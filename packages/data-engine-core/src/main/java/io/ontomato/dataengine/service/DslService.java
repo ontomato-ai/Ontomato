@@ -15,6 +15,5 @@ public interface DslService {
 	
 	public List<String> getNodeIds(JSONObject dsl, UserDataPermission permission, User user);
 	
-	public Map<String, Object> executeForABCProgrammer(JSONObject dsl, String userId, String domainId);
 	
 }

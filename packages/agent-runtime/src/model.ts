@@ -16,7 +16,10 @@ import type { StreamFn } from "./core/pi/types";
 
 // Java serializes unset optional fields as null; preserve configured zero values.
 const javaOptional = <T extends z.ZodTypeAny>(schema: T) =>
-  z.preprocess((value) => value === null ? undefined : value, schema.optional());
+  z.preprocess(
+    (value) => (value === null ? undefined : value),
+    schema.optional(),
+  );
 
 const modelSchema = z.object({
   name: z.string(),
@@ -41,7 +44,7 @@ export async function resolveModel(options: {
   correlationId: string;
   signal: AbortSignal;
 }): Promise<ResolvedModel> {
-  const credential = options.request.privateContext.credential;
+  const credential = options.request.privateContext.modelCredential;
   const headers: Record<string, string> = {
     "X-Correlation-Id": options.correlationId,
   };

@@ -53,45 +53,53 @@ function dataItems(data: unknown): Record<string, unknown>[] {
 }
 
 function chunkProblem(chunk: DataChunk): string | undefined {
-  if (typeof chunk.dsl?.problem === "string" && chunk.dsl.problem) return chunk.dsl.problem;
-  return dataItems(chunk.data).find((item) => typeof item.problem === "string")?.problem as
-    | string
-    | undefined;
+  if (typeof chunk.dsl?.problem === "string" && chunk.dsl.problem)
+    return chunk.dsl.problem;
+  return dataItems(chunk.data).find((item) => typeof item.problem === "string")
+    ?.problem as string | undefined;
 }
 
 function chunkCode(chunk: DataChunk): string | undefined {
   if (typeof chunk.code === "string" && chunk.code) return chunk.code;
-  return dataItems(chunk.data).find((item) => typeof item.code === "string")?.code as
-    | string
-    | undefined;
+  return dataItems(chunk.data).find((item) => typeof item.code === "string")
+    ?.code as string | undefined;
 }
 
 function chunkError(chunk: DataChunk): string | undefined {
   if (typeof chunk.error === "string" && chunk.error) return chunk.error;
-  return dataItems(chunk.data).find((item) => typeof item.error === "string")?.error as
-    | string
-    | undefined;
+  return dataItems(chunk.data).find((item) => typeof item.error === "string")
+    ?.error as string | undefined;
 }
 
 function schemaDefs(value: unknown): Record<string, unknown>[] {
   return Array.isArray(value) ? value.filter(isRecord) : [];
 }
 
-function pathBindings(defs: Record<string, unknown>[]): HotReportReplayPathBinding[] {
+function pathBindings(
+  defs: Record<string, unknown>[],
+): HotReportReplayPathBinding[] {
   return defs.flatMap((def, subQueryIndex) => {
-    if (typeof def.filePath !== "string" || !def.filePath) return [];
+    const filePath =
+      typeof def.runtimePath === "string" ? def.runtimePath : def.filePath;
+    if (typeof filePath !== "string" || !filePath) return [];
     return [
       {
         subQueryIndex,
-        originalFilePath: def.filePath,
-        originalFileName: typeof def.fileName === "string" ? def.fileName : undefined,
+        originalFilePath: filePath,
+        originalFileName:
+          typeof def.fileName === "string" ? def.fileName : undefined,
       },
     ];
   });
 }
 
-function dependencyIndexes(chunk: DataChunk, bindings: HotReportReplayPathBinding[]): number[] {
-  const indexes = new Set<number>(bindings.map((binding) => binding.subQueryIndex));
+function dependencyIndexes(
+  chunk: DataChunk,
+  bindings: HotReportReplayPathBinding[],
+): number[] {
+  const indexes = new Set<number>(
+    bindings.map((binding) => binding.subQueryIndex),
+  );
   if (Array.isArray(chunk.afterCalculatorConsanguinityList)) {
     for (const item of chunk.afterCalculatorConsanguinityList) {
       if (!isRecord(item) || !Array.isArray(item.sources)) continue;
@@ -107,7 +115,7 @@ function dependencyIndexes(chunk: DataChunk, bindings: HotReportReplayPathBindin
 
 export function buildAbcReplayPlanFromChunks(
   chunks: DataChunk[],
-  sessionId?: string
+  sessionId?: string,
 ): HotReportReplayPlan | undefined {
   const finalChunks = chunks
     .filter((chunk) => chunk.source === "final")

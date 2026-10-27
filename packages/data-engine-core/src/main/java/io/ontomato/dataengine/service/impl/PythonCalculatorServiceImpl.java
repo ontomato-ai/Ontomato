@@ -86,6 +86,7 @@ public class PythonCalculatorServiceImpl implements PythonCalculatorService {
 		originalQuestion.setId(originSessionId);
 		try {
 			agentWorkspaceService.createWorkspace(pySessionid);
+            io.ontomato.dataengine.util.PythonInputFiles.stage(agentWorkspaceService.workspaceRoot(pySessionid),io.ontomato.dataengine.util.PythonInputFiles.fromSchema(jsonDataSchema));
 		} catch (Exception e) {
 			log.error(e.getMessage(), e);
 		}
@@ -105,7 +106,7 @@ public class PythonCalculatorServiceImpl implements PythonCalculatorService {
         		String pythonCode = envelope.getString(AfterCalculatorSubmitTools.CODE_KEY);
         		if (pythonCode != null) {
         			try{
-        				List<Map> runResult = this.runPythonCode(sessionid, pythonCode, lang);
+                        List<Map> runResult = this.runPythonCode(sessionid, pythonCode, lang, domainId, io.ontomato.dataengine.util.PythonInputFiles.fromSchema(jsonDataSchema));
         				result.setAnswer(runResult);
         			} catch (SessionCancelledException exp) {
         				throw exp;
@@ -187,9 +188,9 @@ public class PythonCalculatorServiceImpl implements PythonCalculatorService {
     }
 
     @Override
-    public List<Map> runPythonCode(String sessionid, String pythonCode, String lang) throws Exception {
+    public List<Map> runPythonCode(String sessionid, String pythonCode, String lang, String domainId, Map<String,String> inputs) throws Exception {
         try{
-        	PythonExecuteResult result = pythonExecuteService.runPythonCode(sessionid, pythonCode, 2, lang);
+            PythonExecuteResult result = pythonExecuteService.execute(sessionid, pythonCode, 2, lang, io.ontomato.dataengine.service.PythonAuthority.calculation(domainId), new JSONObject(), inputs);
         	String pythonOutput = result.getResult();
         	String errorMessage = result.getError();
         	if (errorMessage != null && !"".equals(errorMessage.trim())) {

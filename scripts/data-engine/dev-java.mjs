@@ -1,38 +1,76 @@
+import { ensureRuntimeCredentials } from "../runtime-credentials.mjs";
 // Host Java dev entry for one product's apps/data-engine: stage the resources the app image would
 // carry, sync them into the app's .dev data root with the container's rule (the shared Python sync,
 // no bash), then run the reactor's spring-boot:run in the foreground. MCP, PostgreSQL and readiness
 // belong to the full-stack entry.
 import { spawn, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { accessSync, constants, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  accessSync,
+  constants,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { delimiter, dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseEnv } from "node:util";
 import { holdForeground } from "../dev-command.mjs";
 import { stageResources } from "./build-images.mjs";
 
-const SYNC = join(dirname(fileURLToPath(import.meta.url)), "sync-product-files.py");
+const SYNC = join(
+  dirname(fileURLToPath(import.meta.url)),
+  "sync-product-files.py",
+);
 
 // The one owner of the venv Python location: the host dev entry uses it for the sync, the
 // full-stack entry for the MCP/skills service, and Windows venvs put it under Scripts/python.exe.
 export function pythonExecutable(appDir, platform = process.platform) {
-  return join(appDir, ".venv", ...(platform === "win32" ? ["Scripts", "python.exe"] : ["bin", "python"]));
+  return join(
+    appDir,
+    ".venv",
+    ...(platform === "win32" ? ["Scripts", "python.exe"] : ["bin", "python"]),
+  );
 }
 
 // The venv follows the product's requirements file: created with the host Python when missing and
 // reinstalled when the file changes. The installed file's hash is kept inside the venv, so a venv
 // created by hand is brought up to date once and then reused.
-export function ensurePythonEnv(appDir, requirements, env = process.env, platform = process.platform) {
+export function ensurePythonEnv(
+  appDir,
+  requirements,
+  env = process.env,
+  platform = process.platform,
+) {
   const python = pythonExecutable(appDir, platform);
   const venv = join(appDir, ".venv");
   const marker = join(venv, "requirements.sha256");
-  const hash = createHash("sha256").update(readFileSync(requirements)).digest("hex");
-  if (executable(python) && existsSync(marker) && readFileSync(marker, "utf8") === hash) return python;
+  const hash = createHash("sha256")
+    .update(readFileSync(requirements))
+    .digest("hex");
+  if (
+    executable(python) &&
+    existsSync(marker) &&
+    readFileSync(marker, "utf8") === hash
+  )
+    return python;
   if (!executable(python)) {
     const host = platform === "win32" ? ["py", "-3"] : ["python3"];
-    runSetup(host[0], [...host.slice(1), "-m", "venv", venv], env, `Creating ${venv} with ${host.join(" ")}`);
+    runSetup(
+      host[0],
+      [...host.slice(1), "-m", "venv", venv],
+      env,
+      `Creating ${venv} with ${host.join(" ")}`,
+    );
   }
-  runSetup(python, ["-m", "pip", "install", "-r", requirements], env, `Installing ${requirements}`);
+  runSetup(
+    python,
+    ["-m", "pip", "install", "-r", requirements],
+    env,
+    `Installing ${requirements}`,
+  );
   writeFileSync(marker, hash);
   return python;
 }
@@ -41,7 +79,9 @@ function runSetup(command, args, env, description) {
   console.log(`[python] ${description}`);
   const result = spawnSync(command, args, { env, stdio: "inherit" });
   if (result.status !== 0)
-    throw new Error(`${description} failed${result.error ? `: ${result.error.message}` : ""}; Python 3.10+ is required`);
+    throw new Error(
+      `${description} failed${result.error ? `: ${result.error.message}` : ""}; Python 3.10+ is required`,
+    );
 }
 
 // The official Maven wrapper pair shipped by the reactor root.
@@ -86,10 +126,22 @@ function cmdArgument(value) {
   return `"${arg}"`.replace(CMD_META, "^$1");
 }
 
-export function mavenInvocation(wrapper, args, platform = process.platform, comspec = process.env.ComSpec || "cmd.exe") {
+export function mavenInvocation(
+  wrapper,
+  args,
+  platform = process.platform,
+  comspec = process.env.ComSpec || "cmd.exe",
+) {
   if (platform !== "win32") return { command: wrapper, args, verbatim: false };
-  const line = [wrapper.replace(CMD_META, "^$1"), ...args.map(cmdArgument)].join(" ");
-  return { command: comspec, args: ["/d", "/s", "/c", `"${line}"`], verbatim: true };
+  const line = [
+    wrapper.replace(CMD_META, "^$1"),
+    ...args.map(cmdArgument),
+  ].join(" ");
+  return {
+    command: comspec,
+    args: ["/d", "/s", "/c", `"${line}"`],
+    verbatim: true,
+  };
 }
 
 export const readDotEnv = parseEnv;
@@ -110,7 +162,10 @@ export function mergeEnvironment(inherited, vars, platform = process.platform) {
   if (platform !== "win32") return { ...vars, ...inherited };
   const env = {};
   const spellings = new Map();
-  for (const [name, value] of [...Object.entries(vars), ...Object.entries(inherited)]) {
+  for (const [name, value] of [
+    ...Object.entries(vars),
+    ...Object.entries(inherited),
+  ]) {
     const upper = name.toUpperCase();
     if (spellings.has(upper)) delete env[spellings.get(upper)];
     spellings.set(upper, name);
@@ -122,21 +177,36 @@ export function mergeEnvironment(inherited, vars, platform = process.platform) {
 // Skills call `python` from PATH; the MCP/skills venv comes first. After the merge, Windows has at
 // most one spelling of PATH; POSIX only ever has the exact PATH.
 export function prependPythonPath(env, venvBin, platform = process.platform) {
-  const key = platform === "win32"
-    ? Object.keys(env).find((name) => name.toUpperCase() === "PATH") ?? "PATH"
-    : "PATH";
+  const key =
+    platform === "win32"
+      ? (Object.keys(env).find((name) => name.toUpperCase() === "PATH") ??
+        "PATH")
+      : "PATH";
   env[key] = `${venvBin}${delimiter}${env[key]}`;
 }
 
 // Everything that can fail on missing local setup fails here, before any staging or Maven; the
 // Python venv is prepared here too.
-export function startDevJava({ app, appDir, wrapper, profiles }, userArgs, inherited = process.env) {
+export function startDevJava(
+  { app, appDir, wrapper, profiles },
+  userArgs,
+  inherited = process.env,
+) {
   const lang = inherited.PROMPT_LANG ?? app.promptLang;
   if (!app.supportedPromptLangs.includes(lang))
-    throw new Error(`PROMPT_LANG must be one of ${app.supportedPromptLangs.join(", ")}`);
+    throw new Error(
+      `PROMPT_LANG must be one of ${app.supportedPromptLangs.join(", ")}`,
+    );
   const envFile = join(app.repoRoot, ".env");
-  if (!existsSync(envFile)) throw new Error(`Missing ${envFile}: copy the product root .env.example first`);
-  const python = ensurePythonEnv(appDir, join(app.requirements.root, app.requirements.path), inherited);
+  if (!existsSync(envFile))
+    throw new Error(
+      `Missing ${envFile}: copy the product root .env.example first`,
+    );
+  const python = ensurePythonEnv(
+    appDir,
+    join(app.requirements.root, app.requirements.path),
+    inherited,
+  );
   const vars = readDotEnv(readFileSync(envFile, "utf8"));
 
   // The staging directory is rebuilt every time; .dev is only synced into, never cleared.
@@ -147,19 +217,42 @@ export function startDevJava({ app, appDir, wrapper, profiles }, userArgs, inher
   // The staged layout is the app image's payload (conf-defaults and skills), synced as in the container.
   const sync = spawnSync(
     python,
-    [SYNC, join(staging, "payload/conf-defaults"), join(staging, "payload/skills"), join(appDir, ".dev")],
+    [
+      SYNC,
+      join(staging, "payload/conf-defaults"),
+      join(staging, "payload/skills"),
+      join(appDir, ".dev"),
+    ],
     { stdio: "inherit" },
   );
-  if (sync.status !== 0) throw new Error(`Resource sync into ${join(appDir, ".dev")} failed`);
+  if (sync.status !== 0)
+    throw new Error(`Resource sync into ${join(appDir, ".dev")} failed`);
 
-  const env = mergeEnvironment(inherited, vars);
+  const env = ensureRuntimeCredentials(
+    app.repoRoot,
+    mergeEnvironment(inherited, vars),
+  );
+  env.AGENT_RUNTIME_URL ||= "http://127.0.0.1:3001";
+  env.ONTOMATO_QUERY_CALLBACK_URL ||=
+    env.DATA_QUERY_BASE_URL || "http://127.0.0.1:18087";
   prependPythonPath(env, dirname(python));
   // Certain VPNs (such as aTrustAgent) set up system SOCKS/HTTP proxies; when the JVM reads them, it hijacks local localhost connections,
   // leading to failure connecting to local PostgreSQL. Explicitly disable the JVM proxy here (placed last to ensure it overrides system-detected proxies).
   const disableProxy = "-DsocksProxyHost= -Dhttp.proxyHost= -Dhttps.proxyHost=";
-  env.JAVA_TOOL_OPTIONS = env.JAVA_TOOL_OPTIONS ? `${env.JAVA_TOOL_OPTIONS} ${disableProxy}` : disableProxy;
-  const args = ["-B", "-ntp", "-DskipTests", "-pl", relative(app.repoRoot, appDir), "-am",
-    ...profiles.map((profile) => `-P${profile}`), "spring-boot:run", ...userArgs];
+  env.JAVA_TOOL_OPTIONS = env.JAVA_TOOL_OPTIONS
+    ? `${env.JAVA_TOOL_OPTIONS} ${disableProxy}`
+    : disableProxy;
+  const args = [
+    "-B",
+    "-ntp",
+    "-DskipTests",
+    "-pl",
+    relative(app.repoRoot, appDir),
+    "-am",
+    ...profiles.map((profile) => `-P${profile}`),
+    "spring-boot:run",
+    ...userArgs,
+  ];
   const invocation = mavenInvocation(wrapper, args);
   return spawn(invocation.command, invocation.args, {
     cwd: app.repoRoot,

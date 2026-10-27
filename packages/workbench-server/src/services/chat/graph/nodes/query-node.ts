@@ -1,4 +1,8 @@
-import { buildQueryRunInput, toDisplayFact } from "../../../data-query/query-fact";
+import { updateQueryRunRetrieval } from "../../../data-query/query-run-store";
+import {
+  buildQueryRunInput,
+  toDisplayFact,
+} from "../../../data-query/query-fact";
 import { startQualityCheckSettlement } from "../../../data-query/late-fact";
 import { resolvePendingLateFacts } from "../utils/query-artifact-cache";
 import type { QueryExecutionFact } from "../../../data-query/query-fact";
@@ -14,9 +18,15 @@ import {
   STANDARD_QUERY_SOURCE_KIND,
   STANDARD_QUERY_SOURCE_REF,
 } from "../utils/query-artifact-cache";
-import { executeBaseQuery, STANDARD_QUERY_BRANCHES } from "../../../data-query/base-query-executor";
+import {
+  executeBaseQuery,
+  STANDARD_QUERY_BRANCHES,
+} from "../../../data-query/base-query-executor";
 import { runtimeDefaults } from "../../../../runtime/defaults";
-import { answerBodyText, type QueryBackendSession } from "@ontomato/contracts/query-execution";
+import {
+  answerBodyText,
+  type QueryBackendSession,
+} from "@ontomato/contracts/query-execution";
 import {
   startQueryRun,
   updateQueryRunBackendSessions,
@@ -26,12 +36,16 @@ import {
 
 const logger = createLogger("query-node");
 
-export async function queryNode(state: GraphState, config?: any): Promise<GraphUpdate> {
+export async function queryNode(
+  state: GraphState,
+  config?: any,
+): Promise<GraphUpdate> {
   const onEvent = config?.configurable?.onEvent;
   const token = config?.configurable?.token || "";
   const apiKey = config?.configurable?.apiKey || "";
   const userId = config?.configurable?.user_id || "";
-  const locale = config?.configurable?.locale || runtimeDefaults().requestLocaleFallback;
+  const locale =
+    config?.configurable?.locale || runtimeDefaults().requestLocaleFallback;
   const abcQuestionMode = getAbcQuestionMode();
   const signal = config?.signal || config?.configurable?.signal;
   const threadId = config?.configurable?.thread_id || state.threadId;
@@ -46,7 +60,8 @@ export async function queryNode(state: GraphState, config?: any): Promise<GraphU
   };
 
   const queryStep = state.plan?.steps.find((step) => step.type === "query");
-  const queryQuestion = queryStep?.type === "query" ? queryStep.question : state.userQuestion;
+  const queryQuestion =
+    queryStep?.type === "query" ? queryStep.question : state.userQuestion;
   const queryRunIdentity = {
     threadId,
     requestSeq,
@@ -55,7 +70,10 @@ export async function queryNode(state: GraphState, config?: any): Promise<GraphU
   };
   let backendSessions: QueryBackendSession[] = [];
 
-  const persistQueryRun = async (message: string, operation: () => Promise<void>) => {
+  const persistQueryRun = async (
+    message: string,
+    operation: () => Promise<void>,
+  ) => {
     try {
       await operation();
     } catch (error) {
@@ -65,8 +83,11 @@ export async function queryNode(state: GraphState, config?: any): Promise<GraphU
 
   // The executor hands over sessions in the contract shape; field names are not changed here.
   const reportBackendLocation = (session: QueryBackendSession) => {
-    const existingIndex = backendSessions.findIndex((item) => item.branch === session.branch);
-    const previous = existingIndex >= 0 ? backendSessions[existingIndex] : undefined;
+    const existingIndex = backendSessions.findIndex(
+      (item) => item.branch === session.branch,
+    );
+    const previous =
+      existingIndex >= 0 ? backendSessions[existingIndex] : undefined;
     // The same branch reporting the same session is a duplicate frame: no new session fact and no second write.
     if (
       previous &&
@@ -78,18 +99,20 @@ export async function queryNode(state: GraphState, config?: any): Promise<GraphU
 
     backendSessions =
       existingIndex >= 0
-        ? backendSessions.map((item, index) => (index === existingIndex ? session : item))
+        ? backendSessions.map((item, index) =>
+            index === existingIndex ? session : item,
+          )
         : [...backendSessions, session];
 
     void persistQueryRun(tApp("queryFixed.35"), () =>
-      updateQueryRunBackendSessions({ ...queryRunIdentity, backendSessions })
+      updateQueryRunBackendSessions({ ...queryRunIdentity, backendSessions }),
     );
   };
 
   const finishQueryRun = async (
     queryResult: QueryExecutionFact | undefined,
     status: "completed" | "failed",
-    error?: string
+    error?: string,
   ) => {
     const input: UpsertQueryRunInput = buildQueryRunInput({
       identity: { ...queryRunIdentity, sourceStage: "query" },
@@ -111,7 +134,7 @@ export async function queryNode(state: GraphState, config?: any): Promise<GraphU
   const buildQueryUpdate = (
     queryResult: QueryExecutionFact | undefined,
     events: any[],
-    extra?: Partial<GraphUpdate>
+    extra?: Partial<GraphUpdate>,
   ): GraphUpdate => {
     if (!queryArtifactCache) {
       logger.warn(tApp("queryFixed.37"), {
@@ -159,7 +182,7 @@ export async function queryNode(state: GraphState, config?: any): Promise<GraphU
         ...queryRunIdentity,
         sourceStage: "query",
         question: queryQuestion,
-      })
+      }),
     );
 
     const execution = await executeBaseQuery({
@@ -185,6 +208,12 @@ export async function queryNode(state: GraphState, config?: any): Promise<GraphU
         });
       },
       onBackendLocation: reportBackendLocation,
+      onRetrievalLocation: (retrieval) => {
+        if (queryRunIdentity)
+          void persistQueryRun("retrieval-reference", () =>
+            updateQueryRunRetrieval({ ...queryRunIdentity!, retrieval }),
+          );
+      },
     });
     if (!execution.winner) {
       const fallback = execution.abcFallback;
@@ -200,7 +229,9 @@ export async function queryNode(state: GraphState, config?: any): Promise<GraphU
       const fallbackDatasets = fallback?.datasets || [];
       const fallbackNodeIds = fallback?.nodeIds || [];
       const fallbackQueryResult: QueryExecutionFact | undefined =
-        fallbackContent || fallbackDatasets.length > 0 || execution.thinkingSummary
+        fallbackContent ||
+        fallbackDatasets.length > 0 ||
+        execution.thinkingSummary
           ? {
               fullContent: fallbackContent || undefined,
               thinkingSummary: execution.thinkingSummary,
@@ -212,7 +243,11 @@ export async function queryNode(state: GraphState, config?: any): Promise<GraphU
               abcCodes: fallback?.abcCodes,
               abcOutKeyRefs: fallback?.abcOutKeyRefs,
               replayPlan: fallback?.replayPlan,
-              markdownTable: fallbackContent ? answerBodyText(fallbackContent) : undefined,
+              retrieval: fallback?.retrieval,
+              needsInput: fallback?.needsInput,
+              markdownTable: fallbackContent
+                ? answerBodyText(fallbackContent)
+                : undefined,
               datasets: fallbackDatasets,
               // The failure reason travels with the execution facts: live and history both see the error description through the same facts.
               error: errorMsg,
@@ -262,7 +297,9 @@ export async function queryNode(state: GraphState, config?: any): Promise<GraphU
     } = execution.output;
     const { thinkingState, thinkingSummary, thinkingSteps } = execution;
     const winnerName = BRANCH_CN[execution.winner];
-    const normalizedNodeIds = Array.isArray(nodeIds) ? nodeIds.map(String).filter(Boolean) : [];
+    const normalizedNodeIds = Array.isArray(nodeIds)
+      ? nodeIds.map(String).filter(Boolean)
+      : [];
 
     logger.debug(tApp("queryFixed.40"), {
       winner: execution.winner,
@@ -274,18 +311,23 @@ export async function queryNode(state: GraphState, config?: any): Promise<GraphU
       hasThinking: !!thinkingSummary,
     });
 
-    const querySummary = t("query.node.completedViaBranch", { branchName: winnerName });
+    const querySummary = t("query.node.completedViaBranch", {
+      branchName: winnerName,
+    });
 
     const thinkingEvent = {
       type: "thinking",
       node: "query",
-      content: thinkingSummary || t("query.node.thinkingSummary", { branchName: winnerName }),
+      content:
+        thinkingSummary ||
+        t("query.node.thinkingSummary", { branchName: winnerName }),
       thinkingSteps,
       thinkingState,
       timestamp: Date.now(),
     };
 
     const queryResult: QueryExecutionFact = {
+      retrieval: execution.output.retrieval,
       fullContent: content,
       thinkingSummary,
       thinkingSteps,
@@ -348,7 +390,10 @@ export async function queryNode(state: GraphState, config?: any): Promise<GraphU
       pendingLateFacts?.register(settlement);
     }
 
-    return buildQueryUpdate(queryResult, eventCollector.concat([thinkingEvent, resultEvent]));
+    return buildQueryUpdate(
+      queryResult,
+      eventCollector.concat([thinkingEvent, resultEvent]),
+    );
   } catch (error) {
     const isAuthFailed = error instanceof AuthFailedError;
     const errorMsg = error instanceof Error ? error.message : String(error);

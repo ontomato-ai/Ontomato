@@ -13,6 +13,8 @@ const headers = {
   "Accept-Language": process.env.ONTOMATO_LANGUAGE,
   "X-Correlation-Id": process.env.ONTOMATO_CORRELATION_ID,
 };
+if (credential.kind === "bearer")
+  headers.Authorization = `Bearer ${credential.value}`;
 if (credential.kind === "token") headers.tk = credential.value;
 if (credential.kind === "api_key") headers["X-API-Key"] = credential.value;
 try {

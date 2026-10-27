@@ -20,7 +20,6 @@ import io.ontomato.dataengine.service.AdminService;
 import io.ontomato.dataengine.service.BusinessConfigService;
 import io.ontomato.dataengine.service.DslService;
 import io.ontomato.dataengine.service.ai.MultiThreadAIChatService;
-import io.ontomato.dataengine.service.DataPermissionLookup;
 import io.ontomato.dataengine.service.sys.bean.permission.UserDataPermission;
 import io.ontomato.dataengine.util.DslUtil;
 import io.ontomato.dataengine.util.HttpRequestUtil;
@@ -41,8 +40,6 @@ public class DslServiceImpl implements DslService {
 	@Autowired
     private AdminService adminService;
 	
-	@Autowired
-	private DataPermissionLookup dataPermissionLookup;
 	
 	@Autowired
 	private VectorResourceDao vectorResourceDao;
@@ -73,18 +70,7 @@ public class DslServiceImpl implements DslService {
     	return nodeIds;
 	}
 
-	@Override
-	public Map<String, Object> executeForABCProgrammer(JSONObject dsl, String userId, String domainId) {
-		UserDataPermission userDataPermission = null;
-		if ("admin".equals(userId)) {
-			userDataPermission = new UserDataPermission();
-		} else {
-			userDataPermission = dataPermissionLookup.getDataPermission(userId, domainId);
-		}
-		return executeNormalized(dsl, userDataPermission, domainId);
-	}
-
-	/** Shared by executeV1 and executeForABCProgrammer: normalize class names and time conditions, return data plus a short error text. */
+	/** Normalize and execute with the already resolved permission. */
 	private Map<String, Object> executeNormalized(JSONObject dsl, UserDataPermission permission, String domainId) {
 		BusinessConfig businessConfig = businessConfigService.get(domainId);
 		Map<String, Object> jsonRule = adminService.getJSONRule(domainId);

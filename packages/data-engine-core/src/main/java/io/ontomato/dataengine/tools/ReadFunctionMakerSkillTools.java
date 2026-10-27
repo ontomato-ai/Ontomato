@@ -77,11 +77,9 @@ public class ReadFunctionMakerSkillTools {
 						parameters.put(parameter.getName(), parameter.getValue());
 					}
 				}
-				Path parameterFile = file.resolveSibling(file.getFileName() + ".params.json");
-				Files.writeString(parameterFile, JSON.toJSONString(parameters, Feature.WriteMapNullValue));
-				pythonExecuteResult = pythonExecuteService.runPythonCode(UUID.randomUUID().toString(), code, timeoutMinutes, lang, "admin", callContext.getDomainId(), parameterFile.toAbsolutePath().toString());
+				pythonExecuteResult = pythonExecuteService.execute(sessionId, code, timeoutMinutes, lang, io.ontomato.dataengine.service.PythonAuthority.exploration(callContext.getDomainId()), parameters, java.util.Map.of());
 			} else {
-				pythonExecuteResult = pythonExecuteService.runPythonCode(UUID.randomUUID().toString(), code, timeoutMinutes, lang, "admin", callContext.getDomainId());
+				pythonExecuteResult = pythonExecuteService.execute(sessionId, code, timeoutMinutes, lang, io.ontomato.dataengine.service.PythonAuthority.exploration(callContext.getDomainId()), new JSONObject(), java.util.Map.of());
 			}
 			if (!code.equals(Files.readString(file))) throw new IllegalStateException("The program file changed during execution, please test again");
 			String content = pythonExecuteResult.getResult();

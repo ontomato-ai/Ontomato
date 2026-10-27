@@ -2,7 +2,10 @@ import type { AbcQuestionMode } from "@ontomato/contracts/system-model";
 import type { BranchKey } from "@ontomato/contracts/query-thinking";
 import type { AbcContentEvent } from "@ontomato/contracts/chat";
 import type { QueryBackendSession } from "@ontomato/contracts/query-execution";
-import type { QueryThinkingState, ThinkingStep } from "@ontomato/contracts/query-thinking";
+import type {
+  QueryThinkingState,
+  ThinkingStep,
+} from "@ontomato/contracts/query-thinking";
 import { getApiConfig } from "../../config/data-query-api";
 import { getAbcQuestionMode, getQueryTimeoutMs } from "./data-query-policy";
 
@@ -12,9 +15,16 @@ import { createLogger } from "../../logging/logger";
 import { runAbcBranch } from "./branches/abc-branch";
 import { runHotBranch } from "./branches/hot-branch";
 import { runStaticBranch } from "./branches/static-branch";
-import type { AbcBranchContext, BaseQueryOutput, BranchContext } from "./branches/types";
+import type {
+  AbcBranchContext,
+  BaseQueryOutput,
+  BranchContext,
+} from "./branches/types";
 import { ThinkingBuffer } from "./thinking/thinking-buffer";
-import { buildThinkingSteps, buildThinkingSummary } from "./thinking/thinking-state";
+import {
+  buildThinkingSteps,
+  buildThinkingSummary,
+} from "./thinking/thinking-state";
 
 const logger = createLogger("base-query-executor");
 
@@ -24,7 +34,9 @@ export const STANDARD_QUERY_BRANCHES = [
   "abc",
 ] as const satisfies readonly BranchKey[];
 
-export const DEEP_ANALYSIS_QUERY_BRANCHES = ["abc"] as const satisfies readonly BranchKey[];
+export const DEEP_ANALYSIS_QUERY_BRANCHES = [
+  "abc",
+] as const satisfies readonly BranchKey[];
 
 interface BaseQueryThinkingResult {
   thinkingState: QueryThinkingState;
@@ -49,6 +61,9 @@ export type BaseQueryExecutionResult = BaseQueryThinkingResult &
   );
 
 export interface BaseQueryExecutionOptions {
+  onRetrievalLocation?: (
+    ref: import("@ontomato/contracts/query-execution").QueryRetrievalRef,
+  ) => void;
   queryQuestion: string;
   token: string;
   apiKey: string;
@@ -63,7 +78,11 @@ export interface BaseQueryExecutionOptions {
   onBackendLocation?: (session: QueryBackendSession) => void;
 }
 
-const BRANCH_FAILURE_ORDER = ["abc", "hot", "static"] as const satisfies readonly BranchKey[];
+const BRANCH_FAILURE_ORDER = [
+  "abc",
+  "hot",
+  "static",
+] as const satisfies readonly BranchKey[];
 
 function normalizeError(error: unknown): Error {
   return error instanceof Error ? error : new Error(String(error));
@@ -71,19 +90,24 @@ function normalizeError(error: unknown): Error {
 
 function formatBranchFailures(
   failures: Partial<Record<BranchKey, string>>,
-  locale: string | undefined
+  locale: string | undefined,
 ): string {
   const parts: string[] = [];
   for (const branch of BRANCH_FAILURE_ORDER) {
     const reason = failures[branch];
     if (!reason) continue;
-    parts.push(tApp("queryFixed.88", { v0: (tForLocale(locale, `query.branch.${branch}`)), v1: (reason) }));
+    parts.push(
+      tApp("queryFixed.88", {
+        v0: tForLocale(locale, `query.branch.${branch}`),
+        v1: reason,
+      }),
+    );
   }
   return parts.join(tApp("queryFixed.183"));
 }
 
 export async function executeBaseQuery(
-  options: BaseQueryExecutionOptions
+  options: BaseQueryExecutionOptions,
 ): Promise<BaseQueryExecutionResult> {
   const enabledBranches = [...new Set(options.enabledBranches)];
   if (enabledBranches.length === 0) {
@@ -98,7 +122,7 @@ export async function executeBaseQuery(
   const findKnowledgeUrl = apiConfig.endpoints.findKnowledge;
 
   const controllers = new Map<BranchKey, AbortController>(
-    enabledBranches.map((branch) => [branch, new AbortController()])
+    enabledBranches.map((branch) => [branch, new AbortController()]),
   );
 
   let abcFallback: BaseQueryOutput | undefined;
@@ -115,7 +139,10 @@ export async function executeBaseQuery(
   const notifyThinking = () => {
     const thinkingState = buildThinkingState();
     const stateJson = JSON.stringify(thinkingState);
-    if (thinkingState.summary === lastThinkingSummary && stateJson === lastThinkingStateJson)
+    if (
+      thinkingState.summary === lastThinkingSummary &&
+      stateJson === lastThinkingStateJson
+    )
       return;
     lastThinkingSummary = thinkingState.summary;
     lastThinkingStateJson = stateJson;
@@ -131,10 +158,20 @@ export async function executeBaseQuery(
   const sendContent = (content: string, loading: boolean) => {
     const event: AbcContentEvent =
       sentContent !== undefined && content.startsWith(sentContent)
-        ? { type: "abc_content", mode: "append", delta: content.slice(sentContent.length), loading }
+        ? {
+            type: "abc_content",
+            mode: "append",
+            delta: content.slice(sentContent.length),
+            loading,
+          }
         : { type: "abc_content", mode: "replace", content, loading };
     sentContent = content;
-    options.onEvent?.({ type: "abc_content", node: "query", content: event, timestamp: Date.now() });
+    options.onEvent?.({
+      type: "abc_content",
+      node: "query",
+      content: event,
+      timestamp: Date.now(),
+    });
   };
 
   const isBranchActive = (branch: BranchKey) => {
@@ -144,7 +181,7 @@ export async function executeBaseQuery(
 
   const createContext = <K extends BranchKey>(branch: K): BranchContext<K> => {
     const controller = controllers.get(branch);
-    if (!controller) throw new Error(tApp("queryFixed.196", { v0: (branch) }));
+    if (!controller) throw new Error(tApp("queryFixed.196", { v0: branch }));
 
     return {
       queryQuestion: options.queryQuestion,
@@ -176,18 +213,29 @@ export async function executeBaseQuery(
 
   const createAbcContext = (): AbcBranchContext => ({
     ...createContext("abc"),
+    reportRetrievalLocation: options.onRetrievalLocation,
     reportFallback: (output) => {
       if (isBranchActive("abc")) abcFallback = output;
     },
     setAbcThinking: (nextState) => thinking.setAbcState(nextState),
   });
 
-  const runBranch = (branch: BranchKey): Promise<BaseQueryOutput | undefined> => {
+  const runBranch = (
+    branch: BranchKey,
+  ): Promise<BaseQueryOutput | undefined> => {
     switch (branch) {
       case "static":
-        return runStaticBranch(metricViewStaticUrl, findKnowledgeUrl, createContext("static"));
+        return runStaticBranch(
+          metricViewStaticUrl,
+          findKnowledgeUrl,
+          createContext("static"),
+        );
       case "hot":
-        return runHotBranch(metricViewGeneralUrl, findKnowledgeUrl, createContext("hot"));
+        return runHotBranch(
+          metricViewGeneralUrl,
+          findKnowledgeUrl,
+          createContext("hot"),
+        );
       case "abc":
         return runAbcBranch(createAbcContext());
     }
@@ -213,7 +261,7 @@ export async function executeBaseQuery(
     const finish = (
       outcome:
         | { winner: BranchKey; output: BaseQueryOutput }
-        | { error: Error; abcFallback?: BaseQueryOutput }
+        | { error: Error; abcFallback?: BaseQueryOutput },
     ) => {
       if (settled) return;
       settled = true;
@@ -229,9 +277,17 @@ export async function executeBaseQuery(
         thinkingSteps: buildThinkingSteps(thinkingSummary),
       };
       if ("winner" in outcome) {
-        resolve({ ...thinkingResult, winner: outcome.winner, output: outcome.output });
+        resolve({
+          ...thinkingResult,
+          winner: outcome.winner,
+          output: outcome.output,
+        });
       } else {
-        resolve({ ...thinkingResult, error: outcome.error, abcFallback: outcome.abcFallback });
+        resolve({
+          ...thinkingResult,
+          error: outcome.error,
+          abcFallback: outcome.abcFallback,
+        });
       }
     };
 
@@ -299,7 +355,7 @@ export async function executeBaseQuery(
     options.signal?.addEventListener("abort", onExternalAbort, { once: true });
     timer = setTimeout(
       () => stop(tForLocale(options.locale, "api.backendExecutionTimeout")),
-      queryTimeoutMs
+      queryTimeoutMs,
     );
 
     logger.debug(tApp("queryFixed.201"), {
@@ -311,7 +367,7 @@ export async function executeBaseQuery(
     for (const branch of enabledBranches) {
       runBranch(branch).then(
         (output) => onDone(branch, output),
-        (error) => onError(branch, error)
+        (error) => onError(branch, error),
       );
     }
   });

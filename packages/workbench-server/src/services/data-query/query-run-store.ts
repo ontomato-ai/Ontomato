@@ -13,6 +13,8 @@ export interface QueryRun {
   status: "pending" | "in_progress" | "completed" | "failed" | string;
   error?: string;
   backendSessions?: QueryBackendSession[];
+  retrieval?: import("@ontomato/contracts/query-execution").QueryRetrievalRef;
+  needsInput?: import("@ontomato/contracts/query-execution").QueryExecutionDisplayFact["needsInput"];
   nodeIds?: string[];
   markdownTable?: string;
   datasetPreviews?: any;
@@ -52,6 +54,8 @@ export interface UpsertQueryRunInput {
   status?: "pending" | "in_progress" | "completed" | "failed" | string;
   error?: string;
   backendSessions?: QueryBackendSession[];
+  retrieval?: import("@ontomato/contracts/query-execution").QueryRetrievalRef;
+  needsInput?: import("@ontomato/contracts/query-execution").QueryExecutionDisplayFact["needsInput"];
   nodeIds?: string[];
   markdownTable?: string;
   datasetPreviews?: unknown;
@@ -80,7 +84,11 @@ type QueryRunKey = Pick<
   "threadId" | "requestSeq" | "sourceKind" | "sourceRef"
 >;
 
-export function buildQueryRunId(threadId: string, requestSeq: number, sourceRef: string): string {
+export function buildQueryRunId(
+  threadId: string,
+  requestSeq: number,
+  sourceRef: string,
+): string {
   return `query:${createHash("md5").update(`${threadId}:${requestSeq}:${sourceRef}`).digest("hex")}`;
 }
 
@@ -100,6 +108,8 @@ function mapQueryRunRow(row: any): QueryRun {
     status: row.status,
     error: row.error || undefined,
     backendSessions: row.backend_sessions || undefined,
+    retrieval: row.retrieval_ref || undefined,
+    needsInput: row.needs_input || undefined,
     nodeIds: row.node_ids || undefined,
     markdownTable: row.markdown_table || undefined,
     datasetPreviews: row.dataset_previews,
@@ -117,7 +127,10 @@ function mapQueryRunRow(row: any): QueryRun {
     qcResult: row.qc_result,
     qcState: row.qc_state,
     objectClasses: row.object_classes || undefined,
-    dataCount: row.data_count === null || row.data_count === undefined ? undefined : row.data_count,
+    dataCount:
+      row.data_count === null || row.data_count === undefined
+        ? undefined
+        : row.data_count,
     abcSubQuestions: row.abc_sub_questions,
     abcDsls: row.abc_dsls,
     abcCodes: row.abc_codes,
@@ -133,7 +146,9 @@ function mapQueryRunRow(row: any): QueryRun {
   };
 }
 
-export async function upsertQueryRun(input: UpsertQueryRunInput): Promise<void> {
+export async function upsertQueryRun(
+  input: UpsertQueryRunInput,
+): Promise<void> {
   const id = buildQueryRunId(input.threadId, input.requestSeq, input.sourceRef);
   const now = new Date();
   await getPostgresPool().query(
@@ -143,8 +158,8 @@ export async function upsertQueryRun(input: UpsertQueryRunInput): Promise<void> 
          cards, winner, data_payload, datasets_payload, dsl_payload, dsl_text, ir,
          full_content, thinking_summary, thinking_steps, thinking_state,
          object_classes, data_count, abc_sub_questions, abc_dsls, abc_codes, abc_out_key_refs, replay_plan,
-         created_at, updated_at)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$32)
+         created_at, updated_at, retrieval_ref, needs_input)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$32,$33,$34)
        ON CONFLICT (thread_id, request_seq, source_kind, source_ref)
        DO UPDATE SET
          source_stage = COALESCE(EXCLUDED.source_stage, ${qualifiedTable("query_runs")}.source_stage),
@@ -173,6 +188,8 @@ export async function upsertQueryRun(input: UpsertQueryRunInput): Promise<void> 
          abc_codes = EXCLUDED.abc_codes,
          abc_out_key_refs = EXCLUDED.abc_out_key_refs,
          replay_plan = EXCLUDED.replay_plan,
+         retrieval_ref = COALESCE(EXCLUDED.retrieval_ref, ${qualifiedTable("query_runs")}.retrieval_ref),
+         needs_input = EXCLUDED.needs_input,
          updated_at = EXCLUDED.updated_at`,
     [
       id,
@@ -207,12 +224,14 @@ export async function upsertQueryRun(input: UpsertQueryRunInput): Promise<void> 
       jsonParam(input.abcOutKeyRefs),
       jsonParam(input.replayPlan),
       now,
-    ]
+      jsonParam(input.retrieval),
+      jsonParam(input.needsInput),
+    ],
   );
 }
 
 export async function startQueryRun(
-  input: QueryRunKey & Pick<UpsertQueryRunInput, "sourceStage" | "question">
+  input: QueryRunKey & Pick<UpsertQueryRunInput, "sourceStage" | "question">,
 ): Promise<void> {
   const now = new Date();
   await getPostgresPool().query(
@@ -230,12 +249,12 @@ export async function startQueryRun(
       input.sourceStage || null,
       input.question || null,
       now,
-    ]
+    ],
   );
 }
 
 export async function updateQueryRunBackendSessions(
-  input: QueryRunKey & { backendSessions: QueryBackendSession[] }
+  input: QueryRunKey & { backendSessions: QueryBackendSession[] },
 ): Promise<void> {
   await getPostgresPool().query(
     `UPDATE ${qualifiedTable("query_runs")}
@@ -252,13 +271,13 @@ export async function updateQueryRunBackendSessions(
       input.sourceRef,
       JSON.stringify(input.backendSessions),
       new Date(),
-    ]
+    ],
   );
 }
 
 /** Writes back only the two quality-check columns: a late fact must never overwrite a whole row of already finalized execution facts. Returns the number of rows hit. */
 export async function updateQueryRunQualityCheck(
-  input: QueryRunKey & { qcResult?: unknown; qcState?: unknown }
+  input: QueryRunKey & { qcResult?: unknown; qcState?: unknown },
 ): Promise<number> {
   const result = await getPostgresPool().query(
     `UPDATE ${qualifiedTable("query_runs")}
@@ -277,12 +296,15 @@ export async function updateQueryRunQualityCheck(
       jsonParam(input.qcResult),
       jsonParam(input.qcState),
       new Date(),
-    ]
+    ],
   );
   return result.rowCount ?? 0;
 }
 
-export async function listQueryRuns(threadId: string, requestSeq?: number): Promise<QueryRun[]> {
+export async function listQueryRuns(
+  threadId: string,
+  requestSeq?: number,
+): Promise<QueryRun[]> {
   const params: any[] = [threadId];
   let where = "thread_id = $1";
   if (requestSeq !== undefined) {
@@ -293,14 +315,14 @@ export async function listQueryRuns(threadId: string, requestSeq?: number): Prom
     `SELECT * FROM ${qualifiedTable("query_runs")}
        WHERE ${where}
        ORDER BY request_seq, created_at, source_kind, source_ref`,
-    params
+    params,
   );
   return result.rows.map(mapQueryRunRow);
 }
 
 export async function getPrimaryQueryRun(
   threadId: string,
-  requestSeq: number
+  requestSeq: number,
 ): Promise<QueryRun | null> {
   const result = await getPostgresPool().query(
     `SELECT * FROM ${qualifiedTable("query_runs")}
@@ -311,7 +333,7 @@ export async function getPrimaryQueryRun(
          CASE source_kind WHEN 'query_stage' THEN 0 ELSE 1 END,
          created_at DESC
        LIMIT 1`,
-    [threadId, requestSeq]
+    [threadId, requestSeq],
   );
   return result.rows[0] ? mapQueryRunRow(result.rows[0]) : null;
 }
@@ -329,12 +351,15 @@ export async function getQueryRunBySource(input: {
          AND source_kind = $3
          AND source_ref = $4
        LIMIT 1`,
-    [input.threadId, input.requestSeq, input.sourceKind, input.sourceRef]
+    [input.threadId, input.requestSeq, input.sourceKind, input.sourceRef],
   );
   return result.rows[0] ? mapQueryRunRow(result.rows[0]) : null;
 }
 
-export async function getObjectClasses(threadId: string, requestSeq?: number): Promise<string[]> {
+export async function getObjectClasses(
+  threadId: string,
+  requestSeq?: number,
+): Promise<string[]> {
   const params: any[] = [threadId];
   let where = "thread_id = $1";
   if (requestSeq !== undefined) {
@@ -347,7 +372,7 @@ export async function getObjectClasses(threadId: string, requestSeq?: number): P
        WHERE ${where}
          AND object_classes IS NOT NULL
          AND array_length(object_classes, 1) > 0`,
-    params
+    params,
   );
   return result.rows.map((row) => String(row.class)).filter(Boolean);
 }
@@ -355,6 +380,23 @@ export async function getObjectClasses(threadId: string, requestSeq?: number): P
 export async function deleteThreadQueryRuns(threadId: string): Promise<void> {
   await getPostgresPool().query(
     `DELETE FROM ${qualifiedTable("query_runs")} WHERE thread_id = $1`,
-    [threadId]
+    [threadId],
+  );
+}
+
+export async function updateQueryRunRetrieval(
+  input: QueryRunKey & {
+    retrieval: import("@ontomato/contracts/query-execution").QueryRetrievalRef;
+  },
+) {
+  await getPostgresPool().query(
+    `UPDATE ${qualifiedTable("query_runs")} SET retrieval_ref=$5::jsonb WHERE thread_id=$1 AND request_seq=$2 AND source_kind=$3 AND source_ref=$4`,
+    [
+      input.threadId,
+      input.requestSeq,
+      input.sourceKind,
+      input.sourceRef,
+      JSON.stringify(input.retrieval),
+    ],
   );
 }

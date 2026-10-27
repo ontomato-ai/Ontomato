@@ -67,7 +67,7 @@ export function productContext(rootInput) {
     // Location of venv Python has only dev-java.mjs as owner: on Windows it is Scripts/python.exe.
     venvPython: pythonExecutable(appDir),
     mcpScript: join(CORE_ROOT, "mcp", "mcpserver.py"),
-    requirements: join(CORE_ROOT, "requirements-py310.txt"),
+    requirements: join(CORE_ROOT, "../agent-runtime/requirements-py310.txt"),
     mcpTemplate: join(CORE_ROOT, "conf-defaults", "mcp-clients.yml"),
     applicationTemplate: join(CORE_ROOT, "conf-defaults", "application.yml"),
     javaEntry: join(appDir, "dev.mjs"),

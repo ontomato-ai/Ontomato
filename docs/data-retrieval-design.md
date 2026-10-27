@@ -1,10 +1,11 @@
-# Retriever migration — batch 2 design for review
+# Retriever migration — batch 2 design
 
-Status: design only, 2026-10-28. No endpoint, sandbox, migration, model-quality or
-image-build claim in this document is an implementation result. The baseline is
+Status: implementation contract, 2026-10-28. Worktree verification is recorded
+in the batch notes; real images, model quality and full-stack acceptance remain
+controller-owned. The baseline is
 public `9d3aa118661ccf9278d4423b78370904bc1db102`. This batch replaces the Java
 ABC programmer with a workbench-owned retriever on the existing independent
-runtime. Controller decisions in the final section are needed before implementation.
+runtime. Controller decisions in the final section authorize implementation.
 
 The wire owners are [data-retrieval.md](../packages/contracts/data-retrieval.md)
 (workbench and ontology boundaries) and
@@ -96,7 +97,7 @@ The English definition moves from
 `packages/data-engine-core/conf-defaults/abc_programmer.md` to workbench prompt
 templates under `data-retrieval/`; enterprise provides the Chinese template at
 the same relative path through the existing prompt overlay. Both use model role
-`query`, current compaction templates, and the same typed tool names.
+`coding`, current compaction templates, and the same typed tool names.
 The runtime has no Chinese/business prompt copy. The old Java programmer prompt
 and assembly branch are deleted after both editions use the workbench definition.
 
@@ -202,9 +203,8 @@ injected into their owning service only.
 | `SkillTools.executePythonFile` | Remove its direct ProcessBuilder too; resolve approved configured script within its package, transfer required package files/arguments through the same executor; unsupported external dependencies fail explicitly |
 | `DslToPythonCodeUtil` and remaining generator prompts in both editions | Emit the one ontology helper protocol; no request-body identity or local engine port |
 
-`/writeFunctionOperation/*` currently trusts body domain/sandbox, so merely
-restricting network to the Java host is insufficient. Read/exploration relay
-profiles exclude those paths; runtime write consumers require a dedicated
+The former `/writeFunctionOperation/*` trusted body domain/sandbox, so merely
+restricting network to the Java host is insufficient. The query grant filter rejects read/exploration grants on those paths; runtime write consumers require a dedicated
 credential-checking boundary deriving sandbox/domain from the authorized task.
 No broad write authority is issued by the retrieval grant endpoint. Legacy
 direct HTTP write callers must be enumerated and changed at the same boundary;
@@ -279,11 +279,11 @@ issues with their owners.
 
 ## Proof plan tied to completion conditions
 
-This first segment needs document/link/diff review only. It changes no executable
-schema or implementation, so unrelated type checks or fake sandbox tests add no
-evidence. During implementation use existing package entry points, filtered Java
-tests and isolated temporary PostgreSQL/processes. Record exact commands/results
-then, rather than reporting the following intended checks as already passing.
+The first segment was approved in 85a7296. Implementation validation uses
+filtered Java tests, temporary PostgreSQL, local runtime/workbench processes and
+a stock Linux Python container. The matrix distinguishes these checks from
+controller-owned real image/full-stack acceptance; exact logs are in the batch
+worktree notes. No static Dockerfile check substitutes for a build.
 
 | Requirement / concrete failure | Evidence in the allowed implementation worktree | Controller acceptance |
 | --- | --- | --- |
@@ -291,7 +291,7 @@ then, rather than reporting the following intended checks as already passing.
 | Credentials can be overridden or escape to ordinary tools | Java boundary tests with actual HTTP guards; forged/expired/revoked/cross-domain/run/purpose grants; body IDs rejected; ordinary external/API key cannot issue E; sibling process/env/file negative cases | Same probes in the actual runtime image and enterprise configured filter chain |
 | Formal results reuse unauthorized exploration rows | Real process: exploration sees a superset; fresh final workspace/query sees user rows, masks columns; changed permissions affect final run; missing sources and changed code receipt rejected | Restricted user plus Python post-calculation question |
 | Read binding can reach write or raw-query actions | Read/explore credentials rejected at every write/action/grant path; read facade rejects unsupported DSL constructs before execution | Actual configured network and endpoint policy, no localhost/bypass route |
-| Whole-process cancellation and isolation | Real Python descendant, CPU/memory/output/time pressure; filesystem/egress escape attempts; kill supervisor then restart; assert no live orphan and no replay. Non-Linux missing isolation must fail closed | Linux image kernel/seccomp/UID/cgroup proof; native developer path selected in R1 |
+| Whole-process cancellation and isolation | Real Python descendant, CPU/memory/output/time pressure; private-file boundary probes; kill supervisor then restart; assert no live orphan and no replay. Non-Linux missing isolation must fail closed | Linux image UID/rlimit/process-tree proof; native developer path selected in R1 |
 | Partial status lost in a row-only helper | Real helper call with complete, partial, empty-partial and error responses; independent next run; final status taken only from final run | A real adapter partial result retained through history/download |
 | Retry repeats admission/output/QC side effects | PostgreSQL plus local model/Java fixtures; drop real HTTP responses after acceptance, recover identical IDs; changed payload conflicts; unknown outcome does not replay | Real stack interruption/restart and recovered query facts |
 | Needs-input loses identity or assumes an answer | API roundtrip for reply/change/no reply/non-interactive, same session/new run, stale revision rejection, preserved partial artifacts | Public ask continuation; chat routing boundary per R4 |
@@ -306,53 +306,49 @@ does not run them here. No remote baseline is refreshed in this segment and no
 35-question score threshold is invented. The known baseline Java SecretCipher
 startup defect must be reported if it blocks tests; this batch does not fix it.
 
-## Decisions required from the controller
+## Controller decisions (2026-10-28)
 
-**R1 — deployment of the isolation boundary.** Recommended implementation is a
-Linux runtime with fixed bubblewrap policy, separate worker UID, network relay
-and enforced group resource limits, used by both Python and credential-bearing
-skill children. Bubblewrap is a construction tool: policy is the application's
-responsibility, and it depends on user namespaces. Docker's default seccomp
-policy blocks some namespace/mount calls, so merely installing it in the current
-image is insufficient. These requirements come from the [upstream bubblewrap
-documentation](https://github.com/containers/bubblewrap/blob/main/README.md) and
-[Docker seccomp documentation](https://docs.docker.com/engine/security/seccomp/).
-Accept or replace the concrete isolation approach, its narrowly scoped Docker
-policy/cgroup prerequisites, and a local Linux runtime path for macOS/Windows.
-No `privileged`, Docker socket mount or unconfined/unsandboxed fallback is
-implicitly authorized. Validate the chosen launch policy before full migration;
-failure is a blocker, not permission to relax isolation.
+R1 accepted: use the explicit first-release UID/rlimit boundary
+in the code contract. No bubblewrap/cgroups or silent production fallback.
+Native developer mode is deliberately weaker and emits a startup warning.
 
-**R2 — one Python environment versus deferred traditional MCP.** The current
-data-engine startup executes both `sync-product-files.py` and `mcpserver.py`;
-dev-stack owns a separate Java-side venv. Recommended smallest scope: move all
-business Python executions to runtime now, retain the existing MCP/startup
-environment explicitly until the scheduled traditional-MCP cleanup, and record
-that the 'one environment' packaging condition is not yet achieved. This is a
-requested exception to that condition, **not an accepted change**. If the single
-environment must hold in batch 2, the controller must expand the batch to relocate
-or replace those remaining Python processes without placing ontology business
-inside runtime core. The worker will not choose that expansion itself.
+R2 accepted exception: all business program execution moves to runtime; the
+traditional MCP calculator and startup Python remain until traditional ABC/MCP
+cleanup. The package does not yet contain just one Python installation.
 
-**R3 — persisted programs using the retired protocol.** Existing Function and
-dashboard programs can embed localhost `/dsl/execute`, `sys.argv` identities and
-Java-side file paths. Recommended: update all live generators in this batch,
-reject old-protocol programs explicitly, and assign offline stored-asset conversion
-to the release migration owner before release. New/published Functions using the
-new protocol must execute through runtime in batch 2. If existing deployed
-Functions must execute immediately, conversion belongs in this batch and needs
-an explicit inventory/acceptance scope. Do not use a transparent loopback proxy,
-`requests` monkey patch, or guessed regex rewrite as hidden compatibility.
+R3 accepted: all current generators adopt the new protocol; published Functions
+using it must work. Old-protocol stored programs fail with a readable migration
+error. Stored Function/dashboard conversion belongs to the pre-release data
+migration. No loopback proxy, monkey patch or guessed program rewrite.
 
-**R4 — needs-input in the retained chat graph.** Recommended batch boundary:
-complete continuation in retrieval API/ask, preserve needs-input as a non-success
-abc outcome with its retrieval ID, and implement normal chat answer routing in
-the already planned main-assistant batch. If this batch must let the current
-chat UI answer a retriever question naturally, approve that narrow graph/state/
-UI integration explicitly; it cannot be claimed while LangGraph and its routing
-remain unchanged.
+R4 accepted: public API/ask support same-session replies. The abc branch preserves
+a structured needs-input outcome and reference; automatic routing of the next
+chat message belongs to batch 3.
 
-The shared Java workspace retention is a source-backed scope clarification,
-not a request to preserve the old retriever. Only its unrelated consumers retain
-it. All four decisions above are open recommendations; this document does not
-silently revise already accepted product requirements.
+Shared Java file tools are renamed accurately and retained for the unmigrated
+consumers, without copying their implementation. SecretCipher remains outside
+this batch. Main-directory image/full-stack and remote acceptance remain with
+the controller.
+
+
+Network clarification: code provides no network isolation. Preserve connections
+to PostgreSQL, workbench callbacks, ontology, model providers and configured
+external MCP. Python/skills can reach container-reachable addresses. This batch
+adds no egress proxy/firewall; deployment network policy owns site allowlists.
+Namespaces, process-level egress and aggregate resource limits remain follow-up
+work. Darwin/Windows development mode has the limits stated in the code contract.
+
+The retriever retains the previous programmer's `coding` model role. Knowledge
+retrieval can use Embedding; metric catalogue lookup is bounded SQL over published
+read Functions, with nullable source fields preserved. Callback credentials are
+short-lived encrypted delegations scoped to a route and run; the workbench
+recovers the original user credential using its service key, then the normal
+identity provider verifies it. The runtime supervisor is trusted and already
+holds that shared host key; workers receive neither the key nor a plaintext
+user credential. The runtime treats the delegation as opaque bytes.
+
+Parent cancellation closes a workbench admission gate and runtime run creation
+intent; Java output/QC cancellation also closes not-yet-admitted jobs. No late
+response is replayed into a second execution. Same-session continuation injects
+effective decisions, prior authorized artifact references and prior successful
+source files, with fresh credentials and a new execution workspace.

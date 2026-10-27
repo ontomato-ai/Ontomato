@@ -166,43 +166,17 @@ If the probe result is empty, try relaxing the condition (such as a broader `lik
 
 ## Step 4: Write the parameterized read function Python program
 
-### Program input parameters
-The external program will execute the read function Python code you write in a way similar to this:
-```
-python your_read_function.py userId domainId parameterFilePath
-```
-- `userId`, `domainId`: the real user and domain identifiers at program runtime; the program must read them through `sys.argv`, and filling them in yourself, guessing them, or using string constants instead is forbidden
-- `parameterFilePath`: the absolute path of the input parameter file. The content of the input parameter file is a JSON object whose key is the parameter name and whose value is the parameter value (that is, the `value` of each parameter in the parameter definitions you finally determine). **A read function with no parameters does not need to read the content of the input parameter file**, but the beginning of the program must still receive the three runtime parameters `userId`, `domainId`, `parameterFilePath` in a fixed order
-
-### Fixed program scaffold
+### Runtime protocol
+The host supplies authorization. Read business parameters from the helper; do not read identity or host file paths from argv.
 ```python
-import sys
+# ontomato-python:2
 import json
-import requests
-import traceback
-
-if len(sys.argv) <= 3:
-    raise RuntimeError("missing the userId, domainId or parameterFilePath passed in when running the program")
-
-userId = sys.argv[1]
-domainId = sys.argv[2]
-parameterFilePath = sys.argv[3]
-
-with open(parameterFilePath, "r", encoding="utf-8") as f:
-    params = json.load(f)
-
-def executeDsl(dsl: dict) -> list:
-    url = f"http://127.0.0.1:{{SERVER_PORT}}/dsl/execute"
-    resp = requests.post(url, json={"dsl": dsl, "userId": userId, "domainId": domainId}).json()
-    error = resp.get("error")
-    if error:
-        raise Exception(error)
-    answer = resp["data"][0]
-    return answer.get("answer", [])
-
-# Read each parameter from params, for example:
-# employeeName = params["employeeName"]
+from query_runtime import execute_dsl, parameters as params
+# Build the verified DSL using business parameters.
+rows = execute_dsl(dsl)
+print(json.dumps({"answer": rows}, ensure_ascii=False))
 ```
+
 
 ### DSL syntax notes
 - Boolean values and null in the DSL are written as `true`, `false`, `null`; when writing the DSL into a Python dictionary, they must be rewritten as Python's `True`, `False`, `None` respectively

@@ -12,7 +12,7 @@ public class PythonExecuteResult {
 	private String error;
 	private Long spendTime;
 	/**
-	 * Present only when a query this run sent to {@code /dsl/execute} returned a partial answer:
+	 * Present only when a query this run sent to {@code /ontology/query/execute-dsl} returned a partial answer:
 	 * the engine's answer-level {@code truncated}/{@code rowLimit}/{@code truncationHint}, recorded
 	 * by the Python runtime. Anything the program computed from that query covers only the
 	 * processed portion, even when it prints a single row.

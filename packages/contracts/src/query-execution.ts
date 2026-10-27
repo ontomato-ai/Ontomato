@@ -5,6 +5,12 @@ import type {
   QcState,
   QcResult,
 } from "./query-thinking";
+import type { RetrievalResult } from "./data-retrieval";
+export interface QueryRetrievalRef {
+  retrievalId: string;
+  runtimeSessionId: string;
+  runtimeRunId: string;
+}
 /** Multi-dataset preview for display. */
 export interface QueryFactDatasetPreview {
   title: string;
@@ -58,19 +64,20 @@ export function datasetPlacement(datasetId: string): string {
 const DATASET_PLACEMENT_PATTERN = /<!-- query-dataset:([\w-]+) -->/g;
 
 export type AnswerBodyPiece =
-  | { kind: "text"; text: string }
-  | { kind: "dataset"; datasetId: string };
+  { kind: "text"; text: string } | { kind: "dataset"; datasetId: string };
 
 /** The answer body in order: text between placements, and each placement's dataset id. */
 export function splitAnswerBody(body: string): AnswerBodyPiece[] {
   const pieces: AnswerBodyPiece[] = [];
   let cursor = 0;
   for (const match of body.matchAll(DATASET_PLACEMENT_PATTERN)) {
-    if (match.index > cursor) pieces.push({ kind: "text", text: body.slice(cursor, match.index) });
+    if (match.index > cursor)
+      pieces.push({ kind: "text", text: body.slice(cursor, match.index) });
     pieces.push({ kind: "dataset", datasetId: match[1]! });
     cursor = match.index + match[0].length;
   }
-  if (cursor < body.length) pieces.push({ kind: "text", text: body.slice(cursor) });
+  if (cursor < body.length)
+    pieces.push({ kind: "text", text: body.slice(cursor) });
   return pieces;
 }
 
@@ -80,6 +87,8 @@ export function answerBodyText(body: string): string {
 }
 
 export interface QueryExecutionDisplayFact {
+  retrieval?: QueryRetrievalRef;
+  needsInput?: Extract<RetrievalResult, { status: "needs_input" }>;
   thinkingSummary?: string;
   thinkingSteps?: ThinkingStep[];
   thinkingState?: QueryThinkingState;

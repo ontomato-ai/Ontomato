@@ -51,30 +51,4 @@ public class DslController {
     	return nodeIds;
     }
 	
-	@PostMapping("/dsl/execute")
-    @ResponseBody
-    public Map<String, Object> executeForABCProgrammer(@RequestBody JSONObject param) throws Exception {
-		JSONObject dsl = validDslJsonFormat(param);
-		String userId = param.getString("userId");
-		String domainId = param.getString("domainId");
-    	return dslService.executeForABCProgrammer(dsl, userId, domainId);
-    }
-	
-	private JSONObject validDslJsonFormat(JSONObject param) throws Exception {
-		try {
-			JSONObject dsl = param.getJSONObject("dsl");
-			if (dsl == null) {
-				throw new Exception();
-			}
-			return dsl;
-		} catch (Exception e) {
-			try {
-				JSONArray dsls = param.getJSONArray("dsl");
-				return dsls.getJSONObject(0);
-			} catch (Exception e1) {
-				throw new Exception(e1.getMessage());
-			}
-		}
-	}
-	
 }

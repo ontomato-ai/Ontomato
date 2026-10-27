@@ -51,6 +51,39 @@ export function workspaceTools(root: string): AgentTool[] {
   }
   return [
     {
+      name: "workspace_edit",
+      label: "Edit workspace file",
+      description: "Replace exactly one occurrence in a workspace UTF-8 file.",
+      parameters: {
+        type: "object",
+        properties: {
+          path: { type: "string" },
+          oldText: { type: "string", minLength: 1 },
+          newText: { type: "string" },
+        },
+        required: ["path", "oldText", "newText"],
+      } as TSchema,
+      async execute(_id, args, signal) {
+        signal?.throwIfAborted();
+        const a = args as { path: string; oldText: string; newText: string };
+        const target = await file(a.path),
+          text = await readFile(target, "utf8"),
+          at = text.indexOf(a.oldText);
+        if (
+          !a.oldText ||
+          at < 0 ||
+          text.indexOf(a.oldText, at + a.oldText.length) >= 0
+        )
+          throw new Error("oldText must match exactly once");
+        await writeFile(
+          target,
+          text.slice(0, at) + a.newText + text.slice(at + a.oldText.length),
+          { signal },
+        );
+        return result({ edited: true });
+      },
+    },
+    {
       name: "workspace_read",
       label: "Read workspace file",
       description:

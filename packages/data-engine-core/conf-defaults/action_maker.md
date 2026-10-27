@@ -215,7 +215,7 @@ For a `TYPE_VECTOR` parameter, its `value` is an object describing one vector fi
   "text": "the vector content used for embedding"
 }
 ```
-`className` and `attrName` are required; `fileId` may be empty when the parameter is used by `appendVector`; `text` may be empty when used by `deleteVector`. The `uploadFilePath` (absolute path of the uploaded file) is filled in automatically by the system at execution time, so it does not need to be provided here. The object the vector file attaches to is decided by the program code (not this parameter): the code usually gets the object id from another parameter or a query, then passes it as the `objectId` argument to the vector primitive. The top-level `className` field of this parameter definition (see the bullet above) should be the class that owns the vector attribute, i.e. the same class as `value.className`.
+`className` and `attrName` are required; `fileId` may be empty when the parameter is used by `appendVector`; `text` may be empty when used by `deleteVector`. The `fileBase64` (absolute path of the uploaded file) is filled in automatically by the system at execution time, so it does not need to be provided here. The object the vector file attaches to is decided by the program code (not this parameter): the code usually gets the object id from another parameter or a query, then passes it as the `objectId` argument to the vector primitive. The top-level `className` field of this parameter definition (see the bullet above) should be the class that owns the vector attribute, i.e. the same class as `value.className`.
 
 For example:
 ```json
@@ -227,168 +227,15 @@ For example:
 
 ## Step 4: Write and Debug the Write Function Program
 
-### Program Input Parameters
-The external program will execute the write function Python code you write in a way similar to this:
-```
-python your_program.py sandboxId domainId parameterFilePath
-```
-- `sandboxId`: the sandbox identifier (during testing this is the sandbox environment; just use this variable directly inside the program, and there is no need to care whether it is a sandbox)
-- `domainId`: the domain identifier
-- `parameterFilePath`: the absolute path of the input parameter file. The content of the input parameter file is a JSON object whose key is the parameter name and whose value is the parameter value (that is, the `value` of each parameter in the parameter definitions you finally determined). **A write function with no parameters does not need to read the content of the input parameter file**, but the program must still receive these three runtime parameters in a fixed order at the beginning
-
-### Fixed Program Scaffold
-The program must be written based on the scaffold below, which already contains helper functions for 8 write-data interfaces and 1 query-data interface:
-
+### Runtime protocol
+The host supplies authorization and business parameters; do not accept user/domain/sandbox IDs or host file paths as program arguments.
 ```python
-import sys
-import json
-import requests
-import traceback
-
-if len(sys.argv) <= 3:
-    raise RuntimeError("missing the sandboxId,domainId,parameterFilePath passed in when running the program")
-
-sandboxId = sys.argv[1]  # "sandboxId"
-domainId = sys.argv[2]   # "domainId"
-parameterFilePath = sys.argv[3]  # "absolute path of the input parameter file"
-
-SERVER_PORT = "{{SERVER_PORT}}"
-BASE = f"http://127.0.0.1:{SERVER_PORT}/writeFunctionOperation"
-
-# Read the input parameter file (the content is a JSON object, key is the parameter name)
-with open(parameterFilePath, "r", encoding="utf-8") as f:
-    params = json.load(f)
-
-
-def _check(resp: dict):
-    """Unified validation for write operation interfaces: throw an exception if success is not true"""
-    if resp.get("success") is not True:
-        raise Exception(resp.get("message", "operation failed"))
-
-
-def query(dsl: dict) -> list:
-    """Query, return an array of records"""
-    url = f"{BASE}/query"
-    resp = requests.post(url, json={"dsl": dsl, "sandboxId": sandboxId, "domainId": domainId}).json()
-    error = resp.get("error")
-    if error:
-        raise Exception(error)
-    answer = resp["data"][0]
-    return answer.get("answer", [])
-
-
-def insert(className: str, objs: list):
-    """Insert objects; objs is an array of objects, and each object must contain an id field. Writes ONLY non-vector attributes — any vector attribute in objs is ignored; write vector attributes via appendVector/updateVector instead."""
-    url = f"{BASE}/insert"
-    resp = requests.post(url, json={"className": className, "objs": objs,
-                                    "sandboxId": sandboxId, "domainId": domainId}).json()
-    _check(resp)
-
-
-def update(className: str, setValues: dict, where: dict):
-    """Update objects; setValues is the fields to change, where is the filter condition. setValues may contain ONLY non-vector attributes — a vector attribute here raises an error; write vector attributes via updateVector/appendVector instead."""
-    url = f"{BASE}/update"
-    resp = requests.post(url, json={"className": className, "setValues": setValues, "where": where,
-                                    "sandboxId": sandboxId, "domainId": domainId}).json()
-    _check(resp)
-
-
-def delete(className: str, where: dict):
-    """Delete objects; where is the filter condition"""
-    url = f"{BASE}/delete"
-    resp = requests.post(url, json={"className": className, "where": where,
-                                    "sandboxId": sandboxId, "domainId": domainId}).json()
-    _check(resp)
-
-
-def createEdge(relationName: str, sourceClassName: str, sourceObjId: str, 
-               targetClassName: str, targetObjId: str):
-    """Create a relationship edge"""
-    url = f"{BASE}/createEdge"
-    resp = requests.post(url, json={"relationName": relationName, 
-                                    "sourceClassName": sourceClassName, "sourceObjId": sourceObjId,
-                                    "targetClassName": targetClassName, "targetObjId": targetObjId,
-                                    "sandboxId": sandboxId, "domainId": domainId}).json()
-    _check(resp)
-
-
-def deleteEdge(relationName: str, sourceClassName: str, sourceObjId: str,
-               targetClassName: str, targetObjId: str):
-    """Delete a relationship edge"""
-    url = f"{BASE}/deleteEdge"
-    resp = requests.post(url, json={"relationName": relationName,
-                                    "sourceClassName": sourceClassName, "sourceObjId": sourceObjId,
-                                    "targetClassName": targetClassName, "targetObjId": targetObjId,
-                                    "sandboxId": sandboxId, "domainId": domainId}).json()
-    _check(resp)
-
-
-def appendVector(className: str, attrName: str, objectId: str, text: str, filePath: str):
-    """Append a vector file to the object's vector attribute; text is the vector content used for embedding, filePath is the local file path to upload"""
-    url = f"{BASE}/appendVector"
-    with open(filePath, "rb") as f:
-        resp = requests.post(url, data={"className": className, "attrName": attrName, "objectId": objectId,
-                                        "text": text, "sandboxId": sandboxId, "domainId": domainId},
-                             files={"file": f}).json()
-    _check(resp)
-
-
-def updateVector(className: str, attrName: str, objectId: str, fileId: str, text: str, filePath: str):
-    """Update an existing vector file of the object's vector attribute; fileId is the file id (last path segment), text is the new vector content, filePath is the local file path to upload"""
-    url = f"{BASE}/updateVector"
-    with open(filePath, "rb") as f:
-        resp = requests.post(url, data={"className": className, "attrName": attrName, "objectId": objectId,
-                                        "fileId": fileId, "text": text, "sandboxId": sandboxId, "domainId": domainId},
-                             files={"file": f}).json()
-    _check(resp)
-
-
-def deleteVector(className: str, attrName: str, objectId: str, fileId: str):
-    """Delete an existing vector file from the object's vector attribute; fileId is the file id (last path segment)"""
-    url = f"{BASE}/deleteVector"
-    resp = requests.post(url, json={"className": className, "attrName": attrName, "objectId": objectId,
-                                    "fileId": fileId, "sandboxId": sandboxId, "domainId": domainId}).json()
-    _check(resp)
-
-
-# ============ Your write function logic ============
-try:
-    # Read each parameter from params, for example:
-    # employeeName = params["employeeName"]
-    # deptId = params["deptId"]
-    
-    # Example: query and return an array of records
-    # dsl = {}  # the concrete DSL
-    # rows = query(dsl)
-
-    # Example: add objects
-    # insert("/hospital/room", [{"id": "3001", "name": employeeName, ...}])
-
-    # Example: update objects
-    # update("/hospital/room", {"name": "new name"}, {"field": "id", "operator": "=", "value": "1001"})
-
-    # Example: delete objects
-    # delete("/hospital/room", {"field": "id", "operator": "=", "value": "1002"})
-
-    # Example: create a relationship edge
-    # createEdge("belongs_to", "/hospital/room", "1001", "/hospital/dept", "2001")
-
-    # Example: delete a relationship edge
-    # deleteEdge("belongs_to", "/hospital/room", "1001", "/hospital/dept", "2001")
-
-    # Example: append a vector file to an object's vector attribute
-    # paper = params["paper"]  # a TYPE_VECTOR parameter; its value is a dict with className/attrName/fileId/text/uploadFilePath
-    # appendVector(paper["className"], paper["attrName"], "1001", paper["text"], paper["uploadFilePath"])
-
-    # Example: update an existing vector file (fileId is the last path segment read from the object's vector attribute)
-    # updateVector(paper["className"], paper["attrName"], "1001", paper["fileId"], paper["text"], paper["uploadFilePath"])
-
-    # Example: delete an existing vector file
-    # deleteVector(paper["className"], paper["attrName"], "1001", paper["fileId"])
-
-except Exception as e:
-    traceback.print_exc()
+# ontomato-python:2
+from query_runtime import (parameters as params, query, insert, update, delete,
+                           createEdge, deleteEdge, appendVector, updateVector, deleteVector)
+# Implement the approved action using these helpers.
 ```
+Vector helper arguments carry text or fileBase64; they do not reference Java host files.
 
 ### where Condition Format
 The `where` condition format of `update`/`delete` is as follows:

@@ -1,147 +1,154 @@
 package io.ontomato.dataengine.service.impl;
 
-import java.io.File;
-import java.io.InputStream;
-import java.nio.charset.Charset;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
-import java.nio.file.Path;
+import com.alibaba.fastjson2.JSON;
+import com.alibaba.fastjson2.JSONObject;
+import io.ontomato.dataengine.bean.PythonExecuteResult;
+import io.ontomato.dataengine.service.*;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.List;
-import java.util.concurrent.TimeUnit;
-
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.beans.factory.annotation.Value;
+import java.util.Map;
+import java.util.UUID;
 import org.springframework.stereotype.Service;
 
-import com.alibaba.fastjson2.JSONObject;
-
-import io.ontomato.dataengine.bean.PythonExecuteResult;
-import io.ontomato.dataengine.config.DataRagConfig;
-import io.ontomato.dataengine.service.BackendSessionEntrance;
-import io.ontomato.dataengine.service.LangService;
-import io.ontomato.dataengine.service.PythonExecuteService;
-import io.ontomato.dataengine.service.SessionCancelledException;
-
-import lombok.extern.slf4j.Slf4j;
-
-@Slf4j
+/** Java interprets business output; all Python processes belong to the runtime. */
 @Service
 public class PythonExecuteServiceImpl implements PythonExecuteService {
+  private final RuntimeCodeClient runtime;
+  private final QueryGrantService grants;
 
-    File pythonPath = new File("./python");
+  public PythonExecuteServiceImpl(RuntimeCodeClient runtime, QueryGrantService grants) {
+    this.runtime = runtime;
+    this.grants = grants;
+  }
 
-    @Autowired
-    private DataRagConfig dataRagConfig;
-
-    @Autowired
-    private LangService langService;
-
-    /** The port programs call /dsl/execute on; only that local origin's answers are recorded. */
-    @Value("${server.port}")
-    private int serverPort;
-
-    @Override
-    public PythonExecuteResult runPythonCode(String sessionId, String code, int timeoutMinute, String lang, String... args) throws Exception {
-        Files.createDirectories(pythonPath.toPath());
-        File file = new File(pythonPath, sessionId + ".py");
-        Files.writeString(file.toPath(), code);
-        // Saved programs, cards and dashboards continue to use the original service working directory.
-        return executeFile(sessionId, file, null, timeoutMinute, lang, args);
+  @Override
+  public PythonExecuteResult execute(
+      String sessionId,
+      String code,
+      int timeoutMinutes,
+      String lang,
+      PythonAuthority authority,
+      JSONObject parameters,
+      Map<String, String> inputFiles)
+      throws Exception {
+    if (authority.domainId() == null)
+      throw new IllegalArgumentException("Python execution requires the owning domain");
+    if (authority.purpose() != null && !code.contains("# ontomato-python:2"))
+      throw new IllegalArgumentException(
+          "This saved program uses the retired Python protocol. Convert or regenerate it before"
+              + " execution (ontomato-python:2 required).");
+    String id =
+        authority.executionId() == null ? UUID.randomUUID().toString() : authority.executionId();
+    UUID.fromString(id);
+    runtime.registerSkill();
+    long started = System.currentTimeMillis(), timeout = Math.max(1, timeoutMinutes) * 60000L;
+    if (authority.parentGrant() != null)
+      timeout = Math.min(timeout, authority.parentGrant().expiresAt() - started);
+    if (timeout <= 0) throw new IllegalStateException("Parent query grant expired");
+    String token =
+        authority.parentGrant() != null
+            ? authority.parentGrant().token()
+            : authority.purpose() == null
+                ? null
+                : grants.issue(
+                    authority.userId(),
+                    authority.domainId(),
+                    authority.purpose(),
+                    id,
+                    started + timeout,
+                    authority.classNames(),
+                    authority.sandboxId());
+    List<Map<String, String>> files = new ArrayList<>();
+    files.add(Map.of("path", "program.py", "content", code));
+    files.add(
+        Map.of(
+            "path",
+            "parameters.json",
+            "content",
+            JSON.toJSONString(
+                parameters == null ? new JSONObject() : parameters,
+                com.alibaba.fastjson2.JSONWriter.Feature.WriteMapNullValue)));
+    for (var file : inputFiles.entrySet()) {
+      if (file.getKey().equals("program.py") || file.getKey().equals("parameters.json"))
+        throw new IllegalArgumentException("Input shadows an execution-owned file");
+      files.add(Map.of("path", file.getKey(), "content", file.getValue()));
     }
-
-    @Override
-    public PythonExecuteResult runPythonFile(String sessionId, File file, int timeoutMinute, String lang, String... args) throws Exception {
-        return executeFile(sessionId, file, file.getAbsoluteFile().getParentFile(), timeoutMinute, lang, args);
-    }
-
-    /**
-     * Sliced wait duration for the process: the upper bound of the cancellation-awareness delay, with negligible overhead.
-     */
-    private static final long WAIT_SLICE_MS = 200L;
-
-    /** Launcher that runs the program and records partial /dsl/execute answers into the run's status file. */
-    private static final String QUERY_RUNTIME_RESOURCE = "/python/query_runtime.py";
-    private static final String QUERY_STATUS_ENV = "ONTOMATO_QUERY_STATUS_FILE";
-    private static final String ENGINE_PORT_ENV = "ONTOMATO_ENGINE_PORT";
-
-    private PythonExecuteResult executeFile(String sessionId, File file, File directory, int timeoutMinute, String lang, String... args) throws Exception {
-        long start = System.currentTimeMillis();
-        Process process = null;
-        Path stdout = null;
-        Path stderr = null;
-        Path runtime = null;
-        Path queryStatus = null;
-        try {
-            if (Thread.currentThread().isInterrupted()) throw new InterruptedException("Python execution has been cancelled");
-            log.info("[{}] pythonCode:\n{}", sessionId, Files.readString(file.toPath()));
-            String executable = dataRagConfig.getPythonpath();
-            if (executable == null || executable.isEmpty()) executable = "python";
-            if (executable.contains(File.separator)) executable = Path.of(executable).toAbsolutePath().toString();
-            runtime = Files.createTempFile("datarag-python-runtime-", ".py");
-            try (InputStream source = PythonExecuteServiceImpl.class.getResourceAsStream(QUERY_RUNTIME_RESOURCE)) {
-                Files.write(runtime, source.readAllBytes());
-            }
-            // Created per run and read only after this run exits, so no execution inherits another's status.
-            queryStatus = Files.createTempFile("datarag-python-", ".query");
-            List<String> command = new ArrayList<>(List.of(executable, runtime.toString(), file.getAbsolutePath()));
-            if (args != null) command.addAll(Arrays.asList(args));
-            log.info("python command: {}", command);
-            stdout = Files.createTempFile("datarag-python-", ".out");
-            stderr = Files.createTempFile("datarag-python-", ".err");
-            ProcessBuilder builder = new ProcessBuilder(command).directory(directory)
-                    .redirectOutput(stdout.toFile()).redirectError(stderr.toFile());
-            builder.environment().put(QUERY_STATUS_ENV, queryStatus.toString());
-            builder.environment().put(ENGINE_PORT_ENV, String.valueOf(serverPort));
-            process = builder.start();
-            // Sliced waiting: on detecting cancellation, throw immediately and go through the existing process-tree kill logic in finally; timeout semantics are the same as before.
-            long deadlineNanos = System.nanoTime() + TimeUnit.MINUTES.toNanos(timeoutMinute);
-            while (System.nanoTime() < deadlineNanos && !process.waitFor(WAIT_SLICE_MS, TimeUnit.MILLISECONDS)) {
-                if (BackendSessionEntrance.isCancelled(sessionId)) {
-                    throw new SessionCancelledException(sessionId);
-                }
-            }
-            if (process.isAlive()) {
-                throw new Exception("[" + sessionId + "] " + langService.get(lang, "PythonExecutor.execute.timeout") + ": " + timeoutMinute);
-            }
-            String charsetName = dataRagConfig.getPythonCharset();
-            Charset charset = Charset.forName(charsetName == null || charsetName.isEmpty() ? "utf-8" : charsetName);
-            String output = Files.readString(stdout, charset);
-            String error = Files.readString(stderr, charset);
-            log.info("[{}] pythonOutput:{}", sessionId, output);
-            if (!error.isEmpty()) log.info("[{}] pythonError:{}", sessionId, error);
-            if (process.exitValue() != 0 && error.isEmpty()) error = "Python process exit code was " + process.exitValue();
-            PythonExecuteResult result = new PythonExecuteResult();
-            result.setResult(output.isEmpty() ? null : output);
-            result.setError(error.isEmpty() ? null : error);
-            result.setSpendTime(System.currentTimeMillis() - start);
-            if (Files.size(queryStatus) > 0) {
-                result.setPartialQuery(JSONObject.parseObject(Files.readString(queryStatus, StandardCharsets.UTF_8)));
-            }
-            return result;
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            throw e;
-        } finally {
-            boolean interrupted = Thread.interrupted();
-            try {
-                if (process != null && process.isAlive()) {
-                    process.descendants().forEach(ProcessHandle::destroyForcibly);
-                    process.destroyForcibly();
-                    process.waitFor(5, TimeUnit.SECONDS);
-                }
-            } catch (InterruptedException e) {
-                interrupted = true;
-            } finally {
-                for (Path output : new Path[] {stdout, stderr, runtime, queryStatus}) {
-                    if (output != null) {
-                        try { Files.deleteIfExists(output); }
-                        catch (Exception e) { log.warn("[{}] Failed to clean up the Python output temporary file", sessionId, e); }
-                    }
-                }
-                if (interrupted) Thread.currentThread().interrupt();
-            }
+    JSONObject binding = new JSONObject();
+    binding.put("targetUrl", token == null ? null : runtime.ontologyUrl());
+    binding.put(
+        "credential",
+        token == null ? Map.of("kind", "none") : Map.of("kind", "bearer", "value", token));
+    binding.put(
+        "context",
+        authority.parentGrant() == null
+            ? Map.of()
+            : Map.of("credentialRunId", authority.parentGrant().runId()));
+    binding.put(
+        "limits", Map.of("wallTimeMs", timeout, "cpuSeconds", Math.max(1, timeoutMinutes) * 60));
+    binding.put("libraries", List.of(Map.of("skill", RuntimeCodeClient.SKILL, "path", "python")));
+    Map<String, Object> request =
+        Map.of(
+            "language",
+            "python",
+            "files",
+            files,
+            "entry",
+            "program.py",
+            "arguments",
+            List.of(),
+            "outputPaths",
+            token == null ? List.of() : List.of("query-status.json"),
+            "binding",
+            binding);
+    boolean settled = false;
+    try {
+      if (Thread.currentThread().isInterrupted() || BackendSessionEntrance.isCancelled(sessionId))
+        throw new SessionCancelledException(sessionId);
+      runtime.request(authority.domainId(), sessionId, "/v1/code-executions", "POST", request, id);
+      JSONObject snapshot;
+      while (true) {
+        if (Thread.currentThread().isInterrupted() || BackendSessionEntrance.isCancelled(sessionId))
+          throw new SessionCancelledException(sessionId);
+        if (authority.parentGrant() != null)
+          grants.verify(
+              authority.parentGrant().token(),
+              authority.parentGrant().runId(),
+              "/ontology/query/metrics/execute");
+        snapshot = runtime.execution(authority.domainId(), id);
+        if (!"running".equals(snapshot.getString("status"))) {
+          settled = true;
+          break;
         }
+        if (System.currentTimeMillis() > started + timeout + 1000)
+          throw new IllegalStateException("Python execution timed out");
+        Thread.sleep(100);
+      }
+      PythonExecuteResult result = new PythonExecuteResult();
+      List<String> outputs = snapshot.getList("outputs", String.class);
+      result.setResult(
+          outputs.contains("stdout") ? runtime.output(authority.domainId(), id, "stdout") : null);
+      result.setError(
+          outputs.contains("stderr") ? runtime.output(authority.domainId(), id, "stderr") : null);
+      if (!"completed".equals(snapshot.getString("status"))) {
+        JSONObject error = snapshot.getJSONObject("error");
+        result.setError(
+            error == null ? "Python execution did not complete" : error.getString("message"));
+      }
+      if (outputs.contains("query-status.json")) {
+        JSONObject marker =
+            JSON.parseObject(runtime.output(authority.domainId(), id, "query-status.json"));
+        if (Boolean.TRUE.equals(marker.getBoolean("truncated"))) result.setPartialQuery(marker);
+      }
+      result.setSpendTime(System.currentTimeMillis() - started);
+      return result;
+    } finally {
+      boolean interrupted = Thread.interrupted();
+      try {
+        if (!settled) runtime.closeIntent(authority.domainId(), id);
+      } finally {
+        grants.revoke(authority.domainId(), id);
+        if (interrupted) Thread.currentThread().interrupt();
+      }
     }
+  }
 }

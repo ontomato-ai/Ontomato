@@ -6,7 +6,6 @@ import com.alibaba.fastjson2.JSONObject;
 import com.alibaba.fastjson2.JSONWriter.Feature;
 import io.ontomato.dataengine.config.ControllerConst;
 import io.ontomato.dataengine.core.bean.User;
-import io.ontomato.dataengine.service.ABCHarnessService;
 import io.ontomato.dataengine.service.BackendSessionEntrance;
 import io.ontomato.dataengine.service.ChatService;
 import io.ontomato.dataengine.service.LangService;
@@ -29,8 +28,6 @@ public class ChatController {
 	@Autowired
     private ChatService chatService;
 
-	@Autowired
-    private ABCHarnessService abcHarnessService;
 
 	@Autowired
     private LangService langService;
@@ -94,18 +91,6 @@ public class ChatController {
         });
     }
 
-    @PostMapping("/abcHarness")
-    @ResponseBody
-    public SseEmitter abcHarness(@RequestHeader(ControllerConst.LANG_HEADER_KEY) String lang, @RequestBody JSONObject param) {
-        UserDataPermission curUserDataPermission = identityService.getCurrentUserDataPermission();
-        User user = SystemUtils.getCurUser();
-        String question = param.getString("question");
-        List<String> classNames = param.getList("classNames", String.class);
-        return sessionEntrance.openNewSessionStream(param, "abcHarness", streamId -> {
-            abcHarnessService.abcHarness(streamId, question, classNames, lang, curUserDataPermission, user);
-        });
-    }
-    
     @PostMapping("/getMidSet")
     @ResponseBody
     public JSONArray getMidSet(@RequestBody JSONObject dsl) {

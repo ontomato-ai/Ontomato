@@ -38,8 +38,6 @@ ontomato:
     production-env-url: ${PRODUCTION_ENV_URL:}
     production-env-user: ${PRODUCTION_ENV_USER:}
     production-env-pwd: ${PRODUCTION_ENV_PASSWORD:}
-    pythonpath: /usr/local/bin/python3
-    python-charset: UTF-8
     jdbc:
       url: ${DATA_ENGINE_JDBC_URL:jdbc:postgresql://${POSTGRES_HOST:localhost}:${POSTGRES_PORT:5432}/datarag}
       username: ${POSTGRES_USER:}

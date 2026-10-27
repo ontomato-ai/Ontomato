@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
-import { spawn, type ChildProcess } from "node:child_process";
 import {
+  chmod,
   mkdir,
   mkdtemp,
   readFile,
@@ -29,6 +29,15 @@ import type {
 } from "@ontomato/contracts/agent-runtime";
 import { RuntimeStore, canonical, digest, type Scope } from "./store";
 import { RuntimeError } from "./errors";
+import {
+  workerIdentity,
+  workerAssets,
+  removeWorkerFiles,
+  spawnWorker,
+  skillLimits,
+  signalWorker,
+  type WorkerPolicy,
+} from "./worker";
 
 export interface RuntimeHost {
   id: string;
@@ -172,7 +181,8 @@ export class SkillRegistry {
       );
     const pkg = runtimeRegisterSkillRequestSchema.parse(row.package);
     const directory = path.join(this.root, row.digest);
-    await mkdir(this.root, { recursive: true });
+    await mkdir(this.root, { recursive: true, mode: 0o700 });
+    await chmod(this.root, 0o700);
     // Atomic directory publication keeps an executing version immutable during product registration.
     try {
       await readFile(path.join(directory, "runtime.json"));
@@ -185,6 +195,7 @@ export class SkillRegistry {
           await writeFile(destination, file.content, { mode: 0o400 });
         }
         try {
+          await chmod(temporary, 0o700);
           await rename(temporary, directory);
         } catch (error) {
           if (
@@ -197,6 +208,9 @@ export class SkillRegistry {
         await rm(temporary, { recursive: true, force: true });
       }
     }
+    await chmod(directory, 0o700);
+    for (const file of pkg.files)
+      await chmod(path.join(directory, file.path), 0o400);
     const markdown = pkg.files.find((f) => f.path === "SKILL.md")!.content;
     return {
       skill: ref,
@@ -207,21 +221,6 @@ export class SkillRegistry {
         .replace(/^---\r?\n[\s\S]*?\r?\n---(?:\r?\n|$)/, "")
         .trim(),
     };
-  }
-}
-
-function signalTree(child: ChildProcess, signal: "SIGTERM" | "SIGKILL") {
-  if (!child.pid) return;
-  if (process.platform === "win32") {
-    spawn("taskkill", ["/pid", String(child.pid), "/T", "/F"], {
-      stdio: "ignore",
-    }).unref();
-    return;
-  }
-  try {
-    process.kill(-child.pid, signal);
-  } catch (e) {
-    if ((e as { code?: string }).code !== "ESRCH") throw e;
   }
 }
 
@@ -236,6 +235,8 @@ export async function executeSkill(options: {
   correlationId: string;
   request: RuntimeStartRunRequest;
   workspace: string;
+  policy: WorkerPolicy;
+  assetRoot: string;
   signal: AbortSignal;
   progress?: (value: Extract<RuntimeSkillOutput, { type: "progress" }>) => void;
 }): Promise<Exclude<RuntimeSkillOutput, { type: "progress" }>> {
@@ -265,105 +266,128 @@ export async function executeSkill(options: {
     [RUNTIME_SKILL_ENV.correlationId]: options.correlationId,
     [RUNTIME_SKILL_ENV.language]: request.language,
     [RUNTIME_SKILL_ENV.targetUrl]: binding.targetUrl,
-    [RUNTIME_SKILL_ENV.credential]: JSON.stringify(
-      request.privateContext.credential,
-    ),
+    [RUNTIME_SKILL_ENV.credential]: JSON.stringify(binding.credential),
     [RUNTIME_SKILL_ENV.context]: JSON.stringify(binding.context),
     [RUNTIME_SKILL_ENV.workspace]: options.workspace,
   });
-  return new Promise((resolve, reject) => {
-    const child = spawn(
-      process.execPath,
-      [
-        "--import",
-        fileURLToPath(new URL("./skill-lifetime.mjs", import.meta.url)),
-        path.join(skill.directory, entry),
-      ],
-      {
-        cwd: options.workspace,
+  const identity = await workerIdentity(options.policy, options.workspace);
+  const assets = path.join(options.assetRoot, randomUUID());
+  try {
+    await workerAssets(options.policy, identity.uid, skill.directory, assets);
+  } catch (error) {
+    await identity.release();
+    await removeWorkerFiles(assets);
+    throw error;
+  }
+  return new Promise<Exclude<RuntimeSkillOutput, { type: "progress" }>>(
+    (resolve, reject) => {
+      const child = spawnWorker(
+        options.policy,
+        identity.uid,
+        process.execPath,
+        [
+          "--import",
+          fileURLToPath(new URL("./skill-lifetime.mjs", import.meta.url)),
+          path.join(assets, entry),
+        ],
         env,
-        detached: process.platform !== "win32",
-        stdio: ["pipe", "pipe", "pipe", "ipc"],
-      },
-    );
-    let buffer = "";
-    let terminal: Exclude<RuntimeSkillOutput, { type: "progress" }> | undefined;
-    let failure: Error | undefined;
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    const terminate = () => {
-      signalTree(child, "SIGTERM");
-      timer ??= setTimeout(() => signalTree(child, "SIGKILL"), 300);
-    };
-    const fail = (message: string) => {
-      failure ??= new Error(message);
-      terminate();
-    };
-    const onAbort = () => {
-      failure ??= new Error("Skill invocation cancelled");
-      terminate();
-    };
-    signal.addEventListener("abort", onAbort, { once: true });
-    child.stdout!.setEncoding("utf8");
-    child.stdout!.on("data", (chunk: string) => {
-      buffer += chunk;
-      if (Buffer.byteLength(buffer) > 16 * 1024 * 1024)
-        return fail("Skill output exceeds the transport byte limit");
-      let newline: number;
-      while ((newline = buffer.indexOf("\n")) >= 0) {
-        const line = buffer.slice(0, newline);
-        buffer = buffer.slice(newline + 1);
-        try {
-          if (terminal) throw new Error("Output after terminal record");
-          const output = (
-            input.kind === "tool"
-              ? runtimeToolSkillOutputSchema
-              : runtimeContextSkillOutputSchema
-          ).parse(JSON.parse(line));
-          const credential = request.privateContext.credential;
-          if (
-            credential.kind !== "none" &&
-            JSON.stringify(output).includes(credential.value)
-          )
-            throw new Error("Private credential in skill output");
-          if (output.type === "progress") options.progress?.(output);
-          else terminal = output;
-        } catch {
-          fail("Invalid or unsafe skill process output");
+        skillLimits(),
+        {
+          cwd: options.workspace,
+          detached: process.platform !== "win32",
+          stdio: ["pipe", "pipe", "pipe", "ipc", "pipe"],
+        },
+      );
+      const deadline = setTimeout(
+        () => fail("Skill execution timed out"),
+        skillLimits().wallTimeMs,
+      );
+      let buffer = "";
+      let outputBytes = 0;
+      let terminal:
+        Exclude<RuntimeSkillOutput, { type: "progress" }> | undefined;
+      let failure: Error | undefined;
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      const terminate = () => {
+        signalWorker(child, "SIGTERM");
+        timer ??= setTimeout(() => signalWorker(child, "SIGKILL"), 300);
+      };
+      const fail = (message: string) => {
+        failure ??= new Error(message);
+        terminate();
+      };
+      const onAbort = () => {
+        failure ??= new Error("Skill invocation cancelled");
+        terminate();
+      };
+      signal.addEventListener("abort", onAbort, { once: true });
+      child.stdout!.setEncoding("utf8");
+      child.stdout!.on("data", (chunk: string) => {
+        buffer += chunk;
+        outputBytes += Buffer.byteLength(chunk);
+        if (outputBytes > skillLimits().outputBytes)
+          return fail("Skill output exceeds the transport byte limit");
+        let newline: number;
+        while ((newline = buffer.indexOf("\n")) >= 0) {
+          const line = buffer.slice(0, newline);
+          buffer = buffer.slice(newline + 1);
+          try {
+            if (terminal) throw new Error("Output after terminal record");
+            const output = (
+              input.kind === "tool"
+                ? runtimeToolSkillOutputSchema
+                : runtimeContextSkillOutputSchema
+            ).parse(JSON.parse(line));
+            const credential = binding.credential;
+            if (
+              credential.kind !== "none" &&
+              JSON.stringify(output).includes(credential.value)
+            )
+              throw new Error("Private credential in skill output");
+            if (output.type === "progress") options.progress?.(output);
+            else terminal = output;
+          } catch {
+            fail("Invalid or unsafe skill process output");
+          }
         }
-      }
-    });
-    // Stderr can contain library headers, so it is drained without entering model or service logs.
-    child.stderr!.resume();
-    child.on("error", () => fail("Skill process could not start"));
-    child.on("exit", () => {
-      signalTree(child, "SIGKILL");
-    });
-    child.on("close", (code) => {
-      clearTimeout(timer);
-      signal.removeEventListener("abort", onAbort);
-      if (failure) return reject(failure);
-      if (
-        buffer.trim() ||
-        !terminal ||
-        (terminal.type === "error" ? code === 0 : code !== 0)
-      )
-        return reject(
-          new Error(
-            "Skill process did not complete its protocol; external outcome is unknown",
-          ),
-        );
-      if (
-        terminal.type === "result" &&
-        tool?.outputSchema &&
-        !Compile(tool.outputSchema as TSchema).Check(terminal.data)
-      )
-        return reject(
-          new Error("Skill result does not match its output schema"),
-        );
-      resolve(terminal);
-    });
-    child.stdin!.on("error", () => {});
-    child.stdin!.end(`${JSON.stringify(input)}\n`);
-    if (signal.aborted) onAbort();
+      });
+      // Stderr can contain library headers, so it is drained without entering model or service logs.
+      child.stderr!.resume();
+      child.on("error", () => fail("Skill process could not start"));
+      child.on("exit", () => {
+        signalWorker(child, "SIGKILL");
+      });
+      child.on("close", (code) => {
+        clearTimeout(timer);
+        clearTimeout(deadline);
+        signal.removeEventListener("abort", onAbort);
+        if (failure) return reject(failure);
+        if (
+          buffer.trim() ||
+          !terminal ||
+          (terminal.type === "error" ? code === 0 : code !== 0)
+        )
+          return reject(
+            new Error(
+              "Skill process did not complete its protocol; external outcome is unknown",
+            ),
+          );
+        if (
+          terminal.type === "result" &&
+          tool?.outputSchema &&
+          !Compile(tool.outputSchema as TSchema).Check(terminal.data)
+        )
+          return reject(
+            new Error("Skill result does not match its output schema"),
+          );
+        resolve(terminal);
+      });
+      child.stdin!.on("error", () => {});
+      child.stdin!.end(`${JSON.stringify(input)}\n`);
+      if (signal.aborted) onAbort();
+    },
+  ).finally(async () => {
+    await identity.release();
+    await removeWorkerFiles(assets);
   });
 }

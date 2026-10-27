@@ -1,13 +1,9 @@
-# Data retrieval contract — batch 2 review draft
+# Data retrieval contract
 
-This is a proposed wire contract, not an implemented API. The existing runtime
-contract remains in [agent-runtime.md](agent-runtime.md). Execution additions are
-in [agent-runtime-code.md](agent-runtime-code.md); ownership, migration and open
-review decisions are in [the design](../../docs/data-retrieval-design.md).
-Implementation starts only after controller review. TypeScript-style shapes below
-describe JSON; the implementation will provide Zod schemas in `src/data-retrieval.ts`
-and infer the workbench's types from them. Java owns its HTTP DTOs and validates
-the same boundary fixtures; it does not import workbench implementation.
+The workbench's executable schemas are in `src/data-retrieval.ts`.
+Runtime additions are in [agent-runtime-code.md](agent-runtime-code.md); ownership
+and migration decisions are in [the design](../../docs/data-retrieval-design.md).
+Java owns and validates its HTTP boundary; it does not import workbench code.
 
 ## Workbench entry point
 
@@ -28,7 +24,7 @@ provider; it is not a bypass in enterprise. Foreign resources return 404.
 | `GET /api/retrievals/:id` | Verified identity | 200 authoritative snapshot |
 | `POST /api/retrievals/:id/answers` | New `Idempotency-Key`; `{expectedRunId, expectedDecisionRevision, answers: [{questionId, choiceId?: string, text?: string}]}` | 202 snapshot for the new runtime run in the same runtime session |
 | `POST /api/retrievals/:id/cancel` | `{}` | 200 snapshot after business closure and cancellation requests settle |
-| `GET /api/retrievals/:id/datasets/:artifactId` | Verified identity | Validated `workbench.dataset.v1` artifact, optionally paged rows for display |
+| `GET /api/retrievals/:id/datasets/:artifactId` | Verified identity | Validated `workbench.dataset.v1` artifact with full rows |
 
 Creation fingerprints question, source references, interaction mode and class
 scope. A matching retry returns the original operation; changed input returns
@@ -48,6 +44,7 @@ type RetrievalSnapshot = {
   result: RetrievalResult | null;
   datasetArtifactIds: UUID[];
   decisionRevision: number;
+  qualityCheck?: JsonObject;
 };
 type RetrievalResult =
   | { status: "completed"; datasetArtifactIds: UUID[]; summary: string }
@@ -69,21 +66,23 @@ on the dataset; completed execution is not proof of complete source coverage or
 correct business meaning. Unresolved material ambiguity always yields
 `needs_input`, including non-interactive callers without an authorized default.
 Available datasets remain available in that outcome; it is not complete success.
-Silence does not accept a recommendation. Cancellation, interruption, timeout,
-expired authentication and protocol failure are `failed` with distinct codes.
+Silence does not accept a recommendation. Cancellation, interruption, timeout and missing submissions are `failed` with
+stable distinct codes. Authentication/dependency failures retain their safe
+reason and cannot become an empty successful result.
 Runtime `completed` without a valid business submission is `failed` with
 `RETRIEVAL_RESULT_MISSING`.
 
-Public GET polling is sufficient for `ask` (respect `Retry-After`). The abc adapter
+Public GET polling is sufficient for `ask` (currently at 500 ms intervals). The abc adapter
 consumes runtime snapshot/events through the existing runtime HTTP client and
 projects progress into current workbench events. No second durable token stream
 or new public SSE journal is introduced for polling clients.
 
-The parent reference is server-only `{kind, id, toolCallId?}`. The workbench
+The parent turn/task ID is server-only. The authenticated server-side caller
 validates its ownership and stores it before admission; model/public JSON cannot
-claim an arbitrary parent. A skill invocation is unique on
-`(domain, owner, parentRun, toolCallId)`, mapped to a stored UUID admission key.
-This makes retry after a lost response use the same retrieval. The runtime has
+claim an arbitrary parent. The abc adapter links the retrieval to its server-side turn/task before admission.
+The public API/ask use a caller UUID admission key for response-loss retries.
+A future main-assistant skill must map its tool call to that key at its own
+admission boundary; that skill routing belongs to batch 3. The runtime has
 no parent/child-run concept. Cancelling a workbench parent closes its admission
 gate and cancels all retrievals already linked to that parent atomically with
 respect to creating another link.
@@ -103,7 +102,7 @@ type DatasetPayload = {
   columns: {key: string; label: string; type: string | null}[];
   rows: Record<string, JsonValue>[];
   recipe:
-    | {kind: "dsl"; dsl: JsonObject}
+    | {kind: "dsl"; dsl: JsonObject; executedCode?: string; sha256?: string}
     | {kind: "python"; code: string; sha256: string}
     | {kind: "metric"; metricId: string; revision: string;
        parameters: JsonObject; executedCode: string; sha256: string};
@@ -208,8 +207,9 @@ definitions, with stable ordering and cursor pagination; **no dialogue or
 embedding call**. It does not use `MetricViewServiceImpl.find`'s embedding-based
 retrieval, nor `generateGeneralContent`'s parameter-filling agent. Knowledge search
 reuses the existing retrieval/Embedding path, without a dialogue-model call.
-All selected specs are complete: reduce the number selected to meet context
-budget and disclose omitted IDs; never cut code or parameter definitions in half.
+The host initially requests at most ten complete specs and injects nextCursor
+when more are available; the retriever can request further pages. Code and
+parameter definitions are never cut in half.
 Optional Java fields such as descriptions, parameter `sample/value/classNames`,
 return metadata and timestamps may be null; normalize only where their absence
 has defined semantics. Retrieval failures must not become an empty catalogue.
@@ -239,7 +239,7 @@ until their own migration; do not confuse an external URL with a runtime target 
 The ontology service signs and validates short-lived grants. Only a configured
 workbench service principal may call
 `POST /internal/query-grants/exploration`. It presents its service credential
-plus the verified user's original credential in a secret request field, and
+plus the verified user's original credential in its normal authentication header, and
 `{retrievalId,runtimeSessionId,runtimeRunId,expiresAt,classNames}`. Java verifies
 the user/domain and query authorization itself. It rejects caller user/domain
 claims. Public identity still requires the private service credential to issue E.
@@ -249,7 +249,8 @@ service principal, user, domain, retrieval/session/run IDs, class scope, jti,
 issuedAt and expiresAt. Expiry is the existing query deadline (normally 600 s),
 bounded by the original credential's expiry; no timeless or user-selected grant.
 Use an ontology-only signing key, never a runtime host token. A persisted grant
-record stores jti/bindings/expiry/revocation, not plaintext bearer secrets.
+record stores jti/run/domain/expiry/revocation; the other bindings are signed
+claims, not a second plaintext bearer store.
 Signature, exact audience/purpose, expiry, revocation, run header binding, domain
 and allowed operation are checked at every request. Domain is the signed value;
 request headers cannot replace it. Cancel/terminal closure revokes by run via the
@@ -308,7 +309,7 @@ not a second permanent dataset store.
 ## Quality check boundary
 
 Add Java `POST /query-quality-checks` with U plus workbench service auth:
-`{id,question,programs:[{question,code,outKeyRefs}],classNames}`. The ID is
+`{id,question,programs:[{question,code,outKeyRefs}],recipes,classNames}`. The ID is
 workbench-issued and bound to domain/user/retrieval round. Admission returns 202
 `{id,status:"running"}`; matching retries return the same check, changed payload
 409. `GET /query-quality-checks/:id` returns running/completed/failed and the
@@ -320,8 +321,8 @@ The workbench starts this after an accepted completed retrieval, once per round,
 using final recipes, not exploration source. Java retains `CheckServiceV2`'s
 blind description/checking prompts, score and candidate threshold (60), and the
 existing pending Function/MetricView creation. No score-triggered recompute or
-new publication rule. A DSL recipe is converted by the existing DSL-to-program
-owner before this call. Minimal admission/status ownership wraps the existing
+new publication rule. The request also carries `recipes`; Java converts a DSL recipe through its
+existing DSL-to-program owner before invoking the checker. Minimal admission/status ownership wraps the existing
 logic; it does not migrate the checker agent.
 
 The workbench persists the returned check ID and late result against its
@@ -333,3 +334,13 @@ status. Waiting in `late-fact` is removed for this migrated path only; tradition
 ABC checks keep their current path until that migration. Failed/cancelled checks
 do not turn a delivered dataset into query failure. Java restart during candidate
 creation is reported as interrupted/unknown and is never automatically replayed.
+
+
+Final DSL/metric recipes carry the actual executed source and digest. Java
+materializes a metric's typed parameters in its executable snapshot, preserving
+nulls and the unchanged published Function source, so saved-program consumers
+retain the calculation when replaying code. This is protocol-2 input assembly,
+not legacy source conversion or a guessed rewrite. The original metric ID,
+revision and structured parameters remain in the recipe. Dataset projection and
+legacy trace arrays keep the same dataset ordering, including mixed DSL/Python
+outputs.

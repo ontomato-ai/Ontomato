@@ -1,5 +1,14 @@
+import retrievalRouter from "../api/routes/data-retrieval";
+import { registerRetrievalSkill } from "../services/data-retrieval/skill";
+import { unwrapCallbackCredential } from "../services/agent-runtime/callback-credential";
 import { registerGovernanceSkill } from "../services/knowledge-governance/skill";
-import express, { Express, Request, Response, NextFunction, Router } from "express";
+import express, {
+  Express,
+  Request,
+  Response,
+  NextFunction,
+  Router,
+} from "express";
 import cors from "cors";
 import path from "path";
 import { skillRegistryManager } from "../core/skills/index";
@@ -37,7 +46,11 @@ import workbenchAppearanceRouter from "../api/routes/workbench-appearance";
 import { syncDefaultPrompts } from "../core/prompts/loader";
 import { createLogger } from "../logging/logger";
 import { initializeLogFileTransport } from "../logging/log-file-transport";
-import { generateRequestId, runWithLogContext, runWithRequestContext } from "../logging/log-context";
+import {
+  generateRequestId,
+  runWithLogContext,
+  runWithRequestContext,
+} from "../logging/log-context";
 import { startTaskScheduler } from "../services/analysis-agent/task/task-scheduler";
 import { resolveAnalysisRunComposition } from "../services/analysis-agent/runtime/run-composition";
 import * as queryRunStore from "../services/data-query/query-run-store";
@@ -105,7 +118,8 @@ export function createWorkbenchApp(mounts: WorkbenchMounts = {}): Express {
   app.use((_req: Request, res: Response, next: NextFunction) => {
     const originalJson = res.json.bind(res);
     res.json = ((body?: any) => {
-      if (!res.headersSent) res.setHeader(SERVER_NOW_HEADER, String(Date.now()));
+      if (!res.headersSent)
+        res.setHeader(SERVER_NOW_HEADER, String(Date.now()));
       return originalJson(body);
     }) as Response["json"];
     next();
@@ -113,7 +127,10 @@ export function createWorkbenchApp(mounts: WorkbenchMounts = {}): Express {
 
   if (mounts.authRouter) app.use("/api/auth", mounts.authRouter);
   app.use("/api/data-query", mounts.backendProxyRouter ?? backendProxyRouter);
-  app.use(product.proxyMountPath, mounts.backendProxyRouter ?? backendProxyRouter);
+  app.use(
+    product.proxyMountPath,
+    mounts.backendProxyRouter ?? backendProxyRouter,
+  );
   app.use("/mcp/analysis-agents", analysisAgentMcpRouter);
   app.use("/mcp/ops-agent", opsAgentMcpRouter);
   app.use(
@@ -123,48 +140,60 @@ export function createWorkbenchApp(mounts: WorkbenchMounts = {}): Express {
       index: false,
       maxAge: "1d",
       redirect: false,
-    })
+    }),
   );
 
-  app.use("/api/skills/resources", async (req: Request, res: Response, next: NextFunction) => {
-    const verification = await identity.resolveSkillResourceDomain(req);
-    if (!verification.ok) {
-      res.status(verification.status).json({
-        success: false,
-        code: verification.code,
-        error: verification.error,
-      });
-      return;
-    }
-    const { domainId } = verification;
-    res.setHeader("Cache-Control", "private, no-store, max-age=0");
-    res.setHeader("Pragma", "no-cache");
-    res.setHeader("Expires", "0");
-    res.setHeader("Referrer-Policy", "no-referrer");
-    try {
-      await runWithLogContext(
-        { domainId, token: verification.token, apiKey: verification.apiKey },
-        async () => {
-          const registry = await skillRegistryManager.forDomain(domainId);
-          const [, type, category, id, ...segments] = decodeURIComponent(req.path).split("/");
-          const skill = registry.getSkillById(id);
-          if (
-            !skill || skill.manifest.type !== type ||
-            skill.manifest.category !== category || !segments.length
-          ) {
-            res.sendStatus(404);
-            return;
-          }
-          const file = await resolveSkillPackageFile(skill, segments.join("/"));
-          res.sendFile(file, (error) => { if (error) next(error); });
-        }
-      );
-    } catch (error) {
-      const code = (error as { code?: string }).code;
-      if (code === "ENOENT" || code === "ENOTDIR") res.sendStatus(404);
-      else next(error);
-    }
-  });
+  app.use(
+    "/api/skills/resources",
+    async (req: Request, res: Response, next: NextFunction) => {
+      const verification = await identity.resolveSkillResourceDomain(req);
+      if (!verification.ok) {
+        res.status(verification.status).json({
+          success: false,
+          code: verification.code,
+          error: verification.error,
+        });
+        return;
+      }
+      const { domainId } = verification;
+      res.setHeader("Cache-Control", "private, no-store, max-age=0");
+      res.setHeader("Pragma", "no-cache");
+      res.setHeader("Expires", "0");
+      res.setHeader("Referrer-Policy", "no-referrer");
+      try {
+        await runWithLogContext(
+          { domainId, token: verification.token, apiKey: verification.apiKey },
+          async () => {
+            const registry = await skillRegistryManager.forDomain(domainId);
+            const [, type, category, id, ...segments] = decodeURIComponent(
+              req.path,
+            ).split("/");
+            const skill = registry.getSkillById(id);
+            if (
+              !skill ||
+              skill.manifest.type !== type ||
+              skill.manifest.category !== category ||
+              !segments.length
+            ) {
+              res.sendStatus(404);
+              return;
+            }
+            const file = await resolveSkillPackageFile(
+              skill,
+              segments.join("/"),
+            );
+            res.sendFile(file, (error) => {
+              if (error) next(error);
+            });
+          },
+        );
+      } catch (error) {
+        const code = (error as { code?: string }).code;
+        if (code === "ENOENT" || code === "ENOTDIR") res.sendStatus(404);
+        else next(error);
+      }
+    },
+  );
 
   app.get("/api/health", (_req: Request, res: Response) => {
     res.json({ status: "ok", timestamp: new Date().toISOString() });
@@ -177,17 +206,21 @@ export function createWorkbenchApp(mounts: WorkbenchMounts = {}): Express {
       `window.__APP_CONFIG__ = ${JSON.stringify({
         DEFAULT_LOCALE: getDefaultLocale(),
         ONTOLOGY_MANAGER_URL: config.ontologyManagerUrl,
-      })};\nwindow.__APP_CONFIG__.API_BASE = new URL("./api", document.currentScript.src).pathname;`
+      })};\nwindow.__APP_CONFIG__.API_BASE = new URL("./api", document.currentScript.src).pathname;`,
     );
   });
 
+  app.use(unwrapCallbackCredential);
   app.use("/api", identity.authenticate);
+  app.use("/api/retrievals", retrievalRouter);
   app.use("/api/analysis-agents", analysisAgentsRouter);
   app.use("/api/analysis-reports", analysisReportsRouter);
   app.use("/api/analysis-tasks", analysisTasksRouter);
   app.use("/api/chat", chatRouter);
-  if (mounts.connectionRouter) app.use("/api/connections", mounts.connectionRouter);
-  if (mounts.dataGovernanceRouter) app.use("/api/data-governance", mounts.dataGovernanceRouter);
+  if (mounts.connectionRouter)
+    app.use("/api/connections", mounts.connectionRouter);
+  if (mounts.dataGovernanceRouter)
+    app.use("/api/data-governance", mounts.dataGovernanceRouter);
   app.use("/api/knowledge-governance", knowledgeGovernanceRouter);
   app.use("/api/dashboards", dashboardsRouter);
   app.use("/api/feedback", feedbackRouter);
@@ -211,7 +244,7 @@ export function createWorkbenchApp(mounts: WorkbenchMounts = {}): Express {
       "/api/observe/live-logs",
       "/api/observe/parse",
     ],
-    identity.observeAccess
+    identity.observeAccess,
   );
   app.use("/api/observe/retention", artifactRetentionRouter);
   app.use("/api/observe/autotest", autotestRouter);
@@ -232,13 +265,17 @@ export function createWorkbenchApp(mounts: WorkbenchMounts = {}): Express {
   return app;
 }
 
-export async function startWorkbench(app: Express, port: number): Promise<void> {
+export async function startWorkbench(
+  app: Express,
+  port: number,
+): Promise<void> {
   const isDev = config.nodeEnv !== "production";
   initializeLogFileTransport();
   await syncRuntimeDefaultResources();
   syncDefaultPrompts();
   await initializeConnection();
   await registerGovernanceSkill();
+  await registerRetrievalSkill();
   if (config.dataQuery.baseUrl) {
     datasetSchemaService.setConfig(config.dataQuery.baseUrl);
     logger.info(tApp("foundation.log.boot.datasetService"));
@@ -251,7 +288,10 @@ export async function startWorkbench(app: Express, port: number): Promise<void> 
     logger.info(`Server running on http://localhost:${port}`);
     try {
       const pgUrl = new URL(config.postgres.connectionString);
-      logger.info(tApp("foundation.log.boot.dbConnected"), { host: pgUrl.hostname, port: pgUrl.port || 5432 });
+      logger.info(tApp("foundation.log.boot.dbConnected"), {
+        host: pgUrl.hostname,
+        port: pgUrl.port || 5432,
+      });
     } catch {
       logger.info(tApp("foundation.log.boot.dbConfigured"));
     }

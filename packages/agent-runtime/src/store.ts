@@ -159,7 +159,7 @@ export class RuntimeStore {
     }
     await this.pool.end();
   }
-  private async admission(
+  async admission(
     c: PoolClient,
     scope: Scope,
     key: string,
@@ -197,6 +197,42 @@ export class RuntimeStore {
       [...values(scope), key, operation, fingerprint, sessionId],
     );
     return false;
+  }
+  /** Close an owned creation intent without admitting work after a lost response. */
+  async closeAdmission(
+    scope: Scope,
+    id: string,
+    operation: "run" | "code",
+    sessionId = id,
+  ) {
+    return this.transaction(async (c) => {
+      await c.query("SELECT pg_advisory_xact_lock(hashtext($1))", [
+        canonical([...values(scope), id]),
+      ]);
+      const previous = (
+        await c.query(
+          `SELECT * FROM ${this.table("admissions")} WHERE host_id=$1 AND domain_id=$2 AND key=$3`,
+          [...values(scope), id],
+        )
+      ).rows[0];
+      if (previous) {
+        if (
+          previous.operation !== operation ||
+          previous.session_id !== sessionId
+        )
+          throw new RuntimeError(
+            409,
+            "IDEMPOTENCY_CONFLICT",
+            "Admission belongs to another operation",
+          );
+        return !previous.deleted;
+      }
+      await c.query(
+        `INSERT INTO ${this.table("admissions")} VALUES($1,$2,$3,$4,'',$5,true)`,
+        [...values(scope), id, operation, sessionId],
+      );
+      return false;
+    });
   }
   async createSession(scope: Scope, id: string) {
     const replayed = await this.transaction(async (c) => {
@@ -238,7 +274,10 @@ export class RuntimeStore {
       updatedAt: row.updated_at.toISOString(),
     };
   }
-  async sessionStatuses(scope: Scope, ids: string[]): Promise<RuntimeSessionStatus[]> {
+  async sessionStatuses(
+    scope: Scope,
+    ids: string[],
+  ): Promise<RuntimeSessionStatus[]> {
     if (!ids.length) return [];
     // One statement gives session pointers and latest statuses the same MVCC snapshot.
     const { rows } = await this.pool.query(
@@ -255,14 +294,20 @@ export class RuntimeStore {
       if (!row) missing();
       return {
         session: {
-          id, domainId: scope.domainId, activeRunId: row.active_run_id,
-          latestRunId: row.latest_run_id, createdAt: row.created_at.toISOString(),
+          id,
+          domainId: scope.domainId,
+          activeRunId: row.active_run_id,
+          latestRunId: row.latest_run_id,
+          createdAt: row.created_at.toISOString(),
           updatedAt: row.updated_at.toISOString(),
         },
-        latestRun: row.run_id ? {
-          id: row.run_id, status: row.run_status,
-          error: row.error_code ? { code: row.error_code } : null,
-        } : null,
+        latestRun: row.run_id
+          ? {
+              id: row.run_id,
+              status: row.run_status,
+              error: row.error_code ? { code: row.error_code } : null,
+            }
+          : null,
       };
     });
   }
@@ -545,10 +590,17 @@ export class RuntimeStore {
     });
     if (status === "failed" || status === "interrupted") {
       // Allowlisted metadata only: provider messages and validation data may contain secrets.
-      process.stderr.write(JSON.stringify({
-        level: "error", event: "runtime_run_terminal", timestamp: envelope.timestamp,
-        runId: id, correlationId: run.correlationId, status, errorCode: error?.code,
-      }) + "\n");
+      process.stderr.write(
+        JSON.stringify({
+          level: "error",
+          event: "runtime_run_terminal",
+          timestamp: envelope.timestamp,
+          runId: id,
+          correlationId: run.correlationId,
+          status,
+          errorCode: error?.code,
+        }) + "\n",
+      );
     }
     return envelope;
   }

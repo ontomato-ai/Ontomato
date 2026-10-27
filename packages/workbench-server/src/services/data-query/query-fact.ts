@@ -17,7 +17,10 @@ import type {
 
 import { t } from "../../i18n";
 import type { QueryRun, UpsertQueryRunInput } from "./query-run-store";
-import { buildThinkingSteps, buildThinkingSummary } from "./thinking/thinking-state";
+import {
+  buildThinkingSteps,
+  buildThinkingSummary,
+} from "./thinking/thinking-state";
 
 import type { HotReportReplayPlan, OutKeyRef } from "./replay-plan";
 
@@ -46,15 +49,22 @@ const RETIRED_BRANCH_KEY = "reportCard";
  * Historical queries won by a retired branch: neither the generated answer nor the query process is displayed anymore. The winner column and
  * the thinking state are both persisted winning facts (the winner column of old rows is backfilled by migration); either naming a retired branch counts.
  */
-export function isWonByRetiredBranch(run: QueryRun | null | undefined): boolean {
-  return run?.winner === RETIRED_BRANCH_KEY || run?.thinkingState?.winner === RETIRED_BRANCH_KEY;
+export function isWonByRetiredBranch(
+  run: QueryRun | null | undefined,
+): boolean {
+  return (
+    run?.winner === RETIRED_BRANCH_KEY ||
+    run?.thinkingState?.winner === RETIRED_BRANCH_KEY
+  );
 }
 
 /** Persisted branch keys are strings: records saved before retirement may name a retired branch. */
 type SavedThinkingBranch = Omit<ThinkingBranchState, "key"> & { key: string };
 
 /** With retired branches removed, everything left is a branch the current executor has produced. */
-function isCurrentBranch(branch: SavedThinkingBranch): branch is ThinkingBranchState {
+function isCurrentBranch(
+  branch: SavedThinkingBranch,
+): branch is ThinkingBranchState {
   return branch.key !== RETIRED_BRANCH_KEY;
 }
 
@@ -67,7 +77,11 @@ function readThinking(run: QueryRun | null | undefined) {
   // Old-row migration only guarantees the thinking state is an object, not that it carries branches.
   const branches: SavedThinkingBranch[] | undefined = saved?.branches;
   if (!branches || branches.every(isCurrentBranch)) {
-    return { summary: run?.thinkingSummary, steps: run?.thinkingSteps, state: saved };
+    return {
+      summary: run?.thinkingSummary,
+      steps: run?.thinkingSteps,
+      state: saved,
+    };
   }
   const state: QueryThinkingState = {
     ...saved,
@@ -75,14 +89,20 @@ function readThinking(run: QueryRun | null | undefined) {
     branches: branches.filter(isCurrentBranch),
   };
   state.summary = buildThinkingSummary(state);
-  return { summary: state.summary, steps: buildThinkingSteps(state.summary), state };
+  return {
+    summary: state.summary,
+    steps: buildThinkingSteps(state.summary),
+    state,
+  };
 }
 
 /**
  * Reads saved query run facts back into execution facts. Pairs with buildQueryRunInput: writing and reading each exist in exactly
  * one place, callers stop hand-copying field by field, and a new fact can never silently miss one of the readers.
  */
-export function toQueryExecutionFact(run?: QueryRun | null): QueryExecutionFact {
+export function toQueryExecutionFact(
+  run?: QueryRun | null,
+): QueryExecutionFact {
   if (isWonByRetiredBranch(run)) return {};
   const thinking = readThinking(run);
   return {
@@ -93,6 +113,8 @@ export function toQueryExecutionFact(run?: QueryRun | null): QueryExecutionFact 
     thinkingSteps: thinking.steps,
     thinkingState: thinking.state,
     backendSessions: run?.backendSessions,
+    retrieval: run?.retrieval,
+    needsInput: run?.needsInput,
     nodeIds: run?.nodeIds,
     markdownTable: run?.markdownTable,
     data: run?.dataPayload,
@@ -117,6 +139,8 @@ export function toQueryExecutionFact(run?: QueryRun | null): QueryExecutionFact 
 }
 
 const DISPLAY_FACT_KEYS = [
+  "retrieval",
+  "needsInput",
   "thinkingSummary",
   "thinkingSteps",
   "fullContent",
@@ -139,7 +163,7 @@ const DISPLAY_FACT_KEYS = [
 
 /** Picks the display part of execution facts. Facts that were never produced do not appear; callers decide rendering by presence. */
 export function toDisplayFact(
-  fact: QueryExecutionFact | null | undefined
+  fact: QueryExecutionFact | null | undefined,
 ): QueryExecutionDisplayFact {
   const display: Record<string, unknown> = {};
   if (!fact) return display;
@@ -161,7 +185,9 @@ export const PERSISTED_RESULT_KEYS = [
   "markdownTable",
 ] as const satisfies readonly (keyof QueryExecutionDisplayFact)[];
 
-export function withoutPersistedResult(fact: QueryExecutionDisplayFact): QueryExecutionDisplayFact {
+export function withoutPersistedResult(
+  fact: QueryExecutionDisplayFact,
+): QueryExecutionDisplayFact {
   const display: Record<string, unknown> = { ...fact };
   for (const key of PERSISTED_RESULT_KEYS) delete display[key];
   return display;
@@ -190,13 +216,18 @@ export function buildQueryRunInput(input: {
   const { identity, fact } = input;
   // DSL text, object class lists, and data row counts can all be derived deterministically from this dataset; both callers share one derivation,
   // neither implements its own, and neither can skip writing it. When a caller passes values explicitly, those win.
-  const datasets = Array.isArray(fact.datasets) ? (fact.datasets as any[]) : undefined;
-  const lastDataset = datasets && datasets.length > 0 ? datasets[datasets.length - 1] : undefined;
+  const datasets = Array.isArray(fact.datasets)
+    ? (fact.datasets as any[])
+    : undefined;
+  const lastDataset =
+    datasets && datasets.length > 0 ? datasets[datasets.length - 1] : undefined;
   const dsl = fact.dsl ?? lastDataset?.dsl;
   const dslText = fact.dslText ?? buildDslText(lastDataset?.dsl);
-  const objectClasses = fact.objectClasses ?? extractObjectClasses(lastDataset?.dsl);
+  const objectClasses =
+    fact.objectClasses ?? extractObjectClasses(lastDataset?.dsl);
   const dataCount =
-    fact.dataCount ?? (Array.isArray(lastDataset?.data) ? lastDataset.data.length : undefined);
+    fact.dataCount ??
+    (Array.isArray(lastDataset?.data) ? lastDataset.data.length : undefined);
   // The thinking summary is a derived expression of the thinking state; the two share one source. When a caller does not pass it, take it from the
   // thinking state so one caller forgetting to copy it cannot leave the column permanently empty.
   const thinkingSummary = fact.thinkingSummary ?? fact.thinkingState?.summary;
@@ -211,6 +242,8 @@ export function buildQueryRunInput(input: {
     status: input.status || "completed",
     error: input.error,
     backendSessions: fact.backendSessions,
+    retrieval: fact.retrieval ?? lastDataset?.retrieval,
+    needsInput: fact.needsInput,
     nodeIds: fact.nodeIds,
     markdownTable: fact.markdownTable,
     datasetPreviews: fact.datasetPreviews,
@@ -267,8 +300,11 @@ function extractObjectClasses(dsl: any): string[] | undefined {
  * The quality check has exactly one channel; readers take it from here, never from the reply snapshot.
  */
 export function buildQualityCheckView(
-  run?: Pick<QueryRun, "qcState" | "qcResult"> | null
+  run?: Pick<QueryRun, "qcState" | "qcResult"> | null,
 ): { state?: unknown; content?: string } | undefined {
   if (!run?.qcState && !run?.qcResult) return undefined;
-  return { state: run.qcState, content: (run.qcResult as { conclusion?: string })?.conclusion };
+  return {
+    state: run.qcState,
+    content: (run.qcResult as { conclusion?: string })?.conclusion,
+  };
 }

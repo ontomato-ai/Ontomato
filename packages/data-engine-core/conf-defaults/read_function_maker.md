@@ -147,14 +147,7 @@ Carefully read the `hardcoded Python code`, and in combination with the `tools f
 
 ## Step 2
 Try to extract the parameterizable parts from the hardcoded code; these parameters will serve as the parameters of the `generic Python program` of this `hardcoded Python code`
-`userId` and `domainId` are platform-supplied runtime arguments, not business parameters to extract. Keep reading them from `sys.argv` in the original order:
-```
-import sys
-
-if len(sys.argv) > 2:
-    userId = sys.argv[1]  # "userId"
-    domainId = sys.argv[2]  # "domainId"
-```
+Identity is supplied by an opaque execution grant. It is not a business parameter. Use `from query_runtime import execute_dsl, parameters`; never read identity from argv or construct engine URLs.
 
 ## Step 3
 For each parameter identified in `step 2` that needs to be parameterized, form the definition of that parameter; **the parameter definition is very important information when other Agents fill in the parameters to call the `new code` you wrote**, and each parameter definition must include the following information:
@@ -181,26 +174,19 @@ For time-type parameters of type TYPE_TIME and TYPE_TIME_ARRAY, the format must 
 
 ## Step 5
 ### According to the input parameters of `step 4`, rewrite the `hardcoded Python code`. The `new code` must meet the following requirements:
-- ** The beginning of the `new code` program must accept the `userId`, `domainId` and `parameterFilePath` parameters, and the order must remain consistent **
-An external program will execute the `new code` you wrote in a similar way; the external program will write the input parameter json object determined in `step 4` into an input parameter file, and the `parameterFilePath` parameter is the absolute path of that file
+Begin with `# ontomato-python:2`. Read business parameters from the ontology helper:
+```python
+# ontomato-python:2
+import json
+from query_runtime import execute_dsl, parameters
 ```
-python your_new_programmer.py userId domainId parameterFilePath
-```
-So when your program receives the `parameterFilePath` parameter at the beginning, it should read the content of the input parameter file according to its path
-```
-import sys
-
-if len(sys.argv) > 3:
-    userId = sys.argv[1]  # "userId"
-    domainId = sys.argv[2]  # "domainId"
-    parameterFilePath = sys.argv[3]  # "absolute path of the parameter file"
-```
+The host supplies parameters.json inside the execution workspace. No user/domain or host file path is a program argument.
 - **With the original values supplied as parameters, the new program must produce the same result as the original program. Changing parameter values changes only the corresponding query inputs; the query and calculation logic must remain the same.**
 - **The keys of every row in the printed `answer` of the new program must be exactly those of the original program: do not rename, add or drop any. Keep a key unchanged even when it contains a value you parameterized (such as the year in `admission_total_2026`): downstream consumers reference the result by these keys.**
 
 ### Notes on writing python code
 - ** It is best to print the exception stack `traceback.print_exc()`, as this helps troubleshooting **
-- Use `test(isNewCode, path, parameterDefs)` to execute a saved Python file and inspect its output or errors. Pass the relative file path, not the code text. For the new parameterized program, call `test` directly with `isNewCode=true` and the parameter definitions. The `runAfter="test"` shortcut has no parameter definitions and is only suitable for the original program that takes `userId` and `domainId`.
+- Use `test(isNewCode, path, parameterDefs)` to execute a saved Python file and inspect its output or errors. Pass the relative file path, not the code text. For the new parameterized program, call `test` directly with `isNewCode=true` and the parameter definitions. The `runAfter="test"` shortcut has no parameter definitions and is only suitable for an original program with no business parameters.
 - ** Before you finally output the `new code`, you must execute it at least once, and only after the test passes may you output it finally; use the `submitFunction` tool to submit the final file path, parameter definitions, `summary title` and `program logic`; in the body, only write a brief description. **
 - ** The reason the test does not pass may be that there are debugging prints in the code; comment out the irrelevant prints written for debugging and it may succeed. **
 

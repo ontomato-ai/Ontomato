@@ -36,6 +36,11 @@ const store = new RuntimeStore(
   process.env.AGENT_RUNTIME_SCHEMA || "agent_runtime",
 );
 const runtime = new AgentRuntime({
+  worker: {
+    development:
+      process.env.NODE_ENV === "development" || process.env.NODE_ENV === "test",
+    python: process.env.AGENT_RUNTIME_PYTHON || "python3",
+  },
   store,
   hosts,
   root: path.resolve(process.env.AGENT_RUNTIME_ROOT || "data/agent-runtime"),
@@ -71,6 +76,10 @@ const runtime = new AgentRuntime({
     : undefined,
 });
 await runtime.initialize();
+if (runtime.worker.development)
+  process.stderr.write(
+    "Agent runtime development mode: worker UID isolation and per-worker process-count limits are disabled; Darwin lacks address-space rlimits and Windows lacks POSIX rlimits. This is not production isolation.\n",
+  );
 const server = createRuntimeHttp(runtime).listen(
   Number(process.env.AGENT_RUNTIME_PORT || 3001),
   process.env.AGENT_RUNTIME_HOST || "127.0.0.1",

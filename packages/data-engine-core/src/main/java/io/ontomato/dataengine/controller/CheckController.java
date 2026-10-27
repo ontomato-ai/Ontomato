@@ -40,42 +40,4 @@ public class CheckController {
         return sseEmitter;
 	}
 	
-	@PostMapping(path = "/check/queryBySessionId-v2", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
-    public SseEmitter queryBySessionIdV2(@RequestBody JSONObject param) {
-		String sseId = UUID.randomUUID().toString();
-    	SseEmitter sseEmitter = SseEmitterUtil.createSseEmitter(sseId);
-
-    	String sessionId = param.getString("sessionId");
-        Executors.newSingleThreadExecutor().execute(() -> {
-        	ABCHarnessCheck check = null;
-        	while (true) {
-        		if (BackendSessionEntrance.isCancelled(sessionId)) {
-        			break;
-        		}
-        		check = checkServiceV2.queryBySessionId(sessionId);
-        		if (check == null || check.getFinished()) {
-        			break;
-        		}
-        	}
-        	if (check != null) {
-        		if (check.getProgramDescriptions() != null) {
-        			for (ABCHarnessProgramDescription programDescription : check.getProgramDescriptions()) {
-        				JSONObject toSseContent = new JSONObject();
-						toSseContent.put("summary", programDescription.getSummary());
-						toSseContent.put("meaning", programDescription.getMeaning());
-						SseEmitterUtil.sendSseEmitter(sseId, JSON.toJSONString(toSseContent));
-        			}
-        			JSONObject toSseContent = new JSONObject();
-					toSseContent.put("conclusion", check.getConclusion());
-					toSseContent.put("score", check.getScore());
-					toSseContent.put("fittedQuestion", check.getFittedQuestion());
-					SseEmitterUtil.sendSseEmitter(sseId, JSON.toJSONString(toSseContent));
-        		}
-        	}
-        	
-            SseEmitterUtil.closeSseEmitter(sseId);
-        });
-        return sseEmitter;
-	}
-	
 }
