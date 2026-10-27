@@ -28,12 +28,13 @@ import org.springframework.web.server.ResponseStatusException;
 class QueryRuntimeBoundaryTest {
   static String schema, jdbcUrl, username, password;
   QueryGrantService grants;
+  QueryAccessService authorization;
   IdentityService identity;
   DataPermissionLookup lookup;
   DslService dsl;
   OntologyQueryService ontology;
   MockMvc http;
-  final User user = new QueryGrantService.GrantUser("user-a", "domain-a");
+  final User user = new QueryAccessService.GrantUser("user-a", "domain-a");
   final UserDataPermission permission = new UserDataPermission();
 
   @BeforeAll
@@ -74,11 +75,10 @@ class QueryRuntimeBoundaryTest {
             new JdbcTemplate(
                 new DriverManagerDataSource(
                     jdbcUrl + "?currentSchema=" + schema, username, password)),
-            lookup,
-            identity,
             "fixture-signing-key",
             "fixture-workbench-secret");
     grants.initialize();
+    authorization = new QueryAccessService(identity, lookup, grants);
     AdminService admin = mock(AdminService.class);
     // Real configuration shape includes null descriptions and optional attribute flags.
     when(admin.getJSONRule("domain-a"))
@@ -97,6 +97,7 @@ class QueryRuntimeBoundaryTest {
     var controller =
         new OntologyQueryController(
             grants,
+            authorization,
             ontology,
             mock(QueryOutputService.class),
             mock(QueryJobService.class),
@@ -192,7 +193,7 @@ class QueryRuntimeBoundaryTest {
     request.addHeader("Authorization", "Bearer " + token);
     request.setAttribute(
         QueryGrantService.ATTRIBUTE, grants.verify(token, run, "/ontology/query/execute-dsl"));
-    assertSame(permission, grants.access(request).permission());
+    assertSame(permission, authorization.access(request).permission());
     verify(lookup).getDataPermission("user-a", "domain-a");
     assertThrows(
         ResponseStatusException.class,
@@ -240,7 +241,7 @@ class QueryRuntimeBoundaryTest {
             "classNames",
             List.of("/sales"));
     String token =
-        grants.issueExploration(new QueryGrantService.Access(user, permission, null, null), body);
+        authorization.issueExploration(new QueryAccessService.Access(user, permission, null, null), body);
     var claims = grants.verify(token, body.getString("runtimeRunId"), "/ontology/query/overview");
     assertEquals(expiry, claims.getLongValue("expiresAt"));
     assertEquals(body.getString("retrievalId"), claims.getString("retrievalId"));
@@ -293,7 +294,7 @@ class QueryRuntimeBoundaryTest {
       assertThrows(
           ResponseStatusException.class,
           () -> jobs.start(id, user, "output", Map.of("a", 1), operation));
-      User other = new QueryGrantService.GrantUser("user-b", "domain-b");
+      User other = new QueryAccessService.GrantUser("user-b", "domain-b");
       assertThrows(ResponseStatusException.class, () -> jobs.get(id, other, "output"));
       jobs.start(id, other, "output", Map.of("a", 0), sid -> Map.of("value", 1));
       assertEquals("cancelled", jobs.cancel(id, user, "output").getString("status"));
@@ -354,7 +355,7 @@ class QueryRuntimeBoundaryTest {
 
   @Test
   void schemaUsesRealNullableOntologyShapeAndEnabledFieldSemantics() throws Exception {
-    var access = new QueryGrantService.Access(user, permission, null, null);
+    var access = new QueryAccessService.Access(user, permission, null, null);
     JSONObject overview = JSONObject.from(ontology.overview(access));
     assertEquals(
         "Sales facts", overview.getJSONArray("classes").getJSONObject(0).getString("description"));

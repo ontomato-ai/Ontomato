@@ -352,3 +352,15 @@ intent; Java output/QC cancellation also closes not-yet-admitted jobs. No late
 response is replayed into a second execution. Same-session continuation injects
 effective decisions, prior authorized artifact references and prior successful
 source files, with fresh credentials and a new execution workspace.
+
+
+## Ontology startup dependency boundary
+
+`QueryGrantService` owns grant signing, verification and revocation using JDBC
+and configured keys. It does not depend on identity or permission services.
+`QueryAccessService` composes request identity, current permissions and the grant
+service at the HTTP query boundary, including the original credential deadline
+for exploration issuance. The Python execution adapter depends only on the
+low-level grant lifecycle; permission resolution may depend on model/program
+services without creating a reverse edge through grant signing. No lazy proxy or
+circular-reference allowance is used to make this graph constructible.

@@ -62,11 +62,7 @@ class RuntimeFunctionIntegrationTest {
                   jdbcUrl + "?currentSchema=" + schema, account[0], account[1]));
       var permission = new UserDataPermission();
       permission.setFullData(true);
-      var lookup = mock(DataPermissionLookup.class);
-      when(lookup.getDataPermission("reader", "domain-a")).thenReturn(permission);
-      var grants =
-          new QueryGrantService(
-              jdbc, lookup, mock(IdentityService.class), "fixture-signing", "fixture-service");
+      var grants = new QueryGrantService(jdbc, "fixture-signing", "fixture-service");
       grants.initialize();
       var calls = new AtomicInteger();
       ontologyHttp = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
@@ -247,8 +243,8 @@ class RuntimeFunctionIntegrationTest {
                       "parameters",
                       JSONObject.of("multiplier", 4)),
                   new JSONArray(),
-                  new QueryGrantService.Access(
-                      new QueryGrantService.GrantUser("reader", "domain-a"),
+                  new QueryAccessService.Access(
+                      new QueryAccessService.GrantUser("reader", "domain-a"),
                       permission,
                       null,
                       null),
@@ -285,8 +281,8 @@ class RuntimeFunctionIntegrationTest {
                           "parameters",
                           JSONObject.of("multiplier", 4)),
                       new JSONArray(),
-                      new QueryGrantService.Access(
-                          new QueryGrantService.GrantUser("reader", "domain-a"),
+                      new QueryAccessService.Access(
+                          new QueryAccessService.GrantUser("reader", "domain-a"),
                           permission,
                           null,
                           null),

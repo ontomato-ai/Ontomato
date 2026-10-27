@@ -30,16 +30,16 @@ public class OntologyQueryService {
     this.knowledge = knowledge;
   }
 
-  public Map<String, Object> rule(QueryGrantService.Access access) {
+  public Map<String, Object> rule(QueryAccessService.Access access) {
     return admin.getJSONRule(access.user().getDomainId());
   }
 
   @SuppressWarnings("unchecked")
-  private List<Map<String, Object>> classes(QueryGrantService.Access access) {
+  private List<Map<String, Object>> classes(QueryAccessService.Access access) {
     return (List<Map<String, Object>>) rule(access).get("classDef");
   }
 
-  private String checkedClass(String name, QueryGrantService.Access access) {
+  private String checkedClass(String name, QueryAccessService.Access access) {
     String normalized = DBSchemaUtil.normalizeClassName(name, classes(access));
     if (classes(access).stream().noneMatch(c -> normalized.equals(c.get("className"))))
       throw new IllegalArgumentException("Unknown ontology class: " + name);
@@ -50,7 +50,7 @@ public class OntologyQueryService {
     return normalized;
   }
 
-  public Object overview(QueryGrantService.Access access) {
+  public Object overview(QueryAccessService.Access access) {
     List<Object> list = new ArrayList<>();
     for (var c : classes(access)) {
       try {
@@ -83,7 +83,7 @@ public class OntologyQueryService {
     return result;
   }
 
-  public Object schema(List<String> names, QueryGrantService.Access access) {
+  public Object schema(List<String> names, QueryAccessService.Access access) {
     if (names == null || names.isEmpty())
       throw new IllegalArgumentException("classNames are required");
     Set<String> selected = new HashSet<>();
@@ -109,7 +109,7 @@ public class OntologyQueryService {
         rels);
   }
 
-  public Object reference(List<String> names, QueryGrantService.Access access) {
+  public Object reference(List<String> names, QueryAccessService.Access access) {
     if (names == null || names.isEmpty())
       throw new IllegalArgumentException("classNames are required");
     List<String> normalized = names.stream().map(n -> checkedClass(n, access)).toList();
@@ -132,7 +132,7 @@ public class OntologyQueryService {
         DslRuleUtil.generateDslExample(query, rule(access)));
   }
 
-  private void checkGraph(Object value, QueryGrantService.Access access, Set<String> temporary) {
+  private void checkGraph(Object value, QueryAccessService.Access access, Set<String> temporary) {
     if (value instanceof Map<?, ?> object)
       for (var entry : object.entrySet()) {
         String key = entry.getKey().toString();
@@ -147,7 +147,7 @@ public class OntologyQueryService {
       for (Object item : array) checkGraph(item, access, temporary);
   }
 
-  public Map<String, Object> execute(JSONObject query, QueryGrantService.Access access) {
+  public Map<String, Object> execute(JSONObject query, QueryAccessService.Access access) {
     if (query == null
         || !query.keySet().stream().allMatch(k -> Set.of("problem", "answer").contains(k))
         || query.getJSONObject("answer") == null)
@@ -169,7 +169,7 @@ public class OntologyQueryService {
     return result;
   }
 
-  public Object distinct(JSONObject body, QueryGrantService.Access access) {
+  public Object distinct(JSONObject body, QueryAccessService.Access access) {
     String name = checkedClass(body.getString("className"), access),
         attribute = body.getString("attribute");
     var def =
@@ -280,7 +280,7 @@ public class OntologyQueryService {
     }
   }
 
-  public MetricView metric(String id, String revision, QueryGrantService.Access access) {
+  public MetricView metric(String id, String revision, QueryAccessService.Access access) {
     if (id == null || id.isBlank() || revision == null || revision.isBlank())
       throw new IllegalArgumentException("Metric id and revision are required");
     MetricView metric = metrics.queryById(id);
@@ -297,7 +297,7 @@ public class OntologyQueryService {
     return metric;
   }
 
-  public Object metrics(JSONObject body, QueryGrantService.Access access) {
+  public Object metrics(JSONObject body, QueryAccessService.Access access) {
     int limit = limit(body);
     String text = Objects.toString(body.getString("query"), "").toLowerCase(Locale.ROOT);
     String cursor = body.getString("cursor");
@@ -366,7 +366,7 @@ public class OntologyQueryService {
     return result;
   }
 
-  public Object knowledge(JSONObject body, QueryGrantService.Access access) {
+  public Object knowledge(JSONObject body, QueryAccessService.Access access) {
     List<JSONObject> items = new ArrayList<>();
     for (var k :
         knowledge.findKnowledge(

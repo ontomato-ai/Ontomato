@@ -15,6 +15,7 @@ import org.springframework.web.server.ResponseStatusException;
 @RestController
 public class OntologyQueryController {
   private final QueryGrantService grants;
+  private final QueryAccessService authorization;
   private final OntologyQueryService ontology;
   private final QueryOutputService outputs;
   private final QueryJobService jobs;
@@ -23,12 +24,14 @@ public class OntologyQueryController {
 
   public OntologyQueryController(
       QueryGrantService grants,
+      QueryAccessService authorization,
       OntologyQueryService ontology,
       QueryOutputService outputs,
       QueryJobService jobs,
       CheckServiceV2 checks,
       RuntimeCodeClient runtime) {
     this.grants = grants;
+    this.authorization = authorization;
     this.ontology = ontology;
     this.outputs = outputs;
     this.jobs = jobs;
@@ -39,7 +42,7 @@ public class OntologyQueryController {
   @PostMapping("/internal/query-grants/exploration")
   public Object grant(@RequestBody JSONObject body, HttpServletRequest request) throws Exception {
     grants.requireWorkbench(request);
-    var access = grants.access(request);
+    var access = authorization.access(request);
     if (!java.util.Set.of(
             "retrievalId", "runtimeSessionId", "runtimeRunId", "expiresAt", "classNames")
         .containsAll(body.keySet()))
@@ -50,7 +53,7 @@ public class OntologyQueryController {
     UUID.fromString(body.getString("runtimeSessionId"));
     UUID.fromString(body.getString("retrievalId"));
     runtime.registerSkill();
-    String token = grants.issueExploration(access, body);
+    String token = authorization.issueExploration(access, body);
     var claims = grants.verify(token, body.getString("runtimeRunId"), "/ontology/query/overview");
     return Map.of(
         "credential",
@@ -62,46 +65,46 @@ public class OntologyQueryController {
   @PostMapping("/internal/query-grants/revoke")
   public Object revoke(@RequestBody JSONObject body, HttpServletRequest request) {
     grants.requireWorkbench(request);
-    var access = grants.access(request);
+    var access = authorization.access(request);
     grants.revoke(access.user().getDomainId(), body.getString("runtimeRunId"));
     return Map.of("revoked", true);
   }
 
   @GetMapping("/ontology/query/overview")
   public Object overview(HttpServletRequest request) {
-    return ontology.overview(grants.access(request));
+    return ontology.overview(authorization.access(request));
   }
 
   @PostMapping("/ontology/query/schema")
   public Object schema(@RequestBody JSONObject body, HttpServletRequest request) {
-    return ontology.schema(body.getList("classNames", String.class), grants.access(request));
+    return ontology.schema(body.getList("classNames", String.class), authorization.access(request));
   }
 
   @PostMapping("/ontology/query/dsl-reference")
   public Object reference(@RequestBody JSONObject body, HttpServletRequest request) {
-    return ontology.reference(body.getList("classNames", String.class), grants.access(request));
+    return ontology.reference(body.getList("classNames", String.class), authorization.access(request));
   }
 
   @PostMapping("/ontology/query/distinct-values")
   public Object distinct(@RequestBody JSONObject body, HttpServletRequest request) {
-    return ontology.distinct(body, grants.access(request));
+    return ontology.distinct(body, authorization.access(request));
   }
 
   @PostMapping("/ontology/query/execute-dsl")
   public Object execute(@RequestBody JSONObject body, HttpServletRequest request) {
     if (!body.keySet().equals(java.util.Set.of("dsl")))
       throw new IllegalArgumentException("Only dsl is accepted; identity comes from credentials");
-    return ontology.execute(body.getJSONObject("dsl"), grants.access(request));
+    return ontology.execute(body.getJSONObject("dsl"), authorization.access(request));
   }
 
   @PostMapping("/ontology/query/metrics/search")
   public Object metrics(@RequestBody JSONObject body, HttpServletRequest request) {
-    return ontology.metrics(body, grants.access(request));
+    return ontology.metrics(body, authorization.access(request));
   }
 
   @PostMapping("/ontology/query/knowledge/search")
   public Object knowledge(@RequestBody JSONObject body, HttpServletRequest request) {
-    return ontology.knowledge(body, grants.access(request));
+    return ontology.knowledge(body, authorization.access(request));
   }
 
   @PostMapping("/ontology/query/metrics/execute")
@@ -120,14 +123,14 @@ public class OntologyQueryController {
         UUID.randomUUID().toString(),
         recipe,
         new JSONArray(),
-        grants.access(request),
+        authorization.access(request),
         language(request));
   }
 
   @PostMapping("/ontology/query/outputs")
   @ResponseStatus(HttpStatus.ACCEPTED)
   public Object output(@RequestBody JSONObject body, HttpServletRequest request) {
-    var access = grants.access(request);
+    var access = authorization.access(request);
     if (access.grant() != null)
       throw new ResponseStatusException(
           HttpStatus.FORBIDDEN, "Final output requires the end user credential");
@@ -148,19 +151,19 @@ public class OntologyQueryController {
 
   @GetMapping("/ontology/query/outputs/{id}")
   public Object outputStatus(@PathVariable String id, HttpServletRequest request) {
-    return jobs.get(id, grants.access(request).user(), "output");
+    return jobs.get(id, authorization.access(request).user(), "output");
   }
 
   @PostMapping("/ontology/query/outputs/{id}/cancel")
   public Object outputCancel(@PathVariable String id, HttpServletRequest request) throws Exception {
-    return jobs.cancel(id, grants.access(request).user(), "output");
+    return jobs.cancel(id, authorization.access(request).user(), "output");
   }
 
   @PostMapping("/query-quality-checks")
   @ResponseStatus(HttpStatus.ACCEPTED)
   public Object quality(@RequestBody JSONObject body, HttpServletRequest request) {
     grants.requireWorkbench(request);
-    var access = grants.access(request);
+    var access = authorization.access(request);
     String id = body.getString("id"), lang = language(request);
     return jobs.start(
         id,
@@ -206,13 +209,13 @@ public class OntologyQueryController {
 
   @GetMapping("/query-quality-checks/{id}")
   public Object qualityStatus(@PathVariable String id, HttpServletRequest request) {
-    return jobs.get(id, grants.access(request).user(), "quality");
+    return jobs.get(id, authorization.access(request).user(), "quality");
   }
 
   @PostMapping("/query-quality-checks/{id}/cancel")
   public Object qualityCancel(@PathVariable String id, HttpServletRequest request)
       throws Exception {
-    return jobs.cancel(id, grants.access(request).user(), "quality");
+    return jobs.cancel(id, authorization.access(request).user(), "quality");
   }
 
   private String language(HttpServletRequest request) {

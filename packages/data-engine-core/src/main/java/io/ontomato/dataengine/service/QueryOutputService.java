@@ -29,7 +29,7 @@ public class QueryOutputService {
   }
 
   public JSONObject execute(
-      String id, JSONObject recipe, JSONArray sources, QueryGrantService.Access access, String lang)
+      String id, JSONObject recipe, JSONArray sources, QueryAccessService.Access access, String lang)
       throws Exception {
     String kind = recipe.getString("kind"), code;
     JSONObject parameters = new JSONObject();

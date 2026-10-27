@@ -24,6 +24,54 @@ import dev.langchain4j.service.tool.ToolProvider;
 import dev.langchain4j.service.tool.ToolProviderResult;
 
 class OssStartupAssemblyTest {
+    @Test
+    void fullApplicationStartsWithoutLazyBeansOrCircularReferences(
+            @org.junit.jupiter.api.io.TempDir java.nio.file.Path directory) throws Exception {
+        org.junit.jupiter.api.Assumptions.assumeTrue(
+                System.getenv("STARTUP_TEST_DATABASE_URL") != null,
+                "Set STARTUP_TEST_DATABASE_URL to a disposable local pgvector PostgreSQL server");
+        String classpath =
+                java.util.Arrays.stream(
+                                System.getProperty("java.class.path")
+                                        .split(java.util.regex.Pattern.quote(java.io.File.pathSeparator)))
+                        .filter(entry -> !entry.replace('\\', '/').endsWith("/test-classes"))
+                        .map(entry -> java.nio.file.Path.of(entry).toAbsolutePath().toString())
+                        .collect(java.util.stream.Collectors.joining(java.io.File.pathSeparator));
+        classpath +=
+                java.io.File.pathSeparator
+                        + java.nio.file.Path.of("../../packages/data-engine-core/conf-defaults").toRealPath();
+        java.nio.file.Path log = directory.resolve("startup.log");
+        Process child =
+                new ProcessBuilder(
+                                java.nio.file.Path.of(System.getProperty("java.home"), "bin", "java").toString(),
+                                "-cp",
+                                classpath,
+                                java.nio.file.Path.of("../../scripts/data-engine/StartupContextProbe.java")
+                                        .toRealPath()
+                                        .toString(),
+                                "io.ontomato.dataengine.service.impl.AnonymousIdentityService",
+                                "io.ontomato.dataengine.service.impl.AnonymousDataPermissionLookup")
+                        .directory(directory.toFile())
+                        .redirectErrorStream(true)
+                        .redirectOutput(log.toFile())
+                        .start();
+        try {
+            assertTrue(
+                    child.waitFor(90, java.util.concurrent.TimeUnit.SECONDS),
+                    "Application startup timed out");
+            String output = java.nio.file.Files.readString(log);
+            assertEquals(0, child.exitValue(), output);
+            assertTrue(output.contains("FULL_CONTEXT_STARTED"), output);
+            System.out.println(output);
+        } finally {
+            if (child.isAlive()) {
+                child.destroyForcibly();
+                child.waitFor();
+            }
+        }
+    }
+
+
 
     @Test
     void ossBeansAreTheOnlyIdentityAndToolChoices() {

@@ -2,8 +2,6 @@ package io.ontomato.dataengine.service;
 
 import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONObject;
-import io.ontomato.dataengine.core.bean.User;
-import io.ontomato.dataengine.service.sys.bean.permission.UserDataPermission;
 import jakarta.annotation.PostConstruct;
 import jakarta.servlet.http.HttpServletRequest;
 import java.nio.charset.StandardCharsets;
@@ -20,26 +18,23 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
 
-/** Ontology-owned run grants. No model-supplied identity or permission mode is accepted. */
+/**
+ * Grant signing, verification and revocation. Independent of request identity and permission
+ * services.
+ */
 @Service
 @DependsOn("jdbcInitDb")
 public class QueryGrantService {
   public static final String ATTRIBUTE = QueryGrantService.class.getName();
   private final JdbcTemplate jdbc;
-  private final DataPermissionLookup permissions;
-  private final IdentityService identity;
   private final String signingKey;
   private final String serviceToken;
 
   public QueryGrantService(
       JdbcTemplate jdbc,
-      DataPermissionLookup permissions,
-      IdentityService identity,
       @Value("${ONTOMATO_QUERY_SIGNING_KEY:}") String signingKey,
       @Value("${ONTOMATO_QUERY_SERVICE_TOKEN:}") String serviceToken) {
     this.jdbc = jdbc;
-    this.permissions = permissions;
-    this.identity = identity;
     this.signingKey = signingKey;
     this.serviceToken = serviceToken;
   }
@@ -90,28 +85,7 @@ public class QueryGrantService {
     return issue(userId, domainId, purpose, runId, expiresAt, classNames, sandboxId, null);
   }
 
-  public String issueExploration(Access access, JSONObject body) {
-    long expiresAt = java.time.Instant.parse(body.getString("expiresAt")).toEpochMilli();
-    Long userExpiry = identity.getCurrentCredentialExpiresAt();
-    if (userExpiry != null) expiresAt = Math.min(expiresAt, userExpiry);
-    return issue(
-        access.user().getId(),
-        access.user().getDomainId(),
-        "retrieval-exploration",
-        body.getString("runtimeRunId"),
-        expiresAt,
-        body.getList("classNames", String.class),
-        null,
-        JSONObject.of(
-            "servicePrincipal",
-            "workbench",
-            "retrievalId",
-            body.getString("retrievalId"),
-            "sessionId",
-            body.getString("runtimeSessionId")));
-  }
-
-  private String issue(
+  String issue(
       String userId,
       String domainId,
       String purpose,
@@ -209,49 +183,5 @@ public class QueryGrantService {
         "UPDATE query_runtime_grants SET revoked=true WHERE domain_id=? AND run_id=?",
         domainId,
         runId);
-  }
-
-  public Access access(HttpServletRequest request) {
-    JSONObject grant = (JSONObject) request.getAttribute(ATTRIBUTE);
-    if (grant != null) {
-      String userId = grant.getString("userId"), domain = grant.getString("domainId");
-      User user = new GrantUser(userId, domain);
-      boolean explore = "retrieval-exploration".equals(grant.getString("purpose"));
-      return new Access(
-          user,
-          explore ? new UserDataPermission() : permissions.getDataPermission(userId, domain),
-          grant,
-          request.getHeader("Authorization").substring(7));
-    }
-    User user = identity.getCurrentUser();
-    if (user == null || !user.isEnable())
-      throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Authentication is required");
-    identity.requireQueryAccess();
-    return new Access(user, identity.getCurrentUserDataPermission(), null, null);
-  }
-
-  public record Access(
-      User user, UserDataPermission permission, JSONObject grant, String credential) {}
-
-  public record GrantUser(String id, String domainId) implements User {
-    public String getId() {
-      return id;
-    }
-
-    public String getDomainId() {
-      return domainId;
-    }
-
-    public String getLoginCode() {
-      return id;
-    }
-
-    public String getUserName() {
-      return id;
-    }
-
-    public boolean isEnable() {
-      return true;
-    }
   }
 }
