@@ -19,6 +19,10 @@ describe.skipIf(!database)("runtime real HTTP and PostgreSQL", () => {
     sideEffects = 0;
   let tree: { parent: number; child: number } | undefined;
   const modelInputs: string[] = [];
+  let releaseFirstModel!: () => void;
+  const firstModelReleased = new Promise<void>((resolve) => {
+    releaseFirstModel = resolve;
+  });
   const schema = `runtime_test_${randomUUID().replaceAll("-", "")}`;
   const hostToken = "fixture-host-service-secret";
   const headers = {
@@ -218,6 +222,7 @@ console.log(JSON.stringify({type:'result',text:'tool result',data:{hostSecretPre
           res.end("data: [DONE]\n\n");
           return;
         }
+        await firstModelReleased;
         if (request.messages.some((m: { role: string }) => m.role === "tool")) {
           frame({ role: "assistant", content: "Saved result" });
           frame({}, "stop");
@@ -253,6 +258,7 @@ console.log(JSON.stringify({type:'result',text:'tool result',data:{hostSecretPre
     await start();
   }, 20000);
   afterAll(async () => {
+    releaseFirstModel();
     await stop();
     await new Promise<void>((resolve) => fake?.close(() => resolve()));
     if (root) await rm(root, { recursive: true, force: true });
@@ -337,9 +343,29 @@ console.log(JSON.stringify({type:'result',text:'tool result',data:{hostSecretPre
         })
       ).body.replayed,
     ).toBe(true);
+    const before = await api(`/v1/runs/${runId}`);
+    const live = await fetch(
+      `${url}/v1/runs/${runId}/events?afterSeq=${before.body.cursor.seq}&streamId=${before.body.cursor.streamId}`,
+      { headers },
+    );
+    const liveBody = live.text();
+    releaseFirstModel();
     const done = await settled(runId);
     expect(done.body.run.status, JSON.stringify(done.body)).toBe("completed");
     const snapshot = runtimeRunSnapshotSchema.parse(done.body);
+    const liveFrames = (await liveBody)
+      .split("\n")
+      .filter((line) => line.startsWith("data: "))
+      .map((line) => JSON.parse(line.slice(6)));
+    const liveResult = liveFrames.find(
+      (frame) =>
+        frame.type === "event" &&
+        frame.envelope.event.type === "tool_execution_end",
+    );
+    expect(liveResult.envelope.event.result.details.artifactIds).toEqual(
+      snapshot.artifacts.map((artifact) => artifact.id),
+    );
+
     expect(snapshot.artifacts).toHaveLength(1);
     expect(snapshot.artifacts[0]!.content).toEqual({
       type: "test/opaque",
