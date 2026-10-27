@@ -82,16 +82,16 @@ describe("configured object view interaction", () => {
     version.value++; await settle();
     expect(element.querySelector(".metric")?.textContent).toBe("changed");
   });
-  it("opens the panel editor using the requested form", async () => {
+  it("always edits the shared full view", async () => {
     const forms: string[] = [];
     vi.stubGlobal("fetch", async (url: string, init: RequestInit) => {
       const body = JSON.parse(String(init.body));
       if (url.endsWith("/edit")) forms.push(body.form);
       return new Response(JSON.stringify({ success: true, data: url.endsWith("/edit") ? { revision: 0, publishedRevision: null, versions: [] } : url.endsWith("getMetas") ? { classDef: [] } : [] }));
     });
-    mount(() => h(ObjectViewBuilder, { className: "Order", initialForm: "panel" }));
+    mount(() => h(ObjectViewBuilder, { className: "Order" }));
     await settle();
-    expect(forms).toEqual(["panel"]);
+    expect(forms).toEqual(["full"]);
   });
   it("does not reload published configuration when runtime variables or object data change", async () => {
     const view = createObjectView("Order");

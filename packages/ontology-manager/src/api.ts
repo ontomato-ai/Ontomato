@@ -509,7 +509,12 @@ export function createManagerClient(
   /** One instance's full record; the data engine returns classDef plus a flat attribute map. */
   async function queryInstanceInfo(id: string, className: string) {
     const response = await post("/data/queryInfoByNode", { id, class: className });
-    return (response.data ?? {}) as Record<string, unknown>;
+    const info = (response.data ?? {}) as Record<string, any>;
+    const key = info.classDef?.attrs?.find((attr: Record<string, unknown>) => attr.primaryKey === true || attr.primary_key === true)?.name;
+    if (key && info.data && typeof info.data === "object" && id.startsWith(`${className}:`)) {
+      info.data = { ...info.data, [key]: id.slice(className.length + 1) };
+    }
+    return info as Record<string, unknown>;
   }
 
   async function objectViewRequest(operation: "read" | "edit" | "save" | "publish", className: string, form: "full" | "panel", values: Record<string, unknown> = {}): Promise<ObjectViewState> {

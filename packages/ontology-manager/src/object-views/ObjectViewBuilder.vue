@@ -9,12 +9,12 @@ import type { OntologyObject, OntologyRelation, SmartAsset } from "../api";
 import ObjectViewRuntime from "./ObjectViewRuntime.vue";
 import ViewBindingEditor from "./ViewBindingEditor.vue";
 
-const props = defineProps<{ className: string; initialPrimaryKey?: string; initialForm?: "full" | "panel" }>();
+const props = defineProps<{ className: string; initialPrimaryKey?: string }>();
 const emit = defineEmits<{ back: []; open: [reference: ObjectReference] }>();
 const client = useManagerClient();
 const { ot } = useOntologyText();
 const { confirm } = useManagerFeedback();
-const form = ref<"full" | "panel">(props.initialForm || "full");
+const form = "full" as const;
 const document = ref<ObjectViewDocument>(createObjectView(props.className));
 const saved = ref("");
 const dirty = computed(() => JSON.stringify(document.value) !== saved.value);
@@ -56,7 +56,7 @@ async function load() {
   error.value = "";
   try {
     const [result, ontology, metricAssets, actionAssets] = await Promise.all([
-      client.objectViewRequest("edit", props.className, form.value), client.loadOntology(), client.loadSmartAssets("metrics"), client.loadSmartAssets("actions"),
+      client.objectViewRequest("edit", props.className, form), client.loadOntology(), client.loadSmartAssets("metrics"), client.loadSmartAssets("actions"),
     ]);
     if (current !== generation) return;
     state.value = result;
@@ -76,11 +76,6 @@ async function load() {
   finally { if (current === generation) busy.value = false; }
 }
 watch(() => props.className, () => { sampleRequest++; previewKey.value = props.initialPrimaryKey || ""; previewObject.value = {}; previewReference.value = { className: props.className, primaryKey: "" }; void load(); }, { immediate: true });
-async function changeForm(value: "full" | "panel") {
-  if (dirty.value) { try { await confirm(ot("ovDiscard"), ot("ovChangeView")); } catch { return; } }
-  form.value = value;
-  await load();
-}
 async function sample() {
   const current = ++sampleRequest;
   const className = props.className;
@@ -106,10 +101,10 @@ async function save(publish = false) {
   error.value = "";
   try {
     const validated = objectViewDocumentSchema.parse(document.value);
-    state.value = await client.saveObjectView(validated, form.value, state.value.revision, description.value);
+    state.value = await client.saveObjectView(validated, form, state.value.revision, description.value);
     saved.value = JSON.stringify(validated);
     description.value = "";
-    if (publish) state.value = await client.objectViewRequest("publish", props.className, form.value, { revision: state.value.revision, expectedRevision: state.value.revision });
+    if (publish) state.value = await client.objectViewRequest("publish", props.className, form, { revision: state.value.revision, expectedRevision: state.value.revision });
   } catch (reason) { error.value = reason instanceof Error ? reason.message : String(reason); }
   finally { busy.value = false; }
 }
@@ -117,7 +112,7 @@ async function publishVersion() {
   if (!historyRevision.value || busy.value || !loaded.value) return;
   error.value = "";
   busy.value = true;
-  try { state.value = await client.objectViewRequest("publish", props.className, form.value, { revision: historyRevision.value, expectedRevision: state.value.revision }); }
+  try { state.value = await client.objectViewRequest("publish", props.className, form, { revision: historyRevision.value, expectedRevision: state.value.revision }); }
   catch (reason) { error.value = reason instanceof Error ? reason.message : String(reason); }
   finally { busy.value = false; }
 }
@@ -200,7 +195,6 @@ onBeforeUnmount(() => { generation++; sampleRequest++; window.removeEventListene
   <div class="view-builder">
     <header class="builder-header">
       <div class="builder-heading"><el-button text @click="back">{{ ot('ovBack') }}</el-button><div class="builder-title"><strong>{{ ot('ovTitle') }}</strong><span :title="objectType?.showName || className">{{ objectType?.showName || className }}</span></div>
-        <el-select :model-value="form" class="form-select" :disabled="busy" @update:model-value="changeForm"><el-option :label="ot('ovFull')" value="full" /><el-option :label="ot('ovPanel')" value="panel" /></el-select>
       </div>
       <div class="builder-actions"><span class="version-status">v{{ state.revision }} · {{ ot('ovPublished') }} {{ state.publishedRevision ?? '—' }} {{ dirty ? '· ' + ot('ovUnsaved') : '' }}</span>
         <el-switch v-model="preview" :active-text="ot('ovPreview')" /><el-button type="primary" plain :disabled="!loaded" :loading="busy" @click="save()">{{ ot('ovSaveDraft') }}</el-button><el-button type="primary" :disabled="!loaded" :loading="busy" @click="save(true)">{{ ot('ovSavePublish') }}</el-button>
@@ -219,8 +213,8 @@ onBeforeUnmount(() => { generation++; sampleRequest++; window.removeEventListene
         <el-select v-model="historyRevision" :placeholder="ot('ovChooseVersion')"><el-option v-for="version in state.versions" :key="version.revision" :value="version.revision" :label="`v${version.revision} · ${version.description || version.author}`" /></el-select>
         <el-button :disabled="!historyRevision || busy" @click="restoreVersion">{{ ot('ovLoadVersion') }}</el-button><el-button type="primary" plain :disabled="!historyRevision || busy" @click="publishVersion">{{ ot('ovPublishVersion') }}</el-button>
       </aside>
-      <main :class="['canvas', { 'panel-canvas': form === 'panel' }]">
-        <ObjectViewRuntime v-if="preview" :document="document" :object="previewObject" :reference="reference" :panel="form === 'panel'" preview @refresh="sample" @open="emit('open', $event)" />
+      <main class="canvas">
+        <ObjectViewRuntime v-if="preview" :document="document" :object="previewObject" :reference="reference" preview @refresh="sample" @open="emit('open', $event)" />
         <template v-else>
           <div class="tab-bar"><el-button v-for="item in document.tabs" :key="item.id" :type="item.id === tab.id ? 'primary' : 'default'" @click="selectedTab = item.id; selectedSection = item.sections[0].id">{{ item.title }}</el-button><el-button @click="addTab">{{ ot('ovAddTab') }}</el-button></div>
           <div class="layout-controls"><el-input v-model="tab.title" :placeholder="ot('ovTabTitle')" /><el-button :disabled="document.tabs.length === 1" @click="document.tabs.splice(document.tabs.indexOf(tab), 1)">{{ ot('ovDeleteTab') }}</el-button><el-button @click="addSection">{{ ot('ovAddSection') }}</el-button></div>
@@ -276,7 +270,6 @@ onBeforeUnmount(() => { generation++; sampleRequest++; window.removeEventListene
 .builder-title { display: grid; gap: 4px; min-width: 0; max-width: 240px; }
 .builder-title strong { font-size: 15px; line-height: 20px; }
 .builder-title span { font-size: 12px; color: var(--el-text-color-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.form-select { width: 128px; flex-shrink: 0; }
 .version-status { font-size: 12px; color: var(--el-text-color-secondary); line-height: 20px; }
 .builder-body { display: grid; grid-template-columns: 200px minmax(0, 1fr) 300px; flex: 1; min-height: 0; min-width: 0; }
 .palette, .inspector { min-width: 0; overflow: auto; padding: 20px 16px; scrollbar-gutter: stable; }
@@ -288,13 +281,12 @@ onBeforeUnmount(() => { generation++; sampleRequest++; window.removeEventListene
 .palette > .el-button :deep(> span) { min-width: 0; line-height: 18px; overflow-wrap: anywhere; }
 .palette > .el-input, .palette > .el-select { width: 100%; margin-bottom: 8px; }
 .canvas { min-width: 0; overflow: auto; padding: 24px; background: var(--el-fill-color-light); scrollbar-gutter: stable; }
-.panel-canvas { max-width: 560px; width: 100%; box-sizing: border-box; justify-self: center; }
 .tab-bar { display: flex; align-items: center; gap: 8px; overflow-x: auto; padding: 2px 2px 12px; margin-bottom: 12px; }
 .tab-bar > .el-button { flex-shrink: 0; max-width: 240px; overflow: hidden; }
 .layout-controls { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; }
 .layout-controls .el-input { flex: 1 1 140px; min-width: 0; }
 .canvas-section { padding: 16px; margin-bottom: 20px; border: 1px dashed var(--el-border-color-dark); border-radius: var(--radius-sm, 4px); transition: border-color .15s; }
-.canvas-grid { display: grid; grid-template-columns: repeat(12,minmax(0,1fr)); gap: 16px; min-height: 80px; align-items: start; }
+.canvas-grid { display: grid; grid-template-columns: repeat(12,minmax(0,1fr)); gap: 16px; min-height: 80px; align-items: stretch; }
 .canvas-widget { padding: 16px; min-width: 0; border: 1px solid var(--el-border-color); border-radius: var(--radius-sm, 4px); background: var(--el-bg-color); cursor: grab; overflow-wrap: anywhere; transition: border-color .15s, box-shadow .15s; }
 .canvas-widget:hover { border-color: var(--el-color-primary-light-5); }
 .canvas-section.selected, .canvas-widget.selected { border-color: var(--el-color-primary); }

@@ -3,7 +3,7 @@ import { ref, watch } from "vue";
 import { ElTabs, ElTabPane } from "element-plus";
 import { viewConditionMatches, type ObjectViewDocument, type ObjectReference } from "@ontomato/contracts/object-views";
 import ObjectViewWidget from "./ObjectViewWidget.vue";
-const props = defineProps<{ document: ObjectViewDocument; object: Record<string, unknown>; reference: ObjectReference; preview?: boolean; panel?: boolean }>();
+const props = defineProps<{ document: ObjectViewDocument; object: Record<string, unknown>; reference: ObjectReference; preview?: boolean }>();
 const emit = defineEmits<{ open: [reference: ObjectReference]; refresh: [] }>();
 const variables = ref<Record<string, unknown>>({});
 const refresh = ref(0);
@@ -16,7 +16,7 @@ watch(() => JSON.stringify([props.reference.className, props.reference.primaryKe
 function reload() { refresh.value++; emit("refresh"); }
 </script>
 <template>
-  <div :class="['object-view-runtime', { panel }]">
+  <div class="object-view-runtime">
     <el-tabs v-model="activeTab">
       <el-tab-pane v-for="tab in document.tabs" :key="tab.id" :name="tab.id" :label="tab.title" lazy>
         <section v-for="section in tab.sections" :key="section.id" class="view-section">
@@ -36,14 +36,14 @@ function reload() { refresh.value++; emit("refresh"); }
 </template>
 <style scoped>
 .object-view-runtime { min-width: 0; container: view-runtime / inline-size; }
-.object-view-runtime :deep(.el-tabs__header) { margin: 0 0 20px; }
-.object-view-runtime :deep(.el-tabs__item) { max-width: 240px; overflow: hidden; text-overflow: ellipsis; }
+.object-view-runtime :deep(.el-tabs__header) { margin: 0 0 var(--spacing-xl); }
+.object-view-runtime :deep(.el-tabs__nav-wrap::after) { height: 1px; background: var(--el-border-color); }
+.object-view-runtime :deep(.el-tabs__item) { height: 40px; max-width: 240px; font-size: var(--text-sm); overflow: hidden; text-overflow: ellipsis; }
 .view-section { margin-bottom: 24px; }
 .view-section:last-child { margin-bottom: 0; }
 .view-section h3 { margin: 0 0 12px; font-size: 14px; font-weight: 600; line-height: 22px; overflow-wrap: anywhere; }
-.view-grid { display: grid; grid-template-columns: repeat(12,minmax(0,1fr)); gap: 16px; align-items: start; }
-.widget-card { border: 1px solid var(--el-border-color); border-radius: var(--radius-sm, 4px); padding: 20px; min-width: 0; background: var(--el-bg-color); container: view-card / inline-size; }
-.widget-card h4 { margin: 0 0 16px; font-size: 13px; font-weight: 600; line-height: 20px; overflow-wrap: anywhere; }
-.panel .widget-card { grid-column: span 12 !important; padding: 16px; }
+.view-grid { display: grid; grid-template-columns: repeat(12,minmax(0,1fr)); gap: var(--spacing-xl); align-items: stretch; }
+.widget-card { border: 1px solid var(--el-border-color); border-radius: var(--radius-sm); padding: var(--spacing-lg); min-width: 0; background: var(--el-bg-color); container: view-card / inline-size; }
+.widget-card h4 { margin: 0 0 var(--spacing-lg); padding-bottom: var(--spacing-sm); border-bottom: 1px solid var(--el-border-color-light); font-size: var(--text-sm); font-weight: var(--font-semibold); line-height: 22px; overflow-wrap: anywhere; }
 @container view-runtime (max-width: 600px) { .widget-card { grid-column: span 12 !important; padding: 16px; } }
 </style>

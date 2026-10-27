@@ -2,7 +2,7 @@
 import { computed, onBeforeUnmount, ref, watch } from "vue";
 import { Eye } from "lucide-vue-next";
 import { parseActionValue } from "./action-values";
-import { ElButton, ElDialog, ElInput, ElTable, ElTableColumn, ElAlert } from "element-plus";
+import { ElButton, ElDialog, ElInput, ElTable, ElTableColumn, ElAlert, ElSkeleton, vLoading } from "element-plus";
 import { readViewPath, resolveViewBinding, type ViewWidget, type ObjectReference } from "@ontomato/contracts/object-views";
 import { useManagerClient, useOntologyText } from "../context";
 const { ot } = useOntologyText();
@@ -13,6 +13,8 @@ const client = useManagerClient();
 const data = ref<unknown>();
 const error = ref("");
 const loading = ref(false);
+const dataLoaded = ref(false);
+const isDataWidget = computed(() => ["metric", "table", "chart", "links"].includes(props.widget.kind));
 const actionOpen = ref(false);
 const actionValues = ref<Record<string, unknown>>({});
 const actionTypes = ref<Record<string, string>>({});
@@ -46,7 +48,6 @@ async function load() {
   error.value = "";
   if (!["table", "chart", "metric", "links"].includes(props.widget.kind)) { loading.value = false; return; }
   loading.value = true;
-  data.value = undefined;
   try {
     if (props.widget.kind === "links") {
       if (!props.widget.relation || !props.reference.primaryKey) return;
@@ -61,7 +62,7 @@ async function load() {
     }
   } catch (reason) {
     if (current === request) error.value = reason instanceof Error ? reason.message : String(reason);
-  } finally { if (current === request) loading.value = false; }
+  } finally { if (current === request) { loading.value = false; dataLoaded.value = true; } }
 }
 watch(() => JSON.stringify([props.reference.className, props.reference.primaryKey, props.widget, parameters.value, props.refresh]), () => { offset.value = 0; void load(); }, { immediate: true });
 function page(delta: number) { offset.value = Math.max(0, offset.value + delta); void load(); }
@@ -110,9 +111,9 @@ async function openAction() {
 }
 </script>
 <template>
-  <div class="view-widget" :aria-busy="loading">
+  <div v-loading="loading && dataLoaded && isDataWidget" class="view-widget" :aria-busy="loading" :style="isDataWidget && loading && !dataLoaded ? { minHeight: widget.kind === 'metric' ? '40px' : Math.min(widget.height, 160) + 'px' } : undefined">
     <el-alert v-if="error" :title="error" type="error" :closable="false" />
-    <p v-if="loading" class="widget-state" role="status">{{ ot('ovLoading') }}</p>
+    <el-skeleton v-if="loading && !dataLoaded && isDataWidget" :rows="widget.kind === 'metric' ? 1 : 4" animated :aria-label="ot('ovLoading')" />
     <p v-else-if="widget.kind === 'text'" class="view-text">{{ widget.text }}{{ widget.binding ? format(bindingValue) : '' }}</p>
     <dl v-else-if="widget.kind === 'properties'" class="properties">
       <template v-for="field in propertyFields" :key="field"><dt>{{ field }}</dt><dd>{{ format(object[field]) }}</dd></template>
@@ -121,9 +122,9 @@ async function openAction() {
     <template v-else-if="widget.kind === 'table' || widget.kind === 'links'">
       <el-table :data="rows" :max-height="widget.height" highlight-current-row @row-click="selectRow" @row-dblclick="openRow">
         <el-table-column v-for="field in fields" :key="field" :prop="field" :label="field" min-width="130" show-overflow-tooltip />
-        <el-table-column v-if="widget.kind === 'links' || widget.targetClass" width="48" align="center"><template #default="scope"><el-button class="object-view-row-action" text :icon="Eye" :title="ot('ovOpenView')" :aria-label="ot('ovOpenView')" @click.stop="openRow(scope.row)" /></template></el-table-column>
+        <el-table-column v-if="widget.kind === 'links' || widget.targetClass" :label="ot('ovOperations')" min-width="140" align="center"><template #default="scope"><el-button class="object-view-row-action" type="primary" link :icon="Eye" :title="ot('ovOpenView')" @click.stop="openRow(scope.row)">{{ ot('ovViewDetails') }}</el-button></template></el-table-column>
       </el-table>
-      <div v-if="widget.kind === 'links'" class="pages"><el-button :disabled="offset === 0" @click="page(-50)">{{ ot('ovPrevious') }}</el-button><span>{{ rows.length ? offset + 1 : 0 }}–{{ offset + rows.length }}</span><el-button :disabled="!hasMore" @click="page(50)">{{ ot('ovNext') }}</el-button></div>
+      <div v-if="widget.kind === 'links' && (hasMore || offset > 0)" class="pages"><el-button :disabled="loading || offset === 0" @click="page(-50)">{{ ot('ovPrevious') }}</el-button><span>{{ rows.length ? offset + 1 : 0 }}–{{ offset + rows.length }}</span><el-button :disabled="loading || !hasMore" @click="page(50)">{{ ot('ovNext') }}</el-button></div>
     </template>
     <template v-else-if="widget.kind === 'chart'">
       <svg v-if="widget.chartType === 'line' && points.length" viewBox="0 0 600 180" role="img" :aria-label="widget.title"><polyline :points="linePoints" fill="none" stroke="currentColor" stroke-width="3" /></svg>
@@ -142,8 +143,8 @@ async function openAction() {
 </template>
 <style scoped>
 .view-widget { min-width: 0; font-size: 13px; line-height: 22px; }
-.object-view-row-action { width: 28px; height: 28px; padding: 0; color: var(--el-text-color-secondary); }
-.object-view-row-action:hover { color: var(--el-color-primary); }
+.object-view-row-action { min-height: 28px; padding: 4px 8px; white-space: normal; }
+.object-view-row-action :deep(> span) { gap: 6px; line-height: 20px; }
 .view-widget :deep(.el-button + .el-button) { margin-inline-start: 0; }
 .view-widget > .el-alert { margin-bottom: 12px; overflow-wrap: anywhere; }
 .view-text { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }

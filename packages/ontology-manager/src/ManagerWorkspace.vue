@@ -65,8 +65,8 @@ const viewBuilder = ref<InstanceType<typeof ObjectViewBuilder>>();
 function openInstance(reference: ObjectReference) {
   navigate(`/views/${encodeURIComponent(reference.className)}?key=${encodeURIComponent(reference.primaryKey)}`);
 }
-function configureView(className: string, form: "full" | "panel" = "full", primaryKey = "") {
-  navigate(`/views/${encodeURIComponent(className)}?${new URLSearchParams({ edit: "true", form, ...(primaryKey ? { key: primaryKey } : {}) })}`);
+function configureView(className: string, primaryKey = "") {
+  navigate(`/views/${encodeURIComponent(className)}?${new URLSearchParams({ edit: "true", ...(primaryKey ? { key: primaryKey } : {}) })}`);
 }
 const objectLabels = ref<Record<string, string>>({});
 
@@ -327,8 +327,8 @@ onMounted(() => {
       />
 
       <section class="content-area">
-        <ObjectViewBuilder v-if="viewClass && viewEditing" ref="viewBuilder" :key="viewClass" :class-name="viewClass" :initial-form="route.query.get('form') === 'panel' ? 'panel' : 'full'" :initial-primary-key="viewPrimaryKey" @open="openInstance" @back="emit('navigate', viewPrimaryKey ? `/views/${encodeURIComponent(viewClass)}?key=${encodeURIComponent(viewPrimaryKey)}` : `/data/${encodeURIComponent(viewClass)}`)" />
-        <ObjectViewPage v-else-if="viewClass" :reference="{ className: viewClass, primaryKey: viewPrimaryKey }" @open="openInstance" @edit="configureView(viewClass, 'full', viewPrimaryKey)" @back="openObjectData(viewClass)" />
+        <ObjectViewBuilder v-if="viewClass && viewEditing" ref="viewBuilder" :key="viewClass" :class-name="viewClass" :initial-primary-key="viewPrimaryKey" @open="openInstance" @back="emit('navigate', viewPrimaryKey ? `/views/${encodeURIComponent(viewClass)}?key=${encodeURIComponent(viewPrimaryKey)}` : `/data/${encodeURIComponent(viewClass)}`)" />
+        <ObjectViewPage v-else-if="viewClass" :reference="{ className: viewClass, primaryKey: viewPrimaryKey }" @open="openInstance" @edit="configureView(viewClass, viewPrimaryKey)" @back="openObjectData(viewClass)" />
         <section v-else-if="activeWorkspace === 'model'" class="model-surface">
           <OntologyModelCatalog
             v-if="!selectedObjectClass && !selectedRelation"

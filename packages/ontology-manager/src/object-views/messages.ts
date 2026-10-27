@@ -3,6 +3,8 @@ export const objectViewEn = {
   ovConfigure: "Configure view",
   ovConfigureObject: "Configure Object View",
   ovOpen: "Open",
+  ovViewDetails: "View details",
+  ovOperations: "Actions",
   ovOpenView: "Open Object View",
   ovBack: "Back",
   ovFull: "Full view",

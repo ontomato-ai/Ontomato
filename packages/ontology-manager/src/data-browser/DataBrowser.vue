@@ -23,7 +23,6 @@ import { useManagerFeedback } from "../feedback";
 import { Filter, Download, Plus, Trash2, Search } from "lucide-vue-next";
 import { useManagerClient, useOntologyText, useSharedText } from "../context";
 import InstanceGraph from "./InstanceGraph.vue";
-import ObjectViewPage from "../object-views/ObjectViewPage.vue";
 import type { ObjectReference } from "@ontomato/contracts/object-views";
 import { businessNameAttribute, instanceName } from "../object-views/instance-name";
 
@@ -32,13 +31,8 @@ const { ot } = useOntologyText();
 const { message } = useManagerFeedback();
 const { getMetas, loadObjectData } = useManagerClient();
 const props = defineProps<{ initialClass?: string }>();
-const emit = defineEmits<{ open: [reference: ObjectReference]; configure: [className: string, form?: "full" | "panel", primaryKey?: string] }>();
-const inspectedObject = ref<ObjectReference | null>(null);
+const emit = defineEmits<{ open: [reference: ObjectReference]; configure: [className: string, primaryKey?: string] }>();
 const primaryKeys = ref<Record<string, string>>({});
-function inspectRow(row: DataItem) {
-  const key = primaryKeys.value[selectedClass.value];
-  if (key && row[key] != null) inspectedObject.value = { className: selectedClass.value, primaryKey: String(row[key]) };
-}
 function openRow(row: DataItem) {
   const key = primaryKeys.value[selectedClass.value];
   if (key && row[key] != null) emit("open", { className: selectedClass.value, primaryKey: String(row[key]) });
@@ -446,7 +440,7 @@ watch(
       style="width: 100%"
       max-height="600"
       highlight-current-row
-      @row-click="inspectRow"
+      @row-click="openRow"
     >
       <el-table-column :label="currentClassAttrs.find(attr => attr.name === titleAttribute?.name)?.showName || ot('ovTitle')" :prop="titleAttribute?.name" min-width="200" fixed="left">
         <template #default="scope">
@@ -547,9 +541,6 @@ watch(
       </el-drawer>
     </template>
     <InstanceGraph v-else :summary-target="graphSummaryTarget" @open="emit('open', $event)" @configure="emit('configure', $event)" />
-    <el-drawer :model-value="!!inspectedObject" class="object-view-drawer" :title="ot('ovTitle')" size="min(560px, 100%)" :lock-scroll="false" @close="inspectedObject = null">
-      <ObjectViewPage v-if="inspectedObject" :reference="inspectedObject" panel @open="inspectedObject = $event" @full="emit('open', inspectedObject!)" @edit="emit('configure', inspectedObject!.className, 'panel', inspectedObject!.primaryKey)" />
-    </el-drawer>
   </div>
 </template>
 
@@ -715,9 +706,6 @@ watch(
   border-radius: var(--manager-filter-drawer-radius) !important;
 }
 
-:global(.ontology-manager .el-drawer.object-view-drawer) {
-  border-radius: 0 !important;
-}
 .object-title-link {
   display: block;
   max-width: 100%;
