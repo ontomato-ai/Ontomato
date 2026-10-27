@@ -6,3 +6,5 @@ services:
     image: ${DATA_ENGINE_IMAGE:-ghcr.io/ontomato-ai/ontomato-data-engine:${ONTOMATO_VERSION:-latest}}
   ontology-manager:
     image: ${MANAGER_IMAGE:-ghcr.io/ontomato-ai/ontomato-ontology-manager:${ONTOMATO_VERSION:-latest}}
+  agent-runtime:
+    image: ${AGENT_RUNTIME_IMAGE:-ghcr.io/ontomato-ai/ontomato-agent-runtime:${ONTOMATO_VERSION:-latest}}

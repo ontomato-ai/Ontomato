@@ -77,7 +77,7 @@ export default [
   {
     // Every .mjs here runs on Node (build, packaging and development entries, their tests, and
     // the agent skill CLIs): add only the Node globals.
-    files: ["scripts/**/*.mjs", "apps/*/*.mjs", "agent-skills/*/*.mjs"],
+    files: ["scripts/**/*.mjs", "apps/*/*.mjs", "agent-skills/*/*.mjs", "packages/agent-runtime/src/**/*.mjs", "packages/workbench-server/resources/runtime-skills/**/*.mjs"],
     languageOptions: { globals: globals.node },
   },
   {
@@ -112,6 +112,17 @@ export default [
         {
           regex: "^(vue-router|vue-i18n|pinia)(/|$)",
           message: "Manager components must not depend on host routes, a global message instance or a store; use the context passed in by the host",
+        },
+      ]),
+    },
+  },
+  {
+    files: ["packages/agent-runtime/src/**/*.ts"],
+    rules: {
+      "no-restricted-imports": restrict([
+        {
+          regex: "^@ontomato/(?!contracts(/|$))|(^|/)(workbench-server|workbench-ui|data-engine-core|apps)(/|$)",
+          message: "agent-runtime may depend on contracts and lower-level libraries, never on a host implementation",
         },
       ]),
     },

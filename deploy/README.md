@@ -1,7 +1,7 @@
 # Ontomato deployment
 
-Three final images run the workbench, data engine and ontology manager. PostgreSQL
-is a fourth service. The site needs Docker Engine 26+, Compose v2 and Python 3.8+.
+Four final images run the workbench, data engine, ontology manager and agent runtime.
+PostgreSQL is a fifth service. The site needs Docker Engine 26+, Compose v2 and Python 3.8+.
 
 ## Online deployment
 
@@ -10,14 +10,14 @@ cp .env.example .env
 # Set ARCH, POSTGRES_PASSWORD and PUBLIC_HOST in .env.
 echo 'COMPOSE_FILE=docker-compose.yml:docker-compose.ghcr.yml' >> .env
 echo 'ONTOMATO_VERSION=<version-and-build-tag>' >> .env
+python3 prepare-env.py .env
 docker compose pull
 docker compose up -d --wait --wait-timeout 600
 ```
 
-CI publishes a shared `<version>-ci<run>.<attempt>-g<commit>` tag for all three images,
+CI publishes a shared `<version>-ci<run>.<attempt>-g<commit>` tag for all four images,
 as well as `edge`, `stable`, release and `latest` aliases. Use the full build tag above so
-`docker ps` shows the deployed build. Update `ONTOMATO_VERSION`, then repeat pull
-and up. Images come from GHCR. Build
+`docker ps` shows the deployed build. Update `ONTOMATO_VERSION`, then run `python3 prepare-env.py .env`, pull and up. Images come from GHCR. Build
 and publication happen before deployment; Compose has no build step.
 
 ### Automatic updates (optional)
@@ -31,10 +31,10 @@ ONTOMATO_VERSION=edge
 ```
 
 This adds a Watchtower container (`nickfedor/watchtower`). Every 5 minutes it checks whether
-the tags of the workbench, data engine and ontology manager containers point to new images on
+the tags of the workbench, data engine, ontology manager and agent runtime containers point to new images on
 GHCR; if so it pulls them, recreates those containers with their existing configuration and
 removes the replaced images. PostgreSQL is not touched, and only this Compose project's
-containers are watched. The three images update independently, and changes to the deployment
+containers are watched. The four images update independently, and changes to the deployment
 templates still need a manual update. Keep fixed versions without automatic updates for
 production sites.
 
@@ -79,6 +79,7 @@ python3 offline/mirror.py import --bundle package \
 cp .env.example .env
 # Set POSTGRES_PASSWORD and PUBLIC_HOST in .env, then append the image references:
 cat images.env >> .env
+python3 prepare-env.py .env
 docker compose pull
 docker compose up -d --wait --wait-timeout 600
 ```
@@ -93,8 +94,8 @@ For updates, extract the new bundle outside the existing deployment directory.
 Run its `tools-install` and import commands with the same state directory.
 Tool installation only loads tool images; it does not import application images, change
 application configuration, restart services or install host Docker/Compose/Python. After successful import,
-replace the six image/version/architecture values in the existing `.env` with
-those in `images.env`, then pull and up. Keep existing secrets, data directories
+replace the seven image/version/architecture values in the existing `.env` with
+those in `images.env`, then run `python3 prepare-env.py .env`, pull and up. Keep existing secrets, data directories
 and database volumes. Import failure leaves the previous `.env` and application
 containers untouched. Retain the previous references to select a prior image;
 application/database migration compatibility must be considered separately.
@@ -126,11 +127,19 @@ Official references: [oc-mirror](https://github.com/openshift/oc-mirror),
 
 PostgreSQL uses a named volume and is published on loopback port 5432 by default.
 Workbench port is 3000, manager 3005 and data engine 18087. Override them in `.env`.
-`frontend_data` maps to `/app/data`, and `backend_data` to `/deploy`. Initial
+`frontend_data` maps to `/app/data`, `backend_data` to `/deploy`, and
+`agent_runtime_data` to the independent runtime’s `/data`. The runtime uses the
+`agent_runtime` schema in the `ontomato` database and has no published host port. Initial
 `initdb.sql` creates the product databases. Services default to UTC; set `TZ` for
 another timezone. This stack does not migrate a pre-existing database.
 
 ## Configuration
+
+`prepare-env.py` generates `AGENT_RUNTIME_SERVICE_TOKEN` once (0600 `.env`) on
+installation or upgrade. Both Node services reference that same value. Existing
+credentials are preserved; retain `.env` and `agent_runtime_data` when updating.
+Run this preparation after copying updated deployment templates and before Compose.
+The runtime temporarily reads model configuration from Java until that owner is migrated.
 
 Models are normally configured in the UI. To seed new domains, optionally set
 `LLM_BASE_URL`, `LLM_API_KEY`, `LLM_MODEL`, `EMBEDDING_BASE_URL`,

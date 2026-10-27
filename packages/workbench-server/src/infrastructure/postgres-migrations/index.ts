@@ -1,3 +1,4 @@
+import { ensureGovernanceRuntimeSchema } from "./20261028-governance-runtime/schema";
 import { workbenchProduct } from "../../product/installed";
 import { ensureGovernanceHarnessLinks } from "./20260923-governance-harness-links/schema";
 import { ensureAnalysisHarnessLinks } from "./20260923-analysis-harness-links/schema";
@@ -197,6 +198,7 @@ export const POSTGRES_MIGRATION_REGISTRY: MigrationRegistration[] = [
     },
   },
   { directory: "20260923-governance-harness-links", ensureSchema: ensureGovernanceHarnessLinks },
+  { directory: "20261028-governance-runtime", ensureSchema: ensureGovernanceRuntimeSchema },
 ];
 
 export async function runPostgresBusinessMigrations(client: QueryableClient): Promise<void> {

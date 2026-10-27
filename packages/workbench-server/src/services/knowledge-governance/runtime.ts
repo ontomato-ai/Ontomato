@@ -1,232 +1,304 @@
-import type { GovernanceWork } from "@ontomato/contracts/knowledge-governance";
-import type { AgentEvent, AgentState } from "../../core/agent-loop/types";
-import { runAgentLoop } from "../../core/agent-loop/agent-loop";
-import { toResponseEvent } from "../../core/agent-loop/chat-view";
-import { createHarnessRun } from "../../core/agent-loop/session-run";
+import { randomUUID } from "node:crypto";
+import type { Response } from "express";
 import {
-  harnessSessions,
-  HarnessSessionBusyError,
-  type HarnessTurnStatus,
-} from "../../infrastructure/harness-sessions";
+  governanceSessionSchema,
+  type GovernanceSession,
+  type GovernanceStreamEvent,
+} from "@ontomato/contracts/knowledge-governance";
+import type { RuntimeRunSnapshot, RuntimeSessionStatus } from "@ontomato/contracts/agent-runtime";
+import { RUNTIME_MODEL_NOT_CONFIGURED } from "@ontomato/contracts/agent-runtime-values";
 import { renderPrompt } from "../../core/prompts/loader";
-import { ModelNotConfiguredError, resolveModelForRole } from "../../config/model-resolver";
-import { runWithLogContext } from "../../logging/log-context";
-import { createLogger } from "../../logging/logger";
+import { getRoleNotConfiguredMessage } from "../../config/model-resolver";
+import { environment } from "../../config/environment";
+import { config } from "../../config/application";
 import { HttpError } from "../../utils/errors";
-import { SessionResponseStream } from "../../utils/response-stream";
-import { createSseErrorEvent } from "../../utils/sse";
-import {
-  governanceStore,
-  publicGovernanceSession,
-  type GovernanceOwner,
-  type GovernanceRecord,
-} from "./store";
-import { createGovernanceTools } from "./tools";
+import { initializeSse } from "../../utils/sse";
+import { RuntimeClient } from "../agent-runtime/client";
+import { governanceStore, type GovernanceOwner } from "./store";
 import type { GovernanceCredentials } from "./materials";
+import { governanceSkillRef } from "./skill";
+import { governanceChatMessages, governanceLiveSnapshot } from "./chat-view";
 
-const logger = createLogger("knowledge-governance");
-const compactionPrompts = {
-  system: "knowledge-governance.compaction.system",
-  summarize: "knowledge-governance.compaction.summarize.user",
-  update: "knowledge-governance.compaction.update.user",
-};
-
-/** Saved business work, sent after each save so the page follows progress live. */
-type GovernanceWorkEvent = { type: "work"; work: GovernanceWork };
-export type GovernanceResponseStream = SessionResponseStream<GovernanceWorkEvent>;
+const failureMessage = (run: Pick<NonNullable<RuntimeSessionStatus["latestRun"]>, "error">) =>
+  run.error?.code === RUNTIME_MODEL_NOT_CONFIGURED
+    ? getRoleNotConfiguredMessage("knowledgeGovernance")
+    : "The governance response could not finish. Saved work is retained; please retry.";
+const governanceStatus = (status: RuntimeRunSnapshot["run"]["status"] | undefined) =>
+  status === "running" ? "running" : status === "failed" ? "failed"
+    : status === "cancelled" || status === "interrupted" ? "stopped" : "idle";
 
 export class GovernanceRuntime {
-  // One entry per session, keyed to the Harness turn it streams. Held only while that turn
-  // runs; afterwards the settled history is the only source.
-  private active = new Map<
-    string,
-    { turnId: string; stream: GovernanceResponseStream; done?: Promise<void> }
-  >();
-
   async start(
     owner: GovernanceOwner,
     credentials: GovernanceCredentials,
     locale: string,
-    message: string
+    message: string,
   ) {
     const record = await governanceStore.create(owner);
     return this.respond(record.id, owner, credentials, locale, message);
   }
-
   async respond(
     id: string,
     owner: GovernanceOwner,
     credentials: GovernanceCredentials,
     locale: string,
-    message: string
-  ) {
-    let record = await governanceStore.get(id, owner);
-    let turnId: string;
-    try {
-      ({ turnId } = await harnessSessions.beginTurn(record.harnessSessionId));
-    } catch (error) {
-      if (error instanceof HarnessSessionBusyError)
-        throw new HttpError(409, "Governance session is already running");
-      throw error;
-    }
-    // Registered in the same tick as admission, so any snapshot that reports this turn
-    // running can subscribe to it.
-    const stream: GovernanceResponseStream = new SessionResponseStream();
-    stream.append({ type: "response_started", message });
-    const entry: { turnId: string; stream: GovernanceResponseStream; done?: Promise<void> } = {
-      turnId,
-      stream,
-    };
-    this.active.set(id, entry);
-    const release = () => {
-      if (this.active.get(id) === entry) this.active.delete(id);
-    };
-    try {
-      // Admission may have waited for the prior turn; take its final business work now.
-      record = await governanceStore.get(id, owner);
-    } catch (error) {
-      await harnessSessions.finishTurn(record.harnessSessionId, turnId, "failed");
-      stream.append(createSseErrorEvent(error));
-      release();
-      throw error;
-    }
-    const done = runWithLogContext(
-      { domainId: owner.domainId, token: credentials.token, apiKey: credentials.apiKey },
-      () => this.run(record, turnId, credentials, locale, message, stream)
-    );
-    entry.done = done;
-    void done
-      .finally(release)
-      .catch((error) => {
-        logger.error("Governance persistence failed", { sessionId: id, error: String(error) });
-      });
-    return publicGovernanceSession(await governanceStore.get(id, owner));
-  }
-
-  async stop(id: string, owner: GovernanceOwner) {
-    await governanceStore.authorize(id, owner);
-    this.active.get(id)?.stream.cancel();
-    return { success: true };
-  }
-
-  /** Replayable events of that Harness turn; undefined once it settled or another turn runs. */
-  async responseStream(id: string, owner: GovernanceOwner, turnId: string) {
-    await governanceStore.authorize(id, owner);
-    const entry = this.active.get(id);
-    return entry?.turnId === turnId ? entry.stream : undefined;
-  }
-
-  async wait(id: string) {
-    await this.active.get(id)?.done;
-  }
-
-  private async run(
-    record: GovernanceRecord,
-    turnId: string,
-    credentials: GovernanceCredentials,
-    locale: string,
     message: string,
-    stream: GovernanceResponseStream
   ) {
-    const signal = stream.controller.signal;
-    let queue = Promise.resolve();
-    const persist = () => {
-      queue = queue.then(() => governanceStore.save(record, turnId));
-      return queue;
-    };
-    const persistWork = async () => {
-      await persist();
-      stream.append({ type: "work", work: structuredClone(record.work) });
-    };
-    let terminal: Exclude<HarnessTurnStatus, "running">;
+    const record = await governanceStore.get(id, owner),
+      client = new RuntimeClient(owner.domainId),
+      snapshot = await client.session(record.runtimeSessionId);
+    if (snapshot.session.activeRunId)
+      throw new HttpError(409, "Governance session is already running");
+    if (record.writeRunId)
+      await governanceStore.closeRun(id, owner, record.writeRunId);
+    const runId = randomUUID();
+    await governanceStore.openRun(id, owner, runId);
     try {
-      signal.throwIfAborted();
-      record.error = null;
-      const model = await resolveModelForRole("knowledgeGovernance");
-      const modelConfig = {
-        baseUrl: model.baseUrl,
-        apiKey: model.apiKey,
-        modelName: model.modelName,
-        maxTokens: model.maxTokens,
-        modelKwargs: model.customRequestParameters,
-        llmLog: { agentName: "KnowledgeGovernance", agentRunId: turnId },
-      };
-      const state: AgentState = {
-        systemPrompt: "",
-        messages: [],
-        tools: createGovernanceTools(record, credentials, persistWork),
-        isStreaming: false,
-      };
-      // Governance conversations do not show model thinking.
-      const relay = (event: AgentEvent) => {
-        const streamEvent = toResponseEvent(event);
-        if (streamEvent && streamEvent.type !== "thinking") stream.append(streamEvent);
-      };
-      await runAgentLoop(message, state, modelConfig, relay, signal, {
-        session: await createHarnessRun(harnessSessions, {
-          sessionId: record.harnessSessionId,
-          turnId,
-          contextWindow: model.contextWindow,
-          promptKeys: compactionPrompts,
-        }),
-        beforeTurn: async (current) => {
-          signal.throwIfAborted();
-          current.systemPrompt = renderPrompt(
-            "knowledge-governance.main.system",
+      await client.start(record.runtimeSessionId, runId, {
+        language: locale,
+        definition: {
+          systemPrompt: "",
+          modelRole: "knowledgeGovernance",
+          skills: [governanceSkillRef],
+          contextSkill: governanceSkillRef,
+          builtinTools: { workspaceFiles: false },
+          externalMcp: [],
+          compaction: {
+            systemPrompt: renderPrompt(
+              "knowledge-governance.compaction.system",
+              {},
+              locale,
+            ),
+            summarizePrompt: renderPrompt(
+              "knowledge-governance.compaction.summarize.user",
+              {},
+              locale,
+            ),
+            updatePrompt: renderPrompt(
+              "knowledge-governance.compaction.update.user",
+              {},
+              locale,
+            ),
+          },
+        },
+        input: { role: "user", content: message, timestamp: Date.now() },
+        privateContext: {
+          credential: credentials.apiKey
+            ? { kind: "api_key", value: credentials.apiKey }
+            : credentials.token
+              ? { kind: "token", value: credentials.token }
+              : { kind: "none" },
+          skillBindings: [
             {
-              progress: JSON.stringify({
-                summary: record.work.summary,
-                notes: record.work.notes,
-                reviewed: record.work.reviewedKnowledgeIds.length,
-                knowledgeTotal: record.work.knowledgeTotal,
-                issues: record.work.issues.map((issue) => ({
-                  id: issue.id,
-                  title: issue.title,
-                  status: issue.status,
-                })),
-              }),
+              skill: governanceSkillRef,
+              targetUrl: `${environment.agentRuntime().callbackUrl.replace(/\/$/, "")}${config.apiBase}/knowledge-governance`,
+              context: { governanceSessionId: id },
             },
-            locale
-          );
+          ],
         },
       });
-      const last = state.messages.at(-1);
-      if (last?.role === "assistant" && last.stopReason === "error")
-        throw new Error(last.errorMessage || "Model request failed");
-      terminal = signal.aborted ? "cancelled" : "completed";
     } catch (error) {
-      terminal = signal.aborted ? "cancelled" : "failed";
-      if (!signal.aborted) {
-        // When no model is configured for the role, directly provide the localized reason; other failures keep the generic message.
-        record.error =
-          error instanceof ModelNotConfiguredError
-            ? error.message
-            : "The governance response could not finish. Saved work is retained; please retry.";
-        logger.error("Governance response failed", { sessionId: record.id, error: String(error) });
+      await governanceStore.closeRun(
+        id,
+        owner,
+        runId,
+        "The governance request could not be admitted. Saved work is retained.",
+      );
+      throw error;
+    }
+    return this.get(id, owner);
+  }
+  async stop(id: string, owner: GovernanceOwner) {
+    const record = await governanceStore.get(id, owner);
+    if (record.writeRunId)
+      await governanceStore.closeRun(id, owner, record.writeRunId);
+    const client = new RuntimeClient(owner.domainId),
+      snapshot = await client.session(record.runtimeSessionId);
+    if (snapshot.session.activeRunId)
+      await client.cancel(snapshot.session.activeRunId);
+    return { success: true };
+  }
+  async get(id: string, owner: GovernanceOwner): Promise<GovernanceSession> {
+    let record = await governanceStore.get(id, owner);
+    const snapshot = await new RuntimeClient(owner.domainId).session(
+      record.runtimeSessionId,
+    );
+    const latest = snapshot.latestRun;
+    if (latest && latest.run.status !== "running") {
+      await governanceStore.closeRun(
+        id,
+        owner,
+        latest.run.id,
+        latest.run.status === "failed" ? failureMessage(latest.run) : undefined,
+      );
+      record = await governanceStore.get(id, owner);
+    }
+    const status = latest?.run.status;
+    return governanceSessionSchema.parse({
+      ...record,
+      status: governanceStatus(status),
+      activeTurnId: snapshot.session.activeRunId,
+      messages: governanceChatMessages(
+        snapshot.messages
+          .filter((m) => m.runId !== snapshot.session.activeRunId)
+          .map((m) => m.message),
+        latest?.run.status !== "running" ? latest?.toolExecutions : [],
+      ),
+      error: status === "failed" ? record.error : null,
+    });
+  }
+  async list(owner: GovernanceOwner) {
+    const records = await governanceStore.list(owner);
+    if (!records.length) return [];
+    const statuses = await new RuntimeClient(owner.domainId).sessionStatuses(
+      records.map((record) => record.runtimeSessionId),
+    );
+    const byId = new Map(statuses.map((status) => [status.session.id, status]));
+    return Promise.all(records.map(async (record) => {
+      const status = byId.get(record.runtimeSessionId);
+      if (!status) throw new Error("Runtime status response is missing a requested session");
+      const latest = status.latestRun;
+      if (latest && latest.status !== "running") {
+        await governanceStore.closeRun(
+          record.id, owner, latest.id,
+          latest.status === "failed" ? failureMessage(latest) : undefined,
+        );
+        record = await governanceStore.get(record.id, owner);
+      }
+      return {
+        id: record.id, createdAt: record.createdAt, updatedAt: record.updatedAt,
+        status: governanceStatus(latest?.status),
+      };
+    }));
+  }
+  /** Each browser connection begins with a runtime snapshot; a host restart loses no authority. */
+  async stream(
+    id: string,
+    owner: GovernanceOwner,
+    runId: string,
+    res: Response,
+  ) {
+    const record = await governanceStore.get(id, owner),
+      client = new RuntimeClient(owner.domainId);
+    const runIdentity = {
+      governanceSessionId: id,
+      runtimeSessionId: record.runtimeSessionId,
+      runId,
+    };
+    let snapshot = await client.run(runId);
+    if (snapshot.run.sessionId !== record.runtimeSessionId)
+      throw new HttpError(404, "Governance run not found");
+    initializeSse(res);
+    const controller = new AbortController();
+    res.once("close", () => controller.abort());
+    const write = (event: GovernanceStreamEvent, seq?: number) => {
+      if (!res.destroyed && !res.writableEnded)
+        res.write(
+          `${seq === undefined ? "" : `id: ${seq}\n`}data: ${JSON.stringify(event)}\n\n`,
+        );
+    };
+    const terminal = async (s: RuntimeRunSnapshot) => {
+      await governanceStore.closeRun(
+        id,
+        owner,
+        runId,
+        s.run.status === "failed" ? failureMessage(s.run) : undefined,
+      );
+      write(
+        s.run.status === "failed"
+          ? {
+              type: "error",
+              error: failureMessage(s.run),
+              timestamp: Date.now(),
+            }
+          : {
+              type: "response_end",
+              status: s.run.status === "completed" ? "completed" : "cancelled",
+            },
+        s.cursor.seq,
+      );
+      res.end();
+    };
+    try {
+      while (!controller.signal.aborted) {
+        const work = (await governanceStore.runWork(runIdentity, owner)).work;
+        write(
+          {
+            type: "snapshot",
+            runId,
+            messages: governanceLiveSnapshot(snapshot),
+            work,
+          },
+          snapshot.cursor.seq,
+        );
+        if (snapshot.run.status !== "running") {
+          await terminal(snapshot);
+          return;
+        }
+        let refresh = false,
+          ended = false;
+        await client.stream(
+          snapshot.cursor,
+          async (frame) => {
+            if (frame.type === "snapshot_required") {
+              refresh = true;
+              return;
+            }
+            const { event, cursor } = frame.envelope;
+            if (
+              event.type === "message_update" &&
+              event.assistantMessageEvent.type === "text_delta"
+            )
+              write(
+                { type: "token", content: event.assistantMessageEvent.delta },
+                cursor.seq,
+              );
+            else if (event.type === "tool_execution_start")
+              write(
+                {
+                  type: "tool_start",
+                  toolCallId: event.toolCallId,
+                  tool: event.toolName,
+                  args: event.args,
+                },
+                cursor.seq,
+              );
+            else if (event.type === "tool_execution_end") {
+              write(
+                {
+                  type: "tool_end",
+                  toolCallId: event.toolCallId,
+                  tool: event.toolName,
+                  result: { content: event.result.content },
+                  isError: event.isError,
+                },
+                cursor.seq,
+              );
+              write({
+                type: "work",
+                work: (await governanceStore.runWork(runIdentity, owner)).work,
+              });
+            } else if (event.type === "agent_end") {
+              ended = true;
+              await terminal(await client.run(runId));
+            }
+          },
+          controller.signal,
+        );
+        if (ended || controller.signal.aborted) return;
+        if (!refresh) {
+          write({ type: "response_unavailable" });
+          res.end();
+          return;
+        }
+        snapshot = await client.run(runId);
+      }
+    } catch {
+      if (!controller.signal.aborted) {
+        write({ type: "response_unavailable" });
+        res.end();
       }
     }
-    let failure: unknown = null;
-    try {
-      await queue;
-      await governanceStore.save(record, turnId);
-    } catch (error) {
-      terminal = "failed";
-      failure = error;
-    }
-    try {
-      await harnessSessions.finishTurn(record.harnessSessionId, turnId, terminal);
-    } catch (error) {
-      terminal = "failed";
-      failure ??= error;
-    }
-    // Sent after the turn is settled, so a subscriber reloading history sees the final state.
-    stream.append(
-      terminal === "failed"
-        ? createSseErrorEvent(record.error ?? failure)
-        : { type: "response_end", status: terminal }
-    );
-    if (failure) throw failure;
   }
 }
-
 export const governanceRuntime = new GovernanceRuntime();

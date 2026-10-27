@@ -11,6 +11,7 @@ export interface TurnIdentity {
 }
 
 export interface LogContext {
+  correlationId?: string;
   requestId?: string;
   turn?: TurnIdentity;
   taskId?: string;

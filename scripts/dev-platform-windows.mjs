@@ -84,7 +84,7 @@ function isTsxWorker(argv, script) {
   return argv.some((arg) => windowsPathKey(arg).includes("\\tsx\\"));
 }
 
-const DEVELOP_MODES = ["dev", "server", "web", "manager"];
+const DEVELOP_MODES = ["dev", "server", "web", "manager", "runtime"];
 const CONCURRENT_MODES = ["pnpm:dev:server", "pnpm:dev:web", "pnpm:dev:ontology-manager"];
 
 function flagValue(argv, flag) {
@@ -120,6 +120,12 @@ export function classifyWindows(row, ctx) {
   const argv = parseWindowsCommandLine(row.command ?? "");
   if (argv.length === 0) return undefined;
   const exe = windowsBaseName(row.exe ?? argv[0]);
+  const runtimeMarker = argv.indexOf("--dev-root");
+  if (exe === "node.exe" && runtimeMarker > 1 &&
+      windowsPathEquals(argv[runtimeMarker + 1], ctx.root) &&
+      windowsPathEndsWith(argv[runtimeMarker - 1], "/apps/agent-runtime/src/index.ts") &&
+      !argv.includes("-e") && !argv.includes("--eval") &&
+      (windowsPathEndsWith(argv[1], "/tsx/dist/cli.mjs") || ["--require", "--import", "--loader", "-r"].includes(argv[1]))) return "frontend-root";
   const workbench = join(ctx.root, "apps/workbench");
   const manager = join(ctx.root, "apps/ontology-manager");
   if (exe === "node.exe") {

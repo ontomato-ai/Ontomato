@@ -1,10 +1,12 @@
 // Native replacement for POSIX-only environment assignments in package scripts.
 // Uses the already installed development CLIs, not a second shell or dependency.
 import { spawn } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { mkdirSync, openSync, closeSync, readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+
+import { runtimeEnvironment, waitForRuntime } from "./dev-runtime.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const WINDOWS = process.platform === "win32";
@@ -27,6 +29,10 @@ export function configuration(mode, { root }, inherited = process.env) {
       tool = "tsx";
       args = ["watch", join(root, "apps/workbench/src/index.ts")];
       cwd = resolve(root, "apps/workbench");
+      break;
+    case "runtime":
+      tool = "tsx";
+      args = ["watch", join(ROOT, "apps/agent-runtime/src/index.ts"), "--dev-root", root];
       break;
     case "web":
       tool = "vite";
@@ -70,9 +76,10 @@ export function holdForeground(child) {
 
 // Each mode resolves its CLI from that mode's own cwd, so the shared public
 // helper never picks the public workspace's copy for a private entry.
-export function start(product) {
-  const settings = configuration(process.argv[2], product);
-  const requireFromCwd = createRequire(resolve(settings.cwd, "package.json"));
+export function start(product, mode = process.argv[2], inherited = process.env, stdio = "inherit", setExitCode = true) {
+  const settings = configuration(mode, product, inherited);
+  const toolRoot = mode === "runtime" ? join(ROOT, "apps/agent-runtime") : settings.cwd;
+  const requireFromCwd = createRequire(resolve(toolRoot, "package.json"));
   const manifestPath = requireFromCwd.resolve(`${settings.tool}/package.json`);
   const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
   const entry = typeof manifest.bin === "string" ? manifest.bin : manifest.bin?.[settings.tool];
@@ -80,7 +87,7 @@ export function start(product) {
   const child = spawn(
     process.execPath,
     [resolve(dirname(manifestPath), entry), ...settings.args, ...process.argv.slice(3)],
-    { env: settings.env, cwd: settings.cwd, stdio: "inherit", shell: false }
+    { env: settings.env, cwd: settings.cwd, stdio, shell: false }
   );
   const release = holdForeground(child);
   child.once("error", (error) => {
@@ -89,20 +96,35 @@ export function start(product) {
   });
   child.once("close", (code, signal) => {
     release();
-    process.exitCode = code ?? (signal === "SIGINT" ? 130 : 1);
+    if (setExitCode) process.exitCode = code ?? (signal === "SIGINT" ? 130 : 1);
   });
   return child;
 }
 
-export function runCli(product) {
+export async function runCli(product) {
+  let runtime;
   try {
-    start(product);
+    const mode = process.argv[2];
+    if (!["dev", "runtime", "server"].includes(mode)) { start(product); return; }
+    const env = runtimeEnvironment(product);
+    if (mode !== "dev") { start(product, mode, env); return; }
+    const log = join(product.root, "data/agent-runtime/dev.log");
+    mkdirSync(dirname(log), { recursive: true });
+    const fd = openSync(log, "a", 0o600);
+    try { runtime = start(product, "runtime", env, ["ignore", fd, fd], false); }
+    finally { closeSync(fd); }
+    await waitForRuntime(runtime, env.AGENT_RUNTIME_URL);
+    console.log(`[dev] Agent runtime ready; log ${log}`);
+    const frontend = start(product, "dev", env);
+    frontend.once("close", () => runtime.kill("SIGTERM"));
+    runtime.once("close", () => frontend.kill("SIGTERM"));
   } catch (error) {
+    runtime?.kill("SIGTERM");
     console.error(error.message);
     process.exitCode = 1;
   }
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  runCli({ root: ROOT });
+  void runCli({ root: ROOT, runtimeDatabase: "ontomato" });
 }

@@ -1,4 +1,4 @@
-// Product root full-stack development entry point: PG -> local Python MCP -> Java ready -> frontend Node trio.
+// Product root full-stack development entry point: PG -> local Python MCP -> Java ready -> frontend group and independent runtime.
 // Only relies on Node 24 built-ins, docker, and platform process/port queries (Unix uses ps/lsof/kill;
 // Windows uses built-in PowerShell/CIM); product differences come entirely from each product's own dev/postgres.compose.yml,
 // the root .env and apps/data-engine/.dev/conf; this tool does not know about edition.
@@ -74,6 +74,7 @@ export function productContext(rootInput) {
     devCommand: join(root, "scripts", "dev-command.mjs"),
     javaEnvFile: join(root, ".env"),
     composeFile: join(root, "dev", "postgres.compose.yml"),
+    runtimeLog: join(root, "data/agent-runtime/dev.log"),
     backendLog: join(devRoot, "logs", "dev-backend.log"),
     mcpLog: join(devRoot, "logs", "dev-mcp.log"),
     project: composeProject(root),
@@ -180,6 +181,7 @@ export function classify(command, cwd, ctx) {
     if (java !== undefined && hasArg(java, "io.ontomato.dataengine.RAGMain") &&
         (java.includes(`-cp ${ctx.devRoot}/conf:`) || java.includes(`-classpath ${ctx.devRoot}/conf:`))) return "ragmain";
   }
+  if (cwd === ctx.root && node !== undefined && node.endsWith("/apps/agent-runtime/src/index.ts --dev-root " + ctx.root) && !hasArg(node, "-e") && !hasArg(node, "--eval") && (moduleArgs(node, "/tsx/dist/cli.mjs") !== undefined || (/^(--require|--import|--loader|-r)\s/.test(node) && node.includes("/tsx/")))) return "frontend-root";
   if (cwd === ctx.root) {
     if (node !== undefined && [ctx.javaEntry, "apps/data-engine/dev.mjs"].some((p) => afterScript(node, p) !== undefined)) return "java-helper";
     if (java !== undefined && hasArg(java, "org.codehaus.plexus.classworlds.launcher.Launcher") &&
@@ -187,7 +189,7 @@ export function classify(command, cwd, ctx) {
     if (node !== undefined) {
       for (const script of ["scripts/dev-command.mjs", join(ctx.root, "scripts/dev-command.mjs")]) {
         const args = afterScript(node, script);
-        if (args !== undefined && /^(dev|server|web|manager)(?:\s|$)/.test(args)) return "frontend-root";
+        if (args !== undefined && /^(dev|server|web|manager|runtime)(?:\s|$)/.test(args)) return "frontend-root";
       }
       const concurrent = moduleArgs(node, "/concurrently/dist/bin/concurrently.js");
       if (concurrent !== undefined && ["server", "web", "ontology-manager"].every((mode) => hasArg(concurrent, `pnpm:dev:${mode}`))) return "frontend-root";
@@ -422,6 +424,10 @@ async function waitForJava(ctx, port, startedAt) {
 function requireAll(entries) {
   for (const [path, label] of entries) if (!existsSync(path)) throw new Error(`Missing ${path} (${label})`);
 }
+export function runtimePort(ctx, inherited = process.env) {
+  const vars = existsSync(ctx.javaEnvFile) ? readDotEnv(readFileSync(ctx.javaEnvFile, "utf8")) : {};
+  return integerLiteral(inherited.AGENT_RUNTIME_PORT ?? vars.AGENT_RUNTIME_PORT ?? "3001", "AGENT_RUNTIME_PORT");
+}
 async function up(ctx) {
   const dbPort = integerLiteral(process.env.POSTGRES_PORT ?? "5432", "POSTGRES_PORT");
   const javaPort = resolveJavaPort(ctx);
@@ -442,7 +448,7 @@ async function up(ctx) {
   assertNoForeign(mcpPort, { group: ownMcp }, "MCP");
   assertNoForeign(javaPort, { group: ownJava }, "Java");
   if (ownMcp.length && !ownsPort(mcpPort, ownMcp)) throw new Error("Checkout MCP is not listening on configured port");
-  for (const [port, label] of [[3000, "Node"], [5173, "Workbench Web"], [5174, "Manager"]]) assertNoForeign(port, { group: [] }, label);
+  for (const [port, label] of [[runtimePort(ctx), "Agent runtime"], [3000, "Node"], [5173, "Workbench Web"], [5174, "Manager"]]) assertNoForeign(port, { group: [] }, label);
   if (!pg || !pg.running || !pg.healthy || !pg.published) {
     if (pg && pg.running && pg.published) throw new Error(`PG container not healthy (state=${pg.state}, health=${pg.health}), stopping`);
     assertNoForeign(dbPort, pre, "PG");
@@ -478,8 +484,8 @@ async function up(ctx) {
   snapshot = identify(ctx);
   if (snapshot.unattributable.length) throw new Error("Unable to confirm candidate process ownership");
   if (snapshot.group.some((entry) => FRONTEND_ROLES.includes(entry.role))) throw new Error("Frontend in this checkout is already running");
-  for (const [port, label] of [[3000, "Node"], [5173, "Workbench Web"], [5174, "Manager"]]) assertNoForeign(port, { group: [] }, label);
-  process.stdout.write(`[dev] Starting Node trio (foreground; Ctrl-C stops this group only, down stops full stack)\n`);
+  for (const [port, label] of [[runtimePort(ctx), "Agent runtime"], [3000, "Node"], [5173, "Workbench Web"], [5174, "Manager"]]) assertNoForeign(port, { group: [] }, label);
+  process.stdout.write(`[dev] Starting runtime and frontend group (foreground; Ctrl-C stops this group only, down stops full stack)\n`);
   // Direct foreground entry using checkout scripts/dev-command.mjs: bypasses pnpm.cmd, avoiding Windows shell parsing issues.
   const child = spawn(process.execPath, [ctx.devCommand, "dev"], { cwd: ctx.root, env: { ...process.env, PORT: "3000" }, stdio: "inherit", shell: false });
   const release = holdForeground(child);
@@ -610,7 +616,7 @@ function status(ctx) {
     const pids = snapshot.group.filter((entry) => entry.role === role).map((entry) => entry.pid);
     process.stdout.write(`[dev] ${label}: ${pids.join(", ") || "not running"}\n`);
   }
-  const ports = pgOwned ? [[mcpPort, "MCP"], [javaPort, "Java"], [3000, "Node"], [5173, "Workbench Web"], [5174, "Manager"]] : [[dbPort, "PG"], [mcpPort, "MCP"], [javaPort, "Java"], [3000, "Node"], [5173, "Workbench Web"], [5174, "Manager"]];
+  const ports = pgOwned ? [[mcpPort, "MCP"], [javaPort, "Java"], [runtimePort(ctx), "Agent runtime"], [3000, "Node"], [5173, "Workbench Web"], [5174, "Manager"]] : [[dbPort, "PG"], [mcpPort, "MCP"], [javaPort, "Java"], [runtimePort(ctx), "Agent runtime"], [3000, "Node"], [5173, "Workbench Web"], [5174, "Manager"]];
   for (const [port, label] of ports)
     if (foreignListeners(port, snapshot.group).length) process.stdout.write(`[dev] ${label} port ${port} occupied by external process\n`);
 }
@@ -628,7 +634,9 @@ function readAt(handle, offset, size) {
 // recognize rotation/replacement by file identity, reset offset to 0 on truncate; bounded buffer;
 // ENOENT treated as rotation in progress and awaits new file; other errors fail explicitly and clean up timer/listeners.
 function logs(ctx) {
-  const path = ctx.backendLog;
+  const selector = process.argv[4] || "java";
+  const path = ({ java: ctx.backendLog, runtime: ctx.runtimeLog, mcp: ctx.mcpLog })[selector];
+  if (!path) throw new Error("Use dev:logs [java|runtime|mcp]");
   if (!existsSync(path)) throw new Error(`Log does not exist: ${path}`);
   const initial = statSync(path);
   let handle = openSync(path, "r");

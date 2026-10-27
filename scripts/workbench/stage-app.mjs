@@ -22,7 +22,7 @@ const SOURCES = "/build/workspace";
 const STAGE = "/stage";
 const STORE = "/opt/runtime";
 const INPUTS = "/inputs.json";
-const SERVER = "@ontomato/workbench-server";
+
 // Payload allowlist per member: manifest, sources, and the package-owned
 // default resources the content layouts read. Web sources, tests, configs and
 // installed node_modules never enter the image.
@@ -122,7 +122,8 @@ export function assembleAppStage({
     );
   const { plan, copies } = stagePlan(graph, members, index);
   for (const copy of copies) copyMember(copy.from, join(stageRoot, copy.to));
-  cpSync(join(root, "dist/web"), join(stageRoot, "dist/web"), { recursive: true });
+  if (record.web !== false)
+    cpSync(join(root, "dist/web"), join(stageRoot, "dist/web"), { recursive: true });
   writeStage(stageRoot, storeRoot, plan);
   return { graph, plan, copies };
 }
@@ -134,8 +135,9 @@ function main() {
   const root = join(SOURCES, record.workspaceId);
   process.chdir(root);
   const members = projects(root);
-  const server = members.find((member) => member.name === SERVER);
-  if (!server) throw new Error(`workspace has no ${SERVER} member`);
+  const provider = record.yamlProvider || "@ontomato/workbench-server";
+  const server = members.find((member) => member.name === provider);
+  if (!server) throw new Error(`workspace has no ${provider} member`);
   const yaml = createRequire(join(server.absolute, "package.json"))("yaml");
   const lock = yaml.parse(readFileSync(join(root, "pnpm-lock.yaml"), "utf8"));
   const selected = projects(root, [

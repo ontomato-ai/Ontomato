@@ -7,7 +7,7 @@ import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 
 const SHARED = resolve(dirname(fileURLToPath(import.meta.url)), "product-targets.mk");
-const BUILD = ["workbench", "data-engine", "ontology-manager"];
+const BUILD = ["workbench", "data-engine", "ontology-manager", "agent-runtime"];
 const FAKE = BUILD;
 let counter = 0;
 

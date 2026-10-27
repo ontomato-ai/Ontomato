@@ -14,7 +14,7 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 TOOL_VERSION = "4.22.17"
 TOOL_IMAGE = "ontomato-oc-mirror:" + TOOL_VERSION
-TOOLS_VERSION = "2026.10.21"
+TOOLS_VERSION = "2026.10.28"
 TOOL_BASE = {
     "amd64": "registry.access.redhat.com/ubi8/ubi@sha256:73071333d0cd7c526b6d7d01f0c9b709fd4a96c47853b1c9071e0a11284bd1da",
     "arm64": "registry.access.redhat.com/ubi9/ubi@sha256:16e9e43d99e181463513cc84a514859b1abb9460f1c4d9e208da4b4e51cd5cc3",
@@ -26,7 +26,7 @@ TOOL_SHA = {
     "amd64": "7bad7aeeb27f6fee911599fcab000587d4066eafb58a7c88aed366676599bb73",
     "arm64": "1d1c755a7581e6bfbeab0198c6ad4349f2761918d53a88523e105e7362c14e5e",
 }
-IMAGE_KEYS = ("WORKBENCH_IMAGE", "DATA_ENGINE_IMAGE", "MANAGER_IMAGE", "POSTGRES_IMAGE")
+IMAGE_KEYS = ("WORKBENCH_IMAGE", "DATA_ENGINE_IMAGE", "MANAGER_IMAGE", "AGENT_RUNTIME_IMAGE", "POSTGRES_IMAGE")
 
 
 def run(argv, capture=False, **kwargs):
@@ -216,7 +216,7 @@ def export(args):
         raise ValueError("Output already exists; choose a new delivery directory: " + str(output))
     if state == output or state in output.parents or output in state.parents:
         raise ValueError("Delivery output and persistent state must be separate directories")
-    sources = dict(zip(IMAGE_KEYS, (args.workbench, args.data_engine, args.manager, args.postgres)))
+    sources = dict(zip(IMAGE_KEYS, (args.workbench, args.data_engine, args.manager, args.agent_runtime, args.postgres)))
     # The product entry has validated these exact digests before export advances history.
     validate_sources(sources)
     state.mkdir(parents=True, exist_ok=True)
@@ -259,7 +259,7 @@ def export(args):
 
 def verify_bundle(bundle):
     data = json.loads((bundle / "delivery.json").read_text())
-    if data.get("schema") != 1 or data.get("arch") not in TOOL_SHA or set(data.get("images", {})) != set(IMAGE_KEYS):
+    if data.get("schema") != 1 or data.get("arch") not in TOOL_SHA or set(data.get("images", {})) not in (set(IMAGE_KEYS), set(IMAGE_KEYS) - {"AGENT_RUNTIME_IMAGE"}):
         raise ValueError("Invalid delivery metadata")
     # Older deliveries record their producer's tool/Registry tags. They do not select
     # the executor; the independently installed tools own that choice.
@@ -324,7 +324,7 @@ def import_bundle(args):
     shutil.copyfile(bundle / "delivery.json", receipts / (sha256(bundle / "delivery.json") + ".json"))
     # A failed import never changes the active deployment's image references.
     lines = ["ARCH=" + data["arch"], "ONTOMATO_VERSION=" + data["version"]]
-    for key in IMAGE_KEYS:
+    for key in data["images"]:
         path = data["images"][key].split("/", 1)[1]
         lines.append(key + "=127.0.0.1:" + str(args.port) + "/" + path)
     target = Path(args.output_env).resolve()
@@ -341,7 +341,7 @@ def main():
     resolve = commands.add_parser("resolve", help="Check the selected platform in the registry and print immutable references as a JSON array")
     exp = commands.add_parser("export", help="Export validated immutable images; retain --state between versions")
     for command in (resolve, exp):
-        for name in ("workbench", "data-engine", "manager", "postgres"):
+        for name in ("workbench", "data-engine", "manager", "agent-runtime", "postgres"):
             command.add_argument("--" + name, required=True)
         command.add_argument("--arch", choices=tuple(TOOL_SHA), required=True)
     for name in ("state", "output", "version"):
@@ -369,7 +369,7 @@ def main():
     try:
         if args.command == "resolve":
             print(json.dumps([resolve_image(ref, args.arch) for ref in
-                              (args.workbench, args.data_engine, args.manager, args.postgres)]))
+                              (args.workbench, args.data_engine, args.manager, args.agent_runtime, args.postgres)]))
         elif args.command == "export":
             export(args)
         elif args.command == "tools-export":

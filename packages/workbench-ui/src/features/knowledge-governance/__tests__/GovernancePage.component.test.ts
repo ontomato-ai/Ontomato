@@ -137,6 +137,20 @@ afterEach(() => {
 });
 
 describe("governance page contract", () => {
+  it("replaces a resumed snapshot before appending its tail, without duplicating the reply",async()=>{
+    const turnId="00000000-0000-4000-8000-000000000003";
+    const current=running(firstId,turnId),stream=sse();
+    vi.mocked(governanceApi.list).mockResolvedValue([]);
+    vi.mocked(governanceApi.read).mockResolvedValue(current);
+    vi.mocked(governanceApi.stream).mockResolvedValue(stream.response);
+    const {wrapper}=await open(firstId);
+    const messages=[{role:"user" as const,content:"Question"},{role:"assistant" as const,content:"A saved reply"}];
+    stream.push({type:"snapshot",runId:turnId,messages,work:current.work},{type:"token",content:" continues"});
+    await flushPromises();expect(wrapper.text()).toContain("A saved reply continues");
+    stream.push({type:"snapshot",runId:turnId,messages:[messages[0]!,{role:"assistant",content:"A saved reply continues"}],work:current.work},{type:"token",content:"."});
+    await flushPromises();expect(wrapper.text()).toContain("A saved reply continues.");
+    expect(wrapper.text().split("A saved reply")).toHaveLength(2);
+  });
   it("opens directly writable, runs nothing until the first message, then shows live text and tools once", async () => {
     vi.mocked(governanceApi.list).mockReturnValue(new Promise(() => {}));
     const { wrapper, router } = await open("");

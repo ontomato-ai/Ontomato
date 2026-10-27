@@ -23,6 +23,11 @@ export const environment = {
   queryBase: () => read("DATA_QUERY_BASE_URL"),
   queryTimeout: () => parseInt(read("DATA_QUERY_TIMEOUT") || "30000", 10),
   queryKey: () => read("DATA_QUERY_API_KEY"),
+  agentRuntime: () => ({
+    url: read("AGENT_RUNTIME_URL") || "http://127.0.0.1:3001",
+    token: read("AGENT_RUNTIME_SERVICE_TOKEN") || "",
+    callbackUrl: read("AGENT_RUNTIME_CALLBACK_URL") || `http://127.0.0.1:${read("PORT") || "3000"}`,
+  }),
   subQuestionInterval: (fallback: number | undefined) =>
     nonNegative(read("SUB_QUESTION_QUERY_INTERVAL_MS"), fallback),
   reportCooldown: (fallback: number | undefined) =>

@@ -1,0 +1,9 @@
+{
+  "name": "@ontomato/agent-runtime-app",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": { "start": "tsx src/index.ts", "typecheck": "tsc --noEmit" },
+  "dependencies": { "@ontomato/agent-runtime": "workspace:*", "dotenv": "16.6.1", "tsx": "4.21.0", "zod": "3.25.76" },
+  "devDependencies": { "@types/node": "22.19.15", "typescript": "5.9.3" }
+}

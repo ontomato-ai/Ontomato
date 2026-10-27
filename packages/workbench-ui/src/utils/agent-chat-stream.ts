@@ -103,7 +103,7 @@ function updateAssistant(
     index = next.length - 1;
   }
   const assistant = next[index]!;
-  const segments = assistant.segments ?? [];
+  const segments = assistant.segments ?? (assistant.content ? [{ type: "text" as const, content: assistant.content }] : []);
   assistant.segments = segments;
   update(assistant, segments);
   return next;

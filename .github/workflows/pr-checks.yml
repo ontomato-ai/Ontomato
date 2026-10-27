@@ -27,6 +27,9 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Typecheck the agent runtime
+        run: pnpm typecheck:runtime
+
       - name: Typecheck the workbench
         run: pnpm typecheck:workbench
 
@@ -46,4 +49,6 @@ jobs:
         run: pnpm --filter @ontomato/workbench-ui --filter @ontomato/ontology-manager --filter @ontomato/ontology-manager-app test
 
       - name: Check offline delivery
-        run: python3 -B scripts/offline-mirror-test.py
+        run: |
+          python3 -B scripts/offline-mirror-test.py
+          python3 -B scripts/deploy-runtime_test.py

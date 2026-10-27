@@ -36,6 +36,18 @@ class DeliveryTests(unittest.TestCase):
             mirror.import_bundle(SimpleNamespace(bundle=self.bundle, state=self.root / "state"))
         run.assert_not_called()
 
+    def test_pre_runtime_baseline_import_remains_readable(self):
+        del self.data["images"]["AGENT_RUNTIME_IMAGE"]
+        self.write_manifest()
+        target = self.root / "old-images.env"
+        args = SimpleNamespace(bundle=self.bundle, state=self.root / "old-state", port=5100,
+                               project="fixture", output_env=target)
+        with patch.object(mirror, "run"), patch.object(mirror, "engine_arch", return_value="arm64"), \
+                patch.object(mirror, "ensure_mirror_network"), patch.object(mirror, "mirror"):
+            mirror.import_bundle(args)
+        self.assertNotIn("AGENT_RUNTIME_IMAGE", target.read_text())
+        self.assertIn("POSTGRES_IMAGE=", target.read_text())
+
     def test_paths_cannot_escape_delivery(self):
         self.data["files"]["../secret"] = {"bytes": 0, "sha256": ""}
         self.write_manifest()
@@ -154,7 +166,7 @@ class DeliveryTests(unittest.TestCase):
         refs = list(self.data["images"].values())
         return SimpleNamespace(state=self.root / "state", output=self.root / "exported", arch="arm64",
                                version="4.0.1", workbench=refs[0], data_engine=refs[1], manager=refs[2],
-                               postgres=refs[3], bootstrap=False, insecure_source=False, network=None, authfile=None,
+                               agent_runtime=refs[3], postgres=refs[4], bootstrap=False, insecure_source=False, network=None, authfile=None,
                                registry_repository=mirror.REGISTRY_REPOSITORY, cache_dir=None)
 
     def test_export_rejects_mutable_tag_before_creating_state(self):
@@ -179,7 +191,7 @@ class DeliveryTests(unittest.TestCase):
         data = mirror.verify_bundle(args.output)
         self.assertEqual(data["images"], self.data["images"])
         names = [item["name"] for item in json.loads((args.output / "imageset.yaml").read_text())["mirror"]["additionalImages"]]
-        self.assertEqual(len(names), 4)
+        self.assertEqual(len(names), 5)
         self.assertTrue(all(name.endswith("@sha256:" + "a" * 64) for name in names))
 
 
