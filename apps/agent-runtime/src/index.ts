@@ -7,6 +7,17 @@ import {
   createRuntimeHttp,
 } from "@ontomato/agent-runtime";
 
+function jsonSetting(
+  name: "AGENT_RUNTIME_HOSTS" | "AGENT_RUNTIME_MCP_SERVERS",
+) {
+  try {
+    return JSON.parse(process.env[name] || "[]") as unknown;
+  } catch {
+    // JSON.parse errors quote input; these settings can contain service credentials.
+    throw new Error(`Invalid JSON in ${name}`);
+  }
+}
+
 const hostSchema = z
   .array(
     z.object({
@@ -18,11 +29,9 @@ const hostSchema = z
     }),
   )
   .min(1);
-const hosts = hostSchema.parse(
-  JSON.parse(process.env.AGENT_RUNTIME_HOSTS || "[]"),
-);
+const hosts = hostSchema.parse(jsonSetting("AGENT_RUNTIME_HOSTS"));
 const store = new RuntimeStore(
-  z.string().min(1).parse(process.env.AGENT_RUNTIME_DATABASE_URL),
+  z.string().url().parse(process.env.AGENT_RUNTIME_DATABASE_URL),
   process.env.AGENT_RUNTIME_SCHEMA || "agent_runtime",
 );
 const runtime = new AgentRuntime({
@@ -51,7 +60,7 @@ const runtime = new AgentRuntime({
         hosts: z.array(z.string()),
       }),
     )
-    .parse(JSON.parse(process.env.AGENT_RUNTIME_MCP_SERVERS || "[]")),
+    .parse(jsonSetting("AGENT_RUNTIME_MCP_SERVERS")),
   eventBufferSize: process.env.AGENT_RUNTIME_EVENT_BUFFER_SIZE
     ? z.coerce
         .number()
