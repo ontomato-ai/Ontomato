@@ -27,7 +27,7 @@ const STORE = join(RUNTIME, "node_modules/.pnpm");
 // pnpm's license report of this installation, read by the image build's
 // third-party notice generator; it never enters the runtime tree.
 const NPM_LICENSES = "/tmp/npm-licenses.json";
-const SERVER = "@ontomato/workbench-server";
+
 
 function inside(root, path) {
   return path === root || path.startsWith(`${root}${sep}`);
@@ -143,8 +143,9 @@ function main() {
   const members = projects(root, ["-r", "list", "--depth", "-1", "--json"]);
   const selected = projects(root, [...selection, "list", "--depth", "-1", "--json"]);
   const manifests = Object.fromEntries(members.map((member) => [member.path, member.manifest]));
-  const server = members.find((member) => member.name === SERVER);
-  if (!server) throw new Error(`workspace has no ${SERVER} member`);
+  const provider = record.yamlProvider || "@ontomato/workbench-server";
+  const server = members.find((member) => member.name === provider);
+  if (!server) throw new Error(`workspace has no ${provider} member`);
   const yaml = createRequire(join(server.absolute, "package.json"))("yaml");
   const lock = yaml.parse(readFileSync(join(root, "pnpm-lock.yaml"), "utf8"));
   const graph = productionGraph(lock, record.appImporter, manifests, process.arch);

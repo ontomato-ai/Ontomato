@@ -6,7 +6,7 @@ import { execute, output, parseOptions } from "./build-support.mjs";
 
 // Only the deploy template goes into the pack. .env, backend_data and
 // frontend_data are onsite state and are never packed.
-export const TEMPLATE_ENTRIES = ["docker-compose.yml", "initdb.sql", "README.md"];
+export const TEMPLATE_ENTRIES = ["docker-compose.yml", "initdb.sql", "README.md", "prepare-env.py"];
 // The product hands over one directory of assembled onsite entries (install.sh and any
 // other entry with its helper scripts); the whole directory lands at the pack root, so a
 // new entry needs no change here. Top-level shell entries stay executable whatever the umask.
@@ -23,7 +23,7 @@ export function stageInstallEntry(installDir, staging) {
 
 const FLAGS = {
   "--arch": "value", "--version": "value", "--image-tag": "value",
-  "--registry": "value", "--state": "value", "--cache-dir": "value",
+  "--registry": "value", "--agent-runtime-tag": "value", "--state": "value", "--cache-dir": "value",
   "--network": "value", "--insecure-source": "boolean", "--postgres": "value",
   "--tool-bundle": "value", "--source-version": "value", "--application-only": "boolean",
 };
@@ -67,7 +67,7 @@ export function buildBundle(options, { name, deployDir, installDir, images, vali
   const mirror = join(tools, "mirror.py");
   execute("python3", [mirror, "tools-verify", "--bundle", tools, "--arch", arch]);
   const imageArgs = (refs) => refs.flatMap((ref, i) => [
-    ["--workbench", "--data-engine", "--manager", "--postgres"][i], ref,
+    ["--workbench", "--data-engine", "--manager", "--agent-runtime", "--postgres"][i], ref,
   ]);
   const resolved = JSON.parse(output("python3", [mirror, "resolve", "--arch", arch, ...imageArgs(images)]));
   validateImages(resolved);

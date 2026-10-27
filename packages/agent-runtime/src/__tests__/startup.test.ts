@@ -43,3 +43,15 @@ it.each(["AGENT_RUNTIME_HOSTS", "AGENT_RUNTIME_MCP_SERVERS"])(
     expect(stderr).not.toContain("SENSITIVE");
   },
 );
+
+it("encodes deployment PostgreSQL credentials without making Compose construct a URI", async () => {
+  const { databaseUrl } = await import("../../../../apps/agent-runtime/src/database.js");
+  const url = new URL(databaseUrl({
+    POSTGRES_HOST: "127.0.0.1", POSTGRES_PORT: "5432",
+    POSTGRES_USER: "user%40", POSTGRES_PASSWORD: "pass%:@/ #?",
+    AGENT_RUNTIME_DATABASE: "runtime-db",
+  }));
+  expect(decodeURIComponent(url.username)).toBe("user%40");
+  expect(decodeURIComponent(url.password)).toBe("pass%:@/ #?");
+  expect(url.pathname).toBe("/runtime-db");
+});

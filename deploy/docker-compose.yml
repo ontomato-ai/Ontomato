@@ -67,6 +67,38 @@ services:
       postgres:
         condition: service_healthy
 
+  agent-runtime:
+    image: ${AGENT_RUNTIME_IMAGE:-ontomato-agent-runtime:deploy-${ARCH:?ARCH not set}}
+    platform: linux/${ARCH:?ARCH not set}
+    pull_policy: missing
+    restart: unless-stopped
+    environment:
+      <<: *database-environment
+      AGENT_RUNTIME_DATABASE: ontomato
+      AGENT_RUNTIME_SCHEMA: agent_runtime
+      AGENT_RUNTIME_HOSTS: '[{"id":"workbench","token":"${AGENT_RUNTIME_SERVICE_TOKEN:?Run the deployment configuration preparation first}","providers":["workbench"],"publishProviders":["workbench"],"domainSkills":true}]'
+      # Temporary Java model configuration dependency until that owner is migrated.
+      AGENT_RUNTIME_MODEL_CONFIG_URL: http://datarag:18087
+      ONTOMATO_MODEL_RUNTIME_TOKEN: ${ONTOMATO_MODEL_RUNTIME_TOKEN:-}
+    volumes:
+      - ./agent_runtime_data:/data
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3001/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "5"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      datarag:
+        condition: service_healthy
+
   ontomato:
     image: ${WORKBENCH_IMAGE:-ontomato:deploy-${ARCH:?ARCH not set}}
     platform: linux/${ARCH:?ARCH not set}
@@ -79,6 +111,9 @@ services:
     environment:
       <<: *database-environment
       DATA_QUERY_BASE_URL: http://datarag:18087
+      AGENT_RUNTIME_URL: http://agent-runtime:3001
+      AGENT_RUNTIME_SERVICE_TOKEN: ${AGENT_RUNTIME_SERVICE_TOKEN:?Run the deployment configuration preparation first}
+      AGENT_RUNTIME_CALLBACK_URL: http://ontomato:3000
       PORT: "3000"
       NODE_ENV: production
       TZ: ${TZ:-UTC}
@@ -92,6 +127,8 @@ services:
         max-size: "50m"
         max-file: "5"
     depends_on:
+      agent-runtime:
+        condition: service_healthy
       postgres:
         condition: service_healthy
       datarag:

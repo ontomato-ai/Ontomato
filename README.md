@@ -277,3 +277,13 @@ Local development and image builds are described in [docs/development.md](docs/d
 Ontomato is licensed under the [Apache License 2.0](LICENSE); see also [NOTICE](NOTICE).
 Every image carries `LICENSE`, `NOTICE` and a `THIRD_PARTY_NOTICES.txt` listing the
 third-party components it contains.
+
+### Agent runtime
+
+`make agent-runtime ARCH=amd64` builds the independent public Node image. The
+aggregate `make build` includes it as the fourth application image.
+`pnpm dev` and `dev:up` start it on port 3001 and wait for readiness before starting
+the workbench. Runtime logs are available with `pnpm dev:logs runtime`; `dev:down`
+stops its checkout-owned processes. Local service credentials are generated once
+in `.secrets/agent-runtime.env` (0600), unless supplied in the environment.
+Runtime state lives in `data/agent-runtime` and its own PostgreSQL schema.

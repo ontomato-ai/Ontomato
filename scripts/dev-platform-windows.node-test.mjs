@@ -287,3 +287,11 @@ test("Windows-only: windowsStop stops the confirmed instance only and preserves 
     await Promise.all([end(target), end(stale), end(bystander)]);
   }
 });
+test("shared runtime belongs to the launching checkout, including its worker", () => {
+  const entry = "C:/Public/apps/agent-runtime/src/index.ts";
+  const cli = `"${NODE}" C:/Public/node_modules/tsx/dist/cli.mjs watch ${entry} --dev-root "${CTX.root}"`;
+  assert.equal(role(cli), "frontend-root");
+  assert.equal(role(cli.replace(CTX.root, CTX.root + "-other")), undefined);
+  assert.equal(role(cli.replace('watch', '-e')), undefined);
+  assert.equal(role(`"${NODE}" --import C:/Public/node_modules/tsx/dist/esm/index.mjs ${entry} --dev-root "${CTX.root}"`), "frontend-root");
+});

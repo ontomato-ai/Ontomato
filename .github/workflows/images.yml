@@ -1,6 +1,6 @@
 name: Images
 
-# Formal releases publish three final images; deployments only pull and run them.
+# Formal releases publish four final images; deployments only pull and run them.
 #
 # develop pushes publish the edge version, stable pushes publish the stable
 # version (the maintenance line of released versions), and formal v* tags publish
@@ -63,12 +63,14 @@ jobs:
           BUILD_CACHE_REF="$REGISTRY/ontomato-workbench:latest" make workbench ARCH="$ARCH"
           BUILD_CACHE_REF="$REGISTRY/ontomato-data-engine:latest" make data-engine ARCH="$ARCH"
           BUILD_CACHE_REF="$REGISTRY/ontomato-ontology-manager:latest" make ontology-manager ARCH="$ARCH"
+          BUILD_CACHE_REF="$REGISTRY/ontomato-agent-runtime:latest" make agent-runtime ARCH="$ARCH"
 
       - name: Start the stack
         id: stack-start
         working-directory: deploy
         run: |
           sed "s/^ARCH=.*/ARCH=$ARCH/" .env.example > .env
+          python3 prepare-env.py .env
           docker pull pgvector/pgvector:pg18
           docker compose up -d --wait --wait-timeout 300
           for port in 3000 3005; do
@@ -111,6 +113,7 @@ jobs:
           publish "ontomato:deploy-$ARCH" "$REGISTRY/ontomato-workbench:$version-$ARCH"
           publish "datarag-opensource:deploy-$ARCH" "$REGISTRY/ontomato-data-engine:$version-$ARCH"
           publish "ontomato-ontology-manager:deploy-$ARCH" "$REGISTRY/ontomato-ontology-manager:$version-$ARCH"
+          publish "ontomato-agent-runtime:deploy-$ARCH" "$REGISTRY/ontomato-agent-runtime:$version-$ARCH"
 
   manifest:
     needs: build
@@ -137,7 +140,7 @@ jobs:
               --annotation "index:org.opencontainers.image.source=$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" \
               "${tags[@]}" "$REGISTRY/$1:$2" "$REGISTRY/$1:$3"
           }
-          for image in ontomato-workbench ontomato-data-engine ontomato-ontology-manager; do
+          for image in ontomato-workbench ontomato-data-engine ontomato-ontology-manager ontomato-agent-runtime; do
             index "$image" "$version-amd64" "$version-arm64"
           done
 
@@ -165,6 +168,7 @@ jobs:
           echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
           if [ "$GITHUB_REF_TYPE" = tag ]; then export ONTOMATO_VERSION="${GITHUB_REF_NAME#v}"; elif [ "$GITHUB_REF_NAME" = develop ]; then export ONTOMATO_VERSION=edge; else export ONTOMATO_VERSION="$GITHUB_REF_NAME"; fi
           sed "s/^ARCH=.*/ARCH=$ARCH/" .env.example > .env
+          python3 prepare-env.py .env
           echo "COMPOSE_FILE=docker-compose.yml:docker-compose.ghcr.yml" >> .env
           docker compose up -d --wait --wait-timeout 300
           for port in 3000 3005; do

@@ -1,5 +1,6 @@
 import "dotenv/config";
 import path from "node:path";
+import { databaseUrl } from "./database.js";
 import { z } from "zod";
 import {
   AgentRuntime,
@@ -31,7 +32,7 @@ const hostSchema = z
   .min(1);
 const hosts = hostSchema.parse(jsonSetting("AGENT_RUNTIME_HOSTS"));
 const store = new RuntimeStore(
-  z.string().url().parse(process.env.AGENT_RUNTIME_DATABASE_URL),
+  databaseUrl(process.env),
   process.env.AGENT_RUNTIME_SCHEMA || "agent_runtime",
 );
 const runtime = new AgentRuntime({

@@ -2,11 +2,11 @@
 # append this file to COMPOSE_FILE in .env and run docker compose up -d:
 #   COMPOSE_FILE=docker-compose.yml:docker-compose.ghcr.yml:docker-compose.autoupdate.yml
 #
-# Every 5 minutes Watchtower checks whether the tag (for example edge) of the three application
+# Every 5 minutes Watchtower checks whether the tag (for example edge) of the four application
 # containers points to a new image in the registry; if so it pulls it, recreates the container
 # with its existing configuration and removes the replaced image. PostgreSQL is left alone. The
 # scope is this deployment's Compose project name, so several deployments on one host each keep
-# to their own containers. The three images update independently, not as one switch, and changes
+# to their own containers. The four images update independently, not as one switch, and changes
 # to the deployment templates (compose files, .env variables) still have to be applied by hand.
 
 x-autoupdate-scope: &autoupdate-scope
@@ -18,6 +18,9 @@ services:
   datarag:
     labels: *autoupdate-scope
   ontology-manager:
+    labels: *autoupdate-scope
+
+  agent-runtime:
     labels: *autoupdate-scope
 
   watchtower:
