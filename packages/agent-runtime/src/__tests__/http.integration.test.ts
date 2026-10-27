@@ -8,7 +8,7 @@ import path from "node:path";
 import pg from "pg";
 import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
-import { runtimeRunSnapshotSchema } from "@ontomato/contracts/agent-runtime";
+import { runtimeRunSnapshotSchema, runtimeSessionStatusesResponseSchema } from "@ontomato/contracts/agent-runtime";
 
 const database = process.env.RUNTIME_TEST_DATABASE_URL;
 describe.skipIf(!database)("runtime real HTTP and PostgreSQL", () => {
@@ -53,6 +53,10 @@ console.log(JSON.stringify({type:'result',text:'tool result',data:{hostSecretPre
     });
     return { status: response.status, body: await response.json() };
   }
+  const terminalLogs = () => logs.split("\n")
+    .filter((line) => line.startsWith("{"))
+    .map((line) => JSON.parse(line))
+    .filter((entry) => entry.event === "runtime_run_terminal");
   const input = () => ({
     language: "en",
     definition: {
@@ -189,7 +193,7 @@ console.log(JSON.stringify({type:'result',text:'tool result',data:{hostSecretPre
                   apiKeys: ["fixture-model-secret"],
                   maxTokens: 4000,
                   contextWindow: 16000,
-                  maxRetries: 0,
+                  timeout: null, maxRetries: null, temperature: null, topP: null, customRequestParameters: null,
                 },
               ],
             },
@@ -211,6 +215,11 @@ console.log(JSON.stringify({type:'result',text:'tool result',data:{hostSecretPre
         for await (const chunk of req) text += chunk;
         const request = JSON.parse(text);
         modelInputs.push(text);
+        if (JSON.stringify(request.messages).includes("provider-error")) {
+          res.writeHead(400, { "content-type": "application/json" });
+          res.end(JSON.stringify({ error: { message: "fixture-model-secret fixture-user-secret FULL_PROVIDER_PAYLOAD" } }));
+          return;
+        }
         res.writeHead(200, { "content-type": "text/event-stream" });
         const frame = (delta: unknown, finish_reason: unknown = null) =>
           res.write(
@@ -437,6 +446,35 @@ console.log(JSON.stringify({type:'result',text:'tool result',data:{hostSecretPre
     );
     expect(logs).not.toContain("fixture-user-secret");
   }, 30000);
+  it("logs a failed run once using metadata only and returns lightweight scoped statuses", async () => {
+    const emptyId = randomUUID(), sessionId = randomUUID(), runId = randomUUID();
+    for (const id of [emptyId, sessionId])
+      await api("/v1/sessions", {}, { "idempotency-key": id });
+    const body = input();
+    body.input.content = "provider-error";
+    await api(`/v1/sessions/${sessionId}/runs`, body, { "idempotency-key": runId });
+    expect((await settled(runId)).body.run.status).toBe("failed");
+    const logged = terminalLogs().filter((entry) => entry.runId === runId);
+    expect(logged).toEqual([{
+      level: "error", event: "runtime_run_terminal", timestamp: expect.any(String),
+      runId, correlationId: "fixture-correlation", status: "failed", errorCode: "RUN_FAILED",
+    }]);
+    for (const secret of [hostToken, "fixture-user-secret", "fixture-model-secret", "FULL_PROVIDER_PAYLOAD"])
+      expect(logs).not.toContain(secret);
+    const statuses = await api("/v1/sessions/status", { sessionIds: [sessionId, emptyId] });
+    expect(statuses.status).toBe(200);
+    const response = runtimeSessionStatusesResponseSchema.parse(statuses.body);
+    expect(response.sessions.map((item) => item.session.id)).toEqual([sessionId, emptyId]);
+    expect(response.sessions[0]!.latestRun).toEqual({ id: runId, status: "failed", error: { code: "RUN_FAILED" } });
+    expect(response.sessions[1]!.latestRun).toBeNull();
+    expect(JSON.stringify(statuses.body)).not.toMatch(/messages|definition|artifacts|FULL_PROVIDER_PAYLOAD/);
+    expect((await api("/v1/sessions/status", { sessionIds: [] })).body).toEqual({ sessions: [] });
+    for (const other of [{ "x-domain-id": "domain-b" }, { authorization: "Bearer fixture-other-host" }] as Record<string, string>[])
+      expect((await api("/v1/sessions/status", { sessionIds: [sessionId] }, other)).status).toBe(404);
+    expect((await api("/v1/sessions/status", { sessionIds: [sessionId, randomUUID()] })).status).toBe(404);
+    expect((await api("/v1/sessions/status", { sessionIds: ["invalid"] })).status).toBe(400);
+  }, 15000);
+
   it("cancels the whole process tree and recovers unknown outcomes without replay", async () => {
     const begin = async () => {
       const sessionId = randomUUID(),
@@ -451,6 +489,9 @@ console.log(JSON.stringify({type:'result',text:'tool result',data:{hostSecretPre
       for (let i = 0; i < 200 && !tree; i++)
         await new Promise((r) => setTimeout(r, 20));
       expect(tree).toBeTruthy();
+      const statuses = await api("/v1/sessions/status", { sessionIds: [sessionId] });
+      expect(statuses.body.sessions[0].session.activeRunId).toBe(runId);
+      expect(statuses.body.sessions[0].latestRun).toEqual({ id: runId, status: "running", error: null });
       return { sessionId, runId, body, tree: tree! };
     };
     const alive = (pid: number) => {
@@ -479,6 +520,11 @@ console.log(JSON.stringify({type:'result',text:'tool result',data:{hostSecretPre
     await start();
     const recovered = await api(`/v1/runs/${crashed.runId}`);
     expect(recovered.body.run.status).toBe("interrupted");
+    expect(terminalLogs()).toEqual([{
+      level: "error", event: "runtime_run_terminal", timestamp: expect.any(String),
+      runId: crashed.runId, correlationId: "fixture-correlation",
+      status: "interrupted", errorCode: "RUNTIME_INTERRUPTED",
+    }]);
     expect(recovered.body.toolExecutions[0].status).toBe("unknown");
     expect(
       (

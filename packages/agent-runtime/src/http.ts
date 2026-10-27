@@ -10,6 +10,7 @@ import {
   runtimeServiceHeadersSchema,
   runtimeRequestHeadersSchema,
   runtimeEventSubscriptionSchema,
+  runtimeSessionStatusesRequestSchema,
 } from "@ontomato/contracts/agent-runtime";
 import { runtimeIdSchema } from "@ontomato/contracts/agent-runtime-values";
 import { AgentRuntime } from "./runtime";
@@ -94,6 +95,14 @@ export function createRuntimeHttp(runtime: AgentRuntime) {
             headers["idempotency-key"],
           ),
         );
+    }),
+  );
+  app.post(
+    "/v1/sessions/status",
+    route(async (req, res) => {
+      const ctx = scope(req);
+      const { sessionIds } = runtimeSessionStatusesRequestSchema.parse(req.body);
+      res.json({ sessions: await runtime.store.sessionStatuses(ctx.scope, sessionIds) });
     }),
   );
   app.get(

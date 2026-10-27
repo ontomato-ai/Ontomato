@@ -14,6 +14,10 @@ import { RuntimeError } from "./errors";
 import { RuntimeStore, type Scope } from "./store";
 import type { StreamFn } from "./core/pi/types";
 
+// Java serializes unset optional fields as null; preserve configured zero values.
+const javaOptional = <T extends z.ZodTypeAny>(schema: T) =>
+  z.preprocess((value) => value === null ? undefined : value, schema.optional());
+
 const modelSchema = z.object({
   name: z.string(),
   baseUrl: z.string().url(),
@@ -21,11 +25,11 @@ const modelSchema = z.object({
   apiKeys: z.array(z.string()),
   maxTokens: z.number().positive(),
   contextWindow: z.number().positive(),
-  timeout: z.string().optional(),
-  maxRetries: z.number().int().nonnegative().optional(),
-  temperature: z.number().optional(),
-  topP: z.number().optional(),
-  customRequestParameters: z.record(z.unknown()).optional(),
+  timeout: javaOptional(z.string()),
+  maxRetries: javaOptional(z.number().int().nonnegative()),
+  temperature: javaOptional(z.number()),
+  topP: javaOptional(z.number()),
+  customRequestParameters: javaOptional(z.record(z.unknown())),
 });
 export type ResolvedModel = z.infer<typeof modelSchema>;
 

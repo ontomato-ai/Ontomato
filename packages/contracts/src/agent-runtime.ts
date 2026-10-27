@@ -101,6 +101,21 @@ export const runtimeSessionSnapshotSchema = z.object({
   messages: z.array(runtimeMessageRecordSchema),
   latestRun: runtimeRunSnapshotSchema.nullable(),
 }).strict();
+/** Lightweight status reads exclude messages, definitions, artifacts and error text. */
+export const runtimeSessionStatusSchema = z.object({
+  session: runtimeSessionSchema,
+  latestRun: z.object({
+    id: runtimeIdSchema, status: runtimeRunStatusSchema,
+    error: runtimeFailureSchema.pick({ code: true }).nullable(),
+  }).strict().nullable(),
+}).strict();
+export const runtimeSessionStatusesRequestSchema = z.object({
+  sessionIds: z.array(runtimeIdSchema),
+}).strict();
+export const runtimeSessionStatusesResponseSchema = z.object({
+  // Same order as sessionIds; any missing/inaccessible session rejects the entire request.
+  sessions: z.array(runtimeSessionStatusSchema),
+}).strict();
 export const runtimeEventSubscriptionSchema = z.object({
   afterSeq: runtimeSequenceSchema, streamId: runtimeIdSchema,
 }).strict();
@@ -128,6 +143,7 @@ export const RUNTIME_ERROR_HTTP_STATUS = {
 export const RUNTIME_HTTP_ROUTES = {
   createSession: { method: "POST", path: "/v1/sessions", status: 201 },
   readSession: { method: "GET", path: "/v1/sessions/:sessionId", status: 200 },
+  readSessionStatuses: { method: "POST", path: "/v1/sessions/status", status: 200 },
   // Required by the existing governance user-deletion path; active sessions must be cancelled first.
   deleteSession: { method: "DELETE", path: "/v1/sessions/:sessionId", status: 204 },
   startRun: { method: "POST", path: "/v1/sessions/:sessionId/runs", status: 202 },
@@ -150,3 +166,7 @@ export type RuntimeAdmissionResponse = z.infer<typeof runtimeAdmissionResponseSc
 export type RuntimeErrorResponse = z.infer<typeof runtimeErrorResponseSchema>;
 export type RuntimeRegisteredSkill = z.infer<typeof runtimeRegisteredSkillSchema>;
 export type RuntimeCancelResponse = z.infer<typeof runtimeCancelResponseSchema>;
+
+export type RuntimeSessionStatus = z.infer<typeof runtimeSessionStatusSchema>;
+export type RuntimeSessionStatusesRequest = z.infer<typeof runtimeSessionStatusesRequestSchema>;
+export type RuntimeSessionStatusesResponse = z.infer<typeof runtimeSessionStatusesResponseSchema>;

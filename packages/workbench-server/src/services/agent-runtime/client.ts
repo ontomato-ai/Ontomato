@@ -5,6 +5,7 @@ import {
   runtimeAdmissionResponseSchema,
   runtimeCreateSessionResponseSchema,
   runtimeCancelResponseSchema,
+  runtimeSessionStatusesResponseSchema,
   type RuntimeStartRunRequest,
 } from "@ontomato/contracts/agent-runtime";
 import {
@@ -83,6 +84,11 @@ export class RuntimeClient {
     return runtimeSessionSnapshotSchema.parse(
       await this.request(`/v1/sessions/${encodeURIComponent(id)}`),
     );
+  }
+  async sessionStatuses(sessionIds: string[]) {
+    return runtimeSessionStatusesResponseSchema.parse(
+      await this.request("/v1/sessions/status", "POST", { sessionIds }),
+    ).sessions;
   }
   async run(id: string) {
     return runtimeRunSnapshotSchema.parse(

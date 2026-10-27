@@ -216,7 +216,7 @@ describe.skipIf(!connection)(
                 apiKeys: ["fixture-model-secret"],
                 maxTokens: 4000,
                 contextWindow: 5000,
-                maxRetries: 0,
+                timeout: null, maxRetries: null, temperature: null, topP: null, customRequestParameters: null,
               },
             ],
           });
@@ -348,6 +348,9 @@ describe.skipIf(!connection)(
         runId = started.body.activeTurnId;
       expect(runId).toBeTruthy();
       await modelArrived;
+      const runningList = await request("/");
+      expect(runningList.status).toBe(200);
+      expect(runningList.body.find((row: { id: string }) => row.id === id).status).toBe("running");
       await stop(host, "SIGKILL");
       await launch("host");
       releaseModel();
@@ -363,6 +366,9 @@ describe.skipIf(!connection)(
         "idle",
       );
       governanceSessionSchema.parse(view);
+      const completedList = await request("/");
+      expect(completedList.status).toBe(200);
+      expect(completedList.body.find((row: { id: string }) => row.id === id).status).toBe("idle");
       expect(
         observed.filter((name) => plan.some(([tool]) => tool === name)),
       ).toEqual(plan.map(([name]) => name));

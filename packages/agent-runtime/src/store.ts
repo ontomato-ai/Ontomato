@@ -3,6 +3,7 @@ import pg, { type PoolClient } from "pg";
 import type {
   RuntimeRun,
   RuntimeSession,
+  RuntimeSessionStatus,
 } from "@ontomato/contracts/agent-runtime";
 import type {
   RuntimeAgentEvent,
@@ -236,6 +237,34 @@ export class RuntimeStore {
       createdAt: row.created_at.toISOString(),
       updatedAt: row.updated_at.toISOString(),
     };
+  }
+  async sessionStatuses(scope: Scope, ids: string[]): Promise<RuntimeSessionStatus[]> {
+    if (!ids.length) return [];
+    // One statement gives session pointers and latest statuses the same MVCC snapshot.
+    const { rows } = await this.pool.query(
+      `SELECT s.id,s.active_run_id,s.latest_run_id,s.created_at,s.updated_at,
+        r.id AS run_id,r.run->>'status' AS run_status,r.run->'error'->>'code' AS error_code
+       FROM ${this.table("sessions")} s LEFT JOIN ${this.table("runs")} r
+         ON r.host_id=s.host_id AND r.domain_id=s.domain_id AND r.session_id=s.id AND r.id=s.latest_run_id
+       WHERE s.host_id=$1 AND s.domain_id=$2 AND s.id=ANY($3::uuid[])`,
+      [...values(scope), ids],
+    );
+    const byId = new Map(rows.map((row) => [row.id, row]));
+    return ids.map((id) => {
+      const row = byId.get(id);
+      if (!row) missing();
+      return {
+        session: {
+          id, domainId: scope.domainId, activeRunId: row.active_run_id,
+          latestRunId: row.latest_run_id, createdAt: row.created_at.toISOString(),
+          updatedAt: row.updated_at.toISOString(),
+        },
+        latestRun: row.run_id ? {
+          id: row.run_id, status: row.run_status,
+          error: row.error_code ? { code: row.error_code } : null,
+        } : null,
+      };
+    });
   }
   async admit(
     scope: Scope,
@@ -508,12 +537,20 @@ export class RuntimeStore {
     const messages = (await this.messages(scope, run.sessionId))
       .filter((m) => m.runId === id)
       .map((m) => m.message);
-    return this.append(scope, id, {
+    const envelope = await this.append(scope, id, {
       type: "agent_end",
       messages,
       status,
       error,
     });
+    if (status === "failed" || status === "interrupted") {
+      // Allowlisted metadata only: provider messages and validation data may contain secrets.
+      process.stderr.write(JSON.stringify({
+        level: "error", event: "runtime_run_terminal", timestamp: envelope.timestamp,
+        runId: id, correlationId: run.correlationId, status, errorCode: error?.code,
+      }) + "\n");
+    }
+    return envelope;
   }
   async deleteSession(scope: Scope, id: string) {
     await this.transaction(async (c) => {
