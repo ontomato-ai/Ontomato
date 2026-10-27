@@ -55,14 +55,6 @@ export const runtimeStartRunRequestSchema = z.object({
   privateContext: runtimePrivateContextSchema,
 }).strict();
 
-/** One provider response with no tool execution; it still has a durable session, run and events. */
-export const runtimeSingleCallRequestSchema = z.object({
-  language: runtimeKeySchema,
-  definition: runtimeAgentDefinitionSchema.pick({ systemPrompt: true, modelRole: true }),
-  input: z.array(runtimeUserMessageSchema).min(1),
-  credential: runtimeEndUserCredentialSchema,
-}).strict();
-
 export const runtimeSessionSchema = z.object({
   id: runtimeIdSchema, domainId: runtimeKeySchema,
   activeRunId: runtimeIdSchema.nullable(), latestRunId: runtimeIdSchema.nullable(),
@@ -75,13 +67,9 @@ const runtimeRunFields = {
   createdAt: runtimeTimestampSchema, finishedAt: runtimeTimestampSchema.nullable(),
   error: runtimeFailureSchema.nullable(),
 };
-export const runtimeRunSchema = z.discriminatedUnion("kind", [
-  z.object({ ...runtimeRunFields, kind: z.literal("agent"), definition: runtimeAgentDefinitionSchema }).strict(),
-  z.object({
-    ...runtimeRunFields, kind: z.literal("single_call"),
-    definition: runtimeAgentDefinitionSchema.pick({ systemPrompt: true, modelRole: true }),
-  }).strict(),
-]).refine(
+export const runtimeRunSchema = z.object({
+  ...runtimeRunFields, definition: runtimeAgentDefinitionSchema,
+}).strict().refine(
   (run) => (run.status === "running") === (run.finishedAt === null),
   "Only running runs have no finishedAt timestamp"
 );
@@ -147,7 +135,6 @@ export const RUNTIME_HTTP_ROUTES = {
   subscribe: { method: "GET", path: "/v1/runs/:runId/events", status: 200 },
   cancel: { method: "POST", path: "/v1/runs/:runId/cancel", status: 200 },
   readArtifact: { method: "GET", path: "/v1/artifacts/:artifactId", status: 200 },
-  singleCall: { method: "POST", path: "/v1/calls", status: 202 },
   registerSkill: { method: "POST", path: "/v1/skills", status: 201 },
 } as const;
 
@@ -155,7 +142,6 @@ export type RuntimeAgentDefinition = z.infer<typeof runtimeAgentDefinitionSchema
 export type RuntimeCreateSessionRequest = z.infer<typeof runtimeCreateSessionRequestSchema>;
 export type RuntimeCreateSessionResponse = z.infer<typeof runtimeCreateSessionResponseSchema>;
 export type RuntimeStartRunRequest = z.infer<typeof runtimeStartRunRequestSchema>;
-export type RuntimeSingleCallRequest = z.infer<typeof runtimeSingleCallRequestSchema>;
 export type RuntimeSession = z.infer<typeof runtimeSessionSchema>;
 export type RuntimeRun = z.infer<typeof runtimeRunSchema>;
 export type RuntimeRunSnapshot = z.infer<typeof runtimeRunSnapshotSchema>;

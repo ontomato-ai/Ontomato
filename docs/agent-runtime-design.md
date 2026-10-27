@@ -1,6 +1,6 @@
 # Agent runtime: batch 0 contract and batch 1 design
 
-This is a design for the first independent runtime and knowledge-governance consumer, not an implemented service. The schemas live in `packages/contracts/src/agent-runtime*.ts`; their [wire semantics](../packages/contracts/agent-runtime.md) define admission, recovery, skills and business write closure. Governance-specific shapes remain in `knowledge-governance.ts`. Batch 1 starts only after controller review of this contract delivery.
+This is a design for the first independent runtime and knowledge-governance consumer, not an implemented service. The schemas live in `packages/contracts/src/agent-runtime*.ts`; their [wire semantics](../packages/contracts/agent-runtime.md) define admission, recovery, skills and business write closure. Governance-specific shapes remain in `knowledge-governance.ts`. Batch 1 is authorized; the reviewed corrections make artifacts opaque, omit unused single calls and transmit message deltas without cumulative partials.
 
 ## Ownership and placement
 
@@ -42,7 +42,7 @@ Use the runtime's own connection/schema and migrations; no workbench JOINs or fo
 | --- | --- |
 | `admissions` | creation key, operation/target, non-secret fingerprint, resource reference, deletion tombstone; unique key per scope |
 | `sessions` | ID, active/latest run IDs, next message sequence, timestamps; lock for admission/journaling/termination |
-| `runs` | ID, session, kind, full definition and resolved skill digests, status, event-sequence reservation, correlation/language, timestamps, safe failure; at most one running run per session |
+| `runs` | ID, session, full definition and resolved skill digests, status, event-sequence reservation, correlation/language, timestamps, safe failure; at most one running run per session |
 | `messages` | session message sequence, stable ID, run ID, PI JSON; append-only |
 | `events` | run event sequence, timestamp, event JSON; durable lifecycle and tool states, no text/progress deltas |
 | `compactions` | session/run, summary, covered-through message sequence, time; raw messages unchanged |

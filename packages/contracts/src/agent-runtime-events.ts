@@ -1,6 +1,6 @@
 import { z } from "zod";
 import {
-  runtimeAssistantMessageSchema, runtimeAssistantStreamEventSchema,
+  runtimeAssistantStreamEventSchema,
   runtimeImageSchema, runtimeMessageSchema, runtimeSettledMessageSchema, runtimeTextSchema,
   runtimeToolResultMessageSchema,
 } from "./agent-runtime-messages";
@@ -34,7 +34,7 @@ export const runtimeAgentEventSchema = z.discriminatedUnion("type", [
   }).strict(),
   z.object({
     type: z.literal("message_update"), messageId: runtimeIdSchema,
-    message: runtimeAssistantMessageSchema, assistantMessageEvent: runtimeAssistantStreamEventSchema,
+    assistantMessageEvent: runtimeAssistantStreamEventSchema,
   }).strict(),
   z.object({
     type: z.literal("message_end"), messageId: runtimeIdSchema,

@@ -77,20 +77,20 @@ export const runtimeSettledMessageSchema = runtimeMessageSchema.refine(
   "A persisted message must be settled"
 );
 
-/** Preserve PI stream names and complete event-time partials, not mutable references. */
+/** Wire updates carry deltas only; complete partials belong to the authoritative snapshot. */
 export const runtimeAssistantStreamEventSchema = z.discriminatedUnion("type", [
-  z.object({ type: z.literal("start"), partial: runtimeAssistantMessageSchema }).strict(),
-  z.object({ type: z.literal("text_start"), contentIndex: runtimeSequenceSchema, partial: runtimeAssistantMessageSchema }).strict(),
-  z.object({ type: z.literal("text_delta"), contentIndex: runtimeSequenceSchema, delta: z.string(), partial: runtimeAssistantMessageSchema }).strict(),
-  z.object({ type: z.literal("text_end"), contentIndex: runtimeSequenceSchema, content: z.string(), partial: runtimeAssistantMessageSchema }).strict(),
-  z.object({ type: z.literal("thinking_start"), contentIndex: runtimeSequenceSchema, partial: runtimeAssistantMessageSchema }).strict(),
-  z.object({ type: z.literal("thinking_delta"), contentIndex: runtimeSequenceSchema, delta: z.string(), partial: runtimeAssistantMessageSchema }).strict(),
-  z.object({ type: z.literal("thinking_end"), contentIndex: runtimeSequenceSchema, content: z.string(), partial: runtimeAssistantMessageSchema }).strict(),
-  z.object({ type: z.literal("toolcall_start"), contentIndex: runtimeSequenceSchema, partial: runtimeAssistantMessageSchema }).strict(),
-  z.object({ type: z.literal("toolcall_delta"), contentIndex: runtimeSequenceSchema, delta: z.string(), partial: runtimeAssistantMessageSchema }).strict(),
-  z.object({ type: z.literal("toolcall_end"), contentIndex: runtimeSequenceSchema, toolCall: runtimeToolCallSchema, partial: runtimeAssistantMessageSchema }).strict(),
-  z.object({ type: z.literal("done"), reason: z.enum(["stop", "length", "toolUse"]), message: runtimeAssistantMessageSchema }).strict(),
-  z.object({ type: z.literal("error"), reason: z.enum(["error", "aborted"]), error: runtimeAssistantMessageSchema }).strict(),
+  z.object({ type: z.literal("start") }).strict(),
+  z.object({ type: z.literal("text_start"), contentIndex: runtimeSequenceSchema }).strict(),
+  z.object({ type: z.literal("text_delta"), contentIndex: runtimeSequenceSchema, delta: z.string() }).strict(),
+  z.object({ type: z.literal("text_end"), contentIndex: runtimeSequenceSchema }).strict(),
+  z.object({ type: z.literal("thinking_start"), contentIndex: runtimeSequenceSchema }).strict(),
+  z.object({ type: z.literal("thinking_delta"), contentIndex: runtimeSequenceSchema, delta: z.string() }).strict(),
+  z.object({ type: z.literal("thinking_end"), contentIndex: runtimeSequenceSchema }).strict(),
+  z.object({ type: z.literal("toolcall_start"), contentIndex: runtimeSequenceSchema }).strict(),
+  z.object({ type: z.literal("toolcall_delta"), contentIndex: runtimeSequenceSchema, delta: z.string() }).strict(),
+  z.object({ type: z.literal("toolcall_end"), contentIndex: runtimeSequenceSchema }).strict(),
+  z.object({ type: z.literal("done"), reason: z.enum(["stop", "length", "toolUse"]) }).strict(),
+  z.object({ type: z.literal("error"), reason: z.enum(["error", "aborted"]) }).strict(),
 ]);
 
 export type RuntimeMessage = z.infer<typeof runtimeMessageSchema>;

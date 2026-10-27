@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { runtimeArtifactContentSchema } from "./agent-runtime-artifacts";
+import { runtimeArtifactOutputSchema } from "./agent-runtime-artifacts";
 import {
   runtimeFailureSchema, runtimeIdSchema, runtimeJsonObjectSchema, runtimeJsonValueSchema,
   runtimeKeySchema, runtimeRelativePathSchema,
@@ -61,7 +61,7 @@ export const runtimeToolSkillOutputSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("progress"), text: z.string(), data: runtimeJsonValueSchema.optional() }).strict(),
   z.object({
     type: z.literal("result"), text: z.string(), data: runtimeJsonValueSchema.optional(),
-    artifacts: z.array(runtimeArtifactContentSchema),
+    artifacts: z.array(runtimeArtifactOutputSchema),
   }).strict(),
   skillErrorSchema,
 ]);
@@ -92,6 +92,8 @@ export const RUNTIME_SKILL_ENV = {
 export const runtimeEndUserCredentialSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("token"), value: runtimeKeySchema }).strict(),
   z.object({ kind: z.literal("api_key"), value: runtimeKeySchema }).strict(),
+  // A host with an existing anonymous identity policy can explicitly supply no end-user ticket.
+  z.object({ kind: z.literal("none") }).strict(),
 ]);
 export const runtimeSkillInvocationIdentitySchema = z.object({
   sessionId: runtimeIdSchema, runId: runtimeIdSchema,
