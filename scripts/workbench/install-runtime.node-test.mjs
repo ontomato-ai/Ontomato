@@ -5,6 +5,7 @@ import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  realpathSync,
   rmSync,
   symlinkSync,
   writeFileSync,
@@ -12,7 +13,7 @@ import {
 import { tmpdir } from "node:os";
 import { join, relative } from "node:path";
 import { test } from "node:test";
-import { finalizeRuntime } from "./install-runtime.mjs";
+import { finalizeRuntime, installedLicenseReport } from "./install-runtime.mjs";
 import { snapshotIndex } from "./runtime-layout.mjs";
 
 const EXPRESS = "express@4.22.1";
@@ -180,4 +181,26 @@ test("rejects an installed store directory outside the production selection", (t
     "@ontomato/workbench-ui",
   );
   assert.throws(() => finalize(fixture), /virtual store does not match the production index/);
+});
+
+// The report can mention an uninstalled optional provider, but missing notices
+// for a package actually shipped must still fail the build.
+test("license inventory uses the installed closure, excluding uninstalled report entries", (t) => {
+  const fixture = installed(t);
+  finalize(fixture);
+  const express = join(fixture.runtime, fixture.index["express@4.22.1"]);
+  const sdk = join(fixture.runtime, fixture.index["@modelcontextprotocol/sdk@1.29.0"]);
+  const report = {
+    MIT: [
+      { name: "express", versions: ["4.22.1"], paths: [express] },
+      { name: "@modelcontextprotocol/sdk", versions: ["1.29.0"], paths: [sdk] },
+    ],
+    "Apache-2.0": [{ name: "uninstalled-provider", versions: ["1.0.0"], paths: [join(fixture.store, "uninstalled-provider@1.0.0/node_modules/uninstalled-provider")] }],
+  };
+  assert.deepEqual(installedLicenseReport(report, fixture.runtime, fixture.index), {
+    MIT: report.MIT.map(pkg => ({ ...pkg, paths: pkg.paths.map(path => realpathSync(path)) })),
+  });
+  assert.throws(() => installedLicenseReport({ MIT: [report.MIT[0]] }, fixture.runtime, fixture.index), /license report is missing installed packages/);
+  rmSync(sdk, { recursive: true });
+  assert.throws(() => installedLicenseReport(report, fixture.runtime, fixture.index), /ENOENT/);
 });

@@ -81,6 +81,30 @@ export function finalizeRuntime({ runtimeRoot, members, index }) {
   runtimeLinks(join(runtime, "node_modules"), runtime);
 }
 
+// The verified installation index owns the shipped package set. Restrict pnpm
+// metadata to that set, and reject missing coverage for any installed package.
+export function installedLicenseReport(report, runtimeRoot, index) {
+  const expected = new Set(Object.values(index).map(path => realpathSync(join(runtimeRoot, path))));
+  const seen = new Set();
+  const installed = {};
+  for (const [license, packages] of Object.entries(report)) {
+    const entries = [];
+    for (const pkg of packages) {
+      const paths = pkg.paths.flatMap(path => {
+        const real = existsSync(path) ? realpathSync(path) : resolve(path);
+        if (!expected.has(real)) return [];
+        seen.add(real);
+        return [real];
+      });
+      if (paths.length) entries.push({ ...pkg, paths });
+    }
+    if (entries.length) installed[license] = entries;
+  }
+  const missing = [...expected].filter(path => !seen.has(path));
+  if (missing.length) throw new Error(`license report is missing installed packages: ${missing.join(", ")}`);
+  return installed;
+}
+
 // pnpm reports members relative to the workspace root, which is also how the
 // lock importers and the graph link targets are keyed.
 function projects(root, args) {
@@ -129,17 +153,14 @@ function main() {
   execute(join(STORE, "node_modules/.bin/esbuild"), ["--version"]);
   // Same selection as the install. pnpm reports package paths under its
   // default virtual store unless it is given the one this install used.
-  writeFileSync(
-    NPM_LICENSES,
-    output("pnpm", [
-      ...selection,
-      "licenses",
-      "list",
-      "--prod",
-      "--json",
-      `--config.virtual-store-dir=${STORE}`,
-    ]),
-  );
+  const licenseReport = JSON.parse(output("pnpm", [
+    ...selection,
+    "licenses",
+    "list",
+    "--prod",
+    "--json",
+    `--config.virtual-store-dir=${STORE}`,
+  ]));
   const members = projects(root, ["-r", "list", "--depth", "-1", "--json"]);
   const selected = projects(root, [...selection, "list", "--depth", "-1", "--json"]);
   const manifests = Object.fromEntries(members.map((member) => [member.path, member.manifest]));
@@ -157,6 +178,7 @@ function main() {
     );
   const index = snapshotIndex(root, RUNTIME, graph);
   finalizeRuntime({ runtimeRoot: RUNTIME, members, index });
+  writeFileSync(NPM_LICENSES, JSON.stringify(installedLicenseReport(licenseReport, RUNTIME, index), null, 2) + "\n");
   console.log(
     `INSTALLED ${record.workspaceId} members=${members.length} selected=${selected.length} packages=${Object.keys(graph.packages).length}`,
   );
