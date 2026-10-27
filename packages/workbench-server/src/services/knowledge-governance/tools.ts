@@ -1,13 +1,14 @@
 import { createHash } from "node:crypto";
 import { z } from "zod";
 import {
-  governanceIssueSchema,
+  governanceWorkPatchSchema,
   type GovernanceSource,
+  type GovernanceSkillCallIdentity,
+  type GovernanceWork,
 } from "@ontomato/contracts/knowledge-governance";
-import type { AgentTool } from "../../core/agent-loop/types";
 import { getCheckpointer } from "../../infrastructure/connection";
 import { parseTurnKey } from "../../logging/log-context";
-import { createCollectTurnArtifactsTool } from "../../platform/diagnosis/observe/agent/tools/collect-turn-artifacts-tool";
+import { collectTurnArtifacts } from "../../platform/diagnosis/observe/workspaces/collect";
 import {
   getFileTree,
   readWorkspaceFile,
@@ -22,294 +23,274 @@ import {
   searchHistory,
   type GovernanceCredentials,
 } from "./materials";
-import type { GovernanceRecord } from "./store";
+import {
+  governanceStore,
+  type GovernanceOwner,
+  type GovernanceRecord,
+} from "./store";
 
-const pageProperties = {
-  query: {
-    type: "string",
-    description: "Text to match across ALL originals, including unread records.",
+// These schemas own both HTTP validation and the generated runtime tool manifest.
+export const governanceActions = {
+  search_history: {
+    description:
+      "Find relevant questions in a page of current-domain users' conversations. Empty matches describe only the scanned page, not all history.",
+    schema: z
+      .object({
+        query: z.string().default(""),
+        offset: z.number().int().nonnegative().default(0),
+        limit: z.number().int().min(1).max(20).default(10),
+      })
+      .strict(),
   },
-  id: { type: "string", description: "Optional exact original identity." },
-  index: { type: "integer", minimum: 0 },
-  offset: { type: "integer", minimum: 0 },
-  maxChars: { type: "integer", minimum: 1000, maximum: 20000 },
+  read_history: {
+    description:
+      "Read current-domain conversation history by character offset. Returned turn keys can be used for diagnostic evidence. System output is execution evidence, not business truth.",
+    schema: z
+      .object({
+        threadId: z.string().min(1),
+        offset: z.number().int().nonnegative().default(0),
+        maxChars: z.number().int().min(1000).max(20000).default(12000),
+      })
+      .strict(),
+  },
+  read_evidence: {
+    description:
+      "Read diagnostic files of a current-domain turn. Omit path to list files. Missing artifacts are an evidence gap. Never print raw prompts in the user conversation.",
+    schema: z
+      .object({
+        turnKey: z.string().min(1),
+        path: z.string().optional(),
+        offset: z.number().int().nonnegative().default(0),
+        maxChars: z.number().int().min(1000).max(20000).default(12000),
+      })
+      .strict(),
+  },
+  read_work_record: {
+    description:
+      "Read saved work, reviewed identities, sources and issues after compaction or resuming. Follow pagination to recover originals.",
+    schema: materialPageInput,
+  },
+  update_work_record: {
+    description:
+      "Save this governance run's progress, notes and findings only. Omitted fields retain content. Reviewed identities are merged, issues upsert by stable ID. Cite previously read source IDs. Confirmation never changes production knowledge, ontology or data.",
+    schema: governanceWorkPatchSchema,
+  },
+  read_knowledge: {
+    description:
+      "Read current-domain knowledge originals by character budget. Query searches all records. Follow next.index/offset. Returned sourceId can be cited in findings.",
+    schema: materialPageInput,
+  },
+  read_ontology: {
+    description:
+      "Read current-domain ontology originals by character budget. Query searches all records. Follow next.index/offset. Returned sourceId can be cited in findings.",
+    schema: materialPageInput,
+  },
+  collect_turn_artifacts: {
+    description:
+      "Collect current-domain execution evidence for a turnKey, then read it using read_evidence. Collection may rebuild existing diagnostic files.",
+    schema: z.object({ turnKey: z.string().min(1) }).strict(),
+  },
 };
-const result = (value: unknown) => ({
-  content: [{ type: "text" as const, text: JSON.stringify(value) }],
-});
-
+export type GovernanceAction = keyof typeof governanceActions;
 export function sourceId(kind: GovernanceSource["kind"], target: string) {
-  return createHash("sha256").update(`${kind}:${target}`).digest("hex").slice(0, 20);
+  return createHash("sha256")
+    .update(`${kind}:${target}`)
+    .digest("hex")
+    .slice(0, 20);
+}
+const source = (
+  kind: GovernanceSource["kind"],
+  target: string,
+  title: string,
+  excerpt: string,
+): GovernanceSource => ({
+  id: sourceId(kind, target),
+  kind,
+  target,
+  title,
+  excerpt: excerpt.slice(0, 1200),
+});
+function remember(work: GovernanceWork, sources: GovernanceSource[]) {
+  for (const item of sources)
+    if (!work.sources.some((s) => s.id === item.id)) work.sources.push(item);
 }
 
-export function createGovernanceTools(
-  record: GovernanceRecord,
+/** Every business mutation goes through one owner transaction, after external reads have finished. */
+export async function executeGovernanceAction(
+  name: GovernanceAction,
+  raw: unknown,
+  identity: GovernanceSkillCallIdentity,
+  owner: GovernanceOwner,
   credentials: GovernanceCredentials,
-  persist: () => Promise<void>
-): AgentTool[] {
-  const remember = (
-    kind: GovernanceSource["kind"],
-    target: string,
-    title: string,
-    excerpt: string
-  ) => {
-    const id = sourceId(kind, target);
-    if (!record.work.sources.some((source) => source.id === id))
-      record.work.sources.push({ id, kind, target, title, excerpt: excerpt.slice(0, 1200) });
-    return id;
-  };
-  const readMaterials = (kind: "knowledge" | "ontology"): AgentTool => ({
-    name: `read_${kind}`,
-    description: `Read current domain ${kind} originals by character budget. Follow next.index/offset to read every character. Query searches ALL records. Returned sourceId can be cited in findings.`,
-    parameters: { type: "object", properties: pageProperties },
-    executionMode: "sequential",
-    async execute(_id, args, signal) {
-      const materials = await (kind === "knowledge"
-        ? readKnowledge(credentials, signal)
-        : readOntology(credentials, signal));
-      signal?.throwIfAborted();
-      if (kind === "knowledge") record.work.knowledgeTotal = materials.length;
-      const page = materialPage(materials, args);
-      const items = page.items.map((item) => ({
+  signal?: AbortSignal,
+): Promise<unknown> {
+  const current = await governanceStore.runWork(identity, owner);
+  if (name === "search_history") {
+    const a = governanceActions[name].schema.parse(raw);
+    return searchHistory(owner.domainId, a.query, a.offset, a.limit, signal);
+  }
+  if (name === "read_work_record") {
+    const a = governanceActions[name].schema.parse(raw);
+    return materialPage(
+      [
+        {
+          id: identity.governanceSessionId,
+          title: "Work record",
+          text: JSON.stringify(current.work, null, 2),
+        },
+      ],
+      a,
+    );
+  }
+  if (name === "collect_turn_artifacts") {
+    const a = governanceActions[name].schema.parse(raw);
+    return collectTurnArtifacts(credentials, a.turnKey, signal);
+  }
+  if (name === "read_knowledge" || name === "read_ontology") {
+    const a = governanceActions[name].schema.parse(raw),
+      kind = name === "read_knowledge" ? "knowledge" : "ontology";
+    const materials = await (kind === "knowledge"
+      ? readKnowledge(credentials, signal)
+      : readOntology(credentials, signal));
+    signal?.throwIfAborted();
+    const page = materialPage(materials, a),
+      sources = page.items.map((item) =>
+        source(kind, item.id, item.title, item.text),
+      );
+    await governanceStore.mutate(identity, owner, (work) => {
+      remember(work, sources);
+      if (kind === "knowledge") work.knowledgeTotal = materials.length;
+    });
+    return {
+      ...page,
+      items: page.items.map((item, index) => ({
         ...item,
-        sourceId: remember(kind, item.id, item.title, item.text),
-      }));
-      await persist();
-      return result({ ...page, items });
-    },
+        sourceId: sources[index]!.id,
+      })),
+    };
+  }
+  if (name === "read_history") {
+    const a = governanceActions[name].schema.parse(raw),
+      history = await readHistory(a.threadId, owner.domainId);
+    signal?.throwIfAborted();
+    const item = source(
+      "history",
+      a.threadId,
+      a.threadId,
+      history.messages
+        .filter((m) => m.role === "user")
+        .map((m) => m.content)
+        .join("\n"),
+    );
+    await governanceStore.mutate(identity, owner, (work) =>
+      remember(work, [item]),
+    );
+    return {
+      ...materialPage(
+        [
+          {
+            id: a.threadId,
+            title: a.threadId,
+            text: JSON.stringify(history, null, 2),
+          },
+        ],
+        a,
+      ),
+      sourceId: item.id,
+      turns: history.turns,
+    };
+  }
+  if (name === "read_evidence") {
+    const a = governanceActions[name].schema.parse(raw),
+      turn = parseTurnKey(a.turnKey);
+    if (!turn) throw new Error("Invalid turnKey");
+    const manifest = loadManifest(a.turnKey);
+    if (!manifest) {
+      const checkpointer = getCheckpointer();
+      if (!checkpointer) throw new Error("Thread storage unavailable");
+      await checkpointer.verifyThreadDomain(turn.threadId, owner.domainId);
+      return { evidenceGap: "No diagnostic workspace exists for this turn." };
+    }
+    if (manifest.domainId !== owner.domainId)
+      throw new Error("Diagnostic artifact belongs to another domain");
+    if (!a.path)
+      return { tree: getFileTree(a.turnKey), status: manifest.status };
+    const text = readWorkspaceFile(a.turnKey, a.path);
+    if (text === null)
+      return {
+        evidenceGap:
+          "Artifact unavailable; absence does not prove the knowledge was absent from the original input.",
+      };
+    const item = source("artifact", `${a.turnKey}/${a.path}`, a.path, "");
+    signal?.throwIfAborted();
+    await governanceStore.mutate(identity, owner, (work) =>
+      remember(work, [item]),
+    );
+    return {
+      ...materialPage([{ id: item.id, title: a.path, text }], a),
+      sourceId: item.id,
+    };
+  }
+  const patch = governanceActions.update_work_record.schema.parse(raw);
+  signal?.throwIfAborted();
+  const saved = await governanceStore.mutate(identity, owner, (work) => {
+    for (const issue of patch.issues ?? [])
+      if (issue.sourceIds.some((id) => !work.sources.some((s) => s.id === id)))
+        throw new Error(
+          "Read the cited original before referencing its sourceId",
+        );
+    if (patch.summary !== undefined) work.summary = patch.summary;
+    if (patch.notes !== undefined) work.notes = patch.notes;
+    work.reviewedKnowledgeIds = [
+      ...new Set([
+        ...work.reviewedKnowledgeIds,
+        ...(patch.reviewedKnowledgeIds ?? []),
+      ]),
+    ];
+    for (const issue of patch.issues ?? []) {
+      const index = work.issues.findIndex((old) => old.id === issue.id);
+      if (index < 0) work.issues.push(issue);
+      else work.issues[index] = issue;
+    }
   });
-  return [
-    readMaterials("knowledge"),
-    readMaterials("ontology"),
-    {
-      name: "search_history",
-      description:
-        "Find relevant questions in a PAGE of all current-domain users' conversations, including those without diagnostic artifacts. Text matching is literal; choose expansions and additional pages yourself. Empty matches only describes scannedFrom..scannedTo, not all history.",
-      parameters: {
-        type: "object",
-        properties: {
-          query: { type: "string" },
-          offset: { type: "integer", minimum: 0 },
-          limit: { type: "integer", minimum: 1, maximum: 20 },
-        },
-      },
-      async execute(_id, args, signal) {
-        const input = z
-          .object({
-            query: z.string().default(""),
-            offset: z.number().int().nonnegative().default(0),
-            limit: z.number().int().min(1).max(20).default(10),
-          })
-          .parse(args);
-        return result(
-          await searchHistory(record.domainId, input.query, input.offset, input.limit, signal)
-        );
-      },
-    },
-    {
-      name: "read_history",
-      description:
-        "Read the shared history payload for a current-domain conversation. Paginate by character offset; turns supplies stable turnKey for optional diagnostic collection. System output is execution evidence, not business truth.",
-      parameters: {
-        type: "object",
-        properties: {
-          threadId: { type: "string" },
-          offset: { type: "integer", minimum: 0 },
-          maxChars: { type: "integer", minimum: 1000, maximum: 20000 },
-        },
-        required: ["threadId"],
-      },
-      executionMode: "sequential",
-      async execute(_id, args, signal) {
-        signal?.throwIfAborted();
-        const { threadId } = z.object({ threadId: z.string().min(1) }).parse(args);
-        const history = await readHistory(threadId, record.domainId);
-        const text = JSON.stringify(history, null, 2);
-        const page = materialPage([{ id: threadId, title: threadId, text }], args);
-        signal?.throwIfAborted();
-        const id = remember(
-          "history",
-          threadId,
-          threadId,
-          history.messages
-            .filter((m) => m.role === "user")
-            .map((m) => m.content)
-            .join("\n")
-        );
-        await persist();
-        return result({ ...page, sourceId: id, turns: history.turns });
-      },
-    },
-    createCollectTurnArtifactsTool({
-      domainId: credentials.domainId,
-      token: credentials.token,
-      apiKey: credentials.apiKey,
-    }),
-    {
-      name: "read_evidence",
-      description:
-        "Read existing diagnostic artifacts of a current-domain turn using the diagnosis file reader. Omit path to list files; provide path and offset to read the full original in parts. Missing artifacts are an evidence gap. Never print raw prompts in the user conversation.",
-      parameters: {
-        type: "object",
-        properties: {
-          turnKey: { type: "string" },
-          path: { type: "string" },
-          offset: { type: "integer", minimum: 0 },
-          maxChars: { type: "integer", minimum: 1000, maximum: 20000 },
-        },
-        required: ["turnKey"],
-      },
-      executionMode: "sequential",
-      async execute(_id, args, signal) {
-        signal?.throwIfAborted();
-        const { turnKey, path } = z
-          .object({ turnKey: z.string(), path: z.string().optional() })
-          .parse(args);
-        const turn = parseTurnKey(turnKey);
-        if (!turn) throw new Error("Invalid turnKey");
-        const manifest = loadManifest(turnKey);
-        if (!manifest) {
-          const checkpointer = getCheckpointer();
-          if (!checkpointer) throw new Error("Thread storage unavailable");
-          await checkpointer.verifyThreadDomain(turn.threadId, record.domainId);
-          return result({ evidenceGap: "No diagnostic workspace exists for this turn." });
-        }
-        if (manifest.domainId !== record.domainId)
-          throw new Error("Diagnostic artifact belongs to another domain");
-        if (!path) return result({ tree: getFileTree(turnKey), status: manifest.status });
-        const text = readWorkspaceFile(turnKey, path);
-        if (text === null)
-          return result({
-            evidenceGap:
-              "Artifact unavailable; absence does not prove the knowledge was absent from the original input.",
-          });
-        const id = remember("artifact", `${turnKey}/${path}`, path, "");
-        signal?.throwIfAborted();
-        await persist();
-        return result({ ...materialPage([{ id, title: path, text }], args), sourceId: id });
-      },
-    },
-    {
-      name: "read_work_record",
-      description:
-        "Read the persistent work record, reviewed identities, sources and issues after compaction or resuming. Follow offsets to recover all content; summaries never replace originals.",
-      parameters: { type: "object", properties: pageProperties },
-      async execute(_id, args) {
-        return result(
-          materialPage(
-            [{ id: record.id, title: "Work record", text: JSON.stringify(record.work, null, 2) }],
-            args
-          )
-        );
-      },
-    },
-    {
-      name: "update_work_record",
-      description:
-        "Save ONLY this governance round's progress, notes and report findings. reviewedKnowledgeIds adds completed original identities. issues upserts by stable issue id: merge the same business dispute across batches. Cite returned sourceIds. Human confirmation updates recommendations only; it never changes production knowledge, ontology or data. Omitted fields retain current content.",
-      executionMode: "sequential",
-      parameters: {
-        type: "object",
-        properties: {
-          summary: {
-            type: "string",
-            description: "Short business-language progress shown on the page.",
-          },
-          notes: {
-            type: "string",
-            description:
-              "Replace durable notes with current coverage, associations, pending meanings and next work. Keep original IDs.",
-          },
-          reviewedKnowledgeIds: { type: "array", items: { type: "string" } },
-          issues: {
-            type: "array",
-            items: {
-              type: "object",
-              properties: {
-                id: { type: "string" },
-                title: { type: "string" },
-                category: { type: "string", enum: ["ontology", "knowledge", "data"] },
-                status: { type: "string", enum: ["proposed", "pending", "confirmed"] },
-                problem: { type: "string" },
-                before: { type: "string" },
-                after: { type: "string" },
-                basis: { type: "string" },
-                sourceIds: { type: "array", items: { type: "string" } },
-              },
-              required: [
-                "id",
-                "title",
-                "category",
-                "status",
-                "problem",
-                "before",
-                "after",
-                "basis",
-                "sourceIds",
-              ],
-            },
-          },
-        },
-      },
-      async execute(_id, args, signal) {
-        signal?.throwIfAborted();
-        const patch = z
-          .object({
-            summary: z.string().max(1000).optional(),
-            notes: z.string().max(30_000).optional(),
-            reviewedKnowledgeIds: z.array(z.string()).optional(),
-            issues: z.array(governanceIssueSchema).optional(),
-          })
-          .parse(args);
-        for (const issue of patch.issues || []) {
-          if (issue.sourceIds.some((id) => !record.work.sources.some((source) => source.id === id)))
-            throw new Error("Read the cited original before referencing its sourceId");
-        }
-        if (patch.summary !== undefined) record.work.summary = patch.summary;
-        if (patch.notes !== undefined) record.work.notes = patch.notes;
-        record.work.reviewedKnowledgeIds = [
-          ...new Set([...record.work.reviewedKnowledgeIds, ...(patch.reviewedKnowledgeIds || [])]),
-        ];
-        for (const issue of patch.issues || []) {
-          const index = record.work.issues.findIndex((existing) => existing.id === issue.id);
-          if (index < 0) record.work.issues.push(issue);
-          else record.work.issues[index] = issue;
-        }
-        await persist();
-        return result({
-          saved: true,
-          reviewed: record.work.reviewedKnowledgeIds.length,
-          issues: record.work.issues.length,
-        });
-      },
-    },
-  ];
+  return {
+    saved: true,
+    reviewed: saved.work.reviewedKnowledgeIds.length,
+    issues: saved.work.issues.length,
+  };
 }
 
-/** User-facing original reads expose business materials, never diagnostic prompts or tool dumps. */
+/** User-facing source reads keep diagnostic prompts and raw tool dumps private. */
 export async function readGovernanceSource(
   record: GovernanceRecord,
   credentials: GovernanceCredentials,
   id: string,
-  offset: number
+  offset: number,
 ) {
-  const source = record.work.sources.find((item) => item.id === id);
-  if (!source) throw new Error("Source not found");
-  if (source.kind === "artifact") return { source, page: null };
+  const item = record.work.sources.find((s) => s.id === id);
+  if (!item) throw new Error("Source not found");
+  if (item.kind === "artifact") return { source: item, page: null };
   const materials =
-    source.kind === "knowledge"
+    item.kind === "knowledge"
       ? await readKnowledge(credentials)
-      : source.kind === "ontology"
+      : item.kind === "ontology"
         ? await readOntology(credentials)
         : [
             {
-              id: source.target,
-              title: source.title,
-              text: JSON.stringify(await readHistory(source.target, record.domainId), null, 2),
+              id: item.target,
+              title: item.title,
+              text: JSON.stringify(
+                await readHistory(item.target, record.domainId),
+                null,
+                2,
+              ),
             },
           ];
   return {
-    source,
-    page: materialPage(materials, materialPageInput.parse({ id: source.target, offset })),
+    source: item,
+    page: materialPage(
+      materials,
+      materialPageInput.parse({ id: item.target, offset }),
+    ),
   };
 }

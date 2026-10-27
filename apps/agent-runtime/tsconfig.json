@@ -1,0 +1,1 @@
+{"extends":"../../packages/agent-runtime/tsconfig.json","include":["src/**/*.ts"]}

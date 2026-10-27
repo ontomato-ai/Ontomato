@@ -1,4 +1,5 @@
 import { Agent } from "undici";
+import { getLogContext } from "../logging/log-context";
 import { createLogger } from "../logging/logger";
 import { getLocale, tApp } from "../i18n";
 
@@ -228,7 +229,7 @@ async function backendRequest(
     try {
       const response = await fetch(url, {
         method,
-        headers: options.headers ?? buildBackendHeaders(token, userId, locale, apiKey),
+        headers: { ...(getLogContext()?.correlationId ? {"X-Correlation-Id":getLogContext()!.correlationId!} : {}), ...(options.headers ?? buildBackendHeaders(token, userId, locale, apiKey)) },
         ...(method === "POST" ? { body: JSON.stringify(body) } : {}),
         signal: abortBridge.signal,
         dispatcher: backendDispatcher,

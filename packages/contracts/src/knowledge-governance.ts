@@ -90,6 +90,7 @@ export const governanceMessageInputSchema = z.object({
 export const governanceStreamEventSchema = z.union([
   agentResponseEventSchema,
   z.object({ type: z.literal("work"), work: governanceWorkSchema }),
+  z.object({ type:z.literal("snapshot"),runId:z.string().uuid(),messages:z.array(agentChatMessageSchema),work:governanceWorkSchema }),
 ]);
 export type GovernanceStreamEvent = z.infer<typeof governanceStreamEventSchema>;
 

@@ -1,3 +1,4 @@
+import { registerGovernanceSkill } from "../services/knowledge-governance/skill";
 import express, { Express, Request, Response, NextFunction, Router } from "express";
 import cors from "cors";
 import path from "path";
@@ -237,6 +238,7 @@ export async function startWorkbench(app: Express, port: number): Promise<void> 
   await syncRuntimeDefaultResources();
   syncDefaultPrompts();
   await initializeConnection();
+  await registerGovernanceSkill();
   if (config.dataQuery.baseUrl) {
     datasetSchemaService.setConfig(config.dataQuery.baseUrl);
     logger.info(tApp("foundation.log.boot.datasetService"));

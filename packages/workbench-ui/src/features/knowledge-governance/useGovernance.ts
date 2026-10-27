@@ -35,20 +35,25 @@ export function useGovernance() {
   let generation = 0,
     sourceGeneration = 0;
   let controller = new AbortController();
-  let subscription: { controller: AbortController; lastSeq: number } | null = null;
+  let subscription: { controller: AbortController; lastSeq: number } | null =
+    null;
   // A round this page just created keeps its live state when the route catches up.
   let adopted: string | null = null;
 
   const messages = computed(() =>
-    joinAssistantTurns([...(session.value?.messages ?? []), ...live.value.messages])
+    joinAssistantTurns([
+      ...(session.value?.messages ?? []),
+      ...live.value.messages,
+    ]),
   );
   // Only a followed stream says a response is in flight; a stale snapshot never does.
   const running = computed(
-    () => live.value.status === "starting" || live.value.status === "running"
+    () => live.value.status === "starting" || live.value.status === "running",
   );
 
   const apply = (next: GovernanceSession) => {
-    if (session.value?.id === next.id && session.value.revision > next.revision) return;
+    if (session.value?.id === next.id && session.value.revision > next.revision)
+      return;
     session.value = next;
     if (next.status !== "running") stopping.value = false;
   };
@@ -62,6 +67,11 @@ export function useGovernance() {
     subscription = null;
   }
   function applyEvent(event: GovernanceStreamEvent): boolean {
+    if (event.type === "snapshot") {
+      live.value = { messages: event.messages, status: "running" };
+      session.value = { ...session.value!, work: event.work };
+      return false;
+    }
     if (event.type === "work") {
       session.value = { ...session.value!, work: event.work };
       return false;
@@ -113,19 +123,26 @@ export function useGovernance() {
             id,
             turnId,
             current.lastSeq,
-            current.controller.signal
+            current.controller.signal,
           );
           settled = await readSseData(
             response,
             (data, seq) => {
               const parsed = governanceStreamEventSchema.safeParse(data);
-              if (!parsed.success) throw new SseProtocolError("Invalid governance stream event");
+              if (!parsed.success)
+                throw new SseProtocolError("Invalid governance stream event");
+              if (
+                parsed.data.type === "snapshot" &&
+                parsed.data.runId !== turnId
+              )
+                throw new SseProtocolError("Snapshot belongs to another run");
               // A missing stream is not progress; only real events refill the budget.
               if (parsed.data.type !== "response_unavailable") reconnects = 0;
-              if (seq !== undefined) current.lastSeq = Math.max(current.lastSeq, seq);
+              if (seq !== undefined)
+                current.lastSeq = Math.max(current.lastSeq, seq);
               return applyEvent(parsed.data);
             },
-            isCurrent
+            isCurrent,
           );
         } catch (reason) {
           if (!isCurrent()) return;
@@ -148,7 +165,8 @@ export function useGovernance() {
             apply(next);
             live.value = idleTail();
             error.value = "";
-            if (next.status === "running") follow(id, next.activeTurnId!, owner);
+            if (next.status === "running")
+              follow(id, next.activeTurnId!, owner);
             return;
           }
           // The same turn still runs but its stream was not ready yet: retry within budget.
@@ -254,8 +272,14 @@ export function useGovernance() {
       sourceOwner = ++sourceGeneration;
     if (!current) return;
     try {
-      const next = await governanceApi.source(current, id, offset, controller.signal);
-      if (owner === generation && sourceOwner === sourceGeneration) source.value = next;
+      const next = await governanceApi.source(
+        current,
+        id,
+        offset,
+        controller.signal,
+      );
+      if (owner === generation && sourceOwner === sourceGeneration)
+        source.value = next;
     } catch (reason) {
       failed(reason, owner);
     }

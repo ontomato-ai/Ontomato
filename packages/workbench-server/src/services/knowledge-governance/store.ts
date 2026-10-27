@@ -1,199 +1,131 @@
 import { randomUUID } from "node:crypto";
-import { z } from "zod";
 import {
-  governanceSessionSchema,
-  governanceSummarySchema,
   governanceWorkSchema,
-  type GovernanceSession,
+  type GovernanceWork,
+  type GovernanceSkillCallIdentity,
 } from "@ontomato/contracts/knowledge-governance";
-import { toChatHistory } from "../../core/agent-loop/chat-view";
-import type { AgentMessage } from "../../core/agent-loop/types";
-import {
-  harnessSessions,
-  type HarnessMessageRow,
-  type HarnessTurnStatus,
-} from "../../infrastructure/harness-sessions";
 import { getPostgresPool, qualifiedTable } from "../../infrastructure/postgres";
 import { HttpError } from "../../utils/errors";
+import { RuntimeClient } from "../agent-runtime/client";
 
 export interface GovernanceOwner {
   domainId: string;
   userId: string;
 }
-// Payloads saved before live streaming also carry draft/activity; parsing strips them.
-const payloadSchema = z.object({
-  work: governanceWorkSchema,
-  error: z.string().nullable(),
+export interface GovernanceRecord {
+  id: string;
+  domainId: string;
+  initiatorId: string;
+  runtimeSessionId: string;
+  writeRunId: string | null;
+  latestRunId: string | null;
+  createdAt: string;
+  updatedAt: string;
+  revision: number;
+  work: GovernanceWork;
+  error: string | null;
+}
+const emptyWork = (): GovernanceWork => ({
+  summary: "",
+  notes: "",
+  reviewedKnowledgeIds: [],
+  knowledgeTotal: null,
+  issues: [],
+  sources: [],
 });
-export interface GovernanceRecord extends GovernanceSession {
-  harnessSessionId: string;
-}
-
-function statusOf(turnStatus: HarnessTurnStatus | null): GovernanceSession["status"] {
-  switch (turnStatus) {
-    case "running":
-      return "running";
-    case "failed":
-      return "failed";
-    case "cancelled":
-    case "interrupted":
-      return "stopped";
-    case "completed":
-    case null:
-      return "idle";
-  }
-}
-function harnessReference(value: unknown): string {
-  if (typeof value !== "string" || !value) {
-    throw new Error("Governance session requires an external upgrade to Harness storage");
-  }
-  return value;
-}
-
-// Governance conversations do not show model thinking.
-function visibleMessage(message: AgentMessage): AgentMessage[] {
-  if (message.role !== "assistant") return [message];
-  const content = message.content.filter((part) => part.type !== "thinking");
-  return content.length ? [{ ...message, content }] : [];
-}
-
-// Read business work, execution state and raw messages in one database snapshot.
-// The business payload never owns execution status or a second conversation copy.
-function readFrom(includeMessages: boolean): string {
-  return `SELECT g.*, h.active_turn_id, t.status AS turn_status, COALESCE(t.turn_index, 0) AS turn_index,
-    GREATEST(g.updated_at, h.updated_at) AS updated_at
-    ${
-      includeMessages
-        ? `, COALESCE((SELECT jsonb_agg(jsonb_build_object('seq', m.seq, 'turnId', m.turn_id, 'message', m.message) ORDER BY m.seq)
-      FROM ${qualifiedTable("harness_messages")} m WHERE m.session_id = h.id), '[]'::jsonb) AS raw_messages`
-        : ""
-    }
-    FROM ${qualifiedTable("knowledge_governance_sessions")} g
-    LEFT JOIN ${qualifiedTable("harness_sessions")} h ON h.id = g.harness_session_id
-    LEFT JOIN LATERAL (SELECT status, turn_index FROM ${qualifiedTable("harness_turns")}
-      WHERE session_id = h.id ORDER BY turn_index DESC LIMIT 1) t ON true`;
-}
-function fromRow(row: Record<string, unknown>): GovernanceRecord {
-  const harnessSessionId = harnessReference(row.harness_session_id);
-  const payload = payloadSchema.parse(row.payload);
-  const status = statusOf(row.turn_status as HarnessTurnStatus | null);
-  const rows = row.raw_messages as HarnessMessageRow[];
-  // The running turn is shown only by its response stream, so history never repeats it.
-  const settled = rows.flatMap(({ turnId, message }) =>
-    status === "running" && turnId === row.active_turn_id ? [] : visibleMessage(message)
-  );
+function record(row: Record<string, any>): GovernanceRecord {
+  if (!row.runtime_session_id)
+    throw new Error(
+      "Governance session requires an external upgrade to runtime storage",
+    );
   return {
-    ...governanceSessionSchema.parse({
-      ...payload,
-      id: row.id,
-      domainId: row.domain_id,
-      initiatorId: row.initiator_id,
-      createdAt: new Date(String(row.created_at)).toISOString(),
-      updatedAt: new Date(String(row.updated_at)).toISOString(),
-      // begin/finish/recovery also advance the public revision, even without a business save.
-      revision: Number(row.revision) + Number(row.turn_index) * 2 + (status === "running" ? 0 : 1),
-      status,
-      activeTurnId: status === "running" ? row.active_turn_id : null,
-      messages: toChatHistory(settled),
-      error: status === "failed" ? payload.error : null,
-    }),
-    harnessSessionId,
+    id: row.id,
+    domainId: row.domain_id,
+    initiatorId: row.initiator_id,
+    runtimeSessionId: row.runtime_session_id,
+    writeRunId: row.write_run_id,
+    latestRunId: row.latest_run_id,
+    createdAt: row.created_at.toISOString(),
+    updatedAt: row.updated_at.toISOString(),
+    revision: Number(row.revision),
+    work: governanceWorkSchema.parse(row.work ?? row.payload.work),
+    error: row.error ?? null,
   };
 }
-
+const selection =
+  () => `SELECT s.*,w.work,w.error FROM ${qualifiedTable("knowledge_governance_sessions")} s
+  LEFT JOIN ${qualifiedTable("knowledge_governance_run_work")} w ON w.run_id=s.latest_run_id`;
 export const governanceStore = {
-  async deleteByUser(userId: string): Promise<void> {
-    const { rows } = await getPostgresPool().query(
-      `DELETE FROM ${qualifiedTable("knowledge_governance_sessions")} WHERE initiator_id = $1 AND domain_id <> '' RETURNING harness_session_id`, [userId]
-    );
-    for (const row of rows) if (row.harness_session_id) await harnessSessions.deleteSession(row.harness_session_id);
-  },
-
-  async create(owner: GovernanceOwner): Promise<GovernanceRecord> {
-    const id = randomUUID();
-    await harnessSessions.create(id);
-    try {
-      await getPostgresPool().query(
-        `INSERT INTO ${qualifiedTable("knowledge_governance_sessions")} (id, domain_id, initiator_id, harness_session_id, payload)
-         VALUES ($1::uuid, $2, $3, $1::text, $4)`,
-        [
-          id,
-          owner.domainId,
-          owner.userId,
-          JSON.stringify({
-            error: null,
-            work: {
-              summary: "",
-              notes: "",
-              reviewedKnowledgeIds: [],
-              knowledgeTotal: null,
-              issues: [],
-              sources: [],
-            },
-          }),
-        ]
-      );
-    } catch (error) {
-      await harnessSessions.deleteSession(id);
-      throw error;
-    }
-    return this.get(id, owner);
-  },
-  async list(owner: GovernanceOwner) {
-    const { rows } = await getPostgresPool().query(
-      `${readFrom(false)} WHERE g.domain_id = $1 AND g.initiator_id = $2 ORDER BY g.updated_at DESC, g.id LIMIT 100`,
-      [owner.domainId, owner.userId]
-    );
-    return rows.map((row) => {
-      harnessReference(row.harness_session_id);
-      return governanceSummarySchema.parse({
-        id: row.id,
-        status: statusOf(row.turn_status),
-        createdAt: new Date(row.created_at).toISOString(),
-        updatedAt: new Date(row.updated_at).toISOString(),
-      });
-    });
-  },
-  /** Domain and initiator authorization without reading the conversation. */
-  async authorize(id: string, owner: GovernanceOwner): Promise<void> {
+  async authorize(id: string, owner: GovernanceOwner) {
     const { rowCount } = await getPostgresPool().query(
-      `SELECT 1 FROM ${qualifiedTable("knowledge_governance_sessions")}
-       WHERE id = $1 AND domain_id = $2 AND initiator_id = $3`,
-      [id, owner.domainId, owner.userId]
+      `SELECT 1 FROM ${qualifiedTable("knowledge_governance_sessions")} WHERE id=$1 AND domain_id=$2 AND initiator_id=$3`,
+      [id, owner.domainId, owner.userId],
     );
     if (!rowCount) throw new HttpError(404, "Governance session not found");
   },
   async get(id: string, owner: GovernanceOwner): Promise<GovernanceRecord> {
     const { rows } = await getPostgresPool().query(
-      `${readFrom(true)} WHERE g.id = $1 AND g.domain_id = $2 AND g.initiator_id = $3`,
-      [id, owner.domainId, owner.userId]
+      `${selection()} WHERE s.id=$1 AND s.domain_id=$2 AND s.initiator_id=$3`,
+      [id, owner.domainId, owner.userId],
     );
     if (!rows[0]) throw new HttpError(404, "Governance session not found");
-    return fromRow(rows[0]);
+    return record(rows[0]);
   },
-  async save(record: GovernanceRecord, turnId: string): Promise<void> {
+  async list(owner: GovernanceOwner): Promise<GovernanceRecord[]> {
+    const { rows } = await getPostgresPool().query(
+      `${selection()} WHERE s.domain_id=$1 AND s.initiator_id=$2 ORDER BY s.updated_at DESC,s.id LIMIT 100`,
+      [owner.domainId, owner.userId],
+    );
+    return rows.map(record);
+  },
+  async create(owner: GovernanceOwner) {
+    const id = randomUUID();
+    await new RuntimeClient(owner.domainId).createSession(id);
+    try {
+      await getPostgresPool().query(
+        `INSERT INTO ${qualifiedTable("knowledge_governance_sessions")} (id,domain_id,initiator_id,runtime_session_id,payload) VALUES($1,$2,$3,$1,$4)`,
+        [id, owner.domainId, owner.userId, { work: emptyWork(), error: null }],
+      );
+    } catch (error) {
+      await new RuntimeClient(owner.domainId).deleteSession(id);
+      throw error;
+    }
+    return this.get(id, owner);
+  },
+  async openRun(id: string, owner: GovernanceOwner, runId: string) {
     const client = await getPostgresPool().connect();
     try {
       await client.query("BEGIN");
-      // Share the same row lock as Harness admission and completion, so a delayed
-      // business save cannot race a newer turn or revive a terminal one.
-      const active = await client.query(
-        `SELECT active_turn_id FROM ${qualifiedTable("harness_sessions")}
-        WHERE id = $1 FOR UPDATE`,
-        [record.harnessSessionId]
+      const row = (
+        await client.query(
+          `SELECT * FROM ${qualifiedTable("knowledge_governance_sessions")} WHERE id=$1 AND domain_id=$2 AND initiator_id=$3 FOR UPDATE`,
+          [id, owner.domainId, owner.userId],
+        )
+      ).rows[0];
+      if (!row) throw new HttpError(404, "Governance session not found");
+      if (row.write_run_id)
+        throw new HttpError(409, "Governance session already has an open run");
+      const previous = row.latest_run_id
+        ? (
+            await client.query(
+              `SELECT work FROM ${qualifiedTable("knowledge_governance_run_work")} WHERE run_id=$1`,
+              [row.latest_run_id],
+            )
+          ).rows[0]?.work
+        : row.payload.work;
+      // Closing the predecessor and seeding its successor share the session lock with every write.
+      await client.query(
+        `UPDATE ${qualifiedTable("knowledge_governance_run_work")} SET write_open=false WHERE session_id=$1 AND write_open`,
+        [id],
       );
-      if (active.rows[0]?.active_turn_id !== turnId)
-        throw new Error("Governance run no longer owns this session");
-      const { rowCount } = await client.query(
-        `UPDATE ${qualifiedTable("knowledge_governance_sessions")} SET payload = $3,
-         revision = revision + 1, updated_at = NOW() WHERE id = $1 AND harness_session_id = $2`,
-        [
-          record.id,
-          record.harnessSessionId,
-          JSON.stringify({ work: record.work, error: record.error }),
-        ]
+      await client.query(
+        `INSERT INTO ${qualifiedTable("knowledge_governance_run_work")} (run_id,session_id,write_open,work) VALUES($1,$2,true,$3)`,
+        [runId, id, previous ?? emptyWork()],
       );
-      if (rowCount !== 1) throw new Error("Governance session not found");
+      await client.query(
+        `UPDATE ${qualifiedTable("knowledge_governance_sessions")} SET write_run_id=$2,latest_run_id=$2,revision=revision+1,updated_at=now() WHERE id=$1`,
+        [id, runId],
+      );
       await client.query("COMMIT");
     } catch (error) {
       await client.query("ROLLBACK");
@@ -202,8 +134,140 @@ export const governanceStore = {
       client.release();
     }
   },
+  async closeRun(
+    id: string,
+    owner: GovernanceOwner,
+    runId: string,
+    error?: string,
+  ) {
+    const client = await getPostgresPool().connect();
+    try {
+      await client.query("BEGIN");
+      const row = (
+        await client.query(
+          `SELECT * FROM ${qualifiedTable("knowledge_governance_sessions")} WHERE id=$1 AND domain_id=$2 AND initiator_id=$3 FOR UPDATE`,
+          [id, owner.domainId, owner.userId],
+        )
+      ).rows[0];
+      if (!row) throw new HttpError(404, "Governance session not found");
+      await client.query(
+        `UPDATE ${qualifiedTable("knowledge_governance_run_work")} SET write_open=false,error=COALESCE($3,error) WHERE session_id=$1 AND run_id=$2`,
+        [id, runId, error ?? null],
+      );
+      if (row.write_run_id === runId)
+        await client.query(
+          `UPDATE ${qualifiedTable("knowledge_governance_sessions")} SET write_run_id=NULL,revision=revision+1,updated_at=now() WHERE id=$1`,
+          [id],
+        );
+      await client.query("COMMIT");
+    } catch (reason) {
+      await client.query("ROLLBACK");
+      throw reason;
+    } finally {
+      client.release();
+    }
+  },
+  async mutate(
+    identity: GovernanceSkillCallIdentity,
+    owner: GovernanceOwner,
+    change: (work: GovernanceWork) => void,
+  ) {
+    const client = await getPostgresPool().connect();
+    try {
+      await client.query("BEGIN");
+      const row = (
+        await client.query(
+          `SELECT * FROM ${qualifiedTable("knowledge_governance_sessions")} WHERE id=$1 AND domain_id=$2 AND initiator_id=$3 FOR UPDATE`,
+          [identity.governanceSessionId, owner.domainId, owner.userId],
+        )
+      ).rows[0];
+      if (!row || row.runtime_session_id !== identity.runtimeSessionId)
+        throw new HttpError(404, "Governance session not found");
+      const run = (
+        await client.query(
+          `SELECT * FROM ${qualifiedTable("knowledge_governance_run_work")} WHERE session_id=$1 AND run_id=$2`,
+          [identity.governanceSessionId, identity.runId],
+        )
+      ).rows[0];
+      if (row.write_run_id !== identity.runId || !run?.write_open) {
+        const error = new HttpError(409, "Governance run is closed");
+        Object.assign(error, {
+          code: "GOVERNANCE_RUN_CLOSED",
+          runId: identity.runId,
+        });
+        throw error;
+      }
+      const work = governanceWorkSchema.parse(run.work);
+      change(work);
+      const updated = (
+        await client.query(
+          `UPDATE ${qualifiedTable("knowledge_governance_run_work")} SET work=$2,revision=revision+1 WHERE run_id=$1 RETURNING revision`,
+          [identity.runId, governanceWorkSchema.parse(work)],
+        )
+      ).rows[0];
+      await client.query(
+        `UPDATE ${qualifiedTable("knowledge_governance_sessions")} SET revision=revision+1,updated_at=now() WHERE id=$1`,
+        [identity.governanceSessionId],
+      );
+      await client.query("COMMIT");
+      return {
+        runId: identity.runId,
+        revision: Number(updated.revision),
+        work,
+      };
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw error;
+    } finally {
+      client.release();
+    }
+  },
+  async runWork(
+    identity: Pick<
+      GovernanceSkillCallIdentity,
+      "governanceSessionId" | "runtimeSessionId" | "runId"
+    >,
+    owner: GovernanceOwner,
+  ) {
+    const current = await this.get(identity.governanceSessionId, owner);
+    if (current.runtimeSessionId !== identity.runtimeSessionId)
+      throw new HttpError(404, "Governance session not found");
+    const row = (
+      await getPostgresPool().query(
+        `SELECT work,write_open FROM ${qualifiedTable("knowledge_governance_run_work")} WHERE session_id=$1 AND run_id=$2`,
+        [current.id, identity.runId],
+      )
+    ).rows[0];
+    if (!row) throw new HttpError(404, "Governance run not found");
+    return {
+      work: governanceWorkSchema.parse(row.work),
+      open: Boolean(row.write_open) && current.writeRunId === identity.runId,
+    };
+  },
+  async deleteByUser(userId: string) {
+    const rows = (
+      await getPostgresPool().query(
+        `SELECT id,domain_id,initiator_id,runtime_session_id,write_run_id FROM ${qualifiedTable("knowledge_governance_sessions")} WHERE initiator_id=$1 AND domain_id<>''`,
+        [userId],
+      )
+    ).rows;
+    for (const row of rows) {
+      if (!row.runtime_session_id)
+        throw new Error(
+          "Governance session requires external upgrade before deletion",
+        );
+      const owner = { domainId: row.domain_id, userId };
+      const client = new RuntimeClient(owner.domainId);
+      if (row.write_run_id)
+        await this.closeRun(row.id, owner, row.write_run_id);
+      const session = await client.session(row.runtime_session_id);
+      if (session.session.activeRunId)
+        await client.cancel(session.session.activeRunId);
+      await client.deleteSession(row.runtime_session_id);
+      await getPostgresPool().query(
+        `DELETE FROM ${qualifiedTable("knowledge_governance_sessions")} WHERE id=$1 AND domain_id=$2 AND initiator_id=$3`,
+        [row.id, owner.domainId, userId],
+      );
+    }
+  },
 };
-
-export function publicGovernanceSession(record: GovernanceRecord): GovernanceSession {
-  return governanceSessionSchema.parse(record);
-}

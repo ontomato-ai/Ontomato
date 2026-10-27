@@ -25,3 +25,10 @@ cross-spawn 7.0.6 (argument escaping, adapted)
 scripts/data-engine/dev-java.mjs
 Copyright (c) 2018 Made With MOXY Lda <hello@moxy.studio>
 Licensed under the MIT License; the full license text is kept in the file header.
+
+--------------------------------------------------------------------------------
+PI agent core 1.3.0 (adapted)
+packages/agent-runtime/src/core/pi/
+Copyright (c) 2025 Mario Zechner
+Licensed under the MIT License; the full license text and source provenance are
+kept in that directory's LICENSE and UPSTREAM.md files.

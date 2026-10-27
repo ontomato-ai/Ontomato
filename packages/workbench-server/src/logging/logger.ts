@@ -14,6 +14,7 @@ const LOG_LEVELS: Record<LogLevel, number> = {
 
 /** Shape of a single JSONL log record written to the main log file. */
 export interface AppLogRecord {
+  correlationId?: string;
   domainId?: string;
   time: string;
   level: LogLevel;
@@ -88,6 +89,7 @@ class Logger {
       }
 
       const record: AppLogRecord = {
+        ...(context?.correlationId ? {correlationId:context.correlationId} : {}),
         ...(context?.domainId ? { domainId: context.domainId } : {}),
         time: now,
         level,
