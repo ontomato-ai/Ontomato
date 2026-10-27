@@ -35,7 +35,8 @@
     "ws": "8.20.0",
     "yaml": "2.8.3",
     "zod": "3.25.76",
-    "zod-to-json-schema": "3.25.2"
+    "zod-to-json-schema": "3.25.2",
+    "openai": "6.32.0"
   },
   "devDependencies": {
     "@types/adm-zip": "0.5.8",
