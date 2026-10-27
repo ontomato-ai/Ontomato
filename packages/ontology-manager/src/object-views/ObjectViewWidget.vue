@@ -120,7 +120,7 @@ async function openAction() {
     </dl>
     <strong v-else-if="widget.kind === 'metric'" class="metric">{{ format(widget.resourceId ? readViewPath(Array.isArray(selectedData) ? selectedData[0] : selectedData, widget.valueField) : bindingValue) }}</strong>
     <template v-else-if="widget.kind === 'table' || widget.kind === 'links'">
-      <el-table :data="rows" :max-height="widget.height" highlight-current-row @row-click="selectRow" @row-dblclick="openRow">
+      <el-table class="object-view-table" :data="rows" :max-height="widget.height" highlight-current-row @row-click="selectRow" @row-dblclick="openRow">
         <el-table-column v-for="field in fields" :key="field" :prop="field" :label="field" min-width="130" show-overflow-tooltip />
         <el-table-column v-if="widget.kind === 'links' || widget.targetClass" :label="ot('ovOperations')" min-width="140" align="center"><template #default="scope"><el-button class="object-view-row-action" type="primary" link :icon="Eye" :title="ot('ovOpenView')" @click.stop="openRow(scope.row)">{{ ot('ovViewDetails') }}</el-button></template></el-table-column>
       </el-table>
@@ -142,8 +142,9 @@ async function openAction() {
   </div>
 </template>
 <style scoped>
-.view-widget { min-width: 0; font-size: 13px; line-height: 22px; }
-.object-view-row-action { min-height: 28px; padding: 4px 8px; white-space: normal; }
+.view-widget { min-width: 0; font-size: var(--text-sm); line-height: 22px; }
+.object-view-table :deep(th.el-table__cell), .object-view-table :deep(td.el-table__cell) { font-size: var(--text-sm); line-height: 20px; }
+.object-view-row-action { min-height: 28px; padding: 4px 8px; font-size: var(--text-sm); line-height: 20px; white-space: normal; }
 .object-view-row-action :deep(> span) { gap: 6px; line-height: 20px; }
 .view-widget :deep(.el-button + .el-button) { margin-inline-start: 0; }
 .view-widget > .el-alert { margin-bottom: 12px; overflow-wrap: anywhere; }
@@ -152,9 +153,9 @@ async function openAction() {
 .properties dt, .properties dd { min-width: 0; overflow-wrap: anywhere; }
 .properties dt { color: var(--el-text-color-secondary); }
 .properties dd { margin: 0; white-space: pre-wrap; }
-.metric { display: block; font-size: 32px; font-weight: 600; line-height: 1.25; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.metric { display: block; font-size: var(--text-3xl); font-weight: var(--font-semibold); line-height: 1.25; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
 .pages { display: flex; flex-wrap: wrap; gap: 8px; justify-content: space-between; align-items: center; padding-top: 12px; margin-top: 12px; border-top: 1px solid var(--el-border-color-lighter); }
-.pages span { font-size: 12px; color: var(--el-text-color-secondary); font-variant-numeric: tabular-nums; }
+.pages span { font-size: var(--text-xs); color: var(--el-text-color-secondary); font-variant-numeric: tabular-nums; }
 .bars { display: grid; gap: 12px; overflow: auto; }
 .bar-row { display: grid; grid-template-columns: minmax(0, 100px) minmax(24px, 1fr) minmax(0, 64px); gap: 12px; align-items: center; }
 .bar-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -162,13 +163,13 @@ async function openAction() {
 .bar-track { background: var(--el-fill-color); height: 12px; border-radius: 2px; overflow: hidden; }
 .bar-track i { display: block; background: var(--el-color-primary); height: 100%; border-radius: inherit; }
 svg { display: block; width: 100%; color: var(--el-color-primary); }
-.action-field { display: flex; flex-direction: column; gap: 8px; margin-bottom: 16px; font-size: 13px; line-height: 20px; overflow-wrap: anywhere; }
+.action-field { display: flex; flex-direction: column; gap: 8px; margin-bottom: 16px; font-size: var(--text-sm); line-height: 20px; overflow-wrap: anywhere; }
 .action-field:last-child { margin-bottom: 0; }
 .widget-state { display: grid; place-items: center; min-height: 96px; margin: 0; padding: 16px; color: var(--el-text-color-secondary); text-align: center; }
 @container view-card (max-width: 260px) {
   .properties { grid-template-columns: minmax(0, 1fr); row-gap: 4px; }
   .properties dd + dt { margin-top: 8px; }
   .bar-row { grid-template-columns: minmax(0, 72px) minmax(16px, 1fr) minmax(0, 48px); gap: 8px; }
-  .metric { font-size: 26px; }
+  .metric { font-size: var(--text-2xl); }
 }
 </style>

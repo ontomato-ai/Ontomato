@@ -675,8 +675,8 @@ watch(
 }
 
 .filter-title {
-  font-size: 14px;
-  font-weight: 500;
+  font-size: var(--text-sm);
+  font-weight: var(--font-medium);
   margin-bottom: var(--spacing-md);
   color: var(--el-text-color-regular);
 }

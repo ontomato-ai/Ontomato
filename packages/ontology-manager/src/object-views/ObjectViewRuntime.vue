@@ -41,7 +41,7 @@ function reload() { refresh.value++; emit("refresh"); }
 .object-view-runtime :deep(.el-tabs__item) { height: 40px; max-width: 240px; font-size: var(--text-sm); overflow: hidden; text-overflow: ellipsis; }
 .view-section { margin-bottom: 24px; }
 .view-section:last-child { margin-bottom: 0; }
-.view-section h3 { margin: 0 0 12px; font-size: 14px; font-weight: 600; line-height: 22px; overflow-wrap: anywhere; }
+.view-section h3 { margin: 0 0 12px; font-size: var(--text-sm); font-weight: var(--font-semibold); line-height: 22px; overflow-wrap: anywhere; }
 .view-grid { display: grid; grid-template-columns: repeat(12,minmax(0,1fr)); gap: var(--spacing-xl); align-items: stretch; }
 .widget-card { border: 1px solid var(--el-border-color); border-radius: var(--radius-sm); padding: var(--spacing-lg); min-width: 0; background: var(--el-bg-color); container: view-card / inline-size; }
 .widget-card h4 { margin: 0 0 var(--spacing-lg); padding-bottom: var(--spacing-sm); border-bottom: 1px solid var(--el-border-color-light); font-size: var(--text-sm); font-weight: var(--font-semibold); line-height: 22px; overflow-wrap: anywhere; }

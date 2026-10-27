@@ -268,14 +268,14 @@ onBeforeUnmount(() => { generation++; sampleRequest++; window.removeEventListene
 .builder-heading, .builder-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; min-width: 0; }
 .builder-heading { flex: 1 1 300px; }
 .builder-title { display: grid; gap: 4px; min-width: 0; max-width: 240px; }
-.builder-title strong { font-size: 15px; line-height: 20px; }
-.builder-title span { font-size: 12px; color: var(--el-text-color-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.version-status { font-size: 12px; color: var(--el-text-color-secondary); line-height: 20px; }
+.builder-title strong { font-size: var(--text-sm); line-height: 20px; }
+.builder-title span { font-size: var(--text-xs); color: var(--el-text-color-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.version-status { font-size: var(--text-xs); color: var(--el-text-color-secondary); line-height: 20px; }
 .builder-body { display: grid; grid-template-columns: 200px minmax(0, 1fr) 300px; flex: 1; min-height: 0; min-width: 0; }
 .palette, .inspector { min-width: 0; overflow: auto; padding: 20px 16px; scrollbar-gutter: stable; }
 .palette { border-inline-end: 1px solid var(--el-border-color); }
 .inspector { border-inline-start: 1px solid var(--el-border-color); }
-.palette h3, .inspector h3 { margin: 24px 0 12px; padding-top: 20px; border-top: 1px solid var(--el-border-color-lighter); font-size: 13px; font-weight: 600; line-height: 20px; }
+.palette h3, .inspector h3 { margin: 24px 0 12px; padding-top: 20px; border-top: 1px solid var(--el-border-color-lighter); font-size: var(--text-sm); font-weight: var(--font-semibold); line-height: 20px; }
 .palette h3:first-child, .inspector h3:first-child { margin-top: 0; padding-top: 0; border-top: 0; }
 .palette > .el-button { display: flex; justify-content: flex-start; width: 100%; height: auto; min-height: 32px; padding: 8px 12px; margin: 0 0 8px; text-align: start; white-space: normal; text-transform: capitalize; }
 .palette > .el-button :deep(> span) { min-width: 0; line-height: 18px; overflow-wrap: anywhere; }
@@ -291,21 +291,21 @@ onBeforeUnmount(() => { generation++; sampleRequest++; window.removeEventListene
 .canvas-widget:hover { border-color: var(--el-color-primary-light-5); }
 .canvas-section.selected, .canvas-widget.selected { border-color: var(--el-color-primary); }
 .canvas-widget.selected { box-shadow: 0 0 0 1px var(--el-color-primary); }
-.canvas-widget strong { display: block; font-size: 14px; line-height: 22px; }
-.canvas-widget p, .canvas-section > p, .inspector-hint { margin: 8px 0 0; color: var(--el-text-color-secondary); font-size: 12px; line-height: 20px; overflow-wrap: anywhere; }
-.widget-tools { display: flex; align-items: center; flex-wrap: wrap; gap: 4px; font-size: 12px; color: var(--el-text-color-secondary); margin-bottom: 12px; }
+.canvas-widget strong { display: block; font-size: var(--text-sm); line-height: 22px; }
+.canvas-widget p, .canvas-section > p, .inspector-hint { margin: 8px 0 0; color: var(--el-text-color-secondary); font-size: var(--text-xs); line-height: 20px; overflow-wrap: anywhere; }
+.widget-tools { display: flex; align-items: center; flex-wrap: wrap; gap: 4px; font-size: var(--text-xs); color: var(--el-text-color-secondary); margin-bottom: 12px; }
 .widget-tools > span { flex: 1; text-transform: capitalize; }
 .widget-tools .el-button { padding: 4px 6px; }
 .configure-widget { display: none; }
-.inspector label, .palette label { display: flex; flex-direction: column; align-items: stretch; gap: 8px; margin-bottom: 16px; font-size: 12px; line-height: 20px; overflow-wrap: anywhere; }
+.inspector label, .palette label { display: flex; flex-direction: column; align-items: stretch; gap: 8px; margin-bottom: 16px; font-size: var(--text-xs); line-height: 20px; overflow-wrap: anywhere; }
 .inspector label > .el-input, .inspector label > .el-select, .inspector label > .el-input-number { width: 100%; }
 .inspector > .el-input { margin-bottom: 8px; }
 .inspector > .el-button { margin: 0 0 16px; max-width: 100%; }
 .inspector > .el-button:last-child { margin-top: 20px; }
 .parameter { display: grid; gap: 8px; padding: 12px; margin-bottom: 12px; border: 1px solid var(--el-border-color-lighter); border-radius: var(--radius-sm, 4px); }
-.parameter > span { font-size: 12px; font-weight: 600; overflow-wrap: anywhere; }
+.parameter > span { font-size: var(--text-xs); font-weight: var(--font-semibold); overflow-wrap: anywhere; }
 .parameter > .el-button { justify-self: end; }
-.inspector h4 { margin: 16px 0 12px; font-size: 12px; line-height: 20px; }
+.inspector h4 { margin: 16px 0 12px; font-size: var(--text-xs); line-height: 20px; }
 .visibility-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 8px; }
 .visibility-heading h4 { margin: 0; }
 .condition-fields { display: grid; gap: 8px; margin-top: 12px; }
