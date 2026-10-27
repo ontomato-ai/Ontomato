@@ -28,13 +28,12 @@ export const app = {
   sources: [{ id: "ontomato", root }],
 };
 export function prepareContext(destination) {
-  mkdirSync(destination, { recursive: true });
+  const record = collectMetadataContext({ ...app, destination });
+  copyWorkspace(app, destination, record);
   cpSync(
     join(root, "packages/agent-runtime/requirements-py310.txt"),
     join(destination, "requirements-py310.txt"),
   );
-  const record = collectMetadataContext({ ...app, destination });
-  copyWorkspace(app, destination, record);
   record.yamlProvider = "@ontomato/agent-runtime";
   record.web = false;
   writeFileSync(join(destination, "inputs.json"), JSON.stringify(record));
