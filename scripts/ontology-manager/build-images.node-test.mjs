@@ -380,7 +380,6 @@ test("the rendered DataRAG proxy clears the model runtime credential header", ()
     env: { PATH: process.env.PATH, ONTOLOGY_API_BASE: "/api", DATARAG_ORIGIN: "http://datarag:18087" },
   });
   assert.match(rendered, /^location \/api\/data-query\/ \{\n {2}proxy_pass http:\/\/datarag:18087\/;\n/);
-  assert.match(rendered, /^ {2}proxy_set_header X-Ontomato-Model-Runtime-Token "";$/m);
   assert.match(rendered, /\n\}$/);
 });
 

@@ -10,6 +10,7 @@ import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
 import com.alibaba.fastjson2.JSONWriter.Feature;
 import io.ontomato.dataengine.config.BusinessConfig;
+import io.ontomato.dataengine.config.SecretMask;
 import io.ontomato.dataengine.config.multisource.DataSourceEntry;
 import io.ontomato.dataengine.config.multisource.MultiDataSourceDefinition;
 
@@ -30,8 +31,6 @@ import io.ontomato.dataengine.config.multisource.MultiDataSourceDefinition;
  */
 @Component
 public class ConnectionSecretCodec {
-
-	public static final String MASK = "******";
 
 	private final DataAdapterRegistry registry;
 	private final SecretCipher cipher;
@@ -80,37 +79,37 @@ public class ConnectionSecretCodec {
 		}
 		for (String field : secretNames(type, connection.keySet())) {
 			if (connection.get(field) != null) {
-				connection.put(field, MASK);
+				connection.put(field, SecretMask.mask(connection.get(field), SecretMask.Style.HIDDEN));
 			}
 		}
 	}
 
-	/** Replace a submitted mask with the stored secret; other fields are untouched. */
+	/**
+	 * Replace a submitted mask with the stored secret ({@link SecretMask}); other fields are untouched.
+	 * A mask with nothing stored behind it is refused rather than saved as the secret.
+	 */
 	public void keepMasked(String type, DataAdapterConnection stored, DataAdapterConnection incoming) {
-		if (stored == null || incoming == null) {
+		if (incoming == null) {
 			return;
 		}
 		for (String field : secretNames(type, incoming.keySet())) {
-			if (MASK.equals(incoming.get(field)) && stored.containsKey(field)) {
-				incoming.put(field, stored.get(field));
+			if (!SecretMask.isMasked(incoming.get(field))) {
+				continue;
 			}
+			incoming.put(field, SecretMask.restore("connection field " + type + "." + field, incoming.get(field),
+					stored == null ? null : stored.get(field), SecretMask.Style.HIDDEN));
 		}
 	}
 
-	/** Merge masked secrets of every source whose id already exists in the stored definition. */
+	/** Merge masked secrets of each source from the stored source with the same id. */
 	public void keepMaskedMulti(BusinessConfig stored, MultiDataSourceDefinition incoming) {
-		if (stored == null || incoming == null) {
+		if (incoming == null || incoming.getDataSources() == null) {
 			return;
 		}
-		MultiDataSourceDefinition previous = stored.getMultiDataSource();
-		if (previous == null || incoming.getDataSources() == null) {
-			return;
-		}
+		MultiDataSourceDefinition previous = stored == null ? null : stored.getMultiDataSource();
 		for (DataSourceEntry source : incoming.getDataSources()) {
-			DataSourceEntry old = previous.source(source.getId());
-			if (old != null) {
-				keepMasked(source.getAdapterType(), old.getConnection(), source.getConnection());
-			}
+			DataSourceEntry old = previous == null ? null : previous.source(source.getId());
+			keepMasked(source.getAdapterType(), old == null ? null : old.getConnection(), source.getConnection());
 		}
 	}
 
@@ -213,7 +212,7 @@ public class ConnectionSecretCodec {
 		boolean changed = false;
 		for (String field : secretNames(type, connection.keySet())) {
 			String value = connection.getString(field);
-			if (value == null || value.isEmpty() || MASK.equals(value) || cipher.isEncrypted(value)) {
+			if (value == null || value.isEmpty() || SecretMask.isMasked(value) || cipher.isEncrypted(value)) {
 				continue;
 			}
 			connection.put(field, cipher.encrypt(value));

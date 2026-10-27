@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { parseIsoDurationSeconds } from "@ontomato/contracts/model-settings";
+import { isMaskedSecret, parseIsoDurationSeconds } from "@ontomato/contracts/model-settings";
 import { computed, reactive, ref, shallowRef } from "vue";
 import { Cpu, Plus, Trash2 } from "lucide-vue-next";
 import { useI18n } from "vue-i18n";
@@ -111,7 +111,7 @@ async function saveDialog() {
     name: draft.name.trim(),
     displayName: draft.displayName.trim(),
     baseUrl: draft.baseUrl,
-    // Keys are a plain array of original values: deleting removes the item and the rest is submitted as-is.
+    // Saved keys come back masked and are submitted as their masks, which keep the stored keys; new keys are sent as entered.
     apiKeys: [...draft.apiKeys],
     modelName: draft.modelName,
     maxTokens: draft.maxTokens,
@@ -228,7 +228,15 @@ function keyStatus(entry: ModelEntry): string {
                 :key="`${keyRowsVersion}-${idx}`"
                 class="api-key-row"
               >
+                <!-- A saved key is write-only: its mask is shown read-only, and changing it means deleting it and adding a new one. -->
                 <el-input
+                  v-if="isMaskedSecret(draft.apiKeys[idx])"
+                  :model-value="draft.apiKeys[idx]"
+                  disabled
+                  class="api-key-input"
+                />
+                <el-input
+                  v-else
                   v-model="draft.apiKeys[idx]"
                   type="password"
                   placeholder="sk-..."
@@ -244,6 +252,9 @@ function keyStatus(entry: ModelEntry): string {
                   @click="removeKey(idx)"
                 />
               </div>
+              <p v-if="draft.apiKeys.some(isMaskedSecret)" class="saved-key-hint">
+                {{ t("admin.savedKeyHint") }}
+              </p>
               <el-button type="primary" link @click="draft.apiKeys.push('')">
                 + {{ t("admin.addApiKey") }}
               </el-button>

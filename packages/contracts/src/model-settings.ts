@@ -8,11 +8,22 @@ export const MODEL_ROLES = [
 
 export type ModelRole = (typeof MODEL_ROLES)[number];
 
+/**
+ * Saved secrets are write-only (Java's SecretMask owns the rule): a read for the page returns `******`, followed by the
+ * last four characters for API keys, and sending that value back on save or test keeps the stored secret.
+ */
+export const SECRET_MASK_PREFIX = "******";
+
+export function isMaskedSecret(value: string | null | undefined): boolean {
+  return !!value && value.startsWith(SECRET_MASK_PREFIX);
+}
+
 /** Model entry: displayName, maxTokens, and contextWindow are guaranteed after Java getModelSettings read normalization (defaults are maintained only in Java). */
 export interface BackendModelConfig {
   name: string;
   displayName: string;
   baseUrl: string;
+  /** Masks (see isMaskedSecret); the keys themselves reach the workbench server only in ModelSettingsData.sealedApiKeys. */
   apiKeys: string[];
   modelName: string;
   contextWindow: number;
@@ -34,6 +45,8 @@ export interface BackendAgentConfig {
 export interface ModelSettingsData {
   models: BackendModelConfig[];
   agents: Record<ModelRole, BackendAgentConfig>;
+  /** Model name to its keys sealed for the workbench server (Java ModelKeySeal); the page ignores it and never sends it back. */
+  sealedApiKeys?: Record<string, string[]>;
 }
 
 /**

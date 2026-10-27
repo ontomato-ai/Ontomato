@@ -28,6 +28,7 @@ import io.ontomato.dataengine.config.AgentConfig;
 import io.ontomato.dataengine.config.AgentRole;
 import io.ontomato.dataengine.config.BusinessConfig;
 import io.ontomato.dataengine.config.ModelConfig;
+import io.ontomato.dataengine.config.ModelKeySeal;
 import io.ontomato.dataengine.core.bean.User;
 import io.ontomato.dataengine.service.BusinessConfigService;
 import io.ontomato.dataengine.service.IdentityService;
@@ -71,6 +72,7 @@ class BusinessConfigControllerModelSettingsTest {
 
         when(businessConfigService.get("d1")).thenReturn(stored);
         ReflectionTestUtils.setField(controller, "businessConfigService", businessConfigService);
+        ReflectionTestUtils.setField(controller, "modelKeySeal", new ModelKeySeal("synthetic-runtime-token"));
     }
 
     @Test

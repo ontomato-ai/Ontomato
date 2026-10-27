@@ -52,6 +52,7 @@ services:
       NODE_ID: ${NODE_ID:-datarag}
       TZ: ${TZ:-UTC}
       <<: *database-environment
+      ONTOMATO_MODEL_RUNTIME_TOKEN: ${ONTOMATO_MODEL_RUNTIME_TOKEN:?ONTOMATO_MODEL_RUNTIME_TOKEN not set}
     volumes:
       - ./backend_data:/deploy
     logging:
@@ -116,6 +117,7 @@ services:
       - .env
     environment:
       <<: *database-environment
+      ONTOMATO_MODEL_RUNTIME_TOKEN: ${ONTOMATO_MODEL_RUNTIME_TOKEN:?ONTOMATO_MODEL_RUNTIME_TOKEN not set}
       DATA_QUERY_BASE_URL: http://datarag:18087
       AGENT_RUNTIME_URL: http://agent-runtime:3001
       AGENT_RUNTIME_SERVICE_TOKEN: ${AGENT_RUNTIME_SERVICE_TOKEN:?Run the deployment configuration preparation first}

@@ -18,13 +18,10 @@ envsubst '${ONTOLOGY_API_BASE} ${ONTOLOGY_INITIAL_ROUTE}' \
   > /usr/share/nginx/html/config.js
 
 # Action generation and other synchronous model calls can exceed Nginx's 60s default.
-# The model runtime service credential belongs to the workbench server alone: an empty value
-# keeps a browser-supplied one from reaching DataRAG through this proxy.
 API_LOCATION="location ${ONTOLOGY_API_BASE}/data-query/ {
   proxy_pass ${DATARAG_ORIGIN}/;
   proxy_http_version 1.1;
   proxy_read_timeout 900s;
-  proxy_set_header X-Ontomato-Model-Runtime-Token \"\";
   proxy_set_header Host \$proxy_host;
   proxy_set_header X-Real-IP \$remote_addr;
   proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;

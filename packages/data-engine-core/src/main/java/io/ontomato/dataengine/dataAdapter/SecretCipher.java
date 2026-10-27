@@ -42,6 +42,7 @@ public class SecretCipher {
 	private final Mode mode;
 	private final SecureRandom random = new SecureRandom();
 
+	/** The constructor Spring uses; the other one is for tests and for callers that bring their own key. */
 	@Autowired
 	public SecretCipher(Environment environment) {
 		this(environment.getProperty("ontomato.connection-secrets.key"),

@@ -1,7 +1,7 @@
 import type { ModelRole, ModelSettingsData } from "@ontomato/contracts/model-settings";
 import { parseIsoDurationSeconds } from "@ontomato/contracts/model-settings";
 import { AuthFailedError, backendGet, buildBackendHeaders } from "../utils/backend-client";
-import { workbenchIdentity } from "../identity/installed";
+import { openSealedModelKey } from "./model-key-seal";
 import { getLogContext } from "../logging/log-context";
 import { config } from "./application";
 import { t } from "../i18n";
@@ -30,10 +30,7 @@ export async function resolveModelForRole(role: ModelRole = "general"): Promise<
   const context = getLogContext();
 
   const response = await backendGet(endpoint, url, {
-    headers: {
-      ...buildBackendHeaders(context?.token, undefined, undefined, context?.apiKey),
-      ...workbenchIdentity().modelSettingsReadHeaders,
-    },
+    headers: buildBackendHeaders(context?.token, undefined, undefined, context?.apiKey),
   }).catch((error: unknown) => {
     if (error instanceof AuthFailedError && error.status === 403) {
       // This read's 403 is a service/domain configuration refusal; only a 401 asks the user to sign in again.
@@ -63,7 +60,9 @@ export async function resolveModelForRole(role: ModelRole = "general"): Promise<
     throw new Error(`Model settings are inconsistent: role "${role}" references missing model "${modelId}"`);
   }
 
-  const apiKey = model.apiKeys?.[0];
+  // apiKeys are masks; the key to use comes sealed and is opened here.
+  const sealed = body.data.sealedApiKeys?.[modelId]?.[0];
+  const apiKey = sealed ? openSealedModelKey(sealed) : "";
   const baseUrl = model.baseUrl;
   const modelName = model.modelName;
   const timeoutSeconds = model.timeout ? parseIsoDurationSeconds(model.timeout) : undefined;
