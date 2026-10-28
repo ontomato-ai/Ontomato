@@ -3,7 +3,8 @@
 Approved design, 2026-10-28, based on public `ba6acd1c`. Backend A/B implementation
 is authorized after the contract simplification. The frontend shell/UI
 and Java traditional-ABC removal are separate parallel work; this branch owns
-server changes and [assistant HTTP contracts](../packages/contracts/assistant-chat.md).
+server changes, the [common host proxy](../packages/contracts/agent-host.md), and
+[workbench actions](../packages/contracts/assistant-chat.md).
 
 ## Direction and ownership
 
@@ -22,8 +23,9 @@ readers change. No old-data conversion, dual reads or legacy compatibility is ad
 The frontend owns `agent-shell` contracts, `packages/agent-shell-ui`, both edition
 layouts and old UI removal. Its only product dependency is contracts. It owns
 code-declared workbenches/features, the two-column layout with a right-hand panel,
-and the host's renderer/data-port adapters. Backend supplies the authenticated HTTP
-contract; it does not duplicate shell declarations. The
+and default rendering with host overrides/action slots. Backend supplies the same
+agent-host proxy shapes for every shell host, plus separate workbench actions; it
+does not duplicate shell declarations or renderer fields. The
 [artifact Markdown contract](../packages/contracts/agent-artifact-markdown.md)
 remains the only presentation rule, consumed through `ARTIFACT_MARKDOWN_PROMPT`.
 The frontend verifies markstream-vue incomplete nodes before adoption, stable
