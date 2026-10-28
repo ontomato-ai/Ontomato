@@ -19,7 +19,6 @@ import {
 export const agentHostAgentSchema = z
   .object({
     id: runtimeIdSchema,
-    workbenchId: runtimeKeySchema,
     name: runtimeKeySchema,
     description: z.string(),
     icon: z.string().nullable(),
@@ -54,7 +53,6 @@ export const agentHostRunSnapshotSchema = z
 export const agentHostSessionSchema = z
   .object({
     id: runtimeIdSchema,
-    workbenchId: runtimeKeySchema,
     agentId: runtimeIdSchema,
     title: z.string(),
     createdAt: runtimeTimestampSchema,
@@ -76,7 +74,7 @@ export const agentHostSessionPageSchema = z
   })
   .strict();
 export const agentHostCreateSessionSchema = z
-  .object({ workbenchId: runtimeKeySchema, agentId: runtimeIdSchema })
+  .object({ agentId: runtimeIdSchema })
   .strict();
 export const agentHostCreateSessionResponseSchema = z
   .object({ session: agentHostSessionSchema, replayed: z.boolean() })

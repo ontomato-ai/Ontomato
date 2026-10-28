@@ -2,7 +2,7 @@
 
 Approved 2026-10-28. [src/assistant-chat.ts](src/assistant-chat.ts) owns these shapes
 (`@ontomato/contracts/assistant-chat`). The workbench implements the complete
-[common host proxy](agent-host.md) at **`/api/assistant`** with `workbenchId=business`.
+[common host proxy](agent-host.md) at **`/api/assistant`**.
 This file owns only workbench-specific actions. All paths below are relative to
 that prefix; `S` = `/sessions/:sessionId`, `F` = `S/artifacts/:artifactId`.
 Every conversation/file/feedback operation checks both user and domain; definition
@@ -11,7 +11,7 @@ AgentHostError. Shell action slots call these endpoints; feedback stays in workb
 
 | Method/path | Input | Output (200 unless listed) |
 | --- | --- | --- |
-| GET `/agent-definitions` | `workbenchId` | `AssistantAgentDefinitionList` |
+| GET `/agent-definitions` | — | `AssistantAgentDefinitionList` |
 | GET `/agent-definitions/:agentId` | — | `AssistantAgentDefinition` |
 | POST `/agent-definitions` | `AssistantAgentInput`, UUID Idempotency-Key | 201 `AssistantAgentDefinition` |
 | PUT `/agent-definitions/:agentId` | `AssistantAgentInput` | `AssistantAgentDefinition` |
