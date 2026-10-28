@@ -1,3 +1,4 @@
+import { getQueryTimeoutMs } from "../../services/data-query/data-query-policy";
 import { Router } from "express";
 import { z } from "zod";
 import {
@@ -18,7 +19,6 @@ import {
 import { HttpError } from "../../utils/errors";
 import { requirePermission } from "../../identity/installed";
 import { asyncHandler } from "../utils/http";
-import { renderPrompt } from "../../core/prompts/loader";
 import { getLogContext, runWithLogContext } from "../../logging/log-context";
 
 const router: ReturnType<typeof Router> = Router();
@@ -136,25 +136,69 @@ router.get(
   }),
 );
 router.post(
-  "/:id/runtime/:operation/:tool?",
+  "/skill-runs",
   asyncHandler(async (req, res) => {
-    const { owner, credentials, locale } = context(req as AuthenticatedRequest);
-    const identity = governanceSkillCallIdentitySchema.parse(
-      req.body?.identity,
-    );
-    if (identity.governanceSessionId !== sessionId(req.params.id!))
+    const key = z.string().uuid().parse(req.header("Idempotency-Key"));
+    const input = z
+      .object({ id: z.string().uuid().optional(), message: z.string().min(1) })
+      .strict()
+      .parse(req.body);
+    const { owner } = context(req as AuthenticatedRequest),
+      id = input.id ?? key;
+    const record = input.id
+      ? await governanceStore.get(id, owner)
+      : await governanceStore.create(owner, id, true);
+    if (record.runtimeSessionId)
       throw new HttpError(
-        400,
-        "Governance session identity does not match the route",
+        409,
+        "External begin requires an external work record",
       );
+    await governanceStore.openRun(
+      id,
+      owner,
+      key,
+      new Date(Date.now() + getQueryTimeoutMs()),
+      input,
+    );
+    const work = await governanceStore.runWork(
+      { governanceSessionId: id, sessionId: id, runId: key },
+      owner,
+    );
+    res
+      .status(201)
+      .json({ id, sessionId: id, runId: key, expiresAt: work.expiresAt });
+  }),
+);
+router.post(
+  "/:id/skill-runs/:runId/close",
+  asyncHandler(async (req, res) => {
+    await governanceStore.closeRun(
+      sessionId(req.params.id!),
+      context(req as AuthenticatedRequest).owner,
+      sessionId(req.params.runId!),
+    );
+    res.status(204).end();
+  }),
+);
+router.post(
+  "/:id/runs/:runId/actions/:action",
+  asyncHandler(async (req, res) => {
+    const { owner, credentials } = context(req as AuthenticatedRequest);
+    const identity = governanceSkillCallIdentitySchema.parse({
+      governanceSessionId: sessionId(req.params.id!),
+      sessionId: req.header("X-Ontomato-Session-Id"),
+      runId: sessionId(req.params.runId!),
+    });
+    if (req.header("X-Ontomato-Run-Id") !== identity.runId)
+      throw new HttpError(400, "Run identity mismatch");
     const current = await governanceStore.runWork(identity, owner);
     if (!current.open) {
       res
         .status(409)
         .json({
           code: "GOVERNANCE_RUN_CLOSED",
-          runId: identity.runId,
           error: "Governance run is closed",
+          runId: identity.runId,
         });
       return;
     }
@@ -162,57 +206,19 @@ router.post(
     res.once("close", () => {
       if (!res.writableEnded) controller.abort();
     });
-    try {
-      if (req.params.operation === "context" && !req.params.tool) {
-        const work = current.work;
-        res.json({
-          systemContext: renderPrompt(
-            "knowledge-governance.main.system",
-            {
-              progress: JSON.stringify({
-                summary: work.summary,
-                notes: work.notes,
-                reviewed: work.reviewedKnowledgeIds.length,
-                knowledgeTotal: work.knowledgeTotal,
-                issues: work.issues.map((issue) => ({
-                  id: issue.id,
-                  title: issue.title,
-                  status: issue.status,
-                })),
-              }),
-            },
-            locale,
-          ),
-        });
-      } else if (req.params.operation === "tools") {
-        const name = governanceRuntimeToolNameSchema.parse(req.params.tool);
-        const result = await runWithLogContext(
-          { ...getLogContext(), correlationId: req.header("x-correlation-id") },
-          () =>
-            executeGovernanceAction(
-              name,
-              req.body.arguments,
-              identity,
-              owner,
-              credentials,
-              controller.signal,
-            ),
-        );
-        res.json({ result });
-      } else throw new HttpError(404, "Governance callback not found");
-    } catch (error) {
-      if ((error as { code?: string })?.code === "GOVERNANCE_RUN_CLOSED") {
-        res
-          .status(409)
-          .json({
-            code: "GOVERNANCE_RUN_CLOSED",
-            runId: identity.runId,
-            error: "Governance run is closed",
-          });
-        return;
-      }
-      throw error;
-    }
+    const result = await runWithLogContext(
+      { ...getLogContext(), correlationId: req.header("x-correlation-id") },
+      () =>
+        executeGovernanceAction(
+          governanceRuntimeToolNameSchema.parse(req.params.action),
+          req.body,
+          identity,
+          owner,
+          credentials,
+          controller.signal,
+        ),
+    );
+    res.json(result);
   }),
 );
 export default router;

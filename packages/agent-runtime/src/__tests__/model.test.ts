@@ -1,3 +1,4 @@
+import { codeLimitsSchema } from "@ontomato/contracts/agent-runtime-code";
 import { afterAll, beforeAll, expect, it } from "vitest";
 import { createServer } from "node:http";
 import type { RuntimeStartRunRequest } from "@ontomato/contracts/agent-runtime";
@@ -50,10 +51,11 @@ const request: RuntimeStartRunRequest = {
     systemPrompt: "",
     skills: [],
     externalMcp: [],
-    builtinTools: { workspaceFiles: false, python: false },
+    sandbox: { limits: codeLimitsSchema.parse({}) },
     compaction: { systemPrompt: "", summarizePrompt: "", updatePrompt: "" },
   },
-  privateContext: { modelCredential: { kind: "none" }, skillBindings: [] },
+  modelCredential: { kind: "none" },
+  environment: { values: {}, secrets: {} },
 };
 const read = () =>
   resolveModel({

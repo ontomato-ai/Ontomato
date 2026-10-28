@@ -1,7 +1,7 @@
 # Standalone code execution contract
 
-Design for controller review, 2026-10-28. This supersedes the former Python
-built-in binding contract; segment 2 updates schemas and Java consumers together.
+Implemented contract, 2026-10-28. This supersedes the former Python built-in
+binding contract; schemas and Java consumers use this shape together.
 [Runtime contract](agent-runtime.md) owns authentication, admission, file storage
 and agent state. This endpoint remains for published Functions and authorized
 formal-output reruns. An agent uses PI bash to run Python; it does not call this
@@ -16,7 +16,7 @@ or cross-domain access returns 404. The ontology host retains its own principal.
 
 ```ts
 type ExecuteCode = {
-  language: "python";
+  language: "python"; locale?: string; // defaults to en
   files: {path:string; content:string}[];
   entry: string; arguments: string[]; outputPaths: string[];
   libraries: {skill: SkillRef; path:string}[];
@@ -86,7 +86,9 @@ image proof and native developer proof must be reported separately.
 ontology HTTP helper source. Both bash exploration and Java code execution load
 that same file; packaging copies it without changing behavior. It reads
 `ONTOMATO_ONTOLOGY_URL`, `ONTOMATO_QUERY_TK` (falling back to `ONTOMATO_TK`),
-`ONTOMATO_RUN_ID`, `ONTOMATO_CORRELATION_ID`, `ONTOMATO_LANGUAGE`; sends the token
+`ONTOMATO_RUN_ID`, `ONTOMATO_CORRELATION_ID`, `ONTOMATO_LANGUAGE`;
+`ONTOMATO_QUERY_RUN_ID` optionally carries an existing parent query grant binding
+for nested metric executions (the runtime execution ID itself is unchanged); sends the token
 as `tk` and the run header; and retains parameters.json and query-status.json.
 Java's grant parser must accept the documented tk header for its existing signed
 grants and verify the same claims. Ordinary tk authorization remains unchanged.

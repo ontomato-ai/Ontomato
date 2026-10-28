@@ -1,11 +1,11 @@
+import { removeWorkerFiles } from "../../../../../agent-runtime/src/worker";
 import { beforeAll, afterAll, describe, expect, it } from "vitest";
 import { createServer, type Server } from "node:http";
 import { spawn, type ChildProcess } from "node:child_process";
 import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 import { randomUUID, createHash } from "node:crypto";
-import { mkdtemp, rm, readFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { mkdtemp, readFile, mkdir, cp } from "node:fs/promises";
 import path from "node:path";
 import pg from "pg";
 import { governanceSessionSchema } from "@ontomato/contracts/knowledge-governance";
@@ -184,16 +184,25 @@ describe.skipIf(!connection)(
         await done;
       }
     }
-    async function request(pathname: string, body?: unknown) {
+    async function request(
+      pathname: string,
+      body?: unknown,
+      headers: Record<string, string> = {},
+    ) {
       const r = await fetch(`${hostUrl}/api/knowledge-governance${pathname}`, {
         method: body === undefined ? "GET" : "POST",
-        headers: { "content-type": "application/json" },
+        headers: { "content-type": "application/json", ...headers },
         body: body === undefined ? undefined : JSON.stringify(body),
       });
-      return { status: r.status, body: await r.json() };
+      return {
+        status: r.status,
+        body: r.status === 204 ? null : await r.json(),
+      };
     }
     beforeAll(async () => {
-      root = await mkdtemp(path.join(tmpdir(), "ontomato-governance-http-"));
+      root = await mkdtemp(
+        path.join(publicRoot, "../notes", "governance-standard-"),
+      );
       admin = new pg.Pool({ connectionString: connection });
       await admin.query(`CREATE DATABASE "${database}"`);
       const url = new URL(connection!);
@@ -216,7 +225,11 @@ describe.skipIf(!connection)(
                 apiKeys: ["fixture-model-secret"],
                 maxTokens: 4000,
                 contextWindow: 5000,
-                timeout: null, maxRetries: null, temperature: null, topP: null, customRequestParameters: null,
+                timeout: null,
+                maxRetries: null,
+                temperature: null,
+                topP: null,
+                customRequestParameters: null,
               },
             ],
           });
@@ -293,8 +306,10 @@ describe.skipIf(!connection)(
                     id: `call-${stage}`,
                     type: "function",
                     function: {
-                      name: step[0],
-                      arguments: JSON.stringify(step[1]),
+                      name: "bash",
+                      arguments: JSON.stringify({
+                        command: `node skills/knowledge-governance/scripts/governance.mjs ${step[0].replaceAll("_", "-")} '${JSON.stringify(step[1]).replaceAll("'", "'\\''")}'`,
+                      }),
                     },
                   },
                 ],
@@ -337,7 +352,7 @@ describe.skipIf(!connection)(
         await admin.query(`DROP DATABASE IF EXISTS "${database}" WITH (FORCE)`);
         await admin.end();
       }
-      if (root) await rm(root, { recursive: true, force: true });
+      if (root) await removeWorkerFiles(root);
     }, 20000);
     it("runs all eight tools, restores after host restart and preserves the work through compaction", async () => {
       const started = await request("/", {
@@ -350,7 +365,9 @@ describe.skipIf(!connection)(
       await modelArrived;
       const runningList = await request("/");
       expect(runningList.status).toBe(200);
-      expect(runningList.body.find((row: { id: string }) => row.id === id).status).toBe("running");
+      expect(
+        runningList.body.find((row: { id: string }) => row.id === id).status,
+      ).toBe("running");
       await stop(host, "SIGKILL");
       await launch("host");
       releaseModel();
@@ -363,12 +380,14 @@ describe.skipIf(!connection)(
         await new Promise((r) => setTimeout(r, 40));
       }
       expect(view.status, JSON.stringify(view) + hostLog + runtimeLog).toBe(
-        "idle",
+        "stopped",
       );
       governanceSessionSchema.parse(view);
       const completedList = await request("/");
       expect(completedList.status).toBe(200);
-      expect(completedList.body.find((row: { id: string }) => row.id === id).status).toBe("idle");
+      expect(
+        completedList.body.find((row: { id: string }) => row.id === id).status,
+      ).toBe("stopped");
       expect(
         observed.filter((name) => plan.some(([tool]) => tool === name)),
       ).toEqual(plan.map(([name]) => name));
@@ -378,7 +397,7 @@ describe.skipIf(!connection)(
       expect(
         view.work.sources.some((s: { id: string }) => s.id === sourceId),
       ).toBe(true);
-      expect(contexts.at(-1)).toContain("Reviewed knowledge");
+      expect(contexts.at(-1)).toContain("knowledge-governance");
       expect(compactions).toBeGreaterThan(0);
       expect(observed.find((s) => s.startsWith("knowledge:"))).not.toBe(
         "knowledge:undefined",
@@ -406,16 +425,14 @@ describe.skipIf(!connection)(
       );
       expect(manifest.status).toBe("completed");
       const identity = {
-        governanceSessionId: id,
-        runtimeSessionId: id,
-        runId,
-        invocationId: randomUUID(),
-        toolCallId: "late-write",
+        "X-Ontomato-Session-Id": id,
+        "X-Ontomato-Run-Id": runId,
       };
-      const late = await request(`/${id}/runtime/tools/update_work_record`, {
+      const late = await request(
+        `/${id}/runs/${runId}/actions/update_work_record`,
+        { summary: "pollution" },
         identity,
-        arguments: { summary: "pollution" },
-      });
+      );
       expect(late.status).toBe(409);
       expect(late.body.code).toBe("GOVERNANCE_RUN_CLOSED");
       expect((await request(`/${id}`)).body.work.summary).toBe(
@@ -433,10 +450,11 @@ describe.skipIf(!connection)(
       expect(nextRun).not.toBe(runId);
       expect(
         (
-          await request(`/${id}/runtime/tools/update_work_record`, {
+          await request(
+            `/${id}/runs/${runId}/actions/update_work_record`,
+            { summary: "old run pollution" },
             identity,
-            arguments: { summary: "old run pollution" },
-          })
+          )
         ).status,
       ).toBe(409);
       expect((await request(`/${id}`)).body.work.summary).toBe(
@@ -448,14 +466,11 @@ describe.skipIf(!connection)(
       expect((await request(`/${id}/stop`, {})).status).toBe(200);
       expect(
         (
-          await request(`/${id}/runtime/tools/update_work_record`, {
-            identity: {
-              ...identity,
-              runId: nextRun,
-              invocationId: randomUUID(),
-            },
-            arguments: { summary: "cancelled run pollution" },
-          })
+          await request(
+            `/${id}/runs/${nextRun}/actions/update_work_record`,
+            { summary: "cancelled run pollution" },
+            { ...identity, "X-Ontomato-Run-Id": nextRun },
+          )
         ).status,
       ).toBe(409);
       const cancelled = await request(`/${id}`);
@@ -466,5 +481,75 @@ describe.skipIf(!connection)(
           .rows[0].n,
       ).toBeGreaterThan(0);
     }, 40000);
+    it("runs unchanged external governance scripts and refuses writes after begin replaces the gate", async () => {
+      const workspace = path.join(root, "external");
+      await mkdir(workspace, { recursive: true });
+      await cp(
+        path.join(
+          publicRoot,
+          "packages/workbench-server/resources/runtime-skills/knowledge-governance",
+        ),
+        path.join(workspace, "skill"),
+        { recursive: true },
+      );
+      const command = async (args: string[]) =>
+        new Promise<string>((resolve, reject) => {
+          const child = spawn(
+            process.execPath,
+            ["skill/scripts/governance.mjs", ...args],
+            {
+              cwd: workspace,
+              env: { PATH: process.env.PATH, ONTOMATO_WORKBENCH_URL: hostUrl },
+              stdio: ["ignore", "pipe", "pipe"],
+            },
+          );
+          let out = "",
+            err = "";
+          child.stdout.on("data", (c) => (out += c));
+          child.stderr.on("data", (c) => (err += c));
+          child.once("error", reject);
+          child.once("close", (code) =>
+            code === 0 ? resolve(out) : reject(new Error(err)),
+          );
+        });
+      const knowledge = JSON.parse(await command(["read-knowledge", "{}"]));
+      expect(knowledge.items[0].sourceId).toBe(sourceId);
+      await command([
+        "update-work-record",
+        JSON.stringify({ summary: "External review" }),
+      ]);
+      const first = JSON.parse(
+        await readFile(
+          path.join(workspace, "work/.governance-run.json"),
+          "utf8",
+        ),
+      );
+      expect((await request(`/${first.id}`)).body.work.summary).toBe(
+        "External review",
+      );
+      const second = JSON.parse(
+        await command(["begin", JSON.stringify({ message: "Continue" })]),
+      );
+      expect(second.id).toBe(first.id);
+      const denied = await request(
+        `/${first.id}/runs/${first.runId}/actions/update_work_record`,
+        { summary: "late" },
+        {
+          "X-Ontomato-Run-Id": first.runId,
+          "X-Ontomato-Session-Id": first.sessionId,
+        },
+      );
+      expect(denied.status).toBe(409);
+      await command(["close"]);
+      const after = await request(
+        `/${second.id}/runs/${second.runId}/actions/update_work_record`,
+        { summary: "late" },
+        {
+          "X-Ontomato-Run-Id": second.runId,
+          "X-Ontomato-Session-Id": second.sessionId,
+        },
+      );
+      expect(after.status).toBe(409);
+    }, 20000);
   },
 );

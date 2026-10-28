@@ -1,11 +1,11 @@
 # Standard agent runtime wire contract
 
-Design for controller review, 2026-10-28. This document replaces the batch 1
-skill, artifact and run-state contract. The TypeScript schemas still describe the
-previous implementation in this documentation-only segment; segment 2 changes
-them and every live consumer together. [Implementation design](../../docs/agent-runtime-design.md)
-owns placement, removal inventory and proof. [Code execution](agent-runtime-code.md)
-and [retrieval](data-retrieval.md) own their respective boundaries.
+Implemented contract, 2026-10-28. This replaces the batch 1 private skill,
+artifact and run-state contract. Executable schemas live in src/agent-runtime*.ts.
+[Implementation design](../../docs/agent-runtime-design.md) owns placement and
+migration scope; [code execution](agent-runtime-code.md) and
+[retrieval](data-retrieval.md) own their respective boundaries. Main-checkout
+image/stack and external Claude Code acceptance remain controller-owned.
 
 ## HTTP and admission
 
@@ -54,7 +54,7 @@ text; latestRun includes only id, status and stopReason.
 
 ## Run definition, environment and sandbox
 
-Proposed wire shape (all IDs are UUIDs; paths are portable relative paths):
+Wire shape (all IDs are UUIDs; paths are portable relative paths):
 
 ```ts
 type SkillRef = { namespace: {kind:"provider"; provider:string}
@@ -166,13 +166,12 @@ may still be running after an assistant toolUse message. At stopped, a final
 assistant fact is present: natural stop/length/error uses PI's values; cancel,
 shutdown or recovered unfinished work uses aborted with an explanatory
 errorMessage. Preparation/worker/storage errors use error. Runtime-originated
-termination uses a PI-shaped assistant error/abort message with empty content,
-zero usage, timestamp and explicit runtime origin on the enclosing message
-record; it must not invent a model response or mutate a previous settled message.
+termination uses an assistant error/abort message with empty content, timestamp
+and explicit origin: runtime; it must not invent a model response or mutate a previous settled message.
 Use resolved model metadata when available; before model resolution use the
-requested role as diagnostic context in that record, not a fictional provider.
-The pre-model case is a declared wire variant: the enclosing record has
-origin: "runtime", message.role: "assistant", message.content: [], stopReason
+requested role from the stored run definition, not a fictional provider.
+The pre-model case is a declared wire variant: the message has
+origin: "runtime", role: "assistant", content: [], stopReason
 error or aborted, nonempty errorMessage and numeric timestamp; model/api/provider
 and usage are null because no provider call happened. Model-origin messages keep
 the existing required PI metadata/usage. The adapter materializes this service
@@ -233,8 +232,8 @@ guarantee. Stop and reap the run's remaining processes, then collect a final
 boundary before agent_end. A collection failure cannot be reported as a clean
 stop. Previously committed snapshots remain readable.
 
-Use one internal ArtifactFiles interface for blob put/read/delete, package file
-materialization and authorized output scanning; route handlers and store code
+Use one internal ArtifactFiles interface for blob put/read/delete and authorized
+output scanning; route handlers and store code
 must not invent separate file backends. No file bytes or business JSON payloads
 in the artifact table. Repeated observation of unchanged bytes emits nothing;
 an A→B→A overwrite creates three metadata occurrences, with A's blob deduplicated.

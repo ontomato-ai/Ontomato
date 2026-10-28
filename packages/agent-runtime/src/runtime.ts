@@ -1,10 +1,11 @@
-import { mkdir, chmod } from "node:fs/promises";
+import { ArtifactFiles } from "./files";
+import { SessionSandbox } from "./sandbox";
+import { mkdir, chmod, readFile } from "node:fs/promises";
 import { CodeExecutor } from "./code";
-import { removeWorkerFiles, type WorkerPolicy } from "./worker";
+import { signalUid, type WorkerPolicy } from "./worker";
 import { randomUUID } from "node:crypto";
 import path from "node:path";
 import { normalizeContext, type Message } from "@earendil-works/pi-ai";
-import type { TSchema } from "typebox";
 import {
   runtimeStartRunRequestSchema,
   type RuntimeStartRunRequest,
@@ -22,19 +23,18 @@ import {
   type RuntimeMessage,
 } from "@ontomato/contracts/agent-runtime-messages";
 import { runtimeAssistantStreamEventSchema } from "@ontomato/contracts/agent-runtime-messages";
-import type { RuntimeArtifactOutput } from "@ontomato/contracts/agent-runtime-artifacts";
 import type {
   RuntimeAgentEvent,
   RuntimeEventEnvelope,
   RuntimeStreamFrame,
 } from "@ontomato/contracts/agent-runtime-events";
-import type { RuntimeTerminalStatus } from "@ontomato/contracts/agent-runtime-values";
+import type { RuntimeStopReason } from "@ontomato/contracts/agent-runtime-values";
 import { runAgentLoopContinue } from "./core/pi/agent-loop";
-import type { AgentEvent, AgentTool } from "./core/pi/types";
+import type { AgentEvent } from "./core/pi/types";
 import { RuntimeStore, digest, canonical, type Scope } from "./store";
 import {
   SkillRegistry,
-  executeSkill,
+  skillCatalog,
   type RuntimeHost,
   type InstalledSkill,
 } from "./skills";
@@ -47,7 +47,7 @@ import {
 } from "./model";
 import { RuntimeError, safeMessage } from "./errors";
 import { contextTokens, cutPoint, serializeConversation } from "./compaction";
-import { workspaceTools, connectMcp, type McpConnection } from "./tools";
+import { connectMcp, type McpConnection } from "./tools";
 
 type Subscriber = (frame: RuntimeStreamFrame) => void;
 interface Active {
@@ -61,8 +61,8 @@ interface Active {
   currentMessageId?: string;
   turnIndex: number;
   subscribers: Set<Subscriber>;
-  drafts: Map<string, RuntimeArtifactOutput[]>;
-  secrets: string[];
+  sandbox?: SessionSandbox;
+  outputBaseline: Map<string, string>;
 }
 export interface RuntimeOptions {
   store: RuntimeStore;
@@ -72,7 +72,6 @@ export interface RuntimeOptions {
   ontologyUrl: string;
   modelRuntimeToken?: string;
   eventBufferSize?: number;
-  maxArtifactBytes?: number;
   mcpServers?: McpConnection[];
 }
 
@@ -105,6 +104,7 @@ export class AgentRuntime {
   readonly registry: SkillRegistry;
   readonly code: CodeExecutor;
   readonly worker: WorkerPolicy;
+  readonly files: ArtifactFiles;
   private active = new Map<string, Active>();
   private locks = new Map<string, Promise<unknown>>();
   constructor(readonly options: RuntimeOptions) {
@@ -120,11 +120,13 @@ export class AgentRuntime {
       this.store,
       path.join(options.root, "skills"),
     );
+    this.files = new ArtifactFiles(path.join(options.root, "artifacts"));
     this.code = new CodeExecutor(
       this.store,
       this.registry,
       path.join(options.root, "executions"),
       this.worker,
+      this.files,
     );
   }
   private async locked<T>(
@@ -144,11 +146,27 @@ export class AgentRuntime {
   }
   async initialize() {
     await this.store.initialize();
+    if (!this.worker.development) {
+      const rows = (
+        await this.store.pool.query(
+          `SELECT worker_uid FROM ${this.store.table("sessions")} WHERE worker_uid IS NOT NULL`,
+        )
+      ).rows;
+      if (rows.length) {
+        const next = Number(await readFile(this.worker.uidStatePath!, "utf8"));
+        if (
+          !Number.isSafeInteger(next) ||
+          rows.some((r) => Number(r.worker_uid) >= next)
+        )
+          throw new Error(
+            "Session UID allocation state is missing or inconsistent",
+          );
+        for (const row of rows) signalUid(Number(row.worker_uid), "SIGKILL");
+      }
+    }
     await this.store.recover();
     await mkdir(this.options.root, { recursive: true, mode: 0o711 });
     await chmod(this.options.root, 0o711);
-    await removeWorkerFiles(path.join(this.options.root, "invocations"));
-    await mkdir(path.join(this.options.root, "invocations"), { mode: 0o711 });
     await this.code.initialize();
   }
   async start(
@@ -160,20 +178,14 @@ export class AgentRuntime {
     body: unknown,
   ) {
     const request = runtimeStartRunRequestSchema.parse(body);
-    const bindings = {
-      skillBindings: request.privateContext.skillBindings.map(
-        ({ credential: _credential, ...binding }) => binding,
-      ),
-      python: request.privateContext.python
-        ? (({ credential: _credential, ...binding }) => binding)(
-            request.privateContext.python,
-          )
-        : undefined,
-    };
     const fingerprint = digest({
       sessionId,
       ...request,
-      privateContext: bindings,
+      modelCredential: undefined,
+      environment: {
+        values: request.environment.values,
+        secretNames: Object.keys(request.environment.secrets).sort(),
+      },
     });
     return this.locked(scope, sessionId, async () => {
       // Admission retries must work even when a dependency is unavailable or the version was unmounted.
@@ -191,7 +203,13 @@ export class AgentRuntime {
         definition: request.definition,
         createdAt: new Date().toISOString(),
         finishedAt: null,
-        error: null,
+        stopReason: null,
+        errorMessage: null,
+        resolvedSkills: [],
+        environment: {
+          values: request.environment.values,
+          secretNames: Object.keys(request.environment.secrets).sort(),
+        },
       };
       let skills: InstalledSkill[] = [];
       if (!admitted.rowCount) {
@@ -200,44 +218,15 @@ export class AgentRuntime {
             this.registry.resolve(host, scope.domainId, ref),
           ),
         );
-        const context = request.definition.contextSkill;
-        if (
-          context &&
-          !skills.some((s) => canonical(s.skill) === canonical(context))
-        )
-          skills.push(
-            await this.registry.resolve(host, scope.domainId, context),
+        if (new Set(skills.map((s) => s.skill.name)).size !== skills.length)
+          throw new RuntimeError(
+            400,
+            "INVALID_REQUEST",
+            "Skill names must be unique within a run",
           );
-        const names = skills.flatMap((s) =>
-          s.manifest.tools.map((t) => t.name),
+        run.resolvedSkills = skills.map(
+          ({ directory: _directory, ...registered }) => registered,
         );
-        if (new Set(names).size !== names.length)
-          throw new RuntimeError(
-            400,
-            "INVALID_REQUEST",
-            "Exposed tool names must be unique",
-          );
-        for (const skill of skills)
-          if (
-            !request.privateContext.skillBindings.some(
-              (b) => canonical(b.skill) === canonical(skill.skill),
-            )
-          )
-            throw new RuntimeError(
-              400,
-              "INVALID_REQUEST",
-              "Missing private skill binding",
-            );
-        if (
-          context &&
-          !skills.find((s) => canonical(s.skill) === canonical(context))
-            ?.manifest.contextEntry
-        )
-          throw new RuntimeError(
-            400,
-            "INVALID_REQUEST",
-            "Context entry is not declared",
-          );
       }
       const accepted = await this.store.admit(
         scope,
@@ -256,16 +245,7 @@ export class AgentRuntime {
         pending: new Map(),
         turnIndex: -1,
         subscribers: new Set(),
-        drafts: new Map(),
-        secrets: [
-          host.token,
-          this.options.modelRuntimeToken,
-          ...[
-            request.privateContext.modelCredential,
-            ...request.privateContext.skillBindings.map((b) => b.credential),
-            request.privateContext.python?.credential,
-          ].flatMap((c) => (c && c.kind !== "none" ? [c.value] : [])),
-        ].filter((v): v is string => Boolean(v)),
+        outputBaseline: new Map(),
       };
       this.active.set(key(scope, runId), active);
       // The first execution begins after this admission lock is released, never on a read/retry.
@@ -293,18 +273,12 @@ export class AgentRuntime {
     }
     if (envelope.event.type === "agent_end") active.subscribers.clear();
   }
-  private async emit(
-    active: Active,
-    event: RuntimeAgentEvent,
-    outputs: RuntimeArtifactOutput[] = [],
-  ) {
+  private async emit(active: Active, event: RuntimeAgentEvent) {
     return this.locked(active.scope, active.run.sessionId, async () => {
       const envelope = await this.store.append(
         active.scope,
         active.run.id,
         event,
-        outputs,
-        this.options.maxArtifactBytes,
       );
       if (event.type === "message_end") active.pending.delete(event.messageId);
       this.publish(active, envelope);
@@ -312,24 +286,6 @@ export class AgentRuntime {
     });
   }
   private async receive(active: Active, event: AgentEvent) {
-    // Provider failures may echo request headers. Scrub known private values before journaling.
-    const clean = (value: unknown): unknown =>
-      typeof value === "string"
-        ? active.secrets.reduce(
-            (text, secret) => text.split(secret).join("[redacted]"),
-            value,
-          )
-        : Array.isArray(value)
-          ? value.map(clean)
-          : value && typeof value === "object"
-            ? Object.fromEntries(
-                Object.entries(value).map(([k, v]) => [k, clean(v)]),
-              )
-            : value;
-    // Keep the original tool-result details object for the PI message's committed artifact IDs.
-    const originalResult =
-      event.type === "tool_execution_end" ? event.result : undefined;
-    event = clean(event) as AgentEvent;
     if (event.type === "agent_end" || event.type === "agent_start") return;
     if (event.type === "turn_start") {
       active.turnIndex++;
@@ -430,16 +386,9 @@ export class AgentRuntime {
             : { data: event.result.structuredContent }),
         },
       };
-      const output = active.drafts.get(event.toolCallId) ?? [];
-      active.drafts.delete(event.toolCallId);
-      const envelope = await this.emit(
-        active,
-        { ...event, result },
-        event.isError ? [] : output,
-      );
-      // PI creates the toolResult message after the awaited sink, so it sees committed IDs.
+      result.details.artifactIds = await this.collect(active, event.toolCallId);
+      const envelope = await this.emit(active, { ...event, result });
       event.result.details = result.details;
-      if (originalResult) originalResult.details = result.details;
       return envelope;
     }
     if (event.type === "tool_execution_update")
@@ -464,8 +413,8 @@ export class AgentRuntime {
   ) {
     const { scope, run, controller } = active;
     const signal = controller.signal;
-    let status: RuntimeTerminalStatus = "completed";
-    let failure: RuntimeRun["error"] = null;
+    let reason: RuntimeStopReason | undefined;
+    let failure: string | null = null;
     let closeMcp = async () => {};
     try {
       const config = await resolveModel({
@@ -475,7 +424,6 @@ export class AgentRuntime {
         correlationId: run.correlationId,
         signal,
       });
-      active.secrets.push(...config.apiKeys.filter(Boolean));
       const rows = await this.store.messages(scope, run.sessionId);
       const summaryRow = (
         await this.store.pool.query(
@@ -498,108 +446,24 @@ export class AgentRuntime {
           content: `Previous conversation summary:\n${summary}`,
           timestamp: Date.now(),
         });
-      const tools: AgentTool[] = skills
-        .filter((s) =>
-          request.definition.skills.some(
-            (ref) => canonical(ref) === canonical(s.skill),
-          ),
-        )
-        .flatMap((skill) =>
-          skill.manifest.tools.map((tool) => ({
-            name: tool.name,
-            label: tool.name,
-            description: tool.description,
-            parameters: tool.inputSchema as TSchema,
-            execute: async (
-              toolCallId: string,
-              args: unknown,
-              toolSignal?: AbortSignal,
-              onUpdate?: (value: any) => void,
-            ) => {
-              const output = await executeSkill({
-                policy: this.worker,
-                assetRoot: path.join(this.options.root, "invocations"),
-                skill,
-                input: {
-                  protocolVersion: 1,
-                  kind: "tool",
-                  toolName: tool.name,
-                  arguments: args as Record<string, never>,
-                },
-                scope,
-                sessionId: run.sessionId,
-                runId: run.id,
-                toolCallId,
-                correlationId: run.correlationId,
-                request,
-                workspace: path.join(
-                  this.options.root,
-                  "workspaces",
-                  digest(scope),
-                  run.id,
-                ),
-                signal: toolSignal ?? signal,
-                progress: (value) =>
-                  onUpdate?.({
-                    content: [{ type: "text", text: value.text }],
-                    details: {},
-                  }),
-              });
-              if (output.type === "error")
-                return {
-                  content: [
-                    { type: "text" as const, text: output.error.message },
-                  ],
-                  details: {},
-                  isError: true,
-                };
-              if (output.type !== "result")
-                throw new Error("Invalid tool result kind");
-              active.drafts.set(toolCallId, output.artifacts);
-              return {
-                content: [{ type: "text" as const, text: output.text }],
-                details: {},
-                structuredContent: output.data,
-              };
-            },
-          })),
-        );
-      const workspace = path.join(
+      const sandbox = new SessionSandbox(
+        this.store,
         this.options.root,
-        "workspaces",
-        digest(scope),
-        run.id,
+        this.worker,
+        scope,
+        run.sessionId,
       );
-      await mkdir(path.dirname(workspace), { recursive: true, mode: 0o711 });
-      await chmod(path.dirname(workspace), 0o711);
-      await chmod(path.dirname(path.dirname(workspace)), 0o711);
-      for (const file of request.initialFiles ?? []) {
-        const write = workspaceTools(workspace).find(
-          (tool) => tool.name === "workspace_write",
-        )!;
-        await write.execute(
-          "initial-file",
-          { path: file.path, text: file.content },
-          signal,
-        );
-      }
-      if (request.definition.builtinTools.python) {
-        if (!request.privateContext.python)
-          throw new Error("Python binding is required");
-        const host = this.options.hosts.find((h) => h.id === scope.hostId)!;
-        tools.push(
-          this.code.tool(
-            host,
-            scope,
-            run.id,
-            run.correlationId,
-            workspace,
-            request.privateContext.python,
-          ),
-        );
-      }
-      if (request.definition.builtinTools.workspaceFiles)
-        tools.push(...workspaceTools(workspace));
+      const uid = await sandbox.prepare(skills);
+      active.sandbox = sandbox;
+      for (const file of await this.files.scan(sandbox.workspace))
+        active.outputBaseline.set(file.path, file.sha256);
+      const tools = await sandbox.start(
+        uid,
+        run.id,
+        run.correlationId,
+        request,
+        skills,
+      );
       const mcp = await connectMcp(
         this.options.mcpServers ?? [],
         request.definition.externalMcp.map((ref) => ref.serverId),
@@ -620,43 +484,9 @@ export class AgentRuntime {
           convertToLlm: (m) => m as Message[],
           prepareRequest: async ({ context }) => {
             signal.throwIfAborted();
-            let dynamic = "";
-            if (request.definition.contextSkill) {
-              const skill = skills.find(
-                (s) =>
-                  canonical(s.skill) ===
-                  canonical(request.definition.contextSkill),
-              )!;
-              const result = await executeSkill({
-                policy: this.worker,
-                assetRoot: path.join(this.options.root, "invocations"),
-                skill,
-                input: { protocolVersion: 1, kind: "context" },
-                scope,
-                sessionId: run.sessionId,
-                runId: run.id,
-                correlationId: run.correlationId,
-                request,
-                workspace: path.join(
-                  this.options.root,
-                  "workspaces",
-                  digest(scope),
-                  run.id,
-                ),
-                signal,
-              });
-              if (result.type !== "context_result")
-                throw new Error(
-                  result.type === "error"
-                    ? result.error.message
-                    : "Invalid context output",
-                );
-              dynamic = result.systemContext;
-            }
             const system = [
               request.definition.systemPrompt,
-              ...skills.map((s) => s.instructions),
-              dynamic,
+              skillCatalog(sandbox.workspace, skills),
             ]
               .filter(Boolean)
               .join("\n\n");
@@ -787,32 +617,86 @@ export class AgentRuntime {
           "conversation",
         ),
       );
-      const last = (await this.store.messages(scope, run.sessionId)).at(
-        -1,
-      )?.message;
-      if (last?.role === "assistant" && last.stopReason === "error")
-        throw new Error(last.errorMessage || "Model request failed");
-      if (signal.aborted) status = "cancelled";
+      if (signal.aborted) {
+        reason = "aborted";
+        failure = "Run cancelled";
+      }
     } catch (error) {
-      status = signal.aborted ? "cancelled" : "failed";
-
-      if (!signal.aborted)
-        failure = {
-          code: error instanceof RuntimeError ? error.code : "RUN_FAILED",
-          message: active.secrets.reduce(
-            (text, secret) => text.split(secret).join("[redacted]"),
-            safeMessage(error),
-          ),
-        };
+      reason = signal.aborted ? "aborted" : "error";
+      failure = signal.aborted ? "Run cancelled" : safeMessage(error);
     }
     await closeMcp();
+    await active.sandbox?.stop();
+    try {
+      await this.collect(active, null);
+    } catch (error) {
+      reason = "error";
+      failure = safeMessage(error);
+    }
     await this.locked(scope, run.sessionId, async () => {
       active.pending.clear();
-      this.publish(
-        active,
-        await this.store.finish(scope, run.id, status, failure),
-      );
+      const before = (await this.store.run(scope, run.id)).seq;
+      await this.store.finish(scope, run.id, reason, failure);
+      for (const envelope of await this.store.events(scope, run.id))
+        if (envelope.cursor.seq > before) this.publish(active, envelope);
     });
+  }
+  private async collect(active: Active, toolCallId: string | null) {
+    const sandbox = active.sandbox;
+    if (!sandbox) return [];
+    return this.files.withLock(async () => {
+      const ids: string[] = [];
+      const current = await this.files.scan(sandbox.workspace);
+      const paths = new Set(current.map((f) => f.path));
+      for (const name of active.outputBaseline.keys())
+        if (!paths.has(name)) active.outputBaseline.delete(name);
+      for (const file of current) {
+        if (active.outputBaseline.get(file.path) === file.sha256) continue;
+        await this.locked(active.scope, active.run.sessionId, async () => {
+          const event = await this.store.registerArtifact(
+            active.scope,
+            active.run.id,
+            toolCallId,
+            file,
+          );
+          if (event.event.type !== "artifact_registered")
+            throw new Error("Invalid artifact event");
+          ids.push(event.event.artifact.id);
+          this.publish(active, event);
+        });
+        active.outputBaseline.set(file.path, file.sha256);
+      }
+      return ids;
+    });
+  }
+  async deleteSession(scope: Scope, id: string) {
+    await this.files.withLock(() =>
+      this.locked(scope, id, async () => {
+        const hashes = (
+          await this.store.pool.query(
+            `SELECT DISTINCT sha256 FROM ${this.store.table("artifacts")} WHERE host_id=$1 AND domain_id=$2 AND session_id=$3`,
+            [scope.hostId, scope.domainId, id],
+          )
+        ).rows;
+        await this.store.deleteSession(scope, id);
+        await new SessionSandbox(
+          this.store,
+          this.options.root,
+          this.worker,
+          scope,
+          id,
+        ).remove();
+        for (const { sha256 } of hashes) {
+          const referenced = (
+            await this.store.pool.query(
+              `SELECT EXISTS(SELECT 1 FROM ${this.store.table("artifacts")} WHERE sha256=$1) OR EXISTS(SELECT 1 FROM ${this.store.table("code_executions")} c, jsonb_each(c.outputs) o WHERE o.value->>'sha256'=$1) AS present`,
+              [sha256],
+            )
+          ).rows[0].present;
+          if (!referenced) await this.files.remove(sha256);
+        }
+      }),
+    );
   }
   private async snapshotUnlocked(
     scope: Scope,
@@ -936,7 +820,6 @@ export class AgentRuntime {
     await this.store.run(scope, id);
     const active = this.active.get(key(scope, id));
     active?.controller.abort();
-    await this.code.cancelRun(scope, id);
     await active?.done;
     return { run: (await this.store.run(scope, id)).run };
   }

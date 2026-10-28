@@ -11,16 +11,23 @@ test("external ask preserves the reply revision on retries and downloads exact n
     runtimeSessionId: "session",
     runtimeRunId: "run-1",
     decisionRevision: 0,
-    phase: "settled",
+    run: { status: "stopped", stopReason: "stop", errorMessage: null },
     datasetArtifactIds: [],
-    result: { status: "needs_input", questions: [{ id: "question" }] },
+    messages: [
+      {
+        message: {
+          role: "assistant",
+          content: [{ type: "text", text: "Which period?" }],
+        },
+      },
+    ],
   };
   const done = {
     ...paused,
     runtimeRunId: "run-2",
     decisionRevision: 1,
     datasetArtifactIds: ["dataset"],
-    result: { status: "completed" },
+    messages: [],
   };
   const replies = new Map();
   const server = createServer(async (req, res) => {
@@ -58,7 +65,7 @@ test("external ask preserves the reply revision on retries and downloads exact n
     const answer = {
       expectedRunId: "run-1",
       expectedDecisionRevision: 0,
-      answers: [{ questionId: "question", choiceId: "now" }],
+      message: "Current period",
     };
     for (let i = 0; i < 2; i++)
       await analystCommand(

@@ -1,3 +1,5 @@
+import { runtimeMessageRecordSchema } from "./agent-runtime";
+import { runtimeStopReasonSchema } from "./agent-runtime-values";
 import { z } from "zod";
 import {
   runtimeJsonValueSchema,
@@ -48,20 +50,6 @@ export const recipeSchema = z.discriminatedUnion("kind", [
     })
     .strict(),
 ]);
-export const inputQuestionSchema = z
-  .object({
-    id,
-    question: z.string().min(1),
-    reason: z.string().min(1),
-    scope: z.string().min(1),
-    choices: z.array(
-      z
-        .object({ id: z.string(), label: z.string(), consequence: z.string() })
-        .strict(),
-    ),
-    recommendedChoiceId: z.string().nullable(),
-  })
-  .strict();
 export const metricUseSchema = z
   .object({
     id: z.string(),
@@ -91,6 +79,7 @@ export const selfCheckSchema = z
   .strict();
 export const datasetPayloadSchema = z
   .object({
+    schema: z.literal("workbench.dataset.v1"),
     title: z.string().min(1),
     question: z.string().min(1),
     columns: z.array(
@@ -138,32 +127,20 @@ export const retrievalInputSchema = z
     interaction: z.enum(["resumable", "non_interactive"]).default("resumable"),
   })
   .strict();
-export const retrievalResultSchema = z.discriminatedUnion("status", [
-  z.object({
-    status: z.literal("completed"),
-    datasetArtifactIds: z.array(id).min(1),
-    summary: z.string(),
-  }),
-  z.object({
-    status: z.literal("needs_input"),
-    datasetArtifactIds: z.array(id),
-    questions: z.array(inputQuestionSchema).min(1),
-    summary: z.string(),
-  }),
-  z.object({
-    status: z.literal("failed"),
-    datasetArtifactIds: z.array(id),
-    error: z.object({ code: z.string(), message: z.string() }),
-  }),
-]);
 export const retrievalSnapshotSchema = z.object({
   qualityCheck: runtimeJsonObjectSchema.optional(),
   id,
   revision: z.number().int(),
-  runtimeSessionId: id,
+  runtimeSessionId: id.nullable(),
   runtimeRunId: id.nullable(),
-  phase: z.enum(["running", "settled"]),
-  result: retrievalResultSchema.nullable(),
+  run: z
+    .object({
+      status: z.enum(["running", "stopped"]),
+      stopReason: runtimeStopReasonSchema.nullable(),
+      errorMessage: z.string().nullable(),
+    })
+    .nullable(),
+  messages: z.array(runtimeMessageRecordSchema),
   datasetArtifactIds: z.array(id),
   decisionRevision: z.number().int(),
 });
@@ -171,24 +148,12 @@ export const retrievalAnswersSchema = z
   .object({
     expectedRunId: id,
     expectedDecisionRevision: z.number().int().nonnegative(),
-    answers: z
-      .array(
-        z
-          .object({
-            questionId: id,
-            choiceId: z.string().optional(),
-            text: z.string().optional(),
-          })
-          .strict(),
-      )
-      .min(1),
+    message: z.string().trim().min(1),
   })
   .strict();
-export const submitDatasetSchema = z
+export const prepareDatasetSchema = z
   .object({
-    path: z.string().optional(),
-    executionId: id.optional(),
-    recipe: recipeSchema.optional(),
+    recipe: recipeSchema,
     title: z.string().min(1),
     question: z.string().min(1),
     outKeyRefs: z.array(fieldSourceSchema),
@@ -198,16 +163,6 @@ export const submitDatasetSchema = z
     decisionIds: z.array(id),
   })
   .strict();
-export const finishRetrievalSchema = z
-  .object({
-    status: z.enum(["completed", "needs_input", "failed"]),
-    submissionIds: z.array(id),
-    summary: z.string(),
-    questions: z.array(inputQuestionSchema.omit({ id: true })).optional(),
-    error: z.object({ code: z.string(), message: z.string() }).optional(),
-  })
-  .strict();
 export type DatasetPayload = z.infer<typeof datasetPayloadSchema>;
 export type RetrievalInput = z.infer<typeof retrievalInputSchema>;
-export type RetrievalResult = z.infer<typeof retrievalResultSchema>;
 export type RetrievalSnapshot = z.infer<typeof retrievalSnapshotSchema>;

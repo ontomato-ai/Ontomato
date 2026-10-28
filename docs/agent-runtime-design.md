@@ -1,11 +1,11 @@
 # Standard harness replacement design
 
-Controller-review segment, 2026-10-28. Baseline public f073cc7, enterprise
-10efb96; branch feature/agent-runtime-standard. This segment changes documents
-only. It does not claim new endpoints or tests have been implemented. The review
-gate precedes implementation. [Runtime wire contract](../packages/contracts/agent-runtime.md),
+Implementation, 2026-10-28. Public baseline d9fcae3 after the authorized rebase;
+enterprise baseline 10efb96. Controller review approved the external business-gate
+entry and standalone process state; a later user decision unified all PI components
+at 1.4.0. [Runtime wire contract](../packages/contracts/agent-runtime.md),
 [standalone execution](../packages/contracts/agent-runtime-code.md) and
-[retrieval contract](../packages/contracts/data-retrieval.md) are the shape owners.
+[retrieval contract](../packages/contracts/data-retrieval.md) own the wire shapes.
 
 Success means the same standard skill files and commands work in an external
 Claude Code/Codex harness and in the product. Governance and retrieval are both
@@ -31,15 +31,12 @@ algorithms. Its built-in edit schema is edits[], read uses line offset/limit,
 and bash has command/timeout; retain those upstream schemas and behaviors. Do not
 translate the retired workspace_* arguments into new private APIs.
 
-The existing journal-aware loop fork and pi-ai 1.3.0 remain the conversation
-owner. The new package brings its own PI dependency closure; use only its four
-tool factories and skill discovery, not AgentSession, CLI, settings discovery,
-model routing or a second loop. A narrow adapter transports the standard tool
-schema/content/details into the existing loop. Explicitly test the 1.4 tool /
-1.3 wire-profile boundary (text, image, errors, streaming tool output); unsupported
-blocks fail visibly. If this cannot be done through public exports, return that
-finding to the controller before upgrading/forking more PI components. Record
-actual production dependency size and notices in main-directory image acceptance.
+The loop is re-forked from pi-agent-core 1.4.0 source maps; pi-ai and
+pi-coding-agent are exact 1.4.0 dependencies. UPSTREAM.md records hashes and local
+changes. Awaited event sinks, prepareRequest and sequential tools are upstream
+hooks used by the runtime for journaling, compaction and terminal persistence.
+Only the four tool factories and explicit skill discovery are consumed from the
+coding-agent SDK; there is no second AgentSession or CLI execution loop.
 
 Instantiate tool execution in a non-root run worker reached by Node IPC. The
 supervisor owns model calls/events and forwards tool name, arguments and cancel;
@@ -153,7 +150,7 @@ refresh and its prompt interpolation; do not reproduce it as a hook. Continuatio
 uses the same skill read. Governance behavior acceptance checks saved progress
 and source/work consistency, not a specific prompt string or tool-call count.
 
-For external execution, propose POST /api/knowledge-governance/skill-runs with a
+For external execution, POST /api/knowledge-governance/skill-runs with a
 UUID key and `{message}` to create the same host business record/open gate without
 starting a runtime agent. Return `{id,sessionId,runId,expiresAt}`; a matching retry
 returns that gate without reopening it. CLI begin prints these identities;
@@ -161,7 +158,7 @@ POST /api/knowledge-governance/:id/skill-runs/:runId/close closes it. Bound expi
 the authenticated credential expiry; every mutation checks it. Explicit close or
 a new run closes earlier. No new lifetime configuration is introduced. The internal entry calls the same gate-opening service and additionally
 admits the runtime run. External history remains in the external harness, not a
-fabricated runtime session. This minimal entry is a review decision because the
+fabricated runtime session. This minimal entry is controller-approved because the
 old API always started a model and could not support the required external proof.
 
 Both modes use the environment names in the retrieval contract. Environment tk
@@ -187,7 +184,7 @@ and hash, so overwrite does not alter historical answers. See wire contract for
 cursor-bound resolution and registration events.
 
 The shared Markdown rule lives in contracts/agent-artifact-markdown.md with one
-exported prompt constant in segment 2. Renderer research and Vue integration
+exported ARTIFACT_MARKDOWN_PROMPT constant. Renderer research and Vue integration
 remain batch 3. This batch adapts current governance/retrieval consumers and
 history/download to the new facts; it does not introduce the new conversation UI.
 
@@ -236,53 +233,29 @@ formal-output/QC semantics. Keep old workbench core/agent-loop, harness-sessions
 LangChain and Java file tools only for unmigrated analysis/diagnosis/generator
 consumers. No work on the paused third-batch branch or remote deployment.
 
-## Verification and review boundary
+## Verification and handoff boundary
 
-Segment 1: review documents against current implementation and authority, check
-relative links/diff/changed-file scope, commit only Markdown, stop. No typecheck
-can prove the proposed schemas have been implemented at this stage.
+The user's latest instruction narrows verification to durable contracts and one
+real-process smoke for each main path: governance reads/writes, one Python data
+question, cancellation and restart yielding aborted. Existing valid checks may
+remain; do not grow a fault matrix or maintain assertions about private SQL,
+prompt wording, internal call counts or implementation-only shapes.
 
-Segment 2 commands use existing repository entry points:
+The kept checks protect runtime identity environment, standard skill loading,
+immutable file snapshots, closed write gates, shared executable distribution and
+PI/Java wire boundaries. Process smokes use isolated PG, real Node/Python child
+processes and local model/ontology HTTP fixtures, including nullable configuration
+and reasoning_content through pi-ai 1.4.0. Governance exercises compaction and
+saved work recovery. These are mechanical proofs, not live-model answer quality.
 
-```sh
-pnpm typecheck:runtime
-pnpm typecheck:workbench
-pnpm test:runtime
-pnpm --filter @ontomato/workbench-server exec vitest run src/services/knowledge-governance src/services/data-retrieval
-pnpm lint:workbench
-pnpm test:scripts
-```
+Existing entry points: pnpm typecheck:runtime, pnpm typecheck:workbench,
+pnpm lint:workbench, pnpm test:runtime and the focused workbench governance/retrieval
+Vitest paths. Both editions' selected Java startup/Function/authorization tests use
+disposable PG/pgvector. The Linux PI tool probe runs current source in a disposable
+container with Node/Python; it does not build or accept the product image.
 
-Run enterprise typecheck and the relevant existing full-context Java startup
-tests, plus narrowly selected grant/formal-output/Function tests. Record exact
-Maven selectors after locating them; no unfiltered external-system Java suite.
-Adapt existing process integration tests instead of writing tests that mirror
-prompt text or a manifest. Add only missing deterministic invariants:
-
-| Concrete risk | Required evidence |
-| --- | --- |
-| Tools still execute old wrappers or disagree with upstream | Real worker process invokes four PI tools and standard CLI scripts; same files/digests externally; no alternate entry |
-| UID/workspace accidentally per tool/run or skills replaceable | Linux process/permissions proof: same session/new run same UID/files, different session inaccessible, read-only package rename/edit denied |
-| Snapshot can change or point to missing bytes | Tool writes/overwrites/deletes, errors after write, binary file, same bytes reused, live/history/hash equality and interrupted commit recovery |
-| Restart/cancel loses source or replays side effects | Real PG + independent runtime/host processes; orphan child cleanup, stopped/aborted recovery, next run file continuity, unknown outcome not replayed |
-| Response loss becomes failure/duplicates action | Drop admission/output/SSE responses; same ID reconciliation, preserved state while unreachable, stale run gate rejection |
-| Nullable real settings/specs or app assembly fail | Fixture actual nullable model/metric fields; full application startup test process, public/enterprise imports, malformed vs empty payload distinctions |
-| Formal rows bypass permissions or differ in history | Query superset then authorized rerun, zero/false/null/partial results, tampered receipt/file rejection, same projection from HTTP snapshot |
-| Governance context hook secretly survives | All eight commands as ordinary subprocesses; read/updated work across compaction, saved sources/progress and continuation |
-| Plain question ends up a business failure | Normal stop message without file; explicit free-text answer same session/new run; aborted/error/length preserved |
-| Packaging still copies runtime-only files | Actual package resource fixture + startup publication; dependency/export/import and notice generation checks |
-
-The worker may run temporary local PG, fixture HTTP/model servers and test child
-processes in its worktree. It must not build product images or start the development
-stack there. Main-directory runtime image build, Linux final-image probes,
-enterprise four-image smoke, live governance/retrieval questions and browser
-acceptance are controller-owned. External Claude Code steps are in the retrieval
-design. Remote 128 demo-test 35 questions requires separate current authorization;
-record comparable model/data/question inputs, per-question correctness and timing,
-without an invented pass threshold. It has not run in this segment.
-
-Review decisions to settle before implementation: the minimal external work-gate
-entry points, and the explicit standalone process state shape (no assistant exists
-there). Dependency compatibility is an implementation proof obligation, not an
-implicit authorization to replace the PI loop. No other user-level scope choice
-is required by this draft.
+Main-directory image builds, real full-stack/browser acceptance, Claude Code
+execution and authorized 128 comparison remain controller-owned. External steps
+are in the retrieval design. Runtime/host legacy schemas are rejected explicitly
+until the separately owned pre-release conversion; no old protocol fallback or
+automatic deletion is installed. No unresolved architecture decision remains.

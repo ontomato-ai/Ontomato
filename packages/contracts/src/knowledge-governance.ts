@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { agentChatMessageSchema, agentResponseEventSchema } from "./agent-chat";
-import { runtimeIdSchema, runtimeKeySchema } from "./agent-runtime-values";
+import { runtimeIdSchema } from "./agent-runtime-values";
 
 export const governanceSourceSchema = z.object({
   id: z.string().min(1),
@@ -72,7 +72,7 @@ export const governanceSourceReadSchema = z.object({
           start: z.number(),
           end: z.number(),
           totalChars: z.number(),
-        })
+        }),
       ),
       totalItems: z.number(),
       matchedItems: z.number(),
@@ -90,24 +90,35 @@ export const governanceMessageInputSchema = z.object({
 export const governanceStreamEventSchema = z.union([
   agentResponseEventSchema,
   z.object({ type: z.literal("work"), work: governanceWorkSchema }),
-  z.object({ type:z.literal("snapshot"),runId:z.string().uuid(),messages:z.array(agentChatMessageSchema),work:governanceWorkSchema }),
+  z.object({
+    type: z.literal("snapshot"),
+    runId: z.string().uuid(),
+    messages: z.array(agentChatMessageSchema),
+    work: governanceWorkSchema,
+  }),
 ]);
 export type GovernanceStreamEvent = z.infer<typeof governanceStreamEventSchema>;
 
 /** All eight tools are workbench governance skills, including the two ontology-backed reads. */
 export const governanceRuntimeToolNameSchema = z.enum([
-  "search_history", "read_history", "read_evidence", "read_work_record",
-  "update_work_record", "read_knowledge", "read_ontology", "collect_turn_artifacts",
+  "search_history",
+  "read_history",
+  "read_evidence",
+  "read_work_record",
+  "update_work_record",
+  "read_knowledge",
+  "read_ontology",
+  "collect_turn_artifacts",
 ]);
 
 /** Taken from the skill environment, never from the model's tool arguments. */
-export const governanceSkillCallIdentitySchema = z.object({
-  governanceSessionId: runtimeIdSchema,
-  runtimeSessionId: runtimeIdSchema,
-  runId: runtimeIdSchema,
-  invocationId: runtimeIdSchema,
-  toolCallId: runtimeKeySchema.nullable(),
-}).strict();
+export const governanceSkillCallIdentitySchema = z
+  .object({
+    governanceSessionId: runtimeIdSchema,
+    sessionId: runtimeIdSchema,
+    runId: runtimeIdSchema,
+  })
+  .strict();
 
 /**
  * Business ownership is decided in the workbench transaction, not by a runtime status GET.
@@ -117,43 +128,61 @@ export const governanceSkillCallIdentitySchema = z.object({
  * A write checks this gate and the session's writeRunId in the same transaction as its commit.
  * In-flight writes before closure can still commit to this run's record after runtime termination.
  */
-export const governanceRunWorkSchema = z.object({
-  governanceSessionId: runtimeIdSchema,
-  runtimeSessionId: runtimeIdSchema,
-  runId: runtimeIdSchema,
-  writeState: z.enum(["open", "closed"]),
-  revision: z.number().int().nonnegative().safe(),
-  work: governanceWorkSchema,
-}).strict();
-export const governanceWriteOwnerSchema = z.object({
-  governanceSessionId: runtimeIdSchema,
-  runtimeSessionId: runtimeIdSchema,
-  writeRunId: runtimeIdSchema.nullable(),
-}).strict();
-export const governanceWorkPatchSchema = z.object({
-  summary: z.string().max(1000).optional(),
-  notes: z.string().max(30_000).optional(),
-  reviewedKnowledgeIds: z.array(z.string()).optional(),
-  issues: z.array(governanceIssueSchema).optional(),
-}).strict();
-export const governanceWriteRequestSchema = z.object({
-  identity: governanceSkillCallIdentitySchema,
-  patch: governanceWorkPatchSchema,
-}).strict();
-export const governanceWriteResponseSchema = z.object({
-  runId: runtimeIdSchema,
-  revision: z.number().int().nonnegative().safe(),
-  work: governanceWorkSchema,
-}).strict();
+export const governanceRunWorkSchema = z
+  .object({
+    governanceSessionId: runtimeIdSchema,
+    sessionId: runtimeIdSchema,
+    runId: runtimeIdSchema,
+    writeState: z.enum(["open", "closed"]),
+    revision: z.number().int().nonnegative().safe(),
+    work: governanceWorkSchema,
+  })
+  .strict();
+export const governanceWriteOwnerSchema = z
+  .object({
+    governanceSessionId: runtimeIdSchema,
+    sessionId: runtimeIdSchema,
+    writeRunId: runtimeIdSchema.nullable(),
+  })
+  .strict();
+export const governanceWorkPatchSchema = z
+  .object({
+    summary: z.string().max(1000).optional(),
+    notes: z.string().max(30_000).optional(),
+    reviewedKnowledgeIds: z.array(z.string()).optional(),
+    issues: z.array(governanceIssueSchema).optional(),
+  })
+  .strict();
+export const governanceWriteRequestSchema = z
+  .object({
+    identity: governanceSkillCallIdentitySchema,
+    patch: governanceWorkPatchSchema,
+  })
+  .strict();
+export const governanceWriteResponseSchema = z
+  .object({
+    runId: runtimeIdSchema,
+    revision: z.number().int().nonnegative().safe(),
+    work: governanceWorkSchema,
+  })
+  .strict();
 /** HTTP 409. Authorization failures remain 401/403/404, not a successful no-op. */
-export const governanceWriteClosedResponseSchema = z.object({
-  code: z.literal("GOVERNANCE_RUN_CLOSED"),
-  runId: runtimeIdSchema,
-  error: z.string().min(1),
-}).strict();
+export const governanceWriteClosedResponseSchema = z
+  .object({
+    code: z.literal("GOVERNANCE_RUN_CLOSED"),
+    runId: runtimeIdSchema,
+    error: z.string().min(1),
+  })
+  .strict();
 
-export type GovernanceSkillCallIdentity = z.infer<typeof governanceSkillCallIdentitySchema>;
+export type GovernanceSkillCallIdentity = z.infer<
+  typeof governanceSkillCallIdentitySchema
+>;
 export type GovernanceRunWork = z.infer<typeof governanceRunWorkSchema>;
 export type GovernanceWorkPatch = z.infer<typeof governanceWorkPatchSchema>;
-export type GovernanceWriteRequest = z.infer<typeof governanceWriteRequestSchema>;
-export type GovernanceWriteResponse = z.infer<typeof governanceWriteResponseSchema>;
+export type GovernanceWriteRequest = z.infer<
+  typeof governanceWriteRequestSchema
+>;
+export type GovernanceWriteResponse = z.infer<
+  typeof governanceWriteResponseSchema
+>;

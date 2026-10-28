@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { pythonBindingSchema, codeFileSchema } from "./agent-runtime-code";
+import { codeLimitsSchema } from "./agent-runtime-code";
 import { runtimeArtifactSchema } from "./agent-runtime-artifacts";
 import {
   runtimeCursorSchema,
@@ -12,16 +12,15 @@ import {
 } from "./agent-runtime-messages";
 import {
   runtimeEndUserCredentialSchema,
+  runtimeEnvironmentSchema,
   runtimeRegisteredSkillSchema,
   runtimeSkillRefSchema,
 } from "./agent-runtime-skills";
 import {
-  runtimeFailureSchema,
-  runtimeHttpUrlSchema,
   runtimeIdSchema,
-  runtimeJsonObjectSchema,
   runtimeKeySchema,
   runtimeRunStatusSchema,
+  runtimeStopReasonSchema,
   runtimeSequenceSchema,
   runtimeTimestampSchema,
 } from "./agent-runtime-values";
@@ -47,14 +46,8 @@ export const runtimeAgentDefinitionSchema = z
     systemPrompt: z.string(),
     modelRole: runtimeKeySchema,
     skills: z.array(runtimeSkillRefSchema),
-    builtinTools: z
-      .object({
-        workspaceFiles: z.boolean(),
-        python: z.boolean().default(false),
-      })
-      .strict(),
+    sandbox: z.object({ limits: codeLimitsSchema }).strict(),
     externalMcp: z.array(z.object({ serverId: runtimeKeySchema }).strict()),
-    contextSkill: runtimeSkillRefSchema.optional(),
     // Host-rendered instructions; the runtime prepends conversation and previous-summary blocks.
     compaction: z
       .object({
@@ -66,33 +59,14 @@ export const runtimeAgentDefinitionSchema = z
   })
   .strict();
 
-/** Kept only for the active run; never in its definition, messages, events or request logs. */
-export const runtimePrivateContextSchema = z
-  .object({
-    // Temporary Java model configuration adapter only; never inherited by a tool.
-    modelCredential: runtimeEndUserCredentialSchema,
-    skillBindings: z.array(
-      z
-        .object({
-          skill: runtimeSkillRefSchema,
-          targetUrl: runtimeHttpUrlSchema,
-          credential: runtimeEndUserCredentialSchema,
-          // Host-owned callback identities, supplied through env rather than model arguments.
-          context: runtimeJsonObjectSchema,
-        })
-        .strict(),
-    ),
-    python: pythonBindingSchema.optional(),
-  })
-  .strict();
 export const runtimeCreateSessionRequestSchema = z.object({}).strict();
 export const runtimeStartRunRequestSchema = z
   .object({
-    initialFiles: z.array(codeFileSchema).optional(),
     language: runtimeKeySchema,
     definition: runtimeAgentDefinitionSchema,
     input: runtimeUserMessageSchema,
-    privateContext: runtimePrivateContextSchema,
+    environment: runtimeEnvironmentSchema,
+    modelCredential: runtimeEndUserCredentialSchema,
   })
   .strict();
 
@@ -115,7 +89,13 @@ const runtimeRunFields = {
   language: runtimeKeySchema,
   createdAt: runtimeTimestampSchema,
   finishedAt: runtimeTimestampSchema.nullable(),
-  error: runtimeFailureSchema.nullable(),
+  stopReason: runtimeStopReasonSchema.nullable(),
+  errorMessage: z.string().nullable(),
+  resolvedSkills: z.array(runtimeRegisteredSkillSchema),
+  environment: z.object({
+    values: z.record(z.string()),
+    secretNames: z.array(z.string()),
+  }),
 };
 export const runtimeRunSchema = z
   .object({
@@ -179,7 +159,7 @@ export const runtimeSessionStatusSchema = z
       .object({
         id: runtimeIdSchema,
         status: runtimeRunStatusSchema,
-        error: runtimeFailureSchema.pick({ code: true }).nullable(),
+        stopReason: runtimeStopReasonSchema.nullable(),
       })
       .strict()
       .nullable(),
@@ -219,7 +199,6 @@ export const runtimeErrorCodeSchema = z.enum([
   "NOT_FOUND",
   "SESSION_BUSY",
   "IDEMPOTENCY_CONFLICT",
-  "SKILL_VERSION_CONFLICT",
   "SKILL_NOT_FOUND",
   "UNSUPPORTED_CAPABILITY",
   "RESOURCE_DELETED",
@@ -241,7 +220,6 @@ export const RUNTIME_ERROR_HTTP_STATUS = {
   NOT_FOUND: 404,
   SESSION_BUSY: 409,
   IDEMPOTENCY_CONFLICT: 409,
-  SKILL_VERSION_CONFLICT: 409,
   SKILL_NOT_FOUND: 422,
   UNSUPPORTED_CAPABILITY: 422,
   RESOURCE_DELETED: 410,

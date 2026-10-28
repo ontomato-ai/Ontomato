@@ -49,13 +49,6 @@ const runtime = new AgentRuntime({
     .url()
     .parse(process.env.AGENT_RUNTIME_MODEL_CONFIG_URL),
   modelRuntimeToken: process.env.ONTOMATO_MODEL_RUNTIME_TOKEN,
-  maxArtifactBytes: process.env.AGENT_RUNTIME_MAX_ARTIFACT_BYTES
-    ? z.coerce
-        .number()
-        .int()
-        .positive()
-        .parse(process.env.AGENT_RUNTIME_MAX_ARTIFACT_BYTES)
-    : undefined,
   mcpServers: z
     .array(
       z.object({

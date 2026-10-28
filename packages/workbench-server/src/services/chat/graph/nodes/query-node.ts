@@ -244,7 +244,6 @@ export async function queryNode(
               abcOutKeyRefs: fallback?.abcOutKeyRefs,
               replayPlan: fallback?.replayPlan,
               retrieval: fallback?.retrieval,
-              needsInput: fallback?.needsInput,
               markdownTable: fallbackContent
                 ? answerBodyText(fallbackContent)
                 : undefined,

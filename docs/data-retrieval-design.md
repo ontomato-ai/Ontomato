@@ -1,7 +1,6 @@
 # Retrieval through standard skills
 
-Controller-review design, 2026-10-28, replacing the batch 2 execution shape.
-No implementation is included in this segment. The shared shapes are in
+Implementation, 2026-10-28, replacing the batch 2 execution shape. The shared shapes are in
 [data-retrieval.md](../packages/contracts/data-retrieval.md); the harness,
 governance migration and complete removal matrix are in
 [agent-runtime-design.md](agent-runtime-design.md). This document owns retrieval
@@ -95,23 +94,21 @@ services. Use an isolated PG schema/data directory and independent child process
 keep fixtures shaped like actual Java responses, including null descriptions,
 nullable model fields, parameter sample/value/classNames and revision metadata.
 
-Required paths: eight governance commands; simple DSL; multi-table recipe;
-bash/Python post-calculation; zero rows and partial zero rows; permission-limited
-formal rerun; user reply in same session; canceled process tree; runtime restart;
-workbench restart; dropped response/stream tail and reconciliation; overwritten
-artifact content in live/history reads. Check ordinary CLI errors as tool errors,
-not a separate skill protocol. Native tests are mechanical process evidence,
-not proof of model quality or production Linux isolation.
+Keep one main-path smoke for governance and Python retrieval, plus cancellation
+and restart/aborted. Retain the contracts for file immutability, closed gates and
+identities; do not add more fault scenarios. The existing free-text continuation
+and copied-skill checks remain valid. Native checks do not prove Linux isolation
+or live-model question quality.
 
-The runtime design lists exact existing pnpm entry points and additional Linux
-permission checks. Record actual commands and logs after implementation. Main
+The runtime design lists the focused contract/smoke scope and existing check
+entry points. Record actual commands and logs at handoff. Main
 checkout build/stack tests remain with the controller; no image is built here.
 
 ## Controller: Claude Code portability acceptance
 
 Run after segment 2 and main-directory host startup. Use a temporary project
 outside product checkouts. This procedure is a plan, not a claim that Claude Code
-has been run. The proposed work-gate endpoints must pass review first.
+has been run. The work-gate endpoints were approved by the controller.
 
 1. Copy the published ontomato-analyst, knowledge-governance and data-retrieval
    directories unchanged under the temporary project's .claude/skills/. Record a

@@ -4,7 +4,6 @@ import {
   retrievalSnapshotSchema,
   type RetrievalInput,
   type RetrievalSnapshot,
-  type RetrievalResult,
 } from "@ontomato/contracts/data-retrieval";
 import {
   getPostgresPool,
@@ -18,9 +17,7 @@ export interface RetrievalOwner {
 }
 export interface Decision {
   id: string;
-  questionId: string;
-  question: string;
-  choiceId: string | null;
+  runId: string;
   text: string;
   scope: string;
   source: "user";
@@ -32,6 +29,9 @@ export interface RetrievalRecord {
   snapshot: RetrievalSnapshot;
   parentId: string | null;
   decisions: Decision[];
+  workSessionId: string;
+  currentRunId: string;
+  external: boolean;
 }
 export function fingerprint(value: unknown): string {
   function canonical(v: unknown): unknown {
@@ -69,6 +69,9 @@ function record(row: Record<string, any>): RetrievalRecord {
     snapshot: retrievalSnapshotSchema.parse(row.snapshot),
     parentId: row.parent_id,
     decisions: row.decisions,
+    workSessionId: row.work_session_id,
+    currentRunId: row.current_run_id,
+    external: row.external,
   };
 }
 export const retrievalStore = {
@@ -91,6 +94,7 @@ export const retrievalStore = {
     input: RetrievalInput,
     parentId: string | null,
     deadline: Date,
+    external = false,
   ) {
     return transaction(async (c) => {
       if (parentId) {
@@ -105,25 +109,45 @@ export const retrievalStore = {
         if (gate.rows[0].closed)
           throw new HttpError(409, "Parent run is closed");
       }
-      const runId = randomUUID(),
+      const runId = external ? id : randomUUID(),
+        workSessionId = randomUUID(),
         snapshot: RetrievalSnapshot = {
           id,
           revision: 0,
-          runtimeSessionId: randomUUID(),
-          runtimeRunId: runId,
-          phase: "running",
-          result: null,
+          runtimeSessionId: external ? null : workSessionId,
+          runtimeRunId: external ? null : runId,
+          run: external
+            ? null
+            : { status: "running", stopReason: null, errorMessage: null },
+          messages: [],
           datasetArtifactIds: [],
           decisionRevision: 0,
         };
-      const hash = fingerprint({ input, parentId });
+      const hash = fingerprint({ input, parentId, external });
       const result = await c.query(
-        `INSERT INTO ${table("retrievals")} (id,domain_id,owner_id,parent_id,input,input_hash,snapshot) VALUES($1,$2,$3,$4,$5,$6,$7) ON CONFLICT DO NOTHING`,
-        [id, owner.domainId, owner.userId, parentId, input, hash, snapshot],
+        `INSERT INTO ${table("retrievals")} (id,domain_id,owner_id,parent_id,input,input_hash,snapshot,work_session_id,current_run_id,external) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) ON CONFLICT DO NOTHING`,
+        [
+          id,
+          owner.domainId,
+          owner.userId,
+          parentId,
+          input,
+          hash,
+          snapshot,
+          workSessionId,
+          runId,
+          external,
+        ],
       );
       if (!result.rowCount) {
         const old = await this.get(id, owner, c);
-        if (fingerprint({ input: old.input, parentId: old.parentId }) !== hash)
+        if (
+          fingerprint({
+            input: old.input,
+            parentId: old.parentId,
+            external: old.external,
+          }) !== hash
+        )
           throw new HttpError(409, "Retrieval input changed");
         return { record: old, replayed: true };
       }
@@ -132,7 +156,16 @@ export const retrievalStore = {
         [runId, id, hash, deadline],
       );
       return {
-        record: { owner, input, snapshot, parentId, decisions: [] },
+        record: {
+          owner,
+          input,
+          snapshot,
+          parentId,
+          decisions: [],
+          workSessionId,
+          currentRunId: runId,
+          external,
+        },
         replayed: false,
       };
     });
@@ -152,39 +185,33 @@ export const retrievalStore = {
       [runId, id],
     );
     if (
-      r.snapshot.runtimeRunId !== runId ||
+      r.currentRunId !== runId ||
       !round.rows[0]?.open ||
       new Date(round.rows[0].deadline).getTime() <= Date.now()
     )
-      throw new HttpError(409, "Retrieval round is closed");
+      throw Object.assign(new HttpError(409, "Retrieval round is closed"), {
+        code: "RETRIEVAL_RUN_CLOSED",
+      });
     return r;
   },
   async close(
     id: string,
     owner: RetrievalOwner,
-    result: RetrievalResult,
     expectedRunId: string,
+    snapshot?: RetrievalSnapshot,
   ) {
     return transaction(async (c) => {
       const r = await this.get(id, owner, c, true);
-      if (r.snapshot.runtimeRunId !== expectedRunId) return r.snapshot;
       await c.query(
-        `UPDATE ${table("retrieval_rounds")} SET open=false WHERE id=$1`,
-        [r.snapshot.runtimeRunId],
+        `UPDATE ${table("retrieval_rounds")} SET open=false WHERE id=$1 AND retrieval_id=$2`,
+        [expectedRunId, id],
       );
-      if (r.snapshot.phase === "settled") return r.snapshot;
-      const snapshot = {
-        ...r.snapshot,
-        phase: "settled",
-        result,
-        revision: r.snapshot.revision + 1,
-        datasetArtifactIds: result.datasetArtifactIds,
-      };
+      if (r.currentRunId !== expectedRunId || !snapshot) return r.snapshot;
       await c.query(
         `UPDATE ${table("retrievals")} SET snapshot=$2 WHERE id=$1`,
         [id, snapshot],
       );
-      return retrievalSnapshotSchema.parse(snapshot);
+      return snapshot;
     });
   },
   async cancelParent(parentId: string, owner: RetrievalOwner) {

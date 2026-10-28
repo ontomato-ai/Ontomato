@@ -14,7 +14,6 @@ export interface QueryRun {
   error?: string;
   backendSessions?: QueryBackendSession[];
   retrieval?: import("@ontomato/contracts/query-execution").QueryRetrievalRef;
-  needsInput?: import("@ontomato/contracts/query-execution").QueryExecutionDisplayFact["needsInput"];
   nodeIds?: string[];
   markdownTable?: string;
   datasetPreviews?: any;
@@ -55,7 +54,6 @@ export interface UpsertQueryRunInput {
   error?: string;
   backendSessions?: QueryBackendSession[];
   retrieval?: import("@ontomato/contracts/query-execution").QueryRetrievalRef;
-  needsInput?: import("@ontomato/contracts/query-execution").QueryExecutionDisplayFact["needsInput"];
   nodeIds?: string[];
   markdownTable?: string;
   datasetPreviews?: unknown;
@@ -109,7 +107,6 @@ function mapQueryRunRow(row: any): QueryRun {
     error: row.error || undefined,
     backendSessions: row.backend_sessions || undefined,
     retrieval: row.retrieval_ref || undefined,
-    needsInput: row.needs_input || undefined,
     nodeIds: row.node_ids || undefined,
     markdownTable: row.markdown_table || undefined,
     datasetPreviews: row.dataset_previews,
@@ -158,8 +155,8 @@ export async function upsertQueryRun(
          cards, winner, data_payload, datasets_payload, dsl_payload, dsl_text, ir,
          full_content, thinking_summary, thinking_steps, thinking_state,
          object_classes, data_count, abc_sub_questions, abc_dsls, abc_codes, abc_out_key_refs, replay_plan,
-         created_at, updated_at, retrieval_ref, needs_input)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$32,$33,$34)
+         created_at, updated_at, retrieval_ref)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$32,$33)
        ON CONFLICT (thread_id, request_seq, source_kind, source_ref)
        DO UPDATE SET
          source_stage = COALESCE(EXCLUDED.source_stage, ${qualifiedTable("query_runs")}.source_stage),
@@ -189,7 +186,6 @@ export async function upsertQueryRun(
          abc_out_key_refs = EXCLUDED.abc_out_key_refs,
          replay_plan = EXCLUDED.replay_plan,
          retrieval_ref = COALESCE(EXCLUDED.retrieval_ref, ${qualifiedTable("query_runs")}.retrieval_ref),
-         needs_input = EXCLUDED.needs_input,
          updated_at = EXCLUDED.updated_at`,
     [
       id,
@@ -225,7 +221,6 @@ export async function upsertQueryRun(
       jsonParam(input.replayPlan),
       now,
       jsonParam(input.retrieval),
-      jsonParam(input.needsInput),
     ],
   );
 }

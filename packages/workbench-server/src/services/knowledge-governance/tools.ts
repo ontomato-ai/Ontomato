@@ -29,7 +29,7 @@ import {
   type GovernanceRecord,
 } from "./store";
 
-// These schemas own both HTTP validation and the generated runtime tool manifest.
+// These schemas own governance action HTTP validation.
 export const governanceActions = {
   search_history: {
     description:

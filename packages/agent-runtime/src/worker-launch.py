@@ -10,6 +10,11 @@ parent_pid = int(os.environ.pop("RUNTIME_PARENT_PID", "0"))
 if os.name == "posix" and os.environ.pop("RUNTIME_LIFETIME_FD", ""):
     os.set_blocking(4, True)
     if os.fork() == 0:
+        # The lifetime watcher must not keep the tool worker IPC channel open.
+        try:
+            os.close(3)
+        except OSError:
+            pass
         try:
             while os.read(4, 1):
                 pass

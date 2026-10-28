@@ -1,6 +1,6 @@
 # Agent artifact Markdown reference contract
 
-Shared shell contract, proposed 2026-10-28 from the approved artifact reference
+Shared shell contract, approved 2026-10-28 from the approved artifact reference
 convention. Runtime provides files according to [agent-runtime.md](agent-runtime.md).
 This batch establishes the reference and shared prompt owner; batch 3 implements
 the Vue shell, parser integration and renderers. No browser implementation is
@@ -14,9 +14,8 @@ system prompt, alongside its business instructions:
 > [title](outputs/path) for a file card opened in the side panel. Choose one form
 > for each intended presentation. Do not embed full dataset contents in the reply.
 
-The implementation adds one exported prompt constant (with the existing locale
-mechanism for translations), consumed by governance and retrieval and later the
-main assistant. Hosts do not independently rewrite the rule. The contract owns
+The exported ARTIFACT_MARKDOWN_PROMPT constant is consumed by governance and
+retrieval; the later main assistant will use the same owner. Hosts do not independently rewrite the rule. The contract owns
 syntax/meaning; each shell host owns concrete renderers. This does not restrict
 standard Markdown references in an external agent.
 

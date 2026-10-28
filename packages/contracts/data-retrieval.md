@@ -1,6 +1,6 @@
 # Standard-skill data retrieval contract
 
-Design for controller review, 2026-10-28; executable schemas change in segment 2.
+Implemented contract, 2026-10-28; executable schemas are in src/data-retrieval.ts.
 This replaces the batch 2 private submission/finish protocol. The workbench owns
 retrieval orchestration; ontology owns authorization and formal execution; runtime
 owns messages, PI state and file snapshots. [Design](../../docs/data-retrieval-design.md)
@@ -173,6 +173,7 @@ The skill packages document these exact environment variables:
 | ONTOMATO_ONTOLOGY_URL | Ontology base URL including gateway prefix when applicable |
 | ONTOMATO_WORKBENCH_URL | Workbench base URL, before /api |
 | ONTOMATO_TK | Normal user or host-issued callback credential, sent as tk |
+| ONTOMATO_QUERY_RUN_ID | Optional parent query-grant run binding for nested standalone executions |
 | ONTOMATO_QUERY_TK | Optional ontology query/execution credential, sent as tk; defaults to ONTOMATO_TK |
 | ONTOMATO_SESSION_ID / ONTOMATO_RUN_ID | Runtime identity in product; host-issued work identity for external execution |
 | ONTOMATO_RETRIEVAL_ID | Workbench retrieval record used by dataset.mjs |
@@ -218,10 +219,12 @@ explicit environment token takes the identical command path in every edition.
 
 ## External work identity and business writes
 
-Proposed addition requiring controller review: each workbench skill can open a
+Controller-approved addition: each workbench skill can open a
 host-owned work record for an external harness without starting a runtime agent.
 POST /api/retrievals/skill-runs takes a UUID key and the same question/class scope;
-returns `{id,sessionId,runId,expiresAt}`. POST
+returns `{id,sessionId,runId,expiresAt}`. An optional retrievalId opens a new
+round on an existing external record, closing its predecessor in the same
+transaction. Matching begin retries return the original gate, never a newer one. POST
 /api/retrievals/:id/skill-runs/:runId/close closes its gate idempotently. Scripts
 `begin`/`close` document these calls and emit values the external caller can set
 as environment variables. End-user auth and query permissions are mandatory.
@@ -231,7 +234,10 @@ service. Internally the work ID is mapped to the actual runtime ID; externally
 there is no fabricated runtime history. The external gate expires at the existing
 query deadline, and an expired gate cannot be reopened by retry. Local files are
 the external harness's outputs; no upload back to runtime is required to prove
-portability. This is business work ownership, not another loop or agent protocol.
+portability. External begin never issues a trusted exploration grant; scripts operate with
+the authenticated user's own permissions. Scripts use ONTOMATO_RUN_ID when
+present, otherwise their documented begin command obtains the work identity.
+This is business work ownership, not another loop or agent protocol.
 Governance uses the equivalent boundary described in the runtime design.
 
 All mutations check the host-owned run gate in the mutation transaction, including

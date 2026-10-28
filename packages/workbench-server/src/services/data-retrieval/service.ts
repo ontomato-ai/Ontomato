@@ -1,20 +1,16 @@
-import { createHash, randomUUID } from "node:crypto";
+import { randomUUID, createHash } from "node:crypto";
 import { z } from "zod";
 import {
   datasetPayloadSchema,
-  finishRetrievalSchema,
-  submitDatasetSchema,
+  prepareDatasetSchema,
   retrievalAnswersSchema,
-  retrievalResultSchema,
   type RetrievalInput,
-  type DatasetPayload,
+  type RetrievalSnapshot,
 } from "@ontomato/contracts/data-retrieval";
 import type { RuntimeRunSnapshot } from "@ontomato/contracts/agent-runtime";
-import { RUNTIME_MODEL_NOT_CONFIGURED } from "@ontomato/contracts/agent-runtime-values";
-import { tForLocale } from "../../i18n";
-import { getRoleNotConfiguredMessage } from "../../config/model-resolver";
-import { codeExecutionSchema } from "@ontomato/contracts/agent-runtime-code";
 import { runtimeArtifactSchema } from "@ontomato/contracts/agent-runtime-artifacts";
+import { ARTIFACT_MARKDOWN_PROMPT } from "@ontomato/contracts/agent-artifact-markdown";
+import { codeLimitsSchema } from "@ontomato/contracts/agent-runtime-code";
 import { RuntimeClient } from "../agent-runtime/client";
 import { callbackCredential } from "../agent-runtime/callback-credential";
 import { renderPrompt } from "../../core/prompts/loader";
@@ -36,37 +32,30 @@ import {
 } from "./store";
 import { ontologyRequest, type RetrievalCredentials } from "./ontology";
 import { retrievalSkill, ontologySkill } from "./skill";
-
-const logger = createLogger("data-retrieval");
-const active = new Map<string, Promise<void>>();
-const qualityActive = new Set<string>();
+const logger = createLogger("data-retrieval"),
+  active = new Map<string, Promise<void>>(),
+  preparing = new Map<string, Promise<void>>(),
+  qualityActive = new Set<string>();
 const pause = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
-const nullableItems = z
-  .object({ items: z.array(z.record(z.unknown())) })
-  .passthrough();
-const sha = (text: string) => createHash("sha256").update(text).digest("hex");
-
 async function artifact(
   owner: RetrievalOwner,
   id: string,
   retrievalId?: string,
 ) {
-  const result = await getPostgresPool().query(
+  const rows = await getPostgresPool().query(
     `SELECT 1 FROM ${table("retrieval_submissions")} s JOIN ${table("retrieval_rounds")} t ON t.id=s.run_id JOIN ${table("retrievals")} r ON r.id=t.retrieval_id WHERE s.artifact_id=$1 AND r.domain_id=$2 AND r.owner_id=$3${retrievalId ? " AND r.id=$4" : ""}`,
     [id, owner.domainId, owner.userId, ...(retrievalId ? [retrievalId] : [])],
   );
-  if (!result.rowCount) throw new HttpError(404, "Dataset not found");
-  const value = runtimeArtifactSchema.parse(
-    await new RuntimeClient(owner.domainId).request(`/v1/artifacts/${id}`),
-  );
-  if (value.content.type !== "workbench.dataset.v1")
-    throw new Error("Referenced artifact is not a dataset");
+  if (!rows.rowCount) throw new HttpError(404, "Dataset not found");
+  const client = new RuntimeClient(owner.domainId);
+  runtimeArtifactSchema.parse(await client.request(`/v1/artifacts/${id}`));
   return {
-    id: value.id,
-    payload: datasetPayloadSchema.parse(value.content.payload),
+    id,
+    payload: datasetPayloadSchema.parse(
+      JSON.parse(await client.text(`/v1/artifacts/${id}/content`)),
+    ),
   };
 }
-
 export const retrievalService = {
   async start(
     id: string,
@@ -77,62 +66,69 @@ export const retrievalService = {
   ) {
     for (const previous of input.previousDatasetIds)
       await artifact(owner, previous);
-    const admission = await retrievalStore.create(
+    const accepted = await retrievalStore.create(
       id,
       owner,
       input,
       parentId,
       new Date(Date.now() + getQueryTimeoutMs()),
     );
-    if (!admission.replayed) this.launch(admission.record, credentials);
-    return admission.record.snapshot;
+    if (!accepted.replayed) await this.launch(accepted.record, credentials);
+    else await preparing.get(accepted.record.currentRunId);
+    return (await retrievalStore.get(id, owner)).snapshot;
   },
   launch(
     record: RetrievalRecord,
     credentials: RetrievalCredentials,
-    answerText?: string,
-    previousRunId?: string,
+    answer?: string,
   ) {
-    const id = record.snapshot.id;
-    const runKey = record.snapshot.runtimeRunId!;
-    if (active.has(runKey)) return;
-    const work = this.prepare(record, credentials, answerText, previousRunId)
-      .catch(async (error: unknown) => {
-        logger.warn("Retrieval preparation failed", {
-          retrievalId: id,
-          error: error instanceof Error ? error.message : String(error),
-        });
-        await this.cancel(
-          id,
-          record.owner,
-          credentials,
-          tForLocale(credentials.locale, "query.retrieval.startFailed"),
-          runKey,
-          "RETRIEVAL_EXECUTION_FAILED",
-        );
-      })
-      // Observation failures cannot establish a business outcome; only a runtime snapshot can.
-      .then(() => this.observe(id, record.owner, credentials, runKey))
-      .finally(() => active.delete(runKey));
-    active.set(runKey, work);
-    void work.catch((error) =>
-      logger.error("Retrieval reconciliation is pending", {
-        retrievalId: id,
-        error,
-      }),
+    const runId = record.currentRunId;
+    if (active.has(runId)) return preparing.get(runId) ?? Promise.resolve();
+    const ready = this.prepare(record, credentials, answer).catch(
+      async (error) => {
+        // An uncertain admission is reconciled by its original ID before closing a gate.
+        try {
+          await new RuntimeClient(record.owner.domainId).run(runId);
+          return;
+        } catch (readError) {
+          if (readError instanceof HttpError && readError.status === 404)
+            await retrievalStore.close(
+              record.snapshot.id,
+              record.owner,
+              runId,
+              { ...record.snapshot, run: null },
+            );
+        }
+        throw error;
+      },
     );
+    preparing.set(runId, ready);
+    const work = ready
+      .then(() =>
+        this.observe(record.snapshot.id, record.owner, credentials, runId),
+      )
+      .catch((error) =>
+        logger.error(
+          "Retrieval admission or observation requires reconciliation",
+          { runId, error },
+        ),
+      )
+      .finally(() => {
+        active.delete(runId);
+        preparing.delete(runId);
+      });
+    active.set(runId, work);
+    return ready;
   },
   async prepare(
     record: RetrievalRecord,
     credentials: RetrievalCredentials,
-    answerText?: string,
-    previousRunId?: string,
+    answer?: string,
   ) {
-    const { owner, input, snapshot } = record,
-      runId = snapshot.runtimeRunId!,
-      client = new RuntimeClient(owner.domainId, runId);
-    const round = await retrievalStore.round(runId);
-    await client.createSession(snapshot.runtimeSessionId);
+    const { owner, input, snapshot, currentRunId: runId } = record,
+      client = new RuntimeClient(owner.domainId, runId),
+      round = await retrievalStore.round(runId);
+    await client.createSession(record.workSessionId);
     const [overview, knowledge, metrics] = await Promise.all([
       ontologyRequest("/ontology/query/overview", credentials),
       ontologyRequest("/ontology/query/knowledge/search", credentials, {
@@ -146,20 +142,12 @@ export const retrievalService = {
         ...(input.classNames ? { classNames: input.classNames } : {}),
       }),
     ]);
-    nullableItems.parse(knowledge);
-    nullableItems.parse(metrics);
-    const grant = await ontologyRequest(
-      "/internal/query-grants/exploration",
-      credentials,
-      {
-        retrievalId: snapshot.id,
-        runtimeSessionId: snapshot.runtimeSessionId,
-        runtimeRunId: runId,
-        expiresAt: new Date(round.deadline).toISOString(),
-        classNames: input.classNames ?? [],
-      },
-    );
-    const authorization = z
+    const items = z
+      .object({ items: z.array(z.record(z.unknown())) })
+      .passthrough();
+    items.parse(knowledge);
+    items.parse(metrics);
+    const grant = z
       .object({
         credential: z.object({
           kind: z.literal("bearer"),
@@ -167,39 +155,35 @@ export const retrievalService = {
         }),
         expiresAt: z.string().datetime(),
       })
-      .parse(grant);
-    const exploration = authorization.credential;
-    round.deadline = new Date(
-      Math.min(
-        new Date(round.deadline).getTime(),
-        Date.parse(authorization.expiresAt),
-      ),
+      .parse(
+        await ontologyRequest(
+          "/internal/query-grants/exploration",
+          credentials,
+          {
+            retrievalId: snapshot.id,
+            runtimeSessionId: record.workSessionId,
+            runtimeRunId: runId,
+            expiresAt: new Date(round.deadline).toISOString(),
+            classNames: input.classNames ?? [],
+          },
+        ),
+      );
+    const deadline = Math.min(
+      new Date(round.deadline).getTime(),
+      Date.parse(grant.expiresAt),
     );
     await getPostgresPool().query(
       `UPDATE ${table("retrieval_rounds")} SET deadline=LEAST(deadline,$2) WHERE id=$1`,
-      [runId, round.deadline],
+      [runId, new Date(deadline)],
     );
-    const previousIds = [
-      ...new Set([...input.previousDatasetIds, ...snapshot.datasetArtifactIds]),
-    ];
     const prior = await Promise.all(
-      previousIds.map((id) => artifact(owner, id)),
+      [
+        ...new Set([
+          ...input.previousDatasetIds,
+          ...snapshot.datasetArtifactIds,
+        ]),
+      ].map((id) => artifact(owner, id)),
     );
-    const initialFiles: { path: string; content: string }[] = [];
-    if (previousRunId) {
-      const old = z
-        .object({ executions: z.array(codeExecutionSchema) })
-        .parse(
-          await client.request(`/v1/runs/${previousRunId}/code-executions`),
-        );
-      const latest = new Map<string, string>();
-      for (const execution of old.executions)
-        if (execution.status === "completed")
-          latest.set(execution.entry, execution.source);
-      for (const [path, content] of latest)
-        initialFiles.push({ path, content });
-    }
-
     const context = {
       question: input.question,
       userQuotes: input.userQuotes,
@@ -216,24 +200,31 @@ export const retrievalService = {
       decisions: record.decisions.filter(
         (d) => !record.decisions.some((next) => next.supersedesId === d.id),
       ),
-      resumedFiles: initialFiles.map((f) => f.path),
-      answer: answerText ?? null,
+      answer: answer ?? null,
     };
-    const prefix = `/api/retrievals/${snapshot.id}/runtime/`;
     await transaction((c) => retrievalStore.gate(snapshot.id, owner, runId, c));
-    await client.start(snapshot.runtimeSessionId, runId, {
-      initialFiles,
+    await client.start(record.workSessionId, runId, {
       language: credentials.locale ?? "en",
+      input: {
+        role: "user",
+        content: JSON.stringify(context),
+        timestamp: Date.now(),
+      },
       definition: {
-        systemPrompt: renderPrompt(
-          "data-retrieval.system",
-          {},
-          credentials.locale,
-        ),
+        systemPrompt:
+          renderPrompt("data-retrieval.system", {}, credentials.locale) +
+          "\n\n" +
+          ARTIFACT_MARKDOWN_PROMPT,
         modelRole: "coding",
         skills: [ontologySkill, retrievalSkill],
-        builtinTools: { workspaceFiles: true, python: true },
         externalMcp: [],
+        sandbox: {
+          limits: codeLimitsSchema.parse({
+            memoryBytes: 16 * 1024 ** 3,
+            wallTimeMs: Math.max(1, deadline - Date.now()),
+            cpuSeconds: Math.max(1, Math.ceil(getQueryTimeoutMs() / 1000)),
+          }),
+        },
         compaction: {
           systemPrompt: renderPrompt(
             "knowledge-governance.compaction.system",
@@ -252,55 +243,28 @@ export const retrievalService = {
           ),
         },
       },
-      input: {
-        role: "user",
-        content: JSON.stringify(context),
-        timestamp: Date.now(),
-      },
-      privateContext: {
-        modelCredential: credentials.apiKey
-          ? { kind: "api_key", value: credentials.apiKey }
-          : credentials.token
-            ? { kind: "token", value: credentials.token }
-            : { kind: "none" },
-        skillBindings: [
-          {
-            skill: ontologySkill,
-            targetUrl: getApiConfig().baseUrl!,
-            credential: exploration,
-            context: {},
-          },
-          {
-            skill: retrievalSkill,
-            targetUrl:
-              environment.agentRuntime().callbackUrl.replace(/\/$/, "") +
-              "/api/retrievals",
-            credential: callbackCredential({
-              pathPrefix: prefix,
-              runId,
-              expiresAt: new Date(round.deadline).getTime(),
-              token: credentials.token ?? "",
-              apiKey: credentials.apiKey ?? "",
-            }),
-            context: { retrievalId: snapshot.id },
-          },
-        ],
-        python: {
-          targetUrl: getApiConfig().baseUrl!,
-          credential: exploration,
-          context: {},
-          libraries: [{ skill: ontologySkill, path: "python" }],
-          limits: {
-            wallTimeMs: Math.max(
-              1,
-              new Date(round.deadline).getTime() - Date.now(),
-            ),
-            cpuSeconds: Math.max(1, Math.ceil(getQueryTimeoutMs() / 1000)),
-            memoryBytes: 1024 ** 3,
-            processCount: 32,
-            fileBytes: 32 * 1024 ** 2,
-            outputBytes: 16 * 1024 ** 2,
-          },
+      modelCredential: credentials.apiKey
+        ? { kind: "api_key", value: credentials.apiKey }
+        : credentials.token
+          ? { kind: "token", value: credentials.token }
+          : { kind: "none" },
+      environment: {
+        values: {
+          ONTOMATO_ONTOLOGY_URL: getApiConfig().baseUrl!,
+          ONTOMATO_WORKBENCH_URL: environment
+            .agentRuntime()
+            .callbackUrl.replace(/\/$/, ""),
+          ONTOMATO_RETRIEVAL_ID: snapshot.id,
+        },
+        secrets: {
+          ONTOMATO_QUERY_TK: grant.credential.value,
+          ONTOMATO_TK: callbackCredential({
+            pathPrefix: `/api/retrievals/${snapshot.id}/runs/${runId}/`,
+            runId,
+            expiresAt: deadline,
+            token: credentials.token ?? "",
+            apiKey: credentials.apiKey ?? "",
+          }).value,
         },
       },
     });
@@ -316,183 +280,155 @@ export const retrievalService = {
     while (true) {
       const record = await retrievalStore.get(id, owner);
       if (
-        record.snapshot.phase === "settled" ||
-        record.snapshot.runtimeRunId !== expectedRunId
+        record.currentRunId !== expectedRunId ||
+        record.external ||
+        record.snapshot.run?.status === "stopped"
       )
         return;
-      const round = await retrievalStore.round(expectedRunId);
-      let snapshot: RuntimeRunSnapshot | undefined;
+      let snapshot: RuntimeRunSnapshot;
       try {
-        const statuses = await client.sessionStatuses([
-          record.snapshot.runtimeSessionId,
-        ]);
-        const latest = statuses[0]?.latestRun;
-        if (latest?.id !== expectedRunId || latest.status !== "running")
-          snapshot = await client.run(expectedRunId);
+        snapshot = await client.run(expectedRunId);
         unavailable = false;
       } catch (error) {
-        if (error instanceof HttpError && error.status === 404) {
-          await this.cancel(
-            id,
-            owner,
-            credentials,
-            tForLocale(credentials.locale, "query.retrieval.interrupted"),
-            expectedRunId,
-            "RETRIEVAL_INTERRUPTED",
-          );
-          return;
-        }
-        // Like governance reconciliation, a failed read leaves business state and write gates unchanged.
         if (!unavailable)
-          logger.warn(
-            "Runtime observation unavailable; retrieval awaits reconciliation",
-            {
-              retrievalId: id,
-              runId: expectedRunId,
-              error,
-            },
-          );
+          logger.warn("Runtime observation awaits reconciliation", {
+            id,
+            runId: expectedRunId,
+            error,
+          });
         unavailable = true;
         await pause(1000);
         continue;
       }
-      if (snapshot && snapshot.run.status !== "running") {
-        await this.settle(record, credentials, snapshot);
+      await this.reconcile(record, credentials, snapshot);
+      if (snapshot.run.status === "stopped") return;
+      if (
+        Date.now() >
+        new Date((await retrievalStore.round(expectedRunId)).deadline).getTime()
+      ) {
+        await this.cancel(id, owner, credentials);
         return;
       }
-      // A result may have finished while observation was unavailable. Reconcile terminal facts first.
-      if (Date.now() > new Date(round.deadline).getTime()) {
-        await this.cancel(
-          id,
-          owner,
-          credentials,
-          "Retrieval timed out",
-          expectedRunId,
-          "RETRIEVAL_TIMEOUT",
-        );
-        return;
-      }
-      await pause(250);
+      await pause(500);
     }
   },
-  async settle(
+  async reconcile(
     record: RetrievalRecord,
     credentials: RetrievalCredentials,
-    run: RuntimeRunSnapshot,
+    snapshot: RuntimeRunSnapshot,
   ) {
-    const { snapshot, owner } = record,
-      runId = snapshot.runtimeRunId!;
-    if (run.run.status === "running") return snapshot;
-    const ids: string[] = [];
-    await transaction(async (c) => {
-      const current = await retrievalStore.get(snapshot.id, owner, c, true);
-      if (current.snapshot.runtimeRunId !== runId) return;
-      for (const item of run.artifacts) {
-        if (item.content.type !== "workbench.dataset.v1") continue;
-        datasetPayloadSchema.parse(item.content.payload);
-        const linked = await c.query(
-          `UPDATE ${table("retrieval_submissions")} SET artifact_id=$3,payload=NULL WHERE run_id=$1 AND tool_call_id=$2 RETURNING id`,
-          [runId, item.toolCallId, item.id],
-        );
-        if (linked.rowCount) ids.push(item.id);
+    const runId = record.currentRunId,
+      client = new RuntimeClient(record.owner.domainId),
+      accepted = new Map<string, string>();
+    for (const file of snapshot.artifacts) {
+      if (!file.path.endsWith(".dataset.json")) continue;
+      const text = await client.text(`/v1/artifacts/${file.id}/content`);
+      let value: unknown;
+      try {
+        value = JSON.parse(text);
+      } catch {
+        continue;
       }
-    });
-    const round = await retrievalStore.round(runId),
-      submission = round.submission;
-    let result;
-    if (run.run.status !== "completed")
-      result = {
-        status: "failed",
-        datasetArtifactIds: ids,
-        error: {
-          code: `RUNTIME_${run.run.status.toUpperCase()}`,
-          message:
-            run.run.error?.code === RUNTIME_MODEL_NOT_CONFIGURED
-              ? getRoleNotConfiguredMessage("coding")
-              : tForLocale(
-                  credentials.locale,
-                  `query.retrieval.${run.run.status}`,
-                ),
-        },
-      };
-    else if (!submission)
-      result = {
-        status: "failed",
-        datasetArtifactIds: ids,
-        error: {
-          code: "RETRIEVAL_RESULT_MISSING",
-          message: "Retriever ended without a result submission",
-        },
-      };
-    else if (submission.status === "completed" && ids.length === 0)
-      result = {
-        status: "failed",
-        datasetArtifactIds: [],
-        error: {
-          code: "RETRIEVAL_RESULT_MISSING",
-          message: "No committed dataset was returned",
-        },
-      };
-    else
-      result = {
-        status: submission.status,
-        datasetArtifactIds: ids,
-        ...(submission.status === "failed"
-          ? { error: submission.error }
-          : {
-              summary: submission.summary,
-              ...(submission.status === "needs_input"
-                ? { questions: submission.questions }
-                : {}),
-            }),
-      };
-    const final = await retrievalStore.close(
-      snapshot.id,
-      owner,
-      retrievalResultSchema.parse(result),
-      runId,
-    );
-    await ontologyRequest("/internal/query-grants/revoke", credentials, {
-      runtimeRunId: runId,
-    }).catch((error) =>
-      logger.warn("Grant revocation failed; deadline still applies", {
-        runId,
-        error,
-      }),
-    );
-    if (final.result?.status === "completed")
-      void this.quality(record, credentials).catch((error) =>
-        logger.warn("Quality check failed", { runId, error }),
+      const parsed = datasetPayloadSchema.safeParse(value);
+      if (!parsed.success) continue;
+      const result = await getPostgresPool().query(
+        `SELECT id FROM ${table("retrieval_submissions")} WHERE run_id=$1 AND receipt_id=$2 AND dataset_digest=$3`,
+        [runId, parsed.data.execution.receiptId, fingerprint(parsed.data)],
       );
-    return final;
+      if (result.rowCount) {
+        await getPostgresPool().query(
+          `UPDATE ${table("retrieval_submissions")} SET artifact_id=$2 WHERE id=$1`,
+          [result.rows[0].id, file.id],
+        );
+        accepted.set(file.path, file.id);
+      }
+    }
+    const next: RetrievalSnapshot = {
+      ...record.snapshot,
+      revision: record.snapshot.revision + 1,
+      run: {
+        status: snapshot.run.status,
+        stopReason: snapshot.run.stopReason,
+        errorMessage: snapshot.run.errorMessage,
+      },
+      messages: snapshot.messages,
+      datasetArtifactIds: [...accepted.values()],
+    };
+    await transaction(async (c) => {
+      const current = await retrievalStore.get(
+        record.snapshot.id,
+        record.owner,
+        c,
+        true,
+      );
+      if (current.currentRunId !== runId) return;
+      if (snapshot.run.status === "stopped")
+        await c.query(
+          `UPDATE ${table("retrieval_rounds")} SET open=false WHERE id=$1`,
+          [runId],
+        );
+      await c.query(
+        `UPDATE ${table("retrievals")} SET snapshot=$2 WHERE id=$1`,
+        [record.snapshot.id, { ...next, messages: [] }],
+      );
+    });
+    if (snapshot.run.status === "stopped") {
+      await ontologyRequest("/internal/query-grants/revoke", credentials, {
+        runtimeRunId: runId,
+      }).catch((error) =>
+        logger.warn("Grant revocation awaits expiry", { runId, error }),
+      );
+      if (snapshot.run.stopReason === "stop" && next.datasetArtifactIds.length)
+        void this.quality({ ...record, snapshot: next }, credentials).catch(
+          (error) => logger.warn("Quality check failed", { runId, error }),
+        );
+    }
+    return next;
   },
   async get(
     id: string,
     owner: RetrievalOwner,
     credentials: RetrievalCredentials,
   ) {
-    const record = await retrievalStore.get(id, owner);
+    const r = await retrievalStore.get(id, owner);
     if (
-      record.snapshot.phase === "running" &&
-      !active.has(record.snapshot.runtimeRunId!)
+      !r.external &&
+      r.snapshot.run?.status !== "stopped" &&
+      !active.has(r.currentRunId)
     ) {
-      // Return the durable pending snapshot even if the runtime is still unreachable after a host restart.
-      const key = record.snapshot.runtimeRunId!;
-      const work = this.observe(id, owner, credentials, key).finally(() =>
-        active.delete(key),
-      );
-      active.set(key, work);
-      void work.catch((error) =>
-        logger.error("Recovery observation failed", { id, error }),
-      );
+      const work = this.observe(id, owner, credentials, r.currentRunId)
+        .catch((error) =>
+          logger.error("Recovery observation failed", { id, error }),
+        )
+        .finally(() => active.delete(r.currentRunId));
+      active.set(r.currentRunId, work);
     }
-    const round = await retrievalStore.round(record.snapshot.runtimeRunId!);
-    if (record.snapshot.result?.status === "completed" && !round.qc_result)
-      void this.quality(record, credentials).catch((error) =>
+    const round = await retrievalStore.round(r.currentRunId);
+    if (
+      !r.external &&
+      r.snapshot.run?.status === "stopped" &&
+      r.snapshot.run.stopReason === "stop" &&
+      r.snapshot.datasetArtifactIds.length &&
+      !round.qc_result
+    )
+      void this.quality(r, credentials).catch((error) =>
         logger.warn("Quality recovery failed", { id, error }),
       );
+    let messages = r.snapshot.messages;
+    if (!r.external && r.snapshot.run) {
+      try {
+        messages = (await new RuntimeClient(owner.domainId).run(r.currentRunId))
+          .messages;
+      } catch (error) {
+        logger.debug("Retrieval messages await runtime transport", {
+          id,
+          error,
+        });
+      }
+    }
     return {
-      ...record.snapshot,
+      ...r.snapshot,
+      messages,
       ...(round.qc_result ? { qualityCheck: round.qc_result } : {}),
     };
   },
@@ -500,72 +436,64 @@ export const retrievalService = {
     id: string,
     owner: RetrievalOwner,
     credentials: RetrievalCredentials,
-    message = "Retrieval cancelled",
-    expectedRunId?: string,
-    code = "RETRIEVAL_CANCELLED",
   ) {
-    const record = await retrievalStore.get(id, owner),
-      runId = expectedRunId ?? record.snapshot.runtimeRunId!;
-    if (record.snapshot.runtimeRunId !== runId) return record.snapshot;
-    const snapshot = await retrievalStore.close(
-      id,
-      owner,
-      {
-        status: "failed",
-        datasetArtifactIds: record.snapshot.datasetArtifactIds,
-        error: { code, message },
-      },
-      runId,
-    );
-    const pending = await getPostgresPool().query(
-      `SELECT id FROM ${table("retrieval_submissions")} WHERE run_id=$1`,
-      [runId],
-    );
-    const quality = await transaction(async (c) => {
-      await c.query(
-        `UPDATE ${table("retrieval_rounds")} SET qc_result=COALESCE(qc_result,'{"status":"cancelled"}'::jsonb) WHERE id=$1`,
+    const r = await retrievalStore.get(id, owner),
+      runId = r.currentRunId;
+    await retrievalStore.close(id, owner, runId);
+    const pending = (
+      await getPostgresPool().query(
+        `SELECT id FROM ${table("retrieval_submissions")} WHERE run_id=$1`,
         [runId],
-      );
-      return (
-        await c.query(
-          `SELECT qc_id FROM ${table("retrieval_rounds")} WHERE id=$1`,
-          [runId],
-        )
-      ).rows[0]?.qc_id as string | undefined;
-    });
-    const cancellations = await Promise.allSettled([
-      ...(quality
+      )
+    ).rows;
+    const round = await retrievalStore.round(runId);
+    const requests: Promise<unknown>[] = [
+      ...pending.map((s) =>
+        ontologyRequest(
+          `/ontology/query/outputs/${s.id}/cancel`,
+          credentials,
+          {},
+        ),
+      ),
+      ...(round.qc_id
         ? [
             ontologyRequest(
-              `/query-quality-checks/${quality}/cancel`,
+              `/query-quality-checks/${round.qc_id}/cancel`,
               credentials,
               {},
             ),
           ]
         : []),
-      new RuntimeClient(owner.domainId).request(
-        `/v1/sessions/${record.snapshot.runtimeSessionId}/run-intents/${runId}/cancel`,
-        "POST",
-        {},
-      ),
-      ontologyRequest("/internal/query-grants/revoke", credentials, {
-        runtimeRunId: runId,
-      }),
-      ...pending.rows.map((r) =>
-        ontologyRequest(
-          `/ontology/query/outputs/${r.id}/cancel`,
-          credentials,
+    ];
+    if (!r.external)
+      requests.push(
+        new RuntimeClient(owner.domainId).request(
+          `/v1/sessions/${r.workSessionId}/run-intents/${runId}/cancel`,
+          "POST",
           {},
         ),
-      ),
-    ]);
-    for (const result of cancellations)
+        ontologyRequest("/internal/query-grants/revoke", credentials, {
+          runtimeRunId: runId,
+        }),
+      );
+    const settled = await Promise.allSettled(requests);
+    for (const result of settled)
       if (result.status === "rejected")
-        logger.warn(
-          "Retrieval cancellation request failed; grants remain deadline bounded",
-          { runId, error: result.reason },
+        logger.warn("Cancellation requires reconciliation", {
+          runId,
+          error: result.reason,
+        });
+    if (!r.external)
+      try {
+        return await this.reconcile(
+          r,
+          credentials,
+          await new RuntimeClient(owner.domainId).run(runId),
         );
-    return snapshot;
+      } catch (error) {
+        logger.warn("Cancelled run awaits runtime snapshot", { runId, error });
+      }
+    return (await retrievalStore.get(id, owner)).snapshot;
   },
   async answer(
     id: string,
@@ -576,77 +504,79 @@ export const retrievalService = {
   ) {
     const input = retrievalAnswersSchema.parse(body),
       hash = fingerprint(input);
-    const record = await transaction(async (c) => {
-      const known = await retrievalStore.get(id, owner, c);
-      if (known.parentId) {
-        const gate = await c.query(
-          `SELECT closed FROM ${table("retrieval_parent_gates")} WHERE domain_id=$1 AND owner_id=$2 AND parent_id=$3 FOR UPDATE`,
-          [owner.domainId, owner.userId, known.parentId],
-        );
-        if (gate.rows[0]?.closed)
-          throw new HttpError(409, "Parent run is closed");
-      }
+    const result = await this.openRound(id, owner, key, hash, input);
+    if (!result.replayed)
+      await this.launch(result.record, credentials, input.message);
+    else await preparing.get(result.record.currentRunId);
+    return result.record.snapshot;
+  },
+  async openRound(
+    id: string,
+    owner: RetrievalOwner,
+    key: string,
+    hash: string,
+    input?: z.infer<typeof retrievalAnswersSchema>,
+  ) {
+    return transaction(async (c) => {
       const current = await retrievalStore.get(id, owner, c, true);
-      const old = await c.query(
-        `SELECT request_hash FROM ${table("retrieval_rounds")} WHERE id=$1 AND retrieval_id=$2`,
-        [key, id],
-      );
-      if (old.rowCount) {
-        if (old.rows[0].request_hash !== hash)
+      if (current.parentId) {
+        const row = (
+          await c.query(
+            `SELECT closed FROM ${table("retrieval_parent_gates")} WHERE domain_id=$1 AND owner_id=$2 AND parent_id=$3 FOR UPDATE`,
+            [owner.domainId, owner.userId, current.parentId],
+          )
+        ).rows[0];
+        if (row?.closed) throw new HttpError(409, "Parent run is closed");
+      }
+      const old = (
+        await c.query(
+          `SELECT request_hash FROM ${table("retrieval_rounds")} WHERE id=$1 AND retrieval_id=$2`,
+          [key, id],
+        )
+      ).rows[0];
+      if (old) {
+        if (old.request_hash !== hash)
           throw new HttpError(409, "Reply input changed");
-        return { ...current, replayed: true };
+        return { record: current, replayed: true };
       }
       if (
-        current.snapshot.phase !== "settled" ||
-        current.snapshot.runtimeRunId !== input.expectedRunId ||
-        current.snapshot.decisionRevision !== input.expectedDecisionRevision
+        input &&
+        (current.external ||
+          current.snapshot.run?.status !== "stopped" ||
+          current.currentRunId !== input.expectedRunId ||
+          current.snapshot.decisionRevision !== input.expectedDecisionRevision)
       )
         throw new HttpError(
           409,
           "Retrieval round or decision revision changed",
         );
-      const questions =
-        current.snapshot.result?.status === "needs_input"
-          ? current.snapshot.result.questions
-          : [];
-      const decisions = [...current.decisions];
-      const seen = new Set<string>();
-      for (const answer of input.answers) {
-        if (seen.has(answer.questionId))
-          throw new HttpError(400, "Duplicate question reply");
-        seen.add(answer.questionId);
-        const previous = [...decisions]
-          .reverse()
-          .find((d) => d.questionId === answer.questionId);
-        const question = questions.find((q) => q.id === answer.questionId);
-        if (!question && !previous)
-          throw new HttpError(
-            400,
-            "Question does not belong to this retrieval",
-          );
-        const choice = question?.choices.find((c) => c.id === answer.choiceId);
-        if (answer.choiceId && question && !choice)
-          throw new HttpError(400, "Unknown choice");
-        const text = answer.text?.trim() || choice?.label;
-        if (!text) throw new HttpError(400, "An explicit answer is required");
-        decisions.push({
-          id: randomUUID(),
-          questionId: answer.questionId,
-          question: question?.question ?? previous!.question,
-          choiceId: answer.choiceId ?? null,
-          text,
-          scope: question?.scope ?? previous!.scope,
-          source: "user",
-          supersedesId: previous?.id ?? null,
-        });
-      }
-      const snapshot = {
+      if (!input && !current.external)
+        throw new HttpError(
+          409,
+          "External begin requires an external work record",
+        );
+      const decisions = input
+        ? [
+            ...current.decisions,
+            {
+              id: randomUUID(),
+              runId: input.expectedRunId,
+              text: input.message,
+              scope: "task",
+              source: "user" as const,
+              supersedesId: null,
+            },
+          ]
+        : current.decisions;
+      const snapshot: RetrievalSnapshot = {
         ...current.snapshot,
-        runtimeRunId: key,
-        phase: "running" as const,
-        result: null,
+        runtimeRunId: current.external ? null : key,
+        run: current.external
+          ? null
+          : { status: "running", stopReason: null, errorMessage: null },
+        messages: [],
         revision: current.snapshot.revision + 1,
-        decisionRevision: current.snapshot.decisionRevision + 1,
+        decisionRevision: current.snapshot.decisionRevision + (input ? 1 : 0),
       };
       await c.query(
         `UPDATE ${table("retrieval_rounds")} SET open=false WHERE retrieval_id=$1`,
@@ -657,182 +587,144 @@ export const retrievalService = {
         [key, id, hash, new Date(Date.now() + getQueryTimeoutMs())],
       );
       await c.query(
-        `UPDATE ${table("retrievals")} SET snapshot=$2,decisions=$3 WHERE id=$1`,
-        [id, snapshot, JSON.stringify(decisions)],
+        `UPDATE ${table("retrievals")} SET current_run_id=$2,snapshot=$3,decisions=$4 WHERE id=$1`,
+        [id, key, snapshot, JSON.stringify(decisions)],
       );
-      return { ...current, snapshot, decisions, replayed: false };
+      return {
+        record: { ...current, currentRunId: key, snapshot, decisions },
+        replayed: false,
+      };
     });
-    if (!record.replayed)
-      this.launch(
-        record,
-        credentials,
-        JSON.stringify(input.answers),
-        input.expectedRunId,
-      );
-    return record.snapshot;
   },
-  async submit(
+  async begin(
+    id: string,
+    owner: RetrievalOwner,
+    input: RetrievalInput,
+    existingId?: string,
+  ) {
+    const result = existingId
+      ? await this.openRound(
+          existingId,
+          owner,
+          id,
+          fingerprint({ input, existingId }),
+        )
+      : await retrievalStore.create(
+          id,
+          owner,
+          input,
+          null,
+          new Date(Date.now() + getQueryTimeoutMs()),
+          true,
+        );
+    const r = result.record,
+      round = await retrievalStore.round(id);
+    return {
+      id: r.snapshot.id,
+      sessionId: r.workSessionId,
+      runId: id,
+      expiresAt: new Date(round.deadline).toISOString(),
+    };
+  },
+  async prepareOutput(
     id: string,
     owner: RetrievalOwner,
     credentials: RetrievalCredentials,
-    identity: { runId: string; toolCallId: string },
+    runId: string,
+    key: string,
     body: unknown,
-    source?: string,
   ) {
-    const input = submitDatasetSchema.parse(body),
-      record = await retrievalStore.get(id, owner);
-    let recipe = input.recipe;
-    if (input.path) {
-      if (!input.executionId || source === undefined)
-        throw new HttpError(400, "A tested file receipt is required");
-      const receipt = codeExecutionSchema.parse(
-        await new RuntimeClient(owner.domainId).request(
-          `/v1/code-executions/${input.executionId}`,
-        ),
-      );
-      if (
-        receipt.runId !== identity.runId ||
-        receipt.status !== "completed" ||
-        receipt.sourceSha256 !== sha(source)
-      )
-        throw new HttpError(
-          409,
-          "Program changed or was not successfully tested in this run",
-        );
-      recipe = { kind: "python", code: source, sha256: sha(source) };
-    }
-    if (!recipe || (recipe.kind === "python" && !input.path))
-      throw new HttpError(400, "Python requires a tested workspace file");
+    const input = prepareDatasetSchema.parse(body),
+      hash = fingerprint(input),
+      r = await retrievalStore.get(id, owner);
+    if (
+      input.recipe.kind === "python" &&
+      createHash("sha256").update(input.recipe.code).digest("hex") !==
+        input.recipe.sha256
+    )
+      throw new HttpError(400, "Recipe source digest mismatch");
     if (
       input.decisionIds.some(
-        (id) =>
-          !record.decisions.some(
-            (d) =>
-              d.id === id &&
-              !record.decisions.some((next) => next.supersedesId === id),
+        (d) =>
+          !r.decisions.some(
+            (x) =>
+              x.id === d &&
+              !r.decisions.some((next) => next.supersedesId === d),
           ),
       )
     )
-      throw new HttpError(400, "Unknown or superseded decision");
-    const hash = fingerprint({ input, recipe });
-    const submission = await transaction(async (c) => {
-      await retrievalStore.gate(id, owner, identity.runId, c);
-      const round = await c.query(
-        `SELECT submission FROM ${table("retrieval_rounds")} WHERE id=$1`,
-        [identity.runId],
-      );
-      if (round.rows[0].submission)
-        throw new HttpError(409, "Retrieval outcome was already submitted");
-      const old = await c.query(
-        `SELECT * FROM ${table("retrieval_submissions")} WHERE run_id=$1 AND tool_call_id=$2`,
-        [identity.runId, identity.toolCallId],
-      );
-      if (old.rows[0]) {
-        if (old.rows[0].input_hash !== hash)
-          throw new HttpError(409, "Submission input changed");
-        return old.rows[0];
-      }
-      const submissionId = randomUUID();
-      await c.query(
-        `INSERT INTO ${table("retrieval_submissions")} (id,run_id,tool_call_id,input_hash) VALUES($1,$2,$3,$4)`,
-        [submissionId, identity.runId, identity.toolCallId, hash],
-      );
-      return { id: submissionId, payload: null };
-    });
-    let payload = submission.payload as DatasetPayload | null;
-    if (!payload) {
-      await ontologyRequest("/ontology/query/outputs", credentials, {
-        submissionId: submission.id,
-        recipe,
-        outKeyRefs: input.outKeyRefs,
-      });
-      let result;
-      while (true) {
-        const round = await retrievalStore.round(identity.runId);
-        if (!round.open || Date.now() > new Date(round.deadline).getTime())
-          throw new HttpError(409, "Retrieval round is closed or expired");
-        result = await ontologyRequest(
-          `/ontology/query/outputs/${submission.id}`,
-          credentials,
-        );
-        if (result.status !== "running") break;
-        await pause(200);
-      }
-      if (result.status !== "completed")
-        throw new Error(
-          result.error?.message ?? "Final output did not complete",
-        );
-      const { receiptId, executedAt, ...output } = result.result;
-      payload = datasetPayloadSchema.parse({
-        title: input.title,
-        question: input.question,
-        ...output,
-        assumptions: input.assumptions,
-        metricUses: input.metricUses,
-        selfCheck: input.selfCheck,
-        decisionIds: input.decisionIds,
-        execution: { receiptId, executedAt },
-      });
-      await transaction(async (c) => {
-        await retrievalStore.gate(id, owner, identity.runId, c);
+      throw new HttpError(400, "Unknown decision");
+    await transaction(async (c) => {
+      await retrievalStore.gate(id, owner, runId, c);
+      const old = (
         await c.query(
-          `UPDATE ${table("retrieval_submissions")} SET payload=$2 WHERE id=$1`,
-          [submission.id, payload],
-        );
-      });
-    }
-    return {
-      result: {
-        submissionId: submission.id,
-        title: payload.title,
-        rowCount: payload.rows.length,
-        truncation: payload.truncation,
-      },
-      artifacts: [
-        { content: { type: "workbench.dataset.v1", payload }, references: [] },
-      ],
-    };
+          `SELECT run_id,input_hash FROM ${table("retrieval_submissions")} WHERE id=$1`,
+          [key],
+        )
+      ).rows[0];
+      if (old) {
+        if (old.run_id !== runId || old.input_hash !== hash)
+          throw new HttpError(409, "Output input changed");
+        return;
+      }
+      await c.query(
+        `INSERT INTO ${table("retrieval_submissions")} (id,run_id,input_hash,request) VALUES($1,$2,$3,$4)`,
+        [key, runId, hash, input],
+      );
+    });
+    await ontologyRequest("/ontology/query/outputs", credentials, {
+      submissionId: key,
+      recipe: input.recipe,
+      outKeyRefs: input.outKeyRefs,
+    });
+    return { id: key };
   },
-  async finish(
+  async output(
     id: string,
     owner: RetrievalOwner,
+    credentials: RetrievalCredentials,
     runId: string,
-    body: unknown,
+    key: string,
   ) {
-    const input = finishRetrievalSchema.parse(body);
-    if (input.status === "completed" && !input.submissionIds.length)
-      throw new HttpError(400, "Completed retrieval requires a dataset");
-    if (input.status === "needs_input" && !input.questions?.length)
-      throw new HttpError(400, "Needs-input requires questions");
-    if (input.status === "failed" && !input.error)
-      throw new HttpError(400, "Failure requires a reason");
-    return transaction(async (c) => {
-      await retrievalStore.gate(id, owner, runId, c);
-      const rows = await c.query(
-        `SELECT id FROM ${table("retrieval_submissions")} WHERE run_id=$1 AND payload IS NOT NULL`,
-        [runId],
-      );
-      if (input.submissionIds.some((id) => !rows.rows.some((r) => r.id === id)))
-        throw new HttpError(400, "Unknown dataset submission");
-      const current = await c.query(
-        `SELECT submission FROM ${table("retrieval_rounds")} WHERE id=$1`,
-        [runId],
-      );
-      if (current.rows[0].submission)
-        throw new HttpError(409, "Outcome already submitted");
-      const submission = {
-        ...input,
-        questions: input.questions?.map((q) => ({ ...q, id: randomUUID() })),
-      };
-      await c.query(
-        `UPDATE ${table("retrieval_rounds")} SET submission=$2 WHERE id=$1`,
-        [runId, submission],
-      );
+    await retrievalStore.get(id, owner);
+    const row = (
+      await getPostgresPool().query(
+        `SELECT s.* FROM ${table("retrieval_submissions")} s JOIN ${table("retrieval_rounds")} r ON r.id=s.run_id WHERE s.id=$1 AND s.run_id=$2 AND r.retrieval_id=$3`,
+        [key, runId, id],
+      )
+    ).rows[0];
+    if (!row) throw new HttpError(404, "Output not found");
+    const result = await ontologyRequest(
+      `/ontology/query/outputs/${key}`,
+      credentials,
+    );
+    if (result.status === "running")
+      return { id: key, running: true, dataset: null, error: null };
+    if (result.status !== "completed")
       return {
-        result: { accepted: true, status: input.status },
-        artifacts: [],
+        id: key,
+        running: false,
+        dataset: null,
+        error: result.error ?? {
+          code: "OUTPUT_FAILED",
+          message: "Final output did not complete",
+        },
       };
+    const { receiptId, executedAt, ...data } = result.result;
+    const dataset = datasetPayloadSchema.parse({
+      ...row.request,
+      ...data,
+      schema: "workbench.dataset.v1",
+      execution: { receiptId, executedAt },
     });
+    await transaction(async (c) => {
+      if (!row.dataset_digest) await retrievalStore.gate(id, owner, runId, c);
+      await c.query(
+        `UPDATE ${table("retrieval_submissions")} SET dataset_digest=$2,receipt_id=$3 WHERE id=$1`,
+        [key, fingerprint(dataset), receiptId],
+      );
+    });
+    return { id: key, running: false, dataset, error: null };
   },
   dataset: artifact,
   async cancelParent(
@@ -840,11 +732,14 @@ export const retrievalService = {
     owner: RetrievalOwner,
     credentials: RetrievalCredentials,
   ) {
-    const ids = await retrievalStore.cancelParent(parentId, owner);
-    await Promise.all(ids.map((id) => this.cancel(id, owner, credentials)));
+    await Promise.all(
+      (await retrievalStore.cancelParent(parentId, owner)).map((id) =>
+        this.cancel(id, owner, credentials),
+      ),
+    );
   },
   async quality(record: RetrievalRecord, credentials: RetrievalCredentials) {
-    const runId = record.snapshot.runtimeRunId!;
+    const runId = record.currentRunId;
     if (qualityActive.has(runId)) return;
     qualityActive.add(runId);
     try {

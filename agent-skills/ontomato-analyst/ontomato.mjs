@@ -1,37 +1,44 @@
 #!/usr/bin/env node
 import fs from "node:fs";
-import { analystCommand } from "./client.mjs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-
-const DIR = path.dirname(fileURLToPath(import.meta.url));
-
-function die(message) {
-  console.error(message);
-  process.exit(1);
-}
-
-function loadConfig() {
-  const text = fs.readFileSync(path.join(DIR, "application.yml"), "utf8");
-  const cfg = {};
-  for (const line of text.split(/\r?\n/)) {
-    const trimmed = line.trim();
-    if (!trimmed || trimmed.startsWith("#")) continue;
-    const colon = trimmed.indexOf(":");
-    if (colon < 0) die(`application.yml line is not key: value: ${trimmed}`);
-    cfg[trimmed.slice(0, colon).trim()] = trimmed.slice(colon + 1).trim();
+import { analystCommand } from "./client.mjs";
+const dir = path.dirname(fileURLToPath(import.meta.url)),
+  cfg = {};
+try {
+  for (const line of fs
+    .readFileSync(path.join(dir, "application.yml"), "utf8")
+    .split(/\r?\n/)) {
+    const text = line.trim();
+    if (!text || text.startsWith("#")) continue;
+    const at = text.indexOf(":");
+    if (at < 0) throw new Error("application.yml requires key: value lines");
+    cfg[text.slice(0, at).trim()] = text.slice(at + 1).trim();
   }
-  if (process.env.ONTOMATO_URL) cfg.envUrl = process.env.ONTOMATO_URL;
-  return cfg;
+} catch (error) {
+  if (error.code !== "ENOENT") throw error;
 }
-
-async function main() {
-  const cfg = loadConfig();
-  if (!cfg.envUrl)
-    throw new Error("Set ONTOMATO_URL or envUrl in application.yml");
-  await analystCommand(cfg, process.argv.slice(2));
-}
-main().catch((error) => {
+for (const [env, key] of Object.entries({
+  ONTOMATO_URL: "envUrl",
+  ONTOMATO_ONTOLOGY_URL: "ontologyUrl",
+  ONTOMATO_WORKBENCH_URL: "workbenchUrl",
+  ONTOMATO_TK: "tk",
+}))
+  if (process.env[env] !== undefined) cfg[key] = process.env[env];
+const command = process.argv[2];
+const token =
+  command === "ask" ? cfg.tk : (process.env.ONTOMATO_QUERY_TK ?? cfg.tk);
+const headers = {
+  ...(token ? { tk: token } : {}),
+  "Accept-Language": process.env.ONTOMATO_LANGUAGE ?? "en",
+  ...(process.env.ONTOMATO_RUN_ID
+    ? { "X-Ontomato-Run-Id": process.env.ONTOMATO_RUN_ID }
+    : {}),
+  ...(process.env.ONTOMATO_CORRELATION_ID
+    ? { "X-Correlation-Id": process.env.ONTOMATO_CORRELATION_ID }
+    : {}),
+};
+analystCommand(cfg, process.argv.slice(2), headers).catch((error) => {
   console.error(error.message);
   process.exitCode = 1;
 });

@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import {
   governanceWorkSchema,
   type GovernanceWork,
@@ -16,7 +16,7 @@ export interface GovernanceRecord {
   id: string;
   domainId: string;
   initiatorId: string;
-  runtimeSessionId: string;
+  runtimeSessionId: string | null;
   writeRunId: string | null;
   latestRunId: string | null;
   createdAt: string;
@@ -34,10 +34,6 @@ const emptyWork = (): GovernanceWork => ({
   sources: [],
 });
 function record(row: Record<string, any>): GovernanceRecord {
-  if (!row.runtime_session_id)
-    throw new Error(
-      "Governance session requires an external upgrade to runtime storage",
-    );
   return {
     id: row.id,
     domainId: row.domain_id,
@@ -78,21 +74,39 @@ export const governanceStore = {
     );
     return rows.map(record);
   },
-  async create(owner: GovernanceOwner) {
-    const id = randomUUID();
-    await new RuntimeClient(owner.domainId).createSession(id);
+  async create(
+    owner: GovernanceOwner,
+    id: string = randomUUID(),
+    external = false,
+  ) {
+    if (!external) await new RuntimeClient(owner.domainId).createSession(id);
     try {
       await getPostgresPool().query(
-        `INSERT INTO ${qualifiedTable("knowledge_governance_sessions")} (id,domain_id,initiator_id,runtime_session_id,payload) VALUES($1,$2,$3,$1,$4)`,
-        [id, owner.domainId, owner.userId, { work: emptyWork(), error: null }],
+        `INSERT INTO ${qualifiedTable("knowledge_governance_sessions")} (id,domain_id,initiator_id,runtime_session_id,payload) VALUES($1,$2,$3,$5,$4) ON CONFLICT DO NOTHING`,
+        [
+          id,
+          owner.domainId,
+          owner.userId,
+          { work: emptyWork(), error: null },
+          external ? null : id,
+        ],
       );
     } catch (error) {
-      await new RuntimeClient(owner.domainId).deleteSession(id);
+      if (!external) await new RuntimeClient(owner.domainId).deleteSession(id);
       throw error;
     }
     return this.get(id, owner);
   },
-  async openRun(id: string, owner: GovernanceOwner, runId: string) {
+  async openRun(
+    id: string,
+    owner: GovernanceOwner,
+    runId: string,
+    expiresAt: Date,
+    input: unknown,
+  ) {
+    const hash = createHash("sha256")
+      .update(JSON.stringify(input))
+      .digest("hex");
     const client = await getPostgresPool().connect();
     try {
       await client.query("BEGIN");
@@ -103,8 +117,18 @@ export const governanceStore = {
         )
       ).rows[0];
       if (!row) throw new HttpError(404, "Governance session not found");
-      if (row.write_run_id)
-        throw new HttpError(409, "Governance session already has an open run");
+      const old = (
+        await client.query(
+          `SELECT request_hash FROM ${qualifiedTable("knowledge_governance_run_work")} WHERE run_id=$1 AND session_id=$2`,
+          [runId, id],
+        )
+      ).rows[0];
+      if (old) {
+        if (old.request_hash !== hash)
+          throw new HttpError(409, "Run input changed");
+        await client.query("COMMIT");
+        return;
+      }
       const previous = row.latest_run_id
         ? (
             await client.query(
@@ -119,8 +143,8 @@ export const governanceStore = {
         [id],
       );
       await client.query(
-        `INSERT INTO ${qualifiedTable("knowledge_governance_run_work")} (run_id,session_id,write_open,work) VALUES($1,$2,true,$3)`,
-        [runId, id, previous ?? emptyWork()],
+        `INSERT INTO ${qualifiedTable("knowledge_governance_run_work")} (run_id,session_id,write_open,work,expires_at,request_hash) VALUES($1,$2,true,$3,$4,$5)`,
+        [runId, id, previous ?? emptyWork(), expiresAt, hash],
       );
       await client.query(
         `UPDATE ${qualifiedTable("knowledge_governance_sessions")} SET write_run_id=$2,latest_run_id=$2,revision=revision+1,updated_at=now() WHERE id=$1`,
@@ -181,7 +205,7 @@ export const governanceStore = {
           [identity.governanceSessionId, owner.domainId, owner.userId],
         )
       ).rows[0];
-      if (!row || row.runtime_session_id !== identity.runtimeSessionId)
+      if (!row || row.id !== identity.sessionId)
         throw new HttpError(404, "Governance session not found");
       const run = (
         await client.query(
@@ -189,7 +213,11 @@ export const governanceStore = {
           [identity.governanceSessionId, identity.runId],
         )
       ).rows[0];
-      if (row.write_run_id !== identity.runId || !run?.write_open) {
+      if (
+        row.write_run_id !== identity.runId ||
+        !run?.write_open ||
+        new Date(run.expires_at).getTime() <= Date.now()
+      ) {
         const error = new HttpError(409, "Governance run is closed");
         Object.assign(error, {
           code: "GOVERNANCE_RUN_CLOSED",
@@ -225,23 +253,27 @@ export const governanceStore = {
   async runWork(
     identity: Pick<
       GovernanceSkillCallIdentity,
-      "governanceSessionId" | "runtimeSessionId" | "runId"
+      "governanceSessionId" | "sessionId" | "runId"
     >,
     owner: GovernanceOwner,
   ) {
     const current = await this.get(identity.governanceSessionId, owner);
-    if (current.runtimeSessionId !== identity.runtimeSessionId)
+    if (current.id !== identity.sessionId)
       throw new HttpError(404, "Governance session not found");
     const row = (
       await getPostgresPool().query(
-        `SELECT work,write_open FROM ${qualifiedTable("knowledge_governance_run_work")} WHERE session_id=$1 AND run_id=$2`,
+        `SELECT work,write_open,expires_at FROM ${qualifiedTable("knowledge_governance_run_work")} WHERE session_id=$1 AND run_id=$2`,
         [current.id, identity.runId],
       )
     ).rows[0];
     if (!row) throw new HttpError(404, "Governance run not found");
     return {
       work: governanceWorkSchema.parse(row.work),
-      open: Boolean(row.write_open) && current.writeRunId === identity.runId,
+      open:
+        Boolean(row.write_open) &&
+        current.writeRunId === identity.runId &&
+        new Date(row.expires_at).getTime() > Date.now(),
+      expiresAt: new Date(row.expires_at).toISOString(),
     };
   },
   async deleteByUser(userId: string) {
