@@ -1,5 +1,5 @@
 import { onBeforeUnmount, ref, watch } from "vue";
-import type { ArtifactRendererProps } from "@ontomato/agent-shell-ui";
+import type { ArtifactRendererProps } from "../types";
 
 /** Reads an artifact once per identity and exposes load state; parse errors are the caller's. */
 export function useArtifactText(props: ArtifactRendererProps) {

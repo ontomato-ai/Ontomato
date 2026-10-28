@@ -1,20 +1,9 @@
 import type { RuntimeJsonValue, RuntimeStopReason } from "@ontomato/contracts/agent-runtime-values";
-import {
-  orderedMessages,
-  type ConversationState,
-  type ToolExecutionView,
-} from "./conversation";
+import { orderedMessages, type ConversationState } from "./conversation";
+import { skillOfCommand } from "./tools";
+import type { ProcessStepView } from "./types";
 
-export interface ProcessStep {
-  key: string;
-  kind: "thinking" | "tool";
-  /** Thinking text, or the tool's main argument. */
-  text: string;
-  toolName: string;
-  args: Record<string, RuntimeJsonValue>;
-  status: ToolExecutionView["status"] | "streaming" | "done";
-  output: string;
-}
+export type ProcessStep = ProcessStepView;
 
 export type ResponseBlock =
   | { kind: "text"; key: string; text: string; final: boolean; runId: string }
@@ -121,6 +110,7 @@ export function conversationItems(state: ConversationState): ConversationItem[] 
           kind: "thinking",
           text: block.thinking,
           toolName: "",
+          skill: null,
           args: {},
           status: settled ? "done" : "streaming",
           output: "",
@@ -129,11 +119,14 @@ export function conversationItems(state: ConversationState): ConversationItem[] 
       }
       const tool = block.id ? run?.tools[block.id] : undefined;
       const args = tool?.args ?? block.arguments;
+      const toolName = tool?.toolName ?? block.name;
+      const command = toolName === "bash" && typeof args.command === "string" ? args.command : "";
       process.steps.push({
         key,
         kind: "tool",
         text: toolSummary(args),
-        toolName: tool?.toolName ?? block.name,
+        toolName,
+        skill: command ? skillOfCommand(command) : null,
         args,
         status: tool?.status ?? (block.id && toolResults.has(block.id) ? "completed" : "streaming"),
         output: tool?.output || (block.id ? (toolResults.get(block.id) ?? "") : ""),

@@ -1,18 +1,18 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, ref, watch } from "vue";
+import { computed, inject, nextTick, onBeforeUnmount, ref, watch } from "vue";
 import * as echarts from "echarts";
-import { useI18n } from "vue-i18n";
-import type { ArtifactRendererProps } from "@ontomato/agent-shell-ui";
-import { useTheme } from "../../../composables/useTheme";
-import { nativeEchartsTheme } from "../../dashboard/components/utils/echartsTheme";
+import { shellContextKey } from "../context";
+import type { ArtifactRendererProps } from "../types";
+import { useDarkMode } from "../useDarkMode";
 import { useArtifactText } from "./useArtifactBlob";
 
-/** .chart.json: an ECharts option written by the agent, drawn with the workbench chart theme. */
+/** .chart.json: an ECharts option object as plain JSON, drawn with the host's chart theme. */
 const props = defineProps<ArtifactRendererProps>();
-const { t } = useI18n();
-const { isDark } = useTheme();
+const shell = inject(shellContextKey)!;
+const isDark = useDarkMode();
 const { text, error } = useArtifactText(props);
 const el = ref<HTMLElement | null>(null);
+const drawError = ref(false);
 let chart: echarts.ECharts | null = null;
 let observer: ResizeObserver | null = null;
 
@@ -27,7 +27,6 @@ const option = computed<{ value: Record<string, unknown> | null; invalid: boolea
     return { value: null, invalid: true };
   }
 });
-const drawError = ref(false);
 
 function dispose() {
   observer?.disconnect();
@@ -40,8 +39,8 @@ async function draw() {
   dispose();
   await nextTick();
   if (!el.value || !option.value.value) return;
-  const themeName = isDark.value ? "agent-artifact-dark" : "agent-artifact-light";
-  echarts.registerTheme(themeName, nativeEchartsTheme(isDark.value));
+  const themeName = isDark.value ? "agent-shell-dark" : "agent-shell-light";
+  echarts.registerTheme(themeName, shell.chartTheme.value(isDark.value));
   chart = echarts.init(el.value, themeName);
   try {
     chart.setOption(option.value.value, { notMerge: true });
@@ -55,22 +54,22 @@ async function draw() {
   observer.observe(el.value);
 }
 
-// Theme changes rebuild the instance; the registered theme is read at init time.
+// Theme changes rebuild the instance; a registered theme is read at init time.
 watch([option, isDark], draw, { immediate: true });
 onBeforeUnmount(dispose);
 </script>
 
 <template>
-  <div class="chart-artifact" :class="presentation">
+  <div class="chart-renderer" :class="presentation">
     <div v-if="error" class="state error">{{ error }}</div>
-    <div v-else-if="text === null" class="state">{{ t("assistant.loading") }}</div>
-    <div v-else-if="option.invalid || drawError" class="state error">{{ t("assistant.invalidChart") }}</div>
+    <div v-else-if="text === null" class="state">{{ shell.labels.value.loading }}</div>
+    <div v-else-if="option.invalid || drawError" class="state error">{{ shell.labels.value.invalidChart }}</div>
     <div v-else ref="el" class="chart" role="img" :aria-label="title" />
   </div>
 </template>
 
 <style scoped>
-.chart-artifact {
+.chart-renderer {
   padding: 12px 8px 6px;
 }
 .chart {
@@ -83,7 +82,7 @@ onBeforeUnmount(dispose);
 .state {
   padding: 18px;
   color: var(--el-text-color-secondary);
-  font-size: var(--text-sm);
+  font-size: var(--text-sm, 13px);
 }
 .state.error {
   color: var(--el-color-danger);

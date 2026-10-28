@@ -6,6 +6,7 @@ import { shellContextKey } from "../context";
 import { artifactIcon } from "../icons";
 import type { OpenArtifact } from "../types";
 import ArtifactView from "./ArtifactView.vue";
+import SlotOutlet from "./SlotOutlet.vue";
 
 /** Right-side outlet. Absent when nothing is open, so it never reserves width. */
 const props = defineProps<{ open: OpenArtifact }>();
@@ -48,6 +49,7 @@ async function download() {
           {{ formatSize(open.artifact.size) }}
         </span>
       </span>
+      <SlotOutlet :slot="shell.slots.artifactActions" :scope="{ artifact: open.artifact }" />
       <button type="button" class="panel-button" :title="shell.labels.value.download" :aria-label="shell.labels.value.download" @click="download">
         <Download :size="16" />
       </button>

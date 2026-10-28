@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { computed, inject, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { ArrowDown, CircleAlert } from "lucide-vue-next";
-import type { ShellAgent, ShellFeedbackPort } from "@ontomato/contracts/agent-shell";
+import type { HostAgent } from "../host";
+import type { ShellFeedbackPort } from "../types";
 import { shellContextKey } from "../context";
 import type { ConversationItem } from "../view";
 import ShellComposer from "./ShellComposer.vue";
@@ -10,7 +11,7 @@ import ShellResponse from "./ShellResponse.vue";
 const props = defineProps<{
   items: ConversationItem[];
   sessionId: string | null;
-  agent: ShellAgent | null;
+  agent: HostAgent | null;
   loading: boolean;
   loadError: string | null;
   sendError: string | null;

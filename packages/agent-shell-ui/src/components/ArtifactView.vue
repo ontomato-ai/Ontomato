@@ -1,12 +1,13 @@
 <script setup lang="ts">
 import { computed, inject, ref, watch } from "vue";
 import type { RuntimeArtifact } from "@ontomato/contracts/agent-runtime-artifacts";
-import { rendererFor } from "../artifacts";
+import { resolveArtifactRenderer } from "../artifacts";
 import { shellContextKey } from "../context";
+import { defaultArtifactRenderers } from "../renderers";
+import FileRenderer from "../renderers/FileRenderer.vue";
 import type { ArtifactPresentation } from "../types";
-import FileArtifact from "./FileArtifact.vue";
 
-/** Resolves an outputs/ reference within its run and renders it with the host's renderer. */
+/** Resolves an outputs/ reference within its run: host override → shell default → file card. */
 const props = defineProps<{
   runId: string;
   path: string;
@@ -40,7 +41,9 @@ watch(shell.artifactRevision, () => {
   if (state.value !== "ready") void resolve();
 });
 
-const renderer = computed(() => rendererFor(props.path, shell.renderers.value));
+const renderer = computed(() =>
+  resolveArtifactRenderer(props.path, shell.artifactRenderers.value, defaultArtifactRenderers),
+);
 const read = () => shell.readArtifact(resolved.value!);
 </script>
 
@@ -52,14 +55,14 @@ const read = () => shell.readArtifact(resolved.value!);
     {{ shell.labels.value.artifactMissing }} · {{ path }}
   </div>
   <component
-    :is="renderer.component"
-    v-else-if="renderer"
+    :is="renderer.component ?? FileRenderer"
+    v-else
     :artifact="resolved"
     :title="title"
     :presentation="presentation"
     :read="read"
+    :fallback="renderer.component ? (renderer.fallback ?? FileRenderer) : null"
   />
-  <FileArtifact v-else :artifact="resolved" :title="title" :presentation="presentation" :read="read" />
 </template>
 
 <style scoped>

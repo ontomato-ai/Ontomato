@@ -1,22 +1,15 @@
 <script setup lang="ts">
 import { computed, inject, ref } from "vue";
-import {
-  Brain,
-  Check,
-  ChevronRight,
-  CircleAlert,
-  LoaderCircle,
-  Terminal,
-  Wrench,
-} from "lucide-vue-next";
+import { Brain, ChevronRight, LoaderCircle, Wrench } from "lucide-vue-next";
 import { shellContextKey } from "../context";
-import type { ProcessStep } from "../view";
+import { describeTool, resolveToolRenderer } from "../tools";
+import type { ProcessStepView } from "../types";
+import ToolStep from "./ToolStep.vue";
 
-/** Generic, collapsed view of consecutive thinking and tool steps. No per-tool cards. */
-const props = defineProps<{ steps: ProcessStep[]; active: boolean }>();
+/** Collapsed view of consecutive thinking and tool steps; tool steps use host overrides or ToolStep. */
+const props = defineProps<{ steps: ProcessStepView[]; active: boolean }>();
 const shell = inject(shellContextKey)!;
 const open = ref(false);
-const expandedStep = ref<string | null>(null);
 
 const current = computed(() => props.steps.at(-1));
 const toolCount = computed(() => props.steps.filter((step) => step.kind === "tool").length);
@@ -25,19 +18,16 @@ const summary = computed(() => {
   const labels = shell.labels.value;
   const step = current.value;
   if (props.active && step) {
-    if (step.kind === "thinking") return { label: labels.thinking, tool: "", detail: "" };
-    if (!step.toolName) return { label: labels.preparing, tool: "", detail: "" };
-    return { label: labels.working, tool: step.toolName, detail: step.text };
+    if (step.kind === "thinking") return { label: labels.thinking, subject: "", detail: "" };
+    if (!step.toolName) return { label: labels.preparing, subject: "", detail: "" };
+    const title = describeTool(step, labels);
+    return { label: title.verb, subject: title.subject, detail: title.detail };
   }
-  return { label: toolCount.value ? labels.steps(toolCount.value) : labels.thinking, tool: "", detail: "" };
+  return { label: toolCount.value ? labels.steps(toolCount.value) : labels.thinking, subject: "", detail: "" };
 });
 
-function toggleStep(key: string) {
-  expandedStep.value = expandedStep.value === key ? null : key;
-}
-
-function argsText(step: ProcessStep) {
-  return JSON.stringify(step.args, null, 2);
+function stepComponent(step: ProcessStepView) {
+  return resolveToolRenderer(step, shell.toolRenderers.value);
 }
 </script>
 
@@ -48,42 +38,22 @@ function argsText(step: ProcessStep) {
       <Wrench v-else-if="toolCount" :size="14" />
       <Brain v-else :size="14" />
       <span class="summary-label">{{ summary.label }}</span>
-      <span v-if="summary.tool" class="summary-tool">{{ summary.tool }}</span>
+      <span v-if="summary.subject" class="summary-subject">{{ summary.subject }}</span>
       <span v-if="summary.detail" class="summary-detail">{{ summary.detail }}</span>
       <ChevronRight :size="14" class="chevron" />
     </button>
     <ol v-if="open" class="steps">
-      <li v-for="step in steps" :key="step.key" class="step">
+      <li v-for="step in steps" :key="step.key">
         <template v-if="step.kind === 'thinking'">
-          <div class="step-row static">
-            <Brain :size="13" class="step-icon" />
-            <span class="step-label">{{ shell.labels.value.thinking }}</span>
-          </div>
+          <div class="thinking-head"><Brain :size="13" />{{ shell.labels.value.thinking }}</div>
           <p class="thinking-text">{{ step.text }}</p>
         </template>
-        <template v-else>
-          <button
-            type="button"
-            class="step-row"
-            :aria-expanded="expandedStep === step.key"
-            @click="toggleStep(step.key)"
-          >
-            <Terminal :size="13" class="step-icon" />
-            <span class="step-name">{{ step.toolName || shell.labels.value.preparing }}</span>
-            <span class="step-arg">{{ step.text }}</span>
-            <LoaderCircle v-if="step.status === 'running' || step.status === 'streaming'" :size="13" class="spin status" />
-            <CircleAlert v-else-if="step.status === 'failed'" :size="13" class="status failed" />
-            <Check v-else :size="13" class="status done" />
-          </button>
-          <div v-if="expandedStep === step.key" class="step-detail">
-            <div class="detail-label">{{ shell.labels.value.toolInput }}</div>
-            <pre>{{ argsText(step) }}</pre>
-            <template v-if="step.output">
-              <div class="detail-label">{{ shell.labels.value.toolOutput }}</div>
-              <pre>{{ step.output }}</pre>
-            </template>
-          </div>
-        </template>
+        <component
+          :is="stepComponent(step) ?? ToolStep"
+          v-else
+          :step="step"
+          :fallback="stepComponent(step) ? ToolStep : null"
+        />
       </li>
     </ol>
   </div>
@@ -112,15 +82,14 @@ function argsText(step: ProcessStep) {
   background: var(--el-fill-color);
   color: var(--el-text-color-regular);
 }
-.process-summary:focus-visible,
-.step-row:focus-visible {
+.process-summary:focus-visible {
   outline: 2px solid var(--el-color-primary);
   outline-offset: 1px;
 }
 .summary-label {
   flex-shrink: 0;
 }
-.summary-tool {
+.summary-subject {
   flex-shrink: 0;
   padding: 1px 6px;
   border-radius: 6px;
@@ -155,59 +124,16 @@ function argsText(step: ProcessStep) {
   flex-direction: column;
   gap: 2px;
 }
-.step-row {
+.thinking-head {
   display: flex;
   align-items: center;
   gap: 8px;
-  width: 100%;
   padding: 5px 8px;
-  border: 0;
-  border-radius: 8px;
-  background: transparent;
-  color: var(--el-text-color-regular);
-  font: inherit;
+  color: var(--el-text-color-secondary);
   font-size: var(--text-sm, 13px);
-  text-align: left;
-  cursor: pointer;
 }
-.step-row:hover:not(.static) {
-  background: var(--el-fill-color-light);
-}
-.step-row.static {
-  cursor: default;
-}
-.step-icon {
+.thinking-head svg {
   color: var(--el-text-color-tertiary);
-  flex-shrink: 0;
-}
-.step-name {
-  font-family: var(--font-mono, ui-monospace, monospace);
-  font-size: var(--text-xs, 12px);
-  font-weight: 600;
-  flex-shrink: 0;
-}
-.step-label {
-  color: var(--el-text-color-secondary);
-}
-.step-arg {
-  flex: 1;
-  min-width: 0;
-  font-family: var(--font-mono, ui-monospace, monospace);
-  font-size: var(--text-xs, 12px);
-  color: var(--el-text-color-secondary);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.status {
-  flex-shrink: 0;
-  color: var(--el-text-color-tertiary);
-}
-.status.done {
-  color: var(--el-color-success);
-}
-.status.failed {
-  color: var(--el-color-danger);
 }
 .thinking-text {
   margin: 0 8px 6px 29px;
@@ -215,31 +141,6 @@ function argsText(step: ProcessStep) {
   font-size: var(--text-sm, 13px);
   line-height: 1.6;
   white-space: pre-wrap;
-}
-.step-detail {
-  margin: 2px 8px 8px 29px;
-}
-.detail-label {
-  margin: 6px 0 4px;
-  font-size: var(--text-xs, 11px);
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  color: var(--el-text-color-tertiary);
-}
-.step-detail pre {
-  margin: 0;
-  max-height: 260px;
-  overflow: auto;
-  padding: 10px 12px;
-  border-radius: 10px;
-  background: var(--el-fill-color-light);
-  color: var(--el-text-color-regular);
-  font-family: var(--font-mono, ui-monospace, monospace);
-  font-size: var(--text-xs, 12px);
-  line-height: 1.55;
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
 }
 .spin {
   animation: spin 1s linear infinite;

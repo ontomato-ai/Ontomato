@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { computed, inject, onMounted, ref } from "vue";
 import { Check, CircleAlert, Copy, Square, ThumbsDown, ThumbsUp, TriangleAlert } from "lucide-vue-next";
-import type { ShellFeedbackPort, ShellFeedbackValue } from "@ontomato/contracts/agent-shell";
+import type { ShellFeedbackPort, ShellFeedbackValue } from "../types";
+import SlotOutlet from "./SlotOutlet.vue";
 import { shellContextKey } from "../context";
 import type { ResponseItem } from "../view";
 import ShellMarkdown from "./ShellMarkdown.vue";
@@ -126,6 +127,10 @@ async function submit(value: ShellFeedbackValue) {
           <ThumbsDown :size="15" />
         </button>
       </template>
+      <SlotOutlet
+        :slot="shell.slots.messageActions"
+        :scope="{ sessionId, runId: item.runId, messageId: item.answerMessageId, text: item.answerText }"
+      />
     </div>
     <form v-if="reasonOpen" class="reason" @submit.prevent="submit({ rating: 'dislike', reason })">
       <textarea v-model="reason" rows="2" :placeholder="labels.feedbackReason" :aria-label="labels.feedbackReason" />

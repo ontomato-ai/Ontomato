@@ -210,6 +210,9 @@ importers:
       '@ontomato/contracts':
         specifier: workspace:*
         version: link:../contracts
+      echarts:
+        specifier: 6.0.0
+        version: 6.0.0
       lucide-vue-next:
         specifier: 1.0.0
         version: 1.0.0(vue@3.5.30(typescript@5.9.3))

@@ -1,13 +1,15 @@
 <script setup lang="ts">
-import { computed, ref, watch } from "vue";
-import { useI18n } from "vue-i18n";
-import type { ArtifactRendererProps } from "@ontomato/agent-shell-ui";
+import { computed, inject, ref, watch } from "vue";
+import { ChevronLeft, ChevronRight } from "lucide-vue-next";
+import { shellContextKey } from "../context";
+import type { ArtifactRendererProps } from "../types";
 import { jsonTable, parseCsv, type TableData } from "./table-data";
 import { useArtifactText } from "./useArtifactBlob";
 
 /** .csv and .json datasets: paginated table; non-tabular JSON falls back to formatted text. */
 const props = defineProps<ArtifactRendererProps>();
-const { t } = useI18n();
+const shell = inject(shellContextKey)!;
+const labels = computed(() => shell.labels.value);
 const { text, error } = useArtifactText(props);
 const page = ref(1);
 const pageSize = computed(() => (props.presentation === "inline" ? 8 : 50));
@@ -25,10 +27,10 @@ const parsed = computed<{ table: TableData | null; raw: string | null; invalid: 
   }
 });
 const table = computed(() => parsed.value.table);
+const pages = computed(() => Math.max(1, Math.ceil((table.value?.rows.length ?? 0) / pageSize.value)));
 const visibleRows = computed(() => {
-  const rows = table.value?.rows ?? [];
   const start = (page.value - 1) * pageSize.value;
-  return rows.slice(start, start + pageSize.value);
+  return (table.value?.rows ?? []).slice(start, start + pageSize.value);
 });
 const NUMBER = /^-?\d[\d,]*(\.\d+)?%?$/;
 const numericColumns = computed(() =>
@@ -41,9 +43,9 @@ watch(() => props.artifact.id, () => (page.value = 1));
 </script>
 
 <template>
-  <div class="table-artifact" :class="presentation">
+  <div class="table-renderer" :class="presentation">
     <div v-if="error" class="state error">{{ error }}</div>
-    <div v-else-if="text === null" class="state">{{ t("assistant.loading") }}</div>
+    <div v-else-if="text === null" class="state">{{ labels.loading }}</div>
     <template v-else-if="table">
       <div class="table-scroll">
         <table>
@@ -64,25 +66,25 @@ watch(() => props.artifact.id, () => (page.value = 1));
         </table>
       </div>
       <div class="table-footer">
-        <span class="row-count">{{ t("assistant.rows", { n: table.rows.length }, table.rows.length) }}</span>
-        <el-pagination
-          v-if="table.rows.length > pageSize"
-          v-model:current-page="page"
-          :page-size="pageSize"
-          :total="table.rows.length"
-          layout="prev, pager, next"
-          size="small"
-          background
-        />
+        <span class="row-count">{{ labels.rows(table.rows.length) }}</span>
+        <div v-if="pages > 1" class="pager">
+          <button type="button" :disabled="page <= 1" :aria-label="labels.previousPage" @click="page--">
+            <ChevronLeft :size="15" />
+          </button>
+          <span>{{ page }} / {{ pages }}</span>
+          <button type="button" :disabled="page >= pages" :aria-label="labels.nextPage" @click="page++">
+            <ChevronRight :size="15" />
+          </button>
+        </div>
       </div>
     </template>
-    <div v-else-if="parsed.raw !== null && parsed.raw.trim() === ''" class="state">{{ t("assistant.emptyFile") }}</div>
+    <div v-else-if="parsed.raw !== null && parsed.raw.trim() === ''" class="state">{{ labels.emptyFile }}</div>
     <pre v-else class="raw" :class="{ invalid: parsed.invalid }">{{ parsed.raw }}</pre>
   </div>
 </template>
 
 <style scoped>
-.table-artifact {
+.table-renderer {
   min-width: 0;
 }
 .table-scroll {
@@ -94,7 +96,7 @@ watch(() => props.artifact.id, () => (page.value = 1));
 table {
   width: 100%;
   border-collapse: collapse;
-  font-size: var(--text-sm);
+  font-size: var(--text-sm, 13px);
   font-variant-numeric: tabular-nums;
 }
 th,
@@ -110,7 +112,7 @@ th {
   background: var(--el-fill-color-light);
   color: var(--el-text-color-secondary);
   font-weight: 600;
-  font-size: var(--text-xs);
+  font-size: var(--text-xs, 11px);
   letter-spacing: 0.03em;
 }
 td {
@@ -130,13 +132,39 @@ tbody tr:hover td {
   padding: 8px 10px 8px 14px;
 }
 .row-count {
-  font-size: var(--text-xs);
+  font-size: var(--text-xs, 11px);
   color: var(--el-text-color-secondary);
+}
+.pager {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--text-xs, 12px);
+  color: var(--el-text-color-secondary);
+  font-variant-numeric: tabular-nums;
+}
+.pager button {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border: 1px solid var(--el-border-color);
+  border-radius: 8px;
+  background: var(--el-bg-color);
+  color: var(--el-text-color-regular);
+  cursor: pointer;
+}
+.pager button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.pager button:focus-visible {
+  outline: 2px solid var(--el-color-primary);
 }
 .state {
   padding: 18px;
   color: var(--el-text-color-secondary);
-  font-size: var(--text-sm);
+  font-size: var(--text-sm, 13px);
 }
 .state.error {
   color: var(--el-color-danger);
@@ -146,8 +174,8 @@ tbody tr:hover td {
   padding: 14px;
   max-height: 420px;
   overflow: auto;
-  font-family: var(--font-mono);
-  font-size: var(--text-xs);
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: var(--text-xs, 12px);
   line-height: 1.6;
   white-space: pre-wrap;
   overflow-wrap: anywhere;

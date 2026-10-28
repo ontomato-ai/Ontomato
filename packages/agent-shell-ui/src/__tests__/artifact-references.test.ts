@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { getMarkdown, parseMarkdownToStructure } from "markstream-vue";
 import { artifactPath } from "@ontomato/contracts/agent-artifact-markdown";
-import { rendererFor } from "../artifacts";
+import { resolveArtifactRenderer } from "../artifacts";
+import { skillOfCommand } from "../tools";
 import { shellParseOptions } from "../markdown";
 
 /** The artifact Markdown contract: which destinations are files, and which renderer gets them. */
@@ -15,13 +16,26 @@ describe("artifact references", () => {
     expect(artifactPath("outputs/")).toBeNull();
   });
 
-  it("dispatches by the longest registered extension", () => {
-    const chart = { extensions: [".chart.json"], component: {} };
-    const table = { extensions: [".csv", ".json"], component: {} };
-    const renderers = [table, chart];
-    expect(rendererFor("outputs/q.chart.json", renderers)).toBe(chart);
-    expect(rendererFor("outputs/q.JSON", renderers)).toBe(table);
-    expect(rendererFor("outputs/q.pdf", renderers)).toBeNull();
+  it("looks up host override, then shell default by longest extension, then nothing", () => {
+    const chart = { extensions: [".chart.json"], component: { name: "chart" } };
+    const table = { extensions: [".csv", ".json"], component: { name: "table" } };
+    const defaults = [table, chart];
+    expect(resolveArtifactRenderer("outputs/q.chart.json", [], defaults)).toEqual({ component: chart.component, fallback: null });
+    expect(resolveArtifactRenderer("outputs/q.JSON", [], defaults).component).toBe(table.component);
+    expect(resolveArtifactRenderer("outputs/q.pdf", [], defaults).component).toBeNull();
+    const report = { path: /^outputs\/report/, component: { name: "report" } };
+    const csv = { extensions: [".csv"], component: { name: "csv" } };
+    expect(resolveArtifactRenderer("outputs/report.csv", [csv, report], defaults)).toEqual({
+      component: report.component,
+      fallback: table.component,
+    });
+    expect(resolveArtifactRenderer("outputs/a.csv", [csv, report], defaults).component).toBe(csv.component);
+  });
+
+  it("names the skill whose script a bash command runs", () => {
+    expect(skillOfCommand("python skills/ontomato-analyst/scripts/query.py --q x")).toBe("ontomato-analyst");
+    expect(skillOfCommand("cd /w && node ./skills/report-writer/run.mjs")).toBe("report-writer");
+    expect(skillOfCommand("python outputs/skills.py")).toBeNull();
   });
 
   it("keeps unclosed references pending while streaming and line breaks as breaks", () => {

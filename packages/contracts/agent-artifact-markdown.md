@@ -3,8 +3,8 @@
 Shared shell contract, approved 2026-10-28; implemented by
 [the agent shell](agent-shell.md) in batch 3. Runtime provides files according to
 [agent-runtime.md](agent-runtime.md). This contract owns the reference syntax,
-its meaning, the chart file format and the shared prompt; each shell host owns
-its concrete renderers.
+its meaning, the chart file format and the shared prompt; the shell renders each
+kind by default and hosts may override a renderer.
 
 The host appends the common prompt text owned by contracts once to each agent's
 system prompt, alongside its business instructions:

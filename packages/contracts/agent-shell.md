@@ -1,82 +1,89 @@
 # Agent shell contract
 
-Implemented contract, 2026-10-28 (batch 3). Types live in
-[src/agent-shell.ts](src/agent-shell.ts); the Vue implementation is
-`packages/agent-shell-ui`. Runtime facts are [agent-runtime.md](agent-runtime.md);
-artifact references are [agent-artifact-markdown.md](agent-artifact-markdown.md).
-The host HTTP protocol behind the port is owned by the workbench server, not here.
+Implemented contract, 2026-10-28 (batch 3), revised by the same day's decision
+"default rendering in the shell, host overrides". The Vue implementation and its
+TypeScript API are `@ontomato/agent-shell-ui`; runtime facts are
+[agent-runtime.md](agent-runtime.md); artifact references are
+[agent-artifact-markdown.md](agent-artifact-markdown.md).
 
 ## Ownership
 
-`@ontomato/agent-shell-ui` owns the conversation shell: two-column layout with a
-right-side outlet, navigation (feature entries, agent selector, the selected
-agent's sessions), the conversation stream, the composer and the artifact outlet.
-Its only product dependency is `@ontomato/contracts`. It imports no workbench,
-Ontology Manager or server code, no Pinia store, router or i18n instance; the host
-passes labels and reads theme values through the existing CSS variables.
+`@ontomato/agent-shell-ui` is the platform conversation shell shared by every
+host: the workbench now, the Ontology Manager (knowledge governance, ontology
+service AI features) later. It owns the two-column layout with a right outlet,
+navigation (feature entries, agent selector, the selected agent's sessions), the
+conversation stream, the composer, default rendering of messages, tool calls and
+artifacts, and the one client of the host proxy interface. Its only product
+dependency is `@ontomato/contracts`; third-party libraries include vue,
+markstream-vue, echarts and lucide. It imports no host code, store, router or
+i18n instance; hosts pass labels, and theme values come from the CSS variables.
 
-The host owns navigation outside the shell, credentials, HTTP/SSE, the session
-index, menu authorization, feature pages, concrete artifact renderers and
-feedback storage. Hiding an entry never authorizes its server operation.
+A host owns its routes under its own prefix, credentials, menu authorization,
+feature pages, agent definitions, rendering overrides and business actions.
+Hiding an entry never authorizes its server operation.
+
+## Host proxy interface
+
+The shell talks to every host through one interface shape, the agent-host
+contract: agents, session list/creation/deletion, session and run snapshots,
+starting a run (also the continuation after a clarifying answer), the event
+stream, cancellation, artifact resolution and content, with paths relative to
+the host's prefix. `createAgentHostClient({request, scope})` implements it once;
+a host supplies an authenticated `request` and fixed scope parameters (for
+example a workbench ID). The wire types are those of the agent-host contract in
+`@ontomato/contracts`; until that module is merged, the shell's `host.ts`
+mirrors them, and the merge replaces the mirror with the import.
+
+Messages, events and artifacts keep the runtime's PI shapes. Run state is
+`status` + `stopReason` + `errorMessage`; the shell never derives
+completed/failed/needs-input states. A session's title is the first user message
+verbatim; there is no model-generated title and no follow-up suggestion.
+
+Snapshots and frames merge by message ID, `toolCallId` and artifact ID, never by
+array position. Events at or below a run's applied `seq` are ignored;
+`snapshot_required` or a transport error makes the shell re-read the run
+snapshot and subscribe after its cursor. Detaching never cancels execution;
+cancel is an explicit user action. Frames apply in batches once per animation
+frame from a bounded queue.
+
+Host-specific endpoints stay outside the shell. Feedback storage is one: the
+shell shows rating buttons and calls the host's `feedback` port.
 
 ## Declarations
 
 A workbench is code: `ShellWorkbenchDeclaration` lists its feature entries; its
-agent definitions belong to the host and arrive through the port. Feature entries
-are `page` (host renders it in the main area through the `feature` slot, keyed by
-feature ID), `action` (the shell emits it and the host reacts in place, e.g. a
-dialog), `link` (navigates away) or `unavailable` (visible placeholder, no action;
-scheduled tasks use this until they return).
-Editions supply their own feature entries to the same business workbench; there
-is one layout. Workbenches in other applications are links.
+agents come from the host interface. Feature entries are `page` (the host renders
+it in the main area through the `feature` slot, keyed by feature ID), `action`
+(the shell emits it and the host reacts in place, e.g. a dialog), `link`
+(navigates away) or `unavailable` (visible placeholder; scheduled tasks use this
+until they return). Editions supply their own entries to the same workbench.
 
-## Port
+## Default rendering and overrides
 
-`AgentShellPort` is the only data path. Every payload keeps the runtime's PI
-shape (`RuntimeSessionSnapshot`, `RuntimeRunSnapshot`, `RuntimeStreamFrame`,
-`RuntimeArtifact`). Run state is `status` + `stopReason` + `errorMessage`; the
-shell never derives completed/failed/needs-input states. A clarification is an
-ordinary answer and the next user message continues the same session.
+The shell renders everything by default; hosts override only where they mean to.
+Lookup is always host override → shell default → generic file card or step.
 
-- `listAgents()`: the host's agent definitions for this workbench; disabled agents
-  stay listed so their history remains selectable, but cannot start runs.
-- `listSessions(agentId, cursor)`: the host index for the current user, domain and
-  agent, newest first, paged by an opaque cursor. The title is the first user
-  message verbatim; no model call, no follow-up suggestions.
-- `send({agentId, sessionId, text})`: `sessionId: null` creates the session first
-  (`createdSession`). Every later message, including the answer to a clarifying
-  question, starts a run in the same session. The result carries the admitted
-  run snapshot; the shell subscribes after its cursor.
-- `readRun` / `subscribe(sessionId, runId, {seq, streamId}, handlers)`: frames
-  after the cursor. Events
-  at or below the last applied `seq` are ignored. `snapshot_required` or a
-  transport error makes the shell re-read the run snapshot and subscribe again;
-  a stopped snapshot needs no stream. Detaching never cancels execution.
-- `cancel(sessionId, runId)`: explicit user action only.
-- `resolveArtifact({sessionId, runId, path})` then `readArtifact(artifact)`:
-  resolution is per run (the version at the run's end, or the current one while
-  it runs); bytes come through the host's authenticated proxy. Artifacts already
-  seen in the run's snapshot or `artifact_registered` events resolve locally first.
-- `feedback` (optional): rating and reason per assistant message.
+- **Message text**: standard Markdown through markstream-vue. Single newlines are
+  line breaks and only `~~` marks strikethrough, as in every delivery channel;
+  raw HTML is escaped.
+- **Artifacts**: `outputs/` image syntax renders inline, link syntax renders a
+  card that opens the right panel; an unclosed reference shows a placeholder.
+  Defaults by extension: `.chart.json` ECharts, `.csv`/`.json` paginated table,
+  images, `.html` iframe with `sandbox="allow-scripts"` only, `.md` rendered like
+  a message. Anything else is a file card with download. Overrides
+  (`ArtifactRendererOverride`) match a path pattern first, then the longest
+  extension. Components are keyed by run and path.
+- **Tool calls**: consecutive thinking and tool steps collapse into one process
+  row. Default step views for `read`, `write`, `edit` and `bash`; a bash command
+  that runs `skills/<name>/...` is shown as that skill. Overrides
+  (`ToolRendererOverride`) match a skill name first, then a tool name.
+- **Charts**: hosts may pass a native ECharts theme; the default follows the CSS
+  tokens.
 
-## Projection
+Every override receives the component it replaces as `fallback`, so it can wrap
+the default instead of re-implementing it.
 
-A pure reducer merges snapshots and frames by message ID, `toolCallId` and
-artifact ID, never by array position. `message_update` applies content-block
-deltas to the identified partial; `message_end` replaces it with the settled
-message. Text blocks render as standard Markdown through markstream-vue; single
-newlines are line breaks and only `~~` marks strikethrough, matching the other
-delivery channels. Thinking and tool calls render as one generic collapsible
-process row per run of consecutive blocks; there are no per-tool cards. System
-messages never become bubbles.
-
-## Artifact rendering
-
-Markdown `outputs/` image syntax renders inline; link syntax renders a file card
-that opens in the right panel. An unclosed reference shows a placeholder until the
-parser settles it. Artifact components are keyed by run and path so streaming does
-not remount them. Hosts register renderers as `{extensions, component}`; the shell
-picks the longest matching suffix (`.chart.json` before `.json`) and falls back to
-a download card. Renderer props are `{artifact, title, presentation, read}` with
-`presentation` `inline` or `panel`; the same renderer serves both. HTML renders in
-an iframe with `sandbox="allow-scripts"` only.
+Business actions (save as dashboard, export PPT and similar) never require an
+override: hosts fill the `artifact-actions` slot (scope `{artifact}`, shown in
+the panel header and inline captions) and the `message-actions` slot (scope
+`{sessionId, runId, messageId, text}`, shown under an answer).

@@ -2,18 +2,19 @@
 import { computed, onMounted, ref, watch } from "vue";
 import { ElMessage } from "element-plus";
 import { useI18n } from "vue-i18n";
-import { AgentShell, type ShellLabels } from "@ontomato/agent-shell-ui";
+import {
+  AgentShell,
+  type ShellFeatureDeclaration,
+  type ShellLabels,
+  type ShellWorkbenchDeclaration,
+} from "@ontomato/agent-shell-ui";
 import "@ontomato/agent-shell-ui/style.css";
-import type {
-  ShellFeatureDeclaration,
-  ShellWorkbenchDeclaration,
-} from "@ontomato/contracts/agent-shell";
 import type { WorkbenchAppearance } from "@ontomato/contracts/workbench-appearance";
 import { AgentSettingsPage } from "../../agents";
 import { DashboardHome } from "../../dashboard";
 import { getWorkbenchAppearance } from "../api";
-import { businessArtifactRenderers } from "../artifacts";
-import { createAssistantPort } from "../assistant-port";
+import { nativeEchartsTheme } from "../../dashboard/components/utils/echartsTheme";
+import { createAssistantClient, createAssistantFeedback } from "../assistant-host";
 import WorkbenchAppearanceDialog from "./WorkbenchAppearanceDialog.vue";
 
 /**
@@ -35,7 +36,8 @@ const WORKBENCH_ID = "business";
 const AGENT_KEY = "ontomato.workbench.agent";
 
 const { t } = useI18n();
-const port = createAssistantPort(WORKBENCH_ID);
+const client = createAssistantClient(WORKBENCH_ID);
+const feedback = createAssistantFeedback();
 const appearance = ref<WorkbenchAppearance | null>(null);
 const editingBrand = ref(false);
 const agentId = ref<string | null>(readRemembered());
@@ -113,6 +115,17 @@ const labels = computed<ShellLabels>(() => ({
   artifactMissing: t("assistant.artifactMissing"),
   menu: t("assistant.menu"),
   scrollToBottom: t("assistant.scrollToBottom"),
+  loading: t("assistant.loading"),
+  rows: (count) => t("assistant.rows", { n: count }, count),
+  emptyFile: t("assistant.emptyFile"),
+  invalidChart: t("assistant.invalidChart"),
+  previousPage: t("assistant.previousPage"),
+  nextPage: t("assistant.nextPage"),
+  toolRead: t("assistant.toolRead"),
+  toolWrite: t("assistant.toolWrite"),
+  toolEdit: t("assistant.toolEdit"),
+  toolBash: t("assistant.toolBash"),
+  toolSkill: t("assistant.toolSkill"),
 }));
 
 const logo = computed(() => appearance.value?.brand.logo || props.defaultLogo);
@@ -137,9 +150,10 @@ function appearanceSaved(value: WorkbenchAppearance) {
     v-model:agent-id="agentId"
     v-model:feature-id="featureId"
     :workbench="workbench"
-    :port="port"
+    :client="client"
     :labels="labels"
-    :renderers="businessArtifactRenderers"
+    :feedback="feedback"
+    :chart-theme="nativeEchartsTheme"
     @error="ElMessage.error($event)"
     @feature-action="emit('featureAction', $event)"
   >

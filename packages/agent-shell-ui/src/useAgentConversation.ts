@@ -1,5 +1,5 @@
 import { computed, onBeforeUnmount, reactive, ref } from "vue";
-import type { AgentShellPort, ShellSendResult } from "@ontomato/contracts/agent-shell";
+import type { AgentHostClient, HostRunSnapshot, HostSession } from "./host";
 import type { RuntimeStreamFrame } from "@ontomato/contracts/agent-runtime-events";
 import {
   applyEnvelope,
@@ -19,7 +19,7 @@ const MAX_QUEUED_FRAMES = 2000;
  * selection token, so a late response for a previous session never writes into the current one.
  * Frames are applied in batches once per animation frame.
  */
-export function useAgentConversation(port: () => AgentShellPort) {
+export function useAgentConversation(port: () => AgentHostClient) {
   const state = reactive<ConversationState>(emptyConversation());
   const loading = ref(false);
   const loadError = ref<string | null>(null);
@@ -142,22 +142,30 @@ export function useAgentConversation(port: () => AgentShellPort) {
     }
   }
 
-  /** Resolves to the port's result so the session list can update; null when sending failed. */
-  async function send(agentId: string, text: string): Promise<ShellSendResult | null> {
+  /**
+   * Starts a run, creating the session first for a new conversation. Resolves to the created
+   * session (if any) and the admitted run so the session list can update; null when sending failed.
+   */
+  async function send(
+    agentId: string,
+    text: string,
+  ): Promise<{ createdSession: HostSession | null; snapshot: HostRunSnapshot } | null> {
     if (busy.value) return null;
     const current = token;
     sending.value = true;
     sendError.value = null;
     pendingInput.value = text;
     try {
-      const result = await port().send({ agentId, sessionId: state.sessionId, text });
-      if (current !== token) return result;
-      state.sessionId = result.createdSession?.id ?? state.sessionId;
-      applyRunSnapshot(state, result.snapshot);
+      const createdSession = state.sessionId ? null : await port().createSession(agentId);
+      if (current !== token) return null;
+      if (createdSession) state.sessionId = createdSession.id;
+      const snapshot = await port().startRun(state.sessionId!, text);
+      if (current !== token) return { createdSession, snapshot };
+      applyRunSnapshot(state, snapshot);
       pendingInput.value = null;
       artifactRevision.value++;
-      attach(result.snapshot.run.id, 0);
-      return result;
+      attach(snapshot.run.id, 0);
+      return { createdSession, snapshot };
     } catch (error) {
       if (current === token) {
         sendError.value = errorText(error);
@@ -185,7 +193,7 @@ export function useAgentConversation(port: () => AgentShellPort) {
     const local = findArtifact(state.runs[runId], path);
     if (local) return local;
     const sessionId = state.sessionId;
-    return sessionId ? port().resolveArtifact({ sessionId, runId, path }) : null;
+    return sessionId ? port().resolveArtifact(sessionId, runId, path) : null;
   }
 
   onBeforeUnmount(() => {

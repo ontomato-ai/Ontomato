@@ -1,10 +1,20 @@
-import type { InjectionKey, Ref } from "vue";
+import type { InjectionKey, Ref, Slot } from "vue";
 import type { RuntimeArtifact } from "@ontomato/contracts/agent-runtime-artifacts";
-import type { ArtifactRendererRegistration, OpenArtifact, ShellLabels } from "./types";
+import type { ChartTheme } from "./chart-theme";
+import type {
+  ArtifactRendererOverride,
+  OpenArtifact,
+  ShellLabels,
+  ToolRendererOverride,
+} from "./types";
 
 export interface ShellContext {
   labels: Ref<ShellLabels>;
-  renderers: Ref<readonly ArtifactRendererRegistration[]>;
+  artifactRenderers: Ref<readonly ArtifactRendererOverride[]>;
+  toolRenderers: Ref<readonly ToolRendererOverride[]>;
+  chartTheme: Ref<ChartTheme>;
+  /** Host slots for business actions: `artifact-actions` ({artifact}) and `message-actions`. */
+  slots: { artifactActions?: Slot; messageActions?: Slot };
   resolveArtifact(runId: string, path: string): Promise<RuntimeArtifact | null>;
   /** Changes whenever a run registers new artifacts, so unresolved references retry. */
   artifactRevision: Ref<number>;

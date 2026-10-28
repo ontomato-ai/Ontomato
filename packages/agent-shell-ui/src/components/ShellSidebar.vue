@@ -1,19 +1,16 @@
 <script setup lang="ts">
 import { computed, inject, onBeforeUnmount, ref } from "vue";
 import { Check, ChevronDown, SquarePen, Trash2 } from "lucide-vue-next";
-import type {
-  ShellAgent,
-  ShellSession,
-  ShellWorkbenchDeclaration,
-} from "@ontomato/contracts/agent-shell";
+import type { HostAgent, HostSession } from "../host";
+import type { ShellWorkbenchDeclaration } from "../types";
 import { shellContextKey } from "../context";
 import { featureIcon } from "../icons";
 
 const props = defineProps<{
   workbench: ShellWorkbenchDeclaration;
-  agents: ShellAgent[];
+  agents: HostAgent[];
   agentId: string | null;
-  sessions: ShellSession[];
+  sessions: HostSession[];
   sessionsState: "loading" | "ready" | "error";
   hasMore: boolean;
   sessionId: string | null;

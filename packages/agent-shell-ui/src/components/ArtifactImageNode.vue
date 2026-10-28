@@ -1,10 +1,12 @@
 <script setup lang="ts">
-import { computed, inject } from "vue";
+import { computed, inject, ref, watch } from "vue";
+import type { RuntimeArtifact } from "@ontomato/contracts/agent-runtime-artifacts";
 import { Maximize2 } from "lucide-vue-next";
 import { artifactPath } from "@ontomato/contracts/agent-artifact-markdown";
 import { fileName } from "../artifacts";
 import { messageContextKey, shellContextKey } from "../context";
 import ArtifactView from "./ArtifactView.vue";
+import SlotOutlet from "./SlotOutlet.vue";
 
 /** markstream image node: outputs/ files render inline through the host renderer. */
 const props = defineProps<{
@@ -15,11 +17,16 @@ const message = inject(messageContextKey)!;
 const path = computed(() => (props.node.loading ? null : artifactPath(props.node.src)));
 const title = computed(() => props.node.alt || (path.value ? fileName(path.value) : ""));
 
-async function expand() {
-  if (!path.value) return;
-  const artifact = await shell.resolveArtifact(message.value.runId, path.value);
-  if (artifact)
-    shell.openArtifact({ key: `${message.value.runId}:${path.value}`, artifact, title: title.value });
+const artifact = ref<RuntimeArtifact | null>(null);
+async function resolve() {
+  if (!path.value || artifact.value) return;
+  artifact.value = await shell.resolveArtifact(message.value.runId, path.value).catch(() => null);
+}
+watch([path, shell.artifactRevision], resolve, { immediate: true });
+
+function expand() {
+  if (path.value && artifact.value)
+    shell.openArtifact({ key: `${message.value.runId}:${path.value}`, artifact: artifact.value, title: title.value });
 }
 </script>
 
@@ -28,6 +35,7 @@ async function expand() {
   <figure v-else-if="path" class="inline-artifact">
     <figcaption class="inline-caption">
       <span class="inline-title">{{ title }}</span>
+      <SlotOutlet v-if="artifact" :slot="shell.slots.artifactActions" :scope="{ artifact }" />
       <button
         type="button"
         class="inline-expand"
@@ -74,6 +82,8 @@ async function expand() {
   border-bottom: 1px solid var(--el-border-color-light);
 }
 .inline-title {
+  flex: 1;
+  min-width: 0;
   font-size: var(--text-sm, 13px);
   font-weight: 600;
   color: var(--el-text-color-primary);

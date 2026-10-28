@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { ArtifactRendererProps } from "@ontomato/agent-shell-ui";
+import type { ArtifactRendererProps } from "../types";
 import { useArtifactUrl } from "./useArtifactBlob";
 
 /** Raster and SVG images; SVG loads through <img>, so its scripts never run. */
@@ -32,6 +32,6 @@ img {
 }
 .state {
   color: var(--el-color-danger);
-  font-size: var(--text-sm);
+  font-size: var(--text-sm, 13px);
 }
 </style>

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { RuntimeEventEnvelope } from "@ontomato/contracts/agent-runtime-events";
-import type { ShellRunSnapshot } from "@ontomato/contracts/agent-shell";
+import type { HostRunSnapshot } from "../host";
 import { applyEnvelope, applyRunSnapshot, emptyConversation } from "../conversation";
 import { conversationItems } from "../view";
 
@@ -14,8 +14,8 @@ function envelope(seq: number, event: RuntimeEventEnvelope["event"]): RuntimeEve
   return { sessionId, cursor: { runId, seq, streamId }, timestamp: new Date(0).toISOString(), event };
 }
 
-const snapshot: ShellRunSnapshot = {
-  run: { id: runId, status: "running", stopReason: null, errorMessage: null },
+const snapshot: HostRunSnapshot = {
+  run: { id: runId, sessionId, status: "running", stopReason: null, errorMessage: null, createdAt: new Date(0).toISOString(), finishedAt: null },
   cursor: { runId, seq: 3, streamId },
   messages: [
     { id: userId, runId, messageSeq: 0, message: { role: "user", content: "hello", timestamp: 1 } },

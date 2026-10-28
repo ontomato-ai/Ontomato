@@ -899,7 +899,14 @@ export default {
     "invalidChart": "This chart file could not be drawn.",
     "featureDashboards": "Dashboards",
     "featureAgentConfig": "Agent settings",
-    "featureSchedule": "Scheduled tasks"
+    "featureSchedule": "Scheduled tasks",
+    "previousPage": "Previous page",
+    "nextPage": "Next page",
+    "toolRead": "Read",
+    "toolWrite": "Write",
+    "toolEdit": "Edit",
+    "toolBash": "Run",
+    "toolSkill": "Skill"
   },
   "agents": {
     "title": "Agent settings",

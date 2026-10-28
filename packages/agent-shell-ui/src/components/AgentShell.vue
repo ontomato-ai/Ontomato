@@ -1,14 +1,17 @@
 <script setup lang="ts">
-import { computed, onMounted, provide, ref, toRef, watch } from "vue";
+import { computed, onMounted, provide, ref, toRef, useSlots, watch } from "vue";
 import { Menu } from "lucide-vue-next";
-import type {
-  AgentShellPort,
-  ShellAgent,
-  ShellSession,
-  ShellWorkbenchDeclaration,
-} from "@ontomato/contracts/agent-shell";
+import { defaultChartTheme, type ChartTheme } from "../chart-theme";
 import { shellContextKey } from "../context";
-import type { ArtifactRendererRegistration, OpenArtifact, ShellLabels } from "../types";
+import type { AgentHostClient, HostAgent, HostSession } from "../host";
+import type {
+  ArtifactRendererOverride,
+  OpenArtifact,
+  ShellFeedbackPort,
+  ShellLabels,
+  ShellWorkbenchDeclaration,
+  ToolRendererOverride,
+} from "../types";
 import { useAgentConversation } from "../useAgentConversation";
 import ShellConversation from "./ShellConversation.vue";
 import ShellSidePanel from "./ShellSidePanel.vue";
@@ -16,20 +19,28 @@ import ShellSidebar from "./ShellSidebar.vue";
 
 /**
  * Two-column agent shell with a right outlet: navigation (features, agent, sessions) and the
- * conversation. Feature pages render through the `feature` slot; the host owns their content.
+ * conversation. Rendering defaults live here; hosts pass overrides and fill the slots:
+ * `brand`, `footer`, `feature` (feature pages), `artifact-actions` and `message-actions`.
  */
-const props = defineProps<{
-  workbench: ShellWorkbenchDeclaration;
-  port: AgentShellPort;
-  labels: ShellLabels;
-  renderers: readonly ArtifactRendererRegistration[];
-}>();
+const props = withDefaults(
+  defineProps<{
+    workbench: ShellWorkbenchDeclaration;
+    client: AgentHostClient;
+    labels: ShellLabels;
+    feedback?: ShellFeedbackPort;
+    artifactRenderers?: readonly ArtifactRendererOverride[];
+    toolRenderers?: readonly ToolRendererOverride[];
+    chartTheme?: ChartTheme;
+  }>(),
+  { artifactRenderers: () => [], toolRenderers: () => [], chartTheme: () => defaultChartTheme },
+);
+const slots = useSlots();
 const emit = defineEmits<{ error: [message: string]; featureAction: [id: string] }>();
 const featureId = defineModel<string | null>("featureId", { default: null });
 const agentId = defineModel<string | null>("agentId", { default: null });
 
-const agents = ref<ShellAgent[]>([]);
-const sessions = ref<ShellSession[]>([]);
+const agents = ref<HostAgent[]>([]);
+const sessions = ref<HostSession[]>([]);
 const sessionsState = ref<"loading" | "ready" | "error">("loading");
 const nextCursor = ref<string | null>(null);
 const sessionId = ref<string | null>(null);
@@ -37,16 +48,26 @@ const openArtifact = ref<OpenArtifact | null>(null);
 const navOpen = ref(false);
 let sessionsLoad = 0;
 
-const conversation = useAgentConversation(() => props.port);
+const conversation = useAgentConversation(() => props.client);
 const currentAgent = computed(() => agents.value.find((agent) => agent.id === agentId.value) ?? null);
 const currentSession = computed(() => sessions.value.find((session) => session.id === sessionId.value));
 
 provide(shellContextKey, {
   labels: toRef(props, "labels"),
-  renderers: toRef(props, "renderers"),
+  artifactRenderers: toRef(props, "artifactRenderers"),
+  toolRenderers: toRef(props, "toolRenderers"),
+  chartTheme: toRef(props, "chartTheme"),
+  slots: {
+    get artifactActions() {
+      return slots["artifact-actions"];
+    },
+    get messageActions() {
+      return slots["message-actions"];
+    },
+  },
   resolveArtifact: conversation.resolveArtifact,
   artifactRevision: conversation.artifactRevision,
-  readArtifact: (artifact) => props.port.readArtifact(artifact),
+  readArtifact: (artifact) => props.client.readArtifact(artifact),
   openArtifact: (open) => {
     openArtifact.value = open;
   },
@@ -59,7 +80,7 @@ function report(error: unknown) {
 
 async function loadAgents() {
   try {
-    agents.value = await props.port.listAgents();
+    agents.value = await props.client.listAgents();
     if (!agents.value.some((agent) => agent.id === agentId.value))
       agentId.value = (agents.value.find((agent) => agent.enabled) ?? agents.value[0])?.id ?? null;
   } catch (error) {
@@ -73,7 +94,7 @@ async function loadSessions(more = false) {
   const load = ++sessionsLoad;
   sessionsState.value = "loading";
   try {
-    const page = await props.port.listSessions(agent, more ? nextCursor.value : null);
+    const page = await props.client.listSessions(agent, more ? nextCursor.value : null);
     if (load !== sessionsLoad) return;
     sessions.value = more ? [...sessions.value, ...page.sessions] : page.sessions;
     nextCursor.value = page.nextCursor;
@@ -108,7 +129,7 @@ function selectFeature(id: string) {
 
 async function removeSession(id: string) {
   try {
-    await props.port.deleteSession(id);
+    await props.client.deleteSession(id);
     sessions.value = sessions.value.filter((session) => session.id !== id);
     if (id === sessionId.value) startNew();
   } catch (error) {
@@ -121,12 +142,11 @@ async function send(text: string) {
   if (!agent) return;
   const result = await conversation.send(agent, text);
   if (!result) return;
-  const run = result.snapshot.run;
-  const latestRun = { id: run.id, status: run.status, stopReason: run.stopReason };
+  const latestRun = result.snapshot.run;
   const created = result.createdSession;
   if (created) {
     sessionId.value = created.id;
-    sessions.value = [{ ...created, latestRun }, ...sessions.value];
+    sessions.value = [{ ...created, title: created.title || text, latestRun }, ...sessions.value];
     return;
   }
   const entry = sessions.value.find((session) => session.id === sessionId.value);
@@ -139,8 +159,10 @@ watch(
   (_, previous) => {
     const entry = currentSession.value;
     const run = previous ? conversation.state.runs[previous] : undefined;
-    if (entry && run && run.status === "stopped")
-      entry.latestRun = { id: run.id, status: run.status, stopReason: run.stopReason };
+    if (entry?.latestRun && run && entry.latestRun.id === run.id && run.status === "stopped") {
+      const { status, stopReason, errorMessage } = run;
+      entry.latestRun = { ...entry.latestRun, status, stopReason, errorMessage };
+    }
   },
 );
 
@@ -208,7 +230,7 @@ onMounted(async () => {
         :send-error="conversation.sendError.value"
         :pending-input="conversation.pendingInput.value"
         :busy="conversation.busy.value"
-        :feedback="port.feedback"
+        :feedback="feedback"
         @send="send"
         @stop="conversation.cancel"
         @retry="conversation.open(sessionId)"

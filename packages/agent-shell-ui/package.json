@@ -13,6 +13,7 @@
   },
   "dependencies": {
     "@ontomato/contracts": "workspace:*",
+    "echarts": "6.0.0",
     "lucide-vue-next": "1.0.0",
     "markstream-vue": "2.0.19"
   },

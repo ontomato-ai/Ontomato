@@ -1,23 +1,38 @@
-import type { ArtifactRendererRegistration } from "./types";
+import type { Component } from "vue";
+import type { ArtifactRendererOverride } from "./types";
 
-/** Longest registered extension wins, so `.chart.json` takes precedence over `.json`. */
-export function rendererFor(
-  path: string,
-  renderers: readonly ArtifactRendererRegistration[],
-): ArtifactRendererRegistration | null {
+function longestExtension<T extends { extensions?: string[] }>(path: string, entries: readonly T[]): T | null {
   const lower = path.toLowerCase();
-  let best: ArtifactRendererRegistration | null = null;
+  let best: T | null = null;
   let bestLength = 0;
-  for (const renderer of renderers) {
-    for (const extension of renderer.extensions) {
+  for (const entry of entries) {
+    for (const extension of entry.extensions ?? []) {
       const suffix = extension.toLowerCase();
       if (suffix.length > bestLength && lower.endsWith(suffix)) {
-        best = renderer;
+        best = entry;
         bestLength = suffix.length;
       }
     }
   }
   return best;
+}
+
+/**
+ * Renderer lookup: host override (path pattern, then longest extension) → shell default for the
+ * extension → none (the caller shows a file card). Returns the chosen component and the one it
+ * replaces, so an override can wrap the default.
+ */
+export function resolveArtifactRenderer(
+  path: string,
+  overrides: readonly ArtifactRendererOverride[],
+  defaults: readonly ArtifactRendererOverride[],
+): { component: Component | null; fallback: Component | null } {
+  const shellDefault = longestExtension(path, defaults)?.component ?? null;
+  const override =
+    overrides.find((entry) => entry.path?.test(path)) ?? longestExtension(path, overrides);
+  return override
+    ? { component: override.component, fallback: shellDefault }
+    : { component: shellDefault, fallback: null };
 }
 
 export function fileName(path: string): string {

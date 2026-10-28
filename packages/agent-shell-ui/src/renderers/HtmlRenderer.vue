@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { ArtifactRendererProps } from "@ontomato/agent-shell-ui";
+import type { ArtifactRendererProps } from "../types";
 import { useArtifactText } from "./useArtifactBlob";
 
 /**
@@ -32,6 +32,6 @@ const { text, error } = useArtifactText(props);
 .state {
   padding: 18px;
   color: var(--el-color-danger);
-  font-size: var(--text-sm);
+  font-size: var(--text-sm, 13px);
 }
 </style>
