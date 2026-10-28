@@ -38,7 +38,7 @@ export const diagnosticConfigSchema = z.object({
       ),
       agents: z.object({
         query: role,
-        coding: role.extend({ skilldir: z.string().nullable() }),
+        coding: role,
         general: role,
         diagnosis: role,
         knowledgeGovernance: role,
@@ -57,11 +57,7 @@ export const diagnosticConfigSchema = z.object({
     "data-engine": z.object({
       dataAdapter: z.string(),
       knowledgeMaxResult: z.number(),
-      toolAndPythonRetry: z.number(),
-      dslCookerTries: z.number().nullable(),
       dslCookerTimeout: z.number().nullable(),
-      questionSpliterTries: z.number().nullable(),
-      questionSpliterTimeout: z.number().nullable(),
     }),
   }),
   subQueryCacheDir: z.string(),
