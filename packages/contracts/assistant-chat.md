@@ -13,6 +13,9 @@ system prompt. Inaccessible/deleted resources return 404; no deletion tombstones
 | Method/path | Request | Response |
 | --- | --- | --- |
 | GET `/agents` | `workbenchId` | `AssistantAgentList` |
+| GET `/agents/:agentId` | configuration permission | `AssistantAgentDefinition` |
+| POST `/agents` | `AssistantAgentInput`, UUID Idempotency-Key | 201 `AssistantAgentDefinition` |
+| PUT `/agents/:agentId` | `AssistantAgentInput`, configuration permission | `AssistantAgentDefinition` |
 | GET `/sessions` | `workbenchId`, `agentId`, optional cursor/limit (30 default, 100 max) | `AssistantSessionPage` |
 | POST `/sessions` | `AssistantCreateSession` | 201 `AssistantCreateSessionResponse` |
 | GET `S` | — | `AssistantSessionSnapshot` |
@@ -70,3 +73,7 @@ in workbench. Errors are `{error:{code,message},correlationId}`: 400
 `INVALID_REQUEST`, 401 `UNAUTHENTICATED`, 403 `FORBIDDEN`, 404 `NOT_FOUND`, the 409
 codes above, or 503 `DEPENDENCY_UNAVAILABLE`. Never return empty history on read
 failure. No credentials/stacks in public errors.
+
+Agent configuration edits prompt, skills and model role under existing management
+permission; list responses omit the prompt. Dashboard create/add accepts
+`dashboard-artifacts` session/dataset artifact IDs instead of old checkpoint indexes.
