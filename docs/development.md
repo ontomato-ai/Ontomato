@@ -60,7 +60,7 @@ The Node service reads the product root `.env` (the process environment takes pr
 and writes runtime data under the product root `data/`. The Ontology Manager proxies to
 `DATARAG_ORIGIN` from the environment or `.env`, otherwise to `DATA_QUERY_BASE_URL`, so by
 default it reaches the same DataRAG as the Node service; with neither set, startup fails. The
-Java data engine, PostgreSQL and the Python MCP are prepared separately; this entry point
+Java data engine and PostgreSQL are prepared separately; this entry point
 starts only the three processes above and is not a full-stack start.
 
 ## Local development (Java data engine)
@@ -87,20 +87,16 @@ repository's reactor root with
 working-tree source and needs no `mvn install`. Extra arguments are passed through to
 Maven unchanged (for example `-o`).
 
-- The start script prepares `apps/data-engine/.dev` (`conf`, `skills`, `logs`, `python`;
+- The JVM prepares `apps/data-engine/.dev` before Spring starts (`conf`, `skills`, `logs`, `python`;
   the JVM working directory, with `conf` first on the classpath) from the build entry's
   resources and language. The sync rules match the container's: same-name files are
   overwritten, new ones are added, extra ones are kept, and `application.yml` and
   `mcp-clients.yml` are copied only when missing. The prompt language is `en`; this
   repository accepts only `PROMPT_LANG=en`.
 - Prepare the root `.env` from `.env.example`; Node, Java and the Manager share it.
-  Process variables take priority. A missing file is reported before Maven starts. The Python virtual environment `apps/data-engine/.venv`
-  needs no manual preparation: on startup, if it is missing it is created automatically
-  with the local `python3` (`py -3` on Windows, Python 3.10+ required) and
-  `packages/data-engine-core/requirements-py310.txt` is installed; it is reinstalled when
-  that list changes and reused otherwise.
-- This entry point starts only the JVM: PostgreSQL and the Python MCP (`mcp-clients.yml`
-  default `127.0.0.1:18500`) must be ready separately; it is not a full-stack start.
+  Process variables take priority. A missing file is reported before Maven starts.
+- This entry point starts only the JVM; PostgreSQL must be ready separately.
+  External MCP servers remain configured through `mcp-clients.yml`, whose template starts empty.
   Foreground signals follow the same rules as the full-stack entry: on Unix, SIGINT/SIGTERM
   are forwarded to the Maven wrapper; on Windows, Node's `kill` is a forced termination,
   so it instead waits for the child processes of the same console to settle on their own.
@@ -109,35 +105,30 @@ Maven unchanged (for example `-o`).
 ## Unified full-stack development entry point
 
 `pnpm dev:up` / `pnpm dev:down` / `pnpm dev:status` / `pnpm dev:logs` start the whole
-stack in the order PG → local Python MCP → Java ready → the three foreground Node
-processes; the MCP and Java are separate background process groups, and their logs are
-appended to `apps/data-engine/.dev/logs/dev-mcp.log` and `dev-backend.log`. The entry
+stack in the order PG → Java ready → the independent runtime and foreground Node
+processes. Java logs are appended to `apps/data-engine/.dev/logs/dev-backend.log`. The entry
 point uses only Node and tools the system already ships (on Windows it uses the built-in
 PowerShell/CIM and needs no Bash, tail or extra dependency), so it runs directly in
 PowerShell.
 
 - `dev:up`: first checks the ports, `.env` and
-  `dev/postgres.compose.yml`, prepares the Python virtual environment as needed and then
-  starts Compose. Only the three Node processes run in the foreground (with an explicit
-  `PORT=3000`), and Ctrl-C stops only this group; when PG/MCP/Java are already up it reuses
+  `dev/postgres.compose.yml`, then starts Compose. Only the three Node processes run in the foreground (with an explicit
+  `PORT=3000`), and Ctrl-C stops only this group; when PG/Java are already up it reuses
   this checkout, and when a port is taken by another process it reports the error and exits
   without stopping others.
 - `dev:down`: identifies and stops the frontend (including concurrently/tsx/Vite subtrees
-  left behind after a parent exits), the Java entry point and any leftover Maven/RAGMain,
-  and the MCP by this checkout's actual commands and entry points, re-confirming the start
+  left behind after a parent exits), the Java entry point and any leftover Maven/RAGMain
+  by this checkout's actual commands and entry points, re-confirming the start
   identity of the same PID before stopping; finally `docker compose down` without `-v`, so
   volumes are kept.
 - `dev:status` reports only this checkout's ownership and external port usage, and
   `dev:logs` follows the end of `dev-backend.log`. When Docker is not running it says to
   start Docker Desktop or dockerd and then exits, without opening a GUI.
 
-Windows and POSIX share the same Node orchestration. Both of the new `pnpm dev:*` entry
-points have been verified on macOS for actually starting, surviving Ctrl-C in the
-background, reusing the background on restart, and stopping this group on down while
-keeping the database volume. The verification used an isolated test configuration and
-does not mean real business behavior or the real license has passed. Windows full-stack
-start/stop, paths with spaces or non-ASCII characters, and multiple-worktree isolation
-are still to be verified on a real machine.
+Windows and POSIX share the same Node orchestration. The Java launcher and final-image
+changes in this branch still require integrated startup verification in the main checkouts.
+Windows full-stack startup, paths with spaces or non-ASCII characters and multi-worktree
+isolation remain to be verified on a real machine.
 
 Checkout identity: the Compose project name and volume names are derived from the product
 root's realpath (`<basename>-dev-<hash8>`), and services and volumes carry the
@@ -147,13 +138,11 @@ can be traced with `docker volume ls --filter label=dev.stack.product=<name>`; e
 volumes are not migrated, backfilled or deleted automatically, and the database-creation
 SQL runs only on the first initialization of an empty volume.
 
-Prepare the root `.env` from `.env.example` and, when needed, the local MCP entry created from the synced
-`apps/data-engine/.dev/conf/mcp-clients.yml` — it must be the only
-`http://127.0.0.1:<port>/sse`, and remote entries may be kept alongside it.
+Prepare the root `.env` from `.env.example`. Configure any independently managed
+external MCP servers in `apps/data-engine/.dev/conf/mcp-clients.yml`.
 
 Ports: Node 3000, the main web app 5173 and the Manager 5174 are fixed; PG uses `POSTGRES_PORT`
-(default 5432), Java uses `SERVER_PORT` from `.env` (default 18087), and
-the MCP uses the local port in `mcp-clients.yml` (template 18500). When a port is taken by
+(default 5432), Java uses `SERVER_PORT` from `.env` (default 18087). When a port is taken by
 another process, `up` reports the error and exits without stopping other processes. Each
 product root needs one install in its own root, so one `pnpm install` in the enterprise
 assembly root already includes the adjacent public repository.

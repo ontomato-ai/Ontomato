@@ -20,12 +20,9 @@ import {
 
 const NODE = "C:\\nodejs\\node.exe";
 const JAVA = "C:\\Java\\bin\\java.exe";
-const BASE_PYTHON = "C:\\Python313\\python.exe";
 const CTX = {
   root: "C:\\My Repo\\ontomato",
   devRoot: "C:\\My Repo\\ontomato\\apps\\data-engine\\.dev",
-  venvPython: "C:\\My Repo\\ontomato\\apps\\data-engine\\.venv\\Scripts\\python.exe",
-  mcpScript: "C:\\My Repo\\ontomato\\packages\\data-engine-core\\mcp\\mcpserver.py",
   javaEntry: "C:\\My Repo\\ontomato\\apps\\data-engine\\dev.mjs",
   devCommand: "C:\\My Repo\\ontomato\\scripts\\dev-command.mjs",
 };
@@ -63,38 +60,6 @@ test("frontend root, java helper and self bind to this checkout's absolute entry
   assert.equal(role(`"${NODE}" "${CTX.javaEntry}"`), "java-helper");
   assert.equal(role(`"${NODE}" "${CTX.devCommand.replace("dev-command", "dev-stack")}" . up`), "self");
   assert.equal(role(`"${NODE}" -e "x=${CTX.devCommand}"`), undefined);
-});
-
-test("MCP binds the real venv ExecutablePath and the shared script, never argv[0] as the exe", () => {
-  const python = `"${CTX.venvPython}" "${CTX.mcpScript}" --host 127.0.0.1 --port 18500`;
-  assert.equal(role(python, CTX.venvPython), "mcp");
-  // When ExecutablePath cannot be read, argv[0] cannot substitute for true exe identity.
-  assert.equal(role(python, null), undefined);
-  // Command line retains venv argv[0], but real exe is base Python: not claimed alone, only claimed via launcher parent edge.
-  assert.equal(role(python, BASE_PYTHON), undefined);
-  assert.equal(role(`"C:\\other\\python.exe" "${CTX.mcpScript}" --port 18500`, "C:\\other\\python.exe"), undefined);
-  assert.equal(role(`"${CTX.venvPython}" "C:\\other\\mcpserver.py" --port 18500`, CTX.venvPython), undefined);
-  // Diagnostic/replay commands carrying path as text are not this product's processes.
-  assert.equal(role(`"${NODE}" -e "print('${python}')"`), undefined);
-});
-
-test("the venv launcher's base-Python child is claimed only through the confirmed parent edge", () => {
-  const launcher = row(`"${CTX.venvPython}" "${CTX.mcpScript}" --port 18500`, CTX.venvPython, { pid: 10, ppid: 1, created: "100" });
-  const child = (command, extra = {}) => row(command, BASE_PYTHON, { pid: 11, ppid: 10, created: "200", ...extra });
-  const roles = (rows) => identifyWindows(rows, CTX, -1).group.map((entry) => [entry.pid, entry.role]);
-  // Official venvlauncher uses CreateProcess to start base Python and waits for it to exit; listener is that child process; argv[0] may still be venv path.
-  assert.deepEqual(roles([launcher, child(`"${CTX.venvPython}" "${CTX.mcpScript}" --port 18500`)]), [[10, "mcp"], [11, "mcp"]]);
-  assert.deepEqual(roles([launcher, child(`"${BASE_PYTHON}" "${CTX.mcpScript}" --port 18500`)]), [[10, "mcp"], [11, "mcp"]]);
-  // Public and enterprise share same mcp script: other Python processes without this group's launcher parent edge are not claimed.
-  assert.deepEqual(roles([child(`"${BASE_PYTHON}" "${CTX.mcpScript}" --port 18500`, { pid: 20, ppid: 1 })]), []);
-  // Child running another script, or CreationDate earlier than parent (reused parent PID) are not grouped.
-  assert.deepEqual(roles([launcher, child(`"${BASE_PYTHON}" "C:\\other\\script.py"`)]), [[10, "mcp"]]);
-  assert.deepEqual(roles([launcher, child(`"${BASE_PYTHON}" -c "print('diagnostic')" "${CTX.mcpScript}"`)]), [[10, "mcp"]]);
-  assert.deepEqual(roles([launcher, { ...child(`"${NODE}" "${CTX.mcpScript}"`), exe: NODE }]), [[10, "mcp"]]);
-  assert.deepEqual(roles([{ ...launcher, created: "300" }, child(`"${BASE_PYTHON}" "${CTX.mcpScript}"`)]), [[10, "mcp"]]);
-  // Child whose CreationDate cannot be obtained is reported, not silently dropped.
-  assert.deepEqual(identifyWindows([launcher, child(`"${BASE_PYTHON}" "${CTX.mcpScript}"`, { created: null })], CTX, -1)
-    .unattributable.map((entry) => entry.pid), [11]);
 });
 
 test("Java roles use the launcher's main-class position, not any argv mention", () => {
@@ -166,24 +131,6 @@ test("concurrently, tsx and the two vite entries bind their absolute paths only"
   assert.equal(role(`"${NODE}" "${CTX.root}\\node_modules\\vitest\\vitest.mjs" run`), undefined);
 });
 
-test("identifyWindows groups the root's descendants but rejects reused parent PIDs and unread fields", () => {
-  const rows = [
-    row(`"${NODE}" "${CTX.devCommand}" dev`, NODE, { pid: 10, ppid: 1, created: "100" }),
-    row("cmd.exe /d /s /c \"pnpm run dev:server\"", "C:\\Windows\\System32\\cmd.exe", { pid: 11, ppid: 10, created: "200" }),
-    // ppid points to this group's root, but CreationDate is earlier than parent: old PID was reused, cannot merge into this group.
-    row("cmd.exe /d /s /c \"unrelated\"", "C:\\Windows\\System32\\cmd.exe", { pid: 12, ppid: 10, created: "50" }),
-    row(`"${CTX.venvPython}" "${CTX.mcpScript}" --port 18500`, CTX.venvPython, { pid: 20, ppid: 1, created: "150" }),
-    row(`"${NODE}" "${CTX.devCommand}" server`, NODE, { pid: 30, ppid: 1, created: null }),
-    row(`"C:\\other\\node.exe" "C:\\other\\scripts\\dev-command.mjs" dev`, "C:\\other\\node.exe", { pid: 40, ppid: 1, created: "150" }),
-  ];
-  const snapshot = identifyWindows(rows, CTX, -1);
-  assert.deepEqual(snapshot.group.map((entry) => [entry.pid, entry.role]).sort((a, b) => a[0] - b[0]),
-    [[10, "frontend-root"], [11, "frontend-child"], [20, "mcp"]]);
-  assert.equal(snapshot.group.find((entry) => entry.pid === 11).lstart, "200");
-  // Candidates in this checkout that fail to yield CreationDate are reported separately for the caller to reject reuse/stop.
-  assert.deepEqual(snapshot.unattributable.map((entry) => entry.pid), [30]);
-});
-
 test("identifyWindows never claims the inspecting process itself", () => {
   const rows = [row(`"${NODE}" "${CTX.root}\\scripts\\dev-stack.mjs" . up`, NODE, { pid: 99, ppid: 1 })];
   assert.deepEqual(identifyWindows(rows, CTX, 99).group, []);
@@ -192,7 +139,7 @@ test("identifyWindows never claims the inspecting process itself", () => {
 
 // Windows-only black-box tests are explicitly skipped on non-Windows and cannot substitute for physical verification.
 // Physical machine verification still requires: pnpm dev:up/dev:down/dev:status/dev:logs across the full lifecycle;
-// checkouts with spaces and unicode paths; Ctrl-C preserving PG/MCP/Java for reuse by the next up;
+// checkouts with spaces and unicode paths; Ctrl-C preserving PG/Java for reuse by the next up;
 // different worktrees not stopping each other; PG volume retained;
 // and windowsStop cleaning up cmd.exe/concurrently/tsx/vite subtrees after acquiring Process handles.
 // Black-box tests only operate on short-lived dummy Node children spawned by this test, never killing outside PIDs.

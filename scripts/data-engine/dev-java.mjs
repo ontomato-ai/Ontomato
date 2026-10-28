@@ -1,88 +1,18 @@
 import { ensureRuntimeCredentials } from "../runtime-credentials.mjs";
 // Host Java dev entry for one product's apps/data-engine: stage the resources the app image would
-// carry, sync them into the app's .dev data root with the container's rule (the shared Python sync,
-// no bash), then run the reactor's spring-boot:run in the foreground. MCP, PostgreSQL and readiness
-// belong to the full-stack entry.
-import { spawn, spawnSync } from "node:child_process";
-import { createHash } from "node:crypto";
+// carry, then run the reactor's spring-boot:run in the foreground. The JVM synchronizes
+// product defaults into .dev before Spring starts. PostgreSQL and readiness belong to the full-stack entry.
+import { spawn } from "node:child_process";
 import {
-  accessSync,
-  constants,
   existsSync,
   mkdirSync,
   readFileSync,
   rmSync,
-  writeFileSync,
 } from "node:fs";
-import { delimiter, dirname, join, relative } from "node:path";
-import { fileURLToPath } from "node:url";
+import { join, relative } from "node:path";
 import { parseEnv } from "node:util";
 import { holdForeground } from "../dev-command.mjs";
 import { stageResources } from "./build-images.mjs";
-
-const SYNC = join(
-  dirname(fileURLToPath(import.meta.url)),
-  "sync-product-files.py",
-);
-
-// The one owner of the venv Python location: the host dev entry uses it for the sync, the
-// full-stack entry for the MCP/skills service, and Windows venvs put it under Scripts/python.exe.
-export function pythonExecutable(appDir, platform = process.platform) {
-  return join(
-    appDir,
-    ".venv",
-    ...(platform === "win32" ? ["Scripts", "python.exe"] : ["bin", "python"]),
-  );
-}
-
-// The venv follows the product's requirements file: created with the host Python when missing and
-// reinstalled when the file changes. The installed file's hash is kept inside the venv, so a venv
-// created by hand is brought up to date once and then reused.
-export function ensurePythonEnv(
-  appDir,
-  requirements,
-  env = process.env,
-  platform = process.platform,
-) {
-  const python = pythonExecutable(appDir, platform);
-  const venv = join(appDir, ".venv");
-  const marker = join(venv, "requirements.sha256");
-  const hash = createHash("sha256")
-    .update(readFileSync(requirements))
-    .digest("hex");
-  if (
-    executable(python) &&
-    existsSync(marker) &&
-    readFileSync(marker, "utf8") === hash
-  )
-    return python;
-  if (!executable(python)) {
-    const host = platform === "win32" ? ["py", "-3"] : ["python3"];
-    runSetup(
-      host[0],
-      [...host.slice(1), "-m", "venv", venv],
-      env,
-      `Creating ${venv} with ${host.join(" ")}`,
-    );
-  }
-  runSetup(
-    python,
-    ["-m", "pip", "install", "-r", requirements],
-    env,
-    `Installing ${requirements}`,
-  );
-  writeFileSync(marker, hash);
-  return python;
-}
-
-function runSetup(command, args, env, description) {
-  console.log(`[python] ${description}`);
-  const result = spawnSync(command, args, { env, stdio: "inherit" });
-  if (result.status !== 0)
-    throw new Error(
-      `${description} failed${result.error ? `: ${result.error.message}` : ""}; Python 3.10+ is required`,
-    );
-}
 
 // The official Maven wrapper pair shipped by the reactor root.
 export function mavenWrapper(root, platform = process.platform) {
@@ -146,15 +76,6 @@ export function mavenInvocation(
 
 export const readDotEnv = parseEnv;
 
-function executable(path) {
-  try {
-    accessSync(path, constants.X_OK);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
 // Process values override the shared root .env. Windows variable names are
 // case-insensitive, so an inherited Path and a file PATH are the same variable and only the process
 // value survives; POSIX names stay case-sensitive and are merged as before.
@@ -174,19 +95,7 @@ export function mergeEnvironment(inherited, vars, platform = process.platform) {
   return env;
 }
 
-// Skills call `python` from PATH; the MCP/skills venv comes first. After the merge, Windows has at
-// most one spelling of PATH; POSIX only ever has the exact PATH.
-export function prependPythonPath(env, venvBin, platform = process.platform) {
-  const key =
-    platform === "win32"
-      ? (Object.keys(env).find((name) => name.toUpperCase() === "PATH") ??
-        "PATH")
-      : "PATH";
-  env[key] = `${venvBin}${delimiter}${env[key]}`;
-}
-
-// Everything that can fail on missing local setup fails here, before any staging or Maven; the
-// Python venv is prepared here too.
+// Validate local configuration, stage product defaults, then launch Maven.
 export function startDevJava(
   { app, appDir, wrapper, profiles },
   userArgs,
@@ -202,11 +111,6 @@ export function startDevJava(
     throw new Error(
       `Missing ${envFile}: copy the product root .env.example first`,
     );
-  const python = ensurePythonEnv(
-    appDir,
-    join(app.requirements.root, app.requirements.path),
-    inherited,
-  );
   const vars = readDotEnv(readFileSync(envFile, "utf8"));
 
   // The staging directory is rebuilt every time; .dev is only synced into, never cleared.
@@ -214,19 +118,7 @@ export function startDevJava(
   rmSync(staging, { recursive: true, force: true });
   mkdirSync(staging, { recursive: true });
   stageResources(app, staging, lang);
-  // The staged layout is the app image's payload (conf-defaults and skills), synced as in the container.
-  const sync = spawnSync(
-    python,
-    [
-      SYNC,
-      join(staging, "payload/conf-defaults"),
-      join(staging, "payload/skills"),
-      join(appDir, ".dev"),
-    ],
-    { stdio: "inherit" },
-  );
-  if (sync.status !== 0)
-    throw new Error(`Resource sync into ${join(appDir, ".dev")} failed`);
+  mkdirSync(join(appDir, ".dev"), { recursive: true });
 
   const env = ensureRuntimeCredentials(
     app.repoRoot,
@@ -235,7 +127,8 @@ export function startDevJava(
   env.AGENT_RUNTIME_URL ||= "http://127.0.0.1:3001";
   env.ONTOMATO_QUERY_CALLBACK_URL ||=
     env.DATA_QUERY_BASE_URL || "http://127.0.0.1:18087";
-  prependPythonPath(env, dirname(python));
+  env.ONTOMATO_CONF_DEFAULTS = join(staging, "payload/conf-defaults");
+  env.ONTOMATO_APP_SKILLS = join(staging, "payload/skills");
   // Certain VPNs (such as aTrustAgent) set up system SOCKS/HTTP proxies; when the JVM reads them, it hijacks local localhost connections,
   // leading to failure connecting to local PostgreSQL. Explicitly disable the JVM proxy here (placed last to ensure it overrides system-detected proxies).
   const disableProxy = "-DsocksProxyHost= -Dhttp.proxyHost= -Dhttps.proxyHost=";

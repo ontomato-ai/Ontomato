@@ -26,20 +26,9 @@ public class DataRagConfig {
     // Maximum number of business knowledge results returned when the vector business knowledge base looks up similar questions
     private int knowledgeMaxResult;
 
-    private List<Map<String, String>> mcpClients;
-
-    private int toolAndPythonRetry;
-
-    private int toolsDataMaxSize;
-
-
-    private Integer dslCookerTries = 1;
+    private List<Map<String, String>> mcpClients = List.of();
 
     private Long dslCookerTimeout = 5 * 60 * 1000L;
-
-    private Integer questionSpliterTries = 1;
-
-    private Long questionSpliterTimeout = 3 * 60 * 1000L;
 
     private String dataAdapter;
     
@@ -81,22 +70,6 @@ public class DataRagConfig {
 		this.dataAdapter = dataAdapter;
 	}
 
-	public Long getQuestionSpliterTimeout() {
-		return questionSpliterTimeout;
-	}
-
-	public void setQuestionSpliterTimeout(Long questionSpliterTimeout) {
-		this.questionSpliterTimeout = questionSpliterTimeout;
-	}
-
-	public Integer getQuestionSpliterTries() {
-		return questionSpliterTries;
-	}
-
-	public void setQuestionSpliterTries(Integer questionSpliterTries) {
-		this.questionSpliterTries = questionSpliterTries;
-	}
-
 	public Long getDslCookerTimeout() {
 		return dslCookerTimeout;
 	}
@@ -104,16 +77,6 @@ public class DataRagConfig {
 	public void setDslCookerTimeout(Long dslCookerTimeout) {
 		this.dslCookerTimeout = dslCookerTimeout;
 	}
-
-	public Integer getDslCookerTries() {
-		return dslCookerTries;
-	}
-
-	public void setDslCookerTries(Integer dslCookerTries) {
-		this.dslCookerTries = dslCookerTries;
-	}
-
-
 
 	private String[] dslMightTimeFormats;
 
@@ -125,13 +88,6 @@ public class DataRagConfig {
 		this.dslMightTimeFormats = dslMightTimeFormats;
 	}
 
-	public int getToolAndPythonRetry() {
-        return toolAndPythonRetry;
-    }
-
-    public void setToolAndPythonRetry(int toolAndPythonRetry) {
-        this.toolAndPythonRetry = toolAndPythonRetry;
-    }
     public List<Map<String, String>> getMcpClients() {
         return mcpClients;
     }
@@ -154,14 +110,6 @@ public class DataRagConfig {
 
     public void setKnowledgeMaxResult(int knowledgeMaxResult) {
         this.knowledgeMaxResult = knowledgeMaxResult;
-    }
-
-    public int getToolsDataMaxSize() {
-        return toolsDataMaxSize;
-    }
-
-    public void setToolsDataMaxSize(int toolsDataMaxSize) {
-        this.toolsDataMaxSize = toolsDataMaxSize;
     }
 
     public String getServiceId() {
