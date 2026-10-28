@@ -10,6 +10,11 @@ import io.ontomato.dataengine.service.sys.bean.permission.UserDataPermission;
  * and business code only depends on this interface, without being aware of whether the underlying login is anonymous or sa-token.</p>
  */
 public interface IdentityService {
+    /** Authorize the ontology read-query capability at its owning identity boundary. */
+    void requireQueryAccess();
+
+    /** Absolute expiry of the verified credential, or null when it has no expiry. */
+    Long getCurrentCredentialExpiresAt();
 
     /**
      * Get the current user.

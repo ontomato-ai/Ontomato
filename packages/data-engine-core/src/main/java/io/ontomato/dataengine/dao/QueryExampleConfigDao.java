@@ -17,7 +17,6 @@ public class QueryExampleConfigDao {
 
 	public static final String QUESTION_SPLITER = "questionSpliter";
 	public static final String DSL_COOKER = "dslCooker";
-	public static final String ABC_PROGRAMMER = "abcProgrammer";
 
 	@Autowired
 	private JdbcTemplate jdbcTemplate;

@@ -1,22 +1,33 @@
 import type { AbcBranchContext, BaseQueryOutput } from "./types";
 import { executeAbcQuery, type AbcQueryConfig } from "../abc-tool";
 import { t } from "../../../i18n";
-import { runAbcHarnessBranch } from "./abc-harness-branch";
+import { runRetrievalBranch } from "./retrieval-branch";
 
-export async function runAbcBranch(ctx: AbcBranchContext): Promise<BaseQueryOutput | undefined> {
+export async function runAbcBranch(
+  ctx: AbcBranchContext,
+): Promise<BaseQueryOutput | undefined> {
   const mode = ctx.abcQuestionMode;
   if (mode === "harness") {
-    return runAbcHarnessBranch(ctx);
+    return runRetrievalBranch(ctx);
   }
   return runOriginalAbcBranch(ctx, mode === "no_tool_fixed");
 }
 
 async function runOriginalAbcBranch(
   ctx: AbcBranchContext,
-  isV0: boolean
+  isV0: boolean,
 ): Promise<BaseQueryOutput | undefined> {
-  const { queryQuestion, token, userId, locale, pushEvent, pushContent, thinking, setAbcThinking, apiKey } =
-    ctx;
+  const {
+    queryQuestion,
+    token,
+    userId,
+    locale,
+    pushEvent,
+    pushContent,
+    thinking,
+    setAbcThinking,
+    apiKey,
+  } = ctx;
   thinking.ensureParallelStarted();
   thinking.set("running", t("query.status.decomposing"));
   thinking.log(t("query.thinking.abcDecomposing"));
@@ -53,7 +64,9 @@ async function runOriginalAbcBranch(
 
   if (!abcResult.success) {
     setAbcThinking(abcResult.thinkingState);
-    throw new Error(abcResult.rawError || abcResult.error || t("query.error.unknownError"));
+    throw new Error(
+      abcResult.rawError || abcResult.error || t("query.error.unknownError"),
+    );
   }
 
   const datasets = abcResult.datasets || [];

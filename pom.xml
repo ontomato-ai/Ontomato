@@ -158,9 +158,6 @@
                         <additionalClasspathElements>
                             <additionalClasspathElement>${project.basedir}/.dev/conf</additionalClasspathElement>
                         </additionalClasspathElements>
-                        <systemPropertyVariables>
-                            <ontomato.data-engine.pythonpath>${project.basedir}/${datarag.venv.python}</ontomato.data-engine.pythonpath>
-                        </systemPropertyVariables>
                     </configuration>
                 </plugin>
             </plugins>

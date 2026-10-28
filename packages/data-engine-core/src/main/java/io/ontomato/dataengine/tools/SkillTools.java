@@ -2,63 +2,40 @@ package io.ontomato.dataengine.tools;
 
 import dev.langchain4j.agent.tool.P;
 import dev.langchain4j.agent.tool.Tool;
-import lombok.extern.slf4j.Slf4j;
+import com.alibaba.fastjson2.JSON;
+import io.ontomato.dataengine.logging.AgentCallContext;
+import io.ontomato.dataengine.service.PythonAuthority;
+import io.ontomato.dataengine.service.PythonExecuteService;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.Base64;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
 
-import java.io.File;
-
-@Slf4j
+/** Remaining Java agents submit packaged Python to the same runtime executor. */
 public class SkillTools {
-
-    private String skill_dir = "";
-
-    public SkillTools(String skill_dir) {
-        this.skill_dir = skill_dir;
-    }
-
-    @Tool("Execute the Skill's Python script (*.py). " +
-            "Input: relative path of the Skill's Python script, composed of the skill name + script path and parameters. " +
-            "Output: execution output of the Skill's Python script.")
-    public String executePythonFile(@P("Relative path of the Skill's Python script, composed of the skill name + script path. For example pdf/scripts/torun.py") String pythonfile,
-                                    @P("Execution parameters of the Skill's Python script. For example '-f input.json' or '-d JSONDATA' , if there are no parameters pass an empty string ''") String parameter) {
-        try {
-            String scriptFile = "";
-            File filePythonFile = new File(pythonfile);
-            if (!filePythonFile.exists()) {
-                String fullPath = null;
-                if(this.skill_dir.endsWith("/")){
-                    fullPath = this.skill_dir+pythonfile;
-                } else {
-                    fullPath = this.skill_dir+"/"+pythonfile;
-                }
-                File fileFullPath = new File(fullPath);
-                if (!fileFullPath.exists()){
-                    return "{\"error\": \"File not found: " + pythonfile + "\"}";
-                } else {
-                    scriptFile = fullPath;
-                }
-            } else {
-                scriptFile = pythonfile;
+    private final String directory;
+    private final PythonExecuteService python;
+    public SkillTools(String directory,PythonExecuteService python){this.directory=directory;this.python=python;}
+    @Tool("Execute a Python script from the configured skill package in an isolated runtime workspace.")
+    public String executePythonFile(@P("Relative script path inside the configured skill package") String pythonfile,
+            @P("Script argument, or empty string") String parameter) throws Exception {
+        Path root=Path.of(directory).toRealPath(),entry=root.resolve(pythonfile).toRealPath();
+        if(!entry.startsWith(root)||!entry.toString().endsWith(".py"))throw new IllegalArgumentException("Script must belong to the configured skill directory");
+        Map<String,String> files=new LinkedHashMap<>();
+        try(var paths=Files.walk(root)) {
+            for(Path file:paths.toList()) {
+                if(Files.isSymbolicLink(file))throw new IllegalArgumentException("Skill package symbolic links are not supported");
+                if(Files.isRegularFile(file))files.put(root.relativize(file).toString().replace('\\','/'),Base64.getEncoder().encodeToString(Files.readAllBytes(file)));
             }
-
-            // Execute Python script
-            String sParameter = parameter.trim();
-            log.info("executePythonFile:{} ,{}",scriptFile, sParameter);
-            ProcessBuilder pb = new ProcessBuilder("python", scriptFile, sParameter);
-            pb.redirectErrorStream(true);
-            Process process = pb.start();
-
-            String output = new String(process.getInputStream().readAllBytes());
-            int exitCode = process.waitFor();
-
-            if (exitCode != 0) {
-                return "Error executing Python code:\n" + output;
-            }
-
-            return output.trim();
-
-        } catch (Exception e) {
-            return "Error: " + e.getMessage();
         }
+        String code="import base64, json, pathlib, runpy, sys\nfiles = json.loads("+JSON.toJSONString(JSON.toJSONString(files))+")\n"
+            +"for name, value in files.items():\n    target = pathlib.Path('skill') / name\n    target.parent.mkdir(parents=True, exist_ok=True)\n    target.write_bytes(base64.b64decode(value))\n"
+            +"sys.path.insert(0, str(pathlib.Path('skill').resolve()))\nsys.argv = "+JSON.toJSONString(List.of("skill/"+root.relativize(entry).toString().replace('\\','/'),parameter==null?"":parameter))+"\nrunpy.run_path(sys.argv[0], run_name='__main__')\n";
+        var context=AgentCallContext.current();
+        var result=python.execute(context.getSessionId(),code,2,"en",PythonAuthority.calculation(context.getDomainId()),new com.alibaba.fastjson2.JSONObject(),Map.of());
+        if(result.getError()!=null&&!result.getError().isBlank())throw new IllegalStateException(result.getError());
+        return result.getResult();
     }
-
 }

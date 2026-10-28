@@ -75,16 +75,13 @@ public class WriteFunctionMakerSkillTools {
 					JSONObject vectorValue = value instanceof JSONObject ? (JSONObject) value : JSONObject.parseObject(JSON.toJSONString(value));
 					String text = vectorValue.getString("text");
 					if (text != null && !"".equals(text.trim())) {
-						Path uploaded = saveVectorText(sandboxId, text);
-						vectorValue.put("uploadFilePath", uploaded.toAbsolutePath().toString());
+						vectorValue.put("text", text);
 					}
 					parameters.put(parameterDef.getName(), vectorValue);
 				} else {
 					parameters.put(parameterDef.getName(), value);
 				}
 			}
-			Path parameterFile = file.resolveSibling(file.getFileName() + ".params.json");
-			Files.writeString(parameterFile, JSON.toJSONString(parameters, Feature.WriteMapNullValue));
 			
 			// Execute the code
 			BusinessConfig businessConfig = businessConfigService.get(domainId);
@@ -92,7 +89,7 @@ public class WriteFunctionMakerSkillTools {
 			if (timeoutMinutes <= 0) {
 				timeoutMinutes = 1;
 			}
-			PythonExecuteResult pythonExecuteResult = pythonExecuteService.runPythonCode(UUID.randomUUID().toString(), code, timeoutMinutes, lang, sandboxId, domainId, parameterFile.toAbsolutePath().toString());
+			PythonExecuteResult pythonExecuteResult = pythonExecuteService.execute(sandboxId, code, timeoutMinutes, lang, io.ontomato.dataengine.service.PythonAuthority.write(domainId,sandboxId), parameters, java.util.Map.of());
 			if (!code.equals(Files.readString(file))) throw new IllegalStateException("The program file changed during execution, please test again");
 			String content = pythonExecuteResult.getResult();
 			String error = pythonExecuteResult.getError();
@@ -123,15 +120,6 @@ public class WriteFunctionMakerSkillTools {
 			ret = "Execution error: " + e.getMessage();
 		}
 		return ret;
-	}
-	
-	/** Write a vector parameter's text into the workspace as a pending upload file and return its absolute path. */
-	private Path saveVectorText(String sandboxId, String text) throws Exception {
-		Path root = workspaceService.workspaceRoot(sandboxId);
-		Files.createDirectories(root);
-		Path file = root.resolve("vector_" + UUID.randomUUID().toString() + ".txt");
-		Files.writeString(file, text);
-		return file;
 	}
 	
 }

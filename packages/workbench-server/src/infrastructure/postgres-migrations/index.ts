@@ -1,3 +1,4 @@
+import { ensureDataRetrievalSchema } from "./20261028-data-retrieval/schema";
 import { ensureGovernanceRuntimeSchema } from "./20261028-governance-runtime/schema";
 import { workbenchProduct } from "../../product/installed";
 import { ensureGovernanceHarnessLinks } from "./20260923-governance-harness-links/schema";
@@ -69,21 +70,32 @@ import {
 
 const logger = createLogger("postgres:migrations");
 
-export const BUSINESS_STORAGE_ARTIFACT_SYNC_VERSION = "20260811_business_storage_artifact_sync_v1";
-const BUSINESS_STORAGE_ARTIFACT_SYNC_NAME = "business storage artifact synchronization v1";
+export const BUSINESS_STORAGE_ARTIFACT_SYNC_VERSION =
+  "20260811_business_storage_artifact_sync_v1";
+const BUSINESS_STORAGE_ARTIFACT_SYNC_NAME =
+  "business storage artifact synchronization v1";
 
 type MigrationIdentity = { version: string; name: string };
 type MigrationRegistration = {
   directory: string;
   ensureSchema: (client: QueryableClient) => Promise<void>;
   migration?: MigrationIdentity & {
-    run: (client: QueryableClient, migration: MigrationIdentity) => Promise<void>;
+    run: (
+      client: QueryableClient,
+      migration: MigrationIdentity,
+    ) => Promise<void>;
   };
 };
 
 export const POSTGRES_MIGRATION_REGISTRY: MigrationRegistration[] = [
-  { directory: "20260910-knowledge-governance", ensureSchema: ensureKnowledgeGovernanceSchema },
-  { directory: "20260827-core-schema-baseline", ensureSchema: ensureCoreSchemaBaseline },
+  {
+    directory: "20260910-knowledge-governance",
+    ensureSchema: ensureKnowledgeGovernanceSchema,
+  },
+  {
+    directory: "20260827-core-schema-baseline",
+    ensureSchema: ensureCoreSchemaBaseline,
+  },
   {
     directory: "20260901-report-deliverable-toggle",
     ensureSchema: ensureReportDeliverableToggleSchema,
@@ -181,7 +193,10 @@ export const POSTGRES_MIGRATION_REGISTRY: MigrationRegistration[] = [
       run: runQueryRunBackendSessions,
     },
   },
-  { directory: "20260922-harness-sessions", ensureSchema: ensureHarnessSessionsSchema },
+  {
+    directory: "20260922-harness-sessions",
+    ensureSchema: ensureHarnessSessionsSchema,
+  },
   {
     directory: "20260923-analysis-harness-links",
     ensureSchema: () => Promise.resolve(),
@@ -197,12 +212,26 @@ export const POSTGRES_MIGRATION_REGISTRY: MigrationRegistration[] = [
       },
     },
   },
-  { directory: "20260923-governance-harness-links", ensureSchema: ensureGovernanceHarnessLinks },
-  { directory: "20261028-governance-runtime", ensureSchema: ensureGovernanceRuntimeSchema },
+  {
+    directory: "20260923-governance-harness-links",
+    ensureSchema: ensureGovernanceHarnessLinks,
+  },
+  {
+    directory: "20261028-governance-runtime",
+    ensureSchema: ensureGovernanceRuntimeSchema,
+  },
+  {
+    directory: "20261028-data-retrieval",
+    ensureSchema: ensureDataRetrievalSchema,
+  },
 ];
 
-export async function runPostgresBusinessMigrations(client: QueryableClient): Promise<void> {
-  await client.query("SELECT pg_advisory_lock(hashtext($1::text))", [workbenchProduct().migrationLockKey]);
+export async function runPostgresBusinessMigrations(
+  client: QueryableClient,
+): Promise<void> {
+  await client.query("SELECT pg_advisory_lock(hashtext($1::text))", [
+    workbenchProduct().migrationLockKey,
+  ]);
   try {
     await ensureMigrationTable(client);
     // The core table baseline lands first: business-storage-v1's column backfill depends on thread_metadata already existing.
@@ -213,14 +242,24 @@ export async function runPostgresBusinessMigrations(client: QueryableClient): Pr
       if (migration) await migration.run(client, migration);
     }
   } finally {
-    await client.query("SELECT pg_advisory_unlock(hashtext($1::text))", [workbenchProduct().migrationLockKey]);
+    await client.query("SELECT pg_advisory_unlock(hashtext($1::text))", [
+      workbenchProduct().migrationLockKey,
+    ]);
   }
 }
 
-async function runBusiness(client: QueryableClient, migration: MigrationIdentity): Promise<void> {
-  const businessStorageApplied = await isMigrationApplied(client, migration.version);
+async function runBusiness(
+  client: QueryableClient,
+  migration: MigrationIdentity,
+): Promise<void> {
+  const businessStorageApplied = await isMigrationApplied(
+    client,
+    migration.version,
+  );
   if (businessStorageApplied) {
-    logger.debug(tApp("foundation.log.migrate.businessSkip"), { version: migration.version });
+    logger.debug(tApp("foundation.log.migrate.businessSkip"), {
+      version: migration.version,
+    });
   } else {
     const copied = await inMigrationTransaction(client, async () => {
       const result = await migrateBusinessStorageV1(client);
@@ -228,21 +267,27 @@ async function runBusiness(client: QueryableClient, migration: MigrationIdentity
       await recordMigration(
         client,
         BUSINESS_STORAGE_ARTIFACT_SYNC_VERSION,
-        BUSINESS_STORAGE_ARTIFACT_SYNC_NAME
+        BUSINESS_STORAGE_ARTIFACT_SYNC_NAME,
       );
       return result;
     });
-    logger.info(tApp("foundation.log.migrate.businessDone"), { version: migration.version, ...copied });
+    logger.info(tApp("foundation.log.migrate.businessDone"), {
+      version: migration.version,
+      ...copied,
+    });
   }
 
-  if (!(await isMigrationApplied(client, BUSINESS_STORAGE_ARTIFACT_SYNC_VERSION))) {
+  if (
+    !(await isMigrationApplied(client, BUSINESS_STORAGE_ARTIFACT_SYNC_VERSION))
+  ) {
     const synced = await inMigrationTransaction(client, async () => {
-      const syncedThreadSequences = await syncThreadMetadataLastRequestSeq(client);
+      const syncedThreadSequences =
+        await syncThreadMetadataLastRequestSeq(client);
       const analysisTaskArtifacts = await syncAnalysisTaskArtifacts(client);
       await recordMigration(
         client,
         BUSINESS_STORAGE_ARTIFACT_SYNC_VERSION,
-        BUSINESS_STORAGE_ARTIFACT_SYNC_NAME
+        BUSINESS_STORAGE_ARTIFACT_SYNC_NAME,
       );
       return { syncedThreadSequences, analysisTaskArtifacts };
     });
@@ -257,7 +302,10 @@ async function runBusiness(client: QueryableClient, migration: MigrationIdentity
   }
 }
 
-async function runAbc(client: QueryableClient, migration: MigrationIdentity): Promise<void> {
+async function runAbc(
+  client: QueryableClient,
+  migration: MigrationIdentity,
+): Promise<void> {
   if (await isMigrationApplied(client, migration.version)) return;
   const migrated = await inMigrationTransaction(client, async () => {
     const result = await migrateAbcReferenceStorage(client);
@@ -273,7 +321,7 @@ async function runAbc(client: QueryableClient, migration: MigrationIdentity): Pr
 
 async function runReportSplit(
   client: QueryableClient,
-  migration: MigrationIdentity
+  migration: MigrationIdentity,
 ): Promise<void> {
   if (await isMigrationApplied(client, migration.version)) return;
   const split = await inMigrationTransaction(client, async () => {
@@ -287,7 +335,10 @@ async function runReportSplit(
   });
 }
 
-async function runQueryFact(client: QueryableClient, migration: MigrationIdentity): Promise<void> {
+async function runQueryFact(
+  client: QueryableClient,
+  migration: MigrationIdentity,
+): Promise<void> {
   if (await isMigrationApplied(client, migration.version)) return;
   const template = await inMigrationTransaction(client, async () => {
     const result = await migrateQueryFactStorageTemplate(client);
@@ -302,7 +353,7 @@ async function runQueryFact(client: QueryableClient, migration: MigrationIdentit
 
 async function runChatRetirement(
   client: QueryableClient,
-  migration: MigrationIdentity
+  migration: MigrationIdentity,
 ): Promise<void> {
   if (await isMigrationApplied(client, migration.version)) return;
   const retired = await inMigrationTransaction(client, async () => {
@@ -325,7 +376,7 @@ async function runChatRetirement(
 
 async function runPresentation(
   client: QueryableClient,
-  migration: MigrationIdentity
+  migration: MigrationIdentity,
 ): Promise<void> {
   if (await isMigrationApplied(client, migration.version)) return;
   const result = await inMigrationTransaction(client, async () => {
@@ -333,13 +384,14 @@ async function runPresentation(
     await recordMigration(client, migration.version, migration.name);
     return migrated;
   });
-  if (result.terminalSkips.length) logger.warn(tApp("foundation.log.migrate.presentationDegraded"), result);
+  if (result.terminalSkips.length)
+    logger.warn(tApp("foundation.log.migrate.presentationDegraded"), result);
   else logger.info(tApp("foundation.log.migrate.presentationDone"), result);
 }
 
 async function runAnalysisConversationTurns(
   client: QueryableClient,
-  migration: MigrationIdentity
+  migration: MigrationIdentity,
 ): Promise<void> {
   if (await isMigrationApplied(client, migration.version)) return;
   await inMigrationTransaction(client, async () => {
@@ -350,7 +402,7 @@ async function runAnalysisConversationTurns(
 
 async function runMcpServiceConfigs(
   client: QueryableClient,
-  migration: MigrationIdentity
+  migration: MigrationIdentity,
 ): Promise<void> {
   if (await isMigrationApplied(client, migration.version)) return;
   await inMigrationTransaction(client, async () => {
@@ -361,7 +413,7 @@ async function runMcpServiceConfigs(
 
 async function runQueryRunBackendSessions(
   client: QueryableClient,
-  migration: MigrationIdentity
+  migration: MigrationIdentity,
 ): Promise<void> {
   if (await isMigrationApplied(client, migration.version)) return;
   const migrated = await inMigrationTransaction(client, async () => {
@@ -369,7 +421,10 @@ async function runQueryRunBackendSessions(
     await recordMigration(client, migration.version, migration.name);
     return result;
   });
-  logger.info(tApp("foundation.log.migrate.backendSessionsDone"), { version: migration.version, ...migrated });
+  logger.info(tApp("foundation.log.migrate.backendSessionsDone"), {
+    version: migration.version,
+    ...migrated,
+  });
 }
 
 async function ensureMigrationTable(client: QueryableClient): Promise<void> {
@@ -382,10 +437,13 @@ async function ensureMigrationTable(client: QueryableClient): Promise<void> {
   `);
 }
 
-async function isMigrationApplied(client: QueryableClient, version: string): Promise<boolean> {
+async function isMigrationApplied(
+  client: QueryableClient,
+  version: string,
+): Promise<boolean> {
   const result = await client.query(
     `SELECT 1 FROM ${qualifiedTable("schema_migrations")} WHERE version = $1 LIMIT 1`,
-    [version]
+    [version],
   );
   return (result.rowCount ?? result.rows.length) > 0;
 }
@@ -393,18 +451,18 @@ async function isMigrationApplied(client: QueryableClient, version: string): Pro
 async function recordMigration(
   client: QueryableClient,
   version: string,
-  name: string
+  name: string,
 ): Promise<void> {
   await client.query(
     `INSERT INTO ${qualifiedTable("schema_migrations")} (version, name, applied_at)
      VALUES ($1, $2, NOW()) ON CONFLICT (version) DO NOTHING`,
-    [version, name]
+    [version, name],
   );
 }
 
 async function inMigrationTransaction<T>(
   client: QueryableClient,
-  run: () => Promise<T>
+  run: () => Promise<T>,
 ): Promise<T> {
   await client.query("BEGIN");
   try {

@@ -8,7 +8,7 @@ import { governanceActions } from "./tools";
 export const governanceSkillRef = {
   namespace: { kind: "provider" as const, provider: "workbench" },
   name: "knowledge-governance",
-  version: "1.0.0",
+  version: "2.0.0",
 };
 export async function registerGovernanceSkill() {
   const root = path.join(

@@ -1,5 +1,10 @@
+import type { QueryRetrievalRef } from "@ontomato/contracts/query-execution";
+import type { RetrievalResult } from "@ontomato/contracts/data-retrieval";
 import type { AbcQuestionMode } from "@ontomato/contracts/system-model";
-import type { BranchKey, ThinkingAbcState } from "@ontomato/contracts/query-thinking";
+import type {
+  BranchKey,
+  ThinkingAbcState,
+} from "@ontomato/contracts/query-thinking";
 import type { HotCard, HotJudgeResult } from "../hot-data/hot-data-utils";
 import type { FetchedCardResult } from "../hot-data/hot-data-fetcher";
 import type { Dataset } from "../adapter";
@@ -8,6 +13,8 @@ import type { ThinkingBranchView } from "../thinking/thinking-buffer";
 import type { HotReportReplayPlan, OutKeyRef } from "../replay-plan";
 
 export interface BaseQueryOutput {
+  retrieval?: QueryRetrievalRef;
+  needsInput?: Extract<RetrievalResult, { status: "needs_input" }>;
   content: string;
   datasets: Dataset[];
   sessionId?: string;
@@ -44,6 +51,7 @@ export interface BranchContext<K extends BranchKey> {
 }
 
 export interface AbcBranchContext extends BranchContext<"abc"> {
+  reportRetrievalLocation?: (ref: QueryRetrievalRef) => void;
   reportFallback: (output: BaseQueryOutput) => void;
   setAbcThinking: (state?: ThinkingAbcState) => void;
 }

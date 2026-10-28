@@ -65,6 +65,81 @@ export function createRuntimeHttp(runtime: AgentRuntime) {
     res.json({ status: "ready" });
   });
   app.post(
+    "/v1/code-executions",
+    route(async (req, res) => {
+      const ctx = scope(req),
+        headers = runtimeAdmissionHeadersSchema.parse(req.headers);
+      res
+        .status(202)
+        .json(
+          await runtime.code.start(
+            ctx.host,
+            ctx.scope,
+            headers["idempotency-key"],
+            ctx.correlationId,
+            req.body,
+          ),
+        );
+    }),
+  );
+  app.get(
+    "/v1/code-executions/:id",
+    route(async (req, res) => {
+      res.json(
+        await runtime.code.get(
+          scope(req).scope,
+          runtimeIdSchema.parse(req.params.id),
+        ),
+      );
+    }),
+  );
+  app.get(
+    "/v1/runs/:id/code-executions",
+    route(async (req, res) => {
+      res.json({
+        executions: await runtime.code.listRun(
+          scope(req).scope,
+          runtimeIdSchema.parse(req.params.id),
+        ),
+      });
+    }),
+  );
+  app.get(
+    "/v1/code-executions/:id/outputs/:name",
+    route(async (req, res) => {
+      res
+        .type("text/plain")
+        .send(
+          await runtime.code.output(
+            scope(req).scope,
+            runtimeIdSchema.parse(req.params.id),
+            req.params.name,
+          ),
+        );
+    }),
+  );
+  app.post(
+    "/v1/code-executions/:id/cancel",
+    route(async (req, res) => {
+      res.json(
+        await runtime.code.cancel(
+          scope(req).scope,
+          runtimeIdSchema.parse(req.params.id),
+        ),
+      );
+    }),
+  );
+  app.post(
+    "/v1/code-execution-intents/:id/cancel",
+    route(async (req, res) => {
+      await runtime.code.closeIntent(
+        scope(req).scope,
+        runtimeIdSchema.parse(req.params.id),
+      );
+      res.status(204).end();
+    }),
+  );
+  app.post(
     "/v1/skills",
     route(async (req, res) => {
       const { host } = identity(req);
@@ -101,8 +176,12 @@ export function createRuntimeHttp(runtime: AgentRuntime) {
     "/v1/sessions/status",
     route(async (req, res) => {
       const ctx = scope(req);
-      const { sessionIds } = runtimeSessionStatusesRequestSchema.parse(req.body);
-      res.json({ sessions: await runtime.store.sessionStatuses(ctx.scope, sessionIds) });
+      const { sessionIds } = runtimeSessionStatusesRequestSchema.parse(
+        req.body,
+      );
+      res.json({
+        sessions: await runtime.store.sessionStatuses(ctx.scope, sessionIds),
+      });
     }),
   );
   app.get(
@@ -154,6 +233,18 @@ export function createRuntimeHttp(runtime: AgentRuntime) {
           runtimeIdSchema.parse(req.params.runId),
         ),
       );
+    }),
+  );
+  app.post(
+    "/v1/sessions/:sessionId/run-intents/:runId/cancel",
+    route(async (req, res) => {
+      z.object({}).strict().parse(req.body);
+      await runtime.closeRunIntent(
+        scope(req).scope,
+        runtimeIdSchema.parse(req.params.sessionId),
+        runtimeIdSchema.parse(req.params.runId),
+      );
+      res.status(204).end();
     }),
   );
   app.post(
@@ -259,20 +350,18 @@ export function createRuntimeHttp(runtime: AgentRuntime) {
             ? "INVALID_REQUEST"
             : "INTERNAL_ERROR";
       // Never echo validation inputs, provider headers, body-parser text or a stack.
-      res
-        .status(status)
-        .json({
-          error: {
-            code,
-            message:
-              error instanceof RuntimeError
-                ? error.message
-                : status === 400
-                  ? "Invalid request"
-                  : "Runtime request failed",
-          },
-          correlationId: req.header("x-correlation-id") || randomUUID(),
-        });
+      res.status(status).json({
+        error: {
+          code,
+          message:
+            error instanceof RuntimeError
+              ? error.message
+              : status === 400
+                ? "Invalid request"
+                : "Runtime request failed",
+        },
+        correlationId: req.header("x-correlation-id") || randomUUID(),
+      });
     },
   );
   return app;

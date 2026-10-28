@@ -1,13 +1,10 @@
 package io.ontomato.dataengine.service;
 
-import java.io.File;
-
+import com.alibaba.fastjson2.JSONObject;
 import io.ontomato.dataengine.bean.PythonExecuteResult;
+import java.util.Map;
 
 public interface PythonExecuteService {
-
-	public PythonExecuteResult runPythonCode(String sessionid, String pythonCode, int timeoutMinute, String lang, String... args) throws Exception;
-
-	public PythonExecuteResult runPythonFile(String sessionId, File file, int timeoutMinute, String lang, String... args) throws Exception;
-	
+    PythonExecuteResult execute(String sessionId,String code,int timeoutMinutes,String lang,
+        PythonAuthority authority,JSONObject parameters,Map<String,String> inputFiles) throws Exception;
 }

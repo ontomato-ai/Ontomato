@@ -1252,16 +1252,6 @@ public class AdminServiceImpl implements AdminService {
 		return getExample(QueryExampleConfigDao.DSL_COOKER, "dsl_cooker_example.md", domainId);
 	}
 
-	@Override
-	public boolean saveAbcProgrammerExample(String content, boolean inheritDefault, String domainId) {
-		return saveExample(QueryExampleConfigDao.ABC_PROGRAMMER, content, inheritDefault, domainId);
-	}
-
-	@Override
-	public String getAbcProgrammerExample(String domainId) {
-		return getExample(QueryExampleConfigDao.ABC_PROGRAMMER, "abc_programmer_example.md", domainId);
-	}
-
 	private boolean saveExample(String field, String content, boolean inheritDefault, String domainId) {
 		try {
 			queryExampleConfigDao.save(domainId, field, content, inheritDefault);

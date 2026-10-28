@@ -1,3 +1,6 @@
+import { mkdir, chmod } from "node:fs/promises";
+import { CodeExecutor } from "./code";
+import { removeWorkerFiles, type WorkerPolicy } from "./worker";
 import { randomUUID } from "node:crypto";
 import path from "node:path";
 import { normalizeContext, type Message } from "@earendil-works/pi-ai";
@@ -63,6 +66,7 @@ interface Active {
 }
 export interface RuntimeOptions {
   store: RuntimeStore;
+  worker?: WorkerPolicy;
   root: string;
   hosts: RuntimeHost[];
   ontologyUrl: string;
@@ -99,13 +103,28 @@ function key(scope: Scope, id: string) {
 export class AgentRuntime {
   readonly store: RuntimeStore;
   readonly registry: SkillRegistry;
+  readonly code: CodeExecutor;
+  readonly worker: WorkerPolicy;
   private active = new Map<string, Active>();
   private locks = new Map<string, Promise<unknown>>();
   constructor(readonly options: RuntimeOptions) {
     this.store = options.store;
+    this.worker = {
+      ...(options.worker ?? {
+        development: process.env.NODE_ENV === "test",
+        python: process.env.AGENT_RUNTIME_PYTHON || "python3",
+      }),
+      uidStatePath: path.join(options.root, "worker-next-uid"),
+    };
     this.registry = new SkillRegistry(
       this.store,
       path.join(options.root, "skills"),
+    );
+    this.code = new CodeExecutor(
+      this.store,
+      this.registry,
+      path.join(options.root, "executions"),
+      this.worker,
     );
   }
   private async locked<T>(
@@ -126,6 +145,11 @@ export class AgentRuntime {
   async initialize() {
     await this.store.initialize();
     await this.store.recover();
+    await mkdir(this.options.root, { recursive: true, mode: 0o711 });
+    await chmod(this.options.root, 0o711);
+    await removeWorkerFiles(path.join(this.options.root, "invocations"));
+    await mkdir(path.join(this.options.root, "invocations"), { mode: 0o711 });
+    await this.code.initialize();
   }
   async start(
     host: RuntimeHost,
@@ -136,7 +160,16 @@ export class AgentRuntime {
     body: unknown,
   ) {
     const request = runtimeStartRunRequestSchema.parse(body);
-    const { credential: _credential, ...bindings } = request.privateContext;
+    const bindings = {
+      skillBindings: request.privateContext.skillBindings.map(
+        ({ credential: _credential, ...binding }) => binding,
+      ),
+      python: request.privateContext.python
+        ? (({ credential: _credential, ...binding }) => binding)(
+            request.privateContext.python,
+          )
+        : undefined,
+    };
     const fingerprint = digest({
       sessionId,
       ...request,
@@ -227,9 +260,11 @@ export class AgentRuntime {
         secrets: [
           host.token,
           this.options.modelRuntimeToken,
-          request.privateContext.credential.kind === "none"
-            ? undefined
-            : request.privateContext.credential.value,
+          ...[
+            request.privateContext.modelCredential,
+            ...request.privateContext.skillBindings.map((b) => b.credential),
+            request.privateContext.python?.credential,
+          ].flatMap((c) => (c && c.kind !== "none" ? [c.value] : [])),
         ].filter((v): v is string => Boolean(v)),
       };
       this.active.set(key(scope, runId), active);
@@ -482,6 +517,8 @@ export class AgentRuntime {
               onUpdate?: (value: any) => void,
             ) => {
               const output = await executeSkill({
+                policy: this.worker,
+                assetRoot: path.join(this.options.root, "invocations"),
                 skill,
                 input: {
                   protocolVersion: 1,
@@ -533,6 +570,34 @@ export class AgentRuntime {
         digest(scope),
         run.id,
       );
+      await mkdir(path.dirname(workspace), { recursive: true, mode: 0o711 });
+      await chmod(path.dirname(workspace), 0o711);
+      await chmod(path.dirname(path.dirname(workspace)), 0o711);
+      for (const file of request.initialFiles ?? []) {
+        const write = workspaceTools(workspace).find(
+          (tool) => tool.name === "workspace_write",
+        )!;
+        await write.execute(
+          "initial-file",
+          { path: file.path, text: file.content },
+          signal,
+        );
+      }
+      if (request.definition.builtinTools.python) {
+        if (!request.privateContext.python)
+          throw new Error("Python binding is required");
+        const host = this.options.hosts.find((h) => h.id === scope.hostId)!;
+        tools.push(
+          this.code.tool(
+            host,
+            scope,
+            run.id,
+            run.correlationId,
+            workspace,
+            request.privateContext.python,
+          ),
+        );
+      }
       if (request.definition.builtinTools.workspaceFiles)
         tools.push(...workspaceTools(workspace));
       const mcp = await connectMcp(
@@ -563,6 +628,8 @@ export class AgentRuntime {
                   canonical(request.definition.contextSkill),
               )!;
               const result = await executeSkill({
+                policy: this.worker,
+                assetRoot: path.join(this.options.root, "invocations"),
                 skill,
                 input: { protocolVersion: 1, kind: "context" },
                 scope,
@@ -728,14 +795,14 @@ export class AgentRuntime {
       if (signal.aborted) status = "cancelled";
     } catch (error) {
       status = signal.aborted ? "cancelled" : "failed";
-      const credential = request.privateContext.credential;
+
       if (!signal.aborted)
         failure = {
           code: error instanceof RuntimeError ? error.code : "RUN_FAILED",
-          message:
-            credential.kind === "none"
-              ? safeMessage(error)
-              : safeMessage(error).split(credential.value).join("[redacted]"),
+          message: active.secrets.reduce(
+            (text, secret) => text.split(secret).join("[redacted]"),
+            safeMessage(error),
+          ),
         };
     }
     await closeMcp();
@@ -857,16 +924,26 @@ export class AgentRuntime {
       };
     });
   }
+  async closeRunIntent(scope: Scope, sessionId: string, runId: string) {
+    const admitted = await this.locked(scope, sessionId, async () => {
+      await this.store.session(scope, sessionId);
+      return this.store.closeAdmission(scope, runId, "run", sessionId);
+    });
+    // Run settlement takes the session lock; never await it while holding that lock.
+    if (admitted) await this.cancel(scope, runId);
+  }
   async cancel(scope: Scope, id: string) {
     await this.store.run(scope, id);
     const active = this.active.get(key(scope, id));
     active?.controller.abort();
+    await this.code.cancelRun(scope, id);
     await active?.done;
     return { run: (await this.store.run(scope, id)).run };
   }
   async close() {
     for (const active of this.active.values()) active.controller.abort();
     await Promise.allSettled([...this.active.values()].map((a) => a.done));
+    await this.code.close();
     await this.store.close();
   }
 }

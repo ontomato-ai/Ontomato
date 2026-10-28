@@ -23,6 +23,7 @@ export type FieldDisplayPlan = Record<string, FieldDisplayPlanItem>;
 
 /** A result dataset; a partial one carries the data engine's truncation marker unchanged. */
 export interface Dataset extends QueryDatasetIdentity, Partial<ResultTruncation> {
+  retrieval?: import("@ontomato/contracts/query-execution").QueryRetrievalRef;
   name: string;
   description: string;
   columns: string[];

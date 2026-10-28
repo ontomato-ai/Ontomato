@@ -75,6 +75,15 @@ export class RuntimeClient {
       }
     }
   }
+  async text(path: string, signal?: AbortSignal) {
+    const response = await fetch(
+      environment.agentRuntime().url.replace(/\/$/, "") + path,
+      { headers: this.headers(), signal },
+    );
+    if (!response.ok)
+      throw new HttpError(response.status, "Runtime output read failed");
+    return response.text();
+  }
   async createSession(id: string) {
     return runtimeCreateSessionResponseSchema.parse(
       await this.request("/v1/sessions", "POST", {}, id),

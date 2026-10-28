@@ -28,10 +28,6 @@ public class DataRagConfig {
 
     private List<Map<String, String>> mcpClients;
 
-    private String pythonpath;
-
-    private String pythonCharset;
-
     private int toolAndPythonRetry;
 
     private int toolsDataMaxSize;
@@ -136,23 +132,6 @@ public class DataRagConfig {
     public void setToolAndPythonRetry(int toolAndPythonRetry) {
         this.toolAndPythonRetry = toolAndPythonRetry;
     }
-    public String getPythonCharset() {
-        return pythonCharset;
-    }
-
-    public void setPythonCharset(String pythonCharset) {
-        this.pythonCharset = pythonCharset;
-    }
-
-    public String getPythonpath() {
-        return pythonpath;
-    }
-
-    public void setPythonpath(String pythonpath) {
-        this.pythonpath = pythonpath;
-    }
-
-
     public List<Map<String, String>> getMcpClients() {
         return mcpClients;
     }

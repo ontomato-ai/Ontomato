@@ -301,13 +301,10 @@ Why it matters: the question splitter and the programmer match the user's wordin
 
 ## Natural-language questions
 
-`ask` posts `{question}` to `/api/data-query/abcHarness`. The response is `text/event-stream`. The script prints each event as the stream delivers it:
-
-- the opening `{sessionId, nodeId}` frame as `session <id>`
-- `MESSAGE_TYPE` text
-- `DATA_TYPE` as the question plus the data JSON
-- an `error` frame to stderr, then a non-zero exit
-
-Heartbeat comments are not printed.
-
-`ask` often takes several minutes. Set the command timeout long enough for the whole run.
+`ask` calls the workbench `/api/retrievals`, prints request/retrieval/session IDs,
+then polls and returns authorized datasets. Outcomes are `completed`, `needs_input`
+or `failed`. Present clarification questions to the user; reply explicitly with
+`ask --resume <retrievalId> --answers @answers.json` (questionId plus choiceId or
+text). Use `ask --status <retrievalId>` or `ask --cancel <retrievalId>` as needed.
+Keep requestId for a response-loss retry with `--request-id`. Failures exit nonzero;
+preserve partial-result limits. A run may take several minutes.

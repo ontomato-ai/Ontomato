@@ -166,3 +166,37 @@ To inspect the **running** build, including a deployment tracking `edge`:
 ```bash
 docker inspect --format '{{.Name}} {{index .Config.Labels "org.opencontainers.image.version"}} {{index .Config.Labels "io.ontomato.build"}}' $(docker compose ps -q)
 ```
+
+
+## Runtime Python and deployment network policy
+
+Business Python execution runs in the public `ontomato-agent-runtime` image.
+Keep the runtime volume and database together when backing up: the volume also
+holds the monotonically allocated worker UID state. The production supervisor
+must start as root so it can drop each worker to a distinct non-root UID/GID;
+starting it as an unprivileged container user rejects isolated executions.
+Do not set `NODE_ENV=development` in production. Workers have private workspaces,
+read-only provider libraries, rlimits and wall/process-tree cancellation. These
+are not filesystem namespaces or aggregate cgroup limits.
+
+Code provides no network isolation. Python/skills can reach addresses reachable
+from the runtime container. Allow the required PostgreSQL, workbench callback,
+ontology, model-provider and configured external-MCP connections. Site egress
+allowlists belong to deployment network policy; this release installs no egress
+proxy or host firewall. Stronger process/network isolation is follow-up work.
+
+`prepare-env.py` preserves existing values and generates missing
+`AGENT_RUNTIME_SERVICE_TOKEN` (workbench host), `AGENT_RUNTIME_ONTOLOGY_TOKEN`
+(ontology host), `ONTOMATO_QUERY_SERVICE_TOKEN` (exploration issuer caller) and
+`ONTOMATO_QUERY_SIGNING_KEY` (ontology grant signing). Keep `.env` private.
+The runtime image includes pinned Python computation packages and combined
+Python/npm notices in `/app/licenses/THIRD_PARTY_NOTICES.txt`.
+
+Saved Function/dashboard code using the retired protocol must be converted in
+the pre-release data migration. New generators emit `ontomato-python:2`; there
+is no compatibility proxy. The traditional MCP calculator and its startup
+Python environment remain until traditional ABC cleanup. Public `ask` supports
+explicit same-session replies; automatic next-chat-message routing is batch 3.
+
+Compose sets a stable `NODE_ID` for ontology job recovery. If overridden or deployed
+with multiple ontology nodes, use a stable unique ID for each node.

@@ -241,6 +241,7 @@ public class AfterCalculateServiceImpl implements AfterCalculateService {
 			}
 		}
 		schemaDef.put("filePath", cacheFile.getAbsolutePath());
+        schemaDef.put("runtimePath", "inputs/" + index + ".json");
 		schemaDef.put("fileName", sessionId + "_" + index + ".json");
 		// cache data sample
 		schemaDef.put("cacheSamples", cacheSamples);
@@ -517,6 +518,7 @@ public class AfterCalculateServiceImpl implements AfterCalculateService {
 		int currentRetry=0;
 		try {
 			agentWorkspaceService.createWorkspace(pySessionid);
+            io.ontomato.dataengine.util.PythonInputFiles.stage(agentWorkspaceService.workspaceRoot(pySessionid),io.ontomato.dataengine.util.PythonInputFiles.fromSchema(jsonDataSchema));
 		} catch (Exception e) {
 			log.error(e.getMessage(), e);
 		}
@@ -567,7 +569,7 @@ public class AfterCalculateServiceImpl implements AfterCalculateService {
 					continue;
 				}
 				try{
-					List<Map> runResult = pythonCalculatorService.runPythonCode(sessionid, pythonCode, lang);
+					List<Map> runResult = pythonCalculatorService.runPythonCode(sessionid, pythonCode, lang, domainId, io.ontomato.dataengine.util.PythonInputFiles.fromSchema(jsonDataSchema));
 					if(runResult != null && runResult.size() > 0){
 						// Python execution returned a result
 						afterCalculatorResult.setAnswer(runResult);

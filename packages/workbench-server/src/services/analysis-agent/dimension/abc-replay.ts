@@ -1,3 +1,7 @@
+import { RuntimeClient } from "../../agent-runtime/client";
+import { requireDomainId } from "../../../utils/request-identity";
+import { getLogContext } from "../../../logging/log-context";
+import { codeExecutionSchema } from "@ontomato/contracts/agent-runtime-code";
 import type { OutKeyRef } from "../../data-query/replay-plan";
 import type { QueryExecutionFact } from "../../data-query/query-fact";
 import {
@@ -5,12 +9,10 @@ import {
   datasetPlacement,
   type ResultTruncation,
 } from "@ontomato/contracts/query-execution";
-import { execFile } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, writeFile, readFile, readdir } from "node:fs/promises";
 import path from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
-import { promisify } from "node:util";
 import { normalizeAnswerRows, type Dataset } from "../../data-query/adapter";
 import {
   combineResultTruncation,
@@ -40,7 +42,6 @@ const logger = createLogger("abc-replay");
 const PYTHON_TIMEOUT_MS = 30000;
 const ABC_PROGRAM_EXECUTE_TIMEOUT_MS = 3 * 60_000;
 const ABC_PROGRAM_REQUEST_INTERVAL_MS = 500;
-const execFileAsync = promisify(execFile);
 
 /** Hot replay execution result = execution facts + business execution state; execution fields are not re-declared here. */
 export interface AbcReplayExecutionResult extends AnalysisQueryFact {
@@ -124,7 +125,7 @@ async function writeAnswerFile(
 ): Promise<string> {
   const filePath = path.join(replayDir, `${safeSessionId(sessionId)}_${index}.json`);
   await writeFile(filePath, JSON.stringify(rows, null, 2), "utf8");
-  return filePath;
+  return path.basename(filePath);
 }
 
 function replaceCachePaths(
@@ -145,24 +146,90 @@ function replaceCachePaths(
   return { code: output, missingIndexes };
 }
 
-export const defaultPythonRunner: PythonRunner = async ({ code, scriptPath, cwd, signal }) => {
+export const defaultPythonRunner: PythonRunner = async ({
+  code,
+  scriptPath,
+  cwd,
+  signal,
+}) => {
   await writeFile(scriptPath, code, "utf8");
-
+  const client = new RuntimeClient(requireDomainId(getLogContext() ?? {})),
+    id = randomUUID();
+  const files = [{ path: path.basename(scriptPath), content: code }];
+  for (const name of await readdir(cwd))
+    if (name.endsWith(".json"))
+      files.push({
+        path: name,
+        content: await readFile(path.join(cwd, name), "utf8"),
+      });
+  let settled = false;
+  const cancel = () => {
+    void client
+      .request(`/v1/code-execution-intents/${id}/cancel`, "POST", {})
+      .catch((error) =>
+        logger.warn("Replay cancellation failed", { id, error }),
+      );
+  };
   try {
-    const { stdout, stderr } = await execFileAsync(environment.replayCommand(), [scriptPath], {
-      cwd,
-      signal,
-      timeout: PYTHON_TIMEOUT_MS,
-    });
-    return { ok: true, stdout: String(stdout || ""), stderr: String(stderr || "") };
-  } catch (error: any) {
+    signal?.throwIfAborted();
+    await client.request(
+      "/v1/code-executions",
+      "POST",
+      {
+        language: "python",
+        files,
+        entry: path.basename(scriptPath),
+        arguments: [],
+        outputPaths: [],
+        binding: {
+          targetUrl: null,
+          credential: { kind: "none" },
+          context: {},
+          libraries: [],
+          limits: {
+            wallTimeMs: PYTHON_TIMEOUT_MS,
+            cpuSeconds: Math.ceil(PYTHON_TIMEOUT_MS / 1000),
+          },
+        },
+      },
+      id,
+    );
+    signal?.addEventListener("abort", cancel, { once: true });
+    if (signal?.aborted) cancel();
+    let execution;
+    do {
+      execution = codeExecutionSchema.parse(
+        await client.request(`/v1/code-executions/${id}`),
+      );
+      if (execution.status === "running") await delay(100);
+    } while (execution.status === "running");
+    settled = true;
+    // Output reads use the same host/domain authorization; the runtime owns process execution.
+    const output = async (name: string) =>
+      execution.outputs.includes(name)
+        ? String(await client.text(`/v1/code-executions/${id}/outputs/${name}`))
+        : "";
+    return {
+      ok: execution.status === "completed",
+      stdout: await output("stdout"),
+      stderr: await output("stderr"),
+      ...(execution.error ? { error: execution.error.message } : {}),
+    };
+  } catch (error) {
     return {
       ok: false,
-      stdout: String(error?.stdout || ""),
-      stderr: String(error?.stderr || ""),
-      error:
-        error?.name === "AbortError" ? tApp("analysis.dimension.abc-replay.32") : error?.message || tApp("analysis.dimension.abc-replay.33"),
+      stdout: "",
+      stderr: "",
+      error: error instanceof Error ? error.message : String(error),
     };
+  } finally {
+    signal?.removeEventListener("abort", cancel);
+    if (!settled)
+      await client
+        .request(`/v1/code-execution-intents/${id}/cancel`, "POST", {})
+        .catch((error) =>
+          logger.warn("Replay intent closure failed", { id, error }),
+        );
   }
 };
 

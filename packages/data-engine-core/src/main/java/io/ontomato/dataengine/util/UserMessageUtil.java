@@ -57,7 +57,6 @@ public class UserMessageUtil {
     public static final String  DSL_EXAMPLE = "{{DSL_EXAMPLE}}";
     public static final String  USER_QUESTION ="{{USER_QUESTION}}";
     public static final String QUESTION_SPLITER_EXAMPLE = "{{QUESTION_SPLITER_EXAMPLE}}";
-    public static final String ABC_PROGRAMMER_EXAMPLE = "{{ABC_PROGRAMMER_EXAMPLE}}";
     
 	public static final String KNOWLEDGE_SUMMARY_PROMPT ="knowledge_summary_prompt.md";
     
@@ -95,7 +94,6 @@ public class UserMessageUtil {
     
     public static final String REPORT_CARD_PROGRAMMER_SERVER_PORT = "{{SERVER_PORT}}";
     
-    public static final String ABC_PROGRAMMER_PROMPT = "abc_programmer.md";
     
     public static final String ABC_PROGRAM_DESCRIBER_PROMPT = "abc_program_describer.md";
     public static final String PYTHON_CODE = "{{PYTHON_CODE}}";
@@ -418,7 +416,7 @@ public class UserMessageUtil {
 		for (int i = 0; i < jsonDataSchema.size(); i++) {
 			Map mapSubQuestion = new HashMap();
 			mapSubQuestion.put("subQuestion", jsonDataSchema.get(i).get("subQuestion"));
-			mapSubQuestion.put("datajsonfile", jsonDataSchema.get(i).get("datajsonfile"));
+			mapSubQuestion.put("datajsonfile", "inputs/" + i + ".json");
 			mapSubQuestion.put("jsonschema", jsonDataSchema.get(i).get("jsonschema"));
 			mapSubQuestion.put("sampledatas", jsonDataSchema.get(i).get("samples"));
 			userMessageJsonSchema.add(mapSubQuestion);
@@ -606,7 +604,7 @@ public class UserMessageUtil {
 			Map mapSubQuestion = new HashMap();
 			mapSubQuestion.put("datajsonfileUrl", jsonDataSchema.get(i).get("datajsonfileUrl"));
 			mapSubQuestion.put("subQuestion", jsonDataSchema.get(i).get("subQuestion"));
-			mapSubQuestion.put("datajsonfile", jsonDataSchema.get(i).get("datajsonfile"));
+			mapSubQuestion.put("datajsonfile", "inputs/" + i + ".json");
 			mapSubQuestion.put("jsonschema", jsonDataSchema.get(i).get("jsonschema"));
 			mapSubQuestion.put("sampledatas", jsonDataSchema.get(i).get("samples"));
 			userMessageJsonSchema.add(mapSubQuestion);
@@ -649,44 +647,6 @@ public class UserMessageUtil {
 		log.info(">>>\n");
 		log.info("JSONCorrectorUserMessage:\n{}", jsonCorrectorPrompt);
 		return jsonCorrectorPrompt;
-	}
-	
-	public static String getAbcProgrammerUserMessage(String sessionId, String question, String serverPort, 
-			KnowledgeDao knowledgeDao, int maxKnowledgeResult,
-			String lang, LangService langService, List<String> classNames, Map<String, Object> jsonRule,
-			String example, String domainId) {
-		String prompt = FileUtil.getResourceFileLoadAll(ABC_PROGRAMMER_PROMPT, "utf-8");
-		
-		// service port
-		prompt = prompt.replace(REPORT_CARD_PROGRAMMER_SERVER_PORT, serverPort);
-
-        Map<String, String> mapDBSchema =DBSchemaUtil.getDBSchema(jsonRule, classNames, false);
-        // dataset description
-        String datasetDesc = mapDBSchema.get(DBSchemaUtil.KEY_DATASET_DESC);
-        prompt = prompt.replace(DATASET_DESC, datasetDesc);
-
-        // class definition description
-        String classDef = DBSchemaUtil.generateClassNameMarkDown(jsonRule, classNames);
-        prompt = prompt.replace(CLASS_DEF, classDef);
-
-        // business knowledge
-		String bussinessKnowledge = BussinessKnowledgeUtil.getBussinessKnowledgeAndExample(knowledgeDao, null, null, question, maxKnowledgeResult, false, false, domainId);
-		prompt = prompt.replace(BUSSINESS_KNOWLEDGE, bussinessKnowledge);
-		prompt = prompt.replace(ABC_PROGRAMMER_EXAMPLE, example);
-        
-        // DSL syntax: fetched on demand by the programmer via the getDslSyntax /
-        // getDslExample tools, so the full rule text is no longer injected here.
-        
-        // user question
-        prompt = prompt.replace(USER_QUESTION, question);
-        
-        //language
-        String langValue = langService.get(lang, "lang");
-        prompt = prompt.replace(LANG, langValue);
-        
-        log.info(">>>\n");
-		log.info("sessionid:{}   ABCProgrammerUserMessage:\n{}", sessionId, prompt);
-        return prompt;
 	}
 	
 	public static String getABCProgramDescriberUserMessage(ABCHarnessProgram program, String lang, LangService langService, List<String> classNames, Map<String, Object> jsonRule) {

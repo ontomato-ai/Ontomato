@@ -62,7 +62,7 @@ Progress maps to `tool_execution_update`, results to `tool_execution_end` plus a
 
 Only the `RUNTIME_SKILL_ENV` fields and a minimal OS environment are passed to children: scope and invocation identity, correlation ID, language, workspace, target URL, opaque end-user credential JSON and host-supplied context JSON. Neither model arguments nor a skill result can override them. Never inherit runtime service credentials or model keys. Context binding values such as governance session identity come from the host, outside model arguments. Private credentials stay in process memory only for the run; do not persist request bodies or echo them in messages/events/logs. Callback services validate the end-user credential and resource binding themselves. Correlation ID propagates in downstream request headers. Cancel terminates the whole owned process tree, not just the direct child; already accepted external actions cannot be undone.
 
-External MCP definitions contain references to runtime-configured servers, not credentials; the runtime owns the configured client connection. No new MCP server is introduced. This batch has workspace-file built-ins, no Python execution or trusted-exploration credentials.
+External MCP definitions contain references to runtime-configured servers, not credentials; the runtime owns the configured client connection. No new MCP server is introduced. Python execution and per-binding opaque credentials are defined in [agent-runtime-code.md](agent-runtime-code.md). The runtime never interprets grant purpose.
 
 ## Workbench business write closure (accepted option A)
 
@@ -73,3 +73,14 @@ Every callback carries `governanceSkillCallIdentitySchema` from its private envi
 User cancellation closes the gate first and then requests runtime cancellation. Observing any runtime terminal state closes the gate before publishing a business terminal event to the page. After a workbench restart, recover the mapping and reconcile the runtime snapshot; an active runtime need not be restarted. Before admitting a different round, reconcile or cancel the preceding runtime run; runtime admission still rejects concurrent execution. Closing a gate and opening the next run serialize with writes, so an old run cannot contaminate the next record.
 
 **The guarantee begins at workbench gate closure, not at the runtime's terminal timestamp.** Between runtime termination and host closure, an in-flight write can still commit to that run's own record. This accepted behavior has the same limitation as cancellation of an already accepted external action. There is no runtime-to-host settlement handshake, shared-table lock or assertion that all business commits precede runtime termination.
+
+
+## Additional execution admission closure
+
+`POST /v1/sessions/:sessionId/run-intents/:runId/cancel` returns 204 after closing
+an owned run creation intent and cancelling admitted work. The existing session
+must belong to the host/domain. If the run was not admitted, a tombstone prevents
+a late request from starting it (410). Conflicting operation/session keys return
+409. This closes the gap between a host's business cancellation gate and a lost
+runtime admission response. Ordinary run cancellation still returns 404 for a
+missing run. Code execution has the corresponding scoped intent operation.

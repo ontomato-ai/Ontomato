@@ -38,77 +38,31 @@ public class ABCProgramServiceImpl implements ABCProgramService {
 	
 	private Pattern ANSWER_JSON_PATTERN = Pattern.compile("(\\{[\\s\\S]+\\})" );
 	
-	private File baseWorkspace = new File("conf/abcProgramWorkspaces/");
-	
-	@Override
-	public Object[] execute(String sessionId, ABCHarnessProgram program, String userId, UserDataPermission curUserDataPermission, String lang, int timeoutMinutes, String domainId) throws Exception {
-		PythonExecuteResult result = pythonExecuteService.runPythonCode(sessionId, program.getCode(), timeoutMinutes, lang, userId, domainId);
-		return new Object[] {dealPythonReturn(result.getResult(), result.getError(), program.getOutKeyRefs(), curUserDataPermission), result};
-	}
-	
-	@Override
-	public Object[] execute(String sessionId, ABCHarnessDashboard dashboard, String userId, UserDataPermission curUserDataPermission, String lang, int timeoutMinutes, String domainId) throws Exception {
-		File parameterFile = new File(baseWorkspace, sessionId + ".json");
-		FileOutputStream fos = null;
-		try {
-			JSONObject parameters = new JSONObject();
-			if (dashboard.getParameters() != null) {
-				for (ABCHarnessDashboardParameter parameter : dashboard.getParameters()) {
-					parameters.put(parameter.getKey(), parameter.getValue());
-				}
-			}
-			parameterFile.getParentFile().mkdirs();
-			fos = new FileOutputStream(parameterFile);
-			fos.write(JSON.toJSONString(parameters, Feature.WriteMapNullValue).getBytes("utf-8"));
-		} catch (Exception e) {
-			throw e;
-		} finally {
-			if (fos != null) {
-				try {
-					fos.close();
-				} catch (Exception e) {
-					log.error(e.getMessage(), e);
-				}
-			}
-		}
-		PythonExecuteResult result = pythonExecuteService.runPythonCode(sessionId, dashboard.getCode(), timeoutMinutes, lang, userId, domainId, parameterFile.getAbsolutePath());
-		return new Object[] {dealPythonReturn(result.getResult(), result.getError(), dashboard.getOutKeyRefs(), curUserDataPermission), result};
-	}
-	
-	@Override
-	public Object[] execute(String sessionId, Function function, String userId, UserDataPermission curUserDataPermission, String sandboxId, String lang, int timeoutMinutes, String domainId) throws Exception {
-		File parameterFile = new File(baseWorkspace, sessionId + ".json");
-		FileOutputStream fos = null;
-		try {
-			JSONObject parameters = new JSONObject();
-			if (function.getParameters() != null) {
-				for (Parameter parameter : function.getParameters()) {
-					parameters.put(parameter.getName(), parameter.getValue());
-				}
-			}
-			parameterFile.getParentFile().mkdirs();
-			fos = new FileOutputStream(parameterFile);
-			fos.write(JSON.toJSONString(parameters, Feature.WriteMapNullValue).getBytes("utf-8"));
-		} catch (Exception e) {
-			throw e;
-		} finally {
-			if (fos != null) {
-				try {
-					fos.close();
-				} catch (Exception e) {
-					log.error(e.getMessage(), e);
-				}
-			}
-		}
-		if (Function.OPERATION_READ.equals(function.getOperation())) {
-			PythonExecuteResult result = pythonExecuteService.runPythonCode(sessionId, function.getCode(), timeoutMinutes, lang, userId, domainId, parameterFile.getAbsolutePath());
-			return new Object[] {dealPythonReturn(result.getResult(), result.getError(), function.getReturnDef().getOutKeyRefs(), curUserDataPermission), result};
-		} else {
-			PythonExecuteResult result = pythonExecuteService.runPythonCode(sessionId, function.getCode(), timeoutMinutes, lang, sandboxId, domainId, parameterFile.getAbsolutePath());
-			return new Object[] {null, result};
-		}
-	}
-	
+
+    @Override
+    public Object[] execute(String sessionId, ABCHarnessProgram program, String userId, UserDataPermission permission, String lang, int timeout, String domainId) throws Exception {
+        PythonExecuteResult result=pythonExecuteService.execute(sessionId,program.getCode(),timeout,lang,
+            io.ontomato.dataengine.service.PythonAuthority.read(userId,domainId),new JSONObject(),java.util.Map.of());
+        return new Object[]{dealPythonReturn(result.getResult(),result.getError(),program.getOutKeyRefs(),permission),result};
+    }
+    @Override
+    public Object[] execute(String sessionId, ABCHarnessDashboard dashboard, String userId, UserDataPermission permission, String lang, int timeout, String domainId) throws Exception {
+        JSONObject parameters=new JSONObject();
+        if(dashboard.getParameters()!=null)for(var parameter:dashboard.getParameters())parameters.put(parameter.getKey(),parameter.getValue());
+        PythonExecuteResult result=pythonExecuteService.execute(sessionId,dashboard.getCode(),timeout,lang,
+            io.ontomato.dataengine.service.PythonAuthority.read(userId,domainId),parameters,java.util.Map.of());
+        return new Object[]{dealPythonReturn(result.getResult(),result.getError(),dashboard.getOutKeyRefs(),permission),result};
+    }
+    @Override
+    public Object[] execute(String sessionId, Function function, String userId, UserDataPermission permission, String sandboxId, String lang, int timeout, String domainId) throws Exception {
+        JSONObject parameters=new JSONObject();
+        if(function.getParameters()!=null)for(var parameter:function.getParameters())parameters.put(parameter.getName(),parameter.getValue());
+        boolean read=Function.OPERATION_READ.equals(function.getOperation());
+        PythonExecuteResult result=pythonExecuteService.execute(sessionId,function.getCode(),timeout,lang,
+            read?io.ontomato.dataengine.service.PythonAuthority.read(userId,domainId):io.ontomato.dataengine.service.PythonAuthority.write(domainId,sandboxId),parameters,java.util.Map.of());
+        return new Object[]{read?dealPythonReturn(result.getResult(),result.getError(),function.getReturnDef().getOutKeyRefs(),permission):null,result};
+    }
+
 	@Override
 	public JSONArray dealPythonReturn(String pythonOutput, String errorMessage, List<ABCHarnessProgramOutKeyRef> outKeyRefs, UserDataPermission curUserDataPermission) throws Exception {
     	if (errorMessage != null && !"".equals(errorMessage.trim())) {
@@ -196,9 +150,4 @@ public class ABCProgramServiceImpl implements ABCProgramService {
         }
     }
 	
-	@Override
-	public File getBaseWorkspace() {
-		return this.baseWorkspace;
-	}
-
 }

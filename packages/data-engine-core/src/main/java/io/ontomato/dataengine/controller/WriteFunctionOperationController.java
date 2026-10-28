@@ -34,8 +34,8 @@ public class WriteFunctionOperationController {
 		JSONObject ret = new JSONObject();
 		try {
 			String className = param.getString("className");
-			String sandboxId = dealSandboxId(param.getString("sandboxId"));
-			String domainId = param.getString("domainId");
+			String sandboxId = dealSandboxId(grant().getString("sandboxId"));
+			String domainId = grant().getString("domainId");
 			JSONArray objs = param.getJSONArray("objs");
 			writeFunctionOperationService.insert(className, objs, sandboxId, domainId);
 			ret.put("success", true);
@@ -53,8 +53,8 @@ public class WriteFunctionOperationController {
 		JSONObject ret = new JSONObject();
 		try {
 			String className = param.getString("className");
-			String sandboxId = dealSandboxId(param.getString("sandboxId"));
-			String domainId = param.getString("domainId");
+			String sandboxId = dealSandboxId(grant().getString("sandboxId"));
+			String domainId = grant().getString("domainId");
 			JSONObject setValues = param.getJSONObject("setValues");
 			JSONObject where = param.getJSONObject("where");
 			writeFunctionOperationService.update(className, setValues, where, sandboxId, domainId);
@@ -73,8 +73,8 @@ public class WriteFunctionOperationController {
 		JSONObject ret = new JSONObject();
 		try {
 			String className = param.getString("className");
-			String sandboxId = dealSandboxId(param.getString("sandboxId"));
-			String domainId = param.getString("domainId");
+			String sandboxId = dealSandboxId(grant().getString("sandboxId"));
+			String domainId = grant().getString("domainId");
 			JSONObject where = param.getJSONObject("where");
 			writeFunctionOperationService.delete(className, where, sandboxId, domainId);
 			ret.put("success", true);
@@ -96,8 +96,8 @@ public class WriteFunctionOperationController {
 			String sourceObjId = param.getString("sourceObjId");
 			String targetClassName = param.getString("targetClassName");
 			String targetObjId = param.getString("targetObjId");
-			String sandboxId = dealSandboxId(param.getString("sandboxId"));
-			String domainId = param.getString("domainId");
+			String sandboxId = dealSandboxId(grant().getString("sandboxId"));
+			String domainId = grant().getString("domainId");
 			writeFunctionOperationService.createEdge(relationName, sourceClassName, sourceObjId, targetClassName, targetObjId, sandboxId, domainId);
 			ret.put("success", true);
 		} catch (Exception e) {
@@ -118,8 +118,8 @@ public class WriteFunctionOperationController {
 			String sourceObjId = param.getString("sourceObjId");
 			String targetClassName = param.getString("targetClassName");
 			String targetObjId = param.getString("targetObjId");
-			String sandboxId = dealSandboxId(param.getString("sandboxId"));
-			String domainId = param.getString("domainId");
+			String sandboxId = dealSandboxId(grant().getString("sandboxId"));
+			String domainId = grant().getString("domainId");
 			writeFunctionOperationService.deleteEdge(relationName, sourceClassName, sourceObjId, targetClassName, targetObjId, sandboxId, domainId);
 			ret.put("success", true);
 		} catch (Exception e) {
@@ -134,74 +134,33 @@ public class WriteFunctionOperationController {
     @ResponseBody
     public Map<String, Object> query(@RequestBody JSONObject param) throws Exception {
 		JSONObject dsl = validDslJsonFormat(param);
-		String sandboxId = dealSandboxId(param.getString("sandboxId"));
-		String domainId = param.getString("domainId");
+		String sandboxId = dealSandboxId(grant().getString("sandboxId"));
+		String domainId = grant().getString("domainId");
 		return writeFunctionOperationService.query(dsl, sandboxId, domainId);
     }
 	
-	@PostMapping("/writeFunctionOperation/appendVector")
-    @ResponseBody
-    public JSONObject appendVector(@RequestParam("className") String className,
-    		@RequestParam("attrName") String attrName,
-    		@RequestParam("objectId") String objectId,
-    		@RequestParam("text") String text,
-    		@RequestParam("file") MultipartFile file,
-    		@RequestParam("sandboxId") String sandboxId,
-    		@RequestParam("domainId") String domainId) {
-		JSONObject ret = new JSONObject();
-		InputStream is = null;
-		try {
-			is = file.getInputStream();
-			writeFunctionOperationService.appendVector(className, attrName, objectId, text, is, getSuffix(file.getOriginalFilename()), dealSandboxId(sandboxId), domainId);
-			ret.put("success", true);
-		} catch (Exception e) {
-			log.error(e.getMessage(), e);
-			ret.put("success", false);
-			ret.put("message", e.getMessage());
-		} finally {
-			if (is != null) {
-				try {
-					is.close();
-				} catch (Exception e) {
-					log.error(e.getMessage(), e);
-				}
-			}
-		}
-		return ret;
+
+    @PostMapping("/writeFunctionOperation/appendVector")
+    public JSONObject appendVector(@RequestBody JSONObject body) throws Exception {
+        byte[] bytes=body.getString("fileBase64")==null?java.util.Objects.toString(body.getString("text"),"").getBytes(java.nio.charset.StandardCharsets.UTF_8):java.util.Base64.getDecoder().decode(body.getString("fileBase64"));
+        try(var input=new java.io.ByteArrayInputStream(bytes)) {
+            writeFunctionOperationService.appendVector(body.getString("className"),body.getString("attrName"),body.getString("objectId"),body.getString("text"),input,getSuffix(body.getString("fileName")),dealSandboxId(grant().getString("sandboxId")),grant().getString("domainId"));
+        }
+        return JSONObject.of("success",true);
     }
-	
-	@PostMapping("/writeFunctionOperation/updateVector")
-    @ResponseBody
-    public JSONObject updateVector(@RequestParam("className") String className,
-    		@RequestParam("attrName") String attrName,
-    		@RequestParam("objectId") String objectId,
-    		@RequestParam("fileId") String fileId,
-    		@RequestParam("text") String text,
-    		@RequestParam("file") MultipartFile file,
-    		@RequestParam("sandboxId") String sandboxId,
-    		@RequestParam("domainId") String domainId) {
-		JSONObject ret = new JSONObject();
-		InputStream is = null;
-		try {
-			is = file.getInputStream();
-			writeFunctionOperationService.updateVector(className, attrName, objectId, fileId, text, is, dealSandboxId(sandboxId), domainId);
-			ret.put("success", true);
-		} catch (Exception e) {
-			log.error(e.getMessage(), e);
-			ret.put("success", false);
-			ret.put("message", e.getMessage());
-		} finally {
-			if (is != null) {
-				try {
-					is.close();
-				} catch (Exception e) {
-					log.error(e.getMessage(), e);
-				}
-			}
-		}
-		return ret;
+    @PostMapping("/writeFunctionOperation/updateVector")
+    public JSONObject updateVector(@RequestBody JSONObject body) throws Exception {
+        byte[] bytes=body.getString("fileBase64")==null?java.util.Objects.toString(body.getString("text"),"").getBytes(java.nio.charset.StandardCharsets.UTF_8):java.util.Base64.getDecoder().decode(body.getString("fileBase64"));
+        try(var input=new java.io.ByteArrayInputStream(bytes)) {
+            writeFunctionOperationService.updateVector(body.getString("className"),body.getString("attrName"),body.getString("objectId"),body.getString("fileId"),body.getString("text"),input,dealSandboxId(grant().getString("sandboxId")),grant().getString("domainId"));
+        }
+        return JSONObject.of("success",true);
     }
-	
+    private JSONObject grant() {
+        var request=((org.springframework.web.context.request.ServletRequestAttributes)org.springframework.web.context.request.RequestContextHolder.currentRequestAttributes()).getRequest();
+        return (JSONObject)request.getAttribute(io.ontomato.dataengine.service.QueryGrantService.ATTRIBUTE);
+    }
+
 	@PostMapping("/writeFunctionOperation/deleteVector")
     @ResponseBody
     public JSONObject deleteVector(@RequestBody JSONObject param) throws Exception {
@@ -211,8 +170,8 @@ public class WriteFunctionOperationController {
 			String attrName = param.getString("attrName");
 			String objectId = param.getString("objectId");
 			String fileId = param.getString("fileId");
-			String sandboxId = dealSandboxId(param.getString("sandboxId"));
-			String domainId = param.getString("domainId");
+			String sandboxId = dealSandboxId(grant().getString("sandboxId"));
+			String domainId = grant().getString("domainId");
 			writeFunctionOperationService.deleteVector(className, attrName, objectId, fileId, sandboxId, domainId);
 			ret.put("success", true);
 		} catch (Exception e) {

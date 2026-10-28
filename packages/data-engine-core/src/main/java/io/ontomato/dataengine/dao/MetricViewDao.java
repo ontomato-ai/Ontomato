@@ -255,6 +255,26 @@ public class MetricViewDao extends BaseDao {
 		return oList;
 	}
 
+
+    /** Model-free published read lookup. Database failures remain failures. */
+    public List<Object[]> queryForRetrieval(String domainId,String query,String cursor,List<String> classes,int limit) {
+        if(!assetLookupPolicy.shouldQuery(jdbcTemplate,TABLE_NAME))return List.of();
+        StringBuilder sql=new StringBuilder("SELECT "+java.util.Arrays.stream(COLUMNS.split(", ")).map(c->"m."+c).collect(java.util.stream.Collectors.joining(","))+" FROM metric_view m JOIN function f ON f.id=m.function_id AND f.domain_id=m.domain_id WHERE m.domain_id=? AND m.status=? AND f.operation=?");
+        List<Object> args=new ArrayList<>(List.of(domainId,MetricView.STATUS_PUBLISHED,Function.OPERATION_READ));
+        if(cursor!=null){sql.append(" AND m.id>?");args.add(cursor);}
+        if(query!=null&&!query.isBlank()) {
+            sql.append(" AND (strpos(lower(m.name),?)>0 OR strpos(lower(coalesce(m.description,'')),?)>0 OR strpos(lower(coalesce(m.match_questions,'')),?)>0 OR strpos(?,lower(m.name))>0)");
+            String normalized=query.toLowerCase(java.util.Locale.ROOT);args.add(normalized);args.add(normalized);args.add(normalized);args.add(normalized);
+        }
+        if(classes!=null&&!classes.isEmpty()) {
+            sql.append(" AND (");
+            for(int i=0;i<classes.size();i++){if(i>0)sql.append(" OR ");sql.append("strpos(m.class_names,?)>0");args.add(","+classes.get(i)+",");}
+            sql.append(")");
+        }
+        sql.append(" ORDER BY m.id LIMIT ?");args.add(limit);
+        return jdbcTemplate.query(sql.toString(),(rs,n)->mapRowWithFunctionId(rs),args.toArray());
+    }
+
 	public List<Object[]> find(String question, String type, String className, int maxResult, double minScore, String domainId) {
 		return retrievalGate.read(domainId, () -> search(question, type, className, maxResult, minScore, domainId));
 	}

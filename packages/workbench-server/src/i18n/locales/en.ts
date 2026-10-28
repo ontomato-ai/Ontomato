@@ -14,6 +14,12 @@ export const en = {
   "query.status.insufficientCoverage": "Insufficient Coverage",
   "query.status.noAvailableData": "No Available Data Retrieved",
 
+  // Retrieval outcomes
+  "query.retrieval.startFailed": "Data retrieval could not start. Please try again.",
+  "query.retrieval.interrupted": "Data retrieval was interrupted. Please try again.",
+  "query.retrieval.failed": "Data retrieval could not finish. Please try again.",
+  "query.retrieval.cancelled": "Data retrieval was cancelled.",
+
   // Thinking logs - parallel execution
   "query.thinking.parallelStart":
     "🧭 Executing in parallel: Fixed Metrics / Dynamic Metrics / ABC Decomposition…",

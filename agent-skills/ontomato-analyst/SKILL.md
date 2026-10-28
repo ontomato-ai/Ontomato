@@ -1,5 +1,7 @@
 ---
 name: ontomato-analyst
+metadata:
+  ontomato-runtime-manifest: runtime.json
 description: "Query and analyze business objects and relationships through an existing Ontomato ontology. Use for natural-language questions, controlled DSL queries, value exploration and analysis reports; read the current definitions without changing the ontology or business data."
 ---
 
@@ -28,73 +30,82 @@ The skills cover different tasks on this same platform: `ontomato-ontomap-builde
 
 Answer business questions using the current ontology and its permitted data. This package reads definitions and queries data; it does not change the data source, ontomap, permissions or business records. It needs no product checkout. Choose `ask` for a natural-language question, `execute-dsl` when you need to control the query, or the separately configured analysis MCP service for a report.
 
-## Prerequisites
+## Runtime invocation
 
-- Ontomato is deployed and an ontomap is imported.
-- You have the frontend base URL, such as `http://host:3000`.
-- Node.js 18 or newer. The script uses only Node built-ins.
+When loaded through runtime.json, use its declared `ontology_*` tools directly.
+The commands below describe the external CLI distribution. The runtime manifest
+has no recursive ask tool. Its Python helper is supplied as a read-only library;
+credentials and target URLs are fixed by the host outside model arguments.
 
-Every script call goes through the frontend: `<envUrl>/api/data-query/<backend path>`.
+## Configuration
 
-## Configure the Ontomato URL
-
-The script reads `application.yml` beside itself as simple `key: value` lines. Use unquoted values and full-line comments. Use the frontend base URL (including a deployment proxy prefix when needed), without `/api/data-query` or a browser `#` route. Keep the configuration private, especially enterprise credentials.
-
-Set `envUrl` in `application.yml` to the frontend URL of Ontomato, without an API path or browser route:
+Use Node.js 18 or newer. Keep this package together; no product checkout is needed.
+`application.yml` beside the script accepts simple unquoted `key: value` lines.
+`ONTOMATO_URL` overrides `envUrl`. Optional separate URLs select the ontology
+facade and workbench; include any reverse-proxy prefix, without browser routes:
 
 ```yaml
 envUrl: http://host:3000
+# Defaults to <envUrl>/api/data-query
+ontologyUrl: http://host:3005/api/data-query
+# Defaults to envUrl
+workbenchUrl: http://host:3000
 ```
 
-When the environment variable `ONTOMATO_URL` is set, it takes precedence over `envUrl`, so one setting serves every installed Ontomato skill.
-
-This is the public-edition client: it sends no enterprise login credentials and has no `login` command. An authenticated enterprise deployment needs the matching enterprise package and authorized identity.
+The public edition has no login. For an authenticated enterprise deployment use
+the enterprise package with an authorized identity.
 
 ## Commands
 
-Run `node ontomato.mjs <command>` from this directory, or pass the script path. JSON may be an argument or `@file`.
+Run `node ontomato.mjs <command>` from this directory. JSON accepts `@file`.
 
+| Command | API and result |
+| --- | --- |
+| `dataset-desc`, `classes` | `GET /ontology/query/overview`: description or class names/descriptions |
+| `schema <class>...`, `relationships <class>...` | `POST /ontology/query/schema`: enabled fields and direct relationships |
+| `dsl-reference <class>...` | `POST /ontology/query/dsl-reference`: current class-specific syntax and Markdown examples |
+| `distinct-values <class> <attribute> [--like text] [--limit n]` | `POST /ontology/query/distinct-values`: values and completeness marker |
+| `execute-dsl @query.json` | `POST /ontology/query/execute-dsl`: one read-only DSL object, under your permissions |
+| `metrics <question> [--cursor id] [--limit n]` | `POST /ontology/query/metrics/search`: published read specifications, revision and next cursor; no model call |
+| `execute-metric <id> --revision <revision> @parameters.json` | `POST /ontology/query/metrics/execute`: current revision checked, execution under your permissions |
+| `knowledge <question> [--limit n]` | `POST /ontology/query/knowledge/search`: relevant business knowledge |
+| `ask [--lang en] [--request-id UUID] "complete question"` | Workbench `POST /api/retrievals`, then polling and dataset downloads |
+| `ask --status <retrievalId>` | Read the authoritative retrieval result |
+| `ask --cancel <retrievalId>` | Close the retrieval and request cancellation |
+| `ask --resume <retrievalId> --answers @answers.json [--request-id UUID]` | Explicit answers in the same session, new run |
+
+`ask` prints its request ID before creating work and then the retrieval/session IDs.
+Keep them to inspect or retry an uncertain response. Reusing a request ID with
+changed input is an error. A terminal result is `completed`, `needs_input` or
+`failed`. `needs_input` includes question IDs, choices, reasons and existing
+usable datasets. Ask the user; silence does not select the recommendation.
+
+```json
+{"expectedRunId":"<runtimeRunId from status>","expectedDecisionRevision":0,
+ "answers":[{"questionId":"<id from needs_input>","choiceId":"<chosen id>"}]}
 ```
-node ontomato.mjs dataset-desc
-node ontomato.mjs classes
-node ontomato.mjs schema <class> [<class> ...]
-node ontomato.mjs relationships <class> [<class> ...]
-node ontomato.mjs distinct-values <class> <attribute> [--like <pattern>] [--limit <n>]
-node ontomato.mjs execute-dsl @query.json
-node ontomato.mjs ask [--lang <tag>] "How many orders were placed last month?"
-```
 
-| Command | Backend call | Returns |
-| --- | --- | --- |
-| `dataset-desc` | `GET /admin/getDatasetDesc` | Business description of the whole dataset |
-| `classes` | `GET /admin/getAllClassNames` | Class names |
-| `schema` | `POST /admin/getSchemaByClassName` | Per class: description, then each enabled attribute's name, type, primary-key flag and description |
-| `relationships` | `POST /admin/getRelationshipByClassNames` | Relationships that start or end at the classes: source class, relationship type, target class, description |
-| `distinct-values` | `POST /admin/queryDistinctAttrValue` | Distinct values of a `varchar` or `text` attribute |
-| `execute-dsl` | `POST /dsl/executeV1` | DSL result JSON |
-| `ask` | `POST /abcHarness` | Streamed events, then the data |
+Keep the same reply envelope and request ID when retrying a lost response.
+A free-text answer uses `text` instead of `choiceId`. A reply advances the decision
+revision; stale concurrent replies fail. The CLI does not automatically route an
+unrelated future chat message into that retrieval. Quality checking is asynchronous
+and may appear later in `ask --status`. Failures exit nonzero with a readable cause.
 
-`distinct-values`: `--like` filters values; without `%` the pattern is wrapped as `%pattern%`. Without `--limit` at most 100 values are shown. Use it to find the exact stored value before writing an `=` or `in` condition.
+## Query workflow and result meaning
 
-A non-2xx response prints the status and body and exits non-zero. A JSON body with `success: false` prints its message and exits non-zero.
+Read overview, schema/relationships and knowledge. Retrieve metric specifications
+before inventing a calculation. Inspect exact stored values when needed. For DSL,
+follow [the reference entry guide](references/dsl.md) and fetch the rules for the
+actual classes; the Java service owns the grammar. `ask` does this orchestration
+for natural-language questions. It can take several minutes.
 
-## Query workflow
-
-Translate the business question into ontology objects, attributes and relationships. `schema` returns class fields and `relationships` returns relationship definitions, not object records. DSL names such as `graph` and `relationship` describe a query graph; they do not require a graph database. A SQL adapter uses the saved JOIN fields.
-
-1. `dataset-desc` and `classes` to see what the dataset covers.
-2. `schema` for the classes the question needs, and `relationships` for how they join. If an attribute has type `vector`, it represents a set of file or text resources attached to the object, queried by semantics and cannot be used for equality or range comparisons.
-3. `distinct-values` to confirm filter values.
-4. Write a DSL query following the rules below and run `execute-dsl`.
-5. If the result is empty or wrong, check class and attribute names, filter values and relationship direction, then run again.
-
-For a question you do not want to plan yourself, use `ask`. It often takes several minutes; set the command timeout long enough for the whole run.
-
-## Use DSL and interpret results
-
-When writing or debugging a DSL query, read this package’s [DSL reference and complete examples](references/dsl.md), then run `execute-dsl`. Direct `ask` does not require writing DSL first. Report a missing relationship/field as an ontology gap; do not invent mappings from database intuition or change permissions to obtain a result.
-
-Interpret each result group’s `answer` as data and `mqls` as executed statements; `error` indicates failure. Honor `truncated`, `rowLimit` or a truncation hint when returned. An empty result means no match under these conditions and permissions, not automatically absence of a business object. Give the user a business answer, its scope and known limits rather than require them to interpret DSL or raw JSON.
+An `answer` is data, not permission to claim complete coverage. Preserve `truncated`,
+`rowLimit` and `truncationHint`, including an empty partial result. Null, false and
+zero are distinct values. Missing relationships/fields are ontology gaps; do not
+invent joins or request elevated credentials to force a result. Report the business
+answer with scope, assumptions and limits. Final datasets from `ask` are rerun
+under the user's authorization and stored as immutable artifacts. This external
+client never requests or selects exploration credentials.
 
 ## Analysis agents (MCP)
 

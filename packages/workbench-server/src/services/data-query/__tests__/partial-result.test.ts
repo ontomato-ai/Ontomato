@@ -1,7 +1,15 @@
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  afterAll,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from "vitest";
 import type { ResultTruncation } from "@ontomato/contracts/query-execution";
 import { configureI18n } from "../../../i18n";
 import { appTextEn } from "../../../i18n/app-text-en";
@@ -38,10 +46,13 @@ vi.mock("../../../logging/model-agents", async (importOriginal) => ({
 }));
 
 vi.mock("../../../core/prompts/loader", () => ({
-  renderPrompt: (name: string, vars: Record<string, unknown>) => JSON.stringify({ name, vars }),
+  renderPrompt: (name: string, vars: Record<string, unknown>) =>
+    JSON.stringify({ name, vars }),
 }));
 
-vi.mock("../../charts/chart-generator", () => ({ generateChartsFromCandidates: vi.fn() }));
+vi.mock("../../charts/chart-generator", () => ({
+  generateChartsFromCandidates: vi.fn(),
+}));
 vi.mock("../../analysis-agent/dimension/skill-executor", () => ({
   analysisSkillExecutor: { executeMultipleSkills: vi.fn() },
 }));
@@ -56,8 +67,7 @@ import type { Dataset } from "../adapter";
 // Several subjects translate fixed text at import time, so they load after i18n is configured.
 const load = async () => ({
   ...(await import("../protocol")),
-  ...(await import("../branches/abc-harness-payload")),
-  ...(await import("../branches/abc-harness-dataset")),
+  ...(await import("../../data-retrieval/projection")),
   ...(await import("../hot-data/hot-data-fetcher")),
   ...(await import("../conclusion")),
   ...(await import("../../../utils/model-data-view")),
@@ -96,31 +106,88 @@ describe("saved report completeness", () => {
   it("writes a fixed notice into dimension reports and summaries even if the model omits it", async () => {
     const generator = new m.ReportGenerator();
     const dimension = {
-      dimensionName: "Sites", dimensionValue: "all", datasetSchema: "", summarizerPrompt: "summarize",
-      evidence: [{ questionId: "q", questionText: "Sites", status: "completed", data: [], dataCount: 0, ...MARKER }],
+      dimensionName: "Sites",
+      dimensionValue: "all",
+      datasetSchema: "",
+      summarizerPrompt: "summarize",
+      evidence: [
+        {
+          questionId: "q",
+          questionText: "Sites",
+          status: "completed",
+          data: [],
+          dataCount: 0,
+          ...MARKER,
+        },
+      ],
     } as never;
-    const summary = { dimensionReports: [], originalQuestion: "Sites", conclusionMakerPrompt: "summarize", truncation: MARKER };
-    expect((await generator.generateDimensionReport(dimension)).report).toContain(MARKER.truncationHint);
-    expect((await generator.generateMultiDimensionSummary(summary)).summary).toContain(MARKER.truncationHint);
-    for (const stream of [generator.generateDimensionReportStream(dimension), generator.generateMultiDimensionSummaryStream(summary)]) {
+    const summary = {
+      dimensionReports: [],
+      originalQuestion: "Sites",
+      conclusionMakerPrompt: "summarize",
+      truncation: MARKER,
+    };
+    expect(
+      (await generator.generateDimensionReport(dimension)).report,
+    ).toContain(MARKER.truncationHint);
+    expect(
+      (await generator.generateMultiDimensionSummary(summary)).summary,
+    ).toContain(MARKER.truncationHint);
+    for (const stream of [
+      generator.generateDimensionReportStream(dimension),
+      generator.generateMultiDimensionSummaryStream(summary),
+    ]) {
       const chunks = [];
       for await (const chunk of stream) chunks.push(chunk);
       expect(chunks.join("")).toContain(MARKER.truncationHint);
     }
-    expect((await generator.generateMultiDimensionSummary({ ...summary, truncation: undefined })).summary).not.toContain(MARKER.truncationHint);
+    expect(
+      (
+        await generator.generateMultiDimensionSummary({
+          ...summary,
+          truncation: undefined,
+        })
+      ).summary,
+    ).not.toContain(MARKER.truncationHint);
   });
 
   it("summary evidence keeps a partial empty source even when charts are disabled", async () => {
     const sections: { markdown?: string }[] = [];
-    const result = await m.runSummaryStage({
-      userQuestion: "Sites", enabledVisualizationSkillIds: [], enabledSkillIds: [], conclusionMakerPrompt: "summarize",
-    } as never, {
-      start: () => "activity", settle: () => {}, section: (value: { markdown?: string }) => sections.push(value),
-      current: () => ({ sections: [] }),
-    } as never, {
-      dimensionReports: [{ success: true, dimensionName: "Sites", dimensionValue: "all", report: "Report" }],
-      plannedDimensions: [{ subQuestions: [{ id: "q", subQuestion: "Sites", datasets: [{ id: "d", data: [], ...MARKER }] }] }],
-    } as never);
+    const result = await m.runSummaryStage(
+      {
+        userQuestion: "Sites",
+        enabledVisualizationSkillIds: [],
+        enabledSkillIds: [],
+        conclusionMakerPrompt: "summarize",
+      } as never,
+      {
+        start: () => "activity",
+        settle: () => {},
+        section: (value: { markdown?: string }) => sections.push(value),
+        current: () => ({ sections: [] }),
+      } as never,
+      {
+        dimensionReports: [
+          {
+            success: true,
+            dimensionName: "Sites",
+            dimensionValue: "all",
+            report: "Report",
+          },
+        ],
+        plannedDimensions: [
+          {
+            subQuestions: [
+              {
+                id: "q",
+                subQuestion: "Sites",
+                datasets: [{ id: "d", data: [], ...MARKER }],
+              },
+            ],
+          },
+        ],
+      } as never,
+    );
     expect(result.errors).toEqual([]);
     expect(sections.at(-1)?.markdown).toContain(MARKER.truncationHint);
   });
@@ -151,27 +218,45 @@ describe("answer protocol", () => {
       { rowLimit: 100000, truncationHint: "cap" },
       { truncated: true, rowLimit: 0, truncationHint: "cap" },
     ]) {
-      expect(() => m.parseQueryAnswerPayload({ answer: [], ...marker })).toThrow(/partial result/);
+      expect(() =>
+        m.parseQueryAnswerPayload({ answer: [], ...marker }),
+      ).toThrow(/partial result/);
     }
   });
 });
 
 describe("datasets keep the marker where they are created", () => {
-  it("ABC harness DATA_TYPE: top-level marker beside the row array", () => {
-    const content = m.normalizeHarnessDataContent(
-      JSON.stringify({ question: "Sites", data: [], code: "print(1)", outKeyRefs: [], ...MARKER })
-    );
-    const dataset = m.buildDataset(content, 0, m.normalizeRows(content.data));
-    expect(dataset).toMatchObject({ data: [], ...MARKER });
+  it("runtime datasets retain source completeness, including zero rows", () => {
+    const payload = {
+      title: "Sites",
+      question: "Sites",
+      columns: [],
+      rows: [],
+      recipe: { kind: "dsl", dsl: {} },
+      outKeyRefs: [],
+      truncation: MARKER,
+    } as unknown as import("@ontomato/contracts/data-retrieval").DatasetPayload;
+    const ref = {
+      retrievalId: "r",
+      runtimeSessionId: "s",
+      runtimeRunId: "run",
+    };
+    const dataset = m.projectDataset("artifact", payload, ref);
+    expect(dataset).toMatchObject({ id: "artifact", data: [], ...MARKER });
     expect(
-      m.buildDataset(m.normalizeHarnessDataContent({ question: "Sites", data: [{ a: 1 }] }), 0, [])
+      m.projectDataset("complete", { ...payload, truncation: null }, ref),
     ).not.toHaveProperty("truncated");
   });
 
   it("saved MetricView snapshot: a marked result.data entry marks the card's dataset", async () => {
     io.cardBody = JSON.stringify({
       data: [{ answer: [{ site: "A" }], ...MARKER }],
-      abcProgram: { title: "Sites", code: "print(1)", outKeyRefs: [{ key: "k" }], parameters: [] },
+      abcProgram: {
+        title: "Sites",
+        code: "print(1)",
+        outKeyRefs: [{ key: "k" }],
+        parameters: [],
+      },
     });
     const [card] = await m.fetchHotCards({
       cards: [{ atomicAsk: "Sites", url: "http://engine/metricView/getData" }],
@@ -206,7 +291,12 @@ describe("model inputs", () => {
       data: [],
       ...MARKER,
     };
-    const content = await m.streamConclusion("How many sites?", [dataset], "", () => {});
+    const content = await m.streamConclusion(
+      "How many sites?",
+      [dataset],
+      "",
+      () => {},
+    );
 
     expect(content).not.toContain(en["query.conclusion.noDataFound"] as string);
     expect(io.prompts).toHaveLength(1);
@@ -216,7 +306,14 @@ describe("model inputs", () => {
   it("analysis evidence keeps a partial dataset without rows and drops a complete empty one", () => {
     const entries = m.expandQueryResultDatasetEntries({
       datasets: [
-        { id: "p", name: "p", description: "p", columns: [], data: [], ...MARKER },
+        {
+          id: "p",
+          name: "p",
+          description: "p",
+          columns: [],
+          data: [],
+          ...MARKER,
+        },
         { id: "c", name: "c", description: "c", columns: [], data: [] },
       ],
     });
@@ -241,14 +338,18 @@ describe("analysis replay of a saved ABC plan", () => {
         source: "streamchatV1-final",
         queryCount: 1,
         rawChunkCount: 1,
-        steps: [{ index: 0, subQuestion: "Matching sites", dsl: { from: "Site" } }],
+        steps: [
+          { index: 0, subQuestion: "Matching sites", dsl: { from: "Site" } },
+        ],
         afterCalculations: [
           {
             index: 1,
             subQuestion: "Site count",
             code: "print(open('/old/0.json').read())",
             dependencySubQueryIndexes: [0],
-            pathBindings: [{ subQueryIndex: 0, originalFilePath: "/old/0.json" }],
+            pathBindings: [
+              { subQueryIndex: 0, originalFilePath: "/old/0.json" },
+            ],
           },
         ],
       },
@@ -269,7 +370,14 @@ describe("analysis replay of a saved ABC plan", () => {
         status: "completed",
         data: [],
         datasets: [
-          { id: "s", name: "s", description: "s", columns: [], data: [], ...MARKER },
+          {
+            id: "s",
+            name: "s",
+            description: "s",
+            columns: [],
+            data: [],
+            ...MARKER,
+          },
         ],
       }),
       replayRootDir,
@@ -283,7 +391,13 @@ describe("analysis replay of a saved ABC plan", () => {
 
     expect(result.status).toBe("completed");
     expect(result.error).toBeUndefined();
-    expect(result.datasets?.map((dataset) => dataset.truncated)).toEqual([true, true]);
-    expect(result.datasets?.[1]).toMatchObject({ data: [{ count: 0 }], ...MARKER });
+    expect(result.datasets?.map((dataset) => dataset.truncated)).toEqual([
+      true,
+      true,
+    ]);
+    expect(result.datasets?.[1]).toMatchObject({
+      data: [{ count: 0 }],
+      ...MARKER,
+    });
   });
 });

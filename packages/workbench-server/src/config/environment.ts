@@ -15,8 +15,10 @@ export const environment = {
     const url = new URL(runtimeDefaults().postgresFallback);
     url.hostname = read("POSTGRES_HOST") ?? url.hostname;
     url.port = read("POSTGRES_PORT") ?? url.port;
-    if (read("POSTGRES_USER") !== undefined) url.username = encodeURIComponent(read("POSTGRES_USER")!);
-    if (read("POSTGRES_PASSWORD") !== undefined) url.password = encodeURIComponent(read("POSTGRES_PASSWORD")!);
+    if (read("POSTGRES_USER") !== undefined)
+      url.username = encodeURIComponent(read("POSTGRES_USER")!);
+    if (read("POSTGRES_PASSWORD") !== undefined)
+      url.password = encodeURIComponent(read("POSTGRES_PASSWORD")!);
     return url.toString();
   },
   pgSchema: () => read("PG_SCHEMA") || "public",
@@ -24,16 +26,17 @@ export const environment = {
   queryTimeout: () => parseInt(read("DATA_QUERY_TIMEOUT") || "30000", 10),
   queryKey: () => read("DATA_QUERY_API_KEY"),
   agentRuntime: () => ({
+    queryServiceToken: read("ONTOMATO_QUERY_SERVICE_TOKEN") || "",
     url: read("AGENT_RUNTIME_URL") || "http://127.0.0.1:3001",
     token: read("AGENT_RUNTIME_SERVICE_TOKEN") || "",
-    callbackUrl: read("AGENT_RUNTIME_CALLBACK_URL") || `http://127.0.0.1:${read("PORT") || "3000"}`,
+    callbackUrl:
+      read("AGENT_RUNTIME_CALLBACK_URL") ||
+      `http://127.0.0.1:${read("PORT") || "3000"}`,
   }),
   subQuestionInterval: (fallback: number | undefined) =>
     nonNegative(read("SUB_QUESTION_QUERY_INTERVAL_MS"), fallback),
   reportCooldown: (fallback: number | undefined) =>
     nonNegative(read("REPORT_GENERATION_COOLDOWN_MS"), fallback),
-  replayCommand: () =>
-    read("ABC_REPLAY_PYTHON_COMMAND") || read("HOT_REPORT_PYTHON_COMMAND") || "python3",
   replayDir: (fallback: string) =>
     read("ABC_REPLAY_DIR") || read("HOT_REPORT_REPLAY_DIR") || fallback,
   chromium: () => read("CHROMIUM_EXECUTABLE_PATH") || undefined,

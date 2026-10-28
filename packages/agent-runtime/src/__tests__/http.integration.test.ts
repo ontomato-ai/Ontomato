@@ -8,7 +8,10 @@ import path from "node:path";
 import pg from "pg";
 import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
-import { runtimeRunSnapshotSchema, runtimeSessionStatusesResponseSchema } from "@ontomato/contracts/agent-runtime";
+import {
+  runtimeRunSnapshotSchema,
+  runtimeSessionStatusesResponseSchema,
+} from "@ontomato/contracts/agent-runtime";
 
 const database = process.env.RUNTIME_TEST_DATABASE_URL;
 describe.skipIf(!database)("runtime real HTTP and PostgreSQL", () => {
@@ -51,12 +54,17 @@ console.log(JSON.stringify({type:'result',text:'tool result',data:{hostSecretPre
       headers: { ...headers, ...extra },
       body: body === undefined ? undefined : JSON.stringify(body),
     });
-    return { status: response.status, body: await response.json() };
+    return {
+      status: response.status,
+      body: response.status === 204 ? undefined : await response.json(),
+    };
   }
-  const terminalLogs = () => logs.split("\n")
-    .filter((line) => line.startsWith("{"))
-    .map((line) => JSON.parse(line))
-    .filter((entry) => entry.event === "runtime_run_terminal");
+  const terminalLogs = () =>
+    logs
+      .split("\n")
+      .filter((line) => line.startsWith("{"))
+      .map((line) => JSON.parse(line))
+      .filter((entry) => entry.event === "runtime_run_terminal");
   const input = () => ({
     language: "en",
     definition: {
@@ -64,7 +72,7 @@ console.log(JSON.stringify({type:'result',text:'tool result',data:{hostSecretPre
       modelRole: "knowledgeGovernance",
       skills: [skill],
       contextSkill: skill,
-      builtinTools: { workspaceFiles: false },
+      builtinTools: { workspaceFiles: false, python: false },
       externalMcp: [],
       compaction: {
         systemPrompt: "Summarize",
@@ -74,8 +82,15 @@ console.log(JSON.stringify({type:'result',text:'tool result',data:{hostSecretPre
     },
     input: { role: "user", content: "Run test", timestamp: 1 },
     privateContext: {
-      credential: { kind: "token", value: "fixture-user-secret" },
-      skillBindings: [{ skill, targetUrl: modelUrl, context: {} }],
+      modelCredential: { kind: "token", value: "fixture-user-secret" },
+      skillBindings: [
+        {
+          skill,
+          targetUrl: modelUrl,
+          context: {},
+          credential: { kind: "token", value: "fixture-user-secret" },
+        },
+      ],
     },
   });
   async function start() {
@@ -193,7 +208,11 @@ console.log(JSON.stringify({type:'result',text:'tool result',data:{hostSecretPre
                   apiKeys: ["fixture-model-secret"],
                   maxTokens: 4000,
                   contextWindow: 16000,
-                  timeout: null, maxRetries: null, temperature: null, topP: null, customRequestParameters: null,
+                  timeout: null,
+                  maxRetries: null,
+                  temperature: null,
+                  topP: null,
+                  customRequestParameters: null,
                 },
               ],
             },
@@ -217,7 +236,14 @@ console.log(JSON.stringify({type:'result',text:'tool result',data:{hostSecretPre
         modelInputs.push(text);
         if (JSON.stringify(request.messages).includes("provider-error")) {
           res.writeHead(400, { "content-type": "application/json" });
-          res.end(JSON.stringify({ error: { message: "fixture-model-secret fixture-user-secret FULL_PROVIDER_PAYLOAD" } }));
+          res.end(
+            JSON.stringify({
+              error: {
+                message:
+                  "fixture-model-secret fixture-user-secret FULL_PROVIDER_PAYLOAD",
+              },
+            }),
+          );
           return;
         }
         res.writeHead(200, { "content-type": "text/event-stream" });
@@ -447,32 +473,75 @@ console.log(JSON.stringify({type:'result',text:'tool result',data:{hostSecretPre
     expect(logs).not.toContain("fixture-user-secret");
   }, 30000);
   it("logs a failed run once using metadata only and returns lightweight scoped statuses", async () => {
-    const emptyId = randomUUID(), sessionId = randomUUID(), runId = randomUUID();
+    const emptyId = randomUUID(),
+      sessionId = randomUUID(),
+      runId = randomUUID();
     for (const id of [emptyId, sessionId])
       await api("/v1/sessions", {}, { "idempotency-key": id });
     const body = input();
     body.input.content = "provider-error";
-    await api(`/v1/sessions/${sessionId}/runs`, body, { "idempotency-key": runId });
+    await api(`/v1/sessions/${sessionId}/runs`, body, {
+      "idempotency-key": runId,
+    });
     expect((await settled(runId)).body.run.status).toBe("failed");
     const logged = terminalLogs().filter((entry) => entry.runId === runId);
-    expect(logged).toEqual([{
-      level: "error", event: "runtime_run_terminal", timestamp: expect.any(String),
-      runId, correlationId: "fixture-correlation", status: "failed", errorCode: "RUN_FAILED",
-    }]);
-    for (const secret of [hostToken, "fixture-user-secret", "fixture-model-secret", "FULL_PROVIDER_PAYLOAD"])
+    expect(logged).toEqual([
+      {
+        level: "error",
+        event: "runtime_run_terminal",
+        timestamp: expect.any(String),
+        runId,
+        correlationId: "fixture-correlation",
+        status: "failed",
+        errorCode: "RUN_FAILED",
+      },
+    ]);
+    for (const secret of [
+      hostToken,
+      "fixture-user-secret",
+      "fixture-model-secret",
+      "FULL_PROVIDER_PAYLOAD",
+    ])
       expect(logs).not.toContain(secret);
-    const statuses = await api("/v1/sessions/status", { sessionIds: [sessionId, emptyId] });
+    const statuses = await api("/v1/sessions/status", {
+      sessionIds: [sessionId, emptyId],
+    });
     expect(statuses.status).toBe(200);
     const response = runtimeSessionStatusesResponseSchema.parse(statuses.body);
-    expect(response.sessions.map((item) => item.session.id)).toEqual([sessionId, emptyId]);
-    expect(response.sessions[0]!.latestRun).toEqual({ id: runId, status: "failed", error: { code: "RUN_FAILED" } });
+    expect(response.sessions.map((item) => item.session.id)).toEqual([
+      sessionId,
+      emptyId,
+    ]);
+    expect(response.sessions[0]!.latestRun).toEqual({
+      id: runId,
+      status: "failed",
+      error: { code: "RUN_FAILED" },
+    });
     expect(response.sessions[1]!.latestRun).toBeNull();
-    expect(JSON.stringify(statuses.body)).not.toMatch(/messages|definition|artifacts|FULL_PROVIDER_PAYLOAD/);
-    expect((await api("/v1/sessions/status", { sessionIds: [] })).body).toEqual({ sessions: [] });
-    for (const other of [{ "x-domain-id": "domain-b" }, { authorization: "Bearer fixture-other-host" }] as Record<string, string>[])
-      expect((await api("/v1/sessions/status", { sessionIds: [sessionId] }, other)).status).toBe(404);
-    expect((await api("/v1/sessions/status", { sessionIds: [sessionId, randomUUID()] })).status).toBe(404);
-    expect((await api("/v1/sessions/status", { sessionIds: ["invalid"] })).status).toBe(400);
+    expect(JSON.stringify(statuses.body)).not.toMatch(
+      /messages|definition|artifacts|FULL_PROVIDER_PAYLOAD/,
+    );
+    expect((await api("/v1/sessions/status", { sessionIds: [] })).body).toEqual(
+      { sessions: [] },
+    );
+    for (const other of [
+      { "x-domain-id": "domain-b" },
+      { authorization: "Bearer fixture-other-host" },
+    ] as Record<string, string>[])
+      expect(
+        (await api("/v1/sessions/status", { sessionIds: [sessionId] }, other))
+          .status,
+      ).toBe(404);
+    expect(
+      (
+        await api("/v1/sessions/status", {
+          sessionIds: [sessionId, randomUUID()],
+        })
+      ).status,
+    ).toBe(404);
+    expect(
+      (await api("/v1/sessions/status", { sessionIds: ["invalid"] })).status,
+    ).toBe(400);
   }, 15000);
 
   it("cancels the whole process tree and recovers unknown outcomes without replay", async () => {
@@ -489,9 +558,15 @@ console.log(JSON.stringify({type:'result',text:'tool result',data:{hostSecretPre
       for (let i = 0; i < 200 && !tree; i++)
         await new Promise((r) => setTimeout(r, 20));
       expect(tree).toBeTruthy();
-      const statuses = await api("/v1/sessions/status", { sessionIds: [sessionId] });
+      const statuses = await api("/v1/sessions/status", {
+        sessionIds: [sessionId],
+      });
       expect(statuses.body.sessions[0].session.activeRunId).toBe(runId);
-      expect(statuses.body.sessions[0].latestRun).toEqual({ id: runId, status: "running", error: null });
+      expect(statuses.body.sessions[0].latestRun).toEqual({
+        id: runId,
+        status: "running",
+        error: null,
+      });
       return { sessionId, runId, body, tree: tree! };
     };
     const alive = (pid: number) => {
@@ -520,11 +595,17 @@ console.log(JSON.stringify({type:'result',text:'tool result',data:{hostSecretPre
     await start();
     const recovered = await api(`/v1/runs/${crashed.runId}`);
     expect(recovered.body.run.status).toBe("interrupted");
-    expect(terminalLogs()).toEqual([{
-      level: "error", event: "runtime_run_terminal", timestamp: expect.any(String),
-      runId: crashed.runId, correlationId: "fixture-correlation",
-      status: "interrupted", errorCode: "RUNTIME_INTERRUPTED",
-    }]);
+    expect(terminalLogs()).toEqual([
+      {
+        level: "error",
+        event: "runtime_run_terminal",
+        timestamp: expect.any(String),
+        runId: crashed.runId,
+        correlationId: "fixture-correlation",
+        status: "interrupted",
+        errorCode: "RUNTIME_INTERRUPTED",
+      },
+    ]);
     expect(recovered.body.toolExecutions[0].status).toBe("unknown");
     expect(
       (
@@ -628,4 +709,174 @@ console.log(JSON.stringify({type:'result',text:'tool result',data:{hostSecretPre
     );
     expect(await lost.text()).toContain("snapshot_required");
   }, 15000);
+  it("executes Python once, keeps null-shaped outputs, scopes receipts and interrupts code without replay", async () => {
+    const request = (code: string) => ({
+      language: "python",
+      files: [{ path: "program.py", content: code }],
+      entry: "program.py",
+      arguments: [],
+      outputPaths: [],
+      binding: {
+        targetUrl: null,
+        credential: { kind: "none" },
+        context: {},
+        libraries: [],
+        limits: { wallTimeMs: 5000 },
+      },
+    });
+    const finish = async (id: string) => {
+      for (let attempt = 0; attempt < 200; attempt++) {
+        const response = await api(`/v1/code-executions/${id}`);
+        if (response.body.status !== "running") return response.body;
+        await new Promise((r) => setTimeout(r, 20));
+      }
+      throw new Error("Code execution did not settle");
+    };
+    const closedSession = randomUUID(),
+      closedRun = randomUUID();
+    await api("/v1/sessions", {}, { "idempotency-key": closedSession });
+    expect(
+      (
+        await api(
+          `/v1/sessions/${closedSession}/run-intents/${closedRun}/cancel`,
+          {},
+        )
+      ).status,
+    ).toBe(204);
+    expect(
+      (
+        await api(`/v1/sessions/${closedSession}/runs`, input(), {
+          "idempotency-key": closedRun,
+        })
+      ).status,
+    ).toBe(410);
+    const closed = randomUUID();
+    expect(
+      (await api(`/v1/code-execution-intents/${closed}/cancel`, {})).status,
+    ).toBe(204);
+    expect(
+      (
+        await api("/v1/code-executions", request("print('must not run')"), {
+          "idempotency-key": closed,
+        })
+      ).status,
+    ).toBe(410);
+    const id = randomUUID(),
+      before = sideEffects;
+    const body = request(
+      `import json,urllib.request\nurllib.request.urlopen(urllib.request.Request(${JSON.stringify(modelUrl + "/effect")}, data=b'',method='POST')).read()\nprint(json.dumps({'answer':[{'a':None,'b':False,'c':0}]}))\n`.replaceAll(
+        "\\n",
+        "\n",
+      ),
+    );
+    expect(
+      (await api("/v1/code-executions", body, { "idempotency-key": id }))
+        .status,
+    ).toBe(202);
+    expect(
+      (await api("/v1/code-executions", body, { "idempotency-key": id })).body
+        .replayed,
+    ).toBe(true);
+    const done = await finish(id);
+    expect(done.status, JSON.stringify(done)).toBe("completed");
+    const stdout = await fetch(
+      `${url}/v1/code-executions/${id}/outputs/stdout`,
+      { headers },
+    ).then((r) => r.text());
+    expect(JSON.parse(stdout)).toEqual({
+      answer: [{ a: null, b: false, c: 0 }],
+    });
+    expect(sideEffects).toBe(before + 1);
+    expect(
+      (
+        await api(`/v1/code-executions/${id}`, undefined, {
+          "x-domain-id": "other-domain",
+        })
+      ).status,
+    ).toBe(404);
+    expect(
+      (
+        await api(`/v1/code-executions/${id}`, undefined, {
+          authorization: "Bearer fixture-other-host",
+        })
+      ).status,
+    ).toBe(404);
+    expect(
+      (await api("/v1/sessions", {}, { "idempotency-key": id })).status,
+    ).toBe(409);
+    expect(
+      (
+        await api("/v1/code-executions", request("print('changed')"), {
+          "idempotency-key": id,
+        })
+      ).status,
+    ).toBe(409);
+    const secretId = randomUUID(),
+      secret = request(
+        "import os,json,sys\nprint(json.loads(os.environ['ONTOMATO_CREDENTIAL_JSON'])['value'])\nsys.exit(1)",
+      );
+    secret.binding.credential = {
+      kind: "bearer",
+      value: "scoped-fixture-secret",
+    } as never;
+    await api("/v1/code-executions", secret, { "idempotency-key": secretId });
+    const rejected = await finish(secretId);
+    expect(rejected.status).toBe("failed");
+    expect(rejected.error.code).toBe("CODE_SECRET_OUTPUT");
+    expect(rejected.outputs).toEqual([]);
+    const timeoutId = randomUUID(),
+      timeout = request("import time\ntime.sleep(30)");
+    timeout.binding.limits.wallTimeMs = 100;
+    await api("/v1/code-executions", timeout, { "idempotency-key": timeoutId });
+    expect((await finish(timeoutId)).error.code).toBe("CODE_TIMEOUT");
+    const code = request(
+      `import os,json,subprocess,sys,time,urllib.request\nchild=subprocess.Popen([sys.executable,'-c','import time;time.sleep(300)'])\nbody=json.dumps({'parent':os.getpid(),'child':child.pid}).encode()\nurllib.request.urlopen(urllib.request.Request(${JSON.stringify(modelUrl + "/effect")},data=body,method='POST')).read()\ntime.sleep(300)\n`.replaceAll(
+        "\\n",
+        "\n",
+      ),
+    );
+    const begin = async () => {
+      tree = undefined;
+      const key = randomUUID();
+      await api("/v1/code-executions", code, { "idempotency-key": key });
+      for (let i = 0; i < 200 && !tree; i++)
+        await new Promise((r) => setTimeout(r, 20));
+      expect(tree).toBeTruthy();
+      return { key, pids: [tree!.parent, tree!.child] };
+    };
+    const alive = (pid: number) => {
+      try {
+        process.kill(pid, 0);
+        return true;
+      } catch {
+        return false;
+      }
+    };
+    const cancelled = await begin();
+    expect(
+      (await api(`/v1/code-executions/${cancelled.key}/cancel`, {})).body
+        .status,
+    ).toBe("cancelled");
+    for (let i = 0; i < 100 && cancelled.pids.some(alive); i++)
+      await new Promise((r) => setTimeout(r, 20));
+    expect(cancelled.pids.some(alive)).toBe(false);
+    const crashed = await begin(),
+      effects = sideEffects;
+    await stop("SIGKILL");
+    await start();
+    expect((await api(`/v1/code-executions/${crashed.key}`)).body.status).toBe(
+      "interrupted",
+    );
+    expect(
+      (
+        await api("/v1/code-executions", code, {
+          "idempotency-key": crashed.key,
+        })
+      ).body.replayed,
+    ).toBe(true);
+    expect(sideEffects).toBe(effects);
+    for (let i = 0; i < 100 && crashed.pids.some(alive); i++)
+      await new Promise((r) => setTimeout(r, 20));
+    expect(crashed.pids.some(alive)).toBe(false);
+  }, 20000);
 });

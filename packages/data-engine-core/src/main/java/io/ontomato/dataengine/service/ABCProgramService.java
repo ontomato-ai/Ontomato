@@ -22,6 +22,5 @@ public interface ABCProgramService {
 	
 	public JSONArray dealPythonReturn(String pythonOutput, String errorMessage, List<ABCHarnessProgramOutKeyRef> outKeyRefs, UserDataPermission curUserDataPermission) throws Exception;
 	
-	public File getBaseWorkspace();
 	
 }

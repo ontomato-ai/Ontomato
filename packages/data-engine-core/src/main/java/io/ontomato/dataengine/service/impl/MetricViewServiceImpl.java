@@ -278,6 +278,17 @@ public class MetricViewServiceImpl implements MetricViewService {
 		}
 	}
 
+    @Override
+    public List<MetricView> queryForRetrieval(String domainId,String query,String cursor,List<String> classes,int limit) {
+        List<MetricView> result=new ArrayList<>();
+        for(Object[] tuple:metricViewDao.queryForRetrieval(domainId,query,cursor,classes,limit)) {
+            MetricView metric=(MetricView)tuple[0];Function function=functionDao.queryById((String)tuple[1]);
+            if(function==null||!domainId.equals(function.getDomainId()))throw new IllegalStateException("Published metric function is missing or belongs to another domain");
+            metric.setFunction(function);result.add(metric);
+        }
+        return result;
+    }
+
 	@Override
 	public MetricView queryById(String id) {
 		Object[] o  = metricViewDao.queryById(id);

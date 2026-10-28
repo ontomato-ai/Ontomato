@@ -5,7 +5,6 @@ import java.util.List;
 import java.util.UUID;
 
 import io.ontomato.dataengine.tools.ABCProgramDashboardMakerSkillTools;
-import io.ontomato.dataengine.tools.ABCProgrammerSkillTools;
 import io.ontomato.dataengine.tools.ActionCodeExplainerSkillTools;
 import io.ontomato.dataengine.tools.AfterCalculatorResultSubmitTools;
 import io.ontomato.dataengine.tools.AfterCalculatorSkillTools;
@@ -34,7 +33,7 @@ import io.ontomato.dataengine.config.ModelConfig;
 import io.ontomato.dataengine.config.ModelResolver.ResolvedChatModel;
 import io.ontomato.dataengine.logging.AgentCallContext;
 import io.ontomato.dataengine.service.SessionCancelledException;
-import io.ontomato.dataengine.tools.ABCHarnessFileTools;
+import io.ontomato.dataengine.tools.AgentWorkspaceFileTools;
 import io.ontomato.dataengine.logging.AgentLlmCallListener;
 import io.ontomato.dataengine.util.LogHelper;
 
@@ -77,7 +76,6 @@ public class MultiThreadAIChatService {
 	
 	public static final String JSON_CORRECTOR = "JSON_CORRECTOR";
 	
-	public static final String ABC_PROGRAMMER = "ABC_PROGRAMMER";
 	
 	public static final String ABC_PROGRAM_DESCRIBER = "ABC_PROGRAM_DESCRIBER";
 	
@@ -240,6 +238,9 @@ public class MultiThreadAIChatService {
     
     @Autowired
     private SchemaSkillTools schemaSkillTools;
+
+    @Autowired
+    private io.ontomato.dataengine.service.PythonExecuteService pythonExecuteService;
     
     @Autowired
     private DslSkillTools dslSkillTools;
@@ -248,7 +249,7 @@ public class MultiThreadAIChatService {
 	private DslSubmitTools dslSubmitTools;
 
 	@Autowired
-	private ABCHarnessFileTools abcHarnessFileTools;
+	private AgentWorkspaceFileTools agentWorkspaceFileTools;
     
     @Autowired
     private DataDetectorSkillTools dataDetectorSkillTools;
@@ -262,8 +263,6 @@ public class MultiThreadAIChatService {
 	@Autowired
 	private AfterCalculatorResultSubmitTools afterCalculatorResultSubmitTools;
     
-    @Autowired
-    private ABCProgrammerSkillTools abcProgrammerSkillTools;
     
     @Autowired
     private ABCProgramDashboardMakerSkillTools abcProgramDashboardMakerSkillTools;
@@ -330,13 +329,13 @@ public class MultiThreadAIChatService {
 				if(skills == null){
 					chatAgent = newNormalAgent(chatModel)
 							.toolProviders(toolProvider)
-							.tools(afterCalculatorSkillTools, abcHarnessFileTools,
+							.tools(afterCalculatorSkillTools, agentWorkspaceFileTools,
 									afterCalculatorSubmitTools, afterCalculatorResultSubmitTools)
 							.build();
 				} else {
-					SkillTools skilltTools = new SkillTools(skill_dir);
+					SkillTools skilltTools = new SkillTools(skill_dir, pythonExecuteService);
 					chatAgent = newNormalAgent(chatModel)
-							.tools(skilltTools, abcHarnessFileTools, afterCalculatorSkillTools,
+							.tools(skilltTools, agentWorkspaceFileTools, afterCalculatorSkillTools,
 									afterCalculatorSubmitTools, afterCalculatorResultSubmitTools)
 							.toolProviders(toolProvider,skills.toolProvider())
 							.systemMessage("You have access to the following skills:\n" + skills.formatAvailableSkills()
@@ -348,10 +347,9 @@ public class MultiThreadAIChatService {
 		ChatModel chatModel = buildChatModel(pythonModel.model(),
 					false, FORMAL_DEFAULT_MAX_COMPLETION_TOKENS);
 				chatAgent = newNormalAgent(chatModel)
-		                .tools(afterCalculatorSkillTools, abcHarnessFileTools, afterCalculatorSubmitTools)
+		                .tools(afterCalculatorSkillTools, agentWorkspaceFileTools, afterCalculatorSubmitTools)
 		                .build();
-        	} else if (ABC_PROGRAMMER.equals(agentName) || 
-        			ABC_PROGRAM_DASHBOARD_MAKER.equals(agentName) || 
+            } else if (ABC_PROGRAM_DASHBOARD_MAKER.equals(agentName) ||
         			READ_FUNCTION_MAKER.equals(agentName) ||
         			STATIC_READ_FUNCTION_NAME_MAKER.equals(agentName) ||
         			READ_FUNCTION_INSTANCER.equals(agentName) || 
@@ -362,25 +360,17 @@ public class MultiThreadAIChatService {
 		ChatModel chatModel = buildChatModel(cleverModel.model(),
 					false, FORMAL_DEFAULT_MAX_COMPLETION_TOKENS);
 				AiServices<NormalAgent> aiServices = newNormalAgent(chatModel);
-				if (ABC_PROGRAMMER.equals(agentName)) {
+				if (ABC_PROGRAM_DASHBOARD_MAKER.equals(agentName)) {
 					aiServices = aiServices.tools(
 							schemaSkillTools,
-							dataDetectorSkillTools,
-							abcHarnessFileTools,
-							dslSkillTools,
-							abcProgrammerSkillTools
-					);
-				} else if (ABC_PROGRAM_DASHBOARD_MAKER.equals(agentName)) {
-					aiServices = aiServices.tools(
-							schemaSkillTools,
-							abcHarnessFileTools,
+							agentWorkspaceFileTools,
 							abcProgramDashboardMakerSkillTools,
 							dashboardSubmitTools
 					);
 				} else if (READ_FUNCTION_MAKER.equals(agentName)) {
 					aiServices = aiServices.tools(
 							schemaSkillTools,
-							abcHarnessFileTools,
+							agentWorkspaceFileTools,
 							readFunctionMakerSkillTools,
 							readFunctionSubmitTools
 					);
@@ -392,7 +382,7 @@ public class MultiThreadAIChatService {
 					aiServices = aiServices.tools(
 							schemaSkillTools,
 							dataDetectorSkillTools,
-							abcHarnessFileTools,
+							agentWorkspaceFileTools,
 							dslSkillTools,
 							readFunctionMakerSkillTools,
 							metricViewSubmitTools
@@ -401,7 +391,7 @@ public class MultiThreadAIChatService {
 					aiServices = aiServices.tools(
 							schemaSkillTools,
 							dataDetectorSkillTools,
-							abcHarnessFileTools,
+							agentWorkspaceFileTools,
 							dslSkillTools,
 							sandboxSkillTools,
 							writeFunctionMakerSkillTools,
@@ -429,7 +419,7 @@ public class MultiThreadAIChatService {
 					false, FORMAL_DEFAULT_MAX_COMPLETION_TOKENS);
 				AiServices<NormalAgent> aiServices = newNormalAgent(chatModel);
 				if (DSL_COOKER.equals(agentName)) {
-					aiServices = aiServices.tools(dslSkillTools, dataDetectorSkillTools, abcHarnessFileTools, dslSubmitTools);
+					aiServices = aiServices.tools(dslSkillTools, dataDetectorSkillTools, agentWorkspaceFileTools, dslSubmitTools);
 				} else if (ABC_PROGRAM_DESCRIBER.equals(agentName)) {
 					aiServices = aiServices.tools(schemaSkillTools);
 				}

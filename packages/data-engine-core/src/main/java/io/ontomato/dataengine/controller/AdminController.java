@@ -739,32 +739,6 @@ public class AdminController {
 		return ret;
 	}
 
-	@PostMapping("/admin/saveAbcProgrammerExample")
-	@ResponseBody
-	public JSONObject saveAbcProgrammerExample(@RequestBody JSONObject param) {
-		JSONObject ret = new JSONObject();
-		try {
-			User user = SystemUtils.getCurUser();
-			boolean inheritDefault = Boolean.TRUE.equals(param.getBoolean("inheritDefault"));
-			String content = inheritDefault ? null : getRequiredExampleContent(param);
-			ret.put("success", adminService.saveAbcProgrammerExample(content, inheritDefault, user.getDomainId()));
-		} catch (Exception e) {
-			ret.put("success", false);
-			ret.put("message", e.getMessage());
-		}
-		return ret;
-	}
-
-	@GetMapping("/admin/getAbcProgrammerExample")
-	@ResponseBody
-	public JSONObject getAbcProgrammerExample() {
-		User user = SystemUtils.getCurUser();
-		JSONObject ret = new JSONObject();
-		ret.put("data", adminService.getAbcProgrammerExample(user.getDomainId()));
-		ret.put("success", true);
-		return ret;
-	}
-
 	private String getRequiredExampleContent(JSONObject param) {
 		if (!param.containsKey("content") || param.get("content") == null) {
 			throw new IllegalArgumentException("content is required when inheritDefault is false");

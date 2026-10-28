@@ -1,3 +1,4 @@
+import { callbackCredential } from "../agent-runtime/callback-credential";
 import { randomUUID } from "node:crypto";
 import type { Response } from "express";
 import {
@@ -5,7 +6,10 @@ import {
   type GovernanceSession,
   type GovernanceStreamEvent,
 } from "@ontomato/contracts/knowledge-governance";
-import type { RuntimeRunSnapshot, RuntimeSessionStatus } from "@ontomato/contracts/agent-runtime";
+import type {
+  RuntimeRunSnapshot,
+  RuntimeSessionStatus,
+} from "@ontomato/contracts/agent-runtime";
 import { RUNTIME_MODEL_NOT_CONFIGURED } from "@ontomato/contracts/agent-runtime-values";
 import { renderPrompt } from "../../core/prompts/loader";
 import { getRoleNotConfiguredMessage } from "../../config/model-resolver";
@@ -19,13 +23,22 @@ import type { GovernanceCredentials } from "./materials";
 import { governanceSkillRef } from "./skill";
 import { governanceChatMessages, governanceLiveSnapshot } from "./chat-view";
 
-const failureMessage = (run: Pick<NonNullable<RuntimeSessionStatus["latestRun"]>, "error">) =>
+const failureMessage = (
+  run: Pick<NonNullable<RuntimeSessionStatus["latestRun"]>, "error">,
+) =>
   run.error?.code === RUNTIME_MODEL_NOT_CONFIGURED
     ? getRoleNotConfiguredMessage("knowledgeGovernance")
     : "The governance response could not finish. Saved work is retained; please retry.";
-const governanceStatus = (status: RuntimeRunSnapshot["run"]["status"] | undefined) =>
-  status === "running" ? "running" : status === "failed" ? "failed"
-    : status === "cancelled" || status === "interrupted" ? "stopped" : "idle";
+const governanceStatus = (
+  status: RuntimeRunSnapshot["run"]["status"] | undefined,
+) =>
+  status === "running"
+    ? "running"
+    : status === "failed"
+      ? "failed"
+      : status === "cancelled" || status === "interrupted"
+        ? "stopped"
+        : "idle";
 
 export class GovernanceRuntime {
   async start(
@@ -61,7 +74,7 @@ export class GovernanceRuntime {
           modelRole: "knowledgeGovernance",
           skills: [governanceSkillRef],
           contextSkill: governanceSkillRef,
-          builtinTools: { workspaceFiles: false },
+          builtinTools: { workspaceFiles: false, python: false },
           externalMcp: [],
           compaction: {
             systemPrompt: renderPrompt(
@@ -83,7 +96,7 @@ export class GovernanceRuntime {
         },
         input: { role: "user", content: message, timestamp: Date.now() },
         privateContext: {
-          credential: credentials.apiKey
+          modelCredential: credentials.apiKey
             ? { kind: "api_key", value: credentials.apiKey }
             : credentials.token
               ? { kind: "token", value: credentials.token }
@@ -91,6 +104,13 @@ export class GovernanceRuntime {
           skillBindings: [
             {
               skill: governanceSkillRef,
+              credential: callbackCredential({
+                pathPrefix: `/api/knowledge-governance/${id}/runtime/`,
+                runId,
+                expiresAt: Date.now() + 60 * 60 * 1000,
+                token: credentials.token ?? "",
+                apiKey: credentials.apiKey ?? "",
+              }),
               targetUrl: `${environment.agentRuntime().callbackUrl.replace(/\/$/, "")}${config.apiBase}/knowledge-governance`,
               context: { governanceSessionId: id },
             },
@@ -154,22 +174,31 @@ export class GovernanceRuntime {
       records.map((record) => record.runtimeSessionId),
     );
     const byId = new Map(statuses.map((status) => [status.session.id, status]));
-    return Promise.all(records.map(async (record) => {
-      const status = byId.get(record.runtimeSessionId);
-      if (!status) throw new Error("Runtime status response is missing a requested session");
-      const latest = status.latestRun;
-      if (latest && latest.status !== "running") {
-        await governanceStore.closeRun(
-          record.id, owner, latest.id,
-          latest.status === "failed" ? failureMessage(latest) : undefined,
-        );
-        record = await governanceStore.get(record.id, owner);
-      }
-      return {
-        id: record.id, createdAt: record.createdAt, updatedAt: record.updatedAt,
-        status: governanceStatus(latest?.status),
-      };
-    }));
+    return Promise.all(
+      records.map(async (record) => {
+        const status = byId.get(record.runtimeSessionId);
+        if (!status)
+          throw new Error(
+            "Runtime status response is missing a requested session",
+          );
+        const latest = status.latestRun;
+        if (latest && latest.status !== "running") {
+          await governanceStore.closeRun(
+            record.id,
+            owner,
+            latest.id,
+            latest.status === "failed" ? failureMessage(latest) : undefined,
+          );
+          record = await governanceStore.get(record.id, owner);
+        }
+        return {
+          id: record.id,
+          createdAt: record.createdAt,
+          updatedAt: record.updatedAt,
+          status: governanceStatus(latest?.status),
+        };
+      }),
+    );
   }
   /** Each browser connection begins with a runtime snapshot; a host restart loses no authority. */
   async stream(

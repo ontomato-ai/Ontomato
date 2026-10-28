@@ -75,8 +75,6 @@ public interface AdminService {
 	
 	public String getDslCookerExample(String domainId);
 
-	public boolean saveAbcProgrammerExample(String content, boolean inheritDefault, String domainId);
 
-	public String getAbcProgrammerExample(String domainId);
 	
 }

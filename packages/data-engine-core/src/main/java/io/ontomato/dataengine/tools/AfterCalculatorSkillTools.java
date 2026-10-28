@@ -51,7 +51,7 @@ public class AfterCalculatorSkillTools {
 			}
 			BusinessConfig businessConfig = businessConfigService.get(callContext.getDomainId());
 			int timeout = businessConfig.getReportCardPythonTimeout();
-			PythonExecuteResult pythonExecuteResult = pythonExecuteService.runPythonCode(BackendSessionEntrance.derive(sessionId, "tool-exec"), code, timeout, lang);
+			PythonExecuteResult pythonExecuteResult = pythonExecuteService.execute(BackendSessionEntrance.derive(sessionId, "tool-exec"), code, timeout, lang, io.ontomato.dataengine.service.PythonAuthority.calculation(callContext.getDomainId()), new com.alibaba.fastjson2.JSONObject(), io.ontomato.dataengine.util.PythonInputFiles.staged(workspaceService.workspaceRoot(sessionId)));
 			if (!code.equals(Files.readString(file))) throw new IllegalStateException("The program file changed during execution, please test again");
 			String content = pythonExecuteResult.getResult();
 			String error = pythonExecuteResult.getError();

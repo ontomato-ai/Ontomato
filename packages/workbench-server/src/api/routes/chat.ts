@@ -1,3 +1,4 @@
+import { retrievalService } from "../../services/data-retrieval/service";
 import type { RunNotFoundEvent } from "@ontomato/contracts/chat";
 import type { ChatClientEvent } from "@ontomato/contracts/chat";
 import { Request, Response, Router } from "express";
@@ -63,6 +64,19 @@ router.post(
       ? runStreamStore.getRun(runId)
       : runStreamStore.getActiveRunByKey(chatRunKey(threadId));
     if (run) requireRunAccess(run, req as AuthenticatedRequest, chatRunKey(threadId));
+
+    if (run?.turn) {
+      const identity = req as AuthenticatedRequest;
+      await retrievalService.cancelParent(
+        run.turn.turnKey,
+        { domainId: requireDomainId(identity), userId: identity.userId },
+        {
+          token: identity.token,
+          apiKey: identity.apiKey,
+          locale: identity.locale,
+        },
+      );
+    }
 
     runWithOptionalTurn(run, () => {
       const cancelled = run ? runStreamStore.cancelByRunId(run.id) : false;

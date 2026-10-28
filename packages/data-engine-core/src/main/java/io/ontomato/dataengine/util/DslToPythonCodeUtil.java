@@ -14,32 +14,8 @@ public class DslToPythonCodeUtil {
     /** Starting indentation level of the dsl variable in the template (1 level inside try) */
     private static final int BASE_LEVEL = 1;
 
-    private static final String HEADER =
-            "import sys\n" +
-            "import json\n" +
-            "import requests\n" +
-            "import traceback\n" +
-            "\n" +
-            "def executeDsl(dsl: dict, userId: str, domainId: str) -> list:\n" +
-            "    url = f\"http://127.0.0.1:{port}/dsl/execute\"\n" +
-            "    resp = requests.post(url, json={\"dsl\": dsl, \"userId\": userId, \"domainId\": domainId}).json()\n" +
-            "    error = resp.get(\"error\")\n" +
-            "    if error:\n" +
-            "        raise Exception(error)\n" +
-            "    answer = resp[\"data\"][0]\n" +
-            "    return answer.get(\"answer\", [])\n" +
-            "\n" +
-            "if len(sys.argv) > 2:\n" +
-            "    userId = sys.argv[1]  # \"userId\"\n" +
-            "    domainId = sys.argv[2]  # \"domainId\"\n" +
-            "\n" +
-            "try:\n";
-
-    private static final String FOOTER =
-            "    rows = executeDsl(dsl, userId, domainId)\n" +
-            "    print(json.dumps({\"answer\": rows}, ensure_ascii=False))\n" +
-            "except Exception as e:\n" +
-            "    traceback.print_exc()\n";
+    private static final String HEADER = "# ontomato-python:2\nimport json\nfrom query_runtime import execute_dsl\n\n";
+    private static final String FOOTER = "\nrows = execute_dsl(dsl)\nprint(json.dumps({\"answer\": rows}, ensure_ascii=False))\n";
 
     /**
      * Entry method: DSL -> Python code
@@ -48,10 +24,10 @@ public class DslToPythonCodeUtil {
         if (dsl == null) {
             dsl = new JSONObject();
         }
-        String literal = render(dsl, BASE_LEVEL);
+        String literal = render(dsl, 0);
         StringBuilder sb = new StringBuilder();
-        sb.append(HEADER.replace("{port}", port));
-        sb.append(INDENT_UNIT).append("dsl = ").append(literal).append("\n");
+        sb.append(HEADER);
+        sb.append("dsl = ").append(literal).append("\n");
         sb.append(FOOTER);
         return sb.toString();
     }
