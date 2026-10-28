@@ -8,21 +8,10 @@ import type { PromptTranscriptFormat } from "@ontomato/contracts/observe";
 export interface WorkbenchContent {
   /** Product display name, the same value as Node product.serviceDisplayName: PPT author/company and the default brand name in appearance settings. */
   serviceDisplayName: string;
-  /** Name and description that identify the seeded default agent; on a match the current locale's default text is shown instead (agentDisplay). */
-  defaultAgentNames: readonly string[];
-  defaultAgentDescriptions: readonly string[];
   /** Analysis agent MCP server name, the same value as Node product.analysisMcpServerName: identifies that server among published services on the MCP page (McpManager.vue). */
   analysisMcpServerName: string;
   /** Operations agent MCP server name, the same value as Node product.opsMcpServerName: identifies that server the same way (McpManager.vue). */
   opsMcpServerName: string;
-  /**
-   * Original display of the agent edit dialog (AgentCreateDialog) on the admin "analysis agents" page
-   * (AnalysisAgentManager, whose own form labels also follow labelWrap). Open source: required asterisk on the right and wrapping labels;
-   * when omitted, the asterisk position is left unset and labels do not wrap.
-   */
-  agentDialogDisplay: { requireAsteriskPosition?: "right"; labelWrap?: boolean };
-  /** Original separator between "failed to load" and the error message in the analysis agent list load failure message (AnalysisAgentManager.vue). */
-  analysisAgentLoadErrorSeparator: string;
   /** Default input example for debugging the echarts skill (the original JSON.stringify(…, null, 2) result, SkillDebugDialog.vue), independent of the UI locale. */
   skillDebugEchartsInput: string;
   /**

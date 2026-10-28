@@ -151,6 +151,9 @@ watch(agentId, (_, previous) => {
   void loadSessions();
 });
 
+/** Hosts call this after editing agent definitions. */
+defineExpose({ reloadAgents: loadAgents });
+
 onMounted(async () => {
   const requested = agentId.value;
   await loadAgents();

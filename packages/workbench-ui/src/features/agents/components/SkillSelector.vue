@@ -56,8 +56,7 @@
   </div>
   <SkillFormDialog
     v-model:visible="showCreateDialog"
-    :initial-category="mode === 'visualization' ? 'visualization' : 'analysis'"
-    lock-category
+    initial-category="analysis"
     @created="handleSkillCreated"
   />
 </template>
@@ -82,13 +81,10 @@ const props = defineProps<{
   modelValue?: string[];
   title?: string;
   hint?: string;
-  mode?: "analysis" | "visualization";
 }>();
 
 const emit = defineEmits<{
   "update:modelValue": [value: string[]];
-  loaded: [skills: AnalysisSkill[]];
-  imported: [skill: SkillInfo];
 }>();
 
 const skills = ref<AnalysisSkill[]>([]);
@@ -112,7 +108,6 @@ async function importSkill(file: File, overwrite = false) {
       id: data.skill.id, action: overwrite ? t("admin.overwrite") : t("common.import"),
     }));
     await handleSkillCreated(data.skill);
-    emit("imported", data.skill);
   } catch (error) {
     if (error instanceof ApiRequestError && error.code === "SKILL_EXISTS") {
       try {
@@ -154,16 +149,16 @@ async function handleSkillCreated(skill: SkillInfo) {
   }
 }
 
-// Load the analysis skill list
+// One list for the agent: analysis and visualization skills alike.
 async function loadSkills() {
   loading.value = true;
   try {
     loadError.value = "";
-    skills.value =
-      props.mode === "visualization"
-        ? await skillsApi.listVisualizationSkills()
-        : await skillsApi.listAnalysisSkills();
-    emit("loaded", skills.value);
+    const [analysis, visualization] = await Promise.all([
+      skillsApi.listAnalysisSkills(),
+      skillsApi.listVisualizationSkills(),
+    ]);
+    skills.value = [...analysis, ...visualization];
   } catch (error) {
     skills.value = [];
     loadError.value = error instanceof Error ? error.message : String(error);

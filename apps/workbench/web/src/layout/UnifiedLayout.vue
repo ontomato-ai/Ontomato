@@ -13,7 +13,8 @@ const defaultLogo = `${import.meta.env.BASE_URL}ontomato-mark-green.svg`;
 </script>
 
 <template>
-  <BusinessWorkbench :default-logo="defaultLogo" default-brand-name="Ontomato">
+  <!-- Open source has no permission gate: every user may manage agents, as on the admin pages. -->
+  <BusinessWorkbench :default-logo="defaultLogo" default-brand-name="Ontomato" can-manage-agents>
     <template #footer>
       <WorkbenchUserMenu
         v-model:visible="showUserMenu"

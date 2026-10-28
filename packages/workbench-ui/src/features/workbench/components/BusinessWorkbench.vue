@@ -9,6 +9,7 @@ import type {
   ShellWorkbenchDeclaration,
 } from "@ontomato/contracts/agent-shell";
 import type { WorkbenchAppearance } from "@ontomato/contracts/workbench-appearance";
+import { AgentSettingsPage } from "../../agents";
 import { DashboardHome } from "../../dashboard";
 import { getWorkbenchAppearance } from "../api";
 import { businessArtifactRenderers } from "../artifacts";
@@ -24,6 +25,8 @@ const props = defineProps<{
   features?: ShellFeatureDeclaration[];
   defaultLogo: string;
   defaultBrandName: string;
+  /** Whether the current user may manage agent definitions (the edition's permission). */
+  canManageAgents: boolean;
 }>();
 
 const emit = defineEmits<{ featureAction: [id: string] }>();
@@ -37,6 +40,7 @@ const appearance = ref<WorkbenchAppearance | null>(null);
 const editingBrand = ref(false);
 const agentId = ref<string | null>(readRemembered());
 const featureId = ref<string | null>(null);
+const shell = ref<{ reloadAgents: () => Promise<void> } | null>(null);
 
 function readRemembered(): string | null {
   try {
@@ -59,13 +63,9 @@ const workbench = computed<ShellWorkbenchDeclaration>(() => ({
   features: [
     { id: "dashboards", label: t("assistant.featureDashboards"), icon: "dashboard", availability: "page" },
     ...(props.features ?? []),
-    {
-      id: "agent-config",
-      label: t("assistant.featureAgentConfig"),
-      icon: "agents",
-      availability: "unavailable",
-      hint: t("assistant.pending"),
-    },
+    ...(props.canManageAgents
+      ? [{ id: "agent-config", label: t("assistant.featureAgentConfig"), icon: "agents", availability: "page" as const }]
+      : []),
     {
       id: "schedule",
       label: t("assistant.featureSchedule"),
@@ -133,6 +133,7 @@ function appearanceSaved(value: WorkbenchAppearance) {
 
 <template>
   <AgentShell
+    ref="shell"
     v-model:agent-id="agentId"
     v-model:feature-id="featureId"
     :workbench="workbench"
@@ -158,6 +159,7 @@ function appearanceSaved(value: WorkbenchAppearance) {
     </template>
     <template #feature="{ featureId: page }">
       <DashboardHome v-if="page === 'dashboards'" />
+      <AgentSettingsPage v-else-if="page === 'agent-config'" @changed="shell?.reloadAgents()" />
       <slot v-else name="feature" :feature-id="page" />
     </template>
     <template #footer>

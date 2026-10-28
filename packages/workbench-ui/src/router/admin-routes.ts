@@ -90,7 +90,7 @@ export const adminRoutes = {
   analysis: {
     path: "analysis",
     name: "Analysis",
-    component: () => import("../features/admin/components/AnalysisAgentManager.vue"),
+    component: () => import("../features/agents/components/AgentSettingsPage.vue"),
     meta: { group: "app-capabilities", permissions: ["analysis-agent"] },
   },
   analysisPlans: {

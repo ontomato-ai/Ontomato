@@ -12,7 +12,6 @@ import {
   Users,
   Wallet,
 } from "lucide-vue-next";
-import { workbenchContent } from "../../../content";
 
 const lucideIconMap: Record<string, Component> = {
   Brain,
@@ -49,17 +48,21 @@ export const darkAvatarColorOptions = [
   "#42331d",
 ];
 
-export function displayAgentName(name: string | undefined, t: (key: string) => string): string {
-  if (!name) return "";
-  return workbenchContent().defaultAgentNames.includes(name) ? t("service.defaultAgentName") : name;
+/** The stored avatar of an agent definition: an icon key and a background colour. */
+export interface AgentAvatar {
+  key: string;
+  color: string;
 }
 
-export function displayAgentDescription(
-  desc: string | undefined,
-  t: (key: string) => string
-): string {
-  if (!desc) return "";
-  return workbenchContent().defaultAgentDescriptions.includes(desc)
-    ? t("service.defaultAgentDescription")
-    : desc;
+export function avatarIcon(key: string): Component {
+  return lucideIconMap[key] ?? Brain;
+}
+
+/** Keeps the chosen swatch when the theme changes: light and dark palettes correspond by index. */
+export function themedAvatarColor(color: string, isDark: boolean): string {
+  const from = isDark ? lightAvatarColorOptions : darkAvatarColorOptions;
+  const to = isDark ? darkAvatarColorOptions : lightAvatarColorOptions;
+  const index = from.indexOf(color);
+  if (index >= 0) return to[index]!;
+  return to.includes(color) ? color : to[0]!;
 }

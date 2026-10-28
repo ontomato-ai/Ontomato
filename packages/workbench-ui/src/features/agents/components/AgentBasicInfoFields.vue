@@ -6,7 +6,7 @@ import {
   avatarIconOptions,
   lightAvatarColorOptions,
   darkAvatarColorOptions,
-} from "../utils/agentDisplay";
+} from "../avatar";
 
 const name = defineModel<string>("name", { required: true });
 const description = defineModel<string>("description", { required: true });

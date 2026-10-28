@@ -9,16 +9,8 @@ import { ossWorkspaceArtifactText } from "../../src/workspace-artifact-text";
  */
 export const workbenchContent: WorkbenchContent = {
   serviceDisplayName: ossProduct.serviceDisplayName,
-  defaultAgentNames: ["Universal Agent", "General Agent", "Data Analysis Agent", "通用智能体", "通用智慧代理"],
-  defaultAgentDescriptions: [
-    "A general-purpose agent for all kinds of business scenarios, able to automatically decompose question dimensions and generate professional analysis reports",
-    "A general-purpose agent suitable for various business scenarios, capable of automatically decomposing question dimensions and generating professional analysis reports",
-    "An agent for business data analysis that automatically decomposes questions into analysis dimensions and generates professional reports",
-  ],
   analysisMcpServerName: ossProduct.analysisMcpServerName,
   opsMcpServerName: ossProduct.opsMcpServerName,
-  agentDialogDisplay: { requireAsteriskPosition: "right", labelWrap: true },
-  analysisAgentLoadErrorSeparator: ": ",
   skillDebugEchartsInput: JSON.stringify(
     {
       data: [
