@@ -1,0 +1,63 @@
+@import "markstream-vue/index.css";
+
+/*
+ * Message typography. markstream-vue derives its colours from HSL triplets; the shell maps the
+ * derived variables onto the workbench design tokens so light and dark themes follow the host.
+ */
+.agent-shell .shell-markdown {
+  --ms-text-body: var(--text-base, 15px);
+  --ms-leading-body: 1.7;
+  --ms-font-sans: var(--font-sans, inherit);
+  --ms-font-mono: var(--font-mono, ui-monospace, monospace);
+  --ms-radius: 10px;
+  --link-color: var(--el-color-primary);
+  --table-border: var(--el-border-color);
+  --table-header-bg: var(--el-fill-color-light);
+  --inline-code-bg: var(--el-fill-color);
+  --inline-code-fg: var(--el-text-color-primary);
+  --inline-code-border: transparent;
+  --code-bg: var(--el-fill-color-light);
+  --code-fg: var(--el-text-color-primary);
+  --code-border: var(--el-border-color-light);
+  --code-header-bg: var(--el-fill-color);
+  --blockquote-border: var(--el-border-color-dark);
+  --hr-border: var(--el-border-color);
+  --list-marker: var(--el-text-color-tertiary);
+  --list-counter-marker: var(--el-text-color-secondary);
+  color: var(--el-text-color-primary);
+  overflow-wrap: anywhere;
+}
+.agent-shell .shell-markdown > :first-child {
+  margin-top: 0;
+}
+.agent-shell .shell-markdown > :last-child {
+  margin-bottom: 0;
+}
+.agent-shell .shell-markdown h1,
+.agent-shell .shell-markdown h2,
+.agent-shell .shell-markdown h3,
+.agent-shell .shell-markdown h4 {
+  color: var(--el-text-color-primary);
+  letter-spacing: -0.005em;
+  line-height: 1.35;
+}
+.agent-shell .shell-markdown h1 {
+  font-size: 1.45em;
+}
+.agent-shell .shell-markdown h2 {
+  font-size: 1.25em;
+}
+.agent-shell .shell-markdown h3 {
+  font-size: 1.1em;
+}
+.agent-shell .shell-markdown strong {
+  font-weight: 600;
+  color: var(--el-text-color-primary);
+}
+.agent-shell .shell-markdown table {
+  font-size: var(--text-sm, 13px);
+}
+.agent-shell .shell-markdown pre {
+  border-radius: 12px;
+  font-size: var(--text-sm, 13px);
+}
