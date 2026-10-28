@@ -28,7 +28,6 @@ export interface BackendModelConfig {
 
 export interface BackendAgentConfig {
   model: string | null;
-  skilldir?: string;
 }
 
 export interface ModelSettingsData {
