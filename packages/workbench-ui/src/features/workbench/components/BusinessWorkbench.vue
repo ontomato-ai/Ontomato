@@ -166,7 +166,6 @@ function appearanceSaved(value: WorkbenchAppearance) {
   </AgentShell>
   <WorkbenchAppearanceDialog
     v-if="editingBrand"
-    section="brand"
     :default-logo="defaultLogo"
     @close="editingBrand = false"
     @saved="appearanceSaved"

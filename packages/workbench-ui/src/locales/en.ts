@@ -578,8 +578,7 @@ export default {
     "deleteChartConfirm": "Confirm delete chart \"{name}\"?",
     "myDashboards": "My Dashboards",
     "noDashboards": "No dashboards",
-    "getDashboardFailed": "Failed to get dashboard list",
-    "addAgent": "Add Agent"
+    "getDashboardFailed": "Failed to get dashboard list"
   },
   "hotData": {
     "dimensionPromptHint": "Dimension Prompt Hint",
@@ -805,15 +804,12 @@ export default {
     "noConversations": "No Conversations",
     "historyConversations": "History Conversations",
     "diagnoseTurn": "Diagnose this Turn",
-    "queryAgent": "Query Agent",
-    "queryAgentDesc": "Natural language queries, real-time data retrieval",
     "send": "Send",
     "toolCalls": "1 tool call | {count} tool calls",
     "toolFailures": "{count} failed",
     "partialResult": "Partial result: a processing or output limit of {rowLimit} was reached, so these results (even if empty) may not cover all matches."
   },
   "appearance": {
-    "qa": "Edit query agent",
     "brand": "Edit platform branding",
     "loadFailed": "Could not load appearance settings. Please retry.",
     "imageHint": "PNG, JPEG or WebP; square (1:1); up to 1 MiB. Recommended: 128×128.",
@@ -824,9 +820,7 @@ export default {
     "uploadLogo": "Upload logo",
     "defaultLogo": "Use default logo",
     "subtitle": "Subtitle",
-    "buttonText": "Button text",
     "reset": "Restore defaults",
-    "addAgentLabel": "Edit add button text",
     "domainRequired": "Sign in to a domain to edit.",
     "invalid": "Check text lengths, image and icon settings."
   },
