@@ -29,6 +29,10 @@ export const assistantAgentSchema = z.object({
   modelRole: runtimeKeySchema,
   skills: z.array(runtimeSkillRefSchema),
 }).strict();
+export const assistantAgentDefinitionSchema = assistantAgentSchema.extend({systemPrompt:z.string()});
+export const assistantAgentInputSchema = assistantAgentDefinitionSchema.omit({id:true});
+export type AssistantAgentDefinition=z.infer<typeof assistantAgentDefinitionSchema>;
+export type AssistantAgentInput=z.infer<typeof assistantAgentInputSchema>;
 export const assistantAgentListSchema = z.object({
   agents: z.array(assistantAgentSchema),
 }).strict();
