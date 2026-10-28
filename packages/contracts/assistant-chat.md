@@ -34,7 +34,13 @@ classNames scopes retrieval as before. graphScope selects initial ontology conte
 not the formal retrieval allow-list. External MCP names retain their existing domain
 configuration meaning. External MCP is not effective yet: names are saved/edited
 but are not passed into runtime (controller's provisional decision).
-Analysis and visualization skills share one RuntimeSkillRef list. Session messages,
+Analysis and visualization skills share one list. Definition writes may use
+`{name, namespace:{kind:"domain"}}` for a skill in the caller's domain; the server
+fills in the domain from the verified request identity, including the public
+edition's anonymous identity. If a write includes domainId, it must match that
+identity or return 403. The browser never chooses the effective domain. Definition
+reads and runtime admission still use complete RuntimeSkillRef values. Provider
+references keep `{kind:"provider",provider}` unchanged. Session messages,
 events and files remain runtime-owned; host indexes do not duplicate message bodies.
 
 Feedback upserts one value per user/session/run/target; dislike requires a reason.

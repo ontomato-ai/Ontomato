@@ -1,6 +1,9 @@
 import { z } from "zod";
 import { agentHostAgentSchema } from "./agent-host";
-import { runtimeSkillRefSchema } from "./agent-runtime-skills";
+import {
+  runtimeSkillNamespaceSchema,
+  runtimeSkillRefSchema,
+} from "./agent-runtime-skills";
 import { retrievalSnapshotSchema } from "./data-retrieval";
 import {
   runtimeKeySchema,
@@ -33,11 +36,23 @@ export const assistantAgentDefinitionListSchema = z
 export type AssistantAgentDefinitionList = z.infer<
   typeof assistantAgentDefinitionListSchema
 >;
+/** A definition write can refer to the caller's domain without knowing its ID. */
+export const assistantSkillInputSchema = runtimeSkillRefSchema.extend({
+  namespace: z.discriminatedUnion("kind", [
+    runtimeSkillNamespaceSchema.options[0],
+    z
+      .object({ kind: z.literal("domain"), domainId: runtimeKeySchema.optional() })
+      .strict(),
+  ]),
+});
 export const assistantAgentInputSchema = assistantAgentDefinitionSchema
   .omit({
     id: true,
   })
-  .extend({ modelRole: runtimeKeySchema.optional() });
+  .extend({
+    modelRole: runtimeKeySchema.optional(),
+    skills: z.array(assistantSkillInputSchema),
+  });
 export type AssistantAgentDefinition = z.infer<
   typeof assistantAgentDefinitionSchema
 >;
