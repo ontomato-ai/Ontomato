@@ -20,6 +20,7 @@ system prompt. Inaccessible/deleted resources return 404; no deletion tombstones
 | POST `/sessions` | `AssistantCreateSession` | 201 `AssistantCreateSessionResponse` |
 | GET `S` | — | `AssistantSessionSnapshot` |
 | DELETE `S` | — | 204; active run: 409 `SESSION_BUSY` |
+| POST `S/export/ppt` | `{}` | PPTX bytes from runtime history and accepted datasets |
 | POST `S/runs` | `{message:string}` | 202 `AssistantAdmission` |
 | GET `R` | — | `AssistantRunSnapshot` |
 | GET `R/events` | `afterSeq`, `streamId` from snapshot cursor | SSE |
