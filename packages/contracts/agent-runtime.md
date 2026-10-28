@@ -249,8 +249,8 @@ not empty files. Blob paths remain private to the runtime.
 
 Path resolution selects the last occurrence for that path through atSeq in the
 specified run (or its inherited session baseline); responses retain the owning
-run. Without atSeq it uses that run's current/final boundary. A historical message
-uses its own event boundary, never a later run's mutable workspace. If no artifact
+run. Without atSeq it uses that run's current/final boundary. The shell resolves a message's path at its owning run's final/current boundary,
+never a later run's mutable workspace; atSeq remains available to other consumers. If no artifact
 exists yet, render pending/unavailable rather than guess. Hashes may deduplicate
 bytes across scopes; every read still requires an authorized artifact ID.
 

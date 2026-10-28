@@ -20,8 +20,8 @@ The exported ARTIFACT_MARKDOWN_PROMPT constant is the only copy of this rule;
 governance, retrieval and the main assistant consume it and do not rewrite it.
 This does not restrict standard Markdown references in an external agent.
 
-The shell resolves a closed Markdown destination within the referencing message's
-run: `(runId, path)` selects that run's version of the file at the end of the run,
+The shell resolves a closed Markdown destination to the authorized artifact
+within the referencing message's run: `(runId, path)` selects that run's version of the file at the end of the run,
 or the current version while the run is still running. It then dispatches by
 extension: .chart.json → ECharts, .csv/.json → table, .png and other images →
 image, .html → sandbox iframe, .md → Markdown. Unknown extensions use a file
