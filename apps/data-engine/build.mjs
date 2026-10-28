@@ -52,11 +52,7 @@ export const app = {
         "mvnw.cmd",
         ".mvn",
         "packages/data-engine-core/pom.xml",
-        "agent-skills/ontomato-analyst/SKILL.md",
-        "agent-skills/ontomato-analyst/runtime.json",
-        "agent-skills/ontomato-analyst/runtime.mjs",
-        "agent-skills/ontomato-analyst/python",
-        "agent-skills/ontomato-analyst/references/dsl.md",
+        "agent-skills/ontomato-analyst",
         "packages/data-engine-core/src/main",
         // Every adapter depends on the shared contract tests in test scope, so Maven resolves it even with tests skipped.
         "packages/data-adapter-test-support/pom.xml",
