@@ -9,11 +9,7 @@ import { ontologyOutlineSchema, vectorRebuildStatusSchema } from "../system";
 
 const generalConfigSaveEndpoints: Record<GeneralConfigKey, string> = {
   knowledgeMaxResult: "/businessConfig/saveKnowledgeMaxResult",
-  toolAndPythonRetry: "/businessConfig/saveToolAndPythonRetry",
-  dslCookerTries: "/businessConfig/saveDslCookerTries",
   dslCookerTimeout: "/businessConfig/saveDslCookerTimeout",
-  questionSpliterTries: "/businessConfig/saveQuestionSpliterTries",
-  questionSpliterTimeout: "/businessConfig/saveQuestionSpliterTimeout",
   lang: "/businessConfig/saveLang",
 };
 
@@ -22,7 +18,6 @@ export const adminApi = {
   getModelSettings: () => apiGet("/businessConfig/getModelSettings"),
   saveModelSettings: (payload: { models: ModelEntry[]; agents: RoleModels }) =>
     apiPost("/businessConfig/saveModelSettings", payload),
-  saveToolSkillDir: (skilldir: string) => apiPost("/businessConfig/saveToolSkillDir", { skilldir }),
   testModel: (model: ModelEntry, prompt: string) =>
     apiPost("/businessConfig/testModel", { model, prompt }),
   saveEmbeddingModel: (payload: unknown) => apiPost("/businessConfig/saveEmbeddingModel", payload),
@@ -43,7 +38,7 @@ export const adminApi = {
   rebuildVectors: () => apiPost("/businessConfig/rebuildVectors"),
   pauseVectorRebuild: () => apiPost("/businessConfig/pauseVectorRebuild"),
   getSystemModelConfig: () => nodeApiGet("/system-model-config"),
-  saveSystemModelConfig: (payload: SystemModelConfig) =>
+  saveSystemModelConfig: (payload: Pick<SystemModelConfig, "queryTimeoutSeconds">) =>
     nodeApiPost("/system-model-config/save", payload),
   queryAuditLogs: (params: unknown) => apiPost("/auditLog/queryPage", params),
   getServiceInfo: () => apiGet("/maintenance/getserviceinfo"),

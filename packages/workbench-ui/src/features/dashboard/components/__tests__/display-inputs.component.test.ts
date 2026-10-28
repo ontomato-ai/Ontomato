@@ -3,7 +3,6 @@ import { flushPromises, mount } from "@vue/test-utils";
 import { createPinia } from "pinia";
 import { createMemoryHistory, createRouter } from "vue-router";
 import ElementPlus from "element-plus";
-import DashboardSidebarPopover from "../DashboardSidebarPopover.vue";
 import ChartZoomModal from "../ChartZoomModal.vue";
 import { workbenchI18n } from "../../../../i18n";
 import { installWorkbenchContent, workbenchContent, type DashboardVisuals } from "../../../../content";
@@ -35,19 +34,6 @@ const router = createRouter({ history: createMemoryHistory(), routes: [{ path: "
 const global = () => ({ plugins: [workbenchI18n(), createPinia(), router, ElementPlus] });
 
 describe("dashboard display inputs under both layouts", () => {
-  it("my dashboards close button: plain text x by default; an icon button with an accessible label in the open-source layout", () => {
-    const text = mount(DashboardSidebarPopover, { global: global() }).find(".dashboard-close-btn");
-    expect(text.text()).toBe("x");
-    expect(text.attributes("aria-label")).toBeUndefined();
-    expect(text.find("svg").exists()).toBe(false);
-
-    const icon = mount(DashboardSidebarPopover, { props: { closeIcon: true }, global: global() }).find(
-      ".dashboard-close-btn"
-    );
-    expect(icon.attributes()).toMatchObject({ type: "button", "aria-label": "Close", title: "Close" });
-    expect(icon.find("svg").exists()).toBe(true);
-  });
-
   async function openZoom() {
     const wrapper = mount(ChartZoomModal, { props: { option: { series: [] } }, global: global() });
     // The component is a JS <script setup>, so test-utils cannot infer its props type.

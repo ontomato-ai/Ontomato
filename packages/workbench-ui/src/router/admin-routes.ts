@@ -48,11 +48,6 @@ export const adminRoutes = {
     }),
     meta: managerMeta,
   },
-  hotData: {
-    path: "hot-data",
-    redirect: "/admin/analysis-plans",
-    meta: { group: "app-capabilities", permissions: ["hot-data"] },
-  },
   metricViews: {
     path: "metric-views",
     redirect: "/admin/ontology-manager?view=assets",
@@ -71,12 +66,6 @@ export const adminRoutes = {
     redirect: "/admin/ontology-manager?view=knowledge",
     meta: { group: "data-assets", permissions: ["business-knowledge"] },
   },
-  examples: {
-    path: "examples",
-    name: "QueryExamples",
-    component: () => import("../features/admin/components/intelligence-engine/ExamplesManager.vue"),
-    meta: { group: "platform-management", permissions: ["query-examples"] },
-  },
   actionManagement: {
     path: "action-management",
     redirect: "/admin/ontology-manager?view=assets",
@@ -90,14 +79,8 @@ export const adminRoutes = {
   analysis: {
     path: "analysis",
     name: "Analysis",
-    component: () => import("../features/admin/components/AnalysisAgentManager.vue"),
+    component: () => import("../features/agents/components/AgentSettingsPage.vue"),
     meta: { group: "app-capabilities", permissions: ["analysis-agent"] },
-  },
-  analysisPlans: {
-    path: "analysis-plans",
-    name: "AnalysisPlans",
-    component: () => import("../features/admin/components/hot-report/HotReportManager.vue"),
-    meta: { group: "app-capabilities", permissions: ["hot-data"] },
   },
   systemAgents: {
     path: "system-agents",

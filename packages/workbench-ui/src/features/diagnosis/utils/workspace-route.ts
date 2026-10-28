@@ -1,13 +1,15 @@
 import type { RouteLocationRaw } from "vue-router";
-import type { ResponseSnapshot } from "../../../types/chat";
 
 export const TURN_COLLECT_QUERY_VALUE = "1";
 export const TURN_DIAGNOSE_QUERY_VALUE = "1";
 
-/** Identity needed to locate a Turn; a reply snapshot satisfies it. */
-export type TurnIdentity = Partial<
-  Pick<ResponseSnapshot, "status" | "turnKey" | "threadId" | "requestSeq">
->;
+/** Identity needed to locate a Turn. */
+export interface TurnIdentity {
+  status?: string;
+  turnKey?: string;
+  threadId?: string;
+  requestSeq?: number;
+}
 
 /** The Turn of a reply: the server turnKey, else thread + request sequence; empty when neither is known. */
 export function snapshotTurnKey(snapshot: TurnIdentity): string {
