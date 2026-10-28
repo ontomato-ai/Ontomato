@@ -155,7 +155,6 @@ public class BusinessConfigController {
 			}
 
 			BusinessConfig stored = businessConfigService.get(user.getDomainId());
-			String existingSkillDir = stored.getAgents().get(AgentRole.CODING).getSkilldir();
 			// The first model saved into an empty library also fills every empty role reference, so a first
 			// setup needs no separate role step; a batch from empty, a second model or later edits assign nothing.
 			String firstModelName = stored.getModels().isEmpty() && models.size() == 1 ? models.get(0).getName() : null;
@@ -182,9 +181,6 @@ public class BusinessConfigController {
 				}
 				AgentConfig agent = new AgentConfig();
 				agent.setModel(modelRef);
-				if (AgentRole.CODING.equals(role)) {
-					agent.setSkilldir(existingSkillDir);
-				}
 				newAgents.put(role, agent);
 			}
 			candidate.setAgents(newAgents);
@@ -206,28 +202,6 @@ public class BusinessConfigController {
 		return ret;
 	}
 
-	@PostMapping("/businessConfig/saveToolSkillDir")
-	@ResponseBody
-	public JSONObject saveToolSkillDir(@RequestBody JSONObject input) {
-		JSONObject ret = new JSONObject();
-		try {
-			User user = SystemUtils.getCurUser();
-			Object raw = input.get("skilldir");
-			if (!(raw instanceof String skilldir)) {
-				throw new IllegalArgumentException("skilldir must be a string");
-			}
-			BusinessConfig businessConfig = businessConfigService.get(user.getDomainId());
-			businessConfig.getAgents().get(AgentRole.CODING).setSkilldir(skilldir);
-			businessConfigService.set(businessConfig, user.getDomainId());
-			ret.put("success", true);
-		} catch (Exception e) {
-			log.error(e.getMessage(), e);
-			ret.put("success", false);
-			ret.put("message", e.getMessage());
-		}
-		return ret;
-	}
-	
 	@PostMapping("/businessConfig/testEmbeddingModel")
     @ResponseBody
     public JSONObject testEmbeddingModel(@RequestBody JSONObject input) {
@@ -345,49 +319,7 @@ public class BusinessConfigController {
     	}
 		return ret;
 	}
-	
-	@PostMapping("/businessConfig/saveToolAndPythonRetry")
-    @ResponseBody
-    public JSONObject saveToolAndPythonRetry(@RequestBody JSONObject input) {
-    	JSONObject ret = new JSONObject();
-    	try {
-    		User user = SystemUtils.getCurUser();
-    		Integer toolAndPythonRetry = input.getInteger("toolAndPythonRetry");
-    		if (toolAndPythonRetry != null) {
-    			BusinessConfig businessConfig = businessConfigService.get(user.getDomainId());
-        		businessConfig.setToolAndPythonRetry(toolAndPythonRetry);
-        		businessConfigService.set(businessConfig, user.getDomainId());
-    		}
-    		ret.put("success", true);
-    	} catch (Exception e) {
-    		log.error(e.getMessage(), e);
-    		ret.put("success", false);
-    		ret.put("message", e.getMessage());
-    	}
-		return ret;
-	}
-	
-	@PostMapping("/businessConfig/saveDslCookerTries")
-    @ResponseBody
-    public JSONObject saveDslCookerTries(@RequestBody JSONObject input) {
-    	JSONObject ret = new JSONObject();
-    	try {
-    		User user = SystemUtils.getCurUser();
-    		Integer dslCookerTries = input.getInteger("dslCookerTries");
-    		if (dslCookerTries != null && dslCookerTries > 0) {
-    			BusinessConfig businessConfig = businessConfigService.get(user.getDomainId());
-        		businessConfig.setDslCookerTries(dslCookerTries);
-        		businessConfigService.set(businessConfig, user.getDomainId());
-    		}
-    		ret.put("success", true);
-    	} catch (Exception e) {
-    		log.error(e.getMessage(), e);
-    		ret.put("success", false);
-    		ret.put("message", e.getMessage());
-    	}
-		return ret;
-	}
-	
+
 	@PostMapping("/businessConfig/saveDslCookerTimeout")
     @ResponseBody
     public JSONObject saveDslCookerTimeout(@RequestBody JSONObject input) {
@@ -408,49 +340,7 @@ public class BusinessConfigController {
     	}
 		return ret;
 	}
-	
-	@PostMapping("/businessConfig/saveQuestionSpliterTries")
-    @ResponseBody
-    public JSONObject saveQuestionSpliterTries(@RequestBody JSONObject input) {
-    	JSONObject ret = new JSONObject();
-    	try {
-    		User user = SystemUtils.getCurUser();
-    		Integer questionSpliterTries = input.getInteger("questionSpliterTries");
-    		if (questionSpliterTries != null && questionSpliterTries > 0) {
-    			BusinessConfig businessConfig = businessConfigService.get(user.getDomainId());
-        		businessConfig.setQuestionSpliterTries(questionSpliterTries);
-        		businessConfigService.set(businessConfig, user.getDomainId());
-    		}
-    		ret.put("success", true);
-    	} catch (Exception e) {
-    		log.error(e.getMessage(), e);
-    		ret.put("success", false);
-    		ret.put("message", e.getMessage());
-    	}
-		return ret;
-	}
-	
-	@PostMapping("/businessConfig/saveQuestionSpliterTimeout")
-    @ResponseBody
-    public JSONObject saveQuestionSpliterTimeout(@RequestBody JSONObject input) {
-    	JSONObject ret = new JSONObject();
-    	try {
-    		User user = SystemUtils.getCurUser();
-    		Long questionSpliterTimeout = input.getLong("questionSpliterTimeout");
-    		if (questionSpliterTimeout != null && questionSpliterTimeout > 0) {
-    			BusinessConfig businessConfig = businessConfigService.get(user.getDomainId());
-        		businessConfig.setQuestionSpliterTimeout(questionSpliterTimeout);
-        		businessConfigService.set(businessConfig, user.getDomainId());
-    		}
-    		ret.put("success", true);
-    	} catch (Exception e) {
-    		log.error(e.getMessage(), e);
-    		ret.put("success", false);
-    		ret.put("message", e.getMessage());
-    	}
-		return ret;
-	}
-	
+
 	@PostMapping("/businessConfig/saveLang")
     @ResponseBody
     public JSONObject saveLang(@RequestBody JSONObject input) {

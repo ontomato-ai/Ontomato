@@ -103,11 +103,7 @@ public class BusinessConfigServiceImpl implements BusinessConfigService {
 		JSONObject ontomato = new JSONObject();
 		DataRagConfig drc = JSON.parseObject(JSON.toJSONString(dataRagConfig), DataRagConfig.class);
 		drc.setKnowledgeMaxResult(businessConfig.getKnowledgeMaxResult());
-		drc.setToolAndPythonRetry(businessConfig.getToolAndPythonRetry());
-		drc.setDslCookerTries(businessConfig.getDslCookerTries());
 		drc.setDslCookerTimeout(businessConfig.getDslCookerTimeout());
-		drc.setQuestionSpliterTries(businessConfig.getQuestionSpliterTries());
-		drc.setQuestionSpliterTimeout(businessConfig.getQuestionSpliterTimeout());
 		drc.setDataAdapter(businessConfig.getDataAdapter());
 		ontomato.put("data-engine", drc);
 		ontomato.put("sso", identityRuntimeSettings.ssoSettings());
@@ -152,9 +148,6 @@ public class BusinessConfigServiceImpl implements BusinessConfigService {
 		for (String role : AgentRole.ALL) {
 			AgentConfig agent = businessConfig.getAgents().get(role);
 			JSONObject item = JSONObject.of("model", agent.getModel());
-			if (AgentRole.CODING.equals(role)) {
-				item.put("skilldir", agent.getSkilldir());
-			}
 			agents.put(role, item);
 		}
 		openAi.put("agents", agents);
@@ -171,11 +164,7 @@ public class BusinessConfigServiceImpl implements BusinessConfigService {
 		JSONObject dataEngine = new JSONObject();
 		dataEngine.put("dataAdapter", businessConfig.getDataAdapter());
 		dataEngine.put("knowledgeMaxResult", businessConfig.getKnowledgeMaxResult());
-		dataEngine.put("toolAndPythonRetry", businessConfig.getToolAndPythonRetry());
-		dataEngine.put("dslCookerTries", businessConfig.getDslCookerTries());
 		dataEngine.put("dslCookerTimeout", businessConfig.getDslCookerTimeout());
-		dataEngine.put("questionSpliterTries", businessConfig.getQuestionSpliterTries());
-		dataEngine.put("questionSpliterTimeout", businessConfig.getQuestionSpliterTimeout());
 		view.put("ontomato", JSONObject.of("data-engine", dataEngine));
 
 		view.put("subQueryCacheDir", new File("conf/" + DaoConst.SUB_QUERY_CACHE_DIR_NAME).getAbsolutePath());
@@ -190,11 +179,7 @@ public class BusinessConfigServiceImpl implements BusinessConfigService {
 				+ "and agents (the model references of the five roles) can take effect promptly after being configured through the page or API, and are retained after restart. "
 				+ "This diagnosis view lists only non-secret fields: whether a model or Embedding connection is configured is shown, never its address, key, headers or custom request parameters.\n"
 				+ "The configurations `ontomato.data-engine.knowledgeMaxResult`, "
-				+ "`ontomato.data-engine.toolAndPythonRetry`, "
-				+ "`ontomato.data-engine.dslCookerTries`, "
 				+ "`ontomato.data-engine.dslCookerTimeout`, "
-				+ "`ontomato.data-engine.questionSpliterTries`, "
-				+ "`ontomato.data-engine.questionSpliterTimeout`, "
 				+ "`ontomato.data-engine.dataAdapter` all take effect promptly after being configured through the page.\n"
 				+ "Apart from these configuration items, other configurations take effect only after the on-site conf/application.yml is updated, or an environment variable that the kept file still references is updated, and the application is restarted. "
 				+ "Environment variable aliases apply through placeholders that remain in that file; removing a placeholder does not guarantee the alias still overrides the file.";

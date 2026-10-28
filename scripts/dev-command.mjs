@@ -1,4 +1,3 @@
-import { ensurePythonEnv } from "./data-engine/dev-java.mjs";
 // Native replacement for POSIX-only environment assignments in package scripts.
 // Uses the already installed development CLIs, not a second shell or dependency.
 import { spawn } from "node:child_process";
@@ -7,7 +6,7 @@ import { createRequire } from "node:module";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { runtimeEnvironment, waitForRuntime } from "./dev-runtime.mjs";
+import { ensurePythonEnv, runtimeEnvironment, waitForRuntime } from "./dev-runtime.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const WINDOWS = process.platform === "win32";

@@ -41,10 +41,6 @@
         <langchain4j-beta.version>1.13.0-beta23</langchain4j-beta.version>
         <!-- Overrides the Spring Boot BOM (1.21.0), whose Docker API default is rejected by Docker Engine 29. -->
         <testcontainers.version>1.21.4</testcontainers.version>
-        <!-- Host dev Python for the spring-boot:run configuration below: the MCP/skills venv of the
-             inheriting app, relative to it. This property is its only source; the Windows profile at
-             the end of this file swaps in the Scripts/python.exe layout. -->
-        <datarag.venv.python>.venv/bin/python</datarag.venv.python>
     </properties>
 
     <dependencyManagement>
@@ -67,11 +63,6 @@
             <dependency>
                 <groupId>dev.langchain4j</groupId>
                 <artifactId>langchain4j-mcp</artifactId>
-                <version>${langchain4j-beta.version}</version>
-            </dependency>
-            <dependency>
-                <groupId>dev.langchain4j</groupId>
-                <artifactId>langchain4j-skills</artifactId>
                 <version>${langchain4j-beta.version}</version>
             </dependency>
             <dependency>
@@ -147,8 +138,7 @@
                 </plugin>
                 <!-- Host dev run (apps/data-engine/dev.mjs), pluginManagement only so package keeps the thin jar.
                      ${project.basedir} is the inheriting app: .dev is its data root (conf first on the
-                     classpath, like /deploy in the container) and .venv its MCP/skills Python
-                     (datarag.venv.python, Scripts/python.exe on Windows). -->
+                     classpath, like /deploy in the container). -->
                 <plugin>
                     <groupId>org.springframework.boot</groupId>
                     <artifactId>spring-boot-maven-plugin</artifactId>
@@ -181,18 +171,4 @@
         </plugins>
     </build>
 
-    <profiles>
-        <!-- Windows virtualenv layout for datarag.venv.python; the POSIX default above is unchanged. -->
-        <profile>
-            <id>windows-venv</id>
-            <activation>
-                <os>
-                    <family>windows</family>
-                </os>
-            </activation>
-            <properties>
-                <datarag.venv.python>.venv/Scripts/python.exe</datarag.venv.python>
-            </properties>
-        </profile>
-    </profiles>
 </project>

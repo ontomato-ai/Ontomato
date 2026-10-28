@@ -1,16 +1,16 @@
 # DataRAG final runnable image, shared by both editions.
 #
 # The Maven export stages compile the reactor inside Docker and hand their output
-# to the final stage: JRE 21, Python 3.10 with the pinned packages, the
+# to the final stage: JRE 21, the
 # third-party runtime dependencies, then this build's own jars, default
-# configuration, skills, MCP service and startup files. Nothing is assembled
+# configuration, skills and startup files. Nothing is assembled
 # outside this image, and the image is what runs online and offline.
 #
 # The public component consumes build-central (empty Maven settings). The
 # enterprise component consumes build-secret: its private settings arrive as a
 # BuildKit secret and its license jar check runs in the same JDK stage.
 ARG JDK_IMAGE=docker.io/library/eclipse-temurin:21-jdk-jammy@sha256:c7d5863b5dd8f26b90c64f1d80cc2b0e5a5e4642f8db9955a370d348edd8f438
-ARG PYTHON_RUNTIME_IMAGE=docker.io/library/python:3.10-slim-bookworm@sha256:2559be987fd64d61badbdafd303ea58a9ccab36d6c3c08bce219e762177d2eca
+ARG PYTHON_BUILD_IMAGE=docker.io/library/python:3.10-slim-bookworm@sha256:2559be987fd64d61badbdafd303ea58a9ccab36d6c3c08bce219e762177d2eca
 ARG JRE_IMAGE=docker.io/library/eclipse-temurin:21-jre-jammy@sha256:61d6c7b34d36aee3f45d043101259f97f3c6d428dc2a6f75513789983c5e254f
 # Which export stage the final image copies from. The builder selects it: the
 # public component builds build-central, the enterprise component build-secret.
@@ -156,61 +156,32 @@ RUN --mount=type=secret,id=maven-settings,required=true \
 # component never evaluates the enterprise source or the secret stage.
 FROM ${EXPORT_STAGE} AS exported
 
-# ---- Runtime base: JRE 21 and Python 3.10 with the pinned packages ----
+# ---- Build-only verification and notices; Python never enters the final image ----
 FROM ${JRE_IMAGE} AS jre
 
-FROM ${PYTHON_RUNTIME_IMAGE} AS runtime-base
-ARG PIP_INDEX_URL=https://pypi.org/simple
-ENV JAVA_HOME=/opt/java/openjdk
-ENV PATH=/opt/java/openjdk/bin:$PATH
-ENV LANG=C.UTF-8
-
-COPY --from=jre /opt/java/openjdk /opt/java/openjdk
-
-COPY requirements-py310.txt /tmp/requirements-py310.txt
-# The pinned list is the whole installed set: --no-deps installs only it, and
-# pip check fails if it misses one.
-RUN pip install --no-cache-dir --no-deps -i "${PIP_INDEX_URL}" -r /tmp/requirements-py310.txt \
-    && pip check \
-    && python -c "import pandas, requests, numpy, mcp, sympy" \
-    && rm -rf /usr/local/lib/python3.10/site-packages/pip* /usr/local/lib/python3.10/site-packages/setuptools* /usr/local/lib/python3.10/site-packages/pkg_resources /usr/local/bin/pip* \
-    && python -c "import pandas, requests, numpy, mcp, sympy"
-# pip/setuptools are used only during the build above: at runtime python runs only calculation scripts and the MCP service (pip is unavailable).
-RUN if python -m pip --version >/dev/null 2>&1; then echo "pip still present, must be removed from runtime" >&2; exit 1; fi
-
-# ---- Final runnable image ----
-FROM runtime-base AS image
+FROM ${PYTHON_BUILD_IMAGE} AS assembly
 ARG TARGETARCH
-
-# Third-party dependencies first, so this layer follows the pinned dependency set
-# and not the product source: an ordinary source change reuses it.
+ENV JAVA_HOME=/opt/java/openjdk
+COPY --from=jre /opt/java/openjdk/release /opt/java/openjdk/release
 COPY --from=exported /out/runtime-lib/ /opt/datarag/lib/
-COPY requirements-py310.txt /opt/datarag/requirements.txt
 COPY LICENSE NOTICE /licenses/
-# Third-party notices of what this image installs, under /licenses, next to the
-# dependencies they describe: every file under lib/ joined with the export's Maven
-# license records (lib/ itself stays byte-identical to the export), and the
-# distributions pip left installed. The system section names where the base images
-# keep their own.
 RUN --mount=type=bind,from=exported,source=/out/maven-licenses.json,target=/tmp/maven-licenses.json \
     --mount=type=bind,source=tools/third_party_notices.py,target=/tmp/third_party_notices.py \
-    python /tmp/third_party_notices.py /licenses/THIRD_PARTY_NOTICES.txt --python --jars /opt/datarag/lib /tmp/maven-licenses.json <<'EOF'
-Debian packages of the python:3.10-slim-bookworm base: /usr/share/doc/<package>/copyright
-Python 3.10 interpreter and standard library: /usr/local/lib/python3.10/LICENSE.txt
-Eclipse Temurin 21 JRE (copied alone from the eclipse-temurin JRE image): /opt/java/openjdk/NOTICE
-and /opt/java/openjdk/legal/
+    python /tmp/third_party_notices.py /licenses/THIRD_PARTY_NOTICES.txt --jars /opt/datarag/lib /tmp/maven-licenses.json <<'EOF'
+Ubuntu packages of the Eclipse Temurin JRE base: /usr/share/doc/<package>/copyright
+Eclipse Temurin 21 JRE: /opt/java/openjdk/NOTICE and /opt/java/openjdk/legal/
 EOF
-
-# This build's own jars, then the product resources and startup files. The
-# startup script permissions are set at the image boundary with COPY --chmod,
-# independently of the build host's filesystem permissions.
 COPY --from=exported /out/app/lib/ /app/lib/
 COPY payload/ /app/
 COPY --chmod=0755 payload/bin/ /app/bin/
-# The build fails here rather than at first start if the assembled image cannot
-# run on the JRE it carries.
 RUN --mount=type=bind,source=tools/verify-image.py,target=/tmp/verify-image.py \
     python /tmp/verify-image.py --app /app --lib /opt/datarag/lib --arch "${TARGETARCH}"
+
+# ---- Final runnable image: JRE only ----
+FROM jre AS image
+COPY --from=assembly /opt/datarag/lib/ /opt/datarag/lib/
+COPY --from=assembly /licenses/ /licenses/
+COPY --from=assembly /app/ /app/
 
 # The product version and build identity the image labels carry, for the running
 # service to report its own version (the enterprise license page shows them).

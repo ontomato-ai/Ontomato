@@ -1,29 +1,21 @@
 package io.ontomato.dataengine.service.ai;
 
-import java.nio.file.Path;
 import java.util.List;
 import java.util.UUID;
 
 import io.ontomato.dataengine.tools.ABCProgramDashboardMakerSkillTools;
 import io.ontomato.dataengine.tools.ActionCodeExplainerSkillTools;
-import io.ontomato.dataengine.tools.AfterCalculatorResultSubmitTools;
-import io.ontomato.dataengine.tools.AfterCalculatorSkillTools;
-import io.ontomato.dataengine.tools.AfterCalculatorSubmitTools;
 import io.ontomato.dataengine.tools.DataDetectorSkillTools;
 import io.ontomato.dataengine.tools.DslSkillTools;
-import io.ontomato.dataengine.tools.DslSubmitTools;
 import io.ontomato.dataengine.tools.MetricViewSubmitTools;
 import io.ontomato.dataengine.tools.ReadFunctionMakerSkillTools;
 import io.ontomato.dataengine.tools.ReadFunctionSubmitTools;
 import io.ontomato.dataengine.tools.SandboxSkillTools;
 import io.ontomato.dataengine.tools.SchemaSkillTools;
-import io.ontomato.dataengine.tools.SkillTools;
 import io.ontomato.dataengine.tools.ActionSubmitTools;
 import io.ontomato.dataengine.tools.DashboardSubmitTools;
 import io.ontomato.dataengine.tools.WriteFunctionMakerSkillTools;
 
-import dev.langchain4j.skills.FileSystemSkillLoader;
-import dev.langchain4j.skills.Skills;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
@@ -37,7 +29,6 @@ import io.ontomato.dataengine.tools.AgentWorkspaceFileTools;
 import io.ontomato.dataengine.logging.AgentLlmCallListener;
 import io.ontomato.dataengine.util.LogHelper;
 
-import dev.langchain4j.service.tool.ToolProvider;
 import dev.langchain4j.memory.chat.ChatMemoryProvider;
 import dev.langchain4j.agent.tool.ToolExecutionRequest;
 import dev.langchain4j.data.message.ToolExecutionResultMessage;
@@ -52,22 +43,7 @@ import lombok.extern.slf4j.Slf4j;
 @Slf4j
 @Component("multiThreadAIChatService")
 public class MultiThreadAIChatService {
-	
-	public static final String QUESTION_SPLITER_V0 = "QUESTION_SPLITER_V0";
-	public static final String QUESTION_SPLITER_V1 = "QUESTION_SPLITER_V1";
-	public static final String QUESTION_SPLITER_EVALUATOR = "QUESTION_SPLITER_EVALUATOR";
-	
-	public static final String DSL_COOKER = "DSL_COOKER";
-	public static final String DSL_COOKER_EVALUATOR = "DSL_COOKER_EVALUATOR";
-	public static final String DSL_DESCRIBER = "DSL_DESCRIBER";
-	
-	public static final String PYTHON_CALCULATOR = "PYTHON_CALCULATOR";
-	public static final String PYTHON_CALCULATOR_EVALUATOR = "PYTHON_CALCULATOR_EVALUATOR";
-	public static final String TOOL_AND_PYTHON_CALCULATOR = "TOOL_AND_PYTHON_CALCULATOR";
-	public static final String TOOL_CALCULATOR_EVALUATOR = "TOOL_CALCULATOR_EVALUATOR";
-	public static final String AFTER_CALCULATE_DESCRIBER = "AFTER_CALCULATE_DESCRIBER";
-	
-	public static final String QUESTION_CHECKER = "QUESTION_CHECKER";
+
 	public static final String QUESTION_CHECKER_V2 = "QUESTION_CHECKER_V2";
 	
 	public static final String DASHBOARD_RENAMER = "DASHBOARD_RENAMER";
@@ -75,8 +51,7 @@ public class MultiThreadAIChatService {
 	public static final String BUSSINESS_KNOWLEDGE_GENERATOR = "BUSSINESS_KNOWLEDGE_GENERATOR";
 	
 	public static final String JSON_CORRECTOR = "JSON_CORRECTOR";
-	
-	
+
 	public static final String ABC_PROGRAM_DESCRIBER = "ABC_PROGRAM_DESCRIBER";
 	
 	public static final String ABC_PROGRAM_DASHBOARD_MAKER = "ABC_PROGRAM_DASHBOARD_MAKER";
@@ -234,35 +209,16 @@ public class MultiThreadAIChatService {
     private ChatMemoryProvider chatMemoryProvider;
     
     @Autowired
-    private ToolProvider toolProvider;
-    
-    @Autowired
     private SchemaSkillTools schemaSkillTools;
 
     @Autowired
-    private io.ontomato.dataengine.service.PythonExecuteService pythonExecuteService;
-    
-    @Autowired
     private DslSkillTools dslSkillTools;
-
-	@Autowired
-	private DslSubmitTools dslSubmitTools;
 
 	@Autowired
 	private AgentWorkspaceFileTools agentWorkspaceFileTools;
     
     @Autowired
     private DataDetectorSkillTools dataDetectorSkillTools;
-    
-    @Autowired
-    private AfterCalculatorSkillTools afterCalculatorSkillTools;
-
-	@Autowired
-	private AfterCalculatorSubmitTools afterCalculatorSubmitTools;
-
-	@Autowired
-	private AfterCalculatorResultSubmitTools afterCalculatorResultSubmitTools;
-    
     
     @Autowired
     private ABCProgramDashboardMakerSkillTools abcProgramDashboardMakerSkillTools;
@@ -313,43 +269,7 @@ public class MultiThreadAIChatService {
     public String chat(String agentName, OriginalQuestion originalQuestion, String sessionId, String questionString, ResolvedChatModel modelProperties, String domainId) {
     	try {
     		NormalAgent chatAgent = null;
-    		if (TOOL_AND_PYTHON_CALCULATOR.equals(agentName)) {
-    			ResolvedChatModel toolModel = modelProperties;
-			ChatModel chatModel = buildChatModel(toolModel.model(),
-					true, FORMAL_DEFAULT_MAX_COMPLETION_TOKENS);
-				String skill_dir = toolModel.getSkilldir();
-				Skills skills = null;
-				if (skill_dir != null && !skill_dir.isBlank()) {
-					try{
-						skills = Skills.from(FileSystemSkillLoader.loadSkills(Path.of(skill_dir)));
-					} catch (Exception exp){
-						log.warn("Failed to load skills from {}",skill_dir);
-					}
-				}
-				if(skills == null){
-					chatAgent = newNormalAgent(chatModel)
-							.toolProviders(toolProvider)
-							.tools(afterCalculatorSkillTools, agentWorkspaceFileTools,
-									afterCalculatorSubmitTools, afterCalculatorResultSubmitTools)
-							.build();
-				} else {
-					SkillTools skilltTools = new SkillTools(skill_dir, pythonExecuteService);
-					chatAgent = newNormalAgent(chatModel)
-							.tools(skilltTools, agentWorkspaceFileTools, afterCalculatorSkillTools,
-									afterCalculatorSubmitTools, afterCalculatorResultSubmitTools)
-							.toolProviders(toolProvider,skills.toolProvider())
-							.systemMessage("You have access to the following skills:\n" + skills.formatAvailableSkills()
-									+ "\nWhen the user's request relates to one of these skills, activate it first using the `activate_skill` tool before proceeding.")
-							.build();
-				}
-        	} else if (PYTHON_CALCULATOR.equals(agentName)) {
-        		ResolvedChatModel pythonModel = modelProperties;
-		ChatModel chatModel = buildChatModel(pythonModel.model(),
-					false, FORMAL_DEFAULT_MAX_COMPLETION_TOKENS);
-				chatAgent = newNormalAgent(chatModel)
-		                .tools(afterCalculatorSkillTools, agentWorkspaceFileTools, afterCalculatorSubmitTools)
-		                .build();
-            } else if (ABC_PROGRAM_DASHBOARD_MAKER.equals(agentName) ||
+            if (ABC_PROGRAM_DASHBOARD_MAKER.equals(agentName) ||
         			READ_FUNCTION_MAKER.equals(agentName) ||
         			STATIC_READ_FUNCTION_NAME_MAKER.equals(agentName) ||
         			READ_FUNCTION_INSTANCER.equals(agentName) || 
@@ -403,24 +323,12 @@ public class MultiThreadAIChatService {
 					);
 				}
 				chatAgent = aiServices.build();
-        	} else if (QUESTION_SPLITER_V0.equals(agentName) ||
-        			QUESTION_SPLITER_V1.equals(agentName)) {
-        		ResolvedChatModel splitterModel = modelProperties;
-		ChatModel chatModel = buildChatModel(splitterModel.model(),
-					false, FORMAL_DEFAULT_MAX_COMPLETION_TOKENS);
-				AiServices<NormalAgent> aiServices = newNormalAgent(chatModel);
-				if (QUESTION_SPLITER_V1.equals(agentName)) {
-					aiServices = aiServices.tools(schemaSkillTools);
-				}
-				chatAgent = aiServices.build();
         	} else {
         		ResolvedChatModel normalModel = modelProperties;
 		ChatModel chatModel = buildChatModel(normalModel.model(),
 					false, FORMAL_DEFAULT_MAX_COMPLETION_TOKENS);
 				AiServices<NormalAgent> aiServices = newNormalAgent(chatModel);
-				if (DSL_COOKER.equals(agentName)) {
-					aiServices = aiServices.tools(dslSkillTools, dataDetectorSkillTools, agentWorkspaceFileTools, dslSubmitTools);
-				} else if (ABC_PROGRAM_DESCRIBER.equals(agentName)) {
+				if (ABC_PROGRAM_DESCRIBER.equals(agentName)) {
 					aiServices = aiServices.tools(schemaSkillTools);
 				}
 				chatAgent = aiServices.build();

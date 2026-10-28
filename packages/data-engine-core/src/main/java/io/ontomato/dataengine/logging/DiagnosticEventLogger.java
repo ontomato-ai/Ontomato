@@ -23,7 +23,7 @@ import jakarta.annotation.PostConstruct;
  * (dedicated appender {@code diagnostic-events.jsonl}).
  *
  * <p>Wrapped in try-catch throughout; a write failure is never thrown back into the business flow. emit is a static method for unified use by Spring beans and non-beans
- * (e.g. {@code ABCDslSubQueryExecutor}); nodeId is captured into a static field by the container after startup.
+ * (e.g. {@code QueryOutputService}); nodeId is captured into a static field by the container after startup.
  *
  * <p>Fixed fields of the base record: {@code time / ts / nodeId / sessionId / eventType / source / payload}.
  * Only one query key is kept, {@code sessionId} (session level=base, sub-query level=base-{index}); no eventId/queryId/level/subQueryIndex.
