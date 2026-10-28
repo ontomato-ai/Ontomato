@@ -14,12 +14,11 @@ import {
   runtimeIdSchema,
   runtimeKeySchema,
   runtimeRunStatusSchema,
-  runtimeSequenceSchema,
   runtimeStopReasonSchema,
   runtimeTimestampSchema,
 } from "./agent-runtime-values";
 
-/** Proposed batch 3 host contract; routes are implemented after design approval. */
+/** Approved batch 3 host contract. */
 export const assistantAgentSchema = z.object({
   id: runtimeIdSchema,
   workbenchId: runtimeKeySchema,
@@ -43,10 +42,7 @@ export const assistantRunSchema = z.object({
   finishedAt: runtimeTimestampSchema.nullable(),
 }).strict();
 
-/** The runtime owns this persisted message-end boundary, including after restart. */
-export const assistantMessageSchema = runtimeMessageRecordSchema.extend({
-  artifactSeq: runtimeSequenceSchema,
-});
+export const assistantMessageSchema = runtimeMessageRecordSchema;
 export const assistantRunSnapshotSchema = z.object({
   run: assistantRunSchema,
   cursor: runtimeCursorSchema,
@@ -83,7 +79,6 @@ export const assistantCreateSessionResponseSchema = z.object({
 }).strict();
 export const assistantStartRunSchema = z.object({
   message: z.string().refine((value) => value.trim().length > 0),
-  expectedLatestRunId: runtimeIdSchema.nullable(),
 }).strict();
 export const assistantAdmissionSchema = z.object({
   snapshot: assistantRunSnapshotSchema,

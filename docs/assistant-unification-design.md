@@ -1,7 +1,7 @@
 # Assistant unification
 
-Proposed design, 2026-10-28, based on public `ba6acd1c`. This delivery contains
-contracts only. Backend implementation starts after review. The frontend shell/UI
+Approved design, 2026-10-28, based on public `ba6acd1c`. Backend A/B implementation
+is authorized after the contract simplification. The frontend shell/UI
 and Java traditional-ABC removal are separate parallel work; this branch owns
 server changes and [assistant HTTP contracts](../packages/contracts/assistant-chat.md).
 
@@ -55,11 +55,13 @@ asynchronous and attaches through the existing retrieval owner; it does not dela
 the assistant's stop or change PI state.
 
 History, feedback, dashboard creation, PPT export, governance and diagnosis use one
-owned session/evidence reader instead of checkpoint parsing. Runtime must expose
-the durable message-end event sequence for historical artifact resolution (currently
-absent from message snapshots); the host does not guess from the latest run cursor.
+owned session/evidence reader instead of checkpoint parsing. Markdown paths resolve
+at run granularity: the final file version for a stopped run, the current version
+for a running run. No message projection change or per-message artifact boundary
+is introduced. Deleted sessions return 404; no host deletion tombstones. Only an
+active run blocks the next message (409 SESSION_BUSY), with no predecessor check.
 
-## Confirmed simplifications and one review decision
+## Confirmed simplifications
 
 Reports are files, normally `outputs/reports/<name>/report.md`, referenced with a
 Markdown link. The report skill guides writing; no section/publish tools, delivery
@@ -71,11 +73,11 @@ Titles are the exact first user message, truncated only for display. Remove mode
 title generation and follow-up suggestions. Delete `analysis-agent/follow-up.ts`;
 asking about a report is the next message in the same conversation.
 
-**Decision for review:** retain these functions and move their surviving model calls
+**Approved:** retain these functions and move their surviving model calls
 to ordinary runs (`skills:[]`, existing model role/prompt), rather than retain direct
 model invocation. No new runtime endpoint is needed:
 
-| Consumer | Proposed treatment |
+| Consumer | Treatment |
 | --- | --- |
 | `analysis-agent/delivery/ppt-summarizer.ts` | Ordinary run per existing summary step; keep source limitations and outline validation |
 | `dashboard/planning/core/chart-recommender.ts` | Ordinary run for create/append/field planning; keep business parsers and chart definitions |
