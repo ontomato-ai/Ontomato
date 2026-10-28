@@ -158,7 +158,7 @@ vi.mock("../../../admin", () => ({
     })),
     getSystemModelConfig: vi.fn(async () => ({
       success: true,
-      data: { abcQuestionMode: "harness", queryTimeoutSeconds: 600 },
+      data: { queryTimeoutSeconds: 600 },
     })),
     saveSystemModelConfig: vi.fn(async (payload: Record<string, unknown>) => {
       sent.system = JSON.parse(JSON.stringify(payload));
@@ -440,8 +440,8 @@ describe("role models card", () => {
 });
 
 describe("query settings card", () => {
-  it("tracks its two fields and clears the marker when reverted", async () => {
-    const model = reactive({ abcQuestionMode: "harness" as const, queryTimeoutSeconds: 600 });
+  it("tracks its field and clears the marker when reverted", async () => {
+    const model = reactive({ queryTimeoutSeconds: 600 });
     const wrapper = track(
       mount(QuerySettingsCard, {
         props: { model, loading: false, saving: false, loadError: "" },
@@ -461,7 +461,7 @@ describe("query settings card", () => {
     const wrapper = track(
       mount(QuerySettingsCard, {
         props: {
-          model: { abcQuestionMode: "harness" as const, queryTimeoutSeconds: 600 },
+          model: { queryTimeoutSeconds: 600 },
           loading: false,
           saving: false,
           loadError: "node down",
@@ -1215,7 +1215,7 @@ describe("system config page", () => {
     await query.find(".el-input-number input").setValue("900");
     await button(query, t("common.saveConfig"))!.trigger("click");
     await flushPromises();
-    expect(sent.system).toEqual({ abcQuestionMode: "harness", queryTimeoutSeconds: 900 });
+    expect(sent.system).toEqual({ queryTimeoutSeconds: 900 });
     expect(query.find(".dirty-tag").exists()).toBe(false);
   });
 

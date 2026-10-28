@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import type { SystemModelConfig } from "@ontomato/contracts/system-model";
 import {
   dataAdapterTestResultSchema,
   multiDataSourceRejectionSchema,
@@ -29,6 +28,7 @@ import {
   type MultiDataSourceDraft,
   type MultiDataSourceSaveFailure,
   type OntologyOutline,
+  type QuerySettings,
   type SystemSettings,
 } from "../types";
 import type { BusinessConfigProps } from "../business-config";
@@ -257,17 +257,15 @@ async function saveMultiDataSource() {
   }
 }
 
-// Query settings live in the Node system model file and hold only the query mode and total time limit.
-let querySettings = reactive<SystemModelConfig>({
-  abcQuestionMode: "harness",
+// Query settings live in the Node system model file and hold only the total time limit.
+let querySettings = reactive<QuerySettings>({
   queryTimeoutSeconds: 600,
 });
 const loadingQuerySettings = ref(false);
 const querySettingsLoadError = ref("");
 const savingQuerySettings = ref(false);
 
-function applyQuerySettings(data: SystemModelConfig) {
-  querySettings.abcQuestionMode = data.abcQuestionMode;
+function applyQuerySettings(data: QuerySettings) {
   querySettings.queryTimeoutSeconds = data.queryTimeoutSeconds;
 }
 
@@ -277,7 +275,7 @@ async function loadQuerySettings() {
   try {
     const res = await adminApi.getSystemModelConfig();
     if (res.success) {
-      applyQuerySettings(res.data as SystemModelConfig);
+      applyQuerySettings(res.data as QuerySettings);
     } else {
       querySettingsLoadError.value = res.message || t("admin.loadConfigFailed");
     }
@@ -293,7 +291,7 @@ async function saveQuerySettings() {
   try {
     const res = await adminApi.saveSystemModelConfig({ ...querySettings });
     if (res.success) {
-      applyQuerySettings(res.data as SystemModelConfig);
+      applyQuerySettings(res.data as QuerySettings);
       querySettingsRef.value?.markSaved();
       ElMessage.success(t("admin.configSaveSuccess"));
     } else {

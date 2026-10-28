@@ -1,4 +1,5 @@
 import { z } from "zod";
+import type { SystemModelConfig } from "@ontomato/contracts/system-model";
 import type {
   BackendAgentConfig,
   BackendModelConfig,
@@ -199,3 +200,6 @@ export function modelLabel(model: { name: string; displayName: string }): string
 export function formatTimeout(seconds: number): string {
   return `PT${seconds}S`;
 }
+
+/** The query settings the system configuration page edits. */
+export type QuerySettings = Pick<SystemModelConfig, "queryTimeoutSeconds">;

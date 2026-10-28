@@ -43,7 +43,7 @@ export const adminApi = {
   rebuildVectors: () => apiPost("/businessConfig/rebuildVectors"),
   pauseVectorRebuild: () => apiPost("/businessConfig/pauseVectorRebuild"),
   getSystemModelConfig: () => nodeApiGet("/system-model-config"),
-  saveSystemModelConfig: (payload: SystemModelConfig) =>
+  saveSystemModelConfig: (payload: Pick<SystemModelConfig, "queryTimeoutSeconds">) =>
     nodeApiPost("/system-model-config/save", payload),
   queryAuditLogs: (params: unknown) => apiPost("/auditLog/queryPage", params),
   getServiceInfo: () => apiGet("/maintenance/getserviceinfo"),

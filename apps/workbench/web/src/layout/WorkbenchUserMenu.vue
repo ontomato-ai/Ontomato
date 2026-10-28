@@ -5,7 +5,6 @@ import { useLocale } from "@ontomato/workbench-ui";
 defineProps<{
   visible: boolean;
   isDark: boolean;
-  compact: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -33,22 +32,20 @@ function handleToggleTheme() {
 
 <template>
   <div class="user-menu-wrapper">
-    <el-tooltip :disabled="!compact" :content="t('nav.admin')" placement="right">
-      <button
-        type="button"
-        class="footer-user"
-        :aria-label="t('nav.admin')"
-        :aria-expanded="visible"
-        @click.stop="emit('update:visible', !visible)"
-      >
-        <span class="user-avatar"><UserRound :size="18" /></span>
-        <span class="footer-user-name">{{ t("nav.admin") }}</span>
-        <ChevronDown :size="12" class="footer-chevron" :class="{ open: visible }" />
-      </button>
-    </el-tooltip>
+    <button
+      type="button"
+      class="footer-user"
+      :aria-label="t('nav.admin')"
+      :aria-expanded="visible"
+      @click.stop="emit('update:visible', !visible)"
+    >
+      <span class="user-avatar"><UserRound :size="18" /></span>
+      <span class="footer-user-name">{{ t("nav.admin") }}</span>
+      <ChevronDown :size="12" class="footer-chevron" :class="{ open: visible }" />
+    </button>
     <Teleport to="body">
       <div v-if="visible" class="user-menu-overlay" @click="emit('update:visible', false)">
-        <div class="user-menu-popup" :class="{ compact }" @click.stop>
+        <div class="user-menu-popup" @click.stop>
           <div class="user-menu-item" @click="handleAdmin">
             <Settings :size="14" />
             <span>{{ t("nav.admin") }}</span>
@@ -118,7 +115,7 @@ function handleToggleTheme() {
 .user-menu-popup {
   position: fixed;
   bottom: 68px;
-  left: calc(18px + 120px - 100px);
+  left: 16px;
   width: 200px;
   background: var(--el-bg-color);
   border: 1px solid var(--el-border-color);
@@ -127,9 +124,6 @@ function handleToggleTheme() {
   padding: 6px;
   animation: menuSlideUp 0.18s ease;
   z-index: 2101;
-}
-.user-menu-popup.compact {
-  left: 88px;
 }
 @keyframes menuSlideUp {
   from {
@@ -159,8 +153,7 @@ function handleToggleTheme() {
   color: var(--el-text-color-secondary);
 }
 @media (max-width: 700px) {
-  .user-menu-popup,
-  .user-menu-popup.compact {
+  .user-menu-popup {
     left: 12px;
     right: 12px;
     bottom: calc(62px + env(safe-area-inset-bottom));

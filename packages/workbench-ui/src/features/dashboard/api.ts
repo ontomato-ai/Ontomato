@@ -1,6 +1,5 @@
 import type {
   DashboardListItem,
-  DashboardGroup,
   DashboardDetail,
 } from "@ontomato/contracts/dashboard";
 import { nodeApiGet, nodeApiPost } from "../../utils/api";
@@ -8,13 +7,6 @@ import { workbenchContent } from "../../content";
 
 export async function fetchDashboardList(): Promise<DashboardListItem[]> {
   const json = await nodeApiPost("/dashboards/queryList", {});
-  return json?.data || [];
-}
-
-export async function fetchDashboardGroups(args: {
-  id: string;
-}): Promise<Pick<DashboardGroup, "id" | "title">[]> {
-  const json = await nodeApiPost("/dashboards/groups", args || {});
   return json?.data || [];
 }
 
@@ -27,28 +19,6 @@ export async function createDashboard(name: string) {
 export async function createDimension(id: string, dimensionName: string) {
   const json = await nodeApiPost("/dashboards/createDimension", { id, dimensionName });
   return json?.success === true;
-}
-
-export async function addChartToDashboard(args: {
-  dashboardId: string;
-  groupId: string;
-  threadId: string;
-  requestSeq: number;
-  datasetIndex: number;
-}) {
-  const json = await nodeApiPost("/dashboards/add-chart", args);
-  return json?.success === true;
-}
-
-export async function createDashboardFromAnalysis(args: {
-  threadId: string;
-  requestSeq: number;
-  name?: string;
-  needParameter?: boolean;
-}) {
-  const json = await nodeApiPost("/dashboards/create-from-analysis", args);
-  if (!json?.data?.id) throw new Error(json?.error || workbenchContent().text.createDashboardFailed);
-  return { id: String(json.data.id), name: String(json.data.name || "") };
 }
 
 export async function fetchDashboardLocalDetail(

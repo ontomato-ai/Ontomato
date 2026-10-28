@@ -323,21 +323,6 @@
   justify-content: flex-end;
 }
 
-.question-mode-select {
-  width: 160px;
-  max-width: 100%;
-}
-
-.question-mode-select :deep(.el-select__selected-item) {
-  min-width: 0;
-}
-
-.question-mode-select :deep(.el-select__selected-item span) {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
 .api-keys-wrap {
   width: 100%;
 }
