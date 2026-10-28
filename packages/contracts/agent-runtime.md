@@ -7,6 +7,9 @@ migration scope; [code execution](agent-runtime-code.md) and
 [retrieval](data-retrieval.md) own their respective boundaries. Main-checkout
 image/stack and external Claude Code acceptance remain controller-owned.
 
+The proposed [domain-skill host integration](domain-skills.md) reuses this
+publication/admission protocol; its host changes are pending separate review.
+
 ## HTTP and admission
 
 Requests carry `Authorization: Bearer <host service credential>` and
