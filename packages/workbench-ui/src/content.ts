@@ -61,10 +61,6 @@ export interface WorkbenchFixedText {
     exportSucceeded: string;
     exportFailed: string;
   };
-  /** Original count text at the end of partial batch-delete failure messages (both query example batch deletes). */
-  batchDeleteFailureSuffix: (failed: number, total: number) => string;
-  /** Original colon after field labels on query example cards (five places in ExamplesManager.vue); independent of errorPunctuation for request errors. */
-  exampleFieldSeparator: string;
   /** Original separator between error explanations and timeout text on the system and model configuration pages. */
   businessConfigSeparator: string;
   /** Dashboard creation failure (dashboard/api.ts). */

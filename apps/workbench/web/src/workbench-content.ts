@@ -40,8 +40,6 @@ export const workbenchContent: WorkbenchContent = {
       like: "Like",
       dislike: "Dislike",
     },
-    batchDeleteFailureSuffix: (failed, total) => `(${failed}/${total})`,
-    exampleFieldSeparator: ":",
     businessConfigSeparator: ": ",
     feedbackRecords: {
       sourceQa: "Query",

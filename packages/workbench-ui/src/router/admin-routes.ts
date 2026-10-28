@@ -71,12 +71,6 @@ export const adminRoutes = {
     redirect: "/admin/ontology-manager?view=knowledge",
     meta: { group: "data-assets", permissions: ["business-knowledge"] },
   },
-  examples: {
-    path: "examples",
-    name: "QueryExamples",
-    component: () => import("../features/admin/components/intelligence-engine/ExamplesManager.vue"),
-    meta: { group: "platform-management", permissions: ["query-examples"] },
-  },
   actionManagement: {
     path: "action-management",
     redirect: "/admin/ontology-manager?view=assets",

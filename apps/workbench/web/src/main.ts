@@ -22,12 +22,12 @@ import { workbenchContent } from "./workbench-content";
 /*
  * Open-source web entry. Assembles the /chat workbench layout, /observe and all open-source admin pages (the /admin
  * layout, the Manager entry (business knowledge lives in the Manager), business agents, analysis plans, system agents,
- * knowledge governance, skills, MCP services, model configuration, system config, query examples, audit log, feedback
+ * knowledge governance, skills, MCP services, model configuration, system config, audit log, feedback
  * records and system monitor, plus redirects for business knowledge, hot reports and the old Manager entry). The UI has
  * passed browser acceptance against locally synthesized APIs; real full-stack integration is not yet verified, so this
  * build cannot replace the production frontend.
  * Menu: the Ontology Manager tab (home-style, opens the Manager directly, no sidebar menu); Agents and Skills: analysis,
- * analysis-plans, system-agents, skills, mcp-service; System Management: model-config, system-config, examples,
+ * analysis-plans, system-agents, skills, mcp-service; System Management: model-config, system-config,
  * audit-log, feedback-records, system-monitor.
  */
 const adminLayout: AdminLayoutConfig = {
@@ -45,7 +45,6 @@ const adminLayout: AdminLayoutConfig = {
     adminMenuItems.mcpService,
     adminMenuItems.modelConfig,
     adminMenuItems.systemConfig,
-    adminMenuItems.queryExamples,
     adminMenuItems.auditLog,
     adminMenuItems.feedbackRecords,
     adminMenuItems.systemMonitor,
@@ -106,7 +105,6 @@ startWorkbenchWeb({
         adminRoutes.skillsVisualization,
         adminRoutes.modelConfig,
         { ...adminRoutes.businessConfig, props: businessConfig },
-        adminRoutes.examples,
         adminRoutes.auditLog,
         adminRoutes.feedbackRecords,
         adminRoutes.systemMonitor,

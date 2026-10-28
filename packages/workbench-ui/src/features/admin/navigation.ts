@@ -7,7 +7,6 @@ import {
   Cpu,
   Database,
   MessageSquare,
-  MessagesSquare,
   Monitor,
   Network,
   Puzzle,
@@ -156,14 +155,6 @@ export const adminMenuItems = {
     titleKey: "nav.systemConfig",
     descriptionKey: "navDescription.systemConfig",
     icon: ServerCog,
-    groupKey: "platform-management",
-  },
-  queryExamples: {
-    permissions: ["query-examples"],
-    path: "/admin/examples",
-    titleKey: "nav.queryExamples",
-    descriptionKey: "navDescription.queryExamples",
-    icon: MessagesSquare,
     groupKey: "platform-management",
   },
   auditLog: {
