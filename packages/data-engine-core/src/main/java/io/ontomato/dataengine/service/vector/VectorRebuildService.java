@@ -12,6 +12,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionTemplate;
 
 import io.ontomato.dataengine.config.BusinessConfig;
+import io.ontomato.dataengine.config.ModelKeyMask;
 import io.ontomato.dataengine.dao.ActionDao;
 import io.ontomato.dataengine.dao.KnowledgeDao;
 import io.ontomato.dataengine.dao.MetricViewDao;
@@ -159,7 +160,8 @@ public class VectorRebuildService {
                 state = retrievalGate.stateOf(domainId, businessConfig);
             }
             properties.setBaseUrl(input.getBaseUrl());
-            properties.setApiKey(input.getApiKey());
+            // A key sent back as its mask keeps the stored key.
+            properties.setApiKey(ModelKeyMask.restoreEmbedding(input.getApiKey(), properties.getApiKey()));
             properties.setModelName(input.getModelName());
             properties.setDimensions(input.getDimensions());
             properties.setTimeout(input.getTimeout());

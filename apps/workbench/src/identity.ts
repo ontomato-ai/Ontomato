@@ -65,6 +65,4 @@ export const ossIdentity: WorkbenchIdentity = {
   requireDomainId() {
     return "default";
   },
-
-  modelSettingsReadHeaders: {},
 };

@@ -198,6 +198,7 @@ export default {
     "jsonPlaceholder": "Enter test data in JSON format",
     "debugSkillWithName": "Debug Skill: {name}",
     "addApiKey": "Add API Key",
+    "savedKeyHint": "Saved keys cannot be viewed again; to change one, enter a new key.",
     "apiModelId": "API model ID",
     "keyCountConfigured": "{n} keys configured",
     "keyMissing": "No key configured",

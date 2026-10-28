@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { parseIsoDurationSeconds } from "@ontomato/contracts/model-settings";
+import { isMaskedSecret, parseIsoDurationSeconds } from "@ontomato/contracts/model-settings";
 import { computed, reactive, ref } from "vue";
 import { BarChart3 } from "lucide-vue-next";
 import { useI18n } from "vue-i18n";
@@ -76,6 +76,8 @@ function emptyDraft() {
 }
 
 const draft = reactive(emptyDraft());
+// The saved key is write-only: its mask is the input's placeholder, and an empty input sends the mask back, which keeps it.
+const savedKeyMask = ref("");
 
 function openEditDialog() {
   if (!writable.value || props.saving) return;
@@ -85,13 +87,14 @@ function openEditDialog() {
     current
       ? {
           baseUrl: current.baseUrl,
-          apiKey: current.apiKey,
+          apiKey: isMaskedSecret(current.apiKey) ? "" : current.apiKey,
           modelName: current.modelName,
           timeoutSeconds: parseIsoDurationSeconds(current.timeout),
           dimensions: current.dimensions,
         }
       : emptyDraft()
   );
+  savedKeyMask.value = current && isMaskedSecret(current.apiKey) ? current.apiKey : "";
   dialogVisible.value = true;
 }
 
@@ -101,7 +104,7 @@ function draftModel(): EmbeddingModelConfig {
   return {
     ...props.model,
     baseUrl: draft.baseUrl,
-    apiKey: draft.apiKey,
+    apiKey: draft.apiKey || savedKeyMask.value,
     modelName: draft.modelName,
     timeout: formatTimeout(draft.timeoutSeconds),
     dimensions: draft.dimensions!,
@@ -195,7 +198,15 @@ async function saveDialog() {
             />
           </el-form-item>
           <el-form-item label="API Key">
-            <el-input v-model="draft.apiKey" type="password" placeholder="sk-..." show-password />
+            <div class="api-keys-wrap">
+              <el-input
+                v-model="draft.apiKey"
+                type="password"
+                :placeholder="savedKeyMask || 'sk-...'"
+                show-password
+              />
+              <p v-if="savedKeyMask" class="saved-key-hint">{{ t("admin.savedKeyHint") }}</p>
+            </div>
           </el-form-item>
           <el-form-item :label="t('admin.modelName')">
             <el-input v-model="draft.modelName" placeholder="text-embedding-v3" />

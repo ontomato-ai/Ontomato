@@ -705,6 +705,71 @@ describe("password visibility with the real dialog", () => {
   });
 });
 
+describe("saved keys are write-only", () => {
+  const realDialog = { plugins: [i18n, ElementPlus], stubs: { transition: false } };
+  const settle = async () => {
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await flushPromises();
+  };
+
+  it("shows a saved model key as its read-only mask and sends the mask back, which keeps the key", async () => {
+    const save = vi.fn(async (_models: ModelEntry[]) => true);
+    const wrapper = track(
+      mount(ModelListCard, {
+        props: { models: [entry("a", { apiKeys: ["******ab12"] })], saving: false, save },
+        global: realDialog,
+        attachTo: document.body,
+      })
+    );
+    await button(wrapper, t("common.edit"))!.trigger("click");
+    await settle();
+    const saved = wrapper.find(".api-key-row input");
+    expect(saved.attributes("disabled")).toBeDefined();
+    expect(saved.attributes("type")).not.toBe("password");
+    expect((saved.element as HTMLInputElement).value).toBe("******ab12");
+    expect(wrapper.find(".saved-key-hint").text()).toBe(t("admin.savedKeyHint"));
+
+    await button(wrapper, t("admin.addApiKey"))!.trigger("click");
+    await wrapper.findAll(".api-key-row input")[1]!.setValue("sk-new-key");
+    await button(wrapper, t("common.save"))!.trigger("click");
+    await flushPromises();
+    expect(save.mock.calls[0]![0][0]!.apiKeys).toEqual(["******ab12", "sk-new-key"]);
+  });
+
+  it("leaves a saved embedding key out of the input and sends its mask back unless a new key is entered", async () => {
+    const save = vi.fn(async (_model: EmbeddingModelConfig) => true);
+    const wrapper = track(
+      mount(EmbeddingModelConfigCard, {
+        props: {
+          model: { ...fixtures.embedding, apiKey: "******mbed" },
+          loading: false,
+          saving: false,
+          loadError: "",
+          save,
+          rebuildStatus: { ...fixtures.rebuildIdle },
+        },
+        global: realDialog,
+        attachTo: document.body,
+      })
+    );
+    await button(wrapper, t("common.edit"))!.trigger("click");
+    await settle();
+    const keyInput = wrapper.find(".el-dialog input[type='password']");
+    expect((keyInput.element as HTMLInputElement).value).toBe("");
+    expect(keyInput.attributes("placeholder")).toBe("******mbed");
+    await button(wrapper, t("common.save"))!.trigger("click");
+    await flushPromises();
+    expect(save.mock.calls[0]![0].apiKey).toBe("******mbed");
+
+    await button(wrapper, t("common.edit"))!.trigger("click");
+    await settle();
+    await wrapper.find(".el-dialog input[type='password']").setValue("sk-replaced");
+    await button(wrapper, t("common.save"))!.trigger("click");
+    await flushPromises();
+    expect(save.mock.calls[1]![0].apiKey).toBe("sk-replaced");
+  });
+});
+
 describe("model config page", () => {
 
 
@@ -998,13 +1063,15 @@ describe("model config page", () => {
     expect(sent.settings).toBeNull();
     expect(embedding.find("section").exists()).toBe(false);
 
+    // The page reads the saved model back instead of keeping the submitted key, so the test sends what the server returned.
+    expect(adminApi.getBusinessConfig).toHaveBeenCalledTimes(2);
     await button(embedding, t("common.testModel"))!.trigger("click");
     const testDialog = page.findAll("section").at(-1)!;
     await testDialog.find("textarea").setValue("hello");
     await button(testDialog, t("common.sendTest"))!.trigger("click");
     await flushPromises();
     expect(sent.embeddingTest).toEqual({
-      modelConfig: { ...fixtures.embedding, apiKey: "sk-embed-2" },
+      modelConfig: { ...fixtures.embedding },
       userContent: "hello",
     });
   });

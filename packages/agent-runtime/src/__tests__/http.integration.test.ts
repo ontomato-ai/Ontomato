@@ -103,6 +103,7 @@ describe.skipIf(!database)("standard runtime real HTTP/PG/processes", () => {
           AGENT_RUNTIME_SCHEMA: schema,
           AGENT_RUNTIME_ROOT: root,
           AGENT_RUNTIME_MODEL_CONFIG_URL: base,
+          ONTOMATO_MODEL_RUNTIME_TOKEN: "fixture-runtime-token",
           AGENT_RUNTIME_PORT: "0",
           AGENT_RUNTIME_EVENT_BUFFER_SIZE: "4",
           AGENT_RUNTIME_HOSTS: JSON.stringify([
@@ -180,12 +181,15 @@ describe.skipIf(!database)("standard runtime real HTTP/PG/processes", () => {
             success: true,
             data: {
               agents: { coding: { model: "fixture" } },
+              sealedApiKeys: {
+                fixture: ["enc:v1:mzjUpW4OVVjLMPmxcmMcyop5LFN8VSJ_7lUGPppYXDK_UDNjyKAlYAL7vVwOMOI"],
+              },
               models: [
                 {
                   name: "fixture",
                   modelName: "deepseek-chat",
                   baseUrl: base + "/v1",
-                  apiKeys: ["fixture-model"],
+                  apiKeys: ["******1234"],
                   maxTokens: 4096,
                   contextWindow: 16000,
                   timeout: null,

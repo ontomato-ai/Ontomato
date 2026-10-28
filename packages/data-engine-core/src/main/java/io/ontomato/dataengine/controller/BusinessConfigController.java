@@ -24,7 +24,9 @@ import io.ontomato.dataengine.config.BusinessConfig;
 import io.ontomato.dataengine.config.BusinessConfig.EmbeddingModelProperties;
 import io.ontomato.dataengine.config.ControllerConst;
 import io.ontomato.dataengine.config.ModelConfig;
+import io.ontomato.dataengine.config.ModelKeyMask;
 import io.ontomato.dataengine.config.ModelResolver;
+import io.ontomato.dataengine.config.ModelKeySeal;
 import io.ontomato.dataengine.core.bean.User;
 import io.ontomato.dataengine.config.CustomRequestParameters;
 import io.ontomato.dataengine.config.multisource.DataSourceEntry;
@@ -73,6 +75,9 @@ public class BusinessConfigController {
 	/** Optional in unit tests that construct the controller directly; Spring injects it in the app. */
 	@Autowired(required = false)
 	private ConnectionSecretCodec connectionSecretCodec;
+
+	@Autowired
+	private ModelKeySeal modelKeySeal;
 	
 	@Autowired
 	private DataAdapterRegistry dataAdapterRegistry;
@@ -90,6 +95,7 @@ public class BusinessConfigController {
 					ModelConfig.class, JSONReader.Feature.DisableReferenceDetect);
 			model.setCustomRequestParameters(CustomRequestParameters.normalize(
 					input.getJSONObject("model").get("customRequestParameters")));
+			ModelKeyMask.restoreModels(List.of(model), businessConfigService.get(user.getDomainId()).getModels());
     		String userContent = input.getString("prompt");
     		if (userContent == null || "".equals(userContent.trim())) {
     			userContent = "Hello";
@@ -105,6 +111,10 @@ public class BusinessConfigController {
 		return ret;
 	}
 
+	/**
+	 * Read by the page and by the workbench server: keys are masked, and each model's keys also come
+	 * sealed for the workbench server under {@code sealedApiKeys} (model name to keys, see {@link ModelKeySeal}).
+	 */
 	@GetMapping("/businessConfig/getModelSettings")
 	@ResponseBody
 	public JSONObject getModelSettings() {
@@ -114,7 +124,12 @@ public class BusinessConfigController {
 			BusinessConfig businessConfig = businessConfigService.get(user.getDomainId());
 			ModelResolver.normalizeForRead(businessConfig.getModels());
 			JSONObject data = new JSONObject();
-			data.put("models", businessConfig.getModels());
+			data.put("models", ModelKeyMask.masked(businessConfig.getModels()));
+			Map<String, List<String>> sealed = new LinkedHashMap<>();
+			for (ModelConfig model : businessConfig.getModels()) {
+				sealed.put(model.getName(), modelKeySeal.seal(model.getApiKeys()));
+			}
+			data.put("sealedApiKeys", sealed);
 			data.put("agents", businessConfig.getAgents());
 			ret.put("data", data);
 			ret.put("success", true);
@@ -159,6 +174,9 @@ public class BusinessConfigController {
 			// setup needs no separate role step; a batch from empty, a second model or later edits assign nothing.
 			String firstModelName = stored.getModels().isEmpty() && models.size() == 1 ? models.get(0).getName() : null;
 
+			// A key sent back as its mask keeps the stored key of the same model.
+			ModelKeyMask.restoreModels(models, stored.getModels());
+
 			BusinessConfig candidate = new BusinessConfig();
 			BeanUtils.copyProperties(stored, candidate);
 			candidate.setModels(models);
@@ -190,7 +208,7 @@ public class BusinessConfigController {
 
 			ModelResolver.normalizeForRead(candidate.getModels());
 			JSONObject data = new JSONObject();
-			data.put("models", candidate.getModels());
+			data.put("models", ModelKeyMask.masked(candidate.getModels()));
 			data.put("agents", candidate.getAgents());
 			ret.put("data", data);
 			ret.put("success", true);
@@ -212,6 +230,10 @@ public class BusinessConfigController {
     				|| embeddingModelProperties.getDimensions() <= 0) {
     			throw new IllegalArgumentException("modelConfig.dimensions must be a positive integer");
     		}
+			EmbeddingModelProperties storedEmbedding = businessConfigService.get(SystemUtils.getCurUser().getDomainId())
+					.getEmbeddingModelProperties();
+			embeddingModelProperties.setApiKey(ModelKeyMask.restoreEmbedding(embeddingModelProperties.getApiKey(),
+					storedEmbedding == null ? null : storedEmbedding.getApiKey()));
     		embeddingModelProperties.setLogRequests(true);
     		embeddingModelProperties.setLogResponses(true);
     		String userContent = input.getString("userContent");
@@ -542,9 +564,13 @@ public class BusinessConfigController {
     	try {
     		User user = SystemUtils.getCurUser();
 			BusinessConfig businessConfig = businessConfigService.get(user.getDomainId());
-			ret.put("data", connectionSecretCodec == null
+			// The response's own record (a fresh read, or the codec's masked copy): model keys are masked on it too.
+			BusinessConfig view = connectionSecretCodec == null
 					? businessConfig
-					: connectionSecretCodec.maskedCopy(businessConfig));
+					: connectionSecretCodec.maskedCopy(businessConfig);
+			view.setModels(ModelKeyMask.masked(view.getModels()));
+			ModelKeyMask.maskEmbedding(view.getEmbeddingModelProperties());
+			ret.put("data", view);
     		ret.put("success", true);
     	} catch (Exception e) {
     		log.error(e.getMessage(), e);

@@ -57,6 +57,7 @@ import { requestLogger as accessLogger, errorHandler } from "../api/middleware";
 import { getDefaultLocale, tApp } from "../i18n/index";
 import { echartDir, webDistDir } from "../content/layout";
 import { workbenchIdentity } from "../identity/installed";
+import { MODEL_RUNTIME_TOKEN_ENV, modelKeySealKey } from "@ontomato/contracts/model-key-seal";
 import { workbenchProduct } from "../product/installed";
 
 const logger = createLogger("server");
@@ -263,6 +264,8 @@ export async function startWorkbench(
   port: number,
 ): Promise<void> {
   const isDev = config.nodeEnv !== "production";
+  // Checked first: without the shared value no model key can be opened, so the server does not start.
+  modelKeySealKey(process.env[MODEL_RUNTIME_TOKEN_ENV]);
   initializeLogFileTransport();
   await syncRuntimeDefaultResources();
   syncDefaultPrompts();

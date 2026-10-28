@@ -1,9 +1,8 @@
+import { createCipheriv, createHash, randomBytes } from "node:crypto";
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ModelSettingsData } from "@ontomato/contracts/model-settings";
 import { parseIsoDurationSeconds } from "@ontomato/contracts/model-settings";
 import { runWithLogContext } from "../../logging/log-context";
-import { installWorkbenchIdentity } from "../../identity/installed";
-import type { WorkbenchIdentity } from "../../identity/types";
 import { configureI18n } from "../../i18n";
 import { appTextEn } from "../../i18n/app-text-en";
 import { en, enLocaleMeta } from "../../i18n/locales/en";
@@ -13,6 +12,14 @@ import {
 } from "../model-resolver";
 
 const mockBackendGet = vi.fn();
+
+/** Seals a key as Java's ModelKeySeal does, with the vitest env's synthetic ONTOMATO_MODEL_RUNTIME_TOKEN. */
+function seal(key: string): string {
+  const iv = randomBytes(12);
+  const cipher = createCipheriv("aes-256-gcm", createHash("sha256").update(process.env.ONTOMATO_MODEL_RUNTIME_TOKEN!).digest(), iv);
+  const body = Buffer.concat([cipher.update(key, "utf8"), cipher.final()]);
+  return `enc:v1:${Buffer.concat([iv, body, cipher.getAuthTag()]).toString("base64url")}`;
+}
 
 vi.mock("../../utils/backend-client", async (importActual) => ({
   ...(await importActual<typeof import("../../utils/backend-client")>()),
@@ -29,9 +36,6 @@ describe("model-resolver", () => {
         en: { messages: { ...en, ...appTextEn }, ...enLocaleMeta },
       },
     });
-    installWorkbenchIdentity({
-      modelSettingsReadHeaders: { "X-Edition-Read": "synthetic" },
-    } as unknown as WorkbenchIdentity);
   });
 
   beforeEach(() => {
@@ -65,7 +69,7 @@ describe("model-resolver", () => {
           name: "m-general",
           displayName: "m-general",
           baseUrl: "https://llm.example.com/v1",
-          apiKeys: ["key-gen-1", "key-gen-2"],
+          apiKeys: ["******en-1", "******en-2"],
           modelName: "gpt-4o",
           timeout: "PT5M",
           maxRetries: 2,
@@ -77,7 +81,7 @@ describe("model-resolver", () => {
           name: "m-diag",
           displayName: "m-diag",
           baseUrl: "https://diag.example.com/v1",
-          apiKeys: ["key-diag-1"],
+          apiKeys: ["******ag-1"],
           modelName: "diag-model",
           maxTokens: 8192,
           contextWindow: 64000,
@@ -89,6 +93,10 @@ describe("model-resolver", () => {
         general: { model: "m-general" },
         diagnosis: { model: "m-diag" },
         knowledgeGovernance: { model: null },
+      },
+      sealedApiKeys: {
+        "m-general": [seal("key-gen-1"), seal("key-gen-2")],
+        "m-diag": [seal("key-diag-1")],
       },
     };
 
@@ -105,7 +113,7 @@ describe("model-resolver", () => {
         () => resolveModelForRole("general")
       );
 
-      // The caller's credential plus the edition's model settings read headers.
+      // The caller's own credential only; the key comes sealed in the response.
       expect(mockBackendGet).toHaveBeenCalledWith(
         "/businessConfig/getModelSettings",
         "/businessConfig/getModelSettings",
@@ -114,7 +122,6 @@ describe("model-resolver", () => {
             "Content-Type": "application/json",
             tk: "jwt-token-123",
             "Accept-Language": "en",
-            "X-Edition-Read": "synthetic",
           },
         }
       );
