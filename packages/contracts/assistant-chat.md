@@ -32,7 +32,8 @@ fields are rejected and are not read from legacy definition rows.
 
 classNames scopes retrieval as before. graphScope selects initial ontology context,
 not the formal retrieval allow-list. External MCP names retain their existing domain
-configuration meaning; the runtime connection handoff awaits controller resolution.
+configuration meaning. External MCP is not effective yet: names are saved/edited
+but are not passed into runtime (controller's provisional decision).
 Analysis and visualization skills share one RuntimeSkillRef list. Session messages,
 events and files remain runtime-owned; host indexes do not duplicate message bodies.
 

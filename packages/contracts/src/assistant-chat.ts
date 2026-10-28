@@ -3,7 +3,8 @@ import { agentHostAgentSchema } from "./agent-host";
 import { runtimeSkillRefSchema } from "./agent-runtime-skills";
 import { retrievalSnapshotSchema } from "./data-retrieval";
 import {
-  runtimeKeySchema,runtimeIdSchema,
+  runtimeKeySchema,
+  runtimeIdSchema,
   runtimeTimestampSchema,
 } from "./agent-runtime-values";
 export const assistantGraphScopeSchema = z.discriminatedUnion("mode", [
@@ -32,9 +33,11 @@ export const assistantAgentDefinitionListSchema = z
 export type AssistantAgentDefinitionList = z.infer<
   typeof assistantAgentDefinitionListSchema
 >;
-export const assistantAgentInputSchema = assistantAgentDefinitionSchema.omit({
-  id: true,
-});
+export const assistantAgentInputSchema = assistantAgentDefinitionSchema
+  .omit({
+    id: true,
+  })
+  .extend({ modelRole: runtimeKeySchema.optional() });
 export type AssistantAgentDefinition = z.infer<
   typeof assistantAgentDefinitionSchema
 >;
