@@ -8,9 +8,8 @@ This directory stores the product operations model and failure modes that the op
 | --- | --- |
 | A page, service, or query is completely unavailable; configuration, permission, or metadata prerequisites are suspected | `infrastructure-and-runtime-prerequisites/index.md`, then only the specific topics |
 | The planning, query, analysis, visualization, or final reply of a standard query Turn is off | `standard-query-turn/index.md`; only read failure modes in that directory when the characteristics match |
-| The plan, current evidence, dimension report, summary, or task replay of an analysis agent task is off | `analysis-agent-tasks/index.md` |
 
-It is not required to start from this index every time, nor to read all three topics in full. When the goal has already been determined from a Skill or page context, read the corresponding topic directly.
+It is not required to start from this index every time, nor to read both topics in full. When the goal has already been determined from a Skill or page context, read the corresponding topic directly.
 
 ## Usage Boundaries
 

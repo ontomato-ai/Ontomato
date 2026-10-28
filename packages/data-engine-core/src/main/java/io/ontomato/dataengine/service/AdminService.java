@@ -66,15 +66,5 @@ public interface AdminService {
 	public JSONObject getPrettyJSONRule(String domainId);
 	
 	public void setPrettyJSONRule(JSONObject prettyJsonRule, String domainId);
-	
-	public boolean saveQuestionSpliterExample(String content, boolean inheritDefault, String domainId);
-	
-	public String getQuestionSpliterExample(String domainId);
-	
-	public boolean saveDslCookerExample(String content, boolean inheritDefault, String domainId);
-	
-	public String getDslCookerExample(String domainId);
 
-
-	
 }

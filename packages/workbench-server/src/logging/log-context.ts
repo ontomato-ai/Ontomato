@@ -11,6 +11,7 @@ export interface TurnIdentity {
 }
 
 export interface LogContext {
+  userId?: string;
   correlationId?: string;
   requestId?: string;
   turn?: TurnIdentity;
@@ -35,7 +36,9 @@ export function generateRequestId(): string {
 export function buildTurnKey(threadId: string, requestSeq: number): string {
   const normalizedThreadId = normalizeTurnKeySegment(threadId, "threadId");
   if (!Number.isInteger(requestSeq) || requestSeq < 0) {
-    throw new Error("requestSeq must be a non-negative integer to build turnKey");
+    throw new Error(
+      "requestSeq must be a non-negative integer to build turnKey",
+    );
   }
 
   return `${TURN_KEY_PREFIX}.${normalizedThreadId}.${requestSeq}`;
@@ -44,13 +47,13 @@ export function buildTurnKey(threadId: string, requestSeq: number): string {
 export function buildAnalysisSubQuestionTurnKey(
   threadId: string,
   requestSeq: number,
-  sourceRef: string
+  sourceRef: string,
 ): string {
   const normalizedSourceRef = normalizeTurnKeySegment(sourceRef, "sourceRef");
 
   return `${buildTurnKey(
     threadId,
-    requestSeq
+    requestSeq,
   )}.${ANALYSIS_SUB_QUESTION_SOURCE_KIND}.${normalizedSourceRef}`;
 }
 
@@ -58,7 +61,11 @@ export function parseTurnKey(turnKey: string): TurnIdentity | null {
   const parts = String(turnKey || "")
     .trim()
     .split(".");
-  if ((parts.length !== 3 && parts.length !== 5) || parts[0] !== TURN_KEY_PREFIX) return null;
+  if (
+    (parts.length !== 3 && parts.length !== 5) ||
+    parts[0] !== TURN_KEY_PREFIX
+  )
+    return null;
 
   const requestSeq = Number(parts[2]);
   if (!Number.isInteger(requestSeq) || requestSeq < 0) return null;
@@ -85,7 +92,10 @@ export function parseTurnKey(turnKey: string): TurnIdentity | null {
   };
 }
 
-export function buildTurnIdentity(threadId: string, requestSeq: number): TurnIdentity {
+export function buildTurnIdentity(
+  threadId: string,
+  requestSeq: number,
+): TurnIdentity {
   return {
     threadId,
     requestSeq,
@@ -114,7 +124,10 @@ export function getTaskId(): string | undefined {
 }
 
 export function runWithLogContext<T>(context: LogContext, fn: () => T): T {
-  return asyncLocalStorage.run({ ...asyncLocalStorage.getStore(), ...context }, fn);
+  return asyncLocalStorage.run(
+    { ...asyncLocalStorage.getStore(), ...context },
+    fn,
+  );
 }
 
 export function runWithRequestContext<T>(requestId: string, fn: () => T): T {
@@ -123,7 +136,7 @@ export function runWithRequestContext<T>(requestId: string, fn: () => T): T {
 
 export function runWithTurnContext<T>(
   turn: Omit<TurnIdentity, "turnKey"> | TurnIdentity,
-  fn: () => T
+  fn: () => T,
 ): T {
   const identity = resolveTurnIdentityForContext(turn);
   return runWithLogContext({ turn: identity }, fn);
@@ -134,14 +147,17 @@ export function runWithTaskContext<T>(taskId: string, fn: () => T): T {
 }
 
 function resolveTurnIdentityForContext(
-  turn: Omit<TurnIdentity, "turnKey"> | TurnIdentity
+  turn: Omit<TurnIdentity, "turnKey"> | TurnIdentity,
 ): TurnIdentity {
   if ("turnKey" in turn && turn.turnKey) {
     const parsed = parseTurnKey(turn.turnKey);
     if (!parsed) {
       throw new Error("Invalid turnKey");
     }
-    if (parsed.threadId !== turn.threadId || parsed.requestSeq !== turn.requestSeq) {
+    if (
+      parsed.threadId !== turn.threadId ||
+      parsed.requestSeq !== turn.requestSeq
+    ) {
       throw new Error("turnKey does not match threadId/requestSeq");
     }
     return parsed;

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { SystemModelConfig } from "@ontomato/contracts/system-model";
+import type { QuerySettings } from "../../types";
 
 import { computed, ref, watch } from "vue";
 import { MessageSquareText } from "lucide-vue-next";
@@ -9,19 +9,13 @@ import { workbenchContent } from "../../../../content";
 const { t } = useI18n();
 const { businessConfigSeparator } = workbenchContent().text;
 
-const abcQuestionModeOptions = [
-  { label: "admin.queryModes.quick", value: "no_tool_fixed" },
-  { label: "admin.queryModes.intelligent", value: "tool_fixed" },
-  { label: "admin.queryModes.deep", value: "harness" },
-] as const;
-
 const props = defineProps<{
   loading: boolean;
   saving: boolean;
   loadError: string;
 }>();
 
-const model = defineModel<SystemModelConfig>("model", { required: true });
+const model = defineModel<QuerySettings>("model", { required: true });
 
 const emit = defineEmits<{
   save: [];
@@ -29,8 +23,7 @@ const emit = defineEmits<{
 }>();
 
 const savedSignature = ref("");
-const signature = () =>
-  JSON.stringify([model.value.abcQuestionMode, model.value.queryTimeoutSeconds]);
+const signature = () => JSON.stringify([model.value.queryTimeoutSeconds]);
 const dirty = computed(() => savedSignature.value !== "" && signature() !== savedSignature.value);
 watch(
   () => props.loading,
@@ -76,18 +69,6 @@ defineExpose({ markSaved });
         size="default"
       >
         <el-row :gutter="24">
-          <el-col :xs="24" :sm="12">
-            <el-form-item :label="t('admin.queryMode')">
-              <el-select v-model="model.abcQuestionMode" class="question-mode-select">
-                <el-option
-                  v-for="option in abcQuestionModeOptions"
-                  :key="option.value"
-                  :label="t(option.label)"
-                  :value="option.value"
-                />
-              </el-select>
-            </el-form-item>
-          </el-col>
           <el-col :xs="24" :sm="12">
             <el-form-item :label="t('admin.queryTimeoutSec')">
               <el-input-number

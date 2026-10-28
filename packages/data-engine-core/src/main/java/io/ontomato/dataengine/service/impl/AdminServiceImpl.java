@@ -5,10 +5,8 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Objects;
 import java.util.Set;
 
-import io.ontomato.dataengine.service.BussinessExampleService;
 import io.ontomato.dataengine.service.KnowledgeService;
 import io.ontomato.dataengine.service.LangService;
 import io.ontomato.dataengine.service.sys.bean.permission.UserDataPermission;
@@ -28,7 +26,6 @@ import io.ontomato.dataengine.config.DataRagConfig;
 import io.ontomato.dataengine.core.bean.User;
 import io.ontomato.dataengine.dao.AuditLogDao;
 import io.ontomato.dataengine.dao.JSONRuleDao;
-import io.ontomato.dataengine.dao.QueryExampleConfigDao;
 import io.ontomato.dataengine.dao.VectorResourceDao;
 import io.ontomato.dataengine.dataAdapter.DataAdapter;
 import io.ontomato.dataengine.dataAdapter.DataAdapterRegistry;
@@ -37,7 +34,6 @@ import io.ontomato.dataengine.service.BusinessConfigService;
 import io.ontomato.dataengine.util.FileUtil;
 import io.ontomato.dataengine.dataAdapter.DslExecutionMode;
 import io.ontomato.dataengine.util.HttpRequestUtil;
-import io.ontomato.dataengine.util.SystemUtils;
 
 import cn.hutool.core.lang.UUID;
 
@@ -61,9 +57,6 @@ public class AdminServiceImpl implements AdminService {
 	private KnowledgeService knowledgeService;
 
 	@Autowired
-	private BussinessExampleService bussinessExampleService;
-	
-	@Autowired
 	private LangService langService;
 	
 	@Autowired
@@ -71,9 +64,6 @@ public class AdminServiceImpl implements AdminService {
 	
 	@Autowired
 	private VectorResourceDao vectorResourceDao;
-
-	@Autowired
-	private QueryExampleConfigDao queryExampleConfigDao;
 
 	@Override
 	public void setDataSetDesc(String dataSetDesc, User user) {
@@ -1056,12 +1046,8 @@ public class AdminServiceImpl implements AdminService {
 	public String getBussinessKnowledgeMarkdown(String domainId){
 		StringBuffer sbMarkdown = new StringBuffer();
 		String bussinessKnowledge = knowledgeService.getBussinessKnowledgeMarkdown(domainId);
-		String bussinessExample = bussinessExampleService.getBussinessExampleMarkdown(domainId);
-		String businessExampleQuestionSpliter = bussinessExampleService.getBusinessExampleQuestionSpliterMarkdown(domainId);
 
 		sbMarkdown.append(bussinessKnowledge).append("\n");
-		sbMarkdown.append(bussinessExample).append("\n");
-		sbMarkdown.append(businessExampleQuestionSpliter).append("\n");
 		return sbMarkdown.toString();
 	}
 	
@@ -1230,47 +1216,6 @@ public class AdminServiceImpl implements AdminService {
 		}
 		rule.put("relationship_rule", relationshipDefs);
 		writeJSONRule(rule, domainId);
-	}
-	
-	@Override
-	public boolean saveQuestionSpliterExample(String content, boolean inheritDefault, String domainId) {
-		return saveExample(QueryExampleConfigDao.QUESTION_SPLITER, content, inheritDefault, domainId);
-	}
-	
-	@Override
-	public String getQuestionSpliterExample(String domainId) {
-		return getExample(QueryExampleConfigDao.QUESTION_SPLITER, "question_spliter_example.md", domainId);
-	}
-	
-	@Override
-	public boolean saveDslCookerExample(String content, boolean inheritDefault, String domainId) {
-		return saveExample(QueryExampleConfigDao.DSL_COOKER, content, inheritDefault, domainId);
-	}
-	
-	@Override
-	public String getDslCookerExample(String domainId) {
-		return getExample(QueryExampleConfigDao.DSL_COOKER, "dsl_cooker_example.md", domainId);
-	}
-
-	private boolean saveExample(String field, String content, boolean inheritDefault, String domainId) {
-		try {
-			queryExampleConfigDao.save(domainId, field, content, inheritDefault);
-			return true;
-		} catch (Exception e) {
-			log.error(e.getMessage(), e);
-			return false;
-		}
-	}
-
-	private String getExample(String field, String defaultFile, String domainId) {
-		JSONObject config = queryExampleConfigDao.query(domainId);
-		if (config.containsKey(field)) {
-			return config.getString(field);
-		}
-		if (AdminServiceImpl.class.getClassLoader().getResource(defaultFile) == null) {
-			throw new IllegalStateException("Default query example not found: " + defaultFile);
-		}
-		return FileUtil.getResourceFileLoadAll(defaultFile, "utf-8");
 	}
 
 }

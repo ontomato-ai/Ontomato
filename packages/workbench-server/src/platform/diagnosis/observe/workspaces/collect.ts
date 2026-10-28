@@ -2,7 +2,7 @@ import fs from "node:fs";
 import { buildTurnWorkspace } from "./builder";
 import { deleteWorkspace, getWorkspacePath, loadManifest } from "./store";
 import { parseTurnKeyOrThrow } from "./turn-resolver";
-import { getCheckpointer } from "../../../../infrastructure/connection";
+import { assistantEvidenceReader } from "./assistant-source";
 import { tApp } from "../../../../i18n";
 
 /** Shared diagnosis operation; AgentTool and governance HTTP are only callers. */
@@ -15,9 +15,7 @@ export async function collectTurnArtifacts(
   if (!turnKey.trim())
     return tApp("diag.observe.agent.tools.collect-turn-artifacts-tool.3");
   try {
-    const checkpointer = getCheckpointer();
-    if (!checkpointer) throw new Error("Thread storage unavailable");
-    await checkpointer.verifyThreadDomain(
+    await assistantEvidenceReader().verifyDomain(
       parseTurnKeyOrThrow(turnKey).threadId,
       caller.domainId,
     );

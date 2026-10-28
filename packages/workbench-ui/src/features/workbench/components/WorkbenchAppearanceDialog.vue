@@ -2,17 +2,14 @@
 import { computed, onMounted, onUnmounted, ref } from "vue";
 import { ElMessage } from "element-plus";
 import { useI18n } from "vue-i18n";
-import type {
-  AppearanceSection,
-  WorkbenchAppearance,
-} from "@ontomato/contracts/workbench-appearance";
+import type { WorkbenchAppearance } from "@ontomato/contracts/workbench-appearance";
 import { getWorkbenchAppearance, saveWorkbenchAppearance } from "../api";
-import AgentBasicInfoFields from "./AgentBasicInfoFields.vue";
 import { workbenchContent } from "../../../content";
 
 const { serviceDisplayName } = workbenchContent();
 
-const props = defineProps<{ section: AppearanceSection; defaultLogo: string }>();
+/** Edits the workbench brand. */
+defineProps<{ defaultLogo: string }>();
 const emit = defineEmits<{ close: []; saved: [value: WorkbenchAppearance] }>();
 const { t } = useI18n();
 const draft = ref<WorkbenchAppearance | null>(null);
@@ -20,7 +17,7 @@ const loading = ref(true);
 const saving = ref(false);
 const imageLoading = ref(false);
 const failed = ref(false);
-const title = computed(() => t(`appearance.${props.section}`));
+const title = computed(() => t("appearance.brand"));
 let active = true;
 let imageSelection = 0;
 onUnmounted(() => {
@@ -54,10 +51,7 @@ function reset() {
   if (!draft.value) return;
   imageSelection++;
   imageLoading.value = false;
-  if (props.section === "brand") draft.value.brand = { name: "", subtitle: "", logo: "" };
-  else if (props.section === "qa")
-    draft.value.qa = { name: "", description: "", avatarKey: "", avatarColor: "" };
-  else draft.value.addAgentLabel = "";
+  draft.value.brand = { name: "", subtitle: "", logo: "" };
 }
 
 async function upload(event: Event) {
@@ -124,65 +118,42 @@ async function save() {
       <el-form v-if="draft" label-position="top" :disabled="saving" @submit.prevent="save">
         <fieldset :disabled="saving">
           <p class="appearance-hint">{{ t("appearance.defaultHint") }}</p>
-          <template v-if="section === 'brand'">
-            <div class="brand-preview">
-              <img :src="draft.brand.logo || defaultLogo" alt="Logo" />
-              <div>
-                <strong>{{ draft.brand.name.trim() || serviceDisplayName }}</strong>
-                <small>{{ draft.brand.subtitle.trim() || t("app.subtitle") }}</small>
-              </div>
+          <div class="brand-preview">
+            <img :src="draft.brand.logo || defaultLogo" alt="Logo" />
+            <div>
+              <strong>{{ draft.brand.name.trim() || serviceDisplayName }}</strong>
+              <small>{{ draft.brand.subtitle.trim() || t("app.subtitle") }}</small>
             </div>
-            <el-form-item label="Logo">
-              <input
-                type="file"
-                accept="image/png,image/jpeg,image/webp"
-                :aria-label="t('appearance.uploadLogo')"
-                :disabled="saving || imageLoading"
-                @change="upload"
-              />
-              <p class="appearance-hint">{{ t("appearance.imageHint") }}</p>
-              <el-button
-                :disabled="saving"
-                text
-                @click="
-                  imageSelection++;
-                  imageLoading = false;
-                  draft.brand.logo = '';
-                "
-              >
-                {{ t("appearance.defaultLogo") }}
-              </el-button>
-            </el-form-item>
-            <el-form-item :label="t('common.name')">
-              <el-input v-model="draft.brand.name" maxlength="40" :placeholder="serviceDisplayName" />
-            </el-form-item>
-            <el-form-item :label="t('appearance.subtitle')">
-              <el-input
-                v-model="draft.brand.subtitle"
-                maxlength="120"
-                :placeholder="t('app.subtitle')"
-              />
-            </el-form-item>
-          </template>
-          <AgentBasicInfoFields
-            v-else-if="section === 'qa'"
-            v-model:name="draft.qa.name"
-            v-model:description="draft.qa.description"
-            v-model:avatar-key="draft.qa.avatarKey"
-            v-model:avatar-color="draft.qa.avatarColor"
-            :name-required="false"
-            :name-maxlength="40"
-            :description-maxlength="120"
-            :name-placeholder="t('chat.queryAgent')"
-            :description-placeholder="t('chat.queryAgentDesc')"
-            default-avatar-key="MessageSquare"
-          />
-          <el-form-item v-else :label="t('appearance.buttonText')">
+          </div>
+          <el-form-item label="Logo">
+            <input
+              type="file"
+              accept="image/png,image/jpeg,image/webp"
+              :aria-label="t('appearance.uploadLogo')"
+              :disabled="saving || imageLoading"
+              @change="upload"
+            />
+            <p class="appearance-hint">{{ t("appearance.imageHint") }}</p>
+            <el-button
+              :disabled="saving"
+              text
+              @click="
+                imageSelection++;
+                imageLoading = false;
+                draft.brand.logo = '';
+              "
+            >
+              {{ t("appearance.defaultLogo") }}
+            </el-button>
+          </el-form-item>
+          <el-form-item :label="t('common.name')">
+            <el-input v-model="draft.brand.name" maxlength="40" :placeholder="serviceDisplayName" />
+          </el-form-item>
+          <el-form-item :label="t('appearance.subtitle')">
             <el-input
-              v-model="draft.addAgentLabel"
-              maxlength="40"
-              :placeholder="t('analysis.addAgent')"
-              autofocus
+              v-model="draft.brand.subtitle"
+              maxlength="120"
+              :placeholder="t('app.subtitle')"
             />
           </el-form-item>
         </fieldset>

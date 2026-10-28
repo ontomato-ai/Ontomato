@@ -57,51 +57,6 @@ const emit = defineEmits<{
             </el-form-item>
           </el-col>
           <el-col :span="12">
-            <el-form-item :label="t('admin.postCalcRetries')">
-              <div class="inline-control">
-                <el-input-number
-                  v-model="config.toolAndPythonRetry"
-                  :min="0"
-                  :step="1"
-                  controls-position="right"
-                />
-                <el-button
-                  type="primary"
-                  size="small"
-                  :loading="saving.toolAndPythonRetry"
-                  :disabled="disabled"
-                  @click="emit('save', 'toolAndPythonRetry')"
-                >
-                  {{ t("common.save") }}
-                </el-button>
-              </div>
-            </el-form-item>
-          </el-col>
-        </el-row>
-
-        <el-row :gutter="24">
-          <el-col :span="12">
-            <el-form-item :label="t('admin.dslCookerTries')">
-              <div class="inline-control">
-                <el-input-number
-                  v-model="config.dslCookerTries"
-                  :min="1"
-                  :step="1"
-                  controls-position="right"
-                />
-                <el-button
-                  type="primary"
-                  size="small"
-                  :loading="saving.dslCookerTries"
-                  :disabled="disabled"
-                  @click="emit('save', 'dslCookerTries')"
-                >
-                  {{ t("common.save") }}
-                </el-button>
-              </div>
-            </el-form-item>
-          </el-col>
-          <el-col :span="12">
             <el-form-item :label="t('admin.dslCookerTimeout')">
               <div class="inline-control">
                 <el-input-number
@@ -116,51 +71,6 @@ const emit = defineEmits<{
                   :loading="saving.dslCookerTimeout"
                   :disabled="disabled"
                   @click="emit('save', 'dslCookerTimeout')"
-                >
-                  {{ t("common.save") }}
-                </el-button>
-              </div>
-            </el-form-item>
-          </el-col>
-        </el-row>
-
-        <el-row :gutter="24">
-          <el-col :span="12">
-            <el-form-item :label="t('admin.questionSpliterTries')">
-              <div class="inline-control">
-                <el-input-number
-                  v-model="config.questionSpliterTries"
-                  :min="1"
-                  :step="1"
-                  controls-position="right"
-                />
-                <el-button
-                  type="primary"
-                  size="small"
-                  :loading="saving.questionSpliterTries"
-                  :disabled="disabled"
-                  @click="emit('save', 'questionSpliterTries')"
-                >
-                  {{ t("common.save") }}
-                </el-button>
-              </div>
-            </el-form-item>
-          </el-col>
-          <el-col :span="12">
-            <el-form-item :label="t('admin.questionSpliterTimeout')">
-              <div class="inline-control">
-                <el-input-number
-                  v-model="config.questionSpliterTimeout"
-                  :min="1000"
-                  :step="10000"
-                  controls-position="right"
-                />
-                <el-button
-                  type="primary"
-                  size="small"
-                  :loading="saving.questionSpliterTimeout"
-                  :disabled="disabled"
-                  @click="emit('save', 'questionSpliterTimeout')"
                 >
                   {{ t("common.save") }}
                 </el-button>

@@ -1,3 +1,4 @@
+import { getLogContext } from "../../../logging/log-context";
 import type { ParsedLogRecord } from "@ontomato/contracts/observe";
 /**
  * Observability query aggregation module.
@@ -23,7 +24,11 @@ import {
   resolveTurnRunBackendTimeWindow,
   resolveTurnWorkspaceContext,
 } from "./workspaces/turn-resolver";
-import type { LogQueryParams, LlmQueryParams, BackendLogQueryParams } from "./types";
+import type {
+  LogQueryParams,
+  LlmQueryParams,
+  BackendLogQueryParams,
+} from "./types";
 import type { BackendNodeRequestOptions } from "./log-sources/backend-node-client";
 
 const logger = createLogger("observe:query");
@@ -75,7 +80,7 @@ export function queryLlmCalls(params: LlmQueryParams = {}): ParsedLogRecord[] {
  */
 export async function queryBackendLogs(
   params: BackendLogQueryParams = {},
-  options: BackendNodeRequestOptions = {}
+  options: BackendNodeRequestOptions = {},
 ): Promise<ParsedLogRecord[]> {
   try {
     return await queryBackendLogsByTurnKey(params, options);
@@ -88,16 +93,20 @@ export async function queryBackendLogs(
 
 async function queryBackendLogsByTurnKey(
   params: BackendLogQueryParams,
-  options: BackendNodeRequestOptions
+  options: BackendNodeRequestOptions,
 ): Promise<ParsedLogRecord[]> {
   if (!params.turnKey) return [];
 
   const turn = parseTurnKeyOrThrow(params.turnKey);
-  const turnContext = await resolveTurnWorkspaceContext(turn);
+  const turnContext = await resolveTurnWorkspaceContext(turn, {
+    domainId: getLogContext()?.domainId ?? "",
+  });
   const queryRun = turnContext.selectedQueryRun ?? turnContext.primaryQueryRun;
   const backendSessions = resolveQueryRunBackendSessions(queryRun);
 
-  const artifactDir = await fs.mkdtemp(path.join(os.tmpdir(), "observe-turn-backend-"));
+  const artifactDir = await fs.mkdtemp(
+    path.join(os.tmpdir(), "observe-turn-backend-"),
+  );
   try {
     const collected = await collectLogs({
       artifactDir,
@@ -113,7 +122,7 @@ async function queryBackendLogsByTurnKey(
     });
     return applyBackendLogFilters(
       collected.records.filter((record) => record.source === "backend"),
-      params
+      params,
     );
   } finally {
     await fs.rm(artifactDir, { recursive: true, force: true });
@@ -122,12 +131,14 @@ async function queryBackendLogsByTurnKey(
 
 function applyBackendLogFilters(
   records: ParsedLogRecord[],
-  params: BackendLogQueryParams
+  params: BackendLogQueryParams,
 ): ParsedLogRecord[] {
   let logs = records;
   if (params.keyword) {
     const keyword = params.keyword.toLowerCase();
-    logs = logs.filter((record) => record.message.toLowerCase().includes(keyword));
+    logs = logs.filter((record) =>
+      record.message.toLowerCase().includes(keyword),
+    );
   }
   if (params.startTime) {
     const startTs = Date.parse(params.startTime);
@@ -166,7 +177,7 @@ export async function getErrorSummary(
     endTime?: string;
     limit?: number;
   },
-  options: BackendNodeRequestOptions = {}
+  options: BackendNodeRequestOptions = {},
 ) {
   const allRecords: ParsedLogRecord[] = [];
 
@@ -196,7 +207,7 @@ export async function getErrorSummary(
           turnKey: params.turnKey,
           limit: params.limit ?? 100,
         },
-        options
+        options,
       );
       allRecords.push(...backendLogs.filter((r) => r.level === "error"));
     }

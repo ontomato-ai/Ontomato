@@ -128,6 +128,20 @@ export default [
     },
   },
   {
+    // The agent shell is a platform UI package: it depends only on contracts and third-party
+    // libraries, never on a host (workbench, Manager), a global store, router or i18n instance.
+    files: ["packages/agent-shell-ui/src/**/*.{ts,vue}"],
+    rules: {
+      "no-undef": "off",
+      "no-restricted-imports": restrict([
+        {
+          regex: "^@ontomato/(?!contracts(/|$))|^(pinia|vue-router|vue-i18n|element-plus)(/|$)",
+          message: "agent-shell-ui may depend only on contracts; hosts pass labels, data ports and renderers",
+        },
+      ]),
+    },
+  },
+  {
     files: ["packages/contracts/**/*.ts"],
     rules: {
       "no-restricted-imports": restrict([
@@ -172,10 +186,5 @@ export default [
       ]),
     },
   },
-  {
-    // Source-repository legacy allowlist (platform → services), moved over unchanged and
-    // only ever reduced.
-    files: [`${server}/platform/diagnosis/autotest/strategies/api-chat.ts`],
-    rules: { "no-restricted-imports": restrict([]) },
-  },
+
 ];

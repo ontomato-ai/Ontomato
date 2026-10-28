@@ -1,3 +1,4 @@
+import { ensureAssistantSchema } from "./20261028-assistant/schema";
 import { ensureDataRetrievalSchema } from "./20261028-data-retrieval/schema";
 import { ensureGovernanceRuntimeSchema } from "./20261028-governance-runtime/schema";
 import { workbenchProduct } from "../../product/installed";
@@ -88,6 +89,7 @@ type MigrationRegistration = {
 };
 
 export const POSTGRES_MIGRATION_REGISTRY: MigrationRegistration[] = [
+  { directory: "20261028-assistant", ensureSchema: ensureAssistantSchema },
   {
     directory: "20260910-knowledge-governance",
     ensureSchema: ensureKnowledgeGovernanceSchema,

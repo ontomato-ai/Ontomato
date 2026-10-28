@@ -16,8 +16,6 @@ import { ossRuntimeDefaults } from "./runtime-defaults";
 import { installM3DiagnosticSupport } from "@ontomato/workbench-server/platform/diagnosis/observe/m3-support";
 import { installModelAgentCatalog } from "@ontomato/workbench-server/logging/model-agents";
 import { installWorkspaceArtifactText } from "@ontomato/workbench-server/platform/diagnosis/observe/workspace-artifact/artifact-text";
-import { installCurrentDatasetRule, lastDatasetWithRows } from "@ontomato/workbench-server/services/chat/graph/utils/current-dataset";
-import { installNoDataVisualization, noDataChart } from "@ontomato/workbench-server/services/chat/graph/nodes/visualization-no-data";
 
 installContentLayout(ossContentLayout(productRoot));
 installWorkbenchProduct(ossProduct);
@@ -26,8 +24,6 @@ installRuntimeDefaults(ossRuntimeDefaults);
 installWorkbenchIdentity(ossIdentity);
 installM3DiagnosticSupport(null);
 installWorkspaceArtifactText(ossWorkspaceArtifactText);
-installCurrentDatasetRule(lastDatasetWithRows);
-installNoDataVisualization(noDataChart);
 configureOssI18n();
 
 const { createWorkbenchApp, startWorkbench } = await import(

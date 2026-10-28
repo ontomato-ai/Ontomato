@@ -1,22 +1,12 @@
-import { Request, Response, Router } from "express";
-import { getStore } from "../../infrastructure/connection";
-import type { AuthenticatedRequest } from "../../utils/request-identity";
+import { Router } from "express";
+import { readPreferences } from "../../services/assistant/user-state";
 import { asyncHandler } from "../utils/http";
-
+import type { AuthenticatedRequest } from "../../utils/request-identity";
 const router: ReturnType<typeof Router> = Router();
-
 router.get(
   "/",
-  asyncHandler(async (req: Request, res: Response) => {
-    const { userId } = req as AuthenticatedRequest;
-    const storeInstance = getStore();
-    if (storeInstance) {
-      const prefs = await storeInstance.search(["preferences", userId], { limit: 100 });
-      res.json(prefs);
-    } else {
-      res.json([]);
-    }
-  })
+  asyncHandler(async (req, res) => {
+    res.json(await readPreferences((req as AuthenticatedRequest).userId));
+  }),
 );
-
 export default router;

@@ -70,9 +70,6 @@ public final class ModelResolver {
             return model.getCustomRequestParameters();
         }
 
-        public String getSkilldir() {
-            return agent.getSkilldir();
-        }
     }
 
     public static ResolvedChatModel resolve(BusinessConfig config, String role, LangService langService) {

@@ -1,7 +1,7 @@
 import { readdir, readFile } from "node:fs/promises";
 import path from "node:path";
 import type { RuntimeSkillRef } from "@ontomato/contracts/agent-runtime-skills";
-import { RuntimeClient } from "./client";
+import { RuntimeClient } from "../../infrastructure/agent-runtime/client";
 /** Publish the exact portable directory; no runtime-specific generated manifest. */
 export async function publishSkill(root: string, skill: RuntimeSkillRef) {
   const files: { path: string; content: string }[] = [];

@@ -143,3 +143,30 @@ export function getEchartsTheme() {
     legendBottom: "",
   };
 }
+
+/**
+ * The same palette as a native ECharts theme, for options written outside the dashboard generator
+ * (agent chart files), which carry no colours of their own.
+ */
+export function nativeEchartsTheme(isDark: boolean) {
+  const visuals = workbenchContent().dashboard;
+  const colors = visuals.themeColors(isDark);
+  const axis = (showLine: boolean, showSplit: boolean) => ({
+    axisLine: { show: showLine, lineStyle: { color: colors.axis } },
+    axisTick: { show: false },
+    axisLabel: { color: colors.textSecondary },
+    nameTextStyle: { color: colors.textSecondary },
+    splitLine: { show: showSplit, lineStyle: { color: colors.splitLine } },
+  });
+  return {
+    color: [...visuals.series],
+    backgroundColor: "transparent",
+    textStyle: { color: colors.text },
+    title: { textStyle: { color: colors.text }, subtextStyle: { color: colors.textSecondary } },
+    legend: { textStyle: { color: colors.textSecondary } },
+    categoryAxis: axis(true, false),
+    valueAxis: axis(false, true),
+    timeAxis: axis(true, false),
+    logAxis: axis(false, true),
+  };
+}

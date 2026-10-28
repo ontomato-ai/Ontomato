@@ -1,20 +1,18 @@
 import type {
   DashboardListItem,
-  DashboardGroup,
   DashboardDetail,
+  DashboardGroup,
 } from "@ontomato/contracts/dashboard";
+import {
+  dashboardAddArtifactSchema,
+  dashboardSourceSchema,
+  type DashboardAddArtifact,
+} from "@ontomato/contracts/dashboard-artifacts";
 import { nodeApiGet, nodeApiPost } from "../../utils/api";
 import { workbenchContent } from "../../content";
 
 export async function fetchDashboardList(): Promise<DashboardListItem[]> {
   const json = await nodeApiPost("/dashboards/queryList", {});
-  return json?.data || [];
-}
-
-export async function fetchDashboardGroups(args: {
-  id: string;
-}): Promise<Pick<DashboardGroup, "id" | "title">[]> {
-  const json = await nodeApiPost("/dashboards/groups", args || {});
   return json?.data || [];
 }
 
@@ -24,31 +22,29 @@ export async function createDashboard(name: string) {
   return { id: String(json.data.id), name: String(json.data.name || "") };
 }
 
+export async function fetchDashboardGroups(id: string): Promise<Pick<DashboardGroup, "id" | "title">[]> {
+  const json = await nodeApiPost("/dashboards/groups", { id });
+  return json?.data || [];
+}
+
+/** Adds a conversation dataset file to an existing dashboard group. */
+export async function addDatasetToDashboard(input: DashboardAddArtifact) {
+  await nodeApiPost("/dashboards/add-chart", dashboardAddArtifactSchema.parse(input));
+}
+
+/** Plans a new dashboard from conversation dataset files. */
+export async function createDashboardFromDatasets(sessionId: string, datasetArtifactIds: string[]) {
+  const json = await nodeApiPost(
+    "/dashboards/create-from-analysis",
+    dashboardSourceSchema.parse({ sessionId, datasetArtifactIds }),
+  );
+  if (!json?.data?.id) throw new Error(json?.error || workbenchContent().text.createDashboardFailed);
+  return { id: String(json.data.id), name: String(json.data.name || "") };
+}
+
 export async function createDimension(id: string, dimensionName: string) {
   const json = await nodeApiPost("/dashboards/createDimension", { id, dimensionName });
   return json?.success === true;
-}
-
-export async function addChartToDashboard(args: {
-  dashboardId: string;
-  groupId: string;
-  threadId: string;
-  requestSeq: number;
-  datasetIndex: number;
-}) {
-  const json = await nodeApiPost("/dashboards/add-chart", args);
-  return json?.success === true;
-}
-
-export async function createDashboardFromAnalysis(args: {
-  threadId: string;
-  requestSeq: number;
-  name?: string;
-  needParameter?: boolean;
-}) {
-  const json = await nodeApiPost("/dashboards/create-from-analysis", args);
-  if (!json?.data?.id) throw new Error(json?.error || workbenchContent().text.createDashboardFailed);
-  return { id: String(json.data.id), name: String(json.data.name || "") };
 }
 
 export async function fetchDashboardLocalDetail(

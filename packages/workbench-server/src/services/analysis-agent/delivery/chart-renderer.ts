@@ -1,13 +1,9 @@
 import { echartDir } from "../../../content/layout";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
-import { createLogger } from "../../../logging/logger";
-import { replaceChartMarkers } from "../report/chart-marker";
 import { getBrowser } from "./browser";
-import { tApp } from "../../../i18n";
 
 
-const logger = createLogger("chart-renderer");
 
 
 const CHART_VIEWPORT_WIDTH = 1000;
@@ -146,64 +142,6 @@ export async function renderChartHtmlToDataUrl(
     options.signal?.removeEventListener("abort", cancel);
     await chartPage.close();
   }
-}
-
-export async function renderChartsToDataUrls(
-  chartHtmls: Record<string, string>,
-  timeoutMs: number = 30_000
-): Promise<Record<string, string>> {
-  const result: Record<string, string> = {};
-  for (const [chartId, html] of Object.entries(chartHtmls)) {
-    try {
-      result[chartId] = await renderChartHtmlToDataUrl(html, timeoutMs);
-    } catch (err) {
-      logger.error(tApp("analysis.delivery.chart-renderer.22"), {
-        chartId,
-        error: err instanceof Error ? err.message : String(err),
-      });
-      result[chartId] = "";
-    }
-  }
-  return result;
-}
-
-export async function replaceChartMarkersWithImages(
-  markdown: string,
-  chartDataUrls: Record<string, string>
-): Promise<string> {
-  const availableChartIds = Object.entries(chartDataUrls)
-    .filter(([, dataUrl]) => Boolean(dataUrl))
-    .map(([chartId]) => chartId);
-
-  return replaceChartMarkers(
-    markdown,
-    ({ chartId }) => {
-      const dataUrl = chartDataUrls[chartId];
-      return dataUrl
-        ? tApp("analysis.delivery.chart-renderer.23", { dataUrl: dataUrl })
-        : undefined;
-    },
-    {
-      onUnmatched: (markers) => {
-        logger.warn(tApp("analysis.delivery.chart-renderer.24"), {
-          unmatchedMarkers: markers.map((marker) => `${marker.scope}:${marker.chartId}`),
-          availableChartIds,
-        });
-      },
-    }
-  );
-}
-
-export async function convertInlineChartBlocks(
-  markdown: string,
-  timeoutMs: number = 30_000
-): Promise<string> {
-  return walkChartBlocks(markdown, (chartHtml, chartIndex) =>
-    renderChartHtmlToDataUrl(chartHtml, timeoutMs).then(
-      (dataUrl) =>
-        tApp("analysis.delivery.chart-renderer.25", { dataUrl: dataUrl, value: chartIndex + 1 })
-    )
-  );
 }
 
 export async function walkChartBlocks(

@@ -32,8 +32,6 @@ ontomato:
     node-id: ${NODE_ID:}
     cardBase-url: ${CARD_BASE_URL:}
     knowledge_maxResult: 10
-    toolsdatamaxsize: 20
-    toolAndPythonRetry: 3
     data-adapter: ${DATA_ADAPTER:postgresql}
     production-env-url: ${PRODUCTION_ENV_URL:}
     production-env-user: ${PRODUCTION_ENV_USER:}
@@ -58,7 +56,6 @@ ontomato:
         model: default
       coding:
         model: default
-        skill-dir: ""
       general:
         model: default
       diagnosis:

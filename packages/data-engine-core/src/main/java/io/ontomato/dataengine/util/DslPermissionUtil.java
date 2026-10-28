@@ -12,8 +12,6 @@ import java.util.Set;
 import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
-import com.alibaba.fastjson2.JSONWriter.Feature;
-import io.ontomato.dataengine.bean.AfterCalculatorConsanguinity;
 import io.ontomato.dataengine.bean.DslConsanguinity;
 import io.ontomato.dataengine.core.exception.ServiceException;
 import io.ontomato.dataengine.service.sys.bean.permission.FieldPermission;
@@ -291,94 +289,5 @@ public class DslPermissionUtil {
 		
 		return dataMap;
 	}
-	
-	public static JSONObject dealAfterCalculateAnswerWithPermission(
-			JSONObject dataMap, 
-			List<Map<String, DslConsanguinity>> dslConsanguinityMapList, 
-			List<AfterCalculatorConsanguinity> afterCalculatorConsanguinityList, 
-			UserDataPermission permission) {
-		if (dslConsanguinityMapList != null && afterCalculatorConsanguinityList != null) {
-			// Output attributes without permission
-			List<String> noPermissionKeys = new ArrayList<String>();
-			
-			for (AfterCalculatorConsanguinity afterCalculatorConsanguinity : afterCalculatorConsanguinityList) {
-				if (afterCalculatorConsanguinity.getSources() != null && afterCalculatorConsanguinity.getSources().size() == 1) {
-					Integer subQueryIndex = afterCalculatorConsanguinity.getSources().get(0).getSubQueryIndex();
-					String input = afterCalculatorConsanguinity.getSources().get(0).getInputKey();
-					if (subQueryIndex >= 0 && subQueryIndex < dslConsanguinityMapList.size()) {
-						Map<String, DslConsanguinity> dslConsanguinityMap = dslConsanguinityMapList.get(subQueryIndex);
-						if (dslConsanguinityMap.get(input) != null) {
-							DslConsanguinity consanguinity = null;
-							Object consanguinityObject = dslConsanguinityMap.get(input);
-							if (consanguinityObject instanceof JSONObject) {
-								consanguinity = ((JSONObject)consanguinityObject).to(DslConsanguinity.class);
-							} else {
-								consanguinity = (DslConsanguinity)consanguinityObject;
-							}
-							String className = consanguinity.getClassName();
-							FieldPermission fieldPermission = permission.getFieldPermissionByClassName(className);
-							if (permission.isFullData() || fieldPermission != null && !fieldPermission.isEmpty()) { // The class has permission
-								if (!permission.isFullData() && !consanguinity.getAsGroupBy()) { // Group by fields are fully output
-									if (consanguinity.getIndicatorNames() != null) { // Permission control of metrics
-										Set<String> hasPermissionAttrNames = new HashSet<String>();
-										hasPermissionAttrNames.addAll(fieldPermission.getVisibleFields()); // Detail fields with permission
-										if (consanguinity.getFunction() != null) { // Statistical fields with permission
-											hasPermissionAttrNames.addAll(fieldPermission.getGroupableColumns());
-										}
-										boolean noPermission = true;
-										for (String indicatorName : consanguinity.getIndicatorNames()) {
-											if (hasPermissionAttrNames.contains(consanguinity.getAttrName()) || hasPermissionAttrNames.contains(consanguinity.getAttrName() + "." + indicatorName)) {
-												noPermission = false;
-												break;
-											}
-										}
-										if (noPermission) {
-											noPermissionKeys.add(input);
-										}
-									} else { // Permission control of attributes
-										Set<String> hasPermissionAttrNames = new HashSet<String>();
-										hasPermissionAttrNames.addAll(fieldPermission.getVisibleFields()); // Detail fields with permission
-										if (consanguinity.getFunction() != null) { // Statistical fields with permission
-											hasPermissionAttrNames.addAll(fieldPermission.getGroupableColumns());
-										}
-										if (!hasPermissionAttrNames.contains(consanguinity.getAttrName())) {
-											noPermissionKeys.add(input);
-										}
-									}
-								}
-							} else { // The class has no permission
-								noPermissionKeys.add(input);
-							}
-						}
-					}
-				}
-			}
-			
-			// Change the values of attributes or metrics without permission to "****"
-			String password = "****";
-			if (dataMap.getJSONArray("data") != null) {
-				JSONArray data = dataMap.getJSONArray("data");
-				for (int i = 0; i < data.size(); i++) {
-					JSONObject datum = data.getJSONObject(i);
-					if (datum.getJSONArray("answer") != null) {
-						JSONArray answer = datum.getJSONArray("answer");
-						for (int j = 0; j < answer.size(); j++) {
-	    					JSONObject row = answer.getJSONObject(j);
-	    					if (row != null) {
-	    						// Handle attributes without permission
-	    						for (String noPermissionKey : noPermissionKeys) {
-	    							// Time series, vector, normal or full-text search fields are all replaced with ****
-	    							if (row.get(noPermissionKey) != null) {
-	    								row.put(noPermissionKey, password);
-	    							}
-	    						}
-	    					}
-						}
-					}
-				}
-			}
-		}
-		return dataMap;
-	}
-	
+
 }

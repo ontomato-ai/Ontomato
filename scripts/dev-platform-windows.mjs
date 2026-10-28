@@ -114,7 +114,7 @@ function mavenProjectRoot(argv) {
   return found === undefined ? undefined : found.slice(flag.length);
 }
 
-// Strict argv binding: entry point / Maven project root / Java conf classpath / Python executable and script must fall within this checkout;
+// Strict argv binding: entry point / Maven project root / Java conf classpath must fall within this checkout;
 // diagnostic commands carrying paths as text will not be claimed.
 export function classifyWindows(row, ctx) {
   const argv = parseWindowsCommandLine(row.command ?? "");
@@ -149,11 +149,6 @@ export function classifyWindows(row, ctx) {
         windowsPathEquals(mavenProjectRoot(argv), ctx.root)) return "maven";
     return undefined;
   }
-  // The venv Scripts/python.exe is started by official launcher, so verify true ExecutablePath = this checkout's venv;
-  // do not treat argv[0] as a substitute for true exe identity. The actual MCP listener might be a base Python child process,
-  // which will be claimed in identifyWindows based on parent-child launch identity.
-  if (exe === "python.exe" && windowsPathEquals(row.exe, ctx.venvPython) &&
-      windowsPathEquals(argv[1], ctx.mcpScript)) return "mcp";
   return undefined;
 }
 
@@ -177,21 +172,6 @@ export function identifyWindows(rows, ctx, self = process.pid) {
     if (role === undefined || role === "self") continue;
     if (row.created == null || row.command == null) report(row, role);
     else classified.set(row.pid, { pid: row.pid, ppid: row.ppid, lstart: String(row.created), command: row.command, role });
-  }
-  // Windows venv launcher calls CreateProcess to start base Python and waits for it to exit (CPython PC/venvlauncher.c);
-  // the listening port belongs to that child process. Public and enterprise share the same mcp script, so we cannot claim by "any python + shared script";
-  // only direct children of a confirmed venv launcher (CreationDate not earlier than parent, preventing reuse) whose argv contains the same mcp script
-  // are classified as mcp; even if the child's argv[0] is still the venv path, it is not used as the true exe identity.
-  for (const row of rows) {
-    const parent = classified.get(row.ppid);
-    if (!parent || parent.role !== "mcp" || classified.has(row.pid)) continue;
-    if (!windowsPathEquals(byPid.get(row.ppid).exe, ctx.venvPython)) continue;
-    if (row.created == null || row.command == null) { report(row, "mcp"); continue; }
-    if (BigInt(row.created) < BigInt(parent.lstart)) continue;
-    if (row.exe == null) { report(row, "mcp"); continue; }
-    if (windowsBaseName(row.exe) !== "python.exe" ||
-        !windowsPathEquals(parseWindowsCommandLine(row.command)[1], ctx.mcpScript)) continue;
-    classified.set(row.pid, { pid: row.pid, ppid: row.ppid, lstart: String(row.created), command: row.command, role: "mcp" });
   }
   const members = new Set([...classified.values()].filter((entry) => entry.role === "frontend-root").map((entry) => entry.pid));
   let grew = true;

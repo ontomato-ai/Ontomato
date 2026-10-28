@@ -1,7 +1,4 @@
-import type {
-  SystemModelConfig,
-  AbcQuestionMode,
-} from "@ontomato/contracts/system-model";
+import type { SystemModelConfig } from "@ontomato/contracts/system-model";
 import fs from "fs";
 import path from "path";
 import { createLogger } from "../logging/logger";
@@ -12,13 +9,10 @@ export class SystemModelConfigError extends Error {}
 
 const logger = createLogger("system-model-config");
 
-export const DEFAULT_ABC_QUESTION_MODE: AbcQuestionMode = "harness";
 export const DEFAULT_QUERY_TIMEOUT_SECONDS = 10 * 60;
-const ABC_QUESTION_MODES: readonly unknown[] = ["no_tool_fixed", "tool_fixed", "harness"];
 
 function createDefaultConfig(): SystemModelConfig {
   return {
-    abcQuestionMode: DEFAULT_ABC_QUESTION_MODE,
     queryTimeoutSeconds: DEFAULT_QUERY_TIMEOUT_SECONDS,
   };
 }
@@ -26,7 +20,9 @@ function createDefaultConfig(): SystemModelConfig {
 function resolveDomainId(domainId?: string): string {
   const resolved = domainId?.trim() || getLogContext()?.domainId?.trim();
   if (!resolved) {
-    throw new SystemModelConfigError("domainId is required for system model configuration");
+    throw new SystemModelConfigError(
+      "domainId is required for system model configuration",
+    );
   }
   return resolved;
 }
@@ -49,7 +45,8 @@ function asRecord(value: unknown): Record<string, unknown> | null {
   return value as Record<string, unknown>;
 }
 
-const isPositiveInteger = (value: unknown) => Number.isInteger(value) && (value as number) > 0;
+const isPositiveInteger = (value: unknown) =>
+  Number.isInteger(value) && (value as number) > 0;
 
 function normalizeConfig(raw: unknown): SystemModelConfig {
   const source = asRecord(raw);
@@ -59,15 +56,7 @@ function normalizeConfig(raw: unknown): SystemModelConfig {
 
   if ("models" in source || "agents" in source) {
     throw new SystemModelConfigError(
-      "Legacy system model config format detected with models/agents; run upgrade migration"
-    );
-  }
-
-  const abcQuestionMode =
-    source.abcQuestionMode === undefined ? DEFAULT_ABC_QUESTION_MODE : source.abcQuestionMode;
-  if (!ABC_QUESTION_MODES.includes(abcQuestionMode)) {
-    throw new SystemModelConfigError(
-      `Invalid abcQuestionMode: ${String(abcQuestionMode)}. Must be one of: ${ABC_QUESTION_MODES.join(", ")}`
+      "Legacy system model config format detected with models/agents; run upgrade migration",
     );
   }
 
@@ -76,11 +65,12 @@ function normalizeConfig(raw: unknown): SystemModelConfig {
       ? DEFAULT_QUERY_TIMEOUT_SECONDS
       : source.queryTimeoutSeconds;
   if (!isPositiveInteger(queryTimeoutSeconds)) {
-    throw new SystemModelConfigError("queryTimeoutSeconds must be a positive integer");
+    throw new SystemModelConfigError(
+      "queryTimeoutSeconds must be a positive integer",
+    );
   }
 
   return {
-    abcQuestionMode: abcQuestionMode as AbcQuestionMode,
     queryTimeoutSeconds: queryTimeoutSeconds as number,
   };
 }
@@ -96,14 +86,11 @@ function migrateLegacyConfig(raw: unknown): SystemModelConfig | null {
     return null;
   }
 
-  const abcQuestionMode = ABC_QUESTION_MODES.includes(source.abcQuestionMode)
-    ? (source.abcQuestionMode as AbcQuestionMode)
-    : DEFAULT_ABC_QUESTION_MODE;
   const queryTimeoutSeconds = isPositiveInteger(source.queryTimeoutSeconds)
     ? (source.queryTimeoutSeconds as number)
     : DEFAULT_QUERY_TIMEOUT_SECONDS;
 
-  return { abcQuestionMode, queryTimeoutSeconds };
+  return { queryTimeoutSeconds };
 }
 
 export function getSystemModelConfig(domainId?: string): SystemModelConfig {
@@ -118,7 +105,9 @@ export function getSystemModelConfig(domainId?: string): SystemModelConfig {
     const raw = JSON.parse(fs.readFileSync(configFile, "utf-8"));
     const migrated = migrateLegacyConfig(raw);
     if (migrated) {
-      logger.warn(`Migrating legacy system model config for domain ${resolved}`);
+      logger.warn(
+        `Migrating legacy system model config for domain ${resolved}`,
+      );
       writeConfig(configFile, migrated);
       return migrated;
     }
@@ -127,28 +116,32 @@ export function getSystemModelConfig(domainId?: string): SystemModelConfig {
     if (error instanceof SystemModelConfigError) {
       throw error;
     }
-    logger.warn(`Failed to read system model config for domain ${resolved}`, error);
+    logger.warn(
+      `Failed to read system model config for domain ${resolved}`,
+      error,
+    );
     return createDefaultConfig();
   }
 }
 
 export function saveSystemModelConfig(
   domainId: string,
-  partial: Partial<SystemModelConfig>
+  partial: Partial<SystemModelConfig>,
 ): SystemModelConfig {
   const resolved = resolveDomainId(domainId);
   const configFile = getDomainConfigFile(resolved);
   const current = getSystemModelConfig(resolved);
 
-  if ("models" in (partial as Record<string, unknown>) || "agents" in (partial as Record<string, unknown>)) {
+  if (
+    "models" in (partial as Record<string, unknown>) ||
+    "agents" in (partial as Record<string, unknown>)
+  ) {
     throw new SystemModelConfigError(
-      "Legacy system model config format detected with models/agents; run upgrade migration"
+      "Legacy system model config format detected with models/agents; run upgrade migration",
     );
   }
 
   const rawToValidate: Record<string, unknown> = {
-    abcQuestionMode:
-      partial.abcQuestionMode !== undefined ? partial.abcQuestionMode : current.abcQuestionMode,
     queryTimeoutSeconds:
       partial.queryTimeoutSeconds !== undefined
         ? partial.queryTimeoutSeconds

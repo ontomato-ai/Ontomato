@@ -1,4 +1,4 @@
-import { getQueryTimeoutMs } from "../../services/data-query/data-query-policy";
+import { getQueryTimeoutMs } from "../../config/query-settings";
 import { Router } from "express";
 import { z } from "zod";
 import {
@@ -193,13 +193,11 @@ router.post(
       throw new HttpError(400, "Run identity mismatch");
     const current = await governanceStore.runWork(identity, owner);
     if (!current.open) {
-      res
-        .status(409)
-        .json({
-          code: "GOVERNANCE_RUN_CLOSED",
-          error: "Governance run is closed",
-          runId: identity.runId,
-        });
+      res.status(409).json({
+        code: "GOVERNANCE_RUN_CLOSED",
+        error: "Governance run is closed",
+        runId: identity.runId,
+      });
       return;
     }
     const controller = new AbortController();

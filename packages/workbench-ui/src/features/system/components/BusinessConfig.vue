@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import type { SystemModelConfig } from "@ontomato/contracts/system-model";
 import {
   dataAdapterTestResultSchema,
   multiDataSourceRejectionSchema,
@@ -18,7 +17,6 @@ import { workbenchContent } from "../../../content";
 import DataAdapterConfigCard from "./business-config/DataAdapterConfigCard.vue";
 import GeneralConfigCard from "./business-config/GeneralConfigCard.vue";
 import QuerySettingsCard from "./business-config/QuerySettingsCard.vue";
-import SkillDirConfigCard from "./business-config/SkillDirConfigCard.vue";
 import {
   dataAdapterRequest,
   multiDataSourceDefinition,
@@ -29,6 +27,7 @@ import {
   type MultiDataSourceDraft,
   type MultiDataSourceSaveFailure,
   type OntologyOutline,
+  type QuerySettings,
   type SystemSettings,
 } from "../types";
 import type { BusinessConfigProps } from "../business-config";
@@ -45,19 +44,13 @@ const querySettingsRef = ref<{ markSaved: () => void } | null>(null);
 // Draft of the general config, language and data adapter, bound two-way by the cards.
 let config = reactive<SystemSettings>({
   knowledgeMaxResult: 10,
-  toolAndPythonRetry: 0,
-  dslCookerTries: 1,
   dslCookerTimeout: 300000,
-  questionSpliterTries: 1,
-  questionSpliterTimeout: 300000,
   lang: props.defaultLanguage,
   dataAdapter: "",
   dataAdapterConnections: {},
 });
 // Data adapters installed in this edition's backend, loaded together with the business config.
 const dataAdapters = ref<DataAdapterInfo[]>([]);
-// Skill directory draft: kept when loading or saving fails and untouched by navigation.
-const skilldir = ref("");
 
 async function loadConfig() {
   loading.value = true;
@@ -70,14 +63,8 @@ async function loadConfig() {
     if (res?.success) {
       dataAdapters.value = (adaptersRes.data as DataAdaptersData).adapters;
       const data = res.data as BusinessConfig;
-      // The skill directory hangs on the coding role and is empty when unset.
-      skilldir.value = data.agents.coding.skilldir ?? "";
       config.knowledgeMaxResult = data.knowledgeMaxResult ?? 10;
-      config.toolAndPythonRetry = data.toolAndPythonRetry ?? 0;
-      config.dslCookerTries = data.dslCookerTries ?? 1;
       config.dslCookerTimeout = data.dslCookerTimeout ?? 300000;
-      config.questionSpliterTries = data.questionSpliterTries ?? 1;
-      config.questionSpliterTimeout = data.questionSpliterTimeout ?? 300000;
       // Only languages this edition ships are selectable; any other stored value shows the default until saved explicitly.
       config.lang = props.languageOptions.some(({ value }) => value === data.lang)
         ? data.lang
@@ -97,35 +84,9 @@ async function loadConfig() {
   }
 }
 
-const savingSkillDir = ref(false);
-
-async function saveSkillDir() {
-  if (loading.value || backendLoadError.value || savingSkillDir.value) {
-    if (backendLoadError.value) ElMessage.error(backendLoadError.value);
-    return;
-  }
-  savingSkillDir.value = true;
-  try {
-    const res = await adminApi.saveToolSkillDir(skilldir.value);
-    if (res?.success) {
-      ElMessage.success(t("admin.configSaveSuccess"));
-    } else {
-      ElMessage.error(res?.message || t("admin.saveFailed"));
-    }
-  } catch (e: any) {
-    ElMessage.error(e.message || t("admin.saveFailed"));
-  } finally {
-    savingSkillDir.value = false;
-  }
-}
-
 const savingGeneral: Record<string, boolean> = reactive({
   knowledgeMaxResult: false,
-  toolAndPythonRetry: false,
-  dslCookerTries: false,
   dslCookerTimeout: false,
-  questionSpliterTries: false,
-  questionSpliterTimeout: false,
   lang: false,
 });
 
@@ -257,17 +218,15 @@ async function saveMultiDataSource() {
   }
 }
 
-// Query settings live in the Node system model file and hold only the query mode and total time limit.
-let querySettings = reactive<SystemModelConfig>({
-  abcQuestionMode: "harness",
+// Query settings live in the Node system model file and hold only the total time limit.
+let querySettings = reactive<QuerySettings>({
   queryTimeoutSeconds: 600,
 });
 const loadingQuerySettings = ref(false);
 const querySettingsLoadError = ref("");
 const savingQuerySettings = ref(false);
 
-function applyQuerySettings(data: SystemModelConfig) {
-  querySettings.abcQuestionMode = data.abcQuestionMode;
+function applyQuerySettings(data: QuerySettings) {
   querySettings.queryTimeoutSeconds = data.queryTimeoutSeconds;
 }
 
@@ -277,7 +236,7 @@ async function loadQuerySettings() {
   try {
     const res = await adminApi.getSystemModelConfig();
     if (res.success) {
-      applyQuerySettings(res.data as SystemModelConfig);
+      applyQuerySettings(res.data as QuerySettings);
     } else {
       querySettingsLoadError.value = res.message || t("admin.loadConfigFailed");
     }
@@ -293,7 +252,7 @@ async function saveQuerySettings() {
   try {
     const res = await adminApi.saveSystemModelConfig({ ...querySettings });
     if (res.success) {
-      applyQuerySettings(res.data as SystemModelConfig);
+      applyQuerySettings(res.data as QuerySettings);
       querySettingsRef.value?.markSaved();
       ElMessage.success(t("admin.configSaveSuccess"));
     } else {
@@ -328,13 +287,6 @@ onMounted(() => {
       <span>{{ t("admin.loadConfigFailed") }}{{ businessConfigSeparator }}{{ backendLoadError }}</span>
       <el-button size="small" @click="loadConfig">{{ t("common.retry") }}</el-button>
     </div>
-
-    <SkillDirConfigCard
-      v-model:skilldir="skilldir"
-      :saving="savingSkillDir"
-      :disabled="loading || !!backendLoadError"
-      @save="saveSkillDir"
-    />
 
     <GeneralConfigCard
       v-model:config="config"

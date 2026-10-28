@@ -6,7 +6,7 @@ import {
   type GovernanceSkillCallIdentity,
   type GovernanceWork,
 } from "@ontomato/contracts/knowledge-governance";
-import { getCheckpointer } from "../../infrastructure/connection";
+import { verifyAssistantDomain } from "../assistant/evidence";
 import { parseTurnKey } from "../../logging/log-context";
 import { collectTurnArtifacts } from "../../platform/diagnosis/observe/workspaces/collect";
 import {
@@ -29,7 +29,7 @@ import {
   type GovernanceRecord,
 } from "./store";
 
-// These schemas own governance action HTTP validation.
+// These schemas own both HTTP validation and the generated runtime tool manifest.
 export const governanceActions = {
   search_history: {
     description:
@@ -206,9 +206,7 @@ export async function executeGovernanceAction(
     if (!turn) throw new Error("Invalid turnKey");
     const manifest = loadManifest(a.turnKey);
     if (!manifest) {
-      const checkpointer = getCheckpointer();
-      if (!checkpointer) throw new Error("Thread storage unavailable");
-      await checkpointer.verifyThreadDomain(turn.threadId, owner.domainId);
+      await verifyAssistantDomain(turn.threadId, owner.domainId);
       return { evidenceGap: "No diagnostic workspace exists for this turn." };
     }
     if (manifest.domainId !== owner.domainId)

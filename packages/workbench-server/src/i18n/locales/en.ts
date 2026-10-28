@@ -179,8 +179,6 @@ export const en = {
   "analysis.cancelled": "Deep analysis cancelled",
 
   // Checkpointer
-  "checkpointer.newConversation": "New Conversation",
-  "checkpointer.noAccess": "No access to this session",
 
   // ABC logger
   "abc.idle": "Preparing",
@@ -229,7 +227,6 @@ export const en = {
   "api.dashboardNotFound": "Dashboard not found",
   "api.cannotGenerateChartInterpretation":
     "Unable to generate structured chart interpretation at this time",
-  "api.checkpointerNotInitialized": "Checkpointer not initialized",
   "api.backendRequestFailed": (params?: Record<string, any>) =>
     `Backend request failed: ${params?.message ?? ""}`,
   "api.dslsCannotBeEmpty": "DSLs cannot be empty",

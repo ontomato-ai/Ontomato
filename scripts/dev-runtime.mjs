@@ -1,8 +1,77 @@
 // Local assembly for the independent public runtime; product wrappers supply the database name.
-import { existsSync, readFileSync } from "node:fs";
+import { accessSync, constants, existsSync, readFileSync, writeFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { join } from "node:path";
 import { parseEnv as readDotEnv } from "node:util";
 import { ensureRuntimeCredentials } from "./runtime-credentials.mjs";
+
+// Runtime Python setup, shared by the development runtime entry points.
+export function pythonExecutable(appDir, platform = process.platform) {
+  return join(
+    appDir,
+    ".venv",
+    ...(platform === "win32" ? ["Scripts", "python.exe"] : ["bin", "python"]),
+  );
+}
+
+// The venv follows the runtime's requirements file: created with the host Python when missing and
+// reinstalled when the file changes. The installed file's hash is kept inside the venv, so a venv
+// created by hand is brought up to date once and then reused.
+export function ensurePythonEnv(
+  appDir,
+  requirements,
+  env = process.env,
+  platform = process.platform,
+) {
+  const python = pythonExecutable(appDir, platform);
+  const venv = join(appDir, ".venv");
+  const marker = join(venv, "requirements.sha256");
+  const hash = createHash("sha256")
+    .update(readFileSync(requirements))
+    .digest("hex");
+  if (
+    executable(python) &&
+    existsSync(marker) &&
+    readFileSync(marker, "utf8") === hash
+  )
+    return python;
+  if (!executable(python)) {
+    const host = platform === "win32" ? ["py", "-3"] : ["python3"];
+    runSetup(
+      host[0],
+      [...host.slice(1), "-m", "venv", venv],
+      env,
+      `Creating ${venv} with ${host.join(" ")}`,
+    );
+  }
+  runSetup(
+    python,
+    ["-m", "pip", "install", "-r", requirements],
+    env,
+    `Installing ${requirements}`,
+  );
+  writeFileSync(marker, hash);
+  return python;
+}
+
+function runSetup(command, args, env, description) {
+  console.log(`[python] ${description}`);
+  const result = spawnSync(command, args, { env, stdio: "inherit" });
+  if (result.status !== 0)
+    throw new Error(
+      `${description} failed${result.error ? `: ${result.error.message}` : ""}; Python 3.10+ is required`,
+    );
+}
+
+function executable(path) {
+  try {
+    accessSync(path, constants.X_OK);
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 export function runtimeEnvironment(
   { root, runtimeDatabase },
