@@ -34,6 +34,9 @@ classNames scopes retrieval as before. graphScope selects initial ontology conte
 not the formal retrieval allow-list. External MCP names retain their existing domain
 configuration meaning. External MCP is not effective yet: names are saved/edited
 but are not passed into runtime (controller's provisional decision).
+The user's subsequent runtime-ownership decision is specified by the proposed
+[external MCP contract](agent-runtime-mcp.md). Its implementation will make this
+same selection field effective; this documentation stage does not enable it.
 Analysis and visualization skills share one list. Definition writes may use
 `{name, namespace:{kind:"domain"}}` for a skill in the caller's domain; the server
 fills in the domain from the verified request identity, including the public

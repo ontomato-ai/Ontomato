@@ -74,13 +74,12 @@ scope expansion and schema reader supply initial context; graph scope does not
 narrow formal retrieval beyond classNames. Existing definition columns are not read
 or converted. Appearance retains brand only; qa and addAgentLabel are removed.
 
-**External MCP is not effective yet (外部 MCP 暂未生效).** Controller's provisional
-decision: preserve/edit selected names, do not pass them into runtime, and do not
-block other capabilities. The old domain configuration contains URLs/headers;
-runtime currently accepts only preconfigured server IDs. Two options for the
-controller's user confirmation: allow the run definition to carry host-selected
-MCP URL/headers, or invoke MCP through standard skill scripts. Neither is added
-in this batch. General MCP configuration/call services remain intact.
+**External MCP is not effective yet (外部 MCP 暂未生效).** This unification preserved
+editable names without passing them to runtime. On 2026-10-28 the user chose
+runtime-owned configuration: hosts pass selected names, runtime owns URLs/headers,
+discovery and calls. The separate [external MCP proposal](external-mcp-runtime-design.md)
+replaces the earlier undecided transport options; implementation awaits that
+module's controller review. General MCP services remain at this baseline.
 
 ## Confirmed simplifications
 

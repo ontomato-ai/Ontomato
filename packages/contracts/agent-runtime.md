@@ -7,6 +7,10 @@ migration scope; [code execution](agent-runtime-code.md) and
 [retrieval](data-retrieval.md) own their respective boundaries. Main-checkout
 image/stack and external Claude Code acceptance remain controller-owned.
 
+The proposed [external MCP replacement](agent-runtime-mcp.md) moves configuration
+into runtime and replaces the `serverId` references below with service names.
+It is a separate documentation-only review; the change is not implemented yet.
+
 ## HTTP and admission
 
 Requests carry `Authorization: Bearer <host service credential>` and
