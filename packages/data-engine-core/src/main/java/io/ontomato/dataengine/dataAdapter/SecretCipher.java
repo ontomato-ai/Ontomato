@@ -10,6 +10,7 @@ import javax.crypto.Cipher;
 import javax.crypto.spec.GCMParameterSpec;
 import javax.crypto.spec.SecretKeySpec;
 
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.core.env.Environment;
 import org.springframework.stereotype.Component;
 
@@ -41,6 +42,7 @@ public class SecretCipher {
 	private final Mode mode;
 	private final SecureRandom random = new SecureRandom();
 
+	@Autowired
 	public SecretCipher(Environment environment) {
 		this(environment.getProperty("ontomato.connection-secrets.key"),
 				parseMode(environment.getProperty("ontomato.connection-secrets.mode", "dual")));
