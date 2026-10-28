@@ -13,9 +13,11 @@ system prompt. Inaccessible/deleted resources return 404; no deletion tombstones
 | Method/path | Request | Response |
 | --- | --- | --- |
 | GET `/agents` | `workbenchId` | `AssistantAgentList` |
-| GET `/agents/:agentId` | configuration permission | `AssistantAgentDefinition` |
-| POST `/agents` | `AssistantAgentInput`, UUID Idempotency-Key | 201 `AssistantAgentDefinition` |
-| PUT `/agents/:agentId` | `AssistantAgentInput`, configuration permission | `AssistantAgentDefinition` |
+| GET `/agent-definitions` | `workbenchId`, management permission | `AssistantAgentDefinitionList` |
+| DELETE `/agent-definitions/:agentId` | management permission | 204; referenced by a session: 409 `AGENT_IN_USE` |
+| GET `/agent-definitions/:agentId` | configuration permission | `AssistantAgentDefinition` |
+| POST `/agent-definitions` | `AssistantAgentInput`, UUID Idempotency-Key | 201 `AssistantAgentDefinition` |
+| PUT `/agent-definitions/:agentId` | `AssistantAgentInput`, configuration permission | `AssistantAgentDefinition` |
 | GET `/sessions` | `workbenchId`, `agentId`, optional cursor/limit (30 default, 100 max) | `AssistantSessionPage` |
 | POST `/sessions` | `AssistantCreateSession` | 201 `AssistantCreateSessionResponse` |
 | GET `S` | — | `AssistantSessionSnapshot` |
@@ -75,6 +77,13 @@ in workbench. Errors are `{error:{code,message},correlationId}`: 400
 codes above, or 503 `DEPENDENCY_UNAVAILABLE`. Never return empty history on read
 failure. No credentials/stacks in public errors.
 
-Agent configuration edits prompt, skills and model role under existing management
-permission; list responses omit the prompt. Dashboard create/add accepts
+Management routes require the existing `analysis-agent` permission. `/agents` is
+only the conversation selector's metadata list, with no prompt. Editable definitions
+have one systemPrompt, one skills list, modelRole, name, description, icon, enabled,
+classNames, graphScope (`panorama` or `subgraph` with rootClassNames/maxDepth 0–10),
+enabledMcpServiceNames and sortOrder. Both presets are ordinary editable definitions.
+classNames restricts retrieval as before; graphScope limits initial ontology context,
+not the formal retrieval allow-list. External MCP selection retains service names;
+the runtime connection handoff is pending controller resolution. Old executor/mode,
+dimension/report/summary/hot-report fields are rejected and never read from old rows. Dashboard create/add accepts
 `dashboard-artifacts` session/dataset artifact IDs instead of old checkpoint indexes.
