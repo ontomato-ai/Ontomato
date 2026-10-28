@@ -455,7 +455,6 @@ class SkillManager {
     query: string,
     locale?: string,
   ): Promise<SkillInfo[]> {
-    const registry = await skillRegistryManager.forDomain(domainId);
     if (!query || query.trim() === "") {
       return [];
     }

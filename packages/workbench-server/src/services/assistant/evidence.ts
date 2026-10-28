@@ -7,7 +7,7 @@ import { runtimeArtifactSchema } from "@ontomato/contracts/agent-runtime-artifac
 import type { RuntimeRunSnapshot } from "@ontomato/contracts/agent-runtime";
 import { retrievalService } from "../data-retrieval/service";
 import { projectDataset } from "../data-retrieval/projection";
-import type { QueryRun } from "../data-query/query-run-store";
+import type { AssistantQueryEvidence } from "./query-evidence";
 import { assistantStore, type AssistantOwner } from "./store";
 import { messageText, finalText } from "../../platform/agent-runtime/runtime";
 import { buildTurnKey } from "../../logging/log-context";
@@ -48,7 +48,7 @@ export async function readAssistantTurnEvidence(
   if (!turn) throw new HttpError(404, "Turn not found");
   const client = new RuntimeClient(owner.domainId),
     run = await client.run(turn.id),
-    queries: QueryRun[] = [],
+    queries: AssistantQueryEvidence[] = [],
     retrievalRuns: RuntimeRunSnapshot[] = [],
     artifacts = [...run.artifacts];
   const links = (

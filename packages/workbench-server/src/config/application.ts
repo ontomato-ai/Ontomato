@@ -27,8 +27,4 @@ export const config = {
     baseUrl: environment.queryBase() || "",
     timeout: environment.queryTimeout(),
   },
-  schedule: {
-    // Scheduling can override the process time zone independently.
-    timezone: process.env.SCHEDULE_TIMEZONE || Intl.DateTimeFormat().resolvedOptions().timeZone,
-  },
 };
