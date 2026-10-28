@@ -20,7 +20,7 @@ syntax/meaning; each shell host owns concrete renderers. This does not restrict
 standard Markdown references in an external agent.
 
 The shell resolves a closed Markdown destination to the authorized artifact at
-the message's run/event boundary, then dispatches by extension: .chart.json →
+the message's run boundary (the final version when stopped, or current version while running), then dispatches by extension: .chart.json →
 ECharts, .csv/.json → table, .png → image, .html → sandbox iframe, .md → Markdown.
 Unknown extensions use a file card/download. A link's extension chooses content,
 not inline-versus-side presentation. Ordinary web links retain their usual role.
