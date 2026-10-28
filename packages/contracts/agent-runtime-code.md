@@ -1,139 +1,111 @@
-# Runtime code execution contract
+# Standalone code execution contract
 
-This extends [agent-runtime.md](agent-runtime.md). Executable schemas live in
-`src/agent-runtime-code.ts`. The runtime executes code and stores execution facts;
-it has no ontology, metric, final-output, quality-check or parent-agent concepts.
+Design for controller review, 2026-10-28. This supersedes the former Python
+built-in binding contract; segment 2 updates schemas and Java consumers together.
+[Runtime contract](agent-runtime.md) owns authentication, admission, file storage
+and agent state. This endpoint remains for published Functions and authorized
+formal-output reruns. An agent uses PI bash to run Python; it does not call this
+endpoint as a special model tool.
 
-## Private bindings
+## HTTP shape
 
-Each `privateContext.skillBindings[]` has its own opaque `credential`; there is
-no global credential fallback. Governance uses the same binding contract.
-`privateContext.modelCredential` remains only for the temporary Java-owned model
-configuration adapter described in the runtime design. It never reaches workers.
-A Python binding is required when `definition.builtinTools.python` is enabled.
+All operations require runtime host/domain/correlation headers. A UUID
+Idempotency-Key is also execution ID. Same semantic input replays that execution;
+changed input conflicts; an intent tombstone rejects late admission. Cross-host
+or cross-domain access returns 404. The ontology host retains its own principal.
 
 ```ts
-type PythonBinding = {
-  targetUrl: string | null;
-  credential: RuntimeOpaqueCredential; // none, token, api_key or bearer
-  context: JsonObject;
-  libraries: {skill: RuntimeSkillRef; path: string}[];
-  limits: {wallTimeMs: number; cpuSeconds: number; memoryBytes: number;
-           processCount: number; fileBytes: number; outputBytes: number};
+type ExecuteCode = {
+  language: "python";
+  files: {path:string; content:string}[];
+  entry: string; arguments: string[]; outputPaths: string[];
+  libraries: {skill: SkillRef; path:string}[];
+  environment: {values:Record<string,string>; secrets:Record<string,string>};
+  limits: CodeLimits;
+};
+type Execution = {
+  id: UUID; status: "running" | "stopped";
+  entry: string; sourceSha256: string;
+  createdAt: string; finishedAt: string | null;
+  exitCode: number | null; errorMessage: string | null;
+  outputs: {name:string; sha256:string; size:number; mediaType:string}[];
 };
 ```
 
-Only the trusted host sets this binding. `targetUrl` configures provider helpers;
-it is **not** a network allowlist. A null target means no configured callback,
-not absence of network. Libraries reference immutable registered package files;
-no arbitrary host directory, URL or symlink is accepted. Each worker receives a
-private read-only copy outside its writable workspace. Registry files remain
-private to the runtime supervisor.
-
-Credentials are excluded from fingerprints, PostgreSQL, messages and logs.
-Non-secret bindings and source bytes participate in the canonical fingerprint.
-A replay does not rotate an admitted execution's credentials. Exact secret echoes
-in process output are rejected; this is not a defense against arbitrary encoding
-or deliberate exfiltration by generated code.
-
-## HTTP and built-in execution
-
-Requests use runtime host/domain/correlation headers. Creation's UUID
-`Idempotency-Key` is the execution ID. Admission keys are shared with session/run
-admission and have the same scope, fingerprint, conflict and tombstone rules.
-Workbench cannot read ontology-host executions, even in the same domain.
-
 | Route | Result |
 | --- | --- |
-| `POST /v1/code-executions` | 202 `{execution,replayed}`; input `{language:"python",files:[{path,content}],entry,arguments:string[],outputPaths:string[],binding:PythonBinding}` |
-| `GET /v1/code-executions/:id` | `{id,runId,entry,source,sourceSha256,status,createdAt,finishedAt,exitCode,outputs,error}` |
-| `GET /v1/code-executions/:id/outputs/:name` | Raw UTF-8 stdout/stderr or requested file, scoped by host/domain |
-| `POST /v1/code-executions/:id/cancel` | Terminal execution after process-tree termination; missing/foreign ID is 404 |
-| `POST /v1/code-execution-intents/:id/cancel` | 204; closes this host/domain's creation intent, including before admission or after a lost response; a closed-before-admission key returns 410 on creation |
-| `GET /v1/runs/:id/code-executions` | `{executions:[...]}` for the owned run, used to resume source work |
+| POST /v1/code-executions | 202 `{execution,replayed}` |
+| GET /v1/code-executions/:id | Execution metadata |
+| GET /v1/code-executions/:id/outputs/:name | Raw authorized stdout, stderr or requested file bytes |
+| POST /v1/code-executions/:id/cancel | Execution after process-tree termination |
+| POST /v1/code-execution-intents/:id/cancel | 204 even before admission |
 
-States are running → completed/failed/cancelled/interrupted. Exit 0 plus collected
-outputs means completed, not valid business JSON. Resource limits, timeout,
-nonzero exit and invalid paths fail explicitly. Java retains its business rule
-that nonempty stderr rejects a program result.
+A standalone process has no PI assistant message, so it has no invented
+stopReason. running/stopped is process lifecycle; exitCode + errorMessage records
+its actual result. Successful execution requires stopped, exitCode 0, no execution
+error and successfully collected outputs. Java retains its business rule that
+nonempty stderr rejects a program result. Cancellation, startup recovery, timeout
+or collection failure set errorMessage; when no exit was observed exitCode is
+null. None re-executes a previous request. Delete the agent-only
+`GET /v1/runs/:id/code-executions`, python_execute and Python receipt requirement:
+bash is the agent's execution path, with file snapshots as its evidence.
 
-`python_execute({path,arguments?:string[],outputPaths?:string[]})` snapshots the
-run workspace into a fresh execution workspace and uses the same executor.
-Its model arguments cannot select credentials, URLs, limits or host paths. The
-result includes an execution ID, source digest, status and stdout preview; full
-outputs are available through the HTTP API. Oversize transport output fails.
-Workbench validates the same-run successful receipt and source digest before
-accepting a Python submission. Changed code needs a new receipt.
+## Files and process ownership
 
-`initialFiles` on run admission seeds workspace files for continuation; it is
-part of the host request/fingerprint. The runtime does not interpret why those
-files were selected. Standalone code execution needs no model session. Built-in
-execution stores the owning run ID, so run cancellation also stops its code.
+Admission persists before spawning. Each standalone execution gets a temporary
+workspace and a distinct UID; it never borrows an agent session's UID/workspace.
+Resolve provider library names to immutable digests at admission, then copy them
+read-only. Reject path traversal/links and missing files. The environment follows
+the run contract and documents the same helper variables used in external agents.
+The generic runtime does not interpret grants, source metadata or business JSON.
 
-Admission is persisted before spawning. Terminal facts and output bytes are
-stored together in PostgreSQL; scratch directories and private library copies
-are removed after collection. History reads never execute code. Restart marks
-unfinished work interrupted and does not replay it. A lifetime pipe kills POSIX
-workers on supervisor death; production cancellation also kills descendants by
-assigned UID, including descendants that left the original process group.
-Disconnecting GET does not cancel. Intent closure prevents late admission after
-an uncertain response. It cannot undo already accepted external actions.
+Collect source, stdout, stderr and requested output bytes through the runtime's
+ArtifactFiles interface into content-addressed blobs. PG stores source/output
+references, digests, sizes and execution metadata, not file contents. Keep raw
+output GET behavior for Java while changing its storage underneath. Complete
+collection before committing stopped, and remove scratch only after persistence.
+History reads do not rerun a program. A lost response reconciles the original ID.
 
-## Approved first-release process boundary
+Retain the existing worker-launch.py privilege drop, rlimits, lifetime pipe and
+process-tree termination. Production requires Linux/root supervision and a
+non-root worker UID; otherwise fail closed. Kill escaped descendants by owned UID
+as well as process group. UID allocations survive restart and are not recycled
+in this batch. Native developer mode explicitly skips UID isolation and logs that
+fact; Darwin/Windows retain their existing reduced resource-limit behavior.
+No namespace/cgroup/egress implementation is introduced. Unix-readable OS files
+and container-reachable network remain accessible under the approved boundary.
 
-Controller decisions, 2026-10-28: no bubblewrap, namespaces or cgroups. The Linux
-production supervisor runs as root and assigns a distinct non-root UID/GID to
-each worker. UID allocation is persisted in the runtime data root. Workspaces are
-private; provider files are read-only to that worker. The launcher starts with
-`-I -S`, installs rlimits before dropping groups/UID/GID, and disables privilege
-escalation. Python and credential-bearing skills use this same launcher.
-Production without Linux/root/UID switching fails closed with
-`CODE_ISOLATION_UNAVAILABLE`; there is no silent fallback.
+Limits retain per-process CPU/address space, per-UID process count, per-file
+size, wall time and output collection size. They are not aggregate memory/CPU or
+total workspace quotas. Network reachability is deployment-owned. Production
+image proof and native developer proof must be reported separately.
 
-Limits cover per-process CPU/address space, per-UID process count, per-file size,
-wall time and collected output bytes. They do not bound total workspace bytes
-or aggregate descendant memory/CPU. The worker can read OS files allowed by Unix
-permissions: this is not filesystem namespace isolation.
+## Ontology helper and retained consumers
 
-**Code provides no network isolation.** Python and skill processes can reach all
-addresses reachable from the runtime container. Required connections include
-PostgreSQL, workbench skill callbacks, ontology, model providers and configured
-external MCP servers. This batch adds no egress proxy or host firewall. Site
-allowlists are enforced by deployment network policies. Per-process network and
-stronger filesystem/resource isolation remain follow-up work.
-
-Native macOS/Windows uses the same execution path in explicit development mode
-and logs its weaker isolation. UID switching is skipped; Darwin address-space
-and shared-UID process limits are skipped, and Windows has no POSIX rlimits.
-Wall timeout/output limits still apply. Windows uses a parent process handle and
-taskkill for lifetime/tree termination; native Windows validation remains a
-separate acceptance item. Development tests do not prove production isolation.
-
-## Provider-owned Python helper
-
-`agent-skills/ontomato-analyst/python/query_runtime.py` owns ontology HTTP and
-partial-query metadata. Java publishes it as a provider library. Runtime code
-imports no ontology implementation. Generated programs use:
+`agent-skills/ontomato-analyst/python/query_runtime.py` remains the single
+ontology HTTP helper source. Both bash exploration and Java code execution load
+that same file; packaging copies it without changing behavior. It reads
+`ONTOMATO_ONTOLOGY_URL`, `ONTOMATO_QUERY_TK` (falling back to `ONTOMATO_TK`),
+`ONTOMATO_RUN_ID`, `ONTOMATO_CORRELATION_ID`, `ONTOMATO_LANGUAGE`; sends the token
+as `tk` and the run header; and retains parameters.json and query-status.json.
+Java's grant parser must accept the documented tk header for its existing signed
+grants and verify the same claims. Ordinary tk authorization remains unchanged.
 
 ```python
 # ontomato-python:2
 import json
 from query_runtime import execute_dsl, parameters
-
 rows = execute_dsl({"problem": "...", "answer": {"steps": []}})
 print(json.dumps({"answer": rows}, ensure_ascii=False))
 ```
 
-The helper sends `{dsl}` and its injected grant directly to the ontology facade.
-Parameters come from `parameters.json`; user/domain are not command arguments.
-`query-status.json` records partial inputs even after empty/aggregated results.
-Each final execution creates its own marker; exploration metadata is not reused.
-The helper is not a sandbox or proof of arbitrary program lineage.
-
-Write Functions receive separately authorized sandbox-write grants. Their
-handlers derive domain/sandbox from verified claims. Retrieval/user-read grants
-cannot call those handlers. Old saved Function/dashboard protocols fail with a
-readable conversion error; pre-release data conversion is outside this batch.
-All current generators emit protocol 2. The traditional MCP calculator and its
-startup Python environment remain until the traditional ABC cleanup batch; all
-business program execution uses this runtime environment.
+Final execution starts with a fresh query-status marker and authorized queries;
+it does not inherit exploration outputs/completeness. Preserve zero-row partial
+results, null/false/zero and parameters. Write Functions keep their separately
+authorized sandbox-write grants and current handlers; retrieval cannot grant
+itself write permission. Protocol-2 generators, published Functions, dashboards,
+traditional after-calculation and Java skill Python callers all continue through
+this endpoint. Their adapters change wire shape together. The traditional MCP
+calculator/startup Python exception remains until its own cleanup batch.
+Old saved Function protocols still require the release migration; no fallback
+executor or guessed source conversion is added.
