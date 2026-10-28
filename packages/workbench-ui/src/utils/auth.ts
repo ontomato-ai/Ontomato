@@ -19,7 +19,7 @@ export interface WorkbenchAuthHost {
    * sent, so the host can tell whether the response belongs to a credential that has since been replaced.
    */
   responseStatusError(status: number, credential: string | null): Error | null;
-  /** Current signed-in user (agent settings read its domain for skill references); null in open source, which has no login. */
+  /** Current signed-in user; null in open source, which has no login. */
   getUserInfo(): WorkbenchUserInfo | null;
   /**
    * Asks whether the session is still valid when a stream failed to connect (the host merges concurrent calls and

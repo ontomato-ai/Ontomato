@@ -11,7 +11,6 @@ import type {
   AssistantAgentInput,
 } from "@ontomato/contracts/assistant-chat";
 import type { RuntimeSkillRef } from "@ontomato/contracts/agent-runtime-skills";
-import { authHost } from "../../../utils/auth";
 import { agentDefinitionsApi, type ObjectClassOption, type OntologyRelationOption } from "../api";
 import { joinSkillRefs, splitSkillRefs } from "../skill-refs";
 import { avatarIcon, lightAvatarColorOptions, themedAvatarColor } from "../avatar";
@@ -121,15 +120,7 @@ function validInput(): AssistantAgentInput | null {
       return null;
     }
   }
-  const skills = joinSkillRefs(
-    providerSkills,
-    value.skillNames,
-    skillRefs.domainId ?? authHost().getUserInfo()?.domainId ?? null,
-  );
-  if (!skills) {
-    ElMessage.error(t("agents.skillDomainUnknown"));
-    return null;
-  }
+  const skills = joinSkillRefs(providerSkills, value.skillNames);
   return {
     name: value.name.trim(),
     description: value.description,

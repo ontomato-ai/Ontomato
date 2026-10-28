@@ -903,7 +903,6 @@ export default {
     "relatedClassesHint": "Leave empty to include all object classes.",
     "deleteConfirm": "Delete the agent “{name}”? Its conversations remain in history.",
     "graphScopeHint": "Where the agent starts exploring the ontology: Panorama includes all classes; Subgraph starts from root classes and follows their relationships.",
-    "builtinSkills": "Built in",
-    "skillDomainUnknown": "The domain of these skills is unknown; sign in again and retry."
+    "builtinSkills": "Built in"
   }
 };
