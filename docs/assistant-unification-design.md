@@ -6,6 +6,11 @@ and Java traditional-ABC removal are separate parallel work; this branch owns
 server changes, the [common host proxy](../packages/contracts/agent-host.md), and
 [workbench actions](../packages/contracts/assistant-chat.md).
 
+Subsequent ownership change, proposed 2026-10-28: the
+[ontology AI migration](ontology-ai-runtime-design.md) moves retrieval to Java.
+Its [retrieval design](data-retrieval-design.md) supersedes the workbench retrieval
+assembly below for that cutover; the assistant keeps parent/evidence integration.
+
 ## Direction and ownership
 
 Regular querying and analysis are workbench-owned definitions: prompt + standard
