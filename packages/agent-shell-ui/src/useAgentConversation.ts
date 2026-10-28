@@ -1,5 +1,6 @@
 import { computed, onBeforeUnmount, reactive, ref } from "vue";
-import type { AgentHostClient, HostRunSnapshot, HostSession } from "./host";
+import type { AgentHostRunSnapshot, AgentHostSession } from "@ontomato/contracts/agent-host";
+import type { AgentHostClient } from "./host";
 import type { RuntimeStreamFrame } from "@ontomato/contracts/agent-runtime-events";
 import {
   applyEnvelope,
@@ -149,7 +150,7 @@ export function useAgentConversation(port: () => AgentHostClient) {
   async function send(
     agentId: string,
     text: string,
-  ): Promise<{ createdSession: HostSession | null; snapshot: HostRunSnapshot } | null> {
+  ): Promise<{ createdSession: AgentHostSession | null; snapshot: AgentHostRunSnapshot } | null> {
     if (busy.value) return null;
     const current = token;
     sending.value = true;

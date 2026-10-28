@@ -1,61 +1,22 @@
-import type { RuntimeRunSnapshot } from "@ontomato/contracts/agent-runtime";
+import type {
+  AgentHostAgent,
+  AgentHostAgentList,
+  AgentHostAdmission,
+  AgentHostArtifactResolution,
+  AgentHostCreateSessionResponse,
+  AgentHostRunSnapshot,
+  AgentHostSession,
+  AgentHostSessionPage,
+  AgentHostSessionSnapshot,
+} from "@ontomato/contracts/agent-host";
+import { agentHostStreamFrameSchema } from "@ontomato/contracts/agent-host";
 import type { RuntimeArtifact } from "@ontomato/contracts/agent-runtime-artifacts";
-import {
-  runtimeStreamFrameSchema,
-  type RuntimeCursor,
-  type RuntimeStreamFrame,
-} from "@ontomato/contracts/agent-runtime-events";
-import type { RuntimeRunStatus, RuntimeStopReason } from "@ontomato/contracts/agent-runtime-values";
+import type { RuntimeCursor, RuntimeStreamFrame } from "@ontomato/contracts/agent-runtime-events";
 
 /*
- * The host proxy interface (agent-host): every host that serves this shell exposes the same routes
- * under its own prefix, so the shell owns one client for all of them. Messages, events and artifacts
- * keep the runtime's PI shapes.
+ * The one client of the agent-host proxy interface: every host that serves this shell exposes the
+ * same routes under its own prefix, scoped by that prefix alone.
  */
-
-export interface HostAgent {
-  id: string;
-  name: string;
-  description: string;
-  icon: string | null;
-  enabled: boolean;
-}
-
-export interface HostRun {
-  id: string;
-  sessionId: string;
-  status: RuntimeRunStatus;
-  stopReason: RuntimeStopReason | null;
-  errorMessage: string | null;
-  createdAt: string;
-  finishedAt: string | null;
-}
-
-export interface HostSession {
-  id: string;
-  agentId: string;
-  /** The first user message, verbatim; empty until the first run is accepted. */
-  title: string;
-  createdAt: string;
-  updatedAt: string;
-  latestRun: HostRun | null;
-}
-
-export type HostRunSnapshot = Pick<
-  RuntimeRunSnapshot,
-  "cursor" | "messages" | "pendingMessages" | "toolExecutions" | "artifacts"
-> & { run: HostRun };
-
-export interface HostSessionSnapshot {
-  session: HostSession;
-  messages: RuntimeRunSnapshot["messages"];
-  latestRun: HostRunSnapshot | null;
-}
-
-export interface HostSessionPage {
-  sessions: HostSession[];
-  nextCursor: string | null;
-}
 
 export interface HostStreamHandlers {
   frame(frame: RuntimeStreamFrame): void;
@@ -64,14 +25,14 @@ export interface HostStreamHandlers {
 }
 
 export interface AgentHostClient {
-  listAgents(): Promise<HostAgent[]>;
-  listSessions(agentId: string, cursor: string | null): Promise<HostSessionPage>;
-  createSession(agentId: string): Promise<HostSession>;
-  readSession(sessionId: string): Promise<HostSessionSnapshot>;
+  listAgents(): Promise<AgentHostAgent[]>;
+  listSessions(agentId: string, cursor: string | null): Promise<AgentHostSessionPage>;
+  createSession(agentId: string): Promise<AgentHostSession>;
+  readSession(sessionId: string): Promise<AgentHostSessionSnapshot>;
   deleteSession(sessionId: string): Promise<void>;
   /** Every message, including the answer to a clarifying question, starts a run in the same session. */
-  startRun(sessionId: string, message: string): Promise<HostRunSnapshot>;
-  readRun(sessionId: string, runId: string): Promise<HostRunSnapshot>;
+  startRun(sessionId: string, message: string): Promise<AgentHostRunSnapshot>;
+  readRun(sessionId: string, runId: string): Promise<AgentHostRunSnapshot>;
   subscribe(
     sessionId: string,
     runId: string,
@@ -90,14 +51,11 @@ export interface AgentHostClientOptions {
    * throws the host's own error otherwise, so error display stays with the host.
    */
   request(path: string, init: RequestInit): Promise<Response>;
-  /** Fixed query parameters and creation fields that scope this host (for example a workbench). */
-  scope?: Record<string, string>;
 }
 
 const enc = encodeURIComponent;
 
 export function createAgentHostClient(options: AgentHostClientOptions): AgentHostClient {
-  const scope = options.scope ?? {};
   const call = (path: string, init: RequestInit = {}) => options.request(path, init);
   const json = async <T>(path: string, init: RequestInit = {}): Promise<T> =>
     (await call(path, init)).json() as Promise<T>;
@@ -109,33 +67,33 @@ export function createAgentHostClient(options: AgentHostClientOptions): AgentHos
     },
     body: JSON.stringify(body),
   });
-  const query = (values: Record<string, string>) => new URLSearchParams({ ...scope, ...values }).toString();
+  const query = (values: Record<string, string>) => new URLSearchParams(values).toString();
   const session = (id: string) => `/sessions/${enc(id)}`;
   const run = (sessionId: string, runId: string) => `${session(sessionId)}/runs/${enc(runId)}`;
 
   return {
     async listAgents() {
-      return (await json<{ agents: HostAgent[] }>(`/agents?${query({})}`)).agents;
+      return (await json<AgentHostAgentList>("/agents")).agents;
     },
     listSessions(agentId, cursor) {
-      return json<HostSessionPage>(`/sessions?${query({ agentId, ...(cursor ? { cursor } : {}) })}`);
+      return json<AgentHostSessionPage>(`/sessions?${query({ agentId, ...(cursor ? { cursor } : {}) })}`);
     },
     async createSession(agentId) {
-      return (await json<{ session: HostSession }>("/sessions", send("POST", { ...scope, agentId }, true))).session;
+      return (await json<AgentHostCreateSessionResponse>("/sessions", send("POST", { agentId }, true))).session;
     },
     readSession(sessionId) {
-      return json<HostSessionSnapshot>(session(sessionId));
+      return json<AgentHostSessionSnapshot>(session(sessionId));
     },
     async deleteSession(sessionId) {
       await call(session(sessionId), { method: "DELETE" });
     },
     async startRun(sessionId, message) {
       return (
-        await json<{ snapshot: HostRunSnapshot }>(`${session(sessionId)}/runs`, send("POST", { message }, true))
+        await json<AgentHostAdmission>(`${session(sessionId)}/runs`, send("POST", { message }, true))
       ).snapshot;
     },
     readRun(sessionId, runId) {
-      return json<HostRunSnapshot>(run(sessionId, runId));
+      return json<AgentHostRunSnapshot>(run(sessionId, runId));
     },
     subscribe(sessionId, runId, after, handlers) {
       const controller = new AbortController();
@@ -160,7 +118,7 @@ export function createAgentHostClient(options: AgentHostClientOptions): AgentHos
     async resolveArtifact(sessionId, runId, path) {
       const params = new URLSearchParams({ path });
       return (
-        await json<{ artifact: RuntimeArtifact | null }>(`${run(sessionId, runId)}/artifacts/resolve?${params}`)
+        await json<AgentHostArtifactResolution>(`${run(sessionId, runId)}/artifacts/resolve?${params}`)
       ).artifact;
     },
     async readArtifact(artifact) {
@@ -197,7 +155,7 @@ async function readFrames(
           continue;
         }
         if (line !== "" || data.length === 0) continue;
-        const parsed = runtimeStreamFrameSchema.parse(JSON.parse(data.join("\n")));
+        const parsed = agentHostStreamFrameSchema.parse(JSON.parse(data.join("\n")));
         data = [];
         frame(parsed);
         if (parsed.type === "snapshot_required" || parsed.envelope.event.type === "agent_end") return true;

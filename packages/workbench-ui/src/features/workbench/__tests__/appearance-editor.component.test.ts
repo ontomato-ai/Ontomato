@@ -13,8 +13,6 @@ vi.mock("../api", () => ({
 }));
 const original: WorkbenchAppearance = {
   brand: { name: "Company", subtitle: "Insights", logo: "" },
-  qa: { name: "Sales", description: "Sales data", avatarKey: "Wallet", avatarColor: "#EEF7FF" },
-  addAgentLabel: "Add expert",
 };
 async function editor() {
   const wrapper = mount(WorkbenchAppearanceDialog, {
@@ -37,7 +35,7 @@ beforeEach(() => {
 });
 
 describe("brand appearance editor", () => {
-  it("saves the brand without changing the other stored appearance fields", async () => {
+  it("saves the brand", async () => {
     const wrapper = await editor();
     await wrapper.find("input.el-input__inner").setValue("New name");
     await button(wrapper, "Save").trigger("click");

@@ -6,13 +6,14 @@ import { ExternalLink, RefreshCw, Trash2 } from "lucide-vue-next";
 import CodeMirrorEditor from "../../../components/CodeMirrorEditor.vue";
 import { useTheme } from "../../../composables/useTheme";
 import { renderAgentMarkdown } from "../../../utils/agent-markdown";
-import {
-  agentDefinitionsApi,
-  type AgentDefinition,
-  type AgentDefinitionInput,
-  type ObjectClassOption,
-  type OntologyRelationOption,
-} from "../api";
+import type {
+  AssistantAgentDefinition,
+  AssistantAgentInput,
+} from "@ontomato/contracts/assistant-chat";
+import type { RuntimeSkillRef } from "@ontomato/contracts/agent-runtime-skills";
+import { authHost } from "../../../utils/auth";
+import { agentDefinitionsApi, type ObjectClassOption, type OntologyRelationOption } from "../api";
+import { joinSkillRefs, splitSkillRefs } from "../skill-refs";
 import { avatarIcon, lightAvatarColorOptions, themedAvatarColor } from "../avatar";
 import AgentBasicInfoFields from "./AgentBasicInfoFields.vue";
 import GraphScopeField from "./GraphScopeField.vue";
@@ -20,12 +21,12 @@ import SkillSelector from "./SkillSelector.vue";
 
 /** Edits one agent definition; a null agent is a new one. */
 const props = defineProps<{
-  agent: AgentDefinition | null;
+  agent: AssistantAgentDefinition | null;
   classes: ObjectClassOption[];
   relations: OntologyRelationOption[];
   outlineLoading: boolean;
 }>();
-const emit = defineEmits<{ saved: [agent: AgentDefinition]; deleted: [id: string] }>();
+const emit = defineEmits<{ saved: [agent: AssistantAgentDefinition]; deleted: [id: string] }>();
 const { t } = useI18n();
 const { isDark } = useTheme();
 
@@ -35,8 +36,8 @@ interface Form {
   avatarKey: string;
   avatarColor: string;
   enabled: boolean;
-  prompt: string;
-  skillIds: string[];
+  systemPrompt: string;
+  skillNames: string[];
   classNames: string[];
   scopeMode: "panorama" | "subgraph";
   scopeRoots: string[];
@@ -44,7 +45,11 @@ interface Form {
   mcpServiceNames: string[];
 }
 
-function toForm(agent: AgentDefinition | null): Form {
+const skillRefs = splitSkillRefs(props.agent?.skills ?? []);
+/** Built-in workbench skills the definition carries; kept as they are. */
+const providerSkills: RuntimeSkillRef[] = skillRefs.providerRefs;
+
+function toForm(agent: AssistantAgentDefinition | null): Form {
   let avatar = { key: "Brain", color: lightAvatarColorOptions[0]! };
   try {
     if (agent?.icon) avatar = { ...avatar, ...JSON.parse(agent.icon) };
@@ -58,13 +63,13 @@ function toForm(agent: AgentDefinition | null): Form {
     avatarKey: avatar.key,
     avatarColor: themedAvatarColor(avatar.color, isDark.value),
     enabled: agent?.enabled ?? true,
-    prompt: agent?.prompt ?? "",
-    skillIds: [...(agent?.skillIds ?? [])],
+    systemPrompt: agent?.systemPrompt ?? "",
+    skillNames: [...skillRefs.domainNames],
     classNames: [...(agent?.classNames ?? [])],
     scopeMode: scope?.mode === "subgraph" ? "subgraph" : "panorama",
     scopeRoots: scope?.mode === "subgraph" ? [...scope.rootClassNames] : [],
     scopeDepth: scope?.mode === "subgraph" ? scope.maxDepth : 1,
-    mcpServiceNames: [...(agent?.mcpServiceNames ?? [])],
+    mcpServiceNames: [...(agent?.enabledMcpServiceNames ?? [])],
   };
 }
 
@@ -99,7 +104,7 @@ function classLabel(cls: ObjectClassOption) {
   return name === cls.className ? cls.className : `${name} (${cls.className})`;
 }
 
-function validInput(): AgentDefinitionInput | null {
+function validInput(): AssistantAgentInput | null {
   const value = form.value;
   if (!value.name.trim()) {
     ElMessage.warning(t("analysis.agentNameRequired"));
@@ -116,19 +121,29 @@ function validInput(): AgentDefinitionInput | null {
       return null;
     }
   }
+  const skills = joinSkillRefs(
+    providerSkills,
+    value.skillNames,
+    skillRefs.domainId ?? authHost().getUserInfo()?.domainId ?? null,
+  );
+  if (!skills) {
+    ElMessage.error(t("agents.skillDomainUnknown"));
+    return null;
+  }
   return {
     name: value.name.trim(),
     description: value.description,
     icon: JSON.stringify({ key: value.avatarKey, color: value.avatarColor }),
     enabled: value.enabled,
-    prompt: value.prompt,
-    skillIds: value.skillIds,
+    systemPrompt: value.systemPrompt,
+    skills,
     classNames: value.classNames,
     graphScope:
       value.scopeMode === "subgraph"
         ? { mode: "subgraph", rootClassNames: value.scopeRoots, maxDepth: value.scopeDepth! }
         : { mode: "panorama" },
-    mcpServiceNames: value.mcpServiceNames,
+    enabledMcpServiceNames: value.mcpServiceNames,
+    sortOrder: props.agent?.sortOrder ?? 0,
   };
 }
 
@@ -222,9 +237,9 @@ defineExpose({ dirty });
               <el-radio-button :value="true">{{ t("admin.agentEditorPreview") }}</el-radio-button>
             </el-radio-group>
           </div>
-          <div v-if="promptPreview" class="prompt-preview markdown-body" v-html="renderAgentMarkdown(form.prompt)" />
-          <CodeMirrorEditor v-else v-model="form.prompt" language="markdown" :min-height="320" />
-          <small class="prompt-count">{{ t("admin.agentEditorCharacters", { count: form.prompt.length }) }} · Markdown</small>
+          <div v-if="promptPreview" class="prompt-preview markdown-body" v-html="renderAgentMarkdown(form.systemPrompt)" />
+          <CodeMirrorEditor v-else v-model="form.systemPrompt" language="markdown" :min-height="320" />
+          <small class="prompt-count">{{ t("admin.agentEditorCharacters", { count: form.systemPrompt.length }) }} · Markdown</small>
         </section>
 
         <section class="editor-section">
@@ -234,7 +249,11 @@ defineExpose({ dirty });
               <p>{{ t("agents.skillsHint") }}</p>
             </div>
           </div>
-          <SkillSelector v-model="form.skillIds" />
+          <div v-if="providerSkills.length" class="builtin-skills">
+            <span class="builtin-label">{{ t("agents.builtinSkills") }}</span>
+            <el-tag v-for="skill in providerSkills" :key="skill.name" size="small" effect="plain">{{ skill.name }}</el-tag>
+          </div>
+          <SkillSelector v-model="form.skillNames" />
         </section>
 
         <section class="editor-section">
@@ -446,5 +465,16 @@ defineExpose({ dirty });
 }
 .mcp-alert {
   margin-top: 10px;
+}
+.builtin-skills {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+.builtin-label {
+  font-size: var(--text-xs);
+  color: var(--el-text-color-secondary);
 }
 </style>

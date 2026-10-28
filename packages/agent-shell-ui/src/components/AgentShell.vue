@@ -3,7 +3,8 @@ import { computed, onMounted, provide, ref, toRef, useSlots, watch } from "vue";
 import { Menu } from "lucide-vue-next";
 import { defaultChartTheme, type ChartTheme } from "../chart-theme";
 import { shellContextKey } from "../context";
-import type { AgentHostClient, HostAgent, HostSession } from "../host";
+import type { AgentHostAgent, AgentHostSession } from "@ontomato/contracts/agent-host";
+import type { AgentHostClient } from "../host";
 import type {
   ArtifactRendererOverride,
   OpenArtifact,
@@ -39,8 +40,8 @@ const emit = defineEmits<{ error: [message: string]; featureAction: [id: string]
 const featureId = defineModel<string | null>("featureId", { default: null });
 const agentId = defineModel<string | null>("agentId", { default: null });
 
-const agents = ref<HostAgent[]>([]);
-const sessions = ref<HostSession[]>([]);
+const agents = ref<AgentHostAgent[]>([]);
+const sessions = ref<AgentHostSession[]>([]);
 const sessionsState = ref<"loading" | "ready" | "error">("loading");
 const nextCursor = ref<string | null>(null);
 const sessionId = ref<string | null>(null);

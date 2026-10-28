@@ -4,10 +4,10 @@ import { ElMessageBox } from "element-plus";
 import { useI18n } from "vue-i18n";
 import { Plus } from "lucide-vue-next";
 import { useTheme } from "../../../composables/useTheme";
+import type { AssistantAgentDefinition as AgentDefinition } from "@ontomato/contracts/assistant-chat";
 import {
   agentDefinitionsApi,
   loadOntologyOutline,
-  type AgentDefinition,
   type ObjectClassOption,
   type OntologyRelationOption,
 } from "../api";

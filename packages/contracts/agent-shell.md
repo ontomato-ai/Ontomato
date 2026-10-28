@@ -28,11 +28,10 @@ The shell talks to every host through one interface shape, the agent-host
 contract: agents, session list/creation/deletion, session and run snapshots,
 starting a run (also the continuation after a clarifying answer), the event
 stream, cancellation, artifact resolution and content, with paths relative to
-the host's prefix. `createAgentHostClient({request, scope})` implements it once;
-a host supplies an authenticated `request` and fixed scope parameters (for
-example a workbench ID). The wire types are those of the agent-host contract in
-`@ontomato/contracts`; until that module is merged, the shell's `host.ts`
-mirrors them, and the merge replaces the mirror with the import.
+the host's prefix. `createAgentHostClient({request})` implements it once;
+a host supplies an authenticated `request` for paths under its prefix, which alone
+scopes the host. The wire types are those of [agent-host.md](agent-host.md),
+imported from `@ontomato/contracts/agent-host`.
 
 Messages, events and artifacts keep the runtime's PI shapes. Run state is
 `status` + `stopReason` + `errorMessage`; the shell never derives

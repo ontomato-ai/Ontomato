@@ -48,11 +48,6 @@ export const adminRoutes = {
     }),
     meta: managerMeta,
   },
-  hotData: {
-    path: "hot-data",
-    redirect: "/admin/analysis-plans",
-    meta: { group: "app-capabilities", permissions: ["hot-data"] },
-  },
   metricViews: {
     path: "metric-views",
     redirect: "/admin/ontology-manager?view=assets",
@@ -86,12 +81,6 @@ export const adminRoutes = {
     name: "Analysis",
     component: () => import("../features/agents/components/AgentSettingsPage.vue"),
     meta: { group: "app-capabilities", permissions: ["analysis-agent"] },
-  },
-  analysisPlans: {
-    path: "analysis-plans",
-    name: "AnalysisPlans",
-    component: () => import("../features/admin/components/hot-report/HotReportManager.vue"),
-    meta: { group: "app-capabilities", permissions: ["hot-data"] },
   },
   systemAgents: {
     path: "system-agents",

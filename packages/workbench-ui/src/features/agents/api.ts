@@ -1,27 +1,12 @@
-import type { AnalysisGraphScope } from "@ontomato/contracts/analysis-agent";
+import {
+  assistantAgentDefinitionListSchema,
+  assistantAgentDefinitionSchema,
+  type AssistantAgentDefinition,
+  type AssistantAgentInput,
+} from "@ontomato/contracts/assistant-chat";
 import { nodeApiFetch, nodeApiGet, nodeApiPost, nodeApiPut } from "../../utils/api";
 import { listMcpServiceNames } from "../mcp/api";
 import { queryViewApi } from "../query-view";
-
-/**
- * An agent definition as the settings page edits it: prompt + skills + data scope, owned by the
- * workbench and run on the agent runtime. The model role comes from the runtime configuration.
- */
-export interface AgentDefinition {
-  id: string;
-  name: string;
-  description: string;
-  /** JSON of {key, color}, the stored avatar. */
-  icon: string | null;
-  enabled: boolean;
-  prompt: string;
-  skillIds: string[];
-  classNames: string[];
-  graphScope: AnalysisGraphScope;
-  mcpServiceNames: string[];
-}
-
-export type AgentDefinitionInput = Omit<AgentDefinition, "id">;
 
 export interface ObjectClassOption {
   className: string;
@@ -34,23 +19,20 @@ export interface OntologyRelationOption {
   toclass?: string;
 }
 
-const base = "/assistant/agents";
-const WORKBENCH_ID = "business";
+const base = "/assistant/agent-definitions";
 
+/** Agent definition management of the workbench (assistant-chat); requires the analysis-agent permission. */
 export const agentDefinitionsApi = {
-  async list(): Promise<AgentDefinition[]> {
-    const body: { agents: AgentDefinition[] } = await nodeApiGet(
-      `${base}?${new URLSearchParams({ workbenchId: WORKBENCH_ID })}`,
+  async list(): Promise<AssistantAgentDefinition[]> {
+    return assistantAgentDefinitionListSchema.parse(await nodeApiGet(base)).agents;
+  },
+  async create(input: AssistantAgentInput): Promise<AssistantAgentDefinition> {
+    return assistantAgentDefinitionSchema.parse(
+      await nodeApiPost(base, input, { headers: { "Idempotency-Key": crypto.randomUUID() } }),
     );
-    return body.agents;
   },
-  async create(input: AgentDefinitionInput): Promise<AgentDefinition> {
-    const body: { agent: AgentDefinition } = await nodeApiPost(base, { workbenchId: WORKBENCH_ID, ...input });
-    return body.agent;
-  },
-  async update(id: string, input: AgentDefinitionInput): Promise<AgentDefinition> {
-    const body: { agent: AgentDefinition } = await nodeApiPut(`${base}/${encodeURIComponent(id)}`, input);
-    return body.agent;
+  async update(id: string, input: AssistantAgentInput): Promise<AssistantAgentDefinition> {
+    return assistantAgentDefinitionSchema.parse(await nodeApiPut(`${base}/${encodeURIComponent(id)}`, input));
   },
   async remove(id: string): Promise<void> {
     await nodeApiFetch(`${base}/${encodeURIComponent(id)}`, "DELETE");

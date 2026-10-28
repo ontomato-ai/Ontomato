@@ -8,7 +8,7 @@ import { workbenchContent } from "../../../content";
 
 const { serviceDisplayName } = workbenchContent();
 
-/** Edits the workbench brand; other stored appearance fields round-trip unchanged. */
+/** Edits the workbench brand. */
 defineProps<{ defaultLogo: string }>();
 const emit = defineEmits<{ close: []; saved: [value: WorkbenchAppearance] }>();
 const { t } = useI18n();

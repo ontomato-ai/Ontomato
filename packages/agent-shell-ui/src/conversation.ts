@@ -1,4 +1,4 @@
-import type { HostRunSnapshot, HostSessionSnapshot } from "./host";
+import type { AgentHostRunSnapshot, AgentHostSessionSnapshot } from "@ontomato/contracts/agent-host";
 import type { RuntimeArtifact } from "@ontomato/contracts/agent-runtime-artifacts";
 import type {
   RuntimeEventEnvelope,
@@ -91,7 +91,7 @@ function toolOutput(content: { type: string; text?: string }[]): string {
 }
 
 /** Replaces one run's live projection with an authoritative snapshot. */
-export function applyRunSnapshot(state: ConversationState, snapshot: HostRunSnapshot) {
+export function applyRunSnapshot(state: ConversationState, snapshot: AgentHostRunSnapshot) {
   const run = ensureRun(state, snapshot.run.id);
   run.status = snapshot.run.status;
   run.stopReason = snapshot.run.stopReason;
@@ -119,7 +119,7 @@ export function applyRunSnapshot(state: ConversationState, snapshot: HostRunSnap
     upsertMessage(state, pending.id, snapshot.run.id, pending.message, null);
 }
 
-export function applySessionSnapshot(state: ConversationState, snapshot: HostSessionSnapshot) {
+export function applySessionSnapshot(state: ConversationState, snapshot: AgentHostSessionSnapshot) {
   state.sessionId = snapshot.session.id;
   for (const record of snapshot.messages)
     upsertMessage(state, record.id, record.runId, record.message, record.messageSeq);

@@ -12,9 +12,12 @@ import "@ontomato/agent-shell-ui/style.css";
 import type { WorkbenchAppearance } from "@ontomato/contracts/workbench-appearance";
 import { AgentSettingsPage } from "../../agents";
 import { DashboardHome } from "../../dashboard";
+import { useDashboardStore } from "../../dashboard/stores/dashboard";
 import { getWorkbenchAppearance } from "../api";
 import { nativeEchartsTheme } from "../../dashboard/components/utils/echartsTheme";
 import { createAssistantClient, createAssistantFeedback } from "../assistant-host";
+import ConversationActions from "./ConversationActions.vue";
+import DatasetActions from "./DatasetActions.vue";
 import WorkbenchAppearanceDialog from "./WorkbenchAppearanceDialog.vue";
 
 /**
@@ -36,8 +39,9 @@ const WORKBENCH_ID = "business";
 const AGENT_KEY = "ontomato.workbench.agent";
 
 const { t } = useI18n();
-const client = createAssistantClient(WORKBENCH_ID);
+const client = createAssistantClient();
 const feedback = createAssistantFeedback();
+const dashboards = useDashboardStore();
 const appearance = ref<WorkbenchAppearance | null>(null);
 const editingBrand = ref(false);
 const agentId = ref<string | null>(readRemembered());
@@ -138,6 +142,11 @@ onMounted(async () => {
   }
 });
 
+function openDashboard(id: string) {
+  void dashboards.selectDashboard(id);
+  featureId.value = "dashboards";
+}
+
 function appearanceSaved(value: WorkbenchAppearance) {
   appearance.value = value;
   editingBrand.value = false;
@@ -175,6 +184,12 @@ function appearanceSaved(value: WorkbenchAppearance) {
       <DashboardHome v-if="page === 'dashboards'" />
       <AgentSettingsPage v-else-if="page === 'agent-config'" @changed="shell?.reloadAgents()" />
       <slot v-else name="feature" :feature-id="page" />
+    </template>
+    <template #artifact-actions="{ artifact }">
+      <DatasetActions :artifact="artifact" @open-dashboard="openDashboard" />
+    </template>
+    <template #message-actions="{ sessionId }">
+      <ConversationActions v-if="sessionId" :session-id="sessionId" />
     </template>
     <template #footer>
       <slot name="footer" />

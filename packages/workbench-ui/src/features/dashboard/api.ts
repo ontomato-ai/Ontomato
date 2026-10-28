@@ -1,7 +1,13 @@
 import type {
   DashboardListItem,
   DashboardDetail,
+  DashboardGroup,
 } from "@ontomato/contracts/dashboard";
+import {
+  dashboardAddArtifactSchema,
+  dashboardSourceSchema,
+  type DashboardAddArtifact,
+} from "@ontomato/contracts/dashboard-artifacts";
 import { nodeApiGet, nodeApiPost } from "../../utils/api";
 import { workbenchContent } from "../../content";
 
@@ -12,6 +18,26 @@ export async function fetchDashboardList(): Promise<DashboardListItem[]> {
 
 export async function createDashboard(name: string) {
   const json = await nodeApiPost("/dashboards/create", { name: String(name || "").trim() });
+  if (!json?.data?.id) throw new Error(json?.error || workbenchContent().text.createDashboardFailed);
+  return { id: String(json.data.id), name: String(json.data.name || "") };
+}
+
+export async function fetchDashboardGroups(id: string): Promise<Pick<DashboardGroup, "id" | "title">[]> {
+  const json = await nodeApiPost("/dashboards/groups", { id });
+  return json?.data || [];
+}
+
+/** Adds a conversation dataset file to an existing dashboard group. */
+export async function addDatasetToDashboard(input: DashboardAddArtifact) {
+  await nodeApiPost("/dashboards/add-chart", dashboardAddArtifactSchema.parse(input));
+}
+
+/** Plans a new dashboard from conversation dataset files. */
+export async function createDashboardFromDatasets(sessionId: string, datasetArtifactIds: string[]) {
+  const json = await nodeApiPost(
+    "/dashboards/create-from-analysis",
+    dashboardSourceSchema.parse({ sessionId, datasetArtifactIds }),
+  );
   if (!json?.data?.id) throw new Error(json?.error || workbenchContent().text.createDashboardFailed);
   return { id: String(json.data.id), name: String(json.data.name || "") };
 }
