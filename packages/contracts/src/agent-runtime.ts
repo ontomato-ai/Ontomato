@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { codeLimitsSchema } from "./agent-runtime-code";
+import { runtimeMcpRefSchema } from "./agent-runtime-mcp";
 import { runtimeArtifactSchema } from "./agent-runtime-artifacts";
 import {
   runtimeCursorSchema,
@@ -47,7 +48,7 @@ export const runtimeAgentDefinitionSchema = z
     modelRole: runtimeKeySchema,
     skills: z.array(runtimeSkillRefSchema),
     sandbox: z.object({ limits: codeLimitsSchema }).strict(),
-    externalMcp: z.array(z.object({ serverId: runtimeKeySchema }).strict()),
+    externalMcp: z.array(runtimeMcpRefSchema),
     // Host-rendered instructions; the runtime prepends conversation and previous-summary blocks.
     compaction: z
       .object({
@@ -203,6 +204,8 @@ export const runtimeErrorCodeSchema = z.enum([
   "UNSUPPORTED_CAPABILITY",
   "RESOURCE_DELETED",
   "INTERNAL_ERROR",
+  "MCP_NAME_EXISTS",
+  "MCP_DISCOVERY_FAILED",
 ]);
 export const runtimeErrorResponseSchema = z
   .object({
@@ -224,6 +227,8 @@ export const RUNTIME_ERROR_HTTP_STATUS = {
   UNSUPPORTED_CAPABILITY: 422,
   RESOURCE_DELETED: 410,
   INTERNAL_ERROR: 500,
+  MCP_NAME_EXISTS: 409,
+  MCP_DISCOVERY_FAILED: 502,
 } as const satisfies Record<z.infer<typeof runtimeErrorCodeSchema>, number>;
 
 /** Success bodies are unwrapped JSON. Non-success responses use runtimeErrorResponseSchema. */

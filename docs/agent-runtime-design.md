@@ -50,7 +50,8 @@ The existing worker-launch.py applies identity/rlimits before starting the Node
 tool worker; descendants inherit the identity/limits. Keep the lifetime pipe and
 process-group/UID cleanup. Disable PI ambient project/global skill discovery and
 session-environment exposure; provide only the explicit runtime environment.
-Preserve external MCP connections as configured service tools; prevent collisions
+External MCP configuration and selection follow the
+[runtime-owned MCP design](external-mcp-runtime-design.md); prevent collisions
 with the four built-in names. No business special cases enter the tool adapter.
 
 ## Session sandbox lifecycle

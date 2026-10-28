@@ -21,7 +21,7 @@ const view = (a: AgentRow) =>
     skills: a.skills,
     classNames: a.class_names,
     graphScope: a.graph_scope,
-    enabledMcpServiceNames: a.enabled_mcp_service_names,
+    enabledMcpServiceIds: a.enabled_mcp_service_ids,
     sortOrder: a.sort_order,
     systemPrompt: a.system_prompt,
   });
@@ -36,7 +36,7 @@ export async function saveAgentDefinition(
   const skills = resolveAssistantSkillReferences(input.skills, owner.domainId);
   const current = await assistantStore.agent(id, owner);
   await getPostgresPool().query(
-    `UPDATE ${t("assistant_agents")} SET name=$3,description=$4,enabled=$5,system_prompt=$6,model_role=$7,skills=$8,icon=$9,class_names=$10,graph_scope=$11,enabled_mcp_service_names=$12,sort_order=$13 WHERE id=$1 AND domain_id=$2`,
+    `UPDATE ${t("assistant_agents")} SET name=$3,description=$4,enabled=$5,system_prompt=$6,model_role=$7,skills=$8,icon=$9,class_names=$10,graph_scope=$11,enabled_mcp_service_ids=$12,sort_order=$13 WHERE id=$1 AND domain_id=$2`,
     [
       id,
       owner.domainId,
@@ -49,7 +49,7 @@ export async function saveAgentDefinition(
       input.icon,
       JSON.stringify(input.classNames),
       JSON.stringify(input.graphScope),
-      JSON.stringify(input.enabledMcpServiceNames),
+      JSON.stringify(input.enabledMcpServiceIds),
       input.sortOrder,
     ],
   );
@@ -62,7 +62,7 @@ export async function createAgentDefinition(
 ) {
   const skills = resolveAssistantSkillReferences(input.skills, owner.domainId);
   await getPostgresPool().query(
-    `INSERT INTO ${t("assistant_agents")} (id,domain_id,kind,name,description,enabled,system_prompt,model_role,skills,icon,class_names,graph_scope,enabled_mcp_service_names,sort_order) VALUES($1,$2,$1::text,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) ON CONFLICT DO NOTHING`,
+    `INSERT INTO ${t("assistant_agents")} (id,domain_id,kind,name,description,enabled,system_prompt,model_role,skills,icon,class_names,graph_scope,enabled_mcp_service_ids,sort_order) VALUES($1,$2,$1::text,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) ON CONFLICT DO NOTHING`,
     [
       id,
       owner.domainId,
@@ -75,7 +75,7 @@ export async function createAgentDefinition(
       input.icon,
       JSON.stringify(input.classNames),
       JSON.stringify(input.graphScope),
-      JSON.stringify(input.enabledMcpServiceNames),
+      JSON.stringify(input.enabledMcpServiceIds),
       input.sortOrder,
     ],
   );

@@ -24,12 +24,13 @@ export function runDefinition(
   modelRole: string,
   skills: RuntimeStartRunRequest["definition"]["skills"],
   locale?: string,
+  externalMcp: RuntimeStartRunRequest["definition"]["externalMcp"] = [],
 ): RuntimeStartRunRequest["definition"] {
   return {
     systemPrompt: systemPrompt + "\n\n" + getOutputLanguageInstruction(locale),
     modelRole,
     skills,
-    externalMcp: [],
+    externalMcp,
     sandbox: {
       limits: codeLimitsSchema.parse({
         memoryBytes: 16 * 1024 ** 3,

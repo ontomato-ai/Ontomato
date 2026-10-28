@@ -47,7 +47,8 @@ import {
 } from "./model";
 import { RuntimeError, safeMessage } from "./errors";
 import { contextTokens, cutPoint, serializeConversation } from "./compaction";
-import { connectMcp, type McpConnection } from "./tools";
+import { connectMcp } from "./tools";
+import { RuntimeMcpServices } from "./mcp";
 import { modelKeySealKey } from "@ontomato/contracts/model-key-seal";
 
 type Subscriber = (frame: RuntimeStreamFrame) => void;
@@ -73,7 +74,6 @@ export interface RuntimeOptions {
   ontologyUrl: string;
   modelRuntimeToken?: string;
   eventBufferSize?: number;
-  mcpServers?: McpConnection[];
 }
 
 /** Only the wire profile is persisted; provider diagnostics are deliberately not part of it. */
@@ -106,11 +106,13 @@ export class AgentRuntime {
   readonly code: CodeExecutor;
   readonly worker: WorkerPolicy;
   readonly files: ArtifactFiles;
+  readonly mcp: RuntimeMcpServices;
   private active = new Map<string, Active>();
   private locks = new Map<string, Promise<unknown>>();
   constructor(readonly options: RuntimeOptions) {
     modelKeySealKey(options.modelRuntimeToken);
     this.store = options.store;
+    this.mcp = new RuntimeMcpServices(this.store);
     this.worker = {
       ...(options.worker ?? {
         development: process.env.NODE_ENV === "test",
@@ -419,6 +421,7 @@ export class AgentRuntime {
     let failure: string | null = null;
     let closeMcp = async () => {};
     try {
+      const mcpConfigs = await this.mcp.resolve(scope, request.definition.externalMcp.map((ref) => ref.id));
       const config = await resolveModel({
         baseUrl: this.options.ontologyUrl,
         runtimeToken: this.options.modelRuntimeToken,
@@ -467,9 +470,7 @@ export class AgentRuntime {
         skills,
       );
       const mcp = await connectMcp(
-        this.options.mcpServers ?? [],
-        request.definition.externalMcp.map((ref) => ref.serverId),
-        scope.hostId,
+        mcpConfigs,
         run.correlationId,
         signal,
       );

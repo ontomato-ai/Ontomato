@@ -8,8 +8,7 @@ export const ANALYSIS_CONVERSATION_TURNS_NAME = "durable analysis conversation t
 export async function migrateAnalysisConversationTurns(client: QueryableClient): Promise<void> {
   await client.query(`
     ALTER TABLE ${qualifiedTable("analysis_agents")}
-      ADD COLUMN IF NOT EXISTS report_deliverable_enabled BOOLEAN NOT NULL DEFAULT TRUE,
-      ADD COLUMN IF NOT EXISTS enabled_mcp_service_names TEXT[] NOT NULL DEFAULT '{}';
+      ADD COLUMN IF NOT EXISTS report_deliverable_enabled BOOLEAN NOT NULL DEFAULT TRUE;
     ALTER TABLE ${qualifiedTable("analysis_tasks")}
       ADD COLUMN IF NOT EXISTS report_deliverable_enabled BOOLEAN NOT NULL DEFAULT TRUE;
     UPDATE ${qualifiedTable("analysis_tasks")} task

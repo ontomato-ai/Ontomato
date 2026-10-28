@@ -45,7 +45,7 @@ export interface AgentRow {
   skills: RuntimeSkillRef[];
   class_names: string[];
   graph_scope: import("@ontomato/contracts/assistant-chat").AssistantGraphScope;
-  enabled_mcp_service_names: string[];
+  enabled_mcp_service_ids: string[];
   sort_order: number;
 }
 const db = () => getPostgresPool();

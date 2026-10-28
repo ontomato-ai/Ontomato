@@ -64,6 +64,29 @@ export function createRuntimeHttp(runtime: AgentRuntime) {
   app.get("/health", (_req, res) => {
     res.json({ status: "ready" });
   });
+  app.get("/v1/mcp/services/names", route(async (req, res) => {
+    res.json(await runtime.mcp.options(scope(req).scope));
+  }));
+  app.get("/v1/mcp/services", route(async (req, res) => {
+    res.json({ services: await runtime.mcp.list(scope(req).scope) });
+  }));
+  app.post("/v1/mcp/services", route(async (req, res) => {
+    res.status(201).json({ service: await runtime.mcp.create(scope(req).scope, req.body) });
+  }));
+  app.put("/v1/mcp/services/:id", route(async (req, res) => {
+    res.json({ service: await runtime.mcp.update(scope(req).scope, runtimeIdSchema.parse(req.params.id), req.body) });
+  }));
+  app.delete("/v1/mcp/services/:id", route(async (req, res) => {
+    await runtime.mcp.delete(scope(req).scope, runtimeIdSchema.parse(req.params.id));
+    res.status(204).end();
+  }));
+  app.get("/v1/mcp/services/:id/tools", route(async (req, res) => {
+    const ctx = scope(req), id = runtimeIdSchema.parse(req.params.id);
+    const controller = new AbortController();
+    res.on("close", () => controller.abort());
+    const tools = await runtime.mcp.discover(ctx.scope, id, ctx.correlationId, controller.signal);
+    if (!controller.signal.aborted) res.json({ tools });
+  }));
   app.post(
     "/v1/code-executions",
     route(async (req, res) => {

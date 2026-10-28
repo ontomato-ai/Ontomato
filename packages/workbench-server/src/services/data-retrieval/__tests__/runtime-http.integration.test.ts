@@ -104,7 +104,6 @@ describe.skipIf(!connection)(
             OBSERVE_BACKEND_NODES: "",
             BACKEND_NODES: "",
             MCP_SERVER_URL: "",
-            AGENT_RUNTIME_MCP_SERVERS: "[]",
             DATA_QUERY_API_KEY: "",
             HTTP_PROXY: "",
             HTTPS_PROXY: "",

@@ -10,6 +10,7 @@ import type {
   AssistantAgentDefinition,
   AssistantAgentInput,
 } from "@ontomato/contracts/assistant-chat";
+import type { McpServiceOption } from "@ontomato/contracts/agent-runtime-mcp";
 import type { RuntimeSkillRef } from "@ontomato/contracts/agent-runtime-skills";
 import { agentDefinitionsApi, type ObjectClassOption, type OntologyRelationOption } from "../api";
 import { joinSkillRefs, splitSkillRefs } from "../skill-refs";
@@ -41,7 +42,7 @@ interface Form {
   scopeMode: "panorama" | "subgraph";
   scopeRoots: string[];
   scopeDepth: number | undefined;
-  mcpServiceNames: string[];
+  mcpServiceIds: string[];
 }
 
 const skillRefs = splitSkillRefs(props.agent?.skills ?? []);
@@ -68,7 +69,7 @@ function toForm(agent: AssistantAgentDefinition | null): Form {
     scopeMode: scope?.mode === "subgraph" ? "subgraph" : "panorama",
     scopeRoots: scope?.mode === "subgraph" ? [...scope.rootClassNames] : [],
     scopeDepth: scope?.mode === "subgraph" ? scope.maxDepth : 1,
-    mcpServiceNames: [...(agent?.enabledMcpServiceNames ?? [])],
+    mcpServiceIds: [...(agent?.enabledMcpServiceIds ?? [])],
   };
 }
 
@@ -77,7 +78,7 @@ const baseline = ref(JSON.stringify(form.value));
 const dirty = computed(() => JSON.stringify(form.value) !== baseline.value);
 const saving = ref(false);
 const promptPreview = ref(false);
-const mcpNames = ref<string[]>([]);
+const mcpOptions = ref<McpServiceOption[]>([]);
 const mcpLoading = ref(false);
 const mcpFailed = ref(false);
 
@@ -89,7 +90,7 @@ async function loadMcp() {
   mcpLoading.value = true;
   mcpFailed.value = false;
   try {
-    mcpNames.value = await agentDefinitionsApi.listMcpServiceNames();
+    mcpOptions.value = await agentDefinitionsApi.listMcpServiceOptions();
   } catch {
     mcpFailed.value = true;
   } finally {
@@ -133,7 +134,7 @@ function validInput(): AssistantAgentInput | null {
       value.scopeMode === "subgraph"
         ? { mode: "subgraph", rootClassNames: value.scopeRoots, maxDepth: value.scopeDepth! }
         : { mode: "panorama" },
-    enabledMcpServiceNames: value.mcpServiceNames,
+    enabledMcpServiceIds: value.mcpServiceIds,
     sortOrder: props.agent?.sortOrder ?? 0,
   };
 }
@@ -295,7 +296,7 @@ defineExpose({ dirty });
             </div>
           </div>
           <el-select
-            v-model="form.mcpServiceNames"
+            v-model="form.mcpServiceIds"
             multiple
             filterable
             collapse-tags
@@ -307,12 +308,12 @@ defineExpose({ dirty });
             :placeholder="t('admin.externalMcpServicesPlaceholder')"
             class="full"
           >
-            <el-option v-for="name in mcpNames" :key="name" :label="name" :value="name" />
+            <el-option v-for="service in mcpOptions" :key="service.id" :label="service.name" :value="service.id" />
             <el-option
-              v-for="name in form.mcpServiceNames.filter((selected) => !mcpNames.includes(selected))"
-              :key="name"
-              :label="name"
-              :value="name"
+              v-for="id in form.mcpServiceIds.filter((selected) => !mcpOptions.some((service) => service.id === selected))"
+              :key="id"
+              :label="t('assistant.unavailable')"
+              :value="id"
               disabled
             />
           </el-select>
