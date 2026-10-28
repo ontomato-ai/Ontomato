@@ -6,7 +6,7 @@ import { MODEL_ROLES } from "@ontomato/contracts/model-settings";
 import ModelListCard from "../business-config/ModelListCard.vue";
 import RoleModelsCard from "../business-config/RoleModelsCard.vue";
 import EmbeddingModelConfigCard from "../business-config/EmbeddingModelConfigCard.vue";
-import SkillDirConfigCard from "../business-config/SkillDirConfigCard.vue";
+import GeneralConfigCard from "../business-config/GeneralConfigCard.vue";
 import QuerySettingsCard from "../business-config/QuerySettingsCard.vue";
 import BusinessConfig from "../BusinessConfig.vue";
 import ModelConfig from "../ModelConfig.vue";
@@ -22,7 +22,6 @@ const OPAQUE_CUSTOMS =
 const sent = vi.hoisted(() => ({
   settings: null as unknown,
   test: null as unknown,
-  skilldir: null as unknown,
   embedding: null as unknown,
   embeddingTest: null as unknown,
   system: null as unknown,
@@ -130,11 +129,7 @@ vi.mock("../../../admin", () => ({
           agents: settingsData().agents,
           embeddingModelProperties: fixtures.embedding,
           knowledgeMaxResult: 10,
-          toolAndPythonRetry: 0,
-          dslCookerTries: 1,
           dslCookerTimeout: 300000,
-          questionSpliterTries: 1,
-          questionSpliterTimeout: 300000,
           lang: "zh-CN",
           dataAdapter: "postgresql",
           dataAdapterConnections: {},
@@ -163,10 +158,6 @@ vi.mock("../../../admin", () => ({
     saveSystemModelConfig: vi.fn(async (payload: Record<string, unknown>) => {
       sent.system = JSON.parse(JSON.stringify(payload));
       return { success: true, data: { ...payload } };
-    }),
-    saveToolSkillDir: vi.fn(async (skilldir: string) => {
-      sent.skilldir = skilldir;
-      return { success: true };
     }),
     saveEmbeddingModel: vi.fn(async (payload: unknown) => {
       sent.embedding = JSON.parse(JSON.stringify(payload));
@@ -205,7 +196,6 @@ beforeEach(() => {
   Object.assign(sent, {
     settings: null,
     test: null,
-    skilldir: null,
     embedding: null,
     embeddingTest: null,
     system: null,
@@ -1209,7 +1199,7 @@ describe("vector rebuild and embedding test on the model config page", () => {
 });
 
 describe("system config page", () => {
-  it("reads and writes only the two query settings", async () => {
+  it("reads and writes only the query timeout setting", async () => {
     const page = await mountSystemPage();
     const query = page.findComponent(QuerySettingsCard);
     await query.find(".el-input-number input").setValue("900");
@@ -1219,23 +1209,10 @@ describe("system config page", () => {
     expect(query.find(".dirty-tag").exists()).toBe(false);
   });
 
-  it("reads the skill directory from the coding role and saves it alone", async () => {
-    const page = await mountSystemPage();
-    const skill = page.findComponent(SkillDirConfigCard);
-    expect((skill.find("input").element as HTMLInputElement).value).toBe("skills/legacy");
-    await skill.find("input").setValue("skills/aftercalculate");
-    await button(skill, t("common.saveConfig"))!.trigger("click");
-    await flushPromises();
-    expect(sent.skilldir).toBe("skills/aftercalculate");
-    expect(sent.settings).toBeNull();
-  });
-
   it("keeps a persistent error and disables writes when the business config fails to load", async () => {
     vi.mocked(adminApi.getBusinessConfig).mockRejectedValueOnce(new Error("java down"));
     const page = await mountSystemPage();
-    expect(
-      button(page.findComponent(SkillDirConfigCard), t("common.saveConfig"))!.attributes("disabled")
-    ).toBeDefined();
+    expect(button(page.findComponent(GeneralConfigCard), t("common.save"))!.attributes("disabled")).toBeDefined();
     const banner = page.find(".config-load-error");
     expect(banner.text()).toContain("java down");
     expect(button(banner, t("common.retry"))).toBeTruthy();

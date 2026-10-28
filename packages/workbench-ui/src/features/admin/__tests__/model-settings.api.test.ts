@@ -48,14 +48,6 @@ describe("model settings api", () => {
     expect(calls.posts).toEqual([{ path: "/businessConfig/saveModelSettings", body: payload }]);
   });
 
-  it("saves only the skill directory", async () => {
-    await adminApi.saveToolSkillDir("skills/aftercalculate");
-
-    expect(calls.posts).toEqual([
-      { path: "/businessConfig/saveToolSkillDir", body: { skilldir: "skills/aftercalculate" } },
-    ]);
-  });
-
   it("tests a draft model with the contract field names", async () => {
     const model = {
       name: "qwen-main",

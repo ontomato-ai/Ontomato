@@ -187,9 +187,7 @@ export default {
     "customRequestParameters": "Custom Request Parameters (JSON)",
     "customRequestParametersHint": "Overrides same-named fields of the final request; objects/arrays replace as a whole, null is sent as-is; unset fields keep system values; when a name also appears above, this JSON wins.",
     "customRequestParametersMustBeObject": "Custom request parameters must be a JSON object.",
-    "skillDir": "Skill Directory",
     "knowledgeMaxResults": "Knowledge Max Results",
-    "postCalcRetries": "Post-Calc Retries",
     "adapterMode": "Adapter Mode",
     "contextWindow": "Context Window (tokens)",
     "addModel": "Add Model",
@@ -262,10 +260,7 @@ export default {
       "RESOURCE": "resource"
     },
     "vectorRebuildConfirm": "Rebuilding clears the vectors of this domain and calls the embedding service again for every item, which takes time and resources. Vector search in this domain stays paused until every vector is rebuilt; you can pause and resume the rebuild. Start the rebuild?",
-    "dslCookerTries": "DSL Cooker Tries",
     "dslCookerTimeout": "DSL Cooker Timeout (ms)",
-    "questionSpliterTries": "Question Splitter Tries",
-    "questionSpliterTimeout": "Question Splitter Timeout (ms)",
     "backendLanguage": "Backend Language",
     "monitorResourceScope": "In a container deployment these figures are the resources visible to the data engine's container or process, not necessarily the host machine."
   },
