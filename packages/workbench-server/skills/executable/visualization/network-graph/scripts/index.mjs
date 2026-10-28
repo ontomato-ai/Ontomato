@@ -1,6 +1,6 @@
 function resolveThemeColors(value) {
   let root = document.documentElement;
-  try { if (parent !== window && parent.document) root = parent.document.documentElement; } catch (error) {}
+  try { if (parent !== window && window.frameElement) root = window.frameElement; } catch (error) {}
   const style = root.ownerDocument.defaultView.getComputedStyle(root);
   function resolve(item) {
     if (!item || typeof item !== "object") return item;
@@ -13,7 +13,7 @@ function resolveThemeColors(value) {
 
 function observeThemeChanges(update) {
   let root = document.documentElement;
-  try { if (parent !== window && parent.document) root = parent.document.documentElement; } catch (error) {}
+  try { if (parent !== window && window.frameElement) root = window.frameElement; } catch (error) {}
   const observer = new MutationObserver(update);
   observer.observe(root, { attributes: true, attributeFilter: ["class", "style", "data-theme"] });
   const scheme = window.matchMedia("(prefers-color-scheme: dark)");
@@ -81,20 +81,35 @@ function normalizeInput(input) {
   }
   return { nodeMap, links, warnings };
 }
-function generateHtml({ title, nodes, links, layout, directed, showRelationLabels, width, height, dark }) {
+function generateHtml({ title, nodes, links, layout, directed, showRelationLabels, showTitle, locale, width, height, dark }) {
+  const languages = {
+    zh: ['拖拽节点探索关系 · 滚轮缩放 · 点击节点高亮相邻对象', '交互关系图', '图表资源加载失败', '其他', '标识', '类型', '状态', '关系'],
+    'zh-TW': ['拖曳節點探索關係 · 滾輪縮放 · 點擊節點醒目顯示相鄰物件', '互動關係圖', '圖表資源載入失敗', '其他', '識別碼', '類型', '狀態', '關係'],
+    en: ['Drag nodes to explore · Scroll to zoom · Click a node to highlight its neighbors', 'Interactive network graph', 'Chart resource failed to load', 'Other', 'ID', 'Type', 'Status', 'Relationship'],
+    ja: ['ノードをドラッグ · スクロールで拡大縮小 · クリックで隣接ノードを強調', '対話型関係グラフ', 'グラフの読み込みに失敗しました', 'その他', 'ID', '種類', '状態', '関係'],
+    fr: ['Glisser pour explorer · Défiler pour zoomer · Cliquer pour surligner les voisins', 'Graphe interactif', 'Échec du chargement du graphique', 'Autre', 'ID', 'Type', 'État', 'Relation'],
+    de: ['Knoten ziehen · Scrollen zum Zoomen · Klicken, um Nachbarn hervorzuheben', 'Interaktiver Beziehungsgraph', 'Diagramm konnte nicht geladen werden', 'Andere', 'ID', 'Typ', 'Status', 'Beziehung'],
+    it: ['Trascina i nodi · Scorri per ingrandire · Clicca per evidenziare i vicini', 'Grafo interattivo', 'Caricamento del grafico non riuscito', 'Altro', 'ID', 'Tipo', 'Stato', 'Relazione'],
+    ar: ['اسحب العقد للاستكشاف · مرر للتكبير · انقر لإبراز العقد المجاورة', 'رسم علاقات تفاعلي', 'تعذر تحميل الرسم', 'أخرى', 'المعرف', 'النوع', 'الحالة', 'العلاقة'],
+  };
+  const language = locale === 'zh-TW' ? 'zh-TW' : String(locale || 'en').split('-')[0];
+  const messages = languages[language] || languages.en;
 
   const safeTitle = esc(title);
+  const titleHtml = showTitle === false ? "" : `<div class="title">${safeTitle}</div>`;
   const serializedNodes = jsonForScript(nodes);
   const serializedLinks = jsonForScript(links);
   const serializedConfig = jsonForScript({ layout, directed, showRelationLabels, dark });
-  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>
+  return `<!doctype html><html lang="${esc(language)}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>
   *{box-sizing:border-box}html,body{margin:0;width:100%;height:100%;font-family:Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:var(--graph-bg, Canvas);color:var(--graph-text, CanvasText)}.shell{height:100%;display:flex;flex-direction:column}.title{font-size:15px;font-weight:650;padding:12px 16px;border-bottom:1px solid var(--graph-border, CanvasText)}#chart{flex:1;width:100%;outline:none}.hint{font-size:11px;color:var(--graph-muted, CanvasText);padding:5px 12px}
-  </style><script src="/api/echart/echarts.min.js"></script></head><body><div class="shell"><div class="title">${safeTitle}</div><div id="chart" role="img" aria-label="Interactive network graph"></div><div class="hint">Drag nodes to explore · Scroll to zoom · Click a node to highlight its neighbors</div></div><script>
+  </style><script src="/api/echart/echarts.min.js"></script></head><body><div class="shell">${titleHtml}<div id="chart" role="img" aria-label="${esc(messages[1])}"></div><div class="hint">${esc(messages[0])}</div></div><script>
+  const messages=${jsonForScript(messages)};
   const nodes=${serializedNodes}; const links=${serializedLinks}; const cfg=${serializedConfig};
   const root=document.getElementById('chart');
-  if(!window.echarts){root.textContent='ECharts resource failed to load.';throw new Error('ECharts resource failed to load');}
+  if(!window.echarts){root.textContent=messages[2];throw new Error(messages[2]);}
   const chart=echarts.init(root, null, {renderer:'canvas'});
-  const types=[...new Set(nodes.map(n=>n.type||'Other'))];
+  nodes.forEach(node => { if (node.type === 'Other') node.type = messages[3]; });
+  const types=[...new Set(nodes.map(n=>n.type||messages[3]))];
   ${resolveThemeColors.toString()}
   ${observeThemeChanges.toString()}
   const themeTokens={"bg": {"$themeColor": "--el-bg-color"}, "text": {"$themeColor": "--el-text-color-primary"}, "regular": {"$themeColor": "--el-text-color-regular"}, "muted": {"$themeColor": "--el-text-color-secondary"}, "border": {"$themeColor": "--el-border-color"}, "overlay": {"$themeColor": "--el-bg-color-overlay"}, "primary": {"$themeColor": "--el-color-primary"}, "danger": {"$themeColor": "--el-color-danger"}, "warning": {"$themeColor": "--el-color-warning"}, "palette": [{"$themeColor": "--el-color-primary"}, {"$themeColor": "--el-color-primary-dark-2"}, {"$themeColor": "--el-color-primary-light-3"}, {"$themeColor": "--el-color-success"}, {"$themeColor": "--el-color-info"}, {"$themeColor": "--el-color-warning"}, {"$themeColor": "--el-color-danger"}, {"$themeColor": "--el-text-color-regular"}, {"$themeColor": "--el-text-color-secondary"}, {"$themeColor": "--el-color-primary-light-5"}]};
@@ -111,13 +126,25 @@ function generateHtml({ title, nodes, links, layout, directed, showRelationLabel
   const series={type:'graph',data:nodeData,links:links.map(l=>({...l,lineStyle:{width:Math.min(5,1+Math.log2(Math.max(1,l.weight))),opacity:.65},label:{show:cfg.showRelationLabels,formatter:l.relation||'',fontSize:9}})),categories,layout:cfg.layout,roam:true,draggable:true,focusNodeAdjacency:true,selectedMode:'single',scaleLimit:{min:.15,max:8},edgeSymbol:cfg.directed?['none','arrow']:['none','none'],edgeSymbolSize:8,edgeLabel:{show:cfg.showRelationLabels,formatter:p=>p.data.relation||'',fontSize:9,color:theme.muted},label:{position:'right',color:theme.text,overflow:'truncate',width:120},lineStyle:{color:'source',curveness:.12},emphasis:{focus:'adjacency',lineStyle:{width:3,opacity:1}},blur:{itemStyle:{opacity:.2},lineStyle:{opacity:.08}}};
   if(cfg.layout==='none' && nodeData.some(n=>!Number.isFinite(n.x)||!Number.isFinite(n.y))) series.layout='force';
   if(series.layout==='force') series.force={repulsion:Math.max(120,Math.min(700, nodes.length*8)),edgeLength:[55,150],gravity:.08,friction:.6};
-  chart.setOption({animation:true,backgroundColor:'transparent',tooltip:{trigger:'item',confine:true,backgroundColor:theme.overlay,borderColor:theme.border,textStyle:{color:theme.text},formatter:p=>{const d=p.data||{};if(p.dataType==='edge'){return '<b>'+esc(d.source)+'</b> → <b>'+esc(d.target)+'</b><br>'+esc(d.relation||'relationship');}let out='<b>'+esc(d.name||d.id)+'</b><br>ID: '+esc(d.id)+'<br>Type: '+esc(d.type||'Other');if(d.status)out+='<br>Status: '+esc(d.status);for(const [k,v] of Object.entries(d.properties||{})){if(['id','name','label','type','status','x','y'].includes(k)||v==null||typeof v==='object')continue;out+='<br>'+esc(k)+': '+esc(v)}return out}},legend:[{type:'scroll',data:types,top:8,left:8,textStyle:{color:theme.regular}}],series:[series]});
+  chart.setOption({animation:true,backgroundColor:'transparent',tooltip:{trigger:'item',confine:true,backgroundColor:theme.overlay,borderColor:theme.border,textStyle:{color:theme.text},formatter:p=>{const d=p.data||{};if(p.dataType==='edge'){return '<b>'+esc(d.source)+'</b> → <b>'+esc(d.target)+'</b><br>'+esc(d.relation||messages[7]);}let out='<b>'+esc(d.name||d.id)+'</b><br>'+esc(messages[4])+': '+esc(d.id)+'<br>'+esc(messages[5])+': '+esc(d.type||messages[3]);if(d.status)out+='<br>'+esc(messages[6])+': '+esc(d.status);for(const [k,v] of Object.entries(d.properties||{})){if(['id','name','label','type','status','x','y'].includes(k)||v==null||typeof v==='object')continue;out+='<br>'+esc(k)+': '+esc(v)}return out}},legend:[{type:'scroll',data:types,top:8,left:8,textStyle:{color:theme.regular}}],series:[series]});
   }
   renderTheme();
   observeThemeChanges(renderTheme);
   function esc(s){return String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
   chart.on('click',p=>{if(p.dataType!=='node')return;const id=p.data.id;const neighbors=new Set([id]);links.forEach(l=>{if(l.source===id)neighbors.add(l.target);if(l.target===id)neighbors.add(l.source)});chart.dispatchAction({type:'downplay',seriesIndex:0});nodeData.forEach((n,i)=>chart.dispatchAction({type:neighbors.has(n.id)?'highlight':'downplay',seriesIndex:0,dataIndex:i}));});
-  new ResizeObserver(()=>chart.resize()).observe(root);
+  let resizeFrame=0;
+  const resizeObserver=new ResizeObserver(()=>{
+    cancelAnimationFrame(resizeFrame);
+    resizeFrame=requestAnimationFrame(()=>{
+      const width=root.clientWidth, height=root.clientHeight;
+      // Hidden tabs must not reset the force layout to a zero-sized viewport.
+      if(width>0 && height>0 && (width!==chart.getWidth() || height!==chart.getHeight())) {
+        chart.resize({width,height,animation:{duration:0}});
+      }
+    });
+  });
+  resizeObserver.observe(root);
+  window.addEventListener('pagehide',()=>{cancelAnimationFrame(resizeFrame);resizeObserver.disconnect();chart.dispose();},{once:true});
   </script></body></html>`;
 }
 export async function execute(input) {
@@ -145,6 +172,6 @@ export async function execute(input) {
   const nodes = selected.map(n => ({ id:n.id, name:n.name, type:n.type||"Other", status:n.status, isAnchor:n.isAnchor, degree:n.degree, x:n.x, y:n.y, symbolSize:n.symbolSize, properties:n.properties, statusColor: /risk|danger|critical|recalled|defective|error/i.test(n.status) ? "danger" : /warning|affected|pending/i.test(n.status) ? "warning" : undefined }));
   const layoutInput = ["force","circular","none"].includes(input.layout) ? input.layout : "force";
   const layout = layoutInput === "none" && nodes.every(n=>Number.isFinite(n.x)&&Number.isFinite(n.y)) ? "none" : (layoutInput === "none" ? "force" : layoutInput);
-  const html = generateHtml({ title, nodes, links:renderLinks, layout, directed:input.directed !== false, showRelationLabels:input.showRelationLabels === true, width:Math.max(360,Math.min(2400,Number(input.width)||800)), dark:input.theme === "dark" });
+  const html = generateHtml({ title, nodes, links:renderLinks, layout, directed:input.directed !== false, showRelationLabels:input.showRelationLabels === true, showTitle:input.showTitle, locale:input.locale, width:Math.max(360,Math.min(2400,Number(input.width)||800)), dark:input.theme === "dark" });
   return { html, meta: { skillId:"network-graph", chartType, title, dataRows:renderLinks.length, nodeCount:nodes.length, originalNodeCount:allNodes.length, linkCount:renderLinks.length, originalLinkCount:links.length, truncated, warnings, layout } };
 }

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref, watch } from "vue";
+import { ArrowLeft } from "lucide-vue-next";
 import { ElAlert, ElButton, ElInput, ElInputNumber, ElOption, ElSelect, ElSwitch } from "element-plus";
 import { createObjectView, createViewWidget, objectViewDocumentSchema, type ObjectReference, type ObjectViewDocument, type ObjectViewState, type ViewWidget } from "@ontomato/contracts/object-views";
 import { useManagerClient, useOntologyText } from "../context";
@@ -23,6 +24,7 @@ const objectType = ref<OntologyObject>();
 const relations = ref<OntologyRelation[]>([]);
 const metrics = ref<SmartAsset[]>([]);
 const actions = ref<SmartAsset[]>([]);
+const skills = ref<Array<{ id: string; title?: string }>>([]);
 const busy = ref(false);
 const loaded = ref(false);
 const error = ref("");
@@ -72,6 +74,7 @@ async function load() {
     selectedWidget.value = "";
     historyRevision.value = undefined;
     loaded.value = true;
+    void client.loadViewSkills().then(result => { if (current === generation) skills.value = result; }).catch(() => {});
   } catch (reason) { if (current === generation) error.value = reason instanceof Error ? reason.message : String(reason); }
   finally { if (current === generation) busy.value = false; }
 }
@@ -194,7 +197,7 @@ onBeforeUnmount(() => { generation++; sampleRequest++; window.removeEventListene
 <template>
   <div class="view-builder">
     <header class="builder-header">
-      <div class="builder-heading"><el-button text @click="back">{{ ot('ovBack') }}</el-button><div class="builder-title"><strong>{{ ot('ovTitle') }}</strong><span :title="objectType?.showName || className">{{ objectType?.showName || className }}</span></div>
+      <div class="builder-heading"><el-button text :icon="ArrowLeft" @click="back">{{ ot('ovBack') }}</el-button><span class="builder-title-divider" /><div class="builder-title"><strong>{{ ot('ovTitle') }}</strong><span :title="objectType?.showName || className">{{ objectType?.showName || className }}</span></div>
       </div>
       <div class="builder-actions"><span class="version-status">v{{ state.revision }} · {{ ot('ovPublished') }} {{ state.publishedRevision ?? '—' }} {{ dirty ? '· ' + ot('ovUnsaved') : '' }}</span>
         <el-switch v-model="preview" :active-text="ot('ovPreview')" /><el-button type="primary" plain :disabled="!loaded" :loading="busy" @click="save()">{{ ot('ovSaveDraft') }}</el-button><el-button type="primary" :disabled="!loaded" :loading="busy" @click="save(true)">{{ ot('ovSavePublish') }}</el-button>
@@ -237,18 +240,21 @@ onBeforeUnmount(() => { generation++; sampleRequest++; window.removeEventListene
           <label v-if="['text', 'button', 'action', 'input'].includes(widget.kind)">{{ ot('ovText') }}<el-input v-model="widget.text" type="textarea" /></label>
           <label v-if="['metric', 'table', 'chart'].includes(widget.kind)">{{ ot('ovMetricView') }}<el-select v-model="widget.resourceId" clearable filterable><el-option v-for="asset in metrics" :key="asset.id" :value="asset.id!" :label="asset.name" /></el-select></label>
           <label v-if="widget.kind === 'action'">{{ ot('ovAction') }}<el-select v-model="widget.resourceId" filterable><el-option v-for="asset in actions" :key="asset.id" :value="asset.id!" :label="asset.name" /></el-select></label>
+          <label v-if="widget.kind === 'chart'">{{ ot('ovVisualizationSkill') }}<el-select v-model="widget.skillId" filterable><el-option v-for="skill in skills" :key="skill.id" :value="skill.id" :label="skill.title || skill.id" /></el-select></label>
           <template v-if="widget.resourceId">
             <h4>{{ ot('ovParameterBindings') }}</h4><div v-for="(_, name) in widget.parameters" :key="name" class="parameter"><span>{{ name }}</span><ViewBindingEditor v-model="widget.parameters[name]" /><el-button text @click="delete widget.parameters[name]">{{ ot('ovRemove') }}</el-button></div>
             <el-input v-model="parameterName" :placeholder="ot('ovParameterName')" /><el-button @click="addParameter">{{ ot('ovAddParameter') }}</el-button>
           </template>
           <label v-if="['metric','table','chart'].includes(widget.kind)">{{ ot('ovResultPath') }}<el-input v-model="widget.resultPath" :placeholder="ot('ovResultPathHint')" /></label>
           <label v-if="['metric','table','chart','button','text'].includes(widget.kind)"><el-switch :model-value="!!widget.binding" :active-text="ot('ovBindValue')" @update:model-value="widget.binding = $event ? { source: 'object', path: '' } : undefined" /><ViewBindingEditor v-if="widget.binding" v-model="widget.binding" /></label>
-          <template v-if="widget.kind === 'chart'"><label>{{ ot('ovChartType') }}<el-select v-model="widget.chartType"><el-option :label="ot('ovBar')" value="bar" /><el-option :label="ot('ovLine')" value="line" /></el-select></label><label>{{ ot('ovLabelField') }}<el-input v-model="widget.labelField" /></label></template>
+          <template v-if="widget.kind === 'chart'"><label>{{ ot('ovChartType') }}<el-select v-model="widget.chartType"><el-option :label="ot('ovBar')" value="bar" /><el-option :label="ot('ovLine')" value="line" /><el-option :label="ot('ovDonut')" value="donut" /><el-option :label="ot('ovTimeline')" value="timeline" /><el-option :label="ot('ovGraph')" value="graph" /><el-option :label="ot('ovMap')" value="leaflet-map" /></el-select></label><label v-if="widget.chartType !== 'graph'">{{ ot('ovLabelField') }}<el-input v-model="widget.labelField" /></label></template>
+          <template v-if="widget.kind === 'chart' && widget.chartType === 'leaflet-map'"><label>{{ ot('ovLatitudeField') }}<el-input v-model="widget.latitudeField" /></label><label>{{ ot('ovLongitudeField') }}<el-input v-model="widget.longitudeField" /></label></template>
+          <template v-if="widget.kind === 'chart' && widget.chartType === 'timeline'"><label>{{ ot('ovDateField') }}<el-input v-model="widget.dateField" /></label><label>{{ ot('ovDescriptionField') }}<el-input v-model="widget.descriptionField" /></label></template>
           <label v-if="['metric','chart','table'].includes(widget.kind)">{{ ot('ovValueField') }}<el-input v-model="widget.valueField" /></label>
           <template v-if="widget.kind === 'links'"><label>{{ ot('ovDirection') }}<el-select v-model="widget.direction" @change="widget!.relation = ''"><el-option :label="ot('ovOutgoing')" value="outgoing" /><el-option :label="ot('ovIncoming')" value="incoming" /></el-select></label><label>{{ ot('ovRelationship') }}<el-select v-model="widget.relation"><el-option v-for="relation in relationOptions" :key="relation.relationship" :value="relation.relationship" :label="relation.showName" /></el-select></label></template>
           <label v-if="['input','table','links','button'].includes(widget.kind)">{{ ot('ovSelectionVariable') }}<el-input v-model="widget.variable" /></label>
           <label v-if="widget.kind === 'button'">{{ ot('ovClickEvent') }}<el-select v-model="widget.onClick"><el-option :label="ot('ovRefreshData')" value="refresh" /><el-option :label="ot('ovSetVariable')" value="setVariable" /><el-option :label="ot('ovOpenObject')" value="openObject" /></el-select></label>
-          <label v-if="['table','button'].includes(widget.kind)">{{ ot('ovTargetType') }}<el-input v-model="widget.targetClass" /></label>
+          <label v-if="['table','button'].includes(widget.kind) || widget.kind === 'chart' && widget.chartType === 'timeline'">{{ ot('ovTargetType') }}<el-input v-model="widget.targetClass" /></label>
           <div class="visibility-heading"><h4>{{ ot('ovVisibility') }}</h4><el-switch :model-value="!!widget.visibleWhen" @update:model-value="widget.visibleWhen = $event ? { binding: { source: 'object', path: '' }, operator: 'present', value: '' } : undefined" /></div>
           <div v-if="widget.visibleWhen" class="condition-fields"><ViewBindingEditor v-model="widget.visibleWhen.binding" /><el-select v-model="widget.visibleWhen.operator"><el-option v-for="operator in (['eq','ne','present','empty'] as const)" :key="operator" :value="operator" :label="ot(({ eq: 'ovEqual', ne: 'ovNotEqual', present: 'ovPresent', empty: 'ovEmpty' } as const)[operator])" /></el-select><el-input v-if="['eq','ne'].includes(widget.visibleWhen.operator)" v-model="widget.visibleWhen.value" /></div>
           <el-button type="danger" plain @click="removeWidget">{{ ot('ovDeleteComponent') }}</el-button>
@@ -267,6 +273,7 @@ onBeforeUnmount(() => { generation++; sampleRequest++; window.removeEventListene
 .builder-header { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 16px; padding: 16px 20px; border-bottom: 1px solid var(--el-border-color); flex-shrink: 0; }
 .builder-heading, .builder-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; min-width: 0; }
 .builder-heading { flex: 1 1 300px; }
+.builder-title-divider { width: 1px; height: 22px; background: var(--el-border-color); }
 .builder-title { display: grid; gap: 4px; min-width: 0; max-width: 240px; }
 .builder-title strong { font-size: var(--text-sm); line-height: 20px; }
 .builder-title span { font-size: var(--text-xs); color: var(--el-text-color-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

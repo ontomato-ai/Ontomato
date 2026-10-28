@@ -19,15 +19,24 @@ export const viewWidgetSchema = z.object({
   span: z.number().int().min(1).max(12),
   height: z.number().int().min(80).max(1200).default(240),
   fields: z.array(z.string().max(200)).max(100).default([]),
+  fieldOptions: z.record(z.string().max(200), z.array(z.object({ value: z.string().min(1).max(200), label: z.string().min(1).max(200) })).min(1).max(100)).default({}),
+  fieldLabels: z.record(z.string().max(200), z.string().max(200)).default({}),
+  readOnlyParameters: z.array(z.string().max(200)).max(100).default([]),
+  contextFields: z.array(z.string().max(200)).max(100).default([]),
   text: z.string().max(10000).default(""),
   binding: viewBindingSchema.optional(),
   visibleWhen: viewConditionSchema.optional(),
   resourceId: z.string().max(200).default(""),
+  skillId: z.string().max(200).default("echarts"),
   parameters: z.record(z.string().max(200), viewBindingSchema).default({}),
   resultPath: z.string().max(200).default(""),
   valueField: z.string().max(200).default(""),
   labelField: z.string().max(200).default(""),
-  chartType: z.enum(["bar", "line"]).default("bar"),
+  chartType: z.enum(["bar", "line", "donut", "timeline", "graph", "leaflet-map"]).default("bar"),
+  latitudeField: z.string().max(200).default("latitude"),
+  longitudeField: z.string().max(200).default("longitude"),
+  dateField: z.string().max(200).default(""),
+  descriptionField: z.string().max(200).default(""),
   relation: z.string().max(200).default(""),
   direction: z.enum(["outgoing", "incoming"]).default("outgoing"),
   variable: z.string().max(100).refine(value => !value || (/^[A-Za-z_][A-Za-z0-9_]*$/.test(value) && !["__proto__", "constructor", "prototype"].includes(value))).default(""),
@@ -90,8 +99,11 @@ export function createObjectView(className: string, title = className): ObjectVi
 export function readViewPath(value: unknown, path: string): unknown {
   if (!path) return value;
   for (const key of path.split(".")) {
-    if (["__proto__", "prototype", "constructor"].includes(key) || value === null || typeof value !== "object" || !Object.hasOwn(value, key)) return undefined;
-    value = (value as Record<string, unknown>)[key];
+    if (["__proto__", "prototype", "constructor"].includes(key) || value === null || typeof value !== "object") return undefined;
+    // Track missing keys on reactive records so later row selections update conditions.
+    const next = (value as Record<string, unknown>)[key];
+    if (!Object.hasOwn(value, key)) return undefined;
+    value = next;
   }
   return value;
 }

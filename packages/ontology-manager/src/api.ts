@@ -222,7 +222,7 @@ export function createManagerClient(
   const stale = () =>
     new DOMException(ontologyText(context.messages, "staleResponseDropped"), "AbortError");
 
-  async function send(path: string, init: { method: "GET" | "POST"; body?: string }) {
+  async function send(path: string, init: { method: "GET" | "POST"; body?: string }, service = "/data-query") {
     if (disposed) throw stale();
     const credential = context.credential;
     if (!credential) throw new Error(ontologyText(context.messages, "credentialMissing"));
@@ -231,7 +231,7 @@ export function createManagerClient(
       if (disposed || hostSource(context) !== source) throw stale();
     };
 
-    const response = await fetch(`${context.apiBase}/data-query${path}`, {
+    const response = await fetch(`${context.apiBase}${service}${path}`, {
       ...init,
       headers: {
         ...(init.method === "POST" ? { "Content-Type": "application/json" } : {}),
@@ -531,6 +531,25 @@ export function createManagerClient(
     return response.data;
   }
 
+  async function loadViewSkills() {
+    const response = await send("/skills", { method: "GET" }, "");
+    return (response.skills as Array<{ id: string; title?: string; enabled?: boolean; type: string; category: string }>).filter(skill => skill.enabled !== false && skill.type === "executable" && skill.category === "visualization");
+  }
+  async function renderViewSkill(id: string, input: Record<string, unknown>) {
+    const response = await send(`/skills/${encodeURIComponent(id)}/render`, { method: "POST", body: JSON.stringify({ input }) }, "");
+    return String(response.result.html);
+  }
+  function viewSkillHtml(html: string) {
+    return html.replace(/(["'])(\/api\/(?:skills\/resources|echart)\/[^"'<>\s]+)\1/g, (_match, quote: string, resource: string) => {
+      const url = new URL(resource, "http://skill.local");
+      if (url.pathname.endsWith("/echarts/scripts/echarts.min.js")) return `${quote}${context.apiBase}/echart/echarts.min.js${quote}`;
+      url.searchParams.delete("tk"); url.searchParams.delete("apiKey");
+      if (context.credential?.type === "token") url.searchParams.set("tk", context.credential.token);
+      if (context.credential?.type === "apiKey") url.searchParams.set("apiKey", context.credential.apiKey);
+      return `${quote}${context.apiBase}${url.pathname.slice(4)}${url.search}${quote}`;
+    });
+  }
+
   async function executeViewAction(id: string, param: Record<string, unknown>) {
     if (disposed || !context.credential) throw stale();
     const source = hostSource(context);
@@ -632,6 +651,9 @@ export function createManagerClient(
     objectViewRequest,
     saveObjectView,
     executeViewMetric,
+    loadViewSkills,
+    renderViewSkill,
+    viewSkillHtml,
     executeViewAction,
     loadViewLinks,
     loadInstanceGraphStatistics,

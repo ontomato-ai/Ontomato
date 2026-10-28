@@ -42,6 +42,27 @@ or checks whether it is present. Action components load the published Action's
 parameters into a dialog and apply configured bindings as defaults. Submitting uses
 the existing Action endpoint and refreshes object data and query components.
 
+Charts execute the template's enabled visualization Skill through the workbench
+`/api/skills/:id/render` endpoint and embed its returned HTML. Skill selection and
+execution use the current domain and credentials. The Manager never imports server
+Skill code. Its gateway must route `/skills` and `/echart` under the API base to
+the workbench (container setting `WORKBENCH_ORIGIN`, default `http://data-agent:3000`).
+MetricView reads still go directly to the data engine.
+
+Point maps select the `leaflet` visualization Skill and `leaflet-map` chart type.
+Bind a MetricView returning location rows, set latitude/longitude fields explicitly,
+and select a readable label field. An optional numeric value field scales markers.
+Coordinates must use WGS-84 for the Esri World Topographic basemap; geographic labels
+alone are not coordinates. Map resources use authenticated Skill resource URLs and
+the basemap requires browser network access to `server.arcgisonline.com`. Demo locations should include
+their provenance and coordinate precision in the data and view description.
+
+The `echarts` Skill renders bar, line, donut and timeline presentations. Timeline
+uses label, date and optional description fields; undated events remain visible.
+The `network-graph` Skill renders relationship data as `{nodes, links}` and must be
+enabled in the domain. Nodes use `id`, `label`, `group`; links use `source`, `target`,
+`label`. Graph exploration is provided by the Skill's own interactions.
+
 ## Save and publish
 
 Save draft creates an immutable revision without changing the published page. Save
@@ -79,5 +100,5 @@ This initial builder supports scalar variable defaults, row selection objects an
 component-level conditions. It does not yet include nested layout containers,
 multi-step event workflows, object-set panel configuration, map/media/time-series
 widgets, file-upload Action parameters or a general expression editor. Chart rendering
-currently provides basic bar and line views. Full and panel documents are configured
+provides bar, line, donut, timeline and relationship graph views. Full and panel documents are configured
 separately.

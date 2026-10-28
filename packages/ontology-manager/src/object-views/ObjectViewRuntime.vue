@@ -23,7 +23,7 @@ function reload() { refresh.value++; emit("refresh"); }
           <h3 v-if="section.title">{{ section.title }}</h3>
           <div class="view-grid">
             <template v-for="widget in section.widgets" :key="widget.id">
-              <article v-if="viewConditionMatches(widget.visibleWhen, object, variables)" :style="{ gridColumn: 'span ' + widget.span }" class="widget-card">
+              <article v-if="viewConditionMatches(widget.visibleWhen, object, variables)" :style="{ gridColumn: 'span ' + widget.span }" :class="['widget-card', { 'chart-card': widget.kind === 'chart' }]">
                 <h4 v-if="widget.title">{{ widget.title }}</h4>
                 <ObjectViewWidget :widget="widget" :object="object" :reference="reference" :variables="variables" :refresh="refresh" :preview="preview" @variable="(name, value) => variables[name] = value" @refresh="reload" @open="emit('open', $event)" />
               </article>
@@ -45,5 +45,8 @@ function reload() { refresh.value++; emit("refresh"); }
 .view-grid { display: grid; grid-template-columns: repeat(12,minmax(0,1fr)); gap: var(--spacing-xl); align-items: stretch; }
 .widget-card { border: 1px solid var(--el-border-color); border-radius: var(--radius-sm); padding: var(--spacing-lg); min-width: 0; background: var(--el-bg-color); container: view-card / inline-size; }
 .widget-card h4 { margin: 0 0 var(--spacing-lg); padding-bottom: var(--spacing-sm); border-bottom: 1px solid var(--el-border-color-light); font-size: var(--text-sm); font-weight: var(--font-semibold); line-height: 22px; overflow-wrap: anywhere; }
+.chart-card { display: flex; flex-direction: column; }
+.chart-card > :deep(.view-widget) { flex: 1; display: flex; flex-direction: column; }
 @container view-runtime (max-width: 600px) { .widget-card { grid-column: span 12 !important; padding: 16px; } }
+@container view-runtime (min-width: 601px) and (max-width: 800px) { .widget-card:not(:has(.metric)) { grid-column: span 12 !important; } }
 </style>

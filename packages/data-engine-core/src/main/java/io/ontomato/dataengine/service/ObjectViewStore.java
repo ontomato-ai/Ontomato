@@ -119,17 +119,36 @@ public class ObjectViewStore {
                     if (widget.getString("kind") == null || !Set.of("text", "properties", "metric", "table", "chart", "links", "input", "action", "button").contains(widget.getString("kind"))
                             || widget.getIntValue("span") < 1 || widget.getIntValue("span") > 12)
                         throw new IllegalArgumentException("Invalid widget");
-                    for (String key : Set.of("title", "resourceId", "resultPath", "valueField", "labelField", "relation", "targetClass")) checkText(widget, key, 200);
+                    for (String key : Set.of("title", "resourceId", "skillId", "resultPath", "valueField", "labelField", "relation", "targetClass", "dateField", "descriptionField", "latitudeField", "longitudeField")) checkText(widget, key, 200);
                     checkText(widget, "text", 10000);
                     if (widget.containsKey("height") && (widget.getIntValue("height") < 80 || widget.getIntValue("height") > 1200)) throw new IllegalArgumentException("Invalid widget height");
                     checkEnum(widget, "direction", Set.of("incoming", "outgoing"));
-                    checkEnum(widget, "chartType", Set.of("bar", "line"));
+                    checkEnum(widget, "chartType", Set.of("bar", "line", "donut", "timeline", "graph", "leaflet-map"));
                     checkEnum(widget, "onClick", Set.of("refresh", "setVariable", "openObject"));
                     String variable = widget.getString("variable");
                     if (variable != null && !variable.isEmpty()) checkVariable(variable);
                     JSONArray fields = widget.getJSONArray("fields");
                     if (fields != null && (fields.size() > 100 || fields.stream().anyMatch(field -> !(field instanceof String) || ((String)field).length() > 200))) throw new IllegalArgumentException("Invalid widget fields");
+                    for (String key : Set.of("readOnlyParameters", "contextFields")) {
+                        JSONArray names = widget.getJSONArray(key);
+                        if (names != null && (names.size() > 100 || names.stream().anyMatch(name -> !(name instanceof String) || ((String)name).length() > 200))) throw new IllegalArgumentException("Invalid action context");
+                    }
                     checkBinding(widget.getJSONObject("binding"));
+                    JSONObject fieldOptions = widget.getJSONObject("fieldOptions");
+                    if (fieldOptions != null) for (String field : fieldOptions.keySet()) {
+                        if (field.length() > 200 || Set.of("__proto__", "constructor", "prototype").contains(field)) throw new IllegalArgumentException("Invalid option field");
+                        JSONArray options = fieldOptions.getJSONArray(field);
+                        if (options == null || options.isEmpty() || options.size() > 100) throw new IllegalArgumentException("Invalid field options");
+                        for (int o = 0; o < options.size(); o++) {
+                            requireText(options.getJSONObject(o), "value", 200);
+                            requireText(options.getJSONObject(o), "label", 200);
+                        }
+                    }
+                    JSONObject fieldLabels = widget.getJSONObject("fieldLabels");
+                    if (fieldLabels != null) for (String field : fieldLabels.keySet()) {
+                        if (field.length() > 200) throw new IllegalArgumentException("Invalid label field");
+                        checkText(fieldLabels, field, 200);
+                    }
                     JSONObject parameters = widget.getJSONObject("parameters");
                     if (parameters != null) for (String name : parameters.keySet()) {
                         if (name.length() > 200 || Set.of("__proto__", "constructor", "prototype").contains(name)) throw new IllegalArgumentException("Invalid parameter name");
