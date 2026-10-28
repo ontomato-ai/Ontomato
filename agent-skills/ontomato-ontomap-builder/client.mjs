@@ -26,8 +26,8 @@ async function json(url, headers, body) {
       typeof result.error === "string"
         ? result.error
         : (result.error?.message ??
-            result.message ??
-            `HTTP ${response.status}`),
+          result.message ??
+          `HTTP ${response.status}`),
     );
   return result;
 }
@@ -107,7 +107,7 @@ export async function analystCommand(cfg, argv, headers = {}) {
 async function ask(cfg, args, headers) {
   const base =
     (cfg.workbenchUrl || cfg.envUrl).replace(/\/$/, "") + "/api/retrievals";
-  const locale = take(args, "--lang") ?? "en",
+  const locale = take(args, "--lang") ?? process.env.ONTOMATO_LANGUAGE ?? "en",
     resume = take(args, "--resume"),
     answers = take(args, "--answers"),
     status = take(args, "--status"),
@@ -138,7 +138,7 @@ async function ask(cfg, args, headers) {
   if (resume) {
     if (!answers)
       throw new Error(
-        "--resume requires --answers @file with explicit question IDs and answers",
+        "--resume requires --answers @file with expected run/revision and a message",
       );
     const reply = readJson(answers);
     if (
@@ -146,10 +146,11 @@ async function ask(cfg, args, headers) {
       Array.isArray(reply) ||
       !reply.expectedRunId ||
       !Number.isInteger(reply.expectedDecisionRevision) ||
-      !Array.isArray(reply.answers)
+      typeof reply.message !== "string" ||
+      !reply.message.trim()
     )
       throw new Error(
-        "Reply file requires expectedRunId, expectedDecisionRevision and answers; copy the revision from ask --status",
+        "Reply file requires expectedRunId, expectedDecisionRevision and message; copy the revision from ask --status",
       );
     console.log(JSON.stringify({ requestId }));
     snapshot = await json(
@@ -177,7 +178,7 @@ async function ask(cfg, args, headers) {
       runtimeSessionId: snapshot.runtimeSessionId,
     }),
   );
-  while (snapshot.phase === "running") {
+  while (snapshot.run?.status === "running") {
     await new Promise((resolve) => setTimeout(resolve, 500));
     snapshot = await json(`${base}/${snapshot.id}`, headers);
   }
@@ -190,6 +191,6 @@ async function ask(cfg, args, headers) {
         2,
       ),
     );
-  if (snapshot.result?.status === "failed")
-    throw new Error(snapshot.result.error.message);
+  if (["error", "aborted"].includes(snapshot.run?.stopReason))
+    throw new Error(snapshot.run.errorMessage ?? "Retrieval stopped");
 }

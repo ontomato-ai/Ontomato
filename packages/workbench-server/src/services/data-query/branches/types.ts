@@ -1,5 +1,4 @@
 import type { QueryRetrievalRef } from "@ontomato/contracts/query-execution";
-import type { RetrievalResult } from "@ontomato/contracts/data-retrieval";
 import type { AbcQuestionMode } from "@ontomato/contracts/system-model";
 import type {
   BranchKey,
@@ -14,7 +13,6 @@ import type { HotReportReplayPlan, OutKeyRef } from "../replay-plan";
 
 export interface BaseQueryOutput {
   retrieval?: QueryRetrievalRef;
-  needsInput?: Extract<RetrievalResult, { status: "needs_input" }>;
   content: string;
   datasets: Dataset[];
   sessionId?: string;

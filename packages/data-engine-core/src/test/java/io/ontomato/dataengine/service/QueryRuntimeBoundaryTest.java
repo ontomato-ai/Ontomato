@@ -134,7 +134,7 @@ class QueryRuntimeBoundaryTest {
     assertEquals("domain-a", claims.getString("domainId"));
     http.perform(
             post("/ontology/query/execute-dsl")
-                .header("Authorization", "Bearer " + token)
+                .header("tk", token)
                 .header("X-Ontomato-Run-Id", run)
                 .header("X-Domain-Id", "domain-b")
                 .contentType("application/json")
@@ -143,7 +143,7 @@ class QueryRuntimeBoundaryTest {
     verify(dsl).executeV1(any(), any(), argThat(u -> "domain-a".equals(u.getDomainId())));
     http.perform(
             post("/ontology/query/execute-dsl")
-                .header("Authorization", "Bearer " + token)
+                .header("tk", token)
                 .header("X-Ontomato-Run-Id", run)
                 .contentType("application/json")
                 .content(query("/payroll")))
@@ -190,7 +190,7 @@ class QueryRuntimeBoundaryTest {
   void userReadDelegationResolvesCurrentPermissionsAndCannotWrite() {
     String run = UUID.randomUUID().toString(), token = grant(run, "user-read");
     var request = new MockHttpServletRequest();
-    request.addHeader("Authorization", "Bearer " + token);
+    request.addHeader("tk", token);
     request.setAttribute(
         QueryGrantService.ATTRIBUTE, grants.verify(token, run, "/ontology/query/execute-dsl"));
     assertSame(permission, authorization.access(request).permission());

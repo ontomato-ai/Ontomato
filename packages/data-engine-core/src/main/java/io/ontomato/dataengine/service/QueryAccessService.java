@@ -53,7 +53,7 @@ public class QueryAccessService {
           user,
           explore ? new UserDataPermission() : permissions.getDataPermission(userId, domain),
           grant,
-          request.getHeader("Authorization").substring(7));
+          request.getHeader("tk"));
     }
     User user = identity.getCurrentUser();
     if (user == null || !user.isEnable())

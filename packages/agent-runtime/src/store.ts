@@ -9,12 +9,9 @@ import type {
   RuntimeAgentEvent,
   RuntimeEventEnvelope,
 } from "@ontomato/contracts/agent-runtime-events";
-import type {
-  RuntimeArtifact,
-  RuntimeArtifactOutput,
-} from "@ontomato/contracts/agent-runtime-artifacts";
+import type { RuntimeArtifact } from "@ontomato/contracts/agent-runtime-artifacts";
 import type { RuntimeMessage } from "@ontomato/contracts/agent-runtime-messages";
-import type { RuntimeTerminalStatus } from "@ontomato/contracts/agent-runtime-values";
+import type { RuntimeStopReason } from "@ontomato/contracts/agent-runtime-values";
 import { RuntimeError, missing } from "./errors";
 
 export interface Scope {
@@ -81,18 +78,18 @@ export class RuntimeStore {
       await c.query(
         `CREATE TABLE IF NOT EXISTS ${this.table("schema_migrations")} (version int PRIMARY KEY)`,
       );
-      if (
-        (
-          await c.query(
-            `SELECT 1 FROM ${this.table("schema_migrations")} WHERE version=1`,
-          )
-        ).rowCount
-      )
-        return;
+      const versions = (
+        await c.query(`SELECT version FROM ${this.table("schema_migrations")}`)
+      ).rows;
+      if (versions.some((row) => row.version === 2)) return;
+      if (versions.length)
+        throw new Error(
+          "Legacy runtime data requires the release conversion before startup",
+        );
       await c.query(`
         CREATE TABLE ${this.table("sessions")} (
           host_id text NOT NULL, domain_id text NOT NULL, id uuid NOT NULL,
-          active_run_id uuid, latest_run_id uuid, message_seq bigint NOT NULL DEFAULT 0,
+          worker_uid bigint, active_run_id uuid, latest_run_id uuid, message_seq bigint NOT NULL DEFAULT 0,
           created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now(),
           PRIMARY KEY(host_id,domain_id,id));
         CREATE TABLE ${this.table("admissions")} (
@@ -115,22 +112,24 @@ export class RuntimeStore {
           PRIMARY KEY(host_id,domain_id,run_id,seq),
           FOREIGN KEY(host_id,domain_id,run_id) REFERENCES ${this.table("runs")}(host_id,domain_id,id) ON DELETE CASCADE);
         CREATE TABLE ${this.table("artifacts")} (
-          host_id text NOT NULL, domain_id text NOT NULL, id uuid NOT NULL, run_id uuid NOT NULL,
-          tool_call_id text NOT NULL, output_index int NOT NULL, artifact jsonb NOT NULL,
-          PRIMARY KEY(host_id,domain_id,id), UNIQUE(host_id,domain_id,run_id,tool_call_id,output_index),
+          host_id text NOT NULL, domain_id text NOT NULL, id uuid NOT NULL, session_id uuid NOT NULL, run_id uuid NOT NULL,
+          tool_call_id text, path text NOT NULL, sha256 text NOT NULL, size bigint NOT NULL, media_type text NOT NULL,
+          created_at timestamptz NOT NULL, seq bigint NOT NULL,
+          PRIMARY KEY(host_id,domain_id,id),
           FOREIGN KEY(host_id,domain_id,run_id) REFERENCES ${this.table("runs")}(host_id,domain_id,id) ON DELETE CASCADE);
         CREATE TABLE ${this.table("compactions")} (
           host_id text NOT NULL, domain_id text NOT NULL, session_id uuid NOT NULL, covered_seq bigint NOT NULL,
           summary text NOT NULL, created_at timestamptz NOT NULL DEFAULT now(),
           PRIMARY KEY(host_id,domain_id,session_id,covered_seq),
           FOREIGN KEY(host_id,domain_id,session_id) REFERENCES ${this.table("sessions")}(host_id,domain_id,id) ON DELETE CASCADE);
-        CREATE TABLE ${this.table("skill_versions")} (
-          identity text PRIMARY KEY, publisher text NOT NULL, digest text NOT NULL, package jsonb NOT NULL, manifest jsonb NOT NULL);
+        CREATE TABLE ${this.table("skills")} (
+          identity text NOT NULL, digest text NOT NULL, metadata jsonb NOT NULL, PRIMARY KEY(identity,digest));
+        CREATE TABLE ${this.table("skill_names")} (identity text PRIMARY KEY, digest text NOT NULL);
         CREATE TABLE ${this.table("model_calls")} (
           id uuid PRIMARY KEY, host_id text NOT NULL, domain_id text NOT NULL, run_id uuid NOT NULL,
           record jsonb NOT NULL,
           FOREIGN KEY(host_id,domain_id,run_id) REFERENCES ${this.table("runs")}(host_id,domain_id,id) ON DELETE CASCADE);
-        INSERT INTO ${this.table("schema_migrations")} VALUES (1);
+        INSERT INTO ${this.table("schema_migrations")} VALUES (2);
       `);
     });
     this.lease = await this.pool.connect();
@@ -282,7 +281,7 @@ export class RuntimeStore {
     // One statement gives session pointers and latest statuses the same MVCC snapshot.
     const { rows } = await this.pool.query(
       `SELECT s.id,s.active_run_id,s.latest_run_id,s.created_at,s.updated_at,
-        r.id AS run_id,r.run->>'status' AS run_status,r.run->'error'->>'code' AS error_code
+        r.id AS run_id,r.run->>'status' AS run_status,r.run->>'stopReason' AS stop_reason
        FROM ${this.table("sessions")} s LEFT JOIN ${this.table("runs")} r
          ON r.host_id=s.host_id AND r.domain_id=s.domain_id AND r.session_id=s.id AND r.id=s.latest_run_id
        WHERE s.host_id=$1 AND s.domain_id=$2 AND s.id=ANY($3::uuid[])`,
@@ -305,7 +304,7 @@ export class RuntimeStore {
           ? {
               id: row.run_id,
               status: row.run_status,
-              error: row.error_code ? { code: row.error_code } : null,
+              stopReason: row.stop_reason,
             }
           : null,
       };
@@ -419,31 +418,88 @@ export class RuntimeStore {
       )
     ).rows.map((r) => r.envelope as RuntimeEventEnvelope);
   }
+  private artifactRow(row: Record<string, any>): RuntimeArtifact {
+    return {
+      id: row.id,
+      sessionId: row.session_id,
+      runId: row.run_id,
+      toolCallId: row.tool_call_id,
+      path: row.path,
+      sha256: row.sha256,
+      size: Number(row.size),
+      mediaType: row.media_type,
+      createdAt: row.created_at.toISOString(),
+      seq: Number(row.seq),
+    };
+  }
   async artifact(scope: Scope, id: string): Promise<RuntimeArtifact> {
     const row = (
       await this.pool.query(
-        `SELECT artifact FROM ${this.table("artifacts")} WHERE host_id=$1 AND domain_id=$2 AND id=$3`,
+        `SELECT * FROM ${this.table("artifacts")} WHERE host_id=$1 AND domain_id=$2 AND id=$3`,
         [...values(scope), id],
       )
     ).rows[0];
     if (!row) missing();
-    return row.artifact;
+    return this.artifactRow(row);
   }
   async artifacts(scope: Scope, runId: string): Promise<RuntimeArtifact[]> {
     return (
       await this.pool.query(
-        `SELECT artifact FROM ${this.table("artifacts")} WHERE host_id=$1 AND domain_id=$2 AND run_id=$3 ORDER BY tool_call_id,output_index`,
+        `SELECT * FROM ${this.table("artifacts")} WHERE host_id=$1 AND domain_id=$2 AND run_id=$3 ORDER BY seq,id`,
         [...values(scope), runId],
       )
-    ).rows.map((r) => r.artifact);
+    ).rows.map((r) => this.artifactRow(r));
   }
-  async append(
+  async resolveArtifacts(
     scope: Scope,
     runId: string,
-    event: RuntimeAgentEvent,
-    outputs: RuntimeArtifactOutput[] = [],
-    maxArtifactBytes = 8 * 1024 * 1024,
+    path?: string,
+    atSeq?: number,
   ) {
+    const { run, seq } = await this.run(scope, runId);
+    if (atSeq !== undefined && atSeq > seq)
+      throw new RuntimeError(
+        400,
+        "INVALID_REQUEST",
+        "Artifact cursor is in the future",
+      );
+    const rows = (
+      await this.pool.query(
+        `SELECT a.* FROM ${this.table("artifacts")} a
+      JOIN ${this.table("runs")} r ON r.host_id=a.host_id AND r.domain_id=a.domain_id AND r.id=a.run_id
+      WHERE a.host_id=$1 AND a.domain_id=$2 AND a.session_id=$3
+      AND (a.run_id=$4 AND a.seq<=$5 OR
+        (SELECT min(seq) FROM ${this.table("messages")} WHERE host_id=$1 AND domain_id=$2 AND run_id=a.run_id)<
+        (SELECT min(seq) FROM ${this.table("messages")} WHERE host_id=$1 AND domain_id=$2 AND run_id=$4))
+      ORDER BY r.run->>'createdAt',a.seq`,
+        [...values(scope), run.sessionId, runId, atSeq ?? seq],
+      )
+    ).rows;
+    const latest = new Map<string, RuntimeArtifact>();
+    for (const row of rows)
+      if (path === undefined || path === row.path)
+        latest.set(row.path, this.artifactRow(row));
+    return [...latest.values()];
+  }
+  async registerArtifact(
+    scope: Scope,
+    runId: string,
+    toolCallId: string | null,
+    file: import("./files").OutputFile,
+  ) {
+    const { run } = await this.run(scope, runId);
+    const artifact: RuntimeArtifact = {
+      ...file,
+      id: randomUUID(),
+      sessionId: run.sessionId,
+      runId,
+      toolCallId,
+      createdAt: new Date().toISOString(),
+      seq: 0,
+    };
+    return this.append(scope, runId, { type: "artifact_registered", artifact });
+  }
+  async append(scope: Scope, runId: string, event: RuntimeAgentEvent) {
     return this.transaction(async (c) => {
       const row = (
         await c.query(
@@ -476,53 +532,32 @@ export class RuntimeStore {
           ],
         );
       }
-      if (event.type === "tool_execution_end") {
-        const ids: string[] = [];
-        for (const [outputIndex, output] of outputs.entries()) {
-          if (Buffer.byteLength(JSON.stringify(output)) > maxArtifactBytes)
-            throw new RuntimeError(
-              422,
-              "ARTIFACT_TOO_LARGE",
-              "Artifact exceeds the configured byte limit",
-            );
-          for (const id of output.references) {
-            if (
-              !(
-                await c.query(
-                  `SELECT 1 FROM ${this.table("artifacts")} WHERE host_id=$1 AND domain_id=$2 AND id=$3`,
-                  [...values(scope), id],
-                )
-              ).rowCount
-            )
-              throw new RuntimeError(
-                422,
-                "INVALID_ARTIFACT_REFERENCE",
-                "Artifact reference is not committed in this scope",
-              );
-          }
-          const artifact: RuntimeArtifact = {
-            ...output,
-            id: randomUUID(),
+      if (event.type === "artifact_registered") {
+        event.artifact.seq = seq;
+        const a = event.artifact;
+        await c.query(
+          `INSERT INTO ${this.table("artifacts")} VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
+          [
+            ...values(scope),
+            a.id,
+            a.sessionId,
             runId,
-            sessionId: run.sessionId,
-            toolCallId: event.toolCallId,
-            outputIndex,
-            createdAt: new Date().toISOString(),
-          };
-          await c.query(
-            `INSERT INTO ${this.table("artifacts")} VALUES($1,$2,$3,$4,$5,$6,$7)`,
-            [
-              ...values(scope),
-              artifact.id,
-              runId,
-              event.toolCallId,
-              outputIndex,
-              artifact,
-            ],
-          );
-          ids.push(artifact.id);
-        }
-        event.result.details.artifactIds = ids;
+            a.toolCallId,
+            a.path,
+            a.sha256,
+            a.size,
+            a.mediaType,
+            a.createdAt,
+            seq,
+          ],
+        );
+      }
+      if (event.type === "message_end" && event.message.role === "assistant") {
+        run.stopReason =
+          event.message.stopReason === "pending"
+            ? null
+            : event.message.stopReason;
+        run.errorMessage = event.message.errorMessage ?? null;
       }
       const envelope: RuntimeEventEnvelope = {
         sessionId: run.sessionId,
@@ -541,7 +576,8 @@ export class RuntimeStore {
       if (event.type === "agent_end") {
         run.status = event.status;
         run.finishedAt = envelope.timestamp;
-        run.error = event.error;
+        run.stopReason = event.stopReason;
+        run.errorMessage = event.errorMessage;
         await c.query(
           `UPDATE ${this.table("sessions")} SET active_run_id=NULL,updated_at=now() WHERE host_id=$1 AND domain_id=$2 AND id=$3 AND active_run_id=$4`,
           [...values(scope), run.sessionId, runId],
@@ -566,42 +602,79 @@ export class RuntimeStore {
         `UPDATE ${this.table("runs")} SET stream_id=$4 WHERE host_id=$1 AND domain_id=$2 AND id=$3`,
         [...values(scope), row.id, randomUUID()],
       );
-      await this.finish(scope, row.id, "interrupted", {
-        code: "RUNTIME_INTERRUPTED",
-        message: "Runtime restarted; unfinished tool outcomes are unknown",
-      });
+      await this.finish(
+        scope,
+        row.id,
+        "aborted",
+        "Runtime restarted; unfinished tool outcomes are unknown",
+      );
     }
   }
   async finish(
     scope: Scope,
     id: string,
-    status: RuntimeTerminalStatus,
-    error: RuntimeRun["error"],
+    reason?: RuntimeStopReason,
+    errorMessage?: string | null,
   ) {
     const { run } = await this.run(scope, id);
-    const messages = (await this.messages(scope, run.sessionId))
+    let messages = (await this.messages(scope, run.sessionId))
       .filter((m) => m.runId === id)
       .map((m) => m.message);
+    const last = [...messages].reverse().find((m) => m.role === "assistant");
+    if (
+      reason &&
+      (last?.role !== "assistant" ||
+        last.stopReason !== reason ||
+        last.errorMessage !== (errorMessage ?? undefined))
+    ) {
+      await this.append(scope, id, {
+        type: "message_end",
+        messageId: randomUUID(),
+        messageSeq: 0,
+        message: {
+          role: "assistant",
+          content: [],
+          api: null,
+          provider: null,
+          model: null,
+          usage: null,
+          origin: "runtime",
+          timestamp: Date.now(),
+          stopReason: reason,
+          errorMessage: errorMessage ?? undefined,
+        },
+      });
+      messages = (await this.messages(scope, run.sessionId))
+        .filter((m) => m.runId === id)
+        .map((m) => m.message);
+    }
+    const final = [...messages].reverse().find((m) => m.role === "assistant");
+    const stopReason =
+      reason ??
+      (final?.role === "assistant" && final.stopReason !== "pending"
+        ? final.stopReason
+        : "error");
+    const text =
+      errorMessage ??
+      (final?.role === "assistant" ? final.errorMessage : null) ??
+      null;
     const envelope = await this.append(scope, id, {
       type: "agent_end",
       messages,
-      status,
-      error,
+      status: "stopped",
+      stopReason,
+      errorMessage: text,
     });
-    if (status === "failed" || status === "interrupted") {
-      // Allowlisted metadata only: provider messages and validation data may contain secrets.
+    if (stopReason === "error" || stopReason === "aborted")
       process.stderr.write(
         JSON.stringify({
-          level: "error",
           event: "runtime_run_terminal",
-          timestamp: envelope.timestamp,
           runId: id,
           correlationId: run.correlationId,
-          status,
-          errorCode: error?.code,
+          status: "stopped",
+          stopReason,
         }) + "\n",
       );
-    }
     return envelope;
   }
   async deleteSession(scope: Scope, id: string) {

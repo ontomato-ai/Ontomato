@@ -23,9 +23,7 @@ public class RuntimeCodeClient {
           "namespace",
           Map.of("kind", "provider", "provider", "ontology"),
           "name",
-          "ontomato-analyst",
-          "version",
-          "2.0.0");
+          "ontomato-analyst");
   private final String url, token, ontologyUrl;
   private final HttpClient http =
       HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(10)).build();
@@ -114,8 +112,9 @@ public class RuntimeCodeClient {
     for (String file :
         List.of(
             "SKILL.md",
-            "runtime.json",
-            "runtime.mjs",
+            "ontomato.mjs",
+            "client.mjs",
+            "application.yml",
             "python/query_runtime.py",
             "references/dsl.md")) {
       try (var in = getClass().getResourceAsStream("/ontology-skills/ontomato-analyst/" + file)) {

@@ -1,362 +1,265 @@
-# Data retrieval contract
+# Standard-skill data retrieval contract
 
-The workbench's executable schemas are in `src/data-retrieval.ts`.
-Runtime additions are in [agent-runtime-code.md](agent-runtime-code.md); ownership
-and migration decisions are in [the design](../../docs/data-retrieval-design.md).
-Java owns and validates its HTTP boundary; it does not import workbench code.
+Implemented contract, 2026-10-28; executable schemas are in src/data-retrieval.ts.
+This replaces the batch 2 private submission/finish protocol. The workbench owns
+retrieval orchestration; ontology owns authorization and formal execution; runtime
+owns messages, PI state and file snapshots. [Design](../../docs/data-retrieval-design.md)
+explains flow and external-agent acceptance. [Runtime contract](agent-runtime.md)
+owns generic files and events, not this dataset schema.
 
-## Workbench entry point
+## Public retrieval API and continuation
 
-The workbench owns one retrieval orchestration service. The `abc` branch in
-`harness` mode calls that service directly. External `ask` and the workbench's
-future retrieval skill call its HTTP API. Neither calls a Java agent or a runtime
-model endpoint directly. A question means one complete business calculation;
-splitting it into datasets is the retriever's responsibility.
+Verified workbench identity supplies user and domain. Resource lookups check both;
+foreign IDs return 404. No public body can claim parent, user or domain identity.
+The existing abc harness branch and external ask call this one service.
 
-All routes require the workbench's verified request identity. Domain and user
-come from that identity, never the JSON body. Every lookup checks both ownership
-and domain. Public anonymous identity follows the installed public identity
-provider; it is not a bypass in enterprise. Foreign resources return 404.
-
-| Method/path | Input | Output |
-| --- | --- | --- |
-| `POST /api/retrievals` | `Idempotency-Key: UUID`; `{question, userQuotes: string[], classNames?: string[], previousDatasetIds: UUID[], interaction: "resumable" | "non_interactive"}` | 202 retrieval snapshot |
-| `GET /api/retrievals/:id` | Verified identity | 200 authoritative snapshot |
-| `POST /api/retrievals/:id/answers` | New `Idempotency-Key`; `{expectedRunId, expectedDecisionRevision, answers: [{questionId, choiceId?: string, text?: string}]}` | 202 snapshot for the new runtime run in the same runtime session |
-| `POST /api/retrievals/:id/cancel` | `{}` | 200 snapshot after business closure and cancellation requests settle |
-| `GET /api/retrievals/:id/datasets/:artifactId` | Verified identity | Validated `workbench.dataset.v1` artifact with full rows |
-
-Creation fingerprints question, source references, interaction mode and class
-scope. A matching retry returns the original operation; changed input returns
-409. Resume additionally fingerprints its previous run, decision revision and
-answers. Resume against an active or superseded round returns 409, never forks a
-second retriever. HTTP validation/auth/dependency failures use real status codes
-and `{error:{code,message},correlationId}`. An accepted operation's business
-failure is a result, not an empty successful response.
+| Method/path | Input / output |
+| --- | --- |
+| POST /api/retrievals | UUID Idempotency-Key; `{question,userQuotes,classNames?,previousDatasetIds,interaction}`; 202 snapshot |
+| GET /api/retrievals/:id | Authoritative snapshot |
+| POST /api/retrievals/:id/answers | New UUID key; `{expectedRunId,expectedDecisionRevision,message}`; 202 snapshot |
+| POST /api/retrievals/:id/cancel | `{}`; closes the business gate before runtime intent/run cancellation |
+| GET /api/retrievals/:id/datasets/:artifactId | Validated dataset JSON read from the immutable file |
 
 ```ts
 type RetrievalSnapshot = {
-  id: UUID;
-  revision: number;
-  runtimeSessionId: UUID;
-  runtimeRunId: UUID | null;
-  phase: "running" | "settled";
-  result: RetrievalResult | null;
+  id: UUID; revision: number;
+  runtimeSessionId: UUID | null; runtimeRunId: UUID | null;
+  run: null | {status:"running"|"stopped"; stopReason:PiStopReason|null;
+               errorMessage:string|null};
+  messages: RuntimeMessageRecord[];
   datasetArtifactIds: UUID[];
   decisionRevision: number;
   qualityCheck?: JsonObject;
 };
-type RetrievalResult =
-  | { status: "completed"; datasetArtifactIds: UUID[]; summary: string }
-  | { status: "needs_input"; datasetArtifactIds: UUID[];
-      questions: InputQuestion[]; summary: string }
-  | { status: "failed"; datasetArtifactIds: UUID[];
-      error: { code: string; message: string } };
-type InputQuestion = {
-  id: UUID; question: string; reason: string; scope: string;
-  choices: {id: string; label: string; consequence: string}[];
-  recommendedChoiceId: string | null;
-};
 ```
 
-`phase` is transport/lifecycle information, not a fourth business outcome.
-`completed` needs at least one accepted dataset and an explicit validated finish
-submission. Zero rows are a valid dataset. Incomplete source coverage is retained
-on the dataset; completed execution is not proof of complete source coverage or
-correct business meaning. Unresolved material ambiguity always yields
-`needs_input`, including non-interactive callers without an authorized default.
-Available datasets remain available in that outcome; it is not complete success.
-Silence does not accept a recommendation. Cancellation, interruption, timeout and missing submissions are `failed` with
-stable distinct codes. Authentication/dependency failures retain their safe
-reason and cannot become an empty successful result.
-Runtime `completed` without a valid business submission is `failed` with
-`RETRIEVAL_RESULT_MISSING`.
+For an external skill-run record, runtime IDs and run are null and messages is
+empty; the host does not create synthetic runtime history.
 
-Public GET polling is sufficient for `ask` (currently at 500 ms intervals). The abc adapter
-consumes runtime snapshot/events through the existing runtime HTTP client and
-projects progress into current workbench events. No second durable token stream
-or new public SSE journal is introduced for polling clients.
+There is no RetrievalResult, needs_input enum, structured question/choice result,
+finish submission or requirement that ordinary stopping must produce a dataset.
+Asking a question is a normal assistant message with stopReason stop. Public
+callers display it, and send a free-text reply to the same retrieval/session.
+No agent process remains alive waiting for the reply. Non-interactive callers
+receive that message and available artifacts; silence does not authorize a
+choice. Missing data does not itself make the run an execution error.
 
-The parent turn/task ID is server-only. The authenticated server-side caller
-validates its ownership and stores it before admission; model/public JSON cannot
-claim an arbitrary parent. The abc adapter links the retrieval to its server-side turn/task before admission.
-The public API/ask use a caller UUID admission key for response-loss retries.
-A future main-assistant skill must map its tool call to that key at its own
-admission boundary; that skill routing belongs to batch 3. The runtime has
-no parent/child-run concept. Cancelling a workbench parent closes its admission
-gate and cancels all retrievals already linked to that parent atomically with
-respect to creating another link.
+Creation fingerprints its inputs; answer fingerprints message, expected run and
+decision revision. An active/superseded round or stale revision returns 409.
+Store the user reply and its source run as a workbench decision fact in the same
+admission-intent transaction. Retain effective decisions and supersedes links for
+existing callers; free-text replies have task scope and user source, without
+inventing question/choice IDs. Changes invalidate superseded decisions for future
+runs, never edit historical files. No automatic knowledge publication is added.
+The host injects effective decisions and prior artifact references into the next
+run with fresh environment values. Moving decisions into runtime is deferred.
 
-Observation does not own runtime execution status. Transport/unavailability
-errors while reading runtime status or snapshots leave the retrieval `phase: "running"`, `result: null` and its
-write gate unchanged. The workbench retries observation and, after a host restart,
-reconstructs it from the stored run/session references on the next GET. It does
-not rerun the agent or infer execution failure from transport failure, following
-the same authority boundary as knowledge-governance reconciliation. An authoritative
-404 for the stored session/run retains the existing interrupted-preparation handling.
+Transport/unavailability errors do not manufacture a PI state. Retain the last
+observed state and retry reads; after a host restart reconstruct observation from
+stored runtime references. An authoritative stopped snapshot closes the gate,
+then publishes that same state. Runtime recovery is aborted, not a separate host
+failed outcome. Read terminal facts before enforcing the existing query deadline.
+If still running at its deadline, close the gate and cancel; this is a host query
+deadline, not a new runtime budget. A missing authoritative resource is an explicit
+HTTP/dependency error, never empty success. Keep parent admission/cancel gates,
+run-intent tombstones and matching-key recovery after response loss.
 
-Only an authoritative terminal snapshot settles runtime completion/failure. An
-`interrupted` snapshot becomes `failed` with `RUNTIME_INTERRUPTED` and a localized
-retry message; raw transport/provider diagnostics do not become that user-facing
-message. Terminal facts are reconciled before checking the observation deadline:
-a completed artifact must not be replaced by a timeout because observation was
-late. If the runtime is still running after its deadline, the existing timeout
-cancellation applies. Explicit user/parent cancellation still closes the gate.
+The abc adapter consumes available authorized datasets through the existing
+projection. It uses PI errors/aborts as execution failures in its existing branch
+contract; a normal text question with no dataset remains text/no data, not an
+invented retrieval state. Automatic next-chat-message routing and structured UI
+interaction belong to batch 3. Public ask supports explicit same-session resume.
 
-## Dataset and decision facts
+## Files and formal-output preparation
 
-The workbench defines the first business artifact, `workbench.dataset.v1`.
-The runtime continues to store opaque type/payload and allocate its immutable ID.
-The workbench skill supplies this artifact only after ontology-authorized final
-execution. The runtime artifact ID is the dataset ID everywhere; there is no
-parallel sequence-based dataset identity.
+The standard data-retrieval skill exposes one ordinary CLI command:
+
+```sh
+node skills/data-retrieval/scripts/dataset.mjs @work/recipe.json outputs/result.dataset.json
+```
+
+It reads a recipe file, requests authorized final execution from the host, writes
+the returned dataset to a temporary file outside outputs, and atomically renames
+it to the requested output. It prints a bounded count/schema summary and path.
+The runtime then registers the file exactly as it does any other output. No tool
+result envelope, runtime artifact RPC or finish call is involved. The same command
+runs in Claude Code from an unmodified package.
+
+Host endpoints for this command:
+
+| Route | Semantics |
+| --- | --- |
+| POST /api/retrievals/:id/runs/:runId/outputs | UUID Idempotency-Key; `{recipe,title,question,outKeyRefs,assumptions,decisionIds,metricUses,selfCheck}`; 202 `{id}` |
+| GET /api/retrievals/:id/runs/:runId/outputs/:id | `{id,running:boolean,dataset:DatasetFile|null,error:null|{code,message}}` |
+
+These are formal execution receipts, not agent completion states. The CLI keeps
+its generated request UUID next to the recipe in work/ before posting; retrying
+the same bytes reuses it. Changed recipe bytes require a new key. Host persists
+identity and Java submission ID before calling Java. Check user/domain/retrieval
+and the active run gate before admission, and again in the transaction that
+accepts a returned receipt. Unknown response reconciles that ID; do not blindly
+resubmit a possibly executed operation. Closed/old run returns 409
+RETRIEVAL_RUN_CLOSED. Already committed receipts remain readable by the owner.
+Cancel closes pending output intents and Java jobs along with the run gate.
+
+The host sends the recipe and source declarations to existing
+POST /ontology/query/outputs using the verified user's authority. Java always
+reruns in a fresh workspace with current user permissions, validates sources,
+parses output, applies masking and derives truncation. Exploration rows are never
+accepted as formal result rows. Python recipes carry their source bytes/digest,
+not a python_execute receipt. Remove the old requirement to find a matching
+special-tool execution: it no longer exists with ordinary bash. Syntax/source
+validation and a real formal rerun remain. This does not prove arbitrary generated
+program lineage or prevent hardcoded answers; model correctness still needs real
+question acceptance.
 
 ```ts
-type DatasetPayload = {
-  title: string;
-  question: string;
-  columns: {key: string; label: string; type: string | null}[];
-  rows: Record<string, JsonValue>[];
+type DatasetFile = {
+  schema: "workbench.dataset.v1";
+  title: string; question: string;
+  columns: {key:string; label:string; type:string|null}[];
+  rows: Record<string,JsonValue>[];
   recipe:
-    | {kind: "dsl"; dsl: JsonObject; executedCode?: string; sha256?: string}
-    | {kind: "python"; code: string; sha256: string}
-    | {kind: "metric"; metricId: string; revision: string;
-       parameters: JsonObject; executedCode: string; sha256: string};
-  outKeyRefs: {key: string; className: string; attrName: string;
-              asGroupBy: boolean; statCal: boolean}[];
-  // Reuse ResultTruncation semantics, not a model's completeness estimate.
-  truncation: null | {truncated: true; rowLimit: number; truncationHint: string};
-  assumptions: string[];
-  decisionIds: UUID[];
-  metricUses: {id: string; revision: string;
-               use: "direct" | "derived" | "not_used"; reason: string}[];
-  selfCheck: {scope: string; filters: string; grain: string;
-              denominator: string; nullGroups: string;
-              comparisons: {metricId: string; comparable: boolean;
-                explanation: string; executionRef: string | null}[]};
-  execution: {receiptId: UUID; executedAt: ISODate};
+    | {kind:"dsl"; dsl:JsonObject; executedCode:string; sha256:string}
+    | {kind:"python"; code:string; sha256:string}
+    | {kind:"metric"; metricId:string; revision:string; parameters:JsonObject;
+       executedCode:string; sha256:string};
+  outKeyRefs: {key:string; className:string; attrName:string;
+              asGroupBy:boolean; statCal:boolean}[];
+  truncation: null | {truncated:true; rowLimit:number; truncationHint:string};
+  assumptions: string[]; decisionIds: UUID[];
+  metricUses: {id:string; revision:string; use:"direct"|"derived"|"not_used";
+              reason:string}[];
+  selfCheck: {scope:string; filters:string; grain:string; denominator:string;
+             nullGroups:string; comparisons:{metricId:string; comparable:boolean;
+             explanation:string; executionRef:string|null}[]};
+  execution: {receiptId:UUID; executedAt:string};
 };
 ```
 
-Rows preserve JSON null, false, zero, empty strings and original numeric values.
-Top-level row keys must equal column keys and `outKeyRefs.key`, without duplicates.
-Java validates source class/attribute existence and applies the existing grouping,
-statistical-column and masking rules. Nested JSON values are not silently
-flattened; the prompt requests flat tables, as before. Empty rows do not remove
-the schema. Java remains the only interpreter of permission rules.
+The dataset has no artifact ID inside it: the runtime assigns that after writing.
+Preserve the existing columns/rows/source/masking semantics, including null,
+false, zero, empty strings, nested values and empty-but-partial results. Column
+keys and declared source keys must agree. Java owns these rules; neither model
+nor Node guesses completeness from row count. Partial inputs stay partial after
+Python aggregation. Metric recipes preserve exact revision, parameters and
+executed source. Detailed schema is owned once by contracts; the standard skill
+reference describes it without requiring an installed contracts package.
 
-Source completeness and business assumptions are different facts. A partial input
-remains partial after Python aggregation or zero-row output. Final execution uses
-its own completeness, never the exploration run's marker. Transport-size overflow
-is an explicit failure, not silent truncation or a fabricated adapter limit.
-Full rows live in the immutable artifact, not the tool's model-visible text;
-tools return schema, count and the existing bounded data view. The abc adapter,
-live rendering, history and download all use one artifact-to-dataset projection.
-No table is rewritten by a model. Existing query history may keep derived display
-snapshots, but recipe/data authority is the referenced runtime artifact.
+Workbench computes a canonical dataset digest from the formal receipt and stores
+only receipt metadata/digest and later artifact ID, not another permanent copy
+of rows. On artifact_registered or snapshot reconciliation it reads *.dataset.json
+through the runtime content endpoint, validates schema, checks that receipt is
+owned by that retrieval/run, and compares the canonical digest. A forged or edited
+file remains a generic runtime file; it is not exposed as an accepted dataset.
+A receipt alone never publishes a dataset. If the script dies before the file is
+registered, do not manufacture publication from its successful HTTP call.
 
-Decisions are workbench facts:
-`{id, retrievalId, questionId, choiceId|null, text, scope, source, supersedesId|null}`.
-`source` identifies a user answer or a previously authorized decision; a model
-recommendation is not a user decision. Answers are committed with the next-round
-admission intent under optimistic `decisionRevision`. Superseding an answer
-invalidates the old decision for subsequent rounds, without editing old artifacts.
-Decisions apply to this task by default and are not automatically published as
-business knowledge. On continuation the workbench injects effective decisions
-and prior artifact references into the same runtime session with fresh credentials.
+Within a run, expose the latest accepted artifact for each output path at the
+observed cursor, ordered by first path appearance. Overwrites retain old IDs for
+historical references. Only changed outputs belong to a new run; inherited files
+remain prior references. Live/history/download/abc all use one file-to-dataset
+projection. Full rows are fetched on demand, never copied into token events.
+The generic file endpoint is still a file endpoint, not a claim that arbitrary
+files satisfy the formal dataset contract.
 
-## Ontology skill surface
+## Skill environment and ontology APIs
 
-`agent-skills/ontomato-analyst` is the ontology-owned source package, published as
-`ontology/ontomato-analyst@2.0.0`. Its `runtime.json` declares typed tools; CLI and
-runtime wrappers use the same HTTP routines. Ordinary internal/external usage has
-only end-user authorization (U). Trusted retrieval has one narrow exploration
-grant (E) fixed by the host for the ontology binding. Neither tool arguments nor
-CLI options choose a user, domain, permission mode, grant or base URL override.
+The skill packages document these exact environment variables:
 
-All paths below are **new** Java endpoints under `/ontology/query`; they delegate
-to existing ontology services/utilities rather than copying their business rules.
-This small read facade avoids granting ordinary readers management access or
-making existing admin routes accept exploration credentials. Existing admin
-routes remain for their other consumers. New responses are plain JSON with
-non-2xx error responses, no success-shaped exception envelope.
+| Variable | Meaning |
+| --- | --- |
+| ONTOMATO_ONTOLOGY_URL | Ontology base URL including gateway prefix when applicable |
+| ONTOMATO_WORKBENCH_URL | Workbench base URL, before /api |
+| ONTOMATO_TK | Normal user or host-issued callback credential, sent as tk |
+| ONTOMATO_QUERY_RUN_ID | Optional parent query-grant run binding for nested standalone executions |
+| ONTOMATO_QUERY_TK | Optional ontology query/execution credential, sent as tk; defaults to ONTOMATO_TK |
+| ONTOMATO_SESSION_ID / ONTOMATO_RUN_ID | Runtime identity in product; host-issued work identity for external execution |
+| ONTOMATO_RETRIEVAL_ID | Workbench retrieval record used by dataset.mjs |
+| ONTOMATO_GOVERNANCE_ID | Workbench record used by governance scripts |
+| ONTOMATO_LANGUAGE / ONTOMATO_CORRELATION_ID | Request language and trace correlation |
+| ONTOMATO_OUTPUT_DIR | Output directory; external default is ./outputs |
 
-| Tool / Java endpoint | Request | Credential | Response / existing owner |
-| --- | --- | --- | --- |
-| `ontology_overview` / `GET /overview` | None | U or E | `{description: string, classes: {name,description:string|null}[]}`; `AdminService`, `JSONRuleDao` |
-| `ontology_schema` / `POST /schema` | `{classNames:string[]}` | U or E | `{classes:JsonObject[], relationships:JsonObject[]}`; enabled class attributes and direct relationships via ontology definitions |
-| `ontology_dsl_reference` / `POST /dsl-reference` | `{classNames:string[]}` | U or E | `{classNames:string[], syntaxMarkdown:string, exampleMarkdown:string}`; `DslRuleUtil.generateDslRule/generateDslExample` |
-| `ontology_distinct_values` / `POST /distinct-values` | `{className,attribute,like:string|null,limit:number}` | U or E | `{values:JsonValue[], displayedCount:number, truncation:ResultTruncation|null}`; existing distinct-value DSL, executed with resolved authority |
-| `ontology_execute_dsl` / `POST /execute-dsl` | `{dsl:JsonObject}`; runtime tool can instead read one workspace `.json` file | U or E | `{data:[{answer:JsonObject[],truncated?:true,rowLimit?:number,truncationHint?:string}],dsl:JsonValue}`; shared normalized DSL execution |
-| `ontology_find_metrics` / `POST /metrics/search` | `{query:string,classNames?:string[],cursor:string|null,limit:number}` | U or E | `{items:MetricSpec[],nextCursor:string|null}`; published read Functions only, exact domain |
-| `ontology_execute_metric` / `POST /metrics/execute` | `{id,revision,parameters:JsonObject}` | U or E | `{recipe:MetricRecipe,outKeyRefs:OutKeyRef[],rows:JsonObject[],truncation:ResultTruncation|null,executionRef:string}`; MetricView/Function execution, no model-based parameter filling |
-| `ontology_find_knowledge` / `POST /knowledge/search` | `{query:string,limit:number}` | U or E | `{items:{id,title:string|null,text,modifiedAt:ISODate|null}[]}`; knowledge retrieval, no dialogue-model call |
+All enabled skills use the one run environment. URLs/configuration resolve from
+environment first; application.yml is a fallback outside product execution.
+ONTOMATO_URL retains the external deployment-base fallback. The packages require
+no product checkout. Scripts use documented variables directly, not
+ONTOMATO_CONTEXT_JSON or a credential JSON envelope. The normal external token
+is sufficient for ordinary authorized queries. Public anonymous identity remains
+an explicit installed product policy. Signed query credentials are still issued,
+verified, expired and revoked by Java for the existing bound run/domain/purpose;
+only their transport is aligned with the scripts' documented tk header.
 
-Relative paths in the table extend `/ontology/query`. The file form of the DSL
-tool reads/strictly parses the file in the skill wrapper; Java receives only DSL,
-never a runtime filesystem path. Failure returns a safe full cause and normalized
-DSL only if execution reached that boundary. A preview shortened for model context
-is distinct from an engine partial-result marker.
+ontomato-analyst has a single ontomato.mjs/client.mjs CLI and Python helper:
 
-DSL documentation is generated on demand for normalized classes and actual
-attribute types, using the current Java rule generator. Its common scope builder
-moves out of `ABCProgrammerSkillTools`; it is not reimplemented in Node or Python.
-`references/dsl.md` becomes an entry guide to this capability, not a second full
-grammar. Syntax examples are platform grammar examples, not retired business
-question/DSL/programmer examples. The new retriever does not inject
-`abc_programmer_example` or `/bussinessexample` content.
-The existing example generator returns Markdown containing a one-item DSL array;
-the facade preserves that documented text shape. Instructions distinguish the
-example wrapper from the execution tool's single-object input; neither Node nor
-Python reparses Markdown to reconstruct the grammar.
+| CLI command | Existing ontology facade endpoint |
+| --- | --- |
+| dataset-desc / classes | GET /ontology/query/overview |
+| schema / relationships | POST /ontology/query/schema |
+| dsl-reference | POST /ontology/query/dsl-reference |
+| distinct-values | POST /ontology/query/distinct-values |
+| execute-dsl | POST /ontology/query/execute-dsl |
+| metrics | POST /ontology/query/metrics/search |
+| execute-metric | POST /ontology/query/metrics/execute |
+| knowledge | POST /ontology/query/knowledge/search |
 
-`MetricSpec` contains `{id,revision,name,description:null|string,matchQuestions:string[],
-type:"GENERAL"|"STATIC",function:{id,operation:"OPERATION_READ",code,logic:null|string,
-parameters:Parameter[],returnDef:ReturnDef},context:{classes:JsonObject[],
-fields:JsonObject[],parameterFields:JsonObject[],valueRanges:JsonObject[],
-unresolved:string[]}}`. `revision` is a canonical spec digest, including Function
-content; execution checks it and returns 409 if the spec changed. No copy of a
-fixed Function or new MetricView model is introduced in this batch.
+Keep class-specific grammar, single-object DSL input (despite one-item-array
+examples), nullable Java fields, published metric spec/revision checks,
+model-free metric search and knowledge's existing Embedding retrieval. No business
+example injection or model-based parameter filling is reintroduced. Python uses
+the same helper as [standalone execution](agent-runtime-code.md).
 
-Metric search is deterministic SQL text/identity/class retrieval over published
-definitions, with stable ordering and cursor pagination; **no dialogue or
-embedding call**. It does not use `MetricViewServiceImpl.find`'s embedding-based
-retrieval, nor `generateGeneralContent`'s parameter-filling agent. Knowledge search
-reuses the existing retrieval/Embedding path, without a dialogue-model call.
-The host initially requests at most ten complete specs and injects nextCursor
-when more are available; the retriever can request further pages. Code and
-parameter definitions are never cut in half.
-Optional Java fields such as descriptions, parameter `sample/value/classNames`,
-return metadata and timestamps may be null; normalize only where their absence
-has defined semantics. Retrieval failures must not become an empty catalogue.
+The external ask command remains a workbench API client. The product retriever's
+prompt instructs it to use direct ontology commands and dataset.mjs, not ask its
+own orchestration service recursively. No second internal analyst entry remains.
+Enterprise distributions generate shared executable files from the public source;
+localized documentation/login convenience can remain edition-owned, but an
+explicit environment token takes the identical command path in every edition.
 
-Ontology code derives involved classes/fields and parameter bindings only from
-available structured DSL/parameter definitions. Arbitrary Python is not a
-reliably parseable DSL: retain its full code and declared sources, mark unknown
-bindings in `unresolved`, and let the retriever inspect/probe. Do not invent value
-ranges or assert the source declaration is complete program data lineage.
+## External work identity and business writes
 
-`ask` is a workbench capability. Keep the external analyst CLI's `ask` command,
-but its adapter is workbench-owned and calls `/api/retrievals`; delete its Java
-`/abcHarness` handling. The ontology runtime manifest contains only the read
-tools above, never an `ask` tool that recursively invokes a retriever. The shared
-external distribution does not make ontology service depend on workbench: Java
-publishes/uses the ontology tool entries, and the external caller chooses ask.
-Shared transport code is imported/generated from its one owner in enterprise
-packages, with credentials and translated instructions supplied by the edition.
-Ontology and workbench have separate configured product base URLs. The existing
-ontology-manager gateway can expose Java's facade without a workbench hop; its
-`/api/data-query` prefix is part of the configured ontology URL. No new blanket
-Node-to-Java proxy is added here. Preserve the deployed gateway's existing paths
-until their own migration; do not confuse an external URL with a runtime target ID.
+Controller-approved addition: each workbench skill can open a
+host-owned work record for an external harness without starting a runtime agent.
+POST /api/retrievals/skill-runs takes a UUID key and the same question/class scope;
+returns `{id,sessionId,runId,expiresAt}`. An optional retrievalId opens a new
+round on an existing external record, closing its predecessor in the same
+transaction. Matching begin retries return the original gate, never a newer one. POST
+/api/retrievals/:id/skill-runs/:runId/close closes its gate idempotently. Scripts
+`begin`/`close` document these calls and emit values the external caller can set
+as environment variables. End-user auth and query permissions are mandatory.
 
-## Grants and final execution (ontology authority)
+The existing product path and this entry call the same per-run gate/receipt
+service. Internally the work ID is mapped to the actual runtime ID; externally
+there is no fabricated runtime history. The external gate expires at the existing
+query deadline, and an expired gate cannot be reopened by retry. Local files are
+the external harness's outputs; no upload back to runtime is required to prove
+portability. External begin never issues a trusted exploration grant; scripts operate with
+the authenticated user's own permissions. Scripts use ONTOMATO_RUN_ID when
+present, otherwise their documented begin command obtains the work identity.
+This is business work ownership, not another loop or agent protocol.
+Governance uses the equivalent boundary described in the runtime design.
 
-The ontology service signs and validates short-lived grants. Only a configured
-workbench service principal may call
-`POST /internal/query-grants/exploration`. It presents its service credential
-plus the verified user's original credential in its normal authentication header, and
-`{retrievalId,runtimeSessionId,runtimeRunId,expiresAt,classNames}`. Java verifies
-the user/domain and query authorization itself. It rejects caller user/domain
-claims. Public identity still requires the private service credential to issue E.
+All mutations check the host-owned run gate in the mutation transaction, including
+source registration on reads. Close before cancellation or opening a newer round;
+serialize both with writes. The accepted guarantee begins at host closure.
+An in-flight request before closure can affect only its own run record, never the
+next round. No runtime-status HTTP call replaces that transaction.
 
-Grant claims: issuer, audience `ontology-query`, purpose `retrieval-exploration`,
-service principal, user, domain, retrieval/session/run IDs, class scope, jti,
-issuedAt and expiresAt. Expiry is the existing query deadline (normally 600 s),
-bounded by the original credential's expiry; no timeless or user-selected grant.
-Use an ontology-only signing key, never a runtime host token. A persisted grant
-record stores jti/run/domain/expiry/revocation; the other bindings are signed
-claims, not a second plaintext bearer store.
-Signature, exact audience/purpose, expiry, revocation, run header binding, domain
-and allowed operation are checked at every request. Domain is the signed value;
-request headers cannot replace it. Cancel/terminal closure revokes by run via the
-same service principal. Expiry closes the crash window. In-flight accepted reads
-may finish; closure prevents publishing their late results.
+## Quality checks and retained behavior
 
-E is accepted only by the facade's read operations. It uses the existing empty
-row/column permission semantics **inside its bound domain**. It cannot issue a
-grant, execute arbitrary SQL/native operations, call admin/write/action/export
-routes, or execute a write Function. The Java facade validates a read-only DSL
-structure before adapter execution and rejects unsupported action/raw-query
-forms. Reusing a generic data-source query tool is not read-only enforcement.
+After a stopped/stop run has accepted datasets, schedule the existing Java
+query-quality-checks job once with the final recipes and artifact IDs. A question
+with no dataset starts no QC job. length/error/aborted never imply successful
+completion; already published files remain available. QC stays asynchronous,
+retains descriptions/score/fitted question/candidate rules, and cannot overwrite
+a later round or mutate an immutable file. Matching job retries reuse its ID;
+unknown candidate-creation effects are not replayed. QC's own existing job state
+is not an agent run state. Moving QC/feedback/decisions into runtime is deferred.
 
-The runtime receives E only in the pinned ontology skill binding and the
-retrieval's Python binding. Workbench result tools receive a user credential or
-a distinct callback grant; ordinary/domain/MCP tools receive neither E nor its
-issuer credential. E is not in registry packages, definition snapshots, stdout,
-tool arguments or public responses. Process isolation is required in addition to
-environment separation; see the code contract. Exploration display policy is
-deferred; this batch makes no claim that model-visible exploration data cannot
-be repeated by a model. It never treats those rows as an authorized dataset.
-
-`POST /ontology/query/outputs` accepts U only and is not in the exploration tool
-manifest. The workbench calls it with `{submissionId,recipe,outKeyRefs}` after it
-has verified the submitted file against a successful runtime execution receipt.
-Java revalidates referenced definitions and sources, creates a **fresh** execution
-workspace, and always reruns the recipe with user-bound authorization. It owns
-JSON-output parsing, source validation, column masking and completeness. It
-admits with 202 `{id:submissionId,status:"running"}`. A matching completed retry
-returns the same admission identity, never another execution. Scoped
-`GET /ontology/query/outputs/:submissionId` returns
-`{id,status,result,error}`, where status is running/completed/failed/cancelled/
-interrupted and result is null until completed, then
-`{receiptId,executedAt,recipe,outKeyRefs,columns,rows,truncation}`. The workbench
-awaits that terminal result before returning the dataset skill result.
-
-For Python, Java calls the runtime code API under its own `ontology` host
-principal with a separate `user-read` grant. This grant resolves current user
-permissions at each query, accepts no body user/domain, cannot explore or write,
-and expires with that execution's deadline. The new helper sends only
-`{dsl}` plus its injected credential; delete `/dsl/execute` and the `admin`
-request-value shortcut, updating all live producers. Model calls have no
-`formal`, `exploration`, `userId`, credential selector or privileged test reuse.
-The runtime sees only code, files, an opaque credential and a configured target.
-
-Output submission IDs deduplicate only identical requests within the same
-user/domain scope. Workbench alone binds a submission to an authorized retrieval
-round; Java does not validate a workbench business state. Java records the
-associated runtime execution ID before HTTP admission. Lost responses reconcile
-that ID; no blind rerun. The
-workbench receives no access to another runtime host's execution objects. Java
-offers scoped `POST /ontology/query/outputs/:submissionId/cancel` for
-cancellation. The result is a receipt of final execution,
-not a second permanent dataset store.
-
-## Quality check boundary
-
-Add Java `POST /query-quality-checks` with U plus workbench service auth:
-`{id,question,programs:[{question,code,outKeyRefs}],recipes,classNames}`. The ID is
-workbench-issued and bound to domain/user/retrieval round. Admission returns 202
-`{id,status:"running"}`; matching retries return the same check, changed payload
-409. `GET /query-quality-checks/:id` returns running/completed/failed and the
-existing program descriptions, score, conclusion and fitted question when ready.
-`POST /query-quality-checks/:id/cancel` closes that check. All lookups are scoped;
-the old DAO's sessionId-only lookup is not exposed as authorization.
-
-The workbench starts this after an accepted completed retrieval, once per round,
-using final recipes, not exploration source. Java retains `CheckServiceV2`'s
-blind description/checking prompts, score and candidate threshold (60), and the
-existing pending Function/MetricView creation. No score-triggered recompute or
-new publication rule. The request also carries `recipes`; Java converts a DSL recipe through its
-existing DSL-to-program owner before invoking the checker. Minimal admission/status ownership wraps the existing
-logic; it does not migrate the checker agent.
-
-The workbench persists the returned check ID and late result against its
-retrieval/query record plus dataset IDs. This job has its own existing 60 s read
-deadline and does not keep the chat turn open. A late result cannot overwrite a
-later round or mutate the immutable dataset. Current display/QC history uses
-the existing QcResult projection; the new retrieval GET can show the late job's
-status. Waiting in `late-fact` is removed for this migrated path only; traditional
-ABC checks keep their current path until that migration. Failed/cancelled checks
-do not turn a delivered dataset into query failure. Java restart during candidate
-creation is reported as interrupted/unknown and is never automatically replayed.
-
-
-Final DSL/metric recipes carry the actual executed source and digest. Java
-materializes a metric's typed parameters in its executable snapshot, preserving
-nulls and the unchanged published Function source, so saved-program consumers
-retain the calculation when replaying code. This is protocol-2 input assembly,
-not legacy source conversion or a guessed rewrite. The original metric ID,
-revision and structured parameters remain in the recipe. Dataset projection and
-legacy trace arrays keep the same dataset ordering, including mixed DSL/Python
-outputs.
+Preserve `/ontology/query/outputs` and its scoped polling/cancellation contract,
+QueryGrantService/QueryAccessService ownership, run-bound grants and all existing
+formal permission checks. Update Java's RuntimeCodeClient and all code-execution
+consumers for the generic process shape in the code contract. Keep LangGraph,
+static/hot/traditional branches, existing Java generators and their Python HTTP
+client until their named later migrations.

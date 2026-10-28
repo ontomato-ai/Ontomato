@@ -1,11 +1,11 @@
+import { runtimeFileMetadataSchema } from "./agent-runtime-artifacts";
 import { z } from "zod";
 import {
-  runtimeEndUserCredentialSchema,
+  runtimeEnvironmentSchema,
   runtimeSkillRefSchema,
 } from "./agent-runtime-skills";
 import {
   runtimeIdSchema,
-  runtimeJsonObjectSchema,
   runtimeRelativePathSchema,
 } from "./agent-runtime-values";
 
@@ -31,11 +31,18 @@ export const codeLimitsSchema = z
       .default(16 * 1024 * 1024),
   })
   .strict();
-export const pythonBindingSchema = z
+export const codeFileSchema = z
+  .object({ path: runtimeRelativePathSchema, content: z.string() })
+  .strict();
+export const codeExecutionRequestSchema = z
   .object({
-    targetUrl: z.string().url().nullable(),
-    credential: runtimeEndUserCredentialSchema,
-    context: runtimeJsonObjectSchema,
+    language: z.literal("python"),
+    locale: z.string().default("en"),
+    files: z.array(codeFileSchema).min(1),
+    entry: runtimeRelativePathSchema,
+    arguments: z.array(z.string()),
+    outputPaths: z.array(runtimeRelativePathSchema),
+    environment: runtimeEnvironmentSchema,
     libraries: z.array(
       z
         .object({
@@ -45,19 +52,6 @@ export const pythonBindingSchema = z
         .strict(),
     ),
     limits: codeLimitsSchema,
-  })
-  .strict();
-export const codeFileSchema = z
-  .object({ path: runtimeRelativePathSchema, content: z.string() })
-  .strict();
-export const codeExecutionRequestSchema = z
-  .object({
-    language: z.literal("python"),
-    files: z.array(codeFileSchema).min(1),
-    entry: runtimeRelativePathSchema,
-    arguments: z.array(z.string()),
-    outputPaths: z.array(runtimeRelativePathSchema),
-    binding: pythonBindingSchema,
   })
   .strict()
   .superRefine((value, ctx) => {
@@ -71,25 +65,17 @@ export const codeExecutionRequestSchema = z
 export const codeExecutionSchema = z
   .object({
     id: runtimeIdSchema,
-    runId: runtimeIdSchema.nullable(),
-    status: z.enum([
-      "running",
-      "completed",
-      "failed",
-      "cancelled",
-      "interrupted",
-    ]),
-    source: z.string(),
+
+    status: z.enum(["running", "stopped"]),
     entry: runtimeRelativePathSchema,
     sourceSha256: z.string(),
     createdAt: z.string(),
     finishedAt: z.string().nullable(),
     exitCode: z.number().int().nullable(),
-    outputs: z.array(z.string()),
-    error: z.object({ code: z.string(), message: z.string() }).nullable(),
+    outputs: z.array(runtimeFileMetadataSchema.extend({ name: z.string() })),
+    errorMessage: z.string().nullable(),
   })
   .strict();
 export type CodeLimits = z.infer<typeof codeLimitsSchema>;
-export type PythonBinding = z.infer<typeof pythonBindingSchema>;
 export type CodeExecutionRequest = z.infer<typeof codeExecutionRequestSchema>;
 export type CodeExecution = z.infer<typeof codeExecutionSchema>;

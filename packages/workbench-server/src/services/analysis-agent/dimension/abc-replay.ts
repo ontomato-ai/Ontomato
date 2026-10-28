@@ -20,9 +20,15 @@ import {
   parseResultTruncation,
   type QueryAnswerPayload,
 } from "../../data-query/protocol";
-import type { HotReportReplayPathBinding, HotReportReplayPlan } from "../../data-query/replay-plan";
+import type {
+  HotReportReplayPathBinding,
+  HotReportReplayPlan,
+} from "../../data-query/replay-plan";
 import type { DimensionalizedQuestion } from "./dimension-types";
-import type { AnalysisQueryFact, DimensionQueryResult } from "../runtime/evidence-types";
+import type {
+  AnalysisQueryFact,
+  DimensionQueryResult,
+} from "../runtime/evidence-types";
 import {
   buildQueryResultDataFromDatasets,
   buildQueryResultDslFromDatasets,
@@ -33,10 +39,12 @@ import {
 import { config } from "../../../config/application";
 import { environment } from "../../../config/environment";
 import { runtimeDataDir } from "../../../content/layout";
-import { backendPost, BackendUnavailableError } from "../../../utils/backend-client";
+import {
+  backendPost,
+  BackendUnavailableError,
+} from "../../../utils/backend-client";
 import { createLogger } from "../../../logging/logger";
 import { t, tApp } from "../../../i18n";
-
 
 const logger = createLogger("abc-replay");
 const PYTHON_TIMEOUT_MS = 30000;
@@ -85,7 +93,8 @@ export interface ExecuteAbcReplayPlanParams {
   pythonRunner?: PythonRunner;
 }
 
-export interface ExecuteSavedAbcReplayParams extends Omit<ExecuteAbcReplayPlanParams, "plan"> {
+export interface ExecuteSavedAbcReplayParams
+  extends Omit<ExecuteAbcReplayPlanParams, "plan"> {
   replayPlan?: HotReportReplayPlan;
   savedDsl?: unknown;
   /** Second-level decomposition traces come from the execution facts; fields are not re-declared here */
@@ -110,7 +119,10 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 function answerPayload(data: unknown): QueryAnswerPayload {
-  return parseQueryAnswerPayload(data, tApp("analysis.dimension.abc-replay.31"));
+  return parseQueryAnswerPayload(
+    data,
+    tApp("analysis.dimension.abc-replay.31"),
+  );
 }
 
 function safeSessionId(sessionId: string | undefined): string {
@@ -121,9 +133,12 @@ async function writeAnswerFile(
   replayDir: string,
   sessionId: string | undefined,
   index: number,
-  rows: QueryResultRow[]
+  rows: QueryResultRow[],
 ): Promise<string> {
-  const filePath = path.join(replayDir, `${safeSessionId(sessionId)}_${index}.json`);
+  const filePath = path.join(
+    replayDir,
+    `${safeSessionId(sessionId)}_${index}.json`,
+  );
   await writeFile(filePath, JSON.stringify(rows, null, 2), "utf8");
   return path.basename(filePath);
 }
@@ -131,7 +146,7 @@ async function writeAnswerFile(
 function replaceCachePaths(
   code: string,
   bindings: HotReportReplayPathBinding[],
-  localPathByIndex: Map<number, string>
+  localPathByIndex: Map<number, string>,
 ): { code: string; missingIndexes: number[] } {
   let output = code;
   const missingIndexes: number[] = [];
@@ -181,15 +196,11 @@ export const defaultPythonRunner: PythonRunner = async ({
         entry: path.basename(scriptPath),
         arguments: [],
         outputPaths: [],
-        binding: {
-          targetUrl: null,
-          credential: { kind: "none" },
-          context: {},
-          libraries: [],
-          limits: {
-            wallTimeMs: PYTHON_TIMEOUT_MS,
-            cpuSeconds: Math.ceil(PYTHON_TIMEOUT_MS / 1000),
-          },
+        environment: { values: {}, secrets: {} },
+        libraries: [],
+        limits: {
+          wallTimeMs: PYTHON_TIMEOUT_MS,
+          cpuSeconds: Math.ceil(PYTHON_TIMEOUT_MS / 1000),
         },
       },
       id,
@@ -206,14 +217,17 @@ export const defaultPythonRunner: PythonRunner = async ({
     settled = true;
     // Output reads use the same host/domain authorization; the runtime owns process execution.
     const output = async (name: string) =>
-      execution.outputs.includes(name)
+      execution.outputs.some((output) => output.name === name)
         ? String(await client.text(`/v1/code-executions/${id}/outputs/${name}`))
         : "";
     return {
-      ok: execution.status === "completed",
+      ok:
+        execution.status === "stopped" &&
+        execution.exitCode === 0 &&
+        !execution.errorMessage,
       stdout: await output("stdout"),
       stderr: await output("stderr"),
-      ...(execution.error ? { error: execution.error.message } : {}),
+      ...(execution.errorMessage ? { error: execution.errorMessage } : {}),
     };
   } catch (error) {
     return {
@@ -243,7 +257,8 @@ function parsePythonAnswer(stdout: string): {
     .map((item) => item.trim())
     .filter(Boolean)
     .pop();
-  if (!line) return { rows: [], error: tApp("analysis.dimension.abc-replay.34") };
+  if (!line)
+    return { rows: [], error: tApp("analysis.dimension.abc-replay.34") };
 
   try {
     const parsed = JSON.parse(line);
@@ -266,11 +281,13 @@ function dataset(
   title: string,
   rows: QueryResultRow[],
   dsl?: unknown,
-  truncation?: ResultTruncation
+  truncation?: ResultTruncation,
 ): Dataset {
   return {
     id: randomUUID(),
-    name: title.replace(/[^\u4e00-\u9fa5a-zA-Z0-9_-]/g, "_").slice(0, 50) || "hot_report",
+    name:
+      title.replace(/[^\u4e00-\u9fa5a-zA-Z0-9_-]/g, "_").slice(0, 50) ||
+      "hot_report",
     description: title,
     columns: [...new Set(rows.flatMap((row) => Object.keys(row)))],
     data: rows,
@@ -280,19 +297,31 @@ function dataset(
   };
 }
 
-function table(title: string, rows: QueryResultRow[] | undefined, error?: string): string {
+function table(
+  title: string,
+  rows: QueryResultRow[] | undefined,
+  error?: string,
+): string {
   if (error) return error;
   const count = rows?.length || 0;
-  return tApp("analysis.dimension.abc-replay.36", { title: title, count: count });
+  return tApp("analysis.dimension.abc-replay.36", {
+    title: title,
+    count: count,
+  });
 }
 
-function toResult(items: ReplayItem[], plan: HotReportReplayPlan): AbcReplayExecutionResult {
-  const completed = items.filter((item) => item.status === "completed" && item.rows);
+function toResult(
+  items: ReplayItem[],
+  plan: HotReportReplayPlan,
+): AbcReplayExecutionResult {
+  const completed = items.filter(
+    (item) => item.status === "completed" && item.rows,
+  );
   const datasetByItem = new Map(
     completed.map((item) => [
       item,
       dataset(item.title, item.rows || [], item.dsl, item.truncation),
-    ])
+    ]),
   );
   const datasets = [...datasetByItem.values()];
   const errors = items
@@ -303,7 +332,9 @@ function toResult(items: ReplayItem[], plan: HotReportReplayPlan): AbcReplayExec
     .map((item) => {
       const section = `### ${item.title}\n\n${table(item.title, item.rows, item.error)}`;
       const itemDataset = datasetByItem.get(item);
-      return itemDataset ? `${section}\n\n${datasetPlacement(itemDataset.id)}` : section;
+      return itemDataset
+        ? `${section}\n\n${datasetPlacement(itemDataset.id)}`
+        : section;
     })
     .join("\n\n");
 
@@ -320,25 +351,41 @@ function toResult(items: ReplayItem[], plan: HotReportReplayPlan): AbcReplayExec
       dataCount: item.rows?.length || 0,
     })),
     abcSubQuestions: [
-      ...plan.steps.map((step) => step.subQuestion || tApp("analysis.dimension.abc-replay.37", { value: step.index + 1 })),
-      ...plan.afterCalculations.map((item) => item.subQuestion || tApp("analysis.dimension.abc-replay.38", { value: item.index + 1 })),
+      ...plan.steps.map(
+        (step) =>
+          step.subQuestion ||
+          tApp("analysis.dimension.abc-replay.37", { value: step.index + 1 }),
+      ),
+      ...plan.afterCalculations.map(
+        (item) =>
+          item.subQuestion ||
+          tApp("analysis.dimension.abc-replay.38", { value: item.index + 1 }),
+      ),
     ],
     abcDsls: plan.steps.map((step) => step.dsl),
     abcCodes: completed.map((item) => item.code || ""),
     abcOutKeyRefs: completed.map(() => []),
     replayPlan: plan,
     dataCount: datasets.reduce((sum, item) => sum + item.data.length, 0),
-    error: errors.length > 0 ? errors.join(tApp("analysis.dimension.abc-replay.39")) : undefined,
+    error:
+      errors.length > 0
+        ? errors.join(tApp("analysis.dimension.abc-replay.39"))
+        : undefined,
   };
 }
 
 function isExecutableDsl(value: unknown): value is Record<string, unknown> {
   return (
-    !!value && typeof value === "object" && !Array.isArray(value) && Object.keys(value).length > 0
+    !!value &&
+    typeof value === "object" &&
+    !Array.isArray(value) &&
+    Object.keys(value).length > 0
   );
 }
 
-export function normalizeSavedAbcDsls(value: unknown): Record<string, unknown>[] {
+export function normalizeSavedAbcDsls(
+  value: unknown,
+): Record<string, unknown>[] {
   if (Array.isArray(value)) {
     return value.filter(isExecutableDsl);
   }
@@ -352,7 +399,9 @@ function buildDirectDslDatasetPreviews(results: DimensionQueryResult[]) {
       dataset?.description ||
       dataset?.name ||
       result.subQuestion ||
-      (results.length > 1 ? tApp("analysis.dimension.abc-replay.40", { value: index + 1 }) : tApp("analysis.dimension.abc-replay.41"));
+      (results.length > 1
+        ? tApp("analysis.dimension.abc-replay.40", { value: index + 1 })
+        : tApp("analysis.dimension.abc-replay.41"));
     return {
       title,
       markdownTable: result.markdownTable || result.error || "",
@@ -364,17 +413,22 @@ function buildDirectDslDatasetPreviews(results: DimensionQueryResult[]) {
 function mergeDirectDslReplayResults(
   question: DimensionalizedQuestion,
   results: DimensionQueryResult[],
-  savedAbcTrace?: ExecuteSavedAbcReplayParams["savedAbcTrace"]
+  savedAbcTrace?: ExecuteSavedAbcReplayParams["savedAbcTrace"],
 ): AbcReplayExecutionResult {
-  const completedResults = results.filter((result) => result.status === "completed");
+  const completedResults = results.filter(
+    (result) => result.status === "completed",
+  );
   const datasets = completedResults.flatMap((result) => result.datasets || []);
-  const datasetPreviews = results.length > 1 ? buildDirectDslDatasetPreviews(results) : undefined;
+  const datasetPreviews =
+    results.length > 1 ? buildDirectDslDatasetPreviews(results) : undefined;
   const errorMessages = results
     .filter((result) => result.status !== "completed" && result.error)
     .map((result) => result.error as string);
   const abcSubQuestions =
     savedAbcTrace?.abcSubQuestions ||
-    results.map((result) => result.subQuestion).filter((item): item is string => !!item);
+    results
+      .map((result) => result.subQuestion)
+      .filter((item): item is string => !!item);
   const abcDsls =
     savedAbcTrace?.abcDsls ||
     results.map((result) => result.dsl).filter((item) => item !== undefined);
@@ -382,13 +436,17 @@ function mergeDirectDslReplayResults(
   const abcCodes =
     datasets.length > 0
       ? completedResults.flatMap((result) =>
-          (result.datasets || []).map((_, index) => result.abcCodes?.[index] || "")
+          (result.datasets || []).map(
+            (_, index) => result.abcCodes?.[index] || "",
+          ),
         )
       : savedAbcTrace?.abcCodes;
   const abcOutKeyRefs =
     datasets.length > 0
       ? completedResults.flatMap((result) =>
-          (result.datasets || []).map((_, index) => result.abcOutKeyRefs?.[index] || [])
+          (result.datasets || []).map(
+            (_, index) => result.abcOutKeyRefs?.[index] || [],
+          ),
         )
       : savedAbcTrace?.abcOutKeyRefs;
 
@@ -397,12 +455,17 @@ function mergeDirectDslReplayResults(
     const markdownTable =
       results.length > 1
         ? buildDirectDslDatasetPreviews(results)
-            .map((preview) => `### ${preview.title}\n\n${preview.markdownTable}`)
+            .map(
+              (preview) => `### ${preview.title}\n\n${preview.markdownTable}`,
+            )
             .join("\n\n")
         : results[0]?.markdownTable;
     return {
       status: "failed",
-      dsl: results.length > 1 ? results.map((result) => result.dsl) : results[0]?.dsl,
+      dsl:
+        results.length > 1
+          ? results.map((result) => result.dsl)
+          : results[0]?.dsl,
       fullContent: markdownTable,
       markdownTable,
       datasets,
@@ -412,7 +475,9 @@ function mergeDirectDslReplayResults(
       abcCodes,
       abcOutKeyRefs,
       dataCount: 0,
-      error: errorMessages.join(tApp("analysis.dimension.abc-replay.39")) || tApp("analysis.dimension.abc-replay.42"),
+      error:
+        errorMessages.join(tApp("analysis.dimension.abc-replay.39")) ||
+        tApp("analysis.dimension.abc-replay.42"),
     };
   }
 
@@ -420,7 +485,9 @@ function mergeDirectDslReplayResults(
     datasets.length > 0
       ? buildQueryResultDataFromDatasets(datasets)
       : completedResults.length > 1
-        ? completedResults.flatMap((result) => flattenQueryResultData(result.data))
+        ? completedResults.flatMap((result) =>
+            flattenQueryResultData(result.data),
+          )
         : completedResults[0]?.data;
   const dsl =
     datasets.length > 0
@@ -431,20 +498,32 @@ function mergeDirectDslReplayResults(
   const dataCount =
     datasets.length > 0
       ? datasets.reduce((sum, dataset) => sum + (dataset.data?.length || 0), 0)
-      : completedResults.reduce((sum, result) => sum + getQueryResultDataCount(result.data), 0);
+      : completedResults.reduce(
+          (sum, result) => sum + getQueryResultDataCount(result.data),
+          0,
+        );
   // Each result's own datasets are placed right after its table, keeping the ids they were created with.
   const withPlacements = (result: DimensionQueryResult, section: string) =>
     result.status === "completed"
-      ? [section, ...(result.datasets || []).map((item) => datasetPlacement(item.id))].join("\n\n")
+      ? [
+          section,
+          ...(result.datasets || []).map((item) => datasetPlacement(item.id)),
+        ].join("\n\n")
       : section;
   const fullContent =
     results.length > 1
       ? buildDirectDslDatasetPreviews(results)
           .map((preview, index) =>
-            withPlacements(results[index]!, `### ${preview.title}\n\n${preview.markdownTable}`)
+            withPlacements(
+              results[index]!,
+              `### ${preview.title}\n\n${preview.markdownTable}`,
+            ),
           )
           .join("\n\n")
-      : withPlacements(completedResults[0]!, completedResults[0]!.markdownTable || "");
+      : withPlacements(
+          completedResults[0]!,
+          completedResults[0]!.markdownTable || "",
+        );
 
   return {
     status: "completed",
@@ -460,7 +539,10 @@ function mergeDirectDslReplayResults(
     abcCodes,
     abcOutKeyRefs,
     dataCount,
-    error: errorMessages.length > 0 ? errorMessages.join(tApp("analysis.dimension.abc-replay.39")) : undefined,
+    error:
+      errorMessages.length > 0
+        ? errorMessages.join(tApp("analysis.dimension.abc-replay.39"))
+        : undefined,
   };
 }
 
@@ -525,7 +607,7 @@ export async function executeAbcProgram(params: {
         token,
         timeoutMs: ABC_PROGRAM_EXECUTE_TIMEOUT_MS,
         signal,
-      }
+      },
     );
 
     const contentType = response.headers.get("content-type") || "";
@@ -540,9 +622,15 @@ export async function executeAbcProgram(params: {
         })()
       : rawText;
 
-    if (!payload || typeof payload !== "object" || !(payload as Record<string, unknown>).success) {
+    if (
+      !payload ||
+      typeof payload !== "object" ||
+      !(payload as Record<string, unknown>).success
+    ) {
       baseResult.status = "failed";
-      baseResult.error = tApp("analysis.dimension.abc-replay.44", { value: typeof payload === "string" ? payload : JSON.stringify(payload) });
+      baseResult.error = tApp("analysis.dimension.abc-replay.44", {
+        value: typeof payload === "string" ? payload : JSON.stringify(payload),
+      });
       return baseResult;
     }
 
@@ -551,7 +639,7 @@ export async function executeAbcProgram(params: {
       : [];
     const truncation = parseResultTruncation(
       payload as Record<string, unknown>,
-      ABC_PROGRAM_EXECUTE_ENDPOINT
+      ABC_PROGRAM_EXECUTE_ENDPOINT,
     );
 
     baseResult.status = "completed";
@@ -578,7 +666,10 @@ export async function executeAbcProgram(params: {
       const headerRow = `| ${columns.join(" | ")} |`;
       const separatorRow = `| ${columns.map(() => "---").join(" | ")} |`;
       const dataRows = rawData
-        .map((row) => `| ${columns.map((col) => String(row[col] ?? "")).join(" | ")} |`)
+        .map(
+          (row) =>
+            `| ${columns.map((col) => String(row[col] ?? "")).join(" | ")} |`,
+        )
         .join("\n");
       // Display body and result table are one and the same.
       baseResult.fullContent =
@@ -587,20 +678,29 @@ export async function executeAbcProgram(params: {
       // Display body and result table are one and the same.
       baseResult.fullContent = baseResult.markdownTable = truncation
         ? `_${subQuestion}_\n\n${t("query.display.emptyPartial")}`
-        : tApp("analysis.dimension.abc-replay.45", { subQuestion: subQuestion });
+        : tApp("analysis.dimension.abc-replay.45", {
+            subQuestion: subQuestion,
+          });
     }
 
     return baseResult;
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : String(error);
-    logger.error(tApp("analysis.dimension.abc-replay.46"), { url: executeUrl, error: message });
+    logger.error(tApp("analysis.dimension.abc-replay.46"), {
+      url: executeUrl,
+      error: message,
+    });
 
     if (error instanceof BackendUnavailableError) {
       baseResult.status = "failed";
-      baseResult.error = tApp("analysis.dimension.abc-replay.47", { message: message });
+      baseResult.error = tApp("analysis.dimension.abc-replay.47", {
+        message: message,
+      });
     } else {
       baseResult.status = "failed";
-      baseResult.error = tApp("analysis.dimension.abc-replay.48", { message: message });
+      baseResult.error = tApp("analysis.dimension.abc-replay.48", {
+        message: message,
+      });
     }
     return baseResult;
   }
@@ -620,7 +720,12 @@ export async function executeSavedAbcReplay({
 }: ExecuteSavedAbcReplayParams): Promise<AbcReplayExecutionResult> {
   const abcCodes = savedAbcTrace?.abcCodes;
   const abcOutKeyRefs = savedAbcTrace?.abcOutKeyRefs;
-  if (abcCodes && abcCodes.length > 0 && abcOutKeyRefs && abcOutKeyRefs.length > 0) {
+  if (
+    abcCodes &&
+    abcCodes.length > 0 &&
+    abcOutKeyRefs &&
+    abcOutKeyRefs.length > 0
+  ) {
     const results: DimensionQueryResult[] = [];
     for (const [index, code] of abcCodes.entries()) {
       if (index > 0) {
@@ -640,7 +745,7 @@ export async function executeSavedAbcReplay({
               : question.subQuestion,
           token,
           signal,
-        })
+        }),
       );
     }
 
@@ -687,8 +792,8 @@ export async function executeSavedAbcReplay({
             : question.subQuestion,
         token,
         signal,
-      })
-    )
+      }),
+    ),
   );
 
   return mergeDirectDslReplayResults(question, results, savedAbcTrace);
@@ -713,14 +818,21 @@ export async function executeAbcReplayPlan({
 
   for (const step of plan.steps) {
     if (!step.dsl) continue;
-    const title = step.subQuestion || tApp("analysis.dimension.abc-replay.50", { subQuestion: question.subQuestion, value: step.index + 1 });
+    const title =
+      step.subQuestion ||
+      tApp("analysis.dimension.abc-replay.50", {
+        subQuestion: question.subQuestion,
+        value: step.index + 1,
+      });
 
     if (step.initialError) {
       items.push({
         title,
         status: "skipped",
         dsl: step.dsl,
-        error: tApp("analysis.dimension.abc-replay.51", { initialError: step.initialError }),
+        error: tApp("analysis.dimension.abc-replay.51", {
+          initialError: step.initialError,
+        }),
       });
       continue;
     }
@@ -735,9 +847,12 @@ export async function executeAbcReplayPlan({
       token,
       signal,
     });
-    const rows = result.status === "completed" ? flattenQueryResultData(result.data) : [];
+    const rows =
+      result.status === "completed" ? flattenQueryResultData(result.data) : [];
     const truncation =
-      result.status === "completed" ? combineResultTruncation(result.datasets || []) : undefined;
+      result.status === "completed"
+        ? combineResultTruncation(result.datasets || [])
+        : undefined;
 
     // Zero rows of a partial result are not "no data": the step completes and stays marked.
     if (rows.length === 0 && !truncation) {
@@ -752,22 +867,28 @@ export async function executeAbcReplayPlan({
 
     localPathByIndex.set(
       step.index,
-      await writeAnswerFile(replayDir, plan.sessionId, step.index, rows)
+      await writeAnswerFile(replayDir, plan.sessionId, step.index, rows),
     );
     if (truncation) truncationByIndex.set(step.index, truncation);
     items.push({ title, status: "completed", rows, dsl: step.dsl, truncation });
   }
 
   for (const afterCalculation of plan.afterCalculations) {
-    const title = afterCalculation.subQuestion || tApp("analysis.dimension.abc-replay.53", { subQuestion: question.subQuestion });
+    const title =
+      afterCalculation.subQuestion ||
+      tApp("analysis.dimension.abc-replay.53", {
+        subQuestion: question.subQuestion,
+      });
     const missingDependency = afterCalculation.dependencySubQueryIndexes.filter(
-      (index) => !localPathByIndex.has(index)
+      (index) => !localPathByIndex.has(index),
     );
     if (missingDependency.length > 0) {
       items.push({
         title,
         status: "skipped",
-        error: tApp("analysis.dimension.abc-replay.54", { join: missingDependency.join(", ") }),
+        error: tApp("analysis.dimension.abc-replay.54", {
+          join: missingDependency.join(", "),
+        }),
       });
       continue;
     }
@@ -775,26 +896,39 @@ export async function executeAbcReplayPlan({
     const rewritten = replaceCachePaths(
       afterCalculation.code,
       afterCalculation.pathBindings,
-      localPathByIndex
+      localPathByIndex,
     );
     if (rewritten.missingIndexes.length > 0) {
       items.push({
         title,
         status: "skipped",
-        error: tApp("analysis.dimension.abc-replay.55", { join: rewritten.missingIndexes.join(", ") }),
+        error: tApp("analysis.dimension.abc-replay.55", {
+          join: rewritten.missingIndexes.join(", "),
+        }),
       });
       continue;
     }
 
     const py = await pythonRunner({
       code: rewritten.code,
-      scriptPath: path.join(replayDir, `after_calculation_${afterCalculation.index}.py`),
+      scriptPath: path.join(
+        replayDir,
+        `after_calculation_${afterCalculation.index}.py`,
+      ),
       cwd: replayDir,
       signal,
     });
     if (!py.ok) {
-      logger.warn(tApp("analysis.dimension.abc-replay.56"), { title, error: py.error || py.stderr });
-      items.push({ title, status: "failed", error: py.error || py.stderr || tApp("analysis.dimension.abc-replay.33") });
+      logger.warn(tApp("analysis.dimension.abc-replay.56"), {
+        title,
+        error: py.error || py.stderr,
+      });
+      items.push({
+        title,
+        status: "failed",
+        error:
+          py.error || py.stderr || tApp("analysis.dimension.abc-replay.33"),
+      });
       continue;
     }
 
@@ -802,15 +936,27 @@ export async function executeAbcReplayPlan({
     // An after-calculation over a partial input is partial too, however few rows it outputs.
     const truncation = combineResultTruncation(
       [
-        ...afterCalculation.dependencySubQueryIndexes.map((index) => truncationByIndex.get(index)),
+        ...afterCalculation.dependencySubQueryIndexes.map((index) =>
+          truncationByIndex.get(index),
+        ),
         parsed.truncation,
-      ].filter((marker): marker is ResultTruncation => marker !== undefined)
+      ].filter((marker): marker is ResultTruncation => marker !== undefined),
     );
     if (parsed.error || (parsed.rows.length === 0 && !truncation)) {
-      items.push({ title, status: "failed", error: parsed.error || tApp("analysis.dimension.abc-replay.57") });
+      items.push({
+        title,
+        status: "failed",
+        error: parsed.error || tApp("analysis.dimension.abc-replay.57"),
+      });
       continue;
     }
-    items.push({ title, status: "completed", rows: parsed.rows, code: rewritten.code, truncation });
+    items.push({
+      title,
+      status: "completed",
+      rows: parsed.rows,
+      code: rewritten.code,
+      truncation,
+    });
   }
 
   return toResult(items, plan);

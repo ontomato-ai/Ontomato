@@ -85,43 +85,70 @@ router.get(
   }),
 );
 router.post(
-  "/:id/runtime/:tool",
+  "/skill-runs",
+  asyncHandler(async (req, res) => {
+    const { owner } = context(req as AuthenticatedRequest);
+    const { retrievalId, ...body } = req.body ?? {};
+    res
+      .status(201)
+      .json(
+        await retrievalService.begin(
+          uuid.parse(req.header("Idempotency-Key")),
+          owner,
+          retrievalInputSchema.parse(body),
+          retrievalId === undefined ? undefined : uuid.parse(retrievalId),
+        ),
+      );
+  }),
+);
+router.post(
+  "/:id/skill-runs/:runId/close",
+  asyncHandler(async (req, res) => {
+    await retrievalStore.close(
+      uuid.parse(req.params.id),
+      context(req as AuthenticatedRequest).owner,
+      uuid.parse(req.params.runId),
+    );
+    res.status(204).end();
+  }),
+);
+router.post(
+  "/:id/runs/:runId/outputs",
   asyncHandler(async (req, res) => {
     const { owner, credentials } = context(req as AuthenticatedRequest),
-      id = uuid.parse(req.params.id);
-    const identity = z
-      .object({
-        runId: uuid,
-        runtimeSessionId: uuid,
-        toolCallId: z.string().min(1),
-        invocationId: uuid,
-      })
-      .strict()
-      .parse(req.body.identity);
-    const record = await retrievalStore.get(id, owner);
-    if (record.snapshot.runtimeSessionId !== identity.runtimeSessionId)
-      throw new HttpError(409, "Wrong runtime session");
-    if (req.params.tool === "submit_dataset")
-      res.json(
-        await retrievalService.submit(
-          id,
+      runId = uuid.parse(req.params.runId);
+    if (req.header("X-Ontomato-Run-Id") !== runId)
+      throw new HttpError(400, "Run identity mismatch");
+    res
+      .status(202)
+      .json(
+        await retrievalService.prepareOutput(
+          uuid.parse(req.params.id),
           owner,
           credentials,
-          identity,
-          req.body.arguments,
-          req.body.source,
+          runId,
+          uuid.parse(req.header("Idempotency-Key")),
+          req.body,
         ),
       );
-    else if (req.params.tool === "finish_retrieval")
-      res.json(
-        await retrievalService.finish(
-          id,
-          owner,
-          identity.runId,
-          req.body.arguments,
-        ),
-      );
-    else throw new HttpError(404, "Retrieval tool not found");
+  }),
+);
+router.get(
+  "/:id/runs/:runId/outputs/:outputId",
+  asyncHandler(async (req, res) => {
+    const { owner, credentials } = context(req as AuthenticatedRequest),
+      runId = uuid.parse(req.params.runId);
+    if (req.header("X-Ontomato-Run-Id") !== runId)
+      throw new HttpError(400, "Run identity mismatch");
+    res.json(
+      await retrievalService.output(
+        uuid.parse(req.params.id),
+        owner,
+        credentials,
+        runId,
+        uuid.parse(req.params.outputId),
+      ),
+    );
   }),
 );
 export default router;

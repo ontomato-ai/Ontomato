@@ -73,33 +73,16 @@ public class PythonExecuteServiceImpl implements PythonExecuteService {
         throw new IllegalArgumentException("Input shadows an execution-owned file");
       files.add(Map.of("path", file.getKey(), "content", file.getValue()));
     }
-    JSONObject binding = new JSONObject();
-    binding.put("targetUrl", token == null ? null : runtime.ontologyUrl());
-    binding.put(
-        "credential",
-        token == null ? Map.of("kind", "none") : Map.of("kind", "bearer", "value", token));
-    binding.put(
-        "context",
-        authority.parentGrant() == null
-            ? Map.of()
-            : Map.of("credentialRunId", authority.parentGrant().runId()));
-    binding.put(
+    Map<String, String> values = new java.util.HashMap<>();
+    values.put("ONTOMATO_ONTOLOGY_URL", runtime.ontologyUrl());
+    if (authority.parentGrant() != null)
+      values.put("ONTOMATO_QUERY_RUN_ID", authority.parentGrant().runId());
+    Map<String, Object> request = Map.of(
+        "language", "python", "locale", lang == null ? "en" : lang, "files", files, "entry", "program.py", "arguments", List.of(),
+        "outputPaths", token == null ? List.of() : List.of("query-status.json"),
+        "environment", Map.of("values", values, "secrets", token == null ? Map.of() : Map.of("ONTOMATO_QUERY_TK", token)),
+        "libraries", List.of(Map.of("skill", RuntimeCodeClient.SKILL, "path", "python")),
         "limits", Map.of("wallTimeMs", timeout, "cpuSeconds", Math.max(1, timeoutMinutes) * 60));
-    binding.put("libraries", List.of(Map.of("skill", RuntimeCodeClient.SKILL, "path", "python")));
-    Map<String, Object> request =
-        Map.of(
-            "language",
-            "python",
-            "files",
-            files,
-            "entry",
-            "program.py",
-            "arguments",
-            List.of(),
-            "outputPaths",
-            token == null ? List.of() : List.of("query-status.json"),
-            "binding",
-            binding);
     boolean settled = false;
     try {
       if (Thread.currentThread().isInterrupted() || BackendSessionEntrance.isCancelled(sessionId))
@@ -124,16 +107,17 @@ public class PythonExecuteServiceImpl implements PythonExecuteService {
         Thread.sleep(100);
       }
       PythonExecuteResult result = new PythonExecuteResult();
-      List<String> outputs = snapshot.getList("outputs", String.class);
+      List<String> outputs = snapshot.getJSONArray("outputs").stream()
+          .map(item -> ((JSONObject) item).getString("name")).toList();
       result.setResult(
           outputs.contains("stdout") ? runtime.output(authority.domainId(), id, "stdout") : null);
       result.setError(
           outputs.contains("stderr") ? runtime.output(authority.domainId(), id, "stderr") : null);
-      if (!"completed".equals(snapshot.getString("status"))) {
-        JSONObject error = snapshot.getJSONObject("error");
-        result.setError(
-            error == null ? "Python execution did not complete" : error.getString("message"));
-      }
+      if (!"stopped".equals(snapshot.getString("status"))
+          || !Integer.valueOf(0).equals(snapshot.getInteger("exitCode"))
+          || snapshot.getString("errorMessage") != null)
+        result.setError(snapshot.getString("errorMessage") == null
+            ? "Python execution did not complete" : snapshot.getString("errorMessage"));
       if (outputs.contains("query-status.json")) {
         JSONObject marker =
             JSON.parseObject(runtime.output(authority.domainId(), id, "query-status.json"));

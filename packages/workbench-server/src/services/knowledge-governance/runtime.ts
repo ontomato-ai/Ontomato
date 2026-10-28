@@ -1,3 +1,6 @@
+import { ARTIFACT_MARKDOWN_PROMPT } from "@ontomato/contracts/agent-artifact-markdown";
+import { codeLimitsSchema } from "@ontomato/contracts/agent-runtime-code";
+import { getQueryTimeoutMs } from "../data-query/data-query-policy";
 import { callbackCredential } from "../agent-runtime/callback-credential";
 import { randomUUID } from "node:crypto";
 import type { Response } from "express";
@@ -6,15 +9,9 @@ import {
   type GovernanceSession,
   type GovernanceStreamEvent,
 } from "@ontomato/contracts/knowledge-governance";
-import type {
-  RuntimeRunSnapshot,
-  RuntimeSessionStatus,
-} from "@ontomato/contracts/agent-runtime";
-import { RUNTIME_MODEL_NOT_CONFIGURED } from "@ontomato/contracts/agent-runtime-values";
+import type { RuntimeRunSnapshot } from "@ontomato/contracts/agent-runtime";
 import { renderPrompt } from "../../core/prompts/loader";
-import { getRoleNotConfiguredMessage } from "../../config/model-resolver";
 import { environment } from "../../config/environment";
-import { config } from "../../config/application";
 import { HttpError } from "../../utils/errors";
 import { initializeSse } from "../../utils/sse";
 import { RuntimeClient } from "../agent-runtime/client";
@@ -23,22 +20,26 @@ import type { GovernanceCredentials } from "./materials";
 import { governanceSkillRef } from "./skill";
 import { governanceChatMessages, governanceLiveSnapshot } from "./chat-view";
 
-const failureMessage = (
-  run: Pick<NonNullable<RuntimeSessionStatus["latestRun"]>, "error">,
-) =>
-  run.error?.code === RUNTIME_MODEL_NOT_CONFIGURED
-    ? getRoleNotConfiguredMessage("knowledgeGovernance")
-    : "The governance response could not finish. Saved work is retained; please retry.";
+const failureMessage = (run: { errorMessage?: string | null }) =>
+  run.errorMessage ||
+  "The governance response could not finish. Saved work is retained; please retry.";
 const governanceStatus = (
-  status: RuntimeRunSnapshot["run"]["status"] | undefined,
-) =>
-  status === "running"
-    ? "running"
-    : status === "failed"
-      ? "failed"
-      : status === "cancelled" || status === "interrupted"
-        ? "stopped"
-        : "idle";
+  run: Pick<RuntimeRunSnapshot["run"], "status" | "stopReason"> | null | undefined,
+): GovernanceSession["status"] => {
+  if (!run) return "idle";
+  if (run.status === "running") return "running";
+  switch (run.stopReason) {
+    case "stop":
+    case "length":
+      return "idle";
+    case "aborted":
+      return "stopped";
+    case "error":
+      return "failed";
+    default:
+      return "stopped";
+  }
+};
 
 export class GovernanceRuntime {
   async start(
@@ -57,24 +58,44 @@ export class GovernanceRuntime {
     locale: string,
     message: string,
   ) {
-    const record = await governanceStore.get(id, owner),
-      client = new RuntimeClient(owner.domainId),
+    const record = await governanceStore.get(id, owner);
+    if (!record.runtimeSessionId)
+      throw new HttpError(
+        409,
+        "External work record has no runtime conversation",
+      );
+    if (!record.runtimeSessionId) return { success: true };
+    const client = new RuntimeClient(owner.domainId),
       snapshot = await client.session(record.runtimeSessionId);
     if (snapshot.session.activeRunId)
       throw new HttpError(409, "Governance session is already running");
     if (record.writeRunId)
       await governanceStore.closeRun(id, owner, record.writeRunId);
     const runId = randomUUID();
-    await governanceStore.openRun(id, owner, runId);
+    if (!record.runtimeSessionId)
+      throw new HttpError(
+        409,
+        "External work record has no runtime conversation",
+      );
+    const expiresAt = new Date(Date.now() + getQueryTimeoutMs());
+    await governanceStore.openRun(id, owner, runId, expiresAt, { message });
     try {
       await client.start(record.runtimeSessionId, runId, {
         language: locale,
         definition: {
-          systemPrompt: "",
+          systemPrompt:
+            renderPrompt("knowledge-governance.main.system", {}, locale) +
+            "\n\n" +
+            ARTIFACT_MARKDOWN_PROMPT,
           modelRole: "knowledgeGovernance",
           skills: [governanceSkillRef],
-          contextSkill: governanceSkillRef,
-          builtinTools: { workspaceFiles: false, python: false },
+          sandbox: {
+            limits: codeLimitsSchema.parse({
+              memoryBytes: 16 * 1024 ** 3,
+              wallTimeMs: getQueryTimeoutMs(),
+              cpuSeconds: Math.ceil(getQueryTimeoutMs() / 1000),
+            }),
+          },
           externalMcp: [],
           compaction: {
             systemPrompt: renderPrompt(
@@ -95,26 +116,27 @@ export class GovernanceRuntime {
           },
         },
         input: { role: "user", content: message, timestamp: Date.now() },
-        privateContext: {
-          modelCredential: credentials.apiKey
-            ? { kind: "api_key", value: credentials.apiKey }
-            : credentials.token
-              ? { kind: "token", value: credentials.token }
-              : { kind: "none" },
-          skillBindings: [
-            {
-              skill: governanceSkillRef,
-              credential: callbackCredential({
-                pathPrefix: `/api/knowledge-governance/${id}/runtime/`,
-                runId,
-                expiresAt: Date.now() + 60 * 60 * 1000,
-                token: credentials.token ?? "",
-                apiKey: credentials.apiKey ?? "",
-              }),
-              targetUrl: `${environment.agentRuntime().callbackUrl.replace(/\/$/, "")}${config.apiBase}/knowledge-governance`,
-              context: { governanceSessionId: id },
-            },
-          ],
+        modelCredential: credentials.apiKey
+          ? { kind: "api_key", value: credentials.apiKey }
+          : credentials.token
+            ? { kind: "token", value: credentials.token }
+            : { kind: "none" },
+        environment: {
+          values: {
+            ONTOMATO_WORKBENCH_URL: environment
+              .agentRuntime()
+              .callbackUrl.replace(/\/$/, ""),
+            ONTOMATO_GOVERNANCE_ID: id,
+          },
+          secrets: {
+            ONTOMATO_TK: callbackCredential({
+              pathPrefix: `/api/knowledge-governance/${id}/runs/${runId}/`,
+              runId,
+              expiresAt: expiresAt.getTime(),
+              token: credentials.token ?? "",
+              apiKey: credentials.apiKey ?? "",
+            }).value,
+          },
         },
       });
     } catch (error) {
@@ -133,30 +155,38 @@ export class GovernanceRuntime {
     if (record.writeRunId)
       await governanceStore.closeRun(id, owner, record.writeRunId);
     const client = new RuntimeClient(owner.domainId),
-      snapshot = await client.session(record.runtimeSessionId);
+      snapshot = await client.session(record.runtimeSessionId!);
     if (snapshot.session.activeRunId)
       await client.cancel(snapshot.session.activeRunId);
     return { success: true };
   }
   async get(id: string, owner: GovernanceOwner): Promise<GovernanceSession> {
     let record = await governanceStore.get(id, owner);
+    if (!record.runtimeSessionId)
+      return governanceSessionSchema.parse({
+        ...record,
+        status: "stopped",
+        activeTurnId: null,
+        messages: [],
+        error: null,
+      });
     const snapshot = await new RuntimeClient(owner.domainId).session(
       record.runtimeSessionId,
     );
     const latest = snapshot.latestRun;
-    if (latest && latest.run.status !== "running") {
+    const status = governanceStatus(latest?.run);
+    if (latest && status !== "running") {
       await governanceStore.closeRun(
         id,
         owner,
         latest.run.id,
-        latest.run.status === "failed" ? failureMessage(latest.run) : undefined,
+        status === "failed" ? failureMessage(latest.run) : undefined,
       );
       record = await governanceStore.get(id, owner);
     }
-    const status = latest?.run.status;
     return governanceSessionSchema.parse({
       ...record,
-      status: governanceStatus(status),
+      status,
       activeTurnId: snapshot.session.activeRunId,
       messages: governanceChatMessages(
         snapshot.messages
@@ -164,11 +194,14 @@ export class GovernanceRuntime {
           .map((m) => m.message),
         latest?.run.status !== "running" ? latest?.toolExecutions : [],
       ),
-      error: status === "failed" ? record.error : null,
+      error: status === "failed" ? failureMessage(latest!.run) : null,
     });
   }
   async list(owner: GovernanceOwner) {
-    const records = await governanceStore.list(owner);
+    const records = (await governanceStore.list(owner)).filter(
+      (r): r is typeof r & { runtimeSessionId: string } =>
+        r.runtimeSessionId !== null,
+    );
     if (!records.length) return [];
     const statuses = await new RuntimeClient(owner.domainId).sessionStatuses(
       records.map((record) => record.runtimeSessionId),
@@ -187,15 +220,15 @@ export class GovernanceRuntime {
             record.id,
             owner,
             latest.id,
-            latest.status === "failed" ? failureMessage(latest) : undefined,
           );
-          record = await governanceStore.get(record.id, owner);
+          const current = await governanceStore.get(record.id, owner);
+          record = { ...current, runtimeSessionId: record.runtimeSessionId };
         }
         return {
           id: record.id,
           createdAt: record.createdAt,
           updatedAt: record.updatedAt,
-          status: governanceStatus(latest?.status),
+          status: governanceStatus(latest),
         };
       }),
     );
@@ -211,7 +244,7 @@ export class GovernanceRuntime {
       client = new RuntimeClient(owner.domainId);
     const runIdentity = {
       governanceSessionId: id,
-      runtimeSessionId: record.runtimeSessionId,
+      sessionId: record.id,
       runId,
     };
     let snapshot = await client.run(runId);
@@ -227,14 +260,15 @@ export class GovernanceRuntime {
         );
     };
     const terminal = async (s: RuntimeRunSnapshot) => {
+      const status = governanceStatus(s.run);
       await governanceStore.closeRun(
         id,
         owner,
         runId,
-        s.run.status === "failed" ? failureMessage(s.run) : undefined,
+        status === "failed" ? failureMessage(s.run) : undefined,
       );
       write(
-        s.run.status === "failed"
+        status === "failed"
           ? {
               type: "error",
               error: failureMessage(s.run),
@@ -242,7 +276,7 @@ export class GovernanceRuntime {
             }
           : {
               type: "response_end",
-              status: s.run.status === "completed" ? "completed" : "cancelled",
+              status: status === "idle" ? "completed" : "cancelled",
             },
         s.cursor.seq,
       );

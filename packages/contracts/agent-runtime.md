@@ -1,86 +1,262 @@
-# Agent runtime wire contract
+# Standard agent runtime wire contract
 
-Batch 0 schema semantics, paired with `src/agent-runtime*.ts` and `src/knowledge-governance.ts`. These are contracts for the planned service, not claims of an implemented endpoint. Package placement and migration scope are in [the design](../../docs/agent-runtime-design.md).
+Implemented contract, 2026-10-28. This replaces the batch 1 private skill,
+artifact and run-state contract. Executable schemas live in src/agent-runtime*.ts.
+[Implementation design](../../docs/agent-runtime-design.md) owns placement and
+migration scope; [code execution](agent-runtime-code.md) and
+[retrieval](data-retrieval.md) own their respective boundaries. Main-checkout
+image/stack and external Claude Code acceptance remain controller-owned.
 
-## HTTP surface and admission
+## HTTP and admission
 
-Every request carries `Authorization: Bearer <host service credential>` and `X-Correlation-Id` (`runtimeServiceHeadersSchema`). Session/run/artifact operations and domain-skill registration additionally require `X-Domain-Id` (`runtimeRequestHeadersSchema`). Provider-skill publication is service-wide and needs no fabricated domain at startup. Runtime configuration maps the service credential to one host and its permitted publishing/consumption namespaces. The runtime treats domain as an opaque host assertion; every session/run/artifact lookup and foreign key is scoped by authenticated host plus domain. A mismatch returns 404, including streams. Invalid service credentials return 401. The host verifies end-user/domain/permission facts before forwarding; the runtime does not re-authenticate end users.
+Requests carry `Authorization: Bearer <host service credential>` and
+`X-Correlation-Id`. Session, run, artifact and domain-skill requests also carry
+`X-Domain-Id`. Credentials resolve a configured host; the host verifies the user
+and domain first. Every lookup uses host + domain, including streams and file
+reads. Foreign resources return 404, invalid service credentials 401. Provider
+publication needs publisher authority but no invented startup domain. Success is
+plain JSON; HTTP failures retain `{error:{code,message},correlationId}`.
 
-Success bodies are plain JSON; errors use `runtimeErrorResponseSchema`. Validation also checks referential conditions that a single JSON schema cannot establish: all data references belong to the scope, skill/MCP references are authorized for that host/domain, skill bindings are complete, tool names are unique, and snapshots are internally consistent.
+| Method and path | Request / response |
+| --- | --- |
+| POST /v1/sessions | `{}`; 201 `{session,replayed}` |
+| GET /v1/sessions/:id | `{session,messages,latestRun}` snapshot |
+| POST /v1/sessions/status | `{sessionIds}`; ordered `{sessions:[{session,latestRun}]}` |
+| POST /v1/sessions/:id/runs | StartRun below; 202 `{run,replayed}` |
+| GET /v1/runs/:id | `{run,messages,pendingMessages,toolExecutions,artifacts,cursor}` |
+| GET /v1/runs/:id/events | SSE, query `afterSeq` + `streamId` |
+| POST /v1/runs/:id/cancel | `{}`; 200 `{run}` after stopping |
+| POST /v1/sessions/:id/run-intents/:runId/cancel | 204, including unadmitted intents |
+| DELETE /v1/sessions/:id | 204; active session 409 |
+| POST /v1/skills | Package publication below; 201 resolved package metadata |
+| GET /v1/artifacts/:id | Immutable file metadata |
+| GET /v1/artifacts/:id/content | Raw bytes, Content-Type, Content-Length, ETag=hash |
+| GET /v1/runs/:id/artifacts | `{artifacts}`; optional `path` and `atSeq` resolve a path at an event boundary |
 
-| Method and path | Request | Success body |
-| --- | --- | --- |
-| `POST /v1/sessions` | `runtimeCreateSessionRequestSchema`, admission headers | 201 `runtimeCreateSessionResponseSchema` |
-| `GET /v1/sessions/:sessionId` | scoped headers | 200 `runtimeSessionSnapshotSchema` |
-| `POST /v1/sessions/status` | `runtimeSessionStatusesRequestSchema`, scoped headers | 200 `runtimeSessionStatusesResponseSchema` |
-| `POST /v1/sessions/:sessionId/runs` | `runtimeStartRunRequestSchema`, admission headers | 202 `runtimeAdmissionResponseSchema` |
-| `GET /v1/runs/:runId` | scoped headers | 200 `runtimeRunSnapshotSchema` |
-| `GET /v1/runs/:runId/events` | `runtimeEventSubscriptionSchema` query | 200 SSE `runtimeStreamFrameSchema` |
-| `POST /v1/runs/:runId/cancel` | `runtimeCancelRequestSchema` | 200 `runtimeCancelResponseSchema` |
-| `GET /v1/artifacts/:artifactId` | scoped headers | 200 `runtimeArtifactSchema` |
-| `POST /v1/skills` | `runtimeRegisterSkillRequestSchema` | 201 `runtimeRegisteredSkillSchema` |
-| `DELETE /v1/sessions/:sessionId` | scoped headers | 204, no body; active session returns 409 |
+Session/run creation uses a UUID `Idempotency-Key`, also the resource ID. The
+host can persist its business gate before sending admission. The shared admission
+ledger retains operation, target and canonical semantic fingerprint per scope.
+Same key + same request replays the original resource, even when stopped; changed
+input/definition/target returns 409. Resolve a matching prior admission before
+checking busy state or current skill publication. Secret values and correlation
+IDs do not participate in fingerprints; public environment values, secret names,
+language, input and definition do. Retrying does not rotate an admitted run's
+credentials or re-resolve its skills. One session has one active run under a row
+lock. Persist admission, resolved definition, input and initial events before
+responding or executing. Do not append input twice.
 
-Creation uses a UUID `Idempotency-Key`. It is also the new session ID or run ID, so a host can persist the run reference and business write gate before sending a run request. The admission key is unique across creation operations within `(host, domain)`; reusing it for another operation/session/input/definition returns 409. Matching retries return the same resource with `replayed: true` and the original success status, even after termination. They never start a second execution. Check a matching prior admission before testing session busy state.
+Intent cancellation prevents a late admission (410) after an uncertain response.
+Deletion retains admission tombstones; old creation retries return 410. A reader
+closing its connection never cancels execution. Status-list reads use one PG
+statement snapshot, preserve request order/duplicates, and reject the whole list
+if any ID is missing. They exclude messages, definitions, artifacts and error
+text; latestRun includes only id, status and stopReason.
 
-Admission atomically saves the key, fingerprint, complete non-secret definition, initial messages and their lifecycle events, running row and session ownership before responding or executing. The fork does not append admitted inputs again. Fingerprints use canonical JSON of the semantic request and target path, excluding credentials and correlation ID; non-secret binding URLs/context remain part of the fingerprint. Credential rotation does not create a second run or replace the credential of an already admitted run. Do not persist the secret request body. Failure before commit has not admitted a run; a lost response after commit is resolved by retry. One session has one active run, protected by its row lock. Keys are retained for the resource lifetime; explicit deletion retains a minimal admission tombstone and old admission retries return 410 instead of replaying actions. The DELETE endpoint preserves the existing governance `deleteByUser` lifecycle: close the business gate, cancel, then delete owned runtime history.
+## Run definition, environment and sandbox
 
-`POST /v1/sessions/status` is an authenticated, domain-scoped read with `{sessionIds: UUID[]}`. Its response is `{sessions: [{session, latestRun}]}` in request order (including repeated IDs). `latestRun` is null or `{id, status, error: null | {code}}`; it excludes definitions, error text, messages, partials, tool executions and artifacts. An empty list returns an empty list. If any ID is missing or inaccessible, reject the entire request with 404 and no partial result. Session pointers and latest run states come from one PostgreSQL statement snapshot. This lightweight read has no execution/admission side effects; callers that need messages still use the unchanged session snapshot endpoint.
+Wire shape (all IDs are UUIDs; paths are portable relative paths):
 
-`running` transitions once to `completed`, `failed`, `cancelled` or `interrupted`. Runtime completion means execution ended, not that a business objective was met. Cancellation stops new work, terminates the owned skill process trees, persists the terminal state, then replies; repeated cancellation returns the existing terminal result. Disconnecting a reader does not cancel. Restart marks unfinished runs interrupted before accepting new runs; it does not resume them. Missing tool results become **unknown outcome** in the next model context, without rewriting history or re-executing the call. No child-run concept or host settlement acknowledgement protocol is added. After committing a failed or interrupted terminal state, the service writes one structured diagnostic line containing timestamp, runId, correlationId, status and error code; never provider error text, request bodies, private bindings or credentials.
+```ts
+type SkillRef = { namespace: {kind:"provider"; provider:string}
+                            | {kind:"domain"; domainId:string}; name:string };
+type StartRun = {
+  language: string;
+  input: RuntimeUserMessage;
+  definition: {
+    systemPrompt: string;
+    modelRole: string;
+    skills: SkillRef[];
+    externalMcp: {serverId:string}[];
+    compaction: {systemPrompt:string; summarizePrompt:string; updatePrompt:string};
+    sandbox: {limits: CodeLimits};
+  };
+  environment: {
+    values: Record<string,string>;
+    secrets: Record<string,string>;
+  };
+  modelCredential: RuntimeEndUserCredential;
+};
+```
 
+The runtime always exposes PI `read`, `write`, `edit`, `bash`. There is no Python
+switch, context entry or business tool registration. Python runs through bash.
+The service owns physical paths, UID allocation, output directory (`outputs/`)
+and sandbox mode; callers cannot choose a host path or UID. Limits reuse the
+existing worker policy. Model credentials remain supervisor-only for the
+existing temporary Java model-configuration adapter.
 
-## PI conversation wire profile
+The run environment is a single map formed from explicit values + secrets plus
+runtime identity. Duplicate names, NUL, invalid environment names and attempts
+to replace runtime identity are admission errors. The server constructs a small
+OS environment (PATH, HOME, TMPDIR, locale and Python library path); it does not
+inherit service/model credentials. Public values and secret *names* are stored;
+secret values live only for the admitted run. Persist no raw request body.
+Continuation must supply fresh values. Unknown environment variables are allowed
+for third-party standard skills; there is no runtime business-variable registry.
 
-`agent-runtime-messages.ts` defines the PI 1.3 conversation wire profile: system/user/assistant/toolResult, provider identity, content block order, signatures, usage and stop reasons. PI milliseconds remain numeric; service timestamps use ISO strings. The adapter explicitly projects to this profile; provider diagnostics, nested coding-agent calls, deferred/batch model results and constrained-sampling extensions are outside this batch. Unsupported provider outcomes must fail explicitly, not be treated as successful empty answers. Existing `agent-messages.ts` is an older, different contract and remains only for unmigrated consumers.
+Runtime-owned variables: `ONTOMATO_SESSION_ID`, `ONTOMATO_RUN_ID`,
+`ONTOMATO_CORRELATION_ID`, `ONTOMATO_LANGUAGE`, `ONTOMATO_WORKSPACE`,
+`ONTOMATO_OUTPUT_DIR`. The first two refer to this session and run, never a model
+argument. Tool-call identity belongs to event metadata; scripts do not need an
+invocation/tool-call envelope. Host skill variables and their exact meaning are
+specified in the retrieval contract and governance design, and repeated in each
+skill's user documentation. File references are relative to the workspace.
 
-Persist settled messages once as `{id, runId, messageSeq, message}`. Keep system context changes and provider signatures needed for continuity. A PI `pending` assistant is only an in-memory partial. Compression saves summary plus covered-through **message sequence**; raw messages stay intact. Context reconstruction uses the latest summary and uncovered raw messages, preserving tool-call/result pairing. A failed or empty summary leaves the raw context intact and creates no compaction record; cancellation still propagates to the run. The same runtime message facts drive live and historical workbench projection; the workbench removes thinking from governance display in both paths.
+A session receives its workspace and UID on first run and reuses both across
+rounds and service restarts. Workspace contents persist; environment and worker
+processes do not persist between runs. Only enabled skill packages appear under
+`skills/<name>/`; a duplicate display name across namespaces rejects admission.
+At a new run boundary the runtime replaces that read-only tree using the newly
+resolved package digests, never while a tool is executing. Previous definition
+snapshots still identify the historical bytes. Session deletion kills any owned
+processes before removing the workspace; published artifacts have their own
+immutable storage. See design for ownership, crash recovery and deletion order.
 
-## Events, snapshots and immutable artifacts
+## Standard skill publication and discovery
 
-Keep PI `agent_start`, `turn_start/end`, `message_start/update/end`, `tool_execution_start/update/end`, `agent_end`. The wire envelope adds session ID, timestamp and `{runId, seq, streamId}` cursor. Message events carry a stable message ID; `message_end` also carries its session message sequence. `agent_end` includes the stored terminal status. Its `messages` are this run's messages, not a replacement session history. This extension is declared in contracts rather than hidden in a consumer.
+```ts
+type PublishSkill = {
+  skill: SkillRef;
+  files: {path:string; content:string}[]; // UTF-8 source files in this batch
+};
+type PublishedSkill = {
+  skill: SkillRef; digest:string; description:string;
+};
+```
 
-Event `seq` is strictly increasing within a run, may have gaps, and is never reused across restart. Reserve sequence values durably before visibility; the content of `message_update` and `tool_execution_update` stays in memory. All other lifecycle events, settled messages, tool execution facts and artifact references are committed before publication. A terminal transaction releases session ownership and persists `agent_end` together. Persistence failure is not swallowed by an event listener. PI partials are mutable; copy the current partial into the snapshot projection. Wire `message_update` carries only the event discriminator, content index and delta; neither a full message nor cumulative partial is sent per token.
+A package is a directory with standard `SKILL.md`, scripts and references.
+Frontmatter uses only [Agent Skills specification](https://agentskills.io/specification)
+fields; no runtime manifest metadata is required. Name must match the directory,
+be unique in the selected run, and description must be nonempty. The runtime
+validates portable paths, duplicate files and package bounds; no absolute paths,
+traversal, links, remote fetching or host-directory imports. UTF-8 is sufficient
+for the three source packages in scope; binary package transport is deferred.
 
-Read the authoritative session or run snapshot first. It includes settled messages, complete live partials when available, tool states, artifacts and one cursor from the same projection boundary. The cursor covers exactly the facts included, not merely a reserved sequence high-water mark. The run snapshot contains that run's settled messages; the session snapshot contains all session messages and its latest run. Merge by message ID and replace partials with settled messages. Never append the overlapping arrays twice.
+Compute SHA-256 from the UTF-8 canonical JSON array of `[path,content]` pairs,
+sorted by path without Unicode/newline rewriting. Store immutable files by
+namespace/name/digest on the runtime volume. PG stores package metadata and the
+current published digest for each authorized name. Identical bytes are
+idempotent. New bytes create a new digest and atomically advance that name; old
+bytes remain addressable by admitted runs. Definition input references names;
+admission stores their resolved digests. There is no mutable package content or
+semantic-version manifest. A missing/unauthorized reference fails admission.
 
-Subscribe using numeric `afterSeq` and `streamId` from that snapshot, scoped to the path's run ID. Query fields are the explicit resume inputs; clients update them from the received cursor, not from a different run's browser state. SSE uses `event: runtime`, JSON `data` containing a stream frame, and the event sequence as `id`; heartbeats are comments. Register the subscriber and capture replay under one boundary, then emit events strictly after the cursor without a replay-to-live gap. A terminal snapshot already contains the final state; subscribing at its final cursor closes immediately.
+Use PI's skill loader against only the installed selected directories, with
+default/global discovery disabled. Use its catalog formatter for name,
+description and SKILL.md location in the system prompt. Do not eagerly append
+bodies or execute scripts to construct context. The model reads SKILL.md and
+references using read, then runs the documented commands using bash. This is the
+same [progressive disclosure](https://agentskills.io/client-implementation/adding-skills-support)
+flow used outside the product. Prompt compaction counts the catalog and four
+tool definitions; raw loaded messages remain in history.
 
-If any necessary volatile tail is missing, send `snapshot_required` and close. The client replaces its snapshot and reconnects; it must not infer that missing sequence numbers are lost text, since gaps are legal. A new `streamId` after restart/in-memory replay loss prevents accepting an old cursor. Future/invalid cursors are 400. Live deltas are best-effort display; a fresh snapshot supplies completed facts and any currently available full partial. Never claim replay of lost partial text.
+## PI state and history
 
-Artifact content is `{ type: string, payload: JSON }` and remains opaque to the runtime. The tool output envelope adds a `references` list outside that content; the runtime validates only already-committed same-scope references, byte size and immutable identity. Concrete payload schemas belong to the producing host and its consumer batch. A successful skill result carries output envelopes; the runtime assigns IDs at `(runId, toolCallId, outputIndex)` and atomically stores them with the completed result. Live `tool_execution_end.result.details.artifactIds`, persisted toolResult details and snapshots reference those same IDs. Progress cannot publish artifacts. No runtime branch on dataset, chart, report, file or quality-check types is allowed.
+```ts
+type RunState = {
+  status: "running" | "stopped";
+  stopReason: "stop" | "length" | "toolUse" | "error" | "aborted" | null;
+  errorMessage: string | null;
+};
+```
 
-## Skills and private execution context
+stopReason/errorMessage project the latest settled PI assistant message, not an
+independent business result. Before any assistant message they are null. A run
+may still be running after an assistant toolUse message. At stopped, a final
+assistant fact is present: natural stop/length/error uses PI's values; cancel,
+shutdown or recovered unfinished work uses aborted with an explanatory
+errorMessage. Preparation/worker/storage errors use error. Runtime-originated
+termination uses an assistant error/abort message with empty content, timestamp
+and explicit origin: runtime; it must not invent a model response or mutate a previous settled message.
+Use resolved model metadata when available; before model resolution use the
+requested role from the stored run definition, not a fictional provider.
+The pre-model case is a declared wire variant: the message has
+origin: "runtime", role: "assistant", content: [], stopReason
+error or aborted, nonempty errorMessage and numeric timestamp; model/api/provider
+and usage are null because no provider call happened. Model-origin messages keep
+the existing required PI metadata/usage. The adapter materializes this service
+notice as context text for subsequent PI input rather than passing an incomplete
+provider message to pi-ai. This is one explicit boundary case, not another run
+status or a claim that a model emitted the notice.
 
-Products push Agent Skills packages at startup. `SKILL.md` owns name/description/instructions; its metadata entry `ontomato-runtime-manifest: runtime.json` points to the sole typed-tool manifest. `runtime.json` owns version, tool declarations and optional context entry. Registration contains UTF-8 files, including scripts and references, rather than remote URLs or local paths. Validate SKILL.md name, runtime.json version, declaration schemas, entries and package paths against the registered identity. Input/output schemas are local JSON Schema; no remote schema fetching. Resolve paths inside the installed immutable package.
+Only status answers whether execution is still active. length is not silently
+converted to error or complete success. toolUse is preserved if that is the last
+PI fact; consumers do not equate it with success. An aborted run retains prior
+messages and artifacts. Restart closes unfinished work as stopped/aborted before
+new admission and never replays a possibly executed tool. Reconstructed model
+context marks a missing tool result as unknown outcome without altering history.
+HTTP/SSE transport failure does not change run state. Hosts retry reads and use
+the authoritative snapshot after reconnection.
 
-Identity is namespace + name + exact version. Provider namespaces (for example `workbench` and `ontology`) are publisher-authorized; a domain namespace must match the authenticated request's domain and configured publisher authority. Definition references resolve only to authorized provider packages or that domain's packages. The server computes SHA-256 over sorted path/content pairs. Same identity and same bytes are idempotent; changed bytes return 409, never overwrite. Runs pin the version and digest at admission; later product startup cannot change their tools. The selected packages' instructions and typed tool declarations join the model context and compaction budget. Duplicate exposed tool names or missing references/bindings reject admission. No `latest` resolution occurs during a run.
+Existing ordered PI lifecycle events remain. agent_end contains the same
+RunState as the committed run. Tool errors remain PI tool-result errors and may
+be corrected by the model. Do not introduce a second completed/failed/cancelled/
+interrupted enum for agents. Hosts close their write gate on stopped regardless
+of stopReason; rendering and business consumers read the message and files.
 
-Each tool invocation runs one `node <entry.mjs>` process. Stdin is one `runtimeSkillInputSchema` JSON followed by EOF. Tool stdout is NDJSON validated with `runtimeToolSkillOutputSchema`: zero or more `progress` records, then exactly one `result` or `error`. A context invocation uses `runtimeContextSkillOutputSchema`: exactly one `context_result` or `error`, with no progress/tool events. `result`/`context_result` must exit 0; `error` must exit nonzero. No extra output after a terminal record. Validate structured result data against the manifest output schema when declared; wait for process exit before accepting the result and artifacts. Invalid output, EOF without a terminal record, or a conflicting exit is a failed call with potentially unknown external effects, never an automatic retry. Safe stderr diagnostics are separate from stdout and do not become model content or ordinary full-result logs.
+Messages retain stable IDs, session message sequence, provider signatures and
+usage. Service timestamps are ISO, PI timestamps milliseconds. Compression
+stores summary + covered-through message sequence without rewriting raw history,
+keeps tool-call/result pairs and retains raw context when summarization fails.
+Model role selection and null-tolerant Java model settings remain unchanged.
 
-Progress maps to `tool_execution_update`, results to `tool_execution_end` plus a PI toolResult. Tool errors return a safe error result to the model; they need not fail the whole run. Each model tool call keeps its toolCallId; each process gets a fresh invocation UUID. Context processes have no model toolCallId and do not fabricate an unmatched tool message. Their failures fail preparation of the run instead of proceeding with old context.
+## Events and file artifacts
 
-Only the `RUNTIME_SKILL_ENV` fields and a minimal OS environment are passed to children: scope and invocation identity, correlation ID, language, workspace, target URL, opaque end-user credential JSON and host-supplied context JSON. Neither model arguments nor a skill result can override them. Never inherit runtime service credentials or model keys. Context binding values such as governance session identity come from the host, outside model arguments. Private credentials stay in process memory only for the run; do not persist request bodies or echo them in messages/events/logs. Callback services validate the end-user credential and resource binding themselves. Correlation ID propagates in downstream request headers. Cancel terminates the whole owned process tree, not just the direct child; already accepted external actions cannot be undone.
+Snapshots contain one consistent projection boundary and cursor
+`{runId,seq,streamId}`. Persist lifecycle facts before publishing. message_update
+and tool_execution_update carry deltas only; full partials exist in snapshots.
+Sequence values are increasing, durable reservations may leave gaps, and values
+are never reused. Subscribe after the snapshot cursor, atomically bridging replay
+and live subscription. Missing volatile tails produce snapshot_required and
+close; clients replace the snapshot and reconnect. A stopped snapshot at the
+final cursor needs no further stream. No promise of lost-token replay is added.
 
-External MCP definitions contain references to runtime-configured servers, not credentials; the runtime owns the configured client connection. No new MCP server is introduced. Python execution and per-binding opaque credentials are defined in [agent-runtime-code.md](agent-runtime-code.md). The runtime never interprets grant purpose.
+```ts
+type Artifact = {
+  id: UUID; sessionId: UUID; runId: UUID; toolCallId: string | null;
+  path: string; // outputs/... relative to the workspace
+  sha256: string; size: number; mediaType: string;
+  createdAt: string; seq: number;
+};
+```
 
-## Workbench business write closure (accepted option A)
+After every tool finishes (also errors/cancellation), collect new or changed
+regular files under outputs. Read each source once into a task-owned temporary
+snapshot while computing SHA-256; the digest and size describe the copied bytes.
+Atomically place the blob at `artifacts/sha256/<prefix>/<hash>` before committing
+metadata and the corresponding tool end. Detect concurrent modification and
+retry collection or report an explicit storage error; never record a hash of
+different bytes. Scripts write temporary files outside outputs and rename final
+files into it. Arbitrary background writers have no transactional publication
+guarantee. Stop and reap the run's remaining processes, then collect a final
+boundary before agent_end. A collection failure cannot be reported as a clean
+stop. Previously committed snapshots remain readable.
 
-`governanceRunWorkSchema` is a per-run work record. The session stores a `writeRunId` pointer; each run has its own open/closed write state and revision. A new round atomically closes the previous gate, seeds a new record from its final saved work, and installs the new run ID. It does not reuse a mutable record that an old callback can overwrite. Repeating admission for the same run must not reseed or reopen it; an uncertain HTTP admission is reconciled with that same key before creating a new run.
+Use one internal ArtifactFiles interface for blob put/read/delete and authorized
+output scanning; route handlers and store code
+must not invent separate file backends. No file bytes or business JSON payloads
+in the artifact table. Repeated observation of unchanged bytes emits nothing;
+an A→B→A overwrite creates three metadata occurrences, with A's blob deduplicated.
+Deleted workspace files do not delete snapshots. New-round unchanged files keep
+their previous artifact IDs; prior outputs are not re-attributed to the new run.
 
-Every callback carries `governanceSkillCallIdentitySchema` from its private environment. The workbench verifies the user/domain/session binding, locks its session row, and checks both `writeRunId` and the run's open gate in the same transaction that applies the mutation. Wrong ownership returns the usual authorization response; a closed/old gate returns HTTP 409 `GOVERNANCE_RUN_CLOSED`. No success-shaped no-op. An HTTP runtime-status check is not a substitute for this transaction.
+artifact_registered events carry the same metadata returned by snapshots. Tool
+end and settled tool-result details carry the IDs registered at that boundary,
+not file content. Runtime never switches on a dataset/chart/report schema.
+GET content streams the immutable blob after scoped metadata lookup, never a
+client-supplied path or bare digest. Missing/corrupt blobs are explicit errors,
+not empty files. Blob paths remain private to the runtime.
 
-User cancellation closes the gate first and then requests runtime cancellation. Observing any runtime terminal state closes the gate before publishing a business terminal event to the page. After a workbench restart, recover the mapping and reconcile the runtime snapshot; an active runtime need not be restarted. Before admitting a different round, reconcile or cancel the preceding runtime run; runtime admission still rejects concurrent execution. Closing a gate and opening the next run serialize with writes, so an old run cannot contaminate the next record.
+Path resolution selects the last occurrence for that path through atSeq in the
+specified run (or its inherited session baseline); responses retain the owning
+run. Without atSeq it uses that run's current/final boundary. A historical message
+uses its own event boundary, never a later run's mutable workspace. If no artifact
+exists yet, render pending/unavailable rather than guess. Hashes may deduplicate
+bytes across scopes; every read still requires an authorized artifact ID.
 
-**The guarantee begins at workbench gate closure, not at the runtime's terminal timestamp.** Between runtime termination and host closure, an in-flight write can still commit to that run's own record. This accepted behavior has the same limitation as cancellation of an already accepted external action. There is no runtime-to-host settlement handshake, shared-table lock or assertion that all business commits precede runtime termination.
-
-
-## Additional execution admission closure
-
-`POST /v1/sessions/:sessionId/run-intents/:runId/cancel` returns 204 after closing
-an owned run creation intent and cancelling admitted work. The existing session
-must belong to the host/domain. If the run was not admitted, a tombstone prevents
-a late request from starting it (410). Conflicting operation/session keys return
-409. This closes the gap between a host's business cancellation gate and a lost
-runtime admission response. Ordinary run cancellation still returns 404 for a
-missing run. Code execution has the corresponding scoped intent operation.
+Markdown presentation is owned by [the shell contract](agent-artifact-markdown.md).
+Hosts reference its common prompt rule. Runtime only supplies path/ID/bytes and
+contains no renderer. Session deletion removes owned metadata/workspace and
+unreferenced blobs after committing the tombstone; a crash may leave unreachable
+blobs but must never delete a still-referenced one. Retention/compression policy
+and object storage are outside this batch.

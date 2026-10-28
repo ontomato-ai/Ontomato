@@ -94,17 +94,6 @@ export function createRuntimeHttp(runtime: AgentRuntime) {
     }),
   );
   app.get(
-    "/v1/runs/:id/code-executions",
-    route(async (req, res) => {
-      res.json({
-        executions: await runtime.code.listRun(
-          scope(req).scope,
-          runtimeIdSchema.parse(req.params.id),
-        ),
-      });
-    }),
-  );
-  app.get(
     "/v1/code-executions/:id/outputs/:name",
     route(async (req, res) => {
       res
@@ -198,7 +187,7 @@ export function createRuntimeHttp(runtime: AgentRuntime) {
   app.delete(
     "/v1/sessions/:sessionId",
     route(async (req, res) => {
-      await runtime.store.deleteSession(
+      await runtime.deleteSession(
         scope(req).scope,
         runtimeIdSchema.parse(req.params.sessionId),
       );
@@ -257,6 +246,43 @@ export function createRuntimeHttp(runtime: AgentRuntime) {
           runtimeIdSchema.parse(req.params.runId),
         ),
       );
+    }),
+  );
+  app.get(
+    "/v1/artifacts/:artifactId/content",
+    route(async (req, res) => {
+      const artifact = await runtime.store.artifact(
+        scope(req).scope,
+        runtimeIdSchema.parse(req.params.artifactId),
+      );
+      const bytes = await runtime.files.read(artifact);
+      res.setHeader("Content-Type", artifact.mediaType);
+      res.setHeader("ETag", `"${artifact.sha256}"`);
+      res.setHeader("Content-Length", artifact.size);
+      res.send(bytes);
+    }),
+  );
+  app.get(
+    "/v1/runs/:runId/artifacts",
+    route(async (req, res) => {
+      const ctx = scope(req),
+        id = runtimeIdSchema.parse(req.params.runId);
+      const atSeq =
+        req.query.atSeq === undefined
+          ? undefined
+          : z.coerce.number().int().nonnegative().parse(req.query.atSeq);
+      const target =
+        req.query.path === undefined
+          ? undefined
+          : z.string().parse(req.query.path);
+      res.json({
+        artifacts: await runtime.store.resolveArtifacts(
+          ctx.scope,
+          id,
+          target,
+          atSeq,
+        ),
+      });
     }),
   );
   app.get(

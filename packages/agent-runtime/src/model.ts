@@ -44,7 +44,7 @@ export async function resolveModel(options: {
   correlationId: string;
   signal: AbortSignal;
 }): Promise<ResolvedModel> {
-  const credential = options.request.privateContext.modelCredential;
+  const credential = options.request.modelCredential;
   const headers: Record<string, string> = {
     "X-Correlation-Id": options.correlationId,
   };
@@ -187,6 +187,17 @@ export function recoverContext(messages: Message[]): Message[] {
   const result: Message[] = [];
   for (let i = 0; i < messages.length; i++) {
     const message = messages[i]!;
+    if (
+      message.role === "assistant" &&
+      (message as unknown as { origin?: string }).origin === "runtime"
+    ) {
+      result.push({
+        role: "user",
+        content: `Runtime notice: ${message.errorMessage ?? message.stopReason}`,
+        timestamp: message.timestamp,
+      });
+      continue;
+    }
     result.push(message);
     if (message.role !== "assistant") continue;
     const answered = new Set<string>();

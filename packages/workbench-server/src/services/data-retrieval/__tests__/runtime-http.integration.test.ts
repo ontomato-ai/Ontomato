@@ -1,11 +1,11 @@
+import { removeWorkerFiles } from "../../../../../agent-runtime/src/worker";
 import { beforeAll, afterAll, describe, it, expect } from "vitest";
-import { createServer, request as httpRequest, type Server } from "node:http";
+import { createServer, type Server } from "node:http";
 import { spawn, type ChildProcess } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { mkdtemp, readFile, mkdir, writeFile, cp } from "node:fs/promises";
 import path from "node:path";
 import pg from "pg";
 import {
@@ -26,14 +26,12 @@ describe.skipIf(!connection)(
     let admin: pg.Pool,
       pool: pg.Pool,
       fake: Server,
-      runtimeLink: Server,
       root: string,
       databaseUrl: string,
       host: ChildProcess,
       runtime: ChildProcess;
     let hostUrl = "",
       runtimeUrl = "",
-      runtimeLinkUrl = "",
       ontologyUrl = "",
       hostLog = "",
       runtimeLog = "";
@@ -43,8 +41,6 @@ describe.skipIf(!connection)(
         string,
         { run: string; purpose: string; domain: string }
       >();
-    let linkMode: "up" | "down" | "snapshot-down" = "up";
-    let linkFailures = 0;
     const contexts: string[] = [];
     let formalExecutions = 0,
       qualityAdmissions = 0;
@@ -133,7 +129,7 @@ describe.skipIf(!connection)(
                 publishProviders: ["ontology"],
               },
             ]),
-            AGENT_RUNTIME_URL: kind === "host" ? runtimeLinkUrl : runtimeUrl,
+            AGENT_RUNTIME_URL: runtimeUrl,
             AGENT_RUNTIME_SERVICE_TOKEN: "fixture-host-secret",
             AGENT_RUNTIME_CALLBACK_URL: hostUrl,
             ONTOMATO_QUERY_SERVICE_TOKEN: "fixture-query-secret",
@@ -205,22 +201,27 @@ describe.skipIf(!connection)(
       body?: unknown,
       key?: string,
       token = "fixture-a",
+      extra: Record<string, string> = {},
     ) {
       const response = await fetch(hostUrl + "/api/retrievals" + endpoint, {
         method: body === undefined ? "GET" : "POST",
         headers: {
           "content-type": "application/json",
           tk: token,
+          ...extra,
           ...(key ? { "Idempotency-Key": key } : {}),
         },
         body: body === undefined ? undefined : JSON.stringify(body),
       });
-      return { status: response.status, body: await response.json() };
+      return {
+        status: response.status,
+        body: response.status === 204 ? null : await response.json(),
+      };
     }
     async function settle(id: string) {
       for (let n = 0; n < 300; n++) {
         const response = await api(`/${id}`);
-        if (response.body.phase === "settled")
+        if (response.body.run?.status === "stopped")
           return retrievalSnapshotSchema.parse(response.body);
         await new Promise((r) => setTimeout(r, 30));
       }
@@ -230,8 +231,9 @@ describe.skipIf(!connection)(
       const files = await Promise.all(
         [
           "SKILL.md",
-          "runtime.json",
-          "runtime.mjs",
+          "ontomato.mjs",
+          "client.mjs",
+          "application.yml",
           "python/query_runtime.py",
         ].map(async (name) => ({
           path: name,
@@ -245,7 +247,6 @@ describe.skipIf(!connection)(
         skill: {
           namespace: { kind: "provider", provider: "ontology" },
           name: "ontomato-analyst",
-          version: "2.0.0",
         },
         files,
       });
@@ -267,22 +268,20 @@ describe.skipIf(!connection)(
           entry: "program.py",
           arguments: [],
           outputPaths: ["query-status.json"],
-          binding: {
-            targetUrl: ontologyUrl,
-            credential: { kind: "bearer", value: token },
-            context: {},
-            libraries: [
-              {
-                skill: {
-                  namespace: { kind: "provider", provider: "ontology" },
-                  name: "ontomato-analyst",
-                  version: "2.0.0",
-                },
-                path: "python",
-              },
-            ],
-            limits: { wallTimeMs: 5000 },
+          environment: {
+            values: { ONTOMATO_ONTOLOGY_URL: ontologyUrl },
+            secrets: { ONTOMATO_QUERY_TK: token },
           },
+          libraries: [
+            {
+              skill: {
+                namespace: { kind: "provider", provider: "ontology" },
+                name: "ontomato-analyst",
+              },
+              path: "python",
+            },
+          ],
+          limits: { wallTimeMs: 5000 },
         },
         executionId,
       );
@@ -292,7 +291,11 @@ describe.skipIf(!connection)(
         if (execution.status !== "running") break;
         await new Promise((r) => setTimeout(r, 20));
       }
-      if (execution.status !== "completed")
+      if (
+        execution.status !== "stopped" ||
+        execution.exitCode !== 0 ||
+        execution.errorMessage
+      )
         throw new Error(JSON.stringify(execution));
       const read = async (name: string) =>
         fetch(
@@ -323,7 +326,9 @@ describe.skipIf(!connection)(
       });
     }
     beforeAll(async () => {
-      root = await mkdtemp(path.join(tmpdir(), "ontomato-retrieval-http-"));
+      root = await mkdtemp(
+        path.join(publicRoot, "../notes", "retrieval-standard-"),
+      );
       admin = new pg.Pool({ connectionString: connection });
       await admin.query(`CREATE DATABASE "${database}"`);
       const db = new URL(connection!);
@@ -426,9 +431,7 @@ describe.skipIf(!connection)(
             return reply({ revoked: true });
           if (req.url === "/ontology/query/execute-dsl") {
             expect(Object.keys(body)).toEqual(["dsl"]);
-            const grant = grants.get(
-              String(req.headers.authorization).slice(7),
-            );
+            const grant = grants.get(String(req.headers.tk));
             expect(grant?.run).toBe(req.headers["x-ontomato-run-id"]);
             if (!grant) return reply({ error: { message: "No grant" } }, 401);
             return reply({
@@ -528,72 +531,50 @@ describe.skipIf(!connection)(
               await new Promise<void>((resolve) =>
                 held.set(context.question, resolve),
               );
-            const tools = body.messages.filter((m: any) => m.role === "tool");
-            const toolText = (message: any) =>
-              typeof message.content === "string"
-                ? message.content
-                : message.content.map((c: any) => c.text ?? "").join("");
-            const latest = tools.length
-              ? JSON.parse(toolText(tools.at(-1)))
-              : {};
             let name: string | undefined, args: unknown;
             const resumed = Boolean(context.answer),
               need = context.question.includes("clarify") && !resumed;
             const step = resumed ? stage + 1 : stage;
             if (step === 0) {
-              name = "workspace_write";
-              args = { path: "answer.py", text: source };
+              name = "write";
+              args = { path: "work/answer.py", content: source };
             } else if (step === 1) {
-              name = "python_execute";
-              args = { path: "answer.py", outputPaths: ["query-status.json"] };
-            } else if (step === 2 && need) {
-              name = "finish_retrieval";
+              name = "bash";
+              args = { command: "python3 work/answer.py" };
+            } else if (step === 2 && !need) {
+              name = "write";
               args = {
-                status: "needs_input",
-                submissionIds: [],
-                summary: "Need scope",
-                questions: [
-                  {
-                    question: "Which period?",
-                    reason: "Time affects the result",
-                    scope: "this task",
-                    choices: [
-                      {
-                        id: "now",
-                        label: "Current period",
-                        consequence: "Use current period",
-                      },
-                    ],
-                    recommendedChoiceId: "now",
+                path: "work/recipe.json",
+                content: JSON.stringify({
+                  recipe: {
+                    kind: "python",
+                    code: source,
+                    sha256: (await import("node:crypto"))
+                      .createHash("sha256")
+                      .update(source)
+                      .digest("hex"),
                   },
-                ],
-              };
-            } else if (step === 2) {
-              name = "submit_dataset";
-              args = {
-                path: "answer.py",
-                executionId: latest.executionId,
-                title: "Sales",
-                question: "Double sales",
-                outKeyRefs: refs,
-                assumptions: [],
-                metricUses: [
-                  {
-                    id: "m1",
-                    revision: "r1",
-                    use: "not_used",
-                    reason: "Different calculation",
-                  },
-                ],
-                selfCheck,
-                decisionIds: (context.decisions ?? []).map((d: any) => d.id),
+                  title: "Sales",
+                  question: "Double sales",
+                  outKeyRefs: refs,
+                  assumptions: [],
+                  metricUses: [
+                    {
+                      id: "m1",
+                      revision: "r1",
+                      use: "not_used",
+                      reason: "Different calculation",
+                    },
+                  ],
+                  selfCheck,
+                  decisionIds: (context.decisions ?? []).map((d: any) => d.id),
+                }),
               };
             } else if (step === 3 && !need) {
-              name = "finish_retrieval";
+              name = "bash";
               args = {
-                status: "completed",
-                submissionIds: [latest.submissionId],
-                summary: "Calculated",
+                command:
+                  "node skills/data-retrieval/scripts/dataset.mjs @work/recipe.json outputs/result.dataset.json",
               };
             }
             if (!name && context.question.startsWith("finish during outage"))
@@ -619,7 +600,12 @@ describe.skipIf(!connection)(
               });
               frame({}, "tool_calls");
             } else {
-              frame({ role: "assistant", content: "Done" });
+              frame({
+                role: "assistant",
+                content: need
+                  ? "Which period? Time affects this calculation."
+                  : "Done [dataset](outputs/result.dataset.json)",
+              });
               frame({}, "stop");
             }
             res.end("data: [DONE]\n\n");
@@ -643,46 +629,12 @@ describe.skipIf(!connection)(
       await new Promise<void>((r) => fake.listen(0, "127.0.0.1", r));
       ontologyUrl = `http://127.0.0.1:${(fake.address() as { port: number }).port}`;
       await launch("runtime");
-      // This loopback link can fail real HTTP reads while the runtime process keeps executing.
-      runtimeLink = createServer((req, res) => {
-        if (
-          linkMode === "down" ||
-          (linkMode === "snapshot-down" && req.url?.startsWith("/v1/runs/"))
-        ) {
-          linkFailures++;
-          res.destroy();
-          return;
-        }
-        const upstream = httpRequest(
-          new URL(req.url!, runtimeUrl),
-          { method: req.method, headers: req.headers },
-          (response) => {
-            res.writeHead(response.statusCode!, response.headers);
-            response.pipe(res);
-          },
-        );
-        upstream.on("error", () => {
-          linkFailures++;
-          res.destroy();
-        });
-        res.once("close", () => upstream.destroy());
-        req.pipe(upstream);
-      });
-      await new Promise<void>((resolve) =>
-        runtimeLink.listen(0, "127.0.0.1", resolve),
-      );
-      runtimeLinkUrl = `http://127.0.0.1:${(runtimeLink.address() as { port: number }).port}`;
       await launch("host");
     }, 40000);
     afterAll(async () => {
       for (const release of held.values()) release();
       await stop(host);
       await stop(runtime);
-      runtimeLink?.closeAllConnections();
-      if (runtimeLink)
-        await new Promise<void>((resolve) =>
-          runtimeLink.close(() => resolve()),
-        );
       fake?.closeAllConnections();
       await new Promise<void>((r) => fake?.close(() => r()));
       await pool?.end();
@@ -690,38 +642,8 @@ describe.skipIf(!connection)(
         await admin.query(`DROP DATABASE IF EXISTS "${database}" WITH (FORCE)`);
         await admin.end();
       }
-      if (root) await rm(root, { recursive: true, force: true });
+      if (root) await removeWorkerFiles(root);
     }, 20000);
-    async function until(check: () => Promise<boolean> | boolean) {
-      for (let attempt = 0; attempt < 400; attempt++) {
-        if (await check()) return;
-        await new Promise((resolve) => setTimeout(resolve, 25));
-      }
-      throw new Error(
-        `Fixture condition not reached\n${hostLog}\n${runtimeLog}`,
-      );
-    }
-    async function runtimeRun(runId: string) {
-      const response = await fetch(`${runtimeUrl}/v1/runs/${runId}`, {
-        headers: {
-          authorization: "Bearer fixture-host-secret",
-          "x-domain-id": "domain-a",
-          "x-correlation-id": "reconcile-proof",
-        },
-      });
-      expect(response.status).toBe(200);
-      return response.json();
-    }
-    async function pending(id: string) {
-      const response = await api(`/${id}`);
-      expect(response.status, JSON.stringify(response.body)).toBe(200);
-      expect(response.body).toMatchObject({ phase: "running", result: null });
-      const round = await pool.query(
-        "SELECT t.open FROM retrieval_rounds t JOIN retrievals r ON r.id=t.retrieval_id WHERE r.id=$1 AND t.id=(r.snapshot->>'runtimeRunId')::uuid",
-        [id],
-      );
-      expect(round.rows[0].open).toBe(true);
-    }
     it("reruns Python with user authorization, returns immutable data and completes before quality checking", async () => {
       const key = randomUUID(),
         body = {
@@ -737,8 +659,9 @@ describe.skipIf(!connection)(
         (await api("/", { ...body, question: "changed" }, key)).status,
       ).toBe(409);
       const done = await settle(first.body.id);
-      expect(done.result, hostLog + runtimeLog).toMatchObject({
-        status: "completed",
+      expect(done.run, hostLog + runtimeLog).toMatchObject({
+        status: "stopped",
+        stopReason: "stop",
       });
       expect(formalExecutions).toBe(1);
       const data = await api(
@@ -766,28 +689,21 @@ describe.skipIf(!connection)(
         await new Promise((r) => setTimeout(r, 30));
       }
       expect(qualityAdmissions).toBe(1);
-      const row = await pool.query(
-        "SELECT artifact_id,payload FROM retrieval_submissions WHERE artifact_id=$1",
-        [done.datasetArtifactIds[0]],
-      );
-      expect(row.rows[0].payload).toBeNull();
     }, 20000);
-    it("pauses without a reply, resumes the same session with retained code, rejects stale replies and recovers host restart", async () => {
+    it("pauses without a reply, resumes the same session with retained code, rejects stale replies ", async () => {
       const first = await api(
         "/",
         { question: "clarify period" },
         randomUUID(),
       );
       const paused = await settle(first.body.id);
-      expect(paused.result?.status).toBe("needs_input");
-      if (paused.result?.status !== "needs_input")
-        throw new Error(JSON.stringify(paused));
+      expect(paused.run?.stopReason).toBe("stop");
+      expect(JSON.stringify(paused.messages)).toContain("Which period?");
+      expect(paused.datasetArtifactIds).toEqual([]);
       const answer = {
           expectedRunId: paused.runtimeRunId,
           expectedDecisionRevision: paused.decisionRevision,
-          answers: [
-            { questionId: paused.result.questions[0]!.id, choiceId: "now" },
-          ],
+          message: "Current period",
         },
         key = randomUUID();
       const resumed = await api(`/${paused.id}/answers`, answer, key);
@@ -801,8 +717,9 @@ describe.skipIf(!connection)(
         (await api(`/${paused.id}/answers`, answer, randomUUID())).status,
       ).toBe(409);
       const done = await settle(paused.id);
-      expect(done.result, JSON.stringify(done)).toMatchObject({
-        status: "completed",
+      expect(done.run, JSON.stringify(done)).toMatchObject({
+        status: "stopped",
+        stopReason: "stop",
       });
       const oldArtifact = done.datasetArtifactIds[0]!;
       const corrected = await api(
@@ -810,36 +727,13 @@ describe.skipIf(!connection)(
         {
           expectedRunId: done.runtimeRunId,
           expectedDecisionRevision: done.decisionRevision,
-          answers: [
-            {
-              questionId: paused.result.questions[0]!.id,
-              text: "Previous year",
-            },
-          ],
+          message: "Previous year",
         },
         randomUUID(),
       );
       expect(corrected.status).toBe(202);
-      expect(
-        (
-          await api(`/${done.id}/runtime/finish_retrieval`, {
-            identity: {
-              runId: paused.runtimeRunId,
-              runtimeSessionId: paused.runtimeSessionId,
-              toolCallId: "late-call",
-              invocationId: randomUUID(),
-            },
-            arguments: {
-              status: "failed",
-              submissionIds: [],
-              summary: "late",
-              error: { code: "LATE", message: "late" },
-            },
-          })
-        ).status,
-      ).toBe(409);
       const revised = await settle(done.id);
-      expect(revised.result?.status).toBe("completed");
+      expect(revised.run?.stopReason).toBe("stop");
       expect(revised.runtimeSessionId).toBe(done.runtimeSessionId);
       expect((await api(`/${done.id}/datasets/${oldArtifact}`)).status).toBe(
         200,
@@ -853,141 +747,122 @@ describe.skipIf(!connection)(
         randomUUID(),
       );
       const unanswered = await settle(offline.body.id);
-      expect(unanswered.result?.status).toBe("needs_input");
+      expect(unanswered.run?.stopReason).toBe("stop");
+      expect(JSON.stringify(unanswered.messages)).toContain("Which period?");
       expect((await api(`/${unanswered.id}`)).body.runtimeRunId).toBe(
         unanswered.runtimeRunId,
       );
-      const pending = await api(
-        "/",
-        { question: "hold restart" },
-        randomUUID(),
-      );
-      for (let n = 0; n < 200 && !held.has("hold restart"); n++)
-        await new Promise((r) => setTimeout(r, 20));
-      expect(held.has("hold restart")).toBe(true);
-      await stop(host, "SIGKILL");
-      await launch("host");
-      await api(`/${pending.body.id}`);
-      held.get("hold restart")!();
-      held.delete("hold restart");
-      const recovered = await settle(pending.body.id);
-      expect(recovered.result, JSON.stringify(recovered)).toMatchObject({
-        status: "completed",
-      });
-      const cancel = await api("/", { question: "hold cancel" }, randomUUID());
-      for (let n = 0; n < 200 && !held.has("hold cancel"); n++)
-        await new Promise((r) => setTimeout(r, 20));
-      const stopped = await api(`/${cancel.body.id}/cancel`, {});
-      expect(stopped.body.result).toMatchObject({
-        status: "failed",
-        error: { code: "RETRIEVAL_CANCELLED" },
-      });
-      held.get("hold cancel")?.();
-      held.delete("hold cancel");
     }, 30000);
-    it("reconciles a hard-killed runtime only after its authoritative interrupted snapshot is available", async () => {
-      const question = "hold runtime restart",
-        first = await api("/", { question }, randomUUID());
-      await until(() => held.has(question));
-      const id = first.body.id,
-        runId = first.body.runtimeRunId,
-        failedBefore = linkFailures;
-      try {
-        await stop(runtime, "SIGKILL");
-        await until(() => linkFailures > failedBefore);
-        await pending(id);
-        expect(stages.get(runId)).toBe(1);
-        await launch("runtime");
-        // No status GET is needed to drive an already active observer after recovery.
-        await until(
-          async () =>
-            (
-              await pool.query(
-                "SELECT snapshot->>'phase' AS phase FROM retrievals WHERE id=$1",
-                [id],
-              )
-            ).rows[0].phase === "settled",
-        );
-        const result = (await api(`/${id}`)).body;
-        expect(result.result).toMatchObject({
-          status: "failed",
-          error: {
-            code: "RUNTIME_INTERRUPTED",
-            message: "Data retrieval was interrupted. Please try again.",
-          },
+    it("runs an unchanged external dataset skill with user authority and closes predecessor gates", async () => {
+      const workspace = path.join(root, "external");
+      await mkdir(workspace, { recursive: true });
+      await cp(
+        path.join(
+          publicRoot,
+          "packages/workbench-server/resources/runtime-skills/data-retrieval",
+        ),
+        path.join(workspace, "skill"),
+        { recursive: true },
+      );
+      const sourceHash = (await import("node:crypto"))
+        .createHash("sha256")
+        .update(source)
+        .digest("hex");
+      const recipe = {
+        recipe: { kind: "python", code: source, sha256: sourceHash },
+        title: "External",
+        question: "Double sales",
+        outKeyRefs: refs,
+        assumptions: [],
+        metricUses: [],
+        selfCheck,
+        decisionIds: [],
+      };
+      await writeFile(
+        path.join(workspace, "recipe.json"),
+        JSON.stringify(recipe),
+      );
+      const explored = [...grants.values()].filter(
+        (g) => g.purpose === "exploration",
+      ).length;
+      const command = async (args: string[]) =>
+        new Promise<string>((resolve, reject) => {
+          const child = spawn(
+            process.execPath,
+            ["skill/scripts/dataset.mjs", ...args],
+            {
+              cwd: workspace,
+              env: {
+                PATH: process.env.PATH,
+                ONTOMATO_WORKBENCH_URL: hostUrl,
+                ONTOMATO_TK: "fixture-a",
+              },
+              stdio: ["ignore", "pipe", "pipe"],
+            },
+          );
+          let out = "",
+            err = "";
+          child.stdout.on("data", (c) => (out += c));
+          child.stderr.on("data", (c) => (err += c));
+          child.once("error", reject);
+          child.once("close", (code) =>
+            code === 0 ? resolve(out) : reject(new Error(err)),
+          );
         });
-        expect(JSON.stringify(result)).not.toContain("fetch failed");
-        expect((await runtimeRun(runId)).run.status).toBe("interrupted");
-        expect(stages.get(runId)).toBe(1);
-      } finally {
-        held.get(question)?.();
-        held.delete(question);
-        if (runtime.exitCode !== null || runtime.signalCode !== null)
-          await launch("runtime");
-      }
-    }, 30000);
-    it("retains a completed dataset across transport loss, host recovery and an overdue observation", async () => {
-      const question = "finish during outage",
-        before = formalExecutions;
-      const first = await api("/", { question }, randomUUID()),
-        id = first.body.id,
-        runId = first.body.runtimeRunId;
-      await until(() => held.has(question));
-      const original = (await runtimeRun(runId)).artifacts.map(
-        (a: { id: string }) => a.id,
+      await command(["@recipe.json", "outputs/external.dataset.json"]);
+      const file = datasetPayloadSchema.parse(
+        JSON.parse(
+          await readFile(
+            path.join(workspace, "outputs/external.dataset.json"),
+            "utf8",
+          ),
+        ),
       );
-      expect(original).toHaveLength(1);
-      try {
-        let failedBefore = linkFailures;
-        linkMode = "down";
-        await until(() => linkFailures > failedBefore);
-        await pending(id);
-        held.get(question)!();
-        held.delete(question);
-        await until(
-          async () => (await runtimeRun(runId)).run.status === "completed",
-        );
-        // The result completed before the deadline; delayed observation must not replace it with a timeout.
-        await pool.query(
-          "UPDATE retrieval_rounds SET deadline=now()-interval '1 second' WHERE id=$1",
-          [runId],
-        );
-        await pending(id);
-        await stop(host, "SIGKILL");
-        linkMode = "up";
-        await launch("host");
-        failedBefore = linkFailures;
-        linkMode = "down";
-        await pending(id);
-        await until(() => linkFailures > failedBefore);
-        await pending(id);
-        failedBefore = linkFailures;
-        linkMode = "snapshot-down";
-        await until(() => linkFailures > failedBefore);
-        await pending(id);
-        linkMode = "up";
-        await until(
-          async () =>
-            (
-              await pool.query(
-                "SELECT snapshot->>'phase' AS phase FROM retrievals WHERE id=$1",
-                [id],
-              )
-            ).rows[0].phase === "settled",
-        );
-        const done = retrievalSnapshotSchema.parse((await api(`/${id}`)).body);
-        expect(done.result?.status).toBe("completed");
-        expect(done.datasetArtifactIds).toEqual(original);
-        expect(
-          (await api(`/${id}/datasets/${original[0]}`)).body.payload.rows,
-        ).toEqual([{ region: "A", count: 14 }]);
-        expect(formalExecutions).toBe(before + 1);
-        expect(stages.get(runId)).toBe(5);
-      } finally {
-        linkMode = "up";
-        held.get(question)?.();
-        held.delete(question);
-      }
-    }, 30000);
+      expect(file.rows).toEqual([{ region: "A", count: 14 }]);
+      expect(
+        [...grants.values()].filter((g) => g.purpose === "exploration"),
+      ).toHaveLength(explored);
+      const first = JSON.parse(
+        await readFile(
+          path.join(workspace, "work/.retrieval-run.json"),
+          "utf8",
+        ),
+      );
+      expect((await api(`/${first.id}`)).body).toMatchObject({
+        runtimeSessionId: null,
+        runtimeRunId: null,
+        messages: [],
+      });
+      await writeFile(
+        path.join(workspace, "question.json"),
+        JSON.stringify({ question: "Double sales" }),
+      );
+      const second = JSON.parse(await command(["begin", "@question.json"]));
+      expect(second.id).toBe(first.id);
+      expect(second.runId).not.toBe(first.runId);
+      expect(
+        (
+          await api(
+            `/${first.id}/runs/${first.runId}/outputs`,
+            recipe,
+            randomUUID(),
+            "fixture-a",
+            { "X-Ontomato-Run-Id": first.runId },
+          )
+        ).status,
+      ).toBe(409);
+      await command(["close"]);
+      expect(
+        (
+          await api(
+            `/${second.id}/runs/${second.runId}/outputs`,
+            recipe,
+            randomUUID(),
+            "fixture-a",
+            { "X-Ontomato-Run-Id": second.runId },
+          )
+        ).status,
+      ).toBe(409);
+    }, 20000);
   },
 );

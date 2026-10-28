@@ -1,73 +1,261 @@
-# Agent runtime: batch 0 contract and batch 1 design
+# Standard harness replacement design
 
-The runtime, governance HTTP consumer, local launcher and four-image deployment chain are implemented in this branch. Independent runtime image option A was approved on 2026-10-28. Script/process checks have passed; final image builds and full-stack image/browser acceptance remain with the controller in the main checkouts. The schemas live in `packages/contracts/src/agent-runtime*.ts`; their [wire semantics](../packages/contracts/agent-runtime.md) define admission, recovery, skills and business write closure. Governance-specific shapes remain in `knowledge-governance.ts`. Batch 1 is authorized; the reviewed corrections make artifacts opaque, omit unused single calls and transmit message deltas without cumulative partials.
+Implementation, 2026-10-28. Public baseline d9fcae3 after the authorized rebase;
+enterprise baseline 10efb96. Controller review approved the external business-gate
+entry and standalone process state; a later user decision unified all PI components
+at 1.4.0. [Runtime wire contract](../packages/contracts/agent-runtime.md),
+[standalone execution](../packages/contracts/agent-runtime-code.md) and
+[retrieval contract](../packages/contracts/data-retrieval.md) own the wire shapes.
 
-## Ownership and placement
+Success means the same standard skill files and commands work in an external
+Claude Code/Codex harness and in the product. Governance and retrieval are both
+prompt + skills + model role on the same harness. Runtime understands sessions,
+PI events, models, files and processes; business services understand their own
+records and permissions. This batch does not resume the paused assistant/UI work.
 
-- `packages/agent-runtime` owns HTTP, the PI loop fork, PostgreSQL sessions/messages/events/artifacts, compaction, model calls, workspace files and skill processes. It imports contracts and infrastructure libraries, never a host implementation. It has no business completion or authorization decisions.
-- `apps/agent-runtime` assembles the public standalone Node process. Enterprise deployment uses this same application. There is no enterprise runtime application: translated governance prompts and business identity checks belong to the enterprise workbench, not the runtime. The temporary model-read service header is configuration, not a reason for a second implementation.
-- The workbench owns governance permissions, definitions/prompts, business records and browser projection. It uses runtime HTTP exclusively. Browsers connect to the workbench. The ontology service owns ontology/knowledge data and its authorization.
-- The public application runs as a separate Node process with its own database connection/schema. Products must supply AGENT_RUNTIME_SERVICE_TOKEN and its corresponding runtime host configuration. Local launcher, container, image-publication and deployment-tool wiring use the public runtime image; enterprise supplies deployment configuration without a separate runtime app.
+## Implementation ownership and PI reuse
 
-## PI fork and message persistence
-
-Use exactly `@earendil-works/pi-ai@1.3.0`, without forking it. Fork the needed `pi-agent-core@1.3.0` loop source under `packages/agent-runtime/src/core/`, retaining the MIT copyright/license and a source/version/change note. The fork was extracted from the installed package's published source maps; `packages/agent-runtime/src/core/pi/UPSTREAM.md` records the source hashes and local adaptations. The full MIT license is retained there and listed in the repository NOTICE.
-
-The fork changes are awaited journaling, event sequencing, compaction/context preparation, child-process skill execution with private bindings, artifact registration and cancellation/terminal handling. The first governance tool batch executes sequentially to preserve its existing ordered reads/writes. This is not a model-concurrency quota or a run budget. Do not migrate LangChain or old business callbacks into the new loop.
-
-## Governance: eight workbench tools and the context skill
-
-| Tool | Actual source / business owner |
+| Owner | Responsibility |
 | --- | --- |
-| `search_history` | Workbench checkpointer thread listing and shared history payloads; governance's existing same-domain cross-user evidence permission |
-| `read_history` | Workbench history service; records its source in the governance run |
-| `read_evidence` | Workbench diagnostic manifest/file reader, with thread/workspace domain checks |
-| `read_work_record` | Workbench governance run's saved work |
-| `update_work_record` | Workbench governance progress/issues/sources; never production ontology/knowledge/data |
-| `read_knowledge` | Workbench calls ontology `POST /admin/getBussinessKnowledge`, then registers sources and knowledge count before returning |
-| `read_ontology` | Workbench calls ontology `GET /admin/getSchema`, then registers sources before returning |
-| `collect_turn_artifacts` | Workbench diagnostic workspace builder; may recreate files, so an unknown result must not be replayed |
+| packages/contracts | HTTP/message/artifact shapes, dataset boundary, shared Markdown reference rule |
+| packages/agent-runtime | Single PI loop, journaling, compaction, model adapter, package registry, session sandbox, artifact file store |
+| apps/agent-runtime | Public process/container assembly; reused by enterprise |
+| workbench-server | Definitions/prompts, governance and retrieval business gates, callback HTTP, projections, QC scheduling |
+| ontology service | Knowledge/schema/DSL/metrics, grants, formal-output permission checks, existing Python caller semantics |
+| provider skill directories | Standard SKILL.md, scripts and references, also distributed externally |
 
-Both ontology-backed reads remain **workbench governance skills**. Ontology data ownership and authorization stay in the ontology service; source registration is a governance business fact. Fetch before taking the short business transaction, then check write ownership and persist sources/count in that request. Do not reconstruct or backfill source registration asynchronously from runtime event history. History/evidence source registration uses the same gate. Character pagination, source identities, issue upserts, reviewed-ID unions and source-reference validation retain their current semantics.
+Local source inspection found pi-coding-agent 1.4.0 with exported createReadTool,
+createWriteTool, createEditTool, createBashTool, loadSkills and
+formatSkillsForPrompt. Use an exact dependency on that package, not copied tool
+algorithms. Its built-in edit schema is edits[], read uses line offset/limit,
+and bash has command/timeout; retain those upstream schemas and behaviors. Do not
+translate the retired workspace_* arguments into new private APIs.
 
-The workbench's fixed-version context entry replaces `beforeTurn`. Governance can use an empty definition base prompt and return its existing fully rendered `main/system.md` in the context section, preserving the template without duplicating its stable instructions. Before every conversational model request, including the first, it reads the saved current run work and renders the current progress using the host-selected language. The runtime replaces the named context section, then computes compaction budget including system instructions and tool definitions (retain the existing 80% window policy). It does not accumulate stale progress or understand GovernanceWork. Failure does not reuse old progress. Compaction calls use the host-rendered instructions, prepending the existing `<conversation>` and optional `<previous-summary>` blocks, and do not recursively invoke the context skill. English/Chinese template assembly remains with the public/enterprise workbench.
+The loop is re-forked from pi-agent-core 1.4.0 source maps; pi-ai and
+pi-coding-agent are exact 1.4.0 dependencies. UPSTREAM.md records hashes and local
+changes. Awaited event sinks, prepareRequest and sequential tools are upstream
+hooks used by the runtime for journaling, compaction and terminal persistence.
+Only the four tool factories and explicit skill discovery are consumed from the
+coding-agent SDK; there is no second AgentSession or CLI execution loop.
 
-The approved write boundary is **workbench gate closure**: new-round opening closes the preceding gate atomically; cancel closes before calling the runtime; observing a terminal closes before publishing a business terminal. Every write checks run ownership and the open gate in its commit transaction. Late writes after runtime termination but before host closure may still commit to that run alone. There is no host settlement handshake. The precise shapes and ordering are in the wire contract.
+Instantiate tool execution in a non-root run worker reached by Node IPC. The
+supervisor owns model calls/events and forwards tool name, arguments and cancel;
+the worker invokes the upstream factory's execute function and returns its
+standard result/update. This private infrastructure IPC is not part of any skill
+package; scripts are ordinary subprocesses of PI bash and use normal stdout/exit
+codes. Run all four factories under the session UID, not just bash. Upstream path
+handling does not make a root file tool safe merely by passing cwd.
 
-## PostgreSQL facts
+The existing worker-launch.py applies identity/rlimits before starting the Node
+tool worker; descendants inherit the identity/limits. Keep the lifetime pipe and
+process-group/UID cleanup. Disable PI ambient project/global skill discovery and
+session-environment exposure; provide only the explicit runtime environment.
+Preserve external MCP connections as configured service tools; prevent collisions
+with the four built-in names. No business special cases enter the tool adapter.
 
-Use the runtime's own connection/schema and migrations; no workbench JOINs or foreign keys across service-owned tables. Session/run data PKs/FKs and uniqueness include host/domain scope. Skill versions instead use their explicit namespace scope: provider packages are shared with authorized hosts, domain packages are limited to their domain, and only the configured publisher can register them. Use short transactions with no HTTP/model/tool work while holding a lock. A single runtime instance owns recovery in this first batch.
+## Session sandbox lifecycle
 
-| Table | Facts / constraints |
+Runtime data volume layout:
+
+```text
+sessions/<opaque-session-storage-key>/workspace/
+  skills/<name>/SKILL.md, scripts/, references/  (supervisor-owned, read-only)
+  work/                                       (scratch and source)
+  outputs/                                    (published files)
+  home/, tmp/                                 (worker-owned)
+skills/<namespace-key>/<name>/<digest>/        (immutable package source)
+artifacts/sha256/<prefix>/<hash>               (immutable file bytes)
+```
+
+1. Session admission creates its PG identity. First run reserves a monotonically
+   allocated UID using the existing persistent allocator, records it on the
+   session, then creates the workspace and selected skill copies. A crash can
+   burn a UID; it must never assign that UID to another session. At most one
+   run per session can allocate/prepare under the admission lock.
+2. Persist preparation state before execution. Filesystem operations occur outside
+   short DB transactions; recover incomplete preparation explicitly as aborted,
+   never silently use an incomplete skill tree. Public IDs are mapped to server
+   storage keys; URL input never becomes an unchecked filesystem path.
+3. Production uses a supervisor-owned workspace root, group=session UID, sticky
+   group-write directory (01770). Root-owned skills directory (0550) cannot be
+   renamed/replaced by the worker; skill files are 0440. work/outputs/home/tmp
+   are writable for that UID. An ordinary writable workspace root with a
+   read-only skills child would permit replacing the child, so it is insufficient.
+   Verify actual permissions and replacement attempts in Linux.
+4. Each run starts a fresh tool worker with fresh environment. HOME/TMPDIR point
+   inside the workspace. PYTHONPATH points to the installed provider helper where
+   needed. Scratch, source and outputs survive rounds. Update skills only between
+   runs. No initialFiles rehydration into a fresh run directory is needed.
+5. Cancel closes the host gate first; runtime stops model/tool admission, cancels
+   PI tools, kills/reaps every process owned by the session UID, collects the
+   final output boundary and commits stopped/aborted. Natural stop also reaps
+   leftover background processes before final collection. It keeps the directory
+   and UID; the next run gets a fresh process, never a surviving shell environment.
+6. On service restart, clean owned orphan processes, close unfinished runs as
+   aborted and retain their workspace/UID. Do not attribute previously unregistered
+   crash-left files to a later run: establish that later run's scan baseline first.
+   Previously committed artifacts remain valid. A missing persistent workspace
+   is an explicit preparation error, not silently an empty continuation.
+7. Session deletion is allowed only after stopped. Commit its tombstone, remove
+   owned metadata/workspace and unreferenced artifacts using resumable cleanup.
+   No UID recycling or workspace TTL is added. Registered packages are shared and
+   are not deleted merely because one session ends.
+
+This preserves the approved UID/rlimit isolation level, not a filesystem or
+network namespace. Workers may read world-readable OS files. Container network
+policy owns reachable destinations. Explicit native development mode remains
+weaker; a macOS proof cannot stand in for Linux UID isolation.
+
+## Governance standard skill
+
+Publish the directory at
+packages/workbench-server/resources/runtime-skills/knowledge-governance. Replace
+run.mjs with scripts/governance.mjs plus references for command arguments; the
+publication helper reads package files instead of generating a tool manifest.
+One skill is sufficient for all eight existing actions:
+
+| CLI subcommand | Host action / preserved behavior |
 | --- | --- |
-| `admissions` | creation key, operation/target, non-secret fingerprint, resource reference, deletion tombstone; unique key per scope |
-| `sessions` | ID, active/latest run IDs, next message sequence, timestamps; lock for admission/journaling/termination |
-| `runs` | ID, session, full definition and exact immutable skill references, status, event-sequence reservation, correlation/language, timestamps, safe failure; at most one running run per session |
-| `messages` | session message sequence, stable ID, run ID, PI JSON; append-only |
-| `events` | run event sequence, timestamp, event JSON; durable lifecycle and tool states, no text/progress deltas |
-| `compactions` | session/run, summary, covered-through message sequence, time; raw messages unchanged |
-| `artifacts` | ID, run/tool call/output index, content, creation time; unique output position and immutable payload |
-| `skill_versions` | namespace/name/version, publisher, digest, files/manifest; immutable content per version |
-| `model_calls` | run, call index/purpose (conversation or compaction), API/provider/model, duration, token usage, correlation ID, result/error; no keys or full result logs |
+| read-knowledge | Read knowledge via ontology; register source/count in the same request |
+| read-ontology | Read schema via ontology; register sources |
+| search-history | Same-domain cross-user history search under governance permission |
+| read-history | Read owned-domain historical facts and register their source |
+| collect-turn-artifacts | Use diagnostic material owner; unknown side effects are never automatically replayed |
+| read-evidence | Existing domain-checked diagnostic evidence reader |
+| read-work-record | Read this run's saved work/revision |
+| update-work-record | Existing notes/issues/progress/reviewed IDs and source checks |
 
-Workbench-owned additions are the runtime session reference, writeRunId, and per-run governance work rows. They do not copy runtime execution status or message history. Model configuration remains **temporarily Java-owned**: the runtime reads `/businessConfig/getModelSettings` using the existing Node protocol, including the configured enterprise runtime-read header when needed. This is the explicit temporary exception to upward model-configuration access and ordinary credential-only-to-skills use. Do not import workbench-server to obtain it. Java stays the sole read/write source; no migration or dual write here. Missing role configuration fails with `RUNTIME_MODEL_NOT_CONFIGURED`, preserving the host's distinct localized explanation; it never falls back to another role. Remove this adapter when the model-key change is integrated and the later model-configuration ownership migration is approved. Workbench query mode/timeouts and ontology Embedding are not moved. Model retries include 429 and use the resolved configuration; conversation and compaction calls have separate records; transport retries are currently handled by pi-ai within a recorded call. No run budget or model-concurrency control is added.
+CLI form: `node skills/knowledge-governance/scripts/governance.mjs <command>
+@work/args.json`. Requests go to POST
+/api/knowledge-governance/:id/runs/:runId/actions/:action, with plain JSON arguments,
+tk, language, correlation and session identity headers. This replaces the old
+/runtime/context and /runtime/tools route and invocation envelope. Identity comes
+from authenticated user/domain plus stored host session/run ownership. A caller
+cannot acquire authority merely by knowing a run ID.
 
-## Replacement and proof boundaries
+Every action retains existing validation, pagination and source semantics.
+Source-registration writes and update-work-record check current writeRunId/open
+and revision inside the commit transaction. Network reads occur before that short
+transaction. Cancel and new-round opening serialize with writes. Closed/old runs
+return 409 GOVERNANCE_RUN_CLOSED, not a successful no-op. The accepted guarantee
+starts when the host closes the gate, with an in-flight write limited to its own
+run record before closure. No new settlement handshake is introduced.
 
-Batch 1 removes governance's direct `runAgentLoop`, `createHarnessRun`, local execution registry and `beforeTurn`; its Harness JOIN/lock/message access; and the `createGovernanceTools` in-process AgentTool path. Material/business services remain with their owner and are exposed through the governance skill HTTP callbacks. Diagnostic collection uses the diagnostic service rather than importing its legacy AgentTool wrapper. The governing HTTP client and projection replace the old governance path completely, including user-deletion cleanup and stream recovery.
+The host builds the stable governance prompt once at run admission, preserving
+modelRole knowledgeGovernance and localized templates. It includes a pointer to
+the skill and asks the agent to read-work-record before work and after compaction
+when current progress is needed. update-work-record returns the authoritative new
+work/revision in the normal command result. Remove automatic before-model progress
+refresh and its prompt interpolation; do not reproduce it as a hook. Continuation
+uses the same skill read. Governance behavior acceptance checks saved progress
+and source/work consistency, not a specific prompt string or tool-call count.
 
-Do not delete all of `core/agent-loop`, `harness-sessions`, the old skill executor or repository-wide LangChain in this batch: analysis/diagnosis and other deferred consumers still use them. They remain only for those consumers, with no governance fallback. The new runtime and migrated governance execution do not depend on LangChain. Old stored sessions require the later release migration; this batch does not silently dual-read old Harness storage.
+For external execution, POST /api/knowledge-governance/skill-runs with a
+UUID key and `{message}` to create the same host business record/open gate without
+starting a runtime agent. Return `{id,sessionId,runId,expiresAt}`; a matching retry
+returns that gate without reopening it. CLI begin prints these identities;
+POST /api/knowledge-governance/:id/skill-runs/:runId/close closes it. Bound expiry by the existing query timeout setting and, when present,
+the authenticated credential expiry; every mutation checks it. Explicit close or
+a new run closes earlier. No new lifetime configuration is introduced. The internal entry calls the same gate-opening service and additionally
+admits the runtime run. External history remains in the external harness, not a
+fabricated runtime session. This minimal entry is controller-approved because the
+old API always started a model and could not support the required external proof.
 
-The real-process integration suites use isolated PostgreSQL and a local HTTP model. They cover all eight tools, source/work persistence, context refresh and actual compaction; host restart while a model request is held; runtime restart; dropped admission responses; snapshot/tail loss; process-tree cancellation; closed/old gate rejection; unknown-side-effect non-replay; host/domain rejection; immutable skill versions; and live/history artifact identity. Governance Vue component tests cover reconnect snapshot replacement and preserved chat/report controls. These are mechanical proofs with fixture data, not live-model business quality or a deployed browser acceptance. Startup/deployment distribution and final whole-batch review remain open. No product image was built or deployed from the worktree.
+Both modes use the environment names in the retrieval contract. Environment tk
+uses normal identity verification; internal callback delegations retain their
+existing run/route verification with transport changed to the documented header.
+No runtime host service key is supplied to a script. Business methods do not branch
+on which harness ran the command.
 
-## 第 1 批部署装配（2026-10-28 主控裁决 A）
+## Storage and transport change
 
-公共 `apps/agent-runtime/Dockerfile` 与 `build.mjs` 独立拥有 Node 镜像入口；企业 `make agent-runtime` 直接调用公共入口，不建企业 app。生产依赖闭包只有 runtime app、runtime package、contracts；复用现有依赖安装与源文件装配工具，不携带工作台、Chromium 或 Python。组件身份统一为 `ontomato-agent-runtime`，build 标签与 OCI revision 来自公共 SHA，即使由企业 CI 发布也不冒用企业 SHA。
+Retain scoped sessions, runs, admissions, messages, events, compactions and
+model-call facts. Change runs to running/stopped and PI projection; add session
+UID/workspace metadata. Replace artifact JSON payload columns with immutable
+file metadata. Replace skill version/manifest rows with name/digest metadata
+and current publication pointers. Code-execution bytes also move behind the same
+file interface. Wire snapshots/HTTP/events all reference the same artifact rows.
 
-四个应用镜像进入两版 CI、Compose、Watchtower、在线与离线清单；PostgreSQL 为第五个镜像。企业按完整 build 标签组包时单独指定 `AGENT_RUNTIME_IMAGE_TAG`，版本标签默认共用。部署工具版本 1.1.0，公共离线工具版本 2026.10.28；旧四镜像基线只在离线输入边界兼容，新导出必须包含运行时。
+The blob write precedes metadata commit; an unreferenced blob after a crash is
+safe to clean, a committed reference to nonexistent bytes is an error. Never
+serve arbitrary mutable workspace files for a historical artifact. Register
+files after all tools, not only bash or successful tools. Store a path occurrence
+and hash, so overwrite does not alter historical answers. See wire contract for
+cursor-bound resolution and registration events.
 
-`prepare-env.py` 是部署新增服务凭据的唯一生成入口：安装/更新保留已有凭据，缺少时生成随机 `AGENT_RUNTIME_SERVICE_TOKEN` 并原子写入 0600 `.env`。企业执行器在镜像校验和备份之后调用它；公共在线/离线部署更新模板后在 Compose 前调用它，无须现场手填。两服务引用同一变量。运行时通过分字段数据库配置连接产品数据库（公共 ontomato、企业 data_agent），独占 agent_runtime schema；文件持久化于 agent_runtime_data，HTTP 端口只在内部网络。模型配置仍临时读取 Java，并复用现有模型服务凭据。
+The shared Markdown rule lives in contracts/agent-artifact-markdown.md with one
+exported ARTIFACT_MARKDOWN_PROMPT constant. Renderer research and Vue integration
+remain batch 3. This batch adapts current governance/retrieval consumers and
+history/download to the new facts; it does not introduce the new conversation UI.
 
-本机 `dev`/`dev:up` 先启动运行时并等到 HTTP 就绪，再启动工作台；`dev:down/status` 按调用产品根识别进程，即使企业运行的是公共源码，也不将它归给公共 checkout。`dev:logs runtime` 查看独立日志。本地凭据在未提供时生成于调用产品的 `.secrets/agent-runtime.env`，数据位于调用产品的 data/agent-runtime。
+Stored pre-replacement records require the pre-release conversion work already
+reserved by the migration plan. Segment 2 uses clean isolated fixtures and new
+schema; it must reject an unconverted legacy schema explicitly rather than erase
+rows or keep old runtime branches. No automatic destructive upgrade is authorized.
+Record the required legacy-to-file conversion inputs for that owner. Main-checkout
+acceptance should use a separately named test DB/volume unless the controller
+explicitly authorizes conversion. Preserving existing runtime data is a release
+boundary, not a reason to keep two live protocols.
 
-工作树内只验证脚本、Compose 解析、依赖闭包及真实测试进程。最终 Docker 构建与整栈镜像冒烟需要主控在主目录执行，本执行者不在 worktree 构建或启动正式产品栈。
+## Removal and retained-owner inventory
+
+Paths below are public-repository relative. Delete obsolete exports/tests with
+their consumers; do not preserve aliases just to satisfy old assertions.
+
+| Replaced/deleted | Destination or retained owner |
+| --- | --- |
+| contracts agent-runtime-skills manifest, invocation/output envelopes, version refs | Standard SkillRef/name/digest publication + environment contract |
+| agent-runtime/src/skills.ts executeSkill and eager instructions; skill-lifetime.mjs | PI catalog loading; run worker lifecycle via existing worker-launch.py |
+| contextSkill/contextEntry; governance context callback/template refresh | Ordinary read-work-record command and host stable prompt |
+| privateContext.skillBindings/python and per-tool target/context envelope | One run environment, standalone execution environment |
+| agent-runtime/src/tools.ts workspace_* definitions | Four upstream PI tools; keep external MCP connection owner |
+| builtinTools.python, python_execute, run execution receipts, initialFiles continuation | bash Python; persistent session files; retained standalone code endpoint |
+| analyst runtime.json/runtime.mjs and Runtime invocation section/metadata | ontomato.mjs/client.mjs + unchanged packaged helper used inside and outside |
+| registerGovernanceSkill/registerRetrievalSkill manifest generation | Upload the actual standard directory bytes at startup |
+| workbench runtime-skills run.mjs NDJSON wrappers | Ordinary CLI scripts and standard references |
+| submit_dataset/finish_retrieval tool schemas, callbacks and outcome rows | Formal output receipt API + dataset file read; PI state/message continuation |
+| completed/failed/cancelled/interrupted for runtime agent/code lifecycle | PI run state; standalone process exit facts |
+| tool artifact output envelopes, opaque payload/jsonb artifact storage | Output scan, content-addressed files, PG metadata |
+| retrieval tri-state/questions/choice handling in API, ask, projection, abc bridge | Ordinary message reply + dataset references; keep task decision ownership |
+| Java RuntimeCodeClient hardcoded runtime-only resource list, Python binding/client parsing | Package full standard skill and use generic code contract |
+| Enterprise duplicated analyst command code and stale prompt tool names | Generated public scripts and edition documentation/prompt overlays |
+
+Search every live producer/reader, including contracts, workbench client,
+governance chat-view, retrieval projection/branch, current Vue consumers, tests,
+Java PythonExecuteService/RuntimeCodeClient and package resource copying. Old
+language enums in unrelated QC/analysis jobs are not runtime protocols and are
+not deleted by a repository-wide text replacement.
+
+Retain: sessions/events/admission/cursor recovery; compaction and PI model gateway;
+UID/rlimit/lifetime isolation; `/v1/code-executions` for Java; workbench orchestration
+and parent cancellation; governance materials/business work; ontology query/grant/
+formal-output/QC semantics. Keep old workbench core/agent-loop, harness-sessions,
+LangChain and Java file tools only for unmigrated analysis/diagnosis/generator
+consumers. No work on the paused third-batch branch or remote deployment.
+
+## Verification and handoff boundary
+
+The user's latest instruction narrows verification to durable contracts and one
+real-process smoke for each main path: governance reads/writes, one Python data
+question, cancellation and restart yielding aborted. Existing valid checks may
+remain; do not grow a fault matrix or maintain assertions about private SQL,
+prompt wording, internal call counts or implementation-only shapes.
+
+The kept checks protect runtime identity environment, standard skill loading,
+immutable file snapshots, closed write gates, shared executable distribution and
+PI/Java wire boundaries. Process smokes use isolated PG, real Node/Python child
+processes and local model/ontology HTTP fixtures, including nullable configuration
+and reasoning_content through pi-ai 1.4.0. Governance exercises compaction and
+saved work recovery. These are mechanical proofs, not live-model answer quality.
+
+Existing entry points: pnpm typecheck:runtime, pnpm typecheck:workbench,
+pnpm lint:workbench, pnpm test:runtime and the focused workbench governance/retrieval
+Vitest paths. Both editions' selected Java startup/Function/authorization tests use
+disposable PG/pgvector. The Linux PI tool probe runs current source in a disposable
+container with Node/Python; it does not build or accept the product image.
+
+Main-directory image builds, real full-stack/browser acceptance, Claude Code
+execution and authorized 128 comparison remain controller-owned. External steps
+are in the retrieval design. Runtime/host legacy schemas are rejected explicitly
+until the separately owned pre-release conversion; no old protocol fallback or
+automatic deletion is installed. No unresolved architecture decision remains.

@@ -5,7 +5,6 @@ import type {
   QcState,
   QcResult,
 } from "./query-thinking";
-import type { RetrievalResult } from "./data-retrieval";
 export interface QueryRetrievalRef {
   retrievalId: string;
   runtimeSessionId: string;
@@ -64,7 +63,8 @@ export function datasetPlacement(datasetId: string): string {
 const DATASET_PLACEMENT_PATTERN = /<!-- query-dataset:([\w-]+) -->/g;
 
 export type AnswerBodyPiece =
-  { kind: "text"; text: string } | { kind: "dataset"; datasetId: string };
+  | { kind: "text"; text: string }
+  | { kind: "dataset"; datasetId: string };
 
 /** The answer body in order: text between placements, and each placement's dataset id. */
 export function splitAnswerBody(body: string): AnswerBodyPiece[] {
@@ -88,7 +88,6 @@ export function answerBodyText(body: string): string {
 
 export interface QueryExecutionDisplayFact {
   retrieval?: QueryRetrievalRef;
-  needsInput?: Extract<RetrievalResult, { status: "needs_input" }>;
   thinkingSummary?: string;
   thinkingSteps?: ThinkingStep[];
   thinkingState?: QueryThinkingState;

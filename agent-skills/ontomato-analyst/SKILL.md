@@ -1,7 +1,5 @@
 ---
 name: ontomato-analyst
-metadata:
-  ontomato-runtime-manifest: runtime.json
 description: "Query and analyze business objects and relationships through an existing Ontomato ontology. Use for natural-language questions, controlled DSL queries, value exploration and analysis reports; read the current definitions without changing the ontology or business data."
 ---
 
@@ -30,30 +28,26 @@ The skills cover different tasks on this same platform: `ontomato-ontomap-builde
 
 Answer business questions using the current ontology and its permitted data. This package reads definitions and queries data; it does not change the data source, ontomap, permissions or business records. It needs no product checkout. Choose `ask` for a natural-language question, `execute-dsl` when you need to control the query, or the separately configured analysis MCP service for a report.
 
-## Runtime invocation
-
-When loaded through runtime.json, use its declared `ontology_*` tools directly.
-The commands below describe the external CLI distribution. The runtime manifest
-has no recursive ask tool. Its Python helper is supplied as a read-only library;
-credentials and target URLs are fixed by the host outside model arguments.
-
 ## Configuration
 
 Use Node.js 18 or newer. Keep this package together; no product checkout is needed.
-`application.yml` beside the script accepts simple unquoted `key: value` lines.
-`ONTOMATO_URL` overrides `envUrl`. Optional separate URLs select the ontology
-facade and workbench; include any reverse-proxy prefix, without browser routes:
+Scripts read environment first and application.yml beside the script as fallback.
+Use ONTOMATO_ONTOLOGY_URL (including any ontology gateway prefix),
+ONTOMATO_WORKBENCH_URL (base before /api), ONTOMATO_TK (sent as tk), and optionally
+ONTOMATO_URL as the common deployment base. The YAML fallback keys are ontologyUrl,
+workbenchUrl, tk and envUrl. An explicit service URL is sufficient without envUrl.
+ONTOMATO_LANGUAGE and ONTOMATO_CORRELATION_ID propagate to requests.
+ONTOMATO_RUN_ID supplies the run header when a host provided it. The Python helper
+uses the same variables. ONTOMATO_QUERY_TK optionally selects the host-issued
+ontology execution credential, and ONTOMATO_QUERY_RUN_ID preserves its bound run
+for a nested standalone execution. Ordinary external execution uses your own tk.
 
-```yaml
-envUrl: http://host:3000
-# Defaults to <envUrl>/api/data-query
-ontologyUrl: http://host:3005/api/data-query
-# Defaults to envUrl
-workbenchUrl: http://host:3000
-```
-
-The public edition has no login. For an authenticated enterprise deployment use
-the enterprise package with an authorized identity.
+The product loads these same files read-only and invokes the commands below using
+bash. Read this file and references on demand; no runtime-specific entry exists.
+Python uses `python/query_runtime.py` via PYTHONPATH; use protocol-2 source as in
+the data-retrieval skill. Public anonymous access follows the installed policy.
+For enterprise login, obtain an authorized tk before execution; it is not a runtime
+service credential. The enterprise distribution includes a separate login helper.
 
 ## Commands
 
@@ -76,20 +70,19 @@ Run `node ontomato.mjs <command>` from this directory. JSON accepts `@file`.
 
 `ask` prints its request ID before creating work and then the retrieval/session IDs.
 Keep them to inspect or retry an uncertain response. Reusing a request ID with
-changed input is an error. A terminal result is `completed`, `needs_input` or
-`failed`. `needs_input` includes question IDs, choices, reasons and existing
-usable datasets. Ask the user; silence does not select the recommendation.
+changed input is an error. Status returns the authoritative PI run state, messages and file artifact IDs.
+A normal stop may be a question, not a dataset. Ask the user and resume the same
+retrieval with their text; silence does not select a recommendation.
 
 ```json
-{"expectedRunId":"<runtimeRunId from status>","expectedDecisionRevision":0,
- "answers":[{"questionId":"<id from needs_input>","choiceId":"<chosen id>"}]}
+{"expectedRunId":"<run from status>","expectedDecisionRevision":0,
+ "message":"Use active employees only"}
 ```
 
-Keep the same reply envelope and request ID when retrying a lost response.
-A free-text answer uses `text` instead of `choiceId`. A reply advances the decision
-revision; stale concurrent replies fail. The CLI does not automatically route an
-unrelated future chat message into that retrieval. Quality checking is asynchronous
-and may appear later in `ask --status`. Failures exit nonzero with a readable cause.
+Use this envelope with ask --resume <id> --answers @file and a fresh request ID.
+Reuse that same request ID/envelope after a lost response. Quality checking is
+asynchronous; inspect ask --status later. The product retriever uses direct
+ontology commands and the data-retrieval file script, never recursively ask.
 
 ## Query workflow and result meaning
 

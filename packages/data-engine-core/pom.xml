@@ -96,7 +96,7 @@
     <build><resources>
         <resource><directory>src/main/resources</directory></resource>
         <resource><directory>../../agent-skills/ontomato-analyst</directory><targetPath>ontology-skills/ontomato-analyst</targetPath>
-            <includes><include>SKILL.md</include><include>runtime.json</include><include>runtime.mjs</include><include>python/**</include><include>references/dsl.md</include></includes>
+            <includes><include>SKILL.md</include><include>ontomato.mjs</include><include>client.mjs</include><include>application.yml</include><include>python/**</include><include>references/dsl.md</include></includes>
         </resource>
     </resources></build>
 </project>

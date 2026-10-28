@@ -38,7 +38,7 @@ export async function runRetrievalBranch(
   );
   const retrieval = {
     retrievalId: id,
-    runtimeSessionId: snapshot.runtimeSessionId,
+    runtimeSessionId: snapshot.runtimeSessionId!,
     runtimeRunId: snapshot.runtimeRunId!,
   };
   ctx.reportRetrievalLocation?.(retrieval);
@@ -49,7 +49,7 @@ export async function runRetrievalBranch(
   ctx.signal.addEventListener("abort", cancel, { once: true });
   if (ctx.signal.aborted) cancel();
   try {
-    while (snapshot.phase === "running") {
+    while (snapshot.run?.status === "running") {
       ctx.signal.throwIfAborted();
       await new Promise((resolve) => setTimeout(resolve, 200));
       snapshot = await retrievalService.get(id, owner, credentials);
@@ -80,26 +80,26 @@ export async function runRetrievalBranch(
       ),
       abcOutKeyRefs: artifacts.map((a) => a.payload.outKeyRefs),
     };
-    if (snapshot.result?.status === "needs_input") {
-      output.needsInput = snapshot.result;
-      output.content = [
-        content,
-        ...snapshot.result.questions.map((q) => q.question),
-      ]
-        .filter(Boolean)
-        .join("\n\n");
-      ctx.reportFallback(output);
-      throw new Error(
-        snapshot.result.questions.map((q) => q.question).join("; "),
-      );
-    }
+    const answer = snapshot.messages
+      .flatMap((m) =>
+        m.message.role === "assistant"
+          ? m.message.content.flatMap((c) =>
+              c.type === "text" ? [c.text] : [],
+            )
+          : [],
+      )
+      .join("\n\n");
+    output.content = [content, answer].filter(Boolean).join("\n\n");
     ctx.reportFallback(output);
-    if (snapshot.result?.status !== "completed")
-      throw new Error(
-        snapshot.result?.status === "failed"
-          ? snapshot.result.error.message
-          : "Retrieval result is missing",
-      );
+    if (
+      snapshot.run?.stopReason === "error" ||
+      snapshot.run?.stopReason === "aborted"
+    )
+      throw new Error(snapshot.run.errorMessage ?? "Retrieval stopped");
+    if (!datasets.length) {
+      if (answer) ctx.pushContent(answer, false);
+      return undefined;
+    }
     ctx.pushEvent({ type: "query_datasets", datasets, nodeIds: [] });
     ctx.pushContent(content, false);
     ctx.thinking.set("success", t("query.status.completed"));

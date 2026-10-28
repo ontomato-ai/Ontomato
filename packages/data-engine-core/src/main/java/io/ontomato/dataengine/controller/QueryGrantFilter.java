@@ -27,13 +27,13 @@ public class QueryGrantFilter extends OncePerRequestFilter {
   protected void doFilterInternal(
       HttpServletRequest request, HttpServletResponse response, FilterChain chain)
       throws ServletException, IOException {
-    String authorization = request.getHeader("Authorization");
-    if (authorization != null && authorization.startsWith("Bearer oq.")) {
+    String authorization = request.getHeader("tk");
+    if (authorization != null && authorization.startsWith("oq.")) {
       try {
         request.setAttribute(
             QueryGrantService.ATTRIBUTE,
             grants.verify(
-                authorization.substring(7),
+                authorization,
                 request.getHeader("X-Ontomato-Run-Id"),
                 request.getRequestURI()));
       } catch (ResponseStatusException e) {

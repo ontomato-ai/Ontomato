@@ -72,7 +72,7 @@ class RuntimeFunctionIntegrationTest {
             try {
               var claims =
                   grants.verify(
-                      exchange.getRequestHeaders().getFirst("Authorization").substring(7),
+                      exchange.getRequestHeaders().getFirst("tk"),
                       exchange.getRequestHeaders().getFirst("X-Ontomato-Run-Id"),
                       exchange.getRequestURI().getPath());
               if (!"reader".equals(claims.getString("userId"))

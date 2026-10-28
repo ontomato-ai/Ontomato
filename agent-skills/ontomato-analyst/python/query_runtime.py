@@ -4,19 +4,30 @@ import os
 from pathlib import Path
 import requests
 
-_target = os.environ["ONTOMATO_TARGET_URL"].rstrip("/")
-_credential = json.loads(os.environ["ONTOMATO_CREDENTIAL_JSON"])
+_config = {}
+_config_file = Path(__file__).resolve().parents[1] / "application.yml"
+if _config_file.exists():
+    for _line in _config_file.read_text(encoding="utf-8").splitlines():
+        if _line.strip() and not _line.lstrip().startswith("#") and ":" in _line:
+            _key, _value = _line.split(":", 1)
+            _config[_key.strip()] = _value.strip()
+_base = os.environ.get("ONTOMATO_URL", _config.get("envUrl", ""))
+_target = os.environ.get("ONTOMATO_ONTOLOGY_URL", _config.get("ontologyUrl", _base.rstrip("/") + "/api/data-query")).rstrip("/")
+_token = os.environ.get("ONTOMATO_QUERY_TK", os.environ.get("ONTOMATO_TK", _config.get("tk", "")))
 _status = Path("query-status.json")
 _status.write_text("{}", encoding="utf-8")
 parameters = json.loads(Path("parameters.json").read_text(encoding="utf-8")) if Path("parameters.json").exists() else {}
 
 
 def _call(path, body):
-    headers = {"X-Ontomato-Run-Id": json.loads(os.environ.get("ONTOMATO_CONTEXT_JSON", "{}")).get("credentialRunId", os.environ["ONTOMATO_RUN_ID"]),
-               "X-Correlation-Id": os.environ["ONTOMATO_CORRELATION_ID"]}
-    if _credential["kind"] != "bearer":
-        raise RuntimeError("An ontology execution grant is required")
-    headers["Authorization"] = "Bearer " + _credential["value"]
+    headers = {"Accept-Language": os.environ.get("ONTOMATO_LANGUAGE", "en")}
+    if _token:
+        headers["tk"] = _token
+    for _name, _header in (("ONTOMATO_RUN_ID", "X-Ontomato-Run-Id"), ("ONTOMATO_CORRELATION_ID", "X-Correlation-Id")):
+        if os.environ.get(_name):
+            headers[_header] = os.environ[_name]
+    if os.environ.get("ONTOMATO_QUERY_RUN_ID"):
+        headers["X-Ontomato-Run-Id"] = os.environ["ONTOMATO_QUERY_RUN_ID"]
     response = requests.post(_target + path, json=body, headers=headers, timeout=120, allow_redirects=False)
     if not response.ok:
         raise RuntimeError("Ontology request failed (%s): %s" % (response.status_code, response.text))

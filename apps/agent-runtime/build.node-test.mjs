@@ -191,7 +191,7 @@ test("runtime production closure contains only the public runtime and contracts"
     ]);
     assert.ok(
       Object.keys(graph.packages).some((key) =>
-        key.startsWith("@earendil-works/pi-ai@1.3.0"),
+        key.startsWith("@earendil-works/pi-ai@1.4.0"),
       ),
     );
   }
@@ -204,8 +204,9 @@ test("source staging accepts an app without a web bundle and preserves the fork 
   const { mkdtempSync, mkdirSync, rmSync, existsSync, writeFileSync } =
     await import("node:fs");
   const { tmpdir } = await import("node:os");
-  const { assembleAppStage } =
-    await import("../../scripts/workbench/stage-app.mjs");
+  const { assembleAppStage } = await import(
+    "../../scripts/workbench/stage-app.mjs"
+  );
   const root = mkdtempSync(join(tmpdir(), "runtime-stage-"));
   t.after(() => rmSync(root, { recursive: true, force: true }));
   const absolute = join(root, "app");
@@ -238,12 +239,14 @@ test("source staging accepts an app without a web bundle and preserves the fork 
 });
 
 test("notice generation sees the same production store that enters the final image", async (t) => {
-  const { mkdtempSync, mkdirSync, rmSync, writeFileSync } =
-    await import("node:fs");
+  const { mkdtempSync, mkdirSync, rmSync, writeFileSync } = await import(
+    "node:fs"
+  );
   const { tmpdir } = await import("node:os");
   const { execFileSync } = await import("node:child_process");
-  const { installedLicenseReport } =
-    await import("../../scripts/workbench/install-runtime.mjs");
+  const { installedLicenseReport } = await import(
+    "../../scripts/workbench/install-runtime.mjs"
+  );
   const root = mkdtempSync(join(tmpdir(), "runtime-notices-"));
   t.after(() => rmSync(root, { recursive: true, force: true }));
   const runtime = join(root, "opt/runtime");

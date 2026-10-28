@@ -51,7 +51,7 @@ class RuntimePythonClientTest {
     when(runtime.execution(anyString(), anyString()))
         .thenReturn(
             JSONObject.parseObject(
-                "{\"status\":\"completed\",\"outputs\":[\"stdout\",\"stderr\",\"query-status.json\"]}"));
+                "{\"status\":\"stopped\",\"exitCode\":0,\"outputs\":[{\"name\":\"stdout\"},{\"name\":\"stderr\"},{\"name\":\"query-status.json\"}]}"));
     when(runtime.output(anyString(), anyString(), eq("stdout")))
         .thenReturn("{\"answer\":[{\"region\":null,\"count\":0,\"valid\":false}]}");
     when(runtime.output(anyString(), anyString(), eq("stderr"))).thenReturn("");
@@ -82,7 +82,7 @@ class RuntimePythonClientTest {
     assertEquals(0, body.getJSONArray("arguments").size());
     assertEquals(
         "scoped-grant",
-        body.getJSONObject("binding").getJSONObject("credential").getString("value"));
+        body.getJSONObject("environment").getJSONObject("secrets").getString("ONTOMATO_QUERY_TK"));
     assertTrue(body.getJSONArray("files").getJSONObject(1).getString("content").contains("null"));
     verify(grants).revoke(eq("domain"), anyString());
   }
@@ -96,7 +96,7 @@ class RuntimePythonClientTest {
             anyString(), anyString(), anyString(), anyString(), anyLong(), anyList(), isNull()))
         .thenReturn("user-read-fixture");
     when(runtime.execution(anyString(), anyString()))
-        .thenReturn(JSONObject.parseObject("{\"status\":\"completed\",\"outputs\":[\"stdout\"]}"));
+        .thenReturn(JSONObject.parseObject("{\"status\":\"stopped\",\"exitCode\":0,\"outputs\":[{\"name\":\"stdout\"}]}"));
     when(runtime.output(anyString(), anyString(), eq("stdout")))
         .thenReturn("{\"answer\":[{\"count\":0,\"region\":null,\"valid\":false}]}");
     var function =

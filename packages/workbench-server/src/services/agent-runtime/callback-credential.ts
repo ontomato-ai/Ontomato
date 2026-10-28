@@ -45,10 +45,10 @@ export function callbackCredential(input: z.infer<typeof claimsSchema>) {
 }
 /** Installed before ordinary authentication, which still verifies the delegated user. */
 export const unwrapCallbackCredential: RequestHandler = (req, _res, next) => {
-  const auth = req.headers.authorization;
-  if (!auth?.startsWith("Bearer wbc1.")) return next();
+  const auth = typeof req.headers.tk === "string" ? req.headers.tk : "";
+  if (!auth.startsWith("wbc1.")) return next();
   try {
-    const bytes = Buffer.from(auth.slice("Bearer wbc1.".length), "base64url"),
+    const bytes = Buffer.from(auth.slice("wbc1.".length), "base64url"),
       decipher = createDecipheriv("aes-256-gcm", key(), bytes.subarray(0, 12));
     decipher.setAuthTag(bytes.subarray(12, 28));
     const claims = claimsSchema.parse(
@@ -60,10 +60,10 @@ export const unwrapCallbackCredential: RequestHandler = (req, _res, next) => {
       ),
     );
     if (
-      req.method !== "POST" ||
+      !["POST", "GET"].includes(req.method) ||
       !req.path.startsWith(claims.pathPrefix) ||
       claims.expiresAt <= Date.now() ||
-      req.body?.identity?.runId !== claims.runId
+      req.header("X-Ontomato-Run-Id") !== claims.runId
     )
       throw new Error("Wrong callback scope");
     delete req.headers.authorization;

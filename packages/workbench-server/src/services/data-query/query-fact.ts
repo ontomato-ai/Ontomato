@@ -114,7 +114,6 @@ export function toQueryExecutionFact(
     thinkingState: thinking.state,
     backendSessions: run?.backendSessions,
     retrieval: run?.retrieval,
-    needsInput: run?.needsInput,
     nodeIds: run?.nodeIds,
     markdownTable: run?.markdownTable,
     data: run?.dataPayload,
@@ -140,7 +139,6 @@ export function toQueryExecutionFact(
 
 const DISPLAY_FACT_KEYS = [
   "retrieval",
-  "needsInput",
   "thinkingSummary",
   "thinkingSteps",
   "fullContent",
@@ -243,7 +241,6 @@ export function buildQueryRunInput(input: {
     error: input.error,
     backendSessions: fact.backendSessions,
     retrieval: fact.retrieval ?? lastDataset?.retrieval,
-    needsInput: fact.needsInput,
     nodeIds: fact.nodeIds,
     markdownTable: fact.markdownTable,
     datasetPreviews: fact.datasetPreviews,

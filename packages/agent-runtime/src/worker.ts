@@ -30,7 +30,7 @@ export interface WorkerPolicy {
 }
 const allocations = new Map<string, Promise<number>>();
 const workerUids = new WeakMap<ChildProcess, number>();
-async function allocateUid(file: string): Promise<number> {
+export async function allocateUid(file: string): Promise<number> {
   const previous = allocations.get(file) ?? Promise.resolve(0);
   const next = previous
     .catch(() => 0)
@@ -198,32 +198,35 @@ export function signalWorker(
     }).unref();
   } else {
     const uid = workerUids.get(child);
-    if (uid !== undefined)
-      for (const pid of readdirSync("/proc").filter((name) =>
-        /^\d+$/.test(name),
-      )) {
-        try {
-          if (
-            Number(
-              readFileSync(`/proc/${pid}/status`, "utf8").match(
-                /^Uid:\s+(\d+)/m,
-              )?.[1],
-            ) === uid
-          )
-            process.kill(Number(pid), signal);
-        } catch (error) {
-          if (
-            !["ESRCH", "ENOENT"].includes(
-              (error as Error & { code?: string }).code ?? "",
-            )
-          )
-            throw error;
-        }
-      }
+    if (uid !== undefined) signalUid(uid, signal);
     try {
       process.kill(-child.pid, signal);
     } catch (e) {
       if ((e as Error & { code?: string }).code !== "ESRCH") throw e;
+    }
+  }
+}
+
+export function signalUid(uid: number, signal: "SIGTERM" | "SIGKILL") {
+  if (process.platform !== "linux" || uid < 20000)
+    throw new Error("Invalid isolated worker UID");
+  for (const pid of readdirSync("/proc").filter((name) => /^\d+$/.test(name))) {
+    try {
+      if (
+        Number(
+          readFileSync(`/proc/${pid}/status`, "utf8").match(
+            /^Uid:\s+(\d+)/m,
+          )?.[1],
+        ) === uid
+      )
+        process.kill(Number(pid), signal);
+    } catch (error) {
+      if (
+        !["ESRCH", "ENOENT"].includes(
+          (error as Error & { code?: string }).code ?? "",
+        )
+      )
+        throw error;
     }
   }
 }
