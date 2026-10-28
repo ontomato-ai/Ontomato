@@ -9,6 +9,7 @@ import {
 } from "../../infrastructure/postgres";
 import { assistantStore, type AssistantOwner, type AgentRow } from "./store";
 import { HttpError } from "../../utils/errors";
+import { resolveAssistantSkillReferences } from "./skill-references";
 const view = (a: AgentRow) =>
   assistantAgentDefinitionSchema.parse({
     id: a.id,
@@ -32,14 +33,7 @@ export async function saveAgentDefinition(
   input: AssistantAgentInput,
   owner: AssistantOwner,
 ) {
-  if (
-    input.skills.some(
-      (s) =>
-        s.namespace.kind === "domain" &&
-        s.namespace.domainId !== owner.domainId,
-    )
-  )
-    throw new HttpError(403, "Skill belongs to another domain");
+  const skills = resolveAssistantSkillReferences(input.skills, owner.domainId);
   const current = await assistantStore.agent(id, owner);
   await getPostgresPool().query(
     `UPDATE ${t("assistant_agents")} SET name=$3,description=$4,enabled=$5,system_prompt=$6,model_role=$7,skills=$8,icon=$9,class_names=$10,graph_scope=$11,enabled_mcp_service_names=$12,sort_order=$13 WHERE id=$1 AND domain_id=$2`,
@@ -51,7 +45,7 @@ export async function saveAgentDefinition(
       input.enabled,
       input.systemPrompt,
       input.modelRole ?? current.model_role,
-      JSON.stringify(input.skills),
+      JSON.stringify(skills),
       input.icon,
       JSON.stringify(input.classNames),
       JSON.stringify(input.graphScope),
@@ -66,14 +60,7 @@ export async function createAgentDefinition(
   input: AssistantAgentInput,
   owner: AssistantOwner,
 ) {
-  if (
-    input.skills.some(
-      (s) =>
-        s.namespace.kind === "domain" &&
-        s.namespace.domainId !== owner.domainId,
-    )
-  )
-    throw new HttpError(403, "Skill belongs to another domain");
+  const skills = resolveAssistantSkillReferences(input.skills, owner.domainId);
   await getPostgresPool().query(
     `INSERT INTO ${t("assistant_agents")} (id,domain_id,kind,name,description,enabled,system_prompt,model_role,skills,icon,class_names,graph_scope,enabled_mcp_service_names,sort_order) VALUES($1,$2,$1::text,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) ON CONFLICT DO NOTHING`,
     [
@@ -84,7 +71,7 @@ export async function createAgentDefinition(
       input.enabled,
       input.systemPrompt,
       input.modelRole ?? "general",
-      JSON.stringify(input.skills),
+      JSON.stringify(skills),
       input.icon,
       JSON.stringify(input.classNames),
       JSON.stringify(input.graphScope),
@@ -99,7 +86,7 @@ export async function createAgentDefinition(
     JSON.stringify(
       assistantAgentDefinitionSchema
         .omit({ id: true })
-        .parse({ ...input, modelRole: input.modelRole ?? "general" }),
+        .parse({ ...input, skills, modelRole: input.modelRole ?? "general" }),
     )
   )
     throw new HttpError(409, "Idempotency key reused", "IDEMPOTENCY_CONFLICT");

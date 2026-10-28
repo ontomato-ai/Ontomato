@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { z } from "zod";
 import {
   getPostgresPool,
   qualifiedTable as table,
@@ -12,6 +13,8 @@ import {
 } from "../../platform/agent-runtime/runtime";
 import { HttpError } from "../../utils/errors";
 export async function analysisTask(id: string, owner: AssistantOwner) {
+  if (!z.string().uuid().safeParse(id).success)
+    throw new HttpError(404, "Analysis task not found");
   const turn = await assistantStore.turn(id, owner),
     session = await assistantStore.session(turn.session_id, owner),
     s = await assistantService.readRun(session.id, id, owner),
@@ -65,13 +68,18 @@ export async function startAnalysis(
   owner: AssistantOwner,
   credentials: AssistantCredentials,
 ) {
-  let sessionId: string;
-  if (threadId && /^[a-f0-9-]{36}$/i.test(threadId)) {
-    const s = await assistantStore.session(threadId, owner);
-    if (s.agent_id !== agentId)
-      throw new HttpError(409, "Conversation agent differs");
-    sessionId = s.id;
-  } else if (threadId) {
+  let sessionId = "";
+  if (threadId && z.string().uuid().safeParse(threadId).success) {
+    try {
+      const s = await assistantStore.session(threadId, owner);
+      if (s.agent_id !== agentId)
+        throw new HttpError(409, "Conversation agent differs");
+      sessionId = s.id;
+    } catch (error) {
+      if (!(error instanceof HttpError && error.status === 404)) throw error;
+    }
+  }
+  if (!sessionId && threadId) {
     const result = await getPostgresPool().query(
       `INSERT INTO ${table("assistant_external_threads")} (domain_id,owner_id,alias,session_id) VALUES($1,$2,$3,$4) ON CONFLICT(domain_id,owner_id,alias) DO UPDATE SET alias=EXCLUDED.alias RETURNING session_id`,
       [owner.domainId, owner.userId, threadId, randomUUID()],
@@ -80,7 +88,7 @@ export async function startAnalysis(
     await assistantService.create(sessionId, owner, {
       agentId,
     });
-  } else {
+  } else if (!sessionId) {
     sessionId = randomUUID();
     await assistantService.create(sessionId, owner, {
       agentId,

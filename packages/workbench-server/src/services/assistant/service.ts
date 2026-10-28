@@ -114,15 +114,20 @@ export const assistantService = {
       cursor?: string;
     },
   ) {
-    const cursor = input.cursor
-      ? z
+    let cursor = null;
+    if (input.cursor) {
+      try {
+        cursor = z
           .object({
-            updatedAt: z.string(),
+            updatedAt: z.string().datetime(),
             id: z.string().uuid(),
             agentId: z.string(),
           })
-          .parse(JSON.parse(Buffer.from(input.cursor, "base64url").toString()))
-      : null;
+          .parse(JSON.parse(Buffer.from(input.cursor, "base64url").toString()));
+      } catch {
+        throw new HttpError(400, "Invalid session cursor", "INVALID_REQUEST");
+      }
+    }
     if (cursor && cursor.agentId !== input.agentId)
       throw new HttpError(400, "Cursor filters differ");
     const rows = (
@@ -222,7 +227,24 @@ export const assistantService = {
   async settle(s: RuntimeRunSnapshot, owner: AssistantOwner) {
     if (s.run.status === "stopped") {
       await assistantStore.close(s.run.id);
-      await retrievalStore.cancelParent(s.run.id, owner);
+      const context = getLogContext();
+      await this.stopChildren(s.run.id, owner, {
+        token: context?.token,
+        apiKey: context?.apiKey,
+      });
+    }
+  },
+  async stopChildren(
+    id: string,
+    owner: AssistantOwner,
+    credentials: AssistantCredentials,
+  ) {
+    const children = await retrievalStore.cancelParent(id, owner);
+    for (const childId of children) {
+      const child = await retrievalStore.get(childId, owner);
+      // Leave completed retrievals and their asynchronous QC alone.
+      if (child.snapshot.run?.status !== "stopped")
+        await retrievalService.cancel(childId, owner, credentials);
     }
   },
   async start(
@@ -361,12 +383,7 @@ export const assistantService = {
           const s = await new RuntimeClient(owner.domainId).run(id);
           if (s.run.status === "stopped") {
             await assistantStore.close(id);
-            const children = await retrievalStore.cancelParent(id, owner);
-            for (const childId of children) {
-              const child = await retrievalStore.get(childId, owner);
-              if (child.snapshot.run?.status === "running")
-                await retrievalService.cancel(childId, owner, credentials);
-            }
+            await this.stopChildren(id, owner, credentials);
             return;
           }
           await new Promise((resolve) => setTimeout(resolve, 500));

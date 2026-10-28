@@ -1,8 +1,31 @@
 import type { AnalysisAgentSkillReference } from "@ontomato/contracts/skills";
+import type { AssistantAgentInput } from "@ontomato/contracts/assistant-chat";
+import { runtimeSkillRefSchema } from "@ontomato/contracts/agent-runtime-skills";
+import { HttpError } from "../../utils/errors";
 import {
   getPostgresPool,
   qualifiedTable as t,
 } from "../../infrastructure/postgres";
+export function resolveAssistantSkillReferences(
+  skills: AssistantAgentInput["skills"],
+  domainId: string,
+) {
+  return skills.map((skill) => {
+    if (
+      skill.namespace.kind === "domain" &&
+      skill.namespace.domainId !== undefined &&
+      skill.namespace.domainId !== domainId
+    )
+      throw new HttpError(403, "Skill belongs to another domain");
+    return runtimeSkillRefSchema.parse({
+      ...skill,
+      namespace:
+        skill.namespace.kind === "domain"
+          ? { kind: "domain", domainId }
+          : skill.namespace,
+    });
+  });
+}
 export async function listAnalysisAgentSkillReferences(
   domainId: string,
   skillId: string,

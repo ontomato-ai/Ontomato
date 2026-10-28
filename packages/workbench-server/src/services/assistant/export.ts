@@ -12,11 +12,15 @@ export async function exportMarkdown(
   markdown: string,
   owner: AssistantOwner,
   signal?: AbortSignal,
+  ancestors: ReadonlySet<string> = new Set(),
 ) {
   const references = [
     ...markdown.matchAll(/(!?)\[([^\]]*)\]\((outputs\/[^\s)]+)\)/g),
   ];
   for (const match of references) {
+    signal?.throwIfAborted();
+    if (ancestors.has(match[3]))
+      throw new HttpError(400, `Circular artifact reference: ${match[3]}`);
     const a = (
       await assistantService.resolve(sessionId, runId, match[3], owner)
     ).artifact;
@@ -39,7 +43,15 @@ export async function exportMarkdown(
         owner,
       );
       rendered = `${payload.title}\n\n${payload.truncation?.truncationHint ?? ""}\n\n${JSON.stringify({ columns: payload.columns, rows: payload.rows })}`;
-    } else if (a.path.endsWith(".md")) rendered = bytes.toString();
+    } else if (a.path.endsWith(".md"))
+      rendered = await exportMarkdown(
+        sessionId,
+        runId,
+        bytes.toString(),
+        owner,
+        signal,
+        new Set([...ancestors, match[3]]),
+      );
     else rendered = `${match[2]} (${a.path})`;
     markdown = markdown.replace(match[0], rendered);
   }

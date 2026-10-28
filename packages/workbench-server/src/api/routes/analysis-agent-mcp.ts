@@ -3,6 +3,7 @@ import { createLogger } from "../../logging/logger";
 import { Request } from "express";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
+import { HttpError } from "../../utils/errors";
 import { analysisTask, startAnalysis } from "../../services/assistant/mcp";
 import { workbenchProduct } from "../../product/installed";
 import {
@@ -16,6 +17,20 @@ import {
   textJson,
   withMcpIdentity,
 } from "../utils/mcp-route";
+function withAnalysisIdentity(
+  req: Request,
+  action: Parameters<typeof withMcpIdentity>[1],
+  options?: Parameters<typeof withMcpIdentity>[2],
+) {
+  return withMcpIdentity(req, async (identity) => {
+    try {
+      return await action(identity);
+    } catch (error) {
+      if (!(error instanceof HttpError && error.status < 500)) throw error;
+      return textJson({ success: false, error: error.message });
+    }
+  }, options);
+}
 function createAnalysisAgentMcpServer(req: Request) {
   const server = new McpServer({
     name: workbenchProduct().analysisMcpServerName,
@@ -29,7 +44,7 @@ function createAnalysisAgentMcpServer(req: Request) {
       inputSchema: {},
     },
     async () =>
-      withMcpIdentity(req, async (identity) => {
+      withAnalysisIdentity(req, async (identity) => {
         const agents = await assistantStore.agents(identity.domainId);
         return textJson({
           agents: agents
@@ -53,7 +68,7 @@ function createAnalysisAgentMcpServer(req: Request) {
       inputSchema: { taskId: z.string().min(1) },
     },
     async ({ taskId }) =>
-      withMcpIdentity(req, async (identity) =>
+      withAnalysisIdentity(req, async (identity) =>
         textJson({ success: true, task: await analysisTask(taskId, identity) }),
       ),
   );
@@ -66,7 +81,7 @@ function createAnalysisAgentMcpServer(req: Request) {
       inputSchema: { taskId: z.string().min(1) },
     },
     async ({ taskId }) =>
-      withMcpIdentity(req, async (identity) => {
+      withAnalysisIdentity(req, async (identity) => {
         const task = await analysisTask(taskId, identity);
         return textJson(
           task.resultReport
@@ -96,7 +111,7 @@ function createAnalysisAgentMcpServer(req: Request) {
       },
     },
     async ({ agentId, question, threadId, apiKey, locale }) =>
-      withMcpIdentity(
+      withAnalysisIdentity(
         req,
         async (identity) =>
           textJson({
