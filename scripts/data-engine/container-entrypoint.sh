@@ -16,6 +16,9 @@ export ONTOMATO_APP_SKILLS="$APP_ROOT/skills"
 [ -d "$ONTOMATO_CONF_DEFAULTS" ] || die "missing $ONTOMATO_CONF_DEFAULTS"
 [ -d "$ONTOMATO_APP_SKILLS" ] || die "missing $ONTOMATO_APP_SKILLS"
 
+# The conf directory is on the JVM classpath, so it must exist before the JVM starts;
+# ProductFileSync fills it during startup.
+mkdir -p "$CONF_DIR"
 cd "$DEPLOY_DIR"
 echo "[entrypoint] datarag starting"
 exec "$JAVA_HOME/bin/java" \
