@@ -9,6 +9,10 @@ import {
   type RetrievalInput,
   type DatasetPayload,
 } from "@ontomato/contracts/data-retrieval";
+import type { RuntimeRunSnapshot } from "@ontomato/contracts/agent-runtime";
+import { RUNTIME_MODEL_NOT_CONFIGURED } from "@ontomato/contracts/agent-runtime-values";
+import { tForLocale } from "../../i18n";
+import { getRoleNotConfiguredMessage } from "../../config/model-resolver";
 import { codeExecutionSchema } from "@ontomato/contracts/agent-runtime-code";
 import { runtimeArtifactSchema } from "@ontomato/contracts/agent-runtime-artifacts";
 import { RuntimeClient } from "../agent-runtime/client";
@@ -93,9 +97,8 @@ export const retrievalService = {
     const runKey = record.snapshot.runtimeRunId!;
     if (active.has(runKey)) return;
     const work = this.prepare(record, credentials, answerText, previousRunId)
-      .then(() => this.observe(id, record.owner, credentials, runKey))
       .catch(async (error: unknown) => {
-        logger.warn("Retrieval execution failed", {
+        logger.warn("Retrieval preparation failed", {
           retrievalId: id,
           error: error instanceof Error ? error.message : String(error),
         });
@@ -103,15 +106,20 @@ export const retrievalService = {
           id,
           record.owner,
           credentials,
-          error instanceof Error ? error.message : String(error),
+          tForLocale(credentials.locale, "query.retrieval.startFailed"),
           runKey,
           "RETRIEVAL_EXECUTION_FAILED",
         );
       })
+      // Observation failures cannot establish a business outcome; only a runtime snapshot can.
+      .then(() => this.observe(id, record.owner, credentials, runKey))
       .finally(() => active.delete(runKey));
     active.set(runKey, work);
     void work.catch((error) =>
-      logger.error("Retrieval settlement failed", { retrievalId: id, error }),
+      logger.error("Retrieval reconciliation is pending", {
+        retrievalId: id,
+        error,
+      }),
     );
   },
   async prepare(
@@ -303,6 +311,8 @@ export const retrievalService = {
     credentials: RetrievalCredentials,
     expectedRunId: string,
   ) {
+    let unavailable = false;
+    const client = new RuntimeClient(owner.domainId);
     while (true) {
       const record = await retrievalStore.get(id, owner);
       if (
@@ -310,7 +320,47 @@ export const retrievalService = {
         record.snapshot.runtimeRunId !== expectedRunId
       )
         return;
-      const round = await retrievalStore.round(record.snapshot.runtimeRunId!);
+      const round = await retrievalStore.round(expectedRunId);
+      let snapshot: RuntimeRunSnapshot | undefined;
+      try {
+        const statuses = await client.sessionStatuses([
+          record.snapshot.runtimeSessionId,
+        ]);
+        const latest = statuses[0]?.latestRun;
+        if (latest?.id !== expectedRunId || latest.status !== "running")
+          snapshot = await client.run(expectedRunId);
+        unavailable = false;
+      } catch (error) {
+        if (error instanceof HttpError && error.status === 404) {
+          await this.cancel(
+            id,
+            owner,
+            credentials,
+            tForLocale(credentials.locale, "query.retrieval.interrupted"),
+            expectedRunId,
+            "RETRIEVAL_INTERRUPTED",
+          );
+          return;
+        }
+        // Like governance reconciliation, a failed read leaves business state and write gates unchanged.
+        if (!unavailable)
+          logger.warn(
+            "Runtime observation unavailable; retrieval awaits reconciliation",
+            {
+              retrievalId: id,
+              runId: expectedRunId,
+              error,
+            },
+          );
+        unavailable = true;
+        await pause(1000);
+        continue;
+      }
+      if (snapshot && snapshot.run.status !== "running") {
+        await this.settle(record, credentials, snapshot);
+        return;
+      }
+      // A result may have finished while observation was unavailable. Reconcile terminal facts first.
       if (Date.now() > new Date(round.deadline).getTime()) {
         await this.cancel(
           id,
@@ -322,21 +372,16 @@ export const retrievalService = {
         );
         return;
       }
-      const statuses = await new RuntimeClient(owner.domainId).sessionStatuses([
-        record.snapshot.runtimeSessionId,
-      ]);
-      if (statuses[0]?.latestRun?.status !== "running") {
-        await this.settle(record, credentials);
-        return;
-      }
       await pause(250);
     }
   },
-  async settle(record: RetrievalRecord, credentials: RetrievalCredentials) {
+  async settle(
+    record: RetrievalRecord,
+    credentials: RetrievalCredentials,
+    run: RuntimeRunSnapshot,
+  ) {
     const { snapshot, owner } = record,
-      runId = snapshot.runtimeRunId!,
-      client = new RuntimeClient(owner.domainId);
-    const run = await client.run(runId);
+      runId = snapshot.runtimeRunId!;
     if (run.run.status === "running") return snapshot;
     const ids: string[] = [];
     await transaction(async (c) => {
@@ -361,7 +406,13 @@ export const retrievalService = {
         datasetArtifactIds: ids,
         error: {
           code: `RUNTIME_${run.run.status.toUpperCase()}`,
-          message: run.run.error?.message ?? `Runtime ${run.run.status}`,
+          message:
+            run.run.error?.code === RUNTIME_MODEL_NOT_CONFIGURED
+              ? getRoleNotConfiguredMessage("coding")
+              : tForLocale(
+                  credentials.locale,
+                  `query.retrieval.${run.run.status}`,
+                ),
         },
       };
     else if (!submission)
@@ -425,22 +476,7 @@ export const retrievalService = {
       record.snapshot.phase === "running" &&
       !active.has(record.snapshot.runtimeRunId!)
     ) {
-      try {
-        await new RuntimeClient(owner.domainId).run(
-          record.snapshot.runtimeRunId!,
-        );
-      } catch (error) {
-        if (error instanceof HttpError && error.status === 404)
-          return this.cancel(
-            id,
-            owner,
-            credentials,
-            "Retrieval preparation was interrupted",
-            record.snapshot.runtimeRunId!,
-            "RETRIEVAL_INTERRUPTED",
-          );
-        throw error;
-      }
+      // Return the durable pending snapshot even if the runtime is still unreachable after a host restart.
       const key = record.snapshot.runtimeRunId!;
       const work = this.observe(id, owner, credentials, key).finally(() =>
         active.delete(key),

@@ -87,6 +87,22 @@ no parent/child-run concept. Cancelling a workbench parent closes its admission
 gate and cancels all retrievals already linked to that parent atomically with
 respect to creating another link.
 
+Observation does not own runtime execution status. Transport/unavailability
+errors while reading runtime status or snapshots leave the retrieval `phase: "running"`, `result: null` and its
+write gate unchanged. The workbench retries observation and, after a host restart,
+reconstructs it from the stored run/session references on the next GET. It does
+not rerun the agent or infer execution failure from transport failure, following
+the same authority boundary as knowledge-governance reconciliation. An authoritative
+404 for the stored session/run retains the existing interrupted-preparation handling.
+
+Only an authoritative terminal snapshot settles runtime completion/failure. An
+`interrupted` snapshot becomes `failed` with `RUNTIME_INTERRUPTED` and a localized
+retry message; raw transport/provider diagnostics do not become that user-facing
+message. Terminal facts are reconciled before checking the observation deadline:
+a completed artifact must not be replaced by a timeout because observation was
+late. If the runtime is still running after its deadline, the existing timeout
+cancellation applies. Explicit user/parent cancellation still closes the gate.
+
 ## Dataset and decision facts
 
 The workbench defines the first business artifact, `workbench.dataset.v1`.

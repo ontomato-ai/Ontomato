@@ -1,5 +1,5 @@
 import { beforeAll, afterAll, describe, it, expect } from "vitest";
-import { createServer, type Server } from "node:http";
+import { createServer, request as httpRequest, type Server } from "node:http";
 import { spawn, type ChildProcess } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { createRequire } from "node:module";
@@ -26,12 +26,14 @@ describe.skipIf(!connection)(
     let admin: pg.Pool,
       pool: pg.Pool,
       fake: Server,
+      runtimeLink: Server,
       root: string,
       databaseUrl: string,
       host: ChildProcess,
       runtime: ChildProcess;
     let hostUrl = "",
       runtimeUrl = "",
+      runtimeLinkUrl = "",
       ontologyUrl = "",
       hostLog = "",
       runtimeLog = "";
@@ -41,6 +43,8 @@ describe.skipIf(!connection)(
         string,
         { run: string; purpose: string; domain: string }
       >();
+    let linkMode: "up" | "down" | "snapshot-down" = "up";
+    let linkFailures = 0;
     const contexts: string[] = [];
     let formalExecutions = 0,
       qualityAdmissions = 0;
@@ -129,7 +133,7 @@ describe.skipIf(!connection)(
                 publishProviders: ["ontology"],
               },
             ]),
-            AGENT_RUNTIME_URL: runtimeUrl,
+            AGENT_RUNTIME_URL: kind === "host" ? runtimeLinkUrl : runtimeUrl,
             AGENT_RUNTIME_SERVICE_TOKEN: "fixture-host-secret",
             AGENT_RUNTIME_CALLBACK_URL: hostUrl,
             ONTOMATO_QUERY_SERVICE_TOKEN: "fixture-query-secret",
@@ -592,6 +596,10 @@ describe.skipIf(!connection)(
                 summary: "Calculated",
               };
             }
+            if (!name && context.question.startsWith("finish during outage"))
+              await new Promise<void>((resolve) =>
+                held.set(context.question, resolve),
+              );
             res.writeHead(200, { "content-type": "text/event-stream" });
             const frame = (delta: unknown, finish: unknown = null) =>
               res.write(
@@ -635,12 +643,46 @@ describe.skipIf(!connection)(
       await new Promise<void>((r) => fake.listen(0, "127.0.0.1", r));
       ontologyUrl = `http://127.0.0.1:${(fake.address() as { port: number }).port}`;
       await launch("runtime");
+      // This loopback link can fail real HTTP reads while the runtime process keeps executing.
+      runtimeLink = createServer((req, res) => {
+        if (
+          linkMode === "down" ||
+          (linkMode === "snapshot-down" && req.url?.startsWith("/v1/runs/"))
+        ) {
+          linkFailures++;
+          res.destroy();
+          return;
+        }
+        const upstream = httpRequest(
+          new URL(req.url!, runtimeUrl),
+          { method: req.method, headers: req.headers },
+          (response) => {
+            res.writeHead(response.statusCode!, response.headers);
+            response.pipe(res);
+          },
+        );
+        upstream.on("error", () => {
+          linkFailures++;
+          res.destroy();
+        });
+        res.once("close", () => upstream.destroy());
+        req.pipe(upstream);
+      });
+      await new Promise<void>((resolve) =>
+        runtimeLink.listen(0, "127.0.0.1", resolve),
+      );
+      runtimeLinkUrl = `http://127.0.0.1:${(runtimeLink.address() as { port: number }).port}`;
       await launch("host");
     }, 40000);
     afterAll(async () => {
       for (const release of held.values()) release();
       await stop(host);
       await stop(runtime);
+      runtimeLink?.closeAllConnections();
+      if (runtimeLink)
+        await new Promise<void>((resolve) =>
+          runtimeLink.close(() => resolve()),
+        );
       fake?.closeAllConnections();
       await new Promise<void>((r) => fake?.close(() => r()));
       await pool?.end();
@@ -650,6 +692,36 @@ describe.skipIf(!connection)(
       }
       if (root) await rm(root, { recursive: true, force: true });
     }, 20000);
+    async function until(check: () => Promise<boolean> | boolean) {
+      for (let attempt = 0; attempt < 400; attempt++) {
+        if (await check()) return;
+        await new Promise((resolve) => setTimeout(resolve, 25));
+      }
+      throw new Error(
+        `Fixture condition not reached\n${hostLog}\n${runtimeLog}`,
+      );
+    }
+    async function runtimeRun(runId: string) {
+      const response = await fetch(`${runtimeUrl}/v1/runs/${runId}`, {
+        headers: {
+          authorization: "Bearer fixture-host-secret",
+          "x-domain-id": "domain-a",
+          "x-correlation-id": "reconcile-proof",
+        },
+      });
+      expect(response.status).toBe(200);
+      return response.json();
+    }
+    async function pending(id: string) {
+      const response = await api(`/${id}`);
+      expect(response.status, JSON.stringify(response.body)).toBe(200);
+      expect(response.body).toMatchObject({ phase: "running", result: null });
+      const round = await pool.query(
+        "SELECT t.open FROM retrieval_rounds t JOIN retrievals r ON r.id=t.retrieval_id WHERE r.id=$1 AND t.id=(r.snapshot->>'runtimeRunId')::uuid",
+        [id],
+      );
+      expect(round.rows[0].open).toBe(true);
+    }
     it("reruns Python with user authorization, returns immutable data and completes before quality checking", async () => {
       const key = randomUUID(),
         body = {
@@ -812,6 +884,110 @@ describe.skipIf(!connection)(
       });
       held.get("hold cancel")?.();
       held.delete("hold cancel");
+    }, 30000);
+    it("reconciles a hard-killed runtime only after its authoritative interrupted snapshot is available", async () => {
+      const question = "hold runtime restart",
+        first = await api("/", { question }, randomUUID());
+      await until(() => held.has(question));
+      const id = first.body.id,
+        runId = first.body.runtimeRunId,
+        failedBefore = linkFailures;
+      try {
+        await stop(runtime, "SIGKILL");
+        await until(() => linkFailures > failedBefore);
+        await pending(id);
+        expect(stages.get(runId)).toBe(1);
+        await launch("runtime");
+        // No status GET is needed to drive an already active observer after recovery.
+        await until(
+          async () =>
+            (
+              await pool.query(
+                "SELECT snapshot->>'phase' AS phase FROM retrievals WHERE id=$1",
+                [id],
+              )
+            ).rows[0].phase === "settled",
+        );
+        const result = (await api(`/${id}`)).body;
+        expect(result.result).toMatchObject({
+          status: "failed",
+          error: {
+            code: "RUNTIME_INTERRUPTED",
+            message: "Data retrieval was interrupted. Please try again.",
+          },
+        });
+        expect(JSON.stringify(result)).not.toContain("fetch failed");
+        expect((await runtimeRun(runId)).run.status).toBe("interrupted");
+        expect(stages.get(runId)).toBe(1);
+      } finally {
+        held.get(question)?.();
+        held.delete(question);
+        if (runtime.exitCode !== null || runtime.signalCode !== null)
+          await launch("runtime");
+      }
+    }, 30000);
+    it("retains a completed dataset across transport loss, host recovery and an overdue observation", async () => {
+      const question = "finish during outage",
+        before = formalExecutions;
+      const first = await api("/", { question }, randomUUID()),
+        id = first.body.id,
+        runId = first.body.runtimeRunId;
+      await until(() => held.has(question));
+      const original = (await runtimeRun(runId)).artifacts.map(
+        (a: { id: string }) => a.id,
+      );
+      expect(original).toHaveLength(1);
+      try {
+        let failedBefore = linkFailures;
+        linkMode = "down";
+        await until(() => linkFailures > failedBefore);
+        await pending(id);
+        held.get(question)!();
+        held.delete(question);
+        await until(
+          async () => (await runtimeRun(runId)).run.status === "completed",
+        );
+        // The result completed before the deadline; delayed observation must not replace it with a timeout.
+        await pool.query(
+          "UPDATE retrieval_rounds SET deadline=now()-interval '1 second' WHERE id=$1",
+          [runId],
+        );
+        await pending(id);
+        await stop(host, "SIGKILL");
+        linkMode = "up";
+        await launch("host");
+        failedBefore = linkFailures;
+        linkMode = "down";
+        await pending(id);
+        await until(() => linkFailures > failedBefore);
+        await pending(id);
+        failedBefore = linkFailures;
+        linkMode = "snapshot-down";
+        await until(() => linkFailures > failedBefore);
+        await pending(id);
+        linkMode = "up";
+        await until(
+          async () =>
+            (
+              await pool.query(
+                "SELECT snapshot->>'phase' AS phase FROM retrievals WHERE id=$1",
+                [id],
+              )
+            ).rows[0].phase === "settled",
+        );
+        const done = retrievalSnapshotSchema.parse((await api(`/${id}`)).body);
+        expect(done.result?.status).toBe("completed");
+        expect(done.datasetArtifactIds).toEqual(original);
+        expect(
+          (await api(`/${id}/datasets/${original[0]}`)).body.payload.rows,
+        ).toEqual([{ region: "A", count: 14 }]);
+        expect(formalExecutions).toBe(before + 1);
+        expect(stages.get(runId)).toBe(5);
+      } finally {
+        linkMode = "up";
+        held.get(question)?.();
+        held.delete(question);
+      }
     }, 30000);
   },
 );
