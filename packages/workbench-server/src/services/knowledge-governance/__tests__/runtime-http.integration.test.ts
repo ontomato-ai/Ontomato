@@ -380,14 +380,14 @@ describe.skipIf(!connection)(
         await new Promise((r) => setTimeout(r, 40));
       }
       expect(view.status, JSON.stringify(view) + hostLog + runtimeLog).toBe(
-        "stopped",
+        "idle",
       );
       governanceSessionSchema.parse(view);
       const completedList = await request("/");
       expect(completedList.status).toBe(200);
       expect(
         completedList.body.find((row: { id: string }) => row.id === id).status,
-      ).toBe("stopped");
+      ).toBe("idle");
       expect(
         observed.filter((name) => plan.some(([tool]) => tool === name)),
       ).toEqual(plan.map(([name]) => name));

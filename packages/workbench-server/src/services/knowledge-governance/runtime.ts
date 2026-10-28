@@ -23,8 +23,23 @@ import { governanceChatMessages, governanceLiveSnapshot } from "./chat-view";
 const failureMessage = (run: { errorMessage?: string | null }) =>
   run.errorMessage ||
   "The governance response could not finish. Saved work is retained; please retry.";
-const governanceStatus = (status: string | undefined) =>
-  status === "running" ? "running" : status === "stopped" ? "stopped" : "idle";
+const governanceStatus = (
+  run: Pick<RuntimeRunSnapshot["run"], "status" | "stopReason"> | null | undefined,
+): GovernanceSession["status"] => {
+  if (!run) return "idle";
+  if (run.status === "running") return "running";
+  switch (run.stopReason) {
+    case "stop":
+    case "length":
+      return "idle";
+    case "aborted":
+      return "stopped";
+    case "error":
+      return "failed";
+    default:
+      return "stopped";
+  }
+};
 
 export class GovernanceRuntime {
   async start(
@@ -159,21 +174,19 @@ export class GovernanceRuntime {
       record.runtimeSessionId,
     );
     const latest = snapshot.latestRun;
-    if (latest && latest.run.status !== "running") {
+    const status = governanceStatus(latest?.run);
+    if (latest && status !== "running") {
       await governanceStore.closeRun(
         id,
         owner,
         latest.run.id,
-        latest.run.stopReason === "error"
-          ? failureMessage(latest.run)
-          : undefined,
+        status === "failed" ? failureMessage(latest.run) : undefined,
       );
       record = await governanceStore.get(id, owner);
     }
-    const status = latest?.run.status;
     return governanceSessionSchema.parse({
       ...record,
-      status: governanceStatus(status),
+      status,
       activeTurnId: snapshot.session.activeRunId,
       messages: governanceChatMessages(
         snapshot.messages
@@ -181,7 +194,7 @@ export class GovernanceRuntime {
           .map((m) => m.message),
         latest?.run.status !== "running" ? latest?.toolExecutions : [],
       ),
-      error: latest?.run.stopReason === "error" ? record.error : null,
+      error: status === "failed" ? failureMessage(latest!.run) : null,
     });
   }
   async list(owner: GovernanceOwner) {
@@ -207,7 +220,6 @@ export class GovernanceRuntime {
             record.id,
             owner,
             latest.id,
-            latest.stopReason === "error" ? failureMessage({}) : undefined,
           );
           const current = await governanceStore.get(record.id, owner);
           record = { ...current, runtimeSessionId: record.runtimeSessionId };
@@ -216,7 +228,7 @@ export class GovernanceRuntime {
           id: record.id,
           createdAt: record.createdAt,
           updatedAt: record.updatedAt,
-          status: governanceStatus(latest?.status),
+          status: governanceStatus(latest),
         };
       }),
     );
@@ -248,14 +260,15 @@ export class GovernanceRuntime {
         );
     };
     const terminal = async (s: RuntimeRunSnapshot) => {
+      const status = governanceStatus(s.run);
       await governanceStore.closeRun(
         id,
         owner,
         runId,
-        s.run.stopReason === "error" ? failureMessage(s.run) : undefined,
+        status === "failed" ? failureMessage(s.run) : undefined,
       );
       write(
-        s.run.stopReason === "error"
+        status === "failed"
           ? {
               type: "error",
               error: failureMessage(s.run),
@@ -263,7 +276,7 @@ export class GovernanceRuntime {
             }
           : {
               type: "response_end",
-              status: s.run.stopReason === "stop" ? "completed" : "cancelled",
+              status: status === "idle" ? "completed" : "cancelled",
             },
         s.cursor.seq,
       );
