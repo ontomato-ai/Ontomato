@@ -60,7 +60,7 @@ services:
         max-size: "50m"
         max-file: "5"
     healthcheck:
-      test: ["CMD", "python3", "-c", "import json, urllib.request; r=urllib.request.urlopen('http://127.0.0.1:18087/health', timeout=3); body=json.load(r); assert r.status == 200 and body.get('success') is True"]
+      test: ["CMD-SHELL", "curl -fsS --max-time 3 http://127.0.0.1:18087/health | grep -q '\"success\":true'"]
       interval: 10s
       timeout: 5s
       retries: 5
