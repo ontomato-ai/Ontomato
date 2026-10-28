@@ -332,6 +332,7 @@ export const assistantService = {
           a.model_role,
           a.skills,
           credentials.locale,
+          a.enabled_mcp_service_ids.map((id) => ({ id })),
         ),
         modelCredential: modelCredential(credentials),
         environment: {

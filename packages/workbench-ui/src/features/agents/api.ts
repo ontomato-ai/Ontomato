@@ -5,7 +5,7 @@ import {
   type AssistantAgentInput,
 } from "@ontomato/contracts/assistant-chat";
 import { nodeApiFetch, nodeApiGet, nodeApiPost, nodeApiPut } from "../../utils/api";
-import { listMcpServiceNames } from "../mcp/api";
+import { listMcpServiceOptions } from "../mcp/api";
 import { queryViewApi } from "../query-view";
 
 export interface ObjectClassOption {
@@ -37,7 +37,7 @@ export const agentDefinitionsApi = {
   async remove(id: string): Promise<void> {
     await nodeApiFetch(`${base}/${encodeURIComponent(id)}`, "DELETE");
   },
-  listMcpServiceNames,
+  listMcpServiceOptions,
 };
 
 /** Classes and relations of the ontology, for related classes and the graph scope selector. */

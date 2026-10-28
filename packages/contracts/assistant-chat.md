@@ -24,19 +24,17 @@ AgentHostError. Shell action slots call these endpoints; feedback stays in workb
 
 Definitions contain one systemPrompt, one skills list, modelRole, name, description,
 icon, enabled, classNames, graphScope (`panorama` or `subgraph` with rootClassNames
-and maxDepth 0–10), enabledMcpServiceNames and sortOrder. Both presets are ordinary
+and maxDepth 0–10), enabledMcpServiceIds and sortOrder. Both presets are ordinary
 editable definitions. The common `/agents` endpoint exposes only selector metadata,
 never the prompt or these business settings. Deleted definitions do not delete
 history, and cannot admit new runs. Old executor/dimension/report/summary/hot-report
 fields are rejected and are not read from legacy definition rows.
 
 classNames scopes retrieval as before. graphScope selects initial ontology context,
-not the formal retrieval allow-list. External MCP names retain their existing domain
-configuration meaning. External MCP is not effective yet: names are saved/edited
-but are not passed into runtime (controller's provisional decision).
-The user's subsequent runtime-ownership decision is specified by the proposed
-[external MCP contract](agent-runtime-mcp.md). Its implementation will make this
-same selection field effective; this documentation stage does not enable it.
+not the formal retrieval allow-list. External MCP selections are runtime-assigned
+service UUIDs. Workbench forwards them as `definition.externalMcp: {id}[]`;
+[the MCP contract](agent-runtime-mcp.md) owns configuration and scoped resolution.
+Renames preserve selections; deleted services are ignored at run start.
 Analysis and visualization skills share one list. Definition writes may use
 `{name, namespace:{kind:"domain"}}` for a skill in the caller's domain; the server
 fills in the domain from the verified request identity, including the public

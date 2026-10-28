@@ -7,14 +7,13 @@ migration scope; [code execution](agent-runtime-code.md) and
 [retrieval](data-retrieval.md) own their respective boundaries. Main-checkout
 image/stack and external Claude Code acceptance remain controller-owned.
 
-The proposed [external MCP replacement](agent-runtime-mcp.md) moves configuration
-into runtime and replaces the `serverId` references below with service names.
-It is a separate documentation-only review; the change is not implemented yet.
+[External MCP services](agent-runtime-mcp.md) are configured in runtime and
+referenced by immutable service UUIDs. That contract owns management and selection.
 
 ## HTTP and admission
 
 Requests carry `Authorization: Bearer <host service credential>` and
-`X-Correlation-Id`. Session, run, artifact and domain-skill requests also carry
+`X-Correlation-Id`. Session, run, artifact, MCP and domain-skill requests also carry
 `X-Domain-Id`. Credentials resolve a configured host; the host verifies the user
 and domain first. Every lookup uses host + domain, including streams and file
 reads. Foreign resources return 404, invalid service credentials 401. Provider
@@ -70,7 +69,7 @@ type StartRun = {
     systemPrompt: string;
     modelRole: string;
     skills: SkillRef[];
-    externalMcp: {serverId:string}[];
+    externalMcp: {id:string}[];
     compaction: {systemPrompt:string; summarizePrompt:string; updatePrompt:string};
     sandbox: {limits: CodeLimits};
   };

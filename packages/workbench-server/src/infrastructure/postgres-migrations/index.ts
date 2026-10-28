@@ -46,7 +46,6 @@ import {
   migrateChatSnapshotFactRetirement,
 } from "./20260901-chat-snapshot-fact-retirement/migration.js";
 import { ensureReportDeliverableToggleSchema } from "./20260901-report-deliverable-toggle/schema.js";
-import { ensureAnalysisAgentMcpServicesSchema } from "./20260901-analysis-agent-mcp-services/schema.js";
 import { ensureKnowledgeGovernanceSchema } from "./20260910-knowledge-governance/schema.js";
 import { ensureAnalysisReportSummaryPositionSchema } from "./20260918-analysis-report-summary-position/schema.js";
 import { ensureAnalysisAgentHotReportSchema } from "./20260929-analysis-agent-hot-report/schema.js";
@@ -63,11 +62,6 @@ import {
   ANALYSIS_CONVERSATION_TURNS_NAME,
   migrateAnalysisConversationTurns,
 } from "./20260911-analysis-conversation-turns/migration.js";
-import {
-  MCP_SERVICE_CONFIGS_VERSION,
-  MCP_SERVICE_CONFIGS_NAME,
-  migrateMcpServiceConfigs,
-} from "./20260911-mcp-service-configs/migration.js";
 
 const logger = createLogger("postgres:migrations");
 
@@ -101,10 +95,6 @@ export const POSTGRES_MIGRATION_REGISTRY: MigrationRegistration[] = [
   {
     directory: "20260901-report-deliverable-toggle",
     ensureSchema: ensureReportDeliverableToggleSchema,
-  },
-  {
-    directory: "20260901-analysis-agent-mcp-services",
-    ensureSchema: ensureAnalysisAgentMcpServicesSchema,
   },
   {
     directory: "20260918-analysis-report-summary-position",
@@ -175,15 +165,6 @@ export const POSTGRES_MIGRATION_REGISTRY: MigrationRegistration[] = [
       version: ANALYSIS_CONVERSATION_TURNS_VERSION,
       name: ANALYSIS_CONVERSATION_TURNS_NAME,
       run: runAnalysisConversationTurns,
-    },
-  },
-  {
-    directory: "20260911-mcp-service-configs",
-    ensureSchema: () => Promise.resolve(),
-    migration: {
-      version: MCP_SERVICE_CONFIGS_VERSION,
-      name: MCP_SERVICE_CONFIGS_NAME,
-      run: runMcpServiceConfigs,
     },
   },
   {
@@ -398,17 +379,6 @@ async function runAnalysisConversationTurns(
   if (await isMigrationApplied(client, migration.version)) return;
   await inMigrationTransaction(client, async () => {
     await migrateAnalysisConversationTurns(client);
-    await recordMigration(client, migration.version, migration.name);
-  });
-}
-
-async function runMcpServiceConfigs(
-  client: QueryableClient,
-  migration: MigrationIdentity,
-): Promise<void> {
-  if (await isMigrationApplied(client, migration.version)) return;
-  await inMigrationTransaction(client, async () => {
-    await migrateMcpServiceConfigs(client);
     await recordMigration(client, migration.version, migration.name);
   });
 }

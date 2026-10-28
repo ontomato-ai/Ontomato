@@ -26,7 +26,7 @@ export const assistantAgentDefinitionSchema = agentHostAgentSchema.extend({
   skills: z.array(runtimeSkillRefSchema),
   classNames: z.array(z.string().trim().min(1)).default([]),
   graphScope: assistantGraphScopeSchema.default({ mode: "panorama" }),
-  enabledMcpServiceNames: z.array(z.string().trim().min(1)).default([]),
+  enabledMcpServiceIds: z.array(runtimeIdSchema).default([]),
   sortOrder: z.number().int().default(0),
   systemPrompt: z.string(),
 });

@@ -95,9 +95,10 @@ describe("MCP manager interactions", () => {
     await page.find('input[aria-label="Header value"]').setValue("Bearer test-secret");
     api.listMcpServices.mockResolvedValue([
       {
+        id: "7cc21b6e-170b-4d05-9559-c5c431603a24",
         name: "Orders",
         url: "http://localhost/mcp",
-        headers: { Authorization: "Bearer test-secret" },
+        headers: { authorization: "********" },
       },
     ]);
     await button(page, "Save").trigger("click");
@@ -106,7 +107,7 @@ describe("MCP manager interactions", () => {
       {
         name: "Orders",
         url: "http://localhost/mcp",
-        headers: { Authorization: "Bearer test-secret" },
+        headers: { authorization: "Bearer test-secret" },
       },
       undefined
     );
@@ -114,6 +115,23 @@ describe("MCP manager interactions", () => {
     await button(page, "View tools").trigger("click");
     await flushPromises();
     expect(page.text()).toContain("Submit an order");
+    page.unmount();
+  });
+
+  it("keeps hidden headers on rename and omits only removed rows", async () => {
+    const id = "7cc21b6e-170b-4d05-9559-c5c431603a24";
+    api.listMcpServices.mockResolvedValue([{ id, name: "Orders", url: "http://localhost/mcp", headers: { authorization: "********", "x-remove": "********" } }]);
+    const page = mountPage();
+    await flushPromises();
+    await button(page, "Edit").trigger("click");
+    const header = page.find('input[aria-label="Header value"]');
+    expect((header.element as HTMLInputElement).value).toBe("");
+    expect(header.attributes("placeholder")).toBe("********");
+    await page.find('input[aria-label="Service Name"]').setValue("Renamed");
+    await page.findAll(".header-row")[1].find("button").trigger("click");
+    await button(page, "Save").trigger("click");
+    await flushPromises();
+    expect(api.saveMcpService).toHaveBeenCalledWith({ name: "Renamed", url: "http://localhost/mcp", headers: { authorization: null } }, id);
     page.unmount();
   });
 

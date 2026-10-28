@@ -1,22 +1,23 @@
 # Runtime-owned external MCP services
 
-Proposed 2026-10-28; **not implemented, awaiting controller review**. Replaces the
-`serverId` path in [agent-runtime](agent-runtime.md). Placement, deletions and the
-rename decision belong to [the design](../../docs/external-mcp-runtime-design.md).
+Implemented 2026-10-29 after controller review. Extends
+[agent-runtime](agent-runtime.md); [the design](../../docs/external-mcp-runtime-design.md)
+owns placement and replacement scope.
 
 ## Ownership and management HTTP
 
-Runtime owns **(hostId, domainId, name)** configuration. The service credential
+Runtime owns **(hostId, domainId, id)** configuration; each service has an immutable
+UUID assigned by runtime and a unique name within its host/domain. The service credential
 determines host; `X-Domain-Id` carries the host-verified domain. Every operation
 uses this scope, with no global fallback or body-supplied host/domain. Workbench
-owns its existing management permission and names-only selector.
+owns its existing management permission and service selector.
 
-Browser, host and runtime share these schemas in `src/agent-runtime-mcp.ts`;
+Browser, host and runtime share [src/agent-runtime-mcp.ts](src/agent-runtime-mcp.ts);
 tool metadata reuses the MCP contract:
 
 ```ts
 type McpServiceView = {
-  name: string; url: string; headers: Record<string, "********">;
+  id: string; name: string; url: string; headers: Record<string, "********">;
 };
 type McpServiceWrite = {
   name: string; url: string; headers?: Record<string, string | null>;
@@ -39,21 +40,22 @@ Let `M = /v1/mcp/services`. All routes use the runtime JSON error envelope.
 
 | Method/path | Request | Success |
 | --- | --- | --- |
-| GET `M/names` | — | 200 `{names:string[]}` |
+| GET `M/names` | — | 200 `{id:string,name:string}[]` |
 | GET `M` | — | 200 `{services:McpServiceView[]}` |
 | POST `M` | `McpServiceWrite` | 201 `{service:McpServiceView}`; create only |
-| PUT `M/:name` | `McpServiceWrite` | 200 `{service:McpServiceView}`; existing row only |
-| DELETE `M/:name` | — | 204 |
-| GET `M/:name/tools` | — | 200 `{tools:McpToolDesc[]}`; discover using stored credentials |
+| PUT `M/:id` | `McpServiceWrite` | 200 `{service:McpServiceView}`; existing row only |
+| DELETE `M/:id` | — | 204 |
+| GET `M/:id/tools` | — | 200 `{tools:McpToolDesc[]}`; discover using stored credentials |
 
 Lists sort by name. Errors: 404 `NOT_FOUND`, 409 `MCP_NAME_EXISTS`, 400
 `INVALID_REQUEST`, 502 `MCP_DISCOVERY_FAILED`, and existing credential 401.
-Failed reads never become empty lists. PUT renames atomically within runtime;
-host reference behavior awaits review. Management writes have no automatic retry.
+Failed reads never become empty lists. PUT changes name/URL/headers, preserving id;
+agent references therefore follow renames automatically. Management writes have
+no automatic retry.
 
 Workbench keeps the same suffixes under `/api/mcp/services` and forwards using
 its service credential and verified domain, including discovery cancellation.
-Names require domain identity; all other operations retain
+The selector requires domain identity; all other operations retain
 `guardMcpServiceManagement`. List/discovery bodies use the shared shapes; mutation
 responses retain existing `{success:true}` (POST 201, PUT/DELETE 200). Errors map
 once to the existing `{success:false,code,error}` boundary, preserving runtime
@@ -62,15 +64,15 @@ No MCP management fields are added to [agent-host](agent-host.md).
 
 ## Selection and execution
 
-Replace `definition.externalMcp: {serverId:string}[]` with **`{name:string}[]`**.
-Workbench maps `enabledMcpServiceNames` directly to these references. Only runtime
-resolves them: once per new run, take distinct requested names intersected with
-current configuration in that run's host/domain. Missing/deleted names are ignored;
+`definition.externalMcp` is **`{id:string}[]`** (UUIDs). Workbench maps
+`enabledMcpServiceIds` directly to these references. At run start, runtime takes
+distinct requested IDs intersected with current configuration in the run's
+host/domain. Missing/deleted IDs are ignored;
 empty selection exposes no external tools. Child and auxiliary runs use their own
 definitions; they do not implicitly inherit the parent's selection.
 
 Resolved settings stay privately in memory; definitions/history/fingerprints
-contain names, not URLs/headers. Changes affect the next run. Admission retries
+contain IDs, not URLs/headers. Changes affect the next run. Admission retries
 return the original run before resolving again; recovery never replays actions.
 Configuration read failure remains an error, not an empty intersection.
 
