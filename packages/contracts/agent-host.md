@@ -4,13 +4,14 @@ Approved 2026-10-28. [src/agent-host.ts](src/agent-host.ts) owns the shell-facin
 schemas/types (`@ontomato/contracts/agent-host`). Every application host implements
 these same shapes under its own prefix. Paths below are **relative to that prefix**;
 `S` = `/sessions/:sessionId`, `R` = `S/runs/:runId`, `F` = `S/artifacts/:artifactId`.
-`workbenchId` is a host-declared shell surface key, with no fixed application values.
+Multiple surfaces within a host use distinct mount prefixes; no surface/workbench
+identifier is carried in these shapes or query parameters.
 No renderer, feedback, dataset or editable-definition fields belong here.
 
 | Method/path | Input | Output (200 unless listed) |
 | --- | --- | --- |
-| GET `/agents` | `workbenchId` | `AgentHostAgentList` |
-| GET `/sessions` | `workbenchId`, `agentId`, optional opaque cursor/limit (30 default, 100 max) | `AgentHostSessionPage` |
+| GET `/agents` | — | `AgentHostAgentList` |
+| GET `/sessions` | `agentId`, optional opaque cursor/limit (30 default, 100 max) | `AgentHostSessionPage` |
 | POST `/sessions` | `AgentHostCreateSession` | 201 `AgentHostCreateSessionResponse` |
 | GET `S` | — | `AgentHostSessionSnapshot` |
 | DELETE `S` | — | 204; active run: 409 `SESSION_BUSY` |
