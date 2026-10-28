@@ -86,7 +86,7 @@ services:
       AGENT_RUNTIME_HOSTS: '[{"id":"workbench","token":"${AGENT_RUNTIME_SERVICE_TOKEN:?Run the deployment configuration preparation first}","providers":["workbench","ontology"],"publishProviders":["workbench"],"domainSkills":true},{"id":"ontology","token":"${AGENT_RUNTIME_ONTOLOGY_TOKEN:?Run the deployment configuration preparation first}","providers":["ontology"],"publishProviders":["ontology"]}]'
       # Temporary Java model configuration dependency until that owner is migrated.
       AGENT_RUNTIME_MODEL_CONFIG_URL: http://datarag:18087
-      ONTOMATO_MODEL_RUNTIME_TOKEN: ${ONTOMATO_MODEL_RUNTIME_TOKEN:-}
+      ONTOMATO_MODEL_RUNTIME_TOKEN: ${ONTOMATO_MODEL_RUNTIME_TOKEN:?ONTOMATO_MODEL_RUNTIME_TOKEN not set}
     volumes:
       - ./agent_runtime_data:/data
     healthcheck:

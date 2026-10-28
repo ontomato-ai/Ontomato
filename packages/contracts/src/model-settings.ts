@@ -23,7 +23,7 @@ export interface BackendModelConfig {
   name: string;
   displayName: string;
   baseUrl: string;
-  /** Masks (see isMaskedSecret); the keys themselves reach the workbench server only in ModelSettingsData.sealedApiKeys. */
+  /** Masks (see isMaskedSecret); server consumers get the keys only in ModelSettingsData.sealedApiKeys. */
   apiKeys: string[];
   modelName: string;
   contextWindow: number;
@@ -45,7 +45,7 @@ export interface BackendAgentConfig {
 export interface ModelSettingsData {
   models: BackendModelConfig[];
   agents: Record<ModelRole, BackendAgentConfig>;
-  /** Model name to its keys sealed for the workbench server (Java ModelKeySeal); the page ignores it and never sends it back. */
+  /** Model name to keys sealed for the workbench and agent runtime (Java ModelKeySeal); the page never sends it back. */
   sealedApiKeys?: Record<string, string[]>;
 }
 

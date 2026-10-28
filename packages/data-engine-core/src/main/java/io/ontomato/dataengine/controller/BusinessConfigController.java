@@ -256,10 +256,10 @@ public class BusinessConfigController {
     				|| embeddingModelProperties.getDimensions() <= 0) {
     			throw new IllegalArgumentException("modelConfig.dimensions must be a positive integer");
     		}
-    		EmbeddingModelProperties storedEmbedding = businessConfigService.get(SystemUtils.getCurUser().getDomainId())
-    				.getEmbeddingModelProperties();
-    		embeddingModelProperties.setApiKey(ModelKeyMask.restoreEmbedding(embeddingModelProperties.getApiKey(),
-    				storedEmbedding == null ? null : storedEmbedding.getApiKey()));
+			EmbeddingModelProperties storedEmbedding = businessConfigService.get(SystemUtils.getCurUser().getDomainId())
+					.getEmbeddingModelProperties();
+			embeddingModelProperties.setApiKey(ModelKeyMask.restoreEmbedding(embeddingModelProperties.getApiKey(),
+					storedEmbedding == null ? null : storedEmbedding.getApiKey()));
     		embeddingModelProperties.setLogRequests(true);
     		embeddingModelProperties.setLogResponses(true);
     		String userContent = input.getString("userContent");

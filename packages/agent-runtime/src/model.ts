@@ -8,6 +8,7 @@ import type {
 } from "@earendil-works/pi-ai";
 import { streamSimple } from "@earendil-works/pi-ai/api/openai-completions";
 import { parseIsoDurationSeconds } from "@ontomato/contracts/model-settings";
+import { openSealedModelKey } from "@ontomato/contracts/model-key-seal";
 import { RUNTIME_MODEL_NOT_CONFIGURED } from "@ontomato/contracts/agent-runtime-values";
 import type { RuntimeStartRunRequest } from "@ontomato/contracts/agent-runtime";
 import { RuntimeError } from "./errors";
@@ -25,7 +26,6 @@ const modelSchema = z.object({
   name: z.string(),
   baseUrl: z.string().url(),
   modelName: z.string(),
-  apiKeys: z.array(z.string()),
   maxTokens: z.number().positive(),
   contextWindow: z.number().positive(),
   timeout: javaOptional(z.string()),
@@ -34,7 +34,7 @@ const modelSchema = z.object({
   topP: javaOptional(z.number()),
   customRequestParameters: javaOptional(z.record(z.unknown())),
 });
-export type ResolvedModel = z.infer<typeof modelSchema>;
+export type ResolvedModel = z.infer<typeof modelSchema> & { apiKey: string };
 
 /** Temporary migration adapter. Remove after Java model configuration ownership is migrated. */
 export async function resolveModel(options: {
@@ -51,8 +51,6 @@ export async function resolveModel(options: {
   if (credential.kind !== "none")
     headers[credential.kind === "token" ? "tk" : "X-API-Key"] =
       credential.value;
-  if (options.runtimeToken)
-    headers["X-Ontomato-Model-Runtime-Token"] = options.runtimeToken;
   const response = await fetch(
     `${options.baseUrl.replace(/\/$/, "")}/businessConfig/getModelSettings`,
     { headers, signal: options.signal },
@@ -68,6 +66,7 @@ export async function resolveModel(options: {
             z.object({ model: z.string().nullable() }).passthrough(),
           ),
           models: z.array(modelSchema),
+          sealedApiKeys: z.record(z.array(z.string())),
         })
         .optional(),
     })
@@ -84,7 +83,11 @@ export async function resolveModel(options: {
   const resolved = body.data.models.find((m) => m.name === name);
   if (!resolved)
     throw new Error("Model role references a missing model configuration");
-  return resolved;
+  const sealed = body.data.sealedApiKeys[resolved.name]?.[0];
+  return {
+    ...resolved,
+    apiKey: sealed ? openSealedModelKey(sealed, options.runtimeToken) : "",
+  };
 }
 
 export function piModel(config: ResolvedModel): Model<"openai-completions"> {
@@ -116,7 +119,7 @@ export function modelStream(
     const start = Date.now();
     const stream = streamSimple(model as Model<"openai-completions">, context, {
       ...options,
-      apiKey: config.apiKeys[0] || "unused",
+      apiKey: config.apiKey || "unused",
       timeoutMs: config.timeout
         ? parseIsoDurationSeconds(config.timeout) * 1000
         : undefined,

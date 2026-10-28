@@ -1,7 +1,7 @@
 import type { ModelRole, ModelSettingsData } from "@ontomato/contracts/model-settings";
 import { parseIsoDurationSeconds } from "@ontomato/contracts/model-settings";
 import { AuthFailedError, backendGet, buildBackendHeaders } from "../utils/backend-client";
-import { openSealedModelKey } from "./model-key-seal";
+import { MODEL_RUNTIME_TOKEN_ENV, openSealedModelKey } from "@ontomato/contracts/model-key-seal";
 import { getLogContext } from "../logging/log-context";
 import { config } from "./application";
 import { t } from "../i18n";
@@ -62,7 +62,7 @@ export async function resolveModelForRole(role: ModelRole = "general"): Promise<
 
   // apiKeys are masks; the key to use comes sealed and is opened here.
   const sealed = body.data.sealedApiKeys?.[modelId]?.[0];
-  const apiKey = sealed ? openSealedModelKey(sealed) : "";
+  const apiKey = sealed ? openSealedModelKey(sealed, process.env[MODEL_RUNTIME_TOKEN_ENV]) : "";
   const baseUrl = model.baseUrl;
   const modelName = model.modelName;
   const timeoutSeconds = model.timeout ? parseIsoDurationSeconds(model.timeout) : undefined;

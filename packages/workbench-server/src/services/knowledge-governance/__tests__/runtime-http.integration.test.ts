@@ -128,6 +128,7 @@ describe.skipIf(!connection)(
           AGENT_RUNTIME_SCHEMA: "runtime",
           AGENT_RUNTIME_ROOT: path.join(root, "runtime"),
           AGENT_RUNTIME_MODEL_CONFIG_URL: modelUrl,
+          ONTOMATO_MODEL_RUNTIME_TOKEN: "fixture-runtime-token",
           AGENT_RUNTIME_PORT: String(port),
           AGENT_RUNTIME_HOSTS: JSON.stringify([
             {
@@ -217,12 +218,15 @@ describe.skipIf(!connection)(
         if (req.url === "/businessConfig/getModelSettings") {
           reply({
             agents: { knowledgeGovernance: { model: "fixture" } },
+            sealedApiKeys: {
+              fixture: ["enc:v1:mzjUpW4OVVjLMPmxcmMcyop5LFN8VSJ_7lUGPppYXDK_UDNjyKAlYAL7vVwOMOI"],
+            },
             models: [
               {
                 name: "fixture",
                 modelName: "fixture-model",
                 baseUrl: `${modelUrl}/v1`,
-                apiKeys: ["fixture-model-secret"],
+                apiKeys: ["******1234"],
                 maxTokens: 4000,
                 contextWindow: 5000,
                 timeout: null,

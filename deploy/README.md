@@ -16,9 +16,10 @@ docker compose up -d --wait --wait-timeout 600
 ```
 
 `ONTOMATO_MODEL_RUNTIME_TOKEN` is a random value per deployment (for example
-`openssl rand -hex 24`) that the workbench and the data engine share: saved model API keys
-are write-only, and the data engine hands them to the workbench encrypted with this value.
-Both services refuse to start without it. A deployment created before this setting existed,
+`openssl rand -hex 24`) shared by the workbench, agent runtime and data engine. Saved model
+API keys are write-only; the data engine returns them encrypted with this value for the
+two Node services to open locally. All three refuse to start without it. This value is never
+sent in an HTTP header. A deployment created before this setting existed,
 including one that follows a tag automatically, must add it to `.env` before taking a
 release that requires it.
 

@@ -199,6 +199,13 @@ usage. Service timestamps are ISO, PI timestamps milliseconds. Compression
 stores summary + covered-through message sequence without rewriting raw history,
 keeps tool-call/result pairs and retains raw context when summarization fails.
 Model role selection and null-tolerant Java model settings remain unchanged.
+The temporary Java adapter reads `sealedApiKeys` from `getModelSettings`; `apiKeys`
+contains display masks only. The workbench and runtime share the Node-only
+`model-key-seal` wire codec to open AES-256-GCM keys locally using
+`ONTOMATO_MODEL_RUNTIME_TOKEN`. All three services require the same nonblank
+value at startup. Only the end-user credential is sent to Java; the old model
+runtime credential header and plaintext-key response path are removed. Java
+still owns configuration storage and writes until the separate ownership migration.
 
 ## Events and file artifacts
 

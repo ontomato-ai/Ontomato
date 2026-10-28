@@ -48,6 +48,7 @@ import {
 import { RuntimeError, safeMessage } from "./errors";
 import { contextTokens, cutPoint, serializeConversation } from "./compaction";
 import { connectMcp, type McpConnection } from "./tools";
+import { modelKeySealKey } from "@ontomato/contracts/model-key-seal";
 
 type Subscriber = (frame: RuntimeStreamFrame) => void;
 interface Active {
@@ -108,6 +109,7 @@ export class AgentRuntime {
   private active = new Map<string, Active>();
   private locks = new Map<string, Promise<unknown>>();
   constructor(readonly options: RuntimeOptions) {
+    modelKeySealKey(options.modelRuntimeToken);
     this.store = options.store;
     this.worker = {
       ...(options.worker ?? {
