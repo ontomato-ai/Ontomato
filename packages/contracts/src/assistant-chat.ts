@@ -19,6 +19,11 @@ import {
 } from "./agent-runtime-values";
 
 /** Approved batch 3 host contract. */
+export const assistantGraphScopeSchema = z.discriminatedUnion("mode", [
+  z.object({mode:z.literal("panorama")}).strict(),
+  z.object({mode:z.literal("subgraph"),rootClassNames:z.array(z.string().trim().min(1)).min(1),maxDepth:z.number().int().min(0).max(10)}).strict(),
+]);
+export type AssistantGraphScope=z.infer<typeof assistantGraphScopeSchema>;
 export const assistantAgentSchema = z.object({
   id: runtimeIdSchema,
   workbenchId: runtimeKeySchema,
@@ -28,8 +33,14 @@ export const assistantAgentSchema = z.object({
   enabled: z.boolean(),
   modelRole: runtimeKeySchema,
   skills: z.array(runtimeSkillRefSchema),
+  classNames:z.array(z.string().trim().min(1)).default([]),
+  graphScope:assistantGraphScopeSchema.default({mode:"panorama"}),
+  enabledMcpServiceNames:z.array(z.string().trim().min(1)).default([]),
+  sortOrder:z.number().int().default(0),
 }).strict();
 export const assistantAgentDefinitionSchema = assistantAgentSchema.extend({systemPrompt:z.string()});
+export const assistantAgentDefinitionListSchema=z.object({agents:z.array(assistantAgentDefinitionSchema)}).strict();
+export type AssistantAgentDefinitionList=z.infer<typeof assistantAgentDefinitionListSchema>;
 export const assistantAgentInputSchema = assistantAgentDefinitionSchema.omit({id:true});
 export type AssistantAgentDefinition=z.infer<typeof assistantAgentDefinitionSchema>;
 export type AssistantAgentInput=z.infer<typeof assistantAgentInputSchema>;
