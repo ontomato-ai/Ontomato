@@ -14,7 +14,7 @@ import {
   ElTag,
   vLoading,
 } from "element-plus";
-import { ArrowLeft, BookOpen, Check, Pencil, Plus, Search, Trash2 } from "lucide-vue-next";
+import { ArrowLeft, BookOpen, Check, Pencil, Plus, Save, Search, Trash2 } from "lucide-vue-next";
 import type { BusinessKnowledge } from "../api";
 import { useManagerClient, useManagerContext, useOntologyText, useSharedText } from "../context";
 import { useManagerFeedback } from "../feedback";
@@ -407,7 +407,7 @@ onMounted(load);
           </el-form-item>
           <div class="knowledge-detail-actions">
             <el-button @click="leaveEdit">{{ ot("cancel") }}</el-button>
-            <el-button type="primary" :loading="saving" @click="save">{{ ot("save") }}</el-button>
+            <el-button type="primary" :icon="Save" :loading="saving" @click="save">{{ ot("save") }}</el-button>
           </div>
         </el-form>
 

@@ -20,7 +20,7 @@ import {
   vLoading,
 } from "element-plus";
 import { useManagerFeedback } from "../feedback";
-import { Filter, Download, Plus, Trash2, Search } from "lucide-vue-next";
+import { Filter, Download, Plus, Trash2, Search, Settings2 } from "lucide-vue-next";
 import { useManagerClient, useOntologyText, useSharedText } from "../context";
 import InstanceGraph from "./InstanceGraph.vue";
 import type { ObjectReference } from "@ontomato/contracts/object-views";
@@ -394,7 +394,6 @@ watch(
       />
 
       <div class="toolbar-actions">
-        <el-button text @click="emit('configure', selectedClass)">{{ ot('ovConfigure') }}</el-button>
         <el-button
           class="toolbar-action"
           :icon="Filter"
@@ -419,6 +418,18 @@ watch(
             </el-dropdown-menu>
           </template>
         </el-dropdown>
+        <el-button
+          class="toolbar-action configure-view-action"
+          type="primary"
+          plain
+          :icon="Settings2"
+          :title="ot('ovConfigureObject')"
+          :aria-label="ot('ovConfigureObject')"
+          :disabled="!selectedClass"
+          @click="emit('configure', selectedClass)"
+        >
+          <span class="toolbar-action-label">{{ ot('ovConfigure') }}</span>
+        </el-button>
       </div>
 
       <el-tag
@@ -514,7 +525,7 @@ watch(
             :placeholder="t('common.value')"
             :disabled="cond.operator === 'null' || cond.operator === 'notnull'"
           />
-          <el-button type="danger" :icon="Trash2" link @click="removeFilterCondition(idx)" />
+          <el-button type="danger" :icon="Trash2" :title="t('common.delete')" :aria-label="t('common.delete')" link @click="removeFilterCondition(idx)" />
         </div>
       </div>
 
@@ -598,6 +609,8 @@ watch(
 .toolbar-action {
   white-space: nowrap;
 }
+
+.configure-view-action { margin-inline-start: var(--spacing-sm); }
 
 .pagination {
   margin-top: var(--spacing-lg);

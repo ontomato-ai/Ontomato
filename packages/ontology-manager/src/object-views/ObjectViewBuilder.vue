@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref, watch } from "vue";
-import { ArrowLeft } from "lucide-vue-next";
+import { ArrowDown, ArrowLeft, ArrowUp, Save, Upload } from "lucide-vue-next";
 import { ElAlert, ElButton, ElInput, ElInputNumber, ElOption, ElSelect, ElSwitch } from "element-plus";
 import { createObjectView, createViewWidget, objectViewDocumentSchema, type ObjectReference, type ObjectViewDocument, type ObjectViewState, type ViewWidget } from "@ontomato/contracts/object-views";
 import { useManagerClient, useOntologyText } from "../context";
@@ -200,7 +200,7 @@ onBeforeUnmount(() => { generation++; sampleRequest++; window.removeEventListene
       <div class="builder-heading"><el-button text :icon="ArrowLeft" @click="back">{{ ot('ovBack') }}</el-button><span class="builder-title-divider" /><div class="builder-title"><strong>{{ ot('ovTitle') }}</strong><span :title="objectType?.showName || className">{{ objectType?.showName || className }}</span></div>
       </div>
       <div class="builder-actions"><span class="version-status">v{{ state.revision }} · {{ ot('ovPublished') }} {{ state.publishedRevision ?? '—' }} {{ dirty ? '· ' + ot('ovUnsaved') : '' }}</span>
-        <el-switch v-model="preview" :active-text="ot('ovPreview')" /><el-button type="primary" plain :disabled="!loaded" :loading="busy" @click="save()">{{ ot('ovSaveDraft') }}</el-button><el-button type="primary" :disabled="!loaded" :loading="busy" @click="save(true)">{{ ot('ovSavePublish') }}</el-button>
+        <el-switch v-model="preview" :active-text="ot('ovPreview')" /><el-button type="primary" plain :icon="Save" :disabled="!loaded" :loading="busy" @click="save()">{{ ot('ovSaveDraft') }}</el-button><el-button type="primary" :icon="Upload" :disabled="!loaded" :loading="busy" @click="save(true)">{{ ot('ovSavePublish') }}</el-button>
       </div>
     </header>
     <el-alert v-if="error" type="error" :title="error" :closable="false" />
@@ -225,7 +225,7 @@ onBeforeUnmount(() => { generation++; sampleRequest++; window.removeEventListene
             <div class="layout-controls"><el-input v-model="item.title" :placeholder="ot('ovSectionTitle')" @focus="selectedSection = item.id" /><el-button :disabled="tab.sections.length === 1" @click="tab.sections.splice(tab.sections.indexOf(item), 1)">{{ ot('ovDeleteSection') }}</el-button></div>
             <div class="canvas-grid">
               <article v-for="(itemWidget, index) in item.widgets" :key="itemWidget.id" :class="['canvas-widget', { selected: widget?.id === itemWidget.id }]" :style="{ gridColumn: 'span ' + itemWidget.span }" draggable="true" @dragstart="dragging = itemWidget.id" @dragover.prevent @drop.stop.prevent="drop(item.id, index)" @click="selectedWidget = itemWidget.id; selectedSection = item.id">
-                <div class="widget-tools"><span>{{ ot(widgetMessageKeys[itemWidget.kind]) }}</span><el-button text size="small" :aria-label="ot('ovMoveUp')" :disabled="index === 0" @click.stop="moveWidget(itemWidget.id, item.id, index - 1)">↑</el-button><el-button text size="small" :aria-label="ot('ovMoveDown')" :disabled="index === item.widgets.length - 1" @click.stop="moveWidget(itemWidget.id, item.id, index + 1)">↓</el-button><el-button class="configure-widget" text size="small" @click.stop="selectedWidget = itemWidget.id; selectedSection = item.id; mobilePane = 'settings'">{{ ot('ovEdit') }}</el-button></div>
+                <div class="widget-tools"><span>{{ ot(widgetMessageKeys[itemWidget.kind]) }}</span><el-button text size="small" :icon="ArrowUp" :title="ot('ovMoveUp')" :aria-label="ot('ovMoveUp')" :disabled="index === 0" @click.stop="moveWidget(itemWidget.id, item.id, index - 1)" /><el-button text size="small" :icon="ArrowDown" :title="ot('ovMoveDown')" :aria-label="ot('ovMoveDown')" :disabled="index === item.widgets.length - 1" @click.stop="moveWidget(itemWidget.id, item.id, index + 1)" /><el-button class="configure-widget" text size="small" @click.stop="selectedWidget = itemWidget.id; selectedSection = item.id; mobilePane = 'settings'">{{ ot('ovEdit') }}</el-button></div>
                 <strong>{{ itemWidget.title }}</strong><p>{{ itemWidget.kind === 'text' ? itemWidget.text : itemWidget.kind === 'properties' ? (itemWidget.fields.join(', ') || ot('ovAllProperties')) : itemWidget.resourceId || itemWidget.relation || ot('ovSelectConfigure') }}</p>
               </article>
             </div><p v-if="!item.widgets.length" @click="selectedSection = item.id">{{ ot('ovEmptySection') }}</p>

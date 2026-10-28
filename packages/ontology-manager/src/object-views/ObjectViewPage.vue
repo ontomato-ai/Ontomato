@@ -58,7 +58,7 @@ watch(() => JSON.stringify([props.reference.className, props.reference.primaryKe
     <div v-loading="loading && !!document" class="object-page-content" :aria-busy="loading">
     <header class="object-header">
       <div class="object-heading"><el-button text :icon="ArrowLeft" @click="emit('back')">{{ ot('ovBack') }}</el-button><span class="title-divider" /><div class="object-title"><h2>{{ displayName }}</h2><small>{{ document?.title || reference.className }}</small></div></div>
-      <div class="object-actions"><el-button text :icon="RefreshCw" :disabled="loading" @click="load">{{ ot('ovRefresh') }}</el-button><el-button type="primary" plain :icon="Settings2" @click="emit('edit')">{{ ot('ovConfigure') }}</el-button></div>
+      <div class="object-actions"><el-button text :icon="RefreshCw" :disabled="loading" @click="load">{{ ot('ovRefresh') }}</el-button><el-button type="primary" plain :icon="Settings2" :title="ot('ovConfigureObject')" :aria-label="ot('ovConfigureObject')" @click="emit('edit')">{{ ot('ovConfigure') }}</el-button></div>
     </header>
     <el-alert v-if="error" type="error" :title="error" :closable="false" />
     <div v-if="loading && !document" class="page-skeleton" role="status" :aria-label="ot('ovLoading')"><el-skeleton :rows="10" animated /></div>

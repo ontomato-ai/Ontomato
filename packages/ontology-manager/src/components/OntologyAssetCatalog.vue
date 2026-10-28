@@ -6,6 +6,8 @@ import {
   ChevronRight,
   Clock3,
   MousePointerClick,
+  Plus,
+  Sparkles,
   Search,
   SquareFunction,
 } from "lucide-vue-next";
@@ -129,8 +131,7 @@ onMounted(() => void loadCatalog());
         <h1>{{ currentMeta.title }}</h1>
         <p>{{ currentMeta.description }}</p>
       </div>
-      <el-button type="primary" @click="emit('create')">
-        <component :is="currentMeta.icon" :size="16" />
+      <el-button type="primary" :icon="kind === 'actions' ? Sparkles : Plus" @click="emit('create')">
         {{ currentMeta.create }}
       </el-button>
     </header>
@@ -207,7 +208,6 @@ onMounted(() => void loadCatalog());
 .catalog-titlebar :deep(.el-button) {
   display: inline-flex;
   align-items: center;
-  gap: var(--spacing-sm);
 }
 h1 {
   margin: 0;

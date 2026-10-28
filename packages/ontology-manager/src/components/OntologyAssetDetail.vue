@@ -673,7 +673,7 @@ onMounted(() => void loadDetail());
                 :placeholder="ot('assetParameterClasses')"
                 @update:model-value="updateParameterClassNames(parameter, $event)"
               />
-              <el-button link type="danger" :icon="Trash2" @click="removeParameter(index)" />
+              <el-button link type="danger" :icon="Trash2" :title="ot('delete')" :aria-label="ot('delete')" @click="removeParameter(index)" />
             </div>
             <el-form-item :label="ot('assetReturnClasses')">
               <el-input

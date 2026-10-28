@@ -178,7 +178,7 @@ async function openAction() {
 .view-widget { min-width: 0; font-size: var(--text-sm); line-height: 22px; }
 .object-view-table :deep(th.el-table__cell), .object-view-table :deep(td.el-table__cell) { font-size: var(--text-sm); line-height: 20px; }
 .object-view-row-action { min-height: 28px; padding: 4px 8px; font-size: var(--text-sm); line-height: 20px; white-space: nowrap; flex-shrink: 0; }
-.object-view-row-action :deep(> span) { gap: 6px; line-height: 20px; }
+.object-view-row-action :deep(> span) { line-height: 20px; }
 .view-widget :deep(.el-button + .el-button) { margin-inline-start: 0; }
 .view-widget > .el-alert { margin-bottom: 12px; overflow-wrap: anywhere; }
 .view-text { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
