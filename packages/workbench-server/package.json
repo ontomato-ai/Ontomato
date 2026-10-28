@@ -13,9 +13,6 @@
   },
   "dependencies": {
     "@langchain/core": "1.1.38",
-    "@langchain/langgraph": "1.2.6",
-    "@langchain/langgraph-checkpoint": "1.0.1",
-    "@langchain/langgraph-checkpoint-postgres": "1.0.1",
     "@langchain/openai": "1.4.1",
     "@modelcontextprotocol/sdk": "1.29.0",
     "@ontomato/contracts": "workspace:*",
@@ -23,7 +20,6 @@
     "archiver": "8.0.0",
     "cors": "2.8.6",
     "express": "4.22.1",
-    "langchain": "1.2.39",
     "marked": "17.0.5",
     "multer": "2.1.1",
     "nodemailer": "8.0.8",

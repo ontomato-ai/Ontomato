@@ -10,7 +10,7 @@ import type { WorkspaceManifest } from "@ontomato/contracts/observe";
 import fs from "node:fs";
 import path from "node:path";
 import { createHash } from "node:crypto";
-import { getCheckpointer } from "../../../../infrastructure/connection";
+import { assistantEvidenceReader } from "./assistant-source";
 import {
   buildWorkspaceArtifact,
   type BuildWorkspaceArtifactInput,
@@ -30,9 +30,7 @@ import {
 import { workbenchProduct } from "../../../../product/installed";
 import { tApp } from "../../../../i18n";
 
-
 export type TurnEvidenceWorkspaceStatus = "success" | "degraded" | "failed";
-
 
 /**
  * One constituent of this run. The stable identity locates and correlates, the copy is display-only,
@@ -78,17 +76,25 @@ interface InternalBuildTurnEvidenceWorkspaceResult extends BuildTurnEvidenceWork
 }
 
 export async function buildTurnEvidenceWorkspace(
-  input: BuildTurnEvidenceWorkspaceInput
+  input: BuildTurnEvidenceWorkspaceInput,
 ): Promise<BuildTurnEvidenceWorkspaceResult> {
   const includeUpstreamTurns = input.includeUpstreamTurns !== false;
-  const result = await buildSingleTurnEvidenceWorkspace(input, { includeUpstreamTurns });
+  const result = await buildSingleTurnEvidenceWorkspace(input, {
+    includeUpstreamTurns,
+  });
   if (result.status !== "failed") {
     if (includeUpstreamTurns && result.turnContext) {
-      await buildUpstreamTurnWorkspaces(input, result.turnContext.upstreamTurns);
+      await buildUpstreamTurnWorkspaces(
+        input,
+        result.turnContext.upstreamTurns,
+      );
     }
     const subTurns = input.compositeRun?.subTurns ?? [];
     if (subTurns.length > 0) {
-      writeSubTurnIndex(input.artifactDir, await buildSubTurnWorkspaces(input, subTurns));
+      writeSubTurnIndex(
+        input.artifactDir,
+        await buildSubTurnWorkspaces(input, subTurns),
+      );
     }
   }
   const { turnContext: _turnContext, ...publicResult } = result;
@@ -97,19 +103,29 @@ export async function buildTurnEvidenceWorkspace(
 
 async function buildSingleTurnEvidenceWorkspace(
   input: BuildTurnEvidenceWorkspaceInput,
-  options: { includeUpstreamTurns: boolean }
+  options: { includeUpstreamTurns: boolean },
 ): Promise<InternalBuildTurnEvidenceWorkspaceResult> {
   const sourceTurn = parseTurnKeyOrThrow(input.turnKey);
-  const checkpointer = getCheckpointer();
-  if (!checkpointer) throw new Error("Thread storage unavailable");
-  await checkpointer.verifyThreadDomain(sourceTurn.threadId, input.domainId);
+  await assistantEvidenceReader().verifyDomain(
+    sourceTurn.threadId,
+    input.domainId,
+  );
   try {
     const turn = parseTurnKeyOrThrow(input.turnKey);
     const turnContext = await resolveTurnWorkspaceContext(turn, {
-      checkpointer: getCheckpointer(),
+      domainId: input.domainId,
       includePreviousNoQueryTurn: options.includeUpstreamTurns,
     });
-    const queryRun = turnContext.selectedQueryRun ?? turnContext.primaryQueryRun;
+    // Runtime messages and artifacts are evidence, not a reconstructed Java conversation.
+    if (turnContext.snapshot) {
+      fs.mkdirSync(input.artifactDir, { recursive: true });
+      fs.writeFileSync(
+        path.join(input.artifactDir, "runtime.json"),
+        JSON.stringify(turnContext.snapshot, null, 2),
+      );
+    }
+    const queryRun =
+      turnContext.selectedQueryRun ?? turnContext.primaryQueryRun;
     const backendSessions = resolveQueryRunBackendSessions(queryRun);
     const turnTimes = resolveTurnRunActualTimes(turnContext.turnRun);
     const metadata = {
@@ -132,18 +148,23 @@ async function buildSingleTurnEvidenceWorkspace(
       frontendLogTimeWindow: turnContext.frontendLogTimeWindow,
     });
     if (!artifactResult) {
-      return failedResult(input, "Turn artifact generation failed", turnContext);
+      return failedResult(
+        input,
+        "Turn artifact generation failed",
+        turnContext,
+      );
     }
 
     const manifest = withTurnManifestFields(
       { ...artifactResult.manifest, domainId: input.domainId },
       turnContext,
-      metadata
+      metadata,
     );
     writeManifestFile(input.artifactDir, manifest);
 
     const status =
-      manifest.postProcess?.severity === "warning" || manifest.postProcess?.severity === "error"
+      manifest.postProcess?.severity === "warning" ||
+      manifest.postProcess?.severity === "error"
         ? "degraded"
         : "success";
     return {
@@ -154,13 +175,16 @@ async function buildSingleTurnEvidenceWorkspace(
       turnContext,
     };
   } catch (error) {
-    return failedResult(input, error instanceof Error ? error.message : String(error));
+    return failedResult(
+      input,
+      error instanceof Error ? error.message : String(error),
+    );
   }
 }
 
 async function buildUpstreamTurnWorkspaces(
   input: BuildTurnEvidenceWorkspaceInput,
-  upstreamTurns: ResolvedUpstreamTurn[]
+  upstreamTurns: ResolvedUpstreamTurn[],
 ): Promise<void> {
   if (upstreamTurns.length === 0) return;
 
@@ -168,7 +192,7 @@ async function buildUpstreamTurnWorkspaces(
     const upstreamArtifactDir = path.join(
       input.artifactDir,
       workbenchProduct().diagnosisWorkspaceNames.upstreamTurns,
-      String(upstream.requestSeq)
+      String(upstream.requestSeq),
     );
     await buildSingleTurnEvidenceWorkspace(
       {
@@ -188,7 +212,7 @@ async function buildUpstreamTurnWorkspaces(
         },
         records: undefined,
       },
-      { includeUpstreamTurns: false }
+      { includeUpstreamTurns: false },
     );
     writeUpstreamSnapshotFile(upstreamArtifactDir, upstream);
   }
@@ -211,7 +235,7 @@ interface SubTurnIndexEntry {
  */
 async function buildSubTurnWorkspaces(
   input: BuildTurnEvidenceWorkspaceInput,
-  subTurns: TurnEvidenceSubTurn[]
+  subTurns: TurnEvidenceSubTurn[],
 ): Promise<SubTurnIndexEntry[]> {
   const entries: SubTurnIndexEntry[] = [];
 
@@ -223,7 +247,11 @@ async function buildSubTurnWorkspaces(
         ...input,
         workspaceId: subTurn.turnKey,
         turnKey: subTurn.turnKey,
-        artifactDir: path.join(input.artifactDir, workbenchProduct().diagnosisWorkspaceNames.subTurns, dirName),
+        artifactDir: path.join(
+          input.artifactDir,
+          workbenchProduct().diagnosisWorkspaceNames.subTurns,
+          dirName,
+        ),
         includeUpstreamTurns: false,
         compositeRun: undefined,
         metadata: {
@@ -236,7 +264,7 @@ async function buildSubTurnWorkspaces(
         },
         records: undefined,
       },
-      { includeUpstreamTurns: false }
+      { includeUpstreamTurns: false },
     );
 
     entries.push({
@@ -255,11 +283,16 @@ async function buildSubTurnWorkspaces(
  * The root index is a triage overview, not a report copy: every sub-turn is listed flat, with question execution state and artifact
  * build state in separate columns; it never restates the execution form's grouping facts nor copies sub-turns' full answers.
  */
-function writeSubTurnIndex(artifactDir: string, entries: SubTurnIndexEntry[]): void {
+function writeSubTurnIndex(
+  artifactDir: string,
+  entries: SubTurnIndexEntry[],
+): void {
   const lines = [
     tApp("diag.observe.workspaces.turn-evidence-workspace.0"),
     "",
-    tApp("diag.observe.workspaces.turn-evidence-workspace.1", { p0: entries.length }),
+    tApp("diag.observe.workspaces.turn-evidence-workspace.1", {
+      p0: entries.length,
+    }),
     "",
     tApp("diag.observe.workspaces.turn-evidence-workspace.2"),
     "| --- | --- | --- | --- | --- | --- |",
@@ -273,7 +306,7 @@ function writeSubTurnIndex(artifactDir: string, entries: SubTurnIndexEntry[]): v
         entry.artifactStatus,
         `\`${escapeTableCell(entry.artifactPath)}\``,
         "",
-      ].join(" | ")
+      ].join(" | "),
     ),
     "",
   ];
@@ -281,7 +314,11 @@ function writeSubTurnIndex(artifactDir: string, entries: SubTurnIndexEntry[]): v
   const diagnosticsDir = path.join(artifactDir, WORKSPACE_DIRS.DIAGNOSTICS);
   try {
     fs.mkdirSync(diagnosticsDir, { recursive: true });
-    fs.writeFileSync(path.join(diagnosticsDir, "index.md"), lines.join("\n"), "utf-8");
+    fs.writeFileSync(
+      path.join(diagnosticsDir, "index.md"),
+      lines.join("\n"),
+      "utf-8",
+    );
   } catch {
     // The index is a triage convenience; a write failure never affects the sub-turn evidence already on disk.
   }
@@ -310,7 +347,7 @@ function escapeTableCell(value: string): string {
 function withTurnManifestFields(
   manifest: WorkspaceManifest,
   turnContext: ResolvedTurnWorkspaceContext,
-  metadata: BuildWorkspaceArtifactInput["metadata"]
+  metadata: BuildWorkspaceArtifactInput["metadata"],
 ): WorkspaceManifest {
   return {
     ...manifest,
@@ -321,7 +358,9 @@ function withTurnManifestFields(
     question: metadata.question ?? manifest.question,
     upstreamTurns:
       turnContext.upstreamTurns.length > 0
-        ? turnContext.upstreamTurns.map(({ snapshot: _snapshot, ...upstream }) => upstream)
+        ? turnContext.upstreamTurns.map(
+            ({ snapshot: _snapshot, ...upstream }) => upstream,
+          )
         : undefined,
   };
 }
@@ -329,7 +368,7 @@ function withTurnManifestFields(
 function failedResult(
   input: BuildTurnEvidenceWorkspaceInput,
   reason: string,
-  turnContext?: ResolvedTurnWorkspaceContext
+  turnContext?: ResolvedTurnWorkspaceContext,
 ): InternalBuildTurnEvidenceWorkspaceResult {
   const now = new Date().toISOString();
   const manifest: WorkspaceManifest = {
@@ -355,27 +394,33 @@ function failedResult(
   return { status: "failed", manifest, reason };
 }
 
-function writeUpstreamSnapshotFile(artifactDir: string, upstream: ResolvedUpstreamTurn): void {
+function writeUpstreamSnapshotFile(
+  artifactDir: string,
+  upstream: ResolvedUpstreamTurn,
+): void {
   if (upstream.snapshot === undefined) return;
   try {
     fs.mkdirSync(artifactDir, { recursive: true });
     fs.writeFileSync(
       path.join(artifactDir, "snapshot.json"),
       JSON.stringify(upstream.snapshot, null, 2),
-      "utf-8"
+      "utf-8",
     );
   } catch {
     // Snapshot evidence is best-effort; the full workspace manifest/status is already written.
   }
 }
 
-function writeManifestFile(artifactDir: string, manifest: WorkspaceManifest): void {
+function writeManifestFile(
+  artifactDir: string,
+  manifest: WorkspaceManifest,
+): void {
   try {
     fs.mkdirSync(artifactDir, { recursive: true });
     fs.writeFileSync(
       path.join(artifactDir, "manifest.json"),
       JSON.stringify(manifest, null, 2),
-      "utf-8"
+      "utf-8",
     );
   } catch {
     // A failed manifest is still returned to the caller even if the disk write fails.

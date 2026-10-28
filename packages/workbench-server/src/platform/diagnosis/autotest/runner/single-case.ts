@@ -5,7 +5,7 @@ import type { CaseResult } from "../types";
  * Single case execution pipeline.
  *
  * 1. Generate unique threadId
- * 2. Execute the data-agent workflow directly (runDataAgentWorkflow, no HTTP)
+ * 2. Execute the ordinary assistant HTTP workflow
  * 3. Aggregate response text, snapshot it, and extract turnKey from the workflow result
  * 4. Wait briefly for backend log files/API buffers to flush, then post-process the case artifact
  * 5. Run answer evaluation (using the default judgment when omitted; logic check is folded in here)
@@ -54,7 +54,7 @@ export interface SingleCaseOptions {
 
 export async function executeSingleCase(options: SingleCaseOptions): Promise<CaseResult> {
   const { runId, testCase, userId, domainId, tk, signal, caseTimeoutMs, onStep } = options;
-  return runWithLogContext({ domainId, token: tk }, async () => {
+  return runWithLogContext({ domainId, userId, token: tk }, async () => {
     const threadId = `autotest-${randomUUID().replace(/-/g, "").slice(0, 16)}`;
 
   const reportStep = (label: string): void => {

@@ -6,7 +6,7 @@ import {
 } from "@ontomato/contracts/knowledge-governance";
 import { getPostgresPool, qualifiedTable } from "../../infrastructure/postgres";
 import { HttpError } from "../../utils/errors";
-import { RuntimeClient } from "../agent-runtime/client";
+import { RuntimeClient } from "../../infrastructure/agent-runtime/client";
 
 export interface GovernanceOwner {
   domainId: string;

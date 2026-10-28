@@ -1,3 +1,11 @@
+import assistantRouter from "../api/routes/assistant";
+import { registerAssistantSkills } from "../services/assistant/skills";
+import {
+  readAssistantTurnEvidence,
+  verifyAssistantDomain,
+} from "../services/assistant/evidence";
+import { installAssistantEvidenceReader } from "../platform/diagnosis/observe/workspaces/assistant-source";
+import type { AuthenticatedRequest } from "../utils/request-identity";
 import retrievalRouter from "../api/routes/data-retrieval";
 import { registerRetrievalSkill } from "../services/data-retrieval/skill";
 import { unwrapCallbackCredential } from "../services/agent-runtime/callback-credential";
@@ -14,13 +22,9 @@ import path from "path";
 import { skillRegistryManager } from "../core/skills/index";
 import { resolveSkillPackageFile } from "../core/skills/discovery/loader";
 import { config } from "../config/application";
-import { datasetSchemaService } from "../services/data-query/dataset-schema";
-import analysisAgentsRouter from "../api/routes/analysis-agents";
-import analysisReportsRouter from "../api/routes/analysis-reports";
 import analysisTasksRouter from "../api/routes/analysis-tasks";
 import backendProxyRouter from "../api/routes/backend-proxy";
 import knowledgeGovernanceRouter from "../api/routes/knowledge-governance";
-import chatRouter from "../api/routes/chat";
 import dashboardsRouter from "../api/routes/dashboards";
 import feedbackRouter from "../api/routes/feedback";
 import memoriesRouter from "../api/routes/memories";
@@ -32,12 +36,8 @@ import queryHistoryRouter from "../api/routes/query-history";
 import reportsRouter from "../api/routes/reports";
 import pptRouter from "../api/routes/ppt";
 import skillsRouter from "../api/routes/skills";
-import threadsRouter from "../api/routes/threads";
 import autotestRouter from "../platform/diagnosis/autotest/routes";
-import { setApiChatStorage } from "../platform/diagnosis/autotest/strategies/api-chat";
 import observeRouter from "../platform/diagnosis/observe/routes";
-import { setRunCompositionResolver } from "../platform/diagnosis/observe/workspaces/builder";
-import { setTurnResolverStorage } from "../platform/diagnosis/observe/workspaces/turn-resolver";
 import artifactRetentionRouter from "../platform/diagnosis/artifact-retention-routes";
 import agentRouter from "../platform/diagnosis/observe/agent/routes";
 import { syncRuntimeDefaultResources } from "../platform/runtime-defaults";
@@ -51,13 +51,6 @@ import {
   runWithLogContext,
   runWithRequestContext,
 } from "../logging/log-context";
-import { startTaskScheduler } from "../services/analysis-agent/task/task-scheduler";
-import { resolveAnalysisRunComposition } from "../services/analysis-agent/runtime/run-composition";
-import * as queryRunStore from "../services/data-query/query-run-store";
-import * as chatSnapshotStore from "../services/chat/chat-snapshot-store";
-import * as chatThreadStore from "../services/chat/thread-store";
-import * as executionEventStore from "../services/chat/execution-event-store";
-import * as turnRunStore from "../services/turn-run/turn-run-store";
 import { startArtifactCleanupScheduler } from "../platform/diagnosis/artifact-retention-cleanup";
 import { initializeConnection } from "../infrastructure/connection";
 import { requestLogger as accessLogger, errorHandler } from "../api/middleware";
@@ -85,20 +78,9 @@ let runtimeBound = false;
 function bindRuntime(): void {
   if (runtimeBound) return;
   runtimeBound = true;
-  setRunCompositionResolver(resolveAnalysisRunComposition);
-  setTurnResolverStorage({
-    getPrimaryQueryRun: queryRunStore.getPrimaryQueryRun,
-    getQueryRunBySource: queryRunStore.getQueryRunBySource,
-    listQueryRuns: queryRunStore.listQueryRuns,
-    listExecutionEvents: executionEventStore.listExecutionEvents,
-    listChatRenderSnapshots: chatSnapshotStore.listChatRenderSnapshots,
-    getTurnRun: turnRunStore.getTurnRun,
-  });
-  setApiChatStorage({
-    createThreadPlaceholder: chatThreadStore.createThreadPlaceholder,
-    allocateRequestSeq: chatThreadStore.allocateRequestSeq,
-    recordTurnRunStart: turnRunStore.recordTurnRunStart,
-    recordTurnRunFinish: turnRunStore.recordTurnRunFinish,
+  installAssistantEvidenceReader({
+    readTurn: readAssistantTurnEvidence,
+    verifyDomain: verifyAssistantDomain,
   });
 }
 
@@ -212,11 +194,22 @@ export function createWorkbenchApp(mounts: WorkbenchMounts = {}): Express {
 
   app.use(unwrapCallbackCredential);
   app.use("/api", identity.authenticate);
+  app.use("/api", (req, _res, next) => {
+    const r = req as AuthenticatedRequest;
+    runWithLogContext(
+      {
+        domainId: r.domainId,
+        userId: r.userId,
+        token: r.token,
+        apiKey: r.apiKey,
+      },
+      next,
+    );
+  });
   app.use("/api/retrievals", retrievalRouter);
-  app.use("/api/analysis-agents", analysisAgentsRouter);
-  app.use("/api/analysis-reports", analysisReportsRouter);
+
   app.use("/api/analysis-tasks", analysisTasksRouter);
-  app.use("/api/chat", chatRouter);
+  app.use("/api/assistant", assistantRouter);
   if (mounts.connectionRouter)
     app.use("/api/connections", mounts.connectionRouter);
   if (mounts.dataGovernanceRouter)
@@ -226,7 +219,7 @@ export function createWorkbenchApp(mounts: WorkbenchMounts = {}): Express {
   app.use("/api/feedback", feedbackRouter);
   app.use("/api/preferences", preferencesRouter);
   app.use("/api/memories", memoriesRouter);
-  app.use("/api/threads", threadsRouter);
+
   app.use("/api/reports", reportsRouter);
   app.use("/api/ppt", pptRouter);
   app.use("/api/skills", skillsRouter);
@@ -276,12 +269,8 @@ export async function startWorkbench(
   await initializeConnection();
   await registerGovernanceSkill();
   await registerRetrievalSkill();
-  if (config.dataQuery.baseUrl) {
-    datasetSchemaService.setConfig(config.dataQuery.baseUrl);
-    logger.info(tApp("foundation.log.boot.datasetService"));
-  }
-  startTaskScheduler();
-  logger.info(tApp("foundation.log.boot.schedulerStarted"));
+  await registerAssistantSkills();
+
   startArtifactCleanupScheduler();
   logger.info(tApp("foundation.log.boot.cleanupStarted"));
   app.listen(port, () => {

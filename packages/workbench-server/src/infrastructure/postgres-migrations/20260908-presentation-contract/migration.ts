@@ -7,7 +7,7 @@ import type {
   AnalysisEvidenceQuestion,
   AnalysisSection,
   DeepAnalysisTaskPayload,
-} from "@ontomato/contracts/analysis-presentation";
+} from "./legacy-presentation";
 import { qualifiedTable } from "../../postgres";
 import type { QueryableClient } from "../helpers";
 import { DIMENSION_REPORT_TITLE_POLICY } from "../../../config/report-title-policy";

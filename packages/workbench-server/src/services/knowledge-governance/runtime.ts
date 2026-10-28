@@ -1,6 +1,6 @@
 import { ARTIFACT_MARKDOWN_PROMPT } from "@ontomato/contracts/agent-artifact-markdown";
 import { codeLimitsSchema } from "@ontomato/contracts/agent-runtime-code";
-import { getQueryTimeoutMs } from "../data-query/data-query-policy";
+import { getQueryTimeoutMs } from "../../config/query-settings";
 import { callbackCredential } from "../agent-runtime/callback-credential";
 import { randomUUID } from "node:crypto";
 import type { Response } from "express";
@@ -14,7 +14,7 @@ import { renderPrompt } from "../../core/prompts/loader";
 import { environment } from "../../config/environment";
 import { HttpError } from "../../utils/errors";
 import { initializeSse } from "../../utils/sse";
-import { RuntimeClient } from "../agent-runtime/client";
+import { RuntimeClient } from "../../infrastructure/agent-runtime/client";
 import { governanceStore, type GovernanceOwner } from "./store";
 import type { GovernanceCredentials } from "./materials";
 import { governanceSkillRef } from "./skill";
@@ -24,7 +24,8 @@ const failureMessage = (run: { errorMessage?: string | null }) =>
   run.errorMessage ||
   "The governance response could not finish. Saved work is retained; please retry.";
 const governanceStatus = (
-  run: Pick<RuntimeRunSnapshot["run"], "status" | "stopReason"> | null | undefined,
+  run:
+    Pick<RuntimeRunSnapshot["run"], "status" | "stopReason"> | null | undefined,
 ): GovernanceSession["status"] => {
   if (!run) return "idle";
   if (run.status === "running") return "running";
@@ -216,11 +217,7 @@ export class GovernanceRuntime {
           );
         const latest = status.latestRun;
         if (latest && latest.status !== "running") {
-          await governanceStore.closeRun(
-            record.id,
-            owner,
-            latest.id,
-          );
+          await governanceStore.closeRun(record.id, owner, latest.id);
           const current = await governanceStore.get(record.id, owner);
           record = { ...current, runtimeSessionId: record.runtimeSessionId };
         }

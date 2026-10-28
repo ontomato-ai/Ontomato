@@ -172,10 +172,5 @@ export default [
       ]),
     },
   },
-  {
-    // Source-repository legacy allowlist (platform → services), moved over unchanged and
-    // only ever reduced.
-    files: [`${server}/platform/diagnosis/autotest/strategies/api-chat.ts`],
-    rules: { "no-restricted-imports": restrict([]) },
-  },
+
 ];

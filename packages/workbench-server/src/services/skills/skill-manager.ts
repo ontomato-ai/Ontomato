@@ -20,7 +20,10 @@ import {
   SkillManifestSchema,
   writeSkillMarkdown,
 } from "../../core/skills/manifest";
-import type { SkillCategoryValue, SkillTypeValue } from "../../core/skills/constants";
+import type {
+  SkillCategoryValue,
+  SkillTypeValue,
+} from "../../core/skills/constants";
 import { SkillType } from "../../core/skills/constants";
 import { createLogger } from "../../logging/logger";
 import { tApp } from "../../i18n";
@@ -30,7 +33,7 @@ import {
   listAnalysisAgentSkillReferences,
   removeAnalysisAgentSkillReferences,
   restoreAnalysisAgentSkillReferences,
-} from "../analysis-agent/config/skill-references";
+} from "../assistant/skill-references";
 
 const logger = createLogger("skill-manager");
 
@@ -47,7 +50,11 @@ class SkillAlreadyExistsError extends Error {
 
 function requireWritableSkill(skill: SkillMeta): void {
   if (skill.isPublic) {
-    throw new HttpError(403, tApp("skills.mgr.publicReadOnly"), "PUBLIC_SKILL_READ_ONLY");
+    throw new HttpError(
+      403,
+      tApp("skills.mgr.publicReadOnly"),
+      "PUBLIC_SKILL_READ_ONLY",
+    );
   }
 }
 
@@ -61,13 +68,20 @@ class SkillManager {
   }
 
   private localizedSkill(skill: SkillMeta, locale?: string): SkillMeta {
-    if (!skill.isPublic || !locale?.toLowerCase().startsWith("en")) return skill;
+    if (!skill.isPublic || !locale?.toLowerCase().startsWith("en"))
+      return skill;
     const originalPath = path.join(skill.path, "SKILL.md");
     const original = readSkillMarkdown(originalPath);
-    return original ? { ...skill, manifest: original.manifest, skillMdPath: originalPath } : skill;
+    return original
+      ? { ...skill, manifest: original.manifest, skillMdPath: originalPath }
+      : skill;
   }
 
-  private toSkillInfo(skill: SkillMeta, registry: SkillRegistryManager, locale?: string): SkillInfo {
+  private toSkillInfo(
+    skill: SkillMeta,
+    registry: SkillRegistryManager,
+    locale?: string,
+  ): SkillInfo {
     skill = this.localizedSkill(skill, locale);
     return {
       id: skill.id,
@@ -85,7 +99,10 @@ class SkillManager {
     };
   }
 
-  async toggleSkill(domainId: string, skillId: string): Promise<{ enabled: boolean }> {
+  async toggleSkill(
+    domainId: string,
+    skillId: string,
+  ): Promise<{ enabled: boolean }> {
     const registry = await skillRegistryManager.forDomain(domainId);
 
     const skill = registry.getSkillById(skillId);
@@ -96,7 +113,9 @@ class SkillManager {
     const enabled = !registry.isSkillEnabled(skillId);
     registry.setSkillEnabled(skillId, enabled);
     logger.info(
-      tApp(enabled ? "skills.mgr.toggleEnabled" : "skills.mgr.toggleDisabled", { id: skillId })
+      tApp(enabled ? "skills.mgr.toggleEnabled" : "skills.mgr.toggleDisabled", {
+        id: skillId,
+      }),
     );
 
     return { enabled };
@@ -104,7 +123,7 @@ class SkillManager {
 
   async getSkillReferences(
     domainId: string,
-    skillId: string
+    skillId: string,
   ): Promise<AnalysisAgentSkillReference[]> {
     const registry = await skillRegistryManager.forDomain(domainId);
     if (!registry.getSkillById(skillId)) {
@@ -113,7 +132,10 @@ class SkillManager {
     return listAnalysisAgentSkillReferences(domainId, skillId);
   }
 
-  async deleteSkill(domainId: string, skillId: string): Promise<SkillDeleteResult> {
+  async deleteSkill(
+    domainId: string,
+    skillId: string,
+  ): Promise<SkillDeleteResult> {
     const registry = await skillRegistryManager.forDomain(domainId);
 
     const skill = registry.getSkillById(skillId);
@@ -122,9 +144,15 @@ class SkillManager {
     }
 
     requireWritableSkill(skill);
-    const affectedAgents = await listAnalysisAgentSkillReferences(domainId, skillId);
+    const affectedAgents = await listAnalysisAgentSkillReferences(
+      domainId,
+      skillId,
+    );
     const wasEnabled = registry.isSkillEnabled(skillId);
-    const trashRoot = path.join(skillRegistryManager.getDomainSkillsRoot(domainId), ".trash");
+    const trashRoot = path.join(
+      skillRegistryManager.getDomainSkillsRoot(domainId),
+      ".trash",
+    );
     const stagedPath = path.join(trashRoot, `${skillId}-${randomUUID()}`);
     let referencesRemoved = false;
 
@@ -132,7 +160,10 @@ class SkillManager {
       fs.mkdirSync(trashRoot, { recursive: true });
       fs.renameSync(skill.path, stagedPath);
 
-      const cleanedAgentCount = await removeAnalysisAgentSkillReferences(domainId, skillId);
+      const cleanedAgentCount = await removeAnalysisAgentSkillReferences(
+        domainId,
+        skillId,
+      );
       referencesRemoved = true;
       registry.removeSkillState(skillId);
       registry.clearCache();
@@ -141,20 +172,28 @@ class SkillManager {
       try {
         fs.rmSync(stagedPath, { recursive: true, force: true });
       } catch (cleanupError) {
-        logger.warn(tApp("skills.mgr.deleteCleanupWarn", { id: skillId }), cleanupError);
+        logger.warn(
+          tApp("skills.mgr.deleteCleanupWarn", { id: skillId }),
+          cleanupError,
+        );
       }
 
       logger.info(
-        tApp("skills.mgr.deletedInfo", { id: skillId, n: cleanedAgentCount })
+        tApp("skills.mgr.deletedInfo", { id: skillId, n: cleanedAgentCount }),
       );
       return { affectedAgents, cleanedAgentCount };
     } catch (error) {
       if (referencesRemoved) {
-        await restoreAnalysisAgentSkillReferences(domainId, skillId, affectedAgents).catch(
-          (restoreError) => {
-            logger.error(tApp("skills.mgr.restoreRefsFail", { id: skillId }), restoreError);
-          }
-        );
+        await restoreAnalysisAgentSkillReferences(
+          domainId,
+          skillId,
+          affectedAgents,
+        ).catch((restoreError) => {
+          logger.error(
+            tApp("skills.mgr.restoreRefsFail", { id: skillId }),
+            restoreError,
+          );
+        });
       }
       if (!wasEnabled) {
         registry.setSkillEnabled(skillId, false);
@@ -164,12 +203,21 @@ class SkillManager {
       }
       registry.clearCache();
       await registry.initialize().catch((restoreError) => {
-        logger.error(tApp("skills.mgr.restoreRegistryFail", { id: skillId }), restoreError);
+        logger.error(
+          tApp("skills.mgr.restoreRegistryFail", { id: skillId }),
+          restoreError,
+        );
       });
 
-      const errorMessage = error instanceof Error ? error.message : String(error);
-      logger.error(tApp("skills.mgr.deleteFailLog", { id: skillId }), errorMessage);
-      throw new Error(tApp("skills.mgr.deleteFail", { error: errorMessage }), { cause: error });
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+      logger.error(
+        tApp("skills.mgr.deleteFailLog", { id: skillId }),
+        errorMessage,
+      );
+      throw new Error(tApp("skills.mgr.deleteFail", { error: errorMessage }), {
+        cause: error,
+      });
     }
   }
 
@@ -187,7 +235,7 @@ class SkillManager {
       outputType?: "html" | "json" | "text";
       scriptCode?: string;
       skillContent?: string;
-    }
+    },
   ): Promise<SkillInfo> {
     const registry = await skillRegistryManager.forDomain(domainId);
 
@@ -201,7 +249,7 @@ class SkillManager {
       skillRegistryManager.getDomainSkillsRoot(domainId),
       type,
       category,
-      skillId
+      skillId,
     );
 
     if (fs.existsSync(skillDir)) {
@@ -213,7 +261,8 @@ class SkillManager {
 
       const manifest = SkillManifestSchema.parse({
         name: skillId,
-        description: options.description?.trim() || options.title?.trim() || skillId,
+        description:
+          options.description?.trim() || options.title?.trim() || skillId,
         type,
         category,
         title: options.title || skillId,
@@ -221,8 +270,11 @@ class SkillManager {
         version: options.version || "1.0.0",
         timeout: options.timeout,
         outputType:
-          type === SkillType.EXECUTABLE ? options.outputType || "html" : options.outputType,
-        entries: type === SkillType.EXECUTABLE ? ["scripts/index.mjs"] : undefined,
+          type === SkillType.EXECUTABLE
+            ? options.outputType || "html"
+            : options.outputType,
+        entries:
+          type === SkillType.EXECUTABLE ? ["scripts/index.mjs"] : undefined,
       });
 
       if (type === SkillType.EXECUTABLE) {
@@ -245,11 +297,17 @@ class SkillManager {
       assertSkillPackageComplete(
         manifest,
         (relativePath) => fs.existsSync(path.join(skillDir, relativePath)),
-        skillMdContent
+        skillMdContent,
       );
-      writeSkillMarkdown(path.join(skillDir, "SKILL.md"), manifest, skillMdContent);
+      writeSkillMarkdown(
+        path.join(skillDir, "SKILL.md"),
+        manifest,
+        skillMdContent,
+      );
 
-      logger.info(tApp("skills.mgr.createdInfo", { id: skillId, dir: skillDir }));
+      logger.info(
+        tApp("skills.mgr.createdInfo", { id: skillId, dir: skillDir }),
+      );
 
       registry.clearCache();
       await registry.initialize();
@@ -281,7 +339,7 @@ class SkillManager {
       outputType?: "html" | "json" | "text";
       scriptCode?: string;
       skillContent?: string;
-    }
+    },
   ): Promise<SkillInfo> {
     const registry = await skillRegistryManager.forDomain(domainId);
 
@@ -297,7 +355,9 @@ class SkillManager {
       const skillMdPath = path.join(skillDir, "SKILL.md");
       const current = readSkillMarkdown(skillMdPath);
       if (!current) {
-        throw new InvalidSkillPackageError(tApp("skills.mgr.frontmatterInvalid"));
+        throw new InvalidSkillPackageError(
+          tApp("skills.mgr.frontmatterInvalid"),
+        );
       }
 
       const updatedManifest = SkillManifestSchema.parse({
@@ -313,7 +373,7 @@ class SkillManager {
       assertSkillPackageComplete(
         updatedManifest,
         (relativePath) => fs.existsSync(path.join(skillDir, relativePath)),
-        updatedContent
+        updatedContent,
       );
 
       if (skill.manifest.type === SkillType.EXECUTABLE && options.scriptCode) {
@@ -335,13 +395,22 @@ class SkillManager {
 
       return this.toSkillInfo(updatedSkill, registry);
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : String(error);
-      logger.error(tApp("skills.mgr.updateFailLog", { id: skillId }), errorMessage);
-      throw new Error(tApp("skills.mgr.updateFail", { error: errorMessage }), { cause: error });
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+      logger.error(
+        tApp("skills.mgr.updateFailLog", { id: skillId }),
+        errorMessage,
+      );
+      throw new Error(tApp("skills.mgr.updateFail", { error: errorMessage }), {
+        cause: error,
+      });
     }
   }
 
-  async getSkillScript(domainId: string, skillId: string): Promise<string | null> {
+  async getSkillScript(
+    domainId: string,
+    skillId: string,
+  ): Promise<string | null> {
     const registry = await skillRegistryManager.forDomain(domainId);
 
     const skill = registry.getSkillById(skillId);
@@ -366,7 +435,11 @@ class SkillManager {
     }
   }
 
-  async getSkillContent(domainId: string, skillId: string, locale?: string): Promise<string | null> {
+  async getSkillContent(
+    domainId: string,
+    skillId: string,
+    locale?: string,
+  ): Promise<string | null> {
     const registry = await skillRegistryManager.forDomain(domainId);
 
     const skill = registry.getSkillById(skillId);
@@ -377,7 +450,11 @@ class SkillManager {
     return loadSkillContent(this.localizedSkill(skill, locale));
   }
 
-  async searchSkills(domainId: string, query: string, locale?: string): Promise<SkillInfo[]> {
+  async searchSkills(
+    domainId: string,
+    query: string,
+    locale?: string,
+  ): Promise<SkillInfo[]> {
     const registry = await skillRegistryManager.forDomain(domainId);
     if (!query || query.trim() === "") {
       return [];
@@ -385,11 +462,17 @@ class SkillManager {
 
     const needle = query.toLowerCase();
     return (await this.getAllSkills(domainId, locale)).filter((skill) =>
-      [skill.id, skill.title, skill.description, ...skill.tags].some((text) => text?.toLowerCase().includes(needle))
+      [skill.id, skill.title, skill.description, ...skill.tags].some((text) =>
+        text?.toLowerCase().includes(needle),
+      ),
     );
   }
 
-  async importSkill(domainId: string, zipBuffer: Buffer, overwrite = false): Promise<SkillInfo> {
+  async importSkill(
+    domainId: string,
+    zipBuffer: Buffer,
+    overwrite = false,
+  ): Promise<SkillInfo> {
     let zip: AdmZip;
     try {
       zip = new AdmZip(zipBuffer);
@@ -397,11 +480,13 @@ class SkillManager {
       throw new InvalidSkillPackageError(
         tApp("skills.mgr.zipUnreadable", {
           error: error instanceof Error ? error.message : String(error),
-        })
+        }),
       );
     }
     const zipEntries = zip.getEntries();
-    const extractedRoot = fs.mkdtempSync(path.join(os.tmpdir(), "workbench-skill-import-"));
+    const extractedRoot = fs.mkdtempSync(
+      path.join(os.tmpdir(), "workbench-skill-import-"),
+    );
     try {
       const candidateDirectories = new Set<string>();
       for (const entry of zipEntries) {
@@ -409,7 +494,7 @@ class SkillManager {
         const relativePath = normalizeSkillPackagePath(entry.entryName);
         if (!relativePath) {
           throw new InvalidSkillPackageError(
-            tApp("skills.mgr.zipBadPath", { name: entry.entryName })
+            tApp("skills.mgr.zipBadPath", { name: entry.entryName }),
           );
         }
         const targetPath = path.join(extractedRoot, relativePath);
@@ -450,15 +535,23 @@ class SkillManager {
         manifest,
         (relativePath) => {
           const requiredPath = path.join(packageRoot!, relativePath);
-          return fs.existsSync(requiredPath) && fs.statSync(requiredPath).isFile();
+          return (
+            fs.existsSync(requiredPath) && fs.statSync(requiredPath).isFile()
+          );
         },
-        content
+        content,
       );
 
       const registry = await skillRegistryManager.forDomain(domainId);
-      const domainSkillsRoot = skillRegistryManager.getDomainSkillsRoot(domainId);
+      const domainSkillsRoot =
+        skillRegistryManager.getDomainSkillsRoot(domainId);
       const existing = registry.getSkillById(manifest.name);
-      const skillDir = path.join(domainSkillsRoot, manifest.type, manifest.category, manifest.name);
+      const skillDir = path.join(
+        domainSkillsRoot,
+        manifest.type,
+        manifest.category,
+        manifest.name,
+      );
 
       if (existing) requireWritableSkill(existing);
       if (existing && !overwrite) {
@@ -469,7 +562,7 @@ class SkillManager {
       }
       if (!existing && fs.existsSync(skillDir)) {
         throw new InvalidSkillPackageError(
-          tApp("skills.mgr.unregisteredDir", { dir: skillDir })
+          tApp("skills.mgr.unregisteredDir", { dir: skillDir }),
         );
       }
 
@@ -481,7 +574,9 @@ class SkillManager {
 
       if (overwrite && existingPath) {
         if (existingPath !== skillDir && fs.existsSync(skillDir)) {
-          throw new Error(tApp("skills.mgr.unsafeOverwrite", { dir: skillDir }));
+          throw new Error(
+            tApp("skills.mgr.unsafeOverwrite", { dir: skillDir }),
+          );
         }
         fs.mkdirSync(trashRoot, { recursive: true });
         fs.renameSync(existingPath, backupPath!);
@@ -490,8 +585,15 @@ class SkillManager {
       try {
         fs.mkdirSync(path.dirname(skillDir), { recursive: true });
         // Node 24's native directory copy reports EACCES on macOS Docker Desktop bind mounts (frontend_data), not seen on Linux deployments; passing a filter forces the JS implementation. Removable once Node fixes the native implementation
-        fs.cpSync(packageRoot, skillDir, { recursive: true, errorOnExist: true, force: false, filter: () => true });
-        logger.info(tApp("skills.mgr.importedInfo", { id: manifest.name, dir: skillDir }));
+        fs.cpSync(packageRoot, skillDir, {
+          recursive: true,
+          errorOnExist: true,
+          force: false,
+          filter: () => true,
+        });
+        logger.info(
+          tApp("skills.mgr.importedInfo", { id: manifest.name, dir: skillDir }),
+        );
 
         registry.clearCache();
         await registry.initialize();
@@ -499,7 +601,7 @@ class SkillManager {
         const newSkill = registry.getSkillById(manifest.name);
         if (!newSkill) {
           throw new Error(
-            tApp("skills.mgr.importNotFound", { id: manifest.name })
+            tApp("skills.mgr.importNotFound", { id: manifest.name }),
           );
         }
 
@@ -520,7 +622,7 @@ class SkillManager {
         await registry.initialize().catch((restoreError) => {
           logger.error(
             tApp("skills.mgr.restoreOverwriteFail", { id: manifest.name }),
-            restoreError
+            restoreError,
           );
         });
         throw error;
@@ -530,10 +632,16 @@ class SkillManager {
     }
   }
 
-  async debugSkill(domainId: string, skillId: string, input: SkillInput): Promise<SkillOutput> {
+  async debugSkill(
+    domainId: string,
+    skillId: string,
+    input: SkillInput,
+  ): Promise<SkillOutput> {
     const registry = await skillRegistryManager.forDomain(domainId);
 
-    const skill = registry.resolveSkill(skillId, { type: SkillType.EXECUTABLE });
+    const skill = registry.resolveSkill(skillId, {
+      type: SkillType.EXECUTABLE,
+    });
 
     if (!skill.manifest.entry) {
       throw new Error(tApp("skills.mgr.debugEntryUndefined", { id: skillId }));
@@ -548,8 +656,11 @@ class SkillManager {
 
       return result;
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : String(error);
-      throw new Error(tApp("skills.mgr.execFailed", { error: errorMessage }), { cause: error });
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+      throw new Error(tApp("skills.mgr.execFailed", { error: errorMessage }), {
+        cause: error,
+      });
     }
   }
 

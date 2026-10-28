@@ -1,3 +1,7 @@
+import { dashboardSourceSchema } from "@ontomato/contracts/dashboard-artifacts";
+import { assistantService } from "../assistant/service";
+import { assistantStore, type AssistantOwner } from "../assistant/store";
+import { projectDataset } from "../data-retrieval/projection";
 import type {
   DashboardChartEntry,
   DashboardGroup,
@@ -7,44 +11,48 @@ import { randomUUID } from "node:crypto";
 
 import { config } from "../../config/application";
 import { backendPost } from "../../utils/backend-client";
-import { getCheckpointer } from "../../infrastructure/connection";
 import { t, tApp } from "../../i18n";
 import { HttpError } from "../../utils/errors";
-import { extractDatasetsFromQueryRun } from "../data-query/query-run-artifacts";
-import { listQueryRuns } from "../data-query/query-run-store";
-import { normalizeAbcProgram, normalizeAbcProgramParametersForUi } from "./abc-program";
-import { ABC_PROGRAM_DASHBOARD_TIMEOUT_MS, wrapDashboardBackendError } from "./dsl-execution";
+import {
+  normalizeAbcProgram,
+  normalizeAbcProgramParametersForUi,
+} from "./abc-program";
+import {
+  ABC_PROGRAM_DASHBOARD_TIMEOUT_MS,
+  wrapDashboardBackendError,
+} from "./dsl-execution";
 import { createDashboardPlanningChain } from "./planning/index";
 import { createDashboard } from "./store";
 import type { DashboardDatasetInput } from "./types";
 export async function resolveDashboardDatasets(
-  threadId: string,
-  requestSeq: number
+  sessionId: string,
+  artifactIds: string[],
+  owner: AssistantOwner,
 ): Promise<{ datasets: DashboardDatasetInput[] }> {
-  const queryRuns = await listQueryRuns(threadId, requestSeq);
-  let datasetIndex = 0;
   const datasets: DashboardDatasetInput[] = [];
-
-  for (const run of queryRuns) {
-    for (const artifact of extractDatasetsFromQueryRun(run)) {
-      const dsl =
-        artifact.dsl && typeof artifact.dsl === "object" && !Array.isArray(artifact.dsl)
-          ? (artifact.dsl as Record<string, unknown>)
-          : null;
-      if ((!dsl && !artifact.abcProgram) || artifact.rows.length === 0) continue;
-
-      datasets.push({
-        datasetKey: artifact.datasetKey || `${run.sourceRef}-dataset-${datasetIndex}`,
-        subQuestion: artifact.title,
-        data: artifact.rows,
-        dsl: dsl || {},
-        abcProgram: artifact.abcProgram,
-        source: { threadId, requestSeq, datasetIndex },
-      });
-      datasetIndex += 1;
-    }
+  await assistantStore.session(sessionId, owner);
+  for (const id of [...new Set(artifactIds)]) {
+    const { payload, source } = await assistantService.dataset(
+      sessionId,
+      id,
+      owner,
+    );
+    const artifact = await assistantService.artifact(sessionId, id, owner);
+    const dataset = projectDataset(id, payload, {
+      retrievalId: source.retrievalId,
+      runtimeSessionId: artifact.sessionId,
+      runtimeRunId: artifact.runId,
+    });
+    datasets.push({
+      datasetKey: id,
+      subQuestion: payload.question,
+      data: payload.rows,
+      dsl: payload.recipe.kind === "dsl" ? payload.recipe.dsl : {},
+      abcProgram: dataset.abcProgram,
+      source: { sessionId, artifactId: id },
+      ...(payload.truncation ?? {}),
+    });
   }
-
   return { datasets };
 }
 export async function createDashboardFromAnalysis(
@@ -52,20 +60,16 @@ export async function createDashboardFromAnalysis(
   domainId: string,
   body: any,
   tk: string,
-  locale: string
+  locale: string,
 ) {
-  const threadId = String(body?.threadId || "").trim();
-  const requestSeq = Number(body?.requestSeq);
-  if (!threadId) throw new HttpError(400, "threadId is required");
-  if (!Number.isInteger(requestSeq) || requestSeq < 0) {
-    throw new HttpError(400, "requestSeq is required");
-  }
-
-  const checkpointer = getCheckpointer();
-  if (!checkpointer) throw new HttpError(500, t("api.checkpointerNotInitialized"));
-  await checkpointer.verifyThreadAccess(threadId, ownerId, domainId);
-  const { datasets } = await resolveDashboardDatasets(threadId, requestSeq);
-  if (!datasets.length) throw new HttpError(400, t("api.noAvailableDashboardData"));
+  const { sessionId, datasetArtifactIds } = dashboardSourceSchema.parse(body);
+  const { datasets } = await resolveDashboardDatasets(
+    sessionId,
+    datasetArtifactIds,
+    { userId: ownerId, domainId },
+  );
+  if (!datasets.length)
+    throw new HttpError(400, t("api.noAvailableDashboardData"));
   const needParameter = body?.needParameter === true;
 
   const groupsFromReq = Array.isArray(body?.groups) ? body.groups : [];
@@ -84,7 +88,7 @@ export async function createDashboardFromAnalysis(
           t("api.executionFailed", {
             status: 500,
             detail: t("api.backendNotConfigured"),
-          })
+          }),
         );
       }
       const endpoint = "/dashboard/createFromABCProgram";
@@ -99,9 +103,11 @@ export async function createDashboardFromAnalysis(
             outKeyRefs: dataset.abcProgram.outKeyRefs,
             needParameter,
           },
-          { token: tk, timeoutMs: ABC_PROGRAM_DASHBOARD_TIMEOUT_MS, locale }
+          { token: tk, timeoutMs: ABC_PROGRAM_DASHBOARD_TIMEOUT_MS, locale },
         );
-        payload = (response.headers.get("content-type") || "").includes("application/json")
+        payload = (response.headers.get("content-type") || "").includes(
+          "application/json",
+        )
           ? JSON.parse(response.text)
           : response.text;
       } catch (error) {
@@ -109,7 +115,8 @@ export async function createDashboardFromAnalysis(
       }
 
       const program = normalizeAbcProgram(payload?.data) || dataset.abcProgram;
-      const title = program.title || dataset.subQuestion || tApp("queryFixed.149");
+      const title =
+        program.title || dataset.subQuestion || tApp("queryFixed.149");
       const parameters = normalizeAbcProgramParametersForUi(program.parameters);
       charts.push({
         id: randomUUID(),
@@ -130,7 +137,8 @@ export async function createDashboardFromAnalysis(
       if (!plannedName && program.title) plannedName = program.title;
     }
 
-    if (!charts.length) throw new HttpError(400, t("api.noAvailableDashboardData"));
+    if (!charts.length)
+      throw new HttpError(400, t("api.noAvailableDashboardData"));
     groups = [
       {
         id: randomUUID(),
@@ -146,7 +154,9 @@ export async function createDashboardFromAnalysis(
     groups = (planned as any)?.groups?.map((group: any) => {
       const charts = (Array.isArray(group?.charts) ? group.charts : [])
         .filter((chart: any) => {
-          const source = datasets.find((item) => item.datasetKey === chart.datasetKey);
+          const source = datasets.find(
+            (item) => item.datasetKey === chart.datasetKey,
+          );
           if (!source) return false;
           const rows = Array.isArray(source.data) ? source.data : [];
           if (rows.length <= 1) return false;
@@ -154,7 +164,9 @@ export async function createDashboardFromAnalysis(
           return true;
         })
         .map((chart: any) => {
-          const source = datasets.find((item) => item.datasetKey === chart.datasetKey);
+          const source = datasets.find(
+            (item) => item.datasetKey === chart.datasetKey,
+          );
           return {
             id: randomUUID(),
             name: String(chart?.name || ""),
@@ -171,24 +183,28 @@ export async function createDashboardFromAnalysis(
           } satisfies DashboardChartEntry;
         });
 
-      const metrics = (Array.isArray(group?.metrics) ? group.metrics : []).map((metric: any) => {
-        const source = datasets.find((item) => item.datasetKey === metric.datasetKey);
-        return {
-          id: randomUUID(),
-          name: String(metric?.name || ""),
-          unit: String(metric?.unit || ""),
-          agg: metric?.agg,
-          valueField: metric?.valueField,
-          dataPlan: metric?.dataPlan,
-          dsl: source?.dsl || {},
-          source: {
-            ...source?.source,
-            datasetKey: source?.datasetKey,
-            subQuestion: source?.subQuestion,
-          },
-          layout: { colSpan: 6, rowSpan: 1 },
-        } satisfies DashboardMetricEntry;
-      });
+      const metrics = (Array.isArray(group?.metrics) ? group.metrics : []).map(
+        (metric: any) => {
+          const source = datasets.find(
+            (item) => item.datasetKey === metric.datasetKey,
+          );
+          return {
+            id: randomUUID(),
+            name: String(metric?.name || ""),
+            unit: String(metric?.unit || ""),
+            agg: metric?.agg,
+            valueField: metric?.valueField,
+            dataPlan: metric?.dataPlan,
+            dsl: source?.dsl || {},
+            source: {
+              ...source?.source,
+              datasetKey: source?.datasetKey,
+              subQuestion: source?.subQuestion,
+            },
+            layout: { colSpan: 6, rowSpan: 1 },
+          } satisfies DashboardMetricEntry;
+        },
+      );
 
       return {
         id: randomUUID(),
@@ -206,8 +222,8 @@ export async function createDashboardFromAnalysis(
     name:
       String(body?.name || "").trim() ||
       plannedName ||
-      tApp("queryFixed.148", { v0: (new Date().toISOString().slice(0, 10)) }),
-    source: { threadId, requestSeq },
+      tApp("queryFixed.148", { v0: new Date().toISOString().slice(0, 10) }),
+    source: { sessionId },
     groups,
   });
   return { id: detail.id, name: detail.name };

@@ -1,26 +1,19 @@
-import { Request, Response, Router } from "express";
-import { getStore } from "../../infrastructure/connection";
+import { Router } from "express";
+import { deleteMemories } from "../../services/assistant/user-state";
 import { asyncHandler } from "../utils/http";
-import { requireDomainId, type AuthenticatedRequest } from "../../utils/request-identity";
-
+import {
+  requireDomainId,
+  type AuthenticatedRequest,
+} from "../../utils/request-identity";
 const router: ReturnType<typeof Router> = Router();
-
 router.delete(
   "/",
-  asyncHandler(async (req: Request, res: Response) => {
-    const { userId } = req as AuthenticatedRequest;
-    const storeInstance = getStore();
-
-    if (storeInstance) {
-      const namespace = ["memories", requireDomainId(req as AuthenticatedRequest), userId];
-      const items = await storeInstance.search(namespace, { limit: 1000 });
-      const count = items.length;
-      await storeInstance.deleteByNamespace(namespace);
-      res.json({ success: true, deletedCount: count });
-    } else {
-      res.json({ success: true, deletedCount: 0 });
-    }
-  })
+  asyncHandler(async (req, res) => {
+    const actor = req as AuthenticatedRequest;
+    res.json({
+      success: true,
+      deletedCount: await deleteMemories(requireDomainId(actor), actor.userId),
+    });
+  }),
 );
-
 export default router;

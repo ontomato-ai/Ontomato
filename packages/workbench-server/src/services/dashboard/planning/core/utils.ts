@@ -24,11 +24,23 @@ export function getChartFieldContract(chartType: string): string[] {
     metric: [tApp("queryFixed.151")],
     pie: [tApp("queryFixed.152"), tApp("queryFixed.151")],
     "nightingale-rose": [tApp("queryFixed.152"), tApp("queryFixed.151")],
-    "bar-line": [tApp("queryFixed.153"), tApp("queryFixed.154"), tApp("queryFixed.155")],
+    "bar-line": [
+      tApp("queryFixed.153"),
+      tApp("queryFixed.154"),
+      tApp("queryFixed.155"),
+    ],
     "pictorial-bar": [tApp("queryFixed.156"), tApp("queryFixed.157")],
-    sankey: [tApp("queryFixed.158"), tApp("queryFixed.159"), tApp("queryFixed.160")],
+    sankey: [
+      tApp("queryFixed.158"),
+      tApp("queryFixed.159"),
+      tApp("queryFixed.160"),
+    ],
     "liquid-fill": [tApp("queryFixed.161")],
-    scatter: [tApp("queryFixed.162"), tApp("queryFixed.163"), tApp("queryFixed.164")],
+    scatter: [
+      tApp("queryFixed.162"),
+      tApp("queryFixed.163"),
+      tApp("queryFixed.164"),
+    ],
     sunburst: [tApp("queryFixed.165"), tApp("queryFixed.166")],
     treemap: [tApp("queryFixed.167"), tApp("queryFixed.166")],
     boxplot: [tApp("queryFixed.168"), tApp("queryFixed.169")],
@@ -42,15 +54,20 @@ export function getChartFieldContract(chartType: string): string[] {
 
 export function applyTransformSpec(
   rows: Array<Record<string, any>>,
-  spec: TransformSpec
+  spec: TransformSpec,
 ): Array<Record<string, any>> {
   const input = Array.isArray(rows) ? rows : [];
   if (!input.length || !spec) return input.slice();
 
   if (spec.kind === "groupBy") {
-    const map = new Map<string, { keyParts: any[]; count: number; sums: Record<string, number> }>();
+    const map = new Map<
+      string,
+      { keyParts: any[]; count: number; sums: Record<string, number> }
+    >();
     for (const r of input) {
-      const keyParts = (spec.groupBy || []).map((field) => r?.[field] ?? tApp("queryFixed.174"));
+      const keyParts = (spec.groupBy || []).map(
+        (field) => r?.[field] ?? tApp("queryFixed.174"),
+      );
       const key = keyParts.map((v) => String(v ?? "")).join("||");
 
       let st = map.get(key);
@@ -85,7 +102,10 @@ export function applyTransformSpec(
     if (sortBy?.field) {
       const order = sortBy.order === "asc" ? 1 : -1;
       result = result.sort(
-        (a, b) => ((toNumber(a[sortBy.field]) || 0) - (toNumber(b[sortBy.field]) || 0)) * order
+        (a, b) =>
+          ((toNumber(a[sortBy.field]) || 0) -
+            (toNumber(b[sortBy.field]) || 0)) *
+          order,
       );
     }
 
@@ -103,7 +123,7 @@ type GroupByTransformSpec = Extract<TransformSpec, { kind: "groupBy" }>;
 
 function computeMetricValue(
   metric: GroupByTransformSpec["metrics"][number],
-  state: { count: number; sums: Record<string, number> }
+  state: { count: number; sums: Record<string, number> },
 ) {
   const { op, field } = metric;
   const sumValue = field ? (state.sums[field] ?? 0) : 0;
@@ -129,7 +149,7 @@ function computeMetricValue(
 
 export function applyDataPlan(
   rows: Array<Record<string, any>>,
-  plan?: DataPlan
+  plan?: DataPlan,
 ): Array<Record<string, any>> {
   if (plan?.mode === "derived" && plan.transform) {
     return applyTransformSpec(rows, plan.transform);
@@ -144,7 +164,8 @@ export function isNumericLike(rows: any[], key: string) {
     const v = r?.[key];
     if (v == null || v === "") continue;
     seen++;
-    const n = typeof v === "number" ? v : Number(String(v).replace(/,/g, "").trim());
+    const n =
+      typeof v === "number" ? v : Number(String(v).replace(/,/g, "").trim());
     if (Number.isFinite(n)) num++;
   }
   return seen > 0 && num / seen >= 0.6;
@@ -161,14 +182,25 @@ export function pickFirstNumericKey(rows: any[]): string | "" {
 export function buildDatasetProfile(ds: DatasetInput): DatasetProfile {
   const rows = Array.isArray(ds?.data) ? ds.data : [];
   const rowCount = rows.length;
-  const fields = Array.from(new Set(rows.flatMap((row) => Object.keys(row || {}))));
-  const dataView = buildModelDataView(rows);
+  const fields = Array.from(
+    new Set(rows.flatMap((row) => Object.keys(row || {}))),
+  );
+  const truncation = ds.truncated
+    ? {
+        truncated: true as const,
+        rowLimit: ds.rowLimit!,
+        truncationHint: ds.truncationHint!,
+      }
+    : undefined;
+  const dataView = buildModelDataView(rows, { truncation });
 
   const isSingleRowSmall = rowCount === 1;
   const hasFiniteNumber = rows.some((row) =>
     fields.some(
-      (field) => typeof row?.[field] === "number" && Number.isFinite(row[field] as number)
-    )
+      (field) =>
+        typeof row?.[field] === "number" &&
+        Number.isFinite(row[field] as number),
+    ),
   );
 
   const dataType: DataType = isSingleRowSmall
@@ -184,6 +216,7 @@ export function buildDatasetProfile(ds: DatasetInput): DatasetProfile {
     rowCount,
     fields,
     sourceRows: rows,
+    truncation,
     dataView,
     dataType,
   };
