@@ -1,23 +1,24 @@
 import { readFile, writeFile, mkdir, rename, rm } from "node:fs/promises";
 import { randomUUID, createHash } from "node:crypto";
 import path from "node:path";
-const base = process.env.ONTOMATO_WORKBENCH_URL?.replace(/\/$/, "");
-if (!base) throw new Error("Set ONTOMATO_WORKBENCH_URL (see SKILL.md)");
+const base = process.env.ONTOMATO_ONTOLOGY_URL?.replace(/\/$/, "");
+if (!base) throw new Error("Set ONTOMATO_ONTOLOGY_URL (see SKILL.md)");
 const [arg, target] = process.argv.slice(2),
   headers = {
     "content-type": "application/json",
     tk: process.env.ONTOMATO_TK ?? "",
+    ...(process.env.ONTOMATO_API_KEY ? { "X-API-Key": process.env.ONTOMATO_API_KEY } : {}),
     "Accept-Language": process.env.ONTOMATO_LANGUAGE ?? "en",
     "X-Correlation-Id": process.env.ONTOMATO_CORRELATION_ID ?? randomUUID(),
   };
-async function call(route, body, extra = {}) {
-  const response = await fetch(base + "/api/retrievals" + route, {
+async function call(route, body, extra = {}, raw = false) {
+  const response = await fetch(base + "/ontology/retrievals" + route, {
     method: body === undefined ? "GET" : "POST",
     headers: { ...headers, ...extra },
     body: body === undefined ? undefined : JSON.stringify(body),
     redirect: "error",
   });
-  const value = response.status === 204 ? null : await response.json();
+  const value = response.status === 204 ? null : raw ? await response.text() : await response.json();
   if (!response.ok)
     throw new Error(`HTTP ${response.status}: ${JSON.stringify(value)}`);
   return value;
@@ -111,7 +112,7 @@ do {
 if (result.error) throw new Error(JSON.stringify(result.error));
 await mkdir(path.dirname(output), { recursive: true });
 const temporary = path.resolve("work", `.dataset-${key}.tmp`);
-await writeFile(temporary, JSON.stringify(result.dataset));
+await writeFile(temporary, await call(`/${state.id}/runs/${state.runId}/outputs/${key}/content`, undefined, extra, true));
 await rename(temporary, output);
 console.log(
   JSON.stringify({

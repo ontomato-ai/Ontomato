@@ -36,7 +36,7 @@ public class QueryAccessService {
         null,
         JSONObject.of(
             "servicePrincipal",
-            "workbench",
+            "ontology",
             "retrievalId",
             body.getString("retrievalId"),
             "sessionId",

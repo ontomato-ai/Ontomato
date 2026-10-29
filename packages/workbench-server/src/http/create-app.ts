@@ -6,8 +6,6 @@ import {
 } from "../services/assistant/evidence";
 import { installAssistantEvidenceReader } from "../platform/diagnosis/observe/workspaces/assistant-source";
 import type { AuthenticatedRequest } from "../utils/request-identity";
-import retrievalRouter from "../api/routes/data-retrieval";
-import { registerRetrievalSkill } from "../services/data-retrieval/skill";
 import { unwrapCallbackCredential } from "../services/agent-runtime/callback-credential";
 import { registerGovernanceSkill } from "../services/knowledge-governance/skill";
 import express, {
@@ -207,7 +205,6 @@ export function createWorkbenchApp(mounts: WorkbenchMounts = {}): Express {
       next,
     );
   });
-  app.use("/api/retrievals", retrievalRouter);
 
   app.use("/api/analysis-tasks", analysisTasksRouter);
   app.use("/api/assistant", assistantRouter);
@@ -271,7 +268,6 @@ export async function startWorkbench(
   syncDefaultPrompts();
   await initializeConnection();
   await registerGovernanceSkill();
-  await registerRetrievalSkill();
   await registerAssistantSkills();
 
   startArtifactCleanupScheduler();

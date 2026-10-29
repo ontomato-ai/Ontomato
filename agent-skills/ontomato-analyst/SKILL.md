@@ -33,9 +33,8 @@ Answer business questions using the current ontology and its permitted data. Thi
 Use Node.js 18 or newer. Keep this package together; no product checkout is needed.
 Scripts read environment first and application.yml beside the script as fallback.
 Use ONTOMATO_ONTOLOGY_URL (including any ontology gateway prefix),
-ONTOMATO_WORKBENCH_URL (base before /api), ONTOMATO_TK (sent as tk), and optionally
-ONTOMATO_URL as the common deployment base. The YAML fallback keys are ontologyUrl,
-workbenchUrl, tk and envUrl. An explicit service URL is sufficient without envUrl.
+ONTOMATO_TK (sent as tk), and optionally ONTOMATO_URL as the common deployment base.
+The YAML fallback keys are ontologyUrl, tk and envUrl. An explicit service URL is sufficient without envUrl.
 ONTOMATO_LANGUAGE and ONTOMATO_CORRELATION_ID propagate to requests.
 ONTOMATO_RUN_ID supplies the run header when a host provided it. The Python helper
 uses the same variables. ONTOMATO_QUERY_TK optionally selects the host-issued
@@ -63,7 +62,7 @@ Run `node ontomato.mjs <command>` from this directory. JSON accepts `@file`.
 | `metrics <question> [--cursor id] [--limit n]` | `POST /ontology/query/metrics/search`: published read specifications, revision and next cursor; no model call |
 | `execute-metric <id> --revision <revision> @parameters.json` | `POST /ontology/query/metrics/execute`: current revision checked, execution under your permissions |
 | `knowledge <question> [--limit n]` | `POST /ontology/query/knowledge/search`: relevant business knowledge |
-| `ask [--lang en] [--request-id UUID] "complete question"` | Workbench `POST /api/retrievals`, then polling and dataset downloads |
+| `ask [--lang en] [--request-id UUID] "complete question"` | Ontology `POST /ontology/retrievals`, then polling and dataset downloads |
 | `ask --status <retrievalId>` | Read the authoritative retrieval result |
 | `ask --cancel <retrievalId>` | Close the retrieval and request cancellation |
 | `ask --resume <retrievalId> --answers @answers.json [--request-id UUID]` | Explicit answers in the same session, new run |
@@ -124,3 +123,8 @@ curl -o report.pdf "<downloadUrl>"
 ```
 
 Only report tasks that already have report text can be downloaded; conversation tasks have no report.
+
+
+`ask` uses the ontology URL and the same entry inside and outside Ontomato. It prints the retrieval/run/decision revision, the final answer and downloaded dataset file paths under `outputs/retrievals/`. Reference those paths directly; do not rebuild the data. Resume with `ask --resume <retrievalId> --answers @reply.json`; the file includes `expectedRunId`, `expectedDecisionRevision` and `message`. Reuse `--request-id` after an uncertain response.
+
+`ONTOMATO_TK` is the current user token; API-key callers can use `ONTOMATO_API_KEY`. In a hosted assistant, optional `ONTOMATO_RETRIEVAL_CALLER_ID` binds ask to its parent lifecycle. It is an association ID, not a credential; the command passes it automatically. External agents leave it unset. The retriever itself uses direct queries and data-retrieval's dataset command, not recursive ask.

@@ -17,7 +17,7 @@ assumptions is a string array. decisionIds contains only confirmed decisions
 supplied by the host; use [] if none. Empty arrays are valid, invented identities
 are not.
 
-The returned file has schema workbench.dataset.v1, columns/rows, final recipe,
+The returned file has schema ontology service.dataset.v1, columns/rows, final recipe,
 field sources, assumptions/decisions/metric uses/selfCheck, a formal execution
 receipt and truncation (null or {truncated:true,rowLimit,truncationHint}). Preserve
 null, false, zero and empty strings. The runtime assigns artifact identity after

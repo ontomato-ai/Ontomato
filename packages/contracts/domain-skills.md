@@ -82,9 +82,10 @@ retain their authentication kind: `ONTOMATO_API_KEY`, sent as `x-api-key`;
 anonymous public-edition requests need neither. Workbench-owned scripts support
 these ordinary authentication forms. Workbench/ontology base URLs come from the
 existing host configuration. Ordinary resource/user/domain checks remain with the
-API owner. All selected scripts use the same run environment. The retiring
-assistant-retrieval skill reads its existing callback credential from
-ONTOMATO_RETRIEVAL_CALLBACK_TOKEN; its callback logic is unchanged.
+API owner. All selected scripts use the same run environment. The
+[ontology retrieval cutover](data-retrieval.md) removes assistant-retrieval and
+its ONTOMATO_RETRIEVAL_CALLBACK_TOKEN. The shared analyst uses the current user
+credential and a non-secret caller scope ID.
 
 Add `resolvedSkills: RuntimeRegisteredSkill[]` to the common `AgentHostRun`
 projection, taken directly from the runtime run in admissions, snapshots and

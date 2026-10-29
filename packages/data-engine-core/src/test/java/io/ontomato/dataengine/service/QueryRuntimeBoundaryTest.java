@@ -101,8 +101,7 @@ class QueryRuntimeBoundaryTest {
             ontology,
             mock(QueryOutputService.class),
             mock(QueryJobService.class),
-            mock(CheckServiceV2.class),
-            mock(RuntimeCodeClient.class));
+            mock(QueryQualityService.class));
     http =
         MockMvcBuilders.standaloneSetup(controller, new DslController())
             .setControllerAdvice(new OntologyQueryErrors())
@@ -241,12 +240,13 @@ class QueryRuntimeBoundaryTest {
             "classNames",
             List.of("/sales"));
     String token =
-        authorization.issueExploration(new QueryAccessService.Access(user, permission, null, null), body);
+        authorization.issueExploration(
+            new QueryAccessService.Access(user, permission, null, null), body);
     var claims = grants.verify(token, body.getString("runtimeRunId"), "/ontology/query/overview");
     assertEquals(expiry, claims.getLongValue("expiresAt"));
     assertEquals(body.getString("retrievalId"), claims.getString("retrievalId"));
     assertEquals(body.getString("runtimeSessionId"), claims.getString("sessionId"));
-    assertEquals("workbench", claims.getString("servicePrincipal"));
+    assertEquals("ontology", claims.getString("servicePrincipal"));
   }
 
   @Test

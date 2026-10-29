@@ -1,5 +1,4 @@
 import { ensureAssistantSchema } from "./20261028-assistant/schema";
-import { ensureDataRetrievalSchema } from "./20261028-data-retrieval/schema";
 import { ensureGovernanceRuntimeSchema } from "./20261028-governance-runtime/schema";
 import { workbenchProduct } from "../../product/installed";
 import { ensureGovernanceHarnessLinks } from "./20260923-governance-harness-links/schema";
@@ -202,10 +201,6 @@ export const POSTGRES_MIGRATION_REGISTRY: MigrationRegistration[] = [
   {
     directory: "20261028-governance-runtime",
     ensureSchema: ensureGovernanceRuntimeSchema,
-  },
-  {
-    directory: "20261028-data-retrieval",
-    ensureSchema: ensureDataRetrievalSchema,
   },
 ];
 

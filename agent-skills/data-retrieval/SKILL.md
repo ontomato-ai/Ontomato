@@ -1,7 +1,7 @@
 ---
 name: data-retrieval
 description: Produce a dataset file from a DSL, Python or published metric recipe by rerunning it through Ontomato under the user's authorization. Use after investigating a complete business question and declaring its sources and assumptions.
-compatibility: Requires Node.js 18 or newer and an authorized Ontomato workbench tk credential.
+compatibility: Requires Node.js 18 or newer and an authorized Ontomato ontology service tk credential.
 ---
 
 # Data retrieval files
@@ -20,7 +20,7 @@ A partial dataset remains partial, even after aggregation or an empty result.
 If business intent is unclear, ask the user in normal text and stop the turn.
 There is no completion or needs-input command.
 
-Set ONTOMATO_WORKBENCH_URL, ONTOMATO_TK (sent as tk), and optionally
+Set ONTOMATO_ONTOLOGY_URL, ONTOMATO_TK (sent as tk), and optionally
 ONTOMATO_LANGUAGE / ONTOMATO_CORRELATION_ID / ONTOMATO_OUTPUT_DIR (default outputs).
 Product execution supplies ONTOMATO_RETRIEVAL_ID, ONTOMATO_SESSION_ID and
 ONTOMATO_RUN_ID. Use the supplied run ID. Outside product execution, when the run

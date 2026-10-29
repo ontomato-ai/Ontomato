@@ -1,150 +1,82 @@
-# Retrieval through standard skills
+# Ontology-owned retrieval
 
-Implementation, 2026-10-28, replacing the batch 2 execution shape. The shared shapes are in
-[data-retrieval.md](../packages/contracts/data-retrieval.md); the harness,
-governance migration and complete removal matrix are in
-[agent-runtime-design.md](agent-runtime-design.md). This document owns retrieval
-assembly and the external-agent acceptance procedure, not another wire schema.
+Implemented in slice A, 2026-10-29, replacing workbench retrieval ownership.
+Wire shapes are in [data-retrieval](../packages/contracts/data-retrieval.md);
+[ontology AI](ontology-ai-runtime-design.md) owns the implementation slices.
 
-## One path inside and outside the product
+## First consumer of the Java host
 
-The retriever uses model role coding, its existing business prompt and two
-standard skills: ontology's ontomato-analyst and workbench's data-retrieval.
-Governance uses model role knowledgeGovernance and knowledge-governance. Runtime
-has no recognizer for these names or roles. Public/enterprise prompt translation
-stays in the existing host template overlay. Both append the one shared Markdown
-reference rule and point at their selected skill catalog.
+Retrieval remains one definition: current prompt, `coding` role, `ontomato-analyst`
+and `data-retrieval` standard skills, both published by provider `ontology`.
+Runtime executes them; Java owns retrieval policy and performs this flow:
 
-1. Workbench authenticates the complete question, creates its business record,
-   parent association and runtime session/run intent, and snapshots language,
-   class scope and the existing query deadline. It validates prior artifact IDs.
-2. Preserve existing host prefetch of knowledge, ontology overview and full
-   published metric specs. Metric search is model-free, knowledge can use its
-   current Embedding owner. Null fields are legitimate where the Java contract
-   says so. A failed dependency does not become an empty catalogue.
-3. Publish the actual standard skill directory bytes, then admit the run with
-   name references, prompt, coding role and one environment. The ontology-issued
-   query grant retains its existing run/domain/expiry semantics. The runtime
-   resolves package digests and sets identity/paths; it does not interpret grants.
-4. The model reads SKILL.md, invokes ontomato.mjs for schema, references, probes,
-   DSL, metrics and knowledge. It can read/write/edit source using PI tools and
-   execute Python with bash. The Python helper is the same file Java publishes
-   for standalone code execution, with the same environment variable names.
-5. To publish a dataset the model writes a recipe under work/ and invokes
-   data-retrieval/scripts/dataset.mjs. That command obtains final authorized
-   execution from the workbench/ontology path and writes the returned file under
-   outputs/. Runtime registers it, and the host validates the stored snapshot
-   against its owned final receipt before exposing it as a dataset.
-6. The assistant references the file and stops normally. If it needs information,
-   it asks in ordinary text and stops; there is no finish command. The host reads
-   PI state and closes the gate, retaining all accepted artifacts. Replies create
-   a new run in the same session with persistent source/work files and fresh env.
-7. Eligible final datasets trigger the existing asynchronous Java QC once. Keep
-   its business logic and late attachment; no score-triggered rewrite is added.
+1. Verify user/domain; persist retrieval input, run intent and write gate. Validate
+   prior datasets; retain continuation decisions, revisions and idempotency.
+2. Read overview, knowledge and published metric context from existing Java
+   services. Issue the exploration grant locally and pass it directly to the
+   retrieval run. Remove the workbench grant round trip.
+3. Admit/observe via the shared runtime client. Reconcile messages, PI state and
+   file registrations from authoritative snapshots after response loss/restart.
+   Never replay unknown external effects.
+4. `dataset.mjs` calls Java's retrieval output endpoint, which invokes the existing
+   formal-output service locally under user permissions. The script atomically
+   writes the returned dataset file.
+5. Verify registered files against owned receipts/digests; expose references, not
+   another permanent row copy. Close writes before cancelling/superseding runs.
+6. Schedule eligible asynchronous QC once; reference the existing Java QC record
+   instead of copying its result into another retrieval store.
 
-The direct authorized output endpoint remains the permission owner even when
-exploration and formal output happen to see equal data. Bash no longer produces
-a special Python execution receipt; the formal rerun is the authoritative
-execution. Keep exact source/digest in the recipe and the final receipt in the
-file. User-facing data, download and existing abc arrays all derive from that
-accepted file; the model does not rebuild a second table in text.
+## Move and remove together
 
-Current LangGraph/static/hot/traditional branches remain. Only the retrieval
-adapter changes its input projection. A normal no-dataset answer is preserved
-as text/no-data at the old branch boundary; automatic next-chat-message routing
-still belongs to batch 3. Public ask explicitly resumes by retrieval ID and
-expected run/revision with a free-text message. Removing the three-state
-retrieval envelope necessarily updates ask, branch consumers, test evidence and
-localized prompts together; no alias or private outcome tool remains.
+| Current source | Destination / treatment |
+| --- | --- |
+| Workbench `services/data-retrieval/{service,store}.ts` | Java retrieval service/DAO: admission, continuation, reconciliation, deadline, receipts, dataset acceptance and QC scheduling. Rewrite, do not embed Node. |
+| `retrievals`, `retrieval_rounds`, `retrieval_submissions` | Ontology-owned tables referencing common host sessions/runs; decisions stay business facts. No workbench SQL joins. |
+| `retrieval_parent_gates`, retrieval `parent_id` | Reviewed caller boundary; only workbench knows what the parent means. No runtime parent/child protocol. |
+| `data-retrieval/ontology.ts`, `skill.ts` | Local Java query services and ontology skill publication; delete Node adapters. |
+| `resources/runtime-skills/data-retrieval/**` | Public `agent-skills/data-retrieval/**`, packaged/published by Java; dataset.mjs calls ontology. |
+| Public workbench `prompts/data-retrieval/system.md` and enterprise `resources/prompts/data-retrieval/system.md` | `data-engine-core/src/main/resources/ontology-prompts/en/data-retrieval/system.md` and enterprise `ontology-prompts/zh/data-retrieval/system.md`; keep English/Chinese semantics. |
+| `assistant-retrieval/**`, including `scripts/ask.mjs` | Delete; assistant and external agents use the single analyst `ask`, extended to download accepted bytes through ontology's proxy. |
+| Workbench `/api/retrievals`, route mount, registration/startup and retrieval schema initializer | Delete. Old stored data is reserved for release conversion, not read, converted or dropped here. |
+| Assistant `/sessions/:sessionId/runs/:runId/retrievals` start/read/content callbacks | Delete with assistant-retrieval; retain the separate dataset-source/evidence actions and parent lifecycle integration. |
+| Retrieval `projection.ts` and unrelated transaction/fingerprint imports | Move live assistant evidence projection to its owner and shared transactions to infrastructure; no old-directory alias. |
 
-## Package layout and distribution
+Package complete skills from their source roots. Enterprise distributions generate
+shared executable bytes from public source; translations remain edition-owned.
+Move retrieval-only resources; keep genuinely shared compaction resources with
+an explicit owner. Remove invalidated tests with the retired implementation.
 
-ontomato-analyst keeps SKILL.md, ontomato.mjs, client.mjs, application.yml,
-python/query_runtime.py and references/. Remove runtime.json/runtime.mjs and
-Runtime invocation prose. env overrides configuration independently per key;
-missing required URL fails before a request. Never overwrite the user's config
-when copying a skill into an external project. tk from the environment bypasses
-interactive login convenience and uses the same command implementation in both
-editions. application.yml remains a fallback, not a requirement inside runtime.
+## Workbench remains an application consumer
 
-The workbench owns two package roots under resources/runtime-skills. Each contains
-SKILL.md, scripts/ and references/, with no dependency on an installed server
-module or product checkout. Plain CLI JSON output is command output, not a
-runtime parser contract. Skill references carry argument/file-format help; bodies
-teach when to read them. Keep all files needed by each CLI in its package.
+Map the assistant session/run to the caller scope in the contract. The
+same skill then calls Java directly; close also blocks admission whose response
+has not arrived. Store only `assistant_turns.retrieval_scope_id`; child references come from Java.
+No local retrieval state machine or child index is retained.
 
-Java resource packaging must publish the whole analyst directory, including CLI
-files currently omitted by RuntimeCodeClient's hardcoded list. Both npm/app
-resource copying and enterprise en/zh distribution generation must produce the
-same executable bytes. Languages can change instruction text, but product and
-external acceptance compare hashes for the exact language package being tested.
-The implementation should use the existing source-generation/package-copy owner;
-do not create another maintained executable copy.
+`ONTOMATO_TK` is always the current user's credential. The parallel domain-skills
+module moves the old callback credential to `ONTOMATO_RETRIEVAL_CALLBACK_TOKEN`;
+this cutover deletes that assistant-retrieval callback path entirely. The
+caller ID is separate, non-secret association metadata, not another meaning of tk.
 
-The standard data-retrieval package documents dataset preparation and host work
-identity commands. ontomato-analyst's existing ask stays a workbench client; the
-retriever prompt uses direct queries, not recursive ask. A future main-assistant
-skill may call the same public orchestration API in batch 3 without introducing
-a second retrieval service.
+One assistant evidence adapter reads Java retrieval evidence and the common host
+proxy for dataset-source, dashboard/PPT and diagnosis/governance history. The
+workbench runtime identity cannot read ontology child runs. Recognize copied
+files only when original Java receipt/artifact and content digest agree; changed
+copies are generic files. Read late QC by its Java reference. Closing an old
+parent cannot cancel a reassigned child round or already finished QC.
 
-## Worktree implementation proof
+Session deletion closes caller admission, reconciles child references and asks
+Java to delete owned child resources; it no longer deletes retrieval rows directly.
+Cleanup remains scoped to those associations and retryable by stable IDs.
 
-Reuse existing real-process tests under agent-runtime and the governance/retrieval
-services. Use an isolated PG schema/data directory and independent child processes;
-keep fixtures shaped like actual Java responses, including null descriptions,
-nullable model fields, parameter sample/value/classNames and revision metadata.
+## Verification and remaining acceptance
 
-Keep one main-path smoke for governance and Python retrieval, plus cancellation
-and restart/aborted. Retain the contracts for file immutability, closed gates and
-identities; do not add more fault scenarios. The existing free-text continuation
-and copied-skill checks remain valid. Native checks do not prove Linux isolation
-or live-model question quality.
+Keep focused contracts for Java/common-proxy interchange, receipt/file matching,
+continuation idempotency and closed-run/caller admission. Relevant typecheck/lint
+and both Maven compiles cover consumers; no prompt tests or exception matrix.
 
-The runtime design lists the focused contract/smoke scope and existing check
-entry points. Record actual commands and logs at handoff. Main
-checkout build/stack tests remain with the controller; no image is built here.
-
-## Controller: Claude Code portability acceptance
-
-Run after segment 2 and main-directory host startup. Use a temporary project
-outside product checkouts. This procedure is a plan, not a claim that Claude Code
-has been run. The work-gate endpoints were approved by the controller.
-
-1. Copy the published ontomato-analyst, knowledge-governance and data-retrieval
-   directories unchanged under the temporary project's .claude/skills/. Record a
-   path/content SHA-256 inventory of each and compare with the runtime-published
-   digest for those exact bytes. Do not add a runtime wrapper or edit SKILL.md.
-2. Supply environment from a shell with authorized test-user tk, service URLs,
-   language and an outputs directory. Use Node and the existing Python dependency
-   set. Do not give the external harness a runtime host service credential.
-3. With ordinary analyst commands read overview/schema/DSL examples/knowledge,
-   probe a stored value and execute a simple query. Then ask Claude Code to answer
-   a real multi-table question with Python post-calculation when needed. Observe
-   that it reads the skill and runs its documented scripts, rather than merely
-   returning a guessed answer. Save the external transcript and command trace.
-4. Use the data-retrieval skill's begin command to obtain the authenticated host
-   retrieval/session/run identity, set those documented env values, then have
-   Claude Code produce a recipe and run dataset.mjs. Open the local dataset file,
-   verify receipt/source/rows under the test user's permissions, and close the
-   work run. This execution does not call /api/retrievals to start another agent.
-5. Use governance begin to obtain an external work identity. Have Claude Code
-   read knowledge and ontology, search/read history, inspect evidence, and save
-   a work record through the same governance script. Confirm sources/count/work
-   in host storage. Close the gate and prove a later update receives 409. At least
-   read knowledge, read ontology, search history and update work must use real
-   product data; mechanical tests cover empty environments for the other actions.
-6. In product, select those same published package digests and repeat retrieval
-   and governance. Compare executed script paths and bytes; different harness
-   tool-call IDs are expected. Verify datasets in current page/history/download,
-   cancellation, restart→aborted and same-session reply. Save runtime IDs, artifact
-   IDs/digests and a short model-output review for each scenario.
-7. Controller builds the actual runtime image in the main checkout and runs the
-   enterprise four-image smoke, configured Java startup and Linux UID/rlimit/
-   file-immutability probes. Record source SHAs/image digest/size and actual
-   dependency imports, including PI 1.4 factories and Python. Only then report
-   image/stack acceptance. The remote 35-question benchmark is a separate
-   authorized step with comparable data/model settings and per-question results.
-
-The decisive evidence is unchanged packages doing real business reads/writes in
-both harnesses. Passing unit tests, API health or a successful build alone does
-not establish that result.
+Controller runs actual assistant and external analyst ask against the same Java
+entry: continuation, copied dataset evidence, cancel during admission and runtime
+restart. Run unchanged dataset.mjs externally with begin/close and normal user
+authority. Controller builds runtime/data-engine and runs the enterprise stack.
+The controller-owned checks remain pending at the A worktree handoff.

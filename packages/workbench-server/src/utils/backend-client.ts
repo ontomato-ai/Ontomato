@@ -197,10 +197,14 @@ export function backendPost(
   return backendRequest(endpoint, url, "POST", options, body) as Promise<BufferedBackendResponse>;
 }
 
+export function backendDelete(endpoint: string, url: string, options: BackendCallOptions = {}): Promise<BufferedBackendResponse> {
+  return backendRequest(endpoint, url, "DELETE", options) as Promise<BufferedBackendResponse>;
+}
+
 async function backendRequest(
   endpoint: string,
   url: string,
-  method: "GET" | "POST",
+  method: "GET" | "POST" | "DELETE",
   options: BackendCallOptions & { stream?: boolean },
   body?: unknown
 ): Promise<BufferedBackendResponse | Response> {

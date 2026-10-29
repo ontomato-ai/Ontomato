@@ -1,0 +1,1 @@
+Summarize this retrieval session so the same agent can continue. Preserve the complete question, confirmed user decisions, class scope, validated sources, recipe and output paths, and unresolved questions. A summary is not evidence; retain references for re-reading. Do not turn assumptions into user confirmation.

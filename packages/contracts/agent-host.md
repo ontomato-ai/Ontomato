@@ -42,7 +42,9 @@ for history but cannot start new execution (409 `AGENT_DISABLED`). New titles ar
 empty; the first accepted user message becomes the verbatim title, truncated only
 for display. No model title or suggestions are required by this contract.
 
-Snapshots preserve PI messages, tools, files and `running/stopped`, `stopReason`,
+Snapshots include the run's admitted `resolvedSkills: RuntimeRegisteredSkill[]`
+(namespace/name/digest/description) and preserve PI messages, tools, files and
+`running/stopped`, `stopReason`,
 `errorMessage`. Merge settled messages by ID in messageSeq order; replace partials.
 SSE uses `event: runtime`, JSON `AgentHostStreamFrame` and `id: <cursor.seq>` for
 event frames. Preserve IDs, cursors and deltas; heartbeat comments carry no state.
