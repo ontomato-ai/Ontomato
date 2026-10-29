@@ -1,5 +1,6 @@
 // Shared external client source. Edition distributions generate this file without changes.
 import fs from "node:fs";
+import path from "node:path";
 import { randomUUID } from "node:crypto";
 
 export function readJson(argument) {
@@ -106,14 +107,16 @@ export async function analystCommand(cfg, argv, headers = {}) {
 }
 async function ask(cfg, args, headers) {
   const base =
-    (cfg.workbenchUrl || cfg.envUrl).replace(/\/$/, "") + "/api/retrievals";
+    (cfg.ontologyUrl || `${cfg.envUrl}/api/data-query`).replace(/\/$/, "") + "/ontology/retrievals";
   const locale = take(args, "--lang") ?? process.env.ONTOMATO_LANGUAGE ?? "en",
     resume = take(args, "--resume"),
     answers = take(args, "--answers"),
     status = take(args, "--status"),
     cancel = take(args, "--cancel");
   const requestId = take(args, "--request-id") ?? randomUUID();
-  headers = { ...headers, "Accept-Language": locale };
+  headers = { ...headers, "Accept-Language": locale,
+    ...(process.env.ONTOMATO_RETRIEVAL_CALLER_ID ? { "X-Ontomato-Retrieval-Caller-Id": process.env.ONTOMATO_RETRIEVAL_CALLER_ID } : {}),
+  };
   let snapshot;
   if (cancel) {
     console.log(
@@ -182,15 +185,27 @@ async function ask(cfg, args, headers) {
     await new Promise((resolve) => setTimeout(resolve, 500));
     snapshot = await json(`${base}/${snapshot.id}`, headers);
   }
-  console.log(JSON.stringify(snapshot, null, 2));
-  for (const id of snapshot.datasetArtifactIds)
-    console.log(
-      JSON.stringify(
-        await json(`${base}/${snapshot.id}/datasets/${id}`, headers),
-        null,
-        2,
-      ),
-    );
+  const files = [];
+  for (const id of snapshot.datasetArtifactIds) {
+    const dataset = await json(`${base}/${snapshot.id}/datasets/${id}`, headers);
+    const ontology = base.slice(0, -"/ontology/retrievals".length);
+    const response = await fetch(`${ontology}/ontology/ai/sessions/${snapshot.runtimeSessionId}/artifacts/${id}/content`, { headers, redirect: "error" });
+    if (!response.ok) throw new Error(`HTTP ${response.status}: ${await response.text()}`);
+    if (![snapshot.id, id].every(value => /^[0-9a-f-]{36}$/i.test(value))) throw new Error("Invalid artifact identity");
+    const root = path.resolve(process.env.ONTOMATO_OUTPUT_DIR ?? "outputs"),
+      output = path.join(root, "retrievals", snapshot.id, `${id}.dataset.json`);
+    fs.mkdirSync(path.dirname(output), { recursive: true });
+    const scratch = path.join(path.dirname(root), "work");
+    fs.mkdirSync(scratch, { recursive: true });
+    const temporary = path.join(scratch, `.retrieval-${id}-${randomUUID()}.download`);
+    fs.writeFileSync(temporary, Buffer.from(await response.arrayBuffer()));
+    fs.renameSync(temporary, output);
+    files.push({ path: path.relative(process.cwd(), output).split(path.sep).join("/"), artifactId: id, rowCount: dataset.payload.rows.length });
+  }
+  const message = [...snapshot.messages].reverse().find(m => m.message.role === "assistant")?.message;
+  const answer = typeof message?.content === "string" ? message.content : (message?.content ?? []).filter(p => p.type === "text").map(p => p.text).join("\n");
+  console.log(JSON.stringify({ retrievalId: snapshot.id, runtimeSessionId: snapshot.runtimeSessionId,
+    runtimeRunId: snapshot.runtimeRunId, decisionRevision: snapshot.decisionRevision, run: snapshot.run, answer, files }, null, 2));
   if (["error", "aborted"].includes(snapshot.run?.stopReason))
     throw new Error(snapshot.run.errorMessage ?? "Retrieval stopped");
 }

@@ -22,7 +22,7 @@ import com.alibaba.fastjson2.JSONWriter.Feature;
 import io.ontomato.dataengine.bean.DslExecutionResult;
 import io.ontomato.dataengine.config.DataRagConfig;
 import io.ontomato.dataengine.dao.VectorResourceDao;
-import io.ontomato.dataengine.service.ai.MultiThreadAIChatService;
+import io.ontomato.dataengine.util.ErrorText;
 import io.ontomato.dataengine.service.sys.bean.permission.UserDataPermission;
 import io.ontomato.dataengine.util.DslUtil;
 import io.ontomato.dataengine.util.HttpRequestUtil;
@@ -478,7 +478,7 @@ public class EsAdapter implements DataAdapter {
 		}
 		dataMap.putAll(result.data());
 		if (result.failed()) {
-			dataMap.put("error", MultiThreadAIChatService.rawErrorText(result.failure().cause()));
+			dataMap.put("error", ErrorText.rawErrorText(result.failure().cause()));
 		}
 		return dataMap;
 	}
@@ -517,7 +517,6 @@ public class EsAdapter implements DataAdapter {
 	@Override
 	public String executeDsl(String queryJson, String sessionId, DslExecutionMode mode, List<String> generatedMqls)
 			throws Exception {
-		log.debug("[{}] DSL to query {}: {}", sessionId, dialect.label(), queryJson);
 		JSONArray dsls = JSONArray.parseArray(queryJson);
 		JSONObject dsl = dsls.getJSONObject(0);
 		JSONArray steps = dsl.getJSONObject("answer").getJSONArray("steps");

@@ -18,11 +18,9 @@ import {
 } from "@ontomato/contracts/agent-runtime-artifacts";
 import type { RuntimeRunSnapshot } from "@ontomato/contracts/agent-runtime";
 import {
-  retrievalInputSchema,
   datasetPayloadSchema,
 } from "@ontomato/contracts/data-retrieval";
 import { RuntimeClient } from "../../infrastructure/agent-runtime/client";
-import { callbackCredential } from "../agent-runtime/callback-credential";
 import { prepareAssistantSkills } from "./skills";
 import { withDomainSkills } from "../skills/operations";
 import {
@@ -38,8 +36,8 @@ import {
   userSkillEnvironment,
   type AssistantCredentials,
 } from "../../platform/agent-runtime/runtime";
-import { retrievalService } from "../data-retrieval/service";
-import { transaction, retrievalStore } from "../data-retrieval/store";
+import { OntologyRetrievalClient } from "./ontology-retrieval";
+import { transaction } from "../../infrastructure/postgres-transaction";
 import { HttpError } from "../../utils/errors";
 import { createLogger } from "../../logging/logger";
 const db = () => getPostgresPool(),
@@ -241,13 +239,7 @@ export const assistantService = {
     owner: AssistantOwner,
     credentials: AssistantCredentials,
   ) {
-    const children = await retrievalStore.cancelParent(id, owner);
-    for (const childId of children) {
-      const child = await retrievalStore.get(childId, owner);
-      // Leave completed retrievals and their asynchronous QC alone.
-      if (child.snapshot.run?.status !== "stopped")
-        await retrievalService.cancel(childId, owner, credentials);
-    }
+    await new OntologyRetrievalClient(owner, id).close(credentials);
   },
   async start(
     sessionId: string,
@@ -314,13 +306,23 @@ export const assistantService = {
       );
     } catch (error) {
       await assistantStore.close(id);
+      await this.stopChildren(id, owner, credentials);
       throw error;
     }
-    const prefix = `/api/assistant/sessions/${sessionId}/runs/${id}/retrievals`;
     try {
       await withDomainSkills(owner.domainId, async () => {
         const skills = await prepareAssistantSkills(owner.domainId, a.skills);
         const skillEnvironment = userSkillEnvironment(credentials);
+        const continuationIds = new Set<string>();
+        for (const previous of await assistantStore.turns(sessionId)) {
+          if (previous.id === id) continue;
+          for (const link of await new OntologyRetrievalClient(owner, previous.retrieval_scope_id).links()) continuationIds.add(link.retrievalId);
+        }
+        await new OntologyRetrievalClient(owner, turn.retrieval_scope_id).open({
+          classNames: turn.class_names,
+          continuationIds: [...continuationIds].sort(),
+          deadlineAt: new Date(new Date(turn.created_at).getTime() + getQueryTimeoutMs()).toISOString(),
+        }, credentials);
         await client.start(sessionId, id, {
           language: credentials.locale ?? "en",
           input: {
@@ -344,17 +346,9 @@ export const assistantService = {
             values: {
               ...skillEnvironment.values,
               ONTOMATO_ASSISTANT_SESSION_ID: sessionId,
+              ONTOMATO_RETRIEVAL_CALLER_ID: turn.retrieval_scope_id,
             },
-            secrets: {
-              ...skillEnvironment.secrets,
-              ONTOMATO_RETRIEVAL_CALLBACK_TOKEN: callbackCredential({
-                pathPrefix: prefix,
-                runId: id,
-                expiresAt: Date.now() + getQueryTimeoutMs(),
-                token: credentials.token ?? "",
-                apiKey: credentials.apiKey ?? "",
-              }).value,
-            },
+            secrets: skillEnvironment.secrets,
           },
         });
       });
@@ -365,8 +359,10 @@ export const assistantService = {
         this.observe(id, owner, credentials);
         return { snapshot: publicSnapshot(found), replayed };
       } catch (readError) {
-        if (readError instanceof HttpError && readError.status === 404)
+        if (readError instanceof HttpError && readError.status === 404) {
           await assistantStore.close(id);
+          await this.stopChildren(id, owner, credentials);
+        }
       }
       if (error instanceof HttpError && error.status === 410)
         throw new HttpError(404, "Run not found", "NOT_FOUND");
@@ -432,7 +428,7 @@ export const assistantService = {
         throw new HttpError(404, "Run not found");
     }
     await assistantStore.close(id);
-    await retrievalService.cancelParent(id, owner, credentials);
+    await this.stopChildren(id, owner, credentials);
     const c = new RuntimeClient(owner.domainId);
     await c.request(
       `/v1/sessions/${sessionId}/run-intents/${id}/cancel`,
@@ -457,45 +453,24 @@ export const assistantService = {
     }
     if (snapshot?.latestRun?.run.status === "running")
       throw new HttpError(409, "Conversation is running", "SESSION_BUSY");
-    const children = (
-      await db().query(
-        `SELECT DISTINCT r.id,r.work_session_id FROM ${table("retrievals")} r JOIN ${table("assistant_retrievals")} l ON l.retrieval_id=r.id WHERE l.session_id=$1`,
-        [sessionId],
-      )
-    ).rows;
-    for (const child of children) {
+    const scopes = (await db().query(`SELECT retrieval_scope_id FROM ${table("assistant_turns")} WHERE session_id=$1`, [sessionId])).rows;
+    const removed = new Set<string>();
+    for (const scope of scopes) {
+      const ontology = new OntologyRetrievalClient(owner, scope.retrieval_scope_id);
       try {
-        const rs = await c.session(child.work_session_id);
-        if (rs.latestRun?.run.status === "running")
-          await c.cancel(rs.latestRun.run.id);
-        await c.deleteSession(child.work_session_id);
-      } catch (e) {
-        if (!(e instanceof HttpError && e.status === 404)) throw e;
-      }
-      await transaction(async (tx) => {
-        await tx.query(
-          `DELETE FROM ${table("retrieval_submissions")} WHERE run_id IN(SELECT id FROM ${table("retrieval_rounds")} WHERE retrieval_id=$1)`,
-          [child.id],
-        );
-        await tx.query(
-          `DELETE FROM ${table("retrieval_rounds")} WHERE retrieval_id=$1`,
-          [child.id],
-        );
-        await tx.query(
-          `DELETE FROM ${table("retrievals")} WHERE id=$1 AND domain_id=$2 AND owner_id=$3`,
-          [child.id, owner.domainId, owner.userId],
-        );
-      });
+        await ontology.close();
+        for (const link of await ontology.links()) {
+          if (removed.has(link.retrievalId)) continue;
+          await ontology.delete(link.retrievalId);
+          removed.add(link.retrievalId);
+        }
+      } catch (error) { if (!(error instanceof HttpError && error.status === 404)) throw error; }
     }
     if (snapshot) await c.deleteSession(sessionId);
     await transaction(async (tx) => {
       await tx.query(
         `DELETE FROM ${table("assistant_external_threads")} WHERE session_id=$1`,
         [sessionId],
-      );
-      await tx.query(
-        `DELETE FROM ${table("retrieval_parent_gates")} WHERE domain_id=$1 AND owner_id=$2 AND parent_id IN(SELECT id::text FROM ${table("assistant_turns")} WHERE session_id=$3)`,
-        [owner.domainId, owner.userId, sessionId],
       );
       await tx.query(
         `DELETE FROM ${table("assistant_sessions")} WHERE id=$1 AND domain_id=$2 AND owner_id=$3`,
@@ -539,29 +514,20 @@ export const assistantService = {
     return { artifact: result.artifacts.at(-1) ?? null };
   },
   async datasetSource(sessionId: string, id: string, owner: AssistantOwner) {
-    const a = await this.artifact(sessionId, id, owner),
-      client = new RuntimeClient(owner.domainId);
-    const rows = (
-      await db().query(
-        `SELECT s.artifact_id,t.retrieval_id,t.qc_result FROM ${table("retrieval_submissions")} s JOIN ${table("retrieval_rounds")} t ON t.id=s.run_id JOIN ${table("assistant_retrievals")} l ON l.retrieval_id=t.retrieval_id WHERE l.session_id=$1 AND s.artifact_id IS NOT NULL`,
-        [sessionId],
-      )
-    ).rows;
-    for (const row of rows) {
-      const source = runtimeArtifactSchema.parse(
-        await client.request(`/v1/artifacts/${row.artifact_id}`),
-      );
-      if (source.sha256 === a.sha256) {
-        await retrievalService.dataset(
-          owner,
-          row.artifact_id,
-          row.retrieval_id,
-        );
-        return {
-          retrievalId: row.retrieval_id as string,
-          sourceArtifactId: row.artifact_id as string,
-          ...(row.qc_result ? { qualityCheck: row.qc_result } : {}),
-        };
+    const a = await this.artifact(sessionId, id, owner);
+    for (const turn of await assistantStore.turns(sessionId)) {
+      const ontology = new OntologyRetrievalClient(owner, turn.retrieval_scope_id);
+      for (const link of await ontology.links()) {
+        const evidence = await ontology.evidence(link.retrievalId, link.runId);
+        const sourceSession = evidence.snapshot.runtimeSessionId;
+        if (!sourceSession) continue;
+        for (const artifactId of evidence.snapshot.datasetArtifactIds) {
+          const source = await ontology.artifact(sourceSession, artifactId);
+          if (source.sha256 !== a.sha256) continue;
+          await ontology.dataset(link.retrievalId, artifactId);
+          return { retrievalId: link.retrievalId, sourceArtifactId: artifactId,
+            ...(evidence.snapshot.qualityCheck ? { qualityCheck: evidence.snapshot.qualityCheck } : {}) };
+        }
       }
     }
     throw new HttpError(404, "Accepted dataset not found");
@@ -624,135 +590,7 @@ export const assistantService = {
       [id, sessionId],
     );
   },
-  async child(
-    sessionId: string,
-    parentId: string,
-    retrievalId: string,
-    owner: AssistantOwner,
-    credentials: AssistantCredentials,
-  ) {
-    await assistantStore.session(sessionId, owner);
-    const r = await db().query(
-      `SELECT 1 FROM ${table("assistant_retrievals")} WHERE retrieval_id=$1 AND session_id=$2 AND parent_run_id=$3`,
-      [retrievalId, sessionId, parentId],
-    );
-    if (!r.rowCount) throw new HttpError(404, "Retrieval not found");
-    return retrievalService.get(retrievalId, owner, credentials);
-  },
-  async retrieve(
-    sessionId: string,
-    parentId: string,
-    key: string,
-    body: unknown,
-    owner: AssistantOwner,
-    credentials: AssistantCredentials,
-  ) {
-    const input = z
-      .object({
-        question: z.string().optional(),
-        retrievalId: z.string().uuid().optional(),
-        message: z.string().optional(),
-      })
-      .strict()
-      .parse(body);
-    const retrievalId = input.retrievalId ?? key;
-    if (!(input.retrievalId ? input.message : input.question)?.trim())
-      throw new HttpError(400, "Question or reply is required");
-    const hash = createHash("sha256")
-      .update(JSON.stringify(input))
-      .digest("hex");
-    const prior = input.retrievalId
-      ? await retrievalService.get(retrievalId, owner, credentials)
-      : null;
-    const request: Record<string, unknown> = prior
-      ? {
-          message: input.message,
-          expectedRunId: prior.runtimeRunId,
-          expectedDecisionRevision: prior.decisionRevision,
-        }
-      : retrievalInputSchema.parse({
-          question: input.question,
-          userQuotes: [input.question],
-          previousDatasetIds: [],
-          interaction: "resumable",
-        });
-    const admitted = await transaction(async (c) => {
-      const turn = await assistantStore.requireOpen(parentId, owner, c);
-      if (turn.session_id !== sessionId)
-        throw new HttpError(404, "Run not found");
-      const old = (
-        await c.query(
-          `SELECT * FROM ${table("assistant_retrievals")} WHERE operation_id=$1`,
-          [key],
-        )
-      ).rows[0];
-      if (old) {
-        if (
-          old.session_id !== sessionId ||
-          old.parent_run_id !== parentId ||
-          old.input_hash !== hash
-        )
-          throw new HttpError(
-            409,
-            "Idempotency key reused",
-            "IDEMPOTENCY_CONFLICT",
-          );
-        return old;
-      }
-      if (input.retrievalId) {
-        const r = await c.query(
-          `SELECT 1 FROM ${table("assistant_retrievals")} WHERE retrieval_id=$1 AND session_id=$2`,
-          [retrievalId, sessionId],
-        );
-        if (!r.rowCount) throw new HttpError(404, "Retrieval not found");
-        await c.query(
-          `UPDATE ${table("retrievals")} SET parent_id=$2 WHERE id=$1`,
-          [retrievalId, parentId],
-        );
-      }
-      if (!input.retrievalId) request.classNames = turn.class_names;
-      return (
-        await c.query(
-          `INSERT INTO ${table("assistant_retrievals")} (operation_id,retrieval_id,request,input_hash,session_id,parent_run_id) VALUES($1,$2,$3,$4,$5,$6) RETURNING *`,
-          [key, retrievalId, request, hash, sessionId, parentId],
-        )
-      ).rows[0];
-    });
-    const snapshot = input.retrievalId
-      ? await retrievalService.answer(
-          retrievalId,
-          owner,
-          credentials,
-          key,
-          admitted.request,
-        )
-      : await retrievalService.start(
-          retrievalId,
-          owner,
-          credentials,
-          admitted.request,
-          parentId,
-        );
-    await db().query(
-      `UPDATE ${table("assistant_retrievals")} SET retrieval_run_id=$2 WHERE operation_id=$1`,
-      [key, snapshot.runtimeRunId],
-    );
-    return snapshot;
-  },
-  async childContent(
-    sessionId: string,
-    parentId: string,
-    id: string,
-    artifactId: string,
-    owner: AssistantOwner,
-    credentials: AssistantCredentials,
-  ) {
-    await this.child(sessionId, parentId, id, owner, credentials);
-    await retrievalService.dataset(owner, artifactId, id);
-    return new RuntimeClient(owner.domainId).bytes(
-      `/v1/artifacts/${artifactId}/content`,
-    );
-  },
+
 };
 function feedbackView(row: Record<string, any>) {
   return assistantFeedbackSchema.parse({

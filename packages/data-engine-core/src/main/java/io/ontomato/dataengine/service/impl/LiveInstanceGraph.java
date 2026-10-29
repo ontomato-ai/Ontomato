@@ -396,6 +396,7 @@ public class LiveInstanceGraph {
     private <T> List<T> parallel(List<AdapterTask<T>> tasks, AdapterPool pool) throws Exception {
         if (tasks.isEmpty()) return List.of();
         List<CompletableFuture<T>> futures = new ArrayList<>();
+        var logContext = io.ontomato.dataengine.logging.ServiceLogContext.capture();
         for (AdapterTask<T> task : tasks) {
             futures.add(CompletableFuture.supplyAsync(() -> {
                 DataAdapter taskAdapter;
@@ -405,7 +406,7 @@ public class LiveInstanceGraph {
                     Thread.currentThread().interrupt();
                     throw new CompletionException(e);
                 }
-                try {
+                try (var ignored = io.ontomato.dataengine.logging.ServiceLogContext.open(logContext)) {
                     return task.run(taskAdapter);
                 } catch (Exception e) {
                     throw new CompletionException(e);

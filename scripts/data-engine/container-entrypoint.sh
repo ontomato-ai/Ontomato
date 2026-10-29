@@ -12,9 +12,7 @@ die() { echo "[entrypoint] $*" >&2; exit 78; }
 
 ls "$APP_LIB"/*.jar >/dev/null 2>&1 || die "no application jar under $APP_LIB"
 export ONTOMATO_CONF_DEFAULTS="$APP_ROOT/conf-defaults"
-export ONTOMATO_APP_SKILLS="$APP_ROOT/skills"
 [ -d "$ONTOMATO_CONF_DEFAULTS" ] || die "missing $ONTOMATO_CONF_DEFAULTS"
-[ -d "$ONTOMATO_APP_SKILLS" ] || die "missing $ONTOMATO_APP_SKILLS"
 
 # The conf directory is on the JVM classpath, so it must exist before the JVM starts;
 # ProductFileSync fills it during startup.

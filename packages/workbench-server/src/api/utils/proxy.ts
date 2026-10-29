@@ -1,3 +1,4 @@
+import { logHeaders } from "@ontomato/service-logging";
 import { Request, Response } from "express";
 import { Readable } from "node:stream";
 import { toErrorMessage } from "../../utils/errors";
@@ -54,6 +55,7 @@ export function buildUpstreamHeaders(req: Request): Record<string, string> {
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
     "X-Requested-With": "XMLHttpRequest",
+    ...logHeaders(),
   };
   if (apiKey) headers["x-api-key"] = apiKey;
   if (tk) headers.tk = tk;

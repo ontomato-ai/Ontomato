@@ -10,7 +10,7 @@ import { skillManager, skillReference } from "../skills/skill-manager";
 import { publishSkill } from "../agent-runtime/skills";
 
 function platformSkills() {
-  return ["assistant-retrieval", "assistant-report"].map((name) => {
+  return ["assistant-report"].map((name) => {
     const root = path.join(workbenchServerResourceRoot, "resources/runtime-skills", name);
     const parsed = readSkillMarkdown(path.join(root, "SKILL.md"));
     if (!parsed) throw new Error(`Missing platform skill: ${name}`);
@@ -26,6 +26,8 @@ export async function registerAssistantSkills() {
 export async function assistantSkillCatalog(domainId: string, locale?: string) {
   return assistantSkillCatalogSchema.parse({ skills: [
     ...platformSkills().map(({ root: _root, ...entry }) => entry),
+    { skill: { namespace: { kind: "provider", provider: "ontology" }, name: "ontomato-analyst" },
+      title: "Ontology analyst", description: "Ask data questions and query the ontology", enabled: true },
     ...(await skillManager.getAllSkills(domainId, locale)).map((s) => ({
       skill: s.skill, title: s.title ?? s.id, description: s.description ?? "", enabled: s.enabled, tags: s.tags,
     })),

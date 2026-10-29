@@ -1,3 +1,5 @@
+import { logHeaders } from "@ontomato/service-logging";
+import { runtimeLogger } from "./logging";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import {
   StreamableHTTPClientTransport,
@@ -19,16 +21,25 @@ async function openMcp(
 ) {
   signal.throwIfAborted();
   const client = new Client({ name: "ontomato-agent-runtime", version: "1" });
-  const fetchWithHeaders: typeof fetch = (url, init) => {
+  const fetchWithHeaders: typeof fetch = async (url, init) => {
     const headers = new Headers(init?.headers);
     for (const [name, value] of Object.entries(config.headers))
       headers.set(name, value);
+    for (const [name, value] of Object.entries(logHeaders())) headers.set(name, value);
     headers.set("X-Correlation-Id", correlationId);
-    return fetch(url, {
+    const started = performance.now();
+    let outcome = "failure";
+    try {
+    const response = await fetch(url, {
       ...init,
       headers,
       signal: init?.signal ? AbortSignal.any([signal, init.signal]) : signal,
     });
+    outcome = response.ok ? "success" : "failure";
+    return response;
+    } finally {
+      runtimeLogger.info("MCP call completed", { kind: "downstream", target: `mcp:${config.id}`, durationMs: Math.floor(performance.now() - started), outcome: signal.aborted ? "cancelled" : outcome });
+    }
   };
   try {
     try {

@@ -1,3 +1,4 @@
+import { runtimeLogger } from "@ontomato/agent-runtime/logging";
 import "dotenv/config";
 import path from "node:path";
 import { databaseUrl } from "./database.js";
@@ -57,14 +58,14 @@ const runtime = new AgentRuntime({
 });
 await runtime.initialize();
 if (runtime.worker.development)
-  process.stderr.write(
+  runtimeLogger.warn(
     "Agent runtime development mode: worker UID isolation and per-worker process-count limits are disabled; Darwin lacks address-space rlimits and Windows lacks POSIX rlimits. This is not production isolation.\n",
   );
 const server = createRuntimeHttp(runtime).listen(
   Number(process.env.AGENT_RUNTIME_PORT || 3001),
   process.env.AGENT_RUNTIME_HOST || "127.0.0.1",
   () => {
-    process.stdout.write(
+    runtimeLogger.info(
       `Agent runtime listening on ${JSON.stringify(server.address())}\n`,
     );
   },

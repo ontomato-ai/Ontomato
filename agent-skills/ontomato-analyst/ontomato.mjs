@@ -21,7 +21,6 @@ try {
 for (const [env, key] of Object.entries({
   ONTOMATO_URL: "envUrl",
   ONTOMATO_ONTOLOGY_URL: "ontologyUrl",
-  ONTOMATO_WORKBENCH_URL: "workbenchUrl",
   ONTOMATO_TK: "tk",
 }))
   if (process.env[env] !== undefined) cfg[key] = process.env[env];
@@ -29,7 +28,9 @@ const command = process.argv[2];
 const token =
   command === "ask" ? cfg.tk : (process.env.ONTOMATO_QUERY_TK ?? cfg.tk);
 const headers = {
+  ...(process.env.ONTOMATO_SESSION_ID ? { "X-Ontomato-Session-Id": process.env.ONTOMATO_SESSION_ID } : {}),
   ...(token ? { tk: token } : {}),
+  ...(process.env.ONTOMATO_API_KEY ? { "X-API-Key": process.env.ONTOMATO_API_KEY } : {}),
   "Accept-Language": process.env.ONTOMATO_LANGUAGE ?? "en",
   ...(process.env.ONTOMATO_RUN_ID
     ? { "X-Ontomato-Run-Id": process.env.ONTOMATO_RUN_ID }

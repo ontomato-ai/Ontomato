@@ -7,46 +7,17 @@ import type {
   WorkspaceBackendSessionEvidence,
 } from "@ontomato/contracts/observe";
 import { answerBodyText, type QueryBackendSession } from "@ontomato/contracts/query-execution";
-import type { LogFileTimeWindow } from "../../../../logging/log-file-transport";
-import type { UnifiedConversation } from "./prompt-types";
+import type { LogTimeWindow } from "../service-logs";
 import type { WorkspaceArtifactSummaryMetadata } from "./summary-generator";
 import type { PostProcessStatusFile, PostProcessStatusItem } from "../types";
-/**
- * Diagnostic artifact post-processing pipeline.
- *
- * Orchestrates the full artifact generation pipeline for both Turn workspaces
- * and autotest cases. Callers provide the artifact directory and neutral
- * summary metadata; this module owns the shared evidence digestion steps.
- * Pipeline steps:
- *
- *  1.  Create artifact directory
- *  2.  Collect logs by turnKey/taskId (app + LLM + backend)
- *  3.  Two-path prompt extraction + merge + write:
- *      - Frontend (data-agent LLM logs) — independent, slotId="front"
- *      - Backend agent-llm structured logs — slotId="s1"
- *      → unified writer outputs all conversations to prompts/
- *  4.  Extract errors -> errors.log
- *  5.  Extract MQLS logic -> mqls_logic.md (diagnostic-events only)
- *  6.  Generate summary.md as a lightweight diagnostic evidence index
- *
- * Each step is wrapped in try-catch: failures only log warnings and
- * never block subsequent steps or the run.
- */
-
+/** Existing artifact metadata remains; logs are queried from their service owners. */
 import fs from "node:fs";
 import path from "node:path";
 import { createLogger } from "../../../../logging/logger";
 
 import { collectLogs, type BackendLogTimeWindow } from "./log-collector";
-import {
-  extractBackendAgentLlmTranscripts,
-  extractFrontendAgentLlmTranscripts,
-} from "./agent-llm-transcript";
-import { mergeConversations } from "./prompt-merger";
-import { writeConversationMarkdown } from "./prompt-unified-writer";
 import { workspaceArtifactText } from "./artifact-text";
 import { generateSummary } from "./summary-generator";
-import { extractLogic } from "./logic/index";
 import { ARTIFACT_DIRS } from "./utils";
 import { extractErrors } from "../parsers/error-extractor";
 import { tApp } from "../../../../i18n";
@@ -86,7 +57,7 @@ export interface BuildWorkspaceArtifactInput {
   /** Actual query start/end (from the turn run), written into the manifest together with the workspace generation time */
   turnStartedAt?: string;
   turnEndedAt?: string;
-  frontendLogTimeWindow?: LogFileTimeWindow;
+  frontendLogTimeWindow?: LogTimeWindow;
   includeFrontendLogs?: boolean;
   token?: string;
   apiKey?: string;
@@ -258,9 +229,7 @@ async function runArtifactPostProcessing(
     taskId,
     metadata,
     logResult,
-    backendSessionIds,
     records,
-    includeFrontendLogs,
   } = input;
   const logContext = {
     workspaceId,
@@ -269,66 +238,6 @@ async function runArtifactPostProcessing(
     targetId: metadata.targetId,
     source: metadata.source,
   };
-
-  // Step 4: Frontend prompts + backend agent-llm transcripts, then unified write.
-
-  let frontendConvs: UnifiedConversation[] = [];
-  let backendConvs: UnifiedConversation[] = [];
-  let mergedConvs: UnifiedConversation[] = [];
-
-  // Step 4a: Frontend agent-llm transcript extraction (always runs, independent of sessionId)
-  if (includeFrontendLogs) {
-    try {
-      const frontendResult = extractFrontendAgentLlmTranscripts(artifactDir);
-      frontendConvs = frontendResult.conversations;
-      logger.debug("Frontend agent-llm transcripts extracted", {
-        ...logContext,
-        count: frontendConvs.length,
-        parsedCount: frontendResult.parsedCount,
-        parseErrorCount: frontendResult.parseErrorCount,
-      });
-    } catch (err) {
-      logger.warn("Frontend agent-llm transcript extraction failed (non-blocking)", {
-        ...logContext,
-        error: err instanceof Error ? err.message : String(err),
-      });
-    }
-  }
-
-  // Step 4b: Backend agent-llm transcript extraction (needs sessionId)
-  try {
-    const backendResult = extractBackendAgentLlmTranscripts(artifactDir, backendSessionIds);
-    backendConvs = backendResult.conversations;
-    logger.debug("Backend agent-llm transcripts extracted", {
-      ...logContext,
-      count: backendConvs.length,
-      parsedCount: backendResult.parsedCount,
-      parseErrorCount: backendResult.parseErrorCount,
-    });
-  } catch (err) {
-    logger.warn("Backend agent-llm transcript extraction failed (non-blocking)", {
-      ...logContext,
-      error: err instanceof Error ? err.message : String(err),
-    });
-  }
-
-  // Step 4c: Merge and write
-  try {
-    mergedConvs = mergeConversations(frontendConvs, backendConvs);
-    const writeResult = writeConversationMarkdown(artifactDir, mergedConvs);
-    logger.info("Prompt merge + write complete", {
-      ...logContext,
-      frontend: frontendConvs.length,
-      backend: backendConvs.length,
-      merged: mergedConvs.length,
-      filesWritten: writeResult.fileCount,
-    });
-  } catch (err) {
-    logger.warn("Prompt merge/write failed", {
-      ...logContext,
-      error: err instanceof Error ? err.message : String(err),
-    });
-  }
 
   // Step 7: Extract errors
   let errorCount = 0;
@@ -341,28 +250,13 @@ async function runArtifactPostProcessing(
     });
   }
 
-  // Step 8: Extract MQLS logic from diagnostic-events.
-  let logicMarkdown = "";
-  try {
-    const logicResult = await extractLogic({
-      artifactDir,
-      sessionIds: backendSessionIds,
-    });
-    logicMarkdown = logicResult.markdown;
-  } catch (err) {
-    logger.warn("Logic extraction failed", {
-      ...logContext,
-      error: err instanceof Error ? err.message : String(err),
-    });
-  }
-
+  const logicMarkdown = "";
   // Step 6: Generate summary.md
   try {
     generateSummary({
       artifactDir,
       metadata,
       logicMarkdown,
-      promptConversations: mergedConvs,
     });
   } catch (err) {
     logger.warn("Summary generation failed", {
@@ -371,20 +265,6 @@ async function runArtifactPostProcessing(
     });
   }
 
-  logger.debug("Post-processing completed", {
-    ...logContext,
-    appLogs: logResult.appLogCount,
-    llmCalls: logResult.llmCallCount,
-    backendLogs: logResult.backendLogCount,
-    diagnosticEvents: logResult.backendDiagnosticEventCount ?? 0,
-    errors: errorCount,
-    logicExtracted: logicMarkdown.length > 0,
-    promptSources: {
-      frontend: frontendConvs.length,
-      backend: backendConvs.length,
-    },
-  });
-
   return { logicMarkdown, artifactDir, logResult, errorCount };
 }
 
@@ -392,207 +272,10 @@ async function runArtifactPostProcessing(
 /*  Internal pipeline steps                                            */
 /* ------------------------------------------------------------------ */
 
-function buildEvidenceStatusItems(input: {
-  includeFrontendLogs: boolean;
-  logResult: WorkspaceArtifactLogResult;
-  logCollectionError?: string;
-}): PostProcessStatusRecorder {
-  const { includeFrontendLogs, logResult, logCollectionError } = input;
-  const items: PostProcessStatusRecorder = {};
-
-  recordStatus(
-    items,
-    "frontend_app_log",
-    buildFrontendEvidenceStatus({
-      enabled: includeFrontendLogs,
-      count: logResult.appLogCount,
-      okMessage: tApp("diag.observe.workspace-artifact.post-processor.6", { p0: logResult.appLogCount }),
-      emptyMessage: tApp("diag.observe.workspace-artifact.post-processor.7"),
-      skippedMessage: tApp("diag.observe.workspace-artifact.post-processor.8"),
-      failedMessage: logCollectionError,
-    })
-  );
-  recordStatus(
-    items,
-    "frontend_llm_log",
-    buildFrontendEvidenceStatus({
-      enabled: includeFrontendLogs,
-      count: logResult.llmCallCount,
-      okMessage: tApp("diag.observe.workspace-artifact.post-processor.9", { p0: logResult.llmCallCount }),
-      emptyMessage: tApp("diag.observe.workspace-artifact.post-processor.10"),
-      skippedMessage: tApp("diag.observe.workspace-artifact.post-processor.11"),
-      failedMessage: logCollectionError,
-    })
-  );
-
-  // Backend-session entries are written per session + node from the query record's session list (design 7, 12).
-  const sessions = logResult.backendSessions;
-  recordStatus(items, "backend_sessions", buildBackendSessionsStatus(sessions));
-
-  recordStatus(
-    items,
-    "backend_log",
-    buildBackendEvidenceStatus({
-      skipped: false,
-      count: logResult.backendLogCount,
-      message: logResult.backendLogMessage,
-      okMessage: tApp("diag.observe.workspace-artifact.post-processor.12", { p0: logResult.backendLogCount }),
-      emptyMessage: tApp("diag.observe.workspace-artifact.post-processor.13"),
-      skippedMessage: tApp("diag.observe.workspace-artifact.post-processor.14"),
-    })
-  );
-  recordStatus(
-    items,
-    "backend_agent_llm",
-    buildBackendEvidenceStatus({
-      skipped: sessions.length === 0,
-      count: logResult.backendAgentLlmCount ?? 0,
-      message: joinSessionMessages(sessions, "agentLlmMessage"),
-      okMessage: tApp("diag.observe.workspace-artifact.post-processor.15", { p0: logResult.backendAgentLlmCount ?? 0 }),
-      emptyMessage: tApp("diag.observe.workspace-artifact.post-processor.16"),
-      skippedMessage: tApp("diag.observe.workspace-artifact.post-processor.17"),
-    })
-  );
-  recordStatus(
-    items,
-    "backend_diagnostic_events",
-    buildBackendEvidenceStatus({
-      skipped: sessions.length === 0,
-      count: logResult.backendDiagnosticEventCount ?? 0,
-      message: joinSessionMessages(sessions, "diagnosticEventMessage"),
-      okMessage: tApp("diag.observe.workspace-artifact.post-processor.18", { p0: logResult.backendDiagnosticEventCount ?? 0 }),
-      emptyMessage: tApp("diag.observe.workspace-artifact.post-processor.19"),
-      skippedMessage: tApp("diag.observe.workspace-artifact.post-processor.20"),
-    })
-  );
-
-  return items;
-}
-
-/** Session list entries: per session and per node, the time window, count, cancellation, and missing reasons; details also land in post_process_status. */
-function buildBackendSessionsStatus(
-  sessions: WorkspaceBackendSessionEvidence[]
-): PostProcessStatusItem {
-  if (sessions.length === 0) {
-    return {
-      status: "skipped",
-      severity: "warning",
-      message: tApp("diag.observe.workspace-artifact.post-processor.21"),
-    };
-  }
-  const nodeCount = sessions.reduce((sum, session) => sum + session.nodes.length, 0);
-  return {
-    status: "ok",
-    severity: "info",
-    message: tApp("diag.observe.workspace-artifact.post-processor.22", {
-      p0: sessions.length,
-      p1: nodeCount,
-      p2: sessions
-      .map(describeBackendSession)
-      .join(tApp("diag.observe.workspace-artifact.post-processor.23")),
-    }),
-    details: {
-      sessions: sessions.map((session) => ({ ...session })),
-    },
-  };
-}
-
-function describeBackendSession(session: WorkspaceBackendSessionEvidence): string {
-  const nodes = session.nodes
-    .map((node) => {
-      const nodeLabel = node.nodeId ? `@${node.nodeId}` : tApp("diag.observe.workspace-artifact.post-processor.24");
-      const reasons = [
-        node.windowMessage,
-        node.locationMessage,
-        node.agentLlmMessage,
-        node.diagnosticEventMessage,
-      ].filter(Boolean);
-      const counts = tApp("diag.observe.workspace-artifact.post-processor.25", {
-        p0: node.agentLlmCount,
-        p1: node.diagnosticEventCount,
-      });
-      const cancelled = node.cancelledAt
-        ? tApp("diag.observe.workspace-artifact.post-processor.26", { p0: new Date(node.cancelledAt).toISOString() })
-        : "";
-      const detail = reasons.length > 0 ? reasons.join(tApp("diag.observe.workspace-artifact.post-processor.23")) : counts;
-      return [nodeLabel, cancelled, detail].filter(Boolean).join(" ");
-    })
-    .join(tApp("diag.observe.workspace-artifact.post-processor.23"));
-  return tApp("diag.observe.workspace-artifact.post-processor.27", {
-    p0: session.branch,
-    p1: session.sessionId,
-    p2: nodes,
-  });
-}
-
-function joinSessionMessages(
-  sessions: WorkspaceBackendSessionEvidence[],
-  field: "agentLlmMessage" | "diagnosticEventMessage"
-): string | undefined {
-  const messages = sessions.flatMap((session) =>
-    session.nodes
-      .map((node) =>
-        node[field]
-          ? `${session.sessionId}@${node.nodeId ?? tApp("diag.observe.workspace-artifact.post-processor.28")}: ${node[field]}`
-          : undefined
-      )
-      .filter((message): message is string => message !== undefined)
-  );
-  return messages.length > 0 ? messages.join(tApp("diag.observe.workspace-artifact.post-processor.23")) : undefined;
-}
-
-function buildFrontendEvidenceStatus(input: {
-  enabled: boolean;
-  count: number;
-  okMessage: string;
-  emptyMessage: string;
-  skippedMessage: string;
-  failedMessage?: string;
-}): PostProcessStatusItem {
-  if (!input.enabled) {
-    return { status: "skipped", severity: "info", message: input.skippedMessage };
-  }
-  if (input.failedMessage) {
-    return {
-      status: "failed",
-      severity: "error",
-      message: tApp("diag.observe.workspace-artifact.post-processor.29", { p0: input.failedMessage }),
-    };
-  }
-  return {
-    status: input.count > 0 ? "ok" : "empty",
-    severity: input.count > 0 ? "info" : "warning",
-    message: input.count > 0 ? input.okMessage : input.emptyMessage,
-  };
-}
-
-function buildBackendEvidenceStatus(input: {
-  skipped: boolean;
-  count: number;
-  message?: string;
-  okMessage: string;
-  emptyMessage: string;
-  skippedMessage: string;
-}): PostProcessStatusItem {
-  if (input.skipped) {
-    return { status: "skipped", severity: "warning", message: input.skippedMessage };
-  }
-  if (isFailureMessage(input.message)) {
-    return {
-      status: "failed",
-      severity: "error",
-      message: input.message || tApp("diag.observe.workspace-artifact.post-processor.30"),
-    };
-  }
-  return {
-    status: input.count > 0 ? "ok" : "empty",
-    severity: input.count > 0 ? "info" : "warning",
-    message: input.count > 0 ? input.okMessage : input.message || input.emptyMessage,
-  };
-}
-
-function isFailureMessage(message?: string): boolean {
-  return !!message && workspaceArtifactText().backendEvidence.failureMessagePattern.test(message);
+function buildEvidenceStatusItems(input: { includeFrontendLogs: boolean; logResult: WorkspaceArtifactLogResult; logCollectionError?: string }): PostProcessStatusRecorder {
+  const failure = input.logCollectionError || input.logResult.backendLogMessage;
+  return { service_logs: { status: failure ? "failed" : "ok", severity: failure ? "warning" : "info",
+    message: failure || "Service logs queried; query references retained. Model messages remain in the runtime." } };
 }
 
 function inferLogResultFromRecords(
@@ -601,7 +284,7 @@ function inferLogResultFromRecords(
 ): WorkspaceArtifactLogResult {
   return {
     appLogCount: records.filter((record) => record.source === workbenchProduct().logSource).length,
-    llmCallCount: records.filter((record) => record.source === "llm").length,
+    llmCallCount: 0,
     backendLogCount: records.filter((record) => record.source === "backend").length,
     backendAgentLlmCount: 0,
     backendDiagnosticEventCount: 0,
@@ -756,14 +439,6 @@ function writeWorkspaceManifest(input: {
     "utf-8"
   );
   return manifest;
-}
-
-function recordStatus(
-  items: PostProcessStatusRecorder,
-  key: string,
-  item: PostProcessStatusItem
-): void {
-  items[key] = item;
 }
 
 function writePostProcessStatus(

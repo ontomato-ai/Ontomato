@@ -44,10 +44,6 @@
         </dependency>
         <dependency>
             <groupId>dev.langchain4j</groupId>
-            <artifactId>langchain4j-spring-boot-starter</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>dev.langchain4j</groupId>
             <artifactId>langchain4j-open-ai-spring-boot-starter</artifactId>
             <exclusions>
                 <exclusion>
@@ -91,8 +87,17 @@
     </dependencies>
     <build><resources>
         <resource><directory>src/main/resources</directory></resource>
+        <resource><directory>../contracts/src</directory><includes><include>service-logging-format.json</include><include>service-logging-fixtures.json</include></includes></resource>
         <resource><directory>../../agent-skills/ontomato-analyst</directory><targetPath>ontology-skills/ontomato-analyst</targetPath>
             <includes><include>SKILL.md</include><include>ontomato.mjs</include><include>client.mjs</include><include>application.yml</include><include>python/**</include><include>references/dsl.md</include></includes>
         </resource>
-    </resources></build>
+        <resource><directory>../../agent-skills/ontology-generation</directory><targetPath>ontology-skills/ontology-generation</targetPath></resource>
+        <resource><directory>../../agent-skills/data-retrieval</directory><targetPath>ontology-skills/data-retrieval</targetPath></resource>
+        <resource><directory>../contracts/src</directory><targetPath>ontology-contracts</targetPath><includes><include>agent-artifact-markdown-prompt.json</include></includes></resource>
+    </resources><plugins><plugin>
+        <groupId>org.apache.maven.plugins</groupId><artifactId>maven-compiler-plugin</artifactId>
+        <configuration><annotationProcessorPaths combine.children="append"><path>
+            <groupId>org.apache.logging.log4j</groupId><artifactId>log4j-core</artifactId><version>${log4j2.version}</version>
+        </path></annotationProcessorPaths></configuration>
+    </plugin></plugins></build>
 </project>

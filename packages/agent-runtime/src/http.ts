@@ -1,4 +1,7 @@
-import { randomUUID, timingSafeEqual } from "node:crypto";
+import { correlationId, withServiceLogContext, updateServiceLogContext, getServiceLogContext, LogQueryError } from "@ontomato/service-logging";
+import { serviceLogIdentitySchema } from "@ontomato/contracts/service-logging";
+import { runtimeLogger, runtimeDiagnostic } from "./logging";
+import { timingSafeEqual } from "node:crypto";
 import express, {
   type Request,
   type Response,
@@ -15,10 +18,26 @@ import {
 import { runtimeIdSchema } from "@ontomato/contracts/agent-runtime-values";
 import { AgentRuntime } from "./runtime";
 import { RuntimeError } from "./errors";
+import { testModel } from "./model";
 
 export function createRuntimeHttp(runtime: AgentRuntime) {
   const app = express();
   app.disable("x-powered-by");
+  app.use((req, res, next) => {
+    const context = { correlationId: correlationId(req.header("X-Correlation-Id")) };
+    res.setHeader("X-Correlation-Id", context.correlationId);
+    withServiceLogContext(context, () => {
+      const attribution = getServiceLogContext(), started = performance.now();
+      res.once("close", () => {
+        if (req.path === "/health" || req.path === "/v1/logs") return;
+        withServiceLogContext(attribution, () => runtimeLogger.info("request completed", {
+          kind: "http", method: req.method, path: req.path, status: res.headersSent ? res.statusCode : null,
+          durationMs: Math.floor(performance.now() - started), outcome: !res.writableFinished ? "cancelled" : res.statusCode >= 400 ? "failure" : "success",
+        }));
+      });
+      next();
+    });
+  });
   app.use(express.json({ limit: "32mb" }));
   const identity = (req: Request) => {
     if (
@@ -45,11 +64,18 @@ export function createRuntimeHttp(runtime: AgentRuntime) {
         "UNAUTHENTICATED",
         "Invalid host service credential",
       );
+    const user = serviceLogIdentitySchema.safeParse(req.header("X-Ontomato-User-Id"));
+    updateServiceLogContext({ correlationId: headers["x-correlation-id"], userId: user.success ? user.data : null });
+    for (const [field, header] of [["runId", "X-Ontomato-Run-Id"], ["sessionId", "X-Ontomato-Session-Id"]] as const) {
+      const parsed = serviceLogIdentitySchema.safeParse(req.header(header));
+      updateServiceLogContext({ [field]: parsed.success ? parsed.data : null });
+    }
     return { host, correlationId: headers["x-correlation-id"] };
   };
   const scope = (req: Request) => {
     const { host, correlationId } = identity(req);
     const headers = runtimeRequestHeadersSchema.parse(req.headers);
+    updateServiceLogContext({ domainId: headers["x-domain-id"] });
     return {
       host,
       correlationId,
@@ -61,9 +87,20 @@ export function createRuntimeHttp(runtime: AgentRuntime) {
     (req: Request, res: Response, next: NextFunction) => {
       void fn(req, res).catch(next);
     };
+  app.get("/v1/logs", route(async (req, res) => {
+    identity(req);
+    res.json(await runtime.logs.query(req.query));
+  }));
   app.get("/health", (_req, res) => {
     res.json({ status: "ready" });
   });
+  app.post("/v1/models/test", route(async (req, res) => {
+    const ctx = scope(req);
+    const controller = new AbortController();
+    res.on("close", () => controller.abort());
+    const result = await testModel(req.body, ctx.correlationId, controller.signal);
+    if (!controller.signal.aborted) res.json(result);
+  }));
   app.get("/v1/mcp/services/names", route(async (req, res) => {
     res.json(await runtime.mcp.options(scope(req).scope));
   }));
@@ -387,29 +424,30 @@ export function createRuntimeHttp(runtime: AgentRuntime) {
         return;
       }
       const status =
-        error instanceof RuntimeError
+        (error instanceof RuntimeError || error instanceof LogQueryError)
           ? error.status
           : error instanceof z.ZodError || error instanceof SyntaxError
             ? 400
             : 500;
       const code =
-        error instanceof RuntimeError
+        (error instanceof RuntimeError || error instanceof LogQueryError)
           ? error.code
           : status === 400
-            ? "INVALID_REQUEST"
-            : "INTERNAL_ERROR";
+            ? req.path === "/v1/logs" ? "INVALID_LOG_QUERY" : "INVALID_REQUEST"
+            : req.path === "/v1/logs" ? "LOG_QUERY_FAILED" : "INTERNAL_ERROR";
+      if (status >= 500 && !(error instanceof LogQueryError)) runtimeLogger.error("request failed", runtimeDiagnostic(error));
       // Never echo validation inputs, provider headers, body-parser text or a stack.
       res.status(status).json({
         error: {
           code,
           message:
-            error instanceof RuntimeError
+            (error instanceof RuntimeError || error instanceof LogQueryError)
               ? error.message
               : status === 400
                 ? "Invalid request"
                 : "Runtime request failed",
         },
-        correlationId: req.header("x-correlation-id") || randomUUID(),
+        correlationId: getServiceLogContext().correlationId,
       });
     },
   );

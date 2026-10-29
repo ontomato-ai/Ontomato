@@ -3,10 +3,9 @@ import {
   qualifiedTable as table,
 } from "../../infrastructure/postgres";
 import { RuntimeClient } from "../../infrastructure/agent-runtime/client";
-import { runtimeArtifactSchema } from "@ontomato/contracts/agent-runtime-artifacts";
-import type { RuntimeRunSnapshot } from "@ontomato/contracts/agent-runtime";
-import { retrievalService } from "../data-retrieval/service";
-import { projectDataset } from "../data-retrieval/projection";
+import type { AgentHostRunSnapshot } from "@ontomato/contracts/agent-host";
+import { OntologyRetrievalClient } from "./ontology-retrieval";
+import { projectDataset } from "./dataset-projection";
 import type { AssistantQueryEvidence } from "./query-evidence";
 import { assistantStore, type AssistantOwner } from "./store";
 import { messageText, finalText } from "../../platform/agent-runtime/runtime";
@@ -49,53 +48,35 @@ export async function readAssistantTurnEvidence(
   const client = new RuntimeClient(owner.domainId),
     run = await client.run(turn.id),
     queries: AssistantQueryEvidence[] = [],
-    retrievalRuns: RuntimeRunSnapshot[] = [],
+    retrievalRuns: AgentHostRunSnapshot[] = [],
     artifacts = [...run.artifacts];
-  const links = (
-    await getPostgresPool().query(
-      `SELECT DISTINCT l.retrieval_id,l.retrieval_run_id,r.input,t.qc_result FROM ${table("assistant_retrievals")} l JOIN ${table("retrievals")} r ON r.id=l.retrieval_id JOIN ${table("retrieval_rounds")} t ON t.id=l.retrieval_run_id WHERE l.parent_run_id=$1`,
-      [turn.id],
-    )
-  ).rows;
+  const ontology = new OntologyRetrievalClient(owner, turn.retrieval_scope_id);
+  const links = await ontology.links();
   for (const link of links) {
-    const child = await client.run(link.retrieval_run_id);
+    const evidence = await ontology.evidence(link.retrievalId, link.runId);
+    const child = await ontology.run(evidence.snapshot.runtimeSessionId!, link.runId);
     retrievalRuns.push(child);
-    const entries = (
-        await getPostgresPool().query(
-          `SELECT artifact_id FROM ${table("retrieval_submissions")} WHERE run_id=$1 AND artifact_id IS NOT NULL`,
-          [child.run.id],
-        )
-      ).rows,
-      datasets = [];
-    for (const entry of entries) {
-      const data = await retrievalService.dataset(
-        owner,
-        entry.artifact_id,
-        link.retrieval_id,
-      );
-      const a = runtimeArtifactSchema.parse(
-        await client.request(`/v1/artifacts/${entry.artifact_id}`),
-      );
-      artifacts.push(a);
-      datasets.push(
-        projectDataset(data.id, data.payload, {
-          retrievalId: link.retrieval_id,
-          runtimeSessionId: child.run.sessionId,
-          runtimeRunId: child.run.id,
-        }),
-      );
+    const datasets = [];
+    for (const artifactId of evidence.snapshot.datasetArtifactIds) {
+      const data = await ontology.dataset(link.retrievalId, artifactId);
+      artifacts.push(await ontology.artifact(child.run.sessionId, artifactId));
+      datasets.push(projectDataset(data.id, data.payload, {
+        retrievalId: link.retrievalId,
+        runtimeSessionId: child.run.sessionId,
+        runtimeRunId: child.run.id,
+      }));
     }
     queries.push({
       id: child.run.id,
       threadId: sessionId,
       requestSeq,
       sourceKind: "retrieval",
-      sourceRef: link.retrieval_id,
-      question: link.input.question,
+      sourceRef: link.retrievalId,
+      question: evidence.input.question,
       status: child.run.status,
       fullContent: finalText(child),
       backendSessions: [],
-      qcResult: link.qc_result,
+      qcResult: evidence.snapshot.qualityCheck,
       datasetsPayload: datasets.map((d) => ({
         id: d.id,
         datasetKey: d.id,

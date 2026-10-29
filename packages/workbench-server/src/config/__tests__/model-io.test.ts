@@ -4,21 +4,6 @@ import { appTextEn } from "../../i18n/app-text-en";
 import { en, enLocaleMeta } from "../../i18n/locales/en";
 import { createModel } from "../model-factory";
 configureI18n({ defaultLocale: "en", languageSwitchEnabled: false, appTextLocale: "en", packs: { en: { messages: { ...en, ...appTextEn }, ...enLocaleMeta } } });
-const captured = vi.hoisted(() => {
-  const trackerCalls: Array<{ agentName: unknown; meta: unknown }> = [];
-  const tracker = { success: vi.fn(), successFromChunks: vi.fn(), fail: vi.fn() };
-  return {
-    trackerCalls,
-    tracker,
-  };
-});
-vi.mock("../../logging/logger", () => ({ createLogger: () => ({ error() { }, warn() { }, info() { }, debug() { } }) }));
-vi.mock("../../logging/llm-logger", () => ({
-  startLlmLog: (agentName: unknown, _prompt: unknown, meta: unknown) => {
-    captured.trackerCalls.push({ agentName, meta });
-    return captured.tracker;
-  },
-}));
 vi.mock("../../config/model-resolver", () => ({
   resolveModelForRole: async () => ({
     baseUrl: "http://model.test",
@@ -63,20 +48,16 @@ function stubModelFetch(handler: (input: unknown) => Promise<Response>) {
     vi.fn((input: unknown) => handler(input))
   );
 }
-beforeEach(() => { vi.clearAllMocks(); captured.trackerCalls.length = 0; });
+beforeEach(() => { vi.clearAllMocks(); });
 afterEach(() => { vi.unstubAllGlobals(); });
-describe("model IO and execution identity", () => {
-  it("preserves the model result and tracking identity", async () => {
+describe("model IO", () => {
+  it("preserves the model result", async () => {
     stubModelFetch(async () => Response.json(COMPLETION_BODY));
     const model = await createModel({ agentName: "fixture-agent", agentRunId: "run-t5l" });
     const result = await model.invoke([{ role: "user", content: "hi" }]);
     expect(String(result.content)).toBe("ok");
 
-    expect(captured.tracker.success).toHaveBeenCalled();
-    expect(captured.trackerCalls[0]).toMatchObject({
-      agentName: "fixture-agent",
-      meta: { agentRunId: "run-t5l" },
-    });
+
   });
   it("propagates invoke failure", async () => {
     stubModelFetch(
@@ -86,7 +67,6 @@ describe("model IO and execution identity", () => {
     const model = await createModel({ agentName: "fixture-agent" });
     await expect(model.invoke([{ role: "user", content: "hi" }])).rejects.toThrow();
 
-    expect(captured.tracker.fail).toHaveBeenCalled();
   });
   it("preserves streaming chunk delivery", async () => {
     stubModelFetch(async () => sseResponse([chunkEvent("a"), chunkEvent("b")]));
@@ -96,7 +76,6 @@ describe("model IO and execution identity", () => {
     for await (const chunk of stream) chunks.push(String(chunk.content));
     expect(chunks).toEqual(["a", "b"]);
 
-    expect(captured.tracker.successFromChunks).toHaveBeenCalled();
   });
   it("propagates stream connection failure", async () => {
     stubModelFetch(
@@ -106,6 +85,5 @@ describe("model IO and execution identity", () => {
     const model = await createModel({ agentName: "fixture-agent" });
     await expect(model.stream([{ role: "user", content: "hi" }])).rejects.toThrow();
 
-    expect(captured.tracker.fail).toHaveBeenCalled();
   });
 });

@@ -22,13 +22,22 @@ public class QueryJobService {
   private final SessionRegistryService sessions;
   private final RuntimeCodeClient runtime;
   private final ExecutorService executor = Executors.newCachedThreadPool();
+
+  private record Job(String id, User user) {}
+
+  private final ThreadLocal<Job> currentJob = new ThreadLocal<>();
+  private final org.springframework.transaction.support.TransactionTemplate transactions;
   private final ConcurrentMap<String, Future<?>> running = new ConcurrentHashMap<>();
 
   public QueryJobService(
-      JdbcTemplate jdbc, SessionRegistryService sessions, RuntimeCodeClient runtime) {
+      JdbcTemplate jdbc,
+      SessionRegistryService sessions,
+      RuntimeCodeClient runtime,
+      org.springframework.transaction.PlatformTransactionManager manager) {
     this.jdbc = jdbc;
     this.sessions = sessions;
     this.runtime = runtime;
+    this.transactions = new org.springframework.transaction.support.TransactionTemplate(manager);
   }
 
   @PostConstruct
@@ -108,8 +117,11 @@ public class QueryJobService {
     FutureTask<Void> task =
         new FutureTask<>(
             () -> {
-              try {
-                Object result = operation.execute(sessionId);
+              try (var ignored = io.ontomato.dataengine.logging.ServiceLogContext.backend(sessionId, user.getDomainId())) {
+                currentJob.set(new Job(id, user));
+                Object result =
+                    io.ontomato.dataengine.service.agent.OntologyGenerationService.asOwner(
+                        user, () -> operation.execute(sessionId));
                 state.put("status", "completed");
                 state.put("result", result);
               } catch (Exception e) {
@@ -136,12 +148,39 @@ public class QueryJobService {
                     user.getId());
                 sessions.registerEnd(sessionId);
                 running.remove(sessionId);
+                currentJob.remove();
               }
               return null;
             });
     running.put(sessionId, task);
-    executor.execute(task);
+    executor.execute(io.ontomato.dataengine.logging.ServiceLogContext.wrap(task));
     return accepted;
+  }
+
+  /** Shares the job row lock with cancellation; model calls never hold this transaction. */
+  public <T> T settle(io.ontomato.dataengine.service.agent.OntologyGenerationService.Work<T> work) {
+    Job job = currentJob.get();
+    if (job == null) throw new IllegalStateException("A current query job is required");
+    return transactions.execute(
+        status -> {
+          String state =
+              jdbc.queryForObject(
+                  "SELECT state->>'status' FROM ontology_query_jobs WHERE id=? AND domain_id=? AND"
+                      + " user_id=? FOR UPDATE",
+                  String.class,
+                  UUID.fromString(job.id()),
+                  job.user().getDomainId(),
+                  job.user().getId());
+          if (!"running".equals(state) || Thread.currentThread().isInterrupted())
+            throw new SessionCancelledException(job.id());
+          try {
+            return work.run();
+          } catch (RuntimeException e) {
+            throw e;
+          } catch (Exception e) {
+            throw new IllegalStateException(e);
+          }
+        });
   }
 
   public JSONObject cancel(String id, User user, String kind) throws Exception {

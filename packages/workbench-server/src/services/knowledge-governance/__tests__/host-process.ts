@@ -11,7 +11,6 @@ import { ossRuntimeDefaults } from "../../../../../../apps/workbench/src/runtime
 import { configureOssI18n } from "../../../../../../apps/workbench/src/i18n";
 import { ossWorkspaceArtifactText } from "../../../../../../apps/workbench/src/workspace-artifact-text";
 import { installWorkspaceArtifactText } from "../../../platform/diagnosis/observe/workspace-artifact/artifact-text";
-import { installM3DiagnosticSupport } from "../../../platform/diagnosis/observe/m3-support";
 
 // Real product owners and HTTP routes, with all mutable files confined to the test directory.
 installContentLayout(ossContentLayout(process.env.GOVERNANCE_TEST_ROOT!));
@@ -20,7 +19,6 @@ installRuntimeDefaults(ossRuntimeDefaults);
 installWorkbenchIdentity(ossIdentity);
 configureOssI18n();
 installWorkspaceArtifactText(ossWorkspaceArtifactText);
-installM3DiagnosticSupport(null);
 const { createWorkbenchApp } = await import("../../../http/create-app");
 const { initializeConnection, closeConnection } =
   await import("../../../infrastructure/connection");

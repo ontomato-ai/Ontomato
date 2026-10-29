@@ -9,6 +9,8 @@ const headers = {
   tk: process.env.ONTOMATO_TK ?? "",
   "Accept-Language": process.env.ONTOMATO_LANGUAGE ?? "en",
   "X-Correlation-Id": process.env.ONTOMATO_CORRELATION_ID ?? randomUUID(),
+    ...(process.env.ONTOMATO_RUN_ID ? { "X-Ontomato-Run-Id": process.env.ONTOMATO_RUN_ID } : {}),
+    ...(process.env.ONTOMATO_SESSION_ID ? { "X-Ontomato-Session-Id": process.env.ONTOMATO_SESSION_ID } : {}),
 };
 async function call(route, body, extra = {}) {
   const response = await fetch(base + "/api/knowledge-governance" + route, {

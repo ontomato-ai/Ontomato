@@ -117,3 +117,5 @@ export const runtimeEnvironmentSchema = z
   });
 export type RuntimeSkillRef = z.infer<typeof runtimeSkillRefSchema>;
 export type RuntimeEnvironment = z.infer<typeof runtimeEnvironmentSchema>;
+
+export type RuntimeRegisteredSkill = z.infer<typeof runtimeRegisteredSkillSchema>;

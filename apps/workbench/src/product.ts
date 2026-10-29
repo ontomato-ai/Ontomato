@@ -3,7 +3,6 @@ import type { WorkbenchProduct } from "@ontomato/workbench-server/product/types"
 export const ossProduct: WorkbenchProduct = {
   proxyMountPath: "/ontomato",
   logFileName: "ontomato.log",
-  llmLogFileName: "ontomato_llm.jsonl",
   migrationLockKey: "ontomato:postgres-business-migrations",
   subgraphFence: "ontomato-subgraph",
   mcpClientName: "ontomato",
@@ -16,7 +15,6 @@ export const ossProduct: WorkbenchProduct = {
   smtpFromAddress: "noreply@ontomato.local",
   logSource: "ontomato",
   appLogSourceType: "ontomato-app",
-  llmLogSourceType: "ontomato-llm",
   logIdPatterns: {
     sessionId: /session[\s_-]*id\s*[=::-]\s*([a-zA-Z0-9_-]+)/i,
     backendNodeId: /backend[\s_-]*node[\s_-]*id\s*[=::-]\s*([a-zA-Z0-9_.:-]+)/i,

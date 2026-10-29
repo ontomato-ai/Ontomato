@@ -4,7 +4,7 @@ import {
   getPostgresPool,
   qualifiedTable as table,
 } from "../../infrastructure/postgres";
-import { transaction } from "../data-retrieval/store";
+import { transaction } from "../../infrastructure/postgres-transaction";
 import { HttpError } from "../../utils/errors";
 import { getPromptTemplate } from "../../core/prompts/loader";
 import type { RuntimeSkillRef } from "@ontomato/contracts/agent-runtime-skills";
@@ -26,6 +26,7 @@ export interface TurnRow {
   id: string;
   session_id: string;
   request_seq: number;
+  retrieval_scope_id: string;
   input_hash: string;
   class_names: string[];
   open: boolean;
@@ -73,8 +74,8 @@ export const assistantStore = {
             getPromptTemplate(`assistant.${kind}.system`),
             JSON.stringify([
               {
-                namespace: { kind: "provider", provider: "workbench" },
-                name: "assistant-retrieval",
+                namespace: { kind: "provider", provider: "ontology" },
+                name: "ontomato-analyst",
               },
               {
                 namespace: { kind: "provider", provider: "workbench" },
@@ -192,7 +193,7 @@ export const assistantStore = {
         return { row: old.rows[0] as TurnRow, replayed: true };
       }
       const result = await c.query(
-        `INSERT INTO ${table("assistant_turns")} (id,session_id,request_seq,input_hash,class_names) SELECT $1,$2,COALESCE(MAX(request_seq),-1)+1,$3,$4 FROM ${table("assistant_turns")} WHERE session_id=$2 RETURNING *`,
+        `INSERT INTO ${table("assistant_turns")} (id,session_id,request_seq,input_hash,class_names,retrieval_scope_id) SELECT $1,$2,COALESCE(MAX(request_seq),-1)+1,$3,$4,$1 FROM ${table("assistant_turns")} WHERE session_id=$2 RETURNING *`,
         [
           id,
           sessionId,

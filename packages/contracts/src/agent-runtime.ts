@@ -1,3 +1,4 @@
+import { serviceLogCorrelationSchema } from "./service-logging";
 import { z } from "zod";
 import { codeLimitsSchema } from "./agent-runtime-code";
 import { runtimeMcpRefSchema } from "./agent-runtime-mcp";
@@ -29,7 +30,7 @@ import {
 /** Lowercase HTTP header names after transport normalization. No caller-supplied host ID. */
 export const runtimeServiceHeadersSchema = z.object({
   authorization: z.string().regex(/^Bearer \S+$/),
-  "x-correlation-id": runtimeKeySchema,
+  "x-correlation-id": serviceLogCorrelationSchema,
 });
 export const runtimeRequestHeadersSchema = runtimeServiceHeadersSchema.extend({
   "x-domain-id": runtimeKeySchema,
@@ -259,6 +260,7 @@ export const RUNTIME_HTTP_ROUTES = {
     path: "/v1/artifacts/:artifactId",
     status: 200,
   },
+  testModel: { method: "POST", path: "/v1/models/test", status: 200 },
   registerSkill: { method: "POST", path: "/v1/skills", status: 201 },
 } as const;
 

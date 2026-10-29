@@ -39,18 +39,6 @@ export interface AgentState {
   isStreaming: boolean;
 }
 
-/**
- * Observability identity for one agent execution. When present, every model
- * call made with this config is written to the shared agent-llm log.
- * `agentName` is the stable agent name; `agentRunId` is the explicit Run
- * identity of a single execution and is reused by every turn of that run, so
- * consumers never have to infer loop boundaries from round numbers or time.
- */
-export interface LlmLogIdentity {
-  agentName: string;
-  agentRunId: string;
-}
-
 export interface ModelConfig {
   baseUrl: string;
   apiKey: string;
@@ -59,8 +47,6 @@ export interface ModelConfig {
   maxTokens?: number;
   /** Validated provider-specific request fields forwarded to ChatOpenAI. */
   modelKwargs?: Record<string, unknown>;
-  /** Omitted when the caller does not want this loop's calls logged. */
-  llmLog?: LlmLogIdentity;
 }
 
 export interface AssistantStreamEvent {

@@ -1,5 +1,5 @@
 import { Agent } from "undici";
-import { getLogContext } from "../logging/log-context";
+import { logHeaders } from "@ontomato/service-logging";
 import { createLogger } from "../logging/logger";
 import { getLocale, tApp } from "../i18n";
 
@@ -197,10 +197,14 @@ export function backendPost(
   return backendRequest(endpoint, url, "POST", options, body) as Promise<BufferedBackendResponse>;
 }
 
+export function backendDelete(endpoint: string, url: string, options: BackendCallOptions = {}): Promise<BufferedBackendResponse> {
+  return backendRequest(endpoint, url, "DELETE", options) as Promise<BufferedBackendResponse>;
+}
+
 async function backendRequest(
   endpoint: string,
   url: string,
-  method: "GET" | "POST",
+  method: "GET" | "POST" | "DELETE",
   options: BackendCallOptions & { stream?: boolean },
   body?: unknown
 ): Promise<BufferedBackendResponse | Response> {
@@ -226,10 +230,12 @@ async function backendRequest(
     }
 
     const abortBridge = createAbortBridge(signal, timeoutMs);
+    const started = performance.now();
+    let outcome = "success";
     try {
       const response = await fetch(url, {
         method,
-        headers: { ...(getLogContext()?.correlationId ? {"X-Correlation-Id":getLogContext()!.correlationId!} : {}), ...(options.headers ?? buildBackendHeaders(token, userId, locale, apiKey)) },
+        headers: { ...logHeaders(), ...(options.headers ?? buildBackendHeaders(token, userId, locale, apiKey)) },
         ...(method === "POST" ? { body: JSON.stringify(body) } : {}),
         signal: abortBridge.signal,
         dispatcher: backendDispatcher,
@@ -248,9 +254,11 @@ async function backendRequest(
       resetCircuit(endpoint);
       return result;
     } catch (error) {
+      outcome = signal?.aborted ? "cancelled" : "failure";
       lastError = error instanceof Error ? error : new Error(String(error));
     } finally {
       abortBridge.cleanup();
+      if (!endpoint.startsWith("/observe/logs")) logger.info("ontology call completed", { kind: "downstream", target: "ontology", durationMs: Math.floor(performance.now() - started), outcome });
     }
 
     if (

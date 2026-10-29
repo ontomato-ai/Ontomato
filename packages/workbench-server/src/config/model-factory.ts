@@ -1,10 +1,6 @@
-import { randomUUID } from "node:crypto";
 import { ChatOpenAI } from "@langchain/openai";
 import { IterableReadableStream } from "@langchain/core/utils/stream";
 import type { ModelRole } from "@ontomato/contracts/model-settings";
-import { startLlmLog } from "../logging/llm-logger";
-import { createLogger } from "../logging/logger";
-import { tApp } from "../i18n";
 import { useApproximateTokenCounter } from "../utils/langchain-token-counter.js";
 import {
   createChatCompletionsOverrideFetch,
@@ -12,7 +8,6 @@ import {
 } from "../utils/chat-completions-body-override.js";
 import { resolveModelForRole } from "./model-resolver";
 
-const logger = createLogger("model-factory");
 
 export type ModelOptions = {
   role?: ModelRole;
@@ -29,13 +24,6 @@ export async function createModel(opts?: number | ModelOptions): Promise<ChatOpe
   const entry = await resolveModelForRole(options.role ?? "general");
 
   const temperature = options.temperature ?? 0;
-  const agentName = options.agentName;
-  const agentRunId = agentName
-    ? typeof options.agentRunId === "string" && options.agentRunId.trim()
-      ? options.agentRunId.trim()
-      : randomUUID()
-    : undefined;
-
   // Custom parameters override the final Chat Completions body at the fetch
   // boundary, so they are never passed as modelKwargs for the SDK to reinterpret.
   const overrideFetch = createChatCompletionsOverrideFetch(entry.customRequestParameters);
@@ -74,96 +62,6 @@ export async function createModel(opts?: number | ModelOptions): Promise<ChatOpe
         if (chunkCount === 0) throw createEmptyChatStreamError();
       })()
     );
-  };
-
-  if (!agentName) {
-    return model;
-  }
-
-  const originalInvoke = model.invoke.bind(model);
-  model.invoke = async function wrappedInvoke(...args: Parameters<typeof model.invoke>) {
-    const tracker = startLlmLog(agentName, args[0], {
-      model: options.modelName || entry.modelName,
-      agentRunId,
-    });
-    logger.debug(tApp("foundation.log.model.invokeStarted", { agentName }), {
-      baseUrl: options.baseURL || entry.baseUrl,
-      modelName: options.modelName || entry.modelName,
-      timeoutSeconds: entry.timeoutSeconds,
-    });
-    const invokeStart = Date.now();
-    try {
-      const result = await originalInvoke(...args);
-      tracker.success(result);
-      logger.debug(tApp("foundation.log.model.invokeCompleted", { agentName }), {
-        durationMs: Date.now() - invokeStart,
-      });
-      return result;
-    } catch (err) {
-      const errMsg = err instanceof Error ? err.message : String(err);
-      logger.error(tApp("foundation.log.model.invokeFailed", { agentName }), {
-        durationMs: Date.now() - invokeStart,
-        error: errMsg,
-      });
-      tracker.fail(err);
-      throw err;
-    }
-  };
-
-  const originalStream = model.stream.bind(model);
-  model.stream = async function wrappedStream(...args: Parameters<typeof model.stream>) {
-    const tracker = startLlmLog(agentName, args[0], {
-      model: options.modelName || entry.modelName,
-      agentRunId,
-    });
-    logger.debug(tApp("foundation.log.model.streamStarted", { agentName }), {
-      baseUrl: options.baseURL || entry.baseUrl,
-      modelName: options.modelName || entry.modelName,
-      timeoutSeconds: entry.timeoutSeconds,
-    });
-    const streamStart = Date.now();
-    try {
-      const stream = await originalStream(...args);
-      const chunks: unknown[] = [];
-      const generator = (async function* () {
-        let firstChunk = true;
-        try {
-          for await (const chunk of stream) {
-            chunks.push(chunk);
-            if (firstChunk) {
-              logger.debug(tApp("foundation.log.model.streamFirstChunk", { agentName }), {
-                ttftMs: Date.now() - streamStart,
-              });
-              firstChunk = false;
-            }
-            yield chunk;
-          }
-          tracker.successFromChunks(chunks);
-          logger.debug(tApp("foundation.log.model.streamCompleted", { agentName }), {
-            durationMs: Date.now() - streamStart,
-            chunkCount: chunks.length,
-          });
-        } catch (err) {
-          const errMsg = err instanceof Error ? err.message : String(err);
-          logger.error(tApp("foundation.log.model.streamFailed", { agentName }), {
-            durationMs: Date.now() - streamStart,
-            error: errMsg,
-          });
-          tracker.fail(err);
-          throw err;
-        }
-      })();
-
-      return IterableReadableStream.fromAsyncGenerator(generator);
-    } catch (err) {
-      const errMsg = err instanceof Error ? err.message : String(err);
-      logger.error(tApp("foundation.log.model.streamConnFailed", { agentName }), {
-        durationMs: Date.now() - streamStart,
-        error: errMsg,
-      });
-      tracker.fail(err);
-      throw err;
-    }
   };
 
   return model;

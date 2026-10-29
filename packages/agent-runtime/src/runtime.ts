@@ -1,3 +1,5 @@
+import { ServiceLogStore, withServiceLogContext, getServiceLogContext, updateServiceLogContext } from "@ontomato/service-logging";
+import { runtimeLogging, runtimeLogger, runtimeDiagnostic } from "./logging";
 import { ArtifactFiles } from "./files";
 import { SessionSandbox } from "./sandbox";
 import { mkdir, chmod, readFile } from "node:fs/promises";
@@ -102,6 +104,7 @@ function key(scope: Scope, id: string) {
 
 export class AgentRuntime {
   readonly store: RuntimeStore;
+  readonly logs: ServiceLogStore;
   readonly registry: SkillRegistry;
   readonly code: CodeExecutor;
   readonly worker: WorkerPolicy;
@@ -112,6 +115,7 @@ export class AgentRuntime {
   constructor(readonly options: RuntimeOptions) {
     modelKeySealKey(options.modelRuntimeToken);
     this.store = options.store;
+    this.logs = new ServiceLogStore("agent-runtime", this.store.connectionString, this.store.schema, runtimeLogging.warn);
     this.mcp = new RuntimeMcpServices(this.store);
     this.worker = {
       ...(options.worker ?? {
@@ -149,7 +153,9 @@ export class AgentRuntime {
     }
   }
   async initialize() {
+    runtimeLogging.initialize({ directory: process.env.AGENT_RUNTIME_LOG_DIR || path.join(this.options.root, "logs"), level: process.env.LOG_LEVEL });
     await this.store.initialize();
+    runtimeLogging.attach(this.logs);
     if (!this.worker.development) {
       const rows = (
         await this.store.pool.query(
@@ -238,7 +244,15 @@ export class AgentRuntime {
         fingerprint,
         request.input,
       );
-      if (accepted.replayed) return accepted;
+      if (accepted.replayed) {
+        const persisted = await this.store.pool.query(`SELECT log_context FROM ${this.store.table("runs")} WHERE host_id=$1 AND domain_id=$2 AND id=$3`, [scope.hostId, scope.domainId, runId]);
+        updateServiceLogContext({ userId: persisted.rows[0]?.log_context?.userId ?? null });
+        updateServiceLogContext({ correlationId: accepted.run.correlationId, runId: accepted.run.id, sessionId: accepted.run.sessionId });
+        return accepted;
+      }
+      const logContext = { correlationId: run.correlationId, domainId: scope.domainId,
+        userId: getServiceLogContext().userId ?? null, runId: run.id, sessionId: run.sessionId };
+      updateServiceLogContext(logContext);
       const active: Active = {
         scope,
         run,
@@ -254,12 +268,10 @@ export class AgentRuntime {
       this.active.set(key(scope, runId), active);
       // The first execution begins after this admission lock is released, never on a read/retry.
       active.done = Promise.resolve()
-        .then(() => this.execute(active, request, skills))
+        .then(() => withServiceLogContext(logContext, () => this.execute(active, request, skills)))
         .finally(() => this.active.delete(key(scope, runId)));
       void active.done.catch(() =>
-        process.stderr.write(
-          "Runtime persistence failed; run will be interrupted on restart\n",
-        ),
+        withServiceLogContext(logContext, () => runtimeLogger.error("Runtime persistence failed; run will be interrupted on restart")),
       );
       return accepted;
     });
@@ -416,6 +428,7 @@ export class AgentRuntime {
     skills: InstalledSkill[],
   ) {
     const { scope, run, controller } = active;
+    runtimeLogger.info("run started");
     const signal = controller.signal;
     let reason: RuntimeStopReason | undefined;
     let failure: string | null = null;
@@ -625,6 +638,7 @@ export class AgentRuntime {
         failure = "Run cancelled";
       }
     } catch (error) {
+      if (!signal.aborted) runtimeLogger.error("run execution failed", runtimeDiagnostic(error));
       reason = signal.aborted ? "aborted" : "error";
       failure = signal.aborted ? "Run cancelled" : safeMessage(error);
     }
@@ -636,6 +650,7 @@ export class AgentRuntime {
       reason = "error";
       failure = safeMessage(error);
     }
+    runtimeLogger.info(reason === "error" ? "run failed" : "run completed");
     await this.locked(scope, run.sessionId, async () => {
       active.pending.clear();
       const before = (await this.store.run(scope, run.id)).seq;
@@ -830,6 +845,7 @@ export class AgentRuntime {
     for (const active of this.active.values()) active.controller.abort();
     await Promise.allSettled([...this.active.values()].map((a) => a.done));
     await this.code.close();
+    await runtimeLogging.close();
     await this.store.close();
   }
 }

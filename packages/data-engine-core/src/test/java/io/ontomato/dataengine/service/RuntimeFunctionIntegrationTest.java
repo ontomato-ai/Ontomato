@@ -181,7 +181,10 @@ class RuntimeFunctionIntegrationTest {
       entrance.publishInstance();
       var python =
           new PythonExecuteServiceImpl(
-              new RuntimeCodeClient(runtimeUrl, "fixture-host", ontologyUrl), grants);
+              new RuntimeCodeClient(
+                  new io.ontomato.dataengine.service.agent.AgentRuntimeClient(
+                      runtimeUrl, "fixture-host", ontologyUrl)),
+              grants);
       var programs = new ABCProgramServiceImpl();
       ReflectionTestUtils.setField(programs, "pythonExecuteService", python);
       var function =

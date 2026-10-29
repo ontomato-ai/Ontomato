@@ -1,7 +1,7 @@
 import { dashboardSourceSchema } from "@ontomato/contracts/dashboard-artifacts";
 import { assistantService } from "../assistant/service";
 import { assistantStore, type AssistantOwner } from "../assistant/store";
-import { projectDataset } from "../data-retrieval/projection";
+import { projectDataset } from "../assistant/dataset-projection";
 import type {
   DashboardChartEntry,
   DashboardGroup,

@@ -4,13 +4,6 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import java.util.List;
-import java.util.Map;
-
-import org.junit.jupiter.api.Test;
-import org.springframework.context.annotation.AnnotationConfigApplicationContext;
-import org.springframework.jdbc.core.JdbcTemplate;
-
 import io.ontomato.dataengine.core.bean.User;
 import io.ontomato.dataengine.core.db.jdbc.SuperAdminSeed;
 import io.ontomato.dataengine.service.DataPermissionLookup;
@@ -19,9 +12,11 @@ import io.ontomato.dataengine.service.IdentityRuntimeSettings;
 import io.ontomato.dataengine.service.IdentityService;
 import io.ontomato.dataengine.service.SchemaImportAuthorization;
 import io.ontomato.dataengine.service.SchemaPermissionService;
-
-import dev.langchain4j.service.tool.ToolProvider;
-import dev.langchain4j.service.tool.ToolProviderResult;
+import java.util.List;
+import java.util.Map;
+import org.junit.jupiter.api.Test;
+import org.springframework.context.annotation.AnnotationConfigApplicationContext;
+import org.springframework.jdbc.core.JdbcTemplate;
 
 class OssStartupAssemblyTest {
     @Test
@@ -37,24 +32,24 @@ class OssStartupAssemblyTest {
                         .filter(entry -> !entry.replace('\\', '/').endsWith("/test-classes"))
                         .map(entry -> java.nio.file.Path.of(entry).toAbsolutePath().toString())
                         .collect(java.util.stream.Collectors.joining(java.io.File.pathSeparator));
-        classpath +=
-                java.io.File.pathSeparator
-                        + java.nio.file.Path.of("../../packages/data-engine-core/conf-defaults").toRealPath();
+    classpath +=
+        java.io.File.pathSeparator
+            + java.nio.file.Path.of("../../packages/data-engine-core/conf-defaults").toRealPath();
         java.nio.file.Path log = directory.resolve("startup.log");
-        Process child =
-                new ProcessBuilder(
-                                java.nio.file.Path.of(System.getProperty("java.home"), "bin", "java").toString(),
-                                "-cp",
-                                classpath,
-                                java.nio.file.Path.of("../../scripts/data-engine/StartupContextProbe.java")
-                                        .toRealPath()
-                                        .toString(),
-                                "io.ontomato.dataengine.service.impl.AnonymousIdentityService",
-                                "io.ontomato.dataengine.service.impl.AnonymousDataPermissionLookup")
-                        .directory(directory.toFile())
-                        .redirectErrorStream(true)
-                        .redirectOutput(log.toFile())
-                        .start();
+    Process child =
+        new ProcessBuilder(
+                java.nio.file.Path.of(System.getProperty("java.home"), "bin", "java").toString(),
+                "-cp",
+                classpath,
+                java.nio.file.Path.of("../../scripts/data-engine/StartupContextProbe.java")
+                    .toRealPath()
+                    .toString(),
+                "io.ontomato.dataengine.service.impl.AnonymousIdentityService",
+                "io.ontomato.dataengine.service.impl.AnonymousDataPermissionLookup")
+            .directory(directory.toFile())
+            .redirectErrorStream(true)
+            .redirectOutput(log.toFile())
+            .start();
         try {
             assertTrue(
                     child.waitFor(90, java.util.concurrent.TimeUnit.SECONDS),
@@ -76,14 +71,13 @@ class OssStartupAssemblyTest {
     @Test
     void ossBeansAreTheOnlyIdentityAndToolChoices() {
         try (AnnotationConfigApplicationContext ctx = new AnnotationConfigApplicationContext()) {
-            ctx.register(
-                    AnonymousIdentityService.class,
-                    SingleDomainSvc.class,
-                    NoopSchemaPermissionService.class,
-                    OssSuperAdminSeed.class,
-                    AnonymousDataPermissionLookup.class,
-                    OssIdentityRuntimeSettings.class,
-                    EmptyExternalToolProvider.class);
+      ctx.register(
+          AnonymousIdentityService.class,
+          SingleDomainSvc.class,
+          NoopSchemaPermissionService.class,
+          OssSuperAdminSeed.class,
+          AnonymousDataPermissionLookup.class,
+          OssIdentityRuntimeSettings.class);
             ctx.refresh();
 
             assertEquals(1, ctx.getBeansOfType(IdentityService.class).size());
@@ -92,7 +86,6 @@ class OssStartupAssemblyTest {
             assertEquals(1, ctx.getBeansOfType(SuperAdminSeed.class).size());
             assertEquals(1, ctx.getBeansOfType(DataPermissionLookup.class).size());
             assertEquals(1, ctx.getBeansOfType(IdentityRuntimeSettings.class).size());
-            assertEquals(1, ctx.getBeansOfType(ToolProvider.class).size());
             assertTrue(ctx.getBeansOfType(JdbcTemplate.class).isEmpty());
 
             IdentityService identity = ctx.getBean(IdentityService.class);
@@ -101,7 +94,8 @@ class OssStartupAssemblyTest {
             assertEquals("admin", identity.getCurrentUserId());
             assertEquals("1", user.getDomainId());
             assertTrue(identity.getCurrentUserDataPermission().isFullData());
-            assertTrue(ctx.getBean(DataPermissionLookup.class).getDataPermission("other", "9").isFullData());
+      assertTrue(
+          ctx.getBean(DataPermissionLookup.class).getDataPermission("other", "9").isFullData());
 
             DomainSvc domains = ctx.getBean(DomainSvc.class);
             assertEquals("1", domains.list().get(0).getId());
@@ -112,7 +106,8 @@ class OssStartupAssemblyTest {
             SchemaPermissionService permissions = ctx.getBean(SchemaPermissionService.class);
             SchemaImportAuthorization prepared = permissions.prepareImport(user);
             assertTrue(prepared.postIds().isEmpty());
-            permissions.grantImport(new SchemaImportAuthorization(List.of("post-1")), List.of(Map.of("name", "Order")));
+      permissions.grantImport(
+          new SchemaImportAuthorization(List.of("post-1")), List.of(Map.of("name", "Order")));
 
             ctx.getBean(SuperAdminSeed.class).initSuperAdmin();
 
@@ -120,8 +115,6 @@ class OssStartupAssemblyTest {
             assertEquals(Map.of(), settings.ssoSettings());
             assertEquals(Map.of(), settings.ldapSettings());
 
-            ToolProviderResult tools = ctx.getBean(ToolProvider.class).provideTools(null);
-            assertTrue(tools.tools().isEmpty());
         }
     }
 
