@@ -1,6 +1,6 @@
 import type { AnalysisAgentSkillReference } from "@ontomato/contracts/skills";
 import type { AssistantAgentInput } from "@ontomato/contracts/assistant-chat";
-import { runtimeSkillRefSchema } from "@ontomato/contracts/agent-runtime-skills";
+import { runtimeSkillRefSchema, type RuntimeSkillRef } from "@ontomato/contracts/agent-runtime-skills";
 import { HttpError } from "../../utils/errors";
 import {
   getPostgresPool,
@@ -28,16 +28,14 @@ export function resolveAssistantSkillReferences(
 }
 export async function listAnalysisAgentSkillReferences(
   domainId: string,
-  skillId: string,
+  skill: RuntimeSkillRef,
 ): Promise<AnalysisAgentSkillReference[]> {
   return (
     await getPostgresPool().query(
       `SELECT id,name FROM ${t("assistant_agents")} WHERE domain_id=$1 AND skills @> $2::jsonb`,
       [
         domainId,
-        JSON.stringify([
-          { namespace: { kind: "domain", domainId }, name: skillId },
-        ]),
+        JSON.stringify([skill]),
       ],
     )
   ).rows.map((r) => ({ ...r, usesAnalysis: true, usesVisualization: false }));

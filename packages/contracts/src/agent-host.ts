@@ -4,6 +4,7 @@ import {
   runtimeRunSnapshotSchema,
 } from "./agent-runtime";
 import { runtimeArtifactSchema } from "./agent-runtime-artifacts";
+import { runtimeRegisteredSkillSchema } from "./agent-runtime-skills";
 import {
   runtimeCursorSchema,
   runtimeStreamFrameSchema,
@@ -37,6 +38,7 @@ export const agentHostRunSchema = z
     errorMessage: z.string().nullable(),
     createdAt: runtimeTimestampSchema,
     finishedAt: runtimeTimestampSchema.nullable(),
+    resolvedSkills: z.array(runtimeRegisteredSkillSchema),
   })
   .strict();
 export const agentHostMessageSchema = runtimeMessageRecordSchema;

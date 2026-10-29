@@ -6,6 +6,9 @@ import type {
   RuntimeRunSnapshot,
 } from "@ontomato/contracts/agent-runtime";
 import { RuntimeClient } from "../../infrastructure/agent-runtime/client";
+import type { RuntimeEnvironment, RuntimeSkillRef } from "@ontomato/contracts/agent-runtime-skills";
+import { environment } from "../../config/environment";
+import { getApiConfig } from "../../config/data-query-api";
 import { getQueryTimeoutMs } from "../../config/query-settings";
 import { renderPrompt } from "../../core/prompts/loader";
 import { getLogContext } from "../../logging/log-context";
@@ -18,6 +21,18 @@ export interface AssistantCredentials {
   token?: string;
   apiKey?: string;
   locale?: string;
+}
+export function userSkillEnvironment(credentials: AssistantCredentials): RuntimeEnvironment {
+  return {
+    values: {
+      ONTOMATO_WORKBENCH_URL: environment.agentRuntime().callbackUrl.replace(/\/$/, ""),
+      ONTOMATO_ONTOLOGY_URL: getApiConfig().baseUrl!.replace(/\/$/, ""),
+    },
+    secrets: {
+      ...(credentials.apiKey ? { ONTOMATO_API_KEY: credentials.apiKey }
+        : credentials.token ? { ONTOMATO_TK: credentials.token } : {}),
+    },
+  };
 }
 export function runDefinition(
   systemPrompt: string,
@@ -103,7 +118,7 @@ export async function waitForRun(
   }
 }
 /** Auxiliary model consumers use ordinary sessions and retain only their ownership reference. */
-export async function runAuxiliary(input: {
+interface AuxiliaryInput {
   systemPrompt: string;
   message: string;
   modelRole?: string;
@@ -111,7 +126,10 @@ export async function runAuxiliary(input: {
   domainId?: string;
   userId?: string;
   credentials?: AssistantCredentials;
-}) {
+  skills?: RuntimeSkillRef[];
+  environment?: RuntimeEnvironment;
+}
+export async function startAuxiliary(input: AuxiliaryInput) {
   const ctx = getLogContext(),
     domainId = input.domainId ?? ctx?.domainId;
   if (!domainId || !(input.userId ?? ctx?.userId))
@@ -142,12 +160,16 @@ export async function runAuxiliary(input: {
     definition: runDefinition(
       input.systemPrompt,
       input.modelRole ?? "general",
-      [],
+      input.skills ?? [],
       credentials.locale,
     ),
-    environment: { values: {}, secrets: {} },
+    environment: input.environment ?? { values: {}, secrets: {} },
     modelCredential: modelCredential(credentials),
   });
+  return { client, runId, sessionId };
+}
+export async function runAuxiliary(input: AuxiliaryInput) {
+  const { client, runId } = await startAuxiliary(input);
   const s = await waitForRun(client, runId, input.signal);
   if (s.run.stopReason !== "stop")
     throw new Error(s.run.errorMessage ?? `Model stopped: ${s.run.stopReason}`);

@@ -9,6 +9,8 @@ image/stack and external Claude Code acceptance remain controller-owned.
 
 [External MCP services](agent-runtime-mcp.md) are configured in runtime and
 referenced by immutable service UUIDs. That contract owns management and selection.
+The [domain-skill host integration](domain-skills.md) reuses this
+publication/admission protocol.
 
 ## HTTP and admission
 

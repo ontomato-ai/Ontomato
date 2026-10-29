@@ -1,3 +1,4 @@
+import { readFileSync as readBundledAsset } from "node:fs";
 const SKILL_ID = "quality-trace-graph";
 const VERSION = "1.0.0";
 const DEFAULT_TITLE = "Quality Traceability Graph";
@@ -1042,7 +1043,7 @@ function generateHtml(option, title) {
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>${ariaTitle}</title>
-  <script src="/api/skills/resources/executable/visualization/${SKILL_ID}/scripts/echarts.min.js"></script>
+  <script>${readBundledAsset(new URL("echarts.min.js", import.meta.url), "utf8").replaceAll("</script", "<\\/script")}</script>
   <style>
     * { box-sizing: border-box; }
     html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; }
@@ -1223,4 +1224,27 @@ export async function execute(input = {}) {
       },
     };
   }
+}
+
+// The exported calculation/rendering function is also usable as an ordinary CLI.
+if (import.meta.main) {
+  const fs = await import("node:fs/promises");
+  const path = await import("node:path");
+  const { randomUUID } = await import("node:crypto");
+  const source = process.argv[2]?.replace(/^@/, "");
+  if (!source) throw new Error("Expected a JSON input file");
+  const result = await execute(JSON.parse(await fs.readFile(source, "utf8")));
+  if (result.meta?.error || result.json?.success === false)
+    throw new Error(result.json?.error || "Skill could not produce the requested result");
+  const root = process.env.ONTOMATO_OUTPUT_DIR || "outputs";
+  const output = path.join(root, "quality-trace-graph." + (result.html ? "html" : "json"));
+  await fs.mkdir(root, { recursive: true });
+  await fs.mkdir("work", { recursive: true });
+  const temporary = path.join("work", randomUUID() + ".tmp");
+  try {
+    await fs.writeFile(temporary, result.html ?? JSON.stringify(result.json ?? result, null, 2));
+    await fs.rename(temporary, output);
+  } finally { await fs.rm(temporary, { force: true }); }
+  if (result.meta) console.log(JSON.stringify(result.meta));
+  console.log(path.relative(process.cwd(), path.resolve(output)));
 }

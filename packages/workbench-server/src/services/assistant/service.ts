@@ -23,7 +23,8 @@ import {
 } from "@ontomato/contracts/data-retrieval";
 import { RuntimeClient } from "../../infrastructure/agent-runtime/client";
 import { callbackCredential } from "../agent-runtime/callback-credential";
-import { environment } from "../../config/environment";
+import { prepareAssistantSkills } from "./skills";
+import { withDomainSkills } from "../skills/operations";
 import {
   getPostgresPool,
   qualifiedTable as table,
@@ -34,6 +35,7 @@ import {
   messageText,
   modelCredential,
   runDefinition,
+  userSkillEnvironment,
   type AssistantCredentials,
 } from "../../platform/agent-runtime/runtime";
 import { retrievalService } from "../data-retrieval/service";
@@ -316,42 +318,45 @@ export const assistantService = {
     }
     const prefix = `/api/assistant/sessions/${sessionId}/runs/${id}/retrievals`;
     try {
-      await client.start(sessionId, id, {
-        language: credentials.locale ?? "en",
-        input: {
-          role: "user",
-          content: message,
-          timestamp: new Date(turn.created_at).getTime(),
-        },
-        definition: runDefinition(
-          a.system_prompt +
-            "\n\nInitial ontology context:\n" +
-            ontologyContext +
-            "\n\n" +
-            ARTIFACT_MARKDOWN_PROMPT,
-          a.model_role,
-          a.skills,
-          credentials.locale,
-          a.enabled_mcp_service_ids.map((id) => ({ id })),
-        ),
-        modelCredential: modelCredential(credentials),
-        environment: {
-          values: {
-            ONTOMATO_WORKBENCH_URL: environment
-              .agentRuntime()
-              .callbackUrl.replace(/\/$/, ""),
-            ONTOMATO_ASSISTANT_SESSION_ID: sessionId,
+      await withDomainSkills(owner.domainId, async () => {
+        const skills = await prepareAssistantSkills(owner.domainId, a.skills);
+        const skillEnvironment = userSkillEnvironment(credentials);
+        await client.start(sessionId, id, {
+          language: credentials.locale ?? "en",
+          input: {
+            role: "user",
+            content: message,
+            timestamp: new Date(turn.created_at).getTime(),
           },
-          secrets: {
-            ONTOMATO_TK: callbackCredential({
-              pathPrefix: prefix,
-              runId: id,
-              expiresAt: Date.now() + getQueryTimeoutMs(),
-              token: credentials.token ?? "",
-              apiKey: credentials.apiKey ?? "",
-            }).value,
+          definition: runDefinition(
+            a.system_prompt +
+              "\n\nInitial ontology context:\n" +
+              ontologyContext +
+              "\n\n" +
+              ARTIFACT_MARKDOWN_PROMPT,
+            a.model_role,
+            skills,
+            credentials.locale,
+            a.enabled_mcp_service_ids.map((serviceId) => ({ id: serviceId })),
+          ),
+          modelCredential: modelCredential(credentials),
+          environment: {
+            values: {
+              ...skillEnvironment.values,
+              ONTOMATO_ASSISTANT_SESSION_ID: sessionId,
+            },
+            secrets: {
+              ...skillEnvironment.secrets,
+              ONTOMATO_RETRIEVAL_CALLBACK_TOKEN: callbackCredential({
+                pathPrefix: prefix,
+                runId: id,
+                expiresAt: Date.now() + getQueryTimeoutMs(),
+                token: credentials.token ?? "",
+                apiKey: credentials.apiKey ?? "",
+              }).value,
+            },
           },
-        },
+        });
       });
     } catch (error) {
       try {

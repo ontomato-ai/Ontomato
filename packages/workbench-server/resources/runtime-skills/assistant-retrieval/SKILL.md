@@ -15,6 +15,8 @@ reply; ask the user and retain the retrieval ID for continuation. Do not fabrica
 an answer or turn a lack of files into a failure. Use files without rewriting rows.
 
 Environment: ONTOMATO_WORKBENCH_URL, ONTOMATO_TK and optional ONTOMATO_LANGUAGE.
+In product, its existing callback credential is ONTOMATO_RETRIEVAL_CALLBACK_TOKEN;
+ONTOMATO_TK remains the ordinary user credential for standard skills.
 In product, ONTOMATO_RUN_ID and ONTOMATO_ASSISTANT_SESSION_ID bind the command to
 its parent run. Outside the product omit the assistant session variable: the same
 script calls the public retrieval API with your user token, with no parent run or
