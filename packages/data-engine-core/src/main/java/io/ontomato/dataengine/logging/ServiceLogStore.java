@@ -18,12 +18,15 @@ import org.apache.logging.log4j.core.appender.AbstractAppender;
 import org.apache.logging.log4j.core.appender.AsyncAppender;
 import org.apache.logging.log4j.core.appender.db.ColumnMapping;
 import org.apache.logging.log4j.core.appender.db.jdbc.AbstractConnectionSource;
+import org.apache.logging.log4j.core.appender.db.jdbc.ConnectionSource;
 import org.apache.logging.log4j.core.appender.db.jdbc.JdbcAppender;
 import org.apache.logging.log4j.core.appender.rewrite.RewriteAppender;
 import org.apache.logging.log4j.core.config.AppenderRef;
+import org.apache.logging.log4j.core.config.Configuration;
 import org.apache.logging.log4j.core.config.Property;
 import org.apache.logging.log4j.core.filter.AbstractFilter;
-import org.apache.logging.log4j.core.layout.MessageLayout;
+import org.apache.logging.log4j.core.layout.AbstractStringLayout;
+import org.apache.logging.log4j.message.StringMapMessage;
 import org.springframework.stereotype.Component;
 
 /** Owns only ontology service logs. The existing audit_log is deliberately unrelated. */
@@ -71,23 +74,28 @@ public final class ServiceLogStore {
     long now = System.currentTimeMillis(), previous = lastWarning.get();
     if (now - previous >= 60000 && lastWarning.compareAndSet(previous, now)) ServiceLogEvents.localWarning(message);
   }
-  private void installSink() {
-    LoggerContext context = (LoggerContext) LogManager.getContext(false);
-    var configuration = context.getConfiguration();
-    if (configuration.getAppender("ServiceEvents") == null) throw new IllegalStateException("Common logging configuration is required");
+  static JdbcAppender createJdbcAppender(Configuration configuration, String table, ConnectionSource connectionSource) {
     var builder = JdbcAppender.newBuilder();
     builder.setName("ServiceJdbc"); builder.setConfiguration(configuration); builder.setIgnoreExceptions(true);
     builder.setTableName(table); builder.setBufferSize(POLICY.getIntValue("batchRows"));
     builder.setImmediateFail(true); builder.setReconnectIntervalMillis(POLICY.getLongValue("reconnectIntervalMs"));
-    builder.setLayout(new MessageLayout());
-    builder.setConnectionSource(new AbstractConnectionSource() {
+    builder.setConnectionSource(connectionSource);
+    String[][] columns = {{"id", "id"}, {"time", "time"}, {"level", "level"}, {"module", "module"}, {"instance_id", "instanceId"}, {"correlation_id", "correlationId"}, {"domain_id", "domainId"}, {"user_id", "userId"}, {"run_id", "runId"}, {"session_id", "sessionId"}, {"line", "line"}};
+    // Log4j 2.24.3 drops the appender layout on buffered flush; bind each column from the event instead.
+    builder.setColumnMappings(Arrays.stream(columns).map(pair -> ColumnMapping.newBuilder()
+      .setName(pair[0]).setLayout(new AbstractStringLayout(StandardCharsets.UTF_8) {
+        @Override public String toSerializable(LogEvent event) { return ((StringMapMessage) event.getMessage()).get(pair[1]); }
+      }).setParameter(pair[0].equals("id") ? "?::uuid" : pair[0].equals("time") ? "?::timestamptz" : "?").build()).toArray(ColumnMapping[]::new));
+    return builder.build();
+  }
+  private void installSink() {
+    LoggerContext context = (LoggerContext) LogManager.getContext(false);
+    var configuration = context.getConfiguration();
+    if (configuration.getAppender("ServiceEvents") == null) throw new IllegalStateException("Common logging configuration is required");
+    jdbc = createJdbcAppender(configuration, table, new AbstractConnectionSource() {
       @Override public Connection getConnection() throws SQLException { return pool.getConnection(); }
       @Override public String toString() { return "Ontology service log connection"; }
     });
-    String[][] columns = {{"id", "id"}, {"time", "time"}, {"level", "level"}, {"module", "module"}, {"instance_id", "instanceId"}, {"correlation_id", "correlationId"}, {"domain_id", "domainId"}, {"user_id", "userId"}, {"run_id", "runId"}, {"session_id", "sessionId"}, {"line", "line"}};
-    builder.setColumnMappings(Arrays.stream(columns).map(pair -> ColumnMapping.newBuilder()
-      .setName(pair[0]).setSource(pair[1]).setParameter(pair[0].equals("id") ? "?::uuid" : pair[0].equals("time") ? "?::timestamptz" : "?").build()).toArray(ColumnMapping[]::new));
-    jdbc = builder.build();
     jdbc.setHandler(new ErrorHandler() {
       @Override public void error(String message) { failed(); }
       @Override public void error(String message, Throwable error) { failed(); }
