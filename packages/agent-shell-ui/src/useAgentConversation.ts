@@ -11,10 +11,10 @@ import {
   type ConversationState,
 } from "./conversation";
 import { conversationItems } from "./view";
-import { skillOfCommand } from "./tools";
 
 const RECONNECT_DELAYS = [500, 1000, 2000, 5000, 10000];
 const MAX_QUEUED_FRAMES = 2000;
+const RETRIEVAL_LINK_RETRY_MS = 1500;
 
 /**
  * Drives one selected conversation through the host port. Every async continuation checks the
@@ -94,36 +94,57 @@ export function useAgentConversation(port: () => AgentHostClient) {
       applyEnvelope(state, frame.envelope);
       const type = frame.envelope.event.type;
       if (type === "artifact_registered") artifactRevision.value++;
-      if (type === "tool_execution_end") {
-        // When an ontomato-analyst ask call completes the retrieval association has just been
-        // created on the backend. Fetch only retrievals via a background readRun without
-        // interrupting the SSE stream or resetting the cursor.
-        // Detection: toolName === "bash" and the recorded command contains
-        // "skills/ontomato-analyst/" (covers "node skills/ontomato-analyst/ontomato.mjs ask …").
-        // The "cd skills/ontomato-analyst && node ontomato.mjs ask" form is not covered here;
-        // in that case retrievals arrive on the next refreshRun (stream error/reconnect).
+      if (type === "tool_execution_start") {
+        // The ask command blocks until the retrieval ends, so tool_execution_end is too late.
+        // Start looking for the association when the bash call starts; it appears once ask is
+        // accepted. Detection: bash with "skills/ontomato-analyst/" in the command. The
+        // "cd skills/ontomato-analyst && node ontomato.mjs ask" form has no skills/ prefix and is
+        // not covered; its retrievals arrive on the next run snapshot read.
         const event = frame.envelope.event;
-        const runId = frame.envelope.cursor.runId;
-        if (event.toolName === "bash") {
-          const tool = state.runs[runId]?.tools[event.toolCallId];
-          const command = typeof tool?.args.command === "string" ? tool.args.command : "";
-          if (command.includes("skills/ontomato-analyst/")) {
-            const sessionId = state.sessionId;
-            const current = token;
-            if (sessionId) {
-              void port().readRun(sessionId, runId).then((snapshot) => {
-                if (current !== token) return;
-                const run = state.runs[runId];
-                if (run && snapshot.run.retrievals) run.retrievals = snapshot.run.retrievals;
-              }).catch(() => {/* best-effort */});
-            }
-          }
-        }
+        const command = event.args.command;
+        if (
+          event.toolName === "bash" &&
+          typeof command === "string" &&
+          command.includes("skills/ontomato-analyst/")
+        )
+          void watchRetrievals(frame.envelope.cursor.runId, event.toolCallId, token);
       }
       if (type === "agent_end") {
         stopStream();
         return;
       }
+    }
+  }
+
+  /**
+   * Reads the run until its retrieval associations appear, then hands over to the activity
+   * area's own polling. Each read happens before the stop check, so a retrieval that finishes
+   * within one interval is still picked up.
+   */
+  async function watchRetrievals(runId: string, toolCallId: string, current: number) {
+    const sessionId = state.sessionId;
+    if (!sessionId) return;
+    const linkKey = (links: readonly { retrievalId: string; runId: string }[]) =>
+      links.map((link) => `${link.retrievalId}:${link.runId}`).join(",");
+    // A new retrieval adds a link; a continuation moves an existing link to its new run.
+    const known = linkKey(state.runs[runId]?.retrievals ?? []);
+    for (;;) {
+      try {
+        const snapshot = await port().readRun(sessionId, runId);
+        if (current !== token) return;
+        const retrievals = snapshot.run.retrievals ?? [];
+        const run = state.runs[runId];
+        if (run && linkKey(retrievals) !== known) {
+          run.retrievals = retrievals;
+          return;
+        }
+      } catch {
+        if (current !== token) return;
+      }
+      const run = state.runs[runId];
+      if (!run || run.status !== "running" || run.tools[toolCallId]?.status !== "running") return;
+      await new Promise((resolve) => setTimeout(resolve, RETRIEVAL_LINK_RETRY_MS));
+      if (current !== token) return;
     }
   }
 

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, inject, ref } from "vue";
+import { computed, inject, ref, watch } from "vue";
 import {
   ChevronRight,
   CircleAlert,
@@ -29,12 +29,14 @@ const props = defineProps<{
 const shell = inject(shellContextKey)!;
 const open = ref(false);
 
-const { state } = useRetrievalActivity(
+const { state, restart } = useRetrievalActivity(
   (retrievalId) =>
     shell.readRetrieval(props.sessionId, props.parentRunId, retrievalId),
   props.link.retrievalId,
   props.runActive,
 );
+// A continuation moves this retrieval to a new run; same component, so the fold state stays.
+watch(() => props.link.runId, restart);
 
 interface ActivityStep {
   key: string;

@@ -209,12 +209,16 @@ export const assistantService = {
       const c = getLogContext();
       this.observe(id, owner, { token: c?.token, apiKey: c?.apiKey });
     }
-    // Attach retrieval associations for front-end activity rendering.
+    // Attach retrieval associations for front-end activity rendering. Ontology lists one row per
+    // retrieval run in creation order; a continuation adds a run to the same retrieval, so keep
+    // one link per retrieval pointing at its latest run.
     let retrievals: { retrievalId: string; runId: string }[] | undefined;
     try {
       const links = await new OntologyRetrievalClient(owner, id).links();
       if (links.length > 0) {
-        retrievals = links.map((link) => ({ retrievalId: link.retrievalId, runId: link.runId }));
+        const latest = new Map<string, string>();
+        for (const link of links) latest.set(link.retrievalId, link.runId);
+        retrievals = [...latest].map(([retrievalId, runId]) => ({ retrievalId, runId }));
       }
     } catch {
       // Non-fatal: retrievals are best-effort for rendering only.

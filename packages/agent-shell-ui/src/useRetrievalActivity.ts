@@ -1,6 +1,5 @@
 import { onBeforeUnmount, shallowReactive } from "vue";
 import type { RetrievalSnapshot } from "@ontomato/contracts/data-retrieval";
-import type { RetrievalLink } from "./conversation";
 
 const POLL_INTERVAL_MS = 1000;
 
@@ -12,8 +11,8 @@ export interface RetrievalState {
 
 /**
  * Polls one retrieval snapshot while its run is active. Stops automatically when the run ends
- * (status !== "running") or when `stop()` is called. The retrieval ID is the stable key across
- * continuations and is used as the fold state key by the caller.
+ * (status !== "running") or when `stop()` is called; `restart()` resumes after a continuation.
+ * The retrieval ID is the stable key across continuations and is the caller's fold state key.
  */
 export function useRetrievalActivity(
   read: (retrievalId: string) => Promise<RetrievalSnapshot>,
@@ -22,38 +21,41 @@ export function useRetrievalActivity(
 ) {
   const state = shallowReactive<RetrievalState>({ snapshot: null, error: false });
   let timer: ReturnType<typeof setTimeout> | null = null;
-  let stopped = false;
+  /** Bumped by every (re)start and by stop, so a stale in-flight read never schedules again. */
+  let generation = 0;
 
-  async function poll() {
-    if (stopped) return;
+  async function poll(current: number) {
     try {
       const snapshot = await read(retrievalId);
-      if (stopped) return;
+      if (current !== generation) return;
       state.snapshot = snapshot;
       state.error = false;
       const done = !runActive() || snapshot.run?.status === "stopped";
-      if (!done) timer = setTimeout(() => void poll(), POLL_INTERVAL_MS);
+      if (!done) timer = setTimeout(() => void poll(current), POLL_INTERVAL_MS);
     } catch {
-      if (!stopped) {
-        state.error = true;
-        // Keep trying while the run is active; the run may have just started.
-        if (runActive()) timer = setTimeout(() => void poll(), POLL_INTERVAL_MS);
-      }
+      if (current !== generation) return;
+      state.error = true;
+      // Keep trying while the run is active; the run may have just started.
+      if (runActive()) timer = setTimeout(() => void poll(current), POLL_INTERVAL_MS);
     }
   }
 
   function stop() {
-    stopped = true;
+    generation++;
     if (timer !== null) {
       clearTimeout(timer);
       timer = null;
     }
   }
 
-  // Start immediately.
-  void poll();
+  /** Polls again from now, e.g. when a continuation moved the retrieval to a new run. */
+  function restart() {
+    stop();
+    void poll(generation);
+  }
 
+  restart();
   onBeforeUnmount(stop);
 
-  return { state, stop };
+  return { state, stop, restart };
 }
