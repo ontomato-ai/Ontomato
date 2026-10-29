@@ -30,6 +30,7 @@ let holdPaths: Set<string>;
 let statusFor: (path: string) => number;
 let metasFor: (url: string) => unknown;
 let functions: Record<string, unknown>[];
+let metricDetail: Record<string, unknown>;
 let dataAdapter: string;
 let instanceNodeCount: number;
 let dataAdapters: DataAdapterInfo[];
@@ -70,10 +71,13 @@ function respond(url: string, body?: Record<string, unknown>): Response {
   if (path === "/metricView/queryList") return json({ success: true, data: [
     { id: "metric-1", name: "Revenue metric", status: "PUBLISHED", origin: "USER" },
   ] });
-  if (path === "/metricView/queryById") return json({ success: true, data: {
-    id: "metric-1", name: "Revenue metric", status: "PUBLISHED", origin: "USER",
-    function: { name: "Revenue", parameters: [], returnDef: { classNames: [] } },
-  } });
+  if (path === "/metricView/queryById") return json({ success: true, data: metricDetail });
+  if (path === "/metricView/save") {
+    metricDetail = { ...body, bindings: (body?.bindings as Record<string, unknown>[]).map((binding, index) => ({
+      ...binding, id: binding.id || `binding-${index}`,
+    })) };
+    return json({ success: true, data: metricDetail });
+  }
   if (path === "/metricView/test") return json({ success: true, data: {
     md: "# Revenue\n\n| Month | Total |\n| --- | ---: |\n| Jan | 42 |",
   } });
@@ -137,6 +141,8 @@ beforeEach(() => {
   statusFor = () => 200;
   metasFor = () => metas(["Order", "Item"]);
   functions = [];
+  metricDetail = { id: "metric-1", name: "Revenue metric", status: "PUBLISHED", origin: "USER",
+    function: { name: "Revenue", operation: "OPERATION_READ", parameters: [], returnDef: { classNames: [] } }, bindings: [] };
   dataAdapter = "mysql";
   dataAdapters = [
     { type: "m3", label: "M3", requiresJoinFields: false, fields: [], examples: {} },
@@ -513,6 +519,41 @@ describe("OntologyManager root component with real pages", () => {
       expect(request.headers.tk).toBeUndefined();
       expect(request.headers["Accept-Language"]).toBe("en");
     }
+  });
+
+  it("round-trips owned bindings with typed values and removes one without changing the calculation", async () => {
+    metricDetail.function = { id: "function-1", name: "Revenue", operation: "OPERATION_READ", code: "shared code",
+      parameters: [{ name: "amount", type: "TYPE_NUMBER" }, { name: "region", type: "TYPE_STRING" }], returnDef: { classNames: [] } };
+    metricDetail.bindings = [{ id: "saved-binding", name: "Existing", parameters: { amount: 7, region: "north" }, matchQuestions: [] }];
+    const { root } = mountHost({ ...base, view: "/assets/metrics" });
+    await settle();
+    (root().querySelector(".resource-table-row") as HTMLButtonElement).click();
+    await settle();
+    clickButton("Add binding");
+    await settle();
+    const card = root().querySelectorAll(".metric-binding")[1]!;
+    const input = (label: string, value: string) => {
+      const field = card.querySelector<HTMLInputElement>(`input[aria-label="${label}"]`)!;
+      field.value = value; field.dispatchEvent(new Event("input", { bubbles: true }));
+    };
+    input("Binding name", "New binding"); input("amount", "0"); input("region", "null");
+    await settle(); clickButton("Save"); await settle();
+    const saved = [...requests].reverse().find((r) => r.url.endsWith("/metricView/save"))!.body!;
+    expect(saved.type).toBeUndefined();
+    expect(saved.function).toMatchObject({ id: "function-1", code: "shared code",
+      parameters: [{ name: "amount", type: "TYPE_NUMBER" }, { name: "region", type: "TYPE_STRING" }] });
+    expect((saved.function as { parameters: { value?: unknown }[] }).parameters.every((p) => p.value === undefined)).toBe(true);
+    expect((saved.bindings as Record<string, unknown>[])[1]!.parameters).toEqual({ amount: 0, region: null });
+    (root().querySelector(".resource-table-row") as HTMLButtonElement).click(); await settle();
+    expect(root().querySelectorAll(".metric-binding")).toHaveLength(2);
+    const remove = [...root().querySelectorAll<HTMLButtonElement>(".metric-binding button")]
+      .find((button) => button.textContent?.includes("Remove binding"))!;
+    remove.click(); await settle(); clickButton("Save"); await settle();
+    const remaining = [...requests].reverse().find((r) => r.url.endsWith("/metricView/save"))!.body!.bindings as Record<string, unknown>[];
+    expect(remaining).toHaveLength(1);
+    expect(remaining[0]!.name).toBe("New binding");
+    expect(remaining[0]!.id).toBe("binding-1");
+    expect(remaining[0]!.parameters).toEqual({ amount: 0, region: null });
   });
 
   it("previews metric Markdown and lets the user switch to its source", async () => {
