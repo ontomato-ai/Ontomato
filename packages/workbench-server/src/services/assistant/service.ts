@@ -219,7 +219,7 @@ export const assistantService = {
     } catch {
       // Non-fatal: retrievals are best-effort for rendering only.
     }
-    return retrievals ? { ...s, retrievals } : s;
+    return retrievals ? { ...s, run: { ...s.run, retrievals } } : s;
   },
   async settle(s: RuntimeRunSnapshot, owner: AssistantOwner) {
     if (s.run.status === "stopped") {

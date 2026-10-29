@@ -95,15 +95,19 @@ export function useAgentConversation(port: () => AgentHostClient) {
       const type = frame.envelope.event.type;
       if (type === "artifact_registered") artifactRevision.value++;
       if (type === "tool_execution_end") {
-        // When an ask skill bash call completes the retrieval association has just been created.
-        // Fetch only the retrievals by reading the run snapshot without interrupting the SSE
-        // stream or resetting the cursor.
+        // When an ontomato-analyst ask call completes the retrieval association has just been
+        // created on the backend. Fetch only retrievals via a background readRun without
+        // interrupting the SSE stream or resetting the cursor.
+        // Detection: toolName === "bash" and the recorded command contains
+        // "skills/ontomato-analyst/" (covers "node skills/ontomato-analyst/ontomato.mjs ask …").
+        // The "cd skills/ontomato-analyst && node ontomato.mjs ask" form is not covered here;
+        // in that case retrievals arrive on the next refreshRun (stream error/reconnect).
         const event = frame.envelope.event;
         const runId = frame.envelope.cursor.runId;
         if (event.toolName === "bash") {
           const tool = state.runs[runId]?.tools[event.toolCallId];
           const command = typeof tool?.args.command === "string" ? tool.args.command : "";
-          if (skillOfCommand(command) === "ask") {
+          if (command.includes("skills/ontomato-analyst/")) {
             const sessionId = state.sessionId;
             const current = token;
             if (sessionId) {
