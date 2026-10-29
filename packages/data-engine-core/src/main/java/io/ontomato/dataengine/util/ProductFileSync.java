@@ -38,12 +38,6 @@ public final class ProductFileSync {
                 copyInto(source, target);
             }
         }
-        try (var entries = Files.list(appSkills)) {
-            for (Path source : entries.toList()) {
-                copyInto(source, skills.resolve(source.getFileName()));
-            }
-        }
-
     System.out.println(
         "[sync] Product defaults synced into "
             + dataRoot.toAbsolutePath().normalize()
