@@ -249,6 +249,7 @@ class RuntimeFunctionIntegrationTest {
                       new QueryAccessService.GrantUser("reader", "domain-a"),
                       permission,
                       null,
+                      null,
                       null),
                   "en");
       assertEquals(8, output.getJSONArray("rows").getJSONObject(0).getIntValue("count"));
@@ -286,6 +287,7 @@ class RuntimeFunctionIntegrationTest {
                       new QueryAccessService.Access(
                           new QueryAccessService.GrantUser("reader", "domain-a"),
                           permission,
+                          null,
                           null,
                           null),
                       "en"));

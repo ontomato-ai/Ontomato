@@ -241,7 +241,7 @@ class QueryRuntimeBoundaryTest {
             List.of("/sales"));
     String token =
         authorization.issueExploration(
-            new QueryAccessService.Access(user, permission, null, null), body);
+            authorization.access(new MockHttpServletRequest()), body);
     var claims = grants.verify(token, body.getString("runtimeRunId"), "/ontology/query/overview");
     assertEquals(expiry, claims.getLongValue("expiresAt"));
     assertEquals(body.getString("retrievalId"), claims.getString("retrievalId"));
@@ -363,7 +363,7 @@ class QueryRuntimeBoundaryTest {
 
   @Test
   void schemaUsesRealNullableOntologyShapeAndEnabledFieldSemantics() throws Exception {
-    var access = new QueryAccessService.Access(user, permission, null, null);
+    var access = new QueryAccessService.Access(user, permission, null, null, null);
     JSONObject overview = JSONObject.from(ontology.overview(access));
     assertEquals(
         "Sales facts", overview.getJSONArray("classes").getJSONObject(0).getString("description"));
