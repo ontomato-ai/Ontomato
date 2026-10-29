@@ -49,5 +49,5 @@ public class ModelConfig {
     private Boolean logResponses;
     private Map<String, Object> customRequestParameters = new LinkedHashMap<>();
     private Map<String, String> customHeaders;
-    private Set<dev.langchain4j.model.chat.Capability> supportedCapabilities;
+    private Set<String> supportedCapabilities;
 }

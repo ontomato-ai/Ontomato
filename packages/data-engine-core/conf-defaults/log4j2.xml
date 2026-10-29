@@ -107,41 +107,6 @@
         </DefaultRolloverStrategy>
     </RollingFile>
 
-    <RollingFile name="usermessage" fileName="${FILE_PATH}/${FILE_NAME}-usermessage.log" filePattern="${FILE_PATH}/${FILE_NAME}-usermessage-%d{yyyy-MM-dd}_%i.log.gz">
-      <!--The console outputs only level and above (onMatch); everything else is denied (onMismatch)-->
-      <ThresholdFilter level="debug" onMatch="ACCEPT" onMismatch="DENY"/>
-      <PatternLayout pattern="${LOG_PATTERN}"/>
-      <Policies>
-        <!--The interval attribute specifies how often to roll; the default is 1 hour-->
-        <TimeBasedTriggeringPolicy interval="1"/>
-        <SizeBasedTriggeringPolicy size="10MB"/>
-      </Policies>
-      <DefaultRolloverStrategy max="15">
-        <Delete basePath="${FILE_PATH}">
-          <IfFileName glob="${FILE_NAME}-usermessage-*.log.gz">
-            <IfAccumulatedFileCount exceeds="15"/>
-          </IfFileName>
-        </Delete>
-      </DefaultRolloverStrategy>
-    </RollingFile>
-
-
-
-    <RollingFile name="agent-llm-log" fileName="${FILE_PATH}/agent-llm.jsonl" filePattern="${FILE_PATH}/agent-llm-%d{yyyy-MM-dd}_%i.jsonl.gz">
-      <PatternLayout pattern="%m%n"/>
-      <Policies>
-        <TimeBasedTriggeringPolicy interval="1"/>
-        <SizeBasedTriggeringPolicy size="50MB"/>
-      </Policies>
-      <DefaultRolloverStrategy max="30">
-        <Delete basePath="${FILE_PATH}">
-          <IfFileName glob="agent-llm-*.jsonl.gz">
-            <IfAccumulatedFileCount exceeds="30"/>
-          </IfFileName>
-        </Delete>
-      </DefaultRolloverStrategy>
-    </RollingFile>
-
     <RollingFile name="diagnostic-events-log" fileName="${FILE_PATH}/diagnostic-events.jsonl" filePattern="${FILE_PATH}/diagnostic-events-%d{yyyy-MM-dd}_%i.jsonl.gz">
       <PatternLayout pattern="%m%n"/>
       <Policies>
@@ -188,14 +153,6 @@
     <!-- Output LogHelper logs to a dedicated file separately -->
     <logger name="io.ontomato.dataengine.util.LogHelper" level="debug" additivity="false">
         <AppenderRef ref="LogHelperFile"/>
-    </logger>
-
-    <logger name="io.ontomato.dataengine.util.UserMessageUtil" level="debug" additivity="false">
-      <AppenderRef ref="usermessage"/>
-    </logger>
-
-    <logger name="AGENT_LLM_LOG" level="info" additivity="false">
-      <AppenderRef ref="agent-llm-log"/>
     </logger>
     <logger name="DIAGNOSTIC_EVENT_LOG" level="info" additivity="false">
       <AppenderRef ref="diagnostic-events-log"/>

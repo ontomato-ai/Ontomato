@@ -54,6 +54,7 @@ export const app = {
         "packages/data-engine-core/pom.xml",
         "agent-skills/ontomato-analyst",
         "agent-skills/data-retrieval",
+        "agent-skills/ontology-generation",
         "packages/contracts/src/agent-artifact-markdown-prompt.json",
         "packages/data-engine-core/src/main",
         // Every adapter depends on the shared contract tests in test scope, so Maven resolves it even with tests skipped.

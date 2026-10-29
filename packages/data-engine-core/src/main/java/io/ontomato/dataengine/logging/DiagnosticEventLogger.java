@@ -1,22 +1,19 @@
 package io.ontomato.dataengine.logging;
 
+import com.alibaba.fastjson2.JSON;
+import com.alibaba.fastjson2.JSONArray;
+import com.alibaba.fastjson2.JSONObject;
+import io.ontomato.dataengine.service.SessionRegistryService;
+import jakarta.annotation.PostConstruct;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.time.ZoneId;
 import java.util.Map;
-
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
-
-import com.alibaba.fastjson2.JSON;
-import com.alibaba.fastjson2.JSONArray;
-import com.alibaba.fastjson2.JSONObject;
-import io.ontomato.dataengine.service.SessionRegistryService;
-
-import jakarta.annotation.PostConstruct;
 
 /**
  * Structured diagnostic event writer: one JSON line per event, written to logger {@code DIAGNOSTIC_EVENT_LOG}
@@ -55,19 +52,22 @@ public class DiagnosticEventLogger {
 	public static void emit(String eventType, String sessionId, JSONObject payload) {
 		try {
 			long ts = System.currentTimeMillis();
-			AgentCallContext context = AgentCallContext.current();
 			JSONObject event = new JSONObject();
-			event.put("time", OffsetDateTime.ofInstant(Instant.ofEpochMilli(ts), ZoneId.systemDefault()).toString());
+      event.put(
+          "time",
+          OffsetDateTime.ofInstant(Instant.ofEpochMilli(ts), ZoneId.systemDefault()).toString());
 			event.put("ts", ts);
-			event.put("nodeId", sessionRegistryService == null ? null : sessionRegistryService.getNodeId());
+      event.put(
+          "nodeId", sessionRegistryService == null ? null : sessionRegistryService.getNodeId());
 			event.put("sessionId", sessionId);
-			event.put("domainId", context == null ? null : context.getDomainId());
+      event.put("domainId", org.slf4j.MDC.get("domainId"));
 			event.put("eventType", eventType);
 			event.put("source", SOURCE);
 			event.put("payload", payload == null ? new JSONObject() : payload);
 			diagLog.info(event.toJSONString());
 		} catch (Exception e) {
-			log.debug("Emit diagnostic event failed. eventType: {}, sessionId: {}", eventType, sessionId, e);
+      log.debug(
+          "Emit diagnostic event failed. eventType: {}, sessionId: {}", eventType, sessionId, e);
 		}
 	}
 

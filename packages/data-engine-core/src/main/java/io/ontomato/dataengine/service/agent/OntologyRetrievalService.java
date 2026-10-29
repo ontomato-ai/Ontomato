@@ -874,7 +874,9 @@ public class OntologyRetrievalService {
     for (var row :
         store.rows(
             "SELECT r.*,s.user_id,s.domain_id FROM ontology_agent_runs r JOIN"
-                + " ontology_agent_sessions s ON s.id=r.session_id WHERE r.input_hash<>'' AND"
+                + " ontology_agent_sessions s ON s.id=r.session_id WHERE s.agent_id='"
+                + RETRIEVER
+                + "'::uuid AND r.input_hash<>'' AND"
                 + " (r.open=true OR (r.external=false AND r.cancel_requested=false AND"
                 + " (r.observed_state IS NULL OR r.observed_state->>'status'<>'stopped')) OR"
                 + " (r.cancel_requested=true AND r.cancel_confirmed=false AND"

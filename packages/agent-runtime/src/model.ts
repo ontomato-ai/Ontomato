@@ -15,25 +15,9 @@ import { RuntimeError } from "./errors";
 import { RuntimeStore, type Scope } from "./store";
 import type { StreamFn } from "./core/pi/types";
 
-// Java serializes unset optional fields as null; preserve configured zero values.
-const javaOptional = <T extends z.ZodTypeAny>(schema: T) =>
-  z.preprocess(
-    (value) => (value === null ? undefined : value),
-    schema.optional(),
-  );
+import { runtimeModelConfigurationSchema as modelSchema, runtimeModelTestRequestSchema } from "@ontomato/contracts/runtime-model-test";
+import { normalizeContext } from "@earendil-works/pi-ai";
 
-const modelSchema = z.object({
-  name: z.string(),
-  baseUrl: z.string().url(),
-  modelName: z.string(),
-  maxTokens: z.number().positive(),
-  contextWindow: z.number().positive(),
-  timeout: javaOptional(z.string()),
-  maxRetries: javaOptional(z.number().int().nonnegative()),
-  temperature: javaOptional(z.number()),
-  topP: javaOptional(z.number()),
-  customRequestParameters: javaOptional(z.record(z.unknown())),
-});
 export type ResolvedModel = z.infer<typeof modelSchema> & { apiKey: string };
 
 /** Temporary migration adapter. Remove after Java model configuration ownership is migrated. */
@@ -47,6 +31,7 @@ export async function resolveModel(options: {
   const credential = options.request.modelCredential;
   const headers: Record<string, string> = {
     "X-Correlation-Id": options.correlationId,
+    "X-Ontomato-Run-Id": options.correlationId,
   };
   if (credential.kind !== "none")
     headers[credential.kind === "token" ? "tk" : "X-API-Key"] =
@@ -125,15 +110,8 @@ export function modelStream(
         : undefined,
       maxRetries: config.maxRetries,
       maxTokens: options?.maxTokens ?? config.maxTokens,
-      headers: { "X-Correlation-Id": correlationId },
-      onPayload: (payload) => ({
-        ...(payload as Record<string, unknown>),
-        ...(config.temperature === undefined
-          ? {}
-          : { temperature: config.temperature }),
-        ...(config.topP === undefined ? {} : { top_p: config.topP }),
-        ...config.customRequestParameters,
-      }),
+      headers: modelHeaders(config, correlationId),
+      onPayload: (payload) => modelPayload(config, payload),
     });
     const result = stream.result.bind(stream);
     let logged: Promise<AssistantMessage> | undefined;
@@ -226,4 +204,52 @@ export function recoverContext(messages: Message[]): Message[] {
         });
   }
   return result;
+}
+
+/** The same provider mapping serves saved models and unsaved connection tests. */
+export function modelHeaders(config: ResolvedModel, correlationId: string) {
+  return {
+    ...(config.organizationId ? { "OpenAI-Organization": config.organizationId } : {}),
+    ...(config.projectId ? { "OpenAI-Project": config.projectId } : {}),
+    ...config.customHeaders,
+    "X-Correlation-Id": correlationId,
+  };
+}
+
+export function modelPayload(config: ResolvedModel, payload: unknown) {
+  const result = { ...(payload as Record<string, unknown>) };
+  const fields = {
+    temperature: config.temperature, top_p: config.topP, stop: config.stop,
+    max_completion_tokens: config.maxCompletionTokens,
+    presence_penalty: config.presencePenalty, frequency_penalty: config.frequencyPenalty,
+    logit_bias: config.logitBias, seed: config.seed, user: config.user,
+    parallel_tool_calls: config.parallelToolCalls, store: config.store,
+    metadata: config.metadata, service_tier: config.serviceTier,
+    reasoning_effort: config.reasoningEffort,
+    response_format: config.responseFormat ? { type: config.responseFormat } : undefined,
+  };
+  for (const [key, value] of Object.entries(fields))
+    if (value !== undefined) result[key] = value;
+  return { ...result, ...config.customRequestParameters };
+}
+
+/** One request, no agent session, persisted draft, model-call record or retry. */
+export async function testModel(input: unknown, correlationId: string, signal: AbortSignal) {
+  const { model: config, prompt } = runtimeModelTestRequestSchema.parse(input);
+  const stream = streamSimple(piModel(config), normalizeContext({
+    messages: [{ role: "user", content: prompt, timestamp: Date.now() }],
+  }), {
+    signal,
+    apiKey: config.apiKey || "unused",
+    maxRetries: 0,
+    maxTokens: config.maxTokens,
+    timeoutMs: config.timeout ? parseIsoDurationSeconds(config.timeout) * 1000 : 30000,
+    headers: modelHeaders(config, correlationId),
+    onPayload: (payload) => modelPayload(config, payload),
+  });
+  for await (const _event of stream) signal.throwIfAborted();
+  const message = await stream.result();
+  if (message.stopReason === "error" || message.stopReason === "aborted")
+    throw new RuntimeError(502, "MODEL_TEST_FAILED", "Model connection test failed");
+  return { content: message.content.flatMap((part) => part.type === "text" ? [part.text] : []).join("\n") };
 }

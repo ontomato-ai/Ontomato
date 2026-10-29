@@ -128,7 +128,6 @@ export function startDevJava(
   env.ONTOMATO_QUERY_CALLBACK_URL ||=
     env.DATA_QUERY_BASE_URL || "http://127.0.0.1:18087";
   env.ONTOMATO_CONF_DEFAULTS = join(staging, "payload/conf-defaults");
-  env.ONTOMATO_APP_SKILLS = join(staging, "payload/skills");
   // Certain VPNs (such as aTrustAgent) set up system SOCKS/HTTP proxies; when the JVM reads them, it hijacks local localhost connections,
   // leading to failure connecting to local PostgreSQL. Explicitly disable the JVM proxy here (placed last to ensure it overrides system-detected proxies).
   const disableProxy = "-DsocksProxyHost= -Dhttp.proxyHost= -Dhttps.proxyHost=";

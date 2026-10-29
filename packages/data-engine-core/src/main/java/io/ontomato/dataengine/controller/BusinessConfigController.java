@@ -1,19 +1,5 @@
 package io.ontomato.dataengine.controller;
 
-import java.util.ArrayList;
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Map;
-
-import org.springframework.beans.BeanUtils;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestHeader;
-import org.springframework.web.bind.annotation.ResponseBody;
-import org.springframework.web.bind.annotation.RestController;
-
 import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
@@ -23,33 +9,44 @@ import io.ontomato.dataengine.config.AgentRole;
 import io.ontomato.dataengine.config.BusinessConfig;
 import io.ontomato.dataengine.config.BusinessConfig.EmbeddingModelProperties;
 import io.ontomato.dataengine.config.ControllerConst;
+import io.ontomato.dataengine.config.CustomRequestParameters;
 import io.ontomato.dataengine.config.ModelConfig;
 import io.ontomato.dataengine.config.ModelKeyMask;
-import io.ontomato.dataengine.config.ModelResolver;
 import io.ontomato.dataengine.config.ModelKeySeal;
-import io.ontomato.dataengine.core.bean.User;
-import io.ontomato.dataengine.config.CustomRequestParameters;
+import io.ontomato.dataengine.config.ModelResolver;
 import io.ontomato.dataengine.config.multisource.DataSourceEntry;
 import io.ontomato.dataengine.config.multisource.MultiDataSourceDefinition;
+import io.ontomato.dataengine.core.bean.User;
 import io.ontomato.dataengine.dataAdapter.ConfigurationProblem;
+import io.ontomato.dataengine.dataAdapter.ConnectionSecretCodec;
 import io.ontomato.dataengine.dataAdapter.DataAdapter;
 import io.ontomato.dataengine.dataAdapter.DataAdapterConnection;
 import io.ontomato.dataengine.dataAdapter.DataAdapterConnectionField;
 import io.ontomato.dataengine.dataAdapter.DataAdapterConnectionTester;
 import io.ontomato.dataengine.dataAdapter.DataAdapterProvider;
-import io.ontomato.dataengine.dataAdapter.ConnectionSecretCodec;
 import io.ontomato.dataengine.dataAdapter.DataAdapterRegistry;
 import io.ontomato.dataengine.dataAdapter.MultiDataSourceValidator;
 import io.ontomato.dataengine.service.AdminService;
 import io.ontomato.dataengine.service.BusinessConfigService;
 import io.ontomato.dataengine.service.LangService;
+import io.ontomato.dataengine.service.agent.AgentRuntimeClient;
 import io.ontomato.dataengine.service.ai.EmbeddingService;
-import io.ontomato.dataengine.service.ai.MultiThreadAIChatService;
 import io.ontomato.dataengine.service.vector.VectorRebuildService;
 import io.ontomato.dataengine.service.vector.VectorRebuildStatus;
 import io.ontomato.dataengine.util.SystemUtils;
-
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.BeanUtils;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestHeader;
+import org.springframework.web.bind.annotation.ResponseBody;
+import org.springframework.web.bind.annotation.RestController;
 
 @Slf4j
 @RestController
@@ -59,10 +56,9 @@ public class BusinessConfigController {
 
 	@Autowired
 	private BusinessConfigService businessConfigService;
-	
-	@Autowired
-	private MultiThreadAIChatService multiThreadAIChatService;
-	
+
+  @Autowired private AgentRuntimeClient agentRuntimeClient;
+
 	@Autowired
 	private EmbeddingService embeddingService;
 
@@ -93,14 +89,33 @@ public class BusinessConfigController {
     		User user = SystemUtils.getCurUser();
 			ModelConfig model = input.getJSONObject("model").toJavaObject(
 					ModelConfig.class, JSONReader.Feature.DisableReferenceDetect);
-			model.setCustomRequestParameters(CustomRequestParameters.normalize(
-					input.getJSONObject("model").get("customRequestParameters")));
+      model.setCustomRequestParameters(
+          CustomRequestParameters.normalize(
+              input.getJSONObject("model").get("customRequestParameters")));
 			ModelKeyMask.restoreModels(List.of(model), businessConfigService.get(user.getDomainId()).getModels());
     		String userContent = input.getString("prompt");
     		if (userContent == null || "".equals(userContent.trim())) {
     			userContent = "Hello";
     		}
-    		String aiContent = multiThreadAIChatService.testModel(model, userContent, user.getDomainId());
+      ModelResolver.normalizeForRead(List.of(model));
+      JSONObject candidate = JSONObject.from(model);
+      candidate.remove("apiKeys");
+      candidate.put(
+          "apiKey",
+          model.getApiKeys() == null || model.getApiKeys().isEmpty()
+              ? ""
+              : model.getApiKeys().get(0));
+      candidate.put("timeout", model.getTimeout() == null ? null : model.getTimeout().toString());
+      String aiContent =
+          agentRuntimeClient
+              .json(
+                  user.getDomainId(),
+                  java.util.UUID.randomUUID().toString(),
+                  "/v1/models/test",
+                  "POST",
+                  JSONObject.of("model", candidate, "prompt", userContent),
+                  null)
+              .getString("content");
     		ret.put("data", aiContent);
     		ret.put("success", true);
     	} catch (Exception e) {
@@ -120,8 +135,21 @@ public class BusinessConfigController {
 	public JSONObject getModelSettings() {
 		JSONObject ret = new JSONObject();
 		try {
-			User user = SystemUtils.getCurUser();
-			BusinessConfig businessConfig = businessConfigService.get(user.getDomainId());
+      var attributes =
+          (org.springframework.web.context.request.ServletRequestAttributes)
+              org.springframework.web.context.request.RequestContextHolder.getRequestAttributes();
+      JSONObject grant =
+          attributes == null
+              ? null
+              : (JSONObject)
+                  attributes
+                      .getRequest()
+                      .getAttribute(io.ontomato.dataengine.service.QueryGrantService.ATTRIBUTE);
+      String domain =
+          grant != null && "ontology-generation".equals(grant.getString("purpose"))
+              ? grant.getString("domainId")
+              : SystemUtils.getCurUser().getDomainId();
+      BusinessConfig businessConfig = businessConfigService.get(domain);
 			ModelResolver.normalizeForRead(businessConfig.getModels());
 			JSONObject data = new JSONObject();
 			data.put("models", ModelKeyMask.masked(businessConfig.getModels()));

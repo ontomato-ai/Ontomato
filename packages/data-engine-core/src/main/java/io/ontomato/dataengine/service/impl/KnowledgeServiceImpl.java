@@ -1,62 +1,46 @@
 package io.ontomato.dataengine.service.impl;
 
-import com.alibaba.fastjson2.JSON;
+import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
-import com.alibaba.fastjson2.TypeReference;
-import com.alibaba.fastjson2.JSONWriter.Feature;
 import io.ontomato.dataengine.bean.AuditLog;
-import io.ontomato.dataengine.bean.OriginalQuestion;
-import io.ontomato.dataengine.config.AgentRole;
 import io.ontomato.dataengine.config.BusinessConfig;
-import io.ontomato.dataengine.config.ModelResolver;
 import io.ontomato.dataengine.core.bean.User;
 import io.ontomato.dataengine.dao.AuditLogDao;
 import io.ontomato.dataengine.dao.KnowledgeDao;
 import io.ontomato.dataengine.dao.KnowledgeEntity;
 import io.ontomato.dataengine.service.BusinessConfigService;
-import io.ontomato.dataengine.service.JSONCorrector;
 import io.ontomato.dataengine.service.KnowledgeService;
 import io.ontomato.dataengine.service.LangService;
 import io.ontomato.dataengine.service.UntitledKnowledgeTitlePrefix;
-import io.ontomato.dataengine.service.ai.MultiThreadAIChatService;
-import io.ontomato.dataengine.util.UserMessageUtil;
+import io.ontomato.dataengine.service.agent.OntologyGenerationPrompts;
+import io.ontomato.dataengine.service.agent.OntologyGenerationService;
+import java.util.*;
+import java.util.regex.Pattern;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
-
-import java.util.*;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 
 @Service
 public class KnowledgeServiceImpl implements KnowledgeService {
 
-    @Autowired
-	private BusinessConfigService businessConfigService;
-    
-    @Autowired
-    private JSONCorrector jsonCorrector;
-    
-    @Autowired
-    private LangService langService;
-    
-    @Autowired
-    private KnowledgeDao knowledgeDao;
-    
-    @Autowired
-    private AuditLogDao auditLogDao;
+  @Autowired private BusinessConfigService businessConfigService;
 
-    @Autowired
-    private MultiThreadAIChatService multiThreadAIChatService;
+  @Autowired private LangService langService;
 
-    private final UntitledKnowledgeTitlePrefix untitledKnowledgeTitlePrefix;
+  @Autowired private KnowledgeDao knowledgeDao;
+
+  @Autowired private AuditLogDao auditLogDao;
+
+  @Autowired private OntologyGenerationService generationService;
+
+  private final UntitledKnowledgeTitlePrefix untitledKnowledgeTitlePrefix;
 
     public KnowledgeServiceImpl(UntitledKnowledgeTitlePrefix untitledKnowledgeTitlePrefix) {
         this.untitledKnowledgeTitlePrefix = untitledKnowledgeTitlePrefix;
     }
 
-    Pattern JSON_PATTERN = Pattern.compile("```json([\\s\\S]+)```" );
+  Pattern JSON_PATTERN = Pattern.compile("```json([\\s\\S]+)```");
 
-    @Override
+  @Override
     public String findKnowledge(String question, int pMaxResult, String domainId) {
 
         int maxResult = businessConfigService.get(domainId).getKnowledgeMaxResult() ;
@@ -73,7 +57,7 @@ public class KnowledgeServiceImpl implements KnowledgeService {
         return sbKnowledge.toString();
     }
 
-    @Override
+  @Override
     public void addBussinessKnowledge(String knowledgeID, String knowledgeTitle, String bk,int status,List<String> listknowledgeTags, User user) {
         KnowledgeEntity knowledgeEntity = new KnowledgeEntity();
         String knowledgeid = knowledgeID == null || "".equals(knowledgeID.trim()) ? ("knowledge_" + UUID.randomUUID().toString()) : knowledgeID.trim();
@@ -113,7 +97,7 @@ public class KnowledgeServiceImpl implements KnowledgeService {
         auditLogDao.save(auditLog, user.getDomainId());
     }
 
-    @Override
+  @Override
     public void delBussinessKnowledge(String knowledgeID, User user) {
         knowledgeDao.deleteKnowledge(knowledgeID, user.getDomainId());
         
@@ -134,7 +118,7 @@ public class KnowledgeServiceImpl implements KnowledgeService {
         }
     }
 
-    @Override
+  @Override
     public void editBussinessKnowledge(String knowledgeID, String knowledgeTitle, String bk,int status,List<String> listknowledgeTags, User user) {
             knowledgeDao.requireKnowledgeInDomain(knowledgeID, user.getDomainId());
             KnowledgeEntity knowledgeEntity = new KnowledgeEntity();
@@ -170,7 +154,7 @@ public class KnowledgeServiceImpl implements KnowledgeService {
             auditLogDao.save(auditLog, user.getDomainId());
     }
 
-    @Override
+  @Override
     public Map<String,KnowledgeEntity> getBussinessKnowledge(String domainId) {
 
         List<KnowledgeEntity> knowledgeEntityList = knowledgeDao.getAllKnowledge(domainId);
@@ -182,7 +166,7 @@ public class KnowledgeServiceImpl implements KnowledgeService {
         return bussinessKnowledges;
     }
 
-    @Override
+  @Override
     public String getBussinessKnowledgeMarkdown(String domainId){
         List<KnowledgeEntity> knowledgeEntityList = knowledgeDao.getAllKnowledge(domainId);
         StringBuffer sbBussinessKnowledge = new StringBuffer();
@@ -199,43 +183,50 @@ public class KnowledgeServiceImpl implements KnowledgeService {
         return sbBussinessKnowledge.toString();
     }
 
-    @Override
-    public List<Map<String,String>> generateBussinessKnowledgeAI(List<Map<String, String>> userTalkJson, Map<String, Object> jsonRule, String lang, String domainId) {
+  @Override
+  public List<Map<String, String>> generateBussinessKnowledgeAI(
+      List<Map<String, String>> userTalkJson,
+      Map<String, Object> jsonRule,
+      String lang,
+      String domainId) {
 
-        Map<String,KnowledgeEntity> bussinessKnowledges = this.getBussinessKnowledge(domainId);
-        Iterator<String> itKeys = bussinessKnowledges.keySet().iterator();
-        List<KnowledgeEntity> listSystemKnowledgeToApprove = new ArrayList<>();
-        List<String> listSystemToApproveKey = new ArrayList<String>();
-        while (itKeys.hasNext()) {
-            String key = itKeys.next();
-            KnowledgeEntity knowledgeEntity = bussinessKnowledges.get(key);
-            if(knowledgeEntity.getStatus() == 0 && knowledgeEntity.getCreatorType()==0){
-                listSystemToApproveKey.add(key);
-                listSystemKnowledgeToApprove.add(knowledgeEntity);
-            }
-        }
-        String userMessage = UserMessageUtil.getKnowledgeUserMessage(userTalkJson,listSystemKnowledgeToApprove, jsonRule,
-        		lang, langService);
-        String kwSessionid = UUID.randomUUID().toString();
-        OriginalQuestion originalQuestion = new OriginalQuestion();
-        originalQuestion.setId(kwSessionid);
-        originalQuestion.setQuestion("Business knowledge summary");
-        originalQuestion.setStartTime(new Date());
-        BusinessConfig businessConfig = businessConfigService.get(domainId);
-        String knowledgeChatRetStr = multiThreadAIChatService.chat(MultiThreadAIChatService.BUSSINESS_KNOWLEDGE_GENERATOR,originalQuestion,kwSessionid,userMessage,ModelResolver.resolve(businessConfig, AgentRole.QUERY, langService), domainId);
-
-        Matcher matcher = JSON_PATTERN.matcher(knowledgeChatRetStr);
-        if (matcher.find()) {
-            String newJsonKnowledge = matcher.group(1);
-            List<Map<String,String>> listNewKnowledge = JSON.parseObject(JSON.toJSONString(jsonCorrector.parseArray(newJsonKnowledge, domainId, kwSessionid), Feature.WriteMapNullValue), new TypeReference<List<Map<String, String>>>() {
-            });
-            if(listNewKnowledge!=null && listNewKnowledge.size() >0){
-                this.createSystemKnowledge(listSystemToApproveKey, listNewKnowledge, domainId);
-            }
-            return  listNewKnowledge;
-        }
-        return new ArrayList<>();
+    Map<String, KnowledgeEntity> bussinessKnowledges = this.getBussinessKnowledge(domainId);
+    Iterator<String> itKeys = bussinessKnowledges.keySet().iterator();
+    List<KnowledgeEntity> listSystemKnowledgeToApprove = new ArrayList<>();
+    List<String> listSystemToApproveKey = new ArrayList<String>();
+    while (itKeys.hasNext()) {
+      String key = itKeys.next();
+      KnowledgeEntity knowledgeEntity = bussinessKnowledges.get(key);
+      if (knowledgeEntity.getStatus() == 0 && knowledgeEntity.getCreatorType() == 0) {
+        listSystemToApproveKey.add(key);
+        listSystemKnowledgeToApprove.add(knowledgeEntity);
+      }
     }
+    String userMessage =
+        OntologyGenerationPrompts.getKnowledgeUserMessage(
+            userTalkJson, listSystemKnowledgeToApprove, jsonRule, lang, langService);
+    String kwSessionid = UUID.randomUUID().toString();
+
+    try (var generation =
+        generationService.generate("knowledge", kwSessionid, userMessage, lang, domainId)) {
+      JSONArray items = generation.result().getJSONArray("knowledge");
+      if (items == null) return new ArrayList<>();
+      List<Map<String, String>> listNewKnowledge = new ArrayList<>();
+      for (Object item : items) {
+        JSONObject value = JSONObject.from(item);
+        String title = value.getString("title"), knowledge = value.getString("knowledge");
+        if (title == null || title.isBlank() || knowledge == null || knowledge.isBlank())
+          throw new IllegalArgumentException("Knowledge title and content are required");
+        listNewKnowledge.add(Map.of("title", title, "knowledge", knowledge));
+      }
+      return generation.settle(
+          () -> {
+            if (!listNewKnowledge.isEmpty())
+              createSystemKnowledge(listSystemToApproveKey, listNewKnowledge, domainId);
+            return listNewKnowledge;
+          });
+    }
+  }
 
     private void createSystemKnowledge(List<String> listSystemToApproveKey, List<Map<String,String>> listNewKnowledge, String domainId) {
         // Delete the old knowledge pending approval

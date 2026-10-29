@@ -47,7 +47,15 @@ public class AgentRuntimeClient {
             .header("Authorization", "Bearer " + token)
             .header("X-Correlation-Id", correlation)
             .header("Content-Type", "application/json");
-    if (!stream) builder.timeout(Duration.ofSeconds(30));
+    if (!stream) {
+      Duration timeout = Duration.ofSeconds(30);
+      if (path.equals("/v1/models/test") && body != null) {
+        String configured = JSONObject.from(body).getJSONObject("model").getString("timeout");
+        if (configured != null) timeout = Duration.parse(configured);
+        timeout = timeout.plusSeconds(10);
+      }
+      builder.timeout(timeout);
+    }
     if (domain != null) builder.header("X-Domain-Id", domain);
     if (key != null) builder.header("Idempotency-Key", key);
     return builder
