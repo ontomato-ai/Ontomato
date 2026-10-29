@@ -114,6 +114,7 @@ class RuntimeFunctionIntegrationTest {
               .directory(root.toFile());
       var env = builder.environment();
       env.clear();
+      env.put("ONTOMATO_MODEL_RUNTIME_TOKEN", "fixture-runtime-token");
       for (String name : List.of("PATH", "SystemRoot", "WINDIR"))
         if (System.getenv(name) != null) env.put(name, System.getenv(name));
       Path emptyEnv = scratch.resolve("empty.env");
@@ -180,7 +181,10 @@ class RuntimeFunctionIntegrationTest {
       entrance.publishInstance();
       var python =
           new PythonExecuteServiceImpl(
-              new RuntimeCodeClient(runtimeUrl, "fixture-host", ontologyUrl), grants);
+              new RuntimeCodeClient(
+                  new io.ontomato.dataengine.service.agent.AgentRuntimeClient(
+                      runtimeUrl, "fixture-host", ontologyUrl)),
+              grants);
       var programs = new ABCProgramServiceImpl();
       ReflectionTestUtils.setField(programs, "pythonExecuteService", python);
       var function =

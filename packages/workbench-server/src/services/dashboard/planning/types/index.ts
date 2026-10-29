@@ -1,3 +1,4 @@
+import type { ResultTruncation } from "@ontomato/contracts/query-execution";
 import type { DataPlan } from "@ontomato/contracts/dashboard";
 import type { ModelDataView } from "../../../../utils/model-data-view";
 
@@ -24,7 +25,7 @@ export type PlannedDashboardGroup = {
   metrics?: PlannedDashboardMetricEntry[];
 };
 
-export type DatasetInput = {
+export type DatasetInput = Partial<ResultTruncation> & {
   datasetKey: string;
   subQuestion: string;
   dsl: Record<string, unknown>;
@@ -40,6 +41,7 @@ export type DatasetProfile = {
   rowCount: number;
   fields: string[];
   sourceRows: Array<Record<string, any>>;
+  truncation?: ResultTruncation;
   dataView: ModelDataView<Record<string, any>>;
   dataType: DataType;
 };

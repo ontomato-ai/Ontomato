@@ -7,13 +7,21 @@ PostgreSQL is a fifth service. The site needs Docker Engine 26+, Compose v2 and 
 
 ```bash
 cp .env.example .env
-# Set ARCH, POSTGRES_PASSWORD and PUBLIC_HOST in .env.
+# Set ARCH, POSTGRES_PASSWORD, ONTOMATO_MODEL_RUNTIME_TOKEN and PUBLIC_HOST in .env.
 echo 'COMPOSE_FILE=docker-compose.yml:docker-compose.ghcr.yml' >> .env
 echo 'ONTOMATO_VERSION=<version-and-build-tag>' >> .env
 python3 prepare-env.py .env
 docker compose pull
 docker compose up -d --wait --wait-timeout 600
 ```
+
+`ONTOMATO_MODEL_RUNTIME_TOKEN` is a random value per deployment (for example
+`openssl rand -hex 24`) shared by the workbench, agent runtime and data engine. Saved model
+API keys are write-only; the data engine returns them encrypted with this value for the
+two Node services to open locally. All three refuse to start without it. This value is never
+sent in an HTTP header. A deployment created before this setting existed,
+including one that follows a tag automatically, must add it to `.env` before taking a
+release that requires it.
 
 CI publishes a shared `<version>-ci<run>.<attempt>-g<commit>` tag for all four images,
 as well as `edge`, `stable`, release and `latest` aliases. Use the full build tag above so
@@ -77,7 +85,7 @@ python3 offline/mirror.py tools-install --bundle offline
 python3 offline/mirror.py import --bundle package \
   --state /var/lib/ontomato-mirror --output-env images.env
 cp .env.example .env
-# Set POSTGRES_PASSWORD and PUBLIC_HOST in .env, then append the image references:
+# Set POSTGRES_PASSWORD, ONTOMATO_MODEL_RUNTIME_TOKEN and PUBLIC_HOST in .env, then append the image references:
 cat images.env >> .env
 python3 prepare-env.py .env
 docker compose pull

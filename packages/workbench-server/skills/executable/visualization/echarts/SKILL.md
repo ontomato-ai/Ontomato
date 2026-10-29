@@ -1,19 +1,25 @@
 ---
 name: echarts
 description: Self-contained ECharts chart rendering, supporting bar charts, line charts, pie charts, hierarchical charts, advanced charts, and the full series of chart types. Automatically completes data analysis and chart configuration selection internally.
-type: executable
-category: visualization
-title: ECharts chart rendering
-tags:
-  - visualization
-  - echarts
-  - chart
-timeout: 15000
-outputType: html
-version: 2.0.0
-entries:
-  - scripts/index.mjs
+metadata:
+  ontomato.type: executable
+  ontomato.category: visualization
+  ontomato.title: ECharts chart rendering
+  ontomato.tags: '["visualization","echarts","chart"]'
+  ontomato.version: 2.0.0
+  ontomato.outputType: html
 ---
+
+## Standard CLI
+
+Write the documented input to a JSON file and run:
+
+`node skills/echarts/scripts/index.mjs work/input.json`
+
+The command writes its result under `outputs/` and prints the file path.
+Reference that path in Markdown. The command runs unchanged in an external harness;
+use the package's local path when it is installed somewhere other than `skills/`.
+
 ## ECharts chart rendering
 
 Render data as an ECharts chart. This skill receives a complete visualization configuration and performs rendering to generate HTML.

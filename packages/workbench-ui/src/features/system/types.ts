@@ -1,4 +1,5 @@
 import { z } from "zod";
+import type { SystemModelConfig } from "@ontomato/contracts/system-model";
 import type {
   BackendAgentConfig,
   BackendModelConfig,
@@ -104,17 +105,13 @@ export interface MultiDataSourceSaveFailure {
 /** General parameters, language and data adapter edited on the system config page. */
 export interface SystemSettings {
   knowledgeMaxResult: number;
-  toolAndPythonRetry: number;
-  dslCookerTries: number;
   dslCookerTimeout: number;
-  questionSpliterTries: number;
-  questionSpliterTimeout: number;
   lang: string;
   dataAdapter: string;
   dataAdapterConnections: Record<string, DataAdapterConnection>;
 }
 
-/** The parts of GET /businessConfig/getConfig the two pages read: the system config page reads general settings and the skill directory, the model configuration page reads Embedding. */
+/** The parts of GET /businessConfig/getConfig the two pages read: the system config page reads general settings, the model configuration page reads Embedding. */
 export interface BusinessConfig extends SystemSettings {
   agents: Record<ModelRole, BackendAgentConfig>;
   embeddingModelProperties: EmbeddingModelConfig | null;
@@ -183,11 +180,7 @@ export function multiDataSourceDefinition(
 
 export type GeneralConfigKey =
   | "knowledgeMaxResult"
-  | "toolAndPythonRetry"
-  | "dslCookerTries"
   | "dslCookerTimeout"
-  | "questionSpliterTries"
-  | "questionSpliterTimeout"
   | "lang";
 
 // Model identity: name is the fixed config ID and displayName may be duplicated;
@@ -199,3 +192,6 @@ export function modelLabel(model: { name: string; displayName: string }): string
 export function formatTimeout(seconds: number): string {
   return `PT${seconds}S`;
 }
+
+/** The query settings the system configuration page edits. */
+export type QuerySettings = Pick<SystemModelConfig, "queryTimeoutSeconds">;

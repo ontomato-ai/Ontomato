@@ -145,3 +145,26 @@ function inferValueField(fields, data, timeField, query) {
     numericFields[0]
   );
 }
+
+// The exported calculation/rendering function is also usable as an ordinary CLI.
+if (import.meta.main) {
+  const fs = await import("node:fs/promises");
+  const path = await import("node:path");
+  const { randomUUID } = await import("node:crypto");
+  const source = process.argv[2]?.replace(/^@/, "");
+  if (!source) throw new Error("Expected a JSON input file");
+  const result = await execute(JSON.parse(await fs.readFile(source, "utf8")));
+  if (result.meta?.error || result.json?.success === false)
+    throw new Error(result.json?.error || "Skill could not produce the requested result");
+  const root = process.env.ONTOMATO_OUTPUT_DIR || "outputs";
+  const output = path.join(root, "growth-rate-calc." + (result.html ? "html" : "json"));
+  await fs.mkdir(root, { recursive: true });
+  await fs.mkdir("work", { recursive: true });
+  const temporary = path.join("work", randomUUID() + ".tmp");
+  try {
+    await fs.writeFile(temporary, result.html ?? JSON.stringify(result.json ?? result, null, 2));
+    await fs.rename(temporary, output);
+  } finally { await fs.rm(temporary, { force: true }); }
+  if (result.meta) console.log(JSON.stringify(result.meta));
+  console.log(path.relative(process.cwd(), path.resolve(output)));
+}

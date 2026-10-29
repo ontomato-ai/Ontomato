@@ -1,22 +1,15 @@
-import { startConversationTurn } from "../../services/analysis-agent/task/task-scheduler";
-import { randomUUID } from "node:crypto";
+import { assistantStore } from "../../services/assistant/store";
+import { createLogger } from "../../logging/logger";
 import { Request } from "express";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { getAnalysisAgentMcpTaskTimeoutMs } from "../../config/mcp";
-import { getAnalysisAgentService } from "../../services/analysis-agent/runtime";
-import { analysisReportPdfSource } from "../../services/analysis-agent/delivery/report-pdf";
-import { getAnalysisTaskService } from "../../services/analysis-agent/task/task-service";
-import { startAnalysisTaskRun } from "../../services/analysis-agent/task/task-runner";
-import type { AnalysisTask } from "../../services/analysis-agent/task-types";
+import { HttpError } from "../../utils/errors";
+import { analysisTask, startAnalysis } from "../../services/assistant/mcp";
+import { workbenchProduct } from "../../product/installed";
 import {
   analysisAgentPublicServiceRoot,
   analysisReportPdfDownloadUrl,
 } from "../../services/mcp/catalog";
-import { resolveLocale, setLocale } from "../../i18n";
-import { workbenchProduct } from "../../product/installed";
-import { requireOwner } from "../../utils/owner-guard";
-import { createLogger } from "../../logging/logger";
 import {
   catalogRequest,
   createStreamableMcpRouter,
@@ -24,225 +17,126 @@ import {
   textJson,
   withMcpIdentity,
 } from "../utils/mcp-route";
-
-const logger = createLogger("api:analysis-agent-mcp");
-
-function taskToMcpResult(task: AnalysisTask) {
-  return {
-    id: task.id,
-    agentId: task.agentId,
-    userId: task.userId,
-    name: task.name,
-    status: task.status,
-    threadId: task.threadId,
-    question: task.question,
-    resultSummary: task.resultSummary,
-    resultReport: task.resultReport,
-    reportDeliverableEnabled: task.reportDeliverableEnabled,
-    finalAnswer: task.analysisPayload?.finalAnswer,
-    triggerSource: task.triggerSource,
-    lastRunAt: task.lastRunAt,
-    createdAt: task.createdAt,
-    updatedAt: task.updatedAt,
-  };
+function withAnalysisIdentity(
+  req: Request,
+  action: Parameters<typeof withMcpIdentity>[1],
+  options?: Parameters<typeof withMcpIdentity>[2],
+) {
+  return withMcpIdentity(req, async (identity) => {
+    try {
+      return await action(identity);
+    } catch (error) {
+      if (!(error instanceof HttpError && error.status < 500)) throw error;
+      return textJson({ success: false, error: error.message });
+    }
+  }, options);
 }
-
 function createAnalysisAgentMcpServer(req: Request) {
-  const product = workbenchProduct();
-  const server = new McpServer({ name: product.analysisMcpServerName, version: "1.0.0" });
-
+  const server = new McpServer({
+    name: workbenchProduct().analysisMcpServerName,
+    version: "1.0.0",
+  });
   server.registerTool(
     "list_analysis_agents",
     {
       title: "List Agents",
-      description: `List enabled agents in ${product.serviceDisplayName} that can analyze business questions.`,
+      description: "List enabled business agents.",
       inputSchema: {},
     },
     async () =>
-      withMcpIdentity(req, async (identity) => {
-        const service = await getAnalysisAgentService();
-        const agents = await service.getEnabledAgents(identity.domainId);
+      withAnalysisIdentity(req, async (identity) => {
+        const agents = await assistantStore.agents(identity.domainId);
         return textJson({
-          agents: agents.map((agent) => ({
-            id: agent.id,
-            name: agent.name,
-            description: agent.description,
-            icon: agent.icon,
-            enabledSkillIds: agent.enabledSkillIds || [],
-            enabledVisualizationSkillIds: agent.enabledVisualizationSkillIds || [],
-          })),
+          agents: agents
+            .filter((a) => a.enabled)
+            .map((a) => ({
+              id: a.id,
+              name: a.name,
+              description: a.description,
+              icon: a.icon,
+              enabledSkillIds: a.skills.map((s) => s.name),
+              enabledVisualizationSkillIds: [],
+            })),
         });
-      })
+      }),
   );
-
   server.registerTool(
     "get_analysis_task",
     {
       title: "Get Analysis Task",
-      description: "Get a previously created analysis task and its result by task ID.",
-      inputSchema: {
-        taskId: z.string().min(1).describe("Analysis task ID returned by run_analysis."),
-      },
+      description: "Read a submitted analysis run.",
+      inputSchema: { taskId: z.string().min(1) },
     },
     async ({ taskId }) =>
-      withMcpIdentity(req, async (identity) => {
-        const task = await getAnalysisTaskService().getTask(taskId, identity.domainId, {
-          payload: "report",
-          runs: "none",
-        });
-        if (
-          !task ||
-          !requireOwner(task.userId, identity.userId) ||
-          task.domainId !== identity.domainId
-        ) {
-          return textJson({ success: false, error: `Analysis task not found: ${taskId}` });
-        }
-
-        return textJson({ success: true, task: taskToMcpResult(task) });
-      })
+      withAnalysisIdentity(req, async (identity) =>
+        textJson({ success: true, task: await analysisTask(taskId, identity) }),
+      ),
   );
-
   server.registerTool(
     "get_analysis_report_pdf",
     {
       title: "Get Analysis Report PDF",
       description:
-        "Return a download URL for the PDF of this task's latest run report. For authenticated MCP connections, send the same x-api-key or tk header when downloading; anonymous connections do not require credentials. Only report tasks that already have report body text can be downloaded.",
-      inputSchema: {
-        taskId: z.string().min(1).describe("Analysis task ID returned by run_analysis."),
-      },
+        "Return the authenticated PDF download URL for a report file.",
+      inputSchema: { taskId: z.string().min(1) },
     },
     async ({ taskId }) =>
-      withMcpIdentity(req, async (identity) => {
-        const task = await getAnalysisTaskService().getTask(taskId, identity.domainId, {
-          payload: "report",
-          runs: "none",
-        });
-        if (
-          !task ||
-          !requireOwner(task.userId, identity.userId) ||
-          task.domainId !== identity.domainId
-        ) {
-          return textJson({ success: false, error: `Analysis task not found: ${taskId}` });
-        }
-        const source = analysisReportPdfSource({ task });
-        if (!source) {
-          return textJson({ success: false, error: "No analysis report to export" });
-        }
-        return textJson({
-          success: true,
-          downloadUrl: analysisReportPdfDownloadUrl(analysisAgentPublicServiceRoot(req), task.id),
-        });
-      })
+      withAnalysisIdentity(req, async (identity) => {
+        const task = await analysisTask(taskId, identity);
+        return textJson(
+          task.resultReport
+            ? {
+                success: true,
+                downloadUrl: analysisReportPdfDownloadUrl(
+                  analysisAgentPublicServiceRoot(req),
+                  taskId,
+                ),
+              }
+            : { success: false, error: "No analysis report to export" },
+        );
+      }),
   );
-
   server.registerTool(
     "run_analysis",
     {
       title: "Run Analysis",
       description:
-        `Submit a ${product.serviceDisplayName} deep analysis task with a selected agent. Use get_analysis_task to poll results.`,
+        "Start an ordinary assistant run and poll get_analysis_task.",
       inputSchema: {
-        agentId: z.string().min(1).describe("Analysis agent ID from list_analysis_agents."),
-        question: z.string().min(1).describe("Business question to analyze."),
-        threadId: z
-          .string()
-          .optional()
-          .describe("Optional thread ID for conversation persistence."),
-        apiKey: z
-          .string()
-          .min(1)
-          .optional()
-          .describe(
-            "User API key. May instead be supplied through the x-api-key header, the apiKey query, or a tk login token header."
-          ),
-        locale: z.string().optional().describe("Optional locale, for example zh-CN or en-US."),
+        agentId: z.string().min(1),
+        question: z.string().min(1),
+        threadId: z.string().optional(),
+        apiKey: z.string().min(1).optional(),
+        locale: z.string().optional(),
       },
     },
-    async ({ agentId, question, threadId, apiKey, locale }) => {
-      const normalizedQuestion = question.trim();
-      const normalizedAgentId = agentId.trim();
-      const resolvedThreadId = threadId?.trim() || `mcp-analysis-${Date.now()}-${randomUUID()}`;
-      setLocale(resolveLocale(locale?.trim()));
-
-      return withMcpIdentity(req, async (identity) => {
-        const agentService = await getAnalysisAgentService();
-        const agent = await agentService.getAgent(normalizedAgentId, identity.domainId);
-        if (!agent || !agent.isEnabled) {
-          return textJson({
-            success: false,
-            error: `Enabled agent not found: ${normalizedAgentId}`,
-          });
-        }
-
-        const taskService = getAnalysisTaskService();
-        const task = await taskService.createTask({
-          reportDeliverableEnabled: agent.reportDeliverableEnabled,
-          graphScopeSnapshot: agent.graphScope,
-          classNamesSnapshot: agent.classNames,
-          agentId: normalizedAgentId,
-          userId: identity.userId,
-          domainId: identity.domainId,
-          name: normalizedQuestion.slice(0, 50) || "MCP Analysis",
-          question: normalizedQuestion,
-          threadId: resolvedThreadId,
-          triggerSource: "manual",
-          token: identity.token,
-        });
-
-        // An agent with report delivery off accepts its first turn like a regular session; other submissions return immediately, with the run and terminal state owned by the orchestrator.
-        if (agent.reportDeliverableEnabled === false) {
-          const requestSeq = await startConversationTurn(
-            task.id,
-            identity.domainId,
-            normalizedQuestion,
-            { token: identity.token, apiKey: identity.apiKey }
-          );
-          if (requestSeq === null) {
-            return textJson({ success: false, error: "Analysis session is already running" });
-          }
-          return textJson({
+    async ({ agentId, question, threadId, apiKey, locale }) =>
+      withAnalysisIdentity(
+        req,
+        async (identity) =>
+          textJson({
             success: true,
-            task: { ...taskToMcpResult(task), status: "running", requestSeq },
-          });
-        }
-
-        // A report task is accepted as one run; an acceptance failure means the same task is already running.
-        const runTask = await taskService.tryStartTask(task.id, identity.domainId);
-        if (!runTask) {
-          return textJson({ success: false, error: "Analysis task is already running" });
-        }
-
-        const { task: runningTask } = await startAnalysisTaskRun({
-          task: runTask,
-          agent,
-          verifiedIdentity: identity,
-          apiKey: identity.apiKey,
-          timeoutMs: getAnalysisAgentMcpTaskTimeoutMs(),
-        });
-
-        return textJson({
-          success: true,
-          message: "Analysis task submitted. Use get_analysis_task to poll status and results.",
-          task: taskToMcpResult(runningTask),
-        });
-      }, { toolApiKey: apiKey?.trim() });
-    }
+            message:
+              "Analysis task submitted. Use get_analysis_task to poll status and results.",
+            task: await startAnalysis(agentId, question, threadId, identity, {
+              token: identity.token,
+              apiKey: identity.apiKey,
+              locale,
+            }),
+          }),
+        { toolApiKey: apiKey },
+      ),
   );
-
   return server;
 }
-
-/** The admin page catalog projects the Zod definitions actually used for MCP registration; no hand-copied JSON Schema is maintained anymore. */
+const router = createStreamableMcpRouter(
+  createAnalysisAgentMcpServer,
+  createLogger("analysis-mcp"),
+);
+export default router;
 export async function getAnalysisAgentMcpToolCatalog() {
-  const tools = await listMcpServerTools(
+  return listMcpServerTools(
     createAnalysisAgentMcpServer(catalogRequest()),
-    "analysis-agent-catalog"
-  );
-  return tools.sort(
-    (left, right) =>
-      Number(left.name === "get_analysis_task") - Number(right.name === "get_analysis_task")
+    "analysis-agent-catalog",
   );
 }
-
-export default createStreamableMcpRouter(createAnalysisAgentMcpServer, logger);

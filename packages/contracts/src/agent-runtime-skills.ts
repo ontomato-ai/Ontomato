@@ -20,6 +20,22 @@ export const runtimeSkillRefSchema = z
       .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/),
   })
   .strict();
+/** Package identity is the same at management and runtime publication boundaries. */
+export const standardSkillFrontmatterSchema = z.object({
+  name: runtimeSkillRefSchema.shape.name,
+  description: z.string().min(1).max(1024).refine((value) => !!value.trim()),
+  license: z.string().optional(),
+  compatibility: z.string().optional(),
+  metadata: z.record(z.string()).optional(),
+  "allowed-tools": z.string().optional(),
+}).strict();
+export type StandardSkillFrontmatter = z.infer<typeof standardSkillFrontmatterSchema>;
+
+export function runtimeSkillKey(skill: RuntimeSkillRef): string {
+  return JSON.stringify([skill.namespace.kind,
+    skill.namespace.kind === "provider" ? skill.namespace.provider : skill.namespace.domainId,
+    skill.name]);
+}
 export const runtimeRegisteredSkillSchema = z
   .object({
     skill: runtimeSkillRefSchema,
@@ -101,3 +117,5 @@ export const runtimeEnvironmentSchema = z
   });
 export type RuntimeSkillRef = z.infer<typeof runtimeSkillRefSchema>;
 export type RuntimeEnvironment = z.infer<typeof runtimeEnvironmentSchema>;
+
+export type RuntimeRegisteredSkill = z.infer<typeof runtimeRegisteredSkillSchema>;

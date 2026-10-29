@@ -6,7 +6,7 @@ import { MODEL_ROLES } from "@ontomato/contracts/model-settings";
 import ModelListCard from "../business-config/ModelListCard.vue";
 import RoleModelsCard from "../business-config/RoleModelsCard.vue";
 import EmbeddingModelConfigCard from "../business-config/EmbeddingModelConfigCard.vue";
-import SkillDirConfigCard from "../business-config/SkillDirConfigCard.vue";
+import GeneralConfigCard from "../business-config/GeneralConfigCard.vue";
 import QuerySettingsCard from "../business-config/QuerySettingsCard.vue";
 import BusinessConfig from "../BusinessConfig.vue";
 import ModelConfig from "../ModelConfig.vue";
@@ -22,7 +22,6 @@ const OPAQUE_CUSTOMS =
 const sent = vi.hoisted(() => ({
   settings: null as unknown,
   test: null as unknown,
-  skilldir: null as unknown,
   embedding: null as unknown,
   embeddingTest: null as unknown,
   system: null as unknown,
@@ -130,11 +129,7 @@ vi.mock("../../../admin", () => ({
           agents: settingsData().agents,
           embeddingModelProperties: fixtures.embedding,
           knowledgeMaxResult: 10,
-          toolAndPythonRetry: 0,
-          dslCookerTries: 1,
           dslCookerTimeout: 300000,
-          questionSpliterTries: 1,
-          questionSpliterTimeout: 300000,
           lang: "zh-CN",
           dataAdapter: "postgresql",
           dataAdapterConnections: {},
@@ -158,15 +153,11 @@ vi.mock("../../../admin", () => ({
     })),
     getSystemModelConfig: vi.fn(async () => ({
       success: true,
-      data: { abcQuestionMode: "harness", queryTimeoutSeconds: 600 },
+      data: { queryTimeoutSeconds: 600 },
     })),
     saveSystemModelConfig: vi.fn(async (payload: Record<string, unknown>) => {
       sent.system = JSON.parse(JSON.stringify(payload));
       return { success: true, data: { ...payload } };
-    }),
-    saveToolSkillDir: vi.fn(async (skilldir: string) => {
-      sent.skilldir = skilldir;
-      return { success: true };
     }),
     saveEmbeddingModel: vi.fn(async (payload: unknown) => {
       sent.embedding = JSON.parse(JSON.stringify(payload));
@@ -205,7 +196,6 @@ beforeEach(() => {
   Object.assign(sent, {
     settings: null,
     test: null,
-    skilldir: null,
     embedding: null,
     embeddingTest: null,
     system: null,
@@ -440,8 +430,8 @@ describe("role models card", () => {
 });
 
 describe("query settings card", () => {
-  it("tracks its two fields and clears the marker when reverted", async () => {
-    const model = reactive({ abcQuestionMode: "harness" as const, queryTimeoutSeconds: 600 });
+  it("tracks its field and clears the marker when reverted", async () => {
+    const model = reactive({ queryTimeoutSeconds: 600 });
     const wrapper = track(
       mount(QuerySettingsCard, {
         props: { model, loading: false, saving: false, loadError: "" },
@@ -461,7 +451,7 @@ describe("query settings card", () => {
     const wrapper = track(
       mount(QuerySettingsCard, {
         props: {
-          model: { abcQuestionMode: "harness" as const, queryTimeoutSeconds: 600 },
+          model: { queryTimeoutSeconds: 600 },
           loading: false,
           saving: false,
           loadError: "node down",
@@ -712,6 +702,71 @@ describe("password visibility with the real dialog", () => {
     await settle();
     expect(keyInput().attributes("type")).toBe("password");
     expect((keyInput().element as HTMLInputElement).value).toBe("sk-embed");
+  });
+});
+
+describe("saved keys are write-only", () => {
+  const realDialog = { plugins: [i18n, ElementPlus], stubs: { transition: false } };
+  const settle = async () => {
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await flushPromises();
+  };
+
+  it("shows a saved model key as its read-only mask and sends the mask back, which keeps the key", async () => {
+    const save = vi.fn(async (_models: ModelEntry[]) => true);
+    const wrapper = track(
+      mount(ModelListCard, {
+        props: { models: [entry("a", { apiKeys: ["******ab12"] })], saving: false, save },
+        global: realDialog,
+        attachTo: document.body,
+      })
+    );
+    await button(wrapper, t("common.edit"))!.trigger("click");
+    await settle();
+    const saved = wrapper.find(".api-key-row input");
+    expect(saved.attributes("disabled")).toBeDefined();
+    expect(saved.attributes("type")).not.toBe("password");
+    expect((saved.element as HTMLInputElement).value).toBe("******ab12");
+    expect(wrapper.find(".saved-key-hint").text()).toBe(t("admin.savedKeyHint"));
+
+    await button(wrapper, t("admin.addApiKey"))!.trigger("click");
+    await wrapper.findAll(".api-key-row input")[1]!.setValue("sk-new-key");
+    await button(wrapper, t("common.save"))!.trigger("click");
+    await flushPromises();
+    expect(save.mock.calls[0]![0][0]!.apiKeys).toEqual(["******ab12", "sk-new-key"]);
+  });
+
+  it("leaves a saved embedding key out of the input and sends its mask back unless a new key is entered", async () => {
+    const save = vi.fn(async (_model: EmbeddingModelConfig) => true);
+    const wrapper = track(
+      mount(EmbeddingModelConfigCard, {
+        props: {
+          model: { ...fixtures.embedding, apiKey: "******mbed" },
+          loading: false,
+          saving: false,
+          loadError: "",
+          save,
+          rebuildStatus: { ...fixtures.rebuildIdle },
+        },
+        global: realDialog,
+        attachTo: document.body,
+      })
+    );
+    await button(wrapper, t("common.edit"))!.trigger("click");
+    await settle();
+    const keyInput = wrapper.find(".el-dialog input[type='password']");
+    expect((keyInput.element as HTMLInputElement).value).toBe("");
+    expect(keyInput.attributes("placeholder")).toBe("******mbed");
+    await button(wrapper, t("common.save"))!.trigger("click");
+    await flushPromises();
+    expect(save.mock.calls[0]![0].apiKey).toBe("******mbed");
+
+    await button(wrapper, t("common.edit"))!.trigger("click");
+    await settle();
+    await wrapper.find(".el-dialog input[type='password']").setValue("sk-replaced");
+    await button(wrapper, t("common.save"))!.trigger("click");
+    await flushPromises();
+    expect(save.mock.calls[1]![0].apiKey).toBe("sk-replaced");
   });
 });
 
@@ -1008,13 +1063,15 @@ describe("model config page", () => {
     expect(sent.settings).toBeNull();
     expect(embedding.find("section").exists()).toBe(false);
 
+    // The page reads the saved model back instead of keeping the submitted key, so the test sends what the server returned.
+    expect(adminApi.getBusinessConfig).toHaveBeenCalledTimes(2);
     await button(embedding, t("common.testModel"))!.trigger("click");
     const testDialog = page.findAll("section").at(-1)!;
     await testDialog.find("textarea").setValue("hello");
     await button(testDialog, t("common.sendTest"))!.trigger("click");
     await flushPromises();
     expect(sent.embeddingTest).toEqual({
-      modelConfig: { ...fixtures.embedding, apiKey: "sk-embed-2" },
+      modelConfig: { ...fixtures.embedding },
       userContent: "hello",
     });
   });
@@ -1209,33 +1266,20 @@ describe("vector rebuild and embedding test on the model config page", () => {
 });
 
 describe("system config page", () => {
-  it("reads and writes only the two query settings", async () => {
+  it("reads and writes only the query timeout setting", async () => {
     const page = await mountSystemPage();
     const query = page.findComponent(QuerySettingsCard);
     await query.find(".el-input-number input").setValue("900");
     await button(query, t("common.saveConfig"))!.trigger("click");
     await flushPromises();
-    expect(sent.system).toEqual({ abcQuestionMode: "harness", queryTimeoutSeconds: 900 });
+    expect(sent.system).toEqual({ queryTimeoutSeconds: 900 });
     expect(query.find(".dirty-tag").exists()).toBe(false);
-  });
-
-  it("reads the skill directory from the coding role and saves it alone", async () => {
-    const page = await mountSystemPage();
-    const skill = page.findComponent(SkillDirConfigCard);
-    expect((skill.find("input").element as HTMLInputElement).value).toBe("skills/legacy");
-    await skill.find("input").setValue("skills/aftercalculate");
-    await button(skill, t("common.saveConfig"))!.trigger("click");
-    await flushPromises();
-    expect(sent.skilldir).toBe("skills/aftercalculate");
-    expect(sent.settings).toBeNull();
   });
 
   it("keeps a persistent error and disables writes when the business config fails to load", async () => {
     vi.mocked(adminApi.getBusinessConfig).mockRejectedValueOnce(new Error("java down"));
     const page = await mountSystemPage();
-    expect(
-      button(page.findComponent(SkillDirConfigCard), t("common.saveConfig"))!.attributes("disabled")
-    ).toBeDefined();
+    expect(button(page.findComponent(GeneralConfigCard), t("common.save"))!.attributes("disabled")).toBeDefined();
     const banner = page.find(".config-load-error");
     expect(banner.text()).toContain("java down");
     expect(button(banner, t("common.retry"))).toBeTruthy();

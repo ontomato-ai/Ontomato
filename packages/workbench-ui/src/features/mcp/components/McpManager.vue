@@ -3,13 +3,14 @@ import { computed, ref, reactive, onMounted } from "vue";
 import { ElMessage, ElMessageBox } from "element-plus";
 import { Plus, RefreshCw, Pencil, Trash2, Copy, Plug, ArrowUpRight } from "lucide-vue-next";
 import { useI18n } from "vue-i18n";
+import { MCP_HEADER_MASK, mcpServiceWriteSchema } from "@ontomato/contracts/agent-runtime-mcp";
 import {
   listMcpServices,
   saveMcpService,
   deleteMcpService,
   listExternalMcpTools,
   listPublishedMcpServices,
-  type McpServiceConfig,
+  type McpServiceView,
   type McpTool,
   type PublishedMcpService,
 } from "../api";
@@ -25,7 +26,7 @@ const recognizedPublished = new Map([
   [opsMcpServerName, { title: "mcp.opsAgentService", hint: "mcp.opsPublishedAuthHint" }],
 ]);
 const activeTab = ref("external");
-const services = ref<McpServiceConfig[]>([]);
+const services = ref<McpServiceView[]>([]);
 const published = ref<PublishedMcpService[]>([]);
 const loading = ref(false);
 const loadFailed = ref(false);
@@ -35,8 +36,8 @@ const publishedLoaded = ref(false);
 const tools = ref<Record<string, { loading: boolean; failed: boolean; items: McpTool[] }>>({});
 const dialogVisible = ref(false);
 const saving = ref(false);
-const previousName = ref<string>();
-const form = ref({ name: "", url: "", headers: [] as Array<{ name: string; value: string }> });
+const serviceId = ref<string>();
+const form = ref({ name: "", url: "", headers: [] as Array<{ name: string; value: string; storedName?: string }> });
 const publishedCards = computed(() =>
   published.value.map((service) => {
     const text = recognizedPublished.get(service.name);
@@ -77,12 +78,12 @@ function changeTab() {
     void loadPublished();
   }
 }
-function openEditor(service?: McpServiceConfig) {
-  previousName.value = service?.name;
+function openEditor(service?: McpServiceView) {
+  serviceId.value = service?.id;
   form.value = {
     name: service?.name || "",
     url: service?.url || "",
-    headers: Object.entries(service?.headers || {}).map(([name, value]) => ({ name, value })),
+    headers: Object.keys(service?.headers || {}).map((name) => ({ name, value: "", storedName: name })),
   };
   dialogVisible.value = true;
 }
@@ -95,23 +96,24 @@ async function save() {
   } catch {
     return ElMessage.warning(t("hotData.addressFormatHint"));
   }
-  const headers: Record<string, string> = {};
+  const headers: Record<string, string | null> = {};
   const names = new Set<string>();
   for (const row of form.value.headers) {
     const key = row.name.trim();
     if (!key && !row.value) continue;
     if (!key || names.has(key.toLowerCase())) return ElMessage.warning(t("mcp.invalidHeaders"));
     names.add(key.toLowerCase());
-    headers[key] = row.value;
+    if (row.storedName && !row.value && row.storedName !== key.toLowerCase())
+      return ElMessage.warning(t("mcp.invalidHeaders"));
+    headers[key] = row.storedName && !row.value ? null : row.value;
   }
-  try {
-    new Headers(headers);
-  } catch {
+  const parsed = mcpServiceWriteSchema.safeParse({ name, url, headers });
+  if (!parsed.success) {
     return ElMessage.warning(t("mcp.invalidHeaders"));
   }
   saving.value = true;
   try {
-    await saveMcpService({ name, url, headers }, previousName.value);
+    await saveMcpService(parsed.data, serviceId.value);
     dialogVisible.value = false;
     ElMessage.success(t("admin.saveSuccess"));
     await loadServices();
@@ -127,31 +129,31 @@ async function save() {
     saving.value = false;
   }
 }
-async function remove(service: McpServiceConfig) {
+async function remove(service: McpServiceView) {
   try {
     await ElMessageBox.confirm(
       t("hotData.deleteMcpConfirm", { name: service.name }),
       t("common.tip"),
       { type: "warning" }
     );
-    await deleteMcpService(service.name);
+    await deleteMcpService(service.id);
     ElMessage.success(t("admin.deletedSuccess"));
     await loadServices();
   } catch (error) {
     if (error !== "cancel" && error !== "close") ElMessage.error(t("admin.deleteFailed"));
   }
 }
-async function inspectTools(service: McpServiceConfig) {
+async function inspectTools(service: McpServiceView) {
   const state = reactive({ loading: true, failed: false, items: [] as McpTool[] });
-  tools.value[service.name] = state;
+  tools.value[service.id] = state;
   try {
-    state.items = await listExternalMcpTools(service.name);
+    state.items = await listExternalMcpTools(service.id);
   } catch {
     state.failed = true;
   } finally {
     state.loading = false;
-    // The list may have been refreshed or the service renamed while discovery was running.
-    if (tools.value[service.name] === state) tools.value[service.name] = { ...state };
+    // The list may have been refreshed or the service edited while discovery was running.
+    if (tools.value[service.id] === state) tools.value[service.id] = { ...state };
   }
 }
 async function copy(address: string) {
@@ -213,7 +215,7 @@ onMounted(loadServices);
           </el-button>
         </el-empty>
         <div v-else class="service-list">
-          <article v-for="service in services" :key="service.name" class="service-card">
+          <article v-for="service in services" :key="service.id" class="service-card">
             <div class="service-heading">
               <div class="service-title">
                 <Plug :size="20" />
@@ -236,21 +238,21 @@ onMounted(loadServices);
               <el-button
                 text
                 type="primary"
-                :loading="tools[service.name]?.loading"
+                :loading="tools[service.id]?.loading"
                 @click="inspectTools(service)"
               >
                 {{ t("mcp.viewTools") }}
               </el-button>
             </div>
-            <template v-if="tools[service.name] && !tools[service.name].loading">
+            <template v-if="tools[service.id] && !tools[service.id].loading">
               <el-alert
-                v-if="tools[service.name].failed"
+                v-if="tools[service.id].failed"
                 :title="t('mcp.discoveryFailed')"
                 type="error"
                 :closable="false"
                 show-icon
               />
-              <McpToolList v-else :tools="tools[service.name].items" />
+              <McpToolList v-else :tools="tools[service.id].items" />
             </template>
           </article>
         </div>
@@ -309,7 +311,7 @@ onMounted(loadServices);
     </el-tabs>
     <el-dialog
       v-model="dialogVisible"
-      :title="previousName === undefined ? t('hotData.addService') : t('mcp.editService')"
+      :title="serviceId === undefined ? t('hotData.addService') : t('mcp.editService')"
       width="600px"
       class="mcp-editor"
       :close-on-click-modal="false"
@@ -339,7 +341,7 @@ onMounted(loadServices);
                 v-model="header.value"
                 type="password"
                 show-password
-                :placeholder="t('mcp.headerValue')"
+                :placeholder="header.storedName ? MCP_HEADER_MASK : t('mcp.headerValue')"
                 :aria-label="t('mcp.headerValue')"
               />
               <el-button

@@ -1,5 +1,6 @@
 package io.ontomato.dataengine;
 
+import io.ontomato.dataengine.util.ProductFileSync;
 import dev.langchain4j.openai.spring.AutoConfig;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
@@ -9,7 +10,8 @@ import org.springframework.scheduling.annotation.EnableScheduling;
 @SpringBootApplication(exclude = AutoConfig.class)
 @EnableScheduling
 public class RAGMain {
-    public static void main(String[] arg) {
+    public static void main(String[] arg) throws java.io.IOException {
+        ProductFileSync.syncFromEnvironment();
         SpringApplication.run(RAGMain.class, arg);
     }
 }

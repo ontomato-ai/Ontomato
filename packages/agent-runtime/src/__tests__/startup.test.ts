@@ -4,7 +4,7 @@ import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 
-it.each(["AGENT_RUNTIME_HOSTS", "AGENT_RUNTIME_MCP_SERVERS"])(
+it.each(["AGENT_RUNTIME_HOSTS"])(
   "does not quote private config when %s contains invalid JSON",
   (name) => {
     const root = path.resolve(
@@ -30,6 +30,7 @@ it.each(["AGENT_RUNTIME_HOSTS", "AGENT_RUNTIME_MCP_SERVERS"])(
             AGENT_RUNTIME_DATABASE_URL:
               "postgresql://unused:unused@127.0.0.1:9/unused",
             AGENT_RUNTIME_MODEL_CONFIG_URL: "http://127.0.0.1:9",
+            ONTOMATO_MODEL_RUNTIME_TOKEN: "fixture-runtime-token",
             [name]: "SENSITIVE",
           },
           stdio: "pipe",

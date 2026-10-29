@@ -53,6 +53,8 @@ export const app = {
         ".mvn",
         "packages/data-engine-core/pom.xml",
         "agent-skills/ontomato-analyst",
+        "agent-skills/data-retrieval",
+        "packages/contracts/src/agent-artifact-markdown-prompt.json",
         "packages/data-engine-core/src/main",
         // Every adapter depends on the shared contract tests in test scope, so Maven resolves it even with tests skipped.
         "packages/data-adapter-test-support/pom.xml",
@@ -68,22 +70,12 @@ export const app = {
   ],
   // No private export inputs: this component consumes the recipe's central export.
   secretExport: null,
-  requirements: {
-    root: repoRoot,
-    path: "packages/agent-runtime/requirements-py310.txt",
-  },
-  mcp: { root: repoRoot, path: "packages/data-engine-core/mcp/mcpserver.py" },
   // Product startup files ride the payload at their fixed /app layout.
   bin: [
     [
       repoRoot,
       "scripts/data-engine/container-entrypoint.sh",
       "payload/bin/container-entrypoint.sh",
-    ],
-    [
-      repoRoot,
-      "scripts/data-engine/sync-product-files.py",
-      "payload/bin/sync-product-files.py",
     ],
   ],
   resources: [
@@ -92,9 +84,7 @@ export const app = {
       "packages/data-engine-core/conf-defaults",
       "payload/conf-defaults",
     ],
-    [repoRoot, "packages/data-engine-core/skills", "payload/skills"],
   ],
-  requiredSkill: "payload/skills/aftercalculate/trend-forecaster/SKILL.md",
   labels: {},
   tagSuffix: "",
 };

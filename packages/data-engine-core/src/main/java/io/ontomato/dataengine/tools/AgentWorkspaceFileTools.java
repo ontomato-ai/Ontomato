@@ -33,19 +33,13 @@ public class AgentWorkspaceFileTools {
     public AgentWorkspaceFileTools(AgentWorkspaceService workspaceService,
             DslSkillTools dslSkillTools,
             SandboxSkillTools sandboxSkillTools,
-            AfterCalculatorSkillTools afterCalculatorSkillTools,
             ReadFunctionMakerSkillTools readFunctionMakerSkillTools,
             ABCProgramDashboardMakerSkillTools abcProgramDashboardMakerSkillTools) {
         this.workspaceService = workspaceService;
         Map<String, Map<String, PostSaveAction>> actions = new HashMap<>();
-        actions.put(MultiThreadAIChatService.DSL_COOKER, Map.of("executeDslFile", dslSkillTools::executeDslFile));
         actions.put(MultiThreadAIChatService.ACTION_MAKER, Map.of(
                 "executeDslFile", dslSkillTools::executeDslFile,
                 "query", sandboxSkillTools::query));
-        actions.put(MultiThreadAIChatService.TOOL_AND_PYTHON_CALCULATOR,
-                Map.of("test", afterCalculatorSkillTools::test));
-        actions.put(MultiThreadAIChatService.PYTHON_CALCULATOR,
-                Map.of("test", afterCalculatorSkillTools::test));
         actions.put(MultiThreadAIChatService.READ_FUNCTION_MAKER,
                 Map.of("test", path -> readFunctionMakerSkillTools.test(Boolean.FALSE, path, null)));
         actions.put(MultiThreadAIChatService.METRIC_VIEW_MAKER, Map.of(

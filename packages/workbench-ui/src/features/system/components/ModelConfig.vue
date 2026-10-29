@@ -176,7 +176,8 @@ async function saveEmbeddingConfig(model: EmbeddingModelConfig): Promise<boolean
   savingEmbedding.value = true;
   try {
     await adminApi.saveEmbeddingModel(model);
-    embedding.value = model;
+    // Read back rather than keep the submitted snapshot, so a key just entered is not held by the page.
+    await loadEmbedding();
     ElMessage.success(t("admin.embeddingSaveSuccess"));
     // A changed URL, model name or dimensions makes the backend report that a rebuild is needed.
     loadRebuildStatus();

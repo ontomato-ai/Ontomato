@@ -1,55 +1,17 @@
 /**
  * Workbench content supplied statically by the app: each edition's original values from before extraction, independent
  * of the UI locale and not derived from the Node message bundle. Three kinds: product literals that are the same fact as
- * in Node, historical matching rules (kept as-is, including known old inconsistencies), and standalone fixed UI and
- * console text. Text that already has a t key still uses messages; error joining punctuation comes from errorPunctuation.
+ * in Node, historical matching rules (kept as-is, including known old inconsistencies), and standalone fixed UI text. Text that already has a t key still uses messages; error joining punctuation comes from errorPunctuation.
  */
 import type { PromptTranscriptFormat } from "@ontomato/contracts/observe";
 
 export interface WorkbenchContent {
-  /** Subgraph code block fence, the same value as Node product.subgraphFence (MessageContent/utils/markdown.ts). */
-  subgraphFence: string;
   /** Product display name, the same value as Node product.serviceDisplayName: PPT author/company and the default brand name in appearance settings. */
   serviceDisplayName: string;
-  /** Key prefix of the "current Q&A thread" in sessionStorage (a persisted value, chat/utils/current-qa-thread.ts). */
-  currentQaThreadStoragePrefix: string;
-  /** File name prefix of downloaded analysis report PDFs (analysis store, SnapshotContent). */
-  reportPdfFilePrefix: string;
-  /** Headings that identify the "overall summary" section (utils/analysis-report.ts). */
-  comprehensiveSummaryTitles: readonly string[];
-  /** Name and description that identify the seeded default agent; on a match the current locale's default text is shown instead (agentDisplay, AnalysisTaskPanel). */
-  defaultAgentNames: readonly string[];
-  defaultAgentDescriptions: readonly string[];
-  /** Q&A markers in hot card bodies: pick the question line and strip the question line and answer marker (query-view/utils/thinkingUtils.ts). */
-  hotCardQa: { question: RegExp; questionLine: RegExp; answerLine: RegExp };
-  /** Hot card parameter replacement note "original condition … replaced with …" (HotCardDetail.vue). */
-  hotCardConditionReplacement: RegExp;
-  /** Keywords in answer bodies used to infer the chart type and the "wants a visualization" intent (MessageContent/utils/markdown.ts). */
-  chartIntentKeywords: {
-    trend: readonly string[];
-    proportion: readonly string[];
-    correlation: readonly string[];
-    visualization: readonly string[];
-  };
-  /** Conditions and fields of the subgraph step table: splitting, empty-value detection and display separators (SubgraphView.vue). */
-  subgraphListItems: { split: RegExp; empty: RegExp; join: string };
-  /** "Step N" label in quality check results (QcInlineResult.vue). */
-  qcStepLabel: RegExp;
-  /** Separator of skill lists (analysis/utils/loop-activity.ts). */
-  skillListSeparator: string;
   /** Analysis agent MCP server name, the same value as Node product.analysisMcpServerName: identifies that server among published services on the MCP page (McpManager.vue). */
   analysisMcpServerName: string;
   /** Operations agent MCP server name, the same value as Node product.opsMcpServerName: identifies that server the same way (McpManager.vue). */
   opsMcpServerName: string;
-  /**
-   * Original display of the agent edit dialog (AgentCreateDialog); the chat and admin entries pass the same value: the
-   * open-source chat layout and the admin "analysis agents" page (AnalysisAgentManager, whose own form labels also follow
-   * labelWrap) both pass it to the dialog as-is. Open source: required asterisk on the right and wrapping labels;
-   * when omitted, the asterisk position is left unset and labels do not wrap.
-   */
-  agentDialogDisplay: { requireAsteriskPosition?: "right"; labelWrap?: boolean };
-  /** Original separator between "failed to load" and the error message in the analysis agent list load failure message (AnalysisAgentManager.vue). */
-  analysisAgentLoadErrorSeparator: string;
   /** Default input example for debugging the echarts skill (the original JSON.stringify(…, null, 2) result, SkillDebugDialog.vue), independent of the UI locale. */
   skillDebugEchartsInput: string;
   /**
@@ -64,32 +26,13 @@ export interface WorkbenchContent {
     promptDirectoryName: string;
   };
   text: WorkbenchFixedText;
-  console: WorkbenchConsoleText;
   dashboard: DashboardVisuals;
 }
 
 /** UI text that was hard-coded in the original source (each edition's own sentences). */
 export interface WorkbenchFixedText {
-  /** SSE connection failure for analysis and follow-ups (analysis/api.ts). */
-  sseConnectionFailed: string;
-  /** Analysis run SSE disconnected (analysis/api.ts). */
-  connectionFailed: string;
-  /** Switching between analysis runs (AnalysisChatView.vue). */
-  runSwitcher: { label: string; previous: string; next: string };
-  /** Like/dislike feedback on answers and reports (ChatView.vue, AnalysisReportView.vue). */
+  /** Like/dislike rating labels of feedback records (FeedbackRecords.vue). */
   feedback: {
-    cancelled: string;
-    cancelFailed: string;
-    promptMessage: string;
-    promptTitle: string;
-    submit: string;
-    cancel: string;
-    queryPlaceholder: string;
-    analysisPlaceholder: string;
-    required: string;
-    thanks: string;
-    submitted: string;
-    submitFailed: string;
     like: string;
     dislike: string;
   };
@@ -118,23 +61,14 @@ export interface WorkbenchFixedText {
     exportSucceeded: string;
     exportFailed: string;
   };
-  /** Original count text at the end of partial batch-delete failure messages (both query example batch deletes). */
-  batchDeleteFailureSuffix: (failed: number, total: number) => string;
-  /** Original colon after field labels on query example cards (five places in ExamplesManager.vue); independent of errorPunctuation for request errors. */
-  exampleFieldSeparator: string;
   /** Original separator between error explanations and timeout text on the system and model configuration pages. */
   businessConfigSeparator: string;
-  /** Default PPT section title and extraction failure (analysis/utils/ppt.ts). */
-  pptSectionFallback: string;
-  pptOutlineFailed: string;
   /** Dashboard creation failure (dashboard/api.ts). */
   createDashboardFailed: string;
   /** Invalid skill list response format (skills/api.ts). */
   skillsListInvalid: string;
   /** Display of an empty error message (query-view/utils/display-error.ts). */
   unknownError: string;
-  /** Item count in the hot card dialog title (HotCardModal.vue). */
-  cardCount: (label: string, count: number) => string;
   /**
    * Sentences hard-coded in the observe page: the message the chat diagnosis entry sends automatically (ObserveLayout.vue),
    * the submitted values of welcome page quick questions (WelcomePage.vue; the display uses t keys), the "cancelled" label,
@@ -153,30 +87,6 @@ export interface WorkbenchFixedText {
     largeFilePreview: (loadedSize: string) => string;
     restoredTestBatch: (runId: string) => string;
   };
-}
-
-/** Console text that was hard-coded in the original source (each edition's own sentences). */
-export interface WorkbenchConsoleText {
-  deepAnalysisConnected: string;
-  deepAnalysisParseFailed: string;
-  deepAnalysisError: string;
-  followUpConnected: string;
-  followUpParseFailed: string;
-  followUpError: string;
-  followUpRunParseFailed: string;
-  loadAgentsFailed: string;
-  loadTasksFailed: string;
-  loadTaskHistoryFailed: string;
-  loadConversationTurnsFailed: string;
-  loadRunHistoryFailed: string;
-  loadTaskDetailFailed: string;
-  loadQaThreadsFailed: string;
-  loadMessagesFailed: (threadId: string) => string;
-  loadHistoryFailed: string;
-  deleteQaThreadFailed: string;
-  analysisActivityInvalid: string;
-  analysisEventUnknown: string;
-  reportChartMarkerUnmatched: (label: string) => string;
 }
 
 /** Brand colours of dashboard charts and two display details (dashboard/components and utils). */

@@ -7,10 +7,15 @@ migration scope; [code execution](agent-runtime-code.md) and
 [retrieval](data-retrieval.md) own their respective boundaries. Main-checkout
 image/stack and external Claude Code acceptance remain controller-owned.
 
+[External MCP services](agent-runtime-mcp.md) are configured in runtime and
+referenced by immutable service UUIDs. That contract owns management and selection.
+The [domain-skill host integration](domain-skills.md) reuses this
+publication/admission protocol.
+
 ## HTTP and admission
 
 Requests carry `Authorization: Bearer <host service credential>` and
-`X-Correlation-Id`. Session, run, artifact and domain-skill requests also carry
+`X-Correlation-Id`. Session, run, artifact, MCP and domain-skill requests also carry
 `X-Domain-Id`. Credentials resolve a configured host; the host verifies the user
 and domain first. Every lookup uses host + domain, including streams and file
 reads. Foreign resources return 404, invalid service credentials 401. Provider
@@ -66,7 +71,7 @@ type StartRun = {
     systemPrompt: string;
     modelRole: string;
     skills: SkillRef[];
-    externalMcp: {serverId:string}[];
+    externalMcp: {id:string}[];
     compaction: {systemPrompt:string; summarizePrompt:string; updatePrompt:string};
     sandbox: {limits: CodeLimits};
   };
@@ -199,6 +204,13 @@ usage. Service timestamps are ISO, PI timestamps milliseconds. Compression
 stores summary + covered-through message sequence without rewriting raw history,
 keeps tool-call/result pairs and retains raw context when summarization fails.
 Model role selection and null-tolerant Java model settings remain unchanged.
+The temporary Java adapter reads `sealedApiKeys` from `getModelSettings`; `apiKeys`
+contains display masks only. The workbench and runtime share the Node-only
+`model-key-seal` wire codec to open AES-256-GCM keys locally using
+`ONTOMATO_MODEL_RUNTIME_TOKEN`. All three services require the same nonblank
+value at startup. Only the end-user credential is sent to Java; the old model
+runtime credential header and plaintext-key response path are removed. Java
+still owns configuration storage and writes until the separate ownership migration.
 
 ## Events and file artifacts
 
@@ -249,8 +261,8 @@ not empty files. Blob paths remain private to the runtime.
 
 Path resolution selects the last occurrence for that path through atSeq in the
 specified run (or its inherited session baseline); responses retain the owning
-run. Without atSeq it uses that run's current/final boundary. A historical message
-uses its own event boundary, never a later run's mutable workspace. If no artifact
+run. Without atSeq it uses that run's current/final boundary. The shell resolves a message's path at its owning run's final/current boundary,
+never a later run's mutable workspace; atSeq remains available to other consumers. If no artifact
 exists yet, render pending/unavailable rather than guess. Hashes may deduplicate
 bytes across scopes; every read still requires an authorized artifact ID.
 

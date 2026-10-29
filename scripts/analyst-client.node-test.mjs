@@ -1,106 +1,54 @@
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import { test } from "node:test";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
+import os from "node:os";
+import path from "node:path";
 import { analystCommand } from "../agent-skills/ontomato-analyst/client.mjs";
 
-test("external ask preserves the reply revision on retries and downloads exact nullable data", async () => {
-  const received = [],
-    logs = [];
-  const paused = {
-    id: "retrieval",
-    runtimeSessionId: "session",
-    runtimeRunId: "run-1",
-    decisionRevision: 0,
-    run: { status: "stopped", stopReason: "stop", errorMessage: null },
-    datasetArtifactIds: [],
-    messages: [
-      {
-        message: {
-          role: "assistant",
-          content: [{ type: "text", text: "Which period?" }],
-        },
-      },
-    ],
-  };
-  const done = {
-    ...paused,
-    runtimeRunId: "run-2",
-    decisionRevision: 1,
-    datasetArtifactIds: ["dataset"],
-    messages: [],
-  };
-  const replies = new Map();
+test("the shared ask uses ontology, preserves continuation and downloads original bytes", async () => {
+  const received = [], logs = [], replies = new Map(),
+    retrieval = randomUUID(), artifact = randomUUID(), scope = randomUUID();
+  const paused = { id: retrieval, runtimeSessionId: retrieval, runtimeRunId: randomUUID(), decisionRevision: 0,
+    run: { status: "stopped", stopReason: "stop", errorMessage: null }, datasetArtifactIds: [],
+    messages: [{ message: { role: "assistant", content: [{ type: "text", text: "Which period?" }] } }] };
+  const done = { ...paused, runtimeRunId: randomUUID(), decisionRevision: 1, datasetArtifactIds: [artifact], messages: [] };
+  const bytes = '{"rows":[{"value":null,"zero":0,"valid":false,"large":9007199254740993}]}';
   const server = createServer(async (req, res) => {
-    let text = "";
-    for await (const part of req) text += part;
+    let text = ""; for await (const part of req) text += part;
     const body = text ? JSON.parse(text) : undefined;
-    received.push({ url: req.url, body, headers: req.headers });
-    res.setHeader("content-type", "application/json");
-    if (req.url === "/api/retrievals") res.end(JSON.stringify(paused));
-    else if (req.url === "/api/retrievals/retrieval/answers") {
+    received.push({ url: req.url, body, headers: req.headers });res.setHeader("content-type", "application/json");
+    if (req.url === "/ontology/retrievals") res.end(JSON.stringify(paused));
+    else if (req.url === `/ontology/retrievals/${retrieval}/answers`) {
       const key = req.headers["idempotency-key"];
-      if (replies.has(key)) assert.deepEqual(body, replies.get(key));
-      else replies.set(key, body);
+      if (replies.has(key)) assert.deepEqual(body, replies.get(key)); else replies.set(key, body);
       res.end(JSON.stringify(done));
-    } else if (req.url === "/api/retrievals/retrieval/datasets/dataset")
-      res.end(
-        JSON.stringify({
-          id: "dataset",
-          payload: { rows: [{ value: null, zero: 0, valid: false }] },
-        }),
-      );
-    else {
-      res.statusCode = 404;
-      res.end(JSON.stringify({ error: { message: "Unexpected request" } }));
-    }
+    } else if (req.url === `/ontology/retrievals/${retrieval}/datasets/${artifact}`) res.end(JSON.stringify({ id: artifact, payload: JSON.parse(bytes) }));
+    else if (req.url === `/ontology/ai/sessions/${retrieval}/artifacts/${artifact}/content`) res.end(bytes);
+    else { res.statusCode = 404;res.end(JSON.stringify({ error: { message: "Unexpected request" } })); }
   });
-  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
-  const cfg = { envUrl: `http://127.0.0.1:${server.address().port}` },
-    print = console.log;
+  await new Promise(resolve => server.listen(0, "127.0.0.1", resolve));
+  const directory = await mkdtemp(path.join(os.tmpdir(), "ontology-ask-"));
+  const cfg = { ontologyUrl: `http://127.0.0.1:${server.address().port}`, envUrl: "http://unused-workbench.invalid" },
+    print = console.log, oldOutput = process.env.ONTOMATO_OUTPUT_DIR, oldScope = process.env.ONTOMATO_RETRIEVAL_CALLER_ID;
+  process.env.ONTOMATO_OUTPUT_DIR = path.join(directory, "outputs");process.env.ONTOMATO_RETRIEVAL_CALLER_ID = scope;
   console.log = (...args) => logs.push(args.join(" "));
   try {
-    await analystCommand(cfg, ["ask", "--request-id", "create-1", "Sales"], {
-      tk: "fixture-user",
-    });
-    const answer = {
-      expectedRunId: "run-1",
-      expectedDecisionRevision: 0,
-      message: "Current period",
-    };
-    for (let i = 0; i < 2; i++)
-      await analystCommand(
-        cfg,
-        [
-          "ask",
-          "--resume",
-          "retrieval",
-          "--request-id",
-          "reply-1",
-          "--answers",
-          JSON.stringify(answer),
-        ],
-        { tk: "fixture-user" },
-      );
+    await analystCommand(cfg, ["ask", "--request-id", randomUUID(), "Sales"], { tk: "fixture-user" });
+    const reply = { expectedRunId: paused.runtimeRunId, expectedDecisionRevision: 0, message: "Current period" }, key = randomUUID();
+    for (let i = 0; i < 2; i++) await analystCommand(cfg, ["ask", "--resume", retrieval, "--request-id", key, "--answers", JSON.stringify(reply)], { tk: "fixture-user" });
     assert.equal(replies.size, 1);
-    assert.equal(received.filter((r) => r.url.endsWith("/answers")).length, 2);
-    assert.deepEqual(received[0].body, {
-      question: "Sales",
-      interaction: "resumable",
-      userQuotes: [],
-      previousDatasetIds: [],
-    });
-    assert.ok(received.every((r) => r.headers.tk === "fixture-user"));
-    assert.deepEqual(JSON.parse(logs.at(-1)).payload.rows, [
-      { value: null, zero: 0, valid: false },
-    ]);
-    await assert.rejects(
-      analystCommand(cfg, ["ask", "--resume", "retrieval", "--answers", "[]"]),
-      /expectedRunId/,
-    );
+    assert.equal(received.filter(r => r.url.endsWith("/answers")).length, 2);
+    assert.ok(received.every(r => r.headers.tk === "fixture-user" && r.headers["x-ontomato-retrieval-caller-id"] === scope));
+    assert.equal(await readFile(path.join(directory, "outputs", "retrievals", retrieval, artifact + ".dataset.json"), "utf8"), bytes);
+    assert.equal(JSON.parse(logs.at(-1)).files[0].rowCount, 1);
+    await assert.rejects(analystCommand(cfg, ["ask", "--resume", retrieval, "--answers", "[]"]), /expectedRunId/);
   } finally {
     console.log = print;
-    server.closeAllConnections();
-    await new Promise((resolve) => server.close(resolve));
+    if (oldOutput === undefined) delete process.env.ONTOMATO_OUTPUT_DIR; else process.env.ONTOMATO_OUTPUT_DIR = oldOutput;
+    if (oldScope === undefined) delete process.env.ONTOMATO_RETRIEVAL_CALLER_ID; else process.env.ONTOMATO_RETRIEVAL_CALLER_ID = oldScope;
+    server.closeAllConnections();await new Promise(resolve => server.close(resolve));await rm(directory, { recursive: true, force: true });
   }
 });
 

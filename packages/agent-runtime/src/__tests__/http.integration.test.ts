@@ -29,6 +29,7 @@ describe.skipIf(!database)("standard runtime real HTTP/PG/processes", () => {
     logs = "",
     modelCalls = 0,
     hold = false;
+  const mcpCalls: string[] = [];
   const schema = "standard_" + randomUUID().replaceAll("-", ""),
     token = "fixture-host",
     inputs: any[] = [];
@@ -46,22 +47,23 @@ describe.skipIf(!database)("standard runtime real HTTP/PG/processes", () => {
     route: string,
     body?: unknown,
     extra: Record<string, string> = {},
+    method = body === undefined ? "GET" : "POST",
   ) {
     const r = await fetch(url + route, {
-      method: body === undefined ? "GET" : "POST",
+      method,
       headers: { ...headers, ...extra },
       body: body === undefined ? undefined : JSON.stringify(body),
     });
     return { status: r.status, body: r.status === 204 ? null : await r.json() };
   }
-  const input = (text: string) => ({
+  const input = (text: string, externalMcp: {id: string}[] = []) => ({
     language: "en",
     input: { role: "user", content: text, timestamp: Date.now() },
     definition: {
       systemPrompt: "Use standard skills",
       modelRole: "coding",
       skills: [skill],
-      externalMcp: [],
+      externalMcp,
       sandbox: {
         limits: codeLimitsSchema.parse({
           memoryBytes: 16 * 1024 ** 3,
@@ -98,11 +100,11 @@ describe.skipIf(!database)("standard runtime real HTTP/PG/processes", () => {
           HTTPS_PROXY: "",
           ALL_PROXY: "",
           NO_PROXY: "127.0.0.1,localhost",
-          AGENT_RUNTIME_MCP_SERVERS: "[]",
           AGENT_RUNTIME_DATABASE_URL: database!,
           AGENT_RUNTIME_SCHEMA: schema,
           AGENT_RUNTIME_ROOT: root,
           AGENT_RUNTIME_MODEL_CONFIG_URL: base,
+          ONTOMATO_MODEL_RUNTIME_TOKEN: "fixture-runtime-token",
           AGENT_RUNTIME_PORT: "0",
           AGENT_RUNTIME_EVENT_BUFFER_SIZE: "4",
           AGENT_RUNTIME_HOSTS: JSON.stringify([
@@ -159,9 +161,9 @@ describe.skipIf(!database)("standard runtime real HTTP/PG/processes", () => {
     ).toBe(201);
     return id;
   }
-  async function run(s: string, text: string) {
+  async function run(s: string, text: string, externalMcp: {id: string}[] = []) {
     const id = randomUUID(),
-      request = input(text);
+      request = input(text, externalMcp);
     expect(
       (await api(`/v1/sessions/${s}/runs`, request, { "idempotency-key": id }))
         .status,
@@ -180,12 +182,15 @@ describe.skipIf(!database)("standard runtime real HTTP/PG/processes", () => {
             success: true,
             data: {
               agents: { coding: { model: "fixture" } },
+              sealedApiKeys: {
+                fixture: ["enc:v1:mzjUpW4OVVjLMPmxcmMcyop5LFN8VSJ_7lUGPppYXDK_UDNjyKAlYAL7vVwOMOI"],
+              },
               models: [
                 {
                   name: "fixture",
                   modelName: "deepseek-chat",
                   baseUrl: base + "/v1",
-                  apiKeys: ["fixture-model"],
+                  apiKeys: ["******1234"],
                   maxTokens: 4096,
                   contextWindow: 16000,
                   timeout: null,
@@ -202,6 +207,26 @@ describe.skipIf(!database)("standard runtime real HTTP/PG/processes", () => {
       }
       let raw = "";
       for await (const c of req) raw += c;
+      if (req.url === "/mcp") {
+        if (req.method !== "POST") { res.writeHead(405).end(); return; }
+        const rpc = JSON.parse(raw);
+        if (rpc.id === undefined) { res.writeHead(202).end(); return; }
+        let result: unknown;
+        if (rpc.method === "initialize") result = {
+          protocolVersion: "2025-03-26", capabilities: { tools: {} }, serverInfo: { name: "fixture", version: "1" },
+        };
+        if (rpc.method === "tools/list") result = {
+          tools: [{ name: rpc.params?.cursor ? "fixture_second" : "fixture_mcp", inputSchema: { type: "object", properties: {} } }],
+          ...(rpc.params?.cursor ? {} : { nextCursor: "second" }),
+        };
+        if (rpc.method === "tools/call") {
+          mcpCalls.push(String(req.headers.authorization));
+          result = { content: [{ type: "text", text: "MCP fixture called" }] };
+        }
+        res.writeHead(200, { "content-type": "application/json" });
+        res.end(JSON.stringify({ jsonrpc: "2.0", id: rpc.id, result }));
+        return;
+      }
       if (req.url !== "/v1/chat/completions") {
         res.end("ok");
         return;
@@ -229,6 +254,11 @@ describe.skipIf(!database)("standard runtime real HTTP/PG/processes", () => {
         });
         frame({ content: "Result [file](outputs/result.txt)" });
         frame({}, "stop");
+      } else if (String(user.content).includes("MCP")) {
+        if (request.tools.some((tool: any) => tool.function.name === "fixture_mcp")) {
+          frame({ role: "assistant", tool_calls: [{ index: 0, id: "mcp-" + modelCalls, type: "function", function: { name: "fixture_mcp", arguments: "{}" } }] });
+          frame({}, "tool_calls");
+        } else { frame({ role: "assistant", content: "No external tools" }); frame({}, "stop"); }
       } else {
         const command = String(user.content).includes("overwrite")
           ? "printf changed > outputs/result.txt"
@@ -284,6 +314,48 @@ describe.skipIf(!database)("standard runtime real HTTP/PG/processes", () => {
     await pool.query(`DROP SCHEMA IF EXISTS "${schema}" CASCADE`);
     await pool.end();
     await removeWorkerFiles(root);
+  });
+  it("keeps scoped stable MCP selections across rename, masks edit responses and calls only selected services", async () => {
+    const path = "/v1/mcp/services";
+    const created = await api(path, { name: "Orders", url: base + "/mcp", headers: { Authorization: "fixture-secret", "X-Remove": "unused" } });
+    expect(created.status).toBe(201);
+    const service = created.body.service;
+    expect(service.headers).toEqual({ authorization: "********", "x-remove": "********" });
+    expect((await api(path)).body.services).toEqual([service]);
+    expect((await api(path + "/names")).body).toEqual([{ id: service.id, name: "Orders" }]);
+    const foreignScopes: Record<string, string>[] = [{ "x-domain-id": "other-domain" }, { authorization: "Bearer other-host" }];
+    for (const extra of foreignScopes) {
+      expect((await api(path, undefined, extra)).body).toEqual({ services: [] });
+      expect((await api(`${path}/${service.id}/tools`, undefined, extra)).status).toBe(404);
+    }
+    const foreign = await api(path, { name: "Orders", url: base + "/mcp" }, { authorization: "Bearer other-host" });
+    expect(foreign.status).toBe(201);
+    expect(foreign.body.service.id).not.toBe(service.id);
+    const renamed = await api(`${path}/${service.id}`, { name: "Orders renamed", url: base + "/mcp", headers: { authorization: null } }, {}, "PUT");
+    expect(renamed.body.service).toEqual({ ...service, name: "Orders renamed", headers: { authorization: "********" } });
+    expect((await api(`${path}/${service.id}/tools`)).body.tools.map((t: any) => t.name)).toEqual(["fixture_mcp", "fixture_second"]);
+    const selected = [{ id: service.id }, { id: foreign.body.service.id }, { id: service.id }];
+    const first = await run(await session(), "MCP selected", selected);
+    expect((await settle(first.id)).run.stopReason, logs).toBe("stop");
+    expect(mcpCalls).toEqual(["fixture-secret"]);
+    expect(inputs.find((i) => i.tools?.some((t: any) => t.function.name === "fixture_mcp"))?.tools.map((t: any) => t.function.name)).toContain("fixture_second");
+    const none = await run(await session(), "MCP unselected");
+    expect((await settle(none.id)).run.stopReason).toBe("stop");
+    expect(mcpCalls).toHaveLength(1);
+    await api(`${path}/${service.id}`, { name: "Orders renamed", url: base + "/mcp", headers: { authorization: "rotated-secret" } }, {}, "PUT");
+    const next = await run(await session(), "MCP next run", selected);
+    expect((await settle(next.id)).run.stopReason).toBe("stop");
+    expect(mcpCalls).toEqual(["fixture-secret", "rotated-secret"]);
+    const snapshot = (await api(`/v1/runs/${first.id}`)).body;
+    expect(JSON.stringify(snapshot)).not.toContain("fixture-secret");
+    expect((await api(`/v1/sessions/${snapshot.run.sessionId}/runs`, first.request, { "idempotency-key": first.id })).body.replayed).toBe(true);
+    expect(mcpCalls).toHaveLength(2);
+    expect((await api(`${path}/${service.id}`, undefined, {}, "DELETE")).status).toBe(204);
+    const replacement = await api(path, { name: "Orders renamed", url: base + "/mcp" });
+    expect(replacement.body.service.id).not.toBe(service.id);
+    const stale = await run(await session(), "MCP deleted selection", selected);
+    expect((await settle(stale.id)).run.stopReason).toBe("stop");
+    expect(mcpCalls).toHaveLength(2);
   });
   it("runs the ordinary skill via PI bash, preserves reasoning_content and immutable files", async () => {
     const s = await session(),

@@ -9,8 +9,7 @@ import { ossContentLayout } from "../content";
 import { configureOssI18n } from "../i18n";
 import { ossProduct } from "../product";
 
-// knowledge-store and skill-loader reach core/skills/manifest's module-level tApp,
-// so they must be imported only after the OSS i18n assembly (the suite's established pattern).
+// Configure the edition locale before reading localized diagnostic resources.
 configureOssI18n();
 const { readKnowledgeMarkdown } = await import(
   "@ontomato/workbench-server/platform/diagnosis/observe/agent/knowledge-store"

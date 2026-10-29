@@ -5,7 +5,7 @@ import { createI18n } from "vue-i18n";
 import { createRouter, createMemoryHistory } from "vue-router";
 import TurnDiagnoseButton from "../TurnDiagnoseButton.vue";
 import en from "../../../../locales/en";
-import type { ResponseSnapshot } from "../../../../types/chat";
+import type { TurnIdentity } from "../../utils/workspace-route";
 import { turnDiagnosisAccessKey, type TurnDiagnosisAccess } from "../../access";
 
 const router = createRouter({
@@ -20,14 +20,14 @@ const router = createRouter({
   ],
 });
 
-function snapshot(patch: Partial<ResponseSnapshot>): ResponseSnapshot {
-  return { mode: "standard", status: "completed", primaryText: "", ...patch } as ResponseSnapshot;
+function snapshot(patch: Partial<TurnIdentity>): TurnIdentity {
+  return { status: "completed", ...patch };
 }
 
 /** Open-source access: /observe has no permission gate, so the entry is always visible. */
 const ossAccess: TurnDiagnosisAccess = { prepare: () => {}, visible: () => true };
 
-function render(value: ResponseSnapshot, access: TurnDiagnosisAccess = ossAccess) {
+function render(value: TurnIdentity, access: TurnDiagnosisAccess = ossAccess) {
   return mount(TurnDiagnoseButton, {
     props: { turn: value },
     global: {

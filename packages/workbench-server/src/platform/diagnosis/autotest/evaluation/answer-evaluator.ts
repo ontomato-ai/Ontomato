@@ -9,12 +9,10 @@ import type { EvaluationResult } from "@ontomato/contracts/autotest";
  * Reference: ragchat-server autotest src/llm/core/evaluator.py
  */
 
-import { createModel } from "../../../../config/model-factory";
-import { modelAgentName } from "../../../../logging/model-agents";
+import { runAuxiliary } from "../../../agent-runtime/runtime";
 import { renderPrompt } from "../../../../core/prompts/loader";
 import { createLogger } from "../../../../logging/logger";
 import {
-  extractTextFromContent,
   loadEvaluationProtocol,
   parseConclusionFromOutput,
   type EvaluationProtocol,
@@ -32,7 +30,7 @@ function buildUserPrompt(
   expectedAnswer: string,
   finalAnswerSnapshot: string,
   expectedLogic?: string,
-  actualLogicMarkdown?: string
+  actualLogicMarkdown?: string,
 ): string {
   const expectedAnswerBlock = expectedAnswer?.trim()
     ? `<${inputTags.expectedAnswer}>\n${expectedAnswer}\n</${inputTags.expectedAnswer}>`
@@ -89,7 +87,9 @@ export interface AnswerEvaluateInput {
  * - Never throws: failures are captured in EvaluationResult.error with
  *   passed = undefined.
  */
-export async function evaluateAnswer(input: AnswerEvaluateInput): Promise<EvaluationResult> {
+export async function evaluateAnswer(
+  input: AnswerEvaluateInput,
+): Promise<EvaluationResult> {
   const {
     question,
     expectedAnswer = "",
@@ -107,8 +107,6 @@ export async function evaluateAnswer(input: AnswerEvaluateInput): Promise<Evalua
   }
 
   try {
-    const model = await createModel({ agentName: modelAgentName("answerEvaluator"), temperature: 0, stream: false });
-
     const protocol = loadEvaluationProtocol();
     const userPrompt = buildUserPrompt(
       protocol,
@@ -117,21 +115,19 @@ export async function evaluateAnswer(input: AnswerEvaluateInput): Promise<Evalua
       expectedAnswer,
       finalAnswerSnapshot,
       expectedLogic,
-      actualLogicMarkdown
+      actualLogicMarkdown,
     );
 
-    const result = await model.invoke(
-      [
-        { role: "system", content: renderPrompt("autotest.answer-evaluator.system") },
-        { role: "user", content: userPrompt },
-      ],
-      { signal: AbortSignal.timeout(EVALUATION_TIMEOUT_MS) }
-    );
-
-    const outputText = extractTextFromContent(result.content);
+    const outputText = await runAuxiliary({
+      systemPrompt: renderPrompt("autotest.answer-evaluator.system"),
+      message: userPrompt,
+      signal: AbortSignal.timeout(EVALUATION_TIMEOUT_MS),
+    });
 
     if (!outputText.trim()) {
-      logger.warn("Answer evaluation returned empty output", { question: question.slice(0, 60) });
+      logger.warn("Answer evaluation returned empty output", {
+        question: question.slice(0, 60),
+      });
       return { passed: undefined, error: "LLM returned empty output" };
     }
 
@@ -141,7 +137,10 @@ export async function evaluateAnswer(input: AnswerEvaluateInput): Promise<Evalua
         question: question.slice(0, 60),
         outputLength: outputText.length,
       });
-      return { passed: undefined, error: "Failed to parse conclusion from LLM output" };
+      return {
+        passed: undefined,
+        error: "Failed to parse conclusion from LLM output",
+      };
     }
 
     logger.info("Answer evaluation completed", {

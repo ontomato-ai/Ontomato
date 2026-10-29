@@ -98,11 +98,6 @@ function exportArgs(app, version) {
     `APP_CHECK_ARG=${secret.check.argument}`,
   ];
 }
-function pipArgs() {
-  return process.env.PIP_INDEX_URL
-    ? ["--build-arg", `PIP_INDEX_URL=${process.env.PIP_INDEX_URL}`]
-    : [];
-}
 function assertImage(image, arch, component, version, labels) {
   const inspected = inspectImage(image, `linux/${arch}`);
   const actual = inspected && inspected.Config.Labels ? inspected.Config.Labels : {};
@@ -117,8 +112,8 @@ function assertImage(image, arch, component, version, labels) {
     throw new Error(`Built image identity mismatch: ${image}`);
 }
 
-// The build context: the source trees the Maven export compiles, the pinned
-// requirements, the public license files, the tools the recipe binds into two
+// The build context: the source trees the Maven export compiles, the
+// public license files, the tools the recipe binds into build-time
 // RUN steps, and the product payload the final stage copies. A build source
 // change therefore only changes files the export and the payload stages read.
 function stageContext(app, arch, lang) {
@@ -126,10 +121,8 @@ function stageContext(app, arch, lang) {
   for (const tree of app.contextTrees)
     for (const path of tree.paths)
       copyFrom(tree.root, path, join(context, tree.dest, path));
-  copyFrom(app.requirements.root, app.requirements.path, join(context, "requirements-py310.txt"));
   stageResources(app, context, lang);
   for (const [root, source, dest] of app.bin) copyFrom(root, source, join(context, dest));
-  copyFrom(app.mcp.root, app.mcp.path, join(context, "payload/mcp/mcpserver.py"));
   for (const name of ["LICENSE", "NOTICE"]) copyFrom(PUBLIC_ROOT, name, join(context, name));
   copyFrom(PUBLIC_ROOT, "scripts/third_party_notices.py", join(context, "tools/third_party_notices.py"));
   copyFrom(PUBLIC_ROOT, "scripts/data-engine/verify-image.py", join(context, "tools/verify-image.py"));
@@ -143,8 +136,7 @@ export function stageResources(app, context, lang) {
   for (const [root, source, dest] of app.resources) copyFrom(root, source, join(context, dest));
   for (const dest of new Set(app.resources.map(([, , dest]) => dest)))
     selectPromptLanguage(join(context, dest), lang, app.supportedPromptLangs);
-  if (!existsSync(join(context, app.requiredSkill)))
-    throw new Error("Missing default trend-forecaster skill");
+  mkdirSync(join(context, "payload/skills"), { recursive: true });
 }
 
 // The one CLI parse: help returns before any Git, settings or Docker read; the
@@ -176,7 +168,6 @@ export async function buildJavaApp(app, { parsed }) {
     "--target",
     "image",
     "--load",
-    ...pipArgs(),
     ...imageLabels(app.component, version, stamp),
     ...labelArgs(app.labels),
     "--build-arg",

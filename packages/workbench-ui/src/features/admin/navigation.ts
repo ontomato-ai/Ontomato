@@ -3,11 +3,9 @@ import {
   Activity,
   Blocks,
   Bot,
-  ClipboardList,
   Cpu,
   Database,
   MessageSquare,
-  MessagesSquare,
   Monitor,
   Network,
   Puzzle,
@@ -109,14 +107,6 @@ export const adminMenuItems = {
     icon: Blocks,
     groupKey: "app-capabilities",
   },
-  analysisPlans: {
-    permissions: ["hot-data"],
-    path: "/admin/analysis-plans",
-    titleKey: "nav.analysisPlans",
-    descriptionKey: "navDescription.analysisPlans",
-    icon: ClipboardList,
-    groupKey: "app-capabilities",
-  },
   // Shown with either system agent's permission; each entry card on the page still checks its own.
   systemAgents: {
     permissions: ["observer", "business-knowledge"],
@@ -156,14 +146,6 @@ export const adminMenuItems = {
     titleKey: "nav.systemConfig",
     descriptionKey: "navDescription.systemConfig",
     icon: ServerCog,
-    groupKey: "platform-management",
-  },
-  queryExamples: {
-    permissions: ["query-examples"],
-    path: "/admin/examples",
-    titleKey: "nav.queryExamples",
-    descriptionKey: "navDescription.queryExamples",
-    icon: MessagesSquare,
     groupKey: "platform-management",
   },
   auditLog: {

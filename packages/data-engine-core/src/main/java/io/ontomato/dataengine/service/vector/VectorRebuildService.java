@@ -12,9 +12,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionTemplate;
 
 import io.ontomato.dataengine.config.BusinessConfig;
+import io.ontomato.dataengine.config.ModelKeyMask;
 import io.ontomato.dataengine.dao.ActionDao;
-import io.ontomato.dataengine.dao.BusinessExampleQuestionSpliterDao;
-import io.ontomato.dataengine.dao.BussinessExampleDao;
 import io.ontomato.dataengine.dao.KnowledgeDao;
 import io.ontomato.dataengine.dao.MetricViewDao;
 import io.ontomato.dataengine.dao.VectorRebuildItem;
@@ -65,12 +64,6 @@ public class VectorRebuildService {
 
     @Autowired
     private KnowledgeDao knowledgeDao;
-
-    @Autowired
-    private BussinessExampleDao bussinessExampleDao;
-
-    @Autowired
-    private BusinessExampleQuestionSpliterDao questionSpliterDao;
 
     @Autowired
     private ActionDao actionDao;
@@ -167,7 +160,8 @@ public class VectorRebuildService {
                 state = retrievalGate.stateOf(domainId, businessConfig);
             }
             properties.setBaseUrl(input.getBaseUrl());
-            properties.setApiKey(input.getApiKey());
+            // A key sent back as its mask keeps the stored key.
+            properties.setApiKey(ModelKeyMask.restoreEmbedding(input.getApiKey(), properties.getApiKey()));
             properties.setModelName(input.getModelName());
             properties.setDimensions(input.getDimensions());
             properties.setTimeout(input.getTimeout());
@@ -234,8 +228,6 @@ public class VectorRebuildService {
         try {
             if (!state.isCleared()) {
                 knowledgeDao.clearDomainVectors(domainId);
-                bussinessExampleDao.clearDomainVectors(domainId);
-                questionSpliterDao.clearDomainVectors(domainId);
                 actionDao.clearDomainVectors(domainId);
                 metricViewDao.clearDomainVectors(domainId);
                 vectorResourceDao.clearDomainVectors(domainId);
@@ -302,14 +294,6 @@ public class VectorRebuildService {
                 () -> knowledgeDao.countDomainRows(domainId), () -> knowledgeDao.countDomainPending(domainId),
                 () -> knowledgeDao.listDomainPending(domainId),
                 (item, vector) -> knowledgeDao.fillDomainVector(item.getId(), vector)));
-        sources.add(new VectorSource(ItemType.EXAMPLE, null,
-                () -> bussinessExampleDao.countDomainRows(domainId), () -> bussinessExampleDao.countDomainPending(domainId),
-                () -> bussinessExampleDao.listDomainPending(domainId),
-                (item, vector) -> bussinessExampleDao.fillDomainVector(item.getId(), vector)));
-        sources.add(new VectorSource(ItemType.SPLIT_EXAMPLE, null,
-                () -> questionSpliterDao.countDomainRows(domainId), () -> questionSpliterDao.countDomainPending(domainId),
-                () -> questionSpliterDao.listDomainPending(domainId),
-                (item, vector) -> questionSpliterDao.fillDomainVector(item.getId(), vector)));
         sources.add(new VectorSource(ItemType.ACTION, null,
                 () -> actionDao.countDomainRows(domainId), () -> actionDao.countDomainPending(domainId),
                 () -> actionDao.listDomainPending(domainId),

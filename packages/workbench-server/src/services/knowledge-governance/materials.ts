@@ -1,8 +1,10 @@
 import { z } from "zod";
 import { config } from "../../config/application";
 import { backendGet, backendPost } from "../../utils/backend-client";
-import { getCheckpointer } from "../../infrastructure/connection";
-import { getThreadMessagesPayload } from "../chat/thread-service";
+import {
+  assistantDomainIndex,
+  readAssistantHistory,
+} from "../assistant/evidence";
 import { buildTurnKey } from "../../logging/log-context";
 
 export interface GovernanceCredentials {
@@ -27,14 +29,17 @@ const knowledgeSchema = z.object({
 });
 
 function unwrap(text: string): unknown {
-  const response = z.object({ success: z.boolean(), data: z.unknown() }).parse(JSON.parse(text));
-  if (!response.success) throw new Error("Source service rejected the read request");
+  const response = z
+    .object({ success: z.boolean(), data: z.unknown() })
+    .parse(JSON.parse(text));
+  if (!response.success)
+    throw new Error("Source service rejected the read request");
   return response.data;
 }
 
 export async function readKnowledge(
   credentials: GovernanceCredentials,
-  signal?: AbortSignal
+  signal?: AbortSignal,
 ): Promise<Material[]> {
   signal?.throwIfAborted();
   const endpoint = "/admin/getBussinessKnowledge";
@@ -42,12 +47,16 @@ export async function readKnowledge(
     endpoint,
     `${config.dataQuery.baseUrl}${endpoint}`,
     {},
-    { ...credentials, signal }
+    { ...credentials, signal },
   );
   const raw = unwrap(response.text);
   const entries = z
     .array(knowledgeSchema)
-    .parse(Array.isArray(raw) ? raw : Object.values(z.record(z.unknown()).parse(raw)));
+    .parse(
+      Array.isArray(raw)
+        ? raw
+        : Object.values(z.record(z.unknown()).parse(raw)),
+    );
   return entries
     .map((item) => ({
       id: item.knowledgeID,
@@ -59,14 +68,18 @@ export async function readKnowledge(
 
 export async function readOntology(
   credentials: GovernanceCredentials,
-  signal?: AbortSignal
+  signal?: AbortSignal,
 ): Promise<Material[]> {
   signal?.throwIfAborted();
   const endpoint = "/admin/getSchema";
-  const response = await backendGet(endpoint, `${config.dataQuery.baseUrl}${endpoint}`, {
-    ...credentials,
-    signal,
-  });
+  const response = await backendGet(
+    endpoint,
+    `${config.dataQuery.baseUrl}${endpoint}`,
+    {
+      ...credentials,
+      signal,
+    },
+  );
   // AdminServiceImpl.getPrettyJSONRule owns this external format: named class
   // definitions in an array, named relationships in an object.
   const schema = z
@@ -94,7 +107,7 @@ export async function readOntology(
       text: JSON.stringify(
         { datasetDesc: schema.datasetDesc, classList: schema.classList },
         null,
-        2
+        2,
       ),
     },
   ].sort((a, b) => a.id.localeCompare(b.id));
@@ -115,14 +128,19 @@ export function materialPage(materials: Material[], raw: unknown) {
   const matches = materials.filter(
     (item) =>
       (!input.id || item.id === input.id) &&
-      (!query || `${item.title}\n${item.text}`.toLocaleLowerCase().includes(query))
+      (!query ||
+        `${item.title}\n${item.text}`.toLocaleLowerCase().includes(query)),
   );
-  const items: Array<Material & { start: number; end: number; totalChars: number }> = [];
+  const items: Array<
+    Material & { start: number; end: number; totalChars: number }
+  > = [];
   let index = input.index,
     offset = input.offset,
     remaining = input.maxChars;
   if (offset && (!matches[index] || offset > matches[index]!.text.length))
-    throw new Error("Source changed or cursor is out of range; reread from offset 0");
+    throw new Error(
+      "Source changed or cursor is out of range; reread from offset 0",
+    );
   while (index < matches.length && remaining > 0) {
     const original = matches[index]!;
     const end = Math.min(original.text.length, offset + remaining);
@@ -151,14 +169,22 @@ export function materialPage(materials: Material[], raw: unknown) {
 }
 
 export async function readHistory(threadId: string, domainId: string) {
-  const payload = await getThreadMessagesPayload(threadId, { scope: "domain", domainId });
+  const payload = await readAssistantHistory(threadId, {
+    scope: "domain",
+    domainId,
+  });
   return {
     ...payload,
     threadId,
     turns: payload.messages.flatMap((message) =>
       typeof message.requestSeq === "number"
-        ? [{ requestSeq: message.requestSeq, turnKey: buildTurnKey(threadId, message.requestSeq) }]
-        : []
+        ? [
+            {
+              requestSeq: message.requestSeq,
+              turnKey: buildTurnKey(threadId, message.requestSeq),
+            },
+          ]
+        : [],
     ),
   };
 }
@@ -168,33 +194,40 @@ export async function searchHistory(
   query: string,
   offset: number,
   limit: number,
-  signal?: AbortSignal
+  signal?: AbortSignal,
 ) {
   signal?.throwIfAborted();
-  const checkpointer = getCheckpointer();
-  if (!checkpointer) throw new Error("Thread storage unavailable");
-  const page = await checkpointer.getThreadList({ domainId, scope: "domain", offset, limit });
+  const page = await assistantDomainIndex(domainId, offset, limit);
   const matches = [];
-  for (const thread of page.threads) {
+  for (const thread of page.items) {
     signal?.throwIfAborted();
-    const history = await readHistory(thread.threadId, domainId);
+    const history = await readHistory(thread.id, domainId);
     const questions = history.messages
-      .filter((message) => message.role === "user" && typeof message.content === "string")
       .filter(
         (message) =>
-          !query || String(message.content).toLocaleLowerCase().includes(query.toLocaleLowerCase())
+          message.role === "user" && typeof message.content === "string",
+      )
+      .filter(
+        (message) =>
+          !query ||
+          String(message.content)
+            .toLocaleLowerCase()
+            .includes(query.toLocaleLowerCase()),
       )
       .map((message) => ({
         question: message.content,
         requestSeq: message.requestSeq,
         ...(typeof message.requestSeq === "number"
-          ? { turnKey: buildTurnKey(thread.threadId, message.requestSeq) }
+          ? { turnKey: buildTurnKey(thread.id, message.requestSeq) }
           : {}),
       }));
-    if (questions.length || thread.title.toLocaleLowerCase().includes(query.toLocaleLowerCase()))
-      matches.push({ ...thread, questions });
+    if (
+      questions.length ||
+      thread.title.toLocaleLowerCase().includes(query.toLocaleLowerCase())
+    )
+      matches.push({ ...thread, threadId: thread.id, questions });
   }
-  const scannedTo = offset + page.threads.length;
+  const scannedTo = offset + page.items.length;
   return {
     matches,
     totalThreads: page.total,

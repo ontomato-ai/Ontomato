@@ -1,21 +1,26 @@
 ---
 name: leaflet
 description: Interactive Leaflet base map for geospatial points with value-scaled markers and detail popups.
-type: executable
-category: visualization
-title: Leaflet Base Map
-tags:
-  - visualization
-  - map
-  - leaflet
-  - geospatial
-timeout: 15000
-outputType: html
-version: 1.0.0
-defaultEnabled: false
-entries:
-  - scripts/index.mjs
+metadata:
+  ontomato.type: executable
+  ontomato.category: visualization
+  ontomato.title: Leaflet Base Map
+  ontomato.tags: '["visualization","map","leaflet","geospatial"]'
+  ontomato.version: 1.0.0
+  ontomato.outputType: html
+  ontomato.defaultEnabled: "false"
 ---
+
+## Standard CLI
+
+Write the documented input to a JSON file and run:
+
+`node skills/leaflet/scripts/index.mjs work/input.json`
+
+The command writes its result under `outputs/` and prints the file path.
+Reference that path in Markdown. The command runs unchanged in an external harness;
+use the package's local path when it is installed somewhere other than `skills/`.
+
 ## Leaflet Base Map
 
 Render tabular data with latitude and longitude fields as an interactive Leaflet point map. The skill adapts to light and dark themes automatically and shows a zoomable base map, circle markers, and detail popups.

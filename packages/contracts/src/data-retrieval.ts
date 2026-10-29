@@ -121,6 +121,7 @@ export const datasetPayloadSchema = z
 export const retrievalInputSchema = z
   .object({
     question: z.string().trim().min(1),
+    timeoutSeconds: z.number().int().min(1).max(600).optional(),
     userQuotes: z.array(z.string()).default([]),
     classNames: z.array(z.string()).optional(),
     previousDatasetIds: z.array(id).default([]),
@@ -146,6 +147,7 @@ export const retrievalSnapshotSchema = z.object({
 });
 export const retrievalAnswersSchema = z
   .object({
+    timeoutSeconds: z.number().int().min(1).max(600).optional(),
     expectedRunId: id,
     expectedDecisionRevision: z.number().int().nonnegative(),
     message: z.string().trim().min(1),
@@ -166,3 +168,10 @@ export const prepareDatasetSchema = z
 export type DatasetPayload = z.infer<typeof datasetPayloadSchema>;
 export type RetrievalInput = z.infer<typeof retrievalInputSchema>;
 export type RetrievalSnapshot = z.infer<typeof retrievalSnapshotSchema>;
+
+export const retrievalEvidenceSchema = z.object({ input: retrievalInputSchema, snapshot: retrievalSnapshotSchema }).strict();
+export const retrievalCallerInputSchema = z.object({ classNames: z.array(z.string()), continuationIds: z.array(id), deadlineAt: z.string().datetime() }).strict();
+export const retrievalCallerSchema = z.object({ id, closed: z.boolean(), retrievals: z.array(z.object({ retrievalId: id, runId: id }).strict()) }).strict();
+
+export const retrievalCallerAdmissionSchema = z.object({ id, expiresAt: z.string().datetime({ offset: true }) }).strict();
+export type RetrievalCallerInput = z.infer<typeof retrievalCallerInputSchema>;

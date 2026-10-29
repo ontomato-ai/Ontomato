@@ -103,32 +103,3 @@ export async function listMcpTools(
     });
   }
 }
-
-export async function callMcpTool(
-  urlLike: string,
-  toolName: string,
-  args: Record<string, unknown>,
-  headers: Record<string, string> = {},
-  signal?: AbortSignal
-) {
-  signal?.throwIfAborted();
-  const url = new URL(urlLike);
-  const client = new Client({ name: workbenchProduct().mcpClientName, version: "1.0.0" });
-  try {
-    await connectClient(client, url, headers, signal);
-    signal?.throwIfAborted();
-    const result = await client.callTool(
-      { name: toolName, arguments: args },
-      undefined,
-      signal ? { signal } : undefined
-    );
-    logger.info("callTool ok", { toolName, isError: result.isError === true });
-    return result;
-  } catch (error) {
-    throw connectionError(error, url, headers);
-  } finally {
-    await client.close().catch(() => {
-      /* ignore */
-    });
-  }
-}

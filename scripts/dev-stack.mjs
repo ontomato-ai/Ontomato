@@ -1,4 +1,4 @@
-// Product root full-stack development entry point: PG -> local Python MCP -> Java ready -> frontend group and independent runtime.
+// Product root full-stack development entry point: PG -> Java ready -> frontend group and independent runtime.
 // Only relies on Node 24 built-ins, docker, and platform process/port queries (Unix uses ps/lsof/kill;
 // Windows uses built-in PowerShell/CIM); product differences come entirely from each product's own dev/postgres.compose.yml,
 // the root .env and apps/data-engine/.dev/conf; this tool does not know about edition.
@@ -8,23 +8,21 @@ import { createHash } from "node:crypto";
 import { closeSync, existsSync, fstatSync, mkdirSync, openSync, readFileSync, readSync, realpathSync, statSync } from "node:fs";
 import { get } from "node:http";
 import { createRequire } from "node:module";
-import { connect } from "node:net";
 import { devNull } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { holdForeground } from "./dev-command.mjs";
 import { identifyWindows, windowsListeningPids, windowsProcesses, windowsStop } from "./dev-platform-windows.mjs";
-import { ensurePythonEnv, pythonExecutable, readDotEnv } from "./data-engine/dev-java.mjs";
+import { readDotEnv } from "./data-engine/dev-java.mjs";
 
 // Shared tools only anchor to the public core of their containing repo, without probing candidate paths based on product identity.
 const CORE_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..", "packages", "data-engine-core");
 const WINDOWS = process.platform === "win32";
 const PRODUCT_COMMANDS = ["up", "down", "status", "logs"];
 const TERM_WAIT_MS = 10_000;
-const MCP_WAIT_MS = 30_000;
 const JAVA_WAIT_MS = 120_000;
 const FRONTEND_ROLES = ["frontend-root", "frontend-child"];
-const MARKERS = ["mcpserver.py", "dev.mjs", "spring-boot:run", "RAGMain", "dev-command.mjs", "concurrently.js", "tsx/dist/", "vite/bin/vite.js", "pnpm"];
+const MARKERS = ["dev.mjs", "spring-boot:run", "RAGMain", "dev-command.mjs", "concurrently.js", "tsx/dist/", "vite/bin/vite.js", "pnpm"];
 
 function run(command, args, options = {}) {
   return spawnSync(command, args, { encoding: "utf8", ...options });
@@ -64,11 +62,6 @@ export function productContext(rootInput) {
     appDir,
     devRoot,
     coreRoot: CORE_ROOT,
-    // Location of venv Python has only dev-java.mjs as owner: on Windows it is Scripts/python.exe.
-    venvPython: pythonExecutable(appDir),
-    mcpScript: join(CORE_ROOT, "mcp", "mcpserver.py"),
-    requirements: join(CORE_ROOT, "../agent-runtime/requirements-py310.txt"),
-    mcpTemplate: join(CORE_ROOT, "conf-defaults", "mcp-clients.yml"),
     applicationTemplate: join(CORE_ROOT, "conf-defaults", "application.yml"),
     javaEntry: join(appDir, "dev.mjs"),
     devCommand: join(root, "scripts", "dev-command.mjs"),
@@ -76,7 +69,6 @@ export function productContext(rootInput) {
     composeFile: join(root, "dev", "postgres.compose.yml"),
     runtimeLog: join(root, "data/agent-runtime/dev.log"),
     backendLog: join(devRoot, "logs", "dev-backend.log"),
-    mcpLog: join(devRoot, "logs", "dev-mcp.log"),
     project: composeProject(root),
   };
 }
@@ -109,35 +101,6 @@ export function resolveJavaPort(ctx, inherited = process.env) {
     throw new Error(`application.yml server.port is not a valid integer (${file}); set SERVER_PORT explicitly in .env`);
   return integerLiteral(port, "server.port");
 }
-// Pick the single http://127.0.0.1:<explicit-port>/sse entry for local compute service; remote entries are permitted. Errors report field locations.
-export function localMcpPort(text, root) {
-  const clients = yamlFor(root).parse(text)?.ontomato?.["data-engine"]?.["mcp-clients"];
-  if (!Array.isArray(clients)) throw new Error("mcp-clients.yml: missing ontomato.data-engine.mcp-clients list");
-  const locals = [];
-  clients.forEach((client, index) => {
-    if (client?.["sse-server"] === undefined) return;
-    let url;
-    try {
-      url = new URL(String(client["sse-server"]));
-    } catch {
-      throw new Error(`mcp-clients.yml: ontomato.data-engine.mcp-clients[${index}].sse-server is not a valid URL`);
-    }
-    if (url.hostname !== "127.0.0.1") return;
-    if (url.protocol !== "http:") throw new Error(`mcp-clients.yml: ontomato.data-engine.mcp-clients[${index}].sse-server must be http`);
-    if (url.port === "") throw new Error(`mcp-clients.yml: ontomato.data-engine.mcp-clients[${index}].sse-server missing explicit port`);
-    if (url.pathname !== "/sse") throw new Error(`mcp-clients.yml: ontomato.data-engine.mcp-clients[${index}].sse-server path must be /sse`);
-    locals.push(integerLiteral(url.port, "MCP port"));
-  });
-  if (locals.length === 0) throw new Error("mcp-clients.yml: no local 127.0.0.1 MCP entry");
-  if (locals.length > 1) throw new Error(`mcp-clients.yml: found ${locals.length} local MCP entries, exactly one required`);
-  return locals[0];
-}
-export function resolveMcpPort(ctx) {
-  const field = join(ctx.devRoot, "conf", "mcp-clients.yml");
-  const file = existsSync(field) ? field : ctx.mcpTemplate;
-  if (!existsSync(file)) throw new Error(`Cannot find MCP configuration (${field} or public template)`);
-  return localMcpPort(readFileSync(file, "utf8"), ctx.root);
-}
 export function parseProcessTable(text) {
   const rows = [];
   for (const line of text.split("\n")) {
@@ -169,15 +132,6 @@ export function classify(command, cwd, ctx) {
   // splitting on spaces would break Java classpaths in checkouts with spaces.
   if (node !== undefined && moduleArgs(node, "/scripts/dev-stack.mjs") !== undefined) return "self";
   if (cwd === ctx.devRoot) {
-    const python = afterScript(command, ctx.venvPython);
-    if (python !== undefined && afterScript(python, ctx.mcpScript) !== undefined) return "mcp";
-    // macOS framework Python (e.g. Homebrew) re-execs into the framework binary
-    // (.../Python.app/Contents/MacOS/Python), so ps reports that interpreter instead of the venv
-    // symlink. Accept any Python interpreter running the MCP script as its first argument, but
-    // never a command that merely mentions the script path.
-    const end = command.indexOf(" ");
-    if (end > 0 && /^python[\d.]*$/i.test(basename(command.slice(0, end))) &&
-        afterScript(command.slice(end + 1), ctx.mcpScript) !== undefined) return "mcp";
     if (java !== undefined && hasArg(java, "io.ontomato.dataengine.RAGMain") &&
         (java.includes(`-cp ${ctx.devRoot}/conf:`) || java.includes(`-classpath ${ctx.devRoot}/conf:`))) return "ragmain";
   }
@@ -353,19 +307,6 @@ async function spawnDetached(command, args, cwd, env, log) {
 function sleep(ms) {
   return new Promise((done) => setTimeout(done, ms));
 }
-async function waitForTcp(port, deadline) {
-  while (Date.now() < deadline) {
-    const ok = await new Promise((done) => {
-      const socket = connect({ host: "127.0.0.1", port });
-      const timer = setTimeout(() => { socket.destroy(); done(false); }, 2000);
-      socket.once("connect", () => { clearTimeout(timer); socket.destroy(); done(true); });
-      socket.once("error", () => { clearTimeout(timer); socket.destroy(); done(false); });
-    });
-    if (ok) return true;
-    await sleep(500);
-  }
-  return false;
-}
 function javaReady(port) {
   return new Promise((done) => {
     const request = get(
@@ -431,9 +372,7 @@ export function runtimePort(ctx, inherited = process.env) {
 async function up(ctx) {
   const dbPort = integerLiteral(process.env.POSTGRES_PORT ?? "5432", "POSTGRES_PORT");
   const javaPort = resolveJavaPort(ctx);
-  const mcpPort = resolveMcpPort(ctx);
-  requireAll([[ctx.composeFile, "dev compose"], [ctx.javaEntry, "Java entry"], [ctx.javaEnvFile, "Java .env"], [ctx.mcpScript, "MCP script"]]);
-  ensurePythonEnv(ctx.appDir, ctx.requirements);
+  requireAll([[ctx.composeFile, "dev compose"], [ctx.javaEntry, "Java entry"], [ctx.javaEnvFile, "Java .env"]]);
   requireDocker();
   const pre = identify(ctx);
   if (pre.unattributable.length)
@@ -443,11 +382,8 @@ async function up(ctx) {
   if (frontend.length) throw new Error(`Frontend in this checkout is already running: ${frontend.map((entry) => entry.pid).join(", ")}`);
 
   const pg = postgresState(ctx, dbPort);
-  const ownMcp = pre.group.filter((entry) => entry.role === "mcp");
   const ownJava = pre.group.filter((entry) => entry.role === "ragmain");
-  assertNoForeign(mcpPort, { group: ownMcp }, "MCP");
   assertNoForeign(javaPort, { group: ownJava }, "Java");
-  if (ownMcp.length && !ownsPort(mcpPort, ownMcp)) throw new Error("Checkout MCP is not listening on configured port");
   for (const [port, label] of [[runtimePort(ctx), "Agent runtime"], [3000, "Node"], [5173, "Workbench Web"], [5174, "Manager"]]) assertNoForeign(port, { group: [] }, label);
   if (!pg || !pg.running || !pg.healthy || !pg.published) {
     if (pg && pg.running && pg.published) throw new Error(`PG container not healthy (state=${pg.state}, health=${pg.health}), stopping`);
@@ -457,19 +393,6 @@ async function up(ctx) {
   } else process.stdout.write(`[dev] PG is ready (project ${ctx.project})\n`);
 
   let snapshot = identify(ctx);
-  const mcp = snapshot.group.filter((entry) => entry.role === "mcp");
-  if (mcp.length && ownsPort(mcpPort, mcp)) process.stdout.write(`[dev] MCP is running\n`);
-  else {
-    if (mcp.length) throw new Error(`Checkout MCP process is not listening on ${mcpPort}, refusing reuse and new start`);
-    assertNoForeign(mcpPort, snapshot, "MCP");
-    const child = await spawnDetached(ctx.venvPython, [ctx.mcpScript, "--host", "127.0.0.1", "--port", String(mcpPort)], ctx.devRoot, process.env, ctx.mcpLog);
-    process.stdout.write(`[dev] Started MCP pid ${child.pid} (port ${mcpPort}, log ${ctx.mcpLog})\n`);
-    const ready = await waitForTcp(mcpPort, Date.now() + MCP_WAIT_MS);
-    if (!ready || !ownsPort(mcpPort, identify(ctx).group.filter((entry) => entry.role === "mcp")))
-      throw new Error(`MCP not ready within ${MCP_WAIT_MS / 1000}s or listener does not belong to this group; see ${ctx.mcpLog}`);
-  }
-
-  snapshot = identify(ctx);
   const java = snapshot.group.filter((entry) => ["java-helper", "maven", "ragmain"].includes(entry.role));
   if (java.length) await waitForJava(ctx, javaPort, undefined);
   else {
@@ -579,7 +502,7 @@ async function down(ctx) {
   const dbPort = integerLiteral(process.env.POSTGRES_PORT ?? "5432", "POSTGRES_PORT");
   const notes = [];
   const failures = [];
-  for (const [label, roles] of [["Frontend", FRONTEND_ROLES], ["Java entry", ["java-helper"]], ["Java residual", ["maven", "ragmain"]], ["MCP", ["mcp"]]]) {
+  for (const [label, roles] of [["Frontend", FRONTEND_ROLES], ["Java entry", ["java-helper"]], ["Java residual", ["maven", "ragmain"]]]) {
     try { await stopGroup(ctx, roles, label, notes, failures); }
     catch (error) { failures.push(`${label} step incomplete: ${error.message}`); }
   }
@@ -598,7 +521,6 @@ async function down(ctx) {
 function status(ctx) {
   const dbPort = integerLiteral(process.env.POSTGRES_PORT ?? "5432", "POSTGRES_PORT");
   const javaPort = resolveJavaPort(ctx);
-  const mcpPort = resolveMcpPort(ctx);
   process.stdout.write(`[dev] Project ${ctx.project}\n[dev] Root ${ctx.root}\n`);
   let pgOwned = false;
   try {
@@ -612,11 +534,11 @@ function status(ctx) {
   }
   const snapshot = identify(ctx);
   if (snapshot.unattributable.length) throw new Error("Candidate processes cannot be confirmed, status incomplete");
-  for (const [role, label] of [["mcp", "MCP"], ["java-helper", "Java entry"], ["maven", "Maven"], ["ragmain", "RAGMain"], ["frontend-root", "Frontend root"], ["frontend-child", "Frontend child"]]) {
+  for (const [role, label] of [["java-helper", "Java entry"], ["maven", "Maven"], ["ragmain", "RAGMain"], ["frontend-root", "Frontend root"], ["frontend-child", "Frontend child"]]) {
     const pids = snapshot.group.filter((entry) => entry.role === role).map((entry) => entry.pid);
     process.stdout.write(`[dev] ${label}: ${pids.join(", ") || "not running"}\n`);
   }
-  const ports = pgOwned ? [[mcpPort, "MCP"], [javaPort, "Java"], [runtimePort(ctx), "Agent runtime"], [3000, "Node"], [5173, "Workbench Web"], [5174, "Manager"]] : [[dbPort, "PG"], [mcpPort, "MCP"], [javaPort, "Java"], [runtimePort(ctx), "Agent runtime"], [3000, "Node"], [5173, "Workbench Web"], [5174, "Manager"]];
+  const ports = pgOwned ? [[javaPort, "Java"], [runtimePort(ctx), "Agent runtime"], [3000, "Node"], [5173, "Workbench Web"], [5174, "Manager"]] : [[dbPort, "PG"], [javaPort, "Java"], [runtimePort(ctx), "Agent runtime"], [3000, "Node"], [5173, "Workbench Web"], [5174, "Manager"]];
   for (const [port, label] of ports)
     if (foreignListeners(port, snapshot.group).length) process.stdout.write(`[dev] ${label} port ${port} occupied by external process\n`);
 }
@@ -635,8 +557,8 @@ function readAt(handle, offset, size) {
 // ENOENT treated as rotation in progress and awaits new file; other errors fail explicitly and clean up timer/listeners.
 function logs(ctx) {
   const selector = process.argv[4] || "java";
-  const path = ({ java: ctx.backendLog, runtime: ctx.runtimeLog, mcp: ctx.mcpLog })[selector];
-  if (!path) throw new Error("Use dev:logs [java|runtime|mcp]");
+  const path = ({ java: ctx.backendLog, runtime: ctx.runtimeLog })[selector];
+  if (!path) throw new Error("Use dev:logs [java|runtime]");
   if (!existsSync(path)) throw new Error(`Log does not exist: ${path}`);
   const initial = statSync(path);
   let handle = openSync(path, "r");

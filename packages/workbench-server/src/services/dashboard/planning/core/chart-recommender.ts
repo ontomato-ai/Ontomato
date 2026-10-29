@@ -1,6 +1,4 @@
-import { HumanMessage, SystemMessage } from "@langchain/core/messages";
-
-import { createModel } from "../../../../config/model-factory";
+import { runAuxiliary } from "../../../../platform/agent-runtime/runtime";
 import { createLogger } from "../../../../logging/logger";
 import type {
   DatasetProfile,
@@ -46,12 +44,14 @@ function normalizeObjectKeysDeep(input: any): any {
 function buildRequest(
   profileIndex: Map<string, DatasetProfile>,
   id: string,
-  ch: any
+  ch: any,
 ): FieldMappingRequest {
   const prof = profileIndex.get(String(ch?.datasetKey || ""));
   const baseRows = Array.isArray(prof?.sourceRows) ? prof.sourceRows : [];
   const plannedRows = applyDataPlan(baseRows, ch?.dataPlan);
-  const allFields = Array.from(new Set(plannedRows.flatMap((row) => Object.keys(row || {}))));
+  const allFields = Array.from(
+    new Set(plannedRows.flatMap((row) => Object.keys(row || {}))),
+  );
   const chartType = String(ch?.type || "metric");
   return {
     id,
@@ -64,15 +64,16 @@ function buildRequest(
 }
 
 async function planChartFields(
-  requests: FieldMappingRequest[]
+  requests: FieldMappingRequest[],
 ): Promise<Map<string, Record<string, any>>> {
-  const llm = await createModel({ temperature: 0.1, agentName: "Dashboard-ChartFieldPlanner" });
   const systemPrompt = buildChartFieldPlannerSystemPrompt();
   const mappings = new Map<string, Record<string, any>>();
   for (const req of requests) {
     const userPrompt = buildChartFieldPlannerUserPrompt(req);
     try {
-      const res = await llm.invoke([new SystemMessage(systemPrompt), new HumanMessage(userPrompt)]);
+      const res = {
+        content: await runAuxiliary({ systemPrompt, message: userPrompt }),
+      };
       const raw = String((res as any)?.content ?? "").trim();
       const jsonText = cleanJsonBlock(raw);
       const parsed = JSON.parse(jsonText);
@@ -86,7 +87,7 @@ async function planChartFields(
 
 export async function recommendAppendDatasetPlan(
   profiles: DatasetProfile[],
-  existingChartTypes: string[]
+  existingChartTypes: string[],
 ) {
   if (!profiles || profiles.length === 0) {
     return { metrics: [], charts: [] };
@@ -96,10 +97,14 @@ export async function recommendAppendDatasetPlan(
     const systemPrompt = buildAppendPlannerSystemPrompt();
     const userPrompt = JSON.stringify({
       existingChartTypes: existingChartTypes ?? [],
-      datasets: profiles.map(({ sourceRows: _sourceRows, ...profile }) => profile),
+      datasets: profiles.map(
+        ({ sourceRows: _sourceRows, ...profile }) => profile,
+      ),
     });
-    const llm = await createModel({ temperature: 0.1, agentName: "Dashboard-AppendPlanner" });
-    const res = await llm.invoke([new SystemMessage(systemPrompt), new HumanMessage(userPrompt)]);
+
+    const res = {
+      content: await runAuxiliary({ systemPrompt, message: userPrompt }),
+    };
     const raw = String((res as any)?.content ?? "").trim();
     const jsonText = cleanJsonBlock(raw);
     const parsed = JSON.parse(jsonText);
@@ -113,7 +118,9 @@ export async function recommendAppendDatasetPlan(
   }
 }
 
-export async function recommendDashboardDatasetPlan(profiles: DatasetProfile[]) {
+export async function recommendDashboardDatasetPlan(
+  profiles: DatasetProfile[],
+) {
   if (!profiles || profiles.length === 0) {
     return { name: "", groups: [] };
   }
@@ -130,8 +137,10 @@ export async function recommendDashboardDatasetPlan(profiles: DatasetProfile[]) 
         dataType: p.dataType,
       })),
     });
-    const llm = await createModel({ temperature: 0.1, agentName: "Dashboard-DashboardPlanner" });
-    const res = await llm.invoke([new SystemMessage(systemPrompt), new HumanMessage(userPrompt)]);
+
+    const res = {
+      content: await runAuxiliary({ systemPrompt, message: userPrompt }),
+    };
     const raw = String((res as any)?.content ?? "").trim();
     const jsonText = cleanJsonBlock(raw);
     const parsed = JSON.parse(jsonText);
@@ -147,24 +156,26 @@ export async function recommendDashboardDatasetPlan(profiles: DatasetProfile[]) 
 
 export async function batchAppendChartFieldMapper(
   charts: PlannedDashboardChartEntry[],
-  profiles: DatasetProfile[]
+  profiles: DatasetProfile[],
 ) {
   const profileIndex = new Map<string, DatasetProfile>();
   for (const p of profiles) profileIndex.set(p.datasetKey, p);
   const requests: FieldMappingRequest[] = charts.map((ch: any, ci: number) =>
-    buildRequest(profileIndex, String(ci), ch)
+    buildRequest(profileIndex, String(ci), ch),
   );
   const mappings = await planChartFields(requests);
-  const mappedCharts: PlannedDashboardChartEntry[] = charts.map((ch: any, ci: number) => ({
-    ...ch,
-    fields: mappings.get(String(ci)) ?? {},
-  }));
+  const mappedCharts: PlannedDashboardChartEntry[] = charts.map(
+    (ch: any, ci: number) => ({
+      ...ch,
+      fields: mappings.get(String(ci)) ?? {},
+    }),
+  );
   return { mode: "append", charts: mappedCharts, profiles };
 }
 
 export async function batchDashboardChartFieldMapper(
   groups: PlannedDashboardGroup[],
-  profiles: DatasetProfile[]
+  profiles: DatasetProfile[],
 ) {
   const profileIndex = new Map<string, DatasetProfile>();
   for (const p of profiles) profileIndex.set(p.datasetKey, p);
@@ -180,10 +191,12 @@ export async function batchDashboardChartFieldMapper(
 
   const outGroups: PlannedDashboardGroup[] = groups.map((g, gi) => {
     const chartsIn = Array.isArray(g?.charts) ? g.charts : [];
-    const charts: PlannedDashboardChartEntry[] = chartsIn.map((ch: any, ci: number) => ({
-      ...ch,
-      fields: mappings.get(`${gi}:${ci}`) ?? {},
-    }));
+    const charts: PlannedDashboardChartEntry[] = chartsIn.map(
+      (ch: any, ci: number) => ({
+        ...ch,
+        fields: mappings.get(`${gi}:${ci}`) ?? {},
+      }),
+    );
     return { title: g.title, charts, metrics: g.metrics };
   });
   return { mode: "dashboard", name: "", groups: outGroups, profiles };

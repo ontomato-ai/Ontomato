@@ -1,3 +1,4 @@
+import { readFileSync as readBundledAsset } from "node:fs";
 function resolveThemeColors(value) {
   let root = document.documentElement;
   try { if (parent !== window && parent.document) root = parent.document.documentElement; } catch (error) {}
@@ -89,7 +90,7 @@ function generateHtml({ title, nodes, links, layout, directed, showRelationLabel
   const serializedConfig = jsonForScript({ layout, directed, showRelationLabels, dark });
   return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>
   *{box-sizing:border-box}html,body{margin:0;width:100%;height:100%;font-family:Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:var(--graph-bg, Canvas);color:var(--graph-text, CanvasText)}.shell{height:100%;display:flex;flex-direction:column}.title{font-size:15px;font-weight:650;padding:12px 16px;border-bottom:1px solid var(--graph-border, CanvasText)}#chart{flex:1;width:100%;outline:none}.hint{font-size:11px;color:var(--graph-muted, CanvasText);padding:5px 12px}
-  </style><script src="/api/echart/echarts.min.js"></script></head><body><div class="shell"><div class="title">${safeTitle}</div><div id="chart" role="img" aria-label="Interactive network graph"></div><div class="hint">Drag nodes to explore · Scroll to zoom · Click a node to highlight its neighbors</div></div><script>
+  </style><script>${readBundledAsset(new URL("echarts.min.js", import.meta.url), "utf8").replaceAll("</script", "<\\/script")}</script></head><body><div class="shell"><div class="title">${safeTitle}</div><div id="chart" role="img" aria-label="Interactive network graph"></div><div class="hint">Drag nodes to explore · Scroll to zoom · Click a node to highlight its neighbors</div></div><script>
   const nodes=${serializedNodes}; const links=${serializedLinks}; const cfg=${serializedConfig};
   const root=document.getElementById('chart');
   if(!window.echarts){root.textContent='ECharts resource failed to load.';throw new Error('ECharts resource failed to load');}
@@ -147,4 +148,27 @@ export async function execute(input) {
   const layout = layoutInput === "none" && nodes.every(n=>Number.isFinite(n.x)&&Number.isFinite(n.y)) ? "none" : (layoutInput === "none" ? "force" : layoutInput);
   const html = generateHtml({ title, nodes, links:renderLinks, layout, directed:input.directed !== false, showRelationLabels:input.showRelationLabels === true, width:Math.max(360,Math.min(2400,Number(input.width)||800)), dark:input.theme === "dark" });
   return { html, meta: { skillId:"network-graph", chartType, title, dataRows:renderLinks.length, nodeCount:nodes.length, originalNodeCount:allNodes.length, linkCount:renderLinks.length, originalLinkCount:links.length, truncated, warnings, layout } };
+}
+
+// The exported calculation/rendering function is also usable as an ordinary CLI.
+if (import.meta.main) {
+  const fs = await import("node:fs/promises");
+  const path = await import("node:path");
+  const { randomUUID } = await import("node:crypto");
+  const source = process.argv[2]?.replace(/^@/, "");
+  if (!source) throw new Error("Expected a JSON input file");
+  const result = await execute(JSON.parse(await fs.readFile(source, "utf8")));
+  if (result.meta?.error || result.json?.success === false)
+    throw new Error(result.json?.error || "Skill could not produce the requested result");
+  const root = process.env.ONTOMATO_OUTPUT_DIR || "outputs";
+  const output = path.join(root, "network-graph." + (result.html ? "html" : "json"));
+  await fs.mkdir(root, { recursive: true });
+  await fs.mkdir("work", { recursive: true });
+  const temporary = path.join("work", randomUUID() + ".tmp");
+  try {
+    await fs.writeFile(temporary, result.html ?? JSON.stringify(result.json ?? result, null, 2));
+    await fs.rename(temporary, output);
+  } finally { await fs.rm(temporary, { force: true }); }
+  if (result.meta) console.log(JSON.stringify(result.meta));
+  console.log(path.relative(process.cwd(), path.resolve(output)));
 }

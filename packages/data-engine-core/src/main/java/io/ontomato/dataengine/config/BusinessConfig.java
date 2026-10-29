@@ -30,15 +30,9 @@ public class BusinessConfig {
 	private EmbeddingVectorSource embeddingVectorSource;
 	
 	private int knowledgeMaxResult;
-	
-	private int toolAndPythonRetry;
-	
-	private Integer dslCookerTries;
+
     private Long dslCookerTimeout;
-    
-    private Integer questionSpliterTries;
-    private Long questionSpliterTimeout;
-    
+
     private Integer reportCardPythonTimeout = 60;
     
     private String lang;
@@ -91,9 +85,6 @@ public class BusinessConfig {
 
 		boolean hasCompleteConnection = ModelResolver.hasCompleteConnection(defaultSeed);
 
-		AgentConfig templateCoding = modelDefaultsProperties.getAgents().get(AgentRole.CODING);
-		String codingSkillDir = templateCoding != null ? templateCoding.getSkilldir() : null;
-
 		Map<String, AgentConfig> agents = new LinkedHashMap<>();
 		if (hasCompleteConnection) {
 			ModelConfig model = new ModelConfig();
@@ -118,18 +109,12 @@ public class BusinessConfig {
 			for (String role : AgentRole.ALL) {
 				AgentConfig agent = new AgentConfig();
 				agent.setModel("default");
-				if (AgentRole.CODING.equals(role)) {
-					agent.setSkilldir(codingSkillDir);
-				}
 				agents.put(role, agent);
 			}
 		} else {
 			for (String role : AgentRole.ALL) {
 				AgentConfig agent = new AgentConfig();
 				agent.setModel(null);
-				if (AgentRole.CODING.equals(role)) {
-					agent.setSkilldir(codingSkillDir);
-				}
 				agents.put(role, agent);
 			}
 		}
@@ -154,15 +139,9 @@ public class BusinessConfig {
 			businessConfig.setEmbeddingVectorSource(embeddingVectorSource);
 			
 			businessConfig.setKnowledgeMaxResult(dataRagConfig.getKnowledgeMaxResult());
-			
-			businessConfig.setToolAndPythonRetry(dataRagConfig.getToolAndPythonRetry());
-			
-			businessConfig.setDslCookerTries(dataRagConfig.getDslCookerTries());
+
 			businessConfig.setDslCookerTimeout(dataRagConfig.getDslCookerTimeout());
-		    
-			businessConfig.setQuestionSpliterTries(dataRagConfig.getQuestionSpliterTries());
-			businessConfig.setQuestionSpliterTimeout(dataRagConfig.getQuestionSpliterTimeout());
-		    
+
 			businessConfig.setDataAdapter(dataRagConfig.getDataAdapter());
 		return businessConfig;
     }

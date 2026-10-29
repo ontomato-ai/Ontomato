@@ -40,6 +40,8 @@ export type DashboardChartEntry = {
   conditions?: unknown[];
   layout?: DashboardLayout;
   source?: {
+    sessionId?: string;
+    artifactId?: string;
     threadId?: string;
     requestSeq?: number;
     datasetIndex?: number;
@@ -59,6 +61,8 @@ export type DashboardMetricEntry = {
   valueField?: string;
   layout?: DashboardLayout;
   source?: {
+    sessionId?: string;
+    artifactId?: string;
     threadId?: string;
     requestSeq?: number;
     datasetIndex?: number;
@@ -81,6 +85,8 @@ export type DashboardDetail = {
   createdAt: number;
   updatedAt: number;
   source?: {
+    sessionId?: string;
+    artifactId?: string;
     threadId?: string;
     requestSeq?: number;
   };

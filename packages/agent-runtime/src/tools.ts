@@ -1,88 +1,135 @@
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
-import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
+import {
+  StreamableHTTPClientTransport,
+  StreamableHTTPError,
+} from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { SSEClientTransport } from "@modelcontextprotocol/sdk/client/sse.js";
 import type { TSchema } from "typebox";
 import type { AgentTool } from "./core/pi/types";
 export interface McpConnection {
   id: string;
+  name: string;
   url: string;
-  transport: "sse" | "streamable-http";
-  headers?: Record<string, string>;
-  hosts: string[];
+  headers: Record<string, string>;
 }
-/** Configured external MCP clients are lower-level tools, not runtime hosts or business handlers. */
+async function openMcp(
+  config: McpConnection,
+  correlationId: string,
+  signal: AbortSignal,
+) {
+  signal.throwIfAborted();
+  const client = new Client({ name: "ontomato-agent-runtime", version: "1" });
+  const fetchWithHeaders: typeof fetch = (url, init) => {
+    const headers = new Headers(init?.headers);
+    for (const [name, value] of Object.entries(config.headers))
+      headers.set(name, value);
+    headers.set("X-Correlation-Id", correlationId);
+    return fetch(url, {
+      ...init,
+      headers,
+      signal: init?.signal ? AbortSignal.any([signal, init.signal]) : signal,
+    });
+  };
+  try {
+    try {
+      await client.connect(
+        new StreamableHTTPClientTransport(new URL(config.url), {
+          fetch: fetchWithHeaders,
+        }),
+      );
+    } catch (error) {
+      if (
+        signal.aborted ||
+        !(error instanceof StreamableHTTPError) ||
+        ![400, 404, 405].includes(error.code ?? 0)
+      )
+        throw error;
+      // Transport negotiation happens only during initialization, before any tool action.
+      await client.close();
+      signal.throwIfAborted();
+      await client.connect(
+        new SSEClientTransport(new URL(config.url), {
+          fetch: fetchWithHeaders,
+        }),
+      );
+    }
+    const tools: Awaited<ReturnType<Client["listTools"]>>["tools"] = [];
+    let cursor: string | undefined;
+    do {
+      signal.throwIfAborted();
+      const page = await client.listTools({ cursor }, { signal });
+      tools.push(...page.tools);
+      cursor = page.nextCursor;
+    } while (cursor);
+    return { client, tools };
+  } catch (error) {
+    await client.close().catch(() => {});
+    throw error;
+  }
+}
+export async function discoverMcp(
+  config: McpConnection,
+  correlationId: string,
+  signal: AbortSignal,
+) {
+  const { client, tools } = await openMcp(config, correlationId, signal);
+  try {
+    return tools;
+  } finally {
+    await client.close();
+  }
+}
+
+/** Connections are already resolved within the run's host/domain scope. */
 export async function connectMcp(
   configs: McpConnection[],
-  ids: string[],
-  hostId: string,
   correlationId: string,
   signal: AbortSignal,
 ) {
   const clients: Client[] = [];
   const tools: AgentTool[] = [];
   try {
-    for (const id of ids) {
-      const config = configs.find(
-        (c) => c.id === id && c.hosts.includes(hostId),
+    for (const config of configs) {
+      const { client, tools: discovered } = await openMcp(
+        config,
+        correlationId,
+        signal,
       );
-      if (!config) throw new Error("MCP reference is not authorized");
-      const client = new Client({
-        name: "ontomato-agent-runtime",
-        version: "1",
-      });
       clients.push(client);
-      const headers = { ...config.headers, "X-Correlation-Id": correlationId };
-      await client.connect(
-        config.transport === "sse"
-          ? new SSEClientTransport(new URL(config.url), {
-              requestInit: { headers },
-            })
-          : new StreamableHTTPClientTransport(new URL(config.url), {
-              requestInit: { headers },
-            }),
-      );
-      let cursor: string | undefined;
-      do {
-        signal.throwIfAborted();
-        const page = await client.listTools({ cursor }, { signal });
-        cursor = page.nextCursor;
-        for (const tool of page.tools)
-          tools.push({
-            name: tool.name,
-            label: tool.title ?? tool.name,
-            description: tool.description ?? tool.name,
-            parameters: tool.inputSchema as TSchema,
-            async execute(_id, args, callSignal) {
-              const response = await client.callTool(
-                { name: tool.name, arguments: args as Record<string, unknown> },
-                undefined,
-                { signal: callSignal },
-              );
-              const parts = (
-                "content" in response ? response.content : []
-              ) as Array<Record<string, unknown>>;
-              return {
-                content: parts.map((p) =>
-                  p.type === "image"
-                    ? {
-                        type: "image" as const,
-                        data: String(p.data),
-                        mimeType: String(p.mimeType),
-                      }
-                    : {
-                        type: "text" as const,
-                        text:
-                          p.type === "text"
-                            ? String(p.text)
-                            : JSON.stringify(p),
-                      },
-                ),
-                details: {},
-                isError: Boolean(response.isError),
-              };
-            },
-          });
-      } while (cursor);
+      for (const tool of discovered)
+        tools.push({
+          name: tool.name,
+          label: tool.title ?? tool.name,
+          description: tool.description ?? tool.name,
+          parameters: tool.inputSchema as TSchema,
+          async execute(_id, args, callSignal) {
+            const response = await client.callTool(
+              { name: tool.name, arguments: args as Record<string, unknown> },
+              undefined,
+              { signal: callSignal },
+            );
+            const parts = (
+              "content" in response ? response.content : []
+            ) as Array<Record<string, unknown>>;
+            return {
+              content: parts.map((p) =>
+                p.type === "image"
+                  ? {
+                      type: "image" as const,
+                      data: String(p.data),
+                      mimeType: String(p.mimeType),
+                    }
+                  : {
+                      type: "text" as const,
+                      text:
+                        p.type === "text" ? String(p.text) : JSON.stringify(p),
+                    },
+              ),
+              details: {},
+              isError: Boolean(response.isError),
+            };
+          },
+        });
     }
     return {
       tools,

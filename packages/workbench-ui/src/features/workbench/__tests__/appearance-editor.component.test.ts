@@ -4,10 +4,7 @@ import { createI18n } from "vue-i18n";
 import ElementPlus from "element-plus";
 import WorkbenchAppearanceDialog from "../components/WorkbenchAppearanceDialog.vue";
 import en from "../../../locales/en";
-import type {
-  AppearanceSection,
-  WorkbenchAppearance,
-} from "@ontomato/contracts/workbench-appearance";
+import type { WorkbenchAppearance } from "@ontomato/contracts/workbench-appearance";
 
 const mocks = vi.hoisted(() => ({ get: vi.fn(), save: vi.fn() }));
 vi.mock("../api", () => ({
@@ -16,12 +13,10 @@ vi.mock("../api", () => ({
 }));
 const original: WorkbenchAppearance = {
   brand: { name: "Company", subtitle: "Insights", logo: "" },
-  qa: { name: "Sales", description: "Sales data", avatarKey: "Wallet", avatarColor: "#EEF7FF" },
-  addAgentLabel: "Add expert",
 };
-async function editor(section: AppearanceSection) {
+async function editor() {
   const wrapper = mount(WorkbenchAppearanceDialog, {
-    props: { section, defaultLogo: "/logo.png" },
+    props: { defaultLogo: "/logo.png" },
     global: {
       plugins: [createI18n({ legacy: false, locale: "en", messages: { en } }), ElementPlus],
       stubs: { ElDialog: { template: "<div><slot/><slot name='footer'/></div>" } },
@@ -39,23 +34,21 @@ beforeEach(() => {
   mocks.save.mockImplementation(async (value) => JSON.parse(JSON.stringify(value)));
 });
 
-describe("appearance editor and shared agent fields", () => {
-  it("saves shared basic fields without changing the other appearance sections", async () => {
-    const wrapper = await editor("qa");
-    await wrapper.find("input").setValue("New name");
-    await wrapper.find("textarea").setValue("New description");
-    await wrapper.find('button[aria-label="Brain"]').trigger("click");
+describe("brand appearance editor", () => {
+  it("saves the brand", async () => {
+    const wrapper = await editor();
+    await wrapper.find("input.el-input__inner").setValue("New name");
     await button(wrapper, "Save").trigger("click");
     await flushPromises();
     expect(wrapper.emitted("saved")?.[0][0]).toEqual({
       ...original,
-      qa: { ...original.qa, name: "New name", description: "New description", avatarKey: "Brain" },
+      brand: { ...original.brand, name: "New name" },
     });
     wrapper.unmount();
   });
 
   it("keeps defaults as an unsaved draft and never emits a saved result on API failure", async () => {
-    const wrapper = await editor("qa");
+    const wrapper = await editor();
     await button(wrapper, "Restore defaults").trigger("click");
     expect(mocks.save).not.toHaveBeenCalled();
     mocks.save.mockRejectedValue(new Error("appearance.saveFailed"));
@@ -63,7 +56,7 @@ describe("appearance editor and shared agent fields", () => {
     await flushPromises();
     expect(mocks.save).toHaveBeenCalledWith({
       ...original,
-      qa: { name: "", description: "", avatarKey: "", avatarColor: "" },
+      brand: { name: "", subtitle: "", logo: "" },
     });
     expect(wrapper.emitted("saved")).toBeUndefined();
     expect(wrapper.emitted("close")).toBeUndefined();
@@ -74,7 +67,7 @@ describe("appearance editor and shared agent fields", () => {
 
   it("disables saving on load failure, then retries from the authoritative configuration", async () => {
     mocks.get.mockRejectedValueOnce(new Error("appearance.loadFailed"));
-    const wrapper = await editor("brand");
+    const wrapper = await editor();
     expect(button(wrapper, "Save").attributes("disabled")).toBeDefined();
     await button(wrapper, "Retry").trigger("click");
     await flushPromises();

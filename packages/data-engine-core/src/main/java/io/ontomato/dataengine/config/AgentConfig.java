@@ -5,7 +5,7 @@ import java.util.Set;
 import lombok.Data;
 
 /**
- * The model name referenced by a role + execution data: answers "which model this agent uses, how many replicas, which skill directory".
+ * The model name referenced by a role.
  * Model request parameters belong to the named model entry (see {@link ModelConfig}); roles only reference them and never override them.
  */
 @Data
@@ -23,5 +23,4 @@ public class AgentConfig {
             "logRequests", "logResponses");
 
     private String model;
-    private String skilldir;
 }

@@ -323,21 +323,6 @@
   justify-content: flex-end;
 }
 
-.question-mode-select {
-  width: 160px;
-  max-width: 100%;
-}
-
-.question-mode-select :deep(.el-select__selected-item) {
-  min-width: 0;
-}
-
-.question-mode-select :deep(.el-select__selected-item span) {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
 .api-keys-wrap {
   width: 100%;
 }
@@ -347,6 +332,13 @@
   gap: 8px;
   margin-bottom: 8px;
   align-items: center;
+}
+
+.saved-key-hint {
+  margin: 0 0 8px;
+  color: var(--el-text-color-secondary);
+  font-size: var(--text-xs);
+  line-height: 1.5;
 }
 
 .api-key-input {
