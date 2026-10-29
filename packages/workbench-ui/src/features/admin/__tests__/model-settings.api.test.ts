@@ -4,7 +4,7 @@ const calls = vi.hoisted(() => ({ posts: [] as Array<{ path: string; body: unkno
 
 vi.mock("../../../utils/api", () => ({
   apiGet: vi.fn(),
-  apiPost: vi.fn((path: string, body?: unknown) => {
+  nodeApiPost: vi.fn((path: string, body?: unknown) => {
     calls.posts.push({ path, body });
     return Promise.resolve({ success: true });
   }),
@@ -12,7 +12,7 @@ vi.mock("../../../utils/api", () => ({
   nodeApiFetch: vi.fn(),
   nodeApiGet: vi.fn(),
   nodeApiPatch: vi.fn(),
-  nodeApiPost: vi.fn(),
+  apiPost: vi.fn(),
 }));
 
 import { adminApi } from "../api";
@@ -45,7 +45,7 @@ describe("model settings api", () => {
     };
     await adminApi.saveModelSettings(payload);
 
-    expect(calls.posts).toEqual([{ path: "/businessConfig/saveModelSettings", body: payload }]);
+    expect(calls.posts).toEqual([{ path: "/model-settings/save", body: payload }]);
   });
 
   it("tests a draft model with the contract field names", async () => {
@@ -61,7 +61,7 @@ describe("model settings api", () => {
     await adminApi.testModel(model, "hello");
 
     expect(calls.posts).toEqual([
-      { path: "/businessConfig/testModel", body: { model, prompt: "hello" } },
+      { path: "/model-settings/test", body: { model, prompt: "hello" } },
     ]);
   });
 });

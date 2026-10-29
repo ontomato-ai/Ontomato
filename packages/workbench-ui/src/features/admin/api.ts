@@ -15,11 +15,11 @@ const generalConfigSaveEndpoints: Record<GeneralConfigKey, string> = {
 
 export const adminApi = {
   getBusinessConfig: () => apiGet("/businessConfig/getConfig"),
-  getModelSettings: () => apiGet("/businessConfig/getModelSettings"),
+  getModelSettings: () => nodeApiGet("/model-settings"),
   saveModelSettings: (payload: { models: ModelEntry[]; agents: RoleModels }) =>
-    apiPost("/businessConfig/saveModelSettings", payload),
+    nodeApiPost("/model-settings/save", payload),
   testModel: (model: ModelEntry, prompt: string) =>
-    apiPost("/businessConfig/testModel", { model, prompt }),
+    nodeApiPost("/model-settings/test", { model, prompt }),
   saveEmbeddingModel: (payload: unknown) => apiPost("/businessConfig/saveEmbeddingModel", payload),
   saveGeneralConfig: (key: GeneralConfigKey, value: unknown) =>
     apiPost(generalConfigSaveEndpoints[key], { [key]: value }),

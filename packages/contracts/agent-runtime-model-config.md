@@ -1,6 +1,6 @@
 # Runtime-owned conversation model settings
 
-Proposed contract for controller review, 2026-10-29; not implemented. Extends
+Approved and implemented, 2026-10-29. Extends
 [agent-runtime](agent-runtime.md). Placement, replacement scope and the OSS domain
 decision are in the [design](../../docs/model-config-runtime-design.md).
 
@@ -15,7 +15,7 @@ it. Existing session/run/MCP host isolation is unchanged.
 
 ## Settings and requests
 
-The executable schemas will live in `src/model-settings.ts`, replacing its
+The executable schemas live in `src/model-settings.ts`, replacing the previous
 handwritten interfaces. Runtime, host and page use that single definition. Model
 request parameter fields retain the current editor/Java model shape, including
 optional fields round-tripped by the editor without dedicated controls. They

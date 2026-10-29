@@ -117,11 +117,6 @@ export class GovernanceRuntime {
           },
         },
         input: { role: "user", content: message, timestamp: Date.now() },
-        modelCredential: credentials.apiKey
-          ? { kind: "api_key", value: credentials.apiKey }
-          : credentials.token
-            ? { kind: "token", value: credentials.token }
-            : { kind: "none" },
         environment: {
           values: {
             ONTOMATO_WORKBENCH_URL: environment

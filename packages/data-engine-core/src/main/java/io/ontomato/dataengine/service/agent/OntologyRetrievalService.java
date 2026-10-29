@@ -448,9 +448,7 @@ public class OntologyRetrievalService {
               "definition",
               definitions.definition(context.language(), deadline - System.currentTimeMillis()),
               "environment",
-              JSONObject.of("values", values, "secrets", secrets),
-              "modelCredential",
-              context.modelCredential()),
+              JSONObject.of("values", values, "secrets", secrets)),
           runId);
     } catch (Exception failure) {
       try {

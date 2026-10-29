@@ -21,8 +21,6 @@ import org.springframework.context.support.GenericApplicationContext;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import com.alibaba.fastjson2.JSONObject;
-import io.ontomato.dataengine.config.AgentConfig;
-import io.ontomato.dataengine.config.AgentRole;
 import io.ontomato.dataengine.config.BusinessConfig;
 import io.ontomato.dataengine.core.bean.User;
 import io.ontomato.dataengine.dao.VectorRebuildState;
@@ -59,14 +57,7 @@ class BusinessConfigControllerVectorRebuildTest {
         new SpringBeanUtil().setApplicationContext(context);
 
         stored = new BusinessConfig();
-        stored.setModels(new ArrayList<>());
-        Map<String, AgentConfig> agents = new LinkedHashMap<>();
-        for (String role : AgentRole.ALL) {
-            AgentConfig agent = new AgentConfig();
-            agent.setModel(null);
-            agents.put(role, agent);
-        }
-        stored.setAgents(agents);
+
 
         when(businessConfigService.get("d1")).thenReturn(stored);
         when(langService.get(any(), anyString())).thenAnswer(invocation -> invocation.getArgument(1));

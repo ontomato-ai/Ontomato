@@ -1,8 +1,7 @@
 import { expect, it } from "vitest";
 import { modelKeySealKey, openSealedModelKey } from "@ontomato/contracts/model-key-seal";
 
-// Sealed by Java's ModelKeySeal for this token; the data engine's BusinessConfigControllerModelKeyWriteOnlyTest pins the
-// same value, so the two implementations cannot drift apart.
+// Pinned AES-256-GCM wire fixture remains readable after moving the sealing owner to runtime.
 const FIXTURE_TOKEN = "fixture-runtime-token";
 const FIXTURE_SEALED = "enc:v1:mzjUpW4OVVjLMPmxcmMcyop5LFN8VSJ_7lUGPppYXDK_UDNjyKAlYAL7vVwOMOI";
 

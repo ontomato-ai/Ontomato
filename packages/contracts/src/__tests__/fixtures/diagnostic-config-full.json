@@ -13,35 +13,6 @@
   },
   "langchain4j": {
     "open-ai": {
-      "models": [
-        {
-          "name": "main",
-          "displayName": "Main",
-          "modelName": "api-main",
-          "connectionConfigured": true,
-          "timeout": "PT1M30S",
-          "maxRetries": 2,
-          "maxTokens": 4000,
-          "contextWindow": 64000
-        }
-      ],
-      "agents": {
-        "query": {
-          "model": "main"
-        },
-        "coding": {
-          "model": "main"
-        },
-        "general": {
-          "model": "main"
-        },
-        "diagnosis": {
-          "model": "main"
-        },
-        "knowledgeGovernance": {
-          "model": null
-        }
-      },
       "embedding-model": {
         "modelName": "emb",
         "apiKeyConfigured": true,

@@ -16,7 +16,7 @@ export const ossIdentity: WorkbenchIdentity = {
     authReq.userId = "system";
     authReq.userName = "system";
     authReq.roles = [];
-    authReq.domainId = "default";
+    authReq.domainId = "1";
     authReq.token = typeof req.headers.tk === "string" ? req.headers.tk : "";
     authReq.apiKey =
       (typeof req.headers["x-api-key"] === "string" ? req.headers["x-api-key"] : "") ||
@@ -36,11 +36,11 @@ export const ossIdentity: WorkbenchIdentity = {
   async confirmTaskOwner() {},
 
   async resolveAutotestActor(input) {
-    return { userId: "system", domainId: input.domainId || "default" };
+    return { userId: "system", domainId: input.domainId || "1" };
   },
 
   async resolveMcpCaller() {
-    return { userId: "system", domainId: "default" };
+    return { userId: "system", domainId: "1" };
   },
 
   async resolveSkillResourceDomain(req) {
@@ -49,7 +49,7 @@ export const ossIdentity: WorkbenchIdentity = {
       (typeof req.headers["x-api-key"] === "string" ? req.headers["x-api-key"] : undefined) ||
       environment.queryKey() ||
       undefined;
-    return { ok: true, domainId: "default", token, apiKey };
+    return { ok: true, domainId: "1", token, apiKey };
   },
 
   requirePermission() {
@@ -63,6 +63,6 @@ export const ossIdentity: WorkbenchIdentity = {
   async assertObserveAccess() {},
 
   requireDomainId() {
-    return "default";
+    return "1";
   },
 };

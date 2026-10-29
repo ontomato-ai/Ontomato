@@ -12,14 +12,13 @@ class BusinessConfigFromTest {
 
     @Test
     void newDomainDefaultsDimensionsTo2048WithMatchingVectorSource() {
-        ModelDefaultsProperties defaults = new ModelDefaultsProperties();
         EmbeddingModelProperties fileProps = new EmbeddingModelProperties();
         fileProps.setBaseUrl("http://emb/v1");
         fileProps.setApiKey("key");
         fileProps.setModelName("m1");
         fileProps.setDimensions(2048);
 
-        BusinessConfig businessConfig = BusinessConfig.from(defaults, fileProps, new DataRagConfig());
+        BusinessConfig businessConfig = BusinessConfig.from(fileProps, new DataRagConfig());
 
         assertEquals(2048, businessConfig.getEmbeddingModelProperties().getDimensions());
         assertEquals("http://emb/v1", businessConfig.getEmbeddingVectorSource().getBaseUrl());

@@ -15,12 +15,8 @@ import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
 import com.alibaba.fastjson2.JSONWriter.Feature;
-import io.ontomato.dataengine.config.AgentConfig;
-import io.ontomato.dataengine.config.AgentRole;
 import io.ontomato.dataengine.config.BusinessConfig;
-import io.ontomato.dataengine.config.ModelConfig;
 import io.ontomato.dataengine.config.ModelKeyMask;
-import io.ontomato.dataengine.config.ModelKeySeal;
 import io.ontomato.dataengine.config.SecretMask;
 import io.ontomato.dataengine.core.bean.User;
 import io.ontomato.dataengine.dataAdapter.SecretCipher;
@@ -37,19 +33,8 @@ import org.mockito.ArgumentCaptor;
 import org.springframework.context.support.GenericApplicationContext;
 import org.springframework.test.util.ReflectionTestUtils;
 
-/** Saved model keys are write-only: reads show masks, saves keep stored keys, and the workbench server gets them sealed. */
+/** Embedding keys remain write-only after conversation configuration moves to runtime. */
 class BusinessConfigControllerModelKeyWriteOnlyTest {
-
-    private static final String KEY_A = "sk-first-key-0001";
-    private static final String KEY_B = "sk-second-key-0001";
-    private static final String TOKEN = "synthetic-runtime-token";
-
-  /**
-   * Sealed by Java for token {@code fixture-runtime-token}; the workbench server's model key seal
-   * test opens the same value, so the two implementations cannot drift apart.
-   */
-  static final String FIXTURE_SEALED =
-      "enc:v1:mzjUpW4OVVjLMPmxcmMcyop5LFN8VSJ_7lUGPppYXDK_UDNjyKAlYAL7vVwOMOI";
 
     private final BusinessConfigService businessConfigService = mock(BusinessConfigService.class);
     private final BusinessConfigController controller = new BusinessConfigController();
@@ -67,20 +52,6 @@ class BusinessConfigControllerModelKeyWriteOnlyTest {
         new SpringBeanUtil().setApplicationContext(context);
 
         BusinessConfig stored = new BusinessConfig();
-        ModelConfig model = new ModelConfig();
-        model.setName("main");
-        model.setBaseUrl("http://llm.test/v1");
-        // Two keys with the same tail: each must map back to itself.
-        model.setApiKeys(new ArrayList<>(List.of(KEY_A, KEY_B)));
-        model.setModelName("m");
-        stored.setModels(new ArrayList<>(List.of(model)));
-        Map<String, AgentConfig> agents = new LinkedHashMap<>();
-        for (String role : AgentRole.ALL) {
-            AgentConfig agent = new AgentConfig();
-            agent.setModel("main");
-            agents.put(role, agent);
-        }
-        stored.setAgents(agents);
         BusinessConfig.EmbeddingModelProperties embedding = stored.new EmbeddingModelProperties();
         embedding.setApiKey("sk-embedding-9876");
         stored.setEmbeddingModelProperties(embedding);
@@ -90,116 +61,15 @@ class BusinessConfigControllerModelKeyWriteOnlyTest {
         when(businessConfigService.get("d1"))
                 .thenAnswer(invocation -> JSON.parseObject(storedJson, BusinessConfig.class));
         ReflectionTestUtils.setField(controller, "businessConfigService", businessConfigService);
-        ReflectionTestUtils.setField(controller, "modelKeySeal", new ModelKeySeal(TOKEN));
-    }
-
-  @Test
-  void draftTestsDelegateToRuntimeAndDoNotSaveConfiguration() throws Exception {
-    var runtime = mock(io.ontomato.dataengine.service.agent.AgentRuntimeClient.class);
-    ReflectionTestUtils.setField(controller, "agentRuntimeClient", runtime);
-    var body = org.mockito.ArgumentCaptor.forClass(Object.class);
-    when(runtime.json(
-            org.mockito.ArgumentMatchers.eq("d1"),
-            org.mockito.ArgumentMatchers.anyString(),
-            org.mockito.ArgumentMatchers.eq("/v1/models/test"),
-            org.mockito.ArgumentMatchers.eq("POST"),
-            body.capture(),
-            org.mockito.ArgumentMatchers.isNull()))
-        .thenReturn(JSONObject.of("content", "fixture reply"));
-    JSONObject draft =
-        JSONObject.of(
-            "name",
-            "main",
-            "baseUrl",
-            "http://draft.invalid/v1",
-            "modelName",
-            "draft",
-            "apiKeys",
-            List.of("******0001"),
-            "customRequestParameters",
-            JSONObject.of("temperature", 0),
-            "customHeaders",
-            JSONObject.of("X-Deployment", "fixture"));
-    JSONObject result = controller.testModel(JSONObject.of("model", draft, "prompt", "probe"));
-    assertTrue(result.getBooleanValue("success"));
-    assertEquals("fixture reply", result.getString("data"));
-    JSONObject request = JSONObject.from(body.getValue());
-    assertEquals("probe", request.getString("prompt"));
-    JSONObject model = request.getJSONObject("model");
-    assertEquals(KEY_A, model.getString("apiKey"));
-    assertFalse(model.containsKey("apiKeys"));
-    assertEquals(0, model.getJSONObject("customRequestParameters").getIntValue("temperature"));
-    assertEquals("fixture", model.getJSONObject("customHeaders").getString("X-Deployment"));
-    assertFalse(result.toJSONString().contains(KEY_A));
-    verify(businessConfigService, never())
-        .set(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.anyString());
-  }
-
-    @Test
-    void verifiedGenerationGrantReadsOnlyItsDomainWithSealedKeys() {
-        var request=new org.springframework.mock.web.MockHttpServletRequest();
-        request.setAttribute(io.ontomato.dataengine.service.QueryGrantService.ATTRIBUTE,
-                JSONObject.of("purpose","ontology-generation","domainId","d1"));
-        org.springframework.web.context.request.RequestContextHolder.setRequestAttributes(
-                new org.springframework.web.context.request.ServletRequestAttributes(request));
-        try {
-            JSONObject result=controller.getModelSettings();
-            assertTrue(result.getBooleanValue("success"));
-            assertFalse(result.toJSONString().contains(KEY_A));
-            assertFalse(result.getJSONObject("data").getJSONObject("sealedApiKeys").isEmpty());
-        } finally {org.springframework.web.context.request.RequestContextHolder.resetRequestAttributes();}
     }
 
     @Test
-    void readsShowMasksAndTheKeysOnlySealed() {
-        JSONObject data = controller.getModelSettings().getJSONObject("data");
-    assertEquals(
-        List.of("******0001", "******0001"),
-        data.getJSONArray("models")
-            .getJSONObject(0)
-            .getJSONArray("apiKeys")
-            .toJavaList(String.class));
-        assertFalse(data.toJSONString().contains(KEY_A));
-    List<String> sealed =
-        data.getJSONObject("sealedApiKeys").getJSONArray("main").toJavaList(String.class);
-        assertEquals(List.of(KEY_A, KEY_B), sealed.stream().map(cipherFor(TOKEN)::decrypt).toList());
-
-        JSONObject config = JSONObject.from(controller.getConfig().get("data"));
-        assertFalse(config.toJSONString().contains(KEY_A));
-    assertEquals(
-        "******0001",
-        config.getJSONArray("models").getJSONObject(0).getJSONArray("apiKeys").getString(0));
-    assertEquals(
-        "******9876", config.getJSONObject("embeddingModelProperties").getString("apiKey"));
-    }
-
-    @Test
-    void savingMasksBackKeepsTheStoredKeysAndTheResponseStaysMasked() {
-    JSONObject response =
-        controller.saveModelSettings(input(List.of("******0001", "sk-new-key-5555", "******0001")));
-
-        assertTrue(response.getBooleanValue("success"), response.toJSONString());
-        ArgumentCaptor<BusinessConfig> saved = ArgumentCaptor.forClass(BusinessConfig.class);
-        verify(businessConfigService).set(saved.capture(), eq("d1"));
-    assertEquals(
-        List.of(KEY_A, "sk-new-key-5555", KEY_B), saved.getValue().getModels().get(0).getApiKeys());
-    assertEquals(
-        List.of("******0001", "******5555", "******0001"),
-        response
-            .getJSONObject("data")
-            .getJSONArray("models")
-            .getJSONObject(0)
-            .getJSONArray("apiKeys")
-            .toJavaList(String.class));
-    }
-
-    @Test
-    void aMaskWithNoStoredKeyBehindItIsRefusedInsteadOfSaved() {
-    JSONObject response =
-        controller.saveModelSettings(input(List.of("******0001", "******0001", "******0001")));
-
-        assertFalse(response.getBooleanValue("success"));
-        verify(businessConfigService, never()).set(any(), any());
+    void embeddingReadIsMasked() {
+        JSONObject data = JSONObject.from(controller.getConfig().get("data"));
+        assertFalse(data.toJSONString().contains("sk-embedding-9876"));
+        assertEquals("******9876", data.getJSONObject("embeddingModelProperties").getString("apiKey"));
+        assertFalse(data.containsKey("models"));
+        assertFalse(data.containsKey("agents"));
     }
 
     @Test
@@ -213,40 +83,4 @@ class BusinessConfigControllerModelKeyWriteOnlyTest {
         IllegalArgumentException.class, () -> ModelKeyMask.restoreEmbedding("******9876", null));
     }
 
-    @Test
-    void theSealOpensOnlyWithTheSameTokenAndNeedsOne() {
-    assertEquals("sk-fixture-key-1234", cipherFor("fixture-runtime-token").decrypt(FIXTURE_SEALED));
-    assertThrows(
-        IllegalStateException.class, () -> cipherFor("another-token").decrypt(FIXTURE_SEALED));
-        for (String missing : new String[] { null, "", " \t " }) {
-            assertThrows(IllegalStateException.class, () -> new ModelKeySeal(missing));
-        }
-    }
-
-    /** The workbench server's side of the seal: AES-256-GCM with key = SHA-256 of the token. */
-    private static SecretCipher cipherFor(String token) {
-        try {
-            byte[] key = java.security.MessageDigest.getInstance("SHA-256")
-                    .digest(token.getBytes(java.nio.charset.StandardCharsets.UTF_8));
-            return new SecretCipher(java.util.Base64.getEncoder().encodeToString(key), SecretCipher.Mode.DUAL);
-        } catch (java.security.NoSuchAlgorithmException e) {
-            throw new IllegalStateException(e);
-        }
-    }
-
-    private static JSONObject input(List<String> keys) {
-        JSONObject model = new JSONObject();
-        model.put("name", "main");
-        model.put("baseUrl", "http://llm.test/v1");
-        model.put("apiKeys", keys);
-        model.put("modelName", "m");
-        JSONObject agents = new JSONObject();
-        for (String role : AgentRole.ALL) {
-            agents.put(role, "main");
-        }
-        JSONObject input = new JSONObject();
-        input.put("models", new JSONArray(List.of(model)));
-        input.put("agents", agents);
-        return input;
-    }
 }

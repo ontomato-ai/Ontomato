@@ -43,11 +43,8 @@ const runtime = new AgentRuntime({
   store,
   hosts,
   root: path.resolve(process.env.AGENT_RUNTIME_ROOT || "data/agent-runtime"),
-  ontologyUrl: z
-    .string()
-    .url()
-    .parse(process.env.AGENT_RUNTIME_MODEL_CONFIG_URL),
   modelRuntimeToken: process.env.ONTOMATO_MODEL_RUNTIME_TOKEN,
+  modelSeed: { baseUrl: process.env.LLM_BASE_URL, apiKey: process.env.LLM_API_KEY, modelName: process.env.LLM_MODEL },
   eventBufferSize: process.env.AGENT_RUNTIME_EVENT_BUFFER_SIZE
     ? z.coerce
         .number()

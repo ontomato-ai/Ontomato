@@ -1,3 +1,4 @@
+import { RuntimeClient } from "../../../../../infrastructure/agent-runtime/client";
 import { diagnosticConfigResponseSchema } from "@ontomato/contracts/diagnostic-config";
 import type { AgentTool } from "../../../../../core/agent-loop/index";
 import { getApiConfig, buildUrl } from "../../../../../config/data-query-api";
@@ -200,6 +201,8 @@ export function createViewAppConfigTool(caller: DiagnosisCallerIdentity): AgentT
         }
 
         const { config, desc } = parsed.data.data;
+        if (!caller.domainId) throw new Error("A verified domain is required");
+        Object.assign(config.langchain4j["open-ai"], await new RuntimeClient(caller.domainId).modelDiagnostics());
 
         const sectionParam = typeof params.section === "string" ? params.section.trim() : "";
         if (sectionParam) {

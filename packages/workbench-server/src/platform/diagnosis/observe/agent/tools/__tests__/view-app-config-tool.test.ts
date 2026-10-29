@@ -4,6 +4,7 @@ import http from "node:http";
 import type { AddressInfo } from "node:net";
 import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { modelDiagnosticsSchema } from "@ontomato/contracts/model-settings";
 import { diagnosticConfigSchema } from "@ontomato/contracts/diagnostic-config";
 import { configureI18n } from "../../../../../../i18n";
 import { appTextEn } from "../../../../../../i18n/app-text-en";
@@ -22,6 +23,10 @@ const fixture = (name: string) =>
   );
 const full = fixture("diagnostic-config-full.json");
 const sparse = fixture("diagnostic-config-sparse.json");
+const modelsFull = fixture("model-diagnostics-full.json");
+const modelsSparse = fixture("model-diagnostics-sparse.json");
+let modelsReply: unknown;
+
 
 /** What the stand-in answers next: an HTTP status and a raw body. */
 let reply: { status: number; body: string };
@@ -35,11 +40,14 @@ beforeAll(async () => {
     packs: { en: { messages: { ...en, ...appTextEn }, ...enLocaleMeta } },
   });
   const app = express();
+  app.get("/v1/models/diagnostics", (_req, res) => res.json(modelsReply));
   app.use((_req, res) => {
     res.status(reply.status).type("application/json").send(reply.body);
   });
   server = app.listen(0);
   await new Promise<void>((resolve) => server.once("listening", () => resolve()));
+  vi.stubEnv("AGENT_RUNTIME_SERVICE_TOKEN", "fixture-runtime-token");
+  vi.stubEnv("AGENT_RUNTIME_URL", `http://127.0.0.1:${(server.address() as AddressInfo).port}`);
   vi.stubEnv("DATA_QUERY_BASE_URL", `http://127.0.0.1:${(server.address() as AddressInfo).port}`);
 });
 
@@ -50,6 +58,7 @@ afterAll(async () => {
 
 beforeEach(() => {
   reply = { status: 200, body: "" };
+  modelsReply = structuredClone(modelsFull);
 });
 
 const answer = (config: unknown, extra: Record<string, unknown> = {}) => {
@@ -65,7 +74,8 @@ const run = async (params: Record<string, unknown> = {}) => {
 function withSecrets() {
   const config = structuredClone(full);
   const openAi = config.langchain4j["open-ai"];
-  Object.assign(openAi.models[0], {
+  const models = modelsReply as typeof modelsFull;
+  Object.assign(models.models[0], {
     baseUrl: "https://u:SECRET-URL@llm.test/v1?key=SECRET-URL",
     apiKeys: ["SECRET-MODEL-KEY"],
     customHeaders: { Authorization: "Bearer SECRET-HEADER" },
@@ -75,7 +85,7 @@ function withSecrets() {
     apiKey: "SECRET-EMBEDDING-KEY",
     customHeaders: { "X-Key": "SECRET-EMB-HEADER" },
   });
-  openAi.agents.query.extra = "SECRET-ROLE";
+  models.agents.query.extra = "SECRET-ROLE";
   config.ontomato.sso = { clientSecret: "SECRET-SSO" };
   config.ontomato["data-engine"].productionEnvPwd = "SECRET-PROD";
   config.newSection = { anything: "SECRET-NEW" };
@@ -86,6 +96,8 @@ describe("the shared diagnosis samples", () => {
   it("are exactly the contract: parsing keeps every field and adds none", () => {
     expect(diagnosticConfigSchema.parse(full)).toEqual(full);
     expect(diagnosticConfigSchema.parse(sparse)).toEqual(sparse);
+    expect(modelDiagnosticsSchema.parse(modelsFull)).toEqual(modelsFull);
+    expect(modelDiagnosticsSchema.parse(modelsSparse)).toEqual(modelsSparse);
   });
 });
 
@@ -98,6 +110,7 @@ describe("view_app_config", () => {
     expect(text).toContain("- `open-ai.embedding-model.apiKeyConfigured`: true");
     expect(text).toContain("- `data-engine.dataAdapter`: postgresql");
 
+    modelsReply = modelsSparse;
     answer(sparse);
     expect(await run()).toContain("- `open-ai.models`: []");
   });

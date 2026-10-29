@@ -129,8 +129,6 @@ class RuntimeFunctionIntegrationTest {
               String.valueOf(port),
               "AGENT_RUNTIME_ROOT",
               scratch.resolve("data").toString(),
-              "AGENT_RUNTIME_MODEL_CONFIG_URL",
-              ontologyUrl,
               "AGENT_RUNTIME_DATABASE",
               db.getPath().substring(1),
               "AGENT_RUNTIME_SCHEMA",

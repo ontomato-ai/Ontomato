@@ -1,9 +1,9 @@
 # Conversation model configuration ownership
 
-Proposed for controller review, 2026-10-29. Not implemented. Baseline: public
+Approved by the controller and implemented, 2026-10-29. Baseline: public
 `5865de9146ef87c3533d566e1486c9ad9b5cfb64`, enterprise
 `0723e509af2da1906553e53a8e187b6132c7f810`.
-The proposed [wire contract](../packages/contracts/agent-runtime-model-config.md)
+The [wire contract](../packages/contracts/agent-runtime-model-config.md)
 owns request/response shapes and save semantics.
 
 ## Outcome and ownership
@@ -53,7 +53,7 @@ all TS/Java producers, fixtures and admission handling: runtime no longer calls
 Java to resolve models. Callback credentials remain in `environment.secrets` for
 skills; generation grants no longer authorize the removed model-settings GET.
 
-## Domain alignment requiring controller approval
+## Approved domain alignment
 
 The baseline has two IDs for the OSS single domain:
 
@@ -65,7 +65,7 @@ Java previously resolved model domains from credentials, hiding this mismatch.
 Keying runtime configuration directly by the current request domain would split
 OSS workbench and ontology models into two independent configurations.
 
-Proposed resolution: use the platform's existing OSS domain ID `1` in OSS
+Controller decision (2026-10-29): use the platform's existing OSS domain ID `1` in OSS
 workbench identity assembly and its fixed-domain defaults. Enterprise continues
 using its verified domain unchanged. Do not teach the runtime that `default` and
 `1` are aliases, or add model-only domain mappings to consumers. Keep session
@@ -74,8 +74,7 @@ host isolation unchanged.
 This also changes the domain used for newly accessed OSS workbench resources.
 Existing local `default`-scoped workbench/runtime data will need the separately
 planned pre-release conversion. No conversion or historical-data fallback is
-included here. Controller approval is required for this consequence; it is not
-implicitly treated as an already approved implementation detail.
+included here. The controller explicitly accepted this consequence.
 
 ## Replacement scope
 
@@ -104,7 +103,7 @@ implicitly treated as an already approved implementation detail.
 No main-checkout edits, service startup, image build, remote access, push or
 InfoHub edits are part of this executor's scope.
 
-## Verification after approval and implementation
+## Verification and acceptance
 
 Contract tests protect domain sharing and foreign-domain isolation, first-model
 role assignment, atomic rejection of invalid references, duplicate-tail mask
@@ -119,5 +118,5 @@ checkout remains: change a model on the original page, run a workbench question
 and ontology generation, verify both use the changed model, verify keys cannot
 be read back in plaintext, and run image/registry smoke checks.
 
-The design-only commit runs whitespace/link checks; it does not claim the
-implementation checks or product acceptance above have passed.
+Local check results are reported with the implementation commits. They do not
+claim controller-owned main-checkout or real-model product acceptance.

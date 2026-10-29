@@ -52,7 +52,6 @@ services:
       NODE_ID: ${NODE_ID:-datarag}
       TZ: ${TZ:-UTC}
       <<: *database-environment
-      ONTOMATO_MODEL_RUNTIME_TOKEN: ${ONTOMATO_MODEL_RUNTIME_TOKEN:?ONTOMATO_MODEL_RUNTIME_TOKEN not set}
     volumes:
       - ./backend_data:/deploy
     logging:
@@ -84,8 +83,9 @@ services:
       AGENT_RUNTIME_DATABASE: ontomato
       AGENT_RUNTIME_SCHEMA: agent_runtime
       AGENT_RUNTIME_HOSTS: '[{"id":"workbench","token":"${AGENT_RUNTIME_SERVICE_TOKEN:?Run the deployment configuration preparation first}","providers":["workbench","ontology"],"publishProviders":["workbench"],"domainSkills":true},{"id":"ontology","token":"${AGENT_RUNTIME_ONTOLOGY_TOKEN:?Run the deployment configuration preparation first}","providers":["ontology"],"publishProviders":["ontology"]}]'
-      # Temporary Java model configuration dependency until that owner is migrated.
-      AGENT_RUNTIME_MODEL_CONFIG_URL: http://datarag:18087
+      LLM_BASE_URL: ${LLM_BASE_URL:-}
+      LLM_API_KEY: ${LLM_API_KEY:-}
+      LLM_MODEL: ${LLM_MODEL:-}
       ONTOMATO_MODEL_RUNTIME_TOKEN: ${ONTOMATO_MODEL_RUNTIME_TOKEN:?ONTOMATO_MODEL_RUNTIME_TOKEN not set}
     volumes:
       - ./agent_runtime_data:/data
@@ -102,8 +102,6 @@ services:
         max-file: "5"
     depends_on:
       postgres:
-        condition: service_healthy
-      datarag:
         condition: service_healthy
 
   ontomato:

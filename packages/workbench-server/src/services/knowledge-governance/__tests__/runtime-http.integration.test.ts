@@ -126,7 +126,6 @@ describe.skipIf(!connection)(
           AGENT_RUNTIME_DATABASE_URL: databaseUrl,
           AGENT_RUNTIME_SCHEMA: "runtime",
           AGENT_RUNTIME_ROOT: path.join(root, "runtime"),
-          AGENT_RUNTIME_MODEL_CONFIG_URL: modelUrl,
           ONTOMATO_MODEL_RUNTIME_TOKEN: "fixture-runtime-token",
           AGENT_RUNTIME_PORT: String(port),
           AGENT_RUNTIME_HOSTS: JSON.stringify([
@@ -214,30 +213,6 @@ describe.skipIf(!connection)(
           res.setHeader("content-type", "application/json");
           res.end(JSON.stringify({ success: true, data }));
         };
-        if (req.url === "/businessConfig/getModelSettings") {
-          reply({
-            agents: { knowledgeGovernance: { model: "fixture" } },
-            sealedApiKeys: {
-              fixture: ["enc:v1:mzjUpW4OVVjLMPmxcmMcyop5LFN8VSJ_7lUGPppYXDK_UDNjyKAlYAL7vVwOMOI"],
-            },
-            models: [
-              {
-                name: "fixture",
-                modelName: "fixture-model",
-                baseUrl: `${modelUrl}/v1`,
-                apiKeys: ["******1234"],
-                maxTokens: 4000,
-                contextWindow: 5000,
-                timeout: null,
-                maxRetries: null,
-                temperature: null,
-                topP: null,
-                customRequestParameters: null,
-              },
-            ],
-          });
-          return;
-        }
         if (req.url === "/admin/getBussinessKnowledge") {
           observed.push(`knowledge:${req.headers["x-correlation-id"]}`);
           reply([
@@ -336,9 +311,18 @@ describe.skipIf(!connection)(
       await new Promise<void>((r) => model.listen(0, "127.0.0.1", r));
       modelUrl = `http://127.0.0.1:${(model.address() as { port: number }).port}`;
       await launch("runtime");
+      const seeded = await fetch(runtimeUrl + "/v1/models/settings", {
+        method: "PUT", headers: { authorization: "Bearer fixture-host-secret", "x-domain-id": "1",
+          "x-correlation-id": "seed", "content-type": "application/json" },
+        body: JSON.stringify({ models: [{ name: "fixture", modelName: "fixture-model", baseUrl: modelUrl + "/v1",
+          apiKeys: ["sk-fixture-key-1234"], maxTokens: 4000, contextWindow: 5000 }],
+          agents: { query: null, coding: null, general: null, diagnosis: null, knowledgeGovernance: null } }),
+      });
+      expect(seeded.status).toBe(200);
+
       await launch("host");
       await pool.query(
-        "INSERT INTO thread_metadata(thread_id,user_id,domain_id,title,last_request_seq) VALUES('fixture-history','another-domain-user','default','Sales question',0)",
+        "INSERT INTO thread_metadata(thread_id,user_id,domain_id,title,last_request_seq) VALUES('fixture-history','another-domain-user','1','Sales question',0)",
       );
       await pool.query(
         "INSERT INTO turn_runs(thread_id,request_seq,status,source,display_message,started_at,ended_at) VALUES('fixture-history',0,'completed','chat','Sales total?',now()-interval '1 minute',now())",

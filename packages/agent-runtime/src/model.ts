@@ -10,76 +10,17 @@ import type {
 } from "@earendil-works/pi-ai";
 import { streamSimple } from "@earendil-works/pi-ai/api/openai-completions";
 import { parseIsoDurationSeconds } from "@ontomato/contracts/model-settings";
-import { openSealedModelKey } from "@ontomato/contracts/model-key-seal";
-import { RUNTIME_MODEL_NOT_CONFIGURED } from "@ontomato/contracts/agent-runtime-values";
-import type { RuntimeStartRunRequest } from "@ontomato/contracts/agent-runtime";
 import { RuntimeError } from "./errors";
 import { RuntimeStore, type Scope } from "./store";
 import type { StreamFn } from "./core/pi/types";
 
-import { runtimeModelConfigurationSchema as modelSchema, runtimeModelTestRequestSchema } from "@ontomato/contracts/runtime-model-test";
+import { runtimeModelConfigurationSchema as modelSchema } from "@ontomato/contracts/runtime-model-test";
 import { normalizeContext } from "@earendil-works/pi-ai";
 
 export type ResolvedModel = z.infer<typeof modelSchema> & { apiKey: string };
 
-/** Temporary migration adapter. Remove after Java model configuration ownership is migrated. */
-export async function resolveModel(options: {
-  baseUrl: string;
-  runtimeToken?: string;
-  request: RuntimeStartRunRequest;
-  correlationId: string;
-  signal: AbortSignal;
-}): Promise<ResolvedModel> {
-  const credential = options.request.modelCredential;
-  const headers: Record<string, string> = {
-    ...logHeaders(),
-    "X-Correlation-Id": options.correlationId,
-    "X-Ontomato-Run-Id": options.correlationId,
-  };
-  if (credential.kind !== "none")
-    headers[credential.kind === "token" ? "tk" : "X-API-Key"] =
-      credential.value;
-  const response = await fetch(
-    `${options.baseUrl.replace(/\/$/, "")}/businessConfig/getModelSettings`,
-    { headers, signal: options.signal },
-  );
-  if (!response.ok)
-    throw new Error(`Model configuration read failed (${response.status})`);
-  const body = z
-    .object({
-      success: z.boolean(),
-      data: z
-        .object({
-          agents: z.record(
-            z.object({ model: z.string().nullable() }).passthrough(),
-          ),
-          models: z.array(modelSchema),
-          sealedApiKeys: z.record(z.array(z.string())),
-        })
-        .optional(),
-    })
-    .parse(await response.json());
-  if (!body.success || !body.data)
-    throw new Error("Model configuration read was rejected");
-  const name = body.data.agents[options.request.definition.modelRole]?.model;
-  if (!name)
-    throw new RuntimeError(
-      422,
-      RUNTIME_MODEL_NOT_CONFIGURED,
-      "No model is configured for this role",
-    );
-  const resolved = body.data.models.find((m) => m.name === name);
-  if (!resolved)
-    throw new Error("Model role references a missing model configuration");
-  const sealed = body.data.sealedApiKeys[resolved.name]?.[0];
-  return {
-    ...resolved,
-    apiKey: sealed ? openSealedModelKey(sealed, options.runtimeToken) : "",
-  };
-}
-
 export function piModel(config: ResolvedModel): Model<"openai-completions"> {
-  // The existing Java configuration describes an OpenAI-compatible endpoint; do not guess protocols.
+  // The saved configuration describes an OpenAI-compatible endpoint; do not guess protocols.
   return {
     id: config.modelName,
     name: config.name,
@@ -113,15 +54,8 @@ export function modelStream(
         : undefined,
       maxRetries: config.maxRetries,
       maxTokens: options?.maxTokens ?? config.maxTokens,
-      headers: { ...logHeaders(), "X-Correlation-Id": correlationId },
-      onPayload: (payload) => ({
-        ...(payload as Record<string, unknown>),
-        ...(config.temperature === undefined
-          ? {}
-          : { temperature: config.temperature }),
-        ...(config.topP === undefined ? {} : { top_p: config.topP }),
-        ...config.customRequestParameters,
-      }),
+      headers: { ...logHeaders(), ...modelHeaders(config, correlationId) },
+      onPayload: (payload) => modelPayload(config, payload),
     });
     const result = stream.result.bind(stream);
     let logged: Promise<AssistantMessage> | undefined;
@@ -246,8 +180,7 @@ export function modelPayload(config: ResolvedModel, payload: unknown) {
 }
 
 /** One request, no agent session, persisted draft, model-call record or retry. */
-export async function testModel(input: unknown, correlationId: string, signal: AbortSignal) {
-  const { model: config, prompt } = runtimeModelTestRequestSchema.parse(input);
+export async function testModel(config: ResolvedModel, prompt: string, correlationId: string, signal: AbortSignal) {
   const stream = streamSimple(piModel(config), normalizeContext({
     messages: [{ role: "user", content: prompt, timestamp: Date.now() }],
   }), {

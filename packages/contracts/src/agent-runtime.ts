@@ -13,7 +13,6 @@ import {
   runtimeUserMessageSchema,
 } from "./agent-runtime-messages";
 import {
-  runtimeEndUserCredentialSchema,
   runtimeEnvironmentSchema,
   runtimeRegisteredSkillSchema,
   runtimeSkillRefSchema,
@@ -68,7 +67,6 @@ export const runtimeStartRunRequestSchema = z
     definition: runtimeAgentDefinitionSchema,
     input: runtimeUserMessageSchema,
     environment: runtimeEnvironmentSchema,
-    modelCredential: runtimeEndUserCredentialSchema,
   })
   .strict();
 

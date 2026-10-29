@@ -80,6 +80,7 @@ export class RuntimeStore {
       await c.query(
         `CREATE TABLE IF NOT EXISTS ${this.table("schema_migrations")} (version int PRIMARY KEY)`,
       );
+      await c.query(`CREATE TABLE IF NOT EXISTS ${this.table("model_settings")} (domain_id text PRIMARY KEY, settings jsonb NOT NULL)`);
       const versions = (
         await c.query(`SELECT version FROM ${this.table("schema_migrations")}`)
       ).rows;

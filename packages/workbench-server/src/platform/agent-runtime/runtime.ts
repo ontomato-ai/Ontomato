@@ -72,15 +72,6 @@ export function runDefinition(
     },
   };
 }
-export function modelCredential(
-  c: AssistantCredentials,
-): RuntimeStartRunRequest["modelCredential"] {
-  return c.apiKey
-    ? { kind: "api_key", value: c.apiKey }
-    : c.token
-      ? { kind: "token", value: c.token }
-      : { kind: "none" };
-}
 export function messageText(m: { content: unknown }): string {
   return typeof m.content === "string"
     ? m.content
@@ -164,7 +155,6 @@ export async function startAuxiliary(input: AuxiliaryInput) {
       credentials.locale,
     ),
     environment: input.environment ?? { values: {}, secrets: {} },
-    modelCredential: modelCredential(credentials),
   });
   return { client, runId, sessionId };
 }
