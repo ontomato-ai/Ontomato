@@ -44,6 +44,7 @@ export const runtimeAdmissionHeadersSchema = runtimeRequestHeadersSchema.extend(
 /** Hosts send a complete non-secret definition on every run; role names are opaque strings. */
 export const runtimeAgentDefinitionSchema = z
   .object({
+    agentId: runtimeKeySchema.optional(),
     systemPrompt: z.string(),
     modelRole: runtimeKeySchema,
     skills: z.array(runtimeSkillRefSchema),

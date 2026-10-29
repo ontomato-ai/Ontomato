@@ -266,6 +266,9 @@ importers:
       '@antv/x6':
         specifier: 3.1.7
         version: 3.1.7
+      '@ontomato/agent-shell-ui':
+        specifier: workspace:*
+        version: link:../agent-shell-ui
       '@ontomato/contracts':
         specifier: workspace:*
         version: link:../contracts

@@ -17,7 +17,6 @@ async function mountPage(granted: readonly string[]) {
     history: createMemoryHistory(),
     routes: [
       { path: "/admin/system-agents", component: page },
-      { path: "/admin/knowledge-governance/:sessionId?", name: "KnowledgeGovernance", component: page },
       { path: "/observe/diagnosis", name: "ObserveDiagnosis", component: page },
     ],
   });
@@ -43,21 +42,17 @@ describe("system agents page", () => {
   it("each entry card shows by its own permission", async () => {
     expect((await mountPage(["observer", "business-knowledge"])).cards()).toEqual([
       t("admin.opsAgent"),
-      t("governance.title"),
     ]);
     expect((await mountPage(["observer"])).cards()).toEqual([t("admin.opsAgent")]);
-    expect((await mountPage(["business-knowledge"])).cards()).toEqual([t("governance.title")]);
+    expect((await mountPage(["business-knowledge"])).cards()).toEqual([]);
   });
 
-  it("the operations agent opens the observability diagnosis page in a new window; knowledge governance opens inside the admin console with this page as its return target", async () => {
+  it("the operations agent opens the observability diagnosis page in a new window", async () => {
     const open = vi.spyOn(window, "open").mockReturnValue(null);
-    const { wrapper, router } = await mountPage(["observer", "business-knowledge"]);
-    const [ops, governance] = wrapper.findAll(".system-agent-card");
+    const { wrapper } = await mountPage(["observer", "business-knowledge"]);
+    const [ops] = wrapper.findAll(".system-agent-card");
     await ops!.find("button").trigger("click");
     expect(open).toHaveBeenCalledWith("/observe/diagnosis", "_blank");
-    await governance!.find("button").trigger("click");
-    await flushPromises();
-    expect(router.currentRoute.value.path).toBe("/admin/knowledge-governance");
-    expect(router.currentRoute.value.query.from).toBe("/admin/system-agents");
+
   });
 });

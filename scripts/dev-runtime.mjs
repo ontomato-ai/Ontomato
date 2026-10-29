@@ -99,6 +99,7 @@ export function runtimeEnvironment(
       token: env.AGENT_RUNTIME_ONTOLOGY_TOKEN,
       providers: ["ontology"],
       publishProviders: ["ontology"],
+      domainHistory: true,
     },
   ]);
   env.AGENT_RUNTIME_DATABASE ||= runtimeDatabase;

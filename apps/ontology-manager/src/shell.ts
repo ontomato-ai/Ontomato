@@ -37,29 +37,6 @@ export interface ManagerShellProfile {
   knowledgeTagValues: ManagerKnowledgeTagValues;
 }
 
-/**
- * Information the host gives through the launch URL when embedding: embedded=1 means the Manager is embedded in a host
- * page; knowledgeGovernanceUrl is the host's knowledge governance page. The address comes from a URL parameter and only
- * http/https is accepted; anything else counts as absent.
- */
-function readHostLaunch() {
-  const params = new URLSearchParams(window.location.search);
-  return {
-    embedded: params.get("embedded") === "1",
-    knowledgeGovernanceUrl: httpUrl(params.get("knowledgeGovernanceUrl")),
-  };
-}
-
-function httpUrl(value: string | null) {
-  if (!value) return null;
-  try {
-    const url = new URL(value, window.location.href);
-    return url.protocol === "http:" || url.protocol === "https:" ? url.href : null;
-  } catch {
-    return null;
-  }
-}
-
 export function startManagerShell(profile: ManagerShellProfile) {
   consumeLaunchCredential();
   const credential = ref(sessionCredential(profile.noCredential));
@@ -72,7 +49,7 @@ export function startManagerShell(profile: ManagerShellProfile) {
   const { apiBase, initialRoute } = readRuntimeConfig();
   const { view, replaceView } = syncView(initialRoute);
 
-  const { embedded, knowledgeGovernanceUrl } = readHostLaunch();
+  const embedded = new URLSearchParams(window.location.search).get("embedded") === "1";
 
   // 401 means authentication expired: clear this tab's credential and stop requests. 402 (license failure) keeps the credential; the component shows the error.
   function onAuthFailure(status: ManagerAuthFailureStatus) {
@@ -96,7 +73,6 @@ export function startManagerShell(profile: ManagerShellProfile) {
             presentation: profile.presentation,
             knowledgeTagValues: profile.knowledgeTagValues,
             embedded,
-            knowledgeGovernanceUrl,
             "onUpdate:view": replaceView,
             onAuthFailure,
           })

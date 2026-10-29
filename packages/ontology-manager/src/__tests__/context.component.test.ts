@@ -92,7 +92,6 @@ const base: ManagerHostContext = {
   },
   knowledgeTagValues: { general: "General", business: "Business", tech: "Tech" },
   embedded: false,
-  knowledgeGovernanceUrl: null,
 };
 
 describe("host context injection", () => {

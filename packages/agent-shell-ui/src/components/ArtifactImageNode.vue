@@ -35,7 +35,7 @@ function expand() {
   <figure v-else-if="path" class="inline-artifact">
     <figcaption class="inline-caption">
       <span class="inline-title">{{ title }}</span>
-      <SlotOutlet v-if="artifact" :slot="shell.slots.artifactActions" :scope="{ artifact }" />
+      <SlotOutlet v-if="artifact" :content="shell.slots.artifactActions" :scope="{ artifact }" />
       <button
         type="button"
         class="inline-expand"

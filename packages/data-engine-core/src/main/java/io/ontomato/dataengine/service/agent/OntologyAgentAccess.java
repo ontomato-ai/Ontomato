@@ -33,6 +33,36 @@ public class OntologyAgentAccess {
       Long expiresAt,
       String callerId) {}
 
+  public Context governance(HttpServletRequest request) {
+    var context = authenticated(request);
+    if (!identity.hasKnowledgeGovernanceAccess())
+      throw new AgentHttpException(403, "FORBIDDEN", "Business knowledge permission is required");
+    return context;
+  }
+
+  public Context authenticated(HttpServletRequest request) {
+    if (request.getAttribute(QueryGrantService.ATTRIBUTE) != null)
+      throw new AgentHttpException(403, "FORBIDDEN", "A current user credential is required");
+    var user = identity.getCurrentUser();
+    if (user == null || !user.isEnable() || user.getDomainId() == null || user.getDomainId().isBlank())
+      throw new AgentHttpException(401, "UNAUTHENTICATED", "A current domain credential is required");
+    return new Context(new OntologyAgentStore.Owner(user.getId(),user.getDomainId()), null,
+      request.getHeader("tk"), request.getHeader("X-API-Key"),
+      request.getHeader("Accept-Language") == null ? "en" : request.getHeader("Accept-Language"),
+      identity.getCurrentCredentialExpiresAt(), null);
+  }
+
+  public boolean governanceAllowed() { return identity.hasKnowledgeGovernanceAccess(); }
+
+  public Context forAgent(HttpServletRequest request, String agent) {
+    return KnowledgeGovernanceService.AGENT.equals(agent) ? governance(request) : current(request);
+  }
+
+  public Context forSession(HttpServletRequest request, String session) {
+    var owner = authenticated(request).owner();
+    return forAgent(request, store.session(session,owner).getString("agent_id"));
+  }
+
   public Context current(HttpServletRequest request) {
     var access = queries.access(request);
     if (access.grant() != null)
@@ -85,7 +115,7 @@ public class OntologyAgentAccess {
 
   public OntologyAgentStore.Owner reader(HttpServletRequest request, String session, String run) {
     if (request.getHeader("X-Ontomato-Query-Service-Token") == null)
-      return current(request).owner();
+      return forSession(request, session).owner();
     String caller = AgentJson.id(request.getHeader("X-Ontomato-Retrieval-Caller-Id"));
     var owner = callerOwner(request, caller);
     store.requireCallerResource(caller, session, run);

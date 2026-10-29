@@ -1,3 +1,4 @@
+import { runtimeHistoryQuerySchema } from "@ontomato/contracts/agent-runtime-history";
 import { correlationId, withServiceLogContext, updateServiceLogContext, getServiceLogContext, LogQueryError } from "@ontomato/service-logging";
 import { serviceLogIdentitySchema } from "@ontomato/contracts/service-logging";
 import { runtimeLogger, runtimeDiagnostic } from "./logging";
@@ -215,6 +216,25 @@ export function createRuntimeHttp(runtime: AgentRuntime) {
         );
     }),
   );
+  app.get("/v1/history", route(async (req, res) => {
+    const ctx = scope(req);
+    res.json(await runtime.store.searchHistory(ctx.scope, ctx.host.domainHistory === true,
+      runtimeHistoryQuerySchema.parse(req.query)));
+  }));
+  app.get("/v1/history/:hostId/:runId", route(async (req, res) => {
+    const ctx = scope(req);
+    res.json(await runtime.store.history(ctx.scope, ctx.host.domainHistory === true,
+      req.params.hostId, runtimeIdSchema.parse(req.params.runId)));
+  }));
+  app.get("/v1/history/:hostId/:runId/artifacts/:artifactId/content", route(async (req, res) => {
+    const ctx = scope(req);
+    const record = await runtime.store.history(ctx.scope, ctx.host.domainHistory === true,
+      req.params.hostId, runtimeIdSchema.parse(req.params.runId));
+    const id = runtimeIdSchema.parse(req.params.artifactId);
+    const artifact = record.artifacts.find(item => item.id === id);
+    if (!artifact) throw new RuntimeError(404, "NOT_FOUND", "Artifact not found");
+    res.type(artifact.mediaType).send(await runtime.files.read(artifact));
+  }));
   app.post(
     "/v1/sessions",
     route(async (req, res) => {

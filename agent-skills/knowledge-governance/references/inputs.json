@@ -1,0 +1,302 @@
+{
+  "begin": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "id": {
+        "type": "string",
+        "format": "uuid"
+      },
+      "message": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "required": [
+      "message"
+    ]
+  },
+  "read_knowledge": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "query": {
+        "type": "string"
+      },
+      "id": {
+        "type": "string"
+      },
+      "index": {
+        "type": "integer",
+        "minimum": 0
+      },
+      "offset": {
+        "type": "integer",
+        "minimum": 0
+      },
+      "maxChars": {
+        "type": "integer",
+        "minimum": 1000,
+        "maximum": 20000
+      }
+    },
+    "required": []
+  },
+  "read_ontology": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "query": {
+        "type": "string"
+      },
+      "id": {
+        "type": "string"
+      },
+      "index": {
+        "type": "integer",
+        "minimum": 0
+      },
+      "offset": {
+        "type": "integer",
+        "minimum": 0
+      },
+      "maxChars": {
+        "type": "integer",
+        "minimum": 1000,
+        "maximum": 20000
+      }
+    },
+    "required": []
+  },
+  "read_work_record": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "query": {
+        "type": "string"
+      },
+      "id": {
+        "type": "string"
+      },
+      "index": {
+        "type": "integer",
+        "minimum": 0
+      },
+      "offset": {
+        "type": "integer",
+        "minimum": 0
+      },
+      "maxChars": {
+        "type": "integer",
+        "minimum": 1000,
+        "maximum": 20000
+      }
+    },
+    "required": []
+  },
+  "search_history": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "query": {
+        "type": "string",
+        "maxLength": 2000
+      },
+      "agentId": {
+        "type": "string",
+        "minLength": 1
+      },
+      "from": {
+        "type": "string",
+        "format": "date-time"
+      },
+      "to": {
+        "type": "string",
+        "format": "date-time"
+      },
+      "offset": {
+        "type": "integer",
+        "minimum": 0
+      },
+      "limit": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 100
+      }
+    },
+    "required": []
+  },
+  "read_history": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "hostId": {
+        "type": "string",
+        "minLength": 1
+      },
+      "runId": {
+        "type": "string",
+        "format": "uuid"
+      },
+      "offset": {
+        "type": "integer",
+        "minimum": 0
+      },
+      "maxChars": {
+        "type": "integer",
+        "minimum": 1000,
+        "maximum": 20000
+      }
+    },
+    "required": [
+      "hostId",
+      "runId"
+    ]
+  },
+  "read_evidence": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "hostId": {
+        "type": "string",
+        "minLength": 1
+      },
+      "runId": {
+        "type": "string",
+        "format": "uuid"
+      },
+      "offset": {
+        "type": "integer",
+        "minimum": 0
+      },
+      "maxChars": {
+        "type": "integer",
+        "minimum": 1000,
+        "maximum": 20000
+      },
+      "artifactId": {
+        "type": "string",
+        "format": "uuid"
+      }
+    },
+    "required": [
+      "hostId",
+      "runId"
+    ]
+  },
+  "collect_turn_artifacts": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "hostId": {
+        "type": "string",
+        "minLength": 1
+      },
+      "runId": {
+        "type": "string",
+        "format": "uuid"
+      },
+      "offset": {
+        "type": "integer",
+        "minimum": 0
+      },
+      "maxChars": {
+        "type": "integer",
+        "minimum": 1000,
+        "maximum": 20000
+      },
+      "artifactId": {
+        "type": "string",
+        "format": "uuid"
+      }
+    },
+    "required": [
+      "hostId",
+      "runId"
+    ]
+  },
+  "update_work_record": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "summary": {
+        "type": "string",
+        "maxLength": 1000
+      },
+      "notes": {
+        "type": "string",
+        "maxLength": 30000
+      },
+      "reviewedKnowledgeIds": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "issues": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "title": {
+              "type": "string",
+              "minLength": 1
+            },
+            "problem": {
+              "type": "string",
+              "minLength": 1
+            },
+            "after": {
+              "type": "string",
+              "minLength": 1
+            },
+            "basis": {
+              "type": "string",
+              "minLength": 1
+            },
+            "before": {
+              "type": "string"
+            },
+            "category": {
+              "enum": [
+                "ontology",
+                "knowledge",
+                "data"
+              ]
+            },
+            "status": {
+              "enum": [
+                "proposed",
+                "pending",
+                "confirmed"
+              ]
+            },
+            "sourceIds": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          },
+          "required": [
+            "id",
+            "title",
+            "problem",
+            "before",
+            "after",
+            "basis",
+            "category",
+            "status",
+            "sourceIds"
+          ]
+        }
+      }
+    },
+    "required": []
+  }
+}

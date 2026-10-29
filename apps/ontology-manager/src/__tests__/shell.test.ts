@@ -22,7 +22,6 @@ vi.mock("@ontomato/ontology-manager", async () => {
       presentation: { type: Object, required: true },
       knowledgeTagValues: { type: Object, required: true },
       embedded: { type: Boolean, required: true },
-      knowledgeGovernanceUrl: { type: String, default: null },
     },
     emits: ["update:view", "auth-failure"],
     setup(props, { emit }) {
@@ -79,18 +78,10 @@ describe("open-source standalone shell", () => {
       tech: "Tech",
     });
     expect(host.props?.embedded).toBe(false);
-    expect(host.props?.knowledgeGovernanceUrl).toBeNull();
     // Open-source presentation values (b6437c86): the same static object is handed to the component.
     expect(host.props?.presentation).toBe(ossPresentation);
   });
 
-  it("host launch parameters: embedded=1 and an http(s) governance URL reach the component; URLs with other schemes count as absent", () => {
-    start("/?embedded=1&knowledgeGovernanceUrl=http%3A%2F%2Fhost.test%2Fadmin%2Fknowledge-governance");
-    expect(host.props?.embedded).toBe(true);
-    expect(host.props?.knowledgeGovernanceUrl).toBe("http://host.test/admin/knowledge-governance");
-    start("/?embedded=1&knowledgeGovernanceUrl=javascript%3Aalert(1)");
-    expect(host.props?.knowledgeGovernanceUrl).toBeNull();
-  });
 
   it("an explicit tk / apiKey launch uses that credential and removes it from the URL", () => {
     start("/?tk=t1#/data");

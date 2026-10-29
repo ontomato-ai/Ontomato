@@ -16,6 +16,7 @@ import io.ontomato.dataengine.service.sys.bean.permission.UserDataPermission;
 public class AnonymousIdentityService implements IdentityService {
     @Override public Long getCurrentCredentialExpiresAt() { return null; }
     @Override public void requireQueryAccess() { }
+    @Override public boolean hasKnowledgeGovernanceAccess() { return true; }
 
     private static final UserDetail ANONYMOUS_USER = createAnonymousUser();
 

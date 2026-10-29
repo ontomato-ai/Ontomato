@@ -49,7 +49,7 @@ async function download() {
           {{ formatSize(open.artifact.size) }}
         </span>
       </span>
-      <SlotOutlet :slot="shell.slots.artifactActions" :scope="{ artifact: open.artifact }" />
+      <SlotOutlet :content="shell.slots.artifactActions" :scope="{ artifact: open.artifact }" />
       <button type="button" class="panel-button" :title="shell.labels.value.download" :aria-label="shell.labels.value.download" @click="download">
         <Download :size="16" />
       </button>

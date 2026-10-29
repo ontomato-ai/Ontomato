@@ -55,17 +55,17 @@ export function runDefinition(
     },
     compaction: {
       systemPrompt: renderPrompt(
-        "knowledge-governance.compaction.system",
+        "agent-runtime.compaction.system",
         {},
         locale,
       ),
       summarizePrompt: renderPrompt(
-        "knowledge-governance.compaction.summarize.user",
+        "agent-runtime.compaction.summarize.user",
         {},
         locale,
       ),
       updatePrompt: renderPrompt(
-        "knowledge-governance.compaction.update.user",
+        "agent-runtime.compaction.update.user",
         {},
         locale,
       ),

@@ -66,8 +66,6 @@ export interface ManagerHostContext {
   knowledgeTagValues: ManagerKnowledgeTagValues;
   /** Embedded in a host page: the host already has the Ontology Manager tab and back navigation, so the brand header is hidden. */
   embedded: boolean;
-  /** The host's knowledge governance page URL (only when the current user has governance permission); the knowledge page shows an entry for it; null when absent. */
-  knowledgeGovernanceUrl: string | null;
 }
 
 const contextKey: InjectionKey<Readonly<ManagerHostContext>> = Symbol("ontology-manager-context");

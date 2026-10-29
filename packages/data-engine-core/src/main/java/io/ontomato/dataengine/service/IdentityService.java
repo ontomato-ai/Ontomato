@@ -13,6 +13,9 @@ public interface IdentityService {
     /** Authorize the ontology read-query capability at its owning identity boundary. */
     void requireQueryAccess();
 
+    /** The same business-knowledge capability that owns governance. */
+    boolean hasKnowledgeGovernanceAccess();
+
     /** Absolute expiry of the verified credential, or null when it has no expiry. */
     Long getCurrentCredentialExpiresAt();
 

@@ -171,7 +171,7 @@ class OntologyRetrievalContractTest {
             quality,
             authorization);
     var host =
-        new OntologyAgentHost(store, runtime, retrieval, mock(OntologyGenerationService.class));
+        new OntologyAgentHost(store, runtime, retrieval, mock(OntologyGenerationService.class), mock(KnowledgeGovernanceService.class));
     http =
         MockMvcBuilders.standaloneSetup(
                 new OntologyAgentController(host, authorization, runtime, retrieval),

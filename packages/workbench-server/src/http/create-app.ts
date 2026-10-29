@@ -7,7 +7,6 @@ import {
 import { installAssistantEvidenceReader } from "../platform/diagnosis/observe/workspaces/assistant-source";
 import type { AuthenticatedRequest } from "../utils/request-identity";
 import { unwrapCallbackCredential } from "../services/agent-runtime/callback-credential";
-import { registerGovernanceSkill } from "../services/knowledge-governance/skill";
 import express, {
   Express,
   Request,
@@ -22,7 +21,6 @@ import { resolveSkillPackageFile } from "../core/skills/discovery/loader";
 import { config } from "../config/application";
 import analysisTasksRouter from "../api/routes/analysis-tasks";
 import backendProxyRouter from "../api/routes/backend-proxy";
-import knowledgeGovernanceRouter from "../api/routes/knowledge-governance";
 import dashboardsRouter from "../api/routes/dashboards";
 import feedbackRouter from "../api/routes/feedback";
 import memoriesRouter from "../api/routes/memories";
@@ -218,7 +216,6 @@ export function createWorkbenchApp(mounts: WorkbenchMounts = {}): Express {
     app.use("/api/connections", mounts.connectionRouter);
   if (mounts.dataGovernanceRouter)
     app.use("/api/data-governance", mounts.dataGovernanceRouter);
-  app.use("/api/knowledge-governance", knowledgeGovernanceRouter);
   app.use("/api/dashboards", dashboardsRouter);
   app.use("/api/feedback", feedbackRouter);
   app.use("/api/preferences", preferencesRouter);
@@ -281,7 +278,6 @@ export async function startWorkbench(
   getWorkbenchLogStore();
   process.once("SIGTERM", () => { void closeWorkbenchLogging().finally(() => process.exit(0)); });
   process.once("SIGINT", () => { void closeWorkbenchLogging().finally(() => process.exit(0)); });
-  await registerGovernanceSkill();
   await registerAssistantSkills();
 
   startArtifactCleanupScheduler();

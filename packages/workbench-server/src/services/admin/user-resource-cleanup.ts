@@ -4,14 +4,12 @@ import { toErrorMessage } from "../../utils/errors";
 import { pptArtifactStore } from "../analysis-agent/delivery/ppt-artifacts";
 import { deleteUserAssistantSessions } from "../assistant/cleanup";
 import { deleteUserDashboards } from "../dashboard/store";
-import { governanceStore } from "../knowledge-governance/store";
 
 const logger = createLogger("user-resource-cleanup");
 const stages: [string, (userId: string) => Promise<void>][] = [
   ["assistant conversations", deleteUserAssistantSessions],
   ["dashboards", deleteUserDashboards],
   ["memory and preferences", deleteUserState],
-  ["governance sessions", (id) => governanceStore.deleteByUser(id)],
   ["PPT artifacts", (id) => pptArtifactStore().deleteByUser(id)],
 ];
 

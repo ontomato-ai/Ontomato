@@ -45,7 +45,6 @@ async function mountLayout(config: AdminLayoutConfig, path: string, switchEnable
           { path: "ontology-manager", component: page, meta: { group: "data-assets" } },
           { path: "system-agents", component: page, meta: { group: "app-capabilities" } },
           { path: "audit-log", component: page, meta: { group: "platform-management" } },
-          { path: "knowledge-governance/:sessionId?", name: "KnowledgeGovernance", component: page },
         ],
       },
     ],
@@ -179,30 +178,6 @@ describe("shared admin layout", () => {
     expect(home.el.querySelector(".admin-page-heading")).toBeNull();
   });
 
-  it("knowledge governance highlights the tab and menu of the page it was opened from; without a valid from, system agents", async () => {
-    const config: AdminLayoutConfig = {
-      ...base,
-      groups: [adminGroups.dataAssets, adminGroups.appCapabilities, adminGroups.platformManagement],
-      items: [adminMenuItems.systemAgents, adminMenuItems.auditLog],
-    };
-    const fromManager = await mountLayout(
-      config,
-      "/admin/knowledge-governance?from=" + encodeURIComponent("/admin/ontology-manager?view=knowledge")
-    );
-    expect(fromManager.activeTab()).toBe("Ontology Manager");
-    expect(fromManager.el.querySelector(".admin-aside")).toBeNull();
-    expect(fromManager.el.querySelector(".admin-page-heading")).toBeNull();
-
-    for (const path of [
-      "/admin/knowledge-governance?from=/admin/system-agents",
-      "/admin/knowledge-governance",
-      "/admin/knowledge-governance?from=https://example.com/admin/",
-    ]) {
-      const layout = await mountLayout(config, path);
-      expect(layout.activeTab()).toBe("Agents and Skills");
-      expect(layout.activeMenu()).toBe("System Agents");
-    }
-  });
 
   it("navigating to a menu page of another group switches the tab and the sidebar menu", async () => {
     const { router, activeTab, menu, activeMenu } = await mountLayout(

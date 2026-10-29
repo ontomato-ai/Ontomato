@@ -55,7 +55,7 @@ async function managerFrameUrl(
       {
         path: "/admin",
         component: RouterView,
-        children: [adminRoutes.ontologyManager, adminRoutes.visualModeling, adminRoutes.knowledgeGovernance],
+        children: [adminRoutes.ontologyManager, adminRoutes.visualModeling],
       },
     ],
   });
@@ -109,12 +109,4 @@ describe("Manager entry", () => {
     expect(Object.fromEntries(oss.url.searchParams)).toEqual({ view: "data-browser", theme: "light", embedded: "1" });
   });
 
-  it("passes the absolute knowledge governance URL (returning to the Manager's knowledge page) with business-knowledge permission and omits it without", async () => {
-    const granted = await managerFrameUrl("/admin/ontology-manager", ossEntry, null, null, ["business-knowledge"]);
-    const governance = new URL(granted.url.searchParams.get("knowledgeGovernanceUrl")!);
-    expect(governance.origin + governance.pathname).toBe(`${window.location.origin}/admin/knowledge-governance`);
-    expect(governance.searchParams.get("from")).toBe("/admin/ontology-manager?view=knowledge");
-    const denied = await managerFrameUrl("/admin/ontology-manager", ossEntry, null, null, ["ontology-modeling"]);
-    expect(denied.url.searchParams.has("knowledgeGovernanceUrl")).toBe(false);
-  });
 });

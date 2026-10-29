@@ -138,7 +138,7 @@ async function submit(value: ShellFeedbackValue) {
         </button>
       </template>
       <SlotOutlet
-        :slot="shell.slots.messageActions"
+        :content="shell.slots.messageActions"
         :scope="{ sessionId, runId: item.runId, messageId: item.answerMessageId, text: item.answerText }"
       />
     </div>

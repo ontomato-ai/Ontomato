@@ -456,6 +456,7 @@ export type SharedKey = {
 
 /** One locale's complete messages and Element Plus widget locale; the host passes the resources for its current locale. */
 export interface ManagerMessages {
+  readonly governance?: import("./knowledge-governance/messages").GovernanceMessages;
   readonly ontology: OntologyMessages;
   readonly shared: SharedMessages;
   readonly element: ElementLocale;

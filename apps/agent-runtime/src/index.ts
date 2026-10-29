@@ -26,6 +26,7 @@ const hostSchema = z
       providers: z.array(z.string()),
       publishProviders: z.array(z.string()).optional(),
       domainSkills: z.boolean().optional(),
+      domainHistory: z.boolean().optional(),
     }),
   )
   .min(1);

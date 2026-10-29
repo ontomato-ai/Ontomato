@@ -1,8 +1,6 @@
 import { ensureOpsDiagnosisSchema } from "./20261029-ops-diagnosis/schema";
 import { ensureAssistantSchema } from "./20261028-assistant/schema";
-import { ensureGovernanceRuntimeSchema } from "./20261028-governance-runtime/schema";
 import { workbenchProduct } from "../../product/installed";
-import { ensureGovernanceHarnessLinks } from "./20260923-governance-harness-links/schema";
 import { ensureAnalysisHarnessLinks } from "./20260923-analysis-harness-links/schema";
 import {
   PRESENTATION_CONTRACT_NAME,
@@ -46,7 +44,6 @@ import {
   migrateChatSnapshotFactRetirement,
 } from "./20260901-chat-snapshot-fact-retirement/migration.js";
 import { ensureReportDeliverableToggleSchema } from "./20260901-report-deliverable-toggle/schema.js";
-import { ensureKnowledgeGovernanceSchema } from "./20260910-knowledge-governance/schema.js";
 import { ensureAnalysisReportSummaryPositionSchema } from "./20260918-analysis-report-summary-position/schema.js";
 import { ensureAnalysisAgentHotReportSchema } from "./20260929-analysis-agent-hot-report/schema.js";
 import {
@@ -85,10 +82,6 @@ type MigrationRegistration = {
 export const POSTGRES_MIGRATION_REGISTRY: MigrationRegistration[] = [
   { directory: "20261029-ops-diagnosis", ensureSchema: ensureOpsDiagnosisSchema },
   { directory: "20261028-assistant", ensureSchema: ensureAssistantSchema },
-  {
-    directory: "20260910-knowledge-governance",
-    ensureSchema: ensureKnowledgeGovernanceSchema,
-  },
   {
     directory: "20260827-core-schema-baseline",
     ensureSchema: ensureCoreSchemaBaseline,
@@ -195,14 +188,6 @@ export const POSTGRES_MIGRATION_REGISTRY: MigrationRegistration[] = [
         });
       },
     },
-  },
-  {
-    directory: "20260923-governance-harness-links",
-    ensureSchema: ensureGovernanceHarnessLinks,
-  },
-  {
-    directory: "20261028-governance-runtime",
-    ensureSchema: ensureGovernanceRuntimeSchema,
   },
 ];
 

@@ -82,7 +82,7 @@ services:
       <<: *database-environment
       AGENT_RUNTIME_DATABASE: ontomato
       AGENT_RUNTIME_SCHEMA: agent_runtime
-      AGENT_RUNTIME_HOSTS: '[{"id":"workbench","token":"${AGENT_RUNTIME_SERVICE_TOKEN:?Run the deployment configuration preparation first}","providers":["workbench","ontology"],"publishProviders":["workbench"],"domainSkills":true},{"id":"ontology","token":"${AGENT_RUNTIME_ONTOLOGY_TOKEN:?Run the deployment configuration preparation first}","providers":["ontology"],"publishProviders":["ontology"]}]'
+      AGENT_RUNTIME_HOSTS: '[{"id":"workbench","token":"${AGENT_RUNTIME_SERVICE_TOKEN:?Run the deployment configuration preparation first}","providers":["workbench","ontology"],"publishProviders":["workbench"],"domainSkills":true},{"id":"ontology","token":"${AGENT_RUNTIME_ONTOLOGY_TOKEN:?Run the deployment configuration preparation first}","providers":["ontology"],"publishProviders":["ontology"],"domainHistory":true}]'
       LLM_BASE_URL: ${LLM_BASE_URL:-}
       LLM_API_KEY: ${LLM_API_KEY:-}
       LLM_MODEL: ${LLM_MODEL:-}
