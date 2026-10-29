@@ -113,7 +113,14 @@ public final class ServiceLogStore {
       .setErrorRef(dropped.getName()).setBlocking(false).setBufferSize(POLICY.getIntValue("queueRecords"))
       .setShutdownTimeout(POLICY.getLongValue("shutdownTimeoutMs")).setIgnoreExceptions(true);
     asyncBuilder.setFilter(new AbstractFilter() {
-        @Override public Result filter(LogEvent event) { return event.getMarker() != null && event.getMarker().isInstanceOf("LOGGING_LOCAL") ? Result.DENY : Result.NEUTRAL; }
+        // The sink must not store its own writes: driver and pool logging raised while a batch is
+        // written (dispatcher thread "AsyncAppenderEventDispatcher-<n>-ServicePgAsync") or by the
+        // sink's pool threads would otherwise feed back into the queue, endlessly at DEBUG level.
+        @Override public Result filter(LogEvent event) {
+          String thread = event.getThreadName();
+          boolean ownWrite = thread != null && (thread.endsWith("-ServicePgAsync") || thread.startsWith("ontology-service-log"));
+          return ownWrite || event.getMarker() != null && event.getMarker().isInstanceOf("LOGGING_LOCAL") ? Result.DENY : Result.NEUTRAL;
+        }
       });
     async = asyncBuilder.build();
     async.start(); configuration.addAppender(async);
