@@ -55,8 +55,8 @@ public class EmbeddingService {
 		        .modelName(embeddingModelProperties.getModelName())
 		        .dimensions(embeddingModelProperties.getDimensions())
 		        .timeout(embeddingModelProperties.getTimeout())
-		        .logRequests(embeddingModelProperties.getLogRequests())
-		        .logResponses(embeddingModelProperties.getLogResponses())
+		        .logRequests(false)
+		        .logResponses(false)
 		        .customHeaders(embeddingModelProperties.getCustomHeaders())
 		        .build();
 		return embedingModel;

@@ -15,7 +15,8 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONObject;
 import com.alibaba.fastjson2.JSONWriter.Feature;
-import io.ontomato.dataengine.logging.DiagnosticEventLogger;
+import io.ontomato.dataengine.logging.ServiceLogEvents;
+import io.ontomato.dataengine.logging.ServiceLogContext;
 import io.ontomato.dataengine.util.SseEmitterUtil;
 
 import jakarta.annotation.PostConstruct;
@@ -81,7 +82,7 @@ public class BackendSessionEntrance {
 	public String beginNewSession(JSONObject request) {
 		String sessionId = UUID.randomUUID().toString();
 		sessionRegistryService.registerStart(sessionId);
-		DiagnosticEventLogger.emit("request.received", sessionId, new JSONObject().fluentPut("request", request));
+		ServiceLogEvents.lifecycle("request received", sessionId);
 		return sessionId;
 	}
 
@@ -129,7 +130,7 @@ public class BackendSessionEntrance {
 	 * {@code {"success": false, ...}} result frames, so the error frame here only covers the path where the callback itself throws.
 	 */
 	private void executeStreamWork(String sessionId, String streamName, StreamWork work) {
-		Executors.newSingleThreadExecutor().execute(() -> {
+		Thread.ofVirtual().start(ServiceLogContext.wrap(() -> {
 			try {
 				work.run(sessionId);
 			} catch (SessionCancelledException e) {
@@ -143,7 +144,7 @@ public class BackendSessionEntrance {
 			} finally {
 				closeSessionStream(sessionId);
 			}
-		});
+		}));
 	}
 
 	private void closeSessionStream(String sessionId) {

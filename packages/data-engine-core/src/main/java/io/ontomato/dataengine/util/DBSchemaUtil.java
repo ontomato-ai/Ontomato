@@ -251,8 +251,6 @@ public class DBSchemaUtil {
             sb.append(chain + "\n");
         }
         String prompt = sb.toString();
-        log.info("relationChain prompt:");
-        log.info(prompt);
         return prompt;
     }
 

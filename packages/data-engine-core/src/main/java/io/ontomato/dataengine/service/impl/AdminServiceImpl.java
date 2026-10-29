@@ -71,7 +71,6 @@ public class AdminServiceImpl implements AdminService {
 			Map<String, Object> jsonRule = getJSONRule(user.getDomainId());
 			jsonRule.put("datasetdesc", dataSetDesc);
 			writeJSONRule(jsonRule, user.getDomainId());
-			log.info("datasetdesc: " + dataSetDesc);
 			
 			AuditLog auditLog = new AuditLog();
 			auditLog.setId(UUID.randomUUID().toString());

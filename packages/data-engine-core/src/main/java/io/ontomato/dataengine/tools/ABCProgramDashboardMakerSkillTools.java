@@ -17,7 +17,7 @@ import io.ontomato.dataengine.bean.PythonExecuteResult;
 import io.ontomato.dataengine.bean.abcHarness.ABCHarnessDashboardParameter;
 import io.ontomato.dataengine.config.BusinessConfig;
 import io.ontomato.dataengine.dao.JSONRuleDao;
-import io.ontomato.dataengine.logging.AgentCallContext;
+import io.ontomato.dataengine.service.ai.AgentExecutionContext;
 import io.ontomato.dataengine.service.AgentWorkspaceService;
 import io.ontomato.dataengine.service.BusinessConfigService;
 import io.ontomato.dataengine.service.PythonExecuteService;
@@ -52,7 +52,7 @@ public class ABCProgramDashboardMakerSkillTools {
 		int maxContentSize = 2000;
 		String ret = "";
 		try {
-			AgentCallContext callContext = AgentCallContext.current();
+			AgentExecutionContext callContext = AgentExecutionContext.current();
 			String sessionId = callContext.getSessionId();
 			Path file = workspaceService.resolve(sessionId, path);
 			workspaceService.clearExecution(sessionId, file.toString());

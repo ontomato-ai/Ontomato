@@ -45,8 +45,7 @@ public final class ProductFileSync {
                 copyInto(source, skills.resolve(source.getFileName()));
             }
         }
-        System.out.println("[sync] Product defaults synced into " + dataRoot.toAbsolutePath().normalize()
-                + " (overwrite same names, add new files, keep extras; site configuration only added when missing)");
+
     }
 
     private static void copyInto(Path source, Path target) throws IOException {

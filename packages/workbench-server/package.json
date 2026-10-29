@@ -32,7 +32,8 @@
     "yaml": "2.8.3",
     "zod": "3.25.76",
     "zod-to-json-schema": "3.25.2",
-    "openai": "6.32.0"
+    "openai": "6.32.0",
+    "@ontomato/service-logging": "workspace:*"
   },
   "devDependencies": {
     "@types/adm-zip": "0.5.8",

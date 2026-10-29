@@ -37,16 +37,6 @@ export interface LogQueryParams {
   offset?: number;
 }
 
-export interface LlmQueryParams {
-  turnKey?: string;
-  taskId?: string;
-  agentName?: string;
-  startTime?: string;
-  endTime?: string;
-  limit?: number;
-  offset?: number;
-}
-
 export interface BackendLogQueryParams {
   turnKey?: string;
   keyword?: string;

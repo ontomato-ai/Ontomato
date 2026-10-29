@@ -1,6 +1,6 @@
 # Service logging contract
 
-Proposal, 2026-10-28; implementation requires controller review. This contract
+Reviewed 2026-10-28; implemented in stage two, 2026-10-29. This contract
 replaces service-specific application/agent log formats. Runtime messages,
 model-call records and audit records keep their existing owners and semantics.
 [Design](../../docs/service-logging-design.md) owns implementation placement.
@@ -8,7 +8,7 @@ model-call records and audit records keep their existing owners and semantics.
 ## One event, three outputs
 
 [service-logging-format.json](service-logging-format.json) is the shared definition
-of field order, spelling, enums, limits and proposed defaults. Both Node services
+of field order, spelling, enums, limits and approved defaults. Both Node services
 load it; Maven packages that same resource for Java. Do not hand-copy its field
 lists or maintain a second Java pattern. The prose below defines its semantics;
 the [fixtures](service-logging-fixtures.json) are common cross-language examples.

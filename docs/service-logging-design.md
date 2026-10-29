@@ -1,10 +1,9 @@
 # Unified service logging
 
-Proposal, 2026-10-28, against public baseline `ba6acd1c`; no implementation is
-included. The goal is to trace one business operation across workbench, ontology
+Implementation, 2026-10-29, following the controller review of the 2026-10-28 contract. The goal is to trace one business operation across workbench, ontology
 and agent runtime using the same bounded service events in stdout, files and PG.
 The [contract](../packages/contracts/service-logging.md) and its JSON resource own
-format, query and propagation rules. Controller review precedes implementation;
+format, query and propagation rules. Integration acceptance is pending;
 image builds and full-stack acceptance remain controller-owned.
 
 ## Ownership and implementation
@@ -65,8 +64,7 @@ line bound. No foreign keys tie retention to runs or audit records.
 
 Use the service's existing database configuration through its infrastructure,
 with one dedicated, lifecycle-managed logging connection so a slow sink cannot
-consume the business pool. Bound acquisition and statement execution (proposed
-1 s / 2 s). Node flushes up to 100 records at 1 s or batch-full; Java JDBC uses
+consume the business pool. Bound acquisition and statement execution (1 s / 2 s). Node flushes up to 100 records at 1 s or batch-full; Java JDBC uses
 100-record batches and Async's end-of-batch flush at low traffic. Each queue has
 512 records, one batch in flight; Java Async is `blocking=false`. PG failure
 drops the failed batch, full queues drop the incoming PG copy, and retries resume
@@ -76,9 +74,9 @@ back into that sink. Shutdown drains for at most 2 s. Log-table creation and
 cleanup failures disable only that sink; existing business DB startup requirements
 are unchanged.
 
-## Defaults proposed for controller decision
+## Approved defaults
 
-Values live in the shared JSON's `proposedDefaults`, pending review:
+Values live in the shared JSON's `defaults`, approved by the controller:
 
 1. **Retention/capacity:** UTC daily rollover plus 50 MiB; 20 files including the
    active file per service/instance, about 1 GiB plus rollover/one-record overhead,
@@ -145,3 +143,29 @@ Component references: [Winston](https://github.com/winstonjs/winston),
 [Async](https://logging.apache.org/log4j/2.x/manual/appenders/delegating.html),
 [JDBC](https://logging.apache.org/log4j/2.x/manual/appenders/database.html),
 [Docker json-file](https://docs.docker.com/engine/logging/drivers/json-file/).
+
+## Stage-two handoff
+
+Node's shared implementation is `packages/service-logging`; the format resource remains
+`packages/contracts/service-logging-format.json`. Java packages that resource and generates
+Log4j plugin metadata with the core module's annotation processor. Both Java image context
+lists include the resource. Deployment Compose already sets service json-file rotation to
+50m x 5. Log directories are the workbench data volume's `logs`, ontology `./logs`
+(`ONTOLOGY_LOG_DIR` override), and runtime root's `logs` (`AGENT_RUNTIME_LOG_DIR` override).
+
+The query endpoints return the shared page directly. `/api/observe/runtime-logs` uses the
+existing workbench host credential after the edition's observe gate. Existing diagnostic
+workspaces query service owners using persisted runtime correlations and time windows,
+retain `service-log-queries.json`, and stop copying raw logs or reconstructing model
+transcripts. Retained historical prompt artifacts can still be viewed. Session-registry
+lookup and cancellation remain unchanged. Full diagnostic harness migration stays with
+its separate work item.
+
+New runtime `runs.log_context` and `code_executions.log_context` capture attribution at
+first admission; retry does not overwrite it. Existing persisted records have empty
+context. No audit, message or model-call retention is changed.
+
+Local contract checks cover shared bytes, UTF-8 bounds, async attribution, query validation,
+503 versus empty evidence, host authentication, and enterprise observe authorization.
+Three-service real-stack correlation, PG outage/recovery, large-result proof, image builds,
+and registry smoke remain the controller's acceptance work.

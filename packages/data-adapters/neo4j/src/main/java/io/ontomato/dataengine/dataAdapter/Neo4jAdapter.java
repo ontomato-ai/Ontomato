@@ -120,7 +120,6 @@ public class Neo4jAdapter implements DataAdapter {
 
 	@Override
 	public String executeDsl(String queryJson, String sessionId, DslExecutionMode mode, List<String> generatedMqls) throws Exception {
-		log.debug("[{}] Neo4j DSL to query: {}", sessionId, queryJson);
 		JSONArray dsls = JSONArray.parseArray(queryJson);
 		DslRowLimit.Tracker rowLimit = new DslRowLimit.Tracker();
 		CypherQuery cypher = toCypher(dsls.getJSONObject(0), jsonRule, rowLimit);

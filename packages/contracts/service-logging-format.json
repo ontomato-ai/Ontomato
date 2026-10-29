@@ -35,7 +35,8 @@
     "hostVerifiedUserId": "X-Ontomato-User-Id"
   },
   "correlationIdPattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
-  "proposedDefaults": {
+  "tables": {"workbench": "workbench_service_log", "ontology": "ontology_service_log", "agent-runtime": "agent_runtime_service_log"},
+  "defaults": {
     "level": "INFO",
     "file": {"utcDaily": true, "maxBytes": 52428800, "maxFilesIncludingActive": 20, "compress": false},
     "docker": {"driver": "json-file", "max-size": "50m", "max-file": "5"},

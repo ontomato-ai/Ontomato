@@ -1,3 +1,5 @@
+import { logHeaders } from "@ontomato/service-logging";
+import { runtimeLogger } from "./logging";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import type {
@@ -46,6 +48,7 @@ export async function resolveModel(options: {
 }): Promise<ResolvedModel> {
   const credential = options.request.modelCredential;
   const headers: Record<string, string> = {
+    ...logHeaders(),
     "X-Correlation-Id": options.correlationId,
   };
   if (credential.kind !== "none")
@@ -125,7 +128,7 @@ export function modelStream(
         : undefined,
       maxRetries: config.maxRetries,
       maxTokens: options?.maxTokens ?? config.maxTokens,
-      headers: { "X-Correlation-Id": correlationId },
+      headers: { ...logHeaders(), "X-Correlation-Id": correlationId },
       onPayload: (payload) => ({
         ...(payload as Record<string, unknown>),
         ...(config.temperature === undefined
@@ -139,6 +142,8 @@ export function modelStream(
     let logged: Promise<AssistantMessage> | undefined;
     stream.result = () =>
       (logged ??= result().then(async (message) => {
+        runtimeLogger.info("model call completed", { kind: "downstream", target: "model-provider",
+          durationMs: Date.now() - start, outcome: message.stopReason === "error" ? "failure" : message.stopReason === "aborted" ? "cancelled" : "success" });
         await store.pool.query(
           `INSERT INTO ${store.table("model_calls")} VALUES($1,$2,$3,$4,$5)`,
           [

@@ -18,7 +18,7 @@ import com.alibaba.fastjson2.JSONObject;
 import com.alibaba.fastjson2.JSONReader;
 import com.alibaba.fastjson2.JSONWriter;
 
-import io.ontomato.dataengine.logging.AgentCallContext;
+import io.ontomato.dataengine.service.ai.AgentExecutionContext;
 import io.ontomato.dataengine.service.BackendSessionEntrance;
 import io.ontomato.dataengine.service.SessionCancelledException;
 
@@ -89,6 +89,7 @@ public class OntomatoHttpClientBuilder implements HttpClientBuilder {
 	    private static final ExecutorService httpPool = Executors.newCachedThreadPool();
 	    
 	    private static class Task {
+	        final java.util.Map<String, String> logContext = io.ontomato.dataengine.logging.ServiceLogContext.capture();
 	        final HttpRequest request;
 	        final OntomatoHttpClient self;
 	        final String sessionId;
@@ -141,7 +142,7 @@ public class OntomatoHttpClientBuilder implements HttpClientBuilder {
 	                // 3. Send HTTP asynchronously, release the slot after completion
 	                final OntomatoHttpClient self = task.self;
 	                CompletableFuture.supplyAsync(() -> {
-	                    try {
+	                    try (var ignored = io.ontomato.dataengine.logging.ServiceLogContext.open(task.logContext)) {
 	                        return self.doExecute(task.request);
 	                    } catch (HttpException e) {
 	                        throw new RuntimeException(e);
@@ -162,7 +163,7 @@ public class OntomatoHttpClientBuilder implements HttpClientBuilder {
 	                Thread.currentThread().interrupt();
 	                break;
 	            } catch (Exception e) {
-	                e.printStackTrace();
+	                org.slf4j.LoggerFactory.getLogger(OntomatoHttpClientBuilder.class).error("HTTP worker failed", e);
 	            }
 	        }
 	    }
@@ -211,7 +212,7 @@ public class OntomatoHttpClientBuilder implements HttpClientBuilder {
 		}
 
 		private static String currentSessionId() {
-			AgentCallContext context = AgentCallContext.current();
+			AgentExecutionContext context = AgentExecutionContext.current();
 			return context == null ? null : context.getSessionId();
 		}
 		

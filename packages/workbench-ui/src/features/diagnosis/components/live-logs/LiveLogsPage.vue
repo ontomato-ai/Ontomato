@@ -163,7 +163,7 @@ function clearLogs(panel: PanelState) {
 /* ------------------------------------------------------------------ */
 
 function connectLeft() {
-  connectPanel(left, `${appLogSource},llm`, () => leftLogContainer.value);
+  connectPanel(left, appLogSource, () => leftLogContainer.value);
 }
 function disconnectLeft() {
   disconnectPanel(left);
@@ -196,15 +196,16 @@ function logLevelClass(level?: string): string {
 }
 
 function formatLogLine(entry: LogEntry): string {
-  if (entry.source === "backend" && entry.message) return entry.message;
-
   const parts: string[] = [];
   if (entry.time || entry.timestamp) parts.push(entry.time || entry.timestamp || "");
   if (entry.level) parts.push(`[${entry.level.toUpperCase()}]`);
   if (entry.source) parts.push(`[${entry.source}]`);
+  if (entry.correlationId) parts.push(`correlation=${entry.correlationId}`);
+  if (entry.runId) parts.push(`run=${entry.runId}`);
   if (entry.turnKey) parts.push(`(turn ${entry.turnKey})`);
   else if (entry.taskId) parts.push(`(task ${entry.taskId})`);
   if (entry.message) parts.push(entry.message);
+  if (entry.error) parts.push(entry.error);
   return parts.join(" ");
 }
 

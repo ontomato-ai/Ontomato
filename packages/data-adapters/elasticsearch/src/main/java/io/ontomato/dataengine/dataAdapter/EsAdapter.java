@@ -517,7 +517,6 @@ public class EsAdapter implements DataAdapter {
 	@Override
 	public String executeDsl(String queryJson, String sessionId, DslExecutionMode mode, List<String> generatedMqls)
 			throws Exception {
-		log.debug("[{}] DSL to query {}: {}", sessionId, dialect.label(), queryJson);
 		JSONArray dsls = JSONArray.parseArray(queryJson);
 		JSONObject dsl = dsls.getJSONObject(0);
 		JSONArray steps = dsl.getJSONObject("answer").getJSONArray("steps");

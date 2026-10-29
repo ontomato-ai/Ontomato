@@ -23,7 +23,7 @@ def _call(path, body):
     headers = {"Accept-Language": os.environ.get("ONTOMATO_LANGUAGE", "en")}
     if _token:
         headers["tk"] = _token
-    for _name, _header in (("ONTOMATO_RUN_ID", "X-Ontomato-Run-Id"), ("ONTOMATO_CORRELATION_ID", "X-Correlation-Id")):
+    for _name, _header in (("ONTOMATO_SESSION_ID", "X-Ontomato-Session-Id"), ("ONTOMATO_RUN_ID", "X-Ontomato-Run-Id"), ("ONTOMATO_CORRELATION_ID", "X-Correlation-Id")):
         if os.environ.get(_name):
             headers[_header] = os.environ[_name]
     if os.environ.get("ONTOMATO_QUERY_RUN_ID"):

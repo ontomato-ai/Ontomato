@@ -10,6 +10,8 @@ const [arg, target] = process.argv.slice(2),
     ...(process.env.ONTOMATO_API_KEY ? { "X-API-Key": process.env.ONTOMATO_API_KEY } : {}),
     "Accept-Language": process.env.ONTOMATO_LANGUAGE ?? "en",
     "X-Correlation-Id": process.env.ONTOMATO_CORRELATION_ID ?? randomUUID(),
+    ...(process.env.ONTOMATO_RUN_ID ? { "X-Ontomato-Run-Id": process.env.ONTOMATO_RUN_ID } : {}),
+    ...(process.env.ONTOMATO_SESSION_ID ? { "X-Ontomato-Session-Id": process.env.ONTOMATO_SESSION_ID } : {}),
   };
 async function call(route, body, extra = {}, raw = false) {
   const response = await fetch(base + "/ontology/retrievals" + route, {

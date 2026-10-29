@@ -1,5 +1,8 @@
 package io.ontomato.dataengine.service.agent;
 
+import io.ontomato.dataengine.logging.ServiceLogContext;
+import io.ontomato.dataengine.logging.ServiceLogEvents;
+import org.apache.logging.log4j.ThreadContext;
 import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONObject;
 import com.alibaba.fastjson2.JSONWriter;
@@ -45,8 +48,11 @@ public class AgentRuntimeClient {
     var builder =
         HttpRequest.newBuilder(URI.create(url + path))
             .header("Authorization", "Bearer " + token)
-            .header("X-Correlation-Id", correlation)
+            .header("X-Correlation-Id", ServiceLogContext.correlation(ThreadContext.get("correlationId")))
             .header("Content-Type", "application/json");
+    ServiceLogContext.outbound(builder);
+    String userId = ThreadContext.get("userId");
+    if (userId != null) builder.setHeader(ServiceLogContext.header("hostVerifiedUserId"), userId);
     if (!stream) builder.timeout(Duration.ofSeconds(30));
     if (domain != null) builder.header("X-Domain-Id", domain);
     if (key != null) builder.header("Idempotency-Key", key);
@@ -60,10 +66,19 @@ public class AgentRuntimeClient {
         .build();
   }
 
+  private <T> HttpResponse<T> send(HttpRequest request, HttpResponse.BodyHandler<T> handler) throws java.io.IOException, InterruptedException {
+    long started = System.nanoTime(); String outcome = "failure";
+    try {
+      var response = http.send(request, handler);
+      outcome = response.statusCode() < 400 ? "success" : "failure"; return response;
+    } catch (InterruptedException error) { outcome = "cancelled"; throw error; }
+    finally { ServiceLogEvents.downstream("runtime-client", "agent-runtime", started, outcome); }
+  }
+
   public HttpResponse<InputStream> stream(String domain, String correlation, String path)
       throws Exception {
     var response =
-        http.send(
+        send(
             request(domain, correlation, path, "GET", null, null, true),
             HttpResponse.BodyHandlers.ofInputStream());
     if (response.statusCode() < 200 || response.statusCode() >= 300) {
@@ -87,10 +102,10 @@ public class AgentRuntimeClient {
     var request = request(domain, correlation, path, method, body, key, false);
     HttpResponse<String> response;
     try {
-      response = http.send(request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+      response = send(request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
     } catch (java.io.IOException failure) {
       if (key == null) throw failure;
-      response = http.send(request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+      response = send(request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
     }
     if (response.statusCode() < 200 || response.statusCode() >= 300)
       throw failure(response.statusCode(), response.body());

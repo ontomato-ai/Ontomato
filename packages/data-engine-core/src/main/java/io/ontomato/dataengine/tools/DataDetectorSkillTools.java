@@ -17,7 +17,7 @@ import io.ontomato.dataengine.config.DataRagConfig;
 import io.ontomato.dataengine.dataAdapter.DataAdapterRegistry;
 import io.ontomato.dataengine.dao.JSONRuleDao;
 import io.ontomato.dataengine.dao.VectorResourceDao;
-import io.ontomato.dataengine.logging.AgentCallContext;
+import io.ontomato.dataengine.service.ai.AgentExecutionContext;
 import io.ontomato.dataengine.service.BusinessConfigService;
 import io.ontomato.dataengine.service.sys.bean.permission.UserDataPermission;
 import io.ontomato.dataengine.util.DBSchemaUtil;
@@ -55,7 +55,7 @@ public class DataDetectorSkillTools {
 			@P("attribute name") String attrName, 
 			@P("content to like (an empty string means no filtering; the logic of adding % before and after follows sql syntax)") String query, 
 			@P("number of records to return (-1 means return all, but when more than 100 records only 100 are shown; if necessary the specified number of records can be forcibly returned)") int limit) {
-		AgentCallContext callContext = AgentCallContext.current();
+		AgentExecutionContext callContext = AgentExecutionContext.current();
 		String md = "";
 		int showRowDefault = 100;
 		

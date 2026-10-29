@@ -68,19 +68,6 @@ function buildPrompt(
   return promptText;
 }
 
-/**
- * Compaction is a distinct agent inside the same run: it keeps the loop's Run
- * identity but gets its own stable agent name, so its calls never mix with the
- * loop's own turns in the agent-llm log.
- */
-function compactionModelConfig(config: ModelConfig): ModelConfig {
-  if (!config.llmLog) return config;
-  return {
-    ...config,
-    llmLog: { ...config.llmLog, agentName: `${config.llmLog.agentName}Compaction` },
-  };
-}
-
 export async function generateSummary(
   messages: AgentMessage[],
   config: ModelConfig,
@@ -100,5 +87,5 @@ export async function generateSummary(
     isUpdate: !!previousSummary,
     maxTokens,
   });
-  return completeText(compactionModelConfig(config), systemPrompt, promptText, maxTokens, signal);
+  return completeText(config, systemPrompt, promptText, maxTokens, signal);
 }

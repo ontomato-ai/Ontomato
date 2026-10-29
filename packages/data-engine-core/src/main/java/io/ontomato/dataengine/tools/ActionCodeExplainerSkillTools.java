@@ -6,7 +6,7 @@ import java.io.FileInputStream;
 import org.springframework.stereotype.Component;
 
 import io.ontomato.dataengine.config.ServiceConst;
-import io.ontomato.dataengine.logging.AgentCallContext;
+import io.ontomato.dataengine.service.ai.AgentExecutionContext;
 
 import dev.langchain4j.agent.tool.P;
 import dev.langchain4j.agent.tool.Tool;
@@ -24,7 +24,7 @@ public class ActionCodeExplainerSkillTools {
 		FileInputStream fis = null;
 		
 		try {
-			AgentCallContext callContext = AgentCallContext.current();
+			AgentExecutionContext callContext = AgentExecutionContext.current();
 			String sessionId = callContext.getSessionId();
 			
 			File codeFile = new File(new File(ServiceConst.CODE_EXPLAIN_BASE), sessionId + ".py");
