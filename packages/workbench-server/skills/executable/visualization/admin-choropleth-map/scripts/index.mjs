@@ -1,3 +1,4 @@
+import { readFileSync as readBundledAsset } from "node:fs";
 import { readFile, mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -106,9 +107,9 @@ function errorResult(message, meta = {}) {
 function numeric(value) { if (value === null || value === undefined || String(value).trim() === "") return undefined; const n = typeof value === "number" ? value : Number(String(value).replace(/,/g, "").trim()); return Number.isFinite(n) ? n : undefined; }
 function generateHtml({ title, geojson, rows, regionField, valueField, featureNameProperty, featureValueProperty, classification, colorRamp, noDataColor, valueLabel, fitPadding, dark, basemap }) {
   const cfg = { regionField, valueField: valueField || null, featureNameProperty, featureValueProperty: featureValueProperty || null, classification, colorRamp, noDataColor, valueLabel, fitPadding, dark, basemap, regionAliases: REGION_ALIASES, regionCodeFields: REGION_CODE_FIELDS, featureCodeFields: FEATURE_CODE_FIELDS };
-  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/api/skills/resources/executable/visualization/leaflet/scripts/leaflet.css"><style>
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>${readBundledAsset(new URL("leaflet.css", import.meta.url), "utf8")}</style><style>
   *{box-sizing:border-box}html,body{height:100%;width:100%;margin:0;font-family:Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:${dark?"#111827":"#fff"};color:${dark?"#f9fafb":"#1f2937"}}.shell{height:100%;min-height:360px;display:flex;flex-direction:column}.title{font-size:15px;font-weight:650;padding:12px 16px;border-bottom:1px solid ${dark?"#374151":"#e5e7eb"}}#map{flex:1;min-height:300px;background:${dark?"#18212f":"#f8fafc"}}.legend{background:${dark?"rgba(17,24,39,.94)":"rgba(255,255,255,.96)"};color:${dark?"#f9fafb":"#1f2937"};padding:10px 12px;border-radius:8px;box-shadow:0 1px 8px #0002;font-size:12px;line-height:1.5;min-width:130px}.legend-title{font-weight:650;margin-bottom:5px}.legend-row{display:flex;align-items:center;gap:7px;white-space:nowrap}.swatch{display:inline-block;width:14px;height:10px;border:1px solid #64748b55}.leaflet-popup-content-wrapper,.leaflet-popup-tip{background:${dark?"#1f2937":"#fff"};color:${dark?"#f9fafb":"#1f2937"}}.popup-title{font-weight:650;margin-bottom:5px}.popup-row{display:flex;gap:10px;margin-top:3px;font-size:12px}.popup-key{color:${dark?"#9ca3af":"#64748b"}}
-  </style></head><body><div class="shell"><div class="title">${esc(title)}</div><div id="map" aria-label="Interactive regional choropleth map"></div></div><script src="/api/skills/resources/executable/visualization/leaflet/scripts/leaflet.js"></script><script>
+  </style></head><body><div class="shell"><div class="title">${esc(title)}</div><div id="map" aria-label="Interactive regional choropleth map"></div></div><script>${readBundledAsset(new URL("leaflet.js", import.meta.url), "utf8").replaceAll("</script", "<\\/script")}</script><script>
   const geojson=${jsonForScript(geojson)}; const rows=${jsonForScript(rows)}; const cfg=${jsonForScript(cfg)};
   const mapRoot=document.getElementById('map');
   if(!window.L){mapRoot.textContent='Leaflet resource failed to load.';throw new Error('Leaflet resource failed to load');}
@@ -205,3 +206,26 @@ export async function execute(input) {
   return { html, meta:{ skillId:"admin-choropleth-map", chartType, title, dataRows:rows.length, geojsonFeatures:validGeoFeatures.length, matchedRegions, unmatchedRegions, unmatchedDataRows, missingValueRegions, regionField, valueField:valueField||null, featureNameProperty, classification, boundarySet:input?.boundarySet || "china-provinces", boundarySource:resolved.source || null, boundaryCoordinateSystem:"GCJ-02 (source dataset v1.6.3)", warnings } };
 }
 
+
+// The exported calculation/rendering function is also usable as an ordinary CLI.
+if (import.meta.main) {
+  const fs = await import("node:fs/promises");
+  const path = await import("node:path");
+  const { randomUUID } = await import("node:crypto");
+  const source = process.argv[2]?.replace(/^@/, "");
+  if (!source) throw new Error("Expected a JSON input file");
+  const result = await execute(JSON.parse(await fs.readFile(source, "utf8")));
+  if (result.meta?.error || result.json?.success === false)
+    throw new Error(result.json?.error || "Skill could not produce the requested result");
+  const root = process.env.ONTOMATO_OUTPUT_DIR || "outputs";
+  const output = path.join(root, "admin-choropleth-map." + (result.html ? "html" : "json"));
+  await fs.mkdir(root, { recursive: true });
+  await fs.mkdir("work", { recursive: true });
+  const temporary = path.join("work", randomUUID() + ".tmp");
+  try {
+    await fs.writeFile(temporary, result.html ?? JSON.stringify(result.json ?? result, null, 2));
+    await fs.rename(temporary, output);
+  } finally { await fs.rm(temporary, { force: true }); }
+  if (result.meta) console.log(JSON.stringify(result.meta));
+  console.log(path.relative(process.cwd(), path.resolve(output)));
+}

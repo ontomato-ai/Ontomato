@@ -1,6 +1,7 @@
 import { exportConversationPpt } from "../../services/assistant/export";
 import { safePptFileName } from "../../services/analysis-agent/delivery/ppt-artifacts";
 import { requirePermission } from "../../identity/installed";
+import { assistantSkillCatalog } from "../../services/assistant/skills";
 import {
   readAgentDefinition,
   listAgentDefinitions,
@@ -88,6 +89,10 @@ router.get(
   }),
 );
 const agentAdmin = requirePermission(["analysis-agent"]);
+router.get("/agent-skills", agentAdmin, wrap(async (req, res) => {
+  const c = context(req);
+  res.json(await assistantSkillCatalog(c.owner.domainId, c.credentials.locale));
+}));
 router.get(
   "/agent-definitions",
   agentAdmin,

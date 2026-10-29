@@ -292,7 +292,7 @@ function resetForm() {
             v-model="form.scriptCode"
             type="textarea"
             :rows="3"
-            placeholder="export async function execute(input) { ... }"
+            placeholder="node scripts/index.mjs work/input.json"
             :disabled="loading || isReadOnly"
           />
           <el-button

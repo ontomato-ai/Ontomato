@@ -12,7 +12,6 @@ import type {
 } from "@ontomato/contracts/assistant-chat";
 import type { RuntimeSkillRef } from "@ontomato/contracts/agent-runtime-skills";
 import { agentDefinitionsApi, type ObjectClassOption, type OntologyRelationOption } from "../api";
-import { joinSkillRefs, splitSkillRefs } from "../skill-refs";
 import { avatarIcon, lightAvatarColorOptions, themedAvatarColor } from "../avatar";
 import AgentBasicInfoFields from "./AgentBasicInfoFields.vue";
 import GraphScopeField from "./GraphScopeField.vue";
@@ -36,17 +35,13 @@ interface Form {
   avatarColor: string;
   enabled: boolean;
   systemPrompt: string;
-  skillNames: string[];
+  skills: RuntimeSkillRef[];
   classNames: string[];
   scopeMode: "panorama" | "subgraph";
   scopeRoots: string[];
   scopeDepth: number | undefined;
   mcpServiceNames: string[];
 }
-
-const skillRefs = splitSkillRefs(props.agent?.skills ?? []);
-/** Built-in workbench skills the definition carries; kept as they are. */
-const providerSkills: RuntimeSkillRef[] = skillRefs.providerRefs;
 
 function toForm(agent: AssistantAgentDefinition | null): Form {
   let avatar = { key: "Brain", color: lightAvatarColorOptions[0]! };
@@ -63,7 +58,7 @@ function toForm(agent: AssistantAgentDefinition | null): Form {
     avatarColor: themedAvatarColor(avatar.color, isDark.value),
     enabled: agent?.enabled ?? true,
     systemPrompt: agent?.systemPrompt ?? "",
-    skillNames: [...skillRefs.domainNames],
+    skills: [...(agent?.skills ?? [])],
     classNames: [...(agent?.classNames ?? [])],
     scopeMode: scope?.mode === "subgraph" ? "subgraph" : "panorama",
     scopeRoots: scope?.mode === "subgraph" ? [...scope.rootClassNames] : [],
@@ -76,6 +71,7 @@ const form = ref<Form>(toForm(props.agent));
 const baseline = ref(JSON.stringify(form.value));
 const dirty = computed(() => JSON.stringify(form.value) !== baseline.value);
 const saving = ref(false);
+const skillsReady = ref(false);
 const promptPreview = ref(false);
 const mcpNames = ref<string[]>([]);
 const mcpLoading = ref(false);
@@ -120,14 +116,13 @@ function validInput(): AssistantAgentInput | null {
       return null;
     }
   }
-  const skills = joinSkillRefs(providerSkills, value.skillNames);
   return {
     name: value.name.trim(),
     description: value.description,
     icon: JSON.stringify({ key: value.avatarKey, color: value.avatarColor }),
     enabled: value.enabled,
     systemPrompt: value.systemPrompt,
-    skills,
+    skills: value.skills,
     classNames: value.classNames,
     graphScope:
       value.scopeMode === "subgraph"
@@ -140,7 +135,7 @@ function validInput(): AssistantAgentInput | null {
 
 async function save() {
   const input = validInput();
-  if (!input || saving.value) return;
+  if (!input || saving.value || !skillsReady.value) return;
   saving.value = true;
   try {
     const saved = props.agent
@@ -195,7 +190,7 @@ defineExpose({ dirty });
         <small :class="{ dirty }">{{ dirty ? t("admin.agentEditorUnsaved") : t("admin.agentEditorSaved") }}</small>
       </div>
       <el-button v-if="agent" text :icon="Trash2" :disabled="saving" @click="remove">{{ t("common.delete") }}</el-button>
-      <el-button type="primary" :loading="saving" :disabled="!dirty && !!agent" @click="save">{{ t("common.save") }}</el-button>
+      <el-button type="primary" :loading="saving" :disabled="!skillsReady || (!dirty && !!agent)" @click="save">{{ t("common.save") }}</el-button>
     </header>
 
     <div class="editor-body">
@@ -240,11 +235,7 @@ defineExpose({ dirty });
               <p>{{ t("agents.skillsHint") }}</p>
             </div>
           </div>
-          <div v-if="providerSkills.length" class="builtin-skills">
-            <span class="builtin-label">{{ t("agents.builtinSkills") }}</span>
-            <el-tag v-for="skill in providerSkills" :key="skill.name" size="small" effect="plain">{{ skill.name }}</el-tag>
-          </div>
-          <SkillSelector v-model="form.skillNames" />
+          <SkillSelector v-model="form.skills" @ready="skillsReady = $event" />
         </section>
 
         <section class="editor-section">
@@ -456,16 +447,5 @@ defineExpose({ dirty });
 }
 .mcp-alert {
   margin-top: 10px;
-}
-.builtin-skills {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 6px;
-  margin-bottom: 12px;
-}
-.builtin-label {
-  font-size: var(--text-xs);
-  color: var(--el-text-color-secondary);
 }
 </style>

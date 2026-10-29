@@ -1,3 +1,4 @@
+import { readFileSync as readBundledAsset } from "node:fs";
 const LATITUDE_CANDIDATES = ["latitude", "lat", "纬度", "纬度坐标"];
 const LONGITUDE_CANDIDATES = ["longitude", "lng", "lon", "经度", "经度坐标"];
 const LABEL_CANDIDATES = ["name", "名称", "地点", "地址", "位置", "门店", "城市", "地区"];
@@ -46,7 +47,7 @@ function generateHtml({ title, points, valueField }) {
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <link rel="stylesheet" href="/api/skills/resources/executable/visualization/leaflet/scripts/leaflet.css">
+  <style>${readBundledAsset(new URL("leaflet.css", import.meta.url), "utf8")}</style>
   <style>
     html, body, #map { height: 100%; margin: 0; }
     body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: #fff; color: #1f2937; }
@@ -67,7 +68,7 @@ function generateHtml({ title, points, valueField }) {
 </head>
 <body>
   <div class="map-shell"><div class="map-title">${safeTitle}</div><div id="map"></div></div>
-  <script src="/api/skills/resources/executable/visualization/leaflet/scripts/leaflet.js"></script>
+  <script>${readBundledAsset(new URL("leaflet.js", import.meta.url), "utf8").replaceAll("</script", "<\\/script")}</script>
   <script>
     const points = ${serializedPoints};
     const valueField = ${serializedValueField};
@@ -161,4 +162,27 @@ export async function execute(input) {
     html: generateHtml({ title, points, valueField }),
     meta: { skillId: "leaflet", chartType, title, dataRows: points.length, originalRows: data.length, skippedRows, latitudeField, longitudeField, labelField, valueField },
   };
+}
+
+// The exported calculation/rendering function is also usable as an ordinary CLI.
+if (import.meta.main) {
+  const fs = await import("node:fs/promises");
+  const path = await import("node:path");
+  const { randomUUID } = await import("node:crypto");
+  const source = process.argv[2]?.replace(/^@/, "");
+  if (!source) throw new Error("Expected a JSON input file");
+  const result = await execute(JSON.parse(await fs.readFile(source, "utf8")));
+  if (result.meta?.error || result.json?.success === false)
+    throw new Error(result.json?.error || "Skill could not produce the requested result");
+  const root = process.env.ONTOMATO_OUTPUT_DIR || "outputs";
+  const output = path.join(root, "leaflet." + (result.html ? "html" : "json"));
+  await fs.mkdir(root, { recursive: true });
+  await fs.mkdir("work", { recursive: true });
+  const temporary = path.join("work", randomUUID() + ".tmp");
+  try {
+    await fs.writeFile(temporary, result.html ?? JSON.stringify(result.json ?? result, null, 2));
+    await fs.rename(temporary, output);
+  } finally { await fs.rm(temporary, { force: true }); }
+  if (result.meta) console.log(JSON.stringify(result.meta));
+  console.log(path.relative(process.cwd(), path.resolve(output)));
 }

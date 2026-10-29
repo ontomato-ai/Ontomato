@@ -1,23 +1,26 @@
 ---
 name: quality-trace-graph
 description: Render batches, process executions, assembly events, recall decisions, and products as an interactive directed evidence graph highlighting risk anchors, recall status, and data gaps.
-type: executable
-category: visualization
-title: Quality Traceability Graph
-tags:
-  - quality traceability
-  - relationship graph
-  - directed graph
-  - derived paths
-  - batch impact
-  - ECharts
-timeout: 15000
-outputType: html
-version: 1.0.0
-defaultEnabled: false
-entries:
-  - scripts/index.mjs
+metadata:
+  ontomato.type: executable
+  ontomato.category: visualization
+  ontomato.title: Quality Traceability Graph
+  ontomato.tags: '["quality traceability","relationship graph","directed graph","derived paths","batch impact","ECharts"]'
+  ontomato.version: 1.0.0
+  ontomato.outputType: html
+  ontomato.defaultEnabled: "false"
 ---
+
+## Standard CLI
+
+Write the documented input to a JSON file and run:
+
+`node skills/quality-trace-graph/scripts/index.mjs work/input.json`
+
+The command writes its result under `outputs/` and prints the file path.
+Reference that path in Markdown. The command runs unchanged in an external harness;
+use the package's local path when it is installed somewhere other than `skills/`.
+
 
 ## Quality Traceability Graph
 

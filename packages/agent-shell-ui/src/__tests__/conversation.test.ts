@@ -15,7 +15,7 @@ function envelope(seq: number, event: RuntimeEventEnvelope["event"]): RuntimeEve
 }
 
 const snapshot: AgentHostRunSnapshot = {
-  run: { id: runId, sessionId, status: "running", stopReason: null, errorMessage: null, createdAt: new Date(0).toISOString(), finishedAt: null },
+  run: { id: runId, sessionId, status: "running", stopReason: null, errorMessage: null, createdAt: new Date(0).toISOString(), finishedAt: null, resolvedSkills: [] },
   cursor: { runId, seq: 3, streamId },
   messages: [
     { id: userId, runId, messageSeq: 0, message: { role: "user", content: "hello", timestamp: 1 } },

@@ -1,10 +1,10 @@
 # Domain skills in the standard runtime
 
-Proposed, 2026-10-28; documentation only, pending controller review. This extends
+Implemented 2026-10-29 after controller review on 2026-10-28. This extends
 [assistant actions](assistant-chat.md) and the [host projection](agent-host.md).
 [Runtime publication/admission](agent-runtime.md) still owns package transport,
 digests, installed files and execution. [Design and review points](../../docs/domain-skills-runtime-design.md)
-own replacement scope. Executable schemas change only after review.
+own replacement scope.
 
 ## Selection and identity
 
@@ -17,6 +17,7 @@ type AssistantSkillCatalog = {
     title: string;
     description: string;
     enabled: boolean;
+    tags: string[];
   }[];
 };
 ```
@@ -38,6 +39,7 @@ PI catalogue. Existing duplicate-name admission rules still apply.
 
 ## Package and publication
 
+SkillInfo also returns the complete `skill` reference for selection after import.
 The existing management URLs, permission (`skill-management`), ZIP import/export
 and read-only public-package rule remain. An authorized save/import approves the
 package for use by selected agents. A new domain package uses standard
@@ -80,7 +82,9 @@ retain their authentication kind: `ONTOMATO_API_KEY`, sent as `x-api-key`;
 anonymous public-edition requests need neither. Workbench-owned scripts support
 these ordinary authentication forms. Workbench/ontology base URLs come from the
 existing host configuration. Ordinary resource/user/domain checks remain with the
-API owner. All selected scripts use the same run environment.
+API owner. All selected scripts use the same run environment. The retiring
+assistant-retrieval skill reads its existing callback credential from
+ONTOMATO_RETRIEVAL_CALLBACK_TOKEN; its callback logic is unchanged.
 
 Add `resolvedSkills: RuntimeRegisteredSkill[]` to the common `AgentHostRun`
 projection, taken directly from the runtime run in admissions, snapshots and

@@ -8,8 +8,8 @@ Multiple surfaces within a host use distinct mount prefixes; no surface/workbenc
 identifier is carried in these shapes or query parameters.
 No renderer, feedback, dataset or editable-definition fields belong here.
 
-Proposed extension, not implemented: [domain skills](domain-skills.md) adds the
-runtime's resolved skill metadata to the read-only run projection.
+[Domain skills](domain-skills.md) adds `resolvedSkills` to the read-only run
+projection, using the runtime's stored namespace/name/digest/description.
 
 | Method/path | Input | Output (200 unless listed) |
 | --- | --- | --- |

@@ -1,10 +1,10 @@
 # Domain skill runtime integration
 
-Proposed, 2026-10-28, inspected at public `cc5ac842`. Segment 1 is documentation
-only. Success is a standard script-bearing package imported through existing
+Implemented 2026-10-29 after controller review on 2026-10-28, based on public
+`cc5ac842`. Success is a standard script-bearing package imported through existing
 management, selected for an agent, executed by PI, and updated for the next run
 while the running version and historical digest stay intact. The
-[contract](../packages/contracts/domain-skills.md) owns the proposed wire changes.
+[contract](../packages/contracts/domain-skills.md) owns the wire changes.
 
 ## Decisions and ownership
 
@@ -25,11 +25,12 @@ an already-admitted retry before this boundary. Preserve the existing host gate
 cleanup when preparation fails.
 
 The runtime already replaces selected packages between rounds and saves
-`resolvedSkills`. The missing pieces are host publication, current-user
-environment assembly and exposing the existing digest in the host projection.
-The current assistant supplies a retrieval-route callback token; replace that
-assistant use with ordinary user authentication. Keep callbacks still owned by
-other services. No change to the retrieval business gate or PI state is needed.
+`resolvedSkills`. Workbench now publishes selected domain packages, assembles the current-user
+environment and exposes the existing digest in the host projection.
+Assistant scripts receive the current user credential as ONTOMATO_TK. The existing
+assistant-retrieval callback moves only to ONTOMATO_RETRIEVAL_CALLBACK_TOKEN; its
+generation, validation and retrieval logic stay with the separate ontology-host
+migration. That migration will remove the workbench retrieval skill and callbacks.
 
 ## Replacement and deletion
 
@@ -40,7 +41,7 @@ exclusive imports, exports, prompts and obsolete tests with each removed path.
 | --- | --- |
 | `src/core/skills/registry/manager.ts`: `matchKnowledgeSkillsWithLLM`, direct `Skill-Executor` model call, eager `getSkillsForAgentContext` | PI's existing selected catalogue and progressive read; retain management discovery/enablement |
 | `src/core/skills/execution/{executor,runtime}.ts`, dynamic `execute(input)`, retry/metrics state; `/api/skills/metrics` | Standard runtime tools and run facts; metrics endpoint has no current UI consumer |
-| `src/services/skills/skill-manager.ts`: in-process debug | Ordinary auxiliary runtime run selecting just the inspected skill; existing debug response is a view of final text, PI state and file metadata |
+| `src/services/skills/skill-manager.ts`: in-process debug | `src/services/skills/preview.ts` starts an ordinary auxiliary runtime run selecting just the inspected skill; existing debug response is a view of final text, PI state and file metadata |
 | `src/core/skills/manifest.ts` / `discovery/scanner.ts`: private manifest requirements and `migrateLegacySkillManifest` | Shared standard package validation, workbench display metadata; remove automatic legacy rewriting |
 | `prompts/skills/executor/knowledge/user.md` and edition `Skill-Executor` labels | Delete with the retired model call; retain unrelated diagnosis/model callers |
 | `src/services/agent-runtime/skills.ts`: provider-only publication helper | One file-publication helper also accepting verified domain context |
@@ -51,29 +52,31 @@ Retain management resource/export routes, public-package read-only behavior,
 domain state, assistant deletion cleanup, provider startup publication and
 runtime name/digest storage. No startup migration of old packages or definitions.
 
-## Controller decisions before implementation
+## Approved scope and implementation evidence
 
-1. **Meaning of unchanged management UI.** Recommend keeping its location,
-   controls and layout, with the minimum script-placeholder/template change and
-   debug result mapping needed for standard CLI skills. Debug becomes an ordinary
-   model run using the selected package and the supplied JSON as task input; its
-   existing response carries final text plus run/file metadata, not a fabricated
-   `execute(input)` result. Also make provider skills editable in the existing
-   agent selector. Source inspection shows they are currently preserved invisibly,
-   despite analysis/visualization having already become one list. Strictly no UI
-   edits would leave a misleading script example and incomplete selection control.
-2. **Bundled public packages.** The management catalogue currently includes seven
-   executable public packages using private frontmatter/entry conventions.
-   Recommend adapting these source assets in this module to standard packages
-   under the existing workbench provider, keeping their calculations/rendering
-   code as ordinary scripts. `generate-ppt` must call the existing authenticated
-   conversation export API instead of `input.services.generatePpt`. This is source
-   replacement, not conversion of stored customer packages. If excluded, assign
-   their replacement/removal and catalogue behavior explicitly; do not retain an
-   old executor or silently publish private packages as if they were standard.
+Management stays in its existing location with the same controls/layout. Script
+examples now show a normal CLI; debug shows the final answer, PI state and file
+metadata of an ordinary runtime run. The agent selector edits provider and domain
+references together. Its catalogue must load successfully before saving.
 
-After these decisions, keep only contract checks for standard-package round trip,
-selected-domain scope and old/new run digests across an edit. Use type/lint gates
-for shared projections and both editions' Maven compile. Main-directory UI,
-full-stack, image and registry smoke remain controller-owned. No implementation,
-build, service startup or runtime proof is claimed by this document.
+Seven bundled public packages are standard sources published as workbench
+provider skills: growth-rate-calc, generate-ppt, echarts, leaflet, network-graph,
+admin-choropleth-map and quality-trace-graph. Their calculations and interactive
+rendering stay in ordinary scripts. HTML embeds bundled library distribution
+assets so the exported package and result do not depend on workbench static routes.
+The canonical ECharts and Leaflet sources remain the existing bundled libraries;
+package-local copies carry them in the standalone distributions.
+`generate-ppt` calls the existing authenticated conversation export API. No stored
+customer package or agent-definition conversion is performed.
+
+Focused contract/component checks cover standard ZIP bytes, independent package
+validation, domain selection, edit publication, shared host metadata and retained
+edition labels. Type/lint checks and both editions' Maven compilation pass. The
+seven public CLIs also run from copied standalone directories; PPT transport uses
+a loopback fixture, not a real presentation generation proof.
+
+Main-directory UI, full-stack, image and runtime-registry smoke remain
+controller-owned, including active-run immutability and the next message in an
+old session using the new digest. The separate ontology-host line owns replacing
+assistant-retrieval with its ask skill and updating the assistant's platform
+catalogue accordingly. This module changes only the old callback variable name.

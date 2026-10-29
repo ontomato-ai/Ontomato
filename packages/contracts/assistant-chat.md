@@ -9,11 +9,12 @@ Every conversation/file/feedback operation checks both user and domain; definiti
 management requires the existing **`analysis-agent`** permission. Errors use
 AgentHostError. Shell action slots call these endpoints; feedback stays in workbench.
 
-Proposed extension, not implemented: [domain skills](domain-skills.md) specifies
+[Domain skills](domain-skills.md) specifies
 the complete selectable skill catalogue and per-run package preparation.
 
 | Method/path | Input | Output (200 unless listed) |
 | --- | --- | --- |
+| GET `/agent-skills` | — | `AssistantSkillCatalog`; complete provider/domain choices |
 | GET `/agent-definitions` | — | `AssistantAgentDefinitionList` |
 | GET `/agent-definitions/:agentId` | — | `AssistantAgentDefinition` |
 | POST `/agent-definitions` | `AssistantAgentInput`, UUID Idempotency-Key | 201 `AssistantAgentDefinition` |

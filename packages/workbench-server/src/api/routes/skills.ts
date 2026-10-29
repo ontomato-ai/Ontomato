@@ -2,9 +2,8 @@ import { NextFunction, Request, Response, Router } from "express";
 import { z } from "zod";
 import multer from "multer";
 import { skillManager } from "../../services/skills/skill-manager";
-import { skillRuntime } from "../../core/skills/index";
+import { previewSkill } from "../../services/skills/preview";
 import {
-  getSkillCombinationError,
   InvalidSkillPackageError,
   SkillCategorySchema,
   SkillIdSchema,
@@ -42,12 +41,6 @@ const CreateSkillSchema = z
     outputType: z.enum(["text", "html", "json"]).optional(),
     scriptCode: z.string().optional(),
     skillContent: z.string().optional(),
-  })
-  .superRefine((skill, ctx) => {
-    const error = getSkillCombinationError(skill.type, skill.category);
-    if (error) {
-      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["type"], message: error });
-    }
   });
 
 const UpdateSkillSchema = z.object({
@@ -66,18 +59,6 @@ const DebugSkillSchema = z.object({
 });
 
 // Read-only endpoints — authenticated by the shared /api boundary.
-router.get(
-  "/metrics",
-  asyncHandler(async (req: Request, res: Response) => {
-    const domainId = (req as AuthenticatedRequest).domainId;
-    if (domainId) await skillRuntime.initialize(domainId);
-    const metrics = domainId
-      ? skillRuntime.getAllMetrics(domainId)
-      : { skills: {}, updatedAt: Date.now() };
-    res.json({ success: true, metrics });
-  })
-);
-
 router.get(
   "/",
   asyncHandler(async (req: Request, res: Response) => {
@@ -187,7 +168,6 @@ router.post(
         description: body.description,
         tags: body.tags,
         version: body.version,
-        timeout: body.timeout,
         outputType: body.outputType,
         scriptCode: body.scriptCode,
         skillContent: body.skillContent,
@@ -255,10 +235,12 @@ router.post(
   validateBody(DebugSkillSchema),
   asyncHandler(async (req: Request, res: Response) => {
     const body = req.body as z.infer<typeof DebugSkillSchema>;
-    const result = await skillManager.debugSkill(
-      (req as AuthenticatedRequest).domainId!,
+    const request = req as AuthenticatedRequest;
+    const result = await previewSkill(
+      { domainId: request.domainId!, userId: request.userId },
+      { token: request.token, apiKey: request.apiKey, locale: request.locale },
       req.params.id,
-      body.input
+      body.input,
     );
     res.json({ success: true, result });
   })
