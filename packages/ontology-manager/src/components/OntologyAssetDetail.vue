@@ -32,6 +32,7 @@ import { normalizeBusinessMeaning, normalizeCodeSegments } from "./codeExplainer
 import { useManagerClient, useOntologyText } from "../context";
 
 type AssetRecord = Record<string, any>;
+type BindingDraft = { id?: string; name: string; description: string; questions: string; values: Record<string, string> };
 
 const props = defineProps<{
   kind: AssetTab;
@@ -50,6 +51,42 @@ const deleting = ref(false);
 const generating = ref(false);
 const testing = ref(false);
 const record = ref<AssetRecord | null>(null);
+const bindingDrafts = ref<BindingDraft[]>([]);
+const testBinding = ref<number>(-1);
+const testValues = ref<Record<string, string>>({});
+
+function valueTexts(values: Record<string, unknown>) {
+  return Object.fromEntries(Object.entries(values).map(([key, value]) => [key, JSON.stringify(value)]));
+}
+function parsedValues(values: Record<string, string>) {
+  return Object.fromEntries(Object.entries(values).map(([key, value]) => {
+    try { return [key, JSON.parse(value)]; }
+    catch { throw new Error(ot("metricInvalidParameter", { name: key })); }
+  }));
+}
+function serializedBindings() {
+  return bindingDrafts.value.map((binding) => ({
+    ...(binding.id ? { id: binding.id } : {}), name: binding.name,
+    description: binding.description, parameters: parsedValues(binding.values),
+    matchQuestions: binding.questions.split(/\r?\n/).map((q) => q.trim()).filter(Boolean),
+  }));
+}
+function addBinding() {
+  bindingDrafts.value.push({ name: "", description: "", questions: "", values:
+    Object.fromEntries(metricParameters.value.map((p: AssetRecord) => [p.name, "null"])) });
+}
+function testParameters() {
+  return testBinding.value < 0 ? parsedValues(testValues.value)
+    : parsedValues(bindingDrafts.value[testBinding.value]!.values);
+}
+function testMetricDraft() {
+  const draft = JSON.parse(JSON.stringify(record.value)) as AssetRecord;
+  const values = testParameters();
+  for (const parameter of draft.function.parameters || []) parameter.value = values[parameter.name];
+  draft.bindings = serializedBindings();
+  return draft;
+}
+
 const functionChoices = ref<SmartAsset[]>([]);
 const generationPrompt = ref("");
 const showGeneration = ref(false);
@@ -162,6 +199,10 @@ watch(
   () => record.value,
   () => {
     savedCodeSnapshot.value = editedCode.value;
+    bindingDrafts.value = (record.value?.bindings || []).map((binding: AssetRecord) => ({
+      id: binding.id, name: binding.name, description: binding.description || "",
+      questions: (binding.matchQuestions || []).join("\n"), values: valueTexts(binding.parameters),
+    }));
   }
 );
 
@@ -171,7 +212,7 @@ function createRecord(kind: AssetTab): AssetRecord {
       name: "",
       description: "",
       origin: "USER",
-      type: "GENERAL",
+      bindings: [],
       status: "PENDING_REVIEW",
       matchQuestions: [],
       function: {
@@ -252,7 +293,8 @@ async function save() {
     const codeChanged = isAction && codeDirty.value;
     // Recalculation happens synchronously in the save request, so actions with code changes first warn that it may take a while.
     if (codeChanged) message.info(ot("explainerRegenerating"));
-    await requestSmartAsset(props.kind, "save", record.value);
+    const payload = props.kind === "metrics" ? { ...record.value, bindings: serializedBindings() } : record.value;
+    await requestSmartAsset(props.kind, "save", payload);
     message.success(ot("assetSaved", { title: meta.value.title }));
     if (props.creating) {
       emit("created");
@@ -376,6 +418,8 @@ function openMetricTest() {
   testJson.value = "";
   testResultUrl.value = "";
   testTab.value = "markdown";
+  testBinding.value = -1;
+  testValues.value = valueTexts(Object.fromEntries(metricParameters.value.map((p: AssetRecord) => [p.name, p.value ?? null])));
   testVisible.value = true;
 }
 
@@ -383,7 +427,7 @@ async function testMetricView() {
   if (!record.value) return;
   testing.value = true;
   try {
-    const response = await requestSmartAsset("metrics", "test", record.value);
+    const response = await requestSmartAsset("metrics", "test", testMetricDraft());
     testMarkdown.value = response?.data?.md || ot("metricTestNoResult");
     markdownView.value = "preview";
     testResultUrl.value = typeof response?.data?.url === "string" ? response.data.url : "";
@@ -403,12 +447,8 @@ async function testExecuteMetricView() {
   }
   testing.value = true;
   try {
-    const param = Object.fromEntries(
-      metricParameters.value.map((parameter: AssetRecord) => [parameter.name, parameter.value])
-    );
     const response = await requestSmartAsset("metrics", "testExecute", {
-      metricView: record.value,
-      param,
+      metricView: testMetricDraft(), param: testParameters(),
     });
     testJson.value = JSON.stringify(response?.data ?? null, null, 2);
     testTab.value = "json";
@@ -591,12 +631,6 @@ onMounted(() => void loadDetail());
               <el-option v-if="isTask" :label="ot('stopped')" value="STOPPED" />
             </el-select>
           </el-form-item>
-          <el-form-item v-if="kind === 'metrics'" :label="ot('assetMetricType')">
-            <el-radio-group v-model="record.type">
-              <el-radio value="GENERAL">{{ ot("assetMetricTypeGeneral") }}</el-radio>
-              <el-radio value="STATIC">{{ ot("assetMetricTypeStatic") }}</el-radio>
-            </el-radio-group>
-          </el-form-item>
           <el-form-item v-if="kind === 'metrics'" :label="ot('assetMatchQuestions')">
             <el-input
               v-model="matchQuestionText"
@@ -635,6 +669,40 @@ onMounted(() => void loadDetail());
           :meaning="businessMeaning"
           :stale="codeDirty"
         />
+      </section>
+
+      <section v-if="kind === 'metrics'" class="definition-section metric-bindings">
+        <div class="parameter-header">
+          <h2>{{ ot("metricBindings") }}</h2>
+          <el-button :icon="Plus" @click="addBinding">{{ ot("metricAddBinding") }}</el-button>
+        </div>
+        <p>{{ ot("metricBindingsHint") }}</p>
+        <p class="text-muted">{{ ot("metricJsonValuesHint") }}</p>
+        <section v-for="(binding, index) in bindingDrafts" :key="binding.id || index" class="metric-binding">
+          <el-form label-position="top">
+            <el-form-item :label="ot('assetFieldName')">
+              <el-input v-model="binding.name" :aria-label="ot('metricBindingName')" />
+            </el-form-item>
+            <el-form-item :label="ot('description')">
+              <el-input v-model="binding.description" />
+            </el-form-item>
+            <el-form-item :label="ot('assetMatchQuestions')">
+              <el-input v-model="binding.questions" type="textarea" :rows="2" />
+            </el-form-item>
+            <el-form-item
+              v-for="parameter in metricParameters"
+              :key="parameter.name"
+              :label="`${parameter.name} (${parameter.type})`"
+            >
+              <el-input
+                v-model="binding.values[parameter.name]"
+                :aria-label="parameter.name"
+                :placeholder="JSON.stringify(parameter.sample ?? null)"
+              />
+            </el-form-item>
+          </el-form>
+          <el-button :icon="Trash2" @click="bindingDrafts.splice(index, 1)">{{ ot("metricRemoveBinding") }}</el-button>
+        </section>
       </section>
 
       <section v-if="!isTask" class="logic-section">
@@ -789,14 +857,19 @@ onMounted(() => void loadDetail());
       width="min(900px, 94cqw)"
     >
       <el-alert :title="ot('metricTestHint')" type="info" :closable="false" />
-      <el-form v-if="metricParameters.length" label-position="top" class="test-parameters">
+      <el-select v-model="testBinding" :aria-label="ot('metricChooseBinding')">
+        <el-option :value="-1" :label="ot('metricExplicitParameters')" />
+        <el-option v-for="(binding, index) in bindingDrafts" :key="index" :value="index" :label="binding.name" />
+      </el-select>
+      <p>{{ ot("metricJsonValuesHint") }}</p>
+      <el-form v-if="metricParameters.length && testBinding < 0" label-position="top" class="test-parameters">
         <el-form-item
           v-for="parameter in metricParameters"
           :key="parameter.name"
           :label="parameter.name || ot('metricUnnamedParameter')"
         >
           <el-input
-            v-model="parameter.value"
+            v-model="testValues[parameter.name]"
             :placeholder="parameter.description || ot('metricParameterValue')"
           />
         </el-form-item>
@@ -912,6 +985,13 @@ onMounted(() => void loadDetail());
 </template>
 
 <style scoped>
+.metric-binding {
+  border: 1px solid var(--el-border-color);
+  border-radius: 8px;
+  padding: 16px;
+  margin-top: 12px;
+}
+
 .markdown-view-toggle { margin-bottom: var(--spacing-md); }
 .metric-markdown-preview {
   min-height: 300px;

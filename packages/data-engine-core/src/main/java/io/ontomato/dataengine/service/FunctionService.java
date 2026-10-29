@@ -18,7 +18,7 @@ public interface FunctionService {
 
 	public Function generateFromABCProgram(String question, ABCHarnessProgram abcProgram, String lang, String domainId, String sessionId);
 
-	public Function generateStaticFromGeneral(String question, List<Parameter> parameters, Function generalFunction, String lang, String sessionId);
+	public String generateBindingName(String question, List<Parameter> parameters, Function generalFunction, String lang, String sessionId);
 	
 	public Function save(Function function, String lang) throws Exception;
 	

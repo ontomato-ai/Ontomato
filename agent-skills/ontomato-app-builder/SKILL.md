@@ -94,7 +94,7 @@ node ontomato.mjs vector-delete <class> <attribute> <object-id> <path>
 node ontomato.mjs distinct-values <class> <attribute> [--like <pattern>] [--limit <n>]
 node ontomato.mjs execute-dsl @query.json
 node ontomato.mjs metric-view generate [--save] <description>
-node ontomato.mjs metric-view execute <id> [<param json|@file>]
+node ontomato.mjs metric-view execute <id> [<param json|@file>] [--binding id]
 node ontomato.mjs metric-view find <class> [<question>]
 node ontomato.mjs metric-view get <id>
 node ontomato.mjs metric-view save @metricView.json
@@ -202,6 +202,20 @@ The import is not atomic: an error while writing (for example embedding or stora
 | `sync-production` | Copies only selected interface definitions, not data, pages, knowledge or the ontomap. Follow the exact-plan confirmation rule below. |
 
 Completion requires checking the actual business result and page calls, not just generation, saving or HTTP 200. Resource bindings depend on context, class/attribute names, object keys and paths; renaming or switching sources does not automatically migrate them. Identify a missing definition/binding and handle it within the authorized scope rather than bypassing the capability contract with direct database writes.
+
+## MetricView parameter bindings
+
+A MetricView is one dynamic calculation with an owned `bindings` collection.
+Each binding has an ID, name, description, named `parameters` object and
+`matchQuestions`. It has no separate publication state or lifetime. Edit this
+collection on the dynamic metric and save it; omit a new binding's ID so the
+server assigns it. Omitted bindings preserve the saved collection; an explicit
+empty array removes them. Definition edits apply to every binding and are
+rejected if they leave bindings invalid. The retired GENERAL/STATIC `type`
+field is not accepted on writes; old data conversion is a separate upgrade task.
+Execute with `--binding <id>` to use stored values, or supply explicit parameters
+for dynamic execution. Do not override a binding's values. Export and production
+sync include the whole metric and its bindings, not standalone fixed metrics.
 
 ## MetricViews and Actions
 

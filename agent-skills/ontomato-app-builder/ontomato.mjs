@@ -186,6 +186,7 @@ async function assetCommand(api, prefix, argv) {
     return;
   }
   if (sub === "execute") {
+    const bindingId = prefix === "metricView" ? takeOption(rest, "--binding") : null;
     const files = [];
     if (prefix === "action") {
       for (
@@ -218,6 +219,7 @@ async function assetCommand(api, prefix, argv) {
       await requestJson(api, "POST", `/${prefix}/execute`, {
         id: rest[0],
         param,
+        ...(bindingId ? { bindingId } : {}),
       }),
     );
     return;

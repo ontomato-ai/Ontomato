@@ -83,6 +83,7 @@ public class OntologyQueryController {
             body.getString("revision"),
             "parameters",
             body.getJSONObject("parameters"));
+    if (body.containsKey("bindingId")) recipe.put("bindingId", body.getString("bindingId"));
     return outputs.execute(
         UUID.randomUUID().toString(),
         recipe,

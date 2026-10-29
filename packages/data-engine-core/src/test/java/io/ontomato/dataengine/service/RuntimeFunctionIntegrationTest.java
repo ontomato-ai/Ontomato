@@ -218,7 +218,7 @@ class RuntimeFunctionIntegrationTest {
       assertEquals(false, rows.getJSONObject(0).get("valid"));
       var metric = new MetricView();
       metric.setId("metric-a");
-      metric.setType("GENERAL");
+
       metric.setFunction(function);
       var ontology = mock(OntologyQueryService.class);
       when(ontology.metric(eq("metric-a"), eq("revision-a"), any())).thenReturn(metric);

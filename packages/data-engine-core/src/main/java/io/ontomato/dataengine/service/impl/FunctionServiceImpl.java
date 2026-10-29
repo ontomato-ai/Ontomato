@@ -61,13 +61,8 @@ public class FunctionServiceImpl implements FunctionService {
 					try {
 						Long now = System.currentTimeMillis();
 						List<Function> functions = functionDao.queryList(Function.OPERATION_READ, null, null);
-						List<Object[]> oList = metricViewDao.queryList(null, null, null, null, null);
-						Set<String> functionIds = new HashSet<String>();
-						for (Object[] o : oList) {
-							String functionId = (String)o[1];
-							functionIds.add(functionId);
-						}
-						for (Function function : functions) {
+	                    Set<String> functionIds = metricViewDao.referencedFunctionIds();
+					for (Function function : functions) {
 							if (!Function.ORIGIN_SYSTEM.equals(function.getOrigin())) {
 								if (!functionIds.contains(function.getId())) {
 									if (now - function.getModifyTimestamp() > timeoutTimeRange) {
@@ -249,22 +244,13 @@ public class FunctionServiceImpl implements FunctionService {
   }
 
   @Override
-  public Function generateStaticFromGeneral(
+  public String generateBindingName(
       String question,
       List<Parameter> parameters,
       Function generalFunction,
       String lang,
       String sessionId) {
     if (generalFunction.getParameters().size() > 0) {
-      Function staticFunction = new Function();
-      staticFunction.setOrigin(Function.ORIGIN_USER);
-      staticFunction.setOperation(Function.OPERATION_READ);
-      staticFunction.setParameters(parameters);
-      staticFunction.setReturnDef(generalFunction.getReturnDef());
-      staticFunction.setCode(generalFunction.getCode());
-      staticFunction.setLogic(generalFunction.getLogic());
-      staticFunction.setDomainId(generalFunction.getDomainId());
-
       String userMessage =
           OntologyGenerationPrompts.getStaticReadFunctionNameMakerUserMessage(
               generalFunction, parameters, lang, langService);
@@ -273,8 +259,7 @@ public class FunctionServiceImpl implements FunctionService {
               "name", sessionId, userMessage, lang, generalFunction.getDomainId())) {
         String name = generation.result().getString("name");
         if (name == null || name.isBlank()) return null;
-        staticFunction.setName(name);
-        return generation.settle(() -> staticFunction);
+        return generation.settle(() -> name);
       }
     }
 
@@ -303,7 +288,7 @@ public class FunctionServiceImpl implements FunctionService {
 
 	private void isReferenced(String functionId, String lang) throws Exception {
 		// A Function referenced by a MetricView cannot be modified or deleted
-		if (metricViewDao.queryList(null, null, functionId, null, null).size() > 0) {
+		if (metricViewDao.referencedFunctionIds().contains(functionId)) {
 			throw new Exception(langService.get(lang, "Function.referencedByMetricView"));
 		}
 		// A Function referenced by an Action cannot be modified or deleted

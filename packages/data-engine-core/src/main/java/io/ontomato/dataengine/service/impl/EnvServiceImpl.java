@@ -34,7 +34,7 @@ import io.ontomato.dataengine.core.bean.User;
 import io.ontomato.dataengine.core.utils.ProductionLoginCipher;
 import io.ontomato.dataengine.dao.ActionDao;
 import io.ontomato.dataengine.dao.FunctionDao;
-import io.ontomato.dataengine.dao.MetricViewDao;
+import io.ontomato.dataengine.util.SystemUtils;
 import io.ontomato.dataengine.dao.VectorResourceDao;
 import io.ontomato.dataengine.dataAdapter.DataAdapter;
 import io.ontomato.dataengine.dataAdapter.DataAdapterRegistry;
@@ -84,7 +84,7 @@ public class EnvServiceImpl implements EnvService {
 	private ActionDao actionDao;
 
 	@Autowired
-	private MetricViewDao metricViewDao;
+	private io.ontomato.dataengine.service.MetricViewService metricViewService;
 
 	@Autowired
 	private FunctionDao functionDao;
@@ -215,12 +215,8 @@ public class EnvServiceImpl implements EnvService {
 		}
 		JSONArray metricViews = new JSONArray();
 		for (String id : metricViewIds) {
-			Object[] row = metricViewDao.queryById(id);
-			if (row == null) {
-				throw new Exception("MetricView not found: " + id);
-			}
-			MetricView metricView = (MetricView) row[0];
-			metricView.setFunction(functionDao.queryById((String) row[1]));
+            MetricView metricView = metricViewService.queryById(id, SystemUtils.getCurUser().getDomainId());
+            if (metricView == null) throw new IllegalArgumentException("MetricView not found: " + id);
 			metricViews.add(metricView);
 		}
 		JSONObject ret = new JSONObject();

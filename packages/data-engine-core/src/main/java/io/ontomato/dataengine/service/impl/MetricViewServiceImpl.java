@@ -10,6 +10,11 @@ import io.ontomato.dataengine.bean.function.Function;
 import io.ontomato.dataengine.bean.function.Parameter;
 import io.ontomato.dataengine.bean.function.ReturnDef;
 import io.ontomato.dataengine.bean.metricView.MetricView;
+import io.ontomato.dataengine.bean.metricView.MetricViewBinding;
+import io.ontomato.dataengine.service.MetricViewBindings;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
+import java.util.Objects;
 import io.ontomato.dataengine.bean.metricView.MetricViewContent;
 import io.ontomato.dataengine.config.DataRagConfig;
 import io.ontomato.dataengine.core.bean.User;
@@ -68,6 +73,8 @@ public class MetricViewServiceImpl implements MetricViewService {
 
   @Autowired private OntologyGenerationService generationService;
 
+  @Autowired private PlatformTransactionManager transactionManager;
+
   @PostConstruct
 	public void initService() {
 		// Periodically clean up unpublished metricViews from 12 hours ago
@@ -78,12 +85,12 @@ public class MetricViewServiceImpl implements MetricViewService {
 				while (true) {
 					try {
 						Long now = System.currentTimeMillis();
-						List<Object[]> oList = metricViewDao.queryList(null, MetricView.STATUS_PENDING_REVIEW, null, null, null);
+						List<Object[]> oList = metricViewDao.queryList(MetricView.STATUS_PENDING_REVIEW, null, null, null);
 						for (Object[] o : oList) {
 							MetricView metricView = (MetricView)o[0];
 							if (!MetricView.ORIGIN_SYSTEM.equals(metricView.getOrigin())) {
 								if (now - metricView.getModifyTimestamp() > timeoutTimeRange) {
-									metricViewDao.delete(metricView.getId());
+									metricViewDao.delete(metricView.getId(), metricView.getDomainId());
 								}
 							}
 						}
@@ -173,7 +180,6 @@ public class MetricViewServiceImpl implements MetricViewService {
       function.setReturnDef(returnDef);
 
       MetricView metricView = generateFromFunction(function);
-      metricView.setType(MetricView.TYPE_GENERAL);
       metricView.setStatus(MetricView.STATUS_PUBLISHED);
       Set<String> matchQuestions = new HashSet<String>();
       matchQuestions.add(question);
@@ -181,8 +187,7 @@ public class MetricViewServiceImpl implements MetricViewService {
       return generation.settle(
           () -> {
             if (persistence) {
-              metricView.setFunction(functionDao.save(function));
-              return metricViewDao.save(metricView);
+              return save(metricView, lang);
             }
             return metricView;
           });
@@ -197,174 +202,160 @@ public class MetricViewServiceImpl implements MetricViewService {
 		metricView.setFunction(function);
 		metricView.setStatus(MetricView.STATUS_PENDING_REVIEW);
 		metricView.setDomainId(function.getDomainId());
+        metricView.setBindings(new ArrayList<>());
 		return metricView;
 	}
 
   @Override
-	public MetricView save(MetricView metricView, String lang) throws Exception {
-		if (metricView.getId() != null) {
-			Object[] exist = metricViewDao.queryById(metricView.getId());
-			if (exist == null) {
-				throw new Exception(langService.get(lang, "MetricView.notFound"));
-			} else {
-				MetricView existMetricView = (MetricView)exist[0];
-				if (MetricView.ORIGIN_SYSTEM.equals(existMetricView.getOrigin())) {
-					throw new Exception(langService.get(lang, "MetricView.cannotModifySystem"));
-				}
-				if (!metricView.getDomainId().equals(existMetricView.getDomainId())) {
-					throw new Exception(langService.get(lang, "MetricView.domainMismatch"));
-				}
-			}
-		}
-		if (metricView.getFunction() != null) {
-			Function function = metricView.getFunction();
-			if (function.getId() != null) {
-				Function existFunction = functionDao.queryById(function.getId());
-				if (existFunction != null) {
-					if (!Function.OPERATION_READ.equals(existFunction.getOperation())) {
-						throw new Exception(langService.get(lang, "Function.notRead"));
-					}
-				} else {
-					throw new Exception(langService.get(lang, "Function.notFound"));
-				}
-			} else {
-				if (!Function.OPERATION_READ.equals(function.getOperation())) {
-					throw new Exception(langService.get(lang, "Function.notRead"));
-				}
-			}
-			function = functionDao.save(function);
-			metricView.setFunction(function);
-		} else {
-			throw new Exception(langService.get(lang, "Function.cannotBeEmpty"));
-		}
-		return metricViewDao.save(metricView);
-	}
+  public MetricView save(MetricView metric, String lang) {
+    return new TransactionTemplate(transactionManager).execute(status -> persist(metric, false));
+  }
 
-  @Override
-	public void delete(String id, String lang) throws Exception {
-		Object[] exist = metricViewDao.queryById(id);
-		if (exist != null) {
-			MetricView existMetricView = (MetricView)exist[0];
-			if (MetricView.ORIGIN_SYSTEM.equals(existMetricView.getOrigin())) {
-				throw new Exception(langService.get(lang, "MetricView.cannotDeleteSystem"));
-			}
-			metricViewDao.delete(id);
-		}
-	}
-
-  @Override
-    public List<MetricView> queryForRetrieval(String domainId,String query,String cursor,List<String> classes,int limit) {
-        List<MetricView> result=new ArrayList<>();
-        for(Object[] tuple:metricViewDao.queryForRetrieval(domainId,query,cursor,classes,limit)) {
-            MetricView metric=(MetricView)tuple[0];Function function=functionDao.queryById((String)tuple[1]);
-            if(function==null||!domainId.equals(function.getDomainId()))throw new IllegalStateException("Published metric function is missing or belongs to another domain");
-            metric.setFunction(function);result.add(metric);
-        }
-        return result;
+  private MetricView persist(MetricView metric, boolean importing) {
+    String domain = Objects.requireNonNull(metric.getDomainId(), "Current domain is required");
+    MetricView previous = null;
+    if (metric.getId() != null) {
+      metricViewDao.lock(metric.getId(), domain);
+      previous = queryById(metric.getId(), domain);
+      if (previous == null && (!importing || metricViewDao.exists(metric.getId())))
+        throw new IllegalArgumentException("MetricView not found");
+      if (previous != null && MetricView.ORIGIN_SYSTEM.equals(previous.getOrigin()))
+        throw new IllegalArgumentException("Cannot modify a system MetricView");
     }
+    if (metric.getBindings() == null)
+      metric.setBindings(previous == null ? new ArrayList<>() : previous.getBindings());
+    if (!importing) {
+      Set<String> owned = new HashSet<>();
+      if (previous != null) for (var binding : previous.getBindings()) owned.add(binding.getId());
+      for (var binding : metric.getBindings())
+        if (binding.getId() != null && !owned.contains(binding.getId()))
+          throw new IllegalArgumentException("Metric binding not found");
+    }
+    Function function = Objects.requireNonNull(metric.getFunction(), "Function is required");
+    if (!Function.OPERATION_READ.equals(function.getOperation()))
+      throw new IllegalArgumentException("MetricView requires a read Function");
+    if (function.getId() != null) {
+      Function stored = functionDao.queryById(function.getId());
+      if (stored == null && !importing) throw new IllegalArgumentException("Function not found");
+      if (stored != null && (!domain.equals(stored.getDomainId()) || !Function.OPERATION_READ.equals(stored.getOperation())))
+        throw new IllegalArgumentException("Read Function not found");
+      if (stored != null) {
+        function.setOrigin(stored.getOrigin());
+        function.setCreateTimestamp(stored.getCreateTimestamp());
+      }
+    }
+    function.setDomainId(domain);
+    if (function.getOrigin() == null) function.setOrigin(Function.ORIGIN_USER);
+    MetricViewBindings.validate(function, metric.getBindings());
+    List<MetricView> sharing = function.getId() == null ? List.of() : queryList(null, function.getId(), null, domain);
+    for (MetricView other : sharing)
+      if (!Objects.equals(other.getId(), metric.getId())) MetricViewBindings.validate(function, other.getBindings());
+    metric.setOrigin(previous == null ? MetricView.ORIGIN_USER : previous.getOrigin());
+    metric.setCreateTimestamp(previous == null ? null : previous.getCreateTimestamp());
+    functionDao.save(function);
+    metricViewDao.save(metric);
+    // A shared definition's class projection follows the same edit as its bindings.
+    for (MetricView other : sharing) {
+      if (Objects.equals(other.getId(), metric.getId())) continue;
+      other.setFunction(function);
+      metricViewDao.save(other);
+    }
+    return metric;
+  }
 
   @Override
-	public MetricView queryById(String id) {
-		Object[] o  = metricViewDao.queryById(id);
-		if (o != null) {
-			MetricView metricView = (MetricView)o[0];
-			String functionId = (String)o[1];
-			Function function = functionDao.queryById(functionId);
-			metricView.setFunction(function);
-			return metricView;
-		} else {
-			return null;
-		}
-	}
+  public MetricView appendBinding(String id, MetricViewBinding binding, String domainId) {
+    return recordMatch(id, null, binding, domainId);
+  }
+
+  private MetricView recordMatch(String id, String question, MetricViewBinding binding, String domainId) {
+    return new TransactionTemplate(transactionManager).execute(status -> {
+      metricViewDao.lock(id, domainId);
+      MetricView metric = queryById(id, domainId);
+      if (metric == null) throw new IllegalArgumentException("MetricView not found");
+      if (question != null) metric.getMatchQuestions().add(question.trim());
+      if (binding != null) {
+        if (binding.getId() != null) throw new IllegalArgumentException("A new binding cannot choose an ID");
+        metric.getBindings().add(binding);
+      }
+      MetricViewBindings.validate(metric.getFunction(), metric.getBindings());
+      return metricViewDao.save(metric);
+    });
+  }
 
   @Override
-	public List<MetricView> queryList(String type, String status, String functionId, String className, String domainId) {
-		List<Object[]> oList = metricViewDao.queryList(type, status, functionId, className, domainId);
-		List<Function> functions = functionDao.queryList(null, null, null);
-		Map<String, Function> functionMap = new HashMap<String, Function>();
-		for (Function function : functions) {
-			functionMap.put(function.getId(), function);
-		}
-		List<MetricView> metricViews = new ArrayList<MetricView>();
-		for (Object[] o : oList) {
-			MetricView metricView = (MetricView)o[0];
-			String fId = (String)o[1];
-			metricView.setFunction(functionMap.get(fId));
-			metricViews.add(metricView);
-		}
-		return metricViews;
-	}
+  public void delete(String id, String domainId, String lang) {
+    MetricView metric = queryById(id, domainId);
+    if (metric == null) throw new IllegalArgumentException("MetricView not found");
+    if (MetricView.ORIGIN_SYSTEM.equals(metric.getOrigin()))
+      throw new IllegalArgumentException("Cannot delete a system MetricView");
+    metricViewDao.delete(id, domainId);
+  }
+
+  private MetricView hydrate(Object[] tuple, String domainId) {
+    MetricView metric = (MetricView) tuple[0];
+    Function function = functionDao.queryById((String) tuple[1]);
+    if (!domainId.equals(metric.getDomainId()) || function == null || !domainId.equals(function.getDomainId())
+        || !Function.OPERATION_READ.equals(function.getOperation()))
+      throw new IllegalStateException("MetricView read Function is missing or belongs to another domain");
+    metric.setFunction(function);
+    return metric;
+  }
 
   @Override
-	public List<MetricView> find(String question, String className, String domainId) {
-		List<Object[]> oList = metricViewDao.find(question, null, className, 10, 0, domainId);
-		List<Function> functions = functionDao.queryList(null, null, domainId);
-		Map<String, Function> functionMap = new HashMap<String, Function>();
-		for (Function function : functions) {
-			functionMap.put(function.getId(), function);
-		}
-		List<MetricView> metricViews = new ArrayList<MetricView>();
-		for (Object[] o : oList) {
-			MetricView metricView = (MetricView)o[0];
-			String functionId = (String)o[1];
-			metricView.setFunction(functionMap.get(functionId));
-			metricViews.add(metricView);
-		}
-		return metricViews;
-	}
+  public List<MetricView> queryForRetrieval(String domainId, String query, String cursor, List<String> classes, int limit) {
+    return metricViewDao.queryForRetrieval(domainId, query, cursor, classes, limit).stream()
+        .map(row -> hydrate(row, domainId)).toList();
+  }
 
   @Override
-	public byte[] exportMetricViews(String lang) throws Exception {
-		List<MetricView> metricViews = queryList(null, null, null, null, null);
-		String json = JSON.toJSONString(metricViews, Feature.WriteMapNullValue);
-		return ZipBundleUtil.zip("metricViews.json", json.getBytes(StandardCharsets.UTF_8));
-	}
+  public MetricView queryById(String id, String domainId) {
+    Objects.requireNonNull(domainId, "Current domain is required");
+    Object[] row = metricViewDao.queryById(id, domainId);
+    return row == null ? null : hydrate(row, domainId);
+  }
 
   @Override
-	public JSONObject importMetricViews(byte[] zipData, String lang) throws Exception {
-		byte[] jsonBytes = ZipBundleUtil.unzipFirstJson(zipData);
-		JSONArray array = JSON.parseArray(new String(jsonBytes, StandardCharsets.UTF_8));
-		User user = SystemUtils.getCurUser();
-		String domainId = user == null ? null : user.getDomainId();
-		int successCount = 0;
-		JSONArray failures = new JSONArray();
-		for (int i = 0; i < array.size(); i++) {
-			String metricViewId = null;
-			try {
-				JSONObject json = array.getJSONObject(i);
-				metricViewId = json.getString("id");
-				MetricView metricView = json.to(MetricView.class);
-				Function function = metricView.getFunction();
-				if (function == null || function.getId() == null) {
-					throw new Exception("MetricView " + metricViewId + " has no embedded function");
-				}
-				if (domainId != null) {
-					metricView.setDomainId(domainId);
-					function.setDomainId(domainId);
-				}
-				functionDao.save(function);
-				metricViewDao.save(metricView);
-				successCount++;
-			} catch (Exception e) {
-				log.error("Failed to import metricView {}: {}", metricViewId, e.getMessage(), e);
-				JSONObject failure = new JSONObject();
-				failure.put("index", i);
-				failure.put("id", metricViewId);
-				failure.put("message", e.getMessage());
-				failures.add(failure);
-			}
-		}
-		JSONObject ret = new JSONObject();
-		ret.put("success", failures.isEmpty());
-		ret.put("successCount", successCount);
-		ret.put("failureCount", failures.size());
-		ret.put("failures", failures);
-		return ret;
-	}
+  public List<MetricView> queryList(String status, String functionId, String className, String domainId) {
+    Objects.requireNonNull(domainId, "Current domain is required");
+    return metricViewDao.queryList(status, functionId, className, domainId).stream().map(row -> hydrate(row, domainId)).toList();
+  }
+
+  @Override
+  public List<MetricView> find(String question, String className, String domainId) {
+    return metricViewDao.find(question, className, 10, 0, domainId).stream().map(row -> hydrate(row, domainId)).toList();
+  }
+
+  @Override
+  public byte[] exportMetricViews(String domainId, String lang) throws Exception {
+    return ZipBundleUtil.zip("metricViews.json", JSON.toJSONString(queryList(null, null, null, domainId), Feature.WriteMapNullValue).getBytes(StandardCharsets.UTF_8));
+  }
+
+  @Override
+  public JSONObject importMetricViews(byte[] zipData, String lang) throws Exception {
+    JSONArray array = JSON.parseArray(new String(ZipBundleUtil.unzipFirstJson(zipData), StandardCharsets.UTF_8));
+    String domain = Objects.requireNonNull(SystemUtils.getCurUser().getDomainId(), "Current domain is required");
+    JSONArray failures = new JSONArray();
+    int successCount = 0;
+    for (int i = 0; i < array.size(); i++) {
+      JSONObject item = array.getJSONObject(i);
+      try {
+        if (item.containsKey("type")) throw new IllegalArgumentException("Legacy MetricView bundles require conversion before import");
+        MetricView metric = item.to(MetricView.class);
+        metric.setDomainId(domain);
+        new TransactionTemplate(transactionManager).execute(status -> persist(metric, true));
+        successCount++;
+      } catch (Exception error) {
+        failures.add(JSONObject.of("index", i, "id", item.getString("id"), "message", error.getMessage()));
+      }
+    }
+    return JSONObject.of("success", failures.isEmpty(), "successCount", successCount, "failureCount", failures.size(), "failures", failures);
+  }
 
   @Override
 	public MetricViewContent test(MetricView metricView, String lang, User user, UserDataPermission permission, int timeoutMinutes) throws Exception {
-		Object[] o = abcProgramService.execute(UUID.randomUUID().toString(), metricView.getFunction(), user.getId(), permission, null, lang, timeoutMinutes, user.getDomainId());
+            validateDraftDomain(metricView, user.getDomainId());
+		Object[] o = abcProgramService.execute(UUID.randomUUID().toString(), MetricViewBindings.executionFunction(metricView.getFunction(), MetricViewBindings.values(metricView.getFunction())), user.getId(), permission, null, lang, timeoutMinutes, user.getDomainId());
 		MetricViewContent metricViewContent = generateContent((JSONArray)o[0], (PythonExecuteResult)o[1], metricView.getName(), metricView, lang);
 		return metricViewContent;
 	}
@@ -380,7 +371,7 @@ public class MetricViewServiceImpl implements MetricViewService {
       boolean test) {
     List<MetricViewContent> metricViewContents = new ArrayList<MetricViewContent>();
     List<Object[]> oList =
-        metricViewDao.find(question, MetricView.TYPE_GENERAL, null, 10, 0, user.getDomainId());
+        metricViewDao.find(question, null, 10, 0, user.getDomainId());
     List<Function> functions = functionDao.queryList(null, null, user.getDomainId());
     Map<String, Function> functionMap = new HashMap<String, Function>();
     for (Function function : functions) {
@@ -420,7 +411,7 @@ public class MetricViewServiceImpl implements MetricViewService {
         JSONArray inputFunctions = generation.result().getJSONArray("instances");
         if (inputFunctions == null) return metricViewContents;
 
-        List<MetricView> matchesToSave = new ArrayList<>(), instancesToSave = new ArrayList<>();
+        List<Runnable> matchesToSave = new ArrayList<>();
         for (int i = 0; i < inputFunctions.size(); i++) {
           try {
             JSONObject inputFunction = inputFunctions.getJSONObject(i);
@@ -438,73 +429,22 @@ public class MetricViewServiceImpl implements MetricViewService {
             if (metricView != null) {
               Function function = metricView.getFunction();
 
-              // Enrich the metricView's matchQuestions
-              metricView.getMatchQuestions().add(question.trim());
-              matchesToSave.add(metricView);
-
-              // Generate the return content
-              MetricView staticMetricView = new MetricView();
-              Function staticFunction = new Function();
-              staticFunction.setName(functionQuestion);
-              staticFunction.setOrigin(Function.ORIGIN_USER);
-              staticFunction.setOperation(Function.OPERATION_READ);
-              List<Parameter> staticParameters = new ArrayList<Parameter>();
-              for (Parameter originParameter : function.getParameters()) {
-                Parameter parameter = null;
-                for (Parameter p : parameters) {
-                  if (originParameter.getName().equals(p.getName())) {
-                    parameter = p;
-                    break;
-                  }
-                }
-                if (parameter != null) {
-                  originParameter.setValue(parameter.getValue());
-                }
-                staticParameters.add(originParameter);
-              }
-              staticFunction.setParameters(staticParameters);
-              staticFunction.setReturnDef(function.getReturnDef());
-              staticFunction.setCode(function.getCode());
-              staticFunction.setLogic(function.getLogic());
-              staticFunction.setDomainId(function.getDomainId());
-              staticMetricView.setName(functionQuestion);
-              staticMetricView.setOrigin(MetricView.ORIGIN_USER);
-              staticMetricView.setType(MetricView.TYPE_STATIC);
-              staticMetricView.setFunction(staticFunction);
-              staticMetricView.setStatus(MetricView.STATUS_PENDING_REVIEW);
-              Set<String> staticMatchQuestions = new HashSet<String>();
-              staticMatchQuestions.add(question.trim());
-              staticMetricView.setMatchQuestions(staticMatchQuestions);
-              staticMetricView.setDomainId(metricView.getDomainId());
-              staticMetricView.setOriginQuestion(metricView.getOriginQuestion());
-              staticMetricView.setOriginCheckResult(metricView.getOriginCheckResult());
-
-              Object[] o =
-                  abcProgramService.execute(
-                      BackendSessionEntrance.derive(sessionId, "hot-exec-" + i),
-                      staticMetricView.getFunction(),
-                      user.getId(),
-                      permission,
-                      null,
-                      lang,
-                      timeoutMinutes,
-                      user.getDomainId());
-              ;
-              MetricViewContent metricViewContent =
-                  generateContent(
-                      (JSONArray) o[0],
-                      (PythonExecuteResult) o[1],
-                      staticMetricView.getName(),
-                      staticMetricView,
-                      lang);
-              metricViewContents.add(metricViewContent);
-
-              if (!test) {
-                // Generate an instantiated card of this general card
-                if (staticFunction.getParameters().size() > 0) {
-                  instancesToSave.add(staticMetricView);
-                }
-              }
+              JSONObject values = new JSONObject();
+              for (Parameter parameter : parameters) values.put(parameter.getName(), parameter.getValue());
+              Function execution = MetricViewBindings.executionFunction(function, values);
+              MetricViewBinding binding = new MetricViewBinding();
+              binding.setName(functionQuestion);
+              binding.setParameters(values);
+              binding.setMatchQuestions(new HashSet<>(Set.of(question.trim())));
+              Object[] o = abcProgramService.execute(
+                  BackendSessionEntrance.derive(sessionId, "hot-exec-" + i), execution,
+                  user.getId(), permission, null, lang, timeoutMinutes, user.getDomainId());
+              MetricView contentMetric = JSON.parseObject(JSON.toJSONString(metricView), MetricView.class);
+              contentMetric.setFunction(execution);
+              metricViewContents.add(generateContent((JSONArray) o[0], (PythonExecuteResult) o[1], functionQuestion, contentMetric, lang));
+              String metricId = metricView.getId();
+              MetricViewBinding toSave = !test && !values.isEmpty() ? binding : null;
+              matchesToSave.add(() -> recordMatch(metricId, question, toSave, user.getDomainId()));
             }
           } catch (SessionCancelledException e) {
             // Cancelled: the remaining cards are no longer processed, and this session's
@@ -516,11 +456,7 @@ public class MetricViewServiceImpl implements MetricViewService {
         }
         generation.settle(
             () -> {
-              for (var match : matchesToSave) metricViewDao.save(match);
-              for (var instance : instancesToSave) {
-                instance.setFunction(functionDao.save(instance.getFunction()));
-                metricViewDao.save(instance);
-              }
+              for (var save : matchesToSave) save.run();
               return null;
             });
       }
@@ -529,29 +465,24 @@ public class MetricViewServiceImpl implements MetricViewService {
   }
 
   @Override
-	public List<MetricViewContent> generateStaticContent(String question, String lang, User user, UserDataPermission permission, int timeoutMinutes) {
-		List<MetricViewContent> metricViewContents = new ArrayList<MetricViewContent>();
-		List<Object[]> oList = metricViewDao.find(question, MetricView.TYPE_STATIC, null, 10, 0, user.getDomainId());
-		List<Function> functions = functionDao.queryList(null, null, user.getDomainId());
-		Map<String, Function> functionMap = new HashMap<String, Function>();
-		for (Function function : functions) {
-			functionMap.put(function.getId(), function);
-		}
-		for (Object[] o : oList) {
-			try {
-				MetricView metricView = (MetricView)o[0];
-				String fId = (String)o[1];
-				metricView.setFunction(functionMap.get(fId));
-				MetricViewContent metricViewContent = test(metricView, lang, user, permission, timeoutMinutes);
-				metricViewContents.add(metricViewContent);
-			} catch (Exception e) {
-				log.error(e.getMessage(), e);
-			}
-		}
-		return metricViewContents;
-	}
-
-	private MetricViewContent generateContent(JSONArray rows, PythonExecuteResult execution, String question, MetricView metricView, String lang) {
+  public List<MetricViewContent> generateStaticContent(String question, String lang, User user, UserDataPermission permission, int timeoutMinutes) {
+    List<MetricViewContent> contents = new ArrayList<>();
+    for (var match : metricViewDao.findBindings(question, 10, 0, user.getDomainId())) {
+      try {
+        MetricView metric = queryById(match.metricId(), user.getDomainId());
+        JSONObject values = MetricViewBindings.resolve(metric, match.binding().getId(), null);
+        metric.setFunction(MetricViewBindings.executionFunction(metric.getFunction(), values));
+        Object[] output = abcProgramService.execute(UUID.randomUUID().toString(), metric.getFunction(), user.getId(), permission, null, lang, timeoutMinutes, user.getDomainId());
+        contents.add(generateContent((JSONArray) output[0], (PythonExecuteResult) output[1], match.binding().getName(), metric, lang));
+      } catch (SessionCancelledException error) {
+        throw error;
+      } catch (Exception error) {
+        log.error(error.getMessage(), error);
+      }
+    }
+    return contents;
+  }
+private MetricViewContent generateContent(JSONArray rows, PythonExecuteResult execution, String question, MetricView metricView, String lang) {
 		int maxSize = 100;
 		MetricViewContent metricViewContent = new MetricViewContent();
 		Function function = metricView.getFunction();
@@ -637,29 +568,40 @@ public class MetricViewServiceImpl implements MetricViewService {
 	}
 
   @Override
-	public Object[] execute(String id, JSONObject param, String lang, User user, UserDataPermission permission, int timeoutMinutes) throws Exception {
-		MetricView metricView = queryById(id);
-		return testExecute(metricView, param, lang, user, permission, timeoutMinutes);
-	}
+  public Object[] execute(String id, String bindingId, JSONObject param, String lang, User user, UserDataPermission permission, int timeoutMinutes) throws Exception {
+    return testExecute(queryById(id, user.getDomainId()), bindingId, param, lang, user, permission, timeoutMinutes);
+  }
 
   @Override
-	public Object[] testExecute(MetricView metricView, JSONObject param, String lang, User user, UserDataPermission permission, int timeoutMinutes) throws Exception {
-		if (metricView != null) {
-			if (MetricView.STATUS_PUBLISHED.equals(metricView.getStatus())) {
-				Function function = metricView.getFunction();
-				if (MetricView.TYPE_GENERAL.equals(metricView.getType())) {
-					for (Parameter parameter : function.getParameters()) {
-						Object value = param.get(parameter.getName());
-						parameter.setValue(value);
-					}
-				}
-				
-				return abcProgramService.execute(UUID.randomUUID().toString(), function, user.getId(), permission, null, lang, timeoutMinutes, user.getDomainId());
-			} else {
-				throw new Exception(langService.get(lang, "MetricView.notPublished"));
-			}
-		} else {
-			throw new Exception(langService.get(lang, "MetricView.notFound"));
-		}
-	}
+  public Object[] testExecute(MetricView metric, String bindingId, JSONObject param, String lang, User user, UserDataPermission permission, int timeoutMinutes) throws Exception {
+    if (metric == null) throw new IllegalArgumentException("MetricView not found");
+    validateDraftDomain(metric, user.getDomainId());
+    if (!MetricView.STATUS_PUBLISHED.equals(metric.getStatus()))
+      throw new IllegalArgumentException("MetricView is not published");
+    JSONObject values = MetricViewBindings.resolve(metric, bindingId, param);
+    Function execution = MetricViewBindings.executionFunction(metric.getFunction(), values);
+    return abcProgramService.execute(UUID.randomUUID().toString(), execution, user.getId(), permission, null, lang, timeoutMinutes, user.getDomainId());
+  }
+
+  private void validateDraftDomain(MetricView metric, String domain) {
+    if (metric.getId() != null) {
+      MetricView stored = queryById(metric.getId(), domain);
+      if (stored == null) throw new IllegalArgumentException("MetricView not found");
+      Set<String> ids = new HashSet<>();
+      for (var binding : stored.getBindings()) ids.add(binding.getId());
+      if (metric.getBindings() != null) for (var binding : metric.getBindings())
+        if (binding.getId() != null && !ids.contains(binding.getId()))
+          throw new IllegalArgumentException("Metric binding not found");
+    }
+    if (metric.getDomainId() != null && !domain.equals(metric.getDomainId()))
+      throw new IllegalArgumentException("MetricView not found");
+    Function function = Objects.requireNonNull(metric.getFunction(), "Function is required");
+    if (!Function.OPERATION_READ.equals(function.getOperation()))
+      throw new IllegalArgumentException("MetricView requires a read Function");
+    if (function.getId() != null) {
+      Function stored = functionDao.queryById(function.getId());
+      if (stored == null || !domain.equals(stored.getDomainId()) || !Function.OPERATION_READ.equals(stored.getOperation()))
+        throw new IllegalArgumentException("Read Function not found");
+    }
+  }
 }

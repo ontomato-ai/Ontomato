@@ -283,7 +283,7 @@ public class OntologyQueryService {
   public MetricView metric(String id, String revision, QueryAccessService.Access access) {
     if (id == null || id.isBlank() || revision == null || revision.isBlank())
       throw new IllegalArgumentException("Metric id and revision are required");
-    MetricView metric = metrics.queryById(id);
+    MetricView metric = metrics.queryById(id, access.user().getDomainId());
     if (metric == null
         || !access.user().getDomainId().equals(metric.getDomainId())
         || !MetricView.STATUS_PUBLISHED.equals(metric.getStatus())

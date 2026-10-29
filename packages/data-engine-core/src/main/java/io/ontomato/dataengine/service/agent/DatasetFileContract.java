@@ -35,8 +35,9 @@ final class DatasetFileContract {
       }
       case "metric" -> {
         AgentJson.fields(
-            recipe, "kind", "metricId", "revision", "parameters", "executedCode", "sha256");
+            recipe, "kind", "metricId", "revision", "parameters", "bindingId", "executedCode", "sha256");
         string(recipe, "metricId", false);
+        optionalText(recipe, "bindingId");
         string(recipe, "revision", false);
         object(recipe, "parameters");
         optionalText(recipe, "executedCode");

@@ -6,7 +6,9 @@ decisionIds, metricUses and selfCheck. It does not contain result rows.
 recipe is one of:
 - {kind:"dsl",dsl:<one DSL object>}
 - {kind:"python",code:<exact Python source>,sha256:<SHA-256 of source bytes>}
-- {kind:"metric",metricId,revision,parameters:<object>}
+- {kind:"metric",metricId,revision,parameters:<object>,bindingId?:<owned binding ID>}
+  metricId always identifies the dynamic metric. A binding uses its saved values;
+  pass {} or exactly those values, never overrides.
 
 Use the ontology skill's Python helper and protocol-2 code for Python. Declare
 outKeyRefs as {key,className,attrName,asGroupBy,statCal} for every result column.

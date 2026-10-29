@@ -60,7 +60,7 @@ Run `node ontomato.mjs <command>` from this directory. JSON accepts `@file`.
 | `distinct-values <class> <attribute> [--like text] [--limit n]` | `POST /ontology/query/distinct-values`: values and completeness marker |
 | `execute-dsl @query.json` | `POST /ontology/query/execute-dsl`: one read-only DSL object, under your permissions |
 | `metrics <question> [--cursor id] [--limit n]` | `POST /ontology/query/metrics/search`: published read specifications, revision and next cursor; no model call |
-| `execute-metric <id> --revision <revision> @parameters.json` | `POST /ontology/query/metrics/execute`: current revision checked, execution under your permissions |
+| `execute-metric <id> --revision <revision> [@parameters.json] [--binding id]` | `POST /ontology/query/metrics/execute`: current revision checked, execution under your permissions; --binding selects an owned parameter set |
 | `knowledge <question> [--limit n]` | `POST /ontology/query/knowledge/search`: relevant business knowledge |
 | `ask [--lang en] [--request-id UUID] "complete question"` | Ontology `POST /ontology/retrievals`, then polling and dataset downloads |
 | `ask --status <retrievalId>` | Read the authoritative retrieval result |
