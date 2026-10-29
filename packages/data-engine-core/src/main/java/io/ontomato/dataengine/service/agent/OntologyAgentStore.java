@@ -44,6 +44,19 @@ CREATE TABLE IF NOT EXISTS ontology_agent_runs (
   caller_id uuid REFERENCES ontology_retrieval_callers(id), external boolean NOT NULL,
   dataset_ids jsonb NOT NULL DEFAULT '[]', observed_state jsonb, decision_revision integer NOT NULL,
   qc_id uuid, qc_admitted boolean NOT NULL DEFAULT false, cancel_requested boolean NOT NULL DEFAULT false, cancel_confirmed boolean NOT NULL DEFAULT false, created_at timestamptz NOT NULL DEFAULT now());
+ALTER TABLE ontology_agent_runs ADD COLUMN IF NOT EXISTS runtime_admitted boolean NOT NULL DEFAULT true;
+ALTER TABLE ontology_agent_runs ADD COLUMN IF NOT EXISTS admission_error text;
+ALTER TABLE ontology_agent_runs ADD COLUMN IF NOT EXISTS result_after bigint NOT NULL DEFAULT 0;
+CREATE TABLE IF NOT EXISTS ontology_binding_runs (
+  run_id uuid PRIMARY KEY REFERENCES ontology_agent_runs(id), status text NOT NULL,
+  open boolean NOT NULL, deadline timestamptz, owner_node text NOT NULL, error text, qc_id uuid NOT NULL, qc_admitted boolean NOT NULL DEFAULT false);
+CREATE TABLE IF NOT EXISTS ontology_binding_outputs (
+  id uuid PRIMARY KEY, run_id uuid NOT NULL REFERENCES ontology_binding_runs(run_id),
+  request jsonb NOT NULL, dataset text, sha256 text);
+CREATE TABLE IF NOT EXISTS ontology_retrieval_deliveries (
+  seq bigserial PRIMARY KEY, run_id uuid NOT NULL REFERENCES ontology_agent_runs(id),
+  source text NOT NULL, source_id uuid NOT NULL, data jsonb NOT NULL,
+  UNIQUE(run_id,source,source_id));
 CREATE TABLE IF NOT EXISTS ontology_generations (
   run_id uuid PRIMARY KEY REFERENCES ontology_agent_runs(id), business_id text NOT NULL,
   kind text NOT NULL, owner_node text NOT NULL, sandbox_id text, source text, test_data jsonb, settled boolean NOT NULL DEFAULT false);
@@ -309,8 +322,8 @@ CREATE TABLE IF NOT EXISTS ontology_retrieval_artifacts (
           }
           update(
               "INSERT INTO"
-                  + " ontology_agent_runs(id,session_id,input_hash,request,open,deadline,caller_id,external,decision_revision)"
-                  + " VALUES(?,?,?,?::jsonb,true,?::timestamptz,?,?,?)",
+                  + " ontology_agent_runs(id,session_id,input_hash,request,open,deadline,caller_id,external,decision_revision,runtime_admitted)"
+                  + " VALUES(?,?,?,?::jsonb,true,?::timestamptz,?,?,?,false)",
               uuid(id),
               uuid(sessionId),
               AgentJson.hash(request),
@@ -319,6 +332,7 @@ CREATE TABLE IF NOT EXISTS ontology_retrieval_artifacts (
               callerId == null ? null : uuid(callerId),
               external,
               decisionRevision);
+          update("UPDATE ontology_agent_runs SET result_after=(SELECT coalesce(max(d.seq),0) FROM ontology_retrieval_deliveries d JOIN ontology_agent_runs r ON r.id=d.run_id WHERE r.session_id=?) WHERE id=?",uuid(sessionId),uuid(id));
           update(
               "INSERT INTO ontology_retrievals(id,input,current_run_id,decisions)"
                   + " VALUES(?,?::jsonb,?,?::jsonb) ON CONFLICT(id) DO UPDATE SET"

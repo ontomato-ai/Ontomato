@@ -24,6 +24,9 @@ public class OntologyRetrievalService {
   private final QueryJobService jobs;
   private final QueryQualityService quality;
   private final OntologyAgentAccess access;
+  private final OntologyBindingRetrieval bindings;
+  private final RetrievalResults results;
+  private final Set<String> launching = ConcurrentHashMap.newKeySet();
 
   private record AdmissionFlight(Owner owner, String hash, CompletableFuture<JSONObject> result) {}
 
@@ -42,7 +45,7 @@ public class OntologyRetrievalService {
       QueryOutputService outputs,
       QueryJobService jobs,
       QueryQualityService quality,
-      OntologyAgentAccess access) {
+      OntologyAgentAccess access, OntologyBindingRetrieval bindings, RetrievalResults results) {
     this.store = store;
     this.runtime = runtime;
     this.definitions = definitions;
@@ -52,6 +55,8 @@ public class OntologyRetrievalService {
     this.jobs = jobs;
     this.quality = quality;
     this.access = access;
+    this.bindings = bindings;
+    this.results = results;
   }
 
   private JSONObject admitOnce(
@@ -189,7 +194,7 @@ public class OntologyRetrievalService {
         input,
         context,
         () -> {
-          createSession(id, context.owner());
+          store.createSession(id, context.owner(), RETRIEVER);
           var admission =
               store.admit(
                   id,
@@ -202,8 +207,8 @@ public class OntologyRetrievalService {
                   timeout(input),
                   context.expiresAt(),
                   false);
-          if (!admission.replayed()) prepare(id, runId, context);
-          return snapshot(id, runId, context.owner());
+          if (!admission.replayed()) launch(id, runId, input, context);
+          return poll(id, 0, context.owner());
         });
   }
 
@@ -262,8 +267,9 @@ public class OntologyRetrievalService {
             timeout(request),
             context.expiresAt(),
             true);
-    if (!accepted.replayed()) prepare(id, key, context);
-    return snapshot(id, key, context.owner());
+    long cursor = accepted.run().getLongValue("result_after");
+    if (!accepted.replayed()) launch(id, key, original, context);
+    return poll(id, cursor, context.owner());
   }
 
   public boolean message(
@@ -346,6 +352,72 @@ public class OntologyRetrievalService {
             existing != null);
     return JSONObject.of(
         "id", id, "sessionId", id, "runId", key, "expiresAt", a.run().getString("deadline"));
+  }
+
+  private void launch(String id, String run, JSONObject input, OntologyAgentAccess.Context context) {
+    launching.add(run);
+    workers.submit(() -> {
+      try {
+        runtime.json(context.owner().domainId(), run, "/v1/sessions", "POST", Map.of(), id);
+        prepare(id, run, context);
+      } catch (Exception failure) {
+        try {
+          var existing = runtime.run(context.owner().domainId(), run);
+          store.update("UPDATE ontology_agent_runs SET runtime_admitted=true WHERE id=?", uuid(run));
+          reconcile(id, run, context.owner(), existing);
+        } catch (AgentHttpException missing) {
+          if (missing.status() == 404 || missing.status() == 410) admissionFailed(id,run,context.owner(),failure.getMessage());
+        } catch (Exception uncertain) {
+          LOG.warn("Retriever admission awaits reconciliation: {}", run, uncertain);
+        }
+      } finally { launching.remove(run); }
+    });
+    bindings.start(id, run, input, context);
+  }
+
+  private void admissionFailed(String id,String run,Owner owner,String error) {
+    String message=error==null ? "Retriever admission failed" : error;
+    store.update("UPDATE ontology_agent_runs SET open=false,admission_error=? WHERE id=? AND runtime_admitted=false",message,uuid(run));
+    results.publish(id,run,owner,"retriever",run,JSONObject.of("answer","","run",null,"error",message,"datasets",new JSONArray()));
+  }
+
+  public JSONObject poll(String id,long after,Owner owner) {
+    var record=store.retrieval(id,owner);
+    var row=store.run(id,record.getString("current_run_id"),owner);
+    var deliveries=results.after(id,after,owner);
+    long cursor=deliveries.isEmpty()?after:deliveries.get(deliveries.size()-1).getLongValue("cursor");
+    var observed=row.getJSONObject("observed_state");
+    boolean delivered = !store.rows("SELECT 1 AS delivered FROM ontology_retrieval_deliveries WHERE run_id=? AND source='retriever'",uuid(row.getString("id"))).isEmpty();
+    boolean pending = !row.getBooleanValue("external") && !delivered;
+    // Old terminal rounds are projected lazily from immutable runtime facts, never re-executed.
+    if(pending && observed!=null && "stopped".equals(observed.getString("status")) && observing.add(row.getString("id"))) {
+      String run=row.getString("id");
+      workers.submit(() -> { try { reconcile(id,run,owner,runtime.run(owner.domainId(),run)); }
+        catch(Exception error) { LOG.warn("Retrieval result projection failed: {}",run,error); }
+        finally { observing.remove(run); } });
+    }
+    var response = JSONObject.of("id",id,"roundId",row.getString("id"),"cursor",cursor,"deliveries",deliveries,
+        "decisionRevision",row.getIntValue("decision_revision"),"runtimeSessionId",row.getBooleanValue("runtime_admitted")?id:null,
+        "runtimeRunId",row.getBooleanValue("runtime_admitted")?row.getString("id"):null,
+        "run",observed==null?null:state(observed),"pending",JSONObject.of("retriever",pending,"bindings",bindings.pending(id,owner)));
+    response.put("bindings",bindings.snapshot(id,row.getString("id"),owner));
+    if(row.getString("qc_id")!=null) {
+      try { response.put("qualityCheck",jobs.get(row.getString("qc_id"),subject(owner),"quality")); }
+      catch(org.springframework.web.server.ResponseStatusException missing) { if(missing.getStatusCode().value()!=404) throw missing; }
+    }
+    return response;
+  }
+
+  public JSONObject cancelRetriever(String id,String expected,Owner owner) throws Exception {
+    store.transaction(() -> {
+      store.session(id,owner);
+      store.one("SELECT id FROM ontology_agent_sessions WHERE id=? FOR UPDATE",uuid(id));
+      var current=store.retrieval(id,owner);
+      if (!expected.equals(current.getString("current_run_id"))) throw conflict("Retrieval round changed");
+      store.closeRun(id,expected,owner); return null;
+    });
+    cancelWork(id,expected,owner);
+    return poll(id,results.cursor(id,owner),owner);
   }
 
   private void prepare(String id, String runId, OntologyAgentAccess.Context context)
@@ -450,6 +522,7 @@ public class OntologyRetrievalService {
               "environment",
               JSONObject.of("values", values, "secrets", secrets)),
           runId);
+      store.update("UPDATE ontology_agent_runs SET runtime_admitted=true WHERE id=?", uuid(runId));
     } catch (Exception failure) {
       try {
         runtime.run(context.owner().domainId(), runId);
@@ -486,7 +559,7 @@ public class OntologyRetrievalService {
     var row = store.run(id, runId, owner);
     JSONObject state = null;
     JSONArray messages = new JSONArray();
-    if (!row.getBooleanValue("external")) {
+    if (!row.getBooleanValue("external") && row.getBooleanValue("runtime_admitted")) {
       var snapshot = runtime.run(owner.domainId(), runId);
       if (observe) reconcile(id, runId, owner, snapshot);
       state = state(snapshot.getJSONObject("run"));
@@ -500,9 +573,9 @@ public class OntologyRetrievalService {
             "revision",
             record.getIntValue("revision"),
             "runtimeSessionId",
-            row.getBooleanValue("external") ? null : id,
+            row.getBooleanValue("external") || !row.getBooleanValue("runtime_admitted") ? null : id,
             "runtimeRunId",
-            row.getBooleanValue("external") ? null : runId,
+            row.getBooleanValue("external") || !row.getBooleanValue("runtime_admitted") ? null : runId,
             "run",
             state,
             "messages",
@@ -511,6 +584,13 @@ public class OntologyRetrievalService {
             row.getJSONArray("dataset_ids"),
             "decisionRevision",
             row.getIntValue("decision_revision"));
+    result.put("createdAt",row.getString("created_at"));
+    var bindingState = bindings.snapshot(id,runId,owner);
+    result.put("bindings", bindingState);
+    result.put("bindingPending",bindingState != null && "running".equals(bindingState.getString("status")));
+    result.put("retrieverPending",state != null ? "running".equals(state.getString("status"))
+        : !row.getBooleanValue("external") && row.getString("admission_error")==null && !row.getBooleanValue("cancel_requested"));
+    result.put("admissionError",row.getString("admission_error"));
     if (row.getString("qc_id") != null) {
       try {
         result.put("qualityCheck", jobs.get(row.getString("qc_id"), subject(owner), "quality"));
@@ -550,6 +630,7 @@ public class OntologyRetrievalService {
       throws Exception {
     closeStoppedCallbacks(id, runId, owner, snapshot);
     var accepted = new LinkedHashMap<String, String>();
+    var acceptedData = new HashMap<String, JSONObject>();
     for (Object item : snapshot.getJSONArray("artifacts")) {
       var file = JSONObject.from(item);
       if (!runId.equals(file.getString("runId"))
@@ -584,6 +665,8 @@ public class OntologyRetrievalService {
             uuid(runId),
             file.getString("path"));
         accepted.put(file.getString("path"), file.getString("id"));
+        acceptedData.put(file.getString("id"),JSONObject.of("id",file.getString("id"),"sha256",file.getString("sha256"),
+            "title",value.getString("title"),"rowCount",value.getJSONArray("rows").size(),"truncation",value.get("truncation")));
       }
     }
     var current = state(snapshot.getJSONObject("run"));
@@ -612,6 +695,8 @@ public class OntologyRetrievalService {
           return null;
         });
     if (stopped) {
+      results.publish(id,runId,owner,"retriever",runId,JSONObject.of("answer",RetrievalResults.answer(snapshot),"run",current,
+          "runtimeSessionId",id,"runtimeRunId",runId,"datasets",accepted.values().stream().map(acceptedData::get).toList()));
       grants.revoke(owner.domainId(), runId);
       if ("stop".equals(current.getString("stopReason")) && !accepted.isEmpty())
         scheduleQuality(id, runId, owner);
@@ -619,6 +704,8 @@ public class OntologyRetrievalService {
   }
 
   public JSONObject cancel(String id, String runId, Owner owner) throws Exception {
+    for(var run:store.rows("SELECT id FROM ontology_agent_runs WHERE session_id=?",uuid(id)))
+      bindings.cancel(id,run.getString("id"),owner);
     store.closeRun(id, runId, owner);
     cancelWork(id, runId, owner);
     return get(id, owner);
@@ -629,6 +716,7 @@ public class OntologyRetrievalService {
     if (!row.getBooleanValue("external")) {
       try {
         var existing = runtime.run(owner.domainId(), runId);
+        store.update("UPDATE ontology_agent_runs SET runtime_admitted=true WHERE id=?",uuid(runId));
         if ("stopped".equals(existing.getJSONObject("run").getString("status"))
             && "stop".equals(existing.getJSONObject("run").getString("stopReason"))) {
           reconcile(id, runId, owner, existing);
@@ -678,6 +766,8 @@ public class OntologyRetrievalService {
       throw first;
     }
     store.update("UPDATE ontology_agent_runs SET cancel_confirmed=true WHERE id=?", uuid(runId));
+    if(!row.getBooleanValue("external") && !store.run(id,runId,owner).getBooleanValue("runtime_admitted"))
+      results.publish(id,runId,owner,"retriever",runId,JSONObject.of("answer","","run",null,"error","Retriever cancelled before admission","datasets",new JSONArray()));
   }
 
   private static QueryAccessService.GrantUser subject(Owner owner) {
@@ -689,6 +779,7 @@ public class OntologyRetrievalService {
     // Retry unfinished cancellation even when the scope was already closed.
     for (var link : store.callerRuns(id, owner)) {
       String session = link.getString("retrievalId"), run = link.getString("runId");
+      bindings.cancel(session, run, owner);
       if (run.equals(store.retrieval(session, owner).getString("current_run_id")))
         cancelWork(session, run, owner);
     }
@@ -790,23 +881,22 @@ public class OntologyRetrievalService {
   }
 
   public JSONObject dataset(String id, String artifact, Owner owner) throws Exception {
-    store.retrieval(id, owner);
-    var row =
-        store.one(
-            "SELECT o.dataset_digest FROM ontology_retrieval_artifacts a JOIN"
-                + " ontology_retrieval_outputs o ON o.id=a.output_id JOIN ontology_agent_runs r ON"
-                + " r.id=a.run_id WHERE r.session_id=? AND a.artifact_id=?",
-            uuid(id),
-            uuid(artifact));
-    var data =
-        JSON.parseObject(
-            new String(
-                runtime.bytes(owner.domainId(), artifact, "/v1/artifacts/" + artifact + "/content"),
-                StandardCharsets.UTF_8));
-    if (!AgentJson.hash(data).equals(row.getString("dataset_digest")))
-      throw new AgentHttpException(
-          503, "DEPENDENCY_UNAVAILABLE", "Dataset receipt differs from its file");
-    return JSONObject.of("id", artifact, "payload", data);
+    if (bindings.ownsDataset(id, artifact, owner)) return bindings.dataset(id, artifact, owner);
+    return JSONObject.of("id", artifact, "payload", JSON.parseObject(new String(runtimeDatasetBytes(id, artifact, owner), StandardCharsets.UTF_8)));
+  }
+
+  private byte[] runtimeDatasetBytes(String id,String artifact,Owner owner) throws Exception {
+    store.retrieval(id,owner);
+    var row=store.one("SELECT o.dataset_digest FROM ontology_retrieval_artifacts a JOIN ontology_retrieval_outputs o ON o.id=a.output_id JOIN ontology_agent_runs r ON r.id=a.run_id WHERE r.session_id=? AND a.artifact_id=?",uuid(id),uuid(artifact));
+    byte[] bytes=runtime.bytes(owner.domainId(),artifact,"/v1/artifacts/"+artifact+"/content");
+    if(!AgentJson.hash(JSON.parseObject(new String(bytes,StandardCharsets.UTF_8))).equals(row.getString("dataset_digest")))
+      throw new AgentHttpException(503,"DEPENDENCY_UNAVAILABLE","Dataset receipt differs from its file");
+    return bytes;
+  }
+
+  public byte[] datasetContent(String id,String dataset,Owner owner) throws Exception {
+    if(bindings.ownsDataset(id,dataset,owner)) return bindings.content(id,dataset,owner).getBytes(StandardCharsets.UTF_8);
+    return runtimeDatasetBytes(id,dataset,owner);
   }
 
   private JSONObject datasetForOwner(String artifact, Owner owner) throws Exception {
@@ -869,13 +959,15 @@ public class OntologyRetrievalService {
 
   @Scheduled(fixedDelay = 500)
   public void recover() {
+    for(var failed:store.rows("SELECT r.id,r.session_id,r.admission_error,s.user_id,s.domain_id FROM ontology_agent_runs r JOIN ontology_agent_sessions s ON s.id=r.session_id WHERE r.admission_error IS NOT NULL AND NOT EXISTS(SELECT 1 FROM ontology_retrieval_deliveries d WHERE d.run_id=r.id AND d.source='retriever')"))
+      admissionFailed(failed.getString("session_id"),failed.getString("id"),owner(failed),failed.getString("admission_error"));
     for (var row :
         store.rows(
             "SELECT r.*,s.user_id,s.domain_id FROM ontology_agent_runs r JOIN"
                 + " ontology_agent_sessions s ON s.id=r.session_id WHERE s.agent_id='"
                 + RETRIEVER
                 + "'::uuid AND r.input_hash<>'' AND"
-                + " (r.open=true OR (r.external=false AND r.cancel_requested=false AND"
+                + " r.admission_error IS NULL AND (r.open=true OR (r.external=false AND r.cancel_requested=false AND"
                 + " (r.observed_state IS NULL OR r.observed_state->>'status'<>'stopped')) OR"
                 + " (r.cancel_requested=true AND r.cancel_confirmed=false AND"
                 + " (r.observed_state IS NULL OR r.observed_state->>'status'<>'stopped')) OR"
@@ -883,7 +975,7 @@ public class OntologyRetrievalService {
                 + " r.observed_state->>'stopReason'='stop' AND jsonb_array_length(r.dataset_ids)>0"
                 + " AND r.qc_admitted=false))")) {
       String id = row.getString("id");
-      if (preparing.containsKey(id) || !observing.add(id)) continue;
+      if (preparing.containsKey(id) || launching.contains(id) || !observing.add(id)) continue;
       workers.submit(
           () -> {
             try (var ignored = io.ontomato.dataengine.logging.ServiceLogContext.open(java.util.Map.of(
@@ -904,6 +996,7 @@ public class OntologyRetrievalService {
               }
               if (row.getBooleanValue("cancel_requested")) cancelWork(session, id, owner);
               var snapshot = runtime.run(owner.domainId(), id);
+              if(!row.getBooleanValue("runtime_admitted")) store.update("UPDATE ontology_agent_runs SET runtime_admitted=true WHERE id=?",uuid(id));
               io.ontomato.dataengine.logging.ServiceLogContext.put("correlationId", snapshot.getJSONObject("run").getString("correlationId"));
               reconcile(session, id, owner, snapshot);
               if ("running".equals(snapshot.getJSONObject("run").getString("status"))
@@ -915,6 +1008,7 @@ public class OntologyRetrievalService {
             } catch (AgentHttpException error) {
               if (error.status() == 404) {
                 try {
+                  if(!row.getBooleanValue("runtime_admitted")) admissionFailed(row.getString("session_id"),id,owner(row),"Retriever admission was interrupted");
                   store.closeRun(row.getString("session_id"), id, owner(row));
                   cancelWork(row.getString("session_id"), id, owner(row));
                 } catch (Exception failure) {
@@ -932,6 +1026,7 @@ public class OntologyRetrievalService {
 
   public void delete(String id, Owner owner) throws Exception {
     store.session(id, owner);
+    if (bindings.pending(id,owner)) throw new AgentHttpException(409,"SESSION_BUSY","Binding execution is active");
     if (!store
         .rows("SELECT id FROM ontology_agent_runs WHERE session_id=? AND open=true", uuid(id))
         .isEmpty()) throw new AgentHttpException(409, "SESSION_BUSY", "A run is active");
@@ -943,6 +1038,9 @@ public class OntologyRetrievalService {
     }
     store.transaction(
         () -> {
+          store.update("DELETE FROM ontology_retrieval_deliveries WHERE run_id IN(SELECT id FROM ontology_agent_runs WHERE session_id=?)",uuid(id));
+          store.update("DELETE FROM ontology_binding_outputs WHERE run_id IN(SELECT id FROM ontology_agent_runs WHERE session_id=?)",uuid(id));
+          store.update("DELETE FROM ontology_binding_runs WHERE run_id IN(SELECT id FROM ontology_agent_runs WHERE session_id=?)",uuid(id));
           store.update(
               "DELETE FROM ontology_retrieval_artifacts WHERE run_id IN(SELECT id FROM"
                   + " ontology_agent_runs WHERE session_id=?)",

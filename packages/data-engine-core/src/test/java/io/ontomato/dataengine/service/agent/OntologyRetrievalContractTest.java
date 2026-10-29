@@ -159,6 +159,8 @@ class OntologyRetrievalContractTest {
     jobs = mock(QueryJobService.class);
     quality = mock(QueryQualityService.class);
     var definitions = new OntologyAgentDefinitions(runtime, new RuntimeCodeClient(runtime));
+    var bindings = mock(OntologyBindingRetrieval.class);
+    when(bindings.snapshot(any(),any(),any())).thenReturn(JSONObject.of("status","completed","error",null,"datasets",new JSONArray()));
     retrieval =
         new OntologyRetrievalService(
             store,
@@ -169,7 +171,7 @@ class OntologyRetrievalContractTest {
             mock(QueryOutputService.class),
             jobs,
             quality,
-            authorization);
+            authorization, bindings, new RetrievalResults(store));
     var host =
         new OntologyAgentHost(store, runtime, retrieval, mock(OntologyGenerationService.class), mock(KnowledgeGovernanceService.class));
     http =
@@ -233,7 +235,13 @@ class OntologyRetrievalContractTest {
     if (caller != null) request.header("X-Ontomato-Retrieval-Caller-Id", caller);
     var result = http.perform(request).andReturn();
     assertTrue(result.getResponse().getStatus() < 300, result.getResponse().getContentAsString());
-    return JSON.parseObject(result.getResponse().getContentAsString());
+    var response = JSON.parseObject(result.getResponse().getContentAsString());
+    if (response.containsKey("roundId")) {
+      String run = response.getString("roundId");
+      for (int attempt=0;attempt<200 && !store.run(response.getString("id"),run,owner).getBooleanValue("runtime_admitted");attempt++) Thread.sleep(10);
+      return retrieval.get(response.getString("id"),owner);
+    }
+    return response;
   }
 
   @Test
@@ -421,7 +429,7 @@ class OntologyRetrievalContractTest {
               "sessionId",
               retrievalId,
               "path",
-              "outputs/result.dataset.json"));
+              "outputs/result.dataset.json", "sha256", QueryOutputService.hash(AgentJson.json(files.get(artifact)))));
     var snapshot = retrieval.get(retrievalId, owner);
     assertEquals(List.of(repeat), snapshot.getList("datasetArtifactIds", String.class));
     assertEquals(dataset, retrieval.dataset(retrievalId, good, owner).getJSONObject("payload"));

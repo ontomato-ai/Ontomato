@@ -14,11 +14,14 @@ workbench `/api/retrievals` entirely.
 
 | Method/path | Shape / meaning |
 | --- | --- |
-| POST `/ontology/retrievals` | UUID Idempotency-Key; existing `RetrievalInput`; 202 `RetrievalSnapshot` |
-| GET `/ontology/retrievals/:id` | Current snapshot |
-| POST `/ontology/retrievals/:id/answers` | New UUID key; existing `retrievalAnswersSchema` (`expectedRunId`, `expectedDecisionRevision`, `message`); 202 snapshot |
+| POST `/ontology/retrievals` | UUID Idempotency-Key; existing `RetrievalInput`; 202 `RetrievalPoll` |
+| GET `/ontology/retrievals/:id` | Runtime activity snapshot plus independent binding state/results |
+| GET `/ontology/retrievals/:id/results?after=cursor` | `RetrievalPoll`: ordered incremental deliveries and pending branch status; no runtime HTTP read on this polling path |
+| POST `/ontology/retrievals/:id/retriever/cancel` | `{expectedRoundId}`; cancel only that current retriever, never binding work/results/QC |
+| POST `/ontology/retrievals/:id/answers` | New UUID key; existing `retrievalAnswersSchema` (`expectedRunId`, `expectedDecisionRevision`, `message`); 202 `RetrievalPoll` |
 | POST `/ontology/retrievals/:id/cancel` | `{}`; close business writes before cancelling active output/QC work and runtime intent/run |
-| GET `/ontology/retrievals/:id/datasets/:artifactId` | `{id,payload:DatasetPayload}` for an accepted immutable dataset, including historical rounds |
+| GET `/ontology/retrievals/:id/datasets/:datasetId` | `{id,payload:DatasetPayload}` for an accepted immutable dataset; host binding results also identify their source, hash and QC |
+| GET `/ontology/retrievals/:id/datasets/:datasetId/content` | Original accepted bytes, whether a real runtime artifact or a host output receipt |
 | GET `/ontology/retrievals/:id/runs/:runId/evidence` | `{input:RetrievalInput,snapshot:RetrievalSnapshot}` for that exact owned round; QC comes from its Java job |
 | DELETE `/ontology/retrievals/:id` | 204; active run 409. Delete the owned business record and runtime session through their owners |
 
@@ -38,6 +41,29 @@ Approved deadline (D3): optional integer `timeoutSeconds` from 1 through 600 on
 creation/continuation, snapshotted by Java, defaults to 600 seconds. A caller scope can shorten it.
 Workbench retains queryTimeoutSeconds for its parent and supplies the remaining
 deadline. Java does not read workbench configuration.
+
+## Concurrent delivery
+
+Fresh ask and explicit answered rounds launch the existing retriever and binding
+execution independently. Binding recall retains its current vector algorithm
+and error behavior; retriever context retains catalog lookup, never binding
+execution results. Existing retriever limits are unchanged. Binding jobs retain
+formal execution limits plus credential/caller expiry.
+
+A successful binding publishes one delivery immediately. No match or execution
+failure publishes nothing and cannot make ask return early. Retriever delivery
+uses its actual terminal messages and accepted artifacts. Results are ordered by
+an ontology cursor; wait reads only later deliveries without restarting work.
+Only the main agent chooses whether to cancel the retriever or wait. Whole-request
+or parent closure cancels both unfinished branches, retaining accepted outputs
+and their asynchronous QC.
+
+Binding outputs have their own write gate and formal execution receipt, not a
+synthetic runtime run/artifact. Runtime stops never close that gate. History and
+parent-file verification distinguish host output IDs from runtime artifact IDs.
+Only host-produced dataset reads allow selfCheck null; agent/external preparation
+contracts, metricUses and comparison instructions stay unchanged. Existing QC
+runs on accepted binding recipes through the same quality service.
 
 ## Formal files and external skills
 
