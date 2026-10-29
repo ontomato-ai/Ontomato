@@ -74,7 +74,7 @@ public class OntologyAgentAccess {
         request.getHeader("tk"),
         request.getHeader("X-API-Key"),
         request.getHeader("Accept-Language") == null ? "en" : request.getHeader("Accept-Language"),
-        identity.getCurrentCredentialExpiresAt(),
+        access.expiresAt(),
         caller == null ? null : AgentJson.id(caller));
   }
 
