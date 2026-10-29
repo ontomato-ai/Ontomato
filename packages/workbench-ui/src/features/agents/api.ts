@@ -1,3 +1,4 @@
+import { randomId } from "@ontomato/contracts/random-id";
 import {
   assistantAgentDefinitionListSchema,
   assistantSkillCatalogSchema,
@@ -32,7 +33,7 @@ export const agentDefinitionsApi = {
   },
   async create(input: AssistantAgentInput): Promise<AssistantAgentDefinition> {
     return assistantAgentDefinitionSchema.parse(
-      await nodeApiPost(base, input, { headers: { "Idempotency-Key": crypto.randomUUID() } }),
+      await nodeApiPost(base, input, { headers: { "Idempotency-Key": randomId() } }),
     );
   },
   async update(id: string, input: AssistantAgentInput): Promise<AssistantAgentDefinition> {

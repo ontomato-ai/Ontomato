@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { randomId } from "@ontomato/contracts/random-id";
 import { computed, provide, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { useI18n } from "vue-i18n";
@@ -36,8 +37,8 @@ const starting = ref(false);
 async function startDiagnosis(target: DiagnosisTarget, fromRoute = false) {
   if (starting.value) return false;
   starting.value = true;
-  const session = fromRoute && typeof route.query.diagnosisSessionId === "string" ? route.query.diagnosisSessionId : crypto.randomUUID();
-  const run = fromRoute && typeof route.query.diagnosisRunId === "string" ? route.query.diagnosisRunId : crypto.randomUUID();
+  const session = fromRoute && typeof route.query.diagnosisSessionId === "string" ? route.query.diagnosisSessionId : randomId();
+  const run = fromRoute && typeof route.query.diagnosisRunId === "string" ? route.query.diagnosisRunId : randomId();
   const returnTo = route.path === "/observe/diagnosis" ? undefined : route.fullPath.split("?")[0];
   try {
     if (fromRoute) await router.replace({ path: route.path, query: { ...route.query, diagnosisSessionId: session, diagnosisRunId: run } });

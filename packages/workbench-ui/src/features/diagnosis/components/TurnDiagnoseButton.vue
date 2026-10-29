@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { randomId } from "@ontomato/contracts/random-id";
 /**
  * Diagnosis entry of a turn: shown once the reply has finished and its Turn is known;
  * opens that Turn's diagnosis page in a new tab. Who may see it is assembled by the app
@@ -32,7 +33,7 @@ onMounted(() => access.prepare());
 
 function openDiagnosis() {
   const target = router.resolve(props.sessionId && props.runId
-    ? { path: "/observe/diagnosis", query: { sourceSessionId: props.sessionId, sourceRunId: props.runId, diagnose: "1", diagnosisSessionId: crypto.randomUUID(), diagnosisRunId: crypto.randomUUID() } }
+    ? { path: "/observe/diagnosis", query: { sourceSessionId: props.sessionId, sourceRunId: props.runId, diagnose: "1", diagnosisSessionId: randomId(), diagnosisRunId: randomId() } }
     : buildTurnDiagnoseRoute(turnKey.value));
   window.open(target.href, "_blank", "noopener,noreferrer");
 }

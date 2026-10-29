@@ -1,3 +1,4 @@
+import { randomId } from "@ontomato/contracts/random-id";
 import type { RouteLocationRaw } from "vue-router";
 
 export const TURN_COLLECT_QUERY_VALUE = "1";
@@ -25,8 +26,8 @@ export function buildTurnDiagnoseRoute(turnKey: string): RouteLocationRaw {
     name: "ObserveTurnDetail",
     params: { turnKey },
     query: {
-      diagnosisSessionId: crypto.randomUUID(),
-      diagnosisRunId: crypto.randomUUID(),
+      diagnosisSessionId: randomId(),
+      diagnosisRunId: randomId(),
       collect: TURN_COLLECT_QUERY_VALUE,
       diagnose: TURN_DIAGNOSE_QUERY_VALUE,
     },

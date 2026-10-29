@@ -1,3 +1,4 @@
+import { randomId } from "@ontomato/contracts/random-id";
 import type {
   AgentHostAgent,
   AgentHostAgentList,
@@ -69,7 +70,7 @@ export function createAgentHostClient(options: AgentHostClientOptions): AgentHos
     method,
     headers: {
       "Content-Type": "application/json",
-      ...(idempotent ? { "Idempotency-Key": crypto.randomUUID() } : {}),
+      ...(idempotent ? { "Idempotency-Key": randomId() } : {}),
     },
     body: JSON.stringify(body),
   });
