@@ -13,7 +13,15 @@ buildManagerImage(
     workspaceId: "ontomato",
     appImporter: "apps/ontology-manager",
     sources: [{ id: "ontomato", root: repoRoot }],
-    owners: { ontomato: ["apps/ontology-manager", "packages/ontology-manager"] },
+    // Knowledge governance renders through the shared agent shell, which reads runtime contracts.
+    owners: {
+      ontomato: [
+        "apps/ontology-manager",
+        "packages/ontology-manager",
+        "packages/agent-shell-ui",
+        "packages/contracts",
+      ],
+    },
   },
   process.argv.slice(2),
 ).catch((error) => {
