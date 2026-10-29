@@ -338,12 +338,25 @@ public class GenerationOperations {
   public static String testDigest(String kind, String code, JSONArray parameters) {
     return AgentJson.hash(
         JSONObject.of(
-            "kind",
-            kind,
-            "code",
-            code,
-            "parameterDefs",
-            parameters == null ? new JSONArray() : parameters));
+            "kind", kind, "code", code, "parameterDefs", executedParameters(kind, parameters)));
+  }
+
+  /**
+   * A receipt binds only the executed input: the parameter name (or dashboard key), type and value.
+   * Descriptive fields such as description or sample never require another business test.
+   */
+  private static JSONArray executedParameters(String kind, JSONArray parameters) {
+    var executed = new JSONArray();
+    if (parameters == null) return executed;
+    boolean dashboard = kind.equals("dashboard");
+    for (int i = 0; i < parameters.size(); i++) {
+      JSONObject parameter = parameters.getJSONObject(i), kept = new JSONObject();
+      kept.put(dashboard ? "key" : "name", parameter.get(dashboard ? "key" : "name"));
+      kept.put("type", parameter.get("type"));
+      kept.put("value", parameter.get("value"));
+      executed.add(kept);
+    }
+    return executed;
   }
 
   @SuppressWarnings("unchecked")
@@ -427,14 +440,13 @@ public class GenerationOperations {
   }
 
   public void requireTest(String run, String kind, String code, JSONArray parameters) {
-    var test =
-        store
-            .one(
-                "SELECT result FROM ontology_generation_tests WHERE run_id=? AND digest=? ORDER BY"
-                    + " created_at DESC,execution_id DESC LIMIT 1",
-                uuid(run),
-                testDigest(kind, code, parameters))
-            .getJSONObject("result");
+    var tests =
+        store.rows(
+            "SELECT result FROM ontology_generation_tests WHERE run_id=? AND digest=? ORDER BY"
+                + " created_at DESC,execution_id DESC LIMIT 1",
+            uuid(run),
+            testDigest(kind, code, parameters));
+    var test = tests.isEmpty() ? null : tests.get(0).getJSONObject("result");
     if (test == null || (test.getString("error") != null && !test.getString("error").isBlank()))
       throw AgentHttpException.invalid("The exact source and parameters must pass a business test");
   }

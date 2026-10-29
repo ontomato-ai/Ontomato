@@ -239,6 +239,48 @@ class OntologyGenerationContractTest {
   }
 
   @Test
+  void descriptionChangesDoNotInvalidateTheBusinessTestReceipt() throws Exception {
+    var ids = generation.open("function", UUID.randomUUID().toString(), null, owner, true);
+    String run = ids.getString("runId");
+    operations.test(
+        run,
+        owner,
+        JSONObject.of(
+            "code",
+            source,
+            "parameterDefs",
+            JSONArray.of(
+                JSONObject.of(
+                    "name", "limit", "type", "TYPE_NUMBER", "value", 10, "description", "size"))));
+    var described =
+        JSONObject.of(
+            "name", "limit", "type", "TYPE_NUMBER", "value", 10, "description", "maximum size");
+    assertDoesNotThrow(
+        () -> operations.requireTest(run, "function", source, JSONArray.of(described)));
+    var changedValue =
+        JSONObject.of(
+            "name", "limit", "type", "TYPE_NUMBER", "value", 20, "description", "size");
+    assertThrows(
+        AgentHttpException.class,
+        () -> operations.requireTest(run, "function", source, JSONArray.of(changedValue)));
+    var changedType =
+        JSONObject.of(
+            "name", "limit", "type", "TYPE_STRING", "value", 10, "description", "size");
+    assertThrows(
+        AgentHttpException.class,
+        () -> operations.requireTest(run, "function", source, JSONArray.of(changedType)));
+    var missing =
+        assertThrows(
+            AgentHttpException.class,
+            () ->
+                operations.requireTest(
+                    run, "function", source + "# untested", JSONArray.of(described)));
+    assertEquals(400, missing.status());
+    assertTrue(missing.getMessage().contains("business test"));
+    generation.close(ids.getString("sessionId"), run, owner);
+  }
+
+  @Test
   void generationCredentialCannotBecomeUserOrQueryAuthorization() {
     String run = UUID.randomUUID().toString();
     String token =

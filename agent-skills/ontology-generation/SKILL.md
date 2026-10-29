@@ -12,7 +12,7 @@ Run `node <this-skill>/scripts/generation.mjs <command> [arguments]`. Runtime su
 | Command | Use |
 | --- | --- |
 | `source [startLine [endLine]]` | Read the exact Action source to explain; line numbers start at 1. |
-| `test program.py parameters.json` | Business test the exact source bytes and parameter definitions. The JSON file is an array (use `[]` for no parameters). Read operations cannot acquire a write sandbox. |
+| `test outputs/program.py parameters.json` | Business test the exact source bytes and parameter definitions. The JSON file is an array (use `[]` for no parameters). Read operations cannot acquire a write sandbox. |
 | `prepare data.json` | Validate Action sandbox fixture `{objDatas,relDatas,vectorDatas}`; object groups contain className and rows, relationships contain relationName/sourceObjId/targetObjId. |
 | `reset` | Clear the Action sandbox and import the prepared fixture. Repeat before independent Action tests. |
 | `query dsl.json` | Query the Action sandbox to verify side effects. |
@@ -23,7 +23,7 @@ Never put credentials, identity, URLs, local paths or transport parameters in ge
 
 ## Delivery
 
-Write **one JSON object** to `outputs/result.json`, with the following fields for the current kind. No JSON fences or XML wrappers. This file replaces any earlier instructions about submitting tools or replying with code/labels. There are no submit tools. A sourcePath is a workspace-relative Python file, tested with these exact parameter definitions after its last modification. The host validates the file from this run, not an inherited artifact or a model claim about a test.
+Write **one JSON object** to `outputs/result.json`, with the following fields for the current kind. No JSON fences or XML wrappers. This file replaces any earlier instructions about submitting tools or replying with code/labels. There are no submit tools. A sourcePath is the tested file's path under `outputs/` (for example `outputs/program.py`); write every delivered program there, because only `outputs/` is published. Test that exact file with these exact parameter definitions after its last modification. The host validates the file from this run, not an inherited artifact or a model claim about a test.
 
 | Kind | Result fields |
 | --- | --- |

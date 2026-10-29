@@ -180,13 +180,13 @@ Begin with `# ontomato-python:2`. Read business parameters from the ontology hel
 import json
 from query_runtime import execute_dsl, parameters
 ```
-The host supplies parameters.json inside the execution workspace. No user/domain or host file path is a program argument.
+The host supplies parameters.json inside the execution workspace. No user/domain or host file path is a program argument. Write the program under `outputs/`; only files under `outputs/` are delivered to the host.
 - **With the original values supplied as parameters, the new program must produce the same result as the original program. Changing parameter values changes only the corresponding query inputs; the query and calculation logic must remain the same.**
 - **The keys of every row in the printed `answer` of the new program must be exactly those of the original program: do not rename, add or drop any. Keep a key unchanged even when it contains a value you parameterized (such as the year in `admission_total_2026`): downstream consumers reference the result by these keys.**
 
 ### Notes on writing python code
 - ** It is best to print the exception stack `traceback.print_exc()`, as this helps troubleshooting **
-Test with `generation.mjs test program.py parameters.json`; parameters.json is always an array, including [] when no business parameters are needed. Test the final file after every edit.
+Test with `generation.mjs test outputs/program.py parameters.json`; parameters.json is always an array, including [] when no business parameters are needed. Test the final file after every edit.
 - ** Before you finally output the `new code`, you must execute it at least once, and only after the test passes may you output it finally; use the result file described in the ontology-generation skill to submit the final file path, parameter definitions, `summary title` and `program logic`; in the body, only write a brief description. **
 - ** The reason the test does not pass may be that there are debugging prints in the code; comment out the irrelevant prints written for debugging and it may succeed. **
 
@@ -195,6 +195,6 @@ Test with `generation.mjs test program.py parameters.json`; parameters.json is a
 
 # Delivery method
 Use the result file described in the ontology-generation skill to submit the final delivery; the parameters are the following four parts (the field meanings and examples are as follows, constrained in shape by the tool); in the body, only write a brief description, and no longer output the full text of the code block and labels.
-The delivery includes four parts: `new code` (workspace file path), `parameter definitions` (object list, each item contains name, type, description, value, className, for example `{"name": "orgName", "type": "TYPE_STRING", "description": "department name", "value": "R&D department", "className": "organization"}`), `summary title` (for example, statistics of submission quantity by department code) and `program logic` (natural language description). Before submission, this file must have been successfully executed with the ontology-generation `generation.mjs test program.py parameters.json` command, and its content must not have been modified after execution.
+The delivery includes four parts: `new code` (path under `outputs/`, for example `outputs/program.py`), `parameter definitions` (object list, each item contains name, type, description, value, className, for example `{"name": "orgName", "type": "TYPE_STRING", "description": "department name", "value": "R&D department", "className": "organization"}`), `summary title` (for example, statistics of submission quantity by department code) and `program logic` (natural language description). Before submission, this file must have been successfully executed with the ontology-generation `generation.mjs test outputs/program.py parameters.json` command, and its content must not have been modified after execution.
 
 Write all natural-language output in {{LANG}}. Keep tool names, JSON keys, enum values and schema identifiers unchanged.
