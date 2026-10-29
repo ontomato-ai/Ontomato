@@ -55,6 +55,7 @@ export const app = {
         "agent-skills/ontomato-analyst",
         "agent-skills/data-retrieval",
         "agent-skills/ontology-generation",
+        "agent-skills/knowledge-governance",
         "packages/contracts/src/agent-artifact-markdown-prompt.json",
         "packages/contracts/src/service-logging-format.json",
         "packages/data-engine-core/src/main",
