@@ -13,6 +13,8 @@ describe("workspace route helpers", () => {
       name: "ObserveTurnDetail",
       params: { turnKey: "turn.thread.1" },
       query: {
+        diagnosisSessionId: expect.any(String),
+        diagnosisRunId: expect.any(String),
         collect: TURN_COLLECT_QUERY_VALUE,
         diagnose: TURN_DIAGNOSE_QUERY_VALUE,
       },

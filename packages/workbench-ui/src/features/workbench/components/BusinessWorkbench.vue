@@ -5,7 +5,6 @@ import { useI18n } from "vue-i18n";
 import {
   AgentShell,
   type ShellFeatureDeclaration,
-  type ShellLabels,
   type ShellWorkbenchDeclaration,
 } from "@ontomato/agent-shell-ui";
 import "@ontomato/agent-shell-ui/style.css";
@@ -16,6 +15,8 @@ import { useDashboardStore } from "../../dashboard/stores/dashboard";
 import { getWorkbenchAppearance } from "../api";
 import { nativeEchartsTheme } from "../../dashboard/components/utils/echartsTheme";
 import { createAssistantClient, createAssistantFeedback } from "../assistant-host";
+import { useShellLabels } from "../../../composables/useShellLabels";
+import TurnDiagnoseButton from "../../diagnosis/components/TurnDiagnoseButton.vue";
 import ConversationActions from "./ConversationActions.vue";
 import DatasetActions from "./DatasetActions.vue";
 import WorkbenchAppearanceDialog from "./WorkbenchAppearanceDialog.vue";
@@ -82,55 +83,7 @@ const workbench = computed<ShellWorkbenchDeclaration>(() => ({
   ],
 }));
 
-const labels = computed<ShellLabels>(() => ({
-  newConversation: t("assistant.newConversation"),
-  agent: t("assistant.agent"),
-  sessions: t("assistant.sessions"),
-  noSessions: t("assistant.noSessions"),
-  more: t("assistant.more"),
-  loadFailed: t("assistant.loadFailed"),
-  retry: t("assistant.retry"),
-  deleteSession: t("assistant.deleteSession"),
-  deleteConfirm: t("assistant.deleteConfirm"),
-  unavailable: t("assistant.unavailable"),
-  placeholder: t("assistant.placeholder"),
-  send: t("assistant.send"),
-  stop: t("assistant.stop"),
-  greeting: t("assistant.greeting"),
-  steps: (count) => t("assistant.steps", { n: count }, count),
-  thinking: t("assistant.thinking"),
-  working: t("assistant.working"),
-  toolInput: t("assistant.toolInput"),
-  toolOutput: t("assistant.toolOutput"),
-  stopped: t("assistant.stopped"),
-  truncated: t("assistant.truncated"),
-  failed: t("assistant.failed"),
-  copy: t("assistant.copy"),
-  copied: t("assistant.copied"),
-  like: t("assistant.like"),
-  dislike: t("assistant.dislike"),
-  feedbackReason: t("assistant.feedbackReason"),
-  submit: t("assistant.submit"),
-  cancel: t("assistant.cancel"),
-  open: t("assistant.open"),
-  download: t("assistant.download"),
-  close: t("assistant.close"),
-  preparing: t("assistant.preparing"),
-  artifactMissing: t("assistant.artifactMissing"),
-  menu: t("assistant.menu"),
-  scrollToBottom: t("assistant.scrollToBottom"),
-  loading: t("assistant.loading"),
-  rows: (count) => t("assistant.rows", { n: count }, count),
-  emptyFile: t("assistant.emptyFile"),
-  invalidChart: t("assistant.invalidChart"),
-  previousPage: t("assistant.previousPage"),
-  nextPage: t("assistant.nextPage"),
-  toolRead: t("assistant.toolRead"),
-  toolWrite: t("assistant.toolWrite"),
-  toolEdit: t("assistant.toolEdit"),
-  toolBash: t("assistant.toolBash"),
-  toolSkill: t("assistant.toolSkill"),
-}));
+const labels = useShellLabels();
 
 const logo = computed(() => appearance.value?.brand.logo || props.defaultLogo);
 
@@ -188,7 +141,8 @@ function appearanceSaved(value: WorkbenchAppearance) {
     <template #artifact-actions="{ artifact }">
       <DatasetActions :artifact="artifact" @open-dashboard="openDashboard" />
     </template>
-    <template #message-actions="{ sessionId }">
+    <template #message-actions="{ sessionId, runId }">
+      <TurnDiagnoseButton v-if="sessionId && runId" :session-id="sessionId" :run-id="runId" />
       <ConversationActions v-if="sessionId" :session-id="sessionId" />
     </template>
     <template #footer>

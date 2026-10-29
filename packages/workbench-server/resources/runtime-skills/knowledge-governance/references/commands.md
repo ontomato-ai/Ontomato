@@ -8,8 +8,7 @@ Every command accepts one JSON object (inline JSON or @file) and prints JSON.
 | read-ontology | Same pagination as read-knowledge |
 | search-history | query?, offset?, limit? (1–20); start with {} |
 | read-history | threadId, offset?, maxChars? (1000–20000) |
-| collect-turn-artifacts | turnKey returned by read-history |
-| read-evidence | turnKey, path?, offset?, maxChars?; omit path to list |
+| read-evidence | turnKey, offset?, maxChars?; reads runtime evidence without collecting files |
 | read-work-record | Same pagination as read-knowledge |
 | update-work-record | Optional summary, notes, reviewedKnowledgeIds, issues |
 

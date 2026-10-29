@@ -50,10 +50,10 @@ describe.skipIf(!connection)(
       ["read_ontology", {}],
       ["search_history", { query: "Sales" }],
       ["read_history", { threadId: "fixture-history" }],
-      ["collect_turn_artifacts", { turnKey: "turn.fixture-history.0" }],
+      ["read_evidence", { turnKey: "turn.fixture-history.0" }],
       [
         "read_evidence",
-        { turnKey: "turn.fixture-history.0", path: "manifest.json" },
+        { turnKey: "turn.fixture-history.0", offset: 12000 },
       ],
       ["read_work_record", {}],
       [

@@ -108,7 +108,6 @@ export const governanceRuntimeToolNameSchema = z.enum([
   "update_work_record",
   "read_knowledge",
   "read_ontology",
-  "collect_turn_artifacts",
 ]);
 
 /** Taken from the skill environment, never from the model's tool arguments. */

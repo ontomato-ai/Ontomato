@@ -5,8 +5,11 @@ import { workbenchIdentity } from "../../identity/installed";
 import { workbenchProduct } from "../../product/installed";
 import { createLogger } from "../../logging/logger";
 import { tApp } from "../../i18n";
-import { diagnosisManager } from "../../platform/diagnosis/observe/agent/pi-agent";
-import type { SessionResponseStream } from "../../utils/response-stream";
+import { randomUUID } from "node:crypto";
+import { createDiagnosis, diagnosisService } from "../../services/ops-diagnosis/service";
+import type { AgentHostOwner } from "../../services/agent-host/types";
+import { messageText } from "../../platform/agent-runtime/runtime";
+import { HttpError } from "../../utils/errors";
 import {
   catalogRequest,
   createStreamableMcpRouter,
@@ -18,62 +21,19 @@ import {
 export const OPS_AGENT_MCP_TIMEOUT_MS = 50_000;
 const logger = createLogger("api:ops-agent-mcp");
 
-async function waitForTurnResult(
-  sessionId: string,
-  stream: SessionResponseStream,
-  timeoutMs: number
-) {
-  const terminal = await waitForStreamTerminal(stream, timeoutMs);
-  if (!terminal.finished) {
-    return { status: "running" as const, sessionId };
+async function waitForTurnResult(sessionId: string, owner: AgentHostOwner, timeoutMs: number) {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    const history = await diagnosisService.snapshot(sessionId, owner), run = history.latestRun;
+    if (!run) return { status: "completed" as const, sessionId, answer: "" };
+    if (run.run.status === "stopped") {
+      if (run.run.stopReason === "error" || run.run.stopReason === "aborted") return { status: "failed" as const, sessionId, error: run.run.errorMessage || "Diagnosis stopped" };
+      const last = [...run.messages].reverse().find((m) => m.message.role === "assistant");
+      return { status: "completed" as const, sessionId, answer: last ? messageText(last.message) : "" };
+    }
+    if (Date.now() >= deadline) return { status: "running" as const, sessionId };
+    await new Promise((resolve) => setTimeout(resolve, Math.min(250, Math.max(0, deadline - Date.now()))));
   }
-  if (terminal.error || stream.status === "failed" || stream.status === "cancelled") {
-    return {
-      status: "failed" as const,
-      sessionId,
-      error:
-        terminal.error ||
-        (stream.status === "cancelled"
-          ? tApp("diag.observe.agent.mcp.error.cancelled")
-          : tApp("diag.observe.agent.mcp.error.failed")),
-    };
-  }
-  const history = await diagnosisManager.getSessionHistory(sessionId);
-  // Session exists because startChat/subscribe succeeded.
-  // Assistant message may be absent if the model turn completed without emitting text.
-  const lastAssistant = history ? history.messages.filter((m) => m.role === "assistant").pop() : undefined;
-  const answer = lastAssistant ? lastAssistant.content : "";
-  return { status: "completed" as const, sessionId, answer };
-}
-
-function waitForStreamTerminal(
-  stream: SessionResponseStream,
-  timeoutMs: number
-): Promise<{ finished: boolean; error?: string }> {
-  return new Promise((resolve) => {
-    let settled = false;
-    let unsubscribe: (() => void) | null = null;
-
-    const onFinish = (result: { finished: boolean; error?: string }) => {
-      if (settled) return;
-      settled = true;
-      clearTimeout(timer);
-      if (unsubscribe) unsubscribe();
-      resolve(result);
-    };
-
-    const timer = setTimeout(() => {
-      onFinish({ finished: false });
-    }, timeoutMs);
-
-    unsubscribe = stream.subscribe(0, (buffered) => {
-      if (buffered.terminal) {
-        const error = buffered.event.type === "error" ? buffered.event.error : undefined;
-        onFinish({ finished: true, error });
-        return false;
-      }
-    });
-  });
 }
 
 export function createOpsAgentMcpServer(
@@ -100,67 +60,18 @@ export function createOpsAgentMcpServer(
           const trimmedSessionId = sessionId?.trim();
           const trimmedMessage = message?.trim();
 
-          if (trimmedMessage) {
+          try {
             let targetSessionId = trimmedSessionId;
-            if (!targetSessionId) {
-              const session = await diagnosisManager.createSession({});
-              targetSessionId = session.id;
+            if (trimmedMessage) {
+              if (!targetSessionId) targetSessionId = (await createDiagnosis(randomUUID(), identity)).session.id;
+              await diagnosisService.start(targetSessionId, randomUUID(), trimmedMessage, identity, identity);
             }
-            const started = await diagnosisManager.startChat(
-              targetSessionId,
-              trimmedMessage,
-              {
-                domainId: identity.domainId,
-                token: identity.token,
-                apiKey: identity.apiKey,
-              }
-            );
-            if (!started.ok) {
-              return textJson({
-                success: false,
-                code: started.code,
-                error: started.error,
-              });
-            }
-            return textJson(await waitForTurnResult(targetSessionId, started.stream, timeoutMs));
+            if (!targetSessionId) return textJson({ success: false, code: "INVALID_CHAT_INPUT", error: tApp("diag.observe.agent.mcp.error.messageRequired") });
+            return textJson(await waitForTurnResult(targetSessionId, identity, timeoutMs));
+          } catch (error) {
+            const code = error instanceof HttpError ? error.status === 404 ? "SESSION_NOT_FOUND" : error.code === "SESSION_BUSY" ? "RESPONSE_BUSY" : error.code ?? "DEPENDENCY_UNAVAILABLE" : "DEPENDENCY_UNAVAILABLE";
+            return textJson({ success: false, code, error: error instanceof HttpError ? error.message : "Diagnosis service is unavailable" });
           }
-
-          if (!trimmedSessionId) {
-            return textJson({
-              success: false,
-              code: "INVALID_CHAT_INPUT",
-              error: tApp("diag.observe.agent.mcp.error.messageRequired"),
-            });
-          }
-
-          const stream = diagnosisManager.getResponseStream(trimmedSessionId);
-          if (stream) {
-            return textJson(await waitForTurnResult(trimmedSessionId, stream, timeoutMs));
-          }
-
-          const history = await diagnosisManager.getSessionHistory(trimmedSessionId);
-          if (!history) {
-            return textJson({
-              success: false,
-              code: "SESSION_NOT_FOUND",
-              error: tApp("diag.observe.agent.mcp.error.sessionNotFound", { p0: trimmedSessionId }),
-            });
-          }
-
-          if (history.responseStatus === "failed") {
-            return textJson({
-              status: "failed",
-              sessionId: trimmedSessionId,
-              error: tApp("diag.observe.agent.mcp.error.failed"),
-            });
-          }
-          if (history.responseStatus === "running") {
-            return textJson({ status: "running", sessionId: trimmedSessionId });
-          }
-          // Assistant message may be absent if the completed turn produced no assistant message.
-          const lastAssistant = history.messages.filter((m) => m.role === "assistant").pop();
-          const answer = lastAssistant ? lastAssistant.content : "";
-          return textJson({ status: "completed", sessionId: trimmedSessionId, answer });
         },
         {
           authorize: (caller) => workbenchIdentity().assertObserveAccess(caller),

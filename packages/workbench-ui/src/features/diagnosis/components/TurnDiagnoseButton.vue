@@ -16,7 +16,7 @@ import {
 } from "../utils/workspace-route";
 import { turnDiagnosisAccessKey } from "../access";
 
-const props = defineProps<{ turn: TurnIdentity }>();
+const props = defineProps<{ turn?: TurnIdentity; sessionId?: string; runId?: string }>();
 
 const router = useRouter();
 const { t } = useI18n();
@@ -25,20 +25,22 @@ const access = inject(turnDiagnosisAccessKey);
 if (!access) throw new Error("Turn diagnosis access is not provided");
 
 const turnKey = computed(() =>
-  props.turn.status === "streaming" ? "" : snapshotTurnKey(props.turn)
+  props.turn?.status === "streaming" ? "" : props.turn ? snapshotTurnKey(props.turn) : ""
 );
 
 onMounted(() => access.prepare());
 
 function openDiagnosis() {
-  const target = router.resolve(buildTurnDiagnoseRoute(turnKey.value));
+  const target = router.resolve(props.sessionId && props.runId
+    ? { path: "/observe/diagnosis", query: { sourceSessionId: props.sessionId, sourceRunId: props.runId, diagnose: "1", diagnosisSessionId: crypto.randomUUID(), diagnosisRunId: crypto.randomUUID() } }
+    : buildTurnDiagnoseRoute(turnKey.value));
   window.open(target.href, "_blank", "noopener,noreferrer");
 }
 </script>
 
 <template>
   <button
-    v-if="turnKey && access.visible()"
+    v-if="(turnKey || (sessionId && runId)) && access.visible()"
     type="button"
     :title="t('chat.diagnoseTurn')"
     :aria-label="t('chat.diagnoseTurn')"

@@ -1,3 +1,4 @@
+import type { DiagnosisEvidence } from "./ops-diagnosis";
 import type { BranchKey } from "./query-thinking";
 
 export type ParsedLogSource = "data-agent" | "ontomato" | "agent-runtime" | "backend";
@@ -70,7 +71,7 @@ export interface WorkspacePostProcessSummary {
   severity: PostProcessSeverity;
   message: string;
   warningCount: number;
-  errorCount: number;
+  errorCount?: number;
 }
 
 export type WorkspaceStatus = "collecting" | "completed" | "failed";
@@ -131,6 +132,7 @@ export interface WorkspaceBackendSessionEvidence {
 }
 
 export interface WorkspaceManifest {
+  evidence?: DiagnosisEvidence;
   domainId?: string;
   workspaceId: string;
   /** Standard question Turn identity exposed to observe users. */
@@ -144,11 +146,11 @@ export interface WorkspaceManifest {
   /** Origin of this workspace. */
   source?: WorkspaceSource;
   /** Summary counts for quick display. */
-  appLogCount: number;
-  llmCallCount: number;
-  backendLogCount: number;
+  appLogCount?: number;
+  llmCallCount?: number;
+  backendLogCount?: number;
   backendDiagnosticEventCount?: number;
-  errorCount: number;
+  errorCount?: number;
   /** Duration in milliseconds (if available from autotest). */
   durationMs?: number;
   /** Linked autotest run ID (if source is autotest). */
@@ -226,7 +228,7 @@ export interface LogSourceProbeResult {
 }
 
 export interface LogParseResult {
-  appLogCount: number;
+  appLogCount?: number;
   llmLogCount: number;
 }
 

@@ -1,3 +1,4 @@
+import { lockSessionClaim, assertUnclaimedSession } from "../agent-host/session-claim";
 import { randomUUID, createHash } from "node:crypto";
 import type pg from "pg";
 import {
@@ -124,12 +125,14 @@ export const assistantStore = {
     return r.rows[0];
   },
   async create(id: string, owner: AssistantOwner, agentId: string) {
-    const existing = await db().query(
+    return transaction(async (tx) => {
+    await lockSessionClaim(tx, id);
+    const existing = await tx.query(
       `SELECT id FROM ${table("assistant_sessions")} WHERE id=$1`,
       [id],
     );
     if (existing.rowCount) {
-      const row = await this.session(id, owner);
+      const row = await this.session(id, owner, tx);
       if (row.agent_id !== agentId)
         throw new HttpError(
           409,
@@ -138,14 +141,15 @@ export const assistantStore = {
         );
       return { row, replayed: true };
     }
+    await assertUnclaimedSession(tx, id, owner);
     const a = await this.agent(agentId, owner);
     if (!a.enabled)
       throw new HttpError(409, "Agent disabled", "AGENT_DISABLED");
-    const r = await db().query(
+    const r = await tx.query(
       `INSERT INTO ${table("assistant_sessions")} (id,domain_id,owner_id,agent_id) VALUES($1,$2,$3,$4) ON CONFLICT DO NOTHING`,
       [id, owner.domainId, owner.userId, agentId],
     );
-    const row = await this.session(id, owner);
+    const row = await this.session(id, owner, tx);
     if (row.agent_id !== agentId)
       throw new HttpError(
         409,
@@ -153,6 +157,7 @@ export const assistantStore = {
         "IDEMPOTENCY_CONFLICT",
       );
     return { row, replayed: !r.rowCount };
+    });
   },
   async turn(id: string, owner: AssistantOwner): Promise<TurnRow> {
     const r = await db().query(

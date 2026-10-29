@@ -44,7 +44,7 @@ const agents = ref<AgentHostAgent[]>([]);
 const sessions = ref<AgentHostSession[]>([]);
 const sessionsState = ref<"loading" | "ready" | "error">("loading");
 const nextCursor = ref<string | null>(null);
-const sessionId = ref<string | null>(null);
+const sessionId = defineModel<string | null>("sessionId", { default: null });
 const openArtifact = ref<OpenArtifact | null>(null);
 const navOpen = ref(false);
 let sessionsLoad = 0;
@@ -110,7 +110,7 @@ function startNew() {
   sessionId.value = null;
   openArtifact.value = null;
   navOpen.value = false;
-  void conversation.open(null);
+
 }
 
 function selectSession(id: string) {
@@ -119,8 +119,13 @@ function selectSession(id: string) {
   if (id === sessionId.value) return;
   sessionId.value = id;
   openArtifact.value = null;
-  void conversation.open(id);
+
 }
+
+watch(sessionId, (id) => {
+  openArtifact.value = null;
+  void conversation.open(id);
+}, { immediate: true });
 
 function selectFeature(id: string) {
   featureId.value = id;
@@ -170,7 +175,7 @@ watch(
 watch(agentId, (_, previous) => {
   sessions.value = [];
   nextCursor.value = null;
-  if (previous !== null || sessionId.value !== null) startNew();
+  if (previous !== null) startNew();
   void loadSessions();
 });
 
