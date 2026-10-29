@@ -7,11 +7,11 @@ model-call records and audit records keep their existing owners and semantics.
 
 ## One event, three outputs
 
-[service-logging-format.json](service-logging-format.json) is the shared definition
+[service-logging-format.json](src/service-logging-format.json) is the shared definition
 of field order, spelling, enums, limits and approved defaults. Both Node services
 load it; Maven packages that same resource for Java. Do not hand-copy its field
 lists or maintain a second Java pattern. The prose below defines its semantics;
-the [fixtures](service-logging-fixtures.json) are common cross-language examples.
+the [fixtures](src/service-logging-fixtures.json) are common cross-language examples.
 
 Create an event UUID and millisecond UTC timestamp once, capture context, normalize
 and bound the event, then fan out to stdout, file and PG. The first two receive

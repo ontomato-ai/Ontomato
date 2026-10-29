@@ -1,5 +1,5 @@
 import { z } from "zod";
-import definition from "../service-logging-format.json";
+import definition from "./service-logging-format.json";
 
 export const serviceLogFormat = definition;
 const enumeration = (values: string[]) => z.enum(values as [string, ...string[]]);
