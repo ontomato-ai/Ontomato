@@ -11,7 +11,7 @@ import { withServiceLogContext, getServiceLogContext, logHeaders } from "../cont
 import { normalizeLogQuery } from "../postgres";
 import { createServiceLogging } from "../index";
 
-const fixtures = JSON.parse(readFileSync(new URL("../../../contracts/service-logging-fixtures.json", import.meta.url), "utf8"));
+const fixtures = JSON.parse(readFileSync(new URL("../../../contracts/src/service-logging-fixtures.json", import.meta.url), "utf8"));
 describe("shared Java/Node service logging contract", () => {
   it("writes identical single-line bytes to Winston stdout and the rotating file", () => {
     const directory = mkdtempSync(path.join(tmpdir(), "service-log-contract-"));
