@@ -44,15 +44,6 @@ public class QueryQualityService {
           checks.saveCheckTask(check);
           checks.check(
               check, programs, body.getList("classNames", String.class), user.getDomainId());
-          long deadline = System.currentTimeMillis() + 60000;
-          while (!Boolean.TRUE.equals(check.getFinished())) {
-            if (System.currentTimeMillis() > deadline)
-              throw new IllegalStateException("Quality check timed out");
-            if (BackendSessionEntrance.isCancelled(sessionId))
-              throw new SessionCancelledException(id);
-            Thread.sleep(100);
-            check = checks.queryBySessionId(sessionId);
-          }
           return check;
         });
   }

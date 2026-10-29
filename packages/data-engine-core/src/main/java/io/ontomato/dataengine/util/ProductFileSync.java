@@ -13,8 +13,7 @@ public final class ProductFileSync {
     private ProductFileSync() {}
 
     public static void syncFromEnvironment() throws IOException {
-        sync(Path.of(requiredEnvironment("ONTOMATO_CONF_DEFAULTS")),
-                Path.of(requiredEnvironment("ONTOMATO_APP_SKILLS")), Path.of("."));
+    sync(Path.of(requiredEnvironment("ONTOMATO_CONF_DEFAULTS")), Path.of("."));
     }
 
     private static String requiredEnvironment(String name) {
@@ -25,10 +24,9 @@ public final class ProductFileSync {
         return value;
     }
 
-    public static void sync(Path confDefaults, Path appSkills, Path dataRoot) throws IOException {
+  public static void sync(Path confDefaults, Path dataRoot) throws IOException {
         Path conf = dataRoot.resolve("conf");
-        Path skills = dataRoot.resolve("skills");
-        for (String name : new String[] {"conf", "skills", "logs", "python"}) {
+    for (String name : new String[] {"conf", "logs", "python"}) {
             Files.createDirectories(dataRoot.resolve(name));
         }
         try (var entries = Files.list(confDefaults)) {
@@ -46,6 +44,11 @@ public final class ProductFileSync {
             }
         }
 
+    System.out.println(
+        "[sync] Product defaults synced into "
+            + dataRoot.toAbsolutePath().normalize()
+            + " (overwrite same names, add new files, keep extras; site configuration only added"
+            + " when missing)");
     }
 
     private static void copyInto(Path source, Path target) throws IOException {

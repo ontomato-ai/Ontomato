@@ -1,7 +1,7 @@
 # Ontology AI host
 
-Slice A implemented, 2026-10-29: the common host and retrieval. Generation file
-consumption below is the approved slice B design and is not implemented yet.
+Slices A and B implemented, 2026-10-29: common host, retrieval, generation file
+consumption and the model-test gateway. B awaits controller integration acceptance.
 [Design](../../docs/ontology-ai-runtime-design.md) owns placement and deletion.
 Executable `agent-host`, runtime and artifact schemas are the shared definitions.
 
@@ -18,8 +18,8 @@ projects the runtime's admitted skill metadata, not current registry contents.
 Indexes retain the selected server-owned definition (prompt + skills + role);
 `/agents` exposes display metadata only. Retrieval actions use
 [data-retrieval](data-retrieval.md), not extra common fields. Both facades use the
-same Java admission/retrieval services. Slice B will keep existing generation routes' business request/result meanings
-and replace their Java model calls with this host.
+same Java admission/retrieval services. Existing generation routes keep their business request/result meanings and use
+this host instead of a Java chat client.
 
 Persist host intent/open gate before admission, with stable UUIDs and the common
 idempotency rules. Associate existing backend jobs/sessions with their runtime
@@ -61,4 +61,59 @@ Java workspace submission registry with this cutover.
 Prompts move with definitions, preserving English/Chinese overlays. The common
 Markdown prompt has one JSON source in contracts: TS exports it as
 `ARTIFACT_MARKDOWN_PROMPT`, and Maven packages the same resource for Java. Model configuration continues through the current sealed-key
-Java adapter; the approved gateway model-test endpoint will be implemented in B (design D2).
+Java adapter; the approved gateway model-test endpoint is defined below (design D2).
+
+## Generation operations and delivery
+
+The standard [`ontology-generation` skill](../../agent-skills/ontology-generation/SKILL.md)
+owns command usage and per-kind result fields. Each runtime definition selects a
+kind, server prompt and model role; `query` serves knowledge/description/QC and
+`coding` serves the other generators. Results always use `outputs/result.json`.
+`sourcePath` references Python bytes from the same run; embedded `code` is rejected
+at this boundary and populated only by the Java result adapter.
+
+Normal HTTP operations under `/ontology/ai/generation` are:
+
+| Method/path | Body/result |
+| --- | --- |
+| POST `/gates` | `{kind,source?: string|null}`; returns `{sessionId,runId}` for an external business gate, with no runtime history |
+| GET `/:run/source` | `{source}`; the exact original source |
+| POST `/:run/test` | `{code,parameterDefs}`; existing Python result (`result`, `error`, `spendTime`, optional partial-query metadata) |
+| POST `/:run/prepare` | `{objDatas,relDatas,vectorDatas?}`; `{prepared:true}` |
+| POST `/:run/reset` | `{}`; `{reset:true}` |
+| POST `/:run/query` | `{dsl}`; existing sandbox query result |
+| POST `/:run/close` | `{}`; `{closed:true}` |
+
+A current user can operate their own external gate. Hosted scripts use the scoped
+`ontology-generation` grant and matching `X-Ontomato-Run-Id`; it only permits
+`/businessConfig/getModelSettings` and callbacks under its own run path. The
+normal query grant is separate. Hosted callbacks additionally check the runtime
+is running; mutation and test receipts recheck the durable business gate in the
+write transaction. Read generation cannot acquire an Action write sandbox.
+
+Receipts bind operation, exact source and parameter definitions. Changing any of
+these requires another successful business test. Cancellation and deadline expiry
+reject further tests and settlement. A stopped `stop` run can be read after its
+callback gate closes, but abort/error/cancel and inherited artifacts cannot save.
+
+## Unsaved model test gateway
+
+`POST /v1/models/test`, using runtime service authentication, `X-Domain-Id` and
+`X-Correlation-Id`. Executable request/response schemas are in
+[`runtime-model-test.ts`](src/runtime-model-test.ts).
+
+Request: `{model: {name?,baseUrl,modelName,apiKey,maxTokens,contextWindow,...},prompt?}`.
+Optional provider settings use the same mapping as configured runs, including
+custom headers, organization/project, sampling and custom request parameters.
+Custom request fields override the assembled payload last. Unset Java nulls are
+accepted; explicit zero/false values are preserved. Prompt defaults to `Hello`.
+Response: `{content: string}`. Provider failures use the common error envelope
+with `MODEL_TEST_FAILED` (502); configuration shape failures use `INVALID_REQUEST`.
+No draft, session, agent run or model-call row is persisted. Exactly one minimal
+provider request is made through pi-ai, with retries disabled and disconnect
+cancellation. Credentials are not echoed.
+
+Java `/businessConfig/testModel` still authorizes configuration management and
+restores saved masks before forwarding. It returns its existing `{success,data}`
+shape; Embedding tests stay in Java. This gateway can be retained unchanged when
+model configuration ownership moves to runtime.

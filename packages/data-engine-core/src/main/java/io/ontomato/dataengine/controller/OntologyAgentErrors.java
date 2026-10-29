@@ -9,7 +9,11 @@ import org.springframework.web.bind.annotation.*;
 import org.springframework.web.server.ResponseStatusException;
 
 @RestControllerAdvice(
-    assignableTypes = {OntologyAgentController.class, OntologyRetrievalController.class})
+    assignableTypes = {
+      OntologyAgentController.class,
+      OntologyRetrievalController.class,
+      OntologyGenerationController.class
+    })
 @Order(-110)
 public class OntologyAgentErrors {
   @ExceptionHandler(Exception.class)

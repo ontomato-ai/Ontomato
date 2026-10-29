@@ -284,7 +284,7 @@ public class DslPermissionUtil {
 	        for (String notReturnId : notReturnIds) {
 	        	descriptionMap.remove(notReturnId);
 	        }
-	        dataMap.put("outputKeyDescriptionMDTable", UserMessageUtil.getOutputKeyDescriptionMDTable(descriptionMap));
+	        dataMap.put("outputKeyDescriptionMDTable", OutputKeyDescription.getOutputKeyDescriptionMDTable(descriptionMap));
 		}
 		
 		return dataMap;

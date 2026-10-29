@@ -18,6 +18,7 @@ import {
 import { runtimeIdSchema } from "@ontomato/contracts/agent-runtime-values";
 import { AgentRuntime } from "./runtime";
 import { RuntimeError } from "./errors";
+import { testModel } from "./model";
 
 export function createRuntimeHttp(runtime: AgentRuntime) {
   const app = express();
@@ -93,6 +94,13 @@ export function createRuntimeHttp(runtime: AgentRuntime) {
   app.get("/health", (_req, res) => {
     res.json({ status: "ready" });
   });
+  app.post("/v1/models/test", route(async (req, res) => {
+    const ctx = scope(req);
+    const controller = new AbortController();
+    res.on("close", () => controller.abort());
+    const result = await testModel(req.body, ctx.correlationId, controller.signal);
+    if (!controller.signal.aborted) res.json(result);
+  }));
   app.get("/v1/mcp/services/names", route(async (req, res) => {
     res.json(await runtime.mcp.options(scope(req).scope));
   }));

@@ -272,3 +272,13 @@ contains no renderer. Session deletion removes owned metadata/workspace and
 unreferenced blobs after committing the tombstone; a crash may leave unreachable
 blobs but must never delete a still-referenced one. Retention/compression policy
 and object storage are outside this batch.
+
+
+## Model connection test
+
+`POST /v1/models/test` is a model-gateway operation for an unsaved configuration,
+not a run. It uses host/domain authentication and the schemas in
+[`runtime-model-test.ts`](src/runtime-model-test.ts). It sends one minimal pi-ai
+request, does not retry or persist anything, and cancels on disconnect. Request
+fields, response and the Java adapter are defined in
+[ontology AI](ontology-ai.md#unsaved-model-test-gateway).

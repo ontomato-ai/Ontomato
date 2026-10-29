@@ -257,7 +257,13 @@ class QueryRuntimeBoundaryTest {
     var sessions = mock(SessionRegistryService.class);
     when(sessions.getNodeId()).thenReturn("fixture-node");
     var runtime = mock(RuntimeCodeClient.class);
-    var jobs = new QueryJobService(jdbc, sessions, runtime);
+    var jobs =
+        new QueryJobService(
+            jdbc,
+            sessions,
+            runtime,
+            new org.springframework.jdbc.datasource.DataSourceTransactionManager(
+                jdbc.getDataSource()));
     jobs.initialize();
     String id = UUID.randomUUID().toString();
     var count = new java.util.concurrent.atomic.AtomicInteger();

@@ -19,7 +19,7 @@ import io.ontomato.dataengine.dao.VectorResourceDao;
 import io.ontomato.dataengine.service.AdminService;
 import io.ontomato.dataengine.service.BusinessConfigService;
 import io.ontomato.dataengine.service.DslService;
-import io.ontomato.dataengine.service.ai.MultiThreadAIChatService;
+import io.ontomato.dataengine.util.ErrorText;
 import io.ontomato.dataengine.service.sys.bean.permission.UserDataPermission;
 import io.ontomato.dataengine.util.DslUtil;
 import io.ontomato.dataengine.util.HttpRequestUtil;
@@ -85,7 +85,7 @@ public class DslServiceImpl implements DslService {
 		JSONObject dataMap = new JSONObject();
 		dataMap.putAll(result.data());
 		if (result.failed()) {
-			dataMap.put("error", MultiThreadAIChatService.rawErrorText(result.failure().cause()));
+			dataMap.put("error", ErrorText.rawErrorText(result.failure().cause()));
 		}
 		return dataMap;
 	}

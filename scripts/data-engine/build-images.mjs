@@ -136,7 +136,6 @@ export function stageResources(app, context, lang) {
   for (const [root, source, dest] of app.resources) copyFrom(root, source, join(context, dest));
   for (const dest of new Set(app.resources.map(([, , dest]) => dest)))
     selectPromptLanguage(join(context, dest), lang, app.supportedPromptLangs);
-  mkdirSync(join(context, "payload/skills"), { recursive: true });
 }
 
 // The one CLI parse: help returns before any Git, settings or Docker read; the

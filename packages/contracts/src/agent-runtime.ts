@@ -260,6 +260,7 @@ export const RUNTIME_HTTP_ROUTES = {
     path: "/v1/artifacts/:artifactId",
     status: 200,
   },
+  testModel: { method: "POST", path: "/v1/models/test", status: 200 },
   registerSkill: { method: "POST", path: "/v1/skills", status: 201 },
 } as const;
 

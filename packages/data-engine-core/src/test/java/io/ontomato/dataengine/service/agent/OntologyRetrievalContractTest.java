@@ -170,7 +170,8 @@ class OntologyRetrievalContractTest {
             jobs,
             quality,
             authorization);
-    var host = new OntologyAgentHost(store, runtime, retrieval);
+    var host =
+        new OntologyAgentHost(store, runtime, retrieval, mock(OntologyGenerationService.class));
     http =
         MockMvcBuilders.standaloneSetup(
                 new OntologyAgentController(host, authorization, runtime, retrieval),
@@ -427,13 +428,18 @@ class OntologyRetrievalContractTest {
     assertThrows(AgentHttpException.class, () -> retrieval.dataset(retrievalId, changed, owner));
     runs.get(run).getJSONObject("run").put("status", "stopped");
     runs.get(run).getJSONObject("run").put("stopReason", "stop");
-    when(quality.start(any(), any(), any())).thenThrow(new IllegalStateException("Lost admission response")).thenReturn(Map.of());
+    when(quality.start(any(), any(), any()))
+        .thenThrow(new IllegalStateException("Lost admission response"))
+        .thenReturn(Map.of());
     assertThrows(IllegalStateException.class, () -> retrieval.get(retrievalId, owner));
     String qcId = store.run(retrievalId, run, owner).getString("qc_id");
     assertNotNull(qcId);
     retrieval.recover();
-    verify(quality, timeout(5000).times(2)).start(argThat(body -> qcId.equals(body.getString("id"))), any(), any());
-    for (int attempt = 0; attempt < 100 && !store.run(retrievalId, run, owner).getBooleanValue("qc_admitted"); attempt++) Thread.sleep(10);
+    verify(quality, timeout(5000).times(2))
+        .start(argThat(body -> qcId.equals(body.getString("id"))), any(), any());
+    for (int attempt = 0;
+        attempt < 100 && !store.run(retrievalId, run, owner).getBooleanValue("qc_admitted");
+        attempt++) Thread.sleep(10);
     assertTrue(store.run(retrievalId, run, owner).getBooleanValue("qc_admitted"));
     assertThrows(
         AgentHttpException.class,

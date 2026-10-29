@@ -63,7 +63,7 @@ public class OntologyAgentController {
   @DeleteMapping("/sessions/{id}")
   @ResponseStatus(HttpStatus.NO_CONTENT)
   public void delete(@PathVariable String id, HttpServletRequest req) throws Exception {
-    retrieval.delete(AgentJson.id(id), access.reader(req, id, null));
+    host.delete(AgentJson.id(id), access.reader(req, id, null));
   }
 
   @PostMapping("/sessions/{id}/runs")

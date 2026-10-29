@@ -14,12 +14,56 @@ public class OntologyAgentHost {
   private final OntologyAgentStore store;
   private final AgentRuntimeClient runtime;
   private final OntologyRetrievalService retrieval;
+  private final OntologyGenerationService generation;
 
   public OntologyAgentHost(
-      OntologyAgentStore store, AgentRuntimeClient runtime, OntologyRetrievalService retrieval) {
+      OntologyAgentStore store,
+      AgentRuntimeClient runtime,
+      OntologyRetrievalService retrieval,
+      OntologyGenerationService generation) {
     this.store = store;
     this.runtime = runtime;
     this.retrieval = retrieval;
+    this.generation = generation;
+  }
+
+  private boolean isRetrieval(String session, Owner owner) {
+    return RETRIEVER.equals(store.session(session, owner).getString("agent_id"));
+  }
+
+  private void closeStoppedCallbacks(String session, String run, Owner owner, JSONObject snapshot)
+      throws Exception {
+    if (isRetrieval(session, owner)) retrieval.closeStoppedCallbacks(session, run, owner, snapshot);
+    else if (!"running".equals(snapshot.getJSONObject("run").getString("status")))
+      store.update(
+          "UPDATE ontology_agent_runs SET open=false,observed_state=?::jsonb WHERE id=?",
+          AgentJson.json(snapshot.getJSONObject("run")),
+          uuid(run));
+  }
+
+  public void delete(String session, Owner owner) throws Exception {
+    if (isRetrieval(session, owner)) {
+      retrieval.delete(session, owner);
+      return;
+    }
+    for (var row :
+        store.rows("SELECT id FROM ontology_agent_runs WHERE session_id=?", uuid(session)))
+      generation.close(session, row.getString("id"), owner);
+    runtime.json(owner.domainId(), session, "/v1/sessions/" + session, "DELETE", null, null);
+    store.transaction(
+        () -> {
+          store.update(
+              "DELETE FROM ontology_generation_tests WHERE run_id IN (SELECT id FROM"
+                  + " ontology_agent_runs WHERE session_id=?)",
+              uuid(session));
+          store.update(
+              "DELETE FROM ontology_generations WHERE run_id IN (SELECT id FROM ontology_agent_runs"
+                  + " WHERE session_id=?)",
+              uuid(session));
+          store.update("DELETE FROM ontology_agent_runs WHERE session_id=?", uuid(session));
+          store.update("DELETE FROM ontology_agent_sessions WHERE id=?", uuid(session));
+          return null;
+        });
   }
 
   public JSONObject agents() {
@@ -91,7 +135,7 @@ public class OntologyAgentHost {
     var session = runtime.json(owner.domainId(), id, "/v1/sessions/" + id, "GET", null, null);
     var latest = session.getJSONObject("latestRun");
     if (latest != null)
-      retrieval.closeStoppedCallbacks(id, latest.getJSONObject("run").getString("id"), owner, latest);
+      closeStoppedCallbacks(id, latest.getJSONObject("run").getString("id"), owner, latest);
     return JSONObject.of(
         "session",
         sessionView(row, latest == null ? null : latest.getJSONObject("run")),
@@ -104,7 +148,7 @@ public class OntologyAgentHost {
   public JSONObject run(String session, String run, Owner owner) throws Exception {
     store.run(session, run, owner);
     var snapshot = runtime.run(owner.domainId(), run);
-    retrieval.closeStoppedCallbacks(session, run, owner, snapshot);
+    closeStoppedCallbacks(session, run, owner, snapshot);
     return publicSnapshot(snapshot);
   }
 
@@ -119,6 +163,11 @@ public class OntologyAgentHost {
 
   public JSONObject cancel(String session, String run, Owner owner) throws Exception {
     store.closeRun(session, run, owner);
+    if (!isRetrieval(session, owner)) {
+      generation.cancel(session, run, owner);
+      return JSONObject.of(
+          "run", publicRun(runtime.run(owner.domainId(), run).getJSONObject("run")));
+    }
     retrieval.cancelWork(session, run, owner);
     try {
       var snapshot = runtime.run(owner.domainId(), run);

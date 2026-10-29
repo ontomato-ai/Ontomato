@@ -55,6 +55,45 @@ public class OntologyAgentDefinitions {
         null);
   }
 
+  public static final Map<String, Object> GENERATION_SKILL =
+      Map.of(
+          "namespace",
+          Map.of("kind", "provider", "provider", "ontology"),
+          "name",
+          "ontology-generation");
+
+  public void publishGeneration() throws Exception {
+    code.registerSkill();
+    var files = new ArrayList<Map<String, String>>();
+    for (String path : List.of("SKILL.md", "scripts/generation.mjs"))
+      files.add(
+          Map.of("path", path, "content", resource("ontology-skills/ontology-generation/" + path)));
+    runtime.json(
+        null,
+        "ontology-generation-skills",
+        "/v1/skills",
+        "POST",
+        Map.of("skill", GENERATION_SKILL, "files", files),
+        null);
+  }
+
+  public JSONObject generation(String kind, String prompt, String language, long remainingMs) {
+    var definition = definition(language, remainingMs);
+    definition.put(
+        "modelRole",
+        List.of("knowledge", "describe", "quality").contains(kind) ? "query" : "coding");
+    definition.put("skills", List.of(RuntimeCodeClient.SKILL, GENERATION_SKILL));
+    definition.put(
+        "systemPrompt",
+        prompt
+            + "\n\n"
+            + resource("ontology-skills/ontology-generation/SKILL.md")
+            + "\n\n"
+            + JSON.parseObject(
+                resource("ontology-contracts/agent-artifact-markdown-prompt.json"), String.class));
+    return definition;
+  }
+
   public JSONObject definition(String language, long remainingMs) {
     String markdown =
         JSON.parseObject(

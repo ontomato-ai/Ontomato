@@ -1,95 +1,19 @@
 package io.ontomato.dataengine.config;
 
-import java.time.Duration;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
-import io.ontomato.dataengine.service.LangService;
-
 /**
- * The only read/write entry point of the model registry.
- * At runtime, parameters are fetched only through {@link #resolve}, and save validation only through {@link #validateForSave},
- * when a reference does not exist an error is thrown directly, with no fallback to some default model.
+ * The only read/write entry point of the model registry. Runtime resolves roles through the
+ * settings API; save validation uses {@link #validateForSave}, when a reference does not exist an
+ * error is thrown directly, with no fallback to some default model.
  */
 public final class ModelResolver {
 
     private ModelResolver() {
-    }
-
-    /** Construction parameters after merging "model + role parameters", produced by resolve. */
-    public record ResolvedChatModel(String role, ModelConfig model, AgentConfig agent) {
-
-        public String getBaseUrl() {
-            return model.getBaseUrl();
-        }
-
-        public List<String> getApiKeys() {
-            return model.getApiKeys();
-        }
-
-        public String getOrganizationId() {
-            return model.getOrganizationId();
-        }
-
-        public String getProjectId() {
-            return model.getProjectId();
-        }
-
-        public String getModelName() {
-            return model.getModelName();
-        }
-
-        public Double getTemperature() {
-            return model.getTemperature();
-        }
-
-        public Double getTopP() {
-            return model.getTopP();
-        }
-
-        public Duration getTimeout() {
-            return model.getTimeout();
-        }
-
-        public Boolean getLogRequests() {
-            return model.getLogRequests();
-        }
-
-        public Boolean getLogResponses() {
-            return model.getLogResponses();
-        }
-
-        public Map<String, String> getCustomHeaders() {
-            return model.getCustomHeaders();
-        }
-
-        public Map<String, Object> getCustomRequestParameters() {
-            return model.getCustomRequestParameters();
-        }
-
-    }
-
-    public static ResolvedChatModel resolve(BusinessConfig config, String role, LangService langService) {
-        if (!AgentRole.ALL.contains(role)) {
-            throw new IllegalArgumentException("Unknown model role: " + role);
-        }
-        Map<String, AgentConfig> agents = config.getAgents();
-        AgentConfig agent = agents == null ? null : agents.get(role);
-        if (agent == null || agent.getModel() == null || agent.getModel().isBlank()) {
-            String lang = config.getLang();
-            String roleName = langService.get(lang, "AgentRole." + role);
-            String template = langService.get(lang, "AgentRole.notConfigured");
-            throw new IllegalStateException(template.replace("{0}", roleName));
-        }
-        ModelConfig model = findModel(config, agent.getModel());
-        if (model == null) {
-            throw new IllegalStateException(
-                    "Model referenced by role " + role + " does not exist: " + agent.getModel());
-        }
-        return new ResolvedChatModel(role, model, agent);
     }
 
     /** The only validation at the save boundary: name unique/non-empty, connections required for each model, all five roles present with existing or empty references. */

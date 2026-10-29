@@ -1,8 +1,8 @@
 # Ontology AI runtime migration
 
-Slice A implemented, 2026-10-29, following controller review of the 2026-10-28
-design (public baseline `cc5ac842`, enterprise `8e125bc`). Slice B remains pending
-until the controller accepts and merges A. Wire boundaries belong to
+Slices A and B implemented in the ontology-ai worktrees, 2026-10-29. A was
+accepted on develop (`f9877897`, enterprise `1dcfa49`); B awaits controller
+integration and live-model acceptance. Wire boundaries belong to
 [ontology AI](../packages/contracts/ontology-ai.md) and
 [retrieval](../packages/contracts/data-retrieval.md).
 
@@ -32,7 +32,7 @@ The parallel domain-skills change adds `AgentHostRun.resolvedSkills` as
 description unchanged. Integrate the authoritative shared schema when merged;
 do not create a Java-specific substitute or read the current publication instead.
 
-## Remaining Java consumers (slice B)
+## Ontology generation consumers (slice B)
 
 | Consumer | Destination; retained behavior |
 | --- | --- |
@@ -41,7 +41,7 @@ do not create a Java-specific substitute or read the current publication instead
 | Knowledge generation | `query` definition; validated file feeds existing nonempty candidate replacement and Embedding. |
 | QC v2 description/scoring and Function candidates | Definitions with current roles; preserve asynchronous QC storage, score/candidate rules and cancellation. |
 | Program-to-dashboard | `coding` definition; existing program tests/result assembly. |
-| Unsaved model test | Runtime model adapter; request-scoped model selection needs D2 below. Embedding tests remain in Java. |
+| Unsaved model test | Runtime model-gateway endpoint `/v1/models/test` (D2). Embedding tests remain in Java. |
 
 Read/test operations become standard ontology skill commands. Files replace
 submission-tool side effects; Java validates exact output bytes before its
@@ -59,8 +59,8 @@ resource generation from that same source.
 | `MultiThreadAIChatService.rawErrorText` references | General error utility; update DSL, MySQL, PG, DuckDB, ES, Neo4j, SQL Server and enterprise M3. |
 | Agent-specific context in `DiagnosticEventLogger` | Coordinate with the logging module; retain general diagnostics. Remove obsolete tests with deleted paths. |
 
-Slice A removes the workbench retrieval row above. The Java generator/tool rows
-remain for slice B. The baseline has 13 tool classes, not the earlier 19. Traditional ABC/QC v1,
+Slice A removed the workbench retrieval row. Slice B removes the Java
+generator/tool machinery. The baseline has 13 tool classes, not the earlier 19. Traditional ABC/QC v1,
 examples, calculator and startup Python are already removed. General Java MCP
 management/calls stay. No old-data converter, dual reads, knowledge-governance
 migration, runtime annotations or model-configuration ownership change.
@@ -80,7 +80,7 @@ skill calls Java directly and Java rejects late admission after scope closure.
 
 **Approved D2 (slice B):** unsaved model testing is a runtime model-gateway API:
 receive the candidate configuration, make one minimal request through pi-ai and
-save nothing. Java's model-test endpoint will delegate to it. This is not an agent
+save nothing. Java's model-test endpoint delegates to it. This is not an agent
 run or a model override on StartRun; the same API remains when model configuration
 moves to runtime. Preserve surviving configured request/header behavior in that
 adapter without retaining Java chat transport.
@@ -95,3 +95,43 @@ continuation, immutable dataset provenance and shared analyst scripts. Main-dire
 live-model assistant/external ask, continuation/cancel, runtime/data-engine images
 and enterprise stack/registry smoke remain controller-owned. A is handed over
 before starting the remaining Java AI consumers in B.
+
+## B implementation and acceptance boundary
+
+`OntologyGenerationService` shares the runtime transport, host session indexes and
+transactional run gate with retrieval, but stores generation metadata and business
+receipts separately from retrieval. Each generation gets a fresh runtime session;
+there is no inherited delivery. Source explanations use an authenticated source
+read; no Java agent workspace or source file is created. Sandbox fixtures are
+ontology data and the skill sends code/file bytes over HTTP.
+
+`ontology-generation` exposes source reads, business tests, sandbox preparation,
+reset and query. Tests bind the exact source, parameter definitions and operation;
+final files must reference those successfully tested bytes. Callback closure on
+runtime stop is independent of the once-only business settlement. Cancellation
+closes gates before cancelling model/code intents and revoking grants. Node-owned
+interrupted generations are cancelled on recovery; unknown effects are not replayed.
+Existing query jobs own QC and Function-candidate work through completion, and
+short save transactions share the job lock with cancellation.
+
+Background ontology jobs obtain a short-lived `ontology-generation` grant for the
+existing sealed model-settings read and their own generation callbacks. It is not
+a user login or a query credential. Query exploration has a separate grant. This
+keeps configuration in Java while avoiding dependence on an expired servlet thread.
+
+Public English and enterprise Chinese prompts are classpath resources under
+`ontology-prompts/*/generation`. Business context builders belong to the ontology
+host. Standard skills have one source under `agent-skills` and are included by
+Maven and both image context manifests.
+
+Controller decision, 2026-10-29: retain the LangChain dependencies used by Java
+Embedding and general enterprise MCP. Remove only chat/agent callers, chat memory,
+the chat starter, tool annotations/submission machinery, chat HTTP scheduler and
+obsolete chat tests. Existing general MCP and Embedding behavior is unchanged.
+The old backend diagnostic-log reader remains for persisted historical logs;
+Java no longer emits agent model-call logs.
+
+B checks are typecheck/lint, both Maven compiles, PostgreSQL generation/retrieval
+contracts, skill HTTP-byte contracts and the runtime model gateway with a local
+provider fixture. Real models, main-directory stack, images and browser acceptance
+remain controller-owned.

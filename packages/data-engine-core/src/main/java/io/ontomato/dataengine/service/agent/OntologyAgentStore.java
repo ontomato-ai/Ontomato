@@ -44,6 +44,12 @@ CREATE TABLE IF NOT EXISTS ontology_agent_runs (
   caller_id uuid REFERENCES ontology_retrieval_callers(id), external boolean NOT NULL,
   dataset_ids jsonb NOT NULL DEFAULT '[]', observed_state jsonb, decision_revision integer NOT NULL,
   qc_id uuid, qc_admitted boolean NOT NULL DEFAULT false, cancel_requested boolean NOT NULL DEFAULT false, cancel_confirmed boolean NOT NULL DEFAULT false, created_at timestamptz NOT NULL DEFAULT now());
+CREATE TABLE IF NOT EXISTS ontology_generations (
+  run_id uuid PRIMARY KEY REFERENCES ontology_agent_runs(id), business_id text NOT NULL,
+  kind text NOT NULL, owner_node text NOT NULL, sandbox_id text, source text, test_data jsonb, settled boolean NOT NULL DEFAULT false);
+CREATE TABLE IF NOT EXISTS ontology_generation_tests (
+  run_id uuid NOT NULL REFERENCES ontology_agent_runs(id), digest text NOT NULL,
+  execution_id uuid PRIMARY KEY, result jsonb, created_at timestamptz NOT NULL DEFAULT now());
 CREATE TABLE IF NOT EXISTS ontology_retrievals (
   id uuid PRIMARY KEY REFERENCES ontology_agent_sessions(id), input jsonb NOT NULL,
   current_run_id uuid NOT NULL, decisions jsonb NOT NULL DEFAULT '[]', revision integer NOT NULL DEFAULT 0);
@@ -109,7 +115,7 @@ CREATE TABLE IF NOT EXISTS ontology_retrieval_artifacts (
   }
 
   public boolean createSession(String id, Owner owner, String agent, boolean runtimeOwned) {
-    if (!RETRIEVER.equals(agent)) throw AgentHttpException.missing();
+    AgentJson.id(agent);
     int n =
         update(
             "INSERT INTO ontology_agent_sessions(id,user_id,domain_id,agent_id,runtime_owned)"
@@ -338,7 +344,9 @@ CREATE TABLE IF NOT EXISTS ontology_retrieval_artifacts (
     run = run(sessionId, runId, owner);
     if (!run.getBooleanValue("open")
         || Instant.parse(run.getString("deadline")).toEpochMilli() <= System.currentTimeMillis()
-        || !runId.equals(retrieval(sessionId, owner).getString("current_run_id"))) throw closed();
+        || (RETRIEVER.equals(session(sessionId, owner).getString("agent_id"))
+            && !runId.equals(retrieval(sessionId, owner).getString("current_run_id"))))
+      throw closed();
     return run;
   }
 
