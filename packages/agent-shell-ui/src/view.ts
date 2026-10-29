@@ -1,5 +1,5 @@
 import type { RuntimeJsonValue, RuntimeStopReason } from "@ontomato/contracts/agent-runtime-values";
-import { orderedMessages, type ConversationState } from "./conversation";
+import { orderedMessages, type ConversationState, type RetrievalLink } from "./conversation";
 import { skillOfCommand } from "./tools";
 import type { ProcessStepView } from "./types";
 
@@ -26,6 +26,8 @@ export interface ResponseItem {
   /** Last settled assistant message, the feedback and copy target. */
   answerMessageId: string | null;
   answerText: string;
+  /** Retrieval associations for activity rendering; stable across continuations. */
+  retrievals: RetrievalLink[];
 }
 
 export type ConversationItem = UserItem | ResponseItem;
@@ -69,6 +71,7 @@ export function conversationItems(state: ConversationState): ConversationItem[] 
       end: null,
       answerMessageId: null,
       answerText: "",
+      retrievals: [],
     };
     items.push(response);
     return response;
@@ -145,6 +148,7 @@ export function conversationItems(state: ConversationState): ConversationItem[] 
     if (item.kind !== "response") continue;
     const run = state.runs[item.runId];
     item.running = run?.status === "running";
+    item.retrievals = run?.retrievals ?? [];
     item.end = run && run.status === "stopped"
       ? { stopReason: run.stopReason, errorMessage: run.errorMessage }
       : null;

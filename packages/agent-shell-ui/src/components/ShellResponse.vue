@@ -3,6 +3,7 @@ import { computed, inject, onMounted, ref } from "vue";
 import { Check, CircleAlert, Copy, Square, ThumbsDown, ThumbsUp, TriangleAlert } from "lucide-vue-next";
 import type { ShellFeedbackPort, ShellFeedbackValue } from "../types";
 import SlotOutlet from "./SlotOutlet.vue";
+import RetrievalActivity from "./RetrievalActivity.vue";
 import { shellContextKey } from "../context";
 import type { ResponseItem } from "../view";
 import ShellMarkdown from "./ShellMarkdown.vue";
@@ -15,6 +16,7 @@ const props = defineProps<{
 }>();
 const shell = inject(shellContextKey)!;
 const labels = computed(() => shell.labels.value);
+const runActive = () => props.item.running;
 
 const copied = ref(false);
 const rating = ref<ShellFeedbackValue | null>(null);
@@ -82,6 +84,13 @@ async function submit(value: ShellFeedbackValue) {
       <span class="dot" /><span class="dot" /><span class="dot" />
       <span class="sr-only">{{ labels.working }}</span>
     </div>
+    <RetrievalActivity
+      v-for="link in item.retrievals"
+      :key="link.retrievalId"
+      :link="link"
+      :session-id="sessionId ?? ''"
+      :run-active="runActive"
+    />
     <template v-for="block in item.blocks" :key="block.key">
       <ShellProcess v-if="block.kind === 'process'" :steps="block.steps" :active="block.active" />
       <ShellMarkdown v-else :content="block.text" :final="block.final" :run-id="block.runId" />

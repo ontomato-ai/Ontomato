@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { agentHostRunSnapshotSchema } from "@ontomato/contracts/agent-host";
-import { datasetPayloadSchema, retrievalEvidenceSchema, retrievalCallerSchema, retrievalCallerAdmissionSchema, type RetrievalCallerInput } from "@ontomato/contracts/data-retrieval";
+import { datasetPayloadSchema, retrievalEvidenceSchema, retrievalSnapshotSchema, retrievalCallerSchema, retrievalCallerAdmissionSchema, type RetrievalCallerInput } from "@ontomato/contracts/data-retrieval";
 import { runtimeArtifactSchema } from "@ontomato/contracts/agent-runtime-artifacts";
 import { backendGet, backendPost, backendDelete, buildBackendHeaders, BackendResponseError } from "../../utils/backend-client";
 import { getApiConfig } from "../../config/data-query-api";
@@ -44,6 +44,9 @@ export class OntologyRetrievalClient {
   }
   async close(credentials?: AssistantCredentials) {
     await this.request(`/ontology/retrieval-callers/${this.scopeId}/close`, "POST", {}, credentials);
+  }
+  async readSnapshot(retrievalId: string) {
+    return retrievalSnapshotSchema.parse(await this.request(`/ontology/retrievals/${retrievalId}`));
   }
   async evidence(retrievalId: string, runId: string) {
     return retrievalEvidenceSchema.parse(await this.request(`/ontology/retrievals/${retrievalId}/runs/${runId}/evidence`));

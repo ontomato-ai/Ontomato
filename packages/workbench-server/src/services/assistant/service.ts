@@ -209,7 +209,17 @@ export const assistantService = {
       const c = getLogContext();
       this.observe(id, owner, { token: c?.token, apiKey: c?.apiKey });
     }
-    return s;
+    // Attach retrieval associations for front-end activity rendering.
+    let retrievals: { retrievalId: string; runId: string; status: "running" | "stopped" | null }[] | undefined;
+    try {
+      const links = await new OntologyRetrievalClient(owner, id).links();
+      if (links.length > 0) {
+        retrievals = links.map((link) => ({ retrievalId: link.retrievalId, runId: link.runId, status: null }));
+      }
+    } catch {
+      // Non-fatal: retrievals are best-effort for rendering only.
+    }
+    return retrievals ? { ...s, retrievals } : s;
   },
   async settle(s: RuntimeRunSnapshot, owner: AssistantOwner) {
     if (s.run.status === "stopped") {

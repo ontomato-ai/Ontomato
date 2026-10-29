@@ -12,6 +12,7 @@ import type {
 import { agentHostStreamFrameSchema } from "@ontomato/contracts/agent-host";
 import type { RuntimeArtifact } from "@ontomato/contracts/agent-runtime-artifacts";
 import type { RuntimeCursor, RuntimeStreamFrame } from "@ontomato/contracts/agent-runtime-events";
+import type { RetrievalSnapshot } from "@ontomato/contracts/data-retrieval";
 
 /*
  * The one client of the agent-host proxy interface: every host that serves this shell exposes the
@@ -43,6 +44,11 @@ export interface AgentHostClient {
   /** The run's version of a path: at the run's end once stopped, the current one while running. */
   resolveArtifact(sessionId: string, runId: string, path: string): Promise<RuntimeArtifact | null>;
   readArtifact(artifact: RuntimeArtifact): Promise<Blob>;
+  /**
+   * Reads one retrieval's snapshot. The retrieval ID is stable across continuations of the same
+   * retrieval, so callers use it as the poll key and fold state; runId scopes the specific run.
+   */
+  readRetrieval(sessionId: string, runId: string, retrievalId: string): Promise<RetrievalSnapshot>;
 }
 
 export interface AgentHostClientOptions {
@@ -123,6 +129,11 @@ export function createAgentHostClient(options: AgentHostClientOptions): AgentHos
     },
     async readArtifact(artifact) {
       return (await call(`${session(artifact.sessionId)}/artifacts/${enc(artifact.id)}/content`)).blob();
+    },
+    readRetrieval(sessionId, runId, retrievalId) {
+      return json<RetrievalSnapshot>(
+        `${run(sessionId, runId)}/retrievals/${enc(retrievalId)}`,
+      );
     },
   };
 }
