@@ -1,6 +1,6 @@
 ---
 name: ontology-generation
-description: Generate or explain ontology Actions, Functions, MetricViews, knowledge and dashboards; describe and quality-check query programs using ontology-owned validation.
+description: Generate or explain ontology Actions, Functions, knowledge and dashboards; instantiate MetricView candidates; describe and quality-check query programs using ontology-owned validation.
 ---
 
 # Ontology generation
@@ -28,7 +28,6 @@ Write **one JSON object** to `outputs/result.json`, with the following fields fo
 | Kind | Result fields |
 | --- | --- |
 | action | `sourcePath`, `parameterDefs` (array), `classNames` (nonempty array), `name`, `logic` |
-| metric | `sourcePath`, `parameterDefs` (array), `outKeyRefs` (array of key/className/attrName/asGroupBy/statCal), `name`, `logic` |
 | function | `sourcePath`, `parameterDefs` (array), `name`, `logic`; preserve the supplied output keys |
 | dashboard | `sourcePath`, `parameterDefs` (array of key/name/type/value/className/attrName), `title` |
 | explain | `segs`, `operations`, `negativeEffect`, exactly following the explanation schema in the task definition; read source first |
