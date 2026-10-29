@@ -11,6 +11,7 @@ import {
   type ConversationState,
 } from "./conversation";
 import { conversationItems } from "./view";
+import { skillOfCommand } from "./tools";
 
 const RECONNECT_DELAYS = [500, 1000, 2000, 5000, 10000];
 const MAX_QUEUED_FRAMES = 2000;
@@ -93,6 +94,28 @@ export function useAgentConversation(port: () => AgentHostClient) {
       applyEnvelope(state, frame.envelope);
       const type = frame.envelope.event.type;
       if (type === "artifact_registered") artifactRevision.value++;
+      if (type === "tool_execution_end") {
+        // When an ask skill bash call completes the retrieval association has just been created.
+        // Fetch only the retrievals by reading the run snapshot without interrupting the SSE
+        // stream or resetting the cursor.
+        const event = frame.envelope.event;
+        const runId = frame.envelope.cursor.runId;
+        if (event.toolName === "bash") {
+          const tool = state.runs[runId]?.tools[event.toolCallId];
+          const command = typeof tool?.args.command === "string" ? tool.args.command : "";
+          if (skillOfCommand(command) === "ask") {
+            const sessionId = state.sessionId;
+            const current = token;
+            if (sessionId) {
+              void port().readRun(sessionId, runId).then((snapshot) => {
+                if (current !== token) return;
+                const run = state.runs[runId];
+                if (run && snapshot.run.retrievals) run.retrievals = snapshot.run.retrievals;
+              }).catch(() => {/* best-effort */});
+            }
+          }
+        }
+      }
       if (type === "agent_end") {
         stopStream();
         return;

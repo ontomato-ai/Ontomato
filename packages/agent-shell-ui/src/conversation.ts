@@ -33,7 +33,6 @@ export interface ToolExecutionView {
 export interface RetrievalLink {
   retrievalId: string;
   runId: string;
-  status: "running" | "stopped" | null;
 }
 
 export interface RunView {

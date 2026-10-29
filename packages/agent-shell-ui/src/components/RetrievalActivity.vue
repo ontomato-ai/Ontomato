@@ -20,6 +20,8 @@ import { toolSummary } from "../view";
  */
 const props = defineProps<{
   link: RetrievalLink;
+  /** The parent run's id — used to scope the retrieval snapshot proxy route. */
+  parentRunId: string;
   sessionId: string;
   runActive: () => boolean;
 }>();
@@ -29,7 +31,7 @@ const open = ref(false);
 
 const { state } = useRetrievalActivity(
   (retrievalId) =>
-    shell.readRetrieval(props.sessionId, props.link.runId, retrievalId),
+    shell.readRetrieval(props.sessionId, props.parentRunId, retrievalId),
   props.link.retrievalId,
   props.runActive,
 );

@@ -88,6 +88,7 @@ async function submit(value: ShellFeedbackValue) {
       v-for="link in item.retrievals"
       :key="link.retrievalId"
       :link="link"
+      :parent-run-id="item.runId"
       :session-id="sessionId ?? ''"
       :run-active="runActive"
     />

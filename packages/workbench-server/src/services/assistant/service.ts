@@ -210,11 +210,11 @@ export const assistantService = {
       this.observe(id, owner, { token: c?.token, apiKey: c?.apiKey });
     }
     // Attach retrieval associations for front-end activity rendering.
-    let retrievals: { retrievalId: string; runId: string; status: "running" | "stopped" | null }[] | undefined;
+    let retrievals: { retrievalId: string; runId: string }[] | undefined;
     try {
       const links = await new OntologyRetrievalClient(owner, id).links();
       if (links.length > 0) {
-        retrievals = links.map((link) => ({ retrievalId: link.retrievalId, runId: link.runId, status: null }));
+        retrievals = links.map((link) => ({ retrievalId: link.retrievalId, runId: link.runId }));
       }
     } catch {
       // Non-fatal: retrievals are best-effort for rendering only.

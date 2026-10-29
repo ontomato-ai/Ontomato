@@ -45,7 +45,6 @@ export const agentHostRunSchema = z
           .object({
             retrievalId: runtimeIdSchema,
             runId: runtimeIdSchema,
-            status: z.enum(["running", "stopped"]).nullable(),
           })
           .strict(),
       )
