@@ -1,3 +1,4 @@
+import { runtimeHistoryRecordSchema, type RuntimeHistoryQuery } from "@ontomato/contracts/agent-runtime-history";
 import { getServiceLogContext, updateServiceLogContext } from "@ontomato/service-logging";
 import { runtimeLogger } from "./logging";
 import { createHash, randomUUID } from "node:crypto";
@@ -461,6 +462,54 @@ export class RuntimeStore {
         [...values(scope), runId],
       )
     ).rows.map((r) => this.artifactRow(r));
+  }
+  private historyProjection() {
+    // Only the user input and the last assistant message of a settled run are public history.
+    const text = (alias: string) => `CASE WHEN jsonb_typeof(${alias}.message->'content')='string'
+      THEN ${alias}.message->>'content' ELSE COALESCE((SELECT string_agg(part->>'text', E'\\n' ORDER BY n)
+      FROM jsonb_array_elements(${alias}.message->'content') WITH ORDINALITY AS p(part,n)
+      WHERE part->>'type'='text'),'') END`;
+    return `SELECT r.host_id,r.domain_id,r.id,r.run,${text("u")} AS question,
+      CASE WHEN r.run->>'status'='stopped' AND r.run->>'stopReason' IN ('stop','length')
+      AND a.message IS NOT NULL AND NOT EXISTS (
+        SELECT 1 FROM jsonb_array_elements(a.message->'content') part WHERE part->>'type'='toolCall'
+      ) THEN ${text("a")} ELSE NULL END AS answer
+      FROM ${this.table("runs")} r
+      LEFT JOIN LATERAL (SELECT message FROM ${this.table("messages")} m
+        WHERE m.host_id=r.host_id AND m.domain_id=r.domain_id AND m.run_id=r.id
+        AND m.message->>'role'='user' ORDER BY seq LIMIT 1) u ON true
+      LEFT JOIN LATERAL (SELECT message FROM ${this.table("messages")} m
+        WHERE m.host_id=r.host_id AND m.domain_id=r.domain_id AND m.run_id=r.id
+        AND m.message->>'role'='assistant' ORDER BY seq DESC LIMIT 1) a ON true`;
+  }
+  private async historyRow(row: Record<string, any>) {
+    return runtimeHistoryRecordSchema.parse({
+      hostId: row.host_id, runId: row.id, sessionId: row.run.sessionId,
+      agentId: row.run.definition.agentId ?? null,
+      createdAt: row.run.createdAt, finishedAt: row.run.finishedAt,
+      question: row.question ?? "", answer: row.answer,
+      artifacts: await this.artifacts({ hostId: row.host_id, domainId: row.domain_id }, row.id),
+    });
+  }
+  async searchHistory(scope: Scope, allHosts: boolean, input: RuntimeHistoryQuery) {
+    const rows = (await this.pool.query(`SELECT * FROM (${this.historyProjection()}) h
+      WHERE domain_id=$1 AND ($2::text IS NULL OR host_id=$2)
+      AND ($3::text IS NULL OR run->'definition'->>'agentId'=$3)
+      AND ($4::timestamptz IS NULL OR (run->>'createdAt')::timestamptz >= $4)
+      AND ($5::timestamptz IS NULL OR (run->>'createdAt')::timestamptz < $5)
+      AND ($6='' OR strpos(lower(COALESCE(question,'') || E'\\n' || COALESCE(answer,'')),lower($6))>0)
+      ORDER BY run->>'createdAt' DESC,host_id,id DESC OFFSET $7 LIMIT $8`,
+      [scope.domainId, allHosts ? null : scope.hostId, input.agentId ?? null, input.from ?? null,
+        input.to ?? null, input.query, input.offset, input.limit + 1])).rows;
+    return { records: await Promise.all(rows.slice(0,input.limit).map(row => this.historyRow(row))),
+      nextOffset: rows.length > input.limit ? input.offset + input.limit : null };
+  }
+  async history(scope: Scope, allHosts: boolean, hostId: string, runId: string) {
+    if (!allHosts && hostId !== scope.hostId) missing();
+    const row = (await this.pool.query(`${this.historyProjection()}
+      WHERE r.domain_id=$1 AND r.host_id=$2 AND r.id=$3`, [scope.domainId,hostId,runId])).rows[0];
+    if (!row) missing();
+    return this.historyRow(row);
   }
   async resolveArtifacts(
     scope: Scope,

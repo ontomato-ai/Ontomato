@@ -275,3 +275,13 @@ not a run. It uses host/domain authentication and the schemas in
 [`runtime-model-test.ts`](src/runtime-model-test.ts). It sends one minimal pi-ai
 request, does not retry or persist anything, and cancels on disconnect. Request fields, masked-key restoration and response are defined in the
 [model configuration contract](agent-runtime-model-config.md).
+
+## Restricted run history
+
+`GET /v1/history` and `/v1/history/:hostId/:runId` expose the projection defined in
+`src/agent-runtime-history.ts`. It contains user questions, final answers and artifact metadata,
+never full messages, thinking, tools or annotations. Artifact content is read through
+`/v1/history/:hostId/:runId/artifacts/:artifactId/content`. `X-Domain-Id` always applies.
+Only hosts configured with `domainHistory: true` can read another host's projection; shipped
+configuration grants this to ontology alone. Other runtime routes remain host-scoped.
+`definition.agentId` is an optional opaque host-owned agent identity for filtering.

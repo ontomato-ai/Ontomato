@@ -317,7 +317,7 @@ export const assistantService = {
             content: message,
             timestamp: new Date(turn.created_at).getTime(),
           },
-          definition: runDefinition(
+          definition: { agentId: session.agent_id, ...runDefinition(
             a.system_prompt +
               "\n\nInitial ontology context:\n" +
               ontologyContext +
@@ -327,7 +327,7 @@ export const assistantService = {
             skills,
             credentials.locale,
             a.enabled_mcp_service_ids.map((serviceId) => ({ id: serviceId })),
-          ),
+          ) },
           environment: {
             values: {
               ...skillEnvironment.values,
