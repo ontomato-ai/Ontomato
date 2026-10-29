@@ -82,8 +82,7 @@ const actions = {
   "read-ontology": "read_ontology",
   "search-history": "search_history",
   "read-history": "read_history",
-  "collect-turn-artifacts": "collect_turn_artifacts",
-  "read-evidence": "read_evidence",
+    "read-evidence": "read_evidence",
   "read-work-record": "read_work_record",
   "update-work-record": "update_work_record",
 };

@@ -50,6 +50,7 @@ function sortEntries(entries: fs.Dirent[]): fs.Dirent[] {
 }
 
 function buildNode(filePath: string, rootDir: string): KnowledgeTreeNode | null {
+  if (fs.lstatSync(filePath).isSymbolicLink()) return null;
   const stat = fs.statSync(filePath);
   const name = path.basename(filePath);
   const relativePath = toKnowledgePath(filePath, rootDir);
@@ -128,6 +129,7 @@ function resolveReadableMarkdown(input?: string, rootDir = knowledgeDir()): stri
     throw new KnowledgeNotFoundError("Knowledge markdown file not found");
   }
 
+  assertInsideRoot(fs.realpathSync(filePath), fs.realpathSync(rootDir));
   return filePath;
 }
 

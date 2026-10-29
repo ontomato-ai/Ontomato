@@ -37,7 +37,7 @@ import skillsRouter from "../api/routes/skills";
 import autotestRouter from "../platform/diagnosis/autotest/routes";
 import observeRouter from "../platform/diagnosis/observe/routes";
 import artifactRetentionRouter from "../platform/diagnosis/artifact-retention-routes";
-import agentRouter from "../platform/diagnosis/observe/agent/routes";
+import opsDiagnosisRouter from "../api/routes/ops-diagnosis";
 import { syncRuntimeDefaultResources } from "../platform/runtime-defaults";
 import systemModelConfigRouter from "../api/routes/system-model-config";
 import workbenchAppearanceRouter from "../api/routes/workbench-appearance";
@@ -230,6 +230,9 @@ export function createWorkbenchApp(mounts: WorkbenchMounts = {}): Express {
   app.use("/api/query-history", queryHistoryRouter);
   app.use(
     [
+      "/api/observe/agent",
+      "/api/observe/diagnoses",
+      "/api/observe/evidence",
       "/api/observe/retention",
       "/api/observe/autotest/runs",
       "/api/observe/turns",
@@ -244,9 +247,9 @@ export function createWorkbenchApp(mounts: WorkbenchMounts = {}): Express {
   );
   app.use("/api/observe/retention", artifactRetentionRouter);
   app.use("/api/observe/autotest", autotestRouter);
+  app.use("/api/observe", opsDiagnosisRouter);
   app.use("/api/observe", serviceLogsRouter);
   app.use("/api/observe", observeRouter);
-  app.use("/api/observe/agent", agentRouter);
   app.use("/api/system-model-config", systemModelConfigRouter);
   app.use("/api/workbench-appearance", workbenchAppearanceRouter);
   app.use(errorHandler);

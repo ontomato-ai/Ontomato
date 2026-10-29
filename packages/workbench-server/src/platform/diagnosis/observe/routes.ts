@@ -466,6 +466,12 @@ router.post(
         return;
       }
 
+      const sourceTurn = parseTurnKey(turnKey);
+      if (!sourceTurn) throw new Error("Invalid turnKey");
+      const domainId = requireDomainId(req as AuthenticatedRequest);
+      await assistantEvidenceReader().verifyDomain(sourceTurn.threadId, domainId);
+      const saved = loadManifest(turnKey);
+      if (saved && saved.domainId !== domainId) throw new Error("Turn not found");
       if (force) {
         deleteWorkspace(turnKey);
       } else {
@@ -480,6 +486,8 @@ router.post(
         turnKey,
         domainId: requireDomainId(req as AuthenticatedRequest),
         token: (req as AuthenticatedRequest).token,
+        apiKey: (req as AuthenticatedRequest).apiKey,
+        userId: (req as AuthenticatedRequest).userId,
       });
       res.status(201).json({ success: true, data: manifest });
     } catch (error) {

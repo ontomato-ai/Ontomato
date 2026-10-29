@@ -1,16 +1,17 @@
 # Operations diagnosis contract
 
-Proposal, 2026-10-29; implementation waits for controller review.
+Implemented, 2026-10-29; main-checkout acceptance remains controller-owned.
 [Design](../../docs/ops-diagnosis-runtime-design.md) owns placement, deletion and
-page migration; [review](../../notes/design.md) records unresolved policy choices.
-This file adds no implemented TypeScript schema in the design stage.
+page migration; [review](../../notes/design.md) records the approved policy choices.
+Executable reference/query schemas are in [src/ops-diagnosis.ts](src/ops-diagnosis.ts).
+Ontology resources use the owner facade with ordinary caller credentials; unavailable same-domain observer reads return the explicit evidence gap described below.
 
 ## Conversation and target entry
 
 `/api/observe/agent` implements [agent-host](agent-host.md) without new fields or
 states. The fixed diagnosis agent uses a UUID selector ID. Runtime messages,
 events, cursors and artifacts retain their existing shapes. The workbench verifies
-observe access plus session ownership on every operation, including MCP (D1).
+observe access plus user and domain session ownership on every operation, including MCP (D1).
 
 A target action is separate from the common proxy:
 
@@ -113,16 +114,13 @@ not the total matching data. `rows.length < receivedRowCount` identifies local
 sampling independently of upstream truncation. Keep null/false/zero/empty values;
 do not shorten values into invalid JSON. The script may abbreviate displayed text
 with an explicit notice. Never claim a total from a truncated sample. Operational
-failures are errors, not successful empty data. During implementation, shared executable schemas for
-new reference/query-preview shapes belong in `contracts/src/ops-diagnosis.ts` and
-are consumed by host, script packaging and feature pages, not redefined per caller.
+failures are errors, not successful empty data. Shared executable reference/query-preview schemas live in `contracts/src/ops-diagnosis.ts` and are consumed by the HTTP boundary and feature pages. The portable script uses these validated HTTP responses without importing repository TypeScript.
 
 ## Logs: reuse the service contract
 
 All filters, defaults, time bounds, cursor rules, IDs, `LogPage`, retention
 limitations and errors are defined **only** by
-[service-logging.md](service-logging.md). That dependency must be integrated before
-implementation; it is absent from this proposal's public baseline.
+[service-logging.md](service-logging.md). The integrated service-logging implementation owns this contract.
 
 The evidence route is a restricted callback alias to the existing provider:
 

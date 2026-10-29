@@ -6,30 +6,17 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const mocks = vi.hoisted(() => ({
-  createSession: vi.fn(),
-  startChat: vi.fn(),
-  hasSession: vi.fn(),
-  getResponseStream: vi.fn(),
-  getSessionHistory: vi.fn(),
+const mocks = vi.hoisted(() => ({ create: vi.fn(), start: vi.fn(), snapshot: vi.fn() }));
+vi.mock("../../../services/ops-diagnosis/service", () => ({
+  createDiagnosis: mocks.create,
+  diagnosisService: { start: mocks.start, snapshot: mocks.snapshot },
 }));
-
-vi.mock("../../../platform/diagnosis/observe/agent/pi-agent", () => ({
-  diagnosisManager: {
-    createSession: mocks.createSession,
-    startChat: mocks.startChat,
-    hasSession: mocks.hasSession,
-    getResponseStream: mocks.getResponseStream,
-    getSessionHistory: mocks.getSessionHistory,
-  },
-}));
-
+import { HttpError } from "../../../utils/errors";
 import { installWorkbenchIdentity } from "../../../identity/installed";
 import { installWorkbenchProduct } from "../../../product/installed";
 import { configureI18n } from "../../../i18n";
 import { appTextEn } from "../../../i18n/app-text-en";
 import { en, enLocaleMeta } from "../../../i18n/locales/en";
-import { SessionResponseStream } from "../../../utils/response-stream";
 import { createOpsAgentMcpRouter, getOpsAgentMcpToolCatalog } from "../ops-agent-mcp";
 import os from "node:os";
 import { installContentLayout } from "../../../content/layout";
@@ -62,11 +49,7 @@ let servers: http.Server[] = [];
 let clients: Client[] = [];
 
 beforeEach(() => {
-  mocks.createSession.mockReset();
-  mocks.startChat.mockReset();
-  mocks.hasSession.mockReset();
-  mocks.getResponseStream.mockReset();
-  mocks.getSessionHistory.mockReset();
+  Object.values(mocks).forEach((fn) => fn.mockReset());
 
   installWorkbenchProduct({
     analysisMcpServerName: "ontomato-analysis-agents",
@@ -122,220 +105,39 @@ function readToolPayload(result: unknown): any {
   return typeof text?.text === "string" ? JSON.parse(text.text) : result;
 }
 
-describe("ops agent MCP router", () => {
-  it("starts a new session and returns completed status with answer", async () => {
-    mocks.createSession.mockResolvedValue({ id: "sess-1" });
-    const stream = new SessionResponseStream();
-    mocks.startChat.mockImplementation(async () => {
-      stream.append({ type: "response_end", status: "completed" });
-      return { ok: true, stream };
-    });
-    mocks.getSessionHistory.mockResolvedValue({
-      messages: [
-        { role: "user", content: "hello" },
-        { role: "assistant", content: "diagnosed output" },
-      ],
-    });
-
-    const client = await startClient(createOpsAgentMcpRouter({ timeoutMs: 1000 }));
-    const result = readToolPayload(
-      await client.callTool({ name: "send", arguments: { message: "hello" } })
-    );
-
-    expect(mocks.createSession).toHaveBeenCalled();
-    expect(mocks.startChat).toHaveBeenCalledWith("sess-1", "hello", {
-      domainId: "default",
-      token: undefined,
-      apiKey: undefined,
-    });
-    expect(result).toEqual({
-      status: "completed",
-      sessionId: "sess-1",
-      answer: "diagnosed output",
-    });
+describe("ops agent MCP compatibility", () => {
+  const sessionId = "a8c435e0-c139-43e7-b4b3-329b966504a8";
+  const snapshot = (status: string, stopReason: string | null, text = "diagnosed") => ({ latestRun: { run: { status, stopReason, errorMessage: stopReason === "aborted" ? "Cancelled" : null }, messages: [{ message: { role: "assistant", content: [{ type: "text", text }] } }] } });
+  it("retains the send schema and creates a session with the current owner", async () => {
+    mocks.create.mockResolvedValue({ session: { id: sessionId } }); mocks.start.mockResolvedValue({}); mocks.snapshot.mockResolvedValue(snapshot("stopped", "stop"));
+    const catalog = await getOpsAgentMcpToolCatalog(); expect(catalog.map((t) => t.name)).toEqual(["send"]);
+    const client = await startClient(createOpsAgentMcpRouter({ timeoutMs: 10 }));
+    const value = readToolPayload(await client.callTool({ name: "send", arguments: { message: " diagnose " } }));
+    expect(value).toEqual({ status: "completed", sessionId, answer: "diagnosed" });
+    expect(mocks.start.mock.calls[0][2]).toBe("diagnose"); expect(mocks.start.mock.calls[0][3]).toEqual({ userId: "system", domainId: "default" });
   });
-
-  it("returns parameter error when message is omitted without sessionId", async () => {
-    const client = await startClient(createOpsAgentMcpRouter({ timeoutMs: 1000 }));
-    const result = readToolPayload(
-      await client.callTool({ name: "send", arguments: {} })
-    );
-
-    expect(result).toEqual({
-      success: false,
-      code: "INVALID_CHAT_INPUT",
-      error: expect.any(String),
-    });
+  it("polls running work without submitting another message", async () => {
+    mocks.snapshot.mockResolvedValue(snapshot("running", null));
+    const client = await startClient(createOpsAgentMcpRouter({ timeoutMs: 0 }));
+    expect(readToolPayload(await client.callTool({ name: "send", arguments: { sessionId } }))).toEqual({ status: "running", sessionId });
+    expect(mocks.start).not.toHaveBeenCalled();
   });
-
-  it("continues conversation with existing sessionId and message", async () => {
-    const stream = new SessionResponseStream();
-    mocks.startChat.mockImplementation(async () => {
-      stream.append({ type: "response_end", status: "completed" });
-      return { ok: true, stream };
-    });
-    mocks.getSessionHistory.mockResolvedValue({
-      messages: [
-        { role: "user", content: "more context" },
-        { role: "assistant", content: "continued diagnosis" },
-      ],
-    });
-
-    const client = await startClient(createOpsAgentMcpRouter({ timeoutMs: 1000 }));
-    const result = readToolPayload(
-      await client.callTool({
-        name: "send",
-        arguments: { sessionId: "sess-existing", message: "more context" },
-      })
-    );
-
-    expect(mocks.createSession).not.toHaveBeenCalled();
-    expect(mocks.startChat).toHaveBeenCalledWith(
-      "sess-existing",
-      "more context",
-      {
-        domainId: "default",
-        token: undefined,
-        apiKey: undefined,
-      }
-    );
-    expect(result).toEqual({
-      status: "completed",
-      sessionId: "sess-existing",
-      answer: "continued diagnosis",
-    });
+  it.each(["error", "aborted"])("preserves failed wire status for stopped %s", async (reason) => {
+    mocks.snapshot.mockResolvedValue(snapshot("stopped", reason));
+    const client = await startClient(createOpsAgentMcpRouter({ timeoutMs: 0 }));
+    expect(readToolPayload(await client.callTool({ name: "send", arguments: { sessionId } }))).toMatchObject({ status: "failed", sessionId });
   });
-
-  it("returns running when execution exceeds timeout and fetches result later without message", async () => {
-    const stream = new SessionResponseStream();
-    mocks.startChat.mockImplementation(async () => {
-      return { ok: true, stream };
-    });
-
-    const client = await startClient(createOpsAgentMcpRouter({ timeoutMs: 20 }));
-    const runningResult = readToolPayload(
-      await client.callTool({
-        name: "send",
-        arguments: { sessionId: "sess-long", message: "long running" },
-      })
-    );
-
-    expect(runningResult).toEqual({
-      status: "running",
-      sessionId: "sess-long",
-    });
-
-    stream.append({ type: "response_end", status: "completed" });
-    mocks.hasSession.mockResolvedValue(true);
-    mocks.getResponseStream.mockReturnValue(stream);
-    mocks.getSessionHistory.mockResolvedValue({
-      messages: [{ role: "assistant", content: "eventual answer" }],
-    });
-
-    const pollResult = readToolPayload(
-      await client.callTool({
-        name: "send",
-        arguments: { sessionId: "sess-long" },
-      })
-    );
-
-    expect(pollResult).toEqual({
-      status: "completed",
-      sessionId: "sess-long",
-      answer: "eventual answer",
-    });
+  it("does not call a partial answer successful business diagnosis", async () => {
+    mocks.snapshot.mockResolvedValue(snapshot("stopped", "length", "Partial evidence"));
+    const client = await startClient(createOpsAgentMcpRouter({ timeoutMs: 0 }));
+    expect(readToolPayload(await client.callTool({ name: "send", arguments: { sessionId } }))).toEqual({ status: "completed", sessionId, answer: "Partial evidence" });
   });
-
-  it("returns busy error when session is already running", async () => {
-    mocks.startChat.mockResolvedValue({
-      ok: false,
-      status: 409,
-      code: "RESPONSE_BUSY",
-      error: "Session response already running",
-    });
-
-    const client = await startClient(createOpsAgentMcpRouter({ timeoutMs: 1000 }));
-    const result = readToolPayload(
-      await client.callTool({
-        name: "send",
-        arguments: { sessionId: "sess-busy", message: "new turn while busy" },
-      })
-    );
-
-    expect(result).toEqual({
-      success: false,
-      code: "RESPONSE_BUSY",
-      error: "Session response already running",
-    });
-  });
-
-  it("returns failed when execution fails", async () => {
-    const stream = new SessionResponseStream();
-    mocks.startChat.mockImplementation(async () => {
-      stream.append({
-        type: "error",
-        error: "Diagnosis agent internal failure",
-        timestamp: Date.now(),
-      });
-      return { ok: true, stream };
-    });
-
-    const client = await startClient(createOpsAgentMcpRouter({ timeoutMs: 1000 }));
-    const result = readToolPayload(
-      await client.callTool({
-        name: "send",
-        arguments: { sessionId: "sess-failed", message: "trigger failure" },
-      })
-    );
-
-    expect(result).toEqual({
-      status: "failed",
-      sessionId: "sess-failed",
-      error: "Diagnosis agent internal failure",
-    });
-  });
-
-  it("returns session not found error when non-existent session is polled without message", async () => {
-    mocks.getSessionHistory.mockResolvedValue(undefined);
-
-    const client = await startClient(createOpsAgentMcpRouter({ timeoutMs: 1000 }));
-    const result = readToolPayload(
-      await client.callTool({
-        name: "send",
-        arguments: { sessionId: "sess-missing" },
-      })
-    );
-
-    expect(result).toEqual({
-      success: false,
-      code: "SESSION_NOT_FOUND",
-      error: expect.any(String),
-    });
-  });
-
-  it("lists the send tool in ops agent tool catalog", async () => {
-    const tools = await getOpsAgentMcpToolCatalog();
-    expect(tools).toHaveLength(1);
-    expect(tools[0].name).toBe("send");
-  });
-
-  it("includes ops agent service with send tool in /api/mcp/system/tools response", async () => {
-    const { default: mcpRouter } = await import("../mcp");
-    const app = express();
-    app.use("/api/mcp", mcpRouter);
-    const server = await new Promise<http.Server>((resolve) => {
-      const s = app.listen(0, "127.0.0.1", () => resolve(s));
-    });
-    servers.push(server);
-    const address = server.address() as AddressInfo;
-    const res = await fetch(`http://127.0.0.1:${address.port}/api/mcp/system/tools`);
-    expect(res.status).toBe(200);
-    const data = (await res.json()) as {
-      services: Array<{ mcpUrl: string; tools: Array<{ name: string }> }>;
-    };
-    const opsService = data.services.find((s) => s.mcpUrl.endsWith("/mcp/ops-agent"));
-    expect(opsService).toBeDefined();
-    expect(opsService?.tools).toHaveLength(1);
-    expect(opsService?.tools[0].name).toBe("send");
+  it("retains invalid, missing and busy error shapes", async () => {
+    const client = await startClient(createOpsAgentMcpRouter({ timeoutMs: 0 }));
+    expect(readToolPayload(await client.callTool({ name: "send", arguments: {} }))).toMatchObject({ success: false, code: "INVALID_CHAT_INPUT" });
+    mocks.snapshot.mockRejectedValue(new HttpError(404, "Not found"));
+    expect(readToolPayload(await client.callTool({ name: "send", arguments: { sessionId } }))).toMatchObject({ success: false, code: "SESSION_NOT_FOUND" });
+    mocks.start.mockRejectedValue(new HttpError(409, "Busy", "SESSION_BUSY"));
+    expect(readToolPayload(await client.callTool({ name: "send", arguments: { sessionId, message: "next" } }))).toMatchObject({ success: false, code: "RESPONSE_BUSY" });
   });
 });

@@ -1,7 +1,7 @@
 # Operations diagnosis on the agent runtime
 
-Proposal for controller review, 2026-10-29. This is the design stage only.
-[Review entry](../notes/design.md) lists decisions required before implementation;
+Design approved and implemented, 2026-10-29. See [implementation handoff](../notes/handoff.md) for the delivered scope and outstanding acceptance. The ownership decisions below remain the design record.
+[Review entry](../notes/design.md) records the controller decisions;
 [ops-diagnosis](../packages/contracts/ops-diagnosis.md) owns the proposed interfaces.
 
 ## Goal and baseline
@@ -15,12 +15,11 @@ conversation shell. The external operations MCP keeps its wire shape.
 
 Inspected public baseline: `80dc66859e4d0f34285094f8a4ae6e5c7007b021`;
 enterprise assembly baseline: `770f37c6666810db91b2fea4563b5e540cca73af`.
-The baseline has the common shell/host contracts but **does not contain**
+The design-stage baseline had the common shell/host contracts but **did not contain**
 `packages/contracts/service-logging.md`. This proposal consumes the supplied
 service-logging worktree contract, including its runtime-log proxy and independent
 run/correlation/session IDs. That worktree also has uncommitted implementation
-changes. Before implementation, the controller must provide the integrated logging
-baseline. Neither those changes nor the logging contract are copied into this branch.
+changes. Implementation began after merging the integrated develop baseline (public `5865de91`, enterprise `0723e50`), which includes service logging. No sibling worktree changes were copied.
 
 The older capability documentation describes the pre-runtime product. In this
 baseline, `services/assistant/evidence.ts` already reads runtime snapshots, while
@@ -114,8 +113,7 @@ Three access rules remain distinct:
 - Turn/autotest evidence is checked against its domain-owned source before any
   runtime request. Existing same-domain observer investigation of assistant turns
   remains possible; this is not unrestricted runtime session browsing.
-- Diagnosis conversations need an explicit ownership decision (review D1).
-  Proposed: user + domain ownership, with both checked for list/read/write/MCP;
+- Diagnosis conversations follow the approved ownership decision (D1): user + domain ownership, with both checked for list/read/write/MCP;
   this corrects the current unscoped diagnosis session store and is not assumed
   to be an already implemented behavior.
 
@@ -168,8 +166,7 @@ that. The proposed integration reads foreign-host resources through the owning
 ontology service, which verifies the request and uses its own runtime credential.
 It returns the same runtime/public projection shapes and immutable bytes. It must
 not expose secrets/definition environments, give workbench the ontology host key,
-or broaden `/v1/logs` access into session access. The ontology evidence facade and
-same-domain observer policy need controller agreement with that module (D2).
+or broaden `/v1/logs` access into session access. The controller assigned the ontology evidence facade and same-domain observer policy to the ontology AI module (D2). Its current common proxy is called with ordinary user credentials; reads it does not authorize remain explicit evidence gaps.
 Until available, return an explicit unavailable source, never recreate evidence
 from old raw logs. This is an implementation dependency, not full acceptance.
 

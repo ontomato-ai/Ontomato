@@ -1,9 +1,6 @@
 import type {
   KnowledgeTreeResponse,
   KnowledgeMarkdownFile,
-  SessionInfo,
-  SessionHistorySnapshot,
-  SessionStopResult,
 } from "@ontomato/contracts/diagnosis";
 import type {
   WorkspaceManifest,
@@ -40,7 +37,6 @@ import {
 import { apiUrl } from "../../utils/api-base";
 import { authHost } from "../../utils/auth";
 
-const AGENT_BASE = "/observe/agent";
 const AUTOTEST_BASE = "/observe/autotest";
 
 export function artifactRetentionRequestKey(
@@ -149,20 +145,6 @@ export const diagnosisApi = {
   deleteCaseSet: (id: string) => requestTestcase<void>(`/case-sets/${id}`, { method: "DELETE" }),
   createCaseSet: (body: string) =>
     requestTestcase<CaseSetImportResult>("/case-sets", { method: "POST", body }),
-  listSessions: (): Promise<HttpSuccessResponse<SessionInfo[]>> =>
-    nodeApiGet(`${AGENT_BASE}/sessions`),
-  createSession: (body: unknown): Promise<HttpSuccessResponse<SessionInfo>> =>
-    nodeApiPost(`${AGENT_BASE}/sessions`, body),
-  deleteSession: (sessionId: string): Promise<HttpAcknowledgement> =>
-    nodeApiDelete(`${AGENT_BASE}/sessions/${sessionId}`),
-  getSessionHistory: (sessionId: string): Promise<HttpSuccessResponse<SessionHistorySnapshot>> =>
-    nodeApiGet(`${AGENT_BASE}/sessions/${sessionId}/history`),
-  openSessionStream: (sessionId: string, opts?: any) =>
-    nodeApiFetch(`${AGENT_BASE}/sessions/${sessionId}/stream`, "GET", undefined, opts),
-  sendMessage: (sessionId: string, message: string, opts?: any) =>
-    nodeApiFetch(`${AGENT_BASE}/chat`, "POST", { sessionId, message }, opts),
-  stopSession: (sessionId: string): Promise<HttpSuccessResponse<SessionStopResult>> =>
-    nodeApiPost(`${AGENT_BASE}/sessions/${sessionId}/stop`),
   turnArtifactUrl: (turnKey: string) => apiUrl(`/observe/turns/${encodeURIComponent(turnKey)}`),
   turnBuildUrl: () => apiUrl("/observe/turns"),
   caseArtifactUrl: (runId: string, caseId: string) =>

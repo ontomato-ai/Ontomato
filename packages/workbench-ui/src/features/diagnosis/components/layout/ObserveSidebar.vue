@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import type { SessionInfo as AgentSession } from "@ontomato/contracts/diagnosis";
 import type { ArtifactType as RetentionArtifactType } from "@ontomato/contracts/observe";
 import type {
   WorkspaceManifest,
@@ -21,18 +20,13 @@ import {
 } from "lucide-vue-next";
 import { useLocale } from "../../../../composables/useLocale";
 import { relativeTime } from "../../../../utils/relative-time";
-import { sessionContextLabel } from "../../utils/session-context";
 import { artifactRetentionRequestKey } from "../../api";
 import CompactSidebarHistoryItem from "./CompactSidebarHistoryItem.vue";
-import SidebarListItem from "../agent-chat/SidebarListItem.vue";
+import SidebarListItem from "./SidebarListItem.vue";
 
 const props = defineProps<{
   activeGroup: ObserveNavGroupKey;
   collapsed: boolean;
-  knowledgeActive: boolean;
-  sessions: AgentSession[];
-  currentSessionId?: string | null;
-  sessionsLoading: boolean;
   observeTurns: WorkspaceManifest[];
   observeTurnsLoading: boolean;
   selectedTurnKey?: string | null;
@@ -50,10 +44,6 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   "toggle-collapsed": [];
-  "new-session": [];
-  "open-knowledge": [];
-  "select-session": [session: AgentSession];
-  "delete-session": [id: string];
   "select-live-logs": [];
   "update:turnSearchInput": [value: string];
   "search-turn": [];
@@ -92,9 +82,7 @@ function formatTurnSubtitle(workspace: WorkspaceManifest): string {
   return workspace.createdAt ? relativeTime(workspace.createdAt) : "";
 }
 
-function formatSessionSubtitle(session: AgentSession): string {
-  return [sessionContextLabel(session), session.createdAt].filter(Boolean).join(" · ");
-}
+
 
 function formatRunSubtitle(run: AutotestRunMeta): string {
   const parts: string[] = [];
@@ -123,77 +111,7 @@ function retentionUpdating(artifactType: RetentionArtifactType, artifactId: stri
 
 <template>
   <aside :class="['observe-aside', { collapsed }]">
-    <template v-if="activeGroup === 'diagnosis'">
-      <div class="diagnosis-sidebar-content">
-        <div class="diagnosis-fixed">
-          <div class="aside-top-row">
-            <div
-              :class="['diagnosis-action-item', 'no-margin', { collapsed }]"
-              @click="emit('new-session')"
-            >
-              <el-icon><Plus /></el-icon>
-              <span v-if="!collapsed" class="action-label">
-                {{ t("diagnosis.newConversation") }}
-              </span>
-            </div>
-          </div>
-          <div
-            :class="['diagnosis-action-item', { active: knowledgeActive, collapsed }]"
-            @click="emit('open-knowledge')"
-          >
-            <el-icon><BookOpen /></el-icon>
-            <span v-if="!collapsed" class="action-label">{{ t("admin.knowledgeBase") }}</span>
-          </div>
-        </div>
-
-        <div v-if="!collapsed" class="diagnosis-sessions">
-          <div class="sessions-divider">
-            <span class="sessions-divider-text">{{ t("chat.historyConversations") }}</span>
-          </div>
-          <div v-loading="sessionsLoading" class="sessions-scroll">
-            <div
-              v-for="s in sessions"
-              :key="s.id"
-              :class="['session-item', { active: currentSessionId === s.id }]"
-              @click="emit('select-session', s)"
-            >
-              <div class="session-item-title">
-                {{ s.title || s.id }}
-              </div>
-              <div v-if="sessionContextLabel(s)" class="session-item-context">
-                {{ sessionContextLabel(s) }}
-              </div>
-              <div v-if="s.createdAt" class="session-item-meta">
-                {{ s.createdAt }}
-              </div>
-              <el-button
-                class="session-delete-btn"
-                text
-                size="small"
-                :icon="Trash2"
-                @click.stop="emit('delete-session', s.id)"
-              />
-            </div>
-            <div v-if="sessions.length === 0 && !sessionsLoading" class="sessions-empty">
-              {{ t("chat.noConversations") }}
-            </div>
-          </div>
-        </div>
-
-        <div v-if="collapsed" v-loading="sessionsLoading" class="compact-history-list">
-          <CompactSidebarHistoryItem
-            v-for="s in sessions"
-            :key="s.id"
-            :title="s.title || s.id"
-            :subtitle="formatSessionSubtitle(s)"
-            :active="currentSessionId === s.id"
-            @click="emit('select-session', s)"
-          />
-        </div>
-      </div>
-    </template>
-
-    <template v-else-if="activeGroup === 'observe'">
+    <template v-if="activeGroup === 'observe'">
       <div class="observe-sidebar-content">
         <div class="observe-fixed">
           <div class="aside-top-row">

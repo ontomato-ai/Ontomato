@@ -18,7 +18,7 @@ export const observeRoutes = {
     {
       path: "diagnosis",
       name: "ObserveDiagnosis",
-      component: () => import("../features/diagnosis/components/agent-chat/DiagnosisPage.vue"),
+      component: placeholder,
       meta: { group: "diagnosis" },
     },
     {

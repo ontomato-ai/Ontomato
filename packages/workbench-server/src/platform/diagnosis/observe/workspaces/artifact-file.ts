@@ -109,7 +109,10 @@ export function createWorkspaceZip(workspaceId: string): Buffer | null {
 
   try {
     const zip = new AdmZip();
-    addDirToZip(zip, dir, workspaceId);
+    const manifest = JSON.parse(fs.readFileSync(path.join(dir, "manifest.json"), "utf8"));
+    if (!manifest.evidence) return null;
+    zip.addFile(`${workspaceId}/evidence.json`, Buffer.from(JSON.stringify(manifest.evidence, null, 2)));
+    zip.addFile(`${workspaceId}/README.txt`, Buffer.from("Evidence references only. Service log retention and source authorization apply; no raw logs are included.\n"));
     return zip.toBuffer();
   } catch (error) {
     const msg = error instanceof Error ? error.message : String(error);

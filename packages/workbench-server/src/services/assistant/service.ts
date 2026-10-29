@@ -7,7 +7,6 @@ import {
   type AssistantFeedbackWrite,
 } from "@ontomato/contracts/assistant-chat";
 import {
-  agentHostRunSchema,
   agentHostSessionSchema,
   agentHostAgentSchema,
 } from "@ontomato/contracts/agent-host";
@@ -43,19 +42,8 @@ import { createLogger } from "../../logging/logger";
 const db = () => getPostgresPool(),
   logger = createLogger("assistant"),
   observing = new Set<string>();
-const publicRun = (run: RuntimeRunSnapshot["run"]) =>
-  agentHostRunSchema.parse(
-    Object.fromEntries(
-      Object.keys(agentHostRunSchema.shape).map((k) => [
-        k,
-        run[k as keyof typeof run],
-      ]),
-    ),
-  );
-export const publicSnapshot = (s: RuntimeRunSnapshot) => ({
-  ...s,
-  run: publicRun(s.run),
-});
+export { publicSnapshot } from "../../platform/agent-runtime/projection";
+import { publicMessages, publicSnapshot, publicRun } from "../../platform/agent-runtime/projection";
 const sessionView = (s: SessionRow, latestRun: RuntimeRunSnapshot | null) =>
   agentHostSessionSchema.parse({
     id: s.id,
@@ -200,7 +188,7 @@ export const assistantService = {
         await assistantStore.session(row.id, owner),
         s.latestRun,
       ),
-      messages: s.messages,
+      messages: publicMessages(s.messages),
       latestRun: s.latestRun ? publicSnapshot(s.latestRun) : null,
     };
   },

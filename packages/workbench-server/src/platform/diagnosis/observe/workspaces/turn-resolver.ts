@@ -1,7 +1,7 @@
 import { HttpError } from "../../../../utils/errors";
 import type { WorkspaceUpstreamTurn } from "@ontomato/contracts/observe";
 import type { QueryBackendSession } from "@ontomato/contracts/query-execution";
-import type { BackendLogTimeWindow } from "../workspace-artifact/log-collector";
+interface BackendLogTimeWindow { minTs?: number; maxTs?: number; turnRunning?: boolean }
 import type { LogTimeWindow } from "../service-logs";
 import {
   assistantEvidenceReader,

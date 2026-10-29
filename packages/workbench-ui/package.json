@@ -17,7 +17,6 @@
     "./features/workbench": "./src/features/workbench/index.ts",
     "./features/query-view": "./src/features/query-view/index.ts",
     "./components/CodeMirrorEditor.vue": "./src/components/CodeMirrorEditor.vue",
-    "./features/diagnosis/utils/prompt-transcript-parser": "./src/features/diagnosis/utils/prompt-transcript-parser.ts",
     "./locales/*": "./src/locales/*.ts",
     "./styles/*": "./src/styles/*"
   },

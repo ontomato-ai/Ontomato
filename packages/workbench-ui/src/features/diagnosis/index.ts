@@ -1,4 +1,3 @@
-export { default as DiagnosisPage } from "./components/agent-chat/DiagnosisPage.vue";
 export { default as DslTestPage } from "./components/dsl-test/DslTestPage.vue";
 export { default as ObserveLayout } from "./components/layout/ObserveLayout.vue";
 export { default as KnowledgePage } from "./components/knowledge/KnowledgePage.vue";

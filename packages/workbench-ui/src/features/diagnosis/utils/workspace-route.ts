@@ -25,6 +25,8 @@ export function buildTurnDiagnoseRoute(turnKey: string): RouteLocationRaw {
     name: "ObserveTurnDetail",
     params: { turnKey },
     query: {
+      diagnosisSessionId: crypto.randomUUID(),
+      diagnosisRunId: crypto.randomUUID(),
       collect: TURN_COLLECT_QUERY_VALUE,
       diagnose: TURN_DIAGNOSE_QUERY_VALUE,
     },

@@ -1,5 +1,5 @@
 import type { EvaluationResult, TestCase, CaseStatus } from "@ontomato/contracts/autotest";
-import type { WorkspaceArtifactResult } from "../../observe/workspace-artifact/post-processor";
+import type { WorkspaceArtifactResult } from "../../observe/workspaces/turn-evidence-workspace";
 import type { CaseResult } from "../types";
 /**
  * Single case execution pipeline.
@@ -22,7 +22,7 @@ import { autotestConfig } from "../config";
 import { evaluateAnswer } from "../evaluation/answer-evaluator";
 import { loadEvaluationProtocol } from "../evaluation/conclusion-parser";
 import { executeApiChat } from "../strategies/api-chat";
-import { toResponseSnapshotMarkdown } from "../../observe/workspace-artifact/post-processor";
+import { toResponseSnapshotMarkdown } from "../answer-snapshot";
 import { buildTurnEvidenceWorkspace } from "../../observe/workspaces/turn-evidence-workspace";
 
 import { writeEvaluationReport } from "../artifact-writer";
@@ -112,18 +112,12 @@ export async function executeSingleCase(options: SingleCaseOptions): Promise<Cas
       error: execResult.error,
     };
 
-    // --- Wait briefly for backend log files/API buffers to flush --------
-    //
-    // Timeout cases keep waiting here because api-chat owns their internal
-    // timeout signal. A user stop only stops waiting for this promise; the
-    // already-produced Turn evidence continues in the background.
-
+    // Save evidence references without waiting for or collecting service logs.
     let ppResult: WorkspaceArtifactResult | undefined;
     if (result.turnKey) {
       if (!signal?.aborted) reportStep(tApp("diag.autotest.runner.single-case.1"));
 
       const postProcess = withRunArtifactWrite(runId, async () => {
-        await delay(10_000);
         if (!signal?.aborted) reportStep(tApp("diag.autotest.runner.single-case.2"));
         return safePostProcess(result, effectiveTestCase, runId, domainId, tk);
       });
@@ -197,10 +191,6 @@ function mapExecutionStatus(execStatus: "success" | "error" | "cancelled"): Case
 
 // ---- Helpers (never throw) ----------------------------------------------
 
-function delay(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
 function waitForAbort(signal: AbortSignal): Promise<undefined> {
   if (signal.aborted) return Promise.resolve(undefined);
   return new Promise((resolve) => {
@@ -242,13 +232,7 @@ async function safePostProcess(
       },
       token,
     });
-    if (evidenceResult.status !== "failed") return evidenceResult.artifactResult;
-    logger.warn("Case Turn evidence workspace build failed (non-blocking)", {
-      runId: result.runId,
-      caseId: result.caseId,
-      turnKey: result.turnKey,
-      reason: evidenceResult.reason,
-    });
+    return evidenceResult.artifactResult;
   } catch (err) {
     logger.warn("Post-processing failed (non-blocking)", {
       caseId: result.caseId,

@@ -1,3 +1,4 @@
+import { HttpError } from "../../utils/errors";
 import { createHash } from "node:crypto";
 import { z } from "zod";
 import {
@@ -6,14 +7,8 @@ import {
   type GovernanceSkillCallIdentity,
   type GovernanceWork,
 } from "@ontomato/contracts/knowledge-governance";
-import { verifyAssistantDomain } from "../assistant/evidence";
+import { readAssistantTurnEvidence } from "../assistant/evidence";
 import { parseTurnKey } from "../../logging/log-context";
-import { collectTurnArtifacts } from "../../platform/diagnosis/observe/workspaces/collect";
-import {
-  getFileTree,
-  readWorkspaceFile,
-} from "../../platform/diagnosis/observe/workspaces/artifact-file";
-import { loadManifest } from "../../platform/diagnosis/observe/workspaces/store";
 import {
   materialPage,
   materialPageInput,
@@ -55,11 +50,11 @@ export const governanceActions = {
   },
   read_evidence: {
     description:
-      "Read diagnostic files of a current-domain turn. Omit path to list files. Missing artifacts are an evidence gap. Never print raw prompts in the user conversation.",
+      "Read authoritative runtime evidence for a current-domain Turn, with character pagination. No files or logs are collected. Missing sources remain evidence gaps. Never print raw prompts in the user conversation.",
     schema: z
       .object({
         turnKey: z.string().min(1),
-        path: z.string().optional(),
+        
         offset: z.number().int().nonnegative().default(0),
         maxChars: z.number().int().min(1000).max(20000).default(12000),
       })
@@ -85,11 +80,7 @@ export const governanceActions = {
       "Read current-domain ontology originals by character budget. Query searches all records. Follow next.index/offset. Returned sourceId can be cited in findings.",
     schema: materialPageInput,
   },
-  collect_turn_artifacts: {
-    description:
-      "Collect current-domain execution evidence for a turnKey, then read it using read_evidence. Collection may rebuild existing diagnostic files.",
-    schema: z.object({ turnKey: z.string().min(1) }).strict(),
-  },
+
 };
 export type GovernanceAction = keyof typeof governanceActions;
 export function sourceId(kind: GovernanceSource["kind"], target: string) {
@@ -141,10 +132,6 @@ export async function executeGovernanceAction(
       ],
       a,
     );
-  }
-  if (name === "collect_turn_artifacts") {
-    const a = governanceActions[name].schema.parse(raw);
-    return collectTurnArtifacts(credentials, a.turnKey, signal);
   }
   if (name === "read_knowledge" || name === "read_ontology") {
     const a = governanceActions[name].schema.parse(raw),
@@ -201,33 +188,13 @@ export async function executeGovernanceAction(
     };
   }
   if (name === "read_evidence") {
-    const a = governanceActions[name].schema.parse(raw),
-      turn = parseTurnKey(a.turnKey);
-    if (!turn) throw new Error("Invalid turnKey");
-    const manifest = loadManifest(a.turnKey);
-    if (!manifest) {
-      await verifyAssistantDomain(turn.threadId, owner.domainId);
-      return { evidenceGap: "No diagnostic workspace exists for this turn." };
-    }
-    if (manifest.domainId !== owner.domainId)
-      throw new Error("Diagnostic artifact belongs to another domain");
-    if (!a.path)
-      return { tree: getFileTree(a.turnKey), status: manifest.status };
-    const text = readWorkspaceFile(a.turnKey, a.path);
-    if (text === null)
-      return {
-        evidenceGap:
-          "Artifact unavailable; absence does not prove the knowledge was absent from the original input.",
-      };
-    const item = source("artifact", `${a.turnKey}/${a.path}`, a.path, "");
+    const a = governanceActions.read_evidence.schema.parse(raw), turn = parseTurnKey(a.turnKey);
+    if (!turn) throw new HttpError(400, "Invalid Turn key");
+    const evidence = await readAssistantTurnEvidence(turn.threadId, turn.requestSeq, { domainId: owner.domainId, scope: "domain" });
+    const item = source("artifact", a.turnKey, a.turnKey, "");
     signal?.throwIfAborted();
-    await governanceStore.mutate(identity, owner, (work) =>
-      remember(work, [item]),
-    );
-    return {
-      ...materialPage([{ id: item.id, title: a.path, text }], a),
-      sourceId: item.id,
-    };
+    await governanceStore.mutate(identity, owner, (work) => remember(work, [item]));
+    return { ...materialPage([{ id: item.id, title: a.turnKey, text: JSON.stringify(evidence) }], a), sourceId: item.id };
   }
   const patch = governanceActions.update_work_record.schema.parse(raw);
   signal?.throwIfAborted();
