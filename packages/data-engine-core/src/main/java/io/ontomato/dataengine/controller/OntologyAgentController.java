@@ -29,8 +29,8 @@ public class OntologyAgentController {
 
   @GetMapping("/agents")
   public Object agents(HttpServletRequest req) {
-    access.current(req);
-    return host.agents();
+    access.authenticated(req);
+    return host.agents(access.governanceAllowed());
   }
 
   @PostMapping("/sessions")
@@ -42,7 +42,7 @@ public class OntologyAgentController {
       throws Exception {
     AgentJson.fields(body, "agentId");
     return host.create(
-        AgentJson.id(key), AgentJson.id(body.getString("agentId")), access.current(req).owner());
+        AgentJson.id(key), AgentJson.id(body.getString("agentId")), access.forAgent(req,body.getString("agentId")).owner());
   }
 
   @GetMapping("/sessions")
@@ -52,7 +52,7 @@ public class OntologyAgentController {
       @RequestParam(required = false) String cursor,
       HttpServletRequest req)
       throws Exception {
-    return host.list(agentId, limit, cursor, access.current(req).owner());
+    return host.list(agentId, limit, cursor, access.forAgent(req,agentId).owner());
   }
 
   @GetMapping("/sessions/{id}")
@@ -76,7 +76,7 @@ public class OntologyAgentController {
       throws Exception {
     AgentJson.fields(body, "message");
     return host.start(
-        AgentJson.id(id), AgentJson.id(key), AgentJson.text(body, "message"), access.current(req));
+        AgentJson.id(id), AgentJson.id(key), AgentJson.text(body, "message"), access.forSession(req,id));
   }
 
   @GetMapping("/sessions/{id}/runs/{run}")
@@ -88,7 +88,7 @@ public class OntologyAgentController {
   @PostMapping("/sessions/{id}/runs/{run}/cancel")
   public Object cancel(@PathVariable String id, @PathVariable String run, HttpServletRequest req)
       throws Exception {
-    return host.cancel(AgentJson.id(id), AgentJson.id(run), access.current(req).owner());
+    return host.cancel(AgentJson.id(id), AgentJson.id(run), access.forSession(req,id).owner());
   }
 
   @GetMapping("/sessions/{id}/runs/{run}/events")

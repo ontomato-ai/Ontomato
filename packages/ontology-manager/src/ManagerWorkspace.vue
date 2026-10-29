@@ -2,9 +2,9 @@
 import { computed, onMounted, ref, watch } from "vue";
 import type { ManagerAuthFailureStatus } from "./api";
 import { provideManagerContext, type ManagerHostContext } from "./context";
-import { sharedText, type SharedKey } from "./i18n";
 import { provideManagerFeedback } from "./feedback";
 import ManagerConfirmDialog from "./ManagerConfirmDialog.vue";
+import GovernancePage from "./knowledge-governance/GovernancePage.vue";
 import BusinessKnowledge from "./components/BusinessKnowledge.vue";
 import DataBrowser from "./data-browser/DataBrowser.vue";
 import VisualModeling from "./visual-modeling/VisualModeling.vue";
@@ -41,7 +41,6 @@ const { loadOntology, loadSmartAssets } = provideManagerContext(context, (status
 );
 const shell = ref<HTMLElement>();
 provideManagerFeedback(shell);
-const t = (key: SharedKey) => sharedText(context.messages, key);
 /** The host-supplied view replaces the original hash routing: the path locates the workspace and resource, the query carries from/focus/id/back. */
 const route = computed(() => {
   const [path, query = ""] = context.view.split("?");
@@ -148,6 +147,9 @@ function applyRouteState() {
   if (section === "visual-modeling") {
     activeWorkspace.value = "visual-modeling";
     return;
+  }
+  if (section === "knowledge-governance") {
+    activeWorkspace.value = "knowledge-governance";return;
   }
   if (section === "knowledge") {
     activeWorkspace.value = "knowledge";
@@ -291,6 +293,7 @@ onMounted(() => {
 
     <div class="workspace">
       <OntologyResourceSidebar
+        v-if="activeWorkspace !== 'knowledge-governance'"
         :active-workspace="activeWorkspace"
         :active-asset-tab="activeAssetTab"
         :active-model-resource="activeModelResource"
@@ -357,8 +360,12 @@ onMounted(() => {
           />
         </section>
         <section v-else-if="activeWorkspace === 'knowledge'" class="knowledge-surface">
-          <BusinessKnowledge />
+          <BusinessKnowledge @governance="navigate('/knowledge-governance')" />
         </section>
+        <GovernancePage v-else-if="activeWorkspace === 'knowledge-governance'"
+          :session-id="route.path.split('/')[2] || null"
+          @session="navigate($event ? `/knowledge-governance/${$event}` : '/knowledge-governance')"
+          @back="openKnowledge" />
         <OntologyPlayground v-else class="playground-surface" @open-modeling="openModelingFocus" />
       </section>
     </div>

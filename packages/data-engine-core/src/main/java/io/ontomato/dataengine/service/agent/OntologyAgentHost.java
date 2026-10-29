@@ -15,16 +15,18 @@ public class OntologyAgentHost {
   private final AgentRuntimeClient runtime;
   private final OntologyRetrievalService retrieval;
   private final OntologyGenerationService generation;
+  private final KnowledgeGovernanceService governance;
 
   public OntologyAgentHost(
       OntologyAgentStore store,
       AgentRuntimeClient runtime,
       OntologyRetrievalService retrieval,
-      OntologyGenerationService generation) {
+      OntologyGenerationService generation, KnowledgeGovernanceService governance) {
     this.store = store;
     this.runtime = runtime;
     this.retrieval = retrieval;
     this.generation = generation;
+    this.governance = governance;
   }
 
   private boolean isRetrieval(String session, Owner owner) {
@@ -42,6 +44,9 @@ public class OntologyAgentHost {
   }
 
   public void delete(String session, Owner owner) throws Exception {
+    if (KnowledgeGovernanceService.AGENT.equals(store.session(session,owner).getString("agent_id"))) {
+      governance.delete(session,owner);return;
+    }
     if (isRetrieval(session, owner)) {
       retrieval.delete(session, owner);
       return;
@@ -66,8 +71,8 @@ public class OntologyAgentHost {
         });
   }
 
-  public JSONObject agents() {
-    return JSONObject.of(
+  public JSONObject agents(boolean governanceAllowed) {
+    var response = JSONObject.of(
         "agents",
         List.of(
             JSONObject.of(
@@ -81,6 +86,13 @@ public class OntologyAgentHost {
                 null,
                 "enabled",
                 true)));
+    if (governanceAllowed) {
+      var agents = new JSONArray(response.getJSONArray("agents"));
+      agents.add(JSONObject.of("id",KnowledgeGovernanceService.AGENT,"name","Business Knowledge Governance",
+        "description","Review business knowledge and save recommendations","icon",null,"enabled",true));
+      response.put("agents",agents);
+    }
+    return response;
   }
 
   public static JSONObject publicRun(JSONObject run) {
@@ -124,8 +136,8 @@ public class OntologyAgentHost {
   }
 
   public JSONObject create(String id, String agent, Owner owner) throws Exception {
-    if (!RETRIEVER.equals(agent)) throw AgentHttpException.missing();
-    boolean replayed = retrieval.createSession(id, owner);
+    if (!RETRIEVER.equals(agent) && !KnowledgeGovernanceService.AGENT.equals(agent)) throw AgentHttpException.missing();
+    boolean replayed = RETRIEVER.equals(agent) ? retrieval.createSession(id, owner) : governance.create(id,owner,false);
     return JSONObject.of("session", snapshot(id, owner).get("session"), "replayed", replayed);
   }
 
@@ -157,11 +169,16 @@ public class OntologyAgentHost {
       throws Exception {
     if (message == null || message.isBlank())
       throw AgentHttpException.invalid("Message is required");
-    boolean replayed = retrieval.message(session, key, message, context);
+    boolean replayed = isRetrieval(session, context.owner())
+      ? retrieval.message(session,key,message,context) : governance.start(session,key,message,context);
     return JSONObject.of("snapshot", run(session, key, context.owner()), "replayed", replayed);
   }
 
   public JSONObject cancel(String session, String run, Owner owner) throws Exception {
+    if (KnowledgeGovernanceService.AGENT.equals(store.session(session,owner).getString("agent_id"))) {
+      governance.cancel(session,run,owner);
+      return JSONObject.of("run",publicRun(runtime.run(owner.domainId(),run).getJSONObject("run")));
+    }
     store.closeRun(session, run, owner);
     if (!isRetrieval(session, owner)) {
       generation.cancel(session, run, owner);
@@ -180,7 +197,7 @@ public class OntologyAgentHost {
   }
 
   public JSONObject list(String agent, int limit, String cursor, Owner owner) throws Exception {
-    if (!RETRIEVER.equals(agent)) throw AgentHttpException.missing();
+    if (!RETRIEVER.equals(agent) && !KnowledgeGovernanceService.AGENT.equals(agent)) throw AgentHttpException.missing();
     if (limit < 1 || limit > 100) throw AgentHttpException.invalid("Limit must be from 1 to 100");
     JSONObject after = null;
     if (cursor != null) {

@@ -32,11 +32,11 @@ public class OntologyAgentDefinitions {
     }
   }
 
-  private String prompt(String language, String path) {
+  private String prompt(String language, String topic, String path) {
     String locale = language != null && language.startsWith("zh") ? "zh" : "en";
-    String name = "ontology-prompts/" + locale + "/data-retrieval/" + path + ".md";
+    String name = "ontology-prompts/" + locale + "/" + topic + "/" + path + ".md";
     if (getClass().getResource("/" + name) == null)
-      name = "ontology-prompts/en/data-retrieval/" + path + ".md";
+      name = "ontology-prompts/en/" + topic + "/" + path + ".md";
     return resource(name).trim();
   }
 
@@ -79,6 +79,7 @@ public class OntologyAgentDefinitions {
 
   public JSONObject generation(String kind, String prompt, String language, long remainingMs) {
     var definition = definition(language, remainingMs);
+    definition.put("agentId", OntologyGenerationService.agentId(kind));
     definition.put(
         "modelRole",
         List.of("knowledge", "describe", "quality").contains(kind) ? "query" : "coding");
@@ -99,8 +100,9 @@ public class OntologyAgentDefinitions {
         JSON.parseObject(
             resource("ontology-contracts/agent-artifact-markdown-prompt.json"), String.class);
     return JSONObject.of(
+        "agentId", OntologyAgentStore.RETRIEVER,
         "systemPrompt",
-        prompt(language, "system") + "\n\n" + markdown,
+        prompt(language, "data-retrieval", "system") + "\n\n" + markdown,
         "modelRole",
         "coding",
         "skills",
@@ -120,10 +122,35 @@ public class OntologyAgentDefinitions {
         "compaction",
         Map.of(
             "systemPrompt",
-            prompt(language, "compaction/system"),
+            prompt(language, "data-retrieval", "compaction/system"),
             "summarizePrompt",
-            prompt(language, "compaction/summarize"),
+            prompt(language, "data-retrieval", "compaction/summarize"),
             "updatePrompt",
-            prompt(language, "compaction/update")));
+            prompt(language, "data-retrieval", "compaction/update")));
   }
+  public static final Map<String,Object> GOVERNANCE_SKILL = Map.of(
+    "namespace", Map.of("kind","provider","provider","ontology"), "name","knowledge-governance");
+
+  public void publishGovernance() throws Exception {
+    var files = new ArrayList<Map<String,String>>();
+    for (String path : List.of("SKILL.md", "scripts/governance.mjs", "references/commands.md"))
+      files.add(Map.of("path",path,"content",resource("ontology-skills/knowledge-governance/"+path)));
+    runtime.json(null,"ontology-governance-skills","/v1/skills","POST",
+      Map.of("skill",GOVERNANCE_SKILL,"files",files),null);
+  }
+
+  public JSONObject governance(String language, long remainingMs) {
+    var value = definition(language,remainingMs);
+    value.put("agentId",KnowledgeGovernanceService.AGENT);
+    value.put("modelRole","knowledgeGovernance");
+    value.put("skills",List.of(GOVERNANCE_SKILL));
+    value.put("systemPrompt",prompt(language,"knowledge-governance","main/system") + "\n\n" +
+      JSON.parseObject(resource("ontology-contracts/agent-artifact-markdown-prompt.json"),String.class));
+    value.put("compaction",Map.of(
+      "systemPrompt",prompt(language,"knowledge-governance","compaction/system"),
+      "summarizePrompt",prompt(language,"knowledge-governance","compaction/summarize/user"),
+      "updatePrompt",prompt(language,"knowledge-governance","compaction/update/user")));
+    return value;
+  }
+
 }

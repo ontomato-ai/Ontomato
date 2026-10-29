@@ -1,4 +1,5 @@
 <script setup lang="ts">
+const emit = defineEmits<{ governance: [] }>();
 import { computed, onMounted, reactive, ref } from "vue";
 import {
   ElButton,
@@ -265,10 +266,7 @@ onMounted(load);
       <h1>{{ t("nav.businessKnowledge") }}</h1>
       <div class="knowledge-actions">
         <el-button
-          v-if="context.knowledgeGovernanceUrl"
-          tag="a"
-          :href="context.knowledgeGovernanceUrl"
-          target="_top"
+          @click="emit('governance')"
         >
           <BookOpen :size="16" />
           {{ ot("knowledgeGovernance") }}

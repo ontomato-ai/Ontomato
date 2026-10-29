@@ -100,7 +100,7 @@ public class QueryGrantService {
         || expiresAt <= System.currentTimeMillis())
       throw new IllegalArgumentException(
           "Query grant requires a valid subject, domain, run and deadline");
-    if (!List.of("retrieval-exploration", "user-read", "sandbox-write", "ontology-generation")
+    if (!List.of("retrieval-exploration", "user-read", "sandbox-write", "ontology-generation", "knowledge-governance")
         .contains(purpose)) throw new IllegalArgumentException("Invalid grant purpose");
     String id = UUID.randomUUID().toString();
     JSONObject claims = new JSONObject();
@@ -173,7 +173,10 @@ public class QueryGrantService {
         read = false;
         write = false;
       }
-      if (!read && !write && !generation)
+      boolean governance = "knowledge-governance".equals(claims.getString("purpose"))
+          && path.matches("/ontology/ai/knowledge-governance/[^/]+/runs/" + runId + "/actions/[^/]+");
+      if ("knowledge-governance".equals(claims.getString("purpose"))) { read = false; write = false; }
+      if (!read && !write && !generation && !governance)
         throw new ResponseStatusException(
             HttpStatus.FORBIDDEN, "This grant cannot call this operation");
       return claims;

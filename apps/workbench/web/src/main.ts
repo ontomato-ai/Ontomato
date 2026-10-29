@@ -90,7 +90,6 @@ startWorkbenchWeb({
         adminRoutes.ontology,
         adminRoutes.visualModeling,
         adminRoutes.metricViews,
-        adminRoutes.knowledgeGovernance,
         adminRoutes.knowledge,
         adminRoutes.actionManagement,
         adminRoutes.writeTasks,

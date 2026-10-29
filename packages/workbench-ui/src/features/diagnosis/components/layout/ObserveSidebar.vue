@@ -15,8 +15,6 @@ import {
   List,
   PanelLeftClose,
   PanelLeftOpen,
-  Plus,
-  Trash2,
 } from "lucide-vue-next";
 import { useLocale } from "../../../../composables/useLocale";
 import { relativeTime } from "../../../../utils/relative-time";

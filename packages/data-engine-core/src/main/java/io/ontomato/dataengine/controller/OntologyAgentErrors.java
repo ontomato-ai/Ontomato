@@ -12,7 +12,8 @@ import org.springframework.web.server.ResponseStatusException;
     assignableTypes = {
       OntologyAgentController.class,
       OntologyRetrievalController.class,
-      OntologyGenerationController.class
+      OntologyGenerationController.class,
+      KnowledgeGovernanceController.class
     })
 @Order(-110)
 public class OntologyAgentErrors {

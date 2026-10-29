@@ -53,13 +53,6 @@ export const adminRoutes = {
     redirect: "/admin/ontology-manager?view=assets",
     meta: { permissions: ["ontology-modeling"] },
   },
-  // No menu item: the layout highlights the menu and tab of the page it was opened from (the from query).
-  knowledgeGovernance: {
-    path: "knowledge-governance/:sessionId?",
-    name: "KnowledgeGovernance",
-    component: () => import("../features/knowledge-governance/GovernancePage.vue"),
-    meta: { permissions: ["business-knowledge"] },
-  },
   // Business knowledge moved into the Ontology Manager; the old route redirects to the Manager's knowledge page.
   knowledge: {
     path: "knowledge",

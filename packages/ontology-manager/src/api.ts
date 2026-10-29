@@ -221,7 +221,7 @@ export function createManagerClient(
   const stale = () =>
     new DOMException(ontologyText(context.messages, "staleResponseDropped"), "AbortError");
 
-  async function send(path: string, init: { method: "GET" | "POST"; body?: string }) {
+  async function request(path: string, init: RequestInit = {}) {
     if (disposed) throw stale();
     const credential = context.credential;
     if (!credential) throw new Error(ontologyText(context.messages, "credentialMissing"));
@@ -233,6 +233,7 @@ export function createManagerClient(
     const response = await fetch(`${context.apiBase}/data-query${path}`, {
       ...init,
       headers: {
+        ...(init.headers as Record<string,string> | undefined),
         ...(init.method === "POST" ? { "Content-Type": "application/json" } : {}),
         "Accept-Language": context.locale,
         "X-Requested-With": "XMLHttpRequest",
@@ -242,12 +243,19 @@ export function createManagerClient(
     assertCurrent();
     if (response.status === 401 || response.status === 402) onAuthFailure(response.status);
     if (!response.ok) {
-      throw new Error(
-        ontologyText(context.messages, "requestFailedStatus", { status: response.status })
-      );
+      const body = await response.json().catch(() => null);
+      assertCurrent();
+      throw Object.assign(new Error(body?.error?.message || body?.message ||
+        ontologyText(context.messages, "requestFailedStatus", { status: response.status })),
+        { code: body?.error?.code ?? body?.code });
     }
-    const json = await response.json();
-    assertCurrent();
+    return response;
+  }
+
+  async function send(path: string, init: RequestInit) {
+    const source = hostSource(context);
+    const json = await (await request(path, init)).json();
+    if (disposed || hostSource(context) !== source) throw stale();
     if (json?.success === false) {
       throw Object.assign(new Error(json.message || json.error || ontologyText(context.messages, "requestFailed")), { code: json.code });
     }
@@ -563,6 +571,7 @@ export function createManagerClient(
   }
 
   return {
+    request,
     loadInstanceGraphStatistics,
     dispose: () => {
       disposed = true;

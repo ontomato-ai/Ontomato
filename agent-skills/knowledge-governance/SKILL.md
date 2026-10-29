@@ -1,7 +1,7 @@
 ---
 name: knowledge-governance
 description: Read ontology and business knowledge, inspect query history and evidence, and save a governance work record with traceable sources. Use when reviewing knowledge quality or maintaining governance progress.
-compatibility: Requires Node.js 18 or newer, an Ontomato workbench URL and authorized tk credential.
+compatibility: Requires Node.js 18 or newer, an Ontomato ontology-service URL and an authorized credential.
 ---
 
 # Knowledge governance
@@ -11,9 +11,9 @@ Read [commands](references/commands.md) for argument shapes. These are ordinary
 commands in Claude Code, Codex and the product runtime. They never modify live
 ontology or business data; they save governance work and evidence references.
 
-Set ONTOMATO_WORKBENCH_URL (base before /api), ONTOMATO_TK (sent as tk), and
+Set ONTOMATO_ONTOLOGY_URL (ontology service base), ONTOMATO_TK or ONTOMATO_API_KEY, and
 optionally ONTOMATO_LANGUAGE / ONTOMATO_CORRELATION_ID. Product execution supplies
-ONTOMATO_GOVERNANCE_ID, ONTOMATO_SESSION_ID and ONTOMATO_RUN_ID. Use these values
+ONTOMATO_GOVERNANCE_ID, ONTOMATO_SESSION_ID, ONTOMATO_RUN_ID and a scoped ONTOMATO_GOVERNANCE_TK. Use these values
 as supplied. They select a host-authorized run; they do not grant permission.
 
 Outside the product, if ONTOMATO_RUN_ID is absent, the command calls begin to

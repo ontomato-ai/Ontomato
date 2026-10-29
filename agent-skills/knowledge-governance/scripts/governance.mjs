@@ -1,19 +1,20 @@
 import { readFile, writeFile, mkdir, rm } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
-const base = process.env.ONTOMATO_WORKBENCH_URL?.replace(/\/$/, "");
-if (!base) throw new Error("Set ONTOMATO_WORKBENCH_URL (see SKILL.md)");
+const base = process.env.ONTOMATO_ONTOLOGY_URL?.replace(/\/$/, "");
+if (!base) throw new Error("Set ONTOMATO_ONTOLOGY_URL (see SKILL.md)");
 const [command, arg] = process.argv.slice(2),
   stateFile = "work/.governance-run.json";
 const headers = {
   "content-type": "application/json",
-  tk: process.env.ONTOMATO_TK ?? "",
+  tk: process.env.ONTOMATO_GOVERNANCE_TK ?? process.env.ONTOMATO_TK ?? "",
+  "X-API-Key": process.env.ONTOMATO_API_KEY ?? "",
   "Accept-Language": process.env.ONTOMATO_LANGUAGE ?? "en",
   "X-Correlation-Id": process.env.ONTOMATO_CORRELATION_ID ?? randomUUID(),
     ...(process.env.ONTOMATO_RUN_ID ? { "X-Ontomato-Run-Id": process.env.ONTOMATO_RUN_ID } : {}),
     ...(process.env.ONTOMATO_SESSION_ID ? { "X-Ontomato-Session-Id": process.env.ONTOMATO_SESSION_ID } : {}),
 };
 async function call(route, body, extra = {}) {
-  const response = await fetch(base + "/api/knowledge-governance" + route, {
+  const response = await fetch(base + "/ontology/ai/knowledge-governance" + route, {
     method: "POST",
     headers: { ...headers, ...extra },
     body: JSON.stringify(body),
@@ -83,6 +84,7 @@ const actions = {
   "search-history": "search_history",
   "read-history": "read_history",
     "read-evidence": "read_evidence",
+  "collect-turn-artifacts": "collect_turn_artifacts",
   "read-work-record": "read_work_record",
   "update-work-record": "update_work_record",
 };

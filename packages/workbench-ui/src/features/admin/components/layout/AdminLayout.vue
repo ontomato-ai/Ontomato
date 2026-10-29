@@ -16,7 +16,6 @@ import { useTheme } from "../../../../composables/useTheme";
 import { useLocale } from "../../../../composables/useLocale";
 import { workbenchLanguage } from "../../../../i18n";
 import { adminAccessKey, type AdminLayoutConfig, type AdminMenuItem } from "../../navigation";
-import { governanceReturnPath } from "../../../knowledge-governance";
 
 const props = defineProps<AdminLayoutConfig>();
 provide(adminAccessKey, props.access);
@@ -134,10 +133,7 @@ const currentGroupItems = computed(() => {
 // Tabs without menu items (home-style tabs) hide the sidebar so the content fills the page.
 const showAside = computed(() => currentGroupItems.value.length > 0);
 
-// The route whose menu item and tab are highlighted: knowledge governance has two entries and follows the page it was opened from.
-const navRoute = computed(() =>
-  route.name === "KnowledgeGovernance" ? router.resolve(governanceReturnPath(route.query)) : route
-);
+const navRoute = computed(() => route);
 
 const activeMenu = computed(() => {
   const path = navRoute.value.path;

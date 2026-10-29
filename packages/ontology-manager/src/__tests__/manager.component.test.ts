@@ -250,7 +250,6 @@ const base: ManagerHostContext = {
   presentation,
   knowledgeTagValues: { general: "tag-g", business: "tag-b", tech: "tag-t" },
   embedded: false,
-  knowledgeGovernanceUrl: null,
 };
 
 const paths = (list = requests) =>
@@ -1270,31 +1269,6 @@ describe("business knowledge page", () => {
   const saved = (path: string) =>
     requests.filter((request) => request.url.endsWith(path)).map((request) => request.body);
 
-  it("standalone shows the brand header and no governance entry; embedded hides the header and shows the entry only with a governance URL, opening it in the top window", async () => {
-    mountHost(knowledgeView);
-    await settle();
-    expect(document.querySelector(".workspace-header")).not.toBeNull();
-    expect(itemTitles()).toEqual(["Refund rule", "Legacy note"]);
-    expect(document.querySelector(".knowledge-actions a")).toBeNull();
-    mountedApps.splice(0).forEach((app) => app.unmount());
-
-    mountHost({ ...knowledgeView, embedded: true });
-    await settle();
-    expect(document.querySelector(".workspace-header")).toBeNull();
-    expect(document.querySelector(".knowledge-actions a")).toBeNull();
-    mountedApps.splice(0).forEach((app) => app.unmount());
-
-    mountHost({
-      ...knowledgeView,
-      embedded: true,
-      knowledgeGovernanceUrl: "http://host.test/admin/knowledge-governance",
-    });
-    await settle();
-    const link = document.querySelector<HTMLAnchorElement>(".knowledge-actions a")!;
-    expect(link.textContent?.trim()).toBe("Knowledge Governance");
-    expect(link.getAttribute("href")).toBe("http://host.test/admin/knowledge-governance");
-    expect(link.getAttribute("target")).toBe("_top");
-  });
 
   it("search needs every space-separated term in the title, content or tags, ignores case, ranks title hits first and highlights the terms", async () => {
     knowledge = {
