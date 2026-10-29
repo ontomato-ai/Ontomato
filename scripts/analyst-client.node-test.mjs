@@ -10,10 +10,15 @@ import { analystCommand } from "../agent-skills/ontomato-analyst/client.mjs";
 test("the shared ask uses ontology, preserves continuation and downloads original bytes", async () => {
   const received = [], logs = [], replies = new Map(),
     retrieval = randomUUID(), artifact = randomUUID(), scope = randomUUID();
-  const paused = { id: retrieval, runtimeSessionId: retrieval, runtimeRunId: randomUUID(), decisionRevision: 0,
-    run: { status: "stopped", stopReason: "stop", errorMessage: null }, datasetArtifactIds: [],
-    messages: [{ message: { role: "assistant", content: [{ type: "text", text: "Which period?" }] } }] };
-  const done = { ...paused, runtimeRunId: randomUUID(), decisionRevision: 1, datasetArtifactIds: [artifact], messages: [] };
+  const run = randomUUID(), nextRun = randomUUID();
+  const state = { status: "stopped", stopReason: "stop", errorMessage: null };
+  const paused = { id: retrieval, roundId: run, runtimeSessionId: retrieval, runtimeRunId: run, decisionRevision: 0,
+    run: state, cursor: 1, pending: { retriever: false, bindings: false }, deliveries: [
+      { cursor: 1, runId: run, source: "retriever", data: { answer: "Which period?", run: state, datasets: [] } },
+    ] };
+  const done = { ...paused, roundId: nextRun, runtimeRunId: nextRun, decisionRevision: 1, cursor: 2, deliveries: [
+    { cursor: 2, runId: nextRun, source: "retriever", data: { answer: "", run: state, datasets: [{ id: artifact, rowCount: 1 }] } },
+  ] };
   const bytes = '{"rows":[{"value":null,"zero":0,"valid":false,"large":9007199254740993}]}';
   const server = createServer(async (req, res) => {
     let text = ""; for await (const part of req) text += part;
@@ -25,7 +30,7 @@ test("the shared ask uses ontology, preserves continuation and downloads origina
       if (replies.has(key)) assert.deepEqual(body, replies.get(key)); else replies.set(key, body);
       res.end(JSON.stringify(done));
     } else if (req.url === `/ontology/retrievals/${retrieval}/datasets/${artifact}`) res.end(JSON.stringify({ id: artifact, payload: JSON.parse(bytes) }));
-    else if (req.url === `/ontology/ai/sessions/${retrieval}/artifacts/${artifact}/content`) res.end(bytes);
+    else if (req.url === `/ontology/retrievals/${retrieval}/datasets/${artifact}/content`) res.end(bytes);
     else { res.statusCode = 404;res.end(JSON.stringify({ error: { message: "Unexpected request" } })); }
   });
   await new Promise(resolve => server.listen(0, "127.0.0.1", resolve));

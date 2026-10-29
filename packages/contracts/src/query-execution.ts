@@ -5,11 +5,18 @@ import type {
   QcState,
   QcResult,
 } from "./query-thinking";
-export interface QueryRetrievalRef {
+export type QueryRetrievalRef = {
+  source?: "retriever";
   retrievalId: string;
   runtimeSessionId: string;
   runtimeRunId: string;
-}
+} | {
+  source: "binding";
+  retrievalId: string;
+  bindingOutputId: string;
+  runtimeSessionId: null;
+  runtimeRunId: null;
+};
 /** Multi-dataset preview for display. */
 export interface QueryFactDatasetPreview {
   title: string;

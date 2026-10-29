@@ -36,6 +36,21 @@ public class OntologyRetrievalController {
     return retrieval.get(AgentJson.id(id), access.reader(req, id, null));
   }
 
+  @GetMapping("/ontology/retrievals/{id}/results")
+  public Object results(@PathVariable String id,@RequestParam(defaultValue="0") long after,HttpServletRequest req) {
+    return retrieval.poll(AgentJson.id(id),after,access.reader(req,id,null));
+  }
+
+  @PostMapping("/ontology/retrievals/{id}/retriever/cancel")
+  public Object cancelRetriever(@PathVariable String id,@RequestBody JSONObject body,HttpServletRequest req) throws Exception {
+    return retrieval.cancelRetriever(AgentJson.id(id),AgentJson.id(body.getString("expectedRoundId")),access.current(req).owner());
+  }
+
+  @GetMapping("/ontology/retrievals/{id}/datasets/{artifact}/content")
+  public ResponseEntity<byte[]> datasetContent(@PathVariable String id,@PathVariable String artifact,HttpServletRequest req) throws Exception {
+    return ResponseEntity.ok().contentType(MediaType.APPLICATION_JSON).body(retrieval.datasetContent(AgentJson.id(id),AgentJson.id(artifact),access.reader(req,id,null)));
+  }
+
   @PostMapping("/ontology/retrievals/{id}/answers")
   @ResponseStatus(HttpStatus.ACCEPTED)
   public Object answer(

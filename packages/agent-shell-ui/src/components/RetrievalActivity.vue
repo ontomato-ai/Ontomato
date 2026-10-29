@@ -81,8 +81,8 @@ function activitySteps(records: RuntimeRunSnapshot["messages"]): ActivityStep[] 
 
 const steps = computed<ActivityStep[]>(() => state.snapshot ? activitySteps(state.snapshot.messages) : []);
 const runStatus = computed(() => state.snapshot?.run?.status ?? null);
-const running = computed(() => runStatus.value === "running");
-const errorMessage = computed(() => state.snapshot?.run?.errorMessage ?? null);
+const running = computed(() => (state.snapshot?.retrieverPending ?? runStatus.value === "running") || (state.snapshot?.bindingPending ?? state.snapshot?.bindings?.status === "running"));
+const errorMessage = computed(() => state.snapshot?.admissionError ?? state.snapshot?.run?.errorMessage ?? null);
 const labels = computed(() => shell.labels.value);
 </script>
 
@@ -102,6 +102,9 @@ const labels = computed(() => shell.labels.value);
       <ChevronRight :size="14" class="chevron" />
     </button>
     <ol v-if="open" class="steps">
+      <li v-for="result in state.snapshot?.bindings?.datasets ?? []" :key="result.id" class="step">
+        <div class="step-head"><Database :size="12" /><span>{{ result.title }}</span></div>
+      </li>
       <li v-for="step in steps" :key="step.key" class="step">
         <div class="step-head">
           <LoaderCircle v-if="step.status === 'running'" :size="12" class="spin" />
@@ -111,7 +114,7 @@ const labels = computed(() => shell.labels.value);
         </div>
         <pre v-if="step.output" class="step-output">{{ step.output }}</pre>
       </li>
-      <li v-if="steps.length === 0" class="step-empty">{{ labels.loading }}</li>
+      <li v-if="steps.length === 0 && !state.snapshot?.bindings?.datasets.length" class="step-empty">{{ labels.loading }}</li>
     </ol>
     <div v-if="errorMessage" class="retrieval-error" role="alert">
       <CircleAlert :size="13" />

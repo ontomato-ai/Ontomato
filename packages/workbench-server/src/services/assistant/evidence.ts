@@ -54,27 +54,33 @@ export async function readAssistantTurnEvidence(
   const links = await ontology.links();
   for (const link of links) {
     const evidence = await ontology.evidence(link.retrievalId, link.runId);
-    const child = await ontology.run(evidence.snapshot.runtimeSessionId!, link.runId);
-    retrievalRuns.push(child);
+    const child = evidence.snapshot.runtimeSessionId && evidence.snapshot.runtimeRunId
+      ? await ontology.run(evidence.snapshot.runtimeSessionId, link.runId) : null;
+    if (child) retrievalRuns.push(child);
     const datasets = [];
-    for (const artifactId of evidence.snapshot.datasetArtifactIds) {
+    for (const artifactId of child ? evidence.snapshot.datasetArtifactIds : []) {
       const data = await ontology.dataset(link.retrievalId, artifactId);
-      artifacts.push(await ontology.artifact(child.run.sessionId, artifactId));
+      artifacts.push(await ontology.artifact(child!.run.sessionId, artifactId));
       datasets.push(projectDataset(data.id, data.payload, {
         retrievalId: link.retrievalId,
-        runtimeSessionId: child.run.sessionId,
-        runtimeRunId: child.run.id,
+        runtimeSessionId: child!.run.sessionId,
+        runtimeRunId: child!.run.id,
       }));
     }
+    for (const output of evidence.snapshot.bindings?.datasets ?? []) {
+      const data = await ontology.dataset(link.retrievalId, output.id);
+      datasets.push(projectDataset(data.id, data.payload, { source: "binding", retrievalId: link.retrievalId,
+        bindingOutputId: data.id, runtimeSessionId: null, runtimeRunId: null }));
+    }
     queries.push({
-      id: child.run.id,
+      id: link.runId,
       threadId: sessionId,
       requestSeq,
       sourceKind: "retrieval",
       sourceRef: link.retrievalId,
       question: evidence.input.question,
-      status: child.run.status,
-      fullContent: finalText(child),
+      status: child?.run.status ?? (evidence.snapshot.retrieverPending || evidence.snapshot.bindings?.status === "running" ? "running" : "stopped"),
+      fullContent: child ? finalText(child) : "",
       backendSessions: [],
       qcResult: evidence.snapshot.qualityCheck,
       datasetsPayload: datasets.map((d) => ({
@@ -103,8 +109,8 @@ export async function readAssistantTurnEvidence(
           ),
         ),
       ],
-      createdAt: new Date(child.run.createdAt),
-      updatedAt: new Date(child.run.finishedAt ?? child.run.createdAt),
+      createdAt: new Date(child?.run.createdAt ?? evidence.snapshot.createdAt ?? turn.created_at),
+      updatedAt: new Date(child?.run.finishedAt ?? child?.run.createdAt ?? evidence.snapshot.createdAt ?? turn.created_at),
     });
   }
   const messages = run.messages

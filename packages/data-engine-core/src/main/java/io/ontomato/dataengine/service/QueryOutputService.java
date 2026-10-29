@@ -31,6 +31,11 @@ public class QueryOutputService {
   public JSONObject execute(
       String id, JSONObject recipe, JSONArray sources, QueryAccessService.Access access, String lang)
       throws Exception {
+    return execute(id, recipe, sources, access, lang, List.of());
+  }
+
+  public JSONObject execute(String id, JSONObject recipe, JSONArray sources, QueryAccessService.Access access,
+      String lang, List<String> classNames) throws Exception {
     String kind = recipe.getString("kind"), code;
     JSONObject parameters = new JSONObject();
     if ("dsl".equals(kind)) code = DslToPythonCodeUtil.generate(recipe.getJSONObject("dsl"), "");
@@ -98,6 +103,7 @@ public class QueryOutputService {
             ? PythonAuthority.exploration(access.user().getDomainId())
                 .withClasses(access.grant().getList("classNames", String.class))
             : PythonAuthority.read(access.user().getId(), access.user().getDomainId());
+    if (classNames != null && !classNames.isEmpty()) authority = authority.withClasses(classNames);
     authority = authority.forExecution(id);
     if (exploring)
       authority =

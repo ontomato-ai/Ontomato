@@ -70,13 +70,12 @@ export type AssistantAgentDefinition = z.infer<
 >;
 export type AssistantAgentInput = z.infer<typeof assistantAgentInputSchema>;
 /** Only accepted copied datasets receive a source; generic JSON files do not. */
-export const assistantDatasetSourceSchema = z
-  .object({
-    retrievalId: runtimeIdSchema,
-    sourceArtifactId: runtimeIdSchema,
-    qualityCheck: retrievalSnapshotSchema.shape.qualityCheck,
-  })
-  .strict();
+export const assistantDatasetSourceSchema = z.union([
+  z.object({ retrievalId: runtimeIdSchema, sourceArtifactId: runtimeIdSchema,
+    qualityCheck: retrievalSnapshotSchema.shape.qualityCheck }).strict(),
+  z.object({ retrievalId: runtimeIdSchema, sourceOutputId: runtimeIdSchema,
+    qualityCheck: retrievalSnapshotSchema.shape.qualityCheck }).strict(),
+]);
 export const assistantFeedbackTargetSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("message"), id: runtimeIdSchema }).strict(),
   z.object({ kind: z.literal("artifact"), id: runtimeIdSchema }).strict(),

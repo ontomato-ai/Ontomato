@@ -99,7 +99,7 @@ export const datasetPayloadSchema = z
     assumptions: z.array(z.string()),
     decisionIds: z.array(id),
     metricUses: z.array(metricUseSchema),
-    selfCheck: selfCheckSchema,
+    selfCheck: selfCheckSchema.nullable(),
     execution: z.object({ receiptId: id, executedAt: z.string() }).strict(),
   })
   .strict()
@@ -129,7 +129,38 @@ export const retrievalInputSchema = z
     interaction: z.enum(["resumable", "non_interactive"]).default("resumable"),
   })
   .strict();
+export const bindingRetrievalSchema = z.object({
+  status: z.enum(["running", "completed", "cancelled", "interrupted"]),
+  error: z.string().nullable(),
+  datasets: z.array(z.object({ id, sha256: z.string(), title: z.string(), qualityCheck: runtimeJsonObjectSchema.optional() })),
+});
+const retrievalRunStateSchema = z.object({
+  status: z.enum(["running", "stopped"]), stopReason: runtimeStopReasonSchema.nullable(), errorMessage: z.string().nullable(),
+});
+export const retrievalDeliverySchema = z.object({
+  cursor: z.number().int().positive(), runId: id, source: z.enum(["binding", "retriever"]),
+  data: z.object({
+    answer: z.string(), run: retrievalRunStateSchema.nullable(), error: z.string().optional(),
+    runtimeSessionId: id.optional(), runtimeRunId: id.optional(),
+    datasets: z.array(z.object({ id, sha256: z.string(), title: z.string(), rowCount: z.number().int().nonnegative(),
+      truncation: truncationSchema.nullable(), binding: runtimeJsonObjectSchema.optional() })),
+  }),
+});
+export const retrievalPollSchema = z.object({
+  bindings: bindingRetrievalSchema,
+  qualityCheck: runtimeJsonObjectSchema.optional(),
+  id, roundId: id, cursor: z.number().int().nonnegative(), decisionRevision: z.number().int(),
+  runtimeSessionId: id.nullable(), runtimeRunId: id.nullable(), run: retrievalRunStateSchema.nullable(),
+  pending: z.object({ retriever: z.boolean(), bindings: z.boolean() }), deliveries: z.array(retrievalDeliverySchema),
+});
+export type RetrievalPoll = z.infer<typeof retrievalPollSchema>;
+
 export const retrievalSnapshotSchema = z.object({
+  bindings: bindingRetrievalSchema.optional(),
+  retrieverPending: z.boolean().optional(),
+  bindingPending: z.boolean().optional(),
+  admissionError: z.string().nullable().optional(),
+  createdAt: z.string().optional(),
   qualityCheck: runtimeJsonObjectSchema.optional(),
   id,
   revision: z.number().int(),
