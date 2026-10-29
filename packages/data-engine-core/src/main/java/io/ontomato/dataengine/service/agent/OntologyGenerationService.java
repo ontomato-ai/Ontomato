@@ -89,6 +89,7 @@ public class OntologyGenerationService {
 
   public static String agentId(String kind) {
     if (!KINDS.contains(kind)) throw AgentHttpException.invalid("Unknown generation kind");
+    if (kind.equals("metric")) return OntologyAgentDefinitions.METRICVIEW_AGENT;
     return UUID.nameUUIDFromBytes(("ontology-generation:" + kind).getBytes(StandardCharsets.UTF_8))
         .toString();
   }
@@ -145,13 +146,33 @@ public class OntologyGenerationService {
 
   public Generation generate(
       String kind, String businessId, String prompt, String lang, String domain, String source) {
+    if (kind.equals("metric"))
+      throw AgentHttpException.invalid("MetricView generation has its own agent");
+    return generate(kind, businessId, prompt, lang, domain, source, false);
+  }
+
+  /** MetricView generation runs as its own agent with its own definition and skill package. */
+  public Generation generateMetricView(
+      String businessId, String prompt, String lang, String domain) {
+    return generate("metric", businessId, prompt, lang, domain, null, true);
+  }
+
+  private Generation generate(
+      String kind,
+      String businessId,
+      String prompt,
+      String lang,
+      String domain,
+      String source,
+      boolean metricView) {
     Owner owner = owner(domain);
     var ids = open(kind, businessId, source, owner, false);
     String session = ids.getString("sessionId"), run = ids.getString("runId");
     var delivery = new Generation(session, run, owner);
     try {
       checkBusiness(businessId);
-      definitions.publishGeneration();
+      if (metricView) definitions.publishMetricView();
+      else definitions.publishGeneration();
       runtime.json(domain, run, "/v1/sessions", "POST", Map.of(), session);
       var row = store.run(session, run, owner);
       long deadline = Instant.parse(row.getString("deadline")).toEpochMilli();
@@ -176,12 +197,16 @@ public class OntologyGenerationService {
                       "content",
                       "Complete the ontology "
                           + kind
-                          + " task. Read the ontology-generation skill and write"
-                          + " outputs/result.json.",
+                          + " task. Read the "
+                          + (metricView ? "metricview-generation" : "ontology-generation")
+                          + " skill and write outputs/result.json.",
                       "timestamp",
                       Instant.parse(row.getString("created_at")).toEpochMilli()),
               "definition",
-                  definitions.generation(kind, prompt, lang, deadline - System.currentTimeMillis()),
+                  metricView
+                      ? definitions.metricView(prompt, lang, deadline - System.currentTimeMillis())
+                      : definitions.generation(
+                          kind, prompt, lang, deadline - System.currentTimeMillis()),
               "environment",
                   JSONObject.of(
                       "values",

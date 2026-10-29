@@ -65,8 +65,12 @@ Java adapter; the approved gateway model-test endpoint is defined below (design 
 
 ## Generation operations and delivery
 
-The standard [`ontology-generation` skill](../../agent-skills/ontology-generation/SKILL.md)
-owns command usage and per-kind result fields. Each runtime definition selects a
+Two standard skills own command usage and per-kind result fields:
+[`ontology-generation`](../../agent-skills/ontology-generation/SKILL.md) for Actions,
+Functions, knowledge, dashboards, explanation, naming, instantiation, description
+and QC, and
+[`metricview-generation`](../../agent-skills/metricview-generation/SKILL.md) for
+MetricView generation. Each runtime definition selects a
 kind, server prompt and model role; `query` serves knowledge/description/QC and
 `coding` serves the other generators. Results always use `outputs/result.json`.
 `sourcePath` references Python bytes from the same run; embedded `code` is rejected

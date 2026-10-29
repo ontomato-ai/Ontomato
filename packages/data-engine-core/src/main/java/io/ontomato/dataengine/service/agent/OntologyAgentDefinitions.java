@@ -95,6 +95,48 @@ public class OntologyAgentDefinitions {
     return definition;
   }
 
+  /** The MetricView generator is the retrieval companion agent; it owns its prompt and skill. */
+  public static final String METRICVIEW_AGENT = "2b25aca0-869c-4644-8783-4a53894068bc";
+
+  public static final Map<String, Object> METRICVIEW_SKILL =
+      Map.of(
+          "namespace",
+          Map.of("kind", "provider", "provider", "ontology"),
+          "name",
+          "metricview-generation");
+
+  public void publishMetricView() throws Exception {
+    code.registerSkill();
+    var files = new ArrayList<Map<String, String>>();
+    for (String path : List.of("SKILL.md", "scripts/generation.mjs"))
+      files.add(
+          Map.of(
+              "path", path, "content", resource("ontology-skills/metricview-generation/" + path)));
+    runtime.json(
+        null,
+        "metricview-generation-skills",
+        "/v1/skills",
+        "POST",
+        Map.of("skill", METRICVIEW_SKILL, "files", files),
+        null);
+  }
+
+  public JSONObject metricView(String prompt, String language, long remainingMs) {
+    var definition = definition(language, remainingMs);
+    definition.put("agentId", METRICVIEW_AGENT);
+    definition.put("modelRole", "coding");
+    definition.put("skills", List.of(RuntimeCodeClient.SKILL, METRICVIEW_SKILL));
+    definition.put(
+        "systemPrompt",
+        prompt
+            + "\n\n"
+            + resource("ontology-skills/metricview-generation/SKILL.md")
+            + "\n\n"
+            + JSON.parseObject(
+                resource("ontology-contracts/agent-artifact-markdown-prompt.json"), String.class));
+    return definition;
+  }
+
   public JSONObject definition(String language, long remainingMs) {
     String markdown =
         JSON.parseObject(

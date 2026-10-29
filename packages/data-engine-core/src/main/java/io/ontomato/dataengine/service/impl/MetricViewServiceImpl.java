@@ -130,7 +130,7 @@ public class MetricViewServiceImpl implements MetricViewService {
             jsonRule,
             domainId);
     try (var generation =
-        generationService.generate("metric", sessionId, userMessage, lang, domainId)) {
+        generationService.generateMetricView(sessionId, userMessage, lang, domainId)) {
       JSONObject envelope = generation.result();
       String code = envelope.getString("code");
       String name = envelope.getString("name");

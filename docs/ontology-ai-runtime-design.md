@@ -106,7 +106,11 @@ read; no Java agent workspace or source file is created. Sandbox fixtures are
 ontology data and the skill sends code/file bytes over HTTP.
 
 `ontology-generation` exposes source reads, business tests, sandbox preparation,
-reset and query. Tests bind the exact source, parameter definitions and operation;
+reset and query. MetricView generation is its own retrieval companion agent with
+the `metricview-generation` skill, which exposes only the MetricView business test
+and its delivery fields; its definition keeps the retrieval sandbox and compaction
+baseline. QC candidates still derive from the verified program and keep their
+existing save and cleanup rules. Tests bind the exact source, parameter definitions and operation;
 final files must reference those successfully tested bytes. Callback closure on
 runtime stop is independent of the once-only business settlement. Cancellation
 closes gates before cancelling model/code intents and revoking grants. Node-owned
