@@ -1,6 +1,7 @@
 package io.ontomato.dataengine.bean.metricView;
 
 import java.util.Set;
+import java.util.List;
 
 import io.ontomato.dataengine.bean.function.Function;
 
@@ -16,13 +17,11 @@ public class MetricView {
 	public static final String ORIGIN_SYSTEM = "SYSTEM";
 	public static final String ORIGIN_USER = "USER";
 	
-	public static final String TYPE_GENERAL = "GENERAL";
-	public static final String TYPE_STATIC = "STATIC";
 
 	private String id;
 	private String name;
 	private String origin;
-	private String type;
+	private List<MetricViewBinding> bindings;
 	private Function function;
 	private String description;
 	private String status;

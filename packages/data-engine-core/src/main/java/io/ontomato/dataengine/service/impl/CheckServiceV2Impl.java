@@ -6,6 +6,8 @@ import io.ontomato.dataengine.bean.abcHarness.ABCHarnessProgram;
 import io.ontomato.dataengine.bean.abcHarness.ABCHarnessProgramDescription;
 import io.ontomato.dataengine.bean.function.Function;
 import io.ontomato.dataengine.bean.metricView.MetricView;
+import io.ontomato.dataengine.bean.metricView.MetricViewBinding;
+import io.ontomato.dataengine.service.MetricViewBindings;
 import io.ontomato.dataengine.bean.metricView.OriginCheckResult;
 import io.ontomato.dataengine.dao.CheckDaoV2;
 import io.ontomato.dataengine.dao.KnowledgeDao;
@@ -130,7 +132,6 @@ public class CheckServiceV2Impl implements CheckServiceV2 {
               Function candidate = function;
               function = jobs.settle(() -> functionService.save(candidate, check.getLang()));
               MetricView metricView = metricViewService.generateFromFunction(function);
-              metricView.setType(MetricView.TYPE_GENERAL);
               Set<String> matchQuestions = new HashSet<String>();
               matchQuestions.add(program.getQuestion());
               metricView.setMatchQuestions(matchQuestions);
@@ -141,25 +142,15 @@ public class CheckServiceV2Impl implements CheckServiceV2 {
               metricView.setOriginCheckResult(originCheckResult);
               metricView.setOriginQuestion(program.getQuestion());
               jobs.settle(() -> metricViewService.save(metricView, check.getLang()));
-              // Convert to a dedicated metricView
-              Function staticFunction =
-                  functionService.generateStaticFromGeneral(
-                      program.getQuestion(),
-                      function.getParameters(),
-                      function,
-                      check.getLang(),
-                      BackendSessionEntrance.derive(check.getSessionId(), "harness-static-" + i));
-              if (staticFunction != null) {
-                Function staticCandidate = staticFunction;
-                staticFunction =
-                    jobs.settle(() -> functionService.save(staticCandidate, check.getLang()));
-                MetricView staticMetricView =
-                    metricViewService.generateFromFunction(staticFunction);
-                staticMetricView.setType(MetricView.TYPE_STATIC);
-                staticMetricView.setMatchQuestions(matchQuestions);
-                staticMetricView.setOriginCheckResult(metricView.getOriginCheckResult());
-                staticMetricView.setOriginQuestion(metricView.getOriginQuestion());
-                jobs.settle(() -> metricViewService.save(staticMetricView, check.getLang()));
+              String bindingName = functionService.generateBindingName(
+                  program.getQuestion(), function.getParameters(), function, check.getLang(),
+                  BackendSessionEntrance.derive(check.getSessionId(), "harness-static-" + i));
+              if (bindingName != null) {
+                MetricViewBinding binding = new MetricViewBinding();
+                binding.setName(bindingName);
+                binding.setParameters(MetricViewBindings.values(function));
+                binding.setMatchQuestions(matchQuestions);
+                jobs.settle(() -> metricViewService.appendBinding(metricView.getId(), binding, domainId));
               }
             }
           }

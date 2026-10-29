@@ -40,15 +40,8 @@ public class QueryOutputService {
           ontology.metric(recipe.getString("metricId"), recipe.getString("revision"), access);
       var function = metric.getFunction();
       code = function.getCode();
-      JSONObject supplied = recipe.getJSONObject("parameters");
-      if (function.getParameters() != null)
-        for (Parameter parameter : function.getParameters()) {
-          parameters.put(
-              parameter.getName(),
-              "STATIC".equals(metric.getType())
-                  ? parameter.getValue()
-                  : supplied.get(parameter.getName()));
-        }
+      parameters = MetricViewBindings.resolve(metric, recipe.getString("bindingId"), recipe.getJSONObject("parameters"));
+      recipe.put("parameters", parameters);
       sources = JSONArray.from(function.getReturnDef().getOutKeyRefs());
       if (code == null || !code.contains("# ontomato-python:2"))
         throw new IllegalArgumentException(

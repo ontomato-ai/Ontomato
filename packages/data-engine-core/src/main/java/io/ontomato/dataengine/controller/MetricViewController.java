@@ -89,9 +89,11 @@ public class MetricViewController {
 		JSONObject ret = new JSONObject();
 		try {
 			User user = SystemUtils.getCurUser();
-			MetricView metricView = param.to(MetricView.class);
+			if (param.containsKey("type")) throw new IllegalArgumentException("MetricView type is retired; edit parameter bindings on a dynamic metric");
+            MetricView metricView = param.to(MetricView.class);
 			metricView.setDomainId(user.getDomainId());
 			metricViewService.save(metricView, lang);
+            ret.put("data", metricView);
 			ret.put("success", true);
 		} catch (Exception e) {
 			log.error(e.getMessage(), e);
@@ -107,7 +109,7 @@ public class MetricViewController {
 		JSONObject ret = new JSONObject();
 		try {
 			String id = param.getString("id");
-			metricViewService.delete(id, lang);
+			metricViewService.delete(id, SystemUtils.getCurUser().getDomainId(), lang);
 			ret.put("success", true);
 		} catch (Exception e) {
 			log.error(e.getMessage(), e);
@@ -123,7 +125,8 @@ public class MetricViewController {
 		JSONObject ret = new JSONObject();
 		try {
 			String id = param.getString("id");
-			MetricView metricView = metricViewService.queryById(id);
+			MetricView metricView = metricViewService.queryById(id, SystemUtils.getCurUser().getDomainId());
+            if (metricView == null) throw new IllegalArgumentException("MetricView not found");
 			ret.put("success", true);
 			ret.put("data", metricView);
 		} catch (Exception e) {
@@ -140,10 +143,9 @@ public class MetricViewController {
 		JSONObject ret = new JSONObject();
 		try {
 			User user = SystemUtils.getCurUser();
-			String type = param.getString("type");
 			String status = param.getString("status");
 			String className = param.getString("className");
-			List<MetricView> metricViews = metricViewService.queryList(type, status, null, className, user.getDomainId());
+			List<MetricView> metricViews = metricViewService.queryList(status, null, className, user.getDomainId());
 			ret.put("success", true);
 			ret.put("data", metricViews);
 		} catch (Exception e) {
@@ -157,7 +159,7 @@ public class MetricViewController {
 	@GetMapping("/metricView/export")
 	public ResponseEntity<byte[]> exportMetricViews(@RequestHeader(value = ControllerConst.LANG_HEADER_KEY, required = false) String lang) {
 		try {
-			byte[] data = metricViewService.exportMetricViews(lang);
+			byte[] data = metricViewService.exportMetricViews(SystemUtils.getCurUser().getDomainId(), lang);
 			return ResponseEntity.ok()
 					.header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"metricViews.zip\"")
 					.contentType(MediaType.APPLICATION_OCTET_STREAM)
@@ -193,7 +195,7 @@ public class MetricViewController {
 			String className = param.getString("className");
 			List<MetricView> metricViews;
 			if (question == null || "".equals(question.trim())) {
-				metricViews = metricViewService.queryList(null, MetricView.STATUS_PUBLISHED, null, className, user.getDomainId());
+				metricViews = metricViewService.queryList(MetricView.STATUS_PUBLISHED, null, className, user.getDomainId());
 			} else {
 				metricViews = metricViewService.find(question.trim(), className, user.getDomainId());
 			}
@@ -203,11 +205,8 @@ public class MetricViewController {
 				metricViewDef.put("id", metricView.getId());
 				metricViewDef.put("name", metricView.getName());
 				metricViewDef.put("logic", metricView.getFunction().getLogic());
-				if (MetricView.TYPE_GENERAL.equals(metricView.getType())) {
-					metricViewDef.put("parameters", metricView.getFunction().getParameters());
-				} else {
-					metricViewDef.put("parameters", new ArrayList<Parameter>());
-				}
+                metricViewDef.put("parameters", metricView.getFunction().getParameters());
+                metricViewDef.put("bindings", metricView.getBindings());
 				metricViewDef.put("returnDef", metricView.getFunction().getReturnDef());
 				metricViewDefs.add(metricViewDef);
 			}
@@ -228,7 +227,8 @@ public class MetricViewController {
 		try {
 			UserDataPermission curUserDataPermission = identityService.getCurrentUserDataPermission();
 	    	User user = SystemUtils.getCurUser();
-			MetricView metricView = param.to(MetricView.class);
+			if (param.containsKey("type")) throw new IllegalArgumentException("MetricView type is retired; edit parameter bindings on a dynamic metric");
+            MetricView metricView = param.to(MetricView.class);
 			BusinessConfig businessConfig = businessConfigService.get(user.getDomainId());
     		int timeoutMinutes = Long.valueOf(businessConfig.getDslCookerTimeout() / 60000).intValue();
 			if (timeoutMinutes <= 0) {
@@ -322,7 +322,7 @@ public class MetricViewController {
 			if (timeoutMinutes <= 0) {
 				timeoutMinutes = 1;
 			}
-			Object[] o = metricViewService.execute(id, p, lang, user, curUserDataPermission, timeoutMinutes);
+			Object[] o = metricViewService.execute(id, param.getString("bindingId"), p, lang, user, curUserDataPermission, timeoutMinutes);
 			ret.put("success", true);
 			ret.put("data", o[0]);
 			((PythonExecuteResult)o[1]).markCompleteness(ret);
@@ -348,7 +348,7 @@ public class MetricViewController {
 			if (timeoutMinutes <= 0) {
 				timeoutMinutes = 1;
 			}
-			Object[] o = metricViewService.testExecute(metricView, p, lang, user, curUserDataPermission, timeoutMinutes);
+			Object[] o = metricViewService.testExecute(metricView, param.getString("bindingId"), p, lang, user, curUserDataPermission, timeoutMinutes);
 			ret.put("success", true);
 			ret.put("data", o[0]);
 			((PythonExecuteResult)o[1]).markCompleteness(ret);

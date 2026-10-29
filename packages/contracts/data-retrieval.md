@@ -59,6 +59,11 @@ and truncation; exploration rows are not formal results. Unknown effects reconci
 the original ID. Closed/old runs return 409 `RETRIEVAL_RUN_CLOSED`; committed
 receipts stay readable. Cancellation closes pending outputs before stopping work.
 
+Metric recipes optionally select an owned `bindingId` on the dynamic `metricId`.
+Execution resolves the stored binding values, rejects overrides and freezes the
+actual values in the returned recipe. Metric revisions include the current
+aggregate; a changed definition or binding requires retrieving it again.
+
 `DatasetPayload` remains the sole dataset schema. Keep `workbench.dataset.v1`
 as the existing wire format identifier in this ownership-only change. Java
 verifies receipt ownership/digest against immutable registered bytes. A receipt

@@ -346,6 +346,7 @@ class QueryRuntimeBoundaryTest {
           ",/sales,",
           i == 3 ? "domain-b" : "domain-a");
     }
+    jdbc.execute("CREATE TABLE metric_view_binding(id text,metric_view_id text,name text,description text,parameters jsonb,match_questions text)");
     var page = dao.queryForRetrieval("domain-a", "Sales_", null, List.of("/sales"), 1);
     assertEquals(1, page.size());
     assertNull(
@@ -353,6 +354,7 @@ class QueryRuntimeBoundaryTest {
     assertEquals(
         1, dao.queryForRetrieval("domain-a", "Sales_", "m0", List.of("/sales"), 20).size());
     assertTrue(dao.queryForRetrieval("domain-a", "%", null, List.of(), 20).isEmpty());
+    jdbc.execute("DROP TABLE metric_view_binding");
     jdbc.execute("DROP TABLE metric_view");
     assertThrows(
         org.springframework.dao.DataAccessException.class,

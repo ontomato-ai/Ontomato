@@ -79,9 +79,10 @@ export async function analystCommand(cfg, argv, headers = {}) {
     };
   } else if (command === "execute-metric") {
     const revision = take(args, "--revision");
+    const bindingId = take(args, "--binding");
     if (!revision) throw new Error("--revision from metrics is required");
     endpoint = "/metrics/execute";
-    body = { id: args[0], revision, parameters: readJson(args[1]) };
+    body = { id: args[0], revision, parameters: args[1] ? readJson(args[1]) : {}, ...(bindingId ? { bindingId } : {}) };
   } else
     throw new Error(
       "Commands: dataset-desc, classes, schema, relationships, dsl-reference, distinct-values, execute-dsl, metrics, execute-metric, knowledge, ask",

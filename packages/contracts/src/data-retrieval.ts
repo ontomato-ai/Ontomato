@@ -43,6 +43,7 @@ export const recipeSchema = z.discriminatedUnion("kind", [
     .object({
       kind: z.literal("metric"),
       metricId: z.string(),
+      bindingId: z.string().optional(),
       revision: z.string(),
       parameters: runtimeJsonObjectSchema,
       executedCode: z.string().optional(),

@@ -79,6 +79,7 @@ class MetricViewServiceImplPartialResultTest {
 	private MetricViewContent runCard(boolean partial) throws Exception {
 		Function function = new Function();
 		function.setName("Order total");
+        function.setOperation(Function.OPERATION_READ);
 		function.setParameters(new ArrayList<>());
 		ReturnDef returnDef = new ReturnDef();
 		returnDef.setOutKeyRefs(List.of());
