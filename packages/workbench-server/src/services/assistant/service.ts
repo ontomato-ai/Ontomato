@@ -523,6 +523,12 @@ export const assistantService = {
       const ontology = new OntologyRetrievalClient(owner, turn.retrieval_scope_id);
       for (const link of await ontology.links()) {
         const evidence = await ontology.evidence(link.retrievalId, link.runId);
+        for (const output of evidence.snapshot.bindings?.datasets ?? []) {
+          if (output.sha256 !== a.sha256) continue;
+          const source = await ontology.dataset(link.retrievalId, output.id);
+          return { retrievalId: link.retrievalId, sourceOutputId: output.id,
+            ...(source.qualityCheck ? { qualityCheck: source.qualityCheck } : {}) };
+        }
         const sourceSession = evidence.snapshot.runtimeSessionId;
         if (!sourceSession) continue;
         for (const artifactId of evidence.snapshot.datasetArtifactIds) {

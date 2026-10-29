@@ -30,7 +30,8 @@ export function useRetrievalActivity(
       if (current !== generation) return;
       state.snapshot = snapshot;
       state.error = false;
-      const done = !runActive() || snapshot.run?.status === "stopped";
+      const retrieverPending = snapshot.retrieverPending ?? snapshot.run?.status === "running";
+      const done = !runActive() || (!retrieverPending && !(snapshot.bindingPending ?? snapshot.bindings?.status === "running"));
       if (!done) timer = setTimeout(() => void poll(current), POLL_INTERVAL_MS);
     } catch {
       if (current !== generation) return;

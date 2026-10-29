@@ -62,12 +62,24 @@ Run `node ontomato.mjs <command>` from this directory. JSON accepts `@file`.
 | `metrics <question> [--cursor id] [--limit n]` | `POST /ontology/query/metrics/search`: published read specifications, revision and next cursor; no model call |
 | `execute-metric <id> --revision <revision> [@parameters.json] [--binding id]` | `POST /ontology/query/metrics/execute`: current revision checked, execution under your permissions; --binding selects an owned parameter set |
 | `knowledge <question> [--limit n]` | `POST /ontology/query/knowledge/search`: relevant business knowledge |
-| `ask [--lang en] [--request-id UUID] "complete question"` | Ontology `POST /ontology/retrievals`, then polling and dataset downloads |
-| `ask --status <retrievalId>` | Read the authoritative retrieval result |
-| `ask --cancel <retrievalId>` | Close the retrieval and request cancellation |
+| `ask [--lang en] [--request-id UUID] "complete question"` | Start concurrent binding execution and retrieval; return the first deliverable results and download their files |
+| `ask --status <retrievalId>` | Read branch status, available results, cursor and quality checks |
+| `ask --wait <retrievalId> --after <cursor>` | Wait for later results without starting another query; download only the returned results |
+| `ask --cancel-retriever <retrievalId>` | Cancel only the current retriever, retaining binding results and their QC |
+| `ask --cancel <retrievalId>` | Cancel unfinished work in both branches; keep accepted results |
 | `ask --resume <retrievalId> --answers @answers.json [--request-id UUID]` | Explicit answers in the same session, new run |
 
 `ask` prints its request ID before creating work and then the retrieval/session IDs.
+The ontology host runs binding recall/execution and the retriever concurrently.
+They do not share execution results. Only a successfully executed binding can
+return early; no match or a binding failure keeps ask waiting for the retriever.
+A successful result with zero rows is still a result, with its completeness flags.
+The response includes pending branch status, a result cursor and downloaded files.
+If a binding answers the question, explicitly cancel the retriever. Otherwise
+wait with the returned cursor for later results. Keep the new cursor after every
+wait. Do not restart ask for this question or treat lookup failure as empty data.
+Binding files are formal host results with null selfCheck, not agent self-checks.
+The retriever retains its existing metric-use and comparison requirements.
 Keep them to inspect or retry an uncertain response. Reusing a request ID with
 changed input is an error. Status returns the authoritative PI run state, messages and file artifact IDs.
 A normal stop may be a question, not a dataset. Ask the user and resume the same
@@ -125,6 +137,6 @@ curl -o report.pdf "<downloadUrl>"
 Only report tasks that already have report text can be downloaded; conversation tasks have no report.
 
 
-`ask` uses the ontology URL and the same entry inside and outside Ontomato. It prints the retrieval/run/decision revision, the final answer and downloaded dataset file paths under `outputs/retrievals/`. Reference those paths directly; do not rebuild the data. Resume with `ask --resume <retrievalId> --answers @reply.json`; the file includes `expectedRunId`, `expectedDecisionRevision` and `message`. Reuse `--request-id` after an uncertain response.
+`ask` uses the ontology URL and the same entry inside and outside Ontomato. It prints the retrieval/run/decision revision, current deliveries, pending status, cursor and downloaded dataset file paths under `outputs/retrievals/`. Reference those paths directly; do not rebuild the data. Resume with `ask --resume <retrievalId> --answers @reply.json`; the file includes `expectedRunId`, `expectedDecisionRevision` and `message`. Reuse `--request-id` after an uncertain response.
 
 `ONTOMATO_TK` is the current user token; API-key callers can use `ONTOMATO_API_KEY`. In a hosted assistant, optional `ONTOMATO_RETRIEVAL_CALLER_ID` binds ask to its parent lifecycle. It is an association ID, not a credential; the command passes it automatically. External agents leave it unset. The retriever itself uses direct queries and data-retrieval's dataset command, not recursive ask.

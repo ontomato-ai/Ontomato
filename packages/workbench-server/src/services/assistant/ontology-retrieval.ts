@@ -55,7 +55,7 @@ export class OntologyRetrievalClient {
     return agentHostRunSnapshotSchema.parse(await this.request(`/ontology/ai/sessions/${sessionId}/runs/${runId}`));
   }
   async dataset(retrievalId: string, artifactId: string) {
-    return z.object({ id: z.string().uuid(), payload: datasetPayloadSchema }).parse(await this.request(`/ontology/retrievals/${retrievalId}/datasets/${artifactId}`));
+    return z.object({ id: z.string().uuid(), payload: datasetPayloadSchema, source: z.literal("binding").optional(), sha256: z.string().optional(), qualityCheck: z.record(z.unknown()).optional() }).parse(await this.request(`/ontology/retrievals/${retrievalId}/datasets/${artifactId}`));
   }
   async artifact(sessionId: string, artifactId: string) {
     return runtimeArtifactSchema.parse(await this.request(`/ontology/ai/sessions/${sessionId}/artifacts/${artifactId}`));
