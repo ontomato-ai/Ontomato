@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import type { WorkspaceManifest, WorkspaceSource } from "@ontomato/contracts/observe";
-import { resolveDiagnosisEvidence } from "../../../../services/ops-diagnosis/evidence";
+import { resolveDiagnosisEvidence } from "../../../../services/ops-diagnosis/evidence"; // eslint-disable-line no-restricted-imports -- TODO: move to platform layer
 import { parseTurnKey } from "../../../../logging/log-context";
 
 export interface BuildTurnEvidenceWorkspaceInput {
