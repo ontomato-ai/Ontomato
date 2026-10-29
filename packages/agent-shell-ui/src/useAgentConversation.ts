@@ -77,11 +77,36 @@ export function useAgentConversation(port: () => AgentHostClient) {
       applySessionSnapshot(state, snapshot);
       artifactRevision.value++;
       if (snapshot.latestRun?.run.status === "running") attach(snapshot.latestRun.run.id, 0);
+      void loadEarlierRetrievals(sessionId, snapshot.latestRun?.run.id ?? null, current);
     } catch (error) {
       if (current === token) loadError.value = errorText(error);
     } finally {
       if (current === token) loading.value = false;
     }
+  }
+
+  /**
+   * The session snapshot carries only the latest run. Earlier runs that called the analyst ask
+   * get their own run snapshot, so their retrieval activity survives a reload.
+   */
+  async function loadEarlierRetrievals(sessionId: string, latestRunId: string | null, current: number) {
+    const runIds = new Set<string>();
+    for (const entry of Object.values(state.messages)) {
+      const message = entry.message;
+      if (entry.runId === latestRunId || message.role !== "assistant") continue;
+      for (const block of message.content) {
+        const command = block.type === "toolCall" && block.name === "bash" ? block.arguments.command : undefined;
+        if (typeof command === "string" && ANALYST_ASK.test(command)) runIds.add(entry.runId);
+      }
+    }
+    await Promise.all([...runIds].map(async (runId) => {
+      try {
+        const snapshot = await port().readRun(sessionId, runId);
+        if (current === token) applyRunSnapshot(state, snapshot);
+      } catch {
+        // Best-effort: without it the earlier run still renders, only without its activity area.
+      }
+    }));
   }
 
   function flush() {

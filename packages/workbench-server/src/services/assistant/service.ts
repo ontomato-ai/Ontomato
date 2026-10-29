@@ -188,7 +188,7 @@ export const assistantService = {
         s.latestRun,
       ),
       messages: publicMessages(s.messages),
-      latestRun: s.latestRun ? publicSnapshot(s.latestRun) : null,
+      latestRun: s.latestRun ? publicSnapshot(await this.withRetrievals(s.latestRun, owner)) : null,
     };
   },
   async readRun(sessionId: string, id: string, owner: AssistantOwner) {
@@ -209,21 +209,25 @@ export const assistantService = {
       const c = getLogContext();
       this.observe(id, owner, { token: c?.token, apiKey: c?.apiKey });
     }
-    // Attach retrieval associations for front-end activity rendering. Ontology lists one row per
-    // retrieval run in creation order; a continuation adds a run to the same retrieval, so keep
-    // one link per retrieval pointing at its latest run.
-    let retrievals: { retrievalId: string; runId: string }[] | undefined;
+    return this.withRetrievals(s, owner);
+  },
+  /**
+   * The run's retrieval associations, attached for activity rendering by every read of a run.
+   * Ontology lists one row per retrieval run in creation order; a continuation adds a run to the
+   * same retrieval, so keep one link per retrieval pointing at its latest run.
+   */
+  async withRetrievals<T extends RuntimeRunSnapshot>(s: T, owner: AssistantOwner): Promise<T> {
     try {
-      const links = await new OntologyRetrievalClient(owner, id).links();
-      if (links.length > 0) {
-        const latest = new Map<string, string>();
-        for (const link of links) latest.set(link.retrievalId, link.runId);
-        retrievals = [...latest].map(([retrievalId, runId]) => ({ retrievalId, runId }));
-      }
+      const links = await new OntologyRetrievalClient(owner, s.run.id).links();
+      if (links.length === 0) return s;
+      const latest = new Map<string, string>();
+      for (const link of links) latest.set(link.retrievalId, link.runId);
+      const retrievals = [...latest].map(([retrievalId, runId]) => ({ retrievalId, runId }));
+      return { ...s, run: { ...s.run, retrievals } };
     } catch {
       // Non-fatal: retrievals are best-effort for rendering only.
+      return s;
     }
-    return retrievals ? { ...s, run: { ...s.run, retrievals } } : s;
   },
   async settle(s: RuntimeRunSnapshot, owner: AssistantOwner) {
     if (s.run.status === "stopped") {
