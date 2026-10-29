@@ -14,6 +14,7 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import {
   runtimeRegisterSkillRequestSchema,
+  standardSkillFrontmatterSchema,
   type RuntimeSkillRef,
 } from "@ontomato/contracts/agent-runtime-skills";
 import type { RuntimeRegisteredSkill } from "@ontomato/contracts/agent-runtime";
@@ -63,30 +64,14 @@ export class SkillRegistry {
     const front = pkg.files
       .find((f) => f.path === "SKILL.md")!
       .content.match(/^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/);
-    const meta = front ? parse(front[1]!) : null;
-    if (
-      !meta ||
-      meta.name !== pkg.skill.name ||
-      typeof meta.description !== "string" ||
-      !meta.description.trim() ||
-      meta.description.length > 1024 ||
-      Object.keys(meta).some(
-        (k) =>
-          ![
-            "name",
-            "description",
-            "license",
-            "compatibility",
-            "metadata",
-            "allowed-tools",
-          ].includes(k),
-      )
-    )
+    const parsed = standardSkillFrontmatterSchema.safeParse(front ? parse(front[1]!) : null);
+    if (!parsed.success || parsed.data.name !== pkg.skill.name)
       throw new RuntimeError(
         400,
         "INVALID_REQUEST",
         "SKILL.md must use standard fields and matching name/description",
       );
+    const meta = parsed.data;
     const files = [...pkg.files].sort((a, b) =>
       a.path < b.path ? -1 : a.path > b.path ? 1 : 0,
     );

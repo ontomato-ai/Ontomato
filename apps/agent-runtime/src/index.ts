@@ -8,9 +8,7 @@ import {
   createRuntimeHttp,
 } from "@ontomato/agent-runtime";
 
-function jsonSetting(
-  name: "AGENT_RUNTIME_HOSTS" | "AGENT_RUNTIME_MCP_SERVERS",
-) {
+function jsonSetting(name: "AGENT_RUNTIME_HOSTS") {
   try {
     return JSON.parse(process.env[name] || "[]") as unknown;
   } catch {
@@ -49,17 +47,6 @@ const runtime = new AgentRuntime({
     .url()
     .parse(process.env.AGENT_RUNTIME_MODEL_CONFIG_URL),
   modelRuntimeToken: process.env.ONTOMATO_MODEL_RUNTIME_TOKEN,
-  mcpServers: z
-    .array(
-      z.object({
-        id: z.string(),
-        url: z.string().url(),
-        transport: z.enum(["sse", "streamable-http"]),
-        headers: z.record(z.string()).optional(),
-        hosts: z.array(z.string()),
-      }),
-    )
-    .parse(jsonSetting("AGENT_RUNTIME_MCP_SERVERS")),
   eventBufferSize: process.env.AGENT_RUNTIME_EVENT_BUFFER_SIZE
     ? z.coerce
         .number()

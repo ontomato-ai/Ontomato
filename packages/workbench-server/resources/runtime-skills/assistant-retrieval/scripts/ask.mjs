@@ -19,8 +19,9 @@ const key = saved?.key ?? randomUUID();
 if (!saved) await writeFile(receipt, JSON.stringify({ key, body }));
 const internal = !!e.ONTOMATO_ASSISTANT_SESSION_ID;
 const base = e.ONTOMATO_WORKBENCH_URL?.replace(/\/$/, "");
-if (!base || !e.ONTOMATO_TK)
-  throw new Error("ONTOMATO_WORKBENCH_URL and ONTOMATO_TK are required");
+const token = internal ? e.ONTOMATO_RETRIEVAL_CALLBACK_TOKEN : e.ONTOMATO_TK;
+if (!base || !token)
+  throw new Error("Workbench URL and retrieval credential are required");
 const root = internal
   ? `${base}/api/assistant/sessions/${e.ONTOMATO_ASSISTANT_SESSION_ID}/runs/${e.ONTOMATO_RUN_ID}/retrievals`
   : `${base}/api/retrievals`;
@@ -28,7 +29,7 @@ async function request(url, method = "GET", body) {
   const r = await fetch(url, {
     method,
     headers: {
-      tk: e.ONTOMATO_TK,
+      tk: token,
       ...(internal ? { "X-Ontomato-Run-Id": e.ONTOMATO_RUN_ID } : {}),
       "Accept-Language": e.ONTOMATO_LANGUAGE ?? "en",
       "Idempotency-Key": key,

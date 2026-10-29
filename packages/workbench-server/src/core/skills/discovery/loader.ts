@@ -7,7 +7,7 @@ import { tApp } from "../../../i18n";
 
 const logger = createLogger("loader");
 
-/** File reads and execution inside a package share the real-path boundary; symbolic links must not escape the authorized skill package. */
+/** Management resource reads stay within the authorized package real path. */
 export async function resolveSkillPackageFile(
   skill: SkillMeta,
   requestedPath: string

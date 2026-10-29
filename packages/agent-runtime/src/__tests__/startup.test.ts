@@ -4,7 +4,7 @@ import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 
-it.each(["AGENT_RUNTIME_HOSTS", "AGENT_RUNTIME_MCP_SERVERS"])(
+it.each(["AGENT_RUNTIME_HOSTS"])(
   "does not quote private config when %s contains invalid JSON",
   (name) => {
     const root = path.resolve(

@@ -1,23 +1,26 @@
 ---
 name: network-graph
 description: Render general-purpose entity relationship networks from supplied nodes and links, supporting directed or undirected edges, grouping, status highlighting, anchor nodes, multiple layouts, filtering, and interactive exploration.
-type: executable
-category: visualization
-title: Network Relationship Graph
-tags:
-  - visualization
-  - relationship graph
-  - network graph
-  - entities
-  - dependencies
-  - ECharts
-timeout: 15000
-outputType: html
-version: 1.0.0
-defaultEnabled: false
-entries:
-  - scripts/index.mjs
+metadata:
+  ontomato.type: executable
+  ontomato.category: visualization
+  ontomato.title: Network Relationship Graph
+  ontomato.tags: '["visualization","relationship graph","network graph","entities","dependencies","ECharts"]'
+  ontomato.version: 1.0.0
+  ontomato.outputType: html
+  ontomato.defaultEnabled: "false"
 ---
+
+## Standard CLI
+
+Write the documented input to a JSON file and run:
+
+`node skills/network-graph/scripts/index.mjs work/input.json`
+
+The command writes its result under `outputs/` and prints the file path.
+Reference that path in Markdown. The command runs unchanged in an external harness;
+use the package's local path when it is installed somewhere other than `skills/`.
+
 
 ## Network Relationship Graph
 

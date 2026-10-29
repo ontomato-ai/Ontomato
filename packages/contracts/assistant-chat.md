@@ -9,8 +9,12 @@ Every conversation/file/feedback operation checks both user and domain; definiti
 management requires the existing **`analysis-agent`** permission. Errors use
 AgentHostError. Shell action slots call these endpoints; feedback stays in workbench.
 
+[Domain skills](domain-skills.md) specifies
+the complete selectable skill catalogue and per-run package preparation.
+
 | Method/path | Input | Output (200 unless listed) |
 | --- | --- | --- |
+| GET `/agent-skills` | — | `AssistantSkillCatalog`; complete provider/domain choices |
 | GET `/agent-definitions` | — | `AssistantAgentDefinitionList` |
 | GET `/agent-definitions/:agentId` | — | `AssistantAgentDefinition` |
 | POST `/agent-definitions` | `AssistantAgentInput`, UUID Idempotency-Key | 201 `AssistantAgentDefinition` |
@@ -24,16 +28,17 @@ AgentHostError. Shell action slots call these endpoints; feedback stays in workb
 
 Definitions contain one systemPrompt, one skills list, modelRole, name, description,
 icon, enabled, classNames, graphScope (`panorama` or `subgraph` with rootClassNames
-and maxDepth 0–10), enabledMcpServiceNames and sortOrder. Both presets are ordinary
+and maxDepth 0–10), enabledMcpServiceIds and sortOrder. Both presets are ordinary
 editable definitions. The common `/agents` endpoint exposes only selector metadata,
 never the prompt or these business settings. Deleted definitions do not delete
 history, and cannot admit new runs. Old executor/dimension/report/summary/hot-report
 fields are rejected and are not read from legacy definition rows.
 
 classNames scopes retrieval as before. graphScope selects initial ontology context,
-not the formal retrieval allow-list. External MCP names retain their existing domain
-configuration meaning. External MCP is not effective yet: names are saved/edited
-but are not passed into runtime (controller's provisional decision).
+not the formal retrieval allow-list. External MCP selections are runtime-assigned
+service UUIDs. Workbench forwards them as `definition.externalMcp: {id}[]`;
+[the MCP contract](agent-runtime-mcp.md) owns configuration and scoped resolution.
+Renames preserve selections; deleted services are ignored at run start.
 Analysis and visualization skills share one list. Definition writes may use
 `{name, namespace:{kind:"domain"}}` for a skill in the caller's domain; the server
 fills in the domain from the verified request identity, including the public

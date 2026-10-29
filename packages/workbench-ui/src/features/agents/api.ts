@@ -1,11 +1,12 @@
 import {
   assistantAgentDefinitionListSchema,
+  assistantSkillCatalogSchema,
   assistantAgentDefinitionSchema,
   type AssistantAgentDefinition,
   type AssistantAgentInput,
 } from "@ontomato/contracts/assistant-chat";
 import { nodeApiFetch, nodeApiGet, nodeApiPost, nodeApiPut } from "../../utils/api";
-import { listMcpServiceNames } from "../mcp/api";
+import { listMcpServiceOptions } from "../mcp/api";
 import { queryViewApi } from "../query-view";
 
 export interface ObjectClassOption {
@@ -23,6 +24,9 @@ const base = "/assistant/agent-definitions";
 
 /** Agent definition management of the workbench (assistant-chat); requires the analysis-agent permission. */
 export const agentDefinitionsApi = {
+  async skills() {
+    return assistantSkillCatalogSchema.parse(await nodeApiGet("/assistant/agent-skills")).skills;
+  },
   async list(): Promise<AssistantAgentDefinition[]> {
     return assistantAgentDefinitionListSchema.parse(await nodeApiGet(base)).agents;
   },
@@ -37,7 +41,7 @@ export const agentDefinitionsApi = {
   async remove(id: string): Promise<void> {
     await nodeApiFetch(`${base}/${encodeURIComponent(id)}`, "DELETE");
   },
-  listMcpServiceNames,
+  listMcpServiceOptions,
 };
 
 /** Classes and relations of the ontology, for related classes and the graph scope selector. */

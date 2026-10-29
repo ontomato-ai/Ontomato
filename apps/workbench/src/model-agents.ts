@@ -31,7 +31,6 @@ export const ossModelAgents: ModelAgentCatalog = {
     "API-TitleGenerator": "3.1 Title Generator",
     "Data Query-HotDataReport": "3.7 Hot Data Reporter",
     "Skill-Matcher": "3.9 Skill Matcher",
-    "Skill-Executor": "3.10 Skill Executor",
     "Dashboard-ChartFieldPlanner": "3.11 Dashboard Field Planner",
     "Dashboard-AppendPlanner": "3.12 Dashboard Append Planner",
     "Dashboard-DashboardPlanner": "3.13 Dashboard Planner",

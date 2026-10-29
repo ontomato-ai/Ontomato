@@ -15,6 +15,10 @@ import {
 } from "@ontomato/contracts/agent-runtime-events";
 import { environment } from "../../config/environment";
 import { HttpError } from "../../utils/errors";
+import {
+  mcpServiceOptionsSchema, mcpServiceListSchema, mcpServiceResponseSchema, mcpServiceToolsSchema,
+  type McpServiceWrite,
+} from "@ontomato/contracts/agent-runtime-mcp";
 
 /** The workbench has only this HTTP boundary; it never imports the runtime implementation. */
 export class RuntimeClient {
@@ -61,6 +65,7 @@ export class RuntimeClient {
             response.status,
             (result as { error?: { message?: string } }).error?.message ||
               "Agent runtime request failed",
+            (result as { error?: { code?: string } }).error?.code,
           );
         return result;
       } catch (error) {
@@ -71,9 +76,31 @@ export class RuntimeClient {
           !signal?.aborted
         )
           continue;
+        if (error instanceof TypeError && !signal?.aborted)
+          throw new HttpError(503, "Agent runtime is unavailable", "DEPENDENCY_UNAVAILABLE");
         throw error;
       }
     }
+  }
+  async mcpOptions() {
+    return mcpServiceOptionsSchema.parse(await this.request("/v1/mcp/services/names"));
+  }
+  async mcpServices() {
+    return mcpServiceListSchema.parse(await this.request("/v1/mcp/services"));
+  }
+  async saveMcpService(input: McpServiceWrite, id?: string) {
+    return mcpServiceResponseSchema.parse(await this.request(
+      id === undefined ? "/v1/mcp/services" : `/v1/mcp/services/${encodeURIComponent(id)}`,
+      id === undefined ? "POST" : "PUT", input,
+    ));
+  }
+  async deleteMcpService(id: string) {
+    await this.request(`/v1/mcp/services/${encodeURIComponent(id)}`, "DELETE");
+  }
+  async mcpTools(id: string, signal: AbortSignal) {
+    return mcpServiceToolsSchema.parse(await this.request(
+      `/v1/mcp/services/${encodeURIComponent(id)}/tools`, "GET", undefined, undefined, signal,
+    ));
   }
   async text(path: string, signal?: AbortSignal) {
     const response = await fetch(

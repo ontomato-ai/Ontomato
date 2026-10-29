@@ -19,22 +19,22 @@
     <div v-loading="loading" class="skill-list">
       <div
         v-for="skill in skills"
-        :key="skill.id"
+        :key="runtimeSkillKey(skill.skill)"
         class="skill-card"
-        :class="{ selected: selectedSkills.includes(skill.id) }"
-        @click="toggleSkill(skill.id)"
+        :class="{ selected: isSelected(skill.skill) }"
+        @click="toggleSkill(skill.skill)"
       >
         <div class="skill-header">
           <div class="skill-title-row">
-            <div class="skill-title">{{ skill.title || skill.id }}</div>
+            <div class="skill-title">{{ skill.title || skill.skill.name }}</div>
             <el-tag v-if="!skill.enabled" size="small" type="warning">
               {{ t("common.disabled") }}
             </el-tag>
           </div>
           <el-checkbox
-            :model-value="selectedSkills.includes(skill.id)"
-            :disabled="skill.id === 'generate-ppt' && !skill.enabled && !selectedSkills.includes(skill.id)"
-            @click.stop="toggleSkill(skill.id)"
+            :model-value="isSelected(skill.skill)"
+            :disabled="!skill.enabled && !isSelected(skill.skill)"
+            @click.stop="toggleSkill(skill.skill)"
           />
         </div>
         <div v-if="skill.description" class="skill-description">
@@ -63,7 +63,10 @@
 
 <script setup lang="ts">
 import { ref, watch } from "vue";
-import { skillsApi, type AnalysisSkill } from "../../skills/api";
+import { skillsApi } from "../../skills/api";
+import { agentDefinitionsApi } from "../api";
+import type { AssistantSkillOption } from "@ontomato/contracts/assistant-chat";
+import { runtimeSkillKey, type RuntimeSkillRef } from "@ontomato/contracts/agent-runtime-skills";
 import type { SkillInfo } from "@ontomato/contracts/skills";
 import { Plus, Upload } from "lucide-vue-next";
 import { ElMessage, ElMessageBox, type UploadFile } from "element-plus";
@@ -78,17 +81,18 @@ const { detailSeparator } = errorPunctuation();
 const { t } = useI18n();
 
 const props = defineProps<{
-  modelValue?: string[];
+  modelValue?: RuntimeSkillRef[];
   title?: string;
   hint?: string;
 }>();
 
 const emit = defineEmits<{
-  "update:modelValue": [value: string[]];
+  "update:modelValue": [value: RuntimeSkillRef[]];
+  ready: [value: boolean];
 }>();
 
-const skills = ref<AnalysisSkill[]>([]);
-const selectedSkills = ref<string[]>([]);
+const skills = ref<AssistantSkillOption[]>([]);
+const selectedSkills = ref<RuntimeSkillRef[]>([]);
 const loadError = ref("");
 const showCreateDialog = ref(false);
 const loading = ref(false);
@@ -143,8 +147,8 @@ function openCreateSkill() {
 
 async function handleSkillCreated(skill: SkillInfo) {
   await loadSkills();
-  if (skills.value.some((item) => item.id === skill.id) && !selectedSkills.value.includes(skill.id)) {
-    selectedSkills.value = [...selectedSkills.value, skill.id];
+  if (skills.value.some((item) => runtimeSkillKey(item.skill) === runtimeSkillKey(skill.skill)) && !isSelected(skill.skill)) {
+    selectedSkills.value = [...selectedSkills.value, skill.skill];
     emit("update:modelValue", selectedSkills.value);
   }
 }
@@ -152,13 +156,11 @@ async function handleSkillCreated(skill: SkillInfo) {
 // One list for the agent: analysis and visualization skills alike.
 async function loadSkills() {
   loading.value = true;
+  emit("ready", false);
   try {
     loadError.value = "";
-    const [analysis, visualization] = await Promise.all([
-      skillsApi.listAnalysisSkills(),
-      skillsApi.listVisualizationSkills(),
-    ]);
-    skills.value = [...analysis, ...visualization];
+    skills.value = await agentDefinitionsApi.skills();
+    emit("ready", true);
   } catch (error) {
     skills.value = [];
     loadError.value = error instanceof Error ? error.message : String(error);
@@ -167,15 +169,16 @@ async function loadSkills() {
   }
 }
 
-// Toggle skill selection
-function toggleSkill(skillId: string) {
-  const index = selectedSkills.value.indexOf(skillId);
-  if (skillId === "generate-ppt" && !skills.value.find(skill => skill.id === skillId)?.enabled && index < 0) return;
-  if (index > -1) {
-    selectedSkills.value = selectedSkills.value.filter((id) => id !== skillId);
-  } else {
-    selectedSkills.value = [...selectedSkills.value, skillId];
-  }
+function isSelected(skill: RuntimeSkillRef) {
+  return selectedSkills.value.some((item) => runtimeSkillKey(item) === runtimeSkillKey(skill));
+}
+function toggleSkill(skill: RuntimeSkillRef) {
+  const key = runtimeSkillKey(skill);
+  const index = selectedSkills.value.findIndex((item) => runtimeSkillKey(item) === key);
+  if (index < 0 && !skills.value.find((item) => runtimeSkillKey(item.skill) === key)?.enabled) return;
+  selectedSkills.value = index >= 0
+    ? selectedSkills.value.filter((item) => runtimeSkillKey(item) !== key)
+    : [...selectedSkills.value, skill];
   emit("update:modelValue", selectedSkills.value);
 }
 

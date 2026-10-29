@@ -1,2 +1,2 @@
 export * from "./types";
-export { callMcpTool, listMcpTools } from "./client";
+export { listMcpTools } from "./client";

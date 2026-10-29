@@ -26,7 +26,7 @@ export const assistantAgentDefinitionSchema = agentHostAgentSchema.extend({
   skills: z.array(runtimeSkillRefSchema),
   classNames: z.array(z.string().trim().min(1)).default([]),
   graphScope: assistantGraphScopeSchema.default({ mode: "panorama" }),
-  enabledMcpServiceNames: z.array(z.string().trim().min(1)).default([]),
+  enabledMcpServiceIds: z.array(runtimeIdSchema).default([]),
   sortOrder: z.number().int().default(0),
   systemPrompt: z.string(),
 });
@@ -36,6 +36,18 @@ export const assistantAgentDefinitionListSchema = z
 export type AssistantAgentDefinitionList = z.infer<
   typeof assistantAgentDefinitionListSchema
 >;
+export const assistantSkillOptionSchema = z.object({
+  skill: runtimeSkillRefSchema,
+  title: z.string(),
+  description: z.string(),
+  enabled: z.boolean(),
+  tags: z.array(z.string()).default([]),
+}).strict();
+export const assistantSkillCatalogSchema = z.object({
+  skills: z.array(assistantSkillOptionSchema),
+}).strict();
+export type AssistantSkillOption = z.infer<typeof assistantSkillOptionSchema>;
+export type AssistantSkillCatalog = z.infer<typeof assistantSkillCatalogSchema>;
 /** A definition write can refer to the caller's domain without knowing its ID. */
 export const assistantSkillInputSchema = runtimeSkillRefSchema.extend({
   namespace: z.discriminatedUnion("kind", [

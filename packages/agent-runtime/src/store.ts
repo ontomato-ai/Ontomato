@@ -81,6 +81,10 @@ export class RuntimeStore {
       const versions = (
         await c.query(`SELECT version FROM ${this.table("schema_migrations")}`)
       ).rows;
+      await c.query(`CREATE TABLE IF NOT EXISTS ${this.table("mcp_services")} (
+        host_id text NOT NULL, domain_id text NOT NULL, id uuid NOT NULL,
+        name text NOT NULL, url text NOT NULL, headers jsonb NOT NULL DEFAULT '{}',
+        PRIMARY KEY(host_id,domain_id,id), UNIQUE(host_id,domain_id,name));`);
       if (versions.some((row) => row.version === 2)) return;
       if (versions.length)
         throw new Error(

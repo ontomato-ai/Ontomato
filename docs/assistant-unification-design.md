@@ -72,20 +72,17 @@ active run blocks the next message (409 SESSION_BUSY), with no predecessor check
 
 Both presets are ordinary editable definitions. Keep one prompt, one standard
 skill list and model role, plus name/description/icon/enabled, related classNames,
-graphScope and enabledMcpServiceNames. Remove execution/dimension/report/summary/
+graphScope and enabledMcpServiceIds. Remove execution/dimension/report/summary/
 hot-report configuration. Management uses the existing analysis-agent permission.
 classNames is captured on the parent run and passed to retrieval. The prior graph
 scope expansion and schema reader supply initial context; graph scope does not
 narrow formal retrieval beyond classNames. Existing definition columns are not read
 or converted. Appearance retains brand only; qa and addAgentLabel are removed.
 
-**External MCP is not effective yet (外部 MCP 暂未生效).** Controller's provisional
-decision: preserve/edit selected names, do not pass them into runtime, and do not
-block other capabilities. The old domain configuration contains URLs/headers;
-runtime currently accepts only preconfigured server IDs. Two options for the
-controller's user confirmation: allow the run definition to carry host-selected
-MCP URL/headers, or invoke MCP through standard skill scripts. Neither is added
-in this batch. General MCP configuration/call services remain intact.
+External MCP configuration now belongs to runtime. Agent definitions store stable
+service UUIDs; hosts pass those references and runtime owns URLs/headers, discovery
+and calls. Renames keep selections intact. The separate
+[external MCP design](external-mcp-runtime-design.md) owns this replacement.
 
 ## Confirmed simplifications
 

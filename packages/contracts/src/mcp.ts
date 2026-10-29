@@ -1,9 +1,12 @@
-export interface McpToolDesc {
-  name: string;
-  title?: string;
-  description?: string;
-  inputSchema?: Record<string, any>;
-}
+import { z } from "zod";
+
+export const mcpToolDescSchema = z.object({
+  name: z.string(),
+  title: z.string().optional(),
+  description: z.string().optional(),
+  inputSchema: z.record(z.unknown()).optional(),
+});
+export type McpToolDesc = z.infer<typeof mcpToolDescSchema>;
 
 export interface SystemMcpTool extends McpToolDesc {
   title: string;

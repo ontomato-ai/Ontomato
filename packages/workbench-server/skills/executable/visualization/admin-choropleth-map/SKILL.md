@@ -1,24 +1,26 @@
 ---
 name: admin-choropleth-map
 description: Render interactive choropleth maps for Chinese provincial regions by matching regional statistics to bundled or automatically loaded GeoJSON boundaries. Supports province-name aliases, administrative-code matching, color classification, legends, popups, and missing-data diagnostics.
-type: executable
-category: visualization
-title: Administrative Choropleth Map
-tags:
-  - visualization
-  - choropleth
-  - administrative map
-  - geospatial
-  - GeoJSON
-  - Leaflet
-  - China provinces
-timeout: 15000
-outputType: html
-version: 1.1.1
-defaultEnabled: false
-entries:
-  - scripts/index.mjs
+metadata:
+  ontomato.type: executable
+  ontomato.category: visualization
+  ontomato.title: Administrative Choropleth Map
+  ontomato.tags: '["visualization","choropleth","administrative map","geospatial","GeoJSON","Leaflet","China provinces"]'
+  ontomato.version: 1.1.1
+  ontomato.outputType: html
+  ontomato.defaultEnabled: "false"
 ---
+
+## Standard CLI
+
+Write the documented input to a JSON file and run:
+
+`node skills/admin-choropleth-map/scripts/index.mjs work/input.json`
+
+The command writes its result under `outputs/` and prints the file path.
+Reference that path in Markdown. The command runs unchanged in an external harness;
+use the package's local path when it is installed somewhere other than `skills/`.
+
 
 ## Administrative Choropleth Map
 

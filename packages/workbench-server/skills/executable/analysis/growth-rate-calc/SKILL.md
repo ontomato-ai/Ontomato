@@ -1,24 +1,26 @@
 ---
 name: growth-rate-calc
 description: Compute year-over-year and month-over-month growth rates for data, suitable for time series data analysis.
-type: executable
-category: analysis
-title: Year-over-year and month-over-month calculation
-tags:
-  - year-over-year
-  - month-over-month
-  - growth rate
-  - calculation
-useCases:
-  - year-over-year growth analysis
-  - month-over-month growth analysis
-  - trend calculation
-timeout: 5000
-outputType: json
-version: 1.0.0
-entries:
-  - scripts/index.mjs
+metadata:
+  ontomato.type: executable
+  ontomato.category: analysis
+  ontomato.title: Year-over-year and month-over-month calculation
+  ontomato.tags: '["year-over-year","month-over-month","growth rate","calculation"]'
+  ontomato.version: 1.0.0
+  ontomato.outputType: json
+  ontomato.useCases: '["year-over-year growth analysis","month-over-month growth analysis","trend calculation"]'
 ---
+
+## Standard CLI
+
+Write the documented input to a JSON file and run:
+
+`node skills/growth-rate-calc/scripts/index.mjs work/input.json`
+
+The command writes its result under `outputs/` and prints the file path.
+Reference that path in Markdown. The command runs unchanged in an external harness;
+use the package's local path when it is installed somewhere other than `skills/`.
+
 ## Year-over-year and month-over-month calculation skill
 
 Compute the year-over-year and month-over-month growth rates of data.

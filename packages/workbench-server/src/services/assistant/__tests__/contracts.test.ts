@@ -42,6 +42,7 @@ describe("approved assistant HTTP boundary", () => {
       errorMessage: null,
       createdAt: "2026-10-28T00:00:00Z",
       finishedAt: "2026-10-28T00:00:01Z",
+      resolvedSkills: [],
     };
     expect(agentHostRunSchema.parse(run)).toEqual(run);
     expect(

@@ -10,9 +10,9 @@ import type {
   AssistantAgentDefinition,
   AssistantAgentInput,
 } from "@ontomato/contracts/assistant-chat";
+import type { McpServiceOption } from "@ontomato/contracts/agent-runtime-mcp";
 import type { RuntimeSkillRef } from "@ontomato/contracts/agent-runtime-skills";
 import { agentDefinitionsApi, type ObjectClassOption, type OntologyRelationOption } from "../api";
-import { joinSkillRefs, splitSkillRefs } from "../skill-refs";
 import { avatarIcon, lightAvatarColorOptions, themedAvatarColor } from "../avatar";
 import AgentBasicInfoFields from "./AgentBasicInfoFields.vue";
 import GraphScopeField from "./GraphScopeField.vue";
@@ -36,17 +36,13 @@ interface Form {
   avatarColor: string;
   enabled: boolean;
   systemPrompt: string;
-  skillNames: string[];
+  skills: RuntimeSkillRef[];
   classNames: string[];
   scopeMode: "panorama" | "subgraph";
   scopeRoots: string[];
   scopeDepth: number | undefined;
-  mcpServiceNames: string[];
+  mcpServiceIds: string[];
 }
-
-const skillRefs = splitSkillRefs(props.agent?.skills ?? []);
-/** Built-in workbench skills the definition carries; kept as they are. */
-const providerSkills: RuntimeSkillRef[] = skillRefs.providerRefs;
 
 function toForm(agent: AssistantAgentDefinition | null): Form {
   let avatar = { key: "Brain", color: lightAvatarColorOptions[0]! };
@@ -63,12 +59,12 @@ function toForm(agent: AssistantAgentDefinition | null): Form {
     avatarColor: themedAvatarColor(avatar.color, isDark.value),
     enabled: agent?.enabled ?? true,
     systemPrompt: agent?.systemPrompt ?? "",
-    skillNames: [...skillRefs.domainNames],
+    skills: [...(agent?.skills ?? [])],
     classNames: [...(agent?.classNames ?? [])],
     scopeMode: scope?.mode === "subgraph" ? "subgraph" : "panorama",
     scopeRoots: scope?.mode === "subgraph" ? [...scope.rootClassNames] : [],
     scopeDepth: scope?.mode === "subgraph" ? scope.maxDepth : 1,
-    mcpServiceNames: [...(agent?.enabledMcpServiceNames ?? [])],
+    mcpServiceIds: [...(agent?.enabledMcpServiceIds ?? [])],
   };
 }
 
@@ -76,8 +72,9 @@ const form = ref<Form>(toForm(props.agent));
 const baseline = ref(JSON.stringify(form.value));
 const dirty = computed(() => JSON.stringify(form.value) !== baseline.value);
 const saving = ref(false);
+const skillsReady = ref(false);
 const promptPreview = ref(false);
-const mcpNames = ref<string[]>([]);
+const mcpOptions = ref<McpServiceOption[]>([]);
 const mcpLoading = ref(false);
 const mcpFailed = ref(false);
 
@@ -89,7 +86,7 @@ async function loadMcp() {
   mcpLoading.value = true;
   mcpFailed.value = false;
   try {
-    mcpNames.value = await agentDefinitionsApi.listMcpServiceNames();
+    mcpOptions.value = await agentDefinitionsApi.listMcpServiceOptions();
   } catch {
     mcpFailed.value = true;
   } finally {
@@ -120,27 +117,26 @@ function validInput(): AssistantAgentInput | null {
       return null;
     }
   }
-  const skills = joinSkillRefs(providerSkills, value.skillNames);
   return {
     name: value.name.trim(),
     description: value.description,
     icon: JSON.stringify({ key: value.avatarKey, color: value.avatarColor }),
     enabled: value.enabled,
     systemPrompt: value.systemPrompt,
-    skills,
+    skills: value.skills,
     classNames: value.classNames,
     graphScope:
       value.scopeMode === "subgraph"
         ? { mode: "subgraph", rootClassNames: value.scopeRoots, maxDepth: value.scopeDepth! }
         : { mode: "panorama" },
-    enabledMcpServiceNames: value.mcpServiceNames,
+    enabledMcpServiceIds: value.mcpServiceIds,
     sortOrder: props.agent?.sortOrder ?? 0,
   };
 }
 
 async function save() {
   const input = validInput();
-  if (!input || saving.value) return;
+  if (!input || saving.value || !skillsReady.value) return;
   saving.value = true;
   try {
     const saved = props.agent
@@ -195,7 +191,7 @@ defineExpose({ dirty });
         <small :class="{ dirty }">{{ dirty ? t("admin.agentEditorUnsaved") : t("admin.agentEditorSaved") }}</small>
       </div>
       <el-button v-if="agent" text :icon="Trash2" :disabled="saving" @click="remove">{{ t("common.delete") }}</el-button>
-      <el-button type="primary" :loading="saving" :disabled="!dirty && !!agent" @click="save">{{ t("common.save") }}</el-button>
+      <el-button type="primary" :loading="saving" :disabled="!skillsReady || (!dirty && !!agent)" @click="save">{{ t("common.save") }}</el-button>
     </header>
 
     <div class="editor-body">
@@ -240,11 +236,7 @@ defineExpose({ dirty });
               <p>{{ t("agents.skillsHint") }}</p>
             </div>
           </div>
-          <div v-if="providerSkills.length" class="builtin-skills">
-            <span class="builtin-label">{{ t("agents.builtinSkills") }}</span>
-            <el-tag v-for="skill in providerSkills" :key="skill.name" size="small" effect="plain">{{ skill.name }}</el-tag>
-          </div>
-          <SkillSelector v-model="form.skillNames" />
+          <SkillSelector v-model="form.skills" @ready="skillsReady = $event" />
         </section>
 
         <section class="editor-section">
@@ -295,7 +287,7 @@ defineExpose({ dirty });
             </div>
           </div>
           <el-select
-            v-model="form.mcpServiceNames"
+            v-model="form.mcpServiceIds"
             multiple
             filterable
             collapse-tags
@@ -307,12 +299,12 @@ defineExpose({ dirty });
             :placeholder="t('admin.externalMcpServicesPlaceholder')"
             class="full"
           >
-            <el-option v-for="name in mcpNames" :key="name" :label="name" :value="name" />
+            <el-option v-for="service in mcpOptions" :key="service.id" :label="service.name" :value="service.id" />
             <el-option
-              v-for="name in form.mcpServiceNames.filter((selected) => !mcpNames.includes(selected))"
-              :key="name"
-              :label="name"
-              :value="name"
+              v-for="id in form.mcpServiceIds.filter((selected) => !mcpOptions.some((service) => service.id === selected))"
+              :key="id"
+              :label="t('assistant.unavailable')"
+              :value="id"
               disabled
             />
           </el-select>
@@ -456,16 +448,5 @@ defineExpose({ dirty });
 }
 .mcp-alert {
   margin-top: 10px;
-}
-.builtin-skills {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 6px;
-  margin-bottom: 12px;
-}
-.builtin-label {
-  font-size: var(--text-xs);
-  color: var(--el-text-color-secondary);
 }
 </style>

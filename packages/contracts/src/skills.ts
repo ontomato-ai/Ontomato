@@ -1,6 +1,8 @@
 import type { ChartSortBy, ChartCategoryValue } from "./analysis-charts";
+import type { RuntimeSkillRef } from "./agent-runtime-skills";
 export interface SkillInfo {
   id: string;
+  skill: RuntimeSkillRef;
   type: "executable" | "knowledge";
   category: "analysis" | "visualization";
   title?: string;
@@ -43,20 +45,6 @@ export interface SkillOutput {
     skillId?: string;
     [key: string]: any;
   };
-}
-
-export interface SkillExecutionMetrics {
-  skillId: string;
-  totalExecutions: number;
-  totalFailures: number;
-  totalSuccesses: number;
-  totalDurationMs: number;
-  lastExecutedAt: number | null;
-}
-
-export interface SkillMetricsSnapshot {
-  skills: Record<string, SkillExecutionMetrics>;
-  updatedAt: number;
 }
 
 export interface ChartSelectionResult {
