@@ -1,4 +1,6 @@
-import { randomUUID } from "node:crypto";
+import { correlationId as normalizeCorrelationId, getServiceLogContext, logHeaders, withServiceLogContext } from "@ontomato/service-logging";
+import { createLogger } from "../../logging/logger";
+const logger = createLogger("runtime-client");
 import {
   runtimeRunSnapshotSchema,
   runtimeSessionSnapshotSchema,
@@ -24,8 +26,10 @@ import {
 export class RuntimeClient {
   constructor(
     readonly domainId: string | undefined,
-    readonly correlationId: string = randomUUID(),
-  ) {}
+    incomingCorrelationId: string | undefined = getServiceLogContext().correlationId ?? undefined,
+    readonly userId = getServiceLogContext().userId,
+  ) { this.correlationId = normalizeCorrelationId(incomingCorrelationId); }
+  readonly correlationId: string;
   private headers(key?: string) {
     const config = environment.agentRuntime();
     if (!config.token)
@@ -34,7 +38,9 @@ export class RuntimeClient {
       authorization: `Bearer ${config.token}`,
       "x-correlation-id": this.correlationId,
       "content-type": "application/json",
+      ...logHeaders({ ...getServiceLogContext(), correlationId: this.correlationId }),
     };
+    if (this.userId) headers["x-ontomato-user-id"] = this.userId;
     if (this.domainId) headers["x-domain-id"] = this.domainId;
     if (key) headers["idempotency-key"] = key;
     return headers;
@@ -48,6 +54,8 @@ export class RuntimeClient {
   ): Promise<unknown> {
     // Only idempotent admission requests are retried after a lost transport response.
     for (let attempt = 0; ; attempt++) {
+      const started = performance.now();
+      let outcome = "success";
       try {
         const response = await fetch(
           environment.agentRuntime().url.replace(/\/$/, "") + path,
@@ -69,6 +77,7 @@ export class RuntimeClient {
           );
         return result;
       } catch (error) {
+        outcome = signal?.aborted ? "cancelled" : "failure";
         if (
           key &&
           attempt === 0 &&
@@ -79,6 +88,9 @@ export class RuntimeClient {
         if (error instanceof TypeError && !signal?.aborted)
           throw new HttpError(503, "Agent runtime is unavailable", "DEPENDENCY_UNAVAILABLE");
         throw error;
+      } finally {
+        if (!path.startsWith("/v1/logs")) withServiceLogContext({ correlationId: this.correlationId, domainId: this.domainId, userId: this.userId }, () =>
+          logger.info("runtime call completed", { kind: "downstream", target: "agent-runtime", durationMs: Math.floor(performance.now() - started), outcome }));
       }
     }
   }
@@ -141,14 +153,14 @@ export class RuntimeClient {
     );
   }
   async start(sessionId: string, runId: string, input: RuntimeStartRunRequest) {
-    return runtimeAdmissionResponseSchema.parse(
+    return withServiceLogContext({ runId, sessionId }, async () => runtimeAdmissionResponseSchema.parse(
       await this.request(
         `/v1/sessions/${encodeURIComponent(sessionId)}/runs`,
         "POST",
         input,
         runId,
       ),
-    );
+    ));
   }
   async cancel(id: string) {
     return runtimeCancelResponseSchema.parse(

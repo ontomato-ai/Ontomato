@@ -12,6 +12,8 @@ import org.springframework.scheduling.annotation.EnableScheduling;
 public class RAGMain {
     public static void main(String[] arg) throws java.io.IOException {
         ProductFileSync.syncFromEnvironment();
-        SpringApplication.run(RAGMain.class, arg);
+        SpringApplication application = new SpringApplication(RAGMain.class);
+        application.setBannerMode(org.springframework.boot.Banner.Mode.OFF);
+        application.run(arg);
     }
 }

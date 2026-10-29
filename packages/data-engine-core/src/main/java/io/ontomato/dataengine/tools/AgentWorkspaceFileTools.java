@@ -9,7 +9,7 @@ import java.util.Map;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
-import io.ontomato.dataengine.logging.AgentCallContext;
+import io.ontomato.dataengine.service.ai.AgentExecutionContext;
 import io.ontomato.dataengine.service.AgentWorkspaceService;
 import io.ontomato.dataengine.service.ai.MultiThreadAIChatService;
 
@@ -53,7 +53,7 @@ public class AgentWorkspaceFileTools {
     }
 
     private String sessionId() {
-        return AgentCallContext.current().getSessionId();
+        return AgentExecutionContext.current().getSessionId();
     }
 
     @Tool("List the files in this workspace; path uses a relative directory, use . for the root directory")
@@ -106,7 +106,7 @@ public class AgentWorkspaceFileTools {
 
     private String afterSave(String saved, String path, String runAfter) {
         if (runAfter == null || runAfter.isBlank()) return saved;
-        Map<String, PostSaveAction> actions = postSaveActions.get(AgentCallContext.current().getAgentName());
+        Map<String, PostSaveAction> actions = postSaveActions.get(AgentExecutionContext.current().getAgentName());
         PostSaveAction action = actions == null ? null : actions.get(runAfter);
         if (action == null) return saved + "\nUnknown follow-up action: " + runAfter + ", not executed";
         try {

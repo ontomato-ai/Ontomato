@@ -72,7 +72,6 @@ public class SseEmitterUtil {
     private static boolean send(String sessionId, EmitterSend action, String message) {
         SseEmitter sseEmitter = SSE_CACHE.get(sessionId);
         if (sseEmitter == null) {
-        	log.info("SSE no longer exists. sessionId: " + sessionId + "    message: " + message);
         	return false;
         }
         try {
@@ -87,7 +86,6 @@ public class SseEmitterUtil {
     public static boolean sendSseEmitter(String sessionId, String message) {
         boolean ok = send(sessionId, emitter -> emitter.send(message), message);
         if (ok) {
-            log.info("SSE message sent successfully. sessionId: " + sessionId + "    message: " + message);
         }
         return ok;
     }

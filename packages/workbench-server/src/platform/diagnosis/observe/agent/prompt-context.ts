@@ -1,20 +1,12 @@
 import type { SessionContext } from "@ontomato/contracts/diagnosis";
-import path from "node:path";
 import { renderPrompt } from "../../../../core/prompts/loader";
-import { observeConfig } from "../config";
 import { KNOWLEDGE_INDEX_RELATIVE_PATH } from "./knowledge-store";
 import { getDiagnosisSkillsIndex } from "./runtime-registry";
 import { tApp } from "../../../../i18n";
 
 
 export function buildLogPaths(): string {
-  const { logDir, appLogFile, llmLogFile } = observeConfig;
-  const appLogPath = path.join(logDir, appLogFile);
-  const llmLogPath = path.join(logDir, llmLogFile);
-  return [
-    tApp("diag.observe.agent.prompt-context.0", { p0: appLogPath }),
-    tApp("diag.observe.agent.prompt-context.1", { p0: llmLogPath }),
-  ].join("\n");
+  return "Service logs: GET /api/observe/logs (workbench), /api/observe/runtime-logs (runtime), /observe/logs (ontology, using its authenticated host proxy). Query by exact correlationId/runId/sessionId and a UTC time window. Log storage is best-effort; 503 means unavailable, not no execution. Runtime messages and artifacts stay in the runtime.";
 }
 
 export function buildSystemPrompt(skillsIndex = getDiagnosisSkillsIndex()): string {

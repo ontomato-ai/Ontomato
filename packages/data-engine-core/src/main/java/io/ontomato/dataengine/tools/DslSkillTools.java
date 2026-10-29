@@ -24,8 +24,8 @@ import io.ontomato.dataengine.dataAdapter.DataAdapter;
 import io.ontomato.dataengine.dataAdapter.DataAdapterRegistry;
 import io.ontomato.dataengine.dao.JSONRuleDao;
 import io.ontomato.dataengine.dao.VectorResourceDao;
-import io.ontomato.dataengine.logging.AgentCallContext;
-import io.ontomato.dataengine.logging.DiagnosticEventLogger;
+import io.ontomato.dataengine.service.ai.AgentExecutionContext;
+import io.ontomato.dataengine.logging.ServiceLogEvents;
 import io.ontomato.dataengine.service.AgentWorkspaceService;
 import io.ontomato.dataengine.service.BusinessConfigService;
 import io.ontomato.dataengine.service.ai.MultiThreadAIChatService;
@@ -69,7 +69,7 @@ public class DslSkillTools {
 			+ "Pass only the relative file name or path, for example query_0.json; the file content must be a single JSON object. "
 			+ "Do not pass the full DSL text, the host directory, the user or the domain; a trial query does not replace the formal Python program test.")
 	public String executeDslFile(@P("the relative path of the DSL JSON file in this workspace") String path) throws Exception {
-		String sessionId = AgentCallContext.current().getSessionId();
+		String sessionId = AgentExecutionContext.current().getSessionId();
 		Path file = workspaceService.resolve(sessionId, path);
 		workspaceService.clearExecution(sessionId, file.toString());
 		if (!file.toString().endsWith(".json") || !Files.isRegularFile(file)) {
@@ -93,10 +93,9 @@ public class DslSkillTools {
 		String ret = null;
 		String dslStr = null;
 		String error = null;
-		// ABC path m3.query event: sessionId takes the base sessionId of the outer AgentCallContext of the tool loop (no sub-query layer)
-		AgentCallContext callContext = AgentCallContext.current();
+		// ABC path m3.query event: sessionId takes the base sessionId of the outer AgentExecutionContext of the tool loop (no sub-query layer)
+		AgentExecutionContext callContext = AgentExecutionContext.current();
 		String sessionId = callContext == null ? null : callContext.getSessionId();
-		long m3Start = System.currentTimeMillis();
 		boolean m3Started = false;
 		try {
 			JSONArray dsls = new JSONArray();
@@ -107,31 +106,19 @@ public class DslSkillTools {
 			dslStr = DslUtil.normalizeClassNames(dslStr, (List<Map<String, Object>>)jsonRule.get("classDef"));
 			DataAdapter timeConditionAdapter = dataAdapterRegistry.create(businessConfig, jsonRule);
 			dslStr = DslUtil.setConditionTimeColumnToCorrectFormat(dslStr, dataRagConfig.getDslMightTimeFormats(), (List<Map<String, Object>>)jsonRule.get("classDef"), timeConditionAdapter.timeConditionsAsEpochMillis(), timeConditionAdapter.timeConditionZone());
-			JSONObject m3StartedPayload = new JSONObject();
-			m3StartedPayload.put("dsl", safeJson(dslStr));
-			m3StartedPayload.put("m3Mode", "V1");
-			DiagnosticEventLogger.emit("m3.query.started", sessionId, m3StartedPayload);
-			m3Start = System.currentTimeMillis();
+			ServiceLogEvents.lifecycle("m3.query.started", sessionId);
 			m3Started = true;
 			DslExecutionResult queryResult = HttpRequestUtil.executeDsl(dataRagConfig, timeConditionAdapter, dslStr, sessionId, false, jsonRule, vectorResourceDao, new UserDataPermission(), DslExecutionMode.OPTIMIZED, callContext.getDomainId())[0];
 			JSONObject dataMap = queryResult.data();
 			if (queryResult.failed()) {
 				String rawError = MultiThreadAIChatService.rawErrorText(queryResult.failure().cause());
 				error = rawError;
-				JSONObject m3Failed = new JSONObject();
-				m3Failed.put("dsl", safeJson(dslStr));
-				m3Failed.put("error", new JSONObject().fluentPut("message", rawError));
-				DiagnosticEventLogger.emit("m3.query.failed", sessionId, m3Failed);
-				DiagnosticEventLogger.emit("m3.query.finished", sessionId, new JSONObject().fluentPut("status", "error").fluentPut("durationMs", System.currentTimeMillis() - m3Start));
+				ServiceLogEvents.lifecycle("m3.query.failed", sessionId);
+				ServiceLogEvents.lifecycle("m3.query.finished", sessionId);
 				ret = "Query execution error:\n" + rawError + "\nThe DSL actually executed this time:\n```json\n" + dslStr + "\n```";
 			} else {
-				JSONObject m3Succeeded = new JSONObject();
-				m3Succeeded.put("dsl", safeJson(dslStr));
-				m3Succeeded.put("m3Mode", "V1");
-				m3Succeeded.put("durationMs", System.currentTimeMillis() - m3Start);
-				m3Succeeded.put("result", DiagnosticEventLogger.buildM3Result(dataMap));
-				DiagnosticEventLogger.emit("m3.query.succeeded", sessionId, m3Succeeded);
-				DiagnosticEventLogger.emit("m3.query.finished", sessionId, new JSONObject().fluentPut("status", "success").fluentPut("durationMs", System.currentTimeMillis() - m3Start));
+				ServiceLogEvents.lifecycle("m3.query.succeeded", sessionId);
+				ServiceLogEvents.lifecycle("m3.query.finished", sessionId);
 				m3Started = false;
 				JSONArray data = dataMap.getJSONArray("data");
 				JSONArray answer = new JSONArray();
@@ -175,25 +162,11 @@ public class DslSkillTools {
 			if (m3Started) {
 				// Only echo the DSL back after it was actually submitted for execution; a failure before submission has no "actually executed DSL"
 				ret += "\nThe DSL actually executed this time:\n```json\n" + dslStr + "\n```";
-				JSONObject m3Failed = new JSONObject();
-				m3Failed.put("dsl", safeJson(dslStr));
-				m3Failed.put("error", new JSONObject().fluentPut("message", rawError));
-				DiagnosticEventLogger.emit("m3.query.failed", sessionId, m3Failed);
-				DiagnosticEventLogger.emit("m3.query.finished", sessionId, new JSONObject().fluentPut("status", "error").fluentPut("durationMs", System.currentTimeMillis() - m3Start));
+				ServiceLogEvents.lifecycle("m3.query.failed", sessionId);
+				ServiceLogEvents.lifecycle("m3.query.finished", sessionId);
 			}
 		}
 		return new DslOutcome(error == null, error, ret);
-	}
-
-	private Object safeJson(String s) {
-		if (s == null) {
-			return null;
-		}
-		try {
-			return JSON.parse(s);
-		} catch (Exception e) {
-			return s;
-		}
 	}
 
 }

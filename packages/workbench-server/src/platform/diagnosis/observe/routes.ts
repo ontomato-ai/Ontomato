@@ -28,8 +28,6 @@ import { assistantEvidenceReader } from "./workspaces/assistant-source";
 import { parseTurnKey } from "../../../logging/log-context";
 import { HttpError } from "../../../utils/errors";
 import type {
-  LogQueryParams,
-  LlmQueryParams,
   BackendLogQueryParams,
   LiveLogFilter,
 } from "./types";
@@ -49,7 +47,6 @@ import { fetchBackendConfig, getBackendConfig } from "./backend-config-fetcher";
 import { listLogSources, probeLogSource } from "./log-sources/manager";
 import {
   queryAppLogs,
-  queryLlmCalls,
   queryBackendLogs,
   getErrorSummary,
 } from "./query";
@@ -258,7 +255,7 @@ router.put(
 /**
  * POST /log-sources/probe - Test connectivity of a specific log source.
  *
- * Body: { sourceType: "data-agent-app" | "ontomato-app" | "data-agent-llm" | "ontomato-llm" | "backend-node-api" }
+ * Body: { sourceType: "data-agent-app" | "ontomato-app" | "agent-runtime" | "backend-node-api" }
  */
 router.post(
   "/log-sources/probe",
@@ -313,11 +310,10 @@ router.post(
 
       // Logs are environment-level evidence and their content is not filtered by domain; callers must still carry a business domain.
       requireDomainId(req as AuthenticatedRequest);
-      const appLogs = queryAppLogs({ startTime, endTime });
-      const llmLogs = queryLlmCalls({ startTime, endTime });
+      const appLogs = await queryAppLogs({ startTime, endTime });
       res.json({
         success: true,
-        data: { appLogCount: appLogs.length, llmLogCount: llmLogs.length },
+        data: { appLogCount: appLogs.length, llmLogCount: 0 },
       });
     } catch (error) {
       const msg = error instanceof Error ? error.message : String(error);
@@ -723,69 +719,6 @@ router.get(
 /* ================================================================== */
 /*  Log Queries                                                       */
 /* ================================================================== */
-
-/**
- * GET /logs - Query main app logs.
- */
-router.get(
-  "/logs",
-  (req: Request, res: Response<HttpResponse<ParsedLogRecord[]>>) => {
-    try {
-      // Logs are environment-level evidence and their content is not filtered by domain; callers must still carry a business domain.
-      requireDomainId(req as AuthenticatedRequest);
-      const params: LogQueryParams = {
-        turnKey: req.query.turnKey as string | undefined,
-        level: req.query.level as LogLevel | undefined,
-        keyword: req.query.keyword as string | undefined,
-        startTime: req.query.startTime as string | undefined,
-        endTime: req.query.endTime as string | undefined,
-        limit: req.query.limit
-          ? parseInt(req.query.limit as string, 10)
-          : undefined,
-        offset: req.query.offset
-          ? parseInt(req.query.offset as string, 10)
-          : undefined,
-      };
-
-      const logs = queryAppLogs(params);
-      res.json({ success: true, data: logs });
-    } catch (error) {
-      const msg = error instanceof Error ? error.message : String(error);
-      res.status(500).json({ success: false, error: msg });
-    }
-  },
-);
-
-/**
- * GET /llm-calls - Query LLM call logs.
- */
-router.get(
-  "/llm-calls",
-  (req: Request, res: Response<HttpResponse<ParsedLogRecord[]>>) => {
-    try {
-      // Logs are environment-level evidence and their content is not filtered by domain; callers must still carry a business domain.
-      requireDomainId(req as AuthenticatedRequest);
-      const params: LlmQueryParams = {
-        turnKey: req.query.turnKey as string | undefined,
-        agentName: req.query.agentName as string | undefined,
-        startTime: req.query.startTime as string | undefined,
-        endTime: req.query.endTime as string | undefined,
-        limit: req.query.limit
-          ? parseInt(req.query.limit as string, 10)
-          : undefined,
-        offset: req.query.offset
-          ? parseInt(req.query.offset as string, 10)
-          : undefined,
-      };
-
-      const logs = queryLlmCalls(params);
-      res.json({ success: true, data: logs });
-    } catch (error) {
-      const msg = error instanceof Error ? error.message : String(error);
-      res.status(500).json({ success: false, error: msg });
-    }
-  },
-);
 
 /**
  * GET /backend-logs - Query backend logs through turnKey -> query run -> sessions -> node windows.

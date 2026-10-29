@@ -9,7 +9,6 @@ import type { LogSourceType, ParsedLogSource } from "@ontomato/contracts/observe
 export interface WorkbenchProduct {
   proxyMountPath: "/data-agent" | "/ontomato";
   logFileName: "data-agent.log" | "ontomato.log";
-  llmLogFileName: "data-agent_llm.jsonl" | "ontomato_llm.jsonl";
   migrationLockKey: "data-agent:postgres-business-migrations" | "ontomato:postgres-business-migrations";
   subgraphFence: "data-agent-subgraph" | "ontomato-subgraph";
   mcpClientName: "data-agent" | "ontomato";
@@ -22,7 +21,6 @@ export interface WorkbenchProduct {
   smtpFromAddress: "noreply@data-agent.local" | "noreply@ontomato.local";
   logSource: Extract<ParsedLogSource, "data-agent" | "ontomato">;
   appLogSourceType: Extract<LogSourceType, "data-agent-app" | "ontomato-app">;
-  llmLogSourceType: Extract<LogSourceType, "data-agent-llm" | "ontomato-llm">;
   /** Matching rules for sessionId / backendNodeId in log text. Each edition keeps its pre-migration regex as-is (the enterprise edition also matches full-width colons). */
   logIdPatterns: { sessionId: RegExp; backendNodeId: RegExp };
   /** Bracket annotations (e.g. units) stripped from model-returned field names during dashboard field mapping. Each edition keeps its pre-migration regex as-is (the enterprise edition also matches full-width brackets). */

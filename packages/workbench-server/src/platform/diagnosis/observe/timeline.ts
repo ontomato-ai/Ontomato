@@ -27,9 +27,7 @@ export function buildTimeline(records: ParsedLogRecord[]): TimelineEvent[] {
   const events: TimelineEvent[] = [];
 
   for (const record of records) {
-    if (record.source === "llm") {
-      events.push(buildLlmEvent(record));
-    } else {
+    {
       const nodeEvent = inferNodeEvent(record);
       if (nodeEvent) {
         events.push(nodeEvent);
@@ -268,19 +266,6 @@ function inferNodeEvent(record: ParsedLogRecord): TimelineEvent | null {
   return null;
 }
 
-function buildLlmEvent(record: ParsedLogRecord): TimelineEvent {
-  const status = record.status === "error" ? ("error" as const) : ("success" as const);
-
-  return {
-    time: record.time || new Date().toISOString(),
-    source: "llm",
-    type: "llm_call",
-    name: record.agentName || "llm",
-    durationMs: record.durationMs,
-    status,
-    detail: record.message,
-  };
-}
 
 function normalizeNodeName(name: string): string {
   // Remove common suffixes for cleaner flowchart display.

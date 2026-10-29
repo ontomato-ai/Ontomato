@@ -1,0 +1,46 @@
+{
+  "version": 1,
+  "encoding": "UTF-8",
+  "newline": "\n",
+  "separator": " ",
+  "missingValue": "-",
+  "timestamp": "UTC ISO-8601 with exactly three fractional digits",
+  "prefixFields": ["time", "level"],
+  "baseFields": [
+    "id", "service", "module", "instanceId", "correlationId", "domainId",
+    "userId", "runId", "sessionId", "kind", "message"
+  ],
+  "httpFields": ["method", "path", "status", "durationMs", "outcome"],
+  "downstreamFields": ["target", "durationMs", "outcome"],
+  "errorFields": ["errorName", "errorCode", "stack"],
+  "services": ["workbench", "ontology", "agent-runtime"],
+  "levels": ["TRACE", "DEBUG", "INFO", "WARN", "ERROR", "FATAL"],
+  "kinds": ["app", "http", "downstream"],
+  "outcomes": ["success", "failure", "cancelled"],
+  "tokenFields": ["service", "kind", "outcome"],
+  "integerFields": ["status", "durationMs"],
+  "identityFields": ["id", "instanceId", "correlationId", "domainId", "userId", "runId", "sessionId"],
+  "limits": {
+    "lineBytesIncludingLf": 32768,
+    "encodedIdentityBytes": 1024,
+    "encodedTextBytes": 256,
+    "encodedFieldBytes": {"message": 4096, "stack": 8192, "path": 1024, "target": 512},
+    "truncationMarkerReserveBytes": 64,
+    "truncationMarker": "...<omitted {bytes} UTF-8 bytes>..."
+  },
+  "headers": {
+    "correlationId": "X-Correlation-Id",
+    "runId": "X-Ontomato-Run-Id",
+    "sessionId": "X-Ontomato-Session-Id",
+    "hostVerifiedUserId": "X-Ontomato-User-Id"
+  },
+  "correlationIdPattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+  "tables": {"workbench": "workbench_service_log", "ontology": "ontology_service_log", "agent-runtime": "agent_runtime_service_log"},
+  "defaults": {
+    "level": "INFO",
+    "file": {"utcDaily": true, "maxBytes": 52428800, "maxFilesIncludingActive": 20, "compress": false},
+    "docker": {"driver": "json-file", "max-size": "50m", "max-file": "5"},
+    "postgres": {"retentionDays": 7, "cleanupIntervalMs": 3600000, "deleteBatchRows": 10000, "batchRows": 100, "queueRecords": 512, "nodeFlushIntervalMs": 1000, "reconnectIntervalMs": 5000, "shutdownTimeoutMs": 2000},
+    "query": {"defaultWindowMs": 3600000, "defaultLimit": 100, "maxLimit": 200}
+  }
+}

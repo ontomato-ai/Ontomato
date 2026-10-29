@@ -8,7 +8,7 @@ import { HttpError } from "../../utils/errors";
 
 const router: ReturnType<typeof Router> = Router();
 const domain = (req: Request) => (req as AuthenticatedRequest).domainId!;
-const client = (req: Request) => new RuntimeClient(domain(req), req.header("x-correlation-id"));
+const client = (req: Request) => new RuntimeClient(domain(req));
 
 function fail(res: Response, error: unknown): void {
   res.status(error instanceof HttpError ? error.status : 500).json({

@@ -16,7 +16,7 @@ import io.ontomato.dataengine.bean.PythonExecuteResult;
 import io.ontomato.dataengine.bean.function.Parameter;
 import io.ontomato.dataengine.config.BusinessConfig;
 import io.ontomato.dataengine.dao.JSONRuleDao;
-import io.ontomato.dataengine.logging.AgentCallContext;
+import io.ontomato.dataengine.service.ai.AgentExecutionContext;
 import io.ontomato.dataengine.service.AgentWorkspaceService;
 import io.ontomato.dataengine.service.BusinessConfigService;
 import io.ontomato.dataengine.service.PythonExecuteService;
@@ -51,7 +51,7 @@ public class WriteFunctionMakerSkillTools {
 		int maxContentSize = 2000;
 		String ret = "";
 		try {
-			AgentCallContext callContext = AgentCallContext.current();
+			AgentExecutionContext callContext = AgentExecutionContext.current();
 			String sandboxId = callContext.getSessionId();
 			String domainId = callContext.getDomainId();
 			Path file = workspaceService.resolve(sandboxId, path);

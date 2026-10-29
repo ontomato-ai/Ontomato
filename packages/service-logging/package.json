@@ -1,0 +1,29 @@
+{
+  "name": "@ontomato/service-logging",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./*": "./src/*.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@ontomato/contracts": "workspace:*",
+    "pg": "8.20.0",
+    "winston": "3.19.0",
+    "winston-daily-rotate-file": "5.0.0",
+    "winston-transport": "4.9.0",
+    "zod": "3.25.76"
+  },
+  "devDependencies": {
+    "@types/node": "22.19.15",
+    "@types/pg": "8.20.0",
+    "typescript": "5.9.3",
+    "vitest": "1.6.0",
+    "tsx": "4.21.0"
+  }
+}

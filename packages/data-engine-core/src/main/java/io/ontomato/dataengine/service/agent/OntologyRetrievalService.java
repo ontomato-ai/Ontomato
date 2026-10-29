@@ -886,7 +886,11 @@ public class OntologyRetrievalService {
       if (preparing.containsKey(id) || !observing.add(id)) continue;
       workers.submit(
           () -> {
-            try {
+            try (var ignored = io.ontomato.dataengine.logging.ServiceLogContext.open(java.util.Map.of(
+                "userId", row.getString("user_id"), "domainId", row.getString("domain_id"),
+                "runId", id, "sessionId", row.getString("session_id"),
+                "correlationId", io.ontomato.dataengine.logging.ServiceLogContext.correlation(
+                    row.getJSONObject("observed_state") == null ? null : row.getJSONObject("observed_state").getString("correlationId"))))) {
               var owner = owner(row);
               String session = row.getString("session_id");
               if (row.getBooleanValue("external")) {
@@ -900,6 +904,7 @@ public class OntologyRetrievalService {
               }
               if (row.getBooleanValue("cancel_requested")) cancelWork(session, id, owner);
               var snapshot = runtime.run(owner.domainId(), id);
+              io.ontomato.dataengine.logging.ServiceLogContext.put("correlationId", snapshot.getJSONObject("run").getString("correlationId"));
               reconcile(session, id, owner, snapshot);
               if ("running".equals(snapshot.getJSONObject("run").getString("status"))
                   && Instant.parse(row.getString("deadline")).toEpochMilli()

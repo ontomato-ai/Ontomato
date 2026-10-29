@@ -9,7 +9,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 import io.ontomato.dataengine.dao.JSONRuleDao;
-import io.ontomato.dataengine.logging.AgentCallContext;
+import io.ontomato.dataengine.service.ai.AgentExecutionContext;
 import io.ontomato.dataengine.util.DBSchemaUtil;
 
 import dev.langchain4j.agent.tool.P;
@@ -28,7 +28,7 @@ public class SchemaSkillTools {
             "Output:  attribute definitions of these object classes")
     public String getSchemaByClassName(@P("object class name array") List<String> classNames) {
 		try {
-			AgentCallContext callContext = AgentCallContext.current();
+			AgentExecutionContext callContext = AgentExecutionContext.current();
 			Map<String, Object> jsonRule = jsonRuleDao.query(callContext.getDomainId());
 			List<Map<String, Object>> classDefs = (List<Map<String, Object>>)jsonRule.get("classDef");
 			String md = "";
@@ -48,7 +48,7 @@ public class SchemaSkillTools {
             "Output:  direct one-level relationship definitions")
 	public String getRelationshipByClassNames(@P("object class name array") List<String> classNames) {
 		try {
-			AgentCallContext callContext = AgentCallContext.current();
+			AgentExecutionContext callContext = AgentExecutionContext.current();
 			Map<String, Object> jsonRule = jsonRuleDao.query(callContext.getDomainId());
 			List<Map<String, Object>> classDefs = (List<Map<String, Object>>)jsonRule.get("classDef");
 			Map<String, Object> relationship_rule = (Map<String, Object>)jsonRule.get("relationship_rule");

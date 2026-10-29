@@ -1,3 +1,4 @@
+import { withServiceLogContext } from "@ontomato/service-logging";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { randomUUID } from "node:crypto";
 
@@ -12,6 +13,8 @@ export interface TurnIdentity {
 
 export interface LogContext {
   userId?: string;
+  runId?: string;
+  sessionId?: string;
   correlationId?: string;
   requestId?: string;
   turn?: TurnIdentity;
@@ -124,10 +127,12 @@ export function getTaskId(): string | undefined {
 }
 
 export function runWithLogContext<T>(context: LogContext, fn: () => T): T {
-  return asyncLocalStorage.run(
-    { ...asyncLocalStorage.getStore(), ...context },
-    fn,
+  const merged = { ...asyncLocalStorage.getStore(), ...context };
+  const attribution = Object.fromEntries(
+    ["correlationId", "domainId", "userId", "runId", "sessionId"].filter(key => key in merged)
+      .map(key => [key, merged[key as keyof LogContext]]),
   );
+  return withServiceLogContext(attribution, () => asyncLocalStorage.run(merged, fn));
 }
 
 export function runWithRequestContext<T>(requestId: string, fn: () => T): T {

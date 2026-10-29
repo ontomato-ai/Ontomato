@@ -1,10 +1,12 @@
 import type { BranchKey } from "./query-thinking";
 
-export type ParsedLogSource = "data-agent" | "ontomato" | "llm" | "backend";
+export type ParsedLogSource = "data-agent" | "ontomato" | "agent-runtime" | "backend";
 
 export type LogLevel = "debug" | "info" | "warn" | "error";
 
 export interface ParsedLogRecord {
+  correlationId?: string;
+  runId?: string;
   domainId?: string;
   source: ParsedLogSource;
   time?: string;
@@ -41,7 +43,7 @@ export interface TimelineEvent {
   detail?: string;
 }
 
-export type LogSourceType = "data-agent-app" | "ontomato-app" | "data-agent-llm" | "ontomato-llm" | "backend-node-api";
+export type LogSourceType = "data-agent-app" | "ontomato-app" | "agent-runtime" | "backend-node-api";
 
 export interface LogSource {
   sourceType: LogSourceType;

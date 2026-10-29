@@ -23,11 +23,9 @@ import com.fasterxml.jackson.core.JsonParseException;
 import io.ontomato.dataengine.bean.OriginalQuestion;
 import io.ontomato.dataengine.config.ModelConfig;
 import io.ontomato.dataengine.config.ModelResolver.ResolvedChatModel;
-import io.ontomato.dataengine.logging.AgentCallContext;
+import io.ontomato.dataengine.service.ai.AgentExecutionContext;
 import io.ontomato.dataengine.service.SessionCancelledException;
 import io.ontomato.dataengine.tools.AgentWorkspaceFileTools;
-import io.ontomato.dataengine.logging.AgentLlmCallListener;
-import io.ontomato.dataengine.util.LogHelper;
 
 import dev.langchain4j.memory.chat.ChatMemoryProvider;
 import dev.langchain4j.agent.tool.ToolExecutionRequest;
@@ -68,7 +66,6 @@ public class MultiThreadAIChatService {
 	
 	public static final String ACTION_CODE_EXPLAINER = "ACTION_CODE_EXPLAINER";
 	
-	private static final AgentLlmCallListener LLM_CALL_LISTENER = new AgentLlmCallListener();
 
 	static <T> AiServices<T> withToolErrorFeedback(AiServices<T> aiServices) {
 		return aiServices
@@ -129,9 +126,8 @@ public class MultiThreadAIChatService {
 				.reasoningEffort(model.getReasoningEffort())
 				.timeout(model.getTimeout())
 				.maxRetries(model.getMaxRetries())
-				.logRequests(model.getLogRequests())
-				.logResponses(model.getLogResponses())
-				.listeners(List.of(LLM_CALL_LISTENER))
+				.logRequests(false)
+				.logResponses(false)
 				.returnThinking(true)
 				.sendThinking(true)
 				.customHeaders(model.getCustomHeaders())
@@ -257,12 +253,9 @@ public class MultiThreadAIChatService {
 		ChatModel chatModel = buildChatModel(modelConfig, false, null);
 		NormalAgent chatAgent = newNormalAgent(chatModel).build();
 		String sessionId = UUID.randomUUID().toString();
-		AgentCallContext.begin(sessionId, "AdhocChat", domainId);
-		try {
+		try (var ignored = AgentExecutionContext.open(sessionId, "AdhocChat", domainId)) {
 			Result<String> result = chatAgent.chat(sessionId, userContent);
 			return result.content();
-		} finally {
-			AgentCallContext.end();
 		}
     }
     
@@ -334,15 +327,10 @@ public class MultiThreadAIChatService {
 				chatAgent = aiServices.build();
         	}
     		
-			AgentCallContext.begin(sessionId, agentName, domainId);
-    		try {
+			try (var ignored = AgentExecutionContext.open(sessionId, agentName, domainId)) {
 				Result<String> result = chatAgent.chat(sessionId, questionString);
 		        String queryJson = result.content();
-		        log.info("sessionId:{}, LLM returned query Json>>>:\n{}", sessionId, queryJson);
-		        LogHelper.info("LLM returned query Json>>>:\n{}", queryJson);
 				return queryJson;
-			} finally {
-				AgentCallContext.end();
 			}
 		} catch (RuntimeException e) {
 			// Cancellation is not an ordinary failure: it is not logged as an error, it is rethrown as-is, and it does not trigger the caller's retry or fallback.

@@ -23,7 +23,7 @@ import com.alibaba.fastjson2.JSONObject;
 import com.alibaba.fastjson2.JSONWriter;
 import com.alibaba.fastjson2.JSONWriter.Feature;
 import io.ontomato.dataengine.dao.JSONRuleDao;
-import io.ontomato.dataengine.logging.AgentCallContext;
+import io.ontomato.dataengine.service.ai.AgentExecutionContext;
 import io.ontomato.dataengine.service.AgentWorkspaceService;
 import io.ontomato.dataengine.service.SandboxService;
 import io.ontomato.dataengine.service.WriteFunctionOperationService;
@@ -55,7 +55,7 @@ public class SandboxSkillTools {
     public String prepareTestData(@P("object data") List<Map> objDatas, @P("relationship data") List<Map> relDatas, @P("vector data") List<Map> vectorDatas) {
 		FileOutputStream fos = null;
 		try {
-			AgentCallContext callContext = AgentCallContext.current();
+			AgentExecutionContext callContext = AgentExecutionContext.current();
 			String domainId = callContext.getDomainId();
 			String sandboxId = callContext.getSessionId();
 			
@@ -229,7 +229,7 @@ public class SandboxSkillTools {
     public String importTestData() {
 		FileInputStream fis = null;
 		try {
-			AgentCallContext callContext = AgentCallContext.current();
+			AgentExecutionContext callContext = AgentExecutionContext.current();
 			String domainId = callContext.getDomainId();
 			String sandboxId = callContext.getSessionId();
 			
@@ -294,7 +294,7 @@ public class SandboxSkillTools {
             "Output: query result or query error text")
 	public String query(@P("the relative path of the DSL JSON file in this workspace") String path) {
 		try {
-			AgentCallContext callContext = AgentCallContext.current();
+			AgentExecutionContext callContext = AgentExecutionContext.current();
 			String domainId = callContext.getDomainId();
 			String sandboxId = callContext.getSessionId();
 

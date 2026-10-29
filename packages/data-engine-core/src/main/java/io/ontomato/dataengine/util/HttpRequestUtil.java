@@ -157,14 +157,16 @@ public class HttpRequestUtil {
     		Set<String> vectorResourceAsSet,
     		DslExecutionMode mode) {
     	
+        long started = System.nanoTime();
+        String outcome = "success";
     	JSONObject dataMap = new JSONObject();
 		List<String> generatedMqls = new ArrayList<String>();
     	
 		try {
 			String JsonData = adapter.executeDsl("[" + JSON.toJSONString(dsl, Feature.WriteMapNullValue) + "]", sessionId, mode, generatedMqls);
 			if (JsonData != null) {
-        	log.info("Data source returned data, sessionId-{}>>>:\n{}",sessionId,JsonData);
-            LogHelper.dataSourceReturnData(JsonData);
+            log.info("Data source query completed: {} bytes", JsonData.getBytes(java.nio.charset.StandardCharsets.UTF_8).length);
+
             
             List<Map> listData = JSON.parseArray(JsonData, Map.class);
 
@@ -247,9 +249,12 @@ public class HttpRequestUtil {
 
 			return DslExecutionResult.success(dataMap);
 		} catch (Exception e) {
+            outcome = "failure";
 			log.error("[" + sessionId + "] Failed to query the database", e);
 			return failedDslExecution(e, generatedMqls);
-		}
+		} finally {
+            io.ontomato.dataengine.logging.ServiceLogEvents.downstream("data-query", adapter.getClass().getSimpleName(), started, outcome);
+        }
     }
 
     static DslExecutionResult failedDslExecution(Exception cause, List<String> generatedMqls) {

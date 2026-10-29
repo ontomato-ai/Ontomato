@@ -1,3 +1,5 @@
+import { getServiceLogContext, withServiceLogContext, updateServiceLogContext } from "@ontomato/service-logging";
+import { runtimeLogger, runtimeDiagnostic } from "./logging";
 import { createHash } from "node:crypto";
 import {
   chmod,
@@ -78,6 +80,7 @@ export class CodeExecutor {
       host_id text NOT NULL, domain_id text NOT NULL, id uuid NOT NULL,
       fingerprint text NOT NULL, execution jsonb NOT NULL, outputs jsonb NOT NULL DEFAULT '{}',
       PRIMARY KEY(host_id,domain_id,id))`);
+    await this.store.pool.query(`ALTER TABLE ${this.store.table("code_executions")} ADD COLUMN IF NOT EXISTS log_context jsonb NOT NULL DEFAULT '{}'`);
     await this.store.pool
       .query(`UPDATE ${this.store.table("code_executions")} SET execution =
       execution || jsonb_build_object('status','stopped','finishedAt',now()::text,
@@ -112,6 +115,7 @@ export class CodeExecutor {
     body: unknown,
   ) {
     const request = codeExecutionRequestSchema.parse(body);
+    const logContext = { ...getServiceLogContext(), correlationId, runId: id, domainId: scope.domainId };
     const fingerprint = digest({
       ...request,
       environment: {
@@ -145,6 +149,7 @@ export class CodeExecutor {
             "IDEMPOTENCY_CONFLICT",
             "Execution input changed",
           );
+        updateServiceLogContext(old.rows[0].log_context);
         return {
           execution: old.rows[0].execution as CodeExecution,
           replayed: true,
@@ -152,8 +157,8 @@ export class CodeExecutor {
       }
       assertWorkerPolicy(this.policy);
       await c.query(
-        `INSERT INTO ${this.store.table("code_executions")} (host_id,domain_id,id,fingerprint,execution) VALUES($1,$2,$3,$4,$5)`,
-        [scope.hostId, scope.domainId, id, fingerprint, execution],
+        `INSERT INTO ${this.store.table("code_executions")} (host_id,domain_id,id,fingerprint,execution,log_context) VALUES($1,$2,$3,$4,$5,$6)`,
+        [scope.hostId, scope.domainId, id, fingerprint, execution, logContext],
       );
       return { execution, replayed: false };
     });
@@ -161,16 +166,17 @@ export class CodeExecutor {
       const controller = new AbortController();
       const active = { controller, done: Promise.resolve() };
       this.active.set(scopeKey(scope, id), active);
-      active.done = this.execute(
+      updateServiceLogContext(logContext);
+      active.done = withServiceLogContext(logContext, () => this.execute(
         host,
         scope,
         execution,
         request,
         correlationId,
         controller.signal,
-      ).finally(() => this.active.delete(scopeKey(scope, id)));
+      )).finally(() => this.active.delete(scopeKey(scope, id)));
       void active.done.catch(() =>
-        process.stderr.write("Code execution persistence failed\n"),
+        withServiceLogContext(logContext, () => runtimeLogger.error("Code execution persistence failed")),
       );
     }
     return accepted;
@@ -191,6 +197,7 @@ export class CodeExecutor {
       digest(scope),
       execution.id,
     );
+    runtimeLogger.info("code execution started");
     const directory = path.join(parent, execution.id);
     const outputs: Record<string, string> = {};
     let identity: Awaited<ReturnType<typeof workerIdentity>> | undefined;
@@ -318,6 +325,7 @@ export class CodeExecutor {
         byteCount += stat.size;
       }
     } catch (error) {
+      if (!signal.aborted) runtimeLogger.error("code execution failed", runtimeDiagnostic(error));
       execution.errorMessage = signal.aborted
         ? "Execution cancelled"
         : error instanceof Error
@@ -349,6 +357,7 @@ export class CodeExecutor {
         name,
         ...meta,
       }));
+      runtimeLogger.info(execution.errorMessage ? "code execution failed" : "code execution completed");
       execution.status = "stopped";
       execution.finishedAt = new Date().toISOString();
       await this.store.pool.query(

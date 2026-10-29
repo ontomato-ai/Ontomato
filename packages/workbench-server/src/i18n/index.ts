@@ -1,3 +1,4 @@
+import { createLogger } from "../logging/logger";
 export type Locale = "zh-CN" | "en" | "ja" | "ar" | "zh-TW" | "fr" | "de" | "it";
 
 export type TranslationValue = string | ((params?: Record<string, any>) => string);
@@ -93,7 +94,7 @@ function translate(locale: Locale, key: string, params?: Record<string, any>): s
   assertConfigured();
   const message = packs.get(locale)?.messages[key] || packs.get(defaultLocale)?.messages[key];
   if (!message) {
-    console.warn(`[i18n] Missing translation key: ${key}`);
+    createLogger("i18n").warn(`Missing translation key: ${key}`);
     return key;
   }
   if (typeof message === "function") return message(params);

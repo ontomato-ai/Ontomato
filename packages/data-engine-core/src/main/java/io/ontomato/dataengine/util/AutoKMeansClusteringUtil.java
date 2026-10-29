@@ -57,7 +57,7 @@ public class AutoKMeansClusteringUtil {
 
             // Calculate the silhouette coefficient
             double silhouette = calculateSilhouetteCoefficient(currentClusters);
-            System.out.println("K=" + k + " Silhouette Coefficient: " + silhouette);
+            org.slf4j.LoggerFactory.getLogger(AutoKMeansClusteringUtil.class).debug("K={} silhouette coefficient={}", k, silhouette);
 
             // Update the best K value
             if (silhouette > bestSilhouette) {
@@ -71,7 +71,7 @@ public class AutoKMeansClusteringUtil {
         this.clusters = bestClusters;
         this.algorithmFinished = true;
 
-        System.out.println("Best K: " + bestK + " with Silhouette Coefficient: " + bestSilhouette);
+        org.slf4j.LoggerFactory.getLogger(AutoKMeansClusteringUtil.class).debug("Best K={} silhouette coefficient={}", bestK, bestSilhouette);
 
     }
 
@@ -148,7 +148,7 @@ public class AutoKMeansClusteringUtil {
                 cluster.updateCenter();
             }
             if(iteration >= maxIterations){
-                System.out.printf("iteration=%d\n",iteration);
+                org.slf4j.LoggerFactory.getLogger(AutoKMeansClusteringUtil.class).debug("Iteration={}", iteration);
             }
         } while (changed && iteration < maxIterations);
 

@@ -11,7 +11,7 @@ import org.springframework.stereotype.Component;
 import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONObject;
 import com.alibaba.fastjson2.JSONWriter.Feature;
-import io.ontomato.dataengine.logging.AgentCallContext;
+import io.ontomato.dataengine.service.ai.AgentExecutionContext;
 import io.ontomato.dataengine.service.AgentWorkspaceService;
 
 import dev.langchain4j.agent.tool.P;
@@ -35,7 +35,7 @@ public class ReadFunctionSubmitTools {
 			@P(value = "Object list of parameter definitions, each item contains name, type, description, value, className; do not pass when there are no parameters", required = false) List<Map> parameterDefs,
 			@P("Summary title of the read function's business meaning") String name,
 			@P("Natural language description of the read function logic") String logic) throws Exception {
-		String sessionId = AgentCallContext.current().getSessionId();
+		String sessionId = AgentExecutionContext.current().getSessionId();
 		Path file = workspaceService.resolve(sessionId, path);
 		if (!file.toString().endsWith(".py") || !Files.isRegularFile(file)) {
 			throw new IllegalArgumentException("The submission entry must be an existing Python file in the workspace");

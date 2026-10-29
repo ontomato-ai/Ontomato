@@ -121,7 +121,7 @@ export default [
     rules: {
       "no-restricted-imports": restrict([
         {
-          regex: "^@ontomato/(?!contracts(/|$))|(^|/)(workbench-server|workbench-ui|data-engine-core|apps)(/|$)",
+          regex: "^@ontomato/(?!(contracts|service-logging)(/|$))|(^|/)(workbench-server|workbench-ui|data-engine-core|apps)(/|$)",
           message: "agent-runtime may depend on contracts and lower-level libraries, never on a host implementation",
         },
       ]),

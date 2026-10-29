@@ -108,7 +108,7 @@ public class QueryJobService {
     FutureTask<Void> task =
         new FutureTask<>(
             () -> {
-              try {
+              try (var ignored = io.ontomato.dataengine.logging.ServiceLogContext.backend(sessionId, user.getDomainId())) {
                 Object result = operation.execute(sessionId);
                 state.put("status", "completed");
                 state.put("result", result);
@@ -140,7 +140,7 @@ public class QueryJobService {
               return null;
             });
     running.put(sessionId, task);
-    executor.execute(task);
+    executor.execute(io.ontomato.dataengine.logging.ServiceLogContext.wrap(task));
     return accepted;
   }
 

@@ -13,7 +13,6 @@ import {
   createChatCompletionsOverrideFetch,
   createEmptyChatStreamError,
 } from "../../utils/chat-completions-body-override.js";
-import { startLlmLog } from "../../logging/llm-logger";
 import { createLogger } from "../../logging/logger";
 import type {
   ModelConfig,
@@ -230,25 +229,12 @@ export async function* streamChatCompletion(
   const timeoutSignal = AbortSignal.timeout(DEFAULT_TIMEOUT_MS);
   const combinedSignal = signal ? AbortSignal.any([signal, timeoutSignal]) : timeoutSignal;
 
-  // This adapter builds its own ChatOpenAI (streaming tool loops cannot use the
-  // shared model factory), so it must supply the equivalent observability
-  // itself: one agent-llm record per model call, aggregated at the call
-  // boundary rather than per chunk.
-  const tracker = modelConfig.llmLog
-    ? startLlmLog(modelConfig.llmLog.agentName, langChainMessages, {
-        model: modelConfig.modelName,
-        agentRunId: modelConfig.llmLog.agentRunId,
-      })
-    : undefined;
-  const loggedChunks: unknown[] = [];
-
   try {
     const stream = await model.stream(langChainMessages, { signal: combinedSignal });
 
     let rawChunkCount = 0;
     for await (const chunk of stream) {
       rawChunkCount += 1;
-      if (tracker) loggedChunks.push(chunk);
       // --- Text content ---
       const content = chunk.content;
       if (typeof content === "string" && content.length > 0) {
@@ -346,15 +332,12 @@ export async function* streamChatCompletion(
     // A normally-ended stream with zero raw chunks is an error, reported
     // through the existing catch below; only cancellation skips it.
     if (rawChunkCount === 0 && !signal?.aborted) throw createEmptyChatStreamError();
-    tracker?.successFromChunks(loggedChunks);
   } catch (err) {
     const aborted = signal?.aborted;
     const errMsg = err instanceof Error ? err.message : String(err);
     if (!aborted) {
       logger.error("LLM stream error", { error: errMsg });
     }
-    if (aborted) tracker?.cancel();
-    else tracker?.fail(err);
     return buildErrorMessage(aborted ? "aborted" : "error", errMsg);
   }
 

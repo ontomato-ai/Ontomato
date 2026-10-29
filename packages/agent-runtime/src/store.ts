@@ -1,3 +1,5 @@
+import { getServiceLogContext, updateServiceLogContext } from "@ontomato/service-logging";
+import { runtimeLogger } from "./logging";
 import { createHash, randomUUID } from "node:crypto";
 import pg, { type PoolClient } from "pg";
 import type {
@@ -42,14 +44,14 @@ export class RuntimeStore {
   readonly pool: pg.Pool;
   private lease?: PoolClient;
   constructor(
-    connectionString: string,
+    readonly connectionString: string,
     readonly schema: string,
   ) {
     if (!/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(schema))
       throw new Error("Invalid runtime schema");
     this.pool = new pg.Pool({ connectionString });
     this.pool.on("error", () =>
-      process.stderr.write("Runtime database connection failed\n"),
+      runtimeLogger.error("Runtime database connection failed"),
     );
   }
   table(name: string) {
@@ -85,7 +87,10 @@ export class RuntimeStore {
         host_id text NOT NULL, domain_id text NOT NULL, id uuid NOT NULL,
         name text NOT NULL, url text NOT NULL, headers jsonb NOT NULL DEFAULT '{}',
         PRIMARY KEY(host_id,domain_id,id), UNIQUE(host_id,domain_id,name));`);
-      if (versions.some((row) => row.version === 2)) return;
+      if (versions.some((row) => row.version === 2)) {
+        await c.query(`ALTER TABLE ${this.table("runs")} ADD COLUMN IF NOT EXISTS log_context jsonb NOT NULL DEFAULT '{}'`);
+        return;
+      }
       if (versions.length)
         throw new Error(
           "Legacy runtime data requires the release conversion before startup",
@@ -102,7 +107,7 @@ export class RuntimeStore {
           PRIMARY KEY(host_id,domain_id,key));
         CREATE TABLE ${this.table("runs")} (
           host_id text NOT NULL, domain_id text NOT NULL, id uuid NOT NULL, session_id uuid NOT NULL,
-          run jsonb NOT NULL, seq bigint NOT NULL DEFAULT 0, stream_id uuid NOT NULL,
+          run jsonb NOT NULL, log_context jsonb NOT NULL DEFAULT '{}', seq bigint NOT NULL DEFAULT 0, stream_id uuid NOT NULL,
           PRIMARY KEY(host_id,domain_id,id),
           FOREIGN KEY(host_id,domain_id,session_id) REFERENCES ${this.table("sessions")}(host_id,domain_id,id) ON DELETE CASCADE);
         CREATE UNIQUE INDEX ON ${this.table("runs")}(host_id,domain_id,session_id) WHERE run->>'status'='running';
@@ -148,7 +153,7 @@ export class RuntimeStore {
     }
     // Losing the ownership connection must stop this process before a second owner recovers its runs.
     this.lease.on("error", () => {
-      process.stderr.write("Runtime ownership connection lost\n");
+      runtimeLogger.error("Runtime ownership connection lost");
       process.exit(1);
     });
   }
@@ -268,6 +273,7 @@ export class RuntimeStore {
       )
     ).rows[0];
     if (!row) missing();
+    updateServiceLogContext({ sessionId: id, domainId: scope.domainId });
     return {
       id,
       domainId: scope.domainId,
@@ -349,8 +355,8 @@ export class RuntimeStore {
       const messageId = randomUUID();
       const messageSeq = Number(session.message_seq) + 1;
       await c.query(
-        `INSERT INTO ${this.table("runs")} (host_id,domain_id,id,session_id,run,stream_id,seq) VALUES ($1,$2,$3,$4,$5,$6,3)`,
-        [...values(scope), run.id, run.sessionId, run, streamId],
+        `INSERT INTO ${this.table("runs")} (host_id,domain_id,id,session_id,run,stream_id,seq,log_context) VALUES ($1,$2,$3,$4,$5,$6,3,$7)`,
+        [...values(scope), run.id, run.sessionId, run, streamId, { userId: getServiceLogContext().userId ?? null }],
       );
       await c.query(
         `UPDATE ${this.table("sessions")} SET active_run_id=$4,latest_run_id=$4,message_seq=$5,updated_at=now() WHERE host_id=$1 AND domain_id=$2 AND id=$3`,
@@ -395,6 +401,7 @@ export class RuntimeStore {
       )
     ).rows[0];
     if (!row) missing();
+    updateServiceLogContext({ runId: row.run.id, sessionId: row.run.sessionId, domainId: scope.domainId });
     return { run: row.run, seq: Number(row.seq), streamId: row.stream_id };
   }
   async messages(
@@ -669,16 +676,6 @@ export class RuntimeStore {
       stopReason,
       errorMessage: text,
     });
-    if (stopReason === "error" || stopReason === "aborted")
-      process.stderr.write(
-        JSON.stringify({
-          event: "runtime_run_terminal",
-          runId: id,
-          correlationId: run.correlationId,
-          status: "stopped",
-          stopReason,
-        }) + "\n",
-      );
     return envelope;
   }
   async deleteSession(scope: Scope, id: string) {

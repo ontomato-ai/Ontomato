@@ -2,7 +2,7 @@ import { HttpError } from "../../../../utils/errors";
 import type { WorkspaceUpstreamTurn } from "@ontomato/contracts/observe";
 import type { QueryBackendSession } from "@ontomato/contracts/query-execution";
 import type { BackendLogTimeWindow } from "../workspace-artifact/log-collector";
-import type { LogFileTimeWindow } from "../../../../logging/log-file-transport";
+import type { LogTimeWindow } from "../service-logs";
 import {
   assistantEvidenceReader,
   type DiagnosticAssistantEvidence,
@@ -34,7 +34,7 @@ export interface ResolvedTurnWorkspaceContext {
   turnRun?: DiagnosticTurnTimes | null;
   selectedQueryRun?: DiagnosticQueryEvidence | null;
   primaryQueryRun?: DiagnosticQueryEvidence | null;
-  frontendLogTimeWindow?: LogFileTimeWindow;
+  frontendLogTimeWindow?: LogTimeWindow;
   upstreamTurns: ResolvedUpstreamTurn[];
 }
 type TurnWorkspaceInput = Pick<TurnIdentity, "threadId" | "requestSeq"> &

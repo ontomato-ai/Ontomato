@@ -43,11 +43,12 @@ import systemModelConfigRouter from "../api/routes/system-model-config";
 import workbenchAppearanceRouter from "../api/routes/workbench-appearance";
 import { syncDefaultPrompts } from "../core/prompts/loader";
 import { createLogger } from "../logging/logger";
-import { initializeLogFileTransport } from "../logging/log-file-transport";
+import { initializeWorkbenchLogging, getWorkbenchLogStore, closeWorkbenchLogging } from "../infrastructure/service-logs";
+import { correlationId, withServiceLogContext } from "@ontomato/service-logging";
+import serviceLogsRouter, { serviceLogAuthResponse } from "../api/routes/service-logs";
 import {
   generateRequestId,
   runWithLogContext,
-  runWithRequestContext,
 } from "../logging/log-context";
 import { startArtifactCleanupScheduler } from "../platform/diagnosis/artifact-retention-cleanup";
 import { initializeConnection } from "../infrastructure/connection";
@@ -90,11 +91,14 @@ export function createWorkbenchApp(mounts: WorkbenchMounts = {}): Express {
   const app: Express = express();
   const isDev = config.nodeEnv !== "production";
 
-  app.use((req: Request, _res: Response, next: NextFunction) => {
-    runWithRequestContext(generateRequestId(), () => next());
+  app.use((req: Request, res: Response, next: NextFunction) => {
+    const correlation = correlationId(req.header("X-Correlation-Id"));
+    res.setHeader("X-Correlation-Id", correlation);
+    withServiceLogContext({ correlationId: correlation, runId: req.header("X-Ontomato-Run-Id"), sessionId: req.header("X-Ontomato-Session-Id") }, () =>
+      runWithLogContext({ requestId: generateRequestId(), correlationId: correlation }, next));
   });
   app.use(accessLogger);
-  app.use(cors({ exposedHeaders: [SERVER_NOW_HEADER] }));
+  app.use(cors({ exposedHeaders: [SERVER_NOW_HEADER, "X-Correlation-Id"] }));
   app.use(express.json({ limit: "50mb" }));
   app.use((_req: Request, res: Response, next: NextFunction) => {
     const originalJson = res.json.bind(res);
@@ -192,6 +196,7 @@ export function createWorkbenchApp(mounts: WorkbenchMounts = {}): Express {
   });
 
   app.use(unwrapCallbackCredential);
+  app.use(["/api/observe/logs", "/api/observe/runtime-logs"], serviceLogAuthResponse);
   app.use("/api", identity.authenticate);
   app.use("/api", (req, _res, next) => {
     const r = req as AuthenticatedRequest;
@@ -229,7 +234,7 @@ export function createWorkbenchApp(mounts: WorkbenchMounts = {}): Express {
       "/api/observe/autotest/runs",
       "/api/observe/turns",
       "/api/observe/logs",
-      "/api/observe/llm-calls",
+      "/api/observe/runtime-logs",
       "/api/observe/backend-logs",
       "/api/observe/errors",
       "/api/observe/live-logs",
@@ -239,6 +244,7 @@ export function createWorkbenchApp(mounts: WorkbenchMounts = {}): Express {
   );
   app.use("/api/observe/retention", artifactRetentionRouter);
   app.use("/api/observe/autotest", autotestRouter);
+  app.use("/api/observe", serviceLogsRouter);
   app.use("/api/observe", observeRouter);
   app.use("/api/observe/agent", agentRouter);
   app.use("/api/system-model-config", systemModelConfigRouter);
@@ -263,10 +269,13 @@ export async function startWorkbench(
   const isDev = config.nodeEnv !== "production";
   // Checked first: without the shared value no model key can be opened, so the server does not start.
   modelKeySealKey(process.env[MODEL_RUNTIME_TOKEN_ENV]);
-  initializeLogFileTransport();
+  initializeWorkbenchLogging();
   await syncRuntimeDefaultResources();
   syncDefaultPrompts();
   await initializeConnection();
+  getWorkbenchLogStore();
+  process.once("SIGTERM", () => { void closeWorkbenchLogging().finally(() => process.exit(0)); });
+  process.once("SIGINT", () => { void closeWorkbenchLogging().finally(() => process.exit(0)); });
   await registerGovernanceSkill();
   await registerAssistantSkills();
 

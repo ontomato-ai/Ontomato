@@ -1,22 +1,12 @@
-import { workbenchProduct } from "../../../product/installed";
 import type { BackendNodeConfig, LogSourceConfig } from "@ontomato/contracts/observe";
 import { environment } from "../../../config/environment";
 import { runtimeDataDir } from "../../../content/layout";
-import { resolveLogDir } from "../../../logging/log-file-transport";
 
 export const observeConfig = {
   get dataDir() {
     return runtimeDataDir("observe");
   },
-  get logDir() {
-    return resolveLogDir();
-  },
-  get appLogFile() {
-    return workbenchProduct().logFileName;
-  },
-  get llmLogFile() {
-    return workbenchProduct().llmLogFileName;
-  },
+
 };
 
 /* ------------------------------------------------------------------ */

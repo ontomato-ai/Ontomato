@@ -11,7 +11,7 @@ import org.springframework.stereotype.Component;
 import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONObject;
 import com.alibaba.fastjson2.JSONWriter.Feature;
-import io.ontomato.dataengine.logging.AgentCallContext;
+import io.ontomato.dataengine.service.ai.AgentExecutionContext;
 import io.ontomato.dataengine.service.AgentWorkspaceService;
 
 import dev.langchain4j.agent.tool.P;
@@ -37,7 +37,7 @@ public class ActionSubmitTools {
 			@P("List of object class names involved in the write operation") List<String> classNames,
 			@P("Summary title of the write function's business meaning") String name,
 			@P("Natural language description of the write function logic") String logic) throws Exception {
-		String sessionId = AgentCallContext.current().getSessionId();
+		String sessionId = AgentExecutionContext.current().getSessionId();
 		Path file = workspaceService.resolve(sessionId, path);
 		if (!file.toString().endsWith(".py") || !Files.isRegularFile(file)) {
 			throw new IllegalArgumentException("The submission entry must be an existing Python file in the workspace");
