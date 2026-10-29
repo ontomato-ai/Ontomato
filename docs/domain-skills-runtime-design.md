@@ -27,10 +27,10 @@ cleanup when preparation fails.
 The runtime already replaces selected packages between rounds and saves
 `resolvedSkills`. Workbench now publishes selected domain packages, assembles the current-user
 environment and exposes the existing digest in the host projection.
-Assistant scripts receive the current user credential as ONTOMATO_TK. The existing
-assistant-retrieval callback moves only to ONTOMATO_RETRIEVAL_CALLBACK_TOKEN; its
-generation, validation and retrieval logic stay with the separate ontology-host
-migration. That migration will remove the workbench retrieval skill and callbacks.
+Assistant scripts receive the current user credential as ONTOMATO_TK. The
+[ontology-host migration](ontology-ai-runtime-design.md) removes assistant-retrieval
+and its ONTOMATO_RETRIEVAL_CALLBACK_TOKEN. The shared analyst uses that same user
+credential and the ontology-owned caller scope.
 
 ## Replacement and deletion
 

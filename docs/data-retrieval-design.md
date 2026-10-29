@@ -1,9 +1,8 @@
 # Ontology-owned retrieval
 
-Review proposal, 2026-10-28. This replaces workbench retrieval ownership; source
-at `cc5ac842` still implements the old owner. Wire changes are in
-[data-retrieval](../packages/contracts/data-retrieval.md), host placement and
-implementation slices in [ontology AI](ontology-ai-runtime-design.md).
+Implemented in slice A, 2026-10-29, replacing workbench retrieval ownership.
+Wire shapes are in [data-retrieval](../packages/contracts/data-retrieval.md);
+[ontology AI](ontology-ai-runtime-design.md) owns the implementation slices.
 
 ## First consumer of the Java host
 
@@ -36,7 +35,7 @@ Runtime executes them; Java owns retrieval policy and performs this flow:
 | `retrieval_parent_gates`, retrieval `parent_id` | Reviewed caller boundary; only workbench knows what the parent means. No runtime parent/child protocol. |
 | `data-retrieval/ontology.ts`, `skill.ts` | Local Java query services and ontology skill publication; delete Node adapters. |
 | `resources/runtime-skills/data-retrieval/**` | Public `agent-skills/data-retrieval/**`, packaged/published by Java; dataset.mjs calls ontology. |
-| Public/enterprise workbench `resources/prompts/data-retrieval/system.md` | Corresponding `data-engine-core`/`data-engine-enterprise` `src/main/resources/prompts/data-retrieval/system.md`; keep English/Chinese semantics. |
+| Public workbench `prompts/data-retrieval/system.md` and enterprise `resources/prompts/data-retrieval/system.md` | `data-engine-core/src/main/resources/ontology-prompts/en/data-retrieval/system.md` and enterprise `ontology-prompts/zh/data-retrieval/system.md`; keep English/Chinese semantics. |
 | `assistant-retrieval/**`, including `scripts/ask.mjs` | Delete; assistant and external agents use the single analyst `ask`, extended to download accepted bytes through ontology's proxy. |
 | Workbench `/api/retrievals`, route mount, registration/startup and retrieval schema initializer | Delete. Old stored data is reserved for release conversion, not read, converted or dropped here. |
 | Assistant `/sessions/:sessionId/runs/:runId/retrievals` start/read/content callbacks | Delete with assistant-retrieval; retain the separate dataset-source/evidence actions and parent lifecycle integration. |
@@ -49,14 +48,14 @@ an explicit owner. Remove invalidated tests with the retired implementation.
 
 ## Workbench remains an application consumer
 
-Map the assistant session/run to the proposed caller scope in the contract. The
+Map the assistant session/run to the caller scope in the contract. The
 same skill then calls Java directly; close also blocks admission whose response
-has not arrived. Reconcile returned child references into `assistant_retrievals`;
-no local retrieval state machine or observer is retained.
+has not arrived. Store only `assistant_turns.retrieval_scope_id`; child references come from Java.
+No local retrieval state machine or child index is retained.
 
 `ONTOMATO_TK` is always the current user's credential. The parallel domain-skills
 module moves the old callback credential to `ONTOMATO_RETRIEVAL_CALLBACK_TOKEN`;
-this cutover deletes that assistant-retrieval callback path entirely. The proposed
+this cutover deletes that assistant-retrieval callback path entirely. The
 caller ID is separate, non-secret association metadata, not another meaning of tk.
 
 One assistant evidence adapter reads Java retrieval evidence and the common host
@@ -70,7 +69,7 @@ Session deletion closes caller admission, reconciles child references and asks
 Java to delete owned child resources; it no longer deletes retrieval rows directly.
 Cleanup remains scoped to those associations and retryable by stable IDs.
 
-## Acceptance after implementation
+## Verification and remaining acceptance
 
 Keep focused contracts for Java/common-proxy interchange, receipt/file matching,
 continuation idempotency and closed-run/caller admission. Relevant typecheck/lint
@@ -80,4 +79,4 @@ Controller runs actual assistant and external analyst ask against the same Java
 entry: continuation, copied dataset evidence, cancel during admission and runtime
 restart. Run unchanged dataset.mjs externally with begin/close and normal user
 authority. Controller builds runtime/data-engine and runs the enterprise stack.
-These are required future checks, not results of this proposal.
+The controller-owned checks remain pending at the A worktree handoff.

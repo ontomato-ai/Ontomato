@@ -1,7 +1,8 @@
 # Ontology AI runtime migration
 
-Review proposal, 2026-10-28, based on public `cc5ac842` and enterprise `8e125bc`.
-This submission changes documentation only. Wire boundaries belong to
+Slice A implemented, 2026-10-29, following controller review of the 2026-10-28
+design (public baseline `cc5ac842`, enterprise `8e125bc`). Slice B remains pending
+until the controller accepts and merges A. Wire boundaries belong to
 [ontology AI](../packages/contracts/ontology-ai.md) and
 [retrieval](../packages/contracts/data-retrieval.md).
 
@@ -31,7 +32,7 @@ The parallel domain-skills change adds `AgentHostRun.resolvedSkills` as
 description unchanged. Integrate the authoritative shared schema when merged;
 do not create a Java-specific substitute or read the current publication instead.
 
-## Remaining Java consumers
+## Remaining Java consumers (slice B)
 
 | Consumer | Destination; retained behavior |
 | --- | --- |
@@ -47,7 +48,7 @@ submission-tool side effects; Java validates exact output bytes before its
 existing save. Common Markdown instructions come from contracts, including Java
 resource generation from that same source.
 
-## Replace and delete together
+## Replacement inventory
 
 | Remove | Retain or relocate |
 | --- | --- |
@@ -58,7 +59,8 @@ resource generation from that same source.
 | `MultiThreadAIChatService.rawErrorText` references | General error utility; update DSL, MySQL, PG, DuckDB, ES, Neo4j, SQL Server and enterprise M3. |
 | Agent-specific context in `DiagnosticEventLogger` | Coordinate with the logging module; retain general diagnostics. Remove obsolete tests with deleted paths. |
 
-The baseline has 13 tool classes, not the earlier 19. Traditional ABC/QC v1,
+Slice A removes the workbench retrieval row above. The Java generator/tool rows
+remain for slice B. The baseline has 13 tool classes, not the earlier 19. Traditional ABC/QC v1,
 examples, calculator and startup Python are already removed. General Java MCP
 management/calls stay. No old-data converter, dual reads, knowledge-governance
 migration, runtime annotations or model-configuration ownership change.
@@ -71,31 +73,25 @@ migration, runtime annotations or model-configuration ownership change.
 2. **Remaining ontology AI:** migrate the consumer table, remove Java chat/tool
    machinery and update both editions. Stop for controller integration acceptance.
 
-**D1: direct ask and parent cancellation.** Review the proposed
-[caller scope](../packages/contracts/data-retrieval.md#assistant-caller-scope-proposed):
-the same skill calls Java directly, while Java rejects admission after parent
-closure. Recording children only after ask returns loses the admission race.
+**Approved D1:** the [caller scope](../packages/contracts/data-retrieval.md#assistant-caller-scope)
+is implemented. Workbench stores only its parent-run/scope association; the shared
+skill calls Java directly and Java rejects late admission after scope closure.
+`ONTOMATO_TK` remains the current user credential.
 
-**D2: unsaved model testing.** `/businessConfig/testModel` tests request-supplied
-configuration; runtime `StartRun` selects a stored role. Propose a request-scoped
-model override on an ordinary test run, using the same runtime adapter and no
-script environment change. Testing must not save configuration or change role
-bindings. Review the wire addition before changing `agent-runtime`; no Java chat
-fallback remains.
+**Approved D2 (slice B):** unsaved model testing is a runtime model-gateway API:
+receive the candidate configuration, make one minimal request through pi-ai and
+save nothing. Java's model-test endpoint will delegate to it. This is not an agent
+run or a model override on StartRun; the same API remains when model configuration
+moves to runtime. Preserve surviving configured request/header behavior in that
+adapter without retaining Java chat transport.
 
-The same adapter must preserve surviving configured request/header behavior;
-the baseline Java builder accepts more fields than runtime `model.ts` currently
-projects (for example organization/project and custom headers). Account for these
-at the model boundary, without moving configuration storage or retaining Java
-transport. This is part of behavior preservation, not a new configuration system.
+**Approved D3:** Java owns the independent retrieval default and maximum of 600
+seconds. Requests can shorten it; workbench supplies its remaining parent deadline.
+Standalone ask never reads workbench domain configuration.
 
-**D3: standalone deadline.** Propose the existing 600-second default for Java
-retrieval; workbench retains its configured parent deadline and passes it through
-the caller scope. Standalone ask will no longer read workbench configuration.
-This behavior boundary needs review; no second configuration store is proposed.
-
-After approval: relevant TS typecheck/lint, both Maven compiles, and focused
-contracts for proxy shapes, closed gates/late admission, dataset provenance and
-generation validation. Controller owns live Manager generation, internal/external
-ask with continuation/cancel, main-directory runtime/data-engine images and
-enterprise stack smoke. This documentation submission claims none of those checks.
+A verification covers TS typecheck/lint, both Maven compiles and focused contracts
+for Java/common host projection, concurrent matching admission, closed gates,
+continuation, immutable dataset provenance and shared analyst scripts. Main-directory
+live-model assistant/external ask, continuation/cancel, runtime/data-engine images
+and enterprise stack/registry smoke remain controller-owned. A is handed over
+before starting the remaining Java AI consumers in B.

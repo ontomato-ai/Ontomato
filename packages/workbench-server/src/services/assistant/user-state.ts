@@ -2,7 +2,7 @@ import {
   getPostgresPool,
   qualifiedTable as table,
 } from "../../infrastructure/postgres";
-import { transaction } from "../data-retrieval/store";
+import { transaction } from "../../infrastructure/postgres-transaction";
 export async function deleteMemories(domainId: string, userId: string) {
   const r = await getPostgresPool().query(
     `DELETE FROM ${table("user_memories")} WHERE domain_id=$1 AND user_id=$2`,
