@@ -16,9 +16,9 @@ docker compose up -d --wait --wait-timeout 600
 ```
 
 `ONTOMATO_MODEL_RUNTIME_TOKEN` is a random value per deployment (for example
-`openssl rand -hex 24`) shared by the workbench, agent runtime and data engine. Saved model
-API keys are write-only; the data engine returns them encrypted with this value for the
-two Node services to open locally. All three refuse to start without it. This value is never
+`openssl rand -hex 24`) shared by the workbench and agent runtime. Saved model API keys are write-only;
+runtime stores them encrypted and supplies sealed keys to remaining workbench model
+callers. Both Node services refuse to start without it; Java no longer requires it. This value is never
 sent in an HTTP header. A deployment created before this setting existed,
 including one that follows a tag automatically, must add it to `.env` before taking a
 release that requires it.
@@ -147,12 +147,15 @@ another timezone. This stack does not migrate a pre-existing database.
 installation or upgrade. Both Node services reference that same value. Existing
 credentials are preserved; retain `.env` and `agent_runtime_data` when updating.
 Run this preparation after copying updated deployment templates and before Compose.
-The runtime temporarily reads model configuration from Java until that owner is migrated.
+The runtime owns conversation models and roles; Java owns Embedding settings.
+Both Node services use the same `ONTOMATO_MODEL_RUNTIME_TOKEN` for sealed model keys.
 
 Models are normally configured in the UI. To seed new domains, optionally set
 `LLM_BASE_URL`, `LLM_API_KEY`, `LLM_MODEL`, `EMBEDDING_BASE_URL`,
 `EMBEDDING_API_KEY`, `EMBEDDING_MODEL` and `EMBEDDING_DIMENSIONS` (default 2048)
-in `.env`. Unset means the product default; an explicit empty value stays empty.
+in `.env`. Runtime seeds conversation models only when all three LLM values are
+nonempty. Java seeds Embedding. Unset means the product default; an explicit empty
+value stays empty.
 Existing domains keep their saved model settings.
 
 For an existing installation, rename the old `BACKEND_` keys for LLM, embedding,

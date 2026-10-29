@@ -168,8 +168,7 @@ public class QueryGrantService {
               && "sandbox-write".equals(claims.getString("purpose"));
       boolean generation =
           "ontology-generation".equals(claims.getString("purpose"))
-              && (path.equals("/businessConfig/getModelSettings")
-                  || path.startsWith("/ontology/ai/generation/" + runId + "/"));
+              && path.startsWith("/ontology/ai/generation/" + runId + "/");
       if ("ontology-generation".equals(claims.getString("purpose"))) {
         read = false;
         write = false;

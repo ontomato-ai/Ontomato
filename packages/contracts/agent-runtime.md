@@ -79,7 +79,6 @@ type StartRun = {
     values: Record<string,string>;
     secrets: Record<string,string>;
   };
-  modelCredential: RuntimeEndUserCredential;
 };
 ```
 
@@ -87,8 +86,7 @@ The runtime always exposes PI `read`, `write`, `edit`, `bash`. There is no Pytho
 switch, context entry or business tool registration. Python runs through bash.
 The service owns physical paths, UID allocation, output directory (`outputs/`)
 and sandbox mode; callers cannot choose a host path or UID. Limits reuse the
-existing worker policy. Model credentials remain supervisor-only for the
-existing temporary Java model-configuration adapter.
+existing worker policy. Model keys remain supervisor-only and are resolved from runtime-owned domain settings.
 
 The run environment is a single map formed from explicit values + secrets plus
 runtime identity. Duplicate names, NUL, invalid environment names and attempts
@@ -203,14 +201,10 @@ Messages retain stable IDs, session message sequence, provider signatures and
 usage. Service timestamps are ISO, PI timestamps milliseconds. Compression
 stores summary + covered-through message sequence without rewriting raw history,
 keeps tool-call/result pairs and retains raw context when summarization fails.
-Model role selection and null-tolerant Java model settings remain unchanged.
-The temporary Java adapter reads `sealedApiKeys` from `getModelSettings`; `apiKeys`
-contains display masks only. The workbench and runtime share the Node-only
-`model-key-seal` wire codec to open AES-256-GCM keys locally using
-`ONTOMATO_MODEL_RUNTIME_TOKEN`. All three services require the same nonblank
-value at startup. Only the end-user credential is sent to Java; the old model
-runtime credential header and plaintext-key response path are removed. Java
-still owns configuration storage and writes until the separate ownership migration.
+Model role selection and write-only keys follow the
+[model configuration contract](agent-runtime-model-config.md). Runtime owns
+storage and resolves each run locally. Workbench and ontology hosts share settings
+within a platform domain. Run requests no longer carry `modelCredential`.
 
 ## Events and file artifacts
 
@@ -279,6 +273,5 @@ and object storage are outside this batch.
 `POST /v1/models/test` is a model-gateway operation for an unsaved configuration,
 not a run. It uses host/domain authentication and the schemas in
 [`runtime-model-test.ts`](src/runtime-model-test.ts). It sends one minimal pi-ai
-request, does not retry or persist anything, and cancels on disconnect. Request
-fields, response and the Java adapter are defined in
-[ontology AI](ontology-ai.md#unsaved-model-test-gateway).
+request, does not retry or persist anything, and cancels on disconnect. Request fields, masked-key restoration and response are defined in the
+[model configuration contract](agent-runtime-model-config.md).

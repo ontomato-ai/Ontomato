@@ -104,7 +104,6 @@ export function runtimeEnvironment(
   env.AGENT_RUNTIME_DATABASE ||= runtimeDatabase;
   env.POSTGRES_HOST ||= "127.0.0.1";
   env.POSTGRES_PORT ||= "5432";
-  env.AGENT_RUNTIME_MODEL_CONFIG_URL ||= env.DATA_QUERY_BASE_URL;
   env.ONTOMATO_QUERY_CALLBACK_URL ||= env.DATA_QUERY_BASE_URL;
   env.AGENT_RUNTIME_ROOT ||= join(root, "data/agent-runtime");
   env.AGENT_RUNTIME_HOST = "127.0.0.1";

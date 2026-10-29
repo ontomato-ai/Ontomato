@@ -76,7 +76,6 @@ describe.skipIf(!database)("standard runtime real HTTP/PG/processes", () => {
         updatePrompt: "Update",
       },
     },
-    modelCredential: { kind: "none" },
     environment: {
       values: { FIXTURE_URL: base },
       secrets: { ONTOMATO_TK: "fixture-tk" },
@@ -103,7 +102,6 @@ describe.skipIf(!database)("standard runtime real HTTP/PG/processes", () => {
           AGENT_RUNTIME_DATABASE_URL: database!,
           AGENT_RUNTIME_SCHEMA: schema,
           AGENT_RUNTIME_ROOT: root,
-          AGENT_RUNTIME_MODEL_CONFIG_URL: base,
           ONTOMATO_MODEL_RUNTIME_TOKEN: "fixture-runtime-token",
           AGENT_RUNTIME_PORT: "0",
           AGENT_RUNTIME_EVENT_BUFFER_SIZE: "4",
@@ -127,7 +125,7 @@ describe.skipIf(!database)("standard runtime real HTTP/PG/processes", () => {
         logs += x;
         const m = logs.match(/Agent runtime listening on (\{[^\n]+\})/);
         if (m) {
-          url = `http://127.0.0.1:${JSON.parse(m[1]).port}`;
+          url = `http://127.0.0.1:${JSON.parse(m[1].replaceAll('\\"', '"')).port}`;
           clearTimeout(timer);
           resolve();
         }
@@ -175,36 +173,6 @@ describe.skipIf(!database)("standard runtime real HTTP/PG/processes", () => {
     await mkdir(notes, { recursive: true });
     root = await mkdtemp(path.join(notes, "runtime-standard-"));
     fake = createServer(async (req, res) => {
-      if (req.url === "/businessConfig/getModelSettings") {
-        res.setHeader("content-type", "application/json");
-        res.end(
-          JSON.stringify({
-            success: true,
-            data: {
-              agents: { coding: { model: "fixture" } },
-              sealedApiKeys: {
-                fixture: ["enc:v1:mzjUpW4OVVjLMPmxcmMcyop5LFN8VSJ_7lUGPppYXDK_UDNjyKAlYAL7vVwOMOI"],
-              },
-              models: [
-                {
-                  name: "fixture",
-                  modelName: "deepseek-chat",
-                  baseUrl: base + "/v1",
-                  apiKeys: ["******1234"],
-                  maxTokens: 4096,
-                  contextWindow: 16000,
-                  timeout: null,
-                  maxRetries: null,
-                  temperature: null,
-                  topP: null,
-                  customRequestParameters: null,
-                },
-              ],
-            },
-          }),
-        );
-        return;
-      }
       let raw = "";
       for await (const c of req) raw += c;
       if (req.url === "/mcp") {
@@ -286,6 +254,13 @@ describe.skipIf(!database)("standard runtime real HTTP/PG/processes", () => {
     await new Promise<void>((r) => fake.listen(0, "127.0.0.1", r));
     base = `http://127.0.0.1:${(fake.address() as any).port}`;
     await startProcess();
+    const saved = await api("/v1/models/settings", {
+      models: [{ name: "fixture", modelName: "deepseek-chat", baseUrl: base + "/v1",
+        apiKeys: ["sk-fixture-key-1234"], maxTokens: 4096, contextWindow: 16000 }],
+      agents: { query: null, coding: null, general: null, diagnosis: null, knowledgeGovernance: null },
+    }, {}, "PUT");
+    expect(saved.status).toBe(200);
+
     expect(
       (
         await api("/v1/skills", {

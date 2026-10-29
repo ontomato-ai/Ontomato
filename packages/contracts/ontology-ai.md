@@ -86,7 +86,7 @@ Normal HTTP operations under `/ontology/ai/generation` are:
 
 A current user can operate their own external gate. Hosted scripts use the scoped
 `ontology-generation` grant and matching `X-Ontomato-Run-Id`; it only permits
-`/businessConfig/getModelSettings` and callbacks under its own run path. The
+callbacks under its own run path. The
 normal query grant is separate. Hosted callbacks additionally check the runtime
 is running; mutation and test receipts recheck the durable business gate in the
 write transaction. Read generation cannot acquire an Action write sandbox.
@@ -96,24 +96,9 @@ these requires another successful business test. Cancellation and deadline expir
 reject further tests and settlement. A stopped `stop` run can be read after its
 callback gate closes, but abort/error/cancel and inherited artifacts cannot save.
 
-## Unsaved model test gateway
+## Model connection tests
 
-`POST /v1/models/test`, using runtime service authentication, `X-Domain-Id` and
-`X-Correlation-Id`. Executable request/response schemas are in
-[`runtime-model-test.ts`](src/runtime-model-test.ts).
-
-Request: `{model: {name?,baseUrl,modelName,apiKey,maxTokens,contextWindow,...},prompt?}`.
-Optional provider settings use the same mapping as configured runs, including
-custom headers, organization/project, sampling and custom request parameters.
-Custom request fields override the assembled payload last. Unset Java nulls are
-accepted; explicit zero/false values are preserved. Prompt defaults to `Hello`.
-Response: `{content: string}`. Provider failures use the common error envelope
-with `MODEL_TEST_FAILED` (502); configuration shape failures use `INVALID_REQUEST`.
-No draft, session, agent run or model-call row is persisted. Exactly one minimal
-provider request is made through pi-ai, with retries disabled and disconnect
-cancellation. Credentials are not echoed.
-
-Java `/businessConfig/testModel` still authorizes configuration management and
-restores saved masks before forwarding. It returns its existing `{success,data}`
-shape; Embedding tests stay in Java. This gateway can be retained unchanged when
-model configuration ownership moves to runtime.
+Conversation model tests and saved-key restoration belong to the runtime's
+[model configuration API](agent-runtime-model-config.md). The existing workbench
+page calls its own host, which authorizes management and forwards the draft.
+Java retains only Embedding configuration and tests.

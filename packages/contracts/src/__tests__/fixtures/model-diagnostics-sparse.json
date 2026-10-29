@@ -1,0 +1,20 @@
+{
+  "models": [],
+  "agents": {
+    "query": {
+      "model": null
+    },
+    "coding": {
+      "model": null
+    },
+    "general": {
+      "model": null
+    },
+    "diagnosis": {
+      "model": null
+    },
+    "knowledgeGovernance": {
+      "model": null
+    }
+  }
+}

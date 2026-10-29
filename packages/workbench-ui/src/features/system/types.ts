@@ -1,7 +1,6 @@
 import { z } from "zod";
 import type { SystemModelConfig } from "@ontomato/contracts/system-model";
 import type {
-  BackendAgentConfig,
   BackendModelConfig,
   ModelRole,
 } from "@ontomato/contracts/model-settings";
@@ -18,11 +17,11 @@ import type {
 /**
  * A model entry edited on the model configuration page: based on the entry read by getModelSettings, with fields that
  * have no controls (organizationId etc.) round-tripped as-is in the snapshot. Unset optional fields may be null when
- * read; new or cleared maxTokens / contextWindow are submitted as null and Java's read normalization fills the defaults.
+ * read; new or cleared maxTokens / contextWindow are submitted as null and runtime read normalization fills the defaults.
  */
 export type ModelEntry = Omit<
   BackendModelConfig,
-  "maxTokens" | "contextWindow" | "timeout" | "maxRetries" | "temperature" | "topP"
+  "maxTokens" | "contextWindow" | "timeout" | "maxRetries" | "temperature" | "topP" | "maxCompletionTokens"
 > & {
   maxTokens: number | null;
   contextWindow: number | null;
@@ -113,7 +112,6 @@ export interface SystemSettings {
 
 /** The parts of GET /businessConfig/getConfig the two pages read: the system config page reads general settings, the model configuration page reads Embedding. */
 export interface BusinessConfig extends SystemSettings {
-  agents: Record<ModelRole, BackendAgentConfig>;
   embeddingModelProperties: EmbeddingModelConfig | null;
   /** The saved multi-source definition; null until one is saved. */
   multiDataSource: MultiDataSourceDefinition | null;

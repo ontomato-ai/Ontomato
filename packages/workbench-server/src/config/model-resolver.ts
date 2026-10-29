@@ -1,9 +1,8 @@
-import type { ModelRole, ModelSettingsData } from "@ontomato/contracts/model-settings";
+import type { ModelRole } from "@ontomato/contracts/model-settings";
 import { parseIsoDurationSeconds } from "@ontomato/contracts/model-settings";
-import { AuthFailedError, backendGet, buildBackendHeaders } from "../utils/backend-client";
+import { RuntimeClient } from "../infrastructure/agent-runtime/client";
 import { MODEL_RUNTIME_TOKEN_ENV, openSealedModelKey } from "@ontomato/contracts/model-key-seal";
 import { getLogContext } from "../logging/log-context";
-import { config } from "./application";
 import { t } from "../i18n";
 
 export class ModelNotConfiguredError extends Error {}
@@ -25,43 +24,23 @@ export function getRoleNotConfiguredMessage(role: ModelRole): string {
 }
 
 export async function resolveModelForRole(role: ModelRole = "general"): Promise<ResolvedModelConfig> {
-  const endpoint = "/businessConfig/getModelSettings";
-  const url = `${config.dataQuery.baseUrl}${endpoint}`;
   const context = getLogContext();
+  if (!context?.domainId) throw new Error("A verified domain is required to resolve a model");
+  const data = await new RuntimeClient(context.domainId).modelSettings();
 
-  const response = await backendGet(endpoint, url, {
-    headers: buildBackendHeaders(context?.token, undefined, undefined, context?.apiKey),
-  }).catch((error: unknown) => {
-    if (error instanceof AuthFailedError && error.status === 403) {
-      // This read's 403 is a service/domain configuration refusal; only a 401 asks the user to sign in again.
-      throw new Error(t("model.settingsReadRefused"));
-    }
-    throw error;
-  });
-
-  const body = JSON.parse(response.text) as {
-    success: boolean;
-    data?: ModelSettingsData;
-    message?: string;
-  };
-
-  if (!body.success || !body.data) {
-    throw new Error(body.message || "Failed to fetch model settings from backend");
-  }
-
-  const agentEntry = body.data.agents?.[role];
+  const agentEntry = data.agents?.[role];
   const modelId = agentEntry?.model;
   if (!modelId) {
     throw new ModelNotConfiguredError(getRoleNotConfiguredMessage(role));
   }
 
-  const model = body.data.models?.find((m) => m.name === modelId);
+  const model = data.models?.find((m) => m.name === modelId);
   if (!model) {
     throw new Error(`Model settings are inconsistent: role "${role}" references missing model "${modelId}"`);
   }
 
   // apiKeys are masks; the key to use comes sealed and is opened here.
-  const sealed = body.data.sealedApiKeys?.[modelId]?.[0];
+  const sealed = data.sealedApiKeys?.[modelId]?.[0];
   const apiKey = sealed ? openSealedModelKey(sealed, process.env[MODEL_RUNTIME_TOKEN_ENV]) : "";
   const baseUrl = model.baseUrl;
   const modelName = model.modelName;

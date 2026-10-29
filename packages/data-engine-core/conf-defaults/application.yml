@@ -41,27 +41,6 @@ ontomato:
       username: ${POSTGRES_USER:}
       password: ${POSTGRES_PASSWORD:}
       driver-class-name: ${DATA_ENGINE_JDBC_DRIVER:org.postgresql.Driver}
-    models:
-      - name: default
-        base-url: ${LLM_BASE_URL:}
-        api-keys: ${LLM_API_KEY:}
-        model-name: ${LLM_MODEL:}
-        timeout: PT300S
-        temperature: 0.0
-        top-p: 0.1
-        log-requests: true
-        log-responses: true
-    agents:
-      query:
-        model: default
-      coding:
-        model: default
-      general:
-        model: default
-      diagnosis:
-        model: default
-      knowledgeGovernance:
-        model: default
 
 logging:
   level:

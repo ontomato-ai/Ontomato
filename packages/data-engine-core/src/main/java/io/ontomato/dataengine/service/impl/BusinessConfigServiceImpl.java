@@ -1,7 +1,6 @@
 package io.ontomato.dataengine.service.impl;
 
 import java.io.File;
-import java.util.List;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.core.env.Environment;
@@ -9,23 +8,16 @@ import org.springframework.stereotype.Service;
 
 import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONObject;
-import io.ontomato.dataengine.config.AgentConfig;
-import io.ontomato.dataengine.config.AgentRole;
 import io.ontomato.dataengine.config.BusinessConfig;
 import io.ontomato.dataengine.config.DaoConst;
 import io.ontomato.dataengine.config.DataRagConfig;
 import io.ontomato.dataengine.config.EmbeddingModelProperties;
-import io.ontomato.dataengine.config.ModelDefaultsProperties;
-import io.ontomato.dataengine.config.ModelResolver;
 import io.ontomato.dataengine.service.IdentityRuntimeSettings;
 import io.ontomato.dataengine.dao.BusinessConfigDao;
 import io.ontomato.dataengine.service.BusinessConfigService;
 
 @Service
 public class BusinessConfigServiceImpl implements BusinessConfigService {
-
-	@Autowired
-    private ModelDefaultsProperties modelDefaultsProperties;
 
     @Autowired
     private EmbeddingModelProperties embeddingModelProperties;
@@ -57,15 +49,10 @@ public class BusinessConfigServiceImpl implements BusinessConfigService {
 		BusinessConfig businessConfig = businessConfigDao.query(domainId);
 		if (businessConfig == null) {
 			businessConfig = BusinessConfig.from(
-					modelDefaultsProperties,
 					embeddingModelProperties,
 					dataRagConfig);
-			ModelResolver.validateForSave(businessConfig);
 			set(businessConfig, domainId);
 		}
-		// The sole boundary where this method reads a persisted record or seeds a new record: a missing display name is initialized to name,
-		// missing/null apiKeys are returned as an empty array as not configured; role references and real keys are untouched, and old records need no manual migration.
-		ModelResolver.normalizeForRead(businessConfig.getModels());
 		return businessConfig;
 	}
 
@@ -94,8 +81,6 @@ public class BusinessConfigServiceImpl implements BusinessConfigService {
 
 		JSONObject langchain4j = new JSONObject();
 		JSONObject langchain4jOpen_ai = new JSONObject();
-		langchain4jOpen_ai.put("models", businessConfig.getModels());
-		langchain4jOpen_ai.put("agents", businessConfig.getAgents());
 		langchain4jOpen_ai.put("embedding-model", businessConfig.getEmbeddingModelProperties());
 		langchain4j.put("open-ai", langchain4jOpen_ai);
 		wholeConfig.put("langchain4j", langchain4j);
@@ -131,26 +116,6 @@ public class BusinessConfigServiceImpl implements BusinessConfigService {
 		view.put("spring", JSONObject.of("servlet", JSONObject.of("multipart", multipart)));
 
 		JSONObject openAi = new JSONObject();
-		List<JSONObject> models = businessConfig.getModels().stream().map(model -> {
-			JSONObject item = new JSONObject();
-			item.put("name", model.getName());
-			item.put("displayName", model.getDisplayName());
-			item.put("modelName", model.getModelName());
-			item.put("connectionConfigured", ModelResolver.hasCompleteConnection(model));
-			item.put("timeout", model.getTimeout());
-			item.put("maxRetries", model.getMaxRetries());
-			item.put("maxTokens", model.getMaxTokens());
-			item.put("contextWindow", model.getContextWindow());
-			return item;
-		}).toList();
-		openAi.put("models", models);
-		JSONObject agents = new JSONObject();
-		for (String role : AgentRole.ALL) {
-			AgentConfig agent = businessConfig.getAgents().get(role);
-			JSONObject item = JSONObject.of("model", agent.getModel());
-			agents.put(role, item);
-		}
-		openAi.put("agents", agents);
 		BusinessConfig.EmbeddingModelProperties embedding = businessConfig.getEmbeddingModelProperties();
 		if (embedding != null) {
 			JSONObject item = new JSONObject();
@@ -174,10 +139,8 @@ public class BusinessConfigServiceImpl implements BusinessConfigService {
 	@Override
 	public String getWholeConfigDesc() {
 		return "If conf/application.yml is missing it is copied from the startup template; an existing site file is kept and read on restart. "
-				+ "The existing env placeholder mapping still applies. Persisted domain models and roles are not written back from the file.\n"
-				+ "For a saved domain, the models under `langchain4j.open-ai` (a named model list with connections and request parameters) "
-				+ "and agents (the model references of the five roles) can take effect promptly after being configured through the page or API, and are retained after restart. "
-				+ "This diagnosis view lists only non-secret fields: whether a model or Embedding connection is configured is shown, never its address, key, headers or custom request parameters.\n"
+				+ "The existing env placeholder mapping still applies. Conversation models and roles belong to the agent runtime.\n"
+				+ "This diagnosis view lists only non-secret fields, including whether Embedding is configured, never its address, key or headers.\n"
 				+ "The configurations `ontomato.data-engine.knowledgeMaxResult`, "
 				+ "`ontomato.data-engine.dslCookerTimeout`, "
 				+ "`ontomato.data-engine.dataAdapter` all take effect promptly after being configured through the page.\n"

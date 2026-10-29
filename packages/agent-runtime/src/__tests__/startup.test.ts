@@ -29,7 +29,6 @@ it.each(["AGENT_RUNTIME_HOSTS"])(
             ]),
             AGENT_RUNTIME_DATABASE_URL:
               "postgresql://unused:unused@127.0.0.1:9/unused",
-            AGENT_RUNTIME_MODEL_CONFIG_URL: "http://127.0.0.1:9",
             ONTOMATO_MODEL_RUNTIME_TOKEN: "fixture-runtime-token",
             [name]: "SENSITIVE",
           },

@@ -97,11 +97,11 @@ class OntologyGenerationContractTest {
                 session = path.split("/")[3];
                 run = call.getArgument(5);
                 JSONObject request = call.getArgument(4);
-                String token = request.getJSONObject("modelCredential").getString("value");
+                String token = request.getJSONObject("environment").getJSONObject("secrets").getString("ONTOMATO_GENERATION_TK");
                 assertEquals(
                     owner.domainId(),
                     grants
-                        .verify(token, run, "/businessConfig/getModelSettings")
+                        .verify(token, run, "/ontology/ai/generation/" + run + "/context")
                         .getString("domainId"));
                 operations.test(
                     run, owner, JSONObject.of("code", source, "parameterDefs", new JSONArray()));
@@ -250,7 +250,7 @@ class OntologyGenerationContractTest {
             System.currentTimeMillis() + 60000,
             List.of(),
             null);
-    assertDoesNotThrow(() -> grants.verify(token, run, "/businessConfig/getModelSettings"));
+    assertDoesNotThrow(() -> grants.verify(token, run, "/ontology/ai/generation/" + run + "/context"));
     assertDoesNotThrow(
         () -> grants.verify(token, run, "/ontology/ai/generation/" + run + "/source"));
     for (String path :
@@ -266,6 +266,6 @@ class OntologyGenerationContractTest {
     grants.revoke(owner.domainId(), run);
     assertThrows(
         org.springframework.web.server.ResponseStatusException.class,
-        () -> grants.verify(token, run, "/businessConfig/getModelSettings"));
+        () -> grants.verify(token, run, "/ontology/ai/generation/" + run + "/context"));
   }
 }

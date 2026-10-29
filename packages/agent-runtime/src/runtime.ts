@@ -41,7 +41,6 @@ import {
   type InstalledSkill,
 } from "./skills";
 import {
-  resolveModel,
   piModel,
   modelStream,
   completeSummary,
@@ -51,6 +50,7 @@ import { RuntimeError, safeMessage } from "./errors";
 import { contextTokens, cutPoint, serializeConversation } from "./compaction";
 import { connectMcp } from "./tools";
 import { RuntimeMcpServices } from "./mcp";
+import { RuntimeModelSettings } from "./model-settings";
 import { modelKeySealKey } from "@ontomato/contracts/model-key-seal";
 
 type Subscriber = (frame: RuntimeStreamFrame) => void;
@@ -73,8 +73,8 @@ export interface RuntimeOptions {
   worker?: WorkerPolicy;
   root: string;
   hosts: RuntimeHost[];
-  ontologyUrl: string;
   modelRuntimeToken?: string;
+  modelSeed?: { baseUrl?: string; apiKey?: string; modelName?: string };
   eventBufferSize?: number;
 }
 
@@ -110,6 +110,7 @@ export class AgentRuntime {
   readonly worker: WorkerPolicy;
   readonly files: ArtifactFiles;
   readonly mcp: RuntimeMcpServices;
+  readonly models: RuntimeModelSettings;
   private active = new Map<string, Active>();
   private locks = new Map<string, Promise<unknown>>();
   constructor(readonly options: RuntimeOptions) {
@@ -117,6 +118,7 @@ export class AgentRuntime {
     this.store = options.store;
     this.logs = new ServiceLogStore("agent-runtime", this.store.connectionString, this.store.schema, runtimeLogging.warn);
     this.mcp = new RuntimeMcpServices(this.store);
+    this.models = new RuntimeModelSettings(this.store, options.modelRuntimeToken, options.modelSeed);
     this.worker = {
       ...(options.worker ?? {
         development: process.env.NODE_ENV === "test",
@@ -191,7 +193,6 @@ export class AgentRuntime {
     const fingerprint = digest({
       sessionId,
       ...request,
-      modelCredential: undefined,
       environment: {
         values: request.environment.values,
         secretNames: Object.keys(request.environment.secrets).sort(),
@@ -435,13 +436,7 @@ export class AgentRuntime {
     let closeMcp = async () => {};
     try {
       const mcpConfigs = await this.mcp.resolve(scope, request.definition.externalMcp.map((ref) => ref.id));
-      const config = await resolveModel({
-        baseUrl: this.options.ontologyUrl,
-        runtimeToken: this.options.modelRuntimeToken,
-        request,
-        correlationId: run.correlationId,
-        signal,
-      });
+      const config = await this.models.resolve(scope.domainId, request.definition.modelRole);
       const rows = await this.store.messages(scope, run.sessionId);
       const summaryRow = (
         await this.store.pool.query(

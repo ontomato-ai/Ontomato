@@ -194,8 +194,7 @@ public class OntologyGenerationService {
                           kind),
                       "secrets",
                       JSONObject.of(
-                          "ONTOMATO_GENERATION_TK", credential, "ONTOMATO_QUERY_TK", query)),
-              "modelCredential", JSONObject.of("kind", "token", "value", credential)),
+                          "ONTOMATO_GENERATION_TK", credential, "ONTOMATO_QUERY_TK", query))),
           run);
       JSONObject snapshot;
       while (true) {

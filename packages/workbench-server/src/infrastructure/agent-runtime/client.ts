@@ -1,3 +1,5 @@
+import { modelSettingsSchema, modelSettingsServerSchema, modelDiagnosticsSchema, type ModelSettingsWrite } from "@ontomato/contracts/model-settings";
+import { runtimeModelTestResponseSchema, type RuntimeModelTestRequest } from "@ontomato/contracts/runtime-model-test";
 import { correlationId as normalizeCorrelationId, getServiceLogContext, logHeaders, withServiceLogContext } from "@ontomato/service-logging";
 import { createLogger } from "../../logging/logger";
 const logger = createLogger("runtime-client");
@@ -93,6 +95,18 @@ export class RuntimeClient {
           logger.info("runtime call completed", { kind: "downstream", target: "agent-runtime", durationMs: Math.floor(performance.now() - started), outcome }));
       }
     }
+  }
+  async modelSettings() {
+    return modelSettingsServerSchema.parse(await this.request("/v1/models/settings"));
+  }
+  async saveModelSettings(input: ModelSettingsWrite) {
+    return modelSettingsSchema.parse(await this.request("/v1/models/settings", "PUT", input));
+  }
+  async testModel(input: RuntimeModelTestRequest, signal: AbortSignal) {
+    return runtimeModelTestResponseSchema.parse(await this.request("/v1/models/test", "POST", input, undefined, signal));
+  }
+  async modelDiagnostics() {
+    return modelDiagnosticsSchema.parse(await this.request("/v1/models/diagnostics"));
   }
   async mcpOptions() {
     return mcpServiceOptionsSchema.parse(await this.request("/v1/mcp/services/names"));

@@ -31,15 +31,7 @@ public class OntologyAgentAccess {
       String apiKey,
       String language,
       Long expiresAt,
-      String callerId) {
-    public JSONObject modelCredential() {
-      return token != null && !token.isBlank()
-          ? JSONObject.of("kind", "token", "value", token)
-          : apiKey != null && !apiKey.isBlank()
-              ? JSONObject.of("kind", "api_key", "value", apiKey)
-              : JSONObject.of("kind", "none");
-    }
-  }
+      String callerId) {}
 
   public Context current(HttpServletRequest request) {
     var access = queries.access(request);

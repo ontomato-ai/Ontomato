@@ -63,12 +63,6 @@ export const runtimeRegisterSkillRequestSchema = z
         message: "Unique files including SKILL.md are required",
       });
   });
-export const runtimeEndUserCredentialSchema = z.discriminatedUnion("kind", [
-  z.object({ kind: z.literal("bearer"), value: runtimeKeySchema }).strict(),
-  z.object({ kind: z.literal("token"), value: runtimeKeySchema }).strict(),
-  z.object({ kind: z.literal("api_key"), value: runtimeKeySchema }).strict(),
-  z.object({ kind: z.literal("none") }).strict(),
-]);
 export const runtimeIdentityEnvironment = [
   "ONTOMATO_SESSION_ID",
   "ONTOMATO_RUN_ID",

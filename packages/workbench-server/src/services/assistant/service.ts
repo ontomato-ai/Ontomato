@@ -31,7 +31,6 @@ import { getQueryTimeoutMs } from "../../config/query-settings";
 import { assistantStore, type AssistantOwner, type SessionRow } from "./store";
 import {
   messageText,
-  modelCredential,
   runDefinition,
   userSkillEnvironment,
   type AssistantCredentials,
@@ -341,7 +340,6 @@ export const assistantService = {
             credentials.locale,
             a.enabled_mcp_service_ids.map((serviceId) => ({ id: serviceId })),
           ),
-          modelCredential: modelCredential(credentials),
           environment: {
             values: {
               ...skillEnvironment.values,

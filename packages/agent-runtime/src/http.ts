@@ -98,8 +98,18 @@ export function createRuntimeHttp(runtime: AgentRuntime) {
     const ctx = scope(req);
     const controller = new AbortController();
     res.on("close", () => controller.abort());
-    const result = await testModel(req.body, ctx.correlationId, controller.signal);
+    const { config, prompt } = await runtime.models.testDraft(ctx.scope.domainId, req.body);
+    const result = await testModel(config, prompt, ctx.correlationId, controller.signal);
     if (!controller.signal.aborted) res.json(result);
+  }));
+  app.get("/v1/models/settings", route(async (req, res) => {
+    res.json(await runtime.models.get(scope(req).scope.domainId));
+  }));
+  app.put("/v1/models/settings", route(async (req, res) => {
+    res.json(await runtime.models.save(scope(req).scope.domainId, req.body));
+  }));
+  app.get("/v1/models/diagnostics", route(async (req, res) => {
+    res.json(await runtime.models.diagnostics(scope(req).scope.domainId));
   }));
   app.get("/v1/mcp/services/names", route(async (req, res) => {
     res.json(await runtime.mcp.options(scope(req).scope));

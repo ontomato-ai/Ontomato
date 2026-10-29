@@ -7,9 +7,9 @@ beforeEach(() => {
 });
 
 describe("oss identity", () => {
-  it("returns default for every domain check and ignores the supplied domain", () => {
-    expect(workbenchIdentity().requireDomainId({ domainId: "other" })).toBe("default");
-    expect(workbenchIdentity().requireDomainId({})).toBe("default");
+  it("returns 1 for every domain check and ignores the supplied domain", () => {
+    expect(workbenchIdentity().requireDomainId({ domainId: "other" })).toBe("1");
+    expect(workbenchIdentity().requireDomainId({})).toBe("1");
   });
 
   it("does not verify a saved task token", async () => {
@@ -26,15 +26,15 @@ describe("oss identity", () => {
     vi.unstubAllGlobals();
   });
 
-  it("keeps MCP on system/default and autotest on the run domain", async () => {
+  it("keeps MCP on system/1 and autotest on the run domain", async () => {
     const req = { header: () => "secret", query: { apiKey: "secret" } } as never;
     await expect(workbenchIdentity().resolveMcpCaller(req, "tool-key")).resolves.toEqual({
       userId: "system",
-      domainId: "default",
+      domainId: "1",
     });
     await expect(
       workbenchIdentity().resolveAutotestActor({ token: "", domainId: "" })
-    ).resolves.toEqual({ userId: "system", domainId: "default" });
+    ).resolves.toEqual({ userId: "system", domainId: "1" });
     await expect(
       workbenchIdentity().resolveAutotestActor({ token: "tk", domainId: "run-domain" })
     ).resolves.toEqual({ userId: "system", domainId: "run-domain" });

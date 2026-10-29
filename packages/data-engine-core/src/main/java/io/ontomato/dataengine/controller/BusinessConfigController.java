@@ -3,17 +3,10 @@ package io.ontomato.dataengine.controller;
 import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
-import com.alibaba.fastjson2.JSONReader;
-import io.ontomato.dataengine.config.AgentConfig;
-import io.ontomato.dataengine.config.AgentRole;
 import io.ontomato.dataengine.config.BusinessConfig;
 import io.ontomato.dataengine.config.BusinessConfig.EmbeddingModelProperties;
 import io.ontomato.dataengine.config.ControllerConst;
-import io.ontomato.dataengine.config.CustomRequestParameters;
-import io.ontomato.dataengine.config.ModelConfig;
 import io.ontomato.dataengine.config.ModelKeyMask;
-import io.ontomato.dataengine.config.ModelKeySeal;
-import io.ontomato.dataengine.config.ModelResolver;
 import io.ontomato.dataengine.config.multisource.DataSourceEntry;
 import io.ontomato.dataengine.config.multisource.MultiDataSourceDefinition;
 import io.ontomato.dataengine.core.bean.User;
@@ -29,17 +22,13 @@ import io.ontomato.dataengine.dataAdapter.MultiDataSourceValidator;
 import io.ontomato.dataengine.service.AdminService;
 import io.ontomato.dataengine.service.BusinessConfigService;
 import io.ontomato.dataengine.service.LangService;
-import io.ontomato.dataengine.service.agent.AgentRuntimeClient;
 import io.ontomato.dataengine.service.ai.EmbeddingService;
 import io.ontomato.dataengine.service.vector.VectorRebuildService;
 import io.ontomato.dataengine.service.vector.VectorRebuildStatus;
 import io.ontomato.dataengine.util.SystemUtils;
-import java.util.ArrayList;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.BeanUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -57,7 +46,6 @@ public class BusinessConfigController {
 	@Autowired
 	private BusinessConfigService businessConfigService;
 
-  @Autowired private AgentRuntimeClient agentRuntimeClient;
 
 	@Autowired
 	private EmbeddingService embeddingService;
@@ -72,8 +60,6 @@ public class BusinessConfigController {
 	@Autowired(required = false)
 	private ConnectionSecretCodec connectionSecretCodec;
 
-	@Autowired
-	private ModelKeySeal modelKeySeal;
 	
 	@Autowired
 	private DataAdapterRegistry dataAdapterRegistry;
@@ -81,173 +67,6 @@ public class BusinessConfigController {
 	@Autowired
 	private AdminService adminService;
 	
-	@PostMapping("/businessConfig/testModel")
-    @ResponseBody
-    public JSONObject testModel(@RequestBody JSONObject input) {
-    	JSONObject ret = new JSONObject();
-    	try {
-    		User user = SystemUtils.getCurUser();
-			ModelConfig model = input.getJSONObject("model").toJavaObject(
-					ModelConfig.class, JSONReader.Feature.DisableReferenceDetect);
-      model.setCustomRequestParameters(
-          CustomRequestParameters.normalize(
-              input.getJSONObject("model").get("customRequestParameters")));
-			ModelKeyMask.restoreModels(List.of(model), businessConfigService.get(user.getDomainId()).getModels());
-    		String userContent = input.getString("prompt");
-    		if (userContent == null || "".equals(userContent.trim())) {
-    			userContent = "Hello";
-    		}
-      ModelResolver.normalizeForRead(List.of(model));
-      JSONObject candidate = JSONObject.from(model);
-      candidate.remove("apiKeys");
-      candidate.put(
-          "apiKey",
-          model.getApiKeys() == null || model.getApiKeys().isEmpty()
-              ? ""
-              : model.getApiKeys().get(0));
-      candidate.put("timeout", model.getTimeout() == null ? null : model.getTimeout().toString());
-      String aiContent =
-          agentRuntimeClient
-              .json(
-                  user.getDomainId(),
-                  java.util.UUID.randomUUID().toString(),
-                  "/v1/models/test",
-                  "POST",
-                  JSONObject.of("model", candidate, "prompt", userContent),
-                  null)
-              .getString("content");
-    		ret.put("data", aiContent);
-    		ret.put("success", true);
-    	} catch (Exception e) {
-    		log.error(e.getMessage(), e);
-    		ret.put("success", false);
-    		ret.put("message", e.getMessage());
-    	}
-		return ret;
-	}
-
-	/**
-	 * Read by the page and by the workbench server: keys are masked, and each model's keys also come
-	 * sealed for the workbench server under {@code sealedApiKeys} (model name to keys, see {@link ModelKeySeal}).
-	 */
-	@GetMapping("/businessConfig/getModelSettings")
-	@ResponseBody
-	public JSONObject getModelSettings() {
-		JSONObject ret = new JSONObject();
-		try {
-      var attributes =
-          (org.springframework.web.context.request.ServletRequestAttributes)
-              org.springframework.web.context.request.RequestContextHolder.getRequestAttributes();
-      JSONObject grant =
-          attributes == null
-              ? null
-              : (JSONObject)
-                  attributes
-                      .getRequest()
-                      .getAttribute(io.ontomato.dataengine.service.QueryGrantService.ATTRIBUTE);
-      String domain =
-          grant != null && "ontology-generation".equals(grant.getString("purpose"))
-              ? grant.getString("domainId")
-              : SystemUtils.getCurUser().getDomainId();
-      BusinessConfig businessConfig = businessConfigService.get(domain);
-			ModelResolver.normalizeForRead(businessConfig.getModels());
-			JSONObject data = new JSONObject();
-			data.put("models", ModelKeyMask.masked(businessConfig.getModels()));
-			Map<String, List<String>> sealed = new LinkedHashMap<>();
-			for (ModelConfig model : businessConfig.getModels()) {
-				sealed.put(model.getName(), modelKeySeal.seal(model.getApiKeys()));
-			}
-			data.put("sealedApiKeys", sealed);
-			data.put("agents", businessConfig.getAgents());
-			ret.put("data", data);
-			ret.put("success", true);
-		} catch (Exception e) {
-			log.error(e.getMessage(), e);
-			ret.put("success", false);
-			ret.put("message", e.getMessage());
-		}
-		return ret;
-	}
-
-	@PostMapping("/businessConfig/saveModelSettings")
-	@ResponseBody
-	public JSONObject saveModelSettings(@RequestBody JSONObject input) {
-		JSONObject ret = new JSONObject();
-		try {
-			User user = SystemUtils.getCurUser();
-			if (input.getJSONArray("models") == null) {
-				throw new IllegalArgumentException("models must not be null");
-			}
-			List<ModelConfig> models = input.getJSONArray("models").toJavaList(
-					ModelConfig.class, JSONReader.Feature.DisableReferenceDetect);
-			if (models == null) {
-				models = new ArrayList<>();
-			}
-			for (ModelConfig model : models) {
-				model.setCustomRequestParameters(CustomRequestParameters.normalize(
-						model.getCustomRequestParameters()));
-			}
-
-			Object rawAgents = input.get("agents");
-			if (!(rawAgents instanceof Map<?, ?> agentsMap)) {
-				throw new IllegalArgumentException("agents must be an object");
-			}
-			if (!agentsMap.keySet().equals(AgentRole.ALL)) {
-				throw new IllegalArgumentException(
-						"agents must contain all five roles and no unknown roles: " + agentsMap.keySet());
-			}
-
-			BusinessConfig stored = businessConfigService.get(user.getDomainId());
-			// The first model saved into an empty library also fills every empty role reference, so a first
-			// setup needs no separate role step; a batch from empty, a second model or later edits assign nothing.
-			String firstModelName = stored.getModels().isEmpty() && models.size() == 1 ? models.get(0).getName() : null;
-
-			// A key sent back as its mask keeps the stored key of the same model.
-			ModelKeyMask.restoreModels(models, stored.getModels());
-
-			BusinessConfig candidate = new BusinessConfig();
-			BeanUtils.copyProperties(stored, candidate);
-			candidate.setModels(models);
-
-			Map<String, AgentConfig> newAgents = new LinkedHashMap<>();
-			for (String role : AgentRole.ALL) {
-				Object rawModelRef = agentsMap.get(role);
-				String modelRef = null;
-				if (rawModelRef != null) {
-					if (!(rawModelRef instanceof String)) {
-						throw new IllegalArgumentException("The model reference of role " + role + " must be a string or null");
-					}
-					String str = ((String) rawModelRef).trim();
-					if (!str.isEmpty()) {
-						modelRef = str;
-					}
-				}
-				if (modelRef == null) {
-					modelRef = firstModelName;
-				}
-				AgentConfig agent = new AgentConfig();
-				agent.setModel(modelRef);
-				newAgents.put(role, agent);
-			}
-			candidate.setAgents(newAgents);
-
-			ModelResolver.validateForSave(candidate);
-			businessConfigService.set(candidate, user.getDomainId());
-
-			ModelResolver.normalizeForRead(candidate.getModels());
-			JSONObject data = new JSONObject();
-			data.put("models", ModelKeyMask.masked(candidate.getModels()));
-			data.put("agents", candidate.getAgents());
-			ret.put("data", data);
-			ret.put("success", true);
-		} catch (Exception e) {
-			log.error(e.getMessage(), e);
-			ret.put("success", false);
-			ret.put("message", e.getMessage());
-		}
-		return ret;
-	}
-
 	@PostMapping("/businessConfig/testEmbeddingModel")
     @ResponseBody
     public JSONObject testEmbeddingModel(@RequestBody JSONObject input) {
@@ -592,11 +411,10 @@ public class BusinessConfigController {
     	try {
     		User user = SystemUtils.getCurUser();
 			BusinessConfig businessConfig = businessConfigService.get(user.getDomainId());
-			// The response's own record (a fresh read, or the codec's masked copy): model keys are masked on it too.
+			// Mask the Embedding key on the response's own copy.
 			BusinessConfig view = connectionSecretCodec == null
 					? businessConfig
 					: connectionSecretCodec.maskedCopy(businessConfig);
-			view.setModels(ModelKeyMask.masked(view.getModels()));
 			ModelKeyMask.maskEmbedding(view.getEmbeddingModelProperties());
 			ret.put("data", view);
     		ret.put("success", true);

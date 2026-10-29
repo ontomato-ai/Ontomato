@@ -30,7 +30,7 @@ export interface SkillResourceDomainFailure {
  * Calling before installation is an assembly error and never degrades into an anonymous principal.
  */
 export interface WorkbenchIdentity {
-  /** Enterprise verifies the ticket; OSS writes the fixed system/default. Proxies mounted before `/api` never pass through it. */
+  /** Enterprise verifies the ticket; OSS writes the fixed system/1. Proxies mounted before `/api` never pass through it. */
   authenticate: RequestHandler;
   /**
    * Called before every task run. Online entries pass in already-verified identity; offline tasks only have the token saved on the task row.
@@ -41,20 +41,20 @@ export interface WorkbenchIdentity {
     task: { userId: string; domainId: string; token?: string },
     verifiedIdentity?: Pick<RequestIdentity, "userId" | "domainId">
   ): Promise<void>;
-  /** Enterprise verifies the tk and the domain must equal this run; OSS uses the domainId from run parameters, defaulting to default. */
+  /** Enterprise verifies the tk and the domain must equal this run; OSS uses the domainId from run parameters, defaulting to 1. */
   resolveAutotestActor(input: {
     token: string;
     domainId?: string | null;
   }): Promise<{ userId: string; domainId: string }>;
   /**
    * Enterprise: the API Key in tool parameters wins, then the API Key in the request, then the token.
-   * OSS never reads these credentials and stays on the fixed system/default, nor writes the caller's API Key into the task.
+   * OSS never reads these credentials and stays on the fixed system/1, nor writes the caller's API Key into the task.
    */
   resolveMcpCaller(
     req: Request,
     toolApiKey?: string
   ): Promise<{ userId: string; domainId: string; token?: string; apiKey?: string }>;
-  /** `/api/skills/resources`. Enterprise verifies credentials first then requires the domain; OSS uses default directly. */
+  /** `/api/skills/resources`. Enterprise verifies credentials first then requires the domain; OSS uses 1 directly. */
   resolveSkillResourceDomain(req: Request): Promise<SkillResourceDomainResult | SkillResourceDomainFailure>;
   /** Knowledge governance and skill writes. OSS allows all; enterprise goes through menu permissions. */
   requirePermission(keys: readonly string[]): RequestHandler;
@@ -65,7 +65,7 @@ export interface WorkbenchIdentity {
   /** Verifies that the caller has access to diagnosis/observe capabilities. Enterprise requires domain and observer permission; OSS allows all. */
   assertObserveAccess(identity: { domainId?: string; token?: string; apiKey?: string }): Promise<void>;
   /**
-   * Enterprise answers 403 when the domain is missing. OSS always returns default and never adopts the domain from request input,
+   * Enterprise answers 403 when the domain is missing. OSS always returns 1 and never adopts the domain from request input,
    * preventing a self-declared request domain from splitting the single-domain storage.
    */
   requireDomainId(identity: { domainId?: string | null }): string;

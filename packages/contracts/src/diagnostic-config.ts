@@ -7,7 +7,6 @@ import { z } from "zod";
  * Shapes follow the data engine's JSON as served (nulls written, durations as ISO-8601 text); the shared samples
  * under __tests__/fixtures are checked against both sides.
  */
-const role = z.object({ model: z.string().nullable() });
 
 export const diagnosticConfigSchema = z.object({
   server: z.object({
@@ -24,25 +23,6 @@ export const diagnosticConfigSchema = z.object({
   }),
   langchain4j: z.object({
     "open-ai": z.object({
-      models: z.array(
-        z.object({
-          name: z.string(),
-          displayName: z.string(),
-          modelName: z.string(),
-          connectionConfigured: z.boolean(),
-          timeout: z.string().nullable(),
-          maxRetries: z.number().nullable(),
-          maxTokens: z.number(),
-          contextWindow: z.number(),
-        })
-      ),
-      agents: z.object({
-        query: role,
-        coding: role,
-        general: role,
-        diagnosis: role,
-        knowledgeGovernance: role,
-      }),
       /** Absent when no Embedding model is configured. */
       "embedding-model": z
         .object({
