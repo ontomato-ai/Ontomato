@@ -3,9 +3,6 @@ package io.ontomato.dataengine.config;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.context.annotation.Configuration;
 
-import java.util.List;
-import java.util.Map;
-
 @Configuration
 @ConfigurationProperties(prefix = "ontomato.data-engine")
 public class DataRagConfig {
@@ -25,8 +22,6 @@ public class DataRagConfig {
 
     // Maximum number of business knowledge results returned when the vector business knowledge base looks up similar questions
     private int knowledgeMaxResult;
-
-    private List<Map<String, String>> mcpClients = List.of();
 
     private Long dslCookerTimeout = 5 * 60 * 1000L;
 
@@ -87,14 +82,6 @@ public class DataRagConfig {
 	public void setDslMightTimeFormats(String[] dslMightTimeFormats) {
 		this.dslMightTimeFormats = dslMightTimeFormats;
 	}
-
-    public List<Map<String, String>> getMcpClients() {
-        return mcpClients;
-    }
-
-    public void setMcpClients(List<Map<String, String>> mcpClients) {
-        this.mcpClients = mcpClients;
-    }
 
     public String getCardBaseUrl() {
         return cardBaseUrl;

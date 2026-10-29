@@ -176,10 +176,6 @@ export default [
       "no-restricted-imports": restrict([
         { regex: "^pg(/|$)", message: `api/routes must not depend on pg, see ${layerSpec}` },
         {
-          regex: "^@langchain/openai(/|$)",
-          message: `api/routes must not depend on @langchain/openai, see ${layerSpec}`,
-        },
-        {
           regex: "^(\\.\\./)+infrastructure/postgres[^/]*(/|$)",
           message: `api/routes must not depend on infrastructure/postgres, see ${layerSpec}`,
         },

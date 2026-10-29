@@ -6,10 +6,6 @@ server:
   max-http-post-size: 10MB
 
 spring:
-  config:
-    # Resolved from the classpath: inside the container /deploy/conf comes first on the classpath, while locally
-    # conf-defaults comes first for the JVM (see the dev-override profile in pom.xml); both can resolve it.
-    import: classpath:mcp-clients.yml
   servlet:
     multipart:
       max-file-size: 10MB

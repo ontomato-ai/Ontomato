@@ -81,8 +81,7 @@ export interface AnswerEvaluateInput {
 /**
  * Evaluate whether the final answer snapshot matches the expected answer using LLM.
  *
- * - Uses createModel with agentName so the call is automatically logged to
- *   the LLM JSONL log.
+ * - Uses an auxiliary runtime session for the evaluation.
  * - Times out after 30 seconds via AbortSignal.timeout.
  * - Never throws: failures are captured in EvaluationResult.error with
  *   passed = undefined.

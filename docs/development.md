@@ -90,13 +90,12 @@ Maven unchanged (for example `-o`).
 - The JVM prepares `apps/data-engine/.dev` before Spring starts (`conf`, `skills`, `logs`, `python`;
   the JVM working directory, with `conf` first on the classpath) from the build entry's
   resources and language. The sync rules match the container's: same-name files are
-  overwritten, new ones are added, extra ones are kept, and `application.yml` and
-  `mcp-clients.yml` are copied only when missing. The prompt language is `en`; this
-  repository accepts only `PROMPT_LANG=en`.
+  overwritten, new ones are added, extra ones are kept, and `application.yml` is copied
+  only when missing. The prompt language is `en`; this repository accepts only `PROMPT_LANG=en`.
 - Prepare the root `.env` from `.env.example`; Node, Java and the Manager share it.
   Process variables take priority. A missing file is reported before Maven starts.
 - This entry point starts only the JVM; PostgreSQL must be ready separately.
-  External MCP servers remain configured through `mcp-clients.yml`, whose template starts empty.
+  External MCP servers are configured in the agent runtime.
   Foreground signals follow the same rules as the full-stack entry: on Unix, SIGINT/SIGTERM
   are forwarded to the Maven wrapper; on Windows, Node's `kill` is a forced termination,
   so it instead waits for the child processes of the same console to settle on their own.
@@ -139,7 +138,7 @@ volumes are not migrated, backfilled or deleted automatically, and the database-
 SQL runs only on the first initialization of an empty volume.
 
 Prepare the root `.env` from `.env.example`. Configure any independently managed
-external MCP servers in `apps/data-engine/.dev/conf/mcp-clients.yml`.
+external MCP servers in the agent runtime.
 
 Ports: Node 3000, the main web app 5173 and the Manager 5174 are fixed; PG uses `POSTGRES_PORT`
 (default 5432), Java uses `SERVER_PORT` from `.env` (default 18087). When a port is taken by

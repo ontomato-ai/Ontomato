@@ -21,7 +21,7 @@ import {
   ABC_PROGRAM_DASHBOARD_TIMEOUT_MS,
   wrapDashboardBackendError,
 } from "./dsl-execution";
-import { createDashboardPlanningChain } from "./planning/index";
+import { planDashboard } from "./planning/index";
 import { createDashboard } from "./store";
 import type { DashboardDatasetInput } from "./types";
 export async function resolveDashboardDatasets(
@@ -148,8 +148,7 @@ export async function createDashboardFromAnalysis(
       },
     ];
   } else {
-    const chain = createDashboardPlanningChain();
-    const planned = await chain.invoke({ mode: "dashboard", datasets });
+    const planned = await planDashboard({ mode: "dashboard", datasets });
     plannedName = String((planned as any)?.name || "").trim();
     groups = (planned as any)?.groups?.map((group: any) => {
       const charts = (Array.isArray(group?.charts) ? group.charts : [])
