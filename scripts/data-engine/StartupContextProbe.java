@@ -59,58 +59,6 @@ class StartupContextProbe {
           exchange.getResponseBody().write(body);
           exchange.close();
         });
-    var finishSse = new java.util.concurrent.CountDownLatch(1);
-    var sseOutput = new java.util.concurrent.atomic.AtomicReference<java.io.OutputStream>();
-    runtime.setExecutor(java.util.concurrent.Executors.newCachedThreadPool());
-    runtime.createContext(
-        "/mcp/sse",
-        exchange -> {
-          exchange.getResponseHeaders().set("Content-Type", "text/event-stream");
-          exchange.sendResponseHeaders(200, 0);
-          var output = exchange.getResponseBody();
-          sseOutput.set(output);
-          output.write(
-              "event: endpoint\ndata: /mcp/messages\n\n"
-                  .getBytes(java.nio.charset.StandardCharsets.UTF_8));
-          output.flush();
-          try {
-            finishSse.await();
-          } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-          } finally {
-            exchange.close();
-          }
-        });
-    runtime.createContext(
-        "/mcp/messages",
-        exchange -> {
-          JSONObject request = JSON.parseObject(exchange.getRequestBody().readAllBytes());
-          if (request.containsKey("id")) {
-            Object result =
-                "initialize".equals(request.getString("method"))
-                    ? Map.of(
-                        "protocolVersion",
-                        request.getJSONObject("params").getString("protocolVersion"),
-                        "capabilities",
-                        Map.of("tools", Map.of()),
-                        "serverInfo",
-                        Map.of("name", "startup-fixture", "version", "1"))
-                    : Map.of("tools", java.util.List.of());
-            byte[] message =
-                ("event: message\ndata: "
-                        + JSON.toJSONString(
-                            Map.of("jsonrpc", "2.0", "id", request.get("id"), "result", result))
-                        + "\n\n")
-                    .getBytes(java.nio.charset.StandardCharsets.UTF_8);
-            var output = sseOutput.get();
-            synchronized (output) {
-              output.write(message);
-              output.flush();
-            }
-          }
-          exchange.sendResponseHeaders(202, -1);
-          exchange.close();
-        });
     runtime.start();
     try (var admin =
             DriverManager.getConnection(server + source.getPath(), account[0], account[1]);
@@ -155,11 +103,6 @@ class StartupContextProbe {
                     "--ontomato.data-engine.jdbc.username=" + account[0],
                     "--ontomato.data-engine.jdbc.password=" + account[1],
                     "--ontomato.data-engine.data-adapter=postgresql",
-                    "--ontomato.data-engine.mcp-clients[0].client-name=startup-fixture",
-                    "--ontomato.data-engine.mcp-clients[0].client-version=1",
-                    "--ontomato.data-engine.mcp-clients[0].sse-server=http://127.0.0.1:"
-                        + runtime.getAddress().getPort()
-                        + "/mcp/sse",
                     "--ontomato.data-engine.node-id=startup-fixture",
                     "--ONTOMATO_MODEL_RUNTIME_TOKEN=startup-model-fixture",
                     "--ONTOMATO_QUERY_SIGNING_KEY=startup-signing-fixture",
@@ -213,7 +156,6 @@ class StartupContextProbe {
         statement.execute("DROP DATABASE IF EXISTS " + database + " WITH (FORCE)");
       }
     } finally {
-      finishSse.countDown();
       runtime.stop(0);
     }
   }

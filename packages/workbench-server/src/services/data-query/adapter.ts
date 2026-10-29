@@ -1,8 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { AbcProgramDashboard } from "@ontomato/contracts/dashboard";
 import type { QueryDatasetIdentity, ResultTruncation } from "@ontomato/contracts/query-execution";
-import { createModel } from "../../config/model-factory";
-import { modelAgentName } from "../../logging/model-agents";
+import { runAuxiliary } from "../../platform/agent-runtime/runtime";
 import { renderPrompt } from "../../core/prompts/loader";
 import { resolveLocale } from "../../i18n/index";
 import { tForLocale, tApp } from "../../i18n";
@@ -251,7 +250,6 @@ export async function createFieldDisplayPlan(
   const fallback = fallbackDisplayPlan(headers, options.locale);
 
   try {
-    const model = await createModel({ temperature: 0.1, agentName: modelAgentName("fieldAdapter") });
     const prompt = renderPrompt(
       "data-query.field-semantics.user",
       {
@@ -263,9 +261,14 @@ export async function createFieldDisplayPlan(
       },
       options.locale
     );
-    const response = await model.invoke(prompt, { signal: options.signal });
+    const response = await runAuxiliary({
+      systemPrompt: "",
+      message: prompt,
+      signal: options.signal,
+      credentials: { locale: options.locale },
+    });
     const parsed = tryParseJSON<Record<string, unknown>>(
-      stripFencesJson(String((response as any)?.content ?? ""))
+      stripFencesJson(response)
     );
     if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return fallback;
 

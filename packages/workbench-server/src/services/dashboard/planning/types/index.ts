@@ -46,13 +46,13 @@ export type DatasetProfile = {
   dataType: DataType;
 };
 
-export type DashboardPlanningChainInput = {
+export type DashboardPlanningInput = {
   mode: "dashboard" | "append";
   datasets: DatasetInput[];
   existingChartTypes?: string[];
 };
 
-export type DashboardPlanningChainOutput =
+export type DashboardPlanningOutput =
   | {
       mode: "dashboard";
       name?: string;

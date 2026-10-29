@@ -12,8 +12,6 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@langchain/core": "1.1.38",
-    "@langchain/openai": "1.4.1",
     "@modelcontextprotocol/sdk": "1.29.0",
     "@ontomato/contracts": "workspace:*",
     "adm-zip": "0.5.17",
@@ -32,7 +30,6 @@
     "yaml": "2.8.3",
     "zod": "3.25.76",
     "zod-to-json-schema": "3.25.2",
-    "openai": "6.32.0",
     "@ontomato/service-logging": "workspace:*"
   },
   "devDependencies": {

@@ -8,7 +8,7 @@ import java.util.Set;
 
 /** Synchronizes product defaults before Spring reads the site's configuration. */
 public final class ProductFileSync {
-    private static final Set<String> SITE_CONFIG = Set.of("application.yml", "mcp-clients.yml");
+    private static final Set<String> SITE_CONFIG = Set.of("application.yml");
 
     private ProductFileSync() {}
 

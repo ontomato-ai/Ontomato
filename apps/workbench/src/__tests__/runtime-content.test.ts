@@ -14,9 +14,6 @@ configureOssI18n();
 const { readKnowledgeMarkdown } = await import(
   "@ontomato/workbench-server/platform/diagnosis/observe/agent/knowledge-store"
 );
-const { loadSkills, resolveSkillDir } = await import(
-  "@ontomato/workbench-server/platform/diagnosis/observe/agent/skill-loader"
-);
 
 let runtimeRoot: string;
 let tempDirs: string[] = [];
@@ -56,9 +53,6 @@ describe("open-source runtime default resources", () => {
     );
     expect(fs.readFileSync(data("echart", "echarts.min.js"))).toEqual(
       fs.readFileSync(path.join(workbenchServerResourceRoot, "data", "echart", "echarts.min.js"))
-    );
-    expect(loadSkills(resolveSkillDir()).map((skill) => skill.name)).toContain(
-      "query-flow-diagnosis"
     );
   });
 

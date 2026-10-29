@@ -11,7 +11,7 @@ import {
   requireGroupId,
 } from "./access";
 import { resolveDashboardDatasets } from "./create-from-analysis";
-import { createDashboardPlanningChain } from "./planning/index";
+import { planDashboard } from "./planning/index";
 import {
   createDashboard,
   deleteDashboard,
@@ -73,8 +73,7 @@ export async function addDashboardChart(
   );
   const group = findGroup(detail, groupId);
 
-  const chain = createDashboardPlanningChain();
-  const planned = await chain.invoke({
+  const planned = await planDashboard({
     mode: "append",
     datasets: [targetDataset],
     existingChartTypes: detail.groups.flatMap((item) =>
