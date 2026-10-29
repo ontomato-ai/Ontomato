@@ -1,9 +1,9 @@
 # Ontology AI host
 
-Review proposal, 2026-10-28; implementation awaits controller review.
+Slice A implemented, 2026-10-29: the common host and retrieval. Generation file
+consumption below is the approved slice B design and is not implemented yet.
 [Design](../../docs/ontology-ai-runtime-design.md) owns placement and deletion.
-Existing executable `agent-host`, runtime and artifact schemas remain the shared
-definitions; this submission does not edit them.
+Executable `agent-host`, runtime and artifact schemas are the shared definitions.
 
 ## Common proxy and admission
 
@@ -18,8 +18,8 @@ projects the runtime's admitted skill metadata, not current registry contents.
 Indexes retain the selected server-owned definition (prompt + skills + role);
 `/agents` exposes display metadata only. Retrieval actions use
 [data-retrieval](data-retrieval.md), not extra common fields. Both facades use the
-same Java admission/retrieval services. Existing generation routes keep their
-business request/result meanings and delegate to the host.
+same Java admission/retrieval services. Slice B will keep existing generation routes' business request/result meanings
+and replace their Java model calls with this host.
 
 Persist host intent/open gate before admission, with stable UUIDs and the common
 idempotency rules. Associate existing backend jobs/sessions with their runtime
@@ -33,7 +33,7 @@ once-per-run business save, guarded against cancellation/supersession. Closing
 callbacks cannot authorize a cancelled save or prevent valid final-file reading.
 No additional agent completion state.
 
-## Skills and generation files
+## Skills and generation files (slice B)
 
 Reuse existing ontology commands for schema, relationships, distinct values and
 DSL. Missing sandbox preparation/reset, generator tests and source reads become
@@ -58,7 +58,7 @@ failure/no-result behavior and do not save. PI stop alone is not business succes
 error/abort/cancel cannot publish success. Delete all four submit tools and the
 Java workspace submission registry with this cutover.
 
-Prompts move with definitions, preserving English/Chinese overlays. Java's common
-Markdown prompt resource is generated from `ARTIFACT_MARKDOWN_PROMPT`, not another
-maintained literal. Model configuration continues through the current sealed-key
-Java adapter; unsaved model testing requires design decision D2.
+Prompts move with definitions, preserving English/Chinese overlays. The common
+Markdown prompt has one JSON source in contracts: TS exports it as
+`ARTIFACT_MARKDOWN_PROMPT`, and Maven packages the same resource for Java. Model configuration continues through the current sealed-key
+Java adapter; the approved gateway model-test endpoint will be implemented in B (design D2).

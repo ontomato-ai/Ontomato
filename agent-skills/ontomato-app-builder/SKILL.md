@@ -125,7 +125,7 @@ node ontomato.mjs ask "How many orders were placed last month?"
 | `metric-view ...` / `action ...` | `/metricView/*`, `/action/*` | test | See below |
 | `action re-explain` | `POST /action/re-explain` | test | Regenerates missing or stale Action explanations; prints success/skipped/failure counts |
 | `sync-production` | `POST /productionEnv/sync` | test → production | Without `--confirm`: the exact plan, no writes. With `--confirm`: per-interface sync result |
-| `ask` | Workbench `POST /api/retrievals` | test | Retrieval reference, structured outcome and authorized datasets |
+| `ask` | Ontology `POST /ontology/retrievals` | test | Retrieval reference, PI state and authorized dataset files |
 
 - After `import-schema`, `dataset-desc`, `classes`, `schema` and `relationships` return the production definitions.
 - `distinct-values` / `prod-distinct-values`: `--like` filters values; without `%` the pattern is wrapped as `%pattern%`. Without `--limit` at most 100 values are shown. Use them to find the exact stored value before writing an `=` or `in` condition.

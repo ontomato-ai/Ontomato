@@ -1,8 +1,7 @@
 # Ontology data retrieval contract
 
-Review proposal, 2026-10-28. Retrieval moves from workbench to ontology;
-implementation is pending. Existing payload schemas remain in
-`src/data-retrieval.ts`; reviewed additions must land there and in Java together.
+Implemented in slice A, 2026-10-29. Ontology owns retrieval; shared schemas are in
+`src/data-retrieval.ts` and Java validates the same boundary.
 [Design](../../docs/data-retrieval-design.md) owns the cutover; [runtime](agent-runtime.md)
 owns messages, PI state and immutable files.
 
@@ -35,8 +34,8 @@ return 409. Java records decisions with the intent, without rewriting historical
 files or moving them into runtime. Reconcile persisted IDs after restart; transport
 failure does not change PI state. Read terminal facts before applying deadlines.
 
-Proposed deadline (D3): optional positive `timeoutSeconds` on creation/continuation,
-snapshotted by Java, defaults to 600 seconds. A caller scope can shorten it.
+Approved deadline (D3): optional integer `timeoutSeconds` from 1 through 600 on
+creation/continuation, snapshotted by Java, defaults to 600 seconds. A caller scope can shorten it.
 Workbench retains queryTimeoutSeconds for its parent and supplies the remaining
 deadline. Java does not read workbench configuration.
 
@@ -47,7 +46,9 @@ remains `node skills/data-retrieval/scripts/dataset.mjs @work/recipe.json output
 
 `POST /ontology/retrievals/:id/runs/:runId/outputs` takes existing
 `prepareDatasetSchema` and UUID Idempotency-Key; returns 202 `{id}`.
-`GET .../outputs/:id` returns `{id,running,dataset,error}` as before. These are
+`GET .../outputs/:id` returns `{id,running,dataset,error}` as before;
+`GET .../outputs/:id/content` returns the ready dataset JSON as original bytes,
+so the script need not parse and rewrite numbers. These are
 formal-execution receipts, not agent outcomes. Persist the request key beside the
 recipe before posting; atomically rename returned data into outputs.
 
@@ -82,9 +83,9 @@ configuration. Environment precedes external application.yml. Ask downloads
 accepted bytes through the ontology proxy; the retriever uses direct queries and
 dataset.mjs rather than recursive ask.
 
-## Assistant caller scope (proposed)
+## Assistant caller scope
 
-New boundary requiring controller approval (D1): workbench owns parent meaning;
+Approved and implemented boundary (D1): workbench owns parent meaning;
 Java owns an opaque caller admission scope. Runtime gains no parent/child model.
 
 | Ontology operation | Shape / meaning |
@@ -100,7 +101,14 @@ metadata, not a credential: normal tk verification and scope ownership are still
 required. Java applies the scope's class/deadline restrictions; request fields
 cannot widen them. Continuation is limited to this scope's children or the
 validated continuationIds supplied by workbench for the same assistant session.
-No script calls a workbench retrieval route.
+No script calls a workbench retrieval route. Workbench stores only the association
+in `assistant_turns.retrieval_scope_id` and asks Java for child references.
+
+Workbench evidence reads carry existing service authorization, domain and caller
+ID. Java derives the owner from the stored caller and verifies the requested
+session/run is linked to it. This retains existing domain-authorized diagnostic
+and governance history access without accepting arbitrary user claims or sharing
+the ontology runtime credential. Ordinary reads still verify the user's credential.
 
 Admission and continuation lock/check the caller scope and record the child round
 association in the same transaction, before contacting runtime. Scope closure

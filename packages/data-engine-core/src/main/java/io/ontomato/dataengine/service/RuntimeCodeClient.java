@@ -2,17 +2,10 @@ package io.ontomato.dataengine.service;
 
 import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONObject;
-import java.io.IOException;
-import java.net.URI;
-import java.net.http.HttpClient;
-import java.net.http.HttpRequest;
-import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
-import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 /** HTTP-only connection from the ontology host to the platform runtime. */
@@ -24,17 +17,10 @@ public class RuntimeCodeClient {
           Map.of("kind", "provider", "provider", "ontology"),
           "name",
           "ontomato-analyst");
-  private final String url, token, ontologyUrl;
-  private final HttpClient http =
-      HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(10)).build();
+  private final io.ontomato.dataengine.service.agent.AgentRuntimeClient runtime;
 
-  public RuntimeCodeClient(
-      @Value("${AGENT_RUNTIME_URL:http://127.0.0.1:3001}") String url,
-      @Value("${AGENT_RUNTIME_ONTOLOGY_TOKEN:}") String token,
-      @Value("${ONTOMATO_QUERY_CALLBACK_URL:http://127.0.0.1:18087}") String ontologyUrl) {
-    this.url = url.replaceAll("/$", "");
-    this.token = token;
-    this.ontologyUrl = ontologyUrl.replaceAll("/$", "");
+  public RuntimeCodeClient(io.ontomato.dataengine.service.agent.AgentRuntimeClient runtime) {
+    this.runtime = runtime;
   }
 
   @org.springframework.context.event.EventListener(
@@ -68,43 +54,13 @@ public class RuntimeCodeClient {
   }
 
   public String ontologyUrl() {
-    return ontologyUrl;
+    return runtime.ontologyUrl();
   }
 
   public String request(
       String domain, String correlation, String path, String method, Object body, String key)
       throws Exception {
-    if (token.isBlank())
-      throw new IllegalStateException("AGENT_RUNTIME_ONTOLOGY_TOKEN is not configured");
-    HttpRequest.Builder builder =
-        HttpRequest.newBuilder(URI.create(url + path))
-            .timeout(Duration.ofSeconds(30))
-            .header("Authorization", "Bearer " + token)
-            .header("X-Correlation-Id", correlation)
-            .header("Content-Type", "application/json");
-    if (domain != null) builder.header("X-Domain-Id", domain);
-    if (key != null) builder.header("Idempotency-Key", key);
-    builder.method(
-        method,
-        body == null
-            ? HttpRequest.BodyPublishers.noBody()
-            : HttpRequest.BodyPublishers.ofString(
-                JSON.toJSONString(
-                    body, com.alibaba.fastjson2.JSONWriter.Feature.WriteMapNullValue)));
-    HttpResponse<String> response = null;
-    for (int attempt = 0; ; attempt++) {
-      try {
-        response =
-            http.send(builder.build(), HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
-        break;
-      } catch (IOException e) {
-        if (key == null || attempt > 0) throw e;
-      }
-    }
-    if (response.statusCode() < 200 || response.statusCode() >= 300)
-      throw new IllegalStateException(
-          "Runtime request failed (" + response.statusCode() + "): " + response.body());
-    return response.body();
+    return runtime.text(domain, correlation, path, method, body, key);
   }
 
   public void registerSkill() throws Exception {

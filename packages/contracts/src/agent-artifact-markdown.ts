@@ -1,6 +1,6 @@
 /** Shared artifact presentation rule; shell implementations consume the same contract. */
-export const ARTIFACT_MARKDOWN_PROMPT =
-  "Reference produced files with workspace-relative outputs/ paths. Use Markdown image syntax ![title](outputs/path) for inline content and Markdown link syntax [title](outputs/path) for a file card opened in the side panel. Choose one form for each intended presentation. Do not embed full dataset contents in the reply. Write a chart as a .chart.json file containing an ECharts option object as plain JSON.";
+import prompt from "./agent-artifact-markdown-prompt.json" with { type: "json" };
+export const ARTIFACT_MARKDOWN_PROMPT = prompt;
 
 /**
  * Normalizes a Markdown destination to an artifact path, or null for ordinary links.

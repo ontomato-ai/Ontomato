@@ -301,7 +301,7 @@ Why it matters: the question splitter and the programmer match the user's wordin
 
 ## Natural-language questions
 
-`ask` calls the workbench `/api/retrievals`, prints request/retrieval/session IDs,
+`ask` calls the ontology `/ontology/retrievals`, prints request/retrieval/session IDs,
 then polls and returns authorized datasets. Outcomes are `completed`, `needs_input`
 or `failed`. Present clarification questions to the user; reply explicitly with
 `ask --resume <retrievalId> --answers @answers.json` (questionId plus choiceId or

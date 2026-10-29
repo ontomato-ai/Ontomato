@@ -57,11 +57,11 @@ QC refresh is independent of the assistant stop. Dashboard create/add uses
 indexes. Scheduled execution remains disabled with stored data retained. Moving
 feedback, QC annotations and decisions into runtime is outside this batch.
 
-## Ontology retrieval cutover (proposal)
+## Ontology retrieval cutover
 
-The [ontology retrieval contract](data-retrieval.md) proposes replacing workbench
+The [ontology retrieval contract](data-retrieval.md) replaces workbench
 retrieval orchestration. The assistant retains parent associations and dataset
 provenance, using ontology HTTP for child runs/files/QC and cancellation. Its
 dataset-source shape above is unchanged. Both external and assistant execution
-use the same `ontomato-analyst ask`; `assistant-retrieval` is removed. This proposal
+use the same `ontomato-analyst ask`; `assistant-retrieval` is removed. This cutover
 does not extend the common host proxy or move feedback into runtime.
