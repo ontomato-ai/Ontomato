@@ -39,6 +39,16 @@ export const agentHostRunSchema = z
     createdAt: runtimeTimestampSchema,
     finishedAt: runtimeTimestampSchema.nullable(),
     resolvedSkills: z.array(runtimeRegisteredSkillSchema),
+    retrievals: z
+      .array(
+        z
+          .object({
+            retrievalId: runtimeIdSchema,
+            runId: runtimeIdSchema,
+          })
+          .strict(),
+      )
+      .optional(),
   })
   .strict();
 export const agentHostMessageSchema = runtimeMessageRecordSchema;

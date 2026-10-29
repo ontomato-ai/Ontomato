@@ -30,6 +30,11 @@ export interface ToolExecutionView {
   output: string;
 }
 
+export interface RetrievalLink {
+  retrievalId: string;
+  runId: string;
+}
+
 export interface RunView {
   id: string;
   status: RuntimeRunStatus;
@@ -38,6 +43,7 @@ export interface RunView {
   cursor: { seq: number; streamId: string } | null;
   artifacts: RuntimeArtifact[];
   tools: Record<string, ToolExecutionView>;
+  retrievals: RetrievalLink[];
 }
 
 export interface ConversationState {
@@ -76,6 +82,7 @@ function ensureRun(state: ConversationState, runId: string): RunView {
     cursor: null,
     artifacts: [],
     tools: {},
+    retrievals: [],
   });
 }
 
@@ -99,6 +106,7 @@ export function applyRunSnapshot(state: ConversationState, snapshot: AgentHostRu
   run.cursor = { seq: snapshot.cursor.seq, streamId: snapshot.cursor.streamId };
   run.artifacts = [...snapshot.artifacts];
   run.tools = {};
+  run.retrievals = snapshot.run.retrievals ?? [];
   for (const tool of snapshot.toolExecutions) {
     run.tools[tool.toolCallId] = {
       toolCallId: tool.toolCallId,

@@ -69,6 +69,8 @@ provide(shellContextKey, {
   resolveArtifact: conversation.resolveArtifact,
   artifactRevision: conversation.artifactRevision,
   readArtifact: (artifact) => props.client.readArtifact(artifact),
+  readRetrieval: (sessionId, runId, retrievalId) =>
+    props.client.readRetrieval(sessionId, runId, retrievalId),
   openArtifact: (open) => {
     openArtifact.value = open;
   },

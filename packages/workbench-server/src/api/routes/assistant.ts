@@ -16,6 +16,7 @@ import {
   assistantFeedbackWriteSchema,
 } from "@ontomato/contracts/assistant-chat";
 import { assistantService } from "../../services/assistant/service";
+import { OntologyRetrievalClient } from "../../services/assistant/ontology-retrieval";
 import { buildAttachmentContentDisposition } from "../utils/http";
 const router: ReturnType<typeof Router> = Router(),
   uuid = z.string().uuid();
@@ -28,6 +29,17 @@ router.get("/agent-skills", agentAdmin, wrap(async (req, res) => {
   const c = context(req);
   res.json(await assistantSkillCatalog(c.owner.domainId, c.credentials.locale));
 }));
+// Retrieval activity snapshot proxy: front-end polls this to render retrieval activity.
+// The retrieval ID is the stable key across continuations; runId scopes the specific run.
+router.get(
+  "/sessions/:sessionId/runs/:runId/retrievals/:retrievalId",
+  wrap(async (req, res) => {
+    const c = context(req);
+    const client = new OntologyRetrievalClient(c.owner, id(req, "runId"));
+    const snapshot = await client.readSnapshot(id(req, "retrievalId"));
+    res.json(snapshot);
+  }),
+);
 router.get(
   "/agent-definitions",
   agentAdmin,

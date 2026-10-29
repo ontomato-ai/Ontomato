@@ -1,5 +1,6 @@
 import type { InjectionKey, Ref, Slot } from "vue";
 import type { RuntimeArtifact } from "@ontomato/contracts/agent-runtime-artifacts";
+import type { RetrievalSnapshot } from "@ontomato/contracts/data-retrieval";
 import type { ChartTheme } from "./chart-theme";
 import type {
   ArtifactRendererOverride,
@@ -21,6 +22,7 @@ export interface ShellContext {
   readArtifact(artifact: RuntimeArtifact): Promise<Blob>;
   openArtifact(open: OpenArtifact): void;
   openArtifactKey: Ref<string | null>;
+  readRetrieval(sessionId: string, runId: string, retrievalId: string): Promise<RetrievalSnapshot>;
 }
 
 /** The message whose Markdown is rendering; artifact references resolve within its run. */

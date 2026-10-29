@@ -14,6 +14,9 @@ import { conversationItems } from "./view";
 
 const RECONNECT_DELAYS = [500, 1000, 2000, 5000, 10000];
 const MAX_QUEUED_FRAMES = 2000;
+const RETRIEVAL_LINK_RETRY_MS = 1500;
+/** The ontomato-analyst entry script running its ask (retrieval) subcommand. */
+const ANALYST_ASK = /ontomato\.mjs["']?\s+ask\b/;
 
 /**
  * Drives one selected conversation through the host port. Every async continuation checks the
@@ -93,10 +96,54 @@ export function useAgentConversation(port: () => AgentHostClient) {
       applyEnvelope(state, frame.envelope);
       const type = frame.envelope.event.type;
       if (type === "artifact_registered") artifactRevision.value++;
+      if (type === "tool_execution_start") {
+        // The ask command blocks until the retrieval ends, so tool_execution_end is too late.
+        // Start looking for the association when the bash call starts; it appears once ask is
+        // accepted. Detection is the analyst entry script followed by its ask subcommand, which
+        // covers "node skills/ontomato-analyst/ontomato.mjs ask", "cd …/ontomato-analyst && node
+        // ontomato.mjs ask" and quoted paths. A wrapper script or variable that hides
+        // "ontomato.mjs ask" is not covered; its retrievals arrive on the next run snapshot read.
+        const event = frame.envelope.event;
+        const command = event.args.command;
+        if (event.toolName === "bash" && typeof command === "string" && ANALYST_ASK.test(command))
+          void watchRetrievals(frame.envelope.cursor.runId, event.toolCallId, token);
+      }
       if (type === "agent_end") {
         stopStream();
         return;
       }
+    }
+  }
+
+  /**
+   * Reads the run until its retrieval associations appear, then hands over to the activity
+   * area's own polling. Each read happens before the stop check, so a retrieval that finishes
+   * within one interval is still picked up.
+   */
+  async function watchRetrievals(runId: string, toolCallId: string, current: number) {
+    const sessionId = state.sessionId;
+    if (!sessionId) return;
+    const linkKey = (links: readonly { retrievalId: string; runId: string }[]) =>
+      links.map((link) => `${link.retrievalId}:${link.runId}`).join(",");
+    // A new retrieval adds a link; a continuation moves an existing link to its new run.
+    const known = linkKey(state.runs[runId]?.retrievals ?? []);
+    for (;;) {
+      try {
+        const snapshot = await port().readRun(sessionId, runId);
+        if (current !== token) return;
+        const retrievals = snapshot.run.retrievals ?? [];
+        const run = state.runs[runId];
+        if (run && linkKey(retrievals) !== known) {
+          run.retrievals = retrievals;
+          return;
+        }
+      } catch {
+        if (current !== token) return;
+      }
+      const run = state.runs[runId];
+      if (!run || run.status !== "running" || run.tools[toolCallId]?.status !== "running") return;
+      await new Promise((resolve) => setTimeout(resolve, RETRIEVAL_LINK_RETRY_MS));
+      if (current !== token) return;
     }
   }
 
