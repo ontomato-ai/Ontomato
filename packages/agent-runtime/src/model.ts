@@ -6,6 +6,7 @@ import type {
   Model,
   Message,
   AssistantMessage,
+  AssistantMessageEvent,
   TranscriptContext,
 } from "@earendil-works/pi-ai";
 import { streamSimple } from "@earendil-works/pi-ai/api/openai-completions";
@@ -15,7 +16,7 @@ import { RuntimeStore, type Scope } from "./store";
 import type { StreamFn } from "./core/pi/types";
 
 import { runtimeModelConfigurationSchema as modelSchema } from "@ontomato/contracts/runtime-model-test";
-import { normalizeContext } from "@earendil-works/pi-ai";
+import { createAssistantMessageEventStream, normalizeContext } from "@earendil-works/pi-ai";
 
 export type ResolvedModel = z.infer<typeof modelSchema> & { apiKey: string };
 
@@ -35,7 +36,15 @@ export function piModel(config: ResolvedModel): Model<"openai-completions"> {
   };
 }
 
-/** pi-ai owns transport/retry behavior (including 429); records omit credentials and payloads. */
+/** Retries when the model setting leaves them unset; one dropped connection should not end a run. */
+const DEFAULT_MODEL_RETRIES = 3;
+
+/**
+ * pi-ai retries a request that fails before the response starts (connection errors, 429, 5xx).
+ * A stream that breaks after the response starts but before any content was emitted is issued
+ * again here; once content has reached the caller, a repeat would duplicate it, so the error
+ * stands. Records omit credentials and payloads.
+ */
 export function modelStream(
   config: ResolvedModel,
   store: RuntimeStore,
@@ -46,17 +55,51 @@ export function modelStream(
 ): StreamFn {
   return (model, context, options) => {
     const start = Date.now();
-    const stream = streamSimple(model as Model<"openai-completions">, context, {
+    const retries = config.maxRetries ?? DEFAULT_MODEL_RETRIES;
+    const request = () => streamSimple(model as Model<"openai-completions">, context, {
       ...options,
       apiKey: config.apiKey || "unused",
       timeoutMs: config.timeout
         ? parseIsoDurationSeconds(config.timeout) * 1000
         : undefined,
-      maxRetries: config.maxRetries,
+      maxRetries: retries,
       maxTokens: options?.maxTokens ?? config.maxTokens,
       headers: { ...logHeaders(), ...modelHeaders(config, correlationId) },
       onPayload: (payload) => modelPayload(config, payload),
     });
+    const stream = createAssistantMessageEventStream();
+    void (async () => {
+      try {
+        for (let attempt = 0; ; attempt++) {
+          // "start" carries no content, so it is held until the first content event arrives.
+          let held: AssistantMessageEvent | null = null;
+          let emitted = false;
+          let retry = false;
+          for await (const event of request()) {
+            if (!emitted && event.type === "start") { held = event; continue; }
+            if (!emitted && event.type === "error" && event.reason === "error"
+              && attempt < retries && !options?.signal?.aborted) {
+              runtimeLogger.warn("model stream failed before content; retrying", { kind: "downstream",
+                target: "model-provider", attempt: attempt + 1, errorMessage: event.error.errorMessage });
+              retry = true;
+              break;
+            }
+            if (!emitted && held) stream.push(held);
+            emitted = true;
+            stream.push(event);
+          }
+          if (!retry) return;
+          await new Promise((resolve) => setTimeout(resolve, 500 * 2 ** attempt));
+        }
+      } catch (error) {
+        const usage = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0,
+          cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } };
+        const failed: AssistantMessage = { role: "assistant", content: [], api: model.api,
+          provider: model.provider, model: model.id, usage, stopReason: "error",
+          errorMessage: error instanceof Error ? error.message : String(error), timestamp: Date.now() };
+        stream.push({ type: "error", reason: "error", error: failed });
+      }
+    })();
     const result = stream.result.bind(stream);
     let logged: Promise<AssistantMessage> | undefined;
     stream.result = () =>
