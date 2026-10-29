@@ -166,6 +166,8 @@ If the probe result is empty, try relaxing the condition (such as a broader `lik
 
 ## Step 4: Write the parameterized read function Python program
 
+Write the program under `outputs/`; only files under `outputs/` are delivered to the host.
+
 ### Runtime protocol
 The host supplies authorization. Read business parameters from the helper; do not read identity or host file paths from argv.
 ```python
@@ -192,7 +194,7 @@ After execution the read function must output JSON, in the format: a MAP object 
 
 ### Writing notes
 - ** It is best to print the exception stack `traceback.print_exc()`, to make troubleshooting easier **
-Test with `generation.mjs test program.py parameters.json`; parameters.json is always an array, including [] when no business parameters are needed. Test the final file after every edit.
+Test with `generation.mjs test outputs/program.py parameters.json`; parameters.json is always an array, including [] when no business parameters are needed. Test the final file after every edit.
 
 ## Step 5: Determine the parameter definitions
 For each input parameter identified in Step 1, form a parameter definition. **The parameter definitions are important information for other Agents when they call this read function and fill in the parameters**, and each parameter definition contains:
@@ -203,7 +205,7 @@ For each input parameter identified in Step 1, form a parameter definition. **Th
 - `className`: the complete class name of the object class corresponding to the parameter; if there is no corresponding class name (such as limit), give an empty string
 
 ## Step 6: Test
-Test with `generation.mjs test program.py parameters.json`; parameters.json is always an array, including [] when no business parameters are needed. Test the final file after every edit.
+Test with `generation.mjs test outputs/program.py parameters.json`; parameters.json is always an array, including [] when no business parameters are needed. Test the final file after every edit.
 - ** Before the formal output, it must at least pass the test (no runtime errors and it meets the print format requirements) **
 - If the test does not pass, it may be because there are debug prints in the code; comment out the irrelevant prints and retry
 
@@ -213,7 +215,7 @@ Depending on the specific situation, you may loop through Steps 4, 5 and 6 for m
 
 # Delivery Method
 Use the result file described in the metricview-generation skill to submit the final delivery, and the parameters are the following five parts (their field meanings and examples are as follows, and the shape is constrained by the tool); in the body text write only a brief description, and do not output the code block and the full tags again.
-The delivery includes five parts: `new code` (workspace file path, which must have been successfully executed with the metricview-generation `generation.mjs test program.py parameters.json` command before submission and whose content must not have been changed again after execution), `parameter definitions` (object list, each item containing name, type, description, value, className; do not pass it when there are no parameters), `return value attribute sources` (object list, each item containing key, className, attrName, asGroupBy, statCal; the set of `key` values must exactly match the top-level fields of each row object inside the printed `answer` array, not the wrapper key `answer`, and `className` can only be filled with one class name), `summary title` (for example, query the department an employee belongs to by employee name) and `program logic` (natural language description).
+The delivery includes five parts: `new code` (path under `outputs/`, for example `outputs/program.py`, which must have been successfully executed with the metricview-generation `generation.mjs test outputs/program.py parameters.json` command before submission and whose content must not have been changed again after execution), `parameter definitions` (object list, each item containing name, type, description, value, className; do not pass it when there are no parameters), `return value attribute sources` (object list, each item containing key, className, attrName, asGroupBy, statCal; the set of `key` values must exactly match the top-level fields of each row object inside the printed `answer` array, not the wrapper key `answer`, and `className` can only be filled with one class name), `summary title` (for example, query the department an employee belongs to by employee name) and `program logic` (natural language description).
 
 # User Requirement
 {{USER_QUESTION}}

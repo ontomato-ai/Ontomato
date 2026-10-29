@@ -73,7 +73,8 @@ and QC, and
 MetricView generation. Each runtime definition selects a
 kind, server prompt and model role; `query` serves knowledge/description/QC and
 `coding` serves the other generators. Results always use `outputs/result.json`.
-`sourcePath` references Python bytes from the same run; embedded `code` is rejected
+`sourcePath` is the tested file's path under `outputs/`; only `outputs/` is
+published as run artifacts. Embedded `code` is rejected
 at this boundary and populated only by the Java result adapter.
 
 Normal HTTP operations under `/ontology/ai/generation` are:
@@ -95,8 +96,10 @@ normal query grant is separate. Hosted callbacks additionally check the runtime
 is running; mutation and test receipts recheck the durable business gate in the
 write transaction. Read generation cannot acquire an Action write sandbox.
 
-Receipts bind operation, exact source and parameter definitions. Changing any of
-these requires another successful business test. Cancellation and deadline expiry
+Receipts bind the operation, exact source and the executed parameter input (name
+or dashboard key, type and value). Changing any of these requires another
+successful business test; descriptive fields such as `description` or `sample`
+do not. Cancellation and deadline expiry
 reject further tests and settlement. A stopped `stop` run can be read after its
 callback gate closes, but abort/error/cancel and inherited artifacts cannot save.
 

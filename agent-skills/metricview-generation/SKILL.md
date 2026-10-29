@@ -11,7 +11,7 @@ Run `node <this-skill>/scripts/generation.mjs <command> [arguments]`. Runtime su
 
 | Command | Use |
 | --- | --- |
-| `test program.py parameters.json` | Business test the exact source bytes and parameter definitions. The JSON file is an array (use `[]` for no parameters). Read operations cannot acquire a write sandbox. |
+| `test outputs/program.py parameters.json` | Business test the exact source bytes and parameter definitions. The JSON file is an array (use `[]` for no parameters). Read operations cannot acquire a write sandbox. |
 | `begin [source.py]` | External agents only: open a MetricView business gate using `ONTOMATO_TK` or `ONTOMATO_API_KEY`; no runtime history is invented. |
 | `close` | External agents close their gate. Hosted runs are closed by the host. |
 
@@ -19,6 +19,6 @@ Never put credentials, identity, URLs, local paths or transport parameters in ge
 
 ## Delivery
 
-Write **one JSON object** to `outputs/result.json`: `sourcePath` (a workspace-relative Python file, tested with these exact parameter definitions after its last modification), `parameterDefs` (array), `outKeyRefs` (array of key/className/attrName/asGroupBy/statCal), `name`, `logic`. No JSON fences or XML wrappers. This file replaces any earlier instructions about submitting tools or replying with code/labels. There are no submit tools. The host validates the file from this run, not an inherited artifact or a model claim about a test. Java owns the parameter and return checks, saving, status and publication; do not publish an asset or fabricate a test receipt yourself.
+Write **one JSON object** to `outputs/result.json`: `sourcePath` (the tested file's path under `outputs/`, for example `outputs/program.py`; write the program there because only `outputs/` is published), `parameterDefs` (array), `outKeyRefs` (array of key/className/attrName/asGroupBy/statCal), `name`, `logic`. No JSON fences or XML wrappers. This file replaces any earlier instructions about submitting tools or replying with code/labels. There are no submit tools. The host validates the file from this run, not an inherited artifact or a model claim about a test. Java owns the parameter and return checks, saving, status and publication; do not publish an asset or fabricate a test receipt yourself.
 
 Finish with a brief description after writing the result.

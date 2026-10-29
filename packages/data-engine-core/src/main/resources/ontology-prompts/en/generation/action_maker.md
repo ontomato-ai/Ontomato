@@ -156,7 +156,7 @@ Use `ontomato-analyst execute-dsl @dsl.json` for a saved single DSL object. Add 
    - the ontology-generation `prepare` command: persists the object data, relationship data and vector data to be imported into the sandbox to a json file (** prepareTestData only prepares test data; it does not import the test data into the sandbox **).
    - the ontology-generation `reset` command: after clearing the sandbox data, imports the data just persisted by prepareTestData into the sandbox.
    - `generation.mjs query dsl.json`: executes the DSL file in the current workspace in the **sandbox**, used to view the data in the sandbox (only accepts a file relative path).
-Test with `generation.mjs test program.py parameters.json`; parameters.json is always an array, including [] when no business parameters are needed. Test the final file after every edit.
+Test with `generation.mjs test outputs/program.py parameters.json`; parameters.json is always an array, including [] when no business parameters are needed. Test the final file after every edit.
 
 ---
 
@@ -200,11 +200,11 @@ All testing and DEBUG of the write function are carried out in the **sandbox env
 4. Use the `generation.mjs query dsl.json` tool (sandbox) to view the data in the sandbox and confirm that the test data meets expectations.
 
 ## Step 3: Determine the Parameter Definitions
-For each input parameter identified in step 1, form a parameter definition (used by the ontology-generation `generation.mjs test program.py parameters.json` command and the result file described in the ontology-generation skills, passed in as structured parameters). If the write function has no parameters, an empty array `[]` is enough. Each parameter definition contains:
+For each input parameter identified in step 1, form a parameter definition (used by the ontology-generation `generation.mjs test outputs/program.py parameters.json` command and the result file described in the ontology-generation skills, passed in as structured parameters). If the write function has no parameters, an empty array `[]` is enough. Each parameter definition contains:
 - `name`: the parameter key name
 - `type`: the parameter type; the options are `TYPE_STRING`, `TYPE_NUMBER`, `TYPE_TIME`, `TYPE_STRING_ARRAY`, `TYPE_NUMBER_ARRAY`, `TYPE_TIME_ARRAY`, `TYPE_VECTOR`
 - `description`: the parameter explanation
-- `value`: the sample value of the parameter, used to fill in the parameter during the ontology-generation `generation.mjs test program.py parameters.json` command; for "association/query" type parameters, take a value that really exists in the sandbox test data you prepared, and for "add" type parameters it can be a reasonable sample value
+- `value`: the sample value of the parameter, used to fill in the parameter during the ontology-generation `generation.mjs test outputs/program.py parameters.json` command; for "association/query" type parameters, take a value that really exists in the sandbox test data you prepared, and for "add" type parameters it can be a reasonable sample value
 - `className`: the complete class name of the object class corresponding to the parameter; if there is no corresponding class name, give an empty string
 For a `TYPE_VECTOR` parameter, its `value` is an object describing one vector file to attach to an object's vector attribute:
 ```json
@@ -250,17 +250,17 @@ The `where` condition format of `update`/`delete` is as follows:
 - A write function mainly performs write operations; there is no mandatory format requirement for the content of `print`, but it is recommended to print the key execution results or exception information, for easy observation during test.
 
 ### Testing and DEBUG (performed in a loop)
-1. Use the ontology-generation `generation.mjs test program.py parameters.json` command tool to test and execute the write function code you have written: first write the code into a file in the current workspace; the input parameters of the ontology-generation `generation.mjs test program.py parameters.json` command are: `path` (the Python file relative path) and `parameterDefs` (the object list of parameter definitions).
-2. After executing the ontology-generation `generation.mjs test program.py parameters.json` command, use the sandbox tool `generation.mjs query dsl.json` to view the data in the sandbox, and verify whether the data was written correctly according to the intended logic.
-3. If the write result does not meet expectations, modify the code and run the ontology-generation `generation.mjs test program.py parameters.json` command again. **Before each new the ontology-generation `generation.mjs test program.py parameters.json` command, you can first call the ontology-generation `reset` command to reset the sandbox test data**, to avoid the write result of the previous test affecting this verification.
+1. Use the ontology-generation `generation.mjs test outputs/program.py parameters.json` command tool to test and execute the write function code you have written: first write the code into a file under `outputs/` (only files under `outputs/` are delivered to the host); the input parameters of the ontology-generation `generation.mjs test outputs/program.py parameters.json` command are: `path` (the Python file path under `outputs/`) and `parameterDefs` (the object list of parameter definitions).
+2. After executing the ontology-generation `generation.mjs test outputs/program.py parameters.json` command, use the sandbox tool `generation.mjs query dsl.json` to view the data in the sandbox, and verify whether the data was written correctly according to the intended logic.
+3. If the write result does not meet expectations, modify the code and run the ontology-generation `generation.mjs test outputs/program.py parameters.json` command again. **Before each new the ontology-generation `generation.mjs test outputs/program.py parameters.json` command, you can first call the ontology-generation `reset` command to reset the sandbox test data**, to avoid the write result of the previous test affecting this verification.
 4. This process may need to be repeated many times (just as human programmers also DEBUG repeatedly); dynamically adjust the code until the write result is correct.
 5. If during debugging you find that the data initially prepared by the ontology-generation `prepare` command is not enough (for example, the data of a certain class or a certain relationship is missing), you can go back to step 2 to supplement the test data.
 
 ---
 
 # Delivery Method
-Use the result file described in the ontology-generation skill to submit the final delivery; the parameters are the following five parts (the field meanings and examples are as follows, and the shape is constrained by the tool); in the body write only a brief description, and no longer output the full code and tag text. Before submission, this file must have been successfully executed with the ontology-generation `generation.mjs test program.py parameters.json` command, and its content must not have been changed again after execution.
-The delivery includes five parts: `write function code` (workspace file path), `parameter definitions` (object list, each item contains name, type, description, value, className), `write function name` (for example, add an employee and create its relationship with a department), `write function program logic` (for example, according to the employee name and department id in the input parameters, add an employee record in the employee class, and create a belonging relationship between this employee and the target department) and `object classes involved in the write operation` (object class name list, for example ["/company/employee", "/company/department"]).
+Use the result file described in the ontology-generation skill to submit the final delivery; the parameters are the following five parts (the field meanings and examples are as follows, and the shape is constrained by the tool); in the body write only a brief description, and no longer output the full code and tag text. Before submission, this file must have been successfully executed with the ontology-generation `generation.mjs test outputs/program.py parameters.json` command, and its content must not have been changed again after execution.
+The delivery includes five parts: `write function code` (path under `outputs/`, for example `outputs/program.py`), `parameter definitions` (object list, each item contains name, type, description, value, className), `write function name` (for example, add an employee and create its relationship with a department), `write function program logic` (for example, according to the employee name and department id in the input parameters, add an employee record in the employee class, and create a belonging relationship between this employee and the target department) and `object classes involved in the write operation` (object class name list, for example ["/company/employee", "/company/department"]).
 
 ---
 
