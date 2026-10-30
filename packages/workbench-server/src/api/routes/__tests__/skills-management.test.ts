@@ -20,6 +20,7 @@ const { sendError } = await import("../../utils/http");
 const { skillManager } = await import("../../../services/skills/skill-manager");
 const { readSkillMarkdown } = await import("../../../core/skills/manifest");
 const { skillRegistryManager } = await import("../../../core/skills/index");
+const { skillRuntime } = await import("../../../core/skills/index");
 
 const realFetch = globalThis.fetch;
 
@@ -98,6 +99,23 @@ afterAll(async () => {
 });
 
 describe("skill management lifecycle", () => {
+
+  it("renders through the current domain runtime with visualization constraints and strips injected services", async () => {
+    const execute = vi.spyOn(skillRuntime, "execute").mockResolvedValue({ html: "<html>chart</html>" });
+    const response = await postJson(`${baseUrl}/api/skills/echarts/render`, {
+      input: { data: [{ name: "A", count: 7 }], chartType: "donut", title: "Distribution", services: { injected: true } },
+      domainId: "forged",
+    });
+    expect(response.status).toBe(200);
+    expect(execute).toHaveBeenCalledWith("domain-a", "echarts", { data: [{ name: "A", count: 7 }], chartType: "donut", title: "Distribution", locale: "*" }, { type: "executable", category: "visualization" });
+    expect(await response.json()).toEqual({ success: true, result: { html: "<html>chart</html>" } });
+  });
+
+  it("rejects failed visualization output rather than embedding an error as a chart", async () => {
+    vi.spyOn(skillRuntime, "execute").mockResolvedValue({ html: "<p>error</p>", meta: { error: true } });
+    const response = await postJson(`${baseUrl}/api/skills/echarts/render`, { input: { data: [], chartType: "donut", title: "Distribution" } });
+    expect(response.status).toBe(422);
+  });
 
   it("runs the full create/update/export/import/overwrite scenario", async () => {
 

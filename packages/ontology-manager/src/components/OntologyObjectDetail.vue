@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref, watch } from "vue";
-import { ArrowLeft, ChevronDown, ChevronUp, Plus, Save, Table2, Trash2 } from "lucide-vue-next";
+import { ArrowLeft, ChevronDown, ChevronUp, Plus, Save, Settings2, Table2, Trash2 } from "lucide-vue-next";
 import { ElAlert, ElButton, ElEmpty, ElForm, ElFormItem, ElInput, vLoading } from "element-plus";
 import { useManagerFeedback } from "../feedback";
 import type { OntologyObject, OntologyRelation } from "../api";
@@ -18,6 +18,7 @@ const emit = defineEmits<{
   updated: [];
   browse: [className: string];
   relation: [relationship: string];
+  view: [className: string];
 }>();
 
 const loading = ref(false);
@@ -166,9 +167,10 @@ onMounted(() => void loadDetail());
       >
         {{ ot("delete") }}
       </el-button>
-      <el-button v-if="object" :icon="Table2" @click="emit('browse', object.className)">
+      <el-button v-if="object" text :icon="Table2" @click="emit('browse', object.className)">
         {{ ot("browseData") }}
       </el-button>
+      <el-button v-if="object" type="primary" plain :icon="Settings2" @click="emit('view', object.className)">{{ ot('ovConfigureObject') }}</el-button>
       <el-button type="primary" :icon="Save" :loading="saving" @click="save">
         {{ ot("saveChanges") }}
       </el-button>

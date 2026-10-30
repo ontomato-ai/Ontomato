@@ -245,6 +245,8 @@ function generateBasicChartOption(chartType, title, xField, yField, seriesField,
   if (chartType === "pie") {
     return {
       ...baseOption,
+      xAxis: { show: false },
+      yAxis: { show: false },
       legend: { ...baseOption.legend, orient: "horizontal", left: "center", bottom: 20 },
       series: [
         {
@@ -1081,12 +1083,46 @@ function generateSankeyOption(data, title, theme) {
   };
 }
 
+function generateTimelineOption(data, config, theme) {
+  const events = data.map((row, index) => {
+    const raw = row[config.dateField];
+    const time = raw == null || raw === "" ? NaN : Date.parse(String(raw));
+    const undated = { zh: "日期未提供", ja: "日付なし", fr: "Date indisponible", de: "Datum nicht verfügbar", it: "Data non disponibile", ar: "التاريخ غير متاح" };
+    return { row, index, time, date: Number.isFinite(time) ? String(raw).slice(0, 10) : undated[String(config.locale || '').split('-')[0]] || "Undated" };
+  }).sort((a, b) => (Number.isFinite(b.time) ? b.time : -Infinity) - (Number.isFinite(a.time) ? a.time : -Infinity) || a.index - b.index);
+  return {
+    backgroundColor: theme.bgColor,
+    title: { text: config.title, left: "center", textStyle: { color: theme.textColor, fontSize: 16 } },
+    grid: { top: config.showTitle === false ? 12 : 65, left: 8, right: 12, bottom: 12 },
+    xAxis: { type: "value", show: false, min: 0, max: 1 },
+    yAxis: { type: "category", show: false, inverse: true, boundaryGap: true, data: events.map((_, index) => index) },
+    tooltip: { trigger: "item", renderMode: "richText", formatter: params => {
+      const event = events[params.dataIndex];
+      return [event.date, event.row[config.xField], event.row[config.descriptionField]].filter(Boolean).join("\n");
+    } },
+    series: [
+      { type: "line", symbol: "none", silent: true, lineStyle: { color: theme.borderColor, width: 2 }, data: events.map((_, index) => [0, index]) },
+      { type: "scatter", symbolSize: 10, itemStyle: { color: theme.primaryColor }, data: events.map((_, index) => [0, index]), label: {
+        show: true, position: "right", distance: 16, color: theme.textColor, fontSize: 12,
+        formatter: params => { const event = events[params.dataIndex]; return `${event.date}\n${wrapLabel(event.row[config.xField], 24, 2)}\n${event.row[config.descriptionField] || ""}`; }, lineHeight: 19,
+      } },
+    ],
+  };
+}
+
 function renderEcharts(data, config, theme) {
   const { chartType, title, xField, yField, seriesField, indicators } = config;
   const renderers = {
     bar: () => generateBasicChartOption("bar", title, xField, yField, seriesField, data, theme),
     line: () => generateBasicChartOption("line", title, xField, yField, seriesField, data, theme),
     pie: () => generateBasicChartOption("pie", title, xField, yField, seriesField, data, theme),
+    donut: () => {
+      const option = generateBasicChartOption("pie", title, xField, yField, seriesField, data, theme);
+      option.series[0].radius = ["42%", "68%"];
+      option.series[0].roseType = false;
+      return option;
+    },
+    timeline: () => generateTimelineOption(data, config, theme),
     scatter: () =>
       generateBasicChartOption("scatter", title, xField, yField, seriesField, data, theme),
     area: () => generateBasicChartOption("area", title, xField, yField, seriesField, data, theme),
@@ -1100,7 +1136,13 @@ function renderEcharts(data, config, theme) {
   };
   const renderer = renderers[chartType];
   if (!renderer) throw new Error(`Unsupported chart type: ${chartType}`);
-  return renderer();
+  const option = renderer();
+  if (config.showTitle === false) {
+    option.title = { show: false };
+    if (option.grid && chartType !== "timeline") option.grid.top = 32;
+    if (option.legend) option.legend.top = 4;
+  }
+  return option;
 }
 
 function colorWithAlpha(color, alpha) {
@@ -1157,7 +1199,7 @@ function generateHTML(data, config) {
     simplifyTimeLabel, normalizeTimeText, generateBasicChartOption, generateRadarOption,
     validateRadarInput, generateGaugeOption, generateHeatmapOption, generateFunnelOption,
     buildTreeData, generateTreemapOption, generateSunburstOption, generateSankeyOption,
-    renderEcharts, colorWithAlpha, readTheme].map((fn) => fn.toString()).join("\n");
+    generateTimelineOption, renderEcharts, colorWithAlpha, readTheme].map((fn) => fn.toString()).join("\n");
   return `<!DOCTYPE html>
 <html>
 <head>
@@ -1167,6 +1209,7 @@ function generateHTML(data, config) {
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     :root { --bg-color: Canvas; }
+    html, body { width: 100%; height: 100%; }
     body {
   font-family:
     Inter,
@@ -1189,8 +1232,8 @@ function generateHTML(data, config) {
 }
    .chart-container {
   width: 100%;
-  height: 100vh;
-  max-width: 1000px;
+   height: 100%;
+   min-width: 0;
 
   background: var(--bg-color);
 
@@ -1214,7 +1257,7 @@ function generateHTML(data, config) {
     const config = ${serialize(config)};
     let themeRoot = document.documentElement;
     try {
-      if (parent !== window && parent.document) themeRoot = parent.document.documentElement;
+      if (parent !== window && window.frameElement) themeRoot = window.frameElement;
     } catch (e) {}
     let previousTheme = '';
     function updateTheme() {
@@ -1222,7 +1265,7 @@ function generateHTML(data, config) {
       const signature = JSON.stringify(theme);
       if (signature === previousTheme) return;
       previousTheme = signature;
-      document.documentElement.style.setProperty('--bg-color', theme.pageColor);
+      document.documentElement.style.setProperty('--bg-color', theme.bgColor);
       chart.setOption(renderEcharts(data, config, theme), true);
     }
     updateTheme();
@@ -1234,6 +1277,9 @@ function generateHTML(data, config) {
     const themeTimer = window.setInterval(updateTheme, 500);
     window.addEventListener('pagehide', () => window.clearInterval(themeTimer), { once: true });
     window.addEventListener('resize', () => chart.resize());
+    const resizeObserver = new ResizeObserver(() => chart.resize());
+    resizeObserver.observe(chartDom);
+    window.addEventListener('pagehide', () => { resizeObserver.disconnect(); chart.dispose(); }, { once: true });
   </script>
 </body>
 </html>`;
@@ -1261,7 +1307,10 @@ export async function execute(input) {
     };
   }
 
-  if (!["sankey", "radar", "gauge"].includes(chartType) && (!xField || !yField)) {
+  if (chartType === "timeline" && (!xField || !input.dateField)) {
+    return { html: "<p>Timeline requires xField and dateField</p>", meta: { error: true } };
+  }
+  if (!["sankey", "radar", "gauge", "timeline"].includes(chartType) && (!xField || !yField)) {
     return {
       html: "<div style='padding:20px;text-align:center;color:#666;'>Missing required parameters: xField, yField</div>",
       meta: { error: true, missingParams: { xField, yField } },
@@ -1352,7 +1401,7 @@ export async function execute(input) {
   }
 
   if (
-    !["sankey", "radar", "gauge", "heatmap"].includes(chartType) &&
+    !["sankey", "radar", "gauge", "heatmap", "timeline"].includes(chartType) &&
     !isNumericYField(processedData, yField)
   ) {
     return {
@@ -1423,7 +1472,7 @@ export async function execute(input) {
     }
   }
 
-  const config = { chartType, title, xField, yField, seriesField, indicators };
+  const config = { chartType, title, xField, yField, seriesField, indicators, dateField: input.dateField, descriptionField: input.descriptionField, showTitle: input.showTitle, locale: input.locale };
 
   const html = generateHTML(processedData, config);
 

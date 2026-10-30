@@ -65,6 +65,23 @@ const DebugSkillSchema = z.object({
   input: z.record(z.unknown()).optional().default({}),
 });
 
+// Runtime rendering is available to authenticated viewers; package management remains administrative.
+router.post("/:id/render", requireDomain, validateBody(z.object({ input: z.object({
+  data: z.unknown(), chartType: z.string().max(100), title: z.string().max(200),
+  showTitle: z.boolean().optional(),
+  latitudeField: z.string().max(200).optional(), longitudeField: z.string().max(200).optional(),
+  labelField: z.string().max(200).optional(), valueField: z.string().max(200).optional(),
+  xField: z.string().max(200).optional(), yField: z.string().max(200).optional(),
+  dateField: z.string().max(200).optional(), descriptionField: z.string().max(200).optional(),
+  nameField: z.string().max(200).optional(), typeField: z.string().max(200).optional(),
+  relationField: z.string().max(200).optional(),
+}) })), asyncHandler(async (req: Request, res: Response) => {
+  const result = await skillRuntime.execute((req as AuthenticatedRequest).domainId!, req.params.id, { ...req.body.input, locale: getLocaleFromRequest(req) },
+    { type: "executable", category: "visualization" });
+  if (!result.html || result.meta?.error) throw new HttpError(422, "Visualization skill could not render this data");
+  res.json({ success: true, result });
+}));
+
 // Read-only endpoints — authenticated by the shared /api boundary.
 router.get(
   "/metrics",

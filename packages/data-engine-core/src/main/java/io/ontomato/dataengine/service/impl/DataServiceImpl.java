@@ -420,13 +420,13 @@ public class DataServiceImpl implements DataService {
 						
 						JSONObject sourceObj = new JSONObject();
 						sourceObj.put("id", sourceNodeId);
-						sourceObj.put("name", sourceName);
+                    sourceObj.put("name", io.ontomato.dataengine.util.InstanceNameUtil.display(io.ontomato.dataengine.util.InstanceNameUtil.businessKey(sourceClassDef), sourceName));
 						sourceObj.put("class", fromClass);
 						nodeMap.putIfAbsent(sourceNodeId, sourceObj);
 						
 						JSONObject targetObj = new JSONObject();
 						targetObj.put("id", targetNodeId);
-						targetObj.put("name", targetName);
+                    targetObj.put("name", io.ontomato.dataengine.util.InstanceNameUtil.display(io.ontomato.dataengine.util.InstanceNameUtil.businessKey(targetClassDef), targetName));
 						targetObj.put("class", toClass);
 						nodeMap.putIfAbsent(targetNodeId, targetObj);
 						typedEdges.add(JSONObject.of("source", sourceNodeId, "target", targetNodeId,
@@ -490,7 +490,7 @@ public class DataServiceImpl implements DataService {
 				for (Object raw : JSONArray.parseArray(result).getJSONObject(0).getJSONArray("answer")) {
 					JSONObject row = (JSONObject) raw;
 					String id = className + ":" + row.getString("pk");
-					String name = row.getString("name");
+                    String name = io.ontomato.dataengine.util.InstanceNameUtil.display(io.ontomato.dataengine.util.InstanceNameUtil.businessKey(classDef), row.getString("name"));
 					JSONObject node = JSONObject.of("id", id, "class", className, "name", name);
 					nodeMap.put(id, node);
 					if (rootClass.equals(className)) roots.add(id);
@@ -503,30 +503,8 @@ public class DataServiceImpl implements DataService {
 	}
 
 	private String getNameField(Map<String, Object> classDef) {
-		String primaryKey = DslUtil.getPrimaryKey(classDef);
-		if (classDef.get("attrs") instanceof List<?> attrs) {
-			for (Object raw : attrs) {
-				Map<?, ?> attr = (Map<?, ?>) raw;
-				String name = (String) attr.get("name");
-				if (!Boolean.FALSE.equals(attr.get("enable")) && !primaryKey.equals(name)
-						&& Boolean.TRUE.equals(attr.get("bizzkey")) && ("name".equals(name) || name.endsWith("_name"))) return name;
-			}
-		}
-		String pk = "id";
-		if (classDef.get("attrs") != null) {
-			List<Map<String, Object>> attrDefs = (List<Map<String, Object>>)classDef.get("attrs");
-			for (Map<String, Object> attrDef : attrDefs) {
-				if (attrDef.get("enable") == null || (Boolean)attrDef.get("enable")) {
-					if (attrDef.get("primaryKey") != null && (Boolean)attrDef.get("primaryKey")) {
-						pk = (String)attrDef.get("name");
-					}
-					if (attrDef.get("bizzkey") != null && (Boolean)attrDef.get("bizzkey")) {
-						return (String)attrDef.get("name");
-					}
-				}
-			}
-		}
-		return pk;
+		String field = io.ontomato.dataengine.util.InstanceNameUtil.businessKey(classDef);
+		return field == null ? DslUtil.getPrimaryKey(classDef) : field;
 	}
 	
 	private JSONObject fromMode0ToMode1(JSONObject wholeData, String domainId) {

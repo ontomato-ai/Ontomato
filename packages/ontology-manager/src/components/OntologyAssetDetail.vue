@@ -495,11 +495,13 @@ onMounted(() => void loadDetail());
         <small>{{ meta.title }}</small>
       </span>
       <span class="title-spacer"></span>
-      <el-button v-if="kind === 'metrics' && record" :icon="Play" @click="openMetricTest">
+      <el-button v-if="kind === 'metrics' && record" type="primary" plain :icon="Play" @click="openMetricTest">
         {{ ot("assetTest") }}
       </el-button>
       <el-button
         v-if="kind === 'metrics' && creating"
+        type="primary"
+        plain
         :icon="Sparkles"
         @click="metricGenerationVisible = true"
       >
@@ -651,7 +653,7 @@ onMounted(() => void loadDetail());
           <template v-if="functionRecord">
             <div class="parameter-header">
               <span class="field-label">{{ ot("assetInputParameters") }}</span>
-              <el-button size="small" :icon="Plus" @click="addParameter">
+              <el-button type="primary" plain size="small" :icon="Plus" @click="addParameter">
                 {{ ot("assetAddParameter") }}
               </el-button>
             </div>
@@ -671,7 +673,7 @@ onMounted(() => void loadDetail());
                 :placeholder="ot('assetParameterClasses')"
                 @update:model-value="updateParameterClassNames(parameter, $event)"
               />
-              <el-button link type="danger" :icon="Trash2" @click="removeParameter(index)" />
+              <el-button link type="danger" :icon="Trash2" :title="ot('delete')" :aria-label="ot('delete')" @click="removeParameter(index)" />
             </div>
             <el-form-item :label="ot('assetReturnClasses')">
               <el-input
@@ -726,7 +728,7 @@ onMounted(() => void loadDetail());
           </div>
         </div>
         <div class="task-actions">
-          <el-button v-if="record.id" type="primary" :icon="Play" @click="runTask">
+          <el-button v-if="record.id" type="primary" plain :icon="Play" @click="runTask">
             {{ ot("taskRunOnce") }}
           </el-button>
           <el-button v-if="record.id" :icon="History" @click="openTaskResults">

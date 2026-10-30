@@ -361,7 +361,7 @@ describe("OntologyManager root component with real pages", () => {
     await new Promise((resolve) => setTimeout(resolve, 300));
     await settle();
     expect(root().querySelector(".instance-candidates")?.textContent).toContain("Spare part");
-    expect(root().querySelector(".instance-candidates")?.textContent).toContain("Item:2");
+    expect(root().querySelector(".instance-candidates")?.textContent).not.toContain("Item:2");
     expect(root().querySelector(".instance-candidates")?.textContent).not.toContain("First order");
     (root().querySelector(".instance-candidates button") as HTMLElement).click();
     await settle();

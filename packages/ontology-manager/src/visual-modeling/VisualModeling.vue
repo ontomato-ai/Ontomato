@@ -1421,22 +1421,22 @@ async function saveClassDesc(cls: ClassDef) {
   <div class="visual-modeling">
     <div class="toolbar">
       <div class="toolbar-group toolbar-group-primary">
-        <el-button v-if="backToPlayground" :icon="ArrowLeft" @click="emit('back')">
+        <el-button v-if="backToPlayground" text :icon="ArrowLeft" @click="emit('back')">
           {{ ot("backToGraph") }}
         </el-button>
         <el-button type="primary" :icon="Box" @click="openAddNodeDialog">
           {{ t("hotData.addClass") }}
         </el-button>
-        <el-button :icon="Link2" @click="openAddEdgeDialog">
+        <el-button type="primary" plain :icon="Link2" @click="openAddEdgeDialog">
           {{ t("hotData.addRelation") }}
         </el-button>
       </div>
 
       <div class="zoom-controls" role="toolbar" :aria-label="ot('fitCanvas')">
-        <el-button :title="ot('zoomIn')" :aria-label="ot('zoomIn')" @click="onZoomIn"><Plus :size="18" /></el-button>
-        <el-button :title="ot('zoomOut')" :aria-label="ot('zoomOut')" @click="onZoomOut"><Minus :size="18" /></el-button>
-        <el-button :title="ot('fitCanvas')" :aria-label="ot('fitCanvas')" @click="onZoomFit"><Maximize :size="18" /></el-button>
-        <el-button :title="ot('relayout')" :aria-label="ot('relayout')" :disabled="loading || layouting || !classList.length" @click="onRelayout"><Network :size="18" /></el-button>
+        <el-button text :title="ot('zoomIn')" :aria-label="ot('zoomIn')" @click="onZoomIn"><Plus :size="18" /></el-button>
+        <el-button text :title="ot('zoomOut')" :aria-label="ot('zoomOut')" @click="onZoomOut"><Minus :size="18" /></el-button>
+        <el-button text :title="ot('fitCanvas')" :aria-label="ot('fitCanvas')" @click="onZoomFit"><Maximize :size="18" /></el-button>
+        <el-button text :title="ot('relayout')" :aria-label="ot('relayout')" :disabled="loading || layouting || !classList.length" @click="onRelayout"><Network :size="18" /></el-button>
       </div>
 
       <div class="selection-cluster">
@@ -1451,6 +1451,8 @@ async function saveClassDesc(cls: ClassDef) {
         <div class="toolbar-group toolbar-group-selection">
           <el-button
             :icon="Pencil"
+            type="primary"
+            plain
             :disabled="!selectedNode && !selectedEdge"
             @click="
               selectedNode
@@ -1464,6 +1466,7 @@ async function saveClassDesc(cls: ClassDef) {
           </el-button>
           <el-button
             type="danger"
+            plain
             :icon="Trash2"
             :disabled="!selectedNode && !selectedEdge"
             @click="selectedNode ? handleTrash2Node() : handleTrash2Edge()"

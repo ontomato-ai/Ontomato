@@ -548,7 +548,7 @@ onBeforeUnmount(() => {
           <strong>{{ relations.length }}</strong>
           {{ t("nav.relationTypes") }}
         </span>
-        <el-button :icon="RefreshCw" circle :title="t('common.refresh')" @click="refresh" />
+        <el-button :icon="RefreshCw" text circle :title="t('common.refresh')" @click="refresh" />
       </div>
     </header>
 

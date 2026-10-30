@@ -1,7 +1,9 @@
 <script setup lang="ts">
 import { Graph } from "@antv/g6";
+import type { ObjectReference } from "@ontomato/contracts/object-views";
 import {
   Box,
+  Eye,
   ArrowLeft,
   Settings2,
   Download,
@@ -38,6 +40,8 @@ import {
 
 const context = useManagerContext();
 const props = defineProps<{ summaryTarget?: HTMLElement | null }>();
+const emit = defineEmits<{ open: [reference: ObjectReference]; configure: [className: string] }>();
+const selectedReference = computed<ObjectReference | null>(() => selectedNode.value ? ({ className: selectedNode.value.class, primaryKey: selectedNode.value.id.slice(selectedNode.value.class.length + 1) }) : null);
 const { message } = useManagerFeedback();
 const { ot } = useOntologyText();
 const { t } = useSharedText();
@@ -121,9 +125,9 @@ function readOverviewLayout(): Record<string, { x: number; y: number }> | null {
 const searchOptions = computed(() =>
   searchNodes.value.map((node) => ({
     value: node.id,
-    label: `${node.name || node.id} · ${node.id} · ${classLabels.value[node.class] || node.class} · ${node.class}`,
-    name: node.name || node.id,
-    description: `${classLabels.value[node.class] || node.class} · ${node.id}`,
+    label: `${node.name || '—'} · ${classLabels.value[node.class] || node.class}`,
+    name: node.name || '—',
+    description: classLabels.value[node.class] || node.class,
   }))
 );
 
@@ -781,7 +785,7 @@ onBeforeUnmount(() => {
     <el-button v-if="summary && !overview" class="back-to-overview" :icon="ArrowLeft" :disabled="loading || rendering || expanding || layouting" @click="showOverview()">{{ ot('instanceGraphBackToOverview') }}</el-button>
     <div v-if="selectedNode && nodeActionPosition" class="node-actions"
       :style="{ left: `${nodeActionPosition.x}px`, top: `${nodeActionPosition.y}px` }"
-      role="toolbar" :aria-label="selectedNode.name || selectedNode.id">
+      role="toolbar" :aria-label="selectedNode.name || '—'">
       <button :title="ot(currentPage ? 'instanceGraphMore' : 'instanceGraphExpand')"
         :aria-label="ot(currentPage ? 'instanceGraphMore' : 'instanceGraphExpand')"
         :disabled="expanding || rendering || filtersDirty || versionChanged || currentPage?.nextOffset === null" @click="expandNeighbors"><GitFork :size="17" /></button>
@@ -887,7 +891,7 @@ onBeforeUnmount(() => {
         >
           <template #prefix><Search :size="15" /></template>
           <template #label="{ value }">
-            {{ selectedNode?.name || value }}
+            {{ selectedNode?.name || '—' }}
           </template>
           <template #default="{ item }">
             <div class="node-search-option">
@@ -905,8 +909,8 @@ onBeforeUnmount(() => {
         <div v-if="overview && searchNodes.length" class="instance-candidates">
           <button v-for="node in searchNodes" :key="node.id" :disabled="rendering || expanding" @click="focusNode(node.id)">
             <span class="candidate-copy">
-              <span class="candidate-name" :title="node.name || node.id">{{ node.name || node.id }}</span>
-              <span class="candidate-meta" :title="`${classLabels[node.class] || node.class} · ${node.id}`">{{ classLabels[node.class] || node.class }} · {{ node.id }}</span>
+              <span class="candidate-name" :title="node.name || '—'">{{ node.name || '—' }}</span>
+              <span class="candidate-meta" :title="classLabels[node.class] || node.class">{{ classLabels[node.class] || node.class }}</span>
             </span>
           </button>
         </div>
@@ -918,6 +922,17 @@ onBeforeUnmount(() => {
         </div>
       </div>
       <div v-if="selectedNode" class="detail-content">
+        <div class="selected-object-header">
+          <div class="detail-title">
+            <span class="resource-icon"><Box :size="16" /></span>
+            <div class="detail-title-copy">
+              <h2>{{ selectedNode.name || '—' }}</h2>
+            </div>
+          </div>
+          <el-button v-if="selectedReference" class="open-object-view" type="primary" plain :icon="Eye" @click="emit('open', selectedReference)">
+            <span>{{ ot('ovOpenView') }}</span>
+          </el-button>
+        </div>
         <div class="neighbor-filters">
           <div class="neighbor-field neighbor-field-wide">
           <span class="neighbor-label">{{ ot('instanceGraphNeighbor') }}</span>
@@ -943,13 +958,6 @@ onBeforeUnmount(() => {
             <el-checkbox v-model="fitAfterExpand">{{ ot('instanceGraphKeepView') }}</el-checkbox>
             <el-button :icon="SlidersHorizontal" type="primary" :loading="expanding" :disabled="expanding || rendering" @click="applyNeighborhoodFilters">{{ ot('instanceGraphApply') }}</el-button>
             <el-button :icon="GitFork" :loading="expanding" :disabled="rendering || filtersDirty || versionChanged || currentPage?.nextOffset === null" @click="expandNeighbors">{{ ot(currentPage ? 'instanceGraphMore' : 'instanceGraphExpand') }}</el-button>
-          </div>
-        </div>
-        <div class="detail-title">
-          <span class="resource-icon"><Box :size="16" /></span>
-          <div class="detail-title-copy">
-            <h2>{{ selectedNode.name || selectedNode.id }}</h2>
-            <code>{{ selectedNode.id }}</code>
           </div>
         </div>
         <div class="detail-section">
@@ -1132,11 +1140,13 @@ onBeforeUnmount(() => {
   border-left: 1px solid var(--el-border-color);
   background: var(--el-bg-color);
   overflow: auto;
+  scrollbar-gutter: stable;
   grid-column: 2;
   grid-row: 1;
 }
 .panel-heading {
   display: flex;
+  flex-shrink: 0;
   min-height: 54px;
   align-items: center;
   justify-content: space-between;
@@ -1151,6 +1161,7 @@ onBeforeUnmount(() => {
 .display-setting .el-switch { flex-shrink: 0; }
 .node-search {
   display: grid;
+  flex-shrink: 0;
   min-width: 0;
   gap: var(--spacing-sm);
   padding: var(--spacing-md);
@@ -1293,14 +1304,34 @@ onBeforeUnmount(() => {
   font-size: var(--text-xs);
 }
 .detail-content {
+  flex-shrink: 0;
   padding: var(--spacing-md);
 }
 .detail-title {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   gap: 10px;
-  padding-bottom: 8px;
+}
+.selected-object-header {
+  display: grid;
+  gap: 12px;
+  padding-bottom: var(--spacing-md);
+  margin-bottom: var(--spacing-md);
   border-bottom: 1px solid var(--el-border-color-light);
+}
+.open-object-view {
+  width: 100%;
+  min-width: 0;
+  height: auto;
+  min-height: 32px;
+  margin: 0;
+  padding: 8px 12px;
+  white-space: normal;
+}
+.open-object-view span {
+  min-width: 0;
+  line-height: 18px;
+  overflow-wrap: anywhere;
 }
 .resource-icon {
   display: grid;

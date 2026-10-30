@@ -1,6 +1,7 @@
 import en from "element-plus/es/locale/lang/en";
 import type { Language as ElementLocale } from "element-plus/es/locale";
 import sharedEn from "./locales/en";
+import { objectViewEn } from "./object-views/messages";
 
 export type TextParams = Record<string, string | number>;
 
@@ -14,6 +15,7 @@ function interpolate(value: string, params?: TextParams) {
 
 /** The Manager's own English messages; other languages are supplied by the host. */
 const ontologyEn = {
+  ...objectViewEn,
   browseObjectData: "Browse Object Data",
   ontologyGraphDesc:
     "Search and inspect objects, properties, and relations in the current Ontology.",
@@ -329,6 +331,13 @@ const ontologyEn = {
   assetGenerateFromNl: "New Metric View",
   assetFieldName: "Name",
   assetStatusPendingReview: "Pending review",
+  assetChecked: "{n} selected",
+  assetCheckAll: "Select all filtered items",
+  assetCheckNamed: "Select {name}",
+  assetClearChecked: "Clear selection",
+  assetBatchStatus: "Update status",
+  assetBatchStatusSaved: "Status updated for {n} items",
+  assetBatchStatusFailed: "Failed to update {failed} of {total} items; failed items remain selected",
   assetMetricType: "Metric type",
   assetMetricTypeGeneral: "General",
   assetMetricTypeStatic: "Static",
@@ -338,6 +347,8 @@ const ontologyEn = {
   assetOperationRead: "Read",
   assetOperationWrite: "Write",
   taskCron: "Cron expression",
+  taskBatchStart: "Start selected tasks",
+  taskBatchStop: "Stop selected tasks",
   taskCronPlaceholder: "e.g. 0 */5 * * * ?",
   taskLinkedFunction: "Linked function",
   taskSelectFunction: "Select write function",

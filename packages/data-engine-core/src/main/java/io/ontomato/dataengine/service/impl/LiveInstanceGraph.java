@@ -107,7 +107,7 @@ public class LiveInstanceGraph {
         this.adapters = adapters;
     }
 
-    private record ObjectType(String name, String pk, String label, List<String> searchFields) {}
+    private record ObjectType(String name, String pk, String label, List<String> searchFields, boolean hasBusinessName) {}
     private record Relation(String type, ObjectType from, ObjectType to) {}
 
     static String identifier(String value) {
@@ -224,8 +224,6 @@ public class LiveInstanceGraph {
         for (var def : (List<Map<String, Object>>) schema.get("classDef")) {
             String name = (String) def.get("className");
             String pk = identifier(DslUtil.getPrimaryKey(def));
-            String label = pk;
-            boolean preferredLabel = false;
             List<String> searchFields = new ArrayList<>();
             for (var attr : (List<Map<String, Object>>) def.get("attrs")) {
                 String field = (String) attr.get("name");
@@ -234,15 +232,9 @@ public class LiveInstanceGraph {
                         && ("varchar".equals(attr.get("type")) || "text".equals(attr.get("type")))) {
                     searchFields.add(identifier(field));
                 }
-                if (Boolean.TRUE.equals(attr.get("bizzkey"))) {
-                    if (label.equals(pk)) label = identifier(field);
-                    if (!preferredLabel && !field.equals(pk) && (field.equals("name") || field.endsWith("_name"))) {
-                        label = identifier(field);
-                        preferredLabel = true;
-                    }
-                }
             }
-            types.put(name, new ObjectType(name, pk, label, searchFields));
+            String businessKey = io.ontomato.dataengine.util.InstanceNameUtil.businessKey(def);
+            types.put(name, new ObjectType(name, pk, businessKey == null ? pk : identifier(businessKey), searchFields, businessKey != null));
         }
         return types;
     }
@@ -570,7 +562,7 @@ public class LiveInstanceGraph {
 
     private JSONObject node(ObjectType type, JSONObject row) {
         return JSONObject.of("id", type.name + ":" + row.getString("pk"), "class", type.name,
-                "name", row.getString("name") == null ? row.getString("pk") : row.getString("name"));
+                "name", type.hasBusinessName && row.getString("name") != null && !row.getString("name").isBlank() ? row.getString("name") : "—");
     }
 
     private JSONObject dsl(JSONArray objects, JSONArray relationships, JSONArray outputFields, JSONObject sort, JSONObject limit) {
