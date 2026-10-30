@@ -59,6 +59,7 @@ public class OntologyGenerationPrompts {
   public static final String METRIC_VIEW_MAKER_PROMPT = "metric_view_maker.md";
 
   public static final String ACTION_MAKER_PROMPT = "action_maker.md";
+  public static final String STRUCTURED_SPEC = "{{STRUCTURED_SPEC}}";
 
   public static final String ACTION_CODE_EXPLAINER_PROMPT = "action_code_explainer.md";
 
@@ -400,6 +401,21 @@ public class OntologyGenerationPrompts {
       LangService langService,
       Map<String, Object> jsonRule,
       String domainId) {
+    return getActionMakerUserMessage(
+        question, serverPort, knowledgeDao, businessConfigService, lang, langService, jsonRule,
+        domainId, null);
+  }
+
+  public static String getActionMakerUserMessage(
+      String question,
+      String serverPort,
+      KnowledgeDao knowledgeDao,
+      BusinessConfigService businessConfigService,
+      String lang,
+      LangService langService,
+      Map<String, Object> jsonRule,
+      String domainId,
+      JSONObject structuredSpec) {
     String prompt = template(ACTION_MAKER_PROMPT, lang);
 
     Map<String, String> mapDBSchema = DBSchemaUtil.getDBSchema(jsonRule, null, false);
@@ -417,6 +433,13 @@ public class OntologyGenerationPrompts {
 
     // user requirement
     prompt = prompt.replace(USER_QUESTION, question);
+
+    // Structured intent from the creation wizard; authoritative when present.
+    String structured =
+        structuredSpec == null || structuredSpec.isEmpty()
+            ? "Not provided. Derive the action from the user requirement and business knowledge."
+            : JSON.toJSONString(structuredSpec, JSONWriter.Feature.PrettyFormat);
+    prompt = prompt.replace(STRUCTURED_SPEC, structured);
 
     // business knowledge
     String bussinessKnowledge =

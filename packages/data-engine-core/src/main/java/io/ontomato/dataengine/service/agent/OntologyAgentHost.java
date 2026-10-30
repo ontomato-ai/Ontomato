@@ -16,17 +16,21 @@ public class OntologyAgentHost {
   private final OntologyRetrievalService retrieval;
   private final OntologyGenerationService generation;
   private final KnowledgeGovernanceService governance;
+  private final ActionCreationService actionCreation;
 
   public OntologyAgentHost(
       OntologyAgentStore store,
       AgentRuntimeClient runtime,
       OntologyRetrievalService retrieval,
-      OntologyGenerationService generation, KnowledgeGovernanceService governance) {
+      OntologyGenerationService generation,
+      KnowledgeGovernanceService governance,
+      ActionCreationService actionCreation) {
     this.store = store;
     this.runtime = runtime;
     this.retrieval = retrieval;
     this.generation = generation;
     this.governance = governance;
+    this.actionCreation = actionCreation;
   }
 
   private boolean isRetrieval(String session, Owner owner) {
@@ -46,6 +50,9 @@ public class OntologyAgentHost {
   public void delete(String session, Owner owner) throws Exception {
     if (KnowledgeGovernanceService.AGENT.equals(store.session(session,owner).getString("agent_id"))) {
       governance.delete(session,owner);return;
+    }
+    if (ActionCreationService.AGENT.equals(store.session(session,owner).getString("agent_id"))) {
+      actionCreation.delete(session,owner);return;
     }
     if (isRetrieval(session, owner)) {
       retrieval.delete(session, owner);
@@ -90,6 +97,8 @@ public class OntologyAgentHost {
       var agents = new JSONArray(response.getJSONArray("agents"));
       agents.add(JSONObject.of("id",KnowledgeGovernanceService.AGENT,"name","Business Knowledge Governance",
         "description","Review business knowledge and save recommendations","icon",null,"enabled",true));
+      agents.add(JSONObject.of("id",ActionCreationService.AGENT,"name","Action creation",
+        "description","Describe a write action in conversation; the agent drafts and tests it","icon",null,"enabled",true));
       response.put("agents",agents);
     }
     return response;
@@ -136,8 +145,15 @@ public class OntologyAgentHost {
   }
 
   public JSONObject create(String id, String agent, Owner owner) throws Exception {
-    if (!RETRIEVER.equals(agent) && !KnowledgeGovernanceService.AGENT.equals(agent)) throw AgentHttpException.missing();
-    boolean replayed = RETRIEVER.equals(agent) ? retrieval.createSession(id, owner) : governance.create(id,owner,false);
+    if (!RETRIEVER.equals(agent)
+        && !KnowledgeGovernanceService.AGENT.equals(agent)
+        && !ActionCreationService.AGENT.equals(agent)) throw AgentHttpException.missing();
+    boolean replayed =
+        RETRIEVER.equals(agent)
+            ? retrieval.createSession(id, owner)
+            : ActionCreationService.AGENT.equals(agent)
+                ? actionCreation.create(id, owner)
+                : governance.create(id, owner, false);
     return JSONObject.of("session", snapshot(id, owner).get("session"), "replayed", replayed);
   }
 
@@ -185,14 +201,23 @@ public class OntologyAgentHost {
       throws Exception {
     if (message == null || message.isBlank())
       throw AgentHttpException.invalid("Message is required");
+    boolean action = ActionCreationService.AGENT.equals(
+        store.session(session, context.owner()).getString("agent_id"));
     boolean replayed = isRetrieval(session, context.owner())
-      ? retrieval.message(session,key,message,context) : governance.start(session,key,message,context);
+      ? retrieval.message(session,key,message,context)
+      : action
+          ? actionCreation.start(session,key,message,context)
+          : governance.start(session,key,message,context);
     return JSONObject.of("snapshot", run(session, key, context.owner()), "replayed", replayed);
   }
 
   public JSONObject cancel(String session, String run, Owner owner) throws Exception {
     if (KnowledgeGovernanceService.AGENT.equals(store.session(session,owner).getString("agent_id"))) {
       governance.cancel(session,run,owner);
+      return JSONObject.of("run",publicRun(runtime.run(owner.domainId(),run).getJSONObject("run")));
+    }
+    if (ActionCreationService.AGENT.equals(store.session(session,owner).getString("agent_id"))) {
+      actionCreation.cancel(session,run,owner);
       return JSONObject.of("run",publicRun(runtime.run(owner.domainId(),run).getJSONObject("run")));
     }
     store.closeRun(session, run, owner);
@@ -213,7 +238,9 @@ public class OntologyAgentHost {
   }
 
   public JSONObject list(String agent, int limit, String cursor, Owner owner) throws Exception {
-    if (!RETRIEVER.equals(agent) && !KnowledgeGovernanceService.AGENT.equals(agent)) throw AgentHttpException.missing();
+    if (!RETRIEVER.equals(agent)
+        && !KnowledgeGovernanceService.AGENT.equals(agent)
+        && !ActionCreationService.AGENT.equals(agent)) throw AgentHttpException.missing();
     if (limit < 1 || limit > 100) throw AgentHttpException.invalid("Limit must be from 1 to 100");
     JSONObject after = null;
     if (cursor != null) {

@@ -30,6 +30,8 @@ import io.ontomato.dataengine.config.ControllerConst;
 import io.ontomato.dataengine.core.bean.User;
 import io.ontomato.dataengine.service.ActionService;
 import io.ontomato.dataengine.service.LangService;
+import io.ontomato.dataengine.service.agent.ActionCreationService;
+import io.ontomato.dataengine.service.impl.ActionDraftService;
 import io.ontomato.dataengine.service.BusinessConfigService;
 import io.ontomato.dataengine.service.IdentityService;
 import io.ontomato.dataengine.service.sys.bean.permission.UserDataPermission;
@@ -52,6 +54,9 @@ public class ActionController {
 
 	@Autowired
 	private LangService langService;
+
+	@Autowired
+	private ActionDraftService actionDraftService;
 	
 	@PostMapping("/action/generateFromNatureLanguage")
     @ResponseBody
@@ -64,7 +69,8 @@ public class ActionController {
 			if (persistence == null) {
 				persistence = false;
 			}
-			Action action = actionService.generateFromNatureLanguage(question, lang, user.getDomainId(), persistence);
+			JSONObject structuredSpec = param.getJSONObject("structuredSpec");
+			Action action = actionService.generateFromNatureLanguage(question, lang, user.getDomainId(), persistence, structuredSpec);
 			if (action == null) {
 				throw new Exception(langService.get(lang, "Action.notGenerated"));
 			}
@@ -78,6 +84,23 @@ public class ActionController {
 		return ret;
 	}
 	
+	@PostMapping("/action/exampleRequests")
+    @ResponseBody
+    public JSONObject exampleRequests(@RequestHeader(ControllerConst.LANG_HEADER_KEY) String lang) {
+		JSONObject ret = new JSONObject();
+		try {
+			User user = SystemUtils.getCurUser();
+			List<String> examples = actionService.exampleRequests(lang, user.getDomainId());
+			ret.put("success", true);
+			ret.put("data", JSONObject.of("examples", examples));
+		} catch (Exception e) {
+			log.error(e.getMessage(), e);
+			ret.put("success", false);
+			ret.put("message", e.getMessage());
+		}
+		return ret;
+	}
+
 	@PostMapping("/action/save")
     @ResponseBody
     public JSONObject save(@RequestHeader(ControllerConst.LANG_HEADER_KEY) String lang, @RequestBody JSONObject param) {
@@ -96,6 +119,56 @@ public class ActionController {
 		return ret;
 	}
 	
+	@GetMapping("/action/creationAgent")
+    @ResponseBody
+    public JSONObject creationAgent() {
+		return JSONObject.of("success", true, "data", JSONObject.of("agentId", ActionCreationService.AGENT));
+	}
+
+	/**
+	 * Builds a draft from the last files of a conversational action-creation run. The explain
+	 * agent runs here once; the returned draft carries its explanation for a direct save.
+	 */
+	@PostMapping("/action/drafts")
+    @ResponseBody
+    public JSONObject drafts(@RequestHeader(ControllerConst.LANG_HEADER_KEY) String lang, @RequestBody JSONObject param) {
+		JSONObject ret = new JSONObject();
+		try {
+			String sessionId = param.getString("sessionId");
+			String runId = param.getString("runId");
+			if (sessionId == null || runId == null) {
+				throw new Exception("sessionId and runId are required");
+			}
+			JSONObject draft = actionDraftService.create(sessionId, runId, lang);
+			ret.put("success", true);
+			ret.put("data", draft);
+		} catch (Exception e) {
+			log.error(e.getMessage(), e);
+			ret.put("success", false);
+			ret.put("message", e.getMessage());
+		}
+		return ret;
+	}
+
+	/** Saves the draft snapshot directly; it never asks the explain agent to run again. */
+	@PostMapping("/action/saveDraft")
+    @ResponseBody
+    public JSONObject saveDraft(@RequestHeader(ControllerConst.LANG_HEADER_KEY) String lang, @RequestBody JSONObject param) {
+		JSONObject ret = new JSONObject();
+		try {
+			String draftId = param.getString("draftId");
+			if (draftId == null) throw new Exception("draftId is required");
+			Action action = actionDraftService.save(draftId, lang);
+			ret.put("success", true);
+			ret.put("data", action);
+		} catch (Exception e) {
+			log.error(e.getMessage(), e);
+			ret.put("success", false);
+			ret.put("message", e.getMessage());
+		}
+		return ret;
+	}
+
 	@PostMapping("/action/delete")
     @ResponseBody
     public JSONObject delete(@RequestHeader(ControllerConst.LANG_HEADER_KEY) String lang, @RequestBody JSONObject param) {
