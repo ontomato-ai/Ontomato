@@ -76,7 +76,7 @@ export const assistantStore = {
             JSON.stringify([
               {
                 namespace: { kind: "provider", provider: "ontology" },
-                name: "ontomato-analyst",
+                name: "ontomato-analyst-assistant",
               },
               {
                 namespace: { kind: "provider", provider: "workbench" },
