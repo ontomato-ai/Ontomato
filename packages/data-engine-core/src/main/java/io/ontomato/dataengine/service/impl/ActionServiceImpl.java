@@ -574,6 +574,26 @@ public class ActionServiceImpl implements ActionService {
 		}
 	}
 
+  /**
+   * Fills the explanation of an already assembled draft Action. Draft creation owns the only
+   * explain call; saving the draft reuses this stored result and never explains again.
+   */
+  public void explainForDraft(Action action, String lang) throws Exception {
+    Function function = action.getFunction();
+    if (function == null) throw new Exception("The draft has no function");
+    explainCode(
+        function.getParameters(),
+        function.getCode(),
+        action.getDomainId(),
+        lang,
+        UUID.randomUUID().toString(),
+        (segments, meaning) -> {
+          action.setCodeSegments(segments);
+          action.setBusinessMeaning(meaning);
+          return null;
+        });
+  }
+
   @FunctionalInterface
   private interface ExplanationConsumer<T> {
     T accept(JSONArray segments, BusinessMeaning meaning) throws Exception;

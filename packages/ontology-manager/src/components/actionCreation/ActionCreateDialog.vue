@@ -1,170 +1,158 @@
 <script setup lang="ts">
-import { computed, nextTick, ref, watch } from "vue";
-import { ElButton, ElDialog, ElInput } from "element-plus";
-import { Send } from "lucide-vue-next";
+import { computed, ref, watch } from "vue";
+import { ElButton, ElDialog } from "element-plus";
+import { Plus } from "lucide-vue-next";
+import {
+  AgentChatPanel,
+  createAgentHostClient,
+  type AgentHostAgent,
+  type AgentHostClient,
+} from "@ontomato/agent-shell-ui";
+import "@ontomato/agent-shell-ui/style.css";
 import { useManagerClient, useOntologyText } from "../../context";
 import { useManagerFeedback } from "../../feedback";
 import ActionDefinitionView from "./ActionDefinitionView.vue";
+import { actionChatLabels } from "./chatLabels";
 
 const props = defineProps<{ modelValue: boolean }>();
 const emit = defineEmits<{ "update:modelValue": [value: boolean]; created: []; back: [] }>();
 
 const { ot } = useOntologyText();
 const { message } = useManagerFeedback();
-const { requestSmartAsset, loadOntology } = useManagerClient();
+const manager = useManagerClient();
 
 const visible = computed({
   get: () => props.modelValue,
   set: (value: boolean) => emit("update:modelValue", value),
 });
 
-type ChatMessage = { role: "user" | "assistant" | "error"; text: string };
+const client: AgentHostClient = createAgentHostClient({
+  request: (path, init) => manager.request(`/ontology/ai${path}`, init),
+});
 
-const messages = ref<ChatMessage[]>([]);
-const prompt = ref("");
-const generating = ref(false);
-const saving = ref(false);
+const agentId = ref<string | null>(null);
+const agent = computed<AgentHostAgent | null>(() =>
+  agentId.value
+    ? {
+        id: agentId.value,
+        name: ot("actionWizardChatTitle"),
+        description: ot("actionWizardIntro"),
+        icon: null,
+        enabled: true,
+      }
+    : null
+);
+const chat = ref<InstanceType<typeof AgentChatPanel> | null>(null);
+const sessionId = ref<string | null>(null);
 const draft = ref<any>(null);
+const saving = ref(false);
+const creatingDraft = ref(false);
 const examples = ref<string[]>([]);
 const examplesLoading = ref(false);
-const messagesEl = ref<HTMLElement | null>(null);
+const errorText = ref("");
 
-function reset() {
-  messages.value = [{ role: "assistant", text: ot("actionWizardIntro") }];
-  prompt.value = "";
-  generating.value = false;
-  saving.value = false;
-  draft.value = null;
-  void nextTick(scrollBottom);
-}
+const labels = computed(() =>
+  actionChatLabels({
+    greeting: ot("actionWizardGreeting"),
+    placeholder: ot("actionWizardPlaceholder"),
+    send: ot("actionWizardSend"),
+    stop: ot("actionWizardStop"),
+    newConversation: ot("actionWizardNewChat"),
+    working: ot("actionWizardGenerating"),
+  })
+);
 
 watch(
   () => props.modelValue,
   async (open) => {
     if (!open) return;
-    reset();
-    await loadExamples();
+    errorText.value = "";
+    void loadAgent();
+    if (!examples.value.length) void loadExamples();
   }
 );
 
+async function loadAgent() {
+  if (agentId.value) return;
+  try {
+    const response = await manager.request("/action/creationAgent");
+    const body = await response.json();
+    const id = body?.data?.agentId ?? body?.agentId;
+    if (typeof id === "string") agentId.value = id;
+  } catch (error) {
+    errorText.value = error instanceof Error ? error.message : ot("actionWizardAgentError");
+  }
+}
+
 async function loadExamples() {
   examplesLoading.value = true;
-  examples.value = [];
   try {
-    const response = await requestSmartAsset("actions", "exampleRequests", {});
-    const list = response?.data?.examples ?? response?.examples ?? [];
-    if (Array.isArray(list) && list.length) {
-      examples.value = list.slice(0, 3).map((item) => String(item));
-      return;
-    }
+    const response = await manager.request("/action/exampleRequests", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: "{}",
+    });
+    const body = await response.json();
+    const list = body?.data?.examples ?? body?.examples ?? [];
+    examples.value = Array.isArray(list) ? list.slice(0, 3).map((item) => String(item)) : [];
   } catch {
-    // The model may be unavailable; fall through to ontology templates.
+    examples.value = [];
   } finally {
     examplesLoading.value = false;
   }
+}
+
+function onSession(id: string | null) {
+  sessionId.value = id;
+}
+
+function onError(text: string) {
+  errorText.value = text;
+  message.error(text);
+}
+
+async function onRunComplete(payload: { sessionId: string; runId: string; ok: boolean }) {
+  if (!payload.ok) return;
+  creatingDraft.value = true;
+  errorText.value = "";
   try {
-    const ontology = await loadOntology();
-    examples.value = buildExamples(ontology.objects, ontology.relations);
-  } catch {
-    examples.value = [];
-  }
-  if (!examples.value.length) {
-    examples.value = [
-      ot("actionWizardExample1"),
-      ot("actionWizardExample2"),
-      ot("actionWizardExample3"),
-    ];
-  }
-}
-
-function labelOf(className: string, objects: Array<{ className: string; showName: string }>) {
-  return objects.find((item) => item.className === className)?.showName || className;
-}
-
-function buildExamples(
-  objects: Array<{ className: string; showName: string; attrs: Array<{ name: string; showName: string; type: string; primaryKey?: boolean }> }>,
-  relations: Array<{ fromclass: string; toclass: string }>
-): string[] {
-  const withAttributes = objects.filter((item) => item.attrs?.length);
-  const primary = withAttributes[0];
-  const attribute = primary?.attrs.find((item) => !item.primaryKey && !/vector|file/i.test(item.type))
-    ?? primary?.attrs.find((item) => !item.primaryKey);
-  const relation = relations[0];
-  const result: string[] = [];
-  if (primary) {
-    result.push(ot("actionExampleCreate", { name: primary.showName }));
-  }
-  if (primary && attribute) {
-    result.push(ot("actionExampleUpdate", { name: primary.showName, field: attribute.showName }));
-  }
-  if (relation) {
-    result.push(
-      ot("actionExampleRelation", {
-        source: labelOf(relation.fromclass, objects),
-        target: labelOf(relation.toclass, objects),
-      })
-    );
-  } else if (primary) {
-    result.push(ot("actionExampleDelete", { name: primary.showName }));
-  }
-  return result.slice(0, 3);
-}
-
-function scrollBottom() {
-  const el = messagesEl.value;
-  if (el) el.scrollTop = el.scrollHeight;
-}
-
-async function runGeneration(question: string) {
-  messages.value.push({ role: "user", text: question });
-  generating.value = true;
-  void nextTick(scrollBottom);
-  try {
-    const response = await requestSmartAsset("actions", "generateFromNatureLanguage", {
-      question,
-      persistence: false,
+    const response = await manager.request("/action/drafts", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ sessionId: payload.sessionId, runId: payload.runId }),
     });
-    const generated = response?.data ?? response;
-    if (!generated) throw new Error(ot("actionWizardGenerateFailed"));
-    draft.value = generated;
-    messages.value.push({
-      role: "assistant",
-      text: ot("actionDefinitionReady", { name: generated.name || "—" }),
-    });
+    const body = await response.json();
+    if (body?.success === false) throw new Error(body.message || ot("actionWizardDraftFailed"));
+    const value = body?.data ?? body;
+    // A question-only turn has no result file; keep the previous draft.
+    if (value?.noDraft) return;
+    if (!value?.draftId) throw new Error(ot("actionWizardDraftFailed"));
+    draft.value = value.action ?? value;
+    draft.value = { ...draft.value, draftId: value.draftId };
+    if (value.explanationMissing) message.warning(ot("actionWizardExplanationMissing"));
   } catch (error) {
-    const text = error instanceof Error ? error.message : ot("actionWizardGenerateFailed");
-    messages.value.push({ role: "error", text });
+    const text = error instanceof Error ? error.message : ot("actionWizardDraftFailed");
+    errorText.value = text;
     message.error(text);
   } finally {
-    generating.value = false;
-    void nextTick(scrollBottom);
+    creatingDraft.value = false;
   }
-}
-
-async function send() {
-  const question = prompt.value.trim();
-  if (!question) {
-    message.warning(ot("actionPromptRequired"));
-    return;
-  }
-  prompt.value = "";
-  await runGeneration(question);
-}
-
-async function sendExample(text: string) {
-  if (generating.value) return;
-  prompt.value = text;
-  await send();
 }
 
 async function save() {
-  if (!draft.value) {
+  if (!draft.value?.draftId) {
     message.warning(ot("actionWizardNoDraft"));
     return;
   }
   saving.value = true;
   try {
-    await requestSmartAsset("actions", "save", draft.value);
+    const response = await manager.request("/action/saveDraft", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ draftId: draft.value.draftId }),
+    });
+    const body = await response.json();
+    if (body?.success === false) throw new Error(body.message || ot("assetSaveFailed"));
     message.success(ot("actionWizardSaved"));
     visible.value = false;
     emit("created");
@@ -173,6 +161,18 @@ async function save() {
   } finally {
     saving.value = false;
   }
+}
+
+function newChat() {
+  sessionId.value = null;
+  draft.value = null;
+  errorText.value = "";
+  chat.value?.reset();
+}
+
+function sendExample(text: string) {
+  if (!agentId.value) return;
+  chat.value?.send(text);
 }
 
 function onClosed() {
@@ -190,45 +190,42 @@ function onClosed() {
     :close-on-click-modal="false"
     @closed="onClosed"
   >
-    <div class="action-create">
+    <div v-if="agentId" class="action-create">
       <section class="chat">
         <header class="chat-header">
           <strong>{{ ot("actionWizardChatTitle") }}</strong>
+          <el-button text size="small" :icon="Plus" @click="newChat">
+            {{ ot("actionWizardNewChat") }}
+          </el-button>
         </header>
-        <div ref="messagesEl" class="messages">
-          <template v-for="(item, index) in messages" :key="index">
-            <div :class="['msg', item.role]">{{ item.text }}</div>
-            <div v-if="index === 0 && messages.length === 1" class="try-say">
-              <p>{{ ot("actionWizardTrySay") }}</p>
-              <p v-if="examplesLoading" class="example-loading">{{ ot("actionWizardExamplesLoading") }}</p>
-              <button
-                v-for="example in examples"
-                :key="example"
-                type="button"
-                @click="sendExample(example)"
-              >
-                {{ example }}
-              </button>
-            </div>
-          </template>
-          <div v-if="generating" class="msg assistant typing">{{ ot("actionWizardGenerating") }}</div>
+        <div v-if="!draft && !sessionId" class="try-say">
+          <p>{{ ot("actionWizardTrySay") }}</p>
+          <p v-if="examplesLoading" class="example-loading">
+            {{ ot("actionWizardExamplesLoading") }}
+          </p>
+          <button
+            v-for="example in examples"
+            :key="example"
+            type="button"
+            :disabled="creatingDraft"
+            @click="sendExample(example)"
+          >
+            {{ example }}
+          </button>
         </div>
-        <div class="composer">
-          <el-input
-            v-model="prompt"
-            type="textarea"
-            :rows="3"
-            resize="none"
-            :placeholder="ot('actionWizardPlaceholder')"
-            @keydown.ctrl.enter.prevent="send"
-          />
-          <div class="composer-actions">
-            <span class="kbd">Ctrl + Enter</span>
-            <el-button type="primary" :icon="Send" :loading="generating" :disabled="generating" @click="send">
-              {{ ot("actionWizardSend") }}
-            </el-button>
-          </div>
-        </div>
+        <p v-if="errorText" class="chat-error" role="alert">{{ errorText }}</p>
+        <AgentChatPanel
+          ref="chat"
+          class="chat-panel"
+          :client="client"
+          :agent-id="agentId"
+          :agent="agent"
+          :labels="labels"
+          :session-id="sessionId"
+          @update:session-id="onSession"
+          @run-complete="onRunComplete"
+          @error="onError"
+        />
       </section>
 
       <aside class="definition-pane">
@@ -237,7 +234,10 @@ function onClosed() {
           <span v-if="draft" class="draft-name">{{ draft.name }}</span>
         </header>
         <div class="definition-body">
-          <ActionDefinitionView :action="draft" />
+          <p v-if="creatingDraft" class="definition-loading">
+            {{ ot("actionWizardGenerating") }}
+          </p>
+          <ActionDefinitionView v-else :action="draft" />
         </div>
         <footer v-if="draft" class="definition-actions">
           <el-button type="primary" :loading="saving" @click="save">
@@ -246,6 +246,7 @@ function onClosed() {
         </footer>
       </aside>
     </div>
+    <p v-else-if="errorText" class="dialog-error" role="alert">{{ errorText }}</p>
   </el-dialog>
 </template>
 
@@ -264,57 +265,27 @@ function onClosed() {
   border-right: 1px solid var(--el-border-color-light);
 }
 .chat-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
   padding: 16px 18px 8px;
 }
-.messages {
+.chat-panel {
   flex: 1;
   min-height: 0;
-  overflow: auto;
-  padding: 8px 18px 16px;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-.msg {
-  max-width: 88%;
-  padding: 10px 13px;
-  border-radius: 12px;
-  line-height: 1.55;
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-}
-.msg.user {
-  align-self: flex-end;
-  background: var(--el-color-primary);
-  color: var(--el-color-white);
-}
-.msg.assistant {
-  align-self: flex-start;
-  background: var(--el-fill-color-light);
-}
-.msg.error {
-  align-self: flex-start;
-  background: var(--el-color-danger-light-9);
-  color: var(--el-color-danger);
-}
-.msg.typing {
-  color: var(--el-text-color-secondary);
-  font-style: italic;
 }
 .try-say {
-  align-self: flex-start;
   display: flex;
-  flex-direction: column;
-  align-items: flex-start;
+  flex-wrap: wrap;
+  align-items: center;
   gap: 6px;
-  padding: 10px 12px;
-  border: 1px solid var(--el-color-success-light-7);
-  border-radius: 10px;
-  background: var(--el-color-success-light-9);
+  padding: 6px 18px 8px;
+  border-bottom: 1px solid var(--el-border-color-lighter);
 }
 .try-say p {
+  width: 100%;
   margin: 0 0 2px;
-  color: var(--el-color-success-dark-2);
+  color: var(--el-text-color-secondary);
   font-size: var(--text-xs, 12px);
 }
 .try-say button {
@@ -328,24 +299,15 @@ function onClosed() {
   cursor: pointer;
   text-align: start;
 }
-.try-say button:hover {
+.try-say button:hover:not(:disabled) {
   border-color: var(--el-color-success);
   color: var(--el-color-success-dark-2);
 }
-.composer {
-  padding: 12px 18px 18px;
-  border-top: 1px solid var(--el-border-color-light);
-}
-.composer-actions {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 10px;
-  margin-top: 8px;
-}
-.kbd {
-  color: var(--el-text-color-placeholder);
-  font-size: var(--text-xs, 11px);
+.chat-error,
+.dialog-error {
+  margin: 8px 18px;
+  color: var(--el-color-danger);
+  font-size: var(--text-sm, 13px);
 }
 .definition-pane {
   display: flex;
@@ -372,6 +334,11 @@ function onClosed() {
 .definition-body {
   flex: 1;
   min-height: 0;
+  overflow: auto;
+}
+.definition-loading {
+  padding: 24px 18px;
+  color: var(--el-text-color-secondary);
 }
 .definition-actions {
   display: flex;
