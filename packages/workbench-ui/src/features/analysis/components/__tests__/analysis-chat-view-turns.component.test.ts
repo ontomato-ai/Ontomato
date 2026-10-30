@@ -791,7 +791,21 @@ it("keeps every turn visible for a regular conversation with run history", () =>
   store.sessions["task-1"].isLoading = true;
   expect(store.displayIsLoading).toBe(true);
   expect(text).not.toContain("first-run-body");
-  expect(wrapper.find(".typing-cursor, .streaming-dots").exists()).toBe(false);
+  expect(wrapper.find(".typing-cursor").exists()).toBe(false);
+  expect(wrapper.find(".loop-running-indicator").exists()).toBe(true);
+});
+
+it.each(["completed", "failed", "cancelled"] as const)("removes the loop execution indicator when the live run becomes %s", async (status) => {
+  seed({
+    messages: [{ id: 1, role: "user", content: "Analyze sales" }],
+    streamingSnapshot: streamingExecution([]),
+    taskPatch: { executionMode: "loop", status: "running" },
+  });
+  const wrapper = render();
+  expect(wrapper.find(".loop-running-indicator[role='status']").exists()).toBe(true);
+  useAnalysisStore().sessions["task-1"].streamingSnapshot!.deepAnalysis!.runState.status = status;
+  await nextTick();
+  expect(wrapper.find(".loop-running-indicator").exists()).toBe(false);
 });
 
 // Public surface under test: one report-task execution plus a standard follow-up; observable result: the report body stays in the report view and the follow-up renders as-is.

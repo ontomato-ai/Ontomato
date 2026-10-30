@@ -79,6 +79,13 @@ watch(
 
 /** Only report tasks switch by run history; regular continuous conversations always show all turns. Judged by the task's own delivery mode. */
 const isReportTask = computed(() => task.value?.reportDeliverableEnabled !== false);
+const isLoopExecuting = computed(() => {
+  if (!store.isSelectedLatestRun) return false;
+  const payload = streamingSnapshot.value?.deepAnalysis;
+  const loop = payload?.executionMode === "loop" || task.value?.executionMode === "loop";
+  if (payload) return loop && payload.runState.status === "running";
+  return loop && (isLoading.value || task.value?.status === "running");
+});
 
 /**
  * Stable identity of a rendered turn. Message ids are rebuilt when live turns settle into history
@@ -1055,6 +1062,11 @@ function showFailedNotice(group: TurnGroup): boolean {
           />
         </template>
 
+        <div v-if="isLoopExecuting" class="loop-running-indicator" role="status" aria-live="polite">
+          <Loader2 :size="16" class="spin" aria-hidden="true" />
+          <span>{{ t("common.inProgress") }}</span>
+        </div>
+
         <!-- Scheduled task notice -->
         <div
           v-if="
@@ -2014,6 +2026,21 @@ function showFailedNotice(group: TurnGroup): boolean {
   align-items: center;
   gap: 6px;
   padding: 4px 0;
+}
+
+.loop-running-indicator {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 0 18px;
+  color: var(--el-text-color-secondary);
+  font-size: 13px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .loop-running-indicator .spin {
+    animation: none;
+  }
 }
 
 .streaming-dots span {

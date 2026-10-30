@@ -70,7 +70,7 @@ it("keeps a terminal snapshot ahead of a stale running list, without recalculati
     ).t.progress
   ).toBe(100);
 });
-it("shows the backend activity count and narrative without a loop percentage", () => {
+it("shows the activity count without leaking the agent narrative into loop task progress", () => {
   const runState = {
     status: "running" as const,
     revision: 1,
@@ -78,6 +78,6 @@ it("shows the backend activity count and narrative without a loop percentage", (
   };
   expect(buildTaskProgressMap([{ ...task, executionMode: "loop", runState }], {}, t).t).toEqual({
     progress: undefined,
-    stageText: 'analysis.loopProgress:{"done":7,"label":"checking trend"}',
+    stageText: 'analysis.loopActivityCount:{"done":7}',
   });
 });
