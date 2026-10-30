@@ -1,15 +1,16 @@
 <script setup lang="ts">
-import { computed, inject, ref } from "vue";
+import { computed, inject } from "vue";
 import { Brain, ChevronRight, LoaderCircle, Wrench } from "lucide-vue-next";
 import { shellContextKey } from "../context";
 import { describeTool, resolveToolRenderer } from "../tools";
 import type { ProcessStepView } from "../types";
 import ToolStep from "./ToolStep.vue";
+import { useAutoFold } from "../useAutoFold";
 
-/** Collapsed view of consecutive thinking and tool steps; tool steps use host overrides or ToolStep. */
+/** Consecutive thinking and tool steps: open while running, folded once done; tool steps use host overrides or ToolStep. */
 const props = defineProps<{ steps: ProcessStepView[]; active: boolean }>();
 const shell = inject(shellContextKey)!;
-const open = ref(false);
+const { open, toggle } = useAutoFold(() => props.active);
 
 const current = computed(() => props.steps.at(-1));
 const toolCount = computed(() => props.steps.filter((step) => step.kind === "tool").length);
@@ -33,7 +34,7 @@ function stepComponent(step: ProcessStepView) {
 
 <template>
   <div class="process" :class="{ open, active }">
-    <button type="button" class="process-summary" :aria-expanded="open" @click="open = !open">
+    <button type="button" class="process-summary" :aria-expanded="open" @click="toggle">
       <LoaderCircle v-if="active" :size="14" class="spin" />
       <Wrench v-else-if="toolCount" :size="14" />
       <Brain v-else :size="14" />

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, inject, ref, watch } from "vue";
+import { computed, inject, watch } from "vue";
 import {
   ChevronRight,
   CircleAlert,
@@ -8,6 +8,7 @@ import {
 } from "lucide-vue-next";
 import { shellContextKey } from "../context";
 import { useRetrievalActivity } from "../useRetrievalActivity";
+import { useAutoFold } from "../useAutoFold";
 import type { RetrievalLink } from "../conversation";
 import { toolSummary } from "../view";
 
@@ -19,7 +20,6 @@ const props = defineProps<{
 }>();
 
 const shell = inject(shellContextKey)!;
-const open = ref(false);
 const { state, run, restart } = useRetrievalActivity(() => {
   const ids = [props.sessionId, props.parentRunId, props.link.retrievalId, props.link.runId] as const;
   return {
@@ -39,7 +39,8 @@ const steps = computed(() => Object.values(run.value?.tools ?? {}).map((tool) =>
   key: tool.toolCallId,
   summary: toolSummary(tool.args),
 })));
-const running = computed(() => state.snapshot?.retrieverPending || state.snapshot?.bindingPending);
+const running = computed(() => Boolean(state.snapshot?.retrieverPending || state.snapshot?.bindingPending));
+const { open, toggle } = useAutoFold(() => running.value);
 const errorMessage = computed(() => state.snapshot?.admissionError ?? run.value?.errorMessage ?? state.snapshot?.run?.errorMessage ?? null);
 const labels = computed(() => shell.labels.value);
 </script>
@@ -50,7 +51,7 @@ const labels = computed(() => shell.labels.value);
       type="button"
       class="retrieval-summary"
       :aria-expanded="open"
-      @click="open = !open"
+      @click="toggle"
     >
       <LoaderCircle v-if="running" :size="14" class="spin" />
       <CircleAlert v-else-if="errorMessage" :size="14" class="danger" />
