@@ -11,7 +11,6 @@ export const ossProduct: WorkbenchProduct = {
   serviceDisplayName: "Ontomato",
   emailFooter: "This email was sent automatically by Ontomato",
   logDirEnvName: "ONTOMATO_LOG_DIR",
-  smtpFromAddress: "noreply@ontomato.local",
   logSource: "ontomato",
   appLogSourceType: "ontomato-app",
   logIdPatterns: {

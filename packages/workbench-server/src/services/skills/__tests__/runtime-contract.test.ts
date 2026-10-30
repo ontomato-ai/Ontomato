@@ -75,6 +75,6 @@ it("publishes every bundled public directory with the same standard package cont
   expect(skills.length).toBeGreaterThan(0);
   for (const skill of skills) {
     const request = await readSkillPackage(skill.path, { namespace: { kind: "provider", provider: "workbench" }, name: skill.id });
-    expect(request.files.some((file) => file.path === "scripts/index.mjs")).toBe(true);
+    expect(request.files.some((file) => file.path === "SKILL.md")).toBe(true);
   }
 });

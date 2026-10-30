@@ -18,7 +18,6 @@ function isCustomPath(sourceRoot: string, sourcePath: string): boolean {
 export async function syncRuntimeDefaultResources(): Promise<void> {
   const runtimeRoot = runtimeDataDir();
   for (const { from, to } of runtimeResourceSources()) {
-    if (!fs.existsSync(from)) continue;
     const target = path.join(runtimeRoot, to);
     await fs.promises.mkdir(path.dirname(target), { recursive: true });
     await fs.promises.cp(from, target, {
