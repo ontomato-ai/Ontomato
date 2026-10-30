@@ -28,6 +28,9 @@ export interface ResponseItem {
   answerText: string;
   /** Retrieval associations for activity rendering; stable across continuations. */
   retrievals: RetrievalLink[];
+  /** The run's start and stop times in ms, for the elapsed-time line. */
+  startedAt: number | null;
+  finishedAt: number | null;
 }
 
 export type ConversationItem = UserItem | ResponseItem;
@@ -72,6 +75,8 @@ export function conversationItems(state: ConversationState): ConversationItem[] 
       answerMessageId: null,
       answerText: "",
       retrievals: [],
+      startedAt: null,
+      finishedAt: null,
     };
     items.push(response);
     return response;
@@ -149,6 +154,8 @@ export function conversationItems(state: ConversationState): ConversationItem[] 
     const run = state.runs[item.runId];
     item.running = run?.status === "running";
     item.retrievals = run?.retrievals ?? [];
+    item.startedAt = run?.createdAt ? Date.parse(run.createdAt) : null;
+    item.finishedAt = run?.finishedAt ? Date.parse(run.finishedAt) : null;
     item.end = run && run.status === "stopped"
       ? { stopReason: run.stopReason, errorMessage: run.errorMessage }
       : null;

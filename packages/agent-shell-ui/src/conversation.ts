@@ -40,6 +40,9 @@ export interface RunView {
   status: RuntimeRunStatus;
   stopReason: RuntimeStopReason | null;
   errorMessage: string | null;
+  /** Run start and stop times (ISO), from the snapshot or the agent_start/agent_end envelopes. */
+  createdAt: string | null;
+  finishedAt: string | null;
   cursor: { seq: number; streamId: string } | null;
   artifacts: RuntimeArtifact[];
   tools: Record<string, ToolExecutionView>;
@@ -79,6 +82,8 @@ function ensureRun(state: ConversationState, runId: string): RunView {
     status: "running",
     stopReason: null,
     errorMessage: null,
+    createdAt: null,
+    finishedAt: null,
     cursor: null,
     artifacts: [],
     tools: {},
@@ -103,6 +108,8 @@ export function applyRunSnapshot(state: ConversationState, snapshot: AgentHostRu
   run.status = snapshot.run.status;
   run.stopReason = snapshot.run.stopReason;
   run.errorMessage = snapshot.run.errorMessage;
+  run.createdAt = snapshot.run.createdAt;
+  run.finishedAt = snapshot.run.finishedAt;
   run.cursor = { seq: snapshot.cursor.seq, streamId: snapshot.cursor.streamId };
   run.artifacts = [...snapshot.artifacts];
   run.tools = {};
@@ -184,6 +191,7 @@ export function applyEnvelope(state: ConversationState, envelope: RuntimeEventEn
   switch (event.type) {
     case "agent_start":
       run.status = "running";
+      run.createdAt ??= envelope.timestamp;
       break;
     case "message_start":
       upsertMessage(state, event.messageId, run.id, structuredClone(event.message), null);
@@ -226,6 +234,7 @@ export function applyEnvelope(state: ConversationState, envelope: RuntimeEventEn
       run.status = event.status;
       run.stopReason = event.stopReason;
       run.errorMessage = event.errorMessage;
+      run.finishedAt = envelope.timestamp;
       for (const tool of Object.values(run.tools))
         if (tool.status === "running") tool.status = "unknown";
       break;

@@ -51,6 +51,15 @@ return computed<ShellLabels>(() => ({
   toolEdit: t("assistant.toolEdit"),
   toolBash: t("assistant.toolBash"),
   toolSkill: t("assistant.toolSkill"),
+  activitySchema: t("assistant.activitySchema"),
+  activityValues: t("assistant.activityValues"),
+  activityQuery: t("assistant.activityQuery"),
+  activityKnowledge: t("assistant.activityKnowledge"),
+  activityRetrieve: t("assistant.activityRetrieve"),
+  activityDataset: t("assistant.activityDataset"),
+  activityCompute: t("assistant.activityCompute"),
+  done: t("assistant.done"),
+  elapsed: (time) => t("assistant.elapsed", { time }),
 }));
 
 }

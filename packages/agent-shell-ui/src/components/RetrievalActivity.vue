@@ -10,7 +10,10 @@ import { shellContextKey } from "../context";
 import { useRetrievalActivity } from "../useRetrievalActivity";
 import { useAutoFold } from "../useAutoFold";
 import type { RetrievalLink } from "../conversation";
+import type { ProcessStepView } from "../types";
+import { activitySummary, describeTool, skillOfCommand } from "../tools";
 import { toolSummary } from "../view";
+import ToolStep from "./ToolStep.vue";
 
 /** The stable retrieval ID preserves fold state while continuations replace the subscribed run. */
 const props = defineProps<{
@@ -34,15 +37,31 @@ watch([
   () => props.link.retrievalId, () => props.link.runId,
 ], restart);
 
-const steps = computed(() => Object.values(run.value?.tools ?? {}).map((tool) => ({
-  ...tool,
-  key: tool.toolCallId,
-  summary: toolSummary(tool.args),
-})));
+/** The retriever's tool executions as process steps, so they read like the main process. */
+const steps = computed<ProcessStepView[]>(() => Object.values(run.value?.tools ?? {}).map((tool) => {
+  const command = tool.toolName === "bash" && typeof tool.args.command === "string" ? tool.args.command : "";
+  return {
+    key: tool.toolCallId,
+    kind: "tool",
+    text: toolSummary(tool.args),
+    toolName: tool.toolName,
+    skill: command ? skillOfCommand(command) : null,
+    args: tool.args,
+    status: tool.status,
+    output: tool.output,
+  };
+}));
 const running = computed(() => Boolean(state.snapshot?.retrieverPending || state.snapshot?.bindingPending));
 const { open, toggle } = useAutoFold(() => running.value);
 const errorMessage = computed(() => state.snapshot?.admissionError ?? run.value?.errorMessage ?? state.snapshot?.run?.errorMessage ?? null);
 const labels = computed(() => shell.labels.value);
+/** While running: the current action; afterwards: the actions taken and the step count. */
+const detail = computed(() => {
+  const current = steps.value.at(-1);
+  if (running.value) return current ? describeTool(current, labels.value).verb : "";
+  const actions = activitySummary(steps.value, labels.value);
+  return steps.value.length ? [actions, labels.value.steps(steps.value.length)].filter(Boolean).join(" · ") : "";
+});
 </script>
 
 <template>
@@ -56,23 +75,15 @@ const labels = computed(() => shell.labels.value);
       <LoaderCircle v-if="running" :size="14" class="spin" />
       <CircleAlert v-else-if="errorMessage" :size="14" class="danger" />
       <Database v-else :size="14" />
-      <span class="summary-label">{{ labels.thinking }}</span>
-      <span class="summary-subject">{{ link.retrievalId.slice(0, 8) }}</span>
+      <span class="summary-label">{{ labels.activityRetrieve }}</span>
+      <span v-if="detail" class="summary-detail">{{ detail }}</span>
       <ChevronRight :size="14" class="chevron" />
     </button>
     <ol v-if="open" class="steps">
-      <li v-for="result in state.snapshot?.bindings?.datasets ?? []" :key="result.id" class="step">
-        <div class="step-head"><Database :size="12" /><span>{{ result.title }}</span></div>
+      <li v-for="result in state.snapshot?.bindings?.datasets ?? []" :key="result.id" class="binding">
+        <Database :size="12" /><span>{{ result.title }}</span>
       </li>
-      <li v-for="step in steps" :key="step.key" class="step">
-        <div class="step-head">
-          <LoaderCircle v-if="step.status === 'running'" :size="12" class="spin" />
-          <CircleAlert v-else-if="step.status === 'failed'" :size="12" class="danger" />
-          <span class="step-name">{{ step.toolName }}</span>
-          <span v-if="step.summary" class="step-summary">{{ step.summary }}</span>
-        </div>
-        <pre v-if="step.output" class="step-output">{{ step.output }}</pre>
-      </li>
+      <li v-for="step in steps" :key="step.key"><ToolStep :step="step" /></li>
       <li v-if="steps.length === 0 && !state.snapshot?.bindings?.datasets.length" class="step-empty">{{ labels.loading }}</li>
     </ol>
     <div v-if="errorMessage" class="retrieval-error" role="alert">
@@ -112,14 +123,12 @@ const labels = computed(() => shell.labels.value);
 .summary-label {
   flex-shrink: 0;
 }
-.summary-subject {
-  flex-shrink: 0;
-  padding: 1px 6px;
-  border-radius: 6px;
-  background: var(--el-fill-color);
-  color: var(--el-text-color-regular);
-  font-family: var(--font-mono, ui-monospace, monospace);
-  font-size: var(--text-xs, 12px);
+.summary-detail {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--el-text-color-tertiary);
 }
 .chevron {
   flex-shrink: 0;
@@ -137,44 +146,13 @@ const labels = computed(() => shell.labels.value);
   flex-direction: column;
   gap: 2px;
 }
-.step {
-  padding: 5px 8px;
-}
-.step-head {
+.binding {
   display: flex;
   align-items: center;
-  gap: 6px;
-  color: var(--el-text-color-secondary);
-  font-size: var(--text-sm, 13px);
-}
-.step-name {
-  font-family: var(--font-mono, ui-monospace, monospace);
-  font-size: var(--text-xs, 12px);
+  gap: 8px;
+  padding: 5px 8px;
   color: var(--el-text-color-regular);
-}
-.step-summary {
-  min-width: 0;
-  max-width: 420px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-family: var(--font-mono, ui-monospace, monospace);
-  font-size: var(--text-xs, 12px);
-  color: var(--el-text-color-tertiary);
-}
-.step-output {
-  margin: 6px 0 0 18px;
-  max-height: 240px;
-  overflow: auto;
-  padding: 8px 10px;
-  border-radius: var(--radius-lg, 12px);
-  background: var(--el-fill-color-light);
-  color: var(--el-text-color-secondary);
-  font-family: var(--font-mono, ui-monospace, monospace);
-  font-size: var(--text-xs, 12px);
-  line-height: 1.5;
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
+  font-size: var(--text-sm, 13px);
 }
 .step-empty {
   padding: 5px 8px;
