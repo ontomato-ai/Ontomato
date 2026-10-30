@@ -47,6 +47,8 @@ export interface TestCase {
 export interface CaseSet {
   id: string;
   name: string;
+  /** Owning business domain; absent on sets stored before case sets were domain-scoped. */
+  domainId?: string;
   cases: TestCase[];
   createdAt: string;
   updatedAt: string;

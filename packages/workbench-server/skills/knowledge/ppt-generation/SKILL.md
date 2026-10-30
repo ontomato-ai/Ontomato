@@ -1,3 +1,8 @@
+---
+name: ppt-generation
+description: Organize an analysis report into a presentation structure with conclusions first, one viewpoint per page and charts next to their explanation, and output it as an offline HTML presentation. Use when a report needs to be presented as slides.
+---
+
 ## Analysis Report PPT Generation Skill
 
 Organize an analysis report into a slide structure suitable for presentation, and output it as a single HTML presentation that can be opened offline.

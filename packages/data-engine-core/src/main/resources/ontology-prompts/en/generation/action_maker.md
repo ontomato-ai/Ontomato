@@ -258,6 +258,28 @@ The `where` condition format of `update`/`delete` is as follows:
 
 ---
 
+# Submission criteria first
+
+Before writing the program, decide the whole-action preconditions and deliver them as `submissionCriteria` in `outputs/result.json`. They describe conditions over parameters and the pre-action object state; they are not per-write guards.
+
+```json
+{
+  "operator": "AND",
+  "conditions": [
+    {"kind": "PROPERTY", "objectParameter": "order_id", "className": "orders",
+     "field": "status", "operator": "IS", "value": "已下单",
+     "message": "Only orders in status 已下单 can be shipped."}
+  ],
+  "unrepresentable": [
+    {"description": "Reject when stock is insufficient", "reason": "Depends on an external stock service"}
+  ]
+}
+```
+
+- Evaluate every condition once at the top of the program, before any write; when any condition fails, raise the configured messages and perform no write.
+- A condition that cannot be expressed as a condition tree belongs under `unrepresentable` with its reason, and stays in code. Never hide it in prose.
+- `objectParameter` names the parameter that identifies the object; `className` names its class.
+
 # Delivery Method
 Use the result file described in the ontology-generation skill to submit the final delivery; the parameters are the following five parts (the field meanings and examples are as follows, and the shape is constrained by the tool); in the body write only a brief description, and no longer output the full code and tag text. Before submission, this file must have been successfully executed with the ontology-generation `generation.mjs test outputs/program.py parameters.json` command, and its content must not have been changed again after execution.
 The delivery includes five parts: `write function code` (path under `outputs/`, for example `outputs/program.py`), `parameter definitions` (object list, each item contains name, type, description, value, className), `write function name` (for example, add an employee and create its relationship with a department), `write function program logic` (for example, according to the employee name and department id in the input parameters, add an employee record in the employee class, and create a belonging relationship between this employee and the target department) and `object classes involved in the write operation` (object class name list, for example ["/company/employee", "/company/department"]).

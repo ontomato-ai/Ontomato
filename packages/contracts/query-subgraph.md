@@ -40,7 +40,8 @@ The Zod structural shape generates `src/query-subgraph.schema.json` using
 same generated schema and validates it using existing Fastjson2. Reference,
 ownership, hop-range, unique-output and dependency-cycle checks run in both
 `querySubgraphIssues` and `QuerySubgraphContract`; shared fixtures keep them aligned.
-Java additionally checks ontology references, execution provenance and user permissions.
+Java reads the graph only through that structural and reference validation: it does not
+resolve ontology references, derive execution provenance or apply user permissions from it.
 
 The preparation/Function cutover will replace single-source `outKeyRefs` as the
 live permission input. Legacy stored declarations are handled at their read
