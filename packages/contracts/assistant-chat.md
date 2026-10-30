@@ -62,6 +62,8 @@ feedback, QC annotations and decisions into runtime is outside this batch.
 The [ontology retrieval contract](data-retrieval.md) replaces workbench
 retrieval orchestration. The assistant retains parent associations and dataset
 provenance, using ontology HTTP for child runs/files/QC and cancellation. Its
-dataset-source shape above is unchanged. Both external and assistant execution
-use the same `ontomato-analyst ask`; `assistant-retrieval` is removed. This cutover
-does not extend the common host proxy or move feedback into runtime.
+dataset-source shape above is unchanged. The assistant mounts
+`ontomato-analyst-assistant`, which documents only the ontology metadata commands
+and the same `ask`; external, retriever and generation execution use the complete
+`ontomato-analyst`. `assistant-retrieval` is removed. This cutover does not extend
+the common host proxy or move feedback into runtime.

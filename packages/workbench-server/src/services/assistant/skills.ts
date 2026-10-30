@@ -26,8 +26,8 @@ export async function registerAssistantSkills() {
 export async function assistantSkillCatalog(domainId: string, locale?: string) {
   return assistantSkillCatalogSchema.parse({ skills: [
     ...platformSkills().map(({ root: _root, ...entry }) => entry),
-    { skill: { namespace: { kind: "provider", provider: "ontology" }, name: "ontomato-analyst" },
-      title: "Ontology analyst", description: "Ask data questions and query the ontology", enabled: true },
+    { skill: { namespace: { kind: "provider", provider: "ontology" }, name: "ontomato-analyst-assistant" },
+      title: "Ontology analyst", description: "Read ontology metadata and ask data questions", enabled: true },
     ...(await skillManager.getAllSkills(domainId, locale)).map((s) => ({
       skill: s.skill, title: s.title ?? s.id, description: s.description ?? "", enabled: s.enabled, tags: s.tags,
     })),

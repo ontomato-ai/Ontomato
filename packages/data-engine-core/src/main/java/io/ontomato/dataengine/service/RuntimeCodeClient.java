@@ -17,6 +17,13 @@ public class RuntimeCodeClient {
           Map.of("kind", "provider", "provider", "ontology"),
           "name",
           "ontomato-analyst");
+  /** The assistant-scoped analyst package reuses the complete skill's client files. */
+  public static final Map<String, Object> ASSISTANT_SKILL =
+      Map.of(
+          "namespace",
+          Map.of("kind", "provider", "provider", "ontology"),
+          "name",
+          "ontomato-analyst-assistant");
   private final io.ontomato.dataengine.service.agent.AgentRuntimeClient runtime;
 
   public RuntimeCodeClient(io.ontomato.dataengine.service.agent.AgentRuntimeClient runtime) {
@@ -34,6 +41,7 @@ public class RuntimeCodeClient {
               for (int attempt = 0; attempt < 30; attempt++) {
                 try {
                   registerSkill();
+                  registerAssistantSkill();
                   return;
                 } catch (Exception error) {
                   if (attempt == 29)
@@ -63,6 +71,13 @@ public class RuntimeCodeClient {
     return runtime.text(domain, correlation, path, method, body, key);
   }
 
+  private String skillResource(String path) throws java.io.IOException {
+    try (var in = getClass().getResourceAsStream("/" + path)) {
+      if (in == null) throw new IllegalStateException("Ontology skill resource is missing: " + path);
+      return new String(in.readAllBytes(), StandardCharsets.UTF_8);
+    }
+  }
+
   public void registerSkill() throws Exception {
     List<Map<String, String>> files = new ArrayList<>();
     for (String file :
@@ -72,20 +87,36 @@ public class RuntimeCodeClient {
             "client.mjs",
             "application.yml",
             "python/query_runtime.py",
-            "references/dsl.md")) {
-      try (var in = getClass().getResourceAsStream("/ontology-skills/ontomato-analyst/" + file)) {
-        if (in == null)
-          throw new IllegalStateException("Ontology skill resource is missing: " + file);
-        files.add(
-            Map.of("path", file, "content", new String(in.readAllBytes(), StandardCharsets.UTF_8)));
-      }
-    }
+            "references/dsl.md"))
+      files.add(
+          Map.of("path", file, "content", skillResource("ontology-skills/ontomato-analyst/" + file)));
     request(
         null,
         "ontology-skill-registration",
         "/v1/skills",
         "POST",
         Map.of("skill", SKILL, "files", files),
+        null);
+  }
+
+  /** Publish the restricted entry point with the complete package's shared client files. */
+  public void registerAssistantSkill() throws Exception {
+    List<Map<String, String>> files = new ArrayList<>();
+    files.add(
+        Map.of(
+            "path",
+            "SKILL.md",
+            "content",
+            skillResource("ontology-skills/ontomato-analyst-assistant/SKILL.md")));
+    for (String file : List.of("ontomato.mjs", "client.mjs", "application.yml"))
+      files.add(
+          Map.of("path", file, "content", skillResource("ontology-skills/ontomato-analyst/" + file)));
+    request(
+        null,
+        "ontology-assistant-skill-registration",
+        "/v1/skills",
+        "POST",
+        Map.of("skill", ASSISTANT_SKILL, "files", files),
         null);
   }
 
