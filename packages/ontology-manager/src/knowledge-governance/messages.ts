@@ -108,6 +108,8 @@ export const englishGovernance: GovernanceMessages = {
     "activityRetrieve": "Retrieve data",
     "activityDataset": "Prepare dataset",
     "activityCompute": "Run calculation",
+    "datasetData": "Data",
+    "datasetLineage": "Lineage",
     "done": "Done",
     "elapsed": "{time} elapsed",
     "addToDashboard": "Add to dashboard",

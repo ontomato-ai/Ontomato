@@ -153,6 +153,9 @@ export interface ShellLabels {
   activityRetrieve: string;
   activityDataset: string;
   activityCompute: string;
+  /** Dataset view switch: the rows, or the graph of how they were obtained. */
+  datasetData: string;
+  datasetLineage: string;
   /** A finished response's status line. */
   done: string;
   /** Elapsed time phrase; `time` is already formatted as m:ss. */
