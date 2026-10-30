@@ -91,7 +91,7 @@ public class OntologyBindingRetrieval {
             return null;
           });
           jobs.start(id, context.access().user(), "output", JSONObject.of("recipe",recipe,"classNames",request.get("classNames")),
-              execution -> outputs.execute(execution, AgentJson.copy(recipe), new JSONArray(), context.access(), context.language(), scope));
+              execution -> outputs.execute(execution, AgentJson.copy(recipe), null, context.access(), context.language(), scope));
           JSONObject job;
           do {
             store.transaction(() -> { gate(retrieval,run,owner); return null; });
@@ -210,7 +210,7 @@ public class OntologyBindingRetrieval {
     var programs=new JSONArray(); var recipes=new JSONArray();
     for(var output:accepted) {
       var data=JSON.parseObject(output.getString("dataset")); var recipe=data.getJSONObject("recipe");
-      programs.add(JSONObject.of("question",data.getString("question"),"code",recipe.getString("executedCode"),"outKeyRefs",data.get("outKeyRefs")));
+      programs.add(JSONObject.of("question",data.getString("question"),"code",recipe.getString("executedCode"),"sourceAnalysis",data.get("sourceAnalysis")));
       recipes.add(recipe);
     }
     var request=accepted.get(0).getJSONObject("request");

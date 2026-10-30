@@ -1103,6 +1103,8 @@ public class DataServiceImpl implements DataService {
 			// Query total record count
 			Integer totalCount = getCountByClassName(className, searchTerm, jsonRule, permission, domainId);
             int totalPage = totalCount % pagecount == 0 ? totalCount / pagecount : totalCount / pagecount + 1;
+            rows = io.ontomato.dataengine.service.QueryPermissions.mask(rows,
+                io.ontomato.dataengine.service.QuerySourceAnalysis.fromDsl(dsl, classDefs), permission);
             ret.put("data", rows);
     		ret.put("total_count", totalCount);
     		ret.put("total_page", totalPage);
@@ -1118,6 +1120,7 @@ public class DataServiceImpl implements DataService {
 	
 	@Override
 	public List<String> queryDistinctAttrValue(String className, String attrName, String query, UserDataPermission permission, String domainId) throws Exception {
+        io.ontomato.dataengine.service.QueryPermissions.requireField(permission, className, attrName, io.ontomato.dataengine.service.QueryPermissions.Use.GROUP);
 		List<String> values = new ArrayList<String>();
 		
 		Map<String, Object> jsonRule = adminService.getJSONRule(domainId);

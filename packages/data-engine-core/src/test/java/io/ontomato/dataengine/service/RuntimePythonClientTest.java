@@ -12,7 +12,7 @@ import org.mockito.ArgumentCaptor;
 
 class RuntimePythonClientTest {
   @org.junit.jupiter.api.BeforeEach
-  void cancellationOwner() {
+  void cancellationOwner() throws Exception {
     var entrance = new BackendSessionEntrance();
     org.springframework.test.util.ReflectionTestUtils.setField(
         entrance, "sessionRegistryService", mock(SessionRegistryService.class));
@@ -20,8 +20,9 @@ class RuntimePythonClientTest {
   }
 
   @Test
-  void savedOldProtocolIsRejectedBeforeAnyRuntimeCall() {
+  void savedOldProtocolIsRejectedBeforeAnyRuntimeCall() throws Exception {
     RuntimeCodeClient runtime = mock(RuntimeCodeClient.class);
+    when(runtime.pythonHelper()).thenReturn("# private fixture helper");
     QueryGrantService grants = mock(QueryGrantService.class);
     var executor = new PythonExecuteServiceImpl(runtime, grants);
     var error =
@@ -43,6 +44,7 @@ class RuntimePythonClientTest {
   @Test
   void newProtocolDelegatesIdentityAndPreservesPartialNullShapedOutput() throws Exception {
     RuntimeCodeClient runtime = mock(RuntimeCodeClient.class);
+    when(runtime.pythonHelper()).thenReturn("# private fixture helper");
     QueryGrantService grants = mock(QueryGrantService.class);
     when(runtime.ontologyUrl()).thenReturn("http://ontology");
     when(grants.issue(
@@ -82,14 +84,20 @@ class RuntimePythonClientTest {
     assertEquals(0, body.getJSONArray("arguments").size());
     assertEquals(
         "scoped-grant",
-        body.getJSONObject("environment").getJSONObject("secrets").getString("ONTOMATO_QUERY_TK"));
-    assertTrue(body.getJSONArray("files").getJSONObject(1).getString("content").contains("null"));
+        body.getJSONObject("environment").getJSONObject("secrets").getString("ONTOMATO_TK"));
+    var files = body.getJSONArray("files").stream().map(JSONObject::from).toList();
+    assertTrue(files.stream().filter(file -> "parameters.json".equals(file.getString("path")))
+        .findFirst().orElseThrow().getString("content").contains("null"));
+    assertTrue(files.stream().anyMatch(file -> "query_runtime.py".equals(file.getString("path"))));
+    assertTrue(body.getJSONArray("libraries").isEmpty());
+    assertFalse(body.getJSONObject("environment").getJSONObject("secrets").containsKey("ONTOMATO_QUERY_TK"));
     verify(grants).revoke(eq("domain"), anyString());
   }
 
   @Test
   void publishedFunctionUsesRuntimeParametersAndOriginalColumnMasking() throws Exception {
     RuntimeCodeClient runtime = mock(RuntimeCodeClient.class);
+    when(runtime.pythonHelper()).thenReturn("# private fixture helper");
     QueryGrantService grants = mock(QueryGrantService.class);
     when(runtime.ontologyUrl()).thenReturn("http://ontology");
     when(grants.issue(
@@ -110,6 +118,7 @@ class RuntimePythonClientTest {
    {"key":"valid","className":"/sales","attrName":"valid","asGroupBy":false,"statCal":false}]}}
 """,
             io.ontomato.dataengine.bean.function.Function.class);
+    function.setDomainId("domain");
     function.setCode("# ontomato-python:2\nfrom query_runtime import execute_dsl, parameters");
     var service = new io.ontomato.dataengine.service.impl.ABCProgramServiceImpl();
     org.springframework.test.util.ReflectionTestUtils.setField(
@@ -145,8 +154,42 @@ class RuntimePythonClientTest {
   }
 
   @Test
+  void pythonFailureUsesHostQueryEvidenceAndNeverMessageContents() throws Exception {
+    // Exercise actual Python traceback formatting without a runtime, database or model.
+    var process = new ProcessBuilder("python3", "-c",
+        "exec(compile(\"def fail():\\n    raise ValueError('private-value')\\nfail()\\n\", 'program.py', 'exec'))").start();
+    String stderr = new String(process.getErrorStream().readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
+    assertEquals(1, process.waitFor());
+    var runtime = mock(RuntimeCodeClient.class);
+    when(runtime.pythonHelper()).thenReturn("# helper");
+    when(runtime.ontologyUrl()).thenReturn("http://ontology");
+    when(runtime.execution(anyString(), anyString())).thenReturn(JSONObject.parseObject(
+        "{\"status\":\"stopped\",\"exitCode\":1,\"errorMessage\":\"private runtime diagnostic\",\"outputs\":[{\"name\":\"stderr\"}]}"));
+    when(runtime.output(anyString(), anyString(), eq("stderr"))).thenReturn(stderr);
+    var grants = mock(QueryGrantService.class);
+    String execution = java.util.UUID.randomUUID().toString();
+    when(grants.queryError("domain", execution)).thenReturn("column t.hj_dj does not exist");
+    var executor = new PythonExecuteServiceImpl(runtime, grants);
+    var result = executor.execute("session", "# ontomato-python:2", 1, "en",
+        PythonAuthority.read("user", "domain").forExecution(execution), new JSONObject(), Map.of());
+    assertEquals("ValueError at program.py line 2\nQuery failed: column t.hj_dj does not exist", result.getError());
+    assertNull(result.getResult());
+    var programs = new io.ontomato.dataengine.service.impl.ABCProgramServiceImpl();
+    assertEquals(result.getError(), assertThrows(Exception.class,
+        () -> programs.parsePythonReturn(result.getResult(), result.getError())).getMessage());
+
+    when(runtime.output(anyString(), anyString(), eq("stderr")))
+        .thenReturn("RuntimeError: Ontology request failed (500): private-value");
+    when(grants.queryError("domain", execution)).thenReturn(null);
+    var forged = executor.execute("session", "# ontomato-python:2", 1, "en",
+        PythonAuthority.read("user", "domain").forExecution(execution), new JSONObject(), Map.of());
+    assertEquals("RuntimeError", forged.getError());
+  }
+
+  @Test
   void lostAdmissionResponseClosesExecutionIntent() throws Exception {
     RuntimeCodeClient runtime = mock(RuntimeCodeClient.class);
+    when(runtime.pythonHelper()).thenReturn("# private fixture helper");
     QueryGrantService grants = mock(QueryGrantService.class);
     when(runtime.request(
             anyString(), anyString(), eq("/v1/code-executions"), eq("POST"), any(), anyString()))

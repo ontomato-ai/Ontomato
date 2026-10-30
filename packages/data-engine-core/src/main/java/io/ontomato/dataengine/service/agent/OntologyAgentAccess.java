@@ -65,9 +65,10 @@ public class OntologyAgentAccess {
 
   public Context current(HttpServletRequest request) {
     var access = queries.access(request);
-    if (access.grant() != null)
+    if (access.grant() != null && !"retrieval-exploration".equals(access.grant().getString("purpose")))
       throw new AgentHttpException(403, "FORBIDDEN", "A current user credential is required");
     String caller = request.getHeader("X-Ontomato-Retrieval-Caller-Id");
+    if (caller != null && access.grant() == null) access = scopedQuery(access, caller);
     return new Context(
         new OntologyAgentStore.Owner(access.user().getId(), access.user().getDomainId()),
         access,
@@ -76,6 +77,15 @@ public class OntologyAgentAccess {
         request.getHeader("Accept-Language") == null ? "en" : request.getHeader("Accept-Language"),
         access.expiresAt(),
         caller == null ? null : AgentJson.id(caller));
+  }
+
+  /** Reuses the existing caller scope for assistant metadata and direct query commands. */
+  public QueryAccessService.Access scopedQuery(QueryAccessService.Access access, String callerId) {
+    var owner = new OntologyAgentStore.Owner(access.user().getId(), access.user().getDomainId());
+    var caller = store.caller(AgentJson.id(callerId), owner, false);
+    if (caller.getBooleanValue("closed")) throw new AgentHttpException(409, "RETRIEVAL_RUN_CLOSED", "Caller is closed");
+    return new QueryAccessService.Access(access.user(), access.permission(), access.grant(), access.credential(),
+        access.expiresAt(), caller.getJSONObject("input").getList("classNames", String.class));
   }
 
   public String exploration(

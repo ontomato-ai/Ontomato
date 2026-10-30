@@ -10,5 +10,6 @@ public class ABCHarnessProgram {
 	private String question;
 	private String code;
 	private List<ABCHarnessProgramOutKeyRef> outKeyRefs;
+    private com.alibaba.fastjson2.JSONObject sourceAnalysis;
 	
 }

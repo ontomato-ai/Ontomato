@@ -67,8 +67,11 @@ print(json.dumps({"answer": rows}, ensure_ascii=False))
 ```
 
 The host chooses credentials. Never use user/domain arguments, localhost engine
-URLs or credentials in code/messages. Test through bash, for example
-`python3 work/program.py`, and correct the file if necessary.
+URLs or credentials in code/messages. Test only through `node skills/data-retrieval/scripts/dataset.mjs preview @work/recipe.json`.
+Java injects query_runtime and credentials; it is unavailable in ordinary bash Python.
+Prepare sourceAnalysis before testing. Both exploration DSL and Python previews return
+user-authorized data. Internal raw values are only available during Java's computation;
+never calculate on masked preview strings.
 The helper preserves source partial-result metadata;
 empty partial rows do not prove there are no full-source matches. Do not rerun
 merely to erase a partial-result warning or change scientific notation.
@@ -80,7 +83,10 @@ to bypass a DSL error. A displayed preview is not the full calculation input.
 # Deliver
 
 Follow data-retrieval/references/dataset.md. Write a recipe with title, question,
-field sources, assumptions, metric uses, selfCheck and confirmed decision IDs.
+sourceAnalysis, assumptions, metric uses, selfCheck and confirmed decision IDs.
+Use the shared subgraph JSON for field sources and the dynamic graph. Output node
+labels must be readable in the user's language; keys may remain stable technical identifiers.
+For DSL, Java derives actual dependencies and accepts your declared output labels by key.
 Run the skill's dataset.mjs to write outputs/<name>.dataset.json. The host always
 reruns the recipe with the user's permissions. Reference that exact file in the
 answer and describe scope/limitations. Different datasets use distinct paths.

@@ -162,6 +162,7 @@ public class OntologyRetrievalService {
         input.put("classNames", requested == null || requested.isEmpty() ? allowed : requested);
       }
     }
+    input.put("classNames", QueryAccessService.classScope(context.access().permission(), input.getList("classNames", String.class)));
     return input;
   }
 
@@ -478,7 +479,7 @@ public class OntologyRetrievalService {
               "userQuotes",
               input.get("userQuotes"),
               "overview",
-              ontology.overview(context.access()),
+              scopedOverview(context.access(), input.getList("classNames", String.class)),
               "knowledge",
               knowledge.get("items"),
               "metrics",
@@ -497,10 +498,8 @@ public class OntologyRetrievalService {
               "ONTOMATO_ONTOLOGY_URL", runtime.ontologyUrl(), "ONTOMATO_RETRIEVAL_ID", id);
       var secrets =
           JSONObject.of(
-              "ONTOMATO_QUERY_TK",
-              grant,
               "ONTOMATO_TK",
-              context.token() == null ? "" : context.token());
+              grant);
       if (context.apiKey() != null) secrets.put("ONTOMATO_API_KEY", context.apiKey());
       store.transaction(() -> store.gate(id, runId, context.owner()));
       runtime.json(
@@ -796,6 +795,13 @@ public class OntologyRetrievalService {
     }
   }
 
+  private Object scopedOverview(QueryAccessService.Access access, List<String> classNames) {
+    var value = JSONObject.from(ontology.overview(access));
+    if (classNames != null && !classNames.isEmpty()) value.put("classes", value.getJSONArray("classes").stream()
+        .map(JSONObject::from).filter(c -> classNames.contains(c.getString("name"))).toList());
+    return value;
+  }
+
   public JSONObject prepareOutput(
       String id, String runId, String key, JSONObject body, OntologyAgentAccess.Context context) {
     DatasetFileContract.preparation(body);
@@ -828,7 +834,7 @@ public class OntologyRetrievalService {
           return null;
         });
     var jobInput =
-        JSONObject.of("submissionId", key, "recipe", recipe, "outKeyRefs", body.get("outKeyRefs"));
+        JSONObject.of("submissionId", key, "recipe", recipe, "sourceAnalysis", body.get("sourceAnalysis"));
     jobs.start(
         key,
         context.access().user(),
@@ -838,7 +844,7 @@ public class OntologyRetrievalService {
             outputs.execute(
                 session,
                 AgentJson.copy(recipe),
-                body.getJSONArray("outKeyRefs"),
+                body.getJSONObject("sourceAnalysis"),
                 context.access(),
                 context.language()));
     return JSONObject.of("id", key);
@@ -884,7 +890,9 @@ public class OntologyRetrievalService {
       if (!keys.add(JSONObject.from(c).getString("key")))
         throw AgentHttpException.invalid("Duplicate dataset column");
     var refs = new HashSet<String>();
-    for (Object r : data.getJSONArray("outKeyRefs")) refs.add(JSONObject.from(r).getString("key"));
+    if (data.getJSONObject("sourceAnalysis") != null)
+      refs.addAll(QuerySourceAnalysis.outputKeys(QuerySubgraphContract.validate(data.getJSONObject("sourceAnalysis"))));
+    else for (Object value : data.getJSONArray("outKeyRefs")) refs.add(JSONObject.from(value).getString("key"));
     if (!keys.equals(refs)) throw AgentHttpException.invalid("Dataset source keys differ");
     for (Object r : data.getJSONArray("rows"))
       if (!JSONObject.from(r).keySet().equals(keys))
@@ -946,8 +954,8 @@ public class OntologyRetrievalService {
               "python".equals(recipe.getString("kind"))
                   ? recipe.getString("code")
                   : recipe.getString("executedCode"),
-              "outKeyRefs",
-              d.get("outKeyRefs")));
+              "sourceAnalysis",
+              d.get("sourceAnalysis")));
       recipes.add(recipe);
     }
     var input = store.retrieval(id, owner).getJSONObject("input");

@@ -59,6 +59,9 @@ export const app = {
         "agent-skills/metricview-generation",
         "agent-skills/knowledge-governance",
         "packages/contracts/src/agent-artifact-markdown-prompt.json",
+        "packages/contracts/src/query-subgraph.schema.json",
+        "packages/contracts/query-subgraph.md",
+        "packages/contracts/examples/query-subgraphs.json",
         "packages/contracts/src/service-logging-format.json",
         "packages/data-engine-core/src/main",
         // Every adapter depends on the shared contract tests in test scope, so Maven resolves it even with tests skipped.

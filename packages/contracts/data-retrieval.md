@@ -141,8 +141,9 @@ in-product retrieval issues its exploration grant locally.
 
 Scripts use `ONTOMATO_ONTOLOGY_URL`, **`ONTOMATO_TK` as current user credential**,
 `ONTOMATO_RETRIEVAL_ID`, runtime session/run identity, language/correlation/output
-variables. Direct query/Python commands retain `ONTOMATO_QUERY_TK` and
-`ONTOMATO_QUERY_RUN_ID`. No callback credential replaces ONTOMATO_TK. Retrieval
+variables. Every process uses one `ONTOMATO_TK`: agent calls carry a scoped user
+authority; Java injects a distinct, short-lived execution tk into its Python job.
+The agent cannot select or receive that internal credential. Retrieval
 stops consuming ONTOMATO_WORKBENCH_URL; other workbench skills retain their own
 configuration. Environment precedes external application.yml. Ask downloads
 accepted bytes through the ontology proxy; the retriever uses direct queries and
@@ -195,3 +196,9 @@ stable job-ID recovery. Retrieval references the QC owner; workbench reads it as
 evidence. Feedback/decisions do not move into runtime. Model configuration,
 MetricView remodeling, general MCP, knowledge governance, stored-data conversion
 and artifact retention stay outside this cutover.
+
+Source analysis is the shared [query subgraph](query-subgraph.md). New Python recipes
+require sourceAnalysis; Java derives DSL sources and resolves stored metric sources.
+Dataset column labels are copied by key from graph output labels. Legacy stored
+datasets may omit the graph. `dataset.mjs preview @recipe.json` uses the same
+permission boundary without registering a file.

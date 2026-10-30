@@ -143,8 +143,8 @@ attribution header to the runtime; snapshot it with the admitted run/code
 execution for async logs. Public Java/Node entries never trust that user header.
 The runtime already owns `ONTOMATO_CORRELATION_ID`, `ONTOMATO_RUN_ID` and
 `ONTOMATO_SESSION_ID`; standard skill HTTP clients forward their available values.
-Keep the existing `ONTOMATO_QUERY_RUN_ID` grant-binding override: it is not a
-replacement for the executing code ID. Code-execution logs identify their own
+Each Python execution has its own bound credential and runtime run ID.
+Code-execution logs identify their own
 execution and join parent runs by correlation. Async work restores captured
 context and clears it on completion; never log the credential-bearing context
 object itself.

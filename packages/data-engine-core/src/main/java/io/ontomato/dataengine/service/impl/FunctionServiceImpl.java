@@ -127,7 +127,7 @@ public class FunctionServiceImpl implements FunctionService {
     function.setOperation(Function.OPERATION_READ);
     function.setDomainId(domainId);
 
-    Map<String, Object> jsonRule = adminService.getJSONRule(domainId);
+    Map<String, Object> jsonRule = generationService.authorizedRule(adminService.getJSONRule(domainId), domainId);
     List<Map<String, Object>> classDefs = (List<Map<String, Object>>) jsonRule.get("classDef");
     String originCode = abcProgram.getCode();
 
@@ -156,15 +156,11 @@ public class FunctionServiceImpl implements FunctionService {
 
       ReturnDef returnDef = new ReturnDef();
       returnDef.setIsVoid(false);
-      List<ABCHarnessProgramOutKeyRef> outKeyRefs = abcProgram.getOutKeyRefs();
-      List<String> classNames = new ArrayList<String>();
-      for (ABCHarnessProgramOutKeyRef outKeyRef : outKeyRefs) {
-        if (!classNames.contains(outKeyRef.getClassName())) {
-          classNames.add(outKeyRef.getClassName());
-        }
-      }
-      returnDef.setOutKeyRefs(outKeyRefs);
-      returnDef.setClassNames(classNames);
+      JSONObject sourceAnalysis = envelope.getJSONObject("sourceAnalysis");
+      io.ontomato.dataengine.service.QuerySubgraphContract.validate(sourceAnalysis);
+      returnDef.setSourceAnalysis(sourceAnalysis);
+      returnDef.setClassNames(sourceAnalysis.getJSONArray("nodes").stream().map(JSONObject::from)
+          .filter(n -> "class".equals(n.getString("kind"))).map(n -> n.getString("className")).distinct().toList());
       function.setReturnDef(returnDef);
 
       return generation.settle(() -> function);

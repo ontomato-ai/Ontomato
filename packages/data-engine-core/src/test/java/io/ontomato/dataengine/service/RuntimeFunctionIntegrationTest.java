@@ -230,6 +230,7 @@ class RuntimeFunctionIntegrationTest {
       var settings = new BusinessConfig();
       settings.setDslCookerTimeout(60000L);
       when(config.get("domain-a")).thenReturn(settings);
+      function.setDomainId("domain-a");
       String originalFunctionCode = function.getCode();
       var output =
           new QueryOutputService(python, programs, ontology, config)
@@ -244,7 +245,7 @@ class RuntimeFunctionIntegrationTest {
                       "revision-a",
                       "parameters",
                       JSONObject.of("multiplier", 4)),
-                  new JSONArray(),
+                  null,
                   new QueryAccessService.Access(
                       new QueryAccessService.GrantUser("reader", "domain-a"),
                       permission,
@@ -283,7 +284,7 @@ class RuntimeFunctionIntegrationTest {
                           "revision-a",
                           "parameters",
                           JSONObject.of("multiplier", 4)),
-                      new JSONArray(),
+                      null,
                       new QueryAccessService.Access(
                           new QueryAccessService.GrantUser("reader", "domain-a"),
                           permission,

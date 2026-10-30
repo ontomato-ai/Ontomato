@@ -11,7 +11,6 @@ for (const directory of process.argv.slice(2)) {
         "ontomato.mjs",
         "client.mjs",
         "SKILL.md",
-        "python/query_runtime.py",
         "references/dsl.md",
       ]
     : ["client.mjs"]) {

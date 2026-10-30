@@ -95,7 +95,7 @@ public class ActionServiceImpl implements ActionService {
   public Action generateFromNatureLanguage(
       String question, String lang, String domainId, boolean persistence) throws Exception {
     String businessId = UUID.randomUUID().toString();
-    Map<String, Object> jsonRule = adminService.getJSONRule(domainId);
+    Map<String, Object> jsonRule = generationService.authorizedRule(adminService.getJSONRule(domainId), domainId);
     List<Map<String, Object>> classDefs = (List<Map<String, Object>>) jsonRule.get("classDef");
     String prompt =
         OntologyGenerationPrompts.getActionMakerUserMessage(
@@ -475,6 +475,8 @@ public class ActionServiceImpl implements ActionService {
 	public PythonExecuteResult execute(String id, JSONObject param, String lang, User user, UserDataPermission permission, int timeoutMinutes) throws Exception {
 		Action action = queryById(id);
 		if (action != null) {
+            if (!user.getDomainId().equals(action.getDomainId()) || action.getFunction() == null ||
+                !user.getDomainId().equals(action.getFunction().getDomainId())) throw new IllegalArgumentException("Action is outside the current domain");
 			if (Action.STATUS_PUBLISHED.equals(action.getStatus())) {
 				Function function = action.getFunction();
 				for (Parameter parameter : function.getParameters()) {
@@ -483,6 +485,8 @@ public class ActionServiceImpl implements ActionService {
 				}
 				Object[] o = abcProgramService.execute(UUID.randomUUID().toString(), function, user.getId(), permission, ServiceConst.NOT_SANDBOX, lang, timeoutMinutes, user.getDomainId());
 				PythonExecuteResult result = (PythonExecuteResult)o[1];
+                if (result.getError() != null && !result.getError().isBlank()) { result.setResult(null); result.setError("Action execution failed"); }
+                else result.setResult(o[0] == null ? "{\"completed\":true}" : JSON.toJSONString(JSONObject.of("answer", o[0]), Feature.WriteMapNullValue));
 				return result;
 			} else {
 				throw new Exception(langService.get(lang, "Action.notPublished"));
@@ -505,7 +509,7 @@ public class ActionServiceImpl implements ActionService {
       String businessId,
       ExplanationConsumer<T> consumer)
       throws Exception {
-    var schema = adminService.getJSONRule(domainId);
+    var schema = generationService.authorizedRule(adminService.getJSONRule(domainId), domainId);
     String prompt =
         OntologyGenerationPrompts.getActionCodeExplainerUserMessage(
             parameters, schema, lang, langService);

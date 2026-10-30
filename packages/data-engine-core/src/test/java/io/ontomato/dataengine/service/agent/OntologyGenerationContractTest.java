@@ -19,6 +19,10 @@ import org.springframework.jdbc.datasource.*;
 
 /** Real PostgreSQL gates and receipts, with runtime and Python calls isolated from models/data. */
 class OntologyGenerationContractTest {
+  private static JSONObject sourceAnalysis() {
+    return JSONObject.of("schema", "ontomato.query-subgraph.v1", "queries", new JSONArray(),
+        "nodes", new JSONArray(), "edges", new JSONArray(), "filters", new JSONArray());
+  }
   String schema, jdbcUrl, username, password, session, run;
   OntologyAgentStore store;
   QueryGrantService grants;
@@ -63,10 +67,14 @@ class OntologyGenerationContractTest {
         .thenAnswer(
             call -> {
               var result = new PythonExecuteResult();
-              result.setResult("ok");
+              result.setResult("{\"answer\":[]}");
               if (failedTest) result.setError("fixture failure");
               return result;
             });
+    var permissionLookup = mock(DataPermissionLookup.class);
+    var permission = new io.ontomato.dataengine.service.sys.bean.permission.UserDataPermission();
+    permission.setFullData(true);
+    when(permissionLookup.getDataPermission(anyString(), anyString())).thenReturn(permission);
     operations =
         new GenerationOperations(
             store,
@@ -74,7 +82,7 @@ class OntologyGenerationContractTest {
             mock(SandboxService.class),
             mock(WriteFunctionOperationService.class),
             python,
-            grants);
+            grants, permissionLookup, new io.ontomato.dataengine.service.impl.ABCProgramServiceImpl());
     runtime = mock(AgentRuntimeClient.class);
     when(runtime.ontologyUrl()).thenReturn("http://ontology.invalid");
     code = mock(RuntimeCodeClient.class);
@@ -88,7 +96,7 @@ class OntologyGenerationContractTest {
             grants,
             sessions,
             operations,
-            code);
+            code, permissionLookup);
     when(runtime.json(any(), anyString(), anyString(), anyString(), any(), any()))
         .thenAnswer(
             call -> {
@@ -97,14 +105,14 @@ class OntologyGenerationContractTest {
                 session = path.split("/")[3];
                 run = call.getArgument(5);
                 JSONObject request = call.getArgument(4);
-                String token = request.getJSONObject("environment").getJSONObject("secrets").getString("ONTOMATO_GENERATION_TK");
+                String token = request.getJSONObject("environment").getJSONObject("secrets").getString("ONTOMATO_TK");
                 assertEquals(
                     owner.domainId(),
                     grants
                         .verify(token, run, "/ontology/ai/generation/" + run + "/context")
                         .getString("domainId"));
                 operations.test(
-                    run, owner, JSONObject.of("code", source, "parameterDefs", new JSONArray()));
+                    run, owner, JSONObject.of("code", source, "parameterDefs", new JSONArray(), "sourceAnalysis", sourceAnalysis()));
               }
               if (path.contains("/artifacts?")) {
                 String name =
@@ -206,7 +214,7 @@ class OntologyGenerationContractTest {
   void receiptBindsCodeParametersAndOperation() throws Exception {
     var ids = generation.open("function", UUID.randomUUID().toString(), null, owner, true);
     String run = ids.getString("runId");
-    operations.test(run, owner, JSONObject.of("code", source, "parameterDefs", new JSONArray()));
+    operations.test(run, owner, JSONObject.of("code", source, "parameterDefs", new JSONArray(), "sourceAnalysis", sourceAnalysis()));
     assertDoesNotThrow(() -> operations.requireTest(run, "function", source, new JSONArray()));
     assertThrows(
         AgentHttpException.class,
@@ -234,7 +242,7 @@ class OntologyGenerationContractTest {
         AgentHttpException.class,
         () ->
             operations.test(
-                run, owner, JSONObject.of("code", source, "parameterDefs", new JSONArray())));
+                run, owner, JSONObject.of("code", source, "parameterDefs", new JSONArray(), "sourceAnalysis", sourceAnalysis())));
     verify(code).closeIntent(eq(owner.domainId()), anyString());
   }
 
@@ -246,6 +254,7 @@ class OntologyGenerationContractTest {
         run,
         owner,
         JSONObject.of(
+            "sourceAnalysis", sourceAnalysis(),
             "code",
             source,
             "parameterDefs",

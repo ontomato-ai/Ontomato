@@ -19,7 +19,7 @@ ONTOMATO_TK (sent as tk), and optionally ONTOMATO_URL as the common deployment b
 The YAML fallback keys are ontologyUrl, tk and envUrl. An explicit service URL is sufficient without envUrl.
 ONTOMATO_LANGUAGE and ONTOMATO_CORRELATION_ID propagate to requests.
 ONTOMATO_RUN_ID supplies the run header when a host provided it.
-ONTOMATO_QUERY_TK optionally selects the host-issued ontology execution credential.
+ONTOMATO_TK is the only credential entry; Java determines the authorized task scope.
 
 Run `node ontomato.mjs <command>` from this directory. JSON accepts `@file`.
 

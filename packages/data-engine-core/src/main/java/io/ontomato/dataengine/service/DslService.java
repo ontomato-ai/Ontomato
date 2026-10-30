@@ -12,6 +12,9 @@ public interface DslService {
 	public Map<String, Object> executeV0(JSONObject dsl, UserDataPermission permission, User user);
 	
 	public Map<String, Object> executeV1(JSONObject dsl, UserDataPermission permission, User user);
+
+    /** Only Java's authenticated execution boundary may request intermediate values. */
+    public Map<String, Object> executeInternal(JSONObject dsl, UserDataPermission permission, User user);
 	
 	public List<String> getNodeIds(JSONObject dsl, UserDataPermission permission, User user);
 	

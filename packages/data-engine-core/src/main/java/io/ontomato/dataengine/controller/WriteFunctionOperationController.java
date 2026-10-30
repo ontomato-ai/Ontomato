@@ -24,6 +24,16 @@ import lombok.extern.slf4j.Slf4j;
 @Slf4j
 @RestController
 public class WriteFunctionOperationController {
+
+    @Autowired private jakarta.servlet.http.HttpServletRequest request;
+    @Autowired private io.ontomato.dataengine.service.QueryAccessService accessService;
+    @Autowired private io.ontomato.dataengine.service.OntologyQueryService queries;
+
+    private void checkClasses(String... names) {
+        java.util.List<String> scope = grant().getList("classNames", String.class);
+        if (scope != null && !scope.isEmpty()) for (String name : names)
+            if (!scope.contains(name)) throw new org.springframework.web.server.ResponseStatusException(org.springframework.http.HttpStatus.FORBIDDEN, "Class is outside this operation");
+    }
 	
 	@Autowired
 	private WriteFunctionOperationService writeFunctionOperationService;
@@ -34,6 +44,7 @@ public class WriteFunctionOperationController {
 		JSONObject ret = new JSONObject();
 		try {
 			String className = param.getString("className");
+            checkClasses(className);
 			String sandboxId = dealSandboxId(grant().getString("sandboxId"));
 			String domainId = grant().getString("domainId");
 			JSONArray objs = param.getJSONArray("objs");
@@ -53,6 +64,7 @@ public class WriteFunctionOperationController {
 		JSONObject ret = new JSONObject();
 		try {
 			String className = param.getString("className");
+            checkClasses(className);
 			String sandboxId = dealSandboxId(grant().getString("sandboxId"));
 			String domainId = grant().getString("domainId");
 			JSONObject setValues = param.getJSONObject("setValues");
@@ -73,6 +85,7 @@ public class WriteFunctionOperationController {
 		JSONObject ret = new JSONObject();
 		try {
 			String className = param.getString("className");
+            checkClasses(className);
 			String sandboxId = dealSandboxId(grant().getString("sandboxId"));
 			String domainId = grant().getString("domainId");
 			JSONObject where = param.getJSONObject("where");
@@ -98,7 +111,8 @@ public class WriteFunctionOperationController {
 			String targetObjId = param.getString("targetObjId");
 			String sandboxId = dealSandboxId(grant().getString("sandboxId"));
 			String domainId = grant().getString("domainId");
-			writeFunctionOperationService.createEdge(relationName, sourceClassName, sourceObjId, targetClassName, targetObjId, sandboxId, domainId);
+			checkClasses(sourceClassName, targetClassName);
+            writeFunctionOperationService.createEdge(relationName, sourceClassName, sourceObjId, targetClassName, targetObjId, sandboxId, domainId);
 			ret.put("success", true);
 		} catch (Exception e) {
 			log.error(e.getMessage(), e);
@@ -120,7 +134,8 @@ public class WriteFunctionOperationController {
 			String targetObjId = param.getString("targetObjId");
 			String sandboxId = dealSandboxId(grant().getString("sandboxId"));
 			String domainId = grant().getString("domainId");
-			writeFunctionOperationService.deleteEdge(relationName, sourceClassName, sourceObjId, targetClassName, targetObjId, sandboxId, domainId);
+			checkClasses(sourceClassName, targetClassName);
+            writeFunctionOperationService.deleteEdge(relationName, sourceClassName, sourceObjId, targetClassName, targetObjId, sandboxId, domainId);
 			ret.put("success", true);
 		} catch (Exception e) {
 			log.error(e.getMessage(), e);
@@ -134,9 +149,8 @@ public class WriteFunctionOperationController {
     @ResponseBody
     public Map<String, Object> query(@RequestBody JSONObject param) throws Exception {
 		JSONObject dsl = validDslJsonFormat(param);
-		String sandboxId = dealSandboxId(grant().getString("sandboxId"));
-		String domainId = grant().getString("domainId");
-		return writeFunctionOperationService.query(dsl, sandboxId, domainId);
+        grant();
+        return queries.execute(dsl, accessService.access(request));
     }
 	
 
@@ -144,6 +158,7 @@ public class WriteFunctionOperationController {
     public JSONObject appendVector(@RequestBody JSONObject body) throws Exception {
         byte[] bytes=body.getString("fileBase64")==null?java.util.Objects.toString(body.getString("text"),"").getBytes(java.nio.charset.StandardCharsets.UTF_8):java.util.Base64.getDecoder().decode(body.getString("fileBase64"));
         try(var input=new java.io.ByteArrayInputStream(bytes)) {
+            checkClasses(body.getString("className"));
             writeFunctionOperationService.appendVector(body.getString("className"),body.getString("attrName"),body.getString("objectId"),body.getString("text"),input,getSuffix(body.getString("fileName")),dealSandboxId(grant().getString("sandboxId")),grant().getString("domainId"));
         }
         return JSONObject.of("success",true);
@@ -152,6 +167,7 @@ public class WriteFunctionOperationController {
     public JSONObject updateVector(@RequestBody JSONObject body) throws Exception {
         byte[] bytes=body.getString("fileBase64")==null?java.util.Objects.toString(body.getString("text"),"").getBytes(java.nio.charset.StandardCharsets.UTF_8):java.util.Base64.getDecoder().decode(body.getString("fileBase64"));
         try(var input=new java.io.ByteArrayInputStream(bytes)) {
+            checkClasses(body.getString("className"));
             writeFunctionOperationService.updateVector(body.getString("className"),body.getString("attrName"),body.getString("objectId"),body.getString("fileId"),body.getString("text"),input,dealSandboxId(grant().getString("sandboxId")),grant().getString("domainId"));
         }
         return JSONObject.of("success",true);
@@ -167,6 +183,7 @@ public class WriteFunctionOperationController {
 		JSONObject ret = new JSONObject();
 		try {
 			String className = param.getString("className");
+            checkClasses(className);
 			String attrName = param.getString("attrName");
 			String objectId = param.getString("objectId");
 			String fileId = param.getString("fileId");

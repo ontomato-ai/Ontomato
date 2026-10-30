@@ -34,6 +34,7 @@ public class OntologyGenerationService {
   private final SessionRegistryService sessions;
   private final GenerationOperations operations;
   private final RuntimeCodeClient code;
+  private final DataPermissionLookup permissions;
   private final Set<String> active = java.util.concurrent.ConcurrentHashMap.newKeySet();
   private static final org.slf4j.Logger LOG =
       org.slf4j.LoggerFactory.getLogger(OntologyGenerationService.class);
@@ -45,7 +46,7 @@ public class OntologyGenerationService {
       QueryGrantService grants,
       SessionRegistryService sessions,
       GenerationOperations operations,
-      RuntimeCodeClient code) {
+      RuntimeCodeClient code, DataPermissionLookup permissions) {
     this.store = store;
     this.runtime = runtime;
     this.definitions = definitions;
@@ -53,6 +54,7 @@ public class OntologyGenerationService {
     this.sessions = sessions;
     this.operations = operations;
     this.code = code;
+    this.permissions = permissions;
   }
 
   @FunctionalInterface
@@ -73,6 +75,17 @@ public class OntologyGenerationService {
       if (previous == null) CURRENT.remove();
       else CURRENT.set(previous);
     }
+  }
+
+  public Map<String, Object> authorizedRule(Map<String, Object> rule, String domain) {
+    var actor = owner(domain);
+    return QueryPermissions.visibleRule(rule, permissions.getDataPermission(actor.userId(), domain), List.of());
+  }
+
+  public QueryAccessService.Access executionAccess(String domain) {
+    var actor = owner(domain);
+    return new QueryAccessService.Access(new QueryAccessService.GrantUser(actor.userId(), domain),
+        permissions.getDataPermission(actor.userId(), domain), null, null, null);
   }
 
   private Owner owner(String domain) {
@@ -179,9 +192,6 @@ public class OntologyGenerationService {
       String credential =
           grants.issue(
               owner.userId(), domain, "ontology-generation", run, deadline, List.of(), null);
-      String query =
-          grants.issue(
-              owner.userId(), domain, "retrieval-exploration", run, deadline, List.of(), null);
       store.transaction(() -> store.gate(session, run, owner));
       runtime.json(
           domain,
@@ -219,7 +229,7 @@ public class OntologyGenerationService {
                           kind),
                       "secrets",
                       JSONObject.of(
-                          "ONTOMATO_GENERATION_TK", credential, "ONTOMATO_QUERY_TK", query))),
+                          "ONTOMATO_TK", credential))),
           run);
       JSONObject snapshot;
       while (true) {

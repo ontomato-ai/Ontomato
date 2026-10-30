@@ -1,33 +1,16 @@
-import { datasetSchemaService } from "./ontology-context";
-import {
-  resolveAnalysisGraphClassNames,
-  intersectAnalysisClassNames,
-} from "./graph-scope";
-import type { AgentRow, AssistantOwner } from "./store";
+import type { AgentRow } from "./store";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
-import { getApiConfig } from "../../config/data-query-api";
-/** Preserve the old distinction: graph scope selects starting context; classNames scopes retrieval. */
+import { buildUrl, getApiConfig } from "../../config/data-query-api";
+import { backendGet } from "../../utils/backend-client";
+/** Initial context and retrieval share classNames; Java owns the authorized class catalogue. */
 export async function assistantOntologyContext(
   agent: AgentRow,
-  question: string,
-  owner: AssistantOwner,
   credentials: AssistantCredentials,
 ) {
-  const graph = await resolveAnalysisGraphClassNames(
-    agent.graph_scope,
-    credentials.token,
-    owner.userId,
-    credentials.locale,
-    credentials.apiKey,
-  );
-  const names = intersectAnalysisClassNames(agent.class_names, graph);
-  if (graph && names?.length === 0)
-    return "No classes are present in the configured initial ontology scope.";
-  datasetSchemaService.setConfig(getApiConfig().baseUrl ?? "");
-  return datasetSchemaService.getSchemaForQuestion(
-    question,
-    credentials.token,
-    credentials.apiKey,
-    names,
-  );
+  const response = await backendGet("assistant:ontology-overview",
+    buildUrl(getApiConfig(), "/ontology/query/overview"), credentials);
+  const overview = JSON.parse(response.text);
+  if (agent.class_names.length)
+    overview.classes = overview.classes.filter((cls: { name: string }) => agent.class_names.includes(cls.name));
+  return JSON.stringify(overview);
 }

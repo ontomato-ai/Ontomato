@@ -22,6 +22,7 @@ export function projectDataset(
     subQuestion: payload.question,
     columns: payload.columns.map((c) => c.key),
     data: payload.rows,
+    sourceAnalysis: payload.sourceAnalysis,
     retrieval,
     ...(payload.recipe.kind === "dsl" ? { dsl: payload.recipe.dsl } : {}),
     ...(code
@@ -29,7 +30,8 @@ export function projectDataset(
           abcProgram: {
             title: payload.title,
             code,
-            outKeyRefs: payload.outKeyRefs,
+            sourceAnalysis: payload.sourceAnalysis,
+            outKeyRefs: payload.outKeyRefs ?? [],
             parameters: [],
           },
         }

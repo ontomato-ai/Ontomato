@@ -11,6 +11,7 @@ import lombok.Data;
 public class ReturnDef {
 
 	private List<ABCHarnessProgramOutKeyRef> outKeyRefs;
+    private JSONObject sourceAnalysis;
 	private Boolean isVoid;
 	private JSONObject value;
 	private List<String> classNames;

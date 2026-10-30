@@ -40,15 +40,12 @@ public class PythonExecuteServiceImpl implements PythonExecuteService {
     String id =
         authority.executionId() == null ? UUID.randomUUID().toString() : authority.executionId();
     UUID.fromString(id);
-    runtime.registerSkill();
     long started = System.currentTimeMillis(), timeout = Math.max(1, timeoutMinutes) * 60000L;
     if (authority.parentGrant() != null)
       timeout = Math.min(timeout, authority.parentGrant().expiresAt() - started);
     if (timeout <= 0) throw new IllegalStateException("Parent query grant expired");
     String token =
-        authority.parentGrant() != null
-            ? authority.parentGrant().token()
-            : authority.purpose() == null
+        authority.purpose() == null
                 ? null
                 : grants.issue(
                     authority.userId(),
@@ -60,6 +57,7 @@ public class PythonExecuteServiceImpl implements PythonExecuteService {
                     authority.sandboxId());
     List<Map<String, String>> files = new ArrayList<>();
     files.add(Map.of("path", "program.py", "content", code));
+    files.add(Map.of("path", "query_runtime.py", "content", runtime.pythonHelper()));
     files.add(
         Map.of(
             "path",
@@ -69,19 +67,17 @@ public class PythonExecuteServiceImpl implements PythonExecuteService {
                 parameters == null ? new JSONObject() : parameters,
                 com.alibaba.fastjson2.JSONWriter.Feature.WriteMapNullValue)));
     for (var file : inputFiles.entrySet()) {
-      if (file.getKey().equals("program.py") || file.getKey().equals("parameters.json"))
+      if (file.getKey().equals("program.py") || file.getKey().equals("parameters.json") || file.getKey().equals("query_runtime.py"))
         throw new IllegalArgumentException("Input shadows an execution-owned file");
       files.add(Map.of("path", file.getKey(), "content", file.getValue()));
     }
     Map<String, String> values = new java.util.HashMap<>();
     values.put("ONTOMATO_ONTOLOGY_URL", runtime.ontologyUrl());
-    if (authority.parentGrant() != null)
-      values.put("ONTOMATO_QUERY_RUN_ID", authority.parentGrant().runId());
     Map<String, Object> request = Map.of(
         "language", "python", "locale", lang == null ? "en" : lang, "files", files, "entry", "program.py", "arguments", List.of(),
         "outputPaths", token == null ? List.of() : List.of("query-status.json"),
-        "environment", Map.of("values", values, "secrets", token == null ? Map.of() : Map.of("ONTOMATO_QUERY_TK", token)),
-        "libraries", List.of(Map.of("skill", RuntimeCodeClient.SKILL, "path", "python")),
+        "environment", Map.of("values", values, "secrets", token == null ? Map.of() : Map.of("ONTOMATO_TK", token)),
+        "libraries", List.of(),
         "limits", Map.of("wallTimeMs", timeout, "cpuSeconds", Math.max(1, timeoutMinutes) * 60));
     boolean settled = false;
     try {
@@ -111,13 +107,13 @@ public class PythonExecuteServiceImpl implements PythonExecuteService {
           .map(item -> ((JSONObject) item).getString("name")).toList();
       result.setResult(
           outputs.contains("stdout") ? runtime.output(authority.domainId(), id, "stdout") : null);
-      result.setError(
-          outputs.contains("stderr") ? runtime.output(authority.domainId(), id, "stderr") : null);
+      String stderr = outputs.contains("stderr") ? runtime.output(authority.domainId(), id, "stderr") : null;
       if (!"stopped".equals(snapshot.getString("status"))
           || !Integer.valueOf(0).equals(snapshot.getInteger("exitCode"))
-          || snapshot.getString("errorMessage") != null)
-        result.setError(snapshot.getString("errorMessage") == null
-            ? "Python execution did not complete" : snapshot.getString("errorMessage"));
+          || snapshot.getString("errorMessage") != null || stderr != null && !stderr.isBlank()) {
+        result.setError(io.ontomato.dataengine.util.ErrorText.pythonError(stderr, grants.queryError(authority.domainId(), id)));
+        result.setResult(null);
+      }
       if (outputs.contains("query-status.json")) {
         JSONObject marker =
             JSON.parseObject(runtime.output(authority.domainId(), id, "query-status.json"));

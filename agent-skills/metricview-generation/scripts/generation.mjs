@@ -20,6 +20,7 @@ export async function metricViewCommand(args, env = process.env, request = fetch
     case "test":
       if (!values[0] || !values[1]) throw new Error("test requires source and parameter definition files");
       body = { code: await readFile(values[0], "utf8"), parameterDefs: await bodyFile(values[1]) };
+      if (values[2]) body.sourceAnalysis = await bodyFile(values[2]);
       if (!Array.isArray(body.parameterDefs)) throw new Error("Parameter definitions must be an array");
       break;
     case "close": body = {}; break;
@@ -32,7 +33,7 @@ export async function metricViewCommand(args, env = process.env, request = fetch
       "Content-Type": "application/json", "X-Requested-With": "XMLHttpRequest",
       "X-Correlation-Id": state?.runId ?? randomUUID(),
       ...(state ? { "X-Ontomato-Run-Id": state.runId } : {}),
-      tk: env.ONTOMATO_GENERATION_TK ?? env.ONTOMATO_TK ?? "",
+      tk: env.ONTOMATO_TK ?? "",
       ...(env.ONTOMATO_API_KEY ? { "X-API-Key": env.ONTOMATO_API_KEY } : {}),
     },
     redirect: "error",

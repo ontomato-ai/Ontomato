@@ -90,6 +90,7 @@ export async function readAssistantTurnEvidence(
         rows: d.data,
         dsl: d.dsl,
         abcProgram: d.abcProgram,
+        sourceAnalysis: d.sourceAnalysis,
         ...(d.truncated
           ? {
               truncated: d.truncated,
@@ -103,9 +104,8 @@ export async function readAssistantTurnEvidence(
         ...new Set(
           datasets.flatMap(
             (d) =>
-              d.abcProgram?.outKeyRefs?.flatMap((r) =>
-                r.className ? [r.className] : [],
-              ) ?? [],
+              d.sourceAnalysis ? d.sourceAnalysis.nodes.filter((n) => n.kind === "class").map((n) => n.className) :
+                d.abcProgram?.outKeyRefs?.flatMap((r) => r.className ? [r.className] : []) ?? [],
           ),
         ),
       ],

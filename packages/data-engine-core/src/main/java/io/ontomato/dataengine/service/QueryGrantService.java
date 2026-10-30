@@ -45,6 +45,7 @@ public class QueryGrantService {
         "CREATE TABLE IF NOT EXISTS query_runtime_grants (id varchar(64) PRIMARY KEY, run_id"
             + " varchar(128) NOT NULL, domain_id varchar(128) NOT NULL, expires_at bigint NOT NULL,"
             + " revoked boolean NOT NULL DEFAULT false)");
+    jdbc.execute("ALTER TABLE query_runtime_grants ADD COLUMN IF NOT EXISTS query_error text");
   }
 
   public void requireWorkbench(HttpServletRequest request) {
@@ -170,13 +171,16 @@ public class QueryGrantService {
           "ontology-generation".equals(claims.getString("purpose"))
               && path.startsWith("/ontology/ai/generation/" + runId + "/");
       if ("ontology-generation".equals(claims.getString("purpose"))) {
-        read = false;
         write = false;
       }
+      boolean retrieval = "retrieval-exploration".equals(claims.getString("purpose"))
+          && claims.getString("retrievalId") != null
+          && path.matches("/ontology/retrievals/" + claims.getString("retrievalId")
+              + "/runs/" + runId + "/outputs(?:/[^/]+(?:/content)?)?");
       boolean governance = "knowledge-governance".equals(claims.getString("purpose"))
           && path.matches("/ontology/ai/knowledge-governance/[^/]+/runs/" + runId + "/actions/[^/]+");
       if ("knowledge-governance".equals(claims.getString("purpose"))) { read = false; write = false; }
-      if (!read && !write && !generation && !governance)
+      if (!read && !write && !generation && !governance && !retrieval)
         throw new ResponseStatusException(
             HttpStatus.FORBIDDEN, "This grant cannot call this operation");
       return claims;
@@ -193,5 +197,17 @@ public class QueryGrantService {
         "UPDATE query_runtime_grants SET revoked=true WHERE domain_id=? AND run_id=?",
         domainId,
         runId);
+  }
+
+  /** Only the query executor writes this already classified error, never the Python process. */
+  public void recordQueryError(JSONObject grant, String message) {
+    jdbc.update("UPDATE query_runtime_grants SET query_error=? WHERE id=? AND run_id=? AND domain_id=? AND revoked=false AND expires_at>?",
+        message, grant.getString("jti"), grant.getString("runId"), grant.getString("domainId"), System.currentTimeMillis());
+  }
+
+  public String queryError(String domainId, String runId) {
+    var errors = jdbc.queryForList("SELECT query_error FROM query_runtime_grants WHERE domain_id=? AND run_id=? AND query_error IS NOT NULL ORDER BY expires_at DESC LIMIT 1",
+        String.class, domainId, runId);
+    return errors.isEmpty() ? null : errors.get(0);
   }
 }

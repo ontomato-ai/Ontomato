@@ -36,15 +36,14 @@ Use ONTOMATO_ONTOLOGY_URL (including any ontology gateway prefix),
 ONTOMATO_TK (sent as tk), and optionally ONTOMATO_URL as the common deployment base.
 The YAML fallback keys are ontologyUrl, tk and envUrl. An explicit service URL is sufficient without envUrl.
 ONTOMATO_LANGUAGE and ONTOMATO_CORRELATION_ID propagate to requests.
-ONTOMATO_RUN_ID supplies the run header when a host provided it. The Python helper
-uses the same variables. ONTOMATO_QUERY_TK optionally selects the host-issued
-ontology execution credential, and ONTOMATO_QUERY_RUN_ID preserves its bound run
-for a nested standalone execution. Ordinary external execution uses your own tk.
+ONTOMATO_RUN_ID supplies the run header when a host provided it. All commands
+use ONTOMATO_TK. Java chooses and verifies the current user's task scope; callers
+never pass user/domain identity or select an elevated execution credential.
 
 The product loads these same files read-only and invokes the commands below using
 bash. Read this file and references on demand; no runtime-specific entry exists.
-Python uses `python/query_runtime.py` via PYTHONPATH; use protocol-2 source as in
-the data-retrieval skill. Public anonymous access follows the installed policy.
+Python query programs use the data-retrieval preview/delivery command. Java injects
+the private query_runtime helper only for that execution; it is not part of this skill. Public anonymous access follows the installed policy.
 For enterprise login, obtain an authorized tk before execution; it is not a runtime
 service credential. The enterprise distribution includes a separate login helper.
 

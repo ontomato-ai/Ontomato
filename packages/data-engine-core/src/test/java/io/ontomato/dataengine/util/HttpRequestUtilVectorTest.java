@@ -26,7 +26,6 @@ import com.alibaba.fastjson2.JSONObject;
 import io.ontomato.dataengine.bean.DslExecutionResult;
 import io.ontomato.dataengine.bean.VectorResource;
 import io.ontomato.dataengine.config.DataRagConfig;
-import io.ontomato.dataengine.core.exception.ServiceException;
 import io.ontomato.dataengine.dao.VectorResourceDao;
 import io.ontomato.dataengine.dataAdapter.DataAdapter;
 import io.ontomato.dataengine.service.ai.EmbeddingService;
@@ -127,7 +126,7 @@ class HttpRequestUtilVectorTest {
 
 		assertTrue(results[1].failed());
 		assertTrue(results[1].failure().cause().getMessage().contains("Vector search down"));
-		assertTrue(results[1].rawResponse().getString("error").contains("Vector search down"));
+		assertEquals("Query execution failed", results[1].rawResponse().getString("error"));
 		verify(adapter, never()).executeDsl(anyString(), anyString(), any(), any());
 	}
 
@@ -153,13 +152,12 @@ class HttpRequestUtilVectorTest {
 		Map<String, Object> jsonRule = Map.of("classDef", List.of(PRODUCT));
 
 		UserDataPermission permission = mock(UserDataPermission.class);
-		when(permission.getRowPermissionMQLByClassName(anyString())).thenAnswer(inv -> {
-			throw new RuntimeException("permission lookup error");
-		});
+		var failure = new RuntimeException("permission lookup error");
+		when(permission.getRowPermissionMQLByClassName(anyString())).thenThrow(failure);
 
-		assertThrows(ServiceException.class, () ->
+		org.junit.jupiter.api.Assertions.assertSame(failure, assertThrows(RuntimeException.class, () ->
 				HttpRequestUtil.executeDsl(dataRagConfig, adapter, PLAIN_DSL, "s1", true, jsonRule,
-						vectorResourceDao, permission, DslExecutionMode.OPTIMIZED, "d1"));
+						vectorResourceDao, permission, DslExecutionMode.OPTIMIZED, "d1")));
 	}
 
 	@Test

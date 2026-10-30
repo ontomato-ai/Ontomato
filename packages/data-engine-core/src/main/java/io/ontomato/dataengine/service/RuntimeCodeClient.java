@@ -78,6 +78,10 @@ public class RuntimeCodeClient {
     }
   }
 
+  public String pythonHelper() throws java.io.IOException {
+    return skillResource("python/query_runtime.py");
+  }
+
   public void registerSkill() throws Exception {
     List<Map<String, String>> files = new ArrayList<>();
     for (String file :
@@ -86,7 +90,6 @@ public class RuntimeCodeClient {
             "ontomato.mjs",
             "client.mjs",
             "application.yml",
-            "python/query_runtime.py",
             "references/dsl.md"))
       files.add(
           Map.of("path", file, "content", skillResource("ontology-skills/ontomato-analyst/" + file)));

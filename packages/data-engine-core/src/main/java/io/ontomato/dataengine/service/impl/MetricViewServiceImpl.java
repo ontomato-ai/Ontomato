@@ -108,7 +108,7 @@ public class MetricViewServiceImpl implements MetricViewService {
   @Override
   public MetricView generateFromNatureLanguage(
       String question, String lang, String domainId, boolean persistence) throws Exception {
-    Map<String, Object> jsonRule = adminService.getJSONRule(domainId);
+    Map<String, Object> jsonRule = generationService.authorizedRule(adminService.getJSONRule(domainId), domainId);
     List<Map<String, Object>> classDefs = (List<Map<String, Object>>) jsonRule.get("classDef");
     String port =
         businessConfigService
@@ -135,28 +135,14 @@ public class MetricViewServiceImpl implements MetricViewService {
       String code = envelope.getString("code");
       String name = envelope.getString("name");
       String logic = envelope.getString("logic");
-      JSONArray outKeyRefArray = envelope.getJSONArray("outKeyRefs");
-      if (code == null || name == null || logic == null || outKeyRefArray == null) {
-        return null;
-      }
+      JSONObject sourceAnalysis = envelope.getJSONObject("sourceAnalysis");
+      if (code == null || name == null || logic == null || sourceAnalysis == null) return null;
+      io.ontomato.dataengine.service.QuerySubgraphContract.validate(sourceAnalysis);
       List<Parameter> parameters = new ArrayList<Parameter>();
       if (envelope.containsKey("parameterDefs")) {
         parameters =
             DBSchemaUtil.buildParameters(
                 envelope.getJSONArray("parameterDefs").toList(Map.class), classDefs);
-      }
-      List<ABCHarnessProgramOutKeyRef> outKeyRefs = new ArrayList<ABCHarnessProgramOutKeyRef>();
-      for (int i = 0; i < outKeyRefArray.size(); i++) {
-        JSONObject outKeyRefObj = outKeyRefArray.getJSONObject(i);
-        ABCHarnessProgramOutKeyRef outKeyRef = new ABCHarnessProgramOutKeyRef();
-        outKeyRef.setKey(outKeyRefObj.getString("key"));
-        String className =
-            DBSchemaUtil.normalizeClassName(outKeyRefObj.getString("className"), classDefs);
-        outKeyRef.setClassName(className);
-        outKeyRef.setAttrName(outKeyRefObj.getString("attrName"));
-        outKeyRef.setAsGroupBy(outKeyRefObj.getBoolean("asGroupBy"));
-        outKeyRef.setStatCal(outKeyRefObj.getBoolean("statCal"));
-        outKeyRefs.add(outKeyRef);
       }
       Function function = new Function();
       function.setOrigin(Function.ORIGIN_USER);
@@ -169,13 +155,9 @@ public class MetricViewServiceImpl implements MetricViewService {
 
       ReturnDef returnDef = new ReturnDef();
       returnDef.setIsVoid(false);
-      List<String> classNames = new ArrayList<String>();
-      for (ABCHarnessProgramOutKeyRef outKeyRef : outKeyRefs) {
-        if (!classNames.contains(outKeyRef.getClassName())) {
-          classNames.add(outKeyRef.getClassName());
-        }
-      }
-      returnDef.setOutKeyRefs(outKeyRefs);
+      List<String> classNames = sourceAnalysis.getJSONArray("nodes").stream().map(JSONObject::from)
+          .filter(n -> "class".equals(n.getString("kind"))).map(n -> n.getString("className")).distinct().toList();
+      returnDef.setSourceAnalysis(sourceAnalysis);
       returnDef.setClassNames(classNames);
       function.setReturnDef(returnDef);
 
@@ -539,7 +521,7 @@ private MetricViewContent generateContent(JSONArray rows, PythonExecuteResult ex
 		JSONObject abcProgram = new JSONObject();
 		abcProgram.put("title", function.getName());
 		abcProgram.put("code", function.getCode());
-		abcProgram.put("outKeyRefs", function.getReturnDef().getOutKeyRefs());
+		abcProgram.put("sourceAnalysis", function.getReturnDef().getSourceAnalysis() != null ? function.getReturnDef().getSourceAnalysis() : io.ontomato.dataengine.service.QuerySourceAnalysis.fromStoredSources(function.getReturnDef().getOutKeyRefs()));
 		abcProgram.put("parameters", function.getParameters());
 
 		JSONArray data = new JSONArray();

@@ -40,12 +40,19 @@ public class OntologyAgentDefinitions {
     return resource(name).trim();
   }
 
+  private void sourceContract(List<Map<String, String>> files) throws Exception {
+    files.add(Map.of("path", "references/query-subgraph.md", "content", resource("ontology-contracts/query-subgraph.md")));
+    files.add(Map.of("path", "references/query-subgraphs.json", "content", resource("ontology-contracts/examples/query-subgraphs.json")));
+    files.add(Map.of("path", "references/query-subgraph.schema.json", "content", resource("ontology-contracts/query-subgraph.schema.json")));
+  }
+
   public void publish() throws Exception {
     code.registerSkill();
     var files = new ArrayList<Map<String, String>>();
     for (String path : List.of("SKILL.md", "scripts/dataset.mjs", "references/dataset.md"))
       files.add(
           Map.of("path", path, "content", resource("ontology-skills/data-retrieval/" + path)));
+    sourceContract(files);
     runtime.json(
         null,
         "ontology-retrieval-skills",
@@ -68,6 +75,7 @@ public class OntologyAgentDefinitions {
     for (String path : List.of("SKILL.md", "scripts/generation.mjs"))
       files.add(
           Map.of("path", path, "content", resource("ontology-skills/ontology-generation/" + path)));
+    sourceContract(files);
     runtime.json(
         null,
         "ontology-generation-skills",
@@ -112,6 +120,7 @@ public class OntologyAgentDefinitions {
       files.add(
           Map.of(
               "path", path, "content", resource("ontology-skills/metricview-generation/" + path)));
+    sourceContract(files);
     runtime.json(
         null,
         "metricview-generation-skills",

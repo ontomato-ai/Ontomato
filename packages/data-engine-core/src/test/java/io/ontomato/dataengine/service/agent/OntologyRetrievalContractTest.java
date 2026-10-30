@@ -288,7 +288,7 @@ class OntologyRetrievalContractTest {
     assertFalse(environment.getJSONObject("values").containsKey("ONTOMATO_WORKBENCH_URL"));
     var claims =
         grants.verify(
-            environment.getJSONObject("secrets").getString("ONTOMATO_QUERY_TK"),
+            environment.getJSONObject("secrets").getString("ONTOMATO_TK"),
             run,
             "/ontology/query/overview");
     assertEquals("ontology", claims.getString("servicePrincipal"));

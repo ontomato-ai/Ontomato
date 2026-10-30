@@ -1,5 +1,8 @@
 package io.ontomato.dataengine.service;
 
+import io.ontomato.dataengine.dataAdapter.DslContractViolationException;
+import static io.ontomato.dataengine.dataAdapter.DslContractViolationException.Code.INVALID_GRAMMAR;
+
 import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
@@ -16,7 +19,12 @@ import org.springframework.web.server.ResponseStatusException;
 
 /** Read facade over ontology-owned definitions and execution. */
 @Service
+@lombok.extern.slf4j.Slf4j
 public class OntologyQueryService {
+  @org.springframework.beans.factory.annotation.Autowired
+  private WriteFunctionOperationService writes;
+  @org.springframework.beans.factory.annotation.Autowired
+  private QueryGrantService grants;
   private final AdminService admin;
   private final DslService dsl;
   private final MetricViewService metrics;
@@ -31,7 +39,8 @@ public class OntologyQueryService {
   }
 
   public Map<String, Object> rule(QueryAccessService.Access access) {
-    return admin.getJSONRule(access.user().getDomainId());
+    return QueryPermissions.visibleRule(admin.getJSONRule(access.user().getDomainId()), access.permission(),
+        access.classNames());
   }
 
   @SuppressWarnings("unchecked")
@@ -42,9 +51,9 @@ public class OntologyQueryService {
   private String checkedClass(String name, QueryAccessService.Access access) {
     String normalized = DBSchemaUtil.normalizeClassName(name, classes(access));
     if (classes(access).stream().noneMatch(c -> normalized.equals(c.get("className"))))
-      throw new IllegalArgumentException("Unknown ontology class: " + name);
+      throw new DslContractViolationException(INVALID_GRAMMAR, "answer.steps.graph.patterns.objects.class", "Unknown ontology class: " + name);
     List<String> scope =
-        access.grant() == null ? List.of() : access.grant().getList("classNames", String.class);
+        access.classNames();
     if (scope != null && !scope.isEmpty() && !scope.contains(normalized))
       throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Class is outside this run's scope");
     return normalized;
@@ -137,7 +146,7 @@ public class OntologyQueryService {
       for (var entry : object.entrySet()) {
         String key = entry.getKey().toString();
         if (Set.of("sql", "nativeQuery", "action", "insert", "update", "delete").contains(key))
-          throw new IllegalArgumentException("Only read ontology DSL is allowed");
+          throw new DslContractViolationException(INVALID_GRAMMAR, "answer.steps", "Only read ontology DSL is allowed");
         if (key.equals("class")
             && entry.getValue() instanceof String name
             && !temporary.contains(name)) checkedClass(name, access);
@@ -147,14 +156,14 @@ public class OntologyQueryService {
       for (Object item : array) checkGraph(item, access, temporary);
   }
 
-  public Map<String, Object> execute(JSONObject query, QueryAccessService.Access access) {
+  public void validateQuery(JSONObject query, QueryAccessService.Access access) {
     if (query == null
         || !query.keySet().stream().allMatch(k -> Set.of("problem", "answer").contains(k))
         || query.getJSONObject("answer") == null)
-      throw new IllegalArgumentException("One read DSL object with answer.steps is required");
+      throw new DslContractViolationException(INVALID_GRAMMAR, "answer", "One read DSL object with answer.steps is required");
     JSONArray steps = query.getJSONObject("answer").getJSONArray("steps");
     if (steps == null || steps.isEmpty())
-      throw new IllegalArgumentException("DSL steps are required");
+      throw new DslContractViolationException(INVALID_GRAMMAR, "answer.steps", "DSL steps are required");
     Set<String> temporary = new HashSet<>();
     for (Object step : steps) {
       checkGraph(step, access, temporary);
@@ -162,16 +171,50 @@ public class OntologyQueryService {
       if (output != null && output.getString("save_table") != null)
         temporary.add(output.getString("save_table"));
     }
-    Map<String, Object> result = dsl.executeV1(query, access.permission(), access.user());
-    if (result.get("error") != null)
-      throw new ResponseStatusException(
-          HttpStatus.UNPROCESSABLE_ENTITY, result.get("error").toString());
+    QueryPermissions.restrictRelations(query, rule(access), access.permission());
+  }
+
+  public Map<String, Object> execute(JSONObject query, QueryAccessService.Access access) {
+    Map<String, Object> result;
+    try {
+      result = executeQuery(query, access);
+    } catch (ResponseStatusException error) {
+      if (error.getStatusCode().value() != HttpStatus.FORBIDDEN.value())
+        throw queryFailure(io.ontomato.dataengine.util.ErrorText.queryError(error), access);
+      if (access.grant() != null) grants.recordQueryError(access.grant(), error.getReason());
+      throw error;
+    } catch (Exception error) {
+      throw queryFailure(io.ontomato.dataengine.util.ErrorText.queryError(error), access);
+    }
+    if (result.get("error") != null) throw queryFailure(result.get("error").toString(), access);
     return result;
+  }
+
+  private ResponseStatusException queryFailure(String message, QueryAccessService.Access access) {
+    if (access.grant() != null) grants.recordQueryError(access.grant(), message);
+    return new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY, message);
+  }
+
+  private Map<String, Object> executeQuery(JSONObject query, QueryAccessService.Access access) throws Exception {
+    validateQuery(query, access);
+    if (access.grant() != null && "sandbox-write".equals(access.grant().getString("purpose"))) {
+      var definitions = classes(access);
+      var analysis = QuerySourceAnalysis.fromDsl(query, definitions);
+      QueryPermissions.authorizeInputs(analysis, access.permission(), definitions);
+      var restricted = (JSONObject) io.ontomato.dataengine.util.DslPermissionUtil.addRowPermission(
+          "[" + query.toJSONString() + "]", definitions, access.permission())[0];
+      String sandbox = access.grant().getString("sandboxId");
+      if (io.ontomato.dataengine.config.ServiceConst.NOT_SANDBOX.equals(sandbox)) sandbox = null;
+      return QueryPermissions.response(writes.query(restricted, sandbox, access.user().getDomainId()), analysis, access.permission(), true);
+    }
+    boolean internal = access.grant() != null && "user-read".equals(access.grant().getString("purpose"));
+    return internal ? dsl.executeInternal(query, access.permission(), access.user()) : dsl.executeV1(query, access.permission(), access.user());
   }
 
   public Object distinct(JSONObject body, QueryAccessService.Access access) {
     String name = checkedClass(body.getString("className"), access),
         attribute = body.getString("attribute");
+    QueryPermissions.requireField(access.permission(), name, attribute, QueryPermissions.Use.GROUP);
     var def =
         classes(access).stream()
             .filter(c -> name.equals(c.get("className")))
@@ -307,7 +350,11 @@ public class OntologyQueryService {
     List<MetricView> all =
         metrics.queryForRetrieval(access.user().getDomainId(), text, cursor, requested, limit + 1);
     List<JSONObject> found = new ArrayList<>();
-    for (MetricView metric : all) {
+    var available = classes(access);
+    Set<String> availableNames = available.stream().map(c -> (String) c.get("className")).collect(java.util.stream.Collectors.toSet());
+    String next = null;
+    for (MetricView metric : all.subList(0, Math.min(limit, all.size()))) {
+      next = metric.getId();
       JSONObject spec =
           JSON.parseObject(
               JSON.toJSONString(
@@ -316,6 +363,18 @@ public class OntologyQueryService {
       Set<String> involved = new LinkedHashSet<>();
       List<Object> fields = new ArrayList<>(), parameterFields = new ArrayList<>();
       var function = metric.getFunction();
+      JSONObject sourceAnalysis;
+      try {
+        sourceAnalysis = function.getReturnDef().getSourceAnalysis() != null ? function.getReturnDef().getSourceAnalysis()
+            : QuerySourceAnalysis.fromStoredSources(function.getReturnDef().getOutKeyRefs());
+        QueryPermissions.authorizeInputs(sourceAnalysis, access.permission(), available);
+      } catch (ResponseStatusException unavailable) { continue; }
+      catch (IllegalArgumentException | DslContractViolationException invalid) {
+        log.warn("Skipping metric {} in domain {} with invalid source declaration: {}",
+            metric.getId(), access.user().getDomainId(), invalid.getMessage());
+        continue;
+      }
+      spec.put("sourceAnalysis", sourceAnalysis);
       if (function.getReturnDef() != null && function.getReturnDef().getClassNames() != null)
         involved.addAll(function.getReturnDef().getClassNames());
       if (function.getReturnDef() != null && function.getReturnDef().getOutKeyRefs() != null)
@@ -338,11 +397,14 @@ public class OntologyQueryService {
           field.put("attribute", null);
           parameterFields.add(field);
         }
+      sourceAnalysis.getJSONArray("nodes").stream().map(JSONObject::from)
+          .filter(n -> "class".equals(n.getString("kind"))).forEach(n -> involved.add(n.getString("className")));
+      if (!availableNames.containsAll(involved)) continue;
       spec.put(
           "context",
           Map.of(
               "classes",
-              classes(access).stream()
+              available.stream()
                   .filter(c -> involved.contains(c.get("className")))
                   .map(this::classSpecification)
                   .toList(),
@@ -359,10 +421,9 @@ public class OntologyQueryService {
                       + " program lineage")));
       found.add(spec);
     }
-    boolean more = found.size() > limit;
-    if (more) found.remove(found.size() - 1);
+    boolean more = all.size() > limit;
     JSONObject result = JSONObject.of("items", found);
-    result.put("nextCursor", more ? found.get(found.size() - 1).getString("id") : null);
+    result.put("nextCursor", more ? next : null);
     return result;
   }
 

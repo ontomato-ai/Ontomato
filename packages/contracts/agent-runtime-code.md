@@ -82,16 +82,14 @@ image proof and native developer proof must be reported separately.
 
 ## Ontology helper and retained consumers
 
-`agent-skills/ontomato-analyst/python/query_runtime.py` remains the single
-ontology HTTP helper source. Both bash exploration and Java code execution load
-that same file; packaging copies it without changing behavior. It reads
-`ONTOMATO_ONTOLOGY_URL`, `ONTOMATO_QUERY_TK` (falling back to `ONTOMATO_TK`),
-`ONTOMATO_RUN_ID`, `ONTOMATO_CORRELATION_ID`, `ONTOMATO_LANGUAGE`;
-`ONTOMATO_QUERY_RUN_ID` optionally carries an existing parent query grant binding
-for nested metric executions (the runtime execution ID itself is unchanged); sends the token
-as `tk` and the run header; and retains parameters.json and query-status.json.
-Java's grant parser must accept the documented tk header for its existing signed
-grants and verify the same claims. Ordinary tk authorization remains unchanged.
+`packages/data-engine-core/src/main/resources/python/query_runtime.py` is the
+single ontology HTTP helper. Java injects it as a private execution file; ordinary
+agent workspaces and external skills do not include it. It reads
+`ONTOMATO_ONTOLOGY_URL`, `ONTOMATO_TK`, `ONTOMATO_RUN_ID`, correlation and language.
+Java issues a new execution-bound credential even for nested work; the parent
+grant only bounds lifetime and cancellation. No query-token override is exposed.
+The helper retains parameters.json and query-status.json. The Java API authorizes
+every request; possession of helper source is not authority.
 
 ```python
 # ontomato-python:2

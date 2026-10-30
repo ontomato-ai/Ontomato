@@ -27,42 +27,51 @@ public class OntologyQueryController {
     this.jobs = jobs;
   }
 
+  @org.springframework.beans.factory.annotation.Autowired
+  private io.ontomato.dataengine.service.agent.OntologyAgentAccess agentAccess;
+
+  private QueryAccessService.Access access(HttpServletRequest request) {
+    var access = authorization.access(request);
+    String caller = request.getHeader("X-Ontomato-Retrieval-Caller-Id");
+    return access.grant() == null && caller != null ? agentAccess.scopedQuery(access, caller) : access;
+  }
+
   @GetMapping("/ontology/query/overview")
   public Object overview(HttpServletRequest request) {
-    return ontology.overview(authorization.access(request));
+    return ontology.overview(access(request));
   }
 
   @PostMapping("/ontology/query/schema")
   public Object schema(@RequestBody JSONObject body, HttpServletRequest request) {
-    return ontology.schema(body.getList("classNames", String.class), authorization.access(request));
+    return ontology.schema(body.getList("classNames", String.class), access(request));
   }
 
   @PostMapping("/ontology/query/dsl-reference")
   public Object reference(@RequestBody JSONObject body, HttpServletRequest request) {
     return ontology.reference(
-        body.getList("classNames", String.class), authorization.access(request));
+        body.getList("classNames", String.class), access(request));
   }
 
   @PostMapping("/ontology/query/distinct-values")
   public Object distinct(@RequestBody JSONObject body, HttpServletRequest request) {
-    return ontology.distinct(body, authorization.access(request));
+    return ontology.distinct(body, access(request));
   }
 
   @PostMapping("/ontology/query/execute-dsl")
   public Object execute(@RequestBody JSONObject body, HttpServletRequest request) {
     if (!body.keySet().equals(java.util.Set.of("dsl")))
       throw new IllegalArgumentException("Only dsl is accepted; identity comes from credentials");
-    return ontology.execute(body.getJSONObject("dsl"), authorization.access(request));
+    return ontology.execute(body.getJSONObject("dsl"), access(request));
   }
 
   @PostMapping("/ontology/query/metrics/search")
   public Object metrics(@RequestBody JSONObject body, HttpServletRequest request) {
-    return ontology.metrics(body, authorization.access(request));
+    return ontology.metrics(body, access(request));
   }
 
   @PostMapping("/ontology/query/knowledge/search")
   public Object knowledge(@RequestBody JSONObject body, HttpServletRequest request) {
-    return ontology.knowledge(body, authorization.access(request));
+    return ontology.knowledge(body, access(request));
   }
 
   @PostMapping("/ontology/query/metrics/execute")
@@ -81,15 +90,15 @@ public class OntologyQueryController {
     return outputs.execute(
         UUID.randomUUID().toString(),
         recipe,
-        new JSONArray(),
-        authorization.access(request),
+        null,
+        access(request),
         language(request));
   }
 
   @PostMapping("/ontology/query/outputs")
   @ResponseStatus(HttpStatus.ACCEPTED)
   public Object output(@RequestBody JSONObject body, HttpServletRequest request) {
-    var access = authorization.access(request);
+    var access = access(request);
     if (access.grant() != null)
       throw new ResponseStatusException(
           HttpStatus.FORBIDDEN, "Final output requires the end user credential");
@@ -103,19 +112,19 @@ public class OntologyQueryController {
             outputs.execute(
                 sessionId,
                 body.getJSONObject("recipe"),
-                body.getJSONArray("outKeyRefs"),
+                body.getJSONObject("sourceAnalysis"),
                 access,
                 lang));
   }
 
   @GetMapping("/ontology/query/outputs/{id}")
   public Object outputStatus(@PathVariable String id, HttpServletRequest request) {
-    return jobs.get(id, authorization.access(request).user(), "output");
+    return jobs.get(id, access(request).user(), "output");
   }
 
   @PostMapping("/ontology/query/outputs/{id}/cancel")
   public Object outputCancel(@PathVariable String id, HttpServletRequest request) throws Exception {
-    return jobs.cancel(id, authorization.access(request).user(), "output");
+    return jobs.cancel(id, access(request).user(), "output");
   }
 
   private String language(HttpServletRequest request) {

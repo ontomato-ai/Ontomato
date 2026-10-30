@@ -64,6 +64,7 @@ class QueryRuntimeBoundaryTest {
 
   @BeforeEach
   void setup() {
+    permission.setFullData(true);
     identity = mock(IdentityService.class);
     lookup = mock(DataPermissionLookup.class);
     dsl = mock(DslService.class);
@@ -187,7 +188,8 @@ class QueryRuntimeBoundaryTest {
     request.addHeader("tk", token);
     request.setAttribute(
         QueryGrantService.ATTRIBUTE, grants.verify(token, run, "/ontology/query/execute-dsl"));
-    assertSame(permission, authorization.access(request).permission());
+    assertNotSame(permission, authorization.access(request).permission());
+    assertTrue(authorization.access(request).permission().isFullData());
     verify(lookup).getDataPermission("user-a", "domain-a");
     assertThrows(
         ResponseStatusException.class,

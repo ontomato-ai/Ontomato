@@ -11,7 +11,10 @@ by the UI. Initial class scope remains `classNames`, unrelated to this result gr
 
 ## Rendering and identity
 
-- `queries` identifies actual DSL occurrences, including separate Python queries.
+- `queries` identifies DSL occurrences, including separate Python queries. DSL graphs
+  are derived by Java; the first Python implementation accepts an agent declaration
+  bound to the exact program and execution receipt, not a runtime taint proof.
+  Reusable Function filters retain symbolic parameter expressions.
 - `nodes` contains class occurrences (query, class and variable), extracted fields,
   operations and final output columns. Repeated classes/self joins have different
   IDs. Node/edge/filter/query IDs are unique within the graph, not ontology IDs.
@@ -50,3 +53,9 @@ boundary, never as a second set of editable graph facts.
 `examples/query-subgraphs.json` contains `singleDsl` (relation, filter, grouping,
 aggregation) and `pythonMerge` (two queries, join and derived output). Both are
 invented examples; labels are already prepared for display.
+
+Persisted outKeyRefs are converted only to evaluate permissions at the read boundary.
+The conversion is not written back or published as a complete display subgraph.
+Legacy metric results retain their declared keys as labels and may omit sourceAnalysis.
+New DSL/Python datasets require an agent declaration with complete output labels;
+Java does not infer or improve labels.
