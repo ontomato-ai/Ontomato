@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { computed, inject, onMounted, ref } from "vue";
-import { Check, CircleAlert, Copy, Square, ThumbsDown, ThumbsUp, TriangleAlert } from "lucide-vue-next";
+import { computed, inject, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { Check, CircleAlert, Copy, LoaderCircle, Square, ThumbsDown, ThumbsUp, TriangleAlert } from "lucide-vue-next";
 import type { ShellFeedbackPort, ShellFeedbackValue } from "../types";
 import SlotOutlet from "./SlotOutlet.vue";
 import RetrievalActivity from "./RetrievalActivity.vue";
@@ -29,6 +29,32 @@ const target = computed(() =>
     : null,
 );
 const waiting = computed(() => props.item.running && props.item.blocks.length === 0);
+
+/** Elapsed time since the request: ticking while the run is active, final once it stopped. */
+const now = ref(Date.now());
+let ticker: ReturnType<typeof setInterval> | null = null;
+watch(
+  () => props.item.running,
+  (running) => {
+    if (ticker) clearInterval(ticker);
+    ticker = running ? setInterval(() => (now.value = Date.now()), 1000) : null;
+  },
+  { immediate: true },
+);
+onBeforeUnmount(() => ticker && clearInterval(ticker));
+function clock(ms: number) {
+  const total = Math.max(0, Math.round(ms / 1000));
+  const h = Math.floor(total / 3600), m = Math.floor((total % 3600) / 60), s = total % 60;
+  const ss = String(s).padStart(2, "0");
+  return h ? `${h}:${String(m).padStart(2, "0")}:${ss}` : `${m}:${ss}`;
+}
+const status = computed(() => {
+  const { startedAt, finishedAt, running, end } = props.item;
+  const until = running ? now.value : finishedAt;
+  if (startedAt === null || until === null) return null;
+  const state = running ? labels.value.working : end?.stopReason === "stop" ? labels.value.done : "";
+  return { state, elapsed: labels.value.elapsed(clock(until - startedAt)) };
+});
 
 onMounted(async () => {
   if (!props.feedback || !target.value) return;
@@ -79,6 +105,12 @@ async function submit(value: ShellFeedbackValue) {
 
 <template>
   <div class="response">
+    <div v-if="status" class="status-line" :aria-live="item.running ? 'off' : 'polite'">
+      <LoaderCircle v-if="item.running" :size="12" class="spin" />
+      <span v-if="status.state">{{ status.state }}</span>
+      <span v-if="status.state" aria-hidden="true">·</span>
+      <span>{{ status.elapsed }}</span>
+    </div>
     <div v-if="waiting" class="waiting" aria-live="polite">
       <span class="dot" /><span class="dot" /><span class="dot" />
       <span class="sr-only">{{ labels.working }}</span>
@@ -153,6 +185,23 @@ async function submit(value: ShellFeedbackValue) {
 <style scoped>
 .response {
   min-width: 0;
+}
+.status-line {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 6px;
+  color: var(--el-text-color-tertiary);
+  font-size: var(--text-xs, 12px);
+  font-variant-numeric: tabular-nums;
+}
+.spin {
+  animation: spin 1s linear infinite;
+}
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 .waiting {
   display: flex;
@@ -298,7 +347,8 @@ async function submit(value: ShellFeedbackValue) {
   }
 }
 @media (prefers-reduced-motion: reduce) {
-  .dot {
+  .dot,
+  .spin {
     animation: none;
   }
 }

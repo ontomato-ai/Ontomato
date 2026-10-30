@@ -67,15 +67,21 @@ Lookup is always host override → shell default → generic file card or step.
   raw HTML is escaped.
 - **Artifacts**: `outputs/` image syntax renders inline, link syntax renders a
   card that opens the right panel; an unclosed reference shows a placeholder.
-  Defaults by extension: `.chart.json` ECharts, `.csv`/`.json` paginated table,
+  Defaults by extension: `.chart.json` ECharts, `.csv`/`.json` paginated table
+  (record arrays, and dataset files headed by their column labels),
   images, `.html` iframe with `sandbox="allow-scripts"` only, `.md` rendered like
   a message. Anything else is a file card with download. Overrides
   (`ArtifactRendererOverride`) match a path pattern first, then the longest
   extension. Components are keyed by run and path.
 - **Tool calls**: consecutive thinking and tool steps collapse into one process
   row. Default step views for `read`, `write`, `edit` and `bash`; a bash command
-  that runs `skills/<name>/...` is shown as that skill. Overrides
-  (`ToolRendererOverride`) match a skill name first, then a tool name.
+  that runs `skills/<name>/...` is shown as that skill. Analyst and retrieval
+  commands are named by their business action (inspect ontology, probe values,
+  run query, search metrics and knowledge, retrieve data, prepare dataset, run
+  calculation); a finished process row lists the distinct actions and the step
+  count, and retrieval activity uses the same step views and summary. Each
+  response shows its elapsed time from the request, ticking while it runs.
+  Overrides (`ToolRendererOverride`) match a skill name first, then a tool name.
 - **Charts**: hosts may pass a native ECharts theme; the default follows the CSS
   tokens.
 

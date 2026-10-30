@@ -145,6 +145,21 @@ export interface ShellLabels {
   toolEdit: string;
   toolBash: string;
   toolSkill: string;
+  /** Business actions of analyst and retrieval commands, used for step names and run summaries. */
+  activitySchema: string;
+  activityValues: string;
+  activityQuery: string;
+  activityKnowledge: string;
+  activityRetrieve: string;
+  activityDataset: string;
+  activityCompute: string;
+  /** Dataset view switch: the rows, or the graph of how they were obtained. */
+  datasetData: string;
+  datasetLineage: string;
+  /** A finished response's status line. */
+  done: string;
+  /** Elapsed time phrase; `time` is already formatted as m:ss. */
+  elapsed: (time: string) => string;
 }
 
 export interface OpenArtifact {

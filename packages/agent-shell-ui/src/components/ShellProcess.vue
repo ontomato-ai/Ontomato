@@ -2,7 +2,7 @@
 import { computed, inject } from "vue";
 import { Brain, ChevronRight, LoaderCircle, Wrench } from "lucide-vue-next";
 import { shellContextKey } from "../context";
-import { describeTool, resolveToolRenderer } from "../tools";
+import { activitySummary, describeTool, resolveToolRenderer } from "../tools";
 import type { ProcessStepView } from "../types";
 import ToolStep from "./ToolStep.vue";
 import { useAutoFold } from "../useAutoFold";
@@ -14,7 +14,7 @@ const { open, toggle } = useAutoFold(() => props.active);
 
 const current = computed(() => props.steps.at(-1));
 const toolCount = computed(() => props.steps.filter((step) => step.kind === "tool").length);
-/** While active: what is happening now; afterwards: how much happened. */
+/** While active: what is happening now; afterwards: which actions were taken and how many steps. */
 const summary = computed(() => {
   const labels = shell.labels.value;
   const step = current.value;
@@ -24,7 +24,11 @@ const summary = computed(() => {
     const title = describeTool(step, labels);
     return { label: title.verb, subject: title.subject, detail: title.detail };
   }
-  return { label: toolCount.value ? labels.steps(toolCount.value) : labels.thinking, subject: "", detail: "" };
+  if (!toolCount.value) return { label: labels.thinking, subject: "", detail: "" };
+  const actions = activitySummary(props.steps, labels);
+  return actions
+    ? { label: actions, subject: "", detail: labels.steps(toolCount.value) }
+    : { label: labels.steps(toolCount.value), subject: "", detail: "" };
 });
 
 function stepComponent(step: ProcessStepView) {
