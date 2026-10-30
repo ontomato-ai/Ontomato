@@ -16,6 +16,7 @@ import org.springframework.web.server.ResponseStatusException;
 
 /** Read facade over ontology-owned definitions and execution. */
 @Service
+@lombok.extern.slf4j.Slf4j
 public class OntologyQueryService {
   @org.springframework.beans.factory.annotation.Autowired
   private WriteFunctionOperationService writes;
@@ -347,6 +348,11 @@ public class OntologyQueryService {
             : QuerySourceAnalysis.fromStoredSources(function.getReturnDef().getOutKeyRefs());
         QueryPermissions.authorizeInputs(sourceAnalysis, access.permission(), available);
       } catch (ResponseStatusException unavailable) { continue; }
+      catch (IllegalArgumentException invalid) {
+        log.warn("Skipping metric {} in domain {} with invalid source declaration: {}",
+            metric.getId(), access.user().getDomainId(), invalid.getMessage());
+        continue;
+      }
       spec.put("sourceAnalysis", sourceAnalysis);
       if (function.getReturnDef() != null && function.getReturnDef().getClassNames() != null)
         involved.addAll(function.getReturnDef().getClassNames());

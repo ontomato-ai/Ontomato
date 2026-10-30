@@ -10,6 +10,7 @@ import java.util.regex.Pattern;
 public final class QuerySourceAnalysis {
   private QuerySourceAnalysis() {}
   private static final Pattern REFERENCE = Pattern.compile("([\\p{L}_][\\p{L}\\p{N}_]*)\\.([\\p{L}_][\\p{L}\\p{N}_]*)");
+  private static final Pattern LITERAL = Pattern.compile("'(?:''|[^'])*'|[+-]?(?:\\d+(?:\\.\\d*)?|\\.\\d+)(?:[eE][+-]?\\d+)?|(?i:true|false|null)");
   private static final Set<String> AGGREGATES = Set.of("COUNT", "SUM", "AVG", "AVERAGE", "MIN", "MAX", "MEDIAN", "STDDEV", "VARIANCE", "FIRST", "LAST", "COLLECT", "ARRAY_AGG", "STRING_AGG");
 
   public static boolean aggregate(String function) {
@@ -161,11 +162,15 @@ public final class QuerySourceAnalysis {
           if (key == null || fields.containsKey(key)) throw new IllegalArgumentException("Unique DSL output aliases are required");
           String expression = field.getString("expr"), source;
           if (expression != null) {
-            source = operation("calculate", query, expression, key);
-            var matcher = REFERENCE.matcher(expression);
-            int count = 0;
-            while (matcher.find()) { dependency(field(matcher.group(1), matcher.group(2)), source, "value"); count++; }
-            if (count == 0) throw new IllegalArgumentException("Calculated DSL output has no field sources");
+            if (LITERAL.matcher(expression.trim()).matches()) {
+              source = operation("constant", query, expression, key);
+            } else {
+              source = operation("calculate", query, expression, key);
+              var matcher = REFERENCE.matcher(expression);
+              int count = 0;
+              while (matcher.find()) { dependency(field(matcher.group(1), matcher.group(2)), source, "value"); count++; }
+              if (count == 0) throw new IllegalArgumentException("Calculated DSL output has no field sources");
+            }
           } else {
             String attribute = field.getString("field"), function = field.getString("function");
             if ("*".equals(attribute) && "COUNT".equalsIgnoreCase(function))

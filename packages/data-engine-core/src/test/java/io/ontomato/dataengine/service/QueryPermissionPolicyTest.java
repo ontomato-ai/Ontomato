@@ -93,6 +93,74 @@ class QueryPermissionPolicyTest {
   }
 
   @Test
+  void literalDslOutputsHaveConstantSources() {
+    for (String expression : List.of("'role_code'", "'e.salary'", "'it''s a role'", "42", "-1.5e2", "true", "null")) {
+      var dsl = query("", "unused");
+      dsl.getJSONObject("answer").getJSONArray("steps").getJSONObject(0).getJSONObject("output")
+          .put("fields", JSONArray.of(JSONObject.of("as", "group_type", "expr", expression)));
+      var graph = QuerySourceAnalysis.fromDsl(dsl, definitions());
+      assertTrue(QueryPermissions.sources(graph).get("group_type").isEmpty());
+      assertTrue(graph.getJSONArray("nodes").stream().map(JSONObject::from)
+          .anyMatch(n -> "constant".equals(n.getString("operation"))));
+      assertEquals("role_code", QueryPermissions.mask(JSONArray.of(JSONObject.of("group_type", "role_code")), graph, permission())
+          .getJSONObject(0).getString("group_type"));
+    }
+  }
+
+  private io.ontomato.dataengine.bean.metricView.MetricView storedMetric(String id, boolean complete) {
+    var ref = new io.ontomato.dataengine.bean.abcHarness.ABCHarnessProgramOutKeyRef();
+    ref.setKey("total"); ref.setClassName("/Employee"); ref.setAttrName("salary");
+    if (complete) { ref.setAsGroupBy(false); ref.setStatCal(true); }
+    var returns = new io.ontomato.dataengine.bean.function.ReturnDef();
+    returns.setOutKeyRefs(List.of(ref));
+    var function = new io.ontomato.dataengine.bean.function.Function();
+    function.setDomainId("domain"); function.setOperation(io.ontomato.dataengine.bean.function.Function.OPERATION_READ);
+    function.setCode("# ontomato-python:2\nprint('{}')");
+    function.setParameters(new ArrayList<>()); function.setReturnDef(returns);
+    var metric = new io.ontomato.dataengine.bean.metricView.MetricView();
+    metric.setId(id); metric.setDomainId("domain");
+    metric.setStatus(io.ontomato.dataengine.bean.metricView.MetricView.STATUS_PUBLISHED); metric.setFunction(function);
+    return metric;
+  }
+
+  @Test
+  void incompleteStoredMetricDoesNotBreakSearchButCannotExecute() {
+    var broken = storedMetric("broken", false);
+    var valid = storedMetric("valid", true);
+    var metrics = mock(MetricViewService.class);
+    when(metrics.queryForRetrieval(eq("domain"), eq(""), isNull(), isNull(), anyInt()))
+        .thenReturn(List.of(broken, valid));
+    when(metrics.queryById("broken", "domain")).thenReturn(broken);
+    var admin = mock(AdminService.class);
+    when(admin.getJSONRule("domain")).thenReturn(Map.of("classDef", definitions()));
+    var ontology = new OntologyQueryService(admin, null, metrics, null);
+    var access = new QueryAccessService.Access(new QueryAccessService.GrantUser("user", "domain"), permission(), null, null, null);
+    var found = JSONObject.from(ontology.metrics(JSONObject.of("limit", 10), access)).getJSONArray("items");
+    assertEquals(List.of("valid"), found.stream().map(JSONObject::from).map(item -> item.getString("id")).toList());
+    var python = mock(PythonExecuteService.class);
+    var output = new QueryOutputService(python, null, ontology, null);
+    var error = assertThrows(IllegalArgumentException.class, () -> output.execute("run", JSONObject.of(
+        "kind", "metric", "metricId", "broken", "revision", OntologyQueryService.digest(broken), "parameters", new JSONObject()), null, access, "en"));
+    assertEquals("Incomplete stored source declaration", error.getMessage());
+    verifyNoInteractions(python);
+  }
+
+  @Test
+  void incompleteStoredFunctionAndDashboardRejectBeforeExecution() {
+    var function = storedMetric("broken", false).getFunction();
+    var dashboard = new io.ontomato.dataengine.bean.abcHarness.ABCHarnessDashboard();
+    dashboard.setOutKeyRefs(function.getReturnDef().getOutKeyRefs());
+    var python = mock(PythonExecuteService.class);
+    var programs = new io.ontomato.dataengine.service.impl.ABCProgramServiceImpl();
+    org.springframework.test.util.ReflectionTestUtils.setField(programs, "pythonExecuteService", python);
+    assertEquals("Incomplete stored source declaration", assertThrows(IllegalArgumentException.class,
+        () -> programs.execute("run", function, "user", permission(), null, "en", 1, "domain")).getMessage());
+    assertEquals("Incomplete stored source declaration", assertThrows(IllegalArgumentException.class,
+        () -> programs.execute("run", dashboard, "user", permission(), "en", 1, "domain")).getMessage());
+    verifyNoInteractions(python);
+  }
+
+  @Test
   void combinedPythonOutputRequiresEveryDeclaredValueSource() throws Exception {
     JSONObject graph;
     try (var input = getClass().getResourceAsStream("/ontology-contracts/examples/query-subgraphs.json")) {
