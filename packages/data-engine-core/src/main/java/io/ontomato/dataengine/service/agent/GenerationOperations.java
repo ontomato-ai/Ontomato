@@ -95,7 +95,11 @@ public class GenerationOperations {
     }
     Map<String, Set<String>> classIdsMap = new HashMap<String, Set<String>>();
     for (Map<String, Object> objData : objDatas) {
-      String className = (String) objData.get("className");
+      // ABC and DSL accept both "/orders" and "orders"; fixtures must normalize too, otherwise
+      // reset() later stores a class name that the sandbox class map cannot resolve.
+      String className =
+          DBSchemaUtil.normalizeClassName((String) objData.get("className"), classDefs);
+      objData.put("className", className);
       Map<String, Object> classDef = classDefMap.get(className);
       if (classDef != null) {
         Set<String> attrNameSet = new HashSet<String>();
@@ -207,7 +211,8 @@ public class GenerationOperations {
     List<Map<String, Object>> newVectorDatas = new ArrayList<Map<String, Object>>();
     if (vectorDatas != null) {
       for (Map<String, Object> vectorData : vectorDatas) {
-        String className = (String) vectorData.get("className");
+        String className =
+            DBSchemaUtil.normalizeClassName((String) vectorData.get("className"), classDefs);
         String objectId = (String) vectorData.get("objectId");
         String attrName = (String) vectorData.get("attrName");
         String text = (String) vectorData.get("text");
@@ -286,7 +291,9 @@ public class GenerationOperations {
             JSONArray objDatas = data.getJSONArray("objDatas");
             for (int i = 0; i < objDatas.size(); i++) {
               JSONObject objData = objDatas.getJSONObject(i);
-              String className = objData.getString("className");
+              String className =
+                  DBSchemaUtil.normalizeClassName(objData.getString("className"), classDefs);
+              objData.put("className", className);
               JSONArray rows = objData.getJSONArray("rows");
               Map<String, Object> classDef = classDefMap.get(className);
               sandboxService.insertObjects(sandboxId, classDef, rows, domainId);
@@ -299,7 +306,8 @@ public class GenerationOperations {
             if (vectorDatas != null) {
               for (int i = 0; i < vectorDatas.size(); i++) {
                 JSONObject vectorData = vectorDatas.getJSONObject(i);
-                String className = vectorData.getString("className");
+                String className =
+                    DBSchemaUtil.normalizeClassName(vectorData.getString("className"), classDefs);
                 String objectId = vectorData.getString("objectId");
                 String attrName = vectorData.getString("attrName");
                 String text = vectorData.getString("text");

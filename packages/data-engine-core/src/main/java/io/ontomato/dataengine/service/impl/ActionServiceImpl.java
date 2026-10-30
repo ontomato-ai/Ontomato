@@ -21,6 +21,7 @@ import io.ontomato.dataengine.service.AdminService;
 import io.ontomato.dataengine.service.BusinessConfigService;
 import io.ontomato.dataengine.service.LangService;
 import io.ontomato.dataengine.service.SandboxService;
+import io.ontomato.dataengine.service.agent.AgentRuntimeClient;
 import io.ontomato.dataengine.service.agent.OntologyGenerationPrompts;
 import io.ontomato.dataengine.service.agent.OntologyGenerationService;
 import io.ontomato.dataengine.service.sys.bean.permission.UserDataPermission;
@@ -61,6 +62,8 @@ public class ActionServiceImpl implements ActionService {
 
   @Autowired private OntologyGenerationService generationService;
 
+  @Autowired private AgentRuntimeClient runtimeClient;
+
   @PostConstruct
 	public void initService() {
 		// Periodically clean up unpublished actions older than 12 hours
@@ -94,6 +97,83 @@ public class ActionServiceImpl implements ActionService {
   @Override
   public Action generateFromNatureLanguage(
       String question, String lang, String domainId, boolean persistence) throws Exception {
+    return generateFromNatureLanguage(question, lang, domainId, persistence, null);
+  }
+
+  @Override
+  public List<String> exampleRequests(String lang, String domainId) throws Exception {
+    Map<String, Object> jsonRule = adminService.getJSONRule(domainId);
+    List<Map<String, Object>> classDefs = (List<Map<String, Object>>) jsonRule.get("classDef");
+    StringBuilder schema = new StringBuilder();
+    int classCount = 0;
+    for (Map<String, Object> cls : classDefs) {
+      if (classCount++ >= 8) break;
+      String className = String.valueOf(cls.get("className"));
+      String showName = cls.get("showName") == null ? className : String.valueOf(cls.get("showName"));
+      schema.append("- ").append(showName).append(" (").append(className).append(")");
+      Object attrs = cls.get("attrs");
+      if (attrs instanceof List<?> list && !list.isEmpty()) {
+        schema.append(": ");
+        int attrCount = 0;
+        for (Object item : list) {
+          if (attrCount++ >= 6) break;
+          Map<String, Object> attr = (Map<String, Object>) item;
+          String name = String.valueOf(attr.get("name"));
+          String label = attr.get("showName") == null ? name : String.valueOf(attr.get("showName"));
+          schema.append(label).append("(").append(name).append("), ");
+        }
+      }
+      schema.append("\n");
+    }
+    Object relations = jsonRule.get("relationship_rule");
+    if (relations instanceof Map<?, ?> map) {
+      int relationCount = 0;
+      for (Map.Entry<?, ?> entry : map.entrySet()) {
+        if (relationCount++ >= 8) break;
+        Object value = entry.getValue();
+        if (!(value instanceof Map<?, ?> relation)) continue;
+        schema.append("- ").append(entry.getKey()).append(": ")
+            .append(relation.get("fromclass")).append(" -> ").append(relation.get("toclass")).append("\n");
+      }
+    }
+    String language = lang != null && lang.startsWith("zh") ? "Chinese" : "English";
+    String prompt =
+        "You help a user try an ontology **write action** generator. Based on the classes and relations below, "
+            + "write exactly 3 very short business-like requests a user could type to change data: create, update or delete an object, "
+            + "or create or delete a relation. Never ask for queries, lists, counts, dashboards or reports. "
+            + "Each must be one sentence, use display names, avoid IDs and technical jargon, and be feasible as one action. "
+            + "Vary the wording and the operation across the three examples. "
+            + "Return strict JSON only: {\"examples\":[\"...\",\"...\",\"...\"]}. Language: "
+            + language
+            + ".\n\nClasses:\n"
+            + schema;
+    String content =
+        runtimeClient.modelText(domainId, UUID.randomUUID().toString(), "general", prompt);
+    if (content == null || content.isBlank()) return List.of();
+    String json = content.trim();
+    int start = json.indexOf('{');
+    int end = json.lastIndexOf('}');
+    if (start >= 0 && end > start) json = json.substring(start, end + 1);
+    JSONObject parsed = JSON.parseObject(json);
+    JSONArray examples = parsed == null ? null : parsed.getJSONArray("examples");
+    List<String> result = new ArrayList<>();
+    if (examples != null) {
+      for (int i = 0; i < examples.size() && result.size() < 3; i++) {
+        String value = examples.getString(i);
+        if (value != null && !value.isBlank()) result.add(value.trim());
+      }
+    }
+    return result;
+  }
+
+  @Override
+  public Action generateFromNatureLanguage(
+      String question,
+      String lang,
+      String domainId,
+      boolean persistence,
+      JSONObject structuredSpec)
+      throws Exception {
     String businessId = UUID.randomUUID().toString();
     Map<String, Object> jsonRule = generationService.authorizedRule(adminService.getJSONRule(domainId), domainId);
     List<Map<String, Object>> classDefs = (List<Map<String, Object>>) jsonRule.get("classDef");
@@ -106,7 +186,8 @@ public class ActionServiceImpl implements ActionService {
             lang,
             langService,
             jsonRule,
-            domainId);
+            domainId,
+            structuredSpec);
     try (var generation =
         generationService.generate("action", businessId, prompt, lang, domainId)) {
       JSONObject envelope = generation.result();
@@ -166,6 +247,7 @@ public class ActionServiceImpl implements ActionService {
         action.setBusinessMeaning(businessMeaning);
       } catch (Exception e) {
       }
+      action.setDefinition(ActionDefinitionProjector.project(action));
       return generation.settle(
           () -> {
             if (persistence) {
@@ -495,6 +577,26 @@ public class ActionServiceImpl implements ActionService {
 			throw new Exception(langService.get(lang, "Action.notFound"));
 		}
 	}
+
+  /**
+   * Fills the explanation of an already assembled draft Action. Draft creation owns the only
+   * explain call; saving the draft reuses this stored result and never explains again.
+   */
+  public void explainForDraft(Action action, String lang) throws Exception {
+    Function function = action.getFunction();
+    if (function == null) throw new Exception("The draft has no function");
+    explainCode(
+        function.getParameters(),
+        function.getCode(),
+        action.getDomainId(),
+        lang,
+        UUID.randomUUID().toString(),
+        (segments, meaning) -> {
+          action.setCodeSegments(segments);
+          action.setBusinessMeaning(meaning);
+          return null;
+        });
+  }
 
   @FunctionalInterface
   private interface ExplanationConsumer<T> {

@@ -4,6 +4,7 @@ import io.ontomato.dataengine.logging.ServiceLogContext;
 import io.ontomato.dataengine.logging.ServiceLogEvents;
 import org.apache.logging.log4j.ThreadContext;
 import com.alibaba.fastjson2.JSON;
+import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
 import com.alibaba.fastjson2.JSONWriter;
 import java.io.InputStream;
@@ -129,6 +130,40 @@ public class AgentRuntimeClient {
 
   public JSONObject run(String domain, String id) throws Exception {
     return json(domain, id, "/v1/runs/" + id, "GET", null, null);
+  }
+
+  /**
+   * One short completion with the model assigned to a role. Used for lightweight guidance text,
+   * never for action generation: the model settings carry masked keys that the runtime restores.
+   */
+  public String modelText(String domain, String correlation, String role, String prompt)
+      throws Exception {
+    JSONObject settings = json(domain, correlation, "/v1/models/settings", "GET", null, null);
+    JSONObject agents = settings.getJSONObject("agents");
+    JSONObject assignment = agents == null ? null : agents.getJSONObject(role);
+    String name = assignment == null ? null : assignment.getString("model");
+    JSONArray models = settings.getJSONArray("models");
+    JSONObject model = null;
+    for (int i = 0; models != null && i < models.size(); i++) {
+      JSONObject candidate = models.getJSONObject(i);
+      if (name == null || name.equals(candidate.getString("name"))) {
+        model = candidate;
+        break;
+      }
+    }
+    if (model == null) throw new IllegalStateException("No model is configured for role " + role);
+    model = JSON.parseObject(JSON.toJSONString(model));
+    // Guidance text is optional UI sugar; never let one call hold the dialog open.
+    model.put("timeout", "PT20S");
+    JSONObject result =
+        json(
+            domain,
+            correlation,
+            "/v1/models/test",
+            "POST",
+            JSONObject.of("model", model, "prompt", prompt),
+            null);
+    return result.getString("content");
   }
 
   private AgentHttpException failure(int status, String body) {

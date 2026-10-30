@@ -5,7 +5,6 @@ import { ArrowLeft, History, Play, Plus, Save, Sparkles, Trash2 } from "lucide-v
 import {
   ElAlert,
   ElButton,
-  ElCheckbox,
   ElDialog,
   ElForm,
   ElFormItem,
@@ -27,6 +26,7 @@ import { useManagerFeedback } from "../feedback";
 import type { SmartAsset } from "../api";
 import type { AssetTab } from "../workspace";
 import ActionCodeExplainer from "./codeExplainer/ActionCodeExplainer.vue";
+import ActionCreateDialog from "./actionCreation/ActionCreateDialog.vue";
 import BusinessMeaning from "./codeExplainer/BusinessMeaning.vue";
 import { normalizeBusinessMeaning, normalizeCodeSegments } from "./codeExplainer/codeSegments";
 import { useManagerClient, useOntologyText } from "../context";
@@ -48,7 +48,6 @@ const { loadSmartAssets, requestSmartAsset } = useManagerClient();
 const loading = ref(false);
 const saving = ref(false);
 const deleting = ref(false);
-const generating = ref(false);
 const testing = ref(false);
 const record = ref<AssetRecord | null>(null);
 const bindingDrafts = ref<BindingDraft[]>([]);
@@ -88,9 +87,7 @@ function testMetricDraft() {
 }
 
 const functionChoices = ref<SmartAsset[]>([]);
-const generationPrompt = ref("");
 const showGeneration = ref(false);
-const generationPersistence = ref(true);
 const metricGenerationPrompt = ref("");
 const metricGenerationVisible = ref(false);
 const metricGenerating = ref(false);
@@ -238,38 +235,43 @@ const businessMeaningForDisplay = computed(() => {
   if (!hasRules) return meaning;
   return meaning.negativeEffect ? { ...meaning, operations: [] } : null;
 });
-const effectLabels: Record<string, string> = {
-  CREATE_OBJECT: "新建对象",
-  UPDATE_OBJECT: "修改对象",
-  DELETE_OBJECT: "删除对象",
-  CREATE_EDGE: "建立关系",
-  DELETE_EDGE: "删除关系",
-  APPEND_VECTOR: "追加向量",
-  UPDATE_VECTOR: "更新向量",
-  DELETE_VECTOR: "删除向量",
-  EXTERNAL_CALL: "外部调用",
-};
-const effectLabel = (kind: string) => effectLabels[kind] || kind;
-
-const RULE_GROUPS: { key: string; label: string; kinds: string[] }[] = [
-  { key: "create", label: "Create", kinds: ["CREATE_OBJECT"] },
-  { key: "modify", label: "Modify", kinds: ["UPDATE_OBJECT"] },
-  { key: "delete", label: "Delete", kinds: ["DELETE_OBJECT"] },
-  { key: "link", label: "Link", kinds: ["CREATE_EDGE", "DELETE_EDGE"] },
-  { key: "vector", label: "Vector", kinds: ["APPEND_VECTOR", "UPDATE_VECTOR", "DELETE_VECTOR"] },
-  { key: "other", label: "Other", kinds: ["EXTERNAL_CALL"] },
-];
+function effectLabel(kind: string) {
+  switch (kind) {
+    case "CREATE_OBJECT": return ot("actionDefinitionCreateObject");
+    case "UPDATE_OBJECT": return ot("actionDefinitionUpdateObject");
+    case "DELETE_OBJECT": return ot("actionDefinitionDeleteObject");
+    case "CREATE_EDGE": return ot("actionDefinitionCreateEdge");
+    case "DELETE_EDGE": return ot("actionDefinitionDeleteEdge");
+    case "APPEND_VECTOR": return ot("actionDefinitionAppendVector");
+    case "UPDATE_VECTOR": return ot("actionDefinitionUpdateVector");
+    case "DELETE_VECTOR": return ot("actionDefinitionDeleteVector");
+    case "EXTERNAL_CALL": return ot("actionDefinitionExternal");
+    default: return kind;
+  }
+}
 const ruleGroups = computed(() => {
+  const groups = [
+    { key: "create", label: ot("actionDefinitionGroupCreate"), kinds: ["CREATE_OBJECT"] },
+    { key: "modify", label: ot("actionDefinitionGroupUpdate"), kinds: ["UPDATE_OBJECT"] },
+    { key: "delete", label: ot("actionDefinitionGroupDelete"), kinds: ["DELETE_OBJECT"] },
+    { key: "link", label: ot("actionDefinitionGroupLink"), kinds: ["CREATE_EDGE", "DELETE_EDGE"] },
+    { key: "vector", label: ot("actionDefinitionGroupVector"), kinds: ["APPEND_VECTOR", "UPDATE_VECTOR", "DELETE_VECTOR"] },
+    { key: "other", label: ot("actionDefinitionGroupOther"), kinds: ["EXTERNAL_CALL"] },
+  ];
   const effects = actionDefinition.value?.effects || [];
-  return RULE_GROUPS.map((group) => ({
+  return groups.map((group) => ({
     ...group,
     items: effects.filter((effect: any) => group.kinds.includes(effect.kind)),
   })).filter((group) => group.items.length > 0);
 });
-const ruleLabel = (kind: string) => effectLabels[kind] || kind;
+const ruleLabel = (kind: string) => effectLabel(kind);
 const ruleTarget = (rule: any) => {
   if (rule.relation)
-    return `${rule.sourceClass || "?"} → ${rule.targetClass || "?"}（${rule.relation}）`;
+    return ot("actionDefinitionRelationTarget", {
+      source: rule.sourceClass || "?",
+      target: rule.targetClass || "?",
+      relation: rule.relation,
+    });
   return rule.className || "—";
 };
 const submissionCriteria = computed(() => actionDefinition.value?.submissionCriteria ?? null);
@@ -281,7 +283,10 @@ function criterionText(condition: any): string {
   if (condition.kind === "PROPERTY")
     return `${condition.className || condition.objectParameter || "?"}.${condition.field} ${condition.operator} ${JSON.stringify(condition.value)}`;
   if (condition.kind === "LINK_EXISTS")
-    return `${condition.from || condition.objectParameter || "?"} 存在关系 ${condition.relation}`;
+    return ot("actionDefinitionLinkExists", {
+      source: condition.from || condition.objectParameter || "?",
+      relation: condition.relation,
+    });
   return condition.description || condition.kind || "—";
 }
 function criterionMessage(condition: any): string {
@@ -567,33 +572,9 @@ async function testExecuteMetricView() {
   }
 }
 
-async function generateAction() {
-  if (!generationPrompt.value.trim()) {
-    message.warning(ot("actionPromptRequired"));
-    return;
-  }
-  generating.value = true;
-  try {
-    const response = await requestSmartAsset("actions", "generateFromNatureLanguage", {
-      question: generationPrompt.value.trim(),
-      persistence: generationPersistence.value,
-    });
-    const generated = response?.data ?? response;
-    if (!generationPersistence.value && generated) {
-      record.value = structuredClone(generated);
-      showGeneration.value = false;
-      message.success(ot("actionDraftGenerated"));
-      return;
-    }
-    message.success(ot("actionGenerated"));
-    showGeneration.value = false;
-    emit("created");
-    emit("back");
-  } catch (error) {
-    message.error(error instanceof Error ? error.message : ot("actionGenerateFailed"));
-  } finally {
-    generating.value = false;
-  }
+function onActionCreated() {
+  emit("created");
+  emit("back");
 }
 
 async function generateMetricView() {
@@ -776,14 +757,12 @@ onMounted(() => void loadDetail());
       <section v-if="kind === 'actions' && actionDefinition" class="action-definition" @click="onParamClick">
         <div class="section-title">
           <div>
-            <span class="eyebrow">结构化定义</span>
-            <h2>Rules（规则）</h2>
+            <span class="eyebrow">{{ ot("actionDefinitionTitle") }}</span>
+            <h2>{{ ot("actionDefinitionRules") }}</h2>
           </div>
-          <el-tag size="small" type="info">派生 · 未验证</el-tag>
+          <el-tag size="small" type="info">{{ ot("actionDefinitionDerivedUnverified") }}</el-tag>
         </div>
-        <p class="text-muted">
-          从代码解释投影出的规则清单，仅用于阅读；平台不执行这些规则，运行时仍以 Python 代码为准。
-        </p>
+        <p class="text-muted">{{ ot("actionDefinitionRulesHint") }}</p>
         <div class="definition-objects">
           <el-tag v-for="name in actionDefinition.objects || []" :key="name" size="small">
             {{ name }}
@@ -800,7 +779,7 @@ onMounted(() => void loadDetail());
               <span class="rule-target">{{ ruleTarget(rule) }}</span>
             </div>
             <div v-if="(rule.assignments || []).length" class="rule-line">
-              <span class="rule-key">字段</span>
+              <span class="rule-key">{{ ot("actionDefinitionFields") }}</span>
               <span class="rule-values">
                 <span v-for="item in rule.assignments" :key="item.field" class="assignment">
                   {{ item.field }} ← <span v-html="renderValueFrom(item.valueFrom)"></span>
@@ -808,23 +787,23 @@ onMounted(() => void loadDetail());
               </span>
             </div>
             <div v-if="rule.guards" class="rule-line">
-              <span class="rule-key">条件</span>
+              <span class="rule-key">{{ ot("actionDefinitionConditions") }}</span>
               <code class="rule-guard">{{ guardText(rule.guards) }}</code>
             </div>
             <div
               v-if="rule.objectIdFrom || rule.sourceObjectIdFrom || rule.targetObjectIdFrom"
               class="rule-line"
             >
-              <span class="rule-key">定位</span>
+              <span class="rule-key">{{ ot("actionDefinitionLocate") }}</span>
               <span class="rule-values">
                 <span v-if="rule.objectIdFrom">
-                  object ← <span v-html="renderValueFrom(rule.objectIdFrom)"></span>
+                  {{ ot("actionDefinitionObject") }} ← <span v-html="renderValueFrom(rule.objectIdFrom)"></span>
                 </span>
                 <span v-if="rule.sourceObjectIdFrom">
-                  source ← <span v-html="renderValueFrom(rule.sourceObjectIdFrom)"></span>
+                  {{ ot("actionDefinitionSource") }} ← <span v-html="renderValueFrom(rule.sourceObjectIdFrom)"></span>
                 </span>
                 <span v-if="rule.targetObjectIdFrom">
-                  target ← <span v-html="renderValueFrom(rule.targetObjectIdFrom)"></span>
+                  {{ ot("actionDefinitionRuleTarget") }} ← <span v-html="renderValueFrom(rule.targetObjectIdFrom)"></span>
                 </span>
               </span>
             </div>
@@ -832,7 +811,7 @@ onMounted(() => void loadDetail());
         </div>
         <table class="param-table">
           <thead>
-            <tr><th>参数</th><th>类型</th><th>说明</th></tr>
+            <tr><th>{{ ot("actionDefinitionParameters") }}</th><th>{{ ot("actionDefinitionType") }}</th><th>{{ ot("actionDefinitionDescription") }}</th></tr>
           </thead>
           <tbody>
             <tr
@@ -848,8 +827,8 @@ onMounted(() => void loadDetail());
         </table>
 
         <div class="group criteria-block">
-          <h4>Submission criteria</h4>
-          <p class="desc">动作开始前统一判定；任一条失败则整个动作不执行。</p>
+          <h4>{{ ot("actionDefinitionSubmissionCriteria") }}</h4>
+          <p class="desc">{{ ot("actionDefinitionCriteriaHint") }}</p>
           <template v-if="submissionCriteria">
             <div v-if="criteriaConditions.length" class="criteria-list">
               <div v-for="(condition, index) in criteriaConditions" :key="index" class="criteria-row">
@@ -862,16 +841,16 @@ onMounted(() => void loadDetail());
                 </div>
               </div>
             </div>
-            <div v-else class="empty">已声明，但没有条件。</div>
+            <div v-else class="empty">{{ ot("actionDefinitionNoConditions") }}</div>
             <div v-if="criteriaUnrepresentable.length" class="criteria-custom">
-              <b>自定义校验（未结构化）</b>
+              <b>{{ ot("actionDefinitionCustomChecks") }}</b>
               <div v-for="(item, index) in criteriaUnrepresentable" :key="index">
                 {{ item.description }}
                 <span v-if="item.reason" class="muted">（{{ item.reason }}）</span>
               </div>
             </div>
           </template>
-          <div v-else class="empty">未声明。当前 Action 没有结构化前置条件。</div>
+          <div v-else class="empty">{{ ot("actionDefinitionNoCriteria") }}</div>
         </div>
       </section>
 
@@ -1017,30 +996,11 @@ onMounted(() => void loadDetail());
       </section>
     </div>
 
-    <el-dialog
+    <ActionCreateDialog
       v-model="showGeneration"
-      :lock-scroll="false"
-      :title="ot('actionGenerateTitle')"
-      width="560px"
-      :close-on-click-modal="false"
-      @closed="emit('back')"
-    >
-      <el-input
-        v-model="generationPrompt"
-        type="textarea"
-        :rows="4"
-        :placeholder="ot('actionPromptPlaceholder')"
-      />
-      <el-checkbox v-model="generationPersistence" class="generation-option">
-        {{ ot("actionSaveAfterGenerate") }}
-      </el-checkbox>
-      <template #footer>
-        <el-button @click="showGeneration = false">{{ ot("cancel") }}</el-button>
-        <el-button type="primary" :loading="generating" @click="generateAction">
-          {{ ot("actionGenerateAndSave") }}
-        </el-button>
-      </template>
-    </el-dialog>
+      @created="onActionCreated"
+      @back="emit('back')"
+    />
 
     <el-dialog
       v-model="metricGenerationVisible"
@@ -1522,9 +1482,6 @@ h2 {
 }
 .test-parameters {
   margin: var(--spacing-lg) 0;
-}
-.generation-option {
-  margin-top: var(--spacing-md);
 }
 .parameter-header {
   display: flex;

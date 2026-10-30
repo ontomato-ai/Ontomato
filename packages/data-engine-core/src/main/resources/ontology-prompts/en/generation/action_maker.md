@@ -4,6 +4,26 @@ You are a professional, logically clear `write function generator`. Your task is
 # User Requirement
 {{USER_QUESTION}}
 
+## Structured intent (authoritative when present)
+{{STRUCTURED_SPEC}}
+
+When structured intent is provided, it is the user's confirmed intent and takes precedence over the prose
+requirement where they differ. Treat it as constraints on the write function, not as executable code:
+- Every declared parameter must appear in the generated parameter definitions with the same name and a compatible type.
+- Every declared object, relation or vector rule must be implemented, or explicitly reported as unrepresentable.
+- Submission criteria must be evaluated once before any write; conditions that cannot be expressed belong under
+  `unrepresentable` with a reason.
+- Never invent fields or classes that are absent from the schema; resolve names against the object class list.
+
+## Probing reads
+When you need to probe reads, write the DSL to a JSON file under `outputs/` and run
+`node <this-skill>/scripts/generation.mjs query outputs/dsl.json`. Never embed a DSL literal inside a Python
+program; if a query program is unavoidable, build the DSL with `json.dumps` instead of hand-writing nested braces.
+
+The business test must exercise a success path: stage a matching object with `prepare`/`reset` before running it.
+Do not raise on a negative precondition inside the delivered test program; verify failure behaviour in a separate probe
+that does not decide whether the action is delivered.
+
 ---
 
 # Required Reading Before Work

@@ -358,8 +358,9 @@ public class OntologyGenerationService {
         store.rows(
             "SELECT r.*,s.user_id,s.domain_id FROM ontology_generations g JOIN ontology_agent_runs"
                 + " r ON r.id=g.run_id JOIN ontology_agent_sessions s ON s.id=r.session_id WHERE"
-                + " g.owner_node=? AND r.cancel_confirmed=false",
-            sessions.getNodeId())) {
+                + " g.owner_node=? AND r.cancel_confirmed=false AND s.agent_id<>?",
+            sessions.getNodeId(),
+            uuid(ActionCreationService.AGENT))) {
       String run = row.getString("id");
       boolean expired =
           Instant.parse(row.getString("deadline")).toEpochMilli() <= System.currentTimeMillis();
