@@ -6,19 +6,13 @@ import {
   type AssistantAgentDefinition,
   type AssistantAgentInput,
 } from "@ontomato/contracts/assistant-chat";
-import { nodeApiFetch, nodeApiGet, nodeApiPost, nodeApiPut } from "../../utils/api";
+import { apiGet, nodeApiFetch, nodeApiGet, nodeApiPost, nodeApiPut } from "../../utils/api";
 import { listMcpServiceOptions } from "../mcp/api";
-import { queryViewApi } from "../query-view";
 
 export interface ObjectClassOption {
   className: string;
   showName?: string;
   classDesc?: string;
-}
-
-export interface OntologyRelationOption {
-  fromclass?: string;
-  toclass?: string;
 }
 
 const base = "/assistant/agent-definitions";
@@ -45,25 +39,10 @@ export const agentDefinitionsApi = {
   listMcpServiceOptions,
 };
 
-/** Classes and relations of the ontology, for related classes and the graph scope selector. */
-export async function loadOntologyOutline(): Promise<{
-  classes: ObjectClassOption[];
-  relations: OntologyRelationOption[];
-}> {
-  const json = await queryViewApi.getMetas();
-  const relationRule = json.data?.relationship_rule || {};
-  const relations = Object.values(relationRule).map((relation: any) => ({
-    fromclass: relation.fromclass,
-    toclass: relation.toclass,
-  }));
-  const classes: ObjectClassOption[] = Array.isArray(json.data?.classDef)
-    ? json.data.classDef
-        .map((cls: any) => ({
-          className: String(cls.className || ""),
-          showName: cls.showName || "",
-          classDesc: cls.classDesc || "",
-        }))
-        .filter((cls: ObjectClassOption) => cls.className)
-    : [];
-  return { classes, relations };
+/** Authorized ontology classes used by the single analysis scope selector. */
+export async function loadOntologyOutline(): Promise<{ classes: ObjectClassOption[] }> {
+  const result = await apiGet("/ontology/query/overview");
+  return { classes: result.classes.map((cls: { name: string; description: string | null }) => ({
+    className: cls.name, classDesc: cls.description ?? "",
+  })) };
 }

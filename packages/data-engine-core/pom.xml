@@ -89,7 +89,7 @@
         <resource><directory>src/main/resources</directory></resource>
         <resource><directory>../contracts/src</directory><includes><include>service-logging-format.json</include><include>service-logging-fixtures.json</include></includes></resource>
         <resource><directory>../../agent-skills/ontomato-analyst</directory><targetPath>ontology-skills/ontomato-analyst</targetPath>
-            <includes><include>SKILL.md</include><include>ontomato.mjs</include><include>client.mjs</include><include>application.yml</include><include>python/**</include><include>references/dsl.md</include></includes>
+            <includes><include>SKILL.md</include><include>ontomato.mjs</include><include>client.mjs</include><include>application.yml</include><include>references/dsl.md</include></includes>
         </resource>
         <resource><directory>../../agent-skills/ontomato-analyst-assistant</directory><targetPath>ontology-skills/ontomato-analyst-assistant</targetPath></resource>
         <resource><directory>../../agent-skills/ontology-generation</directory><targetPath>ontology-skills/ontology-generation</targetPath></resource>
@@ -97,6 +97,7 @@
         <resource><directory>../../agent-skills/knowledge-governance</directory><targetPath>ontology-skills/knowledge-governance</targetPath></resource>
         <resource><directory>../../agent-skills/data-retrieval</directory><targetPath>ontology-skills/data-retrieval</targetPath></resource>
         <resource><directory>../contracts/src</directory><targetPath>ontology-contracts</targetPath><includes><include>agent-artifact-markdown-prompt.json</include><include>query-subgraph.schema.json</include></includes></resource>
+        <resource><directory>../contracts</directory><targetPath>ontology-contracts</targetPath><includes><include>query-subgraph.md</include><include>examples/query-subgraphs.json</include></includes></resource>
     </resources><plugins><plugin>
         <groupId>org.apache.maven.plugins</groupId><artifactId>maven-compiler-plugin</artifactId>
         <configuration><annotationProcessorPaths combine.children="append"><path>

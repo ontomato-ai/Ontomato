@@ -27,15 +27,15 @@ the complete selectable skill catalogue and per-run package preparation.
 | DELETE `S/feedback/:feedbackId` | — | 204 |
 
 Definitions contain one systemPrompt, one skills list, modelRole, name, description,
-icon, enabled, classNames, graphScope (`panorama` or `subgraph` with rootClassNames
-and maxDepth 0–10), enabledMcpServiceIds and sortOrder. Both presets are ordinary
+icon, enabled, classNames, enabledMcpServiceIds and sortOrder. Both presets are ordinary
 editable definitions. The common `/agents` endpoint exposes only selector metadata,
 never the prompt or these business settings. Deleted definitions do not delete
 history, and cannot admit new runs. Old executor/dimension/report/summary/hot-report
 fields are rejected and are not read from legacy definition rows.
 
-classNames scopes retrieval as before. graphScope selects initial ontology context,
-not the formal retrieval allow-list. External MCP selections are runtime-assigned
+classNames scopes both the initial ontology context and retrieval, intersected with
+the current user's authorized classes by ontology. graphScope is removed without
+converting its old roots/depth into new query restrictions. External MCP selections are runtime-assigned
 service UUIDs. Workbench forwards them as `definition.externalMcp: {id}[]`;
 [the MCP contract](agent-runtime-mcp.md) owns configuration and scoped resolution.
 Renames preserve selections; deleted services are ignored at run start.

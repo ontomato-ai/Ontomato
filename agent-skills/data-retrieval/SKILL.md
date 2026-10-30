@@ -7,12 +7,17 @@ compatibility: Requires Node.js 18 or newer and an authorized Ontomato ontology 
 # Data retrieval files
 
 Investigate using ontomato-analyst. Use the harness's read/write/edit/bash tools;
-Python runs through bash. Do not call ask recursively from a product retriever.
+Python source is executed only by Java through the dataset command; the query helper is injected there. Do not call ask recursively from a product retriever.
 Read [dataset recipes](references/dataset.md), write work/recipe.json, then run:
 
 ```sh
 node <this-skill>/scripts/dataset.mjs @work/recipe.json outputs/result.dataset.json
 ```
+
+For a trial without publishing a file, run
+`node <this-skill>/scripts/dataset.mjs preview @work/recipe.json`.
+Both preview and delivery return user-authorized rows. Never run the query program
+with local Python or treat a masked value as a real input value.
 
 The command requests a fresh authorized execution and writes the exact returned
 dataset. Reference the resulting file; do not rewrite its rows in another file.

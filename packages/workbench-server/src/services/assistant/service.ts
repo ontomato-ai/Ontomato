@@ -310,8 +310,6 @@ export const assistantService = {
     try {
       ontologyContext = await assistantOntologyContext(
         a,
-        message,
-        owner,
         credentials,
       );
     } catch (error) {

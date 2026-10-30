@@ -9,7 +9,6 @@ import {
   agentDefinitionsApi,
   loadOntologyOutline,
   type ObjectClassOption,
-  type OntologyRelationOption,
 } from "../api";
 import { avatarIcon, lightAvatarColorOptions, themedAvatarColor } from "../avatar";
 import AgentEditor from "./AgentEditor.vue";
@@ -27,7 +26,6 @@ const selectedId = ref<string | null>(null);
 const creating = ref(false);
 const editor = ref<{ dirty: boolean } | null>(null);
 const classes = ref<ObjectClassOption[]>([]);
-const relations = ref<OntologyRelationOption[]>([]);
 const outlineLoading = ref(true);
 
 const selected = computed(() => agents.value.find((agent) => agent.id === selectedId.value) ?? null);
@@ -60,7 +58,6 @@ onMounted(async () => {
   try {
     const outline = await loadOntologyOutline();
     classes.value = outline.classes;
-    relations.value = outline.relations;
   } finally {
     outlineLoading.value = false;
   }
@@ -156,7 +153,6 @@ function deleted(id: string) {
         :key="editorKey"
         :agent="creating ? null : selected"
         :classes="classes"
-        :relations="relations"
         :outline-loading="outlineLoading"
         @saved="saved"
         @deleted="deleted"

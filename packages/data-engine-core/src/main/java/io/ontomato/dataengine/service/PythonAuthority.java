@@ -35,14 +35,14 @@ public record PythonAuthority(
     return new PythonAuthority(domain, user, "user-read", null, java.util.List.of(), null, null);
   }
 
-  public static PythonAuthority exploration(String domain) {
+  public static PythonAuthority exploration(String user, String domain) {
     return new PythonAuthority(
-        domain, "ontology-service", "retrieval-exploration", null, java.util.List.of(), null, null);
+        domain, user, "retrieval-exploration", null, java.util.List.of(), null, null);
   }
 
-  public static PythonAuthority write(String domain, String sandbox) {
+  public static PythonAuthority write(String user, String domain, String sandbox) {
     return new PythonAuthority(
-        domain, "ontology-service", "sandbox-write", sandbox, java.util.List.of(), null, null);
+        domain, user, "sandbox-write", sandbox, java.util.List.of(), null, null);
   }
 
   public static PythonAuthority calculation(String domain) {

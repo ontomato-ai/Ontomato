@@ -43,7 +43,7 @@ public class ABCProgramDashboardServiceImpl implements ABCProgramDashboardServic
       // Call the dashboard maker
       String sessionId = UUID.randomUUID().toString();
 
-      Map<String, Object> jsonRule = adminService.getJSONRule(domainId);
+      Map<String, Object> jsonRule = generationService.authorizedRule(adminService.getJSONRule(domainId), domainId);
       String userMessage =
           OntologyGenerationPrompts.getAbcProgramDashboardMakerUserMessage(
               program, lang, langService, jsonRule);
@@ -66,9 +66,10 @@ public class ABCProgramDashboardServiceImpl implements ABCProgramDashboardServic
         ABCHarnessDashboard dashboard = new ABCHarnessDashboard();
         dashboard.setTitle(title.trim());
         dashboard.setCode(code);
-        dashboard.setOutKeyRefs(program.getOutKeyRefs());
+        dashboard.setSourceAnalysis(io.ontomato.dataengine.service.QuerySubgraphContract.validate(envelope.getJSONObject("sourceAnalysis")));
         dashboard.setParameters(parameters);
 
+        var access = generationService.executionAccess(domainId);
         // Test
         int timeoutMinutes = 10;
         JSONArray dashboardResult =
@@ -77,8 +78,8 @@ public class ABCProgramDashboardServiceImpl implements ABCProgramDashboardServic
                     .execute(
                         UUID.randomUUID().toString(),
                         dashboard,
-                        "admin",
-                        new UserDataPermission(),
+                        access.user().getId(),
+                        access.permission(),
                         lang,
                         timeoutMinutes,
                         domainId)[0];
@@ -88,8 +89,8 @@ public class ABCProgramDashboardServiceImpl implements ABCProgramDashboardServic
                     .execute(
                         UUID.randomUUID().toString(),
                         program,
-                        "admin",
-                        new UserDataPermission(),
+                        access.user().getId(),
+                        access.permission(),
                         lang,
                         timeoutMinutes,
                         domainId)[0];
@@ -104,7 +105,7 @@ public class ABCProgramDashboardServiceImpl implements ABCProgramDashboardServic
       ABCHarnessDashboard dashboard = new ABCHarnessDashboard();
       dashboard.setTitle(program.getQuestion());
       dashboard.setCode(program.getCode());
-      dashboard.setOutKeyRefs(program.getOutKeyRefs());
+      dashboard.setSourceAnalysis(program.getSourceAnalysis() != null ? program.getSourceAnalysis() : io.ontomato.dataengine.service.QuerySourceAnalysis.fromStoredSources(program.getOutKeyRefs()));
       dashboard.setParameters(new ArrayList<ABCHarnessDashboardParameter>());
       return dashboard;
     }

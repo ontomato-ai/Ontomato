@@ -7,19 +7,19 @@ description: Generate or explain ontology Actions, Functions, knowledge and dash
 
 Use the task-specific definition and its business rules. Use standard `read`, `write`, `edit` and `bash` tools for workspace files. Explore schema, relationships, distinct values and DSL with the `ontomato-analyst` skill. Java paths are never workspace paths.
 
-Run `node <this-skill>/scripts/generation.mjs <command> [arguments]`. Runtime supplies `ONTOMATO_ONTOLOGY_URL`, `ONTOMATO_GENERATION_ID`, `ONTOMATO_GENERATION_KIND`, and the scoped `ONTOMATO_GENERATION_TK`. The analyst uses the separate read-only `ONTOMATO_QUERY_TK` grant.
+Run `node <this-skill>/scripts/generation.mjs <command> [arguments]`. Runtime supplies `ONTOMATO_ONTOLOGY_URL`, `ONTOMATO_GENERATION_ID`, `ONTOMATO_GENERATION_KIND`, and one scoped `ONTOMATO_TK` for both metadata queries and generation operations.
 
 | Command | Use |
 | --- | --- |
 | `source [startLine [endLine]]` | Read the exact Action source to explain; line numbers start at 1. |
-| `test outputs/program.py parameters.json` | Business test the exact source bytes and parameter definitions. The JSON file is an array (use `[]` for no parameters). Read operations cannot acquire a write sandbox. |
+| `test outputs/program.py parameters.json source-analysis.json` | Business test the exact source bytes and parameter definitions. The parameter JSON file is an array (use `[]` for no parameters); read programs also supply source-analysis.json. Read operations cannot acquire a write sandbox. |
 | `prepare data.json` | Validate Action sandbox fixture `{objDatas,relDatas,vectorDatas}`; object groups contain className and rows, relationships contain relationName/sourceObjId/targetObjId. |
 | `reset` | Clear the Action sandbox and import the prepared fixture. Repeat before independent Action tests. |
 | `query dsl.json` | Query the Action sandbox to verify side effects. |
 | `begin kind [source.py]` | External agents only: open a business gate using `ONTOMATO_TK` or `ONTOMATO_API_KEY`; no runtime history is invented. |
 | `close` | External agents close their gate and remove its sandbox. Hosted runs are closed by the host. |
 
-Never put credentials, identity, URLs, local paths or transport parameters in generated business parameter definitions. Python uses the existing `# ontomato-python:2` protocol and `query_runtime` helper. Test errors are feedback for correcting the source; a bash success is not a business test receipt.
+Never put credentials, identity, URLs, local paths or transport parameters in generated business parameter definitions. Python uses protocol `# ontomato-python:2`. Java alone injects the private `query_runtime` helper and execution tk; do not run query programs with local Python. All test output is already filtered for the current user. Read references/query-subgraph.md and references/query-subgraphs.json; declare every output source and computation in sourceAnalysis, with output labels in the user's language. Reusable graphs describe parameter-dependent filters symbolically; do not freeze test/default parameter values into the graph. Test errors are feedback for correcting the source; a bash success is not a business test receipt.
 
 ## Delivery
 
@@ -28,8 +28,8 @@ Write **one JSON object** to `outputs/result.json`, with the following fields fo
 | Kind | Result fields |
 | --- | --- |
 | action | `sourcePath`, `parameterDefs` (array), `classNames` (nonempty array), `name`, `logic` |
-| function | `sourcePath`, `parameterDefs` (array), `name`, `logic`; preserve the supplied output keys |
-| dashboard | `sourcePath`, `parameterDefs` (array of key/name/type/value/className/attrName), `title` |
+| function | `sourcePath`, `parameterDefs` (array), `sourceAnalysis`, `name`, `logic`; preserve the supplied output keys |
+| dashboard | `sourcePath`, `parameterDefs` (array of key/name/type/value/className/attrName), `sourceAnalysis`, `title` |
 | explain | `segs`, `operations`, `negativeEffect`, exactly following the explanation schema in the task definition; read source first |
 | instantiate | `instances`: array of `{id,question,parameters}` matching only the supplied MetricView candidates |
 | name | `name` |

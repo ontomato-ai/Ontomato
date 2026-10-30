@@ -22,6 +22,8 @@ public class GenerationOperations {
   private final WriteFunctionOperationService writes;
   private final PythonExecuteService python;
   private final QueryGrantService grants;
+  private final DataPermissionLookup permissions;
+  private final ABCProgramService programs;
 
   public GenerationOperations(
       OntologyAgentStore store,
@@ -29,13 +31,15 @@ public class GenerationOperations {
       SandboxService sandboxService,
       WriteFunctionOperationService writes,
       PythonExecuteService python,
-      QueryGrantService grants) {
+      QueryGrantService grants, DataPermissionLookup permissions, ABCProgramService programs) {
     this.store = store;
     this.schemas = schemas;
     this.sandboxService = sandboxService;
     this.writes = writes;
     this.python = python;
     this.grants = grants;
+    this.permissions = permissions;
+    this.programs = programs;
   }
 
   public JSONObject gate(String run, Owner owner) {
@@ -328,7 +332,15 @@ public class GenerationOperations {
         () -> {
           var row = gate(run, owner);
           try {
-            return writes.query(body.getJSONObject("dsl"), sandbox(row), owner.domainId());
+            var permission = permissions.getDataPermission(owner.userId(), owner.domainId());
+            var rule = schemas.query(owner.domainId());
+            var definitions = (List<Map<String, Object>>) rule.get("classDef");
+            var query = body.getJSONObject("dsl");
+            QueryPermissions.restrictRelations(query, rule, permission);
+            var analysis = QuerySourceAnalysis.fromDsl(query, definitions);
+            QueryPermissions.authorizeInputs(analysis, permission, definitions);
+            var restricted = (JSONObject) DslPermissionUtil.addRowPermission("[" + query.toJSONString() + "]", definitions, permission)[0];
+            return QueryPermissions.response(writes.query(restricted, sandbox(row), owner.domainId()), analysis, permission, false);
           } catch (Exception error) {
             throw new IllegalStateException(error);
           }
@@ -383,6 +395,9 @@ public class GenerationOperations {
               defs == null ? List.<Map>of() : defs.toList(Map.class), classes))
         parameters.put(p.getName(), p.getValue());
     }
+    JSONObject analysis = body.getJSONObject("sourceAnalysis");
+    var permission = permissions.getDataPermission(owner.userId(), owner.domainId());
+    if (!kind.equals("action")) QueryPermissions.authorizeInputs(analysis, permission, classes);
     String digest = testDigest(kind, code, defs), execution = UUID.randomUUID().toString();
     store.transaction(
         () -> {
@@ -397,8 +412,8 @@ public class GenerationOperations {
         });
     PythonAuthority authority =
         kind.equals("action")
-            ? PythonAuthority.write(owner.domainId(), sandbox(row))
-            : PythonAuthority.exploration(owner.domainId());
+            ? PythonAuthority.write(owner.userId(), owner.domainId(), sandbox(row))
+            : PythonAuthority.read(owner.userId(), owner.domainId());
     long deadline =
         java.time.Instant.parse(
                 store
@@ -425,6 +440,15 @@ public class GenerationOperations {
                 .withParent(new PythonAuthority.ParentGrant(grant, run, deadline)),
             parameters,
             Map.of());
+    if (result.getError() != null && !result.getError().isBlank()) {
+      result.setResult(null);
+      result.setError("Python business test failed; no data was delivered");
+    } else if (kind.equals("action")) {
+      result.setResult("{\"completed\":true}");
+    } else {
+      var rows = QueryPermissions.mask(programs.parsePythonReturn(result.getResult(), null), analysis, permission);
+      result.setResult(JSON.toJSONString(JSONObject.of("answer", rows), JSONWriter.Feature.WriteMapNullValue));
+    }
     return store.transaction(
         () -> {
           gate(run, owner);

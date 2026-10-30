@@ -14,7 +14,6 @@ final class DatasetFileContract {
         "sourceAnalysis",
         "title",
         "question",
-        "outKeyRefs",
         "assumptions",
         "decisionIds",
         "metricUses",
@@ -26,6 +25,7 @@ final class DatasetFileContract {
     JSONObject recipe = object(body, "recipe");
     switch (nonempty(recipe, "kind")) {
       case "python" -> {
+        io.ontomato.dataengine.service.QuerySubgraphContract.validate(object(body, "sourceAnalysis"));
         AgentJson.fields(recipe, "kind", "code", "sha256");
         nonempty(recipe, "code");
         string(recipe, "sha256", false);
@@ -47,13 +47,6 @@ final class DatasetFileContract {
         optionalText(recipe, "sha256");
       }
       default -> throw AgentHttpException.invalid("Unknown recipe kind");
-    }
-    for (Object value : array(body, "outKeyRefs")) {
-      var ref = element(value);
-      AgentJson.fields(ref, "key", "className", "attrName", "asGroupBy", "statCal");
-      for (String key : List.of("key", "className", "attrName")) nonempty(ref, key);
-      bool(ref, "asGroupBy");
-      bool(ref, "statCal");
     }
     for (Object value : array(body, "assumptions"))
       if (!(value instanceof String)) throw AgentHttpException.invalid("Invalid assumption");

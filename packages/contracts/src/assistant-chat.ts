@@ -10,22 +10,10 @@ import {
   runtimeIdSchema,
   runtimeTimestampSchema,
 } from "./agent-runtime-values";
-export const assistantGraphScopeSchema = z.discriminatedUnion("mode", [
-  z.object({ mode: z.literal("panorama") }).strict(),
-  z
-    .object({
-      mode: z.literal("subgraph"),
-      rootClassNames: z.array(z.string().trim().min(1)).min(1),
-      maxDepth: z.number().int().min(0).max(10),
-    })
-    .strict(),
-]);
-export type AssistantGraphScope = z.infer<typeof assistantGraphScopeSchema>;
 export const assistantAgentDefinitionSchema = agentHostAgentSchema.extend({
   modelRole: runtimeKeySchema,
   skills: z.array(runtimeSkillRefSchema),
   classNames: z.array(z.string().trim().min(1)).default([]),
-  graphScope: assistantGraphScopeSchema.default({ mode: "panorama" }),
   enabledMcpServiceIds: z.array(runtimeIdSchema).default([]),
   sortOrder: z.number().int().default(0),
   systemPrompt: z.string(),

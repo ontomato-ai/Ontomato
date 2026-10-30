@@ -96,7 +96,7 @@ export const datasetPayloadSchema = z
     recipe: recipeSchema,
     // Optional only while reading datasets created before the source-analysis cutover.
     sourceAnalysis: querySubgraphSchema.optional(),
-    outKeyRefs: z.array(fieldSourceSchema),
+    outKeyRefs: z.array(fieldSourceSchema).optional(),
     truncation: truncationSchema.nullable(),
     assumptions: z.array(z.string()),
     decisionIds: z.array(id),
@@ -107,7 +107,7 @@ export const datasetPayloadSchema = z
   .strict()
   .superRefine((data, ctx) => {
     const keys = data.columns.map((c) => c.key).sort(),
-      sources = data.outKeyRefs.map((c) => c.key).sort();
+      sources = data.sourceAnalysis ? data.sourceAnalysis.nodes.filter((n) => n.kind === "output").map((n) => n.key).sort() : (data.outKeyRefs ?? []).map((c) => c.key).sort();
     if (
       new Set(keys).size !== keys.length ||
       (data.sourceAnalysis && JSON.stringify(data.sourceAnalysis.nodes
@@ -197,13 +197,14 @@ export const prepareDatasetSchema = z
     sourceAnalysis: querySubgraphSchema.optional(),
     title: z.string().min(1),
     question: z.string().min(1),
-    outKeyRefs: z.array(fieldSourceSchema),
     assumptions: z.array(z.string()),
     metricUses: z.array(metricUseSchema),
     selfCheck: selfCheckSchema,
     decisionIds: z.array(id),
   })
-  .strict();
+  .strict().superRefine((data, context) => {
+    if (data.recipe.kind === "python" && !data.sourceAnalysis) context.addIssue({ code: z.ZodIssueCode.custom, message: "Python sourceAnalysis is required" });
+  });
 export type DatasetPayload = z.infer<typeof datasetPayloadSchema>;
 export type RetrievalInput = z.infer<typeof retrievalInputSchema>;
 export type RetrievalSnapshot = z.infer<typeof retrievalSnapshotSchema>;

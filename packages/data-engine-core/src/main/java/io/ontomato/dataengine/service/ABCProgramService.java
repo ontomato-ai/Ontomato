@@ -20,6 +20,8 @@ public interface ABCProgramService {
 	
 	public Object[] execute(String sessionId, Function function, String userId, UserDataPermission curUserDataPermission, String sandboxId, String lang, int timeoutMinutes, String domainId) throws Exception;
 	
+	public JSONArray parsePythonReturn(String pythonOutput, String errorMessage) throws Exception;
+
 	public JSONArray dealPythonReturn(String pythonOutput, String errorMessage, List<ABCHarnessProgramOutKeyRef> outKeyRefs, UserDataPermission curUserDataPermission) throws Exception;
 	
 	

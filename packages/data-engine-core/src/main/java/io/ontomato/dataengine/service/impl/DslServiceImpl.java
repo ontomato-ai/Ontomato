@@ -19,6 +19,8 @@ import io.ontomato.dataengine.dao.VectorResourceDao;
 import io.ontomato.dataengine.service.AdminService;
 import io.ontomato.dataengine.service.BusinessConfigService;
 import io.ontomato.dataengine.service.DslService;
+import io.ontomato.dataengine.service.QueryPermissions;
+import io.ontomato.dataengine.service.QuerySourceAnalysis;
 import io.ontomato.dataengine.util.ErrorText;
 import io.ontomato.dataengine.service.sys.bean.permission.UserDataPermission;
 import io.ontomato.dataengine.util.DslUtil;
@@ -51,14 +53,23 @@ public class DslServiceImpl implements DslService {
 		JSONArray dsls = new JSONArray();
     	dsls.add(dsl);
 		Map<String, Object> jsonRule = adminService.getJSONRule(user.getDomainId());
+		var definitions = (List<Map<String, Object>>) jsonRule.get("classDef");
+		QueryPermissions.restrictRelations(dsl, jsonRule, permission);
+		var analysis = QuerySourceAnalysis.fromDsl(dsl, definitions);
+		QueryPermissions.authorizeInputs(analysis, permission, definitions);
 		DslExecutionResult[] results = HttpRequestUtil.executeDsl(dataRagConfig, dataAdapterRegistry.create(businessConfig, jsonRule), JSONArray.toJSONString(dsls, Feature.WriteMapNullValue), null, true, jsonRule, vectorResourceDao, permission, DslExecutionMode.RAW, user.getDomainId());
-		return results[1].rawResponse();
+		return QueryPermissions.response(results[1].rawResponse(), analysis, permission, false);
 	}
 
 	@Override
 	public Map<String, Object> executeV1(JSONObject dsl, UserDataPermission permission, User user) {
-		return executeNormalized(dsl, permission, user.getDomainId());
+		return executeNormalized(dsl, permission, user.getDomainId(), false);
 	}
+
+    @Override
+    public Map<String, Object> executeInternal(JSONObject dsl, UserDataPermission permission, User user) {
+        return executeNormalized(dsl, permission, user.getDomainId(), true);
+    }
 	
 	@Override
 	public List<String> getNodeIds(JSONObject dsl, UserDataPermission permission, User user) {
@@ -71,12 +82,15 @@ public class DslServiceImpl implements DslService {
 	}
 
 	/** Normalize and execute with the already resolved permission. */
-	private Map<String, Object> executeNormalized(JSONObject dsl, UserDataPermission permission, String domainId) {
+	private Map<String, Object> executeNormalized(JSONObject dsl, UserDataPermission permission, String domainId, boolean internal) {
 		BusinessConfig businessConfig = businessConfigService.get(domainId);
 		Map<String, Object> jsonRule = adminService.getJSONRule(domainId);
 		JSONArray dsls = new JSONArray();
     	dsls.add(dsl);
 		List<Map<String, Object>> classDefs = (List<Map<String, Object>>)jsonRule.get("classDef");
+		QueryPermissions.restrictRelations(dsl, jsonRule, permission);
+		var analysis = QuerySourceAnalysis.fromDsl(dsl, classDefs);
+		QueryPermissions.authorizeInputs(analysis, permission, classDefs);
 		String dslStr = DslUtil.normalizeClassNames(JSONArray.toJSONString(dsls, Feature.WriteMapNullValue), classDefs);
 		DataAdapter timeConditionAdapter = dataAdapterRegistry.create(businessConfig, jsonRule);
 		dslStr = DslUtil.setConditionTimeColumnToCorrectFormat(dslStr, dataRagConfig.getDslMightTimeFormats(), classDefs, timeConditionAdapter.timeConditionsAsEpochMillis(), timeConditionAdapter.timeConditionZone());
@@ -87,7 +101,7 @@ public class DslServiceImpl implements DslService {
 		if (result.failed()) {
 			dataMap.put("error", ErrorText.rawErrorText(result.failure().cause()));
 		}
-		return dataMap;
+		return QueryPermissions.response(dataMap, analysis, permission, internal);
 	}
 
 }

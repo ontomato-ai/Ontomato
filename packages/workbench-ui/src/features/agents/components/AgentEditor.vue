@@ -12,17 +12,15 @@ import type {
 } from "@ontomato/contracts/assistant-chat";
 import type { McpServiceOption } from "@ontomato/contracts/agent-runtime-mcp";
 import type { RuntimeSkillRef } from "@ontomato/contracts/agent-runtime-skills";
-import { agentDefinitionsApi, type ObjectClassOption, type OntologyRelationOption } from "../api";
+import { agentDefinitionsApi, type ObjectClassOption } from "../api";
 import { avatarIcon, lightAvatarColorOptions, themedAvatarColor } from "../avatar";
 import AgentBasicInfoFields from "./AgentBasicInfoFields.vue";
-import GraphScopeField from "./GraphScopeField.vue";
 import SkillSelector from "./SkillSelector.vue";
 
 /** Edits one agent definition; a null agent is a new one. */
 const props = defineProps<{
   agent: AssistantAgentDefinition | null;
   classes: ObjectClassOption[];
-  relations: OntologyRelationOption[];
   outlineLoading: boolean;
 }>();
 const emit = defineEmits<{ saved: [agent: AssistantAgentDefinition]; deleted: [id: string] }>();
@@ -38,9 +36,6 @@ interface Form {
   systemPrompt: string;
   skills: RuntimeSkillRef[];
   classNames: string[];
-  scopeMode: "panorama" | "subgraph";
-  scopeRoots: string[];
-  scopeDepth: number | undefined;
   mcpServiceIds: string[];
 }
 
@@ -51,7 +46,6 @@ function toForm(agent: AssistantAgentDefinition | null): Form {
   } catch {
     // A malformed stored avatar falls back to the default.
   }
-  const scope = agent?.graphScope;
   return {
     name: agent?.name ?? "",
     description: agent?.description ?? "",
@@ -61,9 +55,6 @@ function toForm(agent: AssistantAgentDefinition | null): Form {
     systemPrompt: agent?.systemPrompt ?? "",
     skills: [...(agent?.skills ?? [])],
     classNames: [...(agent?.classNames ?? [])],
-    scopeMode: scope?.mode === "subgraph" ? "subgraph" : "panorama",
-    scopeRoots: scope?.mode === "subgraph" ? [...scope.rootClassNames] : [],
-    scopeDepth: scope?.mode === "subgraph" ? scope.maxDepth : 1,
     mcpServiceIds: [...(agent?.enabledMcpServiceIds ?? [])],
   };
 }
@@ -106,17 +97,6 @@ function validInput(): AssistantAgentInput | null {
     ElMessage.warning(t("analysis.agentNameRequired"));
     return null;
   }
-  if (value.scopeMode === "subgraph") {
-    if (!value.scopeRoots.length) {
-      ElMessage.warning(t("admin.graphScopeRootsRequired"));
-      return null;
-    }
-    const depth = value.scopeDepth;
-    if (depth === undefined || !Number.isInteger(depth) || depth < 0 || depth > 10) {
-      ElMessage.warning(t("admin.graphScopeDepthInvalid"));
-      return null;
-    }
-  }
   return {
     name: value.name.trim(),
     description: value.description,
@@ -125,10 +105,6 @@ function validInput(): AssistantAgentInput | null {
     systemPrompt: value.systemPrompt,
     skills: value.skills,
     classNames: value.classNames,
-    graphScope:
-      value.scopeMode === "subgraph"
-        ? { mode: "subgraph", rootClassNames: value.scopeRoots, maxDepth: value.scopeDepth! }
-        : { mode: "panorama" },
     enabledMcpServiceIds: value.mcpServiceIds,
     sortOrder: props.agent?.sortOrder ?? 0,
   };
@@ -263,14 +239,6 @@ defineExpose({ dirty });
             </el-select>
             <p class="form-tip">{{ t("agents.relatedClassesHint") }}</p>
           </el-form-item>
-          <GraphScopeField
-            v-model:mode="form.scopeMode"
-            v-model:roots="form.scopeRoots"
-            v-model:depth="form.scopeDepth"
-            :classes="classes"
-            :relations="relations"
-            :loading="outlineLoading"
-          />
         </section>
 
         <section class="editor-section">

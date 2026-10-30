@@ -170,13 +170,16 @@ public class QueryGrantService {
           "ontology-generation".equals(claims.getString("purpose"))
               && path.startsWith("/ontology/ai/generation/" + runId + "/");
       if ("ontology-generation".equals(claims.getString("purpose"))) {
-        read = false;
         write = false;
       }
+      boolean retrieval = "retrieval-exploration".equals(claims.getString("purpose"))
+          && claims.getString("retrievalId") != null
+          && path.matches("/ontology/retrievals/" + claims.getString("retrievalId")
+              + "/runs/" + runId + "/outputs(?:/[^/]+(?:/content)?)?");
       boolean governance = "knowledge-governance".equals(claims.getString("purpose"))
           && path.matches("/ontology/ai/knowledge-governance/[^/]+/runs/" + runId + "/actions/[^/]+");
       if ("knowledge-governance".equals(claims.getString("purpose"))) { read = false; write = false; }
-      if (!read && !write && !generation && !governance)
+      if (!read && !write && !generation && !governance && !retrieval)
         throw new ResponseStatusException(
             HttpStatus.FORBIDDEN, "This grant cannot call this operation");
       return claims;

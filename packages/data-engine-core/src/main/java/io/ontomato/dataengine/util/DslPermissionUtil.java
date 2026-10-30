@@ -22,63 +22,34 @@ import lombok.extern.slf4j.Slf4j;
 @Slf4j
 public class DslPermissionUtil {
 	
-	public static Object[] addRowPermission(String dslStr, List<Map<String, Object>> classDefs, UserDataPermission permission) {
-		try {
-			boolean addPermission = false;
-			JSONArray dsls = JSON.parseArray(dslStr);
-			JSONObject dsl = dsls.getJSONObject(0);
-			Map<String, DslConsanguinity> dslConsanguinityMap = DslUtil.findConsanguinityFromDsl(dsl, classDefs);
-			Set<String> shouldAddPermissionClassNameSet = new HashSet<String>();
-			if (dslConsanguinityMap != null) {
-				for (String key : dslConsanguinityMap.keySet()) {
-					DslConsanguinity consanguinity = dslConsanguinityMap.get(key);
-					if (consanguinity.getClassName() != null && !"".equals(consanguinity.getClassName().trim())) {
-						shouldAddPermissionClassNameSet.add(consanguinity.getClassName().trim());
-					}
-				}
-			}
-			JSONArray steps = dsl.getJSONObject("answer").getJSONArray("steps");
-			JSONObject firstStep = steps.getJSONObject(0);
-			JSONArray objects = firstStep.getJSONObject("graph").getJSONArray("patterns").getJSONObject(0).getJSONArray("objects");
-			for (int i = 0; i < objects.size(); i++) {
-				JSONObject object = objects.getJSONObject(i);
-				String className = object.getString("class");
-//				if (shouldAddPermissionClassNameSet.contains(className)) {
-					JSONObject permissionWhere = permission.getRowPermissionMQLByClassName(className);
-					if (permissionWhere != null) {
-						JSONObject selfConditions = object.getJSONObject("conditions");
-						if (selfConditions == null) {
-							selfConditions = new JSONObject();
-						}
-						
-						JSONObject selfWhere = null;
-						if (selfConditions.getJSONObject("properties") != null) {
-							selfWhere = object.getJSONObject("conditions").getJSONObject("properties");
-						}
-						JSONObject where = null;
-						if (selfWhere != null) {
-							where = new JSONObject();
-							where.put("operator", "logic");
-							JSONArray and = new JSONArray();
-							and.add(selfWhere);
-							and.add(permissionWhere);
-							where.put("and", and);
-						} else {
-							where = permissionWhere;
-						}
-						
-						selfConditions.put("properties", where);
-						object.put("conditions", selfConditions);
-						addPermission = true;
-					}
-//				}
-			}
-			return new Object[] {dsl, addPermission};
-		} catch (Exception e) {
-			log.error(e.getMessage(), e);
-			throw new ServiceException("Failed to inject the formal row permission", e);
-		}
-	}
+    public static Object[] addRowPermission(String dslStr, List<Map<String, Object>> classDefs, UserDataPermission permission) {
+        JSONArray dsls = JSON.parseArray(dslStr);
+        if (dsls.size() != 1) throw new IllegalArgumentException("One DSL query is required");
+        JSONObject dsl = dsls.getJSONObject(0);
+        Set<String> temporary = new HashSet<>();
+        boolean changed = false;
+        for (Object value : dsl.getJSONObject("answer").getJSONArray("steps")) {
+            JSONObject step = JSONObject.from(value);
+            for (Object patternValue : step.getJSONObject("graph").getJSONArray("patterns")) {
+                JSONObject pattern = JSONObject.from(patternValue);
+                for (Object objectValue : pattern.getJSONArray("objects")) {
+                    JSONObject object = (JSONObject) objectValue;
+                    String name = object.getString("class");
+                    if (temporary.contains(name)) continue;
+                    JSONObject rule = permission.getRowPermissionMQLByClassName(name);
+                    if (rule == null) continue;
+                    JSONObject conditions = object.getJSONObject("conditions");
+                    if (conditions == null) { conditions = new JSONObject(); object.put("conditions", conditions); }
+                    JSONObject original = conditions.getJSONObject("properties");
+                    conditions.put("properties", original == null ? rule : JSONObject.of("operator", "logic", "and", JSONArray.of(original, rule)));
+                    changed = true;
+                }
+            }
+            JSONObject output = step.getJSONObject("output");
+            if (output != null && output.getString("save_table") != null) temporary.add(output.getString("save_table"));
+        }
+        return new Object[] {dsl, changed};
+    }
 
 	public static JSONObject dealDslAnswerWithPermission(JSONObject dataMap, UserDataPermission permission, List<Map<String, Object>> classDefs) {
 		SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
@@ -89,6 +60,13 @@ public class DslPermissionUtil {
 			Map<String, DslConsanguinity> consanguinityMap = DslUtil.findConsanguinityFromDsl(dsl, classDefs);
 			// Output attributes without permission
 			List<String> noPermissionKeys = new ArrayList<String>();
+            var graphSources = io.ontomato.dataengine.service.QueryPermissions.sources(
+                io.ontomato.dataengine.service.QuerySourceAnalysis.fromDsl(dsl, classDefs));
+            graphSources.forEach((key, sources) -> {
+                if (sources.stream().anyMatch(source -> !io.ontomato.dataengine.service.QueryPermissions.allowed(
+                    permission, source.className(), source.attrName(), source.use()))) noPermissionKeys.add(key);
+            });
+
 			// Output metrics without permission
 			Map<String, Set<String>> noPermissionIndicatorsMap = new HashMap<String, Set<String>>();
 			// Definition mapping of time series type fields
@@ -99,39 +77,21 @@ public class DslPermissionUtil {
 				DslConsanguinity consanguinity = consanguinityMap.get(as);
 				if (!"".equals(consanguinity.getClassName())) { // Output attributes after multi-field calculation are not subject to permission control
 					String className = consanguinity.getClassName();
-					FieldPermission fieldPermission = permission.getFieldPermissionByClassName(className);
-					if (permission.isFullData() || fieldPermission != null && !fieldPermission.isEmpty()) { // The class has permission
-						if (!permission.isFullData() && !consanguinity.getAsGroupBy()) { // Group by fields are fully output
-							if (consanguinity.getIndicatorNames() != null) { // Permission control of metrics
-								Set<String> hasPermissionAttrNames = new HashSet<String>();
-								hasPermissionAttrNames.addAll(fieldPermission.getVisibleFields()); // Detail fields with permission
-								if (consanguinity.getFunction() != null) { // Statistical fields with permission
-									hasPermissionAttrNames.addAll(fieldPermission.getGroupableColumns());
-								}
-								Set<String> noPermissionIndicators = new HashSet<String>();
-								for (String indicatorName : consanguinity.getIndicatorNames()) {
-									if (!hasPermissionAttrNames.contains(consanguinity.getAttrName()) && !hasPermissionAttrNames.contains(consanguinity.getAttrName() + "." + indicatorName)) {
-										noPermissionIndicators.add(indicatorName);
-									}
-								}
-								if (noPermissionIndicators.size() > 0) {
-									noPermissionIndicatorsMap.put(as, noPermissionIndicators);
-								}
-							} else { // Permission control of attributes
-								Set<String> hasPermissionAttrNames = new HashSet<String>();
-								hasPermissionAttrNames.addAll(fieldPermission.getVisibleFields()); // Detail fields with permission
-								if (consanguinity.getFunction() != null) { // Statistical fields with permission
-									hasPermissionAttrNames.addAll(fieldPermission.getGroupableColumns());
-								}
-								if (!hasPermissionAttrNames.contains(consanguinity.getAttrName())) {
-									noPermissionKeys.add(as);
-								}
-							}
-						}
-					} else { // The class has no permission
-						noPermissionKeys.add(as);
-					}
-					// Definition mapping of time series type fields
+					var use = Boolean.TRUE.equals(consanguinity.getAsGroupBy())
+                            ? io.ontomato.dataengine.service.QueryPermissions.Use.GROUP
+                            : io.ontomato.dataengine.service.QuerySourceAnalysis.aggregate(consanguinity.getFunction())
+                              ? io.ontomato.dataengine.service.QueryPermissions.Use.AGGREGATE
+                              : io.ontomato.dataengine.service.QueryPermissions.Use.DETAIL;
+                        if (consanguinity.getIndicatorNames() != null &&
+                            io.ontomato.dataengine.service.QueryPermissions.fieldAvailable(permission, className, consanguinity.getAttrName())) {
+                            noPermissionKeys.remove(as);
+                            Set<String> denied = new HashSet<>();
+                            for (String indicator : consanguinity.getIndicatorNames())
+                                if (!io.ontomato.dataengine.service.QueryPermissions.allowed(permission, className, consanguinity.getAttrName(), use) &&
+                                    !io.ontomato.dataengine.service.QueryPermissions.allowed(permission, className, consanguinity.getAttrName() + "." + indicator, use)) denied.add(indicator);
+                            if (!denied.isEmpty()) noPermissionIndicatorsMap.put(as, denied);
+                        }
+                        // Definition mapping of time series type fields
 					if (consanguinity.getIndicatorNames() != null) {
 						Map<String, Object> attrDef = null;
 						for (Map<String, Object> classDef : classDefs) {

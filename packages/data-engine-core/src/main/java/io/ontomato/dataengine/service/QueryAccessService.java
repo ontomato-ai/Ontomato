@@ -34,7 +34,7 @@ public class QueryAccessService {
         "retrieval-exploration",
         body.getString("runtimeRunId"),
         expiresAt,
-        body.getList("classNames", String.class),
+        classScope(access.permission(), body.getList("classNames", String.class)),
         null,
         JSONObject.of(
             "servicePrincipal",
@@ -50,10 +50,9 @@ public class QueryAccessService {
     if (grant != null) {
       String userId = grant.getString("userId"), domain = grant.getString("domainId");
       User user = new GrantUser(userId, domain);
-      boolean explore = "retrieval-exploration".equals(grant.getString("purpose"));
       return new Access(
           user,
-          explore ? new UserDataPermission() : permissions.getDataPermission(userId, domain),
+          permissions.getDataPermission(userId, domain),
           grant,
           request.getHeader("tk"),
           grant.getLong("expiresAt"));
@@ -67,14 +66,29 @@ public class QueryAccessService {
         identity.getCurrentCredentialExpiresAt());
   }
 
+  public static java.util.List<String> classScope(UserDataPermission permission, java.util.List<String> requested) {
+    java.util.List<String> selected = requested == null ? java.util.List.of() : requested;
+    if (permission.isFullData()) return java.util.List.copyOf(selected);
+    var available = permission.getFieldPermissions().stream().filter(p -> !p.isEmpty())
+        .map(p -> p.getClassName()).distinct().filter(name -> selected.isEmpty() || selected.contains(name)).toList();
+    if (available.isEmpty()) throw new ResponseStatusException(HttpStatus.FORBIDDEN, "No authorized classes in the requested scope");
+    return available;
+  }
+
   /** Request authority is captured once; neither source beans nor accessor results can mutate it. */
   public record Access(
-      User user, UserDataPermission permission, JSONObject grant, String credential, Long expiresAt) {
+      User user, UserDataPermission permission, JSONObject grant, String credential, Long expiresAt,
+      java.util.List<String> classNames) {
+    public Access(User user, UserDataPermission permission, JSONObject grant, String credential, Long expiresAt) {
+      this(user, permission, grant, credential, expiresAt,
+          grant == null ? java.util.List.of() : grant.getList("classNames", String.class));
+    }
     public Access {
       user = new CapturedUser(
           user.getId(), user.getLoginCode(), user.getUserName(), user.isEnable(), user.getDomainId());
       permission = copyPermission(permission);
       grant = copyGrant(grant);
+      classNames = classNames == null ? java.util.List.of() : java.util.List.copyOf(classNames);
     }
 
     @Override

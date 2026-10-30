@@ -7,6 +7,7 @@ const [arg, target] = process.argv.slice(2),
   headers = {
     "content-type": "application/json",
     tk: process.env.ONTOMATO_TK ?? "",
+    ...(process.env.ONTOMATO_RETRIEVAL_CALLER_ID ? { "X-Ontomato-Retrieval-Caller-Id": process.env.ONTOMATO_RETRIEVAL_CALLER_ID } : {}),
     ...(process.env.ONTOMATO_API_KEY ? { "X-API-Key": process.env.ONTOMATO_API_KEY } : {}),
     "Accept-Language": process.env.ONTOMATO_LANGUAGE ?? "en",
     "X-Correlation-Id": process.env.ONTOMATO_CORRELATION_ID ?? randomUUID(),
@@ -25,12 +26,13 @@ async function call(route, body, extra = {}, raw = false) {
     throw new Error(`HTTP ${response.status}: ${JSON.stringify(value)}`);
   return value;
 }
+const preview = arg === "preview";
 const input =
   arg === "close"
     ? {}
     : JSON.parse(
         await readFile(
-          (arg === "begin" ? target : arg).replace(/^@/, ""),
+          (arg === "begin" || preview ? target : arg).replace(/^@/, ""),
           "utf8",
         ),
       );
@@ -76,11 +78,11 @@ if (arg === "close") {
   console.log("Closed");
   process.exit(0);
 }
-if (!target?.endsWith(".dataset.json"))
+if (!preview && !target?.endsWith(".dataset.json"))
   throw new Error("Output must end in .dataset.json");
-const output = path.resolve(target),
+const output = preview ? null : path.resolve(target),
   outRoot = path.resolve(process.env.ONTOMATO_OUTPUT_DIR ?? "outputs");
-if (!output.startsWith(outRoot + path.sep))
+if (output && !output.startsWith(outRoot + path.sep))
   throw new Error("Write datasets under outputs/");
 const hash = createHash("sha256")
   .update(JSON.stringify([state.runId, input]))
@@ -112,6 +114,7 @@ do {
   if (result.running) await new Promise((resolve) => setTimeout(resolve, 250));
 } while (result.running);
 if (result.error) throw new Error(JSON.stringify(result.error));
+if (preview) { console.log(JSON.stringify(result.dataset, null, 2)); process.exit(0); }
 await mkdir(path.dirname(output), { recursive: true });
 const temporary = path.resolve("work", `.dataset-${key}.tmp`);
 await writeFile(temporary, await call(`/${state.id}/runs/${state.runId}/outputs/${key}/content`, undefined, extra, true));

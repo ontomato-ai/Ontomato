@@ -116,5 +116,6 @@ export type AbcProgramDashboard = {
   title: string;
   code: string;
   outKeyRefs: AbcProgramOutKeyRef[];
+  sourceAnalysis?: import("./query-subgraph").QuerySubgraph;
   parameters?: AbcProgramParameter[];
 };

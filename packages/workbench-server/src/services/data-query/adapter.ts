@@ -29,6 +29,7 @@ export interface Dataset extends QueryDatasetIdentity, Partial<ResultTruncation>
   data: Record<string, unknown>[];
   dsl?: unknown;
   abcProgram?: AbcProgramDashboard;
+  sourceAnalysis?: import("@ontomato/contracts/query-subgraph").QuerySubgraph;
   subQuestion?: string;
   fieldDisplayPlan?: FieldDisplayPlan;
 }

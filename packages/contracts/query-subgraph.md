@@ -11,7 +11,10 @@ by the UI. Initial class scope remains `classNames`, unrelated to this result gr
 
 ## Rendering and identity
 
-- `queries` identifies actual DSL occurrences, including separate Python queries.
+- `queries` identifies DSL occurrences, including separate Python queries. DSL graphs
+  are derived by Java; the first Python implementation accepts an agent declaration
+  bound to the exact program and execution receipt, not a runtime taint proof.
+  Reusable Function filters retain symbolic parameter expressions.
 - `nodes` contains class occurrences (query, class and variable), extracted fields,
   operations and final output columns. Repeated classes/self joins have different
   IDs. Node/edge/filter/query IDs are unique within the graph, not ontology IDs.
