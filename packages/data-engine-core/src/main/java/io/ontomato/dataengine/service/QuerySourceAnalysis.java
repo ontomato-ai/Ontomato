@@ -1,5 +1,8 @@
 package io.ontomato.dataengine.service;
 
+import io.ontomato.dataengine.dataAdapter.DslContractViolationException;
+import static io.ontomato.dataengine.dataAdapter.DslContractViolationException.Code.INVALID_GRAMMAR;
+
 import com.alibaba.fastjson2.*;
 import io.ontomato.dataengine.bean.abcHarness.ABCHarnessProgramOutKeyRef;
 import io.ontomato.dataengine.util.DBSchemaUtil;
@@ -121,11 +124,11 @@ public final class QuerySourceAnalysis {
           for (Object objectValue : pattern.getJSONArray("objects")) {
             var object = JSONObject.from(objectValue);
             String variable = object.getString("variable"), name = object.getString("class");
-            if (variable == null || variables.containsKey(variable)) throw new IllegalArgumentException("DSL variables must identify one object");
+            if (variable == null || variables.containsKey(variable)) throw new DslContractViolationException(INVALID_GRAMMAR, "answer.steps", "DSL variables must identify one object");
             if (tables.containsKey(name)) variables.put(variable, tables.get(name));
             else {
               name = DBSchemaUtil.normalizeClassName(name, definitions);
-              if (!metadata.containsKey(name)) throw new IllegalArgumentException("Unknown DSL class: " + name);
+              if (!metadata.containsKey(name)) throw new DslContractViolationException(INVALID_GRAMMAR, "answer.steps", "Unknown DSL class: " + name);
               var definition = metadata.get(name);
               String owner = node("class", label(definition.get("classDesc"), name),
                   "queryId", query, "className", name, "variable", variable);
@@ -139,7 +142,7 @@ public final class QuerySourceAnalysis {
           if (relations != null) for (Object relationValue : relations) {
             var relation = JSONObject.from(relationValue);
             String from = indices.get(relation.getString("from")), to = indices.get(relation.getString("to"));
-            if (from == null || to == null) throw new IllegalArgumentException("Relationship endpoints must be ontology objects");
+            if (from == null || to == null) throw new DslContractViolationException(INVALID_GRAMMAR, "answer.steps", "Relationship endpoints must be ontology objects");
             for (Object type : relation.getJSONArray("type")) {
               String name = type.toString();
               Integer maximum = relation.getInteger("max_hops");
@@ -149,7 +152,7 @@ public final class QuerySourceAnalysis {
           }
         }
         var output = step.getJSONObject("output");
-        if (output == null) throw new IllegalArgumentException("DSL step output is required");
+        if (output == null) throw new DslContractViolationException(INVALID_GRAMMAR, "answer.steps", "DSL step output is required");
         Set<String> groups = new LinkedHashSet<>();
         var grouping = output.getJSONObject("group_by");
         if (grouping != null) for (Object item : grouping.getJSONArray("fields")) {
@@ -159,7 +162,7 @@ public final class QuerySourceAnalysis {
         for (Object value : output.getJSONArray("fields")) {
           var field = JSONObject.from(value);
           String key = field.getString("as");
-          if (key == null || fields.containsKey(key)) throw new IllegalArgumentException("Unique DSL output aliases are required");
+          if (key == null || fields.containsKey(key)) throw new DslContractViolationException(INVALID_GRAMMAR, "answer.steps", "Unique DSL output aliases are required");
           String expression = field.getString("expr"), source;
           if (expression != null) {
             if (LITERAL.matcher(expression.trim()).matches()) {
@@ -169,7 +172,7 @@ public final class QuerySourceAnalysis {
               var matcher = REFERENCE.matcher(expression);
               int count = 0;
               while (matcher.find()) { dependency(field(matcher.group(1), matcher.group(2)), source, "value"); count++; }
-              if (count == 0) throw new IllegalArgumentException("Calculated DSL output has no field sources");
+              if (count == 0) throw new DslContractViolationException(INVALID_GRAMMAR, "answer.steps", "Calculated DSL output has no field sources");
             }
           } else {
             String attribute = field.getString("field"), function = field.getString("function");
@@ -208,17 +211,17 @@ public final class QuerySourceAnalysis {
         var matches = variables.keySet().stream().filter(v -> variables.get(v).containsKey(attribute) ||
             ownerClasses.containsKey(v) && metadata.get(ownerClasses.get(v)).getJSONArray("attrs").stream()
               .anyMatch(a -> attribute.equals(JSONObject.from(a).getString("name")))).toList();
-        if (matches.size() != 1) throw new IllegalArgumentException("Ambiguous DSL field: " + attribute);
+        if (matches.size() != 1) throw new DslContractViolationException(INVALID_GRAMMAR, "answer.steps", "Ambiguous DSL field: " + attribute);
         variable = matches.get(0);
       }
       var fields = variables.get(variable);
-      if (fields == null || attribute == null) throw new IllegalArgumentException("Unknown DSL field reference");
+      if (fields == null || attribute == null) throw new DslContractViolationException(INVALID_GRAMMAR, "answer.steps", "Unknown DSL field reference");
       if (fields.containsKey(attribute)) return fields.get(attribute);
       String owner = owners.get(variable), name = ownerClasses.get(variable);
-      if (owner == null) throw new IllegalArgumentException("Unknown temporary table field: " + attribute);
+      if (owner == null) throw new DslContractViolationException(INVALID_GRAMMAR, "answer.steps", "Unknown temporary table field: " + attribute);
       var attr = metadata.get(name).getJSONArray("attrs").stream().map(JSONObject::from)
           .filter(a -> attribute.equals(a.getString("name")) && !Boolean.FALSE.equals(a.getBoolean("enable"))).findFirst()
-          .orElseThrow(() -> new IllegalArgumentException("Unknown source attribute: " + attribute));
+          .orElseThrow(() -> new DslContractViolationException(INVALID_GRAMMAR, "answer.steps", "Unknown source attribute: " + attribute));
       String id = node("field", label(attr.get("attrDesc"), attribute), "attrName", attribute);
       edge("contains", owner, id); fields.put(attribute, id); return id;
     }
@@ -227,7 +230,7 @@ public final class QuerySourceAnalysis {
       Set<String> targets = new LinkedHashSet<>();
       conditionFields(condition, variable, targets);
       if (targets.isEmpty() && owners.containsKey(variable)) targets.add(owners.get(variable));
-      if (targets.isEmpty()) throw new IllegalArgumentException("Condition has no source reference");
+      if (targets.isEmpty()) throw new DslContractViolationException(INVALID_GRAMMAR, "answer.steps", "Condition has no source reference");
       String expression = condition.toJSONString();
       filters.add(JSONObject.of("id", id("filter-"), "queryId", query, "targetIds", targets, "label", expression, "expression", expression));
     }

@@ -1,5 +1,8 @@
 package io.ontomato.dataengine.service;
 
+import io.ontomato.dataengine.dataAdapter.DslContractViolationException;
+import static io.ontomato.dataengine.dataAdapter.DslContractViolationException.Code.INVALID_GRAMMAR;
+
 import com.alibaba.fastjson2.*;
 import io.ontomato.dataengine.service.sys.bean.permission.UserDataPermission;
 import java.util.*;
@@ -77,7 +80,7 @@ public final class QueryPermissions {
         for (Object relationValue : relations) {
           var relation = (JSONObject) relationValue;
           List<String> names = relation.getList("type", String.class);
-          if (names == null || names.isEmpty()) throw new IllegalArgumentException("Relationship types are required");
+          if (names == null || names.isEmpty()) throw new DslContractViolationException(INVALID_GRAMMAR, "answer.steps.graph.patterns.relationship.type", "Relationship types are required");
           if (names.contains("*")) {
             if (allowed.isEmpty()) throw new ResponseStatusException(HttpStatus.FORBIDDEN, "No authorized relationships");
             relation.put("type", new ArrayList<>(allowed));
@@ -127,7 +130,7 @@ public final class QueryPermissions {
         throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Field is outside the authorized scope");
       if (metadata.get(name).getJSONArray("attrs").stream().map(JSONObject::from)
           .noneMatch(a -> attribute.equals(a.getString("name")) && !Boolean.FALSE.equals(a.getBoolean("enable"))))
-        throw new IllegalArgumentException("Unknown source attribute");
+        throw new DslContractViolationException(INVALID_GRAMMAR, "answer.steps.output.fields", "Unknown source attribute: " + attribute);
     }
   }
 

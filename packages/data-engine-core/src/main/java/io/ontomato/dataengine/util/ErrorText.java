@@ -37,7 +37,7 @@ public final class ErrorText {
       if (current instanceof SQLException sql && sql.getSQLState() != null) {
         if (sql.getSQLState().startsWith("42") && sql.getMessage() != null)
           return HINT.matcher(sql.getMessage()).replaceAll("").strip();
-        if (sql.getSQLState().startsWith("22")) return "数据类型转换失败，具体值已隐藏";
+        if (sql.getSQLState().startsWith("22")) return "Data type conversion failed; the value is hidden";
         return "Query execution failed";
       }
     }
@@ -57,7 +57,7 @@ public final class ErrorText {
       var exceptions = PYTHON_EXCEPTION.matcher(stderr);
       while (exceptions.find()) type = PYTHON_BUILTINS.contains(exceptions.group(1)) ? exceptions.group(1) : "Exception";
     }
-    String message = type + (line == null ? "" : "，program.py 第 " + line + " 行");
-    return queryError == null || queryError.isBlank() ? message : message + "\n查询失败：" + queryError;
+    String message = type + (line == null ? "" : " at program.py line " + line);
+    return queryError == null || queryError.isBlank() ? message : message + "\nQuery failed: " + queryError;
   }
 }

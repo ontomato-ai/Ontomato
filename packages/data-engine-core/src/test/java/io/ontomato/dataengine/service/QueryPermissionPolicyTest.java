@@ -93,6 +93,50 @@ class QueryPermissionPolicyTest {
   }
 
   @Test
+  void queryValidationAndPermissionErrorsRemainActionableInBothModes() {
+    var admin = mock(AdminService.class);
+    when(admin.getJSONRule("domain")).thenReturn(Map.of("classDef", definitions()));
+    var config = mock(BusinessConfigService.class);
+    when(config.get("domain")).thenReturn(new io.ontomato.dataengine.config.BusinessConfig());
+    var adapters = mock(io.ontomato.dataengine.dataAdapter.DataAdapterRegistry.class);
+    when(adapters.create(any(), any())).thenThrow(new IllegalArgumentException("private adapter value"));
+    var engine = new io.ontomato.dataengine.service.impl.DslServiceImpl();
+    org.springframework.test.util.ReflectionTestUtils.setField(engine, "adminService", admin);
+    org.springframework.test.util.ReflectionTestUtils.setField(engine, "businessConfigService", config);
+    org.springframework.test.util.ReflectionTestUtils.setField(engine, "dataAdapterRegistry", adapters);
+    var grants = mock(QueryGrantService.class);
+    var ontology = new OntologyQueryService(admin, engine, null, null);
+    org.springframework.test.util.ReflectionTestUtils.setField(ontology, "grants", grants);
+    for (String purpose : List.of("retrieval-exploration", "user-read")) {
+      var permission = permission();
+      var grant = JSONObject.of("jti", "grant", "runId", "execution", "domainId", "domain", "purpose", purpose);
+      var access = new QueryAccessService.Access(new QueryAccessService.GrantUser("user", "domain"), permission, grant, null, null);
+      var unknown = query("", "salary");
+      unknown.getJSONObject("answer").getJSONArray("steps").getJSONObject(0).getJSONObject("output")
+          .getJSONArray("fields").getJSONObject(0).put("field", "hj_dj");
+      var validation = assertThrows(org.springframework.web.server.ResponseStatusException.class,
+          () -> ontology.execute(unknown, access));
+      assertEquals(422, validation.getStatusCode().value());
+      assertTrue(validation.getReason().contains("Unknown source attribute: hj_dj"));
+      verify(grants).recordQueryError(grant, validation.getReason());
+
+      permission.getFieldPermissionByClassName("/Employee").getGroupableColumns().clear();
+      var forbiddenAccess = new QueryAccessService.Access(access.user(), permission, grant, null, null);
+      var forbidden = assertThrows(org.springframework.web.server.ResponseStatusException.class,
+          () -> ontology.execute(query("", "salary"), forbiddenAccess));
+      assertEquals(403, forbidden.getStatusCode().value());
+      assertEquals("Field is outside the authorized scope", forbidden.getReason());
+      verify(grants).recordQueryError(grant, forbidden.getReason());
+
+      var execution = assertThrows(org.springframework.web.server.ResponseStatusException.class,
+          () -> ontology.execute(query("", "salary"), access));
+      assertEquals("Query execution failed", execution.getReason());
+      verify(grants).recordQueryError(grant, execution.getReason());
+    }
+    verify(adapters, times(2)).create(any(), any());
+  }
+
+  @Test
   void explorationAndInternalQueriesRecordOnlyClassifiedErrors() {
     var admin = mock(AdminService.class);
     when(admin.getJSONRule("domain")).thenReturn(Map.of("classDef", definitions()));
@@ -151,15 +195,18 @@ class QueryPermissionPolicyTest {
   @Test
   void incompleteStoredMetricDoesNotBreakSearchButCannotExecute() {
     var broken = storedMetric("broken", false);
+    var unknown = storedMetric("unknown", true);
+    unknown.getFunction().getReturnDef().getOutKeyRefs().get(0).setAttrName("missing");
     var valid = storedMetric("valid", true);
     var metrics = mock(MetricViewService.class);
     when(metrics.queryForRetrieval(eq("domain"), eq(""), isNull(), isNull(), anyInt()))
-        .thenReturn(List.of(broken, valid));
+        .thenReturn(List.of(broken, unknown, valid));
     when(metrics.queryById("broken", "domain")).thenReturn(broken);
     var admin = mock(AdminService.class);
     when(admin.getJSONRule("domain")).thenReturn(Map.of("classDef", definitions()));
     var ontology = new OntologyQueryService(admin, null, metrics, null);
-    var access = new QueryAccessService.Access(new QueryAccessService.GrantUser("user", "domain"), permission(), null, null, null);
+    var permission = permission(); permission.setFullData(true);
+    var access = new QueryAccessService.Access(new QueryAccessService.GrantUser("user", "domain"), permission, null, null, null);
     var found = JSONObject.from(ontology.metrics(JSONObject.of("limit", 10), access)).getJSONArray("items");
     assertEquals(List.of("valid"), found.stream().map(JSONObject::from).map(item -> item.getString("id")).toList());
     var python = mock(PythonExecuteService.class);

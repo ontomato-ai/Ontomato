@@ -172,7 +172,7 @@ class RuntimePythonClientTest {
     var executor = new PythonExecuteServiceImpl(runtime, grants);
     var result = executor.execute("session", "# ontomato-python:2", 1, "en",
         PythonAuthority.read("user", "domain").forExecution(execution), new JSONObject(), Map.of());
-    assertEquals("ValueError，program.py 第 2 行\n查询失败：column t.hj_dj does not exist", result.getError());
+    assertEquals("ValueError at program.py line 2\nQuery failed: column t.hj_dj does not exist", result.getError());
     assertNull(result.getResult());
     var programs = new io.ontomato.dataengine.service.impl.ABCProgramServiceImpl();
     assertEquals(result.getError(), assertThrows(Exception.class,

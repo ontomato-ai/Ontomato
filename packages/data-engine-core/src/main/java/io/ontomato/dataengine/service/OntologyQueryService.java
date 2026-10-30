@@ -1,5 +1,8 @@
 package io.ontomato.dataengine.service;
 
+import io.ontomato.dataengine.dataAdapter.DslContractViolationException;
+import static io.ontomato.dataengine.dataAdapter.DslContractViolationException.Code.INVALID_GRAMMAR;
+
 import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
@@ -48,7 +51,7 @@ public class OntologyQueryService {
   private String checkedClass(String name, QueryAccessService.Access access) {
     String normalized = DBSchemaUtil.normalizeClassName(name, classes(access));
     if (classes(access).stream().noneMatch(c -> normalized.equals(c.get("className"))))
-      throw new IllegalArgumentException("Unknown ontology class: " + name);
+      throw new DslContractViolationException(INVALID_GRAMMAR, "answer.steps.graph.patterns.objects.class", "Unknown ontology class: " + name);
     List<String> scope =
         access.classNames();
     if (scope != null && !scope.isEmpty() && !scope.contains(normalized))
@@ -143,7 +146,7 @@ public class OntologyQueryService {
       for (var entry : object.entrySet()) {
         String key = entry.getKey().toString();
         if (Set.of("sql", "nativeQuery", "action", "insert", "update", "delete").contains(key))
-          throw new IllegalArgumentException("Only read ontology DSL is allowed");
+          throw new DslContractViolationException(INVALID_GRAMMAR, "answer.steps", "Only read ontology DSL is allowed");
         if (key.equals("class")
             && entry.getValue() instanceof String name
             && !temporary.contains(name)) checkedClass(name, access);
@@ -157,10 +160,10 @@ public class OntologyQueryService {
     if (query == null
         || !query.keySet().stream().allMatch(k -> Set.of("problem", "answer").contains(k))
         || query.getJSONObject("answer") == null)
-      throw new IllegalArgumentException("One read DSL object with answer.steps is required");
+      throw new DslContractViolationException(INVALID_GRAMMAR, "answer", "One read DSL object with answer.steps is required");
     JSONArray steps = query.getJSONObject("answer").getJSONArray("steps");
     if (steps == null || steps.isEmpty())
-      throw new IllegalArgumentException("DSL steps are required");
+      throw new DslContractViolationException(INVALID_GRAMMAR, "answer.steps", "DSL steps are required");
     Set<String> temporary = new HashSet<>();
     for (Object step : steps) {
       checkGraph(step, access, temporary);
@@ -175,6 +178,11 @@ public class OntologyQueryService {
     Map<String, Object> result;
     try {
       result = executeQuery(query, access);
+    } catch (ResponseStatusException error) {
+      if (error.getStatusCode().value() != HttpStatus.FORBIDDEN.value())
+        throw queryFailure(io.ontomato.dataengine.util.ErrorText.queryError(error), access);
+      if (access.grant() != null) grants.recordQueryError(access.grant(), error.getReason());
+      throw error;
     } catch (Exception error) {
       throw queryFailure(io.ontomato.dataengine.util.ErrorText.queryError(error), access);
     }
@@ -361,7 +369,7 @@ public class OntologyQueryService {
             : QuerySourceAnalysis.fromStoredSources(function.getReturnDef().getOutKeyRefs());
         QueryPermissions.authorizeInputs(sourceAnalysis, access.permission(), available);
       } catch (ResponseStatusException unavailable) { continue; }
-      catch (IllegalArgumentException invalid) {
+      catch (IllegalArgumentException | DslContractViolationException invalid) {
         log.warn("Skipping metric {} in domain {} with invalid source declaration: {}",
             metric.getId(), access.user().getDomainId(), invalid.getMessage());
         continue;

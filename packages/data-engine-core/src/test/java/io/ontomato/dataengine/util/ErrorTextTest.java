@@ -16,7 +16,7 @@ class ErrorTextTest {
 
   @Test
   void sqlState22AndUnclassifiedErrorsDoNotDiscloseValues() {
-    assertEquals("数据类型转换失败，具体值已隐藏", ErrorText.queryError(new SQLException("invalid number: private-value", "22P02")));
+    assertEquals("Data type conversion failed; the value is hidden", ErrorText.queryError(new SQLException("invalid number: private-value", "22P02")));
     assertEquals("Query execution failed", ErrorText.queryError(new SQLException("private-value", "S0001")));
     assertEquals("Query execution failed", ErrorText.queryError(new SQLException("private-value")));
     assertEquals("Query execution failed", ErrorText.queryError(new IllegalStateException("private-value")));
@@ -39,8 +39,8 @@ class ErrorTextTest {
             raise ValueError('private-value')
         ValueError: private-value
         """;
-    assertEquals("ValueError，program.py 第 12 行", ErrorText.pythonError(stderr, null));
-    assertEquals("Exception，program.py 第 12 行", ErrorText.pythonError(stderr.replace("ValueError:", "CustomError:"), null));
+    assertEquals("ValueError at program.py line 12", ErrorText.pythonError(stderr, null));
+    assertEquals("Exception at program.py line 12", ErrorText.pythonError(stderr.replace("ValueError:", "CustomError:"), null));
     assertEquals("ValueError", ErrorText.pythonError(stderr.replace("30", "invalid").replace("12", "9999999999999999"), null));
   }
 
@@ -48,7 +48,7 @@ class ErrorTextTest {
   void forgedOntologyErrorsAreNotQueryEvidence() {
     String stderr = "RuntimeError: Ontology request failed (500): private-value";
     assertEquals("RuntimeError", ErrorText.pythonError(stderr, null));
-    assertEquals("RuntimeError\n查询失败：column t.hj_dj does not exist",
+    assertEquals("RuntimeError\nQuery failed: column t.hj_dj does not exist",
         ErrorText.pythonError(stderr, "column t.hj_dj does not exist"));
   }
 }
