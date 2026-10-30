@@ -16,8 +16,9 @@ import {
   assistantFeedbackWriteSchema,
 } from "@ontomato/contracts/assistant-chat";
 import { assistantService } from "../../services/assistant/service";
+import { retrievalActivityFrame } from "../../services/assistant/ontology-retrieval";
+import { readRuntimeFrames } from "../../infrastructure/agent-runtime/client";
 import { buildAttachmentContentDisposition } from "../utils/http";
-import { proxyResponse } from "../utils/proxy";
 const router: ReturnType<typeof Router> = Router(),
   uuid = z.string().uuid();
 
@@ -43,7 +44,7 @@ router.get(
   "/sessions/:sessionId/runs/:runId/retrievals/:retrievalId/runs/:retrievalRunId",
   wrap(async (req, res) => {
     const client = await assistantService.retrievalClient(id(req, "sessionId"), id(req, "runId"), context(req).owner);
-    res.json(await client.run(id(req, "retrievalId"), id(req, "retrievalRunId")));
+    res.json(await client.activityRun(id(req, "retrievalId"), id(req, "retrievalRunId")));
   }),
 );
 router.get(
@@ -59,8 +60,20 @@ router.get(
     res.on("close", onClose);
     try {
       const upstream = await client.events(id(req, "retrievalId"), id(req, "retrievalRunId"), after, abort.signal);
-      res.set({ "Cache-Control": "no-cache, no-transform", "X-Accel-Buffering": "no" });
-      await proxyResponse(upstream, res);
+      res.set({ "Content-Type": "text/event-stream", "Cache-Control": "no-cache, no-transform", "X-Accel-Buffering": "no" });
+      res.flushHeaders();
+      try {
+        await readRuntimeFrames(upstream, async (raw) => {
+          const frame = retrievalActivityFrame(raw);
+          if (frame) res.write(
+            `${frame.type === "event" ? `id: ${frame.envelope.cursor.seq}\n` : ""}event: runtime\ndata: ${JSON.stringify(frame)}\n\n`,
+          );
+        }, abort.signal, (comment) => { res.write(`${comment}\n\n`); });
+      } catch {
+        // As with the byte proxy, a body failure after headers closes this subscription.
+      } finally {
+        res.end();
+      }
     } finally {
       res.off("close", onClose);
     }

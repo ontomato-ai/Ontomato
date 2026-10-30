@@ -50,16 +50,23 @@ The workbench exposes the child under the authenticated parent route
 - GET `?retrievalRunId=:retrievalRunId` reads that round's lightweight business
   snapshot. Its deliveries belong only to that round; `cursor` is the last such
   delivery cursor (zero before delivery), from the same result sequence as `/results`.
-- GET `/runs/:retrievalRunId` proxies the existing ontology agent-host run snapshot.
+- GET `/runs/:retrievalRunId` projects the existing ontology agent-host run snapshot
+  for activity: run, toolExecutions and cursor are retained; messages,
+  pendingMessages and artifacts are empty arrays under the unchanged host schema.
 - GET `/runs/:retrievalRunId/events?afterSeq=...&streamId=...` proxies that child
-  run's existing ontology event stream. Events never join the parent's stream.
+  run's existing ontology event stream. Only tool execution events, agent_end
+  (with an empty messages array), snapshot_required and heartbeat comments pass
+  through. Events never join the parent's stream; the common event protocol is unchanged.
 
 The workbench verifies the user's parent session/run and uses its stored caller
 scope; ontology verifies that the requested child session/run belongs to the scope.
 The shell reads a run snapshot once, then subscribes from that snapshot's event
-cursor. Disconnects and `snapshot_required` use the same snapshot recovery and
-batched event reducer as the main conversation. Delivery cursors cannot resume
-event streams. Navigation only detaches the subscription.
+cursor. Ordinary disconnects reconnect from the last applied cursor with the same
+backoff as the main conversation. Only snapshot_required re-reads the snapshot;
+initial loading and explicit run refreshes still read it. Delivery cursors cannot
+resume event streams. Navigation detaches the subscription and clears pending
+reconnects. Ontology's events response disables the servlet async deadline for
+that subscription only; ordinary HTTP requests retain their existing timeouts.
 
 Business state reads continue through admission and independent binding execution,
 and stop when both branches have published or finished. Runtime `agent_end` alone

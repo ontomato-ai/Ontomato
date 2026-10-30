@@ -73,16 +73,16 @@ export function createRunSubscription() {
       error() {
         if (current !== generation) return;
         disconnect();
-        scheduleRefresh(attempt + 1);
+        schedule(attempt + 1, connect);
       },
     });
   }
 
-  function scheduleRefresh(attempt: number) {
+  function schedule(attempt: number, resume: (attempt: number) => void | Promise<void>) {
     const current = generation;
     const delay = RECONNECT_DELAYS[Math.min(attempt, RECONNECT_DELAYS.length - 1)];
     reconnectTimer = setTimeout(() => {
-      if (current === generation) void refresh(attempt);
+      if (current === generation) void resume(attempt);
     }, delay);
   }
 
@@ -95,7 +95,7 @@ export function createRunSubscription() {
       target!.snapshot(snapshot);
       connect(attempt);
     } catch {
-      if (current === generation) scheduleRefresh(attempt + 1);
+      if (current === generation) schedule(attempt + 1, refresh);
     }
   }
 

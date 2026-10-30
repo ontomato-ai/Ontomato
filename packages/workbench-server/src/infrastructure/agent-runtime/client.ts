@@ -199,27 +199,39 @@ export class RuntimeClient {
     );
     if (!response.ok)
       throw new HttpError(response.status, "Agent runtime stream failed");
-    const reader = response.body?.getReader();
-    if (!reader) throw new Error("Runtime event stream has no body");
-    let buffer = "";
-    const decoder = new TextDecoder();
-    try {
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        buffer += decoder.decode(value, { stream: true });
-        let newline: number;
-        while ((newline = buffer.indexOf("\n")) >= 0) {
-          const line = buffer.slice(0, newline).trimEnd();
-          buffer = buffer.slice(newline + 1);
-          if (line.startsWith("data: "))
-            await onFrame(
-              runtimeStreamFrameSchema.parse(JSON.parse(line.slice(6))),
-            );
-        }
+    await readRuntimeFrames(response, onFrame, signal);
+  }
+}
+
+/** The runtime uses one JSON data line per frame; comments carry its existing heartbeat. */
+export async function readRuntimeFrames(
+  response: Response,
+  onFrame: (frame: RuntimeStreamFrame) => Promise<void>,
+  signal: AbortSignal,
+  onComment?: (line: string) => void,
+) {
+  const reader = response.body?.getReader();
+  if (!reader) throw new Error("Runtime event stream has no body");
+  const cancel = () => { void reader.cancel().catch(() => {}); };
+  signal.addEventListener("abort", cancel, { once: true });
+  let buffer = "";
+  const decoder = new TextDecoder();
+  try {
+    while (!signal.aborted) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      let newline: number;
+      while ((newline = buffer.indexOf("\n")) >= 0) {
+        const line = buffer.slice(0, newline).trimEnd();
+        buffer = buffer.slice(newline + 1);
+        if (line.startsWith("data: "))
+          await onFrame(runtimeStreamFrameSchema.parse(JSON.parse(line.slice(6))));
+        else if (line.startsWith(":")) onComment?.(line);
       }
-    } finally {
-      await reader.cancel().catch(() => {});
     }
+  } finally {
+    signal.removeEventListener("abort", cancel);
+    await reader.cancel().catch(() => {});
   }
 }
