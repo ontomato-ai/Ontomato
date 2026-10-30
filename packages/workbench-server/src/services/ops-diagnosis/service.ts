@@ -5,7 +5,7 @@ import { z } from "zod";
 import { DIAGNOSIS_AGENT_ID, diagnosisTargetSchema, type DiagnosisTarget } from "@ontomato/contracts/ops-diagnosis";
 import { ARTIFACT_MARKDOWN_PROMPT } from "@ontomato/contracts/agent-artifact-markdown";
 import { runtimeArtifactSchema } from "@ontomato/contracts/agent-runtime-artifacts";
-import type { RuntimeRunSnapshot, RuntimeStartRunRequest } from "@ontomato/contracts/agent-runtime";
+import type { RuntimeStartRunRequest } from "@ontomato/contracts/agent-runtime";
 import { getPostgresPool, qualifiedTable as table } from "../../infrastructure/postgres";
 import { transaction } from "../../infrastructure/postgres-transaction";
 import { RuntimeClient } from "../../infrastructure/agent-runtime/client";
@@ -28,7 +28,7 @@ export async function diagnosisSession(id: string, owner: AgentHostOwner): Promi
   if (!row) throw missing();
   return row;
 }
-const view = (s: Session, latest: RuntimeRunSnapshot | null) => ({
+const view = (s: Session, latest: { run: Parameters<typeof publicRun>[0] } | null) => ({
   id: s.id, agentId: DIAGNOSIS_AGENT_ID, title: s.title,
   createdAt: new Date(s.created_at).toISOString(), updatedAt: new Date(s.updated_at).toISOString(),
   latestRun: latest ? publicRun(latest.run) : null,
@@ -75,6 +75,11 @@ export const diagnosisService: AgentHostService = {
     const sessions = await Promise.all(selected.map(async (row) => view(row, (await client.session(row.id)).latestRun)));
     const last = selected.at(-1);
     return { sessions, nextCursor: rows.length > input.limit && last ? Buffer.from(JSON.stringify({ id: last.id, updatedAt: new Date(last.updated_at).toISOString() })).toString("base64url") : null };
+  },
+  async history(id, owner, query) {
+    const row = await diagnosisSession(id, owner), page = await new RuntimeClient(owner.domainId).history(id, query);
+    const latest = page.session.latestRun;
+    return { ...page, session: view(row, latest ? { run: latest } : null) };
   },
   async snapshot(id, owner) {
     const row = await diagnosisSession(id, owner), snapshot = await new RuntimeClient(owner.domainId).session(id);

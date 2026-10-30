@@ -1,12 +1,14 @@
+import { historyCursor } from "@ontomato/contracts/session-history";
 import { computed, onBeforeUnmount, reactive, ref } from "vue";
-import type { AgentHostRunSnapshot, AgentHostSession } from "@ontomato/contracts/agent-host";
+import type { AgentHostRunSnapshot, AgentHostSessionHistory, AgentHostSession } from "@ontomato/contracts/agent-host";
 import type { AgentHostClient } from "./host";
 import type { RuntimeEventEnvelope } from "@ontomato/contracts/agent-runtime-events";
 import { createRunSubscription, type RunSubscription } from "./run-subscription";
 import {
   applyEnvelope,
   applyRunSnapshot,
-  applySessionSnapshot,
+  applyHistoryPage,
+  applyHistoryLive,
   emptyConversation,
   findArtifact,
   type ConversationState,
@@ -33,7 +35,12 @@ export function useAgentConversation(port: () => AgentHostClient) {
   const artifactRevision = ref(0);
 
   let token = 0;
-  const stream = createRunSubscription();
+  const stream = createRunSubscription<AgentHostSessionHistory[]>();
+  const olderCursor = ref<string | null>(null);
+  const loadingOlder = ref(false);
+  const olderError = ref<string | null>(null);
+  const historyRevision = ref(0);
+  let knownMessageSeq = 0;
 
   const items = computed(() => conversationItems(state));
   const activeRunId = computed(
@@ -50,6 +57,11 @@ export function useAgentConversation(port: () => AgentHostClient) {
     sending.value = false;
     sendError.value = null;
     pendingInput.value = null;
+    olderCursor.value = null;
+    loadingOlder.value = false;
+    olderError.value = null;
+    historyRevision.value = 0;
+    knownMessageSeq = 0;
   }
 
   async function open(sessionId: string | null) {
@@ -58,12 +70,14 @@ export function useAgentConversation(port: () => AgentHostClient) {
     const current = token;
     loading.value = true;
     try {
-      const snapshot = await port().readSession(sessionId);
+      const snapshot = await port().readHistory(sessionId);
       if (current !== token) return;
-      applySessionSnapshot(state, snapshot);
+      applyHistoryPage(state, snapshot);
+      if (snapshot.latestRun) applyHistoryLive(state, snapshot.latestRun);
+      knownMessageSeq = snapshot.page.messageSeq;
+      olderCursor.value = snapshot.page.olderCursor;
       artifactRevision.value++;
       if (snapshot.latestRun?.run.status === "running") stream.start(subscription(snapshot.latestRun.run.id));
-      void loadEarlierRetrievals(sessionId, snapshot.latestRun?.run.id ?? null, current);
     } catch (error) {
       if (current === token) loadError.value = errorText(error);
     } finally {
@@ -71,33 +85,28 @@ export function useAgentConversation(port: () => AgentHostClient) {
     }
   }
 
-  /**
-   * The session snapshot carries only the latest run. Earlier runs that called the analyst ask
-   * get their own run snapshot, so their retrieval activity survives a reload.
-   */
-  async function loadEarlierRetrievals(sessionId: string, latestRunId: string | null, current: number) {
-    const runIds = new Set<string>();
-    for (const entry of Object.values(state.messages)) {
-      const message = entry.message;
-      if (entry.runId === latestRunId || message.role !== "assistant") continue;
-      for (const block of message.content) {
-        const command = block.type === "toolCall" && block.name === "bash" ? block.arguments.command : undefined;
-        if (typeof command === "string" && ANALYST_ASK.test(command)) runIds.add(entry.runId);
-      }
+  async function loadOlder() {
+    const sessionId = state.sessionId, before = olderCursor.value, current = token;
+    if (!sessionId || !before || loadingOlder.value) return;
+    loadingOlder.value = true;
+    olderError.value = null;
+    try {
+      const page = await port().readHistory(sessionId, { before });
+      if (current !== token) return;
+      applyHistoryPage(state, page, true);
+      olderCursor.value = page.page.olderCursor;
+      historyRevision.value++;
+    } catch (error) {
+      if (current === token) olderError.value = errorText(error);
+    } finally {
+      if (current === token) loadingOlder.value = false;
     }
-    await Promise.all([...runIds].map(async (runId) => {
-      try {
-        const snapshot = await port().readRun(sessionId, runId);
-        if (current === token) applyRunSnapshot(state, snapshot);
-      } catch {
-        // Best-effort: without it the earlier run still renders, only without its activity area.
-      }
-    }));
   }
 
   function applyEvent(envelope: RuntimeEventEnvelope) {
     if (!applyEnvelope(state, envelope)) return;
     const type = envelope.event.type;
+    if (envelope.event.type === "message_end") knownMessageSeq = Math.max(knownMessageSeq, envelope.event.messageSeq);
     if (type === "artifact_registered") artifactRevision.value++;
     if (type === "tool_execution_start") {
       // The ask command blocks until the retrieval ends, so tool_execution_end is too late.
@@ -105,7 +114,7 @@ export function useAgentConversation(port: () => AgentHostClient) {
       // accepted. Detection is the analyst entry script followed by its ask subcommand, which
       // covers "node skills/ontomato-analyst/ontomato.mjs ask", "cd …/ontomato-analyst && node
       // ontomato.mjs ask" and quoted paths. A wrapper script or variable that hides
-      // "ontomato.mjs ask" is not covered; its retrievals arrive on the next run snapshot read.
+      // "ontomato.mjs ask" is not covered; its retrievals arrive on the next history read.
       const event = envelope.event;
       const command = event.args.command;
       if (event.toolName === "bash" && typeof command === "string" && ANALYST_ASK.test(command))
@@ -145,19 +154,35 @@ export function useAgentConversation(port: () => AgentHostClient) {
     }
   }
 
-  function subscription(runId: string): RunSubscription {
-    const sessionId = state.sessionId!;
-    const client = port();
+  function subscription(runId: string): RunSubscription<AgentHostSessionHistory[]> {
+    const sessionId = state.sessionId!, client = port(), selection = token;
+    let selectedRunId = runId;
     return {
-      runId,
-      current: () => state.runs[runId],
-      read: () => client.readRun(sessionId, runId),
-      snapshot(snapshot) {
-        applyRunSnapshot(state, snapshot);
+      get runId() { return selectedRunId; },
+      current: () => state.runs[selectedRunId],
+      async read() {
+        const first = await client.readHistory(sessionId, { after: historyCursor(sessionId, knownMessageSeq), runId: selectedRunId });
+        const pages = [first];
+        let next = first.page.nextCursor;
+        while (next && selection === token) {
+          const page = await client.readHistory(sessionId, { after: next, through: first.page.throughCursor });
+          pages.push(page);
+          next = page.page.nextCursor;
+        }
+        return pages;
+      },
+      snapshot(pages) {
+        for (const page of pages) applyHistoryPage(state, page);
+        const first = pages[0];
+        if (first.latestRun) {
+          applyHistoryLive(state, first.latestRun);
+          selectedRunId = first.latestRun.run.id;
+        }
+        knownMessageSeq = Math.max(knownMessageSeq, pages[pages.length - 1].page.messageSeq);
         artifactRevision.value++;
       },
       event: applyEvent,
-      subscribe: (after, handlers) => client.subscribe(sessionId, runId, after, handlers),
+      subscribe: (after, handlers) => client.subscribe(sessionId, selectedRunId, after, handlers),
     };
   }
 
@@ -181,6 +206,7 @@ export function useAgentConversation(port: () => AgentHostClient) {
       const snapshot = await port().startRun(state.sessionId!, text);
       if (current !== token) return { createdSession, snapshot };
       applyRunSnapshot(state, snapshot);
+      for (const message of snapshot.messages) knownMessageSeq = Math.max(knownMessageSeq, message.messageSeq);
       pendingInput.value = null;
       artifactRevision.value++;
       stream.start(subscription(snapshot.run.id));
@@ -225,6 +251,11 @@ export function useAgentConversation(port: () => AgentHostClient) {
     items,
     loading,
     loadError,
+    olderCursor,
+    loadingOlder,
+    olderError,
+    historyRevision,
+    loadOlder,
     sending,
     sendError,
     pendingInput,

@@ -1,3 +1,4 @@
+import { sessionHistoryQuerySchema } from "@ontomato/contracts/session-history";
 import { Router } from "express";
 import { z } from "zod";
 import { agentHostCreateSessionSchema, agentHostStartRunSchema } from "@ontomato/contracts/agent-host";
@@ -47,6 +48,9 @@ router.post(
       );
   }),
 );
+router.get("/sessions/:sessionId/history", wrap(async (req, res) => {
+  res.json(await service.history(id(req, "sessionId"), context(req).owner, sessionHistoryQuerySchema.parse(req.query)));
+}));
 router.get(
   "/sessions/:sessionId",
   wrap(async (req, res) => {

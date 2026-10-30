@@ -1,3 +1,4 @@
+import type { RuntimeSessionHistory, SessionHistoryQuery } from "@ontomato/contracts/session-history";
 import { ServiceLogStore, withServiceLogContext, getServiceLogContext, updateServiceLogContext } from "@ontomato/service-logging";
 import { runtimeLogging, runtimeLogger, runtimeDiagnostic } from "./logging";
 import { ArtifactFiles } from "./files";
@@ -714,10 +715,11 @@ export class AgentRuntime {
   private async snapshotUnlocked(
     scope: Scope,
     runId: string,
+    includeHistory = true,
   ): Promise<RuntimeRunSnapshot> {
     const state = await this.store.run(scope, runId);
     const active = this.active.get(key(scope, runId));
-    const events = await this.store.events(scope, runId);
+    const events = await this.store.toolEvents(scope, runId, !includeHistory);
     const tools = new Map<
       string,
       RuntimeRunSnapshot["toolExecutions"][number]
@@ -746,9 +748,7 @@ export class AgentRuntime {
     return {
       run: state.run,
       cursor: { runId, seq: state.seq, streamId: state.streamId },
-      messages: (await this.store.messages(scope, state.run.sessionId)).filter(
-        (r) => r.runId === runId,
-      ),
+      messages: includeHistory ? await this.store.messages(scope, state.run.sessionId, undefined, runId) : [],
       pendingMessages: active
         ? [...active.pending].map(([id, message]) => ({
             id,
@@ -756,7 +756,7 @@ export class AgentRuntime {
           }))
         : [],
       toolExecutions: [...tools.values()],
-      artifacts: await this.store.artifacts(scope, runId),
+      artifacts: includeHistory ? await this.store.artifacts(scope, runId) : [],
     };
   }
   async snapshot(scope: Scope, runId: string) {
@@ -778,6 +778,31 @@ export class AgentRuntime {
           ? await this.snapshotUnlocked(scope, session.latestRunId)
           : null,
       };
+    });
+  }
+  async history(scope: Scope, sessionId: string, query: SessionHistoryQuery): Promise<RuntimeSessionHistory> {
+    return this.locked(scope, sessionId, async () => {
+      const session = await this.store.session(scope, sessionId);
+      const window = await this.store.historyWindow(scope, sessionId, query);
+      const ids = new Set(window.messages.map(message => message.runId));
+      if (query.runId) {
+        const selected = await this.store.run(scope, query.runId);
+        if (selected.run.sessionId !== sessionId) throw new RuntimeError(404, "NOT_FOUND", "Run not found");
+        ids.add(query.runId);
+      }
+      const runs = await this.store.historyRuns(scope, [...new Set([...ids, ...(session.latestRunId ? [session.latestRunId] : [])])]);
+      const currentRun = runs.find(run => run.id === session.latestRunId) ?? null;
+      let latestRun: RuntimeSessionHistory["latestRun"] = null;
+      if (!query.before && !query.through && session.latestRunId) {
+        const snapshot = await this.snapshotUnlocked(scope, session.latestRunId, false);
+        ids.add(session.latestRunId);
+        latestRun = {
+          ...snapshot,
+          run: currentRun!,
+          pendingMessages: snapshot.pendingMessages.filter(entry => entry.message.role !== "system"),
+        };
+      }
+      return { session: { ...session, latestRun: currentRun }, ...window, runs: runs.filter(run => ids.has(run.id)), latestRun };
     });
   }
   async subscribe(

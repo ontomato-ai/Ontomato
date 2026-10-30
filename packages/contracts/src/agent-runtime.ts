@@ -108,6 +108,18 @@ export const runtimeRunSchema = z
     (run) => (run.status === "running") === (run.finishedAt === null),
     "Only running runs have no finishedAt timestamp",
   );
+/** Conversation read model shared by runtime history and application hosts. */
+export const runtimeRunViewSchema = z.object({
+  id: runtimeRunFields.id,
+  sessionId: runtimeRunFields.sessionId,
+  status: runtimeRunFields.status,
+  stopReason: runtimeRunFields.stopReason,
+  errorMessage: runtimeRunFields.errorMessage,
+  createdAt: runtimeRunFields.createdAt,
+  finishedAt: runtimeRunFields.finishedAt,
+  resolvedSkills: runtimeRunFields.resolvedSkills,
+}).strict();
+export type RuntimeRunView = z.infer<typeof runtimeRunViewSchema>;
 export const runtimeAdmissionResponseSchema = z
   .object({
     run: runtimeRunSchema,
@@ -235,6 +247,7 @@ export const RUNTIME_ERROR_HTTP_STATUS = {
 export const RUNTIME_HTTP_ROUTES = {
   createSession: { method: "POST", path: "/v1/sessions", status: 201 },
   readSession: { method: "GET", path: "/v1/sessions/:sessionId", status: 200 },
+  readSessionHistory: { method: "GET", path: "/v1/sessions/:sessionId/history", status: 200 },
   readSessionStatuses: {
     method: "POST",
     path: "/v1/sessions/status",

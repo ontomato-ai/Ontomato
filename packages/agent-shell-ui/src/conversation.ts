@@ -1,4 +1,4 @@
-import type { AgentHostRunSnapshot, AgentHostSessionSnapshot } from "@ontomato/contracts/agent-host";
+import type { AgentHostRunSnapshot, AgentHostSessionHistory } from "@ontomato/contracts/agent-host";
 import type { RuntimeArtifact } from "@ontomato/contracts/agent-runtime-artifacts";
 import type {
   RuntimeEventEnvelope,
@@ -127,11 +127,55 @@ export function applyRunSnapshot(state: ConversationState, snapshot: AgentHostRu
     upsertMessage(state, pending.id, snapshot.run.id, pending.message, null);
 }
 
-export function applySessionSnapshot(state: ConversationState, snapshot: AgentHostSessionSnapshot) {
-  state.sessionId = snapshot.session.id;
-  for (const record of snapshot.messages)
+/** Merge a bounded durable page without replacing newer live state during backward paging. */
+export function applyHistoryPage(state: ConversationState, page: AgentHostSessionHistory, older = false) {
+  state.sessionId = page.session.id;
+  for (const value of page.runs) {
+    const run = ensureRun(state, value.id);
+    if (!older || !run.cursor) {
+      run.status = value.status;
+      run.stopReason = value.stopReason;
+      run.errorMessage = value.errorMessage;
+      run.retrievals = value.retrievals ?? [];
+    }
+  }
+  for (const record of page.messages) {
     upsertMessage(state, record.id, record.runId, record.message, record.messageSeq);
-  if (snapshot.latestRun) applyRunSnapshot(state, snapshot.latestRun);
+    const run = ensureRun(state, record.runId), message = record.message;
+    if (message.role === "assistant") {
+      for (const block of message.content) {
+        if (block.type !== "toolCall") continue;
+        const tool = run.tools[block.id];
+        run.tools[block.id] = {
+          toolCallId: block.id, toolName: block.name, args: block.arguments,
+          status: tool?.status ?? (run.status === "running" ? "running" : "unknown"),
+          output: tool?.output ?? "",
+        };
+      }
+    } else if (message.role === "toolResult") {
+      run.tools[message.toolCallId] = {
+        toolCallId: message.toolCallId, toolName: message.toolName,
+        args: run.tools[message.toolCallId]?.args ?? {},
+        status: message.isError ? "failed" : "completed", output: toolOutput(message.content),
+      };
+    }
+  }
+  if (!older) for (const value of page.runs) {
+    if (value.status !== "stopped") continue;
+    for (const message of Object.values(state.messages))
+      if (message.runId === value.id && message.messageSeq === null) delete state.messages[message.id];
+    for (const tool of Object.values(state.runs[value.id].tools))
+      if (tool.status === "running") tool.status = "unknown";
+  }
+}
+
+/** The live remainder is an authoritative cut; settled tool results stay with their loaded pages. */
+export function applyHistoryLive(state: ConversationState, snapshot: AgentHostRunSnapshot) {
+  const run = ensureRun(state, snapshot.run.id);
+  const tools = run.tools, artifacts = run.artifacts;
+  applyRunSnapshot(state, snapshot);
+  run.tools = { ...tools, ...run.tools };
+  run.artifacts = artifacts;
 }
 
 function applyDelta(message: RuntimeMessage, event: RuntimeAssistantStreamEvent) {

@@ -1,3 +1,4 @@
+import { sessionHistoryQuerySchema } from "@ontomato/contracts/session-history";
 import { runtimeHistoryQuerySchema } from "@ontomato/contracts/agent-runtime-history";
 import { correlationId, withServiceLogContext, updateServiceLogContext, getServiceLogContext, LogQueryError } from "@ontomato/service-logging";
 import { serviceLogIdentitySchema } from "@ontomato/contracts/service-logging";
@@ -263,6 +264,9 @@ export function createRuntimeHttp(runtime: AgentRuntime) {
       });
     }),
   );
+  app.get("/v1/sessions/:sessionId/history", route(async (req, res) => {
+    res.json(await runtime.history(scope(req).scope, runtimeIdSchema.parse(req.params.sessionId), sessionHistoryQuerySchema.parse(req.query)));
+  }));
   app.get(
     "/v1/sessions/:sessionId",
     route(async (req, res) => {
