@@ -13,6 +13,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   buildStamp,
+  imageCacheArgs,
   imageLabels,
   parseOptions,
   sourceIdentity,
@@ -111,6 +112,22 @@ test("final image labels identify component and version", () => {
     "--label", "io.ontomato.component=ontomato",
     "--label", "io.ontomato.build=4.0.1-build",
   ]);
+});
+test("the image cache is one dedicated registry ref with maximal mode", () => {
+  const previous = process.env.BUILD_CACHE_REF;
+  try {
+    delete process.env.BUILD_CACHE_REF;
+    assert.deepEqual(imageCacheArgs(), []);
+    const ref = "ghcr.io/ontomato-ai/ontomato-workbench:cache-edge-amd64";
+    process.env.BUILD_CACHE_REF = ref;
+    assert.deepEqual(imageCacheArgs(), [
+      "--cache-from", `type=registry,ref=${ref}`,
+      "--cache-to", `type=registry,ref=${ref},mode=max`,
+    ]);
+  } finally {
+    if (previous === undefined) delete process.env.BUILD_CACHE_REF;
+    else process.env.BUILD_CACHE_REF = previous;
+  }
 });
 test("the staging directory is fixed per builder and emptied before every build", () =>
   temporary((dir) => {

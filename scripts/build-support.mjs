@@ -52,10 +52,22 @@ export function execute(
 export const output = (executable, args) =>
   execute(executable, args, { capture: true }).stdout.trim();
 export const docker = (args) => execute("docker", args);
-// Release CI can reuse the previous final image's inline BuildKit cache.
+// Release CI keeps a BuildKit cache in the registry. `mode=max` exports the
+// intermediate layers too (dependency install, web build, Maven compile), which
+// inline cache drops. BUILD_CACHE_REF is one dedicated cache ref per image and
+// architecture: `--cache-to` replaces the manifest stored under its ref, so it
+// must never be a published image tag, and the two architectures must not share
+// one ref. Reading and writing the same dedicated ref is the supported pattern.
 export function imageCacheArgs() {
   const ref = process.env.BUILD_CACHE_REF;
-  return ref ? ["--cache-from", `type=registry,ref=${ref}`, "--cache-to", "type=inline"] : [];
+  return ref
+    ? [
+        "--cache-from",
+        `type=registry,ref=${ref}`,
+        "--cache-to",
+        `type=registry,ref=${ref},mode=max`,
+      ]
+    : [];
 }
 
 // `docker image inspect` accepts --platform from API 1.49; omit it on older servers.
