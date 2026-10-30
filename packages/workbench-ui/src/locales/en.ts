@@ -886,7 +886,7 @@ export default {
       "weekly": "Every {weekday} at {time}",
       "monthly": "Day {day} of every month at {time}"
     },
-    "intervalHint": "Counted from the previous run.",
+    "intervalHint": "First runs one interval after saving, then on a fixed cadence; missed runs are not made up.",
     "monthEndHint": "In months without this day it runs on the last day.",
     "timeZoneHint": "Times follow the server time zone ({zone}).",
     "mail": "Email the result",
