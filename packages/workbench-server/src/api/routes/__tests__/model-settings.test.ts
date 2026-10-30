@@ -43,7 +43,7 @@ afterAll(async () => {
   server.closeAllConnections();
   await new Promise<void>(resolve => server.close(() => resolve()));
 });
-beforeEach(() => { vi.clearAllMocks(); calls.get.mockResolvedValue({ ...settings, sealedApiKeys: { m: ["enc:v1:fixture"] } }); });
+beforeEach(() => { vi.clearAllMocks(); calls.get.mockResolvedValue(settings); });
 it("requires identity and projects only the page view using the verified domain", async () => {
   expect((await fetch(url)).status).toBe(403);
   const response = await fetch(url + "?domainId=foreign", { headers: { "fixture-auth": "yes" } });

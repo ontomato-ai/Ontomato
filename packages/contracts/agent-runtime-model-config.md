@@ -32,9 +32,6 @@ type ModelSettingsView = {
   models: ModelEntry[]; // apiKeys contain only masks; defaults normalized
   agents: Record<ModelRole, { model: string | null }>;
 };
-type ModelSettingsServerView = ModelSettingsView & {
-  sealedApiKeys: Record<string, string[]>;
-};
 ```
 
 `name` remains the domain-unique configuration ID, and `displayName` remains an
@@ -64,14 +61,11 @@ keys in success or error responses, diagnostics or logs.
 
 | Method/path | Request | Success |
 | --- | --- | --- |
-| GET `/v1/models/settings` | — | 200 `ModelSettingsServerView` |
+| GET `/v1/models/settings` | — | 200 `ModelSettingsView` |
 | PUT `/v1/models/settings` | `ModelSettingsWrite` | 200 `ModelSettingsView` |
 | POST `/v1/models/test` | `{model: ModelEntry, prompt?: string}` | 200 `{content: string}` |
-| GET `/v1/models/diagnostics` | — | 200 safe model and role projection described below |
 
-Settings GET is an authenticated server boundary. It returns masks plus the
-existing `enc:v1:` AES-256-GCM sealed-key map for remaining workbench model
-callers. Workbench page responses project `ModelSettingsView` and omit that map.
+Settings GET is an authenticated server boundary. It returns masks for workbench page responses.
 There is no plaintext-key endpoint. Ciphertext is never accepted as a replacement
 API key or a substitute for the current domain's saved mask.
 

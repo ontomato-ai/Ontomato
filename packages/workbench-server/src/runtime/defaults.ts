@@ -4,8 +4,6 @@ import type { Locale } from "../i18n/index";
 export interface RuntimeDefaults {
   postgresFallback: string;
   systemMcpUrlFallback: string;
-  /** How to interpret things when the backend config gives no data adapter during diagnosis. */
-  defaultDataAdapter: "m3" | "sql";
   /** Historical fallback when the request gives no explicit locale: enterprise zh-CN, OSS en. */
   requestLocaleFallback: Locale;
 }

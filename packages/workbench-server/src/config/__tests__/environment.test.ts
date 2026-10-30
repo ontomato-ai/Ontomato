@@ -5,7 +5,7 @@ import { installRuntimeDefaults } from "../../runtime/defaults";
 beforeEach(() => {
   for (const key of ["DATABASE_URL", "PG_CONNECTION_STRING", "POSTGRES_HOST", "POSTGRES_PORT", "POSTGRES_USER", "POSTGRES_PASSWORD"])
     vi.stubEnv(key, "");
-  installRuntimeDefaults({ postgresFallback: "postgresql://default:default@localhost:5432/workbench", systemMcpUrlFallback: "", defaultDataAdapter: "sql", requestLocaleFallback: "en" });
+  installRuntimeDefaults({ postgresFallback: "postgresql://default:default@localhost:5432/workbench", systemMcpUrlFallback: "", requestLocaleFallback: "en" });
 });
 afterEach(() => { vi.unstubAllEnvs(); });
 

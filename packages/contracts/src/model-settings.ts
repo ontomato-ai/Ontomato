@@ -82,16 +82,7 @@ export const modelSettingsSchema = z.object({
   models: z.array(modelEntrySchema.refine(model => model.apiKeys.every(key => key === "" || isMaskedSecret(key)), "Model reads must contain masked keys")),
   agents: modelAgentsSchema,
 });
-export const modelSettingsServerSchema = modelSettingsSchema.extend({ sealedApiKeys: z.record(z.array(z.string().startsWith("enc:v1:"))) });
 export type ModelSettingsData = z.output<typeof modelSettingsSchema>;
-export type ModelSettingsServerData = z.output<typeof modelSettingsServerSchema>;
-export const modelDiagnosticsSchema = z.object({
-  models: z.array(z.object({
-    name: z.string(), displayName: z.string(), modelName: z.string(), connectionConfigured: z.boolean(),
-    timeout: z.string().nullable(), maxRetries: z.number().nullable(), maxTokens: z.number(), contextWindow: z.number(),
-  })),
-  agents: modelAgentsSchema,
-});
 
 /**
  * Parses an ISO-8601 duration string (time part, e.g. PT5M, PT300S, PT1H30M, PT0.5S) into seconds.

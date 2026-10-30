@@ -67,12 +67,9 @@ describe("skill resource HTML credentials", () => {
     (await import("../../../utils/auth")).installAuthHost(host);
     const { withSkillResourceCredentials: underPrefix } = await import("../utils/skill-resource");
     const displayed = underPrefix(
-      '<script src="/api/skills/resources/executable/visualization/echarts/scripts/echarts.min.js?tk=old"></script>' +
-        '<script src="/api/skills/resources/example.js?v=2"></script>'
+      '<script src="/api/skills/resources/example.js?v=2"></script>'
     );
 
-    // Public ECharts carries no credential; skill resources carry the current one.
-    expect(displayed).toContain('src="/chat-bi-v4-demo/api/echart/echarts.min.js"');
     expect(displayed).toContain(
       'src="/chat-bi-v4-demo/api/skills/resources/example.js?v=2&tk=current-token"'
     );

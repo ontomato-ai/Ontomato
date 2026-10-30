@@ -8,7 +8,6 @@ import type { LogSourceType, ParsedLogSource } from "@ontomato/contracts/observe
  */
 export interface WorkbenchProduct {
   proxyMountPath: "/data-agent" | "/ontomato";
-  logFileName: "data-agent.log" | "ontomato.log";
   migrationLockKey: "data-agent:postgres-business-migrations" | "ontomato:postgres-business-migrations";
   subgraphFence: "data-agent-subgraph" | "ontomato-subgraph";
   mcpClientName: "data-agent" | "ontomato";
@@ -18,7 +17,6 @@ export interface WorkbenchProduct {
   serviceDisplayName: "Data Agent" | "Ontomato";
   emailFooter: string;
   logDirEnvName: "DATA_AGENT_LOG_DIR" | "ONTOMATO_LOG_DIR";
-  smtpFromAddress: "noreply@data-agent.local" | "noreply@ontomato.local";
   logSource: Extract<ParsedLogSource, "data-agent" | "ontomato">;
   appLogSourceType: Extract<LogSourceType, "data-agent-app" | "ontomato-app">;
   /** Matching rules for sessionId / backendNodeId in log text. Each edition keeps its pre-migration regex as-is (the enterprise edition also matches full-width colons). */
