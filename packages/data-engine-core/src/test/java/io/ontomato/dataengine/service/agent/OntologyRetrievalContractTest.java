@@ -389,7 +389,7 @@ class OntologyRetrievalContractTest {
                 .getResponse()
                 .getContentAsString());
     assertNull(externalSnapshot.get("runtimeRunId"));
-    assertTrue(externalSnapshot.getJSONArray("messages").isEmpty());
+    assertFalse(externalSnapshot.containsKey("messages"));
   }
 
   @Test
@@ -430,6 +430,7 @@ class OntologyRetrievalContractTest {
               retrievalId,
               "path",
               "outputs/result.dataset.json", "sha256", QueryOutputService.hash(AgentJson.json(files.get(artifact)))));
+    retrieval.reconcile(retrievalId, run, owner, runs.get(run));
     var snapshot = retrieval.get(retrievalId, owner);
     assertEquals(List.of(repeat), snapshot.getList("datasetArtifactIds", String.class));
     assertEquals(dataset, retrieval.dataset(retrievalId, good, owner).getJSONObject("payload"));
@@ -439,7 +440,7 @@ class OntologyRetrievalContractTest {
     when(quality.start(any(), any(), any()))
         .thenThrow(new IllegalStateException("Lost admission response"))
         .thenReturn(Map.of());
-    assertThrows(IllegalStateException.class, () -> retrieval.get(retrievalId, owner));
+    assertThrows(IllegalStateException.class, () -> retrieval.reconcile(retrievalId, run, owner, runs.get(run)));
     String qcId = store.run(retrievalId, run, owner).getString("qc_id");
     assertNotNull(qcId);
     retrieval.recover();

@@ -234,6 +234,10 @@ public class OntologyRetrievalService {
     if (store
         .rows("SELECT id FROM ontology_agent_runs WHERE id=? AND session_id=?", uuid(key), uuid(id))
         .isEmpty()) {
+      // Continuation admission needs current runtime facts; lightweight reads never reconcile synchronously.
+      var prior = store.run(id, store.retrieval(id, context.owner()).getString("current_run_id"), context.owner());
+      if (!prior.getBooleanValue("external") && prior.getBooleanValue("runtime_admitted"))
+        reconcile(id, prior.getString("id"), context.owner(), runtime.run(context.owner().domainId(), prior.getString("id")));
       var previous = get(id, context.owner());
       if (previous.getJSONObject("run") == null
           || !"stopped".equals(previous.getJSONObject("run").getString("status")))
@@ -389,13 +393,7 @@ public class OntologyRetrievalService {
     var observed=row.getJSONObject("observed_state");
     boolean delivered = !store.rows("SELECT 1 AS delivered FROM ontology_retrieval_deliveries WHERE run_id=? AND source='retriever'",uuid(row.getString("id"))).isEmpty();
     boolean pending = !row.getBooleanValue("external") && !delivered;
-    // Old terminal rounds are projected lazily from immutable runtime facts, never re-executed.
-    if(pending && observed!=null && "stopped".equals(observed.getString("status")) && observing.add(row.getString("id"))) {
-      String run=row.getString("id");
-      workers.submit(() -> { try { reconcile(id,run,owner,runtime.run(owner.domainId(),run)); }
-        catch(Exception error) { LOG.warn("Retrieval result projection failed: {}",run,error); }
-        finally { observing.remove(run); } });
-    }
+    observeMissingDelivery(id, row.getString("id"), owner, observed, pending);
     var response = JSONObject.of("id",id,"roundId",row.getString("id"),"cursor",cursor,"deliveries",deliveries,
         "decisionRevision",row.getIntValue("decision_revision"),"runtimeSessionId",row.getBooleanValue("runtime_admitted")?id:null,
         "runtimeRunId",row.getBooleanValue("runtime_admitted")?row.getString("id"):null,
@@ -546,26 +544,32 @@ public class OntologyRetrievalService {
   }
 
   public JSONObject get(String id, Owner owner) throws Exception {
-    return snapshot(id, store.retrieval(id, owner).getString("current_run_id"), owner);
+    return get(id, store.retrieval(id, owner).getString("current_run_id"), owner);
+  }
+
+  public JSONObject get(String id, String runId, Owner owner) throws Exception {
+    var result = snapshot(id, runId, owner);
+    observeMissingDelivery(id, runId, owner, result.getJSONObject("run"), result.getBooleanValue("retrieverPending"));
+    return result;
+  }
+
+  private void observeMissingDelivery(String id, String run, Owner owner, JSONObject observed, boolean pending) {
+    // Reuse result polling's lazy projection for old terminal rounds, without blocking reads.
+    if (pending && observed != null && "stopped".equals(observed.getString("status")) && observing.add(run)) {
+      workers.submit(() -> {
+        try { reconcile(id, run, owner, runtime.run(owner.domainId(), run)); }
+        catch (Exception error) { LOG.warn("Retrieval result projection failed: {}", run, error); }
+        finally { observing.remove(run); }
+      });
+    }
   }
 
   public JSONObject snapshot(String id, String runId, Owner owner) throws Exception {
-    return snapshot(id, runId, owner, true);
-  }
-
-  private JSONObject snapshot(String id, String runId, Owner owner, boolean observe)
-      throws Exception {
     var record = store.retrieval(id, owner);
     var row = store.run(id, runId, owner);
-    JSONObject state = null;
-    JSONArray messages = new JSONArray();
-    if (!row.getBooleanValue("external") && row.getBooleanValue("runtime_admitted")) {
-      var snapshot = runtime.run(owner.domainId(), runId);
-      if (observe) reconcile(id, runId, owner, snapshot);
-      state = state(snapshot.getJSONObject("run"));
-      messages = snapshot.getJSONArray("messages");
-      row = store.run(id, runId, owner);
-    }
+    var observed = row.getJSONObject("observed_state");
+    JSONObject state = observed == null ? null : state(observed);
+    var deliveries = results.forRun(id, runId, owner);
     var result =
         JSONObject.of(
             "id",
@@ -578,8 +582,10 @@ public class OntologyRetrievalService {
             row.getBooleanValue("external") || !row.getBooleanValue("runtime_admitted") ? null : runId,
             "run",
             state,
-            "messages",
-            messages,
+            "cursor",
+            deliveries.isEmpty() ? 0L : deliveries.get(deliveries.size() - 1).getLongValue("cursor"),
+            "deliveries",
+            deliveries,
             "datasetArtifactIds",
             row.getJSONArray("dataset_ids"),
             "decisionRevision",
@@ -588,8 +594,9 @@ public class OntologyRetrievalService {
     var bindingState = bindings.snapshot(id,runId,owner);
     result.put("bindings", bindingState);
     result.put("bindingPending",bindingState != null && "running".equals(bindingState.getString("status")));
-    result.put("retrieverPending",state != null ? "running".equals(state.getString("status"))
-        : !row.getBooleanValue("external") && row.getString("admission_error")==null && !row.getBooleanValue("cancel_requested"));
+    // Runtime termination and business delivery are separate: keep reading until publication.
+    result.put("retrieverPending", !row.getBooleanValue("external")
+        && deliveries.stream().noneMatch(delivery -> "retriever".equals(delivery.getString("source"))));
     result.put("admissionError",row.getString("admission_error"));
     if (row.getString("qc_id") != null) {
       try {
@@ -606,7 +613,7 @@ public class OntologyRetrievalService {
         "input",
         store.retrieval(id, owner).get("input"),
         "snapshot",
-        snapshot(id, runId, owner, false));
+        snapshot(id, runId, owner));
   }
 
   private static JSONObject state(JSONObject run) {

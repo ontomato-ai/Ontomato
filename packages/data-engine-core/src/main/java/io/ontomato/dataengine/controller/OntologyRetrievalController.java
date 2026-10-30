@@ -32,8 +32,11 @@ public class OntologyRetrievalController {
   }
 
   @GetMapping("/ontology/retrievals/{id}")
-  public Object get(@PathVariable String id, HttpServletRequest req) throws Exception {
-    return retrieval.get(AgentJson.id(id), access.reader(req, id, null));
+  public Object get(@PathVariable String id, @RequestParam(required = false) String runId, HttpServletRequest req) throws Exception {
+    id = AgentJson.id(id);
+    if (runId != null) runId = AgentJson.id(runId);
+    var owner = access.reader(req, id, runId);
+    return runId == null ? retrieval.get(id, owner) : retrieval.get(id, runId, owner);
   }
 
   @GetMapping("/ontology/retrievals/{id}/results")

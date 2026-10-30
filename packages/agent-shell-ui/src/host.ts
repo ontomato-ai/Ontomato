@@ -47,9 +47,14 @@ export interface AgentHostClient {
   readArtifact(artifact: RuntimeArtifact): Promise<Blob>;
   /**
    * Reads one retrieval's snapshot. The retrieval ID is stable across continuations of the same
-   * retrieval, so callers use it as the poll key and fold state; runId scopes the specific run.
+   * retrieval, so callers use it as the fold state key. The child run is explicit for history.
    */
-  readRetrieval(sessionId: string, runId: string, retrievalId: string): Promise<RetrievalSnapshot>;
+  readRetrieval(sessionId: string, runId: string, retrievalId: string, retrievalRunId: string): Promise<RetrievalSnapshot>;
+  readRetrievalRun(sessionId: string, runId: string, retrievalId: string, retrievalRunId: string): Promise<AgentHostRunSnapshot>;
+  subscribeRetrieval(
+    sessionId: string, runId: string, retrievalId: string, retrievalRunId: string,
+    after: Pick<RuntimeCursor, "seq" | "streamId">, handlers: HostStreamHandlers,
+  ): () => void;
 }
 
 export interface AgentHostClientOptions {
@@ -77,6 +82,28 @@ export function createAgentHostClient(options: AgentHostClientOptions): AgentHos
   const query = (values: Record<string, string>) => new URLSearchParams(values).toString();
   const session = (id: string) => `/sessions/${enc(id)}`;
   const run = (sessionId: string, runId: string) => `${session(sessionId)}/runs/${enc(runId)}`;
+  const retrieval = (sessionId: string, runId: string, retrievalId: string) =>
+    `${run(sessionId, runId)}/retrievals/${enc(retrievalId)}`;
+  const retrievalRun = (sessionId: string, runId: string, retrievalId: string, retrievalRunId: string) =>
+    `${retrieval(sessionId, runId, retrievalId)}/runs/${enc(retrievalRunId)}`;
+
+  function subscribe(path: string, after: Pick<RuntimeCursor, "seq" | "streamId">, handlers: HostStreamHandlers) {
+    const controller = new AbortController();
+    const params = new URLSearchParams({ afterSeq: String(after.seq), streamId: after.streamId });
+    void (async () => {
+      try {
+        const response = await call(`${path}/events?${params}`, {
+          headers: { Accept: "text/event-stream" },
+          signal: controller.signal,
+        });
+        const ended = await readFrames(response, handlers.frame, () => !controller.signal.aborted);
+        if (!ended && !controller.signal.aborted) handlers.error(new Error("stream closed"));
+      } catch (error) {
+        if (!controller.signal.aborted) handlers.error(error);
+      }
+    })();
+    return () => controller.abort();
+  }
 
   return {
     async listAgents() {
@@ -103,21 +130,7 @@ export function createAgentHostClient(options: AgentHostClientOptions): AgentHos
       return json<AgentHostRunSnapshot>(run(sessionId, runId));
     },
     subscribe(sessionId, runId, after, handlers) {
-      const controller = new AbortController();
-      const params = new URLSearchParams({ afterSeq: String(after.seq), streamId: after.streamId });
-      void (async () => {
-        try {
-          const response = await call(`${run(sessionId, runId)}/events?${params}`, {
-            headers: { Accept: "text/event-stream" },
-            signal: controller.signal,
-          });
-          const ended = await readFrames(response, handlers.frame, () => !controller.signal.aborted);
-          if (!ended && !controller.signal.aborted) handlers.error(new Error("stream closed"));
-        } catch (error) {
-          if (!controller.signal.aborted) handlers.error(error);
-        }
-      })();
-      return () => controller.abort();
+      return subscribe(run(sessionId, runId), after, handlers);
     },
     async cancel(sessionId, runId) {
       await call(`${run(sessionId, runId)}/cancel`, send("POST", {}));
@@ -131,10 +144,16 @@ export function createAgentHostClient(options: AgentHostClientOptions): AgentHos
     async readArtifact(artifact) {
       return (await call(`${session(artifact.sessionId)}/artifacts/${enc(artifact.id)}/content`)).blob();
     },
-    readRetrieval(sessionId, runId, retrievalId) {
+    readRetrieval(sessionId, runId, retrievalId, retrievalRunId) {
       return json<RetrievalSnapshot>(
-        `${run(sessionId, runId)}/retrievals/${enc(retrievalId)}`,
+        `${retrieval(sessionId, runId, retrievalId)}?${query({ retrievalRunId })}`,
       );
+    },
+    readRetrievalRun(sessionId, runId, retrievalId, retrievalRunId) {
+      return json<AgentHostRunSnapshot>(retrievalRun(sessionId, runId, retrievalId, retrievalRunId));
+    },
+    subscribeRetrieval(sessionId, runId, retrievalId, retrievalRunId, after, handlers) {
+      return subscribe(retrievalRun(sessionId, runId, retrievalId, retrievalRunId), after, handlers);
     },
   };
 }

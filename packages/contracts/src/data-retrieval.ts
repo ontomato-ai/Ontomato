@@ -1,4 +1,3 @@
-import { runtimeMessageRecordSchema } from "./agent-runtime";
 import { runtimeStopReasonSchema } from "./agent-runtime-values";
 import { z } from "zod";
 import {
@@ -173,7 +172,9 @@ export const retrievalSnapshotSchema = z.object({
       errorMessage: z.string().nullable(),
     })
     .nullable(),
-  messages: z.array(runtimeMessageRecordSchema),
+  /** Delivery cursor, independent of the runtime event stream's streamId/seq. */
+  cursor: z.number().int().nonnegative(),
+  deliveries: z.array(retrievalDeliverySchema),
   datasetArtifactIds: z.array(id),
   decisionRevision: z.number().int(),
 });

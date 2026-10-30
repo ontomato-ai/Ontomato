@@ -6,83 +6,41 @@ import {
   Database,
   LoaderCircle,
 } from "lucide-vue-next";
-import type { RuntimeRunSnapshot } from "@ontomato/contracts/agent-runtime";
 import { shellContextKey } from "../context";
 import { useRetrievalActivity } from "../useRetrievalActivity";
 import type { RetrievalLink } from "../conversation";
 import { toolSummary } from "../view";
 
-/**
- * Collapsible retrieval activity area. Polls the retrieval snapshot while the owning run is
- * active and renders the toolCall/toolResult messages as steps. The retrieval ID is the stable
- * key across continuations and is used for the fold state, so a retrieval that resumes keeps its
- * place in the list and its open/closed state.
- */
+/** The stable retrieval ID preserves fold state while continuations replace the subscribed run. */
 const props = defineProps<{
   link: RetrievalLink;
-  /** The parent run's id — used to scope the retrieval snapshot proxy route. */
   parentRunId: string;
   sessionId: string;
-  runActive: () => boolean;
 }>();
 
 const shell = inject(shellContextKey)!;
 const open = ref(false);
+const { state, run, restart } = useRetrievalActivity(() => {
+  const ids = [props.sessionId, props.parentRunId, props.link.retrievalId, props.link.runId] as const;
+  return {
+    runId: props.link.runId,
+    read: () => shell.readRetrieval(...ids),
+    readRun: () => shell.readRetrievalRun(...ids),
+    subscribe: (after, handlers) => shell.subscribeRetrieval(...ids, after, handlers),
+  };
+});
+watch([
+  () => props.sessionId, () => props.parentRunId,
+  () => props.link.retrievalId, () => props.link.runId,
+], restart);
 
-const { state, restart } = useRetrievalActivity(
-  (retrievalId) =>
-    shell.readRetrieval(props.sessionId, props.parentRunId, retrievalId),
-  props.link.retrievalId,
-  props.runActive,
-);
-// A continuation moves this retrieval to a new run; same component, so the fold state stays.
-watch(() => props.link.runId, restart);
-
-interface ActivityStep {
-  key: string;
-  toolCallId: string;
-  toolName: string;
-  summary: string;
-  status: "running" | "completed" | "failed";
-  output: string;
-}
-
-/** Projects the snapshot's messages into tool-call activity steps. */
-function activitySteps(records: RuntimeRunSnapshot["messages"]): ActivityStep[] {
-  type ToolResultMsg = Extract<RuntimeRunSnapshot["messages"][number]["message"], { role: "toolResult" }>;
-  const results = new Map<string, ToolResultMsg>();
-  for (const record of records) {
-    if (record.message.role === "toolResult") results.set(record.message.toolCallId, record.message as ToolResultMsg);
-  }
-  const steps: ActivityStep[] = [];
-  for (const record of records) {
-    const message = record.message;
-    if (message.role !== "assistant") continue;
-    for (const block of message.content) {
-      if (block.type !== "toolCall") continue;
-      const result = results.get(block.id);
-      const status: ActivityStep["status"] = result
-        ? result.isError
-          ? "failed"
-          : "completed"
-        : "running";
-      steps.push({
-        key: `${record.id}:${block.id}`,
-        toolCallId: block.id,
-        toolName: block.name,
-        summary: toolSummary(block.arguments),
-        status,
-        output: result ? result.content.map((part) => (part.type === "text" ? part.text : "")).join("") : "",
-      });
-    }
-  }
-  return steps;
-}
-
-const steps = computed<ActivityStep[]>(() => state.snapshot ? activitySteps(state.snapshot.messages) : []);
-const runStatus = computed(() => state.snapshot?.run?.status ?? null);
-const running = computed(() => (state.snapshot?.retrieverPending ?? runStatus.value === "running") || (state.snapshot?.bindingPending ?? state.snapshot?.bindings?.status === "running"));
-const errorMessage = computed(() => state.snapshot?.admissionError ?? state.snapshot?.run?.errorMessage ?? null);
+const steps = computed(() => Object.values(run.value?.tools ?? {}).map((tool) => ({
+  ...tool,
+  key: tool.toolCallId,
+  summary: toolSummary(tool.args),
+})));
+const running = computed(() => state.snapshot?.retrieverPending || state.snapshot?.bindingPending);
+const errorMessage = computed(() => state.snapshot?.admissionError ?? run.value?.errorMessage ?? state.snapshot?.run?.errorMessage ?? null);
 const labels = computed(() => shell.labels.value);
 </script>
 

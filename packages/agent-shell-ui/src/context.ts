@@ -1,6 +1,6 @@
 import type { InjectionKey, Ref, Slot } from "vue";
 import type { RuntimeArtifact } from "@ontomato/contracts/agent-runtime-artifacts";
-import type { RetrievalSnapshot } from "@ontomato/contracts/data-retrieval";
+import type { AgentHostClient } from "./host";
 import type { ChartTheme } from "./chart-theme";
 import type {
   ArtifactRendererOverride,
@@ -9,7 +9,7 @@ import type {
   ToolRendererOverride,
 } from "./types";
 
-export interface ShellContext {
+export interface ShellContext extends Pick<AgentHostClient, "readRetrieval" | "readRetrievalRun" | "subscribeRetrieval"> {
   labels: Ref<ShellLabels>;
   artifactRenderers: Ref<readonly ArtifactRendererOverride[]>;
   toolRenderers: Ref<readonly ToolRendererOverride[]>;
@@ -22,7 +22,6 @@ export interface ShellContext {
   readArtifact(artifact: RuntimeArtifact): Promise<Blob>;
   openArtifact(open: OpenArtifact): void;
   openArtifactKey: Ref<string | null>;
-  readRetrieval(sessionId: string, runId: string, retrievalId: string): Promise<RetrievalSnapshot>;
 }
 
 /** The message whose Markdown is rendering; artifact references resolve within its run. */

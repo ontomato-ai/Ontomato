@@ -226,6 +226,8 @@ export function applyEnvelope(state: ConversationState, envelope: RuntimeEventEn
       run.status = event.status;
       run.stopReason = event.stopReason;
       run.errorMessage = event.errorMessage;
+      for (const tool of Object.values(run.tools))
+        if (tool.status === "running") tool.status = "unknown";
       break;
     default:
       break;
