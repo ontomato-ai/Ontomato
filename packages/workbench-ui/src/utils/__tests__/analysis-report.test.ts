@@ -3,6 +3,7 @@ import { presentation } from "@ontomato/contracts/__tests__/presentation-fixture
 import {
   buildReportFromDeepAnalysis,
   buildReportSectionsFromDeepAnalysis,
+  embedChartHtml,
   isDeepAnalysisReportStreaming,
   joinReportSections,
   moveSummaryMarkdownToTop,
@@ -11,6 +12,20 @@ import {
 } from "../analysis-report";
 
 describe("analysis report sections", () => {
+  it("resolves complete chart markers before removing unfinished streaming markers", () => {
+    const html = '<div class="chart-container">Sales</div>';
+    const content = embedChartHtml(
+      "Before\n\n[chart:summary:report-3-1]\n\nAfter\n[chart:summary:unfinished",
+      [{ chartId: "report-3-1", html }],
+    );
+    const parsed = updateParsedReportContent(undefined, content, "answer", true);
+    expect(parsed.parts.filter(part => part.type === "chart")).toEqual([
+      expect.objectContaining({ html }),
+    ]);
+    expect(content).toContain("After");
+    expect(content).not.toContain("[chart:");
+  });
+
   it("moves the comprehensive summary to the front only when configured", () => {
     const sections = [
       { id: "dimension-1", content: "Dimension one" },

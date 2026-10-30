@@ -935,6 +935,30 @@ it("deduplicates only a finished regular turn's trailing narrative when identica
   expect(occurrences(text, "distinct-final-answer")).toBe(1);
 });
 
+it("renders chart references from each regular turn's own artifacts in both narrative and final answer", () => {
+  const chart = (html: string) => ({
+    chartId: "report-3-1", scopeId: "summary", title: "Sales", chartType: "line",
+    sourceSubQuestion: "Daily sales", skillId: "echarts", dataCount: 31, html,
+  });
+  const firstHtml = '<div class="chart-container">first-turn-chart</div>';
+  const secondHtml = '<div class="chart-container">second-turn-chart</div>';
+  seed({
+    report: false,
+    messages: [
+      { id: 1, role: "user", content: "first" },
+      answerMessage(2, "Sales\n\n[chart:summary:report-3-1]\n\nConclusion", "first-stage", { charts: [chart(firstHtml)] }),
+      { id: 3, role: "user", content: "second" },
+      answerMessage(4, "second-answer", "Stage\n\n[chart:summary:report-3-1]", { charts: [chart(secondHtml)] }),
+    ],
+  });
+  const wrapper = render();
+  const frames = wrapper.findAll("iframe.message-chart");
+  expect(frames).toHaveLength(2);
+  expect(frames.map(frame => frame.attributes("srcdoc"))).toEqual([firstHtml, secondHtml]);
+  expect(wrapper.text()).not.toContain("[chart:");
+  expect(wrapper.text()).toContain("Conclusion");
+});
+
 it("renders loop narrative as the body and workerSummary as safe Markdown without executing raw HTML, with L1 tool summaries in the process", async () => {
   seed({
     report: false,
