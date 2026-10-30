@@ -68,7 +68,6 @@ public class OntologyAgentAccess {
     if (access.grant() != null && !"retrieval-exploration".equals(access.grant().getString("purpose")))
       throw new AgentHttpException(403, "FORBIDDEN", "A current user credential is required");
     String caller = request.getHeader("X-Ontomato-Retrieval-Caller-Id");
-    if (caller != null && access.grant() == null) access = scopedQuery(access, caller);
     return new Context(
         new OntologyAgentStore.Owner(access.user().getId(), access.user().getDomainId()),
         access,
