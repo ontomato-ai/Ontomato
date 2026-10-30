@@ -6,6 +6,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import java.util.*;
 import org.springframework.http.*;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.context.request.async.WebAsyncUtils;
 import org.springframework.web.servlet.mvc.method.annotation.StreamingResponseBody;
 
 @RestController
@@ -102,6 +103,8 @@ public class OntologyAgentController {
     if (afterSeq < 0) throw AgentHttpException.invalid("Invalid cursor");
     var owner = access.reader(req, id, run);
     host.run(AgentJson.id(id), AgentJson.id(run), owner);
+    // This subscription ends with the run or connection, not the servlet's async deadline.
+    WebAsyncUtils.getAsyncManager(req).getAsyncWebRequest().setTimeout(0L);
     var response =
         runtime.stream(
             owner.domainId(),

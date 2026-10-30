@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { agentHostRunSnapshotSchema } from "@ontomato/contracts/agent-host";
+import type { RuntimeStreamFrame } from "@ontomato/contracts/agent-runtime-events";
 import { datasetPayloadSchema, retrievalEvidenceSchema, retrievalSnapshotSchema, retrievalCallerSchema, retrievalCallerAdmissionSchema, type RetrievalCallerInput } from "@ontomato/contracts/data-retrieval";
 import { runtimeArtifactSchema } from "@ontomato/contracts/agent-runtime-artifacts";
 import { backendGet, backendPost, backendDelete, buildBackendHeaders, BackendResponseError } from "../../utils/backend-client";
@@ -51,6 +52,10 @@ export class OntologyRetrievalClient {
   async run(sessionId: string, runId: string) {
     return agentHostRunSnapshotSchema.parse(await this.request(`/ontology/ai/sessions/${sessionId}/runs/${runId}`));
   }
+  async activityRun(sessionId: string, runId: string) {
+    const snapshot = await this.run(sessionId, runId);
+    return { ...snapshot, messages: [], pendingMessages: [], artifacts: [] };
+  }
   async events(sessionId: string, runId: string, after: { seq: number; streamId: string }, signal: AbortSignal) {
     const query = new URLSearchParams({ afterSeq: String(after.seq), streamId: after.streamId });
     const path = `/ontology/ai/sessions/${sessionId}/runs/${runId}/events?${query}`;
@@ -71,6 +76,21 @@ export class OntologyRetrievalClient {
   }
   async delete(retrievalId: string) {
     await this.request(`/ontology/retrievals/${retrievalId}`, "DELETE");
+  }
+}
+
+/** Activity consumes tool steps and run termination, never the child conversation's transcript. */
+export function retrievalActivityFrame(frame: RuntimeStreamFrame): RuntimeStreamFrame | null {
+  if (frame.type === "snapshot_required") return frame;
+  switch (frame.envelope.event.type) {
+    case "tool_execution_start":
+    case "tool_execution_update":
+    case "tool_execution_end":
+      return frame;
+    case "agent_end":
+      return { ...frame, envelope: { ...frame.envelope, event: { ...frame.envelope.event, messages: [] } } };
+    default:
+      return null;
   }
 }
 
