@@ -108,6 +108,8 @@ export interface ShellLabels {
   deleteSession: string;
   deleteConfirm: string;
   unavailable: string;
+  /** Marks a session that one of the user's scheduled tasks started. */
+  scheduledSession: string;
   placeholder: string;
   send: string;
   stop: string;

@@ -54,8 +54,8 @@ A workbench is code: `ShellWorkbenchDeclaration` lists its feature entries; its
 agents come from the host interface. Feature entries are `page` (the host renders
 it in the main area through the `feature` slot, keyed by feature ID), `action`
 (the shell emits it and the host reacts in place, e.g. a dialog), `link`
-(navigates away) or `unavailable` (visible placeholder; scheduled tasks use this
-until they return). Editions supply their own entries to the same workbench.
+(navigates away) or `unavailable` (visible placeholder). The business workbench's
+scheduled tasks are a `page`. Editions supply their own entries to the same workbench.
 
 ## Default rendering and overrides
 

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, inject, onBeforeUnmount, ref } from "vue";
-import { Check, ChevronDown, SquarePen, Trash2 } from "lucide-vue-next";
+import { CalendarClock, Check, ChevronDown, SquarePen, Trash2 } from "lucide-vue-next";
 import type { AgentHostAgent, AgentHostSession } from "@ontomato/contracts/agent-host";
 import type { ShellWorkbenchDeclaration } from "../types";
 import { shellContextKey } from "../context";
@@ -170,6 +170,15 @@ onBeforeUnmount(() => {
             >
               <span v-if="session.latestRun?.status === 'running'" class="running" aria-hidden="true" />
               <span class="session-title">{{ session.title || labels.newConversation }}</span>
+              <span
+                v-if="session.origin === 'scheduled'"
+                class="session-origin"
+                role="img"
+                :title="labels.scheduledSession"
+                :aria-label="labels.scheduledSession"
+              >
+                <CalendarClock :size="13" aria-hidden="true" />
+              </span>
             </button>
             <button
               type="button"
@@ -445,6 +454,12 @@ onBeforeUnmount(() => {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.session-origin {
+  display: inline-flex;
+  flex-shrink: 0;
+  margin-left: auto;
+  color: var(--el-text-color-tertiary);
 }
 .running {
   width: 7px;
