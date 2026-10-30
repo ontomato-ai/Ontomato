@@ -1,7 +1,6 @@
 package io.ontomato.dataengine.service.impl;
 
 import com.alibaba.fastjson2.JSONObject;
-import io.ontomato.dataengine.bean.DslConsanguinity;
 import io.ontomato.dataengine.bean.abcHarness.ABCHarnessProgram;
 import io.ontomato.dataengine.bean.abcHarness.ABCHarnessProgramOutKeyRef;
 import io.ontomato.dataengine.bean.function.Function;
@@ -18,8 +17,6 @@ import io.ontomato.dataengine.service.LangService;
 import io.ontomato.dataengine.service.agent.OntologyGenerationPrompts;
 import io.ontomato.dataengine.service.agent.OntologyGenerationService;
 import io.ontomato.dataengine.util.DBSchemaUtil;
-import io.ontomato.dataengine.util.DslToPythonCodeUtil;
-import io.ontomato.dataengine.util.DslUtil;
 import jakarta.annotation.PostConstruct;
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -117,60 +114,6 @@ public class FunctionServiceImpl implements FunctionService {
 			}
     	}).start();
     }
-
-  @Override
-  public Function generateFromDsl(
-      String question, JSONObject dsl, String lang, String domainId, String sessionId) {
-    Function function = new Function();
-    function.setOrigin(Function.ORIGIN_USER);
-    function.setOperation(Function.OPERATION_READ);
-    function.setDomainId(domainId);
-
-    Map<String, Object> jsonRule = generationService.authorizedRule(adminService.getJSONRule(domainId), domainId);
-    List<Map<String, Object>> classDefs = (List<Map<String, Object>>) jsonRule.get("classDef");
-    String port =
-        businessConfigService
-                .getRuntimeWholeConfig(domainId)
-                .getJSONObject("server")
-                .getInteger("port")
-            + "";
-    String originCode = DslToPythonCodeUtil.generate(dsl, port);
-
-    String userMessage =
-        OntologyGenerationPrompts.getReadFunctionMakerUserMessage(
-            question, originCode, lang, langService, jsonRule);
-    try (var generation =
-        generationService.generate("function", sessionId, userMessage, lang, domainId)) {
-      JSONObject envelope = generation.result();
-      String code = envelope.getString("code");
-      String name = envelope.getString("name");
-      String logic = envelope.getString("logic");
-      if (code == null || name == null || logic == null) {
-        return null;
-      }
-      List<Parameter> parameters = new ArrayList<Parameter>();
-      if (envelope.containsKey("parameterDefs")) {
-        parameters =
-            DBSchemaUtil.buildParameters(
-                envelope.getJSONArray("parameterDefs").toList(Map.class), classDefs);
-      }
-      function.setName(name);
-      function.setParameters(parameters);
-      function.setCode(code);
-      function.setLogic(logic);
-
-      ReturnDef returnDef = new ReturnDef();
-      returnDef.setIsVoid(false);
-      JSONObject sourceAnalysis = envelope.getJSONObject("sourceAnalysis");
-      io.ontomato.dataengine.service.QuerySubgraphContract.validate(sourceAnalysis);
-      returnDef.setSourceAnalysis(sourceAnalysis);
-      returnDef.setClassNames(sourceAnalysis.getJSONArray("nodes").stream().map(JSONObject::from)
-          .filter(n -> "class".equals(n.getString("kind"))).map(n -> n.getString("className")).distinct().toList());
-      function.setReturnDef(returnDef);
-
-      return generation.settle(() -> function);
-    }
-  }
 
   @Override
   public Function generateFromABCProgram(

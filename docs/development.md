@@ -31,9 +31,10 @@ CI publishes final images. Pushes to `develop` publish the `edge` version, pushe
 `stable` publish the `stable` version, and formal `v*` tags publish the stripped version
 plus `latest`. Pull requests run checks
 without publishing (see `.github/workflows/pr-checks.yml`).
-GitHub runners reuse the previous release's inline BuildKit
-cache through `BUILD_CACHE_REF`; this keeps unchanged dependency layers on a fresh runner.
-The enterprise GitLab runner uses its persistent local BuildKit cache.
+GitHub runners keep a BuildKit cache in the registry through `BUILD_CACHE_REF`: one
+dedicated `cache-<version>-<arch>` ref per image, imported and exported with
+`mode=max` so intermediate layers survive a fresh runner. The enterprise GitLab
+runner uses its persistent local BuildKit cache.
 `make tools-bundle ARCH=amd64` prepares the offline tool kit and
 `make bundle ARCH=amd64 VERSION=<version>` exports published images with oc-mirror v2;
 later runs reuse `MIRROR_STATE`. See [deployment](../deploy/README.md) for the offline workflow,

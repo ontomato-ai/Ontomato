@@ -97,12 +97,7 @@ class QueryRuntimeBoundaryTest {
         .thenReturn(Map.of("data", List.of(Map.of("answer", List.of()))));
     var controller =
         new OntologyQueryController(
-            grants,
-            authorization,
-            ontology,
-            mock(QueryOutputService.class),
-            mock(QueryJobService.class),
-            mock(QueryQualityService.class));
+            authorization, ontology, mock(QueryOutputService.class), mock(QueryJobService.class));
     http =
         MockMvcBuilders.standaloneSetup(controller, new DslController())
             .setControllerAdvice(new OntologyQueryErrors())

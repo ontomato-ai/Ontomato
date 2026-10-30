@@ -77,7 +77,9 @@ export async function createDashboardFromAnalysis(
   let plannedName = "";
   if (groupsFromReq.length) {
     groups = groupsFromReq;
-  } else if (datasets.some((dataset) => dataset.abcProgram)) {
+  } else if (needParameter && datasets.some((dataset) => dataset.abcProgram)) {
+    // Only an explicit parameterized-dashboard request needs the ABC dashboard maker.
+    // Planning otherwise keeps the dataset's real fields instead of an empty default chart.
     const charts: DashboardChartEntry[] = [];
 
     for (const dataset of datasets) {
@@ -150,6 +152,18 @@ export async function createDashboardFromAnalysis(
   } else {
     const planned = await planDashboard({ mode: "dashboard", datasets });
     plannedName = String((planned as any)?.name || "").trim();
+    // A DSL stays the executable source when the dataset has one; the frozen program is
+    // the fallback for metric and Python recipes, which have no DSL of their own.
+    const sourceOf = (datasetKey: string) => {
+      const source = datasets.find((item) => item.datasetKey === datasetKey);
+      const dsl = source?.dsl || {};
+      return {
+        source,
+        dsl,
+        abcProgram:
+          Object.keys(dsl).length === 0 ? source?.abcProgram : undefined,
+      };
+    };
     groups = (planned as any)?.groups?.map((group: any) => {
       const charts = (Array.isArray(group?.charts) ? group.charts : [])
         .filter((chart: any) => {
@@ -163,16 +177,15 @@ export async function createDashboardFromAnalysis(
           return true;
         })
         .map((chart: any) => {
-          const source = datasets.find(
-            (item) => item.datasetKey === chart.datasetKey,
-          );
+          const { source, dsl, abcProgram } = sourceOf(chart.datasetKey);
           return {
             id: randomUUID(),
             name: String(chart?.name || ""),
             chartType: String(chart?.type || "bar"),
             fields: chart?.fields || {},
             dataPlan: chart?.dataPlan,
-            dsl: source?.dsl || {},
+            dsl,
+            ...(abcProgram ? { abcProgram } : {}),
             source: {
               ...source?.source,
               datasetKey: source?.datasetKey,
@@ -184,9 +197,7 @@ export async function createDashboardFromAnalysis(
 
       const metrics = (Array.isArray(group?.metrics) ? group.metrics : []).map(
         (metric: any) => {
-          const source = datasets.find(
-            (item) => item.datasetKey === metric.datasetKey,
-          );
+          const { source, dsl, abcProgram } = sourceOf(metric.datasetKey);
           return {
             id: randomUUID(),
             name: String(metric?.name || ""),
@@ -194,7 +205,8 @@ export async function createDashboardFromAnalysis(
             agg: metric?.agg,
             valueField: metric?.valueField,
             dataPlan: metric?.dataPlan,
-            dsl: source?.dsl || {},
+            dsl,
+            ...(abcProgram ? { abcProgram } : {}),
             source: {
               ...source?.source,
               datasetKey: source?.datasetKey,

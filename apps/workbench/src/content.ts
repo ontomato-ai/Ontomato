@@ -13,7 +13,6 @@ export function ossContentLayout(runtimeRoot: string): ContentLayout {
     runtimeResources: [
       { from: shared("data", "echart"), to: "echart" },
       { from: shared("data", "knowledge"), to: "knowledge" },
-      { from: shared("data", "skills"), to: "skills" },
     ],
   };
 }

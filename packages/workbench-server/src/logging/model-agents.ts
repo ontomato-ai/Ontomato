@@ -1,10 +1,9 @@
 /**
  * Agent identity inside LLM logs and diagnosis display names.
  *
- * Each model call in this service takes this edition's agentName by semantic role; agentName is written into LLM logs as a persisted identifier.
- * Each edition installs its pre-migration original values, independent of request language or APP_DEFAULT_LOCALE. Diagnosis interprets the
- * agentName in this service's and the data engine backend's logs into display names via the same catalog, falling back to the raw name when absent.
- * Fixed names that were never renamed (Skill-*, Dashboard-*, API-TitleGenerator, etc.) are still written directly at call sites.
+ * Each edition installs its original values, independent of request language or APP_DEFAULT_LOCALE.
+ * Diagnosis interprets the agentName in historical service logs and data engine backend logs into
+ * display names via this catalog, falling back to the raw name when absent.
  */
 export type ModelAgentRole =
   | "taskPlanner"

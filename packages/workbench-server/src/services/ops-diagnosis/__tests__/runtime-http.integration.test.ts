@@ -58,7 +58,7 @@ describe.skipIf(!database)("diagnosis through real host/runtime/PG/skill process
     root = await mkdtemp(path.join(os.tmpdir(), "ops-diagnosis-test-"));
     model = createServer(async (req, res) => {
       if (req.url === "/businessConfig/getModelSettings") {
-        res.setHeader("Content-Type", "application/json"); res.end(JSON.stringify({ success: true, data: { agents: { diagnosis: { model: "fixture" } }, sealedApiKeys: { fixture: ["enc:v1:mzjUpW4OVVjLMPmxcmMcyop5LFN8VSJ_7lUGPppYXDK_UDNjyKAlYAL7vVwOMOI"] }, models: [{ name: "fixture", modelName: "deepseek-chat", baseUrl: modelUrl + "/v1", apiKeys: ["******1234"], maxTokens: 4096, contextWindow: 16000, timeout: null, maxRetries: null, customRequestParameters: null }] } })); return;
+        res.setHeader("Content-Type", "application/json"); res.end(JSON.stringify({ success: true, data: { agents: { diagnosis: { model: "fixture" } }, models: [{ name: "fixture", modelName: "deepseek-chat", baseUrl: modelUrl + "/v1", apiKeys: ["******1234"], maxTokens: 4096, contextWindow: 16000, timeout: null, maxRetries: null, customRequestParameters: null }] } })); return;
       }
       let raw = ""; for await (const c of req) raw += c;
       if (req.url === "/v1/chat/completions") {

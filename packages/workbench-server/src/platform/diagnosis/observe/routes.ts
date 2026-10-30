@@ -43,7 +43,6 @@ import { createLogger } from "../../../logging/logger";
 
 import { initializeSse } from "../../../utils/sse";
 import { getLogSourceConfig, setLogSourceConfig } from "./config";
-import { fetchBackendConfig, getBackendConfig } from "./backend-config-fetcher";
 import { listLogSources, probeLogSource } from "./log-sources/manager";
 import {
   queryAppLogs,
@@ -98,83 +97,6 @@ router.use((req, _res, next) => {
   void Promise.all(
     turnKeys.map((key) => verifyTurnAccess(req, String(key))),
   ).then(() => next(), next);
-});
-
-/* ------------------------------------------------------------------ */
-/*  Lazy-load backend infrastructure config on first request           */
-/* ------------------------------------------------------------------ */
-
-let backendConfigLoadPromise: Promise<void> | null = null;
-let backendConfigLastAttemptAt = 0;
-
-const BACKEND_CONFIG_RETRY_INTERVAL_MS = 60_000;
-
-function hasBackendConfigCredential(token?: string): boolean {
-  return !!token;
-}
-
-function canRetryBackendConfigLoad(): boolean {
-  return (
-    Date.now() - backendConfigLastAttemptAt >= BACKEND_CONFIG_RETRY_INTERVAL_MS
-  );
-}
-
-function loadBackendConfigOnce(token?: string): Promise<void> {
-  backendConfigLastAttemptAt = Date.now();
-  backendConfigLoadPromise = fetchBackendConfig(token)
-    .then((config) => {
-      if (config) refreshLiveLogSources();
-    })
-    .catch((err) => {
-      logger.warn(tApp("diag.observe.routes.0"), {
-        error: err instanceof Error ? err.message : String(err),
-      });
-    })
-    .finally(() => {
-      backendConfigLoadPromise = null;
-    });
-  return backendConfigLoadPromise;
-}
-
-function shouldWaitForBackendConfig(req: Request): boolean {
-  if (req.method === "POST") {
-    return (
-      req.path === "/turns" ||
-      req.path === "/parse" ||
-      req.path === "/log-sources/probe"
-    );
-  }
-
-  if (req.method !== "GET") return false;
-
-  return (
-    req.path === "/log-source-config" ||
-    req.path === "/backend-logs" ||
-    req.path === "/errors" ||
-    req.path === "/live-logs" ||
-    /^\/turns\/[^/]+\/context$/.test(req.path)
-  );
-}
-
-router.use(async (req: Request, _res: Response, next: NextFunction) => {
-  if (!getBackendConfig()) {
-    const token = (req as AuthenticatedRequest).token;
-    const needsBackendConfig = shouldWaitForBackendConfig(req);
-    const shouldWaitForRemoteConfig = !!token && needsBackendConfig;
-
-    if (
-      needsBackendConfig &&
-      !backendConfigLoadPromise &&
-      hasBackendConfigCredential(token) &&
-      canRetryBackendConfigLoad()
-    ) {
-      loadBackendConfigOnce(token || undefined);
-    }
-    if (shouldWaitForRemoteConfig && backendConfigLoadPromise) {
-      await backendConfigLoadPromise;
-    }
-  }
-  next();
 });
 
 /* ================================================================== */

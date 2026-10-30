@@ -2,7 +2,6 @@ import type { WorkbenchProduct } from "@ontomato/workbench-server/product/types"
 
 export const ossProduct: WorkbenchProduct = {
   proxyMountPath: "/ontomato",
-  logFileName: "ontomato.log",
   migrationLockKey: "ontomato:postgres-business-migrations",
   subgraphFence: "ontomato-subgraph",
   mcpClientName: "ontomato",
@@ -12,7 +11,6 @@ export const ossProduct: WorkbenchProduct = {
   serviceDisplayName: "Ontomato",
   emailFooter: "This email was sent automatically by Ontomato",
   logDirEnvName: "ONTOMATO_LOG_DIR",
-  smtpFromAddress: "noreply@ontomato.local",
   logSource: "ontomato",
   appLogSourceType: "ontomato-app",
   logIdPatterns: {

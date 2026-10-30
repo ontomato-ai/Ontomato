@@ -58,32 +58,17 @@ jobs:
       - name: Check offline delivery
         run: python3 -B scripts/offline-mirror-test.py
 
+      # Cache refs are per image and per architecture: a cache export replaces
+      # the manifest under its ref, so it is never a published tag. The ref
+      # follows the published version, keeping develop, stable and each release
+      # on their own cache.
       - name: Build the final images
         run: |
-          BUILD_CACHE_REF="$REGISTRY/ontomato-workbench:latest" make workbench ARCH="$ARCH"
-          BUILD_CACHE_REF="$REGISTRY/ontomato-data-engine:latest" make data-engine ARCH="$ARCH"
-          BUILD_CACHE_REF="$REGISTRY/ontomato-ontology-manager:latest" make ontology-manager ARCH="$ARCH"
-          BUILD_CACHE_REF="$REGISTRY/ontomato-agent-runtime:latest" make agent-runtime ARCH="$ARCH"
-
-      - name: Start the stack
-        id: stack-start
-        working-directory: deploy
-        run: |
-          sed "s/^ARCH=.*/ARCH=$ARCH/" .env.example > .env
-          python3 prepare-env.py .env
-          docker pull pgvector/pgvector:pg18
-          docker compose up -d --wait --wait-timeout 300
-          for port in 3000 3005; do
-            curl --fail --silent --show-error --retry 20 --retry-delay 3 --retry-all-errors \
-              --output /dev/null "http://127.0.0.1:$port/"
-          done
-
-      - name: Show the stack state
-        if: always() && steps['stack-start'].outcome != 'skipped'
-        working-directory: deploy
-        run: |
-          docker compose ps -a
-          docker compose logs --tail 200
+          if [ "$GITHUB_REF_TYPE" = tag ]; then version="${GITHUB_REF_NAME#v}"; elif [ "$GITHUB_REF_NAME" = develop ]; then version=edge; else version="$GITHUB_REF_NAME"; fi
+          BUILD_CACHE_REF="$REGISTRY/ontomato-workbench:cache-$version-$ARCH" make workbench ARCH="$ARCH"
+          BUILD_CACHE_REF="$REGISTRY/ontomato-data-engine:cache-$version-$ARCH" make data-engine ARCH="$ARCH"
+          BUILD_CACHE_REF="$REGISTRY/ontomato-ontology-manager:cache-$version-$ARCH" make ontology-manager ARCH="$ARCH"
+          BUILD_CACHE_REF="$REGISTRY/ontomato-agent-runtime:cache-$version-$ARCH" make agent-runtime ARCH="$ARCH"
 
       # Branch guard: an outdated branch run must not publish after the branch
       # has advanced. Release-tag builds do not track a branch.

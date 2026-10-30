@@ -29,7 +29,6 @@ import analysisAgentMcpRouter from "../api/routes/analysis-agent-mcp";
 import opsAgentMcpRouter from "../api/routes/ops-agent-mcp";
 import preferencesRouter from "../api/routes/preferences";
 import queryHistoryRouter from "../api/routes/query-history";
-import reportsRouter from "../api/routes/reports";
 import pptRouter from "../api/routes/ppt";
 import skillsRouter from "../api/routes/skills";
 import autotestRouter from "../platform/diagnosis/autotest/routes";
@@ -221,7 +220,6 @@ export function createWorkbenchApp(mounts: WorkbenchMounts = {}): Express {
   app.use("/api/preferences", preferencesRouter);
   app.use("/api/memories", memoriesRouter);
 
-  app.use("/api/reports", reportsRouter);
   app.use("/api/ppt", pptRouter);
   app.use("/api/skills", skillsRouter);
   app.use("/api/mcp", mcpRouter);
