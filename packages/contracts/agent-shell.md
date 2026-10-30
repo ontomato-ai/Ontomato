@@ -64,7 +64,9 @@ Lookup is always host override → shell default → generic file card or step.
 
 - **Message text**: standard Markdown through markstream-vue. Single newlines are
   line breaks and only `~~` marks strikethrough, as in every delivery channel;
-  raw HTML is escaped.
+  raw HTML is escaped. Text in a message that also calls tools is the agent's
+  progress note: it stays visible in the timeline in a quieter style, while the
+  answer is the text of messages without tool calls.
 - **Artifacts**: `outputs/` image syntax renders inline, link syntax renders a
   card that opens the right panel; an unclosed reference shows a placeholder.
   Defaults by extension: `.chart.json` ECharts, `.csv`/`.json` paginated table
