@@ -50,12 +50,12 @@ public class OntologyQueryService {
 
   private String checkedClass(String name, QueryAccessService.Access access) {
     String normalized = DBSchemaUtil.normalizeClassName(name, classes(access));
-    if (classes(access).stream().noneMatch(c -> normalized.equals(c.get("className"))))
-      throw new DslContractViolationException(INVALID_GRAMMAR, "answer.steps.graph.patterns.objects.class", "Unknown ontology class: " + name);
     List<String> scope =
         access.classNames();
     if (scope != null && !scope.isEmpty() && !scope.contains(normalized))
       throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Class is outside this run's scope");
+    if (classes(access).stream().noneMatch(c -> normalized.equals(c.get("className"))))
+      throw new DslContractViolationException(INVALID_GRAMMAR, "answer.steps.graph.patterns.objects.class", "Unknown ontology class: " + name);
     return normalized;
   }
 

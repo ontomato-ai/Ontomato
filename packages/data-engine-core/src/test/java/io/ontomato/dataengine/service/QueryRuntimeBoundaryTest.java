@@ -93,6 +93,7 @@ class QueryRuntimeBoundaryTest {
     ontology =
         new OntologyQueryService(
             admin, dsl, mock(MetricViewService.class), mock(KnowledgeDao.class));
+    org.springframework.test.util.ReflectionTestUtils.setField(ontology, "grants", grants);
     when(dsl.executeV1(any(), any(), any()))
         .thenReturn(Map.of("data", List.of(Map.of("answer", List.of()))));
     var controller =
@@ -188,12 +189,57 @@ class QueryRuntimeBoundaryTest {
     request.addHeader("tk", token);
     request.setAttribute(
         QueryGrantService.ATTRIBUTE, grants.verify(token, run, "/ontology/query/execute-dsl"));
-    assertNotSame(permission, authorization.access(request).permission());
-    assertTrue(authorization.access(request).permission().isFullData());
+    var captured = authorization.access(request);
+    assertNotSame(permission, captured.permission());
+    assertTrue(captured.permission().isFullData());
     verify(lookup).getDataPermission("user-a", "domain-a");
     assertThrows(
         ResponseStatusException.class,
         () -> grants.verify(token, run, "/writeFunctionOperation/query"));
+  }
+
+  @Test
+  void generationQueriesUseOwnerRowAndColumnPermissionsWithoutInternalAuthority() throws Exception {
+    permission.setFullData(false);
+    var fields = new io.ontomato.dataengine.service.sys.bean.permission.FieldPermission("/sales");
+    fields.getGroupableColumns().add("count");
+    permission.addFieldPermission(fields);
+    permission.addRowPermission("team", "/sales", io.ontomato.dataengine.core.db.mql.MQLQuery.LogicQuery.and(
+        new io.ontomato.dataengine.core.db.mql.MQLQuery.PropertyQuery("count", "=", 2)));
+    var adapter = mock(io.ontomato.dataengine.dataAdapter.DataAdapter.class);
+    when(adapter.executeDsl(anyString(), any(), any(), any())).thenAnswer(call -> {
+      var sent = com.alibaba.fastjson2.JSON.parseArray(call.getArgument(0, String.class)).getJSONObject(0);
+      assertTrue(sent.getJSONObject("answer").getJSONArray("steps").getJSONObject(0).getJSONObject("graph")
+          .getJSONArray("patterns").getJSONObject(0).getJSONArray("objects").getJSONObject(0)
+          .getJSONObject("conditions").getJSONObject("properties").toJSONString().contains("\"value\":2"));
+      return "[{\"answer\":[{\"count\":7}]}]";
+    });
+    var registry = mock(io.ontomato.dataengine.dataAdapter.DataAdapterRegistry.class);
+    when(registry.create(any(), any())).thenReturn(adapter);
+    var config = mock(BusinessConfigService.class);
+    when(config.get("domain-a")).thenReturn(new io.ontomato.dataengine.config.BusinessConfig());
+    var engine = new io.ontomato.dataengine.service.impl.DslServiceImpl();
+    org.springframework.test.util.ReflectionTestUtils.setField(engine, "adminService",
+        org.springframework.test.util.ReflectionTestUtils.getField(ontology, "admin"));
+    org.springframework.test.util.ReflectionTestUtils.setField(engine, "businessConfigService", config);
+    org.springframework.test.util.ReflectionTestUtils.setField(engine, "dataAdapterRegistry", registry);
+    org.springframework.test.util.ReflectionTestUtils.setField(engine, "dataRagConfig", new io.ontomato.dataengine.config.DataRagConfig());
+    org.springframework.test.util.ReflectionTestUtils.setField(ontology, "dsl", engine);
+    String run = UUID.randomUUID().toString(), token = grant(run, "ontology-generation");
+    var response = http.perform(post("/ontology/query/execute-dsl")
+            .header("tk", token).header("X-Ontomato-Run-Id", run).header("X-Domain-Id", "other-domain")
+            .contentType("application/json").content(query("/sales").replace("\"fields\":[]",
+                "\"fields\":[{\"variable\":\"s\",\"field\":\"count\",\"as\":\"count\"}]")))
+        .andExpect(status().isOk()).andReturn();
+    assertEquals("****", JSONObject.parseObject(response.getResponse().getContentAsString())
+        .getJSONArray("data").getJSONObject(0).getJSONArray("answer").getJSONObject(0).getString("count"));
+    verify(lookup).getDataPermission("user-a", "domain-a");
+    var request = new MockHttpServletRequest();
+    request.setAttribute(QueryGrantService.ATTRIBUTE, grants.verify(token, run, "/ontology/query/overview"));
+    var agentAccess = new io.ontomato.dataengine.service.agent.OntologyAgentAccess(authorization, identity, grants, null);
+    assertThrows(io.ontomato.dataengine.service.agent.AgentHttpException.class, () -> agentAccess.current(request));
+    for (String path : List.of("/writeFunctionOperation/insert", "/action/save", "/businessConfig/saveModelSettings"))
+      assertThrows(ResponseStatusException.class, () -> grants.verify(token, run, path));
   }
 
   @Test

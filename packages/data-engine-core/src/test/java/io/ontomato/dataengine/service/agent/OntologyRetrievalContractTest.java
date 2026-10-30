@@ -32,6 +32,7 @@ class OntologyRetrievalContractTest {
   QueryJobService jobs;
   QueryQualityService quality;
   QueryGrantService grants;
+  UserDataPermission permission;
   MockMvc http;
   HttpServer server;
   final OntologyAgentStore.Owner owner = new OntologyAgentStore.Owner("user-a", "domain-a");
@@ -149,7 +150,11 @@ class OntologyRetrievalContractTest {
     var user = new QueryAccessService.GrantUser(owner.userId(), owner.domainId());
     when(identity.getCurrentCredentialExpiresAt()).thenReturn(null);
     when(identity.getCurrentUser()).thenReturn(user);
-    when(identity.getCurrentUserDataPermission()).thenReturn(new UserDataPermission());
+    permission = new UserDataPermission();
+    var fields = new io.ontomato.dataengine.service.sys.bean.permission.FieldPermission("/sales");
+    fields.getVisibleFields().addAll(List.of("value", "count"));
+    permission.addFieldPermission(fields);
+    when(identity.getCurrentUserDataPermission()).thenReturn(permission);
     var queries = new QueryAccessService(identity, mock(DataPermissionLookup.class), grants);
     var authorization = new OntologyAgentAccess(queries, identity, grants, store);
     var ontology = mock(OntologyQueryService.class);
@@ -185,6 +190,7 @@ class OntologyRetrievalContractTest {
                 new OntologyAgentController(host, authorization, runtime, retrieval),
                 new OntologyRetrievalController(retrieval, store, authorization))
             .setControllerAdvice(new OntologyAgentErrors())
+            .addFilters(new QueryGrantFilter(grants))
             .build();
   }
 
@@ -265,6 +271,8 @@ class OntologyRetrievalContractTest {
             post("/ontology/retrieval-callers")
                 .header("tk", "fixture-user")
                 .header("X-Ontomato-Query-Service-Token", "fixture-service")
+                .header("X-Domain-Id", owner.domainId())
+                .header("X-Ontomato-Retrieval-Caller-Id", caller)
                 .header("Idempotency-Key", caller)
                 .contentType("application/json")
                 .content(AgentJson.json(scope)))
@@ -290,7 +298,7 @@ class OntologyRetrievalContractTest {
     assertEquals(first.getString("runtimeSessionId"), retrievalId);
     assertEquals(1, requests.size());
     var environment = requests.get(run).getJSONObject("environment");
-    assertEquals("fixture-user", environment.getJSONObject("secrets").getString("ONTOMATO_TK"));
+    assertNotEquals("fixture-user", environment.getJSONObject("secrets").getString("ONTOMATO_TK"));
     assertFalse(environment.getJSONObject("values").containsKey("ONTOMATO_WORKBENCH_URL"));
     var claims =
         grants.verify(
@@ -298,6 +306,9 @@ class OntologyRetrievalContractTest {
             run,
             "/ontology/query/overview");
     assertEquals("ontology", claims.getString("servicePrincipal"));
+    assertEquals(owner.userId(), claims.getString("userId"));
+    assertEquals(owner.domainId(), claims.getString("domainId"));
+    assertEquals(List.of("/sales"), claims.getList("classNames", String.class));
     assertEquals(retrievalId, claims.getString("retrievalId"));
     String wire =
         http.perform(get("/ontology/ai/sessions/" + retrievalId + "/runs/" + run))
@@ -328,6 +339,12 @@ class OntologyRetrievalContractTest {
                 .header("X-Ontomato-Query-Service-Token", "fixture-service"))
         .andExpect(status().isOk());
     assertTrue(cancelled.contains(run));
+    var closedCaller = http.perform(get("/ontology/retrieval-callers/" + caller)
+            .header("X-Ontomato-Query-Service-Token", "fixture-service")
+            .header("X-Domain-Id", owner.domainId())
+            .header("X-Ontomato-Retrieval-Caller-Id", caller))
+        .andExpect(status().isOk()).andReturn();
+    assertTrue(JSON.parseObject(closedCaller.getResponse().getContentAsString()).getBooleanValue("closed"));
     http.perform(
             post("/ontology/retrievals")
                 .header("tk", "fixture-user")
@@ -396,6 +413,48 @@ class OntologyRetrievalContractTest {
                 .getContentAsString());
     assertNull(externalSnapshot.get("runtimeRunId"));
     assertFalse(externalSnapshot.containsKey("messages"));
+  }
+
+  @Test
+  void datasetExecutionKeepsTheAdmittedClassRangeWithAUserCredential() throws Exception {
+    var payroll = new io.ontomato.dataengine.service.sys.bean.permission.FieldPermission("/payroll");
+    payroll.getVisibleFields().add("value");
+    permission.addFieldPermission(payroll);
+    String caller = id();
+    store.openCaller(caller, owner, JSONObject.of("classNames", List.of("/sales"),
+        "continuationIds", List.of(), "deadlineAt", Instant.now().plusSeconds(60).toString()));
+    var run = postJson("/ontology/retrievals/skill-runs", id(), Map.of("question", "Sales?"), caller);
+    var definitions = List.<Map<String, Object>>of(
+        JSONObject.of("className", "/sales", "attrs", JSONArray.of(JSONObject.of("name", "value", "enable", true))),
+        JSONObject.of("className", "/payroll", "attrs", JSONArray.of(JSONObject.of("name", "value", "enable", true))));
+    var query = JSON.parseObject("""
+        {"answer":{"steps":[{"graph":{"patterns":[{"objects":[{"idx":0,"variable":"p","class":"/payroll"}]}]},
+        "output":{"to_user":true,"fields":[{"variable":"p","field":"value","as":"value"}]}}]}}
+        """);
+    var analysis = QuerySourceAnalysis.fromDsl(query, definitions);
+    var admin = mock(AdminService.class);
+    when(admin.getJSONRule(owner.domainId())).thenReturn(Map.of("classDef", definitions));
+    var engine = mock(DslService.class);
+    when(engine.executeV1(any(), any(), any())).thenReturn(JSONObject.of("sourceAnalysis", analysis,
+        "data", JSONArray.of(JSONObject.of("answer", JSONArray.of(JSONObject.of("value", 9))))));
+    var ontology = new OntologyQueryService(admin, engine, null, null);
+    org.springframework.test.util.ReflectionTestUtils.setField(ontology, "grants", grants);
+    org.springframework.test.util.ReflectionTestUtils.setField(retrieval, "outputs", new QueryOutputService(null, null, ontology, null));
+    var preparation = JSONObject.of("title", "Sales", "question", "Sales?", "recipe", JSONObject.of("kind", "dsl", "dsl", query),
+        "sourceAnalysis", analysis, "assumptions", new JSONArray(), "decisionIds", new JSONArray(), "metricUses", new JSONArray(),
+        "selfCheck", JSONObject.of("scope", "", "filters", "", "grain", "", "denominator", "", "nullGroups", "", "comparisons", new JSONArray()));
+    String output = id();
+    http.perform(post("/ontology/retrievals/" + run.getString("id") + "/runs/" + run.getString("runId") + "/outputs")
+            .header("tk", "fixture-user").header("X-Ontomato-Run-Id", run.getString("runId"))
+            .header("X-Ontomato-Retrieval-Caller-Id", caller).header("Idempotency-Key", output)
+            .contentType("application/json").content(AgentJson.json(preparation)))
+        .andExpect(status().isAccepted());
+    var operation = org.mockito.ArgumentCaptor.forClass(QueryJobService.Operation.class);
+    verify(jobs).start(eq(output), any(), eq("output"), any(), operation.capture());
+    var rejected = assertThrows(org.springframework.web.server.ResponseStatusException.class, () -> operation.getValue().execute(output));
+    assertEquals(403, rejected.getStatusCode().value());
+    assertEquals("Class is outside this run's scope", rejected.getReason());
+    verifyNoInteractions(engine);
   }
 
   @Test

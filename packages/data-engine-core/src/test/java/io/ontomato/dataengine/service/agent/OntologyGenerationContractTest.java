@@ -290,7 +290,7 @@ class OntologyGenerationContractTest {
   }
 
   @Test
-  void generationCredentialCannotBecomeUserOrQueryAuthorization() {
+  void generationCredentialAllowsOwnerQueriesButCannotBecomeUserOrWriteAuthorization() {
     String run = UUID.randomUUID().toString();
     String token =
         grants.issue(
@@ -304,9 +304,11 @@ class OntologyGenerationContractTest {
     assertDoesNotThrow(() -> grants.verify(token, run, "/ontology/ai/generation/" + run + "/context"));
     assertDoesNotThrow(
         () -> grants.verify(token, run, "/ontology/ai/generation/" + run + "/source"));
+    var readClaims = grants.verify(token, run, "/ontology/query/overview");
+    assertEquals(owner.userId(), readClaims.getString("userId"));
+    assertEquals(owner.domainId(), readClaims.getString("domainId"));
     for (String path :
         List.of(
-            "/ontology/query/overview",
             "/businessConfig/saveModelSettings",
             "/action/save",
             "/writeFunctionOperation/createObject",

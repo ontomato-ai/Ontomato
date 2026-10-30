@@ -810,10 +810,11 @@ public class OntologyRetrievalService {
         && !QueryOutputService.hash(AgentJson.text(recipe, "code"))
             .equals(recipe.getString("sha256")))
       throw AgentHttpException.invalid("Recipe digest mismatch");
-    store.transaction(
+    var executionAccess = store.transaction(
         () -> {
           store.gate(id, runId, context.owner());
-          var decisions = store.retrieval(id, context.owner()).getJSONArray("decisions");
+          var accepted = store.retrieval(id, context.owner());
+          var decisions = accepted.getJSONArray("decisions");
           for (String decision : body.getList("decisionIds", String.class))
             if (decisions.stream()
                 .map(JSONObject::from)
@@ -831,7 +832,10 @@ public class OntologyRetrievalService {
           if (!runId.equals(previous.getString("run_id"))
               || !AgentJson.hash(body).equals(previous.getString("input_hash")))
             throw conflict("Output input changed");
-          return null;
+          // User credentials do not carry the caller's admitted class range.
+          var current = context.access();
+          return new QueryAccessService.Access(current.user(), current.permission(), current.grant(),
+              current.credential(), current.expiresAt(), accepted.getJSONObject("input").getList("classNames", String.class));
         });
     var jobInput =
         JSONObject.of("submissionId", key, "recipe", recipe, "sourceAnalysis", body.get("sourceAnalysis"));
@@ -845,7 +849,7 @@ public class OntologyRetrievalService {
                 session,
                 AgentJson.copy(recipe),
                 body.getJSONObject("sourceAnalysis"),
-                context.access(),
+                executionAccess,
                 context.language()));
     return JSONObject.of("id", key);
   }
