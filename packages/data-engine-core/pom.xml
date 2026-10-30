@@ -96,7 +96,7 @@
         <resource><directory>../../agent-skills/metricview-generation</directory><targetPath>ontology-skills/metricview-generation</targetPath></resource>
         <resource><directory>../../agent-skills/knowledge-governance</directory><targetPath>ontology-skills/knowledge-governance</targetPath></resource>
         <resource><directory>../../agent-skills/data-retrieval</directory><targetPath>ontology-skills/data-retrieval</targetPath></resource>
-        <resource><directory>../contracts/src</directory><targetPath>ontology-contracts</targetPath><includes><include>agent-artifact-markdown-prompt.json</include></includes></resource>
+        <resource><directory>../contracts/src</directory><targetPath>ontology-contracts</targetPath><includes><include>agent-artifact-markdown-prompt.json</include><include>query-subgraph.schema.json</include></includes></resource>
     </resources><plugins><plugin>
         <groupId>org.apache.maven.plugins</groupId><artifactId>maven-compiler-plugin</artifactId>
         <configuration><annotationProcessorPaths combine.children="append"><path>

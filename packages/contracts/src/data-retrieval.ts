@@ -1,5 +1,6 @@
 import { runtimeStopReasonSchema } from "./agent-runtime-values";
 import { z } from "zod";
+import { querySubgraphSchema } from "./query-subgraph";
 import {
   runtimeJsonValueSchema,
   runtimeJsonObjectSchema,
@@ -93,6 +94,8 @@ export const datasetPayloadSchema = z
     ),
     rows: z.array(z.record(runtimeJsonValueSchema)),
     recipe: recipeSchema,
+    // Optional only while reading datasets created before the source-analysis cutover.
+    sourceAnalysis: querySubgraphSchema.optional(),
     outKeyRefs: z.array(fieldSourceSchema),
     truncation: truncationSchema.nullable(),
     assumptions: z.array(z.string()),
@@ -107,6 +110,8 @@ export const datasetPayloadSchema = z
       sources = data.outKeyRefs.map((c) => c.key).sort();
     if (
       new Set(keys).size !== keys.length ||
+      (data.sourceAnalysis && JSON.stringify(data.sourceAnalysis.nodes
+        .filter((n) => n.kind === "output").map((n) => n.key).sort()) !== JSON.stringify(keys)) ||
       JSON.stringify(keys) !== JSON.stringify(sources) ||
       data.rows.some(
         (row) =>
@@ -189,6 +194,7 @@ export const retrievalAnswersSchema = z
 export const prepareDatasetSchema = z
   .object({
     recipe: recipeSchema,
+    sourceAnalysis: querySubgraphSchema.optional(),
     title: z.string().min(1),
     question: z.string().min(1),
     outKeyRefs: z.array(fieldSourceSchema),
