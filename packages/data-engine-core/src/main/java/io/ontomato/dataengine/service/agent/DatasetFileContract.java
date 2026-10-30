@@ -11,6 +11,7 @@ final class DatasetFileContract {
     AgentJson.fields(
         body,
         "recipe",
+        "sourceAnalysis",
         "title",
         "question",
         "outKeyRefs",
@@ -20,6 +21,8 @@ final class DatasetFileContract {
         "selfCheck");
     nonempty(body, "title");
     nonempty(body, "question");
+    if (body.containsKey("sourceAnalysis"))
+      io.ontomato.dataengine.service.QuerySubgraphContract.validate(object(body, "sourceAnalysis"));
     JSONObject recipe = object(body, "recipe");
     switch (nonempty(recipe, "kind")) {
       case "python" -> {

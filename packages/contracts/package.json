@@ -7,12 +7,15 @@
     "./*": "./src/*.ts"
   },
   "scripts": {
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "generate:query-subgraph": "node scripts/query-subgraph-schema.mjs",
+    "check:query-subgraph": "node scripts/check-query-subgraph.mjs"
   },
   "dependencies": {
     "zod": "3.25.76"
   },
   "devDependencies": {
+    "zod-to-json-schema": "3.25.2",
     "@types/node": "22.19.15",
     "typescript": "5.9.3"
   }

@@ -1,0 +1,412 @@
+{
+  "singleDsl": {
+    "schema": "ontomato.query-subgraph.v1",
+    "queries": [
+      {
+        "id": "q-payroll",
+        "label": "Active employee payroll by department"
+      }
+    ],
+    "nodes": [
+      {
+        "id": "employees",
+        "kind": "class",
+        "label": "Employees",
+        "queryId": "q-payroll",
+        "className": "/Employee",
+        "variable": "e"
+      },
+      {
+        "id": "departments",
+        "kind": "class",
+        "label": "Departments",
+        "queryId": "q-payroll",
+        "className": "/Department",
+        "variable": "d"
+      },
+      {
+        "id": "salary",
+        "kind": "field",
+        "label": "Salary",
+        "attrName": "salary"
+      },
+      {
+        "id": "status",
+        "kind": "field",
+        "label": "Employment status",
+        "attrName": "status"
+      },
+      {
+        "id": "department-name",
+        "kind": "field",
+        "label": "Department name",
+        "attrName": "name"
+      },
+      {
+        "id": "department-group",
+        "kind": "operation",
+        "label": "Department groups",
+        "queryId": "q-payroll",
+        "operation": "group",
+        "expression": "GROUP BY d.name"
+      },
+      {
+        "id": "salary-sum",
+        "kind": "operation",
+        "label": "Total salary",
+        "queryId": "q-payroll",
+        "operation": "aggregate",
+        "expression": "SUM(e.salary)"
+      },
+      {
+        "id": "out-department",
+        "kind": "output",
+        "label": "Department",
+        "key": "department"
+      },
+      {
+        "id": "out-totalSalary",
+        "kind": "output",
+        "label": "Total salary",
+        "key": "totalSalary"
+      }
+    ],
+    "edges": [
+      {
+        "id": "edge-1",
+        "kind": "contains",
+        "source": "employees",
+        "target": "salary"
+      },
+      {
+        "id": "edge-2",
+        "kind": "contains",
+        "source": "employees",
+        "target": "status"
+      },
+      {
+        "id": "edge-3",
+        "kind": "contains",
+        "source": "departments",
+        "target": "department-name"
+      },
+      {
+        "id": "edge-4",
+        "kind": "relation",
+        "source": "employees",
+        "target": "departments",
+        "name": "works_in",
+        "relationType": "many-to-one",
+        "direction": "forward",
+        "hops": {
+          "min": 1,
+          "max": 1
+        },
+        "label": "works in · 1 hop"
+      },
+      {
+        "id": "edge-5",
+        "kind": "dependency",
+        "source": "department-name",
+        "target": "department-group",
+        "role": "value",
+        "label": ""
+      },
+      {
+        "id": "edge-6",
+        "kind": "dependency",
+        "source": "salary",
+        "target": "salary-sum",
+        "role": "value",
+        "label": ""
+      },
+      {
+        "id": "edge-7",
+        "kind": "dependency",
+        "source": "department-name",
+        "target": "salary-sum",
+        "role": "group",
+        "label": ""
+      },
+      {
+        "id": "edge-8",
+        "kind": "dependency",
+        "source": "department-group",
+        "target": "out-department",
+        "role": "value",
+        "label": ""
+      },
+      {
+        "id": "edge-9",
+        "kind": "dependency",
+        "source": "salary-sum",
+        "target": "out-totalSalary",
+        "role": "value",
+        "label": ""
+      }
+    ],
+    "filters": [
+      {
+        "id": "active-employees",
+        "queryId": "q-payroll",
+        "targetIds": [
+          "status"
+        ],
+        "label": "Active employees only",
+        "expression": "e.status = 'active'"
+      }
+    ]
+  },
+  "pythonMerge": {
+    "schema": "ontomato.query-subgraph.v1",
+    "queries": [
+      {
+        "id": "q-salary",
+        "label": "Department payroll"
+      },
+      {
+        "id": "q-budget",
+        "label": "Department budgets for 2026"
+      }
+    ],
+    "nodes": [
+      {
+        "id": "payroll",
+        "kind": "class",
+        "label": "Employees",
+        "queryId": "q-salary",
+        "className": "/Employee",
+        "variable": "e"
+      },
+      {
+        "id": "budgets",
+        "kind": "class",
+        "label": "Department budgets",
+        "queryId": "q-budget",
+        "className": "/DepartmentBudget",
+        "variable": "b"
+      },
+      {
+        "id": "payroll-department",
+        "kind": "field",
+        "label": "Department",
+        "attrName": "department"
+      },
+      {
+        "id": "payroll-salary",
+        "kind": "field",
+        "label": "Salary",
+        "attrName": "salary"
+      },
+      {
+        "id": "budget-department",
+        "kind": "field",
+        "label": "Department",
+        "attrName": "department"
+      },
+      {
+        "id": "budget-amount",
+        "kind": "field",
+        "label": "Budget amount",
+        "attrName": "amount"
+      },
+      {
+        "id": "budget-year",
+        "kind": "field",
+        "label": "Budget year",
+        "attrName": "year"
+      },
+      {
+        "id": "salary-total",
+        "kind": "operation",
+        "label": "Department salary total",
+        "queryId": "q-salary",
+        "operation": "aggregate",
+        "expression": "SUM(e.salary) GROUP BY e.department"
+      },
+      {
+        "id": "budget-total",
+        "kind": "operation",
+        "label": "Department budget total",
+        "queryId": "q-budget",
+        "operation": "aggregate",
+        "expression": "SUM(b.amount) GROUP BY b.department"
+      },
+      {
+        "id": "department-group",
+        "kind": "operation",
+        "label": "Department groups",
+        "queryId": "q-salary",
+        "operation": "group",
+        "expression": "GROUP BY e.department"
+      },
+      {
+        "id": "joined",
+        "kind": "operation",
+        "label": "Join payroll and budgets",
+        "queryId": null,
+        "operation": "join",
+        "expression": "salary.merge(budget, on='department', how='inner')"
+      },
+      {
+        "id": "usage",
+        "kind": "operation",
+        "label": "Payroll as percent of budget",
+        "queryId": null,
+        "operation": "calculate",
+        "expression": "joined.salary_total / joined.budget_total * 100"
+      },
+      {
+        "id": "out-department",
+        "kind": "output",
+        "label": "Department",
+        "key": "department"
+      },
+      {
+        "id": "out-payrollBudgetPercent",
+        "kind": "output",
+        "label": "Payroll / budget (%)",
+        "key": "payrollBudgetPercent"
+      }
+    ],
+    "edges": [
+      {
+        "id": "edge-1",
+        "kind": "contains",
+        "source": "payroll",
+        "target": "payroll-department"
+      },
+      {
+        "id": "edge-2",
+        "kind": "contains",
+        "source": "payroll",
+        "target": "payroll-salary"
+      },
+      {
+        "id": "edge-3",
+        "kind": "contains",
+        "source": "budgets",
+        "target": "budget-department"
+      },
+      {
+        "id": "edge-4",
+        "kind": "contains",
+        "source": "budgets",
+        "target": "budget-amount"
+      },
+      {
+        "id": "edge-5",
+        "kind": "contains",
+        "source": "budgets",
+        "target": "budget-year"
+      },
+      {
+        "id": "edge-6",
+        "kind": "dependency",
+        "source": "payroll-salary",
+        "target": "salary-total",
+        "role": "value",
+        "label": ""
+      },
+      {
+        "id": "edge-7",
+        "kind": "dependency",
+        "source": "payroll-department",
+        "target": "salary-total",
+        "role": "group",
+        "label": ""
+      },
+      {
+        "id": "edge-8",
+        "kind": "dependency",
+        "source": "budget-amount",
+        "target": "budget-total",
+        "role": "value",
+        "label": ""
+      },
+      {
+        "id": "edge-9",
+        "kind": "dependency",
+        "source": "budget-department",
+        "target": "budget-total",
+        "role": "group",
+        "label": ""
+      },
+      {
+        "id": "edge-10",
+        "kind": "dependency",
+        "source": "payroll-department",
+        "target": "department-group",
+        "role": "value",
+        "label": ""
+      },
+      {
+        "id": "edge-11",
+        "kind": "dependency",
+        "source": "salary-total",
+        "target": "joined",
+        "role": "value",
+        "label": ""
+      },
+      {
+        "id": "edge-12",
+        "kind": "dependency",
+        "source": "budget-total",
+        "target": "joined",
+        "role": "value",
+        "label": ""
+      },
+      {
+        "id": "edge-13",
+        "kind": "dependency",
+        "source": "payroll-department",
+        "target": "joined",
+        "role": "join",
+        "label": ""
+      },
+      {
+        "id": "edge-14",
+        "kind": "dependency",
+        "source": "budget-department",
+        "target": "joined",
+        "role": "join",
+        "label": ""
+      },
+      {
+        "id": "edge-15",
+        "kind": "dependency",
+        "source": "joined",
+        "target": "usage",
+        "role": "value",
+        "label": ""
+      },
+      {
+        "id": "edge-16",
+        "kind": "dependency",
+        "source": "department-group",
+        "target": "out-department",
+        "role": "value",
+        "label": ""
+      },
+      {
+        "id": "edge-17",
+        "kind": "dependency",
+        "source": "usage",
+        "target": "out-payrollBudgetPercent",
+        "role": "value",
+        "label": ""
+      }
+    ],
+    "filters": [
+      {
+        "id": "budget-year-filter",
+        "queryId": "q-budget",
+        "targetIds": [
+          "budget-year"
+        ],
+        "label": "Budget year 2026",
+        "expression": "b.year = 2026"
+      }
+    ]
+  }
+}
