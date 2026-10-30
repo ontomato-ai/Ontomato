@@ -65,7 +65,7 @@ export function analysisAgentPublicServiceRoot(req: McpRequestLocation): string 
 }
 
 export function analysisReportPdfDownloadUrl(serviceRoot: string, taskId: string): string {
-  return `${serviceRoot}/api/analysis-tasks/${encodeURIComponent(taskId)}/report.pdf`;
+  return `${serviceRoot}/api/analysis-tasks/${encodeURIComponent(taskId)}/report/pdf`;
 }
 
 export async function buildMcpSystemToolsResponse(

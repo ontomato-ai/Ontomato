@@ -100,12 +100,21 @@ router.use("/runs/:runId/cases/:caseId/artifacts", caseArtifactRouter);
 /*  Case Sets                                                          */
 /* ================================================================== */
 
+/** Case sets belong to one business domain; every case-set route needs a verified domain. */
+router.use("/case-sets", (req: Request, res: Response, next) => {
+  if (!(req as AuthenticatedRequest).domainId) {
+    res.status(403).json({ success: false, error: "A business domain is required" });
+    return;
+  }
+  next();
+});
+
 /**
  * GET /case-sets - List all case sets (without full case arrays).
  */
-router.get("/case-sets", (_req: Request, res: Response<HttpResponse<CaseSetListItem[]>>) => {
+router.get("/case-sets", (req: Request, res: Response<HttpResponse<CaseSetListItem[]>>) => {
   try {
-    const sets = listCaseSets();
+    const sets = listCaseSets(requireDomainId(req as AuthenticatedRequest));
     res.json({ success: true, data: sets });
   } catch (error) {
     const msg = error instanceof Error ? error.message : String(error);
@@ -139,7 +148,7 @@ router.post("/case-sets", (req: Request, res: Response<HttpResponse<CaseSetImpor
     // importCaseSet stays strict ("import must have content"); only this route
     // path treats "no cases" as a valid new empty set.
     if (isEmptyCasePayload(data)) {
-      const caseSet = createEmptyCaseSet(name.trim());
+      const caseSet = createEmptyCaseSet(name.trim(), requireDomainId(req as AuthenticatedRequest));
       logger.info("Empty case set created", { id: caseSet.id, name: caseSet.name });
       res.status(201).json({
         success: true,
@@ -153,7 +162,11 @@ router.post("/case-sets", (req: Request, res: Response<HttpResponse<CaseSetImpor
       return;
     }
 
-    const { caseSet, warnings } = importCaseSet(name.trim(), data);
+    const { caseSet, warnings } = importCaseSet(
+      name.trim(),
+      data,
+      requireDomainId(req as AuthenticatedRequest),
+    );
 
     logger.info("Case set imported", {
       id: caseSet.id,
@@ -183,7 +196,7 @@ router.post("/case-sets", (req: Request, res: Response<HttpResponse<CaseSetImpor
  */
 router.get("/case-sets/:id", (req: Request, res: Response<HttpResponse<CaseSet>>) => {
   try {
-    const cs = getCaseSet(req.params.id);
+    const cs = getCaseSet(req.params.id, requireDomainId(req as AuthenticatedRequest));
     if (!cs) {
       res.status(404).json({ success: false, error: "Case set not found" });
       return;
@@ -200,7 +213,7 @@ router.get("/case-sets/:id", (req: Request, res: Response<HttpResponse<CaseSet>>
  */
 router.delete("/case-sets/:id", (req: Request, res: Response<HttpAcknowledgement>) => {
   try {
-    const deleted = deleteCaseSet(req.params.id);
+    const deleted = deleteCaseSet(req.params.id, requireDomainId(req as AuthenticatedRequest));
     if (!deleted) {
       res.status(404).json({ success: false, error: "Case set not found" });
       return;
@@ -217,7 +230,7 @@ router.delete("/case-sets/:id", (req: Request, res: Response<HttpAcknowledgement
  */
 router.put("/case-sets/:id", (req: Request, res: Response<HttpResponse<CaseSet>>) => {
   try {
-    const cs = getCaseSet(req.params.id);
+    const cs = getCaseSet(req.params.id, requireDomainId(req as AuthenticatedRequest));
     if (!cs) {
       res.status(404).json({ success: false, error: "Case set not found" });
       return;
@@ -279,6 +292,7 @@ router.post("/runs", async (req: Request, res: Response<HttpResponse<RunMeta>>) 
         caseTimeoutSeconds?: unknown;
       };
     const identity = req as AuthenticatedRequest;
+    const domainId = requireDomainId(identity);
 
     if (
       caseTimeoutSeconds !== undefined &&
@@ -293,7 +307,11 @@ router.post("/runs", async (req: Request, res: Response<HttpResponse<RunMeta>>) 
     let resolvedCaseSetId = caseSetId;
 
     if (!resolvedCaseSetId && Array.isArray(temporaryCases) && temporaryCases.length > 0) {
-      const { caseSet } = importCaseSet(tApp("diag.autotest.routes.0", { p0: Date.now() }), temporaryCases);
+      const { caseSet } = importCaseSet(
+        tApp("diag.autotest.routes.0", { p0: Date.now() }),
+        temporaryCases,
+        domainId,
+      );
       resolvedCaseSetId = caseSet.id;
     }
 
@@ -303,7 +321,7 @@ router.post("/runs", async (req: Request, res: Response<HttpResponse<RunMeta>>) 
     }
 
     const runConfig: RunConfig = {
-      domainId: requireDomainId(identity),
+      domainId,
       caseSetId: resolvedCaseSetId,
       concurrency,
       rounds,

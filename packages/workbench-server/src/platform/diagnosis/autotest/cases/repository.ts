@@ -42,7 +42,12 @@ function caseSetPath(id: string): string {
 /*  CRUD                                                               */
 /* ------------------------------------------------------------------ */
 
-export function listCaseSets(): CaseSetListItem[] {
+/** Case sets are visible and writable only inside the domain that owns them. */
+function belongsTo(cs: CaseSet, domainId: string): boolean {
+  return cs.domainId === domainId;
+}
+
+export function listCaseSets(domainId: string): CaseSetListItem[] {
   ensureDir(caseSetsDir());
   const dir = caseSetsDir();
   const files = fs.readdirSync(dir).filter((f) => f.endsWith(".json"));
@@ -52,9 +57,11 @@ export function listCaseSets(): CaseSetListItem[] {
     try {
       const raw = fs.readFileSync(path.join(dir, file), "utf-8");
       const cs = JSON.parse(raw) as CaseSet;
+      if (!belongsTo(cs, domainId)) continue;
       results.push({
         id: cs.id,
         name: cs.name,
+        domainId: cs.domainId,
         caseCount: cs.cases.length,
         createdAt: cs.createdAt,
         updatedAt: cs.updatedAt,
@@ -67,11 +74,12 @@ export function listCaseSets(): CaseSetListItem[] {
   return results.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 }
 
-export function getCaseSet(id: string): CaseSet | null {
+export function getCaseSet(id: string, domainId: string): CaseSet | null {
   const fp = caseSetPath(id);
   if (!fs.existsSync(fp)) return null;
   try {
-    return JSON.parse(fs.readFileSync(fp, "utf-8")) as CaseSet;
+    const cs = JSON.parse(fs.readFileSync(fp, "utf-8")) as CaseSet;
+    return belongsTo(cs, domainId) ? cs : null;
   } catch {
     return null;
   }
@@ -83,7 +91,8 @@ export function saveCaseSet(cs: CaseSet): void {
   logger.info("Case set saved", { id: cs.id, name: cs.name, caseCount: cs.cases.length });
 }
 
-export function deleteCaseSet(id: string): boolean {
+export function deleteCaseSet(id: string, domainId: string): boolean {
+  if (!getCaseSet(id, domainId)) return false;
   const fp = caseSetPath(id);
   if (!fs.existsSync(fp)) return false;
   fs.unlinkSync(fp);
@@ -139,11 +148,12 @@ export function ensureUniqueCaseIds(cases: TestCase[]): TestCase[] {
  * Used when the user explicitly creates a new (empty) set to fill in later.
  * Unlike {@link importCaseSet}, this intentionally allows zero cases.
  */
-export function createEmptyCaseSet(name: string): CaseSet {
+export function createEmptyCaseSet(name: string, domainId: string): CaseSet {
   const now = new Date().toISOString();
   const caseSet: CaseSet = {
     id: generateCaseSetId(),
     name,
+    domainId,
     cases: [],
     createdAt: now,
     updatedAt: now,
@@ -189,7 +199,8 @@ export function isEmptyCasePayload(data: unknown): boolean {
  */
 export function importCaseSet(
   name: string,
-  payload: unknown
+  payload: unknown,
+  domainId: string
 ): { caseSet: CaseSet; warnings: string[] } {
   const warnings: string[] = [];
 
@@ -263,6 +274,7 @@ export function importCaseSet(
   const caseSet: CaseSet = {
     id: generateCaseSetId(),
     name,
+    domainId,
     cases,
     createdAt: now,
     updatedAt: now,
