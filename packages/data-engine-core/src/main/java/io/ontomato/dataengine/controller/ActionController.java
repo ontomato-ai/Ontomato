@@ -79,6 +79,23 @@ public class ActionController {
 		return ret;
 	}
 	
+	@PostMapping("/action/exampleRequests")
+    @ResponseBody
+    public JSONObject exampleRequests(@RequestHeader(ControllerConst.LANG_HEADER_KEY) String lang) {
+		JSONObject ret = new JSONObject();
+		try {
+			User user = SystemUtils.getCurUser();
+			List<String> examples = actionService.exampleRequests(lang, user.getDomainId());
+			ret.put("success", true);
+			ret.put("data", JSONObject.of("examples", examples));
+		} catch (Exception e) {
+			log.error(e.getMessage(), e);
+			ret.put("success", false);
+			ret.put("message", e.getMessage());
+		}
+		return ret;
+	}
+
 	@PostMapping("/action/save")
     @ResponseBody
     public JSONObject save(@RequestHeader(ControllerConst.LANG_HEADER_KEY) String lang, @RequestBody JSONObject param) {

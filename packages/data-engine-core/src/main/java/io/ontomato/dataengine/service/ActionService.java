@@ -13,6 +13,9 @@ public interface ActionService {
 	
 	public Action generateFromNatureLanguage(String question, String lang, String domainId, boolean persistence) throws Exception;
 
+	/** Short business-style examples for the action creation dialog. */
+	public List<String> exampleRequests(String lang, String domainId) throws Exception;
+
 	/** Generates an action with an optional structured intent produced by the creation wizard. */
 	default Action generateFromNatureLanguage(
 			String question, String lang, String domainId, boolean persistence, JSONObject structuredSpec) throws Exception {

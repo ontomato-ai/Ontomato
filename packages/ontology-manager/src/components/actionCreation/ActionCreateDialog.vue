@@ -26,6 +26,7 @@ const generating = ref(false);
 const saving = ref(false);
 const draft = ref<any>(null);
 const examples = ref<string[]>([]);
+const examplesLoading = ref(false);
 const messagesEl = ref<HTMLElement | null>(null);
 
 function reset() {
@@ -42,11 +43,25 @@ watch(
   async (open) => {
     if (!open) return;
     reset();
-    if (!examples.value.length) await loadExamples();
+    await loadExamples();
   }
 );
 
 async function loadExamples() {
+  examplesLoading.value = true;
+  examples.value = [];
+  try {
+    const response = await requestSmartAsset("actions", "exampleRequests", {});
+    const list = response?.data?.examples ?? response?.examples ?? [];
+    if (Array.isArray(list) && list.length) {
+      examples.value = list.slice(0, 3).map((item) => String(item));
+      return;
+    }
+  } catch {
+    // The model may be unavailable; fall through to ontology templates.
+  } finally {
+    examplesLoading.value = false;
+  }
   try {
     const ontology = await loadOntology();
     examples.value = buildExamples(ontology.objects, ontology.relations);
@@ -169,8 +184,8 @@ function onClosed() {
   <el-dialog
     v-model="visible"
     :title="ot('actionGenerateTitle')"
-    width="min(1180px, 94vw)"
-    top="5vh"
+    width="min(1440px, 96vw)"
+    top="3vh"
     class="action-create-dialog"
     :close-on-click-modal="false"
     @closed="onClosed"
@@ -185,6 +200,7 @@ function onClosed() {
             <div :class="['msg', item.role]">{{ item.text }}</div>
             <div v-if="index === 0 && messages.length === 1" class="try-say">
               <p>{{ ot("actionWizardTrySay") }}</p>
+              <p v-if="examplesLoading" class="example-loading">{{ ot("actionWizardExamplesLoading") }}</p>
               <button
                 v-for="example in examples"
                 :key="example"
@@ -236,8 +252,8 @@ function onClosed() {
 <style scoped>
 .action-create {
   display: flex;
-  height: 72vh;
-  min-height: 560px;
+  height: 100%;
+  min-height: 0;
   margin: -10px 0;
 }
 .chat {
@@ -335,7 +351,7 @@ function onClosed() {
   display: flex;
   flex: 1;
   flex-direction: column;
-  min-width: 440px;
+  min-width: 0;
   min-height: 0;
   background: var(--el-bg-color);
 }
@@ -366,7 +382,16 @@ function onClosed() {
 </style>
 
 <style>
-.action-create-dialog .el-dialog__body {
-  padding: 10px 0 0;
+/* The manager shell caps every dialog at 720px; this creation surface needs the full working area. */
+.ontology-manager-shell .el-dialog.action-create-dialog {
+  width: min(1440px, calc(100cqw - 48px)) !important;
+  max-width: calc(100cqw - 48px) !important;
+  margin: 3cqh auto !important;
+}
+.ontology-manager-shell .el-dialog.action-create-dialog .el-dialog__body {
+  height: min(84cqh, 1000px);
+  max-height: none;
+  padding: 0;
+  overflow: hidden;
 }
 </style>

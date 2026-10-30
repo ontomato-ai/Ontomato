@@ -491,6 +491,7 @@ const ontologyEn = {
   actionWizardExternalOutput: "Output mapping",
   actionWizardRulesExplain: "This is the concrete write. Conditions above decide whether it may run; this step decides what it changes.",
   actionWizardRulesSummary: "{count} write rules",
+  actionWizardExamplesLoading: "Generating examples…",
   actionWizardTrySay: "You can try:",
   actionDefinitionTitle: "Structured definition",
   actionDefinitionEmpty: "Send a requirement; the draft's structured definition will appear here.",
