@@ -52,8 +52,9 @@ export async function loadExternalMcpTools(params: ExternalMcpToolParams): Promi
 
   const currentServices = new Map(services.map((service) => [service.name, service]));
   const tools: AgentTool[] = [];
+  const usedToolNames = new Set<string>();
 
-  for (const serviceName of params.selectedServiceNames) {
+  for (const serviceName of new Set(params.selectedServiceNames)) {
     const service = currentServices.get(serviceName);
     if (!service) {
       recordUnavailable(params.trajectory, serviceName, tApp("analysis.loop.external-mcp-tools.264"));
@@ -69,10 +70,18 @@ export async function loadExternalMcpTools(params: ExternalMcpToolParams): Promi
       continue;
     }
 
+    const discoveredToolNames = new Set<string>();
     for (const tool of discovered) {
       const mcpToolName = typeof tool.name === "string" ? tool.name.trim() : "";
-      if (!mcpToolName) continue;
-      const toolName = `mcp__${sanitizeToolNamePart(serviceName)}__${sanitizeToolNamePart(mcpToolName)}`;
+      if (!mcpToolName || discoveredToolNames.has(mcpToolName)) continue;
+      discoveredToolNames.add(mcpToolName);
+      const baseName = `mcp__${sanitizeToolNamePart(serviceName)}__${sanitizeToolNamePart(mcpToolName)}`;
+      let toolName = baseName;
+      let suffix = 2;
+      while (usedToolNames.has(toolName)) {
+        toolName = `${baseName}__${suffix++}`;
+      }
+      usedToolNames.add(toolName);
 
       tools.push({
         name: toolName,
