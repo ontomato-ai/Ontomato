@@ -133,8 +133,8 @@ public final class QueryPermissions {
 
   public static JSONObject response(Map<String, Object> result, JSONObject graph, UserDataPermission permission, boolean internal) {
     JSONObject answer = JSON.parseObject(JSON.toJSONString(result, JSONWriter.Feature.WriteMapNullValue));
+    if (answer.get("error") != null) return JSONObject.of("error", answer.get("error"), "sourceAnalysis", graph);
     if (!internal) {
-      if (answer.get("error") != null) return JSONObject.of("error", "Query execution failed", "sourceAnalysis", graph);
       JSONArray data = new JSONArray();
       if (answer.getJSONArray("data") != null) for (Object value : answer.getJSONArray("data")) {
         var datum = JSONObject.from(value);

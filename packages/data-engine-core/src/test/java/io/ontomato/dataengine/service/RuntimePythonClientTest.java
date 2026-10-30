@@ -154,6 +154,39 @@ class RuntimePythonClientTest {
   }
 
   @Test
+  void pythonFailureUsesHostQueryEvidenceAndNeverMessageContents() throws Exception {
+    // Exercise actual Python traceback formatting without a runtime, database or model.
+    var process = new ProcessBuilder("python3", "-c",
+        "exec(compile(\"def fail():\\n    raise ValueError('private-value')\\nfail()\\n\", 'program.py', 'exec'))").start();
+    String stderr = new String(process.getErrorStream().readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
+    assertEquals(1, process.waitFor());
+    var runtime = mock(RuntimeCodeClient.class);
+    when(runtime.pythonHelper()).thenReturn("# helper");
+    when(runtime.ontologyUrl()).thenReturn("http://ontology");
+    when(runtime.execution(anyString(), anyString())).thenReturn(JSONObject.parseObject(
+        "{\"status\":\"stopped\",\"exitCode\":1,\"errorMessage\":\"private runtime diagnostic\",\"outputs\":[{\"name\":\"stderr\"}]}"));
+    when(runtime.output(anyString(), anyString(), eq("stderr"))).thenReturn(stderr);
+    var grants = mock(QueryGrantService.class);
+    String execution = java.util.UUID.randomUUID().toString();
+    when(grants.queryError("domain", execution)).thenReturn("column t.hj_dj does not exist");
+    var executor = new PythonExecuteServiceImpl(runtime, grants);
+    var result = executor.execute("session", "# ontomato-python:2", 1, "en",
+        PythonAuthority.read("user", "domain").forExecution(execution), new JSONObject(), Map.of());
+    assertEquals("ValueError，program.py 第 2 行\n查询失败：column t.hj_dj does not exist", result.getError());
+    assertNull(result.getResult());
+    var programs = new io.ontomato.dataengine.service.impl.ABCProgramServiceImpl();
+    assertEquals(result.getError(), assertThrows(Exception.class,
+        () -> programs.parsePythonReturn(result.getResult(), result.getError())).getMessage());
+
+    when(runtime.output(anyString(), anyString(), eq("stderr")))
+        .thenReturn("RuntimeError: Ontology request failed (500): private-value");
+    when(grants.queryError("domain", execution)).thenReturn(null);
+    var forged = executor.execute("session", "# ontomato-python:2", 1, "en",
+        PythonAuthority.read("user", "domain").forExecution(execution), new JSONObject(), Map.of());
+    assertEquals("RuntimeError", forged.getError());
+  }
+
+  @Test
   void lostAdmissionResponseClosesExecutionIntent() throws Exception {
     RuntimeCodeClient runtime = mock(RuntimeCodeClient.class);
     when(runtime.pythonHelper()).thenReturn("# private fixture helper");

@@ -442,7 +442,6 @@ public class GenerationOperations {
             Map.of());
     if (result.getError() != null && !result.getError().isBlank()) {
       result.setResult(null);
-      result.setError("Python business test failed; no data was delivered");
     } else if (kind.equals("action")) {
       result.setResult("{\"completed\":true}");
     } else {

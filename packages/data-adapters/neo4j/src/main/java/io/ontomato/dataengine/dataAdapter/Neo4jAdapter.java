@@ -1061,7 +1061,7 @@ public class Neo4jAdapter implements DataAdapter {
 
 		dataMap.putAll(data);
 		if (result.failed()) {
-			dataMap.put("error", ErrorText.rawErrorText(result.failure().cause()));
+			dataMap.put("error", ErrorText.queryError(result.failure().cause()));
 		}
 		return dataMap;
 	}

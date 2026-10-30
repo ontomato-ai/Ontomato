@@ -1,7 +1,6 @@
 package io.ontomato.dataengine.bean;
 
-import java.io.PrintWriter;
-import java.io.StringWriter;
+import io.ontomato.dataengine.util.ErrorText;
 
 import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONObject;
@@ -32,9 +31,7 @@ public record DslExecutionResult(JSONObject data, Failure failure) {
 		JSONObject response = new JSONObject();
 		response.putAll(data);
 		if (failure != null) {
-			StringWriter stackTrace = new StringWriter();
-			failure.cause().printStackTrace(new PrintWriter(stackTrace));
-			response.put("error", stackTrace.toString());
+			response.put("error", ErrorText.queryError(failure.cause()));
 		}
 		return response;
 	}

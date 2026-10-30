@@ -77,7 +77,7 @@ public class ABCProgramServiceImpl implements ABCProgramService {
 
     @Override
     public JSONArray parsePythonReturn(String pythonOutput, String errorMessage) throws Exception {
-        if (errorMessage != null && !errorMessage.isBlank()) throw new Exception("Python execution failed; no data was delivered");
+        if (errorMessage != null && !errorMessage.isBlank()) throw new Exception(errorMessage);
         try {
             JSONObject value = JSON.parseObject(pythonOutput.replaceAll(":\\s*NaN", ": null"));
             if (!value.keySet().equals(Set.of("answer")) || value.getJSONArray("answer") == null)

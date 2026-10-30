@@ -20,6 +20,8 @@ import org.springframework.web.server.ResponseStatusException;
 public class OntologyQueryService {
   @org.springframework.beans.factory.annotation.Autowired
   private WriteFunctionOperationService writes;
+  @org.springframework.beans.factory.annotation.Autowired
+  private QueryGrantService grants;
   private final AdminService admin;
   private final DslService dsl;
   private final MetricViewService metrics;
@@ -170,6 +172,22 @@ public class OntologyQueryService {
   }
 
   public Map<String, Object> execute(JSONObject query, QueryAccessService.Access access) {
+    Map<String, Object> result;
+    try {
+      result = executeQuery(query, access);
+    } catch (Exception error) {
+      throw queryFailure(io.ontomato.dataengine.util.ErrorText.queryError(error), access);
+    }
+    if (result.get("error") != null) throw queryFailure(result.get("error").toString(), access);
+    return result;
+  }
+
+  private ResponseStatusException queryFailure(String message, QueryAccessService.Access access) {
+    if (access.grant() != null) grants.recordQueryError(access.grant(), message);
+    return new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY, message);
+  }
+
+  private Map<String, Object> executeQuery(JSONObject query, QueryAccessService.Access access) throws Exception {
     validateQuery(query, access);
     if (access.grant() != null && "sandbox-write".equals(access.grant().getString("purpose"))) {
       var definitions = classes(access);
@@ -179,15 +197,10 @@ public class OntologyQueryService {
           "[" + query.toJSONString() + "]", definitions, access.permission())[0];
       String sandbox = access.grant().getString("sandboxId");
       if (io.ontomato.dataengine.config.ServiceConst.NOT_SANDBOX.equals(sandbox)) sandbox = null;
-      try { return QueryPermissions.response(writes.query(restricted, sandbox, access.user().getDomainId()), analysis, access.permission(), true); }
-      catch (Exception error) { throw new IllegalArgumentException("Action query execution failed", error); }
+      return QueryPermissions.response(writes.query(restricted, sandbox, access.user().getDomainId()), analysis, access.permission(), true);
     }
     boolean internal = access.grant() != null && "user-read".equals(access.grant().getString("purpose"));
-    Map<String, Object> result = internal ? dsl.executeInternal(query, access.permission(), access.user()) : dsl.executeV1(query, access.permission(), access.user());
-    if (result.get("error") != null)
-      throw new ResponseStatusException(
-          HttpStatus.UNPROCESSABLE_ENTITY, result.get("error").toString());
-    return result;
+    return internal ? dsl.executeInternal(query, access.permission(), access.user()) : dsl.executeV1(query, access.permission(), access.user());
   }
 
   public Object distinct(JSONObject body, QueryAccessService.Access access) {

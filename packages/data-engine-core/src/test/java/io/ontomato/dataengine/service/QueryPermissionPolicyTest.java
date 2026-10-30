@@ -93,6 +93,31 @@ class QueryPermissionPolicyTest {
   }
 
   @Test
+  void explorationAndInternalQueriesRecordOnlyClassifiedErrors() {
+    var admin = mock(AdminService.class);
+    when(admin.getJSONRule("domain")).thenReturn(Map.of("classDef", definitions()));
+    var engine = mock(DslService.class);
+    var grants = mock(QueryGrantService.class);
+    var ontology = new OntologyQueryService(admin, engine, null, null);
+    org.springframework.test.util.ReflectionTestUtils.setField(ontology, "grants", grants);
+    var dsl = query("", "salary");
+    var failure = io.ontomato.dataengine.bean.DslExecutionResult.failure(new JSONObject(),
+        new java.sql.SQLException("column t.hj_dj does not exist\n  Hint: secret_salary", "42703"));
+    var graph = QuerySourceAnalysis.fromDsl(dsl, definitions());
+    for (boolean internal : List.of(false, true)) {
+      var filtered = QueryPermissions.response(failure.rawResponse(), graph, permission(), internal);
+      when(engine.executeInternal(any(), any(), any())).thenReturn(filtered);
+      when(engine.executeV1(any(), any(), any())).thenReturn(filtered);
+      var grant = JSONObject.of("jti", "grant", "runId", "execution", "domainId", "domain",
+          "purpose", internal ? "user-read" : "retrieval-exploration");
+      var access = new QueryAccessService.Access(new QueryAccessService.GrantUser("user", "domain"), permission(), grant, null, null);
+      var error = assertThrows(org.springframework.web.server.ResponseStatusException.class, () -> ontology.execute(dsl, access));
+      assertEquals("column t.hj_dj does not exist", error.getReason());
+      verify(grants).recordQueryError(grant, "column t.hj_dj does not exist");
+    }
+  }
+
+  @Test
   void literalDslOutputsHaveConstantSources() {
     for (String expression : List.of("'role_code'", "'e.salary'", "'it''s a role'", "42", "-1.5e2", "true", "null")) {
       var dsl = query("", "unused");

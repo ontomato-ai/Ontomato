@@ -107,13 +107,13 @@ public class PythonExecuteServiceImpl implements PythonExecuteService {
           .map(item -> ((JSONObject) item).getString("name")).toList();
       result.setResult(
           outputs.contains("stdout") ? runtime.output(authority.domainId(), id, "stdout") : null);
-      result.setError(
-          outputs.contains("stderr") ? runtime.output(authority.domainId(), id, "stderr") : null);
+      String stderr = outputs.contains("stderr") ? runtime.output(authority.domainId(), id, "stderr") : null;
       if (!"stopped".equals(snapshot.getString("status"))
           || !Integer.valueOf(0).equals(snapshot.getInteger("exitCode"))
-          || snapshot.getString("errorMessage") != null)
-        result.setError(snapshot.getString("errorMessage") == null
-            ? "Python execution did not complete" : snapshot.getString("errorMessage"));
+          || snapshot.getString("errorMessage") != null || stderr != null && !stderr.isBlank()) {
+        result.setError(io.ontomato.dataengine.util.ErrorText.pythonError(stderr, grants.queryError(authority.domainId(), id)));
+        result.setResult(null);
+      }
       if (outputs.contains("query-status.json")) {
         JSONObject marker =
             JSON.parseObject(runtime.output(authority.domainId(), id, "query-status.json"));
