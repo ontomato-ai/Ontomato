@@ -9,35 +9,42 @@ const root = ref<HTMLElement | null>(null);
 
 const definition = computed(() => props.action?.definition ?? null);
 
-const EFFECT_LABELS: Record<string, string> = {
-  CREATE_OBJECT: "新建对象",
-  UPDATE_OBJECT: "修改对象",
-  DELETE_OBJECT: "删除对象",
-  CREATE_EDGE: "建立关系",
-  DELETE_EDGE: "删除关系",
-  APPEND_VECTOR: "追加向量",
-  UPDATE_VECTOR: "更新向量",
-  DELETE_VECTOR: "删除向量",
-  EXTERNAL_CALL: "外部调用",
-};
-const RULE_GROUPS: { key: string; label: string; kinds: string[] }[] = [
-  { key: "create", label: "Create", kinds: ["CREATE_OBJECT"] },
-  { key: "modify", label: "Modify", kinds: ["UPDATE_OBJECT"] },
-  { key: "delete", label: "Delete", kinds: ["DELETE_OBJECT"] },
-  { key: "link", label: "Link", kinds: ["CREATE_EDGE", "DELETE_EDGE"] },
-  { key: "vector", label: "Vector", kinds: ["APPEND_VECTOR", "UPDATE_VECTOR", "DELETE_VECTOR"] },
-  { key: "other", label: "Other", kinds: ["EXTERNAL_CALL"] },
-];
+function ruleLabel(kind: string) {
+  switch (kind) {
+    case "CREATE_OBJECT": return ot("actionDefinitionCreateObject");
+    case "UPDATE_OBJECT": return ot("actionDefinitionUpdateObject");
+    case "DELETE_OBJECT": return ot("actionDefinitionDeleteObject");
+    case "CREATE_EDGE": return ot("actionDefinitionCreateEdge");
+    case "DELETE_EDGE": return ot("actionDefinitionDeleteEdge");
+    case "APPEND_VECTOR": return ot("actionDefinitionAppendVector");
+    case "UPDATE_VECTOR": return ot("actionDefinitionUpdateVector");
+    case "DELETE_VECTOR": return ot("actionDefinitionDeleteVector");
+    case "EXTERNAL_CALL": return ot("actionDefinitionExternal");
+    default: return kind;
+  }
+}
 const ruleGroups = computed(() => {
+  const groups = [
+    { key: "create", label: ot("actionDefinitionGroupCreate"), kinds: ["CREATE_OBJECT"] },
+    { key: "modify", label: ot("actionDefinitionGroupUpdate"), kinds: ["UPDATE_OBJECT"] },
+    { key: "delete", label: ot("actionDefinitionGroupDelete"), kinds: ["DELETE_OBJECT"] },
+    { key: "link", label: ot("actionDefinitionGroupLink"), kinds: ["CREATE_EDGE", "DELETE_EDGE"] },
+    { key: "vector", label: ot("actionDefinitionGroupVector"), kinds: ["APPEND_VECTOR", "UPDATE_VECTOR", "DELETE_VECTOR"] },
+    { key: "other", label: ot("actionDefinitionGroupOther"), kinds: ["EXTERNAL_CALL"] },
+  ];
   const effects = definition.value?.effects || [];
-  return RULE_GROUPS.map((group) => ({
+  return groups.map((group) => ({
     ...group,
     items: effects.filter((effect: any) => group.kinds.includes(effect.kind)),
   })).filter((group) => group.items.length > 0);
 });
-const ruleLabel = (kind: string) => EFFECT_LABELS[kind] || kind;
 const ruleTarget = (rule: any) => {
-  if (rule.relation) return `${rule.sourceClass || "?"} → ${rule.targetClass || "?"}（${rule.relation}）`;
+  if (rule.relation)
+    return ot("actionDefinitionRelationTarget", {
+      source: rule.sourceClass || "?",
+      target: rule.targetClass || "?",
+      relation: rule.relation,
+    });
   return rule.className || "—";
 };
 
@@ -99,7 +106,10 @@ function criterionText(condition: any): string {
   if (condition.kind === "PROPERTY")
     return `${condition.className || condition.objectParameter || "?"}.${condition.field} ${condition.operator} ${JSON.stringify(condition.value)}`;
   if (condition.kind === "LINK_EXISTS")
-    return `${condition.from || condition.objectParameter || "?"} 存在关系 ${condition.relation}`;
+    return ot("actionDefinitionLinkExists", {
+      source: condition.from || condition.objectParameter || "?",
+      relation: condition.relation,
+    });
   return condition.description || condition.kind || "—";
 }
 function criterionMessage(condition: any): string {
@@ -116,12 +126,10 @@ const negativeEffect = computed(() => definition.value?.businessMeaning?.negativ
     </div>
     <template v-else>
       <div class="section-title">
-        <h2>Rules（规则）</h2>
-        <el-tag size="small" type="info">派生 · 未验证</el-tag>
+        <h2>{{ ot("actionDefinitionRules") }}</h2>
+        <el-tag size="small" type="info">{{ ot("actionDefinitionDerivedUnverified") }}</el-tag>
       </div>
-      <p class="text-muted">
-        从代码解释投影出的规则清单，仅用于阅读；平台不执行这些规则，运行时仍以 Python 代码为准。
-      </p>
+      <p class="text-muted">{{ ot("actionDefinitionRulesHint") }}</p>
       <div v-if="definition.objects?.length" class="definition-objects">
         <el-tag v-for="name in definition.objects" :key="name" size="small">{{ name }}</el-tag>
       </div>
@@ -137,7 +145,7 @@ const negativeEffect = computed(() => definition.value?.businessMeaning?.negativ
             <span class="rule-target">{{ ruleTarget(rule) }}</span>
           </div>
           <div v-if="(rule.assignments || []).length" class="rule-line">
-            <span class="rule-key">字段</span>
+            <span class="rule-key">{{ ot("actionDefinitionFields") }}</span>
             <span class="rule-values">
               <span v-for="item in rule.assignments" :key="item.field" class="assignment">
                 {{ item.field }} ← <span v-html="renderValueFrom(item.valueFrom)"></span>
@@ -145,20 +153,20 @@ const negativeEffect = computed(() => definition.value?.businessMeaning?.negativ
             </span>
           </div>
           <div v-if="rule.guards" class="rule-line">
-            <span class="rule-key">条件</span>
+            <span class="rule-key">{{ ot("actionDefinitionConditions") }}</span>
             <code class="rule-guard">{{ guardText(rule.guards) }}</code>
           </div>
           <div v-if="rule.objectIdFrom || rule.sourceObjectIdFrom || rule.targetObjectIdFrom" class="rule-line">
-            <span class="rule-key">定位</span>
+            <span class="rule-key">{{ ot("actionDefinitionLocate") }}</span>
             <span class="rule-values">
               <span v-if="rule.objectIdFrom">
-                object ← <span v-html="renderValueFrom(rule.objectIdFrom)"></span>
+                {{ ot("actionDefinitionObject") }} ← <span v-html="renderValueFrom(rule.objectIdFrom)"></span>
               </span>
               <span v-if="rule.sourceObjectIdFrom">
-                source ← <span v-html="renderValueFrom(rule.sourceObjectIdFrom)"></span>
+                {{ ot("actionDefinitionSource") }} ← <span v-html="renderValueFrom(rule.sourceObjectIdFrom)"></span>
               </span>
               <span v-if="rule.targetObjectIdFrom">
-                target ← <span v-html="renderValueFrom(rule.targetObjectIdFrom)"></span>
+                {{ ot("actionDefinitionRuleTarget") }} ← <span v-html="renderValueFrom(rule.targetObjectIdFrom)"></span>
               </span>
             </span>
           </div>
@@ -167,7 +175,7 @@ const negativeEffect = computed(() => definition.value?.businessMeaning?.negativ
 
       <table class="param-table">
         <thead>
-          <tr><th>参数</th><th>类型</th><th>说明</th></tr>
+          <tr><th>{{ ot("actionDefinitionParameters") }}</th><th>{{ ot("actionDefinitionType") }}</th><th>{{ ot("actionDefinitionDescription") }}</th></tr>
         </thead>
         <tbody>
           <tr
@@ -183,8 +191,8 @@ const negativeEffect = computed(() => definition.value?.businessMeaning?.negativ
       </table>
 
       <div class="criteria-block">
-        <h4>Submission criteria</h4>
-        <p class="desc">动作开始前统一判定；任一条失败则整个动作不执行。</p>
+        <h4>{{ ot("actionDefinitionSubmissionCriteria") }}</h4>
+        <p class="desc">{{ ot("actionDefinitionCriteriaHint") }}</p>
         <template v-if="submissionCriteria">
           <div v-if="criteriaConditions.length" class="criteria-list">
             <div v-for="(condition, index) in criteriaConditions" :key="index" class="criteria-row">
@@ -197,16 +205,16 @@ const negativeEffect = computed(() => definition.value?.businessMeaning?.negativ
               </div>
             </div>
           </div>
-          <div v-else class="empty-inline">已声明，但没有条件。</div>
+          <div v-else class="empty-inline">{{ ot("actionDefinitionNoConditions") }}</div>
           <div v-if="criteriaUnrepresentable.length" class="criteria-custom">
-            <b>自定义校验（未结构化）</b>
+            <b>{{ ot("actionDefinitionCustomChecks") }}</b>
             <div v-for="(item, index) in criteriaUnrepresentable" :key="index">
               {{ item.description }}
               <span v-if="item.reason" class="muted">（{{ item.reason }}）</span>
             </div>
           </div>
         </template>
-        <div v-else class="empty-inline">未声明。当前 Action 没有结构化前置条件。</div>
+        <div v-else class="empty-inline">{{ ot("actionDefinitionNoCriteria") }}</div>
       </div>
 
       <div v-if="negativeEffect" class="consequences">
