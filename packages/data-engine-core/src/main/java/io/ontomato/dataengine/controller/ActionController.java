@@ -64,7 +64,8 @@ public class ActionController {
 			if (persistence == null) {
 				persistence = false;
 			}
-			Action action = actionService.generateFromNatureLanguage(question, lang, user.getDomainId(), persistence);
+			JSONObject structuredSpec = param.getJSONObject("structuredSpec");
+			Action action = actionService.generateFromNatureLanguage(question, lang, user.getDomainId(), persistence, structuredSpec);
 			if (action == null) {
 				throw new Exception(langService.get(lang, "Action.notGenerated"));
 			}

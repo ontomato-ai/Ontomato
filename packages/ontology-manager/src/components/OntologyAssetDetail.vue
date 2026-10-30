@@ -5,7 +5,6 @@ import { ArrowLeft, History, Play, Plus, Save, Sparkles, Trash2 } from "lucide-v
 import {
   ElAlert,
   ElButton,
-  ElCheckbox,
   ElDialog,
   ElForm,
   ElFormItem,
@@ -27,6 +26,7 @@ import { useManagerFeedback } from "../feedback";
 import type { SmartAsset } from "../api";
 import type { AssetTab } from "../workspace";
 import ActionCodeExplainer from "./codeExplainer/ActionCodeExplainer.vue";
+import ActionCreateDialog from "./actionCreation/ActionCreateDialog.vue";
 import BusinessMeaning from "./codeExplainer/BusinessMeaning.vue";
 import { normalizeBusinessMeaning, normalizeCodeSegments } from "./codeExplainer/codeSegments";
 import { useManagerClient, useOntologyText } from "../context";
@@ -48,7 +48,6 @@ const { loadSmartAssets, requestSmartAsset } = useManagerClient();
 const loading = ref(false);
 const saving = ref(false);
 const deleting = ref(false);
-const generating = ref(false);
 const testing = ref(false);
 const record = ref<AssetRecord | null>(null);
 const bindingDrafts = ref<BindingDraft[]>([]);
@@ -88,9 +87,7 @@ function testMetricDraft() {
 }
 
 const functionChoices = ref<SmartAsset[]>([]);
-const generationPrompt = ref("");
 const showGeneration = ref(false);
-const generationPersistence = ref(true);
 const metricGenerationPrompt = ref("");
 const metricGenerationVisible = ref(false);
 const metricGenerating = ref(false);
@@ -567,33 +564,9 @@ async function testExecuteMetricView() {
   }
 }
 
-async function generateAction() {
-  if (!generationPrompt.value.trim()) {
-    message.warning(ot("actionPromptRequired"));
-    return;
-  }
-  generating.value = true;
-  try {
-    const response = await requestSmartAsset("actions", "generateFromNatureLanguage", {
-      question: generationPrompt.value.trim(),
-      persistence: generationPersistence.value,
-    });
-    const generated = response?.data ?? response;
-    if (!generationPersistence.value && generated) {
-      record.value = structuredClone(generated);
-      showGeneration.value = false;
-      message.success(ot("actionDraftGenerated"));
-      return;
-    }
-    message.success(ot("actionGenerated"));
-    showGeneration.value = false;
-    emit("created");
-    emit("back");
-  } catch (error) {
-    message.error(error instanceof Error ? error.message : ot("actionGenerateFailed"));
-  } finally {
-    generating.value = false;
-  }
+function onActionCreated() {
+  emit("created");
+  emit("back");
 }
 
 async function generateMetricView() {
@@ -1017,30 +990,11 @@ onMounted(() => void loadDetail());
       </section>
     </div>
 
-    <el-dialog
+    <ActionCreateDialog
       v-model="showGeneration"
-      :lock-scroll="false"
-      :title="ot('actionGenerateTitle')"
-      width="560px"
-      :close-on-click-modal="false"
-      @closed="emit('back')"
-    >
-      <el-input
-        v-model="generationPrompt"
-        type="textarea"
-        :rows="4"
-        :placeholder="ot('actionPromptPlaceholder')"
-      />
-      <el-checkbox v-model="generationPersistence" class="generation-option">
-        {{ ot("actionSaveAfterGenerate") }}
-      </el-checkbox>
-      <template #footer>
-        <el-button @click="showGeneration = false">{{ ot("cancel") }}</el-button>
-        <el-button type="primary" :loading="generating" @click="generateAction">
-          {{ ot("actionGenerateAndSave") }}
-        </el-button>
-      </template>
-    </el-dialog>
+      @created="onActionCreated"
+      @back="emit('back')"
+    />
 
     <el-dialog
       v-model="metricGenerationVisible"
@@ -1522,9 +1476,6 @@ h2 {
 }
 .test-parameters {
   margin: var(--spacing-lg) 0;
-}
-.generation-option {
-  margin-top: var(--spacing-md);
 }
 .parameter-header {
   display: flex;

@@ -94,6 +94,17 @@ public class ActionServiceImpl implements ActionService {
   @Override
   public Action generateFromNatureLanguage(
       String question, String lang, String domainId, boolean persistence) throws Exception {
+    return generateFromNatureLanguage(question, lang, domainId, persistence, null);
+  }
+
+  @Override
+  public Action generateFromNatureLanguage(
+      String question,
+      String lang,
+      String domainId,
+      boolean persistence,
+      JSONObject structuredSpec)
+      throws Exception {
     String businessId = UUID.randomUUID().toString();
     Map<String, Object> jsonRule = adminService.getJSONRule(domainId);
     List<Map<String, Object>> classDefs = (List<Map<String, Object>>) jsonRule.get("classDef");
@@ -106,7 +117,8 @@ public class ActionServiceImpl implements ActionService {
             lang,
             langService,
             jsonRule,
-            domainId);
+            domainId,
+            structuredSpec);
     try (var generation =
         generationService.generate("action", businessId, prompt, lang, domainId)) {
       JSONObject envelope = generation.result();
@@ -166,6 +178,7 @@ public class ActionServiceImpl implements ActionService {
         action.setBusinessMeaning(businessMeaning);
       } catch (Exception e) {
       }
+      action.setDefinition(ActionDefinitionProjector.project(action));
       return generation.settle(
           () -> {
             if (persistence) {

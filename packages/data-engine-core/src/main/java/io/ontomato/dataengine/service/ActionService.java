@@ -13,6 +13,12 @@ public interface ActionService {
 	
 	public Action generateFromNatureLanguage(String question, String lang, String domainId, boolean persistence) throws Exception;
 
+	/** Generates an action with an optional structured intent produced by the creation wizard. */
+	default Action generateFromNatureLanguage(
+			String question, String lang, String domainId, boolean persistence, JSONObject structuredSpec) throws Exception {
+		return generateFromNatureLanguage(question, lang, domainId, persistence);
+	}
+
 	public Action save(Action action, String lang) throws Exception;
 	
 	public void delete(String id, String lang) throws Exception;

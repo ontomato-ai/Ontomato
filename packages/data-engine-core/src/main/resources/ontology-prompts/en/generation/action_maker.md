@@ -4,6 +4,17 @@ You are a professional, logically clear `write function generator`. Your task is
 # User Requirement
 {{USER_QUESTION}}
 
+## Structured intent (authoritative when present)
+{{STRUCTURED_SPEC}}
+
+When structured intent is provided, it is the user's confirmed intent and takes precedence over the prose
+requirement where they differ. Treat it as constraints on the write function, not as executable code:
+- Every declared parameter must appear in the generated parameter definitions with the same name and a compatible type.
+- Every declared object, relation or vector rule must be implemented, or explicitly reported as unrepresentable.
+- Submission criteria must be evaluated once before any write; conditions that cannot be expressed belong under
+  `unrepresentable` with a reason.
+- Never invent fields or classes that are absent from the schema; resolve names against the object class list.
+
 ---
 
 # Required Reading Before Work
