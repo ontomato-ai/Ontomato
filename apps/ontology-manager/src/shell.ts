@@ -37,7 +37,25 @@ export interface ManagerShellProfile {
   knowledgeTagValues: ManagerKnowledgeTagValues;
 }
 
+const STALE_BUILD_RELOAD_KEY = "ontology_manager_stale_build_reload";
+
+/*
+ * Pages load as hashed chunks on first entry. After a redeployment an open tab still runs the old entry, whose chunks
+ * no longer exist; reload once so the tab picks up the new build (the view is kept in the hash). The key records which
+ * entry already reloaded, so a chunk that still fails after the reload surfaces its error instead of reloading in a loop.
+ */
+function reloadOnStaleBuild() {
+  window.addEventListener("vite:preloadError", (event) => {
+    const entry = import.meta.url;
+    if (sessionStorage.getItem(STALE_BUILD_RELOAD_KEY) === entry) return;
+    sessionStorage.setItem(STALE_BUILD_RELOAD_KEY, entry);
+    event.preventDefault();
+    window.location.reload();
+  });
+}
+
 export function startManagerShell(profile: ManagerShellProfile) {
+  reloadOnStaleBuild();
   consumeLaunchCredential();
   const credential = ref(sessionCredential(profile.noCredential));
   const authExpired = ref(false);

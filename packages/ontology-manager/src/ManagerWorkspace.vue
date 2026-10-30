@@ -1,17 +1,12 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from "vue";
+import { computed, defineAsyncComponent, onMounted, ref, watch } from "vue";
 import type { ManagerAuthFailureStatus } from "./api";
 import { provideManagerContext, type ManagerHostContext } from "./context";
 import { provideManagerFeedback } from "./feedback";
 import ManagerConfirmDialog from "./ManagerConfirmDialog.vue";
-import GovernancePage from "./knowledge-governance/GovernancePage.vue";
 import BusinessKnowledge from "./components/BusinessKnowledge.vue";
-import DataBrowser from "./data-browser/DataBrowser.vue";
-import VisualModeling from "./visual-modeling/VisualModeling.vue";
 import OntologyAssetCatalog from "./components/OntologyAssetCatalog.vue";
-import OntologyAssetDetail from "./components/OntologyAssetDetail.vue";
 import OntologyModelCatalog from "./components/OntologyModelCatalog.vue";
-import OntologyPlayground from "./components/OntologyPlayground.vue";
 import OntologyObjectCreateDialog from "./components/OntologyObjectCreateDialog.vue";
 import OntologyObjectDetail from "./components/OntologyObjectDetail.vue";
 import OntologyRelationDetail from "./components/OntologyRelationDetail.vue";
@@ -25,6 +20,17 @@ import {
   type Workspace,
 } from "./workspace";
 import type { SmartAsset } from "./api";
+
+/*
+ * Heavy pages load when first entered, so their graph, chart and Markdown libraries stay out of the entry script:
+ * the graph view and visual modeling bring AntV G6/X6, data browsing loads G6 only for its graph view, asset details
+ * bring Markdown and code highlighting, and knowledge governance brings the agent shell.
+ */
+const GovernancePage = defineAsyncComponent(() => import("./knowledge-governance/GovernancePage.vue"));
+const DataBrowser = defineAsyncComponent(() => import("./data-browser/DataBrowser.vue"));
+const VisualModeling = defineAsyncComponent(() => import("./visual-modeling/VisualModeling.vue"));
+const OntologyAssetDetail = defineAsyncComponent(() => import("./components/OntologyAssetDetail.vue"));
+const OntologyPlayground = defineAsyncComponent(() => import("./components/OntologyPlayground.vue"));
 
 const props = defineProps<{ context: Readonly<ManagerHostContext> }>();
 const emit = defineEmits<{
