@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, watch } from "vue";
+import { ref, computed, defineAsyncComponent, onMounted, watch } from "vue";
 import {
   ElButton,
   ElCheckbox,
@@ -22,7 +22,8 @@ import {
 import { useManagerFeedback } from "../feedback";
 import { Filter, Download, Plus, Trash2, Search } from "lucide-vue-next";
 import { useManagerClient, useOntologyText, useSharedText } from "../context";
-import InstanceGraph from "./InstanceGraph.vue";
+// The graph view loads AntV G6 only when the user switches to it.
+const InstanceGraph = defineAsyncComponent(() => import("./InstanceGraph.vue"));
 
 const { t } = useSharedText();
 const { ot } = useOntologyText();

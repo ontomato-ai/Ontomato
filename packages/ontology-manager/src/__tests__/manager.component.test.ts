@@ -185,6 +185,8 @@ afterEach(() => {
 
 async function settle() {
   for (let index = 0; index < 8; index += 1) {
+    // Heavy pages are async components: wait for their dynamic imports as well as pending requests.
+    await vi.dynamicImportSettled();
     await new Promise((resolve) => setTimeout(resolve, 0));
     await nextTick();
   }
