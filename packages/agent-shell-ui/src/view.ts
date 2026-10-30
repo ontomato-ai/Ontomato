@@ -60,11 +60,11 @@ export function conversationItems(state: ConversationState): ConversationItem[] 
       toolResults.set(message.toolCallId, userText(message.content));
   }
 
-  const openResponse = (runId: string, key: string): ResponseItem => {
+  const openResponse = (runId: string): ResponseItem => {
     if (response && response.runId === runId) return response;
     response = {
       kind: "response",
-      key,
+      key: runId,
       runId,
       blocks: [],
       running: false,
@@ -85,7 +85,7 @@ export function conversationItems(state: ConversationState): ConversationItem[] 
       items.push({ kind: "user", key: entry.id, text: userText(message.content) });
       continue;
     }
-    const current = openResponse(entry.runId, entry.id);
+    const current = openResponse(entry.runId);
     const run = state.runs[entry.runId];
     const settled = entry.messageSeq !== null;
     message.content.forEach((block, index) => {

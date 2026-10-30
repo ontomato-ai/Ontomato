@@ -1,3 +1,5 @@
+import { agentHostSessionHistorySchema } from "@ontomato/contracts/agent-host";
+import type { SessionHistoryQuery } from "@ontomato/contracts/session-history";
 import { randomId } from "@ontomato/contracts/random-id";
 import type {
   AgentHostAgent,
@@ -8,7 +10,7 @@ import type {
   AgentHostRunSnapshot,
   AgentHostSession,
   AgentHostSessionPage,
-  AgentHostSessionSnapshot,
+  AgentHostSessionHistory,
 } from "@ontomato/contracts/agent-host";
 import { agentHostStreamFrameSchema } from "@ontomato/contracts/agent-host";
 import type { RuntimeArtifact } from "@ontomato/contracts/agent-runtime-artifacts";
@@ -30,7 +32,7 @@ export interface AgentHostClient {
   listAgents(): Promise<AgentHostAgent[]>;
   listSessions(agentId: string, cursor: string | null): Promise<AgentHostSessionPage>;
   createSession(agentId: string): Promise<AgentHostSession>;
-  readSession(sessionId: string): Promise<AgentHostSessionSnapshot>;
+  readHistory(sessionId: string, query?: SessionHistoryQuery): Promise<AgentHostSessionHistory>;
   deleteSession(sessionId: string): Promise<void>;
   /** Every message, including the answer to a clarifying question, starts a run in the same session. */
   startRun(sessionId: string, message: string): Promise<AgentHostRunSnapshot>;
@@ -115,8 +117,8 @@ export function createAgentHostClient(options: AgentHostClientOptions): AgentHos
     async createSession(agentId) {
       return (await json<AgentHostCreateSessionResponse>("/sessions", send("POST", { agentId }, true))).session;
     },
-    readSession(sessionId) {
-      return json<AgentHostSessionSnapshot>(session(sessionId));
+    async readHistory(sessionId, input = {}) {
+      return agentHostSessionHistorySchema.parse(await json(`${session(sessionId)}/history?${new URLSearchParams(input)}`));
     },
     async deleteSession(sessionId) {
       await call(session(sessionId), { method: "DELETE" });
