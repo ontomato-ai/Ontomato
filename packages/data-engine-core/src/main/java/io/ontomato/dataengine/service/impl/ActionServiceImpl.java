@@ -150,6 +150,7 @@ public class ActionServiceImpl implements ActionService {
       action.setFunction(function);
       action.setStatus(Action.STATUS_PUBLISHED);
       action.setDomainId(domainId);
+      action.setSubmissionCriteria(envelope.getJSONObject("submissionCriteria"));
       try {
         Object[] explain =
             explainCode(
@@ -206,6 +207,11 @@ public class ActionServiceImpl implements ActionService {
     Function function = action.getFunction();
     if (function == null) {
       throw new Exception(langService.get(lang, "Function.cannotBeEmpty"));
+    }
+    // Vector storage and the domain-scoped asset index key off the function's domain; the
+    // controller sets it on the action, so carry it onto a new function before saving.
+    if (function.getDomainId() == null || function.getDomainId().isBlank()) {
+      function.setDomainId(action.getDomainId());
     }
     boolean codeChanged = true;
     if (function.getId() != null) {
@@ -276,6 +282,7 @@ public class ActionServiceImpl implements ActionService {
 			String functionId = (String)o[1];
 			Function function = functionDao.queryById(functionId);
 			action.setFunction(function);
+			action.setDefinition(ActionDefinitionProjector.project(action));
 			return action;
 		} else {
 			return null;
@@ -295,6 +302,7 @@ public class ActionServiceImpl implements ActionService {
 			Action action = (Action)o[0];
 			String fId = (String)o[1];
 			action.setFunction(functionMap.get(fId));
+			action.setDefinition(ActionDefinitionProjector.project(action));
 			actions.add(action);
 		}
 		return actions;

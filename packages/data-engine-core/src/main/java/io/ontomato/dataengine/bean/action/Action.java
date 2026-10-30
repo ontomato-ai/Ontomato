@@ -3,6 +3,7 @@ package io.ontomato.dataengine.bean.action;
 import java.util.List;
 
 import com.alibaba.fastjson2.JSONArray;
+import com.alibaba.fastjson2.JSONObject;
 import io.ontomato.dataengine.bean.function.Function;
 
 import lombok.Data;
@@ -26,6 +27,10 @@ public class Action {
 	private Function function;
 	private JSONArray codeSegments;
 	private BusinessMeaning businessMeaning;
+	/** Derived, read-only structured projection; never an execution definition. */
+	private JSONObject definition;
+	/** Authored or generation-time submission criteria; null for legacy actions. */
+	private JSONObject submissionCriteria;
 	private String codeHash;
 	private Integer explanationVersion;
 	private String status;
