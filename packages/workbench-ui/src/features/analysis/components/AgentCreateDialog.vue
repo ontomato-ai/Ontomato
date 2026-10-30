@@ -824,8 +824,6 @@ watch(isDark, () => {
             v-model="form.enabledMcpServiceNames"
             multiple
             filterable
-            collapse-tags
-            collapse-tags-tooltip
             clearable
             :loading="mcpServicesLoading"
             :disabled="mcpServicesLoading || mcpServicesLoadFailed"

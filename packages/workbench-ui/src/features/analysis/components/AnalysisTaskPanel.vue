@@ -612,7 +612,12 @@ function handleDelete(e: Event, taskId: string) {
                     {{ getTaskStatusText(task).text }}
                   </span>
                 </div>
-                <div class="progress-text">{{ getStageText(task) }}</div>
+                <div
+                  v-if="task.reportDeliverableEnabled !== false && getStageText(task)"
+                  class="progress-text"
+                >
+                  {{ getStageText(task) }}
+                </div>
               </div>
               <div
                 v-if="taskProgressMap[task.id]?.progress !== undefined"
@@ -664,7 +669,10 @@ function handleDelete(e: Event, taskId: string) {
                     {{ getTaskStatusText(task).text }}
                   </span>
                 </div>
-                <div v-if="task.resultSummary" class="task-summary">
+                <div
+                  v-if="task.reportDeliverableEnabled !== false && task.resultSummary"
+                  class="task-summary"
+                >
                   {{ getTaskSummary(task) }}
                 </div>
               </div>

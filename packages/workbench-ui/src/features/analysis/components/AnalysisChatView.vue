@@ -30,6 +30,7 @@ import {
 } from "../utils/loop-activity";
 import DeepAnalysisResult from "./DeepAnalysisResult.vue";
 import AgentMessageTrace from "./AgentMessageTrace.vue";
+import AnalysisMessageBody from "./AnalysisMessageBody.vue";
 import QuestionExecution, { type QuestionExecutionScope } from "./QuestionExecution.vue";
 import TurnDiagnoseButton from "../../diagnosis/components/TurnDiagnoseButton.vue";
 import { buildDimensionTree, dimensionStageStates } from "../utils/dimension-view";
@@ -617,10 +618,13 @@ function showFailedNotice(group: TurnGroup): boolean {
                   class="chat-bubble assistant loop-content loop-bubble"
                   :class="{ streaming: entry.activity.status === 'running' }"
                 >
-                  <div
-                    class="loop-narrative markdown-body"
-                    v-html="renderAgentMarkdown(entry.activity.narrative || '')"
-                  ></div>
+                  <div class="loop-narrative">
+                    <AnalysisMessageBody
+                      :content="entry.activity.narrative || ''"
+                      :charts="group.payload?.charts"
+                      safe
+                    />
+                  </div>
                 </div>
               </div>
 
@@ -719,7 +723,7 @@ function showFailedNotice(group: TurnGroup): boolean {
 
                         <div
                           v-if="loopActivityDetail(activity, t)"
-                          class="tree-dim-reason loop-step-detail"
+                          class="loop-step-detail"
                           :class="{
                             'is-tool-meta':
                               activity.kind === 'probe' || activity.kind === 'external_tool',
@@ -735,7 +739,7 @@ function showFailedNotice(group: TurnGroup): boolean {
                             isLoopActivityExpanded(group.key, activity) &&
                             activity.questions?.length
                           "
-                          class="tree-questions loop-questions-box"
+                          class="loop-questions-box"
                         >
                           <div
                             v-for="question in activity.questions"
@@ -783,7 +787,7 @@ function showFailedNotice(group: TurnGroup): boolean {
                           <div v-if="activity.workerSummary" class="loop-detail-field">
                             <span>{{ t("analysis.loopDispatchSummary") }}</span>
                             <div
-                              class="loop-worker-summary markdown-body"
+                              class="loop-worker-summary markdown-body markdown-content"
                               v-html="renderAgentMarkdown(activity.workerSummary)"
                             ></div>
                           </div>
@@ -989,14 +993,14 @@ function showFailedNotice(group: TurnGroup): boolean {
               class="chat-bubble assistant"
               :class="{ 'loop-bubble': isLoopMode(group.payload) }"
             >
-              <div class="markdown-body" v-html="renderMarkdown(groupAnswer(group))"></div>
+              <AnalysisMessageBody :content="groupAnswer(group)" :charts="group.payload?.charts" />
             </div>
           </div>
 
           <!-- Follow-up turn streaming tail: show the typing cursor while the body is still growing -->
           <div v-if="group.streaming && group.streamingText !== ''" class="chat-msg assistant">
             <div class="chat-bubble assistant streaming">
-              <div class="markdown-body" v-html="renderMarkdown(group.streamingText)"></div>
+              <div class="markdown-body markdown-content" v-html="renderMarkdown(group.streamingText)"></div>
               <span class="typing-cursor">|</span>
             </div>
           </div>
@@ -1458,72 +1462,35 @@ function showFailedNotice(group: TurnGroup): boolean {
   color: var(--el-color-danger);
 }
 
-.loop-narrative {
-  font-size: 13.5px;
-  line-height: 1.68;
-  color: var(--el-text-color-primary);
+.loop-narrative,
+.loop-worker-summary {
   overflow-wrap: anywhere;
   word-break: break-word;
 }
 
-.loop-narrative :deep(p) {
-  margin: 0 0 6px;
-}
-
-.loop-narrative :deep(p:last-child) {
-  margin-bottom: 0;
-}
-
-.loop-narrative :deep(ul),
-.loop-narrative :deep(ol) {
-  margin: 4px 0;
-  padding-left: 20px;
-}
-
-.loop-narrative :deep(code) {
-  background: var(--el-fill-color-light);
-  padding: 1px 5px;
-  border-radius: 4px;
-  font-size: 12.5px;
-}
-
-.loop-narrative :deep(pre) {
-  background: var(--el-fill-color-light);
-  padding: 8px 12px;
-  border-radius: 8px;
-  overflow-x: auto;
-  font-size: 12px;
-  margin: 6px 0;
-}
-
 .loop-questions-box {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
   margin-top: 8px;
-  padding-left: 0;
   padding: 8px 10px;
   border-radius: 10px;
   border: 1px solid var(--el-border-color-lighter);
   background: var(--el-fill-color-extra-light);
 }
 
-.loop-question-row {
+.tree-question.loop-question-row {
+  align-items: flex-start;
   padding: 5px 6px;
 }
 
-.loop-worker-summary {
+.loop-worker-summary.markdown-body {
   margin-top: 4px;
   color: var(--el-text-color-regular);
   font-size: 12.5px;
   line-height: 1.65;
   overflow-wrap: anywhere;
   word-break: break-word;
-}
-
-.loop-worker-summary :deep(p) {
-  margin: 0 0 6px;
-}
-
-.loop-worker-summary :deep(p:last-child) {
-  margin-bottom: 0;
 }
 
 .loop-tool-trace {
@@ -1540,6 +1507,15 @@ function showFailedNotice(group: TurnGroup): boolean {
 
 .loop-process .tree-q-text {
   min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.loop-question-row .tree-q-status {
+  min-height: 1.6em;
+}
+
+.loop-question-row .tree-q-status-text {
+  max-width: 100%;
   overflow-wrap: anywhere;
 }
 
@@ -1944,27 +1920,49 @@ function showFailedNotice(group: TurnGroup): boolean {
   max-width: none;
 }
 
-.chat-bubble.assistant :deep(.markdown-body) {
+.markdown-body {
   font-size: 14px;
   line-height: 1.7;
 }
 
-.chat-bubble.assistant :deep(.markdown-body p) {
+.markdown-body :deep(p) {
   margin: 0 0 8px;
 }
 
-.chat-bubble.assistant :deep(.markdown-body p:last-child) {
+.markdown-body :deep(ul),
+.markdown-body :deep(ol) {
+  margin: 8px 0;
+  padding-left: 22px;
+}
+
+.markdown-body :deep(li) {
+  margin: 4px 0;
+  line-height: inherit;
+}
+
+.markdown-body :deep(li > p),
+.markdown-body :deep(li > ul),
+.markdown-body :deep(li > ol) {
+  margin-top: 4px;
+  margin-bottom: 4px;
+}
+
+.markdown-body :deep(> :first-child) {
+  margin-top: 0;
+}
+
+.markdown-body :deep(> :last-child) {
   margin-bottom: 0;
 }
 
-.chat-bubble.assistant :deep(.markdown-body code) {
+.markdown-body :deep(code) {
   background: var(--el-fill-color);
   padding: 1px 4px;
   border-radius: 3px;
-  font-size: 13px;
+  font-size: 0.9em;
 }
 
-.chat-bubble.assistant :deep(.markdown-body pre) {
+.markdown-body :deep(pre) {
   background: var(--el-fill-color);
   padding: 8px 12px;
   border-radius: 6px;
@@ -1973,9 +1971,21 @@ function showFailedNotice(group: TurnGroup): boolean {
   margin: 8px 0;
 }
 
-.chat-bubble.assistant :deep(.markdown-body pre code) {
+.markdown-body :deep(pre code) {
   background: none;
   padding: 0;
+}
+
+.markdown-body :deep(table) {
+  display: block;
+  max-width: 100%;
+  overflow-x: auto;
+  margin: 12px 0;
+}
+
+.markdown-body :deep(th),
+.markdown-body :deep(td) {
+  padding: 8px 12px;
 }
 
 .chat-bubble.assistant.streaming {
