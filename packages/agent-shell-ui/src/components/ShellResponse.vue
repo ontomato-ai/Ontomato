@@ -124,7 +124,9 @@ async function submit(value: ShellFeedbackValue) {
     />
     <template v-for="block in item.blocks" :key="block.key">
       <ShellProcess v-if="block.kind === 'process'" :steps="block.steps" :active="block.active" />
-      <ShellMarkdown v-else :content="block.text" :final="block.final" :run-id="block.runId" />
+      <div v-else :class="{ commentary: block.commentary }">
+        <ShellMarkdown :content="block.text" :final="block.final" :run-id="block.runId" />
+      </div>
     </template>
 
     <div v-if="item.end?.stopReason === 'aborted'" class="end-note muted">

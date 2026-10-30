@@ -27,6 +27,12 @@
   color: var(--el-text-color-primary);
   overflow-wrap: anywhere;
 }
+/* What the agent says before calling tools: part of the process, quieter than the answer. */
+.agent-shell .commentary .shell-markdown {
+  --ms-text-body: var(--text-sm, 13px);
+  color: var(--el-text-color-secondary);
+  margin: 2px 0 6px;
+}
 .agent-shell .shell-markdown > :first-child {
   margin-top: 0;
 }

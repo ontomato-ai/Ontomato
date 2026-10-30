@@ -25,7 +25,10 @@ export type StepActivity =
   | "read" | "write" | "edit" | "run" | "skill" | "other"
   | "schema" | "values" | "query" | "knowledge" | "retrieve" | "dataset" | "compute";
 
-const ANALYST_COMMAND = /ontomato\.mjs["']?\s+([\w-]+)/;
+// Only a script that node actually runs counts; reading or editing the file (cat, sed) does not.
+const SCRIPT_PATH = String.raw`(?:"[^"]*?|'[^']*?|[^\s"';&|]*?)`;
+const ANALYST_COMMAND = new RegExp(String.raw`\bnode\s+${SCRIPT_PATH}ontomato\.mjs["']?\s+([\w-]+)`);
+const DATASET_COMMAND = new RegExp(String.raw`\bnode\s+${SCRIPT_PATH}dataset\.mjs\b`);
 const ANALYST_ACTIVITY: Record<string, StepActivity> = {
   ask: "retrieve",
   "execute-dsl": "query",
@@ -50,7 +53,7 @@ export function stepActivity(step: Pick<ProcessStepView, "toolName" | "skill" | 
       const command = typeof step.args.command === "string" ? step.args.command : "";
       const analyst = ANALYST_COMMAND.exec(command)?.[1];
       if (analyst) return ANALYST_ACTIVITY[analyst] ?? "skill";
-      if (/dataset\.mjs\b/.test(command)) return "dataset";
+      if (DATASET_COMMAND.test(command)) return "dataset";
       if (/\bpython3?\s+[\w./-]+\.py\b/.test(command)) return "compute";
       return step.skill ? "skill" : "run";
     }

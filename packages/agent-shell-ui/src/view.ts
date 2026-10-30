@@ -6,7 +6,8 @@ import type { ProcessStepView } from "./types";
 export type ProcessStep = ProcessStepView;
 
 export type ResponseBlock =
-  | { kind: "text"; key: string; text: string; final: boolean; runId: string }
+  /** `commentary`: text written in the same message as tool calls, i.e. what the agent is about to do. */
+  | { kind: "text"; key: string; text: string; final: boolean; runId: string; commentary: boolean }
   | { kind: "process"; key: string; steps: ProcessStep[]; active: boolean };
 
 export interface UserItem {
@@ -93,6 +94,7 @@ export function conversationItems(state: ConversationState): ConversationItem[] 
     const current = openResponse(entry.runId);
     const run = state.runs[entry.runId];
     const settled = entry.messageSeq !== null;
+    const commentary = message.content.some((block) => block.type === "toolCall");
     message.content.forEach((block, index) => {
       const key = `${entry.id}:${index}`;
       if (block.type === "text") {
@@ -103,6 +105,7 @@ export function conversationItems(state: ConversationState): ConversationItem[] 
           text: block.text,
           final: settled,
           runId: entry.runId,
+          commentary,
         });
         return;
       }
