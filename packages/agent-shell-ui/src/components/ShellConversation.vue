@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, inject, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { computed, inject, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { ArrowDown, CircleAlert } from "lucide-vue-next";
 import type { AgentHostAgent } from "@ontomato/contracts/agent-host";
 import type { ShellFeedbackPort } from "../types";
@@ -14,12 +14,16 @@ const props = defineProps<{
   agent: AgentHostAgent | null;
   loading: boolean;
   loadError: string | null;
+  hasOlder: boolean;
+  loadingOlder: boolean;
+  olderError: string | null;
+  historyRevision: number;
   sendError: string | null;
   pendingInput: string | null;
   busy: boolean;
   feedback?: ShellFeedbackPort;
 }>();
-const emit = defineEmits<{ send: [text: string]; stop: []; retry: [] }>();
+const emit = defineEmits<{ send: [text: string]; stop: []; retry: []; loadOlder: [] }>();
 const shell = inject(shellContextKey)!;
 const labels = computed(() => shell.labels.value);
 
@@ -27,6 +31,7 @@ const scroller = ref<HTMLElement | null>(null);
 const content = ref<HTMLElement | null>(null);
 const stick = ref(true);
 let observer: ResizeObserver | null = null;
+let lastScrollTop = 0;
 
 const empty = computed(
   () => !props.loading && !props.loadError && props.items.length === 0 && !props.pendingInput,
@@ -40,12 +45,37 @@ const waiting = computed(
 function onScroll() {
   const el = scroller.value;
   if (!el) return;
+  const upward = el.scrollTop < lastScrollTop;
+  lastScrollTop = el.scrollTop;
   stick.value = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+  if (upward && el.scrollTop < 80 && props.hasOlder && !props.loadingOlder && !props.olderError)
+    requestOlder();
 }
+
+function requestOlder() {
+  stick.value = false;
+  emit("loadOlder");
+}
+
+watch(() => props.historyRevision, async (revision) => {
+  const el = scroller.value, session = props.sessionId;
+  if (!el || revision === 0 || stick.value) return;
+  // Capture immediately before the prepend renders, not before its network request.
+  const height = el.scrollHeight, top = el.scrollTop;
+  stick.value = false;
+  await nextTick();
+  if (session === props.sessionId) {
+    el.scrollTop = top + el.scrollHeight - height;
+    lastScrollTop = el.scrollTop;
+  }
+}, { flush: "pre" });
 
 function toBottom(smooth = false) {
   const el = scroller.value;
-  if (el) el.scrollTo({ top: el.scrollHeight, behavior: smooth ? "smooth" : "auto" });
+  if (el) {
+    el.scrollTo({ top: el.scrollHeight, behavior: smooth ? "smooth" : "auto" });
+    if (!smooth) lastScrollTop = el.scrollTop;
+  }
 }
 
 onMounted(() => {
@@ -57,12 +87,26 @@ onMounted(() => {
 });
 onBeforeUnmount(() => observer?.disconnect());
 
+// The empty/conversation branch can replace this element after the component has mounted.
+watch(content, (el, previous) => {
+  if (previous) observer?.unobserve(previous);
+  if (el) observer?.observe(el);
+}, { flush: "post" });
+
 watch(
   () => props.sessionId,
   () => {
     stick.value = true;
+    lastScrollTop = 0;
   },
 );
+
+watch([() => props.sessionId, () => props.loading], ([, loading]) => {
+  if (loading || props.loadError) return;
+  // Opening positions the freshly rendered tail; older-page prepends use historyRevision instead.
+  stick.value = true;
+  toBottom();
+}, { flush: "post" });
 
 function send(text: string) {
   stick.value = true;
@@ -83,6 +127,12 @@ function send(text: string) {
     <template v-else>
       <div ref="scroller" class="scroller" @scroll.passive="onScroll">
         <div ref="content" class="thread">
+          <div v-if="hasOlder && !loading" class="history-more">
+            <span v-if="olderError" role="alert">{{ labels.loadFailed }}</span>
+            <button type="button" :disabled="loadingOlder" @click="requestOlder">
+              {{ loadingOlder ? labels.loading : olderError ? labels.retry : labels.more }}
+            </button>
+          </div>
           <div v-if="loading" class="thread-loading" aria-busy="true">
             <span class="line w60" /><span class="line w90" /><span class="line w75" />
           </div>
@@ -174,6 +224,22 @@ function send(text: string) {
   font-size: var(--text-base, 15px);
   line-height: 1.7;
 }
+.history-more {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 8px;
+  color: var(--el-text-color-secondary);
+  font-size: var(--text-sm, 13px);
+}
+.history-more button {
+  border: 0;
+  background: none;
+  color: var(--el-color-primary);
+  font: inherit;
+  cursor: pointer;
+}
+.history-more button:disabled { cursor: default; }
 .user-turn {
   display: flex;
   justify-content: flex-end;

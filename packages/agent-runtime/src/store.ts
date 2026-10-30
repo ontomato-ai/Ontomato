@@ -1,3 +1,5 @@
+import { historyCursor, historyPosition, type SessionHistoryQuery } from "@ontomato/contracts/session-history";
+import { runtimeRunViewSchema, type RuntimeRunView } from "@ontomato/contracts/agent-runtime";
 import { runtimeHistoryRecordSchema, type RuntimeHistoryQuery } from "@ontomato/contracts/agent-runtime-history";
 import { getServiceLogContext, updateServiceLogContext } from "@ontomato/service-logging";
 import { runtimeLogger } from "./logging";
@@ -39,6 +41,7 @@ export function canonical(value: unknown): string {
 export const digest = (value: unknown) =>
   createHash("sha256").update(canonical(value)).digest("hex");
 const values = (scope: Scope) => [scope.hostId, scope.domainId];
+const HISTORY_MIN_MESSAGES = 50, HISTORY_MIN_RUNS = 2, HISTORY_MAX_MESSAGES = 500;
 
 /** This schema belongs only to the runtime. No host table or business record is accessed. */
 export class RuntimeStore {
@@ -410,11 +413,12 @@ export class RuntimeStore {
     scope: Scope,
     sessionId: string,
     c: pg.Pool | PoolClient = this.pool,
+    runId?: string,
   ): Promise<MessageRow[]> {
     return (
       await c.query(
-        `SELECT id,run_id AS "runId",seq,message FROM ${this.table("messages")} WHERE host_id=$1 AND domain_id=$2 AND session_id=$3 ORDER BY seq`,
-        [...values(scope), sessionId],
+        `SELECT id,run_id AS "runId",seq,message FROM ${this.table("messages")} WHERE host_id=$1 AND domain_id=$2 AND session_id=$3 AND ($4::uuid IS NULL OR run_id=$4) ORDER BY seq`,
+        [...values(scope), sessionId, runId ?? null],
       )
     ).rows.map((row) => ({
       id: row.id,
@@ -422,6 +426,81 @@ export class RuntimeStore {
       messageSeq: Number(row.seq),
       message: row.message,
     }));
+  }
+  /** Select a bounded message range before loading bodies. A Run is one admitted user turn. */
+  async historyWindow(scope: Scope, sessionId: string, query: SessionHistoryQuery) {
+    const head = Number((await this.pool.query(
+      `SELECT message_seq FROM ${this.table("sessions")} WHERE host_id=$1 AND domain_id=$2 AND id=$3`,
+      [...values(scope), sessionId],
+    )).rows[0].message_seq);
+    let before: number | undefined, after: number | undefined, through: number;
+    try {
+      before = query.before === undefined ? undefined : historyPosition(query.before, sessionId);
+      after = query.after === undefined ? undefined : historyPosition(query.after, sessionId);
+      through = query.through === undefined ? head : historyPosition(query.through, sessionId);
+      if (through > head || (before !== undefined && before > head + 1) || (after !== undefined && after > through))
+        throw new Error("History cursor is beyond the read boundary");
+    } catch (error) {
+      throw new RuntimeError(400, "INVALID_REQUEST", error instanceof Error ? error.message : "Invalid history cursor");
+    }
+    const forward = after !== undefined;
+    let low = after ?? 0, high = before === undefined ? through : Math.max(0, before - 1);
+    const candidates = (await this.pool.query(
+      `SELECT seq,run_id,message->>'role' AS role FROM ${this.table("messages")}
+       WHERE host_id=$1 AND domain_id=$2 AND session_id=$3 AND seq>$4 AND seq<=$5
+         AND message->>'role' IN ('user','assistant') ORDER BY seq ${forward ? "ASC" : "DESC"} LIMIT ${HISTORY_MAX_MESSAGES + 1}`,
+      [...values(scope), sessionId, low, high],
+    )).rows as { seq: string; run_id: string; role: string }[];
+    const turns = new Set<string>();
+    for (let i = 0; i < Math.min(candidates.length, HISTORY_MAX_MESSAGES); i++) {
+      const row = candidates[i];
+      turns.add(row.run_id);
+      const boundary = forward ? candidates[i + 1]?.run_id !== row.run_id : row.role === "user";
+      if (i + 1 === HISTORY_MAX_MESSAGES || (i + 1 >= HISTORY_MIN_MESSAGES && turns.size >= HISTORY_MIN_RUNS && boundary) || i === candidates.length - 1) {
+        if (forward) high = candidates[i + 1] ? Number(candidates[i + 1].seq) - 1 : through;
+        else low = Number(row.seq) - 1;
+        break;
+      }
+    }
+    const messages = (await this.pool.query(
+      `SELECT id,run_id AS "runId",seq,message FROM ${this.table("messages")}
+       WHERE host_id=$1 AND domain_id=$2 AND session_id=$3 AND seq>$4 AND seq<=$5
+         AND message->>'role'<>'system' ORDER BY seq`,
+      [...values(scope), sessionId, low, high],
+    )).rows.map(row => ({ id: row.id, runId: row.runId, messageSeq: Number(row.seq), message: row.message })) as MessageRow[];
+    const first = messages[0]?.messageSeq;
+    const older = first !== undefined && (await this.pool.query(
+      `SELECT 1 FROM ${this.table("messages")} WHERE host_id=$1 AND domain_id=$2 AND session_id=$3
+       AND seq<$4 AND message->>'role'<>'system' LIMIT 1`, [...values(scope), sessionId, first],
+    )).rowCount !== 0;
+    return {
+      messages,
+      page: {
+        olderCursor: older ? historyCursor(sessionId, first!) : null,
+        nextCursor: forward && high < through ? historyCursor(sessionId, high) : null,
+        throughCursor: historyCursor(sessionId, through),
+        messageSeq: high,
+      },
+    };
+  }
+  async historyRuns(scope: Scope, ids: string[]): Promise<RuntimeRunView[]> {
+    if (!ids.length) return [];
+    const fields = Object.keys(runtimeRunViewSchema.shape).map(name => `'${name}',run->'${name}'`).join(",");
+    return (await this.pool.query(
+      `SELECT jsonb_build_object(${fields}) AS run FROM ${this.table("runs")}
+       WHERE host_id=$1 AND domain_id=$2 AND id=ANY($3::uuid[]) ORDER BY run->>'createdAt',id`,
+      [...values(scope), ids],
+    )).rows.map(row => row.run);
+  }
+  async toolEvents(scope: Scope, runId: string, unsettledOnly = false) {
+    return (await this.pool.query(
+      `SELECT e.envelope FROM ${this.table("events")} e WHERE e.host_id=$1 AND e.domain_id=$2 AND e.run_id=$3
+       AND e.envelope->'event'->>'type' IN ('tool_execution_start','tool_execution_end')
+       AND (NOT $4::boolean OR NOT EXISTS (
+         SELECT 1 FROM ${this.table("messages")} m WHERE m.host_id=e.host_id AND m.domain_id=e.domain_id AND m.run_id=e.run_id
+         AND m.message->>'role'='toolResult' AND m.message->>'toolCallId'=e.envelope->'event'->>'toolCallId'
+       )) ORDER BY e.seq`, [...values(scope), runId, unsettledOnly],
+    )).rows.map(row => row.envelope as RuntimeEventEnvelope);
   }
   async events(scope: Scope, runId: string) {
     return (

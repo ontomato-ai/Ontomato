@@ -48,7 +48,8 @@ reads and runtime admission still use complete RuntimeSkillRef values. Provider
 references keep `{kind:"provider",provider}` unchanged. Session messages,
 events and files remain runtime-owned; host indexes do not duplicate message bodies.
 
-Feedback upserts one value per user/session/run/target; dislike requires a reason.
+Feedback upserts one value per session/run/target; dislike requires a reason. A session
+belongs to one user, so the stored rows are per user through their session.
 The host validates target ownership and resolves question/output from runtime.
 Accepted copied datasets must match their original receipt/digest; dataset-source
 returns the original retrieval/artifact IDs and the existing optional QC result.

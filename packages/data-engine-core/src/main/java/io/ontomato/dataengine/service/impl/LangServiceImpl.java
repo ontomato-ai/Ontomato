@@ -43,6 +43,11 @@ public class LangServiceImpl implements LangService {
 	@Override
 	public String get(String lang, String key) {
 		String value = find(langMap.get(lang), key);
+		// A bare "zh" is a common Accept-Language value; the shipped pack is zh-CN.
+		// Without this alias the key falls back to English and prompts tell the model to answer in English.
+		if (value == null && lang != null && lang.startsWith("zh")) {
+			value = find(langMap.get("zh-CN"), key);
+		}
 		if (value == null) {
 			value = find(langMap.get(DEFAULT_LANG), key);
 		}

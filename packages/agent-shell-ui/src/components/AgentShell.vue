@@ -236,6 +236,10 @@ onMounted(async () => {
         :agent="currentAgent"
         :loading="conversation.loading.value"
         :load-error="conversation.loadError.value"
+        :has-older="conversation.olderCursor.value !== null"
+        :loading-older="conversation.loadingOlder.value"
+        :older-error="conversation.olderError.value"
+        :history-revision="conversation.historyRevision.value"
         :send-error="conversation.sendError.value"
         :pending-input="conversation.pendingInput.value"
         :busy="conversation.busy.value"
@@ -243,6 +247,7 @@ onMounted(async () => {
         @send="send"
         @stop="conversation.cancel"
         @retry="conversation.open(sessionId)"
+        @load-older="conversation.loadOlder"
       />
     </main>
 

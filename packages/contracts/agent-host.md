@@ -16,7 +16,8 @@ projection, using the runtime's stored namespace/name/digest/description.
 | GET `/agents` | — | `AgentHostAgentList` |
 | GET `/sessions` | `agentId`, optional opaque cursor/limit (30 default, 100 max) | `AgentHostSessionPage` |
 | POST `/sessions` | `AgentHostCreateSession` | 201 `AgentHostCreateSessionResponse` |
-| GET `S` | — | `AgentHostSessionSnapshot` |
+| GET `S` | — | `AgentHostSessionSnapshot` for complete evidence/history consumers |
+| GET `S/history` | optional before/after/through cursor, recovery runId | `AgentHostSessionHistory` for the shared conversation shell |
 | DELETE `S` | — | 204; active run: 409 `SESSION_BUSY` |
 | POST `S/runs` | `{message:string}` | 202 `AgentHostAdmission` |
 | GET `R` | — | `AgentHostRunSnapshot` |
@@ -48,10 +49,46 @@ Snapshots include the run's admitted `resolvedSkills: RuntimeRegisteredSkill[]`
 `errorMessage`. Merge settled messages by ID in messageSeq order; replace partials.
 SSE uses `event: runtime`, JSON `AgentHostStreamFrame` and `id: <cursor.seq>` for
 event frames. Preserve IDs, cursors and deltas; heartbeat comments carry no state.
-On snapshot_required or broken transport, replace the snapshot and resume from its
-cursor. A stopped final snapshot needs no stream. Disconnect never cancels. Cancel
+Broken transport resumes from the last applied event cursor. On snapshot_required,
+the conversation shell repairs the missing history range and the current live remainder
+before resuming; retrieval activity retains its run-local snapshot recovery. A stopped final snapshot needs no stream. Disconnect never cancels. Cancel
 stops owned work and returns a stopped run, or null if admission was prevented.
 HTTP errors never invent PI state; stop may be an ordinary question.
+
+## Conversation history window
+
+`session-history.ts` owns the shared request, cursor and page-boundary contract.
+Runtime selects the page; hosts authenticate the session and project only their
+own session metadata and the page's retrieval associations. Both the workbench
+assistant (and operations diagnosis) and ontology knowledge governance expose
+this route. Model context, evidence and full exports keep their complete reads.
+
+Without cursors, history opens at the tail. It counts user/assistant messages,
+aims for at least 50 messages across at least two admitted Runs, and stops at a
+Run boundary. The hard cap is 500 counted messages; a longer Run spans pages,
+which merge back into the same response by run/message ID. Tool results accompany
+the selected interval but do not consume the message budget. System messages do
+not leave this read model. History exhaustion may end below the minima.
+
+`before` reads an older page. `after` repairs a forward gap; the first response
+captures `throughCursor`, and further repair pages carry it until `nextCursor`
+is null. Cursors are session-bound positions, not credentials. `runId` includes
+the previously subscribed run's status during repair even if it has no missing
+message. Every query still checks host/domain/session access.
+
+Only the initial tail/repair response supplies `latestRun`'s live cut: settled
+messages and artifacts are absent there, and tool executions include only the
+remainder not yet represented by settled tool-result messages. History body
+messages appear once. Later repair pages carry durable bodies through the fixed
+cut, not another live baseline. Their session header can be current while their
+message/run entries remain restricted to the requested range.
+
+The shell merges durable messages by ID/sequence and then replaces pending state
+from the captured live cut before subscribing. Ordinary event-sequence gaps are
+legal and are not interpreted as lost messages. `snapshot_required` is the repair
+signal; unavailable transient deltas are not claimed as durable replay. Loading
+older pages preserves newer live state and the scroll position. Reopening reads
+from the server; there is no browser persistence or alternate history store.
 
 Resolve paths by **(runId,path)**: final version when stopped, current version while
 running, including the inherited session baseline. Null means no registered file.

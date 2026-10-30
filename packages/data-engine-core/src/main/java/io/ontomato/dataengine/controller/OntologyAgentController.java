@@ -56,6 +56,16 @@ public class OntologyAgentController {
     return host.list(agentId, limit, cursor, access.forAgent(req,agentId).owner());
   }
 
+  @GetMapping("/sessions/{id}/history")
+  public Object history(@PathVariable String id,
+      @RequestParam(required = false) String before,
+      @RequestParam(required = false) String after,
+      @RequestParam(required = false) String through,
+      @RequestParam(required = false) String runId,
+      HttpServletRequest req) throws Exception {
+    return host.history(AgentJson.id(id), JSONObject.of("before", before, "after", after, "through", through, "runId", runId), access.reader(req, id, null));
+  }
+
   @GetMapping("/sessions/{id}")
   public Object session(@PathVariable String id, HttpServletRequest req) throws Exception {
     return host.snapshot(AgentJson.id(id), access.reader(req, id, null));

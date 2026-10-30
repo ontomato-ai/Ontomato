@@ -3,10 +3,15 @@ import { computed, inject, ref, watch } from "vue";
 import { ChevronLeft, ChevronRight } from "lucide-vue-next";
 import { shellContextKey } from "../context";
 import type { ArtifactRendererProps } from "../types";
+import type { QuerySubgraph } from "@ontomato/contracts/query-subgraph";
 import { jsonTable, parseCsv, type TableData } from "./table-data";
 import { useArtifactText } from "./useArtifactBlob";
+import SubgraphView from "./SubgraphView.vue";
 
-/** .csv and .json datasets: paginated table; non-tabular JSON falls back to formatted text. */
+/**
+ * .csv and .json datasets: paginated table; non-tabular JSON falls back to formatted text.
+ * A dataset carrying its source analysis can switch to that graph.
+ */
 const props = defineProps<ArtifactRendererProps>();
 const shell = inject(shellContextKey)!;
 const labels = computed(() => shell.labels.value);
@@ -14,18 +19,21 @@ const { text, error } = useArtifactText(props);
 const page = ref(1);
 const pageSize = computed(() => (props.presentation === "inline" ? 8 : 50));
 
-const parsed = computed<{ table: TableData | null; raw: string | null; invalid: boolean }>(() => {
-  if (text.value === null) return { table: null, raw: null, invalid: false };
+const parsed = computed<{ table: TableData | null; raw: string | null; invalid: boolean; graph: QuerySubgraph | null }>(() => {
+  if (text.value === null) return { table: null, raw: null, invalid: false, graph: null };
   if (props.artifact.path.toLowerCase().endsWith(".csv"))
-    return { table: parseCsv(text.value), raw: null, invalid: false };
+    return { table: parseCsv(text.value), raw: null, invalid: false, graph: null };
   try {
     const value: unknown = JSON.parse(text.value);
     const table = jsonTable(value);
-    return { table, raw: table ? null : JSON.stringify(value, null, 2), invalid: false };
+    const analysis = (value as { sourceAnalysis?: QuerySubgraph } | null)?.sourceAnalysis;
+    const graph = table && analysis?.schema === "ontomato.query-subgraph.v1" ? analysis : null;
+    return { table, raw: table ? null : JSON.stringify(value, null, 2), invalid: false, graph };
   } catch {
-    return { table: null, raw: text.value, invalid: true };
+    return { table: null, raw: text.value, invalid: true, graph: null };
   }
 });
+const view = ref<"data" | "lineage">("data");
 const table = computed(() => parsed.value.table);
 const pages = computed(() => Math.max(1, Math.ceil((table.value?.rows.length ?? 0) / pageSize.value)));
 const visibleRows = computed(() => {
@@ -39,7 +47,10 @@ const numericColumns = computed(() =>
     return values.length > 0 && values.every((value) => NUMBER.test(value));
   }),
 );
-watch(() => props.artifact.id, () => (page.value = 1));
+watch(() => props.artifact.id, () => {
+  page.value = 1;
+  view.value = "data";
+});
 </script>
 
 <template>
@@ -47,6 +58,16 @@ watch(() => props.artifact.id, () => (page.value = 1));
     <div v-if="error" class="state error">{{ error }}</div>
     <div v-else-if="text === null" class="state">{{ labels.loading }}</div>
     <template v-else-if="table">
+      <div v-if="parsed.graph" class="views" role="tablist">
+        <button type="button" role="tab" :aria-selected="view === 'data'" :class="{ on: view === 'data' }" @click="view = 'data'">
+          {{ labels.datasetData }}
+        </button>
+        <button type="button" role="tab" :aria-selected="view === 'lineage'" :class="{ on: view === 'lineage' }" @click="view = 'lineage'">
+          {{ labels.datasetLineage }}
+        </button>
+      </div>
+      <SubgraphView v-if="parsed.graph && view === 'lineage'" :graph="parsed.graph" />
+      <template v-else>
       <div class="table-scroll">
         <table>
           <thead>
@@ -77,6 +98,7 @@ watch(() => props.artifact.id, () => (page.value = 1));
           </button>
         </div>
       </div>
+      </template>
     </template>
     <div v-else-if="parsed.raw !== null && parsed.raw.trim() === ''" class="state">{{ labels.emptyFile }}</div>
     <pre v-else class="raw" :class="{ invalid: parsed.invalid }">{{ parsed.raw }}</pre>
@@ -89,6 +111,29 @@ watch(() => props.artifact.id, () => (page.value = 1));
 }
 .table-scroll {
   overflow: auto;
+}
+.views {
+  display: flex;
+  gap: 2px;
+  padding: 6px 8px;
+}
+.views button {
+  padding: 3px 10px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--el-text-color-secondary);
+  font: inherit;
+  font-size: var(--text-xs, 12px);
+  cursor: pointer;
+}
+.views button:hover {
+  background: var(--el-fill-color);
+}
+.views button.on {
+  background: var(--el-fill-color);
+  color: var(--el-text-color-primary);
+  font-weight: 500;
 }
 .inline .table-scroll {
   max-height: 360px;

@@ -166,7 +166,7 @@ function startSingleRun(runConfig: RunConfig): RunMeta {
     throw new Error("A run is already active. Stop it first or wait for it to complete.");
   }
 
-  const caseSet = getCaseSet(runConfig.caseSetId);
+  const caseSet = getCaseSet(runConfig.caseSetId, runConfig.domainId);
   if (!caseSet) {
     throw new Error(`Case set not found: ${runConfig.caseSetId}`);
   }

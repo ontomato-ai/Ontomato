@@ -6,18 +6,18 @@ import type { HostStreamHandlers } from "./host";
 const RECONNECT_DELAYS = [500, 1000, 2000, 5000, 10000];
 const MAX_QUEUED_FRAMES = 2000;
 
-export interface RunSubscription {
+export interface RunSubscription<T = AgentHostRunSnapshot> {
   runId: string;
   current(): RunView | undefined;
-  read(): Promise<AgentHostRunSnapshot>;
-  snapshot(snapshot: AgentHostRunSnapshot): void;
+  read(): Promise<T>;
+  snapshot(snapshot: T): void;
   event(envelope: RuntimeEventEnvelope): void;
   subscribe(after: { seq: number; streamId: string }, handlers: HostStreamHandlers): () => void;
 }
 
 /** One run's snapshot/cursor recovery and batched event delivery, shared by both shell views. */
-export function createRunSubscription() {
-  let target: RunSubscription | null = null;
+export function createRunSubscription<T = AgentHostRunSnapshot>() {
+  let target: RunSubscription<T> | null = null;
   let generation = 0;
   let detach: (() => void) | null = null;
   let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
@@ -101,13 +101,13 @@ export function createRunSubscription() {
 
   return {
     /** Attach after the caller has already applied an authoritative snapshot. */
-    start(next: RunSubscription) {
+    start(next: RunSubscription<T>) {
       stop();
       target = next;
       connect(0);
     },
     /** Read a snapshot before attaching, including on initial activity load. */
-    load(next: RunSubscription) {
+    load(next: RunSubscription<T>) {
       stop();
       target = next;
       return refresh(0);

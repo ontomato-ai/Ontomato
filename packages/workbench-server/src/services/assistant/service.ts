@@ -1,3 +1,4 @@
+import type { SessionHistoryQuery } from "@ontomato/contracts/session-history";
 import { getLogContext } from "../../logging/log-context";
 import { assistantOntologyContext } from "./context";
 import { randomUUID, createHash } from "node:crypto";
@@ -43,7 +44,7 @@ const db = () => getPostgresPool(),
   observing = new Set<string>();
 export { publicSnapshot } from "../../platform/agent-runtime/projection";
 import { publicMessages, publicSnapshot, publicRun } from "../../platform/agent-runtime/projection";
-const sessionView = (s: SessionRow, latestRun: RuntimeRunSnapshot | null) =>
+const sessionView = (s: SessionRow, latestRun: { run: Parameters<typeof publicRun>[0] } | null) =>
   agentHostSessionSchema.parse({
     id: s.id,
     agentId: s.agent_id,
@@ -162,6 +163,28 @@ export const assistantService = {
           : null,
     };
   },
+  async history(id: string, owner: AssistantOwner, query: SessionHistoryQuery) {
+    await assistantStore.session(id, owner);
+    const page = await new RuntimeClient(owner.domainId).history(id, query);
+    if (page.latestRun) {
+      await assistantStore.admitted(page.latestRun.run.id, messageText(
+        page.messages.find(m => m.runId === page.latestRun!.run.id && m.message.role === "user")?.message ?? { content: "" },
+      ));
+      await this.settle(page.latestRun, owner);
+      if (page.latestRun.run.status === "running") {
+        const c = getLogContext();
+        this.observe(page.latestRun.run.id, owner, { token: c?.token, apiKey: c?.apiKey });
+      }
+    }
+    const runs = await Promise.all(page.runs.map(async run => (await this.withRetrievals({ run }, owner)).run));
+    const latest = runs.find(run => run.id === page.session.latestRunId);
+    return {
+      ...page,
+      session: sessionView(await assistantStore.session(id, owner), page.session.latestRun ? { run: page.session.latestRun } : null),
+      runs,
+      latestRun: page.latestRun ? { ...page.latestRun, run: latest! } : null,
+    };
+  },
   async snapshot(id: string, owner: AssistantOwner) {
     const row = await assistantStore.session(id, owner),
       s = await new RuntimeClient(owner.domainId).session(id);
@@ -221,7 +244,7 @@ export const assistantService = {
    * Ontology lists one row per retrieval run in creation order; a continuation adds a run to the
    * same retrieval, so keep one link per retrieval pointing at its latest run.
    */
-  async withRetrievals<T extends RuntimeRunSnapshot>(s: T, owner: AssistantOwner): Promise<T> {
+  async withRetrievals<T extends { run: { id: string } }>(s: T, owner: AssistantOwner): Promise<T> {
     try {
       const links = await new OntologyRetrievalClient(owner, s.run.id).links();
       if (links.length === 0) return s;
@@ -234,7 +257,7 @@ export const assistantService = {
       return s;
     }
   },
-  async settle(s: RuntimeRunSnapshot, owner: AssistantOwner) {
+  async settle(s: { run: Pick<RuntimeRunSnapshot["run"], "id" | "status"> }, owner: AssistantOwner) {
     if (s.run.status === "stopped") {
       await assistantStore.close(s.run.id);
       const context = getLogContext();

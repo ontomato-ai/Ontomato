@@ -6,7 +6,8 @@ import type { ProcessStepView } from "./types";
 export type ProcessStep = ProcessStepView;
 
 export type ResponseBlock =
-  | { kind: "text"; key: string; text: string; final: boolean; runId: string }
+  /** `commentary`: text written in the same message as tool calls, i.e. what the agent is about to do. */
+  | { kind: "text"; key: string; text: string; final: boolean; runId: string; commentary: boolean }
   | { kind: "process"; key: string; steps: ProcessStep[]; active: boolean };
 
 export interface UserItem {
@@ -28,6 +29,9 @@ export interface ResponseItem {
   answerText: string;
   /** Retrieval associations for activity rendering; stable across continuations. */
   retrievals: RetrievalLink[];
+  /** The run's start and stop times in ms, for the elapsed-time line. */
+  startedAt: number | null;
+  finishedAt: number | null;
 }
 
 export type ConversationItem = UserItem | ResponseItem;
@@ -60,11 +64,11 @@ export function conversationItems(state: ConversationState): ConversationItem[] 
       toolResults.set(message.toolCallId, userText(message.content));
   }
 
-  const openResponse = (runId: string, key: string): ResponseItem => {
+  const openResponse = (runId: string): ResponseItem => {
     if (response && response.runId === runId) return response;
     response = {
       kind: "response",
-      key,
+      key: runId,
       runId,
       blocks: [],
       running: false,
@@ -72,6 +76,8 @@ export function conversationItems(state: ConversationState): ConversationItem[] 
       answerMessageId: null,
       answerText: "",
       retrievals: [],
+      startedAt: null,
+      finishedAt: null,
     };
     items.push(response);
     return response;
@@ -85,9 +91,10 @@ export function conversationItems(state: ConversationState): ConversationItem[] 
       items.push({ kind: "user", key: entry.id, text: userText(message.content) });
       continue;
     }
-    const current = openResponse(entry.runId, entry.id);
+    const current = openResponse(entry.runId);
     const run = state.runs[entry.runId];
     const settled = entry.messageSeq !== null;
+    const commentary = message.content.some((block) => block.type === "toolCall");
     message.content.forEach((block, index) => {
       const key = `${entry.id}:${index}`;
       if (block.type === "text") {
@@ -98,6 +105,7 @@ export function conversationItems(state: ConversationState): ConversationItem[] 
           text: block.text,
           final: settled,
           runId: entry.runId,
+          commentary,
         });
         return;
       }
@@ -149,6 +157,8 @@ export function conversationItems(state: ConversationState): ConversationItem[] 
     const run = state.runs[item.runId];
     item.running = run?.status === "running";
     item.retrievals = run?.retrievals ?? [];
+    item.startedAt = run?.createdAt ? Date.parse(run.createdAt) : null;
+    item.finishedAt = run?.finishedAt ? Date.parse(run.finishedAt) : null;
     item.end = run && run.status === "stopped"
       ? { stopReason: run.stopReason, errorMessage: run.errorMessage }
       : null;

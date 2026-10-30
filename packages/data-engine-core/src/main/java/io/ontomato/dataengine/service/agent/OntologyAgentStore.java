@@ -47,6 +47,7 @@ CREATE TABLE IF NOT EXISTS ontology_agent_runs (
 ALTER TABLE ontology_agent_runs ADD COLUMN IF NOT EXISTS runtime_admitted boolean NOT NULL DEFAULT true;
 ALTER TABLE ontology_agent_runs ADD COLUMN IF NOT EXISTS admission_error text;
 ALTER TABLE ontology_agent_runs ADD COLUMN IF NOT EXISTS result_after bigint NOT NULL DEFAULT 0;
+ALTER TABLE ontology_agent_runs ADD COLUMN IF NOT EXISTS language text;
 CREATE TABLE IF NOT EXISTS ontology_binding_runs (
   run_id uuid PRIMARY KEY REFERENCES ontology_agent_runs(id), status text NOT NULL,
   open boolean NOT NULL, deadline timestamptz, owner_node text NOT NULL, error text, qc_id uuid NOT NULL, qc_admitted boolean NOT NULL DEFAULT false);
@@ -237,7 +238,8 @@ CREATE TABLE IF NOT EXISTS ontology_retrieval_artifacts (
       boolean external,
       int seconds,
       Long credentialExpiry,
-      boolean continuation) {
+      boolean continuation,
+      String language) {
     return transaction(
         () -> {
           JSONObject scope = callerId == null ? null : caller(callerId, owner, true);
@@ -322,8 +324,8 @@ CREATE TABLE IF NOT EXISTS ontology_retrieval_artifacts (
           }
           update(
               "INSERT INTO"
-                  + " ontology_agent_runs(id,session_id,input_hash,request,open,deadline,caller_id,external,decision_revision,runtime_admitted)"
-                  + " VALUES(?,?,?,?::jsonb,true,?::timestamptz,?,?,?,false)",
+                  + " ontology_agent_runs(id,session_id,input_hash,request,open,deadline,caller_id,external,decision_revision,runtime_admitted,language)"
+                  + " VALUES(?,?,?,?::jsonb,true,?::timestamptz,?,?,?,false,?)",
               uuid(id),
               uuid(sessionId),
               AgentJson.hash(request),
@@ -331,7 +333,8 @@ CREATE TABLE IF NOT EXISTS ontology_retrieval_artifacts (
               Instant.ofEpochMilli(deadline).toString(),
               callerId == null ? null : uuid(callerId),
               external,
-              decisionRevision);
+              decisionRevision,
+              language);
           update("UPDATE ontology_agent_runs SET result_after=(SELECT coalesce(max(d.seq),0) FROM ontology_retrieval_deliveries d JOIN ontology_agent_runs r ON r.id=d.run_id WHERE r.session_id=?) WHERE id=?",uuid(sessionId),uuid(id));
           update(
               "INSERT INTO ontology_retrievals(id,input,current_run_id,decisions)"

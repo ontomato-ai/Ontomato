@@ -1456,7 +1456,8 @@ if (import.meta.main) {
   if (result.meta?.error || result.json?.success === false)
     throw new Error(result.json?.error || "Skill could not produce the requested result");
   const root = process.env.ONTOMATO_OUTPUT_DIR || "outputs";
-  const output = path.join(root, "echarts." + (result.html ? "html" : "json"));
+  // Every call keeps its own file so repeated charts in one run do not overwrite each other.
+  const output = path.join(root, "echarts-" + randomUUID().slice(0, 8) + (result.html ? ".html" : ".json"));
   await fs.mkdir(root, { recursive: true });
   await fs.mkdir("work", { recursive: true });
   const temporary = path.join("work", randomUUID() + ".tmp");

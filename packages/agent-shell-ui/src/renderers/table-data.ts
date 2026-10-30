@@ -46,8 +46,25 @@ function cell(value: unknown): string {
   return typeof value === "object" ? JSON.stringify(value) : String(value);
 }
 
-/** JSON arrays of records become tables; anything else is shown as formatted JSON. */
+/**
+ * JSON arrays of records become tables, and so do dataset files ({columns:[{key,label}], rows}),
+ * headed by their column labels; anything else is shown as formatted JSON.
+ */
 export function jsonTable(value: unknown): TableData | null {
+  if (value && typeof value === "object" && !Array.isArray(value)) {
+    const { columns, rows } = value as { columns?: unknown; rows?: unknown };
+    if (
+      Array.isArray(columns) && Array.isArray(rows) &&
+      columns.every((column) => column && typeof column.key === "string" && typeof column.label === "string")
+    ) {
+      const fields = columns as { key: string; label: string }[];
+      return {
+        columns: fields.map((column) => column.label),
+        rows: (rows as Record<string, unknown>[]).map((row) => fields.map((column) => cell(row?.[column.key]))),
+      };
+    }
+    return null;
+  }
   if (!Array.isArray(value) || value.length === 0) return null;
   if (value.every((row) => row && typeof row === "object" && !Array.isArray(row))) {
     const columns: string[] = [];

@@ -207,7 +207,8 @@ public class OntologyRetrievalService {
                   false,
                   timeout(input),
                   context.expiresAt(),
-                  false);
+                  false,
+                  context.language());
           if (!admission.replayed()) launch(id, runId, input, context);
           return poll(id, 0, context.owner());
         });
@@ -271,7 +272,8 @@ public class OntologyRetrievalService {
             false,
             timeout(request),
             context.expiresAt(),
-            true);
+            true,
+            context.language());
     long cursor = accepted.run().getLongValue("result_after");
     if (!accepted.replayed()) launch(id, key, original, context);
     return poll(id, cursor, context.owner());
@@ -329,7 +331,8 @@ public class OntologyRetrievalService {
               false,
               600,
               context.expiresAt(),
-              false);
+              false,
+              context.language());
           prepare(session, key, context);
           return snapshot(session, key, context.owner());
         });
@@ -354,7 +357,8 @@ public class OntologyRetrievalService {
             true,
             timeout(input),
             context.expiresAt(),
-            existing != null);
+            existing != null,
+            context.language());
     return JSONObject.of(
         "id", id, "sessionId", id, "runId", key, "expiresAt", a.run().getString("deadline"));
   }
@@ -953,6 +957,8 @@ public class OntologyRetrievalService {
       recipes.add(recipe);
     }
     var input = store.retrieval(id, owner).getJSONObject("input");
+    // The quality check follows the request language that admitted this round.
+    var language = row.getString("language");
     quality.start(
         JSONObject.of(
             "id",
@@ -966,7 +972,7 @@ public class OntologyRetrievalService {
             "classNames",
             input.getOrDefault("classNames", List.of())),
         subject(owner),
-        "en");
+        language == null ? "en" : language);
     store.update("UPDATE ontology_agent_runs SET qc_admitted=true WHERE id=?", uuid(runId));
   }
 

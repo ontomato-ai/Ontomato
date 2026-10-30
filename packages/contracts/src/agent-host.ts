@@ -2,9 +2,10 @@ import { z } from "zod";
 import {
   runtimeMessageRecordSchema,
   runtimeRunSnapshotSchema,
+  runtimeRunViewSchema,
 } from "./agent-runtime";
+import { sessionHistoryBoundsSchema } from "./session-history";
 import { runtimeArtifactSchema } from "./agent-runtime-artifacts";
-import { runtimeRegisteredSkillSchema } from "./agent-runtime-skills";
 import {
   runtimeCursorSchema,
   runtimeStreamFrameSchema,
@@ -12,8 +13,6 @@ import {
 import {
   runtimeIdSchema,
   runtimeKeySchema,
-  runtimeRunStatusSchema,
-  runtimeStopReasonSchema,
   runtimeTimestampSchema,
 } from "./agent-runtime-values";
 /** Application-neutral metadata for the shell's read-only agent selector. */
@@ -29,16 +28,8 @@ export const agentHostAgentSchema = z
 export const agentHostAgentListSchema = z
   .object({ agents: z.array(agentHostAgentSchema) })
   .strict();
-export const agentHostRunSchema = z
-  .object({
-    id: runtimeIdSchema,
-    sessionId: runtimeIdSchema,
-    status: runtimeRunStatusSchema,
-    stopReason: runtimeStopReasonSchema.nullable(),
-    errorMessage: z.string().nullable(),
-    createdAt: runtimeTimestampSchema,
-    finishedAt: runtimeTimestampSchema.nullable(),
-    resolvedSkills: z.array(runtimeRegisteredSkillSchema),
+export const agentHostRunSchema = runtimeRunViewSchema
+  .extend({
     retrievals: z
       .array(
         z
@@ -79,6 +70,14 @@ export const agentHostSessionSnapshotSchema = z
     latestRun: agentHostRunSnapshotSchema.nullable(),
   })
   .strict();
+export const agentHostSessionHistorySchema = z.object({
+  session: agentHostSessionSchema,
+  messages: z.array(agentHostMessageSchema),
+  runs: z.array(agentHostRunSchema),
+  latestRun: agentHostRunSnapshotSchema.nullable(),
+  page: sessionHistoryBoundsSchema,
+}).strict();
+export type AgentHostSessionHistory = z.infer<typeof agentHostSessionHistorySchema>;
 export const agentHostSessionPageSchema = z
   .object({
     sessions: z.array(agentHostSessionSchema),

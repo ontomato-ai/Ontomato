@@ -25,7 +25,8 @@ plain JSON; HTTP failures retain `{error:{code,message},correlationId}`.
 | Method and path | Request / response |
 | --- | --- |
 | POST /v1/sessions | `{}`; 201 `{session,replayed}` |
-| GET /v1/sessions/:id | `{session,messages,latestRun}` snapshot |
+| GET /v1/sessions/:id | `{session,messages,latestRun}` complete snapshot |
+| GET /v1/sessions/:id/history | bounded conversation history page; `before`, `after`, `through`, optional recovery `runId` |
 | POST /v1/sessions/status | `{sessionIds}`; ordered `{sessions:[{session,latestRun}]}` |
 | POST /v1/sessions/:id/runs | StartRun below; 202 `{run,replayed}` |
 | GET /v1/runs/:id | `{run,messages,pendingMessages,toolExecutions,artifacts,cursor}` |
@@ -205,6 +206,18 @@ Model role selection and write-only keys follow the
 [model configuration contract](agent-runtime-model-config.md). Runtime owns
 storage and resolves each run locally. Workbench and ontology hosts share settings
 within a platform domain. Run requests no longer carry `modelCredential`.
+
+## Conversation history reads
+
+`session-history.ts` defines the window read used by the common agent-host shell.
+The runtime selects a keyset range in storage before reading message bodies;
+limits are 50 user/assistant messages and two Runs as targets, with a hard
+500-message cap. Other records accompany the interval. A long Run may span pages.
+A session lock pairs the tail/repair page boundary with its current live cut;
+subsequent forward pages are pinned to the first response's through cursor.
+Backward pages have no live baseline. Full internal history/model reads are
+unchanged. See [agent-host](agent-host.md#conversation-history-window) for the
+host projection and shell merge/scroll behavior.
 
 ## Events and file artifacts
 

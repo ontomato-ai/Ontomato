@@ -1,3 +1,5 @@
+import type { SessionHistoryQuery } from "@ontomato/contracts/session-history";
+import type { AgentHostSessionHistory } from "@ontomato/contracts/agent-host";
 import type { AgentHostAgentList, AgentHostCreateSessionResponse, AgentHostSessionPage, AgentHostSessionSnapshot, AgentHostAdmission, AgentHostCancelResponse, AgentHostArtifactResolution } from "@ontomato/contracts/agent-host";
 import type { RuntimeArtifact } from "@ontomato/contracts/agent-runtime-artifacts";
 import type { RuntimeRunSnapshot } from "@ontomato/contracts/agent-runtime";
@@ -9,6 +11,7 @@ export interface AgentHostService {
   agents(owner: AgentHostOwner, locale?: string): Promise<AgentHostAgentList>;
   create(id: string, owner: AgentHostOwner, input: { agentId: string }): Promise<AgentHostCreateSessionResponse>;
   list(owner: AgentHostOwner, input: { agentId: string; limit: number; cursor?: string }): Promise<AgentHostSessionPage>;
+  history(id: string, owner: AgentHostOwner, query: SessionHistoryQuery): Promise<AgentHostSessionHistory>;
   snapshot(id: string, owner: AgentHostOwner): Promise<AgentHostSessionSnapshot>;
   delete(id: string, owner: AgentHostOwner): Promise<void>;
   start(session: string, run: string, message: string, owner: AgentHostOwner, credentials: AssistantCredentials): Promise<AgentHostAdmission>;
