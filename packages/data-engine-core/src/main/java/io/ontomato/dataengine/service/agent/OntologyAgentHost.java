@@ -141,6 +141,22 @@ public class OntologyAgentHost {
     return JSONObject.of("session", snapshot(id, owner).get("session"), "replayed", replayed);
   }
 
+  public JSONObject history(String id, JSONObject query, Owner owner) throws Exception {
+    var row = store.session(id, owner);
+    if (!row.getBooleanValue("runtime_owned")) throw AgentHttpException.missing();
+    var params = new ArrayList<String>();
+    for (String name : List.of("before", "after", "through", "runId")) {
+      String value = query.getString(name);
+      if (value != null) params.add(name + "=" + java.net.URLEncoder.encode(value, java.nio.charset.StandardCharsets.UTF_8));
+    }
+    var page = runtime.json(owner.domainId(), id, "/v1/sessions/" + id + "/history?" + String.join("&", params), "GET", null, null);
+    var latest = page.getJSONObject("session").getJSONObject("latestRun");
+    var live = page.getJSONObject("latestRun");
+    if (live != null) closeStoppedCallbacks(id, live.getJSONObject("run").getString("id"), owner, live);
+    page.put("session", sessionView(row, latest));
+    return page;
+  }
+
   public JSONObject snapshot(String id, Owner owner) throws Exception {
     var row = store.session(id, owner);
     if (!row.getBooleanValue("runtime_owned")) throw AgentHttpException.missing();

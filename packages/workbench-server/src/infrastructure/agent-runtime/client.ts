@@ -1,3 +1,4 @@
+import { runtimeSessionHistorySchema, type SessionHistoryQuery } from "@ontomato/contracts/session-history";
 import { modelSettingsSchema, modelSettingsServerSchema, modelDiagnosticsSchema, type ModelSettingsWrite } from "@ontomato/contracts/model-settings";
 import { runtimeModelTestResponseSchema, type RuntimeModelTestRequest } from "@ontomato/contracts/runtime-model-test";
 import { correlationId as normalizeCorrelationId, getServiceLogContext, logHeaders, withServiceLogContext } from "@ontomato/service-logging";
@@ -155,6 +156,10 @@ export class RuntimeClient {
     return runtimeSessionSnapshotSchema.parse(
       await this.request(`/v1/sessions/${encodeURIComponent(id)}`),
     );
+  }
+  async history(id: string, query: SessionHistoryQuery = {}) {
+    const params = new URLSearchParams(query);
+    return runtimeSessionHistorySchema.parse(await this.request(`/v1/sessions/${encodeURIComponent(id)}/history?${params}`));
   }
   async sessionStatuses(sessionIds: string[]) {
     return runtimeSessionStatusesResponseSchema.parse(
