@@ -2,8 +2,8 @@ import { z } from "zod";
 import type { PoolClient } from "pg";
 import {
   MODEL_ROLES, isMaskedSecret, maskModelKey, modelEntrySchema, modelAgentsSchema,
-  modelSettingsWriteSchema, modelDiagnosticsSchema,
-  type BackendModelConfig, type ModelSettingsData, type ModelSettingsServerData,
+  modelSettingsWriteSchema,
+  type BackendModelConfig, type ModelSettingsData,
 } from "@ontomato/contracts/model-settings";
 import { openSealedModelKey, sealModelKey } from "@ontomato/contracts/model-key-seal";
 import { runtimeModelTestRequestSchema } from "@ontomato/contracts/runtime-model-test";
@@ -70,11 +70,9 @@ export class RuntimeModelSettings {
   private read(domainId: string) {
     return this.store.transaction(c => this.current(c, domainId));
   }
-  async get(domainId: string): Promise<ModelSettingsServerData> {
+  async get(domainId: string): Promise<ModelSettingsData> {
     const data = await this.read(domainId);
-    return { ...this.keys(data, maskModelKey), sealedApiKeys: Object.fromEntries(
-      data.models.map(model => [model.name, model.apiKeys.map(value => sealModelKey(value, this.token))]),
-    ) };
+    return this.keys(data, maskModelKey);
   }
   async save(domainId: string, body: unknown): Promise<ModelSettingsData> {
     const input = modelSettingsWriteSchema.parse(body);
@@ -110,17 +108,5 @@ export class RuntimeModelSettings {
     const apiKeys = restoreKeys(model, stored);
     const { apiKeys: _keys, ...configuration } = model;
     return { config: { ...configuration, apiKey: apiKeys[0] ?? "" }, prompt };
-  }
-  async diagnostics(domainId: string) {
-    const data = await this.read(domainId);
-    return modelDiagnosticsSchema.parse({
-      agents: data.agents,
-      models: data.models.map(model => ({
-        name: model.name, displayName: model.displayName, modelName: model.modelName,
-        connectionConfigured: !!(model.baseUrl && model.modelName && model.apiKeys.some(key => key.trim())),
-        timeout: model.timeout ?? null, maxRetries: model.maxRetries ?? null,
-        maxTokens: model.maxTokens, contextWindow: model.contextWindow,
-      })),
-    });
   }
 }

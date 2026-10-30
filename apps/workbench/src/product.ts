@@ -2,7 +2,6 @@ import type { WorkbenchProduct } from "@ontomato/workbench-server/product/types"
 
 export const ossProduct: WorkbenchProduct = {
   proxyMountPath: "/ontomato",
-  logFileName: "ontomato.log",
   migrationLockKey: "ontomato:postgres-business-migrations",
   subgraphFence: "ontomato-subgraph",
   mcpClientName: "ontomato",

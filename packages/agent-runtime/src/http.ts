@@ -110,9 +110,6 @@ export function createRuntimeHttp(runtime: AgentRuntime) {
   app.put("/v1/models/settings", route(async (req, res) => {
     res.json(await runtime.models.save(scope(req).scope.domainId, req.body));
   }));
-  app.get("/v1/models/diagnostics", route(async (req, res) => {
-    res.json(await runtime.models.diagnostics(scope(req).scope.domainId));
-  }));
   app.get("/v1/mcp/services/names", route(async (req, res) => {
     res.json(await runtime.mcp.options(scope(req).scope));
   }));

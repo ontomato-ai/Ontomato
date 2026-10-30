@@ -4,8 +4,6 @@ import type { RuntimeDefaults } from "@ontomato/workbench-server";
 export const ossRuntimeDefaults: RuntimeDefaults = {
   postgresFallback: "postgresql://ontomato:ontomato@localhost:5432/ontomato",
   systemMcpUrlFallback: "",
-
-  defaultDataAdapter: "sql",
   /** The OSS edition's historical default request locale. */
   requestLocaleFallback: "en",
 };

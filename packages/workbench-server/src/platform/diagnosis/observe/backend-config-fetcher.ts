@@ -1,4 +1,3 @@
-import type { DataAdaptersData } from "@ontomato/contracts/data-adapters";
 import { getApiConfig, buildUrl } from "../../../config/data-query-api";
 import { environment } from "../../../config/environment";
 import { backendGet } from "../../../utils/backend-client";
@@ -8,9 +7,7 @@ import { tApp } from "../../../i18n";
 
 const logger = createLogger("observe:backend-config");
 
-export interface BackendInfraConfig {
-  dataAdapter: string;
-}
+export type BackendInfraConfig = Record<string, never>;
 
 let cached: BackendInfraConfig | null = null;
 
@@ -30,7 +27,7 @@ export async function fetchBackendConfig(token?: string): Promise<BackendInfraCo
     const url = buildUrl(apiConfig, ENDPOINT);
     const resp = await backendGet(ENDPOINT, url, { token: tk, timeoutMs: 10_000, retries: 1 });
     const json = JSON.parse(resp.text) as
-      | { success: true; data: DataAdaptersData }
+      | { success: true; data?: unknown }
       | { success: false; message?: string };
 
     if (!json.success) {
@@ -38,12 +35,10 @@ export async function fetchBackendConfig(token?: string): Promise<BackendInfraCo
       return null;
     }
 
-    const result: BackendInfraConfig = { dataAdapter: json.data.currentType };
+    const result: BackendInfraConfig = {};
 
     cached = result;
-    logger.info(tApp("diag.observe.backend-config-fetcher.3"), {
-      dataAdapter: result.dataAdapter,
-    });
+    logger.info(tApp("diag.observe.backend-config-fetcher.3"));
     return result;
   } catch (err) {
     logger.warn(tApp("diag.observe.backend-config-fetcher.4"), {

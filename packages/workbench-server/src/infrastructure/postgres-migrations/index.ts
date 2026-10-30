@@ -52,7 +52,6 @@ import {
   migrateQueryRunBackendSessions,
 } from "./20260922-query-run-backend-sessions/migration.js";
 import { ensureQueryRunBackendSessionsSchema } from "./20260922-query-run-backend-sessions/schema.js";
-import { ensureHarnessSessionsSchema } from "./20260922-harness-sessions/schema.js";
 
 import {
   ANALYSIS_CONVERSATION_TURNS_VERSION,
@@ -169,10 +168,6 @@ export const POSTGRES_MIGRATION_REGISTRY: MigrationRegistration[] = [
       name: QUERY_RUN_BACKEND_SESSIONS_NAME,
       run: runQueryRunBackendSessions,
     },
-  },
-  {
-    directory: "20260922-harness-sessions",
-    ensureSchema: ensureHarnessSessionsSchema,
   },
   {
     directory: "20260923-analysis-harness-links",

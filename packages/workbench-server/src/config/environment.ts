@@ -2,8 +2,6 @@ import { workbenchProduct } from "../product/installed";
 import { runtimeDefaults } from "../runtime/defaults";
 
 const read = (name: string) => process.env[name];
-const nonNegative = (value: unknown, fallback: number | undefined) =>
-  Math.max(0, parseInt(String(value || fallback), 10));
 
 export const environment = {
   node: () => read("NODE_ENV"),
@@ -33,26 +31,8 @@ export const environment = {
       read("AGENT_RUNTIME_CALLBACK_URL") ||
       `http://127.0.0.1:${read("PORT") || "3000"}`,
   }),
-  subQuestionInterval: (fallback: number | undefined) =>
-    nonNegative(read("SUB_QUESTION_QUERY_INTERVAL_MS"), fallback),
-  reportCooldown: (fallback: number | undefined) =>
-    nonNegative(read("REPORT_GENERATION_COOLDOWN_MS"), fallback),
-  replayDir: (fallback: string) =>
-    read("ABC_REPLAY_DIR") || read("HOT_REPORT_REPLAY_DIR") || fallback,
   chromium: () => read("CHROMIUM_EXECUTABLE_PATH") || undefined,
-  smtp: () => {
-    const user = read("SMTP_USER") || "";
-    return {
-      host: read("SMTP_HOST"),
-      port: Number(read("SMTP_PORT")) || 587,
-      secure: read("SMTP_SECURE") === "true",
-      user,
-      pass: read("SMTP_PASS") || "",
-      from: read("SMTP_FROM") || user || workbenchProduct().smtpFromAddress,
-    };
-  },
   retention: () => read("DIAGNOSIS_RETENTION_FILE"),
   observeNodes: () => read("OBSERVE_BACKEND_NODES") || read("BACKEND_NODES"),
-  observeBucket: () => read("OBSERVE_BACKEND_INFO_BUCKET_ROOT"),
   observeWorkspaces: () => read("OBSERVE_TRACE_WORKSPACE_ROOT"),
 };

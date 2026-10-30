@@ -85,7 +85,7 @@ public class ABCProgramServiceImpl implements ABCProgramService {
         		errorPythonOutput = pythonOutput;
         	}
         	String jsonErrorMessage = "The program print result is:\n```\n" + errorPythonOutput + "\n```\n";
-        	jsonErrorMessage += "does not conform to the program print format `{\"answer\":[{...}, ...]}`. Check your code again to see whether there are some irrelevant prints written for debug, remove these irrelevant prints, call the `test` tool again, and then come back to `outputCode`.";
+        	jsonErrorMessage += "does not conform to the program print format `{\"answer\":[{...}, ...]}`. Check your code again to see whether there are some irrelevant prints written for debug, and remove these irrelevant prints.";
         	throw new Exception(jsonErrorMessage);
         }
         
@@ -95,7 +95,7 @@ public class ABCProgramServiceImpl implements ABCProgramService {
 		}
         for (int i = 0; i < answer.size(); i++) {
 			if (!answer.getJSONObject(i).keySet().equals(allKeys)) {
-				throw new Exception("The top-level fields of the program print result are inconsistent with outKeyRefs. Modify the Python program or outKeyRefs and then call outputCode again");
+				throw new Exception("The top-level fields of the program print result are inconsistent with outKeyRefs. Modify the Python program or outKeyRefs.");
 			}
 		}
 

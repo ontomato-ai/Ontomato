@@ -85,23 +85,23 @@ describe.skipIf(!database)("runtime domain model configuration HTTP/PG contract"
     expect(saved.status).toBe(200);
     expect(saved.data.models[0].apiKeys).toEqual(["******0001", "******0001"]);
     expect(saved.data.agents).toEqual(Object.fromEntries(MODEL_ROLES.map(role => [role, { model: "main" }])));
-    expect(saved.data).not.toHaveProperty("sealedApiKeys");
     const read = await request("/v1/models/settings", undefined, "1", "host-b");
     expect(read.data.agents).toEqual(saved.data.agents);
-    expect(read.data.sealedApiKeys.main.map((key: string) => openSealedModelKey(key, sealToken))).toEqual(draft().apiKeys);
+    expect(read.data.models[0].apiKeys).toEqual(["******0001", "******0001"]);
     expect(JSON.stringify(read.data)).not.toContain("sk-first");
-    expect(modelSettingsSchema.parse(read.data)).not.toHaveProperty("sealedApiKeys");
     expect((await request("/v1/models/settings", undefined, "other", "host-b")).data.models).toEqual([]);
     const stored = (await store.pool.query(`SELECT settings FROM ${store.table("model_settings")} WHERE domain_id='1'`)).rows[0];
     expect(JSON.stringify(stored)).not.toContain("sk-first");
     expect(stored.settings.models[0].apiKeys[0]).toMatch(/^enc:v1:/);
+    expect(stored.settings.models[0].apiKeys.map((k: string) => openSealedModelKey(k, sealToken))).toEqual(draft().apiKeys);
     await expect(models.resolve("other", "general")).rejects.toMatchObject({ code: "MODEL_NOT_CONFIGURED" });
   });
   it("restores duplicate masks in order and rejects unmatched or foreign masks atomically", async () => {
     const keys = ["******0001", "sk-replacement-5555", "******0001"];
     expect((await request("/v1/models/settings", { models: [draft(keys)], agents: roles })).status).toBe(200);
     const before = await models.get("1");
-    expect(before.sealedApiKeys.main.map(key => openSealedModelKey(key, sealToken)))
+    const stored = (await store.pool.query(`SELECT settings FROM ${store.table("model_settings")} WHERE domain_id='1'`)).rows[0];
+    expect(stored.settings.models[0].apiKeys.map((key: string) => openSealedModelKey(key, sealToken)))
       .toEqual(["sk-first-key-0001", "sk-replacement-5555", "sk-second-key-0001"]);
     expect(before.agents.general.model).toBeNull(); // Later saves do not refill roles.
     for (const domain of ["1", "other"]) {
@@ -110,20 +110,16 @@ describe.skipIf(!database)("runtime domain model configuration HTTP/PG contract"
     }
     expect((await models.get("1")).models).toEqual(before.models);
     expect((await request("/v1/models/settings", { models: [], agents: { ...roles, general: "main" } })).status).toBe(400);
-    const sealed = before.sealedApiKeys.main[0];
+    const sealed = stored.settings.models[0].apiKeys[0];
     expect((await request("/v1/models/settings", { models: [draft([sealed])], agents: roles })).status).toBe(400);
   });
-  it("tests a saved mask at the new owner without writing and emits only safe diagnosis fields", async () => {
+  it("tests a saved mask at the new owner without writing", async () => {
     const before = await models.get("1");
     const result = await request("/v1/models/test", { model: { ...draft(["******0001"]), baseUrl: providerUrl }, prompt: "hello" }, "1", "host-b", "POST");
     expect(result).toEqual({ status: 200, data: { content: "connected" } });
     expect(observedKey).toBe("Bearer sk-first-key-0001");
     expect((await models.get("1")).models).toEqual(before.models);
     expect((await request("/v1/models/test", { model: draft(["******0001"]) }, "other", "host-a", "POST")).status).toBe(400);
-    const diagnostics = await request("/v1/models/diagnostics");
-    expect(diagnostics.data.models[0]).toMatchObject({ name: "main", connectionConfigured: true });
-    for (const secret of ["apiKeys", "sealedApiKeys", "baseUrl", "customHeaders", "customRequestParameters", "sk-first"])
-      expect(JSON.stringify(diagnostics.data)).not.toContain(secret);
   });
   it("persists configuration across restart and does not reseed an intentionally emptied library", async () => {
     await stop(); await start();

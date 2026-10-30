@@ -1,4 +1,3 @@
-import { randomUUID } from "node:crypto";
 import type { AbcProgramDashboard } from "@ontomato/contracts/dashboard";
 import type { QueryDatasetIdentity, ResultTruncation } from "@ontomato/contracts/query-execution";
 import { runAuxiliary } from "../../platform/agent-runtime/runtime";
@@ -765,46 +764,6 @@ ${remainingTable}
 </details>`;
 }
 
-export async function buildTableFromRows(
-  rows: Record<string, unknown>[],
-  ctxLabel: string,
-  options?: {
-    signal?: AbortSignal;
-    maxRows?: number;
-    outputKeyDescriptionMDTable?: string;
-    code?: string;
-    locale?: string;
-    truncation?: Partial<ResultTruncation>;
-  }
-): Promise<{
-  tableSegment: string;
-  normalizedRows: Record<string, unknown>[];
-  fieldDisplayPlan?: FieldDisplayPlan;
-}> {
-  if (rows.length === 0) {
-    return {
-      tableSegment: emptyTableText(options?.locale, options?.truncation),
-      normalizedRows: [],
-    };
-  }
-
-  const fieldDisplayPlan = await createFieldDisplayPlan(rows, {
-    subQuestion: ctxLabel,
-    signal: options?.signal,
-    outputKeyDescriptionMDTable: options?.outputKeyDescriptionMDTable,
-    code: options?.code,
-    locale: options?.locale,
-  });
-  return {
-    tableSegment: renderDataAsTable(rows, fieldDisplayPlan, {
-      maxRows: options?.maxRows,
-      locale: options?.locale,
-    }),
-    normalizedRows: rows,
-    fieldDisplayPlan,
-  };
-}
-
 export function extractAnswerFromData(data: unknown): string {
   const normalized = normalizeData(data);
 
@@ -832,26 +791,3 @@ export function extractAnswerFromData(data: unknown): string {
   return tApp("queryFixed.194", { v0: (summary), v1: (preview) });
 }
 
-export function convertChunkToDataset(
-  chunk: { data: Record<string, unknown>[]; dsl?: unknown; truncation?: ResultTruncation },
-  index: number,
-  locale?: string
-): Dataset {
-  const problem =
-    (chunk.dsl as { problem?: string } | undefined)?.problem ||
-    tForLocale(locale, "query.datasetFallbackTitle", { index: index + 1 });
-  const name =
-    problem.replace(/[^\u4e00-\u9fa5a-zA-Z0-9_-]/g, "_").slice(0, 50) || `dataset_${index + 1}`;
-
-  const columns = collectAllHeaders(chunk.data);
-
-  return {
-    id: randomUUID(),
-    name,
-    description: problem,
-    columns,
-    data: chunk.data,
-    dsl: chunk.dsl,
-    ...chunk.truncation,
-  };
-}
