@@ -20,7 +20,9 @@ public final class QuerySourceAnalysis {
     return new DslGraph(definitions).build(dsl);
   }
 
-  /** Persisted single-source programs are upgraded on read; new programs submit the graph. */
+  /** Read-boundary compatibility for permission evaluation of persisted outKeyRefs.
+   * Never writes back or invents display labels; this is not a second editable analysis.
+   */
   public static JSONObject fromStoredSources(List<ABCHarnessProgramOutKeyRef> refs) {
     if (refs == null) throw new IllegalArgumentException("Stored program has no source declaration");
     Builder graph = new Builder();
@@ -48,46 +50,22 @@ public final class QuerySourceAnalysis {
         .filter(n -> "output".equals(n.getString("kind"))).map(n -> n.getString("key")).toList();
   }
 
+  /** Display labels are declared by the agent; Java never guesses or fills them. */
   public static void outputLabels(JSONObject actual, JSONObject declared, String language) {
+    if (declared == null) throw new IllegalArgumentException("sourceAnalysis with output labels is required");
+    QuerySubgraphContract.validate(declared);
     Map<String, String> labels = new HashMap<>();
-    if (declared != null) {
-      QuerySubgraphContract.validate(declared);
-      for (Object value : declared.getJSONArray("nodes")) {
-        var node = JSONObject.from(value);
-        if ("output".equals(node.getString("kind"))) labels.put(node.getString("key"), node.getString("label"));
-      }
-      if (!labels.keySet().equals(new HashSet<>(outputKeys(actual)))) throw new IllegalArgumentException("Declared output labels do not match the query");
+    for (Object value : declared.getJSONArray("nodes")) {
+      var node = JSONObject.from(value);
+      if ("output".equals(node.getString("kind"))) labels.put(node.getString("key"), node.getString("label"));
     }
-    Map<String, JSONObject> nodes = new LinkedHashMap<>();
-    Map<String, List<JSONObject>> incoming = new HashMap<>();
-    for (Object value : actual.getJSONArray("nodes")) { var n = (JSONObject) value; nodes.put(n.getString("id"), n); }
-    for (Object value : actual.getJSONArray("edges")) { var e = JSONObject.from(value);
-      if ("dependency".equals(e.getString("kind"))) incoming.computeIfAbsent(e.getString("target"), ignored -> new ArrayList<>()).add(e);
-    }
-    boolean chinese = language != null && language.toLowerCase(Locale.ROOT).startsWith("zh");
-    for (var node : nodes.values()) {
-      if ("operation".equals(node.getString("kind"))) {
-        var values = incoming.getOrDefault(node.getString("id"), List.of()).stream()
-            .filter(e -> "value".equals(e.getString("role"))).map(e -> nodes.get(e.getString("source"))).toList();
-        String input = values.isEmpty() ? "" : values.get(0).getString("label");
-        String operation = node.getString("operation");
-        if (operation.equals("group") && !input.isBlank()) node.put("label", input);
-        if (operation.equals("aggregate")) {
-          String function = node.getString("expression").split("\\(", 2)[0].toUpperCase(Locale.ROOT);
-          String display = switch (function) {
-            case "COUNT" -> chinese ? "数量" : "Count";
-            case "SUM" -> chinese ? input + "合计" : "Total " + input;
-            case "AVG", "AVERAGE" -> chinese ? "平均" + input : "Average " + input;
-            case "MIN" -> chinese ? "最小" + input : "Minimum " + input;
-            case "MAX" -> chinese ? "最大" + input : "Maximum " + input;
-            default -> node.getString("expression");
-          };
-          node.put("label", display);
-        }
-      }
+    if (!labels.keySet().equals(new HashSet<>(outputKeys(actual)))) throw new IllegalArgumentException("Declared output labels do not match the query");
+    for (Object value : actual.getJSONArray("nodes")) {
+      var node = (JSONObject) value;
       if ("output".equals(node.getString("kind"))) {
-        String source = incoming.get(node.getString("id")).get(0).getString("source");
-        node.put("label", labels.getOrDefault(node.getString("key"), nodes.get(source).getString("label")));
+        String text = labels.get(node.getString("key"));
+        if (text.isBlank()) throw new IllegalArgumentException("Output labels must not be blank");
+        node.put("label", text);
       }
     }
   }

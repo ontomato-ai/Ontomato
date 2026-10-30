@@ -890,7 +890,9 @@ public class OntologyRetrievalService {
       if (!keys.add(JSONObject.from(c).getString("key")))
         throw AgentHttpException.invalid("Duplicate dataset column");
     var refs = new HashSet<String>();
-    refs.addAll(QuerySourceAnalysis.outputKeys(QuerySubgraphContract.validate(data.getJSONObject("sourceAnalysis"))));
+    if (data.getJSONObject("sourceAnalysis") != null)
+      refs.addAll(QuerySourceAnalysis.outputKeys(QuerySubgraphContract.validate(data.getJSONObject("sourceAnalysis"))));
+    else for (Object value : data.getJSONArray("outKeyRefs")) refs.add(JSONObject.from(value).getString("key"));
     if (!keys.equals(refs)) throw AgentHttpException.invalid("Dataset source keys differ");
     for (Object r : data.getJSONArray("rows"))
       if (!JSONObject.from(r).keySet().equals(keys))

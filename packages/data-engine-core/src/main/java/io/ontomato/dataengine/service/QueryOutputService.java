@@ -27,6 +27,7 @@ public class QueryOutputService {
       QueryAccessService.Access access, String lang, List<String> classNames) throws Exception {
     String kind = recipe.getString("kind");
     JSONArray rows;
+    JSONArray legacySources = null;
     JSONObject truncation = null;
     if ("dsl".equals(kind)) {
       JSONObject declared = analysis;
@@ -50,6 +51,8 @@ public class QueryOutputService {
         recipe.put("parameters", parameters);
         var returns = function.getReturnDef();
         analysis = returns.getSourceAnalysis() != null ? returns.getSourceAnalysis() : QuerySourceAnalysis.fromStoredSources(returns.getOutKeyRefs());
+        analysis = JSON.parseObject(JSON.toJSONString(analysis, JSONWriter.Feature.WriteMapNullValue));
+        if (returns.getSourceAnalysis() == null) legacySources = JSONArray.from(returns.getOutKeyRefs());
         if (!parameters.isEmpty()) code = "# ontomato-python:2\nfrom pathlib import Path as _P\n_P('parameters.json').write_text("
             + JSON.toJSONString(JSON.toJSONString(parameters, JSONWriter.Feature.WriteMapNullValue))
             + ", encoding='utf-8')\nexec(compile(" + JSON.toJSONString(code) + ", 'published_function.py', 'exec'))\n";
@@ -81,8 +84,12 @@ public class QueryOutputService {
     var columns = analysis.getJSONArray("nodes").stream().map(JSONObject::from)
         .filter(node -> "output".equals(node.getString("kind"))).map(node ->
             JSONObject.of("key", node.getString("key"), "label", node.getString("label"), "type", null)).toList();
-    return JSONObject.of("receiptId", id, "executedAt", java.time.Instant.now().toString(),
-        "recipe", recipe, "sourceAnalysis", analysis, "columns", columns, "rows", rows, "truncation", truncation);
+    var output = JSONObject.of("receiptId", id, "executedAt", java.time.Instant.now().toString(),
+        "recipe", recipe, "columns", columns, "rows", rows, "truncation", truncation);
+    // A legacy permission conversion is not a complete, declared display subgraph.
+    if (legacySources == null) output.put("sourceAnalysis", analysis);
+    else output.put("outKeyRefs", legacySources);
+    return output;
   }
 
   public static String hash(String code) {

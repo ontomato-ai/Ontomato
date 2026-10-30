@@ -53,3 +53,9 @@ boundary, never as a second set of editable graph facts.
 `examples/query-subgraphs.json` contains `singleDsl` (relation, filter, grouping,
 aggregation) and `pythonMerge` (two queries, join and derived output). Both are
 invented examples; labels are already prepared for display.
+
+Persisted outKeyRefs are converted only to evaluate permissions at the read boundary.
+The conversion is not written back or published as a complete display subgraph.
+Legacy metric results retain their declared keys as labels and may omit sourceAnalysis.
+New DSL/Python datasets require an agent declaration with complete output labels;
+Java does not infer or improve labels.

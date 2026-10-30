@@ -31,6 +31,7 @@ final class DatasetFileContract {
         string(recipe, "sha256", false);
       }
       case "dsl" -> {
+        io.ontomato.dataengine.service.QuerySubgraphContract.validate(object(body, "sourceAnalysis"));
         AgentJson.fields(recipe, "kind", "dsl", "executedCode", "sha256");
         object(recipe, "dsl");
         optionalText(recipe, "executedCode");

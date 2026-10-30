@@ -178,6 +178,7 @@ public final class QueryPermissions {
     });
     JSONArray visible = new JSONArray();
     for (Object value : rows) {
+      if (!(value instanceof Map<?, ?>)) throw new IllegalArgumentException("Result rows must be objects");
       JSONObject row = JSON.parseObject(JSON.toJSONString(value, JSONWriter.Feature.WriteMapNullValue));
       if (!row.keySet().equals(sources.keySet())) throw new IllegalArgumentException("Result columns do not match source analysis");
       for (String key : denied) {
@@ -195,7 +196,7 @@ public final class QueryPermissions {
             if (cell instanceof List<?> bucket && bucket.size() >= 3) {
               JSONArray copy = JSONArray.from(bucket);
               if (!allowed(permission, source.className(), source.attrName() + "." + bucket.get(1), source.use()))
-                for (int i = 0; i < copy.size(); i++) if (i != 1) copy.set(i, "****");
+                for (int i = 0; i < copy.size(); i++) copy.set(i, "****");
               masked.add(copy);
             } else masked.add("****");
           }

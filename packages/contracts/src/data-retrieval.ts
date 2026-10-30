@@ -203,7 +203,7 @@ export const prepareDatasetSchema = z
     decisionIds: z.array(id),
   })
   .strict().superRefine((data, context) => {
-    if (data.recipe.kind === "python" && !data.sourceAnalysis) context.addIssue({ code: z.ZodIssueCode.custom, message: "Python sourceAnalysis is required" });
+    if (data.recipe.kind !== "metric" && !data.sourceAnalysis) context.addIssue({ code: z.ZodIssueCode.custom, message: "sourceAnalysis is required" });
   });
 export type DatasetPayload = z.infer<typeof datasetPayloadSchema>;
 export type RetrievalInput = z.infer<typeof retrievalInputSchema>;

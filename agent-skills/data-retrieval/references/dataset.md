@@ -18,7 +18,7 @@ Include all source fields and calculation paths, not only one convenient source.
 For DSL, reuse sourceAnalysis returned by execute-dsl and set its output labels in
 the user's language. Java reconstructs the actual DSL dependencies and uses only
 the declared output labels by key. Python requires the full
-analysis. Published metrics use their saved analysis. No outKeyRefs declaration is accepted.
+analysis. Published metrics use their saved analysis. Legacy stored metrics without one retain key labels and do not publish a fabricated graph; their stored outKeyRefs are converted only for permission evaluation. No new outKeyRefs declaration is accepted.
 Each metric use is {id,revision,use:"direct"|"derived"|"not_used",reason}.
 selfCheck contains scope, filters, grain, denominator, nullGroups (all strings),
 and comparisons: [{metricId,comparable,explanation,executionRef:null|string}].

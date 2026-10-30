@@ -38,6 +38,39 @@ class QueryPermissionPolicyTest {
         "output", JSONObject.of("to_user", true, "fields", JSONArray.of(field))))));
   }
 
+  @Test
+  void savedMultiQueryGraphSurvivesMetricExecution() throws Exception {
+    JSONObject graph;
+    try (var input = getClass().getResourceAsStream("/ontology-contracts/examples/query-subgraphs.json")) {
+      graph = JSON.parseObject(input.readAllBytes()).getJSONObject("pythonMerge");
+    }
+    var definition = new io.ontomato.dataengine.bean.function.Function();
+    definition.setCode("# ontomato-python:2\nprint('{}')");
+    definition.setParameters(new ArrayList<>());
+    var returns = new io.ontomato.dataengine.bean.function.ReturnDef();
+    returns.setSourceAnalysis(graph); definition.setReturnDef(returns);
+    var metric = new io.ontomato.dataengine.bean.metricView.MetricView(); metric.setFunction(definition);
+    var ontology = mock(OntologyQueryService.class);
+    when(ontology.metric(any(), any(), any())).thenReturn(metric);
+    var metadata = new ArrayList<>(definitions());
+    metadata.add(JSONObject.of("className", "/DepartmentBudget", "attrs", JSONArray.of(
+        JSONObject.of("name", "department"), JSONObject.of("name", "amount"), JSONObject.of("name", "year"))));
+    when(ontology.rule(any())).thenReturn(Map.of("classDef", metadata));
+    var python = mock(PythonExecuteService.class);
+    var execution = new io.ontomato.dataengine.bean.PythonExecuteResult();
+    execution.setResult("{\"answer\":[{\"department\":\"Operations\",\"payrollBudgetPercent\":60}]}");
+    when(python.execute(anyString(), anyString(), anyInt(), anyString(), any(), any(), any())).thenReturn(execution);
+    var config = mock(BusinessConfigService.class);
+    var settings = new io.ontomato.dataengine.config.BusinessConfig(); settings.setDslCookerTimeout(60000L);
+    when(config.get("domain")).thenReturn(settings);
+    var permission = permission(); permission.setFullData(true);
+    var access = new QueryAccessService.Access(new QueryAccessService.GrantUser("user", "domain"), permission, null, null, null);
+    var result = new QueryOutputService(python, new io.ontomato.dataengine.service.impl.ABCProgramServiceImpl(), ontology, config)
+        .execute(UUID.randomUUID().toString(), JSONObject.of("kind", "metric", "metricId", "metric", "revision", "r1", "parameters", new JSONObject()), null, access, "en");
+    assertEquals(graph, QuerySubgraphContract.validate(result.getJSONObject("sourceAnalysis")));
+    assertEquals("Payroll / budget (%)", result.getJSONArray("columns").getJSONObject(1).getString("label"));
+  }
+
   private UserDataPermission permission() {
     var permission = new UserDataPermission();
     var employee = new FieldPermission("/Employee");
