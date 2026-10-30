@@ -118,34 +118,38 @@ watch(
 );
 
 let lastRunId: string | null = null;
-let awaitingRun = false;
+let reportedRunId: string | null = null;
 watch(
   () => conversation.activeRunId.value,
   (id) => {
-    if (id) {
-      lastRunId = id;
-      awaitingRun = true;
-    }
+    if (id) lastRunId = id;
   },
 );
+// Emit only when the run itself reaches "stopped". Watching `busy` also fires when opening a
+// freshly created session resets the conversation, which used to ask for a draft while the run
+// was still starting.
 watch(
-  () => conversation.busy.value,
-  (busy) => {
-    if (busy || !awaitingRun || !lastRunId) return;
-    awaitingRun = false;
-    const sessionId = conversation.state.sessionId;
+  () => (lastRunId ? conversation.state.runs[lastRunId]?.status : undefined),
+  (status) => {
+    if (!lastRunId || status !== "stopped" || reportedRunId === lastRunId) return;
     const run = conversation.state.runs[lastRunId];
-    // The host decides from its own run record when the live projection is already gone.
-    const ok = run
-      ? run.status === "stopped" && run.stopReason === "stop" && !run.errorMessage
-      : true;
-    if (sessionId) emit("runComplete", { sessionId, runId: lastRunId, ok });
+    const sessionId = conversation.state.sessionId;
+    if (!run || !sessionId) return;
+    reportedRunId = lastRunId;
+    emit("runComplete", {
+      sessionId,
+      runId: lastRunId,
+      ok: run.stopReason === "stop" && !run.errorMessage,
+    });
   },
 );
 
 async function send(text: string) {
   const result = await conversation.send(props.agentId, text);
   if (!result) return;
+  // Track the run before the host opens the newly created session; opening resets the projection
+  // and must not be mistaken for a finished run.
+  lastRunId = result.snapshot.run.id;
   if (result.createdSession) emit("update:sessionId", result.createdSession.id);
 }
 

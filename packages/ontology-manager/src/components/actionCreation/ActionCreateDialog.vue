@@ -131,19 +131,37 @@ function onError(text: string) {
   message.error(text);
 }
 
+async function requestDraft(sessionId: string, runId: string) {
+  const response = await manager.request("/action/drafts", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ sessionId, runId }),
+  });
+  const body = await response.json();
+  if (body?.success === false) throw new Error(body.message || ot("actionWizardDraftFailed"));
+  return body?.data ?? body;
+}
+
 async function onRunComplete(payload: { sessionId: string; runId: string; ok: boolean }) {
   if (!payload.ok) return;
   creatingDraft.value = true;
   errorText.value = "";
   try {
-    const response = await manager.request("/action/drafts", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ sessionId: payload.sessionId, runId: payload.runId }),
-    });
-    const body = await response.json();
-    if (body?.success === false) throw new Error(body.message || ot("actionWizardDraftFailed"));
-    const value = body?.data ?? body;
+    let value: any;
+    for (let attempt = 0; ; attempt++) {
+      try {
+        value = await requestDraft(payload.sessionId, payload.runId);
+        break;
+      } catch (error) {
+        const text = error instanceof Error ? error.message : "";
+        // The live run event and the server's run row can briefly disagree; wait for the row.
+        if (attempt < 3 && /still running/i.test(text)) {
+          await new Promise((resolve) => setTimeout(resolve, 1500));
+          continue;
+        }
+        throw error;
+      }
+    }
     // A question-only turn has no result file; keep the previous draft.
     if (value?.noDraft) return;
     if (!value?.draftId) throw new Error(ot("actionWizardDraftFailed"));
