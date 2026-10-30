@@ -15,6 +15,15 @@ requirement where they differ. Treat it as constraints on the write function, no
   `unrepresentable` with a reason.
 - Never invent fields or classes that are absent from the schema; resolve names against the object class list.
 
+## Probing reads
+When you need to probe reads, write the DSL to a JSON file under `outputs/` and run
+`node <this-skill>/scripts/generation.mjs query outputs/dsl.json`. Never embed a DSL literal inside a Python
+program; if a query program is unavoidable, build the DSL with `json.dumps` instead of hand-writing nested braces.
+
+The business test must exercise a success path: stage a matching object with `prepare`/`reset` before running it.
+Do not raise on a negative precondition inside the delivered test program; verify failure behaviour in a separate probe
+that does not decide whether the action is delivered.
+
 ---
 
 # Required Reading Before Work
