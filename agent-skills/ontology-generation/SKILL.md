@@ -27,7 +27,7 @@ Write **one JSON object** to `outputs/result.json`, with the following fields fo
 
 | Kind | Result fields |
 | --- | --- |
-| action | `sourcePath`, `parameterDefs` (array), `classNames` (nonempty array), `name`, `logic` |
+| action | `sourcePath`, `parameterDefs` (array), `classNames` (nonempty array), `name`, `logic`, optional `submissionCriteria` (`operator`, `conditions`, `unrepresentable`) |
 | function | `sourcePath`, `parameterDefs` (array), `name`, `logic`; preserve the supplied output keys |
 | dashboard | `sourcePath`, `parameterDefs` (array of key/name/type/value/className/attrName), `title` |
 | explain | `segs`, `operations`, `negativeEffect`, exactly following the explanation schema in the task definition; read source first |
