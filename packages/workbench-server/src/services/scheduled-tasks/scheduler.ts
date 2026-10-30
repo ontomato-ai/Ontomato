@@ -1,7 +1,7 @@
 import { environment } from "../../config/environment";
 import { createLogger } from "../../logging/logger";
 import { settleScheduledRuns, startScheduledRun } from "./runner";
-import { nextRunAt } from "./schedule";
+import { nextRunAfterSlot } from "./schedule";
 import { scheduledTaskStore } from "./store";
 
 const logger = createLogger("scheduled-task-scheduler");
@@ -13,7 +13,8 @@ let ticking = false;
 
 /**
  * One pass: end runs that have stopped, then fire due tasks. A due slot is claimed by moving it to the next slot
- * after now, so a slot fires once across instances and a long outage fires once, not once per missed slot.
+ * after now (see nextRunAfterSlot), so a slot fires once across instances and a long outage fires once, not once per
+ * missed slot.
  */
 export async function runSchedulerTick(now = Date.now()) {
   await settleScheduledRuns(now);
@@ -21,7 +22,9 @@ export async function runSchedulerTick(now = Date.now()) {
   const due = await scheduledTaskStore.due(new Date(now), DUE_BATCH);
   await Promise.allSettled(
     due.map(async (task) => {
-      const claimed = await scheduledTaskStore.claim(task, new Date(nextRunAt(task.frequency, now, zone)));
+      // Due tasks always have a slot; it anchors an interval's next one.
+      const next = nextRunAfterSlot(task.frequency, task.nextRunAt!.getTime(), now, zone);
+      const claimed = await scheduledTaskStore.claim(task, new Date(next));
       if (claimed) await startScheduledRun(claimed, "schedule");
     }),
   );

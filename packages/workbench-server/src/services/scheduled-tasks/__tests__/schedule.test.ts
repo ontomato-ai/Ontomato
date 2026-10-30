@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ScheduledTaskFrequency } from "@ontomato/contracts/scheduled-tasks";
-import { nextRunAt } from "../schedule";
+import { nextRunAfterSlot, nextRunAt } from "../schedule";
 
 /** Times of day are wall-clock times of the schedule zone, whatever zone the process itself runs in. */
 const next = (frequency: ScheduledTaskFrequency, afterIso: string, zone: string) =>
@@ -48,5 +48,22 @@ describe("scheduled task frequencies", () => {
     expect(next(lastDay, "2026-12-31T04:00:00Z", "UTC")).toBe("2027-01-31T03:30:00.000Z");
     // The month's end is the schedule zone's: 01:00 on Feb 1 in Shanghai is still Jan 31 in UTC.
     expect(next({ kind: "monthly", day: 31, time: "09:00" }, "2026-01-31T17:00:00Z", "Asia/Shanghai")).toBe("2026-02-28T01:00:00.000Z");
+  });
+
+  it("keeps an interval's cadence on its slots: a late tick does not drift it, an outage fires once", () => {
+    const hourly = { kind: "interval", every: 1, unit: "hour" } as const;
+    const slot = (previousIso: string, nowIso: string) =>
+      new Date(nextRunAfterSlot(hourly, Date.parse(previousIso), Date.parse(nowIso), "UTC")).toISOString();
+    // Claimed 50 seconds late, the next slot stays on the hour.
+    expect(slot("2026-03-08T10:00:00Z", "2026-03-08T10:00:50Z")).toBe("2026-03-08T11:00:00.000Z");
+    expect(slot("2026-03-08T11:00:00Z", "2026-03-08T11:00:30Z")).toBe("2026-03-08T12:00:00.000Z");
+    // After a 5½-hour outage the overdue slot fires once and the next one is the first slot after now.
+    expect(slot("2026-03-08T10:00:00Z", "2026-03-08T15:30:00Z")).toBe("2026-03-08T16:00:00.000Z");
+    // A tick exactly on a later slot moves past it rather than firing it again.
+    expect(slot("2026-03-08T10:00:00Z", "2026-03-08T12:00:00Z")).toBe("2026-03-08T13:00:00.000Z");
+    // Times of day are unaffected by the previous slot.
+    expect(
+      new Date(nextRunAfterSlot({ kind: "daily", time: "03:30" }, Date.parse("2026-03-01T03:30:00Z"), Date.parse("2026-03-08T05:00:00Z"), "UTC")).toISOString(),
+    ).toBe("2026-03-09T03:30:00.000Z");
   });
 });

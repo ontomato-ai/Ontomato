@@ -36,6 +36,22 @@ export function nextRunAt(frequency: ScheduledTaskFrequency, after: number, time
   }
 }
 
+/**
+ * The slot after a due slot fires at `now`. An interval keeps its cadence anchored at the previous slot: the next
+ * slot is the first `previous + k * interval` strictly after now, so a late tick does not push the schedule back and
+ * an outage fires once instead of once per missed slot. Times of day do not depend on the previous slot.
+ */
+export function nextRunAfterSlot(
+  frequency: ScheduledTaskFrequency,
+  previousSlot: number,
+  now: number,
+  timeZone: string,
+): number {
+  if (frequency.kind !== "interval") return nextRunAt(frequency, now, timeZone);
+  const step = frequency.every * UNIT_MS[frequency.unit];
+  return previousSlot + Math.max(1, Math.floor((now - previousSlot) / step) + 1) * step;
+}
+
 const UNIT_MS = { minute: 60_000, hour: 3_600_000, day: 86_400_000 } as const;
 
 function clock(time: string): [number, number] {

@@ -8,7 +8,10 @@ import { runtimeIdSchema, runtimeTimestampSchema } from "./agent-runtime-values"
 const timeOfDaySchema = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, "HH:MM");
 
 export const scheduledTaskFrequencySchema = z.discriminatedUnion("kind", [
-  /** Every `every` units, counted from the previous trigger. */
+  /**
+   * Every `every` units on a fixed cadence from the previous scheduled slot; the first slot is one interval after the
+   * task is created, edited, switched on or resumed. Missed slots are not made up: one run, then the cadence goes on.
+   */
   z
     .object({
       kind: z.literal("interval"),
