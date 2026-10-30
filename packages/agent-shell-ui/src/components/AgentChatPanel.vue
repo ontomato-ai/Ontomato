@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, provide, ref, toRef, watch } from "vue";
+import { computed, onBeforeUnmount, provide, ref, toRef, watch } from "vue";
 import type { AgentHostAgent } from "@ontomato/contracts/agent-host";
 import type { AgentHostClient } from "../host";
 import { defaultChartTheme } from "../chart-theme";
@@ -119,10 +119,65 @@ watch(
 
 let lastRunId: string | null = null;
 let reportedRunId: string | null = null;
+let completionTimer: ReturnType<typeof setTimeout> | null = null;
+let completionRunId: string | null = null;
+
+function stopCompletionWatch() {
+  if (completionTimer !== null) {
+    clearTimeout(completionTimer);
+    completionTimer = null;
+  }
+  completionRunId = null;
+}
+
+function emitRunComplete(sessionId: string, runId: string, ok: boolean) {
+  if (reportedRunId === runId) return;
+  reportedRunId = runId;
+  emit("runComplete", { sessionId, runId, ok });
+}
+
+/**
+ * The live conversation projection can lag behind the run row (or be reset while a new session is
+ * opening). Read the authoritative run after sending so the draft request is never skipped just
+ * because the SSE status was stale.
+ */
+function startCompletionWatch(sessionId: string, runId: string) {
+  stopCompletionWatch();
+  completionRunId = runId;
+  let attempts = 0;
+  const check = async () => {
+    if (completionRunId !== runId || reportedRunId === runId) return;
+    if (attempts++ >= 300) {
+      stopCompletionWatch();
+      return;
+    }
+    try {
+      const snapshot = await props.client.readRun(sessionId, runId);
+      if (completionRunId !== runId) return;
+      if (snapshot.run.status === "stopped") {
+        emitRunComplete(
+          sessionId,
+          runId,
+          snapshot.run.stopReason !== "aborted" && !snapshot.run.errorMessage
+        );
+        stopCompletionWatch();
+        return;
+      }
+    } catch {
+      // The run may not be readable yet; retry while the deadline allows it.
+    }
+    if (completionRunId === runId) completionTimer = setTimeout(check, 2000);
+  };
+  void check();
+}
+
 watch(
   () => conversation.activeRunId.value,
   (id) => {
-    if (id) lastRunId = id;
+    if (!id) return;
+    lastRunId = id;
+    const sessionId = conversation.state.sessionId;
+    if (sessionId) startCompletionWatch(sessionId, id);
   },
 );
 // Emit only when the run itself reaches "stopped". Watching `busy` also fires when opening a
@@ -135,14 +190,12 @@ watch(
     const run = conversation.state.runs[lastRunId];
     const sessionId = conversation.state.sessionId;
     if (!run || !sessionId) return;
-    reportedRunId = lastRunId;
-    emit("runComplete", {
-      sessionId,
-      runId: lastRunId,
-      ok: run.stopReason === "stop" && !run.errorMessage,
-    });
+    emitRunComplete(sessionId, lastRunId, run.stopReason !== "aborted" && !run.errorMessage);
+    stopCompletionWatch();
   },
 );
+
+onBeforeUnmount(stopCompletionWatch);
 
 async function send(text: string) {
   const result = await conversation.send(props.agentId, text);
@@ -151,6 +204,9 @@ async function send(text: string) {
   // and must not be mistaken for a finished run.
   lastRunId = result.snapshot.run.id;
   if (result.createdSession) emit("update:sessionId", result.createdSession.id);
+  const sessionId =
+    result.snapshot.run.sessionId ?? result.createdSession?.id ?? conversation.state.sessionId;
+  if (sessionId) startCompletionWatch(sessionId, result.snapshot.run.id);
 }
 
 function report(error: unknown) {
