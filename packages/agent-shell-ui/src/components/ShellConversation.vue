@@ -72,7 +72,10 @@ watch(() => props.historyRevision, async (revision) => {
 
 function toBottom(smooth = false) {
   const el = scroller.value;
-  if (el) el.scrollTo({ top: el.scrollHeight, behavior: smooth ? "smooth" : "auto" });
+  if (el) {
+    el.scrollTo({ top: el.scrollHeight, behavior: smooth ? "smooth" : "auto" });
+    if (!smooth) lastScrollTop = el.scrollTop;
+  }
 }
 
 onMounted(() => {
@@ -84,6 +87,12 @@ onMounted(() => {
 });
 onBeforeUnmount(() => observer?.disconnect());
 
+// The empty/conversation branch can replace this element after the component has mounted.
+watch(content, (el, previous) => {
+  if (previous) observer?.unobserve(previous);
+  if (el) observer?.observe(el);
+}, { flush: "post" });
+
 watch(
   () => props.sessionId,
   () => {
@@ -91,6 +100,13 @@ watch(
     lastScrollTop = 0;
   },
 );
+
+watch([() => props.sessionId, () => props.loading], ([, loading]) => {
+  if (loading || props.loadError) return;
+  // Opening positions the freshly rendered tail; older-page prepends use historyRevision instead.
+  stick.value = true;
+  toBottom();
+}, { flush: "post" });
 
 function send(text: string) {
   stick.value = true;
