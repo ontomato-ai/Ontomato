@@ -224,6 +224,7 @@ public class ActionController {
 				actionDef.put("logic", action.getFunction().getLogic());
 				actionDef.put("parameters", action.getFunction().getParameters());
 				actionDef.put("returnDef", action.getFunction().getReturnDef());
+				actionDef.put("definition", action.getDefinition());
 				actionDefs.add(actionDef);
 			}
 			ret.put("success", true);
