@@ -13,7 +13,7 @@ const { ot } = useOntologyText();
 
 <template>
   <section v-if="meaning" class="business-meaning">
-    <h3 class="bm-title">{{ ot("sectionBusinessMeaning") }}</h3>
+    <h3 v-if="meaning.operations.length > 0" class="bm-title">{{ ot("sectionBusinessMeaning") }}</h3>
     <p v-if="stale" class="bm-stale">{{ ot("businessMeaningStale") }}</p>
     <div v-if="meaning.operations.length > 0" class="bm-part">
       <h4>{{ ot("detailOperations") }}</h4>
