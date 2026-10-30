@@ -91,6 +91,7 @@
         <resource><directory>../../agent-skills/ontomato-analyst</directory><targetPath>ontology-skills/ontomato-analyst</targetPath>
             <includes><include>SKILL.md</include><include>ontomato.mjs</include><include>client.mjs</include><include>application.yml</include><include>python/**</include><include>references/dsl.md</include></includes>
         </resource>
+        <resource><directory>../../agent-skills/ontomato-analyst-assistant</directory><targetPath>ontology-skills/ontomato-analyst-assistant</targetPath></resource>
         <resource><directory>../../agent-skills/ontology-generation</directory><targetPath>ontology-skills/ontology-generation</targetPath></resource>
         <resource><directory>../../agent-skills/metricview-generation</directory><targetPath>ontology-skills/metricview-generation</targetPath></resource>
         <resource><directory>../../agent-skills/knowledge-governance</directory><targetPath>ontology-skills/knowledge-governance</targetPath></resource>
