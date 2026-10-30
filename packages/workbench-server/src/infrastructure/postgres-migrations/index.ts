@@ -1,5 +1,6 @@
 import { ensureOpsDiagnosisSchema } from "./20261029-ops-diagnosis/schema";
 import { ensureAssistantSchema } from "./20261028-assistant/schema";
+import { ensureScheduledTaskSchema } from "./20261030-scheduled-tasks/schema";
 import { workbenchProduct } from "../../product/installed";
 import { ensureAnalysisHarnessLinks } from "./20260923-analysis-harness-links/schema";
 import {
@@ -31,7 +32,6 @@ import {
   REPORT_AUTHORITY_SPLIT_VERSION,
   migrateReportAuthorityScheduleSplit,
 } from "./20260828-report-authority-schedule-split/migration.js";
-import { ensureScheduleRuleSchema } from "./20260828-report-authority-schedule-split/schema.js";
 import {
   QUERY_FACT_STORAGE_TEMPLATE_NAME,
   QUERY_FACT_STORAGE_TEMPLATE_VERSION,
@@ -81,6 +81,7 @@ type MigrationRegistration = {
 export const POSTGRES_MIGRATION_REGISTRY: MigrationRegistration[] = [
   { directory: "20261029-ops-diagnosis", ensureSchema: ensureOpsDiagnosisSchema },
   { directory: "20261028-assistant", ensureSchema: ensureAssistantSchema },
+  { directory: "20261030-scheduled-tasks", ensureSchema: ensureScheduledTaskSchema },
   {
     directory: "20260827-core-schema-baseline",
     ensureSchema: ensureCoreSchemaBaseline,
@@ -117,7 +118,7 @@ export const POSTGRES_MIGRATION_REGISTRY: MigrationRegistration[] = [
   },
   {
     directory: "20260828-report-authority-schedule-split",
-    ensureSchema: ensureScheduleRuleSchema,
+    ensureSchema: () => Promise.resolve(),
     migration: {
       version: REPORT_AUTHORITY_SPLIT_VERSION,
       name: REPORT_AUTHORITY_SPLIT_NAME,

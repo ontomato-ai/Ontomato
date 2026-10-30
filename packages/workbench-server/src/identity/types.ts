@@ -1,5 +1,4 @@
 import type { Request, RequestHandler } from "express";
-import type { RequestIdentity } from "@ontomato/contracts/identity";
 
 /** Data engine online ticket verification result. Task attribution, MCP, and autotest never share this one return value. */
 export interface VerifiedOnlineCredential {
@@ -9,6 +8,12 @@ export interface VerifiedOnlineCredential {
   roles?: string[] | null;
   domainId?: string | null;
   domainName?: string | null;
+}
+
+/** Downstream credentials of a scheduled run, in the shape online requests carry them. */
+export interface ScheduledRunCredentials {
+  token?: string;
+  apiKey?: string;
 }
 
 export interface SkillResourceDomainResult {
@@ -33,14 +38,21 @@ export interface WorkbenchIdentity {
   /** Enterprise verifies the ticket; OSS writes the fixed system/1. Proxies mounted before `/api` never pass through it. */
   authenticate: RequestHandler;
   /**
-   * Called before every task run. Online entries pass in already-verified identity; offline tasks only have the token saved on the task row.
-   * Enterprise: verified identity is compared with the task row directly, otherwise the token is verified again before comparing, and an attribution mismatch is rejected;
-   * OSS keeps the userId/domainId on the task row, verifying no ticket and comparing nothing.
+   * Scheduled tasks run while their owner is offline, with a credential the server keeps per owner and domain.
+   * Enterprise: exchanges the caller's own login token for a new internal API Key of the login's user and domain,
+   * which ends the previous one; without a login token (e.g. a request made with an API Key) it answers 403.
+   * OSS has no credential and returns null.
    */
-  confirmTaskOwner(
-    task: { userId: string; domainId: string; token?: string },
-    verifiedIdentity?: Pick<RequestIdentity, "userId" | "domainId">
-  ): Promise<void>;
+  issueScheduledCredential(caller: { token?: string; apiKey?: string }): Promise<string | null>;
+  /**
+   * The credentials one scheduled run uses, from the kept credential. Enterprise verifies that the internal API Key
+   * still authenticates as the owner and returns it, or null when it does not; an unreachable verifier throws.
+   * OSS ignores the (null) credential and returns what its requests carry: the deployment's query key.
+   */
+  resolveScheduledCredential(
+    owner: { userId: string; domainId: string },
+    credential: string | null
+  ): Promise<ScheduledRunCredentials | null>;
   /** Enterprise verifies the tk and the domain must equal this run; OSS uses the domainId from run parameters, defaulting to 1. */
   resolveAutotestActor(input: {
     token: string;

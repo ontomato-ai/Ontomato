@@ -1,6 +1,7 @@
-import { Marked } from "marked";
+import { Marked, type MarkedExtension } from "marked";
 
-export const marked = new Marked({
+/** The product Markdown dialect shared by every server-side renderer. */
+export const productMarkdownOptions: MarkedExtension = {
   gfm: true,
   breaks: true,
   tokenizer: {
@@ -12,4 +13,6 @@ export const marked = new Marked({
       return undefined;
     },
   },
-});
+};
+
+export const marked = new Marked(productMarkdownOptions);

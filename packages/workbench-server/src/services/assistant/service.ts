@@ -53,6 +53,7 @@ const sessionView = (s: SessionRow, latestRun: LatestRun | null) =>
     createdAt: new Date(s.created_at).toISOString(),
     updatedAt: new Date(s.updated_at).toISOString(),
     latestRun: latestRun ? runStatusView(latestRun) : null,
+    origin: s.origin,
   });
 export { sessionView };
 export const assistantService = {
@@ -69,11 +70,13 @@ export const assistantService = {
       ),
     };
   },
-  async create(id: string, owner: AssistantOwner, input: { agentId: string }) {
+  /** Scheduled tasks start their conversations here too, marked with their origin. */
+  async create(id: string, owner: AssistantOwner, input: { agentId: string }, origin: SessionRow["origin"] = "user") {
     const { row, replayed } = await assistantStore.create(
       id,
       owner,
       input.agentId,
+      origin,
     );
     try {
       await new RuntimeClient(owner.domainId).createSession(id);

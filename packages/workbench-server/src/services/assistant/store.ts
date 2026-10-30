@@ -19,6 +19,7 @@ export interface SessionRow {
   owner_id: string;
   agent_id: string;
   title: string;
+  origin: "user" | "scheduled";
   latest_run_id: string | null;
   created_at: Date;
   updated_at: Date;
@@ -123,7 +124,7 @@ export const assistantStore = {
       throw new HttpError(404, "Conversation not found", "NOT_FOUND");
     return r.rows[0];
   },
-  async create(id: string, owner: AssistantOwner, agentId: string) {
+  async create(id: string, owner: AssistantOwner, agentId: string, origin: SessionRow["origin"] = "user") {
     return transaction(async (tx) => {
     await lockSessionClaim(tx, id);
     const existing = await tx.query(
@@ -145,8 +146,8 @@ export const assistantStore = {
     if (!a.enabled)
       throw new HttpError(409, "Agent disabled", "AGENT_DISABLED");
     const r = await tx.query(
-      `INSERT INTO ${table("assistant_sessions")} (id,domain_id,owner_id,agent_id) VALUES($1,$2,$3,$4) ON CONFLICT DO NOTHING`,
-      [id, owner.domainId, owner.userId, agentId],
+      `INSERT INTO ${table("assistant_sessions")} (id,domain_id,owner_id,agent_id,origin) VALUES($1,$2,$3,$4,$5) ON CONFLICT DO NOTHING`,
+      [id, owner.domainId, owner.userId, agentId, origin],
     );
     const row = await this.session(id, owner, tx);
     if (row.agent_id !== agentId)

@@ -20,6 +20,7 @@ export async function ensureAssistantSchema(c: QueryableClient) {
     agent_id uuid NOT NULL,
     title text NOT NULL DEFAULT '', latest_run_id uuid, created_at timestamptz NOT NULL DEFAULT now(),
     updated_at timestamptz NOT NULL DEFAULT now());
+  ALTER TABLE ${t("assistant_sessions")} ADD COLUMN IF NOT EXISTS origin text NOT NULL DEFAULT 'user' CHECK (origin IN ('user','scheduled'));
   CREATE INDEX IF NOT EXISTS assistant_sessions_owner ON ${t("assistant_sessions")}(domain_id,owner_id,updated_at DESC,id DESC);
   CREATE TABLE IF NOT EXISTS ${t("assistant_turns")} (
     id uuid PRIMARY KEY, session_id uuid NOT NULL REFERENCES ${t("assistant_sessions")}(id) ON DELETE CASCADE,

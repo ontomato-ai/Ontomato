@@ -44,7 +44,10 @@ full run read per row; the run's body arrives with `AgentHostSessionHistory` or
 a session row, including the row returned by session creation and the list entries
 the shell adds after a send.
 
-Sessions retain their agent. Session lists sort by descending `(updatedAt,id)` with
+Sessions retain their agent and may carry `origin`: absent or `user` when the user
+started them, `scheduled` when one of the user's scheduled tasks did (workbench
+assistant only); the shell marks the latter in the list.
+Session lists sort by descending `(updatedAt,id)` with
 keyset cursors; agent lists use host display order. Disabled agents remain visible
 for history but cannot start new execution (409 `AGENT_DISABLED`). New titles are
 empty; the first accepted user message becomes the verbatim title, truncated only

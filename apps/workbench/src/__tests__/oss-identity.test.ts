@@ -12,17 +12,18 @@ describe("oss identity", () => {
     expect(workbenchIdentity().requireDomainId({})).toBe("1");
   });
 
-  it("does not verify a saved task token", async () => {
+  it("runs scheduled tasks without issuing or verifying a credential", async () => {
     const fetchMock = vi.fn(async () => {
       throw new Error("must not verify");
     });
     vi.stubGlobal("fetch", fetchMock);
-    await workbenchIdentity().confirmTaskOwner({
-      userId: "row-user",
-      domainId: "row-domain",
-      token: "saved-token",
-    });
+    vi.stubEnv("DATA_QUERY_API_KEY", "deployment-key");
+    await expect(workbenchIdentity().issueScheduledCredential({ token: "tk" })).resolves.toBeNull();
+    await expect(
+      workbenchIdentity().resolveScheduledCredential({ userId: "system", domainId: "1" }, null)
+    ).resolves.toEqual({ apiKey: "deployment-key" });
     expect(fetchMock).not.toHaveBeenCalled();
+    vi.unstubAllEnvs();
     vi.unstubAllGlobals();
   });
 

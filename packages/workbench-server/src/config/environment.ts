@@ -32,6 +32,20 @@ export const environment = {
       `http://127.0.0.1:${read("PORT") || "3000"}`,
   }),
   chromium: () => read("CHROMIUM_EXECUTABLE_PATH") || undefined,
+  smtp: () => {
+    const user = read("SMTP_USER") || "";
+    return {
+      host: read("SMTP_HOST"),
+      port: Number(read("SMTP_PORT")) || 587,
+      secure: read("SMTP_SECURE") === "true",
+      user,
+      pass: read("SMTP_PASS") || "",
+      from: read("SMTP_FROM") || user,
+    };
+  },
+  /** Zone of scheduled tasks' times of day; the process zone unless overridden. */
+  scheduleTimeZone: () =>
+    read("SCHEDULE_TIMEZONE") || Intl.DateTimeFormat().resolvedOptions().timeZone,
   retention: () => read("DIAGNOSIS_RETENTION_FILE"),
   observeNodes: () => read("OBSERVE_BACKEND_NODES") || read("BACKEND_NODES"),
   observeWorkspaces: () => read("OBSERVE_TRACE_WORKSPACE_ROOT"),
