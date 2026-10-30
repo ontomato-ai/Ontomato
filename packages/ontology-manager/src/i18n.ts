@@ -394,6 +394,11 @@ const ontologyEn = {
   actionWizardStop: "Stop",
   actionWizardNewChat: "New chat",
   actionWizardDraftFailed: "The assistant did not produce a valid draft",
+  actionWizardGeneratingDefinition: "Generating the structured definition…",
+  actionWizardGeneratingDefinitionHint:
+    "The code explanation is being projected into rules and parameters. Wait for the definition before saving.",
+  actionWizardDefinitionMissing: "The structured definition is not ready. Regenerate it.",
+  actionWizardRetryDefinition: "Regenerate definition",
   actionWizardExplanationMissing: "The draft has no explanation. You can still save it, or ask the assistant to regenerate it.",
   actionWizardAgentError: "The action assistant failed",
   actionProcessThinking: "Thinking",

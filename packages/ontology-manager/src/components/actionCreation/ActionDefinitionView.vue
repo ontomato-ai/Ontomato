@@ -7,7 +7,19 @@ const props = defineProps<{ action: any | null }>();
 const { ot } = useOntologyText();
 const root = ref<HTMLElement | null>(null);
 
-const definition = computed(() => props.action?.definition ?? null);
+const definition = computed(() => {
+  const value = props.action?.definition;
+  // A proxy or an older draft may hand back the definition as JSON text; parse it instead of
+  // rendering an empty pane.
+  if (typeof value === "string") {
+    try {
+      return JSON.parse(value);
+    } catch {
+      return null;
+    }
+  }
+  return value ?? null;
+});
 
 function ruleLabel(kind: string) {
   switch (kind) {

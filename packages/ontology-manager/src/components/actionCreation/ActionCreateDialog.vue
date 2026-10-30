@@ -47,6 +47,13 @@ const sessionId = ref<string | null>(null);
 const draft = ref<any>(null);
 const saving = ref(false);
 const creatingDraft = ref(false);
+const lastRun = ref<{ sessionId: string; runId: string; ok: boolean } | null>(null);
+const definitionReady = computed(() => {
+  const value = draft.value?.definition;
+  if (!value) return false;
+  if (typeof value === "string") return value.trim().length > 0;
+  return typeof value === "object" && Object.keys(value).length > 0;
+});
 const examples = ref<string[]>([]);
 const examplesLoading = ref(false);
 const errorText = ref("");
@@ -144,6 +151,7 @@ async function requestDraft(sessionId: string, runId: string) {
 
 async function onRunComplete(payload: { sessionId: string; runId: string; ok: boolean }) {
   if (!payload.ok) return;
+  lastRun.value = payload;
   creatingDraft.value = true;
   errorText.value = "";
   try {
@@ -165,8 +173,14 @@ async function onRunComplete(payload: { sessionId: string; runId: string; ok: bo
     // A question-only turn has no result file; keep the previous draft.
     if (value?.noDraft) return;
     if (!value?.draftId) throw new Error(ot("actionWizardDraftFailed"));
-    draft.value = value.action ?? value;
-    draft.value = { ...draft.value, draftId: value.draftId };
+    const action = value.action && typeof value.action === "object" ? value.action : {};
+    // The definition is the completion signal for the right pane. Prefer the response's own
+    // definition field so a partial action object can never leave the pane blank.
+    draft.value = {
+      ...action,
+      definition: value.definition ?? action.definition ?? null,
+      draftId: value.draftId,
+    };
     if (value.explanationMissing) message.warning(ot("actionWizardExplanationMissing"));
   } catch (error) {
     const text = error instanceof Error ? error.message : ot("actionWizardDraftFailed");
@@ -177,9 +191,17 @@ async function onRunComplete(payload: { sessionId: string; runId: string; ok: bo
   }
 }
 
+async function retryDefinition() {
+  if (lastRun.value) await onRunComplete(lastRun.value);
+}
+
 async function save() {
   if (!draft.value?.draftId) {
     message.warning(ot("actionWizardNoDraft"));
+    return;
+  }
+  if (!definitionReady.value) {
+    message.warning(ot("actionWizardDefinitionMissing"));
     return;
   }
   saving.value = true;
@@ -270,15 +292,36 @@ function onClosed() {
         <header class="definition-head">
           <strong>{{ ot("actionDefinitionTitle") }}</strong>
           <span v-if="draft" class="draft-name">{{ draft.name }}</span>
+          <span v-if="creatingDraft" class="draft-status">
+            {{ ot("actionWizardGeneratingDefinition") }}
+          </span>
         </header>
         <div class="definition-body">
-          <p v-if="creatingDraft" class="definition-loading">
-            {{ ot("actionWizardGenerating") }}
-          </p>
-          <ActionDefinitionView v-else :action="draft" />
+          <div v-if="creatingDraft" class="definition-loading" role="status" aria-live="polite">
+            <span class="definition-spinner" aria-hidden="true"></span>
+            <div>
+              <strong>{{ ot("actionWizardGeneratingDefinition") }}</strong>
+              <p>{{ ot("actionWizardGeneratingDefinitionHint") }}</p>
+            </div>
+          </div>
+          <template v-else>
+            <ActionDefinitionView v-if="definitionReady" :action="draft" />
+            <div v-else-if="draft" class="definition-loading definition-error">
+              <p>{{ ot("actionWizardDefinitionMissing") }}</p>
+              <el-button size="small" @click="retryDefinition">
+                {{ ot("actionWizardRetryDefinition") }}
+              </el-button>
+            </div>
+            <ActionDefinitionView v-else :action="null" />
+          </template>
         </div>
-        <footer v-if="draft" class="definition-actions">
-          <el-button type="primary" :loading="saving" @click="save">
+        <footer v-if="draft && !creatingDraft" class="definition-actions">
+          <el-button
+            type="primary"
+            :loading="saving"
+            :disabled="!definitionReady"
+            @click="save"
+          >
             {{ ot("actionWizardSave") }}
           </el-button>
         </footer>
@@ -374,9 +417,50 @@ function onClosed() {
   min-height: 0;
   overflow: auto;
 }
+.draft-status {
+  color: var(--el-color-primary);
+  font-size: var(--text-xs, 12px);
+}
 .definition-loading {
-  padding: 24px 18px;
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  margin: 24px 18px;
+  padding: 18px;
+  border: 1px solid var(--el-border-color-light);
+  border-radius: 12px;
+  background: var(--el-fill-color-lighter);
+  color: var(--el-text-color-regular);
+}
+.definition-loading p {
+  margin: 4px 0 0;
   color: var(--el-text-color-secondary);
+  font-size: var(--text-xs, 12px);
+  line-height: 1.55;
+}
+.definition-spinner {
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+  margin-top: 2px;
+  border: 2px solid var(--el-border-color);
+  border-top-color: var(--el-color-primary);
+  border-radius: 50%;
+  animation: definition-spin 0.8s linear infinite;
+}
+@keyframes definition-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.definition-error {
+  align-items: center;
+  justify-content: space-between;
+}
+@media (prefers-reduced-motion: reduce) {
+  .definition-spinner {
+    animation: none;
+  }
 }
 .definition-actions {
   display: flex;
