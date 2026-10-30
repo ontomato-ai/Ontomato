@@ -11,26 +11,20 @@ import org.springframework.web.server.ResponseStatusException;
 
 @RestController
 public class OntologyQueryController {
-  private final QueryGrantService grants;
   private final QueryAccessService authorization;
   private final OntologyQueryService ontology;
   private final QueryOutputService outputs;
   private final QueryJobService jobs;
-  private final QueryQualityService quality;
 
   public OntologyQueryController(
-      QueryGrantService grants,
       QueryAccessService authorization,
       OntologyQueryService ontology,
       QueryOutputService outputs,
-      QueryJobService jobs,
-      QueryQualityService quality) {
-    this.grants = grants;
+      QueryJobService jobs) {
     this.authorization = authorization;
     this.ontology = ontology;
     this.outputs = outputs;
     this.jobs = jobs;
-    this.quality = quality;
   }
 
   @GetMapping("/ontology/query/overview")
@@ -122,26 +116,6 @@ public class OntologyQueryController {
   @PostMapping("/ontology/query/outputs/{id}/cancel")
   public Object outputCancel(@PathVariable String id, HttpServletRequest request) throws Exception {
     return jobs.cancel(id, authorization.access(request).user(), "output");
-  }
-
-  @PostMapping("/query-quality-checks")
-  @ResponseStatus(HttpStatus.ACCEPTED)
-  public Object quality(@RequestBody JSONObject body, HttpServletRequest request) {
-    grants.requireWorkbench(request);
-    var access = authorization.access(request);
-    String id = body.getString("id"), lang = language(request);
-    return quality.start(body, access.user(), lang);
-  }
-
-  @GetMapping("/query-quality-checks/{id}")
-  public Object qualityStatus(@PathVariable String id, HttpServletRequest request) {
-    return jobs.get(id, authorization.access(request).user(), "quality");
-  }
-
-  @PostMapping("/query-quality-checks/{id}/cancel")
-  public Object qualityCancel(@PathVariable String id, HttpServletRequest request)
-      throws Exception {
-    return jobs.cancel(id, authorization.access(request).user(), "quality");
   }
 
   private String language(HttpServletRequest request) {
