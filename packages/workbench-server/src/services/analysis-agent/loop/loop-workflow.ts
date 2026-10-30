@@ -361,6 +361,7 @@ export async function runAnalysisLoopWorkflow(
         },
         workerTools: {
           evidence: evidenceCapability.createWorkerTool,
+          readEvidence: evidenceCapability.readTool,
           probe: dataProbeCapability.createWorkerTools,
           skills: skillCapability.workerTools,
           notebook: notebookCapability.createWorkerTools,
@@ -381,6 +382,7 @@ export async function runAnalysisLoopWorkflow(
 
       const tools = [
         evidenceCapability.supervisorTool,
+        evidenceCapability.readTool,
         dispatchTool,
         ...dataProbeCapability.supervisorTools,
         ...skillCapability.supervisorTools,

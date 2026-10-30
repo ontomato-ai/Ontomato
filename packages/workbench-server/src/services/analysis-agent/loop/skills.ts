@@ -247,6 +247,11 @@ function createRunSkillTool(deps: LoopSkillDeps, supervisor: boolean): AgentTool
           type: "string",
           description: tApp("analysis.loop.skills.375"),
         },
+        parameters: {
+          type: "object",
+          description: "Skill-specific JSON options documented by load_skill, such as field mappings, dates and locations. The host supplies data, query and title from question_id; do not include data or services here. Validate required options with one dataset before expanding the analysis.",
+          additionalProperties: true,
+        },
       },
       required: ["skill_id"],
     },
@@ -258,6 +263,14 @@ function createRunSkillTool(deps: LoopSkillDeps, supervisor: boolean): AgentTool
       if (!questionId && skillId !== "generate-ppt") return textResult(tApp("analysis.loop.skills.377"));
       if (params.entry !== undefined && !requestedEntry) {
         return textResult(tApp("analysis.loop.skills.378"));
+      }
+      const options = params.parameters ?? {};
+      if (typeof options !== "object" || Array.isArray(options) || options === null) {
+        return textResult("run_skill parameters must be a JSON object.");
+      }
+      const reserved = ["data", "datasets", "query", "title", "services", "context", "queryResult", "mockData", "__proto__", "constructor", "prototype"];
+      if (Object.keys(options).some(key => reserved.includes(key))) {
+        return textResult("run_skill parameters cannot override host-owned data, query, title, services or context.");
       }
 
       let entry = requestedEntry || undefined;
@@ -322,7 +335,7 @@ function createRunSkillTool(deps: LoopSkillDeps, supervisor: boolean): AgentTool
             const output = await skillRuntime.execute(
               deps.domainId,
               skillId,
-              { query: evidence.question, title: dataset.title, data: dataset.data },
+              { ...options, query: evidence.question, title: dataset.title, data: dataset.data },
               {
                 type: SkillType.EXECUTABLE,
                 category: SkillCategory.ANALYSIS,

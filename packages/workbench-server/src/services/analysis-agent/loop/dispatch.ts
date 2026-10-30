@@ -72,6 +72,7 @@ export function assembleLoopDispatchCapability(params: {
   };
   workerTools: {
     evidence: (dispatchActivityId: string) => AgentTool;
+    readEvidence?: AgentTool;
     probe: (dispatchActivityId: string) => AgentTool[];
     skills: AgentTool[];
     notebook: (dispatchActivityId: string) => AgentTool[];
@@ -108,6 +109,7 @@ export function assembleLoopDispatchCapability(params: {
       systemPrompt: renderPrompt("analysis-agent.loop.subagent.system", params.workerPrompt),
       createChildTools: (dispatchActivityId) => [
         params.workerTools.evidence(dispatchActivityId),
+        ...(params.workerTools.readEvidence ? [params.workerTools.readEvidence] : []),
         ...params.workerTools.probe(dispatchActivityId),
         ...params.workerTools.skills,
         ...params.workerTools.notebook(dispatchActivityId),

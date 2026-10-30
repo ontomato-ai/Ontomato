@@ -36,6 +36,7 @@ import {
 import type { ChartDatasetCandidate } from "../../charts/chart-generator";
 import type { DeepAnalysisArtifactStore } from "../task/artifacts";
 import { tApp } from "../../../i18n";
+import { createReadEvidenceTool } from "./read-evidence";
 
 
 const logger = createLogger("analysis-loop-evidence");
@@ -110,6 +111,7 @@ export function buildEvidenceModelText(params: {
       : entry.data;
     parts.push(
       tApp("analysis.loop.evidence.254", { title: entry.title, dataCount: entry.dataCount }),
+      "Preview omission only limits model visibility: use read_evidence to inspect more stored rows. run_skill and generate_chart use the full stored dataset; do not recollect the same data per entity just to bypass this preview. Source truncation, when present, is reported separately.",
       `dataView=${JSON.stringify(buildModelDataView(displayRows, { truncation: entry }))}`
     );
   }
@@ -220,6 +222,7 @@ export function assembleLoopEvidenceCapability(params: {
 
   return {
     supervisorTool: createTool(),
+    readTool: createReadEvidenceTool(id => evidence.get(id), params.locale),
     createWorkerTool: createTool,
     resolveEvidence: (questionId: string) => evidence.get(questionId),
     resolveChartCandidates: (questionIds: string[]): ChartDatasetCandidate[] =>
