@@ -1,7 +1,8 @@
 import { computed, onBeforeUnmount, reactive, ref } from "vue";
 import type { AgentHostRunSnapshot, AgentHostSession } from "@ontomato/contracts/agent-host";
 import type { AgentHostClient } from "./host";
-import type { RuntimeStreamFrame } from "@ontomato/contracts/agent-runtime-events";
+import type { RuntimeEventEnvelope } from "@ontomato/contracts/agent-runtime-events";
+import { createRunSubscription, type RunSubscription } from "./run-subscription";
 import {
   applyEnvelope,
   applyRunSnapshot,
@@ -12,8 +13,6 @@ import {
 } from "./conversation";
 import { conversationItems } from "./view";
 
-const RECONNECT_DELAYS = [500, 1000, 2000, 5000, 10000];
-const MAX_QUEUED_FRAMES = 2000;
 const RETRIEVAL_LINK_RETRY_MS = 1500;
 /** The ontomato-analyst entry script running its ask (retrieval) subcommand. */
 const ANALYST_ASK = /ontomato\.mjs["']?\s+ask\b/;
@@ -34,10 +33,7 @@ export function useAgentConversation(port: () => AgentHostClient) {
   const artifactRevision = ref(0);
 
   let token = 0;
-  let detach: (() => void) | null = null;
-  let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
-  let queue: RuntimeStreamFrame[] = [];
-  let flushHandle: number | null = null;
+  const stream = createRunSubscription();
 
   const items = computed(() => conversationItems(state));
   const activeRunId = computed(
@@ -45,19 +41,9 @@ export function useAgentConversation(port: () => AgentHostClient) {
   );
   const busy = computed(() => sending.value || activeRunId.value !== null);
 
-  function stopStream() {
-    detach?.();
-    detach = null;
-    if (reconnectTimer) clearTimeout(reconnectTimer);
-    reconnectTimer = null;
-    if (flushHandle !== null) cancelAnimationFrame(flushHandle);
-    flushHandle = null;
-    queue = [];
-  }
-
   function reset(sessionId: string | null) {
     token++;
-    stopStream();
+    stream.stop();
     Object.assign(state, emptyConversation(sessionId));
     loading.value = false;
     loadError.value = null;
@@ -76,7 +62,7 @@ export function useAgentConversation(port: () => AgentHostClient) {
       if (current !== token) return;
       applySessionSnapshot(state, snapshot);
       artifactRevision.value++;
-      if (snapshot.latestRun?.run.status === "running") attach(snapshot.latestRun.run.id, 0);
+      if (snapshot.latestRun?.run.status === "running") stream.start(subscription(snapshot.latestRun.run.id));
       void loadEarlierRetrievals(sessionId, snapshot.latestRun?.run.id ?? null, current);
     } catch (error) {
       if (current === token) loadError.value = errorText(error);
@@ -109,40 +95,27 @@ export function useAgentConversation(port: () => AgentHostClient) {
     }));
   }
 
-  function flush() {
-    flushHandle = null;
-    const frames = queue;
-    queue = [];
-    for (const frame of frames) {
-      if (frame.type === "snapshot_required") {
-        void refreshRun(frame.runId, token, 0);
-        return;
-      }
-      applyEnvelope(state, frame.envelope);
-      const type = frame.envelope.event.type;
-      if (type === "artifact_registered") artifactRevision.value++;
-      if (type === "tool_execution_start") {
-        // The ask command blocks until the retrieval ends, so tool_execution_end is too late.
-        // Start looking for the association when the bash call starts; it appears once ask is
-        // accepted. Detection is the analyst entry script followed by its ask subcommand, which
-        // covers "node skills/ontomato-analyst/ontomato.mjs ask", "cd …/ontomato-analyst && node
-        // ontomato.mjs ask" and quoted paths. A wrapper script or variable that hides
-        // "ontomato.mjs ask" is not covered; its retrievals arrive on the next run snapshot read.
-        const event = frame.envelope.event;
-        const command = event.args.command;
-        if (event.toolName === "bash" && typeof command === "string" && ANALYST_ASK.test(command))
-          void watchRetrievals(frame.envelope.cursor.runId, event.toolCallId, token);
-      }
-      if (type === "agent_end") {
-        stopStream();
-        return;
-      }
+  function applyEvent(envelope: RuntimeEventEnvelope) {
+    if (!applyEnvelope(state, envelope)) return;
+    const type = envelope.event.type;
+    if (type === "artifact_registered") artifactRevision.value++;
+    if (type === "tool_execution_start") {
+      // The ask command blocks until the retrieval ends, so tool_execution_end is too late.
+      // Start looking for the association when the bash call starts; it appears once ask is
+      // accepted. Detection is the analyst entry script followed by its ask subcommand, which
+      // covers "node skills/ontomato-analyst/ontomato.mjs ask", "cd …/ontomato-analyst && node
+      // ontomato.mjs ask" and quoted paths. A wrapper script or variable that hides
+      // "ontomato.mjs ask" is not covered; its retrievals arrive on the next run snapshot read.
+      const event = envelope.event;
+      const command = event.args.command;
+      if (event.toolName === "bash" && typeof command === "string" && ANALYST_ASK.test(command))
+        void watchRetrievals(envelope.cursor.runId, event.toolCallId, token);
     }
   }
 
   /**
    * Reads the run until its retrieval associations appear, then hands over to the activity
-   * area's own polling. Each read happens before the stop check, so a retrieval that finishes
+   * area's child-run subscription. Each read happens before the stop check, so a retrieval that finishes
    * within one interval is still picked up.
    */
   async function watchRetrievals(runId: string, toolCallId: string, current: number) {
@@ -172,47 +145,20 @@ export function useAgentConversation(port: () => AgentHostClient) {
     }
   }
 
-  function attach(runId: string, attempt: number) {
-    stopStream();
-    const run = state.runs[runId];
-    const sessionId = state.sessionId;
-    if (!sessionId || !run?.cursor || run.status !== "running") return;
-    const current = token;
-    detach = port().subscribe(sessionId, runId, run.cursor, {
-      frame(frame) {
-        if (current !== token) return;
-        queue.push(frame);
-        // Bounded: when rendering falls far behind, replace the backlog with a snapshot read.
-        if (queue.length > MAX_QUEUED_FRAMES)
-          queue = [{ type: "snapshot_required", runId, reason: "buffer_lost" }];
-        flushHandle ??= requestAnimationFrame(flush);
+  function subscription(runId: string): RunSubscription {
+    const sessionId = state.sessionId!;
+    const client = port();
+    return {
+      runId,
+      current: () => state.runs[runId],
+      read: () => client.readRun(sessionId, runId),
+      snapshot(snapshot) {
+        applyRunSnapshot(state, snapshot);
+        artifactRevision.value++;
       },
-      error() {
-        if (current !== token) return;
-        detach = null;
-        scheduleRefresh(runId, current, attempt + 1);
-      },
-    });
-  }
-
-  function scheduleRefresh(runId: string, current: number, attempt: number) {
-    const delay = RECONNECT_DELAYS[Math.min(attempt, RECONNECT_DELAYS.length - 1)];
-    reconnectTimer = setTimeout(() => void refreshRun(runId, current, attempt), delay);
-  }
-
-  async function refreshRun(runId: string, current: number, attempt: number) {
-    stopStream();
-    const sessionId = state.sessionId;
-    if (!sessionId) return;
-    try {
-      const snapshot = await port().readRun(sessionId, runId);
-      if (current !== token) return;
-      applyRunSnapshot(state, snapshot);
-      artifactRevision.value++;
-      attach(runId, attempt);
-    } catch {
-      if (current === token) scheduleRefresh(runId, current, attempt + 1);
-    }
+      event: applyEvent,
+      subscribe: (after, handlers) => client.subscribe(sessionId, runId, after, handlers),
+    };
   }
 
   /**
@@ -237,7 +183,7 @@ export function useAgentConversation(port: () => AgentHostClient) {
       applyRunSnapshot(state, snapshot);
       pendingInput.value = null;
       artifactRevision.value++;
-      attach(snapshot.run.id, 0);
+      stream.start(subscription(snapshot.run.id));
       return { createdSession, snapshot };
     } catch (error) {
       if (current === token) {
@@ -258,7 +204,7 @@ export function useAgentConversation(port: () => AgentHostClient) {
     try {
       await port().cancel(sessionId, runId);
     } finally {
-      if (current === token) await refreshRun(runId, current, 0);
+      if (current === token) await stream.load(subscription(runId));
     }
   }
 
@@ -271,7 +217,7 @@ export function useAgentConversation(port: () => AgentHostClient) {
 
   onBeforeUnmount(() => {
     token++;
-    stopStream();
+    stream.stop();
   });
 
   return {

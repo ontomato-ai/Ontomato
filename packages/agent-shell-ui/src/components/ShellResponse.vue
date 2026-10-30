@@ -16,7 +16,6 @@ const props = defineProps<{
 }>();
 const shell = inject(shellContextKey)!;
 const labels = computed(() => shell.labels.value);
-const runActive = () => props.item.running;
 
 const copied = ref(false);
 const rating = ref<ShellFeedbackValue | null>(null);
@@ -90,7 +89,6 @@ async function submit(value: ShellFeedbackValue) {
       :link="link"
       :parent-run-id="item.runId"
       :session-id="sessionId ?? ''"
-      :run-active="runActive"
     />
     <template v-for="block in item.blocks" :key="block.key">
       <ShellProcess v-if="block.kind === 'process'" :steps="block.steps" :active="block.active" />

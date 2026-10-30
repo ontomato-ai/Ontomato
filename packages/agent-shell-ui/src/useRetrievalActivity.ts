@@ -1,62 +1,77 @@
-import { onBeforeUnmount, shallowReactive } from "vue";
+import { computed, onBeforeUnmount, reactive, shallowReactive } from "vue";
 import type { RetrievalSnapshot } from "@ontomato/contracts/data-retrieval";
+import { applyEnvelope, applyRunSnapshot, emptyConversation } from "./conversation";
+import { createRunSubscription, type RunSubscription } from "./run-subscription";
 
 const POLL_INTERVAL_MS = 1000;
 
 export interface RetrievalState {
-  /** Latest snapshot, or null before the first response. */
   snapshot: RetrievalSnapshot | null;
   error: boolean;
 }
 
-/**
- * Polls one retrieval snapshot while its run is active. Stops automatically when the run ends
- * (status !== "running") or when `stop()` is called; `restart()` resumes after a continuation.
- * The retrieval ID is the stable key across continuations and is the caller's fold state key.
- */
-export function useRetrievalActivity(
-  read: (retrievalId: string) => Promise<RetrievalSnapshot>,
-  retrievalId: string,
-  runActive: () => boolean,
-) {
-  const state = shallowReactive<RetrievalState>({ snapshot: null, error: false });
-  let timer: ReturnType<typeof setTimeout> | null = null;
-  /** Bumped by every (re)start and by stop, so a stale in-flight read never schedules again. */
-  let generation = 0;
+interface RetrievalSource {
+  runId: string;
+  read(): Promise<RetrievalSnapshot>;
+  readRun: RunSubscription["read"];
+  subscribe: RunSubscription["subscribe"];
+}
 
-  async function poll(current: number) {
-    try {
-      const snapshot = await read(retrievalId);
-      if (current !== generation) return;
-      state.snapshot = snapshot;
-      state.error = false;
-      const retrieverPending = snapshot.retrieverPending ?? snapshot.run?.status === "running";
-      const done = !runActive() || (!retrieverPending && !(snapshot.bindingPending ?? snapshot.bindings?.status === "running"));
-      if (!done) timer = setTimeout(() => void poll(current), POLL_INTERVAL_MS);
-    } catch {
-      if (current !== generation) return;
-      state.error = true;
-      // Keep trying while the run is active; the run may have just started.
-      if (runActive()) timer = setTimeout(() => void poll(current), POLL_INTERVAL_MS);
-    }
-  }
+/** Business state is polled until delivery; activity uses the child's independent event stream. */
+export function useRetrievalActivity(source: () => RetrievalSource) {
+  const state = shallowReactive<RetrievalState>({ snapshot: null, error: false });
+  const conversation = reactive(emptyConversation());
+  const stream = createRunSubscription();
+  const run = computed(() => conversation.runs[source().runId]);
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  let generation = 0;
 
   function stop() {
     generation++;
-    if (timer !== null) {
-      clearTimeout(timer);
-      timer = null;
-    }
+    stream.stop();
+    if (timer !== null) clearTimeout(timer);
+    timer = null;
   }
 
-  /** Polls again from now, e.g. when a continuation moved the retrieval to a new run. */
   function restart() {
     stop();
-    void poll(generation);
+    state.snapshot = null;
+    state.error = false;
+    Object.assign(conversation, emptyConversation());
+    const current = generation;
+    const selected = source();
+    let subscribed = false;
+
+    async function poll() {
+      try {
+        const snapshot = await selected.read();
+        if (current !== generation) return;
+        state.snapshot = snapshot;
+        state.error = false;
+        // Admission can lag the association. Once admitted, only recovery re-reads messages.
+        if (!subscribed && snapshot.runtimeRunId) {
+          subscribed = true;
+          void stream.load({
+            runId: selected.runId,
+            current: () => conversation.runs[selected.runId],
+            read: selected.readRun,
+            snapshot: (value) => applyRunSnapshot(conversation, value),
+            event: (envelope) => { applyEnvelope(conversation, envelope); },
+            subscribe: selected.subscribe,
+          });
+        }
+        if (!snapshot.retrieverPending && !snapshot.bindingPending) return;
+      } catch {
+        if (current !== generation) return;
+        state.error = true;
+      }
+      timer = setTimeout(() => void poll(), POLL_INTERVAL_MS);
+    }
+
+    void poll();
   }
 
   restart();
   onBeforeUnmount(stop);
-
-  return { state, stop, restart };
+  return { state, run, stop, restart };
 }
