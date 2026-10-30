@@ -91,6 +91,10 @@ function fixture(t) {
     "apps/workbench/src/server.ts": "export {};\n",
     "packages/core/package.json": '{"name":"@ontomato/core"}\n',
     "packages/core/src/core.ts": "export {};\n",
+    "packages/agent-shell-ui/package.json": '{"name":"@ontomato/agent-shell-ui"}\n',
+    "packages/agent-shell-ui/src/index.ts": "export {};\n",
+    "packages/contracts/package.json": '{"name":"@ontomato/contracts"}\n',
+    "packages/contracts/src/index.ts": "export {};\n",
   });
   repository(privateRoot, {
     "package.json": '{"name":"enterprise","private":true}\n',
@@ -239,7 +243,7 @@ test("help returns early; the architecture and flags come only from Make", async
 
 
 
-test("the public entry builds ontomato-ontology-manager from its two owners", (t) => {
+test("the public entry builds ontomato-ontology-manager from its owners", (t) => {
   const { dir, publicRoot } = fixture(t);
   const docker = fakeDocker(t, dir);
   const out = execFileSync("node", ["apps/ontology-manager/build.mjs", "--arch", "arm64"], {
@@ -269,6 +273,10 @@ test("the public entry builds ontomato-ontology-manager from its two owners", (t
       "workspace/ontomato/apps/ontology-manager/src/main.ts",
       "workspace/ontomato/apps/workbench/package.json",
       "workspace/ontomato/package.json",
+      "workspace/ontomato/packages/agent-shell-ui/package.json",
+      "workspace/ontomato/packages/agent-shell-ui/src/index.ts",
+      "workspace/ontomato/packages/contracts/package.json",
+      "workspace/ontomato/packages/contracts/src/index.ts",
       "workspace/ontomato/packages/core/package.json",
       "workspace/ontomato/packages/ontology-manager/package.json",
       "workspace/ontomato/packages/ontology-manager/src/index.ts",
@@ -334,6 +342,8 @@ test("an enterprise build takes its own app plus the public owners and stamps th
       "workspace/ontomato/apps/ontology-manager/src/main.ts",
       "workspace/ontomato/apps/workbench/package.json",
       "workspace/ontomato/package.json",
+      "workspace/ontomato/packages/agent-shell-ui/package.json",
+      "workspace/ontomato/packages/contracts/package.json",
       "workspace/ontomato/packages/core/package.json",
       "workspace/ontomato/packages/ontology-manager/package.json",
       "workspace/ontomato/packages/ontology-manager/src/index.ts",

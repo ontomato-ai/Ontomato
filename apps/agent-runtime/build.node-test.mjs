@@ -170,7 +170,7 @@ syncBuiltinESMExports();
   }
 });
 
-test("runtime production closure contains only the public runtime and contracts", () => {
+test("runtime production closure contains only the public runtime, contracts and service logging", () => {
   const lock = yaml.parse(
     readFileSync(join(app.repoRoot, "pnpm-lock.yaml"), "utf8"),
   );
@@ -188,6 +188,7 @@ test("runtime production closure contains only the public runtime and contracts"
       "apps/agent-runtime",
       "packages/agent-runtime",
       "packages/contracts",
+      "packages/service-logging",
     ]);
     assert.ok(
       Object.keys(graph.packages).some((key) =>
