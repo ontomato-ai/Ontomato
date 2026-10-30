@@ -3,6 +3,7 @@ package io.ontomato.dataengine.service.agent;
 import static io.ontomato.dataengine.service.agent.OntologyAgentStore.Owner;
 import static io.ontomato.dataengine.service.agent.OntologyAgentStore.uuid;
 
+import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
 import io.ontomato.dataengine.dao.KnowledgeDao;
 import io.ontomato.dataengine.service.AdminService;
@@ -13,9 +14,11 @@ import io.ontomato.dataengine.service.SessionRegistryService;
 import jakarta.annotation.PostConstruct;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.annotation.DependsOn;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
@@ -26,6 +29,7 @@ import org.springframework.stereotype.Service;
  * the schema, write the program, run the business test and leave the final files under outputs/.
  * The draft is built from those files afterwards; this service never persists an Action.
  */
+@Slf4j
 @Service
 @DependsOn("ontologyAgentStore")
 public class ActionCreationService {
@@ -310,16 +314,44 @@ public class ActionCreationService {
         boolean expired =
             Instant.parse(row.getString("deadline")).toEpochMilli() <= System.currentTimeMillis();
         boolean stopped = false;
+        JSONObject snapshot = null;
+        var owner = new Owner(row.getString("user_id"), row.getString("domain_id"));
         if (!expired) {
-          var snapshot = runtime.run(row.getString("domain_id"), run);
+          snapshot = runtime.run(owner.domainId(), run);
           stopped = !"running".equals(snapshot.getJSONObject("run").getString("status"));
         }
+        if (!expired && !stopped && looping(snapshot)) {
+          log.warn(
+              "Cancelling looping action-creation run {} ({} tool calls)",
+              run,
+              snapshot.getJSONArray("toolExecutions").size());
+          cancel(row.getString("session_id"), run, owner);
+          continue;
+        }
         if (expired || stopped || row.getBooleanValue("cancel_requested"))
-          settleAndRelease(run, row.getString("session_id"), new Owner(row.getString("user_id"), row.getString("domain_id")));
+          settleAndRelease(run, row.getString("session_id"), owner);
       } catch (Exception error) {
         // The run row remains open; the next sweep retries.
       }
     }
+  }
+
+  /**
+   * A runaway model can repeat exactly the same tool call indefinitely. The generation runtime has
+   * no step limit, so the host closes such runs: more than 100 tool calls, or 12 identical calls.
+   */
+  private boolean looping(JSONObject snapshot) {
+    if (snapshot == null) return false;
+    JSONArray tools = snapshot.getJSONArray("toolExecutions");
+    if (tools == null) return false;
+    if (tools.size() > 100) return true;
+    Map<String, Integer> counts = new HashMap<>();
+    for (int i = 0; i < tools.size(); i++) {
+      JSONObject tool = tools.getJSONObject(i);
+      String key = tool.getString("toolName") + ":" + AgentJson.json(tool.get("args"));
+      if (counts.merge(key, 1, Integer::sum) >= 12) return true;
+    }
+    return false;
   }
 
   private void settleAndRelease(String run, String session, Owner owner) {

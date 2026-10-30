@@ -190,16 +190,18 @@ public class OntologyAgentDefinitions {
     value.put("agentId", ActionCreationService.AGENT);
     value.put("modelRole", "coding");
     value.put("skills", List.of(RuntimeCodeClient.SKILL, GENERATION_SKILL));
+    // The conversation guardrails go last: they are the rules the model must apply after reading
+    // the action-maker task and the generation skill, not before them.
     value.put(
         "systemPrompt",
-        prompt(language, "generation", "action_creation")
-            + "\n\n"
-            + prompt
+        prompt
             + "\n\n"
             + resource("ontology-skills/ontology-generation/SKILL.md")
             + "\n\n"
             + JSON.parseObject(
-                resource("ontology-contracts/agent-artifact-markdown-prompt.json"), String.class));
+                resource("ontology-contracts/agent-artifact-markdown-prompt.json"), String.class)
+            + "\n\n"
+            + prompt(language, "generation", "action_creation"));
     return value;
   }
 

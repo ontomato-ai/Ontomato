@@ -4,7 +4,14 @@ import type { AgentHostAgent } from "@ontomato/contracts/agent-host";
 import type { AgentHostClient } from "../host";
 import { defaultChartTheme } from "../chart-theme";
 import { shellContextKey } from "../context";
-import type { ArtifactRendererOverride, ShellFeedbackPort, ShellLabels, ToolRendererOverride } from "../types";
+import type { ConversationItem } from "../view";
+import type {
+  ArtifactRendererOverride,
+  ProcessStepView,
+  ShellFeedbackPort,
+  ShellLabels,
+  ToolRendererOverride,
+} from "../types";
 import { useAgentConversation } from "../useAgentConversation";
 import ShellConversation from "./ShellConversation.vue";
 
@@ -31,6 +38,47 @@ const emit = defineEmits<{
 }>();
 
 const conversation = useAgentConversation(() => props.client);
+
+/** Host paths are execution details, never user-facing content. */
+function redact(value: string): string {
+  return value
+    .replace(/\/Users\/[^\s"'`]*\/workspace/g, "workspace")
+    .replace(/\/Users\/[^\s"'`]*/g, "<path>")
+    .replace(/\/home\/[^\s"'`]*/g, "<path>")
+    .replace(/\/private\/(?:tmp|var)\/[^\s"'`]*/g, "<path>")
+    .replace(/[A-Za-z]:\\Users\\[^\s"'`]*/g, "<path>");
+}
+
+function redactValue(value: unknown): unknown {
+  if (typeof value === "string") return redact(value);
+  if (Array.isArray(value)) return value.map(redactValue);
+  if (value && typeof value === "object")
+    return Object.fromEntries(
+      Object.entries(value as Record<string, unknown>).map(([key, item]) => [key, redactValue(item)])
+    );
+  return value;
+}
+
+function sanitizeStep(step: ProcessStepView): ProcessStepView {
+  return {
+    ...step,
+    text: redact(step.text),
+    output: redact(step.output),
+    args: redactValue(step.args) as ProcessStepView["args"],
+  };
+}
+
+function sanitizeItem(item: ConversationItem): ConversationItem {
+  if (item.kind !== "response") return item;
+  return {
+    ...item,
+    blocks: item.blocks.map((block) =>
+      block.kind === "process" ? { ...block, steps: block.steps.map(sanitizeStep) } : block
+    ),
+  };
+}
+
+const safeItems = computed(() => conversation.items.value.map(sanitizeItem));
 const artifactRevision = computed(() => conversation.artifactRevision.value);
 const noArtifacts = computed<readonly ArtifactRendererOverride[]>(() => []);
 const noTools = computed<readonly ToolRendererOverride[]>(() => []);
@@ -128,7 +176,7 @@ defineExpose({
 <template>
   <div class="agent-chat-panel">
     <ShellConversation
-      :items="conversation.items.value"
+      :items="safeItems"
       :session-id="conversation.state.sessionId"
       :agent="agent"
       :loading="conversation.loading.value"
