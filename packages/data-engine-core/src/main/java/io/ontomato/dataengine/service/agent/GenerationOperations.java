@@ -9,6 +9,7 @@ import io.ontomato.dataengine.util.*;
 import java.io.ByteArrayInputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
 
 /**
@@ -31,7 +32,7 @@ public class GenerationOperations {
       SandboxService sandboxService,
       WriteFunctionOperationService writes,
       PythonExecuteService python,
-      QueryGrantService grants, DataPermissionLookup permissions, ABCProgramService programs) {
+      QueryGrantService grants, @Lazy DataPermissionLookup permissions, ABCProgramService programs) {
     this.store = store;
     this.schemas = schemas;
     this.sandboxService = sandboxService;

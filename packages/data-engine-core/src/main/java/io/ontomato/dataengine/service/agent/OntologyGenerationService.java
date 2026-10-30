@@ -9,6 +9,7 @@ import io.ontomato.dataengine.util.SystemUtils;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.*;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
 
 /** Runs ontology definitions and consumes only this run's immutable delivery. */
@@ -46,7 +47,7 @@ public class OntologyGenerationService {
       QueryGrantService grants,
       SessionRegistryService sessions,
       GenerationOperations operations,
-      RuntimeCodeClient code, DataPermissionLookup permissions) {
+      RuntimeCodeClient code, @Lazy DataPermissionLookup permissions) {
     this.store = store;
     this.runtime = runtime;
     this.definitions = definitions;
