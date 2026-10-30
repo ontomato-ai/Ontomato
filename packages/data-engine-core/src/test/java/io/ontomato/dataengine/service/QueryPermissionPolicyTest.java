@@ -11,6 +11,18 @@ import org.junit.jupiter.api.Test;
 
 /** Permission and delivery examples, with no database, runtime or model calls. */
 class QueryPermissionPolicyTest {
+  @Test
+  void invalidFunctionModeCannotBecomeWriteAuthority() {
+    var function = new io.ontomato.dataengine.bean.function.Function();
+    function.setDomainId("domain"); function.setOperation("invalid");
+    function.setCode("# ontomato-python:2\nprint('{}')");
+    var python = mock(PythonExecuteService.class);
+    var programs = new io.ontomato.dataengine.service.impl.ABCProgramServiceImpl();
+    org.springframework.test.util.ReflectionTestUtils.setField(programs, "pythonExecuteService", python);
+    assertThrows(IllegalArgumentException.class, () -> programs.execute("run", function, "user", permission(), null, "en", 1, "domain"));
+    verifyNoInteractions(python);
+  }
+
   private List<Map<String, Object>> definitions() {
     return List.of(JSONObject.of("className", "/Employee", "classDesc", "员工", "attrs", JSONArray.of(
         JSONObject.of("name", "salary", "attrDesc", "工资", "enable", true),

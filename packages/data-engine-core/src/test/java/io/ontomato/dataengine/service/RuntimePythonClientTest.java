@@ -85,7 +85,12 @@ class RuntimePythonClientTest {
     assertEquals(
         "scoped-grant",
         body.getJSONObject("environment").getJSONObject("secrets").getString("ONTOMATO_TK"));
-    assertTrue(body.getJSONArray("files").getJSONObject(1).getString("content").contains("null"));
+    var files = body.getJSONArray("files").stream().map(JSONObject::from).toList();
+    assertTrue(files.stream().filter(file -> "parameters.json".equals(file.getString("path")))
+        .findFirst().orElseThrow().getString("content").contains("null"));
+    assertTrue(files.stream().anyMatch(file -> "query_runtime.py".equals(file.getString("path"))));
+    assertTrue(body.getJSONArray("libraries").isEmpty());
+    assertFalse(body.getJSONObject("environment").getJSONObject("secrets").containsKey("ONTOMATO_QUERY_TK"));
     verify(grants).revoke(eq("domain"), anyString());
   }
 

@@ -54,6 +54,8 @@ public class ABCProgramServiceImpl implements ABCProgramService {
         JSONObject parameters=new JSONObject();
         if(function.getParameters()!=null)for(var parameter:function.getParameters())parameters.put(parameter.getName(),parameter.getValue());
         boolean read=Function.OPERATION_READ.equals(function.getOperation());
+        if (!read && !Function.OPERATION_WRITE.equals(function.getOperation()))
+            throw new IllegalArgumentException("Unknown Function operation");
         PythonExecuteResult result=pythonExecuteService.execute(sessionId,function.getCode(),timeout,lang,
             read?io.ontomato.dataengine.service.PythonAuthority.read(userId,domainId):io.ontomato.dataengine.service.PythonAuthority.write(userId,domainId,sandboxId).withClasses(function.getReturnDef() == null ? null : function.getReturnDef().getClassNames()),parameters,java.util.Map.of());
         return new Object[]{read?authorized(result,function.getReturnDef().getSourceAnalysis(),function.getReturnDef().getOutKeyRefs(),permission):null,result};
