@@ -29,6 +29,7 @@ export type StepActivity =
 const SCRIPT_PATH = String.raw`(?:"[^"]*?|'[^']*?|[^\s"';&|]*?)`;
 const ANALYST_COMMAND = new RegExp(String.raw`\bnode\s+${SCRIPT_PATH}ontomato\.mjs["']?\s+([\w-]+)`);
 const DATASET_COMMAND = new RegExp(String.raw`\bnode\s+${SCRIPT_PATH}dataset\.mjs\b`);
+const SKILL_SCRIPT_RUN = new RegExp(String.raw`\b(?:node|python3?|bash|sh)\s+${SCRIPT_PATH}skills/[A-Za-z0-9][A-Za-z0-9._-]*/`);
 const ANALYST_ACTIVITY: Record<string, StepActivity> = {
   ask: "retrieve",
   "execute-dsl": "query",
@@ -55,7 +56,7 @@ export function stepActivity(step: Pick<ProcessStepView, "toolName" | "skill" | 
       if (analyst) return ANALYST_ACTIVITY[analyst] ?? "skill";
       if (DATASET_COMMAND.test(command)) return "dataset";
       if (/\bpython3?\s+[\w./-]+\.py\b/.test(command)) return "compute";
-      return step.skill ? "skill" : "run";
+      return step.skill && SKILL_SCRIPT_RUN.test(command) ? "skill" : "run";
     }
     default:
       return "other";
