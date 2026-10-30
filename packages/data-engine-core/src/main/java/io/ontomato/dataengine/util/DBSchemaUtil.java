@@ -27,7 +27,13 @@ public class DBSchemaUtil {
         }
         for (Map<String, Object> classDef : classDefs) {
             String formalName = (String)classDef.get("className");
+            // Bare schemas accept the "/customers" form, and schemas that use a leading slash
+            // (for example the M3 adapter) accept the bare "customers" form too. Always return the
+            // schema's own spelling so the adapter receives the name it expects.
             if (!formalName.startsWith("/") && className.equals("/" + formalName)) {
+                return formalName;
+            }
+            if (formalName.startsWith("/") && className.equals(formalName.substring(1))) {
                 return formalName;
             }
         }
