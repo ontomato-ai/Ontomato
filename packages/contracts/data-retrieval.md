@@ -15,7 +15,7 @@ workbench `/api/retrievals` entirely.
 | Method/path | Shape / meaning |
 | --- | --- |
 | POST `/ontology/retrievals` | UUID Idempotency-Key; existing `RetrievalInput`; 202 `RetrievalPoll` |
-| GET `/ontology/retrievals/:id` | Runtime activity snapshot plus independent binding state/results |
+| GET `/ontology/retrievals/:id?runId=:runId` | Lightweight `RetrievalSnapshot`: stored state, deliveries and result cursor, never messages. Optional runId selects an exact owned round; omitted selects the current round |
 | GET `/ontology/retrievals/:id/results?after=cursor` | `RetrievalPoll`: ordered incremental deliveries and pending branch status; no runtime HTTP read on this polling path |
 | POST `/ontology/retrievals/:id/retriever/cancel` | `{expectedRoundId}`; cancel only that current retriever, never binding work/results/QC |
 | POST `/ontology/retrievals/:id/answers` | New UUID key; existing `retrievalAnswersSchema` (`expectedRunId`, `expectedDecisionRevision`, `message`); 202 `RetrievalPoll` |
@@ -25,7 +25,7 @@ workbench `/api/retrievals` entirely.
 | GET `/ontology/retrievals/:id/runs/:runId/evidence` | `{input:RetrievalInput,snapshot:RetrievalSnapshot}` for that exact owned round; QC comes from its Java job |
 | DELETE `/ontology/retrievals/:id` | 204; active run 409. Delete the owned business record and runtime session through their owners |
 
-Preserve messages, `running/stopped`, stopReason/errorMessage, runtime IDs,
+Preserve `running/stopped`, stopReason/errorMessage, runtime IDs,
 datasetArtifactIds and revisions. Questions stop normally; replies share the
 session. No needs_input/business completion enum. The common [host proxy](ontology-ai.md)
 supplies detailed history/events and original artifact bytes. Workbench cannot
@@ -41,6 +41,33 @@ Approved deadline (D3): optional integer `timeoutSeconds` from 1 through 600 on
 creation/continuation, snapshotted by Java, defaults to 600 seconds. A caller scope can shorten it.
 Workbench retains queryTimeoutSeconds for its parent and supplies the remaining
 deadline. Java does not read workbench configuration.
+
+## Retrieval activity subscription
+
+The workbench exposes the child under the authenticated parent route
+`/assistant/sessions/:sessionId/runs/:runId/retrievals/:retrievalId`:
+
+- GET `?retrievalRunId=:retrievalRunId` reads that round's lightweight business
+  snapshot. Its deliveries belong only to that round; `cursor` is the last such
+  delivery cursor (zero before delivery), from the same result sequence as `/results`.
+- GET `/runs/:retrievalRunId` proxies the existing ontology agent-host run snapshot.
+- GET `/runs/:retrievalRunId/events?afterSeq=...&streamId=...` proxies that child
+  run's existing ontology event stream. Events never join the parent's stream.
+
+The workbench verifies the user's parent session/run and uses its stored caller
+scope; ontology verifies that the requested child session/run belongs to the scope.
+The shell reads a run snapshot once, then subscribes from that snapshot's event
+cursor. Disconnects and `snapshot_required` use the same snapshot recovery and
+batched event reducer as the main conversation. Delivery cursors cannot resume
+event streams. Navigation only detaches the subscription.
+
+Business state reads continue through admission and independent binding execution,
+and stop when both branches have published or finished. Runtime `agent_end` alone
+does not imply that retrieval delivery has been recorded. These reads never fetch
+runtime messages synchronously; the existing observer owns reconciliation, with
+lazy projection of old terminal rounds shared with `/results`. Evidence reads
+remain side-effect free. Continuation admission still reconciles current runtime
+facts before deciding whether another round can start.
 
 ## Concurrent delivery
 

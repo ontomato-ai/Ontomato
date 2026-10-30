@@ -12,28 +12,25 @@ import type { AssistantCredentials } from "../../platform/agent-runtime/runtime"
 /** Application-owned parent association and evidence access, never retrieval orchestration. */
 export class OntologyRetrievalClient {
   constructor(readonly owner: AssistantOwner, readonly scopeId: string) {}
-  private async request(path: string, method: "GET" | "POST" | "DELETE" = "GET", body?: unknown, credentials?: AssistantCredentials, key?: string) {
-    const headers = {
+  private headers(credentials?: AssistantCredentials, key?: string) {
+    return {
       ...buildBackendHeaders(credentials?.token, undefined, credentials?.locale, credentials?.apiKey),
       "X-Ontomato-Query-Service-Token": environment.agentRuntime().queryServiceToken,
       "X-Domain-Id": this.owner.domainId,
       "X-Ontomato-Retrieval-Caller-Id": this.scopeId,
       ...(key ? { "Idempotency-Key": key } : {}),
     };
+  }
+  private async request(path: string, method: "GET" | "POST" | "DELETE" = "GET", body?: unknown, credentials?: AssistantCredentials, key?: string) {
     const url = getApiConfig().baseUrl!.replace(/\/$/, "") + path;
-    const options = { headers, retries: 1, timeoutMs: 30000, errorDetailLimit: 1000 };
+    const options = { headers: this.headers(credentials, key), retries: 1, timeoutMs: 30000, errorDetailLimit: 1000 };
     try {
       const response = method === "GET" ? await backendGet(path, url, options)
         : method === "DELETE" ? await backendDelete(path, url, options)
         : await backendPost(path, url, body, options);
       return response.text ? JSON.parse(response.text) as unknown : null;
     } catch (error) {
-      if (error instanceof BackendResponseError) {
-        let code = "DEPENDENCY_UNAVAILABLE", message = `Ontology returned HTTP ${error.status}`;
-        try { const parsed = JSON.parse(error.detail); code = parsed.error?.code ?? code; message = parsed.error?.message ?? message; } catch { /* Retain the HTTP failure when the body is not JSON. */ }
-        throw new HttpError(error.status, message, code);
-      }
-      throw error;
+      throwOntologyError(error);
     }
   }
   async open(input: RetrievalCallerInput, credentials: AssistantCredentials) {
@@ -45,14 +42,26 @@ export class OntologyRetrievalClient {
   async close(credentials?: AssistantCredentials) {
     await this.request(`/ontology/retrieval-callers/${this.scopeId}/close`, "POST", {}, credentials);
   }
-  async readSnapshot(retrievalId: string) {
-    return retrievalSnapshotSchema.parse(await this.request(`/ontology/retrievals/${retrievalId}`));
+  async readSnapshot(retrievalId: string, runId: string) {
+    return retrievalSnapshotSchema.parse(await this.request(`/ontology/retrievals/${retrievalId}?runId=${runId}`));
   }
   async evidence(retrievalId: string, runId: string) {
     return retrievalEvidenceSchema.parse(await this.request(`/ontology/retrievals/${retrievalId}/runs/${runId}/evidence`));
   }
   async run(sessionId: string, runId: string) {
     return agentHostRunSnapshotSchema.parse(await this.request(`/ontology/ai/sessions/${sessionId}/runs/${runId}`));
+  }
+  async events(sessionId: string, runId: string, after: { seq: number; streamId: string }, signal: AbortSignal) {
+    const query = new URLSearchParams({ afterSeq: String(after.seq), streamId: after.streamId });
+    const path = `/ontology/ai/sessions/${sessionId}/runs/${runId}/events?${query}`;
+    try {
+      return await backendGet(path, getApiConfig().baseUrl!.replace(/\/$/, "") + path, {
+        headers: { ...this.headers(), Accept: "text/event-stream" }, stream: true,
+        retries: 1, timeoutMs: 30000, signal, errorDetailLimit: 1000,
+      });
+    } catch (error) {
+      throwOntologyError(error);
+    }
   }
   async dataset(retrievalId: string, artifactId: string) {
     return z.object({ id: z.string().uuid(), payload: datasetPayloadSchema, source: z.literal("binding").optional(), sha256: z.string().optional(), qualityCheck: z.record(z.unknown()).optional() }).parse(await this.request(`/ontology/retrievals/${retrievalId}/datasets/${artifactId}`));
@@ -63,4 +72,13 @@ export class OntologyRetrievalClient {
   async delete(retrievalId: string) {
     await this.request(`/ontology/retrievals/${retrievalId}`, "DELETE");
   }
+}
+
+function throwOntologyError(error: unknown): never {
+  if (error instanceof BackendResponseError) {
+    let code = "DEPENDENCY_UNAVAILABLE", message = `Ontology returned HTTP ${error.status}`;
+    try { const parsed = JSON.parse(error.detail); code = parsed.error?.code ?? code; message = parsed.error?.message ?? message; } catch { /* Retain the HTTP failure when the body is not JSON. */ }
+    throw new HttpError(error.status, message, code);
+  }
+  throw error;
 }

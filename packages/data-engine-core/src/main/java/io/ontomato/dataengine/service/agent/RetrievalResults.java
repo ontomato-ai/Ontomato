@@ -33,6 +33,11 @@ public class RetrievalResults {
     return store.rows("SELECT d.seq AS cursor,d.run_id AS \"runId\",d.source,d.data FROM ontology_retrieval_deliveries d JOIN ontology_agent_runs r ON r.id=d.run_id WHERE r.session_id=? AND d.seq>? ORDER BY d.seq", uuid(retrieval), cursor);
   }
 
+  public List<JSONObject> forRun(String retrieval, String run, Owner owner) {
+    store.run(retrieval, run, owner);
+    return store.rows("SELECT seq AS cursor,run_id AS \"runId\",source,data FROM ontology_retrieval_deliveries WHERE run_id=? ORDER BY seq", uuid(run));
+  }
+
   public static String answer(JSONObject snapshot) {
     var messages = snapshot.getJSONArray("messages");
     for (int i = messages.size() - 1; i >= 0; i--) {

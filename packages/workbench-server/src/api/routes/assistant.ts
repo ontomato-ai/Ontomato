@@ -16,8 +16,8 @@ import {
   assistantFeedbackWriteSchema,
 } from "@ontomato/contracts/assistant-chat";
 import { assistantService } from "../../services/assistant/service";
-import { OntologyRetrievalClient } from "../../services/assistant/ontology-retrieval";
 import { buildAttachmentContentDisposition } from "../utils/http";
+import { proxyResponse } from "../utils/proxy";
 const router: ReturnType<typeof Router> = Router(),
   uuid = z.string().uuid();
 
@@ -29,15 +29,41 @@ router.get("/agent-skills", agentAdmin, wrap(async (req, res) => {
   const c = context(req);
   res.json(await assistantSkillCatalog(c.owner.domainId, c.credentials.locale));
 }));
-// Retrieval activity snapshot proxy: front-end polls this to render retrieval activity.
-// The retrieval ID is the stable key across continuations; runId scopes the specific run.
+// Business state stays lightweight; activity is read from the separately authorized child run.
 router.get(
   "/sessions/:sessionId/runs/:runId/retrievals/:retrievalId",
   wrap(async (req, res) => {
     const c = context(req);
-    const client = new OntologyRetrievalClient(c.owner, id(req, "runId"));
-    const snapshot = await client.readSnapshot(id(req, "retrievalId"));
+    const client = await assistantService.retrievalClient(id(req, "sessionId"), id(req, "runId"), c.owner);
+    const snapshot = await client.readSnapshot(id(req, "retrievalId"), uuid.parse(req.query.retrievalRunId));
     res.json(snapshot);
+  }),
+);
+router.get(
+  "/sessions/:sessionId/runs/:runId/retrievals/:retrievalId/runs/:retrievalRunId",
+  wrap(async (req, res) => {
+    const client = await assistantService.retrievalClient(id(req, "sessionId"), id(req, "runId"), context(req).owner);
+    res.json(await client.run(id(req, "retrievalId"), id(req, "retrievalRunId")));
+  }),
+);
+router.get(
+  "/sessions/:sessionId/runs/:runId/retrievals/:retrievalId/runs/:retrievalRunId/events",
+  wrap(async (req, res) => {
+    const client = await assistantService.retrievalClient(id(req, "sessionId"), id(req, "runId"), context(req).owner);
+    const after = {
+      seq: z.coerce.number().int().nonnegative().parse(req.query.afterSeq),
+      streamId: uuid.parse(req.query.streamId),
+    };
+    const abort = new AbortController();
+    const onClose = () => abort.abort();
+    res.on("close", onClose);
+    try {
+      const upstream = await client.events(id(req, "retrievalId"), id(req, "retrievalRunId"), after, abort.signal);
+      res.set({ "Cache-Control": "no-cache, no-transform", "X-Accel-Buffering": "no" });
+      await proxyResponse(upstream, res);
+    } finally {
+      res.off("close", onClose);
+    }
   }),
 );
 router.get(
