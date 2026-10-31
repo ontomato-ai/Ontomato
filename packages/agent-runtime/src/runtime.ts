@@ -275,14 +275,25 @@ export class AgentRuntime {
       // Register before any further await so a cancel that follows the admission response always
       // finds this run instead of returning it still running.
       this.active.set(key(scope, runId), active);
+      // Load the admitted events while this admission still holds the session lock, so the first
+      // subscriber always sees a complete replay buffer instead of an empty one.
+      const loading = this.store.events(scope, runId).then((frames) => {
+        active.frames = frames;
+      });
       // The first execution begins after this admission lock is released, never on a read/retry.
       active.done = (async () => {
-        active.frames = await this.store.events(scope, runId);
+        await loading;
         await withServiceLogContext(logContext, () => this.execute(active, config!, request, skills));
       })().finally(() => this.active.delete(key(scope, runId)));
       void active.done.catch(() =>
         withServiceLogContext(logContext, () => runtimeLogger.error("Runtime persistence failed; run will be interrupted on restart")),
       );
+      try {
+        await loading;
+      } catch (error) {
+        this.active.delete(key(scope, runId));
+        throw error;
+      }
       return accepted;
     });
   }
