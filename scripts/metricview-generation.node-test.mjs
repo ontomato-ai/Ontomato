@@ -8,7 +8,7 @@ import { metricViewCommand } from "../agent-skills/metricview-generation/scripts
 const env = {
   ONTOMATO_ONTOLOGY_URL: "http://ontology.invalid/",
   ONTOMATO_GENERATION_ID: "00000000-0000-4000-8000-000000000002",
-  ONTOMATO_GENERATION_TK: "fixture-generation-credential",
+  ONTOMATO_TK: "fixture-generation-credential",
 };
 const external = { ONTOMATO_ONTOLOGY_URL: "http://ontology.invalid/" };
 test("MetricView business test sends exact file bytes and parameter definitions, never host paths", async () => {
@@ -23,7 +23,7 @@ test("MetricView business test sends exact file bytes and parameter definitions,
       calls++;
       assert.equal(url, `http://ontology.invalid/ontology/ai/generation/${env.ONTOMATO_GENERATION_ID}/test`);
       assert.deepEqual(JSON.parse(options.body), { code: source, parameterDefs: definitions });
-      assert.equal(options.headers.tk, env.ONTOMATO_GENERATION_TK);
+      assert.equal(options.headers.tk, env.ONTOMATO_TK);
       assert.equal(options.headers["X-Ontomato-Run-Id"], env.ONTOMATO_GENERATION_ID);
       assert.equal(options.redirect, "error");
       return Response.json({ result: "ok", error: null });

@@ -8,7 +8,7 @@ import { generationCommand } from "../agent-skills/ontology-generation/scripts/g
 const env = {
   ONTOMATO_ONTOLOGY_URL: "http://ontology.invalid/",
   ONTOMATO_GENERATION_ID: "00000000-0000-4000-8000-000000000001",
-  ONTOMATO_GENERATION_TK: "fixture-generation-credential",
+  ONTOMATO_TK: "fixture-generation-credential",
 };
 test("business test sends exact file bytes and parameter definitions, never host paths", async () => {
   const dir = await mkdtemp(join(tmpdir(), "ontology-generation-"));
@@ -22,7 +22,7 @@ test("business test sends exact file bytes and parameter definitions, never host
       calls++;
       assert.equal(url, `http://ontology.invalid/ontology/ai/generation/${env.ONTOMATO_GENERATION_ID}/test`);
       assert.deepEqual(JSON.parse(options.body), { code: source, parameterDefs: definitions });
-      assert.equal(options.headers.tk, env.ONTOMATO_GENERATION_TK);
+      assert.equal(options.headers.tk, env.ONTOMATO_TK);
       assert.equal(options.headers["X-Ontomato-Run-Id"], env.ONTOMATO_GENERATION_ID);
       assert.equal(options.redirect, "error");
       return Response.json({ result: "ok", error: null });

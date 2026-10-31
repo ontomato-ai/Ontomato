@@ -239,7 +239,9 @@ public class ActionCreationService {
                       "action"),
                   "secrets",
                   JSONObject.of(
-                      "ONTOMATO_GENERATION_TK",
+                      // The generation skill reads one scoped credential as ONTOMATO_TK, the
+                      // same name OntologyGenerationService passes; this path carries two.
+                      "ONTOMATO_TK",
                       generationToken,
                       "ONTOMATO_QUERY_TK",
                       queryToken))),
