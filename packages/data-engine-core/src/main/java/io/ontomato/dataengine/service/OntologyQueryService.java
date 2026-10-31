@@ -310,6 +310,25 @@ public class OntologyQueryService {
     return value;
   }
 
+  /**
+   * Revision of a published metric: the read Function it executes. Match bookkeeping (questions, bindings, timestamps,
+   * name, description) changes whenever a question hits the metric or the quality check appends a binding, and must not
+   * invalidate the revisions already handed out. Bindings are addressed by ID and resolved at execution time.
+   */
+  public static String revision(MetricView metric) {
+    Function function = Objects.requireNonNull(metric.getFunction(), "Metric Function is required");
+    return digest(
+        JSONObject.of(
+            "id",
+            metric.getId(),
+            "code",
+            function.getCode(),
+            "parameters",
+            function.getParameters(),
+            "returnDef",
+            function.getReturnDef()));
+  }
+
   public static String digest(Object value) {
     try {
       return HexFormat.of()
@@ -335,7 +354,7 @@ public class OntologyQueryService {
         || !access.user().getDomainId().equals(metric.getFunction().getDomainId())
         || !Function.OPERATION_READ.equals(metric.getFunction().getOperation()))
       throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Published read metric not found");
-    if (revision != null && !digest(metric).equals(revision))
+    if (revision != null && !revision(metric).equals(revision))
       throw new ResponseStatusException(
           HttpStatus.CONFLICT, "Metric specification changed; retrieve it again");
     return metric;
@@ -360,7 +379,7 @@ public class OntologyQueryService {
           JSON.parseObject(
               JSON.toJSONString(
                   metric, com.alibaba.fastjson2.JSONWriter.Feature.WriteMapNullValue));
-      spec.put("revision", digest(metric));
+      spec.put("revision", revision(metric));
       Set<String> involved = new LinkedHashSet<>();
       List<Object> fields = new ArrayList<>(), parameterFields = new ArrayList<>();
       var function = metric.getFunction();

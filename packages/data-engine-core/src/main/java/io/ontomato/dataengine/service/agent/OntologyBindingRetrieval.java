@@ -78,7 +78,7 @@ public class OntologyBindingRetrieval {
           if (scope != null && !scope.isEmpty() && !scope.containsAll(involved)) continue;
           String id = UUID.nameUUIDFromBytes((run+":"+metric.getId()+":"+match.binding().getId()).getBytes(StandardCharsets.UTF_8)).toString();
           var recipe = JSONObject.of("kind","metric","metricId",metric.getId(),"bindingId",match.binding().getId(),
-              "revision",OntologyQueryService.digest(metric),"parameters",new JSONObject());
+              "revision",OntologyQueryService.revision(metric),"parameters",new JSONObject());
           var request = JSONObject.of("title",binding.getName(),"question",input.getString("question"),"recipe",recipe,
               "classNames",scope == null ? List.of() : scope,"language",context.language(),
               "binding",JSONObject.of("metricId",metric.getId(),"bindingId",match.binding().getId(),"name",binding.getName(),
@@ -205,6 +205,9 @@ public class OntologyBindingRetrieval {
     if(branches.isEmpty()) return;
     var branch=branches.get(0);
     if(branch.getBooleanValue("open") || branch.getBooleanValue("qc_admitted")) return;
+    // Only a branch that ran to the end describes work worth checking; a cancelled or interrupted
+    // one keeps what it already delivered and must not produce candidate metrics.
+    if(!"completed".equals(branch.getString("status"))) return;
     var accepted=store.rows("SELECT request,dataset FROM ontology_binding_outputs WHERE run_id=? AND dataset IS NOT NULL ORDER BY id",uuid(run));
     if(accepted.isEmpty()) return;
     var programs=new JSONArray(); var recipes=new JSONArray();
@@ -221,7 +224,7 @@ public class OntologyBindingRetrieval {
 
   @Scheduled(fixedDelay=1000)
   public void recoverResults() {
-    for(var row:store.rows("SELECT o.id,o.run_id,r.session_id,s.user_id,s.domain_id FROM ontology_binding_outputs o JOIN ontology_binding_runs b ON b.run_id=o.run_id JOIN ontology_agent_runs r ON r.id=o.run_id JOIN ontology_agent_sessions s ON s.id=r.session_id WHERE o.dataset IS NOT NULL AND b.owner_node=? AND ((b.open=false AND b.qc_admitted=false) OR NOT EXISTS(SELECT 1 FROM ontology_retrieval_deliveries d WHERE d.source='binding' AND d.source_id=o.id))",sessions.getNodeId())) {
+    for(var row:store.rows("SELECT o.id,o.run_id,r.session_id,s.user_id,s.domain_id FROM ontology_binding_outputs o JOIN ontology_binding_runs b ON b.run_id=o.run_id JOIN ontology_agent_runs r ON r.id=o.run_id JOIN ontology_agent_sessions s ON s.id=r.session_id WHERE o.dataset IS NOT NULL AND b.owner_node=? AND ((b.status='completed' AND b.qc_admitted=false) OR NOT EXISTS(SELECT 1 FROM ontology_retrieval_deliveries d WHERE d.source='binding' AND d.source_id=o.id))",sessions.getNodeId())) {
       try { var owner=owner(row); publish(row.getString("session_id"),row.getString("run_id"),row.getString("id"),owner); scheduleQuality(row.getString("run_id"),owner); }
       catch(Exception failure) { LOG.warn("Binding result reconciliation failed: {}",row.getString("id"),failure); }
     }

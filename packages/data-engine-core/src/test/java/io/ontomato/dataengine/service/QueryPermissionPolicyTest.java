@@ -246,7 +246,7 @@ class QueryPermissionPolicyTest {
     var python = mock(PythonExecuteService.class);
     var output = new QueryOutputService(python, null, ontology, null);
     var error = assertThrows(IllegalArgumentException.class, () -> output.execute("run", JSONObject.of(
-        "kind", "metric", "metricId", "broken", "revision", OntologyQueryService.digest(broken), "parameters", new JSONObject()), null, access, "en"));
+        "kind", "metric", "metricId", "broken", "revision", OntologyQueryService.revision(broken), "parameters", new JSONObject()), null, access, "en"));
     assertEquals("Incomplete stored source declaration", error.getMessage());
     verifyNoInteractions(python);
   }

@@ -49,7 +49,7 @@ public class QueryGrantFilter extends OncePerRequestFilter {
         return;
       }
     }
-    if (request.getRequestURI().startsWith("/writeFunctionOperation/")
+    if (QueryGrantService.requiresWriteGrant(request.getRequestURI())
         && request.getAttribute(QueryGrantService.ATTRIBUTE) == null) {
       response.setStatus(401);
       response.setContentType("application/json");
