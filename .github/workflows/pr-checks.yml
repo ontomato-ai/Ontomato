@@ -119,8 +119,6 @@ jobs:
       ONTOMATO_TEST_POSTGRES_PASSWORD: ontomato
       RUNTIME_TEST_DATABASE_URL: postgres://ontomato:ontomato@127.0.0.1:5432/ontomato
       STARTUP_TEST_DATABASE_URL: postgres://ontomato:ontomato@127.0.0.1:5432/ontomato
-      # The retrieval contract test writes the wire its consumer must accept.
-      ONTOLOGY_HOST_CONTRACT_OUTPUT: ${{ runner.temp }}/ontology-host-contract.json
     steps:
       - uses: actions/checkout@v5
 
@@ -130,7 +128,10 @@ jobs:
           java-version: 21
           cache: maven
 
+      # The retrieval contract test writes the wire its consumer must accept.
       - name: Test the Java reactor
+        env:
+          ONTOLOGY_HOST_CONTRACT_OUTPUT: ${{ runner.temp }}/ontology-host-contract.json
         run: ./mvnw -B -ntp test
 
       - uses: actions/upload-artifact@v4
