@@ -76,12 +76,6 @@ export class CodeExecutor {
     await mkdir(this.root, { recursive: true, mode: 0o711 });
     await chmod(this.root, 0o711);
     await this.store.pool
-      .query(`CREATE TABLE IF NOT EXISTS ${this.store.table("code_executions")} (
-      host_id text NOT NULL, domain_id text NOT NULL, id uuid NOT NULL,
-      fingerprint text NOT NULL, execution jsonb NOT NULL, outputs jsonb NOT NULL DEFAULT '{}',
-      PRIMARY KEY(host_id,domain_id,id))`);
-    await this.store.pool.query(`ALTER TABLE ${this.store.table("code_executions")} ADD COLUMN IF NOT EXISTS log_context jsonb NOT NULL DEFAULT '{}'`);
-    await this.store.pool
       .query(`UPDATE ${this.store.table("code_executions")} SET execution =
       execution || jsonb_build_object('status','stopped','finishedAt',now()::text,
       'errorMessage','Runtime restarted; execution was not replayed')

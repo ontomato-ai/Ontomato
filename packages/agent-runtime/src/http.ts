@@ -18,6 +18,7 @@ import {
   runtimeSessionStatusesRequestSchema,
 } from "@ontomato/contracts/agent-runtime";
 import { runtimeIdSchema } from "@ontomato/contracts/agent-runtime-values";
+import type { RuntimeStreamFrame } from "@ontomato/contracts/agent-runtime-events";
 import { AgentRuntime } from "./runtime";
 import { RuntimeError } from "./errors";
 import { testModel } from "./model";
@@ -403,21 +404,27 @@ export function createRuntimeHttp(runtime: AgentRuntime) {
           "INVALID_REQUEST",
           "Cursor is in the future",
         );
-      res.set({
-        "Content-Type": "text/event-stream",
-        "Cache-Control": "no-cache, no-transform",
-        "X-Accel-Buffering": "no",
-      });
-      res.flushHeaders();
-      const timer = setInterval(() => {
-        if (!res.destroyed) res.write(": heartbeat\n\n");
-      }, 15000);
-      timer.unref();
+      // Subscribe before any header is sent: a rejected subscription must stay an HTTP error rather
+      // than an empty 200 stream. Frames arriving before the stream opens are buffered in order.
+      const buffered: RuntimeStreamFrame[] = [];
+      let open = false;
+      const write = (frame: RuntimeStreamFrame) => {
+        if (closed) return;
+        res.write(
+          `${frame.type === "event" ? `id: ${frame.envelope.cursor.seq}\n` : ""}event: runtime\ndata: ${JSON.stringify(frame)}\n\n`,
+        );
+        if (
+          frame.type === "snapshot_required" ||
+          frame.envelope.event.type === "agent_end"
+        )
+          res.end();
+      };
       let closed = false;
       let unsubscribe = () => {};
+      let timer: ReturnType<typeof setInterval> | undefined;
       res.on("close", () => {
         closed = true;
-        clearInterval(timer);
+        if (timer) clearInterval(timer);
         unsubscribe();
       });
       unsubscribe = await runtime.subscribe(
@@ -426,17 +433,22 @@ export function createRuntimeHttp(runtime: AgentRuntime) {
         cursor.afterSeq,
         cursor.streamId,
         (frame) => {
-          if (closed) return;
-          res.write(
-            `${frame.type === "event" ? `id: ${frame.envelope.cursor.seq}\n` : ""}event: runtime\ndata: ${JSON.stringify(frame)}\n\n`,
-          );
-          if (
-            frame.type === "snapshot_required" ||
-            frame.envelope.event.type === "agent_end"
-          )
-            res.end();
+          if (open) write(frame);
+          else buffered.push(frame);
         },
       );
+      res.set({
+        "Content-Type": "text/event-stream",
+        "Cache-Control": "no-cache, no-transform",
+        "X-Accel-Buffering": "no",
+      });
+      res.flushHeaders();
+      timer = setInterval(() => {
+        if (!res.destroyed) res.write(": heartbeat\n\n");
+      }, 15000);
+      timer.unref();
+      open = true;
+      for (const frame of buffered) write(frame);
       if (closed) unsubscribe();
       if (
         (await runtime.store.run(ctx.scope, runId)).run.status !== "running" &&
