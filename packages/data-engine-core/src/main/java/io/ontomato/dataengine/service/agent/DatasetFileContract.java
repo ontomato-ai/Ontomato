@@ -21,17 +21,18 @@ final class DatasetFileContract {
     nonempty(body, "title");
     nonempty(body, "question");
     if (body.containsKey("sourceAnalysis"))
-      io.ontomato.dataengine.service.QuerySubgraphContract.validate(object(body, "sourceAnalysis"));
+      at("sourceAnalysis", () -> io.ontomato.dataengine.service.QuerySubgraphContract.validate(object(body, "sourceAnalysis")));
     JSONObject recipe = object(body, "recipe");
+    if (!body.containsKey("sourceAnalysis") && ("python".equals(recipe.getString("kind")) || "dsl".equals(recipe.getString("kind"))))
+      throw AgentHttpException.invalid("sourceAnalysis must be an object");
+    at("recipe", () -> {
     switch (nonempty(recipe, "kind")) {
       case "python" -> {
-        io.ontomato.dataengine.service.QuerySubgraphContract.validate(object(body, "sourceAnalysis"));
         AgentJson.fields(recipe, "kind", "code", "sha256");
         nonempty(recipe, "code");
         string(recipe, "sha256", false);
       }
       case "dsl" -> {
-        io.ontomato.dataengine.service.QuerySubgraphContract.validate(object(body, "sourceAnalysis"));
         AgentJson.fields(recipe, "kind", "dsl", "executedCode", "sha256");
         object(recipe, "dsl");
         optionalText(recipe, "executedCode");
@@ -47,35 +48,61 @@ final class DatasetFileContract {
         optionalText(recipe, "executedCode");
         optionalText(recipe, "sha256");
       }
-      default -> throw AgentHttpException.invalid("Unknown recipe kind");
+      default -> throw AgentHttpException.invalid("kind must be dsl, python or metric");
     }
-    for (Object value : array(body, "assumptions"))
-      if (!(value instanceof String)) throw AgentHttpException.invalid("Invalid assumption");
-    for (Object value : array(body, "decisionIds")) {
-      if (!(value instanceof String id)) throw AgentHttpException.invalid("Invalid decision ID");
-      else AgentJson.id(id);
+    });
+    var assumptions = array(body, "assumptions");
+    for (int i = 0; i < assumptions.size(); i++)
+      if (!(assumptions.get(i) instanceof String)) throw AgentHttpException.invalid("assumptions[" + i + "] must be text");
+    var decisions = array(body, "decisionIds");
+    for (int i = 0; i < decisions.size(); i++) {
+      Object value = decisions.get(i);
+      at("decisionIds[" + i + "]", () -> {
+        if (!(value instanceof String id)) throw AgentHttpException.invalid("must be a UUID string");
+        else AgentJson.id(id);
+      });
     }
-    for (Object value : array(body, "metricUses")) {
+    var uses = array(body, "metricUses");
+    for (int i = 0; i < uses.size(); i++) {
+      Object value = uses.get(i);
+      at("metricUses[" + i + "]", () -> {
       var use = element(value);
       AgentJson.fields(use, "id", "revision", "use", "reason");
       string(use, "id", false);
       string(use, "revision", false);
       nonempty(use, "reason");
       if (!List.of("direct", "derived", "not_used").contains(use.getString("use")))
-        throw AgentHttpException.invalid("Invalid metric use");
+        throw AgentHttpException.invalid("use must be direct, derived or not_used");
+      });
     }
     var check = object(body, "selfCheck");
+    at("selfCheck", () -> {
     AgentJson.fields(
         check, "scope", "filters", "grain", "denominator", "nullGroups", "comparisons");
     for (String key : List.of("scope", "filters", "grain", "denominator", "nullGroups"))
       string(check, key, false);
-    for (Object value : array(check, "comparisons")) {
+    var comparisons = array(check, "comparisons");
+    for (int i = 0; i < comparisons.size(); i++) {
+      Object value = comparisons.get(i);
+      at("comparisons[" + i + "]", () -> {
       var comparison = element(value);
       AgentJson.fields(comparison, "metricId", "comparable", "explanation", "executionRef");
       string(comparison, "metricId", false);
       bool(comparison, "comparable");
       string(comparison, "explanation", false);
       string(comparison, "executionRef", true);
+      });
+    }
+    });
+  }
+
+  private static void at(String path, Runnable validation) {
+    try { validation.run(); }
+    catch (AgentHttpException invalid) {
+      if (invalid.status() != 400) throw invalid;
+      throw AgentHttpException.invalid(path + ": " + invalid.getMessage());
+    } catch (IllegalArgumentException invalid) {
+      throw AgentHttpException.invalid(path + ": " + invalid.getMessage());
     }
   }
 

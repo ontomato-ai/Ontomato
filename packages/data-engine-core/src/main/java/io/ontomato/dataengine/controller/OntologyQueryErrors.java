@@ -15,7 +15,8 @@ public class OntologyQueryErrors {
     int status =
         error instanceof ResponseStatusException e
             ? e.getStatusCode().value()
-            : error instanceof IllegalArgumentException ? 400 : 500;
+            : error instanceof IllegalArgumentException
+                || error instanceof io.ontomato.dataengine.dataAdapter.DslContractViolationException ? 400 : 500;
     String message =
         error instanceof ResponseStatusException e ? e.getReason() : error.getMessage();
     return ResponseEntity.status(status)

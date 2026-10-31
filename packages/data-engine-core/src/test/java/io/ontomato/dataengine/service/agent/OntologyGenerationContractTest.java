@@ -31,6 +31,9 @@ class OntologyGenerationContractTest {
   AgentRuntimeClient runtime;
   RuntimeCodeClient code;
   SessionRegistryService sessions;
+  IdentityService identity;
+  SandboxService sandboxService;
+  PythonExecuteService python;
   String stop = "stop", source = "# ontomato-python:2\nprint('ok')\n";
   boolean inherited = false, failedTest = false;
   final Owner owner = new Owner("fixture-user", "fixture-domain");
@@ -62,7 +65,9 @@ class OntologyGenerationContractTest {
     var admin = mock(io.ontomato.dataengine.dao.JSONRuleDao.class);
     when(admin.query(owner.domainId()))
         .thenReturn(Map.of("classDef", List.of(), "relationship_rule", Map.of()));
-    var python = mock(PythonExecuteService.class);
+    python = mock(PythonExecuteService.class);
+    identity = mock(IdentityService.class);
+    sandboxService = mock(SandboxService.class);
     when(python.execute(anyString(), anyString(), anyInt(), anyString(), any(), any(), any()))
         .thenAnswer(
             call -> {
@@ -79,10 +84,10 @@ class OntologyGenerationContractTest {
         new GenerationOperations(
             store,
             admin,
-            mock(SandboxService.class),
+            sandboxService,
             mock(WriteFunctionOperationService.class),
             python,
-            grants, permissionLookup, new io.ontomato.dataengine.service.impl.ABCProgramServiceImpl());
+            grants, permissionLookup, new io.ontomato.dataengine.service.impl.ABCProgramServiceImpl(), identity);
     runtime = mock(AgentRuntimeClient.class);
     when(runtime.ontologyUrl()).thenReturn("http://ontology.invalid");
     code = mock(RuntimeCodeClient.class);
@@ -287,6 +292,24 @@ class OntologyGenerationContractTest {
     assertEquals(400, missing.status());
     assertTrue(missing.getMessage().contains("business test"));
     generation.close(ids.getString("sessionId"), run, owner);
+  }
+
+  @Test
+  void readAccessCannotAllocateOrContinueAWriteSandbox() throws Exception {
+    doThrow(new org.springframework.web.server.ResponseStatusException(org.springframework.http.HttpStatus.FORBIDDEN,
+        "Action execution permission is required")).when(identity).requireActionExecutionAccess(owner.userId(), owner.domainId());
+    assertThrows(org.springframework.web.server.ResponseStatusException.class,
+        () -> generation.open("action", UUID.randomUUID().toString(), null, owner, true));
+    verifyNoInteractions(sandboxService, python);
+    reset(identity);
+    var opened = generation.open("action", UUID.randomUUID().toString(), null, owner, true);
+    verify(sandboxService).createNamespace(anyString(), eq(owner.domainId()));
+    doThrow(new org.springframework.web.server.ResponseStatusException(org.springframework.http.HttpStatus.FORBIDDEN))
+        .when(identity).requireActionExecutionAccess(owner.userId(), owner.domainId());
+    assertThrows(org.springframework.web.server.ResponseStatusException.class, () -> operations.test(opened.getString("runId"), owner,
+        JSONObject.of("code", source, "parameterDefs", new JSONArray())));
+    verifyNoInteractions(python);
+    generation.close(opened.getString("sessionId"), opened.getString("runId"), owner);
   }
 
   @Test

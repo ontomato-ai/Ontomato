@@ -25,6 +25,7 @@ public class GenerationOperations {
   private final QueryGrantService grants;
   private final DataPermissionLookup permissions;
   private final ABCProgramService programs;
+  private final IdentityService identity;
 
   public GenerationOperations(
       OntologyAgentStore store,
@@ -32,7 +33,7 @@ public class GenerationOperations {
       SandboxService sandboxService,
       WriteFunctionOperationService writes,
       PythonExecuteService python,
-      QueryGrantService grants, @Lazy DataPermissionLookup permissions, ABCProgramService programs) {
+      QueryGrantService grants, @Lazy DataPermissionLookup permissions, ABCProgramService programs, @Lazy IdentityService identity) {
     this.store = store;
     this.schemas = schemas;
     this.sandboxService = sandboxService;
@@ -41,12 +42,19 @@ public class GenerationOperations {
     this.grants = grants;
     this.permissions = permissions;
     this.programs = programs;
+    this.identity = identity;
+  }
+
+  public void requireWriteAccess(Owner owner) {
+    identity.requireActionExecutionAccess(owner.userId(), owner.domainId());
   }
 
   public JSONObject gate(String run, Owner owner) {
     var row = store.one("SELECT * FROM ontology_agent_runs WHERE id=?", uuid(run));
     store.gate(row.getString("session_id"), run, owner);
-    return store.one("SELECT * FROM ontology_generations WHERE run_id=?", uuid(run));
+    var generation = store.one("SELECT * FROM ontology_generations WHERE run_id=?", uuid(run));
+    if ("action".equals(generation.getString("kind"))) requireWriteAccess(owner);
+    return generation;
   }
 
   public String source(String run, Owner owner) {

@@ -113,7 +113,7 @@ public final class QuerySourceAnalysis {
 
     JSONObject build(JSONObject dsl) {
       String question = dsl.getString("problem");
-      queries.add(JSONObject.of("id", query, "label", question == null || question.isBlank() ? "DSL query" : question));
+      queries.add(JSONObject.of("id", query, "label", question == null || question.isBlank() ? "Query" : question));
       Map<String, String> lastOutput = Map.of();
       for (Object stepValue : dsl.getJSONObject("answer").getJSONArray("steps")) {
         JSONObject step = JSONObject.from(stepValue);
@@ -166,9 +166,9 @@ public final class QuerySourceAnalysis {
           String expression = field.getString("expr"), source;
           if (expression != null) {
             if (LITERAL.matcher(expression.trim()).matches()) {
-              source = operation("constant", query, expression, key);
+              source = operation("constant", query, expression, expression);
             } else {
-              source = operation("calculate", query, expression, key);
+              source = operation("calculate", query, expression, expression);
               var matcher = REFERENCE.matcher(expression);
               int count = 0;
               while (matcher.find()) { dependency(field(matcher.group(1), matcher.group(2)), source, "value"); count++; }
@@ -181,7 +181,9 @@ public final class QuerySourceAnalysis {
             else source = field(field.getString("variable"), attribute);
             String kind = aggregate(function) ? "aggregate" : groups.contains(source) || Boolean.TRUE.equals(field.getBoolean("distinct")) ? "group" : function != null ? "calculate" : null;
             if (kind != null) {
-              String op = operation(kind, query, function == null ? "GROUP BY " + attribute : function + "(" + attribute + ")", key);
+              String expressionLabel = function == null ? "GROUP BY " + fieldLabel(field.getString("variable"), attribute)
+                  : function + "(" + fieldLabel(field.getString("variable"), attribute) + ")";
+              String op = operation(kind, query, function == null ? "GROUP BY " + attribute : function + "(" + attribute + ")", expressionLabel);
               dependency(source, op, "value");
               if (kind.equals("aggregate")) for (String group : groups) dependency(group, op, "group");
               source = op;
@@ -190,19 +192,24 @@ public final class QuerySourceAnalysis {
           if (field.get("conditions") != null) {
             String predicate = JSON.toJSONString(field.get("conditions"));
             filters.add(JSONObject.of("id", id("filter-"), "queryId", query, "targetIds", List.of(source),
-                "label", "Input conditions: " + predicate, "expression", predicate));
+                "label", conditionLabel(field.get("conditions"), field.getString("variable")), "expression", predicate));
           }
           fields.put(key, source);
         }
         if (output.get("having") != null && !fields.isEmpty()) {
           String predicate = JSON.toJSONString(output.get("having"));
           filters.add(JSONObject.of("id", id("filter-"), "queryId", query, "targetIds", new ArrayList<>(fields.values()),
-              "label", "HAVING " + predicate, "expression", predicate));
+              "label", "HAVING " + conditionLabel(output.get("having"), null), "expression", predicate));
         }
         if (output.getString("save_table") != null) tables.put(output.getString("save_table"), fields);
         lastOutput = fields;
       }
       lastOutput.forEach(this::output);
+      if (question == null || question.isBlank()) {
+        var names = nodes.stream().map(JSONObject::from).filter(n -> "class".equals(n.getString("kind")))
+            .map(n -> n.getString("label")).distinct().toList();
+        queries.getJSONObject(0).put("label", names.isEmpty() ? "Calculation" : String.join(" / ", names));
+      }
       return QuerySubgraphContract.validate(result());
     }
 
@@ -232,7 +239,45 @@ public final class QuerySourceAnalysis {
       if (targets.isEmpty() && owners.containsKey(variable)) targets.add(owners.get(variable));
       if (targets.isEmpty()) throw new DslContractViolationException(INVALID_GRAMMAR, "answer.steps", "Condition has no source reference");
       String expression = condition.toJSONString();
-      filters.add(JSONObject.of("id", id("filter-"), "queryId", query, "targetIds", targets, "label", expression, "expression", expression));
+      filters.add(JSONObject.of("id", id("filter-"), "queryId", query, "targetIds", targets, "label", conditionLabel(condition, variable), "expression", expression));
+    }
+
+    String fieldLabel(String variable, String attribute) {
+      if ("*".equals(attribute)) return "*";
+      var definition = metadata.get(ownerClasses.get(variable));
+      if (definition != null) for (Object value : definition.getJSONArray("attrs")) {
+        var attr = JSONObject.from(value);
+        if (Objects.equals(attribute, attr.getString("name"))) return label(attr.get("attrDesc"), attribute);
+      }
+      var fields = variables.get(variable);
+      String source = fields == null ? null : fields.get(attribute);
+      if (source != null) for (Object value : nodes) {
+        var node = JSONObject.from(value);
+        if (source.equals(node.getString("id"))) return node.getString("label");
+      }
+      return attribute;
+    }
+
+    String conditionLabel(Object value, String variable) {
+      if (!(value instanceof Map<?, ?>)) return valueLabel(value);
+      var condition = JSONObject.from(value);
+      for (String operator : List.of("and", "or", "not")) if (condition.get(operator) instanceof List<?> children) {
+        String text = String.join(" " + (operator.equals("or") ? "OR" : "AND") + " ",
+            children.stream().map(child -> conditionLabel(child, variable)).toList());
+        return (operator.equals("not") ? "NOT " : "") + "(" + text + ")";
+      }
+      if (condition.getString("field") != null) {
+        String name = fieldLabel(condition.getString("variable") == null ? variable : condition.getString("variable"), condition.getString("field"));
+        String function = condition.getString("function");
+        if (function != null) name = function + "(" + name + ")";
+        return name + " " + Objects.toString(condition.get("operator"), "=") + " " + valueLabel(condition.get("value"));
+      }
+      return String.join(" AND ", condition.values().stream().map(child -> conditionLabel(child, variable)).toList());
+    }
+
+    String valueLabel(Object value) {
+      if (value instanceof List<?> values) return "(" + String.join(", ", values.stream().map(this::valueLabel).toList()) + ")";
+      return value == null ? "NULL" : value.toString();
     }
 
     void conditionFields(Object value, String variable, Set<String> targets) {

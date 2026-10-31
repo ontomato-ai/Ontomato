@@ -12,6 +12,40 @@ import org.junit.jupiter.api.Test;
 /** Permission and delivery examples, with no database, runtime or model calls. */
 class QueryPermissionPolicyTest {
   @Test
+  void checkedPythonErrorsKeepTheirPublicMessageAcrossOwnerExecution() {
+    var error = assertThrows(IllegalStateException.class,
+        () -> io.ontomato.dataengine.service.agent.OntologyGenerationService.asOwner(
+            new QueryAccessService.GrantUser("user", "domain"), () -> { throw new Exception("KeyError at program.py line 2"); }));
+    assertEquals("KeyError at program.py line 2", error.getMessage());
+  }
+
+  @Test
+  void dslLabelsDescribeFiltersAndOperationsWithoutTechnicalAliases() {
+    var metadata = definitions();
+    var attrs = JSONObject.from(metadata.get(0)).getJSONArray("attrs");
+    attrs.getJSONObject(1).put("attrDesc", "单位全称");
+    attrs.add(JSONObject.of("name", "status", "attrDesc", "人员状态", "enable", true));
+    var dsl = query("COUNT", "headcount"); dsl.remove("problem");
+    var step = dsl.getJSONObject("answer").getJSONArray("steps").getJSONObject(0);
+    var condition = JSON.parseObject("""
+        {"properties":{"and":[{"field":"status","operator":"=","value":"在职"},
+        {"or":[{"field":"department","operator":"=","value":"文学院"},{"field":"department","operator":"=","value":"理学院"}]}]}}
+        """);
+    step.getJSONObject("graph").getJSONArray("patterns").getJSONObject(0).getJSONArray("objects").getJSONObject(0).put("conditions", condition);
+    step.getJSONObject("output").put("group_by", JSONObject.of("fields", JSONArray.of(JSONObject.of("variable", "e", "field", "department"))));
+    step.getJSONObject("output").getJSONArray("fields").add(JSONObject.of("variable", "e", "field", "department", "as", "college_name"));
+    var graph = QuerySourceAnalysis.fromDsl(dsl, metadata);
+    assertEquals("员工", graph.getJSONArray("queries").getJSONObject(0).getString("label"));
+    var filter = graph.getJSONArray("filters").getJSONObject(0);
+    assertEquals(condition.toJSONString(), filter.getString("expression"));
+    assertEquals("(人员状态 = 在职 AND (单位全称 = 文学院 OR 单位全称 = 理学院))", filter.getString("label"));
+    var labels = graph.getJSONArray("nodes").stream().map(JSONObject::from).filter(n -> "operation".equals(n.getString("kind")))
+        .map(n -> n.getString("label")).toList();
+    assertTrue(labels.contains("COUNT(*)")); assertTrue(labels.contains("GROUP BY 单位全称"));
+    assertFalse(labels.contains("headcount")); assertFalse(labels.contains("college_name"));
+  }
+
+  @Test
   void invalidFunctionModeCannotBecomeWriteAuthority() {
     var function = new io.ontomato.dataengine.bean.function.Function();
     function.setDomainId("domain"); function.setOperation("invalid");

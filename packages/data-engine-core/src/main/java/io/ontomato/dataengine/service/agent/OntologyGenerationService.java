@@ -71,7 +71,7 @@ public class OntologyGenerationService {
     } catch (RuntimeException error) {
       throw error;
     } catch (Exception error) {
-      throw new IllegalStateException(error);
+      throw new IllegalStateException(error.getMessage(), error);
     } finally {
       if (previous == null) CURRENT.remove();
       else CURRENT.set(previous);
@@ -110,6 +110,7 @@ public class OntologyGenerationService {
 
   public JSONObject open(
       String kind, String businessId, String source, Owner owner, boolean external) {
+    if (kind.equals("action")) operations.requireWriteAccess(owner);
     String session = UUID.randomUUID().toString(), run = UUID.randomUUID().toString();
     String sandbox = kind.equals("action") ? "a" + run.replace("-", "") : null;
     String agent = agentId(kind);
