@@ -7,4 +7,3 @@ export { default as ResultsPage } from "./components/results/ResultsPage.vue";
 export { default as TestPage } from "./components/test-run/TestPage.vue";
 export { default as TestcasesPage } from "./components/testcases/TestcasesPage.vue";
 export { default as TurnDiagnoseButton } from "./components/TurnDiagnoseButton.vue";
-export { snapshotTurnKey } from "./utils/workspace-route";

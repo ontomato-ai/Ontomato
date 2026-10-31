@@ -5,31 +5,22 @@ import { createI18n } from "vue-i18n";
 import { createRouter, createMemoryHistory } from "vue-router";
 import TurnDiagnoseButton from "../TurnDiagnoseButton.vue";
 import en from "../../../../locales/en";
-import type { TurnIdentity } from "../../utils/workspace-route";
 import { turnDiagnosisAccessKey, type TurnDiagnosisAccess } from "../../access";
 
 const router = createRouter({
   history: createMemoryHistory(),
   routes: [
     { path: "/", component: { template: "<div />" } },
-    {
-      path: "/observe/turns/:turnKey",
-      name: "ObserveTurnDetail",
-      component: { template: "<div />" },
-    },
+    { path: "/observe/diagnosis", component: { template: "<div />" } },
   ],
 });
-
-function snapshot(patch: Partial<TurnIdentity>): TurnIdentity {
-  return { status: "completed", ...patch };
-}
 
 /** Open-source access: /observe has no permission gate, so the entry is always visible. */
 const ossAccess: TurnDiagnosisAccess = { prepare: () => {}, visible: () => true };
 
-function render(value: TurnIdentity, access: TurnDiagnosisAccess = ossAccess) {
+function render(access: TurnDiagnosisAccess = ossAccess) {
   return mount(TurnDiagnoseButton, {
-    props: { turn: value },
+    props: { sessionId: "session-1", runId: "run-1" },
     global: {
       plugins: [createI18n({ legacy: false, locale: "en", messages: { en } }), router],
       provide: { [turnDiagnosisAccessKey as symbol]: access },
@@ -37,36 +28,25 @@ function render(value: TurnIdentity, access: TurnDiagnosisAccess = ossAccess) {
   });
 }
 
-it("opens the finished Turn's diagnosis page in a new tab", async () => {
+it("opens that run's diagnosis page in a new tab", async () => {
   const open = vi.spyOn(window, "open").mockReturnValue(null);
-  const wrapper = render(snapshot({ threadId: "thread-1", requestSeq: 3 }));
-
-  await wrapper.find("button").trigger("click");
+  await render().find("button").trigger("click");
 
   const [href, target] = open.mock.calls[0];
-  expect(href).toContain("/observe/turns/turn.thread-1.3");
-  expect(href).toContain("diagnose=1");
+  const url = new URL(href as string, "http://localhost");
+  expect(url.pathname).toBe("/observe/diagnosis");
+  expect(url.searchParams.get("sourceSessionId")).toBe("session-1");
+  expect(url.searchParams.get("sourceRunId")).toBe("run-1");
+  expect(url.searchParams.get("diagnose")).toBe("1");
   expect(target).toBe("_blank");
   open.mockRestore();
-});
-
-it("stays hidden while streaming or without a Turn", () => {
-  expect(
-    render(snapshot({ turnKey: "turn.t.1", status: "streaming" }))
-      .find("button")
-      .exists()
-  ).toBe(false);
-  expect(render(snapshot({})).find("button").exists()).toBe(false);
 });
 
 it("calls prepare once on mount and follows the assembled visibility reactively", async () => {
   // Permission-gated access: permissions load on mount and the button appears once they arrive (reactivity comes from the app's permission state).
   const allowed = ref(false);
   const prepare = vi.fn();
-  const wrapper = render(snapshot({ threadId: "thread-1", requestSeq: 3 }), {
-    prepare,
-    visible: () => allowed.value,
-  });
+  const wrapper = render({ prepare, visible: () => allowed.value });
   expect(prepare).toHaveBeenCalledTimes(1);
   expect(wrapper.find("button").exists()).toBe(false);
 
@@ -79,7 +59,7 @@ it("refuses to render without an assembled access instead of defaulting either w
   vi.spyOn(console, "warn").mockImplementation(() => {});
   expect(() =>
     mount(TurnDiagnoseButton, {
-      props: { turn: snapshot({ threadId: "thread-1", requestSeq: 3 }) },
+      props: { sessionId: "session-1", runId: "run-1" },
       global: { plugins: [createI18n({ legacy: false, locale: "en", messages: { en } }), router] },
     })
   ).toThrow("Turn diagnosis access is not provided");
