@@ -14,7 +14,7 @@ import type {
 } from "@ontomato/contracts/agent-host";
 import { agentHostStreamFrameSchema } from "@ontomato/contracts/agent-host";
 import type { RuntimeArtifact } from "@ontomato/contracts/agent-runtime-artifacts";
-import type { RuntimeCursor, RuntimeStreamFrame } from "@ontomato/contracts/agent-runtime-events";
+import type { RuntimeCursor, RuntimeEventEnvelope, RuntimeStreamFrame } from "@ontomato/contracts/agent-runtime-events";
 import type { RetrievalSnapshot } from "@ontomato/contracts/data-retrieval";
 
 /*
@@ -65,6 +65,10 @@ export interface AgentHostClientOptions {
    * throws the host's own error otherwise, so error display stays with the host.
    */
   request(path: string, init: RequestInit): Promise<Response>;
+  /** Filters or renames the agents this host serves; the shell shows the result verbatim. */
+  agents?(agents: AgentHostAgent[]): AgentHostAgent[];
+  /** Called for every applied run frame, so a host page can refresh its own view of the run. */
+  onEvent?(sessionId: string, envelope: RuntimeEventEnvelope): void;
 }
 
 const enc = encodeURIComponent;
@@ -89,16 +93,25 @@ export function createAgentHostClient(options: AgentHostClientOptions): AgentHos
   const retrievalRun = (sessionId: string, runId: string, retrievalId: string, retrievalRunId: string) =>
     `${retrieval(sessionId, runId, retrievalId)}/runs/${enc(retrievalRunId)}`;
 
-  function subscribe(path: string, after: Pick<RuntimeCursor, "seq" | "streamId">, handlers: HostStreamHandlers) {
+  function subscribe(
+    path: string,
+    sessionId: string,
+    after: Pick<RuntimeCursor, "seq" | "streamId">,
+    handlers: HostStreamHandlers,
+  ) {
     const controller = new AbortController();
     const params = new URLSearchParams({ afterSeq: String(after.seq), streamId: after.streamId });
+    const frame = (value: RuntimeStreamFrame) => {
+      if (options.onEvent && value.type === "event") options.onEvent(sessionId, value.envelope);
+      handlers.frame(value);
+    };
     void (async () => {
       try {
         const response = await call(`${path}/events?${params}`, {
           headers: { Accept: "text/event-stream" },
           signal: controller.signal,
         });
-        const ended = await readFrames(response, handlers.frame, () => !controller.signal.aborted);
+        const ended = await readFrames(response, frame, () => !controller.signal.aborted);
         if (!ended && !controller.signal.aborted) handlers.error(new Error("stream closed"));
       } catch (error) {
         if (!controller.signal.aborted) handlers.error(error);
@@ -109,7 +122,8 @@ export function createAgentHostClient(options: AgentHostClientOptions): AgentHos
 
   return {
     async listAgents() {
-      return (await json<AgentHostAgentList>("/agents")).agents;
+      const agents = (await json<AgentHostAgentList>("/agents")).agents;
+      return options.agents ? options.agents(agents) : agents;
     },
     listSessions(agentId, cursor) {
       return json<AgentHostSessionPage>(`/sessions?${query({ agentId, ...(cursor ? { cursor } : {}) })}`);
@@ -132,7 +146,7 @@ export function createAgentHostClient(options: AgentHostClientOptions): AgentHos
       return json<AgentHostRunSnapshot>(run(sessionId, runId));
     },
     subscribe(sessionId, runId, after, handlers) {
-      return subscribe(run(sessionId, runId), after, handlers);
+      return subscribe(run(sessionId, runId), sessionId, after, handlers);
     },
     async cancel(sessionId, runId) {
       await call(`${run(sessionId, runId)}/cancel`, send("POST", {}));
@@ -155,7 +169,7 @@ export function createAgentHostClient(options: AgentHostClientOptions): AgentHos
       return json<AgentHostRunSnapshot>(retrievalRun(sessionId, runId, retrievalId, retrievalRunId));
     },
     subscribeRetrieval(sessionId, runId, retrievalId, retrievalRunId, after, handlers) {
-      return subscribe(retrievalRun(sessionId, runId, retrievalId, retrievalRunId), after, handlers);
+      return subscribe(retrievalRun(sessionId, runId, retrievalId, retrievalRunId), sessionId, after, handlers);
     },
   };
 }

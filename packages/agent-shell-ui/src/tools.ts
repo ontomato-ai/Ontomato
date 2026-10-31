@@ -27,9 +27,19 @@ export type StepActivity =
 
 // Only a script that node actually runs counts; reading or editing the file (cat, sed) does not.
 const SCRIPT_PATH = String.raw`(?:"[^"]*?|'[^']*?|[^\s"';&|]*?)`;
-const ANALYST_COMMAND = new RegExp(String.raw`\bnode\s+${SCRIPT_PATH}ontomato\.mjs["']?\s+([\w-]+)`);
-const DATASET_COMMAND = new RegExp(String.raw`\bnode\s+${SCRIPT_PATH}dataset\.mjs\b`);
+const NODE_SCRIPT = String.raw`\bnode\s+${SCRIPT_PATH}`;
+const ANALYST_COMMAND = new RegExp(String.raw`${NODE_SCRIPT}ontomato\.mjs["']?\s+([\w-]+)`);
+const DATASET_COMMAND = new RegExp(String.raw`${NODE_SCRIPT}dataset\.mjs\b`);
 const SKILL_SCRIPT_RUN = new RegExp(String.raw`\b(?:node|python3?|bash|sh)\s+${SCRIPT_PATH}skills/[A-Za-z0-9][A-Za-z0-9._-]*/`);
+
+/**
+ * The analyst entry script running its ask subcommand, i.e. a retrieval. Its tool call blocks until
+ * the retrieval ends, so the shell starts looking for the association as soon as the call starts.
+ */
+export function runsAnalystAsk(command: string): boolean {
+  return ANALYST_COMMAND.exec(command)?.[1] === "ask";
+}
+
 const ANALYST_ACTIVITY: Record<string, StepActivity> = {
   ask: "retrieve",
   "execute-dsl": "query",
