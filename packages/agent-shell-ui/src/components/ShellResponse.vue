@@ -23,8 +23,10 @@ const reasonOpen = ref(false);
 const reason = ref("");
 const feedbackBusy = ref(false);
 
+/** The answer is the run's last settled message; while a run streams, each reply with text moves the
+ * id, so feedback is read once the run stops rather than at every step. */
 const target = computed(() =>
-  props.sessionId && props.item.answerMessageId
+  props.sessionId && !props.item.running && props.item.answerMessageId
     ? { sessionId: props.sessionId, runId: props.item.runId, messageId: props.item.answerMessageId }
     : null,
 );
