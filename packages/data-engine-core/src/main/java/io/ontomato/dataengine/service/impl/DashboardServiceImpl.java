@@ -66,7 +66,9 @@ public class DashboardServiceImpl implements DashboardService {
 	@Override
 	public List<DashboardCondition> getConditionsFromDsls(List<JSONObject> originDsls, String domainId) {
 		List<Map<String, Object>> classDefs = (List<Map<String, Object>>)adminService.getJSONRule(domainId).get("classDef");
-		return getConditionsFromDsls(originDsls, classDefs);
+		// A DSL may spell a class "/person" or "person"; the condition lookups key on the schema's own spelling.
+		String normalizedDsls = DslUtil.normalizeClassNames(JSONArray.toJSONString(originDsls, Feature.WriteMapNullValue), classDefs);
+		return getConditionsFromDsls(JSON.parseArray(normalizedDsls, JSONObject.class), classDefs);
 	}
 	
 	private List<DashboardCondition> getConditionsFromDsls(List<JSONObject> originDsls, List<Map<String, Object>> classDefs) {
