@@ -89,17 +89,19 @@ jobs:
       - name: Test the agent runtime
         run: pnpm test:runtime
 
-      - name: DEBUG paths
-        run: |
-          id
-          namei -l "$PWD/packages/agent-runtime/src/tool-worker.mjs" || true
-          ls -ld /home /home/runner /home/runner/work "$PWD" "$PWD/packages/agent-runtime/src/tool-worker.mjs"
-
-      # The worker drops to a per-session UID, so this proof needs root; the
-      # suite skips itself for anyone else and says so in its name. sudo resets
-      # PATH, which would hide the node installed by setup-node.
+      # The worker drops to a per-session UID, so this proof needs root; the suite
+      # skips itself for anyone else and says so in its name. sudo resets PATH,
+      # which would hide the node installed by setup-node.
+      #
+      # The worker also has to reach the runtime's own source from its new UID,
+      # which the workspace checkout is not set up for: /home/runner is 0750. A
+      # deployment installs the runtime world-readable under /app, so granting
+      # traversal here reproduces that premise rather than relaxing an assertion.
       - name: Test the Linux sandbox as root
-        run: sudo env "PATH=$PATH" "RUNTIME_TEST_DATABASE_URL=$RUNTIME_TEST_DATABASE_URL" pnpm --filter @ontomato/agent-runtime exec vitest run src/__tests__/sandbox-linux.test.ts
+        run: |
+          sudo chmod o+x /home/runner
+          sudo chmod -R o+rX "$PWD"
+          sudo env "PATH=$PATH" "RUNTIME_TEST_DATABASE_URL=$RUNTIME_TEST_DATABASE_URL" pnpm --filter @ontomato/agent-runtime exec vitest run src/__tests__/sandbox-linux.test.ts
 
   # Java tests were compiled by the image build but never executed. The core
   # suites need PostgreSQL; the adapter suites bring their own containers.

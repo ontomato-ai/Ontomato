@@ -36,12 +36,20 @@ class RuntimeDeployment(unittest.TestCase):
             if not root.exists():
                 continue
             with self.subTest(root=root), tempfile.TemporaryDirectory() as temp:
-                env = Path(temp) / ".env"
+                # Compose reads the service-level `env_file: .env` relative to the project
+                # directory, not the --env-file override, so the project has to own the
+                # prepared file. Copying the templates keeps this test off any local
+                # deploy/.env that a checkout does not contain.
+                project = Path(temp) / "deploy"
+                project.mkdir()
+                for name in ("docker-compose.yml", f"docker-compose.{overlay}.yml", "initdb.sql"):
+                    (project / name).write_bytes((root / "deploy" / name).read_bytes())
+                env = project / ".env"
                 env.write_text((root / "deploy/.env.example").read_text())
                 prepare.prepare(env)
-                result = subprocess.run(["docker", "compose", "--project-directory", str(root / "deploy"),
-                    "--env-file", str(env), "-f", str(root / "deploy/docker-compose.yml"),
-                    "-f", str(root / f"deploy/docker-compose.{overlay}.yml"), "config", "--no-env-resolution", "--format", "json"],
+                result = subprocess.run(["docker", "compose", "--project-directory", str(project),
+                    "--env-file", str(env), "-f", str(project / "docker-compose.yml"),
+                    "-f", str(project / f"docker-compose.{overlay}.yml"), "config", "--no-env-resolution", "--format", "json"],
                     text=True, capture_output=True, env={k: v for k, v in os.environ.items() if k != "AGENT_RUNTIME_SERVICE_TOKEN"})
                 self.assertEqual(result.returncode, 0, result.stderr)
                 services = json.loads(result.stdout)["services"]
