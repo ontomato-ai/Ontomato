@@ -12,10 +12,15 @@ vi.mock("../skills", () => ({ validateAssistantSkills: vi.fn().mockResolvedValue
 vi.mock("../../skills/operations", () => ({ withDomainSkills: async (_domain: string, work: () => Promise<unknown>) => work() }));
 import { createAgentDefinition } from "../definitions";
 
-describe.skipIf(!process.env.RUNTIME_TEST_DATABASE_URL)("agent creation on PostgreSQL", () => {
+const database = process.env.RUNTIME_TEST_DATABASE_URL;
+// A database-backed suite never skips silently: the integration command requires a disposable database.
+if (!database)
+  throw new Error("Set RUNTIME_TEST_DATABASE_URL to a disposable PostgreSQL database");
+
+describe("agent creation on PostgreSQL", () => {
   beforeAll(async () => {
     state.schema = `agent_definition_${randomUUID().replaceAll("-", "")}`;
-    state.pool = new pg.Pool({ connectionString: process.env.RUNTIME_TEST_DATABASE_URL });
+    state.pool = new pg.Pool({ connectionString: database });
     await state.pool.query(`CREATE SCHEMA "${state.schema}"`);
     await state.pool.query(`CREATE TABLE "${state.schema}".assistant_agents (
       id uuid PRIMARY KEY, domain_id text, kind text, name text, description text, enabled boolean,

@@ -9,7 +9,7 @@ import type { RuntimeStartRunRequest } from "@ontomato/contracts/agent-runtime";
 import { getPostgresPool, qualifiedTable as table } from "../../infrastructure/postgres";
 import { transaction } from "../../infrastructure/postgres-transaction";
 import { RuntimeClient } from "../../infrastructure/agent-runtime/client";
-import { publicMessages, publicRun, publicSnapshot } from "../../platform/agent-runtime/projection";
+import { publicMessages, publicRun, publicSnapshot, runStatusView } from "../../platform/agent-runtime/projection";
 import { runDefinition, messageText } from "../../platform/agent-runtime/runtime";
 import { workbenchServerResourceRoot } from "../../content/resources";
 import { renderPrompt } from "../../core/prompts/loader";
@@ -28,10 +28,11 @@ export async function diagnosisSession(id: string, owner: AgentHostOwner): Promi
   if (!row) throw missing();
   return row;
 }
-const view = (s: Session, latest: { run: Parameters<typeof publicRun>[0] } | null) => ({
+type LatestRun = Parameters<typeof runStatusView>[0];
+const view = (s: Session, latest: LatestRun | null) => ({
   id: s.id, agentId: DIAGNOSIS_AGENT_ID, title: s.title,
   createdAt: new Date(s.created_at).toISOString(), updatedAt: new Date(s.updated_at).toISOString(),
-  latestRun: latest ? publicRun(latest.run) : null,
+  latestRun: latest ? runStatusView(latest) : null,
 });
 export async function createDiagnosis(id: string, owner: AgentHostOwner, target: DiagnosisTarget | null = null) {
   if (target) target = diagnosisTargetSchema.parse(target);
@@ -46,7 +47,7 @@ export async function createDiagnosis(id: string, owner: AgentHostOwner, target:
   if (canonical(row.target) !== canonical(target)) throw new HttpError(409, "Idempotency key reused", "IDEMPOTENCY_CONFLICT");
   const client = new RuntimeClient(owner.domainId, undefined, owner.userId);
   await client.createSession(id);
-  return { session: view(row, (await client.session(id)).latestRun), replayed: !inserted.rowCount };
+  return { session: view(row, (await client.session(id)).latestRun?.run ?? null), replayed: !inserted.rowCount };
 }
 function canonical(value: unknown): string {
   if (Array.isArray(value)) return `[${value.map(canonical).join(",")}]`;
@@ -72,14 +73,15 @@ export const diagnosisService: AgentHostService = {
     }
     const rows = (await db().query(`SELECT * FROM ${table("ops_sessions")} WHERE domain_id=$1 AND owner_id=$2 AND ($3::timestamptz IS NULL OR (updated_at,id)<($3,$4::uuid)) ORDER BY updated_at DESC,id DESC LIMIT $5`, [owner.domainId, owner.userId, cursor?.updatedAt ?? null, cursor?.id ?? null, input.limit + 1])).rows as Session[];
     const selected = rows.slice(0, input.limit), client = new RuntimeClient(owner.domainId);
-    const sessions = await Promise.all(selected.map(async (row) => view(row, (await client.session(row.id)).latestRun)));
+    const statuses = selected.length ? await client.sessionStatuses(selected.map((row) => row.id)) : [];
+    const sessions = selected.map((row) => view(row, statuses.find((s) => s.session.id === row.id)?.latestRun ?? null));
     const last = selected.at(-1);
     return { sessions, nextCursor: rows.length > input.limit && last ? Buffer.from(JSON.stringify({ id: last.id, updatedAt: new Date(last.updated_at).toISOString() })).toString("base64url") : null };
   },
   async history(id, owner, query) {
     const row = await diagnosisSession(id, owner), page = await new RuntimeClient(owner.domainId).history(id, query);
     const latest = page.session.latestRun;
-    return { ...page, session: view(row, latest ? { run: latest } : null) };
+    return { ...page, session: view(row, latest) };
   },
   async snapshot(id, owner) {
     const row = await diagnosisSession(id, owner), snapshot = await new RuntimeClient(owner.domainId).session(id);
@@ -87,7 +89,7 @@ export const diagnosisService: AgentHostService = {
       const first = snapshot.messages.find((m) => m.message.role === "user");
       if (first) { row.title = messageText(first.message); await db().query(`UPDATE ${table("ops_sessions")} SET title=$2 WHERE id=$1 AND title=''`, [id, row.title]); }
     }
-    return { session: view(row, snapshot.latestRun), messages: publicMessages(snapshot.messages), latestRun: snapshot.latestRun ? publicSnapshot(snapshot.latestRun) : null };
+    return { session: view(row, snapshot.latestRun?.run ?? null), messages: publicMessages(snapshot.messages), latestRun: snapshot.latestRun ? publicSnapshot(snapshot.latestRun) : null };
   },
   async readRun(session, run, owner) {
     await diagnosisSession(session, owner);

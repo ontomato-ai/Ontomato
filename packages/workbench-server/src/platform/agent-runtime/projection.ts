@@ -1,5 +1,10 @@
 import type { RuntimeStreamFrame } from "@ontomato/contracts/agent-runtime-events";
-import { agentHostRunSchema, type AgentHostRun, type AgentHostRunSnapshot } from "@ontomato/contracts/agent-host";
+import {
+  agentHostRunSchema,
+  type AgentHostRun,
+  type AgentHostRunSnapshot,
+  type AgentHostRunStatus,
+} from "@ontomato/contracts/agent-host";
 import type { RuntimeRunSnapshot } from "@ontomato/contracts/agent-runtime";
 export const publicRun = (run: RuntimeRunSnapshot["run"] | AgentHostRun) =>
   agentHostRunSchema.parse(
@@ -10,11 +15,22 @@ export const publicRun = (run: RuntimeRunSnapshot["run"] | AgentHostRun) =>
       ]),
     ),
   );
-/** The business outcome of a run: the runtime only reports running/stopped, the stop reason says why. */
+/** A session row's latest run, without the run's messages, artifacts or definition. */
+export function runStatusView(run: {
+  id: string;
+  status: AgentHostRunStatus["status"];
+  stopReason: AgentHostRunStatus["stopReason"];
+}): AgentHostRunStatus {
+  return { id: run.id, status: run.status, stopReason: run.stopReason };
+}
+/**
+ * The business outcome of a run: the runtime only reports running/stopped, the stop reason says why.
+ * A length-limited run still delivered its answer, so it counts as completed, not failed.
+ */
 export type RunOutcome = "running" | "completed" | "cancelled" | "failed";
 export function runOutcome(run: { status: "running" | "stopped"; stopReason: string | null }): RunOutcome {
   if (run.status === "running") return "running";
-  if (run.stopReason === "stop") return "completed";
+  if (run.stopReason === "stop" || run.stopReason === "length") return "completed";
   if (run.stopReason === "aborted") return "cancelled";
   return "failed";
 }

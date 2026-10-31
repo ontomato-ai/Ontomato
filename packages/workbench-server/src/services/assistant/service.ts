@@ -43,15 +43,16 @@ const db = () => getPostgresPool(),
   logger = createLogger("assistant"),
   observing = new Set<string>();
 export { publicSnapshot } from "../../platform/agent-runtime/projection";
-import { publicMessages, publicSnapshot, publicRun } from "../../platform/agent-runtime/projection";
-const sessionView = (s: SessionRow, latestRun: { run: Parameters<typeof publicRun>[0] } | null) =>
+import { publicMessages, publicSnapshot, publicRun, runStatusView } from "../../platform/agent-runtime/projection";
+type LatestRun = Parameters<typeof runStatusView>[0];
+const sessionView = (s: SessionRow, latestRun: LatestRun | null) =>
   agentHostSessionSchema.parse({
     id: s.id,
     agentId: s.agent_id,
     title: s.title,
     createdAt: new Date(s.created_at).toISOString(),
     updatedAt: new Date(s.updated_at).toISOString(),
-    latestRun: latestRun ? publicRun(latestRun.run) : null,
+    latestRun: latestRun ? runStatusView(latestRun) : null,
   });
 export { sessionView };
 export const assistantService = {
@@ -86,13 +87,9 @@ export const assistantService = {
       }
       throw e;
     }
-    return {
-      session: sessionView(
-        row,
-        (await new RuntimeClient(owner.domainId).session(id)).latestRun,
-      ),
-      replayed,
-    };
+    const latestRun = (await new RuntimeClient(owner.domainId).session(id))
+      .latestRun;
+    return { session: sessionView(row, latestRun?.run ?? null), replayed };
   },
   async list(
     owner: AssistantOwner,
@@ -132,26 +129,18 @@ export const assistantService = {
       )
     ).rows as SessionRow[];
     const selected = rows.slice(0, input.limit);
-    const client = new RuntimeClient(owner.domainId);
+    // One status read per page: a row names its latest run, and the run's body is only read by
+    // the history call that opens the conversation.
     const statuses = selected.length
-      ? await client.sessionStatuses(selected.map((row) => row.id))
+      ? await new RuntimeClient(owner.domainId).sessionStatuses(
+          selected.map((row) => row.id),
+        )
       : [];
-    // One status read per page; each row's run is only read when its body is needed, which is the
-    // history call. A run the runtime no longer knows leaves the row without a latest run.
-    const sessions = await Promise.all(
-      selected.map(async (row) => {
-        const latestId = statuses.find((s) => s.session.id === row.id)?.latestRun
-          ?.id;
-        let latest = null;
-        if (latestId) {
-          try {
-            latest = await this.readRun(row.id, latestId, owner);
-          } catch (e) {
-            if (!(e instanceof HttpError && e.status === 404)) throw e;
-          }
-        }
-        return sessionView(row, latest);
-      }),
+    const sessions = selected.map((row) =>
+      sessionView(
+        row,
+        statuses.find((s) => s.session.id === row.id)?.latestRun ?? null,
+      ),
     );
     const last = selected.at(-1);
     return {
@@ -192,7 +181,7 @@ export const assistantService = {
       : null;
     return {
       ...page,
-      session: sessionView(await assistantStore.session(id, owner), page.session.latestRun ? { run: page.session.latestRun } : null),
+      session: sessionView(await assistantStore.session(id, owner), page.session.latestRun),
       runs,
       latestRun: live && latest ? { ...live, run: latest } : null,
     };
@@ -218,10 +207,7 @@ export const assistantService = {
       }
     }
     return {
-      session: sessionView(
-        await assistantStore.session(row.id, owner),
-        s.latestRun,
-      ),
+      session: sessionView(await assistantStore.session(row.id, owner), s.latestRun?.run ?? null),
       messages: publicMessages(s.messages),
       latestRun: s.latestRun ? publicSnapshot(await this.withRetrievals(s.latestRun, owner)) : null,
     };

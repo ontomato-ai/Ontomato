@@ -5,7 +5,7 @@ import { runtimeArtifactSchema } from "@ontomato/contracts/agent-runtime-artifac
 import { retrievalCallerSchema, retrievalEvidenceSchema } from "@ontomato/contracts/data-retrieval";
 import { assistantStore } from "../assistant/store";
 import { RuntimeClient } from "../../infrastructure/agent-runtime/client";
-import { publicMessages, publicSnapshot, publicRun } from "../../platform/agent-runtime/projection";
+import { publicMessages, publicSnapshot, runStatusView } from "../../platform/agent-runtime/projection";
 import { parseTurnKey } from "../../logging/log-context";
 import { backendGet, backendPost, BackendResponseError, AuthFailedError } from "../../utils/backend-client";
 import { getApiConfig } from "../../config/data-query-api";
@@ -91,7 +91,7 @@ export async function readEvidenceSession(provider: "workbench" | "ontology", id
   catch (e) { if (!(e instanceof HttpError && e.status === 404)) throw e; await diagnosisSession(id, caller); return diagnosisService.snapshot(id, caller); }
   const snapshot = await new RuntimeClient(caller.domainId).session(id);
   return agentHostSessionSnapshotSchema.parse({
-    session: { id, agentId: row.agent_id, title: row.title, createdAt: new Date(row.created_at).toISOString(), updatedAt: new Date(row.updated_at).toISOString(), latestRun: snapshot.latestRun ? publicRun(snapshot.latestRun.run) : null },
+    session: { id, agentId: row.agent_id, title: row.title, createdAt: new Date(row.created_at).toISOString(), updatedAt: new Date(row.updated_at).toISOString(), latestRun: snapshot.latestRun ? runStatusView(snapshot.latestRun.run) : null },
     messages: publicMessages(snapshot.messages), latestRun: snapshot.latestRun ? publicSnapshot(snapshot.latestRun) : null,
   });
 }
