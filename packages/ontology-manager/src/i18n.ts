@@ -592,7 +592,6 @@ const ontologyEn = {
   metricMarkdownPreview: "Preview",
   metricMarkdownSource: "Source",
   metricTestResultPlaceholder: "Test results will appear here",
-  metricOpenFullResult: "Open full result",
   metricJsonTest: "JSON test",
   metricJsonResultPlaceholder: "Tests can run after publishing; results will appear here",
   close: "Close",

@@ -245,69 +245,6 @@ public class MetricViewController {
 		return ret;
 	}
 	
-	@PostMapping(path = "/metricView/generateGeneralContent", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
-    public SseEmitter generateGeneralContent(@RequestHeader(ControllerConst.LANG_HEADER_KEY) String lang, @RequestBody JSONObject param) {
-		UserDataPermission curUserDataPermission = identityService.getCurrentUserDataPermission();
-    	User user = SystemUtils.getCurUser();
-		String question = param.getString("question");
-		Boolean testParam = param.getBoolean("test");
-		boolean testFlag = testParam == null ? false : testParam;
-		BusinessConfig businessConfig = businessConfigService.get(user.getDomainId());
-		int timeoutMinutes = Long.valueOf(businessConfig.getDslCookerTimeout() / 60000).intValue();
-		if (timeoutMinutes <= 0) {
-			timeoutMinutes = 1;
-		}
-		final int queryTimeoutMinutes = timeoutMinutes;
-		return sessionEntrance.openNewSessionStream(param, "generateGeneralContent", streamId -> {
-			try {
-				List<MetricViewContent> metricViewContents = metricViewService.generateGeneralContent(streamId, question, lang, user, curUserDataPermission, queryTimeoutMinutes, testFlag);
-				JSONObject ret = new JSONObject();
-				ret.put("success", true);
-				ret.put("data", metricViewContents);
-				SseEmitterUtil.sendSseEmitter(streamId, JSON.toJSONString(ret));
-			} catch (SessionCancelledException e) {
-				// Do not swallow a cancellation into a failure result frame: rethrow as-is and let the entrance cancellation branch handle it.
-				throw e;
-			} catch (Exception e) {
-				log.error(e.getMessage(), e);
-				JSONObject ret = new JSONObject();
-				ret.put("success", false);
-				ret.put("message", failureMessage(e));
-				SseEmitterUtil.sendSseEmitter(streamId, JSON.toJSONString(ret));
-			}
-		});
-	}
-	
-	@PostMapping("/metricView/generateStaticContent")
-    @ResponseBody
-    public JSONObject generateStaticContent(@RequestHeader(ControllerConst.LANG_HEADER_KEY) String lang, @RequestBody JSONObject param) {
-		JSONObject ret = new JSONObject();
-		try {
-			UserDataPermission curUserDataPermission = identityService.getCurrentUserDataPermission();
-	    	User user = SystemUtils.getCurUser();
-			String question = param.getString("question");
-			BusinessConfig businessConfig = businessConfigService.get(user.getDomainId());
-    		int timeoutMinutes = Long.valueOf(businessConfig.getDslCookerTimeout() / 60000).intValue();
-			if (timeoutMinutes <= 0) {
-				timeoutMinutes = 1;
-			}
-			List<MetricViewContent> metricViewContents = metricViewService.generateStaticContent(question, lang, user, curUserDataPermission, timeoutMinutes);
-			ret.put("success", true);
-			ret.put("data", metricViewContents);
-		} catch (Exception e) {
-			log.error(e.getMessage(), e);
-			ret.put("success", false);
-			ret.put("message", failureMessage(e));
-		}
-		return ret;
-	}
-	
-	@GetMapping("/metricView/getData")
-	@ResponseBody
-	public JSONObject getData(@RequestHeader(ControllerConst.LANG_HEADER_KEY) String lang, @RequestParam String parameter) throws Exception {
-		return metricViewService.getData(parameter.trim(), lang);
-	}
-	
 	@PostMapping("/metricView/execute")
     @ResponseBody
     public JSONObject execute(@RequestHeader(ControllerConst.LANG_HEADER_KEY) String lang, @RequestBody JSONObject param) {

@@ -43,11 +43,8 @@ CREATE TABLE IF NOT EXISTS ontology_agent_runs (
   input_hash text NOT NULL, request jsonb NOT NULL, open boolean NOT NULL, deadline timestamptz NOT NULL,
   caller_id uuid REFERENCES ontology_retrieval_callers(id), external boolean NOT NULL,
   dataset_ids jsonb NOT NULL DEFAULT '[]', observed_state jsonb, decision_revision integer NOT NULL,
-  qc_id uuid, qc_admitted boolean NOT NULL DEFAULT false, cancel_requested boolean NOT NULL DEFAULT false, cancel_confirmed boolean NOT NULL DEFAULT false, created_at timestamptz NOT NULL DEFAULT now());
-ALTER TABLE ontology_agent_runs ADD COLUMN IF NOT EXISTS runtime_admitted boolean NOT NULL DEFAULT true;
-ALTER TABLE ontology_agent_runs ADD COLUMN IF NOT EXISTS admission_error text;
-ALTER TABLE ontology_agent_runs ADD COLUMN IF NOT EXISTS result_after bigint NOT NULL DEFAULT 0;
-ALTER TABLE ontology_agent_runs ADD COLUMN IF NOT EXISTS language text;
+  qc_id uuid, qc_admitted boolean NOT NULL DEFAULT false, cancel_requested boolean NOT NULL DEFAULT false, cancel_confirmed boolean NOT NULL DEFAULT false, created_at timestamptz NOT NULL DEFAULT now(),
+  runtime_admitted boolean NOT NULL DEFAULT true, admission_error text, result_after bigint NOT NULL DEFAULT 0, language text);
 CREATE TABLE IF NOT EXISTS ontology_binding_runs (
   run_id uuid PRIMARY KEY REFERENCES ontology_agent_runs(id), status text NOT NULL,
   open boolean NOT NULL, deadline timestamptz, owner_node text NOT NULL, error text, qc_id uuid NOT NULL, qc_admitted boolean NOT NULL DEFAULT false);

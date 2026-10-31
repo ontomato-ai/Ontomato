@@ -44,8 +44,7 @@ public class QueryGrantService {
     jdbc.execute(
         "CREATE TABLE IF NOT EXISTS query_runtime_grants (id varchar(64) PRIMARY KEY, run_id"
             + " varchar(128) NOT NULL, domain_id varchar(128) NOT NULL, expires_at bigint NOT NULL,"
-            + " revoked boolean NOT NULL DEFAULT false)");
-    jdbc.execute("ALTER TABLE query_runtime_grants ADD COLUMN IF NOT EXISTS query_error text");
+            + " revoked boolean NOT NULL DEFAULT false, query_error text)");
   }
 
   public void requireWorkbench(HttpServletRequest request) {
@@ -153,34 +152,7 @@ public class QueryGrantService {
               claims.getString("domainId"),
               System.currentTimeMillis());
       if (count == null || count != 1) throw new IllegalArgumentException();
-      boolean read =
-          List.of(
-                  "/ontology/query/overview",
-                  "/ontology/query/schema",
-                  "/ontology/query/dsl-reference",
-                  "/ontology/query/distinct-values",
-                  "/ontology/query/execute-dsl",
-                  "/ontology/query/metrics/search",
-                  "/ontology/query/metrics/execute",
-                  "/ontology/query/knowledge/search")
-              .contains(path);
-      boolean write =
-          path.startsWith("/writeFunctionOperation/")
-              && "sandbox-write".equals(claims.getString("purpose"));
-      boolean generation =
-          "ontology-generation".equals(claims.getString("purpose"))
-              && path.startsWith("/ontology/ai/generation/" + runId + "/");
-      if ("ontology-generation".equals(claims.getString("purpose"))) {
-        write = false;
-      }
-      boolean retrieval = "retrieval-exploration".equals(claims.getString("purpose"))
-          && claims.getString("retrievalId") != null
-          && path.matches("/ontology/retrievals/" + claims.getString("retrievalId")
-              + "/runs/" + runId + "/outputs(?:/[^/]+(?:/content)?)?");
-      boolean governance = "knowledge-governance".equals(claims.getString("purpose"))
-          && path.matches("/ontology/ai/knowledge-governance/[^/]+/runs/" + runId + "/actions/[^/]+");
-      if ("knowledge-governance".equals(claims.getString("purpose"))) { read = false; write = false; }
-      if (!read && !write && !generation && !governance && !retrieval)
+      if (!allows(claims, runId, path))
         throw new ResponseStatusException(
             HttpStatus.FORBIDDEN, "This grant cannot call this operation");
       return claims;
@@ -190,6 +162,40 @@ public class QueryGrantService {
       throw new ResponseStatusException(
           HttpStatus.UNAUTHORIZED, "Invalid, expired or revoked query grant");
     }
+  }
+
+  /** The one place that maps a grant purpose to the paths it may call. */
+  private static boolean allows(JSONObject claims, String runId, String path) {
+    String purpose = claims.getString("purpose");
+    if (purpose == null) return false;
+    return switch (purpose) {
+      case "retrieval-exploration" ->
+          read(path)
+              || (claims.getString("retrievalId") != null
+                  && path.matches("/ontology/retrievals/" + claims.getString("retrievalId")
+                      + "/runs/" + runId + "/outputs(?:/[^/]+(?:/content)?)?"));
+      // Sandbox and saved read programs query through the same protocol, which applies the owner's
+      // row and column permissions; only the sandbox one may also write through its own grant.
+      case "sandbox-write" -> read(path) || path.startsWith("/writeFunctionOperation/");
+      // A generation agent reads the ontology as its owner so that it can author valid definitions;
+      // it never reaches final output delivery or another run's actions.
+      case "user-read", "ontology-generation" ->
+          read(path) || ("ontology-generation".equals(purpose)
+              && path.startsWith("/ontology/ai/generation/" + runId + "/"));
+      case "knowledge-governance" ->
+          path.matches("/ontology/ai/knowledge-governance/[^/]+/runs/" + runId + "/actions/[^/]+");
+      default -> false;
+    };
+  }
+
+  /** Query reads; final output delivery always needs the end user credential. */
+  private static boolean read(String path) {
+    return path.startsWith("/ontology/query/") && !path.startsWith("/ontology/query/outputs");
+  }
+
+  /** Whether this path needs a scoped write grant rather than an ordinary credential. */
+  public static boolean requiresWriteGrant(String path) {
+    return path.startsWith("/writeFunctionOperation/");
   }
 
   public void revoke(String domainId, String runId) {
