@@ -4,8 +4,8 @@ name: Images
 #
 # develop pushes publish the edge version, stable pushes publish the stable
 # version (the maintenance line of released versions), and formal v* tags publish
-# the stripped version plus latest. Pull requests never publish: they run
-# pr-checks.yml.
+# the stripped version plus latest. Pull requests and develop pushes are only
+# checked, never published: they run pr-checks.yml.
 #
 # Keep each ref's build, publication and verification together. A newer push to
 # the same branch cancels the superseded run, so only the current head publishes;

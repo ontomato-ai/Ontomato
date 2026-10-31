@@ -1,10 +1,13 @@
-name: PR checks
+name: Checks
 
-# Pull requests into develop or main never publish images and never touch
-# private resources. They run the repository's own Node and Java checks plus the
-# offline delivery check, all safe on a fork.
+# Changes to develop and main are checks, never publications: they run the
+# repository's own Node and Java checks plus the offline delivery check, and
+# touch no private resource. Pull requests into those branches run the same
+# checks, so a feature branch is verified before it lands.
 
 on:
+  push:
+    branches: ["develop"]
   pull_request:
     branches: ["develop", "main"]
 
