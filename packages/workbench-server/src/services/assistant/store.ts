@@ -235,17 +235,4 @@ export const assistantStore = {
       )
     ).rows;
   },
-  async requireOpen(
-    id: string,
-    owner: AssistantOwner,
-    c: pg.Pool | pg.PoolClient = db(),
-  ) {
-    const r = await c.query(
-      `SELECT t.* FROM ${table("assistant_turns")} t JOIN ${table("assistant_sessions")} s ON s.id=t.session_id WHERE t.id=$1 AND t.open AND s.domain_id=$2 AND s.owner_id=$3 FOR UPDATE OF t`,
-      [id, owner.domainId, owner.userId],
-    );
-    if (!r.rowCount)
-      throw new HttpError(409, "Run is closed", "ASSISTANT_RUN_CLOSED");
-    return r.rows[0] as TurnRow;
-  },
 };

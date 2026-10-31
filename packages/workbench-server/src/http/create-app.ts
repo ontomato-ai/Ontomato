@@ -5,6 +5,8 @@ import {
   verifyAssistantDomain,
 } from "../services/assistant/evidence";
 import { installAssistantEvidenceReader } from "../platform/diagnosis/observe/workspaces/assistant-source";
+import { installDiagnosisEvidenceReader } from "../platform/diagnosis/observe/workspaces/diagnosis-source";
+import { resolveDiagnosisEvidence } from "../services/ops-diagnosis/evidence";
 import type { AuthenticatedRequest } from "../utils/request-identity";
 import { unwrapCallbackCredential } from "../services/agent-runtime/callback-credential";
 import express, {
@@ -80,6 +82,7 @@ function bindRuntime(): void {
     readTurn: readAssistantTurnEvidence,
     verifyDomain: verifyAssistantDomain,
   });
+  installDiagnosisEvidenceReader({ resolve: resolveDiagnosisEvidence });
 }
 
 export function createWorkbenchApp(mounts: WorkbenchMounts = {}): Express {

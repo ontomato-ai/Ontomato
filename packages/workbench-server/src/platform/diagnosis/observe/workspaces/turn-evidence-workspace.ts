@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import type { WorkspaceManifest, WorkspaceSource } from "@ontomato/contracts/observe";
-import { resolveDiagnosisEvidence } from "../../../../services/ops-diagnosis/evidence"; // eslint-disable-line no-restricted-imports -- TODO: move to platform layer
+import { diagnosisEvidenceReader } from "./diagnosis-source";
 import { parseTurnKey } from "../../../../logging/log-context";
 
 export interface BuildTurnEvidenceWorkspaceInput {
@@ -14,7 +14,7 @@ export interface WorkspaceArtifactResult { artifactDir: string; manifest: Worksp
 /** A case keeps source references; reading logs or runtime messages never writes a second archive. */
 export async function buildTurnEvidenceWorkspace(input: BuildTurnEvidenceWorkspaceInput) {
   input.signal?.throwIfAborted();
-  const evidence = await resolveDiagnosisEvidence({ kind: "turn", turnKey: input.turnKey }, {
+  const evidence = await diagnosisEvidenceReader().resolve({ kind: "turn", turnKey: input.turnKey }, {
     domainId: input.domainId, userId: input.userId ?? "", token: input.token, apiKey: input.apiKey,
   });
   input.signal?.throwIfAborted();

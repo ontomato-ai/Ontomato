@@ -40,4 +40,16 @@ describe.skipIf(!process.env.RUNTIME_TEST_DATABASE_URL)("agent creation on Postg
     const stored = await state.pool!.query(`SELECT kind FROM "${state.schema}".assistant_agents WHERE id=$1`, [id]);
     expect(stored.rows[0].kind).toBe(id);
   });
+  it("replays the same definition and refuses the same id from another domain", async () => {
+    const id = randomUUID();
+    const input = assistantAgentInputSchema.parse({ name: "Shared id", description: "", icon: null,
+      enabled: true, systemPrompt: "Scoped", skills: [], classNames: [], enabledMcpServiceIds: [], sortOrder: 0 });
+    await createAgentDefinition(id, input, { userId: "owner", domainId: "domain-a" });
+    const replayed = await createAgentDefinition(id, input, { userId: "owner", domainId: "domain-a" });
+    expect(replayed.id).toBe(id);
+    await expect(createAgentDefinition(id, input, { userId: "other", domainId: "domain-b" }))
+      .rejects.toMatchObject({ status: 409, code: "IDEMPOTENCY_CONFLICT" });
+    await expect(createAgentDefinition(id, { ...input, name: "Different" }, { userId: "owner", domainId: "domain-a" }))
+      .rejects.toMatchObject({ status: 409, code: "IDEMPOTENCY_CONFLICT" });
+  });
 });

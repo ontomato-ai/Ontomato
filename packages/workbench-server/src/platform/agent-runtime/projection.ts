@@ -10,6 +10,14 @@ export const publicRun = (run: RuntimeRunSnapshot["run"] | AgentHostRun) =>
       ]),
     ),
   );
+/** The business outcome of a run: the runtime only reports running/stopped, the stop reason says why. */
+export type RunOutcome = "running" | "completed" | "cancelled" | "failed";
+export function runOutcome(run: { status: "running" | "stopped"; stopReason: string | null }): RunOutcome {
+  if (run.status === "running") return "running";
+  if (run.stopReason === "stop") return "completed";
+  if (run.stopReason === "aborted") return "cancelled";
+  return "failed";
+}
 export const publicMessages = (messages: RuntimeRunSnapshot["messages"]) => messages.filter((m) => m.message.role !== "system");
 export const publicSnapshot = (s: RuntimeRunSnapshot | AgentHostRunSnapshot) => ({
   ...s,

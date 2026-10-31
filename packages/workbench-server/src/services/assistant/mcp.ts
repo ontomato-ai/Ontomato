@@ -12,6 +12,7 @@ import {
   type AssistantCredentials,
 } from "../../platform/agent-runtime/runtime";
 import { HttpError } from "../../utils/errors";
+import { runOutcome } from "../../platform/agent-runtime/projection";
 export async function analysisTask(id: string, owner: AssistantOwner) {
   if (!z.string().uuid().safeParse(id).success)
     throw new HttpError(404, "Analysis task not found");
@@ -27,14 +28,7 @@ export async function analysisTask(id: string, owner: AssistantOwner) {
     agentId: session.agent_id,
     userId: owner.userId,
     name: session.title,
-    status:
-      s.run.status === "running"
-        ? "running"
-        : s.run.stopReason === "stop"
-          ? "completed"
-          : s.run.stopReason === "aborted"
-            ? "cancelled"
-            : "failed",
+    status: runOutcome(s.run),
     threadId:
       (
         await getPostgresPool().query(

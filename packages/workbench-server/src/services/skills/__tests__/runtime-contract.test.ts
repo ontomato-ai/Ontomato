@@ -1,7 +1,6 @@
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { createHash } from "node:crypto";
 import AdmZip from "adm-zip";
 import { afterAll, afterEach, expect, it, vi } from "vitest";
 import { installContentLayout } from "../../../content/layout";
@@ -46,23 +45,24 @@ it("round-trips a standard package byte-for-byte and preserves its other files a
 it("publishes only the selected current-domain package and keeps captured versions unchanged across edits", async () => {
   vi.stubEnv("AGENT_RUNTIME_SERVICE_TOKEN", "synthetic-host");
   const published: Array<{ skill: unknown; files: { path: string; content: string }[] }> = [];
-  const digest = (files: { path: string; content: string }[]) => createHash("sha256").update(JSON.stringify([...files].sort((a,b) => a.path < b.path ? -1 : 1).map((f) => [f.path,f.content]))).digest("hex");
   vi.stubGlobal("fetch", vi.fn(async (_url: string, init: { headers: Record<string, string>; body: string }) => {
     expect(new Headers(init.headers).get("x-domain-id")).toBe(domain);
     const body = JSON.parse(String(init.body));
     published.push(body);
-    return Response.json({ skill: body.skill, digest: digest(body.files), description: "A portable sample" }, { status: 201 });
+    return Response.json({ skill: body.skill, digest: "a".repeat(64), description: "A portable sample" }, { status: 201 });
   }));
   await skillManager.importSkill(domain, zip(), true);
   const provider = { namespace: { kind: "provider" as const, provider: "workbench" }, name: "assistant-report" };
   const analyst = { namespace: { kind: "provider" as const, provider: "ontology" }, name: "ontomato-analyst-assistant" };
   expect(await prepareAssistantSkills(domain, [analyst, provider, reference])).toEqual([analyst, provider, reference]);
-  const oldDigest = digest(published[0].files);
+  const script = (body: { files: { path: string; content: string }[] }) =>
+    body.files.find((file) => file.path === "scripts/main.mjs")?.content;
   await skillManager.updateSkill(domain, reference.name, { scriptCode: "console.log('next run');\n" });
   await prepareAssistantSkills(domain, [reference]);
   expect(published.map((p) => p.skill)).toEqual([reference, reference]);
-  expect(digest(published[0].files)).toBe(oldDigest);
-  expect(digest(published[1].files)).not.toBe(oldDigest);
+  // A captured version is the package as it was: the later edit reaches only the new publication.
+  expect(script(published[0])).toBe(files["scripts/main.mjs"]);
+  expect(script(published[1])).toBe("console.log('next run');\n");
   await skillManager.toggleSkill(domain, reference.name);
   expect(await prepareAssistantSkills(domain, [provider, reference])).toEqual([provider]);
   expect(await prepareAssistantSkills(domain, [provider])).toEqual([provider]);
