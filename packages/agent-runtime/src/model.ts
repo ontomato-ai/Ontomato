@@ -1,5 +1,5 @@
 import { logHeaders } from "@ontomato/service-logging";
-import { runtimeLogger } from "./logging";
+import { runtimeLogger, runtimeDiagnostic, runtimeFailureMessage } from "./logging";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import type {
@@ -109,11 +109,13 @@ export function modelStream(
           await new Promise((resolve) => setTimeout(resolve, 500 * attempt));
         }
       } catch (error) {
+        // Provider text can echo request bodies; keep it in the log and store only its class and status.
+        runtimeLogger.error("model stream failed", runtimeDiagnostic(error));
         const usage = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0,
           cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } };
         const failed: AssistantMessage = { role: "assistant", content: [], api: model.api,
           provider: model.provider, model: model.id, usage, stopReason: "error",
-          errorMessage: error instanceof Error ? error.message : String(error), timestamp: Date.now() };
+          errorMessage: runtimeFailureMessage(error), timestamp: Date.now() };
         stream.push({ type: "error", reason: "error", error: failed });
       }
     })();
