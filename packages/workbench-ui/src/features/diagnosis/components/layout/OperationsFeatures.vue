@@ -8,13 +8,11 @@ import type {
   ObserveActiveView,
   ObserveNavGroupKey,
 } from "./types";
-import { ref, computed, inject, watch, onMounted } from "vue";
+import { ref, computed, watch, onMounted } from "vue";
 import { useRouter, useRoute } from "vue-router";
 import { ElMessage, ElMessageBox } from "element-plus";
 import { useLocale } from "../../../../composables/useLocale";
-import { diagnosisActionKey } from "../../ops-host";
 import { artifactRetentionRequestKey, diagnosisApi, setArtifactRetention } from "../../api";
-import { isTurnCollectRequested, isTurnDiagnoseRequested } from "../../utils/workspace-route";
 
 import ObserveSidebar from "./ObserveSidebar.vue";
 
@@ -40,8 +38,6 @@ const { t } = useLocale();
 /*  Global AI sidebar (declared early — referenced by route watcher)   */
 /* ------------------------------------------------------------------ */
 
-const startDiagnosis = inject(diagnosisActionKey)!;
-
 /* ------------------------------------------------------------------ */
 /*  Observe group state                                                */
 /* ------------------------------------------------------------------ */
@@ -53,8 +49,6 @@ const observeActiveView = ref<ObserveActiveView>("turns");
 const turnSearchInput = ref("");
 const turnSearching = ref(false);
 const deletingTurnKey = ref<string | null>(null);
-const routeWorkspaceCollecting = ref(false);
-const routeWorkspaceCollectingId = ref<string | null>(null);
 const retentionUpdatingKey = ref<string | null>(null);
 
 const observeApiPrefix = computed(() => {
@@ -67,9 +61,8 @@ const observeBuildBody = computed(() => {
   return selectedTurnKey.value ? { turnKey: selectedTurnKey.value } : {};
 });
 
-const isSelectedWorkspaceCollecting = computed(
-  () => routeWorkspaceCollecting.value && routeWorkspaceCollectingId.value === selectedTurnKey.value
-);
+/** A selected turn whose workspace is still being collected shows the loading pane instead of the artifact. */
+const isSelectedWorkspaceCollecting = computed(() => selectedTurn.value?.status === "collecting");
 
 function createTurnPlaceholder(turnKey: string): WorkspaceManifest {
   return {
@@ -192,55 +185,6 @@ async function handleTurnSearch() {
     ElMessage.error(e?.message || t("diagnosis.workspaceBuildFailed"));
   } finally {
     turnSearching.value = false;
-  }
-}
-
-function clearWorkspaceRouteFlags(turnKey: string, flags: Array<"collect" | "diagnose">) {
-  if (String(route.params.turnKey || "") !== turnKey) return;
-
-  const nextQuery = { ...route.query };
-  for (const flag of flags) {
-    delete nextQuery[flag];
-  }
-  router.replace({ path: route.path, query: nextQuery }).catch(() => {});
-}
-
-async function startTurnDiagnosisFromRoute(turnKey: string, opts?: { clearQuery?: boolean }) {
-  if (String(route.params.turnKey || "") !== turnKey) return false;
-
-  const started = await startDiagnosis({ kind: "turn", turnKey }, true);
-
-  if (opts?.clearQuery !== false) {
-    clearWorkspaceRouteFlags(turnKey, ["diagnose"]);
-  }
-
-  return Boolean(started);
-}
-
-async function collectTurnFromRoute(turnKey: string, opts?: { diagnoseAfter?: boolean }) {
-  if (routeWorkspaceCollecting.value && routeWorkspaceCollectingId.value === turnKey) return;
-
-  routeWorkspaceCollecting.value = true;
-  routeWorkspaceCollectingId.value = turnKey;
-  let collected = false;
-  try {
-    await diagnosisApi.buildTurn(turnKey);
-    collected = true;
-    await loadObserveTurns();
-    if (opts?.diagnoseAfter) {
-      await startTurnDiagnosisFromRoute(turnKey, { clearQuery: false });
-    }
-  } catch (e: any) {
-    ElMessage.error(e?.message || t("diagnosis.workspaceBuildFailed"));
-  } finally {
-    routeWorkspaceCollecting.value = false;
-    routeWorkspaceCollectingId.value = null;
-
-    const flags: Array<"collect" | "diagnose"> = ["collect"];
-    if (opts?.diagnoseAfter || (!collected && isTurnDiagnoseRequested(route.query.diagnose))) {
-      flags.push("diagnose");
-    }
-    clearWorkspaceRouteFlags(turnKey, flags);
   }
 }
 
@@ -448,7 +392,7 @@ watch(
 
 // Handle direct navigation to observe sub-routes
 watch(
-  () => [route.path, route.params.turnKey, route.query.collect, route.query.diagnose] as const,
+  () => [route.path, route.params.turnKey] as const,
   ([p]) => {
     if (activeGroup.value === "observe") {
       // /observe/turn/:turnKey -> select Turn workspace.
@@ -457,15 +401,6 @@ watch(
         selectedTurnKey.value = turnKey;
         observeActiveView.value = "turns";
         ensureSelectedTurnInList(turnKey);
-        const shouldCollect = isTurnCollectRequested(route.query.collect);
-        const shouldDiagnose = isTurnDiagnoseRequested(route.query.diagnose);
-        if (shouldCollect) {
-          void collectTurnFromRoute(turnKey, { diagnoseAfter: shouldDiagnose });
-          return;
-        }
-        if (shouldDiagnose) {
-          void startTurnDiagnosisFromRoute(turnKey);
-        }
         return;
       }
       // /observe/live-logs -> switch to live logs

@@ -94,6 +94,11 @@ export class RuntimeStore {
         PRIMARY KEY(host_id,domain_id,id), UNIQUE(host_id,domain_id,name));`);
       if (versions.some((row) => row.version === 2)) {
         await c.query(`ALTER TABLE ${this.table("runs")} ADD COLUMN IF NOT EXISTS log_context jsonb NOT NULL DEFAULT '{}'`);
+        await c.query(`CREATE TABLE IF NOT EXISTS ${this.table("code_executions")} (
+          host_id text NOT NULL, domain_id text NOT NULL, id uuid NOT NULL,
+          fingerprint text NOT NULL, execution jsonb NOT NULL, outputs jsonb NOT NULL DEFAULT '{}',
+          PRIMARY KEY(host_id,domain_id,id))`);
+        await c.query(`ALTER TABLE ${this.table("code_executions")} ADD COLUMN IF NOT EXISTS log_context jsonb NOT NULL DEFAULT '{}'`);
         return;
       }
       if (versions.length)
@@ -143,6 +148,11 @@ export class RuntimeStore {
           id uuid PRIMARY KEY, host_id text NOT NULL, domain_id text NOT NULL, run_id uuid NOT NULL,
           record jsonb NOT NULL,
           FOREIGN KEY(host_id,domain_id,run_id) REFERENCES ${this.table("runs")}(host_id,domain_id,id) ON DELETE CASCADE);
+        CREATE TABLE ${this.table("code_executions")} (
+          host_id text NOT NULL, domain_id text NOT NULL, id uuid NOT NULL,
+          fingerprint text NOT NULL, execution jsonb NOT NULL, outputs jsonb NOT NULL DEFAULT '{}',
+          log_context jsonb NOT NULL DEFAULT '{}',
+          PRIMARY KEY(host_id,domain_id,id));
         INSERT INTO ${this.table("schema_migrations")} VALUES (2);
       `);
     });

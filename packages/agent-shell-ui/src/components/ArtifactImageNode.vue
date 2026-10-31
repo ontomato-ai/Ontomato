@@ -18,8 +18,11 @@ const path = computed(() => (props.node.loading ? null : artifactPath(props.node
 const title = computed(() => props.node.alt || (path.value ? fileName(path.value) : ""));
 
 const artifact = ref<RuntimeArtifact | null>(null);
+const resolvedPath = ref<string | null>(null);
+/** Re-resolves on every registration revision: a rewritten file is a new version at the same path. */
 async function resolve() {
-  if (!path.value || artifact.value) return;
+  if (!path.value || (artifact.value && resolvedPath.value === path.value)) return;
+  resolvedPath.value = path.value;
   artifact.value = await shell.resolveArtifact(message.value.runId, path.value).catch(() => null);
 }
 watch([path, shell.artifactRevision], resolve, { immediate: true });

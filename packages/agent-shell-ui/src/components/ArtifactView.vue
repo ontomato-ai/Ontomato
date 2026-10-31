@@ -36,10 +36,8 @@ async function resolve() {
 }
 
 watch(() => [props.runId, props.path], resolve, { immediate: true });
-// A reference may stream before its file is registered; retry while unresolved.
-watch(shell.artifactRevision, () => {
-  if (state.value !== "ready") void resolve();
-});
+// Each registration can be a new version at the same path, so a shown file re-resolves too.
+watch(shell.artifactRevision, resolve);
 
 const renderer = computed(() =>
   resolveArtifactRenderer(props.path, shell.artifactRenderers.value, defaultArtifactRenderers),

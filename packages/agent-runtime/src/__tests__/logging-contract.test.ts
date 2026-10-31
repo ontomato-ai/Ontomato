@@ -2,6 +2,7 @@ import type { AddressInfo } from "node:net";
 import { expect, it, vi } from "vitest";
 import { createRuntimeHttp } from "../http";
 import type { AgentRuntime } from "../runtime";
+import { runtimeDiagnostic, runtimeFailureMessage } from "../logging";
 import { LogQueryError } from "@ontomato/service-logging";
 
 it("exposes service evidence only to an authenticated host and preserves unavailable storage", async () => {
@@ -23,4 +24,17 @@ it("exposes service evidence only to an authenticated host and preserves unavail
     expect(empty.status).toBe(200);
     expect(await empty.json()).toEqual(page);
   } finally { await new Promise<void>(done => server.close(() => done())); }
+});
+
+/** A provider failure may echo request bodies, so only its class and status may be stored or logged. */
+it("keeps provider text out of stored failure messages and diagnostic log entries", () => {
+  const failure = Object.assign(new Error('401 unauthorized: {"authorization":"Bearer sk-secret"}'), { status: 401 });
+  const stored = runtimeFailureMessage(failure);
+  expect(stored).not.toContain("sk-secret");
+  expect(stored).toContain(failure.name);
+  expect(stored).toContain("401");
+  expect(runtimeFailureMessage(new Error("sk-secret"))).not.toContain("sk-secret");
+  expect(runtimeFailureMessage("sk-secret")).not.toContain("sk-secret");
+  expect(runtimeFailureMessage(new Error("no status"))).not.toContain("no status");
+  expect(runtimeDiagnostic(new Error('500 upstream: {"apiKey":"sk-secret"}')).message).not.toContain("sk-secret");
 });

@@ -5,7 +5,7 @@ import { ArtifactFiles } from "./files";
 import { SessionSandbox } from "./sandbox";
 import { mkdir, chmod, readFile } from "node:fs/promises";
 import { CodeExecutor } from "./code";
-import { signalUid, type WorkerPolicy } from "./worker";
+import { signalUid, assertWorkerPolicy, type WorkerPolicy } from "./worker";
 import { randomUUID } from "node:crypto";
 import path from "node:path";
 import { normalizeContext, type Message } from "@earendil-works/pi-ai";
@@ -46,6 +46,7 @@ import {
   modelStream,
   completeSummary,
   recoverContext,
+  type ResolvedModel,
 } from "./model";
 import { RuntimeError, safeMessage } from "./errors";
 import { contextTokens, cutPoint, serializeConversation } from "./compaction";
@@ -205,6 +206,25 @@ export class AgentRuntime {
         `SELECT 1 FROM ${this.store.table("admissions")} WHERE host_id=$1 AND domain_id=$2 AND key=$3`,
         [scope.hostId, scope.domainId, runId],
       );
+      let config: ResolvedModel | undefined;
+      let skills: InstalledSkill[] = [];
+      // Read-only checks for unusable dependencies belong before admission, so a new run fails with
+      // 422/503 instead of starting and reporting the same problem as a stopped run.
+      if (!admitted.rowCount) {
+        config = await this.models.resolve(scope.domainId, request.definition.modelRole);
+        assertWorkerPolicy(this.worker);
+        skills = await Promise.all(
+          request.definition.skills.map((ref) =>
+            this.registry.resolve(host, scope.domainId, ref),
+          ),
+        );
+        if (new Set(skills.map((s) => s.skill.name)).size !== skills.length)
+          throw new RuntimeError(
+            400,
+            "INVALID_REQUEST",
+            "Skill names must be unique within a run",
+          );
+      }
       const run: RuntimeRun = {
         id: runId,
         sessionId,
@@ -217,29 +237,14 @@ export class AgentRuntime {
         finishedAt: null,
         stopReason: null,
         errorMessage: null,
-        resolvedSkills: [],
+        resolvedSkills: skills.map(
+          ({ directory: _directory, ...registered }) => registered,
+        ),
         environment: {
           values: request.environment.values,
           secretNames: Object.keys(request.environment.secrets).sort(),
         },
       };
-      let skills: InstalledSkill[] = [];
-      if (!admitted.rowCount) {
-        skills = await Promise.all(
-          request.definition.skills.map((ref) =>
-            this.registry.resolve(host, scope.domainId, ref),
-          ),
-        );
-        if (new Set(skills.map((s) => s.skill.name)).size !== skills.length)
-          throw new RuntimeError(
-            400,
-            "INVALID_REQUEST",
-            "Skill names must be unique within a run",
-          );
-        run.resolvedSkills = skills.map(
-          ({ directory: _directory, ...registered }) => registered,
-        );
-      }
       const accepted = await this.store.admit(
         scope,
         run,
@@ -260,21 +265,35 @@ export class AgentRuntime {
         run,
         controller: new AbortController(),
         done: Promise.resolve(),
-        frames: await this.store.events(scope, runId),
+        frames: [],
         lostThrough: 0,
         pending: new Map(),
         turnIndex: -1,
         subscribers: new Set(),
         outputBaseline: new Map(),
       };
+      // Register before any further await so a cancel that follows the admission response always
+      // finds this run instead of returning it still running.
       this.active.set(key(scope, runId), active);
+      // Load the admitted events while this admission still holds the session lock, so the first
+      // subscriber always sees a complete replay buffer instead of an empty one.
+      const loading = this.store.events(scope, runId).then((frames) => {
+        active.frames = frames;
+      });
       // The first execution begins after this admission lock is released, never on a read/retry.
-      active.done = Promise.resolve()
-        .then(() => withServiceLogContext(logContext, () => this.execute(active, request, skills)))
-        .finally(() => this.active.delete(key(scope, runId)));
+      active.done = (async () => {
+        await loading;
+        await withServiceLogContext(logContext, () => this.execute(active, config!, request, skills));
+      })().finally(() => this.active.delete(key(scope, runId)));
       void active.done.catch(() =>
         withServiceLogContext(logContext, () => runtimeLogger.error("Runtime persistence failed; run will be interrupted on restart")),
       );
+      try {
+        await loading;
+      } catch (error) {
+        this.active.delete(key(scope, runId));
+        throw error;
+      }
       return accepted;
     });
   }
@@ -426,18 +445,22 @@ export class AgentRuntime {
   }
   private async execute(
     active: Active,
+    config: ResolvedModel,
     request: RuntimeStartRunRequest,
     skills: InstalledSkill[],
   ) {
     const { scope, run, controller } = active;
-    runtimeLogger.info("run started");
     const signal = controller.signal;
+    if (signal.aborted) {
+      await this.settle(active, "aborted", "Run cancelled");
+      return;
+    }
+    runtimeLogger.info("run started");
     let reason: RuntimeStopReason | undefined;
     let failure: string | null = null;
     let closeMcp = async () => {};
     try {
       const mcpConfigs = await this.mcp.resolve(scope, request.definition.externalMcp.map((ref) => ref.id));
-      const config = await this.models.resolve(scope.domainId, request.definition.modelRole);
       const rows = await this.store.messages(scope, run.sessionId);
       const summaryRow = (
         await this.store.pool.query(
@@ -603,14 +626,6 @@ export class AgentRuntime {
               })),
               timestamp: Date.now(),
             };
-            await this.receive(active, {
-              type: "message_start",
-              message: prepared,
-            });
-            await this.receive(active, {
-              type: "message_end",
-              message: prepared,
-            });
             return {
               context: { ...context, messages: [prepared, ...effective] },
             };
@@ -646,6 +661,14 @@ export class AgentRuntime {
       reason = "error";
       failure = safeMessage(error);
     }
+    await this.settle(active, reason, failure);
+  }
+  private async settle(
+    active: Active,
+    reason: RuntimeStopReason | undefined,
+    failure: string | null,
+  ) {
+    const { scope, run } = active;
     runtimeLogger.info(reason === "error" ? "run failed" : "run completed");
     await this.locked(scope, run.sessionId, async () => {
       active.pending.clear();
@@ -816,12 +839,6 @@ export class AgentRuntime {
     return this.locked(scope, run.sessionId, async () => {
       const state = await this.store.run(scope, runId);
       const active = this.active.get(key(scope, runId));
-      if (afterSeq > state.seq)
-        throw new RuntimeError(
-          400,
-          "INVALID_REQUEST",
-          "Cursor is in the future",
-        );
       if (
         streamId !== state.streamId ||
         (!active && afterSeq < state.seq) ||

@@ -44,17 +44,18 @@ export function createRunSubscription<T = AgentHostRunSnapshot>() {
     flushHandle = null;
     const frames = queue;
     queue = [];
+    let ended = false;
     for (const frame of frames) {
+      // A required snapshot supersedes the batch; its read is authoritative for everything queued.
       if (frame.type === "snapshot_required") {
         void refresh(0);
         return;
       }
       target!.event(frame.envelope);
-      if (frame.envelope.event.type === "agent_end") {
-        stop();
-        return;
-      }
+      // The run's last frames can share this batch; they still belong to the run just ended.
+      if (frame.envelope.event.type === "agent_end") ended = true;
     }
+    if (ended) stop();
   }
 
   function connect(attempt: number) {

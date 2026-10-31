@@ -4,8 +4,7 @@ import { z } from "zod";
  * `data` of GET /businessConfig/getConfigAndDesc: the data engine's diagnosis view of its running configuration and
  * the notes on how changes take effect. Only these named non-secret fields cross into the workbench server; z.object
  * drops every other key, so an unexpected key/header/parameter in a response never reaches a diagnosis output.
- * Shapes follow the data engine's JSON as served (nulls written, durations as ISO-8601 text); the shared samples
- * under __tests__/fixtures are checked against both sides.
+ * Shapes follow the data engine's JSON as served (nulls written, durations as ISO-8601 text).
  */
 
 export const diagnosticConfigSchema = z.object({

@@ -1,5 +1,13 @@
 import type { ShellLabels } from "@ontomato/agent-shell-ui";
-export interface GovernanceMessages { text: Readonly<Record<string,string>>; shell: Readonly<Record<string,string>> }
+/**
+ * Governance text. `shell` is the shell's labels as stored: the three the page formats from text
+ * (steps, rows, elapsed) keep their keys but hold the pattern instead of the formatter, so a
+ * missing key is a type error here rather than a silent `{...}` cast.
+ */
+export interface GovernanceMessages {
+  text: Readonly<Record<string, string>>;
+  shell: Readonly<Omit<ShellLabels, "steps" | "rows" | "elapsed"> & Record<"steps" | "rows" | "elapsed", string>>;
+}
 export const governanceAgentId = "56a15178-ae22-4e6f-9974-ababeb42a676";
 export const englishGovernance: GovernanceMessages = {
   "text": {
@@ -91,9 +99,6 @@ export const englishGovernance: GovernanceMessages = {
     "rows": "{n} row | {n} rows",
     "emptyFile": "This file is empty.",
     "invalidChart": "This chart file could not be drawn.",
-    "featureDashboards": "Dashboards",
-    "featureAgentConfig": "Agent settings",
-    "featureSchedule": "Scheduled tasks",
     "previousPage": "Previous page",
     "nextPage": "Next page",
     "toolRead": "Read",
@@ -112,27 +117,22 @@ export const englishGovernance: GovernanceMessages = {
     "datasetLineage": "Lineage",
     "done": "Done",
     "elapsed": "{time} elapsed",
-    "addToDashboard": "Add to dashboard",
-    "dashboard": "Dashboard",
-    "newDashboard": "New dashboard from this data",
-    "dashboardGroup": "Group",
-    "addedToDashboard": "Added to the dashboard",
-    "qualityCheck": "Quality check",
-    "exportPpt": "Export conversation as PPT",
-    "exportFailed": "Export failed"
   }
 };
 export function shellLabels(messages: GovernanceMessages): ShellLabels {
   const labels = messages.shell;
-  const countLabel = (text: string, n: number) => {
+  /** "one | many" choices, as the shell's own label files write plurals. */
+  const count = (text: string) => (n: number) => {
     const choices = text.split(" | ");
     return choices[Math.min(n === 1 ? 0 : 1, choices.length - 1)].replace(/\{(?:n|count)\}/g, String(n));
   };
-  return { ...labels,
+  const { steps, rows, elapsed, ...rest } = labels;
+  return {
+    ...rest,
     placeholder: messages.text.placeholder,
     greeting: messages.text.welcomeTitle,
-    steps: (n: number) => countLabel(labels.steps, n),
-    rows: (n: number) => countLabel(labels.rows, n),
-    elapsed: (time: string) => labels.elapsed.replace("{time}", time),
-  } as ShellLabels;
+    steps: count(steps),
+    rows: count(rows),
+    elapsed: (time: string) => elapsed.replace("{time}", time),
+  };
 }

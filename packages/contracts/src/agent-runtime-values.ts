@@ -59,14 +59,3 @@ export const runtimeStopReasonSchema = z.enum([
 ]);
 export type RuntimeRunStatus = z.infer<typeof runtimeRunStatusSchema>;
 export type RuntimeStopReason = z.infer<typeof runtimeStopReasonSchema>;
-
-/** Hosts may localize the missing-role case without parsing a model/provider error message. */
-export const RUNTIME_MODEL_NOT_CONFIGURED = "MODEL_NOT_CONFIGURED";
-
-/** Messages are safe to return to the caller; never include credentials or stacks. */
-export const runtimeFailureSchema = z
-  .object({
-    code: runtimeKeySchema,
-    message: z.string().min(1),
-  })
-  .strict();

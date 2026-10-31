@@ -58,6 +58,11 @@ statement snapshot, preserve request order/duplicates, and reject the whole list
 if any ID is missing. They exclude messages, definitions, artifacts and error
 text; latestRun includes only id, status and stopReason.
 
+Run start checks its read-only prerequisites before admitting: a session whose
+definition role has no configured model returns 422 `MODEL_NOT_CONFIGURED`, and a
+platform that cannot isolate workers returns 503 `CODE_ISOLATION_UNAVAILABLE`.
+Neither leaves an admission, so the same key may start once the dependency is fixed.
+
 ## Run definition, environment and sandbox
 
 Wire shape (all IDs are UUIDs; paths are portable relative paths):

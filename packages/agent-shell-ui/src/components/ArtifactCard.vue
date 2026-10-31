@@ -24,9 +24,9 @@ async function resolve() {
   }
 }
 watch(key, resolve, { immediate: true });
-watch(shell.artifactRevision, () => {
-  if (!artifact.value) void resolve();
-});
+// Every registration the run makes can be a new version of the same path, so the revision
+// re-resolves regardless of whether an older version is already shown.
+watch(shell.artifactRevision, resolve);
 
 function open() {
   if (artifact.value)

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from "vue";
-import { AgentShell, createAgentHostClient, type AgentHostClient } from "@ontomato/agent-shell-ui";
+import { AgentShell, createAgentHostClient } from "@ontomato/agent-shell-ui";
 import "@ontomato/agent-shell-ui/style.css";
 import {
   governanceSourceReadSchema, governanceWorkResponseSchema,
@@ -45,25 +45,16 @@ async function readSource(id: string, offset = 0) {
     if (session === sessionId.value && version === sourceRead) source.value = result;
   } catch (reason) { if (session === sessionId.value && version === sourceRead) fail(reason); }
 }
-const transport = createAgentHostClient({ request: (path, init) => manager.request(`/ontology/ai${path}`, init) });
-const client: AgentHostClient = {
-  ...transport,
-  async listAgents() {
-    return (await transport.listAgents()).filter(agent => agent.id === governanceAgentId)
-      .map(agent => ({ ...agent, name: t("title"), description: t("subtitle") }));
+const client = createAgentHostClient({
+  request: (path, init) => manager.request(`/ontology/ai${path}`, init),
+  // The governance agent is the only one this page discusses; its work is read again once a run ends.
+  agents: (agents) =>
+    agents.filter((agent) => agent.id === governanceAgentId)
+      .map((agent) => ({ ...agent, name: t("title"), description: t("subtitle") })),
+  onEvent: (session, envelope) => {
+    if (session === sessionId.value && envelope.event.type === "agent_end") void readWork();
   },
-  subscribe(session, run, cursor, handlers) {
-    return transport.subscribe(session, run, cursor, {
-      ...handlers,
-      frame(frame) {
-        handlers.frame(frame);
-        if (sessionId.value === session && frame.type === "event" &&
-            (frame.envelope.event.type === "agent_end" ||
-             (featureId.value === "report" && frame.envelope.event.type === "tool_execution_end"))) void readWork();
-      },
-    });
-  },
-};
+});
 watch(sessionId, () => { sourceRead++; source.value = null; work.value = null; void readWork(); }, { immediate: true });
 watch(featureId, value => { if (value === "report") void readWork(); });
 const progress = computed(() => work.value?.knowledgeTotal === null || !work.value ? "" :
