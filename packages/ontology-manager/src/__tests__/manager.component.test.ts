@@ -365,9 +365,12 @@ describe("OntologyManager root component with real pages", () => {
     input.focus();
     input.value = "spare";
     input.dispatchEvent(new Event("input", { bubbles: true }));
-    await new Promise((resolve) => setTimeout(resolve, 300));
-    await settle();
-    expect(root().querySelector(".instance-candidates")?.textContent).toContain("Spare part");
+    // The search is debounced and its results are fetched, so wait for the list the
+    // assertions below read instead of guessing a delay that holds on a loaded runner.
+    await vi.waitFor(async () => {
+      await settle();
+      expect(root().querySelector(".instance-candidates")?.textContent).toContain("Spare part");
+    }, { timeout: 5000 });
     expect(root().querySelector(".instance-candidates")?.textContent).toContain("Item:2");
     expect(root().querySelector(".instance-candidates")?.textContent).not.toContain("First order");
     (root().querySelector(".instance-candidates button") as HTMLElement).click();

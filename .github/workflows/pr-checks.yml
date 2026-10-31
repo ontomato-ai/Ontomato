@@ -89,6 +89,12 @@ jobs:
       - name: Test the agent runtime
         run: pnpm test:runtime
 
+      - name: DEBUG paths
+        run: |
+          id
+          namei -l "$PWD/packages/agent-runtime/src/tool-worker.mjs" || true
+          ls -ld /home /home/runner /home/runner/work "$PWD" "$PWD/packages/agent-runtime/src/tool-worker.mjs"
+
       # The worker drops to a per-session UID, so this proof needs root; the
       # suite skips itself for anyone else and says so in its name. sudo resets
       # PATH, which would hide the node installed by setup-node.
@@ -127,6 +133,18 @@ jobs:
           distribution: temurin
           java-version: 21
           cache: maven
+
+      # RuntimeFunctionIntegrationTest starts the real runtime process through the
+      # workspace's tsx loader, so the JS dependencies are part of this job's inputs.
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+
+      - name: Install pnpm
+        run: npm install --global pnpm@9.15.9
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
 
       # The retrieval contract test writes the wire its consumer must accept.
       - name: Test the Java reactor
