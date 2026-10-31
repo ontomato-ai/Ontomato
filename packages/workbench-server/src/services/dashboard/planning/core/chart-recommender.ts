@@ -1,5 +1,4 @@
 import { runAuxiliary } from "../../../../platform/agent-runtime/runtime";
-import { createLogger } from "../../../../logging/logger";
 import type {
   DatasetProfile,
   FieldMappingRequest,
@@ -15,8 +14,6 @@ import {
 import { applyDataPlan, getChartFieldContract } from "./utils";
 import { buildModelDataView } from "../../../../utils/model-data-view";
 import { workbenchProduct } from "../../../../product/installed";
-
-const logger = createLogger("chart-recommender");
 
 export function cleanJsonBlock(text: string) {
   return String(text ?? "")
@@ -70,17 +67,15 @@ async function planChartFields(
   const mappings = new Map<string, Record<string, any>>();
   for (const req of requests) {
     const userPrompt = buildChartFieldPlannerUserPrompt(req);
-    try {
-      const res = {
-        content: await runAuxiliary({ systemPrompt, message: userPrompt }),
-      };
-      const raw = String((res as any)?.content ?? "").trim();
-      const jsonText = cleanJsonBlock(raw);
-      const parsed = JSON.parse(jsonText);
-      mappings.set(req.id, normalizeObjectKeysDeep(parsed));
-    } catch (e) {
-      logger.warn("planChartFields failed", { error: String(e) });
-    }
+    const raw = (
+      await runAuxiliary({ systemPrompt, message: userPrompt })
+    ).trim();
+    // A chart whose fields cannot be planned is an empty chart; the caller reports the plan failed
+    // rather than creating a dashboard the user cannot read.
+    mappings.set(
+      req.id,
+      normalizeObjectKeysDeep(JSON.parse(cleanJsonBlock(raw))),
+    );
   }
   return mappings;
 }
@@ -93,29 +88,22 @@ export async function recommendAppendDatasetPlan(
     return { metrics: [], charts: [] };
   }
 
-  try {
-    const systemPrompt = buildAppendPlannerSystemPrompt();
-    const userPrompt = JSON.stringify({
-      existingChartTypes: existingChartTypes ?? [],
-      datasets: profiles.map(
-        ({ sourceRows: _sourceRows, ...profile }) => profile,
-      ),
-    });
+  const systemPrompt = buildAppendPlannerSystemPrompt();
+  const userPrompt = JSON.stringify({
+    existingChartTypes: existingChartTypes ?? [],
+    datasets: profiles.map(
+      ({ sourceRows: _sourceRows, ...profile }) => profile,
+    ),
+  });
 
-    const res = {
-      content: await runAuxiliary({ systemPrompt, message: userPrompt }),
-    };
-    const raw = String((res as any)?.content ?? "").trim();
-    const jsonText = cleanJsonBlock(raw);
-    const parsed = JSON.parse(jsonText);
-    return {
-      charts: Array.isArray(parsed?.charts) ? parsed.charts : [],
-      metrics: Array.isArray(parsed?.metrics) ? parsed.metrics : [],
-    };
-  } catch (e) {
-    logger.warn("recommendAppendDatasetPlan failed", { error: String(e) });
-    return { metrics: [], charts: [] };
-  }
+  const raw = (
+    await runAuxiliary({ systemPrompt, message: userPrompt })
+  ).trim();
+  const parsed = JSON.parse(cleanJsonBlock(raw));
+  return {
+    charts: Array.isArray(parsed?.charts) ? parsed.charts : [],
+    metrics: Array.isArray(parsed?.metrics) ? parsed.metrics : [],
+  };
 }
 
 export async function recommendDashboardDatasetPlan(
@@ -125,33 +113,26 @@ export async function recommendDashboardDatasetPlan(
     return { name: "", groups: [] };
   }
 
-  try {
-    const systemPrompt = buildDashboardPlannerSystemPrompt();
-    const userPrompt = JSON.stringify({
-      datasets: profiles.map((p) => ({
-        datasetKey: p.datasetKey,
-        subQuestion: p.subQuestion,
-        rowCount: p.rowCount,
-        fields: p.fields,
-        dataView: p.dataView,
-        dataType: p.dataType,
-      })),
-    });
+  const systemPrompt = buildDashboardPlannerSystemPrompt();
+  const userPrompt = JSON.stringify({
+    datasets: profiles.map((p) => ({
+      datasetKey: p.datasetKey,
+      subQuestion: p.subQuestion,
+      rowCount: p.rowCount,
+      fields: p.fields,
+      dataView: p.dataView,
+      dataType: p.dataType,
+    })),
+  });
 
-    const res = {
-      content: await runAuxiliary({ systemPrompt, message: userPrompt }),
-    };
-    const raw = String((res as any)?.content ?? "").trim();
-    const jsonText = cleanJsonBlock(raw);
-    const parsed = JSON.parse(jsonText);
-    return {
-      name: typeof parsed?.name === "string" ? parsed.name.trim() : "",
-      groups: Array.isArray(parsed?.groups) ? parsed.groups : [],
-    };
-  } catch (e) {
-    logger.warn("recommendDashboardDatasetPlan failed", { error: String(e) });
-    return { name: "", groups: [] };
-  }
+  const raw = (
+    await runAuxiliary({ systemPrompt, message: userPrompt })
+  ).trim();
+  const parsed = JSON.parse(cleanJsonBlock(raw));
+  return {
+    name: typeof parsed?.name === "string" ? parsed.name.trim() : "",
+    groups: Array.isArray(parsed?.groups) ? parsed.groups : [],
+  };
 }
 
 export async function batchAppendChartFieldMapper(

@@ -1,7 +1,7 @@
 import type { SessionHistoryQuery } from "@ontomato/contracts/session-history";
 import { getLogContext } from "../../logging/log-context";
 import { assistantOntologyContext } from "./context";
-import { randomUUID, createHash } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import {
   assistantFeedbackSchema,
@@ -131,23 +131,28 @@ export const assistantService = {
         ],
       )
     ).rows as SessionRow[];
-    const selected = rows.slice(0, input.limit),
-      sessions = [];
+    const selected = rows.slice(0, input.limit);
+    const client = new RuntimeClient(owner.domainId);
     const statuses = selected.length
-      ? await new RuntimeClient(owner.domainId).sessionStatuses(
-          selected.map((row) => row.id),
-        )
+      ? await client.sessionStatuses(selected.map((row) => row.id))
       : [];
-    for (const row of selected) {
-      const latestId = statuses.find((s) => s.session.id === row.id)?.latestRun
-        ?.id;
-      const latest = latestId
-        ? await this.readRun(row.id, latestId, owner)
-        : null;
-      sessions.push(
-        sessionView(await assistantStore.session(row.id, owner), latest),
-      );
-    }
+    // One status read per page; each row's run is only read when its body is needed, which is the
+    // history call. A run the runtime no longer knows leaves the row without a latest run.
+    const sessions = await Promise.all(
+      selected.map(async (row) => {
+        const latestId = statuses.find((s) => s.session.id === row.id)?.latestRun
+          ?.id;
+        let latest = null;
+        if (latestId) {
+          try {
+            latest = await this.readRun(row.id, latestId, owner);
+          } catch (e) {
+            if (!(e instanceof HttpError && e.status === 404)) throw e;
+          }
+        }
+        return sessionView(row, latest);
+      }),
+    );
     const last = selected.at(-1);
     return {
       sessions,
@@ -167,22 +172,29 @@ export const assistantService = {
     await assistantStore.session(id, owner);
     const page = await new RuntimeClient(owner.domainId).history(id, query);
     if (page.latestRun) {
-      await assistantStore.admitted(page.latestRun.run.id, messageText(
-        page.messages.find(m => m.runId === page.latestRun!.run.id && m.message.role === "user")?.message ?? { content: "" },
+      const live = page.latestRun.run;
+      await assistantStore.admitted(live.id, messageText(
+        page.messages.find(m => m.runId === live.id && m.message.role === "user")?.message ?? { content: "" },
       ));
       await this.settle(page.latestRun, owner);
-      if (page.latestRun.run.status === "running") {
+      if (live.status === "running") {
         const c = getLogContext();
-        this.observe(page.latestRun.run.id, owner, { token: c?.token, apiKey: c?.apiKey });
+        this.observe(live.id, owner, { token: c?.token, apiKey: c?.apiKey });
       }
     }
     const runs = await Promise.all(page.runs.map(async run => (await this.withRetrievals({ run }, owner)).run));
-    const latest = runs.find(run => run.id === page.session.latestRunId);
+    // The live run view is the page's own run; the retrieval links on it come from the page's run
+    // list when that list holds it, otherwise they are read once for this run.
+    const live = page.latestRun;
+    const latest = live
+      ? runs.find(run => run.id === live.run.id) ??
+        (await this.withRetrievals({ run: live.run }, owner)).run
+      : null;
     return {
       ...page,
       session: sessionView(await assistantStore.session(id, owner), page.session.latestRun ? { run: page.session.latestRun } : null),
       runs,
-      latestRun: page.latestRun ? { ...page.latestRun, run: latest! } : null,
+      latestRun: live && latest ? { ...live, run: latest } : null,
     };
   },
   async snapshot(id: string, owner: AssistantOwner) {
@@ -283,25 +295,6 @@ export const assistantService = {
   ) {
     const session = await assistantStore.session(sessionId, owner),
       client = new RuntimeClient(owner.domainId);
-    try {
-      const previous = await assistantStore.turn(id, owner);
-      if (
-        previous.session_id !== sessionId ||
-        previous.input_hash !==
-          createHash("sha256").update(message).digest("hex")
-      )
-        throw new HttpError(
-          409,
-          "Idempotency key reused",
-          "IDEMPOTENCY_CONFLICT",
-        );
-      return {
-        snapshot: publicSnapshot(await this.readRun(sessionId, id, owner)),
-        replayed: true,
-      };
-    } catch (error) {
-      if (!(error instanceof HttpError && error.status === 404)) throw error;
-    }
     const a = await assistantStore.agent(session.agent_id, owner);
     if (session.latest_run_id) {
       try {
@@ -410,22 +403,34 @@ export const assistantService = {
     if (observing.has(id)) return;
     observing.add(id);
     void (async () => {
+      const deadline = Date.now() + getQueryTimeoutMs();
       try {
         for (;;) {
-          const s = await new RuntimeClient(owner.domainId).run(id);
-          if (s.run.status === "stopped") {
-            await assistantStore.close(id);
-            await this.stopChildren(id, owner, credentials);
+          let s;
+          try {
+            s = await new RuntimeClient(owner.domainId).run(id);
+          } catch (e) {
+            // A run the runtime cannot read (deleted session, restarted runtime) is over for this
+            // process: leaving the turn open would make every later read treat it as still running.
+            logger.warn("Assistant run observation lost the run", {
+              runId: id,
+              error: e instanceof Error ? e.message : String(e),
+            });
             return;
           }
+          if (s.run.status === "stopped" || Date.now() >= deadline) return;
           await new Promise((resolve) => setTimeout(resolve, 500));
         }
-      } catch (e) {
-        logger.error("Assistant observation needs reconciliation", {
-          runId: id,
-          error: e,
-        });
       } finally {
+        try {
+          await assistantStore.close(id);
+          await this.stopChildren(id, owner, credentials);
+        } catch (e) {
+          logger.error("Assistant observation needs reconciliation", {
+            runId: id,
+            error: e,
+          });
+        }
         observing.delete(id);
       }
     })();
