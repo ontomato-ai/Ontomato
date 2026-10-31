@@ -20,7 +20,11 @@ const repo = path.resolve(
   "../../../..",
 );
 const pause = (ms: number) => new Promise((r) => setTimeout(r, ms));
-describe.skipIf(!database)("standard runtime real HTTP/PG/processes", () => {
+// Moved out of the daily suite: it needs PostgreSQL and spawns real processes. A
+// missing database fails here instead of turning the file green without running.
+if (!database)
+  throw new Error("Set RUNTIME_TEST_DATABASE_URL to a disposable PostgreSQL database");
+describe("standard runtime real HTTP/PG/processes", () => {
   let fake: Server,
     child: ChildProcess,
     url = "",
@@ -389,8 +393,6 @@ describe.skipIf(!database)("standard runtime real HTTP/PG/processes", () => {
       ).toBe(false);
     }
   });
-  // Killing and restarting the runtime is the slowest case here; its own settlement
-  // polling budget already exceeds vitest's default, so the limit is explicit.
   it("cancels a real shell tree and recovers killed runtime work as aborted without replay", async () => {
     const s = await session(),
       r = await run(s, "hang");
@@ -410,7 +412,7 @@ describe.skipIf(!database)("standard runtime real HTTP/PG/processes", () => {
     expect(modelCalls).toBe(calls);
     const next = await run(s, "overwrite");
     expect((await settle(next.id)).run.stopReason).toBe("stop");
-  }, 60000);
+  });
   it("executes standalone Python and keeps output bytes off PostgreSQL", async () => {
     const id = randomUUID(),
       body = {

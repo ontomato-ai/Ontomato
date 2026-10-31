@@ -22,7 +22,11 @@
     "lint:scripts": "eslint scripts \"apps/*/*.mjs\" agent-skills",
     "dev:agent-runtime": "node scripts/dev-command.mjs runtime",
     "typecheck:runtime": "pnpm --filter @ontomato/contracts --filter @ontomato/agent-runtime --filter @ontomato/agent-runtime-app typecheck",
-    "test:runtime": "pnpm --filter @ontomato/agent-runtime test"
+    "test:runtime": "pnpm --filter @ontomato/agent-runtime test",
+    "test:integration": "pnpm --filter @ontomato/agent-runtime test:integration && pnpm --filter @ontomato/workbench-server test:integration",
+    "test:java:contract": "./mvnw -B -ntp -pl packages/data-engine-core -am -Dtest='ServiceLogContractTest,ServiceLogJdbcTest,OntologyRetrievalContractTest,OntologyGenerationContractTest,QueryRuntimeBoundaryTest,BusinessConfigControllerModelKeyWriteOnlyTest,MetadataPostgresBoundaryTest,VectorResourcePostgresBoundaryTest,AssetLookupPostgresBoundaryTest,KnowledgeDomainPostgresBoundaryTest,AbsJdbcBaseDaoIdTest,OssStartupAssemblyTest' -Dsurefire.failIfNoSpecifiedTests=false test",
+    "test:sandbox": "pnpm --filter @ontomato/agent-runtime test:sandbox",
+    "test:wire": "pnpm --filter @ontomato/workbench-server test:wire"
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",

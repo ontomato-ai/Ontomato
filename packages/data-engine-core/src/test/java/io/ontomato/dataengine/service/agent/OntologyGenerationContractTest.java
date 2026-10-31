@@ -41,7 +41,9 @@ class OntologyGenerationContractTest {
   @BeforeEach
   void setup() throws Exception {
     String database = System.getenv("RUNTIME_TEST_DATABASE_URL");
-    Assumptions.assumeTrue(database != null);
+    if (database == null)
+      throw new IllegalStateException(
+          "Set RUNTIME_TEST_DATABASE_URL to a disposable PostgreSQL database");
     URI url = URI.create(database);
     String[] account = url.getUserInfo().split(":", 2);
     username = account[0];

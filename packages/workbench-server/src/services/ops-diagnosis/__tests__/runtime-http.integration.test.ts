@@ -18,7 +18,10 @@ const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../.
 const tsx = createRequire(path.join(repo, "apps/workbench/package.json")).resolve("tsx");
 const pause = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-describe.skipIf(!database)("diagnosis through real host/runtime/PG/skill processes", () => {
+// Needs PostgreSQL and spawns the real host and runtime processes.
+if (!database)
+  throw new Error("Set RUNTIME_TEST_DATABASE_URL to a disposable PostgreSQL database");
+describe("diagnosis through real host/runtime/PG/skill processes", () => {
   let model: Server, host: ChildProcess, runtime: ChildProcess, root: string, hostUrl = "", runtimeUrl = "", modelUrl = "";
   const schema = `ops_${randomUUID().replaceAll("-", "")}`, children: ChildProcess[] = [];
   const pool = new pg.Pool({ connectionString: database });

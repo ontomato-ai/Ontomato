@@ -29,7 +29,6 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
-import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -44,7 +43,9 @@ class RuntimeFunctionIntegrationTest {
   @Timeout(60)
   void functionAndMetricReplayPreserveParametersNullsAndUserAuthority() throws Exception {
     String database = System.getenv("RUNTIME_TEST_DATABASE_URL");
-    Assumptions.assumeTrue(database != null);
+    if (database == null)
+      throw new IllegalStateException(
+          "Set RUNTIME_TEST_DATABASE_URL to a disposable PostgreSQL database");
     URI db = URI.create(database);
     String[] account = db.getUserInfo().split(":", 2);
     String jdbcUrl = "jdbc:postgresql://" + db.getHost() + ":" + db.getPort() + db.getPath();

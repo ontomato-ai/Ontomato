@@ -9,7 +9,9 @@
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "test": "vitest run"
+    "test": "vitest run --exclude '**/*.integration.test.ts'",
+    "test:integration": "vitest run --exclude '**/sandbox-linux.integration.test.ts' integration",
+    "test:sandbox": "vitest run src/__tests__/sandbox-linux.integration.test.ts"
   },
   "dependencies": {
     "@earendil-works/pi-ai": "1.4.0",

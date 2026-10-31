@@ -16,7 +16,9 @@ public abstract class PostgresTestDatabase {
     @BeforeEach
     protected void openSchema() {
         String url = System.getenv("ONTOMATO_TEST_POSTGRES_URL");
-        org.junit.jupiter.api.Assumptions.assumeTrue(url != null && !url.isBlank(), "A disposable PostgreSQL URL is required");
+        if (url == null || url.isBlank())
+            throw new IllegalStateException(
+                    "Set ONTOMATO_TEST_POSTGRES_URL to a disposable PostgreSQL database");
         dataSource = new DriverManagerDataSource(System.getenv("ONTOMATO_TEST_POSTGRES_URL"),
                 System.getenv("ONTOMATO_TEST_POSTGRES_USER"), System.getenv("ONTOMATO_TEST_POSTGRES_PASSWORD"));
         new JdbcTemplate(dataSource).execute("CREATE SCHEMA " + schema);
