@@ -389,6 +389,8 @@ describe.skipIf(!database)("standard runtime real HTTP/PG/processes", () => {
       ).toBe(false);
     }
   });
+  // Killing and restarting the runtime is the slowest case here; its own settlement
+  // polling budget already exceeds vitest's default, so the limit is explicit.
   it("cancels a real shell tree and recovers killed runtime work as aborted without replay", async () => {
     const s = await session(),
       r = await run(s, "hang");
@@ -408,7 +410,7 @@ describe.skipIf(!database)("standard runtime real HTTP/PG/processes", () => {
     expect(modelCalls).toBe(calls);
     const next = await run(s, "overwrite");
     expect((await settle(next.id)).run.stopReason).toBe("stop");
-  });
+  }, 60000);
   it("executes standalone Python and keeps output bytes off PostgreSQL", async () => {
     const id = randomUUID(),
       body = {
