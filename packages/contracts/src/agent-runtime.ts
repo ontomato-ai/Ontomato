@@ -204,78 +204,6 @@ export const runtimeCancelResponseSchema = z
     "Cancellation responds after the run settles",
   );
 
-export const runtimeErrorCodeSchema = z.enum([
-  "CODE_ISOLATION_UNAVAILABLE",
-  "INVALID_REQUEST",
-  "UNAUTHENTICATED",
-  "FORBIDDEN",
-  "NOT_FOUND",
-  "SESSION_BUSY",
-  "IDEMPOTENCY_CONFLICT",
-  "SKILL_NOT_FOUND",
-  "UNSUPPORTED_CAPABILITY",
-  "RESOURCE_DELETED",
-  "INTERNAL_ERROR",
-  "MCP_NAME_EXISTS",
-  "MCP_DISCOVERY_FAILED",
-]);
-export const runtimeErrorResponseSchema = z
-  .object({
-    error: z
-      .object({ code: runtimeErrorCodeSchema, message: z.string().min(1) })
-      .strict(),
-    correlationId: runtimeKeySchema,
-  })
-  .strict();
-export const RUNTIME_ERROR_HTTP_STATUS = {
-  CODE_ISOLATION_UNAVAILABLE: 503,
-  INVALID_REQUEST: 400,
-  UNAUTHENTICATED: 401,
-  FORBIDDEN: 403,
-  NOT_FOUND: 404,
-  SESSION_BUSY: 409,
-  IDEMPOTENCY_CONFLICT: 409,
-  SKILL_NOT_FOUND: 422,
-  UNSUPPORTED_CAPABILITY: 422,
-  RESOURCE_DELETED: 410,
-  INTERNAL_ERROR: 500,
-  MCP_NAME_EXISTS: 409,
-  MCP_DISCOVERY_FAILED: 502,
-} as const satisfies Record<z.infer<typeof runtimeErrorCodeSchema>, number>;
-
-/** Success bodies are unwrapped JSON. Non-success responses use runtimeErrorResponseSchema. */
-export const RUNTIME_HTTP_ROUTES = {
-  createSession: { method: "POST", path: "/v1/sessions", status: 201 },
-  readSession: { method: "GET", path: "/v1/sessions/:sessionId", status: 200 },
-  readSessionHistory: { method: "GET", path: "/v1/sessions/:sessionId/history", status: 200 },
-  readSessionStatuses: {
-    method: "POST",
-    path: "/v1/sessions/status",
-    status: 200,
-  },
-  // Required by the existing governance user-deletion path; active sessions must be cancelled first.
-  deleteSession: {
-    method: "DELETE",
-    path: "/v1/sessions/:sessionId",
-    status: 204,
-  },
-  startRun: {
-    method: "POST",
-    path: "/v1/sessions/:sessionId/runs",
-    status: 202,
-  },
-  readRun: { method: "GET", path: "/v1/runs/:runId", status: 200 },
-  subscribe: { method: "GET", path: "/v1/runs/:runId/events", status: 200 },
-  cancel: { method: "POST", path: "/v1/runs/:runId/cancel", status: 200 },
-  readArtifact: {
-    method: "GET",
-    path: "/v1/artifacts/:artifactId",
-    status: 200,
-  },
-  testModel: { method: "POST", path: "/v1/models/test", status: 200 },
-  registerSkill: { method: "POST", path: "/v1/skills", status: 201 },
-} as const;
-
 export type RuntimeAgentDefinition = z.infer<
   typeof runtimeAgentDefinitionSchema
 >;
@@ -297,7 +225,6 @@ export type RuntimeSessionSnapshot = z.infer<
 export type RuntimeAdmissionResponse = z.infer<
   typeof runtimeAdmissionResponseSchema
 >;
-export type RuntimeErrorResponse = z.infer<typeof runtimeErrorResponseSchema>;
 export type RuntimeRegisteredSkill = z.infer<
   typeof runtimeRegisteredSkillSchema
 >;
