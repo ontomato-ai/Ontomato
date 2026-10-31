@@ -6,6 +6,7 @@ import {
 import { environment } from "../../../../config/environment";
 import { buildTurnKey } from "../../../../logging/log-context";
 import { finalText } from "../../../agent-runtime/runtime";
+import { runOutcome } from "../../../agent-runtime/projection";
 import type { ExecutionResult } from "../types";
 import { autotestConfig } from "../config";
 export interface ApiChatOptions {
@@ -72,19 +73,21 @@ export async function executeApiChat(
       const s = agentHostRunSnapshotSchema.parse(
         await request(`/sessions/${sessionId}/runs/${runId}`),
       );
-      if (s.run.status === "stopped")
+      if (s.run.status === "stopped") {
+        const outcome = runOutcome(s.run);
         return {
           turnKey: buildTurnKey(sessionId, 0),
           durationMs: Date.now() - started,
           status:
-            s.run.stopReason === "stop"
+            outcome === "completed"
               ? "success"
-              : s.run.stopReason === "aborted"
+              : outcome === "cancelled"
                 ? "cancelled"
                 : "error",
           finalAnswer: finalText(s),
           error: s.run.errorMessage ?? undefined,
         };
+      }
       await new Promise((resolve) => setTimeout(resolve, 250));
     }
   } catch (error) {

@@ -2,15 +2,18 @@ import { describe, expect, it, vi } from "vitest";
 import { exportMarkdown } from "../export";
 
 const owner = { userId: "user-a", domainId: "domain-a" };
+// The current run and the historical run hold different bytes at the same path: a resolver that
+// read the current run instead of the reported one would render the newer image.
 const files: Record<string, string> = {
-  "outputs/reports/revenue/report.md": "# Revenue\n![Trend](outputs/trend.png)",
-  "outputs/trend.png": "original image bytes",
+  "historical-run:outputs/trend.png": "image as exported",
+  "current-run:outputs/trend.png": "image as edited later",
 };
+const resolved: Array<{ runId: string; path: string }> = [];
 vi.mock("../service", () => ({
   assistantService: {
-    resolve: async (sessionId: string, runId: string, path: string, access: unknown) => {
-      expect({ sessionId, runId, access }).toEqual({ sessionId: "session", runId: "historical-run", access: owner });
-      return { artifact: { id: path, path } };
+    resolve: async (_sessionId: string, runId: string, path: string) => {
+      resolved.push({ runId, path });
+      return { artifact: { id: `${runId}:${path}`, path } };
     },
     content: async (_sessionId: string, id: string) => Buffer.from(files[id]),
   },
@@ -21,8 +24,31 @@ vi.mock("../../analysis-agent/delivery/ppt-generator", () => ({ generatePpt: vi.
 vi.mock("../../analysis-agent/delivery/chart-renderer", () => ({ renderChartHtmlToDataUrl: vi.fn() }));
 
 describe("assistant report export references", () => {
-  it("resolves a linked report and its nested image at the same historical run", async () => {
-    expect(await exportMarkdown("session", "historical-run", "[Report](outputs/reports/revenue/report.md)", owner))
-      .toBe(`# Revenue\n![Trend](data:image/png;base64,${Buffer.from(files["outputs/trend.png"]).toString("base64")})`);
+  it("renders every reference from the run the caller reported, not the session's latest run", async () => {
+    const markdown = await exportMarkdown(
+      "session",
+      "historical-run",
+      "[Report](outputs/trend.png)",
+      owner,
+    );
+    expect(markdown).toBe(
+      `![Report](data:image/png;base64,${Buffer.from(files["historical-run:outputs/trend.png"]).toString("base64")})`,
+    );
+    expect(resolved).toEqual([{ runId: "historical-run", path: "outputs/trend.png" }]);
+  });
+
+  it("resolves a linked report and its nested image at the same run", async () => {
+    files["historical-run:outputs/reports/revenue/report.md"] =
+      "# Revenue\n![Trend](outputs/nested.png)";
+    files["historical-run:outputs/nested.png"] = "nested bytes";
+    const markdown = await exportMarkdown(
+      "session",
+      "historical-run",
+      "[Report](outputs/reports/revenue/report.md)",
+      owner,
+    );
+    expect(markdown).toBe(
+      `# Revenue\n![Trend](data:image/png;base64,${Buffer.from("nested bytes").toString("base64")})`,
+    );
   });
 });

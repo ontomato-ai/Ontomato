@@ -4,6 +4,7 @@ import { z } from "zod";
 import { workbenchIdentity } from "../../identity/installed";
 import { workbenchProduct } from "../../product/installed";
 import { createLogger } from "../../logging/logger";
+import { runOutcome } from "../../platform/agent-runtime/projection";
 import { tApp } from "../../i18n";
 import { randomUUID } from "node:crypto";
 import { createDiagnosis, diagnosisService } from "../../services/ops-diagnosis/service";
@@ -27,7 +28,8 @@ async function waitForTurnResult(sessionId: string, owner: AgentHostOwner, timeo
     const history = await diagnosisService.snapshot(sessionId, owner), run = history.latestRun;
     if (!run) return { status: "completed" as const, sessionId, answer: "" };
     if (run.run.status === "stopped") {
-      if (run.run.stopReason === "error" || run.run.stopReason === "aborted") return { status: "failed" as const, sessionId, error: run.run.errorMessage || "Diagnosis stopped" };
+      const outcome = runOutcome(run.run);
+      if (outcome === "failed" || outcome === "cancelled") return { status: "failed" as const, sessionId, error: run.run.errorMessage || "Diagnosis stopped" };
       const last = [...run.messages].reverse().find((m) => m.message.role === "assistant");
       return { status: "completed" as const, sessionId, answer: last ? messageText(last.message) : "" };
     }

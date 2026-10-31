@@ -66,7 +66,17 @@ export async function createAgentDefinition(
   return withDomainSkills(owner.domainId, async () => {
     const skills = resolveAssistantSkillReferences(input.skills, owner.domainId);
     await validateAssistantSkills(owner.domainId, skills);
-    await getPostgresPool().query(
+    const pool = getPostgresPool();
+    const existing = (
+      await pool.query(
+        `SELECT domain_id FROM ${t("assistant_agents")} WHERE id=$1`,
+        [id],
+      )
+    ).rows[0];
+    // An id is owned by its domain: reusing it elsewhere is a conflict, not a missing agent.
+    if (existing && existing.domain_id !== owner.domainId)
+      throw new HttpError(409, "Idempotency key reused", "IDEMPOTENCY_CONFLICT");
+    const inserted = await pool.query(
       `INSERT INTO ${t("assistant_agents")} (id,domain_id,kind,name,description,enabled,system_prompt,model_role,skills,icon,class_names,enabled_mcp_service_ids,sort_order) VALUES($1::uuid,$2,($1::uuid)::text,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) ON CONFLICT DO NOTHING`,
       [
         id,
@@ -84,16 +94,22 @@ export async function createAgentDefinition(
       ],
     );
     const actual = await readAgentDefinition(id, owner);
-    const { id: _id, ...semantic } = actual;
-    if (
-      JSON.stringify(semantic) !==
-      JSON.stringify(
-        assistantAgentDefinitionSchema
-          .omit({ id: true })
-          .parse({ ...input, skills, modelRole: input.modelRole ?? "general" }),
-      )
-    )
-      throw new HttpError(409, "Idempotency key reused", "IDEMPOTENCY_CONFLICT");
+    // The insert won: this call created the definition, so there is nothing to replay. A write that
+    // changed nothing means the same id was replayed, which is only valid with the same definition.
+    if (!inserted.rowCount) {
+      const expected = assistantAgentDefinitionSchema
+        .omit({ id: true })
+        .parse({ ...input, skills, modelRole: input.modelRole ?? "general" });
+      const same = (Object.keys(expected) as (keyof typeof expected)[]).every(
+        (key) => JSON.stringify(actual[key]) === JSON.stringify(expected[key]),
+      );
+      if (!same)
+        throw new HttpError(
+          409,
+          "Idempotency key reused",
+          "IDEMPOTENCY_CONFLICT",
+        );
+    }
     return actual;
   });
 }

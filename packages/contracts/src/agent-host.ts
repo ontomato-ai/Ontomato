@@ -13,6 +13,8 @@ import {
 import {
   runtimeIdSchema,
   runtimeKeySchema,
+  runtimeRunStatusSchema,
+  runtimeStopReasonSchema,
   runtimeTimestampSchema,
 } from "./agent-runtime-values";
 /** Application-neutral metadata for the shell's read-only agent selector. */
@@ -42,6 +44,14 @@ export const agentHostRunSchema = runtimeRunViewSchema
       .optional(),
   })
   .strict();
+/** A session row names its latest run without carrying the run's body: lists stay one read per page. */
+export const agentHostRunStatusSchema = z
+  .object({
+    id: runtimeIdSchema,
+    status: runtimeRunStatusSchema,
+    stopReason: runtimeStopReasonSchema.nullable(),
+  })
+  .strict();
 export const agentHostMessageSchema = runtimeMessageRecordSchema;
 export const agentHostRunSnapshotSchema = z
   .object({
@@ -60,7 +70,7 @@ export const agentHostSessionSchema = z
     title: z.string(),
     createdAt: runtimeTimestampSchema,
     updatedAt: runtimeTimestampSchema,
-    latestRun: agentHostRunSchema.nullable(),
+    latestRun: agentHostRunStatusSchema.nullable(),
   })
   .strict();
 export const agentHostSessionSnapshotSchema = z
@@ -115,6 +125,7 @@ export const agentHostStreamFrameSchema = runtimeStreamFrameSchema;
 export type AgentHostAgent = z.infer<typeof agentHostAgentSchema>;
 export type AgentHostAgentList = z.infer<typeof agentHostAgentListSchema>;
 export type AgentHostRun = z.infer<typeof agentHostRunSchema>;
+export type AgentHostRunStatus = z.infer<typeof agentHostRunStatusSchema>;
 export type AgentHostMessage = z.infer<typeof agentHostMessageSchema>;
 export type AgentHostRunSnapshot = z.infer<typeof agentHostRunSnapshotSchema>;
 export type AgentHostSession = z.infer<typeof agentHostSessionSchema>;

@@ -37,6 +37,13 @@ retries return the original admission; changed input returns 409
 with no predecessor/revision check. All continuation, clarification and follow-up
 messages use the same endpoint/session. No completion or `needs_input` protocol.
 
+`AgentHostSession.latestRun` names the session's latest run as
+`{id,status,stopReason}` only, so a list page costs one status read rather than one
+full run read per row; the run's body arrives with `AgentHostSessionHistory` or
+`AgentHostSessionSnapshot`. Hosts project a run into that shape whenever they build
+a session row, including the row returned by session creation and the list entries
+the shell adds after a send.
+
 Sessions retain their agent. Session lists sort by descending `(updatedAt,id)` with
 keyset cursors; agent lists use host display order. Disabled agents remain visible
 for history but cannot start new execution (409 `AGENT_DISABLED`). New titles are

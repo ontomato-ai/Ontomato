@@ -1,7 +1,7 @@
 import type { SessionHistoryQuery } from "@ontomato/contracts/session-history";
 import { getLogContext } from "../../logging/log-context";
 import { assistantOntologyContext } from "./context";
-import { randomUUID, createHash } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import {
   assistantFeedbackSchema,
@@ -43,15 +43,16 @@ const db = () => getPostgresPool(),
   logger = createLogger("assistant"),
   observing = new Set<string>();
 export { publicSnapshot } from "../../platform/agent-runtime/projection";
-import { publicMessages, publicSnapshot, publicRun } from "../../platform/agent-runtime/projection";
-const sessionView = (s: SessionRow, latestRun: { run: Parameters<typeof publicRun>[0] } | null) =>
+import { publicMessages, publicSnapshot, publicRun, runStatusView } from "../../platform/agent-runtime/projection";
+type LatestRun = Parameters<typeof runStatusView>[0];
+const sessionView = (s: SessionRow, latestRun: LatestRun | null) =>
   agentHostSessionSchema.parse({
     id: s.id,
     agentId: s.agent_id,
     title: s.title,
     createdAt: new Date(s.created_at).toISOString(),
     updatedAt: new Date(s.updated_at).toISOString(),
-    latestRun: latestRun ? publicRun(latestRun.run) : null,
+    latestRun: latestRun ? runStatusView(latestRun) : null,
   });
 export { sessionView };
 export const assistantService = {
@@ -86,13 +87,9 @@ export const assistantService = {
       }
       throw e;
     }
-    return {
-      session: sessionView(
-        row,
-        (await new RuntimeClient(owner.domainId).session(id)).latestRun,
-      ),
-      replayed,
-    };
+    const latestRun = (await new RuntimeClient(owner.domainId).session(id))
+      .latestRun;
+    return { session: sessionView(row, latestRun?.run ?? null), replayed };
   },
   async list(
     owner: AssistantOwner,
@@ -131,23 +128,20 @@ export const assistantService = {
         ],
       )
     ).rows as SessionRow[];
-    const selected = rows.slice(0, input.limit),
-      sessions = [];
+    const selected = rows.slice(0, input.limit);
+    // One status read per page: a row names its latest run, and the run's body is only read by
+    // the history call that opens the conversation.
     const statuses = selected.length
       ? await new RuntimeClient(owner.domainId).sessionStatuses(
           selected.map((row) => row.id),
         )
       : [];
-    for (const row of selected) {
-      const latestId = statuses.find((s) => s.session.id === row.id)?.latestRun
-        ?.id;
-      const latest = latestId
-        ? await this.readRun(row.id, latestId, owner)
-        : null;
-      sessions.push(
-        sessionView(await assistantStore.session(row.id, owner), latest),
-      );
-    }
+    const sessions = selected.map((row) =>
+      sessionView(
+        row,
+        statuses.find((s) => s.session.id === row.id)?.latestRun ?? null,
+      ),
+    );
     const last = selected.at(-1);
     return {
       sessions,
@@ -167,22 +161,29 @@ export const assistantService = {
     await assistantStore.session(id, owner);
     const page = await new RuntimeClient(owner.domainId).history(id, query);
     if (page.latestRun) {
-      await assistantStore.admitted(page.latestRun.run.id, messageText(
-        page.messages.find(m => m.runId === page.latestRun!.run.id && m.message.role === "user")?.message ?? { content: "" },
+      const live = page.latestRun.run;
+      await assistantStore.admitted(live.id, messageText(
+        page.messages.find(m => m.runId === live.id && m.message.role === "user")?.message ?? { content: "" },
       ));
       await this.settle(page.latestRun, owner);
-      if (page.latestRun.run.status === "running") {
+      if (live.status === "running") {
         const c = getLogContext();
-        this.observe(page.latestRun.run.id, owner, { token: c?.token, apiKey: c?.apiKey });
+        this.observe(live.id, owner, { token: c?.token, apiKey: c?.apiKey });
       }
     }
     const runs = await Promise.all(page.runs.map(async run => (await this.withRetrievals({ run }, owner)).run));
-    const latest = runs.find(run => run.id === page.session.latestRunId);
+    // The live run view is the page's own run; the retrieval links on it come from the page's run
+    // list when that list holds it, otherwise they are read once for this run.
+    const live = page.latestRun;
+    const latest = live
+      ? runs.find(run => run.id === live.run.id) ??
+        (await this.withRetrievals({ run: live.run }, owner)).run
+      : null;
     return {
       ...page,
-      session: sessionView(await assistantStore.session(id, owner), page.session.latestRun ? { run: page.session.latestRun } : null),
+      session: sessionView(await assistantStore.session(id, owner), page.session.latestRun),
       runs,
-      latestRun: page.latestRun ? { ...page.latestRun, run: latest! } : null,
+      latestRun: live && latest ? { ...live, run: latest } : null,
     };
   },
   async snapshot(id: string, owner: AssistantOwner) {
@@ -206,10 +207,7 @@ export const assistantService = {
       }
     }
     return {
-      session: sessionView(
-        await assistantStore.session(row.id, owner),
-        s.latestRun,
-      ),
+      session: sessionView(await assistantStore.session(row.id, owner), s.latestRun?.run ?? null),
       messages: publicMessages(s.messages),
       latestRun: s.latestRun ? publicSnapshot(await this.withRetrievals(s.latestRun, owner)) : null,
     };
@@ -283,25 +281,6 @@ export const assistantService = {
   ) {
     const session = await assistantStore.session(sessionId, owner),
       client = new RuntimeClient(owner.domainId);
-    try {
-      const previous = await assistantStore.turn(id, owner);
-      if (
-        previous.session_id !== sessionId ||
-        previous.input_hash !==
-          createHash("sha256").update(message).digest("hex")
-      )
-        throw new HttpError(
-          409,
-          "Idempotency key reused",
-          "IDEMPOTENCY_CONFLICT",
-        );
-      return {
-        snapshot: publicSnapshot(await this.readRun(sessionId, id, owner)),
-        replayed: true,
-      };
-    } catch (error) {
-      if (!(error instanceof HttpError && error.status === 404)) throw error;
-    }
     const a = await assistantStore.agent(session.agent_id, owner);
     if (session.latest_run_id) {
       try {
@@ -410,22 +389,34 @@ export const assistantService = {
     if (observing.has(id)) return;
     observing.add(id);
     void (async () => {
+      const deadline = Date.now() + getQueryTimeoutMs();
       try {
         for (;;) {
-          const s = await new RuntimeClient(owner.domainId).run(id);
-          if (s.run.status === "stopped") {
-            await assistantStore.close(id);
-            await this.stopChildren(id, owner, credentials);
+          let s;
+          try {
+            s = await new RuntimeClient(owner.domainId).run(id);
+          } catch (e) {
+            // A run the runtime cannot read (deleted session, restarted runtime) is over for this
+            // process: leaving the turn open would make every later read treat it as still running.
+            logger.warn("Assistant run observation lost the run", {
+              runId: id,
+              error: e instanceof Error ? e.message : String(e),
+            });
             return;
           }
+          if (s.run.status === "stopped" || Date.now() >= deadline) return;
           await new Promise((resolve) => setTimeout(resolve, 500));
         }
-      } catch (e) {
-        logger.error("Assistant observation needs reconciliation", {
-          runId: id,
-          error: e,
-        });
       } finally {
+        try {
+          await assistantStore.close(id);
+          await this.stopChildren(id, owner, credentials);
+        } catch (e) {
+          logger.error("Assistant observation needs reconciliation", {
+            runId: id,
+            error: e,
+          });
+        }
         observing.delete(id);
       }
     })();

@@ -3,7 +3,7 @@ import { computed, onMounted, provide, ref, toRef, useSlots, watch } from "vue";
 import { Menu } from "lucide-vue-next";
 import { defaultChartTheme, type ChartTheme } from "../chart-theme";
 import { shellContextKey } from "../context";
-import type { AgentHostAgent, AgentHostSession } from "@ontomato/contracts/agent-host";
+import type { AgentHostAgent, AgentHostRun, AgentHostRunStatus, AgentHostSession } from "@ontomato/contracts/agent-host";
 import type { AgentHostClient } from "../host";
 import type {
   ArtifactRendererOverride,
@@ -50,6 +50,12 @@ const navOpen = ref(false);
 let sessionsLoad = 0;
 
 const conversation = useAgentConversation(() => props.client);
+/** The list only carries a run's name and state; its body is read when the conversation opens. */
+const runStatus = (run: Pick<AgentHostRun, "id" | "status" | "stopReason">): AgentHostRunStatus => ({
+  id: run.id,
+  status: run.status,
+  stopReason: run.stopReason,
+});
 const currentAgent = computed(() => agents.value.find((agent) => agent.id === agentId.value) ?? null);
 const currentSession = computed(() => sessions.value.find((session) => session.id === sessionId.value));
 
@@ -154,7 +160,7 @@ async function send(text: string) {
   if (!agent) return;
   const result = await conversation.send(agent, text);
   if (!result) return;
-  const latestRun = result.snapshot.run;
+  const latestRun = runStatus(result.snapshot.run);
   const created = result.createdSession;
   if (created) {
     // The state already carries this session and its admitted run; linking the id afterwards keeps
@@ -173,10 +179,8 @@ watch(
   (_, previous) => {
     const entry = currentSession.value;
     const run = previous ? conversation.state.runs[previous] : undefined;
-    if (entry?.latestRun && run && entry.latestRun.id === run.id && run.status === "stopped") {
-      const { status, stopReason, errorMessage } = run;
-      entry.latestRun = { ...entry.latestRun, status, stopReason, errorMessage };
-    }
+    if (entry?.latestRun && run && entry.latestRun.id === run.id && run.status === "stopped")
+      entry.latestRun = runStatus(run);
   },
 );
 

@@ -31,6 +31,8 @@ export async function planDashboard(
     : [];
 
   // Plan the structure, then map chart fields before finalizing metric specs.
+  // A planning failure is reported to the caller: a dashboard created from an empty plan would
+  // look successful while showing nothing the user asked for.
   let planned: DashboardPlanningOutput;
   if (input?.mode === "append") {
     const { charts = [], metrics = [] } = await recommendAppendDatasetPlan(profiles, existingChartTypes);
