@@ -19,9 +19,12 @@ import com.alibaba.fastjson2.JSONObject;
 import com.sun.net.httpserver.HttpServer;
 import io.ontomato.dataengine.config.DataRagConfig;
 import io.ontomato.dataengine.core.bean.User;
+import io.ontomato.dataengine.dao.ActionDao;
+import io.ontomato.dataengine.dao.FunctionDao;
 import io.ontomato.dataengine.dao.VectorResourceDao;
 import io.ontomato.dataengine.service.AdminService;
 import io.ontomato.dataengine.service.BusinessConfigService;
+import io.ontomato.dataengine.service.MetricViewService;
 import io.ontomato.dataengine.service.ProductionEnvironmentLoginPolicy;
 import io.ontomato.dataengine.service.SchemaPermissionService;
 import io.ontomato.dataengine.service.VectorResourceService;
@@ -127,6 +130,10 @@ class OssProductionEnvironmentLoginAssemblyTest {
                 factory.registerResolvableDependency(SchemaPermissionService.class, unused(SchemaPermissionService.class));
                 factory.registerResolvableDependency(VectorResourceDao.class, vectorResourceDao);
                 factory.registerResolvableDependency(VectorResourceService.class, unused(VectorResourceService.class));
+                // Asset sync reads these three; no test here calls it, so mocks only satisfy wiring.
+                factory.registerResolvableDependency(ActionDao.class, mock(ActionDao.class));
+                factory.registerResolvableDependency(MetricViewService.class, mock(MetricViewService.class));
+                factory.registerResolvableDependency(FunctionDao.class, mock(FunctionDao.class));
             });
             context.register(assembly, EnvServiceImpl.class);
             context.refresh();

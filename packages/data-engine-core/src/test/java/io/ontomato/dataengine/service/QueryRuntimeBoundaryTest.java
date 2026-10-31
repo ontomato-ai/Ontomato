@@ -40,7 +40,9 @@ class QueryRuntimeBoundaryTest {
   @BeforeAll
   static void database() throws Exception {
     String value = System.getenv("RUNTIME_TEST_DATABASE_URL");
-    Assumptions.assumeTrue(value != null);
+    if (value == null)
+      throw new IllegalStateException(
+          "Set RUNTIME_TEST_DATABASE_URL to a disposable PostgreSQL database");
     URI url = URI.create(value);
     String[] account = url.getUserInfo().split(":", 2);
     username = account[0];

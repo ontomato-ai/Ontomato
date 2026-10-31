@@ -161,4 +161,39 @@
         </plugins>
     </build>
 
+    <profiles>
+        <!-- The contract and permission-boundary suites: the checks a release depends on
+             that also need a real PostgreSQL. This list is their only owner; the image build,
+             CI and `pnpm test:java:contract` all select the profile instead of naming classes.
+             The suite needs ONTOMATO_TEST_POSTGRES_URL, RUNTIME_TEST_DATABASE_URL and
+             STARTUP_TEST_DATABASE_URL, and fails without them rather than skipping. -->
+        <profile>
+            <id>contract</id>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-surefire-plugin</artifactId>
+                        <configuration>
+                            <includes>
+                                <include>**/ServiceLogContractTest.java</include>
+                                <include>**/ServiceLogJdbcTest.java</include>
+                                <include>**/OntologyRetrievalContractTest.java</include>
+                                <include>**/OntologyGenerationContractTest.java</include>
+                                <include>**/QueryRuntimeBoundaryTest.java</include>
+                                <include>**/BusinessConfigControllerModelKeyWriteOnlyTest.java</include>
+                                <include>**/MetadataPostgresBoundaryTest.java</include>
+                                <include>**/VectorResourcePostgresBoundaryTest.java</include>
+                                <include>**/AssetLookupPostgresBoundaryTest.java</include>
+                                <include>**/KnowledgeDomainPostgresBoundaryTest.java</include>
+                                <include>**/AbsJdbcBaseDaoIdTest.java</include>
+                                <include>**/OssStartupAssemblyTest.java</include>
+                            </includes>
+                        </configuration>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+    </profiles>
+
 </project>

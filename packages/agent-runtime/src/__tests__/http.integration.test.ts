@@ -20,7 +20,11 @@ const repo = path.resolve(
   "../../../..",
 );
 const pause = (ms: number) => new Promise((r) => setTimeout(r, ms));
-describe.skipIf(!database)("standard runtime real HTTP/PG/processes", () => {
+// Moved out of the daily suite: it needs PostgreSQL and spawns real processes. A
+// missing database fails here instead of turning the file green without running.
+if (!database)
+  throw new Error("Set RUNTIME_TEST_DATABASE_URL to a disposable PostgreSQL database");
+describe("standard runtime real HTTP/PG/processes", () => {
   let fake: Server,
     child: ChildProcess,
     url = "",

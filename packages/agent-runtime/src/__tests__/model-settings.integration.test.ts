@@ -32,7 +32,10 @@ it("keeps complete role replacement and nullable editor defaults in one schema",
   expect(runtimeStartRunRequestSchema.shape).not.toHaveProperty("modelCredential");
 });
 
-describe.skipIf(!database)("runtime domain model configuration HTTP/PG contract", () => {
+// Needs PostgreSQL; a missing database fails instead of reporting a green skip.
+if (!database)
+  throw new Error("Set RUNTIME_TEST_DATABASE_URL to a disposable PostgreSQL database");
+describe("runtime domain model configuration HTTP/PG contract", () => {
   const schema = "models_" + randomUUID().replaceAll("-", "");
   const sealToken = "fixture-seal-token";
   let store: RuntimeStore, models: RuntimeModelSettings, server: Server, provider: Server;

@@ -18,7 +18,10 @@ const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../.
 const tsx = createRequire(path.join(repo, "apps/workbench/package.json")).resolve("tsx");
 const pause = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-describe.skipIf(!database)("diagnosis through real host/runtime/PG/skill processes", () => {
+// Needs PostgreSQL and spawns the real host and runtime processes.
+if (!database)
+  throw new Error("Set RUNTIME_TEST_DATABASE_URL to a disposable PostgreSQL database");
+describe("diagnosis through real host/runtime/PG/skill processes", () => {
   let model: Server, host: ChildProcess, runtime: ChildProcess, root: string, hostUrl = "", runtimeUrl = "", modelUrl = "";
   const schema = `ops_${randomUUID().replaceAll("-", "")}`, children: ChildProcess[] = [];
   const pool = new pg.Pool({ connectionString: database });
@@ -30,7 +33,10 @@ describe.skipIf(!database)("diagnosis through real host/runtime/PG/skill process
       cwd: repo, env: { ...process.env, NODE_ENV: "test", HTTP_PROXY: "", HTTPS_PROXY: "", ALL_PROXY: "", NO_PROXY: "127.0.0.1,localhost",
         DATABASE_URL: database, PG_SCHEMA: schema, OPS_TEST_ROOT: path.join(root, "host"), PORT: String(port), DATA_QUERY_BASE_URL: modelUrl, DATA_QUERY_API_KEY: "", MCP_SERVER_URL: "",
         OBSERVE_TRACE_WORKSPACE_ROOT: path.join(root, "traces"), AGENT_RUNTIME_DATABASE_URL: database, AGENT_RUNTIME_SCHEMA: schema + "_runtime", AGENT_RUNTIME_ROOT: path.join(root, "runtime"),
-        AGENT_RUNTIME_MODEL_CONFIG_URL: modelUrl, ONTOMATO_MODEL_RUNTIME_TOKEN: "fixture-runtime-token", AGENT_RUNTIME_PORT: String(port),
+        ONTOMATO_MODEL_RUNTIME_TOKEN: "fixture-runtime-token", AGENT_RUNTIME_PORT: String(port),
+        // The runtime owns conversation model settings: a complete LLM_* seed is the first
+        // model library and assigns every role, which is what this fixture needs.
+        LLM_BASE_URL: modelUrl + "/v1", LLM_API_KEY: "fixture-key", LLM_MODEL: "deepseek-chat",
         AGENT_RUNTIME_HOSTS: JSON.stringify([{ id: "workbench", token: "ops-runtime-fixture", providers: ["workbench"], publishProviders: ["workbench"] }]),
         AGENT_RUNTIME_URL: runtimeUrl, AGENT_RUNTIME_SERVICE_TOKEN: "ops-runtime-fixture", AGENT_RUNTIME_CALLBACK_URL: hostUrl,
       }, stdio: ["ignore", "pipe", "pipe"],
@@ -57,9 +63,6 @@ describe.skipIf(!database)("diagnosis through real host/runtime/PG/skill process
   beforeAll(async () => {
     root = await mkdtemp(path.join(os.tmpdir(), "ops-diagnosis-test-"));
     model = createServer(async (req, res) => {
-      if (req.url === "/businessConfig/getModelSettings") {
-        res.setHeader("Content-Type", "application/json"); res.end(JSON.stringify({ success: true, data: { agents: { diagnosis: { model: "fixture" } }, models: [{ name: "fixture", modelName: "deepseek-chat", baseUrl: modelUrl + "/v1", apiKeys: ["******1234"], maxTokens: 4096, contextWindow: 16000, timeout: null, maxRetries: null, customRequestParameters: null }] } })); return;
-      }
       let raw = ""; for await (const c of req) raw += c;
       if (req.url === "/v1/chat/completions") {
         modelCalls++; const input = JSON.parse(raw), last = input.messages.at(-1);

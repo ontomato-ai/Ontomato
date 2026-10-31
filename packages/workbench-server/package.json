@@ -9,7 +9,9 @@
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "test": "vitest run"
+    "test": "vitest run --exclude '**/*.integration.test.ts'",
+    "test:integration": "vitest run src/services/ops-diagnosis/__tests__/runtime-http.integration.test.ts",
+    "test:wire": "vitest run src/services/assistant/__tests__/ontology-wire.integration.test.ts"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.29.0",

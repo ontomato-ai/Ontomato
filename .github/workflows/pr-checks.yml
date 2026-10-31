@@ -1,10 +1,16 @@
-name: PR checks
+name: Checks
 
-# Pull requests into develop or main never publish images and never touch
-# private resources. They run the repository's own Node checks plus the
-# offline delivery check, all safe on a fork.
+# Changes to develop and main are checks, never publications: they run the
+# repository's own checks and touch no private resource. Pull requests into those
+# branches run the same checks, so a feature branch is verified before it lands.
+#
+# Only checks that need nothing beyond a checkout run here. Suites that need a
+# real database, real processes or root are on demand: `pnpm test:integration`,
+# `pnpm test:sandbox` and the Maven contract group below.
 
 on:
+  push:
+    branches: ["develop"]
   pull_request:
     branches: ["develop", "main"]
 
@@ -27,28 +33,55 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Typecheck the agent runtime
-        run: pnpm typecheck:runtime
+      - name: Typecheck
+        run: |
+          pnpm typecheck:runtime
+          pnpm typecheck:workbench
+          pnpm --filter @ontomato/workbench typecheck:web
+          pnpm --filter @ontomato/workbench-ui --filter @ontomato/ontology-manager --filter @ontomato/ontology-manager-app --filter @ontomato/agent-shell-ui --filter @ontomato/service-logging typecheck
 
-      - name: Typecheck the workbench
-        run: pnpm typecheck:workbench
-
-      - name: Typecheck the workbench web entry
-        run: pnpm --filter @ontomato/workbench typecheck:web
-
-      - name: Test the workbench
-        run: pnpm test:workbench
-
-      - name: Test the scripts
-        run: pnpm test:scripts
-
-      - name: Typecheck the UI and the manager
-        run: pnpm --filter @ontomato/workbench-ui --filter @ontomato/ontology-manager --filter @ontomato/ontology-manager-app typecheck
-
-      - name: Test the UI and the manager
-        run: pnpm --filter @ontomato/workbench-ui --filter @ontomato/ontology-manager --filter @ontomato/ontology-manager-app test
+      - name: Test
+        run: |
+          pnpm test:runtime
+          pnpm test:workbench
+          pnpm --filter @ontomato/workbench-ui --filter @ontomato/ontology-manager --filter @ontomato/ontology-manager-app --filter @ontomato/agent-shell-ui --filter @ontomato/service-logging test
+          pnpm test:scripts
 
       - name: Check offline delivery
         run: |
           python3 -B scripts/offline-mirror-test.py
           python3 -B scripts/deploy-runtime_test.py
+
+  # The Java contract and permission-boundary group: it needs a database and
+  # nothing else. The adapter contract suites (Testcontainers), the process
+  # suites and the full reactor stay on demand with `./mvnw test`.
+  java:
+    runs-on: ubuntu-24.04
+    services:
+      postgres:
+        image: pgvector/pgvector:pg18
+        env:
+          POSTGRES_USER: ontomato
+          POSTGRES_PASSWORD: ontomato
+          POSTGRES_DB: ontomato
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -h 127.0.0.1 -U ontomato -d ontomato"
+          --health-interval 5s --health-timeout 5s --health-retries 20
+    env:
+      ONTOMATO_TEST_POSTGRES_URL: jdbc:postgresql://127.0.0.1:5432/ontomato
+      ONTOMATO_TEST_POSTGRES_USER: ontomato
+      ONTOMATO_TEST_POSTGRES_PASSWORD: ontomato
+      RUNTIME_TEST_DATABASE_URL: postgres://ontomato:ontomato@127.0.0.1:5432/ontomato
+      STARTUP_TEST_DATABASE_URL: postgres://ontomato:ontomato@127.0.0.1:5432/ontomato
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 21
+          cache: maven
+
+      - name: Test the Java contract and boundary group
+        run: ./mvnw -B -ntp -Pcontract test
