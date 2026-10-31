@@ -405,6 +405,22 @@ class QueryRuntimeBoundaryTest {
   }
 
   @Test
+  void hiddenAndMissingClassesHaveTheSameNotFoundBoundary() throws Exception {
+    permission.setFullData(false);
+    var fields = new io.ontomato.dataengine.service.sys.bean.permission.FieldPermission("/sales");
+    fields.getVisibleFields().add("count"); permission.addFieldPermission(fields);
+    for (String name : List.of("/payroll", "/missing")) {
+      http.perform(post("/ontology/query/schema").contentType("application/json")
+          .content(JSONObject.of("classNames", List.of(name)).toJSONString())).andExpect(status().isNotFound());
+      http.perform(post("/ontology/query/distinct-values").contentType("application/json")
+          .content(JSONObject.of("className", name, "attribute", "count", "limit", 5).toJSONString())).andExpect(status().isNotFound());
+      http.perform(post("/ontology/query/execute-dsl").contentType("application/json").content(query(name)))
+          .andExpect(status().isNotFound());
+    }
+    verifyNoInteractions(dsl);
+  }
+
+  @Test
   void schemaUsesRealNullableOntologyShapeAndEnabledFieldSemantics() throws Exception {
     var access = new QueryAccessService.Access(user, permission, null, null, null);
     JSONObject overview = JSONObject.from(ontology.overview(access));

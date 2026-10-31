@@ -67,7 +67,7 @@ export async function createAgentDefinition(
     const skills = resolveAssistantSkillReferences(input.skills, owner.domainId);
     await validateAssistantSkills(owner.domainId, skills);
     await getPostgresPool().query(
-      `INSERT INTO ${t("assistant_agents")} (id,domain_id,kind,name,description,enabled,system_prompt,model_role,skills,icon,class_names,enabled_mcp_service_ids,sort_order) VALUES($1,$2,$1::text,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) ON CONFLICT DO NOTHING`,
+      `INSERT INTO ${t("assistant_agents")} (id,domain_id,kind,name,description,enabled,system_prompt,model_role,skills,icon,class_names,enabled_mcp_service_ids,sort_order) VALUES($1::uuid,$2,($1::uuid)::text,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) ON CONFLICT DO NOTHING`,
       [
         id,
         owner.domainId,

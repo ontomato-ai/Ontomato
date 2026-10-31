@@ -55,7 +55,7 @@ public class OntologyQueryService {
     if (scope != null && !scope.isEmpty() && !scope.contains(normalized))
       throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Class is outside this run's scope");
     if (classes(access).stream().noneMatch(c -> normalized.equals(c.get("className"))))
-      throw new DslContractViolationException(INVALID_GRAMMAR, "answer.steps.graph.patterns.objects.class", "Unknown ontology class: " + name);
+      throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Ontology class not found: " + name);
     return normalized;
   }
 
@@ -179,7 +179,8 @@ public class OntologyQueryService {
     try {
       result = executeQuery(query, access);
     } catch (ResponseStatusException error) {
-      if (error.getStatusCode().value() != HttpStatus.FORBIDDEN.value())
+      if (error.getStatusCode().value() != HttpStatus.FORBIDDEN.value()
+          && error.getStatusCode().value() != HttpStatus.NOT_FOUND.value())
         throw queryFailure(io.ontomato.dataengine.util.ErrorText.queryError(error), access);
       if (access.grant() != null) grants.recordQueryError(access.grant(), error.getReason());
       throw error;

@@ -416,6 +416,32 @@ class OntologyRetrievalContractTest {
   }
 
   @Test
+  void datasetExampleIsCompleteAndInvalidSubmissionsIdentifyTheirField() throws Exception {
+    String reference;
+    try (var stream = getClass().getResourceAsStream("/ontology-skills/data-retrieval/references/dataset.md")) {
+      reference = new String(stream.readAllBytes(), StandardCharsets.UTF_8);
+    }
+    var example = JSON.parseObject(reference.split("```json\\R", 2)[1].split("```", 2)[0]);
+    DatasetFileContract.preparation(example);
+    var wrongCheck = AgentJson.copy(example);
+    wrongCheck.getJSONObject("selfCheck").put("filters", new JSONArray());
+    var wrongSource = AgentJson.copy(example);
+    wrongSource.getJSONObject("sourceAnalysis").getJSONArray("nodes").getJSONObject(0).remove("label");
+    for (var entry : Map.of("selfCheck", wrongCheck, "sourceAnalysis", wrongSource).entrySet()) {
+      String session = id(), run = id();
+      var response = http.perform(post("/ontology/retrievals/" + session + "/runs/" + run + "/outputs")
+              .header("tk", "fixture-user").header("X-Ontomato-Run-Id", run).header("Idempotency-Key", id())
+              .contentType("application/json").content(AgentJson.json(entry.getValue())))
+          .andExpect(status().isBadRequest()).andReturn();
+      String message = JSON.parseObject(response.getResponse().getContentAsString()).getJSONObject("error").getString("message");
+      assertTrue(message.contains(entry.getKey()), message);
+      assertNotEquals("Invalid request", message);
+      if (entry.getKey().equals("selfCheck")) assertTrue(message.contains("filters must be text"));
+    }
+    verifyNoInteractions(jobs);
+  }
+
+  @Test
   void datasetExecutionKeepsTheAdmittedClassRangeWithAUserCredential() throws Exception {
     var payroll = new io.ontomato.dataengine.service.sys.bean.permission.FieldPermission("/payroll");
     payroll.getVisibleFields().add("value");

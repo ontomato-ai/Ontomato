@@ -13,6 +13,9 @@ public interface IdentityService {
     /** Authorize the ontology read-query capability at its owning identity boundary. */
     void requireQueryAccess();
 
+    /** Reuse the existing Action execution permission for an explicitly captured owner. */
+    void requireActionExecutionAccess(String userId, String domainId);
+
     /** The same business-knowledge capability that owns governance. */
     boolean hasKnowledgeGovernanceAccess();
 

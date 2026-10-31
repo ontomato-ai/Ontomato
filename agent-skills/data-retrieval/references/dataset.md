@@ -31,3 +31,56 @@ field sources, assumptions/decisions/metric uses/selfCheck, a formal execution
 receipt and truncation (null or {truncated:true,rowLimit,truncationHint}). Preserve
 null, false, zero and empty strings. The runtime assigns artifact identity after
 the file is written; do not insert an artifact ID into the JSON.
+
+## Minimal complete DSL preparation
+
+Save this object as `work/count.json`, replace `/Employee` with a class from
+`schema`, then run `node scripts/dataset.mjs preview @work/count.json`.
+Use the same object for delivery. Keep every selfCheck value as text, including
+`filters` and `nullGroups`; use `""` when there is nothing to add, never `[]`, `{}`
+or `null`. This example counts authorized rows and needs no attribute source.
+
+```json
+{
+  "title": "Employee count",
+  "question": "How many employees can I access?",
+  "recipe": {
+    "kind": "dsl",
+    "dsl": {
+      "problem": "Employee count",
+      "answer": {
+        "steps": [{
+          "graph": {"patterns": [{"objects": [{"idx": 0, "variable": "e", "class": "/Employee"}]}]},
+          "output": {"to_user": true, "fields": [{"variable": "e", "field": "*", "function": "COUNT", "as": "headcount"}]}
+        }]
+      }
+    }
+  },
+  "sourceAnalysis": {
+    "schema": "ontomato.query-subgraph.v1",
+    "queries": [{"id": "q", "label": "Employee count"}],
+    "nodes": [
+      {"id": "employees", "kind": "class", "label": "Employees", "queryId": "q", "className": "/Employee", "variable": "e"},
+      {"id": "one", "kind": "operation", "label": "1", "queryId": "q", "operation": "constant", "expression": "1"},
+      {"id": "count", "kind": "operation", "label": "COUNT(*)", "queryId": "q", "operation": "aggregate", "expression": "COUNT(*)"},
+      {"id": "result", "kind": "output", "label": "Employee count", "key": "headcount"}
+    ],
+    "edges": [
+      {"id": "count-input", "kind": "dependency", "source": "one", "target": "count", "role": "value", "label": ""},
+      {"id": "count-output", "kind": "dependency", "source": "count", "target": "result", "role": "value", "label": ""}
+    ],
+    "filters": []
+  },
+  "assumptions": [],
+  "decisionIds": [],
+  "metricUses": [],
+  "selfCheck": {
+    "scope": "Employees visible to the current user",
+    "filters": "No additional filter",
+    "grain": "One total",
+    "denominator": "",
+    "nullGroups": "No grouping",
+    "comparisons": []
+  }
+}
+```
