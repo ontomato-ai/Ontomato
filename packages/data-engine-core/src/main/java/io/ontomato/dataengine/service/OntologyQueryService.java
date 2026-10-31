@@ -8,6 +8,7 @@ import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
 import io.ontomato.dataengine.bean.function.Function;
 import io.ontomato.dataengine.bean.metricView.MetricView;
+import io.ontomato.dataengine.bean.metricView.MetricViewBinding;
 import io.ontomato.dataengine.dao.KnowledgeDao;
 import io.ontomato.dataengine.util.DBSchemaUtil;
 import io.ontomato.dataengine.util.DslRuleUtil;
@@ -311,12 +312,16 @@ public class OntologyQueryService {
   }
 
   /**
-   * Revision of a published metric: the read Function it executes. Match bookkeeping (questions, bindings, timestamps,
-   * name, description) changes whenever a question hits the metric or the quality check appends a binding, and must not
-   * invalidate the revisions already handed out. Bindings are addressed by ID and resolved at execution time.
+   * Revision of a published metric: the read Function it executes and the parameter sets stored with it. Match
+   * bookkeeping (questions, timestamps) and label-like fields change whenever a question hits the metric and must not
+   * invalidate the revisions already handed out.
    */
   public static String revision(MetricView metric) {
     Function function = Objects.requireNonNull(metric.getFunction(), "Metric Function is required");
+    List<JSONObject> bindings = new ArrayList<>();
+    if (metric.getBindings() != null)
+      for (MetricViewBinding binding : metric.getBindings())
+        bindings.add(JSONObject.of("id", binding.getId(), "parameters", binding.getParameters()));
     return digest(
         JSONObject.of(
             "id",
@@ -326,7 +331,9 @@ public class OntologyQueryService {
             "parameters",
             function.getParameters(),
             "returnDef",
-            function.getReturnDef()));
+            function.getReturnDef(),
+            "bindings",
+            bindings));
   }
 
   public static String digest(Object value) {
