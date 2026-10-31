@@ -143,7 +143,7 @@ export function conversationItems(state: ConversationState): ConversationItem[] 
         output: tool?.output || (block.id ? (toolResults.get(block.id) ?? "") : ""),
       });
     });
-    if (settled && message.stopReason === "stop") {
+    if (settled && message.content.some((block) => block.type === "text" && block.text.trim())) {
       current.answerMessageId = entry.id;
       current.answerText = message.content
         .map((block) => (block.type === "text" ? block.text : ""))

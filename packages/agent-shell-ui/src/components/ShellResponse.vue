@@ -41,6 +41,9 @@ watch(
   },
   { immediate: true },
 );
+onMounted(() => {
+  if (!ticker && props.item.running) ticker = setInterval(() => (now.value = Date.now()), 1000);
+});
 onBeforeUnmount(() => ticker && clearInterval(ticker));
 function clock(ms: number) {
   const total = Math.max(0, Math.round(ms / 1000));
@@ -56,14 +59,18 @@ const status = computed(() => {
   return { state, elapsed: labels.value.elapsed(clock(until - startedAt)) };
 });
 
-onMounted(async () => {
-  if (!props.feedback || !target.value) return;
+// The answer id appears after the run settles, and the component stays mounted, so read the stored
+// feedback whenever the target changes rather than once on mount.
+watch(target, async (next) => {
+  rating.value = null;
+  if (!props.feedback || !next) return;
   try {
-    rating.value = await props.feedback.read(target.value);
+    const stored = await props.feedback.read(next);
+    if (target.value === next) rating.value = stored;
   } catch {
-    rating.value = null;
+    if (target.value === next) rating.value = null;
   }
-});
+}, { immediate: true });
 
 async function copy() {
   await navigator.clipboard.writeText(props.item.answerText);
