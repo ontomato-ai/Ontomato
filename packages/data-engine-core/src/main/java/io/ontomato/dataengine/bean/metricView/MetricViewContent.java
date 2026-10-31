@@ -11,6 +11,5 @@ public class MetricViewContent {
 	private String originQuestion;
 	private OriginCheckResult originCheckResult;
 	private List<String> parameterInstanceDesc;
-	private String url;
 	
 }

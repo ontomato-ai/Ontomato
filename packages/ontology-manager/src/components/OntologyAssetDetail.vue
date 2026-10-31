@@ -98,7 +98,6 @@ const markdownView = ref("preview");
 const markdown = new MarkdownIt({ html: false, linkify: true, breaks: true });
 const testMarkdownPreview = computed(() => markdown.render(testMarkdown.value));
 const testJson = ref("");
-const testResultUrl = ref("");
 const taskResultsVisible = ref(false);
 const taskResultLoading = ref(false);
 const taskResults = ref<AssetRecord[]>([]);
@@ -529,7 +528,6 @@ function openMetricTest() {
   markdownView.value = "preview";
   testMarkdown.value = "";
   testJson.value = "";
-  testResultUrl.value = "";
   testTab.value = "markdown";
   testBinding.value = -1;
   testValues.value = valueTexts(Object.fromEntries(metricParameters.value.map((p: AssetRecord) => [p.name, p.value ?? null])));
@@ -543,7 +541,6 @@ async function testMetricView() {
     const response = await requestSmartAsset("metrics", "test", testMetricDraft());
     testMarkdown.value = response?.data?.md || ot("metricTestNoResult");
     markdownView.value = "preview";
-    testResultUrl.value = typeof response?.data?.url === "string" ? response.data.url : "";
     testTab.value = "markdown";
   } catch (error) {
     message.error(error instanceof Error ? error.message : ot("metricTestFailed"));
@@ -1065,9 +1062,6 @@ onMounted(() => void loadDetail());
             :placeholder="ot('metricTestResultPlaceholder')"
             class="code-input"
           />
-          <el-link v-if="testResultUrl" :href="testResultUrl" target="_blank" type="primary">
-            {{ ot("metricOpenFullResult") }}
-          </el-link>
         </el-tab-pane>
         <el-tab-pane :label="ot('metricJsonTest')" name="json">
           <el-input
