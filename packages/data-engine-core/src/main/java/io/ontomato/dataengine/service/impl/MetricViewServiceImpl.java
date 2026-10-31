@@ -16,12 +16,10 @@ import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
 import java.util.Objects;
 import io.ontomato.dataengine.bean.metricView.MetricViewContent;
-import io.ontomato.dataengine.config.DataRagConfig;
 import io.ontomato.dataengine.core.bean.User;
 import io.ontomato.dataengine.dao.FunctionDao;
 import io.ontomato.dataengine.dao.KnowledgeDao;
 import io.ontomato.dataengine.dao.MetricViewDao;
-import io.ontomato.dataengine.dao.SubQueryWorkspaceDao;
 import io.ontomato.dataengine.dataAdapter.DslRowLimit;
 import io.ontomato.dataengine.service.ABCProgramService;
 import io.ontomato.dataengine.service.AdminService;
@@ -53,8 +51,6 @@ import org.springframework.stereotype.Service;
 @Service
 public class MetricViewServiceImpl implements MetricViewService {
 
-  @Autowired private DataRagConfig dataRagConfig;
-
   @Autowired private MetricViewDao metricViewDao;
 
   @Autowired private FunctionDao functionDao;
@@ -68,8 +64,6 @@ public class MetricViewServiceImpl implements MetricViewService {
   @Autowired private ABCProgramService abcProgramService;
 
   @Autowired private LangService langService;
-
-  @Autowired private SubQueryWorkspaceDao subQueryWorkspaceDao;
 
   @Autowired private OntologyGenerationService generationService;
 
@@ -342,128 +336,6 @@ public class MetricViewServiceImpl implements MetricViewService {
 		return metricViewContent;
 	}
 
-  @Override
-  public List<MetricViewContent> generateGeneralContent(
-      String sessionId,
-      String question,
-      String lang,
-      User user,
-      UserDataPermission permission,
-      int timeoutMinutes,
-      boolean test) {
-    List<MetricViewContent> metricViewContents = new ArrayList<MetricViewContent>();
-    List<Object[]> oList =
-        metricViewDao.find(question, null, 10, 0, user.getDomainId());
-    List<Function> functions = functionDao.queryList(null, null, user.getDomainId());
-    Map<String, Function> functionMap = new HashMap<String, Function>();
-    for (Function function : functions) {
-      functionMap.put(function.getId(), function);
-    }
-    List<MetricView> metricViews = new ArrayList<MetricView>();
-    for (Object[] o : oList) {
-      try {
-        MetricView metricView = (MetricView) o[0];
-        String fId = (String) o[1];
-        metricView.setFunction(functionMap.get(fId));
-        metricViews.add(metricView);
-      } catch (Exception e) {
-        log.error(e.getMessage(), e);
-      }
-    }
-
-    if (metricViews.size() > 0) {
-
-      Map<String, Object> jsonRule = adminService.getJSONRule(user.getDomainId());
-      String userMessage =
-          OntologyGenerationPrompts.getReadFunctionInstancerUserMessage(
-              question,
-              metricViews,
-              knowledgeDao,
-              businessConfigService,
-              lang,
-              langService,
-              jsonRule,
-              user.getDomainId());
-      try (var generation =
-          OntologyGenerationService.asOwner(
-              user,
-              () ->
-                  generationService.generate(
-                      "instantiate", sessionId, userMessage, lang, user.getDomainId()))) {
-        JSONArray inputFunctions = generation.result().getJSONArray("instances");
-        if (inputFunctions == null) return metricViewContents;
-
-        List<Runnable> matchesToSave = new ArrayList<>();
-        for (int i = 0; i < inputFunctions.size(); i++) {
-          try {
-            JSONObject inputFunction = inputFunctions.getJSONObject(i);
-            String id = inputFunction.getString("id");
-            String functionQuestion = inputFunction.getString("question");
-            List<Parameter> parameters = inputFunction.getList("parameters", Parameter.class);
-
-            MetricView metricView = null;
-            for (MetricView mv : metricViews) {
-              if (mv.getId().equals(id)) {
-                metricView = mv;
-                break;
-              }
-            }
-            if (metricView != null) {
-              Function function = metricView.getFunction();
-
-              JSONObject values = new JSONObject();
-              for (Parameter parameter : parameters) values.put(parameter.getName(), parameter.getValue());
-              Function execution = MetricViewBindings.executionFunction(function, values);
-              MetricViewBinding binding = new MetricViewBinding();
-              binding.setName(functionQuestion);
-              binding.setParameters(values);
-              binding.setMatchQuestions(new HashSet<>(Set.of(question.trim())));
-              Object[] o = abcProgramService.execute(
-                  BackendSessionEntrance.derive(sessionId, "hot-exec-" + i), execution,
-                  user.getId(), permission, null, lang, timeoutMinutes, user.getDomainId());
-              MetricView contentMetric = JSON.parseObject(JSON.toJSONString(metricView), MetricView.class);
-              contentMetric.setFunction(execution);
-              metricViewContents.add(generateContent((JSONArray) o[0], (PythonExecuteResult) o[1], functionQuestion, contentMetric, lang));
-              String metricId = metricView.getId();
-              MetricViewBinding toSave = !test && !values.isEmpty() ? binding : null;
-              matchesToSave.add(() -> recordMatch(metricId, question, toSave, user.getDomainId()));
-            }
-          } catch (SessionCancelledException e) {
-            // Cancelled: the remaining cards are no longer processed, and this session's
-            // stream ends directly.
-            throw e;
-          } catch (Exception e) {
-            log.error(e.getMessage(), e);
-          }
-        }
-        generation.settle(
-            () -> {
-              for (var save : matchesToSave) save.run();
-              return null;
-            });
-      }
-    }
-    return metricViewContents;
-  }
-
-  @Override
-  public List<MetricViewContent> generateStaticContent(String question, String lang, User user, UserDataPermission permission, int timeoutMinutes) {
-    List<MetricViewContent> contents = new ArrayList<>();
-    for (var match : metricViewDao.findBindings(question, 10, 0, user.getDomainId())) {
-      try {
-        MetricView metric = queryById(match.metricId(), user.getDomainId());
-        JSONObject values = MetricViewBindings.resolve(metric, match.binding().getId(), null);
-        metric.setFunction(MetricViewBindings.executionFunction(metric.getFunction(), values));
-        Object[] output = abcProgramService.execute(UUID.randomUUID().toString(), metric.getFunction(), user.getId(), permission, null, lang, timeoutMinutes, user.getDomainId());
-        contents.add(generateContent((JSONArray) output[0], (PythonExecuteResult) output[1], match.binding().getName(), metric, lang));
-      } catch (SessionCancelledException error) {
-        throw error;
-      } catch (Exception error) {
-        log.error(error.getMessage(), error);
-      }
-    }
-    return contents;
-  }
 private MetricViewContent generateContent(JSONArray rows, PythonExecuteResult execution, String question, MetricView metricView, String lang) {
 		int maxSize = 100;
 		MetricViewContent metricViewContent = new MetricViewContent();
@@ -518,35 +390,7 @@ private MetricViewContent generateContent(JSONArray rows, PythonExecuteResult ex
 		}
 		metricViewContent.setParameterInstanceDesc(parameterInstanceDesc);
 
-		JSONObject abcProgram = new JSONObject();
-		abcProgram.put("title", function.getName());
-		abcProgram.put("code", function.getCode());
-		abcProgram.put("sourceAnalysis", function.getReturnDef().getSourceAnalysis() != null ? function.getReturnDef().getSourceAnalysis() : io.ontomato.dataengine.service.QuerySourceAnalysis.fromStoredSources(function.getReturnDef().getOutKeyRefs()));
-		abcProgram.put("parameters", function.getParameters());
-
-		JSONArray data = new JSONArray();
-		data.add(answerPayload);
-
-		JSONObject result = new JSONObject();
-		result.put("data", data);
-		result.put("abcProgram", abcProgram);
-		String shortCode = subQueryWorkspaceDao.writeResult(result);
-		metricViewContent.setUrl(dataRagConfig.getCardBaseUrl() + "/metricView/getData?parameter=" + shortCode);
 		return metricViewContent;
-	}
-
-  @Override
-	public JSONObject getData(String shortCode, String lang) throws Exception {
-		final JSONObject result;
-		try {
-			result = subQueryWorkspaceDao.readResult(shortCode);
-		} catch (Exception e) {
-			throw new Exception(langService.get(lang, "MetricView.snapshotUnreadable"), e);
-		}
-		if (result == null) {
-			throw new Exception(langService.get(lang, "MetricView.snapshotNotFound"));
-		}
-		return result;
 	}
 
   @Override
