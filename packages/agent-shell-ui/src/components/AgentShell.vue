@@ -125,7 +125,10 @@ function selectSession(id: string) {
 
 }
 
+// A new conversation writes its id while sending; that run is already open, so opening it again
+// would reset the pending message and the admitted snapshot.
 watch(sessionId, (id) => {
+  if (id !== null && id === conversation.state.sessionId) return;
   openArtifact.value = null;
   void conversation.open(id);
 }, { immediate: true });
@@ -154,8 +157,10 @@ async function send(text: string) {
   const latestRun = result.snapshot.run;
   const created = result.createdSession;
   if (created) {
-    sessionId.value = created.id;
+    // The state already carries this session and its admitted run; linking the id afterwards keeps
+    // the watch from opening it again and discarding the pending message.
     sessions.value = [{ ...created, title: created.title || text, latestRun }, ...sessions.value];
+    sessionId.value = created.id;
     return;
   }
   const entry = sessions.value.find((session) => session.id === sessionId.value);

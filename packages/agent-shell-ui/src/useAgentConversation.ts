@@ -14,10 +14,9 @@ import {
   type ConversationState,
 } from "./conversation";
 import { conversationItems } from "./view";
+import { runsAnalystAsk } from "./tools";
 
 const RETRIEVAL_LINK_RETRY_MS = 1500;
-/** The ontomato-analyst entry script running its ask (retrieval) subcommand. */
-const ANALYST_ASK = /ontomato\.mjs["']?\s+ask\b/;
 
 /**
  * Drives one selected conversation through the host port. Every async continuation checks the
@@ -109,15 +108,12 @@ export function useAgentConversation(port: () => AgentHostClient) {
     if (envelope.event.type === "message_end") knownMessageSeq = Math.max(knownMessageSeq, envelope.event.messageSeq);
     if (type === "artifact_registered") artifactRevision.value++;
     if (type === "tool_execution_start") {
-      // The ask command blocks until the retrieval ends, so tool_execution_end is too late.
-      // Start looking for the association when the bash call starts; it appears once ask is
-      // accepted. Detection is the analyst entry script followed by its ask subcommand, which
-      // covers "node skills/ontomato-analyst/ontomato.mjs ask", "cd …/ontomato-analyst && node
-      // ontomato.mjs ask" and quoted paths. A wrapper script or variable that hides
-      // "ontomato.mjs ask" is not covered; its retrievals arrive on the next history read.
+      // The ask command blocks until the retrieval ends, so tool_execution_end is too late: start
+      // looking when the bash call starts. A wrapper script that hides the analyst entry is not
+      // covered; its retrievals arrive on the next history read.
       const event = envelope.event;
       const command = event.args.command;
-      if (event.toolName === "bash" && typeof command === "string" && ANALYST_ASK.test(command))
+      if (event.toolName === "bash" && typeof command === "string" && runsAnalystAsk(command))
         void watchRetrievals(envelope.cursor.runId, event.toolCallId, token);
     }
   }
