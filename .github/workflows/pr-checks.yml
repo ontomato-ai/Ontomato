@@ -84,7 +84,4 @@ jobs:
           cache: maven
 
       - name: Test the Java contract and boundary group
-        run: |
-          ./mvnw -B -ntp -pl packages/data-engine-core -am \
-            -Dtest='ServiceLogContractTest,ServiceLogJdbcTest,OntologyRetrievalContractTest,OntologyGenerationContractTest,QueryRuntimeBoundaryTest,BusinessConfigControllerModelKeyWriteOnlyTest,MetadataPostgresBoundaryTest,VectorResourcePostgresBoundaryTest,AssetLookupPostgresBoundaryTest,KnowledgeDomainPostgresBoundaryTest,AbsJdbcBaseDaoIdTest,OssStartupAssemblyTest' \
-            -Dsurefire.failIfNoSpecifiedTests=false test
+        run: ./mvnw -B -ntp -Pcontract test
