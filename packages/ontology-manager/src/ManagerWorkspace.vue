@@ -6,6 +6,7 @@ import { provideManagerFeedback } from "./feedback";
 import ManagerConfirmDialog from "./ManagerConfirmDialog.vue";
 import BusinessKnowledge from "./components/BusinessKnowledge.vue";
 import DataBrowser from "./data-browser/DataBrowser.vue";
+import InstanceGraph from "./data-browser/InstanceGraph.vue";
 import ObjectViewBuilder from "./object-views/ObjectViewBuilder.vue";
 import ObjectViewPage from "./object-views/ObjectViewPage.vue";
 import type { ObjectReference } from "@ontomato/contracts/object-views";
@@ -42,6 +43,7 @@ const { loadOntology, loadSmartAssets } = provideManagerContext(context, (status
   emit("auth-failure", status)
 );
 const shell = ref<HTMLElement>();
+const graphSummaryTarget = ref<HTMLElement | null>(null);
 provideManagerFeedback(shell);
 /** The host-supplied view replaces the original hash routing: the path locates the workspace and resource, the query carries from/focus/id/back. */
 const route = computed(() => {
@@ -87,6 +89,10 @@ async function navigate(path: string) {
 }
 
 function changeWorkspace(workspace: Workspace) {
+  if (workspace === "instance-graph") {
+    navigate("/instance-graph");
+    return;
+  }
   if (workspace === "browser") {
     navigate(
       browserObjectClass.value ? `/data/${encodeURIComponent(browserObjectClass.value)}` : "/data"
@@ -162,6 +168,10 @@ function applyRouteState() {
   if (section === "data") {
     activeWorkspace.value = "browser";
     browserObjectClass.value = first || "";
+    return;
+  }
+  if (section === "instance-graph") {
+    activeWorkspace.value = "instance-graph";
     return;
   }
   if (section === "playground") {
@@ -357,6 +367,10 @@ onMounted(() => {
         <section v-else-if="activeWorkspace === 'browser'" class="legacy-surface">
           <DataBrowser :initial-class="browserObjectClass" @open="openInstance" @configure="configureView" />
         </section>
+        <section v-else-if="activeWorkspace === 'instance-graph'" class="legacy-surface graph-surface">
+          <div ref="graphSummaryTarget" class="graph-summary-slot" />
+          <InstanceGraph :summary-target="graphSummaryTarget" @open="openInstance" @configure="configureView" />
+        </section>
         <section v-else-if="activeWorkspace === 'assets'" class="asset-surface">
           <OntologyAssetCatalog
             v-if="!selectedAsset && !isAssetCreating"
@@ -447,6 +461,18 @@ onMounted(() => {
 }
 .legacy-surface :deep(.data-browser) {
   min-height: 100%;
+}
+.graph-surface {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.graph-summary-slot:not(:empty) {
+  margin-bottom: var(--spacing-lg);
+}
+.graph-surface :deep(.instance-graph) {
+  min-height: 0;
+  flex: 1;
 }
 .assets-content {
   display: flex;

@@ -12,7 +12,6 @@ import {
   ElPagination,
   ElRadio,
   ElRadioGroup,
-  ElSegmented,
   ElSelect,
   ElTable,
   ElTableColumn,
@@ -22,7 +21,6 @@ import {
 import { useManagerFeedback } from "../feedback";
 import { Filter, Download, Plus, Trash2, Search, Settings2 } from "lucide-vue-next";
 import { useManagerClient, useOntologyText, useSharedText } from "../context";
-import InstanceGraph from "./InstanceGraph.vue";
 import type { ObjectReference } from "@ontomato/contracts/object-views";
 import { businessNameAttribute, instanceName } from "../object-views/instance-name";
 
@@ -37,7 +35,6 @@ function openRow(row: DataItem) {
   const key = primaryKeys.value[selectedClass.value];
   if (key && row[key] != null) emit("open", { className: selectedClass.value, primaryKey: String(row[key]) });
 }
-const graphSummaryTarget = ref<HTMLElement | null>(null);
 
 interface ClassDef {
   className: string;
@@ -72,12 +69,6 @@ const pageNum = ref(1);
 const pageSize = ref(20);
 const total = ref(0);
 const loading = ref(false);
-const viewMode = ref<"table" | "graph">("table");
-
-const viewModeOptions = computed(() => [
-  { label: ot("tableView"), value: "table" },
-  { label: ot("instanceGraphTitle"), value: "graph" },
-]);
 
 const currentClassAttrs = computed(() => {
   const cls = classList.value.find((c) => c.className === selectedClass.value);
@@ -363,11 +354,6 @@ watch(
 
 <template>
   <div class="data-browser">
-    <div class="mode-bar">
-      <el-segmented v-model="viewMode" :options="viewModeOptions" />
-      <div v-show="viewMode === 'graph'" ref="graphSummaryTarget" class="graph-summary-slot" />
-    </div>
-    <template v-if="viewMode === 'table'">
       <div class="toolbar">
       <el-select
         v-model="selectedClass"
@@ -550,8 +536,6 @@ watch(
         <el-button type="primary" @click="applyFilters">{{ t("dataBrowser.apply") }}</el-button>
       </template>
       </el-drawer>
-    </template>
-    <InstanceGraph v-else :summary-target="graphSummaryTarget" @open="emit('open', $event)" @configure="emit('configure', $event)" />
   </div>
 </template>
 
@@ -562,27 +546,6 @@ watch(
   display: flex;
   flex-direction: column;
   overflow: hidden;
-}
-
-.mode-bar {
-  display: flex;
-  align-items: center;
-  flex-shrink: 0;
-  margin-bottom: var(--spacing-lg);
-  gap: var(--spacing-lg);
-  flex-wrap: wrap;
-}
-
-.mode-bar :deep(.el-segmented) { flex-shrink: 0; }
-.graph-summary-slot { flex: 1; min-width: min(360px, 100%); }
-
-.mode-bar :deep(.el-segmented) {
-  --el-segmented-item-selected-bg-color: var(--el-color-primary);
-}
-
-.data-browser :deep(.instance-graph) {
-  min-height: 0;
-  flex: 1;
 }
 
 .data-browser :deep(.el-table) {

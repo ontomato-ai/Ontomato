@@ -270,9 +270,7 @@ describe("OntologyManager root component with real pages", () => {
     vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue({
       width: 800, height: 600,
     } as DOMRect);
-    const { root } = mountHost({ ...base, view: "/data/Order" });
-    await settle();
-    (root().querySelectorAll(".mode-bar .el-segmented__item")[1] as HTMLElement).click();
+    const { root } = mountHost({ ...base, view: "/instance-graph" });
     await settle();
     await settle();
     const options = graphRecord.options.at(-1);
@@ -293,9 +291,7 @@ describe("OntologyManager root component with real pages", () => {
 
   it("aggregates overview connections by default and reveals selected instance connections", async () => {
     vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue({ width: 800, height: 600 } as DOMRect);
-    const { root } = mountHost({ ...base, view: "/data/Order" });
-    await settle();
-    (root().querySelectorAll(".mode-bar .el-segmented__item")[1] as HTMLElement).click();
+    const { root } = mountHost({ ...base, view: "/instance-graph" });
     await settle();
     await settle();
     expect(graphRecord.dataBatches.at(-1).edges[0].data).toMatchObject({ aggregated: true, count: 1, type: "has" });
@@ -348,9 +344,7 @@ describe("OntologyManager root component with real pages", () => {
     vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue({
       width: 800, height: 600,
     } as DOMRect);
-    const { root } = mountHost({ ...base, view: "/data/Order" });
-    await settle();
-    (root().querySelectorAll(".mode-bar .el-segmented__item")[1] as HTMLElement).click();
+    const { root } = mountHost({ ...base, view: "/instance-graph" });
     await settle();
 
     const input = root().querySelector<HTMLInputElement>(".node-search input")!;
@@ -395,9 +389,7 @@ describe("OntologyManager root component with real pages", () => {
     { field: "relationType", index: 1, label: "has", value: "has" },
   ])("reloads direct neighbors after clearing $field and applying filters", async ({ field, index, label, value }) => {
     vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue({ width: 800, height: 600 } as DOMRect);
-    const { root } = mountHost({ ...base, view: "/data/Order" });
-    await settle();
-    (root().querySelectorAll(".mode-bar .el-segmented__item")[1] as HTMLElement).click();
+    const { root } = mountHost({ ...base, view: "/instance-graph" });
     await settle();
     graphHandlers["node:click"]({ target: { id: "Order:1" } });
     await settle();
@@ -435,9 +427,7 @@ describe("OntologyManager root component with real pages", () => {
 
   it("caps automatic focus at native size when the graph fit would enlarge one node", async () => {
     vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue({ width: 800, height: 600 } as DOMRect);
-    const { root } = mountHost({ ...base, view: "/data/Order" });
-    await settle();
-    (root().querySelectorAll(".mode-bar .el-segmented__item")[1] as HTMLElement).click();
+    const { root } = mountHost({ ...base, view: "/instance-graph" });
     await settle();
     graphRecord.zoom = 3;
     (root().querySelector(".sample-legend button") as HTMLElement).click();
@@ -449,9 +439,7 @@ describe("OntologyManager root component with real pages", () => {
 
   it("toggles relation names on existing edges without hiding node labels or reloading data", async () => {
     vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue({ width: 800, height: 600 } as DOMRect);
-    const { root } = mountHost({ ...base, view: "/data/Order" });
-    await settle();
-    (root().querySelectorAll(".mode-bar .el-segmented__item")[1] as HTMLElement).click();
+    const { root } = mountHost({ ...base, view: "/instance-graph" });
     await settle();
     const edge = graphRecord.dataBatches.flatMap((batch) => batch.edges || [])[0];
     const node = graphRecord.dataBatches.flatMap((batch) => batch.nodes || [])[0];
@@ -477,9 +465,7 @@ describe("OntologyManager root component with real pages", () => {
 
   it("keeps hidden relation labels and loaded data when switching themes", async () => {
     vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue({ width: 800, height: 600 } as DOMRect);
-    const { host, root } = mountHost({ ...base, view: "/data/Order" });
-    await settle();
-    (root().querySelectorAll(".mode-bar .el-segmented__item")[1] as HTMLElement).click();
+    const { host, root } = mountHost({ ...base, view: "/instance-graph" });
     await settle();
     const edge = graphRecord.dataBatches.flatMap((batch) => batch.edges || [])[0];
     (root().querySelector(".graph-toolbar button[aria-label='Display settings']") as HTMLButtonElement).click();
