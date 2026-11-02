@@ -107,9 +107,8 @@ export const adminMenuItems = {
     icon: Blocks,
     groupKey: "app-capabilities",
   },
-  // Shown with either system agent's permission; each entry card on the page still checks its own.
   systemAgents: {
-    permissions: ["observer", "business-knowledge"],
+    permissions: ["observer"],
     path: "/admin/system-agents",
     titleKey: "nav.systemAgents",
     descriptionKey: "navDescription.systemAgents",

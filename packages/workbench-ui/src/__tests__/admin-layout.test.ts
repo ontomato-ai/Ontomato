@@ -155,7 +155,7 @@ describe("shared admin layout", () => {
     expect(logout).toHaveBeenCalledOnce();
   });
 
-  it("a menu item shows with any one of its permissions (system agents: observer or business-knowledge)", async () => {
+  it("the system agents menu requires observer permission", async () => {
     const config = (granted: string[]): AdminLayoutConfig => ({
       ...base,
       groups: [adminGroups.appCapabilities],
@@ -163,9 +163,7 @@ describe("shared admin layout", () => {
       access: { ready: true, can: (p) => granted.includes(p) },
     });
     expect((await mountLayout(config(["observer"]), "/admin/system-agents")).menu()).toEqual(["System Agents"]);
-    expect((await mountLayout(config(["business-knowledge"]), "/admin/system-agents")).menu()).toEqual([
-      "System Agents",
-    ]);
+    expect((await mountLayout(config(["business-knowledge"]), "/admin/system-agents")).menu()).toEqual([]);
     const none = await mountLayout(config([]), "/admin/system-agents");
     expect(none.el.querySelector(".permission-empty")).not.toBeNull();
   });
