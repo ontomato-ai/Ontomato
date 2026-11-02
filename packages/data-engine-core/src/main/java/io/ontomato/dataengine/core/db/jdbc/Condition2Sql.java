@@ -26,7 +26,7 @@ public class Condition2Sql {
 
     }
 
-    private record CdtField(Field field, String columnName, boolean isCollection, boolean isLike) {
+    private record CdtField(Field field, String columnName, boolean isCollection, boolean isLike, String op) {
     }
 
     public static Where empty = new Where("", null);
@@ -54,7 +54,8 @@ public class Condition2Sql {
                             && Objects.equals(conditionField.getName(), entityField.field().getName())) {
                         isLike = true;
                     }
-                    return new CdtField(conditionField, entityField.columnName(), isCollection, isLike);
+                    return new CdtField(conditionField, entityField.columnName(), isCollection, isLike,
+                            getOp(conditionField, entityField.field()));
                 })
                 .collect(Collectors.toList());
     }
@@ -93,9 +94,8 @@ public class Condition2Sql {
                     params.add(val);
                     sqls.add(c.columnName + " LIKE ?");
                 } else {
-                    String op = getOp(c.field);
                     params.add(val);
-                    sqls.add(c.columnName + " " + op + " ?");
+                    sqls.add(c.columnName + " " + c.op + " ?");
                 }
             } catch (Exception e) {
                 throw new DaoException("cdt err!", e);
@@ -104,10 +104,10 @@ public class Condition2Sql {
         return new Where(String.join(" AND ", sqls), params);
     }
 
-    private String getOp(Field field) {
+    private String getOp(Field field, Field entityField) {
         String name = field.getName();
         Class<?> type = field.getType();
-        if (type == String.class || Objects.equals(name, field.getName())) {
+        if (type == String.class || Objects.equals(name, entityField.getName())) {
             return "=";
         } else if (name.startsWith("start")) {
             return ">=";
