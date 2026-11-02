@@ -106,6 +106,7 @@ services:
       - "${ONTOLOGY_MANAGER_PORT:-3005}:80"
     environment:
       DATARAG_ORIGIN: http://datarag:18087
+      WORKBENCH_ORIGIN: http://ontomato:3000
       ONTOLOGY_INITIAL_ROUTE: ${ONTOLOGY_INITIAL_ROUTE:-/playground}
     logging:
       driver: json-file
@@ -115,6 +116,9 @@ services:
     depends_on:
       datarag:
         condition: service_healthy
+      # Nginx resolves the workbench host when it starts.
+      ontomato:
+        condition: service_started
 
 volumes:
   postgres18_data:
