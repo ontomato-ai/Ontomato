@@ -13,7 +13,14 @@ buildManagerImage(
     workspaceId: "ontomato",
     appImporter: "apps/ontology-manager",
     sources: [{ id: "ontomato", root: repoRoot }],
-    owners: { ontomato: ["apps/ontology-manager", "packages/ontology-manager"] },
+    // Object views import runtime schemas and helpers from the shared contracts.
+    owners: {
+      ontomato: [
+        "apps/ontology-manager",
+        "packages/ontology-manager",
+        "packages/contracts",
+      ],
+    },
   },
   process.argv.slice(2),
 ).catch((error) => {
