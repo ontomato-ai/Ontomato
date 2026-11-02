@@ -94,7 +94,7 @@ public class OntologyGenerationController {
       JSONObject snapshot = runtime.run(owner.domainId(), run);
       lang = snapshot.getJSONObject("run").getString("language");
     }
-    return drafts.explainLatest(row.getString("session_id"), lang);
+    return drafts.explainLatest(row.getString("session_id"), lang, owner);
   }
 
   @PostMapping("/{run}/test")

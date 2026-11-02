@@ -11,6 +11,7 @@ import io.ontomato.dataengine.bean.action.Action;
 import io.ontomato.dataengine.bean.function.Function;
 import io.ontomato.dataengine.bean.function.Parameter;
 import io.ontomato.dataengine.bean.function.ReturnDef;
+import io.ontomato.dataengine.core.bean.SimpleUser;
 import io.ontomato.dataengine.core.bean.User;
 import io.ontomato.dataengine.dao.ActionDao;
 import io.ontomato.dataengine.dao.FunctionDao;
@@ -22,6 +23,7 @@ import io.ontomato.dataengine.service.agent.AgentHttpException;
 import io.ontomato.dataengine.service.agent.AgentJson;
 import io.ontomato.dataengine.service.agent.AgentRuntimeClient;
 import io.ontomato.dataengine.service.agent.OntologyAgentStore;
+import io.ontomato.dataengine.service.agent.OntologyGenerationService;
 import io.ontomato.dataengine.util.CodeHashUtil;
 import io.ontomato.dataengine.util.DBSchemaUtil;
 import jakarta.annotation.PostConstruct;
@@ -231,8 +233,7 @@ public class ActionDraftService {
    * Re-runs the explain agent for the newest draft in a conversational action-creation session.
    * The draft keeps its code hash; only its action explanation and derived definition are replaced.
    */
-  public JSONObject explainLatest(String sessionId, String lang) throws Exception {
-    Owner owner = owner();
+  public JSONObject explainLatest(String sessionId, String lang, Owner owner) throws Exception {
     var rows =
         store.rows(
             "SELECT * FROM action_drafts WHERE session_id=? AND owner_id=? AND domain_id=?"
@@ -247,7 +248,14 @@ public class ActionDraftService {
     if (action.getFunction() == null || action.getFunction().getCode() == null)
       throw new AgentHttpException(422, "INVALID_DRAFT", "The draft has no function code");
     try {
-      actions.explainForDraft(action, lang);
+      // The explain tool is called with a generation grant, not a browser session. Set the
+      // owner explicitly so the explain run can resolve its domain credential.
+      OntologyGenerationService.asOwner(
+          new SimpleUser(owner.userId(), null, null, true, owner.domainId()),
+          () -> {
+            actions.explainForDraft(action, lang);
+            return null;
+          });
     } catch (Exception error) {
       throw new AgentHttpException(422, "EXPLAIN_FAILED", error.getMessage());
     }

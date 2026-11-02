@@ -165,7 +165,11 @@ class ActionDraftServiceTest {
     when(store.rows(anyString(), any(), any(), any())).thenReturn(List.of(row));
     when(store.update(anyString(), any(), any(), any(), any())).thenReturn(1);
 
-    JSONObject result = service.explainLatest(UUID.randomUUID().toString(), "en");
+    JSONObject result =
+        service.explainLatest(
+            UUID.randomUUID().toString(),
+            "en",
+            new OntologyAgentStore.Owner("fixture-user", "fixture-domain"));
 
     assertEquals(draftId, result.getString("draftId"));
     verify(actions).explainForDraft(any(), eq("en"));

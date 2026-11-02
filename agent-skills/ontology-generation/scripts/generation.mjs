@@ -31,11 +31,14 @@ export async function generationCommand(args, env = process.env, request = fetch
     case "prepare": body = await bodyFile(values[0]); break;
     case "query": body = { dsl: await bodyFile(values[0]) }; break;
     case "reset": case "close": body = {}; break;
-    case "source": break;
+    case "source":
+      if (env.ONTOMATO_GENERATION_KIND && env.ONTOMATO_GENERATION_KIND !== "explain")
+        throw new Error("source is only available for explain runs; use explain to refresh the structured definition");
+      break;
     case "helpers":
       if (!state?.runId) throw new Error("helpers requires a generation gate; run begin first");
       route = `/${state.runId}/helpers`; body = undefined; break;
-    default: throw new Error("Commands: begin, helpers, source, test, prepare, reset, query, close");
+    default: throw new Error("Commands: begin, explain, helpers, source, test, prepare, reset, query, close");
   }
   route ??= `/${state.runId}/${command}`;
   const response = await request(base + "/ontology/ai/generation" + route, {
