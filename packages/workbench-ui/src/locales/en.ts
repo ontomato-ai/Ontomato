@@ -365,6 +365,7 @@ export default {
     "codeEditorPlaceholder": "Write your code here"
   },
   "nav": {
+    "knowledge": "Knowledge",
     "systemManagement": "System Management",
     "agentsAndSkills": "Agents and Skills",
     "businessAgents": "Business Agents",
