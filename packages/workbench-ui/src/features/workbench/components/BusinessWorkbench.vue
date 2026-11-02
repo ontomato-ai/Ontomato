@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from "vue";
+import { computed, nextTick, onMounted, ref, watch } from "vue";
 import { ElMessage } from "element-plus";
 import { useI18n } from "vue-i18n";
 import {
@@ -11,6 +11,7 @@ import "@ontomato/agent-shell-ui/style.css";
 import type { WorkbenchAppearance } from "@ontomato/contracts/workbench-appearance";
 import { AgentSettingsPage } from "../../agents";
 import { DashboardHome } from "../../dashboard";
+import { ScheduledTasksPage } from "../../scheduled-tasks";
 import { useDashboardStore } from "../../dashboard/stores/dashboard";
 import { getWorkbenchAppearance } from "../api";
 import { nativeEchartsTheme } from "../../dashboard/components/utils/echartsTheme";
@@ -47,6 +48,7 @@ const appearance = ref<WorkbenchAppearance | null>(null);
 const editingBrand = ref(false);
 const agentId = ref<string | null>(readRemembered());
 const featureId = ref<string | null>(null);
+const conversationId = ref<string | null>(null);
 const shell = ref<{ reloadAgents: () => Promise<void> } | null>(null);
 
 function readRemembered(): string | null {
@@ -73,13 +75,7 @@ const workbench = computed<ShellWorkbenchDeclaration>(() => ({
     ...(props.canManageAgents
       ? [{ id: "agent-config", label: t("assistant.featureAgentConfig"), icon: "agents", availability: "page" as const }]
       : []),
-    {
-      id: "schedule",
-      label: t("assistant.featureSchedule"),
-      icon: "schedule",
-      availability: "unavailable",
-      hint: t("assistant.unavailable"),
-    },
+    { id: "schedule", label: t("assistant.featureSchedule"), icon: "schedule", availability: "page" },
   ],
 }));
 
@@ -100,6 +96,16 @@ function openDashboard(id: string) {
   featureId.value = "dashboards";
 }
 
+/** Opens a conversation that a scheduled run started; switching the agent first resets the shell's session. */
+async function openScheduledSession(target: { agentId: string; sessionId: string }) {
+  featureId.value = null;
+  if (agentId.value !== target.agentId) {
+    agentId.value = target.agentId;
+    await nextTick();
+  }
+  conversationId.value = target.sessionId;
+}
+
 function appearanceSaved(value: WorkbenchAppearance) {
   appearance.value = value;
   editingBrand.value = false;
@@ -111,6 +117,7 @@ function appearanceSaved(value: WorkbenchAppearance) {
     ref="shell"
     v-model:agent-id="agentId"
     v-model:feature-id="featureId"
+    v-model:session-id="conversationId"
     :workbench="workbench"
     :client="client"
     :labels="labels"
@@ -136,6 +143,7 @@ function appearanceSaved(value: WorkbenchAppearance) {
     <template #feature="{ featureId: page }">
       <DashboardHome v-if="page === 'dashboards'" />
       <AgentSettingsPage v-else-if="page === 'agent-config'" @changed="shell?.reloadAgents()" />
+      <ScheduledTasksPage v-else-if="page === 'schedule'" @open-session="openScheduledSession" />
       <slot v-else name="feature" :feature-id="page" />
     </template>
     <template #artifact-actions="{ artifact }">

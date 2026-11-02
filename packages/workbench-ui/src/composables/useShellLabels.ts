@@ -14,6 +14,7 @@ return computed<ShellLabels>(() => ({
   deleteSession: t("assistant.deleteSession"),
   deleteConfirm: t("assistant.deleteConfirm"),
   unavailable: t("assistant.unavailable"),
+  scheduledSession: t("assistant.scheduledSession"),
   placeholder: t("assistant.placeholder"),
   send: t("assistant.send"),
   stop: t("assistant.stop"),

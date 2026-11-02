@@ -13,6 +13,7 @@ export function actionChatLabels(overrides: Partial<ShellLabels> = {}): ShellLab
     deleteSession: "Delete conversation",
     deleteConfirm: "Delete this conversation?",
     unavailable: "Unavailable",
+    scheduledSession: "Started by a scheduled task",
     placeholder: "Describe the action you want to create…",
     send: "Send",
     stop: "Stop",

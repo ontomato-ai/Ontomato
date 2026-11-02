@@ -1,4 +1,6 @@
 import assistantRouter from "../api/routes/assistant";
+import scheduledTasksRouter from "../api/routes/scheduled-tasks";
+import { startScheduledTaskScheduler } from "../services/scheduled-tasks/scheduler";
 import { registerAssistantSkills } from "../services/assistant/skills";
 import {
   readAssistantTurnEvidence,
@@ -214,6 +216,7 @@ export function createWorkbenchApp(mounts: WorkbenchMounts = {}): Express {
 
   app.use("/api/analysis-tasks", analysisTasksRouter);
   app.use("/api/assistant", assistantRouter);
+  app.use("/api/scheduled-tasks", scheduledTasksRouter);
   if (mounts.connectionRouter)
     app.use("/api/connections", mounts.connectionRouter);
   if (mounts.dataGovernanceRouter)
@@ -285,6 +288,7 @@ export async function startWorkbench(
   await registerAssistantSkills();
 
   startArtifactCleanupScheduler();
+  startScheduledTaskScheduler();
   logger.info(tApp("foundation.log.boot.cleanupStarted"));
   app.listen(port, () => {
     logger.info(`Server running on http://localhost:${port}`);

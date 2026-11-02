@@ -772,6 +772,7 @@ export default {
     "deleteSession": "Delete conversation",
     "deleteConfirm": "Delete?",
     "unavailable": "Unavailable",
+    "scheduledSession": "Started by a scheduled task",
     "placeholder": "Ask anything about your data…",
     "send": "Send",
     "stop": "Stop",
@@ -848,5 +849,90 @@ export default {
     "relatedClassesHint": "Leave empty to use all classes available to the current user. Queries stay within the selected classes.",
     "deleteConfirm": "Delete the agent “{name}”? Its conversations remain in history.",
     "builtinSkills": "Built in"
+  },
+  "scheduledTasks": {
+    "title": "Scheduled tasks",
+    "intro": "Each task gives an agent a prompt on a schedule. Every run starts a new conversation, marked in your conversation list.",
+    "newTask": "New task",
+    "editTask": "Edit task",
+    "create": "Create",
+    "empty": "No scheduled tasks yet",
+    "loadFailed": "Couldn't load scheduled tasks",
+    "prompt": "Prompt",
+    "promptPlaceholder": "What the agent should do each time, e.g. summarize yesterday's orders by region",
+    "promptRequired": "Enter what the agent should do.",
+    "agent": "Agent",
+    "agentRequired": "Choose an agent.",
+    "unknownAgent": "Deleted agent",
+    "frequency": "Frequency",
+    "kind": {
+      "interval": "At an interval",
+      "daily": "Every day",
+      "weekly": "Every week",
+      "monthly": "Every month"
+    },
+    "unit": {
+      "minute": "minutes",
+      "hour": "hours",
+      "day": "days"
+    },
+    "every": {
+      "minute": "Every {n} minute | Every {n} minutes",
+      "hour": "Every {n} hour | Every {n} hours",
+      "day": "Every {n} day | Every {n} days"
+    },
+    "describe": {
+      "daily": "Every day at {time}",
+      "weekly": "Every {weekday} at {time}",
+      "monthly": "Day {day} of every month at {time}"
+    },
+    "intervalHint": "First runs one interval after saving, then on a fixed cadence; missed runs are not made up.",
+    "monthEndHint": "In months without this day it runs on the last day.",
+    "timeZoneHint": "Times follow the server time zone ({zone}).",
+    "mail": "Email the result",
+    "emailPlaceholder": "Email address",
+    "emailInvalid": "Enter a valid email address.",
+    "on": "On",
+    "off": "Off",
+    "toggle": "Run on schedule",
+    "resume": "Resume",
+    "paused": {
+      "credential_invalid": "Paused: credential expired",
+      "agent_unavailable": "Paused: agent unavailable"
+    },
+    "nextRun": "Next run {time}",
+    "lastRun": "Last run {time}",
+    "runNow": "Run now",
+    "runStarted": "The run has started; its conversation is in your list.",
+    "history": "History",
+    "runsLoadFailed": "Couldn't load the run history",
+    "noRuns": "No runs yet",
+    "openConversation": "Open conversation",
+    "runStatus": {
+      "running": "Running",
+      "completed": "Completed",
+      "failed": "Failed"
+    },
+    "trigger": {
+      "schedule": "On schedule",
+      "manual": "Run manually"
+    },
+    "error": {
+      "credential_invalid": "The background credential no longer works. Open Scheduled tasks while signed in to renew it.",
+      "agent_unavailable": "The agent is disabled or deleted.",
+      "dependency_unavailable": "A required service was unavailable.",
+      "start_failed": "The conversation could not start.",
+      "run_failed": "The run ended with an error.",
+      "interrupted": "The run was interrupted."
+    },
+    "deleteConfirm": "Delete this scheduled task? Conversations it started stay in your history.",
+    "failure": {
+      "request": "The request failed. Please try again.",
+      "agentDisabled": "The agent is disabled.",
+      "notFound": "The task or its agent no longer exists.",
+      "limit": "You have reached the limit of scheduled tasks.",
+      "busy": "The previous run is still running.",
+      "loginRequired": "Sign in again to schedule tasks."
+    }
   }
 };

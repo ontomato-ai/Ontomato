@@ -69,6 +69,7 @@ export const englishGovernance: GovernanceMessages = {
     "deleteSession": "Delete conversation",
     "deleteConfirm": "Delete?",
     "unavailable": "Unavailable",
+    "scheduledSession": "Started by a scheduled task",
     "placeholder": "Ask anything about your data…",
     "send": "Send",
     "stop": "Stop",

@@ -71,6 +71,8 @@ export const agentHostSessionSchema = z
     createdAt: runtimeTimestampSchema,
     updatedAt: runtimeTimestampSchema,
     latestRun: agentHostRunStatusSchema.nullable(),
+    /** How the session was started; absent means by its user. scheduled: by one of the user's scheduled tasks. */
+    origin: z.enum(["user", "scheduled"]).optional(),
   })
   .strict();
 export const agentHostSessionSnapshotSchema = z
