@@ -43,3 +43,13 @@ test("Python business failures retain their corrective feedback", async () => {
   await assert.rejects(generationCommand(["reset"], env,
     async () => Response.json({ error: "Unknown class /Order; inspect the schema first" })), /Unknown class \/Order/);
 });
+
+test("helpers renders the canonical API without a run gate", async () => {
+  const result = await generationCommand(["helpers"], { ONTOMATO_ONTOLOGY_URL: "http://ontology.invalid/" },
+    async (url, options) => {
+      assert.equal(url, "http://ontology.invalid/ontology/ai/generation/helpers");
+      assert.equal(options.method, "GET");
+      return Response.json({ markdown: "# Python helper API\n\ndef query(dsl):" });
+    });
+  assert.match(result.markdown, /def query\(dsl\):/);
+});

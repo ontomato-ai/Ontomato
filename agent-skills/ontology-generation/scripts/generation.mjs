@@ -8,7 +8,7 @@ export async function generationCommand(args, env = process.env, request = fetch
   if (!base) throw new Error("Set ONTOMATO_ONTOLOGY_URL");
   const statePath = "work/.ontology-generation.json";
   let state = env.ONTOMATO_GENERATION_ID ? { runId: env.ONTOMATO_GENERATION_ID } : null;
-  if (!state && command !== "begin") state = JSON.parse(await readFile(statePath, "utf8"));
+  if (!state && command !== "begin" && command !== "helpers") state = JSON.parse(await readFile(statePath, "utf8"));
   const bodyFile = async (name) => JSON.parse(await readFile(name.replace(/^@/, ""), "utf8"));
   let route, body;
   switch (command) {
@@ -27,7 +27,8 @@ export async function generationCommand(args, env = process.env, request = fetch
     case "query": body = { dsl: await bodyFile(values[0]) }; break;
     case "reset": case "close": body = {}; break;
     case "source": break;
-    default: throw new Error("Commands: begin, source, test, prepare, reset, query, close");
+    case "helpers": route = "/helpers"; body = undefined; break;
+    default: throw new Error("Commands: begin, helpers, source, test, prepare, reset, query, close");
   }
   route ??= `/${state.runId}/${command}`;
   const response = await request(base + "/ontology/ai/generation" + route, {

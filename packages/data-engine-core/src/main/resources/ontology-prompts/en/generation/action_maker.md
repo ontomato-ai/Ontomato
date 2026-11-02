@@ -38,6 +38,7 @@ that does not decide whether the action is delivered.
 You can use the following tools multiple times to obtain the attribute definitions and relationship definitions you want to know
 - Tool for getting object class attribute definitions: the analyst `schema` command (attribute definitions for the specified classes)
 - Tool for getting relationship definitions: the analyst `relationships` command (direct relationships involving the specified classes)
+- Tool for getting current DSL syntax: the analyst `dsl-reference` command (class-specific grammar and examples)
 
 ## DSL Syntax
 {{DSL_RULE}}
@@ -253,15 +254,13 @@ The host supplies authorization and business parameters; do not accept user/doma
 # ontomato-python:2
 from query_runtime import (parameters as params, query, insert, update, delete,
                            createEdge, deleteEdge, appendVector, updateVector, deleteVector)
-# Implement the approved action using these helpers.
+# Run the ontology-generation skill's `helpers` command for exact signatures.
+# query(dsl) takes one DSL object, not a class name; `where` belongs only to update/delete.
 ```
 Vector helper arguments carry text or fileBase64; they do not reference Java host files.
 
-### where Condition Format
-The `where` condition format of `update`/`delete` is as follows:
-- Single-attribute condition: `{"field": "attribute name", "operator": "operator", "value": value}`, the operators include `=`, `!=`, `>`, `>=`, `<`, `<=`, `between`, `like`, `in`, `is`, `is not`
-- For `between`, value is a two-element array; for `in`, value is an array; for `is`/`is not`, value is null
-- Multi-attribute condition (logic): `{"operator": "logic", "and": [single-attribute condition...]}` or `{"operator": "logic", "or": [single-attribute condition...]}`, nestable
+### where conditions
+`where` is only a parameter of `update`/`delete`; its exact shape is in the `helpers` output. It is not a parameter of `query`.
 
 ### Notes on Writing
 - **`insert` and `update` write ONLY non-vector attributes.** To attach / update / delete vector files, use `appendVector` / `updateVector` / `deleteVector` exclusively. Never put a vector attribute into `insert`'s rows or `update`'s `setValues` — `insert` silently ignores it, and `update` raises an error.
