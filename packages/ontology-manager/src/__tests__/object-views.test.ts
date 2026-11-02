@@ -40,6 +40,21 @@ describe("object view bindings and documents", () => {
     document.tabs[0].sections[0].widgets[0].span = 13;
     expect(objectViewDocumentSchema.safeParse(document).success).toBe(false);
   });
+  it.each([
+    [undefined, true], [null, true], ["", true], [0, false], [false, false], [" ", false], [[], false], [{}, false],
+  ])("keeps presence and emptiness complementary for %j", (value, empty) => {
+    const binding = { source: "variable" as const, path: "value" };
+    expect(viewConditionMatches({ binding, operator: "empty", value: "" }, {}, { value })).toBe(empty);
+    expect(viewConditionMatches({ binding, operator: "present", value: "" }, {}, { value })).toBe(!empty);
+  });
+  it("compares condition values as text and supports whole-object bindings", () => {
+    const binding = { source: "variable" as const, path: "value" };
+    expect(viewConditionMatches({ binding, operator: "eq", value: "false" }, {}, { value: false })).toBe(true);
+    expect(viewConditionMatches({ binding, operator: "eq", value: "0" }, {}, { value: 0 })).toBe(true);
+    expect(viewConditionMatches({ binding, operator: "ne", value: "" }, {}, {})).toBe(false);
+    const object = { id: "1" };
+    expect(resolveViewBinding({ source: "object", path: "" }, object, {})).toBe(object);
+  });
 });
 
 describe("object view requests", () => {

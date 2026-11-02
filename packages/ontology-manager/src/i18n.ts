@@ -413,6 +413,7 @@ const ontologyEn = {
   staleResponseDropped: "Host context changed; the stale response was discarded",
   knowledgeAdd: "Add Knowledge",
   knowledgeEdit: "Edit Knowledge",
+  knowledgeDesc: "Maintain business rules, terminology and context to support business understanding and queries.",
   knowledgeTitle: "Knowledge Title",
   knowledgeContent: "Knowledge Content",
   knowledgeTags: "Tags",

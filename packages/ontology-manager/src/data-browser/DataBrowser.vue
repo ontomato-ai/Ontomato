@@ -601,6 +601,8 @@ watch(
 
 .toolbar-actions {
   display: flex;
+  flex-wrap: wrap;
+  max-width: 100%;
   align-items: center;
   gap: var(--spacing-md);
   flex-shrink: 0;
@@ -664,10 +666,6 @@ watch(
     max-height: calc(100cqh - 330px) !important;
   }
 
-  .filter-condition {
-    grid-template-columns: minmax(0, 1fr) 28px;
-  }
-
   .filter-condition .el-select:nth-child(2),
   .filter-condition .el-input {
     grid-column: 1 / -1;
@@ -706,6 +704,10 @@ watch(
 .filter-condition .el-input {
   min-width: 0;
   width: 100%;
+}
+
+@container ontology-manager (max-width: 640px) {
+  .filter-condition { grid-template-columns: minmax(0, 1fr) 28px; }
 }
 
 .admin-table :deep(th.el-table__cell .cell) {

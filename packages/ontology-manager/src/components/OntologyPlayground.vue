@@ -1012,7 +1012,7 @@ onBeforeUnmount(() => {
 }
 .graph-toolbar button {
   display: grid;
-  width: 34px;
+  width: 32px;
   height: 32px;
   place-items: center;
   border: 0;
@@ -1111,7 +1111,7 @@ onBeforeUnmount(() => {
   border-radius: 999px;
   color: var(--el-color-primary);
   background: var(--el-color-primary-light-9);
-  font-size: 11px;
+  font-size: var(--text-xs);
   font-weight: var(--font-semibold);
   line-height: 16px;
 }

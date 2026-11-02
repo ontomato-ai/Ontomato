@@ -262,19 +262,22 @@ onMounted(load);
 <template>
   <section class="business-knowledge" :class="{ 'narrow-detail': narrowDetail }">
     <header class="knowledge-titlebar">
-      <h1>{{ t("nav.businessKnowledge") }}</h1>
+      <div class="knowledge-heading">
+        <h1>{{ t("nav.businessKnowledge") }}</h1>
+        <p>{{ ot("knowledgeDesc") }}</p>
+      </div>
       <div class="knowledge-actions">
         <el-button
           v-if="context.knowledgeGovernanceUrl"
+          class="knowledge-governance-button"
           tag="a"
+          :icon="BookOpen"
           :href="context.knowledgeGovernanceUrl"
           target="_top"
         >
-          <BookOpen :size="16" />
           {{ ot("knowledgeGovernance") }}
         </el-button>
-        <el-button type="primary" @click="openCreate">
-          <Plus :size="16" />
+        <el-button type="primary" :icon="Plus" @click="openCreate">
           {{ ot("knowledgeAdd") }}
         </el-button>
       </div>
@@ -453,6 +456,7 @@ onMounted(load);
 
 <style scoped>
 .business-knowledge {
+  min-width: 0;
   display: flex;
   flex: 1;
   flex-direction: column;
@@ -462,6 +466,7 @@ onMounted(load);
 }
 .knowledge-titlebar {
   display: flex;
+  flex-wrap: wrap;
   min-height: 76px;
   align-items: center;
   justify-content: space-between;
@@ -473,11 +478,17 @@ onMounted(load);
   font-size: var(--text-2xl);
   font-weight: var(--font-semibold);
 }
+.knowledge-heading { min-width: 0; }
+.knowledge-heading p { margin: 5px 0 0; color: var(--el-text-color-secondary); font-size: var(--text-sm); line-height: 22px; overflow-wrap: anywhere; }
 .knowledge-actions {
   display: flex;
   flex-wrap: wrap;
+  align-items: center;
   gap: var(--spacing-sm);
 }
+.knowledge-actions :deep(.el-button + .el-button) { margin-inline-start: 0; }
+.knowledge-governance-button { text-decoration: none; }
+.knowledge-governance-button:hover, .knowledge-governance-button:focus { text-decoration: none; }
 .business-knowledge :deep(.el-button) {
   display: inline-flex;
   align-items: center;
@@ -500,6 +511,7 @@ onMounted(load);
 }
 .knowledge-filters {
   display: flex;
+  flex-wrap: wrap;
   gap: var(--spacing-xs);
 }
 .knowledge-filter {
@@ -535,6 +547,7 @@ onMounted(load);
   border-radius: var(--radius-sm);
 }
 .knowledge-list {
+  min-width: 0;
   overflow-y: auto;
   border-right: 1px solid var(--el-border-color);
 }
@@ -543,10 +556,11 @@ onMounted(load);
   z-index: 1;
   top: 0;
   display: flex;
+  flex-wrap: wrap;
   min-height: 44px;
   align-items: center;
   gap: var(--spacing-sm);
-  padding: 0 var(--spacing-md);
+  padding: var(--spacing-xs) var(--spacing-md);
   border-bottom: 1px solid var(--el-border-color-light);
   background: var(--el-fill-color-light);
   font-size: var(--text-sm);
@@ -624,10 +638,12 @@ onMounted(load);
   gap: var(--spacing-xs);
 }
 .knowledge-detail {
+  min-width: 0;
   overflow-y: auto;
   padding: var(--spacing-lg) var(--spacing-xl);
 }
 .knowledge-detail h2 {
+  overflow-wrap: anywhere;
   margin: 0;
   color: var(--el-text-color-primary);
   font-size: var(--text-lg);
@@ -635,6 +651,7 @@ onMounted(load);
 }
 .knowledge-detail-head {
   display: flex;
+  flex-wrap: wrap;
   align-items: flex-start;
   justify-content: space-between;
   gap: var(--spacing-md);
@@ -657,6 +674,7 @@ onMounted(load);
 }
 .knowledge-detail-actions {
   display: flex;
+  flex-wrap: wrap;
   justify-content: flex-end;
   gap: var(--spacing-sm);
   margin-top: var(--spacing-xl);
@@ -675,7 +693,7 @@ onMounted(load);
 .knowledge-back {
   display: none;
 }
-@media (max-width: 760px) {
+@container ontology-manager (max-width: 760px) {
   .business-knowledge {
     padding: var(--spacing-lg) var(--spacing-md);
   }

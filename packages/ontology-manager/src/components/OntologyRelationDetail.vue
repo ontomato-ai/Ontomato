@@ -180,10 +180,11 @@ onMounted(() => void loadDetail());
 }
 .detail-titlebar {
   display: flex;
+  flex-wrap: wrap;
   min-height: 64px;
   align-items: center;
   gap: var(--spacing-sm);
-  padding: 0 var(--spacing-2xl);
+  padding: var(--spacing-sm) var(--spacing-2xl);
   border-bottom: 1px solid var(--el-border-color);
   background: var(--el-bg-color);
 }
@@ -249,6 +250,8 @@ h2 {
   font-size: var(--text-sm);
 }
 .endpoint-card {
+  min-width: 0;
+  overflow-wrap: anywhere;
   display: block;
   width: 100%;
   padding: var(--spacing-md);

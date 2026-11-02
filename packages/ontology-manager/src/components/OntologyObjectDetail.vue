@@ -50,7 +50,7 @@ const primaryKeyStatus = computed(() => {
     return { type: "warning" as const, message: ot("primaryKeyDisabled") };
   }
   return {
-    type: "success" as const,
+    type: "info" as const,
     message: ot("primaryKeyLabel", { name: primaryKeys[0].showName }),
   };
 });
@@ -326,9 +326,11 @@ onMounted(() => void loadDetail());
 }
 .detail-titlebar {
   display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-sm);
   min-height: 64px;
   align-items: center;
-  padding: 0 var(--spacing-2xl);
+  padding: var(--spacing-sm) var(--spacing-2xl);
   border-bottom: 1px solid var(--el-border-color);
   background: var(--el-bg-color);
 }
@@ -381,6 +383,7 @@ onMounted(() => void loadDetail());
 }
 .section-title {
   display: flex;
+  flex-wrap: wrap;
   align-items: flex-start;
   justify-content: space-between;
   gap: var(--spacing-md);
@@ -454,7 +457,7 @@ h2 {
     );
 }
 .detail-table-head {
-  min-height: 36px;
+  min-height: 40px;
   padding: 0 var(--spacing-md);
   border-bottom: 1px solid var(--el-border-color-dark);
   color: var(--el-text-color-secondary);
@@ -543,11 +546,11 @@ h2 {
   }
   .attribute-table .detail-table-head,
   .attribute-table .detail-table-row {
-    grid-template-columns: minmax(150px, 1fr) 80px 20px;
+    grid-template-columns: minmax(0, 1fr) 80px 20px;
   }
   .relation-table .detail-table-head,
   .relation-table .detail-table-row {
-    grid-template-columns: minmax(150px, 1fr) 80px;
+    grid-template-columns: minmax(0, 1fr) 80px;
   }
   .detail-table-head span:nth-child(3),
   .detail-table-head span:nth-child(4),

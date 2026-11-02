@@ -4,6 +4,8 @@ import { createObjectView, createViewWidget } from "@ontomato/contracts/object-v
 import ObjectViewRuntime from "../object-views/ObjectViewRuntime.vue";
 import ObjectViewBuilder from "../object-views/ObjectViewBuilder.vue";
 import ObjectViewPage from "../object-views/ObjectViewPage.vue";
+import ViewBindingEditor from "../object-views/ViewBindingEditor.vue";
+import type { ViewBinding } from "@ontomato/contracts/object-views";
 import { provideManagerContext, type ManagerHostContext } from "../context";
 import { provideManagerFeedback } from "../feedback";
 import { englishMessages } from "../i18n";
@@ -29,6 +31,23 @@ function mount(child: () => ReturnType<typeof h>) {
 async function settle() { for (let index = 0; index < 12; index++) { await new Promise(resolve => setTimeout(resolve, 0)); await nextTick(); } }
 
 describe("configured object view interaction", () => {
+  it("selects a defined variable and accepts a nested variable path", async () => {
+    const binding = ref<ViewBinding>({ source: "variable", path: "" });
+    const element = mount(() => h(ViewBindingEditor, { modelValue: binding.value, variables: ["filter", "selected"], "onUpdate:modelValue": value => { binding.value = value; } }));
+    await settle();
+    const select = element.querySelectorAll(".el-select")[1];
+    (select.querySelector(".el-select__wrapper") as HTMLElement).click(); await settle();
+    Array.from(document.querySelectorAll<HTMLElement>(".el-select-dropdown__item")).find(item => item.querySelector("span")?.textContent === "filter")!.click();
+    await settle();
+    expect(binding.value).toEqual({ source: "variable", path: "filter" });
+    (select.querySelector(".el-select__wrapper") as HTMLElement).click(); await settle();
+    const input = select.querySelector("input")!;
+    input.value = "selected.name"; input.dispatchEvent(new Event("input", { bubbles: true })); await settle();
+    Array.from(document.querySelectorAll<HTMLElement>(".el-select-dropdown__item")).find(item => item.textContent === "selected.name")!.click();
+    await settle();
+    expect(binding.value).toEqual({ source: "variable", path: "selected.name" });
+    expect(element.textContent).toContain("e.g. selected.name");
+  });
   it("shows a dependent action when a previously missing row-selection variable is assigned", async () => {
     const view = createObjectView("Person");
     const table = createViewWidget("table"); table.variable = "selected"; table.binding = { source: "literal", value: [{ id: "exchange-1", name: "Conference" }] };
@@ -117,6 +136,43 @@ describe("configured object view interaction", () => {
     expect(element.querySelector(".metric")?.textContent).toBe("changed");
     expect(element.textContent).toContain("Now visible");
   });
+  it("searches preview objects within the current class, displays business names and loads by primary key", async () => {
+    const searches: Record<string, unknown>[] = [];
+    const lookups: Record<string, unknown>[] = [];
+    const attrs = [{ name: "id", primaryKey: true }, { name: "name", bizzkeyBool: true }];
+    vi.stubGlobal("fetch", async (url: string, init: RequestInit) => {
+      const body = JSON.parse(String(init.body));
+      if (url.endsWith("getWholeClassDataByPage")) {
+        searches.push(body);
+        return new Response(JSON.stringify({ success: true, data: [{ id: "order-2", name: "Readable order" }], total_count: 1 }));
+      }
+      if (url.endsWith("queryInfoByNode")) lookups.push(body);
+      const data = url.endsWith("/edit") ? { revision: 0, publishedRevision: null, versions: [] }
+        : url.endsWith("getMetas") ? { classDef: [{ className: "Order", showName: "Order", attrs }] }
+        : url.endsWith("queryInfoByNode") ? { classDef: { attrs }, data: { name: body.id === "Order:order-1" ? "Initial order" : "Readable order" } } : [];
+      return new Response(JSON.stringify({ success: true, data }));
+    });
+    const element = mount(() => h(ObjectViewBuilder, { className: "Order", initialPrimaryKey: "order-1" }));
+    await settle();
+    const select = element.querySelector(".preview-object-select")!;
+    expect(select.textContent).toContain("Initial order");
+    (select.querySelector(".el-select__wrapper") as HTMLElement).click();
+    await settle();
+    expect(searches[0]).toMatchObject({ classname: "Order", pagenum: 1, pagecount: 25 });
+    const input = select.querySelector("input")!;
+    input.value = "Readable";
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    await new Promise(resolve => setTimeout(resolve, 350));
+    await settle();
+    expect(searches.at(-1)).toMatchObject({ classname: "Order", search: "Readable" });
+    const option = Array.from(document.querySelectorAll<HTMLElement>(".el-select-dropdown__item")).find(item => item.textContent === "Readable order")!;
+    expect(option).toBeDefined();
+    option.click(); await settle();
+    expect(select.textContent).toContain("Readable order");
+    Array.from(element.querySelectorAll<HTMLButtonElement>(".palette button")).find(button => button.textContent?.trim() === "Load object")!.click();
+    await settle();
+    expect(lookups.at(-1)).toEqual({ id: "Order:order-2", class: "Order" });
+  });
   it("saves and publishes the actual configured layout with optimistic revision", async () => {
     const calls: Array<{ url: string; body: Record<string, any> }> = [];
     vi.stubGlobal("fetch", async (url: string, init: RequestInit) => {
@@ -202,5 +258,20 @@ describe("configured object view interaction", () => {
     field.value = "changed"; field.dispatchEvent(new Event("input", { bubbles: true })); await settle();
     expect(values).toEqual(["initial", "changed"]);
     expect(element.querySelector(".metric")?.textContent).toBe("changed");
+  });
+  it("uses the current binding after clearing a query and never displays the previous query rows", async () => {
+    const view = reactive(createObjectView("Order"));
+    const table = createViewWidget("table"); table.resourceId = "query-1";
+    table.binding = { source: "literal", value: [{ name: "Bound row" }] };
+    view.tabs[0].sections[0].widgets = [table];
+    vi.stubGlobal("fetch", async () => new Response(JSON.stringify({ success: true, data: [{ name: "Query row" }] })));
+    const element = mount(() => h(ObjectViewRuntime, { document: view, object: {}, reference: { className: "Order", primaryKey: "1" } }));
+    await settle();
+    expect(element.textContent).toContain("Query row");
+    expect(element.textContent).not.toContain("Bound row");
+    view.tabs[0].sections[0].widgets[0].resourceId = "";
+    await settle();
+    expect(element.textContent).toContain("Bound row");
+    expect(element.textContent).not.toContain("Query row");
   });
 });

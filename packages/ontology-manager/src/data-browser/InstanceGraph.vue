@@ -1074,9 +1074,9 @@ onBeforeUnmount(() => {
 .graph-toolbar button[aria-pressed="true"] { color: var(--el-color-primary); background: var(--el-color-primary-light-9); }
 .graph-toolbar button {
   display: grid;
-  width: 34px;
-  height: 34px;
-  flex: 0 0 34px;
+  width: 32px;
+  height: 32px;
+  flex: 0 0 32px;
   padding: 0;
   place-items: center;
   border: 0;
@@ -1325,7 +1325,7 @@ onBeforeUnmount(() => {
   height: auto;
   min-height: 32px;
   margin: 0;
-  padding: 8px 12px;
+  padding: 6px 12px;
   white-space: normal;
 }
 .open-object-view span {

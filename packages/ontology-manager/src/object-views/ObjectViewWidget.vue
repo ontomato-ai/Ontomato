@@ -71,6 +71,8 @@ async function load() {
   error.value = "";
   if (!["table", "chart", "metric", "links"].includes(props.widget.kind)) { loading.value = false; return; }
   loading.value = true;
+  data.value = undefined;
+  hasMore.value = false;
   try {
     if (props.widget.kind === "links") {
       if (!props.widget.relation || !props.reference.primaryKey) return;

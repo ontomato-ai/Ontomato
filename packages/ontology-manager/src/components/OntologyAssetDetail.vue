@@ -28,6 +28,7 @@ import type { SmartAsset } from "../api";
 import type { AssetTab } from "../workspace";
 import ActionCodeExplainer from "./codeExplainer/ActionCodeExplainer.vue";
 import BusinessMeaning from "./codeExplainer/BusinessMeaning.vue";
+import SourceCodeEditor from "./SourceCodeEditor.vue";
 import { normalizeBusinessMeaning, normalizeCodeSegments } from "./codeExplainer/codeSegments";
 import { useManagerClient, useOntologyText } from "../context";
 
@@ -653,7 +654,7 @@ onMounted(() => void loadDetail());
           <template v-if="functionRecord">
             <div class="parameter-header">
               <span class="field-label">{{ ot("assetInputParameters") }}</span>
-              <el-button type="primary" plain size="small" :icon="Plus" @click="addParameter">
+              <el-button class="add-parameter-button" :icon="Plus" @click="addParameter">
                 {{ ot("assetAddParameter") }}
               </el-button>
             </div>
@@ -686,7 +687,7 @@ onMounted(() => void loadDetail());
                 <el-input v-model="record.logic" type="textarea" :rows="3" />
               </el-form-item>
               <el-form-item :label="ot('explainerCode')">
-                <el-input v-model="record.code" type="textarea" :rows="14" class="code-input" />
+                <SourceCodeEditor v-model="record.code" />
               </el-form-item>
             </template>
             <template v-else>
@@ -694,12 +695,7 @@ onMounted(() => void loadDetail());
                 <el-input v-model="functionRecord.logic" type="textarea" :rows="3" />
               </el-form-item>
               <el-form-item :label="ot('explainerCode')">
-                <el-input
-                  v-model="functionRecord.code"
-                  type="textarea"
-                  :rows="14"
-                  class="code-input"
-                />
+                <SourceCodeEditor v-model="functionRecord.code" />
               </el-form-item>
             </template>
           </template>
@@ -984,10 +980,11 @@ onMounted(() => void loadDetail());
 }
 .detail-titlebar {
   display: flex;
+  flex-wrap: wrap;
   min-height: 64px;
   align-items: center;
   gap: var(--spacing-sm);
-  padding: 0 var(--spacing-2xl);
+  padding: var(--spacing-sm) var(--spacing-2xl);
   border-bottom: 1px solid var(--el-border-color);
   background: var(--el-bg-color);
 }
@@ -1035,6 +1032,7 @@ onMounted(() => void loadDetail());
   border-radius: var(--radius-sm);
   background: var(--el-bg-color);
 }
+.logic-section { container: asset-logic / inline-size; }
 .section-title {
   display: flex;
   justify-content: space-between;
@@ -1070,10 +1068,26 @@ h2 {
 }
 .parameter-header {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: var(--spacing-md);
-  margin: var(--spacing-sm) 0 var(--spacing-xs);
+  margin: var(--spacing-sm) 0 var(--spacing-md);
+}
+.add-parameter-button {
+  flex-shrink: 0;
+  min-height: 32px;
+  height: auto;
+  max-width: 100%;
+  padding: 5px 12px;
+  font-size: var(--text-sm);
+  line-height: 20px;
+  white-space: normal;
+}
+.add-parameter-button :deep(> span) {
+  min-width: 0;
+  line-height: 20px;
+  overflow-wrap: anywhere;
 }
 .field-label {
   color: var(--el-text-color-secondary);
@@ -1100,7 +1114,16 @@ h2 {
 .parameter-row > .el-button {
   width: 28px;
   min-width: 28px;
+  height: 28px;
+  padding: 6px;
   justify-self: center;
+}
+@container asset-logic (max-width: 640px) {
+  .parameter-row { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 28px; padding: 12px; border: 1px solid var(--el-border-color-light); border-radius: var(--radius-sm); margin-bottom: 12px; }
+  .parameter-row > :nth-child(1) { grid-column: 1; grid-row: 1; }
+  .parameter-row > :nth-child(2) { grid-column: 2; grid-row: 1; }
+  .parameter-row > :nth-child(3), .parameter-row > :nth-child(4), .parameter-row > :nth-child(5) { grid-column: 1 / 3; }
+  .parameter-row > .el-button { grid-column: 3; grid-row: 1; }
 }
 .task-pagination {
   margin-top: var(--spacing-lg);
@@ -1182,16 +1205,6 @@ h2 {
     grid-template-columns: 1fr;
   }
 }
-@container ontology-manager (max-width: 900px) {
-  .parameter-row {
-    grid-template-columns: 1fr 1fr 28px;
-  }
-  .parameter-row .el-input:nth-child(3),
-  .parameter-row .el-input:nth-child(4),
-  .parameter-row .el-input:nth-child(5) {
-    grid-column: span 1;
-  }
-}
 @container ontology-manager (max-width: 640px) {
   .detail-titlebar {
     padding: 0 var(--spacing-md);
@@ -1219,7 +1232,6 @@ h2 {
   .detail-titlebar :deep(.el-button:not(:first-child)) {
     padding-left: var(--spacing-sm);
     padding-right: var(--spacing-sm);
-    font-size: 0;
   }
   .detail-titlebar :deep(.el-button:not(:first-child) .el-icon) {
     margin: 0;

@@ -341,6 +341,7 @@ onMounted(() => {
 }
 .catalog-titlebar {
   display: flex;
+  flex-wrap: wrap;
   min-height: 76px;
   align-items: center;
   justify-content: space-between;
@@ -365,6 +366,7 @@ p {
 }
 .catalog-toolbar {
   display: flex;
+  flex-wrap: wrap;
   min-height: 54px;
   align-items: center;
   gap: var(--spacing-md);
@@ -393,6 +395,7 @@ p {
 }
 .resource-table-head,
 .resource-table-row {
+  min-width: 0;
   display: grid;
   width: 100%;
   align-items: center;
@@ -427,6 +430,7 @@ p {
 .resource-table-row:hover {
   background: var(--el-fill-color-light);
 }
+.resource-table-row > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .attribute-row-group {
   border-bottom: 1px solid var(--el-border-color-light);
 }
@@ -512,13 +516,13 @@ p {
     font-size: var(--text-xl);
   }
   .object-grid {
-    grid-template-columns: minmax(190px, 1fr) 64px 20px;
+    grid-template-columns: minmax(0, 1fr) 64px 20px;
   }
   .attribute-grid {
-    grid-template-columns: minmax(190px, 1fr) minmax(100px, 1fr) 20px;
+    grid-template-columns: minmax(0, 1fr) minmax(80px, 0.7fr) 20px;
   }
   .relation-grid {
-    grid-template-columns: minmax(190px, 1fr) minmax(100px, 1fr) 20px;
+    grid-template-columns: minmax(0, 1fr) minmax(80px, 0.7fr) 20px;
   }
   .resource-table-head span:nth-child(2),
   .resource-table-head span:nth-child(4),
@@ -526,6 +530,8 @@ p {
   .resource-table-row > span:nth-child(4) {
     display: none;
   }
+  .attribute-grid > span:nth-child(3), .attribute-grid > span:nth-child(5) { display: none; }
+  .attribute-grid.resource-table-head > span:nth-child(2) { display: block; }
 }
 @container ontology-manager (max-width: 560px) {
   .catalog-titlebar {
@@ -541,5 +547,6 @@ p {
     align-items: stretch;
     flex-direction: column;
   }
+  .title-actions { width: 100%; justify-content: flex-start; }
 }
 </style>
