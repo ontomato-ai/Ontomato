@@ -4,6 +4,7 @@ import { RuntimeClient } from "../../infrastructure/agent-runtime/client";
 import { runWithLogContext } from "../../logging/log-context";
 import { createLogger } from "../../logging/logger";
 import { finalText } from "../../platform/agent-runtime/runtime";
+import { runOutcome } from "../../platform/agent-runtime/projection";
 import { AuthFailedError } from "../../utils/backend-client";
 import { HttpError, toErrorMessage } from "../../utils/errors";
 import { assistantService } from "../assistant/service";
@@ -105,7 +106,7 @@ export async function startScheduledRun(
 function startFailure(error: unknown): StartFailure {
   if (error instanceof HttpError && error.code === "AGENT_DISABLED")
     return new StartFailure({ code: "agent_unavailable", message: error.message });
-  if (error instanceof AuthFailedError || (error instanceof HttpError && error.status === 401))
+  if ((error instanceof AuthFailedError || error instanceof HttpError) && error.status === 401)
     return new StartFailure({ code: "credential_invalid", message: error.message });
   return new StartFailure({ code: "start_failed", message: toErrorMessage(error) });
 }
@@ -152,7 +153,7 @@ async function settle(run: RunRecord & { task: TaskRecord }, now: number) {
     return;
   }
   if (snapshot.run.status !== "stopped") return;
-  const ok = snapshot.run.stopReason === "stop";
+  const ok = runOutcome(snapshot.run) === "completed";
   await finish(
     run,
     ok ? null : { code: "run_failed", message: snapshot.run.errorMessage ?? snapshot.run.stopReason ?? "" },
