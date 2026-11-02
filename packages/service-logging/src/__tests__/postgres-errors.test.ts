@@ -2,7 +2,9 @@ import pg from "pg";
 import { afterEach, expect, it, vi } from "vitest";
 import { ServiceLogStore } from "../postgres";
 
-afterEach(() => vi.restoreAllMocks());
+afterEach(() => {
+  vi.restoreAllMocks();
+});
 
 it("contains log database client errors while checked out and idle", async () => {
   // Inject a real pool with no network connection into the log store.
