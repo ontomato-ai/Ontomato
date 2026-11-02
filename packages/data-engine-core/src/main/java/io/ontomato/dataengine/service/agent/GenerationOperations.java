@@ -333,6 +333,8 @@ public class GenerationOperations {
                     domainId);
               }
             }
+          } catch (RuntimeException error) {
+            throw error;
           } catch (Exception error) {
             throw new IllegalStateException(error);
           }
@@ -358,6 +360,8 @@ public class GenerationOperations {
             QueryPermissions.authorizeInputs(analysis, permission, definitions);
             var restricted = (JSONObject) DslPermissionUtil.addRowPermission("[" + query.toJSONString() + "]", definitions, permission)[0];
             return QueryPermissions.response(writes.query(restricted, sandbox(row), owner.domainId()), analysis, permission, false);
+          } catch (RuntimeException error) {
+            throw error;
           } catch (Exception error) {
             throw new IllegalStateException(error);
           }
