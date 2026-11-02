@@ -361,11 +361,18 @@ public class ActionDraftService {
                 null)
             .getJSONArray("artifacts");
     if (artifacts == null || artifacts.isEmpty()) return null;
-    var artifact = artifacts.getJSONObject(artifacts.size() - 1);
-    if (!run.equals(artifact.getString("runId")) || !session.equals(artifact.getString("sessionId")))
-      throw new AgentHttpException(422, "INVALID_RESULT", "Inherited files are not run results");
-    return new String(
-        runtime.bytes(domain, run, "/v1/artifacts/" + artifact.getString("id") + "/content"),
-        StandardCharsets.UTF_8);
+    // The session workspace is persistent, so the artifacts endpoint may return a file from an
+    // earlier run. It is not a delivery of this run. If only inherited artifacts exist, this run
+    // wrote no result; the caller then falls back to the newest draft in the session.
+    for (int i = artifacts.size() - 1; i >= 0; i--) {
+      var artifact = artifacts.getJSONObject(i);
+      if (run.equals(artifact.getString("runId"))
+          && session.equals(artifact.getString("sessionId"))) {
+        return new String(
+            runtime.bytes(domain, run, "/v1/artifacts/" + artifact.getString("id") + "/content"),
+            StandardCharsets.UTF_8);
+      }
+    }
+    return null;
   }
 }
