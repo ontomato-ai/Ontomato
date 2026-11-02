@@ -18,8 +18,15 @@ import io.ontomato.dataengine.dataAdapter.DataAdapter;
 import io.ontomato.dataengine.dataAdapter.DataAdapterRegistry;
 import io.ontomato.dataengine.service.AdminService;
 import io.ontomato.dataengine.service.BusinessConfigService;
+import io.ontomato.dataengine.service.sys.bean.permission.UserDataPermission;
 
 class LiveInstanceGraphTest {
+    private static UserDataPermission fullPermission() {
+        var permission = new UserDataPermission();
+        permission.setFullData(true);
+        return permission;
+    }
+
     @Test void overviewCountsThenUsesBoundedDslAndSharesStatistics() throws Exception {
         var admin = mock(AdminService.class);
         var configs = mock(BusinessConfigService.class);
@@ -44,7 +51,12 @@ class LiveInstanceGraphTest {
             JSONArray answer = new JSONArray();
             JSONObject row = new JSONObject();
             if (count) { row.put("cnt", 1); }
-            else if (edge) { row.put("source", "1"); row.put("target", "1"); row.put("pk", "1"); row.put("name", "Entity"); }
+            else if (edge) {
+                for (Object value : step.getJSONObject("output").getJSONArray("fields")) {
+                    String key = JSONObject.from(value).getString("as");
+                    row.put(key, key.equals("name") ? "Entity" : "1");
+                }
+            }
             else { row.put("pk", "1"); row.put("name", "Entity"); }
             answer.add(row);
             JSONObject envelope = new JSONObject();
@@ -52,7 +64,7 @@ class LiveInstanceGraphTest {
             return JSONArray.of(envelope).toJSONString();
         });
         var service = new LiveInstanceGraph(admin, configs, adapters);
-        var response = service.query("summary", new JSONObject(), "test");
+        var response = service.query("summary", new JSONObject(), fullPermission(), "test");
         assertTrue(response.getBooleanValue("success"));
         assertEquals(1, response.getJSONObject("data").getJSONArray("overviewNodes").size());
         assertEquals(1, response.getJSONObject("data").getJSONArray("overviewEdges").size());
@@ -68,14 +80,14 @@ class LiveInstanceGraphTest {
         assertTrue(edgeStep.getJSONObject("graph").getJSONArray("patterns").getJSONObject(0).containsKey("relationship"));
         assertEquals("/univ_demo/org", edgeStep.getJSONObject("graph").getJSONArray("patterns").getJSONObject(0)
                 .getJSONArray("objects").getJSONObject(1).getString("class"));
-        assertEquals(1, service.query("statistics", new JSONObject(), "test").getJSONObject("data").getLongValue("nodeCount"));
+        assertEquals(1, service.query("statistics", new JSONObject(), fullPermission(), "test").getJSONObject("data").getLongValue("nodeCount"));
         // A second overview and its statistics reuse the cached snapshot instead of querying the datasource again.
-        service.query("summary", new JSONObject(), "test");
-        service.query("statistics", new JSONObject(), "test");
-        JSONObject search = service.query("search", JSONObject.of("class", "/univ_demo/org"), "test");
+        service.query("summary", new JSONObject(), fullPermission(), "test");
+        service.query("statistics", new JSONObject(), fullPermission(), "test");
+        JSONObject search = service.query("search", JSONObject.of("class", "/univ_demo/org"), fullPermission(), "test");
         assertTrue(search.getBooleanValue("success"), search.toJSONString());
         assertEquals("/univ_demo/org:1", search.getJSONObject("data").getJSONArray("nodes").getJSONObject(0).getString("id"));
-        service.query("search", JSONObject.of("term", "Entity"), "test");
+        service.query("search", JSONObject.of("term", "Entity"), fullPermission(), "test");
         JSONObject searchStep = JSON.parseArray(dsls.get(dsls.size() - 1)).getJSONObject(0)
                 .getJSONObject("answer").getJSONArray("steps").getJSONObject(0);
         JSONObject searchConditions = searchStep.getJSONObject("graph").getJSONArray("patterns").getJSONObject(0)
@@ -83,7 +95,7 @@ class LiveInstanceGraphTest {
         // M3 needs the logic marker; without it the engine reads a leaf with no field and emits "n". null.
         assertEquals("logic", searchConditions.getString("operator"));
         assertFalse(searchConditions.getJSONArray("or").isEmpty());
-        JSONObject neighborhood = service.query("neighborhood", JSONObject.of("id", "/univ_demo/org:1"), "test");
+        JSONObject neighborhood = service.query("neighborhood", JSONObject.of("id", "/univ_demo/org:1"), fullPermission(), "test");
         assertTrue(neighborhood.getBooleanValue("success"), neighborhood.toJSONString());
         assertFalse(neighborhood.getJSONObject("data").getJSONArray("edges").isEmpty());
         // Neighbour reads ask only for the requested page plus one probe row per relation side.
@@ -126,11 +138,11 @@ class LiveInstanceGraphTest {
                 for (int i = 0; i <= 2000; i++) rows.add(JSONObject.of("source", "1", "target", "1"));
             } else {
                 int limit = output.getJSONObject("limit").getIntValue("count");
-                for (int i = 0; i < limit; i++) rows.add(JSONObject.of("pk", String.valueOf(i)));
+                for (int i = 0; i < limit; i++) rows.add(JSONObject.of("pk", String.valueOf(i), "name", String.valueOf(i)));
             }
             return JSONArray.of(JSONObject.of("answer", rows)).toJSONString();
         });
-        JSONObject result = new LiveInstanceGraph(admin, configs, adapters).query("summary", new JSONObject(), "test");
+        JSONObject result = new LiveInstanceGraph(admin, configs, adapters).query("summary", new JSONObject(), fullPermission(), "test");
         assertTrue(result.getBooleanValue("success"), result.toJSONString());
         JSONObject data = result.getJSONObject("data");
         assertEquals(2000, data.getJSONArray("overviewEdges").size());
@@ -160,7 +172,7 @@ class LiveInstanceGraphTest {
             return JSONArray.of(JSONObject.of("answer", JSONArray.of(JSONObject.of("cnt", 10 + value))))
                     .toJSONString();
         });
-        JSONObject result = new LiveInstanceGraph(admin, configs, adapters).query("statistics", new JSONObject(), "test");
+        JSONObject result = new LiveInstanceGraph(admin, configs, adapters).query("statistics", new JSONObject(), fullPermission(), "test");
         assertTrue(result.getBooleanValue("success"), result.toJSONString());
         assertEquals(108, result.getJSONObject("data").getLongValue("nodeCount"));
         JSONArray classes = result.getJSONObject("data").getJSONArray("classes");
@@ -198,11 +210,11 @@ class LiveInstanceGraphTest {
                 for (int i = 0; i < 400; i++) rows.add(JSONObject.of("source", String.valueOf(i), "target", String.valueOf(i)));
             } else {
                 int limit = output.getJSONObject("limit").getIntValue("count");
-                for (int i = 0; i < limit; i++) rows.add(JSONObject.of("pk", String.valueOf(i)));
+                for (int i = 0; i < limit; i++) rows.add(JSONObject.of("pk", String.valueOf(i), "name", String.valueOf(i)));
             }
             return JSONArray.of(JSONObject.of("answer", rows)).toJSONString();
         });
-        JSONObject result = new LiveInstanceGraph(admin, configs, adapters).query("summary", new JSONObject(), "test");
+        JSONObject result = new LiveInstanceGraph(admin, configs, adapters).query("summary", new JSONObject(), fullPermission(), "test");
         assertTrue(result.getBooleanValue("success"), result.toJSONString());
         assertEquals(2000, result.getJSONObject("data").getJSONArray("overviewEdges").size());
         assertTrue(result.getJSONObject("data").getBooleanValue("overviewEdgesTruncated"));
@@ -235,11 +247,11 @@ class LiveInstanceGraphTest {
             } else {
                 int limit = output.getJSONObject("limit").getIntValue("count");
                 limits.put(type, limit);
-                for (int i = 0; i < limit; i++) rows.add(JSONObject.of("pk", String.valueOf(i)));
+                for (int i = 0; i < limit; i++) rows.add(JSONObject.of("pk", String.valueOf(i), "name", String.valueOf(i)));
             }
             return JSONArray.of(JSONObject.of("answer", rows)).toJSONString();
         });
-        JSONObject result = new LiveInstanceGraph(admin, configs, adapters).query("summary", new JSONObject(), "test");
+        JSONObject result = new LiveInstanceGraph(admin, configs, adapters).query("summary", new JSONObject(), fullPermission(), "test");
         assertTrue(result.getBooleanValue("success"), result.toJSONString());
         assertEquals(java.util.Map.of("A", 400, "B", 100), limits);
         assertEquals(500, result.getJSONObject("data").getJSONArray("overviewNodes").size());

@@ -28,6 +28,10 @@ import io.ontomato.dataengine.dataAdapter.DataAdapterRegistry;
 import io.ontomato.dataengine.dataAdapter.DslExecutionMode;
 import io.ontomato.dataengine.service.AdminService;
 import io.ontomato.dataengine.service.BusinessConfigService;
+import io.ontomato.dataengine.service.QueryPermissions;
+import io.ontomato.dataengine.service.QuerySourceAnalysis;
+import io.ontomato.dataengine.service.sys.bean.permission.UserDataPermission;
+import io.ontomato.dataengine.util.DslPermissionUtil;
 import io.ontomato.dataengine.util.DslUtil;
 
 /**
@@ -54,28 +58,30 @@ public class LiveInstanceGraph {
     });
     private record CachedStatistics(long expiresAt, JSONObject data) {}
     private record CachedOverview(long expiresAt, JSONObject data) {}
+    private record CacheKey(String domainId, String version, int connections, String permission) {}
+    private record Reader(DataAdapter adapter, Map<String, Object> schema, UserDataPermission permission) {}
     private record SchemaSnapshot(String version, Map<String, Object> schema,
-            Map<String, ObjectType> types, List<Relation> relations, long expiresAt) {}
-    private final Map<String, CachedStatistics> statisticsCache = new ConcurrentHashMap<>();
-    private final Map<String, CachedOverview> overviewCache = new ConcurrentHashMap<>();
+            Map<String, ObjectType> types, long expiresAt) {}
+    private final Map<CacheKey, CachedStatistics> statisticsCache = new ConcurrentHashMap<>();
+    private final Map<CacheKey, CachedOverview> overviewCache = new ConcurrentHashMap<>();
     private final Map<String, SchemaSnapshot> schemaSnapshots = new ConcurrentHashMap<>();
-    private final Map<String, CompletableFuture<JSONObject>> overviewBuilds = new ConcurrentHashMap<>();
+    private final Map<CacheKey, CompletableFuture<JSONObject>> overviewBuilds = new ConcurrentHashMap<>();
 
     /**
      * Bounded lease pool: each parallel task borrows one adapter instance, so per-adapter caches stay
      * useful while no adapter is ever used by two threads at once.
      */
     private final class AdapterPool {
-        private final Supplier<DataAdapter> factory;
-        private final BlockingQueue<DataAdapter> idle = new LinkedBlockingQueue<>();
+        private final Supplier<Reader> factory;
+        private final BlockingQueue<Reader> idle = new LinkedBlockingQueue<>();
         private int created;
 
-        AdapterPool(Supplier<DataAdapter> factory) {
+        AdapterPool(Supplier<Reader> factory) {
             this.factory = factory;
         }
 
-        DataAdapter acquire() throws InterruptedException {
-            DataAdapter adapter = idle.poll();
+        Reader acquire() throws InterruptedException {
+            Reader adapter = idle.poll();
             if (adapter != null) return adapter;
             synchronized (this) {
                 if (created < PARALLEL_THRESHOLD) {
@@ -91,14 +97,14 @@ public class LiveInstanceGraph {
             return idle.take();
         }
 
-        void release(DataAdapter adapter) {
+        void release(Reader adapter) {
             idle.offer(adapter);
         }
     }
 
     @FunctionalInterface
     private interface AdapterTask<T> {
-        T run(DataAdapter adapter) throws Exception;
+        T run(Reader adapter) throws Exception;
     }
 
     public LiveInstanceGraph(AdminService admin, BusinessConfigService configs, DataAdapterRegistry adapters) {
@@ -117,7 +123,7 @@ public class LiveInstanceGraph {
     }
 
     @SuppressWarnings("unchecked")
-    public JSONObject query(String operation, JSONObject request, String domainId) {
+    public JSONObject query(String operation, JSONObject request, UserDataPermission permission, String domainId) {
         if (!permits.tryAcquire()) throw new IllegalStateException("Graph queries are busy. Please retry.");
         try {
             var config = configs.get(domainId);
@@ -125,7 +131,9 @@ public class LiveInstanceGraph {
             String version = snapshot.version;
             if (request.getString("version") != null && !version.equals(request.getString("version")))
                 return JSONObject.of("success", false, "code", "GRAPH_VERSION_CHANGED", "message", "Ontology changed. Reload the overview.");
-            String cacheKey = domainId + ":" + version + ":" + config.getDataAdapterConnections().hashCode();
+            // Cache and single-flight sharing require the same effective row AND column permissions.
+            CacheKey cacheKey = new CacheKey(domainId, version, config.getDataAdapterConnections().hashCode(),
+                    JSON.toJSONString(permission));
             if ("statistics".equals(operation)) {
                 CachedStatistics cached = statisticsCache.get(cacheKey);
                 if (cached != null && cached.expiresAt > System.currentTimeMillis())
@@ -136,14 +144,20 @@ public class LiveInstanceGraph {
                 if (cached != null && cached.expiresAt > System.currentTimeMillis())
                     return ready(cached.data);
             }
-            DataAdapter adapter = adapters.create(config, snapshot.schema);
-            Supplier<DataAdapter> adapterFactory = () -> adapters.create(config, snapshot.schema);
+            Map<String, ObjectType> types = visibleTypes(snapshot.types, permission);
+            Map<String, ObjectType> nodeTypes = new LinkedHashMap<>();
+            types.forEach((name, type) -> {
+                if (QueryPermissions.allowed(permission, name, type.pk, QueryPermissions.Use.DETAIL)) nodeTypes.put(name, type);
+            });
+            List<Relation> relations = relations(snapshot.schema, nodeTypes);
+            Supplier<Reader> adapterFactory = () -> new Reader(adapters.create(config, snapshot.schema), snapshot.schema, permission);
+            Reader adapter = adapterFactory.get();
             AdapterPool pool = new AdapterPool(adapterFactory);
             JSONObject data = switch (operation) {
-                case "summary" -> cachedOverview(adapter, pool, snapshot.types, snapshot.relations, version, cacheKey);
-                case "statistics" -> cachedStatistics(adapter, pool, snapshot.types, cacheKey);
-                case "search" -> search(adapter, snapshot.types, request, version);
-                case "neighborhood" -> neighborhood(adapter, snapshot.types, snapshot.relations, request, version);
+                case "summary" -> cachedOverview(adapter, pool, types, relations, version, cacheKey);
+                case "statistics" -> cachedStatistics(adapter, pool, types, cacheKey);
+                case "search" -> search(adapter, nodeTypes, request, version);
+                case "neighborhood" -> neighborhood(adapter, nodeTypes, relations, request, version);
                 default -> throw new IllegalArgumentException("Unknown graph operation");
             };
             return ready(data);
@@ -162,8 +176,8 @@ public class LiveInstanceGraph {
     }
 
     /** Cached overview with single-flight: concurrent readers of the same version wait for one build. */
-    private JSONObject cachedOverview(DataAdapter adapter, AdapterPool pool,
-            Map<String, ObjectType> types, List<Relation> relations, String version, String cacheKey) throws Exception {
+    private JSONObject cachedOverview(Reader adapter, AdapterPool pool,
+            Map<String, ObjectType> types, List<Relation> relations, String version, CacheKey cacheKey) throws Exception {
         CachedOverview cached = overviewCache.get(cacheKey);
         if (cached != null && cached.expiresAt > System.currentTimeMillis()) return cached.data;
         CompletableFuture<JSONObject> future = new CompletableFuture<>();
@@ -189,8 +203,8 @@ public class LiveInstanceGraph {
         }
     }
 
-    private JSONObject cachedStatistics(DataAdapter adapter, AdapterPool pool,
-            Map<String, ObjectType> types, String cacheKey) throws Exception {
+    private JSONObject cachedStatistics(Reader adapter, AdapterPool pool,
+            Map<String, ObjectType> types, CacheKey cacheKey) throws Exception {
         CachedStatistics cached = statisticsCache.get(cacheKey);
         if (cached != null && cached.expiresAt > System.currentTimeMillis()) return cached.data;
         JSONObject data = statistics(adapter, pool, types);
@@ -207,9 +221,8 @@ public class LiveInstanceGraph {
         if (cached != null && cached.expiresAt > now) return cached;
         Map<String, Object> schema = admin.getJSONRule(domainId);
         Map<String, ObjectType> types = objectTypes(schema);
-        List<Relation> relations = relations(schema, types);
         String version = Integer.toHexString(schema.toString().hashCode());
-        SchemaSnapshot snapshot = new SchemaSnapshot(version, schema, types, relations, now + SCHEMA_TTL_MS);
+        SchemaSnapshot snapshot = new SchemaSnapshot(version, schema, types, now + SCHEMA_TTL_MS);
         schemaSnapshots.put(domainId, snapshot);
         return snapshot;
     }
@@ -217,6 +230,20 @@ public class LiveInstanceGraph {
     // ----------------------------------------------------------------------------------
     // Schema parsing
     // ----------------------------------------------------------------------------------
+
+    private Map<String, ObjectType> visibleTypes(Map<String, ObjectType> types, UserDataPermission permission) {
+        Map<String, ObjectType> visible = new LinkedHashMap<>();
+        for (ObjectType type : types.values()) {
+            if (!QueryPermissions.classAllowed(permission, type.name)
+                    || !QueryPermissions.allowed(permission, type.name, type.pk, QueryPermissions.Use.AGGREGATE)) continue;
+            String label = QueryPermissions.allowed(permission, type.name, type.label, QueryPermissions.Use.DETAIL)
+                    ? type.label : type.pk;
+            List<String> searchFields = type.searchFields.stream()
+                    .filter(field -> QueryPermissions.allowed(permission, type.name, field, QueryPermissions.Use.DETAIL)).toList();
+            visible.put(type.name, new ObjectType(type.name, type.pk, label, searchFields));
+        }
+        return visible;
+    }
 
     @SuppressWarnings("unchecked")
     private Map<String, ObjectType> objectTypes(Map<String, Object> schema) {
@@ -265,18 +292,24 @@ public class LiveInstanceGraph {
     // Operations
     // ----------------------------------------------------------------------------------
 
-    private JSONObject overview(DataAdapter adapter, AdapterPool pool,
-            Map<String, ObjectType> types, List<Relation> relations, String version, String cacheKey) throws Exception {
+    private JSONObject overview(Reader adapter, AdapterPool pool,
+            Map<String, ObjectType> types, List<Relation> relations, String version, CacheKey cacheKey) throws Exception {
         JSONObject statistics = cachedStatistics(adapter, pool, types, cacheKey);
         Map<String, Long> counts = new LinkedHashMap<>();
         for (Object raw : statistics.getJSONArray("classes")) {
             JSONObject item = (JSONObject) raw;
             counts.put(item.getString("class"), item.getLongValue("instanceCount"));
         }
-        Map<String, Integer> quotas = InstanceGraphSampling.quotas(counts);
+        Map<String, Long> sampleCounts = new LinkedHashMap<>();
+        types.forEach((name, type) -> {
+            // A node ID embeds its primary key, so aggregate-only access cannot expose a node.
+            if (QueryPermissions.allowed(adapter.permission, name, type.pk, QueryPermissions.Use.DETAIL))
+                sampleCounts.put(name, counts.get(name));
+        });
+        Map<String, Integer> quotas = InstanceGraphSampling.quotas(sampleCounts);
         Map<String, List<JSONObject>> sampled = new LinkedHashMap<>();
         List<ObjectType> sampledTypes = types.values().stream()
-                .filter(type -> quotas.get(type.name) > 0).toList();
+                .filter(type -> quotas.getOrDefault(type.name, 0) > 0).toList();
         if (sampledTypes.size() >= PARALLEL_THRESHOLD) {
             List<AdapterTask<List<JSONObject>>> tasks = sampledTypes.stream()
                     .map(type -> (AdapterTask<List<JSONObject>>) taskAdapter ->
@@ -357,7 +390,7 @@ public class LiveInstanceGraph {
                 "target", relation.to.name + ":" + row.getString("target"), "type", relation.type));
     }
 
-    private JSONObject statistics(DataAdapter adapter, AdapterPool pool,
+    private JSONObject statistics(Reader adapter, AdapterPool pool,
             Map<String, ObjectType> types) throws Exception {
         Map<String, Long> counts = new LinkedHashMap<>();
         if (types.size() >= PARALLEL_THRESHOLD) {
@@ -378,14 +411,14 @@ public class LiveInstanceGraph {
         return JSONObject.of("nodeCount", total, "classes", classes);
     }
 
-    private long countRows(DataAdapter adapter, ObjectType type) throws Exception {
+    private long countRows(Reader adapter, ObjectType type) throws Exception {
         JSONObject dsl = dsl(objects(object(0, "n", type.name, null)), null,
                 fields(aggField("n", type.pk, "count", "cnt")), null, null);
         List<JSONObject> rows = runDsl(adapter, dsl);
         return rows.isEmpty() ? 0 : ((Number) rows.get(0).get("cnt")).longValue();
     }
 
-    private List<JSONObject> sampleRows(DataAdapter adapter, ObjectType type, int quota) throws Exception {
+    private List<JSONObject> sampleRows(Reader adapter, ObjectType type, int quota) throws Exception {
         JSONObject dsl = dsl(objects(object(0, "n", type.name, null)), null,
                 fields(field("n", type.pk, "pk"), field("n", type.label, "name")),
                 sort(sortField("pk")), limit(quota, 0));
@@ -399,7 +432,7 @@ public class LiveInstanceGraph {
         var logContext = io.ontomato.dataengine.logging.ServiceLogContext.capture();
         for (AdapterTask<T> task : tasks) {
             futures.add(CompletableFuture.supplyAsync(() -> {
-                DataAdapter taskAdapter;
+                Reader taskAdapter;
                 try {
                     taskAdapter = pool.acquire();
                 } catch (InterruptedException e) {
@@ -429,7 +462,7 @@ public class LiveInstanceGraph {
         return results;
     }
 
-    private JSONObject search(DataAdapter adapter, Map<String, ObjectType> types, JSONObject request, String version) throws Exception {
+    private JSONObject search(Reader adapter, Map<String, ObjectType> types, JSONObject request, String version) throws Exception {
         JSONArray nodes = new JSONArray();
         String term = request.getString("term");
         term = term == null ? "" : term.trim();
@@ -463,7 +496,7 @@ public class LiveInstanceGraph {
         return JSONObject.of("nodes", nodes, "hasMore", more, "version", version);
     }
 
-    private JSONObject neighborhood(DataAdapter adapter, Map<String, ObjectType> types, List<Relation> relations, JSONObject request, String version) throws Exception {
+    private JSONObject neighborhood(Reader adapter, Map<String, ObjectType> types, List<Relation> relations, JSONObject request, String version) throws Exception {
         String id = request.getString("id");
         int separator = id == null ? -1 : id.indexOf(':');
         if (separator < 1) throw new IllegalArgumentException("Invalid instance id");
@@ -559,13 +592,19 @@ public class LiveInstanceGraph {
     // DSL building and execution
     // ----------------------------------------------------------------------------------
 
-    private List<JSONObject> runDsl(DataAdapter adapter, JSONObject dsl) throws Exception {
-        JSONArray dsls = new JSONArray();
-        dsls.add(dsl);
-        String result = adapter.executeDsl(dsls.toJSONString(), UUID.randomUUID().toString(), DslExecutionMode.RAW, new ArrayList<>());
+    @SuppressWarnings("unchecked")
+    private List<JSONObject> runDsl(Reader reader, JSONObject dsl) throws Exception {
+        var definitions = (List<Map<String, Object>>) reader.schema.get("classDef");
+        QueryPermissions.restrictRelations(dsl, reader.schema, reader.permission);
+        JSONObject analysis = QuerySourceAnalysis.fromDsl(dsl, definitions);
+        QueryPermissions.authorizeInputs(analysis, reader.permission, definitions);
+        JSONObject restricted = (JSONObject) DslPermissionUtil.addRowPermission(
+                JSONArray.of(dsl).toJSONString(), definitions, reader.permission)[0];
+        String result = reader.adapter.executeDsl(JSONArray.of(restricted).toJSONString(),
+                UUID.randomUUID().toString(), DslExecutionMode.RAW, new ArrayList<>());
         JSONArray answer = JSON.parseArray(result).getJSONObject(0).getJSONArray("answer");
         List<JSONObject> rows = new ArrayList<>();
-        if (answer != null) for (Object raw : answer) rows.add((JSONObject) raw);
+        if (answer != null) for (Object raw : QueryPermissions.mask(answer, analysis, reader.permission)) rows.add((JSONObject) raw);
         return rows;
     }
 

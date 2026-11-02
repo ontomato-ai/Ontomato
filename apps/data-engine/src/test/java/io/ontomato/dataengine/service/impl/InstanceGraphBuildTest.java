@@ -3,6 +3,8 @@ package io.ontomato.dataengine.service.impl;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 import java.nio.file.Path;
+import java.util.Set;
+import java.util.stream.Collectors;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.springframework.test.util.ReflectionTestUtils;
@@ -37,12 +39,16 @@ class InstanceGraphBuildTest {
         DuckDbGraphFixture store = new DuckDbGraphFixture(directory.resolve("graph.db"), "");
         DataServiceImpl service = service(store);
         JSONObject graph = service.cutWholeData("domain", store.config);
-        InstanceGraphIndex index = new InstanceGraphIndex(graph);
-        assertEquals(3, index.summary().getIntValue("nodeCount"));
-        assertEquals(1, index.summary().getIntValue("isolatedNodeCount"));
-        assertEquals(1, index.summary().getIntValue("edgeCount"));
-        assertTrue(index.summary().getBooleanValue("complete"));
-        assertEquals(1, index.search(JSONObject.of("term", "Business name")).getJSONArray("nodes").size());
+        var nodes = graph.getJSONArray("nodes").stream().map(JSONObject::from)
+                .filter(node -> !"virtual_root".equals(node.getString("class"))).toList();
+        assertEquals(Set.of("pump:P1", "pump:P2", "tank:T1"),
+                nodes.stream().map(node -> node.getString("id")).collect(Collectors.toSet()));
+        assertEquals("Business name", nodes.stream().filter(node -> "pump:P1".equals(node.getString("id")))
+                .findFirst().orElseThrow().getString("name"));
+        assertEquals(1, graph.getJSONArray("edges").size());
+        assertEquals("pump:P1", graph.getJSONArray("edges").getJSONObject(0).getString("source"));
+        assertEquals("tank:T1", graph.getJSONArray("edges").getJSONObject(0).getString("target"));
+        assertTrue(graph.getBooleanValue("complete"));
         store.execute("DROP TABLE pump");
         JSONObject failed = service.cutWholeData("domain", store.config);
         assertFalse(failed.getBooleanValue("complete"));

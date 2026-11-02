@@ -53,22 +53,26 @@ public class DataController {
 
 	@GetMapping("/data/instanceGraph/summary")
 	public JSONObject instanceGraphSummary() {
-		return dataService.queryInstanceGraph("summary", new JSONObject(), SystemUtils.getCurUser().getDomainId());
+		return dataService.queryInstanceGraph("summary", new JSONObject(),
+				identityService.getCurrentUserDataPermission(), SystemUtils.getCurUser().getDomainId());
 	}
 
 	@GetMapping("/data/instanceGraph/statistics")
 	public JSONObject instanceGraphStatistics() {
-		return dataService.queryInstanceGraph("statistics", new JSONObject(), SystemUtils.getCurUser().getDomainId());
+		return dataService.queryInstanceGraph("statistics", new JSONObject(),
+				identityService.getCurrentUserDataPermission(), SystemUtils.getCurUser().getDomainId());
 	}
 
 	@PostMapping("/data/instanceGraph/search")
 	public JSONObject instanceGraphSearch(@RequestBody JSONObject param) {
-		return dataService.queryInstanceGraph("search", param, SystemUtils.getCurUser().getDomainId());
+		return dataService.queryInstanceGraph("search", param,
+				identityService.getCurrentUserDataPermission(), SystemUtils.getCurUser().getDomainId());
 	}
 
 	@PostMapping("/data/instanceGraph/neighborhood")
 	public JSONObject instanceGraphNeighborhood(@RequestBody JSONObject param) {
-		return dataService.queryInstanceGraph("neighborhood", param, SystemUtils.getCurUser().getDomainId());
+		return dataService.queryInstanceGraph("neighborhood", param,
+				identityService.getCurrentUserDataPermission(), SystemUtils.getCurUser().getDomainId());
 	}
 	
 	@PostMapping("/data/queryInfoByNode")
