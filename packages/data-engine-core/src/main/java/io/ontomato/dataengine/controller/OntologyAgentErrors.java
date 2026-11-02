@@ -4,6 +4,8 @@ import io.ontomato.dataengine.dataAdapter.DslContractViolationException;
 import io.ontomato.dataengine.service.agent.AgentHttpException;
 import jakarta.servlet.http.HttpServletRequest;
 import java.util.*;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.core.annotation.Order;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;

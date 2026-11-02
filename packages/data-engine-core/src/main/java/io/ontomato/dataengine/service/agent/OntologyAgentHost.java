@@ -128,6 +128,13 @@ public class OntologyAgentHost {
     return result;
   }
 
+  /** A session row names its latest run without carrying the run body: id, status and stop reason only. */
+  public static JSONObject publicRunStatus(JSONObject run) {
+    var result = new JSONObject();
+    for (String name : List.of("id", "status", "stopReason")) result.put(name, run.get(name));
+    return result;
+  }
+
   private JSONObject sessionView(JSONObject row, JSONObject run) {
     return JSONObject.of(
         "id",
@@ -141,7 +148,7 @@ public class OntologyAgentHost {
         "updatedAt",
         Instant.parse(row.getString("updated_at")).toString(),
         "latestRun",
-        run == null ? null : publicRun(run));
+        run == null ? null : publicRunStatus(run));
   }
 
   public JSONObject create(String id, String agent, Owner owner) throws Exception {

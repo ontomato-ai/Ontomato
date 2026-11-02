@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from "vue";
 import { ElButton, ElDialog } from "element-plus";
-import { Plus } from "lucide-vue-next";
 import {
   AgentChatPanel,
   createAgentHostClient,
@@ -223,13 +222,6 @@ async function save() {
   }
 }
 
-function newChat() {
-  sessionId.value = null;
-  draft.value = null;
-  errorText.value = "";
-  chat.value?.reset();
-}
-
 function sendExample(text: string) {
   if (!agentId.value) return;
   chat.value?.send(text);
@@ -254,9 +246,6 @@ function onClosed() {
       <section class="chat">
         <header class="chat-header">
           <strong>{{ ot("actionWizardChatTitle") }}</strong>
-          <el-button text size="small" :icon="Plus" @click="newChat">
-            {{ ot("actionWizardNewChat") }}
-          </el-button>
         </header>
         <div v-if="!draft && !sessionId" class="try-say">
           <p>{{ ot("actionWizardTrySay") }}</p>
