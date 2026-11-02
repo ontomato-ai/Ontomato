@@ -22,9 +22,13 @@ export function getPostgresPool(): pg.Pool {
       max: 20,
       idleTimeoutMillis: 30000,
     });
-    pool.on("error", (err) => {
+    const onConnectionError = (err: Error) => {
       logger.error(tApp("foundation.log.pg.poolError"), err);
-    });
+    };
+    pool.on("error", onConnectionError);
+    // pg removes its idle error listener while a client is checked out.
+    pool.on("acquire", (client) => client.on("error", onConnectionError));
+    pool.on("release", (_err, client) => client.removeListener("error", onConnectionError));
     logger.info(tApp("foundation.log.pg.poolCreated"));
   }
   return pool;
