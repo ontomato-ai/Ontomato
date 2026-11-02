@@ -322,11 +322,11 @@ public class ActionCreationService {
           snapshot = runtime.run(owner.domainId(), run);
           stopped = !"running".equals(snapshot.getJSONObject("run").getString("status"));
         }
-        if (!expired && !stopped && looping(snapshot)) {
+        if (!expired && !stopped && (looping(snapshot) || repeatingTest(run))) {
           log.warn(
               "Cancelling looping action-creation run {} ({} tool calls)",
               run,
-              snapshot.getJSONArray("toolExecutions").size());
+              snapshot == null ? 0 : snapshot.getJSONArray("toolExecutions").size());
           cancel(row.getString("session_id"), run, owner);
           continue;
         }
@@ -354,6 +354,18 @@ public class ActionCreationService {
       if (counts.merge(key, 1, Integer::sum) >= 12) return true;
     }
     return false;
+  }
+
+  /** Re-testing the same code and parameters produces the same digest without progress. */
+  private boolean repeatingTest(String run) {
+    var rows =
+        store.rows(
+            "SELECT digest FROM ontology_generation_tests WHERE run_id=? ORDER BY created_at DESC LIMIT 3",
+            uuid(run));
+    if (rows.size() < 3) return false;
+    String digest = rows.get(0).getString("digest");
+    return digest != null
+        && rows.stream().allMatch(row -> digest.equals(row.getString("digest")));
   }
 
   private void settleAndRelease(String run, String session, Owner owner) {

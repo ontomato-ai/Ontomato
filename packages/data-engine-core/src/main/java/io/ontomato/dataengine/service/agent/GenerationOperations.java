@@ -124,7 +124,7 @@ public class GenerationOperations {
         for (Map<String, Object> row : rows) {
           for (String key : row.keySet()) {
             if (!attrNameSet.contains(key)) {
-              throw new Exception(
+              throw AgentHttpException.invalid(
                   "The row of Class["
                       + className
                       + "] has a property["
@@ -138,15 +138,15 @@ public class GenerationOperations {
             String id = ((String) row.get(pk));
             for (String cn : classIdsMap.keySet()) {
               if (classIdsMap.get(cn).contains(id)) {
-                throw new Exception("Property[" + pk + "]: " + id + ", is duplicated.");
+                throw AgentHttpException.invalid("Property[" + pk + "]: " + id + ", is duplicated.");
               }
             }
             if (ids.contains(id)) {
-              throw new Exception("Property[" + pk + "]: " + id + ", is duplicated.");
+              throw AgentHttpException.invalid("Property[" + pk + "]: " + id + ", is duplicated.");
             }
             ids.add(id);
           } else {
-            throw new Exception(
+            throw AgentHttpException.invalid(
                 "The row of Class["
                     + className
                     + "] has not primary key property["
@@ -158,7 +158,7 @@ public class GenerationOperations {
         }
         classIdsMap.put(className, ids);
       } else {
-        throw new Exception("Class[" + className + "] is not exist.");
+        throw AgentHttpException.invalid("Class[" + className + "] is not exist.");
       }
     }
 
@@ -176,7 +176,7 @@ public class GenerationOperations {
         String toClass = relationDef.get("toclass");
         Set<String> fromIds = classIdsMap.get(fromClass);
         if (fromIds == null || !fromIds.contains(sourceObjId)) {
-          throw new Exception(
+          throw AgentHttpException.invalid(
               "The relation data: {relationName:"
                   + relationName
                   + ", sourceObjId: "
@@ -191,7 +191,7 @@ public class GenerationOperations {
         }
         Set<String> toIds = classIdsMap.get(toClass);
         if (toIds == null || !toIds.contains(targetObjId)) {
-          throw new Exception(
+          throw AgentHttpException.invalid(
               "The relation data: {relationName:"
                   + relationName
                   + ", sourceObjId: "
@@ -212,7 +212,7 @@ public class GenerationOperations {
         newRelData.put("targetObjId", targetObjId);
         newRelDatas.add(newRelData);
       } else {
-        throw new Exception("Relation[" + relationName + "] is not exist.");
+        throw AgentHttpException.invalid("Relation[" + relationName + "] is not exist.");
       }
     }
 
@@ -228,15 +228,15 @@ public class GenerationOperations {
         String fileId = (String) vectorData.get("fileId");
         Map<String, Object> classDef = classDefMap.get(className);
         if (classDef == null) {
-          throw new Exception("The vector data: Class[" + className + "] is not exist.");
+          throw AgentHttpException.invalid("The vector data: Class[" + className + "] is not exist.");
         }
         Set<String> ids = classIdsMap.get(className);
         if (ids == null || !ids.contains(objectId)) {
-          throw new Exception(
+          throw AgentHttpException.invalid(
               "The vector data: objectId[" + objectId + "] is not in Class[" + className + "].");
         }
         if (attrName == null || "".equals(attrName.trim())) {
-          throw new Exception("The vector data: attrName is empty.");
+          throw AgentHttpException.invalid("The vector data: attrName is empty.");
         }
         boolean isVectorAttr = false;
         List<Map<String, Object>> attrDefs = (List<Map<String, Object>>) classDef.get("attrs");
@@ -247,7 +247,7 @@ public class GenerationOperations {
           }
         }
         if (!isVectorAttr) {
-          throw new Exception(
+          throw AgentHttpException.invalid(
               "The vector data: attrName["
                   + attrName
                   + "] is not a vector attribute of Class["
@@ -255,7 +255,7 @@ public class GenerationOperations {
                   + "].");
         }
         if (text == null || "".equals(text.trim())) {
-          throw new Exception("The vector data: text is empty.");
+          throw AgentHttpException.invalid("The vector data: text is empty.");
         }
         Map<String, Object> newVectorData = new HashMap<String, Object>();
         newVectorData.put("className", className);
@@ -334,7 +334,7 @@ public class GenerationOperations {
               }
             }
           } catch (Exception error) {
-            throw new IllegalStateException(error);
+            throw AgentHttpException.invalid("Reset failed: " + error.getMessage());
           }
           return JSONObject.of("reset", true);
         });
