@@ -79,7 +79,7 @@ export const adminRoutes = {
     path: "system-agents",
     name: "SystemAgents",
     component: () => import("../features/admin/components/SystemAgents.vue"),
-    meta: { group: "app-capabilities", permissions: ["observer", "business-knowledge"] },
+    meta: { group: "app-capabilities", permissions: ["observer"] },
   },
   mcpService: {
     path: "mcp-service",

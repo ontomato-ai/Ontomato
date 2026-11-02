@@ -365,6 +365,7 @@ export default {
     "codeEditorPlaceholder": "Write your code here"
   },
   "nav": {
+    "knowledge": "Knowledge",
     "systemManagement": "System Management",
     "agentsAndSkills": "Agents and Skills",
     "businessAgents": "Business Agents",
@@ -386,7 +387,7 @@ export default {
   },
   "navDescription": {
     "businessAgents": "The Q&A and analysis assistants business users choose on the chat page. Configure their mode, skills and prompts here.",
-    "systemAgents": "Built-in platform agents that help administrators troubleshoot issues and govern business knowledge.",
+    "systemAgents": "Built-in platform agents that help administrators troubleshoot issues.",
     "skills": "Capability packages agents can call. Analysis skills provide methods or calculations; chart skills render charts.",
     "mcpService": "Connect external tools or make platform capabilities available to other systems.",
     "modelConfig": "Model connections available in this domain, and which model the query engine and each agent role uses.",

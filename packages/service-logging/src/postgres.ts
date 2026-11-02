@@ -44,7 +44,11 @@ export class ServiceLogStore {
     this.table = `"${schema}"."${name}"`;
     this.pool = new pg.Pool({ connectionString, max: 1, connectionTimeoutMillis: 1000,
       statement_timeout: 2000, query_timeout: 2500, idleTimeoutMillis: 30000, allowExitOnIdle: true });
-    this.pool.on("error", () => this.warn("Service log database connection failed"));
+    const onConnectionError = () => this.warn("Service log database connection failed");
+    this.pool.on("error", onConnectionError);
+    // Retention transactions hold a client outside the pool's idle error handler.
+    this.pool.on("acquire", (client) => client.on("error", onConnectionError));
+    this.pool.on("release", (_err, client) => client.removeListener("error", onConnectionError));
   }
 
   start(): void {
