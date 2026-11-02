@@ -169,7 +169,11 @@ final class ActionCodeExplanationValidator {
 			JSONObject limit = object(output.get("limit"), path + ".limit");
 			for (String key : List.of("offset", "count")) {
 				if (limit.get(key) != null) {
-					integer(limit.get(key), path + ".limit." + key);
+					// A limit can be a literal or a descriptive expression such as
+					// "distinct product count + 10". The explanation is documentation, not an
+					// executable query, so do not discard twelve valid segments over one
+					// expression string.
+					integerOrExpression(limit.get(key), path + ".limit." + key);
 				}
 			}
 		}
@@ -214,6 +218,14 @@ final class ActionCodeExplanationValidator {
 	private static int integer(Object value, String path) {
 		require(value instanceof Integer || value instanceof Long, path, "is not an integer");
 		return ((Number) value).intValue();
+	}
+
+	private static void integerOrExpression(Object value, String path) {
+		if (value instanceof Integer || value instanceof Long) {
+			return;
+		}
+		require(value instanceof String && !((String) value).isBlank(), path,
+				"is not an integer or expression");
 	}
 
 	private static JSONObject object(Object value, String path) {
