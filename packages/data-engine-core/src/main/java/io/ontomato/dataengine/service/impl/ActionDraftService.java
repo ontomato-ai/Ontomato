@@ -120,8 +120,19 @@ public class ActionDraftService {
       throw new AgentHttpException(409, "RUN_STILL_RUNNING", "The action creation run is still running");
 
     String resultText = fileOrNull(owner.domainId(), sessionId, runId, "outputs/result.json");
-    // A conversational turn may only answer a question; it does not replace the current draft.
-    if (resultText == null) return JSONObject.of("draftId", null, "noDraft", true);
+    // A conversational turn may only answer a question or refresh the explanation. It does not
+    // replace the current draft, but the refreshed draft must still reach the right-hand pane.
+    if (resultText == null) {
+      var latest =
+          store.rows(
+              "SELECT * FROM action_drafts WHERE session_id=? AND owner_id=? AND domain_id=?"
+                  + " AND consumed_at IS NULL AND expires_at>now() ORDER BY created_at DESC LIMIT 1",
+              uuid(sessionId),
+              owner.userId(),
+              owner.domainId());
+      if (!latest.isEmpty()) return view(latest.get(0));
+      return JSONObject.of("draftId", null, "noDraft", true);
+    }
     JSONObject result = parse(resultText);
     String sourcePath = result.getString("sourcePath");
     if (sourcePath == null || !sourcePath.startsWith("outputs/") || !sourcePath.endsWith(".py"))
@@ -142,12 +153,7 @@ public class ActionDraftService {
             owner.domainId(),
             draftHash);
     if (!existing.isEmpty() && !existing.get(0).getBooleanValue("explanation_missing")) {
-      JSONObject row = existing.get(0);
-      return JSONObject.of(
-          "draftId", row.getString("id"),
-          "action", JSON.parseObject(row.getString("action"), Action.class),
-          "definition", JSON.parseObject(row.getString("definition")),
-          "explanationMissing", false);
+      return view(existing.get(0));
     }
     String name = result.getString("name");
     String logic = result.getString("logic");
@@ -305,6 +311,14 @@ public class ActionDraftService {
   @Scheduled(fixedDelay = 3_600_000L)
   public void cleanup() {
     store.update("DELETE FROM action_drafts WHERE expires_at < now() - interval '1 day'");
+  }
+
+  private JSONObject view(JSONObject row) {
+    return JSONObject.of(
+        "draftId", row.getString("id"),
+        "action", JSON.parseObject(row.getString("action"), Action.class),
+        "definition", JSON.parseObject(row.getString("definition")),
+        "explanationMissing", row.getBooleanValue("explanation_missing"));
   }
 
   private JSONObject parse(String text) {
