@@ -46,7 +46,8 @@ Charts execute the template's enabled visualization Skill through the workbench
 `/api/skills/:id/render` endpoint and embed its returned HTML. Skill selection and
 execution use the current domain and credentials. The Manager never imports server
 Skill code. Its gateway must route `/skills` and `/echart` under the API base to
-the workbench (container setting `WORKBENCH_ORIGIN`, default `http://data-agent:3000`).
+the workbench (container setting `WORKBENCH_ORIGIN`; `deploy/docker-compose.yml` sets it to
+`http://ontomato:3000`, and the image default is `http://data-agent:3000`).
 MetricView reads still go directly to the data engine.
 
 Point maps select the `leaflet` visualization Skill and `leaflet-map` chart type.
