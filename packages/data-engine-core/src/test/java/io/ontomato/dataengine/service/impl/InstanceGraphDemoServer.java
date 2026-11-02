@@ -5,10 +5,8 @@ import com.alibaba.fastjson2.JSONObject;
 import com.sun.net.httpserver.HttpServer;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
-import java.lang.reflect.Field;
-import java.util.Map;
 
-/** Local-only synthetic fixture; graph requests execute the production service and index. */
+/** Local-only synthetic fixture; graph requests execute the synthetic index without a production service. */
 public final class InstanceGraphDemoServer {
     public static void main(String[] args) throws Exception {
         JSONArray nodes = new JSONArray(), edges = new JSONArray();
@@ -30,12 +28,6 @@ public final class InstanceGraphDemoServer {
         graph.put("nodes", nodes);
         graph.put("edges", edges);
         InstanceGraphIndex index = new InstanceGraphIndex(graph);
-        DataServiceImpl service = new DataServiceImpl();
-        Field field = DataServiceImpl.class.getDeclaredField("instanceGraphIndexes");
-        field.setAccessible(true);
-        @SuppressWarnings("unchecked")
-        Map<String, InstanceGraphIndex> indexes = (Map<String, InstanceGraphIndex>) field.get(service);
-        indexes.put("demo", index);
         JSONObject metas = new JSONObject();
         JSONArray classes = new JSONArray();
         for (String type : types) {
@@ -55,7 +47,13 @@ public final class InstanceGraphDemoServer {
                 JSONObject request = body.length == 0 ? new JSONObject() : JSONObject.parseObject(new String(body, StandardCharsets.UTF_8));
                 String path = exchange.getRequestURI().getPath();
                 if (path.startsWith("/data/instanceGraph/")) {
-                    ret = service.queryInstanceGraph(path.substring(path.lastIndexOf('/') + 1), request, "demo");
+                    JSONObject data = switch (path.substring(path.lastIndexOf('/') + 1)) {
+                        case "summary" -> index.summary();
+                        case "search" -> index.search(request);
+                        case "neighborhood" -> index.neighborhood(request);
+                        default -> throw new IllegalArgumentException("Unknown graph operation");
+                    };
+                    ret = JSONObject.of("success", true, "status", "READY", "data", data);
                 } else {
                     ret = new JSONObject();
                     ret.put("success", true);

@@ -79,7 +79,6 @@ public class DataServiceImpl implements DataService {
 	// Domains with a generation in progress; guarantees at most one generation per domain at a time.
 	// Package-visible so focused unit tests can drive the read states without a database.
 	final Set<String> generatingDomains = ConcurrentHashMap.newKeySet();
-	private final Map<String, InstanceGraphIndex> instanceGraphIndexes = new ConcurrentHashMap<>();
 	@Autowired
 	private LiveInstanceGraph liveInstanceGraph;
 	
@@ -138,42 +137,12 @@ public class DataServiceImpl implements DataService {
 		starChartDao.writeWholeData(wholeData, MODE_0, newSuffix, domainId);
 		starChartDao.writeWholeData(fromMode0ToMode1(wholeData, domainId), MODE_1, newSuffix, domainId);
 		log.info("generate star chart data writeWholeData end...");
-		InstanceGraphIndex index = new InstanceGraphIndex(wholeData);
 		currentSuffix.put(domainId, newSuffix);
-		instanceGraphIndexes.put(domainId, index);
 	}
 
 	@Override
-	public JSONObject queryInstanceGraph(String operation, JSONObject request, String domainId) {
-		if (liveInstanceGraph != null) return liveInstanceGraph.query(operation, request, domainId);
-		JSONObject ret = new JSONObject();
-		ret.put("success", true);
-		InstanceGraphIndex index = instanceGraphIndexes.get(domainId);
-		if (index == null) {
-			ret.put("status", generatingDomains.contains(domainId) ? STATUS_GENERATING : STATUS_NOT_GENERATED);
-			return ret;
-		}
-		String version = request.getString("version");
-		if (!"summary".equals(operation) && (version == null || !version.equals(index.version))) {
-			ret.put("success", false);
-			ret.put("code", "GRAPH_VERSION_CHANGED");
-			ret.put("message", "Graph version changed. Refresh the overview before exploring.");
-			return ret;
-		}
-		try {
-			JSONObject data = switch (operation) {
-				case "summary" -> index.summary();
-				case "search" -> index.search(request);
-				case "neighborhood" -> index.neighborhood(request);
-				default -> throw new IllegalArgumentException("Unknown graph operation");
-			};
-			ret.put("status", STATUS_READY);
-			ret.put("data", data);
-		} catch (IllegalArgumentException e) {
-			ret.put("success", false);
-			ret.put("message", e.getMessage());
-		}
-		return ret;
+	public JSONObject queryInstanceGraph(String operation, JSONObject request, UserDataPermission permission, String domainId) {
+		return liveInstanceGraph.query(operation, request, permission, domainId);
 	}
 	
 	private JSONObject buildStarChartData(Map<String, JSONObject> nodeMap, Map<String, Set<String>> sourceTargetsMap, Map<String, Set<String>> targetSourcesMap, Set<String> roots) {
