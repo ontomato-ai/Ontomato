@@ -27,7 +27,9 @@ export async function generationCommand(args, env = process.env, request = fetch
     case "query": body = { dsl: await bodyFile(values[0]) }; break;
     case "reset": case "close": body = {}; break;
     case "source": break;
-    case "helpers": route = "/helpers"; body = undefined; break;
+    case "helpers":
+      if (!state?.runId) throw new Error("helpers requires a generation gate; run begin first");
+      route = `/${state.runId}/helpers`; body = undefined; break;
     default: throw new Error("Commands: begin, helpers, source, test, prepare, reset, query, close");
   }
   route ??= `/${state.runId}/${command}`;

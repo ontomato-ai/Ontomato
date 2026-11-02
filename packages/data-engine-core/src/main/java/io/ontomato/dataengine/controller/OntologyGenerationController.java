@@ -31,8 +31,9 @@ public class OntologyGenerationController {
     this.runtime = runtime;
   }
 
-  @GetMapping("/helpers")
-  public Object helpers() {
+  @GetMapping("/{run}/helpers")
+  public Object helpers(@PathVariable String run, HttpServletRequest request) throws Exception {
+    owner(run, request);
     return JSONObject.of("markdown", PythonHelperDocs.markdown());
   }
 
