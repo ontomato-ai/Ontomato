@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
+import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
 import io.ontomato.dataengine.bean.action.Action;
 import io.ontomato.dataengine.bean.function.Function;
@@ -146,5 +147,27 @@ class ActionDraftServiceTest {
     assertTrue(result.getBooleanValue("noDraft"));
     assertNull(result.get("draftId"));
     verify(actions, never()).explainForDraft(any(), any());
+  }
+
+  @Test
+  void explainLatestReplacesTheNewestDraftDefinition() throws Exception {
+    Action action = actionWith(code);
+    action.setCodeSegments(new JSONArray());
+    String draftId = UUID.randomUUID().toString();
+    JSONObject row =
+        JSONObject.of(
+            "id", draftId,
+            "program", code,
+            "result", JSONObject.of("name", "fixture"),
+            "action", action,
+            "definition", JSONObject.of("version", 1),
+            "explanation_missing", true);
+    when(store.rows(anyString(), any(), any(), any())).thenReturn(List.of(row));
+    when(store.update(anyString(), any(), any(), any(), any())).thenReturn(1);
+
+    JSONObject result = service.explainLatest(UUID.randomUUID().toString(), "en");
+
+    assertEquals(draftId, result.getString("draftId"));
+    verify(actions).explainForDraft(any(), eq("en"));
   }
 }

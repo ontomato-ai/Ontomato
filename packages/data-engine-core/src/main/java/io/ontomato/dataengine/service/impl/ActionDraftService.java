@@ -87,6 +87,7 @@ public class ActionDraftService {
           session_id uuid,
           run_id uuid,
           code_hash text NOT NULL,
+          draft_hash text,
           program text NOT NULL,
           parameters jsonb NOT NULL,
           return_def jsonb NOT NULL,
@@ -98,6 +99,7 @@ public class ActionDraftService {
           expires_at timestamptz NOT NULL,
           consumed_at timestamptz);
         CREATE INDEX IF NOT EXISTS action_drafts_owner ON action_drafts(domain_id,owner_id,created_at DESC);
+        ALTER TABLE action_drafts ADD COLUMN IF NOT EXISTS draft_hash text;
         """);
   }
 
@@ -126,6 +128,27 @@ public class ActionDraftService {
       throw new AgentHttpException(422, "INVALID_RESULT",
           "result.json sourcePath must name a tested program under outputs/");
     String code = file(owner.domainId(), sessionId, runId, sourcePath);
+    String codeHash = CodeHashUtil.sha256(code);
+    String draftHash = CodeHashUtil.sha256(code + "\n" + AgentJson.canonical(result));
+    // A chat turn that only refreshes the explanation leaves the code and result unchanged.
+    // Reuse the already explained draft instead of starting another explain run.
+    var existing =
+        store.rows(
+            "SELECT * FROM action_drafts WHERE session_id=? AND owner_id=? AND domain_id=?"
+                + " AND draft_hash=? AND consumed_at IS NULL AND expires_at>now()"
+                + " ORDER BY created_at DESC LIMIT 1",
+            uuid(sessionId),
+            owner.userId(),
+            owner.domainId(),
+            draftHash);
+    if (!existing.isEmpty() && !existing.get(0).getBooleanValue("explanation_missing")) {
+      JSONObject row = existing.get(0);
+      return JSONObject.of(
+          "draftId", row.getString("id"),
+          "action", JSON.parseObject(row.getString("action"), Action.class),
+          "definition", JSON.parseObject(row.getString("definition")),
+          "explanationMissing", false);
+    }
     String name = result.getString("name");
     String logic = result.getString("logic");
     JSONArray classNames = result.getJSONArray("classNames");
@@ -166,22 +189,22 @@ public class ActionDraftService {
       explanationMissing = true;
       log.warn("Draft explanation failed for action run {}: {}", runId, error.getMessage());
     }
-    String codeHash = CodeHashUtil.sha256(code);
     action.setCodeHash(codeHash);
     action.setExplanationVersion(Action.EXPLANATION_VERSION);
     action.setDefinition(ActionDefinitionProjector.project(action));
 
     String draftId = UUID.randomUUID().toString();
     store.update(
-        "INSERT INTO action_drafts(id,domain_id,owner_id,session_id,run_id,code_hash,program,"
-            + "parameters,return_def,result,action,definition,explanation_missing,expires_at)"
-            + " VALUES(?,?,?,?,?,?,?,?::jsonb,?::jsonb,?::jsonb,?::jsonb,?::jsonb,?,now()+?::interval)",
+        "INSERT INTO action_drafts(id,domain_id,owner_id,session_id,run_id,code_hash,draft_hash,"
+            + "program,parameters,return_def,result,action,definition,explanation_missing,expires_at)"
+            + " VALUES(?,?,?,?,?,?,?,?,?::jsonb,?::jsonb,?::jsonb,?::jsonb,?::jsonb,?,now()+?::interval)",
         uuid(draftId),
         owner.domainId(),
         owner.userId(),
         uuid(sessionId),
         uuid(runId),
         codeHash,
+        draftHash,
         code,
         AgentJson.json(parameters),
         AgentJson.json(returnDef),
@@ -196,6 +219,52 @@ public class ActionDraftService {
         "definition", action.getDefinition(),
         "explanationMissing", explanationMissing);
     return view;
+  }
+
+  /**
+   * Re-runs the explain agent for the newest draft in a conversational action-creation session.
+   * The draft keeps its code hash; only its action explanation and derived definition are replaced.
+   */
+  public JSONObject explainLatest(String sessionId, String lang) throws Exception {
+    Owner owner = owner();
+    var rows =
+        store.rows(
+            "SELECT * FROM action_drafts WHERE session_id=? AND owner_id=? AND domain_id=?"
+                + " AND consumed_at IS NULL AND expires_at>now() ORDER BY created_at DESC LIMIT 1",
+            uuid(sessionId),
+            owner.userId(),
+            owner.domainId());
+    if (rows.isEmpty())
+      throw new AgentHttpException(404, "NO_DRAFT", "No draft exists for this session");
+    JSONObject row = rows.get(0);
+    Action action = JSON.parseObject(row.getString("action"), Action.class);
+    if (action.getFunction() == null || action.getFunction().getCode() == null)
+      throw new AgentHttpException(422, "INVALID_DRAFT", "The draft has no function code");
+    try {
+      actions.explainForDraft(action, lang);
+    } catch (Exception error) {
+      throw new AgentHttpException(422, "EXPLAIN_FAILED", error.getMessage());
+    }
+    action.setExplanationVersion(Action.EXPLANATION_VERSION);
+    action.setDefinition(ActionDefinitionProjector.project(action));
+    String draftHash =
+        CodeHashUtil.sha256(
+            row.getString("program")
+                + "\n"
+                + AgentJson.canonical(JSON.parseObject(row.getString("result"))));
+    String draftId = row.getString("id");
+    store.update(
+        "UPDATE action_drafts SET action=?::jsonb, definition=?::jsonb, draft_hash=?,"
+            + " explanation_missing=false WHERE id=?",
+        AgentJson.json(action),
+        AgentJson.json(action.getDefinition()),
+        draftHash,
+        uuid(draftId));
+    return JSONObject.of(
+        "draftId", draftId,
+        "action", action,
+        "definition", action.getDefinition(),
+        "explanationMissing", false);
   }
 
   public Action save(String draftId, String lang) throws Exception {

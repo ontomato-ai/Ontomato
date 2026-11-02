@@ -7,11 +7,12 @@ description: Generate or explain ontology Actions, Functions, knowledge and dash
 
 Use the task-specific definition and its business rules. Use standard `read`, `write`, `edit` and `bash` tools for workspace files. Explore schema, relationships, distinct values and DSL with the `ontomato-analyst` skill. Java paths are never workspace paths.
 
-Run `node <this-skill>/scripts/generation.mjs <command> [arguments]`. Runtime supplies `ONTOMATO_ONTOLOGY_URL`, `ONTOMATO_GENERATION_ID`, `ONTOMATO_GENERATION_KIND`, and one scoped `ONTOMATO_TK` for both metadata queries and generation operations.
+Run `node <this-skill>/scripts/generation.mjs <command> [arguments]`. Runtime supplies `ONTOMATO_ONTOLOGY_URL`, `ONTOMATO_GENERATION_ID`, `ONTOMATO_GENERATION_KIND`, and one scoped `ONTOMATO_TK` for both metadata queries and generation operations. When the user only asks to refresh the structured explanation, run `explain`; do not edit the action.
 
 | Command | Use |
 | --- | --- |
 | `source [startLine [endLine]]` | Read the exact Action source to explain; line numbers start at 1. Read it in one call. Do not pipe it through `sed`, `head` or `tail`: the command already returns the requested slice, and repeated paging is treated as no progress. |
+| `explain` | Re-run the structured explanation for the current conversation's newest draft from its saved code. Use only when the user asks to refresh/regenerate the right-side definition; it does not change the action code. |
 | `test outputs/program.py parameters.json source-analysis.json` | Business test the exact source bytes and parameter definitions. The parameter JSON file is an array (use `[]` for no parameters); read programs also supply source-analysis.json. Read operations cannot acquire a write sandbox. |
 | `prepare data.json` | Validate Action sandbox fixture `{objDatas,relDatas,vectorDatas}`; object groups contain className and rows, relationships contain relationName/sourceObjId/targetObjId. |
 | `reset` | Clear the Action sandbox and import the prepared fixture. Repeat before independent Action tests. |

@@ -17,6 +17,11 @@ export async function generationCommand(args, env = process.env, request = fetch
       route = "/gates";
       body = { kind: values[0], source: values[1] ? await readFile(values[1], "utf8") : null };
       break;
+    case "explain":
+      if (!state) throw new Error("The host must own this run before it can re-explain the draft");
+      route = `/${state.runId}/explainDraft`;
+      body = {};
+      break;
     case "test":
       if (!values[0] || !values[1]) throw new Error("test requires source and parameter definition files");
       body = { code: await readFile(values[0], "utf8"), parameterDefs: await bodyFile(values[1]) };
