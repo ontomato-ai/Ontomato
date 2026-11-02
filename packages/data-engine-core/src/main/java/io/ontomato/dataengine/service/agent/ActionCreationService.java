@@ -14,7 +14,6 @@ import io.ontomato.dataengine.service.SessionRegistryService;
 import jakarta.annotation.PostConstruct;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -339,21 +338,12 @@ public class ActionCreationService {
   }
 
   /**
-   * A runaway model can repeat exactly the same tool call indefinitely. The generation runtime has
-   * no step limit, so the host closes such runs: more than 100 tool calls, or 12 identical calls.
+   * A runaway model can repeat the same tool call indefinitely. The generation runtime has no step
+   * limit, so the host closes such runs. {@link AgentLoopGuard} also catches a command that only
+   * drifts a line number, which an exact-argument comparison would miss.
    */
   private boolean looping(JSONObject snapshot) {
-    if (snapshot == null) return false;
-    JSONArray tools = snapshot.getJSONArray("toolExecutions");
-    if (tools == null) return false;
-    if (tools.size() > 100) return true;
-    Map<String, Integer> counts = new HashMap<>();
-    for (int i = 0; i < tools.size(); i++) {
-      JSONObject tool = tools.getJSONObject(i);
-      String key = tool.getString("toolName") + ":" + AgentJson.json(tool.get("args"));
-      if (counts.merge(key, 1, Integer::sum) >= 12) return true;
-    }
-    return false;
+    return AgentLoopGuard.runaway(snapshot);
   }
 
   /** Re-testing the same code and parameters produces the same digest without progress. */

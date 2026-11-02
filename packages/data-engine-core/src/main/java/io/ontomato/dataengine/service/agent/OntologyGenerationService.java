@@ -127,7 +127,7 @@ public class OntologyGenerationService {
                 uuid(session),
                 AgentJson.hash(JSONObject.of("kind", kind, "businessId", businessId)),
                 "{}",
-                Instant.now().plusSeconds(600).toString(),
+                Instant.now().plusSeconds(deadlineSeconds(kind)).toString(),
                 external);
             store.update(
                 "INSERT INTO"
@@ -170,6 +170,11 @@ public class OntologyGenerationService {
   public Generation generateMetricView(
       String businessId, String prompt, String lang, String domain) {
     return generate("metric", businessId, prompt, lang, domain, null, true);
+  }
+
+  /** Explanation is short-lived; a stuck explain run must not hold the draft request for 10 minutes. */
+  private static long deadlineSeconds(String kind) {
+    return kind.equals("explain") ? 180 : 600;
   }
 
   private Generation generate(
@@ -242,6 +247,16 @@ public class OntologyGenerationService {
                 <= System.currentTimeMillis()) throw closed();
         snapshot = runtime.run(domain, run);
         if (!"running".equals(snapshot.getJSONObject("run").getString("status"))) break;
+        if (AgentLoopGuard.runaway(snapshot)) {
+          JSONArray tools = snapshot.getJSONArray("toolExecutions");
+          LOG.warn(
+              "Cancelling looping {} generation run {} ({} tool calls)",
+              kind,
+              run,
+              tools == null ? 0 : tools.size());
+          throw new AgentHttpException(
+              409, "AGENT_LOOP", "The agent repeated a tool call without making progress");
+        }
         Thread.sleep(150);
       }
       store.update(

@@ -3,8 +3,10 @@ package io.ontomato.dataengine.controller;
 import static io.ontomato.dataengine.service.agent.OntologyAgentStore.*;
 
 import com.alibaba.fastjson2.JSONObject;
+import io.ontomato.dataengine.config.ControllerConst;
 import io.ontomato.dataengine.service.QueryGrantService;
 import io.ontomato.dataengine.service.agent.*;
+import io.ontomato.dataengine.service.impl.ActionDraftService;
 import jakarta.servlet.http.HttpServletRequest;
 import java.util.UUID;
 import org.springframework.web.bind.annotation.*;
@@ -17,18 +19,21 @@ public class OntologyGenerationController {
   private final OntologyAgentAccess access;
   private final OntologyAgentStore store;
   private final AgentRuntimeClient runtime;
+  private final ActionDraftService drafts;
 
   public OntologyGenerationController(
       OntologyGenerationService generation,
       GenerationOperations operations,
       OntologyAgentAccess access,
       OntologyAgentStore store,
-      AgentRuntimeClient runtime) {
+      AgentRuntimeClient runtime,
+      ActionDraftService drafts) {
     this.generation = generation;
     this.operations = operations;
     this.access = access;
     this.store = store;
     this.runtime = runtime;
+    this.drafts = drafts;
   }
 
   @GetMapping("/{run}/helpers")
@@ -73,6 +78,23 @@ public class OntologyGenerationController {
   @GetMapping("/{run}/source")
   public Object source(@PathVariable String run, HttpServletRequest request) throws Exception {
     return JSONObject.of("source", operations.source(run, owner(run, request)));
+  }
+
+  /**
+   * Re-runs the explain agent for the current conversation's newest draft. This is a tool of the
+   * action-creation agent, so chat can refresh the right-hand structured definition without
+   * changing the action code.
+   */
+  @PostMapping("/{run}/explainDraft")
+  public Object explainDraft(@PathVariable String run, HttpServletRequest request) throws Exception {
+    Owner owner = owner(run, request);
+    var row = store.one("SELECT session_id FROM ontology_agent_runs WHERE id=?", uuid(run));
+    String lang = request.getHeader(ControllerConst.LANG_HEADER_KEY);
+    if (lang == null || lang.isBlank()) {
+      JSONObject snapshot = runtime.run(owner.domainId(), run);
+      lang = snapshot.getJSONObject("run").getString("language");
+    }
+    return drafts.explainLatest(row.getString("session_id"), lang, owner);
   }
 
   @PostMapping("/{run}/test")

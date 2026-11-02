@@ -473,7 +473,7 @@ You can use the following tools multiple times to obtain the attribute definitio
 {{PARAMETERS}}
 ```
 ## Code
-You can use the tool the ontology-generation `source` command to read the code. At the beginning you can read all the code, and then when determining the number of lines covered by each `code block`, you should read the code according to the determined start and end lines, to ensure that the value of the covered line count is accurate.
+You can use the tool the ontology-generation `source` command to read the code. Read the code once at the beginning. When determining the number of lines covered by each `code block`, call `source <start> <end>` for the exact slice if needed; never page it with `sed`, `head` or `tail`. A repeated paging loop is treated as no progress and the run is cancelled.
 
 # Output Content
 The output contains three parts: `code segments`, operations in business context, and `negative effects`

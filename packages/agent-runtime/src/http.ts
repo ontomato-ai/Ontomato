@@ -408,20 +408,27 @@ export function createRuntimeHttp(runtime: AgentRuntime) {
       // than an empty 200 stream. Frames arriving before the stream opens are buffered in order.
       const buffered: RuntimeStreamFrame[] = [];
       let open = false;
+      let closed = false;
+      let unsubscribe = () => {};
+      let timer: ReturnType<typeof setInterval> | undefined;
       const write = (frame: RuntimeStreamFrame) => {
-        if (closed) return;
+        if (closed || res.writableEnded || res.destroyed) return;
         res.write(
           `${frame.type === "event" ? `id: ${frame.envelope.cursor.seq}\n` : ""}event: runtime\ndata: ${JSON.stringify(frame)}\n\n`,
         );
         if (
           frame.type === "snapshot_required" ||
           frame.envelope.event.type === "agent_end"
-        )
+        ) {
+          // Stop the heartbeat before ending the response. Otherwise the timer can fire between
+          // end() and the socket close event, writing after end and crashing the runtime with
+          // ERR_STREAM_WRITE_AFTER_END.
+          closed = true;
+          if (timer) clearInterval(timer);
+          unsubscribe();
           res.end();
+        }
       };
-      let closed = false;
-      let unsubscribe = () => {};
-      let timer: ReturnType<typeof setInterval> | undefined;
       res.on("close", () => {
         closed = true;
         if (timer) clearInterval(timer);
@@ -444,7 +451,8 @@ export function createRuntimeHttp(runtime: AgentRuntime) {
       });
       res.flushHeaders();
       timer = setInterval(() => {
-        if (!res.destroyed) res.write(": heartbeat\n\n");
+        if (!closed && !res.destroyed && !res.writableEnded)
+          res.write(": heartbeat\n\n");
       }, 15000);
       timer.unref();
       open = true;
