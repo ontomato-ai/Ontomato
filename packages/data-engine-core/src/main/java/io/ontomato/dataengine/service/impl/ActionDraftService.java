@@ -33,6 +33,8 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
@@ -43,6 +45,7 @@ import org.springframework.stereotype.Service;
  */
 @Service
 public class ActionDraftService {
+  private static final Logger log = LoggerFactory.getLogger(ActionDraftService.class);
   private static final long TTL_HOURS = 12;
 
   private final OntologyAgentStore store;
@@ -161,6 +164,7 @@ public class ActionDraftService {
       actions.explainForDraft(action, lang);
     } catch (Exception error) {
       explanationMissing = true;
+      log.warn("Draft explanation failed for action run {}: {}", runId, error.getMessage());
     }
     String codeHash = CodeHashUtil.sha256(code);
     action.setCodeHash(codeHash);

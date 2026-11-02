@@ -11,7 +11,7 @@ Run `node <this-skill>/scripts/generation.mjs <command> [arguments]`. Runtime su
 
 | Command | Use |
 | --- | --- |
-| `source [startLine [endLine]]` | Read the exact Action source to explain; line numbers start at 1. |
+| `source [startLine [endLine]]` | Read the exact Action source to explain; line numbers start at 1. Read it in one call. Do not pipe it through `sed`, `head` or `tail`: the command already returns the requested slice, and repeated paging is treated as no progress. |
 | `test outputs/program.py parameters.json source-analysis.json` | Business test the exact source bytes and parameter definitions. The parameter JSON file is an array (use `[]` for no parameters); read programs also supply source-analysis.json. Read operations cannot acquire a write sandbox. |
 | `prepare data.json` | Validate Action sandbox fixture `{objDatas,relDatas,vectorDatas}`; object groups contain className and rows, relationships contain relationName/sourceObjId/targetObjId. |
 | `reset` | Clear the Action sandbox and import the prepared fixture. Repeat before independent Action tests. |
