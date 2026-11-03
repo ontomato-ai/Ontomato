@@ -30,7 +30,6 @@ const base: ManagerHostContext = {
     compactDialogs: false,
   },
   knowledgeTagValues: { general: "General", business: "Business", tech: "Tech" },
-  embedded: true,
 };
 
 function work(summary: string, issues: unknown[] = [], sources: unknown[] = []) {

@@ -2,7 +2,6 @@ import { describe, expect, it, vi } from "vitest";
 import { createApp, h, nextTick, reactive } from "vue";
 import ElementPlus from "element-plus";
 import en from "element-plus/es/locale/lang/en";
-import { Wrench } from "lucide-vue-next";
 import { createMemoryHistory, createRouter, RouterView } from "vue-router";
 import AdminLayout from "../features/admin/components/layout/AdminLayout.vue";
 import { adminGroups, adminMenuItems, type AdminLayoutConfig } from "../features/admin/navigation";
@@ -24,11 +23,10 @@ async function mountLayout(config: AdminLayoutConfig, path: string, switchEnable
           agentsAndSkills: "Agents and Skills",
           systemAgents: "System Agents",
           systemManagement: "System Management",
-          auditLogs: "Audit Logs",
+          feedbackRecords: "Feedback Records",
         },
-        navDescription: { auditLogs: "Operation logs" },
+        navDescription: { feedbackRecords: "Operation logs" },
         admin: { loadingMenuPermission: "Loading", noAvailableMenuPermission: "No access" },
-        common: { dataGovernance: "Data Governance" },
         user: { logout: "Logout" },
       },
     },
@@ -42,9 +40,8 @@ async function mountLayout(config: AdminLayoutConfig, path: string, switchEnable
         component: AdminLayout,
         props: config,
         children: [
-          { path: "ontology-manager", component: page, meta: { group: "data-assets" } },
           { path: "system-agents", component: page, meta: { group: "app-capabilities" } },
-          { path: "audit-log", component: page, meta: { group: "platform-management" } },
+          { path: "feedback-records", component: page, meta: { group: "platform-management" } },
         ],
       },
     ],
@@ -65,28 +62,26 @@ async function mountLayout(config: AdminLayoutConfig, path: string, switchEnable
 const base: AdminLayoutConfig = {
   access: { ready: true, can: () => true },
   groups: [adminGroups.dataAssets, adminGroups.platformManagement],
-  items: [adminMenuItems.auditLog],
-  actionTabs: [],
+  items: [adminMenuItems.feedbackRecords],
   account: null,
-  navigationHidden: false,
 };
 
 describe("shared admin layout", () => {
   it("open-source assembly: all tabs, the current route group's menu and the observe entry; no account and no language switch", async () => {
-    const { el, tabs, menu } = await mountLayout(base, "/admin/audit-log");
+    const { el, tabs, menu } = await mountLayout(base, "/admin/feedback-records");
     expect(tabs()).toEqual(["Ontology Manager", "System Management"]);
     expect(el.querySelector(".tab-item.active")?.textContent?.trim()).toBe("System Management");
-    expect(menu()).toEqual(["Audit Logs"]);
+    expect(menu()).toEqual(["Feedback Records"]);
     expect(el.querySelector(".icon-btn")).not.toBeNull();
     expect(el.querySelector(".user-name")).toBeNull();
     expect(el.querySelector(".lang-switch-wrapper")).toBeNull();
   });
 
-  it("the home-style tab (Ontology Manager) shows by ontology-modeling and hides the sidebar; the observe entry is hidden without its permission; the language switch follows the app setting", async () => {
+  it("the Ontology Manager link tab shows by ontology-modeling and has no sidebar; the observe entry is hidden without its permission; the language switch follows the app setting", async () => {
     const granted = new Set(["ontology-modeling"]);
     const { el, tabs, menu } = await mountLayout(
       { ...base, access: { ready: true, can: (p) => granted.has(p) } },
-      "/admin/ontology-manager",
+      "/admin/feedback-records",
       true
     );
     expect(tabs()).toEqual(["Ontology Manager"]);
@@ -96,60 +91,61 @@ describe("shared admin layout", () => {
     expect(el.querySelector(".lang-switch-wrapper")).not.toBeNull();
   });
 
+  it("the Ontology Manager tab is a real link opening the Manager page in a new window without an opener", async () => {
+    const { el } = await mountLayout(base, "/admin/feedback-records");
+    const link = el.querySelector<HTMLAnchorElement>(".header-tabs a.tab-item")!;
+    expect(link.textContent?.trim()).toBe("Ontology Manager");
+    expect(link.getAttribute("href")).toBe(adminGroups.dataAssets.href);
+    expect(link.getAttribute("href")).toMatch(/\/ontology-manager\/$/);
+    expect(link.target).toBe("_blank");
+    expect(link.rel).toBe("noopener");
+    expect(link.classList.contains("active")).toBe(false);
+  });
+
   it("without ontology-modeling the Ontology Manager tab is hidden (the old group permission intelligence-engine no longer grants it)", async () => {
     const granted = new Set(["intelligence-engine", "audit-logs"]);
     const { tabs } = await mountLayout(
       { ...base, access: { ready: true, can: (p) => granted.has(p) } },
-      "/admin/audit-log"
+      "/admin/feedback-records"
     );
     expect(tabs()).toEqual(["System Management"]);
   });
 
-  it("group landing: a home-style tab opens its home page, a menu tab opens the group's first visible menu item", async () => {
-    const { el, router } = await mountLayout(base, "/admin/audit-log");
+  it("group landing: a menu tab opens the group's first visible menu item", async () => {
+    const { el, router } = await mountLayout(
+      {
+        ...base,
+        groups: [adminGroups.appCapabilities, adminGroups.platformManagement],
+        items: [adminMenuItems.systemAgents, adminMenuItems.feedbackRecords],
+      },
+      "/admin/system-agents"
+    );
     const tab = (title: string) =>
       [...el.querySelectorAll<HTMLElement>(".header-tabs .tab-item")].find(
         (item) => item.textContent?.trim() === title
       )!;
     const settle = () => new Promise((resolve) => setTimeout(resolve));
-    tab("Ontology Manager").click();
-    await settle();
-    expect(router.currentRoute.value.path).toBe("/admin/ontology-manager");
-    expect(el.querySelector(".admin-aside")).toBeNull();
     tab("System Management").click();
     await settle();
-    expect(router.currentRoute.value.path).toBe("/admin/audit-log");
+    expect(router.currentRoute.value.path).toBe("/admin/feedback-records");
     expect(el.querySelector(".admin-aside")).not.toBeNull();
   });
 
   it("shows loading until permissions load, then selects the current route's group; shows the empty state without any permission", async () => {
     const access = reactive({ ready: false, can: () => true });
-    const { el } = await mountLayout({ ...base, access }, "/admin/audit-log");
+    const { el } = await mountLayout({ ...base, access }, "/admin/feedback-records");
     expect(el.querySelector(".permission-loading")?.textContent).toContain("Loading");
     access.ready = true;
     await nextTick();
     expect(el.querySelector(".tab-item.active")?.textContent?.trim()).toBe("System Management");
 
-    const none = await mountLayout({ ...base, access: { ready: true, can: () => false } }, "/admin/audit-log");
+    const none = await mountLayout({ ...base, access: { ready: true, can: () => false } }, "/admin/feedback-records");
     expect(none.el.querySelector(".permission-empty")?.textContent).toContain("No access");
   });
 
-  it("action tabs come before groups and only run their action without becoming current; account display and logout", async () => {
-    const select = vi.fn();
+  it("account display and logout", async () => {
     const logout = vi.fn();
-    const { el, tabs } = await mountLayout(
-      {
-        ...base,
-        actionTabs: [{ key: "data-governance", titleKey: "common.dataGovernance", icon: Wrench, select }],
-        account: { userName: "alice", logout },
-      },
-      "/admin/ontology-manager"
-    );
-    expect(tabs()).toEqual(["Data Governance", "Ontology Manager", "System Management"]);
-    (el.querySelector(".header-tabs .tab-item") as HTMLElement).click();
-    await nextTick();
-    expect(select).toHaveBeenCalledOnce();
-    expect(el.querySelector(".tab-item.active")?.textContent?.trim()).toBe("Ontology Manager");
+    const { el } = await mountLayout({ ...base, account: { userName: "alice", logout } }, "/admin/feedback-records");
     expect(el.querySelector(".user-name")?.textContent).toBe("alice");
     (el.querySelector(".logout-btn") as HTMLElement).click();
     expect(logout).toHaveBeenCalledOnce();
@@ -168,12 +164,12 @@ describe("shared admin layout", () => {
     expect(none.el.querySelector(".permission-empty")).not.toBeNull();
   });
 
-  it("menu pages show their title and description above the content; the home-style page does not", async () => {
-    const { el } = await mountLayout(base, "/admin/audit-log");
-    expect(el.querySelector(".admin-page-heading h1")?.textContent).toBe("Audit Logs");
+  it("menu pages show their title and description above the content; other pages do not", async () => {
+    const { el } = await mountLayout(base, "/admin/feedback-records");
+    expect(el.querySelector(".admin-page-heading h1")?.textContent).toBe("Feedback Records");
     expect(el.querySelector(".admin-page-heading p")?.textContent).toBe("Operation logs");
-    const home = await mountLayout(base, "/admin/ontology-manager");
-    expect(home.el.querySelector(".admin-page-heading")).toBeNull();
+    const other = await mountLayout(base, "/admin/system-agents");
+    expect(other.el.querySelector(".admin-page-heading")).toBeNull();
   });
 
 
@@ -182,11 +178,11 @@ describe("shared admin layout", () => {
       {
         ...base,
         groups: [adminGroups.appCapabilities, adminGroups.platformManagement],
-        items: [adminMenuItems.systemAgents, adminMenuItems.auditLog],
+        items: [adminMenuItems.systemAgents, adminMenuItems.feedbackRecords],
       },
-      "/admin/audit-log"
+      "/admin/feedback-records"
     );
-    expect([activeTab(), menu(), activeMenu()]).toEqual(["System Management", ["Audit Logs"], "Audit Logs"]);
+    expect([activeTab(), menu(), activeMenu()]).toEqual(["System Management", ["Feedback Records"], "Feedback Records"]);
     await router.push("/admin/system-agents");
     await nextTick();
     expect([activeTab(), menu(), activeMenu()]).toEqual([
@@ -194,16 +190,5 @@ describe("shared admin layout", () => {
       ["System Agents"],
       "System Agents",
     ]);
-  });
-
-  it("hidden navigation (restricted licensing): only back, title, theme and account, and the page still renders", async () => {
-    const { el } = await mountLayout(
-      { ...base, navigationHidden: true, account: { userName: "alice", logout: () => {} } },
-      "/admin/audit-log"
-    );
-    expect(el.querySelector(".header-tabs")).toBeNull();
-    expect(el.querySelector(".admin-aside")).toBeNull();
-    expect(el.querySelector(".user-name")?.textContent).toBe("alice");
-    expect(el.querySelector(".page")).not.toBeNull();
   });
 });

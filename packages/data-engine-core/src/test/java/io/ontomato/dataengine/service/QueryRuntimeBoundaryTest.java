@@ -79,7 +79,7 @@ class QueryRuntimeBoundaryTest {
                 new DriverManagerDataSource(
                     jdbcUrl + "?currentSchema=" + schema, username, password)),
             "fixture-signing-key",
-            "fixture-workbench-secret");
+            new WorkbenchServiceAuthentication("fixture-workbench-secret"));
     grants.initialize();
     authorization = new QueryAccessService(identity, lookup, grants);
     AdminService admin = mock(AdminService.class);

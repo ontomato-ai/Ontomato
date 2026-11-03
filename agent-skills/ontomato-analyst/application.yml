@@ -2,5 +2,5 @@
 envUrl: http://host:3000
 
 # Optional separate service URLs (include proxy prefixes)
-# ontologyUrl: http://host:3005/api/data-query
+# ontologyUrl: http://host:3000/api/data-query
 # workbenchUrl: http://host:3000

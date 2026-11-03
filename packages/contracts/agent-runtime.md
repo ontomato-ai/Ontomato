@@ -75,7 +75,7 @@ type StartRun = {
   input: RuntimeUserMessage;
   definition: {
     systemPrompt: string;
-    modelRole: string;
+    modelId?: string | null;
     skills: SkillRef[];
     externalMcp: {id:string}[];
     compaction: {systemPrompt:string; summarizePrompt:string; updatePrompt:string};

@@ -257,7 +257,6 @@ const base: ManagerHostContext = {
   dataFallbacks: hostFallbacks,
   presentation,
   knowledgeTagValues: { general: "tag-g", business: "tag-b", tech: "tag-t" },
-  embedded: false,
 };
 
 const paths = (list = requests) =>

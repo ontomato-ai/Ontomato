@@ -9,12 +9,14 @@ export async function ensureAssistantSchema(c: QueryableClient) {
   CREATE TABLE IF NOT EXISTS ${t("assistant_agents")} (
     id uuid PRIMARY KEY, domain_id text NOT NULL, kind text NOT NULL, name text NOT NULL,
     description text NOT NULL DEFAULT '', icon text, enabled boolean NOT NULL DEFAULT true,
-    system_prompt text NOT NULL, model_role text NOT NULL DEFAULT 'general',
+    system_prompt text NOT NULL, model_selection jsonb NOT NULL DEFAULT '{"modelId":null}',
     skills jsonb NOT NULL DEFAULT '[]', class_names jsonb NOT NULL DEFAULT '[]',
     enabled_mcp_service_ids jsonb NOT NULL DEFAULT '[]',
     sort_order integer NOT NULL DEFAULT 0, UNIQUE(domain_id,kind));
   ALTER TABLE ${t("assistant_agents")} DROP COLUMN IF EXISTS graph_scope;
   ALTER TABLE ${t("assistant_agents")} ADD COLUMN IF NOT EXISTS enabled_mcp_service_ids jsonb NOT NULL DEFAULT '[]';
+  CREATE TABLE IF NOT EXISTS ${t("ops_diagnosis_settings")} (
+    domain_id text PRIMARY KEY, model_selection jsonb NOT NULL);
   CREATE TABLE IF NOT EXISTS ${t("assistant_sessions")} (
     id uuid PRIMARY KEY, domain_id text NOT NULL, owner_id text NOT NULL,
     agent_id uuid NOT NULL,

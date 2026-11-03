@@ -1,3 +1,4 @@
+import type { ModelSelection } from "@ontomato/contracts/model-settings";
 import { lockSessionClaim, assertUnclaimedSession } from "../agent-host/session-claim";
 import { randomUUID, createHash } from "node:crypto";
 import type pg from "pg";
@@ -44,7 +45,7 @@ export interface AgentRow {
   icon: string | null;
   enabled: boolean;
   system_prompt: string;
-  model_role: string;
+  model_selection: ModelSelection;
   skills: RuntimeSkillRef[];
   class_names: string[];
   enabled_mcp_service_ids: string[];

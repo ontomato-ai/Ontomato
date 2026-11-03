@@ -62,7 +62,7 @@ class OntologyGenerationContractTest {
     var jdbc = new JdbcTemplate(dataSource);
     store = new OntologyAgentStore(jdbc, new DataSourceTransactionManager(dataSource));
     store.initialize();
-    grants = new QueryGrantService(jdbc, "fixture-signing-key", "fixture-service");
+    grants = new QueryGrantService(jdbc, "fixture-signing-key", new io.ontomato.dataengine.service.WorkbenchServiceAuthentication("fixture-service"));
     grants.initialize();
     var admin = mock(io.ontomato.dataengine.dao.JSONRuleDao.class);
     when(admin.query(owner.domainId()))
@@ -99,7 +99,7 @@ class OntologyGenerationContractTest {
         new OntologyGenerationService(
             store,
             runtime,
-            new OntologyAgentDefinitions(runtime, code),
+            new OntologyAgentDefinitions(runtime, code, org.mockito.Mockito.mock(OntologyAgentModelSettings.class)),
             grants,
             sessions,
             operations,

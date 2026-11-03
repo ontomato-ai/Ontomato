@@ -17,18 +17,12 @@ export { adminApi, AdminLayout } from "./features/admin";
 export type {
   AdminAccess,
   AdminAccount,
-  AdminActionTab,
   AdminGroup,
   AdminLayoutConfig,
   AdminMenuItem,
 } from "./features/admin/navigation";
-export { adminGroups, adminMenuItems } from "./features/admin/navigation";
+export { adminGroups, adminMenuItems, adminNavigationIcons, decorateAdminGroup, decorateAdminMenuItem } from "./features/admin/navigation";
 export { adminRoutes } from "./router/admin-routes";
 export { observeRoutes } from "./router/observe-routes";
 export { ObserveLayout } from "./features/diagnosis";
 export type { ObserveAccount } from "./features/diagnosis/components/layout/types";
-export type {
-  BusinessConfigAdapterDisplay,
-  BusinessConfigLanguageOption,
-  BusinessConfigProps,
-} from "./features/system/business-config";

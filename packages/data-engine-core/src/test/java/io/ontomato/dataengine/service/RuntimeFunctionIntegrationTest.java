@@ -63,7 +63,7 @@ class RuntimeFunctionIntegrationTest {
                   jdbcUrl + "?currentSchema=" + schema, account[0], account[1]));
       var permission = new UserDataPermission();
       permission.setFullData(true);
-      var grants = new QueryGrantService(jdbc, "fixture-signing", "fixture-service");
+      var grants = new QueryGrantService(jdbc, "fixture-signing", new io.ontomato.dataengine.service.WorkbenchServiceAuthentication("fixture-service"));
       grants.initialize();
       var calls = new AtomicInteger();
       ontologyHttp = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);

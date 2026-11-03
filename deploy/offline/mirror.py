@@ -26,7 +26,7 @@ TOOL_SHA = {
     "amd64": "7bad7aeeb27f6fee911599fcab000587d4066eafb58a7c88aed366676599bb73",
     "arm64": "1d1c755a7581e6bfbeab0198c6ad4349f2761918d53a88523e105e7362c14e5e",
 }
-IMAGE_KEYS = ("WORKBENCH_IMAGE", "DATA_ENGINE_IMAGE", "MANAGER_IMAGE", "AGENT_RUNTIME_IMAGE", "POSTGRES_IMAGE")
+IMAGE_KEYS = ("WORKBENCH_IMAGE", "DATA_ENGINE_IMAGE", "MANAGER_IMAGE", "AGENT_RUNTIME_IMAGE", "GATEWAY_IMAGE", "POSTGRES_IMAGE")
 
 
 def run(argv, capture=False, **kwargs):
@@ -216,7 +216,8 @@ def export(args):
         raise ValueError("Output already exists; choose a new delivery directory: " + str(output))
     if state == output or state in output.parents or output in state.parents:
         raise ValueError("Delivery output and persistent state must be separate directories")
-    sources = dict(zip(IMAGE_KEYS, (args.workbench, args.data_engine, args.manager, args.agent_runtime, args.postgres)))
+    sources = dict(zip(IMAGE_KEYS, (args.workbench, args.data_engine, args.manager, args.agent_runtime, args.gateway, args.postgres)))
+    sources = {key: value for key, value in sources.items() if value}
     # The product entry has validated these exact digests before export advances history.
     validate_sources(sources)
     state.mkdir(parents=True, exist_ok=True)
@@ -259,7 +260,7 @@ def export(args):
 
 def verify_bundle(bundle):
     data = json.loads((bundle / "delivery.json").read_text())
-    if data.get("schema") != 1 or data.get("arch") not in TOOL_SHA or set(data.get("images", {})) not in (set(IMAGE_KEYS), set(IMAGE_KEYS) - {"AGENT_RUNTIME_IMAGE"}):
+    if data.get("schema") != 1 or data.get("arch") not in TOOL_SHA or set(data.get("images", {})) not in (set(IMAGE_KEYS), set(IMAGE_KEYS) - {"GATEWAY_IMAGE"}, set(IMAGE_KEYS) - {"GATEWAY_IMAGE", "AGENT_RUNTIME_IMAGE"}):
         raise ValueError("Invalid delivery metadata")
     # Older deliveries record their producer's tool/Registry tags. They do not select
     # the executor; the independently installed tools own that choice.
@@ -343,6 +344,7 @@ def main():
     for command in (resolve, exp):
         for name in ("workbench", "data-engine", "manager", "agent-runtime", "postgres"):
             command.add_argument("--" + name, required=True)
+        command.add_argument("--gateway", help="Gateway image; omitted only for historical application exports")
         command.add_argument("--arch", choices=tuple(TOOL_SHA), required=True)
     for name in ("state", "output", "version"):
         exp.add_argument("--" + name, required=True)
@@ -369,7 +371,7 @@ def main():
     try:
         if args.command == "resolve":
             print(json.dumps([resolve_image(ref, args.arch) for ref in
-                              (args.workbench, args.data_engine, args.manager, args.agent_runtime, args.postgres)]))
+                              (args.workbench, args.data_engine, args.manager, args.agent_runtime, args.gateway, args.postgres) if ref]))
         elif args.command == "export":
             export(args)
         elif args.command == "tools-export":

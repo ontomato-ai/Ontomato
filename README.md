@@ -218,7 +218,7 @@ Tell your agent which database to model, for example:
 
 The agent connects the database, reads the tables, drafts the ontology, imports it and
 asks test questions. Review and refine the ontology in the Ontology Manager at
-`http://<host>:3005`, and ask questions in the Workbench at `http://<host>:3000`.
+`http://<host>:3000/ontology-manager/`, and ask questions in the Workbench at `http://<host>:3000`.
 
 <details>
 <summary>For AI agents setting up Ontomato</summary>
@@ -239,9 +239,7 @@ If you are a coding agent asked to set Ontomato up:
 
 | Port | Service |
 | --- | --- |
-| 3000 | Workbench and API |
-| 3005 | Ontology Manager |
-| 18087 | Data engine |
+| 3000 | Gateway: Workbench, Ontology Manager and API |
 | 5432 | PostgreSQL, on the server's loopback address only |
 
 ## Status
@@ -281,9 +279,19 @@ third-party components it contains.
 ### Agent runtime
 
 `make agent-runtime ARCH=amd64` builds the independent public Node image. The
-aggregate `make build` includes it as the fourth application image.
+aggregate `make build` includes it and the gateway among the five application images.
 `pnpm dev` and `dev:up` start it on port 3001 and wait for readiness before starting
 the workbench. Runtime logs are available with `pnpm dev:logs runtime`; `dev:down`
 stops its checkout-owned processes. Local service credentials are generated once
 in `.secrets/agent-runtime.env` (0600), unless supplied in the environment.
 Runtime state lives in `data/agent-runtime` and its own PostgreSQL schema.
+
+
+### Gateway development entry
+
+`pnpm dev:up` serves both applications through `http://localhost:8080/` (Manager:
+`/ontology-manager/`). `PUBLIC_BASE_PATH` prefixes both pages and APIs. Vite 5173/5174,
+Node 3000 and Java 18087 are development upstreams, not browser entry URLs.
+Docker supplies the pinned Nginx gateway; no product image is built. On Linux its
+host-gateway must reach the host's Vite/Node/Java listeners. `dev:status` includes the
+gateway and `dev:down` removes only this checkout's development Compose services.

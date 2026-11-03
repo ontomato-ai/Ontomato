@@ -1,3 +1,4 @@
+import { modelSelectionSchema } from "./model-settings";
 import { z } from "zod";
 import { agentHostAgentSchema } from "./agent-host";
 import {
@@ -11,7 +12,7 @@ import {
   runtimeTimestampSchema,
 } from "./agent-runtime-values";
 export const assistantAgentDefinitionSchema = agentHostAgentSchema.extend({
-  modelRole: runtimeKeySchema,
+  modelSelection: modelSelectionSchema,
   skills: z.array(runtimeSkillRefSchema),
   classNames: z.array(z.string().trim().min(1)).default([]),
   enabledMcpServiceIds: z.array(runtimeIdSchema).default([]),
@@ -50,7 +51,7 @@ export const assistantAgentInputSchema = assistantAgentDefinitionSchema
     id: true,
   })
   .extend({
-    modelRole: runtimeKeySchema.optional(),
+    modelSelection: modelSelectionSchema.default({ modelId: null }),
     skills: z.array(assistantSkillInputSchema),
   });
 export type AssistantAgentDefinition = z.infer<

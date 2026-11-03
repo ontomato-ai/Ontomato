@@ -164,7 +164,7 @@ describe("session sandbox prepares an isolated workspace", () => {
         language: "en",
         definition: {
           systemPrompt: "",
-          modelRole: "general",
+          modelId: null,
           skills: skills.map((skill) => skill.skill),
           sandbox: {
             limits: codeLimitsSchema.parse({

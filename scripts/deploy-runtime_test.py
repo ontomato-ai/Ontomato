@@ -47,7 +47,7 @@ class RuntimeDeployment(unittest.TestCase):
                 env = project / ".env"
                 env.write_text((root / "deploy/.env.example").read_text() +
                                "\nARCH=amd64\nPOSTGRES_PASSWORD=test-pg\nPUBLIC_HOST=127.0.0.1\n"
-                               "ONTOMATO_MODEL_RUNTIME_TOKEN=test-model-key\n")
+                               "ONTOMATO_MODEL_RUNTIME_TOKEN=test-model-key\nONTOMATO_VERSION=fixture-version\n")
                 prepare.prepare(env)
                 result = subprocess.run(["docker", "compose", "--project-directory", str(project),
                     "--env-file", str(env), "-f", str(project / "docker-compose.yml"),

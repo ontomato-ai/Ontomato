@@ -1,4 +1,11 @@
+import { z } from "zod";
 import { randomId } from "@ontomato/contracts/random-id";
+import {
+  modelOptionsSchema,
+  modelSelectionSchema,
+  type ModelOptions,
+  type ModelSelection,
+} from "@ontomato/contracts/model-settings";
 import {
   assistantAgentDefinitionListSchema,
   assistantSkillCatalogSchema,
@@ -37,6 +44,23 @@ export const agentDefinitionsApi = {
     await nodeApiFetch(`${base}/${encodeURIComponent(id)}`, "DELETE");
   },
   listMcpServiceOptions,
+};
+
+const diagnosisModelSchema = z.object({ modelSelection: modelSelectionSchema }).strict();
+
+/** The domain's models to choose from (names only, no connection settings); any account of the domain may read them. */
+export async function loadModelOptions(): Promise<ModelOptions> {
+  return modelOptionsSchema.parse((await apiGet("/model-options")).data);
+}
+
+/** The operations agent's model; read and saved with the analysis-agent permission, like the agent definitions. */
+export const diagnosisModelApi = {
+  async get(): Promise<ModelSelection> {
+    return diagnosisModelSchema.parse(await nodeApiGet("/assistant/diagnosis-model")).modelSelection;
+  },
+  async save(modelSelection: ModelSelection): Promise<ModelSelection> {
+    return diagnosisModelSchema.parse(await nodeApiPut("/assistant/diagnosis-model", { modelSelection })).modelSelection;
+  },
 };
 
 /** Authorized ontology classes used by the single analysis scope selector. */

@@ -1,3 +1,4 @@
+import { ensurePlatformEventCursorSchema } from "./20261103-platform-events/schema";
 import { ensureOpsDiagnosisSchema } from "./20261029-ops-diagnosis/schema";
 import { ensureAssistantSchema } from "./20261028-assistant/schema";
 import { ensureScheduledTaskSchema } from "./20261030-scheduled-tasks/schema";
@@ -79,6 +80,7 @@ type MigrationRegistration = {
 };
 
 export const POSTGRES_MIGRATION_REGISTRY: MigrationRegistration[] = [
+  { directory: "20261103-platform-events", ensureSchema: ensurePlatformEventCursorSchema },
   { directory: "20261029-ops-diagnosis", ensureSchema: ensureOpsDiagnosisSchema },
   { directory: "20261028-assistant", ensureSchema: ensureAssistantSchema },
   { directory: "20261030-scheduled-tasks", ensureSchema: ensureScheduledTaskSchema },

@@ -13,9 +13,13 @@ export async function deleteUserAssistantSessions(userId: string) {
     )
   ).rows;
   for (const s of sessions) {
-    const owner = { userId, domainId: s.domain_id },
-      snapshot = await assistantService.snapshot(s.id, owner);
-    if (snapshot.latestRun?.run.status === "running")
+    const owner = { userId, domainId: s.domain_id };
+    let snapshot;
+    try { snapshot = await assistantService.snapshot(s.id, owner); }
+    catch (error) {
+      if (!(error instanceof HttpError && error.status === 404)) throw error;
+    }
+    if (snapshot?.latestRun?.run.status === "running")
       await assistantService.cancel(s.id, snapshot.latestRun.run.id, owner, {});
     await assistantService.delete(s.id, owner);
   }

@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createServer, type Server } from "node:http";
 import { randomUUID } from "node:crypto";
 import pg from "pg";
-import { MODEL_ROLES, modelSettingsSchema, modelSettingsWriteSchema, parseIsoDurationSeconds } from "@ontomato/contracts/model-settings";
+import { modelSettingsWriteSchema, parseIsoDurationSeconds } from "@ontomato/contracts/model-settings";
 import { openSealedModelKey } from "@ontomato/contracts/model-key-seal";
 import { runtimeStartRunRequestSchema } from "@ontomato/contracts/agent-runtime";
 import { RuntimeStore } from "../store";
@@ -11,21 +11,20 @@ import { createRuntimeHttp } from "../http";
 import type { AgentRuntime } from "../runtime";
 
 const database = process.env.RUNTIME_TEST_DATABASE_URL;
-const roles = Object.fromEntries(MODEL_ROLES.map(role => [role, null]));
 const draft = (keys = ["sk-first-key-0001", "sk-second-key-0001"]) => ({
   name: "main", baseUrl: "http://127.0.0.1:9/v1", modelName: "fixture-model", apiKeys: keys,
   maxTokens: null, contextWindow: null, timeout: null, temperature: 0, topP: 0,
   customRequestParameters: { vendor: { enabled: false }, seed: 0 },
 });
-it("keeps complete role replacement and nullable editor defaults in one schema", () => {
-  const parsed = modelSettingsWriteSchema.parse({ models: [draft()], agents: roles });
+it("keeps explicit domain defaults and nullable editor defaults in one schema", () => {
+  const parsed = modelSettingsWriteSchema.parse({ models: [draft()], defaultModelId: null });
   expect(parsed.models[0]).toMatchObject({ maxTokens: 50000, contextWindow: 256000, displayName: "main", temperature: 0 });
-  expect(modelSettingsWriteSchema.safeParse({ models: [draft()], agents: { ...roles, general: "missing" } }).success).toBe(false);
-  expect(modelSettingsWriteSchema.safeParse({ models: [draft(), draft()], agents: roles }).success).toBe(false);
-  expect(modelSettingsWriteSchema.safeParse({ models: [], agents: { general: null } }).success).toBe(false);
-  expect(modelSettingsWriteSchema.safeParse({ models: [], agents: { ...roles, extra: null } }).success).toBe(false);
+  expect(modelSettingsWriteSchema.safeParse({ models: [draft()], defaultModelId: "missing" }).success).toBe(false);
+  expect(modelSettingsWriteSchema.safeParse({ models: [draft(), draft()], defaultModelId: null }).success).toBe(false);
+  expect(modelSettingsWriteSchema.safeParse({ models: [], defaultModelId: "missing" }).success).toBe(false);
+  expect(modelSettingsWriteSchema.safeParse({ models: [], defaultModelId: null, extra: null }).success).toBe(false);
   for (const value of [[], "not-an-object", 12]) {
-    expect(modelSettingsWriteSchema.safeParse({ models: [{ ...draft(), customRequestParameters: value }], agents: roles }).success).toBe(false);
+    expect(modelSettingsWriteSchema.safeParse({ models: [{ ...draft(), customRequestParameters: value }], defaultModelId: null }).success).toBe(false);
   }
   expect(parseIsoDurationSeconds("PT1H30M")).toBe(5400);
   expect(() => parseIsoDurationSeconds("PT")).toThrow();
@@ -84,12 +83,12 @@ describe("runtime domain model configuration HTTP/PG contract", () => {
   });
   it("shares one library across hosts, isolates domains, and never returns or stores plaintext keys", async () => {
     expect((await request("/v1/models/settings", undefined, "1", "invalid")).status).toBe(401);
-    const saved = await request("/v1/models/settings", { models: [draft()], agents: roles });
+    const saved = await request("/v1/models/settings", { models: [draft()], defaultModelId: null });
     expect(saved.status).toBe(200);
     expect(saved.data.models[0].apiKeys).toEqual(["******0001", "******0001"]);
-    expect(saved.data.agents).toEqual(Object.fromEntries(MODEL_ROLES.map(role => [role, { model: "main" }])));
+    expect(saved.data.defaultModelId).toBeNull();
     const read = await request("/v1/models/settings", undefined, "1", "host-b");
-    expect(read.data.agents).toEqual(saved.data.agents);
+    expect(read.data.defaultModelId).toEqual(saved.data.defaultModelId);
     expect(read.data.models[0].apiKeys).toEqual(["******0001", "******0001"]);
     expect(JSON.stringify(read.data)).not.toContain("sk-first");
     expect((await request("/v1/models/settings", undefined, "other", "host-b")).data.models).toEqual([]);
@@ -97,24 +96,24 @@ describe("runtime domain model configuration HTTP/PG contract", () => {
     expect(JSON.stringify(stored)).not.toContain("sk-first");
     expect(stored.settings.models[0].apiKeys[0]).toMatch(/^enc:v1:/);
     expect(stored.settings.models[0].apiKeys.map((k: string) => openSealedModelKey(k, sealToken))).toEqual(draft().apiKeys);
-    await expect(models.resolve("other", "general")).rejects.toMatchObject({ code: "MODEL_NOT_CONFIGURED" });
+    await expect(models.resolve("other", null)).rejects.toMatchObject({ code: "MODEL_NOT_CONFIGURED" });
   });
   it("restores duplicate masks in order and rejects unmatched or foreign masks atomically", async () => {
     const keys = ["******0001", "sk-replacement-5555", "******0001"];
-    expect((await request("/v1/models/settings", { models: [draft(keys)], agents: roles })).status).toBe(200);
+    expect((await request("/v1/models/settings", { models: [draft(keys)], defaultModelId: null })).status).toBe(200);
     const before = await models.get("1");
     const stored = (await store.pool.query(`SELECT settings FROM ${store.table("model_settings")} WHERE domain_id='1'`)).rows[0];
     expect(stored.settings.models[0].apiKeys.map((key: string) => openSealedModelKey(key, sealToken)))
       .toEqual(["sk-first-key-0001", "sk-replacement-5555", "sk-second-key-0001"]);
-    expect(before.agents.general.model).toBeNull(); // Later saves do not refill roles.
+    expect(before.defaultModelId).toBeNull(); // Saves never implicitly replace the domain default.
     for (const domain of ["1", "other"]) {
-      const result = await request("/v1/models/settings", { models: [draft(["******9999"])], agents: roles }, domain);
+      const result = await request("/v1/models/settings", { models: [draft(["******9999"])], defaultModelId: null }, domain);
       expect(result.status).toBe(400);
     }
     expect((await models.get("1")).models).toEqual(before.models);
-    expect((await request("/v1/models/settings", { models: [], agents: { ...roles, general: "main" } })).status).toBe(400);
+    expect((await request("/v1/models/settings", { models: [], defaultModelId: "main" })).status).toBe(400);
     const sealed = stored.settings.models[0].apiKeys[0];
-    expect((await request("/v1/models/settings", { models: [draft([sealed])], agents: roles })).status).toBe(400);
+    expect((await request("/v1/models/settings", { models: [draft([sealed])], defaultModelId: null })).status).toBe(400);
   });
   it("tests a saved mask at the new owner without writing", async () => {
     const before = await models.get("1");
@@ -124,12 +123,25 @@ describe("runtime domain model configuration HTTP/PG contract", () => {
     expect((await models.get("1")).models).toEqual(before.models);
     expect((await request("/v1/models/test", { model: draft(["******0001"]) }, "other", "host-a", "POST")).status).toBe(400);
   });
+  it("resolves explicit IDs or the domain default without leaking settings through options", async () => {
+    await models.save("selection", { models: [draft(), { ...draft(), name: "second", modelName: "second-provider" }], defaultModelId: "main" });
+    expect((await models.resolve("selection", null)).modelName).toBe("fixture-model");
+    expect((await models.resolve("selection")).modelName).toBe("fixture-model");
+    expect((await models.resolve("selection", "second")).modelName).toBe("second-provider");
+    expect(await models.options("selection")).toEqual({ models: [{ name: "main", displayName: "main" }, { name: "second", displayName: "second" }], defaultModelId: "main" });
+    await models.save("selection", { models: [{ ...draft(), displayName: "Renamed" }], defaultModelId: "main" });
+    expect((await models.resolve("selection", "main")).name).toBe("main");
+    await expect(models.resolve("selection", "second")).rejects.toMatchObject({ code: "MODEL_NOT_CONFIGURED" });
+    await models.save("selection", { models: [draft()], defaultModelId: null });
+    await expect(models.resolve("selection", null)).rejects.toMatchObject({ code: "MODEL_NOT_CONFIGURED" });
+    expect((await models.resolve("selection", "main")).name).toBe("main");
+  });
   it("persists configuration across restart and does not reseed an intentionally emptied library", async () => {
     await stop(); await start();
     expect((await request("/v1/models/settings", undefined, "1", "host-b")).data.models[0].name).toBe("main");
     const seeded = new RuntimeModelSettings(store, sealToken, { baseUrl: providerUrl, apiKey: "seed-key", modelName: "seed-model" });
-    expect((await seeded.get("seeded")).agents.general.model).toBe("default");
-    await seeded.save("seeded", { models: [], agents: roles });
+    expect((await seeded.get("seeded")).defaultModelId).toBe("default");
+    await seeded.save("seeded", { models: [], defaultModelId: null });
     expect((await seeded.get("seeded")).models).toEqual([]);
   });
 });

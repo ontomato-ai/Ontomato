@@ -295,7 +295,9 @@ onMounted(() => {
 
 <template>
   <main ref="shell" class="ontology-manager-shell">
-    <OntologyWorkspaceHeader v-if="!context.embedded" @home="changeWorkspace('playground')" />
+    <OntologyWorkspaceHeader @home="changeWorkspace('playground')">
+      <template #actions><slot name="header-actions" /></template>
+    </OntologyWorkspaceHeader>
 
     <div class="workspace">
       <OntologyResourceSidebar

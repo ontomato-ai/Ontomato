@@ -67,7 +67,7 @@ class OntologyRetrievalContractTest {
     var jdbc = new JdbcTemplate(source);
     store = new OntologyAgentStore(jdbc, new DataSourceTransactionManager(source));
     store.initialize();
-    grants = new QueryGrantService(jdbc, "fixture-signing-key", "fixture-service");
+    grants = new QueryGrantService(jdbc, "fixture-signing-key", new io.ontomato.dataengine.service.WorkbenchServiceAuthentication("fixture-service"));
     grants.initialize();
     server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
     server.createContext(
@@ -165,7 +165,7 @@ class OntologyRetrievalContractTest {
     when(ontology.knowledge(any(), any())).thenReturn(Map.of("items", List.of()));
     jobs = mock(QueryJobService.class);
     quality = mock(QueryQualityService.class);
-    var definitions = new OntologyAgentDefinitions(runtime, new RuntimeCodeClient(runtime));
+    var definitions = new OntologyAgentDefinitions(runtime, new RuntimeCodeClient(runtime), org.mockito.Mockito.mock(OntologyAgentModelSettings.class));
     var bindings = mock(OntologyBindingRetrieval.class);
     when(bindings.snapshot(any(),any(),any())).thenReturn(JSONObject.of("status","completed","error",null,"datasets",new JSONArray()));
     retrieval =

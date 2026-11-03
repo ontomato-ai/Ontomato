@@ -1,6 +1,6 @@
 name: Images
 
-# Formal releases publish four final images; deployments only pull and run them.
+# Formal releases publish five final images; deployments only pull and run them.
 #
 # develop pushes publish the edge version, stable pushes publish the stable
 # version (the maintenance line of released versions), and formal v* tags publish
@@ -69,6 +69,7 @@ jobs:
           BUILD_CACHE_REF="$REGISTRY/ontomato-data-engine:cache-$version-$ARCH" make data-engine ARCH="$ARCH"
           BUILD_CACHE_REF="$REGISTRY/ontomato-ontology-manager:cache-$version-$ARCH" make ontology-manager ARCH="$ARCH"
           BUILD_CACHE_REF="$REGISTRY/ontomato-agent-runtime:cache-$version-$ARCH" make agent-runtime ARCH="$ARCH"
+          BUILD_CACHE_REF="$REGISTRY/ontomato-gateway:cache-$version-$ARCH" make gateway ARCH="$ARCH"
 
       # Branch guard: an outdated branch run must not publish after the branch
       # has advanced. Release-tag builds do not track a branch.
@@ -99,6 +100,7 @@ jobs:
           publish "datarag-opensource:deploy-$ARCH" "$REGISTRY/ontomato-data-engine:$version-$ARCH"
           publish "ontomato-ontology-manager:deploy-$ARCH" "$REGISTRY/ontomato-ontology-manager:$version-$ARCH"
           publish "ontomato-agent-runtime:deploy-$ARCH" "$REGISTRY/ontomato-agent-runtime:$version-$ARCH"
+          publish "ontomato-gateway:deploy-$ARCH" "$REGISTRY/ontomato-gateway:$version-$ARCH"
 
   manifest:
     needs: build
@@ -125,7 +127,7 @@ jobs:
               --annotation "index:org.opencontainers.image.source=$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" \
               "${tags[@]}" "$REGISTRY/$1:$2" "$REGISTRY/$1:$3"
           }
-          for image in ontomato-workbench ontomato-data-engine ontomato-ontology-manager ontomato-agent-runtime; do
+          for image in ontomato-workbench ontomato-data-engine ontomato-ontology-manager ontomato-agent-runtime ontomato-gateway; do
             index "$image" "$version-amd64" "$version-arm64"
           done
 
@@ -156,9 +158,9 @@ jobs:
           python3 prepare-env.py .env
           echo "COMPOSE_FILE=docker-compose.yml:docker-compose.ghcr.yml" >> .env
           docker compose up -d --wait --wait-timeout 300
-          for port in 3000 3005; do
+          for path in / /ontology-manager/ /api/data-query/health; do
             curl --fail --silent --show-error --retry 20 --retry-delay 3 --retry-all-errors \
-              --output /dev/null "http://127.0.0.1:$port/"
+              --output /dev/null "http://127.0.0.1:3000$path"
           done
 
       - name: Show the stack state

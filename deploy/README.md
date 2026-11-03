@@ -1,7 +1,7 @@
 # Ontomato deployment
 
-Four final images run the workbench, data engine, ontology manager and agent runtime.
-PostgreSQL is a fifth service. The site needs Docker Engine 26+, Compose v2 and Python 3.8+.
+Five final images run the gateway, workbench, data engine, ontology manager and agent runtime.
+PostgreSQL is a sixth service. The site needs Docker Engine 26+, Compose v2 and Python 3.8+.
 
 ## Online deployment
 
@@ -23,7 +23,7 @@ sent in an HTTP header. A deployment created before this setting existed,
 including one that follows a tag automatically, must add it to `.env` before taking a
 release that requires it.
 
-CI publishes a shared `<version>-ci<run>.<attempt>-g<commit>` tag for all four images,
+CI publishes a shared `<version>-ci<run>.<attempt>-g<commit>` tag for all five images,
 as well as `edge`, `stable`, release and `latest` aliases. Use the full build tag above so
 `docker ps` shows the deployed build. Update `ONTOMATO_VERSION`, then run `python3 prepare-env.py .env`, pull and up. Images come from GHCR. Build
 and publication happen before deployment; Compose has no build step.
@@ -39,10 +39,10 @@ ONTOMATO_VERSION=edge
 ```
 
 This adds a Watchtower container (`nickfedor/watchtower`). Every 5 minutes it checks whether
-the tags of the workbench, data engine, ontology manager and agent runtime containers point to new images on
+the tags of the workbench, data engine, ontology manager, agent runtime and gateway containers point to new images on
 GHCR; if so it pulls them, recreates those containers with their existing configuration and
 removes the replaced images. PostgreSQL is not touched, and only this Compose project's
-containers are watched. The four images update independently, and changes to the deployment
+containers are watched. The five images update independently, and changes to the deployment
 templates still need a manual update. Keep fixed versions without automatic updates for
 production sites.
 
@@ -102,7 +102,7 @@ For updates, extract the new bundle outside the existing deployment directory.
 Run its `tools-install` and import commands with the same state directory.
 Tool installation only loads tool images; it does not import application images, change
 application configuration, restart services or install host Docker/Compose/Python. After successful import,
-replace the seven image/version/architecture values in the existing `.env` with
+replace the image/version/architecture values in the existing `.env` with
 those in `images.env`, then run `python3 prepare-env.py .env`, pull and up. Keep existing secrets, data directories
 and database volumes. Import failure leaves the previous `.env` and application
 containers untouched. Retain the previous references to select a prior image;
@@ -134,7 +134,8 @@ Official references: [oc-mirror](https://github.com/openshift/oc-mirror),
 ## Data and ports
 
 PostgreSQL uses a named volume and is published on loopback port 5432 by default.
-Workbench port is 3000, manager 3005 and data engine 18087. Override them in `.env`.
+Only the gateway publishes a browser port: `PORT=3000` by default.
+The workbench, manager, Java and runtime remain on the Compose network.
 `frontend_data` maps to `/app/data`, `backend_data` to `/deploy`, and
 `agent_runtime_data` to the independent runtime’s `/data`. The runtime uses the
 `agent_runtime` schema in the `ontomato` database and has no published host port. Initial
@@ -147,7 +148,7 @@ another timezone. This stack does not migrate a pre-existing database.
 installation or upgrade. Both Node services reference that same value. Existing
 credentials are preserved; retain `.env` and `agent_runtime_data` when updating.
 Run this preparation after copying updated deployment templates and before Compose.
-The runtime owns conversation models and roles; Java owns Embedding settings.
+The runtime owns conversation models and the domain default; Java owns Embedding settings.
 Both Node services use the same `ONTOMATO_MODEL_RUNTIME_TOKEN` for sealed model keys.
 
 Models are normally configured in the UI. To seed new domains, optionally set
@@ -212,6 +213,44 @@ explicit same-session replies; automatic next-chat-message routing is batch 3.
 Compose sets a stable `NODE_ID` for ontology job recovery. If overridden or deployed
 with multiple ontology nodes, use a stable unique ID for each node.
 
+## Gateway migration and reverse proxies
+
+The workbench is at `<origin><PUBLIC_BASE_PATH>/`, and the Manager at
+`<origin><PUBLIC_BASE_PATH>/ontology-manager/`. The default prefix is empty;
+for example `/wenshu` has no trailing slash. Prefix segments accept letters,
+digits, underscores and hyphens. Each deployment needs its own origin (scheme,
+host and port): different path prefixes on one origin do not isolate browser credentials.
+The public edition is anonymous. Enterprise login belongs to the Manager at `#/login`.
+
+For the first update to the gateway layout, stop this project's Watchtower if enabled,
+back up `.env` and the Compose files, obtain all five application images, then stop
+only the workbench (`docker compose stop ontomato`) to release its published port.
+Copy the new Compose templates into the existing deployment, keep the original `PORT`
+and secrets, add `GATEWAY_IMAGE`, and remove `ONTOLOGY_MANAGER_URL`,
+`ONTOLOGY_MANAGER_PORT` and `DATARAG_PORT`. Run `prepare-env.py`, pull and `up -d --wait`.
+Preserve the existing automatic-update overlay; `up` starts Watchtower again.
+Watchtower alone cannot install this new service or change published ports.
+The initial migration has downtime and must use a complete application combination.
+No database or business volume is replaced by this routing change.
+
+External clients that used port 3005 or 18087 must use the gateway base URL.
+The canonical ontology API is `<origin><prefix>/api/data-query`; the public
+`<prefix>/ontomato/*` alias remains for older integrations. MCP remains at
+`<prefix>/mcp/*` and report downloads at `<prefix>/api/analysis-tasks/*/report/pdf`.
+A change of origin requires logging in again in the enterprise edition.
+
+An existing outer Nginx forwards the entire prefix (including pages, API and MCP)
+to the gateway, preserving the prefix. Pass the original Host, X-Forwarded-Host and
+X-Forwarded-Proto and configure `TRUSTED_PROXY_CIDR` for that proxy's source network.
+Disable response/request buffering, preserve uploads, and use 900s read/send timeouts;
+source SSE heartbeats keep otherwise idle business sessions open. The gateway adds no
+total deadline; endpoints retain their existing completion/reconnection behavior.
+Do not keep an outer Java-to-Node proxy or strip the prefix twice.
+
+If the switch fails, stop the gateway and restore the backed-up templates and image
+references before starting the old application combination; keep the database volumes.
+Health checks prove HTTP readiness only. Login, permissions, both pages and a streamed
+business request still require browser acceptance by the deployment owner.
 
 ## Configuration reference
 

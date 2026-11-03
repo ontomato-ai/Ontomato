@@ -16,7 +16,6 @@ import express, {
   Request,
   Response,
   NextFunction,
-  Router,
 } from "express";
 import cors from "cors";
 import path from "path";
@@ -24,7 +23,6 @@ import { skillRegistryManager } from "../core/skills/index";
 import { resolveSkillPackageFile } from "../core/skills/discovery/loader";
 import { config } from "../config/application";
 import analysisTasksRouter from "../api/routes/analysis-tasks";
-import backendProxyRouter from "../api/routes/backend-proxy";
 import dashboardsRouter from "../api/routes/dashboards";
 import feedbackRouter from "../api/routes/feedback";
 import memoriesRouter from "../api/routes/memories";
@@ -40,7 +38,6 @@ import observeRouter from "../platform/diagnosis/observe/routes";
 import artifactRetentionRouter from "../platform/diagnosis/artifact-retention-routes";
 import opsDiagnosisRouter from "../api/routes/ops-diagnosis";
 import { syncRuntimeDefaultResources } from "../platform/runtime-defaults";
-import modelSettingsRouter from "../api/routes/model-settings";
 import systemModelConfigRouter from "../api/routes/system-model-config";
 import workbenchAppearanceRouter from "../api/routes/workbench-appearance";
 import { syncDefaultPrompts } from "../core/prompts/loader";
@@ -59,21 +56,9 @@ import { getDefaultLocale, tApp } from "../i18n/index";
 import { echartDir, webDistDir } from "../content/layout";
 import { workbenchIdentity } from "../identity/installed";
 import { MODEL_RUNTIME_TOKEN_ENV, modelKeySealKey } from "@ontomato/contracts/model-key-seal";
-import { workbenchProduct } from "../product/installed";
 
 const logger = createLogger("server");
 const SERVER_NOW_HEADER = "X-Server-Now";
-
-export interface WorkbenchMounts {
-  /** Edition-owned backend routes, followed by the ordinary transparent proxy. */
-  backendProxyRouter?: Router;
-  /** Enterprise SSO. Must run before the unified authenticate. OSS has no such route. */
-  authRouter?: Router;
-  /** Enterprise governance platform connection proxy. Absent in OSS. */
-  connectionRouter?: Router;
-  /** Enterprise governance platform SSO ticket. Absent in OSS. */
-  dataGovernanceRouter?: Router;
-}
 
 let runtimeBound = false;
 
@@ -87,10 +72,9 @@ function bindRuntime(): void {
   installDiagnosisEvidenceReader({ resolve: resolveDiagnosisEvidence });
 }
 
-export function createWorkbenchApp(mounts: WorkbenchMounts = {}): Express {
+export function createWorkbenchApp(): Express {
   bindRuntime();
   const identity = workbenchIdentity();
-  const product = workbenchProduct();
   const app: Express = express();
   const isDev = config.nodeEnv !== "production";
 
@@ -113,12 +97,6 @@ export function createWorkbenchApp(mounts: WorkbenchMounts = {}): Express {
     next();
   });
 
-  if (mounts.authRouter) app.use("/api/auth", mounts.authRouter);
-  app.use("/api/data-query", mounts.backendProxyRouter ?? backendProxyRouter);
-  app.use(
-    product.proxyMountPath,
-    mounts.backendProxyRouter ?? backendProxyRouter,
-  );
   app.use("/mcp/analysis-agents", analysisAgentMcpRouter);
   app.use("/mcp/ops-agent", opsAgentMcpRouter);
   app.use(
@@ -193,7 +171,6 @@ export function createWorkbenchApp(mounts: WorkbenchMounts = {}): Express {
     res.send(
       `window.__APP_CONFIG__ = ${JSON.stringify({
         DEFAULT_LOCALE: getDefaultLocale(),
-        ONTOLOGY_MANAGER_URL: config.ontologyManagerUrl,
       })};\nwindow.__APP_CONFIG__.API_BASE = new URL("./api", document.currentScript.src).pathname;`,
     );
   });
@@ -217,10 +194,6 @@ export function createWorkbenchApp(mounts: WorkbenchMounts = {}): Express {
   app.use("/api/analysis-tasks", analysisTasksRouter);
   app.use("/api/assistant", assistantRouter);
   app.use("/api/scheduled-tasks", scheduledTasksRouter);
-  if (mounts.connectionRouter)
-    app.use("/api/connections", mounts.connectionRouter);
-  if (mounts.dataGovernanceRouter)
-    app.use("/api/data-governance", mounts.dataGovernanceRouter);
   app.use("/api/dashboards", dashboardsRouter);
   app.use("/api/feedback", feedbackRouter);
   app.use("/api/preferences", preferencesRouter);
@@ -255,7 +228,6 @@ export function createWorkbenchApp(mounts: WorkbenchMounts = {}): Express {
   app.use("/api/observe", opsDiagnosisRouter);
   app.use("/api/observe", serviceLogsRouter);
   app.use("/api/observe", observeRouter);
-  app.use("/api/model-settings", modelSettingsRouter);
   app.use("/api/system-model-config", systemModelConfigRouter);
   app.use("/api/workbench-appearance", workbenchAppearanceRouter);
   app.use(errorHandler);
@@ -274,6 +246,7 @@ export function createWorkbenchApp(mounts: WorkbenchMounts = {}): Express {
 export async function startWorkbench(
   app: Express,
   port: number,
+  initializeApplication?: () => Promise<() => Promise<void>>,
 ): Promise<void> {
   const isDev = config.nodeEnv !== "production";
   // Checked first: without the shared value no model key can be opened, so the server does not start.
@@ -283,8 +256,12 @@ export async function startWorkbench(
   syncDefaultPrompts();
   await initializeConnection();
   getWorkbenchLogStore();
-  process.once("SIGTERM", () => { void closeWorkbenchLogging().finally(() => process.exit(0)); });
-  process.once("SIGINT", () => { void closeWorkbenchLogging().finally(() => process.exit(0)); });
+  const stopApplication = await initializeApplication?.();
+  const shutdown = async () => {
+    try { await stopApplication?.(); } finally { await closeWorkbenchLogging(); }
+  };
+  process.once("SIGTERM", () => { void shutdown().finally(() => process.exit(0)); });
+  process.once("SIGINT", () => { void shutdown().finally(() => process.exit(0)); });
   await registerAssistantSkills();
 
   startArtifactCleanupScheduler();

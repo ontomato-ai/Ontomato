@@ -1,0 +1,23 @@
+services:
+  gateway:
+    image: docker.io/library/nginx:1.27-alpine@sha256:65645c7bb6a0661892a8b03b89d0743208a18dd2f3f17a54ef4b76fb8e2f2a10
+    entrypoint: ["/bin/sh", "/gateway-entrypoint.sh"]
+    command: ["nginx", "-g", "daemon off;"]
+    ports:
+      - "127.0.0.1:8080:80"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    environment:
+      WORKBENCH_UPSTREAM: host.docker.internal:3000
+      WEB_UPSTREAM: host.docker.internal:5173
+      MANAGER_UPSTREAM: host.docker.internal:5174
+      JAVA_UPSTREAM: host.docker.internal:${DEV_JAVA_PORT:-18087}
+      PUBLIC_BASE_PATH: ${PUBLIC_BASE_PATH:-}
+      WEB_MOUNT: ${PUBLIC_BASE_PATH:-}/
+      MANAGER_MOUNT: ${PUBLIC_BASE_PATH:-}/ontology-manager/
+    volumes:
+      - ${DEV_PUBLIC_ROOT:?}/docker/gateway/docker-entrypoint.sh:/gateway-entrypoint.sh:ro
+      - ${DEV_PUBLIC_ROOT:?}/docker/gateway/nginx.conf.template:/etc/nginx/templates/gateway.conf.template:ro
+    labels:
+      dev.stack.root: "${DEV_STACK_ROOT:?}"
+      dev.stack.product: "${DEV_STACK_PRODUCT:?}"

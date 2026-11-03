@@ -13,11 +13,13 @@ buildManagerImage(
     workspaceId: "ontomato",
     appImporter: "apps/ontology-manager",
     sources: [{ id: "ontomato", root: repoRoot }],
-    // Knowledge governance renders through the shared agent shell, which reads runtime contracts.
+    // Knowledge governance renders through the shared agent shell, which reads runtime contracts; the platform area
+    // (audit logs, system monitoring, system configuration) comes from the platform admin package.
     owners: {
       ontomato: [
         "apps/ontology-manager",
         "packages/ontology-manager",
+        "packages/platform-admin",
         "packages/agent-shell-ui",
         "packages/contracts",
       ],

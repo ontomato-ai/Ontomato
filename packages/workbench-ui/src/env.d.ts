@@ -12,6 +12,5 @@ interface Window {
     API_BASE?: string;
     DEFAULT_LOCALE?: string;
     LANGUAGE_SWITCH_ENABLED?: boolean;
-    ONTOLOGY_MANAGER_URL?: string;
   };
 }

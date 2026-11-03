@@ -36,14 +36,14 @@ export function userSkillEnvironment(credentials: AssistantCredentials): Runtime
 }
 export function runDefinition(
   systemPrompt: string,
-  modelRole: string,
+  modelId: string | null,
   skills: RuntimeStartRunRequest["definition"]["skills"],
   locale?: string,
   externalMcp: RuntimeStartRunRequest["definition"]["externalMcp"] = [],
 ): RuntimeStartRunRequest["definition"] {
   return {
     systemPrompt: systemPrompt + "\n\n" + getOutputLanguageInstruction(locale),
-    modelRole,
+    modelId,
     skills,
     externalMcp,
     sandbox: {
@@ -112,7 +112,6 @@ export async function waitForRun(
 interface AuxiliaryInput {
   systemPrompt: string;
   message: string;
-  modelRole?: string;
   signal?: AbortSignal;
   domainId?: string;
   userId?: string;
@@ -150,7 +149,7 @@ export async function startAuxiliary(input: AuxiliaryInput) {
     input: { role: "user", content: input.message, timestamp: Date.now() },
     definition: runDefinition(
       input.systemPrompt,
-      input.modelRole ?? "general",
+      null,
       input.skills ?? [],
       credentials.locale,
     ),

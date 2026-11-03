@@ -225,7 +225,7 @@ public class ActionCreationService {
                   "timestamp",
                   Instant.parse(row.getString("created_at")).toEpochMilli()),
               "definition",
-              definitions.actionCreation(prompt, context.language(), remaining),
+              definitions.actionCreation(context.owner().domainId(), prompt, context.language(), remaining),
               "environment",
               JSONObject.of(
                   "values",

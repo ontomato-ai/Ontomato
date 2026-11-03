@@ -75,7 +75,7 @@ test("an application export records its source without carrying the executor", (
     writeFileSync(join(root, "tools/mirror.py"), "fixture");
     const python = join(root, "bin/python3");
     writeFileSync(python, `#!${process.execPath}\nconst fs=require('node:fs');const a=process.argv.slice(2);\n`
-      + `if(a.includes('resolve')) console.log(JSON.stringify(['a','b','c','d','e']));\n`
+      + `if(a.includes('resolve')) console.log(JSON.stringify(['a','b','c','d','e','f']));\n`
       + `if(a.includes('export')) {const p=a[a.indexOf('--output')+1];fs.mkdirSync(p,{recursive:true});fs.writeFileSync(p+'/delivery.json',JSON.stringify({version:'4.1.4',files:{}}));}\n`);
     chmodSync(python, 0o755);
     process.chdir(root);
@@ -83,8 +83,8 @@ test("an application export records its source without carrying the executor", (
     let checked = false;
     const output = buildBundle({ "--arch": "amd64", "--version": "4.1.4", "--tool-bundle": join(root, "tools"),
       "--state": join(root, "state"), "--application-only": true, "--source-version": "4.1.0" }, {
-      name: "test", deployDir: join(root, "deploy"), images: ["a", "b", "c", "d", "e"],
-      validateImages(images) { assert.deepEqual(images, ["a", "b", "c", "d", "e"]); checked = true; },
+      name: "test", deployDir: join(root, "deploy"), images: ["a", "b", "c", "d", "e", "f"],
+      validateImages(images) { assert.deepEqual(images, ["a", "b", "c", "d", "e", "f"]); checked = true; },
     });
     assert.equal(checked, true);
     assert.equal(JSON.parse(readFileSync(join(output, "package/delivery.json"), "utf8")).source, "4.1.0");

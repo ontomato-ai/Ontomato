@@ -1,3 +1,4 @@
+import { withScheduledUserActivity } from "./user-activity";
 import { randomUUID } from "node:crypto";
 import type { ScheduledTaskPauseReason } from "@ontomato/contracts/scheduled-tasks";
 import { RuntimeClient } from "../../infrastructure/agent-runtime/client";
@@ -49,6 +50,14 @@ export async function startScheduledRun(
   trigger: RunRecord["trigger"],
   runId: string = randomUUID(),
 ): Promise<RunRecord | null> {
+  return withScheduledUserActivity(task.ownerId, async () => {
+    // A due task may have been claimed before account cleanup deleted it.
+    if (!await scheduledTaskStore.get(task.id, ownerOf(task))) return null;
+    return startAdmittedRun(task, trigger, runId);
+  });
+}
+
+async function startAdmittedRun(task: TaskRecord, trigger: RunRecord["trigger"], runId: string): Promise<RunRecord | null> {
   const started = await scheduledTaskStore.startRun(runId, task.id, trigger);
   if (!started) {
     logger.info("Scheduled run skipped: the previous run is still running", { taskId: task.id, trigger });

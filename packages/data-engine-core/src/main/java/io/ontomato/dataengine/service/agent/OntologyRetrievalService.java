@@ -519,7 +519,7 @@ public class OntologyRetrievalService {
                   "timestamp",
                   Instant.parse(row.getString("created_at")).toEpochMilli()),
               "definition",
-              definitions.definition(context.language(), deadline - System.currentTimeMillis()),
+              definitions.definition(context.owner().domainId(), context.language(), deadline - System.currentTimeMillis()),
               "environment",
               JSONObject.of("values", values, "secrets", secrets)),
           runId);

@@ -1,4 +1,4 @@
-import { createApp, h, ref } from "vue";
+import { computed, createApp, h, ref, type Component, type ComputedRef } from "vue";
 import "element-plus/dist/index.css";
 import "element-plus/theme-chalk/dark/css-vars.css";
 import {
@@ -11,22 +11,17 @@ import {
 } from "@ontomato/ontology-manager";
 import { ontologyText, type ManagerMessages } from "@ontomato/ontology-manager/i18n";
 import { readRuntimeConfig } from "./config";
-import { clearSessionCredential, consumeLaunchCredential, sessionCredential } from "./credential";
-import { syncLocale, syncTheme, type LocaleSync } from "./preferences";
+import { ShellHeaderControls } from "./header-controls";
+import { syncLocale, syncTheme, type LocalePreference, type ThemePreference } from "./preferences";
 import { syncView } from "./view";
 import "./style.css";
 
-export type { LocaleSync };
+export { ShellHeaderControls };
 
 /** Every static difference between the two products' standalone shells. */
 export interface ManagerShellProfile {
-  /** Value handed to the component when this tab has no credential: explicit anonymous (open source) or null (stop requests and report the missing credential). */
-  noCredential: ManagerCredential | null;
-  /** Theme message type sent by the main system. */
-  themeMessage: string;
-  /** UI locale: the fixed locale without sync, otherwise the default locale. */
+  /** Default UI locale; with a single supported locale it is fixed and no language control is shown. */
   locale: string;
-  localeSync: LocaleSync | null;
   /** Messages per supported locale; its keys are the locales the shell accepts. */
   messages: Readonly<Record<string, ManagerMessages>>;
   /** Fixed data defaults, independent of the UI locale. */
@@ -35,6 +30,59 @@ export interface ManagerShellProfile {
   presentation: ManagerPresentation;
   /** This product's stored values for the business knowledge tags. */
   knowledgeTagValues: ManagerKnowledgeTagValues;
+}
+
+/**
+ * What the page's host supplies for one page load. The credential is fixed for the page: a host whose credential can
+ * change (another tab signs in or out) rebuilds the whole page, so no old data or request outlives its credential.
+ */
+export interface ManagerShellHost {
+  credential: ManagerCredential;
+  /** 401/402 from a Manager request. Without it a 401 stops the component and reports the status. */
+  onAuthFailure?: (status: ManagerAuthFailureStatus) => void;
+  /** Host controls after the shell's theme and language controls (e.g. account and log out); receives `messages`. */
+  headerActions?: Component;
+}
+
+/** The page's theme and language, shared by the Manager view and any host page on the same document. */
+export interface ManagerShellPreferences extends ThemePreference, LocalePreference {
+  locales: readonly string[];
+  messages: ComputedRef<ManagerMessages>;
+}
+
+const LEGACY_SESSION_KEYS = ["ontology_manager_token", "ontology_manager_api_key"];
+
+/**
+ * The Manager no longer takes credentials from its URL or keeps a tab session. Old launch links lose only their tk/apiKey
+ * (the rest of the query and the hash stay) and a credential left in this tab's session by the old launch is dropped,
+ * never migrated.
+ */
+export function discardLegacyLaunchCredential() {
+  for (const key of LEGACY_SESSION_KEYS) {
+    try {
+      window.sessionStorage.removeItem(key);
+    } catch {
+      // Storage unavailable: nothing was kept.
+    }
+  }
+  const url = new URL(window.location.href);
+  if (!url.searchParams.has("tk") && !url.searchParams.has("apiKey")) return;
+  url.searchParams.delete("tk");
+  url.searchParams.delete("apiKey");
+  window.history.replaceState(window.history.state, "", `${url.pathname}${url.search}${url.hash}`);
+}
+
+/** Starts the page's theme and language once; call it before mounting anything that reads them. */
+export function startShellPreferences(profile: ManagerShellProfile): ManagerShellPreferences {
+  const locales = Object.keys(profile.messages);
+  const theme = syncTheme();
+  const locale = syncLocale(profile.locale, locales);
+  return {
+    ...theme,
+    ...locale,
+    locales,
+    messages: computed(() => profile.messages[locale.locale.value]),
+  };
 }
 
 const STALE_BUILD_RELOAD_KEY = "ontology_manager_stale_build_reload";
@@ -54,52 +102,57 @@ function reloadOnStaleBuild() {
   });
 }
 
-export function startManagerShell(profile: ManagerShellProfile) {
+export function startManagerShell(
+  profile: ManagerShellProfile,
+  host: ManagerShellHost,
+  preferences: ManagerShellPreferences = startShellPreferences(profile)
+) {
   reloadOnStaleBuild();
-  consumeLaunchCredential();
-  const credential = ref(sessionCredential(profile.noCredential));
+  discardLegacyLaunchCredential();
   const authExpired = ref(false);
-  const theme = syncTheme(profile.themeMessage);
-  const locale = profile.localeSync
-    ? syncLocale(profile.locale, Object.keys(profile.messages), profile.localeSync)
-    : ref(profile.locale);
-  const messages = () => profile.messages[locale.value];
   const { apiBase, initialRoute } = readRuntimeConfig();
   const { view, replaceView } = syncView(initialRoute);
 
-  const embedded = new URLSearchParams(window.location.search).get("embedded") === "1";
-
-  // 401 means authentication expired: clear this tab's credential and stop requests. 402 (license failure) keeps the credential; the component shows the error.
   function onAuthFailure(status: ManagerAuthFailureStatus) {
-    if (status !== 401) return;
-    clearSessionCredential();
-    credential.value = null;
-    authExpired.value = true;
+    if (host.onAuthFailure) {
+      host.onAuthFailure(status);
+      return;
+    }
+    // 402 (license failure) keeps the component; the component shows the error.
+    if (status === 401) authExpired.value = true;
   }
 
   createApp({
     render: () =>
-      credential.value
-        ? h(OntologyManager, {
-            apiBase,
-            credential: credential.value,
-            locale: locale.value,
-            messages: messages(),
-            theme: theme.value,
-            view: view.value,
-            dataFallbacks: profile.dataFallbacks,
-            presentation: profile.presentation,
-            knowledgeTagValues: profile.knowledgeTagValues,
-            embedded,
-            "onUpdate:view": replaceView,
-            onAuthFailure,
-          })
-        : h(
+      authExpired.value
+        ? h(
             "p",
             { class: "manager-shell-status", role: "alert" },
-            authExpired.value
-              ? ontologyText(messages(), "requestFailedStatus", { status: 401 })
-              : ontologyText(messages(), "credentialMissing")
+            ontologyText(preferences.messages.value, "requestFailedStatus", { status: 401 })
+          )
+        : h(
+            OntologyManager,
+            {
+              apiBase,
+              credential: host.credential,
+              locale: preferences.locale.value,
+              messages: preferences.messages.value,
+              theme: preferences.theme.value,
+              view: view.value,
+              dataFallbacks: profile.dataFallbacks,
+              presentation: profile.presentation,
+              knowledgeTagValues: profile.knowledgeTagValues,
+              "onUpdate:view": replaceView,
+              onAuthFailure,
+            },
+            {
+              "header-actions": () => [
+                h(ShellHeaderControls, { preferences }),
+                host.headerActions
+                  ? h(host.headerActions, { messages: preferences.messages.value })
+                  : null,
+              ],
+            }
           ),
   }).mount("#app");
 }

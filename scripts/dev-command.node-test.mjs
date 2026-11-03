@@ -17,7 +17,7 @@ test("dev keeps the old three-process pnpm arguments and the open-source default
   assert.deepEqual(settings.args, ["pnpm:dev:server", "pnpm:dev:web", "pnpm:dev:ontology-manager"]);
   assert.equal(settings.cwd, ROOT);
   assert.equal(settings.env.NODE_ENV, "development");
-  assert.equal(settings.env.ONTOLOGY_MANAGER_URL, "http://localhost:5174");
+  assert.equal(settings.env.ONTOLOGY_MANAGER_URL, undefined);
   assert.equal(settings.env.DATARAG_ORIGIN, undefined);
 });
 

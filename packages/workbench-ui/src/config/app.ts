@@ -1,8 +1,4 @@
-function runtimeConfig() {
-  return typeof window !== "undefined" ? window.__APP_CONFIG__ : undefined;
-}
+import { API_BASE } from "../utils/api-base";
 
-export const ONTOLOGY_MANAGER_URL =
-  runtimeConfig()?.ONTOLOGY_MANAGER_URL?.trim() ||
-  import.meta.env.VITE_ONTOLOGY_MANAGER_URL?.trim() ||
-  (import.meta.env.DEV ? "http://localhost:5174" : "");
+/** The Manager shares the deployment root with the workbench in every environment. */
+export const ONTOLOGY_MANAGER_PATH = `${API_BASE.replace(/\/api$/, "")}/ontology-manager/`;

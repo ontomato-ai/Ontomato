@@ -38,8 +38,6 @@ services:
     platform: linux/${ARCH:?ARCH not set}
     pull_policy: missing
     restart: unless-stopped
-    ports:
-      - "${DATARAG_PORT:-18087}:18087"
     env_file:
       - .env
     # Keep unset and empty optional values distinct; internal addresses are fixed here.
@@ -49,6 +47,7 @@ services:
       ONTOMATO_QUERY_SERVICE_TOKEN: ${ONTOMATO_QUERY_SERVICE_TOKEN:?Run the deployment configuration preparation first}
       ONTOMATO_QUERY_SIGNING_KEY: ${ONTOMATO_QUERY_SIGNING_KEY:?Run the deployment configuration preparation first}
       ONTOMATO_QUERY_CALLBACK_URL: http://datarag:18087
+      PUBLIC_BASE_PATH: ${PUBLIC_BASE_PATH:-}
       NODE_ID: ${NODE_ID:-datarag}
       TZ: ${TZ:-UTC}
       <<: *database-environment
@@ -109,8 +108,6 @@ services:
     platform: linux/${ARCH:?ARCH not set}
     pull_policy: missing
     restart: unless-stopped
-    ports:
-      - "${PORT:-3000}:3000"
     env_file:
       - .env
     environment:
@@ -124,7 +121,6 @@ services:
       PORT: "3000"
       NODE_ENV: production
       TZ: ${TZ:-UTC}
-      ONTOLOGY_MANAGER_URL: ${ONTOLOGY_MANAGER_URL:-http://${PUBLIC_HOST:?PUBLIC_HOST not set}:${ONTOLOGY_MANAGER_PORT:-3005}}
     shm_size: "1gb"
     volumes:
       - ./frontend_data:/app/data
@@ -146,10 +142,7 @@ services:
     platform: linux/${ARCH:?ARCH not set}
     pull_policy: missing
     restart: unless-stopped
-    ports:
-      - "${ONTOLOGY_MANAGER_PORT:-3005}:80"
     environment:
-      DATARAG_ORIGIN: http://datarag:18087
       ONTOLOGY_INITIAL_ROUTE: ${ONTOLOGY_INITIAL_ROUTE:-/playground}
     logging:
       driver: json-file
@@ -157,6 +150,26 @@ services:
         max-size: "50m"
         max-file: "5"
     depends_on:
+      datarag:
+        condition: service_healthy
+
+  gateway:
+    image: ${GATEWAY_IMAGE:-ontomato-gateway:deploy-${ARCH:?ARCH not set}}
+    platform: linux/${ARCH:?ARCH not set}
+    pull_policy: missing
+    restart: unless-stopped
+    ports:
+      - "${PORT:-3000}:80"
+    environment:
+      WORKBENCH_UPSTREAM: ontomato:3000
+      LEGACY_API_PREFIX: ontomato
+      PUBLIC_BASE_PATH: ${PUBLIC_BASE_PATH:-}
+      TRUSTED_PROXY_CIDR: ${TRUSTED_PROXY_CIDR:-127.0.0.1/32}
+    depends_on:
+      ontomato:
+        condition: service_started
+      ontology-manager:
+        condition: service_started
       datarag:
         condition: service_healthy
 

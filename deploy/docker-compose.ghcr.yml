@@ -8,3 +8,5 @@ services:
     image: ${MANAGER_IMAGE:-ghcr.io/ontomato-ai/ontomato-ontology-manager:${ONTOMATO_VERSION:-latest}}
   agent-runtime:
     image: ${AGENT_RUNTIME_IMAGE:-ghcr.io/ontomato-ai/ontomato-agent-runtime:${ONTOMATO_VERSION:-latest}}
+  gateway:
+    image: ${GATEWAY_IMAGE:-ghcr.io/ontomato-ai/ontomato-gateway:${ONTOMATO_VERSION:-latest}}

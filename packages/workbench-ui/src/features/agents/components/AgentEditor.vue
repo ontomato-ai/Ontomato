@@ -11,10 +11,12 @@ import type {
   AssistantAgentInput,
 } from "@ontomato/contracts/assistant-chat";
 import type { McpServiceOption } from "@ontomato/contracts/agent-runtime-mcp";
+import type { ModelOptions } from "@ontomato/contracts/model-settings";
 import type { RuntimeSkillRef } from "@ontomato/contracts/agent-runtime-skills";
 import { agentDefinitionsApi, type ObjectClassOption } from "../api";
 import { avatarIcon, lightAvatarColorOptions, themedAvatarColor } from "../avatar";
 import AgentBasicInfoFields from "./AgentBasicInfoFields.vue";
+import ModelSelectionSelect from "./ModelSelectionSelect.vue";
 import SkillSelector from "./SkillSelector.vue";
 
 /** Edits one agent definition; a null agent is a new one. */
@@ -22,8 +24,15 @@ const props = defineProps<{
   agent: AssistantAgentDefinition | null;
   classes: ObjectClassOption[];
   outlineLoading: boolean;
+  /** The domain's models; null until read (or when reading failed). */
+  modelOptions: ModelOptions | null;
+  modelOptionsFailed: boolean;
 }>();
-const emit = defineEmits<{ saved: [agent: AssistantAgentDefinition]; deleted: [id: string] }>();
+const emit = defineEmits<{
+  saved: [agent: AssistantAgentDefinition];
+  deleted: [id: string];
+  reloadModelOptions: [];
+}>();
 const { t } = useI18n();
 const { isDark } = useTheme();
 
@@ -34,6 +43,8 @@ interface Form {
   avatarColor: string;
   enabled: boolean;
   systemPrompt: string;
+  /** The agent's own model; null follows the domain default. */
+  modelId: string | null;
   skills: RuntimeSkillRef[];
   classNames: string[];
   mcpServiceIds: string[];
@@ -53,6 +64,7 @@ function toForm(agent: AssistantAgentDefinition | null): Form {
     avatarColor: themedAvatarColor(avatar.color, isDark.value),
     enabled: agent?.enabled ?? true,
     systemPrompt: agent?.systemPrompt ?? "",
+    modelId: agent?.modelSelection.modelId ?? null,
     skills: [...(agent?.skills ?? [])],
     classNames: [...(agent?.classNames ?? [])],
     mcpServiceIds: [...(agent?.enabledMcpServiceIds ?? [])],
@@ -103,6 +115,7 @@ function validInput(): AssistantAgentInput | null {
     icon: JSON.stringify({ key: value.avatarKey, color: value.avatarColor }),
     enabled: value.enabled,
     systemPrompt: value.systemPrompt,
+    modelSelection: { modelId: value.modelId },
     skills: value.skills,
     classNames: value.classNames,
     enabledMcpServiceIds: value.mcpServiceIds,
@@ -186,6 +199,20 @@ defineExpose({ dirty });
               <p>{{ t("admin.agentEditorEnabledHint") }}</p>
             </div>
             <el-switch v-model="form.enabled" :aria-label="t('common.enable')" />
+          </div>
+        </section>
+
+        <section class="editor-section">
+          <div class="section-head">
+            <div>
+              <h3>{{ t("agents.model") }}</h3>
+              <p>{{ t("agents.modelHint") }}</p>
+            </div>
+          </div>
+          <ModelSelectionSelect v-model="form.modelId" :options="modelOptions" :aria-label="t('agents.model')" />
+          <div v-if="modelOptionsFailed" class="model-options-failed" role="alert">
+            <span>{{ t("agents.modelOptionsLoadFailed") }}</span>
+            <el-button size="small" link type="primary" @click="emit('reloadModelOptions')">{{ t("common.retry") }}</el-button>
           </div>
         </section>
 
@@ -416,5 +443,13 @@ defineExpose({ dirty });
 }
 .mcp-alert {
   margin-top: 10px;
+}
+.model-options-failed {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+  font-size: var(--text-sm);
+  color: var(--el-color-warning);
 }
 </style>

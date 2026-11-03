@@ -48,10 +48,9 @@ After `pnpm install`, one root command starts three processes:
   SIGINT/SIGTERM to the child processes;
 - `pnpm dev:server`: the Node service (`tsx watch src/index.ts` in `apps/workbench`,
   default port 3000);
-- `pnpm dev:web`: the main web app's Vite dev server (port 5173, `/api` and `/config.js`
-  proxied to 3000);
-- `pnpm dev:ontology-manager`: the Ontology Manager's Vite dev server (port 5174,
-  `/api/data-query` proxied to `DATARAG_ORIGIN`).
+- `pnpm dev:web`: the main web app's Vite dev server (internal port 5173; use the gateway on 8080);
+- `pnpm dev:ontology-manager`: the Manager Vite upstream on 5174; use the gateway
+  `/ontology-manager/` entry. Java requests go through the gateway, not Vite.
 
 Node 24+ and pnpm 9+ are required. Run `pnpm install`, then `pnpm dev`. Dependencies
 always use exact versions, never `^` or `~` ranges; the root `.npmrc` sets
@@ -148,3 +147,7 @@ product root needs one install in its own root, so one `pnpm install` in the ent
 assembly root already includes the adjacent public repository.
 
 Existing checkouts: merge the values from `apps/data-engine/.env` into the root `.env` once, resolve duplicate keys, then remove the old file. Java now follows the same process-environment priority as Node. Rename old keys and site YAML placeholders as described in [deployment configuration](../deploy/README.md#configuration).
+
+The browser entry for `pnpm dev:up` is `http://localhost:8080/`; the Manager is at
+`/ontology-manager/`. `PUBLIC_BASE_PATH` prefixes pages and APIs together. Docker runs
+the pinned Nginx base with the shared route template; no product image is built.

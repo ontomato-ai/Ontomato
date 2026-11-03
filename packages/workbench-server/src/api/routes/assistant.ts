@@ -1,3 +1,5 @@
+import { modelSelectionSchema } from "@ontomato/contracts/model-settings";
+import { readDiagnosisModel, saveDiagnosisModel } from "../../services/ops-diagnosis/model-settings";
 import { exportConversationPpt } from "../../services/assistant/export";
 import { safePptFileName } from "../../services/analysis-agent/delivery/ppt-artifacts";
 import { requirePermission } from "../../identity/installed";
@@ -26,6 +28,13 @@ import { context, id, wrap } from "../utils/agent-host";
 import { createAgentHostRouter } from "./agent-host";
 router.use(createAgentHostRouter(assistantService));
 const agentAdmin = requirePermission(["analysis-agent"]);
+router.get("/diagnosis-model", agentAdmin, wrap(async (req, res) => {
+  res.json(await readDiagnosisModel(context(req).owner.domainId));
+}));
+router.put("/diagnosis-model", agentAdmin, wrap(async (req, res) => {
+  const input = z.object({ modelSelection: modelSelectionSchema }).strict().parse(req.body);
+  res.json(await saveDiagnosisModel(context(req).owner.domainId, input.modelSelection));
+}));
 router.get("/agent-skills", agentAdmin, wrap(async (req, res) => {
   const c = context(req);
   res.json(await assistantSkillCatalog(c.owner.domainId, c.credentials.locale));

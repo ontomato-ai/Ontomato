@@ -1,121 +1,76 @@
-# Runtime-owned conversation model settings
+# Domain model settings and direct selection
 
-Approved and implemented, 2026-10-29. Extends
-[agent-runtime](agent-runtime.md). Placement, replacement scope and the OSS domain
-decision are in the [design](../../docs/model-config-runtime-design.md).
-
-## Identity and scope
-
-All routes use the existing host service Bearer credential, `X-Correlation-Id`
-and host-verified `X-Domain-Id`. The host authenticates the end user and decides
-management permissions. Runtime never accepts domain or host identity from the
-body. A model library is shared by authorized hosts in the same platform domain;
-it is not keyed by host. Other domains cannot read, retain masks from or overwrite
-it. Existing session/run/MCP host isolation is unchanged.
-
-## Settings and requests
-
-The executable schemas live in `src/model-settings.ts`, replacing the previous
-handwritten interfaces. Runtime, host and page use that single definition. Model
-request parameter fields retain the current editor/Java model shape, including
-optional fields round-tripped by the editor without dedicated controls. They
-share the provider parameter shape with `src/runtime-model-test.ts` rather than
-maintaining a second model field list.
+Runtime owns one `model_settings(domain_id, settings)` document per platform domain.
+All authenticated hosts in that domain share it. Model `name` is the stable configuration
+ID; `displayName` is editable. Provider parameters belong exclusively to each model.
+Executable schemas: `src/model-settings.ts`, `src/runtime-model-test.ts`.
 
 ```ts
-type ModelRole = "query" | "coding" | "general" | "diagnosis" | "knowledgeGovernance";
-type ModelSettingsWrite = {
-  models: ModelEntry[];
-  agents: Record<ModelRole, string | null>;
-};
-type ModelSettingsView = {
-  models: ModelEntry[]; // apiKeys contain only masks; defaults normalized
-  agents: Record<ModelRole, { model: string | null }>;
-};
+type ModelSelection = { modelId: string | null };
+type ModelSettings = { models: ModelEntry[]; defaultModelId: string | null };
+type ModelOptions = { models: { name: string; displayName: string }[]; defaultModelId: string | null };
 ```
 
-`name` remains the domain-unique configuration ID, and `displayName` remains an
-editable label. Roles only reference IDs; parameters belong to the model entry.
-An empty/absent label becomes the ID. Null or absent `maxTokens` and
-`contextWindow` use the existing defaults, 50000 and 256000. Nullable optional
-fields from the existing editor are normalized at the request boundary. Custom
-request parameters remain an object applied as final top-level body overrides.
+Run definitions replace `modelRole` with optional nullable `modelId`. Null or omission
+selects the domain default. An explicit missing ID never falls back: unavailable selection
+or default returns 422 `MODEL_NOT_CONFIGURED` before admission. A run and its compaction
+retain their resolved model; changing settings affects subsequent runs. An admitted retry
+retains the original run without resolving models again.
 
-Save is a complete replacement of models and all five references; no partial
-model save or dual write. Require nonempty unique IDs, complete model connections
-and all five role keys with no unknown roles. References must be null/blank or
-refer to a submitted model. Blank references normalize to null. If and only if
-the previous library is empty and the submitted library contains exactly one
-model, assign that model to every empty role. Return the resulting normalized
-references so the page shows what was actually saved.
-
-Saved API keys retain the established write-only semantics: keys longer than
-eight characters show `******` plus the last four characters; shorter keys show
-`******`. An incoming mask restores one matching stored key from the same domain
-and model ID. Match in stored order, using each stored key at most once, including
-duplicate tails. Reject unmatched masks without writing any part of the document.
-Plain values replace keys; omitted list elements are removed. Never echo plaintext
-keys in success or error responses, diagnostics or logs.
-
-## Runtime HTTP
-
-| Method/path | Request | Success |
+| Runtime route | Input | Output |
 | --- | --- | --- |
-| GET `/v1/models/settings` | — | 200 `ModelSettingsView` |
-| PUT `/v1/models/settings` | `ModelSettingsWrite` | 200 `ModelSettingsView` |
-| POST `/v1/models/test` | `{model: ModelEntry, prompt?: string}` | 200 `{content: string}` |
+| GET `/v1/models/settings` | — | `ModelSettings` with masked API keys |
+| PUT `/v1/models/settings` | complete `ModelSettings` | normalized `ModelSettings` |
+| GET `/v1/models/options` | — | `ModelOptions`, no connection parameters or secrets |
+| POST `/v1/models/test` | `{model:ModelEntry,prompt?:string}` | `{content:string}` |
 
-Settings GET is an authenticated server boundary. It returns masks for workbench page responses.
-There is no plaintext-key endpoint. Ciphertext is never accepted as a replacement
-API key or a substitute for the current domain's saved mask.
+All routes require host Bearer credentials, verified `X-Domain-Id` and correlation context.
+Runtime validates and atomically replaces the complete document under its existing domain
+lock. Default references must exist in the submitted list or be null. A removed model may
+remain referenced in host-owned agent definitions; the next run fails explicitly. There is
+no reverse business dependency or cascading update. A first manual model does not implicitly
+change a null default. Complete LLM seed environment initializes a new domain with the existing
+`default` model/default ID; incomplete seed creates an empty library. Saved rows are never reseeded.
 
-The test route replaces its current raw `apiKey` draft shape with the existing
-editor's `apiKeys` shape. Runtime resolves any masks against saved settings,
-selects the first key as before, then calls the existing pi-ai connection test.
-An unsaved draft with plaintext keys does not need a configuration ID; restoring
-a mask requires the matching saved model ID. Test does not assign any roles.
-Blank/omitted prompts use `Hello`. Nothing is saved, no session is created, no
-provider retry is added, and client disconnect cancels the request. Model
-provider errors use the existing safe `MODEL_TEST_FAILED` response.
+API keys remain encrypted at rest and masked on reads. An incoming mask restores a matching
+saved key in the same domain and model ID, consuming duplicate masks in stored order.
+Ciphertext and unmatched masks are rejected; plaintext replacement values are never echoed.
+Tests restore masks against saved data, never save, and cancel when the upstream request is
+cancelled. Connection errors expose the safe `MODEL_TEST_FAILED` result. Read failures never
+become empty writable state. Existing parameter defaults and custom-request overrides remain.
 
-Diagnostics expose only model ID, display label, API model name,
-`connectionConfigured`, timeout, retry count, output/context limits and role
-references, matching the current safe model projection. They contain no URL,
-key, ciphertext, header values or custom request parameter values. Runtime owns
-this projection; Java supplies only its remaining diagnostic fields.
+Ontology is the browser's management host. The gateway prefix is `/api/data-query`:
 
-Errors use the existing `{error:{code,message},correlationId}` envelope: invalid
-credentials 401; invalid settings/masks 400 `INVALID_REQUEST`; absent model for a
-requested role 422 `MODEL_NOT_CONFIGURED`; test provider failure 502
-`MODEL_TEST_FAILED`. Read/storage errors are failures, never empty libraries.
-Configuration writes have no automatic retry. Concurrent saves serialize on the
-domain document; the last committed complete replacement is authoritative.
+| Java route | Permission | Success |
+| --- | --- | --- |
+| GET `/model-settings` | `system-config` | `{success:true,data:ModelSettings}` |
+| POST `/model-settings/save` | `system-config` | same |
+| POST `/model-settings/test` | `system-config` | `{success:true,data:{content:string}}` |
+| GET `/model-options` | current domain identity | `{success:true,data:ModelOptions}` |
+| GET `/ontology/ai/agent-models` | `system-config` | `{success:true,data:{agents:[{id,kind,name,modelSelection}]}}` |
+| PUT `/ontology/ai/agent-models/:id` | `system-config` | `{success:true,data:{id,kind,name,modelSelection}}` |
 
-## Workbench boundary
+The PUT body is `{modelSelection:ModelSelection}`. Only ontology-owned catalog IDs may be
+configured. Domain comes from the current identity, never from the body. Runtime grants are
+not user credentials for these APIs. Explicit model IDs are validated against runtime options
+before host settings are saved. Unknown agents return 404, absent referenced models 400;
+transport failures return 503 `DEPENDENCY_UNAVAILABLE`. New controller errors use non-2xx
+`{success:false,code,message}`. Enterprise's existing `system-config` guard owns management
+permissions; the options endpoint only requires identity. OSS keeps domain `1`.
 
-The existing page calls `GET /api/model-settings`,
-`POST /api/model-settings/save`, and `POST /api/model-settings/test`. The API
-adapter changes; page location, controls, dialogs, first-model behavior and
-success/error presentation stay the same. Read requires authenticated domain
-identity; save and test additionally require the existing `system-config`
-permission. OSS keeps its anonymous single-domain behavior.
+Workbench owns `assistant_agents.model_selection` and `ops_diagnosis_settings.model_selection`.
+Assistant definitions expose `modelSelection` instead of `modelRole`; creation/omission defaults
+to `{modelId:null}`. Existing `/api/assistant/agent-definitions` CRUD retains `analysis-agent`.
+GET/PUT `/api/assistant/diagnosis-model` uses that same permission and returns `{modelSelection}`;
+PUT takes the same shape. Diagnosis execution permissions remain unchanged. Auxiliary report,
+chart, preview and evaluation calls use the domain default. Ontology's Action input examples
+also use only that default. Workbench `/api/model-settings` and its management proxy are removed.
 
-The host forwards through `RuntimeClient`, using only server-verified domain
-context and its service credential. It preserves the existing page envelopes:
-`{success:true,data:ModelSettingsView}` for read/save and
-`{success:true,data:string}` for test. Failures carry a safe message and runtime
-status/code; transport failure is 503 `DEPENDENCY_UNAVAILABLE`. Failed reads must
-not become writable empty state.
+Embedding remains Java-owned with its existing businessConfig and vector rebuild endpoints.
+No embedding entries enter the runtime conversation-model list.
 
-## Agent execution and cutover
-
-Runtime resolves `definition.modelRole` from its local domain store when preparing
-a new run. It captures that resolved model for the run and compaction; later saves
-affect the next resolution, not an in-flight request. An unassigned role fails
-explicitly without falling back to another role.
-
-Remove `modelCredential` from StartRun and all producers in the same change;
-credentials required by skills remain in `environment.secrets`. Delete
-`AGENT_RUNTIME_MODEL_CONFIG_URL`, the Java settings adapter and the Java
-`businessConfig` conversation-model endpoints/fields. Stored old configuration
-is not read or converted by this code; pre-release conversion is separate.
+Existing deployments require the separate pre-release conversion in a stop-write window.
+Convert each agent's old role to a direct ID; null roles become the domain default. Set the
+domain default from old `general`, remove the old role map/column, and remove `modelRole` from
+historical run definitions. Cross-version replay of old admissions is unsupported. Products
+contain no legacy role parser, data conversion or compatibility branch.

@@ -132,7 +132,7 @@ public class KnowledgeGovernanceService {
       store.transaction(() -> gate(id,run,context.owner()));
       runtime.json(context.owner().domainId(),run,"/v1/sessions/"+id+"/runs","POST",JSONObject.of(
         "language",context.language(),
-        "definition",definitions.governance(context.language(),deadline-System.currentTimeMillis()),
+        "definition",definitions.governance(context.owner().domainId(), context.language(),deadline-System.currentTimeMillis()),
         "input",JSONObject.of("role","user","content",message,"timestamp",Instant.parse(row.getString("created_at")).toEpochMilli()),
         "environment",JSONObject.of("values",JSONObject.of("ONTOMATO_ONTOLOGY_URL",runtime.ontologyUrl(),"ONTOMATO_GOVERNANCE_ID",id),
           "secrets",JSONObject.of("ONTOMATO_GOVERNANCE_TK",token))),run);

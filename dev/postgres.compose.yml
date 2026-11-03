@@ -1,6 +1,9 @@
 # PostgreSQL for local development. Called only by the product root's `pnpm dev:up`
 # full-stack tool with explicit -p/-f; the account and password are local examples only.
 services:
+  gateway:
+    environment:
+      LEGACY_API_PREFIX: ontomato
   postgres:
     image: pgvector/pgvector:pg18
     restart: unless-stopped

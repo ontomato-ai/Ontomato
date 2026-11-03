@@ -1,4 +1,5 @@
 import { ossProfile } from "./profile";
-import { startManagerShell } from "./shell";
+import { startOssManager } from "./platform";
 
-startManagerShell(ossProfile);
+// Open source has no sign-in: every request is explicitly anonymous.
+startOssManager(ossProfile);

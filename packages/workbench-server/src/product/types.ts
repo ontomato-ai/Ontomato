@@ -7,7 +7,6 @@ import type { LogSourceType, ParsedLogSource } from "@ontomato/contracts/observe
  * string here; each app pins its own literals locally.
  */
 export interface WorkbenchProduct {
-  proxyMountPath: "/data-agent" | "/ontomato";
   migrationLockKey: "data-agent:postgres-business-migrations" | "ontomato:postgres-business-migrations";
   subgraphFence: "data-agent-subgraph" | "ontomato-subgraph";
   mcpClientName: "data-agent" | "ontomato";

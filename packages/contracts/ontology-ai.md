@@ -106,6 +106,7 @@ callback gate closes, but abort/error/cancel and inherited artifacts cannot save
 ## Model connection tests
 
 Conversation model tests and saved-key restoration belong to the runtime's
-[model configuration API](agent-runtime-model-config.md). The existing workbench
-page calls its own host, which authorizes management and forwards the draft.
+[model configuration API](agent-runtime-model-config.md). The Ontology Manager's
+model configuration page calls the ontology service, which authorizes management
+and forwards the draft.
 Java retains only Embedding configuration and tests.

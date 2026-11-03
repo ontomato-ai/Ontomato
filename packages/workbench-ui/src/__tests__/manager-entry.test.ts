@@ -1,112 +1,71 @@
-import { beforeEach, describe, expect, it } from "vitest";
-import { createApp, h, nextTick } from "vue";
-import ElementPlus from "element-plus";
-import en from "element-plus/es/locale/lang/en";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { createMemoryHistory, createRouter, RouterView } from "vue-router";
-import { installWorkbenchI18n } from "../i18n";
-import { installAuthHost } from "../utils/auth";
-import {
-  installOntologyManagerEntry,
-  type OntologyManagerEntryConfig,
-} from "../views/admin/manager-entry-config";
-import { adminRoutes } from "../router/admin-routes";
-import { adminAccessKey } from "../features/admin/navigation";
 
-// config/app.ts reads the runtime config on import.
-window.__APP_CONFIG__ = { ONTOLOGY_MANAGER_URL: "http://manager.test/" };
+// config/app.ts reads the runtime config on import: the deployment root is /nested/.
+window.__APP_CONFIG__ = { API_BASE: "/nested/api" };
 
-const enterpriseEntry: OntologyManagerEntryConfig = {
-  themeMessage: "data-agent-theme",
-  localeMessage: "data-agent-locale",
-  frameTitle: "Ontology Manager",
-  missingUrlTitle: "",
-  missingUrlDescription: "",
-};
-const ossEntry: OntologyManagerEntryConfig = { ...enterpriseEntry, themeMessage: "ontomato-theme", localeMessage: null };
+const { adminRoutes, managerLocation } = await import("../router/admin-routes");
+const { adminGroups } = await import("../features/admin/navigation");
 
-async function managerFrameUrl(
-  path: string,
-  entry: OntologyManagerEntryConfig,
-  token: string | null,
-  apiKey: string | null,
-  granted: readonly string[] = []
-) {
-  installOntologyManagerEntry(entry);
-  installAuthHost({
-    getToken: () => token,
-    getApiKey: () => apiKey,
-    responseStatusError: () => null,
-    getUserInfo: () => null,
-    verifySessionOnce: () => Promise.resolve("valid"),
-    handleAuthExpired: () => {},
-  });
-  const i18n = installWorkbenchI18n({
-    supported: ["zh-CN", "en"],
-    defaultLocale: "zh-CN",
-    initialLocale: "en",
-    switchEnabled: true,
-    save: null,
-    messages: {},
-    elementLocale: () => en,
-  });
+/** Opens an old workbench address and returns where the tab was replaced to (null when it stayed in the workbench). */
+async function open(path: string) {
+  const replace = vi.spyOn(window.location, "replace").mockImplementation(() => {});
   const router = createRouter({
     history: createMemoryHistory(),
     routes: [
+      { path: "/chat", component: { render: () => null } },
       {
         path: "/admin",
         component: RouterView,
-        children: [adminRoutes.ontologyManager, adminRoutes.visualModeling],
+        children: Object.values(adminRoutes),
       },
     ],
   });
-  await router.push(path);
-  const el = document.createElement("div");
-  document.body.append(el);
-  const app = createApp({ render: () => h(RouterView) }).use(i18n).use(ElementPlus).use(router);
-  app.provide(adminAccessKey, { ready: true, can: (permission) => granted.includes(permission) });
-  app.mount(el);
-  await router.isReady();
-  await new Promise((resolve) => setTimeout(resolve));
-  await nextTick();
-  const src = el.querySelector("iframe")?.getAttribute("src");
-  // Unmounting the last app resets the router's currentRoute to the start, so read it before unmounting.
-  const route = router.currentRoute.value;
-  app.unmount();
-  return { url: new URL(src!), route };
+  await router.push(path).catch(() => {});
+  const target = replace.mock.calls[0]?.[0];
+  return target === undefined ? null : String(target);
 }
 
-describe("Manager entry", () => {
-  beforeEach(() => localStorage.clear());
+afterEach(() => {
+  vi.restoreAllMocks();
+});
 
-  it("the old visual modeling route enters the Manager entry with focus/id/back and drops the rest of the query", async () => {
-    const { url, route } = await managerFrameUrl(
-      "/admin/ontology/visual-modeling?focus=object&id=Order&back=playground&tk=leak&keep=1",
-      enterpriseEntry,
-      "tok",
-      null
+describe("old Manager addresses in the workbench", () => {
+  it("the Manager tab is a real link to the Manager page under the same deployment root", () => {
+    expect(adminGroups.dataAssets.href).toBe("/nested/ontology-manager/");
+  });
+
+  it.each([
+    ["/admin/ontology-manager", "/nested/ontology-manager/"],
+    ["/admin/ontology", "/nested/ontology-manager/"],
+    ["/admin/intelligence-assets", "/nested/ontology-manager/#/assets/metrics"],
+    ["/admin/metric-views", "/nested/ontology-manager/#/assets/metrics"],
+    ["/admin/action-management", "/nested/ontology-manager/#/assets/metrics"],
+    ["/admin/write-tasks", "/nested/ontology-manager/#/assets/metrics"],
+    ["/admin/knowledge", "/nested/ontology-manager/#/knowledge"],
+    ["/admin/ontology-manager?view=data-browser", "/nested/ontology-manager/#/data"],
+  ])("%s replaces the tab with %s", async (path, target) => {
+    expect(await open(path)).toBe(target);
+  });
+
+  it("visual modeling takes focus/id and only the Manager graph as back target; credentials and other parameters stay behind", async () => {
+    expect(
+      await open("/admin/ontology/visual-modeling?focus=object&id=Order%20A&back=playground&tk=leak&keep=1")
+    ).toBe("/nested/ontology-manager/#/visual-modeling?focus=object&id=Order+A&back=playground");
+    expect(await open("/admin/ontology/visual-modeling?focus=object&id=Order&back=https://evil.test/")).toBe(
+      "/nested/ontology-manager/#/visual-modeling?focus=object&id=Order"
     );
-    expect(route.path).toBe("/admin/ontology-manager");
-    expect(route.query).toEqual({ focus: "object", id: "Order", back: "playground", view: "visual-modeling" });
-    expect(Object.fromEntries(url.searchParams)).toEqual({
-      view: "visual-modeling",
-      focus: "object",
-      id: "Order",
-      back: "playground",
-      theme: "light",
-      locale: "en",
-      embedded: "1",
-      tk: "tok",
-    });
-    expect(url.hash).toBe("");
+    expect(await open("/admin/ontology/visual-modeling")).toBe("/nested/ontology-manager/#/visual-modeling");
   });
 
-  it("with locale sync: token first, apiKey without a token; open source sends no locale and no credential parameter without a credential", async () => {
-    const withKey = await managerFrameUrl("/admin/ontology-manager?view=assets", enterpriseEntry, null, "key");
-    expect(withKey.url.searchParams.get("apiKey")).toBe("key");
-    expect(withKey.url.searchParams.get("tk")).toBeNull();
-
-    const oss = await managerFrameUrl("/admin/ontology-manager?view=data-browser", ossEntry, null, null);
-    expect(Object.fromEntries(oss.url.searchParams)).toEqual({ view: "data-browser", theme: "light", embedded: "1" });
+  it("an unknown view opens the Manager's own initial page, and focus/id/back only belong to visual modeling", () => {
+    expect(managerLocation({ view: "other", focus: "object" })).toBe("/nested/ontology-manager/");
+    expect(managerLocation({ view: "assets", focus: "object", id: "x" })).toBe(
+      "/nested/ontology-manager/#/assets/metrics"
+    );
   });
 
+  it("the console root opens its first own page instead of leaving for the Manager", async () => {
+    expect(await open("/admin")).toBeNull();
+  });
 });
