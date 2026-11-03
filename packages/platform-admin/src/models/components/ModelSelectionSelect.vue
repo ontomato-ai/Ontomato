@@ -1,59 +1,44 @@
 <script setup lang="ts">
 import { computed } from "vue";
 import { useI18n } from "vue-i18n";
-import { modelLabel } from "../types";
+import { modelSelectionView, selectedModelId, type ModelChoice } from "@ontomato/agent-shell-ui/model-selection";
 
-/*
- * Picks one of the domain's models, or the null choice the caller names (follow the domain default, or no default).
- * A stored ID that is no longer in the list stays selected as it is and is reported, never replaced by the null choice:
- * the reference fails explicitly until someone chooses again.
- */
+/** Element Plus rendering of the shared model selection rule, in the platform language. */
 const props = defineProps<{
   modelValue: string | null;
-  /** The domain's models; null while they are not known, when nothing can be chosen or reported missing. */
-  models: readonly { name: string; displayName: string }[] | null;
-  /** Label of the null choice. */
+  /** The domain's models; null while they are not known. */
+  models: readonly ModelChoice[] | null;
+  /** Label of the null choice (follow the domain default, or no default). */
   nullLabel: string;
   disabled?: boolean;
   ariaLabel?: string;
 }>();
-
 const emit = defineEmits<{ "update:modelValue": [value: string | null] }>();
 const { t } = useI18n();
 
-// The select holds "" for the null choice: model IDs are never empty, and "" is declared a real value below.
-const NULL_CHOICE = "";
-
-const missing = computed(
-  () => props.modelValue !== null && props.models !== null && !props.models.some((model) => model.name === props.modelValue)
+const view = computed(() =>
+  modelSelectionView(props.modelValue, props.models, {
+    nullChoice: props.nullLabel,
+    unavailable: (id) => t("admin.modelUnavailable", { id }),
+  })
 );
-
-function select(value: string) {
-  emit("update:modelValue", value === NULL_CHOICE ? null : value);
-}
 </script>
 
 <template>
   <div class="model-selection">
+    <!-- "" is the null choice; it is declared a real value instead of an empty one. -->
     <el-select
-      :model-value="props.modelValue ?? NULL_CHOICE"
+      :model-value="view.value"
       :empty-values="[null, undefined]"
-      :disabled="props.disabled || props.models === null"
+      :disabled="props.disabled || view.disabled"
       :aria-label="props.ariaLabel"
       filterable
-      @update:model-value="select"
+      @update:model-value="emit('update:modelValue', selectedModelId($event))"
     >
-      <el-option :value="NULL_CHOICE" :label="props.nullLabel" />
-      <el-option v-for="model in props.models ?? []" :key="model.name" :value="model.name" :label="modelLabel(model)" />
-      <el-option
-        v-if="missing"
-        :value="props.modelValue!"
-        :label="t('admin.modelUnavailable', { id: props.modelValue })"
-        disabled
-      />
+      <el-option v-for="option in view.options" :key="option.value" v-bind="option" />
     </el-select>
-    <p v-if="missing" class="model-selection-missing" role="alert">
-      {{ t("admin.modelSelectionMissing", { id: props.modelValue }) }}
+    <p v-if="view.missingId" class="model-selection-missing" role="alert">
+      {{ t("admin.modelSelectionMissing", { id: view.missingId }) }}
     </p>
   </div>
 </template>

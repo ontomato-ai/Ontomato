@@ -5,6 +5,7 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
+    "./model-selection": "./src/model-selection/index.ts",
     "./style.css": "./src/style.css"
   },
   "scripts": {

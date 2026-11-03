@@ -2,7 +2,8 @@
 import type { ModelSelection } from "@ontomato/contracts/model-settings";
 import { Bot } from "lucide-vue-next";
 import { useI18n } from "vue-i18n";
-import { modelLabel, type OntologyAgentSelection } from "../types";
+import { modelLabel } from "@ontomato/agent-shell-ui/model-selection";
+import type { OntologyAgentSelection } from "../types";
 import { usePlatformHost } from "../../context";
 import ModelSelectionSelect from "./ModelSelectionSelect.vue";
 

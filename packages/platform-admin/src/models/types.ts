@@ -85,12 +85,6 @@ export const vectorRebuildStatusSchema = z.union([
 export type VectorRebuildStatus = z.output<typeof vectorRebuildStatusSchema>;
 export type VectorRebuildState = VectorRebuildStatus["state"];
 
-// Model identity: name is the fixed config ID and displayName may be duplicated;
-// append the ID when they differ, show it once when they match.
-export function modelLabel(model: { name: string; displayName: string }): string {
-  return model.displayName === model.name ? model.name : `${model.displayName} (${model.name})`;
-}
-
 export function formatTimeout(seconds: number): string {
   return `PT${seconds}S`;
 }

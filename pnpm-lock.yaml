@@ -321,6 +321,9 @@ importers:
 
   packages/platform-admin:
     dependencies:
+      '@ontomato/agent-shell-ui':
+        specifier: workspace:*
+        version: link:../agent-shell-ui
       '@ontomato/contracts':
         specifier: workspace:*
         version: link:../contracts
