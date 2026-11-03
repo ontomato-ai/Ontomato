@@ -284,6 +284,55 @@ async function syncProduction(api, rest) {
   }
 }
 
+async function objectViewCommand(api, rest) {
+  const command = rest.shift();
+  if (command === "list") {
+    printData(await requestJson(api, "POST", "/objectView/list", rest[0] ? { className: rest[0] } : {}));
+    return;
+  }
+  if (command === "save") {
+    if (!rest[0]) die("object-view save requires a JSON request: className, form, expectedRevision, document, description");
+    printData(await requestJson(api, "POST", "/objectView/save", JSON.parse(readInput(rest[0]))));
+    return;
+  }
+  if (command === "publish") {
+    if (!rest[0]) die("object-view publish requires a JSON request: className, form, revision, expectedRevision");
+    printData(await requestJson(api, "POST", "/objectView/publish", JSON.parse(readInput(rest[0]))));
+    return;
+  }
+  if (!["get", "validate"].includes(command) || !rest[0]) die("object-view get|validate <class> [--form full|panel] [--revision <number>]");
+  const form = takeOption(rest, "--form") || "full";
+  const revision = takeOption(rest, "--revision");
+  if (rest.length !== 1 || !["full", "panel"].includes(form) || (revision != null && (!Number.isSafeInteger(Number(revision)) || Number(revision) < 1))) die("Invalid Object View reference");
+  const resolved = (await requestJson(api, "POST", "/objectView/resolve", { className: rest[0], form, revision: revision == null ? "published" : Number(revision) })).data;
+  if (command === "get") { console.log(JSON.stringify(resolved, null, 2)); return; }
+  const issues = [];
+  for (const [kind, ids] of [["metricView", resolved.dependencies.metricViews], ["action", resolved.dependencies.actions]]) {
+    for (const id of ids) {
+      const asset = (await requestJson(api, "POST", `/${kind}/queryById`, { id })).data;
+      if (!asset || asset.status !== "PUBLISHED") issues.push(`${kind} ${id} is missing or not published`);
+      else {
+        for (const tab of resolved.document.tabs) for (const section of tab.sections) for (const widget of section.widgets) {
+          if (widget.resourceId !== id || (kind === "action" ? widget.kind !== "action" : !["metric", "table", "chart"].includes(widget.kind))) continue;
+          const names = new Set((asset.function?.parameters || []).map(parameter => parameter.name));
+          for (const name of Object.keys(widget.parameters || {})) if (!names.has(name)) issues.push(`${widget.id}: unknown ${kind} parameter ${name}`);
+          if (kind === "metricView") for (const name of names) if (!Object.hasOwn(widget.parameters || {}, name)) issues.push(`${widget.id}: missing MetricView parameter binding ${name}`);
+        }
+      }
+    }
+  }
+  if (resolved.dependencies.skills.length) {
+    const response = await fetch(`${api.envUrl}/api/skills`, { headers: headers(api) });
+    const available = (await readJson(response)).skills || [];
+    for (const id of resolved.dependencies.skills) if (!available.some(skill => skill.id === id && skill.enabled !== false && skill.type === "executable" && skill.category === "visualization")) issues.push(`Visualization skill ${id} is unavailable`);
+  }
+  const classes = (await requestJson(api, "GET", "/admin/getAllClassNames")).data;
+  const classNames = new Set(Array.isArray(classes) ? classes.map(item => typeof item === "string" ? item : item.className) : []);
+  for (const name of resolved.dependencies.classes) if (!classNames.has(name)) issues.push(`Object class ${name} is unavailable`);
+  console.log(JSON.stringify({ valid: issues.length === 0, revision: resolved.revision, dependencies: resolved.dependencies, issues }, null, 2));
+  if (issues.length) process.exitCode = 1;
+}
+
 function usage() {
   die(`usage: ontomato.mjs [--lang <tag>] <command>
   dataset-desc
@@ -291,6 +340,9 @@ function usage() {
   schema <class> [<class> ...]
   relationships <class> [<class> ...]
   env-mode
+  object-view list [<class>]
+  object-view get|validate <class> [--form full|panel] [--revision <number>]
+  object-view save|publish <json|@file>
   import-schema
   prod-distinct-values <class> <attribute> [--like <pattern>] [--limit <n>]
   prod-query <json|@file>
@@ -320,6 +372,10 @@ async function main() {
   const cfg = loadConfig();
   if (!cfg.envUrl) die("Set ONTOMATO_URL or envUrl in application.yml");
   const api = { envUrl: cfg.envUrl, lang };
+  if (cmd === "object-view") {
+    await objectViewCommand(api, argv.slice(1));
+    return;
+  }
   if (cmd === "dataset-desc") {
     printData(await requestJson(api, "GET", "/admin/getDatasetDesc"));
     return;

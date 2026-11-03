@@ -50,4 +50,24 @@ class ObjectViewStoreTest {
         assertThrows(IllegalArgumentException.class, () -> store.publish("domain-a", "Order", "panel", 7, 9));
         verify(jdbc, never()).update(anyString(), any(Object[].class));
     }
+
+    @Test void validatesTypedInputsAndFindsDependencies() {
+        JSONObject document = document();
+        document.put("inputs", JSONObject.of("period", JSONObject.of("type", "string", "default", "month", "enum", java.util.List.of("month", "year"))));
+        var widget = document.getJSONArray("tabs").getJSONObject(0).getJSONArray("sections").getJSONObject(0).getJSONArray("widgets").getJSONObject(0);
+        widget.put("binding", JSONObject.of("source", "input", "path", "period"));
+        assertDoesNotThrow(() -> ObjectViewStore.validateDocument("Order", document));
+        document.getJSONObject("inputs").getJSONObject("period").put("default", 10);
+        assertThrows(IllegalArgumentException.class, () -> ObjectViewStore.validateDocument("Order", document));
+        widget.put("kind", "chart");
+        widget.put("resourceId", "summary");
+        assertEquals(java.util.Set.of("summary"), ObjectViewStore.dependencies(document).get("metricViews"));
+    }
+
+    @Test void pinnedReadsRequireAPublishedRevisionInTheCurrentDomain() {
+        JdbcTemplate jdbc = mock(JdbcTemplate.class);
+        var store = new ObjectViewStore(jdbc);
+        assertThrows(IllegalArgumentException.class, () -> store.resolve("domain-a", "Order", "full", 3));
+        verify(jdbc).query(contains("AND published=TRUE"), any(org.springframework.jdbc.core.RowMapper.class), eq("domain-a"), eq("Order"), eq("full"), eq(3));
+    }
 }

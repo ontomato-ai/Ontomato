@@ -3,6 +3,10 @@ import "element-plus/dist/index.css";
 import "element-plus/theme-chalk/dark/css-vars.css";
 import {
   OntologyManager,
+  OntomatoObjectView,
+  objectViewEmbedSchema,
+  type ObjectViewEmbed,
+  type ObjectViewActionEvent,
   type ManagerAuthFailureStatus,
   type ManagerCredential,
   type ManagerDataFallbacks,
@@ -73,6 +77,40 @@ export function startManagerShell(profile: ManagerShellProfile) {
   const { view, replaceView } = syncView(initialRoute);
 
   const { embedded, knowledgeGovernanceUrl } = readHostLaunch();
+  const launch = new URLSearchParams(window.location.search);
+  const objectViewMode = launch.get("embed") === "object-view";
+  const declaration = ref<ObjectViewEmbed>();
+  const embedError = ref("");
+  const reload = ref(0);
+  const parentOrigin = httpUrl(launch.get("parentOrigin"));
+  const allowedOrigin = parentOrigin ? new URL(parentOrigin).origin : window.location.origin;
+  function notify(type: string, payload: unknown) {
+    if (window.parent !== window) window.parent.postMessage({ channel: "ontomato.object-view", version: 1, type, payload }, allowedOrigin);
+  }
+  function setDeclaration(value: unknown) {
+    const result = objectViewEmbedSchema.safeParse(value);
+    if (!result.success) {
+      embedError.value = ontologyText(messages(), "ovInvalidDeclaration");
+      notify("error", { message: embedError.value });
+      return;
+    }
+    embedError.value = "";
+    declaration.value = result.data;
+  }
+  if (objectViewMode) {
+    if (launch.has("declaration")) {
+      try { setDeclaration(JSON.parse(launch.get("declaration")!)); }
+      catch { embedError.value = ontologyText(messages(), "ovInvalidDeclaration"); }
+    }
+    window.addEventListener("message", event => {
+      if (event.source !== window.parent || event.origin !== allowedOrigin) return;
+      const message = event.data;
+      if (!message || message.channel !== "ontomato.object-view" || message.version !== 1) return;
+      if (message.type === "configure") setDeclaration(message.payload);
+      if (message.type === "refresh") reload.value++;
+    });
+    notify("ready", {});
+  }
 
   // 401 means authentication expired: clear this tab's credential and stop requests. 402 (license failure) keeps the credential; the component shows the error.
   function onAuthFailure(status: ManagerAuthFailureStatus) {
@@ -85,7 +123,26 @@ export function startManagerShell(profile: ManagerShellProfile) {
   createApp({
     render: () =>
       credential.value
-        ? h(OntologyManager, {
+        ? objectViewMode
+          ? embedError.value
+            ? h("p", { class: "manager-shell-status", role: "alert" }, embedError.value)
+            : declaration.value
+              ? h(OntomatoObjectView, {
+                  key: reload.value,
+                  context: {
+                    apiBase, credential: credential.value, locale: locale.value, messages: messages(), theme: theme.value,
+                    view: "", dataFallbacks: profile.dataFallbacks, presentation: profile.presentation,
+                    knowledgeTagValues: profile.knowledgeTagValues, embedded: true, knowledgeGovernanceUrl: null,
+                  },
+                  declaration: declaration.value,
+                  onAuthFailure,
+                  onLoaded: payload => notify("loaded", payload),
+                  onOpenObject: (payload: { className: string; primaryKey: string }) => notify("open-object", payload),
+                  onActionCompleted: (payload: ObjectViewActionEvent) => notify("action-completed", payload),
+                  onError: message => notify("error", { message }),
+                })
+              : null
+          : h(OntologyManager, {
             apiBase,
             credential: credential.value,
             locale: locale.value,

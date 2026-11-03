@@ -27,6 +27,18 @@ public class ObjectViewController {
         return respond(() -> store.read(identity.getCurrentUser().getDomainId(), input.getString("className"), input.getString("form"), true));
     }
 
+    @PostMapping("/objectView/list")
+    public ResponseEntity<JSONObject> list(@RequestBody JSONObject input) {
+        return respond(() -> store.list(identity.getCurrentUser().getDomainId(), input.getString("className")));
+    }
+
+    @PostMapping("/objectView/resolve")
+    public ResponseEntity<JSONObject> resolve(@RequestBody JSONObject input) {
+        return respond(() -> store.resolve(identity.getCurrentUser().getDomainId(), input.getString("className"),
+            input.getString("form") == null ? "full" : input.getString("form"),
+            input.get("revision") == null || "published".equals(input.getString("revision")) ? null : input.getInteger("revision")));
+    }
+
     @PostMapping("/objectView/save")
     public ResponseEntity<JSONObject> save(@RequestBody JSONObject input) {
         return respond(() -> store.save(identity.getCurrentUser().getDomainId(), identity.getCurrentUserId(), input.getString("className"), input.getString("form"),

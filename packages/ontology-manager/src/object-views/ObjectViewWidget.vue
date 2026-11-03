@@ -3,14 +3,14 @@ import { computed, onBeforeUnmount, ref, watch } from "vue";
 import { Eye } from "lucide-vue-next";
 import { parseActionValue } from "./action-values";
 import { ElButton, ElDialog, ElInput, ElSelect, ElOption, ElTable, ElTableColumn, ElAlert, ElSkeleton, vLoading } from "element-plus";
-import { readViewPath, resolveViewBinding, type ViewWidget, type ObjectReference } from "@ontomato/contracts/object-views";
+import { readViewPath, resolveViewBinding, type ObjectViewActionEvent, type ViewWidget, type ObjectReference } from "@ontomato/contracts/object-views";
 import { useManagerClient, useOntologyText } from "../context";
 import ObjectViewVisualization from "./ObjectViewVisualization.vue";
 import { useManagerFeedback } from "../feedback";
 const { ot } = useOntologyText();
 
-const props = defineProps<{ widget: ViewWidget; object: Record<string, unknown>; reference: ObjectReference; variables: Record<string, unknown>; refresh: number; preview?: boolean }>();
-const emit = defineEmits<{ variable: [name: string, value: unknown]; refresh: []; open: [reference: ObjectReference] }>();
+const props = defineProps<{ widget: ViewWidget; object: Record<string, unknown>; reference: ObjectReference; variables: Record<string, unknown>; inputs?: Record<string, unknown>; refresh: number; preview?: boolean }>();
+const emit = defineEmits<{ variable: [name: string, value: unknown]; refresh: []; open: [reference: ObjectReference]; "action-completed": [event: ObjectViewActionEvent] }>();
 const client = useManagerClient();
 const { message } = useManagerFeedback();
 const data = ref<unknown>();
@@ -45,8 +45,8 @@ watch(() => JSON.stringify([props.reference.className, props.reference.primaryKe
   actionOpen.value = false;
   actionValues.value = {};
 });
-const parameters = computed(() => Object.fromEntries(Object.entries(props.widget.parameters).map(([name, binding]) => [name, resolveViewBinding(binding, props.object, props.variables)])));
-const bindingValue = computed(() => resolveViewBinding(props.widget.binding, props.object, props.variables));
+const parameters = computed(() => Object.fromEntries(Object.entries(props.widget.parameters).map(([name, binding]) => [name, resolveViewBinding(binding, props.object, props.variables, props.inputs)])));
+const bindingValue = computed(() => resolveViewBinding(props.widget.binding, props.object, props.variables, props.inputs));
 const selectedData = computed(() => readViewPath(data.value, props.widget.resultPath));
 const rows = computed<Record<string, unknown>[]>(() => {
   const value = props.widget.kind === "links" ? data.value : selectedData.value ?? bindingValue.value;
@@ -122,6 +122,7 @@ async function execute() {
     if (current !== actionRequest) return;
     actionOpen.value = false;
     message.success(ot("ovActionSucceeded"));
+    emit("action-completed", { id: props.widget.resourceId, reference: { ...props.reference } });
     emit("refresh");
   } catch (reason) { if (current === actionRequest) error.value = reason instanceof Error ? reason.message : String(reason); }
   finally { if (current === actionRequest) loading.value = false; }

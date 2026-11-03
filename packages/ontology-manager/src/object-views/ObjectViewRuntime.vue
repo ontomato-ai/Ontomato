@@ -1,10 +1,18 @@
 <script setup lang="ts">
-import { ref, watch } from "vue";
-import { ElTabs, ElTabPane } from "element-plus";
-import { viewConditionMatches, type ObjectViewDocument, type ObjectReference } from "@ontomato/contracts/object-views";
+import { computed, ref, watch } from "vue";
+import { ElAlert, ElTabs, ElTabPane } from "element-plus";
+import { resolveViewInputs, viewConditionMatches, type ObjectViewActionEvent, type ObjectViewDocument, type ObjectReference } from "@ontomato/contracts/object-views";
 import ObjectViewWidget from "./ObjectViewWidget.vue";
-const props = defineProps<{ document: ObjectViewDocument; object: Record<string, unknown>; reference: ObjectReference; preview?: boolean }>();
-const emit = defineEmits<{ open: [reference: ObjectReference]; refresh: [] }>();
+import { useOntologyText } from "../context";
+import { viewInputErrorMessage } from "./input-error";
+const { ot } = useOntologyText();
+const props = defineProps<{ document: ObjectViewDocument; object: Record<string, unknown>; reference: ObjectReference; inputs?: Record<string, unknown>; preview?: boolean }>();
+const emit = defineEmits<{ open: [reference: ObjectReference]; refresh: []; "action-completed": [event: ObjectViewActionEvent] }>();
+const inputState = computed(() => {
+  try { return { values: resolveViewInputs(props.document, props.inputs), error: "" }; }
+  catch (reason) { return { values: {}, error: viewInputErrorMessage(reason, ot) }; }
+});
+const resolvedInputs = computed(() => inputState.value.values);
 const variables = ref<Record<string, unknown>>({});
 const refresh = ref(0);
 const activeTab = ref("");
@@ -17,15 +25,16 @@ function reload() { refresh.value++; emit("refresh"); }
 </script>
 <template>
   <div class="object-view-runtime">
-    <el-tabs v-model="activeTab">
+    <el-alert v-if="inputState.error" :title="inputState.error" type="error" :closable="false" />
+    <el-tabs v-else v-model="activeTab">
       <el-tab-pane v-for="tab in document.tabs" :key="tab.id" :name="tab.id" :label="tab.title" lazy>
         <section v-for="section in tab.sections" :key="section.id" class="view-section">
           <h3 v-if="section.title">{{ section.title }}</h3>
           <div class="view-grid">
             <template v-for="widget in section.widgets" :key="widget.id">
-              <article v-if="viewConditionMatches(widget.visibleWhen, object, variables)" :style="{ gridColumn: 'span ' + widget.span }" :class="['widget-card', { 'chart-card': widget.kind === 'chart' }]">
+              <article v-if="viewConditionMatches(widget.visibleWhen, object, variables, resolvedInputs)" :style="{ gridColumn: 'span ' + widget.span }" :class="['widget-card', { 'chart-card': widget.kind === 'chart' }]">
                 <h4 v-if="widget.title">{{ widget.title }}</h4>
-                <ObjectViewWidget :widget="widget" :object="object" :reference="reference" :variables="variables" :refresh="refresh" :preview="preview" @variable="(name, value) => variables[name] = value" @refresh="reload" @open="emit('open', $event)" />
+                <ObjectViewWidget :widget="widget" :object="object" :reference="reference" :variables="variables" :inputs="resolvedInputs" :refresh="refresh" :preview="preview" @variable="(name, value) => variables[name] = value" @refresh="reload" @open="emit('open', $event)" @action-completed="emit('action-completed', $event)" />
               </article>
             </template>
           </div>

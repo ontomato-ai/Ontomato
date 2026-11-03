@@ -143,6 +143,7 @@ Read the existing ontology and reusable interfaces first: identify the objects t
 5. Generate the interfaces the pages need with `metric-view generate` / `action generate`, and debug them with `execute`. Once you understand the structure, editing the definition from `get` and running `save` is usually faster than generating again from natural language.
 6. For a full test pass on the designated disposable dataset, restore the agreed baseline with `import-test-data` so earlier Action writes do not confuse the checks (re-importing clears the vector resources of classes present in the file and re-attaches the ones in the zip).
 7. Build the pages on the tested MetricViews and Actions; see [Calling interfaces from a page](#calling-interfaces-from-a-page).
+   Discover published Object Views with `object-view list` before rebuilding an object's detail UI. Use `object-view get` to inspect its inputs and dependencies and `object-view validate` to check the target deployment. Reuse it through the declaration/iframe contract below when it matches the business task.
 8. In `two-env`, run `action re-explain --missing`, then sync the interfaces the pages use to production with `sync-production`. Dry run first, show the user the exact list, and wait for explicit confirmation before running with `--confirm`; see [Sync interfaces back to production](#sync-interfaces-back-to-production).
 9. Deploy the application code to production with the customer's web server or hosting process.
 
@@ -253,6 +254,73 @@ Every Action stores a server-generated structured explanation (`codeSegments` an
 - `sync-production` refuses Actions whose explanation is missing or does not match the current code. The dry run lists them under `missingExplanations`.
 
 ## Calling interfaces from a page
+
+### Reusing Object Views
+
+For a native page matching the application's own design, use `POST /objectView/contract`
+with `{view:{className,form,revision}}`. It returns `regions` and `operations` with stable
+keys (legacy views use widget IDs). Call `/objectView/instance/read` with
+`{view,object:{primaryKey},regions:[key],inputs:{}}`; inspect each region's `success`,
+`value` and completeness markers. Pin the resolved numeric revision for subsequent calls.
+Render those values using host components. Execute `/objectView/instance/execute` with
+`{view,object:{primaryKey},operation:key,parameters:{},inputs:{}}` only within the authorized
+business scope. Bound read-only identity parameters cannot be overridden. The original
+object/query/Action permissions still apply. Interactive-variable bindings and file
+operations require the full runtime. Native APIs return data, not chart HTML or layout styles.
+
+An Object View is a published object UI asset, keyed by class and `full`/`panel` in
+the current domain. Commands:
+
+```text
+node ontomato.mjs object-view list [<class>]
+node ontomato.mjs object-view get|validate <class> [--form full|panel] [--revision <number>]
+node ontomato.mjs object-view save @save-request.json
+node ontomato.mjs object-view publish @publish-request.json
+```
+
+`list` returns current publications, input definitions and dependencies; `get` returns
+the document and resolved revision. `validate` checks published read/write dependencies,
+their parameter bindings, object classes and enabled visualization Skills without
+executing Actions. It exits non-zero when issues are found. Check actual UI behavior
+as well. `save` accepts `{className,form,expectedRevision,document,description}`;
+`publish` accepts `{className,form,revision,expectedRevision}`. These modify UI definitions.
+
+Embed the standalone Manager deployment URL in an iframe with
+`?embed=object-view&parentOrigin=<encoded-application-origin>`. Register the message
+listener before setting `src`. Check the exact Manager origin and iframe window on
+every event. When it sends `ready`, post this envelope to that exact origin:
+
+```json
+{
+  "channel": "ontomato.object-view",
+  "version": 1,
+  "type": "configure",
+  "payload": {
+    "kind": "objectView",
+    "view": {"className": "/crm/customer", "form": "full", "revision": "published"},
+    "object": {"primaryKey": "customer-1024"},
+    "inputs": {},
+    "navigation": "host"
+  }
+}
+```
+
+Use the actual deployment URL, class, object key and declared inputs. `revision` may be
+a positive integer for a previously published revision. With `host` navigation handle
+`open-object` in the application; `local` navigation opens related objects inside the
+view. Other events are `loaded` (`{revision,reference}`), `action-completed`
+(`{id,reference}`) and `error` (`{message}`). Send `refresh` with the same envelope to
+reload and reset state. Authentication uses the deployment's existing session mechanism.
+Do not include credentials in the declaration. A URL-encoded JSON `declaration` query
+parameter also supplies the initial declaration.
+
+Published views may declare `inputs` with `type` (`string`, `number`, `boolean`),
+`description`, `required`, `default`, and optional `enum`. Bind using
+`{"source":"input","path":"period"}`. Internal variables remain view-owned.
+Pinned layouts still call current data/interfaces. Check dependencies in the target
+deployment; view revisions are local to it. `sync-production` does not copy views:
+read the target revision, explicitly save/publish there and verify before deploying
+the page. Do not imply a view is present in production after syncing only its interfaces.
 
 A page calls the interfaces through the test environment's frontend, the same path the script uses:
 

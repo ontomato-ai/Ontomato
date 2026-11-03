@@ -13,7 +13,7 @@ function source(value: ViewBinding["source"]) {
   <div class="binding-editor">
     <span class="binding-field-label">{{ ot('ovBindingSource') }}</span>
     <el-select :model-value="modelValue.source" :aria-label="ot('ovBindingSource')" @update:model-value="source">
-      <el-option :label="ot('ovObjectProperty')" value="object" /><el-option :label="ot('ovVariable')" value="variable" /><el-option :label="ot('ovFixedValue')" value="literal" />
+      <el-option :label="ot('ovObjectProperty')" value="object" /><el-option :label="ot('ovVariable')" value="variable" /><el-option :label="ot('ovHostInput')" value="input" /><el-option :label="ot('ovFixedValue')" value="literal" />
     </el-select>
     <template v-if="modelValue.source === 'literal'">
       <span class="binding-field-label">{{ ot('ovFixedValue') }}</span>
@@ -27,6 +27,10 @@ function source(value: ViewBinding["source"]) {
         </el-option>
       </el-select>
       <p class="binding-hint">{{ ot('ovVariablePathHint') }}</p>
+    </template>
+    <template v-else-if="modelValue.source === 'input'">
+      <span class="binding-field-label">{{ ot('ovHostInput') }}</span>
+      <el-input :model-value="modelValue.path" :aria-label="ot('ovHostInput')" @update:model-value="emit('update:modelValue', { source: 'input', path: $event })" />
     </template>
     <template v-else>
       <span class="binding-field-label">{{ ot('ovObjectProperty') }}</span>

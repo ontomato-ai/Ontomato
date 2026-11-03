@@ -4,6 +4,7 @@ import { createObjectView, createViewWidget } from "@ontomato/contracts/object-v
 import ObjectViewRuntime from "../object-views/ObjectViewRuntime.vue";
 import ObjectViewBuilder from "../object-views/ObjectViewBuilder.vue";
 import ObjectViewPage from "../object-views/ObjectViewPage.vue";
+import OntomatoObjectView from "../object-views/OntomatoObjectView.vue";
 import ViewBindingEditor from "../object-views/ViewBindingEditor.vue";
 import type { ViewBinding } from "@ontomato/contracts/object-views";
 import { provideManagerContext, type ManagerHostContext } from "../context";
@@ -31,6 +32,28 @@ function mount(child: () => ReturnType<typeof h>) {
 async function settle() { for (let index = 0; index < 12; index++) { await new Promise(resolve => setTimeout(resolve, 0)); await nextTick(); } }
 
 describe("configured object view interaction", () => {
+  it("loads a declarative view and ignores an old object's delayed response", async () => {
+    const view = createObjectView("Order");
+    view.tabs[0].sections[0].widgets[0].fields = ["name"];
+    let finishOld: ((value: Response) => void) | undefined;
+    const loaded = vi.fn();
+    const declaration = reactive({ kind: "objectView" as const, view: { className: "Order", form: "full" as const, revision: 3 }, object: { primaryKey: "old" }, inputs: {}, navigation: "host" as const });
+    vi.stubGlobal("fetch", async (url: string, init: RequestInit) => {
+      if (url.endsWith("/objectView/resolve")) return new Response(JSON.stringify({ success: true, data: { revision: 3, document: view } }));
+      if (JSON.stringify(init.body).includes("old")) return new Promise<Response>(resolve => { finishOld = resolve; });
+      return new Response(JSON.stringify({ success: true, data: { data: { name: "New order" } } }));
+    });
+    const element = mount(() => h(OntomatoObjectView, { context, declaration, onLoaded: loaded }));
+    await settle();
+    declaration.object.primaryKey = "new";
+    await settle();
+    expect(element.textContent).toContain("New order");
+    finishOld?.(new Response(JSON.stringify({ success: true, data: { data: { name: "Old order" } } })));
+    await settle();
+    expect(element.textContent).not.toContain("Old order");
+    expect(loaded).toHaveBeenCalledTimes(1);
+    expect(loaded).toHaveBeenCalledWith({ revision: 3, reference: { className: "Order", primaryKey: "new" } });
+  });
   it("selects a defined variable and accepts a nested variable path", async () => {
     const binding = ref<ViewBinding>({ source: "variable", path: "" });
     const element = mount(() => h(ViewBindingEditor, { modelValue: binding.value, variables: ["filter", "selected"], "onUpdate:modelValue": value => { binding.value = value; } }));

@@ -2,7 +2,7 @@
 import { computed, onBeforeUnmount, ref, watch } from "vue";
 import { ArrowDown, ArrowLeft, ArrowUp, Plus, Save, Trash2, Upload } from "lucide-vue-next";
 import { ElAlert, ElButton, ElInput, ElInputNumber, ElOption, ElSelect, ElSwitch } from "element-plus";
-import { createObjectView, createViewWidget, objectViewDocumentSchema, type ObjectReference, type ObjectViewDocument, type ObjectViewState, type ViewWidget } from "@ontomato/contracts/object-views";
+import { createObjectView, createViewWidget, objectViewDocumentSchema, resolveViewInputs, type ObjectReference, type ObjectViewDocument, type ObjectViewState, type ViewWidget } from "@ontomato/contracts/object-views";
 import { useManagerClient, useOntologyText } from "../context";
 import { widgetMessageKeys } from "./messages";
 import { useManagerFeedback } from "../feedback";
@@ -10,6 +10,7 @@ import type { OntologyObject, OntologyRelation, SmartAsset } from "../api";
 import ObjectViewRuntime from "./ObjectViewRuntime.vue";
 import ViewBindingEditor from "./ViewBindingEditor.vue";
 import { instanceName } from "./instance-name";
+import { viewInputErrorMessage } from "./input-error";
 
 const props = defineProps<{ className: string; initialPrimaryKey?: string }>();
 const emit = defineEmits<{ back: []; open: [reference: ObjectReference] }>();
@@ -47,6 +48,12 @@ const historyRevision = ref<number>();
 const parameterName = ref("");
 const variableName = ref("");
 const variableValue = ref("");
+const inputName = ref("");
+const previewInputs = ref<Record<string, string | number | boolean | null>>({});
+const previewInputError = computed(() => {
+  try { resolveViewInputs(document.value, previewInputs.value); return ""; }
+  catch (reason) { return viewInputErrorMessage(reason, ot); }
+});
 const tab = computed(() => document.value.tabs.find(item => item.id === selectedTab.value) || document.value.tabs[0]);
 const section = computed(() => tab.value?.sections.find(item => item.id === selectedSection.value) || tab.value?.sections[0]);
 const widget = computed(() => section.value?.widgets.find(item => item.id === selectedWidget.value));
@@ -80,6 +87,7 @@ async function load() {
     metrics.value = metricAssets.filter(item => item.status === "PUBLISHED");
     actions.value = actionAssets.filter(item => item.status === "PUBLISHED");
     document.value = result.versions[0] ? objectViewDocumentSchema.parse(result.versions[0].document) : createObjectView(props.className, objectType.value?.showName);
+    previewInputs.value = {};
     if (!result.versions[0]) document.value.tabs[0].sections[0].widgets[0].title = ot('ovKindProperties');
     saved.value = JSON.stringify(document.value);
     selectedTab.value = document.value.tabs[0].id;
@@ -158,7 +166,8 @@ async function restoreVersion() {
   const version = state.value.versions.find(item => item.revision === historyRevision.value);
   if (!version) return;
   if (dirty.value) { try { await confirm(ot("ovRestoreConfirm"), ot("ovRestoreVersion")); } catch { return; } }
-  document.value = objectViewDocumentSchema.parse(version.document);
+    document.value = objectViewDocumentSchema.parse(version.document);
+    previewInputs.value = {};
   selectedTab.value = document.value.tabs[0].id;
   selectedSection.value = document.value.tabs[0].sections[0].id;
   selectedWidget.value = "";
@@ -222,6 +231,12 @@ function addVariable() {
   variableName.value = "";
   variableValue.value = "";
 }
+function addInput() {
+  const name = inputName.value.trim();
+  if (!/^[A-Za-z_][A-Za-z0-9_]{0,99}$/.test(name) || ["__proto__", "constructor", "prototype"].includes(name)) return;
+  if (!Object.hasOwn(document.value.inputs, name)) document.value.inputs[name] = { type: "string", description: "", required: false, default: "" };
+  inputName.value = "";
+}
 async function back() {
   if (!await canLeave()) return;
   emit("back");
@@ -264,12 +279,26 @@ onBeforeUnmount(() => { generation++; sampleRequest++; objectSearchRequest++; wi
           <el-input :model-value="String(value ?? '')" :aria-label="name" @update:model-value="document.variables[name] = $event" />
         </div>
         <el-input v-model="variableName" :placeholder="ot('ovVariableName')" /><el-input v-model="variableValue" :placeholder="ot('ovDefaultValue')" /><el-button @click="addVariable">{{ ot('ovAddVariable') }}</el-button>
+        <h3>{{ ot('ovHostInputs') }}</h3>
+        <div v-for="(definition, name) in document.inputs" :key="name" class="variable-item">
+          <div class="variable-heading"><span>{{ name }}</span><el-button link :icon="Trash2" :aria-label="`${ot('ovRemove')} ${name}`" @click="delete document.inputs[name]; delete previewInputs[name]" /></div>
+          <el-input v-model="definition.description" :placeholder="ot('ovDescription')" />
+          <el-select :model-value="definition.type" :aria-label="ot('ovInputType')" @update:model-value="definition.type = $event; definition.default = $event === 'number' ? 0 : $event === 'boolean' ? false : ''; delete definition.enum; delete previewInputs[name]">
+            <el-option v-for="type in (['string', 'number', 'boolean'] as const)" :key="type" :value="type" :label="ot(({ string: 'ovInputString', number: 'ovInputNumber', boolean: 'ovInputBoolean' } as const)[type])" />
+          </el-select>
+          <el-switch v-if="definition.type === 'boolean'" :model-value="Boolean(definition.default)" :active-text="ot('ovDefaultValue')" @update:model-value="definition.default = Boolean($event)" />
+          <el-input-number v-else-if="definition.type === 'number'" :model-value="Number(definition.default ?? 0)" :aria-label="ot('ovDefaultValue')" @update:model-value="definition.default = $event ?? null" />
+          <el-input v-else :model-value="String(definition.default ?? '')" :placeholder="ot('ovDefaultValue')" @update:model-value="definition.default = $event" />
+          <el-switch v-model="definition.required" :active-text="ot('ovRequiredInput')" />
+        </div>
+        <el-input v-model="inputName" :placeholder="ot('ovInputName')" /><el-button @click="addInput">{{ ot('ovAddInput') }}</el-button>
         <h3>{{ ot('ovVersions') }}</h3><el-input v-model="description" :placeholder="ot('ovVersionDescription')" />
         <el-select v-model="historyRevision" :placeholder="ot('ovChooseVersion')"><el-option v-for="version in state.versions" :key="version.revision" :value="version.revision" :label="`v${version.revision} · ${version.description || version.author}`" /></el-select>
         <el-button :disabled="!historyRevision || busy" @click="restoreVersion">{{ ot('ovLoadVersion') }}</el-button><el-button type="primary" plain :disabled="!historyRevision || busy" @click="publishVersion">{{ ot('ovPublishVersion') }}</el-button>
       </aside>
       <main class="canvas">
-        <ObjectViewRuntime v-if="preview" :document="document" :object="previewObject" :reference="reference" preview @refresh="sample" @open="emit('open', $event)" />
+        <el-alert v-if="preview && previewInputError" :title="previewInputError" type="error" :closable="false" />
+        <ObjectViewRuntime v-else-if="preview" :document="document" :object="previewObject" :reference="reference" :inputs="previewInputs" preview @refresh="sample" @open="emit('open', $event)" />
         <template v-else>
           <div class="tab-bar"><el-button v-for="item in document.tabs" :key="item.id" :type="item.id === tab.id ? 'primary' : 'default'" @click="selectedTab = item.id; selectedSection = item.sections[0].id">{{ item.title }}</el-button><el-button @click="addTab">{{ ot('ovAddTab') }}</el-button></div>
           <div class="layout-controls"><el-input v-model="tab.title" :placeholder="ot('ovTabTitle')" /><el-button :disabled="document.tabs.length === 1" @click="document.tabs.splice(document.tabs.indexOf(tab), 1)">{{ ot('ovDeleteTab') }}</el-button><el-button @click="addSection">{{ ot('ovAddSection') }}</el-button></div>
@@ -285,6 +314,7 @@ onBeforeUnmount(() => { generation++; sampleRequest++; objectSearchRequest++; wi
         </template>
       </main>
       <aside class="inspector">
+        <label v-if="widget">{{ ot('ovCapabilityKey') }}<el-input :model-value="widget.key || ''" @update:model-value="widget.key = $event || undefined" /></label>
         <h3>{{ ot('ovViewSettings') }}</h3><label>{{ ot('ovName') }}<el-input v-model="document.title" /></label><label>{{ ot('ovTitleProperty') }}<el-select v-model="document.titleField" clearable><el-option v-for="attr in objectType?.attrs.filter(item => item.enable !== false && item.bizzkeyBool)" :key="attr.name" :value="attr.name" :label="attr.showName" /></el-select></label>
         <template v-if="widget && !preview">
           <h3>{{ ot('ovWidgetSettings', { kind: ot(widgetMessageKeys[widget.kind]) }) }}</h3><label>{{ ot('ovName') }}<el-input v-model="widget.title" /></label>

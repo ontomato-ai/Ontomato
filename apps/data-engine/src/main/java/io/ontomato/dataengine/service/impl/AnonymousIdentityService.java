@@ -14,6 +14,8 @@ import io.ontomato.dataengine.service.sys.bean.permission.UserDataPermission;
  */
 @Component
 public class AnonymousIdentityService implements IdentityService {
+    @Override
+    public void requireApiPermission(String permission) { }
 
     private static final UserDetail ANONYMOUS_USER = createAnonymousUser();
 

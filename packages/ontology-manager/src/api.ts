@@ -521,6 +521,10 @@ export function createManagerClient(
     return (await post(`/objectView/${operation}`, { className, form, ...values })).data;
   }
 
+  async function resolveObjectView(className: string, form: "full" | "panel", revision: number | "published"): Promise<{ revision: number; document: ObjectViewDocument }> {
+    return (await post("/objectView/resolve", { className, form, revision })).data;
+  }
+
   function saveObjectView(document: ObjectViewDocument, form: "full" | "panel", expectedRevision: number, description: string) {
     return objectViewRequest("save", document.className, form, { document, expectedRevision, description });
   }
@@ -649,6 +653,7 @@ export function createManagerClient(
 
   return {
     objectViewRequest,
+    resolveObjectView,
     saveObjectView,
     executeViewMetric,
     loadViewSkills,

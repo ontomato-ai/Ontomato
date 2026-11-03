@@ -29,4 +29,9 @@ public interface IdentityService {
      * <p>The open-source edition returns a "full, unfiltered" permission with fullData=true; the enterprise edition resolves it by role/position.</p>
      */
     UserDataPermission getCurrentUserDataPermission();
+
+    /** Nested capability execution must preserve the original endpoint authorization. */
+    default void requireApiPermission(String permission) {
+        throw new SecurityException("API permission resolution is unavailable");
+    }
 }

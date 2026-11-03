@@ -10,6 +10,7 @@ const host = vi.hoisted(() => ({
 // The whole component is doubled (it has its own tests); this file only checks the props the shell hands over, how component events are handled, and the status messages used.
 vi.mock("@ontomato/ontology-manager", async () => {
   const { defineComponent, h } = await import("vue");
+  // eslint-disable-next-line vue/one-component-per-file
   const OntologyManager = defineComponent({
     props: {
       apiBase: { type: String, required: true },
@@ -31,7 +32,18 @@ vi.mock("@ontomato/ontology-manager", async () => {
       return () => h("div", { class: "manager-double" });
     },
   });
-  return { OntologyManager };
+  // eslint-disable-next-line vue/one-component-per-file
+  const OntomatoObjectView = defineComponent({
+    props: { context: { type: Object, required: true }, declaration: { type: Object, required: true } },
+    emits: ["loaded", "open-object", "action-completed", "error", "auth-failure"],
+    setup(props, { emit }) {
+      host.props = props;
+      host.emit = emit as typeof host.emit;
+      return () => h("div", { class: "object-view-double" });
+    },
+  });
+  const { objectViewEmbedSchema } = await import("../../../../packages/contracts/src/object-views");
+  return { OntologyManager, OntomatoObjectView, objectViewEmbedSchema };
 });
 
 const { englishMessages } = await import("@ontomato/ontology-manager/i18n");
@@ -56,6 +68,28 @@ describe("open-source standalone shell", () => {
     localStorage.clear();
     document.documentElement.lang = "en";
     window.__ONTOLOGY_MANAGER_CONFIG__ = { API_BASE: "/custom-base/api/", INITIAL_ROUTE: "" };
+  });
+
+  it("accepts Object View configuration only from the configured parent origin and window", async () => {
+    start("/?embed=object-view&parentOrigin=https%3A%2F%2Fapp.example.com");
+    const declaration = { kind: "objectView", view: { className: "Order" }, object: { primaryKey: "00123" } };
+    const send = (origin: string, source: Window, payload: unknown = declaration) => window.dispatchEvent(new MessageEvent("message", {
+      origin, source, data: { channel: "ontomato.object-view", version: 1, type: "configure", payload },
+    }));
+    send("https://other.example.com", window.parent);
+    await nextTick();
+    expect(document.querySelector(".object-view-double")).toBeNull();
+    send("https://app.example.com", {} as Window);
+    await nextTick();
+    expect(document.querySelector(".object-view-double")).toBeNull();
+    send("https://app.example.com", window.parent);
+    await nextTick();
+    expect(document.querySelector(".object-view-double")).not.toBeNull();
+    expect(host.props?.declaration).toMatchObject({ object: { primaryKey: "00123" }, view: { revision: "published", form: "full" } });
+    expect(host.props?.context).toMatchObject({ credential: { type: "anonymous" } });
+    send("https://app.example.com", window.parent, { ...declaration, object: { primaryKey: "" } });
+    await nextTick();
+    expect(document.querySelector('[role="alert"]')).not.toBeNull();
   });
 
   it("without parameters: explicit anonymous, fixed en with English messages and open-source data defaults, apiBase from config.js", () => {
