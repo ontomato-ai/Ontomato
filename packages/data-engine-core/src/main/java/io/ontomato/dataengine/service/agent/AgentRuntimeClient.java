@@ -59,7 +59,7 @@ public class AgentRuntimeClient {
       if (path.equals("/v1/models/test") && body != null) {
         Object model = JSONObject.from(body).get("model");
         timeout = Duration.ofSeconds(300);
-        if (model instanceof JSONObject draft && draft.get("timeout") instanceof String configured) {
+        if (model instanceof java.util.Map<?, ?> draft && draft.get("timeout") instanceof String configured) {
           try {
             Duration requested = Duration.parse(configured);
             if (!requested.isNegative() && !requested.isZero()) timeout = requested;

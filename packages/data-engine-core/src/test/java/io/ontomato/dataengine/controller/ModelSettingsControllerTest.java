@@ -10,6 +10,9 @@ import com.alibaba.fastjson2.JSONObject;
 import io.ontomato.dataengine.service.agent.*;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.MediaType;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.test.util.ReflectionTestUtils;
+import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
 class ModelSettingsControllerTest {
@@ -60,12 +63,71 @@ class ModelSettingsControllerTest {
     mvc.perform(asyncDispatch(result)).andExpect(status().isBadGateway()).andExpect(jsonPath("$.code").value("MODEL_TEST_FAILED"));
   }
 
-  @Test void ontologySelectionUsesAuthenticatedDomain() throws Exception {
+  private final JdbcTemplate jdbc = mock(JdbcTemplate.class);
+
+  private MockMvc selectionMvc(String storedSelection) throws Exception {
     identity();
-    var body=JSONObject.of("modelSelection",JSONObject.of("modelId","m"));
-    when(agents.save(eq("verified-domain"),eq("agent"),any())).thenReturn(body);
-    MockMvcBuilders.standaloneSetup(controller).build().perform(put("/ontology/ai/agent-models/agent")
-        .contentType(MediaType.APPLICATION_JSON).content(body.toJSONString()))
-        .andExpect(status().isOk()).andExpect(jsonPath("$.data.modelSelection.modelId").value("m"));
+    when(runtime.json(eq("verified-domain"), anyString(), eq("/v1/models/options"), eq("GET"), isNull(), isNull()))
+        .thenReturn(JSONObject.parseObject("{\"models\":[{\"name\":\"alt1\",\"displayName\":\"Alternative\"}]}"));
+    when(jdbc.queryForList(anyString(), eq("verified-domain"), eq(OntologyAgentStore.RETRIEVER)))
+        .thenReturn(java.util.List.of(java.util.Map.of("model_selection", storedSelection)));
+    // Exercise MVC deserialization and the real selection service, mocking only its dependencies.
+    var service = new OntologyAgentModelSettings(jdbc, runtime);
+    return MockMvcBuilders.standaloneSetup(new ModelSettingsController(runtime, access, service)).build();
+  }
+
+  @Test void mvcSavesAnExistingModelUsingTheVerifiedDomain() throws Exception {
+    selectionMvc("{\"modelId\":\"alt1\"}")
+        .perform(put("/ontology/ai/agent-models/" + OntologyAgentStore.RETRIEVER)
+            .header("X-Domain-Id", "untrusted-domain")
+            .contentType(MediaType.APPLICATION_JSON).content("{\"modelSelection\":{\"modelId\":\"alt1\"}}"))
+        .andExpect(status().isOk()).andExpect(jsonPath("$.data.modelSelection.modelId").value("alt1"));
+    verify(jdbc).update(anyString(), eq("verified-domain"), eq(OntologyAgentStore.RETRIEVER), eq("{\"modelId\":\"alt1\"}"));
+  }
+
+  @Test void mvcSavesNullAsTheDomainDefault() throws Exception {
+    selectionMvc("{\"modelId\":null}")
+        .perform(put("/ontology/ai/agent-models/" + OntologyAgentStore.RETRIEVER)
+            .contentType(MediaType.APPLICATION_JSON).content("{\"modelSelection\":{\"modelId\":null}}"))
+        .andExpect(status().isOk()).andExpect(jsonPath("$.data.modelSelection.modelId").value(org.hamcrest.Matchers.nullValue()));
+    verify(jdbc).update(anyString(), eq("verified-domain"), eq(OntologyAgentStore.RETRIEVER), eq("{\"modelId\":null}"));
+    verifyNoInteractions(runtime);
+  }
+
+  @Test void mvcRejectsAMissingModelBeforeWriting() throws Exception {
+    selectionMvc("{\"modelId\":null}")
+        .perform(put("/ontology/ai/agent-models/" + OntologyAgentStore.RETRIEVER)
+            .contentType(MediaType.APPLICATION_JSON).content("{\"modelSelection\":{\"modelId\":\"missing\"}}"))
+        .andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("INVALID_REQUEST"));
+    verifyNoInteractions(jdbc);
+  }
+
+  @Test void mvcRejectsAnUnknownAgentBeforeReadingModels() throws Exception {
+    selectionMvc("{\"modelId\":null}")
+        .perform(put("/ontology/ai/agent-models/00000000-0000-4000-8000-000000000000")
+            .contentType(MediaType.APPLICATION_JSON).content("{\"modelSelection\":{\"modelId\":\"alt1\"}}"))
+        .andExpect(status().isNotFound()).andExpect(jsonPath("$.code").value("NOT_FOUND"));
+    verifyNoInteractions(jdbc, runtime);
+  }
+
+  @Test void mvcModelTestPreservesTheDraftTimeoutThroughDeserialization() throws Exception {
+    identity();
+    var transport = mock(java.net.http.HttpClient.class);
+    @SuppressWarnings("unchecked")
+    var response = (java.net.http.HttpResponse<String>) mock(java.net.http.HttpResponse.class);
+    when(response.statusCode()).thenReturn(200);
+    when(response.body()).thenReturn("{\"content\":\"connected\"}");
+    when(transport.sendAsync(any(java.net.http.HttpRequest.class), org.mockito.ArgumentMatchers.<java.net.http.HttpResponse.BodyHandler<String>>any()))
+        .thenReturn(java.util.concurrent.CompletableFuture.completedFuture(response));
+    var client = new AgentRuntimeClient("http://runtime.invalid", "fixture-host-token", "http://ontology.invalid");
+    ReflectionTestUtils.setField(client, "http", transport);
+    var mvc = MockMvcBuilders.standaloneSetup(new ModelSettingsController(client, access, agents)).build();
+    var result = mvc.perform(post("/model-settings/test").contentType(MediaType.APPLICATION_JSON)
+        .content("{\"model\":{\"timeout\":\"PT25S\"}}"))
+        .andExpect(request().asyncStarted()).andReturn();
+    mvc.perform(asyncDispatch(result)).andExpect(status().isOk()).andExpect(jsonPath("$.data.content").value("connected"));
+    var sent = org.mockito.ArgumentCaptor.forClass(java.net.http.HttpRequest.class);
+    verify(transport).sendAsync(sent.capture(), org.mockito.ArgumentMatchers.<java.net.http.HttpResponse.BodyHandler<String>>any());
+    assertEquals(java.time.Duration.ofSeconds(35), sent.getValue().timeout().orElseThrow());
   }
 }

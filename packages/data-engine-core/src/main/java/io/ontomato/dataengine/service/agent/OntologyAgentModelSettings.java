@@ -57,7 +57,9 @@ public class OntologyAgentModelSettings {
     var agent = agent(id);
     AgentJson.fields(input, "modelSelection");
     Object raw = input.get("modelSelection");
-    if (!(raw instanceof JSONObject selection)) throw AgentHttpException.invalid("modelSelection must be an object");
+    if (!(raw instanceof java.util.Map<?, ?>)) throw AgentHttpException.invalid("modelSelection must be an object");
+    // Spring may bind nested JSON objects as maps rather than JSONObject instances.
+    JSONObject selection = input.getJSONObject("modelSelection");
     AgentJson.fields(selection, "modelId");
     Object value = selection.get("modelId");
     if (value != null && (!(value instanceof String) || ((String) value).isBlank()))
