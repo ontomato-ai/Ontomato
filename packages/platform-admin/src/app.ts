@@ -1,5 +1,5 @@
-import { computed, createApp, defineComponent, h, watch } from "vue";
-import { RouterView, type NavigationGuard, type RouteRecordRaw } from "vue-router";
+import { computed, createApp, defineComponent, h, watch, type App } from "vue";
+import { RouterView, type NavigationGuard, type RouteRecordRaw, type Router } from "vue-router";
 import ElementPlus, { ElConfigProvider } from "element-plus";
 import "element-plus/dist/index.css";
 import "element-plus/theme-chalk/dark/css-vars.css";
@@ -28,6 +28,8 @@ export interface PlatformAdminOptions {
   locales: Readonly<Record<string, PlatformLocale>>;
   /** This edition's brand and neutral colour variables per theme (the Manager's presentation values). */
   themeProperties: Readonly<Record<PlatformTheme, Readonly<Record<string, string>>>>;
+  /** Edition setup before mounting (its own provides, router hooks). */
+  configure?: (app: App, router: Router) => void;
 }
 
 /**
@@ -81,6 +83,7 @@ export function startPlatformAdmin(options: PlatformAdminOptions) {
   app.use(i18n);
   app.use(ElementPlus);
   app.use(router);
+  options.configure?.(app, router);
   app.mount("#app");
   return { app, router };
 }
