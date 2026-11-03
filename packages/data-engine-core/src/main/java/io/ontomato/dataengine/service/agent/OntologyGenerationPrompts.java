@@ -71,7 +71,7 @@ public class OntologyGenerationPrompts {
       LangService langService) {
     String knowledgeSummryPrompt = template(KNOWLEDGE_SUMMARY_PROMPT, lang);
 
-    Map<String, String> mapDBSchema = DBSchemaUtil.getDBSchema(jsonRule, null, false);
+    Map<String, String> mapDBSchema = DBSchemaUtil.getDBSchema(jsonRule, null);
     // dataset description
     String datasetDesc = mapDBSchema.get(DBSchemaUtil.KEY_DATASET_DESC);
     knowledgeSummryPrompt = knowledgeSummryPrompt.replace(DATASET_DESC, datasetDesc);
@@ -116,7 +116,7 @@ public class OntologyGenerationPrompts {
       Map<String, Object> jsonRule) {
     String prompt = template(ABC_PROGRAM_DESCRIBER_PROMPT, lang);
 
-    Map<String, String> mapDBSchema = DBSchemaUtil.getDBSchema(jsonRule, classNames, false);
+    Map<String, String> mapDBSchema = DBSchemaUtil.getDBSchema(jsonRule, classNames);
     // dataset description
     String datasetDesc = mapDBSchema.get(DBSchemaUtil.KEY_DATASET_DESC);
     prompt = prompt.replace(DATASET_DESC, datasetDesc);
@@ -187,7 +187,7 @@ public class OntologyGenerationPrompts {
       Map<String, Object> jsonRule) {
     String prompt = template(ABC_PROGRAM_DASHBOARD_MAKER_PROMPT, lang);
 
-    Map<String, String> mapDBSchema = DBSchemaUtil.getDBSchema(jsonRule, null, false);
+    Map<String, String> mapDBSchema = DBSchemaUtil.getDBSchema(jsonRule, null);
     // dataset description
     String datasetDesc = mapDBSchema.get(DBSchemaUtil.KEY_DATASET_DESC);
     prompt = prompt.replace(DATASET_DESC, datasetDesc);
@@ -221,7 +221,7 @@ public class OntologyGenerationPrompts {
       Map<String, Object> jsonRule) {
     String prompt = template(READ_FUNCTION_MAKER_PROMPT, lang);
 
-    Map<String, String> mapDBSchema = DBSchemaUtil.getDBSchema(jsonRule, null, false);
+    Map<String, String> mapDBSchema = DBSchemaUtil.getDBSchema(jsonRule, null);
     // dataset description
     String datasetDesc = mapDBSchema.get(DBSchemaUtil.KEY_DATASET_DESC);
     prompt = prompt.replace(DATASET_DESC, datasetDesc);
@@ -292,7 +292,7 @@ public class OntologyGenerationPrompts {
       String domainId) {
     String prompt = template(READ_FUNCTION_INSTANCER_PROMPT, lang);
 
-    Map<String, String> mapDBSchema = DBSchemaUtil.getDBSchema(jsonRule, null, false);
+    Map<String, String> mapDBSchema = DBSchemaUtil.getDBSchema(jsonRule, null);
     // dataset description
     String datasetDesc = mapDBSchema.get(DBSchemaUtil.KEY_DATASET_DESC);
     prompt = prompt.replace(DATASET_DESC, datasetDesc);
@@ -357,7 +357,7 @@ public class OntologyGenerationPrompts {
       String domainId) {
     String prompt = template(METRIC_VIEW_MAKER_PROMPT, lang);
 
-    Map<String, String> mapDBSchema = DBSchemaUtil.getDBSchema(jsonRule, null, false);
+    Map<String, String> mapDBSchema = DBSchemaUtil.getDBSchema(jsonRule, null);
     // dataset description
     String datasetDesc = mapDBSchema.get(DBSchemaUtil.KEY_DATASET_DESC);
     prompt = prompt.replace(DATASET_DESC, datasetDesc);
@@ -418,7 +418,7 @@ public class OntologyGenerationPrompts {
       JSONObject structuredSpec) {
     String prompt = template(ACTION_MAKER_PROMPT, lang);
 
-    Map<String, String> mapDBSchema = DBSchemaUtil.getDBSchema(jsonRule, null, false);
+    Map<String, String> mapDBSchema = DBSchemaUtil.getDBSchema(jsonRule, null);
     // dataset description
     String datasetDesc = mapDBSchema.get(DBSchemaUtil.KEY_DATASET_DESC);
     prompt = prompt.replace(DATASET_DESC, datasetDesc);
@@ -468,7 +468,7 @@ public class OntologyGenerationPrompts {
     String prompt = template(ACTION_CODE_EXPLAINER_PROMPT, lang);
 
     // dataset description
-    Map<String, String> mapDBSchema = DBSchemaUtil.getDBSchema(jsonRule, null, false);
+    Map<String, String> mapDBSchema = DBSchemaUtil.getDBSchema(jsonRule, null);
     String datasetDesc = mapDBSchema.get(DBSchemaUtil.KEY_DATASET_DESC);
     prompt = prompt.replace(DATASET_DESC, datasetDesc);
 

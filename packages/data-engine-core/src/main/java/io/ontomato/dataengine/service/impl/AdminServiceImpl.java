@@ -859,7 +859,7 @@ public class AdminServiceImpl implements AdminService {
 
 	@Override
 	public Map<String, String> getSchemaMarkdown(List<String> classNames, String domainId){
-		Map<String, String> dbSchemaMarkdown = DBSchemaUtil.getDBSchema(getJSONRule(domainId), classNames, false);
+		Map<String, String> dbSchemaMarkdown = DBSchemaUtil.getDBSchema(getJSONRule(domainId), classNames);
 		return dbSchemaMarkdown;
 	}
 	
