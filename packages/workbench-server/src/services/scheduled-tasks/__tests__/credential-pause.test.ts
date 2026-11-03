@@ -15,6 +15,7 @@ const state = vi.hoisted(() => ({
 
 vi.mock("../store", () => ({
   scheduledTaskStore: {
+    async get(id: string) { return state.tasks.get(id) ?? null; },
     async startRun(id: string, taskId: string, trigger: string) {
       if ([...state.runs.values()].some((r) => r.taskId === taskId && r.status === "running")) return null;
       const run = { id, taskId, sessionId: null, trigger, status: "running", error: null, startedAt: new Date(), finishedAt: null };

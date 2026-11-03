@@ -1,3 +1,4 @@
+import { withScheduledUserActivity } from "../scheduled-tasks/user-activity";
 import { deleteUserState } from "../assistant/user-state";
 import { createLogger } from "../../logging/logger";
 import { toErrorMessage } from "../../utils/errors";
@@ -16,11 +17,12 @@ const stages: [string, (userId: string) => Promise<void>][] = [
   ["PPT artifacts", (id) => pptArtifactStore().deleteByUser(id)],
 ];
 
-/** Best-effort cleanup after Java has successfully deleted the global accounts. */
+/** Complete cleanup of a deleted global account; any failed stage leaves its event unacknowledged. */
 export async function cleanupDeletedUsers(
   userIds: readonly string[],
 ): Promise<void> {
   for (const userId of new Set(userIds)) {
+    await withScheduledUserActivity(userId, async () => {
     for (const [stage, cleanup] of stages) {
       try {
         await cleanup(userId);
@@ -30,7 +32,9 @@ export async function cleanupDeletedUsers(
           stage,
           error: toErrorMessage(error),
         });
+        throw error;
       }
     }
+    });
   }
 }

@@ -260,6 +260,7 @@ export function createWorkbenchApp(mounts: WorkbenchMounts = {}): Express {
 export async function startWorkbench(
   app: Express,
   port: number,
+  initializeApplication?: () => Promise<() => Promise<void>>,
 ): Promise<void> {
   const isDev = config.nodeEnv !== "production";
   // Checked first: without the shared value no model key can be opened, so the server does not start.
@@ -269,8 +270,12 @@ export async function startWorkbench(
   syncDefaultPrompts();
   await initializeConnection();
   getWorkbenchLogStore();
-  process.once("SIGTERM", () => { void closeWorkbenchLogging().finally(() => process.exit(0)); });
-  process.once("SIGINT", () => { void closeWorkbenchLogging().finally(() => process.exit(0)); });
+  const stopApplication = await initializeApplication?.();
+  const shutdown = async () => {
+    try { await stopApplication?.(); } finally { await closeWorkbenchLogging(); }
+  };
+  process.once("SIGTERM", () => { void shutdown().finally(() => process.exit(0)); });
+  process.once("SIGINT", () => { void shutdown().finally(() => process.exit(0)); });
   await registerAssistantSkills();
 
   startArtifactCleanupScheduler();

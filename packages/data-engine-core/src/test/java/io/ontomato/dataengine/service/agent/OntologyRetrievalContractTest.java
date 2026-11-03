@@ -67,7 +67,7 @@ class OntologyRetrievalContractTest {
     var jdbc = new JdbcTemplate(source);
     store = new OntologyAgentStore(jdbc, new DataSourceTransactionManager(source));
     store.initialize();
-    grants = new QueryGrantService(jdbc, "fixture-signing-key", "fixture-service");
+    grants = new QueryGrantService(jdbc, "fixture-signing-key", new io.ontomato.dataengine.service.WorkbenchServiceAuthentication("fixture-service"));
     grants.initialize();
     server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
     server.createContext(

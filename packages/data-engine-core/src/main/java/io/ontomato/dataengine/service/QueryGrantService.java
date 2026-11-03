@@ -28,15 +28,15 @@ public class QueryGrantService {
   public static final String ATTRIBUTE = QueryGrantService.class.getName();
   private final JdbcTemplate jdbc;
   private final String signingKey;
-  private final String serviceToken;
+  private final WorkbenchServiceAuthentication serviceAuthentication;
 
   public QueryGrantService(
       JdbcTemplate jdbc,
       @Value("${ONTOMATO_QUERY_SIGNING_KEY:}") String signingKey,
-      @Value("${ONTOMATO_QUERY_SERVICE_TOKEN:}") String serviceToken) {
+      WorkbenchServiceAuthentication serviceAuthentication) {
     this.jdbc = jdbc;
     this.signingKey = signingKey;
-    this.serviceToken = serviceToken;
+    this.serviceAuthentication = serviceAuthentication;
   }
 
   @PostConstruct
@@ -48,10 +48,7 @@ public class QueryGrantService {
   }
 
   public void requireWorkbench(HttpServletRequest request) {
-    String supplied = request.getHeader("X-Ontomato-Query-Service-Token");
-    if (serviceToken.isBlank() || supplied == null || !equal(serviceToken, supplied))
-      throw new ResponseStatusException(
-          HttpStatus.FORBIDDEN, "Workbench service authorization is required");
+    serviceAuthentication.authenticate(request);
   }
 
   private static boolean equal(String a, String b) {
