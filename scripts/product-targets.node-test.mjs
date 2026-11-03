@@ -7,7 +7,7 @@ import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 
 const SHARED = resolve(dirname(fileURLToPath(import.meta.url)), "product-targets.mk");
-const BUILD = ["workbench", "data-engine", "ontology-manager", "agent-runtime"];
+const BUILD = ["workbench", "data-engine", "ontology-manager", "agent-runtime", "gateway"];
 const FAKE = BUILD;
 let counter = 0;
 
@@ -56,7 +56,7 @@ const line = (name, arch = "test-arch") => `${name}:${arch}`;
 
 
 
-test("build is the default goal and runs Node, Java and Manager in order", () => {
+test("build is the default goal and runs all five application targets in order", () => {
   inWorkspace((dir) => {
     const implicit = run(dir, []);
     assert.equal(implicit.status, 0, implicit.stderr);

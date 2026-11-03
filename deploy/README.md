@@ -148,7 +148,7 @@ another timezone. This stack does not migrate a pre-existing database.
 installation or upgrade. Both Node services reference that same value. Existing
 credentials are preserved; retain `.env` and `agent_runtime_data` when updating.
 Run this preparation after copying updated deployment templates and before Compose.
-The runtime owns conversation models and roles; Java owns Embedding settings.
+The runtime owns conversation models and the domain default; Java owns Embedding settings.
 Both Node services use the same `ONTOMATO_MODEL_RUNTIME_TOKEN` for sealed model keys.
 
 Models are normally configured in the UI. To seed new domains, optionally set
@@ -251,3 +251,7 @@ If the switch fails, stop the gateway and restore the backed-up templates and im
 references before starting the old application combination; keep the database volumes.
 Health checks prove HTTP readiness only. Login, permissions, both pages and a streamed
 business request still require browser acceptance by the deployment owner.
+
+## Configuration reference
+
+Each installation and major-version deployment includes a complete, commented `.env.example` for the supported site configuration. Required values are marked; uncomment and fill them when starting Compose directly. Keep your existing `.env` when changing releases. New required values, renamed settings, and Compose topology changes are described in that release's notes rather than silently merged into site configuration.
