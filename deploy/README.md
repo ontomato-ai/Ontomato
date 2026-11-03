@@ -211,3 +211,8 @@ explicit same-session replies; automatic next-chat-message routing is batch 3.
 
 Compose sets a stable `NODE_ID` for ontology job recovery. If overridden or deployed
 with multiple ontology nodes, use a stable unique ID for each node.
+
+
+## Configuration reference
+
+Each installation and major-version deployment includes a complete, commented `.env.example` for the supported site configuration. Required values are marked; uncomment and fill them when starting Compose directly. Keep your existing `.env` when changing releases. New required values, renamed settings, and Compose topology changes are described in that release's notes rather than silently merged into site configuration.
