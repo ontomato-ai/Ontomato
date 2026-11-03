@@ -18,6 +18,18 @@ map $http_x_api_key $credential_key { default $http_x_api_key; "" $arg_apiKey; }
 map $http_accept_language $request_language { default $http_accept_language; "" $arg_locale; }
 map $http_upgrade $connection_upgrade { default upgrade; "" ""; }
 
+# Route from the original request target: $uri has already decoded path delimiters.
+# Each target includes the original query exactly once; proxy_pass must not append $args.
+map $request_uri $gateway_target {
+  default "";
+  ~^${PUBLIC_BASE_PATH}/ontology-manager/(?<manager_raw>.*)$ http://$manager${MANAGER_MOUNT}$manager_raw;
+  ~^${PUBLIC_BASE_PATH}/api/data-query(?:/(?<java_raw>[^?]*))?(?<java_query>\?.*)?$ http://$java/$java_raw$java_query;
+  ~^${PUBLIC_BASE_PATH}/api/auth/(?<auth_raw>doLogin|verify|verifyByApiKey|verifyTicket|logout)(?<auth_query>\?.*)?$ http://$java/sso/$auth_raw$auth_query;
+  ~^${PUBLIC_BASE_PATH}/${LEGACY_API_PREFIX}/(?<legacy_raw>.*)$ http://$java/$legacy_raw;
+  ~^${PUBLIC_BASE_PATH}/(?<node_raw>(?:api|mcp)(?:/[^?]*)?(?:\?.*)?|config\.js(?:\?.*)?)$ http://$workbench/$node_raw;
+  ~^${PUBLIC_BASE_PATH}/(?<web_raw>.*)$ http://$web${WEB_MOUNT}$web_raw;
+}
+
 server {
   listen 80;
   server_name _;
@@ -55,26 +67,11 @@ server {
   location = ${PUBLIC_BASE_PATH}/ontology-manager {
     return 308 ${PUBLIC_BASE_PATH}/ontology-manager/$is_args$args;
   }
-  location ~ ^${PUBLIC_BASE_PATH}/ontology-manager/(?<manager_path>.*)$ {
-    proxy_pass http://$manager${MANAGER_MOUNT}$manager_path$is_args$args;
-  }
-  location ~ ^${PUBLIC_BASE_PATH}/api/data-query/(?<java_path>.*)$ {
-    proxy_pass http://$java/$java_path$is_args$args;
-  }
-  location ~ ^${PUBLIC_BASE_PATH}/api/auth/(?<auth_path>doLogin|verify|verifyByApiKey|verifyTicket|logout)$ {
-    proxy_pass http://$java/sso/$auth_path$is_args$args;
-  }
-  location ~ ^${PUBLIC_BASE_PATH}/${LEGACY_API_PREFIX}/(?<legacy_path>.*)$ {
-    proxy_pass http://$java/$legacy_path$is_args$args;
-  }
-  location ~ ^${PUBLIC_BASE_PATH}/(?<node_path>api(?:/.*)?|mcp(?:/.*)?|config\.js)$ {
-    proxy_pass http://$workbench/$node_path$is_args$args;
-  }
   location = ${PUBLIC_BASE_PATH}/login.html {
     return 302 "${PUBLIC_BASE_PATH}/ontology-manager/#/login";
   }
-  location ~ ^${PUBLIC_BASE_PATH}/(?<web_path>.*)$ {
-    proxy_pass http://$web${WEB_MOUNT}$web_path$is_args$args;
+  location / {
+    if ($gateway_target = "") { return 404; }
+    proxy_pass $gateway_target;
   }
-  location / { return 404; }
 }
