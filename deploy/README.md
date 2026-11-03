@@ -157,3 +157,8 @@ To inspect the **running** build, including a deployment tracking `edge`:
 ```bash
 docker inspect --format '{{.Name}} {{index .Config.Labels "org.opencontainers.image.version"}} {{index .Config.Labels "io.ontomato.build"}}' $(docker compose ps -q)
 ```
+
+
+## Configuration reference
+
+Each installation and major-version deployment includes a complete, commented `.env.example` for the supported site configuration. Required values are marked; uncomment and fill them when starting Compose directly. Keep your existing `.env` when changing releases. New required values, renamed settings, and Compose topology changes are described in that release's notes rather than silently merged into site configuration.
