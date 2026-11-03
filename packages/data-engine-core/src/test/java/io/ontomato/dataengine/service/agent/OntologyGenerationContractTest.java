@@ -99,7 +99,7 @@ class OntologyGenerationContractTest {
         new OntologyGenerationService(
             store,
             runtime,
-            new OntologyAgentDefinitions(runtime, code),
+            new OntologyAgentDefinitions(runtime, code, org.mockito.Mockito.mock(OntologyAgentModelSettings.class)),
             grants,
             sessions,
             operations,

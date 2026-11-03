@@ -148,7 +148,7 @@ public class ActionServiceImpl implements ActionService {
             + ".\n\nClasses:\n"
             + schema;
     String content =
-        runtimeClient.modelText(domainId, UUID.randomUUID().toString(), "general", prompt);
+        runtimeClient.modelText(domainId, UUID.randomUUID().toString(), prompt);
     if (content == null || content.isBlank()) return List.of();
     String json = content.trim();
     int start = json.indexOf('{');

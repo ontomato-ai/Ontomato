@@ -221,9 +221,9 @@ public class OntologyGenerationService {
                       Instant.parse(row.getString("created_at")).toEpochMilli()),
               "definition",
                   metricView
-                      ? definitions.metricView(prompt, lang, deadline - System.currentTimeMillis())
+                      ? definitions.metricView(domain, prompt, lang, deadline - System.currentTimeMillis())
                       : definitions.generation(
-                          kind, prompt, lang, deadline - System.currentTimeMillis()),
+                          domain, kind, prompt, lang, deadline - System.currentTimeMillis()),
               "environment",
                   JSONObject.of(
                       "values",

@@ -11,6 +11,7 @@ import org.springframework.stereotype.Service;
 public class OntologyAgentDefinitions {
   private final AgentRuntimeClient runtime;
   private final RuntimeCodeClient code;
+  private final OntologyAgentModelSettings models;
   public static final Map<String, Object> DATASET_SKILL =
       Map.of(
           "namespace",
@@ -18,9 +19,10 @@ public class OntologyAgentDefinitions {
           "name",
           "data-retrieval");
 
-  public OntologyAgentDefinitions(AgentRuntimeClient runtime, RuntimeCodeClient code) {
+  public OntologyAgentDefinitions(AgentRuntimeClient runtime, RuntimeCodeClient code, OntologyAgentModelSettings models) {
     this.runtime = runtime;
     this.code = code;
+    this.models = models;
   }
 
   public String resource(String path) {
@@ -85,12 +87,11 @@ public class OntologyAgentDefinitions {
         null);
   }
 
-  public JSONObject generation(String kind, String prompt, String language, long remainingMs) {
-    var definition = definition(language, remainingMs);
+  public JSONObject generation(String domain, String kind, String prompt, String language, long remainingMs) {
+    var definition = definition(domain, language, remainingMs);
     definition.put("agentId", OntologyGenerationService.agentId(kind));
     definition.put(
-        "modelRole",
-        List.of("knowledge", "describe", "quality").contains(kind) ? "query" : "coding");
+        "modelId", models.modelId(domain, OntologyGenerationService.agentId(kind)));
     definition.put("skills", List.of(RuntimeCodeClient.SKILL, GENERATION_SKILL));
     definition.put(
         "systemPrompt",
@@ -130,10 +131,10 @@ public class OntologyAgentDefinitions {
         null);
   }
 
-  public JSONObject metricView(String prompt, String language, long remainingMs) {
-    var definition = definition(language, remainingMs);
+  public JSONObject metricView(String domain, String prompt, String language, long remainingMs) {
+    var definition = definition(domain, language, remainingMs);
     definition.put("agentId", METRICVIEW_AGENT);
-    definition.put("modelRole", "coding");
+    definition.put("modelId", models.modelId(domain, METRICVIEW_AGENT));
     definition.put("skills", List.of(RuntimeCodeClient.SKILL, METRICVIEW_SKILL));
     definition.put(
         "systemPrompt",
@@ -146,7 +147,7 @@ public class OntologyAgentDefinitions {
     return definition;
   }
 
-  public JSONObject definition(String language, long remainingMs) {
+  public JSONObject definition(String domain, String language, long remainingMs) {
     String markdown =
         JSON.parseObject(
             resource("ontology-contracts/agent-artifact-markdown-prompt.json"), String.class);
@@ -154,8 +155,8 @@ public class OntologyAgentDefinitions {
         "agentId", OntologyAgentStore.RETRIEVER,
         "systemPrompt",
         prompt(language, "data-retrieval", "system") + "\n\n" + markdown,
-        "modelRole",
-        "coding",
+        "modelId",
+        models.modelId(domain, OntologyAgentStore.RETRIEVER),
         "skills",
         List.of(RuntimeCodeClient.SKILL, DATASET_SKILL),
         "externalMcp",
@@ -194,10 +195,10 @@ public class OntologyAgentDefinitions {
    * The conversational action creator: the action maker task prompt plus the generation skill, in
    * a persistent session. It has a write sandbox and can revise the files from the previous turn.
    */
-  public JSONObject actionCreation(String prompt, String language, long remainingMs) {
-    var value = definition(language, remainingMs);
+  public JSONObject actionCreation(String domain, String prompt, String language, long remainingMs) {
+    var value = definition(domain, language, remainingMs);
     value.put("agentId", ActionCreationService.AGENT);
-    value.put("modelRole", "coding");
+    value.put("modelId", models.modelId(domain, ActionCreationService.AGENT));
     value.put("skills", List.of(RuntimeCodeClient.SKILL, GENERATION_SKILL));
     // The conversation guardrails go last: they are the rules the model must apply after reading
     // the action-maker task and the generation skill, not before them.
@@ -214,10 +215,10 @@ public class OntologyAgentDefinitions {
     return value;
   }
 
-  public JSONObject governance(String language, long remainingMs) {
-    var value = definition(language,remainingMs);
+  public JSONObject governance(String domain, String language, long remainingMs) {
+    var value = definition(domain, language,remainingMs);
     value.put("agentId",KnowledgeGovernanceService.AGENT);
-    value.put("modelRole","knowledgeGovernance");
+    value.put("modelId", models.modelId(domain, KnowledgeGovernanceService.AGENT));
     value.put("skills",List.of(GOVERNANCE_SKILL));
     value.put("systemPrompt",prompt(language,"knowledge-governance","main/system") + "\n\n" +
       JSON.parseObject(resource("ontology-contracts/agent-artifact-markdown-prompt.json"),String.class));

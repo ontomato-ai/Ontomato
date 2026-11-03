@@ -57,8 +57,16 @@ public class AgentRuntimeClient {
     if (!stream) {
       Duration timeout = Duration.ofSeconds(30);
       if (path.equals("/v1/models/test") && body != null) {
-        String configured = JSONObject.from(body).getJSONObject("model").getString("timeout");
-        if (configured != null) timeout = Duration.parse(configured);
+        Object model = JSONObject.from(body).get("model");
+        timeout = Duration.ofSeconds(300);
+        if (model instanceof JSONObject draft && draft.get("timeout") instanceof String configured) {
+          try {
+            Duration requested = Duration.parse(configured);
+            if (!requested.isNegative() && !requested.isZero()) timeout = requested;
+          } catch (java.time.format.DateTimeParseException invalid) {
+            // Runtime validates the draft; transport timeout does not change its contents.
+          }
+        }
         timeout = timeout.plusSeconds(10);
       }
       builder.timeout(timeout);
@@ -128,30 +136,41 @@ public class AgentRuntimeClient {
     return value.isBlank() ? new JSONObject() : JSON.parseObject(value);
   }
 
+  /** Cancellation of the servlet request must cancel the upstream HTTP call as well. */
+  public java.util.concurrent.CompletableFuture<JSONObject> testModel(String domain, Object body) {
+    var upstream = http.sendAsync(request(domain, "model-test", "/v1/models/test", "POST", body, null, false),
+        HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+    var result = upstream.thenApply(response -> {
+      if (response.statusCode() < 200 || response.statusCode() >= 300)
+        throw failure(response.statusCode(), response.body());
+      return JSON.parseObject(response.body());
+    });
+    result.whenComplete((value, error) -> { if (result.isCancelled()) upstream.cancel(true); });
+    return result;
+  }
+
   public JSONObject run(String domain, String id) throws Exception {
     return json(domain, id, "/v1/runs/" + id, "GET", null, null);
   }
 
   /**
-   * One short completion with the model assigned to a role. Used for lightweight guidance text,
+   * One short completion with the domain default model. Used for lightweight guidance text,
    * never for action generation: the model settings carry masked keys that the runtime restores.
    */
-  public String modelText(String domain, String correlation, String role, String prompt)
+  public String modelText(String domain, String correlation, String prompt)
       throws Exception {
     JSONObject settings = json(domain, correlation, "/v1/models/settings", "GET", null, null);
-    JSONObject agents = settings.getJSONObject("agents");
-    JSONObject assignment = agents == null ? null : agents.getJSONObject(role);
-    String name = assignment == null ? null : assignment.getString("model");
+    String name = settings.getString("defaultModelId");
     JSONArray models = settings.getJSONArray("models");
     JSONObject model = null;
     for (int i = 0; models != null && i < models.size(); i++) {
       JSONObject candidate = models.getJSONObject(i);
-      if (name == null || name.equals(candidate.getString("name"))) {
+      if (name != null && name.equals(candidate.getString("name"))) {
         model = candidate;
         break;
       }
     }
-    if (model == null) throw new IllegalStateException("No model is configured for role " + role);
+    if (model == null) throw new AgentHttpException(422, "MODEL_NOT_CONFIGURED", "No domain default model is configured");
     model = JSON.parseObject(JSON.toJSONString(model));
     // Guidance text is optional UI sugar; never let one call hold the dialog open.
     model.put("timeout", "PT20S");
