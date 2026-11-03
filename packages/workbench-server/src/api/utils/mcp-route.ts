@@ -87,6 +87,16 @@ export function createStreamableMcpRouter(
       const server = createServer(req);
       const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
 
+      const heartbeat = setInterval(() => {
+        if (res.headersSent && !res.writableEnded && !res.destroyed &&
+            String(res.getHeader("Content-Type")).startsWith("text/event-stream")) {
+          res.write(": heartbeat\n\n");
+        }
+      }, 15000);
+      heartbeat.unref();
+      const stopHeartbeat = () => clearInterval(heartbeat);
+      res.once("close", stopHeartbeat);
+      res.once("finish", stopHeartbeat);
       try {
         await server.connect(transport);
         await transport.handleRequest(req, res, req.body);
@@ -95,6 +105,7 @@ export function createStreamableMcpRouter(
           server.close().catch(() => undefined);
         });
       } catch (error) {
+        stopHeartbeat();
         logger.error("MCP request failed", error);
         await transport.close().catch(() => undefined);
         await server.close().catch(() => undefined);

@@ -16,7 +16,6 @@ export const config = {
   nodeEnv: environment.node() || "development",
   logLevel: environment.level() || "info",
   apiBase: normalizeApiBase(process.env.API_BASE),
-  ontologyManagerUrl: process.env.ONTOLOGY_MANAGER_URL || "",
   postgres: {
     get connectionString() {
       return environment.pgConnection();

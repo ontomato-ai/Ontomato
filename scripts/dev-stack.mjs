@@ -249,12 +249,12 @@ function assertNoForeign(port, snapshot, label) {
   if (foreignListeners(port, snapshot.group).length) throw new Error(`${label} port ${port} is already occupied by another process (this tool does not stop foreign processes)`);
 }
 function composeEnv(ctx, dbPort) {
-  const env = { ...process.env, POSTGRES_PORT: String(dbPort), DEV_STACK_ROOT: ctx.root, DEV_STACK_PRODUCT: ctx.product };
+  const env = { ...process.env, POSTGRES_PORT: String(dbPort), DEV_STACK_ROOT: ctx.root, DEV_STACK_PRODUCT: ctx.product, DEV_PUBLIC_ROOT: resolve(CORE_ROOT, "../.."), DEV_JAVA_PORT: String(resolveJavaPort(ctx)) };
   for (const key of ["COMPOSE_FILE", "COMPOSE_PROJECT_NAME", "COMPOSE_PROFILES", "COMPOSE_ENV_FILES"]) delete env[key];
   return env;
 }
 export function composeArgs(ctx, rest) {
-  return ["compose", "--project-directory", dirname(ctx.composeFile), "--env-file", devNull, "-p", ctx.project, "-f", ctx.composeFile, ...rest];
+  return ["compose", "--project-directory", dirname(ctx.composeFile), "--env-file", devNull, "-p", ctx.project, "-f", ctx.composeFile, "-f", resolve(CORE_ROOT, "../../dev/gateway.compose.yml"), ...rest];
 }
 function compose(ctx, dbPort, rest) {
   return run("docker", composeArgs(ctx, rest), { env: composeEnv(ctx, dbPort) });
@@ -388,7 +388,7 @@ async function up(ctx) {
   if (!pg || !pg.running || !pg.healthy || !pg.published) {
     if (pg && pg.running && pg.published) throw new Error(`PG container not healthy (state=${pg.state}, health=${pg.health}), stopping`);
     assertNoForeign(dbPort, pre, "PG");
-    const started = compose(ctx, dbPort, ["up", "-d", "--wait", "--wait-timeout", "60"]);
+    const started = compose(ctx, dbPort, ["up", "-d", "--wait", "--wait-timeout", "60", "postgres"]);
     if (started.status !== 0) throw new Error(`PG startup failed: ${started.stderr.trim() || started.stdout.trim()}`);
   } else process.stdout.write(`[dev] PG is ready (project ${ctx.project})\n`);
 
@@ -408,6 +408,12 @@ async function up(ctx) {
   if (snapshot.unattributable.length) throw new Error("Unable to confirm candidate process ownership");
   if (snapshot.group.some((entry) => FRONTEND_ROLES.includes(entry.role))) throw new Error("Frontend in this checkout is already running");
   for (const [port, label] of [[runtimePort(ctx), "Agent runtime"], [3000, "Node"], [5173, "Workbench Web"], [5174, "Manager"]]) assertNoForeign(port, { group: [] }, label);
+  const gatewayState = compose(ctx, dbPort, ["ps", "-q", "gateway"]);
+  if (gatewayState.status !== 0) throw new Error("Unable to inspect development gateway");
+  if (!gatewayState.stdout.trim()) assertNoForeign(8080, { group: [] }, "Gateway");
+  const gateway = compose(ctx, dbPort, ["up", "-d", "--no-deps", "gateway"]);
+  if (gateway.status !== 0) throw new Error(`Gateway startup failed: ${gateway.stderr.trim()}`);
+  process.stdout.write(`[dev] Browser entry: http://localhost:8080${process.env.PUBLIC_BASE_PATH || ""}/\n`);
   process.stdout.write(`[dev] Starting runtime and frontend group (foreground; Ctrl-C stops this group only, down stops full stack)\n`);
   // Direct foreground entry using checkout scripts/dev-command.mjs: bypasses pnpm.cmd, avoiding Windows shell parsing issues.
   const child = spawn(process.execPath, [ctx.devCommand, "dev"], { cwd: ctx.root, env: { ...process.env, PORT: "3000" }, stdio: "inherit", shell: false });
@@ -532,6 +538,8 @@ function status(ctx) {
   } catch (error) {
     process.stdout.write(`[dev] PG status unknown: ${error.message}\n`);
   }
+  const gateway = compose(ctx, dbPort, ["ps", "gateway"]);
+  process.stdout.write(gateway.stdout || gateway.stderr);
   const snapshot = identify(ctx);
   if (snapshot.unattributable.length) throw new Error("Candidate processes cannot be confirmed, status incomplete");
   for (const [role, label] of [["java-helper", "Java entry"], ["maven", "Maven"], ["ragmain", "RAGMain"], ["frontend-root", "Frontend root"], ["frontend-child", "Frontend child"]]) {

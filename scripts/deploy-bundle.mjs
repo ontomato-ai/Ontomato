@@ -67,7 +67,7 @@ export function buildBundle(options, { name, deployDir, installDir, images, vali
   const mirror = join(tools, "mirror.py");
   execute("python3", [mirror, "tools-verify", "--bundle", tools, "--arch", arch]);
   const imageArgs = (refs) => refs.flatMap((ref, i) => [
-    ["--workbench", "--data-engine", "--manager", "--agent-runtime", "--postgres"][i], ref,
+    ["--workbench", "--data-engine", "--manager", "--agent-runtime", "--gateway", "--postgres"][i], ref,
   ]);
   const resolved = JSON.parse(output("python3", [mirror, "resolve", "--arch", arch, ...imageArgs(images)]));
   validateImages(resolved);

@@ -24,7 +24,6 @@ import { skillRegistryManager } from "../core/skills/index";
 import { resolveSkillPackageFile } from "../core/skills/discovery/loader";
 import { config } from "../config/application";
 import analysisTasksRouter from "../api/routes/analysis-tasks";
-import backendProxyRouter from "../api/routes/backend-proxy";
 import dashboardsRouter from "../api/routes/dashboards";
 import feedbackRouter from "../api/routes/feedback";
 import memoriesRouter from "../api/routes/memories";
@@ -59,16 +58,11 @@ import { getDefaultLocale, tApp } from "../i18n/index";
 import { echartDir, webDistDir } from "../content/layout";
 import { workbenchIdentity } from "../identity/installed";
 import { MODEL_RUNTIME_TOKEN_ENV, modelKeySealKey } from "@ontomato/contracts/model-key-seal";
-import { workbenchProduct } from "../product/installed";
 
 const logger = createLogger("server");
 const SERVER_NOW_HEADER = "X-Server-Now";
 
 export interface WorkbenchMounts {
-  /** Edition-owned backend routes, followed by the ordinary transparent proxy. */
-  backendProxyRouter?: Router;
-  /** Enterprise SSO. Must run before the unified authenticate. OSS has no such route. */
-  authRouter?: Router;
   /** Enterprise governance platform connection proxy. Absent in OSS. */
   connectionRouter?: Router;
   /** Enterprise governance platform SSO ticket. Absent in OSS. */
@@ -90,7 +84,6 @@ function bindRuntime(): void {
 export function createWorkbenchApp(mounts: WorkbenchMounts = {}): Express {
   bindRuntime();
   const identity = workbenchIdentity();
-  const product = workbenchProduct();
   const app: Express = express();
   const isDev = config.nodeEnv !== "production";
 
@@ -113,12 +106,6 @@ export function createWorkbenchApp(mounts: WorkbenchMounts = {}): Express {
     next();
   });
 
-  if (mounts.authRouter) app.use("/api/auth", mounts.authRouter);
-  app.use("/api/data-query", mounts.backendProxyRouter ?? backendProxyRouter);
-  app.use(
-    product.proxyMountPath,
-    mounts.backendProxyRouter ?? backendProxyRouter,
-  );
   app.use("/mcp/analysis-agents", analysisAgentMcpRouter);
   app.use("/mcp/ops-agent", opsAgentMcpRouter);
   app.use(
@@ -193,7 +180,6 @@ export function createWorkbenchApp(mounts: WorkbenchMounts = {}): Express {
     res.send(
       `window.__APP_CONFIG__ = ${JSON.stringify({
         DEFAULT_LOCALE: getDefaultLocale(),
-        ONTOLOGY_MANAGER_URL: config.ontologyManagerUrl,
       })};\nwindow.__APP_CONFIG__.API_BASE = new URL("./api", document.currentScript.src).pathname;`,
     );
   });

@@ -36,14 +36,14 @@ describe("runtime config: config.js → VITE_ONTOLOGY_* → defaults", () => {
     delete window.__ONTOLOGY_MANAGER_CONFIG__;
     expect(readRuntimeConfig()).toEqual({ apiBase: `${window.location.origin}/api`, initialRoute: "" });
   });
-  it("resolves the generated ./api under the Manager's own mount independently of the workbench", () => {
+  it("resolves ../api from the Manager config script under the deployment root", () => {
     vi.stubEnv("VITE_ONTOLOGY_API_BASE", "");
-    for (const path of ["/", "/manager/", "/nested/manager/index.html"]) {
+    for (const path of ["/ontology-manager/", "/nested/ontology-manager/", "/nested/ontology-manager/index.html"]) {
       window.history.replaceState({}, "", `${path}#/playground`);
-      window.__ONTOLOGY_MANAGER_CONFIG__ = { API_BASE: "./api" };
-      expect(readRuntimeConfig().apiBase).toBe(new URL("./api", window.location.href).href);
+      window.__ONTOLOGY_MANAGER_CONFIG__ = { API_BASE: "../api" };
+      expect(readRuntimeConfig().apiBase).toBe(new URL("../api", window.location.href).href);
       delete window.__ONTOLOGY_MANAGER_CONFIG__;
-      expect(readRuntimeConfig().apiBase).toBe(new URL("./api", window.location.href).href);
+      expect(readRuntimeConfig().apiBase).toBe(new URL("../api", window.location.href).href);
     }
   });
 

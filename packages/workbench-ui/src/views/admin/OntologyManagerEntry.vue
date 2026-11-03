@@ -3,7 +3,7 @@ import { computed, nextTick, ref, watch } from "vue";
 import { useRoute } from "vue-router";
 import { useTheme } from "../../composables/useTheme";
 import { useLocale } from "../../composables/useLocale";
-import { ONTOLOGY_MANAGER_URL } from "../../config/app";
+import { ONTOLOGY_MANAGER_PATH } from "../../config/app";
 import { managerViewQuery } from "../../router/admin-routes";
 import { authHost } from "../../utils/auth";
 import { ontologyManagerEntryConfig } from "./manager-entry-config";
@@ -18,8 +18,8 @@ const initialLocale = currentLocale.value;
 
 // The credential is handed to the Manager only in the launch query; updates rebuild the iframe URL on route changes or re-entry (a full reload).
 const managerUrl = computed(() => {
-  if (!ONTOLOGY_MANAGER_URL) return "";
-  const url = new URL(ONTOLOGY_MANAGER_URL, window.location.origin);
+  if (!ONTOLOGY_MANAGER_PATH) return "";
+  const url = new URL(ONTOLOGY_MANAGER_PATH, window.location.origin);
   const view = typeof route.query.view === "string" ? route.query.view : "";
   if (view) url.searchParams.set("view", view);
   for (const [key, value] of Object.entries(managerViewQuery(route.query))) {

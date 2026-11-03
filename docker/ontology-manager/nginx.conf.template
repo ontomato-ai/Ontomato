@@ -4,7 +4,6 @@ server {
   root /usr/share/nginx/html;
   index index.html;
 
-  ${API_LOCATION}
 
   location / {
     try_files $uri $uri/ /index.html;

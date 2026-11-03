@@ -5,7 +5,7 @@ PROMPT_LANG ?= en
 
 include scripts/product-targets.mk
 
-.PHONY: workbench data-engine ontology-manager agent-runtime bundle deploy-kit
+.PHONY: workbench data-engine ontology-manager agent-runtime gateway bundle deploy-kit
 
 workbench:
 	$(NODE) apps/workbench/build.mjs --arch $(ARCH)
@@ -18,6 +18,9 @@ ontology-manager:
 
 agent-runtime:
 	$(NODE) apps/agent-runtime/build.mjs --arch $(ARCH)
+
+gateway:
+	$(NODE) apps/gateway/build.mjs --arch $(ARCH)
 
 VERSION ?= $(shell $(NODE) --input-type=module -e 'import {readFileSync} from "node:fs"; import {readRevision} from "./scripts/build-support.mjs"; console.log(readRevision(readFileSync("pom.xml", "utf8")))')
 IMAGE_TAG ?= $(VERSION)

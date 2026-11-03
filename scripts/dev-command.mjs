@@ -22,7 +22,6 @@ export function configuration(mode, { root }, inherited = process.env) {
   switch (mode) {
     case "dev":
       env.NODE_ENV = "development";
-      env.ONTOLOGY_MANAGER_URL = "http://localhost:5174";
       tool = "concurrently";
       args = ["pnpm:dev:server", "pnpm:dev:web", "pnpm:dev:ontology-manager"];
       break;

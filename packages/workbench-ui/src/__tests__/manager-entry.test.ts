@@ -13,7 +13,7 @@ import { adminRoutes } from "../router/admin-routes";
 import { adminAccessKey } from "../features/admin/navigation";
 
 // config/app.ts reads the runtime config on import.
-window.__APP_CONFIG__ = { ONTOLOGY_MANAGER_URL: "http://manager.test/" };
+window.__APP_CONFIG__ = { API_BASE: "/nested/api" };
 
 const enterpriseEntry: OntologyManagerEntryConfig = {
   themeMessage: "data-agent-theme",
@@ -98,6 +98,7 @@ describe("Manager entry", () => {
       tk: "tok",
     });
     expect(url.hash).toBe("");
+    expect(url.pathname).toBe("/nested/ontology-manager/");
   });
 
   it("with locale sync: token first, apiKey without a token; open source sends no locale and no credential parameter without a credential", async () => {

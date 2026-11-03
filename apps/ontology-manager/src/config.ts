@@ -12,8 +12,8 @@ export function readRuntimeConfig() {
   const runtime = window.__ONTOLOGY_MANAGER_CONFIG__;
   return {
     apiBase: new URL(
-      runtime?.API_BASE || import.meta.env.VITE_ONTOLOGY_API_BASE || "./api",
-      window.location.href
+      runtime?.API_BASE || import.meta.env.VITE_ONTOLOGY_API_BASE || "../api",
+      document.querySelector<HTMLScriptElement>('script[src$="config.js"]')?.src || window.location.href
     ).href.replace(/\/+$/, ""),
     initialRoute: runtime?.INITIAL_ROUTE || import.meta.env.VITE_ONTOLOGY_INITIAL_ROUTE || "",
   };
