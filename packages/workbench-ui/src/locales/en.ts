@@ -708,9 +708,6 @@ export default {
   "audit": {
     "loadFailed": "Load Failed"
   },
-  "dataSource": {
-    "port": "Port"
-  },
   "autotest": {
     "correct": "Correct",
     "wrong": "Wrong",
