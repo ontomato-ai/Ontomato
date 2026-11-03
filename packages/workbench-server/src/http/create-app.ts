@@ -16,7 +16,6 @@ import express, {
   Request,
   Response,
   NextFunction,
-  Router,
 } from "express";
 import cors from "cors";
 import path from "path";
@@ -62,13 +61,6 @@ import { MODEL_RUNTIME_TOKEN_ENV, modelKeySealKey } from "@ontomato/contracts/mo
 const logger = createLogger("server");
 const SERVER_NOW_HEADER = "X-Server-Now";
 
-export interface WorkbenchMounts {
-  /** Enterprise governance platform connection proxy. Absent in OSS. */
-  connectionRouter?: Router;
-  /** Enterprise governance platform SSO ticket. Absent in OSS. */
-  dataGovernanceRouter?: Router;
-}
-
 let runtimeBound = false;
 
 function bindRuntime(): void {
@@ -81,7 +73,7 @@ function bindRuntime(): void {
   installDiagnosisEvidenceReader({ resolve: resolveDiagnosisEvidence });
 }
 
-export function createWorkbenchApp(mounts: WorkbenchMounts = {}): Express {
+export function createWorkbenchApp(): Express {
   bindRuntime();
   const identity = workbenchIdentity();
   const app: Express = express();
@@ -203,10 +195,6 @@ export function createWorkbenchApp(mounts: WorkbenchMounts = {}): Express {
   app.use("/api/analysis-tasks", analysisTasksRouter);
   app.use("/api/assistant", assistantRouter);
   app.use("/api/scheduled-tasks", scheduledTasksRouter);
-  if (mounts.connectionRouter)
-    app.use("/api/connections", mounts.connectionRouter);
-  if (mounts.dataGovernanceRouter)
-    app.use("/api/data-governance", mounts.dataGovernanceRouter);
   app.use("/api/dashboards", dashboardsRouter);
   app.use("/api/feedback", feedbackRouter);
   app.use("/api/preferences", preferencesRouter);
