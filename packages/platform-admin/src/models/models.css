@@ -1,0 +1,393 @@
+.config-card {
+  margin-bottom: 0;
+}
+
+.model-editor-form :deep(.el-form-item__label) {
+  flex: 0 0 auto;
+  white-space: nowrap;
+  word-break: keep-all;
+}
+
+.config-card .card-header {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--spacing-sm);
+  font-size: var(--text-md);
+  font-weight: var(--font-semibold);
+  color: var(--el-text-color-primary);
+  margin-bottom: var(--spacing-lg);
+  padding-bottom: var(--spacing-md);
+  border-bottom: 1px solid var(--el-border-color-light);
+}
+
+.config-card .card-header .el-icon {
+  color: var(--el-color-primary);
+  flex-shrink: 0;
+}
+
+.header-action {
+  margin-left: auto;
+}
+
+.load-error {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-md);
+  padding: var(--spacing-md);
+  border: 1px solid var(--el-color-danger-light-5);
+  border-radius: var(--radius-md);
+  background: var(--el-color-danger-light-9);
+  color: var(--el-color-danger);
+  font-size: var(--text-sm);
+  flex-wrap: wrap;
+}
+
+.model-list {
+  list-style: none;
+  margin: 0 0 var(--spacing-md);
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+}
+
+.model-item {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-md);
+  padding: var(--spacing-md) var(--spacing-lg);
+  border: 1px solid var(--el-border-color-light);
+  border-radius: var(--radius-md);
+  min-width: 0;
+  flex-wrap: wrap;
+}
+
+/* Two lines on the left: the name above, then IDs, URL and key count (wrapping when narrow); the row actions stay on the right. */
+.model-info {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+  min-width: 0;
+  flex: 1 1 0;
+}
+
+.model-meta {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: var(--spacing-xs) var(--spacing-md);
+  min-width: 0;
+}
+
+.model-title {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  min-width: 0;
+}
+
+.model-name {
+  font-weight: var(--font-medium);
+  color: var(--el-text-color-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.model-id {
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  color: var(--el-text-color-regular);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The URL is the longest field: it is the one truncated (full value in its tooltip). */
+.model-url {
+  max-width: 420px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--el-text-color-regular);
+  font-size: var(--text-sm);
+  font-family: var(--font-mono);
+}
+
+.model-keys {
+  flex: 0 0 auto;
+  font-size: var(--text-sm);
+  color: var(--el-text-color-regular);
+}
+
+.model-actions {
+  flex: 0 0 auto;
+  margin-left: auto;
+  display: flex;
+  gap: 4px;
+}
+
+.dialog-section {
+  margin: 0 0 var(--spacing-md);
+  font-size: var(--text-sm);
+  font-weight: var(--font-semibold);
+  color: var(--el-text-color-primary);
+}
+
+/* The dialog root node of Element Plus does not carry the caller's scoped attribute. */
+:global(.model-dialog .el-dialog__body) {
+  max-height: 70vh;
+  overflow-y: auto;
+}
+
+/* On narrow screens, split info and actions into separate lines so full fields stay readable and buttons stay reachable. */
+@media (max-width: 640px) {
+  .model-info {
+    flex-basis: 100%;
+  }
+
+  .model-meta {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .model-name,
+  .model-id,
+  .model-url {
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+
+  .model-url {
+    max-width: 100%;
+  }
+
+  .model-actions {
+    flex-basis: 100%;
+    justify-content: flex-end;
+    margin-left: 0;
+  }
+
+  .model-actions :deep(.el-button),
+  .api-keys-wrap :deep(.el-button),
+  .header-action {
+    min-width: 44px;
+    min-height: 44px;
+  }
+
+  .model-editor-form :deep(.el-form-item) {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .model-editor-form :deep(.el-form-item__label) {
+    width: auto !important;
+    height: auto;
+    justify-content: flex-start;
+    line-height: 1.5;
+    margin-bottom: var(--spacing-xs);
+  }
+
+  .model-editor-form :deep(.el-form-item__content) {
+    margin-left: 0 !important;
+  }
+}
+
+.card-body {
+  padding: 0;
+}
+
+.api-keys-wrap {
+  width: 100%;
+}
+
+.api-key-row {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 8px;
+  align-items: center;
+}
+
+.saved-key-hint {
+  margin: 0 0 8px;
+  color: var(--el-text-color-secondary);
+  font-size: var(--text-xs);
+  line-height: 1.5;
+}
+
+.api-key-input {
+  flex: 1;
+}
+
+.custom-request-parameters-item :deep(.el-form-item__content) {
+  margin-left: 0 !important;
+}
+
+.custom-request-parameters-editor {
+  width: 100%;
+  --el-collapse-border-color: var(--el-border-color-lighter);
+}
+
+.custom-request-parameters-editor :deep(.el-collapse-item__header) {
+  min-height: 42px;
+  height: auto;
+  padding: 0 var(--spacing-md);
+  font-size: inherit;
+}
+
+.custom-request-parameters-editor :deep(.el-collapse-item__title) {
+  min-width: 0;
+}
+
+.custom-request-parameters-editor :deep(.el-collapse-item__wrap) {
+  border-bottom: 0;
+}
+
+.custom-request-parameters-editor :deep(.el-collapse-item__content) {
+  padding: var(--spacing-md) 0 0;
+}
+
+.custom-request-parameters-heading {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-md);
+  min-width: 0;
+  width: 100%;
+  padding-right: var(--spacing-sm);
+}
+
+.custom-request-parameters-title {
+  flex: 0 0 auto;
+  font-weight: var(--font-medium);
+}
+
+.custom-request-parameters-summary {
+  min-width: 0;
+  margin-left: auto;
+  overflow: hidden;
+  color: var(--el-text-color-regular);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.custom-request-parameters-editor :deep(textarea) {
+  font-family: var(--el-font-family-monospace, ui-monospace, SFMono-Regular, Consolas, monospace);
+  line-height: 1.5;
+}
+
+.custom-request-parameters-hint {
+  margin: var(--spacing-xs) 0 0;
+  color: var(--el-text-color-regular);
+  font-size: var(--text-xs);
+  line-height: 1.5;
+}
+
+/* Switch paired settings to one column before their controls become cramped. */
+@media (max-width: 760px) {
+  .config-card :deep(.el-col) {
+    flex: 0 0 100% !important;
+    max-width: 100% !important;
+  }
+}
+
+/* One-line hint shown when a card has nothing configured yet. */
+.card-empty {
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--el-text-color-secondary);
+}
+
+.card-empty-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--spacing-md);
+}
+
+/* Vector rebuild status under the embedding row: progress, the need to rebuild, and the last failure. */
+.vector-rebuild-status {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+}
+
+/* The domain default above the model list: label and hint on the left, the select on the right (below when narrow). */
+.default-model-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--spacing-sm) var(--spacing-lg);
+  margin-bottom: var(--spacing-lg);
+}
+
+.default-model-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1 1 280px;
+  min-width: 0;
+}
+
+.default-model-label {
+  font-weight: var(--font-medium);
+  color: var(--el-text-color-primary);
+}
+
+.default-model-hint,
+.card-hint {
+  font-size: var(--text-xs);
+  line-height: 1.5;
+  color: var(--el-text-color-secondary);
+}
+
+.card-hint {
+  margin: 0 0 var(--spacing-md);
+}
+
+.default-model-select {
+  flex: 0 1 360px;
+  min-width: 220px;
+}
+
+.default-model-unset {
+  flex-basis: 100%;
+  margin: 0;
+  font-size: var(--text-xs);
+  color: var(--el-color-warning);
+}
+
+/* Ontology agents: one cell per agent (name above, select below); three columns when wide, then two, then one. */
+.agent-model-grid {
+  --agent-grid-gap: var(--spacing-lg);
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(
+    auto-fill,
+    minmax(max(260px, calc((100% - 2 * var(--agent-grid-gap)) / 3)), 1fr)
+  );
+  gap: var(--spacing-md) var(--agent-grid-gap);
+}
+
+.agent-model-cell {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+  min-width: 0;
+}
+
+.agent-model-name {
+  font-weight: var(--font-medium);
+  color: var(--el-text-color-primary);
+}
+
+.dialog-text {
+  margin: 0 0 var(--spacing-md);
+  line-height: 1.6;
+  color: var(--el-text-color-regular);
+}

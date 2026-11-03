@@ -139,12 +139,6 @@ export const adminRoutes = {
     redirect: "/admin/skills",
     meta: { group: "app-capabilities", permissions: ["visualization-skills"] },
   },
-  modelConfig: {
-    path: "model-config",
-    name: "ModelConfig",
-    component: () => import("../features/system/components/ModelConfig.vue"),
-    meta: { group: "platform-management", permissions: ["system-config"] },
-  },
   // The workbench part of the system configuration (query settings); the ontology service part is in the Manager.
   systemConfig: {
     path: "system-config",

@@ -1,8 +1,16 @@
+import type { ModelSelection } from "@ontomato/contracts/model-settings";
 import {
   generalConfigSaveEndpoints,
   ontologyOutlineSchema,
   type GeneralConfigKey,
 } from "./config/types";
+import {
+  vectorRebuildStatusSchema,
+  type EmbeddingModelConfig,
+  type ModelEntry,
+  type ModelSettings,
+  type OntologyAgentSelection,
+} from "./models/types";
 
 /**
  * Platform area requests. The platform pages live next to the Ontology Manager and call the Java service through the
@@ -61,7 +69,7 @@ export function createPlatformClient(context: PlatformRequestContext) {
     const response = await fetch(`${context.apiBase}/data-query${path}`, {
       ...init,
       headers: {
-        ...(init.method === "POST" ? { "Content-Type": "application/json" } : {}),
+        ...(init.body !== undefined ? { "Content-Type": "application/json" } : {}),
         "Accept-Language": context.locale(),
         "X-Requested-With": "XMLHttpRequest",
         ...credentialHeaders(credential),
@@ -90,6 +98,7 @@ export function createPlatformClient(context: PlatformRequestContext) {
     get: (path: string) => read(path, { method: "GET" }),
     post: (path: string, body?: unknown) =>
       read(path, { method: "POST", body: JSON.stringify(body ?? {}) }),
+    put: (path: string, body: unknown) => read(path, { method: "PUT", body: JSON.stringify(body) }),
     dispose: () => {
       disposed = true;
     },
@@ -111,6 +120,24 @@ export function platformApi(client: PlatformClient) {
       client.post(generalConfigSaveEndpoints[key], { [key]: value }),
     getOntologyOutline: async () =>
       ontologyOutlineSchema.parse((await client.get("/admin/getSchema")).data),
+    // The model library is read and written as-is, not through the contract schema: parsing would drop provider
+    // fields the page has no control for, and the save must send them back unchanged.
+    getModelSettings: async (): Promise<ModelSettings> => (await client.get("/model-settings")).data,
+    saveModelSettings: async (settings: ModelSettings): Promise<ModelSettings> =>
+      (await client.post("/model-settings/save", settings)).data,
+    testModel: async (model: ModelEntry, prompt: string): Promise<{ content: string }> =>
+      (await client.post("/model-settings/test", { model, prompt })).data,
+    listOntologyAgentModels: async (): Promise<OntologyAgentSelection[]> =>
+      (await client.get("/ontology/ai/agent-models")).data.agents,
+    saveOntologyAgentModel: async (id: string, modelSelection: ModelSelection): Promise<OntologyAgentSelection> =>
+      (await client.put(`/ontology/ai/agent-models/${encodeURIComponent(id)}`, { modelSelection })).data,
+    saveEmbeddingModel: (model: EmbeddingModelConfig) => client.post("/businessConfig/saveEmbeddingModel", model),
+    testEmbeddingModel: (payload: { modelConfig: EmbeddingModelConfig; userContent: string }) =>
+      client.post("/businessConfig/testEmbeddingModel", payload),
+    getVectorRebuildStatus: async () =>
+      vectorRebuildStatusSchema.parse((await client.get("/businessConfig/vectorRebuildStatus")).data),
+    rebuildVectors: () => client.post("/businessConfig/rebuildVectors"),
+    pauseVectorRebuild: () => client.post("/businessConfig/pauseVectorRebuild"),
   };
 }
 

@@ -9,11 +9,11 @@ import {
   type SaveAction,
   type VectorRebuildState,
   type VectorRebuildStatus,
-} from "../../types";
-import { workbenchContent } from "../../../../content";
+} from "../types";
+import { usePlatformHost } from "../../context";
 
 const { t } = useI18n();
-const { businessConfigSeparator } = workbenchContent().text;
+const { separators } = usePlatformHost();
 
 const props = defineProps<{
   /** The saved Embedding model, or null when none is configured. */
@@ -126,7 +126,7 @@ async function saveDialog() {
     <div class="card-body">
       <el-skeleton v-if="props.loading" :rows="2" animated />
       <div v-else-if="props.loadError" class="load-error" role="alert">
-        <span>{{ t("admin.modelListLoadFailed") }}{{ businessConfigSeparator }}{{ props.loadError }}</span>
+        <span>{{ t("admin.modelListLoadFailed") }}{{ separators.detail }}{{ props.loadError }}</span>
         <el-button size="small" @click="emit('retry')">{{ t("common.retry") }}</el-button>
       </div>
       <template v-else>
@@ -146,10 +146,10 @@ async function saveDialog() {
                   {{ props.model.apiKey ? t("admin.keyCountConfigured", { n: 1 }) : t("admin.keyMissing") }}
                 </span>
                 <span class="model-keys">
-                  {{ t("common.timeoutSec") }}{{ businessConfigSeparator }}{{ parseIsoDurationSeconds(props.model.timeout) }}
+                  {{ t("common.timeoutSec") }}{{ separators.detail }}{{ parseIsoDurationSeconds(props.model.timeout) }}
                 </span>
                 <span class="model-keys">
-                  {{ t("admin.embeddingDimensions") }}{{ businessConfigSeparator }}{{ props.model.dimensions }}
+                  {{ t("admin.embeddingDimensions") }}{{ separators.detail }}{{ props.model.dimensions }}
                 </span>
               </div>
             </div>
@@ -247,4 +247,4 @@ async function saveDialog() {
   </div>
 </template>
 
-<style scoped src="./business-config.css"></style>
+<style scoped src="../models.css"></style>

@@ -81,15 +81,6 @@ export const adminMenuItemData = {
     icon: "Puzzle",
     groupKey: "app-capabilities",
   },
-  modelConfig: {
-    permissions: ["system-config"],
-    ownerApplication: "platform",
-    path: "/admin/model-config",
-    titleKey: "nav.modelConfig",
-    descriptionKey: "navDescription.modelConfig",
-    icon: "Cpu",
-    groupKey: "platform-management",
-  },
   systemConfig: {
     permissions: ["system-config"],
     ownerApplication: "platform",

@@ -76,4 +76,4 @@ watch(
   </el-form-item>
 </template>
 
-<style scoped src="./business-config.css"></style>
+<style scoped src="../models.css"></style>

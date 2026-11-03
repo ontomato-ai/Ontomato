@@ -1,15 +1,22 @@
-import { flushPromises, mount } from "@vue/test-utils";
+import { flushPromises, mount, type VueWrapper } from "@vue/test-utils";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import ElementPlus, { ElMessage, ElMessageBox } from "element-plus";
-import ModelListCard from "../business-config/ModelListCard.vue";
-import EmbeddingModelConfigCard from "../business-config/EmbeddingModelConfigCard.vue";
-import QuerySettingsCard from "../business-config/QuerySettingsCard.vue";
-import SystemConfig from "../SystemConfig.vue";
-import ModelConfig from "../ModelConfig.vue";
-import { vectorRebuildStatusSchema } from "../../types";
-import type { EmbeddingModelConfig, ModelEntry, VectorRebuildStatus } from "../../types";
-import { adminApi } from "../../../admin";
-import { workbenchI18n } from "../../../../i18n";
+import ModelListCard from "../models/components/ModelListCard.vue";
+import EmbeddingModelConfigCard from "../models/components/EmbeddingModelConfigCard.vue";
+import ModelSelectionSelect from "../models/components/ModelSelectionSelect.vue";
+import OntologyAgentModelsCard from "../models/components/OntologyAgentModelsCard.vue";
+import ModelConfigPage from "../pages/ModelConfigPage.vue";
+import { vectorRebuildStatusSchema } from "../models/types";
+import type {
+  EmbeddingModelConfig,
+  ModelEntry,
+  ModelSettings,
+  OntologyAgentSelection,
+  VectorRebuildStatus,
+} from "../models/types";
+import type { PlatformApi } from "../api";
+import { providePlatformHost } from "../context";
+import { testHost, testI18n } from "./host";
 
 const OPAQUE_CUSTOMS =
   '{"__v_isRef":true,"__v_isReactive":1,"__v_isReadonly":0,"__v_raw":{"nested":"user-value"},"value":"keep-me","temperature":null,"constructor":{"x":1},"__proto__":{"polluted":false},"arr":[1,null,{"k":"v"}]}';
@@ -19,7 +26,7 @@ const sent = vi.hoisted(() => ({
   test: null as unknown,
   embedding: null as unknown,
   embeddingTest: null as unknown,
-  system: null as unknown,
+  agentSaves: [] as Array<{ id: string; modelId: string | null }>,
 }));
 
 // Simulates the Java model library: reads return a copy; saves are stored atomically and filled with the maxTokens / contextWindow defaults as read normalization does.
@@ -27,6 +34,7 @@ const server = vi.hoisted(() => ({
   models: [] as Array<Record<string, unknown>>,
   defaultModelId: null as string | null,
   reads: 0,
+  agents: [] as OntologyAgentSelection[],
 }));
 
 const fixtures = vi.hoisted(() => ({
@@ -73,6 +81,11 @@ const fixtures = vi.hoisted(() => ({
     customHeaders: { "X-Embed-Key": "keep" },
   },
   rebuildIdle: { state: "READY", total: 0, done: 0, error: null } as VectorRebuildStatus,
+  agents: [
+    { id: "a-retrieval", kind: "retrieval", name: "Data retrieval", modelSelection: { modelId: null } },
+    { id: "a-gone", kind: "knowledgeGovernance", name: "Knowledge governance", modelSelection: { modelId: "gone-model" } },
+    { id: "a-future", kind: "futureKind", name: "Service-named agent", modelSelection: { modelId: "qwen-main" } },
+  ] as OntologyAgentSelection[],
 }));
 
 function settingsData() {
@@ -84,11 +97,11 @@ function settingsData() {
   );
 }
 
-vi.mock("../../../admin", () => ({
-  adminApi: {
-    getModelSettings: vi.fn(async () => {
+// The page's endpoints as the platform api resolves them: the model library and agent catalog as their data.
+const api = {
+    getModelSettings: vi.fn(async (): Promise<ModelSettings> => {
       server.reads += 1;
-      return { success: true, data: settingsData() };
+      return settingsData();
     }),
     saveModelSettings: vi.fn(
       async (payload: { models: Array<Record<string, unknown>>; defaultModelId: string | null }) => {
@@ -99,12 +112,12 @@ vi.mock("../../../admin", () => ({
           contextWindow: model.contextWindow ?? 256000,
         }));
         server.defaultModelId = (sent.settings as typeof payload).defaultModelId;
-        return { success: true, data: settingsData() };
+        return settingsData() as ModelSettings;
       }
     ),
     testModel: vi.fn(async (model: unknown, prompt: string) => {
       sent.test = JSON.parse(JSON.stringify({ model, prompt }));
-      return { success: true, data: { content: "ok" } };
+      return { content: "ok" };
     }),
     getBusinessConfig: vi.fn(async () => ({
       success: true,
@@ -120,14 +133,6 @@ vi.mock("../../../admin", () => ({
         })
       ),
     })),
-    getSystemModelConfig: vi.fn(async () => ({
-      success: true,
-      data: { queryTimeoutSeconds: 600 },
-    })),
-    saveSystemModelConfig: vi.fn(async (payload: Record<string, unknown>) => {
-      sent.system = JSON.parse(JSON.stringify(payload));
-      return { success: true, data: { ...payload } };
-    }),
     saveEmbeddingModel: vi.fn(async (payload: unknown) => {
       sent.embedding = JSON.parse(JSON.stringify(payload));
       return { success: true };
@@ -137,16 +142,23 @@ vi.mock("../../../admin", () => ({
       return { success: true };
     }),
     getVectorRebuildStatus: vi.fn(async () => ({ ...fixtures.rebuildIdle })),
+    listOntologyAgentModels: vi.fn(async () => JSON.parse(JSON.stringify(server.agents)) as OntologyAgentSelection[]),
+    saveOntologyAgentModel: vi.fn(async (id: string, modelSelection: { modelId: string | null }) => {
+      sent.agentSaves.push({ id, modelId: modelSelection.modelId });
+      server.agents = server.agents.map((agent) => (agent.id === id ? { ...agent, modelSelection } : agent));
+      return JSON.parse(JSON.stringify(server.agents.find((agent) => agent.id === id)));
+    }),
     rebuildVectors: vi.fn(async () => ({ success: true })),
     pauseVectorRebuild: vi.fn(async () => ({ success: true })),
-  },
-}));
+};
 
-const i18n = workbenchI18n();
+const i18n = testI18n();
 const t = i18n.global.t as (key: string, params?: Record<string, unknown>) => string;
 
+const host = testHost(api as unknown as Partial<PlatformApi>);
 const global = {
   plugins: [i18n, ElementPlus],
+  provide: providePlatformHost(host),
   stubs: {
     teleport: true,
     "el-tooltip": { template: "<span><slot /></span>" },
@@ -167,8 +179,9 @@ beforeEach(() => {
     test: null,
     embedding: null,
     embeddingTest: null,
-    system: null,
+    agentSaves: [],
   });
+  server.agents = JSON.parse(JSON.stringify(fixtures.agents));
   server.models = JSON.parse(JSON.stringify(fixtures.models));
   server.defaultModelId = fixtures.defaultModelId;
   server.reads = 0;
@@ -219,7 +232,7 @@ function mountList(models: ModelEntry[], extra: Record<string, unknown> = {}) {
     return true;
   });
   const wrapper: ReturnType<typeof mount> = track(
-    mount(ModelListCard, { props: { models, saving: false, save, ...extra }, global })
+    mount(ModelListCard, { props: { models, defaultModelId: null, saving: false, save, ...extra }, global })
   );
   return { wrapper, save };
 }
@@ -233,15 +246,10 @@ async function saveDialog(scope: Pick<ReturnType<typeof mount>, "findAll">) {
   await flushPromises();
 }
 
-async function mountModelPage() {
-  const wrapper = track(mount(ModelConfig, { global }));
-  await flushPromises();
-  return wrapper;
-}
-
-/** The workbench part of the system config page: the query settings. */
-async function mountSystemPage() {
-  const wrapper = track(mount(SystemConfig, { global }));
+async function mountModelPage(options: { realSelects?: boolean } = {}) {
+  // The teleport and tooltip stubs also drop the select dropdown, whose options name the selected value.
+  const stubs = options.realSelects ? { ...global.stubs, teleport: false, "el-tooltip": false } : global.stubs;
+  const wrapper = track(mount(ModelConfigPage, { global: { ...global, stubs } }));
   await flushPromises();
   return wrapper;
 }
@@ -314,27 +322,6 @@ describe("model list card", () => {
     expect(wrapper.findAll("button").every((b) => b.attributes("disabled") !== undefined)).toBe(
       true
     );
-  });
-});
-
-describe("query settings card", () => {
-
-  it("shows the load error with retry and blocks save", async () => {
-    const wrapper = track(
-      mount(QuerySettingsCard, {
-        props: {
-          model: { queryTimeoutSeconds: 600 },
-          loading: false,
-          saving: false,
-          loadError: "node down",
-        },
-        global,
-      })
-    );
-    expect(wrapper.find(".load-error").text()).toContain("node down");
-    expect(button(wrapper, t("common.saveConfig"))!.attributes("disabled")).toBeDefined();
-    await button(wrapper, t("common.retry"))!.trigger("click");
-    expect(wrapper.emitted("retry")).toHaveLength(1);
   });
 });
 
@@ -493,7 +480,7 @@ describe("embedding model card", () => {
 
 describe("password visibility with the real dialog", () => {
   // ElDialog/teleport are not replaced: after a real close/destroy and rebuilt key rows, password inputs return to hidden by default.
-  const realDialog = { plugins: [i18n, ElementPlus], stubs: { transition: false } };
+  const realDialog = { plugins: [i18n, ElementPlus], provide: providePlatformHost(host), stubs: { transition: false } };
   const settle = async () => {
     await new Promise((resolve) => setTimeout(resolve, 0));
     await flushPromises();
@@ -512,6 +499,7 @@ describe("password visibility with the real dialog", () => {
             entry("a", { apiKeys: ["sk-fake-1", "sk-fake-2", "sk-fake-3"] }),
             entry("b", { apiKeys: ["sk-fake-9"] }),
           ],
+          defaultModelId: "a",
           saving: false,
           save,
         },
@@ -578,7 +566,7 @@ describe("password visibility with the real dialog", () => {
 });
 
 describe("saved keys are write-only", () => {
-  const realDialog = { plugins: [i18n, ElementPlus], stubs: { transition: false } };
+  const realDialog = { plugins: [i18n, ElementPlus], provide: providePlatformHost(host), stubs: { transition: false } };
   const settle = async () => {
     await new Promise((resolve) => setTimeout(resolve, 0));
     await flushPromises();
@@ -588,7 +576,7 @@ describe("saved keys are write-only", () => {
     const save = vi.fn(async (_models: ModelEntry[]) => true);
     const wrapper = track(
       mount(ModelListCard, {
-        props: { models: [entry("a", { apiKeys: ["******ab12"] })], saving: false, save },
+        props: { models: [entry("a", { apiKeys: ["******ab12"] })], defaultModelId: "a", saving: false, save },
         global: realDialog,
         attachTo: document.body,
       })
@@ -645,7 +633,7 @@ describe("saved keys are write-only", () => {
 describe("model config page", () => {
 
   it("shows a persistent error with retry and offers no write entry when loading fails", async () => {
-    vi.mocked(adminApi.getModelSettings).mockRejectedValueOnce(new Error("legacy role params"));
+    vi.mocked(api.getModelSettings).mockRejectedValueOnce(new Error("legacy role params"));
     const page = await mountModelPage();
     const alert = page.find(".load-error[role='alert']");
     expect(alert.text()).toContain("legacy role params");
@@ -661,8 +649,8 @@ describe("model config page", () => {
 
   it("keeps the model and embedding dialogs open when their save fails", async () => {
     const error = vi.spyOn(ElMessage, "error");
-    vi.mocked(adminApi.saveModelSettings).mockRejectedValueOnce(new Error("models rejected"));
-    vi.mocked(adminApi.saveEmbeddingModel).mockRejectedValueOnce(new Error("embedding rejected"));
+    vi.mocked(api.saveModelSettings).mockRejectedValueOnce(new Error("models rejected"));
+    vi.mocked(api.saveEmbeddingModel).mockRejectedValueOnce(new Error("embedding rejected"));
     const page = await mountModelPage();
     const list = page.findComponent(ModelListCard);
     await button(list, t("common.edit"))!.trigger("click");
@@ -736,7 +724,7 @@ describe("model config page", () => {
     expect(tested.model.baseUrl).toBe("https://new.example.com/v1");
     expect(tested.model.apiKeys).toEqual(["", "sk-fake-cd34"]);
     expect(JSON.stringify(tested.model.customRequestParameters)).toBe(OPAQUE_CUSTOMS);
-    expect(adminApi.saveModelSettings).toHaveBeenCalledTimes(1);
+    expect(api.saveModelSettings).toHaveBeenCalledTimes(1);
   });
 
   it("titles the model and embedding test dialogs after the selected entry", async () => {
@@ -766,7 +754,7 @@ describe("model config page", () => {
     expect(embedding.find("section").exists()).toBe(false);
 
     // The page reads the saved model back instead of keeping the submitted key, so the test sends what the server returned.
-    expect(adminApi.getBusinessConfig).toHaveBeenCalledTimes(2);
+    expect(api.getBusinessConfig).toHaveBeenCalledTimes(2);
     await button(embedding, t("common.testModel"))!.trigger("click");
     const testDialog = page.findAll("section").at(-1)!;
     await testDialog.find("textarea").setValue("hello");
@@ -794,25 +782,25 @@ describe("vector rebuild and embedding test on the model config page", () => {
   // Design item 3/4: rebuilding is a separate, confirmed step; cancelling the confirmation starts nothing.
   it("confirms before rebuilding with the cost explained", async () => {
     const confirm = vi.spyOn(ElMessageBox, "confirm");
-    vi.mocked(adminApi.getVectorRebuildStatus).mockResolvedValue(status({ state: "PENDING" }));
+    vi.mocked(api.getVectorRebuildStatus).mockResolvedValue(status({ state: "PENDING" }));
     const page = await mountModelPage();
     confirm.mockRejectedValueOnce("cancel");
     await rebuildButton(page).trigger("click");
     await flushPromises();
     expect(confirm.mock.calls[0]![0]).toBe(t("admin.vectorRebuildConfirm"));
-    expect(adminApi.rebuildVectors).not.toHaveBeenCalled();
+    expect(api.rebuildVectors).not.toHaveBeenCalled();
 
     confirm.mockResolvedValueOnce("confirm" as never);
     await rebuildButton(page).trigger("click");
     await flushPromises();
-    expect(adminApi.rebuildVectors).toHaveBeenCalledTimes(1);
+    expect(api.rebuildVectors).toHaveBeenCalledTimes(1);
   });
 
   // Contract 4/5: after starting, progress is polled while running and polling stops once the rebuild ends.
   it("polls the progress while a rebuild runs and stops when it ends", async () => {
     vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
     vi.spyOn(ElMessageBox, "confirm").mockResolvedValueOnce("confirm" as never);
-    const read = vi.mocked(adminApi.getVectorRebuildStatus);
+    const read = vi.mocked(api.getVectorRebuildStatus);
     read
       .mockResolvedValueOnce(status({ state: "PENDING" }))
       .mockResolvedValueOnce(status({ state: "RUNNING", total: 10, done: 0 }))
@@ -839,7 +827,7 @@ describe("vector rebuild and embedding test on the model config page", () => {
   it("pauses, stops polling once paused, and resumes after a reload without a new confirmation", async () => {
     vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
     const confirm = vi.spyOn(ElMessageBox, "confirm");
-    const read = vi.mocked(adminApi.getVectorRebuildStatus);
+    const read = vi.mocked(api.getVectorRebuildStatus);
     read
       .mockResolvedValueOnce(status({ state: "RUNNING", total: 10, done: 4 }))
       .mockResolvedValueOnce(status({ state: "PAUSING", total: 10, done: 4 }))
@@ -847,7 +835,7 @@ describe("vector rebuild and embedding test on the model config page", () => {
     const page = await mountModelPage();
     await cardButton(page, "admin.pauseVectorRebuild")!.trigger("click");
     await flushPromises();
-    expect(adminApi.pauseVectorRebuild).toHaveBeenCalledTimes(1);
+    expect(api.pauseVectorRebuild).toHaveBeenCalledTimes(1);
     expect(cardButton(page, "admin.pauseVectorRebuild")!.attributes("disabled")).toBeDefined();
     await vi.advanceTimersByTimeAsync(3000);
     const card = page.findComponent(EmbeddingModelConfigCard);
@@ -861,7 +849,7 @@ describe("vector rebuild and embedding test on the model config page", () => {
     await cardButton(reloaded, "admin.resumeVectorRebuild")!.trigger("click");
     await flushPromises();
     expect(confirm).not.toHaveBeenCalled();
-    expect(adminApi.rebuildVectors).toHaveBeenCalledTimes(1);
+    expect(api.rebuildVectors).toHaveBeenCalledTimes(1);
   });
 
   // Java omits null fields; a malformed status is a load failure, not a crash or a silent state.
@@ -875,7 +863,7 @@ describe("vector rebuild and embedding test on the model config page", () => {
     const error = vi.spyOn(ElMessage, "error");
     for (const raw of [{ state: "FAILED", total: 3, done: 1 }, { state: "MIGRATING", total: 3, done: 1 }]) {
       error.mockClear();
-      vi.mocked(adminApi.getVectorRebuildStatus).mockImplementationOnce(async () => vectorRebuildStatusSchema.parse(raw));
+      vi.mocked(api.getVectorRebuildStatus).mockImplementationOnce(async () => vectorRebuildStatusSchema.parse(raw));
       const page = await mountModelPage();
       expect(error).toHaveBeenCalledWith(t("admin.loadConfigFailed"));
       expect(page.findComponent(EmbeddingModelConfigCard).find(".vector-rebuild-status").exists()).toBe(false);
@@ -887,7 +875,7 @@ describe("vector rebuild and embedding test on the model config page", () => {
   it("ignores a stale status response that arrives after a newer one", async () => {
     vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
     let answerPoll: (value: VectorRebuildStatus) => void = () => {};
-    const read = vi.mocked(adminApi.getVectorRebuildStatus);
+    const read = vi.mocked(api.getVectorRebuildStatus);
     read
       .mockResolvedValueOnce(status({ state: "RUNNING", total: 10, done: 4 }))
       .mockImplementationOnce(() => new Promise((resolve) => (answerPoll = resolve)))
@@ -908,7 +896,7 @@ describe("vector rebuild and embedding test on the model config page", () => {
   // Task item 3: leaving the page stops the polling.
   it("stops polling when the page is left", async () => {
     vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
-    const read = vi.mocked(adminApi.getVectorRebuildStatus);
+    const read = vi.mocked(api.getVectorRebuildStatus);
     read.mockResolvedValue(status({ state: "RUNNING", total: 10, done: 1 }));
     const page = await mountModelPage();
     await vi.advanceTimersByTimeAsync(3000);
@@ -922,7 +910,7 @@ describe("vector rebuild and embedding test on the model config page", () => {
   // While a rebuild runs the backend rejects the save, and its message is shown verbatim.
   it("reads the rebuild status again after saving and shows a rejected save verbatim", async () => {
     const error = vi.spyOn(ElMessage, "error");
-    const read = vi.mocked(adminApi.getVectorRebuildStatus);
+    const read = vi.mocked(api.getVectorRebuildStatus);
     const page = await mountModelPage();
     expect(read).toHaveBeenCalledTimes(1);
     expect(rebuildButton(page).attributes("disabled")).toBeDefined();
@@ -933,11 +921,11 @@ describe("vector rebuild and embedding test on the model config page", () => {
     await embedding.find("section").findAll(".el-input-number input")[1]!.setValue("1024");
     await saveDialog(embedding);
     expect(sent.embedding).toEqual({ ...fixtures.embedding, dimensions: 1024 });
-    expect(adminApi.rebuildVectors).not.toHaveBeenCalled();
+    expect(api.rebuildVectors).not.toHaveBeenCalled();
     expect(read).toHaveBeenCalledTimes(2);
     expect(rebuildButton(page).attributes("disabled")).toBeUndefined();
 
-    vi.mocked(adminApi.saveEmbeddingModel).mockRejectedValueOnce(new Error("Vectors are being rebuilt; change the config after it finishes"));
+    vi.mocked(api.saveEmbeddingModel).mockRejectedValueOnce(new Error("Vectors are being rebuilt; change the config after it finishes"));
     await button(embedding, t("common.edit"))!.trigger("click");
     await saveDialog(embedding);
     expect(error).toHaveBeenCalledWith("Vectors are being rebuilt; change the config after it finishes");
@@ -946,7 +934,7 @@ describe("vector rebuild and embedding test on the model config page", () => {
 
   // Design item 6: the test request carries the dimensions filled in the dialog, and a mismatch shows the backend message.
   it("sends the draft dimensions to the embedding test and shows its failure message", async () => {
-    vi.mocked(adminApi.testEmbeddingModel).mockRejectedValueOnce(
+    vi.mocked(api.testEmbeddingModel).mockRejectedValueOnce(
       new Error("Configured dimensions 4096, but the model returned 2048")
     );
     const page = await mountModelPage();
@@ -958,23 +946,144 @@ describe("vector rebuild and embedding test on the model config page", () => {
     await testDialog.find("textarea").setValue("hello");
     await button(testDialog, t("common.sendTest"))!.trigger("click");
     await flushPromises();
-    expect(vi.mocked(adminApi.testEmbeddingModel).mock.calls[0]![0]).toEqual({
+    expect(vi.mocked(api.testEmbeddingModel).mock.calls[0]![0]).toEqual({
       modelConfig: { ...fixtures.embedding, dimensions: 4096 },
       userContent: "hello",
     });
     expect(testDialog.text()).toContain("Configured dimensions 4096, but the model returned 2048");
-    expect(adminApi.saveEmbeddingModel).not.toHaveBeenCalled();
+    expect(api.saveEmbeddingModel).not.toHaveBeenCalled();
   });
 });
 
-describe("system config page", () => {
-  it("reads and writes only the query timeout setting", async () => {
-    const page = await mountSystemPage();
-    const query = page.findComponent(QuerySettingsCard);
-    await query.find(".el-input-number input").setValue("900");
-    await button(query, t("common.saveConfig"))!.trigger("click");
+describe("model selections", () => {
+  /** Picks a value through the real select inside a selection control, as a choice of its dropdown would. */
+  async function choose(control: Pick<VueWrapper, "findComponent">, value: string) {
+    control.findComponent({ name: "ElSelect" }).vm.$emit("update:modelValue", value);
     await flushPromises();
-    expect(sent.system).toEqual({ queryTimeoutSeconds: 900 });
-    expect(query.find(".dirty-tag").exists()).toBe(false);
+  }
+  const selectText = (control: { find: (selector: string) => { text(): string } }) =>
+    control.find(".el-select__selected-item:not(.is-hidden)").text();
+
+  it("shows a missing model ID as it is and asks for a new choice instead of falling back to the default", async () => {
+    const page = await mountModelPage({ realSelects: true });
+    const card = page.findComponent(OntologyAgentModelsCard);
+    const [following, stale, future] = card.findAllComponents(ModelSelectionSelect);
+    expect(selectText(following!)).toBe(t("admin.followDomainDefault", { model: "Qwen (qwen-lite)" }));
+    expect(selectText(stale!)).toBe(t("admin.modelUnavailable", { id: "gone-model" }));
+    expect(stale!.find("[role='alert']").text()).toBe(t("admin.modelSelectionMissing", { id: "gone-model" }));
+    expect(stale!.props("modelValue")).toBe("gone-model");
+    expect(selectText(future!)).toBe("Qwen (qwen-main)");
+    // A kind the page does not know keeps the service's own name; known kinds are named in the page language.
+    expect(card.findAll(".agent-model-name").map((name) => name.text())).toEqual([
+      t("admin.ontologyAgentKinds.retrieval"),
+      t("admin.ontologyAgentKinds.knowledgeGovernance"),
+      "Service-named agent",
+    ]);
+    expect(api.saveOntologyAgentModel).not.toHaveBeenCalled();
+  });
+
+  it("reports a missing domain default the same way", async () => {
+    server.defaultModelId = "gone-default";
+    const page = await mountModelPage({ realSelects: true });
+    const control = page.findComponent(ModelListCard).findComponent(ModelSelectionSelect);
+    expect(selectText(control)).toBe(t("admin.modelUnavailable", { id: "gone-default" }));
+    expect(control.find("[role='alert']").exists()).toBe(true);
+  });
+
+  it("saves one ontology agent's choice on its own and keeps the shown choice when the save is rejected", async () => {
+    const error = vi.spyOn(ElMessage, "error");
+    const page = await mountModelPage({ realSelects: true });
+    const controls = () => page.findComponent(OntologyAgentModelsCard).findAllComponents(ModelSelectionSelect);
+    await choose(controls()[1]!, "qwen-main");
+    expect(sent.agentSaves).toEqual([{ id: "a-gone", modelId: "qwen-main" }]);
+    expect(selectText(controls()[1]!)).toBe("Qwen (qwen-main)");
+    expect(controls()[1]!.find("[role='alert']").exists()).toBe(false);
+
+    // The null choice is "follow the domain default".
+    await choose(controls()[2]!, "");
+    expect(sent.agentSaves.at(-1)).toEqual({ id: "a-future", modelId: null });
+
+    api.saveOntologyAgentModel.mockRejectedValueOnce(new Error("The selected model does not exist in this domain"));
+    await choose(controls()[0]!, "qwen-main");
+    expect(error).toHaveBeenCalledWith("The selected model does not exist in this domain");
+    expect(controls()[0]!.props("modelValue")).toBeNull();
+  });
+
+  it("saves a new domain default with every model entry unchanged", async () => {
+    const page = await mountModelPage({ realSelects: true });
+    await choose(page.findComponent(ModelListCard).findComponent(ModelSelectionSelect), "qwen-main");
+    expect(sent.settings).toEqual({ models: fixtures.models, defaultModelId: "qwen-main" });
+    expect(JSON.stringify((sent.settings as ModelSettings).models[0]!.customRequestParameters)).toBe(OPAQUE_CUSTOMS);
+    expect(page.findComponent(ModelListCard).props("defaultModelId")).toBe("qwen-main");
+  });
+
+  it("makes the first model of an empty library the default in the same save", async () => {
+    server.models = [];
+    server.defaultModelId = null;
+    const page = await mountModelPage({ realSelects: true });
+    const list = page.findComponent(ModelListCard);
+    await button(list, t("admin.addModel"))!.trigger("click");
+    await fillNewModel(list.find("section"), "first");
+    await saveDialog(list.find("section"));
+    expect((sent.settings as ModelSettings).defaultModelId).toBe("first");
+  });
+
+  it("removing another model keeps the default; removing the default chooses the next one or none in the same save", async () => {
+    vi.spyOn(ElMessageBox, "confirm").mockResolvedValue("confirm" as never);
+    server.models = [...JSON.parse(JSON.stringify(fixtures.models)), entry("deepseek")];
+    const page = await mountModelPage({ realSelects: true });
+    const deleteButtons = () =>
+      page.findComponent(ModelListCard).findAll("button").filter((b) => b.text() === t("common.delete"));
+
+    // qwen-main is not the default: a plain confirmation, and the default stays.
+    await deleteButtons()[0]!.trigger("click");
+    await flushPromises();
+    expect(sent.settings).toEqual({
+      models: [fixtures.models[1], entry("deepseek")],
+      defaultModelId: "qwen-lite",
+    });
+
+    // qwen-lite is the default: nothing is saved until the replacement is chosen, offered first by default.
+    sent.settings = null;
+    await deleteButtons()[0]!.trigger("click");
+    await flushPromises();
+    expect(sent.settings).toBeNull();
+    const dialog = page.findAll("section").at(-1)!;
+    expect(dialog.text()).toContain(t("admin.deleteDefaultModelHint", { name: "Qwen (qwen-lite)" }));
+    const replacement = page.findAllComponents(ModelSelectionSelect).at(-1)!;
+    expect(replacement.props("modelValue")).toBe("deepseek");
+    // Only the remaining models are offered.
+    expect(replacement.props("models")!.map((model) => model.name)).toEqual(["deepseek"]);
+    await choose(replacement, "");
+    await button(dialog, t("common.delete"))!.trigger("click");
+    await flushPromises();
+    expect(sent.settings).toEqual({ models: [entry("deepseek")], defaultModelId: null });
+    expect(page.findComponent(ModelListCard).find(".default-model-unset").exists()).toBe(true);
+  });
+
+  it("keeps the default and the model when the deletion with a new default is rejected", async () => {
+    const error = vi.spyOn(ElMessage, "error");
+    const page = await mountModelPage({ realSelects: true });
+    api.saveModelSettings.mockRejectedValueOnce(new Error("Default references a missing model"));
+    const deleteButtons = page.findComponent(ModelListCard).findAll("button").filter((b) => b.text() === t("common.delete"));
+    await deleteButtons[1]!.trigger("click");
+    await flushPromises();
+    const dialog = page.findAll("section").at(-1)!;
+    await button(dialog, t("common.delete"))!.trigger("click");
+    await flushPromises();
+    expect(error).toHaveBeenCalledWith("Default references a missing model");
+    // The dialog stays open with the same choice for another try.
+    expect(page.findAll("section").at(-1)!.text()).toContain(t("admin.deleteDefaultModelHint", { name: "Qwen (qwen-lite)" }));
+    expect(page.findComponent(ModelListCard).props("models")).toHaveLength(2);
+    expect(page.findComponent(ModelListCard).props("defaultModelId")).toBe("qwen-lite");
+  });
+
+  it("offers nothing to choose and reports nothing missing while the model library is unknown", async () => {
+    api.getModelSettings.mockRejectedValueOnce(new Error("runtime down"));
+    const page = await mountModelPage({ realSelects: true });
+    const controls = page.findComponent(OntologyAgentModelsCard).findAllComponents(ModelSelectionSelect);
+    expect(controls).toHaveLength(3);
+    expect(controls.every((control) => control.find("[role='alert']").exists() === false)).toBe(true);
+    expect(controls.every((control) => control.findComponent({ name: "ElSelect" }).props("disabled"))).toBe(true);
   });
 });

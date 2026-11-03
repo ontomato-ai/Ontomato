@@ -11,8 +11,7 @@ import type {
 
 /**
  * Types and pure helpers of the platform pages: the general parameters, language and data adapter edited on the system
- * configuration page. The model entries, role references and Embedding model types stay with the model configuration
- * page until it moves here.
+ * configuration page. The model configuration page has its own types in `models/types.ts`.
  */
 
 /** Save and test send the same request: the adapter type plus the current values of only the connection fields it declares. */

@@ -4,20 +4,13 @@ import { useI18n } from "vue-i18n";
 
 const { t } = useI18n();
 
-withDefaults(
-  defineProps<{
-    title: string;
-    result: string;
-    renderedResult?: string;
-    running: boolean;
-    placeholder: string;
-    plainResult?: boolean;
-  }>(),
-  {
-    renderedResult: "",
-    plainResult: false,
-  }
-);
+// The result is shown as plain text: the platform area renders no Markdown or HTML from a model reply.
+defineProps<{
+  title: string;
+  result: string;
+  running: boolean;
+  placeholder: string;
+}>();
 
 const visible = defineModel<boolean>("visible", { required: true });
 const content = defineModel<string>("content", { required: true });
@@ -44,8 +37,7 @@ const emit = defineEmits<{
         <el-icon :size="16"><Globe /></el-icon>
         <span>{{ t("common.responseResult") }}</span>
       </div>
-      <pre v-if="plainResult" class="test-result-text">{{ result }}</pre>
-      <div v-else class="test-result-text markdown-body" v-html="renderedResult"></div>
+      <pre class="test-result-text">{{ result }}</pre>
     </div>
     <template #footer>
       <el-button @click="visible = false">{{ t("common.close") }}</el-button>
@@ -86,43 +78,6 @@ const emit = defineEmits<{
   word-break: break-all;
   background: var(--el-bg-color);
   color: var(--el-text-color-primary);
-}
-
-.test-result-text :deep(pre) {
   white-space: pre-wrap;
-}
-
-.test-result-text.markdown-body :deep(p),
-.test-result-text.markdown-body :deep(ul),
-.test-result-text.markdown-body :deep(ol),
-.test-result-text.markdown-body :deep(blockquote),
-.test-result-text.markdown-body :deep(table),
-.test-result-text.markdown-body :deep(pre) {
-  margin-block: 0.4em;
-}
-
-.test-result-text.markdown-body :deep(h1) {
-  font-size: 1.2em;
-}
-
-.test-result-text.markdown-body :deep(h2) {
-  font-size: 1.1em;
-}
-
-.test-result-text.markdown-body :deep(h3) {
-  font-size: 1.05em;
-}
-
-.test-result-text.markdown-body :deep(h4),
-.test-result-text.markdown-body :deep(h5),
-.test-result-text.markdown-body :deep(h6) {
-  font-size: 1em;
-}
-
-.test-result-text.markdown-body :deep(p),
-.test-result-text.markdown-body :deep(li),
-.test-result-text.markdown-body :deep(td),
-.test-result-text.markdown-body :deep(th) {
-  font-size: var(--text-sm);
 }
 </style>

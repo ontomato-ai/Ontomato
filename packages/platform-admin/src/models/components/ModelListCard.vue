@@ -3,14 +3,17 @@ import { isMaskedSecret, parseIsoDurationSeconds } from "@ontomato/contracts/mod
 import { computed, reactive, ref, shallowRef } from "vue";
 import { Cpu, Plus, Trash2 } from "lucide-vue-next";
 import { useI18n } from "vue-i18n";
-import { formatTimeout, type ModelEntry, type SaveAction } from "../../types";
+import { formatTimeout, type ModelEntry, type SaveAction } from "../types";
 import CustomRequestParametersEditor from "./CustomRequestParametersEditor.vue";
+import ModelSelectionSelect from "./ModelSelectionSelect.vue";
 
 const { t } = useI18n();
 
 const props = defineProps<{
   /** The saved list. Entries are plain objects; adding or editing hands a whole new list to save instead of mutating it. */
   models: ModelEntry[];
+  /** The domain default: used by every agent that follows the default instead of naming a model. */
+  defaultModelId: string | null;
   saving: boolean;
   save: SaveAction<ModelEntry[]>;
 }>();
@@ -18,6 +21,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   remove: [index: number];
   test: [model: ModelEntry];
+  selectDefault: [modelId: string | null];
 }>();
 
 const dialogVisible = ref(false);
@@ -107,7 +111,7 @@ function openEditDialog(index: number) {
 async function saveDialog() {
   const staged: ModelEntry = {
     ...editingBaseline,
-    // The config ID is the identity roles refer to, so existing entries cannot change it; the display name can change at any time without affecting references.
+    // The config ID is the identity agents and the domain default refer to, so existing entries cannot change it; the display name can change at any time without affecting references.
     name: draft.name.trim(),
     displayName: draft.displayName.trim(),
     baseUrl: draft.baseUrl,
@@ -157,10 +161,33 @@ function keyStatus(entry: ModelEntry): string {
     </div>
     <div class="card-body">
       <p v-if="props.models.length === 0" class="card-empty">{{ t("admin.modelListEmpty") }}</p>
-      <ul v-else class="model-list">
+      <div v-else class="default-model-row">
+        <div class="default-model-text">
+          <span class="default-model-label">{{ t("admin.domainDefaultModel") }}</span>
+          <span class="default-model-hint">{{ t("admin.domainDefaultModelHint") }}</span>
+        </div>
+        <ModelSelectionSelect
+          class="default-model-select"
+          :model-value="props.defaultModelId"
+          :models="props.models"
+          :null-label="t('admin.noDefaultModel')"
+          :disabled="props.saving"
+          :aria-label="t('admin.domainDefaultModel')"
+          @update:model-value="emit('selectDefault', $event)"
+        />
+        <p v-if="props.defaultModelId === null" class="default-model-unset" role="alert">
+          {{ t("admin.defaultModelUnset") }}
+        </p>
+      </div>
+      <ul v-if="props.models.length > 0" class="model-list">
         <li v-for="(entry, index) in props.models" :key="entry.name" class="model-item">
           <div class="model-info">
-            <span class="model-name">{{ entry.displayName }}</span>
+            <span class="model-title">
+              <span class="model-name">{{ entry.displayName }}</span>
+              <el-tag v-if="entry.name === props.defaultModelId" size="small" effect="plain">
+                {{ t("admin.defaultModelTag") }}
+              </el-tag>
+            </span>
             <div class="model-meta">
               <code
                 v-if="entry.displayName !== entry.name"
@@ -357,4 +384,4 @@ function keyStatus(entry: ModelEntry): string {
   </div>
 </template>
 
-<style scoped src="./business-config.css"></style>
+<style scoped src="../models.css"></style>

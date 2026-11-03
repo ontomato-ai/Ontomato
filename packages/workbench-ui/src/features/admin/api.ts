@@ -1,21 +1,7 @@
-import { apiGet, apiPost, nodeApiGet, nodeApiPost } from "../../utils/api";
+import { apiPost, nodeApiGet, nodeApiPost } from "../../utils/api";
 import type { SystemModelConfig } from "@ontomato/contracts/system-model";
-import type { ModelEntry } from "../system";
-import { vectorRebuildStatusSchema } from "../system";
 
 export const adminApi = {
-  getBusinessConfig: () => apiGet("/businessConfig/getConfig"),
-  getModelSettings: () => apiGet("/model-settings"),
-  saveModelSettings: (payload: { models: ModelEntry[]; defaultModelId: string | null }) =>
-    apiPost("/model-settings/save", payload),
-  testModel: (model: ModelEntry, prompt: string) =>
-    apiPost("/model-settings/test", { model, prompt }),
-  saveEmbeddingModel: (payload: unknown) => apiPost("/businessConfig/saveEmbeddingModel", payload),
-  testEmbeddingModel: (payload: unknown) => apiPost("/businessConfig/testEmbeddingModel", payload),
-  getVectorRebuildStatus: async () =>
-    vectorRebuildStatusSchema.parse((await apiGet("/businessConfig/vectorRebuildStatus")).data),
-  rebuildVectors: () => apiPost("/businessConfig/rebuildVectors"),
-  pauseVectorRebuild: () => apiPost("/businessConfig/pauseVectorRebuild"),
   getSystemModelConfig: () => nodeApiGet("/system-model-config"),
   saveSystemModelConfig: (payload: Pick<SystemModelConfig, "queryTimeoutSeconds">) =>
     nodeApiPost("/system-model-config/save", payload),

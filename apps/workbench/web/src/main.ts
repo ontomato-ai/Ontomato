@@ -27,7 +27,7 @@ import { workbenchContent } from "./workbench-content";
  * passed browser acceptance against locally synthesized APIs; real full-stack integration is not yet verified, so this
  * build cannot replace the production frontend.
  * Menu: the Ontology Manager tab (a link that opens the Manager page in a new window); Agents and Skills: analysis,
- * system-agents, skills, mcp-service; System Management: model-config, system-config, feedback-records.
+ * system-agents, skills, mcp-service; System Management: system-config, feedback-records.
  */
 const adminLayout: AdminLayoutConfig = {
   access: { ready: true, can: () => true },
@@ -41,7 +41,6 @@ const adminLayout: AdminLayoutConfig = {
     adminMenuItems.systemAgents,
     adminMenuItems.skills,
     adminMenuItems.mcpService,
-    adminMenuItems.modelConfig,
     adminMenuItems.systemConfig,
     adminMenuItems.feedbackRecords,
   ],
@@ -87,7 +86,6 @@ startWorkbenchWeb({
         adminRoutes.skills,
         adminRoutes.skillsAnalysis,
         adminRoutes.skillsVisualization,
-        adminRoutes.modelConfig,
         adminRoutes.systemConfig,
         adminRoutes.feedbackRecords,
       ],

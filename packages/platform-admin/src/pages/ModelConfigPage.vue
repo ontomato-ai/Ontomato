@@ -1,45 +1,51 @@
 <script setup lang="ts">
 import { ZodError } from "zod";
-import { type ModelSettingsData } from "@ontomato/contracts/model-settings";
-import { computed, onBeforeUnmount, onMounted, ref, shallowRef } from "vue";
+import type { ModelSelection } from "@ontomato/contracts/model-settings";
+import { onBeforeUnmount, onMounted, ref, shallowRef } from "vue";
 import { ElMessage, ElMessageBox } from "element-plus";
 import { useI18n } from "vue-i18n";
-import { adminApi } from "../../admin";
-import { renderMarkdown } from "../../../utils/markdown";
-import { workbenchContent } from "../../../content";
-import EmbeddingModelConfigCard from "./business-config/EmbeddingModelConfigCard.vue";
-import ModelListCard from "./business-config/ModelListCard.vue";
-import TestResultDialog from "./business-config/TestResultDialog.vue";
+import { usePlatformHost } from "../context";
+import EmbeddingModelConfigCard from "../models/components/EmbeddingModelConfigCard.vue";
+import ModelListCard from "../models/components/ModelListCard.vue";
+import ModelSelectionSelect from "../models/components/ModelSelectionSelect.vue";
+import OntologyAgentModelsCard from "../models/components/OntologyAgentModelsCard.vue";
+import TestResultDialog from "../models/components/TestResultDialog.vue";
 import {
   modelLabel,
-  type BusinessConfig,
+  type EmbeddingBusinessConfig,
   type EmbeddingModelConfig,
   type ModelEntry,
+  type ModelSettings,
+  type OntologyAgentSelection,
   type VectorRebuildStatus,
-} from "../types";
+} from "../models/types";
 
-// Transitional page adapter; the model management page moves to the Ontology Manager separately.
+/*
+ * Model configuration page: the domain's conversation models and default, the ontology service agents' models, and the
+ * Embedding model with its vector rebuild. Workbench agents choose their models in the workbench.
+ */
 const { t } = useI18n();
-const { businessConfigSeparator } = workbenchContent().text;
+const { api, separators } = usePlatformHost();
 
 // The list is held by a shallow ref and replaced as a whole: entries stay plain objects and opaque custom parameters never pass through Vue proxies.
 const savedModels = shallowRef<ModelEntry[]>([]);
 const defaultModelId = ref<string | null>(null);
+const modelsLoaded = ref(false);
 const loading = ref(false);
 const loadError = ref("");
 const saving = ref(false);
 
-function applySaved(data: ModelSettingsData) {
+function applySaved(data: ModelSettings) {
   savedModels.value = data.models;
   defaultModelId.value = data.defaultModelId;
+  modelsLoaded.value = true;
 }
 
 async function loadSettings() {
   loading.value = true;
   loadError.value = "";
   try {
-    const res = await adminApi.getModelSettings();
-    applySaved(res.data as ModelSettingsData);
+    applySaved(await api.getModelSettings());
   } catch (e: any) {
     loadError.value = e.message || t("admin.loadConfigFailed");
   } finally {
@@ -47,13 +53,12 @@ async function loadSettings() {
   }
 }
 
-// Preserve the saved domain default when editing a model.
-async function saveSettings(models: ModelEntry[], selectedDefault: string | null): Promise<boolean> {
+// Every save carries the whole library with its default: the service replaces both together.
+async function saveSettings(settings: ModelSettings, success: string): Promise<boolean> {
   saving.value = true;
   try {
-    const res = await adminApi.saveModelSettings({ models, defaultModelId: selectedDefault });
-    applySaved(res.data as ModelSettingsData);
-    ElMessage.success(t("admin.modelSaveSuccess"));
+    applySaved(await api.saveModelSettings(settings));
+    ElMessage.success(success);
     return true;
   } catch (e: any) {
     ElMessage.error(e.message || t("admin.saveFailed"));
@@ -63,18 +68,49 @@ async function saveSettings(models: ModelEntry[], selectedDefault: string | null
   }
 }
 
+// Adding or editing keeps the saved default; the first model of an empty library is made the default explicitly here.
 async function saveModels(models: ModelEntry[]): Promise<boolean> {
-  return saveSettings(models, savedModels.value.length === 0 && models.length === 1 ? models[0]!.name : defaultModelId.value);
+  const firstModel = savedModels.value.length === 0 && models.length === 1;
+  return saveSettings(
+    { models, defaultModelId: firstModel ? models[0]!.name : defaultModelId.value },
+    t("admin.modelSaveSuccess")
+  );
 }
+
+async function selectDefault(modelId: string | null) {
+  await saveSettings({ models: savedModels.value, defaultModelId: modelId }, t("admin.defaultModelSaved"));
+}
+
+// Removing the default model chooses the next default (or none) in the same save; removing another model keeps it.
+const replacingDefault = ref(false);
+const removingLabel = ref("");
+const replacementDefault = ref<string | null>(null);
+const remainingModels = shallowRef<ModelEntry[]>([]);
 
 async function removeModel(index: number) {
   const removed = savedModels.value[index]!;
+  const remaining = savedModels.value.filter((_, i) => i !== index);
+  if (removed.name === defaultModelId.value) {
+    removingLabel.value = modelLabel(removed);
+    remainingModels.value = remaining;
+    replacementDefault.value = remaining[0]?.name ?? null;
+    replacingDefault.value = true;
+    return;
+  }
   const confirmed = await ElMessageBox.confirm(
     t("admin.deleteModelConfirm", { name: modelLabel(removed) }), t("common.deleteConfirm"),
     { type: "warning", confirmButtonText: t("common.delete"), cancelButtonText: t("common.cancel") },
   ).then(() => true, () => false);
   if (!confirmed) return;
-  await saveSettings(savedModels.value.filter((_, i) => i !== index), defaultModelId.value === removed.name ? null : defaultModelId.value);
+  await saveSettings({ models: remaining, defaultModelId: defaultModelId.value }, t("admin.modelDeleted"));
+}
+
+async function removeDefaultModel() {
+  const saved = await saveSettings(
+    { models: remainingModels.value, defaultModelId: replacementDefault.value },
+    t("admin.modelDeleted")
+  );
+  if (saved) replacingDefault.value = false;
 }
 
 const testDialogVisible = ref(false);
@@ -82,7 +118,6 @@ const testModel = shallowRef<ModelEntry | null>(null);
 const testContent = ref("");
 const testResult = ref("");
 const testRunning = ref(false);
-const renderedTestResult = computed(() => renderMarkdown(testResult.value));
 
 function openModelTest(model: ModelEntry) {
   testModel.value = model;
@@ -99,12 +134,43 @@ async function runModelTest() {
   testRunning.value = true;
   testResult.value = "";
   try {
-    const res = await adminApi.testModel(testModel.value!, testContent.value);
-    testResult.value = (res.data as { content: string }).content;
+    testResult.value = (await api.testModel(testModel.value!, testContent.value)).content;
   } catch (e: any) {
-    testResult.value = `${t("admin.testFailed")}: ${e.message || t("common.unknownError")}`;
+    testResult.value = `${t("admin.testFailed")}${separators.detail}${e.message || t("common.unknownError")}`;
   } finally {
     testRunning.value = false;
+  }
+}
+
+// The ontology service's agents, each saved on its own; the row shows the service's answer, so a rejected change
+// leaves the previous selection in place.
+const ontologyAgents = shallowRef<OntologyAgentSelection[] | null>(null);
+const agentsLoading = ref(false);
+const agentsLoadError = ref("");
+const savingAgents = ref<ReadonlySet<string>>(new Set());
+
+async function loadOntologyAgents() {
+  agentsLoading.value = true;
+  agentsLoadError.value = "";
+  try {
+    ontologyAgents.value = await api.listOntologyAgentModels();
+  } catch (e: any) {
+    agentsLoadError.value = e.message || t("admin.loadConfigFailed");
+  } finally {
+    agentsLoading.value = false;
+  }
+}
+
+async function saveOntologyAgent(id: string, selection: ModelSelection) {
+  savingAgents.value = new Set([...savingAgents.value, id]);
+  try {
+    const saved = await api.saveOntologyAgentModel(id, selection);
+    ontologyAgents.value = ontologyAgents.value?.map((agent) => (agent.id === id ? saved : agent)) ?? null;
+    ElMessage.success(t("admin.agentModelSaved"));
+  } catch (e: any) {
+    ElMessage.error(e.message || t("admin.saveFailed"));
+  } finally {
+    savingAgents.value = new Set([...savingAgents.value].filter((saving) => saving !== id));
   }
 }
 
@@ -118,8 +184,8 @@ async function loadEmbedding() {
   embeddingLoading.value = true;
   embeddingLoadError.value = "";
   try {
-    const res = await adminApi.getBusinessConfig();
-    embedding.value = (res.data as BusinessConfig).embeddingModelProperties;
+    const res = await api.getBusinessConfig();
+    embedding.value = (res.data as EmbeddingBusinessConfig).embeddingModelProperties;
   } catch (e: any) {
     embeddingLoadError.value = e.message || t("admin.loadConfigFailed");
   } finally {
@@ -131,7 +197,7 @@ async function loadEmbedding() {
 async function saveEmbeddingConfig(model: EmbeddingModelConfig): Promise<boolean> {
   savingEmbedding.value = true;
   try {
-    await adminApi.saveEmbeddingModel(model);
+    await api.saveEmbeddingModel(model);
     // Read back rather than keep the submitted snapshot, so a key just entered is not held by the page.
     await loadEmbedding();
     ElMessage.success(t("admin.embeddingSaveSuccess"));
@@ -159,7 +225,7 @@ async function loadRebuildStatus() {
   const seq = ++rebuildReadSeq;
   let status: VectorRebuildStatus;
   try {
-    status = await adminApi.getVectorRebuildStatus();
+    status = await api.getVectorRebuildStatus();
   } catch (e: any) {
     if (seq !== rebuildReadSeq) return;
     // A failed or malformed read stops polling; the next save or rebuild reads again.
@@ -187,11 +253,11 @@ async function rebuildVectors() {
     );
     if (!confirmed) return;
   }
-  await rebuildAction(adminApi.rebuildVectors);
+  await rebuildAction(api.rebuildVectors);
 }
 
 async function pauseVectorRebuild() {
-  await rebuildAction(adminApi.pauseVectorRebuild);
+  await rebuildAction(api.pauseVectorRebuild);
 }
 
 async function rebuildAction(request: () => Promise<unknown>) {
@@ -230,13 +296,13 @@ async function runEmbeddingTest() {
   testEmbeddingRunning.value = true;
   testEmbeddingResult.value = "";
   try {
-    const res = await adminApi.testEmbeddingModel({
+    const res = await api.testEmbeddingModel({
       modelConfig: testEmbeddingTarget.value!,
       userContent: testEmbeddingContent.value,
     });
     testEmbeddingResult.value = JSON.stringify(res, null, 2);
   } catch (e: any) {
-    testEmbeddingResult.value = `${t("admin.testFailed")}: ${e.message || t("common.unknownError")}`;
+    testEmbeddingResult.value = `${t("admin.testFailed")}${separators.detail}${e.message || t("common.unknownError")}`;
   } finally {
     testEmbeddingRunning.value = false;
   }
@@ -244,29 +310,43 @@ async function runEmbeddingTest() {
 
 onMounted(() => {
   loadSettings();
+  loadOntologyAgents();
   loadEmbedding();
   loadRebuildStatus();
 });
 </script>
 
 <template>
-  <div class="system-config-container">
+  <div class="model-config-container">
     <div v-if="loading" class="admin-card config-card">
       <el-skeleton :rows="4" animated />
     </div>
     <div v-else-if="loadError" class="load-error" role="alert">
-      <span>{{ t("admin.modelListLoadFailed") }}{{ businessConfigSeparator }}{{ loadError }}</span>
+      <span>{{ t("admin.modelListLoadFailed") }}{{ separators.detail }}{{ loadError }}</span>
       <el-button size="small" @click="loadSettings">{{ t("common.retry") }}</el-button>
     </div>
     <template v-else>
       <ModelListCard
         :models="savedModels"
+        :default-model-id="defaultModelId"
         :saving="saving"
         :save="saveModels"
         @remove="removeModel"
         @test="openModelTest"
+        @select-default="selectDefault"
       />
     </template>
+
+    <OntologyAgentModelsCard
+      :agents="ontologyAgents"
+      :loading="agentsLoading"
+      :load-error="agentsLoadError"
+      :models="modelsLoaded ? savedModels : null"
+      :default-model-id="defaultModelId"
+      :saving="savingAgents"
+      @change="saveOntologyAgent"
+      @retry="loadOntologyAgents"
+    />
 
     <EmbeddingModelConfigCard
       :model="embedding"
@@ -286,7 +366,6 @@ onMounted(() => {
       v-model:content="testContent"
       :title="t('admin.testModelNamed', { name: testModel && modelLabel(testModel) })"
       :result="testResult"
-      :rendered-result="renderedTestResult"
       :running="testRunning"
       :placeholder="t('common.enterTestMessage')"
       @submit="runModelTest"
@@ -299,17 +378,37 @@ onMounted(() => {
       :result="testEmbeddingResult"
       :running="testEmbeddingRunning"
       :placeholder="t('common.enterEmbeddingText')"
-      plain-result
       @submit="runEmbeddingTest"
     />
+
+    <el-dialog
+      v-model="replacingDefault"
+      :title="t('admin.deleteDefaultModel')"
+      width="min(560px, calc(100vw - 32px))"
+      class="model-dialog"
+    >
+      <p class="dialog-text">
+        {{ t("admin.deleteDefaultModelHint", { name: removingLabel }) }}
+      </p>
+      <ModelSelectionSelect
+        v-model="replacementDefault"
+        :models="remainingModels"
+        :null-label="t('admin.noDefaultModel')"
+        :aria-label="t('admin.domainDefaultModel')"
+      />
+      <template #footer>
+        <el-button @click="replacingDefault = false">{{ t("common.cancel") }}</el-button>
+        <el-button type="danger" :loading="saving" @click="removeDefaultModel">{{ t("common.delete") }}</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
-<style scoped src="./business-config/business-config.css"></style>
+<style scoped src="../models/models.css"></style>
 
 <style scoped>
 /* Width follows the admin main area; individual inputs limit their own width. */
-.system-config-container {
+.model-config-container {
   display: flex;
   flex-direction: column;
   gap: var(--spacing-lg);

@@ -4,7 +4,6 @@ import { ONTOLOGY_MANAGER_PATH } from "../../config/app";
 import {
   Blocks,
   Bot,
-  Cpu,
   Database,
   MessageSquare,
   Monitor,
@@ -67,7 +66,7 @@ export interface AdminLayoutConfig {
 
 /** Only the browser adapter resolves icons and deployment-relative links. */
 export const adminNavigationIcons: Record<string, Component> = {
-  Blocks, Bot, Cpu, Database, MessageSquare, Monitor, Network, Puzzle, ServerCog,
+  Blocks, Bot, Database, MessageSquare, Monitor, Network, Puzzle, ServerCog,
 };
 
 export function decorateAdminGroup(group: AdminGroupData): AdminGroup {
