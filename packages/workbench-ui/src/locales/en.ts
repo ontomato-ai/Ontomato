@@ -662,7 +662,19 @@ export default {
     "dataHint": "The part of the ontology this agent works with.",
     "relatedClassesHint": "Leave empty to use all classes available to the current user. Queries stay within the selected classes.",
     "deleteConfirm": "Delete the agent “{name}”? Its conversations remain in history.",
-    "builtinSkills": "Built in"
+    "builtinSkills": "Built in",
+    "model": "Model",
+    "modelHint": "The model this agent uses. Following the domain default picks up later changes of the default.",
+    "followDomainDefault": "Domain default ({model})",
+    "noDefaultModel": "not set",
+    "modelUnavailable": "{id} (unavailable)",
+    "modelSelectionMissing": "Model \"{id}\" is no longer configured. Choose another model; until then this agent cannot run.",
+    "modelOptionsLoadFailed": "Couldn't load the models to choose from.",
+    "modelSaved": "Model saved",
+    "systemAgents": "System agents",
+    "opsAgentModelOnly": "Model only",
+    "opsAgentModelHint": "The model the operations agent uses when diagnosing issues.",
+    "opsAgentModelLoadFailed": "Couldn't load the operations agent's model."
   },
   "scheduledTasks": {
     "title": "Scheduled tasks",

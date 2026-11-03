@@ -2,18 +2,24 @@
 import { computed, onMounted, ref } from "vue";
 import { ElMessageBox } from "element-plus";
 import { useI18n } from "vue-i18n";
-import { Plus } from "lucide-vue-next";
+import { Plus, ScanEye } from "lucide-vue-next";
+import type { ModelOptions } from "@ontomato/contracts/model-settings";
 import { useTheme } from "../../../composables/useTheme";
 import type { AssistantAgentDefinition as AgentDefinition } from "@ontomato/contracts/assistant-chat";
 import {
   agentDefinitionsApi,
+  loadModelOptions,
   loadOntologyOutline,
   type ObjectClassOption,
 } from "../api";
 import { avatarIcon, lightAvatarColorOptions, themedAvatarColor } from "../avatar";
 import AgentEditor from "./AgentEditor.vue";
+import DiagnosisModelPanel from "./DiagnosisModelPanel.vue";
 
-/** Agent settings of the business workbench: the agents on the left, the selected one's editor on the right. */
+/**
+ * Agent settings of the business workbench: the agents on the left, the selected one's editor on the right. The built-in
+ * operations agent is listed below them for choosing its model only.
+ */
 const emit = defineEmits<{ changed: [] }>();
 const { t } = useI18n();
 const { isDark } = useTheme();
@@ -24,9 +30,21 @@ const loadFailed = ref(false);
 /** null while creating a new agent. */
 const selectedId = ref<string | null>(null);
 const creating = ref(false);
+const diagnosisOpen = ref(false);
 const editor = ref<{ dirty: boolean } | null>(null);
 const classes = ref<ObjectClassOption[]>([]);
 const outlineLoading = ref(true);
+const modelOptions = ref<ModelOptions | null>(null);
+const modelOptionsFailed = ref(false);
+
+async function reloadModelOptions() {
+  modelOptionsFailed.value = false;
+  try {
+    modelOptions.value = await loadModelOptions();
+  } catch {
+    modelOptionsFailed.value = true;
+  }
+}
 
 const selected = computed(() => agents.value.find((agent) => agent.id === selectedId.value) ?? null);
 const editorKey = computed(() => (creating.value ? "new" : (selectedId.value ?? "none")));
@@ -55,6 +73,7 @@ async function load() {
 
 onMounted(async () => {
   void load();
+  void reloadModelOptions();
   try {
     const outline = await loadOntologyOutline();
     classes.value = outline.classes;
@@ -78,16 +97,24 @@ async function leaveEditor(): Promise<boolean> {
 }
 
 async function select(id: string) {
-  if (id === selectedId.value && !creating.value) return;
+  if (id === selectedId.value && !creating.value && !diagnosisOpen.value) return;
   if (!(await leaveEditor())) return;
   creating.value = false;
+  diagnosisOpen.value = false;
   selectedId.value = id;
 }
 
 async function startNew() {
   if (creating.value || !(await leaveEditor())) return;
   creating.value = true;
+  diagnosisOpen.value = false;
   selectedId.value = null;
+}
+
+async function openDiagnosis() {
+  if (diagnosisOpen.value || !(await leaveEditor())) return;
+  diagnosisOpen.value = true;
+  creating.value = false;
 }
 
 function saved(agent: AgentDefinition) {
@@ -130,8 +157,8 @@ function deleted(id: string) {
           <button
             type="button"
             class="agent-item"
-            :class="{ active: agent.id === selectedId && !creating }"
-            :aria-current="agent.id === selectedId && !creating ? 'page' : undefined"
+            :class="{ active: agent.id === selectedId && !creating && !diagnosisOpen }"
+            :aria-current="agent.id === selectedId && !creating && !diagnosisOpen ? 'page' : undefined"
             @click="select(agent.id)"
           >
             <span class="item-avatar" :style="{ background: avatarOf(agent).color }">
@@ -145,17 +172,40 @@ function deleted(id: string) {
           </button>
         </li>
       </ul>
+      <h3 class="list-group">{{ t("agents.systemAgents") }}</h3>
+      <button
+        type="button"
+        class="agent-item"
+        :class="{ active: diagnosisOpen }"
+        :aria-current="diagnosisOpen ? 'page' : undefined"
+        @click="openDiagnosis"
+      >
+        <span class="item-avatar system-avatar"><ScanEye :size="16" /></span>
+        <span class="item-text">
+          <span class="item-name">{{ t("admin.opsAgent") }}</span>
+          <span class="item-description">{{ t("agents.opsAgentModelOnly") }}</span>
+        </span>
+      </button>
     </aside>
     <section class="agent-detail">
+      <DiagnosisModelPanel
+        v-if="diagnosisOpen"
+        :model-options="modelOptions"
+        :model-options-failed="modelOptionsFailed"
+        @reload-model-options="reloadModelOptions"
+      />
       <AgentEditor
-        v-if="creating || selected"
+        v-else-if="creating || selected"
         ref="editor"
         :key="editorKey"
         :agent="creating ? null : selected"
         :classes="classes"
         :outline-loading="outlineLoading"
+        :model-options="modelOptions"
+        :model-options-failed="modelOptionsFailed"
         @saved="saved"
         @deleted="deleted"
+        @reload-model-options="reloadModelOptions"
       />
       <el-empty v-else-if="!loading" :description="t('agents.empty')" />
     </section>
@@ -263,6 +313,16 @@ ul {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.list-group {
+  margin: 14px 0 2px;
+  padding: 0 10px;
+  font-size: var(--text-xs);
+  font-weight: 600;
+  color: var(--el-text-color-tertiary);
+}
+.system-avatar {
+  background: var(--el-color-primary-light-9);
 }
 .list-note {
   padding: 8px 10px;
