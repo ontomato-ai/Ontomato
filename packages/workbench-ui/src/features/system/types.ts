@@ -1,6 +1,6 @@
 import { z } from "zod";
 import type { SystemModelConfig } from "@ontomato/contracts/system-model";
-import type { BackendModelConfig, ModelRole } from "@ontomato/contracts/model-settings";
+import type { BackendModelConfig } from "@ontomato/contracts/model-settings";
 
 /*
  * Types of the workbench's own configuration pages: the query settings (Node system model file), and the model
@@ -29,8 +29,6 @@ export type ModelEntry = Omit<
 /** A save the page hands to a card's dialog: resolves to whether the value was saved; the dialog closes only on success. */
 export type SaveAction<T> = (value: T) => Promise<boolean>;
 
-/** Draft model references of the five roles: a config ID or not configured (null); same shape as agents in the saveModelSettings request. */
-export type RoleModels = Record<ModelRole, string | null>;
 
 /** The part of GET /businessConfig/getConfig the model configuration page reads. */
 export interface BusinessConfig {

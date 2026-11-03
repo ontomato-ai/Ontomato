@@ -105,6 +105,9 @@ export function createRuntimeHttp(runtime: AgentRuntime) {
     const result = await testModel(config, prompt, ctx.correlationId, controller.signal);
     if (!controller.signal.aborted) res.json(result);
   }));
+  app.get("/v1/models/options", route(async (req, res) => {
+    res.json(await runtime.models.options(scope(req).scope.domainId));
+  }));
   app.get("/v1/models/settings", route(async (req, res) => {
     res.json(await runtime.models.get(scope(req).scope.domainId));
   }));

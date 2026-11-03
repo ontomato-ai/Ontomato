@@ -1,3 +1,4 @@
+import { readDiagnosisModel } from "./model-settings";
 import { lockSessionClaim, assertUnclaimedSession } from "../agent-host/session-claim";
 import { createHash } from "node:crypto";
 import path from "node:path";
@@ -108,7 +109,7 @@ export const diagnosisService: AgentHostService = {
         if (previous.session_id !== session || previous.fingerprint !== fingerprint) throw new HttpError(409, "Idempotency key reused", "IDEMPOTENCY_CONFLICT");
         return { ...previous, replayed: true };
       }
-      const definition = runDefinition(renderPrompt("diagnosis-agent.main.system", {}, language) + "\n\n" + ARTIFACT_MARKDOWN_PROMPT + (row.target ? `\n\nDiagnosis target (resolve before drawing conclusions): ${JSON.stringify(row.target)}` : ""), "diagnosis", [skill], language);
+      const definition = runDefinition(renderPrompt("diagnosis-agent.main.system", {}, language) + "\n\n" + ARTIFACT_MARKDOWN_PROMPT + (row.target ? `\n\nDiagnosis target (resolve before drawing conclusions): ${JSON.stringify(row.target)}` : ""), (await readDiagnosisModel(owner.domainId)).modelSelection.modelId, [skill], language);
       definition.agentId = DIAGNOSIS_AGENT_ID;
       return { ...(await tx.query(`INSERT INTO ${table("ops_run_intents")} (id,session_id,fingerprint,definition,language) VALUES($1,$2,$3,$4,$5) RETURNING *`, [run, session, fingerprint, JSON.stringify(definition), language])).rows[0], replayed: false };
     });

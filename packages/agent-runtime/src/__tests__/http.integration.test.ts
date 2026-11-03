@@ -65,7 +65,7 @@ describe("standard runtime real HTTP/PG/processes", () => {
     input: { role: "user", content: text, timestamp: Date.now() },
     definition: {
       systemPrompt: "Use standard skills",
-      modelRole: "coding",
+      modelId: null,
       skills: [skill],
       externalMcp,
       sandbox: {
@@ -261,7 +261,7 @@ describe("standard runtime real HTTP/PG/processes", () => {
     const saved = await api("/v1/models/settings", {
       models: [{ name: "fixture", modelName: "deepseek-chat", baseUrl: base + "/v1",
         apiKeys: ["sk-fixture-key-1234"], maxTokens: 4096, contextWindow: 16000 }],
-      agents: { query: null, coding: null, general: null, diagnosis: null, knowledgeGovernance: null },
+      defaultModelId: "fixture",
     }, {}, "PUT");
     expect(saved.status).toBe(200);
 

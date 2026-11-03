@@ -26,7 +26,7 @@ the complete selectable skill catalogue and per-run package preparation.
 | PUT `S/feedback` | `AssistantFeedbackWrite` | `AssistantFeedback` |
 | DELETE `S/feedback/:feedbackId` | — | 204 |
 
-Definitions contain one systemPrompt, one skills list, modelRole, name, description,
+Definitions contain one systemPrompt, one skills list, modelSelection, name, description,
 icon, enabled, classNames, enabledMcpServiceIds and sortOrder. Both presets are ordinary
 editable definitions. The common `/agents` endpoint exposes only selector metadata,
 never the prompt or these business settings. Deleted definitions do not delete

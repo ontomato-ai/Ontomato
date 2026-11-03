@@ -4,7 +4,7 @@ const calls = vi.hoisted(() => ({ posts: [] as Array<{ path: string; body: unkno
 
 vi.mock("../../../utils/api", () => ({
   apiGet: vi.fn(),
-  nodeApiPost: vi.fn((path: string, body?: unknown) => {
+  apiPost: vi.fn((path: string, body?: unknown) => {
     calls.posts.push({ path, body });
     return Promise.resolve({ success: true });
   }),
@@ -12,7 +12,7 @@ vi.mock("../../../utils/api", () => ({
   nodeApiFetch: vi.fn(),
   nodeApiGet: vi.fn(),
   nodeApiPatch: vi.fn(),
-  apiPost: vi.fn(),
+  nodeApiPost: vi.fn(),
 }));
 
 import { adminApi } from "../api";
@@ -21,7 +21,7 @@ describe("model settings api", () => {
   beforeEach(() => {
     calls.posts.length = 0;
   });
-  it("saves the model list and the five role references in one request", async () => {
+  it("saves the model list and the domain default in one request", async () => {
     const payload = {
       models: [
         {
@@ -35,13 +35,7 @@ describe("model settings api", () => {
           timeout: "PT300S",
         },
       ],
-      agents: {
-        query: "qwen-main",
-        coding: "qwen-main",
-        general: "qwen-main",
-        diagnosis: null,
-        knowledgeGovernance: null,
-      },
+      defaultModelId: "qwen-main",
     };
     await adminApi.saveModelSettings(payload);
 

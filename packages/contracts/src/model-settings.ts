@@ -1,7 +1,5 @@
 import { z } from "zod";
 
-export const MODEL_ROLES = ["query", "coding", "general", "diagnosis", "knowledgeGovernance"] as const;
-export type ModelRole = (typeof MODEL_ROLES)[number];
 export const SECRET_MASK_PREFIX = "******";
 export function isMaskedSecret(value: string | null | undefined): boolean {
   return !!value && value.startsWith(SECRET_MASK_PREFIX);
@@ -53,19 +51,19 @@ export const modelEntrySchema = modelConfigurationSchema.extend({
 }).transform(model => ({ ...model, displayName: model.displayName.trim() || model.name }));
 export type BackendModelConfig = z.output<typeof modelEntrySchema>;
 export type ModelEntryInput = z.input<typeof modelEntrySchema>;
-const roleReference = z.string().trim().nullable().transform(value => value || null);
-const roles = { query: roleReference, coding: roleReference, general: roleReference,
-  diagnosis: roleReference, knowledgeGovernance: roleReference };
-export const modelRoleReferencesSchema = z.object(roles).strict();
-export const modelAgentsSchema = z.object({
-  query: z.object({ model: roleReference }).strict(), coding: z.object({ model: roleReference }).strict(),
-  general: z.object({ model: roleReference }).strict(), diagnosis: z.object({ model: roleReference }).strict(),
-  knowledgeGovernance: z.object({ model: roleReference }).strict(),
+/** Null means the current domain default; explicit missing IDs never fall back. */
+export const modelSelectionSchema = z.object({
+  modelId: z.string().trim().min(1).nullish().transform(value => value ?? null),
 }).strict();
-export type BackendAgentConfig = { model: string | null };
+export type ModelSelection = z.output<typeof modelSelectionSchema>;
+export const modelOptionsSchema = z.object({
+  models: z.array(z.object({ name: z.string(), displayName: z.string() }).strict()),
+  defaultModelId: z.string().nullable(),
+}).strict();
+export type ModelOptions = z.output<typeof modelOptionsSchema>;
 export const modelSettingsWriteSchema = z.object({
-  models: z.array(modelEntrySchema), agents: modelRoleReferencesSchema,
-}).strict().superRefine(({ models, agents }, ctx) => {
+  models: z.array(modelEntrySchema), defaultModelId: z.string().trim().min(1).nullable(),
+}).strict().superRefine(({ models, defaultModelId }, ctx) => {
   const ids = new Set<string>();
   for (const model of models) {
     if (!model.name.trim() || ids.has(model.name))
@@ -74,14 +72,14 @@ export const modelSettingsWriteSchema = z.object({
     if (!model.apiKeys.some(key => key.trim()))
       ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Each model requires an API key" });
   }
-  if (Object.values(agents).some(id => id !== null && !ids.has(id)))
-    ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Role references a missing model" });
+  if (defaultModelId !== null && !ids.has(defaultModelId))
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Default references a missing model" });
 });
 export type ModelSettingsWrite = z.input<typeof modelSettingsWriteSchema>;
 export const modelSettingsSchema = z.object({
   models: z.array(modelEntrySchema.refine(model => model.apiKeys.every(key => key === "" || isMaskedSecret(key)), "Model reads must contain masked keys")),
-  agents: modelAgentsSchema,
-});
+  defaultModelId: z.string().nullable(),
+}).strict();
 export type ModelSettingsData = z.output<typeof modelSettingsSchema>;
 
 /**

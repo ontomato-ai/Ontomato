@@ -349,7 +349,7 @@ export const assistantService = {
               ontologyContext +
               "\n\n" +
               ARTIFACT_MARKDOWN_PROMPT,
-            a.model_role,
+            a.model_selection.modelId,
             skills,
             credentials.locale,
             a.enabled_mcp_service_ids.map((serviceId) => ({ id: serviceId })),

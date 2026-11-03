@@ -211,7 +211,7 @@ export class AgentRuntime {
       // Read-only checks for unusable dependencies belong before admission, so a new run fails with
       // 422/503 instead of starting and reporting the same problem as a stopped run.
       if (!admitted.rowCount) {
-        config = await this.models.resolve(scope.domainId, request.definition.modelRole);
+        config = await this.models.resolve(scope.domainId, request.definition.modelId);
         assertWorkerPolicy(this.worker);
         skills = await Promise.all(
           request.definition.skills.map((ref) =>

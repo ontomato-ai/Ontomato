@@ -1,6 +1,5 @@
 import { runtimeSessionHistorySchema, type SessionHistoryQuery } from "@ontomato/contracts/session-history";
-import { modelSettingsSchema, type ModelSettingsWrite } from "@ontomato/contracts/model-settings";
-import { runtimeModelTestResponseSchema, type RuntimeModelTestRequest } from "@ontomato/contracts/runtime-model-test";
+import { modelOptionsSchema } from "@ontomato/contracts/model-settings";
 import { correlationId as normalizeCorrelationId, getServiceLogContext, logHeaders, withServiceLogContext } from "@ontomato/service-logging";
 import { createLogger } from "../../logging/logger";
 const logger = createLogger("runtime-client");
@@ -97,14 +96,8 @@ export class RuntimeClient {
       }
     }
   }
-  async modelSettings() {
-    return modelSettingsSchema.parse(await this.request("/v1/models/settings"));
-  }
-  async saveModelSettings(input: ModelSettingsWrite) {
-    return modelSettingsSchema.parse(await this.request("/v1/models/settings", "PUT", input));
-  }
-  async testModel(input: RuntimeModelTestRequest, signal: AbortSignal) {
-    return runtimeModelTestResponseSchema.parse(await this.request("/v1/models/test", "POST", input, undefined, signal));
+  async modelOptions() {
+    return modelOptionsSchema.parse(await this.request("/v1/models/options"));
   }
   async mcpOptions() {
     return mcpServiceOptionsSchema.parse(await this.request("/v1/mcp/services/names"));

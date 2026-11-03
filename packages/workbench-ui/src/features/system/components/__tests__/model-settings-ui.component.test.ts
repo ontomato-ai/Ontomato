@@ -1,16 +1,13 @@
 import { flushPromises, mount } from "@vue/test-utils";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import ElementPlus, { ElMessage, ElMessageBox } from "element-plus";
-import { reactive } from "vue";
-import { MODEL_ROLES } from "@ontomato/contracts/model-settings";
 import ModelListCard from "../business-config/ModelListCard.vue";
-import RoleModelsCard from "../business-config/RoleModelsCard.vue";
 import EmbeddingModelConfigCard from "../business-config/EmbeddingModelConfigCard.vue";
 import QuerySettingsCard from "../business-config/QuerySettingsCard.vue";
 import SystemConfig from "../SystemConfig.vue";
 import ModelConfig from "../ModelConfig.vue";
 import { vectorRebuildStatusSchema } from "../../types";
-import type { EmbeddingModelConfig, ModelEntry, RoleModels, VectorRebuildStatus } from "../../types";
+import type { EmbeddingModelConfig, ModelEntry, VectorRebuildStatus } from "../../types";
 import { adminApi } from "../../../admin";
 import { workbenchI18n } from "../../../../i18n";
 
@@ -28,7 +25,7 @@ const sent = vi.hoisted(() => ({
 // Simulates the Java model library: reads return a copy; saves are stored atomically and filled with the maxTokens / contextWindow defaults as read normalization does.
 const server = vi.hoisted(() => ({
   models: [] as Array<Record<string, unknown>>,
-  agents: {} as Record<string, string | null>,
+  defaultModelId: null as string | null,
   reads: 0,
 }));
 
@@ -66,13 +63,7 @@ const fixtures = vi.hoisted(() => ({
       customRequestParameters: {},
     },
   ],
-  agents: {
-    query: "qwen-main",
-    coding: "qwen-main",
-    general: "qwen-lite",
-    diagnosis: "qwen-main",
-    knowledgeGovernance: null,
-  },
+  defaultModelId: "qwen-lite",
   embedding: {
     baseUrl: "https://dashscope.aliyuncs.com/compatible-mode/v1",
     apiKey: "sk-embed",
@@ -88,12 +79,7 @@ function settingsData() {
   return JSON.parse(
     JSON.stringify({
       models: server.models,
-      agents: Object.fromEntries(
-        Object.entries(server.agents).map(([role, model]) => [
-          role,
-          role === "coding" ? { model, skilldir: "skills/legacy" } : { model },
-        ])
-      ),
+      defaultModelId: server.defaultModelId,
     })
   );
 }
@@ -105,26 +91,26 @@ vi.mock("../../../admin", () => ({
       return { success: true, data: settingsData() };
     }),
     saveModelSettings: vi.fn(
-      async (payload: { models: Array<Record<string, unknown>>; agents: Record<string, string | null> }) => {
+      async (payload: { models: Array<Record<string, unknown>>; defaultModelId: string | null }) => {
         sent.settings = JSON.parse(JSON.stringify(payload));
         server.models = (sent.settings as typeof payload).models.map((model) => ({
           ...model,
           maxTokens: model.maxTokens ?? 50000,
           contextWindow: model.contextWindow ?? 256000,
         }));
-        server.agents = (sent.settings as typeof payload).agents;
+        server.defaultModelId = (sent.settings as typeof payload).defaultModelId;
         return { success: true, data: settingsData() };
       }
     ),
     testModel: vi.fn(async (model: unknown, prompt: string) => {
       sent.test = JSON.parse(JSON.stringify({ model, prompt }));
-      return { success: true, data: "ok" };
+      return { success: true, data: { content: "ok" } };
     }),
     getBusinessConfig: vi.fn(async () => ({
       success: true,
       data: JSON.parse(
         JSON.stringify({
-          agents: settingsData().agents,
+          defaultModelId: settingsData().defaultModelId,
           embeddingModelProperties: fixtures.embedding,
           knowledgeMaxResult: 10,
           dslCookerTimeout: 300000,
@@ -184,7 +170,7 @@ beforeEach(() => {
     system: null,
   });
   server.models = JSON.parse(JSON.stringify(fixtures.models));
-  server.agents = { ...fixtures.agents };
+  server.defaultModelId = fixtures.defaultModelId;
   server.reads = 0;
 });
 afterEach(() => {
@@ -260,22 +246,6 @@ async function mountSystemPage() {
   return wrapper;
 }
 
-function roleSelect(page: ReturnType<typeof mount>, role: string) {
-  return page
-    .findComponent(RoleModelsCard)
-    .findAllComponents({ name: "ElSelect" })
-    .find((select) => select.props("ariaLabel") === t(`admin.modelRoleNames.${role}`))!;
-}
-
-/** The role card's own save and its unsaved marker. */
-async function saveRoles(page: ReturnType<typeof mount>) {
-  await button(page.findComponent(RoleModelsCard), t("common.save"))!.trigger("click");
-  await flushPromises();
-}
-
-const unsavedTag = (page: ReturnType<typeof mount>) =>
-  page.findComponent(RoleModelsCard).find(".card-header-actions .el-tag");
-
 describe("model list card", () => {
   it("shows an add entry when the library is legitimately empty", async () => {
     const { wrapper } = mountList([]);
@@ -347,88 +317,7 @@ describe("model list card", () => {
   });
 });
 
-describe("role models card", () => {
-  function mountRoles(models = [entry("qwen-main", { displayName: "Qwen" }), entry("qwen-lite", { displayName: "Qwen" })]) {
-    const roles = reactive<RoleModels>({
-      query: "qwen-main",
-      coding: null,
-      general: "qwen-lite",
-      diagnosis: null,
-      knowledgeGovernance: null,
-    });
-    // Options render in the dropdown popper's content slot, so the tooltip stub renders it too.
-    const wrapper = track(
-      mount(RoleModelsCard, {
-        props: { roles, models, saving: false, dirty: false },
-        global: {
-          ...global,
-          stubs: {
-            ...global.stubs,
-            "el-tooltip": { template: '<span><slot /><slot name="content" /></span>' },
-          },
-        },
-      })
-    );
-    return { roles, wrapper };
-  }
-
-  it("lists the five roles in the query engine and agent groups", () => {
-    const { wrapper } = mountRoles();
-    const groups = wrapper.findAll(".role-group");
-    expect(groups.map((group) => group.find("h4").text())).toEqual([
-      t("admin.modelRoleGroups.queryEngine"),
-      t("admin.modelRoleGroups.agents"),
-    ]);
-    expect(groups.map((group) => group.findAll(".role-name").map((name) => name.text()))).toEqual([
-      [t("admin.modelRoleNames.query"), t("admin.modelRoleNames.coding")],
-      [
-        t("admin.modelRoleNames.general"),
-        t("admin.modelRoleNames.diagnosis"),
-        t("admin.modelRoleNames.knowledgeGovernance"),
-      ],
-    ]);
-  });
-
-  it("each role name carries a focusable description", () => {
-    const { wrapper } = mountRoles();
-    expect(wrapper.findAll("button.role-info").map((info) => info.attributes("aria-label"))).toEqual(
-      MODEL_ROLES.map((role) => t(`admin.modelRoleDescriptions.${role}`))
-    );
-  });
-
-  it("offers the given models by config ID and clears a role to not configured", async () => {
-    const { roles, wrapper } = mountRoles();
-    const selects = wrapper.findAllComponents({ name: "ElSelect" });
-    expect(selects).toHaveLength(5);
-    const options = selects[0]!.findAllComponents({ name: "ElOption" });
-    expect(options.map((option) => [option.props("value"), option.props("label")])).toEqual([
-      ["qwen-main", "Qwen (qwen-main)"],
-      ["qwen-lite", "Qwen (qwen-lite)"],
-    ]);
-    expect(selects[1]!.props("placeholder")).toBe(t("admin.roleNotConfigured"));
-    await selects[0]!.trigger("mouseenter");
-    await selects[0]!.find(".el-select__clear").trigger("click");
-    expect(roles.query).toBeNull();
-  });
-});
-
 describe("query settings card", () => {
-  it("tracks its field and clears the marker when reverted", async () => {
-    const model = reactive({ queryTimeoutSeconds: 600 });
-    const wrapper = track(
-      mount(QuerySettingsCard, {
-        props: { model, loading: false, saving: false, loadError: "" },
-        global,
-      })
-    );
-    const input = wrapper.find(".el-input-number input");
-    expect(wrapper.find(".dirty-tag").exists()).toBe(false);
-    await input.setValue("900");
-    expect(model.queryTimeoutSeconds).toBe(900);
-    expect(wrapper.find(".dirty-tag").exists()).toBe(true);
-    await input.setValue("600");
-    expect(wrapper.find(".dirty-tag").exists()).toBe(false);
-  });
 
   it("shows the load error with retry and blocks save", async () => {
     const wrapper = track(
@@ -755,189 +644,19 @@ describe("saved keys are write-only", () => {
 
 describe("model config page", () => {
 
-
-  it("saves the first model from its dialog; the five roles the backend assigns it show as saved and stay editable", async () => {
-    server.models = [];
-    server.agents = Object.fromEntries(MODEL_ROLES.map((role) => [role, null]));
-    const error = vi.spyOn(ElMessage, "error");
-    const page = await mountModelPage();
-    const list = page.findComponent(ModelListCard);
-    expect(list.text()).toContain(t("admin.modelListEmpty"));
-    const roleValues = () => MODEL_ROLES.map((role) => roleSelect(page, role).props("modelValue"));
-
-    // A failed first save keeps the dialog and its input; no role changes.
-    vi.mocked(adminApi.saveModelSettings).mockRejectedValueOnce(new Error("models rejected"));
-    await button(list, t("admin.addModel"))!.trigger("click");
-    await fillNewModel(list.find("section"), "fresh");
-    await saveDialog(list.find("section"));
-    expect(error).toHaveBeenCalledWith("models rejected");
-    expect(list.find("section").exists()).toBe(true);
-    expect(roleValues()).toEqual(MODEL_ROLES.map(() => null));
-    expect(unsavedTag(page).exists()).toBe(false);
-
-    // Java assigns the first model of an empty library to every empty role in the same save (simulated here).
-    vi.mocked(adminApi.saveModelSettings).mockImplementationOnce(async (payload) => {
-      sent.settings = JSON.parse(JSON.stringify(payload));
-      server.models = payload.models.map((model) => ({ ...model, maxTokens: 50000, contextWindow: 256000 }));
-      server.agents = Object.fromEntries(MODEL_ROLES.map((role) => [role, "fresh"]));
-      return { success: true, data: settingsData() };
-    });
-    await saveDialog(list.find("section"));
-    expect(sent.settings).toEqual({
-      models: [
-        {
-          name: "fresh",
-          displayName: "Model fresh",
-          baseUrl: "https://new.example/v1",
-          apiKeys: ["sk-new"],
-          modelName: "new-model",
-          maxTokens: null,
-          contextWindow: null,
-          timeout: null,
-          maxRetries: null,
-          temperature: null,
-          topP: null,
-          maxCompletionTokens: null,
-          customRequestParameters: {},
-        },
-      ],
-      agents: Object.fromEntries(MODEL_ROLES.map((role) => [role, null])),
-    });
-    // On success the dialog closes, the response (including Java's defaults) becomes the saved list, and the
-    // five assigned roles show at once with no false unsaved marker.
-    expect(list.find("section").exists()).toBe(false);
-    expect(page.findComponent(ModelListCard).props("models")).toMatchObject([
-      { name: "fresh", maxTokens: 50000, contextWindow: 256000 },
-    ]);
-    expect(roleValues()).toEqual(MODEL_ROLES.map(() => "fresh"));
-    expect(unsavedTag(page).exists()).toBe(false);
-
-    // The role card still edits and saves the assignment.
-    roleSelect(page, "coding").vm.$emit("update:modelValue", null);
-    await flushPromises();
-    expect(unsavedTag(page).text()).toBe(t("admin.unsaved"));
-    await saveRoles(page);
-    expect(sent.settings).toMatchObject({
-      agents: { query: "fresh", coding: null, general: "fresh", diagnosis: "fresh", knowledgeGovernance: "fresh" },
-    });
-    expect(unsavedTag(page).exists()).toBe(false);
-
-    // A second model is saved with the saved roles and leaves the role draft alone.
-    roleSelect(page, "query").vm.$emit("update:modelValue", null);
-    await flushPromises();
-    await button(page.findComponent(ModelListCard), t("admin.addModel"))!.trigger("click");
-    await fillNewModel(page.findComponent(ModelListCard).find("section"), "second");
-    await saveDialog(page.findComponent(ModelListCard).find("section"));
-    expect(sent.settings).toMatchObject({
-      models: [{ name: "fresh" }, { name: "second" }],
-      agents: { query: "fresh", coding: null, general: "fresh", diagnosis: "fresh", knowledgeGovernance: "fresh" },
-    });
-    expect(roleSelect(page, "query").props("modelValue")).toBeNull();
-    expect(unsavedTag(page).exists()).toBe(true);
-    expect(server.reads).toBe(1);
-  });
-
-  it("a model save carries the saved roles, not the role draft, and keeps the draft", async () => {
-    const page = await mountModelPage();
-    roleSelect(page, "knowledgeGovernance").vm.$emit("update:modelValue", "qwen-lite");
-    await flushPromises();
-    const list = page.findComponent(ModelListCard);
-    await button(list, t("common.edit"))!.trigger("click");
-    await list.findAll("section input")[1]!.setValue("Qwen Max");
-    await saveDialog(list);
-    expect(sent.settings).toMatchObject({
-      models: [{ name: "qwen-main", displayName: "Qwen Max" }, { name: "qwen-lite" }],
-      agents: fixtures.agents,
-    });
-    expect(roleSelect(page, "knowledgeGovernance").props("modelValue")).toBe("qwen-lite");
-    expect(unsavedTag(page).exists()).toBe(true);
-  });
-
-  it("the role save submits exactly the saved model list and the five role keys in one request", async () => {
-    const page = await mountModelPage();
-    await saveRoles(page);
-    const payload = sent.settings as { models: unknown[]; agents: Record<string, unknown> };
-    expect(new Set(Object.keys(payload))).toEqual(new Set(["models", "agents"]));
-    expect(new Set(Object.keys(payload.agents))).toEqual(new Set(MODEL_ROLES));
-    // Roles carry only config IDs; the skill directory is not submitted with the model save.
-    expect(payload.agents).toEqual(fixtures.agents);
-    expect(payload.models).toEqual(fixtures.models);
-  });
-
-  it("deleting a model in use names its roles in the confirmation and saves them as not configured", async () => {
-    const confirm = vi.spyOn(ElMessageBox, "confirm");
-    const page = await mountModelPage();
-    const remove = () =>
-      page
-        .findComponent(ModelListCard)
-        .findAll("button")
-        .filter((b) => b.text() === t("common.delete"))[0]!
-        .trigger("click");
-    // A role draft pointing at the model is cleared too.
-    roleSelect(page, "knowledgeGovernance").vm.$emit("update:modelValue", "qwen-main");
-
-    confirm.mockRejectedValueOnce("cancel");
-    await remove();
-    await flushPromises();
-    expect(adminApi.saveModelSettings).not.toHaveBeenCalled();
-    expect(page.findComponent(ModelListCard).props("models")).toHaveLength(2);
-
-    confirm.mockResolvedValueOnce("confirm" as never);
-    await remove();
-    await flushPromises();
-    expect(confirm.mock.calls[1]![0]).toBe(
-      t("admin.deleteModelInUseConfirm", {
-        name: "Qwen (qwen-main)",
-        roles: ["query", "coding", "diagnosis"].map((role) => t(`admin.modelRoleNames.${role}`)).join(", "),
-      })
-    );
-    expect(sent.settings).toMatchObject({
-      models: [{ name: "qwen-lite" }],
-      agents: {
-        query: null,
-        coding: null,
-        general: "qwen-lite",
-        diagnosis: null,
-        knowledgeGovernance: null,
-      },
-    });
-    for (const role of ["query", "coding", "diagnosis", "knowledgeGovernance"]) {
-      const select = roleSelect(page, role);
-      expect(select.props("modelValue")).toBeNull();
-      expect(select.find(".el-select__placeholder").text()).toBe(t("admin.roleNotConfigured"));
-    }
-    expect(roleSelect(page, "general").props("modelValue")).toBe("qwen-lite");
-    expect(page.findComponent(RoleModelsCard).props("models")).toMatchObject([{ name: "qwen-lite" }]);
-    expect(unsavedTag(page).exists()).toBe(false);
-  });
-
   it("shows a persistent error with retry and offers no write entry when loading fails", async () => {
     vi.mocked(adminApi.getModelSettings).mockRejectedValueOnce(new Error("legacy role params"));
     const page = await mountModelPage();
     const alert = page.find(".load-error[role='alert']");
     expect(alert.text()).toContain("legacy role params");
     expect(page.findComponent(ModelListCard).exists()).toBe(false);
-    expect(page.findComponent(RoleModelsCard).exists()).toBe(false);
+    expect(page.findComponent(ModelListCard).exists()).toBe(false);
     expect(button(page, t("admin.addModel"))).toBeUndefined();
 
     await button(alert, t("common.retry"))!.trigger("click");
     await flushPromises();
     expect(page.find(".load-error[role='alert']").exists()).toBe(false);
     expect(page.findComponent(ModelListCard).props("models")).toHaveLength(2);
-  });
-
-  it("keeps the role draft and shows the backend message when the role save fails", async () => {
-    const error = vi.spyOn(ElMessage, "error");
-    vi.mocked(adminApi.saveModelSettings).mockRejectedValueOnce(
-      new Error("Model referenced by role query does not exist: gone")
-    );
-    const page = await mountModelPage();
-    roleSelect(page, "knowledgeGovernance").vm.$emit("update:modelValue", "qwen-lite");
-    await flushPromises();
-    await saveRoles(page);
-    expect(error).toHaveBeenCalledWith("Model referenced by role query does not exist: gone");
-    expect(roleSelect(page, "knowledgeGovernance").props("modelValue")).toBe("qwen-lite");
-    expect(unsavedTag(page).exists()).toBe(true);
   });
 
   it("keeps the model and embedding dialogs open when their save fails", async () => {

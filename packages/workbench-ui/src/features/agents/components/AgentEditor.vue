@@ -103,6 +103,7 @@ function validInput(): AssistantAgentInput | null {
     icon: JSON.stringify({ key: value.avatarKey, color: value.avatarColor }),
     enabled: value.enabled,
     systemPrompt: value.systemPrompt,
+    modelSelection: props.agent?.modelSelection ?? { modelId: null },
     skills: value.skills,
     classNames: value.classNames,
     enabledMcpServiceIds: value.mcpServiceIds,

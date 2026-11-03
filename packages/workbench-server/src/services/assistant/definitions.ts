@@ -1,3 +1,4 @@
+import { validateModelSelection } from "../../platform/agent-runtime/model-selection";
 import {
   assistantAgentDefinitionSchema,
   type AssistantAgentInput,
@@ -19,7 +20,7 @@ const view = (a: AgentRow) =>
     description: a.description,
     icon: a.icon ?? null,
     enabled: a.enabled,
-    modelRole: a.model_role,
+    modelSelection: a.model_selection,
     skills: a.skills,
     classNames: a.class_names,
     enabledMcpServiceIds: a.enabled_mcp_service_ids,
@@ -35,11 +36,12 @@ export async function saveAgentDefinition(
   owner: AssistantOwner,
 ) {
   return withDomainSkills(owner.domainId, async () => {
+    await validateModelSelection(owner.domainId, input.modelSelection);
     const skills = resolveAssistantSkillReferences(input.skills, owner.domainId);
     await validateAssistantSkills(owner.domainId, skills);
-    const current = await assistantStore.agent(id, owner);
+    await assistantStore.agent(id, owner);
     await getPostgresPool().query(
-      `UPDATE ${t("assistant_agents")} SET name=$3,description=$4,enabled=$5,system_prompt=$6,model_role=$7,skills=$8,icon=$9,class_names=$10,enabled_mcp_service_ids=$11,sort_order=$12 WHERE id=$1 AND domain_id=$2`,
+      `UPDATE ${t("assistant_agents")} SET name=$3,description=$4,enabled=$5,system_prompt=$6,model_selection=$7,skills=$8,icon=$9,class_names=$10,enabled_mcp_service_ids=$11,sort_order=$12 WHERE id=$1 AND domain_id=$2`,
       [
         id,
         owner.domainId,
@@ -47,7 +49,7 @@ export async function saveAgentDefinition(
         input.description,
         input.enabled,
         input.systemPrompt,
-        input.modelRole ?? current.model_role,
+        JSON.stringify(input.modelSelection),
         JSON.stringify(skills),
         input.icon,
         JSON.stringify(input.classNames),
@@ -64,6 +66,7 @@ export async function createAgentDefinition(
   owner: AssistantOwner,
 ) {
   return withDomainSkills(owner.domainId, async () => {
+    await validateModelSelection(owner.domainId, input.modelSelection);
     const skills = resolveAssistantSkillReferences(input.skills, owner.domainId);
     await validateAssistantSkills(owner.domainId, skills);
     const pool = getPostgresPool();
@@ -77,7 +80,7 @@ export async function createAgentDefinition(
     if (existing && existing.domain_id !== owner.domainId)
       throw new HttpError(409, "Idempotency key reused", "IDEMPOTENCY_CONFLICT");
     const inserted = await pool.query(
-      `INSERT INTO ${t("assistant_agents")} (id,domain_id,kind,name,description,enabled,system_prompt,model_role,skills,icon,class_names,enabled_mcp_service_ids,sort_order) VALUES($1::uuid,$2,($1::uuid)::text,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) ON CONFLICT DO NOTHING`,
+      `INSERT INTO ${t("assistant_agents")} (id,domain_id,kind,name,description,enabled,system_prompt,model_selection,skills,icon,class_names,enabled_mcp_service_ids,sort_order) VALUES($1::uuid,$2,($1::uuid)::text,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) ON CONFLICT DO NOTHING`,
       [
         id,
         owner.domainId,
@@ -85,7 +88,7 @@ export async function createAgentDefinition(
         input.description,
         input.enabled,
         input.systemPrompt,
-        input.modelRole ?? "general",
+        JSON.stringify(input.modelSelection),
         JSON.stringify(skills),
         input.icon,
         JSON.stringify(input.classNames),
@@ -99,7 +102,7 @@ export async function createAgentDefinition(
     if (!inserted.rowCount) {
       const expected = assistantAgentDefinitionSchema
         .omit({ id: true })
-        .parse({ ...input, skills, modelRole: input.modelRole ?? "general" });
+        .parse({ ...input, skills, modelSelection: input.modelSelection });
       const same = (Object.keys(expected) as (keyof typeof expected)[]).every(
         (key) => JSON.stringify(actual[key]) === JSON.stringify(expected[key]),
       );

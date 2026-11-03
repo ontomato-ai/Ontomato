@@ -1,7 +1,7 @@
 import { z } from "zod";
 import type { PoolClient } from "pg";
 import {
-  MODEL_ROLES, isMaskedSecret, maskModelKey, modelEntrySchema, modelAgentsSchema,
+  isMaskedSecret, maskModelKey, modelEntrySchema,
   modelSettingsWriteSchema,
   type BackendModelConfig, type ModelSettingsData,
 } from "@ontomato/contracts/model-settings";
@@ -11,11 +11,7 @@ import { RuntimeStore } from "./store";
 import { RuntimeError } from "./errors";
 import type { ResolvedModel } from "./model";
 
-const storedSettingsSchema = z.object({ models: z.array(modelEntrySchema), agents: modelAgentsSchema });
-
-function agents(references: Record<string, string | null>): ModelSettingsData["agents"] {
-  return Object.fromEntries(MODEL_ROLES.map(role => [role, { model: references[role] ?? null }])) as ModelSettingsData["agents"];
-}
+const storedSettingsSchema = z.object({ models: z.array(modelEntrySchema), defaultModelId: z.string().nullable() }).strict();
 
 /** A mask retains one saved key in the same model; equal tails consume keys in stored order. */
 function restoreKeys(model: BackendModelConfig, stored: BackendModelConfig[]) {
@@ -51,7 +47,7 @@ export class RuntimeModelSettings {
     return storedSettingsSchema.parse({
       models: complete ? [{ name: "default", baseUrl, apiKeys: [apiKey!.trim()], modelName,
         timeout: "PT300S", temperature: 0, topP: 0.1, logRequests: true, logResponses: true }] : [],
-      agents: agents(Object.fromEntries(MODEL_ROLES.map(role => [role, complete ? "default" : null]))),
+      defaultModelId: complete ? "default" : null,
     });
   }
   private async write(c: PoolClient, domainId: string, data: ModelSettingsData) {
@@ -74,27 +70,30 @@ export class RuntimeModelSettings {
     const data = await this.read(domainId);
     return this.keys(data, maskModelKey);
   }
+  async options(domainId: string) {
+    const data = await this.read(domainId);
+    return { models: data.models.map(({ name, displayName }) => ({ name, displayName })), defaultModelId: data.defaultModelId };
+  }
   async save(domainId: string, body: unknown): Promise<ModelSettingsData> {
     const input = modelSettingsWriteSchema.parse(body);
     return this.store.transaction(async c => {
       const previous = await this.current(c, domainId);
-      const first = previous.models.length === 0 && input.models.length === 1 ? input.models[0]!.name : null;
       const restored = modelSettingsWriteSchema.parse({ ...input,
         models: input.models.map(model => ({ ...model, apiKeys: restoreKeys(model, previous.models) })),
       });
       const data = {
         models: restored.models,
-        agents: agents(Object.fromEntries(MODEL_ROLES.map(role => [role, input.agents[role] ?? first]))),
+        defaultModelId: restored.defaultModelId,
       };
       await this.write(c, domainId, data);
       return this.keys(data, maskModelKey);
     });
   }
-  async resolve(domainId: string, role: string): Promise<ResolvedModel> {
+  async resolve(domainId: string, modelId?: string | null): Promise<ResolvedModel> {
     const data = await this.read(domainId);
-    const reference = Object.hasOwn(data.agents, role) ? data.agents[role as keyof typeof data.agents].model : null;
+    const reference = modelId ?? data.defaultModelId;
     const model = data.models.find(model => model.name === reference);
-    if (!model) throw new RuntimeError(422, "MODEL_NOT_CONFIGURED", "No model is configured for this role");
+    if (!model) throw new RuntimeError(422, "MODEL_NOT_CONFIGURED", "The selected model or domain default is not configured");
     const { apiKeys, ...configuration } = model;
     return { ...configuration, apiKey: apiKeys[0] ?? "" };
   }

@@ -41,12 +41,12 @@ export const runtimeAdmissionHeadersSchema = runtimeRequestHeadersSchema.extend(
   },
 );
 
-/** Hosts send a complete non-secret definition on every run; role names are opaque strings. */
+/** Hosts send a complete non-secret definition on every run; model IDs are domain-local. */
 export const runtimeAgentDefinitionSchema = z
   .object({
     agentId: runtimeKeySchema.optional(),
     systemPrompt: z.string(),
-    modelRole: runtimeKeySchema,
+    modelId: runtimeKeySchema.nullish().transform(value => value ?? null),
     skills: z.array(runtimeSkillRefSchema),
     sandbox: z.object({ limits: codeLimitsSchema }).strict(),
     externalMcp: z.array(runtimeMcpRefSchema),
