@@ -238,6 +238,8 @@ The canonical ontology API is `<origin><prefix>/api/data-query`; the public
 `<prefix>/ontomato/*` alias remains for older integrations. MCP remains at
 `<prefix>/mcp/*` and report downloads at `<prefix>/api/analysis-tasks/*/report/pdf`.
 A change of origin requires logging in again in the enterprise edition.
+`CARD_BASE_URL` is the browser-reachable prefix the data engine puts in resource links;
+if it pointed at `http://<host>:18087`, change it to `<origin><prefix>/api/data-query`.
 
 An existing outer Nginx forwards the entire prefix (including pages, API and MCP)
 to the gateway, preserving the prefix. Pass the original Host, X-Forwarded-Host and
