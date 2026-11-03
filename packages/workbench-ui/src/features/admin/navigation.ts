@@ -2,7 +2,6 @@ import { adminGroupData, adminMenuItemData, type AdminGroupData, type AdminMenuI
 import type { Component, InjectionKey } from "vue";
 import { ONTOLOGY_MANAGER_PATH } from "../../config/app";
 import {
-  Activity,
   Blocks,
   Bot,
   Cpu,
@@ -11,7 +10,6 @@ import {
   Monitor,
   Network,
   Puzzle,
-  ScrollText,
   ServerCog,
 } from "lucide-vue-next";
 
@@ -82,7 +80,7 @@ export interface AdminLayoutConfig {
 
 /** Only the browser adapter resolves icons and deployment-relative links. */
 export const adminNavigationIcons: Record<string, Component> = {
-  Activity, Blocks, Bot, Cpu, Database, MessageSquare, Monitor, Network, Puzzle, ScrollText, ServerCog,
+  Blocks, Bot, Cpu, Database, MessageSquare, Monitor, Network, Puzzle, ServerCog,
 };
 
 export function decorateAdminGroup(group: AdminGroupData): AdminGroup {

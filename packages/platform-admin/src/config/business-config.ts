@@ -1,6 +1,7 @@
 /**
- * App assembly input of the system config page (BusinessConfig): each app passes its edition values as props on the route record.
- * Business defaults, the UI locale and the Node product config are not derived from one another.
+ * Edition values of the system configuration page: the business defaults, the backend languages this edition's data
+ * engine ships and the data adapter card layout. The host passes one of these; defaults, UI language and Node product
+ * config are not derived from one another.
  */
 
 /** Original layout of the data adapter card: form label width and a two-column grid for URL and credentials. */

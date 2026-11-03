@@ -2,10 +2,10 @@ import { readdirSync } from "node:fs";
 import { resolve } from "node:path";
 import { flushPromises, mount } from "@vue/test-utils";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import ElementPlus from "element-plus";
-import BusinessConfig from "../BusinessConfig.vue";
-import { workbenchI18n } from "../../../../i18n";
-import { businessConfig } from "../../../../../../../apps/workbench/web/src/business-config";
+import SystemConfigPage from "../pages/SystemConfigPage.vue";
+import { createPlatformClient, platformApi } from "../api";
+import { ossSystemConfig as businessConfig } from "../../../../apps/ontology-manager/src/system-config";
+import { pageGlobal, testHost, testI18n } from "./host";
 
 /** Language resources the open-source data engine ships (conf-defaults/lang/*.json); tests run from this package. */
 const shippedLanguages = readdirSync(resolve(process.cwd(), "../data-engine-core/conf-defaults/lang"))
@@ -43,9 +43,11 @@ afterEach(() => {
 });
 
 async function mountPage() {
-  const page = mount(BusinessConfig, {
-    props: businessConfig,
-    global: { plugins: [workbenchI18n(), ElementPlus] },
+  const api = platformApi(
+    createPlatformClient({ apiBase: "/api", credential: { type: "anonymous" }, locale: () => "en" })
+  );
+  const page = mount(SystemConfigPage, {
+    global: pageGlobal(testHost(api, { systemConfig: businessConfig })),
     attachTo: document.body,
   });
   wrappers.push(page);
@@ -53,9 +55,9 @@ async function mountPage() {
   return page;
 }
 
-const t = workbenchI18n().global.t as (key: string) => string;
+const t = testI18n().global.t as (key: string) => string;
 
-describe("open-source system config page", () => {
+describe("open-source system configuration page in the Ontology Manager", () => {
   it("offers only the backend languages the data engine ships; a stored unsupported value shows en and is saved only on request", async () => {
     expect(businessConfig.languageOptions.map(({ value }) => value)).toEqual(shippedLanguages);
     const page = await mountPage();

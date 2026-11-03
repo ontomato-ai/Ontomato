@@ -6,15 +6,13 @@ import { MODEL_ROLES } from "@ontomato/contracts/model-settings";
 import ModelListCard from "../business-config/ModelListCard.vue";
 import RoleModelsCard from "../business-config/RoleModelsCard.vue";
 import EmbeddingModelConfigCard from "../business-config/EmbeddingModelConfigCard.vue";
-import GeneralConfigCard from "../business-config/GeneralConfigCard.vue";
 import QuerySettingsCard from "../business-config/QuerySettingsCard.vue";
-import BusinessConfig from "../BusinessConfig.vue";
+import SystemConfig from "../SystemConfig.vue";
 import ModelConfig from "../ModelConfig.vue";
 import { vectorRebuildStatusSchema } from "../../types";
 import type { EmbeddingModelConfig, ModelEntry, RoleModels, VectorRebuildStatus } from "../../types";
 import { adminApi } from "../../../admin";
 import { workbenchI18n } from "../../../../i18n";
-import { businessConfig } from "../../../../../../../apps/workbench/web/src/business-config";
 
 const OPAQUE_CUSTOMS =
   '{"__v_isRef":true,"__v_isReactive":1,"__v_isReadonly":0,"__v_raw":{"nested":"user-value"},"value":"keep-me","temperature":null,"constructor":{"x":1},"__proto__":{"polluted":false},"arr":[1,null,{"k":"v"}]}';
@@ -136,21 +134,6 @@ vi.mock("../../../admin", () => ({
         })
       ),
     })),
-    listDataAdapters: vi.fn(async () => ({
-      success: true,
-      data: {
-        currentType: "postgresql",
-        adapters: [
-          {
-            type: "postgresql",
-            label: "PostgreSQL",
-            requiresJoinFields: true,
-            fields: ["url", "user", "password"],
-            examples: { url: "jdbc:postgresql://host:port/db", user: "postgres" },
-          },
-        ],
-      },
-    })),
     getSystemModelConfig: vi.fn(async () => ({
       success: true,
       data: { queryTimeoutSeconds: 600 },
@@ -270,9 +253,9 @@ async function mountModelPage() {
   return wrapper;
 }
 
-/** System config page: query settings, skill directory and other config. */
+/** The workbench part of the system config page: the query settings. */
 async function mountSystemPage() {
-  const wrapper = track(mount(BusinessConfig, { props: businessConfig, global }));
+  const wrapper = track(mount(SystemConfig, { global }));
   await flushPromises();
   return wrapper;
 }
@@ -1274,14 +1257,5 @@ describe("system config page", () => {
     await flushPromises();
     expect(sent.system).toEqual({ queryTimeoutSeconds: 900 });
     expect(query.find(".dirty-tag").exists()).toBe(false);
-  });
-
-  it("keeps a persistent error and disables writes when the business config fails to load", async () => {
-    vi.mocked(adminApi.getBusinessConfig).mockRejectedValueOnce(new Error("java down"));
-    const page = await mountSystemPage();
-    expect(button(page.findComponent(GeneralConfigCard), t("common.save"))!.attributes("disabled")).toBeDefined();
-    const banner = page.find(".config-load-error");
-    expect(banner.text()).toContain("java down");
-    expect(button(banner, t("common.retry"))).toBeTruthy();
   });
 });

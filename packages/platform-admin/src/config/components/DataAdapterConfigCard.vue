@@ -14,8 +14,8 @@ import type {
   OntologyOutline,
   SystemSettings,
   TestConnection,
-} from "../../types";
-import type { BusinessConfigAdapterDisplay } from "../../business-config";
+} from "../types";
+import type { BusinessConfigAdapterDisplay } from "../business-config";
 import DataAdapterConnectionFields from "./DataAdapterConnectionFields.vue";
 import DataAdapterTestReport from "./DataAdapterTestReport.vue";
 import MultiDataSourceEditor from "./MultiDataSourceEditor.vue";
@@ -137,4 +137,4 @@ function connection(type: string): DataAdapterConnection {
   </div>
 </template>
 
-<style scoped src="./business-config.css"></style>
+<style scoped src="./config.css"></style>

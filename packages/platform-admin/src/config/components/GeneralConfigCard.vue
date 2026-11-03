@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { Cog } from "lucide-vue-next";
 import { useI18n } from "vue-i18n";
-import type { GeneralConfigKey, SystemSettings } from "../../types";
-import type { BusinessConfigLanguageOption } from "../../business-config";
+import type { GeneralConfigKey, SystemSettings } from "../types";
+import type { BusinessConfigLanguageOption } from "../business-config";
 
 const { t } = useI18n();
 
@@ -109,4 +109,4 @@ const emit = defineEmits<{
   </div>
 </template>
 
-<style scoped src="./business-config.css"></style>
+<style scoped src="./config.css"></style>

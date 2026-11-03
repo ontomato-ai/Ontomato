@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { useI18n } from "vue-i18n";
-import type { DataAdapterTestOutcome } from "../../types";
+import type { DataAdapterTestOutcome } from "../types";
 
 // The outcome of one connection test: the adapter's catalog or search report, or the failure message verbatim.
 const { t } = useI18n();
@@ -89,4 +89,4 @@ defineProps<{ test: DataAdapterTestOutcome }>();
   </div>
 </template>
 
-<style scoped src="./business-config.css"></style>
+<style scoped src="./config.css"></style>

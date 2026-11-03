@@ -99,15 +99,6 @@ export const adminMenuItemData = {
     icon: "ServerCog",
     groupKey: "platform-management",
   },
-  auditLog: {
-    permissions: ["audit-logs"],
-    ownerApplication: "platform",
-    path: "/admin/audit-log",
-    titleKey: "nav.auditLogs",
-    descriptionKey: "navDescription.auditLogs",
-    icon: "ScrollText",
-    groupKey: "platform-management",
-  },
   feedbackRecords: {
     permissions: ["audit-logs"],
     ownerApplication: "platform",
@@ -115,15 +106,6 @@ export const adminMenuItemData = {
     titleKey: "nav.feedbackRecords",
     descriptionKey: "navDescription.feedbackRecords",
     icon: "MessageSquare",
-    groupKey: "platform-management",
-  },
-  systemMonitor: {
-    permissions: ["system-monitoring"],
-    ownerApplication: "platform",
-    path: "/admin/system-monitor",
-    titleKey: "nav.systemMonitoring",
-    descriptionKey: "navDescription.systemMonitoring",
-    icon: "Activity",
     groupKey: "platform-management",
   },
 } satisfies Record<string, AdminMenuItemData>;

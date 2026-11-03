@@ -6,7 +6,7 @@ import type {
   DataAdapterFieldInfo,
   DataAdapterInfo,
 } from "@ontomato/contracts/data-adapters";
-import type { BusinessConfigAdapterDisplay } from "../../business-config";
+import type { BusinessConfigAdapterDisplay } from "../business-config";
 
 // The fields one adapter type declares, rendered in declaration order. The
 // provider is the source of truth: a new adapter adds account/warehouse/role/

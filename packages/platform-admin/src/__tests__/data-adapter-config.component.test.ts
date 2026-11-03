@@ -1,18 +1,16 @@
 import { flushPromises, mount } from "@vue/test-utils";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import ElementPlus from "element-plus";
-import BusinessConfig from "../BusinessConfig.vue";
-import DataAdapterConfigCard from "../business-config/DataAdapterConfigCard.vue";
+import SystemConfigPage from "../pages/SystemConfigPage.vue";
+import DataAdapterConfigCard from "../config/components/DataAdapterConfigCard.vue";
 import type {
   DataAdapterConnection,
   DataAdapterInfo,
   DataAdapterTestResult,
   MultiDataSourceDefinition,
 } from "@ontomato/contracts/data-adapters";
-import { adminApi } from "../../../admin";
-import { ApiBusinessError } from "../../../../utils/api";
-import { workbenchI18n } from "../../../../i18n";
-import { businessConfig } from "../../../../../../../apps/workbench/web/src/business-config";
+import { PlatformBusinessError } from "../api";
+import { ontologyOutlineSchema } from "../config/types";
+import { pageGlobal, testHost, testI18n } from "./host";
 
 /** Two backend GET /businessConfig/dataAdapters responses: the open-source edition installs only postgresql; a larger edition installs 11 (sorted by label). */
 const openSourceAdapters: DataAdapterInfo[] = [
@@ -116,49 +114,44 @@ const backend = vi.hoisted(() => ({
   tested: [] as unknown[],
 }));
 
-vi.mock("../../../admin", async () => {
-  const { ontologyOutlineSchema } =
-    await vi.importActual<typeof import("../../types")>("../../types");
-  return {
-    adminApi: {
-      getBusinessConfig: vi.fn(async () => ({
-        success: true,
-        data: JSON.parse(
-          JSON.stringify({
-            agents: { coding: { model: null } },
-            lang: "en",
-            dataAdapter: backend.dataAdapter,
-            dataAdapterConnections: backend.connections,
-            multiDataSource: backend.multiDataSource,
-          })
-        ),
-      })),
-      listDataAdapters: vi.fn(async () => ({
-        success: true,
-        data: { currentType: backend.dataAdapter, adapters: backend.adapters },
-      })),
-      useDataAdapter: vi.fn(async (payload: unknown) => {
-        backend.used.push(JSON.parse(JSON.stringify(payload)));
-        return { success: true };
-      }),
-      useMultiDataSource: vi.fn(async (payload: unknown) => {
-        backend.multiUsed.push(JSON.parse(JSON.stringify(payload)));
-        return { success: true };
-      }),
-      // The real boundary parse of GET /admin/getSchema runs on the stored schema.
-      getOntologyOutline: vi.fn(async () => ontologyOutlineSchema.parse(backend.schema)),
-      testDataAdapter: vi.fn(async (payload: unknown) => {
-        backend.tested.push(JSON.parse(JSON.stringify(payload)));
-        return { success: true, data: postgresReport };
-      }),
-      getSystemModelConfig: vi.fn(async () => ({ success: false, message: "not under test" })),
-    },
-  };
-});
+// The endpoints the system configuration page calls, answering from the simulated backend above.
+const adminApi = {
+  getBusinessConfig: vi.fn(async () => ({
+    success: true,
+    data: JSON.parse(
+      JSON.stringify({
+        agents: { coding: { model: null } },
+        lang: "en",
+        dataAdapter: backend.dataAdapter,
+        dataAdapterConnections: backend.connections,
+        multiDataSource: backend.multiDataSource,
+      })
+    ),
+  })),
+  listDataAdapters: vi.fn(async () => ({
+    success: true,
+    data: { currentType: backend.dataAdapter, adapters: backend.adapters },
+  })),
+  useDataAdapter: vi.fn(async (payload: unknown) => {
+    backend.used.push(JSON.parse(JSON.stringify(payload)));
+    return { success: true };
+  }),
+  useMultiDataSource: vi.fn(async (payload: unknown) => {
+    backend.multiUsed.push(JSON.parse(JSON.stringify(payload)));
+    return { success: true };
+  }),
+  // The real boundary parse of GET /admin/getSchema runs on the stored schema.
+  getOntologyOutline: vi.fn(async () => ontologyOutlineSchema.parse(backend.schema)),
+  testDataAdapter: vi.fn(async (payload: unknown): Promise<unknown> => {
+    backend.tested.push(JSON.parse(JSON.stringify(payload)));
+    return { success: true, data: postgresReport };
+  }),
+};
 
-const i18n = workbenchI18n();
+const i18n = testI18n();
 const t = i18n.global.t as (key: string, params?: Record<string, unknown>) => string;
-const global = { plugins: [i18n, ElementPlus], stubs: { teleport: true } };
+const host = testHost(adminApi);
+const global = { ...pageGlobal(host, i18n), stubs: { teleport: true } };
 
 const wrappers: ReturnType<typeof mount>[] = [];
 afterEach(() => {
@@ -182,7 +175,7 @@ async function mountCard(
   backend.adapters = adapters;
   backend.dataAdapter = dataAdapter;
   backend.connections = connections;
-  const page = mount(BusinessConfig, { props: businessConfig, global });
+  const page = mount(SystemConfigPage, { global });
   wrappers.push(page);
   await flushPromises();
   return page.findComponent(DataAdapterConfigCard);
@@ -765,9 +758,8 @@ describe("the multi-source mode of the data adapter card", () => {
     backend.adapters = multiAdapters;
     backend.dataAdapter = "multi";
     // The dropdown is teleported to the body; the select's input names it through aria-controls.
-    const page = mount(BusinessConfig, {
-      props: businessConfig,
-      global: { plugins: [i18n, ElementPlus] },
+    const page = mount(SystemConfigPage, {
+      global: pageGlobal(host, i18n),
       attachTo: document.body,
     });
     wrappers.push(page);
@@ -862,7 +854,7 @@ describe("the multi-source mode of the data adapter card", () => {
     const card = await mountMulti("multi");
     const message = "Invalid multi-source configuration: a; b";
     vi.mocked(adminApi.useMultiDataSource).mockRejectedValueOnce(
-      new ApiBusinessError(message, {
+      new PlatformBusinessError(message, {
         success: false,
         message,
         data: {

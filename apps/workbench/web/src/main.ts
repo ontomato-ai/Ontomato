@@ -16,19 +16,18 @@ import {
   type AdminLayoutConfig,
 } from "@ontomato/workbench-ui";
 import { anonymousAuthHost } from "./auth";
-import { businessConfig } from "./business-config";
 import { workbenchContent } from "./workbench-content";
 
 /*
  * Open-source web entry. Assembles the /chat workbench layout, /observe and all open-source admin pages (the /admin
- * layout, business agents, system agents, knowledge governance, skills, MCP services, model configuration, system
- * config, audit log, feedback records and system monitor). Old Manager addresses (the Manager entry, business knowledge,
+ * layout, business agents, system agents, knowledge governance, skills, MCP services, model configuration, the
+ * workbench part of the system config and feedback records). Audit logs, system monitoring and the ontology service
+ * part of the system config are platform pages in the Ontology Manager. Old Manager addresses (the Manager entry, business knowledge,
  * smart assets, visual modeling) leave for the Ontology Manager page in the same tab. The UI has
  * passed browser acceptance against locally synthesized APIs; real full-stack integration is not yet verified, so this
  * build cannot replace the production frontend.
  * Menu: the Ontology Manager tab (a link that opens the Manager page in a new window); Agents and Skills: analysis,
- * system-agents, skills, mcp-service; System Management: model-config, system-config,
- * audit-log, feedback-records, system-monitor.
+ * system-agents, skills, mcp-service; System Management: model-config, system-config, feedback-records.
  */
 const adminLayout: AdminLayoutConfig = {
   access: { ready: true, can: () => true },
@@ -44,9 +43,7 @@ const adminLayout: AdminLayoutConfig = {
     adminMenuItems.mcpService,
     adminMenuItems.modelConfig,
     adminMenuItems.systemConfig,
-    adminMenuItems.auditLog,
     adminMenuItems.feedbackRecords,
-    adminMenuItems.systemMonitor,
   ],
   actionTabs: [],
   account: null,
@@ -93,10 +90,8 @@ startWorkbenchWeb({
         adminRoutes.skillsAnalysis,
         adminRoutes.skillsVisualization,
         adminRoutes.modelConfig,
-        { ...adminRoutes.businessConfig, props: businessConfig },
-        adminRoutes.auditLog,
+        adminRoutes.systemConfig,
         adminRoutes.feedbackRecords,
-        adminRoutes.systemMonitor,
       ],
     },
     // The open-source /observe had no auth/permission meta; the header has no account.

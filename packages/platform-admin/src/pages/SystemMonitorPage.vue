@@ -12,11 +12,12 @@ import {
   User,
   Gauge,
 } from "lucide-vue-next";
-import { adminApi } from "../../api";
+import { usePlatformHost } from "../context";
 import { useI18n } from "vue-i18n";
-import { formatMemoryGB, formatUptime, type SystemStatus } from "../../system-monitor";
+import { formatMemoryGB, formatUptime, type SystemStatus } from "../system-monitor";
 
 const { t } = useI18n();
+const { api } = usePlatformHost();
 
 const status = ref<SystemStatus | null>(null);
 const loading = ref(false);
@@ -26,7 +27,7 @@ const lastRefresh = ref("");
 async function fetchStatus() {
   loading.value = true;
   try {
-    const data = await adminApi.getServiceInfo();
+    const data = await api.getServiceInfo();
     status.value = data as SystemStatus;
     lastRefresh.value = new Date().toLocaleTimeString();
   } catch (err: any) {

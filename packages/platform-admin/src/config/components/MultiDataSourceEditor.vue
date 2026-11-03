@@ -6,15 +6,15 @@ import {
   type DataAdapterInfo,
   type DataAdapterRequest,
 } from "@ontomato/contracts/data-adapters";
-import { workbenchContent } from "../../../../content";
 import {
   dataAdapterRequest,
   type DataAdapterTestOutcome,
   type MultiDataSourceDraft,
   type OntologyOutline,
   type TestConnection,
-} from "../../types";
-import type { BusinessConfigAdapterDisplay } from "../../business-config";
+} from "../types";
+import type { BusinessConfigAdapterDisplay } from "../business-config";
+import { usePlatformHost } from "../../context";
 import DataAdapterConnectionFields from "./DataAdapterConnectionFields.vue";
 import DataAdapterTestReport from "./DataAdapterTestReport.vue";
 
@@ -22,7 +22,7 @@ import DataAdapterTestReport from "./DataAdapterTestReport.vue";
 // relationships with the source their end classes put them in. Rejection rules belong to the data engine's save;
 // this editor only derives what it shows.
 const { t } = useI18n();
-const { businessConfigSeparator } = workbenchContent().text;
+const { separators } = usePlatformHost();
 
 const props = defineProps<{
   adapters: DataAdapterInfo[];
@@ -167,7 +167,7 @@ const relationshipRows = computed(() =>
   </section>
 
   <div v-if="!ontology && ontologyLoadError" class="load-error" role="alert">
-    <span>{{ t("admin.multiSourceOntologyLoadFailed") }}{{ businessConfigSeparator }}{{ ontologyLoadError }}</span>
+    <span>{{ t("admin.multiSourceOntologyLoadFailed") }}{{ separators.detail }}{{ ontologyLoadError }}</span>
     <el-button size="small" @click="emit('retryOntology')">{{ t("common.retry") }}</el-button>
   </div>
   <p v-else-if="!ontology" class="card-empty">{{ t("common.loading") }}</p>
@@ -250,4 +250,4 @@ const relationshipRows = computed(() =>
   </template>
 </template>
 
-<style scoped src="./business-config.css"></style>
+<style scoped src="./config.css"></style>

@@ -257,11 +257,6 @@
   .config-form :deep(.el-form-item__content) {
     margin-left: 0 !important;
   }
-
-  /* On narrow screens numeric controls and save buttons may wrap so no row's save entry is clipped. */
-  .inline-control {
-    flex-wrap: wrap;
-  }
 }
 
 .card-body {
@@ -288,27 +283,8 @@
   letter-spacing: 0.04em;
 }
 
-.config-card :deep(.el-table th.el-table__cell .cell),
-.config-card :deep(.el-table td.el-table__cell .cell) {
-  white-space: nowrap;
-}
-
 .config-card :deep(.el-table td.el-table__cell) {
   font-size: var(--text-sm);
-}
-
-.config-card :deep(.operation-cell .cell) {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: var(--spacing-xs);
-  flex-wrap: nowrap;
-}
-
-.config-card :deep(.operation-cell .el-button) {
-  white-space: nowrap;
-  flex-shrink: 0;
-  margin-left: 0;
 }
 
 .form-actions {
@@ -343,16 +319,6 @@
 
 .api-key-input {
   flex: 1;
-}
-
-.inline-control {
-  display: flex;
-  align-items: center;
-  gap: var(--spacing-sm);
-}
-
-.inline-control .el-input-number {
-  flex-shrink: 0;
 }
 
 .custom-request-parameters-item :deep(.el-form-item__content) {
@@ -462,171 +428,6 @@
     width: 100%;
     margin-left: 0 !important;
   }
-}
-
-/* Connection test result under the data adapter form. */
-.adapter-test-result {
-  display: flex;
-  flex-direction: column;
-  gap: var(--spacing-md);
-  margin-top: var(--spacing-lg);
-}
-
-.adapter-test-result :deep(.el-alert__content) {
-  min-width: 0;
-}
-
-/* The backend message is shown verbatim: keep its line breaks and let it be selected and copied. */
-.adapter-test-message {
-  margin: var(--spacing-xs) 0 0;
-  max-height: 320px;
-  overflow: auto;
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-  font-family: var(--font-mono);
-  font-size: var(--text-xs);
-  user-select: text;
-}
-
-.adapter-test-section {
-  font-size: var(--text-sm);
-  font-weight: var(--font-semibold);
-  color: var(--el-text-color-primary);
-}
-
-/* A schema may hold thousands of tables: the list scrolls inside a fixed height. */
-.adapter-table-list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  max-height: 320px;
-  overflow-y: auto;
-  border: 1px solid var(--el-border-color-light);
-  border-radius: var(--radius-md);
-}
-
-.adapter-table-list li {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: var(--spacing-md);
-  padding: var(--spacing-xs) var(--spacing-md);
-  font-size: var(--text-sm);
-}
-
-.adapter-table-list li + li {
-  border-top: 1px solid var(--el-border-color-lighter);
-}
-
-.adapter-table-name {
-  min-width: 0;
-  overflow-wrap: anywhere;
-  font-family: var(--font-mono);
-  color: var(--el-text-color-primary);
-}
-
-.adapter-table-type {
-  flex-shrink: 0;
-  font-size: var(--text-xs);
-  color: var(--el-text-color-secondary);
-}
-
-/* Multi-source editor: data source entries, then the class routing and relationship tables. */
-.multi-source-section {
-  display: flex;
-  flex-direction: column;
-  gap: var(--spacing-md);
-  margin-bottom: var(--spacing-lg);
-}
-
-.multi-source-heading {
-  font-size: var(--text-sm);
-  font-weight: var(--font-semibold);
-  color: var(--el-text-color-primary);
-}
-
-.multi-source-hint {
-  margin: 0;
-  font-size: var(--text-sm);
-  color: var(--el-text-color-regular);
-}
-
-.multi-source-entry {
-  display: flex;
-  flex-direction: column;
-  padding: var(--spacing-md) var(--spacing-lg);
-  border: 1px solid var(--el-border-color-light);
-  border-radius: var(--radius-md);
-  min-width: 0;
-}
-
-.multi-source-entry-actions {
-  display: flex;
-  justify-content: flex-end;
-  flex-wrap: wrap;
-  gap: var(--spacing-sm);
-}
-
-.multi-source-add {
-  align-self: flex-start;
-}
-
-/* Data tables keep full names and scroll sideways when narrow. */
-.multi-source-table-wrap {
-  overflow-x: auto;
-}
-
-.multi-source-table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: var(--text-sm);
-}
-
-.multi-source-table th,
-.multi-source-table td {
-  padding: var(--spacing-xs) var(--spacing-md);
-  border-bottom: 1px solid var(--el-border-color-lighter);
-  text-align: start;
-  vertical-align: middle;
-}
-
-.multi-source-table th {
-  font-weight: var(--font-semibold);
-  color: var(--el-text-color-secondary);
-}
-
-.multi-source-name {
-  font-family: var(--font-mono);
-  overflow-wrap: anywhere;
-  color: var(--el-text-color-primary);
-}
-
-.multi-source-derived {
-  white-space: nowrap;
-}
-
-.multi-source-derived .el-tag {
-  margin-inline-end: var(--spacing-xs);
-}
-
-.multi-source-muted {
-  color: var(--el-text-color-secondary);
-}
-
-.multi-source-failure {
-  margin-top: var(--spacing-lg);
-}
-
-.multi-source-problems {
-  margin: var(--spacing-xs) 0 0;
-  padding-inline-start: var(--spacing-lg);
-  font-size: var(--text-sm);
-  overflow-wrap: anywhere;
-}
-
-.multi-source-problems code {
-  margin-inline-end: var(--spacing-sm);
-  font-family: var(--font-mono);
 }
 
 /* One-line hint shown when a card has nothing configured yet. */

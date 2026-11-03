@@ -10,13 +10,9 @@ import {
 
 import { ref, reactive, onMounted, watch } from "vue";
 import { ElMessage } from "element-plus";
-import { adminApi } from "../../admin";
-import { ApiBusinessError } from "../../../utils/api";
 import { useI18n } from "vue-i18n";
-import { workbenchContent } from "../../../content";
-import DataAdapterConfigCard from "./business-config/DataAdapterConfigCard.vue";
-import GeneralConfigCard from "./business-config/GeneralConfigCard.vue";
-import QuerySettingsCard from "./business-config/QuerySettingsCard.vue";
+import DataAdapterConfigCard from "../config/components/DataAdapterConfigCard.vue";
+import GeneralConfigCard from "../config/components/GeneralConfigCard.vue";
 import {
   dataAdapterRequest,
   multiDataSourceDefinition,
@@ -27,25 +23,26 @@ import {
   type MultiDataSourceDraft,
   type MultiDataSourceSaveFailure,
   type OntologyOutline,
-  type QuerySettings,
   type SystemSettings,
-} from "../types";
-import type { BusinessConfigProps } from "../business-config";
+} from "../config/types";
+import { PlatformBusinessError } from "../api";
+import { usePlatformHost } from "../context";
 
-// System config page: query settings, skill directory, general config and data adapter; models live on the model configuration page, query examples on their own page.
-const props = defineProps<BusinessConfigProps>();
+/*
+ * System configuration page: the general parameters, backend language and data adapter of the ontology service. The
+ * query settings (the Node system model file) stay in the workbench, and models have their own page.
+ */
 const { t } = useI18n();
-const { businessConfigSeparator } = workbenchContent().text;
+const { api, separators, systemConfig: businessConfig } = usePlatformHost();
 
 const loading = ref(false);
 const backendLoadError = ref("");
-const querySettingsRef = ref<{ markSaved: () => void } | null>(null);
 
 // Draft of the general config, language and data adapter, bound two-way by the cards.
 let config = reactive<SystemSettings>({
   knowledgeMaxResult: 10,
   dslCookerTimeout: 300000,
-  lang: props.defaultLanguage,
+  lang: businessConfig.defaultLanguage,
   dataAdapter: "",
   dataAdapterConnections: {},
 });
@@ -57,8 +54,8 @@ async function loadConfig() {
   backendLoadError.value = "";
   try {
     const [res, adaptersRes] = await Promise.all([
-      adminApi.getBusinessConfig(),
-      adminApi.listDataAdapters(),
+      api.getBusinessConfig(),
+      api.listDataAdapters(),
     ]);
     if (res?.success) {
       dataAdapters.value = (adaptersRes.data as DataAdaptersData).adapters;
@@ -66,9 +63,9 @@ async function loadConfig() {
       config.knowledgeMaxResult = data.knowledgeMaxResult ?? 10;
       config.dslCookerTimeout = data.dslCookerTimeout ?? 300000;
       // Only languages this edition ships are selectable; any other stored value shows the default until saved explicitly.
-      config.lang = props.languageOptions.some(({ value }) => value === data.lang)
+      config.lang = businessConfig.languageOptions.some(({ value }) => value === data.lang)
         ? data.lang
-        : props.defaultLanguage;
+        : businessConfig.defaultLanguage;
       config.dataAdapter = data.dataAdapter;
       config.dataAdapterConnections = data.dataAdapterConnections;
       multiDraft.value = multiDataSourceDraft(data.multiDataSource);
@@ -93,7 +90,7 @@ const savingGeneral: Record<string, boolean> = reactive({
 async function saveGeneralConfig(key: GeneralConfigKey, value: unknown) {
   savingGeneral[key] = true;
   try {
-    const res = await adminApi.saveGeneralConfig(key, value);
+    const res = await api.saveGeneralConfig(key, value);
     if (res?.success) {
       ElMessage.success(t("admin.configSaveSuccess"));
     } else {
@@ -141,7 +138,7 @@ async function saveDataAdapter() {
   savingAdapter.value = true;
   try {
     const adapter = selectedDataAdapter();
-    await adminApi.useDataAdapter(singleSourceRequest(adapter));
+    await api.useDataAdapter(singleSourceRequest(adapter));
     ElMessage.success(t("admin.switchedDataAdapter", { name: adapter.label }));
     config.dataAdapter = dataAdapterMode.value;
   } catch (e: any) {
@@ -154,7 +151,7 @@ async function saveDataAdapter() {
 // Tests a candidate connection without saving it or switching this domain's adapter.
 async function testConnection(request: DataAdapterRequest): Promise<DataAdapterTestOutcome> {
   try {
-    const res = await adminApi.testDataAdapter(request);
+    const res = await api.testDataAdapter(request);
     const report = dataAdapterTestResultSchema.safeParse(res.data);
     return report.success
       ? { ok: true, result: report.data }
@@ -185,7 +182,7 @@ async function loadOntology() {
   loadingOntology.value = true;
   ontologyLoadError.value = "";
   try {
-    ontology.value = await adminApi.getOntologyOutline();
+    ontology.value = await api.getOntologyOutline();
   } catch (e: any) {
     ontologyLoadError.value = e.message;
   } finally {
@@ -204,11 +201,11 @@ async function saveMultiDataSource() {
   savingAdapter.value = true;
   multiSaveFailure.value = null;
   try {
-    await adminApi.useMultiDataSource(multiDataSourceDefinition(multiDraft.value, ontology.value!));
+    await api.useMultiDataSource(multiDataSourceDefinition(multiDraft.value, ontology.value!));
     ElMessage.success(t("admin.switchedDataAdapter", { name: selectedDataAdapter().label }));
     config.dataAdapter = multiDataSourceType;
   } catch (e: any) {
-    const rejection = e instanceof ApiBusinessError ? multiDataSourceRejectionSchema.safeParse(e.body) : null;
+    const rejection = e instanceof PlatformBusinessError ? multiDataSourceRejectionSchema.safeParse(e.body) : null;
     multiSaveFailure.value = {
       message: e.message,
       problems: rejection?.success ? rejection.data.data.problems : [],
@@ -218,81 +215,23 @@ async function saveMultiDataSource() {
   }
 }
 
-// Query settings live in the Node system model file and hold only the total time limit.
-let querySettings = reactive<QuerySettings>({
-  queryTimeoutSeconds: 600,
-});
-const loadingQuerySettings = ref(false);
-const querySettingsLoadError = ref("");
-const savingQuerySettings = ref(false);
-
-function applyQuerySettings(data: QuerySettings) {
-  querySettings.queryTimeoutSeconds = data.queryTimeoutSeconds;
-}
-
-async function loadQuerySettings() {
-  loadingQuerySettings.value = true;
-  querySettingsLoadError.value = "";
-  try {
-    const res = await adminApi.getSystemModelConfig();
-    if (res.success) {
-      applyQuerySettings(res.data as QuerySettings);
-    } else {
-      querySettingsLoadError.value = res.message || t("admin.loadConfigFailed");
-    }
-  } catch (e: any) {
-    querySettingsLoadError.value = e.message || t("admin.loadConfigFailed");
-  } finally {
-    loadingQuerySettings.value = false;
-  }
-}
-
-async function saveQuerySettings() {
-  savingQuerySettings.value = true;
-  try {
-    const res = await adminApi.saveSystemModelConfig({ ...querySettings });
-    if (res.success) {
-      applyQuerySettings(res.data as QuerySettings);
-      querySettingsRef.value?.markSaved();
-      ElMessage.success(t("admin.configSaveSuccess"));
-    } else {
-      ElMessage.error(res.message || t("admin.saveFailed"));
-    }
-  } catch (e: any) {
-    ElMessage.error(e.message || t("admin.saveFailed"));
-  } finally {
-    savingQuerySettings.value = false;
-  }
-}
-
 onMounted(() => {
   loadConfig();
-  loadQuerySettings();
 });
 </script>
 
 <template>
   <div class="system-config-container">
-    <QuerySettingsCard
-      ref="querySettingsRef"
-      v-model:model="querySettings"
-      :loading="loadingQuerySettings"
-      :saving="savingQuerySettings"
-      :load-error="querySettingsLoadError"
-      @save="saveQuerySettings"
-      @retry="loadQuerySettings"
-    />
-
     <div v-if="backendLoadError" class="config-load-error" role="alert">
-      <span>{{ t("admin.loadConfigFailed") }}{{ businessConfigSeparator }}{{ backendLoadError }}</span>
+      <span>{{ t("admin.loadConfigFailed") }}{{ separators.detail }}{{ backendLoadError }}</span>
       <el-button size="small" @click="loadConfig">{{ t("common.retry") }}</el-button>
     </div>
 
     <GeneralConfigCard
       v-model:config="config"
       :saving="savingGeneral"
-      :language-options="languageOptions"
-      :default-language="defaultLanguage"
+      :language-options="businessConfig.languageOptions"
+      :default-language="businessConfig.defaultLanguage"
       :disabled="loading || !!backendLoadError"
       @save="saveGeneralField"
     />
@@ -301,7 +240,7 @@ onMounted(() => {
       v-model:config="config"
       v-model:mode="dataAdapterMode"
       :adapters="dataAdapters"
-      :adapter-display="adapterDisplay"
+      :adapter-display="businessConfig.adapterDisplay"
       :saving="savingAdapter"
       :testing="testingAdapter"
       :test="adapterTest"
@@ -318,7 +257,7 @@ onMounted(() => {
   </div>
 </template>
 
-<style scoped src="./business-config/business-config.css"></style>
+<style scoped src="../config/components/config.css"></style>
 
 <style scoped>
 .system-config-container {

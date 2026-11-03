@@ -1,3 +1,3 @@
-// admin/api consumes these types; the BusinessConfig page is lazy-loaded by the router directly and is not exported here.
-export type { GeneralConfigKey, ModelEntry, RoleModels } from "./types";
-export { ontologyOutlineSchema, vectorRebuildStatusSchema } from "./types";
+// admin/api consumes these types; the system configuration page is lazy-loaded by the router directly and is not exported here.
+export type { ModelEntry, RoleModels } from "./types";
+export { vectorRebuildStatusSchema } from "./types";

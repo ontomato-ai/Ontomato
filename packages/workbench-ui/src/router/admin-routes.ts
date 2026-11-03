@@ -145,29 +145,17 @@ export const adminRoutes = {
     component: () => import("../features/system/components/ModelConfig.vue"),
     meta: { group: "platform-management", permissions: ["system-config"] },
   },
-  // Edition values (BusinessConfigProps) are passed by the app as props on the route record.
-  businessConfig: {
+  // The workbench part of the system configuration (query settings); the ontology service part is in the Manager.
+  systemConfig: {
     path: "system-config",
     name: "SystemConfig",
-    component: () => import("../features/system/components/BusinessConfig.vue"),
+    component: () => import("../features/system/components/SystemConfig.vue"),
     meta: { group: "platform-management", permissions: ["system-config"] },
-  },
-  auditLog: {
-    path: "audit-log",
-    name: "AuditLog",
-    component: () => import("../features/admin/components/platform-operations/AuditLogManager.vue"),
-    meta: { group: "platform-management", permissions: ["audit-logs"] },
   },
   feedbackRecords: {
     path: "feedback-records",
     name: "FeedbackRecords",
     component: () => import("../features/admin/components/platform-operations/FeedbackRecords.vue"),
     meta: { group: "platform-management", permissions: ["audit-logs"] },
-  },
-  systemMonitor: {
-    path: "system-monitor",
-    name: "SystemMonitor",
-    component: () => import("../features/admin/components/platform-operations/SystemMonitor.vue"),
-    meta: { group: "platform-management", permissions: ["system-monitoring"] },
   },
 } satisfies Record<string, RouteRecordRaw>;

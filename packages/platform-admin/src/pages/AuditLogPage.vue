@@ -2,10 +2,11 @@
 import { ref, reactive, onMounted } from "vue";
 import { ElMessage } from "element-plus";
 import { RefreshCw, Search } from "lucide-vue-next";
-import { adminApi } from "../../api";
+import { usePlatformHost } from "../context";
 import { useI18n } from "vue-i18n";
 
 const { t } = useI18n();
+const { api } = usePlatformHost();
 
 interface AuditLog {
   id: string;
@@ -56,7 +57,7 @@ async function loadLogs() {
     if (filterForm.operation) {
       params.operation = filterForm.operation;
     }
-    const res = await adminApi.queryAuditLogs(params);
+    const res = await api.queryAuditLogs(params);
     logList.value = res.data || [];
     total.value = res.totalRows || 0;
   } catch (e: any) {

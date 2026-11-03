@@ -5,7 +5,8 @@
   "type": "module",
   "exports": {
     "./shell": "./src/shell.ts",
-    "./config": "./src/config.ts"
+    "./config": "./src/config.ts",
+    "./area": "./src/area.ts"
   },
   "scripts": {
     "dev": "vite --port 5174",
@@ -16,6 +17,7 @@
   },
   "dependencies": {
     "@ontomato/ontology-manager": "workspace:*",
+    "@ontomato/platform-admin": "workspace:*",
     "element-plus": "2.13.6",
     "vue": "3.5.30"
   },
