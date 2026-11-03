@@ -3,7 +3,6 @@ export { default as AdminLayout } from "./components/layout/AdminLayout.vue";
 export type {
   AdminAccess,
   AdminAccount,
-  AdminActionTab,
   AdminGroup,
   AdminLayoutConfig,
   AdminMenuItem,

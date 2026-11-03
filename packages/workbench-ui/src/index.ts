@@ -17,7 +17,6 @@ export { adminApi, AdminLayout } from "./features/admin";
 export type {
   AdminAccess,
   AdminAccount,
-  AdminActionTab,
   AdminGroup,
   AdminLayoutConfig,
   AdminMenuItem,

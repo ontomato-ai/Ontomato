@@ -45,9 +45,7 @@ const adminLayout: AdminLayoutConfig = {
     adminMenuItems.systemConfig,
     adminMenuItems.feedbackRecords,
   ],
-  actionTabs: [],
   account: null,
-  navigationHidden: false,
 };
 
 startWorkbenchWeb({

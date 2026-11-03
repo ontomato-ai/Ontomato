@@ -116,7 +116,7 @@ const navGroups = computed(() =>
 const pageGroups = computed(() => navGroups.value.filter((group) => !group.href));
 
 watch(
-  () => [navGroups.value.length, props.actionTabs.length, currentLocale.value, props.access.ready],
+  () => [navGroups.value.length, currentLocale.value, props.access.ready],
   () => nextTick(measureTabs)
 );
 
@@ -210,34 +210,7 @@ function openObserve() {
 
 <template>
   <div class="admin-layout">
-    <div v-if="navigationHidden">
-      <header class="admin-header">
-        <div class="header-left">
-          <el-button class="back-btn" text @click="goBack">
-            <el-icon><ArrowLeft /></el-icon>
-            <span>{{ t("common.backToChat") }}</span>
-          </el-button>
-          <div class="header-divider"></div>
-          <div class="header-title">{{ t("nav.admin") }}</div>
-        </div>
-        <div class="header-right">
-          <el-button class="theme-btn" :icon="isDark ? Sun : Moon" text @click="toggleTheme" />
-          <template v-if="account">
-            <span class="user-name">{{ account.userName }}</span>
-            <el-button class="logout-btn" text @click="account.logout()">
-              <el-icon><LogOut /></el-icon>
-              <span>{{ t("user.logout") }}</span>
-            </el-button>
-          </template>
-        </div>
-      </header>
-      <div class="admin-body">
-        <main class="admin-main">
-          <router-view />
-        </main>
-      </div>
-    </div>
-    <div v-else-if="!access.ready" class="permission-loading">
+    <div v-if="!access.ready" class="permission-loading">
       <el-icon class="is-loading"><Loader2 /></el-icon>
       <span>{{ t("admin.loadingMenuPermission") }}</span>
     </div>
@@ -258,15 +231,6 @@ function openObserve() {
           <div class="header-title">{{ t("nav.admin") }}</div>
         </div>
         <nav ref="tabsRef" :class="['header-tabs', { 'is-compact': compactTabs }]">
-          <div
-            v-for="tab in actionTabs"
-            :key="tab.key"
-            class="tab-item"
-            @click="tab.select()"
-          >
-            <el-icon><component :is="tab.icon" /></el-icon>
-            <span>{{ t(tab.titleKey) }}</span>
-          </div>
           <template v-for="group in navGroups" :key="group.key">
             <a
               v-if="group.href"

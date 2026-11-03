@@ -42,14 +42,6 @@ export interface AdminMenuItem {
   groupKey: string;
 }
 
-/** Tabs that only run an action and have no menu items (e.g. a "data governance" jump). Placed before the grouped tabs. */
-export interface AdminActionTab {
-  key: string;
-  titleKey: string;
-  icon: Component;
-  select(): void;
-}
-
 /** The app's access check: ready means permissions are loaded; open source is always ready and always allowed. */
 export interface AdminAccess {
   readonly ready: boolean;
@@ -65,17 +57,12 @@ export interface AdminAccount {
   logout(): void;
 }
 
-/**
- * Assembly input of the admin layout. navigationHidden is the reduced layout used when licensing is restricted:
- * only back, title, theme and account remain; tabs, sidebar and loading/no-permission states are hidden.
- */
+/** Assembly input of the admin layout. */
 export interface AdminLayoutConfig {
   access: AdminAccess;
   groups: readonly AdminGroup[];
   items: readonly AdminMenuItem[];
-  actionTabs: readonly AdminActionTab[];
   account: AdminAccount | null;
-  navigationHidden: boolean;
 }
 
 /** Only the browser adapter resolves icons and deployment-relative links. */

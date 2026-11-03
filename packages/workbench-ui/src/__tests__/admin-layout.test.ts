@@ -2,7 +2,6 @@ import { describe, expect, it, vi } from "vitest";
 import { createApp, h, nextTick, reactive } from "vue";
 import ElementPlus from "element-plus";
 import en from "element-plus/es/locale/lang/en";
-import { Wrench } from "lucide-vue-next";
 import { createMemoryHistory, createRouter, RouterView } from "vue-router";
 import AdminLayout from "../features/admin/components/layout/AdminLayout.vue";
 import { adminGroups, adminMenuItems, type AdminLayoutConfig } from "../features/admin/navigation";
@@ -28,7 +27,6 @@ async function mountLayout(config: AdminLayoutConfig, path: string, switchEnable
         },
         navDescription: { feedbackRecords: "Operation logs" },
         admin: { loadingMenuPermission: "Loading", noAvailableMenuPermission: "No access" },
-        common: { dataGovernance: "Data Governance" },
         user: { logout: "Logout" },
       },
     },
@@ -65,9 +63,7 @@ const base: AdminLayoutConfig = {
   access: { ready: true, can: () => true },
   groups: [adminGroups.dataAssets, adminGroups.platformManagement],
   items: [adminMenuItems.feedbackRecords],
-  actionTabs: [],
   account: null,
-  navigationHidden: false,
 };
 
 describe("shared admin layout", () => {
@@ -147,22 +143,9 @@ describe("shared admin layout", () => {
     expect(none.el.querySelector(".permission-empty")?.textContent).toContain("No access");
   });
 
-  it("action tabs come before groups and only run their action without becoming current; account display and logout", async () => {
-    const select = vi.fn();
+  it("account display and logout", async () => {
     const logout = vi.fn();
-    const { el, tabs } = await mountLayout(
-      {
-        ...base,
-        actionTabs: [{ key: "data-governance", titleKey: "common.dataGovernance", icon: Wrench, select }],
-        account: { userName: "alice", logout },
-      },
-      "/admin/feedback-records"
-    );
-    expect(tabs()).toEqual(["Data Governance", "Ontology Manager", "System Management"]);
-    (el.querySelector(".header-tabs .tab-item") as HTMLElement).click();
-    await nextTick();
-    expect(select).toHaveBeenCalledOnce();
-    expect(el.querySelector(".tab-item.active")?.textContent?.trim()).toBe("System Management");
+    const { el } = await mountLayout({ ...base, account: { userName: "alice", logout } }, "/admin/feedback-records");
     expect(el.querySelector(".user-name")?.textContent).toBe("alice");
     (el.querySelector(".logout-btn") as HTMLElement).click();
     expect(logout).toHaveBeenCalledOnce();
@@ -207,16 +190,5 @@ describe("shared admin layout", () => {
       ["System Agents"],
       "System Agents",
     ]);
-  });
-
-  it("hidden navigation (restricted licensing): only back, title, theme and account, and the page still renders", async () => {
-    const { el } = await mountLayout(
-      { ...base, navigationHidden: true, account: { userName: "alice", logout: () => {} } },
-      "/admin/feedback-records"
-    );
-    expect(el.querySelector(".header-tabs")).toBeNull();
-    expect(el.querySelector(".admin-aside")).toBeNull();
-    expect(el.querySelector(".user-name")?.textContent).toBe("alice");
-    expect(el.querySelector(".page")).not.toBeNull();
   });
 });
