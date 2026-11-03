@@ -142,4 +142,20 @@ export default {
     visualModeling: "Visual Modeling",
     businessKnowledge: "Business Knowledge",
   },
+  // Header controls of the standalone page: the language names keep each language's own script.
+  lang: {
+    switch: "Language",
+    zhCN: "Simplified Chinese",
+    en: "English",
+    ja: "Japanese",
+    ar: "العربية",
+    zhTW: "Traditional Chinese",
+    fr: "Français",
+    de: "Deutsch",
+    it: "Italiano",
+  },
+  theme: {
+    light: "Light Mode",
+    dark: "Dark Mode",
+  },
 };

@@ -42,7 +42,6 @@ async function mountLayout(config: AdminLayoutConfig, path: string, switchEnable
         component: AdminLayout,
         props: config,
         children: [
-          { path: "ontology-manager", component: page, meta: { group: "data-assets" } },
           { path: "system-agents", component: page, meta: { group: "app-capabilities" } },
           { path: "audit-log", component: page, meta: { group: "platform-management" } },
         ],
@@ -82,11 +81,11 @@ describe("shared admin layout", () => {
     expect(el.querySelector(".lang-switch-wrapper")).toBeNull();
   });
 
-  it("the home-style tab (Ontology Manager) shows by ontology-modeling and hides the sidebar; the observe entry is hidden without its permission; the language switch follows the app setting", async () => {
+  it("the Ontology Manager link tab shows by ontology-modeling and has no sidebar; the observe entry is hidden without its permission; the language switch follows the app setting", async () => {
     const granted = new Set(["ontology-modeling"]);
     const { el, tabs, menu } = await mountLayout(
       { ...base, access: { ready: true, can: (p) => granted.has(p) } },
-      "/admin/ontology-manager",
+      "/admin/audit-log",
       true
     );
     expect(tabs()).toEqual(["Ontology Manager"]);
@@ -94,6 +93,17 @@ describe("shared admin layout", () => {
     expect(el.querySelector(".admin-aside")).toBeNull();
     expect(el.querySelector(".icon-btn")).toBeNull();
     expect(el.querySelector(".lang-switch-wrapper")).not.toBeNull();
+  });
+
+  it("the Ontology Manager tab is a real link opening the Manager page in a new window without an opener", async () => {
+    const { el } = await mountLayout(base, "/admin/audit-log");
+    const link = el.querySelector<HTMLAnchorElement>(".header-tabs a.tab-item")!;
+    expect(link.textContent?.trim()).toBe("Ontology Manager");
+    expect(link.getAttribute("href")).toBe(adminGroups.dataAssets.href);
+    expect(link.getAttribute("href")).toMatch(/\/ontology-manager\/$/);
+    expect(link.target).toBe("_blank");
+    expect(link.rel).toBe("noopener");
+    expect(link.classList.contains("active")).toBe(false);
   });
 
   it("without ontology-modeling the Ontology Manager tab is hidden (the old group permission intelligence-engine no longer grants it)", async () => {
@@ -105,17 +115,20 @@ describe("shared admin layout", () => {
     expect(tabs()).toEqual(["System Management"]);
   });
 
-  it("group landing: a home-style tab opens its home page, a menu tab opens the group's first visible menu item", async () => {
-    const { el, router } = await mountLayout(base, "/admin/audit-log");
+  it("group landing: a menu tab opens the group's first visible menu item", async () => {
+    const { el, router } = await mountLayout(
+      {
+        ...base,
+        groups: [adminGroups.appCapabilities, adminGroups.platformManagement],
+        items: [adminMenuItems.systemAgents, adminMenuItems.auditLog],
+      },
+      "/admin/system-agents"
+    );
     const tab = (title: string) =>
       [...el.querySelectorAll<HTMLElement>(".header-tabs .tab-item")].find(
         (item) => item.textContent?.trim() === title
       )!;
     const settle = () => new Promise((resolve) => setTimeout(resolve));
-    tab("Ontology Manager").click();
-    await settle();
-    expect(router.currentRoute.value.path).toBe("/admin/ontology-manager");
-    expect(el.querySelector(".admin-aside")).toBeNull();
     tab("System Management").click();
     await settle();
     expect(router.currentRoute.value.path).toBe("/admin/audit-log");
@@ -143,13 +156,13 @@ describe("shared admin layout", () => {
         actionTabs: [{ key: "data-governance", titleKey: "common.dataGovernance", icon: Wrench, select }],
         account: { userName: "alice", logout },
       },
-      "/admin/ontology-manager"
+      "/admin/audit-log"
     );
     expect(tabs()).toEqual(["Data Governance", "Ontology Manager", "System Management"]);
     (el.querySelector(".header-tabs .tab-item") as HTMLElement).click();
     await nextTick();
     expect(select).toHaveBeenCalledOnce();
-    expect(el.querySelector(".tab-item.active")?.textContent?.trim()).toBe("Ontology Manager");
+    expect(el.querySelector(".tab-item.active")?.textContent?.trim()).toBe("System Management");
     expect(el.querySelector(".user-name")?.textContent).toBe("alice");
     (el.querySelector(".logout-btn") as HTMLElement).click();
     expect(logout).toHaveBeenCalledOnce();
@@ -168,12 +181,12 @@ describe("shared admin layout", () => {
     expect(none.el.querySelector(".permission-empty")).not.toBeNull();
   });
 
-  it("menu pages show their title and description above the content; the home-style page does not", async () => {
+  it("menu pages show their title and description above the content; other pages do not", async () => {
     const { el } = await mountLayout(base, "/admin/audit-log");
     expect(el.querySelector(".admin-page-heading h1")?.textContent).toBe("Audit Logs");
     expect(el.querySelector(".admin-page-heading p")?.textContent).toBe("Operation logs");
-    const home = await mountLayout(base, "/admin/ontology-manager");
-    expect(home.el.querySelector(".admin-page-heading")).toBeNull();
+    const other = await mountLayout(base, "/admin/system-agents");
+    expect(other.el.querySelector(".admin-page-heading")).toBeNull();
   });
 
 

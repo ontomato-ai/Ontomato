@@ -98,7 +98,7 @@ onBeforeUnmount(() => {
 const canSeeItem = (item: AdminMenuItem) => item.permissions.some((p) => props.access.can(p));
 
 // A tab is visible if it has permission itself or at least one menu item in its group does; menu items are filtered one by one.
-// Landing path when switching groups: the home page for a home-style tab, otherwise the group's first visible menu item.
+// Landing path when switching groups: the group's first visible menu item. Link tabs only open their page.
 const navGroups = computed(() =>
   props.groups
     .filter(
@@ -110,9 +110,10 @@ const navGroups = computed(() =>
       const items = props.items
         .filter((item) => item.groupKey === group.key && canSeeItem(item))
         .map((item) => ({ path: item.path, title: t(item.titleKey), icon: item.icon }));
-      return { ...group, title: t(group.titleKey), items, landing: group.homePath ?? items[0]?.path };
+      return { ...group, title: t(group.titleKey), items, landing: items[0]?.path };
     })
 );
+const pageGroups = computed(() => navGroups.value.filter((group) => !group.href));
 
 watch(
   () => [navGroups.value.length, props.actionTabs.length, currentLocale.value, props.access.ready],
@@ -121,7 +122,7 @@ watch(
 
 const hasRealGroups = computed(() => navGroups.value.length > 0);
 
-const firstAvailableGroup = computed(() => navGroups.value[0]?.key || "");
+const firstAvailableGroup = computed(() => pageGroups.value[0]?.key || "");
 
 const activeGroup = ref("");
 
@@ -171,7 +172,7 @@ watch(
   (ready) => {
     if (!ready || !hasRealGroups.value) return;
     const currentGroup = navRoute.value.meta?.group as string | undefined;
-    if (currentGroup && navGroups.value.some((g) => g.key === currentGroup)) {
+    if (currentGroup && pageGroups.value.some((g) => g.key === currentGroup)) {
       activeGroup.value = currentGroup;
       return;
     }
@@ -184,8 +185,7 @@ function handleGroupSelect(key: string) {
   activeGroup.value = key;
   const group = navGroups.value.find((g) => g.key === key);
   if (!group?.landing) return;
-  const inGroup =
-    route.path === group.homePath || group.items.some((item) => item.path === route.path);
+  const inGroup = group.items.some((item) => item.path === route.path);
   if (!inGroup) router.push(group.landing);
 }
 
@@ -267,15 +267,26 @@ function openObserve() {
             <el-icon><component :is="tab.icon" /></el-icon>
             <span>{{ t(tab.titleKey) }}</span>
           </div>
-          <div
-            v-for="group in navGroups"
-            :key="group.key"
-            :class="['tab-item', { active: activeGroup === group.key }]"
-            @click="handleGroupSelect(group.key)"
-          >
-            <el-icon><component :is="group.icon" /></el-icon>
-            <span>{{ group.title }}</span>
-          </div>
+          <template v-for="group in navGroups" :key="group.key">
+            <a
+              v-if="group.href"
+              class="tab-item tab-link"
+              :href="group.href"
+              target="_blank"
+              rel="noopener"
+            >
+              <el-icon><component :is="group.icon" /></el-icon>
+              <span>{{ group.title }}</span>
+            </a>
+            <div
+              v-else
+              :class="['tab-item', { active: activeGroup === group.key }]"
+              @click="handleGroupSelect(group.key)"
+            >
+              <el-icon><component :is="group.icon" /></el-icon>
+              <span>{{ group.title }}</span>
+            </div>
+          </template>
         </nav>
         <div class="header-right">
           <div v-if="languageSwitch" ref="langBtnRef" class="lang-switch-wrapper">
@@ -494,6 +505,10 @@ function openObserve() {
 .tab-item:hover {
   color: var(--el-text-color-primary);
   background: var(--el-fill-color);
+}
+
+.tab-link {
+  text-decoration: none;
 }
 
 .tab-item.active {

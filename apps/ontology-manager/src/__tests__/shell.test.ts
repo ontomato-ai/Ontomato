@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { nextTick } from "vue";
+import { defineComponent, h, nextTick } from "vue";
 
 /** Component double: records the props the shell hands to the component and can emit events on its behalf. */
 const host = vi.hoisted(() => ({
@@ -7,7 +7,8 @@ const host = vi.hoisted(() => ({
   emit: null as ((event: string, ...args: unknown[]) => void) | null,
 }));
 
-// The whole component is doubled (it has its own tests); this file only checks the props the shell hands over, how component events are handled, and the status messages used.
+// The whole component is doubled (it has its own tests); this file only checks the props the shell hands over, the header
+// controls it puts into the component header, how component events are handled, and the status messages used.
 vi.mock("@ontomato/ontology-manager", async () => {
   const { defineComponent, h } = await import("vue");
   const OntologyManager = defineComponent({
@@ -21,13 +22,12 @@ vi.mock("@ontomato/ontology-manager", async () => {
       dataFallbacks: { type: Object, required: true },
       presentation: { type: Object, required: true },
       knowledgeTagValues: { type: Object, required: true },
-      embedded: { type: Boolean, required: true },
     },
     emits: ["update:view", "auth-failure"],
-    setup(props, { emit }) {
+    setup(props, { emit, slots }) {
       host.props = props;
       host.emit = emit as typeof host.emit;
-      return () => h("div", { class: "manager-double" });
+      return () => h("div", { class: "manager-double" }, slots["header-actions"]?.());
     },
   });
   return { OntologyManager };
@@ -41,23 +41,24 @@ const { startManagerShell } = await import("../shell");
 
 const resetShell = isolateShellPerTest();
 
-function start(url: string) {
+function start(url: string, extra: Parameters<typeof startManagerShell>[1] = { credential: { type: "anonymous" } }) {
   host.props = null;
   resetShell();
   document.body.innerHTML = '<div id="app"></div>';
   window.history.replaceState({}, "", url);
-  startManagerShell(ossProfile);
+  startManagerShell(ossProfile, extra);
 }
 
 describe("open-source standalone shell", () => {
   beforeEach(() => {
     sessionStorage.clear();
     localStorage.clear();
+    document.documentElement.className = "";
     document.documentElement.lang = "en";
     window.__ONTOLOGY_MANAGER_CONFIG__ = { API_BASE: "/custom-base/api/", INITIAL_ROUTE: "" };
   });
 
-  it("without parameters: explicit anonymous, fixed en with English messages and open-source data defaults, apiBase from config.js", () => {
+  it("hands the host credential, fixed en with English messages, open-source data defaults and apiBase from config.js", () => {
     start("/?view=assets");
     expect(host.props).toMatchObject({
       // A relative or root-relative API_BASE resolves against the page URL, so one image serves any gateway prefix.
@@ -77,43 +78,57 @@ describe("open-source standalone shell", () => {
       business: "Business",
       tech: "Tech",
     });
-    expect(host.props?.embedded).toBe(false);
     // Open-source presentation values (b6437c86): the same static object is handed to the component.
     expect(host.props?.presentation).toBe(ossPresentation);
+    expect(host.props).not.toHaveProperty("embedded");
   });
 
-
-  it("an explicit tk / apiKey launch uses that credential and removes it from the URL", () => {
-    start("/?tk=t1#/data");
-    expect(host.props?.credential).toEqual({ type: "token", token: "t1" });
-    expect(window.location.search).toBe("");
-    expect(host.props?.view).toBe("/data");
-    start("/?apiKey=k1");
-    expect(host.props?.credential).toEqual({ type: "apiKey", apiKey: "k1" });
+  it("an old launch link loses only tk/apiKey and never becomes a credential; an old tab session is dropped", () => {
+    sessionStorage.setItem("ontology_manager_token", "old-token");
+    sessionStorage.setItem("ontology_manager_api_key", "old-key");
+    start("/?view=data-browser&tk=t1&apiKey=k1&theme=dark#/data");
+    expect(host.props?.credential).toEqual({ type: "anonymous" });
+    expect(window.location.search).toBe("?view=data-browser&theme=dark");
+    expect(window.location.hash).toBe("#/data");
+    expect(sessionStorage.getItem("ontology_manager_token")).toBeNull();
+    expect(sessionStorage.getItem("ontology_manager_api_key")).toBeNull();
   });
 
-  it("locale is fixed to en: URL parameters, stored preference and locale messages change nothing and no preference is written", async () => {
+  it("URL theme/locale and the workbench preference keys do not drive the Manager", () => {
+    localStorage.setItem("theme-preference", "dark");
     localStorage.setItem("app-locale", "zh-CN");
-    start("/?locale=zh-CN");
-    for (const type of ["data-agent-locale", "ontomato-locale"]) {
-      window.dispatchEvent(
-        new MessageEvent("message", { data: { type, locale: "zh-CN" }, source: window })
-      );
-    }
-    window.dispatchEvent(new StorageEvent("storage", { key: "app-locale", newValue: "ja" }));
-    await nextTick();
+    start("/?theme=dark&locale=zh-CN");
+    expect(host.props?.theme).toBe("light");
     expect(host.props?.locale).toBe("en");
-    expect(localStorage.getItem("app-locale")).toBe("zh-CN");
-    expect(document.documentElement.lang).toBe("en");
   });
 
-  it("theme messages use ontomato-theme", async () => {
+  it("the header shows the theme control and, with one locale, no language control; the theme is stored under the Manager key", async () => {
     start("/");
-    window.dispatchEvent(
-      new MessageEvent("message", { data: { type: "ontomato-theme", theme: "dark" }, source: window })
-    );
+    expect(document.querySelector(".manager-shell-locale")).toBeNull();
+    const toggle = document.querySelector<HTMLButtonElement>(".manager-shell-theme")!;
+    expect(toggle.textContent).toBe("Dark Mode");
+    toggle.click();
     await nextTick();
     expect(host.props?.theme).toBe("dark");
+    expect(document.documentElement.classList.contains("dark")).toBe(true);
+    expect(localStorage.getItem("ontology_manager_theme")).toBe("dark");
+    expect(localStorage.getItem("theme-preference")).toBeNull();
+    expect(document.querySelector(".manager-shell-theme")?.textContent).toBe("Light Mode");
+  });
+
+  it("host header actions follow the shell controls and receive the current messages", () => {
+    const received: unknown[] = [];
+    const Account = defineComponent({
+      props: { messages: { type: Object, required: true } },
+      setup(props) {
+        received.push(props.messages);
+        return () => h("span", { class: "account-double" });
+      },
+    });
+    start("/", { credential: { type: "token", token: "t1" }, headerActions: Account });
+    expect(host.props?.credential).toEqual({ type: "token", token: "t1" });
+    expect(document.querySelector(".manager-shell-controls + .account-double")).not.toBeNull();
+    expect(received).toEqual([englishMessages]);
   });
 
   it("component navigation replaces the hash", async () => {
@@ -126,23 +141,24 @@ describe("open-source standalone shell", () => {
     expect(window.history.length).toBe(length);
   });
 
-  it("401: clears this tab's credential, stops rendering the component and reports the auth failure; a reload returns to the anonymous default", async () => {
-    start("/?tk=t1");
-    host.emit?.("auth-failure", 401);
-    await nextTick();
-    expect(sessionStorage.length).toBe(0);
-    expect(document.querySelector(".manager-double")).toBeNull();
-    expect(document.querySelector('[role="alert"]')?.textContent).toBe("Request failed (401)");
+  it("without a host handler a 401 stops the component and reports it; a 402 keeps the component", async () => {
     start("/");
-    expect(host.props?.credential).toEqual({ type: "anonymous" });
-  });
-
-  it("402: keeps the credential and the component without redirecting to login", async () => {
-    start("/?tk=t1");
     host.emit?.("auth-failure", 402);
     await nextTick();
-    expect(host.props?.credential).toEqual({ type: "token", token: "t1" });
-    expect(sessionStorage.getItem("ontology_manager_token")).toBe("t1");
+    expect(document.querySelector(".manager-double")).not.toBeNull();
+    host.emit?.("auth-failure", 401);
+    await nextTick();
+    expect(document.querySelector(".manager-double")).toBeNull();
+    expect(document.querySelector('[role="alert"]')?.textContent).toBe("Request failed (401)");
+  });
+
+  it("a host handler decides 401 and 402 itself", async () => {
+    const failures: number[] = [];
+    start("/", { credential: { type: "token", token: "t1" }, onAuthFailure: (status) => failures.push(status) });
+    host.emit?.("auth-failure", 401);
+    host.emit?.("auth-failure", 402);
+    await nextTick();
+    expect(failures).toEqual([401, 402]);
     expect(document.querySelector(".manager-double")).not.toBeNull();
   });
 });

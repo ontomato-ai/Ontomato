@@ -1,4 +1,5 @@
 import type { Component, InjectionKey } from "vue";
+import { ONTOLOGY_MANAGER_PATH } from "../../config/app";
 import {
   Activity,
   Blocks,
@@ -20,11 +21,14 @@ import {
 export interface AdminGroup {
   key: string;
   titleKey: string;
-  /** For a home-style tab this is the home page's permission: the tab is visible and lands on the home page only with it. */
+  /** For a link tab this is the linked page's permission: the tab is visible only with it. */
   permission: string;
   icon: Component;
-  /** Home-style tab: selecting it opens this page and it has no sidebar menu items (the Ontology Manager shows its iframe directly). */
-  homePath?: string;
+  /**
+   * Link tab: a real link that opens another page of the platform in a new window (noopener) and has no menu items
+   * (the Ontology Manager is its own page next to the workbench).
+   */
+  href?: string;
 }
 
 export interface AdminMenuItem {
@@ -53,7 +57,7 @@ export interface AdminAccess {
   can(permission: string): boolean;
 }
 
-/** The admin layout hands the app's access check to its pages (entry cards and the Manager entry use it to decide what to show). */
+/** The admin layout hands the app's access check to its pages (entry cards use it to decide what to show). */
 export const adminAccessKey: InjectionKey<AdminAccess> = Symbol("admin-access");
 
 /** Header display and logout for the signed-in account; open source has no account. */
@@ -82,7 +86,7 @@ export const adminGroups = {
     titleKey: "nav.ontologyManager",
     permission: "ontology-modeling",
     icon: Database,
-    homePath: "/admin/ontology-manager",
+    href: ONTOLOGY_MANAGER_PATH,
   },
   appCapabilities: {
     key: "app-capabilities",

@@ -1,4 +1,5 @@
 import { ossProfile } from "./profile";
 import { startManagerShell } from "./shell";
 
-startManagerShell(ossProfile);
+// Open source has no sign-in: every request is explicitly anonymous.
+startManagerShell(ossProfile, { credential: { type: "anonymous" } });

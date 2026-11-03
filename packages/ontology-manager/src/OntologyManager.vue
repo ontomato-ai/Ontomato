@@ -53,7 +53,10 @@ const workspaceKey = computed(() => hostSource(props));
         :context="props"
         @navigate="emit('update:view', $event)"
         @auth-failure="emit('auth-failure', $event)"
-      />
+      >
+        <!-- Host controls (theme, language, account) shown at the end of the Manager header. -->
+        <template #header-actions><slot name="header-actions" /></template>
+      </ManagerWorkspace>
     </div>
   </el-config-provider>
 </template>

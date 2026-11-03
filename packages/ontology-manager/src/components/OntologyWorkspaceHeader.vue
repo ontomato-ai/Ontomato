@@ -14,6 +14,7 @@ const { t } = useSharedText();
         <strong>{{ t("nav.ontologyManager") }}</strong>
       </span>
     </button>
+    <div class="header-actions"><slot name="actions" /></div>
   </header>
 </template>
 
@@ -23,6 +24,8 @@ const { t } = useSharedText();
   height: 52px;
   flex: 0 0 52px;
   align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-md);
   padding: 0 var(--spacing-lg);
   border-bottom: 1px solid var(--el-border-color);
   background: var(--el-bg-color);
@@ -36,6 +39,12 @@ const { t } = useSharedText();
   color: var(--el-text-color-primary);
   background: transparent;
   text-align: left;
+}
+.header-actions {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: var(--spacing-sm);
 }
 .brand-mark {
   display: grid;

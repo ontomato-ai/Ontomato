@@ -91,7 +91,6 @@ const base: ManagerHostContext = {
     compactDialogs: false,
   },
   knowledgeTagValues: { general: "General", business: "Business", tech: "Tech" },
-  embedded: false,
 };
 
 describe("host context injection", () => {

@@ -64,8 +64,6 @@ export interface ManagerHostContext {
   presentation: ManagerPresentation;
   /** Business knowledge tag values supplied statically by the host; see ManagerKnowledgeTagValues. */
   knowledgeTagValues: ManagerKnowledgeTagValues;
-  /** Embedded in a host page: the host already has the Ontology Manager tab and back navigation, so the brand header is hidden. */
-  embedded: boolean;
 }
 
 const contextKey: InjectionKey<Readonly<ManagerHostContext>> = Symbol("ontology-manager-context");
