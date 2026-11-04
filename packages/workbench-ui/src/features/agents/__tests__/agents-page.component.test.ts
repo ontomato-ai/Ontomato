@@ -6,8 +6,8 @@ import AgentsPage from "../components/AgentsPage.vue";
 
 /*
  * The agents page is one entry with two tabs, each shown by its own capability codes: the agents list with
- * analysis-agent or observer, the capability library with skill-management or mcp-service. A user with only one of them
- * enters the single visible tab without a tab bar.
+ * analysis-agent (the server guards the agent definitions with it), the capability library with skill-management or
+ * mcp-service. A user with only one of them enters the single visible tab without a tab bar.
  */
 const i18n = workbenchI18n();
 const t = i18n.global.t as (key: string) => string;
@@ -61,8 +61,8 @@ describe("agents page tabs", () => {
     expect(wrapper.find(".capability-library").exists()).toBe(true);
   });
 
-  it("opens the agents list when only observer applies, and links it to the address's tab", async () => {
-    const { wrapper } = await mountPage(["observer"]);
+  it("opens the agents list when that is the only tab, and follows the address's tab", async () => {
+    const { wrapper } = await mountPage(["analysis-agent"]);
     expect(wrapper.find(".agent-settings").exists()).toBe(true);
 
     const requested = mount(AgentsPage, {

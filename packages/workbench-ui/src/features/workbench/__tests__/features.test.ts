@@ -42,7 +42,8 @@ describe("workbench function area", () => {
     expect(ids("analysis-agent")).toEqual(["dashboards", "agents", "schedule", "ontology-service"]);
     expect(ids("skill-management")).toEqual(["dashboards", "agents", "schedule", "ontology-service"]);
     expect(ids("mcp-service")).toContain("agents");
-    expect(ids("observer")).toEqual(["dashboards", "agents", "ops-diagnosis", "schedule", "ontology-service"]);
+    // observer opens operations diagnosis only: the agent definitions are guarded by analysis-agent.
+    expect(ids("observer")).toEqual(["dashboards", "ops-diagnosis", "schedule", "ontology-service"]);
     // Codes of the old console that no longer own an entry of the function area.
     expect(ids("audit-logs", "system-config")).toEqual(["dashboards", "schedule", "ontology-service"]);
   });

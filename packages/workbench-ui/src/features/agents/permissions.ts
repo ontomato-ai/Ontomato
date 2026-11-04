@@ -5,7 +5,6 @@
  */
 export const AGENT_PAGE_PERMISSIONS = [
   "analysis-agent",
-  "observer",
   "mcp-service",
   "skill-management",
 ] as const;
@@ -13,9 +12,13 @@ export const AGENT_PAGE_PERMISSIONS = [
 /** The operations diagnosis page (the old console's observability page). */
 export const OPS_DIAGNOSIS_PERMISSION = "observer";
 
-/** The tabs of the agents page: the agents list, and the library of skills and external tools. */
+/**
+ * The tabs of the agents page. Both tabs read and write the agent definitions and the operations agent's model, which
+ * the server guards with analysis-agent (the observer code opens operations diagnosis, not the agent definitions), so the
+ * agents tab follows that code; the library follows the code of each kind of capability.
+ */
 export const AGENT_TAB_PERMISSIONS = {
-  agents: ["analysis-agent", "observer"],
+  agents: ["analysis-agent"],
   capabilities: ["skill-management", "mcp-service"],
 } as const;
 
