@@ -1406,19 +1406,25 @@ async function saveClassDesc(cls: ClassDef) {
 
 <template>
   <div class="visual-modeling">
-    <div class="toolbar">
-      <div class="toolbar-group toolbar-group-primary">
+    <header class="modeling-header">
+      <div class="modeling-heading">
+        <h1>{{ t("nav.visualModeling") }}</h1>
+        <p>{{ ot("visualModelingDesc") }}</p>
+      </div>
+      <div class="toolbar-group">
         <el-button v-if="backToPlayground" :icon="ArrowLeft" @click="emit('back')">
           {{ ot("backToGraph") }}
-        </el-button>
-        <el-button type="primary" :icon="Box" @click="openAddNodeDialog">
-          {{ t("hotData.addClass") }}
         </el-button>
         <el-button :icon="Link2" @click="openAddEdgeDialog">
           {{ t("hotData.addRelation") }}
         </el-button>
+        <el-button type="primary" :icon="Box" @click="openAddNodeDialog">
+          {{ t("hotData.addClass") }}
+        </el-button>
       </div>
+    </header>
 
+    <div class="toolbar">
       <div class="zoom-controls" role="toolbar" :aria-label="ot('fitCanvas')">
         <el-button :title="ot('zoomIn')" :aria-label="ot('zoomIn')" @click="onZoomIn"><Plus :size="18" /></el-button>
         <el-button :title="ot('zoomOut')" :aria-label="ot('zoomOut')" @click="onZoomOut"><Minus :size="18" /></el-button>
@@ -1524,10 +1530,49 @@ async function saveClassDesc(cls: ClassDef) {
   overflow: hidden;
 }
 
-/* The page's 48px header row: actions, zoom and the current selection. */
+/* The page's 48px header: title, one-line description and the create actions. */
+.modeling-header {
+  display: flex;
+  height: var(--page-header-height);
+  flex: 0 0 var(--page-header-height);
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-md);
+  padding: 0 var(--spacing-lg);
+  background: var(--el-bg-color);
+  border-bottom: 1px solid var(--el-border-color);
+}
+
+.modeling-heading {
+  display: flex;
+  min-width: 0;
+  align-items: baseline;
+  gap: var(--spacing-md);
+}
+
+.modeling-heading h1 {
+  margin: 0;
+  color: var(--el-text-color-primary);
+  font-size: var(--text-lg);
+  font-weight: var(--font-semibold);
+  line-height: var(--leading-lg);
+  white-space: nowrap;
+}
+
+.modeling-heading p {
+  margin: 0;
+  overflow: hidden;
+  color: var(--el-text-color-secondary);
+  font-size: var(--text-sm);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The 40px canvas toolbar under the header: zoom and layout on the left, the current selection on the right. */
 .toolbar {
   display: flex;
-  min-height: var(--page-header-height);
+  min-height: 40px;
+  flex-shrink: 0;
   align-items: center;
   gap: var(--spacing-sm);
   padding: var(--spacing-xs) var(--spacing-lg);
@@ -1536,6 +1581,7 @@ async function saveClassDesc(cls: ClassDef) {
   flex-wrap: wrap;
 }
 
+.modeling-header :deep(.el-button),
 .toolbar :deep(.el-button) {
   white-space: nowrap;
   flex-shrink: 0;
@@ -1543,22 +1589,18 @@ async function saveClassDesc(cls: ClassDef) {
 
 .toolbar-group {
   display: inline-flex;
+  flex-shrink: 0;
   align-items: center;
   gap: var(--spacing-sm);
 }
 
-.toolbar-group + .zoom-controls {
-  margin-left: var(--spacing-sm);
-  padding-left: var(--spacing-md);
-  border-left: 1px solid var(--el-border-color);
+.toolbar-group :deep(.el-button + .el-button) {
+  margin-left: 0;
 }
 
 .zoom-controls {
   display: flex;
   gap: var(--spacing-xs);
-  margin-left: var(--spacing-sm);
-  padding-left: var(--spacing-sm);
-  border-left: 1px solid var(--el-border-color);
 }
 
 .selection-cluster {
@@ -1611,30 +1653,6 @@ async function saveClassDesc(cls: ClassDef) {
 
 .graph-canvas :deep(.x6-graph-background rect) {
   fill: transparent !important;
-}
-
-@container ontology-manager (max-width: 1024px) {
-  .toolbar {
-    flex-direction: column;
-    align-items: stretch;
-  }
-
-  .toolbar-group,
-  .zoom-controls,
-  .selection-cluster {
-    margin-left: 0 !important;
-    padding-left: 0 !important;
-    border-left: 0 !important;
-  }
-
-  .selection-cluster {
-    justify-content: space-between;
-  }
-
-  .toolbar .el-input,
-  .toolbar .el-select {
-    width: 100%;
-  }
 }
 
 @container ontology-manager (max-width: 900px) {

@@ -251,7 +251,7 @@ reach them or carry a different meaning:
 | Selector | Variables |
 |---|---|
 | `:root` | `--el-disabled-text-color: faint` |
-| `.el-button--primary` | `--el-button-text-color`, `--el-button-hover-text-color`, `--el-button-active-text-color`, `--el-button-disabled-text-color`: `var(--on-primary)`; `--el-button-hover-bg-color`, `--el-button-hover-border-color`: `var(--brand-primary-hover)` (Element Plus defaults to the lighter `light-3`; `primary-hover` is chosen per mode so on-primary text keeps at least 4.5:1) |
+| `.el-button--primary` | `--el-button-text-color`, `--el-button-hover-text-color`, `--el-button-active-text-color`: `var(--on-primary)`; `--el-button-hover-bg-color`, `--el-button-hover-border-color`: `var(--brand-primary-hover)` (Element Plus defaults to the lighter `light-3`; `primary-hover` is chosen per mode so on-primary text keeps at least 4.5:1); disabled uses the disabled roles, not a paler primary: `--el-button-disabled-bg-color: var(--el-fill-color-light)` (`hover`), `--el-button-disabled-border-color: var(--el-border-color-light)`, `--el-button-disabled-text-color: var(--el-disabled-text-color)` (`faint`) (Element Plus's `light-5` fill under on-primary text looks enabled in dark mode) |
 | `.el-table` | `--el-table-header-bg-color: var(--el-fill-color)`; row hover and current row keep the defaults (`hover`, `selected`) |
 | `.el-menu` | `--el-menu-hover-bg-color: var(--el-fill-color-light)` (default is the selected colour); `--el-menu-item-height: 32px` |
 
