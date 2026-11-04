@@ -111,4 +111,16 @@ class DslGrammarValidatorTest {
 
 		assertDoesNotThrow(() -> DslGrammarValidator.validate(dsl, CLASS_DEFS));
 	}
+
+	@Test
+	void conditionsOutsidePropertiesAreRejectedInsteadOfIgnored() {
+		var dsl = com.alibaba.fastjson2.JSON.parseObject("""
+				{"answer":{"steps":[{"graph":{"patterns":[{"objects":[{"idx":0,"variable":"p","class":"/person",
+				  "conditions":{"operator":"logic","and":[{"field":"status","operator":"=","value":"x"}]}}]}]},
+				  "output":{"to_user":true,"fields":[{"as":"n","variable":"p","field":"id","function":"count"}]}}]}}
+				""");
+		var error = org.junit.jupiter.api.Assertions.assertThrows(DslContractViolationException.class,
+				() -> DslGrammarValidator.validate(dsl, java.util.List.of()));
+		org.junit.jupiter.api.Assertions.assertTrue(error.getMessage().contains("conditions.properties"), error.getMessage());
+	}
 }
