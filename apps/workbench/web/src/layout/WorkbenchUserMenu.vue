@@ -39,7 +39,7 @@ function handleToggleTheme() {
       :aria-expanded="visible"
       @click.stop="emit('update:visible', !visible)"
     >
-      <span class="user-avatar"><UserRound :size="18" /></span>
+      <span class="user-avatar"><UserRound :size="16" /></span>
       <span class="footer-user-name">{{ t("nav.admin") }}</span>
       <ChevronDown :size="12" class="footer-chevron" :class="{ open: visible }" />
     </button>
@@ -63,8 +63,8 @@ function handleToggleTheme() {
 
 <style scoped>
 .user-avatar {
-  width: 18px;
-  height: 18px;
+  width: 16px;
+  height: 16px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -75,31 +75,33 @@ function handleToggleTheme() {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 8px 10px;
-  border-radius: 14px;
+  height: var(--nav-row-height);
+  padding: 0 8px;
+  border-radius: var(--radius-md);
   cursor: pointer;
-  font-size: 12px;
-  color: var(--el-text-color-tertiary);
-  transition: all 0.15s;
+  font: inherit;
+  font-size: var(--text-sm);
+  color: var(--el-text-color-regular);
+  transition: background-color var(--transition-fast);
   width: 100%;
   border: 0;
   background: transparent;
   text-align: left;
 }
 .footer-user:hover {
-  background: var(--el-fill-color);
+  background: var(--el-fill-color-light);
 }
 .footer-user:focus-visible {
   outline: 2px solid var(--el-color-primary);
   outline-offset: -2px;
 }
 .footer-user-name {
-  color: var(--el-text-color-tertiary);
+  color: var(--el-text-color-regular);
 }
 .footer-chevron {
   margin-left: auto;
-  color: var(--el-text-color-tertiary);
-  transition: transform 0.2s ease;
+  color: var(--el-text-color-secondary);
+  transition: transform var(--transition-fast);
 }
 .footer-chevron.open {
   transform: rotate(180deg);
@@ -114,15 +116,14 @@ function handleToggleTheme() {
 }
 .user-menu-popup {
   position: fixed;
-  bottom: 68px;
-  left: 16px;
+  bottom: 56px;
+  left: 8px;
   width: 200px;
-  background: var(--el-bg-color);
-  border: 1px solid var(--el-border-color);
-  border-radius: 14px;
-  box-shadow: var(--shadow-dropdown);
-  padding: 6px;
-  animation: menuSlideUp 0.18s ease;
+  background: var(--el-bg-color-overlay);
+  border-radius: var(--radius-md);
+  box-shadow: var(--elevation-overlay);
+  padding: 4px;
+  animation: menuSlideUp var(--transition-base);
   z-index: 2101;
 }
 @keyframes menuSlideUp {
@@ -138,13 +139,14 @@ function handleToggleTheme() {
 .user-menu-item {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 9px 12px;
-  border-radius: 8px;
-  font-size: 13px;
+  gap: 8px;
+  height: var(--nav-row-height);
+  padding: 0 8px;
+  border-radius: var(--radius-sm);
+  font-size: var(--text-sm);
   color: var(--el-text-color-regular);
   cursor: pointer;
-  transition: background 0.12s;
+  transition: background-color var(--transition-fast);
 }
 .user-menu-item:hover {
   background: var(--el-fill-color-light);
@@ -156,7 +158,7 @@ function handleToggleTheme() {
   .user-menu-popup {
     left: 12px;
     right: 12px;
-    bottom: calc(62px + env(safe-area-inset-bottom));
+    bottom: calc(52px + env(safe-area-inset-bottom));
     width: auto;
   }
   .user-menu-item {

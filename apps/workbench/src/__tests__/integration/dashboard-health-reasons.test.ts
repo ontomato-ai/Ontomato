@@ -1,9 +1,12 @@
 import { expect, it } from "vitest";
 import { installWorkbenchContent } from "@ontomato/workbench-ui/content";
+import { installWorkbenchBrand } from "@ontomato/workbench-ui/brand";
+import { ossBrand } from "@ontomato/design-tokens/oss";
 import { EchartsGenerator } from "@ontomato/workbench-ui/features/dashboard/components/utils/echartsGenerator";
 import { workbenchContent } from "../../../web/src/workbench-content";
 
 installWorkbenchContent(workbenchContent);
+installWorkbenchBrand(ossBrand);
 
 it.each([
   ["radar", "RADAR_INVALID", { category: "name", value: "amount" }],

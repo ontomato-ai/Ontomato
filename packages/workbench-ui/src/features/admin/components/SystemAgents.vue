@@ -44,7 +44,7 @@ function openOpsAgent() {
   gap: var(--spacing-md);
   padding: var(--spacing-lg);
   border: 1px solid var(--el-border-color);
-  border-radius: var(--radius-2xl);
+  border-radius: var(--radius-md);
   background: var(--el-bg-color);
   box-shadow: var(--shadow-card);
 }

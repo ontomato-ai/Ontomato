@@ -12,7 +12,7 @@
   padding: 10px 12px !important;
   background: var(--el-bg-color) !important;
   border: 1px solid var(--el-border-color) !important;
-  border-radius: var(--radius-sm) !important;
+  border-radius: var(--radius-md) !important;
 }
 
 .toolbar .el-button,
@@ -78,7 +78,7 @@
   justify-content: flex-end;
 }
 
-/* Table base wrapper - width & overflow handled by theme.css .admin-table */
+/* Table base wrapper - the .el-table.admin-table rules are at the end of this file */
 .admin-table {
   width: 100%;
 }
@@ -98,9 +98,8 @@
 /* Card styles */
 .admin-card {
   background: var(--el-bg-color);
-  border-radius: var(--radius-2xl);
+  border-radius: var(--radius-md);
   padding: var(--spacing-lg);
-  box-shadow: var(--shadow-card);
   margin-bottom: var(--spacing-lg);
   border: 1px solid var(--el-border-color);
 }
@@ -140,8 +139,10 @@
   align-items: center;
   gap: 4px;
   padding: 2px 8px;
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-xs);
   font-size: var(--text-xs);
+  line-height: var(--leading-xs);
+  font-weight: var(--font-medium);
 }
 
 .status-badge.status-success {
@@ -215,14 +216,15 @@
   flex-direction: column;
   background: var(--el-bg-color) !important;
   border: 1px solid var(--el-border-color) !important;
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-md);
+  box-shadow: none !important;
   overflow: hidden;
 }
 
 .crud-card .el-card__header {
   padding: 12px 16px;
   background: var(--el-bg-color);
-  border-bottom: 1px solid var(--el-border-color-lighter);
+  border-bottom: 1px solid var(--el-border-color);
 }
 
 .crud-card .el-card__body {
@@ -240,8 +242,9 @@
 
 .card-title {
   flex: 1;
-  font-weight: 600;
-  font-size: 14px;
+  font-weight: var(--font-semibold);
+  font-size: var(--text-base);
+  line-height: var(--leading-sm);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -254,8 +257,8 @@
 }
 
 .card-field {
-  font-size: 13px;
-  line-height: 1.65;
+  font-size: var(--text-sm);
+  line-height: var(--leading-sm);
   margin-bottom: 6px;
   display: flex;
   align-items: flex-start;
@@ -285,14 +288,14 @@
   justify-content: flex-end;
   gap: 4px;
   padding: 8px 16px;
-  background: var(--el-fill-color-lighter);
-  border-top: 1px solid var(--el-border-color-lighter);
+  background: var(--el-fill-color);
+  border-top: 1px solid var(--el-border-color);
 }
 
 .card-text {
-  font-size: 13px;
+  font-size: var(--text-sm);
   color: var(--el-text-color-regular);
-  line-height: 1.65;
+  line-height: var(--leading-sm);
   overflow-y: auto;
   white-space: pre-wrap;
   word-break: break-word;
@@ -312,4 +315,189 @@
   .admin-card-grid {
     grid-template-columns: 1fr;
   }
+}
+
+/* ========================================
+   Admin Table Styles - DESIGN.md "Table": head 36px on sunken in the label style, rows 40px, 1px line between
+   rows, hover = hover, current = selected with ink; a line border with rounded.md and no shadow.
+   ======================================== */
+
+/* ---- Table container ---- */
+.el-table.admin-table {
+  background: var(--el-bg-color);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--el-border-color);
+  overflow: hidden;
+}
+
+.el-table.admin-table::before {
+  height: 0;
+}
+
+/* ---- Table header ---- */
+.el-table.admin-table th.el-table__cell {
+  background-color: var(--el-fill-color);
+  color: var(--el-text-color-secondary);
+  font-weight: var(--font-semibold);
+  font-size: var(--text-xs);
+  letter-spacing: var(--tracking-label);
+  border-bottom: 1px solid var(--el-border-color);
+  padding: 0 var(--spacing-md) !important;
+  height: var(--table-head-height);
+}
+
+.el-table.admin-table th.el-table__cell .cell {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ---- Cells ---- */
+.el-table.admin-table td.el-table__cell {
+  background-color: var(--el-bg-color);
+  color: var(--el-text-color-regular);
+  font-size: var(--text-sm);
+  border-bottom: 1px solid var(--el-border-color);
+  transition: background-color var(--transition-fast);
+  padding: 0 var(--spacing-md) !important;
+  height: var(--table-row-height);
+}
+
+/* ---- Last row has no bottom border ---- */
+.el-table.admin-table .el-table__body tr:last-child td.el-table__cell {
+  border-bottom: none;
+}
+
+/* ---- Striped rows ---- */
+.el-table.admin-table--striped .el-table__body tr.el-table__row--striped td.el-table__cell {
+  background-color: var(--el-fill-color-extra-light) !important;
+}
+
+/* ---- Hover effect ---- */
+.el-table.admin-table .el-table__body tr:hover > td.el-table__cell {
+  background-color: var(--el-fill-color-light) !important;
+}
+
+.el-table.admin-table--striped .el-table__body tr.el-table__row--striped:hover > td.el-table__cell {
+  background-color: var(--el-fill-color) !important;
+}
+
+/* ---- Selected row ---- */
+.el-table.admin-table .el-table__body tr.current-row > td.el-table__cell {
+  background-color: var(--el-color-primary-light-9) !important;
+  color: var(--el-text-color-primary);
+}
+
+/* ---- Fixed column shadow optimization ---- */
+.el-table.admin-table .el-table__fixed::before,
+.el-table.admin-table .el-table__fixed-right::before {
+  background-color: transparent;
+  box-shadow: none;
+}
+
+/* ---- Empty data state ---- */
+.el-table.admin-table .el-table__empty-block {
+  background-color: var(--el-bg-color);
+}
+
+.el-table.admin-table .el-table__empty-text {
+  color: var(--el-text-color-secondary);
+}
+
+/* ---- Tags in table ---- */
+.el-table.admin-table .el-tag {
+  white-space: nowrap;
+  margin-right: var(--spacing-xs);
+}
+
+/* ---- Button groups in table ---- */
+.el-table.admin-table .el-button-group {
+  display: inline-flex;
+  flex-wrap: nowrap;
+}
+
+/* ---- Space component in table ---- */
+.el-table.admin-table .el-space {
+  flex-wrap: nowrap;
+  gap: var(--spacing-xs);
+}
+
+/* ========================================
+   Operation Column - Operation Cell
+   ======================================== */
+
+/* Operation column cell */
+.el-table.admin-table td.el-table__cell.operation-cell {
+  padding: 0 var(--spacing-sm) !important;
+  vertical-align: middle !important;
+}
+
+/* Operation column header */
+.el-table.admin-table th.el-table__cell.operation-cell .cell {
+  display: flex;
+  justify-content: center;
+}
+
+/* Operation column inner cell container - flex layout centering */
+.el-table.admin-table td.el-table__cell.operation-cell .cell {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--spacing-xs);
+  flex-wrap: nowrap;
+}
+
+/* Base styles for operation buttons */
+.el-table.admin-table .operation-cell .el-button {
+  white-space: nowrap;
+  flex-shrink: 0;
+  border-radius: var(--radius-sm);
+  padding: 0 8px;
+  height: var(--control-height-sm);
+  min-height: var(--control-height-sm);
+  line-height: var(--leading-xs);
+  font-weight: var(--font-medium);
+  font-size: var(--text-xs);
+  transition: all var(--transition-fast);
+}
+
+/* Link-type button styles in the operation column */
+.el-table.admin-table .operation-cell .el-button.is-link {
+  padding: 2px 8px;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  border: none;
+  box-shadow: none;
+}
+
+.el-table.admin-table .operation-cell .el-button.is-link:hover {
+  background: var(--el-fill-color-light);
+}
+
+.el-table.admin-table .operation-cell .el-button.is-link:active {
+  background: var(--el-fill-color);
+}
+
+/* Reset button selected/focus state */
+.el-table.admin-table .operation-cell .el-button.is-link:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--el-color-primary) 20%, transparent);
+  background: var(--el-fill-color-light);
+}
+
+/* Button spacing is already controlled uniformly by the cell's gap */
+.el-table.admin-table .operation-cell .el-button + .el-button {
+  margin-left: 0;
+}
+
+/* ========================================
+   Table Cell Content Truncation
+   ======================================== */
+
+.el-table.admin-table .cell {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  padding: 0;
+  line-height: var(--leading-sm);
 }

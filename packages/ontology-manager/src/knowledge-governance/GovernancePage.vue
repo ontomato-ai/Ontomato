@@ -6,15 +6,13 @@ import {
   governanceSourceReadSchema, governanceWorkResponseSchema,
   type GovernanceSourceRead, type GovernanceWork,
 } from "@ontomato/contracts/knowledge-governance";
-import { useManagerClient, useManagerContext } from "../context";
-import { englishGovernance, governanceAgentId, shellLabels } from "./messages";
+import { useGovernanceText, useManagerClient } from "../context";
+import { governanceAgentId } from "./messages";
 
 const props = defineProps<{ sessionId: string | null }>();
 const emit = defineEmits<{ session: [id: string | null]; back: [] }>();
-const context = useManagerContext(), manager = useManagerClient();
-const messages = computed(() => context.messages.governance ?? englishGovernance);
-const t = (key: string) => messages.value.text[key] ?? englishGovernance.text[key];
-const labels = computed(() => shellLabels(messages.value));
+const manager = useManagerClient();
+const { t, labels } = useGovernanceText();
 const agentId = ref<string | null>(governanceAgentId);
 const sessionId = computed({ get: () => props.sessionId, set: (id) => emit("session", id) });
 const featureId = ref<string | null>(null);
@@ -58,7 +56,7 @@ const client = createAgentHostClient({
 watch(sessionId, () => { sourceRead++; source.value = null; work.value = null; void readWork(); }, { immediate: true });
 watch(featureId, value => { if (value === "report") void readWork(); });
 const progress = computed(() => work.value?.knowledgeTotal === null || !work.value ? "" :
-  t("progress").replace("{done}", String(work.value.reviewedKnowledgeIds.length)).replace("{total}", String(work.value.knowledgeTotal)));
+  t("progress", { done: work.value.reviewedKnowledgeIds.length, total: work.value.knowledgeTotal }));
 </script>
 
 <template>

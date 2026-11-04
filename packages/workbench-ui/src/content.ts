@@ -6,8 +6,6 @@
 import type { PromptTranscriptFormat } from "@ontomato/contracts/observe";
 
 export interface WorkbenchContent {
-  /** Product display name, the same value as Node product.serviceDisplayName: PPT author/company and the default brand name in appearance settings. */
-  serviceDisplayName: string;
   /** Analysis agent MCP server name, the same value as Node product.analysisMcpServerName: identifies that server among published services on the MCP page (McpManager.vue). */
   analysisMcpServerName: string;
   /** Operations agent MCP server name, the same value as Node product.opsMcpServerName: identifies that server the same way (McpManager.vue). */
@@ -89,34 +87,17 @@ export interface WorkbenchFixedText {
   };
 }
 
-/** Brand colours of dashboard charts and two display details (dashboard/components and utils). */
+/**
+ * Display details of dashboard charts (dashboard/components and utils). Chart colours are not content: they come from
+ * the edition's brand source (features/dashboard/chart-palette.ts).
+ */
 export interface DashboardVisuals {
   /** Theme name registered with echarts (original value). */
   themeName: string;
-  /** Series colours, shared by the theme color and sequential colour picking. */
-  series: readonly string[];
-  /** Theme colours that change with light/dark; items that originally did not change in an edition return the same value in both cases. */
-  themeColors(isDark: boolean): DashboardThemeColors;
-  /** Bar gradient: series colour → [top, bottom]. */
-  barGradients: Readonly<Record<string, readonly [string, string]>>;
-  /** Area gradient: series colour → three opacity stops; unregistered colours use defaultAreaGradient. */
-  areaGradients: Readonly<Record<string, readonly [string, string, string]>>;
-  defaultAreaGradient: readonly [string, string, string];
   /** Chart theme of the zoom dialog: either echarts' default theme or (open source) the registered dashboard theme. */
   zoomChartTheme: "default" | "dashboard";
   /** Loading mask of charts and metric cards: the Element Plus default background or (open source) transparent. */
   loadingMask: "default" | "transparent";
-  /**
-   * Colours hard-coded in the generator that do not change with light/dark: the primary RGB (shadow opacities keep their
-   * original values), label and secondary label colours, radar split lines, and gauge track and ticks.
-   */
-  chartColors: {
-    primaryRgb: string;
-    label: string;
-    labelSecondary: string;
-    radarSplitLine: string;
-    gaugeTrack: string;
-  };
   /** The generator's two original tooltip sentences: value with share, and the value/share line of tree maps. */
   chartTooltips: {
     valueWithPercent(value: string, percent: string): string;
@@ -151,21 +132,6 @@ export interface DashboardHealthReasons {
   boxplotIllegalItems(n: number): string;
   gaugeIllegalValue: string;
   liquidFillIllegalValues(n: number): string;
-}
-
-export interface DashboardThemeColors {
-  text: string;
-  textSecondary: string;
-  axis: string;
-  splitLine: string;
-  border: string;
-  visualMap: readonly string[];
-  /** Candlestick rising colour and border (originally the same in both editions). */
-  kPositive: string;
-  timelineLine: string;
-  /** Timeline nodes, controls and labels (originally the same in both editions). */
-  timelineAccent: string;
-  timelineCheck: string;
 }
 
 let content: WorkbenchContent | null = null;

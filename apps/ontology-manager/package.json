@@ -5,8 +5,7 @@
   "type": "module",
   "exports": {
     "./shell": "./src/shell.ts",
-    "./config": "./src/config.ts",
-    "./area": "./src/area.ts"
+    "./config": "./src/config.ts"
   },
   "scripts": {
     "dev": "vite --port 5174",
@@ -16,9 +15,11 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@ontomato/design-tokens": "workspace:*",
     "@ontomato/ontology-manager": "workspace:*",
     "@ontomato/platform-admin": "workspace:*",
     "element-plus": "2.13.6",
+    "lucide-vue-next": "1.0.0",
     "vue": "3.5.30"
   },
   "devDependencies": {

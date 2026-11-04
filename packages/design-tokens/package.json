@@ -1,0 +1,21 @@
+{
+  "name": "@ontomato/design-tokens",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./oss": "./src/oss.ts",
+    "./foundation.css": "./src/foundation.css"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "@types/node": "22.19.15",
+    "happy-dom": "20.14.3",
+    "typescript": "5.9.3",
+    "vitest": "1.6.0"
+  }
+}

@@ -1,6 +1,5 @@
 import "element-plus/dist/index.css";
 import "element-plus/theme-chalk/dark/css-vars.css";
-import "./theme.css";
 import "@ontomato/workbench-ui/styles/style.css";
 import "./narrow-dialogs.css";
 import "@ontomato/workbench-ui/styles/admin-common.css";
@@ -12,9 +11,11 @@ import {
   adminMenuItems,
   adminRoutes,
   observeRoutes,
+  openOntologyServiceAccess,
   startWorkbenchWeb,
   type AdminLayoutConfig,
 } from "@ontomato/workbench-ui";
+import { ossBrand } from "@ontomato/design-tokens/oss";
 import { anonymousAuthHost } from "./auth";
 import { workbenchContent } from "./workbench-content";
 
@@ -48,6 +49,7 @@ const adminLayout: AdminLayoutConfig = {
 };
 
 startWorkbenchWeb({
+  brand: ossBrand,
   language: {
     supported: ["en"],
     defaultLocale: "en",
@@ -62,6 +64,8 @@ startWorkbenchWeb({
   content: workbenchContent,
   // The open-source /observe has no permission gate: the turn diagnosis entry is visible to all users.
   turnDiagnosis: { prepare: () => {}, visible: () => true },
+  // The open-source edition has no platform permissions: the Ontology Service entries are always shown.
+  ontologyService: openOntologyServiceAccess,
   routes: [
     { path: "/", redirect: "/chat" },
     { path: "/chat", name: "Chat", component: () => import("./layout/UnifiedLayout.vue") },

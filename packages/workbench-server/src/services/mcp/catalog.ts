@@ -9,7 +9,7 @@ import type { McpToolDesc } from "@ontomato/contracts/mcp";
 import { config } from "../../config/application";
 import { getAnalysisAgentMcpUrlOverride, getSystemMcpUrl } from "../../config/mcp";
 import { createLogger } from "../../logging/logger";
-import { tApp } from "../../i18n";
+import { t, tApp } from "../../i18n";
 import { listMcpTools } from "./client";
 
 const logger = createLogger("api:mcp");
@@ -80,13 +80,13 @@ export async function buildMcpSystemToolsResponse(
   const services: SystemMcpService[] = [
     {
       name: product.analysisMcpServerName,
-      title: `${product.serviceDisplayName} Agents MCP`,
+      title: t("mcp.catalog.analysisTitle"),
       mcpUrl: analysisMcpUrl,
       tools: analysisAgentMcpTools.map(toolToClient),
     },
     {
       name: product.opsMcpServerName,
-      title: `${product.serviceDisplayName} Ops Agent MCP`,
+      title: t("mcp.catalog.opsTitle"),
       mcpUrl: opsMcpUrl,
       tools: opsAgentMcpTools.map(toolToClient),
     },
@@ -104,7 +104,7 @@ export async function buildMcpSystemToolsResponse(
     }
     services.unshift({
       name: product.systemMcpCatalogName,
-      title: `${product.serviceDisplayName} MCP`,
+      title: t("mcp.catalog.systemTitle"),
       mcpUrl: mcpServerUrl,
       tools: tools.map(toolToClient),
     });

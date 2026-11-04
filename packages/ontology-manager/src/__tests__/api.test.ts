@@ -47,7 +47,11 @@ function setup(credential: ManagerCredential | null) {
     apiBase: "/custom/manager-api",
     credential,
     locale: "en",
-    messages: englishMessages,
+    text: (key, params) =>
+      Object.entries(params ?? {}).reduce(
+        (text, [name, value]) => text.replace(`{${name}}`, String(value)),
+        englishMessages.ontology[key]
+      ),
     dataFallbacks: hostFallbacks,
   };
   const failures: ManagerAuthFailureStatus[] = [];

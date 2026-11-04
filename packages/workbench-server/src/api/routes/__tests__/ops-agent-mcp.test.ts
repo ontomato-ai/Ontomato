@@ -53,7 +53,6 @@ beforeEach(() => {
   installWorkbenchProduct({
     analysisMcpServerName: "ontomato-analysis-agents",
     opsMcpServerName: "ontomato-ops-agent",
-    serviceDisplayName: "Ontomato",
   } as unknown as WorkbenchProduct);
 
   installWorkbenchIdentity({

@@ -66,6 +66,9 @@ importers:
 
   apps/ontology-manager:
     dependencies:
+      '@ontomato/design-tokens':
+        specifier: workspace:*
+        version: link:../../packages/design-tokens
       '@ontomato/ontology-manager':
         specifier: workspace:*
         version: link:../../packages/ontology-manager
@@ -75,6 +78,9 @@ importers:
       element-plus:
         specifier: 2.13.6
         version: 2.13.6(typescript@5.9.3)(vue@3.5.30(typescript@5.9.3))
+      lucide-vue-next:
+        specifier: 1.0.0
+        version: 1.0.0(vue@3.5.30(typescript@5.9.3))
       vue:
         specifier: 3.5.30
         version: 3.5.30(typescript@5.9.3)
@@ -116,6 +122,9 @@ importers:
       '@ontomato/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts
+      '@ontomato/design-tokens':
+        specifier: workspace:*
+        version: link:../../packages/design-tokens
       '@ontomato/workbench-ui':
         specifier: workspace:*
         version: link:../../packages/workbench-ui
@@ -267,6 +276,21 @@ importers:
         specifier: 3.25.2
         version: 3.25.2(zod@3.25.76)
 
+  packages/design-tokens:
+    devDependencies:
+      '@types/node':
+        specifier: 22.19.15
+        version: 22.19.15
+      happy-dom:
+        specifier: 20.14.3
+        version: 20.14.3
+      typescript:
+        specifier: 5.9.3
+        version: 5.9.3
+      vitest:
+        specifier: 1.6.0
+        version: 1.6.0(@types/node@22.19.15)(happy-dom@20.14.3)
+
   packages/ontology-manager:
     dependencies:
       '@antv/g6':
@@ -296,6 +320,12 @@ importers:
       vue:
         specifier: 3.5.30
         version: 3.5.30(typescript@5.9.3)
+      vue-i18n:
+        specifier: 10.0.8
+        version: 10.0.8(vue@3.5.30(typescript@5.9.3))
+      vue-router:
+        specifier: 5.0.4
+        version: 5.0.4(@vue/compiler-sfc@3.5.30)(pinia@3.0.4(typescript@5.9.3)(vue@3.5.30(typescript@5.9.3)))(vue@3.5.30(typescript@5.9.3))
     devDependencies:
       '@types/markdown-it':
         specifier: 14.1.2
@@ -324,9 +354,6 @@ importers:
 
   packages/platform-admin:
     dependencies:
-      '@ontomato/agent-shell-ui':
-        specifier: workspace:*
-        version: link:../agent-shell-ui
       '@ontomato/contracts':
         specifier: workspace:*
         version: link:../contracts
@@ -543,6 +570,9 @@ importers:
       '@ontomato/contracts':
         specifier: workspace:*
         version: link:../contracts
+      '@ontomato/design-tokens':
+        specifier: workspace:*
+        version: link:../design-tokens
       codemirror:
         specifier: 6.0.2
         version: 6.0.2

@@ -3,104 +3,89 @@ import {
   createWebHashHistory,
   type NavigationGuard,
   type RouteComponent,
+  type RouteLocationNormalized,
   type RouteRecordRaw,
   type Router,
 } from "vue-router";
-import {
-  availablePages,
-  fallbackPage,
-  type PlatformAccess,
-  type PlatformNavigation,
-} from "./navigation";
+import { availablePages, fallbackPage, type PlatformAccess, type PlatformNavigation, type PlatformPage } from "./navigation";
 
-/** Root of the platform navigation pages; `#/admin` opens the account's first available page. */
-export const PLATFORM_ROOT = "/admin";
+/** Route name of the root address; with no available page the layout shows "no permission" there. */
+export const SERVICE_ROOT = "ServiceRoot";
 
-/** Lazily loaded page components keyed by the navigation path they serve. */
-export type PlatformPageComponents = Readonly<Record<string, () => Promise<unknown>>>;
+/** Old root of the platform area: opens the first available platform administration page (`/admin/...`). */
+const ADMIN_ROOT = "/admin";
 
-export interface PlatformRoutes {
-  /** Pages shown inside the platform layout, in navigation order. */
+export interface PlatformRouterOptions {
+  /** Every navigation page (paths and permissions the guard checks), in display order. */
   navigation: PlatformNavigation;
   /**
-   * Pages rendered on their own, without the platform layout: the sign-in page, the SSO callback and the super admin
-   * console. Their paths are never navigation entries.
+   * Routes rendered inside the service layout (absolute paths). Each page route names its navigation entry in
+   * `meta.page`; a route without `meta.page` (a redirect, a frame route) is not checked.
+   */
+  routes: readonly RouteRecordRaw[];
+  /**
+   * Pages rendered on their own, without the layout: the sign-in page, the SSO callback and the super admin console.
+   * Their paths are never navigation entries.
    */
   standalone: readonly RouteRecordRaw[];
-}
-
-function hashPath(hash: string) {
-  return hash.replace(/^#/, "").split("?")[0] || "/";
-}
-
-/** Every top-level hash path the platform area owns besides `/admin/*`; anything else belongs to the workspace. */
-function standalonePaths(standalone: readonly RouteRecordRaw[]): string[] {
-  return standalone.map((route) => route.path);
-}
-
-/**
- * Whether a location hash addresses the platform area; the shell uses this to pick which area to start. Only one of
- * the two areas runs on a page load, so only one router owns the hash.
- */
-export function isPlatformHash(hash: string, standalone: readonly RouteRecordRaw[] = []): boolean {
-  const path = hashPath(hash);
-  return [PLATFORM_ROOT, ...standalonePaths(standalone)].some(
-    (known) => path === known || path.startsWith(`${known}/`)
-  );
-}
-
-export interface PlatformRouterOptions extends PlatformRoutes {
   access: PlatformAccess;
-  components: PlatformPageComponents;
-  /** The layout every navigation page renders inside. */
+  /** The layout every navigation page renders inside (the sidebar). */
   layout: RouteComponent;
+  /** Where the root address lands when the account may open it (the deployment's start page, e.g. `/playground`). */
+  home: string;
   /** Host guard run before the permission guard (sign-in and account-kind checks of the enterprise edition). */
   guard?: NavigationGuard;
 }
 
+function pageOf(navigation: PlatformNavigation, route: Pick<RouteLocationNormalized, "meta">): PlatformPage | undefined {
+  return navigation.pages.find((page) => page.path === route.meta.page);
+}
+
 /**
- * One router for the whole platform area: the layout under `/admin` with one child route per navigation page, plus the
- * standalone pages. The guard and the menu both read `availablePages`, so a deep link the account cannot open lands on
- * the first page it can open; with no page at all it lands on the root, which the layout shows as "no permission".
+ * The one router of the Ontology Service page (hash mode): the layout at `/` with the host's page routes as children,
+ * plus the standalone pages. The guard and the navigation both read `availablePages`, so a deep link the account
+ * cannot open lands on the first page it can open; with no page at all it lands on the root, which the layout shows as
+ * "no permission". Unknown addresses go to the root.
  */
 export function createPlatformRouter(options: PlatformRouterOptions): Router {
   const { navigation, access } = options;
-
-  const pageRoutes: RouteRecordRaw[] = navigation.pages.map((page) => {
-    const component = options.components[page.path];
-    if (!component) throw new Error(`No component for platform page ${page.path}`);
-    return {
-      path: page.path,
-      name: page.path,
-      component,
-      meta: { platformPage: page.path },
-    };
-  });
 
   const router = createRouter({
     history: createWebHashHistory(),
     routes: [
       {
-        path: PLATFORM_ROOT,
+        path: "/",
         component: options.layout,
-        children: [{ path: "", name: "PlatformRoot", component: { render: () => null } }, ...pageRoutes],
+        children: [
+          { path: "", name: SERVICE_ROOT, component: { render: () => null } },
+          { path: ADMIN_ROOT, component: { render: () => null }, meta: { adminRoot: true } },
+          ...options.routes,
+        ],
       },
       ...options.standalone,
+      { path: "/:unknown(.*)*", redirect: "/" },
     ],
   });
 
   if (options.guard) router.beforeEach(options.guard);
 
   router.beforeEach(async (to) => {
-    const isRoot = to.name === "PlatformRoot";
-    const page = navigation.pages.find((candidate) => candidate.path === to.meta.platformPage);
-    if (!isRoot && !page) return true;
-    if (page?.enterableWithoutPermission) return true;
+    if (to.name === SERVICE_ROOT || to.meta.adminRoot) {
+      await access.load();
+      const pages = availablePages(navigation, access);
+      if (to.name === SERVICE_ROOT) {
+        const home = pageOf(navigation, router.resolve(options.home));
+        if (home && pages.includes(home)) return options.home;
+        return pages[0]?.path ?? true;
+      }
+      return pages.find((page) => page.path.startsWith(`${ADMIN_ROOT}/`))?.path ?? pages[0]?.path ?? { name: SERVICE_ROOT };
+    }
+    const page = pageOf(navigation, to);
+    if (!page || page.enterableWithoutPermission) return true;
     await access.load();
-    if (page && availablePages(navigation, access).includes(page)) return true;
-    const fallback = fallbackPage(navigation, access, page?.group);
-    if (fallback) return fallback.path;
-    return isRoot ? true : { name: "PlatformRoot" };
+    if (availablePages(navigation, access).includes(page)) return true;
+    const fallback = fallbackPage(navigation, access, page.group);
+    return fallback ? fallback.path : { name: SERVICE_ROOT };
   });
 
   return router;

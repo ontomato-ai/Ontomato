@@ -1,6 +1,6 @@
 /**
  * Assembly prerequisites of the shared tests: like the open-source entry startWorkbenchWeb, install the auth host, error
- * punctuation, workbench content and language first so module-level code can read them at call time. Uses the
+ * punctuation, workbench content, brand source and language first so module-level code can read them at call time. Uses the
  * open-source app values (anonymous host, the real en messages, open-source workbench content); tests that need other
  * values override the relevant item in their own file.
  */
@@ -10,12 +10,15 @@ import { installWorkbenchI18n } from "../i18n";
 import { installAuthHost } from "../utils/auth";
 import { installErrorPunctuation } from "../utils/error-punctuation";
 import { installWorkbenchContent } from "../content";
+import { installWorkbenchBrand } from "../brand";
+import { ossBrand } from "@ontomato/design-tokens/oss";
 import { anonymousAuthHost } from "../../../../apps/workbench/web/src/auth";
 import { workbenchContent } from "../../../../apps/workbench/web/src/workbench-content";
 
 installAuthHost(anonymousAuthHost);
 installErrorPunctuation({ detailSeparator: ":", listSeparator: ";" });
 installWorkbenchContent(workbenchContent);
+installWorkbenchBrand(ossBrand);
 installWorkbenchI18n({
   supported: ["en"],
   defaultLocale: "en",

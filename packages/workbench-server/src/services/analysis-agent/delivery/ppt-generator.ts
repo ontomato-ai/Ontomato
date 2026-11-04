@@ -1,6 +1,6 @@
 import type pptxgen from "pptxgenjs";
 import { createRequire } from "node:module";
-import { workbenchProduct } from "../../../product/installed";
+import { tApp } from "../../../i18n";
 import type { PptSummarySlide, PptSummaryOutline, PptGenerationOptions, PptSourceSection } from "@ontomato/contracts/ppt";
 import { marked, type Tokens } from "marked";
 import { renderChartHtmlToDataUrl } from "./chart-renderer";
@@ -177,10 +177,11 @@ export async function buildPptDeck(
   }
   const deck = new PptxGen();
   deck.layout = "LAYOUT_WIDE";
-  deck.author = workbenchProduct().serviceDisplayName;
+  // The product name shown in the file properties, in the fixed artifact language.
+  deck.author = tApp("product.name");
   deck.subject = title;
   deck.title = title;
-  deck.company = workbenchProduct().serviceDisplayName;
+  deck.company = tApp("product.name");
   deck.theme = {
     headFontFace: "Microsoft YaHei",
     bodyFontFace: "Microsoft YaHei",

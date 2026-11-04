@@ -1134,7 +1134,6 @@ onMounted(() => void loadDetail());
           v-loading="taskResultLoading"
           :data="taskResults"
           border
-          stripe
           class="task-results-table"
         >
           <el-table-column :label="ot('taskResultTime')" width="190">
@@ -1237,7 +1236,7 @@ onMounted(() => void loadDetail());
   display: flex;
   flex: 0 0 auto;
   gap: var(--spacing-sm);
-  padding: var(--spacing-sm) var(--spacing-2xl) 0;
+  padding: var(--spacing-sm) var(--spacing-lg) 0;
   border-bottom: 1px solid var(--el-border-color);
   background: var(--el-bg-color);
 }
@@ -1261,14 +1260,15 @@ onMounted(() => void loadDetail());
   flex: 1;
   flex-direction: column;
   gap: var(--spacing-md);
-  padding: var(--spacing-md) var(--spacing-2xl) var(--spacing-xl);
+  padding: var(--spacing-md) var(--spacing-lg) var(--spacing-lg);
 }
 .detail-titlebar {
   display: flex;
-  min-height: 64px;
+  height: var(--page-header-height);
+  flex: 0 0 var(--page-header-height);
   align-items: center;
   gap: var(--spacing-sm);
-  padding: 0 var(--spacing-2xl);
+  padding: 0 var(--spacing-lg);
   border-bottom: 1px solid var(--el-border-color);
   background: var(--el-bg-color);
 }
@@ -1304,8 +1304,8 @@ onMounted(() => void loadDetail());
 .detail-body {
   display: grid;
   grid-template-columns: minmax(300px, 0.9fr) minmax(460px, 1.4fr);
-  gap: var(--spacing-xl);
-  padding: var(--spacing-xl) var(--spacing-2xl);
+  gap: var(--spacing-lg);
+  padding: var(--spacing-lg);
 }
 .action-definition {
   margin-top: var(--spacing-xl);
@@ -1363,7 +1363,7 @@ onMounted(() => void loadDetail());
 }
 
 @keyframes param-flash {
-  0% { box-shadow: inset 0 0 0 2px #f59e0b; }
+  0% { box-shadow: inset 0 0 0 2px var(--el-color-warning); }
   100% { box-shadow: none; }
 }
 
@@ -1481,7 +1481,7 @@ onMounted(() => void loadDetail());
   min-width: 0;
   padding: var(--spacing-lg);
   border: 1px solid var(--el-border-color);
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-md);
   background: var(--el-bg-color);
 }
 .section-title {

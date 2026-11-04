@@ -14,6 +14,7 @@ import {
   Puzzle,
   Settings2,
   Table2,
+  Waypoints,
 } from "lucide-vue-next";
 import { fileKind } from "./artifacts";
 
@@ -26,6 +27,7 @@ const featureIcons: Record<string, Component> = {
   graph: Network,
   settings: Settings2,
   knowledge: BookOpen,
+  ontology: Waypoints,
 };
 
 export function featureIcon(name: string): Component {

@@ -455,21 +455,24 @@ onMounted(load);
   flex: 1;
   flex-direction: column;
   min-height: 0;
-  padding: var(--spacing-xl) var(--spacing-2xl);
   background: var(--el-bg-color);
 }
 .knowledge-titlebar {
   display: flex;
-  min-height: 76px;
+  height: var(--page-header-height);
+  flex: 0 0 var(--page-header-height);
   align-items: center;
   justify-content: space-between;
-  gap: var(--spacing-lg);
+  gap: var(--spacing-md);
+  padding: 0 var(--spacing-lg);
+  border-bottom: 1px solid var(--el-border-color);
 }
 .knowledge-titlebar h1 {
   margin: 0;
   color: var(--el-text-color-primary);
-  font-size: var(--text-2xl);
+  font-size: var(--text-lg);
   font-weight: var(--font-semibold);
+  line-height: var(--leading-lg);
 }
 .knowledge-actions {
   display: flex;
@@ -484,13 +487,10 @@ onMounted(load);
 .knowledge-toolbar {
   display: flex;
   flex-wrap: wrap;
-  min-height: 54px;
+  min-height: 40px;
   align-items: center;
-  gap: var(--spacing-md);
-  margin: var(--spacing-lg) 0;
-  padding: 9px var(--spacing-md);
-  border: 1px solid var(--el-border-color);
-  border-radius: var(--radius-sm);
+  gap: var(--spacing-sm);
+  padding: var(--spacing-sm) var(--spacing-lg);
 }
 .knowledge-search {
   flex: 0 1 360px;
@@ -517,7 +517,7 @@ onMounted(load);
   background: var(--el-fill-color-light);
 }
 .knowledge-filter.active {
-  color: var(--el-color-primary);
+  color: var(--el-text-color-primary);
   background: var(--el-color-primary-light-9);
   font-weight: var(--font-semibold);
 }
@@ -529,8 +529,7 @@ onMounted(load);
   flex: 1;
   grid-template-columns: minmax(280px, 380px) minmax(0, 1fr);
   min-height: 0;
-  border: 1px solid var(--el-border-color);
-  border-radius: var(--radius-sm);
+  border-top: 1px solid var(--el-border-color);
 }
 .knowledge-list {
   overflow-y: auto;
@@ -674,9 +673,6 @@ onMounted(load);
   display: none;
 }
 @media (max-width: 760px) {
-  .business-knowledge {
-    padding: var(--spacing-lg) var(--spacing-md);
-  }
   .knowledge-body {
     grid-template-columns: minmax(0, 1fr);
   }

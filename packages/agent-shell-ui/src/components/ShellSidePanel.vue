@@ -78,11 +78,12 @@ async function download() {
   width: var(--panel-width);
   height: 100%;
   min-height: 0;
-  border-radius: 24px;
+  border: 1px solid var(--el-border-color);
+  border-radius: var(--shell-conversation-radius);
   background: var(--el-bg-color);
-  box-shadow: var(--shadow-card);
+  box-shadow: var(--elevation-panel);
   overflow: hidden;
-  animation: slide-in 220ms cubic-bezier(0.2, 0.8, 0.2, 1);
+  animation: slide-in var(--transition-slow);
 }
 .panel-resize {
   position: absolute;
@@ -100,18 +101,20 @@ async function download() {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 14px 12px 14px 18px;
-  border-bottom: 1px solid var(--el-border-color-light);
+  min-height: var(--panel-header-height);
+  padding: 6px 8px 6px 16px;
+  box-sizing: border-box;
+  border-bottom: 1px solid var(--el-border-color);
 }
 .panel-icon {
   display: grid;
   place-items: center;
-  width: 34px;
-  height: 34px;
+  width: 28px;
+  height: 28px;
   flex-shrink: 0;
-  border-radius: 10px;
+  border-radius: var(--radius-sm);
   background: var(--el-fill-color);
-  color: var(--el-color-primary);
+  color: var(--el-text-color-secondary);
 }
 .panel-heading {
   display: flex;
@@ -121,6 +124,8 @@ async function download() {
   min-width: 0;
 }
 .panel-title {
+  font-size: var(--text-base);
+  line-height: var(--leading-sm);
   font-weight: 600;
   color: var(--el-text-color-primary);
   overflow: hidden;
@@ -128,7 +133,8 @@ async function download() {
   white-space: nowrap;
 }
 .panel-meta {
-  font-size: var(--text-xs, 11px);
+  font-size: var(--text-xs);
+  line-height: var(--leading-xs);
   color: var(--el-text-color-secondary);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -137,11 +143,11 @@ async function download() {
 .panel-button {
   display: grid;
   place-items: center;
-  width: 32px;
-  height: 32px;
+  width: var(--control-height);
+  height: var(--control-height);
   flex-shrink: 0;
   border: 0;
-  border-radius: 9px;
+  border-radius: var(--radius-sm);
   background: transparent;
   color: var(--el-text-color-secondary);
   cursor: pointer;
@@ -157,7 +163,7 @@ async function download() {
   flex: 1;
   min-height: 0;
   overflow: auto;
-  padding: 18px;
+  padding: 16px;
 }
 @keyframes slide-in {
   from {
@@ -174,12 +180,12 @@ async function download() {
   .side-panel {
     position: fixed;
     z-index: 40;
-    top: 12px;
-    right: 12px;
-    bottom: 12px;
+    top: var(--shell-conversation-gutter);
+    right: var(--shell-conversation-gutter);
+    bottom: var(--shell-conversation-gutter);
     height: auto;
-    width: min(var(--panel-width), calc(100vw - 24px));
-    box-shadow: var(--el-shadow-xl);
+    width: min(var(--panel-width), calc(100vw - 2 * var(--shell-conversation-gutter)));
+    box-shadow: var(--elevation-modal);
   }
   .panel-resize {
     display: none;

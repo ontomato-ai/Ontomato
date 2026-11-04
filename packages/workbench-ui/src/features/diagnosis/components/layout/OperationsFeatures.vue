@@ -570,33 +570,18 @@ watch(activeGroup, (g) => {
 
 <style>
 /* ------------------------------------------------------------------ */
-/*  Observe elevation CSS variables (non-scoped, :root level)          */
+/*  Observe surfaces on the brand's colour roles (one set for both      */
+/*  modes: the roles change with the mode)                              */
 /* ------------------------------------------------------------------ */
 
 :root {
-  --observe-bg-top: #fff;
-  --observe-bg-sidebar: #f7f7f8;
-  --observe-bg-main: #fff;
-  --observe-bg-card: #f9f9f9;
-  --observe-bg-hover: #f0f0f0;
-  --observe-bg-active: #e8e8e8;
-  --observe-border: #e5e5e5;
-}
-
-html.dark {
-  --observe-bg-top: #1a1a1a;
-  --observe-bg-sidebar: #212121;
-  --observe-bg-main: #2a2a2a;
-  --observe-bg-card: #333;
-  --observe-bg-hover: #3a3a3a;
-  --observe-bg-active: #404040;
-  --observe-border: #3a3a3a;
-}
-
-/* Brighten secondary text in the observe module in dark mode to avoid insufficient contrast with the dark background */
-html.dark .observe-layout {
-  --el-text-color-secondary: #aaa;
-  --el-text-color-placeholder: #777;
+  --observe-bg-top: var(--el-bg-color);
+  --observe-bg-sidebar: var(--el-bg-color-page);
+  --observe-bg-main: var(--el-bg-color);
+  --observe-bg-card: var(--el-fill-color);
+  --observe-bg-hover: var(--el-fill-color-light);
+  --observe-bg-active: var(--el-color-primary-light-9);
+  --observe-border: var(--el-border-color);
 }
 </style>
 

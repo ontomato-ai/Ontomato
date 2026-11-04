@@ -1,20 +1,10 @@
-import en from "element-plus/es/locale/lang/en";
-import type { Language as ElementLocale } from "element-plus/es/locale";
 import sharedEn from "./locales/en";
+import { englishGovernance, type GovernanceMessages } from "./knowledge-governance/messages";
 
 export type TextParams = Record<string, string | number>;
 
-function interpolate(value: string, params?: TextParams) {
-  if (!params) return value;
-  return Object.entries(params).reduce(
-    (text, [name, replacement]) => text.replace(`{${name}}`, String(replacement)),
-    value
-  );
-}
-
 /** The Manager's own English messages; other languages are supplied by the host. */
 const ontologyEn = {
-  browseObjectData: "Browse Object Data",
   ontologyGraphDesc:
     "Search and inspect objects, properties, and relations in the current Ontology.",
   ontologyStats: "Ontology Summary",
@@ -670,22 +660,23 @@ export type SharedKey = {
   [Group in keyof typeof sharedEn]: `${Group}.${keyof (typeof sharedEn)[Group] & string}`;
 }[keyof typeof sharedEn];
 
-/** One locale's complete messages and Element Plus widget locale; the host passes the resources for its current locale. */
+/** One locale's Manager messages: its own, the ones worded like the workbench, and knowledge governance. */
 export interface ManagerMessages {
-  readonly governance?: import("./knowledge-governance/messages").GovernanceMessages;
   readonly ontology: OntologyMessages;
   readonly shared: SharedMessages;
-  readonly element: ElementLocale;
+  readonly governance: GovernanceMessages;
 }
 
-export const englishMessages: ManagerMessages = { ontology: ontologyEn, shared: sharedEn, element: en };
+export const englishMessages: ManagerMessages = { ontology: ontologyEn, shared: sharedEn, governance: englishGovernance };
 
-export function ontologyText(messages: ManagerMessages, key: MessageKey, params?: TextParams) {
-  return interpolate(messages.ontology[key] ?? ontologyEn[key], params);
-}
+/** vue-i18n message tree of one locale's Manager messages. */
+export type ManagerMessageTree = { readonly [key: string]: string | object };
 
-export function sharedText(messages: ManagerMessages, key: SharedKey, params?: TextParams) {
-  const [group, name] = key.split(".") as [keyof SharedMessages, string];
-  const fallback = sharedEn[group] as Readonly<Record<string, string>>;
-  return interpolate((messages.shared[group] as Readonly<Record<string, string>> | undefined)?.[name] ?? fallback[name], params);
+/**
+ * One locale's Manager messages as entries of the page's single vue-i18n tree: the Manager's own words under
+ * `ontology`, knowledge governance under `governance`, and the workbench-worded groups (`common`, `nav`, ...) at the top
+ * level, where they sit next to the platform pages' groups of the same name.
+ */
+export function managerMessageTree(messages: ManagerMessages): ManagerMessageTree {
+  return { ...messages.shared, ontology: messages.ontology, governance: messages.governance };
 }

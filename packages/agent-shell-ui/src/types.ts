@@ -135,6 +135,8 @@ export interface ShellLabels {
   preparing: string;
   artifactMissing: string;
   menu: string;
+  /** Accessible name of the mark on links that open in a new tab; without it the mark is decorative. */
+  opensInNewTab?: string;
   scrollToBottom: string;
   loading: string;
   rows: (count: number) => string;

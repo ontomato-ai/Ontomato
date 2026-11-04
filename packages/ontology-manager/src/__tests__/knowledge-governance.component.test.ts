@@ -1,7 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { createApp, defineComponent, h, nextTick, reactive, type App } from "vue";
-import { provideManagerContext, type ManagerHostContext } from "../context";
-import { englishMessages } from "../i18n";
+import { createApp, defineComponent, h, nextTick, reactive, ref, type App } from "vue";
+import { createI18n } from "vue-i18n";
+import { createManager } from "../context";
+import { englishMessages, managerMessageTree } from "../i18n";
 import GovernancePage from "../knowledge-governance/GovernancePage.vue";
 
 /* The page's own reads are what this covers: the report of the current session, source paging, and
@@ -13,24 +14,28 @@ let responses: Map<string, unknown>;
 const json = (body: unknown) =>
   new Response(JSON.stringify(body), { status: 200, headers: { "Content-Type": "application/json" } });
 
-const base: ManagerHostContext = {
-  apiBase: "/manager-api",
-  credential: { type: "token", token: "t-1" },
-  locale: "en",
-  messages: englishMessages,
-  theme: "light",
-  view: "/knowledge-governance",
-  dataFallbacks: { noBusinessDescription: "", unnamedAsset: "" },
-  presentation: {
-    themeProperties: { light: {}, dark: {} },
-    nodePalette: [],
-    edgeLabel: {},
-    maxFitZoom: null,
-    dataBrowserDescription: () => "",
-    compactDialogs: false,
-  },
-  knowledgeTagValues: { general: "General", business: "Business", tech: "Tech" },
-};
+function installManager(app: App) {
+  const i18n = createI18n({ legacy: false, locale: "en", messages: { en: managerMessageTree(englishMessages) } as never });
+  app.use(i18n);
+  createManager({
+    apiBase: "/manager-api",
+    credential: { type: "token", token: "t-1" },
+    theme: ref("light"),
+    locale: ref("en"),
+    translate: (key) => key,
+    dataFallbacks: { noBusinessDescription: "", unnamedAsset: "" },
+    presentation: {
+      themeProperties: { light: {}, dark: {} },
+      nodePalette: { light: [], dark: [] },
+      edgeLabel: {},
+      maxFitZoom: null,
+      dataBrowserDescription: () => "",
+      compactDialogs: false,
+    },
+    knowledgeTagValues: { general: "General", business: "Business", tech: "Tech" },
+    onAuthFailure: () => {},
+  }).install(app);
+}
 
 function work(summary: string, issues: unknown[] = [], sources: unknown[] = []) {
   return {
@@ -61,14 +66,12 @@ const page = (id: string, text: string, next: number | null) => ({
 function mountPage(sessionId: string | null) {
   const props = reactive({ sessionId });
   const Root = defineComponent({
-    setup() {
-      provideManagerContext(base, () => {});
-      return () => h(GovernancePage, { sessionId: props.sessionId });
-    },
+    setup: () => () => h(GovernancePage, { sessionId: props.sessionId }),
   });
   const host = document.createElement("div");
   document.body.appendChild(host);
   const app = createApp(Root);
+  installManager(app);
   app.mount(host);
   mounted.push(app);
   return { host, props };
