@@ -18,7 +18,8 @@
     "./features/query-view": "./src/features/query-view/index.ts",
     "./components/CodeMirrorEditor.vue": "./src/components/CodeMirrorEditor.vue",
     "./locales/*": "./src/locales/*.ts",
-    "./styles/*": "./src/styles/*"
+    "./styles/*": "./src/styles/*",
+    "./permission-data": "./src/features/agents/permission-data.ts"
   },
   "scripts": {
     "typecheck": "vue-tsc --noEmit",
