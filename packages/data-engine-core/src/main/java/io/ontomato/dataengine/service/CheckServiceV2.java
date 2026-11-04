@@ -10,7 +10,7 @@ public interface CheckServiceV2 {
 
 	public void saveCheckTask(ABCHarnessCheck check);
 
-	public void check(ABCHarnessCheck check, List<ABCHarnessProgram> programs, List<String> classNames, String domainId);
+	public void check(ABCHarnessCheck check, List<ABCHarnessProgram> programs, List<String> userQuotes, List<String> confirmedDecisions, List<String> classNames, String domainId);
 
 	/** Runs inside the candidate job; candidate failures never change the quality conclusion. */
 	public void generateCandidates(ABCHarnessCheck check, List<ABCHarnessProgram> programs, JSONArray recipes, String domainId);

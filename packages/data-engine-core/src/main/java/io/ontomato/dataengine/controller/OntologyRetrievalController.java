@@ -158,8 +158,9 @@ public class OntologyRetrievalController {
       HttpServletRequest req) {
     access.service(req);
     var context = access.current(req);
-    AgentJson.fields(body, "classNames", "continuationIds", "deadlineAt");
-    for (String field : List.of("classNames", "continuationIds"))
+    AgentJson.fields(body, "classNames", "continuationIds", "deadlineAt", "recentUserMessages");
+    body.putIfAbsent("recentUserMessages", new JSONArray());
+    for (String field : List.of("classNames", "continuationIds", "recentUserMessages"))
       if (!(body.get(field) instanceof java.util.List<?> array)
           || array.stream().anyMatch(v -> !(v instanceof String)))
         throw AgentHttpException.invalid(field + " must be an array");

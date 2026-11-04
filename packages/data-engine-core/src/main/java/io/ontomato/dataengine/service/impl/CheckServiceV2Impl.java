@@ -94,6 +94,8 @@ public class CheckServiceV2Impl implements CheckServiceV2 {
   public void check(
       ABCHarnessCheck check,
       List<ABCHarnessProgram> programs,
+      List<String> userQuotes,
+      List<String> confirmedDecisions,
       List<String> classNames,
       String domainId) {
     try {
@@ -116,7 +118,7 @@ public class CheckServiceV2Impl implements CheckServiceV2 {
         }
       }
       check.setProgramDescriptions(programDescriptions);
-      check(check, domainId);
+      check(check, userQuotes, confirmedDecisions, domainId);
     } catch (Exception e) {
       if (SessionCancelledException.findCancelled(e) != null) {
         log.info("check cancelled: " + check.getSessionId());
@@ -286,13 +288,19 @@ public class CheckServiceV2Impl implements CheckServiceV2 {
     }
   }
 
-  private void check(ABCHarnessCheck check, String domainId) {
+  private void check(
+      ABCHarnessCheck check,
+      List<String> userQuotes,
+      List<String> confirmedDecisions,
+      String domainId) {
 
     String userMessage =
         OntologyGenerationPrompts.getQuestionCheckerV2UserMessage(
             check.getSessionId(),
             check.getOriginQuestion(),
             check.getProgramDescriptions(),
+            userQuotes,
+            confirmedDecisions,
             knowledgeDao,
             businessConfigService,
             check.getLang(),

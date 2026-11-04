@@ -66,7 +66,7 @@ class QueryQualityServiceTest {
               return null;
             })
         .when(checks)
-        .check(any(), anyList(), anyList(), eq(DOMAIN));
+        .check(any(), anyList(), anyList(), anyList(), anyList(), eq(DOMAIN));
   }
 
   @Test
@@ -80,7 +80,7 @@ class QueryQualityServiceTest {
     ABCHarnessCheck check = assertInstanceOf(ABCHarnessCheck.class, qualityResult.get());
     assertEquals(88.0, check.getScore());
     assertEquals("The program answers the question", check.getConclusion());
-    verify(checks).check(eq(check), anyList(), anyList(), eq(DOMAIN));
+    verify(checks).check(eq(check), anyList(), anyList(), anyList(), anyList(), eq(DOMAIN));
     verify(checks, never()).generateCandidates(any(), anyList(), any(JSONArray.class), anyString());
 
     String candidateId =
@@ -145,7 +145,7 @@ class QueryQualityServiceTest {
               return null;
             })
         .when(checks)
-        .check(any(), anyList(), anyList(), eq(DOMAIN));
+        .check(any(), anyList(), anyList(), anyList(), anyList(), eq(DOMAIN));
 
     quality.start(body(JSONObject.of("problem", "hidden")), user(), "en");
 
@@ -153,11 +153,24 @@ class QueryQualityServiceTest {
   }
 
   @Test
+  void qualityPassesHostQuotesAndConfirmedDecisions() throws Exception {
+    quality.start(body(JSONObject.of("problem", "hidden")), user(), "en", false);
+
+    ArgumentCaptor<List<String>> quotes = stringListCaptor();
+    ArgumentCaptor<List<String>> decisions = stringListCaptor();
+    verify(checks)
+        .check(
+            any(), anyList(), quotes.capture(), decisions.capture(), anyList(), eq(DOMAIN));
+    assertEquals(List.of("host quote"), quotes.getValue());
+    assertEquals(List.of("host decision"), decisions.getValue());
+  }
+
+  @Test
   void bindingBranchDoesNotStartACandidateJob() throws Exception {
     quality.start(body(JSONObject.of("problem", "hidden")), user(), "en", false);
 
     verify(jobs, never()).start(anyString(), any(), eq("candidate"), any(), any());
-    verify(checks).check(any(), anyList(), anyList(), eq(DOMAIN));
+    verify(checks).check(any(), anyList(), anyList(), anyList(), anyList(), eq(DOMAIN));
   }
 
   @Test
@@ -177,6 +190,8 @@ class QueryQualityServiceTest {
         .check(
             argThat(check -> "quality-session".equals(check.getSessionId())),
             programs.capture(),
+            anyList(),
+            anyList(),
             eq(List.of()),
             eq(DOMAIN));
     String code = programs.getValue().get(0).getCode();
@@ -190,6 +205,11 @@ class QueryQualityServiceTest {
 
   @SuppressWarnings({"unchecked", "rawtypes"})
   private static ArgumentCaptor<List<ABCHarnessProgram>> listCaptor() {
+    return (ArgumentCaptor) ArgumentCaptor.forClass(List.class);
+  }
+
+  @SuppressWarnings({"unchecked", "rawtypes"})
+  private static ArgumentCaptor<List<String>> stringListCaptor() {
     return (ArgumentCaptor) ArgumentCaptor.forClass(List.class);
   }
 
@@ -221,6 +241,10 @@ class QueryQualityServiceTest {
         JSONArray.of(program, pythonProgram),
         "recipes",
         JSONArray.of(recipe, pythonRecipe),
+        "userQuotes",
+        JSONArray.of("host quote"),
+        "confirmedDecisions",
+        JSONArray.of("host decision"),
         "classNames",
         new JSONArray());
   }

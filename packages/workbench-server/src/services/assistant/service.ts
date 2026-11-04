@@ -36,6 +36,7 @@ import {
   type AssistantCredentials,
 } from "../../platform/agent-runtime/runtime";
 import { OntologyRetrievalClient } from "./ontology-retrieval";
+import { recentUserMessages } from "./user-quotes";
 import { transaction } from "../../infrastructure/postgres-transaction";
 import { HttpError } from "../../utils/errors";
 import { createLogger } from "../../logging/logger";
@@ -331,10 +332,17 @@ export const assistantService = {
           if (previous.id === id) continue;
           for (const link of await new OntologyRetrievalClient(owner, previous.retrieval_scope_id).links()) continuationIds.add(link.retrievalId);
         }
+        const userMessages = recentUserMessages(
+          (await client.session(sessionId)).messages,
+          id,
+          message,
+          new Date(turn.created_at).getTime(),
+        );
         await new OntologyRetrievalClient(owner, turn.retrieval_scope_id).open({
           classNames: turn.class_names,
           continuationIds: [...continuationIds].sort(),
           deadlineAt: new Date(new Date(turn.created_at).getTime() + getQueryTimeoutMs()).toISOString(),
+          recentUserMessages: userMessages,
         }, credentials);
         await client.start(sessionId, id, {
           language: credentials.locale ?? "en",
