@@ -1,15 +1,16 @@
 ---
-version: 0.1-proposal
+version: 0.2
 name: Ontomato Product UI
 description: >
-  The design system for the Ontomato product interface (workbench, admin pages, Ontology
-  Manager). It owns the shared foundation that every edition inherits — layout, density,
+  The design system for the Ontomato product interface: the Agent Platform (workbench,
+  its admin pages) and the Ontology Service (formerly the Ontology Manager). It owns the shared foundation that every edition inherits — layout, density,
   type, spacing, shape, motion and component rules — and the open-source brand layer: a
   calm, editorial palette of warm paper, olive ink and leaf green taken from ontomato.ai.
 status: >
-  Proposal, 2026-10-28. Not implemented yet; "Current vs proposed" lists what changes.
-  The hex values below are the proposal. On adoption they move into one code source per
-  edition (see "Scope and ownership") and this front matter keeps only roles and rules.
+  Adopted 2026-11-04 with the amendments in "Applications and shells" (user decision after
+  reviewing mock-ups). Not implemented yet; "Current vs proposed" lists what changes. On
+  implementation the hex values move into one code source per edition (see "Scope and
+  ownership") and this front matter keeps only roles and rules.
 
 # ── Shared foundation (all editions) ─────────────────────────────────────────
 
@@ -58,12 +59,17 @@ density:
 
 shell:
   agent-rail: 232px        # collapses to 56px icon rail below 1280px
+  conversation-gutter: 10px  # Agent Platform: gap around the raised conversation panel
+  conversation-radius: 18px  # Agent Platform: radius of the raised conversation panel
+  composer-height: 56px      # Agent Platform: pill composer (radius = height / 2)
   list-panel: 264px
   inspector:  320px
   content-max: 960px       # reading width for chat answers
 
 elevation:
-  flat: none                                    # everything in the page flow
+  flat: none                                    # everything in the data shell's page flow
+  panel:   "0 1px 2px rgba(0,0,0,.04), 0 8px 24px rgba(0,0,0,.04)" # Agent Platform conversation panel only
+  composer: "0 6px 20px rgba(0,0,0,.08)"        # Agent Platform composer only
   overlay: "0 0 0 1px {line}, 0 8px 24px rgba(0,0,0,.10)"   # dropdown, popover, toast
   modal:   "0 0 0 1px {line}, 0 24px 64px rgba(0,0,0,.18)"  # dialog, drawer
 
@@ -136,10 +142,55 @@ dataviz:   # categorical order is fixed; validated (CVD ΔE ≥ 8, normal ΔE �
 
 # Ontomato Product UI
 
+## Applications and shells
+
+Decided 2026-11-04 after reviewing mock-ups; this section overrides any older wording below.
+
+The product has two applications with their own pages, services and shells. They share this
+design language (colour roles, type, density, controls, navigation rows, group labels) but
+not a shell, and they do not switch inside one page:
+
+| Application | Former name | What it is | Shell |
+|---|---|---|---|
+| Agent Platform (智能体平台) | workbench, "Data Agent", 数据分析平台 | where business users talk to agents | conversation shell |
+| Ontology Service (本体服务) | Ontology Manager (本体管理器) | the platform: ontology, assets, knowledge and platform administration | data shell |
+
+Renaming covers interface text and documents only. URL paths (`/ontology-manager/`),
+package names and image names stay, so deployments do not change again.
+
+**Cross-application links** sit in each application's left function area as ordinary
+navigation rows with an external-link mark, and open in a new tab:
+
+- Agent Platform: "Ontology Service" among New chat, Dashboards, Graph, Agent settings and
+  Scheduled tasks.
+- Ontology Service: "Agent Platform" and (enterprise) "Data Governance Platform" at the top of
+  its sidebar, above the navigation groups.
+
+**Conversation shell (Agent Platform).** Keep the current structure: logo, function area,
+agent selector, recent conversations, user row. The sidebar sits on `canvas` with no divider.
+The workspace is one raised panel: `surface`, `conversation-radius`, `conversation-gutter`
+around it, a 1px `line` and `elevation.panel`. The composer is a pill of `composer-height`
+with `elevation.composer` and a round send button. Admin pages of the Agent Platform keep
+their current layout and only adopt the colour roles and component rules.
+
+**Data shell (Ontology Service, data-dense pages).** Edge to edge, separated by tone and a
+1px `line` (the Layout section below). One sidebar and one router: groups Ontology (graph,
+object types, attributes, relation types, actions, visual modelling, data browser), Assets
+(metric views, functions, scheduled tasks), Knowledge (business knowledge) and Platform
+administration (permission centre, models, system configuration, licence, audit log, system
+monitor), each entry shown by permission. There is no separate "platform area" with its
+own header and back button.
+
+**Light and dark.** Each mode is uniform: in light mode the sidebar, list panel and workspace
+are all light; in dark mode all dark. No dark sidebar beside a light workspace.
+
+**Brand mark.** The Agent Platform mark uses `accent`, the Ontology Service mark `primary`,
+so the current application is recognisable at a glance.
+
 ## Scope and ownership
 
-This file covers the product interface: the workbench (agents, conversations, answers),
-the admin pages and the Ontology Manager. The marketing site keeps its own styles.
+This file covers the product interface: the Agent Platform (agents, conversations, answers,
+its admin pages) and the Ontology Service. The marketing site keeps its own styles.
 
 It has two layers:
 
@@ -207,8 +258,9 @@ rail muted = `muted`, rail active = `selected` with `ink`.
 ## Principles
 
 1. **Data is loud, chrome is quiet.** Users come for answers, tables and the ontology
-   graph. Frames, panels and navigation recede: no floating cards, no coloured shadows,
-   no gradients on controls.
+   graph. Frames, panels and navigation recede: no floating cards in the data shell, no
+   coloured shadows, no gradients on controls. The conversation shell lifts exactly one
+   panel, the conversation, so the eye lands on it.
 2. **Density by default.** Operators scan lists of objects, fields and runs. Rows are
    32–44px, tables 40px, controls 32px. A screen should show a full list page of 15+ rows
    at 1440×900 without scrolling.
@@ -326,9 +378,10 @@ every pair stays at or above 4.5:1 on that fill.
 
 - Controls `sm` 6px; content cards, menus and row highlights `md` 8px; dialogs `lg` 12px.
   Pills only for avatars, status dots and count badges.
-- Nothing in the page flow has a shadow. Overlays (dropdown, popover, toast) get
-  `elevation.overlay`; dialogs and drawers get `elevation.modal`. Primary buttons have no
-  glow.
+- Nothing in the data shell's page flow has a shadow. Overlays (dropdown, popover, toast)
+  get `elevation.overlay`; dialogs and drawers get `elevation.modal`. In the conversation
+  shell only the conversation panel (`elevation.panel`) and the composer
+  (`elevation.composer`) are raised. Primary buttons have no glow.
 
 ## Components
 
@@ -385,7 +438,8 @@ table and chart rules above. Trace and evidence ("why this answer") collapse und
 - Check both modes before shipping a screen.
 
 **Don't**
-- Don't wrap panels, toolbars or tables in floating cards with outer gaps.
+- Don't wrap panels, toolbars or tables in floating cards with outer gaps (the conversation
+  panel of the Agent Platform is the one exception).
 - Don't use coloured shadows or gradients on buttons, or glows on focus.
 - Don't use logo green for text or buttons, or tomato for anything interactive.
 - Don't hard-code hex colours in components; use the role variables.
@@ -399,7 +453,8 @@ As of 2026-10-28 the code differs from this proposal as follows.
 |---|---|---|
 | Primary (light) | logo green `#639c2d` (3.3:1 with white) | leaf green `#42613f` (7.0:1) |
 | Page background | `#fbfdf8`, green-tinted fills | warm paper `#f8f8f4`, sage selection |
-| Shell | three floating cards, 16px gutters, 24px radius | edge-to-edge panels, hairline dividers |
+| Shell | three floating cards, 16px gutters, 24px radius | Agent Platform: one raised conversation panel, 10px gutter, 18px radius; Ontology Service and data pages: edge-to-edge panels, hairline dividers |
+| Ontology Manager | two shells (workspace header with text controls; platform area with its own header, back link and icon controls) | one Ontology Service shell: one sidebar, one router, cross-application links in the sidebar |
 | Body size | 15px | 14px (13px in tables and lists) |
 | Table | head 44px, rows 48px, card shadow | head 36px, rows 40px, border only |
 | List rows | 56–72px cards | 32px single-line or 44px two-line rows |
