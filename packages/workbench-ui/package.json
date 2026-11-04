@@ -6,6 +6,8 @@
   "exports": {
     ".": "./src/index.ts",
     "./content": "./src/content.ts",
+    "./brand": "./src/brand/index.ts",
+    "./brand/oss": "./src/brand/oss.ts",
     "./i18n": "./src/i18n/index.ts",
     "./utils/auth": "./src/utils/auth.ts",
     "./utils/marked": "./src/utils/marked.ts",
