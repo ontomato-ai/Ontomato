@@ -131,14 +131,24 @@ function handleFeatureAction(id: string) {
   emit("featureAction", id);
 }
 
-onMounted(() => {
-  // An address may name a feature and a tab (the legacy admin addresses and deep links); the shell then opens it.
-  const requested = route.query.feature;
-  if (requested === "agents" || requested === "dashboards" || requested === "schedule") {
+/**
+ * An address may name a feature and a tab (the legacy console addresses and deep links); the shell opens it, and drops
+ * the parameters so a later navigation to plain /chat is a clean conversation. Watched on mount and on every query
+ * change, because a link inside the running workbench does not remount it.
+ */
+watch(
+  () => route.query.feature,
+  (requested) => {
+    if (requested !== "agents" && requested !== "dashboards" && requested !== "schedule") return;
     featureId.value = requested;
-    agentsTab.value = requestedTab();
-  }
-});
+    agentsTab.value = requested === "agents" ? requestedTab() : null;
+    const query = { ...route.query };
+    delete query.feature;
+    delete query.tab;
+    void router.replace({ path: route.path, query });
+  },
+  { immediate: true },
+);
 </script>
 
 <template>
