@@ -59,6 +59,8 @@ public final class DslGrammarValidator {
 				for (int o = 0; o < objects.size(); o++) {
 					JSONObject object = objects.getJSONObject(o);
 					JSONObject conditions = object == null ? null : object.getJSONObject("conditions");
+					checkConditionKeys(conditions,
+							"steps[" + s + "].patterns[" + p + "].objects[" + o + "].conditions");
 					JSONObject timeseries = conditions == null ? null : conditions.getJSONObject("timeseries");
 					if (timeseries == null) {
 						continue;
@@ -239,6 +241,21 @@ public final class DslGrammarValidator {
 			throw new IllegalArgumentException("operand expected");
 		}
 		position[0]++;
+	}
+
+	private static final java.util.Set<String> CONDITION_KEYS = java.util.Set.of("properties", "timeseries", "text", "vector");
+
+	/** Adapters read only these keys, so anything else used to be dropped silently and widen the result. */
+	private static void checkConditionKeys(JSONObject conditions, String path) {
+		if (conditions == null) {
+			return;
+		}
+		for (String key : conditions.keySet()) {
+			if (!CONDITION_KEYS.contains(key)) {
+				throw invalid(path + "." + key,
+						"`conditions` only takes `properties`, `timeseries`, `text` or `vector`; put field filters under `conditions.properties`");
+			}
+		}
 	}
 
 	private static DslContractViolationException invalid(String path, String detail) {
