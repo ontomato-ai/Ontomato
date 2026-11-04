@@ -73,6 +73,20 @@ describe("brand generation", () => {
     }
   });
 
+  it("the audit checks primary-coloured text and ink on the selected background", () => {
+    // A dark primary that only works as a fill (white text on it) fails as text unless a link colour is given.
+    const fillOnly: BrandSource = {
+      ...ossBrand,
+      dark: { ...ossBrand.dark, primary: "#3f43c4", primaryHover: "#373ab0", primaryPress: "#30339c", onPrimary: "#ffffff" },
+    };
+    expect(brandContrastFailures(fillOnly)).toEqual(
+      expect.arrayContaining([expect.stringMatching(/^dark link on surface: /)])
+    );
+    expect(brandContrastFailures({ ...fillOnly, dark: { ...fillOnly.dark, link: "#8f92ff" } })).toEqual([]);
+    const pale: BrandSource = { ...ossBrand, light: { ...ossBrand.light, primarySoft: "#62665c" } };
+    expect(brandContrastFailures(pale)).toEqual(expect.arrayContaining([expect.stringMatching(/^light ink on selected: /)]));
+  });
+
   it("links use primary unless the edition defines a link colour", () => {
     expect(brandProperties(ossBrand, "light")["--brand-link"]).toBe(ossBrand.light.primary);
     const linked: BrandSource = { ...ossBrand, light: { ...ossBrand.light, link: "#123456" } };

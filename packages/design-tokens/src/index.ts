@@ -42,7 +42,11 @@ export interface BrandColors {
   onPrimary: string;
   /** Selected state (current nav row, selected table row). */
   primarySoft: string;
-  /** Link text when it differs from primary; links use primary otherwise. */
+  /**
+   * Text drawn in the primary colour (links, active tab, active menu item, selected option) when it differs from
+   * primary; such text uses primary otherwise. Needed when primary, chosen to carry on-primary text, is under 4.5:1
+   * as text on canvas, surface or raised.
+   */
   link?: string;
   /** The logo mark colour, when the edition defines one (never a text or button colour). */
   brandMark?: string;
@@ -164,9 +168,10 @@ const BODY_TEXT = 4.5;
 const GRAPHIC = 3;
 
 /**
- * Contrast pairs DESIGN.md requires, per mode: text colours on every surface they sit on (placeholders on input fills),
- * on-primary on the filled primary states, link text, status text on surface and on its soft fill, accent text, and
- * chart marks against the surface. Returns one line per failing pair; empty when the brand passes.
+ * Contrast pairs DESIGN.md requires, per mode: text colours on every surface they sit on, the selected background
+ * included (selected rows use ink), placeholders on input fills, on-primary on the filled primary states, link text (all
+ * primary-coloured text), status text on surface and on its soft fill, accent text, and chart marks against the
+ * surface. Returns one line per failing pair; empty when the brand passes.
  */
 export function brandContrastFailures(brand: BrandSource): string[] {
   const failures: string[] = [];

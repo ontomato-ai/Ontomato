@@ -154,13 +154,48 @@
 
 .el-link.el-link--primary {
   --el-link-text-color: var(--brand-link);
+  --el-link-hover-text-color: var(--brand-link);
+}
+
+/*
+ * Other text drawn in the primary colour (active tab, active menu item, selected option) also uses the link role, so
+ * it keeps 4.5:1 where primary itself does not (enterprise: dark surface 3.4:1, light canvas 4.45:1).
+ */
+.el-tabs__item.is-active,
+.el-tabs__item:hover,
+.el-tabs--border-card > .el-tabs__header .el-tabs__item.is-active,
+.el-tabs--border-card > .el-tabs__header .el-tabs__item:not(.is-disabled):hover,
+.el-select-dropdown__item.is-selected {
+  color: var(--brand-link);
+}
+
+.el-cascader,
+.el-cascader-panel,
+.el-cascader__dropdown {
+  --el-cascader-menu-selected-text-color: var(--brand-link);
+}
+
+/* Rows on the selected background (primary-soft) keep ink text, never primary. */
+.el-dropdown,
+.el-dropdown__popper {
+  --el-dropdown-menuItem-hover-color: var(--el-text-color-primary);
+}
+
+.el-table__body tr.current-row > td.el-table__cell,
+.el-tree--highlight-current .el-tree-node.is-current > .el-tree-node__content,
+.el-table-filter__list-item:hover,
+.el-table-filter__list-item:focus {
+  color: var(--el-text-color-primary);
 }
 
 .el-table {
   --el-table-header-bg-color: var(--el-fill-color);
 }
 
+/* Menu rows: hover is a background change only; the active item uses the link role. */
 .el-menu {
   --el-menu-hover-bg-color: var(--el-fill-color-light);
+  --el-menu-hover-text-color: var(--el-menu-text-color);
+  --el-menu-active-color: var(--brand-link);
   --el-menu-item-height: var(--nav-row-height);
 }
