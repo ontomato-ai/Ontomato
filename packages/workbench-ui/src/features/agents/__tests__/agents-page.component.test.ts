@@ -81,5 +81,12 @@ describe("agents page tabs", () => {
     await requested.setProps({ initialTab: "agents" });
     await flushPromises();
     expect(requested.find(".el-tabs__item.is-active").text()).toBe(t("agents.agentsTab"));
+
+    // An address naming no tab opens the first one.
+    await requested.setProps({ initialTab: "capabilities" });
+    await flushPromises();
+    await requested.setProps({ initialTab: null });
+    await flushPromises();
+    expect(requested.find(".el-tabs__item.is-active").text()).toBe(t("agents.agentsTab"));
   });
 });

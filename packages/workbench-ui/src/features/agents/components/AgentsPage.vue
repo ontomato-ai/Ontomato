@@ -28,11 +28,12 @@ function firstVisibleTab(): "agents" | "capabilities" {
 }
 
 const tab = ref<"agents" | "capabilities">(firstVisibleTab());
-// A later address naming a tab (an old link opened while the page is already shown) switches to it.
+// A later address (an old link opened while the page is already shown) switches to the tab it names, or to the first
+// tab when it names none.
 watch(
   () => props.initialTab,
-  (next) => {
-    if (next) tab.value = firstVisibleTab();
+  () => {
+    tab.value = firstVisibleTab();
   }
 );
 </script>
