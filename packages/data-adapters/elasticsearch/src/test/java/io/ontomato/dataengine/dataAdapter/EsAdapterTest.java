@@ -100,6 +100,7 @@ class EsAdapterTest extends AbstractDataAdapterTest {
 	protected Set<DataAdapterCapability> capabilities() {
 		return EnumSet.of(
 				DataAdapterCapability.READ_QUERY,
+				DataAdapterCapability.LIKE_LITERAL_ESCAPE,
 				DataAdapterCapability.SAMPLE_DATA,
 				DataAdapterCapability.NAMESPACE_LIFECYCLE,
 				DataAdapterCapability.CLASS_SCHEMA,
