@@ -7,8 +7,6 @@ import java.util.List;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.test.util.ReflectionTestUtils;
-import dev.langchain4j.data.embedding.Embedding;
-import dev.langchain4j.model.output.Response;
 import io.ontomato.dataengine.config.BusinessConfig;
 import io.ontomato.dataengine.core.bean.User;
 import io.ontomato.dataengine.service.BusinessConfigService;
@@ -30,7 +28,7 @@ class KnowledgeDomainPostgresBoundaryTest extends PostgresTestDatabase {
         var gate = new VectorRetrievalGate();
         ReflectionTestUtils.setField(gate, "rebuildTracker", new VectorRebuildTracker());
         EmbeddingService embeddings = mock(EmbeddingService.class);
-        when(embeddings.embedding(anyString(), anyString())).thenReturn(new Response<>(Embedding.from(new float[] {1, 2})));
+        when(embeddings.embedding(anyString(), anyString())).thenReturn(new float[] {1, 2});
         ReflectionTestUtils.setField(dao, "embeddingService", embeddings);
         ReflectionTestUtils.setField(dao, "retrievalGate", gate);
         dao.insertKnowledge("shared-id", "owner", "Original", "Original body", List.of("kept"), 0, 1, new Date(1000));

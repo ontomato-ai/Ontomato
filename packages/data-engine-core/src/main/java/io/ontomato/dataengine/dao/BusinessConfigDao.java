@@ -30,7 +30,6 @@ public class BusinessConfigDao {
 
 	private static final String TABLE_NAME = "business_config";
 
-	private static final String EMBEDDING_KEY = "embeddingModelProperties";
 
 	@PostConstruct
 	public void initIndex() {
@@ -41,12 +40,7 @@ public class BusinessConfigDao {
 		log.info(">>>businessConfig table initialization complete");
 	}
 
-	/**
-	 * Save the whole record. A stored config keeps its embedding configuration: it changes only through
-	 * {@link #saveEmbeddingModel}, so a save built from an older snapshot cannot write an old embedding
-	 * generation back. A new row, or one whose content is SQL or JSON null and is being seeded again by
-	 * {@code BusinessConfigService.get}, takes the embedding configuration it is given.
-	 */
+	/** Preserve pending legacy embedding data until the runtime acknowledges its import. */
 	public void save(BusinessConfig businessConfig, String domainId) {
 		String stored = TABLE_NAME + ".content::jsonb";
 		String content = JSON.toJSONString(businessConfig, Feature.WriteMapNullValue);
@@ -56,20 +50,10 @@ public class BusinessConfigDao {
 		jdbcTemplate.update(
 				"INSERT INTO " + TABLE_NAME + " (id, content) VALUES (?, ?) "
 						+ "ON CONFLICT (id) DO UPDATE SET content = CASE WHEN jsonb_typeof(" + stored + ") = 'object' "
-						+ "THEN jsonb_set(EXCLUDED.content::jsonb, '{" + EMBEDDING_KEY + "}', "
-						+ "COALESCE(" + stored + " -> '" + EMBEDDING_KEY + "', 'null'::jsonb))::text "
+						+ "THEN (EXCLUDED.content::jsonb || jsonb_strip_nulls(jsonb_build_object('embeddingModelProperties', "
+                        + stored + " -> 'embeddingModelProperties', 'embeddingVectorSource', " + stored + " -> 'embeddingVectorSource')))::text "
 						+ "ELSE EXCLUDED.content END",
 				domainId, content);
-	}
-
-	/** Replace only the embedding configuration of an existing record; the vector rebuild service owns this write. */
-	public void saveEmbeddingModel(BusinessConfig.EmbeddingModelProperties properties, String domainId) {
-		int updated = jdbcTemplate.update(
-				"UPDATE " + TABLE_NAME + " SET content = jsonb_set(content::jsonb, '{" + EMBEDDING_KEY + "}', ?::jsonb)::text WHERE id = ?",
-				JSON.toJSONString(properties, Feature.WriteMapNullValue), domainId);
-		if (updated == 0) {
-			throw new IllegalStateException("business_config record not found (domainId=" + domainId + ")");
-		}
 	}
 
 	public BusinessConfig query(String domainId) {

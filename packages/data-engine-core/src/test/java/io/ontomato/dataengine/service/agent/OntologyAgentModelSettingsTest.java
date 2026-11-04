@@ -24,14 +24,14 @@ class OntologyAgentModelSettingsTest {
     when(runtime.json(eq("d"),anyString(),eq("/v1/models/options"),eq("GET"),isNull(),isNull()))
         .thenReturn(JSONObject.of("models",new com.alibaba.fastjson2.JSONArray()));
     var failure=assertThrows(AgentHttpException.class,()->models.save("d",OntologyAgentStore.RETRIEVER,
-        JSONObject.of("modelSelection",JSONObject.of("modelId","missing"))));
+        JSONObject.of("modelSelection",JSONObject.of("modelId","legacy/missing"))));
     assertEquals(400,failure.status()); verifyNoInteractions(jdbc);
   }
 
   @Test void defaultNeedsNoModelReadAndStoredMissingIdsStayVisible() throws Exception {
     when(jdbc.queryForList(anyString(),eq("d"),eq(OntologyAgentStore.RETRIEVER)))
-        .thenReturn(List.of(java.util.Map.of("model_selection","{\"modelId\":\"deleted\"}")));
-    assertEquals("deleted",models.modelId("d",OntologyAgentStore.RETRIEVER));
+        .thenReturn(List.of(java.util.Map.of("model_selection","{\"modelId\":\"legacy/deleted\"}")));
+    assertEquals("legacy/deleted",models.modelId("d",OntologyAgentStore.RETRIEVER));
     models.save("d",OntologyAgentStore.RETRIEVER,JSONObject.of("modelSelection",new JSONObject()));
     verify(jdbc).update(anyString(),eq("d"),eq(OntologyAgentStore.RETRIEVER),eq("{\"modelId\":null}"));
     verifyNoInteractions(runtime);

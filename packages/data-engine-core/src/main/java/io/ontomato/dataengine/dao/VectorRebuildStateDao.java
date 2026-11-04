@@ -19,7 +19,7 @@ public class VectorRebuildStateDao {
 
     private static final String TABLE_NAME = "vector_rebuild_state";
 
-    private static final String COLUMNS = "domain_id, base_url, model_name, dimensions, status, cleared, error";
+    private static final String COLUMNS = "domain_id, model_ref, dimensions, status, cleared, error";
 
     @Autowired
     private JdbcTemplate jdbcTemplate;
@@ -35,6 +35,7 @@ public class VectorRebuildStateDao {
                 + "cleared BOOLEAN NOT NULL, "
                 + "error TEXT"
                 + ")");
+        jdbcTemplate.execute("ALTER TABLE " + TABLE_NAME + " ADD COLUMN IF NOT EXISTS model_ref TEXT");
     }
 
     public VectorRebuildState find(String domainId) {
@@ -42,8 +43,7 @@ public class VectorRebuildStateDao {
                 "SELECT " + COLUMNS + " FROM " + TABLE_NAME + " WHERE domain_id = ?",
                 (rs, rowNum) -> {
                     VectorRebuildState state = new VectorRebuildState();
-                    state.setBaseUrl(rs.getString("base_url"));
-                    state.setModelName(rs.getString("model_name"));
+                    state.setModelId(rs.getString("model_ref"));
                     state.setDimensions((Integer) rs.getObject("dimensions"));
                     state.setStatus(VectorRebuildState.Status.valueOf(rs.getString("status")));
                     state.setCleared(rs.getBoolean("cleared"));
@@ -55,8 +55,7 @@ public class VectorRebuildStateDao {
     }
 
     public void save(String domainId, VectorRebuildState state) {
-        write(domainId, state, "ON CONFLICT (domain_id) DO UPDATE SET base_url = EXCLUDED.base_url, "
-                + "model_name = EXCLUDED.model_name, dimensions = EXCLUDED.dimensions, status = EXCLUDED.status, "
+        write(domainId, state, "ON CONFLICT (domain_id) DO UPDATE SET model_ref = EXCLUDED.model_ref, dimensions = EXCLUDED.dimensions, status = EXCLUDED.status, "
                 + "cleared = EXCLUDED.cleared, error = EXCLUDED.error");
     }
 
@@ -66,8 +65,8 @@ public class VectorRebuildStateDao {
     }
 
     private void write(String domainId, VectorRebuildState state, String onConflict) {
-        jdbcTemplate.update("INSERT INTO " + TABLE_NAME + " (" + COLUMNS + ") VALUES (?, ?, ?, ?, ?, ?, ?) " + onConflict,
-                domainId, state.getBaseUrl(), state.getModelName(), state.getDimensions(), state.getStatus().name(),
+        jdbcTemplate.update("INSERT INTO " + TABLE_NAME + " (" + COLUMNS + ") VALUES (?, ?, ?, ?, ?, ?) " + onConflict,
+                domainId, state.getModelId(), state.getDimensions(), state.getStatus().name(),
                 state.isCleared(), state.getError() == null ? null : JSON.toJSONString(state.getError()));
     }
 

@@ -37,24 +37,12 @@
         <maven.compiler.source>21</maven.compiler.source>
         <maven.compiler.target>21</maven.compiler.target>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-        <langchain4j.version>1.13.0</langchain4j.version>
-        <langchain4j-beta.version>1.13.0-beta23</langchain4j-beta.version>
         <!-- Overrides the Spring Boot BOM (1.21.0), whose Docker API default is rejected by Docker Engine 29. -->
         <testcontainers.version>1.21.4</testcontainers.version>
     </properties>
 
     <dependencyManagement>
         <dependencies>
-            <dependency>
-                <groupId>dev.langchain4j</groupId>
-                <artifactId>langchain4j-open-ai-spring-boot-starter</artifactId>
-                <version>${langchain4j-beta.version}</version>
-            </dependency>
-            <dependency>
-                <groupId>dev.langchain4j</groupId>
-                <artifactId>langchain4j-http-client-spring-restclient</artifactId>
-                <version>${langchain4j-beta.version}</version>
-            </dependency>
             <dependency>
                 <groupId>com.alibaba.fastjson2</groupId>
                 <artifactId>fastjson2</artifactId>

@@ -23,8 +23,6 @@ import io.ontomato.dataengine.service.ai.EmbeddingService;
 import io.ontomato.dataengine.service.vector.VectorRetrievalGate;
 import io.ontomato.dataengine.util.AutoKMeansClusteringUtil;
 
-import dev.langchain4j.data.embedding.Embedding;
-import dev.langchain4j.model.output.Response;
 import lombok.extern.slf4j.Slf4j;
 
 @Slf4j
@@ -71,8 +69,8 @@ public class VectorResourceDao extends BaseDao {
 	}
 
 	private float[] briefToVector(String replaceBrief, String domainId) {
-		Response<Embedding> embeddingResponse = embeddingService.embedding(replaceBrief, domainId);
-		float[] embededVector = embeddingResponse.content().vector();
+		float[] embeddingResponse = embeddingService.embedding(replaceBrief, domainId);
+		float[] embededVector = embeddingResponse;
 		return embededVector;
 	}
 
@@ -181,8 +179,8 @@ public class VectorResourceDao extends BaseDao {
 			ensureTable(indexName);
 
 			String replaceQuestion = this.replace(question);
-			Response<Embedding> embeddingResponse = embeddingService.embedding(replaceQuestion, domainId);
-			findVector = embeddingResponse.content().vector();
+			float[] embeddingResponse = embeddingService.embedding(replaceQuestion, domainId);
+			findVector = embeddingResponse;
 
 			queryString = "SELECT id, brief, path, class_name, attr_name, object_id, brief_vector <-> ?::vector AS distance FROM " + tableName
 					+ " WHERE brief_vector IS NOT NULL ORDER BY distance LIMIT ?";

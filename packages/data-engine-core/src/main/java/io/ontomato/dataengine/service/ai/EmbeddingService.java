@@ -1,65 +1,50 @@
 package io.ontomato.dataengine.service.ai;
 
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.stereotype.Component;
-
 import com.alibaba.fastjson2.JSONObject;
-import io.ontomato.dataengine.config.BusinessConfig;
-import io.ontomato.dataengine.service.BusinessConfigService;
-
-import dev.langchain4j.data.embedding.Embedding;
-import dev.langchain4j.model.embedding.EmbeddingModel;
-import dev.langchain4j.model.openai.OpenAiEmbeddingModel;
-import dev.langchain4j.model.output.Response;
+import io.ontomato.dataengine.service.agent.AgentRuntimeClient;
+import io.ontomato.dataengine.service.agent.AgentHttpException;
+import org.springframework.stereotype.Component;
+import java.util.List;
 
 @Component("embeddingService")
 public class EmbeddingService {
+    private final AgentRuntimeClient runtime;
+    public EmbeddingService(AgentRuntimeClient runtime) { this.runtime = runtime; }
 
-	@Autowired
-	private BusinessConfigService businessConfigService;
+    public EmbeddingSelection selection(String domain) {
+        try {
+            var options = runtime.json(domain, "embedding-selection", "/v1/models/options", "GET", null, null);
+            String ref = options.getString("embeddingModelId");
+            for (Object item : options.getJSONArray("models")) {
+                var model = (JSONObject) item;
+                if (ref != null && ref.equals(model.getString("ref")) && "embedding".equals(model.getString("type")))
+                    return new EmbeddingSelection(ref, model.getInteger("dimensions"));
+            }
+            throw new AgentHttpException(422, "MODEL_NOT_CONFIGURED", "No embedding model is configured");
+        } catch (RuntimeException e) { throw e; }
+        catch (Exception e) { throw new IllegalStateException("Runtime embedding configuration is unavailable", e); }
+    }
 
-	public Response<Embedding> embedding(String content, String domainId) {
-		BusinessConfig businessConfig = businessConfigService.get(domainId);
-		return embedWith(businessConfig.getEmbeddingModelProperties(), content);
-	}
+    public float[] embedding(String content, String domain) { return embedWith(null, content, domain); }
 
-	/** Embed with a pinned configuration: the rebuild passes the configuration taken when it started. */
-	public Response<Embedding> embedWith(BusinessConfig.EmbeddingModelProperties embeddingModelProperties, String content) {
-		EmbeddingModel embedingModel = buildModel(embeddingModelProperties);
-		return embedingModel.embed(content);
-	}
-	
-	public JSONObject testEmbeddingModel(BusinessConfig.EmbeddingModelProperties embeddingModelProperties, String content) throws Exception {
-		Response<Embedding> resp = embedWith(embeddingModelProperties, content);
-		Embedding embedding = resp.content();
-		int dimension = embedding.dimension();
-		checkReturnedDimension(dimension, embeddingModelProperties.getDimensions());
-		JSONObject ret = new JSONObject();
-		ret.put("dimension", dimension);
-		ret.put("vector", embedding.vector());
-		return ret;
-	}
-
-	/** The model must return as many dimensions as the draft configuration asks for. */
-	static void checkReturnedDimension(int actual, int expected) {
-		if (actual != expected) {
-			throw new IllegalArgumentException("The vector dimension returned by the embedding model " + actual
-					+ " and the requested embedding dimension " + expected + " are inconsistent");
-		}
-	}
-	
-	private EmbeddingModel buildModel(BusinessConfig.EmbeddingModelProperties embeddingModelProperties) {
-		EmbeddingModel embedingModel = OpenAiEmbeddingModel.builder()
-		        .baseUrl(embeddingModelProperties.getBaseUrl())
-		        .apiKey(embeddingModelProperties.getApiKey())
-		        .modelName(embeddingModelProperties.getModelName())
-		        .dimensions(embeddingModelProperties.getDimensions())
-		        .timeout(embeddingModelProperties.getTimeout())
-		        .logRequests(false)
-		        .logResponses(false)
-		        .customHeaders(embeddingModelProperties.getCustomHeaders())
-		        .build();
-		return embedingModel;
-	}
-	
+    /** A rebuild rejects a changed generation instead of mixing its vectors into the pinned round. */
+    public float[] embedWith(EmbeddingSelection expected, String content, String domain) {
+        try {
+            var result = runtime.json(domain, "embedding", "/v1/models/embeddings", "POST", JSONObject.of("texts", List.of(content)), null);
+            var actual = new EmbeddingSelection(result.getString("modelId"), result.getInteger("dimensions"));
+            if (expected != null && !expected.equals(actual)) throw new IllegalStateException("Embedding model changed during vector rebuild");
+            var vectors = result.getJSONArray("vectors");
+            if (vectors == null || vectors.size() != 1 || actual.getDimensions() == null)
+                throw new IllegalStateException("Invalid embedding response");
+            var vector = vectors.getJSONArray(0);
+            if (vector.size() != actual.getDimensions()) throw new IllegalStateException("Embedding dimensions do not match");
+            float[] values = new float[vector.size()];
+            for (int i = 0; i < values.length; i++) {
+                values[i] = vector.getFloatValue(i);
+                if (!Float.isFinite(values[i])) throw new IllegalStateException("Invalid embedding value");
+            }
+            return values;
+        } catch (RuntimeException e) { throw e; }
+        catch (Exception e) { throw new IllegalStateException("Runtime embedding call failed", e); }
+    }
 }

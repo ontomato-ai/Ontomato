@@ -1,3 +1,4 @@
+import { startModelMigration, stopModelMigration } from "../platform/agent-runtime/model-migration";
 import assistantRouter from "../api/routes/assistant";
 import scheduledTasksRouter from "../api/routes/scheduled-tasks";
 import { startScheduledTaskScheduler } from "../services/scheduled-tasks/scheduler";
@@ -255,9 +256,11 @@ export async function startWorkbench(
   await syncRuntimeDefaultResources();
   syncDefaultPrompts();
   await initializeConnection();
+  startModelMigration();
   getWorkbenchLogStore();
   const stopApplication = await initializeApplication?.();
   const shutdown = async () => {
+    stopModelMigration();
     try { await stopApplication?.(); } finally { await closeWorkbenchLogging(); }
   };
   process.once("SIGTERM", () => { void shutdown().finally(() => process.exit(0)); });

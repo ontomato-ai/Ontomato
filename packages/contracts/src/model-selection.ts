@@ -9,7 +9,7 @@ import type { ModelOption } from "./model-settings";
  */
 
 /** Options use the full provider/model-id reference; display names may repeat. */
-export type ModelChoice = Pick<ModelOption, "ref" | "name">;
+export type ModelChoice = Pick<ModelOption, "ref" | "name" | "type">;
 
 /** Texts of the options, supplied by the host in its own language. */
 export interface ModelSelectionLabels {
@@ -49,13 +49,14 @@ export function modelSelectionView(
   models: readonly ModelChoice[] | null,
   labels: ModelSelectionLabels
 ): ModelSelectionView {
+  const choices = models === null ? null : models.filter(model => model.type === "chat");
   const missingId =
-    modelId !== null && models !== null && !models.some((model) => model.ref === modelId) ? modelId : null;
+    modelId !== null && choices !== null && !choices.some((model) => model.ref === modelId) ? modelId : null;
   return {
     value: modelId ?? NULL_CHOICE,
     options: [
       { value: NULL_CHOICE, label: labels.nullChoice, disabled: false },
-      ...(models ?? []).map((model) => ({ value: model.ref, label: modelLabel(model), disabled: false })),
+      ...(choices ?? []).map((model) => ({ value: model.ref, label: modelLabel(model), disabled: false })),
       ...(missingId === null ? [] : [{ value: missingId, label: labels.unavailable(missingId), disabled: true }]),
     ],
     missingId,

@@ -8,7 +8,6 @@ import org.springframework.beans.factory.UnsatisfiedDependencyException;
 import org.springframework.context.annotation.AnnotationConfigApplicationContext;
 import org.springframework.jdbc.core.JdbcTemplate;
 
-import io.ontomato.dataengine.config.EmbeddingModelProperties;
 import io.ontomato.dataengine.service.ai.EmbeddingService;
 
 class AssetLookupPolicyRequiredTest {
@@ -24,10 +23,7 @@ class AssetLookupPolicyRequiredTest {
             try (AnnotationConfigApplicationContext ctx = new AnnotationConfigApplicationContext()) {
                 ctx.addBeanFactoryPostProcessor(factory -> {
                     factory.registerResolvableDependency(JdbcTemplate.class, new JdbcTemplate());
-                    factory.registerResolvableDependency(EmbeddingService.class, new EmbeddingService());
-                    EmbeddingModelProperties properties = new EmbeddingModelProperties();
-                    properties.setDimensions(3);
-                    factory.registerResolvableDependency(EmbeddingModelProperties.class, properties);
+                    factory.registerResolvableDependency(EmbeddingService.class, org.mockito.Mockito.mock(EmbeddingService.class));
                 });
                 ctx.register(daoType);
                 ctx.refresh();

@@ -2,7 +2,6 @@ package io.ontomato.dataengine.service.vector;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
 import java.util.function.BiConsumer;
 import java.util.function.IntSupplier;
 import java.util.function.Supplier;
@@ -12,7 +11,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionTemplate;
 
 import io.ontomato.dataengine.config.BusinessConfig;
-import io.ontomato.dataengine.config.ModelKeyMask;
+import io.ontomato.dataengine.service.ai.EmbeddingSelection;
 import io.ontomato.dataengine.dao.ActionDao;
 import io.ontomato.dataengine.dao.KnowledgeDao;
 import io.ontomato.dataengine.dao.MetricViewDao;
@@ -38,8 +37,6 @@ import lombok.extern.slf4j.Slf4j;
 @Slf4j
 @Service
 public class VectorRebuildService {
-
-    private static final String REDACTED = "***";
 
     @Autowired
     private BusinessConfigService businessConfigService;
@@ -131,55 +128,22 @@ public class VectorRebuildService {
             if (state.getStatus() == Status.READY || rebuildTracker.isRunning(domainId) || !isEmpty(domainId)) {
                 return state;
             }
-            VectorRebuildState ready = VectorRebuildState.of(businessConfig.getEmbeddingModelProperties(), Status.READY, true);
+            VectorRebuildState ready = VectorRebuildState.of(embeddingService.selection(domainId), Status.READY, true);
             stateDao.save(domainId, ready);
             return ready;
         });
     }
 
-    /**
-     * Save the embedding configuration of this domain, the only writer of it. An empty domain is
-     * ready; a new generation makes a domain with data pending a fresh round; the key and timeout
-     * never change the state of a domain with data, so a pending or failed round stays as it is.
-     * The configuration and its state are written in one transaction.
-     */
-    public void saveEmbeddingModel(String domainId, String lang, BusinessConfig.EmbeddingModelProperties input) {
-        rebuildTracker.exclusively(domainId, () -> {
-            if (rebuildTracker.isRunning(domainId)) {
-                throw new IllegalStateException(langService.get(lang, "Vector.saveRefusedWhileRebuilding"));
-            }
-            BusinessConfig businessConfig = businessConfigService.get(domainId);
-            BusinessConfig.EmbeddingModelProperties properties = businessConfig.getEmbeddingModelProperties();
-            // In getConfig, embeddingModelProperties:null means not configured; in that case create the existing object before writing.
-            VectorRebuildState state = null;
-            if (properties == null) {
-                properties = businessConfig.new EmbeddingModelProperties();
-                businessConfig.setEmbeddingModelProperties(properties);
-            } else {
-                // Judged before the fields change, so a key-only save keeps the state it finds.
-                state = retrievalGate.stateOf(domainId, businessConfig);
-            }
-            properties.setBaseUrl(input.getBaseUrl());
-            // A key sent back as its mask keeps the stored key.
-            properties.setApiKey(ModelKeyMask.restoreEmbedding(input.getApiKey(), properties.getApiKey()));
-            properties.setModelName(input.getModelName());
-            properties.setDimensions(input.getDimensions());
-            properties.setTimeout(input.getTimeout());
-            properties.setCustomHeaders(input.getCustomHeaders());
-            VectorRebuildState next = isEmpty(domainId)
-                    ? VectorRebuildState.of(properties, Status.READY, true)
-                    : state == null || !state.sameGeneration(properties)
-                            ? VectorRebuildState.of(properties, Status.PENDING, false)
-                            : null;
-            BusinessConfig.EmbeddingModelProperties saved = properties;
-            transactions.executeWithoutResult(transaction -> {
-                if (next != null) {
-                    stateDao.save(domainId, next);
-                }
-                businessConfigService.setEmbeddingModel(saved, domainId);
-            });
-            return null;
+    /** Reconcile a runtime-owned selection after save or startup, then use the existing rebuild lifecycle. */
+    public void modelSettingsChanged(String domainId) {
+        boolean pending = rebuildTracker.exclusively(domainId, () -> {
+            if (rebuildTracker.isRunning(domainId)) return false;
+            VectorRebuildState state = retrievalGate.stateOf(domainId, businessConfigService.get(domainId));
+            if (isEmpty(domainId)) state = VectorRebuildState.of(embeddingService.selection(domainId), Status.READY, true);
+            stateDao.save(domainId, state);
+            return state.getStatus() == Status.PENDING;
         });
+        if (pending) start(domainId, businessConfigService.get(domainId).getLang());
     }
 
     /** Start a new round or continue the current one in the background, and return at once. */
@@ -194,7 +158,7 @@ public class VectorRebuildService {
                 throw new IllegalStateException(langService.get(lang, "Vector.rebuildAlreadyRunning"));
             }
             // Read now, so a key or timeout corrected after a failure is used by the continued round.
-            BusinessConfig.EmbeddingModelProperties properties = businessConfig.getEmbeddingModelProperties();
+            EmbeddingSelection properties = embeddingService.selection(domainId);
             VectorRebuildState running = VectorRebuildState.of(properties, Status.RUNNING, state.isCleared());
             try {
                 stateDao.save(domainId, running);
@@ -221,7 +185,7 @@ public class VectorRebuildService {
      * records that this generation already cleared, then fill each pending row. A row written
      * meanwhile already holds a vector of this generation and is left as written.
      */
-    void run(String domainId, BusinessConfig.EmbeddingModelProperties properties, VectorRebuildState state) {
+    void run(String domainId, EmbeddingSelection properties, VectorRebuildState state) {
         Phase phase = Phase.CLEAR;
         ItemType itemType = null;
         String itemId = null;
@@ -248,7 +212,7 @@ public class VectorRebuildService {
                     }
                     itemId = source.table() == null ? item.getId() : source.table() + "/" + item.getId();
                     phase = Phase.EMBED;
-                    float[] vector = embeddingService.embedWith(properties, item.getText()).content().vector();
+                    float[] vector = embeddingService.embedWith(properties, item.getText(), domainId);
                     phase = Phase.SAVE;
                     source.fill().accept(item, vector);
                 }
@@ -256,7 +220,7 @@ public class VectorRebuildService {
             state.setStatus(Status.READY);
             stateDao.save(domainId, state);
         } catch (Exception e) {
-            String reason = redact(e.getMessage() == null ? e.getClass().getName() : e.getMessage(), properties);
+            String reason = "Runtime embedding or vector storage failed (" + e.getClass().getSimpleName() + ")";
             // Only the redacted reason is logged: the raw exception and its causes may carry the key or headers.
             log.error("Vector rebuild of domain {} failed at {} {} {} ({}): {}", domainId, phase, itemType, itemId,
                     e.getClass().getName(), reason);
@@ -309,23 +273,6 @@ public class VectorRebuildService {
                     (item, vector) -> vectorResourceDao.fillTableVector(table, item.getId(), vector)));
         }
         return sources;
-    }
-
-    /** The reported reason never carries the key or a custom header value of the request. */
-    static String redact(String reason, BusinessConfig.EmbeddingModelProperties properties) {
-        List<String> secrets = new ArrayList<>();
-        secrets.add(properties.getApiKey());
-        Map<String, String> headers = properties.getCustomHeaders();
-        if (headers != null) {
-            secrets.addAll(headers.values());
-        }
-        String redacted = reason;
-        for (String secret : secrets) {
-            if (secret != null && !secret.isBlank()) {
-                redacted = redacted.replace(secret, REDACTED);
-            }
-        }
-        return redacted;
     }
 
 }

@@ -4,9 +4,7 @@ import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
 import io.ontomato.dataengine.config.BusinessConfig;
-import io.ontomato.dataengine.config.BusinessConfig.EmbeddingModelProperties;
 import io.ontomato.dataengine.config.ControllerConst;
-import io.ontomato.dataengine.config.ModelKeyMask;
 import io.ontomato.dataengine.config.multisource.DataSourceEntry;
 import io.ontomato.dataengine.config.multisource.MultiDataSourceDefinition;
 import io.ontomato.dataengine.core.bean.User;
@@ -22,7 +20,6 @@ import io.ontomato.dataengine.dataAdapter.MultiDataSourceValidator;
 import io.ontomato.dataengine.service.AdminService;
 import io.ontomato.dataengine.service.BusinessConfigService;
 import io.ontomato.dataengine.service.LangService;
-import io.ontomato.dataengine.service.ai.EmbeddingService;
 import io.ontomato.dataengine.service.vector.VectorRebuildService;
 import io.ontomato.dataengine.service.vector.VectorRebuildStatus;
 import io.ontomato.dataengine.util.SystemUtils;
@@ -47,8 +44,6 @@ public class BusinessConfigController {
 	private BusinessConfigService businessConfigService;
 
 
-	@Autowired
-	private EmbeddingService embeddingService;
 
 	@Autowired
 	private LangService langService;
@@ -67,58 +62,6 @@ public class BusinessConfigController {
 	@Autowired
 	private AdminService adminService;
 	
-	@PostMapping("/businessConfig/testEmbeddingModel")
-    @ResponseBody
-    public JSONObject testEmbeddingModel(@RequestBody JSONObject input) {
-    	JSONObject ret = new JSONObject();
-    	try {
-    		EmbeddingModelProperties embeddingModelProperties = JSONObject.parseObject(JSON.toJSONString(input.getJSONObject("modelConfig")), EmbeddingModelProperties.class);
-    		if (embeddingModelProperties == null || embeddingModelProperties.getDimensions() == null
-    				|| embeddingModelProperties.getDimensions() <= 0) {
-    			throw new IllegalArgumentException("modelConfig.dimensions must be a positive integer");
-    		}
-			EmbeddingModelProperties storedEmbedding = businessConfigService.get(SystemUtils.getCurUser().getDomainId())
-					.getEmbeddingModelProperties();
-			embeddingModelProperties.setApiKey(ModelKeyMask.restoreEmbedding(embeddingModelProperties.getApiKey(),
-					storedEmbedding == null ? null : storedEmbedding.getApiKey()));
-    		embeddingModelProperties.setLogRequests(true);
-    		embeddingModelProperties.setLogResponses(true);
-    		String userContent = input.getString("userContent");
-    		if (userContent == null || "".equals(userContent.trim())) {
-    			userContent = "Hello";
-    		}
-    		JSONObject aiContent = embeddingService.testEmbeddingModel(embeddingModelProperties, userContent);
-    		ret.put("data", aiContent);
-    		ret.put("success", true);
-    	} catch (Exception e) {
-    		log.error(e.getMessage(), e);
-    		ret.put("success", false);
-    		ret.put("message", e.getMessage());
-    	}
-		return ret;
-	}
-	
-	@PostMapping("/businessConfig/saveEmbeddingModel")
-    @ResponseBody
-    public JSONObject saveEmbeddingModel(@RequestHeader(ControllerConst.LANG_HEADER_KEY) String lang, @RequestBody JSONObject input) {
-    	JSONObject ret = new JSONObject();
-    	try {
-    		User user = SystemUtils.getCurUser();
-    		EmbeddingModelProperties embeddingModelProperties = JSONObject.parseObject(JSON.toJSONString(input), EmbeddingModelProperties.class);
-    		if (embeddingModelProperties == null || embeddingModelProperties.getDimensions() == null
-    				|| embeddingModelProperties.getDimensions() <= 0) {
-    			throw new IllegalArgumentException("dimensions must be a positive integer");
-    		}
-			vectorRebuildService.saveEmbeddingModel(user.getDomainId(), lang, embeddingModelProperties);
-    		ret.put("success", true);
-    	} catch (Exception e) {
-    		log.error(e.getMessage(), e);
-    		ret.put("success", false);
-    		ret.put("message", e.getMessage());
-    	}
-		return ret;
-	}
-
 	@GetMapping("/businessConfig/vectorRebuildStatus")
     @ResponseBody
     public JSONObject vectorRebuildStatus() {
@@ -411,11 +354,10 @@ public class BusinessConfigController {
     	try {
     		User user = SystemUtils.getCurUser();
 			BusinessConfig businessConfig = businessConfigService.get(user.getDomainId());
-			// Mask the Embedding key on the response's own copy.
+			// Mask connection secrets on the response copy.
 			BusinessConfig view = connectionSecretCodec == null
 					? businessConfig
 					: connectionSecretCodec.maskedCopy(businessConfig);
-			ModelKeyMask.maskEmbedding(view.getEmbeddingModelProperties());
 			ret.put("data", view);
     		ret.put("success", true);
     	} catch (Exception e) {

@@ -13,7 +13,7 @@ export async function saveDiagnosisModel(domainId: string, modelSelection: Model
   await validateModelSelection(domainId, modelSelection);
   await getPostgresPool().query(
     `INSERT INTO ${table("ops_diagnosis_settings")} (domain_id,model_selection) VALUES($1,$2::jsonb)
-     ON CONFLICT(domain_id) DO UPDATE SET model_selection=EXCLUDED.model_selection`,
+     ON CONFLICT(domain_id) DO UPDATE SET model_selection=EXCLUDED.model_selection,model_reference_migrated=true`,
     [domainId, JSON.stringify(modelSelection)],
   );
   return { modelSelection };

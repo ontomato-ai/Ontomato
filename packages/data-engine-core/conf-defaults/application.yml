@@ -11,17 +11,6 @@ spring:
       max-file-size: 10MB
       max-request-size: 10MB
 
-langchain4j:
-  open-ai:
-    embedding-model:
-      base-url: ${EMBEDDING_BASE_URL:}
-      api-key: ${EMBEDDING_API_KEY:}
-      model-name: ${EMBEDDING_MODEL:}
-      dimensions: ${EMBEDDING_DIMENSIONS:2048}
-      timeout: PT300S
-      log-requests: true
-      log-responses: false
-
 ontomato:
   data-engine:
     service-id: ${SERVICE_ID:}
@@ -40,5 +29,4 @@ ontomato:
 
 logging:
   level:
-    dev.langchain4j: DEBUG
     org.springframework: WARN

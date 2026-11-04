@@ -25,8 +25,6 @@ import io.ontomato.dataengine.service.ai.EmbeddingService;
 import io.ontomato.dataengine.service.vector.VectorRetrievalGate;
 import io.ontomato.dataengine.util.AutoKMeansClusteringUtil;
 
-import dev.langchain4j.data.embedding.Embedding;
-import dev.langchain4j.model.output.Response;
 import jakarta.annotation.PostConstruct;
 import lombok.extern.slf4j.Slf4j;
 
@@ -100,7 +98,7 @@ public class MetricViewDao extends BaseDao {
 		String brief = buildBrief(metricView.getName(), metricView.getDescription(), metricView.getMatchQuestions());
 
 		retrievalGate.write(domainId, () -> {
-			PGvector pgVector = new PGvector(embeddingService.embedding(brief, domainId).content().vector());
+			PGvector pgVector = new PGvector(embeddingService.embedding(brief, domainId));
 			int changed = jdbcTemplate.update(
 				"INSERT INTO " + TABLE_NAME + " (" + COLUMNS + ", brief, brief_vector) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?::vector) "
 						+ "ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, origin = EXCLUDED.origin, type = EXCLUDED.type, "
@@ -299,8 +297,8 @@ public class MetricViewDao extends BaseDao {
 	private List<Object[]> search(String question, String className, int maxResult, double minScore, String domainId) {
 		List<Object[]> oList = new ArrayList<Object[]>();
 		try {
-			Response<Embedding> embeddingResponse = embeddingService.embedding(question, domainId);
-			float[] findVector = embeddingResponse.content().vector();
+			float[] embeddingResponse = embeddingService.embedding(question, domainId);
+			float[] findVector = embeddingResponse;
 			PGvector pgVector = new PGvector(findVector);
 
 			StringBuilder whereSql = new StringBuilder("type = 'GENERAL' AND status = ?");
@@ -396,7 +394,7 @@ public class MetricViewDao extends BaseDao {
             if (binding.getId() == null) binding.setId(UUID.randomUUID().toString());
             retained.add(binding.getId());
             String brief = buildBrief(binding.getName(), binding.getDescription(), binding.getMatchQuestions());
-            PGvector vector = new PGvector(embeddingService.embedding(brief, metric.getDomainId()).content().vector());
+            PGvector vector = new PGvector(embeddingService.embedding(brief, metric.getDomainId()));
             int changed = jdbcTemplate.update("INSERT INTO metric_view_binding(id,metric_view_id,name,description,parameters,match_questions,brief,brief_vector) "
                 + "VALUES(?,?,?,?,?::jsonb,?,?,?::vector) ON CONFLICT(id) DO UPDATE SET name=EXCLUDED.name,description=EXCLUDED.description,"
                 + "parameters=EXCLUDED.parameters,match_questions=EXCLUDED.match_questions,brief=EXCLUDED.brief,brief_vector=EXCLUDED.brief_vector "
@@ -414,7 +412,7 @@ public class MetricViewDao extends BaseDao {
         return retrievalGate.read(domainId, () -> {
             List<BindingMatch> found = new ArrayList<>();
             try {
-                PGvector vector = new PGvector(embeddingService.embedding(question, domainId).content().vector());
+                PGvector vector = new PGvector(embeddingService.embedding(question, domainId));
                 List<Object[]> rows = jdbcTemplate.query("SELECT b.*,b.brief_vector <-> ?::vector AS distance FROM metric_view_binding b "
                     + "JOIN metric_view m ON m.id=b.metric_view_id WHERE m.type='GENERAL' AND m.domain_id=? AND m.status=? "
                     + "AND b.brief_vector IS NOT NULL ORDER BY distance LIMIT ?",

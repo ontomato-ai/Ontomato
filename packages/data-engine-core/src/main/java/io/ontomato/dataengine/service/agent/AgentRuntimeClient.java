@@ -4,7 +4,6 @@ import io.ontomato.dataengine.logging.ServiceLogContext;
 import io.ontomato.dataengine.logging.ServiceLogEvents;
 import org.apache.logging.log4j.ThreadContext;
 import com.alibaba.fastjson2.JSON;
-import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
 import com.alibaba.fastjson2.JSONWriter;
 import java.io.InputStream;
@@ -56,20 +55,16 @@ public class AgentRuntimeClient {
     if (userId != null) builder.setHeader(ServiceLogContext.header("hostVerifiedUserId"), userId);
     if (!stream) {
       Duration timeout = Duration.ofSeconds(30);
-      if (path.equals("/v1/models/test") && body != null) {
-        Object model = JSONObject.from(body).get("model");
-        timeout = Duration.ofSeconds(300);
-        if (model instanceof java.util.Map<?, ?> draft && draft.get("timeout") instanceof String configured) {
-          try {
-            Duration requested = Duration.parse(configured);
-            if (!requested.isNegative() && !requested.isZero()) timeout = requested;
-          } catch (java.time.format.DateTimeParseException invalid) {
-            // Runtime validates the draft; transport timeout does not change its contents.
-          }
-        }
-        timeout = timeout.plusSeconds(10);
+      if (path.equals("/v1/models/embeddings")) {
+        // The runtime owns request timeouts and retries; a shorter host deadline would truncate them.
+        timeout = null;
+      } else if ((path.equals("/v1/models/test") || path.equals("/v1/models/discover")) && body != null) {
+        var retry = JSONObject.from(body).getJSONObject("retry");
+        var provider = retry == null ? null : retry.getJSONObject("provider");
+        long configured = provider == null ? 300000 : provider.getLongValue("timeoutMs", 300000);
+        timeout = Duration.ofMillis(Math.max(1, configured)).plusSeconds(10);
       }
-      builder.timeout(timeout);
+      if (timeout != null) builder.timeout(timeout);
     }
     if (domain != null) builder.header("X-Domain-Id", domain);
     if (key != null) builder.header("Idempotency-Key", key);
@@ -160,28 +155,19 @@ public class AgentRuntimeClient {
   public String modelText(String domain, String correlation, String prompt)
       throws Exception {
     JSONObject settings = json(domain, correlation, "/v1/models/settings", "GET", null, null);
-    String name = settings.getString("defaultModelId");
-    JSONArray models = settings.getJSONArray("models");
+    String ref = settings.getString("defaultModelId");
+    int slash = ref == null ? -1 : ref.indexOf('/');
+    JSONObject provider = slash < 1 ? null : settings.getJSONObject("providers").getJSONObject(ref.substring(0, slash));
     JSONObject model = null;
-    for (int i = 0; models != null && i < models.size(); i++) {
-      JSONObject candidate = models.getJSONObject(i);
-      if (name != null && name.equals(candidate.getString("name"))) {
-        model = candidate;
-        break;
-      }
+    if (provider != null) for (Object item : provider.getJSONArray("models")) {
+      var candidate = (JSONObject) item;
+      if (ref.substring(slash + 1).equals(candidate.getString("id")) && "chat".equals(candidate.getString("type"))) model = candidate;
     }
     if (model == null) throw new AgentHttpException(422, "MODEL_NOT_CONFIGURED", "No domain default model is configured");
-    model = JSON.parseObject(JSON.toJSONString(model));
-    // Guidance text is optional UI sugar; never let one call hold the dialog open.
-    model.put("timeout", "PT20S");
-    JSONObject result =
-        json(
-            domain,
-            correlation,
-            "/v1/models/test",
-            "POST",
-            JSONObject.of("model", model, "prompt", prompt),
-            null);
+    provider = JSON.parseObject(provider.toJSONString()); provider.remove("models");
+    var result = json(domain, correlation, "/v1/models/test", "POST", JSONObject.of("providerId", ref.substring(0, slash),
+        "provider", provider, "model", model, "prompt", prompt,
+        "retry", JSONObject.of("provider", JSONObject.of("timeoutMs", 20000, "maxRetries", 0, "maxRetryDelayMs", 60000))), null);
     return result.getString("content");
   }
 

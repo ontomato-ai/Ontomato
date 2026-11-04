@@ -31,9 +31,20 @@ public class ModelSettingsController {
     return success(runtime.json(domain(request), "model-settings", "/v1/models/settings", "GET", null, null));
   }
 
+  @org.springframework.beans.factory.annotation.Autowired
+  private io.ontomato.dataengine.service.vector.VectorRebuildService vectors;
+
+  @PostMapping("/model-settings/discover")
+  public Object discover(@RequestBody JSONObject body, HttpServletRequest request) throws Exception {
+    return success(runtime.json(domain(request), "model-discovery", "/v1/models/discover", "POST", body, null));
+  }
+
   @PostMapping("/model-settings/save")
   public Object save(@RequestBody JSONObject body, HttpServletRequest request) throws Exception {
-    return success(runtime.json(domain(request), "model-settings", "/v1/models/settings", "PUT", body, null));
+    String domain = domain(request);
+    var saved = runtime.json(domain, "model-settings", "/v1/models/settings", "PUT", body, null);
+    if (saved.getString("embeddingModelId") != null) vectors.modelSettingsChanged(domain);
+    return success(saved);
   }
 
   @GetMapping("/model-options")
