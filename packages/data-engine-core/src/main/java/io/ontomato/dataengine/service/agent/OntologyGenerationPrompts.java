@@ -143,6 +143,8 @@ public class OntologyGenerationPrompts {
       String sessionId,
       String question,
       List<ABCHarnessProgramDescription> programDescriptions,
+      List<String> userQuotes,
+      List<String> confirmedDecisions,
       KnowledgeDao knowledgeDao,
       BusinessConfigService businessConfigService,
       String lang,
@@ -170,8 +172,8 @@ public class OntologyGenerationPrompts {
             domainId);
     prompt = prompt.replace(BUSSINESS_KNOWLEDGE, bussinessKnowledge);
 
-    // user question
-    prompt = prompt.replace(USER_QUESTION, question);
+    // The user's own messages and confirmed clarifications are the question to check.
+    prompt = prompt.replace(USER_QUESTION, userQuestion(question, userQuotes, confirmedDecisions));
 
     // language
     String langValue = langService.get(lang, "lang");
@@ -500,6 +502,33 @@ public class OntologyGenerationPrompts {
     prompt = prompt.replace(LANG, langValue);
 
     return prompt;
+  }
+
+  /** The checker compares against the user's words; the rewritten question is only a fallback. */
+  static String userQuestion(
+      String question, List<String> userQuotes, List<String> confirmedDecisions) {
+    StringBuilder sb = new StringBuilder();
+    List<String> quotes =
+        userQuotes == null
+            ? List.of()
+            : userQuotes.stream().filter(text -> text != null && !text.isBlank()).toList();
+    if (quotes.isEmpty()) sb.append(question);
+    else {
+      sb.append("The user's actual messages in this conversation (oldest first):\n");
+      for (int i = 0; i < quotes.size(); i++)
+        sb.append(i + 1).append(". ").append(quotes.get(i)).append("\n");
+    }
+    List<String> decisions =
+        confirmedDecisions == null
+            ? List.of()
+            : confirmedDecisions.stream()
+                .filter(text -> text != null && !text.isBlank())
+                .toList();
+    if (!decisions.isEmpty()) {
+      sb.append("\nConfirmed clarifications from the user:\n");
+      for (String decision : decisions) sb.append("- ").append(decision).append("\n");
+    }
+    return sb.toString();
   }
 
   private static String template(String name, String language) {

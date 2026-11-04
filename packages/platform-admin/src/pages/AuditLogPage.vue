@@ -15,7 +15,8 @@ interface AuditLog {
   operation: string;
   bussiness: string;
   description: string;
-  timestamp: number;
+  /** Epoch milliseconds, as the data engine's AuditLog.operateTime. */
+  operateTime: number;
 }
 
 const loading = ref(false);
@@ -128,7 +129,7 @@ onMounted(() => {
     >
       <el-table-column :label="t('common.time')" width="180">
         <template #default="{ row }">
-          {{ new Date(row.timestamp).toLocaleString() }}
+          {{ new Date(row.operateTime).toLocaleString() }}
         </template>
       </el-table-column>
       <el-table-column prop="userName" :label="t('common.user')" width="120" />

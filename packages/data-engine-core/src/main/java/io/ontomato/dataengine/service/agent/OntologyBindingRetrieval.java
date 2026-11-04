@@ -64,6 +64,7 @@ public class OntologyBindingRetrieval {
     Owner owner = context.owner();
     try {
       store.transaction(() -> { gate(retrieval,run,owner); return null; });
+      var retrievalRecord = store.retrieval(retrieval, owner);
       for (var match : metrics.findBindings(input.getString("question"), 10, 0, owner.domainId())) {
         try {
           store.transaction(() -> { gate(retrieval,run,owner); return null; });
@@ -81,6 +82,8 @@ public class OntologyBindingRetrieval {
               "revision",OntologyQueryService.revision(metric),"parameters",new JSONObject());
           var request = JSONObject.of("title",binding.getName(),"question",input.getString("question"),"recipe",recipe,
               "classNames",scope == null ? List.of() : scope,"language",context.language(),
+              "userQuotes",input.get("userQuotes"),
+              "confirmedDecisions",OntologyRetrievalService.confirmedDecisions(retrievalRecord.getJSONArray("decisions")),
               "binding",JSONObject.of("metricId",metric.getId(),"bindingId",match.binding().getId(),"name",binding.getName(),
                   "logic",metric.getFunction().getLogic(),"parameters",binding.getParameters(),
                   "originQuestion",metric.getOriginQuestion(),"originCheckResult",metric.getOriginCheckResult()));
@@ -217,8 +220,10 @@ public class OntologyBindingRetrieval {
       recipes.add(recipe);
     }
     var request=accepted.get(0).getJSONObject("request");
+    // A binding branch only reports its conclusion; it never creates a new candidate.
     quality.start(JSONObject.of("id",branch.getString("qc_id"),"question",request.getString("question"),
-        "programs",programs,"recipes",recipes,"classNames",request.get("classNames")),subject(owner),request.getString("language"));
+        "userQuotes",request.get("userQuotes"),"confirmedDecisions",request.get("confirmedDecisions"),
+        "programs",programs,"recipes",recipes,"classNames",request.get("classNames")),subject(owner),request.getString("language"),false);
     store.update("UPDATE ontology_binding_runs SET qc_admitted=true WHERE run_id=?",uuid(run));
   }
 
