@@ -35,6 +35,8 @@ export const platformPages = {
     titleKey: "nav.modelConfig",
     descriptionKey: "platform.descriptions.modelConfig",
     icon: Cpu,
+    // The page draws its header: the save of the whole draft sits there, beside the title.
+    ownHeader: true,
     permissions: ["system-config"],
     group: "platform",
   },

@@ -159,6 +159,7 @@ export class AgentRuntime {
   async initialize() {
     runtimeLogging.initialize({ directory: process.env.AGENT_RUNTIME_LOG_DIR || path.join(this.options.root, "logs"), level: process.env.LOG_LEVEL });
     await this.store.initialize();
+    await this.models.initialize();
     runtimeLogging.attach(this.logs);
     if (!this.worker.development) {
       const rows = (

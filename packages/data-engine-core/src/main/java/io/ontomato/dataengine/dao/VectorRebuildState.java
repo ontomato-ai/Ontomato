@@ -2,12 +2,12 @@ package io.ontomato.dataengine.dao;
 
 import java.util.Objects;
 
-import io.ontomato.dataengine.config.BusinessConfig;
+import io.ontomato.dataengine.service.ai.EmbeddingSelection;
 
 import lombok.Data;
 
 /**
- * The persisted vector state of one domain: the generation (baseUrl, modelName, dimensions) its
+ * The persisted vector state of one domain: the generation (modelId, dimensions) its
  * vectors are meant to belong to, whether the current round has cleared every vector of another
  * generation, and how the latest round ended. Rows whose vector is NULL are the pending work.
  */
@@ -47,29 +47,26 @@ public class VectorRebuildState {
         private String reason;
     }
 
-    private String baseUrl;
-    private String modelName;
+    private String modelId;
     private Integer dimensions;
     private Status status;
     /** True once no vector of another generation remains; always true when READY. */
     private boolean cleared;
     private Failure error;
 
-    public static VectorRebuildState of(BusinessConfig.EmbeddingModelProperties generation, Status status,
+    public static VectorRebuildState of(EmbeddingSelection generation, Status status,
             boolean cleared) {
         VectorRebuildState state = new VectorRebuildState();
-        state.setBaseUrl(generation.getBaseUrl());
-        state.setModelName(generation.getModelName());
+        state.setModelId(generation.getModelId());
         state.setDimensions(generation.getDimensions());
         state.setStatus(status);
         state.setCleared(cleared);
         return state;
     }
 
-    /** baseUrl, modelName and dimensions identify generated vectors; the key and timeout never count. */
-    public boolean sameGeneration(BusinessConfig.EmbeddingModelProperties properties) {
-        return Objects.equals(baseUrl, properties.getBaseUrl())
-                && Objects.equals(modelName, properties.getModelName())
+    /** Model reference and dimensions identify generated vectors; the key and timeout never count. */
+    public boolean sameGeneration(EmbeddingSelection properties) {
+        return Objects.equals(modelId, properties.getModelId())
                 && Objects.equals(dimensions, properties.getDimensions());
     }
 

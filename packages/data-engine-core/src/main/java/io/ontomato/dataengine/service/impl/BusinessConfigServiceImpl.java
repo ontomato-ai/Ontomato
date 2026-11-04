@@ -11,16 +11,12 @@ import com.alibaba.fastjson2.JSONObject;
 import io.ontomato.dataengine.config.BusinessConfig;
 import io.ontomato.dataengine.config.DaoConst;
 import io.ontomato.dataengine.config.DataRagConfig;
-import io.ontomato.dataengine.config.EmbeddingModelProperties;
 import io.ontomato.dataengine.service.IdentityRuntimeSettings;
 import io.ontomato.dataengine.dao.BusinessConfigDao;
 import io.ontomato.dataengine.service.BusinessConfigService;
 
 @Service
 public class BusinessConfigServiceImpl implements BusinessConfigService {
-
-    @Autowired
-    private EmbeddingModelProperties embeddingModelProperties;
 
     @Autowired
     private DataRagConfig dataRagConfig;
@@ -40,16 +36,10 @@ public class BusinessConfigServiceImpl implements BusinessConfigService {
 	}
 
 	@Override
-	public void setEmbeddingModel(BusinessConfig.EmbeddingModelProperties properties, String domainId) {
-		businessConfigDao.saveEmbeddingModel(properties, domainId);
-	}
-
-	@Override
 	public BusinessConfig get(String domainId) {
 		BusinessConfig businessConfig = businessConfigDao.query(domainId);
 		if (businessConfig == null) {
 			businessConfig = BusinessConfig.from(
-					embeddingModelProperties,
 					dataRagConfig);
 			set(businessConfig, domainId);
 		}
@@ -78,12 +68,6 @@ public class BusinessConfigServiceImpl implements BusinessConfigService {
 		springServlet.put("multipart", springServletMultipart);
 		spring.put("servlet", springServlet);
 		wholeConfig.put("spring", spring);
-
-		JSONObject langchain4j = new JSONObject();
-		JSONObject langchain4jOpen_ai = new JSONObject();
-		langchain4jOpen_ai.put("embedding-model", businessConfig.getEmbeddingModelProperties());
-		langchain4j.put("open-ai", langchain4jOpen_ai);
-		wholeConfig.put("langchain4j", langchain4j);
 
 		JSONObject ontomato = new JSONObject();
 		DataRagConfig drc = JSON.parseObject(JSON.toJSONString(dataRagConfig), DataRagConfig.class);
@@ -115,17 +99,6 @@ public class BusinessConfigServiceImpl implements BusinessConfigService {
 		multipart.put("max-request-size", environment.getProperty("spring.servlet.multipart.max-request-size"));
 		view.put("spring", JSONObject.of("servlet", JSONObject.of("multipart", multipart)));
 
-		JSONObject openAi = new JSONObject();
-		BusinessConfig.EmbeddingModelProperties embedding = businessConfig.getEmbeddingModelProperties();
-		if (embedding != null) {
-			JSONObject item = new JSONObject();
-			item.put("modelName", embedding.getModelName());
-			item.put("apiKeyConfigured", embedding.getApiKey() != null && !embedding.getApiKey().isBlank());
-			item.put("timeout", embedding.getTimeout());
-			openAi.put("embedding-model", item);
-		}
-		view.put("langchain4j", JSONObject.of("open-ai", openAi));
-
 		JSONObject dataEngine = new JSONObject();
 		dataEngine.put("dataAdapter", businessConfig.getDataAdapter());
 		dataEngine.put("knowledgeMaxResult", businessConfig.getKnowledgeMaxResult());
@@ -139,8 +112,8 @@ public class BusinessConfigServiceImpl implements BusinessConfigService {
 	@Override
 	public String getWholeConfigDesc() {
 		return "If conf/application.yml is missing it is copied from the startup template; an existing site file is kept and read on restart. "
-				+ "The existing env placeholder mapping still applies. Conversation models and roles belong to the agent runtime.\n"
-				+ "This diagnosis view lists only non-secret fields, including whether Embedding is configured, never its address, key or headers.\n"
+				+ "The existing env placeholder mapping still applies. All model configuration belongs to the agent runtime.\n"
+				+ "This diagnosis view lists only non-secret fields, without model connection parameters.\n"
 				+ "The configurations `ontomato.data-engine.knowledgeMaxResult`, "
 				+ "`ontomato.data-engine.dslCookerTimeout`, "
 				+ "`ontomato.data-engine.dataAdapter` all take effect promptly after being configured through the page.\n"

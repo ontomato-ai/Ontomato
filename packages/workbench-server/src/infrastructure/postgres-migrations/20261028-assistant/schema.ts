@@ -43,4 +43,9 @@ export async function ensureAssistantSchema(c: QueryableClient) {
     user_id text NOT NULL, key text NOT NULL, value jsonb NOT NULL,
     created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now(),
     PRIMARY KEY(user_id,key));`);
+  for (const name of ["assistant_agents", "ops_diagnosis_settings"]) {
+    await c.query(`ALTER TABLE ${t(name)} ADD COLUMN IF NOT EXISTS model_reference_migrated boolean NOT NULL DEFAULT false;
+      ALTER TABLE ${t(name)} ALTER COLUMN model_reference_migrated SET DEFAULT true`);
+  }
+
 }

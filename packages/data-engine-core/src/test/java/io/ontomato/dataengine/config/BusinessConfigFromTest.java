@@ -1,29 +1,11 @@
 package io.ontomato.dataengine.config;
-
-import static org.junit.jupiter.api.Assertions.assertEquals;
-
+import static org.junit.jupiter.api.Assertions.*;
+import com.alibaba.fastjson2.JSONObject;
 import org.junit.jupiter.api.Test;
-
-/**
- * A new domain (confirmed item 1) defaults its embedding dimensions from the file configuration,
- * and its recorded vector source equals that initial configuration.
- */
 class BusinessConfigFromTest {
-
-    @Test
-    void newDomainDefaultsDimensionsTo2048WithMatchingVectorSource() {
-        EmbeddingModelProperties fileProps = new EmbeddingModelProperties();
-        fileProps.setBaseUrl("http://emb/v1");
-        fileProps.setApiKey("key");
-        fileProps.setModelName("m1");
-        fileProps.setDimensions(2048);
-
-        BusinessConfig businessConfig = BusinessConfig.from(fileProps, new DataRagConfig());
-
-        assertEquals(2048, businessConfig.getEmbeddingModelProperties().getDimensions());
-        assertEquals("http://emb/v1", businessConfig.getEmbeddingVectorSource().getBaseUrl());
-        assertEquals("m1", businessConfig.getEmbeddingVectorSource().getModelName());
-        assertEquals(2048, businessConfig.getEmbeddingVectorSource().getDimensions());
+    @Test void newDomainsDoNotCreateJavaModelConfiguration() {
+        var config = JSONObject.from(BusinessConfig.from(new DataRagConfig()));
+        assertFalse(config.containsKey("embeddingModelProperties"));
+        assertFalse(config.containsKey("embeddingVectorSource"));
     }
-
 }

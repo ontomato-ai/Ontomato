@@ -6,6 +6,8 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 import io.ontomato.dataengine.config.BusinessConfig;
+import io.ontomato.dataengine.service.ai.EmbeddingService;
+import io.ontomato.dataengine.service.ai.EmbeddingSelection;
 import io.ontomato.dataengine.dao.VectorRebuildState;
 import io.ontomato.dataengine.dao.VectorRebuildStateDao;
 import io.ontomato.dataengine.service.BusinessConfigService;
@@ -14,13 +16,16 @@ import io.ontomato.dataengine.service.LangService;
 /**
  * Owns the vector readiness of a domain and the boundary that the data access writes go through.
  * Vector search of a domain is allowed only when every vector belongs to the current generation
- * (baseUrl, modelName, dimensions); a running, paused, failed or interrupted round keeps it closed.
+ * (model reference, dimensions); a running, paused, failed or interrupted round keeps it closed.
  */
 @Component
 public class VectorRetrievalGate {
 
     @Autowired
     private BusinessConfigService businessConfigService;
+
+    @Autowired
+    private EmbeddingService embeddingService;
 
     @Autowired
     private VectorRebuildStateDao stateDao;
@@ -37,41 +42,16 @@ public class VectorRetrievalGate {
      * such as a restored or migrated one) counts as a round not yet started for the configured one.
      */
     public VectorRebuildState stateOf(String domainId, BusinessConfig businessConfig) {
-        BusinessConfig.EmbeddingModelProperties current = businessConfig.getEmbeddingModelProperties();
-        if (current == null) {
-            throw new IllegalStateException(
-                    "The embeddingModelProperties of this domain is missing; run the upgrade migration first");
-        }
+        EmbeddingSelection current = embeddingService.selection(domainId);
         VectorRebuildState state = stateDao.find(domainId);
         if (state == null) {
-            stateDao.insertIfAbsent(domainId, seed(businessConfig, current));
+            stateDao.insertIfAbsent(domainId, VectorRebuildState.of(current, VectorRebuildState.Status.READY, true));
             state = stateDao.find(domainId);
         }
         if (!state.sameGeneration(current)) {
             return VectorRebuildState.of(current, VectorRebuildState.Status.PENDING, false);
         }
         return state;
-    }
-
-    /**
-     * The first state of a domain recorded before this table existed, or created since: the stored
-     * embeddingVectorSource is the generation its vectors were made with, and new domains seed it
-     * with their initial configuration.
-     */
-    private static VectorRebuildState seed(BusinessConfig businessConfig,
-            BusinessConfig.EmbeddingModelProperties current) {
-        BusinessConfig.EmbeddingVectorSource source = businessConfig.getEmbeddingVectorSource();
-        if (source == null) {
-            throw new IllegalStateException(
-                    "The embeddingVectorSource of this domain is missing; run the upgrade migration first");
-        }
-        VectorRebuildState recorded = new VectorRebuildState();
-        recorded.setBaseUrl(source.getBaseUrl());
-        recorded.setModelName(source.getModelName());
-        recorded.setDimensions(source.getDimensions());
-        return recorded.sameGeneration(current)
-                ? VectorRebuildState.of(current, VectorRebuildState.Status.READY, true)
-                : VectorRebuildState.of(current, VectorRebuildState.Status.PENDING, false);
     }
 
     /**

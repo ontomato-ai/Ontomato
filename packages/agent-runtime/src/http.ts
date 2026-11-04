@@ -21,6 +21,8 @@ import { runtimeIdSchema } from "@ontomato/contracts/agent-runtime-values";
 import type { RuntimeStreamFrame } from "@ontomato/contracts/agent-runtime-events";
 import { AgentRuntime } from "./runtime";
 import { RuntimeError } from "./errors";
+import { runtimeEmbeddingsRequestSchema } from "@ontomato/contracts/runtime-embeddings";
+import { embedTexts, discoverModels } from "./model-provider";
 import { testModel } from "./model";
 
 export function createRuntimeHttp(runtime: AgentRuntime) {
@@ -102,8 +104,29 @@ export function createRuntimeHttp(runtime: AgentRuntime) {
     const controller = new AbortController();
     res.on("close", () => controller.abort());
     const { config, prompt } = await runtime.models.testDraft(ctx.scope.domainId, req.body);
-    const result = await testModel(config, prompt, ctx.correlationId, controller.signal);
+    const result = config.kind === "embedding"
+      ? { type: "embedding", dimensions: (await embedTexts(config, [prompt], controller.signal, true)).dimensions }
+      : await testModel(config, prompt, ctx.correlationId, controller.signal);
     if (!controller.signal.aborted) res.json(result);
+  }));
+  app.get("/v1/models/migration-map", route(async (req, res) => {
+    res.json(await runtime.models.migrationMap(scope(req).scope.domainId));
+  }));
+  app.post("/v1/models/import-embedding", route(async (req, res) => {
+    res.json(await runtime.models.importEmbedding(scope(req).scope.domainId, req.body));
+  }));
+  app.post("/v1/models/discover", route(async (req, res) => {
+    const draft = await runtime.models.discoveryDraft(scope(req).scope.domainId, req.body);
+    const controller = new AbortController();
+    res.on("close", () => controller.abort());
+    res.json(await discoverModels(draft, controller.signal));
+  }));
+  app.post("/v1/models/embeddings", route(async (req, res) => {
+    const config = await runtime.models.resolve(scope(req).scope.domainId, null, "embedding");
+    const { texts } = runtimeEmbeddingsRequestSchema.parse(req.body);
+    const controller = new AbortController();
+    res.on("close", () => controller.abort());
+    res.json(await embedTexts(config, texts, controller.signal));
   }));
   app.get("/v1/models/options", route(async (req, res) => {
     res.json(await runtime.models.options(scope(req).scope.domainId));

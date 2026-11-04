@@ -2,42 +2,43 @@ import { describe, expect, it } from "vitest";
 import { modelLabel, modelSelectionView, selectedModelId, type ModelSelectionLabels } from "@ontomato/contracts/model-selection";
 
 const labels: ModelSelectionLabels = {
-  nullChoice: "Domain default (Qwen (qwen-main))",
+  nullChoice: "Domain default (Qwen (gateway/qwen-main))",
   unavailable: (id) => `${id} (unavailable)`,
 };
 const models = [
-  { name: "qwen-main", displayName: "Qwen" },
-  { name: "deepseek", displayName: "deepseek" },
+  { ref: "gateway/qwen-main", name: "Qwen", type: "chat" as const },
+  { ref: "deepseek/chat", name: "deepseek/chat", type: "chat" as const },
+  { ref: "gateway/embed", name: "Embed", type: "embedding" as const },
 ];
 
 describe("model selection", () => {
   it("names a model by its display name and ID, once when they match", () => {
-    expect(modelLabel(models[0]!)).toBe("Qwen (qwen-main)");
-    expect(modelLabel(models[1]!)).toBe("deepseek");
+    expect(modelLabel(models[0]!)).toBe("Qwen (gateway/qwen-main)");
+    expect(modelLabel(models[1]!)).toBe("deepseek/chat");
   });
 
-  it("offers the null choice first, then every model", () => {
+  it("offers the null choice first, then every chat model", () => {
     const view = modelSelectionView(null, models, labels);
     expect(view.value).toBe("");
     expect(view.options).toEqual([
       { value: "", label: labels.nullChoice, disabled: false },
-      { value: "qwen-main", label: "Qwen (qwen-main)", disabled: false },
-      { value: "deepseek", label: "deepseek", disabled: false },
+      { value: "gateway/qwen-main", label: "Qwen (gateway/qwen-main)", disabled: false },
+      { value: "deepseek/chat", label: "deepseek/chat", disabled: false },
     ]);
     expect(view.missingId).toBeNull();
     expect(view.disabled).toBe(false);
-    expect(modelSelectionView("deepseek", models, labels).value).toBe("deepseek");
+    expect(modelSelectionView("deepseek/chat", models, labels).value).toBe("deepseek/chat");
   });
 
   it("keeps a missing model ID selected as it is, as an unavailable option, and reports it", () => {
-    const view = modelSelectionView("removed-model", models, labels);
-    expect(view.value).toBe("removed-model");
-    expect(view.missingId).toBe("removed-model");
-    expect(view.options.at(-1)).toEqual({ value: "removed-model", label: "removed-model (unavailable)", disabled: true });
+    const view = modelSelectionView("legacy/removed-model", models, labels);
+    expect(view.value).toBe("legacy/removed-model");
+    expect(view.missingId).toBe("legacy/removed-model");
+    expect(view.options.at(-1)).toEqual({ value: "legacy/removed-model", label: "legacy/removed-model (unavailable)", disabled: true });
   });
 
   it("offers nothing and reports nothing missing while the models are unknown", () => {
-    const view = modelSelectionView("removed-model", null, labels);
+    const view = modelSelectionView("legacy/removed-model", null, labels);
     expect(view.disabled).toBe(true);
     expect(view.missingId).toBeNull();
     expect(view.options).toEqual([{ value: "", label: labels.nullChoice, disabled: false }]);
@@ -45,6 +46,6 @@ describe("model selection", () => {
 
   it("stores the null choice as null and anything else as the model ID", () => {
     expect(selectedModelId("")).toBeNull();
-    expect(selectedModelId("deepseek")).toBe("deepseek");
+    expect(selectedModelId("deepseek/chat")).toBe("deepseek/chat");
   });
 });

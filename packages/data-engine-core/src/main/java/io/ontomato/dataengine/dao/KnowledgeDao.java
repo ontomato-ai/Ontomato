@@ -4,8 +4,6 @@ import com.alibaba.fastjson2.JSON;
 import com.pgvector.PGvector;
 import io.ontomato.dataengine.service.ai.EmbeddingService;
 import io.ontomato.dataengine.service.vector.VectorRetrievalGate;
-import dev.langchain4j.data.embedding.Embedding;
-import dev.langchain4j.model.output.Response;
 import jakarta.annotation.PostConstruct;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -65,8 +63,8 @@ public class KnowledgeDao extends BaseDao {
         float[] findVector = null;
         String queryString = "";
         try {
-            Response<Embedding> embeddingResponse = embeddingService.embedding(question, domainId);
-            findVector = embeddingResponse.content().vector();
+            float[] embeddingResponse = embeddingService.embedding(question, domainId);
+            findVector = embeddingResponse;
 
             queryString = "SELECT " + COLUMNS + " FROM " + TABLE_NAME
                     + " WHERE status = 1 AND domain_id = ? AND knowledge_vector IS NOT NULL ORDER BY knowledge_vector <-> ?::vector LIMIT ?";
@@ -112,7 +110,7 @@ public class KnowledgeDao extends BaseDao {
                 : new Timestamp(System.currentTimeMillis());
 
         int saved = retrievalGate.write(domainId, () -> {
-            float[] embededVector = embeddingService.embedding(knowledgeText, domainId).content().vector();
+            float[] embededVector = embeddingService.embedding(knowledgeText, domainId);
             return jdbcTemplate.update(
                 "INSERT INTO " + TABLE_NAME + " (" + COLUMNS + ", knowledge_vector) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?::vector) "
                         + "ON CONFLICT (knowledge_id) DO UPDATE SET knowledge_title = EXCLUDED.knowledge_title, "

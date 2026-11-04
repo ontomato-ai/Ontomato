@@ -23,8 +23,6 @@ import io.ontomato.dataengine.service.ai.EmbeddingService;
 import io.ontomato.dataengine.service.vector.VectorRetrievalGate;
 import io.ontomato.dataengine.util.AutoKMeansClusteringUtil;
 
-import dev.langchain4j.data.embedding.Embedding;
-import dev.langchain4j.model.output.Response;
 import jakarta.annotation.PostConstruct;
 import lombok.extern.slf4j.Slf4j;
 
@@ -97,7 +95,7 @@ public class ActionDao extends BaseDao {
 		String brief = buildBrief(action.getName(), action.getDescription());
 
 		retrievalGate.write(domainId, () -> {
-			PGvector pgVector = new PGvector(embeddingService.embedding(brief, domainId).content().vector());
+			PGvector pgVector = new PGvector(embeddingService.embedding(brief, domainId));
 			return jdbcTemplate.update(
 				"INSERT INTO " + TABLE_NAME + " (" + COLUMNS + ", brief, brief_vector) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?::vector) "
 						+ "ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, description = EXCLUDED.description, "
@@ -246,8 +244,8 @@ public class ActionDao extends BaseDao {
 	private List<Object[]> search(String question, String className, int maxResult, double minScore, String domainId) {
 		List<Object[]> oList = new ArrayList<Object[]>();
 		try {
-			Response<Embedding> embeddingResponse = embeddingService.embedding(question, domainId);
-			float[] findVector = embeddingResponse.content().vector();
+			float[] embeddingResponse = embeddingService.embedding(question, domainId);
+			float[] findVector = embeddingResponse;
 			PGvector pgVector = new PGvector(findVector);
 
 			StringBuilder whereSql = new StringBuilder("status = ?");

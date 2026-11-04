@@ -21,6 +21,8 @@ public class OntologyAgentModelSettings {
   @PostConstruct
   public void initialize() {
     jdbc.execute("CREATE TABLE IF NOT EXISTS ontology_agent_settings (domain_id text NOT NULL, agent_id uuid NOT NULL, model_selection jsonb NOT NULL, PRIMARY KEY(domain_id,agent_id))");
+    jdbc.execute("ALTER TABLE ontology_agent_settings ADD COLUMN IF NOT EXISTS model_reference_migrated boolean NOT NULL DEFAULT false");
+    jdbc.execute("ALTER TABLE ontology_agent_settings ALTER COLUMN model_reference_migrated SET DEFAULT true");
   }
 
   public record Agent(String id, String kind, String name) {}
@@ -62,15 +64,15 @@ public class OntologyAgentModelSettings {
     JSONObject selection = input.getJSONObject("modelSelection");
     AgentJson.fields(selection, "modelId");
     Object value = selection.get("modelId");
-    if (value != null && (!(value instanceof String) || ((String) value).isBlank()))
+    if (value != null && (!(value instanceof String) || (!((String) value).contains("/") || ((String) value).endsWith("/"))))
       throw AgentHttpException.invalid("modelId must be a nonempty string or null");
     String model = value == null ? null : ((String) value).trim();
     if (model != null) {
       var options = runtime.json(domain, "agent-model-selection", "/v1/models/options", "GET", null, null);
-      boolean exists = options.getJSONArray("models").stream().anyMatch(item -> model.equals(((JSONObject) item).getString("name")));
+      boolean exists = options.getJSONArray("models").stream().anyMatch(item -> model.equals(((JSONObject) item).getString("ref")) && "chat".equals(((JSONObject) item).getString("type")));
       if (!exists) throw AgentHttpException.invalid("The selected model does not exist in this domain");
     }
-    jdbc.update("INSERT INTO ontology_agent_settings(domain_id,agent_id,model_selection) VALUES(?,?::uuid,?::jsonb) ON CONFLICT(domain_id,agent_id) DO UPDATE SET model_selection=EXCLUDED.model_selection",
+    jdbc.update("INSERT INTO ontology_agent_settings(domain_id,agent_id,model_selection) VALUES(?,?::uuid,?::jsonb) ON CONFLICT(domain_id,agent_id) DO UPDATE SET model_selection=EXCLUDED.model_selection,model_reference_migrated=true",
         domain, id, JSONObject.of("modelId", model).toJSONString(com.alibaba.fastjson2.JSONWriter.Feature.WriteMapNullValue));
     return view(domain, agent);
   }

@@ -1,147 +1,54 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { createServer, type Server } from "node:http";
 import { randomUUID } from "node:crypto";
 import pg from "pg";
-import { modelSettingsWriteSchema, parseIsoDurationSeconds } from "@ontomato/contracts/model-settings";
-import { openSealedModelKey } from "@ontomato/contracts/model-key-seal";
-import { runtimeStartRunRequestSchema } from "@ontomato/contracts/agent-runtime";
 import { RuntimeStore } from "../store";
 import { RuntimeModelSettings } from "../model-settings";
-import { createRuntimeHttp } from "../http";
-import type { AgentRuntime } from "../runtime";
-
+import { emptyModelSettings } from "../model-migration";
+import { sealModelKey } from "@ontomato/contracts/model-key-seal";
 const database = process.env.RUNTIME_TEST_DATABASE_URL;
-const draft = (keys = ["sk-first-key-0001", "sk-second-key-0001"]) => ({
-  name: "main", baseUrl: "http://127.0.0.1:9/v1", modelName: "fixture-model", apiKeys: keys,
-  maxTokens: null, contextWindow: null, timeout: null, temperature: 0, topP: 0,
-  customRequestParameters: { vendor: { enabled: false }, seed: 0 },
-});
-it("keeps explicit domain defaults and nullable editor defaults in one schema", () => {
-  const parsed = modelSettingsWriteSchema.parse({ models: [draft()], defaultModelId: null });
-  expect(parsed.models[0]).toMatchObject({ maxTokens: 50000, contextWindow: 256000, displayName: "main", temperature: 0 });
-  expect(modelSettingsWriteSchema.safeParse({ models: [draft()], defaultModelId: "missing" }).success).toBe(false);
-  expect(modelSettingsWriteSchema.safeParse({ models: [draft(), draft()], defaultModelId: null }).success).toBe(false);
-  expect(modelSettingsWriteSchema.safeParse({ models: [], defaultModelId: "missing" }).success).toBe(false);
-  expect(modelSettingsWriteSchema.safeParse({ models: [], defaultModelId: null, extra: null }).success).toBe(false);
-  for (const value of [[], "not-an-object", 12]) {
-    expect(modelSettingsWriteSchema.safeParse({ models: [{ ...draft(), customRequestParameters: value }], defaultModelId: null }).success).toBe(false);
-  }
-  expect(parseIsoDurationSeconds("PT1H30M")).toBe(5400);
-  expect(() => parseIsoDurationSeconds("PT")).toThrow();
-  expect(runtimeStartRunRequestSchema.shape).not.toHaveProperty("modelCredential");
-});
-
-// Needs PostgreSQL; a missing database fails instead of reporting a green skip.
-if (!database)
-  throw new Error("Set RUNTIME_TEST_DATABASE_URL to a disposable PostgreSQL database");
-describe("runtime domain model configuration HTTP/PG contract", () => {
+if (!database) throw new Error("Set RUNTIME_TEST_DATABASE_URL to a disposable PostgreSQL database");
+describe("persisted domain model settings and upgrade", () => {
   const schema = "models_" + randomUUID().replaceAll("-", "");
-  const sealToken = "fixture-seal-token";
-  let store: RuntimeStore, models: RuntimeModelSettings, server: Server, provider: Server;
-  let url = "", providerUrl = "", observedKey = "";
-  const hosts = [{ id: "workbench", token: "host-a", providers: [] }, { id: "ontology", token: "host-b", providers: [] }];
-  async function request(path: string, body?: unknown, domain = "1", token = "host-a", method = body ? "PUT" : "GET") {
-    const response = await fetch(url + path, { method,
-      headers: { authorization: `Bearer ${token}`, "x-domain-id": domain, "x-correlation-id": "fixture", "content-type": "application/json" },
-      body: body === undefined ? undefined : JSON.stringify(body),
-    });
-    return { status: response.status, data: await response.json() };
-  }
-  async function start() {
-    store = new RuntimeStore(database!, schema);
-    await store.initialize();
-    models = new RuntimeModelSettings(store, sealToken);
-    server = createServer(createRuntimeHttp({ options: { hosts }, models } as unknown as AgentRuntime));
-    await new Promise<void>(resolve => server.listen(0, "127.0.0.1", resolve));
-    url = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
-  }
-  async function stop() {
-    server.closeAllConnections();
-    await new Promise<void>(resolve => server.close(() => resolve()));
-    await store.close();
-  }
+  let store: RuntimeStore, models: RuntimeModelSettings;
+  const draft = () => ({ ...emptyModelSettings(), providers: { gateway: {
+    api: "openai-completions" as const, baseUrl: "http://127.0.0.1:9/v1", apiKey: "sk-first-key-0001",
+    models: [{ id: "vendor/chat", type: "chat" as const }],
+  } }, defaultModelId: "gateway/vendor/chat" });
   beforeAll(async () => {
-    await start();
-    provider = createServer(async (req, res) => {
-      observedKey = req.headers.authorization ?? "";
-      for await (const _chunk of req) { /* Drain request. */ }
-      res.writeHead(200, { "content-type": "text/event-stream" });
-      res.end(`data: ${JSON.stringify({ id: "test", object: "chat.completion.chunk", model: "fixture-model",
-        choices: [{ index: 0, delta: { role: "assistant", content: "connected" }, finish_reason: "stop" }],
-      })}\n\ndata: [DONE]\n\n`);
-    });
-    await new Promise<void>(resolve => provider.listen(0, "127.0.0.1", resolve));
-    providerUrl = `http://127.0.0.1:${(provider.address() as { port: number }).port}/v1`;
+    store = new RuntimeStore(database!, schema); await store.initialize();
+    models = new RuntimeModelSettings(store, "seal-token"); await models.initialize();
   });
   afterAll(async () => {
-    await stop();
-    provider.closeAllConnections();
-    await new Promise<void>(resolve => provider.close(() => resolve()));
-    const pool = new pg.Pool({ connectionString: database });
-    await pool.query(`DROP SCHEMA "${schema}" CASCADE`);
-    await pool.end();
+    await store.close(); const pool = new pg.Pool({ connectionString: database });
+    await pool.query(`DROP SCHEMA "${schema}" CASCADE`); await pool.end();
   });
-  it("shares one library across hosts, isolates domains, and never returns or stores plaintext keys", async () => {
-    expect((await request("/v1/models/settings", undefined, "1", "invalid")).status).toBe(401);
-    const saved = await request("/v1/models/settings", { models: [draft()], defaultModelId: null });
-    expect(saved.status).toBe(200);
-    expect(saved.data.models[0].apiKeys).toEqual(["******0001", "******0001"]);
-    expect(saved.data.defaultModelId).toBeNull();
-    const read = await request("/v1/models/settings", undefined, "1", "host-b");
-    expect(read.data.defaultModelId).toEqual(saved.data.defaultModelId);
-    expect(read.data.models[0].apiKeys).toEqual(["******0001", "******0001"]);
-    expect(JSON.stringify(read.data)).not.toContain("sk-first");
-    expect((await request("/v1/models/settings", undefined, "other", "host-b")).data.models).toEqual([]);
-    const stored = (await store.pool.query(`SELECT settings FROM ${store.table("model_settings")} WHERE domain_id='1'`)).rows[0];
-    expect(JSON.stringify(stored)).not.toContain("sk-first");
-    expect(stored.settings.models[0].apiKeys[0]).toMatch(/^enc:v1:/);
-    expect(stored.settings.models[0].apiKeys.map((k: string) => openSealedModelKey(k, sealToken))).toEqual(draft().apiKeys);
-    await expect(models.resolve("other", null)).rejects.toMatchObject({ code: "MODEL_NOT_CONFIGURED" });
+  it("encrypts keys, masks reads, retains matched masks and rejects foreign masks atomically", async () => {
+    const saved = await models.save("d1", draft());
+    expect(saved.providers.gateway!.apiKey).toBe("******0001");
+    const raw = (await store.pool.query(`SELECT settings FROM ${store.table("model_settings")} WHERE domain_id='d1'`)).rows[0].settings;
+    expect(raw.providers.gateway.apiKey).toMatch(/^enc:v1:/);
+    expect(JSON.stringify(raw)).not.toContain("sk-first");
+    await models.save("d1", saved);
+    await expect(models.save("d2", saved)).rejects.toMatchObject({ code: "INVALID_REQUEST" });
+    await expect(models.save("d1", { ...saved, providers: { gateway: { ...saved.providers.gateway, apiKey: "******9999" } } })).rejects.toMatchObject({ code: "INVALID_REQUEST" });
+    expect(await models.get("d1")).toEqual(saved);
+    expect((await models.resolve("d1", null)).id).toBe("vendor/chat");
+    await expect(models.resolve("d1", "missing/chat")).rejects.toMatchObject({ code: "MODEL_NOT_CONFIGURED" });
+    expect(JSON.stringify(await models.options("d1"))).not.toContain("apiKey");
   });
-  it("restores duplicate masks in order and rejects unmatched or foreign masks atomically", async () => {
-    const keys = ["******0001", "sk-replacement-5555", "******0001"];
-    expect((await request("/v1/models/settings", { models: [draft(keys)], defaultModelId: null })).status).toBe(200);
-    const before = await models.get("1");
-    const stored = (await store.pool.query(`SELECT settings FROM ${store.table("model_settings")} WHERE domain_id='1'`)).rows[0];
-    expect(stored.settings.models[0].apiKeys.map((key: string) => openSealedModelKey(key, sealToken)))
-      .toEqual(["sk-first-key-0001", "sk-replacement-5555", "sk-second-key-0001"]);
-    expect(before.defaultModelId).toBeNull(); // Saves never implicitly replace the domain default.
-    for (const domain of ["1", "other"]) {
-      const result = await request("/v1/models/settings", { models: [draft(["******9999"])], defaultModelId: null }, domain);
-      expect(result.status).toBe(400);
-    }
-    expect((await models.get("1")).models).toEqual(before.models);
-    expect((await request("/v1/models/settings", { models: [], defaultModelId: "main" })).status).toBe(400);
-    const sealed = stored.settings.models[0].apiKeys[0];
-    expect((await request("/v1/models/settings", { models: [draft([sealed])], defaultModelId: null })).status).toBe(400);
-  });
-  it("tests a saved mask at the new owner without writing", async () => {
-    const before = await models.get("1");
-    const result = await request("/v1/models/test", { model: { ...draft(["******0001"]), baseUrl: providerUrl }, prompt: "hello" }, "1", "host-b", "POST");
-    expect(result).toEqual({ status: 200, data: { content: "connected" } });
-    expect(observedKey).toBe("Bearer sk-first-key-0001");
-    expect((await models.get("1")).models).toEqual(before.models);
-    expect((await request("/v1/models/test", { model: draft(["******0001"]) }, "other", "host-a", "POST")).status).toBe(400);
-  });
-  it("resolves explicit IDs or the domain default without leaking settings through options", async () => {
-    await models.save("selection", { models: [draft(), { ...draft(), name: "second", modelName: "second-provider" }], defaultModelId: "main" });
-    expect((await models.resolve("selection", null)).modelName).toBe("fixture-model");
-    expect((await models.resolve("selection")).modelName).toBe("fixture-model");
-    expect((await models.resolve("selection", "second")).modelName).toBe("second-provider");
-    expect(await models.options("selection")).toEqual({ models: [{ name: "main", displayName: "main" }, { name: "second", displayName: "second" }], defaultModelId: "main" });
-    await models.save("selection", { models: [{ ...draft(), displayName: "Renamed" }], defaultModelId: "main" });
-    expect((await models.resolve("selection", "main")).name).toBe("main");
-    await expect(models.resolve("selection", "second")).rejects.toMatchObject({ code: "MODEL_NOT_CONFIGURED" });
-    await models.save("selection", { models: [draft()], defaultModelId: null });
-    await expect(models.resolve("selection", null)).rejects.toMatchObject({ code: "MODEL_NOT_CONFIGURED" });
-    expect((await models.resolve("selection", "main")).name).toBe("main");
-  });
-  it("persists configuration across restart and does not reseed an intentionally emptied library", async () => {
-    await stop(); await start();
-    expect((await request("/v1/models/settings", undefined, "1", "host-b")).data.models[0].name).toBe("main");
-    const seeded = new RuntimeModelSettings(store, sealToken, { baseUrl: providerUrl, apiKey: "seed-key", modelName: "seed-model" });
-    expect((await seeded.get("seeded")).defaultModelId).toBe("default");
-    await seeded.save("seeded", { models: [], defaultModelId: null });
-    expect((await seeded.get("seeded")).models).toEqual([]);
+  it("upgrades once, exposes the mapping, and acknowledges repeated Java imports without overwriting edits", async () => {
+    const legacy = { models: [{ name: "main", modelName: "chat", baseUrl: "https://gateway/v1",
+      apiKeys: [sealModelKey("key", "seal-token")], timeout: "PT10S" }], defaultModelId: "main" };
+    await store.pool.query(`INSERT INTO ${store.table("model_settings")} VALUES($1,$2)`, ["upgrade", legacy]);
+    await models.initialize();
+    expect((await models.migrationMap("upgrade")).references).toEqual({ main: "gateway/chat" });
+    const input = { baseUrl: "https://gateway/v1", apiKey: "key", modelName: "embed", dimensions: 2 };
+    const first = await models.importEmbedding("upgrade", input);
+    expect(first).toEqual({ importedModelId: "gateway/embed", embeddingModelId: "gateway/embed" });
+    const saved = await models.get("upgrade"); saved.embeddingModelId = null;
+    await models.save("upgrade", saved);
+    await models.initialize();
+    expect(await models.importEmbedding("upgrade", input)).toEqual({ importedModelId: "gateway/embed", embeddingModelId: null });
+    expect((await models.get("upgrade")).providers.gateway!.models).toHaveLength(2);
   });
 });

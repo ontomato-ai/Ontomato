@@ -4,7 +4,10 @@ import { useI18n } from "vue-i18n";
 import type { ModelOptions } from "@ontomato/contracts/model-settings";
 import { modelLabel, modelSelectionView, selectedModelId } from "@ontomato/contracts/model-selection";
 
-/** Element Plus rendering of the shared model selection rule for an agent: null follows the domain default. */
+/**
+ * Element Plus rendering of the shared model selection rule for an agent: null follows the domain default, and only
+ * chat models are offered (the rule filters them).
+ */
 const props = defineProps<{
   modelValue: string | null;
   /** The domain's models and default; null while they are not known. */
@@ -16,7 +19,7 @@ const emit = defineEmits<{ "update:modelValue": [value: string | null] }>();
 const { t } = useI18n();
 
 const view = computed(() => {
-  const current = props.options?.models.find((model) => model.name === props.options?.defaultModelId);
+  const current = props.options?.models.find((model) => model.ref === props.options?.defaultModelId);
   return modelSelectionView(props.modelValue, props.options?.models ?? null, {
     nullChoice: t("agents.followDomainDefault", { model: current ? modelLabel(current) : t("agents.noDefaultModel") }),
     unavailable: (id) => t("agents.modelUnavailable", { id }),

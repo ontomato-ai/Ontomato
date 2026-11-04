@@ -15,10 +15,12 @@ const t = i18n.global.t as (key: string, params?: Record<string, unknown>) => st
 
 const options: ModelOptions = {
   models: [
-    { name: "qwen-main", displayName: "Qwen" },
-    { name: "deepseek", displayName: "deepseek" },
+    { ref: "gateway/qwen-main", name: "Qwen", type: "chat" },
+    { ref: "deepseek/deepseek-chat", name: "deepseek/deepseek-chat", type: "chat" },
+    { ref: "gateway/embed", name: "Embed", type: "embedding", dimensions: 1024 },
   ],
-  defaultModelId: "qwen-main",
+  defaultModelId: "gateway/qwen-main",
+  embeddingModelId: "gateway/embed",
 };
 
 // The skill selector reports ready at once; the prompt editor is a plain stand-in.
@@ -79,27 +81,34 @@ const saveButton = (wrapper: VueWrapper) =>
 
 describe("workbench agent model selection", () => {
   it("keeps a missing model ID as it is, reports it, and saves it unchanged when other fields change", async () => {
-    const { wrapper, update } = await mountEditor("removed-model");
+    const { wrapper, update } = await mountEditor("legacy/removed-model");
     const control = wrapper.findComponent(ModelSelectionSelect);
-    expect(selected(control)).toBe(t("agents.modelUnavailable", { id: "removed-model" }));
-    expect(control.find("[role='alert']").text()).toBe(t("agents.modelSelectionMissing", { id: "removed-model" }));
+    expect(selected(control)).toBe(t("agents.modelUnavailable", { id: "legacy/removed-model" }));
+    expect(control.find("[role='alert']").text()).toBe(t("agents.modelSelectionMissing", { id: "legacy/removed-model" }));
 
     await wrapper.find("input").setValue("Sales analyst 2");
     await saveButton(wrapper).trigger("click");
     await flushPromises();
-    expect(update.mock.calls[0]![1]).toMatchObject({ name: "Sales analyst 2", modelSelection: { modelId: "removed-model" } });
+    expect(update.mock.calls[0]![1]).toMatchObject({ name: "Sales analyst 2", modelSelection: { modelId: "legacy/removed-model" } });
+  });
+
+  it("offers only chat models, by provider/model reference", async () => {
+    const { wrapper } = await mountEditor(null);
+    const values = wrapper.findComponent(ModelSelectionSelect).findAllComponents({ name: "ElOption" })
+      .map((option) => option.props("value"));
+    expect(values).toEqual(["", "gateway/qwen-main", "deepseek/deepseek-chat"]);
   });
 
   it("saves the chosen model, or null for the domain default", async () => {
     const { wrapper, update } = await mountEditor(null);
     const control = () => wrapper.findComponent(ModelSelectionSelect);
-    expect(selected(control())).toBe(t("agents.followDomainDefault", { model: "Qwen (qwen-main)" }));
+    expect(selected(control())).toBe(t("agents.followDomainDefault", { model: "Qwen (gateway/qwen-main)" }));
 
-    await choose(control(), "deepseek");
+    await choose(control(), "deepseek/deepseek-chat");
     expect(saveButton(wrapper).attributes("disabled")).toBeUndefined();
     await saveButton(wrapper).trigger("click");
     await flushPromises();
-    expect(update.mock.calls[0]![1].modelSelection).toEqual({ modelId: "deepseek" });
+    expect(update.mock.calls[0]![1].modelSelection).toEqual({ modelId: "deepseek/deepseek-chat" });
 
     await choose(control(), "");
     await saveButton(wrapper).trigger("click");
@@ -121,17 +130,17 @@ describe("operations agent model", () => {
   }
 
   it("shows a missing model ID as it is and saves a new choice at once", async () => {
-    vi.spyOn(diagnosisModelApi, "get").mockResolvedValue({ modelId: "removed-model" });
+    vi.spyOn(diagnosisModelApi, "get").mockResolvedValue({ modelId: "legacy/removed-model" });
     const save = vi.spyOn(diagnosisModelApi, "save").mockImplementation(async (selection) => selection);
     const wrapper = await mountPanel();
     const control = () => wrapper.findComponent(ModelSelectionSelect);
-    expect(selected(control())).toBe(t("agents.modelUnavailable", { id: "removed-model" }));
+    expect(selected(control())).toBe(t("agents.modelUnavailable", { id: "legacy/removed-model" }));
     expect(control().find("[role='alert']").exists()).toBe(true);
     expect(save).not.toHaveBeenCalled();
 
-    await choose(control(), "deepseek");
-    expect(save).toHaveBeenCalledWith({ modelId: "deepseek" });
-    expect(control().props("modelValue")).toBe("deepseek");
+    await choose(control(), "deepseek/deepseek-chat");
+    expect(save).toHaveBeenCalledWith({ modelId: "deepseek/deepseek-chat" });
+    expect(control().props("modelValue")).toBe("deepseek/deepseek-chat");
     expect(control().find("[role='alert']").exists()).toBe(false);
   });
 
@@ -140,7 +149,7 @@ describe("operations agent model", () => {
     vi.spyOn(diagnosisModelApi, "save").mockRejectedValue(new Error("Model not configured"));
     const error = vi.spyOn(ElMessage, "error");
     const wrapper = await mountPanel();
-    await choose(wrapper.findComponent(ModelSelectionSelect), "deepseek");
+    await choose(wrapper.findComponent(ModelSelectionSelect), "deepseek/deepseek-chat");
     expect(error).toHaveBeenCalledWith("Model not configured");
     expect(wrapper.findComponent(ModelSelectionSelect).props("modelValue")).toBeNull();
   });

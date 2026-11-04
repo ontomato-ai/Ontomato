@@ -3,6 +3,7 @@ package io.ontomato.dataengine.controller;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
@@ -29,6 +30,8 @@ import io.ontomato.dataengine.service.IdentityService;
 import io.ontomato.dataengine.service.LangService;
 import io.ontomato.dataengine.service.ai.EmbeddingService;
 import io.ontomato.dataengine.service.vector.VectorRebuildService;
+import io.ontomato.dataengine.service.vector.VectorRetrievalGate;
+import io.ontomato.dataengine.service.agent.AgentHttpException;
 import io.ontomato.dataengine.service.vector.VectorRebuildStatus;
 import io.ontomato.dataengine.util.SpringBeanUtil;
 
@@ -62,77 +65,8 @@ class BusinessConfigControllerVectorRebuildTest {
         when(businessConfigService.get("d1")).thenReturn(stored);
         when(langService.get(any(), anyString())).thenAnswer(invocation -> invocation.getArgument(1));
         ReflectionTestUtils.setField(controller, "businessConfigService", businessConfigService);
-        ReflectionTestUtils.setField(controller, "embeddingService", embeddingService);
         ReflectionTestUtils.setField(controller, "langService", langService);
         ReflectionTestUtils.setField(controller, "vectorRebuildService", vectorRebuildService);
-    }
-
-    private static JSONObject embeddingInput(Integer dimensions) {
-        JSONObject input = new JSONObject();
-        input.put("baseUrl", "http://emb/v1");
-        input.put("apiKey", "key");
-        input.put("modelName", "m1");
-        if (dimensions != null) {
-            input.put("dimensions", dimensions);
-        }
-        return input;
-    }
-
-    @Test
-    void saveEmbeddingModelHandsTheDimensionsToTheVectorService() {
-        JSONObject response = controller.saveEmbeddingModel("zh-CN", embeddingInput(2048));
-
-        assertTrue(response.getBooleanValue("success"), response.toJSONString());
-        ArgumentCaptor<BusinessConfig.EmbeddingModelProperties> captor =
-                ArgumentCaptor.forClass(BusinessConfig.EmbeddingModelProperties.class);
-        verify(vectorRebuildService).saveEmbeddingModel(eq("d1"), eq("zh-CN"), captor.capture());
-        assertEquals(2048, captor.getValue().getDimensions());
-    }
-
-    @Test
-    void saveEmbeddingModelRejectsMissingOrNonPositiveDimensions() {
-        for (JSONObject input : List.of(embeddingInput(null), embeddingInput(0), embeddingInput(-4))) {
-            JSONObject response = controller.saveEmbeddingModel("zh-CN", input);
-            assertFalse(response.getBooleanValue("success"), input.toJSONString());
-            assertTrue(response.getString("message").contains("dimensions"), response.toJSONString());
-        }
-    }
-
-    @Test
-    void saveEmbeddingModelReportsARefusalWhileARebuildRuns() {
-        org.mockito.Mockito.doThrow(new IllegalStateException("Vector.saveRefusedWhileRebuilding"))
-                .when(vectorRebuildService).saveEmbeddingModel(eq("d1"), eq("zh-CN"), any());
-
-        JSONObject response = controller.saveEmbeddingModel("zh-CN", embeddingInput(2048));
-
-        assertFalse(response.getBooleanValue("success"));
-        assertTrue(response.getString("message").contains("Vector.saveRefusedWhileRebuilding"), response.toJSONString());
-    }
-
-    @Test
-    void testEmbeddingModelRejectsMissingDimensions() {
-        JSONObject input = new JSONObject();
-        input.put("modelConfig", embeddingInput(null));
-
-        JSONObject response = controller.testEmbeddingModel(input);
-
-        assertFalse(response.getBooleanValue("success"));
-        assertTrue(response.getString("message").contains("dimensions"), response.toJSONString());
-    }
-
-    @Test
-    void testEmbeddingModelReportsDraftAgainstActualLength() throws Exception {
-        when(embeddingService.testEmbeddingModel(any(), anyString()))
-                .thenThrow(new IllegalArgumentException(
-                        "The vector dimension returned by the embedding model 2048 and the requested embedding dimension 4096 are inconsistent"));
-        JSONObject input = new JSONObject();
-        input.put("modelConfig", embeddingInput(4096));
-
-        JSONObject response = controller.testEmbeddingModel(input);
-
-        assertFalse(response.getBooleanValue("success"));
-        assertTrue(response.getString("message").contains("4096"), response.toJSONString());
-        assertTrue(response.getString("message").contains("2048"), response.toJSONString());
     }
 
     @Test
@@ -154,6 +88,7 @@ class BusinessConfigControllerVectorRebuildTest {
         assertTrue(response.getBooleanValue("success"));
         JSONObject data = response.getJSONObject("data");
         assertEquals("FAILED", data.getString("state"));
+        assertTrue(data.getBooleanValue("configured"));
         assertEquals(7, data.getIntValue("total"));
         assertEquals(3, data.getIntValue("done"));
         assertEquals("EMBED", data.getJSONObject("error").getString("phase"));
@@ -184,6 +119,32 @@ class BusinessConfigControllerVectorRebuildTest {
         JSONObject response = controller.pauseVectorRebuild("zh-CN");
         assertFalse(response.getBooleanValue("success"));
         assertTrue(response.getString("message").contains("Vector.rebuildNotRunning"), response.toJSONString());
+    }
+
+    @Test
+    void unconfiguredEmbeddingReturnsASuccessfulEmptyRebuildStatus() {
+        var gate = mock(VectorRetrievalGate.class);
+        when(gate.stateOf("d1", stored)).thenThrow(new AgentHttpException(422, "MODEL_NOT_CONFIGURED", "No embedding model is configured"));
+        var service = new VectorRebuildService();
+        ReflectionTestUtils.setField(service, "businessConfigService", businessConfigService);
+        ReflectionTestUtils.setField(service, "retrievalGate", gate);
+        ReflectionTestUtils.setField(controller, "vectorRebuildService", service);
+        JSONObject response = controller.vectorRebuildStatus();
+        assertTrue(response.getBooleanValue("success"));
+        JSONObject data = response.getJSONObject("data");
+        assertFalse(data.getBooleanValue("configured"));
+        for (String field : List.of("state", "total", "done", "error")) assertNull(data.get(field));
+    }
+
+    @Test
+    void unavailableRuntimeStillReturnsAFailedStatusRequest() {
+        var gate = mock(VectorRetrievalGate.class);
+        when(gate.stateOf("d1", stored)).thenThrow(new AgentHttpException(503, "DEPENDENCY_UNAVAILABLE", "offline"));
+        var service = new VectorRebuildService();
+        ReflectionTestUtils.setField(service, "businessConfigService", businessConfigService);
+        ReflectionTestUtils.setField(service, "retrievalGate", gate);
+        ReflectionTestUtils.setField(controller, "vectorRebuildService", service);
+        assertFalse(controller.vectorRebuildStatus().getBooleanValue("success"));
     }
 
 }

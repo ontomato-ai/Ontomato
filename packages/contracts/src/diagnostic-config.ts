@@ -20,18 +20,6 @@ export const diagnosticConfigSchema = z.object({
       }),
     }),
   }),
-  langchain4j: z.object({
-    "open-ai": z.object({
-      /** Absent when no Embedding model is configured. */
-      "embedding-model": z
-        .object({
-          modelName: z.string().nullable(),
-          apiKeyConfigured: z.boolean(),
-          timeout: z.string().nullable(),
-        })
-        .optional(),
-    }),
-  }),
   ontomato: z.object({
     "data-engine": z.object({
       dataAdapter: z.string(),
