@@ -1,7 +1,10 @@
 package io.ontomato.dataengine.dataAdapter;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
@@ -40,6 +43,7 @@ public final class DslGrammarValidator {
 		}
 		for (int s = 0; s < steps.size(); s++) {
 			JSONObject step = steps.getJSONObject(s);
+			checkOutputFields(step, s);
 			JSONArray patterns = step == null || step.getJSONObject("graph") == null
 					? null
 					: step.getJSONObject("graph").getJSONArray("patterns");
@@ -70,6 +74,175 @@ public final class DslGrammarValidator {
 				}
 			}
 		}
+	}
+
+	private static final Pattern EXPR_NUMBER = Pattern
+			.compile("(?:\\d+(?:\\.\\d*)?|\\.\\d+)(?:[eE][+-]?\\d+)?");
+	private static final Pattern EXPR_STRING = Pattern.compile("'(?:''|[^'])*'");
+	private static final Pattern EXPR_REFERENCE = Pattern
+			.compile("[\\p{L}_][\\p{L}\\p{N}_]*\\.[\\p{L}_][\\p{L}\\p{N}_]*");
+	private static final Pattern EXPR_WORD = Pattern.compile("[\\p{L}_][\\p{L}\\p{N}_]*");
+
+	/**
+	 * Output fields are the projection contract: either {@code variable}+{@code field}, or
+	 * {@code expr} arithmetic after a temporary table. A missing key used to reach the adapter and
+	 * fail as an unlocated null dereference, so reject the shape here with the exact field path.
+	 */
+	private static void checkOutputFields(JSONObject step, int stepIndex) {
+		JSONObject output = step == null ? null : step.getJSONObject("output");
+		JSONArray fields = output == null ? null : output.getJSONArray("fields");
+		if (fields == null) {
+			return;
+		}
+		for (int i = 0; i < fields.size(); i++) {
+			JSONObject field = fields.getJSONObject(i);
+			String path = "steps[" + stepIndex + "].output.fields[" + i + "]";
+			if (field == null) {
+				throw invalid(path, "output field must be an object");
+			}
+			String alias = field.getString("as");
+			if (alias == null || alias.isBlank()) {
+				throw invalid(path + ".as", "output field requires a nonblank `as` alias");
+			}
+			String expr = field.getString("expr");
+			boolean variable = hasText(field.getString("variable"));
+			boolean sourceField = hasText(field.getString("field"));
+			if (expr != null) {
+				if (variable || sourceField || field.getString("function") != null
+						|| field.getBoolean("distinct") != null) {
+					throw invalid(path,
+							"`expr` cannot be combined with `variable`, `field`, `function` or `distinct`");
+				}
+				if (stepIndex == 0) {
+					throw invalid(path + ".expr",
+							"`expr` is only supported after a temporary table; use `variable` and `field` in the first step");
+				}
+				validateExpression(expr, path + ".expr");
+			} else if (!variable || !sourceField) {
+				throw invalid(path, "output field `" + alias
+						+ "` requires `variable` and `field`, or a supported `expr`");
+			}
+		}
+	}
+
+	private static boolean hasText(String value) {
+		return value != null && !value.isBlank();
+	}
+
+	/**
+	 * {@code expr} is arithmetic over numeric fields and literals. It is not a SQL escape hatch:
+	 * functions, CASE expressions and comparisons are rejected here with the field path.
+	 */
+	private static void validateExpression(String expression, String path) {
+		try {
+			List<String> tokens = expressionTokens(expression);
+			int[] position = { 0 };
+			parseExpression(tokens, position);
+			if (position[0] != tokens.size()) {
+				throw new IllegalArgumentException("unexpected token");
+			}
+		} catch (RuntimeException invalid) {
+			throw invalid(path,
+					"`expr` only supports arithmetic like `t.amount / t.total`; for aggregation use `variable` + `field` with `function` instead of SQL like `SUM(CASE ...)`");
+		}
+	}
+
+	private static List<String> expressionTokens(String expression) {
+		List<String> tokens = new ArrayList<>();
+		int index = 0;
+		while (index < expression.length()) {
+			char c = expression.charAt(index);
+			if (Character.isWhitespace(c)) {
+				index++;
+				continue;
+			}
+			Matcher matcher = EXPR_STRING.matcher(expression);
+			matcher.region(index, expression.length());
+			if (matcher.lookingAt()) {
+				tokens.add("value");
+				index = matcher.end();
+				continue;
+			}
+			matcher = EXPR_NUMBER.matcher(expression);
+			matcher.region(index, expression.length());
+			if (matcher.lookingAt()) {
+				tokens.add("value");
+				index = matcher.end();
+				continue;
+			}
+			matcher = EXPR_REFERENCE.matcher(expression);
+			matcher.region(index, expression.length());
+			if (matcher.lookingAt()) {
+				tokens.add("reference");
+				index = matcher.end();
+				continue;
+			}
+			matcher = EXPR_WORD.matcher(expression);
+			matcher.region(index, expression.length());
+			if (matcher.lookingAt()) {
+				String word = matcher.group();
+				if ("true".equalsIgnoreCase(word) || "false".equalsIgnoreCase(word)
+						|| "null".equalsIgnoreCase(word)) {
+					tokens.add("value");
+					index = matcher.end();
+					continue;
+				}
+				throw new IllegalArgumentException("unsupported identifier");
+			}
+			if ("+-*/()".indexOf(c) >= 0) {
+				tokens.add(String.valueOf(c));
+				index++;
+				continue;
+			}
+			throw new IllegalArgumentException("unsupported character");
+		}
+		return tokens;
+	}
+
+	private static void parseExpression(List<String> tokens, int[] position) {
+		parseTerm(tokens, position);
+		while (position[0] < tokens.size()
+				&& ("+".equals(tokens.get(position[0])) || "-".equals(tokens.get(position[0])))) {
+			position[0]++;
+			parseTerm(tokens, position);
+		}
+	}
+
+	private static void parseTerm(List<String> tokens, int[] position) {
+		parseFactor(tokens, position);
+		while (position[0] < tokens.size()
+				&& ("*".equals(tokens.get(position[0])) || "/".equals(tokens.get(position[0])))) {
+			position[0]++;
+			parseFactor(tokens, position);
+		}
+	}
+
+	private static void parseFactor(List<String> tokens, int[] position) {
+		while (position[0] < tokens.size()
+				&& ("+".equals(tokens.get(position[0])) || "-".equals(tokens.get(position[0])))) {
+			position[0]++;
+		}
+		if (position[0] >= tokens.size()) {
+			throw new IllegalArgumentException("missing operand");
+		}
+		String token = tokens.get(position[0]);
+		if ("(".equals(token)) {
+			position[0]++;
+			parseExpression(tokens, position);
+			if (position[0] >= tokens.size() || !")".equals(tokens.get(position[0]))) {
+				throw new IllegalArgumentException("missing closing parenthesis");
+			}
+			position[0]++;
+			return;
+		}
+		if (!"value".equals(token) && !"reference".equals(token)) {
+			throw new IllegalArgumentException("operand expected");
+		}
+		position[0]++;
+	}
+
+	private static DslContractViolationException invalid(String path, String detail) {
+		return new DslContractViolationException(DslContractViolationException.Code.INVALID_GRAMMAR, path, detail);
 	}
 
 	/** Every field a {@code timeseries} block names must be a bucket-type attribute of its class. */

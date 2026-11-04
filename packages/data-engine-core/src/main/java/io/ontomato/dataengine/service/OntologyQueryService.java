@@ -1,6 +1,7 @@
 package io.ontomato.dataengine.service;
 
 import io.ontomato.dataengine.dataAdapter.DslContractViolationException;
+import io.ontomato.dataengine.dataAdapter.DslGrammarValidator;
 import static io.ontomato.dataengine.dataAdapter.DslContractViolationException.Code.INVALID_GRAMMAR;
 
 import com.alibaba.fastjson2.JSON;
@@ -165,6 +166,8 @@ public class OntologyQueryService {
     JSONArray steps = query.getJSONObject("answer").getJSONArray("steps");
     if (steps == null || steps.isEmpty())
       throw new DslContractViolationException(INVALID_GRAMMAR, "answer.steps", "DSL steps are required");
+    // Run the shared grammar gate before source analysis so a malformed projection keeps its field path.
+    DslGrammarValidator.validate(query, classes(access));
     Set<String> temporary = new HashSet<>();
     for (Object step : steps) {
       checkGraph(step, access, temporary);
