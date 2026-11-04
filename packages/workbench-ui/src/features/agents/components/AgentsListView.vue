@@ -229,7 +229,7 @@ function deleted(id: string) {
 /* Fills the tab; the list and the editor scroll on their own, so a long agent list does not stretch the page. */
 .agent-settings {
   display: flex;
-  height: calc(100vh - 220px);
+  height: 100%;
   min-height: 420px;
 }
 .agent-list {
