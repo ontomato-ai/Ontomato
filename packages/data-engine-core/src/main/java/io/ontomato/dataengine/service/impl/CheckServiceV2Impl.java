@@ -94,10 +94,8 @@ public class CheckServiceV2Impl implements CheckServiceV2 {
   public void check(
       ABCHarnessCheck check,
       List<ABCHarnessProgram> programs,
-      JSONArray recipes,
       List<String> classNames,
-      String domainId,
-      boolean generateCandidates) {
+      String domainId) {
     try {
       // Call the quality checker
       List<ABCHarnessProgramDescription> programDescriptions =
@@ -126,13 +124,10 @@ public class CheckServiceV2Impl implements CheckServiceV2 {
       }
       throw new IllegalStateException("Quality check failed", e);
     }
-
-    // Candidates follow the settled conclusion; a candidate failure must not erase it.
-    if (!generateCandidates || check.getScore() == null || check.getScore() < 60) return;
-    createCandidates(check, programs, recipes, domainId);
   }
 
-  private void createCandidates(
+  @Override
+  public void generateCandidates(
       ABCHarnessCheck check,
       List<ABCHarnessProgram> programs,
       JSONArray recipes,

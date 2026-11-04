@@ -31,7 +31,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
 
-/** The quality conclusion is independent of the candidate that follows it. */
+/** Quality is its own job; candidates are a separate job that can fail on its own. */
 @ExtendWith(MockitoExtension.class)
 @MockitoSettings(strictness = Strictness.LENIENT)
 class CheckServiceV2ImplTest {
@@ -90,26 +90,18 @@ class CheckServiceV2ImplTest {
   }
 
   @Test
-  void candidateFailureKeepsTheQualityConclusion() throws Exception {
+  void qualityCheckSettlesTheConclusionWithoutCandidates() throws Exception {
     ABCHarnessCheck check = check();
-    when(functionService.generateFromABCProgram(any(), any(), any(), any(), any()))
-        .thenThrow(new IllegalStateException("Function generation failed"));
 
-    assertDoesNotThrow(
-        () ->
-            checks.check(
-                check,
-                List.of(program()),
-                JSONArray.of(JSONObject.of("kind", "python")),
-                List.of(),
-                DOMAIN,
-                true));
+    checks.check(check, List.of(program()), List.of(), DOMAIN);
 
     assertEquals(90.0, check.getScore());
     assertEquals("The program answers the question", check.getConclusion());
     assertEquals("How many staff are employed?", check.getFittedQuestion());
     assertTrue(check.getFinished());
     verify(checkDaoV2).save(check);
+    verify(functionService, never()).generateFromABCProgram(any(), any(), any(), any(), any());
+    verify(metricViewService, never()).generateFromFunction(any());
     verify(metricViewService, never()).save(any(), anyString());
     verify(metricViewService, never()).appendBinding(any(), any(), anyString());
   }
@@ -121,40 +113,56 @@ class CheckServiceV2ImplTest {
 
     assertThrows(
         IllegalStateException.class,
-        () ->
-            checks.check(
-                check,
-                List.of(program()),
-                JSONArray.of(JSONObject.of("kind", "python")),
-                List.of(),
-                DOMAIN,
-                true));
+        () -> checks.check(check, List.of(program()), List.of(), DOMAIN));
     assertNull(check.getScore());
     verify(functionService, never()).generateFromABCProgram(any(), any(), any(), any(), any());
   }
 
   @Test
-  void bindingBranchNeverCreatesACandidate() throws Exception {
-    ABCHarnessCheck check = check();
+  void candidateFailureIsLoggedAndTheNextCandidateStillRuns() throws Exception {
+    ABCHarnessCheck check = scoredCheck();
+    when(functionService.generateFromABCProgram(any(), any(), any(), any(), any()))
+        .thenThrow(new IllegalStateException("Function generation failed"))
+        .thenReturn(null);
 
-    checks.check(
-        check,
-        List.of(program()),
-        JSONArray.of(JSONObject.of("kind", "metric", "metricId", "metric-1")),
-        List.of(),
-        DOMAIN,
-        false);
+    assertDoesNotThrow(
+        () ->
+            checks.generateCandidates(
+                check,
+                List.of(program(), program()),
+                JSONArray.of(
+                    JSONObject.of("kind", "python"), JSONObject.of("kind", "python")),
+                DOMAIN));
 
-    assertEquals(90.0, check.getScore());
-    verify(functionService, never()).generateFromABCProgram(any(), any(), any(), any(), any());
-    verify(metricViewService, never()).generateFromFunction(any());
+    verify(functionService, times(2))
+        .generateFromABCProgram(any(), any(), any(), any(), any());
     verify(metricViewService, never()).save(any(), anyString());
     verify(metricViewService, never()).appendBinding(any(), any(), anyString());
   }
 
   @Test
+  void pythonRecipeKeepsTheExistingFunctionCandidate() throws Exception {
+    ABCHarnessCheck check = scoredCheck();
+    Function function = function();
+    MetricView candidate = metric(function);
+    when(functionService.generateFromABCProgram(any(), any(), any(), any(), any()))
+        .thenReturn(function);
+    when(functionService.save(function, "en")).thenReturn(function);
+    when(metricViewService.generateFromFunction(function)).thenReturn(candidate);
+    when(functionService.generateBindingName(any(), any(), any(), any(), any()))
+        .thenReturn("Employees in 2026");
+
+    checks.generateCandidates(
+        check, List.of(program()), JSONArray.of(JSONObject.of("kind", "python")), DOMAIN);
+
+    verify(functionService).save(function, "en");
+    verify(metricViewService).save(candidate, "en");
+    verify(metricViewService).appendBinding(eq("metric-1"), any(), eq(DOMAIN));
+  }
+
+  @Test
   void metricRecipeAppendsOnlyABinding() throws Exception {
-    ABCHarnessCheck check = check();
+    ABCHarnessCheck check = scoredCheck();
     Function function = function();
     MetricView metric = metric(function);
     when(metricViewService.queryById("metric-1", DOMAIN)).thenReturn(metric);
@@ -167,8 +175,8 @@ class CheckServiceV2ImplTest {
             "metricId", "metric-1",
             "parameters", JSONObject.of("year", "2026"));
 
-    checks.check(
-        check, List.of(program()), JSONArray.of(recipe), List.of(), DOMAIN, true);
+    checks.generateCandidates(
+        check, List.of(program()), JSONArray.of(recipe), DOMAIN);
 
     ArgumentCaptor<MetricViewBinding> binding = ArgumentCaptor.forClass(MetricViewBinding.class);
     verify(metricViewService).appendBinding(eq("metric-1"), binding.capture(), eq(DOMAIN));
@@ -182,7 +190,7 @@ class CheckServiceV2ImplTest {
 
   @Test
   void metricRecipeSkipsAnIdenticalBinding() throws Exception {
-    ABCHarnessCheck check = check();
+    ABCHarnessCheck check = scoredCheck();
     Function function = function();
     MetricView metric = metric(function);
     MetricViewBinding existing = new MetricViewBinding();
@@ -196,8 +204,8 @@ class CheckServiceV2ImplTest {
             "metricId", "metric-1",
             "parameters", JSONObject.of("year", "2026"));
 
-    checks.check(
-        check, List.of(program()), JSONArray.of(recipe), List.of(), DOMAIN, true);
+    checks.generateCandidates(
+        check, List.of(program()), JSONArray.of(recipe), DOMAIN);
 
     verify(functionService, never()).generateBindingName(any(), any(), any(), any(), any());
     verify(metricViewService, never()).appendBinding(any(), any(), anyString());
@@ -205,7 +213,7 @@ class CheckServiceV2ImplTest {
 
   @Test
   void metricRecipeWithABindingIdAppendsNothing() throws Exception {
-    ABCHarnessCheck check = check();
+    ABCHarnessCheck check = scoredCheck();
     JSONObject recipe =
         JSONObject.of(
             "kind", "metric",
@@ -213,8 +221,8 @@ class CheckServiceV2ImplTest {
             "bindingId", "binding-1",
             "parameters", JSONObject.of("year", "2026"));
 
-    checks.check(
-        check, List.of(program()), JSONArray.of(recipe), List.of(), DOMAIN, true);
+    checks.generateCandidates(
+        check, List.of(program()), JSONArray.of(recipe), DOMAIN);
 
     verify(metricViewService, never()).queryById(anyString(), anyString());
     verify(metricViewService, never()).appendBinding(any(), any(), anyString());
@@ -238,6 +246,15 @@ class CheckServiceV2ImplTest {
     check.setLang("en");
     check.setCreateTimestamp(System.currentTimeMillis());
     check.setFinished(false);
+    return check;
+  }
+
+  private static ABCHarnessCheck scoredCheck() {
+    ABCHarnessCheck check = check();
+    check.setScore(90.0);
+    check.setConclusion("The program answers the question");
+    check.setFittedQuestion("How many staff are employed?");
+    check.setFinished(true);
     return check;
   }
 
