@@ -263,7 +263,10 @@ onMounted(load);
 <template>
   <section class="business-knowledge" :class="{ 'narrow-detail': narrowDetail }">
     <header class="knowledge-titlebar">
-      <h1>{{ t("nav.businessKnowledge") }}</h1>
+      <div class="knowledge-heading">
+        <h1>{{ t("nav.businessKnowledge") }}</h1>
+        <p>{{ ot("knowledgeDesc") }}</p>
+      </div>
       <div class="knowledge-actions">
         <el-button
           @click="emit('governance')"
@@ -467,15 +470,31 @@ onMounted(load);
   padding: 0 var(--spacing-lg);
   border-bottom: 1px solid var(--el-border-color);
 }
+.knowledge-heading {
+  display: flex;
+  min-width: 0;
+  align-items: baseline;
+  gap: var(--spacing-md);
+}
 .knowledge-titlebar h1 {
   margin: 0;
   color: var(--el-text-color-primary);
   font-size: var(--text-lg);
   font-weight: var(--font-semibold);
   line-height: var(--leading-lg);
+  white-space: nowrap;
+}
+.knowledge-heading p {
+  margin: 0;
+  overflow: hidden;
+  color: var(--el-text-color-secondary);
+  font-size: var(--text-sm);
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .knowledge-actions {
   display: flex;
+  flex: 0 0 auto;
   flex-wrap: wrap;
   gap: var(--spacing-sm);
 }
