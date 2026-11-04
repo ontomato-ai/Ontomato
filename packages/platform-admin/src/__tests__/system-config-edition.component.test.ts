@@ -1,11 +1,16 @@
 import { readdirSync } from "node:fs";
 import { resolve } from "node:path";
-import { flushPromises, mount } from "@vue/test-utils";
+import { flushPromises, mount, type VueWrapper } from "@vue/test-utils";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import GeneralSettingsTab from "../config/components/GeneralSettingsTab.vue";
-import { createPlatformClient, platformApi } from "../api";
+import { computed, defineComponent, h, shallowRef } from "vue";
+import { createMemoryHistory, createRouter, RouterView } from "vue-router";
 import { ossSystemConfig as businessConfig } from "../../../../apps/ontology-manager/src/system-config";
-import { pageGlobal, testHost, testI18n } from "./host";
+import { createPlatformClient, platformApi } from "../api";
+import { pageActionsKey, type PlatformPageActions } from "../context";
+import ServiceLayout from "../layout/ServiceLayout.vue";
+import { ossPlatformPages, systemSettingsTabs } from "../pages";
+import SystemSettingsPage from "../pages/SystemSettingsPage.vue";
+import { pageGlobal, testHost } from "./host";
 
 /** Language resources the open-source data engine ships (conf-defaults/lang/*.json); tests run from this package. */
 const shippedLanguages = readdirSync(resolve(process.cwd(), "../data-engine-core/conf-defaults/lang"))
@@ -18,9 +23,11 @@ interface Sent {
 }
 let sent: Sent[];
 let storedLang: string;
+let wrappers: VueWrapper[] = [];
 
 beforeEach(() => {
   sent = [];
+  wrappers = [];
   storedLang = "fr";
   vi.stubGlobal("fetch", async (url: string, init: { body?: string }) => {
     sent.push({ url, body: init.body === undefined ? undefined : JSON.parse(init.body) });
@@ -29,55 +36,72 @@ beforeEach(() => {
       : url.endsWith("/businessConfig/dataAdapters")
         ? { currentType: "", adapters: [] }
         : [];
-    return new Response(JSON.stringify({ success: true, data }), {
-      headers: { "Content-Type": "application/json" },
-    });
+    return new Response(JSON.stringify({ success: true, data }), { headers: { "Content-Type": "application/json" } });
   });
 });
 
-const wrappers: ReturnType<typeof mount>[] = [];
 afterEach(() => {
-  wrappers.splice(0).forEach((wrapper) => wrapper.unmount());
+  wrappers.forEach((wrapper) => wrapper.unmount());
   vi.unstubAllGlobals();
+  vi.restoreAllMocks();
   document.body.innerHTML = "";
 });
 
+/** The general screen mounted as the page shows it: inside the layout, whose header carries the one Save. */
 async function mountPage() {
-  const api = platformApi(
-    createPlatformClient({ apiBase: "/api", credential: { type: "anonymous" }, locale: () => "en" })
-  );
-  const page = mount(GeneralSettingsTab, {
-    global: pageGlobal(testHost(api, { systemConfig: businessConfig })),
+  const api = platformApi(createPlatformClient({ apiBase: "/api", credential: { type: "anonymous" }, locale: () => "en" }));
+  const host = testHost(api, {
+    navigation: computed(() => ({ groups: [], pages: [...ossPlatformPages] })),
+    systemConfig: businessConfig,
+  });
+  const router = createRouter({
+    history: createMemoryHistory(),
+    routes: [
+      {
+        path: "/",
+        component: ServiceLayout,
+        children: [
+          { path: systemSettingsTabs.general.path, component: SystemSettingsPage, meta: { page: "/admin/system-config" } },
+        ],
+      },
+    ],
+  });
+  await router.push(systemSettingsTabs.general.path);
+  const actions = shallowRef<PlatformPageActions | null>(null);
+  const page = pageGlobal(host);
+  const wrapper = mount(defineComponent({ render: () => h(RouterView) }), {
+    global: {
+      ...page,
+      plugins: [...page.plugins, router],
+      provide: { ...page.provide, [pageActionsKey as symbol]: actions },
+    },
     attachTo: document.body,
   });
-  wrappers.push(page);
+  wrappers.push(wrapper);
   await flushPromises();
-  return page;
+  return wrapper;
 }
 
-const t = testI18n().global.t as (key: string) => string;
+const general = (wrapper: VueWrapper) => wrapper.findAll(".setting-row")[2]!;
+const headerSave = (wrapper: VueWrapper) =>
+  wrapper.findAll(".page-header .page-actions button").find((button) => button.text() === "Save")!;
 
-describe("open-source system configuration page in the Ontology Manager", () => {
+describe("open-source general settings in the Ontology Manager", () => {
   it("offers only the backend languages the data engine ships; a stored unsupported value shows en and is saved only on request", async () => {
     expect(businessConfig.languageOptions.map(({ value }) => value)).toEqual(shippedLanguages);
-    const page = await mountPage();
-    const languageRow = page
-      .findAll(".el-form-item")
-      .find((item) => item.text().includes(t("admin.backendLanguage")))!;
-    await languageRow.find(".el-select__wrapper").trigger("click");
+    const wrapper = await mountPage();
+    const language = general(wrapper).findComponent({ name: "ElSelect" });
+    expect(language.props("modelValue")).toBe("en");
+    await language.find(".el-select__wrapper").trigger("click");
     await flushPromises();
     // The dropdown list is teleported; the select's input names it through aria-controls.
-    const list = document.getElementById(languageRow.find("input").attributes("aria-controls")!)!;
-    const options = [...list.querySelectorAll(".el-select-dropdown__item")].map((item) => item.textContent?.trim());
-    expect(options).toEqual(["English"]);
-    expect(list.querySelector(".el-select-dropdown__item.is-selected")?.textContent?.trim()).toBe("English");
+    const list = document.getElementById(language.find("input").attributes("aria-controls")!)!;
+    expect([...list.querySelectorAll(".el-select-dropdown__item")].map((item) => item.textContent?.trim())).toEqual([
+      "English",
+    ]);
     expect(sent.some((request) => request.url.endsWith("/businessConfig/saveLang"))).toBe(false);
-
-    await languageRow.find("button.el-button--primary").trigger("click");
-    await flushPromises();
-    expect(sent.find((request) => request.url.endsWith("/businessConfig/saveLang"))?.body).toEqual({
-      lang: "en",
-    });
+    // Nothing changed on the screen, so the header's Save is disabled: no setting is written on arrival.
+    expect(headerSave(wrapper).attributes("disabled")).toBeDefined();
   });
 
   it("no longer carries query examples (they moved to their own menu page)", async () => {

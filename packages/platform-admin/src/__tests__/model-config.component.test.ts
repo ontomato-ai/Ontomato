@@ -111,7 +111,7 @@ const saveButton = (wrapper: VueWrapper) =>
 const usagePanel = (wrapper: VueWrapper) => wrapper.findComponent(ModelUsagePanel);
 
 describe("model configuration page", () => {
-  it("loads an unconfigured embedding status without reporting a configuration failure", async () => {
+  it("says an unconfigured embedding model once, in the select, and reports no configuration failure", async () => {
     const error = vi.spyOn(ElMessage, "error");
     vi.spyOn(api, "getModelSettings").mockResolvedValue({ ...structuredClone(saved), embeddingModelId: null });
     const status = vectorRebuildStatusSchema.parse({ configured: false });
@@ -119,9 +119,18 @@ describe("model configuration page", () => {
     vi.spyOn(api, "getVectorRebuildStatus").mockResolvedValue(status);
     const wrapper = await mountPage();
     const panel = usagePanel(wrapper);
-    expect(panel.find(".rebuild-status").text()).toContain(t("admin.noEmbeddingModel"));
-    expect(panel.findAll(".rebuild-actions button")).toHaveLength(0);
+    // The select shows "not set"; there is no state to speak of, so no box repeats it.
+    expect(panel.find(".rebuild-status").exists()).toBe(false);
+    expect(panel.text()).toContain(t("admin.noEmbeddingModel"));
     expect(error).not.toHaveBeenCalled();
+  });
+
+  it("shows the rebuild state and its action once a model is set", async () => {
+    vi.spyOn(api, "getVectorRebuildStatus").mockResolvedValue(
+      vectorRebuildStatusSchema.parse({ configured: true, state: "PAUSED", total: 10, done: 4 })
+    );
+    const wrapper = await mountPage();
+    expect(usagePanel(wrapper).find(".rebuild-status").text()).toContain(t("admin.vectorRebuildStates.PAUSED"));
   });
 
   it("saves the whole settings at once and submits an unchanged masked key as read", async () => {
@@ -143,8 +152,9 @@ describe("model configuration page", () => {
   it("lists only the agents given a model of their own, grouped by purpose, and follow-the-default removes a row", async () => {
     const wrapper = await mountPage();
     const panel = usagePanel(wrapper);
-    // The retriever follows the default, so it is not listed; the governance agent and the dashboard generator are.
-    expect(panel.findAll(".group-label").map((label) => label.text())).toEqual([
+    // The retriever follows the default, so it is not listed; the governance agent and the dashboard generator are, one
+    // row each with their purpose as a label.
+    expect(panel.findAll(".agent-purpose").map((label) => label.text())).toEqual([
       t("admin.agentPurposes.knowledge"),
       t("admin.agentPurposes.generation"),
     ]);
@@ -162,7 +172,14 @@ describe("model configuration page", () => {
       select.findAllComponents({ name: "ElOption" }).map((option) => option.props("value"));
     expect(values(governance)).toEqual(["", "gateway/vendor/chat", "legacy/old-name"]);
 
-    await panel.findAll("button").find((button) => button.text() === t("admin.followDefaultAction"))!.trigger("click");
+    // One row per agent: purpose, name, model and the link back to the default, the link on the select's line.
+    const rows = panel.findAll(".agent-line");
+    expect(rows).toHaveLength(2);
+    expect(rows[0]!.find(".agent-purpose").text()).toBe(t("admin.agentPurposes.knowledge"));
+    expect(rows[0]!.find(".agent-reset").text()).toBe(t("admin.followDefaultAction"));
+    expect(rows[0]!.findComponent(ModelSelectionSelect).exists()).toBe(true);
+
+    await rows[0]!.find(".agent-reset").trigger("click");
     await flushPromises();
     await saveButton(wrapper).trigger("click");
     await flushPromises();

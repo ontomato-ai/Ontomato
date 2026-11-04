@@ -5,7 +5,7 @@ import "element-plus/dist/index.css";
 import "element-plus/theme-chalk/dark/css-vars.css";
 import { createPlatformRouter } from "./router";
 import ServiceLayout from "./layout/ServiceLayout.vue";
-import { platformHostKey, type PlatformPageHost, type PlatformTheme } from "./context";
+import { platformHostKey, providePageActions, type PlatformPageHost, type PlatformTheme } from "./context";
 import type { PlatformNavigation } from "./navigation";
 import type { PlatformI18n, PlatformLocale } from "./i18n";
 import "./styles/platform.css";
@@ -83,6 +83,7 @@ export function startPlatformAdmin(options: PlatformAdminOptions) {
     })
   );
   app.provide(platformHostKey, host);
+  providePageActions();
   app.use(i18n);
   app.use(ElementPlus);
   app.use(router);

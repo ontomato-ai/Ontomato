@@ -12,11 +12,8 @@ import { usePlatformHost } from "../context";
  * gateway); this page reads and exports them and writes nothing.
  */
 const { t } = useI18n();
-const host = usePlatformHost();
-const { api, separators } = host;
+const { api, separators } = usePlatformHost();
 
-const props = defineProps<{ path: string }>();
-const page = computed(() => host.navigation.value.pages.find((entry) => entry.path === props.path));
 const loading = ref(false);
 const exporting = ref(false);
 const loadError = ref("");
@@ -194,23 +191,11 @@ function showDetail(record: FeedbackRecord) {
   detailVisible.value = true;
 }
 
-// The navigation title (the registered name when the catalog has one) is this page's header, as on the other pages here.
-const title = computed(() => page.value?.title ?? t("nav.userFeedback"));
-
 onMounted(loadRecords);
 </script>
 
 <template>
   <div class="feedback-records platform-page">
-    <header class="page-header">
-      <h1 class="page-title">{{ title }}</h1>
-      <p class="page-description">{{ t("platform.descriptions.userFeedback") }}</p>
-      <div class="page-actions">
-        <el-button :icon="RefreshCw" :loading="loading" @click="loadRecords">{{ t("common.refresh") }}</el-button>
-        <el-button :icon="Download" :loading="exporting" @click="exportRecords">{{ t("admin.feedbackExport") }}</el-button>
-      </div>
-    </header>
-
     <div class="page-body">
       <div class="toolbar">
         <el-select v-model="filters.sourceType" clearable :placeholder="t('admin.feedbackColumns.source')" class="filter-source">
@@ -227,6 +212,10 @@ onMounted(loadRecords);
           @keyup.enter="search"
         />
         <el-button type="primary" :icon="Search" @click="search">{{ t("common.query") }}</el-button>
+        <div class="toolbar-actions">
+          <el-button :icon="RefreshCw" :loading="loading" @click="loadRecords">{{ t("common.refresh") }}</el-button>
+          <el-button :icon="Download" :loading="exporting" @click="exportRecords">{{ t("admin.feedbackExport") }}</el-button>
+        </div>
       </div>
 
       <p v-if="loadError" class="load-error" role="alert">{{ t("admin.feedbackLoadFailed") }}{{ separators.detail }}{{ loadError }}</p>
@@ -299,47 +288,6 @@ onMounted(loadRecords);
   background: var(--el-bg-color);
 }
 
-.page-header {
-  display: flex;
-  height: var(--page-header-height);
-  flex: 0 0 var(--page-header-height);
-  align-items: center;
-  gap: var(--spacing-md);
-  padding: 0 var(--spacing-lg);
-  border-bottom: 1px solid var(--el-border-color);
-}
-
-.page-title {
-  margin: 0;
-  color: var(--el-text-color-primary);
-  font-size: var(--text-lg);
-  font-weight: var(--font-semibold);
-  line-height: var(--leading-lg);
-  white-space: nowrap;
-}
-
-.page-description {
-  min-width: 0;
-  margin: 0;
-  overflow: hidden;
-  color: var(--el-text-color-secondary);
-  font-size: var(--text-sm);
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.page-actions {
-  display: flex;
-  flex: 0 0 auto;
-  align-items: center;
-  gap: var(--spacing-sm);
-  margin-inline-start: auto;
-}
-
-.page-actions .el-button {
-  margin: 0;
-}
-
 .page-body {
   display: flex;
   min-height: 0;
@@ -386,17 +334,5 @@ onMounted(loadRecords);
   overflow-wrap: anywhere;
   color: var(--el-text-color-primary);
   font-size: var(--text-sm);
-}
-
-@media (max-width: 768px) {
-  .page-description {
-    display: none;
-  }
-
-  .filter-source,
-  .filter-rating,
-  .filter-keyword {
-    width: 100%;
-  }
 }
 </style>

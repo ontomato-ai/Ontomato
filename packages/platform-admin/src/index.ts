@@ -28,7 +28,10 @@ export { createPlatformI18n, mergeMessages, type PlatformI18n, type PlatformLoca
 export {
   platformHostKey,
   providePlatformHost,
+  usePageActions,
+  usePageActionsOf,
   usePlatformHost,
+  type PlatformPageActions,
   type PlatformPageHost,
   type PlatformPreferences,
   type PlatformTheme,

@@ -3,7 +3,7 @@ import { computed } from "vue";
 import { useRoute } from "vue-router";
 import { ExternalLink, Languages, LogOut, Moon, Orbit, Sun } from "lucide-vue-next";
 import { availableGroups, availablePages } from "../navigation";
-import { usePlatformHost } from "../context";
+import { usePageActionsOf, usePlatformHost } from "../context";
 
 /*
  * The Ontology Service's one data shell: a sidebar (brand, links to the other applications, the navigation groups,
@@ -26,6 +26,9 @@ const shownGroups = computed(() =>
 const loadError = computed(() => (host.access.ready ? host.access.error : null));
 const noPermissions = computed(() => host.access.ready && !loadError.value && pages.value.length === 0);
 const currentPage = computed(() => navigation.value.pages.find((page) => page.path === route.meta.page));
+// Actions the shown page hands to the header (the system settings' one Save); a page with its own header has none.
+const pageActions = usePageActionsOf();
+const actions = computed(() => pageActions.value);
 const dark = computed(() => preferences.theme.value === "dark");
 const userInitial = computed(() => host.account?.userName.trim().charAt(0).toUpperCase() ?? "");
 
@@ -150,6 +153,15 @@ function localeLabel(locale: string) {
         <header v-if="currentPage && !currentPage.ownHeader" class="page-header">
           <h1 class="page-title">{{ currentPage.title ?? $t(currentPage.titleKey) }}</h1>
           <p v-if="currentPage.descriptionKey" class="page-description">{{ $t(currentPage.descriptionKey) }}</p>
+          <div v-if="actions" class="page-actions">
+            <span v-if="actions.dirty" class="unsaved" role="status">{{ $t("admin.unsavedChanges") }}</span>
+            <el-button :disabled="!actions.dirty || actions.saving" @click="actions.discard()">
+              {{ $t("admin.discardChanges") }}
+            </el-button>
+            <el-button type="primary" :disabled="!actions.dirty" :loading="actions.saving" @click="actions.save()">
+              {{ $t("common.save") }}
+            </el-button>
+          </div>
         </header>
         <div :class="['page-body', { 'page-body--content platform-page': currentPage && !currentPage.ownHeader }]">
           <RouterView />
@@ -387,6 +399,24 @@ function localeLabel(locale: string) {
   color: var(--el-text-color-secondary);
   font-size: var(--text-sm);
   text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.page-actions {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: var(--spacing-sm);
+  margin-inline-start: auto;
+}
+
+.page-actions :deep(.el-button) {
+  margin: 0;
+}
+
+.page-actions .unsaved {
+  color: var(--el-color-warning);
+  font-size: var(--text-sm);
   white-space: nowrap;
 }
 

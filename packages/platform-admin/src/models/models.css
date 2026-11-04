@@ -552,17 +552,22 @@
   gap: var(--spacing-sm);
 }
 
-/* ---- Defaults and retry: setting rows with the text on the left and the control on the right ---- */
+/* ---- The usage screen: sections of setting rows, one hairline per row, one gap between sections ---- */
 .defaults-panel {
   display: flex;
+  max-width: 880px;
   flex-direction: column;
-  gap: var(--spacing-xl);
+  gap: var(--spacing-2xl);
 }
 
 .settings-section {
   display: flex;
-  max-width: 880px;
   flex-direction: column;
+}
+
+/* The title row: the name on the left, the section's own actions on the right. */
+.settings-section > .section-bar {
+  min-height: var(--control-height);
 }
 
 .settings-section > .section-title {
@@ -573,6 +578,124 @@
   margin: 0 0 var(--spacing-sm);
   color: var(--el-text-color-secondary);
   font-size: var(--text-sm);
+}
+
+.empty-note {
+  margin: 0;
+  padding: var(--spacing-md) 0;
+  border-bottom: 1px solid var(--el-border-color);
+  color: var(--el-text-color-secondary);
+  font-size: var(--text-sm);
+}
+
+/* ---- The agents given their own model: one table row each, the four columns aligned ---- */
+.agent-table {
+  display: flex;
+  flex-direction: column;
+}
+
+.agent-group {
+  display: flex;
+  flex-direction: column;
+}
+
+.agent-line {
+  display: grid;
+  grid-template-columns: 72px minmax(0, 1fr) minmax(0, 260px) 88px;
+  gap: var(--spacing-md);
+  align-items: center;
+  padding: var(--spacing-sm) 0;
+  border-bottom: 1px solid var(--el-border-color);
+}
+
+.agent-purpose {
+  color: var(--el-text-color-secondary);
+  font-size: var(--text-xs);
+  line-height: var(--leading-xs);
+}
+
+.agent-name {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--el-text-color-primary);
+  font-size: var(--text-sm);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.agent-model {
+  min-width: 0;
+}
+
+/* The link sits at the row's end, on the select's line, never wrapped under it. */
+.agent-reset {
+  justify-self: end;
+  margin: 0;
+}
+
+.group-label {
+  margin: var(--spacing-sm) 0 0;
+  padding-bottom: var(--spacing-xs);
+  color: var(--el-text-color-secondary);
+  font-size: var(--text-xs);
+  font-weight: var(--font-semibold);
+  letter-spacing: var(--tracking-label);
+}
+
+.agent-picker {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border: 1px solid var(--el-border-color);
+  border-radius: var(--radius-md);
+}
+
+.agent-picker:not(:first-child) {
+  margin-top: var(--spacing-sm);
+}
+
+.agent-pick {
+  display: flex;
+  width: 100%;
+  min-height: var(--list-row-height);
+  align-items: center;
+  gap: var(--spacing-md);
+  padding: var(--spacing-xs) var(--spacing-md);
+  border: 0;
+  border-bottom: 1px solid var(--el-border-color);
+  background: transparent;
+  color: var(--el-text-color-primary);
+  font: inherit;
+  font-size: var(--text-sm);
+  text-align: start;
+  cursor: pointer;
+}
+
+.agent-pick:last-child {
+  border-bottom: 0;
+}
+
+.agent-pick:hover {
+  background: var(--el-fill-color-light);
+}
+
+.agent-pick:focus-visible {
+  outline: 2px solid var(--el-color-primary);
+  outline-offset: -2px;
+}
+
+.agent-pick-name {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.agent-pick-meta {
+  flex: 0 0 auto;
+  color: var(--el-text-color-secondary);
+  font-size: var(--text-xs);
 }
 
 .setting-row {
