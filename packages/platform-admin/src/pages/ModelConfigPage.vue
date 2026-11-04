@@ -7,7 +7,7 @@ import { useI18n } from "vue-i18n";
 import { usePlatformHost } from "../context";
 import EmbeddingModelConfigCard from "../models/components/EmbeddingModelConfigCard.vue";
 import ModelListCard from "../models/components/ModelListCard.vue";
-import { modelLabel } from "@ontomato/agent-shell-ui/model-selection";
+import { modelLabel } from "@ontomato/contracts/model-selection";
 import ModelSelectionSelect from "../models/components/ModelSelectionSelect.vue";
 import OntologyAgentModelsCard from "../models/components/OntologyAgentModelsCard.vue";
 import TestResultDialog from "../models/components/TestResultDialog.vue";

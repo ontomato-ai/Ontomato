@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { modelLabel, modelSelectionView, selectedModelId, type ModelSelectionLabels } from "..";
+import { modelLabel, modelSelectionView, selectedModelId, type ModelSelectionLabels } from "@ontomato/contracts/model-selection";
 
 const labels: ModelSelectionLabels = {
   nullChoice: "Domain default (Qwen (qwen-main))",
