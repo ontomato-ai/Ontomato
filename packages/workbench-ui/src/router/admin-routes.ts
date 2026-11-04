@@ -112,8 +112,13 @@ export const legacyAdminRoutes = {
   skillsAnalysis: { path: "/admin/skills/analysis", redirect: "/chat?feature=agents&tab=capabilities" },
   skillsVisualization: { path: "/admin/skills/visualization", redirect: "/chat?feature=agents&tab=capabilities" },
   mcpService: { path: "/admin/mcp-service", redirect: "/chat?feature=agents&tab=capabilities" },
-  // Retired pages: operations diagnosis is an entry of the function area and keeps its own address; the system
-  // configuration and the feedback records are no longer settings of this application.
+  // Operation addresses that lived under the console now open operations diagnosis, which keeps its own path and pages.
+  observe: { path: "/admin/observe", redirect: "/observe" },
+  observePage: {
+    path: "/admin/observe/:page(.*)",
+    redirect: (to) => ({ path: `/observe/${String(to.params.page ?? "")}`, query: to.query }),
+  },
+  // Retired pages: the system configuration and the feedback records are no longer settings of this application.
   systemConfig: { path: "/admin/system-config", redirect: "/chat" },
   feedbackRecords: { path: "/admin/feedback-records", redirect: "/chat" },
 } satisfies Record<string, RouteRecordRaw>;
