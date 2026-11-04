@@ -101,7 +101,10 @@ export async function createDashboardFromAnalysis(
           `${backendUrl.replace(/\/$/, "")}${endpoint}`,
           {
             question: dataset.subQuestion || dataset.abcProgram.title,
-            code: dataset.abcProgram.code,
+            ...(dataset.abcProgram.queryPackage ? { queryPackage: dataset.abcProgram.queryPackage }
+              : { code: dataset.abcProgram.code }),
+            parameterValues: dataset.abcProgram.parameterValues,
+            sourceAnalysis: dataset.abcProgram.sourceAnalysis,
             outKeyRefs: dataset.abcProgram.outKeyRefs,
             needParameter,
           },

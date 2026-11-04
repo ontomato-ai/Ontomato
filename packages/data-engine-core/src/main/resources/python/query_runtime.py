@@ -27,6 +27,18 @@ def _call(path, body):
     return result
 
 
+def execute_dsl_file(path, parameter_values=None):
+    """Execute a declared query file from the immutable Java-owned package.
+
+    Only declared parameter values may change. The server resolves the original
+    file; this process never uploads or replaces the DSL definition.
+    """
+    reference = {"path": path}
+    if parameter_values is not None:
+        reference["parameters"] = parameter_values
+    return _query_rows(_call("/ontology/query/execute-dsl", {"queryRef": reference}))
+
+
 def execute_dsl(dsl):
     """Execute one read-only DSL object outside the write sandbox.
 
@@ -38,7 +50,10 @@ def execute_dsl(dsl):
     Returns:
         A list of result rows.
     """
-    result = _call("/ontology/query/execute-dsl", {"dsl": dsl})
+    return _query_rows(_call("/ontology/query/execute-dsl", {"dsl": dsl}))
+
+
+def _query_rows(result):
     data = result["data"]
     if not isinstance(data, list) or len(data) != 1 or not isinstance(data[0].get("answer"), list):
         raise RuntimeError("Invalid ontology DSL result")

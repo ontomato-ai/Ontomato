@@ -8,6 +8,7 @@
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
+    "generate:query-package": "node --import tsx scripts/query-package-schema.mjs",
     "generate:query-subgraph": "node scripts/query-subgraph-schema.mjs",
     "check:query-subgraph": "node scripts/check-query-subgraph.mjs"
   },
@@ -15,8 +16,9 @@
     "zod": "3.25.76"
   },
   "devDependencies": {
-    "zod-to-json-schema": "3.25.2",
     "@types/node": "22.19.15",
-    "typescript": "5.9.3"
+    "tsx": "4.21.0",
+    "typescript": "5.9.3",
+    "zod-to-json-schema": "3.25.2"
   }
 }

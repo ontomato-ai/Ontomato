@@ -22,6 +22,13 @@ export async function generationCommand(args, env = process.env, request = fetch
       route = `/${state.runId}/explainDraft`;
       body = {};
       break;
+    case "test-package": {
+      if (!values[0] || !values[1]) throw new Error("test-package requires a package entry and column labels");
+      const { collectPackage } = await import("../../data-retrieval/scripts/query-package.mjs");
+      body = { queryPackage: await collectPackage(values[0]), columnLabels: await bodyFile(values[1]) };
+      route = `/${state.runId}/test`;
+      break;
+    }
     case "test":
       if (!values[0] || !values[1]) throw new Error("test requires source and parameter definition files");
       body = { code: await readFile(values[0], "utf8"), parameterDefs: await bodyFile(values[1]) };
@@ -38,7 +45,7 @@ export async function generationCommand(args, env = process.env, request = fetch
     case "helpers":
       if (!state?.runId) throw new Error("helpers requires a generation gate; run begin first");
       route = `/${state.runId}/helpers`; body = undefined; break;
-    default: throw new Error("Commands: begin, explain, helpers, source, test, prepare, reset, query, close");
+    default: throw new Error("Commands: begin, explain, helpers, source, test-package, test, prepare, reset, query, close");
   }
   route ??= `/${state.runId}/${command}`;
   const response = await request(base + "/ontology/ai/generation" + route, {

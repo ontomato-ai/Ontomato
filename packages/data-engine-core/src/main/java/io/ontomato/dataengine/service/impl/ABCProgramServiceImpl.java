@@ -1,98 +1,83 @@
 package io.ontomato.dataengine.service.impl;
 
-import java.io.File;
-import java.io.FileOutputStream;
+import com.alibaba.fastjson2.*;
+import io.ontomato.dataengine.bean.PythonExecuteResult;
+import io.ontomato.dataengine.bean.abcHarness.*;
+import io.ontomato.dataengine.bean.function.Function;
+import io.ontomato.dataengine.service.*;
+import io.ontomato.dataengine.service.sys.bean.permission.UserDataPermission;
 import java.util.List;
-import java.util.Set;
-
+import java.util.Map;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
 
-import com.alibaba.fastjson2.JSON;
-import com.alibaba.fastjson2.JSONArray;
-import com.alibaba.fastjson2.JSONObject;
-import com.alibaba.fastjson2.JSONWriter.Feature;
-import io.ontomato.dataengine.bean.PythonExecuteResult;
-import io.ontomato.dataengine.bean.abcHarness.ABCHarnessDashboard;
-import io.ontomato.dataengine.bean.abcHarness.ABCHarnessDashboardParameter;
-import io.ontomato.dataengine.bean.abcHarness.ABCHarnessProgram;
-import io.ontomato.dataengine.bean.abcHarness.ABCHarnessProgramOutKeyRef;
-import io.ontomato.dataengine.bean.function.Function;
-import io.ontomato.dataengine.bean.function.Parameter;
-import io.ontomato.dataengine.service.ABCProgramService;
-import io.ontomato.dataengine.service.PythonExecuteService;
-import io.ontomato.dataengine.service.sys.bean.permission.UserDataPermission;
-
-import lombok.extern.slf4j.Slf4j;
-
-@Slf4j
 @Service
 public class ABCProgramServiceImpl implements ABCProgramService {
-	
-	@Autowired
-	private PythonExecuteService pythonExecuteService;
-	
-	
+  @Autowired private PythonExecuteService pythonExecuteService;
+  @Autowired @Lazy private OntologyQueryService ontology;
 
-    @Override
-    public Object[] execute(String sessionId, ABCHarnessProgram program, String userId, UserDataPermission permission, String lang, int timeout, String domainId) throws Exception {
-        JSONObject graph = sourceAnalysis(program.getSourceAnalysis(), program.getOutKeyRefs());
-        PythonExecuteResult result=pythonExecuteService.execute(sessionId,program.getCode(),timeout,lang,
-            io.ontomato.dataengine.service.PythonAuthority.read(userId,domainId),new JSONObject(),java.util.Map.of());
-        return new Object[]{authorized(result,graph,permission),result};
-    }
-    @Override
-    public Object[] execute(String sessionId, ABCHarnessDashboard dashboard, String userId, UserDataPermission permission, String lang, int timeout, String domainId) throws Exception {
-        JSONObject graph = sourceAnalysis(dashboard.getSourceAnalysis(), dashboard.getOutKeyRefs());
-        JSONObject parameters=new JSONObject();
-        if(dashboard.getParameters()!=null)for(var parameter:dashboard.getParameters())parameters.put(parameter.getKey(),parameter.getValue());
-        PythonExecuteResult result=pythonExecuteService.execute(sessionId,dashboard.getCode(),timeout,lang,
-            io.ontomato.dataengine.service.PythonAuthority.read(userId,domainId),parameters,java.util.Map.of());
-        return new Object[]{authorized(result,graph,permission),result};
-    }
-    @Override
-    public Object[] execute(String sessionId, Function function, String userId, UserDataPermission permission, String sandboxId, String lang, int timeout, String domainId) throws Exception {
-        if (!domainId.equals(function.getDomainId())) throw new IllegalArgumentException("Function is outside the current domain");
-        JSONObject parameters=new JSONObject();
-        if(function.getParameters()!=null)for(var parameter:function.getParameters())parameters.put(parameter.getName(),parameter.getValue());
-        boolean read=Function.OPERATION_READ.equals(function.getOperation());
-        if (!read && !Function.OPERATION_WRITE.equals(function.getOperation()))
-            throw new IllegalArgumentException("Unknown Function operation");
-        if (read && function.getReturnDef() == null)
-            throw new IllegalArgumentException("Stored program has no source declaration");
-        JSONObject graph = read ? sourceAnalysis(function.getReturnDef().getSourceAnalysis(), function.getReturnDef().getOutKeyRefs()) : null;
-        PythonExecuteResult result=pythonExecuteService.execute(sessionId,function.getCode(),timeout,lang,
-            read?io.ontomato.dataengine.service.PythonAuthority.read(userId,domainId):io.ontomato.dataengine.service.PythonAuthority.write(userId,domainId,sandboxId).withClasses(function.getReturnDef() == null ? null : function.getReturnDef().getClassNames()),parameters,java.util.Map.of());
-        return new Object[]{read?authorized(result,graph,permission):null,result};
-    }
+  @Override
+  public Object[] execute(String id, ABCHarnessProgram program, String user, UserDataPermission permission,
+      String lang, int timeout, String domain) throws Exception {
+    var graph = sourceAnalysis(program.getSourceAnalysis(), program.getOutKeyRefs());
+    if (program.getQueryPackage() != null)
+      return executePackage(id, program.getQueryPackage(), program.getParameterValues(), graph, user, permission, lang, timeout, domain);
+    var result = pythonExecuteService.execute(id, program.getCode(), timeout, lang,
+        PythonAuthority.read(user, domain), program.getParameterValues() == null ? new JSONObject() : program.getParameterValues(), Map.of());
+    return new Object[]{authorized(result, graph, permission), result};
+  }
 
-    private JSONObject sourceAnalysis(JSONObject graph, List<ABCHarnessProgramOutKeyRef> legacy) {
-        return graph == null ? io.ontomato.dataengine.service.QuerySourceAnalysis.fromStoredSources(legacy)
-            : io.ontomato.dataengine.service.QuerySubgraphContract.validate(graph);
-    }
+  @Override
+  public Object[] execute(String id, ABCHarnessDashboard dashboard, String user, UserDataPermission permission,
+      String lang, int timeout, String domain) throws Exception {
+    var graph = sourceAnalysis(dashboard.getSourceAnalysis(), dashboard.getOutKeyRefs());
+    var parameters = dashboard.getParameterValues() == null ? new JSONObject() : QueryPackage.copy(dashboard.getParameterValues());
+    if (dashboard.getParameters() != null)
+      for (var parameter : dashboard.getParameters()) parameters.put(parameter.getKey(), parameter.getValue());
+    if (dashboard.getQueryPackage() != null)
+      return executePackage(id, dashboard.getQueryPackage(), parameters, graph, user, permission, lang, timeout, domain);
+    var result = pythonExecuteService.execute(id, dashboard.getCode(), timeout, lang,
+        PythonAuthority.read(user, domain), parameters, Map.of());
+    return new Object[]{authorized(result, graph, permission), result};
+  }
 
-    private JSONArray authorized(PythonExecuteResult result, JSONObject graph, UserDataPermission permission) throws Exception {
-        return io.ontomato.dataengine.service.QueryPermissions.mask(parsePythonReturn(result.getResult(), result.getError()), graph, permission);
-    }
+  @Override
+  public Object[] execute(String id, Function function, String user, UserDataPermission permission,
+      String sandbox, String lang, int timeout, String domain) throws Exception {
+    if (!domain.equals(function.getDomainId())) throw new IllegalArgumentException("Function is outside the current domain");
+    var parameters = MetricViewBindings.values(function);
+    boolean read = Function.OPERATION_READ.equals(function.getOperation());
+    if (!read && !Function.OPERATION_WRITE.equals(function.getOperation())) throw new IllegalArgumentException("Unknown Function operation");
+    if (read && function.getReturnDef() == null) throw new IllegalArgumentException("Stored program has no source declaration");
+    var graph = read ? sourceAnalysis(function.getReturnDef().getSourceAnalysis(), function.getReturnDef().getOutKeyRefs()) : null;
+    if (read && function.getQueryPackage() != null)
+      return executePackage(id, function.getQueryPackage(), parameters, graph, user, permission, lang, timeout, domain);
+    var result = pythonExecuteService.execute(id, function.getCode(), timeout, lang,
+        read ? PythonAuthority.read(user, domain) : PythonAuthority.write(user, domain, sandbox)
+            .withClasses(function.getReturnDef() == null ? null : function.getReturnDef().getClassNames()), parameters, Map.of());
+    return new Object[]{read ? authorized(result, graph, permission) : null, result};
+  }
 
-    @Override
-    public JSONArray parsePythonReturn(String pythonOutput, String errorMessage) throws Exception {
-        if (errorMessage != null && !errorMessage.isBlank()) throw new Exception(errorMessage);
-        try {
-            JSONObject value = JSON.parseObject(pythonOutput.replaceAll(":\\s*NaN", ": null"));
-            if (!value.keySet().equals(Set.of("answer")) || value.getJSONArray("answer") == null)
-                throw new IllegalArgumentException();
-            return value.getJSONArray("answer");
-        } catch (Exception invalid) {
-            throw new Exception("Python must print one JSON object containing an answer array");
-        }
-    }
+  private Object[] executePackage(String id, JSONObject bundle, JSONObject values, JSONObject graph, String user,
+      UserDataPermission permission, String lang, int timeout, String domain) throws Exception {
+    var access = new QueryAccessService.Access(new QueryAccessService.GrantUser(user, domain), permission, null, null, null);
+    var result = QueryPackageExecution.execute(id, bundle, values, QueryPackage.labels(graph), access,
+        lang, timeout, ontology, pythonExecuteService);
+    return new Object[]{result.rows(), result.execution()};
+  }
 
-    @Override
-    public JSONArray dealPythonReturn(String pythonOutput, String errorMessage, List<ABCHarnessProgramOutKeyRef> refs, UserDataPermission permission) throws Exception {
-        return io.ontomato.dataengine.service.QueryPermissions.mask(parsePythonReturn(pythonOutput, errorMessage),
-            io.ontomato.dataengine.service.QuerySourceAnalysis.fromStoredSources(refs), permission);
-    }
-
-
+  private JSONObject sourceAnalysis(JSONObject graph, List<ABCHarnessProgramOutKeyRef> legacy) {
+    return graph == null ? QuerySourceAnalysis.fromStoredSources(legacy) : QuerySubgraphContract.validate(graph);
+  }
+  private JSONArray authorized(PythonExecuteResult result, JSONObject graph, UserDataPermission permission) throws Exception {
+    return QueryPermissions.mask(PythonRows.parse(result.getResult(), result.getError()), graph, permission);
+  }
+  @Override
+  public JSONArray parsePythonReturn(String output, String error) throws Exception { return PythonRows.parse(output, error); }
+  @Override
+  public JSONArray dealPythonReturn(String output, String error, List<ABCHarnessProgramOutKeyRef> refs,
+      UserDataPermission permission) throws Exception {
+    return QueryPermissions.mask(PythonRows.parse(output, error), QuerySourceAnalysis.fromStoredSources(refs), permission);
+  }
 }

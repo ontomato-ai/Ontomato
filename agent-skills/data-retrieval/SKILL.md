@@ -1,40 +1,45 @@
 ---
 name: data-retrieval
-description: Produce a dataset file from a DSL, Python or published metric recipe by rerunning it through Ontomato under the user's authorization. Use after investigating a complete business question and declaring its sources and assumptions.
-compatibility: Requires Node.js 18 or newer and an authorized Ontomato ontology service tk credential.
+description: Deliver a query logic package as a dataset by rerunning it through Ontomato under the user's authorization.
+compatibility: Requires Node.js 18 or newer and an authorized Ontomato ontology service credential.
 ---
 
 # Data retrieval files
 
-Investigate using ontomato-analyst. Use the harness's read/write/edit/bash tools;
-Python source is executed only by Java through the dataset command; the query helper is injected there. Do not call ask recursively from a product retriever.
-Read [dataset recipes](references/dataset.md), write work/recipe.json, then run:
+Investigate a complete question with ontomato-analyst, then read
+[delivery inputs](references/dataset.md) and [query packages](references/query-package.md).
+Use ordinary read/write/edit/bash tools. A plain DSL JSON is already a package;
+Python packages explicitly list their query and source files. Do not call ask recursively.
 
 ```sh
-node <this-skill>/scripts/dataset.mjs @work/recipe.json outputs/result.dataset.json
+node <this-skill>/scripts/dataset.mjs deliver @work/q.json --meta @work/delivery.json
 ```
 
-For a trial without publishing a file, run
-`node <this-skill>/scripts/dataset.mjs preview @work/recipe.json`.
-Both preview and delivery return user-authorized rows. Never run the query program
-with local Python or treat a masked value as a real input value.
+Optional `--out outputs/name.dataset.json` selects a distinct output path;
+otherwise the submission determines the name. `--params @work/values.json` supplies
+business values. A metric selector contains kind:metric, metricId, revision,
+parameters and optional bindingId; its Function package is resolved by Java.
 
-The command requests a fresh authorized execution and writes the exact returned
-dataset. Reference the resulting file; do not rewrite its rows in another file.
-A partial dataset remains partial, even after aggregation or an empty result.
-If business intent is unclear, ask the user in normal text and stop the turn.
-There is no completion or needs-input command.
+Deliver directly when the logic is ready. For a necessary trial use the same
+command with `preview` instead of `deliver`. Identical inputs reuse their execution;
+there is no mandatory preview. Java alone runs Python and injects query_runtime.
+Never run a query program with local Python or calculate on masked preview values.
+Java receives all package files, applies row permissions before calculation and
+masks final columns from the composed source graph. Preserve partial results,
+null, false, zero and empty strings. Reference the exact returned file, never
+rewrite its rows or edit its receipt.
 
-Set ONTOMATO_ONTOLOGY_URL, ONTOMATO_TK (sent as tk), and optionally
-ONTOMATO_LANGUAGE / ONTOMATO_CORRELATION_ID / ONTOMATO_OUTPUT_DIR (default outputs).
-Product execution supplies ONTOMATO_RETRIEVAL_ID, ONTOMATO_SESSION_ID and
-ONTOMATO_RUN_ID. Use the supplied run ID. Outside product execution, when the run
-ID is absent, the script calls begin with the question and saves returned host
-work identity in work/.retrieval-run.json. No runtime agent or trusted exploration
-credential is created: external execution always uses your own user permissions.
+The metadata supplies title, columnLabels, assumptions, metricUses and selfCheck.
+The host supplies the admitted question and confirmed decision IDs. Business
+self-checks and comparisons remain your responsibility; do not invent execution
+references or decisions. Material ambiguity requires asking the user and ending
+normally, not claiming completion.
 
-For an explicit new round run `node <this-skill>/scripts/dataset.mjs begin @work/question.json`
-with `{"question":"..."}`. Begin reuses the saved external record and closes its
-previous write gate. `close` closes that gate when done. Keep work/ files for
-response-loss reconciliation. Output requests reuse their saved idempotency key;
-changed recipes receive a new key. Closed/expired run writes return HTTP 409.
+Set ONTOMATO_ONTOLOGY_URL and ONTOMATO_TK (or ONTOMATO_API_KEY), optionally
+ONTOMATO_LANGUAGE, ONTOMATO_CORRELATION_ID and ONTOMATO_OUTPUT_DIR (default outputs).
+Hosted execution supplies ONTOMATO_RETRIEVAL_ID, ONTOMATO_SESSION_ID and ONTOMATO_RUN_ID.
+Use these identities. Outside the product run `begin @work/question.json` with
+{"question":"..."} before delivery; `close` closes the external write gate.
+External work retains ordinary user permissions and never receives internal grants.
+Keep work/.retrieval-*.json and work/.dataset-*.json for response-loss reconciliation.
+Changed inputs get a new submission; closed/expired writes return 409.

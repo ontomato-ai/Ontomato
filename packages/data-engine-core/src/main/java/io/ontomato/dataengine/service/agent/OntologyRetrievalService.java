@@ -829,12 +829,13 @@ public class OntologyRetrievalService {
 
   public JSONObject prepareOutput(
       String id, String runId, String key, JSONObject body, OntologyAgentAccess.Context context) {
+    var acceptedInput = store.retrieval(id, context.owner());
+    body.put("question", acceptedInput.getJSONObject("input").getString("question"));
+    body.put("decisionIds", acceptedInput.getJSONArray("decisions").stream()
+        .map(JSONObject::from).map(d -> d.getString("id")).toList());
     DatasetFileContract.preparation(body);
+    body.put("schema", "workbench.dataset.v2");
     var recipe = body.getJSONObject("recipe");
-    if ("python".equals(recipe.getString("kind"))
-        && !QueryOutputService.hash(AgentJson.text(recipe, "code"))
-            .equals(recipe.getString("sha256")))
-      throw AgentHttpException.invalid("Recipe digest mismatch");
     var executionAccess = store.transaction(
         () -> {
           store.gate(id, runId, context.owner());
@@ -897,7 +898,7 @@ public class OntologyRetrievalService {
         JSONObject.of(
             "receiptId", result.remove("receiptId"), "executedAt", result.remove("executedAt"));
     data.putAll(result);
-    data.put("schema", "workbench.dataset.v1");
+    data.putIfAbsent("schema", "workbench.dataset.v1");
     data.put("execution", execution);
     validateDataset(data);
     store.transaction(
@@ -975,14 +976,7 @@ public class OntologyRetrievalService {
     for (String artifact : row.getList("dataset_ids", String.class)) {
       var d = dataset(id, artifact, owner).getJSONObject("payload");
       var recipe = d.getJSONObject("recipe");
-      programs.add(
-          JSONObject.of(
-              "question",
-              d.getString("question"),
-              "code",
-              qualityCode(recipe),
-              "sourceAnalysis",
-              d.get("sourceAnalysis")));
+      programs.add(QuerySourceSnapshot.fromDataset(d));
       recipes.add(recipe);
     }
     var retrievalRecord = store.retrieval(id, owner);
@@ -1008,14 +1002,6 @@ public class OntologyRetrievalService {
         subject(owner),
         language == null ? "en" : language);
     store.update("UPDATE ontology_agent_runs SET qc_admitted=true WHERE id=?", uuid(runId));
-  }
-
-  /** DSL code is regenerated from the recipe so the describer never sees its problem text. */
-  private static String qualityCode(JSONObject recipe) {
-    String kind = recipe.getString("kind");
-    if ("python".equals(kind)) return recipe.getString("code");
-    if ("dsl".equals(kind)) return null;
-    return recipe.getString("executedCode");
   }
 
   @Scheduled(fixedDelay = 500)

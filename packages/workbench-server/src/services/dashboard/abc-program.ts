@@ -1,3 +1,4 @@
+import { queryPackageSchema } from "@ontomato/contracts/query-package";
 import type { AbcProgramDashboard } from "@ontomato/contracts/dashboard";
 
 export function normalizeAbcProgram(value: unknown): AbcProgramDashboard | null {
@@ -6,10 +7,14 @@ export function normalizeAbcProgram(value: unknown): AbcProgramDashboard | null 
   const title = String(record.title || "").trim();
   const code = String(record.code || "");
   const outKeyRefs = Array.isArray(record.outKeyRefs) ? record.outKeyRefs : [];
-  if (!code || outKeyRefs.length === 0) return null;
+  const bundle = record.queryPackage ? queryPackageSchema.parse(record.queryPackage) : undefined;
+  if (!bundle && (!code || outKeyRefs.length === 0 && !record.sourceAnalysis)) return null;
   return {
     title,
     code,
+    ...(bundle ? { queryPackage: bundle } : {}),
+    parameterValues: record.parameterValues as Record<string, unknown> | undefined,
+    sourceAnalysis: record.sourceAnalysis as AbcProgramDashboard["sourceAnalysis"],
     outKeyRefs: outKeyRefs as AbcProgramDashboard["outKeyRefs"],
     parameters: Array.isArray(record.parameters)
       ? (record.parameters as AbcProgramDashboard["parameters"])
@@ -19,7 +24,10 @@ export function normalizeAbcProgram(value: unknown): AbcProgramDashboard | null 
 export function buildAbcProgramQueryPayload(program: AbcProgramDashboard, parameters?: unknown[]) {
   return {
     title: program.title,
-    code: program.code,
+    code: program.queryPackage ? undefined : program.code,
+    queryPackage: program.queryPackage,
+    parameterValues: program.parameterValues,
+    sourceAnalysis: program.sourceAnalysis,
     outKeyRefs: Array.isArray(program.outKeyRefs) ? program.outKeyRefs : [],
     parameters: normalizeAbcProgramParametersForApi(
       Array.isArray(parameters)
@@ -34,7 +42,7 @@ export function normalizeAbcProgramParametersForUi(parameters: unknown[] | undef
   return (Array.isArray(parameters) ? parameters : [])
     .filter((item): item is Record<string, unknown> => Boolean(item && typeof item === "object"))
     .map((item) => {
-      const type = String(item.type || item.valueType || "STRING").trim() || "STRING";
+      const type = String(item.type || item.valueType || "STRING").trim().replace(/^TYPE_/, "") || "STRING";
       const value = item.value ?? item.originSample;
       return {
         ...item,

@@ -42,17 +42,6 @@ public class QueryQualityService {
           check.setFinished(false);
           var programs = body.getJSONArray("programs").toJavaList(ABCHarnessProgram.class);
           JSONArray recipes = body.getJSONArray("recipes");
-          for (int i = 0; i < programs.size(); i++) {
-            JSONObject recipe =
-                recipes == null || i >= recipes.size() ? null : recipes.getJSONObject(i);
-            // Describe the DSL code as executed, but without the natural-language problem field.
-            if (recipe != null && "dsl".equals(recipe.getString("kind")))
-              programs
-                  .get(i)
-                  .setCode(
-                      io.ontomato.dataengine.util.DslToPythonCodeUtil.generateForQuality(
-                          recipe.getJSONObject("dsl")));
-          }
           checks.saveCheckTask(check);
           checks.check(
               check,
@@ -90,7 +79,7 @@ public class QueryQualityService {
             "score", check.getScore(),
             "conclusion", check.getConclusion(),
             "fittedQuestion", check.getFittedQuestion(),
-            "programs", JSONArray.parseArray(JSON.toJSONString(programs)),
+            "programs", JSONArray.parseArray(JSON.toJSONString(programs, JSONWriter.Feature.WriteMapNullValue)),
             "recipes", recipes,
             "classNames", classNames,
             "domainId", user.getDomainId());

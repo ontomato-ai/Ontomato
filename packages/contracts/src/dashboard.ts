@@ -115,6 +115,8 @@ export type AbcProgramParameter = {
 export type AbcProgramDashboard = {
   title: string;
   code: string;
+  queryPackage?: import("./query-package").QueryPackage;
+  parameterValues?: Record<string, unknown>;
   outKeyRefs: AbcProgramOutKeyRef[];
   sourceAnalysis?: import("./query-subgraph").QuerySubgraph;
   parameters?: AbcProgramParameter[];

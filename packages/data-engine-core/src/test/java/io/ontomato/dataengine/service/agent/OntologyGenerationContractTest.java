@@ -23,6 +23,16 @@ class OntologyGenerationContractTest {
     return JSONObject.of("schema", "ontomato.query-subgraph.v1", "queries", new JSONArray(),
         "nodes", new JSONArray(), "edges", new JSONArray(), "filters", new JSONArray());
   }
+  private static JSONObject bundle(String source, JSONArray defs) {
+    return JSONObject.of("manifest", JSONObject.of("schema", "ontomato.query-package.v1",
+        "entry", JSONObject.of("kind", "python", "path", "program.py"), "queries", new JSONObject(),
+        "modules", new JSONArray(), "parameterDefs", defs, "parameterBindings", new JSONArray(),
+        "computation", JSONObject.of("operations", new JSONArray(), "outputs", new JSONArray())),
+        "files", JSONArray.of(JSONObject.of("path", "program.py", "content", source)));
+  }
+  private JSONObject packageBody() {
+    return JSONObject.of("queryPackage", bundle(source, new JSONArray()), "columnLabels", new JSONObject());
+  }
   String schema, jdbcUrl, username, password, session, run;
   OntologyAgentStore store;
   QueryGrantService grants;
@@ -90,6 +100,9 @@ class OntologyGenerationContractTest {
             mock(WriteFunctionOperationService.class),
             python,
             grants, permissionLookup, new io.ontomato.dataengine.service.impl.ABCProgramServiceImpl(), identity);
+    var ontology = mock(OntologyQueryService.class);
+    when(ontology.rule(any())).thenReturn(Map.of("classDef", List.of()));
+    org.springframework.test.util.ReflectionTestUtils.setField(operations, "ontology", ontology);
     runtime = mock(AgentRuntimeClient.class);
     when(runtime.ontologyUrl()).thenReturn("http://ontology.invalid");
     code = mock(RuntimeCodeClient.class);
@@ -118,8 +131,7 @@ class OntologyGenerationContractTest {
                     grants
                         .verify(token, run, "/ontology/ai/generation/" + run + "/context")
                         .getString("domainId"));
-                operations.test(
-                    run, owner, JSONObject.of("code", source, "parameterDefs", new JSONArray(), "sourceAnalysis", sourceAnalysis()));
+                operations.test(run, owner, packageBody());
               }
               if (path.contains("/artifacts?")) {
                 String name =
@@ -129,8 +141,8 @@ class OntologyGenerationContractTest {
                 files.put(
                     id,
                     name.equals("outputs/result.json")
-                        ? "{\"sourcePath\":\"outputs/program.py\",\"parameterDefs\":[],\"name\":\"fixture\",\"logic\":\"fixture\"}"
-                        : source);
+                        ? "{\"packagePath\":\"outputs/package.json\",\"columnLabels\":{},\"name\":\"fixture\",\"logic\":\"fixture\"}"
+                        : name.equals("outputs/package.json") ? bundle(source, new JSONArray()).getJSONObject("manifest").toJSONString() : source);
                 return JSONObject.of(
                     "artifacts",
                     List.of(
@@ -181,7 +193,7 @@ class OntologyGenerationContractTest {
   @Test
   void consumesOnlyTheTestedImmutableSourceAndSettlesOnce() {
     try (var result = generate()) {
-      assertEquals(source, result.result().getString("code"));
+      assertEquals(source, result.result().getJSONObject("queryPackage").getJSONArray("files").getJSONObject(0).getString("content"));
       var writes = new AtomicInteger();
       assertEquals(1, result.settle(writes::incrementAndGet));
       assertThrows(AgentHttpException.class, () -> result.settle(writes::incrementAndGet));
@@ -205,7 +217,7 @@ class OntologyGenerationContractTest {
     assertThrows(IllegalStateException.class, this::generate);
     inherited = false;
     failedTest = true;
-    assertThrows(AgentHttpException.class, this::generate);
+    assertThrows(IllegalStateException.class, this::generate);
   }
 
   @Test
@@ -221,19 +233,19 @@ class OntologyGenerationContractTest {
   void receiptBindsCodeParametersAndOperation() throws Exception {
     var ids = generation.open("function", UUID.randomUUID().toString(), null, owner, true);
     String run = ids.getString("runId");
-    operations.test(run, owner, JSONObject.of("code", source, "parameterDefs", new JSONArray(), "sourceAnalysis", sourceAnalysis()));
-    assertDoesNotThrow(() -> operations.requireTest(run, "function", source, new JSONArray()));
+    operations.test(run, owner, packageBody());
+    assertDoesNotThrow(() -> operations.requirePackageTest(run, "function", bundle(source, new JSONArray())));
     assertThrows(
         AgentHttpException.class,
-        () -> operations.requireTest(run, "function", source + "# changed", new JSONArray()));
+        () -> operations.requirePackageTest(run, "function", bundle(source + "# changed", new JSONArray())));
     assertThrows(
         AgentHttpException.class,
         () ->
-            operations.requireTest(
-                run, "function", source, JSONArray.of(JSONObject.of("name", "different"))));
+            operations.requirePackageTest(
+                run, "function", bundle(source, JSONArray.of(JSONObject.of("name", "different", "type", "TYPE_STRING", "value", "x")))));
     assertThrows(
         AgentHttpException.class,
-        () -> operations.requireTest(run, "action", source, new JSONArray()));
+        () -> operations.requirePackageTest(run, "action", bundle(source, new JSONArray())));
     assertThrows(
         AgentHttpException.class,
         () ->
@@ -245,12 +257,22 @@ class OntologyGenerationContractTest {
         AgentHttpException.class,
         () -> operations.source(run, new Owner("other", owner.domainId())));
     generation.close(ids.getString("sessionId"), run, owner);
-    assertThrows(
-        AgentHttpException.class,
-        () ->
-            operations.test(
-                run, owner, JSONObject.of("code", source, "parameterDefs", new JSONArray(), "sourceAnalysis", sourceAnalysis())));
+    assertThrows(AgentHttpException.class, () -> operations.test(run, owner, packageBody()));
     verify(code).closeIntent(eq(owner.domainId()), anyString());
+  }
+
+  @Test
+  void numericModelDefaultsPassTestingAndAdoptionWithoutAnotherModelRound() throws Exception {
+    var ids = generation.open("function", UUID.randomUUID().toString(), null, owner, true);
+    String run = ids.getString("runId");
+    var raw = bundle(source, JSONArray.of(JSONObject.of("name", "limit", "type", "TYPE_NUMBER", "value", "25")));
+    operations.test(run, owner, JSONObject.of("queryPackage", raw, "columnLabels", new JSONObject()));
+    var values = org.mockito.ArgumentCaptor.forClass(JSONObject.class);
+    verify(python, times(1)).execute(anyString(), anyString(), anyInt(), anyString(), any(), values.capture(), any());
+    assertInstanceOf(Number.class, values.getValue().get("limit"));
+    assertEquals(25, values.getValue().getIntValue("limit"));
+    assertDoesNotThrow(() -> operations.requirePackageTest(run, "function", QueryPackage.accept(raw)));
+    generation.close(ids.getString("sessionId"), run, owner);
   }
 
   @Test
@@ -260,37 +282,32 @@ class OntologyGenerationContractTest {
     operations.test(
         run,
         owner,
-        JSONObject.of(
-            "sourceAnalysis", sourceAnalysis(),
-            "code",
-            source,
-            "parameterDefs",
-            JSONArray.of(
-                JSONObject.of(
-                    "name", "limit", "type", "TYPE_NUMBER", "value", 10, "description", "size"))));
+        JSONObject.of("queryPackage", bundle(source, JSONArray.of(
+                JSONObject.of("name", "limit", "type", "TYPE_NUMBER", "value", 10, "description", "size"))),
+            "columnLabels", new JSONObject()));
     var described =
         JSONObject.of(
             "name", "limit", "type", "TYPE_NUMBER", "value", 10, "description", "maximum size");
     assertDoesNotThrow(
-        () -> operations.requireTest(run, "function", source, JSONArray.of(described)));
+        () -> operations.requirePackageTest(run, "function", bundle(source, JSONArray.of(described))));
     var changedValue =
         JSONObject.of(
             "name", "limit", "type", "TYPE_NUMBER", "value", 20, "description", "size");
     assertThrows(
         AgentHttpException.class,
-        () -> operations.requireTest(run, "function", source, JSONArray.of(changedValue)));
+        () -> operations.requirePackageTest(run, "function", bundle(source, JSONArray.of(changedValue))));
     var changedType =
         JSONObject.of(
             "name", "limit", "type", "TYPE_STRING", "value", 10, "description", "size");
     assertThrows(
         AgentHttpException.class,
-        () -> operations.requireTest(run, "function", source, JSONArray.of(changedType)));
+        () -> operations.requirePackageTest(run, "function", bundle(source, JSONArray.of(changedType))));
     var missing =
         assertThrows(
             AgentHttpException.class,
             () ->
-                operations.requireTest(
-                    run, "function", source + "# untested", JSONArray.of(described)));
+                operations.requirePackageTest(
+                    run, "function", bundle(source + "# untested", JSONArray.of(described))));
     assertEquals(400, missing.status());
     assertTrue(missing.getMessage().contains("business test"));
     generation.close(ids.getString("sessionId"), run, owner);

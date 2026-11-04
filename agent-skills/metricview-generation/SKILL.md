@@ -1,24 +1,42 @@
 ---
 name: metricview-generation
-description: Generate one reusable parameterized MetricView read function from a natural-language requirement, using ontology-owned validation and business tests.
+description: Generate one reusable MetricView query logic package from a natural-language requirement, using ontology-owned validation and business tests.
 ---
 
 # MetricView generation
 
-Use the task-specific definition and its business rules. Use standard `read`, `write`, `edit` and `bash` tools for workspace files. Explore schema, relationships, distinct values and DSL with the `ontomato-analyst` skill. Java paths are never workspace paths.
+Read the task's business rules and [query packages](references/query-package.md).
+Use ordinary read/write/edit/bash tools and ontomato-analyst for permitted schema,
+relationships, values and DSL exploration. The data-retrieval skill must also be
+installed; the host provides it and this script reuses its package collector.
 
-Run `node <this-skill>/scripts/generation.mjs <command> [arguments]`. Runtime supplies `ONTOMATO_ONTOLOGY_URL`, `ONTOMATO_GENERATION_ID`, `ONTOMATO_GENERATION_KIND`, and one scoped `ONTOMATO_TK` for both metadata queries and generation operations.
+Write the DSL and any necessary Python calculation under outputs/. Prefer DSL
+where it supports the calculation. Python uses `execute_dsl_file`, parameters
+from query_runtime, and the existing answer array protocol. It can execute only
+DSL files declared in the package; only parameter values may vary. Never run
+query code in local Python or put identity, credentials, URLs or host paths in
+business parameters. Java injects the helper and internal execution authority.
 
-| Command | Use |
-| --- | --- |
-| `test outputs/program.py parameters.json source-analysis.json` | Business test the exact source bytes and parameter definitions. The parameter JSON file is an array (use `[]` for no parameters); read programs also supply source-analysis.json. Read operations cannot acquire a write sandbox. |
-| `begin [source.py]` | External agents only: open a MetricView business gate using `ONTOMATO_TK` or `ONTOMATO_API_KEY`; no runtime history is invented. |
-| `close` | External agents close their gate. Hosted runs are closed by the host. |
+```sh
+node <this-skill>/scripts/generation.mjs test-package outputs/package.json labels.json
+```
 
-Never put credentials, identity, URLs, local paths or transport parameters in generated business parameter definitions. Python uses protocol `# ontomato-python:2`. Java alone injects the private `query_runtime` helper and execution tk; do not run query programs with local Python. All test output is already filtered for the current user. Read references/query-subgraph.md and references/query-subgraphs.json; declare every output source and computation in sourceAnalysis, with output labels in the user's language. Reusable graphs describe parameter-dependent filters symbolically; do not freeze test/default parameter values into the graph. Test errors are feedback for correcting the source; a bash success is not a business test receipt.
+A plain DSL entry is accepted instead of a manifest. labels.json maps each final
+output key to a readable label in the user's language. This command tests the
+whole package with manifest parameter values. Read operations cannot obtain
+write authority. Java derives DSL provenance; declare only additional Python
+computation paths, never another full sourceAnalysis. Reusable parameter bindings
+must not freeze test values in the saved filter description.
 
-## Delivery
+Write outputs/result.json as one JSON object:
+`{packagePath:"outputs/package.json",columnLabels:{...},name:"...",logic:"..."}`.
+Parameter definitions live in the manifest; do not copy them into this result.
+Preserve output keys and test the final package after execution changes. The host
+collects all files from this run and checks the exact package test; a model claim,
+bash success or inherited artifact is not a receipt. Java owns saving, publication,
+binding consistency and permissions. End with a brief description.
 
-Write **one JSON object** to `outputs/result.json`: `sourcePath` (the tested file's path under `outputs/`, for example `outputs/program.py`; write the program there because only `outputs/` is published), `parameterDefs` (array), `sourceAnalysis` (the shared subgraph JSON), `name`, `logic`. No JSON fences or XML wrappers. This file replaces any earlier instructions about submitting tools or replying with code/labels. There are no submit tools. The host validates the file from this run, not an inherited artifact or a model claim about a test. Java owns the parameter and return checks, saving, status and publication; do not publish an asset or fabricate a test receipt yourself.
-
-Finish with a brief description after writing the result.
+Hosted runs supply ONTOMATO_ONTOLOGY_URL, ONTOMATO_GENERATION_ID,
+ONTOMATO_GENERATION_KIND and scoped ONTOMATO_TK. External agents run `begin` with
+an authorized user credential (or API key) before testing, then `close`. Ordinary
+external credentials do not become internal computation credentials.

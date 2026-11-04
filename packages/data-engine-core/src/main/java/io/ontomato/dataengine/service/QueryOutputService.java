@@ -26,6 +26,16 @@ public class QueryOutputService {
   public JSONObject execute(String id, JSONObject recipe, JSONObject analysis,
       QueryAccessService.Access access, String lang, List<String> classNames) throws Exception {
     String kind = recipe.getString("kind");
+    if ("package".equals(kind))
+      return executeBundle(id, recipe, recipe.getJSONObject("package"), recipe.getJSONObject("parameters"),
+          recipe.getJSONObject("columnLabels"), scoped(access, classNames), lang);
+    var selectedMetric = "metric".equals(kind)
+        ? ontology.metric(recipe.getString("metricId"), recipe.getString("revision"), access) : null;
+    if (selectedMetric != null && selectedMetric.getFunction().getQueryPackage() != null) {
+      var values = MetricViewBindings.resolve(selectedMetric, recipe.getString("bindingId"), recipe.getJSONObject("parameters"));
+      return executeBundle(id, recipe, selectedMetric.getFunction().getQueryPackage(), values,
+          QueryPackage.labels(selectedMetric.getFunction().getReturnDef().getSourceAnalysis()), scoped(access, classNames), lang);
+    }
     JSONArray rows;
     JSONArray legacySources = null;
     JSONObject truncation = null;
@@ -43,7 +53,7 @@ public class QueryOutputService {
       JSONObject parameters = new JSONObject();
       if ("python".equals(kind)) code = recipe.getString("code");
       else if ("metric".equals(kind)) {
-        var metric = ontology.metric(recipe.getString("metricId"), recipe.getString("revision"), access);
+        var metric = selectedMetric;
         var function = metric.getFunction();
         code = function.getCode();
         if (code == null || !code.contains("# ontomato-python:2")) throw new IllegalArgumentException("Saved program requires Python protocol 2");
@@ -53,10 +63,8 @@ public class QueryOutputService {
         analysis = returns.getSourceAnalysis() != null ? returns.getSourceAnalysis() : QuerySourceAnalysis.fromStoredSources(returns.getOutKeyRefs());
         analysis = JSON.parseObject(JSON.toJSONString(analysis, JSONWriter.Feature.WriteMapNullValue));
         if (returns.getSourceAnalysis() == null) legacySources = JSONArray.from(returns.getOutKeyRefs());
-        if (!parameters.isEmpty()) code = "# ontomato-python:2\nfrom pathlib import Path as _P\n_P('parameters.json').write_text("
-            + JSON.toJSONString(JSON.toJSONString(parameters, JSONWriter.Feature.WriteMapNullValue))
-            + ", encoding='utf-8')\nexec(compile(" + JSON.toJSONString(code) + ", 'published_function.py', 'exec'))\n";
-        recipe.put("executedCode", code);
+        recipe.remove("package");
+        recipe.put("legacySource", QuerySourceSnapshot.legacy(code, function.getParameters()));
       } else throw new IllegalArgumentException("Unknown output recipe");
       if (code == null || !code.contains("# ontomato-python:2") || analysis == null)
         throw new IllegalArgumentException("Python protocol 2 and sourceAnalysis are required");
@@ -90,6 +98,33 @@ public class QueryOutputService {
     if (legacySources == null) output.put("sourceAnalysis", analysis);
     else output.put("outKeyRefs", legacySources);
     return output;
+  }
+
+  private QueryAccessService.Access scoped(QueryAccessService.Access access, List<String> classes) {
+    if (classes == null || classes.isEmpty()) return access;
+    var selected = access.classNames().isEmpty() ? classes : classes.stream().filter(access.classNames()::contains).toList();
+    if (selected.isEmpty()) throw new IllegalArgumentException("No classes remain in the task scope");
+    return new QueryAccessService.Access(access.user(), access.permission(), access.grant(), access.credential(), access.expiresAt(), selected);
+  }
+
+  private JSONObject executeBundle(String id, JSONObject recipe, JSONObject bundle, JSONObject parameters,
+      JSONObject labels, QueryAccessService.Access access, String lang) throws Exception {
+    String digest = OntologyQueryService.digest(bundle);
+    if (recipe.containsKey("packageSha256") && !digest.equals(recipe.getString("packageSha256")))
+      throw new IllegalArgumentException("Query package digest mismatch");
+    int minutes = "dsl".equals(bundle.getJSONObject("manifest").getJSONObject("entry").getString("kind"))
+        ? 1 : Math.max(1, (int) (config.get(access.user().getDomainId()).getDslCookerTimeout() / 60000));
+    var result = QueryPackageExecution.execute(id, bundle, parameters, labels, access, lang, minutes, ontology, python);
+    recipe.put("package", QueryPackage.copy(bundle));
+    recipe.put("parameters", result.parameters());
+    recipe.put("columnLabels", labels);
+    recipe.put("packageSha256", digest);
+    recipe.put("executionInputSha256", OntologyQueryService.digest(JSONObject.of("packageSha256", digest, "parameters", result.parameters())));
+    var columns = result.analysis().getJSONArray("nodes").stream().map(JSONObject::from)
+        .filter(n -> "output".equals(n.getString("kind"))).map(n ->
+            JSONObject.of("key", n.getString("key"), "label", n.getString("label"), "type", null)).toList();
+    return JSONObject.of("receiptId", id, "executedAt", java.time.Instant.now().toString(), "recipe", recipe,
+        "columns", columns, "rows", result.rows(), "sourceAnalysis", result.analysis(), "truncation", result.execution().getPartialQuery());
   }
 
   public static String hash(String code) {

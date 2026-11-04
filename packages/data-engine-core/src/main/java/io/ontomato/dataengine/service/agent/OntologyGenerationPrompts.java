@@ -39,7 +39,7 @@ public class OntologyGenerationPrompts {
   public static final String REPORT_CARD_PROGRAMMER_SERVER_PORT = "{{SERVER_PORT}}";
 
   public static final String ABC_PROGRAM_DESCRIBER_PROMPT = "abc_program_describer.md";
-  public static final String PYTHON_CODE = "{{PYTHON_CODE}}";
+  public static final String QUERY_LOGIC = "{{QUERY_LOGIC}}";
 
   public static final String QUESTION_CHECKER_V2_PROMPT = "question_checker-v2.md";
   public static final String PROGRAM_DESCRIPTIONS = "{{PROGRAM_DESCRIPTIONS}}";
@@ -129,8 +129,9 @@ public class OntologyGenerationPrompts {
     String dslRule = DslRuleUtil.generateWholeDslRule(jsonRule);
     prompt = prompt.replace(DSL_RULE, dslRule);
 
-    // Python code
-    prompt = prompt.replace(PYTHON_CODE, program.getCode());
+    // Only the independent describer receives the rule-based blind projection.
+    prompt = prompt.replace(QUERY_LOGIC, JSON.toJSONString(
+        io.ontomato.dataengine.service.QueryBlindView.of(program), Feature.PrettyFormat, Feature.WriteMapNullValue));
 
     // language
     String langValue = langService.get(lang, "lang");
@@ -205,8 +206,8 @@ public class OntologyGenerationPrompts {
     // user question corresponding to the hardcoded code
     prompt = prompt.replace(USER_QUESTION, program.getQuestion());
 
-    // Python code
-    prompt = prompt.replace(PYTHON_CODE, program.getCode());
+    prompt = prompt.replace(QUERY_LOGIC, JSON.toJSONString(
+        io.ontomato.dataengine.service.QuerySourceSnapshot.input(program), Feature.PrettyFormat, Feature.WriteMapNullValue));
 
     // language
     String langValue = langService.get(lang, "lang");
@@ -217,7 +218,7 @@ public class OntologyGenerationPrompts {
 
   public static String getReadFunctionMakerUserMessage(
       String question,
-      String code,
+      JSONObject queryLogic,
       String lang,
       LangService langService,
       Map<String, Object> jsonRule) {
@@ -239,8 +240,7 @@ public class OntologyGenerationPrompts {
     // user question corresponding to the hardcoded code
     prompt = prompt.replace(USER_QUESTION, question);
 
-    // Python code
-    prompt = prompt.replace(PYTHON_CODE, code);
+    prompt = prompt.replace(QUERY_LOGIC, JSON.toJSONString(queryLogic, Feature.PrettyFormat, Feature.WriteMapNullValue));
 
     // language
     String langValue = langService.get(lang, "lang");

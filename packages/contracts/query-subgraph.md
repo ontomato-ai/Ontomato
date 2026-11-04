@@ -11,10 +11,12 @@ by the UI. Initial class scope remains `classNames`, unrelated to this result gr
 
 ## Rendering and identity
 
-- `queries` identifies DSL occurrences, including separate Python queries. DSL graphs
-  are derived by Java; the first Python implementation accepts an agent declaration
-  bound to the exact program and execution receipt, not a runtime taint proof.
-  Reusable Function filters retain symbolic parameter expressions.
+- `queries` identifies declared DSL occurrences in a [query package](query-package.md).
+  Java derives each DSL graph and composes the model's Python computation fragment
+  by stable query/output-key references. Intermediate DSL outputs become project
+  nodes before composition. The Python fragment remains a declaration, not a
+  runtime taint proof or static lineage analysis. Reusable Function filters retain
+  symbolic parameter expressions.
 - `nodes` contains class occurrences (query, class and variable), extracted fields,
   operations and final output columns. Repeated classes/self joins have different
   IDs. Node/edge/filter/query IDs are unique within the graph, not ontology IDs.
@@ -57,5 +59,6 @@ invented examples; labels are already prepared for display.
 Persisted outKeyRefs are converted only to evaluate permissions at the read boundary.
 The conversion is not written back or published as a complete display subgraph.
 Legacy metric results retain their declared keys as labels and may omit sourceAnalysis.
-New DSL/Python datasets require an agent declaration with complete output labels;
-Java does not infer or improve labels.
+New package datasets require explicit output labels, but no model-written DSL
+source graph. Java derives DSL sources and composes only the Python computation
+fragment. Java does not infer or improve labels.

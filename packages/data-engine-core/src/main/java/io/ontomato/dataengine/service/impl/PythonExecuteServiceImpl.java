@@ -47,6 +47,8 @@ public class PythonExecuteServiceImpl implements PythonExecuteService {
     String token =
         authority.purpose() == null
                 ? null
+                : authority.packageInput() != null
+                ? grants.issuePackage(authority, id, started + timeout)
                 : grants.issue(
                     authority.userId(),
                     authority.domainId(),
@@ -119,6 +121,8 @@ public class PythonExecuteServiceImpl implements PythonExecuteService {
             JSON.parseObject(runtime.output(authority.domainId(), id, "query-status.json"));
         if (Boolean.TRUE.equals(marker.getBoolean("truncated"))) result.setPartialQuery(marker);
       }
+      if (authority.packageInput() != null)
+        result.setPartialQuery(grants.packagePartial(authority.domainId(), id));
       result.setSpendTime(System.currentTimeMillis() - started);
       return result;
     } finally {
