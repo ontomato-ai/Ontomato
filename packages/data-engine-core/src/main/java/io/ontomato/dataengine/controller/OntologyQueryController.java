@@ -107,6 +107,8 @@ public class OntologyQueryController {
     String id = body.getString("submissionId"), lang = language(request);
     if (!java.util.Set.of("package", "metric").contains(body.getJSONObject("recipe").getString("kind")))
       throw new IllegalArgumentException("New outputs require a query package or metric reference");
+    if ("package".equals(body.getJSONObject("recipe").getString("kind")))
+      body.getJSONObject("recipe").put("package", QueryPackage.accept(body.getJSONObject("recipe").getJSONObject("package")));
     return jobs.start(
         id,
         access.user(),

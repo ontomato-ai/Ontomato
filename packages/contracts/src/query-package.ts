@@ -61,6 +61,4 @@ export const packageRecipeSchema = z.object({
   parameters: runtimeJsonObjectSchema,
   columnLabels: z.record(z.string().min(1)),
   packageSha256: z.string().optional(), executionInputSha256: z.string().optional(),
-  // Removed with the separately coordinated package QC cutover.
-  executedCode: z.string().optional(),
 }).strict();

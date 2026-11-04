@@ -3,7 +3,6 @@ package io.ontomato.dataengine.util;
 import com.alibaba.fastjson2.JSON;
 import io.ontomato.dataengine.bean.function.Parameter;
 
-import java.math.BigDecimal;
 import java.util.*;
 
 public class DBSchemaUtil {
@@ -45,7 +44,7 @@ public class DBSchemaUtil {
             parameter.setName(str(def.get("name")));
             parameter.setType(str(def.get("type")));
             parameter.setDescription(str(def.get("description")));
-            Object value = typedValue(parameter.getType(), def.get("value"));
+            Object value = ParameterValues.normalize(parameter.getType(), def.get("value"));
             parameter.setValue(value);
             parameter.setSample(value);
             String className = normalizeClassName(str(def.get("className")), classDefs);
@@ -57,50 +56,6 @@ public class DBSchemaUtil {
             parameters.add(parameter);
         }
         return parameters;
-    }
-
-    /** The declared type owns the value shape; normalize before testing or saving. */
-    private static Object typedValue(String type, Object value) {
-        if (type == null || value == null) {
-            return value;
-        }
-        switch (type) {
-            case Parameter.TYPE_NUMBER:
-                return number(value);
-            case Parameter.TYPE_NUMBER_ARRAY:
-                return numberArray(value);
-            default:
-                return value;
-        }
-    }
-
-    private static Object number(Object value) {
-        if (value instanceof Number) {
-            return value;
-        }
-        if (!(value instanceof String text) || text.isBlank()) {
-            return value;
-        }
-        try {
-            return new BigDecimal(text.trim());
-        } catch (NumberFormatException invalid) {
-            return value;
-        }
-    }
-
-    private static Object numberArray(Object value) {
-        if (!(value instanceof List<?> list)) {
-            return value;
-        }
-        List<Object> values = new ArrayList<Object>(list.size());
-        for (Object element : list) {
-            Object number = number(element);
-            if (!(number instanceof Number)) {
-                return value;
-            }
-            values.add(number);
-        }
-        return values;
     }
 
     private static String str(Object value) {

@@ -36,6 +36,26 @@ describe("query package wire boundaries", () => {
       title: "Total", assumptions: [], metricUses: [], selfCheck: check }).recipe.kind).toBe("package");
     expect(datasetPayloadSchema.safeParse({ ...legacy, schema: "workbench.dataset.v2" }).success).toBe(false);
   });
+  it("keeps old metric text only at the v1 read boundary and rejects it in v2", () => {
+    const historical = { ...common, schema: "workbench.dataset.v1", sourceAnalysis: graph,
+      recipe: { kind: "metric", metricId: "old", revision: "old", parameters: { threshold: 35 }, executedCode: "archived source" } };
+    const old = datasetPayloadSchema.parse(historical);
+    expect(projectDataset("old", old, { retrievalId: "r", runtimeSessionId: "s", runtimeRunId: "u" }).abcProgram?.code).toBe("archived source");
+    expect(datasetPayloadSchema.safeParse({ ...historical, schema: "workbench.dataset.v2" }).success).toBe(false);
+  });
+  it("retains an opaque legacy Function source and its actual values without inventing a query package", () => {
+    const legacySource = { manifest: { schema: "ontomato.query-source.legacy",
+      entry: { kind: "python", path: "legacy.py" }, queries: {}, modules: [], parameterDefs: [], parameterBindings: [] },
+      files: [{ path: "legacy.py", content: "from query_runtime import parameters\nprint(parameters)" }] };
+    const payload = datasetPayloadSchema.parse({ ...common, schema: "workbench.dataset.v2", sourceAnalysis: graph,
+      recipe: { kind: "metric", metricId: "old", revision: "revision", parameters: { threshold: 35 }, legacySource } });
+    expect(datasetPayloadSchema.safeParse({ ...payload, recipe: { ...payload.recipe, package: bundle } }).success).toBe(false);
+    const projected = projectDataset("old", payload, { retrievalId: "r", runtimeSessionId: "s", runtimeRunId: "u" });
+    const normalized = normalizeAbcProgram(projected.abcProgram)!;
+    expect(normalized.queryPackage).toBeUndefined();
+    expect(normalized.code).toBe(legacySource.files[0]!.content);
+    expect(buildAbcProgramQueryPayload(normalized).parameterValues).toEqual({ threshold: 35 });
+  });
   it("keeps the whole executed package and values through history projection and dashboard refresh", () => {
     const payload = datasetPayloadSchema.parse({ ...common, schema: "workbench.dataset.v2", sourceAnalysis: graph,
       recipe: { kind: "package", package: bundle, parameters: { threshold: 35 }, columnLabels: { total: "Total" },

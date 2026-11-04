@@ -2,8 +2,9 @@
 
 Turn the supplied final query into one reusable query logic package. Read the
 ontology-generation skill and query-package reference. Preserve its behavior and
-all final output keys. The input may be a complete package rendered as Python
-transport text; inspect every declared DSL and calculation file, not just the launcher.
+all final output keys. The input contains the complete frozen package and actual
+execution values. Inspect every declared DSL and calculation file, not only the entry.
+Use the supplied parameters values as the original defaults.
 
 Business question: {{USER_QUESTION}}
 
@@ -16,8 +17,8 @@ DSL rules:
 {{DSL_RULE}}
 
 Original logic:
-```python
-{{PYTHON_CODE}}
+```json
+{{QUERY_LOGIC}}
 ```
 
 Keep DSL in JSON files. If it can do the entire calculation, use a DSL entry and

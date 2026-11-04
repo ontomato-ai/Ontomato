@@ -24,7 +24,7 @@ public class ABCProgramServiceImpl implements ABCProgramService {
     if (program.getQueryPackage() != null)
       return executePackage(id, program.getQueryPackage(), program.getParameterValues(), graph, user, permission, lang, timeout, domain);
     var result = pythonExecuteService.execute(id, program.getCode(), timeout, lang,
-        PythonAuthority.read(user, domain), new JSONObject(), Map.of());
+        PythonAuthority.read(user, domain), program.getParameterValues() == null ? new JSONObject() : program.getParameterValues(), Map.of());
     return new Object[]{authorized(result, graph, permission), result};
   }
 

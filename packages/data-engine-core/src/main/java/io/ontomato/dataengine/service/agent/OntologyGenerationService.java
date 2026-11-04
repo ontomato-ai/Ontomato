@@ -292,7 +292,7 @@ public class OntologyGenerationService {
     String text = file(domain, session, run, path);
     var manifest = JSON.parseObject(text);
     if (!"ontomato.query-package.v1".equals(manifest.getString("schema")))
-      return QueryPackage.validate(QueryPackage.fromDsl(text));
+      return QueryPackage.accept(QueryPackage.fromDsl(text));
     String root = path.substring(0, path.lastIndexOf('/') + 1);
     var paths = new ArrayList<String>();
     manifest.getJSONObject("queries").values().forEach(v -> paths.add((String) v));
@@ -301,7 +301,7 @@ public class OntologyGenerationService {
       paths.add(manifest.getJSONObject("entry").getString("path"));
     var files = new JSONArray();
     for (String name : paths) files.add(JSONObject.of("path", QueryPackage.path(name), "content", file(domain, session, run, root + name)));
-    return QueryPackage.validate(JSONObject.of("manifest", manifest, "files", files));
+    return QueryPackage.accept(JSONObject.of("manifest", manifest, "files", files));
   }
 
   private String file(String domain, String session, String run, String path) throws Exception {

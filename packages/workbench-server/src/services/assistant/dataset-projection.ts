@@ -13,10 +13,10 @@ export function projectDataset(
 ): Dataset {
   const bundle = "package" in payload.recipe ? payload.recipe.package : undefined;
   const values = "parameters" in payload.recipe ? payload.recipe.parameters : {};
-  const code =
-    payload.recipe.kind === "python"
-      ? payload.recipe.code
-      : payload.recipe.executedCode;
+  const legacySource = "legacySource" in payload.recipe ? payload.recipe.legacySource : undefined;
+  const code = legacySource
+    ? legacySource.files.find((file) => file.path === legacySource.manifest.entry.path)?.content
+    : historicalCode(payload);
   return {
     id,
     name: payload.title,
@@ -39,12 +39,19 @@ export function projectDataset(
             code,
             sourceAnalysis: payload.sourceAnalysis,
             outKeyRefs: payload.outKeyRefs ?? [],
+            parameterValues: values,
             parameters: [],
           },
         }
       : {}),
     ...(payload.truncation ?? {}),
   };
+}
+/** Decode original v1 source text only while reading an immutable historical snapshot. */
+function historicalCode(payload: DatasetPayload) {
+  if (payload.schema !== "workbench.dataset.v1") return undefined;
+  if (payload.recipe.kind === "python") return payload.recipe.code;
+  return "executedCode" in payload.recipe ? payload.recipe.executedCode : undefined;
 }
 const cell = (value: unknown) =>
   String(

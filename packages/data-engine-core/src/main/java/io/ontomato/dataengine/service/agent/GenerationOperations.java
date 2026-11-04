@@ -496,7 +496,7 @@ public class GenerationOperations {
   private Object testPackage(String run, Owner owner, JSONObject body, String kind) throws Exception {
     if (!Set.of("metric", "function", "dashboard").contains(kind))
       throw AgentHttpException.invalid("This definition does not test query packages");
-    var bundle = QueryPackage.validate(body.getJSONObject("queryPackage"));
+    var bundle = QueryPackage.accept(body.getJSONObject("queryPackage"));
     var parameters = QueryPackage.parameters(bundle, null);
     String digest = packageTestDigest(kind, bundle), execution = UUID.randomUUID().toString();
     long deadline = java.time.Instant.parse(store.one("SELECT deadline FROM ontology_agent_runs WHERE id=?", uuid(run)).getString("deadline")).toEpochMilli();

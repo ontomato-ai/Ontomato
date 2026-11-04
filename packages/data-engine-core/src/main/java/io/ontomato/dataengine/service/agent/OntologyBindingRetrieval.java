@@ -216,7 +216,7 @@ public class OntologyBindingRetrieval {
     var programs=new JSONArray(); var recipes=new JSONArray();
     for(var output:accepted) {
       var data=JSON.parseObject(output.getString("dataset")); var recipe=data.getJSONObject("recipe");
-      programs.add(JSONObject.of("question",data.getString("question"),"code",recipe.getString("executedCode"),"sourceAnalysis",data.get("sourceAnalysis")));
+      programs.add(QuerySourceSnapshot.fromDataset(data));
       recipes.add(recipe);
     }
     var request=accepted.get(0).getJSONObject("request");

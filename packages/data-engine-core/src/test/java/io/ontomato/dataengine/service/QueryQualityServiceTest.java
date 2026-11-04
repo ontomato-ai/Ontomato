@@ -9,7 +9,6 @@ import com.alibaba.fastjson2.JSONObject;
 import io.ontomato.dataengine.bean.abcHarness.ABCHarnessCheck;
 import io.ontomato.dataengine.bean.abcHarness.ABCHarnessProgram;
 import io.ontomato.dataengine.core.bean.User;
-import io.ontomato.dataengine.util.DslToPythonCodeUtil;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
 import java.util.concurrent.atomic.AtomicReference;
@@ -20,7 +19,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
 
-/** The describer receives the executed DSL program without the original problem text. */
+/** Quality and candidate jobs share frozen sources; the describer alone receives the blind view. */
 @ExtendWith(MockitoExtension.class)
 @MockitoSettings(strictness = Strictness.LENIENT)
 class QueryQualityServiceTest {
@@ -103,8 +102,10 @@ class QueryQualityServiceTest {
     assertEquals(DOMAIN, input.getString("domainId"));
     assertEquals(2, input.getJSONArray("programs").size());
     assertEquals(2, input.getJSONArray("recipes").size());
-    assertFalse(
-        input.getJSONArray("programs").getJSONObject(0).getString("code").contains("How many active employees?"));
+    assertTrue(input.getJSONArray("programs").getJSONObject(0).getJSONObject("queryPackage")
+        .getJSONObject("manifest").containsKey("computation"));
+    assertTrue(input.getJSONArray("programs").getJSONObject(0).getJSONObject("queryPackage").toJSONString()
+        .contains("How many active employees?"));
 
     candidateOperation.get().execute("candidate-session");
 
@@ -174,7 +175,7 @@ class QueryQualityServiceTest {
   }
 
   @Test
-  void dslProgramCodeHasAnEmptyProblem() throws Exception {
+  void frozenDslStaysStructuredAndOnlyTheDescriberViewRemovesItsProblem() throws Exception {
     JSONObject dsl =
         JSONObject.of(
             "problem",
@@ -194,13 +195,11 @@ class QueryQualityServiceTest {
             anyList(),
             eq(List.of()),
             eq(DOMAIN));
-    String code = programs.getValue().get(0).getCode();
-    assertFalse(code.contains("How many active employees aged 20 to 30?"));
-    assertTrue(code.contains("\"problem\": \"\""));
-    JSONObject sanitized = JSONObject.from(dsl);
-    sanitized.put("problem", "");
-    assertEquals(DslToPythonCodeUtil.generate(sanitized, ""), code);
-    assertEquals("# ontomato-python:2\nprint('[]')\n", programs.getValue().get(1).getCode());
+    var program = programs.getValue().get(0);
+    assertNull(program.getCode());
+    assertEquals(dsl.toJSONString(), program.getQueryPackage().getJSONArray("files").getJSONObject(0).getString("content"));
+    assertFalse(QueryBlindView.of(program).toJSONString().contains("How many active employees aged 20 to 30?"));
+    assertEquals(2, programs.getValue().get(1).getQueryPackage().getJSONArray("files").size());
   }
 
   @SuppressWarnings({"unchecked", "rawtypes"})
@@ -220,18 +219,14 @@ class QueryQualityServiceTest {
   }
 
   private static JSONObject body(JSONObject dsl) {
-    JSONObject recipe = JSONObject.of("kind", "dsl", "dsl", dsl);
-    JSONObject program =
-        JSONObject.of(
-            "question",
-            "How many?",
-            "code",
-            DslToPythonCodeUtil.generate(dsl, ""));
-    JSONObject pythonRecipe =
-        JSONObject.of("kind", "python", "code", "# ontomato-python:2\nprint('[]')\n", "sha256", "x");
-    JSONObject pythonProgram =
-        JSONObject.of(
-            "question", "How many?", "code", "# ontomato-python:2\nprint('[]')\n");
+    JSONObject recipe = JSONObject.of("kind", "package", "package", QueryPackage.fromDsl(dsl.toJSONString()), "parameters", new JSONObject());
+    JSONObject program = QuerySourceSnapshot.fromDataset(JSONObject.of("schema", "workbench.dataset.v2", "question", "How many?", "recipe", recipe));
+    JSONObject pythonPackage;
+    try (var input = QueryQualityServiceTest.class.getResourceAsStream("/ontology-contracts/examples/query-packages.json")) {
+      pythonPackage = com.alibaba.fastjson2.JSON.parseObject(input.readAllBytes()).getJSONObject("pythonAggregate");
+    } catch (Exception error) { throw new IllegalStateException(error); }
+    JSONObject pythonRecipe = JSONObject.of("kind", "package", "package", pythonPackage, "parameters", JSONObject.of("threshold", 20));
+    JSONObject pythonProgram = QuerySourceSnapshot.fromDataset(JSONObject.of("schema", "workbench.dataset.v2", "question", "How many?", "recipe", pythonRecipe));
     return JSONObject.of(
         "id",
         UUID.randomUUID().toString(),

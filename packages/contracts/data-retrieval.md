@@ -198,7 +198,9 @@ Exploration-grant issuance ceases to be a workbench API.
 ## QC and limits
 
 Eligible stopped/stop runs with accepted datasets schedule existing Java QC once;
-questions without datasets do not. QC compares the retrieved program against the
+questions without datasets do not. The independent describer receives the whole
+frozen package through the rule-based blind view; candidate generation receives
+the original package and actual parameter values. QC compares the retrieved program against the
 user's own messages plus the confirmed decisions recorded on the retrieval; when
 no user messages are present it falls back to the retrieval question. A caller
 scope's `recentUserMessages` become those messages for the retriever and QC.

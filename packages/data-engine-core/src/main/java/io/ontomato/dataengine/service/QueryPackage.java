@@ -52,6 +52,17 @@ public final class QueryPackage {
     return value;
   }
 
+  /** Capture model input once, before its identity or execution receipt is established. */
+  public static JSONObject accept(JSONObject value) {
+    var accepted = copy(validate(value));
+    for (Object item : accepted.getJSONObject("manifest").getJSONArray("parameterDefs")) {
+      var definition = (JSONObject) item;
+      definition.put("value", io.ontomato.dataengine.util.ParameterValues.normalize(
+          definition.getString("type"), definition.get("value")));
+    }
+    return accepted;
+  }
+
   public static JSONObject fromDsl(String text) {
     return JSONObject.of("manifest", JSONObject.of("schema", "ontomato.query-package.v1",
         "entry", JSONObject.of("kind", "dsl", "query", "main"), "queries", JSONObject.of("main", "query.json"),
@@ -228,7 +239,8 @@ public final class QueryPackage {
       throw new IllegalArgumentException("Convert this read Function to a query package before saving");
     if (function.getCode() != null && !function.getCode().isBlank())
       throw new IllegalArgumentException("Read Functions have one query package, not a second code definition");
-    var bundle = validate(function.getQueryPackage());
+    var bundle = accept(function.getQueryPackage());
+    function.setQueryPackage(bundle);
     var returns = function.getReturnDef();
     if (returns == null) returns = new io.ontomato.dataengine.bean.function.ReturnDef();
     var labels = returns.getColumnLabels();
@@ -252,18 +264,4 @@ public final class QueryPackage {
         + JSON.toJSONString("package/" + value.getJSONObject("manifest").getJSONObject("entry").getString("path")) + ", run_name='__main__')\n";
   }
 
-  /** Temporary complete-source projection for QC; never accepted as a new algorithm. */
-  public static String reviewCode(JSONObject value, JSONObject parameters) {
-    String header = "# ontomato-python:2\nimport json\nfrom pathlib import Path\nquery_package = json.loads("
-        + JSON.toJSONString(JSON.toJSONString(value, JSONWriter.Feature.WriteMapNullValue)) + ")\nparameters = json.loads("
-        + JSON.toJSONString(JSON.toJSONString(parameters, JSONWriter.Feature.WriteMapNullValue)) + ")\n"
-        + "Path('parameters.json').write_text(json.dumps(parameters), encoding='utf-8')\n";
-    var entry = value.getJSONObject("manifest").getJSONObject("entry");
-    if ("dsl".equals(entry.getString("kind")))
-      return header + "from query_runtime import execute_dsl_file\nprint(json.dumps({'answer': execute_dsl_file("
-          + JSON.toJSONString(value.getJSONObject("manifest").getJSONObject("queries").getString(entry.getString("query"))) + ")}))\n";
-    return header + "for file in query_package['files']:\n    target = Path('package') / file['path']\n"
-        + "    target.parent.mkdir(parents=True, exist_ok=True)\n    target.write_text(file['content'], encoding='utf-8')\n"
-        + launcher(value);
-  }
 }

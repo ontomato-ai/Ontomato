@@ -84,7 +84,23 @@ Old protocols still require explicit migration. No bulk conversion or guessed
 DSL extraction. Read Functions store one queryPackage; parameters are projected,
 return graphs are generated, and MetricViews reference that Function.
 
-During the separately coordinated QC cutover, executedCode is a generated,
-complete-source projection for the existing QC call. It is not the saved algorithm,
-not accepted as a new write format, and must be removed when QC consumes packages.
-This batch does not change blind-view rules, quotes, scoring or QC lifecycle.
+Model-authored parameter defaults are normalized once at admission: TYPE_NUMBER
+and TYPE_NUMBER_ARRAY convert valid numeric strings through the same ParameterValues
+rule used by DBSchemaUtil. String parameters retain their original text. Delivery,
+generation tests, adoption and read-Function saves capture the normalized manifest
+before hashing; execution and binding consumers keep their strict value checks.
+
+Quality reads a frozen source snapshot. The describer receives the entire declared
+file list and actual parameter values, with DSL problem fields, Python comments
+and standalone documentation strings removed. Manifest descriptions, samples and
+the author's computation explanation are omitted; aliases, variables, output keys
+and business literals remain. This is a direct text projection, with no static
+lineage or blindability classification, no new status and no extra model call.
+The source files are never changed. Candidates and parameterized dashboards consume
+the original whole source snapshot as JSON, not a generated Python projection.
+The comparison step continues to use host user quotes and confirmed decisions.
+
+Only v1 historical decoding reads executedCode. A legacy saved Function freezes
+its original Python as an opaque legacySource plus actual values, without claiming
+a parsed DSL package. These adapters live at stored-data read boundaries; new
+package submissions and v2 package receipts contain no source-text fallback.

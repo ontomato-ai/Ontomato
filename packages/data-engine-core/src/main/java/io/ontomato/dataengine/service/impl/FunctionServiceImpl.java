@@ -129,13 +129,11 @@ public class FunctionServiceImpl implements FunctionService {
 
     Map<String, Object> jsonRule = generationService.authorizedRule(adminService.getJSONRule(domainId), domainId);
     List<Map<String, Object>> classDefs = (List<Map<String, Object>>) jsonRule.get("classDef");
-    String originCode = abcProgram.getQueryPackage() == null ? abcProgram.getCode()
-        : io.ontomato.dataengine.service.QueryPackage.reviewCode(abcProgram.getQueryPackage(),
-            io.ontomato.dataengine.service.QueryPackage.parameters(abcProgram.getQueryPackage(), abcProgram.getParameterValues()));
+    var queryLogic = io.ontomato.dataengine.service.QuerySourceSnapshot.input(abcProgram);
 
     String userMessage =
         OntologyGenerationPrompts.getReadFunctionMakerUserMessage(
-            question, originCode, lang, langService, jsonRule);
+            question, queryLogic, lang, langService, jsonRule);
     try (var generation =
         generationService.generate("function", sessionId, userMessage, lang, domainId)) {
       JSONObject envelope = generation.result();

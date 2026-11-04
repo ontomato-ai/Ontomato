@@ -58,13 +58,10 @@ public class ABCProgramDashboardServiceImpl implements ABCProgramDashboardServic
       String sessionId = UUID.randomUUID().toString();
 
       Map<String, Object> jsonRule = generationService.authorizedRule(adminService.getJSONRule(domainId), domainId);
-      var promptProgram = program;
-      if (program.getQueryPackage() != null) {
-        promptProgram = new ABCHarnessProgram();
-        promptProgram.setQuestion(program.getQuestion());
-        promptProgram.setCode(io.ontomato.dataengine.service.QueryPackage.reviewCode(program.getQueryPackage(),
-            io.ontomato.dataengine.service.QueryPackage.parameters(program.getQueryPackage(), program.getParameterValues())));
-      }
+      var promptProgram = new ABCHarnessProgram();
+      promptProgram.setQuestion(program.getQuestion());
+      promptProgram.setQueryPackage(io.ontomato.dataengine.service.QuerySourceSnapshot.fromProgram(program));
+      promptProgram.setParameterValues(program.getParameterValues());
       String userMessage =
           OntologyGenerationPrompts.getAbcProgramDashboardMakerUserMessage(
               promptProgram, lang, langService, jsonRule);

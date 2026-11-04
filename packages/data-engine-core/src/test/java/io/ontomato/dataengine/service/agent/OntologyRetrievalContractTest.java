@@ -428,7 +428,11 @@ class OntologyRetrievalContractTest {
     example.put("recipe", JSONObject.of("kind", "package", "package", QueryPackage.fromDsl("{\"answer\":{\"steps\":[{}]}}"),
         "parameters", new JSONObject(), "columnLabels", labels));
     example.put("question", "Count?"); example.put("decisionIds", new JSONArray());
+    example.getJSONObject("recipe").getJSONObject("package").getJSONObject("manifest").getJSONArray("parameterDefs")
+        .add(JSONObject.of("name", "limit", "type", "TYPE_NUMBER", "value", "25"));
     DatasetFileContract.preparation(example);
+    assertInstanceOf(Number.class, example.getJSONObject("recipe").getJSONObject("package")
+        .getJSONObject("manifest").getJSONArray("parameterDefs").getJSONObject(0).get("value"));
     var wrongCheck = AgentJson.copy(example);
     wrongCheck.getJSONObject("selfCheck").put("filters", new JSONArray());
     var wrongSource = AgentJson.copy(example);

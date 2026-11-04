@@ -256,7 +256,8 @@ class RuntimeFunctionIntegrationTest {
                   "en");
       assertEquals(8, output.getJSONArray("rows").getJSONObject(0).getIntValue("count"));
       var saved = new ABCHarnessProgram();
-      saved.setCode(output.getJSONObject("recipe").getString("executedCode"));
+      saved.setCode(output.getJSONObject("recipe").getJSONObject("legacySource").getJSONArray("files").getJSONObject(0).getString("content"));
+      saved.setParameterValues(output.getJSONObject("recipe").getJSONObject("parameters"));
       saved.setOutKeyRefs(function.getReturnDef().getOutKeyRefs());
       rows =
           (JSONArray)

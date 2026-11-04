@@ -63,10 +63,8 @@ public class QueryOutputService {
         analysis = returns.getSourceAnalysis() != null ? returns.getSourceAnalysis() : QuerySourceAnalysis.fromStoredSources(returns.getOutKeyRefs());
         analysis = JSON.parseObject(JSON.toJSONString(analysis, JSONWriter.Feature.WriteMapNullValue));
         if (returns.getSourceAnalysis() == null) legacySources = JSONArray.from(returns.getOutKeyRefs());
-        if (!parameters.isEmpty()) code = "# ontomato-python:2\nfrom pathlib import Path as _P\n_P('parameters.json').write_text("
-            + JSON.toJSONString(JSON.toJSONString(parameters, JSONWriter.Feature.WriteMapNullValue))
-            + ", encoding='utf-8')\nexec(compile(" + JSON.toJSONString(code) + ", 'published_function.py', 'exec'))\n";
-        recipe.put("executedCode", code);
+        recipe.remove("package");
+        recipe.put("legacySource", QuerySourceSnapshot.legacy(code, function.getParameters()));
       } else throw new IllegalArgumentException("Unknown output recipe");
       if (code == null || !code.contains("# ontomato-python:2") || analysis == null)
         throw new IllegalArgumentException("Python protocol 2 and sourceAnalysis are required");
@@ -122,7 +120,6 @@ public class QueryOutputService {
     recipe.put("columnLabels", labels);
     recipe.put("packageSha256", digest);
     recipe.put("executionInputSha256", OntologyQueryService.digest(JSONObject.of("packageSha256", digest, "parameters", result.parameters())));
-    recipe.put("executedCode", QueryPackage.reviewCode(bundle, result.parameters()));
     var columns = result.analysis().getJSONArray("nodes").stream().map(JSONObject::from)
         .filter(n -> "output".equals(n.getString("kind"))).map(n ->
             JSONObject.of("key", n.getString("key"), "label", n.getString("label"), "type", null)).toList();

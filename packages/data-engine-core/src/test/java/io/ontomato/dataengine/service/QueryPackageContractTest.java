@@ -60,6 +60,26 @@ class QueryPackageContractTest {
   }
 
   @Test
+  void modelNumericDefaultsAreNormalizedAtTheSameBoundaryAsLegacyParameters() throws Exception {
+    var raw = bundle();
+    var definitions = raw.getJSONObject("manifest").getJSONArray("parameterDefs");
+    definitions.getJSONObject(0).put("value", "25");
+    definitions.add(JSONObject.of("name", "codes", "type", "TYPE_STRING", "value", "025"));
+    definitions.add(JSONObject.of("name", "amounts", "type", "TYPE_NUMBER_ARRAY", "value", JSONArray.of("2.5", "0")));
+    var accepted = QueryPackage.accept(raw);
+    var values = QueryPackage.parameters(accepted, null);
+    assertInstanceOf(Number.class, values.get("threshold"));
+    assertEquals(25, values.getIntValue("threshold"));
+    assertEquals("025", values.getString("codes"));
+    assertTrue(values.getJSONArray("amounts").stream().allMatch(Number.class::isInstance));
+    var legacy = io.ontomato.dataengine.util.DBSchemaUtil.buildParameters(definitions.toList(Map.class), List.of());
+    assertEquals(legacy.get(0).getValue(), QueryPackage.definitions(accepted).get(0).getValue());
+    assertEquals(legacy.get(2).getValue(), QueryPackage.definitions(accepted).get(2).getValue());
+    assertEquals("25", raw.getJSONObject("manifest").getJSONArray("parameterDefs").getJSONObject(0).get("value"));
+    assertEquals(OntologyQueryService.digest(accepted), OntologyQueryService.digest(QueryPackage.accept(accepted)));
+  }
+
+  @Test
   void wholeBundleAndItsParameterTargetsAreClosed() throws Exception {
     var original = bundle();
     QueryPackage.validate(original);

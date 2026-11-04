@@ -3,8 +3,8 @@
 Create a reusable query logic package for the supplied query. Read the
 ontology-generation skill and query-package reference. Preserve all original
 output keys and business behavior, including filters, grain, denominator,
-null handling and partial results. The supplied program may render a complete
-package; inspect its DSL files and Python calculation, not just its launcher.
+null handling and partial results. Inspect all DSL and Python files in the frozen
+package, not only its entry. parameters contains the actual original execution values.
 
 Dataset: {{DATASET_DESC}}
 
@@ -15,8 +15,8 @@ DSL rules:
 {{DSL_RULE}}
 
 Original query:
-```python
-{{PYTHON_CODE}}
+```json
+{{QUERY_LOGIC}}
 ```
 
 Keep DSL in JSON files. A pure DSL needs no Python. Additional Python calls

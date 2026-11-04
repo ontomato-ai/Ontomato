@@ -12,7 +12,8 @@ export function normalizeAbcProgram(value: unknown): AbcProgramDashboard | null 
   return {
     title,
     code,
-    ...(bundle ? { queryPackage: bundle, parameterValues: record.parameterValues as Record<string, unknown> | undefined } : {}),
+    ...(bundle ? { queryPackage: bundle } : {}),
+    parameterValues: record.parameterValues as Record<string, unknown> | undefined,
     sourceAnalysis: record.sourceAnalysis as AbcProgramDashboard["sourceAnalysis"],
     outKeyRefs: outKeyRefs as AbcProgramDashboard["outKeyRefs"],
     parameters: Array.isArray(record.parameters)

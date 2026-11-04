@@ -26,7 +26,7 @@ final class DatasetFileContract {
     switch (nonempty(recipe, "kind")) {
       case "package" -> {
         AgentJson.fields(recipe, "kind", "package", "parameters", "columnLabels");
-        io.ontomato.dataengine.service.QueryPackage.validate(object(recipe, "package"));
+        recipe.put("package", io.ontomato.dataengine.service.QueryPackage.accept(object(recipe, "package")));
         object(recipe, "parameters");
         var labels = object(recipe, "columnLabels");
         for (String key : labels.keySet()) nonempty(labels, key);

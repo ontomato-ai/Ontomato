@@ -262,6 +262,20 @@ class OntologyGenerationContractTest {
   }
 
   @Test
+  void numericModelDefaultsPassTestingAndAdoptionWithoutAnotherModelRound() throws Exception {
+    var ids = generation.open("function", UUID.randomUUID().toString(), null, owner, true);
+    String run = ids.getString("runId");
+    var raw = bundle(source, JSONArray.of(JSONObject.of("name", "limit", "type", "TYPE_NUMBER", "value", "25")));
+    operations.test(run, owner, JSONObject.of("queryPackage", raw, "columnLabels", new JSONObject()));
+    var values = org.mockito.ArgumentCaptor.forClass(JSONObject.class);
+    verify(python, times(1)).execute(anyString(), anyString(), anyInt(), anyString(), any(), values.capture(), any());
+    assertInstanceOf(Number.class, values.getValue().get("limit"));
+    assertEquals(25, values.getValue().getIntValue("limit"));
+    assertDoesNotThrow(() -> operations.requirePackageTest(run, "function", QueryPackage.accept(raw)));
+    generation.close(ids.getString("sessionId"), run, owner);
+  }
+
+  @Test
   void descriptionChangesDoNotInvalidateTheBusinessTestReceipt() throws Exception {
     var ids = generation.open("function", UUID.randomUUID().toString(), null, owner, true);
     String run = ids.getString("runId");
