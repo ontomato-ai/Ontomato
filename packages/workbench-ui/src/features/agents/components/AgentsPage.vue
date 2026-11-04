@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from "vue";
+import { computed, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import AgentsListView from "./AgentsListView.vue";
 import CapabilityLibrary from "./CapabilityLibrary.vue";
@@ -28,6 +28,13 @@ function firstVisibleTab(): "agents" | "capabilities" {
 }
 
 const tab = ref<"agents" | "capabilities">(firstVisibleTab());
+// A later address naming a tab (an old link opened while the page is already shown) switches to it.
+watch(
+  () => props.initialTab,
+  (next) => {
+    if (next) tab.value = firstVisibleTab();
+  }
+);
 </script>
 
 <template>

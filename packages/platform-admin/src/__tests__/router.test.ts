@@ -3,7 +3,7 @@ import { defineComponent, h } from "vue";
 import { RouterView, type RouteRecordRaw } from "vue-router";
 import { createPlatformRouter } from "../router";
 import { availableGroups, availablePages, type PlatformAccess, type PlatformNavigation } from "../navigation";
-import { legacyPageRedirects, pageRoutes, platformPages, systemSettingsTabs } from "../pages";
+import { legacyPageRedirects, ossPlatformPages, pageRoutes, platformPages, sharedPageRoutes, systemSettingsTabs } from "../pages";
 
 const navigation: PlatformNavigation = {
   groups: [
@@ -142,5 +142,15 @@ describe("the service router", () => {
     // The tab is still named, so the page opens on it although the account holds no code at all.
     expect(await land("/admin/license", access([], "HTTP 402"))).toBe("/admin/system-config/authorization");
     expect(await land("/admin/license", access(["system-config"]))).toBe("/admin/system-config/authorization");
+  });
+});
+
+describe("the shared page routes", () => {
+  it("route every tab of the edition's pages: the licence tab exists only where the edition's system settings hold it", () => {
+    const paths = (routes: RouteRecordRaw[]) => routes.map((route) => route.path);
+    const enterprise = sharedPageRoutes([platformPages.modelConfig, platformPages.systemSettings, platformPages.runRecords]);
+    expect(paths(enterprise)).toContain(systemSettingsTabs.authorization.path);
+    expect(paths(sharedPageRoutes(ossPlatformPages))).not.toContain(systemSettingsTabs.authorization.path);
+    expect(paths(sharedPageRoutes())).toEqual(paths(sharedPageRoutes(ossPlatformPages)));
   });
 });

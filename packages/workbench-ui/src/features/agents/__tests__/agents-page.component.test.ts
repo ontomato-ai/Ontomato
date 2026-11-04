@@ -76,5 +76,10 @@ describe("agents page tabs", () => {
     wrappers.push(requested);
     await flushPromises();
     expect(requested.find(".el-tabs__item.is-active").text()).toBe(t("agents.capabilityLibrary"));
+
+    // A later address naming the other tab (an old link opened while the page is shown) switches to it.
+    await requested.setProps({ initialTab: "agents" });
+    await flushPromises();
+    expect(requested.find(".el-tabs__item.is-active").text()).toBe(t("agents.agentsTab"));
   });
 });

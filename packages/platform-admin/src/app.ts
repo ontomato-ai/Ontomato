@@ -83,7 +83,7 @@ export function startPlatformAdmin(options: PlatformAdminOptions) {
     })
   );
   app.provide(platformHostKey, host);
-  providePageActions();
+  providePageActions(app);
   app.use(i18n);
   app.use(ElementPlus);
   app.use(router);

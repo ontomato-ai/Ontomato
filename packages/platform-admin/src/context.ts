@@ -1,9 +1,9 @@
 import {
   inject,
   onBeforeUnmount,
-  provide,
   shallowRef,
   watchEffect,
+  type App,
   type Component,
   type ComputedRef,
   type InjectionKey,
@@ -79,10 +79,13 @@ export interface PlatformPageActions {
 
 export const pageActionsKey: InjectionKey<Ref<PlatformPageActions | null>> = Symbol("platform-page-actions");
 
-/** Provided by the app, written by the shown page and read by the layout. */
-export function providePageActions(): Ref<PlatformPageActions | null> {
+/**
+ * Provided on the app — the app is assembled before any component's setup runs, where a plain `provide` has no
+ * effect — written by the shown page and read by the layout.
+ */
+export function providePageActions(app: App): Ref<PlatformPageActions | null> {
   const actions = shallowRef<PlatformPageActions | null>(null);
-  provide(pageActionsKey, actions);
+  app.provide(pageActionsKey, actions);
   return actions;
 }
 

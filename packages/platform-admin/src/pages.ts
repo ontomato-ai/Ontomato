@@ -141,9 +141,14 @@ export const ossPlatformPages: readonly PlatformPage[] = [
 /** The pages outside platform administration that this package ships: the feedback records, under knowledge. */
 export const platformKnowledgePages: readonly PlatformPage[] = [platformPages.userFeedback];
 
-/** Every route the shared pages need: the platform pages (with their tabs) and the pages beside them. */
-export function sharedPageRoutes(): RouteRecordRaw[] {
-  return pageRoutes([...ossPlatformPages, ...platformKnowledgePages], platformPageComponents);
+/**
+ * Every route the shared pages need: the edition's platform pages (with their tabs, so an edition whose system
+ * settings hold the licence tab gets that tab's address too) and the pages beside them. Pages this package does not
+ * ship, such as an edition's own permission centre, are routed by the edition.
+ */
+export function sharedPageRoutes(pages: readonly PlatformPage[] = ossPlatformPages): RouteRecordRaw[] {
+  const shared = pages.filter((page) => page.path in platformPageComponents);
+  return pageRoutes([...shared, ...platformKnowledgePages], platformPageComponents);
 }
 
 /**
