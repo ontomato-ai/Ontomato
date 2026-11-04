@@ -107,7 +107,9 @@ export const modelSettingsConfigurationSchema = z.object({
   retry: modelRetrySchema,
 }).strict();
 /** Provider IDs that prefix unavailable legacy model references; no configured provider may use them. */
-export const RESERVED_MODEL_PROVIDER_IDS: readonly string[] = ["legacy", "legacy-unconfigured"];
+/** Prefix of migrated references whose model no longer exists; no provider may take it, so they stay unavailable. */
+export const UNCONFIGURED_MODEL_PROVIDER_ID = "legacy";
+export const RESERVED_MODEL_PROVIDER_IDS: readonly string[] = [UNCONFIGURED_MODEL_PROVIDER_ID];
 export const modelSettingsWriteSchema = modelSettingsConfigurationSchema.superRefine((settings, ctx) => {
   for (const id of Object.keys(settings.providers)) {
     if (RESERVED_MODEL_PROVIDER_IDS.includes(id)) ctx.addIssue({ code: z.ZodIssueCode.custom,

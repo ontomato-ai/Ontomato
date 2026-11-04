@@ -1,7 +1,7 @@
 import { expect, it } from "vitest";
 import { migrateLegacyModelSettings, importLegacyEmbedding, emptyModelSettings, defaultModelRetry } from "../model-migration";
 import { migrateModelReference } from "@ontomato/contracts/model-migration";
-import { modelSettingsWriteSchema, modelReferenceSchema } from "@ontomato/contracts/model-settings";
+import { RESERVED_MODEL_PROVIDER_IDS, modelSettingsWriteSchema, modelReferenceSchema } from "@ontomato/contracts/model-settings";
 import { sealModelKey, openSealedModelKey } from "@ontomato/contracts/model-key-seal";
 const key = sealModelKey("effective-key", "test-token");
 const old = (name: string, extra = {}) => ({ name, modelName: "chat", baseUrl: "https://gateway/v1", apiKeys: [key], ...extra });
@@ -21,7 +21,6 @@ it("preserves headers, duplicate IDs, parameters and selections while discarding
   expect(migrateModelReference("missing", result.mapping)).toBe("legacy/missing");
   expect(migrateModelReference(null, result.mapping)).toBeNull();
   expect(migrateModelReference("old/name", { ...result.mapping, references: { "old/name": "gateway/chat" } })).toBe("gateway/chat");
-  expect(migrateModelReference("missing", { ...result.mapping, unconfiguredProviderId: "legacy-unconfigured" })).toBe("legacy-unconfigured/missing");
   const ref = importLegacyEmbedding(result.settings, { baseUrl: "https://gateway/v1", apiKey: "effective-key",
     modelName: "embed", dimensions: 2, headers: { "openai-organization": "org" }, timeoutMs: 180000 });
   expect(ref).toBe("gateway/embed");
@@ -64,7 +63,7 @@ it("counts an unset legacy retry count as the old default of three", () => {
 it("rejects reserved provider IDs on write while keeping unavailable legacy references valid", () => {
   const settings = emptyModelSettings();
   importLegacyEmbedding(settings, { baseUrl: "https://gateway/v1", apiKey: "key", modelName: "embed", dimensions: 2 });
-  for (const id of ["legacy", "legacy-unconfigured"]) {
+  for (const id of RESERVED_MODEL_PROVIDER_IDS) {
     const result = modelSettingsWriteSchema.safeParse({ ...settings,
       providers: { [id]: settings.providers.gateway }, embeddingModelId: `${id}/embed` });
     expect(result.success).toBe(false);

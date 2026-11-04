@@ -1,6 +1,6 @@
 import type { PoolClient } from "pg";
 import { z } from "zod";
-import { isMaskedSecret, maskModelKey, modelSettingsConfigurationSchema, modelSettingsWriteSchema,
+import { UNCONFIGURED_MODEL_PROVIDER_ID, isMaskedSecret, maskModelKey, modelSettingsConfigurationSchema, modelSettingsWriteSchema,
   modelProviderConnectionSchema, type ModelSettingsData, type ModelSettingsWrite } from "@ontomato/contracts/model-settings";
 import { legacyEmbeddingImportSchema, type ModelMigrationMap } from "@ontomato/contracts/model-migration";
 import { openSealedModelKey, sealModelKey } from "@ontomato/contracts/model-key-seal";
@@ -97,7 +97,7 @@ export class RuntimeModelSettings {
   async migrationMap(domain: string): Promise<ModelMigrationMap> {
     const settings = await this.read(domain);
     const row = (await this.store.pool.query(`SELECT references_map FROM ${this.store.table("model_migration")} WHERE domain_id=$1`, [domain])).rows[0];
-    return { references: row?.references_map ?? {}, unconfiguredProviderId: settings.providers.legacy ? "legacy-unconfigured" : "legacy" };
+    return { references: row?.references_map ?? {}, unconfiguredProviderId: UNCONFIGURED_MODEL_PROVIDER_ID };
   }
   async importEmbedding(domain: string, body: unknown) {
     const input = legacyEmbeddingImportSchema.parse(body);

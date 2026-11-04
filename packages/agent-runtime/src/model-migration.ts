@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { modelSettingsConfigurationSchema, type ModelEntry, type ModelSettingsWrite, type ModelProviderWrite } from "@ontomato/contracts/model-settings";
+import { RESERVED_MODEL_PROVIDER_IDS, UNCONFIGURED_MODEL_PROVIDER_ID, modelSettingsConfigurationSchema, type ModelEntry, type ModelSettingsWrite, type ModelProviderWrite } from "@ontomato/contracts/model-settings";
 import { type LegacyEmbeddingImport, type ModelMigrationMap } from "@ontomato/contracts/model-migration";
 import { runtimeJsonObjectSchema } from "@ontomato/contracts/agent-runtime-values";
 
@@ -36,7 +36,7 @@ export function appendImportedModel(settings: ModelSettingsWrite, connection: Om
   const found = Object.entries(settings.providers).find(([, p]) => equal(p) && !p.models.some(m => m.id === model.id));
   if (found) { found[1].models.push(model); return `${found[0]}/${model.id}`; }
   let base = new URL(connection.baseUrl).hostname.replace(/[^a-zA-Z0-9.-]/g, "-") || "gateway";
-  if (base === "legacy" || base === "legacy-unconfigured") base = "gateway";
+  if (RESERVED_MODEL_PROVIDER_IDS.includes(base)) base = "gateway";
   let id = base;
   for (let n = 2; settings.providers[id]; n++) id = `${base}-${n}`;
   settings.providers[id] = { ...connection, name: id, models: [model] };
@@ -44,7 +44,7 @@ export function appendImportedModel(settings: ModelSettingsWrite, connection: Om
 }
 export function migrateLegacyModelSettings(raw: unknown, open: (key: string) => string) {
   const old = legacySettingsSchema.parse(raw), settings = emptyModelSettings();
-  const mapping: ModelMigrationMap = { references: {}, unconfiguredProviderId: "legacy" };
+  const mapping: ModelMigrationMap = { references: {}, unconfiguredProviderId: UNCONFIGURED_MODEL_PROVIDER_ID };
   let discardedKeys = 0;
   const timeouts: number[] = [], retries: number[] = [];
   for (const model of old.models) {
