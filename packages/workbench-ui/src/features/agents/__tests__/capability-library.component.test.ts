@@ -4,6 +4,7 @@ import ElementPlus from "element-plus";
 import { createMemoryHistory, createRouter } from "vue-router";
 import type { AssistantAgentDefinition } from "@ontomato/contracts/assistant-chat";
 import { workbenchI18n } from "../../../i18n";
+import { workbenchContent } from "../../../content";
 import CapabilityLibrary from "../components/CapabilityLibrary.vue";
 
 /*
@@ -121,6 +122,22 @@ describe("capability library", () => {
     await flushPromises();
     expect(api.listExternalMcpTools).toHaveBeenCalledWith("service-1");
     expect(wrapper.text()).toContain("Submit an order");
+    wrapper.unmount();
+  });
+
+  it("shows the platform's published services read-only, with the localized title and the connection hint", async () => {
+    api.listPublishedMcpServices.mockResolvedValue([
+      { name: workbenchContent().analysisMcpServerName, mcpUrl: "http://localhost/mcp/analysis-agents", tools: [] },
+      { name: workbenchContent().opsMcpServerName, title: "Ontomato Ops Agent MCP", mcpUrl: "http://localhost/mcp/ops-agent", tools: [{ name: "send", description: "Send a message" }] },
+    ]);
+    const { wrapper } = await mountLibrary();
+    const cards = wrapper.findAll(".published-card");
+    expect(cards.map((card) => card.find("h4").text())).toEqual([t("mcp.agentService"), t("mcp.opsAgentService")]);
+    expect(cards[0]!.find(".published-address").text()).toBe("http://localhost/mcp/analysis-agents");
+    expect(cards[0]!.find("summary").text()).toBe(`${t("mcp.availableTools")} · 0`);
+    expect(cards[1]!.find("summary").text()).toBe(`${t("mcp.availableTools")} · 1`);
+    // Published services are shown, not edited: their rows have no delete action.
+    expect(cards[1]!.find("button").exists()).toBe(false);
     wrapper.unmount();
   });
 });
