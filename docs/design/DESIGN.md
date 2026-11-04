@@ -195,8 +195,7 @@ its admin pages) and the Ontology Service. The marketing site keeps its own styl
 It has two layers:
 
 - **Foundation** — type, spacing, shape, density, shell layout, motion and component rules.
-  Owned here for every edition, because every edition renders `@ontomato/workbench-ui`.
-  An edition never redefines it.
+  Owned here for every edition. An edition never redefines it.
 - **Brand** — colours (light and dark), the chart palette and the shell signature. This
   file defines the open-source brand. Another edition defines its own brand layer in its
   own DESIGN.md and inherits everything else from here.
@@ -205,15 +204,17 @@ Where the values live in code once adopted:
 
 | Layer | Code owner |
 |---|---|
-| Foundation | `packages/workbench-ui/src/styles/style.css` (`:root` variables) |
-| Brand colours | one brand token source per edition, consumed by both apps below |
+| Foundation variables | `@ontomato/design-tokens` — `packages/design-tokens/src/foundation.css` |
+| Brand types and generator | `@ontomato/design-tokens` (`src/index.ts`) |
+| Open-source brand source | `@ontomato/design-tokens/oss` |
+| Enterprise brand source | enterprise `packages/brand-enterprise` |
 
-Today each edition keeps its colours twice: `apps/workbench/web/src/theme.css` (`:root`
-light, `html.dark` dark) and `apps/ontology-manager/src/presentation.ts`
-(`themeProperties` and `nodePalette`, copied by hand from the theme). Adopting this system
-means replacing both with a single brand source per edition that generates the workbench
-theme and the Manager presentation, including `nodePalette` = the `dataviz` order. After
-that, the hex values leave this file; it keeps the roles and rules.
+`@ontomato/design-tokens` has no runtime dependencies; both applications depend on it and
+not on each other's packages. One brand source per edition generates the Agent Platform
+theme, the Ontology Service presentation and the graph `nodePalette` (one per mode, the
+`dataviz` order). Dashboard chart colours are still a separate copy in the Agent Platform
+and move onto the brand source with its restyle. (Before 2026-11-04 each edition kept its
+colours twice: `apps/workbench/web/src/theme.css` and `apps/ontology-manager/src/presentation.ts`.)
 
 ### Colour roles → Element Plus
 
@@ -234,6 +235,8 @@ variables.
 | placeholder | `--el-text-color-placeholder` | placeholders; also the default disabled text |
 | faint | `--el-disabled-text-color` | disabled text (overridden at `:root`) |
 | primary / press | `--el-color-primary` / `--el-color-primary-dark-2` | actions, focus; active state |
+| link | `--brand-link` (enterprise defines it; open source uses primary) | every place primary is used as **text**: links, text and link buttons, active tab and menu item, selected option |
+| primary tint | `--brand-primary-tint` (primary at 10% over `surface`) | fill behind primary-coloured text: primary tags, plain primary buttons |
 | primary ladder | `--el-color-primary-light-3/5/7/8` | derived the Element Plus way: primary mixed with `surface` at 30/50/70/80% |
 | primary-hover | `--brand-primary-hover` (new) | applied through the button variables below |
 | on-primary | `--on-primary` (exists) | applied through the button variables below |
@@ -267,7 +270,8 @@ rail muted = `muted`, rail active = `selected` with `ink`.
 3. **Separate by tone and hairline, not by gaps.** Shell panels butt against each other
    and differ by surface tone (`canvas` vs `surface`) plus one 1px `line`. Whitespace is
    for grouping content, not for framing containers.
-4. **Every colour has one job.** Primary means "you can act here". Status colours mean
+4. **Every colour has one job.** Primary means "you can act here"; as text it is always the
+   `link` role, and text on a selected row is `ink`. Status colours mean
    state and always come with an icon or label. The accent is a brand signature, never a
    state. Chart colours mean identity and follow the entity, never the rank.
 5. **Light and dark are both first-class.** Dark is designed with its own steps, not
