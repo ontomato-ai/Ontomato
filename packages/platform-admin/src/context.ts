@@ -1,4 +1,14 @@
-import { inject, type Component, type ComputedRef, type InjectionKey, type Ref } from "vue";
+import {
+  inject,
+  onBeforeUnmount,
+  provide,
+  shallowRef,
+  watchEffect,
+  type Component,
+  type ComputedRef,
+  type InjectionKey,
+  type Ref,
+} from "vue";
 import type { PlatformAccess, PlatformLink, PlatformNavigation } from "./navigation";
 import type { PlatformApi } from "./api";
 import type { BusinessConfigProps } from "./config/business-config";
@@ -53,4 +63,43 @@ export function usePlatformHost<Api extends PlatformApi = PlatformApi>(): Platfo
   const host = inject(platformHostKey);
   if (!host) throw new Error("Platform pages must be mounted inside the platform app");
   return host as PlatformPageHost<Api>;
+}
+
+
+/**
+ * What a page that holds one draft writes for the layout's page header: the unsaved marker and the Save / Discard
+ * actions. A page provides it while it is shown; the layout draws it at the end of the 48px header it draws itself.
+ */
+export interface PlatformPageActions {
+  readonly dirty: boolean;
+  readonly saving: boolean;
+  save(): void;
+  discard(): void;
+}
+
+export const pageActionsKey: InjectionKey<Ref<PlatformPageActions | null>> = Symbol("platform-page-actions");
+
+/** Provided by the app, written by the shown page and read by the layout. */
+export function providePageActions(): Ref<PlatformPageActions | null> {
+  const actions = shallowRef<PlatformPageActions | null>(null);
+  provide(pageActionsKey, actions);
+  return actions;
+}
+
+/**
+ * Shows one page's header actions in the layout for as long as the calling component is mounted, and clears them on
+ * unmount so the next page starts without them. `actions` is a getter: a page with several tabs hands them over on the
+ * tab that has them, and the flags are read through it, so they stay live.
+ */
+export function usePageActions(actions: () => PlatformPageActions | null) {
+  const target = inject(pageActionsKey, null);
+  if (!target) return;
+  watchEffect(() => (target.value = actions()));
+  onBeforeUnmount(() => {
+    target.value = null;
+  });
+}
+
+export function usePageActionsOf(): Readonly<Ref<PlatformPageActions | null>> {
+  return inject(pageActionsKey, shallowRef<PlatformPageActions | null>(null));
 }

@@ -70,6 +70,10 @@ export default {
     "bizType": "Biz Type",
     "operationType": "Operation Type",
     "knowledgeMaxResults": "Knowledge Max Results",
+    "knowledgeMaxResultsHint": "How many knowledge entries one search returns at most.",
+    "dslCookerTimeoutSeconds": "DSL generator timeout (s)",
+    "dslCookerTimeoutSecondsHint": "How long one DSL generation may take before it is abandoned.",
+    "backendLanguageHint": "The language the data engine answers in; the interface language is set here too.",
     "adapterMode": "Adapter Mode",
     "dslCookerTimeout": "DSL Cooker Timeout (ms)",
     "backendLanguage": "Backend Language",
@@ -280,6 +284,11 @@ export default {
       "output": "Answer",
       "feedback": "Comment",
       "relatedId": "Related"
+    },
+    "generalSettingNames": {
+      "knowledgeMaxResult": "Knowledge Max Results",
+      "dslCookerTimeout": "DSL generator timeout",
+      "lang": "Backend Language"
     },
     "modelErrors": {
       "INVALID_REQUEST": "The configuration was rejected",
