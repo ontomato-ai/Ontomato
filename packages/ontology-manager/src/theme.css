@@ -96,15 +96,11 @@
   }
 }
 
+/* A toolbar is a row of controls in the page, not a card (DESIGN data shell). */
 :where(.ontology-manager) .toolbar {
   display: flex;
   align-items: center;
-  gap: var(--spacing-md);
-  margin-bottom: var(--spacing-lg);
-  padding: var(--spacing-md);
-  background: var(--el-bg-color);
-  border-radius: var(--radius-lg);
-  border: 1px solid var(--el-border-color);
+  gap: var(--spacing-sm);
   flex-wrap: wrap;
 }
 
@@ -130,9 +126,9 @@
 }
 
 :where(.ontology-manager) .el-dialog {
-  border-radius: var(--radius-2xl) !important;
+  border-radius: var(--radius-lg) !important;
   padding: 0;
-  box-shadow: var(--shadow-dropdown) !important;
+  box-shadow: var(--elevation-modal) !important;
   margin: 0 !important;
 }
 
@@ -166,7 +162,7 @@
 }
 
 :where(.ontology-manager) .el-drawer {
-  border-radius: var(--radius-2xl) 0 0 var(--radius-2xl) !important;
+  border-radius: var(--radius-lg) 0 0 var(--radius-lg) !important;
 }
 
 :where(.ontology-manager) .el-drawer__header {
@@ -357,11 +353,11 @@
   scrollbar-color: var(--el-text-color-disabled) transparent;
 }
 
+/* Table: a line border with rounded.md, head 36px on sunken in the label style, rows 40px, 1px line between rows. */
 :where(.ontology-manager) .el-table.admin-table {
   background: var(--el-bg-color);
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-md);
   border: 1px solid var(--el-border-color);
-  box-shadow: var(--shadow-card);
   overflow: hidden;
 }
 
@@ -370,15 +366,14 @@
 }
 
 :where(.ontology-manager) .el-table.admin-table th.el-table__cell {
-  background-color: var(--el-fill-color-light);
+  background-color: var(--el-fill-color);
   color: var(--el-text-color-secondary);
   font-weight: var(--font-semibold);
-  font-size: var(--text-sm);
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  border-bottom: 1px solid var(--el-border-color-dark);
-  padding: 0 var(--spacing-lg);
-  height: 44px;
+  font-size: var(--text-xs);
+  letter-spacing: 0.02em;
+  border-bottom: 1px solid var(--el-border-color);
+  padding: 0 var(--spacing-md);
+  height: var(--table-head-height);
 }
 
 :where(.ontology-manager) .el-table.admin-table th.el-table__cell .cell {
@@ -391,10 +386,10 @@
   background-color: var(--el-bg-color);
   color: var(--el-text-color-regular);
   font-size: var(--text-sm);
-  border-bottom: 1px solid var(--el-border-color-light);
+  border-bottom: 1px solid var(--el-border-color);
   transition: background-color var(--transition-fast);
-  padding: 0 var(--spacing-lg);
-  height: 48px;
+  padding: 0 var(--spacing-md);
+  height: var(--table-row-height);
 }
 
 :where(.ontology-manager) .el-table.admin-table .el-table__body tr:last-child td.el-table__cell {

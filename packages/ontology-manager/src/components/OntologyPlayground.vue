@@ -523,7 +523,7 @@ onBeforeUnmount(() => {
 <template>
   <section v-loading="loading" class="playground">
     <header class="playground-header">
-      <div>
+      <div class="playground-heading">
         <h1>{{ t("nav.ontologyGraph") }}</h1>
         <p>{{ ot("ontologyGraphDesc") }}</p>
       </div>
@@ -777,35 +777,48 @@ onBeforeUnmount(() => {
   min-width: 0;
   flex-direction: column;
   overflow: hidden;
-  background: var(--el-bg-color-page);
+  background: var(--el-bg-color);
 }
 .playground-header {
   display: flex;
-  min-height: 84px;
+  height: var(--page-header-height);
+  flex: 0 0 var(--page-header-height);
   align-items: center;
   justify-content: space-between;
-  gap: var(--spacing-lg);
-  padding: var(--spacing-md) var(--spacing-xl);
+  gap: var(--spacing-md);
+  padding: 0 var(--spacing-lg);
   border-bottom: 1px solid var(--el-border-color);
   background: var(--el-bg-color);
+}
+.playground-heading {
+  display: flex;
+  min-width: 0;
+  align-items: baseline;
+  gap: var(--spacing-md);
 }
 .playground-header h1 {
   margin: 0;
   color: var(--el-text-color-primary);
-  font-size: var(--text-xl);
-  letter-spacing: 0;
+  font-size: var(--text-lg);
+  font-weight: var(--font-semibold);
+  line-height: var(--leading-lg);
+  white-space: nowrap;
 }
 .playground-header p {
-  margin: 2px 0 0;
+  margin: 0;
+  overflow: hidden;
   color: var(--el-text-color-secondary);
   font-size: var(--text-sm);
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .summary-strip {
   display: flex;
   align-items: center;
-  gap: var(--spacing-lg);
+  gap: var(--spacing-md);
   color: var(--el-text-color-secondary);
   font-size: var(--text-sm);
+  font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
 .summary-strip span {
@@ -815,13 +828,13 @@ onBeforeUnmount(() => {
 }
 .summary-strip strong {
   color: var(--el-text-color-primary);
-  font-size: var(--text-lg);
+  font-weight: var(--font-semibold);
 }
 .playground-grid {
   display: grid;
   min-height: 0;
   flex: 1;
-  grid-template-columns: 240px minmax(320px, 1fr) 320px;
+  grid-template-columns: var(--shell-list-panel) minmax(320px, 1fr) var(--shell-inspector);
   overflow: hidden;
 }
 .explorer-panel,
@@ -834,6 +847,7 @@ onBeforeUnmount(() => {
 }
 .explorer-panel {
   border-right: 1px solid var(--el-border-color);
+  background: var(--el-bg-color-page);
 }
 .inspector-panel {
   border-left: 1px solid var(--el-border-color);
@@ -841,13 +855,13 @@ onBeforeUnmount(() => {
 }
 .panel-heading {
   display: flex;
-  height: 54px;
-  min-height: 54px;
-  flex: 0 0 54px;
+  height: var(--panel-header-height);
+  min-height: var(--panel-header-height);
+  flex: 0 0 var(--panel-header-height);
   align-items: center;
   justify-content: space-between;
-  padding: var(--spacing-md);
-  border-bottom: 1px solid var(--el-border-color-light);
+  padding: 0 var(--spacing-md);
+  border-bottom: 1px solid var(--el-border-color);
   color: var(--el-text-color-secondary);
 }
 .panel-heading strong,
@@ -1245,8 +1259,14 @@ code {
     overflow: auto;
   }
   .playground-header {
+    height: auto;
+    flex-basis: auto;
     align-items: flex-start;
     flex-direction: column;
+    padding: var(--spacing-sm) var(--spacing-lg);
+  }
+  .playground-header p {
+    display: none;
   }
   .summary-strip {
     width: 100%;
@@ -1278,9 +1298,6 @@ code {
   }
 }
 @container ontology-manager (max-width: 560px) {
-  .playground-header {
-    padding: var(--spacing-md);
-  }
   .summary-strip {
     flex-wrap: wrap;
     gap: var(--spacing-sm);

@@ -21,7 +21,7 @@ import {
 } from "element-plus";
 import { useManagerFeedback } from "../feedback";
 import { Filter, Download, Plus, Trash2, Search } from "lucide-vue-next";
-import { useManagerClient, useOntologyText, useSharedText } from "../context";
+import { useManagerClient, useManagerContext, useOntologyText, useSharedText } from "../context";
 // The graph view loads AntV G6 only when the user switches to it.
 const InstanceGraph = defineAsyncComponent(() => import("./InstanceGraph.vue"));
 
@@ -29,6 +29,7 @@ const { t } = useSharedText();
 const { ot } = useOntologyText();
 const { message } = useManagerFeedback();
 const { getMetas, loadObjectData } = useManagerClient();
+const context = useManagerContext();
 const props = defineProps<{ initialClass?: string }>();
 const graphSummaryTarget = ref<HTMLElement | null>(null);
 
@@ -57,6 +58,12 @@ interface FilterCondition {
 
 const classList = ref<ClassDef[]>([]);
 const selectedClass = ref("");
+/** The page header's one-line description for the selected object type (each edition words it its own way). */
+const description = computed(() =>
+  context.presentation.dataBrowserDescription(
+    classList.value.find((item) => item.className === selectedClass.value)?.showName
+  )
+);
 const dataList = ref<DataItem[]>([]);
 const searchQuery = ref("");
 const pageNum = ref(1);
@@ -348,9 +355,14 @@ watch(
 
 <template>
   <div class="data-browser">
-    <div class="mode-bar">
+    <header class="data-browser-header">
+      <h1>{{ t("nav.dataBrowser") }}</h1>
+      <p v-if="description">{{ description }}</p>
+      <span class="header-spacer" />
       <el-segmented v-model="viewMode" :options="viewModeOptions" />
-      <div v-show="viewMode === 'graph'" ref="graphSummaryTarget" class="graph-summary-slot" />
+    </header>
+    <div v-show="viewMode === 'graph'" class="mode-bar">
+      <div ref="graphSummaryTarget" class="graph-summary-slot" />
     </div>
     <template v-if="viewMode === 'table'">
       <div class="toolbar">
@@ -419,9 +431,7 @@ watch(
       v-loading="loading"
       :data="filteredData"
       border
-      stripe
       class="admin-table"
-      style="width: 100%"
       max-height="600"
     >
       <el-table-column type="index" width="50" />
@@ -531,25 +541,61 @@ watch(
   overflow: hidden;
 }
 
+/* 48px page header: title, one-line description, then the table/graph switch. */
+.data-browser-header {
+  display: flex;
+  height: var(--page-header-height);
+  flex: 0 0 var(--page-header-height);
+  align-items: center;
+  gap: var(--spacing-md);
+  padding: 0 var(--spacing-lg);
+  border-bottom: 1px solid var(--el-border-color);
+}
+
+.data-browser-header h1 {
+  margin: 0;
+  color: var(--el-text-color-primary);
+  font-size: var(--text-lg);
+  font-weight: var(--font-semibold);
+  line-height: var(--leading-lg);
+  white-space: nowrap;
+}
+
+.data-browser-header p {
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  color: var(--el-text-color-secondary);
+  font-size: var(--text-sm);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.header-spacer {
+  flex: 1;
+}
+
+/* Segmented control: active segment is surface with ink text on a sunken track. */
+.data-browser-header :deep(.el-segmented) {
+  flex-shrink: 0;
+  --el-segmented-bg-color: var(--el-fill-color);
+  --el-segmented-item-selected-bg-color: var(--el-bg-color);
+  --el-segmented-item-selected-color: var(--el-text-color-primary);
+}
+
 .mode-bar {
   display: flex;
   align-items: center;
   flex-shrink: 0;
-  margin-bottom: var(--spacing-lg);
-  gap: var(--spacing-lg);
-  flex-wrap: wrap;
+  padding: var(--spacing-md) var(--spacing-lg) 0;
 }
 
-.mode-bar :deep(.el-segmented) { flex-shrink: 0; }
 .graph-summary-slot { flex: 1; min-width: min(360px, 100%); }
-
-.mode-bar :deep(.el-segmented) {
-  --el-segmented-item-selected-bg-color: var(--el-color-primary);
-}
 
 .data-browser :deep(.instance-graph) {
   min-height: 0;
   flex: 1;
+  margin: var(--spacing-md) var(--spacing-lg) var(--spacing-lg);
 }
 
 .data-browser :deep(.el-table) {
@@ -559,8 +605,9 @@ watch(
 .toolbar {
   display: flex;
   align-items: center;
-  gap: var(--spacing-md);
-  margin-bottom: var(--spacing-lg);
+  gap: var(--spacing-sm);
+  min-height: 40px;
+  padding: var(--spacing-md) var(--spacing-lg);
   flex-wrap: wrap;
   /* Not squeezed by the table in the fixed-height column layout; otherwise on narrow screens the action buttons wrap into a second column outside the viewport. */
   flex-shrink: 0;
@@ -577,8 +624,20 @@ watch(
   white-space: nowrap;
 }
 
+.data-browser > :deep(.el-table) {
+  width: auto;
+  margin: 0 var(--spacing-lg);
+  border: 1px solid var(--el-border-color);
+  border-radius: var(--radius-md);
+}
+
+.data-browser > :deep(.el-table)::before,
+.data-browser > :deep(.el-table .el-table__inner-wrapper)::before {
+  display: none;
+}
+
 .pagination {
-  margin-top: var(--spacing-lg);
+  padding: var(--spacing-md) var(--spacing-lg) var(--spacing-lg);
   display: flex;
   justify-content: flex-end;
   min-width: 0;

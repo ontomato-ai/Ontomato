@@ -1524,11 +1524,13 @@ async function saveClassDesc(cls: ClassDef) {
   overflow: hidden;
 }
 
+/* The page's 48px header row: actions, zoom and the current selection. */
 .toolbar {
   display: flex;
+  min-height: var(--page-header-height);
   align-items: center;
   gap: var(--spacing-sm);
-  padding: var(--spacing-md) var(--spacing-lg);
+  padding: var(--spacing-xs) var(--spacing-lg);
   background: var(--el-bg-color);
   border-bottom: 1px solid var(--el-border-color);
   flex-wrap: wrap;
