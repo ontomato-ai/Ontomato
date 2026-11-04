@@ -15,6 +15,7 @@ import {
 } from "@ontomato/contracts/assistant-chat";
 import { apiGet, nodeApiFetch, nodeApiGet, nodeApiPost, nodeApiPut } from "../../utils/api";
 import { listMcpServiceOptions } from "../mcp/api";
+import { queryViewApi } from "../query-view";
 
 export interface ObjectClassOption {
   className: string;
@@ -69,4 +70,38 @@ export async function loadOntologyOutline(): Promise<{ classes: ObjectClassOptio
   return { classes: result.classes.map((cls: { name: string; description: string | null }) => ({
     className: cls.name, classDesc: cls.description ?? "",
   })) };
+}
+
+/** One relation of the ontology graph, between two object types. */
+export interface ObjectRelationOption {
+  from: string;
+  to: string;
+}
+
+/**
+ * The object types with their relations, for the graph-scope selector: the same metadata the visual modelling reads, so
+ * adjacent object types can be shown and added to the scope. A domain without relation rules simply has no edges.
+ */
+export async function loadOntologyScope(): Promise<{ classes: ObjectClassOption[]; relations: ObjectRelationOption[] }> {
+  const json = await queryViewApi.getMetas();
+  const classDefs: Array<{ className?: string; showName?: string; classDesc?: string }> = Array.isArray(json?.data?.classDef)
+    ? json.data.classDef
+    : [];
+  const classes = classDefs
+    .filter((cls) => !!cls.className)
+    .map((cls) => ({ className: cls.className!, showName: cls.showName || "", classDesc: cls.classDesc || "" }));
+  const known = new Set(classes.map((cls) => cls.className));
+  const rule = json?.data?.relationship_rule;
+  const relations: ObjectRelationOption[] = [];
+  const seen = new Set<string>();
+  for (const relation of Object.values((rule || {}) as Record<string, { fromclass?: string; toclass?: string }>)) {
+    const from = String(relation?.fromclass || "").trim();
+    const to = String(relation?.toclass || "").trim();
+    if (!known.has(from) || !known.has(to) || from === to) continue;
+    const key = [from, to].sort().join("\u0000");
+    if (seen.has(key)) continue;
+    seen.add(key);
+    relations.push({ from, to });
+  }
+  return { classes, relations };
 }

@@ -213,7 +213,6 @@ export const en = {
   "api.backendNotConfigured": "Backend not configured (DATA_QUERY_BASE_URL)",
   "api.feedbackSubmitted": "Feedback submitted",
   "api.loadConfigFailed": "Failed to load configuration",
-  "api.saveConfigFailed": "Failed to save configuration",
   "api.modelTestFailed": "Model test failed",
   "model.roleNotConfigured": "No model configured for role '{role}', please configure it in model settings",
   "model.settingsReadRefused": "The data engine refused the model settings read (403): the workbench server's model settings service credential does not match the data engine's, or the current account has no business domain. This is a deployment configuration problem; signing in again does not fix it.",

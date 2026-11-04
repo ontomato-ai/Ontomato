@@ -49,34 +49,35 @@ function leaveForManager(to: RouteLocationNormalized) {
 const managerMeta = { group: "data-assets", permissions: ["ontology-modeling"] };
 
 /*
- * Shared /admin child route records. Each app lists them explicitly in the original order (its own pages go between the
- * shared ones), with no registration or ordering framework. meta keeps only fields with consumers: group (layout tab
- * lookup) and permissions (app guards; any one of them grants access); the original title/icon/hidden had no reader.
+ * The old admin console is gone: its pages moved into the function area (agents, operations diagnosis) or into the
+ * Ontology Service (feedback records, system configuration). These records keep the old addresses working by opening the
+ * new place in the same tab; the Manager deep links keep their existing redirects to the Manager page.
+ *
+ * Every record is a redirect, so no page of the workbench is rendered from here.
  */
-export const adminRoutes = {
-  // The Ontology Manager is a link tab, so the console opens on its first own page.
-  root: { path: "", name: "AdminRoot", redirect: "/admin/analysis" },
+export const legacyAdminRoutes = {
+  root: { path: "/admin", redirect: "/chat" },
+  // The Manager deep links (already moved to the Ontology Service before the console was retired).
   intelligenceAssets: {
-    path: "intelligence-assets",
+    path: "/admin/intelligence-assets",
     redirect: "/admin/ontology-manager?view=assets",
     meta: managerMeta,
   },
   ontologyManager: {
-    path: "ontology-manager",
+    path: "/admin/ontology-manager",
     name: "OntologyManager",
     component: { render: () => null },
     beforeEnter: leaveForManager,
     meta: managerMeta,
   },
   ontology: {
-    path: "ontology",
+    path: "/admin/ontology",
     name: "Ontology",
     redirect: "/admin/ontology-manager",
     meta: managerMeta,
   },
-  // Visual modeling now lives in the Manager: the old route leaves for it with the focus/id/back it understands.
   visualModeling: {
-    path: "ontology/visual-modeling",
+    path: "/admin/ontology/visual-modeling",
     name: "VisualModeling",
     redirect: (to) => ({
       path: "/admin/ontology-manager",
@@ -85,71 +86,37 @@ export const adminRoutes = {
     meta: managerMeta,
   },
   metricViews: {
-    path: "metric-views",
+    path: "/admin/metric-views",
     redirect: "/admin/ontology-manager?view=assets",
     meta: { permissions: ["ontology-modeling"] },
   },
-  // Business knowledge moved into the Ontology Manager; the old route redirects to the Manager's knowledge page.
   knowledge: {
-    path: "knowledge",
+    path: "/admin/knowledge",
     redirect: "/admin/ontology-manager?view=knowledge",
     meta: { group: "data-assets", permissions: ["business-knowledge"] },
   },
   actionManagement: {
-    path: "action-management",
+    path: "/admin/action-management",
     redirect: "/admin/ontology-manager?view=assets",
     meta: managerMeta,
   },
   writeTasks: {
-    path: "write-tasks",
+    path: "/admin/write-tasks",
     redirect: "/admin/ontology-manager?view=assets",
     meta: managerMeta,
   },
-  analysis: {
-    path: "analysis",
-    name: "Analysis",
-    component: () => import("../features/agents/components/AgentSettingsPage.vue"),
-    meta: { group: "app-capabilities", permissions: ["analysis-agent"] },
-  },
-  systemAgents: {
-    path: "system-agents",
-    name: "SystemAgents",
-    component: () => import("../features/admin/components/SystemAgents.vue"),
-    meta: { group: "app-capabilities", permissions: ["observer"] },
-  },
-  mcpService: {
-    path: "mcp-service",
-    name: "McpService",
-    component: () => import("../features/mcp/components/McpManager.vue"),
-    meta: { group: "app-capabilities", permissions: ["mcp-service"] },
-  },
-  skills: {
-    path: "skills",
-    name: "Skills",
-    component: () => import("../features/skills/components/SkillManager.vue"),
-    meta: { group: "app-capabilities", permissions: ["skill-management"] },
-  },
-  skillsAnalysis: {
-    path: "skills/analysis",
-    redirect: "/admin/skills",
-    meta: { group: "app-capabilities", permissions: ["analytical-skills"] },
-  },
-  skillsVisualization: {
-    path: "skills/visualization",
-    redirect: "/admin/skills",
-    meta: { group: "app-capabilities", permissions: ["visualization-skills"] },
-  },
-  // The workbench part of the system configuration (query settings); the ontology service part is in the Manager.
-  systemConfig: {
-    path: "system-config",
-    name: "SystemConfig",
-    component: () => import("../features/system/components/SystemConfig.vue"),
-    meta: { group: "platform-management", permissions: ["system-config"] },
-  },
-  feedbackRecords: {
-    path: "feedback-records",
-    name: "FeedbackRecords",
-    component: () => import("../features/admin/components/platform-operations/FeedbackRecords.vue"),
-    meta: { group: "platform-management", permissions: ["audit-logs"] },
-  },
+  // The console's own pages, now in the function area of the workbench.
+  analysis: { path: "/admin/analysis", redirect: "/chat?feature=agents" },
+  systemAgents: { path: "/admin/system-agents", redirect: "/chat?feature=agents" },
+  skills: { path: "/admin/skills", redirect: "/chat?feature=agents&tab=capabilities" },
+  skillsAnalysis: { path: "/admin/skills/analysis", redirect: "/chat?feature=agents&tab=capabilities" },
+  skillsVisualization: { path: "/admin/skills/visualization", redirect: "/chat?feature=agents&tab=capabilities" },
+  mcpService: { path: "/admin/mcp-service", redirect: "/chat?feature=agents&tab=capabilities" },
+  // Retired pages: operations diagnosis is an entry of the function area and keeps its own address; the system
+  // configuration and the feedback records are no longer settings of this application.
+  systemConfig: { path: "/admin/system-config", redirect: "/chat" },
+  feedbackRecords: { path: "/admin/feedback-records", redirect: "/chat" },
 } satisfies Record<string, RouteRecordRaw>;
+
+/** @deprecated The admin console is gone; kept as an alias while old imports are removed. */
+export const adminRoutes = legacyAdminRoutes;

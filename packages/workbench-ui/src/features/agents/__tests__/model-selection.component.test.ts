@@ -61,7 +61,7 @@ async function mountEditor(modelId: string | null) {
     id: "agent-1",
   }) as AssistantAgentDefinition);
   const wrapper = mount(AgentEditor, {
-    props: { agent: agent(modelId), classes: [], outlineLoading: false, modelOptions: options, modelOptionsFailed: false },
+    props: { agent: agent(modelId), classes: [], relations: [], outlineLoading: false, modelOptions: options, modelOptionsFailed: false },
     global,
     attachTo: document.body,
   });

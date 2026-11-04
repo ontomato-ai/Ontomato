@@ -12,6 +12,7 @@ import {
   LayoutDashboard,
   Network,
   Puzzle,
+  ScanEye,
   Settings2,
   Table2,
   Waypoints,
@@ -28,6 +29,7 @@ const featureIcons: Record<string, Component> = {
   settings: Settings2,
   knowledge: BookOpen,
   ontology: Waypoints,
+  diagnosis: ScanEye,
 };
 
 export function featureIcon(name: string): Component {

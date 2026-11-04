@@ -66,7 +66,7 @@ watch(() => [route.query.diagnose, route.query.sourceSessionId, route.query.sour
     <template #footer>
       <el-button v-if="route.query.returnTo" text @click="router.push(String(route.query.returnTo))">{{ t('common.back') }}</el-button>
       <span v-if="account">{{ account.userName }}</span>
-      <el-button text @click="router.push('/admin')">{{ t('ops.back') }}</el-button>
+      <el-button text @click="router.push('/chat')">{{ t('ops.back') }}</el-button>
     </template>
   </AgentShell>
 </template>

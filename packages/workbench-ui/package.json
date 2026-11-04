@@ -13,14 +13,12 @@
     "./utils/agent-markdown": "./src/utils/agent-markdown.ts",
     "./features/dashboard/components/utils/echartsGenerator": "./src/features/dashboard/components/utils/echartsGenerator.ts",
     "./composables/useTheme": "./src/composables/useTheme.ts",
-    "./features/admin/components/platform-operations/SystemMonitor.vue": "./src/features/admin/components/platform-operations/SystemMonitor.vue",
     "./features/dashboard": "./src/features/dashboard/index.ts",
     "./features/workbench": "./src/features/workbench/index.ts",
     "./features/query-view": "./src/features/query-view/index.ts",
     "./components/CodeMirrorEditor.vue": "./src/components/CodeMirrorEditor.vue",
     "./locales/*": "./src/locales/*.ts",
-    "./styles/*": "./src/styles/*",
-    "./navigation-data": "./src/features/admin/navigation-data.ts"
+    "./styles/*": "./src/styles/*"
   },
   "scripts": {
     "typecheck": "vue-tsc --noEmit",

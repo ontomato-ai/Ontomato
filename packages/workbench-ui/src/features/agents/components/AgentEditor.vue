@@ -13,16 +13,21 @@ import type {
 import type { McpServiceOption } from "@ontomato/contracts/agent-runtime-mcp";
 import type { ModelOptions } from "@ontomato/contracts/model-settings";
 import type { RuntimeSkillRef } from "@ontomato/contracts/agent-runtime-skills";
-import { agentDefinitionsApi, type ObjectClassOption } from "../api";
+import { agentDefinitionsApi, type ObjectClassOption, type ObjectRelationOption } from "../api";
 import { avatarIcon, lightAvatarColorOptions, themedAvatarColor } from "../avatar";
 import AgentBasicInfoFields from "./AgentBasicInfoFields.vue";
+import DataScopeGraph from "./DataScopeGraph.vue";
 import ModelSelectionSelect from "./ModelSelectionSelect.vue";
 import SkillSelector from "./SkillSelector.vue";
 
-/** Edits one agent definition; a null agent is a new one. */
+/**
+ * Edits one agent definition as one long page, in the order the work is done: basics, data scope, capabilities (skills
+ * and external tools), model and instructions. A null agent is a new one. The section titles double as in-page anchors.
+ */
 const props = defineProps<{
   agent: AssistantAgentDefinition | null;
   classes: ObjectClassOption[];
+  relations: ObjectRelationOption[];
   outlineLoading: boolean;
   /** The domain's models; null until read (or when reading failed). */
   modelOptions: ModelOptions | null;
@@ -81,6 +86,22 @@ const mcpOptions = ref<McpServiceOption[]>([]);
 const mcpLoading = ref(false);
 const mcpFailed = ref(false);
 
+const sections = computed(() => [
+  { id: "basics", label: t("agents.basic") },
+  { id: "data", label: t("agents.data") },
+  { id: "capabilities", label: t("agents.capabilities") },
+  { id: "model", label: t("agents.model") },
+  { id: "prompt", label: t("agents.prompt") },
+]);
+
+const bodyRef = ref<HTMLElement | null>(null);
+
+/** Section titles are in-page anchors: the editor is one page, so jumping to a part does not reload anything. */
+function jumpTo(id: string) {
+  const target = bodyRef.value?.querySelector<HTMLElement>(`[data-section="${id}"]`);
+  target?.scrollIntoView({ block: "start", behavior: "smooth" });
+}
+
 watch(isDark, (dark) => {
   form.value.avatarColor = themedAvatarColor(form.value.avatarColor, dark);
 });
@@ -97,11 +118,6 @@ async function loadMcp() {
   }
 }
 onMounted(loadMcp);
-
-function classLabel(cls: ObjectClassOption) {
-  const name = cls.showName || cls.classDesc || cls.className;
-  return name === cls.className ? cls.className : `${name} (${cls.className})`;
-}
 
 function validInput(): AssistantAgentInput | null {
   const value = form.value;
@@ -179,13 +195,18 @@ defineExpose({ dirty });
         <strong>{{ form.name.trim() || (agent ? agent.name : t("agents.newAgent")) }}</strong>
         <small :class="{ dirty }">{{ dirty ? t("admin.agentEditorUnsaved") : t("admin.agentEditorSaved") }}</small>
       </div>
+      <nav class="section-anchors" :aria-label="t('agents.sections')">
+        <button v-for="section in sections" :key="section.id" type="button" @click="jumpTo(section.id)">
+          {{ section.label }}
+        </button>
+      </nav>
       <el-button v-if="agent" text :icon="Trash2" :disabled="saving" @click="remove">{{ t("common.delete") }}</el-button>
       <el-button type="primary" :loading="saving" :disabled="!skillsReady || (!dirty && !!agent)" @click="save">{{ t("common.save") }}</el-button>
     </header>
 
-    <div class="editor-body">
+    <div ref="bodyRef" class="editor-body">
       <el-form label-position="top" :disabled="saving" @submit.prevent>
-        <section class="editor-section">
+        <section class="editor-section" data-section="basics">
           <h3>{{ t("agents.basic") }}</h3>
           <AgentBasicInfoFields
             v-model:name="form.name"
@@ -202,84 +223,44 @@ defineExpose({ dirty });
           </div>
         </section>
 
-        <section class="editor-section">
-          <div class="section-head">
-            <div>
-              <h3>{{ t("agents.model") }}</h3>
-              <p>{{ t("agents.modelHint") }}</p>
-            </div>
-          </div>
-          <ModelSelectionSelect v-model="form.modelId" :options="modelOptions" :aria-label="t('agents.model')" />
-          <div v-if="modelOptionsFailed" class="model-options-failed" role="alert">
-            <span>{{ t("agents.modelOptionsLoadFailed") }}</span>
-            <el-button size="small" link type="primary" @click="emit('reloadModelOptions')">{{ t("common.retry") }}</el-button>
-          </div>
-        </section>
-
-        <section class="editor-section">
-          <div class="section-head">
-            <div>
-              <h3>{{ t("agents.prompt") }}</h3>
-              <p>{{ t("agents.promptHint") }}</p>
-            </div>
-            <el-radio-group v-model="promptPreview" size="small">
-              <el-radio-button :value="false">{{ t("common.edit") }}</el-radio-button>
-              <el-radio-button :value="true">{{ t("admin.agentEditorPreview") }}</el-radio-button>
-            </el-radio-group>
-          </div>
-          <div v-if="promptPreview" class="prompt-preview markdown-body" v-html="renderAgentMarkdown(form.systemPrompt)" />
-          <CodeMirrorEditor v-else v-model="form.systemPrompt" language="markdown" :min-height="320" />
-          <small class="prompt-count">{{ t("admin.agentEditorCharacters", { count: form.systemPrompt.length }) }} · Markdown</small>
-        </section>
-
-        <section class="editor-section">
-          <div class="section-head">
-            <div>
-              <h3>{{ t("agents.skills") }}</h3>
-              <p>{{ t("agents.skillsHint") }}</p>
-            </div>
-          </div>
-          <SkillSelector v-model="form.skills" @ready="skillsReady = $event" />
-        </section>
-
-        <section class="editor-section">
+        <section class="editor-section" data-section="data">
           <div class="section-head">
             <div>
               <h3>{{ t("agents.data") }}</h3>
               <p>{{ t("agents.dataHint") }}</p>
             </div>
           </div>
-          <el-form-item :label="t('admin.relatedClasses')">
-            <el-select
-              v-model="form.classNames"
-              multiple
-              filterable
-              collapse-tags
-              collapse-tags-tooltip
-              clearable
-              :max-collapse-tags="4"
-              :loading="outlineLoading"
-              :placeholder="t('admin.relatedClasses')"
-              class="full"
-            >
-              <el-option v-for="cls in classes" :key="cls.className" :label="classLabel(cls)" :value="cls.className" />
-            </el-select>
-            <p class="form-tip">{{ t("agents.relatedClassesHint") }}</p>
-          </el-form-item>
+          <DataScopeGraph
+            v-model="form.classNames"
+            :classes="classes"
+            :relations="relations"
+            :loading="outlineLoading"
+          />
         </section>
 
-        <section class="editor-section">
+        <section class="editor-section" data-section="capabilities">
           <div class="section-head">
             <div>
-              <h3>{{ t("admin.externalMcpServices") }}</h3>
-              <p>{{ t("admin.externalMcpServicesHint") }}</p>
+              <h3>{{ t("agents.capabilities") }}</h3>
+              <p>{{ t("agents.capabilitiesHint") }}</p>
             </div>
             <div class="section-actions">
-              <el-button size="small" tag="a" href="#/admin/mcp-service" target="_blank" rel="noopener" :icon="ExternalLink">
-                {{ t("mcp.manageServices") }}
+              <el-button size="small" tag="a" href="#/chat?feature=agents&tab=capabilities" :icon="ExternalLink">
+                {{ t("agents.capabilityLibrary") }}
               </el-button>
-              <el-button size="small" :loading="mcpLoading" :icon="RefreshCw" @click="loadMcp">{{ t("common.refresh") }}</el-button>
             </div>
+          </div>
+
+          <h4 class="group-title">{{ t("agents.skills") }}</h4>
+          <p class="group-hint">{{ t("agents.skillsHint") }}</p>
+          <SkillSelector v-model="form.skills" @ready="skillsReady = $event" />
+
+          <div class="section-head tool-head">
+            <div>
+              <h4 class="group-title">{{ t("admin.externalMcpServices") }}</h4>
+              <p class="group-hint">{{ t("admin.externalMcpServicesHint") }}</p>
+            </div>
+            <el-button size="small" :loading="mcpLoading" :icon="RefreshCw" @click="loadMcp">{{ t("common.refresh") }}</el-button>
           </div>
           <el-select
             v-model="form.mcpServiceIds"
@@ -304,6 +285,36 @@ defineExpose({ dirty });
             />
           </el-select>
           <el-alert v-if="mcpFailed" class="mcp-alert" type="warning" :closable="false" :title="t('admin.externalMcpServicesLoadFailed')" />
+        </section>
+
+        <section class="editor-section" data-section="model">
+          <div class="section-head">
+            <div>
+              <h3>{{ t("agents.model") }}</h3>
+              <p>{{ t("agents.modelHint") }}</p>
+            </div>
+          </div>
+          <ModelSelectionSelect v-model="form.modelId" :options="modelOptions" :aria-label="t('agents.model')" />
+          <div v-if="modelOptionsFailed" class="model-options-failed" role="alert">
+            <span>{{ t("agents.modelOptionsLoadFailed") }}</span>
+            <el-button size="small" link type="primary" @click="emit('reloadModelOptions')">{{ t("common.retry") }}</el-button>
+          </div>
+        </section>
+
+        <section class="editor-section" data-section="prompt">
+          <div class="section-head">
+            <div>
+              <h3>{{ t("agents.prompt") }}</h3>
+              <p>{{ t("agents.promptHint") }}</p>
+            </div>
+            <el-radio-group v-model="promptPreview" size="small">
+              <el-radio-button :value="false">{{ t("common.edit") }}</el-radio-button>
+              <el-radio-button :value="true">{{ t("admin.agentEditorPreview") }}</el-radio-button>
+            </el-radio-group>
+          </div>
+          <div v-if="promptPreview" class="prompt-preview markdown-body" v-html="renderAgentMarkdown(form.systemPrompt)" />
+          <CodeMirrorEditor v-else v-model="form.systemPrompt" language="markdown" :min-height="320" />
+          <small class="prompt-count">{{ t("admin.agentEditorCharacters", { count: form.systemPrompt.length }) }} · Markdown</small>
         </section>
       </el-form>
     </div>
@@ -330,13 +341,12 @@ defineExpose({ dirty });
   width: 36px;
   height: 36px;
   flex-shrink: 0;
-  border-radius: 10px;
+  border-radius: var(--radius-md);
   color: var(--el-color-primary);
 }
 .editor-title {
   display: flex;
   flex-direction: column;
-  flex: 1;
   min-width: 0;
 }
 .editor-title strong {
@@ -353,6 +363,36 @@ defineExpose({ dirty });
 .editor-title small.dirty {
   color: var(--el-color-warning);
 }
+.section-anchors {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin-left: auto;
+  padding: 2px;
+  background: var(--el-fill-color);
+  border-radius: var(--radius-sm);
+  overflow-x: auto;
+}
+.section-anchors button {
+  height: 24px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: var(--radius-xs);
+  background: transparent;
+  color: var(--el-text-color-regular);
+  font: inherit;
+  font-size: var(--text-xs);
+  white-space: nowrap;
+  cursor: pointer;
+}
+.section-anchors button:hover {
+  color: var(--el-text-color-primary);
+  background: var(--el-bg-color);
+}
+.section-anchors button:focus-visible {
+  outline: 2px solid var(--el-color-primary);
+  outline-offset: -2px;
+}
 .editor-body {
   flex: 1;
   min-height: 0;
@@ -366,6 +406,7 @@ defineExpose({ dirty });
 .editor-section {
   padding: 22px 0;
   border-bottom: 1px solid var(--el-border-color-lighter);
+  scroll-margin-top: 12px;
 }
 .editor-section:last-child {
   border-bottom: 0;
@@ -400,13 +441,27 @@ defineExpose({ dirty });
   margin: 0;
   text-decoration: none;
 }
+.group-title {
+  margin: 0 0 4px;
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--el-text-color-primary);
+}
+.group-hint {
+  margin: 0 0 10px;
+  font-size: var(--text-sm);
+  color: var(--el-text-color-secondary);
+}
+.tool-head {
+  margin-top: 20px;
+}
 .setting-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 16px;
   padding: 12px 14px;
-  border-radius: 12px;
+  border-radius: var(--radius-md);
   background: var(--el-fill-color-light);
 }
 .setting-row strong {
@@ -422,7 +477,7 @@ defineExpose({ dirty });
   min-height: 320px;
   padding: 14px 18px;
   border: 1px solid var(--el-border-color);
-  border-radius: 10px;
+  border-radius: var(--radius-md);
   overflow: auto;
 }
 .prompt-count {
@@ -433,13 +488,6 @@ defineExpose({ dirty });
 }
 .full {
   width: 100%;
-}
-.form-tip {
-  flex-basis: 100%;
-  margin: 6px 0 0;
-  font-size: 12px;
-  line-height: 1.5;
-  color: var(--el-text-color-secondary);
 }
 .mcp-alert {
   margin-top: 10px;
