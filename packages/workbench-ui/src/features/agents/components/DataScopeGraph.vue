@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from "vue";
 import { useI18n } from "vue-i18n";
-import { Maximize2, ZoomIn, ZoomOut } from "lucide-vue-next";
 import type { ObjectClassOption, ObjectRelationOption } from "../api";
 
 /**
@@ -20,7 +19,6 @@ const emit = defineEmits<{ "update:modelValue": [value: string[]] }>();
 const { t } = useI18n();
 
 const includeAdjacent = ref(false);
-const zoom = ref(1);
 
 /** The saved list itself: the object types the user picked (and, while the checkbox is on, their adjacent ones). */
 const chosen = computed(() => new Set(props.modelValue));
@@ -82,34 +80,49 @@ function includeAdjacentChanged(value: boolean) {
   emit("update:modelValue", [...next]);
 }
 
-const newNodeSize = 132;
-const columns = computed(() => Math.max(1, Math.ceil(Math.sqrt(props.classes.length))));
+/*
+ * The graph is drawn at its natural size and clipped by a scroll area instead of being scaled to fit: a fitted drawing
+ * shrank the node names to a few pixels. Node labels are at least 12px, and the three states differ by fill and border
+ * weight as well as colour, so they stay apart in both modes.
+ */
+const NODE_WIDTH = 152;
+const NODE_HEIGHT = 44;
+const COLUMN_GAP = 24;
+const ROW_GAP = 20;
+const MARGIN = 16;
+
+const columns = computed(() => Math.max(1, Math.ceil(Math.sqrt(props.classes.length / 1.4))));
 const nodes = computed(() =>
   props.classes.map((item, index) => ({
     ...item,
-    x: 40 + (index % columns.value) * (newNodeSize + 44) + newNodeSize / 2,
-    y: 40 + Math.floor(index / columns.value) * (newNodeSize + 56) + newNodeSize / 2,
+    x: MARGIN + (index % columns.value) * (NODE_WIDTH + COLUMN_GAP),
+    y: MARGIN + Math.floor(index / columns.value) * (NODE_HEIGHT + ROW_GAP),
   })),
 );
-const width = computed(() => Math.max(320, ...nodes.value.map((node) => node.x + newNodeSize)));
-const height = computed(() => Math.max(200, ...nodes.value.map((node) => node.y + 60)));
-const viewBox = computed(() => {
-  const viewWidth = width.value / zoom.value;
-  const viewHeight = height.value / zoom.value;
-  return `${(width.value - viewWidth) / 2} ${(height.value - viewHeight) / 2} ${viewWidth} ${viewHeight}`;
-});
+const width = computed(
+  () => Math.max(NODE_WIDTH + MARGIN * 2, ...nodes.value.map((node) => node.x + NODE_WIDTH + MARGIN)),
+);
+const height = computed(
+  () => Math.max(NODE_HEIGHT + MARGIN * 2, ...nodes.value.map((node) => node.y + NODE_HEIGHT + MARGIN)),
+);
 const edges = computed(() => {
   const position = new Map(nodes.value.map((node) => [node.className, node]));
   return props.relations.flatMap((relation) => {
     const from = position.get(relation.from);
     const to = position.get(relation.to);
-    return from && to ? [{ key: `${relation.from}-${relation.to}`, from, to }] : [];
+    if (!from || !to) return [];
+    return [
+      {
+        key: `${relation.from}-${relation.to}`,
+        x1: from.x + NODE_WIDTH / 2,
+        y1: from.y + NODE_HEIGHT / 2,
+        x2: to.x + NODE_WIDTH / 2,
+        y2: to.y + NODE_HEIGHT / 2,
+        active: scopeState(relation.from) !== "other" && scopeState(relation.to) !== "other",
+      },
+    ];
   });
 });
-
-function zoomBy(delta: number) {
-  zoom.value = Math.min(2.5, Math.max(0.75, Number((zoom.value + delta).toFixed(2))));
-}
 
 function labelOf(cls: ObjectClassOption) {
   const name = cls.showName || cls.classDesc || cls.className;
@@ -128,35 +141,21 @@ const summary = computed(() =>
     <div class="scope-graph">
       <div class="graph-toolbar">
         <span class="graph-summary">{{ summary }}</span>
-        <div class="graph-actions">
-          <button type="button" :title="t('agents.dataScopeZoomIn')" :aria-label="t('agents.dataScopeZoomIn')" @click="zoomBy(0.25)">
-            <ZoomIn :size="15" />
-          </button>
-          <button type="button" :title="t('agents.dataScopeZoomOut')" :aria-label="t('agents.dataScopeZoomOut')" @click="zoomBy(-0.25)">
-            <ZoomOut :size="15" />
-          </button>
-          <button type="button" :title="t('agents.dataScopeReset')" :aria-label="t('agents.dataScopeReset')" @click="zoom = 1">
-            <Maximize2 :size="15" />
-          </button>
-        </div>
       </div>
       <el-skeleton v-if="loading" :rows="4" animated />
       <el-empty v-else-if="!nodes.length" :image-size="60" :description="t('agents.dataScopeNoClasses')" />
       <template v-else>
-        <div class="graph-canvas">
-          <svg :viewBox="viewBox" preserveAspectRatio="xMidYMid meet" role="group" :aria-label="t('agents.dataScopeGraph')">
+        <div class="graph-canvas" :style="{ maxHeight: `${Math.min(height, 420)}px` }">
+          <svg :width="width" :height="height" role="group" :aria-label="t('agents.dataScopeGraph')">
             <line
               v-for="edge in edges"
               :key="edge.key"
               class="graph-edge"
-              :class="{
-                active:
-                  (scopeState(edge.from.className) !== 'other' && scopeState(edge.to.className) !== 'other'),
-              }"
-              :x1="edge.from.x"
-              :y1="edge.from.y"
-              :x2="edge.to.x"
-              :y2="edge.to.y"
+              :class="{ active: edge.active }"
+              :x1="edge.x1"
+              :y1="edge.y1"
+              :x2="edge.x2"
+              :y2="edge.y2"
             />
             <g
               v-for="node in nodes"
@@ -172,9 +171,9 @@ const summary = computed(() =>
               @keydown.space.prevent="toggle(node.className)"
             >
               <title>{{ labelOf(node) }}</title>
-              <circle :cx="node.x" :cy="node.y" :r="newNodeSize / 2" />
-              <text :x="node.x" :y="node.y + 4" text-anchor="middle">
-                {{ (node.showName || node.className).length > 14 ? `${(node.showName || node.className).slice(0, 13)}…` : node.showName || node.className }}
+              <rect :x="node.x" :y="node.y" :width="NODE_WIDTH" :height="NODE_HEIGHT" rx="10" />
+              <text :x="node.x + NODE_WIDTH / 2" :y="node.y + NODE_HEIGHT / 2 + 4" text-anchor="middle">
+                {{ (node.showName || node.className).length > 16 ? `${(node.showName || node.className).slice(0, 15)}…` : node.showName || node.className }}
               </text>
             </g>
           </svg>
@@ -239,35 +238,12 @@ const summary = computed(() =>
   font-size: var(--text-sm);
   color: var(--el-text-color-secondary);
 }
-.graph-actions {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-}
-.graph-actions button {
-  display: grid;
-  place-items: center;
-  width: var(--control-height);
-  height: var(--control-height);
-  padding: 0;
-  border: 1px solid var(--el-border-color-light);
+.graph-canvas {
+  overflow: auto;
   border-radius: var(--radius-sm);
-  background: var(--el-bg-color);
-  color: var(--el-text-color-regular);
-  cursor: pointer;
-}
-.graph-actions button:hover {
-  color: var(--el-text-color-primary);
-  background: var(--el-fill-color-light);
-}
-.graph-actions button:focus-visible {
-  outline: 2px solid var(--el-color-primary);
-  outline-offset: 1px;
 }
 .graph-canvas svg {
   display: block;
-  width: 100%;
-  height: 320px;
 }
 .graph-edge {
   stroke: var(--el-border-color);
@@ -277,37 +253,46 @@ const summary = computed(() =>
 .graph-edge.active {
   stroke: var(--el-color-primary-light-5);
   opacity: 1;
+  stroke-width: 2;
 }
 .graph-node {
   cursor: pointer;
   outline: none;
 }
-.graph-node circle {
+.graph-node rect {
   fill: var(--el-bg-color);
   stroke: var(--el-border-color);
-  stroke-width: 1.5;
-  transition: fill var(--transition-fast), stroke var(--transition-fast);
+  stroke-width: 1;
+  transition:
+    fill var(--transition-fast),
+    stroke var(--transition-fast);
 }
 .graph-node text {
   fill: var(--el-text-color-regular);
-  font-size: 11px;
+  font-size: 12px;
   pointer-events: none;
 }
-.graph-node.adjacent circle {
+/* Adjacent: filled but lighter, and a dashed border, so it reads apart from both other states in dark mode too. */
+.graph-node.adjacent rect {
   fill: var(--el-color-primary-light-9);
   stroke: var(--el-color-primary-light-5);
+  stroke-dasharray: 4 3;
 }
-.graph-node.chosen circle {
+.graph-node.chosen rect {
   fill: var(--el-color-primary);
   stroke: var(--el-color-primary);
+  stroke-width: 2;
 }
 .graph-node.chosen text {
-  fill: var(--el-bg-color);
+  fill: var(--on-primary);
   font-weight: 600;
 }
-.graph-node:focus-visible circle {
+.graph-node:focus-visible rect {
   stroke: var(--el-color-primary);
   stroke-width: 3;
+}
+.graph-node:hover rect {
+  stroke: var(--el-text-color-secondary);
 }
 .graph-legend {
   display: flex;
