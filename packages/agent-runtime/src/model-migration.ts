@@ -63,8 +63,10 @@ export function migrateLegacyModelSettings(raw: unknown, open: (key: string) => 
       input: ["text", "image"], contextWindow: model.contextWindow ?? 256000, maxTokens: model.maxTokens ?? 50000,
       samplingParams: runtimeJsonObjectSchema.parse(samplingParams) });
     discardedKeys += Math.max(0, model.apiKeys.length - 1);
-    if (model.timeout) timeouts.push(durationMs(model.timeout));
-    if (model.maxRetries != null) retries.push(model.maxRetries);
+    // An unset value meant the runtime default (provider default timeout, 3 retries), which the domain value must keep.
+    const defaults = defaultModelRetry().provider;
+    timeouts.push(model.timeout ? durationMs(model.timeout) : defaults.timeoutMs);
+    retries.push(model.maxRetries ?? defaults.maxRetries);
   }
   settings.defaultModelId = old.defaultModelId === null ? null : mapping.references[old.defaultModelId] ?? `legacy/${old.defaultModelId}`;
   if (timeouts.length) settings.retry.provider.timeoutMs = Math.max(...timeouts);

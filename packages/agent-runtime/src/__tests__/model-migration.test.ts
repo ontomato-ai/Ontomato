@@ -15,7 +15,8 @@ it("preserves headers, duplicate IDs, parameters and selections while discarding
   expect(result.discardedKeys).toBe(1);
   expect(result.mapping.references).toEqual({ main: "gateway/chat", "other-headers": "gateway-2/chat", "other-parameters": "gateway-3/chat" });
   expect(result.settings.providers.gateway!.models[0]!.samplingParams).toEqual({ temperature: 0.7, top_p: 0.2 });
-  expect(result.settings.retry.provider).toEqual({ timeoutMs: 120000, maxRetries: 4, maxRetryDelayMs: 60000 });
+  // other-parameters sets no timeout, which meant the provider default (300 s).
+  expect(result.settings.retry.provider).toEqual({ timeoutMs: 300000, maxRetries: 4, maxRetryDelayMs: 60000 });
   expect(result.settings.defaultModelId).toBe("gateway/chat");
   expect(migrateModelReference("missing", result.mapping)).toBe("legacy/missing");
   expect(migrateModelReference(null, result.mapping)).toBeNull();
@@ -26,7 +27,8 @@ it("preserves headers, duplicate IDs, parameters and selections while discarding
   expect(ref).toBe("gateway/embed");
   expect(result.settings.embeddingModelId).toBe(ref);
   expect(result.settings.providers.gateway!.models[1]).toEqual({ id: "embed", type: "embedding", dimensions: 2 });
-  expect(result.settings.retry.provider.timeoutMs).toBe(180000);
+  // The import only raises the domain timeout; 180 s stays below the 300 s already required above.
+  expect(result.settings.retry.provider.timeoutMs).toBe(300000);
 });
 it("retains missing defaults, uses runtime retry defaults, and preserves user embedding choices", () => {
   const result = migrateLegacyModelSettings({ models: [], defaultModelId: "gone" }, value => value);
@@ -47,15 +49,15 @@ it("rejects expressions, unsupported APIs and non-OpenAI embedding providers", (
     expect(modelSettingsWriteSchema.safeParse({ ...settings, providers: { gateway: { ...settings.providers.gateway, apiKey } } }).success).toBe(false);
 });
 
-it("preserves three default retries unless legacy models explicitly configure a retry count", () => {
+it("counts an unset legacy retry count as the old default of three", () => {
   expect(defaultModelRetry().provider).toEqual({ timeoutMs: 300000, maxRetries: 3, maxRetryDelayMs: 60000 });
   for (const models of [[], [old("unset"), old("null", { maxRetries: null })]]) {
     const result = migrateLegacyModelSettings({ models, defaultModelId: null }, value => openSealedModelKey(value, "test-token"));
     expect(result.settings.retry.provider.maxRetries).toBe(3);
   }
-  for (const [counts, expected] of [[[0], 0], [[1, 2], 2]] as const) {
-    const result = migrateLegacyModelSettings({ models: [old("unset"), ...counts.map((maxRetries, index) => old(`set-${index}`, { maxRetries }))], defaultModelId: null },
-      value => openSealedModelKey(value, "test-token"));
+  for (const [withUnset, counts, expected] of [[true, [0], 3], [true, [1, 5], 5], [false, [0], 0], [false, [1, 2], 2]] as const) {
+    const models = [...(withUnset ? [old("unset")] : []), ...counts.map((maxRetries, index) => old(`set-${index}`, { maxRetries }))];
+    const result = migrateLegacyModelSettings({ models, defaultModelId: null }, value => openSealedModelKey(value, "test-token"));
     expect(result.settings.retry.provider.maxRetries).toBe(expected);
   }
 });
