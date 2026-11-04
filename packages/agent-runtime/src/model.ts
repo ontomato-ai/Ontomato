@@ -1,7 +1,7 @@
 import { logHeaders } from "@ontomato/service-logging";
 import { runtimeLogger, runtimeDiagnostic, runtimeFailureMessage } from "./logging";
 import { randomUUID } from "node:crypto";
-import { z } from "zod";
+import type { ModelApi, ModelEntry, ModelProviderWrite, ModelRetry } from "@ontomato/contracts/model-settings";
 import type {
   Model,
   Message,
@@ -9,35 +9,38 @@ import type {
   AssistantMessageEvent,
   TranscriptContext,
 } from "@earendil-works/pi-ai";
-import { streamSimple } from "@earendil-works/pi-ai/api/openai-completions";
-import { parseIsoDurationSeconds } from "@ontomato/contracts/model-settings";
+import { streamSimple as openaiCompletions } from "@earendil-works/pi-ai/api/openai-completions";
+import { streamSimple as openaiResponses } from "@earendil-works/pi-ai/api/openai-responses";
+import { streamSimple as anthropicMessages } from "@earendil-works/pi-ai/api/anthropic-messages";
+import { streamSimple as googleGenerativeAi } from "@earendil-works/pi-ai/api/google-generative-ai";
 import { RuntimeError } from "./errors";
 import { RuntimeStore, type Scope } from "./store";
 import type { StreamFn } from "./core/pi/types";
 
-import { runtimeModelConfigurationSchema as modelSchema } from "@ontomato/contracts/runtime-model-test";
 import { createAssistantMessageEventStream, normalizeContext } from "@earendil-works/pi-ai";
 
-export type ResolvedModel = z.infer<typeof modelSchema> & { apiKey: string };
-
-export function piModel(config: ResolvedModel): Model<"openai-completions"> {
-  // The saved configuration describes an OpenAI-compatible endpoint; do not guess protocols.
-  return {
-    id: config.modelName,
-    name: config.name,
-    api: "openai-completions",
-    provider: "configured",
-    baseUrl: config.baseUrl,
-    reasoning: false,
-    input: ["text", "image"],
-    contextWindow: config.contextWindow,
-    maxTokens: config.maxTokens,
-    cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-  };
+export type ResolvedModel = Model<ModelApi> & { apiKey: string; retry: ModelRetry; kind: "chat" | "embedding"; dimensions?: number };
+export function resolveModel(providerId: string, provider: Omit<ModelProviderWrite, "models">, model: ModelEntry, retry: ModelRetry): ResolvedModel {
+  return { id: model.id, name: model.name ?? model.id, provider: providerId, api: provider.api,
+    baseUrl: provider.baseUrl, headers: provider.headers, apiKey: provider.apiKey, retry, kind: model.type,
+    dimensions: model.type === "embedding" ? model.dimensions : undefined,
+    reasoning: model.reasoning ?? false, input: model.input ?? ["text"], contextWindow: model.contextWindow ?? 128000,
+    maxTokens: model.maxTokens ?? 16384, samplingParams: model.samplingParams,
+    cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } };
 }
-
-/** Retries when the model setting leaves them unset; one dropped connection should not end a run. */
-const DEFAULT_MODEL_RETRIES = 3;
+export function piModel(config: ResolvedModel): Model<ModelApi> {
+  const { apiKey: _key, retry: _retry, kind: _kind, dimensions: _dimensions, ...model } = config;
+  return model;
+}
+const streamProvider: StreamFn = (model, context, options) => {
+  switch (model.api) {
+    case "openai-completions": return openaiCompletions(model as Model<"openai-completions">, context, options);
+    case "openai-responses": return openaiResponses(model as Model<"openai-responses">, context, options);
+    case "anthropic-messages": return anthropicMessages(model as Model<"anthropic-messages">, context, options);
+    case "google-generative-ai": return googleGenerativeAi(model as Model<"google-generative-ai">, context, options);
+    default: throw new RuntimeError(400, "INVALID_REQUEST", "Unsupported model API");
+  }
+};
 
 /**
  * pi-ai retries requests that fail before a response (connection errors, 429, 5xx) and owns that
@@ -55,7 +58,7 @@ export function modelStream(
 ): StreamFn {
   return (model, context, options) => {
     const start = Date.now();
-    const budget = (config.maxRetries ?? DEFAULT_MODEL_RETRIES) + 1;
+    const budget = config.retry.provider.maxRetries + 1;
     let requests = 0;
     const baseFetch = options?.fetch ?? fetch;
     const countedFetch: typeof fetch = (input, init) => {
@@ -63,16 +66,14 @@ export function modelStream(
       return baseFetch(input, init);
     };
     const request = (responded: () => void) =>
-      streamSimple(model as Model<"openai-completions">, context, {
+      streamProvider(model, context, {
         ...options,
         apiKey: config.apiKey || "unused",
-        timeoutMs: config.timeout
-          ? parseIsoDurationSeconds(config.timeout) * 1000
-          : undefined,
+        timeoutMs: config.retry.provider.timeoutMs,
+        maxRetryDelayMs: config.retry.provider.maxRetryDelayMs,
         maxRetries: Math.max(0, budget - requests - 1),
         maxTokens: options?.maxTokens ?? config.maxTokens,
         headers: { ...logHeaders(), ...modelHeaders(config, correlationId) },
-        onPayload: (payload) => modelPayload(config, payload),
         fetch: countedFetch,
         onResponse: async (response, responseModel) => {
           responded();
@@ -89,7 +90,7 @@ export function modelStream(
           let held: AssistantMessageEvent | null = null;
           let emitted = false;
           let retry = false;
-          for await (const event of request(() => (responded = true))) {
+          for await (const event of await request(() => (responded = true))) {
             if (!emitted && event.type === "start") {
               held = { type: "start", partial: structuredClone(event.partial) };
               continue;
@@ -153,7 +154,7 @@ export function modelStream(
 
 export async function completeSummary(
   stream: StreamFn,
-  model: Model<"openai-completions">,
+  model: Model<ModelApi>,
   context: TranscriptContext,
   signal: AbortSignal,
   maxTokens?: number,
@@ -214,49 +215,25 @@ export function recoverContext(messages: Message[]): Message[] {
   return result;
 }
 
-/** The same provider mapping serves saved models and unsaved connection tests. */
 export function modelHeaders(config: ResolvedModel, correlationId: string) {
-  return {
-    ...(config.organizationId ? { "OpenAI-Organization": config.organizationId } : {}),
-    ...(config.projectId ? { "OpenAI-Project": config.projectId } : {}),
-    ...config.customHeaders,
-    "X-Correlation-Id": correlationId,
-  };
-}
-
-export function modelPayload(config: ResolvedModel, payload: unknown) {
-  const result = { ...(payload as Record<string, unknown>) };
-  const fields = {
-    temperature: config.temperature, top_p: config.topP, stop: config.stop,
-    max_completion_tokens: config.maxCompletionTokens,
-    presence_penalty: config.presencePenalty, frequency_penalty: config.frequencyPenalty,
-    logit_bias: config.logitBias, seed: config.seed, user: config.user,
-    parallel_tool_calls: config.parallelToolCalls, store: config.store,
-    metadata: config.metadata, service_tier: config.serviceTier,
-    reasoning_effort: config.reasoningEffort,
-    response_format: config.responseFormat ? { type: config.responseFormat } : undefined,
-  };
-  for (const [key, value] of Object.entries(fields))
-    if (value !== undefined) result[key] = value;
-  return { ...result, ...config.customRequestParameters };
+  return { ...config.headers, "X-Correlation-Id": correlationId };
 }
 
 /** One request, no agent session, persisted draft, model-call record or retry. */
 export async function testModel(config: ResolvedModel, prompt: string, correlationId: string, signal: AbortSignal) {
-  const stream = streamSimple(piModel(config), normalizeContext({
+  const stream = await streamProvider(piModel(config), normalizeContext({
     messages: [{ role: "user", content: prompt, timestamp: Date.now() }],
   }), {
     signal,
     apiKey: config.apiKey || "unused",
     maxRetries: 0,
     maxTokens: config.maxTokens,
-    timeoutMs: config.timeout ? parseIsoDurationSeconds(config.timeout) * 1000 : 30000,
+    timeoutMs: config.retry.provider.timeoutMs,
     headers: modelHeaders(config, correlationId),
-    onPayload: (payload) => modelPayload(config, payload),
   });
   for await (const _event of stream) signal.throwIfAborted();
   const message = await stream.result();
   if (message.stopReason === "error" || message.stopReason === "aborted")
     throw new RuntimeError(502, "MODEL_TEST_FAILED", "Model connection test failed");
-  return { content: message.content.flatMap((part) => part.type === "text" ? [part.text] : []).join("\n") };
+  return { type: "chat" as const, content: message.content.flatMap((part) => part.type === "text" ? [part.text] : []).join("\n") };
 }

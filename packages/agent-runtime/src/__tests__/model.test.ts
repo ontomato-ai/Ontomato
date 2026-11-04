@@ -1,11 +1,10 @@
 import { afterAll, beforeAll, expect, it } from "vitest";
 import { createServer, type IncomingHttpHeaders } from "node:http";
-import { testModel } from "../model";
+import { testModel, resolveModel } from "../model";
 let modelHeaders: IncomingHttpHeaders;
 let modelPayload: Record<string, unknown> = {};
 let modelCalls = 0;
 let baseUrl = "";
-const modelDraft = { name: "fixture", baseUrl: "", modelName: "fixture-model", maxTokens: 4096, contextWindow: 32000 };
 const server = createServer(async (req, res) => {
   modelHeaders = req.headers;
   modelCalls++;
@@ -27,14 +26,13 @@ afterAll(async () => {
 });
 it("tests unsaved models once with the same headers and final custom request overrides", async () => {
   const before = modelCalls;
-  const result = await testModel({
-    ...modelDraft, baseUrl: baseUrl + "/v1", apiKey: "draft-key",
-    organizationId: "org-fixture", projectId: "project-fixture",
-    customHeaders: { "X-Deployment": "fixture" },
-    temperature: 0, topP: 0, maxRetries: 8,
-    customRequestParameters: { temperature: 0.25, seed: 0, vendor: { enabled: false } },
-  }, "draft probe", "test-correlation", new AbortController().signal);
-  expect(result).toEqual({ content: "ok" });
+  const result = await testModel(resolveModel("fixture", {
+    baseUrl: baseUrl + "/v1", apiKey: "draft-key", api: "openai-completions",
+    headers: { "OpenAI-Organization": "org-fixture", "OpenAI-Project": "project-fixture", "X-Deployment": "fixture" },
+  }, { id: "fixture-model", type: "chat", maxTokens: 4096, contextWindow: 32000,
+    samplingParams: { temperature: 0.25, top_p: 0, seed: 0, vendor: { enabled: false } },
+  }, { provider: { timeoutMs: 30000, maxRetries: 8, maxRetryDelayMs: 60000 } }), "draft probe", "test-correlation", new AbortController().signal);
+  expect(result).toEqual({ type: "chat", content: "ok" });
   expect(modelCalls - before).toBe(1);
   expect(modelHeaders).toMatchObject({ authorization: "Bearer draft-key", "openai-organization": "org-fixture", "openai-project": "project-fixture", "x-deployment": "fixture" });
   expect(modelPayload).toMatchObject({ temperature: 0.25, top_p: 0, seed: 0, vendor: { enabled: false } });

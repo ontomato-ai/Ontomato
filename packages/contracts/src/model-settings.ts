@@ -20,11 +20,9 @@ export const modelReferenceSchema = z.string().trim().refine(value => {
 }, "Expected provider/model-id");
 export type ModelReference = z.output<typeof modelReferenceSchema>;
 
-/** Chat APIs registered by the pinned pi-ai 1.4.0 dependency; discovery is a smaller subset. */
+/** Custom APIs supported with a base URL and a literal API key. */
 export const modelApiSchema = z.enum([
   "openai-completions", "openai-responses", "anthropic-messages", "google-generative-ai",
-  "mistral-conversations", "azure-openai-responses", "openai-codex-responses",
-  "bedrock-converse-stream", "google-vertex", "pi-messages",
 ]);
 export type ModelApi = z.output<typeof modelApiSchema>;
 export const modelTypeSchema = z.enum(["chat", "embedding"]);
@@ -62,12 +60,18 @@ const providerFields = {
 export const modelProviderConnectionSchema = z.object({
   ...providerFields, apiKey: modelApiKeyWriteSchema,
 }).strict();
-const uniqueModels = (provider: { models: ModelEntry[] }, ctx: z.RefinementCtx) => {
+export function supportsEmbeddings(api: ModelApi): boolean {
+  return api === "openai-completions" || api === "openai-responses";
+}
+const uniqueModels = (provider: { api: ModelApi; models: ModelEntry[] }, ctx: z.RefinementCtx) => {
   const seen = new Set<string>();
   provider.models.forEach((model, index) => {
     if (seen.has(model.id)) ctx.addIssue({ code: z.ZodIssueCode.custom,
       path: ["models", index, "id"], message: "Model IDs must be unique within a provider" });
     seen.add(model.id);
+    if (model.type === "embedding" && !supportsEmbeddings(provider.api))
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["models", index, "type"],
+        message: "Embedding models require an OpenAI-compatible provider" });
   });
 };
 export const modelProviderWriteSchema = modelProviderConnectionSchema.extend({
@@ -94,11 +98,12 @@ const defaults = {
   defaultModelId: modelReferenceSchema.nullable(),
   embeddingModelId: modelReferenceSchema.nullable(),
 };
-export const modelSettingsWriteSchema = z.object({
+export const modelSettingsConfigurationSchema = z.object({
   providers: z.record(modelProviderIdSchema, modelProviderWriteSchema),
   ...defaults,
   retry: modelRetrySchema,
-}).strict().superRefine((settings, ctx) => {
+}).strict();
+export const modelSettingsWriteSchema = modelSettingsConfigurationSchema.superRefine((settings, ctx) => {
   for (const [field, type] of [["defaultModelId", "chat"], ["embeddingModelId", "embedding"]] as const) {
     const ref = settings[field];
     if (ref === null) continue;
