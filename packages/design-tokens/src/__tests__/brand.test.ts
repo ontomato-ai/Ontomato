@@ -69,6 +69,8 @@ describe("brand generation", () => {
       // The primary ladder is primary mixed with surface at 30/50/70/80%; status soft fills are 10% status over surface.
       for (const step of [3, 5, 7, 8]) expect(p[`--el-color-primary-light-${step}`]).toBe(mix(c.primary, c.surface, step / 10));
       expect(p["--el-color-danger-light-9"]).toBe(mix(c.danger, c.surface, 0.9));
+      // Tags and plain buttons use their own tint; the selected background stays primary-soft.
+      expect(p["--brand-primary-tint"]).toBe(mix(c.primary, c.surface, 0.9));
       ossBrand.dataviz[mode].forEach((color, index) => expect(p[`--chart-${index + 1}`]).toBe(color));
     }
   });
@@ -83,6 +85,11 @@ describe("brand generation", () => {
       expect.arrayContaining([expect.stringMatching(/^dark link on surface: /)])
     );
     expect(brandContrastFailures({ ...fillOnly, dark: { ...fillOnly.dark, link: "#8f92ff" } })).toEqual([]);
+    // Link text must also hold on the primary tint of tags and plain buttons.
+    const faintLink: BrandSource = { ...ossBrand, light: { ...ossBrand.light, link: "#9aa69a" } };
+    expect(brandContrastFailures(faintLink)).toEqual(
+      expect.arrayContaining([expect.stringMatching(/^light link on primary tint: /)])
+    );
     const pale: BrandSource = { ...ossBrand, light: { ...ossBrand.light, primarySoft: "#62665c" } };
     expect(brandContrastFailures(pale)).toEqual(expect.arrayContaining([expect.stringMatching(/^light ink on selected: /)]));
   });

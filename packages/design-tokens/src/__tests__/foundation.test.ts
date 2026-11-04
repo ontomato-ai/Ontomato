@@ -50,6 +50,19 @@ describe("foundation text colours", () => {
     });
   });
 
+  it("plain primary buttons and primary tags show link text on the primary tint, not on the selected background", () => {
+    expect(declarationsFor(".el-button.el-button--primary.is-plain")).toMatchObject({
+      "--el-button-text-color": "var(--brand-link)",
+      "--el-button-bg-color": "var(--brand-primary-tint)",
+    });
+    expect(declarationsFor(".el-tag.el-tag--primary:not(.el-tag--dark)")).toMatchObject({
+      "--el-tag-text-color": "var(--brand-link)",
+    });
+    expect(declarationsFor(".el-tag.el-tag--primary:not(.el-tag--dark):not(.el-tag--plain)")).toMatchObject({
+      "--el-tag-bg-color": "var(--brand-primary-tint)",
+    });
+  });
+
   it("text and link primary buttons and primary links use the link role", () => {
     expect(declarationsFor(".el-button.el-button--primary:is(.is-text, .is-link)")).toMatchObject({
       "--el-button-text-color": "var(--brand-link)",

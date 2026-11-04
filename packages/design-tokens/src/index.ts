@@ -128,6 +128,9 @@ export function brandProperties(brand: BrandSource, mode: BrandMode): Record<str
     "--brand-primary-hover": c.primaryHover,
     "--on-primary": c.onPrimary,
     "--brand-link": c.link ?? c.primary,
+    // Soft fill of primary tags and plain primary buttons: primary at 10% over surface, like the status soft fills.
+    // It is not the selected background (primary-soft), which may be too strong for link text (enterprise dark 4.2:1).
+    "--brand-primary-tint": primaryTint(c),
     "--brand-accent": c.accent,
     "--brand-accent-ink": c.accentInk,
     "--brand-accent-soft": c.accentSoft,
@@ -135,6 +138,10 @@ export function brandProperties(brand: BrandSource, mode: BrandMode): Record<str
   if (c.brandMark) properties["--brand-mark"] = c.brandMark;
   palette.forEach((color, index) => (properties[`--chart-${index + 1}`] = color));
   return properties;
+}
+
+function primaryTint(c: BrandColors) {
+  return mix(c.primary, c.surface, 0.9);
 }
 
 function declarations(properties: Record<string, string>) {
@@ -170,7 +177,7 @@ const GRAPHIC = 3;
 /**
  * Contrast pairs DESIGN.md requires, per mode: text colours on every surface they sit on, the selected background
  * included (selected rows use ink), placeholders on input fills, on-primary on the filled primary states, link text (all
- * primary-coloured text), status text on surface and on its soft fill, accent text, and chart marks against the
+ * primary-coloured text, also on the primary tint of tags and plain buttons), status text on surface and on its soft fill, accent text, and chart marks against the
  * surface. Returns one line per failing pair; empty when the brand passes.
  */
 export function brandContrastFailures(brand: BrandSource): string[] {
@@ -189,6 +196,7 @@ export function brandContrastFailures(brand: BrandSource): string[] {
     for (const state of ["primary", "primaryHover", "primaryPress"] as const)
       check(`onPrimary on ${state}`, c.onPrimary, c[state], BODY_TEXT);
     for (const name of ["canvas", "surface", "raised"] as const) check(`link on ${name}`, c.link ?? c.primary, c[name], BODY_TEXT);
+    check("link on primary tint", c.link ?? c.primary, primaryTint(c), BODY_TEXT);
     for (const status of ["success", "warning", "danger", "info"] as const) {
       check(`${status} on surface`, c[status], c.surface, BODY_TEXT);
       check(`${status} on its soft fill`, c[status], mix(c[status], c.surface, 0.9), BODY_TEXT);

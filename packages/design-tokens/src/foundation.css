@@ -143,13 +143,27 @@
   --el-button-hover-border-color: var(--brand-primary-hover);
 }
 
-/* At rest, plain buttons show primary text; text and link buttons are links and use the link role. */
+/*
+ * At rest, plain buttons show link text on the primary tint (not the selected background, see --brand-primary-tint);
+ * text and link buttons are links and use the link role.
+ */
 .el-button.el-button--primary.is-plain {
-  --el-button-text-color: var(--el-color-primary);
+  --el-button-text-color: var(--brand-link);
+  --el-button-bg-color: var(--brand-primary-tint);
 }
 
 .el-button.el-button--primary:is(.is-text, .is-link) {
   --el-button-text-color: var(--brand-link);
+}
+
+/* Primary tags: link text; the light (default) tag sits on the primary tint. Dark (filled) tags keep Element Plus. */
+.el-tag.el-tag--primary:not(.el-tag--dark) {
+  --el-tag-text-color: var(--brand-link);
+  --el-tag-hover-color: var(--brand-link);
+}
+
+.el-tag.el-tag--primary:not(.el-tag--dark):not(.el-tag--plain) {
+  --el-tag-bg-color: var(--brand-primary-tint);
 }
 
 .el-link.el-link--primary {
