@@ -129,7 +129,9 @@ public class FunctionServiceImpl implements FunctionService {
 
     Map<String, Object> jsonRule = generationService.authorizedRule(adminService.getJSONRule(domainId), domainId);
     List<Map<String, Object>> classDefs = (List<Map<String, Object>>) jsonRule.get("classDef");
-    String originCode = abcProgram.getCode();
+    String originCode = abcProgram.getQueryPackage() == null ? abcProgram.getCode()
+        : io.ontomato.dataengine.service.QueryPackage.reviewCode(abcProgram.getQueryPackage(),
+            io.ontomato.dataengine.service.QueryPackage.parameters(abcProgram.getQueryPackage(), abcProgram.getParameterValues()));
 
     String userMessage =
         OntologyGenerationPrompts.getReadFunctionMakerUserMessage(
@@ -137,31 +139,21 @@ public class FunctionServiceImpl implements FunctionService {
     try (var generation =
         generationService.generate("function", sessionId, userMessage, lang, domainId)) {
       JSONObject envelope = generation.result();
-      String code = envelope.getString("code");
+      JSONObject bundle = envelope.getJSONObject("queryPackage");
       String name = envelope.getString("name");
       String logic = envelope.getString("logic");
-      if (code == null || name == null || logic == null) {
+      if (bundle == null || name == null || logic == null) {
         return null;
       }
-      List<Parameter> parameters = new ArrayList<Parameter>();
-      if (envelope.containsKey("parameterDefs")) {
-        parameters =
-            DBSchemaUtil.buildParameters(
-                envelope.getJSONArray("parameterDefs").toList(Map.class), classDefs);
-      }
       function.setName(name);
-      function.setParameters(parameters);
-      function.setCode(code);
+      function.setQueryPackage(bundle);
       function.setLogic(logic);
 
       ReturnDef returnDef = new ReturnDef();
       returnDef.setIsVoid(false);
-      JSONObject sourceAnalysis = envelope.getJSONObject("sourceAnalysis");
-      io.ontomato.dataengine.service.QuerySubgraphContract.validate(sourceAnalysis);
-      returnDef.setSourceAnalysis(sourceAnalysis);
-      returnDef.setClassNames(sourceAnalysis.getJSONArray("nodes").stream().map(JSONObject::from)
-          .filter(n -> "class".equals(n.getString("kind"))).map(n -> n.getString("className")).distinct().toList());
+      returnDef.setColumnLabels(envelope.getJSONObject("columnLabels"));
       function.setReturnDef(returnDef);
+      io.ontomato.dataengine.service.QueryPackage.prepareReadFunction(function, classDefs);
 
       return generation.settle(() -> function);
     }
@@ -192,6 +184,9 @@ public class FunctionServiceImpl implements FunctionService {
 
   @Override
 	public Function save(Function function, String lang) throws Exception {
+        if (Function.OPERATION_READ.equals(function.getOperation()))
+            io.ontomato.dataengine.service.QueryPackage.prepareReadFunction(function,
+                (List<Map<String, Object>>) adminService.getJSONRule(function.getDomainId()).get("classDef"));
 		if (function.getId() != null) {
 			Function existFunction = functionDao.queryById(function.getId());
 			if (existFunction == null) {

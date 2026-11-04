@@ -128,7 +128,7 @@ public class OntologyBindingRetrieval {
   static JSONObject datasetPayload(JSONObject request, JSONObject result) {
     var data = AgentJson.copy(result);
     var execution = JSONObject.of("receiptId",data.remove("receiptId"),"executedAt",data.remove("executedAt"));
-    data.put("schema","workbench.dataset.v1"); data.put("execution",execution);
+    data.put("schema","workbench.dataset.v2"); data.put("execution",execution);
     data.put("title",request.getString("title")); data.put("question",request.getString("question"));
     data.put("assumptions",new JSONArray()); data.put("decisionIds",new JSONArray());
     data.put("metricUses",new JSONArray()); data.put("selfCheck",null);

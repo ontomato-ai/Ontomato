@@ -59,6 +59,8 @@ public class OntologyQueryController {
 
   @PostMapping("/ontology/query/execute-dsl")
   public Object execute(@RequestBody JSONObject body, HttpServletRequest request) {
+    if (body.keySet().equals(java.util.Set.of("queryRef")))
+      return ontology.executePackage(body.getJSONObject("queryRef"), access(request));
     if (!body.keySet().equals(java.util.Set.of("dsl")))
       throw new IllegalArgumentException("Only dsl is accepted; identity comes from credentials");
     return ontology.execute(body.getJSONObject("dsl"), access(request));
@@ -103,6 +105,8 @@ public class OntologyQueryController {
       throw new ResponseStatusException(
           HttpStatus.FORBIDDEN, "Final output requires the end user credential");
     String id = body.getString("submissionId"), lang = language(request);
+    if (!java.util.Set.of("package", "metric").contains(body.getJSONObject("recipe").getString("kind")))
+      throw new IllegalArgumentException("New outputs require a query package or metric reference");
     return jobs.start(
         id,
         access.user(),

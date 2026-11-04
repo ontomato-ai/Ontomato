@@ -35,6 +35,20 @@ public class ABCProgramDashboardServiceImpl implements ABCProgramDashboardServic
 
   @Autowired private OntologyGenerationService generationService;
 
+  private List<ABCHarnessDashboardParameter> packageParameters(JSONObject bundle, JSONObject supplied) {
+    var values = io.ontomato.dataengine.service.QueryPackage.parameters(bundle, supplied);
+    var parameters = new ArrayList<ABCHarnessDashboardParameter>();
+    for (var definition : io.ontomato.dataengine.service.QueryPackage.definitions(bundle)) {
+      var parameter = new ABCHarnessDashboardParameter();
+      parameter.setKey(definition.getName());
+      parameter.setName(definition.getName());
+      parameter.setType(definition.getType().replaceFirst("^TYPE_", ""));
+      parameter.setValue(values.get(definition.getName()));
+      parameters.add(parameter);
+    }
+    return parameters;
+  }
+
   @Override
   public ABCHarnessDashboard fromProgram(
       ABCHarnessProgram program, boolean needParameter, String lang, String domainId)
@@ -44,30 +58,35 @@ public class ABCProgramDashboardServiceImpl implements ABCProgramDashboardServic
       String sessionId = UUID.randomUUID().toString();
 
       Map<String, Object> jsonRule = generationService.authorizedRule(adminService.getJSONRule(domainId), domainId);
+      var promptProgram = program;
+      if (program.getQueryPackage() != null) {
+        promptProgram = new ABCHarnessProgram();
+        promptProgram.setQuestion(program.getQuestion());
+        promptProgram.setCode(io.ontomato.dataengine.service.QueryPackage.reviewCode(program.getQueryPackage(),
+            io.ontomato.dataengine.service.QueryPackage.parameters(program.getQueryPackage(), program.getParameterValues())));
+      }
       String userMessage =
           OntologyGenerationPrompts.getAbcProgramDashboardMakerUserMessage(
-              program, lang, langService, jsonRule);
+              promptProgram, lang, langService, jsonRule);
       try (var generation =
           generationService.generate("dashboard", sessionId, userMessage, lang, domainId)) {
         JSONObject envelope = generation.result();
-        String code = envelope.getString("code");
+        JSONObject bundle = envelope.getJSONObject("queryPackage");
         String title = envelope.getString("title");
-        JSONArray defsArray = envelope.getJSONArray("parameterDefs");
-        if (code == null || title == null || defsArray == null) {
-          return null;
-        }
-        List<ABCHarnessDashboardParameter> parameters =
-            JSONArray.parseArray(defsArray.toJSONString(), ABCHarnessDashboardParameter.class);
-        List<Map<String, Object>> classDefs = (List<Map<String, Object>>) jsonRule.get("classDef");
-        for (ABCHarnessDashboardParameter parameter : parameters) {
-          parameter.setClassName(
-              DBSchemaUtil.normalizeClassName(parameter.getClassName(), classDefs));
-        }
+        if (bundle == null || title == null) return null;
+        var function = new io.ontomato.dataengine.bean.function.Function();
+        function.setOperation(io.ontomato.dataengine.bean.function.Function.OPERATION_READ);
+        function.setQueryPackage(bundle);
+        var returns = new io.ontomato.dataengine.bean.function.ReturnDef();
+        returns.setColumnLabels(envelope.getJSONObject("columnLabels"));
+        function.setReturnDef(returns);
+        io.ontomato.dataengine.service.QueryPackage.prepareReadFunction(function,
+            (List<Map<String, Object>>) jsonRule.get("classDef"));
         ABCHarnessDashboard dashboard = new ABCHarnessDashboard();
         dashboard.setTitle(title.trim());
-        dashboard.setCode(code);
-        dashboard.setSourceAnalysis(io.ontomato.dataengine.service.QuerySubgraphContract.validate(envelope.getJSONObject("sourceAnalysis")));
-        dashboard.setParameters(parameters);
+        dashboard.setQueryPackage(bundle);
+        dashboard.setSourceAnalysis(returns.getSourceAnalysis());
+        dashboard.setParameters(packageParameters(bundle, null));
 
         var access = generationService.executionAccess(domainId);
         // Test
@@ -104,9 +123,12 @@ public class ABCProgramDashboardServiceImpl implements ABCProgramDashboardServic
     } else {
       ABCHarnessDashboard dashboard = new ABCHarnessDashboard();
       dashboard.setTitle(program.getQuestion());
-      dashboard.setCode(program.getCode());
+      dashboard.setQueryPackage(program.getQueryPackage());
+      dashboard.setParameterValues(program.getParameterValues());
+      dashboard.setCode(program.getQueryPackage() == null ? program.getCode() : null);
       dashboard.setSourceAnalysis(program.getSourceAnalysis() != null ? program.getSourceAnalysis() : io.ontomato.dataengine.service.QuerySourceAnalysis.fromStoredSources(program.getOutKeyRefs()));
-      dashboard.setParameters(new ArrayList<ABCHarnessDashboardParameter>());
+      dashboard.setParameters(program.getQueryPackage() == null ? new ArrayList<>()
+          : packageParameters(program.getQueryPackage(), program.getParameterValues()));
       return dashboard;
     }
   }

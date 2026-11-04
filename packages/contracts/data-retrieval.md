@@ -101,8 +101,10 @@ runs on accepted binding recipes through the same quality service.
 
 ## Formal files and external skills
 
-Provider `ontology` publishes both analyst and data-retrieval. The dataset command
-remains `node skills/data-retrieval/scripts/dataset.mjs @work/recipe.json outputs/result.dataset.json`.
+Provider `ontology` publishes analyst and data-retrieval. New delivery uses
+`node skills/data-retrieval/scripts/dataset.mjs deliver @work/q.json --meta @work/delivery.json`.
+[Query packages](query-package.md) owns the file manifest, parameter bindings and
+Python computation fragment. A plain DSL JSON is the one-file shorthand.
 
 `POST /ontology/retrievals/:id/runs/:runId/outputs` takes existing
 `prepareDatasetSchema` and UUID Idempotency-Key; returns 202 `{id}`.
@@ -124,8 +126,11 @@ Execution resolves the stored binding values, rejects overrides and freezes the
 actual values in the returned recipe. Metric revisions include the current
 aggregate; a changed definition or binding requires retrieving it again.
 
-`DatasetPayload` remains the sole dataset schema. Keep `workbench.dataset.v1`
-as the existing wire format identifier in this ownership-only change. Java
+`DatasetPayload` remains the sole dataset schema. New outputs use
+`workbench.dataset.v2` and freeze the complete package and actual parameter values;
+metric outputs retain kind:metric plus their host-resolved frozen package.
+Historical v1 files keep their exact original bytes and receipts and are decoded
+only at the read boundary. New dsl/python recipe submissions are rejected. Java
 verifies receipt ownership/digest against immutable registered bytes. A receipt
 without a file publishes nothing; edited files stay generic. Latest accepted
 occurrence per path forms current output; historical IDs remain and inherited
@@ -197,8 +202,11 @@ evidence. Feedback/decisions do not move into runtime. Model configuration,
 MetricView remodeling, general MCP, knowledge governance, stored-data conversion
 and artifact retention stay outside this cutover.
 
-Source analysis is the shared [query subgraph](query-subgraph.md). New Python recipes
-require sourceAnalysis; Java derives DSL sources and resolves stored metric sources.
-Dataset column labels are copied by key from graph output labels. Legacy stored
-datasets may omit the graph. `dataset.mjs preview @recipe.json` uses the same
-permission boundary without registering a file.
+Source analysis is the shared [query subgraph](query-subgraph.md). Java derives
+DSL graphs from the frozen package, then composes the declared Python computation
+fragment. Model metadata supplies only output labels, business self-checks and
+metric-use explanations. The host supplies the admitted question and confirmed
+decision IDs. Legacy stored sources remain read-boundary compatibility.
+`dataset.mjs preview @query.json --meta @delivery.json` executes under the same
+permissions; identical preview/delivery inputs reuse their execution key. No
+preview or extra model round is required before deliver.

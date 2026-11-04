@@ -268,11 +268,16 @@ public class OntologyGenerationService {
       var result = JSON.parseObject(file(domain, session, run, "outputs/result.json"));
       if (result == null) throw new IllegalArgumentException("Missing generation result");
       if (Set.of("action", "metric", "function", "dashboard").contains(kind)) {
-        if (result.containsKey("code"))
-          throw AgentHttpException.invalid("Use sourcePath, not embedded code");
-        String code = file(domain, session, run, AgentJson.text(result, "sourcePath"));
-        operations.requireTest(run, kind, code, result.getJSONArray("parameterDefs"));
-        result.put("code", code);
+        if (result.containsKey("code")) throw AgentHttpException.invalid("Use a source file path");
+        if (kind.equals("action")) {
+          String code = file(domain, session, run, AgentJson.text(result, "sourcePath"));
+          operations.requireTest(run, kind, code, result.getJSONArray("parameterDefs"));
+          result.put("code", code);
+        } else {
+          var bundle = packageFile(domain, session, run, AgentJson.text(result, "packagePath"));
+          operations.requirePackageTest(run, kind, bundle);
+          result.put("queryPackage", bundle);
+        }
       }
       delivery.result = result;
       return delivery;
@@ -281,6 +286,22 @@ public class OntologyGenerationService {
       if (error instanceof RuntimeException runtimeError) throw runtimeError;
       throw new IllegalStateException("Ontology generation failed", error);
     }
+  }
+
+  private JSONObject packageFile(String domain, String session, String run, String path) throws Exception {
+    String text = file(domain, session, run, path);
+    var manifest = JSON.parseObject(text);
+    if (!"ontomato.query-package.v1".equals(manifest.getString("schema")))
+      return QueryPackage.validate(QueryPackage.fromDsl(text));
+    String root = path.substring(0, path.lastIndexOf('/') + 1);
+    var paths = new ArrayList<String>();
+    manifest.getJSONObject("queries").values().forEach(v -> paths.add((String) v));
+    paths.addAll(manifest.getList("modules", String.class));
+    if ("python".equals(manifest.getJSONObject("entry").getString("kind")))
+      paths.add(manifest.getJSONObject("entry").getString("path"));
+    var files = new JSONArray();
+    for (String name : paths) files.add(JSONObject.of("path", QueryPackage.path(name), "content", file(domain, session, run, root + name)));
+    return QueryPackage.validate(JSONObject.of("manifest", manifest, "files", files));
   }
 
   private String file(String domain, String session, String run, String path) throws Exception {

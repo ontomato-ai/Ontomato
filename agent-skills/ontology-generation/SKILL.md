@@ -13,7 +13,8 @@ Run `node <this-skill>/scripts/generation.mjs <command> [arguments]`. Runtime su
 | --- | --- |
 | `source [startLine [endLine]]` | Read the exact Action source to explain; line numbers start at 1. Read it in one call. Do not pipe it through `sed`, `head` or `tail`: the command already returns the requested slice, and repeated paging is treated as no progress. |
 | `explain` | Re-run the structured explanation for the current conversation's newest draft from its saved code. Use only when the user asks to refresh/regenerate the right-side definition; it does not change the action code. |
-| `test outputs/program.py parameters.json source-analysis.json` | Business test the exact source bytes and parameter definitions. The parameter JSON file is an array (use `[]` for no parameters); read programs also supply source-analysis.json. Read operations cannot acquire a write sandbox. |
+| `test-package outputs/package.json labels.json` | Test the complete read package, default parameter values and output labels. Plain DSL entries are accepted. Requires the data-retrieval skill alongside this skill. |
+| `test outputs/program.py parameters.json` | Action business test only. Read operations use test-package and cannot acquire a write sandbox. |
 | `prepare data.json` | Validate Action sandbox fixture `{objDatas,relDatas,vectorDatas}`; object groups contain className and rows, relationships contain relationName/sourceObjId/targetObjId. |
 | `reset` | Clear the Action sandbox and import the prepared fixture. Repeat before independent Action tests. |
 | `query dsl.json` | Query the Action sandbox to verify side effects. |
@@ -21,17 +22,17 @@ Run `node <this-skill>/scripts/generation.mjs <command> [arguments]`. Runtime su
 | `begin kind [source.py]` | External agents only: open a business gate using `ONTOMATO_TK` or `ONTOMATO_API_KEY`; no runtime history is invented. |
 | `close` | External agents close their gate and remove its sandbox. Hosted runs are closed by the host. |
 
-Never put credentials, identity, URLs, local paths or transport parameters in generated business parameter definitions. Python uses protocol `# ontomato-python:2`. Java alone injects the private `query_runtime` helper and execution tk; do not run query programs with local Python. Run `node <this-skill>/scripts/generation.mjs helpers` inside the current generation gate before writing `program.py`; it renders the exact signatures from `python/query_runtime.py`. In particular, `query(dsl)` takes one DSL object, not a class name or `where`; `where` belongs only to `update`/`delete`. All test output is already filtered for the current user. Read references/query-subgraph.md and references/query-subgraphs.json; declare every output source and computation in sourceAnalysis, with output labels in the user's language. Reusable graphs describe parameter-dependent filters symbolically; do not freeze test/default parameter values into the graph. Test errors are feedback for correcting the source; a bash success is not a business test receipt.
+Never put credentials, identity, URLs, local paths or transport parameters in generated business parameter definitions. Python uses protocol `# ontomato-python:2`. Java alone injects the private `query_runtime` helper and execution tk; do not run query programs with local Python. Run `node <this-skill>/scripts/generation.mjs helpers` for Action helper signatures before writing an Action program; read query programs follow the package reference directly. In particular, `query(dsl)` takes one DSL object, not a class name or `where`; `where` belongs only to `update`/`delete`. All test output is already filtered for the current user. For read programs, follow [query packages](references/query-package.md). Use `execute_dsl_file`, keep DSL in declared JSON files and declare only the Python computation fragment. Java derives DSL sources. Reusable filters are parameterized by JSON value bindings. Do not submit a second full sourceAnalysis. Action programs retain their existing source and parameter protocol. Test errors are feedback for correcting the source; a bash success is not a business test receipt.
 
 ## Delivery
 
-Write **one JSON object** to `outputs/result.json`, with the following fields for the current kind. No JSON fences or XML wrappers. This file replaces any earlier instructions about submitting tools or replying with code/labels. There are no submit tools. A sourcePath is the tested file's path under `outputs/` (for example `outputs/program.py`); write every delivered program there, because only `outputs/` is published. Test that exact file with these exact parameter definitions after its last modification. The host validates the file from this run, not an inherited artifact or a model claim about a test.
+Write **one JSON object** to `outputs/result.json`, with the following fields for the current kind. No JSON fences or XML wrappers. This file replaces any earlier instructions about submitting tools or replying with code/labels. There are no submit tools. Read deliveries use `packagePath` under outputs/, plus `columnLabels`; the host collects every declared file from this run and verifies the whole package test. Parameter definitions live in the manifest only. Action deliveries use sourcePath and parameterDefs as before. After the last execution change, test the exact delivered files again; description-only changes need no additional query.
 
 | Kind | Result fields |
 | --- | --- |
 | action | `sourcePath`, `parameterDefs` (array), `classNames` (nonempty array), `name`, `logic`, optional `submissionCriteria` (`operator`, `conditions`, `unrepresentable`) |
-| function | `sourcePath`, `parameterDefs` (array), `sourceAnalysis`, `name`, `logic`; preserve the supplied output keys |
-| dashboard | `sourcePath`, `parameterDefs` (array of key/name/type/value/className/attrName), `sourceAnalysis`, `title` |
+| function | `packagePath`, `columnLabels`, `name`, `logic`; preserve the supplied output keys |
+| dashboard | `packagePath`, `columnLabels`, `title`; parameter definitions belong to the package |
 | explain | `segs`, `operations`, `negativeEffect`, exactly following the explanation schema in the task definition; read source first |
 | instantiate | `instances`: array of `{id,question,parameters}` matching only the supplied MetricView candidates |
 | name | `name` |

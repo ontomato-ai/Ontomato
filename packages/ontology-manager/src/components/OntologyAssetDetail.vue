@@ -49,6 +49,8 @@ const saving = ref(false);
 const deleting = ref(false);
 const testing = ref(false);
 const record = ref<AssetRecord | null>(null);
+const packageDraft = ref("");
+const columnLabelsDraft = ref("{}");
 const bindingDrafts = ref<BindingDraft[]>([]);
 const testBinding = ref<number>(-1);
 const testValues = ref<Record<string, string>>({});
@@ -79,8 +81,11 @@ function testParameters() {
 }
 function testMetricDraft() {
   const draft = JSON.parse(JSON.stringify(record.value)) as AssetRecord;
+  if (packageDraft.value.trim()) prepareQueryPackage(draft.function);
   const values = testParameters();
   for (const parameter of draft.function.parameters || []) parameter.value = values[parameter.name];
+  if (draft.function.queryPackage)
+    for (const parameter of draft.function.queryPackage.manifest.parameterDefs) parameter.value = values[parameter.name];
   draft.bindings = serializedBindings();
   return draft;
 }
@@ -121,9 +126,21 @@ const isFunction = computed(() => props.kind === "functions");
 const functionRecord = computed(() =>
   props.kind === "functions" ? record.value : record.value?.function || null
 );
-const metricParameters = computed(() =>
-  Array.isArray(record.value?.function?.parameters) ? record.value.function.parameters : []
-);
+const readFunction = computed(() => functionRecord.value?.operation === "OPERATION_READ");
+function prepareQueryPackage(fn: AssetRecord) {
+  if (fn?.operation !== "OPERATION_READ") return;
+  fn.queryPackage = JSON.parse(packageDraft.value);
+  fn.code = null;
+  fn.returnDef = { ...fn.returnDef, columnLabels: JSON.parse(columnLabelsDraft.value) };
+  fn.parameters = fn.queryPackage.manifest.parameterDefs;
+}
+const metricParameters = computed(() => {
+  if (readFunction.value && packageDraft.value) {
+    try { return JSON.parse(packageDraft.value).manifest.parameterDefs as AssetRecord[]; }
+    catch { /* Save and test report invalid source drafts. */ }
+  }
+  return Array.isArray(record.value?.function?.parameters) ? record.value.function.parameters : [];
+});
 const parameterTypes = [
   "TYPE_STRING",
   "TYPE_NUMBER",
@@ -310,6 +327,11 @@ watch(
   () => record.value,
   () => {
     savedCodeSnapshot.value = editedCode.value;
+    const fn = functionRecord.value;
+    packageDraft.value = fn?.queryPackage ? JSON.stringify(fn.queryPackage, null, 2) : "";
+    const labels = fn?.returnDef?.columnLabels ?? Object.fromEntries((fn?.returnDef?.sourceAnalysis?.nodes ?? [])
+      .filter((node: AssetRecord) => node.kind === "output").map((node: AssetRecord) => [node.key, node.label]));
+    columnLabelsDraft.value = JSON.stringify(labels, null, 2);
     bindingDrafts.value = (record.value?.bindings || []).map((binding: AssetRecord) => ({
       id: binding.id, name: binding.name, description: binding.description || "",
       questions: (binding.matchQuestions || []).join("\n"), values: valueTexts(binding.parameters),
@@ -404,6 +426,7 @@ async function save() {
     const codeChanged = isAction && codeDirty.value;
     // Recalculation happens synchronously in the save request, so actions with code changes first warn that it may take a while.
     if (codeChanged) message.info(ot("explainerRegenerating"));
+    if (readFunction.value) prepareQueryPackage(functionRecord.value!);
     const payload = props.kind === "metrics" ? { ...record.value, bindings: serializedBindings() } : record.value;
     await requestSmartAsset(props.kind, "save", payload);
     message.success(ot("assetSaved", { title: meta.value.title }));
@@ -904,6 +927,20 @@ onMounted(() => void loadDetail());
             <el-input v-model="functionRecord.name" />
           </el-form-item>
           <template v-if="functionRecord">
+            <template v-if="readFunction">
+              <el-alert v-if="!functionRecord.queryPackage && functionRecord.code" :title="ot('assetLegacyPackageHint')" type="info" :closable="false" />
+              <el-form-item :label="ot('assetQueryPackage')">
+                <el-input v-model="packageDraft" type="textarea" :rows="18" class="code-input" />
+              </el-form-item>
+              <el-form-item :label="ot('assetColumnLabels')">
+                <el-input v-model="columnLabelsDraft" type="textarea" :rows="3" />
+              </el-form-item>
+              <el-input v-if="!functionRecord.queryPackage && functionRecord.code" :model-value="functionRecord.code" type="textarea" :rows="8" readonly />
+              <el-form-item :label="ot('assetLogicDescription')">
+                <el-input v-model="functionRecord.logic" type="textarea" :rows="3" />
+              </el-form-item>
+            </template>
+            <template v-else>
             <div class="parameter-header">
               <span class="field-label">{{ ot("assetInputParameters") }}</span>
               <el-button size="small" :icon="Plus" @click="addParameter">
@@ -954,6 +991,7 @@ onMounted(() => void loadDetail());
                   class="code-input"
                 />
               </el-form-item>
+            </template>
             </template>
           </template>
         </el-form>

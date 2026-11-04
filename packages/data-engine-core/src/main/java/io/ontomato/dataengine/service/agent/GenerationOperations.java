@@ -17,6 +17,8 @@ import org.springframework.stereotype.Service;
  */
 @Service
 public class GenerationOperations {
+  @org.springframework.beans.factory.annotation.Autowired @Lazy
+  private OntologyQueryService ontology;
   private final OntologyAgentStore store;
   private final io.ontomato.dataengine.dao.JSONRuleDao schemas;
   private final SandboxService sandboxService;
@@ -394,10 +396,11 @@ public class GenerationOperations {
 
   @SuppressWarnings("unchecked")
   public Object test(String run, Owner owner, JSONObject body) throws Exception {
-    String code = AgentJson.text(body, "code");
-    var defs = body.getJSONArray("parameterDefs");
     var row = store.transaction(() -> gate(run, owner));
     String kind = row.getString("kind");
+    if (!kind.equals("action")) return testPackage(run, owner, body, kind);
+    String code = AgentJson.text(body, "code");
+    var defs = body.getJSONArray("parameterDefs");
     if (!Set.of("action", "metric", "function", "dashboard").contains(kind))
       throw AgentHttpException.invalid("This definition does not test programs");
     JSONObject parameters = new JSONObject();
@@ -483,13 +486,56 @@ public class GenerationOperations {
         });
   }
 
+  public static String packageTestDigest(String kind, JSONObject bundle) {
+    var executable = QueryPackage.copy(QueryPackage.validate(bundle));
+    var manifest = executable.getJSONObject("manifest");
+    manifest.put("parameterDefs", executedParameters("function", manifest.getJSONArray("parameterDefs")));
+    return AgentJson.hash(JSONObject.of("kind", kind, "package", executable));
+  }
+
+  private Object testPackage(String run, Owner owner, JSONObject body, String kind) throws Exception {
+    if (!Set.of("metric", "function", "dashboard").contains(kind))
+      throw AgentHttpException.invalid("This definition does not test query packages");
+    var bundle = QueryPackage.validate(body.getJSONObject("queryPackage"));
+    var parameters = QueryPackage.parameters(bundle, null);
+    String digest = packageTestDigest(kind, bundle), execution = UUID.randomUUID().toString();
+    long deadline = java.time.Instant.parse(store.one("SELECT deadline FROM ontology_agent_runs WHERE id=?", uuid(run)).getString("deadline")).toEpochMilli();
+    String token = grants.issue(owner.userId(), owner.domainId(), "user-read", run, deadline, List.of(), null);
+    var grant = grants.verify(token, run, "/ontology/query/execute-dsl");
+    var access = new QueryAccessService.Access(new QueryAccessService.GrantUser(owner.userId(), owner.domainId()),
+        permissions.getDataPermission(owner.userId(), owner.domainId()), grant, token, deadline);
+    store.transaction(() -> {
+      gate(run, owner);
+      store.update("INSERT INTO ontology_generation_tests(run_id,digest,execution_id,result) VALUES(?,?,?,NULL)", uuid(run), digest, uuid(execution));
+      return null;
+    });
+    var result = QueryPackageExecution.execute(execution, bundle, parameters, body.getJSONObject("columnLabels"),
+        access, "en", 10, ontology, python);
+    var output = result.execution();
+    output.setResult(JSON.toJSONString(JSONObject.of("answer", result.rows()), JSONWriter.Feature.WriteMapNullValue));
+    return store.transaction(() -> {
+      gate(run, owner);
+      store.update("UPDATE ontology_generation_tests SET result=?::jsonb WHERE run_id=? AND digest=? AND execution_id=?",
+          AgentJson.json(output), uuid(run), digest, uuid(execution));
+      return output;
+    });
+  }
+
+  public void requirePackageTest(String run, String kind, JSONObject bundle) {
+    requireDigest(run, packageTestDigest(kind, bundle));
+  }
+
   public void requireTest(String run, String kind, String code, JSONArray parameters) {
+    requireDigest(run, testDigest(kind, code, parameters));
+  }
+
+  private void requireDigest(String run, String digest) {
     var tests =
         store.rows(
             "SELECT result FROM ontology_generation_tests WHERE run_id=? AND digest=? ORDER BY"
                 + " created_at DESC,execution_id DESC LIMIT 1",
             uuid(run),
-            testDigest(kind, code, parameters));
+            digest);
     var test = tests.isEmpty() ? null : tests.get(0).getJSONObject("result");
     if (test == null || (test.getString("error") != null && !test.getString("error").isBlank()))
       throw AgentHttpException.invalid("The exact source and parameters must pass a business test");

@@ -804,12 +804,13 @@ public class OntologyRetrievalService {
 
   public JSONObject prepareOutput(
       String id, String runId, String key, JSONObject body, OntologyAgentAccess.Context context) {
+    var acceptedInput = store.retrieval(id, context.owner());
+    body.put("question", acceptedInput.getJSONObject("input").getString("question"));
+    body.put("decisionIds", acceptedInput.getJSONArray("decisions").stream()
+        .map(JSONObject::from).map(d -> d.getString("id")).toList());
     DatasetFileContract.preparation(body);
+    body.put("schema", "workbench.dataset.v2");
     var recipe = body.getJSONObject("recipe");
-    if ("python".equals(recipe.getString("kind"))
-        && !QueryOutputService.hash(AgentJson.text(recipe, "code"))
-            .equals(recipe.getString("sha256")))
-      throw AgentHttpException.invalid("Recipe digest mismatch");
     var executionAccess = store.transaction(
         () -> {
           store.gate(id, runId, context.owner());
@@ -872,7 +873,7 @@ public class OntologyRetrievalService {
         JSONObject.of(
             "receiptId", result.remove("receiptId"), "executedAt", result.remove("executedAt"));
     data.putAll(result);
-    data.put("schema", "workbench.dataset.v1");
+    data.putIfAbsent("schema", "workbench.dataset.v1");
     data.put("execution", execution);
     validateDataset(data);
     store.transaction(

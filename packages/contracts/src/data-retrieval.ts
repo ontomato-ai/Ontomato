@@ -1,3 +1,4 @@
+import { packageRecipeSchema, queryPackageSchema } from "./query-package";
 import { runtimeStopReasonSchema } from "./agent-runtime-values";
 import { z } from "zod";
 import { querySubgraphSchema } from "./query-subgraph";
@@ -23,7 +24,8 @@ export const truncationSchema = z
     truncationHint: z.string().min(1),
   })
   .strict();
-export const recipeSchema = z.discriminatedUnion("kind", [
+export const recipeSchema = z.union([
+  packageRecipeSchema,
   z
     .object({
       kind: z.literal("python"),
@@ -46,6 +48,10 @@ export const recipeSchema = z.discriminatedUnion("kind", [
       bindingId: z.string().optional(),
       revision: z.string(),
       parameters: runtimeJsonObjectSchema,
+      package: queryPackageSchema.optional(),
+      packageSha256: z.string().optional(),
+      executionInputSha256: z.string().optional(),
+      columnLabels: z.record(z.string()).optional(),
       executedCode: z.string().optional(),
       sha256: z.string().optional(),
     })
@@ -80,7 +86,7 @@ export const selfCheckSchema = z
   .strict();
 export const datasetPayloadSchema = z
   .object({
-    schema: z.literal("workbench.dataset.v1"),
+    schema: z.enum(["workbench.dataset.v1", "workbench.dataset.v2"]),
     title: z.string().min(1),
     question: z.string().min(1),
     columns: z.array(
@@ -106,6 +112,13 @@ export const datasetPayloadSchema = z
   })
   .strict()
   .superRefine((data, ctx) => {
+    const legacy = data.recipe.kind === "dsl" || data.recipe.kind === "python";
+    if (data.schema === "workbench.dataset.v1" && data.recipe.kind === "package" ||
+        data.schema === "workbench.dataset.v2" && legacy)
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Recipe does not match the dataset version" });
+    if (data.schema === "workbench.dataset.v2" && data.recipe.kind === "package" &&
+        (!data.sourceAnalysis || !data.recipe.packageSha256 || !data.recipe.executionInputSha256))
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Package datasets require sources and execution digests" });
     const keys = data.columns.map((c) => c.key).sort(),
       sources = data.sourceAnalysis ? data.sourceAnalysis.nodes.filter((n) => n.kind === "output").map((n) => n.key).sort() : (data.outKeyRefs ?? []).map((c) => c.key).sort();
     if (
@@ -191,19 +204,24 @@ export const retrievalAnswersSchema = z
     message: z.string().trim().min(1),
   })
   .strict();
+export const submissionRecipeSchema = z.union([
+  packageRecipeSchema.omit({ packageSha256: true, executionInputSha256: true, executedCode: true }),
+  z.object({ kind: z.literal("metric"), metricId: z.string(), revision: z.string(),
+    parameters: runtimeJsonObjectSchema, bindingId: z.string().optional() }).strict(),
+]);
 export const prepareDatasetSchema = z
   .object({
-    recipe: recipeSchema,
+    recipe: submissionRecipeSchema,
     sourceAnalysis: querySubgraphSchema.optional(),
     title: z.string().min(1),
-    question: z.string().min(1),
+    question: z.string().min(1).optional(),
     assumptions: z.array(z.string()),
     metricUses: z.array(metricUseSchema),
     selfCheck: selfCheckSchema,
-    decisionIds: z.array(id),
+    decisionIds: z.array(id).optional(),
   })
   .strict().superRefine((data, context) => {
-    if (data.recipe.kind !== "metric" && !data.sourceAnalysis) context.addIssue({ code: z.ZodIssueCode.custom, message: "sourceAnalysis is required" });
+    if (data.sourceAnalysis) context.addIssue({ code: z.ZodIssueCode.custom, message: "Sources are derived from the query package" });
   });
 export type DatasetPayload = z.infer<typeof datasetPayloadSchema>;
 export type RetrievalInput = z.infer<typeof retrievalInputSchema>;

@@ -223,6 +223,9 @@ const ontologyEn = {
   actionsDesc:
     "Manage actions that can operate on business objects and their execution definitions.",
   generateFromNaturalLanguage: "New Action",
+  assetQueryPackage: "Query logic package (JSON)",
+  assetColumnLabels: "Column labels (JSON)",
+  assetLegacyPackageHint: "Convert this legacy program to a query package before saving changes. The saved program can still run.",
   functionsTitle: "Functions",
   functionsDesc: "Manage reusable Ontology query and write functions.",
   createFunction: "New Function",

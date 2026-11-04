@@ -526,8 +526,12 @@ describe("OntologyManager root component with real pages", () => {
   });
 
   it("round-trips owned bindings with typed values and removes one without changing the calculation", async () => {
-    metricDetail.function = { id: "function-1", name: "Revenue", operation: "OPERATION_READ", code: "shared code",
-      parameters: [{ name: "amount", type: "TYPE_NUMBER" }, { name: "region", type: "TYPE_STRING" }], returnDef: { classNames: [] } };
+    const queryPackage = { manifest: { schema: "ontomato.query-package.v1", entry: { kind: "dsl", query: "main" },
+      queries: { main: "q.json" }, modules: [], computation: null, parameterBindings: [],
+      parameterDefs: [{ name: "amount", type: "TYPE_NUMBER", value: null }, { name: "region", type: "TYPE_STRING", value: null }] },
+      files: [{ path: "q.json", content: "shared query" }] };
+    metricDetail.function = { id: "function-1", name: "Revenue", operation: "OPERATION_READ", queryPackage,
+      parameters: queryPackage.manifest.parameterDefs, returnDef: { classNames: [], columnLabels: {} } };
     metricDetail.bindings = [{ id: "saved-binding", name: "Existing", parameters: { amount: 7, region: "north" }, matchQuestions: [] }];
     const { root } = mountHost({ ...base, view: "/assets/metrics" });
     await settle();
@@ -544,9 +548,8 @@ describe("OntologyManager root component with real pages", () => {
     await settle(); clickButton("Save"); await settle();
     const saved = [...requests].reverse().find((r) => r.url.endsWith("/metricView/save"))!.body!;
     expect(saved.type).toBeUndefined();
-    expect(saved.function).toMatchObject({ id: "function-1", code: "shared code",
-      parameters: [{ name: "amount", type: "TYPE_NUMBER" }, { name: "region", type: "TYPE_STRING" }] });
-    expect((saved.function as { parameters: { value?: unknown }[] }).parameters.every((p) => p.value === undefined)).toBe(true);
+    expect(saved.function).toMatchObject({ id: "function-1", code: null, queryPackage });
+    expect((saved.function as { parameters: { value?: unknown }[] }).parameters.every((p) => p.value === null)).toBe(true);
     expect((saved.bindings as Record<string, unknown>[])[1]!.parameters).toEqual({ amount: 0, region: null });
     (root().querySelector(".resource-table-row") as HTMLButtonElement).click(); await settle();
     expect(root().querySelectorAll(".metric-binding")).toHaveLength(2);

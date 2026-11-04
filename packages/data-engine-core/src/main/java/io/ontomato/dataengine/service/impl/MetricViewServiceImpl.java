@@ -126,34 +126,23 @@ public class MetricViewServiceImpl implements MetricViewService {
     try (var generation =
         generationService.generateMetricView(sessionId, userMessage, lang, domainId)) {
       JSONObject envelope = generation.result();
-      String code = envelope.getString("code");
+      JSONObject bundle = envelope.getJSONObject("queryPackage");
       String name = envelope.getString("name");
       String logic = envelope.getString("logic");
-      JSONObject sourceAnalysis = envelope.getJSONObject("sourceAnalysis");
-      if (code == null || name == null || logic == null || sourceAnalysis == null) return null;
-      io.ontomato.dataengine.service.QuerySubgraphContract.validate(sourceAnalysis);
-      List<Parameter> parameters = new ArrayList<Parameter>();
-      if (envelope.containsKey("parameterDefs")) {
-        parameters =
-            DBSchemaUtil.buildParameters(
-                envelope.getJSONArray("parameterDefs").toList(Map.class), classDefs);
-      }
+      if (bundle == null || name == null || logic == null) return null;
       Function function = new Function();
       function.setOrigin(Function.ORIGIN_USER);
       function.setOperation(Function.OPERATION_READ);
       function.setDomainId(domainId);
       function.setName(name);
-      function.setParameters(parameters);
-      function.setCode(code);
+      function.setQueryPackage(bundle);
       function.setLogic(logic);
 
       ReturnDef returnDef = new ReturnDef();
       returnDef.setIsVoid(false);
-      List<String> classNames = sourceAnalysis.getJSONArray("nodes").stream().map(JSONObject::from)
-          .filter(n -> "class".equals(n.getString("kind"))).map(n -> n.getString("className")).distinct().toList();
-      returnDef.setSourceAnalysis(sourceAnalysis);
-      returnDef.setClassNames(classNames);
+      returnDef.setColumnLabels(envelope.getJSONObject("columnLabels"));
       function.setReturnDef(returnDef);
+      io.ontomato.dataengine.service.QueryPackage.prepareReadFunction(function, classDefs);
 
       MetricView metricView = generateFromFunction(function);
       metricView.setStatus(MetricView.STATUS_PUBLISHED);
@@ -221,6 +210,8 @@ public class MetricViewServiceImpl implements MetricViewService {
       }
     }
     function.setDomainId(domain);
+    io.ontomato.dataengine.service.QueryPackage.prepareReadFunction(function,
+        (List<Map<String, Object>>) adminService.getJSONRule(domain).get("classDef"));
     if (function.getOrigin() == null) function.setOrigin(Function.ORIGIN_USER);
     MetricViewBindings.validate(function, metric.getBindings());
     List<MetricView> sharing = function.getId() == null ? List.of() : queryList(null, function.getId(), null, domain);

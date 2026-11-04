@@ -11,6 +11,8 @@ export function projectDataset(
   payload: DatasetPayload,
   retrieval: QueryRetrievalRef,
 ): Dataset {
+  const bundle = "package" in payload.recipe ? payload.recipe.package : undefined;
+  const values = "parameters" in payload.recipe ? payload.recipe.parameters : {};
   const code =
     payload.recipe.kind === "python"
       ? payload.recipe.code
@@ -25,7 +27,12 @@ export function projectDataset(
     sourceAnalysis: payload.sourceAnalysis,
     retrieval,
     ...(payload.recipe.kind === "dsl" ? { dsl: payload.recipe.dsl } : {}),
-    ...(code
+    ...(bundle ? { abcProgram: {
+      title: payload.title, code: "", queryPackage: bundle, parameterValues: values,
+      sourceAnalysis: payload.sourceAnalysis, outKeyRefs: [],
+      parameters: bundle.manifest.parameterDefs.map((p) => ({ key: String(p.name),
+        type: typeof p.type === "string" ? p.type.replace(/^TYPE_/, "") : undefined, value: values[String(p.name)] })),
+    } } : code
       ? {
           abcProgram: {
             title: payload.title,

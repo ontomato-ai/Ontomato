@@ -99,6 +99,12 @@ rows = execute_dsl({"problem": "...", "answer": {"steps": []}})
 print(json.dumps({"answer": rows}, ensure_ascii=False))
 ```
 
+New read programs follow [query packages](query-package.md): Java submits the full
+files[] input and issues a package-read credential bound to its frozen package.
+`execute_dsl_file(path, parameter_values=None)` references only declared query files;
+Java resolves the original bytes and binds only declared values. Raw execute_dsl
+remains for persisted legacy programs and write-specific paths, not new read packages.
+
 Final execution starts with a fresh query-status marker and authorized queries;
 it does not inherit exploration outputs/completeness. Preserve zero-row partial
 results, null/false/zero and parameters. Write Functions keep their separately
