@@ -118,7 +118,7 @@ function handleAction() {
   border-radius: 12px;
   background: var(--observe-bg-card, var(--el-bg-color));
   padding: 10px 12px 8px;
-  box-shadow: 0 1px 3px var(--shadow-card);
+  box-shadow: none;
   transition:
     border-color var(--transition-fast),
     box-shadow var(--transition-fast);
@@ -132,7 +132,7 @@ function handleAction() {
 html.dark .chat-input-box {
   background: var(--observe-bg-card, var(--el-fill-color-dark));
   border-color: var(--observe-border, var(--el-border-color-dark));
-  box-shadow: 0 1px 3px var(--shadow-md);
+  box-shadow: none;
 }
 
 html.dark .chat-input-box--focused {

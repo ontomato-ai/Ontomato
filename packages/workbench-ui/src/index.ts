@@ -2,6 +2,11 @@ export { startWorkbenchWeb } from "./app/start";
 export { workbenchI18n, type SupportedLocale, type WorkbenchLanguage } from "./i18n";
 export type { WorkbenchAuthHost } from "./utils/auth";
 export type { TurnDiagnosisAccess } from "./features/diagnosis/access";
+export {
+  ontologyServiceAccessKey,
+  openOntologyServiceAccess,
+  type OntologyServiceAccess,
+} from "./app/ontology-service";
 export type { WorkbenchContent } from "./content";
 export {
   apiGet,

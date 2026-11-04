@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, inject, onBeforeUnmount, ref } from "vue";
-import { CalendarClock, Check, ChevronDown, SquarePen, Trash2 } from "lucide-vue-next";
+import { CalendarClock, Check, ChevronDown, ExternalLink, SquarePen, Trash2 } from "lucide-vue-next";
 import type { AgentHostAgent, AgentHostSession } from "@ontomato/contracts/agent-host";
 import type { ShellWorkbenchDeclaration } from "../types";
 import { shellContextKey } from "../context";
@@ -84,7 +84,7 @@ onBeforeUnmount(() => {
         :class="{ active: featureId === null && sessionId === null }"
         @click="emit('newConversation')"
       >
-        <SquarePen :size="17" />
+        <SquarePen :size="16" />
         <span class="nav-label">{{ labels.newConversation }}</span>
       </button>
       <template v-for="feature in workbench.features" :key="feature.id">
@@ -95,8 +95,15 @@ onBeforeUnmount(() => {
           target="_blank"
           rel="noopener"
         >
-          <component :is="featureIcon(feature.icon)" :size="17" />
+          <component :is="featureIcon(feature.icon)" :size="16" />
           <span class="nav-label">{{ feature.label }}</span>
+          <ExternalLink
+            class="external-mark"
+            :size="13"
+            :role="labels.opensInNewTab ? 'img' : undefined"
+            :aria-label="labels.opensInNewTab"
+            :aria-hidden="labels.opensInNewTab ? undefined : 'true'"
+          />
         </a>
         <div
           v-else-if="feature.availability === 'unavailable'"
@@ -104,7 +111,7 @@ onBeforeUnmount(() => {
           aria-disabled="true"
           :title="feature.hint || labels.unavailable"
         >
-          <component :is="featureIcon(feature.icon)" :size="17" />
+          <component :is="featureIcon(feature.icon)" :size="16" />
           <span class="nav-label">{{ feature.label }}</span>
           <span class="badge">{{ feature.hint || labels.unavailable }}</span>
         </div>
@@ -116,7 +123,7 @@ onBeforeUnmount(() => {
           :aria-current="featureId === feature.id ? 'page' : undefined"
           @click="feature.availability === 'action' ? emit('featureAction', feature.id) : emit('selectFeature', feature.id)"
         >
-          <component :is="featureIcon(feature.icon)" :size="17" />
+          <component :is="featureIcon(feature.icon)" :size="16" />
           <span class="nav-label">{{ feature.label }}</span>
         </button>
       </template>
@@ -208,62 +215,69 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
+/*
+ * The conversation shell's sidebar: on canvas with no divider, 32px navigation rows (DESIGN.md "Navigation row"),
+ * `label` group headings and single-line 32px conversation rows. The current row is the selected colour with ink text.
+ */
 .shell-sidebar {
   display: flex;
   flex-direction: column;
   height: 100%;
   min-height: 0;
-  padding: 14px 10px 10px;
+  padding: 0 8px 8px;
   box-sizing: border-box;
   color: var(--el-text-color-regular);
-  font-size: var(--text-sm, 13px);
+  font-size: var(--text-sm);
+  line-height: var(--leading-sm);
 }
 .brand {
   display: flex;
   align-items: center;
   gap: 10px;
-  min-height: 36px;
-  padding: 0 8px 12px;
+  height: var(--page-header-height);
+  padding: 0 8px;
+  flex-shrink: 0;
 }
 .brand-name {
-  font-size: var(--text-lg, 17px);
-  font-weight: 700;
+  font-size: var(--text-base);
+  font-weight: 600;
   color: var(--el-text-color-primary);
 }
 .features {
   display: flex;
   flex-direction: column;
-  gap: 1px;
+  gap: 2px;
+  padding-top: 4px;
 }
 .nav-item {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   width: 100%;
-  min-height: 36px;
-  padding: 0 10px;
+  height: var(--nav-row-height);
+  padding: 0 8px;
   box-sizing: border-box;
   border: 0;
-  border-radius: 10px;
+  border-radius: var(--radius-md);
   background: transparent;
   color: var(--el-text-color-regular);
   font: inherit;
-  font-weight: 500;
   text-align: left;
   text-decoration: none;
   cursor: pointer;
-  transition: background-color var(--transition-fast, 150ms);
+  transition: background-color var(--transition-fast);
 }
 .nav-item svg {
   flex-shrink: 0;
   color: var(--el-text-color-secondary);
 }
 .nav-item:hover:not(.unavailable) {
-  background: var(--el-fill-color);
+  background: var(--el-fill-color-light);
 }
 .nav-item.active {
-  background: var(--el-fill-color-dark);
+  background: var(--el-color-primary-light-9);
   color: var(--el-text-color-primary);
+  font-weight: 600;
 }
 .nav-item.active svg,
 .nav-item.primary svg {
@@ -276,6 +290,12 @@ onBeforeUnmount(() => {
 .nav-item.unavailable svg {
   color: var(--el-text-color-tertiary);
 }
+.external-mark {
+  flex-shrink: 0;
+}
+.nav-item svg.external-mark {
+  color: var(--el-text-color-tertiary);
+}
 .nav-label {
   flex: 1;
   min-width: 0;
@@ -285,11 +305,12 @@ onBeforeUnmount(() => {
 }
 .badge {
   flex-shrink: 0;
-  padding: 1px 7px;
-  border-radius: 999px;
+  padding: 0 6px;
+  border-radius: var(--radius-xs);
   background: var(--el-fill-color);
   color: var(--el-text-color-secondary);
-  font-size: var(--text-xs, 11px);
+  font-size: var(--text-xs);
+  line-height: var(--leading-xs);
   font-weight: 500;
 }
 .nav-item:focus-visible,
@@ -303,7 +324,7 @@ onBeforeUnmount(() => {
 }
 .agent-picker {
   position: relative;
-  margin: 14px 0 6px;
+  margin: 12px 0 4px;
 }
 .agent-trigger {
   display: grid;
@@ -311,24 +332,24 @@ onBeforeUnmount(() => {
   grid-template-rows: auto auto;
   align-items: center;
   width: 100%;
-  padding: 8px 12px;
+  padding: 6px 10px;
   border: 1px solid var(--el-border-color);
-  border-radius: 12px;
+  border-radius: var(--radius-md);
   background: var(--el-bg-color);
   color: inherit;
   font: inherit;
   text-align: left;
   cursor: pointer;
-  transition: border-color var(--transition-fast, 150ms);
+  transition: border-color var(--transition-fast);
 }
 .agent-trigger:hover {
   border-color: var(--el-border-color-dark);
 }
 .agent-caption {
   grid-column: 1;
-  font-size: var(--text-xs, 11px);
-  color: var(--el-text-color-tertiary);
-  letter-spacing: 0.02em;
+  font-size: var(--text-xs);
+  line-height: var(--leading-xs);
+  color: var(--el-text-color-secondary);
 }
 .agent-name {
   grid-column: 1;
@@ -342,7 +363,7 @@ onBeforeUnmount(() => {
   grid-column: 2;
   grid-row: 1 / 3;
   color: var(--el-text-color-secondary);
-  transition: transform var(--transition-fast, 150ms);
+  transition: transform var(--transition-fast);
 }
 .agent-chevron.open {
   transform: rotate(180deg);
@@ -350,25 +371,24 @@ onBeforeUnmount(() => {
 .agent-menu {
   position: absolute;
   z-index: 20;
-  top: calc(100% + 6px);
+  top: calc(100% + 4px);
   left: 0;
   right: 0;
   margin: 0;
-  padding: 6px;
+  padding: 4px;
   list-style: none;
-  border: 1px solid var(--el-border-color);
-  border-radius: 14px;
+  border-radius: var(--radius-md);
   background: var(--el-bg-color-overlay);
-  box-shadow: var(--shadow-dropdown, var(--el-shadow-md));
+  box-shadow: var(--elevation-overlay);
 }
 .agent-option {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   width: 100%;
-  padding: 8px 10px;
+  padding: 6px 8px;
   border: 0;
-  border-radius: 10px;
+  border-radius: var(--radius-sm);
   background: transparent;
   color: inherit;
   font: inherit;
@@ -376,7 +396,7 @@ onBeforeUnmount(() => {
   cursor: pointer;
 }
 .agent-option:hover {
-  background: var(--el-fill-color);
+  background: var(--el-fill-color-light);
 }
 .option-text {
   display: flex;
@@ -390,9 +410,9 @@ onBeforeUnmount(() => {
   color: var(--el-text-color-primary);
 }
 .option-description {
-  font-size: var(--text-xs, 12px);
+  font-size: var(--text-xs);
+  line-height: var(--leading-xs);
   color: var(--el-text-color-secondary);
-  line-height: 1.45;
 }
 .option-check {
   color: var(--el-color-primary);
@@ -405,13 +425,17 @@ onBeforeUnmount(() => {
   flex-direction: column;
 }
 .section-title {
-  padding: 10px 10px 6px;
-  font-size: var(--text-xs, 11px);
+  padding: 8px 8px 4px;
+  font-size: var(--text-xs);
+  line-height: var(--leading-xs);
   font-weight: 600;
-  color: var(--el-text-color-tertiary);
-  letter-spacing: 0.04em;
+  letter-spacing: var(--tracking-label);
+  color: var(--el-text-color-secondary);
 }
 .session-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
   list-style: none;
   margin: 0;
   padding: 0 0 8px;
@@ -422,14 +446,14 @@ onBeforeUnmount(() => {
   position: relative;
   display: flex;
   align-items: center;
-  border-radius: 10px;
-  transition: background-color var(--transition-fast, 150ms);
+  border-radius: var(--radius-md);
+  transition: background-color var(--transition-fast);
 }
 .session-item:hover {
-  background: var(--el-fill-color);
+  background: var(--el-fill-color-light);
 }
 .session-item.active {
-  background: var(--el-fill-color-dark);
+  background: var(--el-color-primary-light-9);
 }
 .session-open {
   display: flex;
@@ -437,10 +461,10 @@ onBeforeUnmount(() => {
   gap: 8px;
   flex: 1;
   min-width: 0;
-  height: 34px;
-  padding: 0 10px;
+  height: var(--nav-row-height);
+  padding: 0 8px;
   border: 0;
-  border-radius: 10px;
+  border-radius: var(--radius-md);
   background: transparent;
   color: var(--el-text-color-regular);
   font: inherit;
@@ -449,6 +473,7 @@ onBeforeUnmount(() => {
 }
 .session-item.active .session-open {
   color: var(--el-text-color-primary);
+  font-weight: 600;
 }
 .session-title {
   overflow: hidden;
@@ -462,26 +487,26 @@ onBeforeUnmount(() => {
   color: var(--el-text-color-tertiary);
 }
 .running {
-  width: 7px;
-  height: 7px;
+  width: 6px;
+  height: 6px;
   flex-shrink: 0;
-  border-radius: 50%;
+  border-radius: var(--radius-full);
   background: var(--el-color-primary);
   animation: breathe 1.6s ease-in-out infinite;
 }
 .session-delete {
   display: grid;
   place-items: center;
-  height: 28px;
-  min-width: 28px;
-  margin-right: 3px;
+  height: var(--control-height-sm);
+  min-width: var(--control-height-sm);
+  margin-right: 4px;
   padding: 0 6px;
   border: 0;
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
   background: transparent;
   color: var(--el-text-color-tertiary);
   font: inherit;
-  font-size: var(--text-xs, 12px);
+  font-size: var(--text-xs);
   cursor: pointer;
   opacity: 0;
 }
@@ -500,13 +525,13 @@ onBeforeUnmount(() => {
   font-weight: 600;
 }
 .session-note {
-  padding: 6px 10px;
-  color: var(--el-text-color-tertiary);
+  padding: 6px 8px;
+  color: var(--el-text-color-secondary);
 }
 .link {
   border: 0;
   background: none;
-  color: var(--el-color-primary);
+  color: var(--brand-link);
   font: inherit;
   cursor: pointer;
 }
@@ -514,11 +539,11 @@ onBeforeUnmount(() => {
   display: flex;
   flex-direction: column;
   gap: 10px;
-  padding: 8px 10px;
+  padding: 8px;
 }
 .session-skeleton span {
   height: 12px;
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   background: var(--el-fill-color);
 }
 .session-skeleton span:nth-child(2) {
@@ -529,20 +554,21 @@ onBeforeUnmount(() => {
 }
 .more {
   width: 100%;
-  height: 32px;
+  height: var(--nav-row-height);
+  padding: 0 8px;
   border: 0;
-  border-radius: 10px;
+  border-radius: var(--radius-md);
   background: transparent;
   color: var(--el-text-color-secondary);
   font: inherit;
+  text-align: left;
   cursor: pointer;
 }
 .more:hover {
-  background: var(--el-fill-color);
+  background: var(--el-fill-color-light);
 }
 .footer {
-  padding-top: 8px;
-  border-top: 1px solid var(--el-border-color-light);
+  padding-top: 4px;
 }
 .footer:empty {
   display: none;

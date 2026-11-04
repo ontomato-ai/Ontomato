@@ -73,39 +73,45 @@ defineExpose({ focus: () => input.value?.focus() });
 </template>
 
 <style scoped>
+/*
+ * The chat composer: a pill of the composer height (radius = height / 2) with a round send button. The conversation
+ * shell raises it through --shell-composer-shadow; embedded chats keep it flat.
+ */
 .composer {
   display: flex;
   align-items: flex-end;
-  gap: 10px;
-  padding: 10px 10px 10px 18px;
-  border: 1px solid var(--el-border-color);
-  border-radius: 24px;
+  gap: 8px;
+  min-height: var(--shell-composer-height);
+  padding: 7px 7px 7px 20px;
+  box-sizing: border-box;
+  border: 1px solid var(--el-border-color-dark);
+  border-radius: calc(var(--shell-composer-height) / 2);
   background: var(--el-bg-color);
-  box-shadow: var(--el-shadow-sm);
+  box-shadow: var(--shell-composer-shadow, none);
   transition:
-    border-color var(--transition-fast, 150ms),
-    box-shadow var(--transition-fast, 150ms);
+    border-color var(--transition-fast),
+    box-shadow var(--transition-fast);
 }
 .composer:focus-within {
-  border-color: var(--el-color-primary-light-5);
-  box-shadow: var(--el-shadow);
+  border-color: var(--el-color-primary);
 }
 .composer.disabled {
   opacity: 0.6;
 }
 textarea {
   flex: 1;
-  min-height: 24px;
+  min-height: var(--control-height-lg);
   max-height: 220px;
-  padding: 6px 0;
+  padding: 9px 0;
+  box-sizing: border-box;
   border: 0;
   outline: none;
   resize: none;
   background: transparent;
   color: var(--el-text-color-primary);
   font: inherit;
-  font-size: var(--text-base, 15px);
-  line-height: 1.55;
+  font-size: var(--text-base);
+  line-height: var(--leading-base);
 }
 textarea::placeholder {
   color: var(--el-text-color-placeholder);
@@ -113,24 +119,24 @@ textarea::placeholder {
 .composer-button {
   display: grid;
   place-items: center;
-  width: 36px;
-  height: 36px;
+  width: var(--control-height-lg);
+  height: var(--control-height-lg);
   flex-shrink: 0;
   border: 0;
-  border-radius: 50%;
+  border-radius: var(--radius-full);
   background: var(--el-color-primary);
-  color: var(--on-primary, #fff);
+  color: var(--on-primary);
   cursor: pointer;
   transition:
-    background-color var(--transition-fast, 150ms),
-    opacity var(--transition-fast, 150ms);
+    background-color var(--transition-fast),
+    opacity var(--transition-fast);
 }
 .composer-button:hover:not(:disabled) {
-  background: var(--el-color-primary-dark-2);
+  background: var(--brand-primary-hover);
 }
 .composer-button:disabled {
-  background: var(--el-fill-color-dark);
-  color: var(--el-text-color-tertiary);
+  background: var(--el-fill-color);
+  color: var(--el-text-color-disabled);
   cursor: default;
 }
 .composer-button.stop {

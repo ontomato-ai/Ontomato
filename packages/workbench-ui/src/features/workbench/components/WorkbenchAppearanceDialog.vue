@@ -4,12 +4,9 @@ import { ElMessage } from "element-plus";
 import { useI18n } from "vue-i18n";
 import type { WorkbenchAppearance } from "@ontomato/contracts/workbench-appearance";
 import { getWorkbenchAppearance, saveWorkbenchAppearance } from "../api";
-import { workbenchContent } from "../../../content";
 
-const { serviceDisplayName } = workbenchContent();
-
-/** Edits the workbench brand. */
-defineProps<{ defaultLogo: string }>();
+/** Edits the workbench brand; the preview shows what the sidebar will show, with the edition's defaults. */
+defineProps<{ defaultLogo: string; defaultBrandName: string }>();
 const emit = defineEmits<{ close: []; saved: [value: WorkbenchAppearance] }>();
 const { t } = useI18n();
 const draft = ref<WorkbenchAppearance | null>(null);
@@ -121,8 +118,8 @@ async function save() {
           <div class="brand-preview">
             <img :src="draft.brand.logo || defaultLogo" alt="Logo" />
             <div>
-              <strong>{{ draft.brand.name.trim() || serviceDisplayName }}</strong>
-              <small>{{ draft.brand.subtitle.trim() || t("app.subtitle") }}</small>
+              <strong>{{ draft.brand.name.trim() || defaultBrandName }}</strong>
+              <small v-if="draft.brand.subtitle.trim()">{{ draft.brand.subtitle.trim() }}</small>
             </div>
           </div>
           <el-form-item label="Logo">
@@ -147,14 +144,10 @@ async function save() {
             </el-button>
           </el-form-item>
           <el-form-item :label="t('common.name')">
-            <el-input v-model="draft.brand.name" maxlength="40" :placeholder="serviceDisplayName" />
+            <el-input v-model="draft.brand.name" maxlength="40" :placeholder="defaultBrandName" />
           </el-form-item>
           <el-form-item :label="t('appearance.subtitle')">
-            <el-input
-              v-model="draft.brand.subtitle"
-              maxlength="120"
-              :placeholder="t('app.subtitle')"
-            />
+            <el-input v-model="draft.brand.subtitle" maxlength="120" />
           </el-form-item>
         </fieldset>
       </el-form>

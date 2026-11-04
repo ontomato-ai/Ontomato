@@ -21,13 +21,15 @@ import TurnDiagnoseButton from "../../diagnosis/components/TurnDiagnoseButton.vu
 import ConversationActions from "./ConversationActions.vue";
 import DatasetActions from "./DatasetActions.vue";
 import WorkbenchAppearanceDialog from "./WorkbenchAppearanceDialog.vue";
+import { workbenchFeatures } from "../features";
+import { useOntologyServiceAccess } from "../../../app/ontology-service";
 
 /**
  * The one business workbench both editions mount. Editions add their own feature entries and
  * render those pages through the `feature` slot; everything else is shared.
  */
 const props = defineProps<{
-  /** Edition-specific entries, placed after the shared dashboard entry. */
+  /** Edition-specific entries, placed after the shared dashboard entry (see workbenchFeatures). */
   features?: ShellFeatureDeclaration[];
   defaultLogo: string;
   defaultBrandName: string;
@@ -41,6 +43,7 @@ const WORKBENCH_ID = "business";
 const AGENT_KEY = "ontomato.workbench.agent";
 
 const { t } = useI18n();
+const ontologyService = useOntologyServiceAccess();
 const client = createAssistantClient();
 const feedback = createAssistantFeedback();
 const dashboards = useDashboardStore();
@@ -69,14 +72,7 @@ watch(agentId, (id) => {
 const workbench = computed<ShellWorkbenchDeclaration>(() => ({
   id: WORKBENCH_ID,
   label: appearance.value?.brand.name || props.defaultBrandName,
-  features: [
-    { id: "dashboards", label: t("assistant.featureDashboards"), icon: "dashboard", availability: "page" },
-    ...(props.features ?? []),
-    ...(props.canManageAgents
-      ? [{ id: "agent-config", label: t("assistant.featureAgentConfig"), icon: "agents", availability: "page" as const }]
-      : []),
-    { id: "schedule", label: t("assistant.featureSchedule"), icon: "schedule", availability: "page" },
-  ],
+  features: workbenchFeatures(t, props.features ?? [], props.canManageAgents, ontologyService.visible()),
 }));
 
 const labels = useShellLabels();
@@ -160,6 +156,7 @@ function appearanceSaved(value: WorkbenchAppearance) {
   <WorkbenchAppearanceDialog
     v-if="editingBrand"
     :default-logo="defaultLogo"
+    :default-brand-name="defaultBrandName"
     @close="editingBrand = false"
     @saved="appearanceSaved"
   />
@@ -169,17 +166,17 @@ function appearanceSaved(value: WorkbenchAppearance) {
 .brand {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   min-width: 0;
-  border-radius: 10px;
+  border-radius: var(--radius-sm);
 }
 .brand:focus-visible {
   outline: 2px solid var(--el-color-primary);
   outline-offset: 2px;
 }
 .brand-logo {
-  width: 30px;
-  height: 30px;
+  width: 24px;
+  height: 24px;
   object-fit: contain;
   flex-shrink: 0;
 }
@@ -190,7 +187,8 @@ function appearanceSaved(value: WorkbenchAppearance) {
 }
 .brand-name {
   font-size: var(--text-base);
-  font-weight: 700;
+  line-height: var(--leading-sm);
+  font-weight: 600;
   color: var(--el-text-color-primary);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -198,6 +196,7 @@ function appearanceSaved(value: WorkbenchAppearance) {
 }
 .brand-subtitle {
   font-size: var(--text-xs);
+  line-height: var(--leading-xs);
   color: var(--el-text-color-secondary);
   overflow: hidden;
   text-overflow: ellipsis;

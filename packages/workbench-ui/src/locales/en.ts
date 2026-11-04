@@ -207,7 +207,7 @@ export default {
     "agentsAndSkills": "Agents and Skills",
     "businessAgents": "Business Agents",
     "skills": "Skills",
-    "ontologyManager": "Ontology Manager",
+    "ontologyManager": "Ontology Service",
     "systemAgents": "System Agents",
     "mcpService": "MCP Service",
     "systemConfig": "System Configuration",
@@ -343,7 +343,7 @@ export default {
     "cancelled": "Cancelled"
   },
   "app": {
-    "subtitle": "Intelligent Data Analysis Platform"
+    "name": "Agent Platform"
   },
   "diagnosis": {
     "promptTranscript": {
@@ -620,6 +620,8 @@ export default {
     "featureDashboards": "Dashboards",
     "featureAgentConfig": "Agent settings",
     "featureSchedule": "Scheduled tasks",
+    "featureOntologyService": "Ontology Service",
+    "opensInNewTab": "Opens in a new tab",
     "previousPage": "Previous page",
     "nextPage": "Next page",
     "toolRead": "Read",

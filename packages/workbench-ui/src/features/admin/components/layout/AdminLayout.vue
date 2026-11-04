@@ -11,14 +11,17 @@ import {
   ArrowLeft,
   Loader2,
   Languages,
+  ExternalLink,
 } from "lucide-vue-next";
 import { useTheme } from "../../../../composables/useTheme";
 import { useLocale } from "../../../../composables/useLocale";
 import { workbenchLanguage } from "../../../../i18n";
 import { adminAccessKey, type AdminLayoutConfig, type AdminMenuItem } from "../../navigation";
+import { useOntologyServiceAccess } from "../../../../app/ontology-service";
 
 const props = defineProps<AdminLayoutConfig>();
 provide(adminAccessKey, props.access);
+const ontologyService = useOntologyServiceAccess();
 
 const router = useRouter();
 const route = useRoute();
@@ -98,13 +101,15 @@ onBeforeUnmount(() => {
 const canSeeItem = (item: AdminMenuItem) => item.permissions.some((p) => props.access.can(p));
 
 // A tab is visible if it has permission itself or at least one menu item in its group does; menu items are filtered one by one.
+// The Ontology Service link tab follows the app's OntologyServiceAccess, the same answer as the function-area link.
 // Landing path when switching groups: the group's first visible menu item. Link tabs only open their page.
 const navGroups = computed(() =>
   props.groups
-    .filter(
-      (group) =>
-        props.access.can(group.permission) ||
-        props.items.some((item) => item.groupKey === group.key && canSeeItem(item))
+    .filter((group) =>
+      group.href
+        ? ontologyService.visible()
+        : props.access.can(group.permission) ||
+          props.items.some((item) => item.groupKey === group.key && canSeeItem(item))
     )
     .map((group) => {
       const items = props.items
@@ -241,6 +246,7 @@ function openObserve() {
             >
               <el-icon><component :is="group.icon" /></el-icon>
               <span>{{ group.title }}</span>
+              <ExternalLink class="external-mark" :size="12" aria-hidden="true" />
             </a>
             <div
               v-else
@@ -359,11 +365,16 @@ function openObserve() {
 </template>
 
 <style scoped>
+/*
+ * Agent Platform admin: the layout is unchanged; colours and components follow DESIGN.md. The header is surface
+ * with a hairline, the navigation sits on canvas with 32px rows, the workspace is surface.
+ */
 .admin-layout {
   height: 100vh;
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  background: var(--el-bg-color);
 }
 
 .admin-layout :deep(button),
@@ -388,7 +399,7 @@ function openObserve() {
   justify-content: center;
   gap: var(--spacing-md);
   color: var(--el-text-color-secondary);
-  font-size: var(--text-md);
+  font-size: var(--text-base);
 }
 
 .permission-empty .el-button {
@@ -396,15 +407,14 @@ function openObserve() {
 }
 
 .admin-header {
-  height: 64px;
+  height: var(--page-header-height);
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 var(--spacing-xl);
+  padding: 0 var(--spacing-lg);
   background: var(--el-bg-color);
   border-bottom: 1px solid var(--el-border-color);
   flex-shrink: 0;
-  box-shadow: var(--shadow-sm);
 }
 
 .header-left {
@@ -415,9 +425,9 @@ function openObserve() {
 
 .back-btn {
   color: var(--el-text-color-secondary);
-  padding: var(--spacing-sm);
-  border-radius: var(--radius-md);
-  transition: all var(--transition-base);
+  padding: 0 var(--spacing-sm);
+  border-radius: var(--radius-sm);
+  transition: all var(--transition-fast);
 }
 
 .back-btn:hover {
@@ -437,28 +447,32 @@ function openObserve() {
 
 .header-title {
   font-size: var(--text-lg);
+  line-height: var(--leading-lg);
   font-weight: var(--font-semibold);
   color: var(--el-text-color-primary);
-  letter-spacing: -0.01em;
 }
 
+/* Segmented control (DESIGN.md "Segmented control / tabs"): 28px segments on a sunken track. */
 .header-tabs {
   display: flex;
   align-items: center;
-  gap: var(--spacing-xs);
-  padding: var(--spacing-xs);
-  background: var(--el-fill-color-light);
-  border-radius: var(--radius-lg);
+  gap: 2px;
+  padding: 2px;
+  background: var(--el-fill-color);
+  border-radius: var(--radius-sm);
 }
 
 .tab-item {
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: var(--spacing-sm) var(--spacing-md);
-  border-radius: var(--radius-md);
+  height: 28px;
+  padding: 0 var(--spacing-md);
+  border-radius: var(--radius-xs);
   cursor: pointer;
-  transition: all var(--transition-base);
+  transition:
+    background-color var(--transition-fast),
+    color var(--transition-fast);
   color: var(--el-text-color-regular);
   font-size: var(--text-sm);
   font-weight: var(--font-medium);
@@ -468,17 +482,22 @@ function openObserve() {
 
 .tab-item:hover {
   color: var(--el-text-color-primary);
-  background: var(--el-fill-color);
+  background: var(--el-fill-color-light);
 }
 
 .tab-link {
   text-decoration: none;
 }
 
+.tab-link .external-mark {
+  flex-shrink: 0;
+  color: var(--el-text-color-tertiary);
+}
+
 .tab-item.active {
-  color: var(--on-primary);
-  background: var(--el-color-primary);
-  box-shadow: var(--shadow-primary);
+  color: var(--el-text-color-primary);
+  background: var(--el-bg-color);
+  font-weight: var(--font-semibold);
 }
 
 .tab-item .el-icon {
@@ -504,9 +523,9 @@ function openObserve() {
 
 .logout-btn {
   color: var(--el-text-color-secondary);
-  padding: var(--spacing-sm);
-  border-radius: var(--radius-md);
-  transition: all var(--transition-base);
+  padding: 0 var(--spacing-sm);
+  border-radius: var(--radius-sm);
+  transition: all var(--transition-fast);
 }
 
 .logout-btn:hover {
@@ -527,7 +546,7 @@ function openObserve() {
 
 .admin-aside {
   width: 220px;
-  background: var(--el-bg-color);
+  background: var(--el-bg-color-page);
   border-right: 1px solid var(--el-border-color);
   display: flex;
   flex-direction: column;
@@ -545,20 +564,20 @@ function openObserve() {
 }
 
 .aside-header {
-  height: 48px;
+  height: var(--panel-header-height);
   display: flex;
   align-items: center;
   justify-content: flex-end;
-  padding: 0 var(--spacing-md);
-  border-bottom: 1px solid var(--el-border-color-light);
+  padding: 0 var(--spacing-sm);
   flex-shrink: 0;
 }
 
 .collapse-btn {
-  padding: var(--spacing-sm);
+  width: var(--control-height);
+  padding: 0;
   color: var(--el-text-color-secondary);
-  border-radius: var(--radius-md);
-  transition: all var(--transition-base);
+  border-radius: var(--radius-sm);
+  transition: all var(--transition-fast);
 }
 
 .collapse-btn:hover {
@@ -571,17 +590,29 @@ function openObserve() {
   border-right: none;
   background: transparent;
   overflow-y: auto;
-  padding: var(--spacing-sm) 0;
+  padding: 0 0 var(--spacing-sm);
 }
 
+/* Navigation rows (DESIGN.md "Navigation row"): 32px, highlight inset 8px, current = selected with ink and 600. */
 .admin-menu :deep(.el-menu-item) {
-  height: 44px;
-  line-height: 44px;
+  height: var(--nav-row-height);
+  line-height: var(--nav-row-height);
   margin: 2px var(--spacing-sm);
+  padding: 0 var(--spacing-sm) !important;
   border-radius: var(--radius-md);
-  transition: all var(--transition-base);
-  font-size: 13px;
+  transition:
+    background-color var(--transition-fast),
+    color var(--transition-fast);
+  font-size: var(--text-sm);
+  color: var(--el-text-color-regular);
   overflow: hidden;
+}
+
+.admin-menu :deep(.el-menu-item .el-icon) {
+  width: 16px;
+  margin-right: var(--spacing-sm);
+  font-size: 16px;
+  color: var(--el-text-color-secondary);
 }
 
 .menu-item-title {
@@ -602,32 +633,24 @@ function openObserve() {
 }
 
 .admin-menu :deep(.el-menu-item:hover) {
-  background-color: var(--el-fill-color);
+  background-color: var(--el-fill-color-light);
 }
 
 .admin-menu :deep(.el-menu-item.is-active) {
   background-color: var(--el-color-primary-light-9);
-  color: var(--el-color-primary);
-  font-weight: var(--font-medium);
+  color: var(--el-text-color-primary);
+  font-weight: var(--font-semibold);
 }
 
-.admin-menu :deep(.el-menu-item.is-active::before) {
-  content: "";
-  position: absolute;
-  left: 0;
-  top: 50%;
-  transform: translateY(-50%);
-  width: 3px;
-  height: 20px;
-  background: var(--el-color-primary);
-  border-radius: 0 2px 2px 0;
+.admin-menu :deep(.el-menu-item.is-active .el-icon) {
+  color: var(--el-color-primary);
 }
 
 /* Centre icons when collapsed - consistent with the collapse button */
 .admin-aside.collapsed .admin-menu :deep(li.el-menu-item) {
-  margin: 4px auto !important;
-  width: 40px !important;
-  height: 40px !important;
+  margin: 2px auto !important;
+  width: var(--control-height) !important;
+  height: var(--control-height) !important;
   padding: 0 !important;
   padding-left: 0 !important;
   border-radius: var(--radius-md) !important;
@@ -650,16 +673,11 @@ function openObserve() {
 
 .admin-aside.collapsed .admin-menu :deep(.el-menu-item .el-icon) {
   margin: 0 !important;
-  font-size: 18px !important;
+  font-size: 16px !important;
 }
 
 .admin-aside.collapsed .admin-menu :deep(.el-menu-item.is-active) {
   background-color: var(--el-color-primary-light-9) !important;
-  color: var(--el-color-primary) !important;
-}
-
-.admin-aside.collapsed .admin-menu :deep(.el-menu-item.is-active::before) {
-  display: none !important;
 }
 
 .admin-aside.collapsed .admin-menu :deep(.el-menu-item span) {
@@ -671,7 +689,7 @@ function openObserve() {
   flex: 1;
   padding: var(--spacing-xl);
   overflow-y: auto;
-  background: var(--el-bg-color-page);
+  background: var(--el-bg-color);
   min-width: 0;
   min-height: 0;
 }
@@ -682,7 +700,7 @@ function openObserve() {
   display: flex;
   flex-direction: column;
   min-width: 0;
-  background: var(--el-bg-color-page);
+  background: var(--el-bg-color);
 }
 
 /* Title and description share one baseline row; the description wraps below on narrow screens. */
@@ -701,8 +719,8 @@ function openObserve() {
 
 .admin-page-heading h1 {
   margin: 0;
-  font-size: var(--text-xl);
-  line-height: 1.4;
+  font-size: var(--text-lg);
+  line-height: var(--leading-lg);
   font-weight: var(--font-semibold);
   color: var(--el-text-color-primary);
 }
@@ -710,7 +728,7 @@ function openObserve() {
 .admin-page-heading p {
   margin: 0;
   font-size: var(--text-sm);
-  line-height: 1.5;
+  line-height: var(--leading-sm);
   color: var(--el-text-color-secondary);
 }
 
@@ -754,7 +772,8 @@ function openObserve() {
   padding: var(--spacing-sm);
 }
 
-.header-tabs.is-compact .tab-item span {
+.header-tabs.is-compact .tab-item span,
+.header-tabs.is-compact .tab-item .external-mark {
   display: none;
 }
 </style>
@@ -778,28 +797,30 @@ function openObserve() {
 .lang-popup {
   position: fixed;
   width: 160px;
-  background: var(--el-bg-color);
-  border: 1px solid var(--el-border-color);
-  border-radius: 12px;
-  box-shadow: var(--shadow-dropdown);
+  background: var(--el-bg-color-overlay);
+  border-radius: var(--radius-md);
+  box-shadow: var(--elevation-overlay);
   padding: 4px;
   z-index: 2201;
-  animation: menuSlideUp 0.15s ease;
+  animation: menuSlideUp var(--transition-base);
 }
 .lang-popup-item {
-  padding: 8px 12px;
-  border-radius: 8px;
-  font-size: 13px;
+  display: flex;
+  align-items: center;
+  height: var(--nav-row-height);
+  padding: 0 var(--spacing-sm);
+  border-radius: var(--radius-sm);
+  font-size: var(--text-sm);
   color: var(--el-text-color-regular);
   cursor: pointer;
-  transition: background 0.12s;
+  transition: background-color var(--transition-fast);
 }
 .lang-popup-item:hover {
   background: var(--el-fill-color-light);
 }
 .lang-item-active {
-  background: var(--el-fill-color-light);
+  background: var(--el-color-primary-light-9);
   font-weight: 600;
-  color: var(--el-color-primary);
+  color: var(--el-text-color-primary);
 }
 </style>

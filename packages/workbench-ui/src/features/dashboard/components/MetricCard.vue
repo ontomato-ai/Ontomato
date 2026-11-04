@@ -145,7 +145,7 @@ onBeforeUnmount(() => {
   grid-column: span var(--col-span, 1);
   grid-row: span var(--row-span, 1);
   display: block;
-  border-radius: var(--radius-2xl);
+  border-radius: var(--radius-md);
   border: 1px solid var(--el-border-color);
   box-shadow: var(--shadow-card);
   height: 102px;
@@ -169,7 +169,7 @@ onBeforeUnmount(() => {
   text-align: center;
   padding: 16px;
   height: 100%;
-  border-radius: var(--radius-2xl);
+  border-radius: var(--radius-md);
 }
 
 .title-row {
@@ -237,7 +237,7 @@ onBeforeUnmount(() => {
 .value {
   display: flex;
   font-size: 32px;
-  font-weight: var(--font-bold);
+  font-weight: var(--font-semibold);
   color: var(--el-text-color-primary);
   line-height: 1;
   min-width: 0;
