@@ -13,7 +13,6 @@
     <Rewrite name="ServiceEvents"><ServiceLogPolicy/><AppenderRef ref="ServiceConsole"/><AppenderRef ref="ServiceFile"/></Rewrite>
   </Appenders>
   <Loggers>
-    <!-- Provider HTTP debug output contains credentials and model payloads. -->
     <Root level="${env:LOG_LEVEL:-INFO}"><AppenderRef ref="ServiceEvents"/></Root>
   </Loggers>
 </Configuration>
