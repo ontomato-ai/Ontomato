@@ -56,6 +56,7 @@ interface AnalysisAgentRow {
   enabled_skill_ids: string[] | null;
   enabled_visualization_skill_ids: string[] | null;
   enabled_mcp_service_names: string[] | null;
+  enabled_action_ids: string[] | null;
   class_names: string[] | null;
   graph_scope: unknown;
   is_enabled: boolean;
@@ -177,6 +178,7 @@ export class AnalysisAgentService {
         ? await this.getDefaultVisualizationSkillIds(domainId)
         : agent.enabledVisualizationSkillIds;
     const enabledMcpServiceNames = normalizeStringList(agent.enabledMcpServiceNames);
+    const enabledActionIds = normalizeStringList(agent.enabledActionIds);
     const classNames = normalizeStringList(agent.classNames);
     const graphScope = normalizeAnalysisGraphScope(agent.graphScope);
     await this.validateSkillSelections(enabledSkillIds, SkillCategory.ANALYSIS, domainId);
@@ -194,8 +196,9 @@ export class AnalysisAgentService {
         analysis_dimension_prompt, summarizer_prompt,
         conclusion_maker_prompt, enabled_skill_ids, enabled_visualization_skill_ids,
         enabled_mcp_service_names, class_names, is_enabled, sort_order, domain_id,
-         report_deliverable_enabled, hot_report_enabled, summary_position, graph_scope, created_at, updated_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22)`,
+         report_deliverable_enabled, hot_report_enabled, summary_position, graph_scope, created_at, updated_at,
+         enabled_action_ids)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23)`,
       [
         id,
         agent.name,
@@ -223,6 +226,7 @@ export class AnalysisAgentService {
         graphScope,
         now,
         now,
+        enabledActionIds,
       ]
     );
     logger.info(tApp("analysis.config.agent-service.3", { id: id, name: agent.name }));
@@ -247,6 +251,9 @@ export class AnalysisAgentService {
     }
     if (updates.enabledMcpServiceNames !== undefined) {
       updates.enabledMcpServiceNames = normalizeStringList(updates.enabledMcpServiceNames);
+    }
+    if (updates.enabledActionIds !== undefined) {
+      updates.enabledActionIds = normalizeStringList(updates.enabledActionIds);
     }
     if (updates.classNames !== undefined) {
       updates.classNames = normalizeStringList(updates.classNames);
@@ -291,6 +298,10 @@ export class AnalysisAgentService {
     if (updates.enabledMcpServiceNames !== undefined) {
       vals.push(updates.enabledMcpServiceNames);
       sets.push(`enabled_mcp_service_names = $${idx++}`);
+    }
+    if (updates.enabledActionIds !== undefined) {
+      vals.push(updates.enabledActionIds);
+      sets.push(`enabled_action_ids = $${idx++}`);
     }
     if (updates.loopPrompt !== undefined) {
       vals.push(updates.loopPrompt);
@@ -463,6 +474,7 @@ function mapAgentRow(row: AnalysisAgentRow): AnalysisAgent {
     enabledSkillIds: row.enabled_skill_ids || [],
     enabledVisualizationSkillIds: row.enabled_visualization_skill_ids || [],
     enabledMcpServiceNames: row.enabled_mcp_service_names || [],
+    enabledActionIds: row.enabled_action_ids || [],
     classNames: row.class_names || [],
     graphScope: normalizeAnalysisGraphScope(row.graph_scope),
     isEnabled: row.is_enabled,

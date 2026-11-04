@@ -229,7 +229,10 @@ async function backendRequest(
       const response = await fetch(url, {
         method,
         headers: options.headers ?? buildBackendHeaders(token, userId, locale, apiKey),
-        ...(method === "POST" ? { body: JSON.stringify(body) } : {}),
+        // A form body is sent as is; the caller sets its content type.
+        ...(method === "POST"
+          ? { body: body instanceof URLSearchParams ? body : JSON.stringify(body) }
+          : {}),
         signal: abortBridge.signal,
         dispatcher: backendDispatcher,
       } as NonNullable<Parameters<typeof fetch>[1]> & { dispatcher: Agent });

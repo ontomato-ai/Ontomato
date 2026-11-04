@@ -30,6 +30,7 @@ import {
   type ReportSection,
 } from "../../../utils/analysis-report";
 import { buildTaskProgressMap } from "../utils/taskProgress";
+import { buildScheduleExpression, type ScheduleSettings } from "../utils/schedule-expression";
 import { downloadPptx, type PptGenerationOptions } from "../utils/ppt";
 import { workbenchContent } from "../../../content";
 
@@ -1077,8 +1078,6 @@ export const useAnalysisStore = defineStore("analysis", () => {
     params?: {
       scheduleEnabled: boolean;
       scheduleExpression: string;
-      scheduleFrequency: string;
-      scheduleTime: string;
       emailEnabled: boolean;
       emailRecipient: string;
     }
@@ -1139,27 +1138,10 @@ export const useAnalysisStore = defineStore("analysis", () => {
     await refresh;
   }
 
-  function saveSchedule(settings: {
-    frequency: string;
-    time: string;
-    dayOfWeek: number;
-    dayOfMonth: number;
-    emailNotify: boolean;
-    emails: string;
-  }) {
+  function saveSchedule(settings: ScheduleSettings & { emailNotify: boolean; emails: string }) {
     const task = currentTask.value;
     if (!task) return;
-    const scheduleMap: Record<string, string> = {
-      [t("analysis.everyDay")]: "1d",
-      [t("analysis.everyWeek")]: "7d",
-      [t("analysis.everyMonth")]: "30d",
-    };
-    let scheduleExpression = `${scheduleMap[settings.frequency] || "1d"}@${settings.time}`;
-    if (settings.frequency === t("analysis.everyWeek")) {
-      scheduleExpression += `/${settings.dayOfWeek}`;
-    } else if (settings.frequency === t("analysis.everyMonth")) {
-      scheduleExpression += `/${settings.dayOfMonth}`;
-    }
+    const scheduleExpression = buildScheduleExpression(settings);
 
     analysisTaskApi
       .updateTask(task.id, {

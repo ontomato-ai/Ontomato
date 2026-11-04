@@ -40,7 +40,7 @@ export const ossIdentity: WorkbenchIdentity = {
   },
 
   async resolveMcpCaller() {
-    return { userId: "system", domainId: "default" };
+    return { userId: "system", userName: "system", domainId: "default" };
   },
 
   async resolveSkillResourceDomain(req) {

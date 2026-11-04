@@ -351,6 +351,7 @@ router.post(
     const requestSeq = await startConversationTurn(task.id, task.domainId, req.body.message, {
       token: authReq.token,
       apiKey: authReq.apiKey,
+      userName: authReq.userName,
     });
     if (requestSeq === null) {
       throw new HttpError(409, t("api.taskIsRunning"));
@@ -613,6 +614,7 @@ router.post(
         await startConversationTurn(task.id, task.domainId, body.question, {
           token: authReq.token,
           apiKey: authReq.apiKey,
+          userName: authReq.userName,
         });
       } else {
         executeTask(task.id, task.domainId).catch((error) => {
@@ -668,7 +670,7 @@ router.post(
         task.id,
         task.domainId,
         task.question || task.name,
-        { token: requestToken || task.token }
+        { token: requestToken || task.token, userName: (req as AuthenticatedRequest).userName }
       );
       if (requestSeq === null) {
         throw new HttpError(409, t("api.taskIsRunning"));

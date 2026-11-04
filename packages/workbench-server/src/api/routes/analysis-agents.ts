@@ -35,6 +35,15 @@ const router: ReturnType<typeof Router> = Router();
 
 const INVALID_EXECUTION_MODE_ERROR = `executionMode must be one of: ${ANALYSIS_AGENT_EXECUTION_MODES.join(", ")}`;
 
+function assertOptionalStringArray(value: unknown, field: string): void {
+  if (
+    value !== undefined &&
+    (!Array.isArray(value) || value.some((item: unknown) => typeof item !== "string" || !item.trim()))
+  ) {
+    throw new HttpError(400, `${field} must be a string array`);
+  }
+}
+
 function deepAnalysisRunKey(threadId: string): string {
   return `analysis-deep:${threadId}`;
 }
@@ -127,6 +136,7 @@ router.post(
         enabledSkillIds,
         enabledVisualizationSkillIds,
         enabledMcpServiceNames,
+        enabledActionIds,
         classNames,
         graphScope,
         isEnabled,
@@ -169,13 +179,8 @@ router.post(
       if (reportDeliverableEnabled === false && resolvedExecutionMode !== "loop") {
         throw new HttpError(400, "Normal Harness requires loop execution");
       }
-      if (
-        enabledMcpServiceNames !== undefined &&
-        (!Array.isArray(enabledMcpServiceNames) ||
-          enabledMcpServiceNames.some((name: unknown) => typeof name !== "string" || !name.trim()))
-      ) {
-        throw new HttpError(400, "enabledMcpServiceNames must be a string array");
-      }
+      assertOptionalStringArray(enabledMcpServiceNames, "enabledMcpServiceNames");
+      assertOptionalStringArray(enabledActionIds, "enabledActionIds");
 
       const service = await getAnalysisAgentService();
       const agent = await service.createAgent(
@@ -194,6 +199,7 @@ router.post(
           enabledSkillIds,
           enabledVisualizationSkillIds,
           enabledMcpServiceNames: enabledMcpServiceNames ?? [],
+          enabledActionIds: enabledActionIds ?? [],
            classNames: Array.isArray(classNames) ? classNames : [],
            graphScope: normalizeAnalysisGraphScope(graphScope),
           isEnabled: isEnabled !== false,
@@ -222,8 +228,14 @@ router.put(
   "/:id",
   asyncHandler(async (req: Request, res: Response) => {
     try {
-      const { executionMode, reportDeliverableEnabled, hotReportEnabled, summaryPosition, enabledMcpServiceNames } =
-        req.body ?? {};
+      const {
+        executionMode,
+        reportDeliverableEnabled,
+        hotReportEnabled,
+        summaryPosition,
+        enabledMcpServiceNames,
+        enabledActionIds,
+      } = req.body ?? {};
       if (executionMode !== undefined && !isAnalysisAgentExecutionMode(executionMode)) {
         throw new HttpError(400, INVALID_EXECUTION_MODE_ERROR);
       }
@@ -239,13 +251,8 @@ router.put(
           `summaryPosition must be one of: ${ANALYSIS_REPORT_SUMMARY_POSITIONS.join(", ")}`
         );
       }
-      if (
-        enabledMcpServiceNames !== undefined &&
-        (!Array.isArray(enabledMcpServiceNames) ||
-          enabledMcpServiceNames.some((name: unknown) => typeof name !== "string" || !name.trim()))
-      ) {
-        throw new HttpError(400, "enabledMcpServiceNames must be a string array");
-      }
+      assertOptionalStringArray(enabledMcpServiceNames, "enabledMcpServiceNames");
+      assertOptionalStringArray(enabledActionIds, "enabledActionIds");
 
       const service = await getAnalysisAgentService();
       const existing = await service.getAgent(

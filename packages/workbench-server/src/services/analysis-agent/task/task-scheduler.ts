@@ -3,7 +3,7 @@ import { getAnalysisTaskService } from "./task-service";
 import { getAnalysisScheduleRuleService } from "./schedule-rules";
 import { getAnalysisAgentService } from "../runtime";
 import { startAnalysisTaskRun } from "./task-runner";
-import { parseScheduleToNextRun } from "./schedule-parser";
+import { nextRunAfterSlot } from "./schedule-parser";
 import { currentAnalysisRunId } from "./run-history";
 import { config } from "../../../config/application";
 import type { AnalysisScheduleRule } from "./schedule-rules";
@@ -22,7 +22,7 @@ const CHECK_INTERVAL_MS = 30000;
  * and the slot must land in the future or the scheduler's 30s poll would re-select the same rule every time.
  */
 function nextRunSlot(rule: AnalysisScheduleRule, triggeredAt: number): number {
-  const parsed = parseScheduleToNextRun(rule.scheduleExpression, triggeredAt);
+  const parsed = nextRunAfterSlot(rule.scheduleExpression, rule.nextRunAt, triggeredAt);
   if (parsed && parsed > Date.now()) return parsed;
   logger.warn(tApp("analysis.task.task-scheduler.423"), {
     ruleId: rule.id,
@@ -136,14 +136,21 @@ export async function startConversationTurn(
   taskId: string,
   domainId: string,
   message: string,
-  credentials: { token?: string; apiKey?: string } = {}
+  caller: ConversationTurnCaller = {}
 ): Promise<number | null> {
   const turn = await getAnalysisTaskService().claimConversationTurn(taskId, message);
   if (!turn) return null;
-  void runConversationTurn(taskId, domainId, turn, credentials).catch((error) =>
+  void runConversationTurn(taskId, domainId, turn, caller).catch((error) =>
     logger.error(tApp("analysis.task.task-scheduler.432", { taskId: taskId }), { error })
   );
   return turn.requestSeq;
+}
+
+/** The verified caller of a turn: its credentials and the name the agent addresses. */
+export interface ConversationTurnCaller {
+  token?: string;
+  apiKey?: string;
+  userName?: string;
 }
 
 /** Every regular-session turn goes through the loop: entry credentials win, falling back to the token saved on the task row. */
@@ -151,7 +158,7 @@ async function runConversationTurn(
   taskId: string,
   domainId: string,
   turn: AnalysisConversationTurnRecord,
-  credentials: { token?: string; apiKey?: string }
+  caller: ConversationTurnCaller
 ): Promise<void> {
   const taskService = getAnalysisTaskService();
   const agentService = await getAnalysisAgentService();
@@ -177,9 +184,10 @@ async function runConversationTurn(
   }
 
   const { completion } = await startAnalysisTaskRun({
-    task: { ...task, token: credentials.token ?? task.token, question: turn.userMessage },
+    task: { ...task, token: caller.token ?? task.token, question: turn.userMessage },
     agent,
-    apiKey: credentials.apiKey,
+    apiKey: caller.apiKey,
+    userName: caller.userName,
     conversationTurn: turn,
   });
   await completion;

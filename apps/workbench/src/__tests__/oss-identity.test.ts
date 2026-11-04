@@ -30,6 +30,7 @@ describe("oss identity", () => {
     const req = { header: () => "secret", query: { apiKey: "secret" } } as never;
     await expect(workbenchIdentity().resolveMcpCaller(req, "tool-key")).resolves.toEqual({
       userId: "system",
+      userName: "system",
       domainId: "default",
     });
     await expect(

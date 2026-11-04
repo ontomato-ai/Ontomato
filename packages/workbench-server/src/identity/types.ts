@@ -53,7 +53,7 @@ export interface WorkbenchIdentity {
   resolveMcpCaller(
     req: Request,
     toolApiKey?: string
-  ): Promise<{ userId: string; domainId: string; token?: string; apiKey?: string }>;
+  ): Promise<{ userId: string; userName?: string; domainId: string; token?: string; apiKey?: string }>;
   /** `/api/skills/resources`. Enterprise verifies credentials first then requires the domain; OSS uses default directly. */
   resolveSkillResourceDomain(req: Request): Promise<SkillResourceDomainResult | SkillResourceDomainFailure>;
   /** Knowledge governance and skill writes. OSS allows all; enterprise goes through menu permissions. */
