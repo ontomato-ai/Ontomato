@@ -61,17 +61,42 @@ watch(code, () => highlight());
 .dsl-pre {
   margin: 0;
   padding: 10px 12px;
-  background: #fff;
-  border: 1px solid rgba(0, 0, 0, 0.08);
-  border-radius: 8px;
+  background: var(--el-fill-color);
+  border: 1px solid var(--el-border-color);
+  border-radius: var(--radius-md);
   max-height: 64vh;
   overflow: auto;
-  font-size: 12px;
-  line-height: 1.5;
+  color: var(--el-text-color-primary);
+  font-family: var(--font-mono);
+  font-size: var(--text-mono);
+  line-height: var(--leading-mono);
   white-space: pre;
 }
 
 .dsl-pre :deep(code) {
   font-family: var(--font-mono);
+  text-shadow: none;
+  color: inherit;
+}
+
+/* JSON tokens on the role colours so the block reads in both modes (Prism's own theme is light only). */
+.dsl-pre :deep(.token.property) {
+  color: var(--brand-link);
+}
+
+.dsl-pre :deep(.token.string) {
+  color: var(--el-color-success);
+}
+
+.dsl-pre :deep(.token.number),
+.dsl-pre :deep(.token.boolean),
+.dsl-pre :deep(.token.null) {
+  color: var(--el-color-warning);
+}
+
+.dsl-pre :deep(.token.punctuation),
+.dsl-pre :deep(.token.operator) {
+  color: var(--el-text-color-secondary);
+  background: none;
 }
 </style>

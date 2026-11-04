@@ -1,5 +1,8 @@
 import { contrastRatio, mix, rgbTriplet } from "./color";
 
+/** Colour arithmetic for consumers that derive further shades from a brand source (chart gradients, ramps). */
+export { mix, rgbTriplet } from "./color";
+
 /*
  * @ontomato/design-tokens: the design foundation and the brand layer of docs/design/DESIGN.md as code, free of
  * application code, so the workbench and the Ontology Manager page both depend on this package alone.

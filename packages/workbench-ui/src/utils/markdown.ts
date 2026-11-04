@@ -34,7 +34,7 @@ export function renderMarkdown(text: string): string {
 
   for (const block of blocks) {
     const escaped = escapeAttr(withSkillResourceCredentials(block.html));
-    const iframeHtml = `<div class="chart-section"><div class="chart-wrapper"><iframe srcdoc="${escaped}" class="visualization-iframe" sandbox="allow-scripts allow-same-origin" style="width:100%;height:400px;border:1px solid #e2e8f0;border-radius:8px;"></iframe></div></div>`;
+    const iframeHtml = `<div class="chart-section"><div class="chart-wrapper"><iframe srcdoc="${escaped}" class="visualization-iframe" sandbox="allow-scripts allow-same-origin" style="width:100%;height:400px;border:1px solid var(--el-border-color);border-radius:8px;"></iframe></div></div>`;
     result = result.replace(block.fullMatch, iframeHtml);
   }
 

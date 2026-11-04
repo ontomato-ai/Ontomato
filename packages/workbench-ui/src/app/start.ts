@@ -9,14 +9,15 @@ import { installErrorPunctuation, type ErrorPunctuation } from "../utils/error-p
 import { installWorkbenchContent, type WorkbenchContent } from "../content";
 import { turnDiagnosisAccessKey, type TurnDiagnosisAccess } from "../features/diagnosis/access";
 import { installBrandTheme, type BrandSource } from "@ontomato/design-tokens";
+import { installWorkbenchBrand } from "../brand";
 
 export interface WorkbenchWebOptions {
-  /** This edition's brand source; the workbench colour variables are generated from it. */
+  /** This edition's brand source; the workbench colour variables and the chart colours are generated from it. */
   brand: BrandSource;
   language: WorkbenchLanguage;
   auth: WorkbenchAuthHost;
   errorPunctuation: ErrorPunctuation;
-  /** Static workbench content (original matching rules, sentences and colours; module-level code reads it at call time). */
+  /** Static workbench content (original matching rules and sentences; module-level code reads it at call time). */
   content: WorkbenchContent;
   /** Visibility of the chat turn diagnosis entry (components read it via inject). */
   turnDiagnosis: TurnDiagnosisAccess;
@@ -34,6 +35,7 @@ export interface WorkbenchWebOptions {
  */
 export function startWorkbenchWeb(options: WorkbenchWebOptions): void {
   installBrandTheme(options.brand);
+  installWorkbenchBrand(options.brand);
   installAuthHost(options.auth);
   installErrorPunctuation(options.errorPunctuation);
   installWorkbenchContent(options.content);

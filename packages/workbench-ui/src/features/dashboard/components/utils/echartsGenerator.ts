@@ -6,8 +6,10 @@
 
 import { t } from "../../../../i18n";
 import { workbenchContent } from "../../../../content";
+import { areaGradientStops, barGradientStops, currentChartPalette } from "../../chart-palette";
 
-const chartColors = () => workbenchContent().dashboard.chartColors;
+/** Colours come from the installed brand's chart palette in the mode shown when the option is generated. */
+const chartColors = () => currentChartPalette();
 const reasonText = () => workbenchContent().dashboard.healthReasons;
 
 
@@ -104,9 +106,7 @@ function wrapLabel(s, maxCharsPerLine = 6, maxLines = 2) {
 }
 
 function createBarGradient(color) {
-  const presets = workbenchContent().dashboard.barGradients;
-
-  const pair = presets[color] || [color, color];
+  const pair = barGradientStops(color, chartColors().surface);
 
   return {
     type: "linear",
@@ -128,10 +128,7 @@ function createBarGradient(color) {
 }
 
 function createAreaGradient(color) {
-  const dashboard = workbenchContent().dashboard;
-  const map = dashboard.areaGradients;
-
-  const colors = map[color] || dashboard.defaultAreaGradient;
+  const colors = areaGradientStops(color);
 
   return {
     type: "linear",
@@ -157,7 +154,7 @@ function createAreaGradient(color) {
 }
 
 function getThemeColor(index) {
-  const colors = workbenchContent().dashboard.series;
+  const colors = chartColors().series;
   return colors[index % colors.length];
 }
 
@@ -705,7 +702,7 @@ export class EchartsGenerator {
       },
       itemStyle: {
         color: lineColor,
-        borderColor: "#fff",
+        borderColor: chartColors().surface,
         borderWidth: 2,
       },
       areaStyle: {
@@ -753,12 +750,12 @@ export class EchartsGenerator {
           center: ["50%", "50%"],
           itemStyle: {
             borderRadius: 10,
-            borderColor: "#fff",
+            borderColor: chartColors().surface,
             borderWidth: 3,
           },
           label: {
             show: true,
-            color: chartColors().labelSecondary,
+            color: chartColors().textSecondary,
             formatter: (p) => `${truncateLabel(p.name, 10)}  ${defaultFormatter(p.value)}`,
           },
           data: items.map((d, i) => ({
@@ -801,12 +798,12 @@ export class EchartsGenerator {
           avoidLabelOverlap: true,
           itemStyle: {
             borderRadius: 10,
-            borderColor: "#fff",
+            borderColor: chartColors().surface,
             borderWidth: 3,
           },
           label: {
             show: true,
-            color: chartColors().labelSecondary,
+            color: chartColors().textSecondary,
             formatter: (p) => `${truncateLabel(p.name, 10)}  ${defaultFormatter(p.value)}`,
           },
           labelLine: { length: 20, length2: 10 },
@@ -929,7 +926,7 @@ export class EchartsGenerator {
           },
           itemStyle: {
             color: getThemeColor(0),
-            borderColor: "#fff",
+            borderColor: chartColors().surface,
             borderWidth: 2,
           },
           data: seriesData,
@@ -958,7 +955,7 @@ export class EchartsGenerator {
           emphasis: { focus: "adjacency" },
           label: {
             formatter: (p) => truncateLabel(p.name, 12),
-            color: chartColors().labelSecondary,
+            color: chartColors().textSecondary,
           },
           data: nodes.map((node, i) => ({
             ...node,
@@ -1002,11 +999,11 @@ export class EchartsGenerator {
           max: paddedMax,
         })),
         axisName: {
-          color: chartColors().labelSecondary,
+          color: chartColors().textSecondary,
         },
         splitLine: {
           lineStyle: {
-            color: chartColors().radarSplitLine,
+            color: chartColors().line,
           },
         },
       },
@@ -1026,7 +1023,7 @@ export class EchartsGenerator {
           },
           itemStyle: {
             color: primaryColor,
-            borderColor: "#fff",
+            borderColor: chartColors().surface,
             borderWidth: 2,
           },
           emphasis: {
@@ -1136,7 +1133,7 @@ export class EchartsGenerator {
           minAngle: leafCount > 24 ? 2 : 1,
           emphasis: { focus: "ancestor" },
           itemStyle: {
-            borderColor: "#fff",
+            borderColor: chartColors().surface,
             borderWidth: 2,
           },
           label: {
@@ -1159,7 +1156,7 @@ export class EchartsGenerator {
               r0: `${innerRadius + ringWidth * idx}%`,
               r: `${innerRadius + ringWidth * (idx + 1)}%`,
               itemStyle: {
-                borderColor: "#fff",
+                borderColor: chartColors().surface,
                 borderWidth: 2,
               },
               label: {
@@ -1200,11 +1197,11 @@ export class EchartsGenerator {
           label: {
             show: true,
             formatter: (p) => truncateLabel(p.name, 10),
-            color: "#ffffff",
+            color: chartColors().surface,
           },
           itemStyle: {
             gapWidth: 2,
-            borderColor: "#ffffff",
+            borderColor: chartColors().surface,
             borderWidth: 1,
           },
           data: items.map((d, i) => ({
@@ -1290,7 +1287,7 @@ export class EchartsGenerator {
           },
           itemStyle: {
             color: primaryColor,
-            borderColor: "#fff",
+            borderColor: chartColors().surface,
             borderWidth: 2,
           },
           areaStyle: {
@@ -1328,12 +1325,12 @@ export class EchartsGenerator {
             show: true,
             position: "outside",
             formatter: (p) => `${truncateLabel(p.name, 12)}  ${defaultFormatter(p.value)}`,
-            color: chartColors().labelSecondary,
+            color: chartColors().textSecondary,
           },
           labelLine: { length: 12, length2: 10 },
           itemStyle: {
             borderWidth: 1,
-            borderColor: "#fff",
+            borderColor: chartColors().surface,
           },
           data: rows.map((d, i) => ({
             name: d.name,
@@ -1374,7 +1371,7 @@ export class EchartsGenerator {
             roundCap: true,
             lineStyle: {
               width: 18,
-              color: [[1, chartColors().gaugeTrack]],
+              color: [[1, chartColors().sunken]],
             },
           },
           axisTick: { show: false },
@@ -1382,7 +1379,7 @@ export class EchartsGenerator {
             length: 15,
             lineStyle: {
               width: 2,
-              color: chartColors().gaugeTrack,
+              color: chartColors().sunken,
             },
           },
           axisLabel: { show: false },
@@ -1399,7 +1396,7 @@ export class EchartsGenerator {
             valueAnimation: true,
             fontSize: 34,
             fontWeight: 700,
-            color: chartColors().label,
+            color: chartColors().text,
             offsetCenter: [0, "70%"],
             formatter: () => formatPercent(p),
           },
