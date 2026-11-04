@@ -111,9 +111,6 @@ const paired = computed(() => props.feature?.withConversation === true);
   flex-shrink: 0;
   border-bottom: 1px solid var(--el-border-color);
 }
-.pane-menu {
-  display: none;
-}
 .pane-icon {
   flex-shrink: 0;
   color: var(--el-text-color-secondary);
@@ -149,6 +146,10 @@ const paired = computed(() => props.feature?.withConversation === true);
 .pane-button:focus-visible {
   outline: 2px solid var(--el-color-primary);
 }
+/* The menu opens the navigation drawer, which only exists below 760px. */
+.pane-button.pane-menu {
+  display: none;
+}
 .pane-body {
   flex: 1;
   min-height: 0;
@@ -177,7 +178,7 @@ const paired = computed(() => props.feature?.withConversation === true);
   }
 }
 @media (max-width: 760px) {
-  .pane-menu {
+  .pane-button.pane-menu {
     display: grid;
   }
   .page-pane.full {
