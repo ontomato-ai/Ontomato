@@ -31,6 +31,8 @@ const { message } = useManagerFeedback();
 const { getMetas, loadObjectData } = useManagerClient();
 const context = useManagerContext();
 const props = defineProps<{ initialClass?: string }>();
+/** The object type on show, whether it came from `initialClass` or from the type selector. */
+const emit = defineEmits<{ classChange: [className: string] }>();
 const graphSummaryTarget = ref<HTMLElement | null>(null);
 
 interface ClassDef {
@@ -340,6 +342,10 @@ function exportExcel() {
 
 onMounted(() => {
   loadClassList();
+});
+
+watch(selectedClass, (className) => {
+  if (className) emit("classChange", className);
 });
 
 watch(

@@ -119,13 +119,26 @@ const RelationDetailPage = defineComponent({
   },
 });
 
-const DataBrowserPage = defineComponent({
-  name: "ManagerDataBrowserPage",
-  props: { className: { type: String, default: "" } },
-  setup(props) {
-    return () => h("section", { class: "legacy-surface" }, [h(DataBrowser, { initialClass: props.className })]);
-  },
-});
+/** Where the data browser last was, kept per router so that the navigation entry returns to that object type. */
+interface DataBrowserMemory {
+  className: string;
+}
+
+function dataBrowserPage(memory: DataBrowserMemory) {
+  return defineComponent({
+    name: "ManagerDataBrowserPage",
+    props: { className: { type: String, default: "" } },
+    setup(props) {
+      const router = useRouter();
+      const onClassChange = (className: string) => {
+        memory.className = className;
+        if (className !== props.className) void router.replace({ name: "manager-data", params: { className } });
+      };
+      return () =>
+        h("section", { class: "legacy-surface" }, [h(DataBrowser, { initialClass: props.className, onClassChange })]);
+    },
+  });
+}
 
 const AssetCatalogPage = defineComponent({
   name: "ManagerAssetCatalogPage",
@@ -227,6 +240,7 @@ const stringParam = (name: string) => (route: { params: Record<string, unknown> 
  * the navigation highlight read. The addresses are the ones the Manager has always used, so old deep links still land.
  */
 export function managerRoutes(): RouteRecordRaw[] {
+  const dataBrowser: DataBrowserMemory = { className: "" };
   return [
     {
       path: "",
@@ -256,9 +270,13 @@ export function managerRoutes(): RouteRecordRaw[] {
         {
           path: `${managerPaths.dataBrowser}/:className?`,
           name: "manager-data",
-          component: DataBrowserPage,
+          component: dataBrowserPage(dataBrowser),
           props: stringParam("className"),
           meta: { page: managerPaths.dataBrowser },
+          beforeEnter: (to) =>
+            !to.params.className && dataBrowser.className
+              ? { name: "manager-data", params: { className: dataBrowser.className } }
+              : true,
         },
         ...ASSET_KINDS.flatMap((kind) => [
           { path: `/assets/${kind}`, component: AssetCatalogPage, props: { kind }, meta: { page: `/assets/${kind}` } },

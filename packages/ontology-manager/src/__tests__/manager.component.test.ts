@@ -665,6 +665,13 @@ describe("Manager pages in the service router", () => {
     await settle();
     expect(views.at(-1)).toBe("/data/Order");
 
+    // The navigation entry (a bare /data) returns to the object type last on show.
+    host.view = "/objects";
+    await settle();
+    host.view = "/data";
+    await settle();
+    expect(views.at(-1)).toBe("/data/Order");
+
     host.view = "/unknown";
     await settle();
     expect(views.at(-1)).toBe("/playground");
