@@ -4,7 +4,7 @@ import en from "element-plus/es/locale/lang/en";
 import { createPlatformI18n } from "../i18n";
 import { providePlatformHost, type PlatformPageHost } from "../context";
 import { openAccess } from "../navigation";
-import { ossNavigation } from "../pages";
+import { ossPlatformPages, platformGroups } from "../pages";
 import type { PlatformApi } from "../api";
 import platformEn from "../locales/en";
 import { ossSystemConfig } from "../../../../apps/ontology-manager/src/system-config";
@@ -25,11 +25,10 @@ export function testHost(api: Partial<PlatformApi>, overrides: Partial<PlatformP
       theme: ref("light"),
       setTheme: () => {},
     },
-    navigation: computed(() => ossNavigation),
+    navigation: computed(() => ({ groups: [platformGroups.platform], pages: ossPlatformPages })),
     account: null,
-    actions: [],
+    links: [],
     navigationHidden: computed(() => false),
-    openWorkspace: () => {},
     systemConfig: ossSystemConfig,
     separators: { detail: ": " },
     ...overrides,

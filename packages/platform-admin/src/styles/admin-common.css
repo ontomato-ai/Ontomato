@@ -1,97 +1,115 @@
-/* Shared admin page styles the moved pages were written against; values copied from the workbench admin-common.css. */
-.platform-document .toolbar,
-.platform-document .admin-toolbar {
-  display: flex !important;
-  align-items: center !important;
-  flex-wrap: wrap !important;
-  gap: var(--spacing-sm) !important;
-  height: 54px;
-  margin-bottom: var(--spacing-lg) !important;
-  padding: 10px 12px !important;
-  background: var(--el-bg-color) !important;
-  border: 1px solid var(--el-border-color) !important;
-  border-radius: var(--radius-sm) !important;
+/*
+ * Shared rules of the platform administration pages (the layout's page body and the standalone super admin console
+ * carry .platform-page). Data shell rules from DESIGN.md: toolbars are a row of controls, not a card; content blocks
+ * are bordered surfaces with rounded.md and no shadow. Scoped to .platform-page so the Manager pages on the same
+ * document keep their own toolbars.
+ */
+.platform-page .toolbar,
+.platform-page .admin-toolbar {
+  display: flex;
+  min-height: 40px;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--spacing-sm);
+  margin-bottom: var(--spacing-md);
 }
 
-.platform-document .toolbar .el-button,
-.platform-document .admin-toolbar .el-button {
-  margin-left: 0 !important;
+.platform-page .toolbar .el-button,
+.platform-page .admin-toolbar .el-button {
+  margin-left: 0;
 }
 
-.platform-document .toolbar .el-input,
-.platform-document .toolbar .el-select,
-.platform-document .toolbar .el-date-editor,
-.platform-document .admin-toolbar .el-input,
-.platform-document .admin-toolbar .el-select,
-.platform-document .admin-toolbar .el-date-editor {
+.platform-page .toolbar .el-input,
+.platform-page .toolbar .el-select,
+.platform-page .toolbar .el-date-editor,
+.platform-page .admin-toolbar .el-input,
+.platform-page .admin-toolbar .el-select,
+.platform-page .admin-toolbar .el-date-editor {
   max-width: 100%;
 }
 
-.platform-document .toolbar .search-input,
-.platform-document .admin-toolbar .search-input {
+.platform-page .toolbar .search-input,
+.platform-page .admin-toolbar .search-input {
   width: 240px;
 }
 
-.platform-document .toolbar .toolbar-actions,
-.platform-document .admin-toolbar .toolbar-actions,
-.platform-document .toolbar .toolbar-right,
-.platform-document .admin-toolbar .toolbar-right {
-  margin-left: auto;
+.platform-page .toolbar .toolbar-actions,
+.platform-page .admin-toolbar .toolbar-actions,
+.platform-page .toolbar .toolbar-right,
+.platform-page .admin-toolbar .toolbar-right {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
   gap: var(--spacing-sm);
+  margin-inline-start: auto;
 }
 
-.platform-document .admin-card {
-  padding: var(--spacing-lg);
+.platform-page .admin-card {
   margin-bottom: var(--spacing-lg);
+  padding: var(--spacing-lg);
   border: 1px solid var(--el-border-color);
-  border-radius: var(--radius-2xl);
+  border-radius: var(--radius-md);
   background: var(--el-bg-color);
-  box-shadow: var(--shadow-card);
 }
 
-.platform-document .admin-card .el-button--primary,
-.platform-document .admin-dialog .el-button--primary,
-.platform-document .admin-toolbar .el-button--primary {
-  box-shadow: none;
-}
-
-.platform-document .admin-pagination {
+.platform-page .admin-pagination {
   display: flex;
   justify-content: flex-end;
-  margin-top: var(--spacing-lg);
+  margin-top: var(--spacing-md);
 }
 
-.platform-document .admin-form .el-form-item {
+.platform-page .admin-form .el-form-item {
   margin-bottom: var(--spacing-lg);
 }
 
-.platform-document .admin-empty {
+.platform-page .admin-empty {
   padding: var(--spacing-3xl) 0;
   color: var(--el-text-color-secondary);
   text-align: center;
 }
 
-.platform-document .admin-table {
-  --el-table-border-color: var(--el-border-color-light);
+/* Table: a line border with rounded.md, 1px line between rows, head on sunken (foundation sets the head colour). */
+.platform-page .admin-table {
+  --el-table-border-color: var(--el-border-color);
+  border: 1px solid var(--el-border-color);
+  border-radius: var(--radius-md);
+}
+
+.platform-page .admin-table::before,
+.platform-page .admin-table .el-table__inner-wrapper::before {
+  display: none;
+}
+
+.platform-page .admin-table th.el-table__cell {
+  height: var(--table-head-height);
+  padding: 0;
+  color: var(--el-text-color-secondary);
+  font-size: var(--text-xs);
+  font-weight: var(--font-semibold);
+}
+
+.platform-page .admin-table td.el-table__cell {
+  height: var(--table-row-height);
+  padding: 0;
+  font-size: var(--text-sm);
+}
+
+.platform-page .admin-table .el-table__body tr:last-child td.el-table__cell {
+  border-bottom: 0;
 }
 
 @media (max-width: 768px) {
-  .platform-document .toolbar,
-  .platform-document .admin-toolbar {
-    height: auto;
-    min-height: 54px;
-    align-items: stretch !important;
+  .platform-page .toolbar,
+  .platform-page .admin-toolbar {
+    align-items: stretch;
   }
 
-  .platform-document .toolbar .el-input,
-  .platform-document .toolbar .el-select,
-  .platform-document .toolbar .el-date-editor,
-  .platform-document .admin-toolbar .el-input,
-  .platform-document .admin-toolbar .el-select,
-  .platform-document .admin-toolbar .el-date-editor {
+  .platform-page .toolbar .el-input,
+  .platform-page .toolbar .el-select,
+  .platform-page .toolbar .el-date-editor,
+  .platform-page .admin-toolbar .el-input,
+  .platform-page .admin-toolbar .el-select,
+  .platform-page .admin-toolbar .el-date-editor {
     width: 100% !important;
   }
 }

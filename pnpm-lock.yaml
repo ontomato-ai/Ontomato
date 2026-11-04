@@ -78,6 +78,9 @@ importers:
       element-plus:
         specifier: 2.13.6
         version: 2.13.6(typescript@5.9.3)(vue@3.5.30(typescript@5.9.3))
+      lucide-vue-next:
+        specifier: 1.0.0
+        version: 1.0.0(vue@3.5.30(typescript@5.9.3))
       vue:
         specifier: 3.5.30
         version: 3.5.30(typescript@5.9.3)
@@ -314,6 +317,12 @@ importers:
       vue:
         specifier: 3.5.30
         version: 3.5.30(typescript@5.9.3)
+      vue-i18n:
+        specifier: 10.0.8
+        version: 10.0.8(vue@3.5.30(typescript@5.9.3))
+      vue-router:
+        specifier: 5.0.4
+        version: 5.0.4(@vue/compiler-sfc@3.5.30)(pinia@3.0.4(typescript@5.9.3)(vue@3.5.30(typescript@5.9.3)))(vue@3.5.30(typescript@5.9.3))
     devDependencies:
       '@types/markdown-it':
         specifier: 14.1.2

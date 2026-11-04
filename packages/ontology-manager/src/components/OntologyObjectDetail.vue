@@ -324,9 +324,10 @@ onMounted(() => void loadDetail());
 }
 .detail-titlebar {
   display: flex;
-  min-height: 64px;
+  height: var(--page-header-height);
+  flex: 0 0 var(--page-header-height);
   align-items: center;
-  padding: 0 var(--spacing-2xl);
+  padding: 0 var(--spacing-lg);
   border-bottom: 1px solid var(--el-border-color);
   background: var(--el-bg-color);
 }
@@ -362,8 +363,8 @@ onMounted(() => void loadDetail());
 .detail-body {
   display: grid;
   grid-template-columns: minmax(300px, 0.9fr) minmax(460px, 1.5fr);
-  gap: var(--spacing-xl);
-  padding: var(--spacing-xl) var(--spacing-2xl);
+  gap: var(--spacing-lg);
+  padding: var(--spacing-lg);
 }
 .definition-section {
   grid-row: span 2;
@@ -374,7 +375,7 @@ onMounted(() => void loadDetail());
   min-width: 0;
   padding: var(--spacing-lg);
   border: 1px solid var(--el-border-color);
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-md);
   background: var(--el-bg-color);
 }
 .section-title {

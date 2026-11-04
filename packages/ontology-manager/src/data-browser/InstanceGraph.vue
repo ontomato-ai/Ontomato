@@ -24,6 +24,7 @@ import { ElButton, ElPopover, ElSelect, ElOption, ElCheckbox, ElSwitch, ElSelect
 import { useManagerFeedback } from "../feedback";
 import type { InstanceGraphEdge, InstanceGraphNode, InstanceGraphResult, InstanceGraphSummary } from "../api";
 import { useManagerClient, useManagerContext, useOntologyText, useSharedText } from "../context";
+import { readGraphColors } from "../graph-colors";
 import {
   drawInstanceGraphBatches,
   GRAPH_BATCH_SIZE,
@@ -137,19 +138,7 @@ function colorForClass(className: string) {
 }
 
 function graphColors() {
-  const styles = getComputedStyle(graphRef.value!);
-  const dark = context.theme === "dark";
-  return {
-    text: dark ? "#f4f6ff" : styles.getPropertyValue("--el-text-color-primary").trim() || "#1b2559",
-    muted: dark
-      ? "#c4cce8"
-      : styles.getPropertyValue("--el-text-color-secondary").trim() || "#6b7a99",
-    surface: dark ? "#181a2e" : styles.getPropertyValue("--el-bg-color").trim() || "#fff",
-    edge: dark ? "#7180a8" : styles.getPropertyValue("--el-border-color-dark").trim() || "#dce3f4",
-    nodeStroke: dark ? "#303858" : styles.getPropertyValue("--el-bg-color").trim() || "#fff",
-    shadow: dark ? "rgba(0, 0, 0, 0.48)" : "rgba(30, 42, 90, 0.16)",
-    primary: styles.getPropertyValue("--el-color-primary").trim() || "#5b3fff",
-  };
+  return readGraphColors(graphRef.value!);
 }
 
 function seededRandom(seed = 20261008) {
@@ -1001,14 +990,10 @@ onBeforeUnmount(() => {
   flex: 1;
   overflow: hidden;
   border: 1px solid var(--el-border-color);
-  border-radius: var(--radius-sm);
-  background-color: var(--el-bg-color-page);
-  background-image: radial-gradient(var(--el-border-color-dark) 1px, transparent 1px);
-  background-size: 18px 18px;
-}
-.ontology-manager.is-dark .instance-graph {
-  background-color: #0a0b16;
-  background-image: radial-gradient(#3a4265 1px, transparent 1px);
+  border-radius: var(--radius-md);
+  background-color: var(--el-bg-color);
+  background-image: radial-gradient(var(--el-border-color) 1px, transparent 1px);
+  background-size: 20px 20px;
 }
 .graph-canvas {
   position: relative;

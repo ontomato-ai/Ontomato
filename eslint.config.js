@@ -101,17 +101,30 @@ export default [
     },
   },
   {
-    // Manager components consume only the context the host passes in; they do not depend on
-    // host routes, a global message instance or a store.
     files: ["packages/ontology-manager/src/**/*.{ts,vue}"],
     rules: {
       // DOM type names (such as RequestInit) are not runtime globals; undefined identifiers
       // are checked by vue-tsc.
       "no-undef": "off",
+    },
+  },
+  {
+    // Manager components consume only what the Manager installs in the page (context, client, text
+    // helpers) and report navigation through events; they do not depend on the router, the page's
+    // vue-i18n instance or a store. Only the route table, the frame around the pages and the context
+    // module bind them to the service page's one router and one vue-i18n (2026-11-04 shell unification).
+    files: ["packages/ontology-manager/src/**/*.{ts,vue}"],
+    ignores: [
+      "packages/ontology-manager/src/routes.ts",
+      "packages/ontology-manager/src/context.ts",
+      "packages/ontology-manager/src/ManagerFrame.vue",
+      "packages/ontology-manager/src/**/__tests__/**",
+    ],
+    rules: {
       "no-restricted-imports": restrict([
         {
           regex: "^(vue-router|vue-i18n|pinia)(/|$)",
-          message: "Manager components must not depend on host routes, a global message instance or a store; use the context passed in by the host",
+          message: "Manager components must not depend on the router, the page's vue-i18n or a store; use the Manager context, its text helpers and events",
         },
       ]),
     },

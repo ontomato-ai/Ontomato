@@ -1,13 +1,18 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { createApp, h, nextTick, reactive, type App } from "vue";
-import OntologyManager from "../OntologyManager.vue";
-import type { ManagerHostContext, ManagerPresentation } from "../context";
-import { englishMessages, type ManagerMessages } from "../i18n";
+import { createApp, defineComponent, h, nextTick, reactive, toRef, watch, type App } from "vue";
+import { ElConfigProvider } from "element-plus";
+import { createI18n } from "vue-i18n";
+import { createMemoryHistory, createRouter, RouterView } from "vue-router";
+import { createManager, type ManagerPresentation, type ManagerTheme } from "../context";
+import type { ManagerCredential, ManagerDataFallbacks } from "../api";
+import { englishMessages, managerMessageTree, type ManagerMessages } from "../i18n";
+import { managerRoutes } from "../routes";
 import de from "element-plus/es/locale/lang/de";
+import en from "element-plus/es/locale/lang/en";
 import { graphHandlers, graphRecord } from "./graph-double";
 import type { DataAdapterInfo } from "@ontomato/contracts/data-adapters";
 
-// Only the graph library internals are doubled; the root component, pages, request client and fetch calls are real code.
+// Only the graph library internals are doubled; the routes, frame, pages, request client and fetch calls are real code.
 vi.mock("@antv/g6", async () => ({ Graph: (await import("./graph-double")).GraphDouble }));
 vi.mock("@antv/x6", async () => ({
   Graph: (await import("./graph-double")).GraphDouble,
@@ -192,22 +197,85 @@ async function settle() {
   }
 }
 
-/** Minimal host: holds the context, writes view back with v-model semantics and records auth-failure notifications. */
-function mountHost(initial: ManagerHostContext) {
+interface HostOptions {
+  apiBase: string;
+  credential: ManagerCredential;
+  locale: string;
+  theme: ManagerTheme;
+  view: string;
+  dataFallbacks: ManagerDataFallbacks;
+  presentation: ManagerPresentation;
+  knowledgeTagValues: { general: string; business: string; tech: string };
+}
+
+/**
+ * A page around the Manager pages as the service app assembles it: one router (memory history) with the Manager routes
+ * under a layout, one vue-i18n over the Manager messages, and the Manager installed with the page's theme and locale.
+ * `host.view` navigates, `host.theme`/`host.locale` change the page's preferences; `views` records every address.
+ */
+function mountHost(initial: HostOptions) {
   const host = reactive({ ...initial });
   const views: string[] = [];
   const failures: number[] = [];
-  const app = createApp({
-    render: () =>
-      h(OntologyManager, {
-        ...host,
-        "onUpdate:view": (view: string) => {
-          views.push(view);
-          host.view = view;
-        },
-        onAuthFailure: (status: number) => failures.push(status),
-      }),
+  const i18n = createI18n({
+    legacy: false,
+    locale: host.locale,
+    fallbackLocale: "en",
+    missingWarn: false,
+    fallbackWarn: false,
+    messages: { en: managerMessageTree(englishMessages), de: managerMessageTree(markedMessages("[de] ")) } as never,
   });
+  const page = i18n.global as unknown as {
+    locale: { value: string };
+    t: (key: string, params: Record<string, string | number>) => string;
+  };
+  watch(
+    () => host.locale,
+    (locale) => (page.locale.value = locale)
+  );
+  const manager = createManager({
+    apiBase: host.apiBase,
+    credential: host.credential,
+    theme: toRef(host, "theme"),
+    locale: toRef(host, "locale"),
+    translate: (key, params) => page.t(key, params ?? {}),
+    dataFallbacks: host.dataFallbacks,
+    presentation: host.presentation,
+    knowledgeTagValues: host.knowledgeTagValues,
+    onAuthFailure: (status) => failures.push(status),
+  });
+  // The page opens at the address under test (the router starts from the history's location when installed).
+  const history = createMemoryHistory();
+  history.replace(host.view);
+  const router = createRouter({
+    history,
+    routes: [
+      { path: "/", component: RouterView, children: managerRoutes() },
+      // The service router sends unknown addresses to its root, which lands on the graph.
+      { path: "/:unknown(.*)*", redirect: "/playground" },
+    ],
+  });
+  router.afterEach((to) => {
+    views.push(to.fullPath);
+    host.view = to.fullPath;
+  });
+  watch(
+    () => host.view,
+    (view) => {
+      if (view !== router.currentRoute.value.fullPath) void router.push(view);
+    }
+  );
+  const app = createApp(
+    defineComponent({
+      setup: () => () =>
+        h(ElConfigProvider, { locale: host.locale === "de" ? de : en }, () =>
+          h("div", { class: "page-area" }, [h(RouterView)])
+        ),
+    })
+  );
+  app.use(i18n);
+  app.use(router);
+  manager.install(app);
   const element = document.createElement("div");
   document.body.appendChild(element);
   app.mount(element);
@@ -218,8 +286,8 @@ function mountHost(initial: ManagerHostContext) {
 /** Host-supplied data defaults that differ from the open-source values, so the tests can tell which one was used. */
 const hostFallbacks = { noBusinessDescription: "Host: no description", unnamedAsset: "Host: unnamed asset" };
 
-/** A pseudo-locale for switching tests: the English messages with a marker plus a real widget locale, standing in for any host translation. */
-function markedMessages(marker: string, element: ManagerMessages["element"]): ManagerMessages {
+/** A pseudo-locale for switching tests: the English messages with a marker, standing in for any translation. */
+function markedMessages(marker: string): ManagerMessages {
   const mark = (table: Readonly<Record<string, string>>) =>
     Object.fromEntries(Object.entries(table).map(([key, value]) => [key, `${marker}${value}`]));
   return {
@@ -227,13 +295,13 @@ function markedMessages(marker: string, element: ManagerMessages["element"]): Ma
     shared: Object.fromEntries(
       Object.entries(englishMessages.shared).map(([group, table]) => [group, mark(table)])
     ),
-    element,
+    governance: englishMessages.governance,
   } as ManagerMessages;
 }
 
-/** The host switches locale and messages together. */
-const english = { locale: "en", messages: englishMessages };
-const german = { locale: "de", messages: markedMessages("[de] ", de) };
+/** The page's language (the widget locale follows it). */
+const english = { locale: "en" };
+const german = { locale: "de" };
 
 /** Test presentation values: only used to recognise that the component reads them from the host; they are not either product's values (those are checked by the app presentation and evidence audit). */
 const presentation: ManagerPresentation = {
@@ -248,7 +316,7 @@ const presentation: ManagerPresentation = {
   compactDialogs: false,
 };
 
-const base: ManagerHostContext = {
+const base: HostOptions = {
   apiBase: "/tenant-a/api",
   credential: { type: "apiKey", apiKey: "key-a" },
   ...english,
@@ -270,7 +338,7 @@ function clickButton(text: string) {
   button.click();
 }
 
-describe("OntologyManager root component with real pages", () => {
+describe("Manager pages in the service router", () => {
   it("a 50,000-instance graph initially loads only the type summary", async () => {
     instanceNodeCount = 50000;
     vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue({
@@ -278,7 +346,7 @@ describe("OntologyManager root component with real pages", () => {
     } as DOMRect);
     const { root } = mountHost({ ...base, view: "/data/Order" });
     await settle();
-    (root().querySelectorAll(".mode-bar .el-segmented__item")[1] as HTMLElement).click();
+    (root().querySelectorAll(".data-browser-header .el-segmented__item")[1] as HTMLElement).click();
     await settle();
     await settle();
     const options = graphRecord.options.at(-1);
@@ -301,7 +369,7 @@ describe("OntologyManager root component with real pages", () => {
     vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue({ width: 800, height: 600 } as DOMRect);
     const { root } = mountHost({ ...base, view: "/data/Order" });
     await settle();
-    (root().querySelectorAll(".mode-bar .el-segmented__item")[1] as HTMLElement).click();
+    (root().querySelectorAll(".data-browser-header .el-segmented__item")[1] as HTMLElement).click();
     await settle();
     await settle();
     expect(graphRecord.dataBatches.at(-1).edges[0].data).toMatchObject({ aggregated: true, count: 1, type: "has" });
@@ -356,7 +424,7 @@ describe("OntologyManager root component with real pages", () => {
     } as DOMRect);
     const { root } = mountHost({ ...base, view: "/data/Order" });
     await settle();
-    (root().querySelectorAll(".mode-bar .el-segmented__item")[1] as HTMLElement).click();
+    (root().querySelectorAll(".data-browser-header .el-segmented__item")[1] as HTMLElement).click();
     await settle();
 
     const input = root().querySelector<HTMLInputElement>(".node-search input")!;
@@ -406,7 +474,7 @@ describe("OntologyManager root component with real pages", () => {
     vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue({ width: 800, height: 600 } as DOMRect);
     const { root } = mountHost({ ...base, view: "/data/Order" });
     await settle();
-    (root().querySelectorAll(".mode-bar .el-segmented__item")[1] as HTMLElement).click();
+    (root().querySelectorAll(".data-browser-header .el-segmented__item")[1] as HTMLElement).click();
     await settle();
     graphHandlers["node:click"]({ target: { id: "Order:1" } });
     await settle();
@@ -446,7 +514,7 @@ describe("OntologyManager root component with real pages", () => {
     vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue({ width: 800, height: 600 } as DOMRect);
     const { root } = mountHost({ ...base, view: "/data/Order" });
     await settle();
-    (root().querySelectorAll(".mode-bar .el-segmented__item")[1] as HTMLElement).click();
+    (root().querySelectorAll(".data-browser-header .el-segmented__item")[1] as HTMLElement).click();
     await settle();
     graphRecord.zoom = 3;
     (root().querySelector(".sample-legend button") as HTMLElement).click();
@@ -460,7 +528,7 @@ describe("OntologyManager root component with real pages", () => {
     vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue({ width: 800, height: 600 } as DOMRect);
     const { root } = mountHost({ ...base, view: "/data/Order" });
     await settle();
-    (root().querySelectorAll(".mode-bar .el-segmented__item")[1] as HTMLElement).click();
+    (root().querySelectorAll(".data-browser-header .el-segmented__item")[1] as HTMLElement).click();
     await settle();
     const edge = graphRecord.dataBatches.flatMap((batch) => batch.edges || [])[0];
     const node = graphRecord.dataBatches.flatMap((batch) => batch.nodes || [])[0];
@@ -488,7 +556,7 @@ describe("OntologyManager root component with real pages", () => {
     vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue({ width: 800, height: 600 } as DOMRect);
     const { host, root } = mountHost({ ...base, view: "/data/Order" });
     await settle();
-    (root().querySelectorAll(".mode-bar .el-segmented__item")[1] as HTMLElement).click();
+    (root().querySelectorAll(".data-browser-header .el-segmented__item")[1] as HTMLElement).click();
     await settle();
     const edge = graphRecord.dataBatches.flatMap((batch) => batch.edges || [])[0];
     (root().querySelector(".graph-toolbar button[aria-label='Display settings']") as HTMLButtonElement).click();
@@ -583,7 +651,7 @@ describe("OntologyManager root component with real pages", () => {
     expect((root().querySelector(".el-dialog textarea") as HTMLTextAreaElement).value).toContain("# Revenue");
   });
 
-  it("view locates data browsing; internal navigation goes back to the host through update:view, unknown paths return to the graph by the original rule", async () => {
+  it("the address locates data browsing; page actions navigate through the router; unknown addresses land on the graph", async () => {
     const { host, views } = mountHost({ ...base, view: "/data/Item" });
     await settle();
 
@@ -591,17 +659,18 @@ describe("OntologyManager root component with real pages", () => {
     expect(page?.body).toEqual({ classname: "Item", pagenum: 1, pagecount: 20 });
     expect(page?.headers["x-api-key"]).toBe("key-a");
 
-    clickButton("Object Types");
+    host.view = "/objects/Order";
     await settle();
-    expect(views.at(-1)).toBe("/objects");
-    expect(host.view).toBe("/objects");
+    clickButton("Browse Data");
+    await settle();
+    expect(views.at(-1)).toBe("/data/Order");
 
     host.view = "/unknown";
     await settle();
     expect(views.at(-1)).toBe("/playground");
   });
 
-  it("theme only drives the component root and neither reads nor changes the host html.dark", async () => {
+  it("the frame follows the page theme and neither reads nor changes html.dark", async () => {
     const { host, root } = mountHost({ ...base, theme: "dark" });
     await settle();
     expect(root().classList.contains("is-dark")).toBe(true);
@@ -614,18 +683,17 @@ describe("OntologyManager root component with real pages", () => {
     expect(document.documentElement.classList.contains("dark")).toBe(true);
   });
 
-  it("host resources drive the component text and Element Plus widgets; locale drives lang and Accept-Language", async () => {
+  it("the page's vue-i18n locale drives the text and Element Plus widgets; the locale drives Accept-Language", async () => {
     const { host, root } = mountHost({ ...base, ...german, view: "/data/Order" });
     await settle();
-    expect(root().getAttribute("lang")).toBe("de");
-    expect(root().textContent).toContain("[de] Data Browser");
+    expect(root().textContent).toContain("[de] Advanced Filter");
     expect(root().querySelector(".el-pagination__total")?.textContent).toContain("Gesamt");
     expect(requests.every((request) => request.headers["Accept-Language"] === "de")).toBe(true);
 
     requests = [];
     Object.assign(host, english);
     await settle();
-    expect(root().textContent).toContain("Data Browser");
+    expect(root().textContent).toContain("Advanced Filter");
     expect(root().textContent).not.toContain("[de] ");
     expect(root().querySelector(".el-pagination__total")?.textContent).toContain("Total");
     expect(requests).toEqual([]);
@@ -636,57 +704,12 @@ describe("OntologyManager root component with real pages", () => {
     expect(requests.every((request) => request.headers["Accept-Language"] === "en")).toBe(true);
   });
 
-  it("without a credential the workspace is not rendered and no request is sent; once the host supplies a token it loads with it", async () => {
-    const { host, root } = mountHost({ ...base, credential: null });
-    await settle();
-    expect(requests).toEqual([]);
-    expect(root().querySelector(".ontology-manager-shell")).toBeNull();
-
-    host.credential = { type: "token", token: "tok-1" };
-    await settle();
-    expect(requests.length).toBeGreaterThan(0);
-    for (const request of requests) {
-      expect(request.headers.tk).toBe("tok-1");
-      expect(request.headers["x-api-key"]).toBeUndefined();
-    }
-  });
-
-  it("after the host switches API entry and credential, in-flight responses from the old entry do not reach the new host's pages", async () => {
-    holdPaths.add("/admin/getMetas");
-    metasFor = (url) => metas(url.startsWith("/tenant-a/") ? ["Stale"] : ["Fresh"]);
-    const { host, root } = mountHost({ ...base, view: "/data" });
-    await settle();
-    const staleWaiting = held.get("/admin/getMetas")!.splice(0);
-
-    host.apiBase = "/tenant-b/api";
-    host.credential = { type: "token", token: "tok-b" };
-    await settle();
-    holdPaths.clear();
-    held
-      .get("/admin/getMetas")!
-      .splice(0)
-      .forEach((waiting) => waiting.resolve(new Response()));
-    staleWaiting.forEach((waiting) => waiting.resolve(new Response()));
-    await settle();
-
-    const afterSwitch = requests.filter((request) => request.url.startsWith("/tenant-b/"));
-    expect(afterSwitch.every((request) => request.headers.tk === "tok-b")).toBe(true);
-    const pageRequests = requests.filter((request) =>
-      request.url.endsWith("/data/getWholeClassDataByPage")
-    );
-    expect(
-      pageRequests.map((request) => [request.url.split("/data-query")[0], request.body?.classname])
-    ).toEqual([["/tenant-b/api", "Fresh"]]);
-    expect(root().textContent).not.toContain("Stale");
-  });
-
-  it("401/402 only notify the host; after 402 the credential is kept and later requests still carry it", async () => {
+  it("401/402 only notify the page; after 402 the credential is kept and later requests still carry it", async () => {
     statusFor = (path) =>
       path === "/action/queryList" ? 402 : path === "/function/queryList" ? 401 : 200;
     const { host, failures } = mountHost(base);
     await settle();
     expect(failures.sort()).toEqual([401, 402]);
-    expect(host.credential).toEqual({ type: "apiKey", apiKey: "key-a" });
 
     requests = [];
     statusFor = () => 200;
@@ -696,7 +719,7 @@ describe("OntologyManager root component with real pages", () => {
     expect(requests.every((request) => request.headers["x-api-key"] === "key-a")).toBe(true);
   });
 
-  it("visual modeling: focuses the object from view, field-by-field edits keep the original order, and back returns to the host", async () => {
+  it("visual modeling: focuses the object from the address, field-by-field edits keep the original order, and back returns to the graph", async () => {
     const { views } = mountHost({
       ...base,
       view: "/visual-modeling?focus=object&id=Order&back=playground",
@@ -876,120 +899,6 @@ describe("OntologyManager root component with real pages", () => {
     expect(requests[1].headers["Accept-Language"]).toBe("de");
   });
 
-  it("the host switches API entry and credential during delete confirmation: the old confirmation ends with the old workspace and no delete is sent anywhere", async () => {
-    const { host } = mountHost({ ...base, view: "/objects/Order" });
-    await settle();
-    clickButton("Delete");
-    await settle();
-    expect(confirmDialog()).not.toBeNull();
-
-    host.apiBase = "/tenant-b/api";
-    host.credential = { type: "token", token: "tok-b" };
-    await settle();
-    expect(confirmDialog()).toBeNull();
-    expect(paths()).not.toContain("/admin/delClass");
-  });
-
-  it("switching the credential during a multi-step delete: the old workspace sends no further steps", async () => {
-    const { host } = mountHost({
-      ...base,
-      view: "/visual-modeling?focus=object&id=Order&back=playground",
-    });
-    await settle();
-    clickButton("Delete");
-    await settle();
-    holdPaths.add("/admin/delRelationship");
-    clickButton("OK");
-    await settle();
-    expect(paths().filter((path) => path === "/admin/delRelationship")).toHaveLength(1);
-
-    host.credential = { type: "token", token: "tok-b" };
-    await settle();
-    holdPaths.clear();
-    held.get("/admin/delRelationship")!.forEach((waiting) => waiting.resolve(new Response()));
-    await settle();
-    expect(paths().filter((path) => path === "/admin/delRelationship")).toHaveLength(1);
-    expect(paths()).not.toContain("/admin/delClass");
-    // The stale follow-up's failure message is not shown and does not land under body.
-    expect(document.querySelector(".el-message")).toBeNull();
-  });
-
-  it("multi-step delete across credential A→B→A: the unmounted old workspace neither delivers responses nor sends follow-ups", async () => {
-    const { host } = mountHost({
-      ...base,
-      view: "/visual-modeling?focus=object&id=Order&back=playground",
-    });
-    await settle();
-    clickButton("Delete");
-    await settle();
-    holdPaths.add("/admin/delRelationship");
-    clickButton("OK");
-    await settle();
-
-    host.credential = { type: "token", token: "tok-b" };
-    await settle();
-    host.credential = { type: "apiKey", apiKey: "key-a" };
-    await settle();
-    holdPaths.clear();
-    held.get("/admin/delRelationship")!.forEach((waiting) => waiting.resolve(new Response()));
-    await settle();
-    expect(paths()).not.toContain("/admin/delClass");
-  });
-
-  it("two instances on one page: theme, popper container, messages and confirmations stay independent", async () => {
-    statusFor = (path) => (path === "/data/getWholeClassDataByPage" ? 500 : 200);
-    const a = mountHost({ ...base, theme: "dark", view: "/data/Order" });
-    const b = mountHost({ ...base, apiBase: "/tenant-b/api", view: "/objects/Order" });
-    await settle();
-
-    expect(a.root().classList.contains("is-dark")).toBe(true);
-    expect(b.root().classList.contains("is-dark")).toBe(false);
-    // A's dropdown popper and error message live inside A's own root; no extra container is created under body.
-    expect(a.root().querySelector(".el-select__popper")).not.toBeNull();
-    expect(a.root().querySelector(".el-message--error")).not.toBeNull();
-    expect(b.root().querySelector(".el-message")).toBeNull();
-    expect(document.body.querySelector(":scope > [id*='popper-container']")).toBeNull();
-
-    // After B opens a confirmation, changing A's credential rebuilds only A and B's confirmation stays.
-    [...b.root().querySelectorAll("button")]
-      .find((item) => item.textContent?.trim() === "Delete")!
-      .click();
-    await settle();
-    expect(b.root().querySelector(".manager-confirm")).not.toBeNull();
-    a.host.credential = { type: "token", token: "tok-a2" };
-    await settle();
-    expect(b.root().querySelector(".manager-confirm")).not.toBeNull();
-  });
-
-  it("host presentation values bind to each real root element: switched as a group by theme, with the narrow-dialog switch affecting only its own instance", async () => {
-    const compact: ManagerPresentation = {
-      ...presentation,
-      themeProperties: {
-        light: { "--el-color-primary": "#303030" },
-        dark: { "--el-color-primary": "#c0c0c0" },
-      },
-      compactDialogs: true,
-    };
-    const a = mountHost(base);
-    const b = mountHost({ ...base, apiBase: "/tenant-b/api", presentation: compact });
-    await settle();
-    const value = (root: Element, name: string) => (root as HTMLElement).style.getPropertyValue(name);
-
-    expect(value(a.root(), "--el-color-primary")).toBe("#101010");
-    expect(value(a.root(), "--manager-relation-icon-color")).toBe("#202020");
-    expect(value(b.root(), "--el-color-primary")).toBe("#303030");
-    expect(a.root().classList.contains("is-compact-dialogs")).toBe(false);
-    expect(b.root().classList.contains("is-compact-dialogs")).toBe(true);
-
-    requests = [];
-    a.host.theme = "dark";
-    await settle();
-    expect(value(a.root(), "--el-color-primary")).toBe("#e0e0e0");
-    expect(value(a.root(), "--manager-relation-icon-color")).toBe("#d0d0d0");
-    expect(value(b.root(), "--el-color-primary")).toBe("#303030");
-    expect(requests).toEqual([]);
-  });
-
   it("graph and modeling take the node palette, edge label fragment and fit limit from the host", async () => {
     vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue({
       width: 800,
@@ -1167,7 +1076,7 @@ describe("OntologyManager root component with real pages", () => {
     }
   });
 
-  it("edit dialogs mount in the popper container inside this instance's root; opening and closing leave body unchanged", async () => {
+  it("edit dialogs mount in the popper container inside the Manager frame; opening and closing leave body unchanged", async () => {
     const { root } = mountHost({ ...base, view: "/objects/Order" });
     await settle();
     const bodyBefore = [
@@ -1212,7 +1121,7 @@ describe("Manager business knowledge page", () => {
       (item) => item.textContent?.trim() === text
     )!;
 
-  it("lists knowledge and adds an entry in the detail panel; the success message stays inside the instance", async () => {
+  it("lists knowledge and adds an entry in the detail panel; the success message stays inside the Manager frame", async () => {
     const { root } = mountHost({ ...base, view: "/knowledge" });
     await settle();
     expect(paths()).toContain("/admin/getBussinessKnowledge");
@@ -1240,38 +1149,23 @@ describe("Manager business knowledge page", () => {
     expect(document.body.querySelector(":scope > .el-message")).toBeNull();
   });
 
-  it("deletes after a confirmation shown in its own instance; messages do not reach another instance or body", async () => {
-    const a = mountHost({ ...base, view: "/knowledge" });
-    const b = mountHost({ ...base, apiBase: "/tenant-b/api", view: "/objects/Order" });
+  it("deletes after a confirmation shown in the Manager frame; messages stay in the frame, not under body", async () => {
+    const { root } = mountHost({ ...base, view: "/knowledge" });
     await settle();
 
-    buttonIn(a.root(), "Delete").click();
+    buttonIn(root(), "Delete").click();
     await settle();
-    expect(a.root().querySelector(".manager-confirm")).not.toBeNull();
-    expect(b.root().querySelector(".manager-confirm")).toBeNull();
+    expect(root().querySelector(".manager-confirm")).not.toBeNull();
 
-    buttonIn(a.root(), "OK").click();
+    buttonIn(root(), "OK").click();
     await settle();
     const deleted = requests.find((r) => r.url.endsWith("/admin/delBussinessKnowledge"));
     expect(deleted?.url.startsWith("/tenant-a/api/")).toBe(true);
     expect(deleted?.body).toEqual({ knowledgeID: "k-1" });
-    expect(a.root().querySelector(".el-message--success")).not.toBeNull();
-    expect(b.root().querySelector(".el-message")).toBeNull();
+    expect(root().querySelector(".el-message--success")).not.toBeNull();
     expect(document.body.querySelector(":scope > .el-message, :scope > .el-overlay")).toBeNull();
   });
 
-  it("switching the credential while a delete confirmation is open cancels it and sends no delete", async () => {
-    const { host } = mountHost({ ...base, view: "/knowledge" });
-    await settle();
-    clickButton("Delete");
-    await settle();
-    expect(confirmDialog()).not.toBeNull();
-
-    host.credential = { type: "token", token: "tok-b" };
-    await settle();
-    expect(confirmDialog()).toBeNull();
-    expect(paths()).not.toContain("/admin/delBussinessKnowledge");
-  });
 });
 
 function typeInto(input: HTMLInputElement | HTMLTextAreaElement, value: string) {
