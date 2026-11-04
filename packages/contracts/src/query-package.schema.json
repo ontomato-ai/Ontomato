@@ -1,0 +1,361 @@
+{
+  "type": "object",
+  "properties": {
+    "manifest": {
+      "type": "object",
+      "properties": {
+        "schema": {
+          "type": "string",
+          "const": "ontomato.query-package.v1"
+        },
+        "entry": {
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": {
+                "kind": {
+                  "type": "string",
+                  "const": "dsl"
+                },
+                "query": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "required": [
+                "kind",
+                "query"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "kind": {
+                  "type": "string",
+                  "const": "python"
+                },
+                "path": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "required": [
+                "kind",
+                "path"
+              ],
+              "additionalProperties": false
+            }
+          ]
+        },
+        "queries": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "modules": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "parameterDefs": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string",
+                "minLength": 1
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "TYPE_STRING",
+                  "TYPE_NUMBER",
+                  "TYPE_TIME",
+                  "TYPE_STRING_ARRAY",
+                  "TYPE_NUMBER_ARRAY",
+                  "TYPE_TIME_ARRAY",
+                  "TYPE_ONTOOBJ",
+                  "TYPE_DATASET",
+                  "TYPE_VECTOR"
+                ]
+              },
+              "value": {
+                "anyOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "type": "boolean"
+                  },
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "array",
+                    "items": {}
+                  },
+                  {
+                    "type": "object",
+                    "additionalProperties": {}
+                  }
+                ]
+              },
+              "description": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "sample": {
+                "anyOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "type": "boolean"
+                  },
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "array",
+                    "items": {}
+                  },
+                  {
+                    "type": "object",
+                    "additionalProperties": {}
+                  }
+                ]
+              },
+              "classNames": {
+                "anyOf": [
+                  {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "name",
+              "type",
+              "value"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "parameterBindings": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "query": {
+                "type": "string",
+                "minLength": 1
+              },
+              "pointer": {
+                "type": "string",
+                "pattern": "^\\/"
+              },
+              "parameter": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "required": [
+              "query",
+              "pointer",
+              "parameter"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "computation": {
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": {
+                "operations": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "operation": {
+                        "type": "string",
+                        "enum": [
+                          "project",
+                          "filter",
+                          "group",
+                          "aggregate",
+                          "join",
+                          "calculate",
+                          "constant"
+                        ]
+                      },
+                      "expression": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "inputs": {
+                        "type": "array",
+                        "items": {
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "query": {
+                                  "type": "string",
+                                  "minLength": 1
+                                },
+                                "key": {
+                                  "type": "string",
+                                  "minLength": 1
+                                },
+                                "role": {
+                                  "type": "string",
+                                  "enum": [
+                                    "value",
+                                    "group",
+                                    "filter",
+                                    "join"
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "query",
+                                "key",
+                                "role"
+                              ],
+                              "additionalProperties": false
+                            },
+                            {
+                              "type": "object",
+                              "properties": {
+                                "operation": {
+                                  "type": "string",
+                                  "minLength": 1
+                                },
+                                "role": {
+                                  "type": "string",
+                                  "enum": [
+                                    "value",
+                                    "group",
+                                    "filter",
+                                    "join"
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "operation",
+                                "role"
+                              ],
+                              "additionalProperties": false
+                            }
+                          ]
+                        }
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "operation",
+                      "expression",
+                      "inputs"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "outputs": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "key": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "from": {
+                        "type": "string",
+                        "minLength": 1
+                      }
+                    },
+                    "required": [
+                      "key",
+                      "from"
+                    ],
+                    "additionalProperties": false
+                  }
+                }
+              },
+              "required": [
+                "operations",
+                "outputs"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "schema",
+        "entry",
+        "queries",
+        "modules",
+        "parameterDefs",
+        "parameterBindings",
+        "computation"
+      ],
+      "additionalProperties": false
+    },
+    "files": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "minLength": 1
+          },
+          "content": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "path",
+          "content"
+        ],
+        "additionalProperties": false
+      },
+      "minItems": 1
+    }
+  },
+  "required": [
+    "manifest",
+    "files"
+  ],
+  "additionalProperties": false,
+  "$schema": "http://json-schema.org/draft-07/schema#"
+}

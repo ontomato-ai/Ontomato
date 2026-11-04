@@ -424,13 +424,22 @@ class OntologyRetrievalContractTest {
       reference = new String(stream.readAllBytes(), StandardCharsets.UTF_8);
     }
     var example = JSON.parseObject(reference.split("```json\\R", 2)[1].split("```", 2)[0]);
+    var labels = example.remove("columnLabels");
+    example.put("recipe", JSONObject.of("kind", "package", "package", QueryPackage.fromDsl("{\"answer\":{\"steps\":[{}]}}"),
+        "parameters", new JSONObject(), "columnLabels", labels));
+    example.put("question", "Count?"); example.put("decisionIds", new JSONArray());
+    example.getJSONObject("recipe").getJSONObject("package").getJSONObject("manifest").getJSONArray("parameterDefs")
+        .add(JSONObject.of("name", "limit", "type", "TYPE_NUMBER", "value", "25"));
     DatasetFileContract.preparation(example);
+    assertInstanceOf(Number.class, example.getJSONObject("recipe").getJSONObject("package")
+        .getJSONObject("manifest").getJSONArray("parameterDefs").getJSONObject(0).get("value"));
     var wrongCheck = AgentJson.copy(example);
     wrongCheck.getJSONObject("selfCheck").put("filters", new JSONArray());
     var wrongSource = AgentJson.copy(example);
-    wrongSource.getJSONObject("sourceAnalysis").getJSONArray("nodes").getJSONObject(0).remove("label");
+    wrongSource.put("sourceAnalysis", new JSONObject());
     for (var entry : Map.of("selfCheck", wrongCheck, "sourceAnalysis", wrongSource).entrySet()) {
-      String session = id(), run = id();
+      var gate = postJson("/ontology/retrievals/skill-runs", id(), Map.of("question", "Count?"), null);
+      String session = gate.getString("id"), run = gate.getString("runId");
       var response = http.perform(post("/ontology/retrievals/" + session + "/runs/" + run + "/outputs")
               .header("tk", "fixture-user").header("X-Ontomato-Run-Id", run).header("Idempotency-Key", id())
               .contentType("application/json").content(AgentJson.json(entry.getValue())))
@@ -468,8 +477,9 @@ class OntologyRetrievalContractTest {
     var ontology = new OntologyQueryService(admin, engine, null, null);
     org.springframework.test.util.ReflectionTestUtils.setField(ontology, "grants", grants);
     org.springframework.test.util.ReflectionTestUtils.setField(retrieval, "outputs", new QueryOutputService(null, null, ontology, null));
-    var preparation = JSONObject.of("title", "Sales", "question", "Sales?", "recipe", JSONObject.of("kind", "dsl", "dsl", query),
-        "sourceAnalysis", analysis, "assumptions", new JSONArray(), "decisionIds", new JSONArray(), "metricUses", new JSONArray(),
+    var preparation = JSONObject.of("title", "Sales", "question", "Sales?", "recipe", JSONObject.of("kind", "package",
+        "package", QueryPackage.fromDsl(query.toJSONString()), "parameters", new JSONObject(), "columnLabels", JSONObject.of("value", "Value")),
+        "assumptions", new JSONArray(), "decisionIds", new JSONArray(), "metricUses", new JSONArray(),
         "selfCheck", JSONObject.of("scope", "", "filters", "", "grain", "", "denominator", "", "nullGroups", "", "comparisons", new JSONArray()));
     String output = id();
     http.perform(post("/ontology/retrievals/" + run.getString("id") + "/runs/" + run.getString("runId") + "/outputs")
@@ -479,9 +489,8 @@ class OntologyRetrievalContractTest {
         .andExpect(status().isAccepted());
     var operation = org.mockito.ArgumentCaptor.forClass(QueryJobService.Operation.class);
     verify(jobs).start(eq(output), any(), eq("output"), any(), operation.capture());
-    var rejected = assertThrows(org.springframework.web.server.ResponseStatusException.class, () -> operation.getValue().execute(output));
-    assertEquals(403, rejected.getStatusCode().value());
-    assertEquals("Class is outside this run's scope", rejected.getReason());
+    var rejected = assertThrows(io.ontomato.dataengine.dataAdapter.DslContractViolationException.class, () -> operation.getValue().execute(output));
+    assertTrue(rejected.getMessage().contains("Unknown DSL class"));
     verifyNoInteractions(engine);
   }
 

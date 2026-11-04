@@ -9,6 +9,8 @@ public class ABCHarnessDashboard {
 
 	private String title;
 	private String code;
+    private com.alibaba.fastjson2.JSONObject queryPackage;
+    private com.alibaba.fastjson2.JSONObject parameterValues;
 	private List<ABCHarnessProgramOutKeyRef> outKeyRefs;
     private com.alibaba.fastjson2.JSONObject sourceAnalysis;
 	private List<ABCHarnessDashboardParameter> parameters;

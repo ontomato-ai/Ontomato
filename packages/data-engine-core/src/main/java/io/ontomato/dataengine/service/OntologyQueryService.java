@@ -176,6 +176,40 @@ public class OntologyQueryService {
   }
 
   public Map<String, Object> execute(JSONObject query, QueryAccessService.Access access) {
+    if (access.grant() != null && "package-read".equals(access.grant().getString("purpose")))
+      throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Package executions must reference a declared query file");
+    return executeAuthorized(query, access);
+  }
+
+  public Map<String, Object> executePackage(JSONObject reference, QueryAccessService.Access access) {
+    if (reference == null || !reference.keySet().stream().allMatch(k -> Set.of("path", "parameters").contains(k)))
+      throw new IllegalArgumentException("Expected a package query reference");
+    JSONObject input = grants.packageInput(access.grant());
+    JSONObject bundle = input.getJSONObject("package"), values = input.getJSONObject("parameters");
+    String path = reference.getString("path");
+    var overrides = reference.getJSONObject("parameters");
+    if (overrides != null) {
+      var allowed = new HashSet<String>();
+      var queries = bundle.getJSONObject("manifest").getJSONObject("queries");
+      for (Object item : bundle.getJSONObject("manifest").getJSONArray("parameterBindings")) {
+        var binding = JSONObject.from(item);
+        if (Objects.equals(path, queries.getString(binding.getString("query"))) || Objects.equals(path, binding.getString("query")))
+          allowed.add(binding.getString("parameter"));
+      }
+      if (!allowed.containsAll(overrides.keySet())) throw new IllegalArgumentException("Only declared query parameter values can change");
+      values.putAll(overrides);
+    }
+    values = QueryPackage.parameters(bundle, values);
+    var result = executeAuthorized(QueryPackage.query(bundle, path, values), access);
+    if (result.get("data") instanceof List<?> data)
+      for (Object item : data) {
+        var marker = partial(JSONObject.from(item));
+        if (marker != null) grants.recordPackagePartial(access.grant(), marker);
+      }
+    return result;
+  }
+
+  private Map<String, Object> executeAuthorized(JSONObject query, QueryAccessService.Access access) {
     Map<String, Object> result;
     try {
       result = executeQuery(query, access);
@@ -209,7 +243,7 @@ public class OntologyQueryService {
       if (io.ontomato.dataengine.config.ServiceConst.NOT_SANDBOX.equals(sandbox)) sandbox = null;
       return QueryPermissions.response(writes.query(restricted, sandbox, access.user().getDomainId()), analysis, access.permission(), true);
     }
-    boolean internal = access.grant() != null && "user-read".equals(access.grant().getString("purpose"));
+    boolean internal = access.grant() != null && ("user-read".equals(access.grant().getString("purpose")) || "package-read".equals(access.grant().getString("purpose")));
     return internal ? dsl.executeInternal(query, access.permission(), access.user()) : dsl.executeV1(query, access.permission(), access.user());
   }
 
@@ -326,6 +360,7 @@ public class OntologyQueryService {
         JSONObject.of(
             "id",
             metric.getId(),
+            "queryPackage", function.getQueryPackage(),
             "code",
             function.getCode(),
             "parameters",

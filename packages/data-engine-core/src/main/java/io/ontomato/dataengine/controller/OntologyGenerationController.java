@@ -101,7 +101,7 @@ public class OntologyGenerationController {
   public Object test(
       @PathVariable String run, @RequestBody JSONObject body, HttpServletRequest request)
       throws Exception {
-    AgentJson.fields(body, "code", "sourceAnalysis", "parameterDefs");
+    AgentJson.fields(body, "code", "sourceAnalysis", "parameterDefs", "queryPackage", "columnLabels");
     return operations.test(run, owner(run, request), body);
   }
 

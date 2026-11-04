@@ -20,35 +20,26 @@ final class DatasetFileContract {
         "selfCheck");
     nonempty(body, "title");
     nonempty(body, "question");
-    if (body.containsKey("sourceAnalysis"))
-      at("sourceAnalysis", () -> io.ontomato.dataengine.service.QuerySubgraphContract.validate(object(body, "sourceAnalysis")));
+    if (body.containsKey("sourceAnalysis")) throw AgentHttpException.invalid("sourceAnalysis is derived from the query package");
     JSONObject recipe = object(body, "recipe");
-    if (!body.containsKey("sourceAnalysis") && ("python".equals(recipe.getString("kind")) || "dsl".equals(recipe.getString("kind"))))
-      throw AgentHttpException.invalid("sourceAnalysis must be an object");
     at("recipe", () -> {
     switch (nonempty(recipe, "kind")) {
-      case "python" -> {
-        AgentJson.fields(recipe, "kind", "code", "sha256");
-        nonempty(recipe, "code");
-        string(recipe, "sha256", false);
-      }
-      case "dsl" -> {
-        AgentJson.fields(recipe, "kind", "dsl", "executedCode", "sha256");
-        object(recipe, "dsl");
-        optionalText(recipe, "executedCode");
-        optionalText(recipe, "sha256");
+      case "package" -> {
+        AgentJson.fields(recipe, "kind", "package", "parameters", "columnLabels");
+        recipe.put("package", io.ontomato.dataengine.service.QueryPackage.accept(object(recipe, "package")));
+        object(recipe, "parameters");
+        var labels = object(recipe, "columnLabels");
+        for (String key : labels.keySet()) nonempty(labels, key);
       }
       case "metric" -> {
         AgentJson.fields(
-            recipe, "kind", "metricId", "revision", "parameters", "bindingId", "executedCode", "sha256");
+            recipe, "kind", "metricId", "revision", "parameters", "bindingId");
         string(recipe, "metricId", false);
         optionalText(recipe, "bindingId");
         string(recipe, "revision", false);
         object(recipe, "parameters");
-        optionalText(recipe, "executedCode");
-        optionalText(recipe, "sha256");
       }
-      default -> throw AgentHttpException.invalid("kind must be dsl, python or metric");
+      default -> throw AgentHttpException.invalid("kind must be package or metric");
     }
     });
     var assumptions = array(body, "assumptions");

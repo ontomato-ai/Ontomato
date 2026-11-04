@@ -1,86 +1,59 @@
-# Dataset preparation
+# Dataset delivery
 
-The recipe request contains title, question, recipe, sourceAnalysis, assumptions,
-decisionIds, metricUses and selfCheck. It does not contain result rows.
+Write a plain ontology DSL object to work/q.json, or write an explicit package
+manifest and its source files as specified in [query packages](query-package.md).
+Do not copy DSL into Python. Python uses `execute_dsl_file("queries/q.json")`;
+Java resolves the frozen package file and only declared parameter values may vary.
 
-recipe is one of:
-- {kind:"dsl",dsl:<one DSL object>}
-- {kind:"python",code:<exact Python source>,sha256:<SHA-256 of source bytes>}
-- {kind:"metric",metricId,revision,parameters:<object>,bindingId?:<owned binding ID>}
-  metricId always identifies the dynamic metric. A binding uses its saved values;
-  pass {} or exactly those values, never overrides.
-
-Use the ontology skill's Python helper and protocol-2 code for Python. Declare sourceAnalysis using the shared query-subgraph contract:
-read references/query-subgraph.md and references/query-subgraphs.json in this skill.
-Every output node key matches one result column; label is a ready-to-display name
-in the user's language, never a technical key when a human-readable name is available.
-Include all source fields and calculation paths, not only one convenient source.
-For DSL, reuse sourceAnalysis returned by execute-dsl and set its output labels in
-the user's language. Java reconstructs the actual DSL dependencies and uses only
-the declared output labels by key. Python requires the full
-analysis. Published metrics use their saved analysis. Legacy stored metrics without one retain key labels and do not publish a fabricated graph; their stored outKeyRefs are converted only for permission evaluation. No new outKeyRefs declaration is accepted.
-Each metric use is {id,revision,use:"direct"|"derived"|"not_used",reason}.
-selfCheck contains scope, filters, grain, denominator, nullGroups (all strings),
-and comparisons: [{metricId,comparable,explanation,executionRef:null|string}].
-assumptions is a string array. decisionIds contains only confirmed decisions
-supplied by the host; use [] if none. Empty arrays are valid, invented identities
-are not.
-
-The returned file has schema workbench.dataset.v1, columns/rows, final recipe,
-field sources, assumptions/decisions/metric uses/selfCheck, a formal execution
-receipt and truncation (null or {truncated:true,rowLimit,truncationHint}). Preserve
-null, false, zero and empty strings. The runtime assigns artifact identity after
-the file is written; do not insert an artifact ID into the JSON.
-
-## Minimal complete DSL preparation
-
-Save this object as `work/count.json`, replace `/Employee` with a class from
-`schema`, then run `node scripts/dataset.mjs preview @work/count.json`.
-Use the same object for delivery. Keep every selfCheck value as text, including
-`filters` and `nullGroups`; use `""` when there is nothing to add, never `[]`, `{}`
-or `null`. This example counts authorized rows and needs no attribute source.
+Write work/delivery.json:
 
 ```json
 {
   "title": "Employee count",
-  "question": "How many employees can I access?",
-  "recipe": {
-    "kind": "dsl",
-    "dsl": {
-      "problem": "Employee count",
-      "answer": {
-        "steps": [{
-          "graph": {"patterns": [{"objects": [{"idx": 0, "variable": "e", "class": "/Employee"}]}]},
-          "output": {"to_user": true, "fields": [{"variable": "e", "field": "*", "function": "COUNT", "as": "headcount"}]}
-        }]
-      }
-    }
-  },
-  "sourceAnalysis": {
-    "schema": "ontomato.query-subgraph.v1",
-    "queries": [{"id": "q", "label": "Employee count"}],
-    "nodes": [
-      {"id": "employees", "kind": "class", "label": "Employees", "queryId": "q", "className": "/Employee", "variable": "e"},
-      {"id": "one", "kind": "operation", "label": "1", "queryId": "q", "operation": "constant", "expression": "1"},
-      {"id": "count", "kind": "operation", "label": "COUNT(*)", "queryId": "q", "operation": "aggregate", "expression": "COUNT(*)"},
-      {"id": "result", "kind": "output", "label": "Employee count", "key": "headcount"}
-    ],
-    "edges": [
-      {"id": "count-input", "kind": "dependency", "source": "one", "target": "count", "role": "value", "label": ""},
-      {"id": "count-output", "kind": "dependency", "source": "count", "target": "result", "role": "value", "label": ""}
-    ],
-    "filters": []
-  },
+  "columnLabels": {"headcount": "Employee count"},
   "assumptions": [],
-  "decisionIds": [],
   "metricUses": [],
   "selfCheck": {
     "scope": "Employees visible to the current user",
-    "filters": "No additional filter",
+    "filters": "No additional business filter",
     "grain": "One total",
-    "denominator": "",
+    "denominator": "Not a ratio",
     "nullGroups": "No grouping",
     "comparisons": []
   }
 }
 ```
+
+These are example explanations, not default assertions. Each selfCheck value is
+text; comparisons is an array of {metricId,comparable,explanation,executionRef}.
+Record every relevant metric use as {id,revision,use:"direct"|"derived"|"not_used",reason}.
+Comparisons need comparable filters, grain and time plus an actual execution
+reference, or an explanation that comparison is not valid. Keep assumptions
+explicit. The question and confirmed decision identities are filled by the host.
+
+```sh
+node scripts/dataset.mjs deliver @work/q.json --meta @work/delivery.json --out outputs/count.dataset.json
+```
+
+The tool returns the path, row count, columns, truncation, receipt and package hash.
+It writes the exact host bytes, with schema workbench.dataset.v2. The dataset
+freezes the whole package, actual parameters, source graph, business explanations
+and execution receipt. Labels must match every final output key and be readable
+in the user's language. Do not declare a second sourceAnalysis: Java derives DSL
+sources and combines only the Python computation fragment from the manifest.
+Do not calculate hashes or create receipts yourself.
+
+For direct metric use, the input file is:
+
+```json
+{"kind":"metric","metricId":"published-id","revision":"current-revision","parameters":{}}
+```
+
+An optional bindingId selects owned stored values and rejects overrides. A metric
+execution freezes the actual Function package and keeps its metric identity.
+Change of logic is derived use, never direct use. A legacy metric can still run
+through the stored-data read boundary; it does not acquire invented provenance.
+
+Use preview only to resolve an actual uncertainty. It performs an authorized
+execution, not just JSON validation. Delivering identical input then reuses the
+same task. Fix syntax from field-specific errors instead of reading script source.

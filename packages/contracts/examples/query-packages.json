@@ -1,0 +1,20 @@
+{
+  "pythonAggregate": {
+    "manifest": {
+      "schema": "ontomato.query-package.v1",
+      "entry": {"kind": "python", "path": "calculate.py"},
+      "queries": {"employees": "queries/employees.json"},
+      "modules": [],
+      "parameterDefs": [{"name": "threshold", "type": "TYPE_NUMBER", "value": 20, "description": "Minimum salary"}],
+      "parameterBindings": [{"query": "employees", "parameter": "threshold", "pointer": "/answer/steps/0/graph/patterns/0/objects/0/conditions/properties/value"}],
+      "computation": {
+        "operations": [{"id": "sum", "operation": "aggregate", "expression": "SUM(employees.salary)", "inputs": [{"query": "employees", "key": "salary", "role": "value"}]}],
+        "outputs": [{"key": "total", "from": "sum"}]
+      }
+    },
+    "files": [
+      {"path": "queries/employees.json", "content": "{\"answer\":{\"steps\":[{\"graph\":{\"patterns\":[{\"objects\":[{\"idx\":0,\"variable\":\"e\",\"class\":\"/Employee\",\"conditions\":{\"properties\":{\"field\":\"salary\",\"operator\":\">=\",\"value\":20}}}]}]},\"output\":{\"to_user\":true,\"fields\":[{\"variable\":\"e\",\"field\":\"salary\",\"as\":\"salary\"}]}}]}}"},
+      {"path": "calculate.py", "content": "# ontomato-python:2\nimport json\nfrom query_runtime import execute_dsl_file\nrows = execute_dsl_file('queries/employees.json')\nprint(json.dumps({'answer': [{'total': sum(row['salary'] for row in rows)}]}))\n"}
+    ]
+  }
+}

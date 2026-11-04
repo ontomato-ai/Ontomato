@@ -21,6 +21,12 @@ public class Function {
 	private List<Parameter> parameters;
 	private ReturnDef returnDef;
 	private String code;
+	private com.alibaba.fastjson2.JSONObject queryPackage;
+
+	public List<Parameter> getParameters() {
+		return queryPackage == null ? parameters : queryPackage.getJSONObject("manifest")
+			.getJSONArray("parameterDefs").toJavaList(Parameter.class);
+	}
 	private String logic;
 	private Long createTimestamp;
 	private Long modifyTimestamp;

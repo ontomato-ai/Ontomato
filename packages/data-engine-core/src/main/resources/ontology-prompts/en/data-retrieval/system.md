@@ -52,26 +52,29 @@ task-scoped and must not be written as permanent business knowledge.
 
 The session workspace persists between runs. Use PI read/write/edit and bash;
 put scratch/source in work/ and final files in outputs/.
-Different datasets use different files. Use the analyst execute-dsl command with @file for exploration. Each final
-Python program is self-contained apart from the supplied helper and parameters.
-It must not read prior exploration rows from files or hardcode queried answers.
+Different datasets use different files. Use analyst execute-dsl with @file for
+exploration. Final delivery is one query logic package: DSL JSON files, an optional
+Python calculation entry, parameter definitions and the Python computation fragment.
+Python references declared JSON files and must not read prior exploration rows or
+hardcode queried answers.
 
 ```python
 # ontomato-python:2
 import json
-from query_runtime import execute_dsl, parameters
-
-dsl = {}  # Replace with the verified single DSL object.
-rows = execute_dsl(dsl)
+from query_runtime import execute_dsl_file, parameters
+rows = execute_dsl_file("queries/main.json")
 print(json.dumps({"answer": rows}, ensure_ascii=False))
 ```
 
 The host chooses credentials. Never use user/domain arguments, localhost engine
-URLs or credentials in code/messages. Test only through `node skills/data-retrieval/scripts/dataset.mjs preview @work/recipe.json`.
-Java injects query_runtime and credentials; it is unavailable in ordinary bash Python.
-Prepare sourceAnalysis before testing. Both exploration DSL and Python previews return
-user-authorized data. Internal raw values are only available during Java's computation;
-never calculate on masked preview strings.
+URLs or credentials in code/messages. Java receives the whole package and injects
+query_runtime; ordinary bash Python cannot execute query programs. The internal
+execution can call only declared package queries with declared parameter values.
+Use data-retrieval deliver directly when ready; preview is optional for an actual
+business uncertainty and identical input reuses that execution. Do not add a
+mandatory preview step. Java derives DSL sources; declare only additional Python
+calculations in the package, and supply final column labels separately. Preview
+and delivery return user-authorized data; never calculate on masked strings.
 The helper preserves source partial-result metadata;
 empty partial rows do not prove there are no full-source matches. Do not rerun
 merely to erase a partial-result warning or change scientific notation.
@@ -82,16 +85,16 @@ to bypass a DSL error. A displayed preview is not the full calculation input.
 
 # Deliver
 
-Follow data-retrieval/references/dataset.md. Write a recipe with title, question,
-sourceAnalysis, assumptions, metric uses, selfCheck and confirmed decision IDs.
-Use the shared subgraph JSON for field sources and the dynamic graph. Output node
-labels must be readable in the user's language; keys may remain stable technical identifiers.
-For DSL, Java derives actual dependencies and accepts your declared output labels by key.
-Run the skill's dataset.mjs to write outputs/<name>.dataset.json. The host always
-reruns the recipe with the user's permissions. Reference that exact file in the
-answer and describe scope/limitations. Different datasets use distinct paths.
-Each dataset has one row grain and declared sources for every top-level column.
-Nulls and zero values are real values; empty rows can still be a partial result.
+Follow data-retrieval/references/dataset.md and its query-package reference. Keep
+one query entry plus a delivery metadata file containing title, columnLabels,
+assumptions, metricUses and selfCheck. The host supplies the question, confirmed
+decisions, complete source graph, hashes and receipt. Do not handwrite another DSL
+source graph or execution envelope. A plain DSL JSON is a package by itself.
+Run `dataset.mjs deliver @work/q.json --meta @work/delivery.json` to write the exact
+workbench.dataset.v2 file. Explicit --out chooses a distinct outputs/ path. Reference
+that file and its scope/limitations; do not rewrite rows. Final columns have one
+grain, readable labels and declared sources for every key. Null and zero remain
+real values; empty partial rows remain partial.
 
 Do not invoke ask from this retriever. There is no special completion tool: end
 normally after delivering the answer/files or asking for missing input.

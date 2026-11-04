@@ -17,14 +17,15 @@ export async function metricViewCommand(args, env = process.env, request = fetch
       route = "/gates";
       body = { kind: "metric", source: values[0] ? await readFile(values[0], "utf8") : null };
       break;
-    case "test":
-      if (!values[0] || !values[1]) throw new Error("test requires source and parameter definition files");
-      body = { code: await readFile(values[0], "utf8"), parameterDefs: await bodyFile(values[1]) };
-      if (values[2]) body.sourceAnalysis = await bodyFile(values[2]);
-      if (!Array.isArray(body.parameterDefs)) throw new Error("Parameter definitions must be an array");
+    case "test-package": {
+      if (!values[0] || !values[1]) throw new Error("test-package requires a package entry and column labels");
+      const { collectPackage } = await import("../../data-retrieval/scripts/query-package.mjs");
+      body = { queryPackage: await collectPackage(values[0]), columnLabels: await bodyFile(values[1]) };
+      route = `/${state.runId}/test`;
       break;
+    }
     case "close": body = {}; break;
-    default: throw new Error("Commands: begin, test, close");
+    default: throw new Error("Commands: begin, test-package, close");
   }
   route ??= `/${state.runId}/${command}`;
   const response = await request(base + "/ontology/ai/generation" + route, {

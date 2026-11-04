@@ -43,6 +43,8 @@ public class OntologyAgentDefinitions {
   }
 
   private void sourceContract(List<Map<String, String>> files) throws Exception {
+    files.add(Map.of("path", "references/query-package.md", "content", resource("ontology-contracts/query-package.md")));
+    files.add(Map.of("path", "references/query-package.schema.json", "content", resource("ontology-contracts/query-package.schema.json")));
     files.add(Map.of("path", "references/query-subgraph.md", "content", resource("ontology-contracts/query-subgraph.md")));
     files.add(Map.of("path", "references/query-subgraphs.json", "content", resource("ontology-contracts/examples/query-subgraphs.json")));
     files.add(Map.of("path", "references/query-subgraph.schema.json", "content", resource("ontology-contracts/query-subgraph.schema.json")));
@@ -51,7 +53,7 @@ public class OntologyAgentDefinitions {
   public void publish() throws Exception {
     code.registerSkill();
     var files = new ArrayList<Map<String, String>>();
-    for (String path : List.of("SKILL.md", "scripts/dataset.mjs", "references/dataset.md"))
+    for (String path : List.of("SKILL.md", "scripts/dataset.mjs", "scripts/query-package.mjs", "references/dataset.md"))
       files.add(
           Map.of("path", path, "content", resource("ontology-skills/data-retrieval/" + path)));
     sourceContract(files);
@@ -72,7 +74,7 @@ public class OntologyAgentDefinitions {
           "ontology-generation");
 
   public void publishGeneration() throws Exception {
-    code.registerSkill();
+    publish();
     var files = new ArrayList<Map<String, String>>();
     for (String path : List.of("SKILL.md", "scripts/generation.mjs"))
       files.add(
@@ -92,7 +94,7 @@ public class OntologyAgentDefinitions {
     definition.put("agentId", OntologyGenerationService.agentId(kind));
     definition.put(
         "modelId", models.modelId(domain, OntologyGenerationService.agentId(kind)));
-    definition.put("skills", List.of(RuntimeCodeClient.SKILL, GENERATION_SKILL));
+    definition.put("skills", List.of(RuntimeCodeClient.SKILL, DATASET_SKILL, GENERATION_SKILL));
     definition.put(
         "systemPrompt",
         prompt
@@ -115,7 +117,7 @@ public class OntologyAgentDefinitions {
           "metricview-generation");
 
   public void publishMetricView() throws Exception {
-    code.registerSkill();
+    publish();
     var files = new ArrayList<Map<String, String>>();
     for (String path : List.of("SKILL.md", "scripts/generation.mjs"))
       files.add(
@@ -135,7 +137,7 @@ public class OntologyAgentDefinitions {
     var definition = definition(domain, language, remainingMs);
     definition.put("agentId", METRICVIEW_AGENT);
     definition.put("modelId", models.modelId(domain, METRICVIEW_AGENT));
-    definition.put("skills", List.of(RuntimeCodeClient.SKILL, METRICVIEW_SKILL));
+    definition.put("skills", List.of(RuntimeCodeClient.SKILL, DATASET_SKILL, METRICVIEW_SKILL));
     definition.put(
         "systemPrompt",
         prompt

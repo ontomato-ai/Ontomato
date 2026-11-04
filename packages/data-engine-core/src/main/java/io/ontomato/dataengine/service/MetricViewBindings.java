@@ -89,7 +89,12 @@ public final class MetricViewBindings {
   public static Function executionFunction(Function definition, JSONObject values) {
     validateValues(definition, values);
     Function execution = JSON.parseObject(JSON.toJSONString(definition), Function.class);
-    if (execution.getParameters() != null)
+    if (execution.getQueryPackage() != null) {
+      for (Object item : execution.getQueryPackage().getJSONObject("manifest").getJSONArray("parameterDefs")) {
+        var parameter = (JSONObject) item;
+        parameter.put("value", values.get(parameter.getString("name")));
+      }
+    } else if (execution.getParameters() != null)
       for (Parameter p : execution.getParameters()) p.setValue(values.get(p.getName()));
     return execution;
   }

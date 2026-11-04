@@ -11,10 +11,12 @@ export function projectDataset(
   payload: DatasetPayload,
   retrieval: QueryRetrievalRef,
 ): Dataset {
-  const code =
-    payload.recipe.kind === "python"
-      ? payload.recipe.code
-      : payload.recipe.executedCode;
+  const bundle = "package" in payload.recipe ? payload.recipe.package : undefined;
+  const values = "parameters" in payload.recipe ? payload.recipe.parameters : {};
+  const legacySource = "legacySource" in payload.recipe ? payload.recipe.legacySource : undefined;
+  const code = legacySource
+    ? legacySource.files.find((file) => file.path === legacySource.manifest.entry.path)?.content
+    : historicalCode(payload);
   return {
     id,
     name: payload.title,
@@ -25,19 +27,31 @@ export function projectDataset(
     sourceAnalysis: payload.sourceAnalysis,
     retrieval,
     ...(payload.recipe.kind === "dsl" ? { dsl: payload.recipe.dsl } : {}),
-    ...(code
+    ...(bundle ? { abcProgram: {
+      title: payload.title, code: "", queryPackage: bundle, parameterValues: values,
+      sourceAnalysis: payload.sourceAnalysis, outKeyRefs: [],
+      parameters: bundle.manifest.parameterDefs.map((p) => ({ key: String(p.name),
+        type: typeof p.type === "string" ? p.type.replace(/^TYPE_/, "") : undefined, value: values[String(p.name)] })),
+    } } : code
       ? {
           abcProgram: {
             title: payload.title,
             code,
             sourceAnalysis: payload.sourceAnalysis,
             outKeyRefs: payload.outKeyRefs ?? [],
+            parameterValues: values,
             parameters: [],
           },
         }
       : {}),
     ...(payload.truncation ?? {}),
   };
+}
+/** Decode original v1 source text only while reading an immutable historical snapshot. */
+function historicalCode(payload: DatasetPayload) {
+  if (payload.schema !== "workbench.dataset.v1") return undefined;
+  if (payload.recipe.kind === "python") return payload.recipe.code;
+  return "executedCode" in payload.recipe ? payload.recipe.executedCode : undefined;
 }
 const cell = (value: unknown) =>
   String(

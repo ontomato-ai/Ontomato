@@ -1,3 +1,4 @@
+import { packagePathSchema, packageRecipeSchema, queryPackageSchema } from "./query-package";
 import { runtimeStopReasonSchema } from "./agent-runtime-values";
 import { z } from "zod";
 import { querySubgraphSchema } from "./query-subgraph";
@@ -23,34 +24,33 @@ export const truncationSchema = z
     truncationHint: z.string().min(1),
   })
   .strict();
-export const recipeSchema = z.discriminatedUnion("kind", [
-  z
-    .object({
-      kind: z.literal("python"),
-      code: z.string().min(1),
-      sha256: z.string(),
-    })
-    .strict(),
-  z
-    .object({
-      kind: z.literal("dsl"),
-      dsl: runtimeJsonObjectSchema,
-      executedCode: z.string().optional(),
-      sha256: z.string().optional(),
-    })
-    .strict(),
-  z
-    .object({
-      kind: z.literal("metric"),
-      metricId: z.string(),
-      bindingId: z.string().optional(),
-      revision: z.string(),
-      parameters: runtimeJsonObjectSchema,
-      executedCode: z.string().optional(),
-      sha256: z.string().optional(),
-    })
-    .strict(),
+/** Opaque saved Python source at the legacy Function read boundary, never a new package. */
+const legacySourceSchema = z.object({
+  manifest: z.object({
+    schema: z.literal("ontomato.query-source.legacy"),
+    entry: z.object({ kind: z.literal("python"), path: packagePathSchema }).strict(),
+    queries: z.record(packagePathSchema), modules: z.array(packagePathSchema),
+    parameterDefs: z.array(runtimeJsonObjectSchema), parameterBindings: z.array(runtimeJsonObjectSchema),
+  }).strict(),
+  files: z.array(z.object({ path: packagePathSchema, content: z.string() }).strict()),
+}).strict();
+const metricRecipeSchema = z.object({
+  kind: z.literal("metric"), metricId: z.string(), bindingId: z.string().optional(), revision: z.string(),
+  parameters: runtimeJsonObjectSchema, package: queryPackageSchema.optional(),
+  legacySource: legacySourceSchema.optional(),
+  packageSha256: z.string().optional(), executionInputSha256: z.string().optional(),
+  columnLabels: z.record(z.string()).optional(), sha256: z.string().optional(),
+}).strict();
+// Only immutable v1 snapshots may carry the former source-text field.
+const historicalRecipeSchema = z.union([
+  z.object({ kind: z.literal("python"), code: z.string().min(1), sha256: z.string() }).strict(),
+  z.object({ kind: z.literal("dsl"), dsl: runtimeJsonObjectSchema,
+    executedCode: z.string().optional(), sha256: z.string().optional() }).strict(),
+  z.object({ kind: z.literal("metric"), metricId: z.string(), bindingId: z.string().optional(),
+    revision: z.string(), parameters: runtimeJsonObjectSchema,
+    executedCode: z.string().optional(), sha256: z.string().optional() }).strict(),
 ]);
+export const recipeSchema = z.union([packageRecipeSchema, metricRecipeSchema, historicalRecipeSchema]);
 export const metricUseSchema = z
   .object({
     id: z.string(),
@@ -80,7 +80,7 @@ export const selfCheckSchema = z
   .strict();
 export const datasetPayloadSchema = z
   .object({
-    schema: z.literal("workbench.dataset.v1"),
+    schema: z.enum(["workbench.dataset.v1", "workbench.dataset.v2"]),
     title: z.string().min(1),
     question: z.string().min(1),
     columns: z.array(
@@ -106,6 +106,21 @@ export const datasetPayloadSchema = z
   })
   .strict()
   .superRefine((data, ctx) => {
+    const legacy = data.recipe.kind === "dsl" || data.recipe.kind === "python";
+    if (data.schema === "workbench.dataset.v2" && "executedCode" in data.recipe)
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Source-text recipes are historical v1 data only" });
+    if (data.schema === "workbench.dataset.v1" && data.recipe.kind === "package" ||
+        data.schema === "workbench.dataset.v2" && legacy)
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Recipe does not match the dataset version" });
+    if (data.schema === "workbench.dataset.v2" && data.recipe.kind === "metric") {
+      const hasPackage = "package" in data.recipe && !!data.recipe.package;
+      const hasLegacy = "legacySource" in data.recipe && !!data.recipe.legacySource;
+      if (hasPackage === hasLegacy)
+        ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Metric datasets require exactly one frozen source" });
+    }
+    if (data.schema === "workbench.dataset.v2" && data.recipe.kind === "package" &&
+        (!data.sourceAnalysis || !data.recipe.packageSha256 || !data.recipe.executionInputSha256))
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Package datasets require sources and execution digests" });
     const keys = data.columns.map((c) => c.key).sort(),
       sources = data.sourceAnalysis ? data.sourceAnalysis.nodes.filter((n) => n.kind === "output").map((n) => n.key).sort() : (data.outKeyRefs ?? []).map((c) => c.key).sort();
     if (
@@ -191,19 +206,24 @@ export const retrievalAnswersSchema = z
     message: z.string().trim().min(1),
   })
   .strict();
+export const submissionRecipeSchema = z.union([
+  packageRecipeSchema.omit({ packageSha256: true, executionInputSha256: true }),
+  z.object({ kind: z.literal("metric"), metricId: z.string(), revision: z.string(),
+    parameters: runtimeJsonObjectSchema, bindingId: z.string().optional() }).strict(),
+]);
 export const prepareDatasetSchema = z
   .object({
-    recipe: recipeSchema,
+    recipe: submissionRecipeSchema,
     sourceAnalysis: querySubgraphSchema.optional(),
     title: z.string().min(1),
-    question: z.string().min(1),
+    question: z.string().min(1).optional(),
     assumptions: z.array(z.string()),
     metricUses: z.array(metricUseSchema),
     selfCheck: selfCheckSchema,
-    decisionIds: z.array(id),
+    decisionIds: z.array(id).optional(),
   })
   .strict().superRefine((data, context) => {
-    if (data.recipe.kind !== "metric" && !data.sourceAnalysis) context.addIssue({ code: z.ZodIssueCode.custom, message: "sourceAnalysis is required" });
+    if (data.sourceAnalysis) context.addIssue({ code: z.ZodIssueCode.custom, message: "Sources are derived from the query package" });
   });
 export type DatasetPayload = z.infer<typeof datasetPayloadSchema>;
 export type RetrievalInput = z.infer<typeof retrievalInputSchema>;

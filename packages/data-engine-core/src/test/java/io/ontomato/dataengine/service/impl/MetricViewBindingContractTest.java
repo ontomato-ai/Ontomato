@@ -41,6 +41,10 @@ class MetricViewBindingContractTest {
     ReflectionTestUtils.setField(service, "transactionManager", transactions);
     ReflectionTestUtils.setField(service, "metricViewDao", dao);
     ReflectionTestUtils.setField(service, "functionDao", functionDao);
+    var admin = mock(AdminService.class);
+    when(admin.getJSONRule(anyString())).thenReturn(Map.of("classDef", List.of(
+        JSONObject.of("className", "/Employee", "attrs", List.of(JSONObject.of("name", "salary"))))));
+    ReflectionTestUtils.setField(service, "adminService", admin);
     ReflectionTestUtils.setField(service, "abcProgramService", execution);
     when(functionDao.queryById(anyString())).thenAnswer(call -> {
       Function f = functions.get(call.getArgument(0)); return f == null ? null : copy(f, Function.class);
@@ -73,17 +77,23 @@ class MetricViewBindingContractTest {
     when(execution.execute(anyString(), any(), anyString(), any(), isNull(), anyString(), anyInt(), anyString()))
         .thenAnswer(call -> {
           Function f = call.getArgument(1);
-          return new Object[]{JSONArray.of(JSONObject.of("code", f.getCode(), "values", MetricViewBindings.values(f))), new PythonExecuteResult()};
+          String code = QueryPackage.query(f.getQueryPackage(), "main").getJSONObject("answer")
+              .getJSONArray("steps").getJSONObject(0).getJSONObject("output").getJSONArray("fields")
+              .getJSONObject(0).getString("expr").replace("'", "");
+          return new Object[]{JSONArray.of(JSONObject.of("code", code, "values", MetricViewBindings.values(f))), new PythonExecuteResult()};
         });
   }
 
   MetricView metric(String domain) {
-    Function f = new Function(); f.setOperation(Function.OPERATION_READ); f.setCode("shared calculation");
+    Function f = new Function(); f.setOperation(Function.OPERATION_READ);
     f.setParameters(new ArrayList<>());
     for (String[] field : new String[][]{{"amount", Parameter.TYPE_NUMBER}, {"labels", Parameter.TYPE_STRING_ARRAY}, {"optional", Parameter.TYPE_STRING}}) {
       Parameter p = new Parameter(); p.setName(field[0]); p.setType(field[1]); p.setValue(null); f.getParameters().add(p);
     }
-    f.setReturnDef(new ReturnDef());
+    var pkg = QueryPackage.fromDsl("{\"answer\":{\"steps\":[{\"graph\":{\"patterns\":[{\"objects\":[{\"idx\":0,\"variable\":\"e\",\"class\":\"/Employee\"}]}]},\"output\":{\"fields\":[{\"expr\":\"'shared calculation'\",\"as\":\"code\"}]}}]}}");
+    pkg.getJSONObject("manifest").put("parameterDefs", JSON.parseArray(JSON.toJSONString(f.getParameters(), com.alibaba.fastjson2.JSONWriter.Feature.WriteMapNullValue)));
+    f.setQueryPackage(pkg);
+    var returns = new ReturnDef(); returns.setColumnLabels(JSONObject.of("code", "Code")); f.setReturnDef(returns);
     MetricView m = service.generateFromFunction(f); m.setDomainId(domain); m.setName("Revenue");
     m.setStatus(MetricView.STATUS_PUBLISHED); m.setMatchQuestions(new HashSet<>());
     m.setBindings(new ArrayList<>(List.of(binding("First", 0), binding("Second", 12))));
@@ -109,7 +119,9 @@ class MetricViewBindingContractTest {
     assertEquals(0, execute(m, m.getBindings().get(0).getId()).getJSONObject("values").getIntValue("amount"));
     assertEquals(12, execute(m, m.getBindings().get(1).getId()).getJSONObject("values").getIntValue("amount"));
     assertNull(functions.values().iterator().next().getParameters().get(0).getValue());
-    m.getFunction().setCode("updated calculation"); service.save(m, "en");
+    var source = m.getFunction().getQueryPackage().getJSONArray("files").getJSONObject(0);
+    source.put("content", source.getString("content").replace("shared calculation", "updated calculation"));
+    service.save(m, "en");
     for (var b : m.getBindings()) assertEquals("updated calculation", execute(m, b.getId()).getString("code"));
     assertEquals(1, functions.size());
     JSONObject payload = JSON.parseObject(JSON.toJSONString(m, com.alibaba.fastjson2.JSONWriter.Feature.WriteMapNullValue));
@@ -122,12 +134,12 @@ class MetricViewBindingContractTest {
   void invalidatingEditsDoNotChangeStoredDefinitionOrBindings() {
     MetricView m = service.save(metric("domain-a"), "en");
     String before = JSON.toJSONString(functions);
-    m.getFunction().getParameters().get(0).setType(Parameter.TYPE_STRING);
+    m.getFunction().getQueryPackage().getJSONObject("manifest").getJSONArray("parameterDefs").getJSONObject(0).put("type", Parameter.TYPE_STRING);
     m.setBindings(null); // Definition-only clients preserve the saved binding collection.
     assertThrows(IllegalArgumentException.class, () -> service.save(m, "en"));
     assertEquals(before, JSON.toJSONString(functions));
     MetricView renamed = service.queryById(m.getId(), "domain-a");
-    renamed.getFunction().getParameters().get(0).setName("renamed");
+    renamed.getFunction().getQueryPackage().getJSONObject("manifest").getJSONArray("parameterDefs").getJSONObject(0).put("name", "renamed");
     assertThrows(IllegalArgumentException.class, () -> service.save(renamed, "en"));
     assertEquals(2, metrics.get(m.getId()).getBindings().size());
   }

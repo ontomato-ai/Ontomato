@@ -45,6 +45,8 @@ public class QueryGrantService {
         "CREATE TABLE IF NOT EXISTS query_runtime_grants (id varchar(64) PRIMARY KEY, run_id"
             + " varchar(128) NOT NULL, domain_id varchar(128) NOT NULL, expires_at bigint NOT NULL,"
             + " revoked boolean NOT NULL DEFAULT false, query_error text)");
+    jdbc.execute("ALTER TABLE query_runtime_grants ADD COLUMN IF NOT EXISTS package_input jsonb");
+    jdbc.execute("ALTER TABLE query_runtime_grants ADD COLUMN IF NOT EXISTS package_partial jsonb");
   }
 
   public void requireWorkbench(HttpServletRequest request) {
@@ -97,7 +99,7 @@ public class QueryGrantService {
         || expiresAt <= System.currentTimeMillis())
       throw new IllegalArgumentException(
           "Query grant requires a valid subject, domain, run and deadline");
-    if (!List.of("retrieval-exploration", "user-read", "sandbox-write", "ontology-generation", "knowledge-governance")
+    if (!List.of("retrieval-exploration", "user-read", "package-read", "sandbox-write", "ontology-generation", "knowledge-governance")
         .contains(purpose)) throw new IllegalArgumentException("Invalid grant purpose");
     String id = UUID.randomUUID().toString();
     JSONObject claims = new JSONObject();
@@ -173,6 +175,7 @@ public class QueryGrantService {
                       + "/runs/" + runId + "/outputs(?:/[^/]+(?:/content)?)?"));
       // Sandbox and saved read programs query through the same protocol, which applies the owner's
       // row and column permissions; only the sandbox one may also write through its own grant.
+      case "package-read" -> path.equals("/ontology/query/execute-dsl");
       case "sandbox-write" -> read(path) || path.startsWith("/writeFunctionOperation/");
       // A generation agent reads the ontology as its owner so that it can author valid definitions;
       // it never reaches final output delivery or another run's actions.
@@ -193,6 +196,39 @@ public class QueryGrantService {
   /** Whether this path needs a scoped write grant rather than an ordinary credential. */
   public static boolean requiresWriteGrant(String path) {
     return path.startsWith("/writeFunctionOperation/");
+  }
+
+  public String issuePackage(PythonAuthority authority, String execution, long expiresAt) {
+    var input = authority.packageInput();
+    QueryPackage.validate(input.getJSONObject("package"));
+    String digest = OntologyQueryService.digest(input);
+    String token = issue(authority.userId(), authority.domainId(), "package-read", execution,
+        expiresAt, authority.classNames(), null, JSONObject.of("packageInputSha256", digest));
+    String grantId = JSON.parseObject(Base64.getUrlDecoder().decode(token.split("\\.")[1])).getString("jti");
+    jdbc.update("UPDATE query_runtime_grants SET package_input=?::jsonb WHERE id=? AND run_id=? AND domain_id=? AND revoked=false",
+        JSON.toJSONString(input, com.alibaba.fastjson2.JSONWriter.Feature.WriteMapNullValue), grantId, execution, authority.domainId());
+    return token;
+  }
+
+  public JSONObject packageInput(JSONObject grant) {
+    if (grant == null || !"package-read".equals(grant.getString("purpose")))
+      throw new ResponseStatusException(HttpStatus.FORBIDDEN, "A package execution grant is required");
+    String text = jdbc.queryForObject("SELECT package_input::text FROM query_runtime_grants WHERE id=? AND run_id=? AND domain_id=? AND revoked=false AND expires_at>?",
+        String.class, grant.getString("jti"), grant.getString("runId"), grant.getString("domainId"), System.currentTimeMillis());
+    JSONObject input = JSON.parseObject(text);
+    if (input == null || !OntologyQueryService.digest(input).equals(grant.getString("packageInputSha256")))
+      throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Package execution input differs");
+    return input;
+  }
+
+  public void recordPackagePartial(JSONObject grant, JSONObject partial) {
+    jdbc.update("UPDATE query_runtime_grants SET package_partial=?::jsonb WHERE id=? AND package_partial IS NULL AND revoked=false",
+        partial.toJSONString(), grant.getString("jti"));
+  }
+
+  public JSONObject packagePartial(String domain, String execution) {
+    var values = jdbc.queryForList("SELECT package_partial::text FROM query_runtime_grants WHERE domain_id=? AND run_id=? AND package_partial IS NOT NULL LIMIT 1", String.class, domain, execution);
+    return values.isEmpty() ? null : JSON.parseObject(values.get(0));
   }
 
   public void revoke(String domainId, String runId) {

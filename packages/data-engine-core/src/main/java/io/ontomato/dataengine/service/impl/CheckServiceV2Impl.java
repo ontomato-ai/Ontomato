@@ -109,7 +109,6 @@ public class CheckServiceV2Impl implements CheckServiceV2 {
               describeProgram(
                   check.getSessionId(),
                   i,
-                  check.getOriginQuestion(),
                   program,
                   classNames,
                   check.getLang(),
@@ -258,7 +257,6 @@ public class CheckServiceV2Impl implements CheckServiceV2 {
   private ABCHarnessProgramDescription describeProgram(
       String sessionId,
       int index,
-      String originQuestion,
       ABCHarnessProgram program,
       List<String> classNames,
       String lang,
@@ -281,7 +279,7 @@ public class CheckServiceV2Impl implements CheckServiceV2 {
         throw new IllegalArgumentException("Invalid program description");
 
       ABCHarnessProgramDescription description = new ABCHarnessProgramDescription();
-      description.setCode(program.getCode());
+      description.setQueryLogic(io.ontomato.dataengine.service.QuerySourceSnapshot.input(program));
       description.setMeaning(logic);
       description.setSummary(summary);
       return generation.settle(() -> description);

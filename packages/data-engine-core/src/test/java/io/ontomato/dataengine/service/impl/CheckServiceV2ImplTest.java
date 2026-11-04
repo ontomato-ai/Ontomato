@@ -151,7 +151,7 @@ class CheckServiceV2ImplTest {
                 check,
                 List.of(program(), program()),
                 JSONArray.of(
-                    JSONObject.of("kind", "python"), JSONObject.of("kind", "python")),
+                    JSONObject.of("kind", "package"), JSONObject.of("kind", "package")),
                 DOMAIN));
 
     verify(functionService, times(2))
@@ -161,7 +161,7 @@ class CheckServiceV2ImplTest {
   }
 
   @Test
-  void pythonRecipeKeepsTheExistingFunctionCandidate() throws Exception {
+  void packageRecipeCreatesAFunctionCandidateFromTheWholePackage() throws Exception {
     ABCHarnessCheck check = scoredCheck();
     Function function = function();
     MetricView candidate = metric(function);
@@ -173,7 +173,7 @@ class CheckServiceV2ImplTest {
         .thenReturn("Employees in 2026");
 
     checks.generateCandidates(
-        check, List.of(program()), JSONArray.of(JSONObject.of("kind", "python")), DOMAIN);
+        check, List.of(program()), JSONArray.of(JSONObject.of("kind", "package")), DOMAIN);
 
     verify(functionService).save(function, "en");
     verify(metricViewService).save(candidate, "en");
@@ -281,7 +281,9 @@ class CheckServiceV2ImplTest {
   private static ABCHarnessProgram program() {
     ABCHarnessProgram program = new ABCHarnessProgram();
     program.setQuestion(QUESTION);
-    program.setCode("# ontomato-python:2\nprint('[]')\n");
+    program.setQueryPackage(io.ontomato.dataengine.service.QueryPackage.fromDsl(
+        JSONObject.of("problem", QUESTION, "answer", JSONObject.of("steps", new JSONArray())).toJSONString()));
+    program.setParameterValues(new JSONObject());
     return program;
   }
 
