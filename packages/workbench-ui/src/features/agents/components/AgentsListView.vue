@@ -9,17 +9,22 @@ import type { AssistantAgentDefinition as AgentDefinition } from "@ontomato/cont
 import {
   agentDefinitionsApi,
   loadModelOptions,
-  loadOntologyOutline,
+  loadOntologyScope,
   type ObjectClassOption,
+  type ObjectRelationOption,
 } from "../api";
 import { avatarIcon, lightAvatarColorOptions, themedAvatarColor } from "../avatar";
 import AgentEditor from "./AgentEditor.vue";
 import DiagnosisModelPanel from "./DiagnosisModelPanel.vue";
 
 /**
- * Agent settings of the business workbench: the agents on the left, the selected one's editor on the right. The built-in
- * operations agent is listed below them for choosing its model only.
+ * The agents tab: business agents and the built-in operations agent in one list, grouped. The built-in agent has only
+ * its model to set; every other agent opens the long editor.
  */
+const props = defineProps<{
+  /** The operations agent is shown only with the observer code (the same code as operations diagnosis). */
+  showSystemAgents: boolean;
+}>();
 const emit = defineEmits<{ changed: [] }>();
 const { t } = useI18n();
 const { isDark } = useTheme();
@@ -33,6 +38,7 @@ const creating = ref(false);
 const diagnosisOpen = ref(false);
 const editor = ref<{ dirty: boolean } | null>(null);
 const classes = ref<ObjectClassOption[]>([]);
+const relations = ref<ObjectRelationOption[]>([]);
 const outlineLoading = ref(true);
 const modelOptions = ref<ModelOptions | null>(null);
 const modelOptionsFailed = ref(false);
@@ -75,8 +81,12 @@ onMounted(async () => {
   void load();
   void reloadModelOptions();
   try {
-    const outline = await loadOntologyOutline();
-    classes.value = outline.classes;
+    const scope = await loadOntologyScope();
+    classes.value = scope.classes;
+    relations.value = scope.relations;
+  } catch {
+    classes.value = [];
+    relations.value = [];
   } finally {
     outlineLoading.value = false;
   }
@@ -151,7 +161,7 @@ function deleted(id: string) {
         {{ t("agents.loadFailed") }}
         <button type="button" class="link" @click="load">{{ t("common.retry") }}</button>
       </div>
-      <div v-else-if="agents.length === 0" class="list-note">{{ t("agents.empty") }}</div>
+      <div v-else-if="agents.length === 0 && !props.showSystemAgents" class="list-note">{{ t("agents.empty") }}</div>
       <ul v-else>
         <li v-for="agent in agents" :key="agent.id">
           <button
@@ -172,20 +182,22 @@ function deleted(id: string) {
           </button>
         </li>
       </ul>
-      <h3 class="list-group">{{ t("agents.systemAgents") }}</h3>
-      <button
-        type="button"
-        class="agent-item"
-        :class="{ active: diagnosisOpen }"
-        :aria-current="diagnosisOpen ? 'page' : undefined"
-        @click="openDiagnosis"
-      >
-        <span class="item-avatar system-avatar"><ScanEye :size="16" /></span>
-        <span class="item-text">
-          <span class="item-name">{{ t("admin.opsAgent") }}</span>
-          <span class="item-description">{{ t("agents.opsAgentModelOnly") }}</span>
-        </span>
-      </button>
+      <template v-if="props.showSystemAgents">
+        <h3 class="list-group">{{ t("agents.systemAgents") }}</h3>
+        <button
+          type="button"
+          class="agent-item"
+          :class="{ active: diagnosisOpen }"
+          :aria-current="diagnosisOpen ? 'page' : undefined"
+          @click="openDiagnosis"
+        >
+          <span class="item-avatar system-avatar"><ScanEye :size="16" /></span>
+          <span class="item-text">
+            <span class="item-name">{{ t("admin.opsAgent") }}</span>
+            <span class="item-description">{{ t("agents.opsAgentModelOnly") }}</span>
+          </span>
+        </button>
+      </template>
     </aside>
     <section class="agent-detail">
       <DiagnosisModelPanel
@@ -200,6 +212,7 @@ function deleted(id: string) {
         :key="editorKey"
         :agent="creating ? null : selected"
         :classes="classes"
+        :relations="relations"
         :outline-loading="outlineLoading"
         :model-options="modelOptions"
         :model-options-failed="modelOptionsFailed"
@@ -259,7 +272,7 @@ ul {
   width: 100%;
   padding: 8px 10px;
   border: 0;
-  border-radius: 10px;
+  border-radius: var(--radius-md);
   background: transparent;
   color: var(--el-text-color-regular);
   font: inherit;
@@ -291,7 +304,7 @@ ul {
   width: 32px;
   height: 32px;
   flex-shrink: 0;
-  border-radius: 9px;
+  border-radius: var(--radius-sm);
   color: var(--el-color-primary);
 }
 .item-text {
@@ -344,7 +357,7 @@ ul {
 }
 .list-skeleton span {
   height: 32px;
-  border-radius: 9px;
+  border-radius: var(--radius-sm);
   background: var(--el-fill-color);
 }
 .agent-detail {

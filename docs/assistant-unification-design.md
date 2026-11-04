@@ -52,6 +52,9 @@ parent run while retaining retrieval identity. Cancellation closes those gates a
 stops child work. Reuse existing admission and deadline semantics; retain
 `queryTimeoutSeconds` after deleting branch-mode configuration.
 
+*(2026-11-04: `queryTimeoutSeconds` was a stored setting then; it is now a fixed
+ten-minute constant with no configuration interface, so this line no longer applies.)*
+
 Child workspace paths cannot be referenced in the parent's Markdown. The skill
 downloads accepted child snapshots through the host and atomically writes their
 unchanged bytes into its own `outputs/`; runtime registers them normally. Workbench

@@ -10,8 +10,6 @@ export const appTextFoundationEn = {
   "foundation.rateLimit.tooManyRequests": "Too many requests, please try again later",
   "foundation.report.defaultTitle": "Analysis Report",
   "foundation.skill.description": "Skill description cannot be empty",
-  "foundation.systemModel.saveFailed": "Failed to save system model configuration:",
-  "foundation.systemModel.testFailed": "Failed to test system model:",
   "foundation.error.unknown": "Unknown error",
   "foundation.error.apiNotConfigured": "API not configured",
   "foundation.error.apiRequestFailed": "API request failed",

@@ -39,7 +39,6 @@ import observeRouter from "../platform/diagnosis/observe/routes";
 import artifactRetentionRouter from "../platform/diagnosis/artifact-retention-routes";
 import opsDiagnosisRouter from "../api/routes/ops-diagnosis";
 import { syncRuntimeDefaultResources } from "../platform/runtime-defaults";
-import systemModelConfigRouter from "../api/routes/system-model-config";
 import workbenchAppearanceRouter from "../api/routes/workbench-appearance";
 import { syncDefaultPrompts } from "../core/prompts/loader";
 import { createLogger } from "../logging/logger";
@@ -229,7 +228,6 @@ export function createWorkbenchApp(): Express {
   app.use("/api/observe", opsDiagnosisRouter);
   app.use("/api/observe", serviceLogsRouter);
   app.use("/api/observe", observeRouter);
-  app.use("/api/system-model-config", systemModelConfigRouter);
   app.use("/api/workbench-appearance", workbenchAppearanceRouter);
   app.use(errorHandler);
 

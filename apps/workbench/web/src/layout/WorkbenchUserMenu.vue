@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ChevronDown, Moon, Settings, Sun, UserRound } from "lucide-vue-next";
+import { ChevronDown, Moon, Sun, UserRound } from "lucide-vue-next";
 import { useLocale } from "@ontomato/workbench-ui";
 
 defineProps<{
@@ -9,7 +9,6 @@ defineProps<{
 
 const emit = defineEmits<{
   "update:visible": [value: boolean];
-  admin: [];
   toggleTheme: [];
 }>();
 
@@ -17,11 +16,6 @@ const { t } = useLocale();
 
 function closeAll() {
   emit("update:visible", false);
-}
-
-function handleAdmin() {
-  emit("admin");
-  closeAll();
 }
 
 function handleToggleTheme() {
@@ -35,21 +29,17 @@ function handleToggleTheme() {
     <button
       type="button"
       class="footer-user"
-      :aria-label="t('nav.admin')"
+      :aria-label="t('user.menu')"
       :aria-expanded="visible"
       @click.stop="emit('update:visible', !visible)"
     >
       <span class="user-avatar"><UserRound :size="16" /></span>
-      <span class="footer-user-name">{{ t("nav.admin") }}</span>
+      <span class="footer-user-name">{{ t("user.menu") }}</span>
       <ChevronDown :size="12" class="footer-chevron" :class="{ open: visible }" />
     </button>
     <Teleport to="body">
       <div v-if="visible" class="user-menu-overlay" @click="emit('update:visible', false)">
         <div class="user-menu-popup" @click.stop>
-          <div class="user-menu-item" @click="handleAdmin">
-            <Settings :size="14" />
-            <span>{{ t("nav.admin") }}</span>
-          </div>
           <div class="user-menu-item" @click="handleToggleTheme">
             <Sun v-if="isDark" :size="14" />
             <Moon v-else :size="14" />

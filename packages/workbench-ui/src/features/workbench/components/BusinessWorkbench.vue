@@ -2,6 +2,7 @@
 import { computed, nextTick, onMounted, ref, watch } from "vue";
 import { ElMessage } from "element-plus";
 import { useI18n } from "vue-i18n";
+import { useRoute, useRouter } from "vue-router";
 import {
   AgentShell,
   type ShellFeatureDeclaration,
@@ -9,7 +10,7 @@ import {
 } from "@ontomato/agent-shell-ui";
 import "@ontomato/agent-shell-ui/style.css";
 import type { WorkbenchAppearance } from "@ontomato/contracts/workbench-appearance";
-import { AgentSettingsPage } from "../../agents";
+import { AgentsPage } from "../../agents";
 import { DashboardHome } from "../../dashboard";
 import { ScheduledTasksPage } from "../../scheduled-tasks";
 import { useDashboardStore } from "../../dashboard/stores/dashboard";
@@ -25,17 +26,20 @@ import { workbenchFeatures } from "../features";
 import { useOntologyServiceAccess } from "../../../app/ontology-service";
 
 /**
- * The one business workbench both editions mount. Editions add their own feature entries and
- * render those pages through the `feature` slot; everything else is shared.
+ * The one business workbench both editions mount. Editions add their own feature entries and render those pages through
+ * the `feature` slot; everything else is shared.
  */
-const props = defineProps<{
-  /** Edition-specific entries, placed after the shared dashboard entry (see workbenchFeatures). */
-  features?: ShellFeatureDeclaration[];
-  defaultLogo: string;
-  defaultBrandName: string;
-  /** Whether the current user may manage agent definitions (the edition's permission). */
-  canManageAgents: boolean;
-}>();
+const props = withDefaults(
+  defineProps<{
+    /** Edition-specific entries, placed after the shared dashboard entry (see workbenchFeatures). */
+    features?: ShellFeatureDeclaration[];
+    defaultLogo: string;
+    defaultBrandName: string;
+    /** The edition's permission check for the function area's entries; open source shows everything. */
+    can?: (permission: string) => boolean;
+  }>(),
+  { features: () => [], can: () => true },
+);
 
 const emit = defineEmits<{ featureAction: [id: string] }>();
 
@@ -43,6 +47,8 @@ const WORKBENCH_ID = "business";
 const AGENT_KEY = "ontomato.workbench.agent";
 
 const { t } = useI18n();
+const route = useRoute();
+const router = useRouter();
 const ontologyService = useOntologyServiceAccess();
 const client = createAssistantClient();
 const feedback = createAssistantFeedback();
@@ -72,7 +78,7 @@ watch(agentId, (id) => {
 const workbench = computed<ShellWorkbenchDeclaration>(() => ({
   id: WORKBENCH_ID,
   label: appearance.value?.brand.name || props.defaultBrandName,
-  features: workbenchFeatures(t, props.features ?? [], props.canManageAgents, ontologyService.visible()),
+  features: workbenchFeatures(t, props.features, props.can, ontologyService.visible()),
 }));
 
 const labels = useShellLabels();
@@ -106,6 +112,43 @@ function appearanceSaved(value: WorkbenchAppearance) {
   appearance.value = value;
   editingBrand.value = false;
 }
+
+/** The agents page's tab is part of the address, so a link to the capability library opens it directly. */
+const agentsTab = ref<"agents" | "capabilities" | null>(null);
+
+function requestedTab(): "agents" | "capabilities" | null {
+  const tab = route.query.tab;
+  return tab === "capabilities" ? "capabilities" : tab === "agents" ? "agents" : null;
+}
+
+/** Entries that are pages of their own conversation shell open in a new tab, like the Ontology Service link. */
+function openSeparatePage(path: string) {
+  window.open(router.resolve(path).href, "_blank", "noopener");
+}
+
+function handleFeatureAction(id: string) {
+  if (id === "ops-diagnosis") openSeparatePage("/observe");
+  emit("featureAction", id);
+}
+
+/**
+ * An address may name a feature and a tab (the legacy console addresses and deep links); the shell opens it, and drops
+ * the parameters so a later navigation to plain /chat is a clean conversation. Watched on mount and on every query
+ * change, because a link inside the running workbench does not remount it.
+ */
+watch(
+  () => route.query.feature,
+  (requested) => {
+    if (requested !== "agents" && requested !== "dashboards" && requested !== "schedule") return;
+    featureId.value = requested;
+    agentsTab.value = requested === "agents" ? requestedTab() : null;
+    const query = { ...route.query };
+    delete query.feature;
+    delete query.tab;
+    void router.replace({ path: route.path, query });
+  },
+  { immediate: true },
+);
 </script>
 
 <template>
@@ -120,7 +163,7 @@ function appearanceSaved(value: WorkbenchAppearance) {
     :feedback="feedback"
     :chart-theme="nativeEchartsTheme"
     @error="ElMessage.error($event)"
-    @feature-action="emit('featureAction', $event)"
+    @feature-action="handleFeatureAction"
   >
     <template #brand>
       <div
@@ -138,7 +181,7 @@ function appearanceSaved(value: WorkbenchAppearance) {
     </template>
     <template #feature="{ featureId: page }">
       <DashboardHome v-if="page === 'dashboards'" />
-      <AgentSettingsPage v-else-if="page === 'agent-config'" @changed="shell?.reloadAgents()" />
+      <AgentsPage v-else-if="page === 'agents'" :can="props.can" :initial-tab="agentsTab" @changed="shell?.reloadAgents()" />
       <ScheduledTasksPage v-else-if="page === 'schedule'" @open-session="openScheduledSession" />
       <slot v-else name="feature" :feature-id="page" />
     </template>

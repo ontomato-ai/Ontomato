@@ -16,6 +16,7 @@ import {
   LayoutDashboard,
   Network,
   Puzzle,
+  ScanEye,
   Settings2,
   SquareTerminal,
   Table2,
@@ -38,6 +39,7 @@ const featureIcons: Record<string, Component> = {
   test: FlaskConical,
   query: SquareTerminal,
   review: ListChecks,
+  diagnosis: ScanEye,
 };
 
 export function featureIcon(name: string): Component {

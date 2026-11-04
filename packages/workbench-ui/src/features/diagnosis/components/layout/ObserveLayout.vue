@@ -43,7 +43,7 @@ const workbench = computed<ShellWorkbenchDeclaration>(() => ({
   label: t("ops.title"),
   features: [
     ...pages.map(({ id, label, icon }) => ({ id, label: t(label), icon, availability: "page" as const, withConversation: true })),
-    { id: "admin", label: t("ops.back"), icon: "settings", availability: "action" as const },
+    { id: "workbench", label: t("ops.back"), icon: "agents", availability: "action" as const },
   ],
 }));
 const pageOf = (path: string) =>
@@ -137,7 +137,7 @@ watch(() => [route.query.diagnose, route.query.sourceSessionId, route.query.sour
 }, { immediate: true });
 
 function featureAction(id: string) {
-  if (id === "admin") void router.push("/admin");
+  if (id === "workbench") void router.push("/chat");
 }
 
 onMounted(() => {

@@ -18,16 +18,18 @@ export {
 } from "./utils/api";
 export { apiUrl } from "./utils/api-base";
 export { useLocale } from "./composables/useLocale";
-export { adminApi, AdminLayout } from "./features/admin";
-export type {
-  AdminAccess,
-  AdminAccount,
-  AdminGroup,
-  AdminLayoutConfig,
-  AdminMenuItem,
-} from "./features/admin/navigation";
-export { adminGroups, adminMenuItems, adminNavigationIcons, decorateAdminGroup, decorateAdminMenuItem } from "./features/admin/navigation";
-export { adminRoutes } from "./router/admin-routes";
+export {
+  AGENT_PAGE_PERMISSIONS,
+  AGENT_TAB_PERMISSIONS,
+  OPS_DIAGNOSIS_PERMISSION,
+  anyPermission,
+  showsAgentTab,
+  workbenchPermissionGroups,
+  workbenchPermissions,
+} from "./features/agents";
+export type { WorkbenchPermissionData, WorkbenchPermissionGroupData } from "./features/agents";
+export { workbenchFeatures } from "./features/workbench";
+export { legacyAdminRoutes, managerLocation } from "./router/admin-routes";
 export { observeRoutes } from "./router/observe-routes";
 export { ObserveLayout } from "./features/diagnosis";
 export type { ObserveAccount } from "./features/diagnosis/components/layout/types";

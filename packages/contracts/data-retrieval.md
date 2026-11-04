@@ -39,8 +39,8 @@ failure does not change PI state. Read terminal facts before applying deadlines.
 
 Approved deadline (D3): optional integer `timeoutSeconds` from 1 through 600 on
 creation/continuation, snapshotted by Java, defaults to 600 seconds. A caller scope can shorten it.
-Workbench retains queryTimeoutSeconds for its parent and supplies the remaining
-deadline. Java does not read workbench configuration.
+Workbench supplies the remaining deadline from its own turn deadline, a fixed ten
+minutes. Java does not read workbench configuration.
 
 ## Retrieval activity subscription
 
