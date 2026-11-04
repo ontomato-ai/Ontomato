@@ -154,7 +154,14 @@ jobs:
         run: |
           echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
           if [ "$GITHUB_REF_TYPE" = tag ]; then export ONTOMATO_VERSION="${GITHUB_REF_NAME#v}"; elif [ "$GITHUB_REF_NAME" = develop ]; then export ONTOMATO_VERSION=edge; else export ONTOMATO_VERSION="$GITHUB_REF_NAME"; fi
-          sed "s/^ARCH=.*/ARCH=$ARCH/" .env.example > .env
+          # .env.example is an inactive, fully commented reference; CI supplies its own site inputs.
+          cp .env.example .env
+          {
+            echo "ARCH=$ARCH"
+            echo "POSTGRES_PASSWORD=ci-verify-password"
+            echo "ONTOMATO_MODEL_RUNTIME_TOKEN=ci-verify-runtime-token"
+            echo "PUBLIC_HOST=127.0.0.1"
+          } >> .env
           python3 prepare-env.py .env
           echo "COMPOSE_FILE=docker-compose.yml:docker-compose.ghcr.yml" >> .env
           docker compose up -d --wait --wait-timeout 300
