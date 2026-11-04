@@ -25,15 +25,9 @@ function sources(directory: string, found: Record<string, string> = {}) {
   return found;
 }
 
-/* Known page-level overrides that still hard-code brand variables; the page work removes them. */
-const PENDING = new Set([
-  "packages/workbench-ui/src/features/diagnosis/components/layout/OperationsFeatures.vue: --el-text-color-secondary",
-  "packages/workbench-ui/src/features/diagnosis/components/layout/OperationsFeatures.vue: --el-text-color-placeholder",
-]);
-
 it("no public source declares a generated brand variable outside the brand source", () => {
   const files = { ...sources(join(repository, "apps")), ...sources(join(repository, "packages")) };
   expect(Object.keys(files)).toContain("apps/ontology-manager/src/presentation.ts");
   expect(Object.keys(files)).toContain("packages/ontology-manager/src/theme.css");
-  expect(findBrandDeclarations(files).filter((found) => !PENDING.has(found))).toEqual([]);
+  expect(findBrandDeclarations(files)).toEqual([]);
 });

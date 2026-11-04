@@ -58,16 +58,11 @@ defineExpose({ scrollToBottom });
   min-width: 0;
   display: flex;
   flex-direction: column;
-  background: var(--observe-bg-card, #f6f8fa);
+  background: var(--observe-bg-card);
   border: 0.5px solid var(--observe-border, var(--el-border-color));
   border-radius: 8px;
   margin: 8px 8px 8px 0;
   overflow: hidden;
-}
-
-html.dark .right-panel {
-  background: var(--observe-bg-card, #1a1d23);
-  border-color: var(--observe-border, #2d3139);
 }
 
 .log-bar {
@@ -75,28 +70,22 @@ html.dark .right-panel {
   align-items: center;
   gap: 8px;
   padding: 7px 12px;
-  background: var(--observe-bg-sidebar, #eef1f5);
+  background: var(--observe-bg-sidebar);
   border-bottom: 0.5px solid var(--observe-border, var(--el-border-color-lighter));
   flex-shrink: 0;
-}
-
-html.dark .log-bar {
-  background: var(--observe-bg-sidebar, #20242c);
-  border-color: var(--observe-border, #2d3139);
 }
 
 .log-status-dot {
   width: 7px;
   height: 7px;
   border-radius: 50%;
-  background: #8b949e;
+  background: var(--el-text-color-disabled);
   flex-shrink: 0;
   transition: background 0.3s;
 }
 
 .log-status-dot.active {
-  background: #3fb950;
-  box-shadow: 0 0 6px rgba(63, 185, 80, 0.6);
+  background: var(--el-color-success);
   animation: pulse-dot 1.5s ease-in-out infinite;
 }
 
@@ -177,44 +166,27 @@ html.dark .log-bar {
   background: transparent;
 }
 
-html.dark .log-terminal {
-  color: #c9d1d9;
-}
-
 .log-ts {
   color: var(--el-text-color-placeholder);
   margin-right: 4px;
 }
 
 .log-info {
-  color: #1a7f37;
+  color: var(--el-color-success);
 }
 
 .log-warn,
 .log-warning {
-  color: #9a6700;
+  color: var(--el-color-warning);
 }
 
 .log-error {
-  color: #cf222e;
+  color: var(--el-color-danger);
   font-weight: 500;
 }
 
 .log-debug {
   color: var(--el-text-color-placeholder);
-}
-
-html.dark .log-info {
-  color: #3fb950;
-}
-
-html.dark .log-warn,
-html.dark .log-warning {
-  color: #d29922;
-}
-
-html.dark .log-error {
-  color: #f85149;
 }
 
 .log-cursor {

@@ -250,13 +250,8 @@ async function executeDsl() {
   border: 1px solid var(--observe-border, var(--el-border-color-light));
   border-radius: 8px;
   overflow: hidden;
-  background: var(--observe-bg-card, #f6f8fa);
+  background: var(--observe-bg-card);
   margin: 4px;
-}
-
-html.dark .dsl-panel {
-  background: var(--observe-bg-card, #1a1d23);
-  border-color: var(--observe-border, #2d3139);
 }
 
 .dsl-panel.right {
@@ -269,14 +264,9 @@ html.dark .dsl-panel {
   align-items: center;
   gap: 8px;
   padding: 8px 12px;
-  background: var(--observe-bg-sidebar, #eef1f5);
+  background: var(--observe-bg-sidebar);
   border-bottom: 1px solid var(--observe-border, var(--el-border-color-lighter));
   flex-shrink: 0;
-}
-
-html.dark .panel-header {
-  background: var(--observe-bg-sidebar, #20242c);
-  border-color: var(--observe-border, #2d3139);
 }
 
 .panel-title {

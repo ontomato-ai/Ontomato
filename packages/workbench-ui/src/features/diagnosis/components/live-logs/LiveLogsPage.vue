@@ -410,13 +410,8 @@ onBeforeUnmount(() => {
   border: 1px solid var(--observe-border, var(--el-border-color-light));
   border-radius: 8px;
   overflow: hidden;
-  background: var(--observe-bg-card, #f6f8fa);
+  background: var(--observe-bg-card);
   margin: 4px;
-}
-
-html.dark .log-panel {
-  background: var(--observe-bg-card, #1a1d23);
-  border-color: var(--observe-border, #2d3139);
 }
 
 /* ---- Panel Header ---- */
@@ -425,14 +420,9 @@ html.dark .log-panel {
   align-items: center;
   gap: 8px;
   padding: 8px 12px;
-  background: var(--observe-bg-sidebar, #eef1f5);
+  background: var(--observe-bg-sidebar);
   border-bottom: 1px solid var(--observe-border, var(--el-border-color-lighter));
   flex-shrink: 0;
-}
-
-html.dark .panel-header {
-  background: var(--observe-bg-sidebar, #20242c);
-  border-color: var(--observe-border, #2d3139);
 }
 
 .panel-icon {
@@ -462,13 +452,12 @@ html.dark .panel-header {
 }
 
 .status-dot.is-connected {
-  background: #3fb950;
-  box-shadow: 0 0 6px rgba(63, 185, 80, 0.5);
+  background: var(--el-color-success);
   animation: pulse-dot 1.5s ease-in-out infinite;
 }
 
 .status-dot.is-disconnected {
-  background: #8b949e;
+  background: var(--el-text-color-disabled);
 }
 
 @keyframes pulse-dot {
@@ -490,10 +479,6 @@ html.dark .panel-header {
   border-bottom: 1px solid var(--observe-border, var(--el-border-color-lighter));
   flex-shrink: 0;
   flex-wrap: wrap;
-}
-
-html.dark .panel-toolbar {
-  border-color: var(--observe-border, #2d3139);
 }
 
 /* ---- Drag Handle ---- */
@@ -520,12 +505,7 @@ html.dark .panel-toolbar {
   color: var(--el-text-color-placeholder);
   font-size: 13px;
   font-family: var(--font-mono);
-  background: #1e1e2e;
-}
-
-html.dark .log-empty {
-  background: #111;
-  color: #585b70;
+  background: var(--el-fill-color);
 }
 
 .log-terminal {
@@ -534,31 +514,28 @@ html.dark .log-empty {
   margin: 0;
   padding: 8px 14px;
   font-family: var(--font-mono);
-  font-size: 12px;
-  line-height: 1.7;
-  color: #cdd6f4;
+  font-size: var(--text-mono);
+  line-height: var(--leading-mono);
+  color: var(--el-text-color-regular);
   white-space: pre-wrap;
   word-break: break-all;
-  background: #1e1e2e;
+  background: var(--el-fill-color);
 }
 
-html.dark .log-terminal {
-  background: #111;
-}
-
+/* Log levels on the status roles (the terminal follows the mode like every other well). */
 .log-info {
-  color: #a6e3a1;
+  color: var(--el-color-success);
 }
 
 .log-warn {
-  color: #f9e2af;
+  color: var(--el-color-warning);
 }
 
 .log-error {
-  color: #f38ba8;
+  color: var(--el-color-danger);
 }
 
 .log-debug {
-  color: #6c7086;
+  color: var(--el-text-color-placeholder);
 }
 </style>
