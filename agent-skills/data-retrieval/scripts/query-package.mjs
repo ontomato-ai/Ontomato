@@ -12,7 +12,11 @@ async function source(root, name) {
   let target = root;
   for (const part of name.split("/")) {
     target = path.join(target, part);
-    if ((await lstat(target)).isSymbolicLink()) throw new Error("Package links are not allowed: " + name);
+    const stat = await lstat(target).catch((error) => {
+      if (error.code !== "ENOENT") throw error;
+      throw new Error(`Package file ${name} not found at ${path.join(root, name)}; paths are relative to the manifest's directory`);
+    });
+    if (stat.isSymbolicLink()) throw new Error("Package links are not allowed: " + name);
   }
   if (!(await lstat(target)).isFile()) throw new Error("Expected a package file: " + name);
   return { path: name, content: await readFile(target, "utf8") };

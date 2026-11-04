@@ -46,7 +46,10 @@ async function call(route, body, extra = {}, raw = false) {
   if (!response.ok) throw new Error(`HTTP ${response.status}: ${JSON.stringify(value)}`);
   return value;
 }
-await mkdir("work", { recursive: true });
+await mkdir("work", { recursive: true }).catch((error) => {
+  if (!["EACCES", "EROFS", "EPERM"].includes(error.code)) throw error;
+  throw new Error(`Cannot write work/ in ${process.cwd()}; run this command from the workspace root`);
+});
 let state = process.env.ONTOMATO_RUN_ID ? {
   id: process.env.ONTOMATO_RETRIEVAL_ID, sessionId: process.env.ONTOMATO_SESSION_ID, runId: process.env.ONTOMATO_RUN_ID,
 } : null;
