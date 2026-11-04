@@ -44,11 +44,11 @@ const tab = ref<"agents" | "capabilities">(firstVisibleTab());
 </template>
 
 <style scoped>
+/* The page scrolls as a whole (the shell's feature area does the scrolling), so the tabs grow with their content. */
 .agents-page {
   display: flex;
   flex-direction: column;
-  height: 100%;
-  min-height: 0;
+  min-height: 100%;
   padding: 0 24px;
 }
 .agents-page :deep(.el-tabs__header) {
@@ -57,12 +57,6 @@ const tab = ref<"agents" | "capabilities">(firstVisibleTab());
 }
 .agents-page :deep(.el-tabs__content) {
   flex: 1;
-  min-height: 0;
-  overflow: hidden;
-}
-.agents-page :deep(.el-tab-pane) {
-  height: 100%;
-  min-height: 0;
 }
 .agents-page :deep(.el-tabs__nav-wrap::after) {
   height: 1px;
