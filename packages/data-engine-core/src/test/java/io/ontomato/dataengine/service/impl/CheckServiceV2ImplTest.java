@@ -93,7 +93,7 @@ class CheckServiceV2ImplTest {
   void qualityCheckSettlesTheConclusionWithoutCandidates() throws Exception {
     ABCHarnessCheck check = check();
 
-    checks.check(check, List.of(program()), List.of(), DOMAIN);
+    checks.check(check, List.of(program()), List.of(), List.of(), List.of(), DOMAIN);
 
     assertEquals(90.0, check.getScore());
     assertEquals("The program answers the question", check.getConclusion());
@@ -107,13 +107,33 @@ class CheckServiceV2ImplTest {
   }
 
   @Test
+  void qualityPromptUsesHostQuotesAndConfirmedDecisions() throws Exception {
+    ABCHarnessCheck check = check();
+
+    checks.check(
+        check,
+        List.of(program()),
+        List.of("The user's actual message"),
+        List.of("Confirmed decision"),
+        List.of(),
+        DOMAIN);
+
+    ArgumentCaptor<String> prompt = ArgumentCaptor.forClass(String.class);
+    verify(generationService)
+        .generate(eq("quality"), anyString(), prompt.capture(), anyString(), eq(DOMAIN));
+    assertTrue(prompt.getValue().contains("The user's actual message"));
+    assertTrue(prompt.getValue().contains("Confirmed decision"));
+    assertFalse(prompt.getValue().contains(QUESTION));
+  }
+
+  @Test
   void invalidScoreStillFailsTheQualityCheck() throws Exception {
     ABCHarnessCheck check = check();
     when(qualityGeneration.result()).thenReturn(qualityResult(Double.NaN));
 
     assertThrows(
         IllegalStateException.class,
-        () -> checks.check(check, List.of(program()), List.of(), DOMAIN));
+        () -> checks.check(check, List.of(program()), List.of(), List.of(), List.of(), DOMAIN));
     assertNull(check.getScore());
     verify(functionService, never()).generateFromABCProgram(any(), any(), any(), any(), any());
   }

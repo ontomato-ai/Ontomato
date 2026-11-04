@@ -154,16 +154,42 @@ public class OntologyRetrievalService {
     if (context.callerId() != null) {
       var caller = store.caller(context.callerId(), context.owner(), false);
       if (caller.getBooleanValue("closed")) throw closed();
-      var allowed = caller.getJSONObject("input").getList("classNames", String.class);
+      var callerInput = caller.getJSONObject("input");
+      var allowed = callerInput.getList("classNames", String.class);
       if (!allowed.isEmpty()) {
         var requested = input.getList("classNames", String.class);
         if (requested != null && !allowed.containsAll(requested))
           throw new AgentHttpException(403, "FORBIDDEN", "Class scope cannot be widened");
         input.put("classNames", requested == null || requested.isEmpty() ? allowed : requested);
       }
+      // The host owns the user's words; the model-supplied quotes never win in a caller scope.
+      applyCallerUserQuotes(input, callerInput);
     }
     input.put("classNames", QueryAccessService.classScope(context.access().permission(), input.getList("classNames", String.class)));
     return input;
+  }
+
+  /** A caller scope's host-supplied messages replace any model-written quotes. */
+  static void applyCallerUserQuotes(JSONObject input, JSONObject callerInput) {
+    if (callerInput == null) return;
+    JSONArray quotes = callerInput.getJSONArray("recentUserMessages");
+    input.put("userQuotes", quotes == null ? new JSONArray() : quotes);
+  }
+
+  /** Confirmed user clarifications, in the order they were recorded. */
+  static List<String> confirmedDecisions(JSONArray decisions) {
+    if (decisions == null) return List.of();
+    List<String> texts = new ArrayList<>();
+    for (Object item : decisions) {
+      JSONObject decision = JSONObject.from(item);
+      String text = decision.getString("text");
+      String source = decision.getString("source");
+      if (text != null
+          && !text.isBlank()
+          && (source == null || "user".equals(source)))
+        texts.add(text);
+    }
+    return texts;
   }
 
   public boolean createSession(String id, Owner owner) throws Exception {
@@ -247,11 +273,9 @@ public class OntologyRetrievalService {
     }
     var original = store.retrieval(id, context.owner()).getJSONObject("input");
     if (context.callerId() != null) {
-      var allowed =
-          store
-              .caller(context.callerId(), context.owner(), false)
-              .getJSONObject("input")
-              .getList("classNames", String.class);
+      var callerInput =
+          store.caller(context.callerId(), context.owner(), false).getJSONObject("input");
+      var allowed = callerInput.getList("classNames", String.class);
       var originalClasses = original.getList("classNames", String.class);
       if (!allowed.isEmpty()
           && (originalClasses == null
@@ -259,6 +283,7 @@ public class OntologyRetrievalService {
               || !allowed.containsAll(originalClasses)))
         throw new AgentHttpException(
             403, "FORBIDDEN", "The prior retrieval exceeds this caller scope");
+      applyCallerUserQuotes(original, callerInput);
     }
 
     var accepted =
@@ -960,7 +985,8 @@ public class OntologyRetrievalService {
               d.get("sourceAnalysis")));
       recipes.add(recipe);
     }
-    var input = store.retrieval(id, owner).getJSONObject("input");
+    var retrievalRecord = store.retrieval(id, owner);
+    var input = retrievalRecord.getJSONObject("input");
     // The quality check follows the request language that admitted this round.
     var language = row.getString("language");
     quality.start(
@@ -969,6 +995,10 @@ public class OntologyRetrievalService {
             qc,
             "question",
             input.getString("question"),
+            "userQuotes",
+            input.get("userQuotes"),
+            "confirmedDecisions",
+            confirmedDecisions(retrievalRecord.getJSONArray("decisions")),
             "programs",
             programs,
             "recipes",

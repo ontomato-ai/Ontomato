@@ -55,7 +55,12 @@ public class QueryQualityService {
           }
           checks.saveCheckTask(check);
           checks.check(
-              check, programs, body.getList("classNames", String.class), user.getDomainId());
+              check,
+              programs,
+              body.getList("userQuotes", String.class),
+              body.getList("confirmedDecisions", String.class),
+              body.getList("classNames", String.class),
+              user.getDomainId());
           // The quality job returns the settled conclusion before the candidate job produces
           // anything; the candidate job keeps its own status and failure.
           if (generateCandidates

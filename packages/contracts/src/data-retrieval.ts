@@ -210,7 +210,7 @@ export type RetrievalInput = z.infer<typeof retrievalInputSchema>;
 export type RetrievalSnapshot = z.infer<typeof retrievalSnapshotSchema>;
 
 export const retrievalEvidenceSchema = z.object({ input: retrievalInputSchema, snapshot: retrievalSnapshotSchema }).strict();
-export const retrievalCallerInputSchema = z.object({ classNames: z.array(z.string()), continuationIds: z.array(id), deadlineAt: z.string().datetime() }).strict();
+export const retrievalCallerInputSchema = z.object({ classNames: z.array(z.string()), continuationIds: z.array(id), deadlineAt: z.string().datetime(), recentUserMessages: z.array(z.string()).default([]) }).strict();
 export const retrievalCallerSchema = z.object({ id, closed: z.boolean(), retrievals: z.array(z.object({ retrievalId: id, runId: id }).strict()) }).strict();
 
 export const retrievalCallerAdmissionSchema = z.object({ id, expiresAt: z.string().datetime({ offset: true }) }).strict();
