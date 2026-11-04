@@ -37,9 +37,10 @@ export const workbenchPermissions = {
     ownerApplication: "workbench",
     groupKey: "app-capabilities",
   },
+  // The operations agent and its work live in operations diagnosis; observer opens that page.
   systemAgents: {
     permissions: ["observer"],
-    path: "/chat?feature=agents",
+    path: "/observe",
     titleKey: "nav.systemAgents",
     ownerApplication: "workbench",
     groupKey: "app-capabilities",
