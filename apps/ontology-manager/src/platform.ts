@@ -1,6 +1,6 @@
 import en from "element-plus/es/locale/lang/en";
 import { computed } from "vue";
-import { managerRoutes } from "@ontomato/ontology-manager";
+import { managerRoutes, managerStandaloneRoutes } from "@ontomato/ontology-manager";
 import {
   createPlatformClient,
   openAccess,
@@ -57,6 +57,7 @@ export function startOssManager(profile: ManagerShellProfile) {
   const { app } = startPlatformAdmin({
     navigation,
     routes: [...managerRoutes(), ...pageRoutes(ossPlatformPages, platformPageComponents)],
+    standalone: managerStandaloneRoutes(),
     home: startPage(),
     i18n,
     locales,

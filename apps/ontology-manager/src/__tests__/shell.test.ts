@@ -23,6 +23,15 @@ vi.mock("../../../../packages/ontology-manager/src/data-browser/DataBrowser.vue"
   }),
 }));
 
+vi.mock("../../../../packages/ontology-manager/src/knowledge-governance/GovernancePage.vue", () => ({
+  __esModule: true,
+  default: defineComponent({
+    name: "GovernanceDouble",
+    props: { sessionId: String },
+    setup: (props) => () => h("p", { class: "page-double" }, `governance ${props.sessionId ?? ""}`),
+  }),
+}));
+
 // Model configuration reads a structured settings response; its own package tests it.
 vi.mock("../../../../packages/platform-admin/src/pages/ModelConfigPage.vue", () => ({
   __esModule: true,
@@ -136,6 +145,13 @@ describe("open-source Ontology Service page", () => {
     await start("/#/objects");
     expect(document.querySelector(".nav-row.active .nav-label")?.textContent).toBe("Object Types");
     expect(document.querySelector(".page-header")).toBeNull();
+    expect(document.querySelector(".ontology-manager")).not.toBeNull();
+  });
+
+  it("knowledge governance fills the window without the service sidebar", async () => {
+    await start("/#/knowledge-governance/s1");
+    expect(document.querySelector(".page-double")?.textContent).toBe("governance s1");
+    expect(document.querySelector(".service-layout")).toBeNull();
     expect(document.querySelector(".ontology-manager")).not.toBeNull();
   });
 

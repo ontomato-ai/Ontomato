@@ -289,15 +289,31 @@ export function managerRoutes(): RouteRecordRaw[] {
         ]),
         { path: managerPaths.visualModeling, component: VisualModelingPage, meta: { page: managerPaths.visualModeling } },
         { path: managerPaths.knowledge, component: KnowledgePage, meta: { page: managerPaths.knowledge } },
+      ],
+    },
+    // The old platform address of visual modeling.
+    { path: "/admin/ontology/visual-modeling", redirect: managerPaths.visualModeling },
+  ];
+}
+
+/**
+ * The Manager pages that fill the window, outside the service layout and its sidebar: knowledge governance is a
+ * conversation of its own, entered from business knowledge and left through its back link. It is still a page of the
+ * business knowledge entry (`meta.page`), so the same permission opens it.
+ */
+export function managerStandaloneRoutes(): RouteRecordRaw[] {
+  return [
+    {
+      path: "/knowledge-governance",
+      component: ManagerFrame,
+      children: [
         {
-          path: "/knowledge-governance/:sessionId?",
+          path: ":sessionId?",
           component: KnowledgeGovernancePage,
           props: stringParam("sessionId"),
           meta: { page: managerPaths.knowledge },
         },
       ],
     },
-    // The old platform address of visual modeling.
-    { path: "/admin/ontology/visual-modeling", redirect: managerPaths.visualModeling },
   ];
 }
