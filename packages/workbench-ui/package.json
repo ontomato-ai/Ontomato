@@ -6,8 +6,6 @@
   "exports": {
     ".": "./src/index.ts",
     "./content": "./src/content.ts",
-    "./brand": "./src/brand/index.ts",
-    "./brand/oss": "./src/brand/oss.ts",
     "./i18n": "./src/i18n/index.ts",
     "./utils/auth": "./src/utils/auth.ts",
     "./utils/marked": "./src/utils/marked.ts",
@@ -39,6 +37,7 @@
     "@element-plus/icons-vue": "2.3.2",
     "@ontomato/agent-shell-ui": "workspace:*",
     "@ontomato/contracts": "workspace:*",
+    "@ontomato/design-tokens": "workspace:*",
     "codemirror": "6.0.2",
     "echarts": "6.0.0",
     "element-plus": "2.13.6",

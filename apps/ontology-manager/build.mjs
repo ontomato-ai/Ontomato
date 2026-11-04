@@ -15,7 +15,7 @@ buildManagerImage(
     sources: [{ id: "ontomato", root: repoRoot }],
     // Knowledge governance renders through the shared agent shell, which reads runtime contracts; the platform area
     // (audit logs, system monitoring, system configuration) comes from the platform admin package; the design
-    // foundation stylesheet and the brand source come from the workbench UI package.
+    // foundation stylesheet and the brand source come from the design tokens package.
     owners: {
       ontomato: [
         "apps/ontology-manager",
@@ -23,7 +23,7 @@ buildManagerImage(
         "packages/platform-admin",
         "packages/agent-shell-ui",
         "packages/contracts",
-        "packages/workbench-ui",
+        "packages/design-tokens",
       ],
     },
   },

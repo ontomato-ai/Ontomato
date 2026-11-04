@@ -8,7 +8,7 @@ import { installAuthHost, type WorkbenchAuthHost } from "../utils/auth";
 import { installErrorPunctuation, type ErrorPunctuation } from "../utils/error-punctuation";
 import { installWorkbenchContent, type WorkbenchContent } from "../content";
 import { turnDiagnosisAccessKey, type TurnDiagnosisAccess } from "../features/diagnosis/access";
-import { installBrandTheme, type BrandSource } from "../brand";
+import { installBrandTheme, type BrandSource } from "@ontomato/design-tokens";
 
 export interface WorkbenchWebOptions {
   /** This edition's brand source; the workbench colour variables are generated from it. */

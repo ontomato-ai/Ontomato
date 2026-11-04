@@ -1,6 +1,6 @@
 import type { ManagerPresentation } from "@ontomato/ontology-manager";
-import { brandProperties } from "@ontomato/workbench-ui/brand";
-import { ossBrand } from "@ontomato/workbench-ui/brand/oss";
+import { brandProperties } from "@ontomato/design-tokens";
+import { ossBrand } from "@ontomato/design-tokens/oss";
 
 /** Manager component properties that are not brand colours (b6437c86). */
 const managerProperties = {

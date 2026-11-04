@@ -1,7 +1,7 @@
 /*
  * The Manager's own theme: applies only inside the component root .ontology-manager, with light/dark set by the theme prop
  * (is-dark on the root); it neither reads nor changes the host html/body. The host supplies the Element Plus base styles
- * (element-plus/dist/index.css) and the design foundation (@ontomato/workbench-ui/styles/foundation.css: type, spacing,
+ * (element-plus/dist/index.css) and the design foundation (@ontomato/design-tokens/foundation.css: type, spacing,
  * shape, density, elevation, motion), which the component inherits from the document root. Brand colours are not in
  * this file either: the host generates them from its edition's brand source and supplies them as a group per theme via
  * presentation.themeProperties, which the component binds on its root (see OntologyManager.vue). This file keeps only

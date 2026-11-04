@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { brandProperties } from "@ontomato/workbench-ui/brand";
-import { ossBrand } from "@ontomato/workbench-ui/brand/oss";
+import { brandProperties } from "@ontomato/design-tokens";
+import { ossBrand } from "@ontomato/design-tokens/oss";
 import { ossPresentation } from "../presentation";
 
 describe("open-source Manager presentation", () => {

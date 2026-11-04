@@ -3,8 +3,8 @@
    ======================================== */
 
 /* Foundation tokens (type, spacing, shape, density, shell, elevation, motion) and the Element Plus component
-   variables; colours come from the edition's brand source (src/brand). */
-@import "./foundation.css";
+   variables; colours come from the edition's brand source (@ontomato/design-tokens). */
+@import "@ontomato/design-tokens/foundation.css";
 
 * {
   box-sizing: border-box;

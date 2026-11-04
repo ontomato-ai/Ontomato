@@ -1,12 +1,16 @@
 import { contrastRatio, mix, rgbTriplet } from "./color";
 
 /*
- * The brand layer of docs/design/DESIGN.md as code. Each edition keeps exactly one BrandSource (its colour roles in light
- * and dark plus the categorical chart palette); everything that needs a brand colour is generated from it here:
- * - the workbench stylesheet (`installBrandTheme`, through `startWorkbenchWeb`),
+ * @ontomato/design-tokens: the design foundation and the brand layer of docs/design/DESIGN.md as code, free of
+ * application code, so the workbench and the Ontology Manager page both depend on this package alone.
+ *
+ * Each edition keeps exactly one BrandSource (its colour roles in light and dark plus the categorical chart palette);
+ * everything that needs a brand colour is generated from it here:
+ * - the workbench stylesheet (`installBrandTheme`, called by `startWorkbenchWeb` in @ontomato/workbench-ui),
  * - the Ontology Manager presentation (`brandProperties` per theme for `themeProperties`, `dataviz` for `nodePalette`).
  * The role → Element Plus mapping follows DESIGN.md "Colour roles → Element Plus". Foundation values (type, spacing,
- * shape, density, shell, elevation, motion) and the component variable rules live in ../styles/foundation.css.
+ * shape, density, shell, elevation, motion) and the component variable rules live in ./foundation.css
+ * (`@ontomato/design-tokens/foundation.css`).
  */
 
 export type BrandMode = "light" | "dark";

@@ -14,7 +14,7 @@ import {
   startWorkbenchWeb,
   type AdminLayoutConfig,
 } from "@ontomato/workbench-ui";
-import { ossBrand } from "@ontomato/workbench-ui/brand/oss";
+import { ossBrand } from "@ontomato/design-tokens/oss";
 import { anonymousAuthHost } from "./auth";
 import { workbenchContent } from "./workbench-content";
 

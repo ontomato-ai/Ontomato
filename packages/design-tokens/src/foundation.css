@@ -2,9 +2,9 @@
    Foundation - docs/design/DESIGN.md (shared by every edition)
    ========================================
    Type, spacing, shape, density, shell sizes, elevation and motion, plus the Element Plus component variables that
-   the global colour variables do not reach. The workbench loads this through style.css; the Ontology Manager page
-   (Manager workspace and platform area) imports it directly. Colours are not here: each edition's brand source
-   generates them (src/brand). */
+   the global colour variables do not reach. The workbench loads this through @ontomato/workbench-ui style.css; the
+   Ontology Manager page (Manager workspace and platform area) imports it directly. Colours are not here: each
+   edition's brand source generates them (src/index.ts). */
 
 :root {
   /* ---- Type ---- */
