@@ -6,16 +6,11 @@ export {
   openAccess,
   type PlatformAccess,
   type PlatformGroup,
+  type PlatformLink,
   type PlatformNavigation,
   type PlatformPage,
 } from "./navigation";
-export {
-  PLATFORM_ROOT,
-  createPlatformRouter,
-  isPlatformHash,
-  type PlatformPageComponents,
-  type PlatformRoutes,
-} from "./router";
+export { SERVICE_ROOT, createPlatformRouter, type PlatformRouterOptions } from "./router";
 export {
   PlatformBusinessError,
   createPlatformClient,
@@ -25,17 +20,16 @@ export {
   type PlatformCredential,
   type PlatformRequestContext,
 } from "./api";
-export { createPlatformI18n, type PlatformI18n, type PlatformLocale, type PlatformMessages } from "./i18n";
+export { createPlatformI18n, mergeMessages, type PlatformI18n, type PlatformLocale, type PlatformMessages } from "./i18n";
 export {
   platformHostKey,
   providePlatformHost,
   usePlatformHost,
-  type PlatformAction,
   type PlatformPageHost,
   type PlatformPreferences,
   type PlatformTheme,
 } from "./context";
-export { ossNavigation, platformGroups, platformPageComponents, platformPages } from "./pages";
+export { ossPlatformPages, pageRoutes, platformGroups, platformPageComponents, platformPages } from "./pages";
 export type {
   BusinessConfigAdapterDisplay,
   BusinessConfigLanguageOption,

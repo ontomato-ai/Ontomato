@@ -1,7 +1,7 @@
 /*
- * The platform area runs on the Ontology Manager page instead of the Manager workspace (one area per page load). Its
- * design tokens come from the page's foundation stylesheet and its brand colours from the host (themeProperties on the
- * document root), so dialogs and popovers teleported to <body> read them too.
+ * Document rules of the Ontology Service page. Design tokens come from the page's foundation stylesheet and brand
+ * colours from the host (themeProperties on the document root), so dialogs and popovers teleported to <body> read them
+ * too.
  */
 .platform-document {
   color: var(--el-text-color-primary);
@@ -19,7 +19,7 @@
   background: var(--el-bg-color-page);
 }
 
-/* Element Plus button shadows: the platform pages were built with them suppressed inside the admin layout. */
+/* Element Plus button shadows: suppressed in the data shell (nothing in the page flow has a shadow). */
 .platform-document button,
 .platform-document .el-button,
 .platform-document button:hover,

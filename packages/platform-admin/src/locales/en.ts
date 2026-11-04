@@ -1,4 +1,5 @@
-// Platform area messages (English); the enterprise edition adds its translations and its own pages' messages.
+// Ontology Service shell and platform administration messages (English); the enterprise edition adds its translations
+// and its own pages' messages.
 export default {
   "admin": {
     "noAvailableMenuPermission": "No available menu permissions",
@@ -234,6 +235,15 @@ export default {
   },
   "platform": {
     "title": "Platform Management",
-    "backToWorkspace": "Back to Ontology Manager"
+    "serviceName": "Ontology Service",
+    "navigation": "Ontology Service navigation",
+    "agentPlatform": "Agent Platform",
+    "openInNewTab": "Opens in a new tab",
+    "descriptions": {
+      "auditLog": "Sign-ins and changes recorded across the platform",
+      "systemMonitor": "Service status and resource usage of the data engine",
+      "modelConfig": "Models used by the agents, the ontology and knowledge search",
+      "systemConfig": "Data adapters, languages and general parameters"
+    }
   }
 };

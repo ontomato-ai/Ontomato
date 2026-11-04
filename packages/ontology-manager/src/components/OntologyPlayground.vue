@@ -31,6 +31,7 @@ import {
 import { useManagerFeedback } from "../feedback";
 import type { OntologyObject, OntologyRelation } from "../api";
 import { useManagerClient, useManagerContext, useOntologyText, useSharedText } from "../context";
+import { readGraphColors } from "../graph-colors";
 import { graphLayout, initialNodePosition } from "../ontology-graph-layout";
 
 const emit = defineEmits<{ "open-modeling": [focus: "object" | "relation", id: string] }>();
@@ -108,19 +109,7 @@ const attributeCount = computed(() =>
 );
 
 function graphColors() {
-  const styles = getComputedStyle(graphRef.value!);
-  const dark = context.theme === "dark";
-  return {
-    text: dark ? "#f4f6ff" : styles.getPropertyValue("--el-text-color-primary").trim() || "#1b2559",
-    muted: dark
-      ? "#c4cce8"
-      : styles.getPropertyValue("--el-text-color-secondary").trim() || "#6b7a99",
-    surface: dark ? "#181a2e" : styles.getPropertyValue("--el-bg-color").trim() || "#fff",
-    edge: dark ? "#7180a8" : styles.getPropertyValue("--el-border-color-dark").trim() || "#dce3f4",
-    nodeStroke: dark ? "#303858" : styles.getPropertyValue("--el-bg-color").trim() || "#fff",
-    shadow: dark ? "rgba(0, 0, 0, 0.48)" : "rgba(30, 42, 90, 0.16)",
-    primary: styles.getPropertyValue("--el-color-primary").trim() || "#5b3fff",
-  };
+  return readGraphColors(graphRef.value!);
 }
 
 function colorForClass(className: string) {
@@ -197,7 +186,7 @@ function nodeOptions(colors: ReturnType<typeof graphColors>) {
     },
     state: {
       selected: { stroke: colors.primary, lineWidth: 6 },
-      highlighted: { stroke: "#ffb547", lineWidth: 7 },
+      highlighted: { stroke: colors.highlight, lineWidth: 7 },
     },
   };
 }
@@ -220,7 +209,7 @@ function edgeOptions(colors: ReturnType<typeof graphColors>) {
     },
     state: {
       selected: { stroke: colors.primary, lineWidth: 4 },
-      highlighted: { stroke: "#ffb547", lineWidth: 4 },
+      highlighted: { stroke: colors.highlight, lineWidth: 4 },
     },
   };
 }
@@ -991,13 +980,9 @@ onBeforeUnmount(() => {
   min-width: 0;
   min-height: 0;
   overflow: hidden;
-  background-color: var(--el-bg-color-page);
-  background-image: radial-gradient(var(--el-border-color-dark) 1px, transparent 1px);
-  background-size: 18px 18px;
-}
-.ontology-manager.is-dark .graph-panel {
-  background-color: #0a0b16;
-  background-image: radial-gradient(#3a4265 1px, transparent 1px);
+  background-color: var(--el-bg-color);
+  background-image: radial-gradient(var(--el-border-color) 1px, transparent 1px);
+  background-size: 20px 20px;
 }
 .graph-canvas {
   position: absolute;

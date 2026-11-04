@@ -157,3 +157,49 @@
     max-width: 420px;
   }
 }
+
+/* Page surfaces of the Manager routes (routes.ts): each page fills the frame and scrolls on its own. */
+.ontology-manager-shell > .model-surface,
+.ontology-manager-shell > .asset-surface {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+  overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-gutter: stable;
+}
+
+.ontology-manager-shell > .legacy-surface {
+  min-height: 0;
+  flex: 1;
+  overflow: auto;
+  background: var(--el-bg-color);
+}
+
+.ontology-manager-shell > .legacy-surface .data-browser {
+  min-height: 100%;
+}
+
+.ontology-manager-shell > .visual-content {
+  min-height: 0;
+  flex: 1;
+  overflow: hidden;
+}
+
+.ontology-manager-shell > .visual-content .visual-modeling,
+.ontology-manager-shell > .visual-content .graph-container {
+  background: var(--el-bg-color);
+}
+
+.ontology-manager-shell > .knowledge-surface {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  overflow: hidden;
+}
+
+.ontology-manager-shell > .playground-surface {
+  min-height: 0;
+  flex: 1;
+}

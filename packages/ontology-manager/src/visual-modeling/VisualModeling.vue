@@ -7,6 +7,7 @@ import { useManagerFeedback } from "../feedback";
 import { ArrowLeft, Box, Link2, Maximize, Minus, Network, Pencil, Plus, Trash2 } from "lucide-vue-next";
 import { Graph, Node, Edge } from "@antv/x6";
 import { useManagerClient, useManagerContext, useOntologyText, useSharedText } from "../context";
+import { readGraphColors } from "../graph-colors";
 import VisualModelingDialogs from "./VisualModelingDialogs.vue";
 import VisualModelingRightPanel from "./VisualModelingRightPanel.vue";
 import VisualModelingAttributeDialog, {
@@ -81,32 +82,21 @@ function nodeColor(className: string) {
 }
 
 function getGraphColors() {
-  const style = getComputedStyle(graphRef.value!);
-  const primary = style.getPropertyValue("--el-color-primary").trim();
-  const textPrimary = style.getPropertyValue("--el-text-color-primary").trim();
-  const textSecondary = style.getPropertyValue("--el-text-color-secondary").trim();
-  const bgColor = style.getPropertyValue("--el-bg-color").trim();
-  const borderColor = style.getPropertyValue("--el-border-color").trim();
-  const borderDark = style.getPropertyValue("--el-border-color-dark").trim();
-  const success = style.getPropertyValue("--el-color-success").trim();
-  const successLight = style.getPropertyValue("--el-color-success-light-9").trim();
-  const dark = context.theme === "dark";
-  const highlight = "#ffb547";
-
+  const colors = readGraphColors(graphRef.value!);
   return {
-    nodeFill: bgColor,
-    nodeStroke: dark ? "#303858" : bgColor,
-    nodeText: textPrimary,
-    selectedStroke: highlight,
-    selectedHalo: "rgba(255, 181, 71, 0.28)",
-    edgeStroke: dark ? "#7180a8" : borderDark || borderColor,
-    edgeLabelFill: textSecondary,
-    edgeLabelBg: bgColor,
-    edgeLabelStroke: bgColor,
-    portStroke: primary,
-    portFill: bgColor,
-    newFill: successLight,
-    newStroke: success,
+    nodeFill: colors.surface,
+    nodeStroke: colors.surface,
+    nodeText: colors.text,
+    selectedStroke: colors.highlight,
+    selectedHalo: colors.highlightSoft,
+    edgeStroke: colors.edge,
+    edgeLabelFill: colors.muted,
+    edgeLabelBg: colors.surface,
+    edgeLabelStroke: colors.surface,
+    portStroke: colors.primary,
+    portFill: colors.surface,
+    newFill: colors.successSoft,
+    newStroke: colors.success,
   };
 }
 
@@ -1211,12 +1201,9 @@ onUnmounted(() => {
 function refreshGraphTheme() {
   if (graph) {
     const colors = getGraphColors();
-    const dark = context.theme === "dark";
-    graph.container.style.backgroundColor = dark ? "#0a0b16" : "var(--el-bg-color-page)";
-    graph.container.style.backgroundImage = dark
-      ? "radial-gradient(#3a4265 1px, transparent 1px)"
-      : "radial-gradient(var(--el-border-color-dark) 1px, transparent 1px)";
-    graph.container.style.backgroundSize = "18px 18px";
+    graph.container.style.backgroundColor = "var(--el-bg-color)";
+    graph.container.style.backgroundImage = "radial-gradient(var(--el-border-color) 1px, transparent 1px)";
+    graph.container.style.backgroundSize = "20px 20px";
 
     graph.getNodes().forEach((node) => {
       const cls = classList.value.find((c) => c.className === node.id);
@@ -1594,29 +1581,21 @@ async function saveClassDesc(cls: ClassDef) {
 .graph-container {
   flex: 1;
   min-width: 0;
-  background-color: var(--el-bg-color-page);
-  background-image: radial-gradient(var(--el-border-color-dark) 1px, transparent 1px);
-  background-size: 18px 18px;
+  background-color: var(--el-bg-color);
+  background-image: radial-gradient(var(--el-border-color) 1px, transparent 1px);
+  background-size: 20px 20px;
   position: relative;
 }
 
-.ontology-manager.is-dark .graph-container {
-  background-color: #0a0b16;
-  background-image: radial-gradient(#3a4265 1px, transparent 1px);
-}
 
 .graph-canvas {
   width: 100%;
   height: 100%;
-  background-color: var(--el-bg-color-page);
-  background-image: radial-gradient(var(--el-border-color-dark) 1px, transparent 1px);
-  background-size: 18px 18px;
+  background-color: var(--el-bg-color);
+  background-image: radial-gradient(var(--el-border-color) 1px, transparent 1px);
+  background-size: 20px 20px;
 }
 
-.ontology-manager.is-dark .graph-canvas {
-  background-color: #0a0b16;
-  background-image: radial-gradient(#3a4265 1px, transparent 1px);
-}
 
 .graph-canvas :deep(.x6-graph),
 .graph-canvas :deep(.x6-graph-background),

@@ -1,11 +1,25 @@
-/** One admin page of the platform area: its route path (hash) and the capability that grants access. */
+import type { Component } from "vue";
+
+/**
+ * One page of the Ontology Service navigation: its route path (hash), the capability that grants access and how its
+ * navigation row looks. Ontology, asset and knowledge pages (the Manager's) and platform administration pages are all
+ * entries of the same navigation.
+ */
 export interface PlatformPage {
-  /** Hash path under the platform root, e.g. `/admin/audit-log`. */
+  /** Hash path of the page, e.g. `/admin/audit-log` or `/objects`. */
   path: string;
-  /** Title message key in the platform locale. */
+  /** Title message key in the page's vue-i18n tree. */
   titleKey: string;
   /** Resolved title that replaces the message key (e.g. the registered permission name); set by the host. */
   title?: string;
+  /** One-line description shown after the title in the page header the layout draws. */
+  descriptionKey?: string;
+  /** 16px navigation icon. */
+  icon?: Component;
+  /** Count shown at the end of the navigation row; null or absent shows none. */
+  count?: () => number | null;
+  /** The page draws its own page header (the Manager pages); otherwise the layout draws title and description. */
+  ownHeader?: boolean;
   /**
    * Permission codes that grant this page: the page is enterable with any one of them.
    * An empty list means no permission is required (open source runs no permission logic).
@@ -21,15 +35,15 @@ export interface PlatformPage {
 }
 
 /**
- * The platform area's navigation, supplied by the host so this package never imports an edition's pages.
- * The host lists pages in display order; the layout filters them by the access check it is given.
+ * The Ontology Service navigation, supplied by the host so this package never imports an edition's pages (nor the
+ * Manager's). The host lists groups and pages in display order; the layout filters them by the access check it is given.
  */
 export interface PlatformNavigation {
   groups: readonly PlatformGroup[];
   pages: readonly PlatformPage[];
 }
 
-/** A group of platform pages; shown when at least one of its pages is available. */
+/** A navigation group; shown when at least one of its pages is available. */
 export interface PlatformGroup {
   key: string;
   /** Title message key in the platform locale. */
@@ -88,4 +102,16 @@ export function fallbackPage(
     if (inGroup) return inGroup;
   }
   return pages[0] ?? null;
+}
+
+/**
+ * A link to another application in the sidebar's function area (Agent Platform, Data Governance Platform). It always
+ * opens in a new tab: `href` as a link, or `open` for a target the host must resolve first (a signed jump).
+ */
+export interface PlatformLink {
+  key: string;
+  titleKey: string;
+  icon: Component;
+  href?: string;
+  open?: () => void;
 }
