@@ -8,6 +8,7 @@ import org.springframework.web.bind.annotation.*;
 import org.springframework.web.context.request.async.DeferredResult;
 
 /** Domain identity is verified here; enterprise management permissions are enforced by its guard. */
+@lombok.extern.slf4j.Slf4j
 @RestController
 public class ModelSettingsController {
   private final AgentRuntimeClient runtime;
@@ -85,6 +86,9 @@ public class ModelSettingsController {
     }
     if (error instanceof AgentHttpException known) {
       status = known.status(); code = known.code(); message = known.getMessage();
+    } else if (status == 503) {
+      // The generic answer hides the cause from the caller; keep it in the service log.
+      log.warn("Model configuration request failed", error);
     }
     return ResponseEntity.status(status).body(JSONObject.of("success", false, "code", code, "message", message));
   }

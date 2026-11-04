@@ -63,6 +63,17 @@ class ModelSettingsControllerTest {
     mvc.perform(asyncDispatch(result)).andExpect(status().isBadGateway()).andExpect(jsonPath("$.code").value("MODEL_TEST_FAILED"));
   }
 
+  @Test void asyncTestReturnsTheRuntimeResult() throws Exception {
+    identity();
+    when(runtime.testModel(eq("verified-domain"),any())).thenReturn(java.util.concurrent.CompletableFuture.completedFuture(
+        JSONObject.of("type","chat","content","pong")));
+    var mvc=MockMvcBuilders.standaloneSetup(controller).build();
+    var result=mvc.perform(post("/model-settings/test").contentType(MediaType.APPLICATION_JSON).content("{\"model\":{}}"))
+        .andExpect(request().asyncStarted()).andReturn();
+    mvc.perform(asyncDispatch(result)).andExpect(status().isOk())
+        .andExpect(jsonPath("$.success").value(true)).andExpect(jsonPath("$.data.content").value("pong"));
+  }
+
   private final JdbcTemplate jdbc = mock(JdbcTemplate.class);
 
   private MockMvc selectionMvc(String storedSelection) throws Exception {
