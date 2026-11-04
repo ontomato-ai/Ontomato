@@ -8,6 +8,7 @@ import { installAuthHost, type WorkbenchAuthHost } from "../utils/auth";
 import { installErrorPunctuation, type ErrorPunctuation } from "../utils/error-punctuation";
 import { installWorkbenchContent, type WorkbenchContent } from "../content";
 import { turnDiagnosisAccessKey, type TurnDiagnosisAccess } from "../features/diagnosis/access";
+import { ontologyServiceAccessKey, type OntologyServiceAccess } from "./ontology-service";
 import { installBrandTheme, type BrandSource } from "@ontomato/design-tokens";
 import { installWorkbenchBrand } from "../brand";
 
@@ -21,6 +22,8 @@ export interface WorkbenchWebOptions {
   content: WorkbenchContent;
   /** Visibility of the chat turn diagnosis entry (components read it via inject). */
   turnDiagnosis: TurnDiagnosisAccess;
+  /** Visibility of the entries that open the Ontology Service (function-area link and admin tab). */
+  ontologyService: OntologyServiceAccess;
   routes: RouteRecordRaw[];
   /** App navigation guards; the Pinia instance is passed explicitly so stores in guards do not depend on mount timing. */
   installGuards?: (router: Router, pinia: Pinia) => void;
@@ -46,6 +49,7 @@ export function startWorkbenchWeb(options: WorkbenchWebOptions): void {
 
   const app = createApp(App);
   app.provide(turnDiagnosisAccessKey, options.turnDiagnosis);
+  app.provide(ontologyServiceAccessKey, options.ontologyService);
   app.use(i18n);
   app.use(ElementPlus);
   app.use(pinia);

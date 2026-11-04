@@ -17,9 +17,11 @@ import { useTheme } from "../../../../composables/useTheme";
 import { useLocale } from "../../../../composables/useLocale";
 import { workbenchLanguage } from "../../../../i18n";
 import { adminAccessKey, type AdminLayoutConfig, type AdminMenuItem } from "../../navigation";
+import { useOntologyServiceAccess } from "../../../../app/ontology-service";
 
 const props = defineProps<AdminLayoutConfig>();
 provide(adminAccessKey, props.access);
+const ontologyService = useOntologyServiceAccess();
 
 const router = useRouter();
 const route = useRoute();
@@ -99,13 +101,15 @@ onBeforeUnmount(() => {
 const canSeeItem = (item: AdminMenuItem) => item.permissions.some((p) => props.access.can(p));
 
 // A tab is visible if it has permission itself or at least one menu item in its group does; menu items are filtered one by one.
+// The Ontology Service link tab follows the app's OntologyServiceAccess, the same answer as the function-area link.
 // Landing path when switching groups: the group's first visible menu item. Link tabs only open their page.
 const navGroups = computed(() =>
   props.groups
-    .filter(
-      (group) =>
-        props.access.can(group.permission) ||
-        props.items.some((item) => item.groupKey === group.key && canSeeItem(item))
+    .filter((group) =>
+      group.href
+        ? ontologyService.visible()
+        : props.access.can(group.permission) ||
+          props.items.some((item) => item.groupKey === group.key && canSeeItem(item))
     )
     .map((group) => {
       const items = props.items

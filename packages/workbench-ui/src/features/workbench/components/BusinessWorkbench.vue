@@ -22,6 +22,7 @@ import ConversationActions from "./ConversationActions.vue";
 import DatasetActions from "./DatasetActions.vue";
 import WorkbenchAppearanceDialog from "./WorkbenchAppearanceDialog.vue";
 import { workbenchFeatures } from "../features";
+import { useOntologyServiceAccess } from "../../../app/ontology-service";
 
 /**
  * The one business workbench both editions mount. Editions add their own feature entries and
@@ -42,6 +43,7 @@ const WORKBENCH_ID = "business";
 const AGENT_KEY = "ontomato.workbench.agent";
 
 const { t } = useI18n();
+const ontologyService = useOntologyServiceAccess();
 const client = createAssistantClient();
 const feedback = createAssistantFeedback();
 const dashboards = useDashboardStore();
@@ -70,7 +72,7 @@ watch(agentId, (id) => {
 const workbench = computed<ShellWorkbenchDeclaration>(() => ({
   id: WORKBENCH_ID,
   label: appearance.value?.brand.name || props.defaultBrandName,
-  features: workbenchFeatures(t, props.features ?? [], props.canManageAgents),
+  features: workbenchFeatures(t, props.features ?? [], props.canManageAgents, ontologyService.visible()),
 }));
 
 const labels = useShellLabels();

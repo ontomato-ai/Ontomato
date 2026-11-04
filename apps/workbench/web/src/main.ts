@@ -11,6 +11,7 @@ import {
   adminMenuItems,
   adminRoutes,
   observeRoutes,
+  openOntologyServiceAccess,
   startWorkbenchWeb,
   type AdminLayoutConfig,
 } from "@ontomato/workbench-ui";
@@ -63,6 +64,8 @@ startWorkbenchWeb({
   content: workbenchContent,
   // The open-source /observe has no permission gate: the turn diagnosis entry is visible to all users.
   turnDiagnosis: { prepare: () => {}, visible: () => true },
+  // The open-source edition has no platform permissions: the Ontology Service entries are always shown.
+  ontologyService: openOntologyServiceAccess,
   routes: [
     { path: "/", redirect: "/chat" },
     { path: "/chat", name: "Chat", component: () => import("./layout/UnifiedLayout.vue") },
