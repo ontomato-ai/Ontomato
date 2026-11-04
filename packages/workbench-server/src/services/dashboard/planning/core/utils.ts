@@ -62,7 +62,12 @@ export function applyTransformSpec(
   if (spec.kind === "groupBy") {
     const map = new Map<
       string,
-      { keyParts: any[]; count: number; sums: Record<string, number> }
+      {
+        keyParts: any[];
+        count: number;
+        sums: Record<string, number>;
+        numeric: Record<string, boolean>;
+      }
     >();
     for (const r of input) {
       const keyParts = (spec.groupBy || []).map(
@@ -72,7 +77,7 @@ export function applyTransformSpec(
 
       let st = map.get(key);
       if (!st) {
-        st = { keyParts, count: 0, sums: {} };
+        st = { keyParts, count: 0, sums: {}, numeric: {} };
         map.set(key, st);
       }
 
@@ -81,8 +86,9 @@ export function applyTransformSpec(
       for (const metric of spec.metrics || []) {
         const field = metric?.field;
         if (!field) continue;
-        const v = toNumber(r?.[field]) || 0;
-        st.sums[field] = (st.sums[field] ?? 0) + v;
+        const value = toNumber(r?.[field]);
+        st.sums[field] = (st.sums[field] ?? 0) + (value ?? 0);
+        if (value !== null) st.numeric[field] = true;
       }
     }
 
@@ -123,7 +129,11 @@ type GroupByTransformSpec = Extract<TransformSpec, { kind: "groupBy" }>;
 
 function computeMetricValue(
   metric: GroupByTransformSpec["metrics"][number],
-  state: { count: number; sums: Record<string, number> },
+  state: {
+    count: number;
+    sums: Record<string, number>;
+    numeric: Record<string, boolean>;
+  },
 ) {
   const { op, field } = metric;
   const sumValue = field ? (state.sums[field] ?? 0) : 0;
@@ -138,7 +148,9 @@ function computeMetricValue(
   }
 
   if (op === "sum") {
-    if (sumValue === 0 && count > 0) {
+    // Only a field without any numeric value means the plan summed an
+    // identifier-like column; show the row count then. A real zero stays zero.
+    if ((!field || !state.numeric[field]) && count > 0) {
       return count;
     }
     return sumValue;
