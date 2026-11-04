@@ -72,7 +72,7 @@ const resumable = computed(
   () => rebuildState.value === "PAUSED" || rebuildState.value === "FAILED" || rebuildState.value === "INTERRUPTED"
 );
 type AlertType = "info" | "warning" | "error";
-const stateAlerts: Record<Exclude<VectorRebuildState, "READY" | "FAILED">, { type: AlertType; key: string }> = {
+const stateAlerts: Record<Exclude<VectorRebuildState, "READY" | "FAILED" | null>, { type: AlertType; key: string }> = {
   PENDING: { type: "warning", key: "admin.vectorRebuildNeeded" },
   RUNNING: { type: "info", key: "admin.vectorRebuildRunning" },
   PAUSING: { type: "info", key: "admin.vectorRebuildPausing" },
@@ -82,6 +82,7 @@ const stateAlerts: Record<Exclude<VectorRebuildState, "READY" | "FAILED">, { typ
 const rebuildAlert = computed((): { type: AlertType; title: string } | null => {
   const status = props.rebuildStatus;
   if (!status || status.state === "READY") return null;
+  if (!status.configured) return { type: "info", title: t("admin.noEmbeddingModel") };
   const progress = { done: status.done, total: status.total };
   if (status.state === "FAILED") {
     const { phase, itemType, itemId, reason } = status.error;

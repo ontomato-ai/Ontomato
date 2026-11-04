@@ -29,6 +29,7 @@ public class ModelConfigurationMigration {
         Thread t = new Thread(r, "model-configuration-upgrade"); t.setDaemon(true); return t;
     });
     private Set<String> pending;
+    private final Set<String> rejectedEmbeddingImports = new LinkedHashSet<>();
 
     public ModelConfigurationMigration(JdbcTemplate jdbc, AgentRuntimeClient runtime, VectorRebuildService vectors,
             TransactionTemplate transactions, VectorRebuildStateDao state) {
@@ -58,22 +59,30 @@ public class ModelConfigurationMigration {
         var rows = jdbc.queryForList("SELECT content FROM business_config WHERE id=?", domain);
         JSONObject config = rows.isEmpty() || rows.getFirst().get("content") == null ? null : JSON.parseObject(rows.getFirst().get("content").toString());
         JSONObject old = config == null ? null : config.getJSONObject("embeddingModelProperties");
-        if (old != null) {
-            JSONObject input = JSONObject.of("baseUrl", old.getString("baseUrl"), "apiKey", old.getString("apiKey"),
-                "modelName", old.getString("modelName"), "dimensions", old.getInteger("dimensions"));
-            if (old.getJSONObject("customHeaders") != null) input.put("headers", old.getJSONObject("customHeaders"));
-            if (old.getString("timeout") != null) input.put("timeoutMs", Duration.parse(old.getString("timeout")).toMillis());
-            String imported = runtime.json(domain, "embedding-upgrade", "/v1/models/import-embedding", "POST", input, null).getString("importedModelId");
-            transactions.executeWithoutResult(tx -> {
-                // The old generation identity is translated, never marked rebuilt by a rename.
-                var source = config.getJSONObject("embeddingVectorSource");
-                if (source != null) jdbc.update("INSERT INTO vector_rebuild_state(domain_id,base_url,model_name,dimensions,status,cleared) VALUES(?,?,?,?, 'READY',true) ON CONFLICT(domain_id) DO NOTHING",
-                    domain, source.getString("baseUrl"), source.getString("modelName"), source.getInteger("dimensions"));
-                jdbc.update("UPDATE vector_rebuild_state SET model_ref=CASE WHEN base_url=? AND model_name=? THEN ? ELSE 'legacy/' || COALESCE(model_name,'unconfigured') END, base_url=NULL, model_name=NULL WHERE domain_id=? AND model_ref IS NULL",
-                    old.getString("baseUrl"), old.getString("modelName"), imported, domain);
-                jdbc.update("UPDATE business_config SET content=(content::jsonb - 'embeddingModelProperties' - 'embeddingVectorSource')::text WHERE id=? AND content::jsonb->'embeddingModelProperties'=?::jsonb",
-                    domain, old.toJSONString());
-            });
+        if (old != null && unconfigured(old)) {
+            transactions.executeWithoutResult(tx -> removeLegacyEmbedding(domain, old));
+        } else if (old != null && !rejectedEmbeddingImports.contains(domain)) {
+            try {
+                JSONObject input = JSONObject.of("baseUrl", old.getString("baseUrl"), "apiKey", old.getString("apiKey"),
+                    "modelName", old.getString("modelName"), "dimensions", old.getInteger("dimensions"));
+                if (old.getJSONObject("customHeaders") != null) input.put("headers", old.getJSONObject("customHeaders"));
+                if (old.getString("timeout") != null) input.put("timeoutMs", Duration.parse(old.getString("timeout")).toMillis());
+                String imported = runtime.json(domain, "embedding-upgrade", "/v1/models/import-embedding", "POST", input, null).getString("importedModelId");
+                transactions.executeWithoutResult(tx -> {
+                    // The old generation identity is translated, never marked rebuilt by a rename.
+                    var source = config.getJSONObject("embeddingVectorSource");
+                    if (source != null) jdbc.update("INSERT INTO vector_rebuild_state(domain_id,base_url,model_name,dimensions,status,cleared) VALUES(?,?,?,?, 'READY',true) ON CONFLICT(domain_id) DO NOTHING",
+                        domain, source.getString("baseUrl"), source.getString("modelName"), source.getInteger("dimensions"));
+                    jdbc.update("UPDATE vector_rebuild_state SET model_ref=CASE WHEN base_url=? AND model_name=? THEN ? ELSE 'legacy/' || COALESCE(model_name,'unconfigured') END, base_url=NULL, model_name=NULL WHERE domain_id=? AND model_ref IS NULL",
+                        old.getString("baseUrl"), old.getString("modelName"), imported, domain);
+                    removeLegacyEmbedding(domain, old);
+                });
+            } catch (AgentHttpException error) {
+                if (error.status() < 400 || error.status() >= 500) throw error;
+                // Do not re-import a rejected configuration if another step needs a transient retry.
+                rejectedEmbeddingImports.add(domain);
+                log.warn("Legacy embedding import rejected for domain {} (code={}); keeping its configuration", domain, error.code());
+            }
         }
         JSONObject mapping = runtime.json(domain, "model-upgrade", "/v1/models/migration-map", "GET", null, null);
         for (var row : jdbc.queryForList("SELECT agent_id,model_selection FROM ontology_agent_settings WHERE domain_id=? AND NOT model_reference_migrated", domain)) {
@@ -86,4 +95,16 @@ public class ModelConfigurationMigration {
         var options = runtime.json(domain, "embedding-upgrade", "/v1/models/options", "GET", null, null);
         if (options.getString("embeddingModelId") != null) vectors.modelSettingsChanged(domain);
     }
+    private static boolean unconfigured(JSONObject old) {
+        for (String field : new String[]{"baseUrl", "modelName", "apiKey"}) {
+            String value = old.getString(field);
+            if (value == null || value.trim().isEmpty()) return true;
+        }
+        return false;
+    }
+    private void removeLegacyEmbedding(String domain, JSONObject old) {
+        jdbc.update("UPDATE business_config SET content=(content::jsonb - 'embeddingModelProperties' - 'embeddingVectorSource')::text WHERE id=? AND content::jsonb->'embeddingModelProperties'=?::jsonb",
+            domain, old.toJSONString(com.alibaba.fastjson2.JSONWriter.Feature.WriteMapNullValue));
+    }
+
 }

@@ -17,12 +17,20 @@ public class VectorRebuildStatus {
         INTERRUPTED
     }
 
+    private boolean configured = true;
     private State state;
     /** Rows of this domain that need a vector. */
-    private int total;
+    private Integer total;
     /** Rows that already hold a vector of the current round. */
-    private int done;
+    private Integer done;
     /** Where and why the latest round failed; null unless FAILED. */
     private VectorRebuildState.Failure error;
+
+    /** No model is a valid domain state, with no rebuild progress to report. */
+    public static VectorRebuildStatus unconfigured() {
+        VectorRebuildStatus status = new VectorRebuildStatus();
+        status.setConfigured(false);
+        return status;
+    }
 
 }

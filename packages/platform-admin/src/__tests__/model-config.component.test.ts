@@ -1,9 +1,10 @@
 import { flushPromises, mount, type VueWrapper } from "@vue/test-utils";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { ElMessageBox } from "element-plus";
+import { ElMessage, ElMessageBox } from "element-plus";
 import { defineComponent, h } from "vue";
 import { createMemoryHistory, createRouter, RouterView } from "vue-router";
 import type { ModelSettingsData, ModelSettingsWrite, OntologyAgentModel } from "@ontomato/contracts/model-settings";
+import { vectorRebuildStatusSchema } from "../models/types";
 import DefaultModelsPanel from "../models/components/DefaultModelsPanel.vue";
 import ModelEditDialog from "../models/components/ModelEditDialog.vue";
 import ModelSelectionSelect from "../models/components/ModelSelectionSelect.vue";
@@ -59,7 +60,7 @@ const api: Partial<PlatformApi> = {
   saveModelSettings,
   listOntologyAgentModels: async () => structuredClone(agents),
   saveOntologyAgentModel,
-  getVectorRebuildStatus: async () => ({ state: "READY", total: 0, done: 0, error: null }),
+  getVectorRebuildStatus: async () => ({ configured: true, state: "READY", total: 0, done: 0, error: null }),
 };
 
 const wrappers: VueWrapper[] = [];
@@ -93,6 +94,19 @@ const saveButton = (wrapper: VueWrapper) =>
   wrapper.findAll(".page-actions button").find((button) => button.text() === "Save")!;
 
 describe("model configuration page", () => {
+  it("loads an unconfigured embedding status without reporting a configuration failure", async () => {
+    const error = vi.spyOn(ElMessage, "error");
+    vi.spyOn(api, "getModelSettings").mockResolvedValue({ ...structuredClone(saved), embeddingModelId: null });
+    const status = vectorRebuildStatusSchema.parse({ configured: false });
+    expect(status).toEqual({ configured: false, state: null, total: null, done: null, error: null });
+    vi.spyOn(api, "getVectorRebuildStatus").mockResolvedValue(status);
+    const wrapper = await mountPage();
+    const panel = wrapper.findComponent(DefaultModelsPanel);
+    expect(panel.find(".rebuild-status").text()).toContain(t("admin.noEmbeddingModel"));
+    expect(panel.findAll(".rebuild-actions button")).toHaveLength(0);
+    expect(error).not.toHaveBeenCalled();
+  });
+
   it("saves the whole settings at once and submits an unchanged masked key as read", async () => {
     const wrapper = await mountPage();
     expect(saveButton(wrapper).attributes("disabled")).toBeDefined();

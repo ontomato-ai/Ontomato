@@ -3,6 +3,7 @@ package io.ontomato.dataengine.controller;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
@@ -29,6 +30,8 @@ import io.ontomato.dataengine.service.IdentityService;
 import io.ontomato.dataengine.service.LangService;
 import io.ontomato.dataengine.service.ai.EmbeddingService;
 import io.ontomato.dataengine.service.vector.VectorRebuildService;
+import io.ontomato.dataengine.service.vector.VectorRetrievalGate;
+import io.ontomato.dataengine.service.agent.AgentHttpException;
 import io.ontomato.dataengine.service.vector.VectorRebuildStatus;
 import io.ontomato.dataengine.util.SpringBeanUtil;
 
@@ -85,6 +88,7 @@ class BusinessConfigControllerVectorRebuildTest {
         assertTrue(response.getBooleanValue("success"));
         JSONObject data = response.getJSONObject("data");
         assertEquals("FAILED", data.getString("state"));
+        assertTrue(data.getBooleanValue("configured"));
         assertEquals(7, data.getIntValue("total"));
         assertEquals(3, data.getIntValue("done"));
         assertEquals("EMBED", data.getJSONObject("error").getString("phase"));
@@ -115,6 +119,32 @@ class BusinessConfigControllerVectorRebuildTest {
         JSONObject response = controller.pauseVectorRebuild("zh-CN");
         assertFalse(response.getBooleanValue("success"));
         assertTrue(response.getString("message").contains("Vector.rebuildNotRunning"), response.toJSONString());
+    }
+
+    @Test
+    void unconfiguredEmbeddingReturnsASuccessfulEmptyRebuildStatus() {
+        var gate = mock(VectorRetrievalGate.class);
+        when(gate.stateOf("d1", stored)).thenThrow(new AgentHttpException(422, "MODEL_NOT_CONFIGURED", "No embedding model is configured"));
+        var service = new VectorRebuildService();
+        ReflectionTestUtils.setField(service, "businessConfigService", businessConfigService);
+        ReflectionTestUtils.setField(service, "retrievalGate", gate);
+        ReflectionTestUtils.setField(controller, "vectorRebuildService", service);
+        JSONObject response = controller.vectorRebuildStatus();
+        assertTrue(response.getBooleanValue("success"));
+        JSONObject data = response.getJSONObject("data");
+        assertFalse(data.getBooleanValue("configured"));
+        for (String field : List.of("state", "total", "done", "error")) assertNull(data.get(field));
+    }
+
+    @Test
+    void unavailableRuntimeStillReturnsAFailedStatusRequest() {
+        var gate = mock(VectorRetrievalGate.class);
+        when(gate.stateOf("d1", stored)).thenThrow(new AgentHttpException(503, "DEPENDENCY_UNAVAILABLE", "offline"));
+        var service = new VectorRebuildService();
+        ReflectionTestUtils.setField(service, "businessConfigService", businessConfigService);
+        ReflectionTestUtils.setField(service, "retrievalGate", gate);
+        ReflectionTestUtils.setField(controller, "vectorRebuildService", service);
+        assertFalse(controller.vectorRebuildStatus().getBooleanValue("success"));
     }
 
 }

@@ -12,6 +12,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 
 import io.ontomato.dataengine.config.BusinessConfig;
 import io.ontomato.dataengine.service.ai.EmbeddingSelection;
+import io.ontomato.dataengine.service.agent.AgentHttpException;
 import io.ontomato.dataengine.dao.ActionDao;
 import io.ontomato.dataengine.dao.KnowledgeDao;
 import io.ontomato.dataengine.dao.MetricViewDao;
@@ -77,7 +78,13 @@ public class VectorRebuildService {
     }
 
     public VectorRebuildStatus status(String domainId) {
-        VectorRebuildState state = retrievalGate.stateOf(domainId, businessConfigService.get(domainId));
+        VectorRebuildState state;
+        try {
+            state = retrievalGate.stateOf(domainId, businessConfigService.get(domainId));
+        } catch (AgentHttpException error) {
+            if (!"MODEL_NOT_CONFIGURED".equals(error.code())) throw error;
+            return VectorRebuildStatus.unconfigured();
+        }
         int total = 0;
         int pending = 0;
         for (VectorSource source : sources(domainId)) {

@@ -23,9 +23,14 @@ const vectorRebuildFailureSchema = z.object({
  * INTERRUPTED that the service stopped during a round.
  */
 export const vectorRebuildStatusSchema = z.union([
-  z.object({ ...vectorRebuildProgress, state: z.literal("FAILED"), error: vectorRebuildFailureSchema }),
+  z.object({
+    configured: z.literal(false), state: nullable(z.null()),
+    total: nullable(z.null()), done: nullable(z.null()), error: nullable(z.null()),
+  }),
+  z.object({ ...vectorRebuildProgress, configured: z.literal(true), state: z.literal("FAILED"), error: vectorRebuildFailureSchema }),
   z.object({
     ...vectorRebuildProgress,
+    configured: z.literal(true),
     state: z.enum(["READY", "PENDING", "RUNNING", "PAUSING", "PAUSED", "INTERRUPTED"]),
     error: z.null().optional().transform(() => null),
   }),
