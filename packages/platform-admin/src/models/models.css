@@ -1,393 +1,622 @@
-.config-card {
-  margin-bottom: 0;
-}
+/*
+ * Model configuration page (DESIGN.md data shell): a 48px page header, text tabs, then panels edge to edge separated
+ * by one hairline. The provider list is a canvas list panel; the detail, defaults and retry panels are surface with
+ * 16px padding. Lists are rows with hairlines, not cards. Colours are role variables only, so both modes follow.
+ */
 
-.model-editor-form :deep(.el-form-item__label) {
-  flex: 0 0 auto;
-  white-space: nowrap;
-  word-break: keep-all;
-}
-
-.config-card .card-header {
+/* ---- Page ---- */
+.model-config {
   display: flex;
+  height: 100%;
+  min-height: 0;
+  flex-direction: column;
+  background: var(--el-bg-color);
+}
+
+.page-header {
+  display: flex;
+  height: var(--page-header-height);
+  flex: 0 0 var(--page-header-height);
   align-items: center;
-  flex-wrap: wrap;
-  gap: var(--spacing-sm);
-  font-size: var(--text-md);
-  font-weight: var(--font-semibold);
+  gap: var(--spacing-md);
+  padding: 0 var(--spacing-lg);
+  border-bottom: 1px solid var(--el-border-color);
+}
+
+.page-title {
+  margin: 0;
   color: var(--el-text-color-primary);
-  margin-bottom: var(--spacing-lg);
-  padding-bottom: var(--spacing-md);
-  border-bottom: 1px solid var(--el-border-color-light);
+  font-size: var(--text-lg);
+  font-weight: var(--font-semibold);
+  line-height: var(--leading-lg);
+  white-space: nowrap;
 }
 
-.config-card .card-header .el-icon {
-  color: var(--el-color-primary);
-  flex-shrink: 0;
+.page-description {
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  color: var(--el-text-color-secondary);
+  font-size: var(--text-sm);
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.header-action {
-  margin-left: auto;
+.page-actions {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: var(--spacing-sm);
+  margin-inline-start: auto;
+}
+
+.page-actions .el-button {
+  margin: 0;
+}
+
+.unsaved {
+  color: var(--el-color-warning);
+  font-size: var(--text-sm);
+  white-space: nowrap;
+}
+
+.page-state {
+  padding: var(--spacing-lg);
 }
 
 .load-error {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: var(--spacing-md);
-  padding: var(--spacing-md);
-  border: 1px solid var(--el-color-danger-light-5);
-  border-radius: var(--radius-md);
-  background: var(--el-color-danger-light-9);
   color: var(--el-color-danger);
   font-size: var(--text-sm);
-  flex-wrap: wrap;
 }
 
-.model-list {
-  list-style: none;
-  margin: 0 0 var(--spacing-md);
-  padding: 0;
+/* Page-level text tabs with the primary underline; the panes fill the rest of the page. */
+.model-tabs {
   display: flex;
+  min-height: 0;
+  flex: 1;
   flex-direction: column;
-  gap: var(--spacing-sm);
 }
 
-.model-item {
-  display: flex;
-  align-items: center;
-  gap: var(--spacing-md);
-  padding: var(--spacing-md) var(--spacing-lg);
-  border: 1px solid var(--el-border-color-light);
-  border-radius: var(--radius-md);
-  min-width: 0;
-  flex-wrap: wrap;
+.model-tabs :deep(.el-tabs__header) {
+  margin: 0;
+  padding: 0 var(--spacing-lg);
+  border-bottom: 1px solid var(--el-border-color);
 }
 
-/* Two lines on the left: the name above, then IDs, URL and key count (wrapping when narrow); the row actions stay on the right. */
-.model-info {
+.model-tabs :deep(.el-tabs__nav-wrap::after) {
+  display: none;
+}
+
+.model-tabs :deep(.el-tabs__item) {
+  height: 40px;
+  font-size: var(--text-sm);
+}
+
+.model-tabs :deep(.el-tabs__content),
+.model-tabs :deep(.el-tab-pane) {
   display: flex;
+  min-height: 0;
+  flex: 1;
   flex-direction: column;
-  gap: var(--spacing-xs);
-  min-width: 0;
-  flex: 1 1 0;
 }
 
-.model-meta {
+.tab-content {
+  min-height: 0;
+  flex: 1;
+  overflow: auto;
+  padding: var(--spacing-lg);
+}
+
+/* ---- Providers: list panel and detail ---- */
+.providers-split {
   display: flex;
-  align-items: baseline;
-  flex-wrap: wrap;
-  gap: var(--spacing-xs) var(--spacing-md);
-  min-width: 0;
-}
-
-.model-title {
-  display: flex;
-  align-items: center;
-  gap: var(--spacing-sm);
-  min-width: 0;
-}
-
-.model-name {
-  font-weight: var(--font-medium);
-  color: var(--el-text-color-primary);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.model-id {
-  font-family: var(--font-mono);
-  font-size: var(--text-sm);
-  color: var(--el-text-color-regular);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-/* The URL is the longest field: it is the one truncated (full value in its tooltip). */
-.model-url {
-  max-width: 420px;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  color: var(--el-text-color-regular);
-  font-size: var(--text-sm);
-  font-family: var(--font-mono);
-}
-
-.model-keys {
-  flex: 0 0 auto;
-  font-size: var(--text-sm);
-  color: var(--el-text-color-regular);
-}
-
-.model-actions {
-  flex: 0 0 auto;
-  margin-left: auto;
-  display: flex;
-  gap: 4px;
-}
-
-.dialog-section {
-  margin: 0 0 var(--spacing-md);
-  font-size: var(--text-sm);
-  font-weight: var(--font-semibold);
-  color: var(--el-text-color-primary);
-}
-
-/* The dialog root node of Element Plus does not carry the caller's scoped attribute. */
-:global(.model-dialog .el-dialog__body) {
-  max-height: 70vh;
-  overflow-y: auto;
-}
-
-/* On narrow screens, split info and actions into separate lines so full fields stay readable and buttons stay reachable. */
-@media (max-width: 640px) {
-  .model-info {
-    flex-basis: 100%;
-  }
-
-  .model-meta {
-    flex-direction: column;
-    align-items: flex-start;
-  }
-
-  .model-name,
-  .model-id,
-  .model-url {
-    white-space: normal;
-    overflow-wrap: anywhere;
-  }
-
-  .model-url {
-    max-width: 100%;
-  }
-
-  .model-actions {
-    flex-basis: 100%;
-    justify-content: flex-end;
-    margin-left: 0;
-  }
-
-  .model-actions :deep(.el-button),
-  .api-keys-wrap :deep(.el-button),
-  .header-action {
-    min-width: 44px;
-    min-height: 44px;
-  }
-
-  .model-editor-form :deep(.el-form-item) {
-    flex-direction: column;
-    align-items: stretch;
-  }
-
-  .model-editor-form :deep(.el-form-item__label) {
-    width: auto !important;
-    height: auto;
-    justify-content: flex-start;
-    line-height: 1.5;
-    margin-bottom: var(--spacing-xs);
-  }
-
-  .model-editor-form :deep(.el-form-item__content) {
-    margin-left: 0 !important;
-  }
-}
-
-.card-body {
-  padding: 0;
-}
-
-.api-keys-wrap {
-  width: 100%;
-}
-
-.api-key-row {
-  display: flex;
-  gap: 8px;
-  margin-bottom: 8px;
-  align-items: center;
-}
-
-.saved-key-hint {
-  margin: 0 0 8px;
-  color: var(--el-text-color-secondary);
-  font-size: var(--text-xs);
-  line-height: 1.5;
-}
-
-.api-key-input {
+  min-height: 0;
   flex: 1;
 }
 
-.custom-request-parameters-item :deep(.el-form-item__content) {
-  margin-left: 0 !important;
+.providers-list {
+  width: var(--shell-list-panel);
+  flex: 0 0 var(--shell-list-panel);
+  border-inline-end: 1px solid var(--el-border-color);
 }
 
-.custom-request-parameters-editor {
-  width: 100%;
-  --el-collapse-border-color: var(--el-border-color-lighter);
-}
-
-.custom-request-parameters-editor :deep(.el-collapse-item__header) {
-  min-height: 42px;
-  height: auto;
-  padding: 0 var(--spacing-md);
-  font-size: inherit;
-}
-
-.custom-request-parameters-editor :deep(.el-collapse-item__title) {
+.providers-detail {
   min-width: 0;
+  flex: 1;
+  overflow: auto;
 }
 
-.custom-request-parameters-editor :deep(.el-collapse-item__wrap) {
-  border-bottom: 0;
-}
-
-.custom-request-parameters-editor :deep(.el-collapse-item__content) {
-  padding: var(--spacing-md) 0 0;
-}
-
-.custom-request-parameters-heading {
+.empty-detail {
   display: flex;
+  flex-direction: column;
   align-items: center;
-  gap: var(--spacing-md);
-  min-width: 0;
-  width: 100%;
-  padding-right: var(--spacing-sm);
+  justify-content: center;
+  gap: var(--spacing-sm);
+  height: 100%;
+  padding: var(--spacing-2xl) var(--spacing-lg);
+  text-align: center;
 }
 
-.custom-request-parameters-title {
-  flex: 0 0 auto;
-  font-weight: var(--font-medium);
+.empty-title {
+  margin: 0;
+  color: var(--el-text-color-primary);
+  font-size: var(--text-base);
+  font-weight: var(--font-semibold);
 }
 
-.custom-request-parameters-summary {
+.empty-text {
+  margin: 0 0 var(--spacing-sm);
+  color: var(--el-text-color-secondary);
+  font-size: var(--text-sm);
+}
+
+.provider-detail {
+  display: flex;
+  max-width: 880px;
+  flex-direction: column;
+  gap: var(--spacing-lg);
+  padding: var(--spacing-lg);
+}
+
+.detail-header {
+  display: flex;
   min-width: 0;
-  margin-left: auto;
+  align-items: baseline;
+  gap: var(--spacing-sm);
+}
+
+.detail-title {
+  min-width: 0;
+  margin: 0;
   overflow: hidden;
-  color: var(--el-text-color-regular);
-  font-family: var(--font-mono);
-  font-size: var(--text-xs);
+  color: var(--el-text-color-primary);
+  font-size: var(--text-lg);
+  font-weight: var(--font-semibold);
+  line-height: var(--leading-lg);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.custom-request-parameters-editor :deep(textarea) {
-  font-family: var(--el-font-family-monospace, ui-monospace, SFMono-Regular, Consolas, monospace);
-  line-height: 1.5;
+.detail-id,
+.mono,
+.model-row-id {
+  font-family: var(--font-mono);
 }
 
-.custom-request-parameters-hint {
-  margin: var(--spacing-xs) 0 0;
-  color: var(--el-text-color-regular);
+.detail-id {
+  color: var(--el-text-color-secondary);
   font-size: var(--text-xs);
-  line-height: 1.5;
 }
 
-/* Switch paired settings to one column before their controls become cramped. */
-@media (max-width: 760px) {
-  .config-card :deep(.el-col) {
-    flex: 0 0 100% !important;
-    max-width: 100% !important;
-  }
+.detail-remove {
+  margin-inline-start: auto;
 }
 
-/* One-line hint shown when a card has nothing configured yet. */
-.card-empty {
-  margin: 0;
+.provider-form :deep(.el-form-item) {
+  margin-bottom: var(--spacing-md);
+}
+
+.provider-form :deep(.el-form-item__label),
+.model-form :deep(.el-form-item__label) {
   font-size: var(--text-sm);
-  color: var(--el-text-color-secondary);
 }
 
-.card-empty-row {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: var(--spacing-md);
-}
-
-/* Vector rebuild status under the embedding row: progress, the need to rebuild, and the last failure. */
-.vector-rebuild-status {
-  display: flex;
+.provider-form :deep(.el-form-item__content) {
   flex-direction: column;
-  gap: var(--spacing-sm);
+  align-items: stretch;
 }
 
-/* The domain default above the model list: label and hint on the left, the select on the right (below when narrow). */
-.default-model-row {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: var(--spacing-sm) var(--spacing-lg);
-  margin-bottom: var(--spacing-lg);
+.provider-form .el-select {
+  width: 100%;
 }
 
-.default-model-text {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  flex: 1 1 280px;
-  min-width: 0;
+.readonly-value {
+  color: var(--el-text-color-regular);
+  font-size: var(--text-mono);
+  line-height: var(--control-height);
 }
 
-.default-model-label {
-  font-weight: var(--font-medium);
-  color: var(--el-text-color-primary);
-}
-
-.default-model-hint,
-.card-hint {
-  font-size: var(--text-xs);
-  line-height: 1.5;
+.field-hint {
+  margin: var(--spacing-xs) 0 0;
   color: var(--el-text-color-secondary);
-}
-
-.card-hint {
-  margin: 0 0 var(--spacing-md);
-}
-
-.default-model-select {
-  flex: 0 1 360px;
-  min-width: 220px;
-}
-
-.default-model-unset {
-  flex-basis: 100%;
-  margin: 0;
   font-size: var(--text-xs);
+  line-height: var(--leading-xs);
+}
+
+.field-hint.warning {
   color: var(--el-color-warning);
 }
 
-/* Ontology agents: one cell per agent (name above, select below); three columns when wide, then two, then one. */
-.agent-model-grid {
-  --agent-grid-gap: var(--spacing-lg);
-  list-style: none;
+.form-error {
   margin: 0;
-  padding: 0;
-  display: grid;
-  grid-template-columns: repeat(
-    auto-fill,
-    minmax(max(260px, calc((100% - 2 * var(--agent-grid-gap)) / 3)), 1fr)
-  );
-  gap: var(--spacing-md) var(--agent-grid-gap);
+  color: var(--el-color-danger);
+  font-size: var(--text-sm);
 }
 
-.agent-model-cell {
+.mono-input :deep(input),
+.mono-input :deep(textarea) {
+  font-family: var(--font-mono);
+  font-size: var(--text-mono);
+}
+
+.check-row {
+  display: flex;
+  gap: var(--spacing-sm);
+}
+
+.check-row .el-button {
+  margin: 0;
+}
+
+.check-model {
+  min-width: 0;
+  flex: 1;
+}
+
+.check-result {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--spacing-xs);
+  margin: var(--spacing-sm) 0 0;
+  font-size: var(--text-sm);
+  line-height: var(--leading-sm);
+  overflow-wrap: anywhere;
+}
+
+.check-result svg {
+  flex: 0 0 auto;
+  margin-top: 3px;
+}
+
+.check-result.ok {
+  color: var(--el-color-success);
+}
+
+.check-result.failed {
+  color: var(--el-color-danger);
+}
+
+/* Advanced settings: a label disclosure row, collapsed until opened or until headers exist. */
+.advanced {
+  border-top: 1px solid var(--el-border-color);
+  padding-top: var(--spacing-md);
+}
+
+.disclosure {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--el-text-color-secondary);
+  font: inherit;
+  font-size: var(--text-xs);
+  font-weight: var(--font-semibold);
+  letter-spacing: var(--tracking-label);
+  cursor: pointer;
+}
+
+.disclosure:focus-visible {
+  outline: 2px solid var(--el-color-primary);
+  outline-offset: 2px;
+}
+
+.disclosure-count {
+  font-weight: var(--font-normal);
+}
+
+.advanced-body {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--spacing-sm);
+  margin-top: var(--spacing-md);
+}
+
+.field-label {
+  margin: 0;
+  color: var(--el-text-color-regular);
+  font-size: var(--text-sm);
+}
+
+.header-row {
+  display: grid;
+  width: 100%;
+  grid-template-columns: minmax(0, 2fr) minmax(0, 3fr) auto;
+  gap: var(--spacing-sm);
+  align-items: center;
+}
+
+/* ---- Models of a provider ---- */
+.models-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-md);
+  border-top: 1px solid var(--el-border-color);
+  padding-top: var(--spacing-md);
+}
+
+.section-bar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--spacing-sm);
+}
+
+.section-title {
+  margin: 0;
+  color: var(--el-text-color-primary);
+  font-size: var(--text-base);
+  font-weight: var(--font-semibold);
+  line-height: var(--leading-sm);
+}
+
+.section-count {
+  color: var(--el-text-color-secondary);
+  font-size: var(--text-xs);
+}
+
+.section-actions {
+  display: flex;
+  gap: var(--spacing-sm);
+  margin-inline-start: auto;
+}
+
+.section-actions .el-button {
+  margin: 0;
+}
+
+.model-group {
   display: flex;
   flex-direction: column;
   gap: var(--spacing-xs);
+}
+
+.group-label {
+  margin: 0;
+  color: var(--el-text-color-secondary);
+  font-size: var(--text-xs);
+  font-weight: var(--font-semibold);
+  letter-spacing: var(--tracking-label);
+}
+
+.model-rows {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.model-rows.bordered {
+  border: 1px solid var(--el-border-color);
+  border-radius: var(--radius-md);
+}
+
+.model-row {
+  display: flex;
+  min-height: var(--list-row-height);
+  align-items: center;
+  gap: var(--spacing-md);
+  padding: var(--spacing-xs) var(--spacing-md);
+  border-bottom: 1px solid var(--el-border-color);
+}
+
+.model-row:last-child {
+  border-bottom: 0;
+}
+
+.model-row:hover {
+  background: var(--el-fill-color-light);
+}
+
+.model-row-text {
+  display: flex;
   min-width: 0;
+  flex: 1;
+  flex-direction: column;
 }
 
-.agent-model-name {
-  font-weight: var(--font-medium);
+.model-row-name {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: var(--spacing-sm);
+  overflow: hidden;
   color: var(--el-text-color-primary);
+  font-size: var(--text-sm);
+  font-weight: var(--font-medium);
+  line-height: var(--leading-sm);
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.dialog-text {
-  margin: 0 0 var(--spacing-md);
-  line-height: 1.6;
-  color: var(--el-text-color-regular);
+.model-row-id {
+  overflow: hidden;
+  color: var(--el-text-color-secondary);
+  font-size: var(--text-xs);
+  line-height: var(--leading-xs);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.model-row-meta {
+  display: flex;
+  flex: 0 1 auto;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--spacing-xs) var(--spacing-sm);
+  color: var(--el-text-color-secondary);
+  font-size: var(--text-xs);
+  font-variant-numeric: tabular-nums;
+}
+
+.model-row-actions {
+  display: flex;
+  flex: 0 0 auto;
+}
+
+.model-row-added {
+  color: var(--el-text-color-secondary);
+  font-size: var(--text-xs);
+}
+
+.model-empty {
+  margin: 0;
+  padding: var(--spacing-lg) 0;
+  color: var(--el-text-color-secondary);
+  font-size: var(--text-sm);
+  text-align: center;
+}
+
+/* ---- Dialogs ---- */
+.model-form :deep(.el-form-item) {
+  margin-bottom: var(--spacing-md);
+}
+
+.model-form :deep(.el-input-number) {
+  width: 100%;
+}
+
+.form-row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0 var(--spacing-lg);
+}
+
+.discover-list {
+  min-height: 120px;
+  max-height: min(420px, 60vh);
+  margin-top: var(--spacing-md);
+  overflow: auto;
+  border: 1px solid var(--el-border-color);
+  border-radius: var(--radius-md);
+}
+
+.discover-error {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-md);
+}
+
+.discover-error-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--spacing-sm);
+}
+
+/* ---- Defaults and retry: setting rows with the text on the left and the control on the right ---- */
+.defaults-panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xl);
+}
+
+.settings-section {
+  display: flex;
+  max-width: 880px;
+  flex-direction: column;
+}
+
+.settings-section > .section-title {
+  margin-bottom: var(--spacing-xs);
+}
+
+.section-hint {
+  margin: 0 0 var(--spacing-sm);
+  color: var(--el-text-color-secondary);
+  font-size: var(--text-sm);
+}
+
+.setting-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 360px);
+  gap: var(--spacing-lg);
+  align-items: start;
+  padding: var(--spacing-md) 0;
+  border-bottom: 1px solid var(--el-border-color);
+}
+
+.setting-row.compact {
+  align-items: center;
+  padding: var(--spacing-sm) 0;
+}
+
+.setting-text {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.setting-label {
+  color: var(--el-text-color-primary);
+  font-size: var(--text-sm);
+  font-weight: var(--font-medium);
+}
+
+.setting-hint {
+  color: var(--el-text-color-secondary);
+  font-size: var(--text-xs);
+  line-height: var(--leading-xs);
+}
+
+.setting-control {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+}
+
+.setting-control .el-select {
+  width: 100%;
+}
+
+.setting-control.narrow .el-input-number {
+  width: 200px;
+}
+
+.rebuild-status {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+  margin-top: var(--spacing-sm);
+}
+
+.rebuild-actions:empty {
+  display: none;
+}
+
+@media (max-width: 768px) {
+  .page-description {
+    display: none;
+  }
+
+  .providers-split {
+    flex-direction: column;
+    overflow: auto;
+  }
+
+  .providers-list {
+    width: auto;
+    flex: 0 0 auto;
+    max-height: 40vh;
+    border-inline-end: 0;
+    border-bottom: 1px solid var(--el-border-color);
+  }
+
+  .providers-detail {
+    overflow: visible;
+  }
+
+  .setting-row,
+  .form-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .model-row {
+    flex-wrap: wrap;
+  }
 }

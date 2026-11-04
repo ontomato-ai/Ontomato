@@ -1,16 +1,26 @@
-import type { ModelSelection } from "@ontomato/contracts/model-settings";
+import {
+  modelSettingsSchema,
+  ontologyAgentModelSchema,
+  ontologyAgentModelsSchema,
+  type ModelSelection,
+  type ModelSettingsData,
+  type ModelSettingsWrite,
+  type OntologyAgentModel,
+} from "@ontomato/contracts/model-settings";
+import {
+  runtimeModelDiscoveryResponseSchema,
+  runtimeModelTestResponseSchema,
+  type RuntimeModelDiscoveryRequest,
+  type RuntimeModelDiscoveryResponse,
+  type RuntimeModelTestRequest,
+  type RuntimeModelTestResponse,
+} from "@ontomato/contracts/runtime-model-test";
 import {
   generalConfigSaveEndpoints,
   ontologyOutlineSchema,
   type GeneralConfigKey,
 } from "./config/types";
-import {
-  vectorRebuildStatusSchema,
-  type EmbeddingModelConfig,
-  type ModelEntry,
-  type ModelSettings,
-  type OntologyAgentSelection,
-} from "./models/types";
+import { vectorRebuildStatusSchema } from "./models/types";
 
 /**
  * Platform area requests. The platform pages live next to the Ontology Manager and call the Java service through the
@@ -55,6 +65,28 @@ export class PlatformBusinessError extends Error {
   }
 }
 
+/** The service answered a non-2xx status; `code` is the service's error code when the body carries one. */
+export class PlatformHttpError extends Error {
+  constructor(
+    message: string,
+    readonly status: number,
+    readonly code: string | null
+  ) {
+    super(message);
+    this.name = "PlatformHttpError";
+  }
+}
+
+/** The service's error code of a failed request (`{success:false,code,message}`), or null. */
+export function platformErrorCode(error: unknown): string | null {
+  if (error instanceof PlatformHttpError) return error.code;
+  if (error instanceof PlatformBusinessError) {
+    const code = (error.body as { code?: unknown } | null)?.code;
+    return typeof code === "string" ? code : null;
+  }
+  return null;
+}
+
 export type PlatformClient = ReturnType<typeof createPlatformClient>;
 
 type RequestOptions = NonNullable<Parameters<typeof fetch>[1]>;
@@ -79,8 +111,10 @@ export function createPlatformClient(context: PlatformRequestContext) {
     if (response.status === 401 || response.status === 402) context.onAuthFailure?.(response.status);
     if (!response.ok) {
       const body = await response.json().catch(() => null);
-      throw new Error(
-        body?.error || body?.message || body?.msg || `Request failed: HTTP ${response.status}`
+      throw new PlatformHttpError(
+        body?.error || body?.message || body?.msg || `Request failed: HTTP ${response.status}`,
+        response.status,
+        typeof body?.code === "string" ? body.code : null
       );
     }
     return response;
@@ -120,20 +154,22 @@ export function platformApi(client: PlatformClient) {
       client.post(generalConfigSaveEndpoints[key], { [key]: value }),
     getOntologyOutline: async () =>
       ontologyOutlineSchema.parse((await client.get("/admin/getSchema")).data),
-    // The model library is read and written as-is, not through the contract schema: parsing would drop provider
-    // fields the page has no control for, and the save must send them back unchanged.
-    getModelSettings: async (): Promise<ModelSettings> => (await client.get("/model-settings")).data,
-    saveModelSettings: async (settings: ModelSettings): Promise<ModelSettings> =>
-      (await client.post("/model-settings/save", settings)).data,
-    testModel: async (model: ModelEntry, prompt: string): Promise<{ content: string }> =>
-      (await client.post("/model-settings/test", { model, prompt })).data,
-    listOntologyAgentModels: async (): Promise<OntologyAgentSelection[]> =>
-      (await client.get("/ontology/ai/agent-models")).data.agents,
-    saveOntologyAgentModel: async (id: string, modelSelection: ModelSelection): Promise<OntologyAgentSelection> =>
-      (await client.put(`/ontology/ai/agent-models/${encodeURIComponent(id)}`, { modelSelection })).data,
-    saveEmbeddingModel: (model: EmbeddingModelConfig) => client.post("/businessConfig/saveEmbeddingModel", model),
-    testEmbeddingModel: (payload: { modelConfig: EmbeddingModelConfig; userContent: string }) =>
-      client.post("/businessConfig/testEmbeddingModel", payload),
+    // The domain's model settings, replaced as a whole on save; keys are read masked.
+    getModelSettings: async (): Promise<ModelSettingsData> =>
+      modelSettingsSchema.parse((await client.get("/model-settings")).data),
+    saveModelSettings: async (settings: ModelSettingsWrite): Promise<ModelSettingsData> =>
+      modelSettingsSchema.parse((await client.post("/model-settings/save", settings)).data),
+    // One minimal call (or the provider's model list) with an unsaved draft; a masked key resolves by provider ID.
+    testModel: async (request: RuntimeModelTestRequest): Promise<RuntimeModelTestResponse> =>
+      runtimeModelTestResponseSchema.parse((await client.post("/model-settings/test", request)).data),
+    discoverModels: async (request: RuntimeModelDiscoveryRequest): Promise<RuntimeModelDiscoveryResponse> =>
+      runtimeModelDiscoveryResponseSchema.parse((await client.post("/model-settings/discover", request)).data),
+    listOntologyAgentModels: async (): Promise<OntologyAgentModel[]> =>
+      ontologyAgentModelsSchema.parse((await client.get("/ontology/ai/agent-models")).data).agents,
+    saveOntologyAgentModel: async (id: string, modelSelection: ModelSelection): Promise<OntologyAgentModel> =>
+      ontologyAgentModelSchema.parse(
+        (await client.put(`/ontology/ai/agent-models/${encodeURIComponent(id)}`, { modelSelection })).data
+      ),
     getVectorRebuildStatus: async () =>
       vectorRebuildStatusSchema.parse((await client.get("/businessConfig/vectorRebuildStatus")).data),
     rebuildVectors: () => client.post("/businessConfig/rebuildVectors"),
