@@ -5,12 +5,12 @@ export { mix, rgbTriplet } from "./color";
 
 /*
  * @ontomato/design-tokens: the design foundation and the brand layer of docs/design/DESIGN.md as code, free of
- * application code, so the workbench and the Ontology Manager page both depend on this package alone.
+ * application code, so the workbench and the Ontology Service page both depend on this package alone.
  *
  * Each edition keeps exactly one BrandSource (its colour roles in light and dark plus the categorical chart palette);
  * everything that needs a brand colour is generated from it here:
  * - the workbench stylesheet (`installBrandTheme`, called by `startWorkbenchWeb` in @ontomato/workbench-ui),
- * - the Ontology Manager presentation (`brandProperties` per theme for `themeProperties`, `dataviz` for `nodePalette`).
+ * - the Ontology Service presentation (`brandProperties` per theme for `themeProperties`, `dataviz` for `nodePalette`).
  * The role → Element Plus mapping follows DESIGN.md "Colour roles → Element Plus". Foundation values (type, spacing,
  * shape, density, shell, elevation, motion) and the component variable rules live in ./foundation.css
  * (`@ontomato/design-tokens/foundation.css`).
@@ -18,7 +18,7 @@ export { mix, rgbTriplet } from "./color";
 
 export type BrandMode = "light" | "dark";
 
-/** The colour roles of one mode (DESIGN.md front matter `colors.light` / `colors.dark`). */
+/** The colour roles of one mode (DESIGN.md front matter `colors`). */
 export interface BrandColors {
   /** Shell panels: sidebar, list panel, admin navigation. */
   canvas: string;
@@ -65,7 +65,7 @@ export interface BrandColors {
 export interface BrandSource {
   light: BrandColors;
   dark: BrandColors;
-  /** Categorical chart and graph palette per mode, fixed order (DESIGN.md `dataviz.categorical-*`). */
+  /** Categorical chart and graph palette per mode, fixed order (DESIGN.md `dataviz.categorical`). */
   dataviz: Readonly<Record<BrandMode, readonly string[]>>;
 }
 

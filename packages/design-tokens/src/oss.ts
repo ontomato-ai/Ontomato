@@ -2,7 +2,7 @@ import type { BrandSource } from "./index";
 
 /**
  * The open-source edition's brand: the only place its colours are written (docs/design/DESIGN.md, open-source brand
- * layer). The workbench theme and the Ontology Manager presentation are both generated from it.
+ * layer). The workbench theme and the Ontology Service presentation are both generated from it.
  */
 export const ossBrand: BrandSource = {
   light: {
