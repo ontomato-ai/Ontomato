@@ -4,7 +4,8 @@ import { describe, expect, it } from "vitest";
 
 /*
  * The text-colour rules of the Element Plus mapping: primary-coloured text (active tab, active menu item, selected
- * option, text and link buttons, links) uses the link role, and rows on the selected background use ink.
+ * option, text and link buttons, links) uses the link role, rows on the selected background use ink, and disabled
+ * primary buttons use the disabled roles.
  */
 const css = readFileSync(new URL("../foundation.css", import.meta.url), "utf8").replace(/\/\*[\s\S]*?\*\//g, "");
 
@@ -60,6 +61,14 @@ describe("foundation text colours", () => {
     });
     expect(declarationsFor(".el-tag.el-tag--primary:not(.el-tag--dark):not(.el-tag--plain)")).toMatchObject({
       "--el-tag-bg-color": "var(--brand-primary-tint)",
+    });
+  });
+
+  it("disabled primary buttons use the disabled roles, not a paler primary that looks enabled in dark mode", () => {
+    expect(declarationsFor(".el-button.el-button--primary:not(.is-dashed)")).toMatchObject({
+      "--el-button-disabled-bg-color": "var(--el-fill-color-light)",
+      "--el-button-disabled-border-color": "var(--el-border-color-light)",
+      "--el-button-disabled-text-color": "var(--el-disabled-text-color)",
     });
   });
 

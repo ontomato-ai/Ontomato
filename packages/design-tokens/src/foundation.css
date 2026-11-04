@@ -130,15 +130,20 @@
 
 /*
  * Primary buttons: text on the filled states is on-primary (dark in the open-source dark mode), and hover darkens to
- * primary-hover instead of Element Plus's lighter light-3. The class chain also wins over Element Plus's
- * `html.dark .el-button` disabled text. Plain buttons fill on hover, so they share the filled hover; dashed buttons
- * never fill and keep Element Plus's values.
+ * primary-hover instead of Element Plus's lighter light-3. Disabled drops the primary fill for the disabled roles
+ * (hover background, faint text): Element Plus's light-5 is primary mixed with surface, which in dark mode stays a
+ * saturated fill under on-primary text and reads as enabled. The class chain also wins over Element Plus's
+ * `html.dark .el-button` disabled text. Plain buttons fill on hover, so they share the filled hover; their disabled
+ * state, like that of text, link and dashed buttons, is Element Plus's own rule and ignores these variables. Dashed
+ * buttons never fill and keep Element Plus's values.
  */
 .el-button.el-button--primary:not(.is-dashed) {
   --el-button-text-color: var(--on-primary);
   --el-button-hover-text-color: var(--on-primary);
   --el-button-active-text-color: var(--on-primary);
-  --el-button-disabled-text-color: var(--on-primary);
+  --el-button-disabled-text-color: var(--el-disabled-text-color);
+  --el-button-disabled-bg-color: var(--el-fill-color-light);
+  --el-button-disabled-border-color: var(--el-border-color-light);
   --el-button-hover-bg-color: var(--brand-primary-hover);
   --el-button-hover-border-color: var(--brand-primary-hover);
 }
