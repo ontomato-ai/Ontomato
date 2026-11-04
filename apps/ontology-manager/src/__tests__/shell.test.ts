@@ -101,10 +101,10 @@ describe("open-source Ontology Service page", () => {
       "Functions",
       "Schedule Tasks",
       "Business Knowledge",
-      "Model Configuration",
-      "System Configuration",
-      "Audit Logs",
-      "System Monitoring",
+      "User Feedback",
+      "Models",
+      "System Settings",
+      "Run Records",
     ]);
     // No back link to a separate workspace and no second header.
     expect(document.querySelector(".back-btn, .workspace-header, .platform-header")).toBeNull();
@@ -129,8 +129,8 @@ describe("open-source Ontology Service page", () => {
     ["/#/data/Order", "#/data/Order", "data Order"],
     ["/#/objects", "#/objects", null],
     ["/#/admin/ontology/visual-modeling", "#/visual-modeling", "modeling :"],
-    ["/#/admin", "#/admin/model-config", "models"],
-    ["/#/admin/audit-log", "#/admin/audit-log", null],
+    ["/#/admin", "#/admin/model-config/usage", "models"],
+    ["/#/admin/audit-log", "#/admin/records/audit-log", null],
     ["/#/no-such-page", "#/playground", "graph"],
   ])("old address %s lands on %s", async (url, landed, page) => {
     await start(url);
@@ -140,8 +140,8 @@ describe("open-source Ontology Service page", () => {
 
   it("the current page's navigation row is highlighted and the platform pages get the 48px page header", async () => {
     await start("/#/admin/audit-log");
-    expect(document.querySelector(".nav-row.active .nav-label")?.textContent).toBe("Audit Logs");
-    expect(document.querySelector(".page-header .page-title")?.textContent).toBe("Audit Logs");
+    expect(document.querySelector(".nav-row.active .nav-label")?.textContent).toBe("Run Records");
+    expect(document.querySelector(".page-header .page-title")?.textContent).toBe("Run Records");
     await start("/#/objects");
     expect(document.querySelector(".nav-row.active .nav-label")?.textContent).toBe("Object Types");
     expect(document.querySelector(".page-header")).toBeNull();

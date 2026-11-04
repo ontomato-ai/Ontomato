@@ -1,45 +1,34 @@
 <script setup lang="ts">
-import {
-  dataAdapterTestResultSchema,
-  multiDataSourceRejectionSchema,
-  multiDataSourceType,
-  type DataAdapterInfo,
-  type DataAdapterRequest,
-  type DataAdaptersData,
-} from "@ontomato/contracts/data-adapters";
-
-import { ref, reactive, onMounted, watch } from "vue";
+import { onMounted, reactive, ref, watch } from "vue";
 import { ElMessage } from "element-plus";
 import { useI18n } from "vue-i18n";
-import DataAdapterConfigCard from "../config/components/DataAdapterConfigCard.vue";
-import GeneralConfigCard from "../config/components/GeneralConfigCard.vue";
+import { dataAdapterTestResultSchema, multiDataSourceRejectionSchema, multiDataSourceType } from "@ontomato/contracts/data-adapters";
+import type { DataAdapterInfo, DataAdapterRequest, DataAdaptersData } from "@ontomato/contracts/data-adapters";
+import DataAdapterConfigCard from "./DataAdapterConfigCard.vue";
+import { PlatformBusinessError } from "../../api";
+import { usePlatformHost } from "../../context";
 import {
   dataAdapterRequest,
   multiDataSourceDefinition,
   multiDataSourceDraft,
   type BusinessConfig,
   type DataAdapterTestOutcome,
-  type GeneralConfigKey,
   type MultiDataSourceDraft,
   type MultiDataSourceSaveFailure,
   type OntologyOutline,
   type SystemSettings,
-} from "../config/types";
-import { PlatformBusinessError } from "../api";
-import { usePlatformHost } from "../context";
+} from "../types";
 
 /*
- * System configuration page: the general parameters, backend language and data adapter of the ontology service. The
- * query settings (the Node system model file) stay in the workbench, and models have their own page.
+ * The data adapter of this domain: one connection, or several sources routed by class. Testing reads a candidate
+ * connection without saving it or switching the domain's adapter; saving switches the domain to what the form holds.
  */
 const { t } = useI18n();
 const { api, separators, systemConfig: businessConfig } = usePlatformHost();
 
 const loading = ref(false);
-const backendLoadError = ref("");
-
-// Draft of the general config, language and data adapter, bound two-way by the cards.
-let config = reactive<SystemSettings>({
+const loadError = ref("");
+const config = reactive<SystemSettings>({
   knowledgeMaxResult: 10,
   dslCookerTimeout: 300000,
   lang: businessConfig.defaultLanguage,
@@ -51,60 +40,24 @@ const dataAdapters = ref<DataAdapterInfo[]>([]);
 
 async function loadConfig() {
   loading.value = true;
-  backendLoadError.value = "";
+  loadError.value = "";
   try {
-    const [res, adaptersRes] = await Promise.all([
-      api.getBusinessConfig(),
-      api.listDataAdapters(),
-    ]);
+    const [res, adaptersRes] = await Promise.all([api.getBusinessConfig(), api.listDataAdapters()]);
     if (res?.success) {
       dataAdapters.value = (adaptersRes.data as DataAdaptersData).adapters;
       const data = res.data as BusinessConfig;
-      config.knowledgeMaxResult = data.knowledgeMaxResult ?? 10;
-      config.dslCookerTimeout = data.dslCookerTimeout ?? 300000;
-      // Only languages this edition ships are selectable; any other stored value shows the default until saved explicitly.
-      config.lang = businessConfig.languageOptions.some(({ value }) => value === data.lang)
-        ? data.lang
-        : businessConfig.defaultLanguage;
       config.dataAdapter = data.dataAdapter;
       config.dataAdapterConnections = data.dataAdapterConnections;
       multiDraft.value = multiDataSourceDraft(data.multiDataSource);
       dataAdapterMode.value = config.dataAdapter;
     } else {
-      backendLoadError.value = res?.message || t("admin.loadConfigFailed");
+      loadError.value = res?.message || t("admin.loadConfigFailed");
     }
   } catch (e: any) {
-    backendLoadError.value = e.message || t("admin.loadConfigFailed");
-    ElMessage.error(e.message || t("admin.loadConfigFailed"));
+    loadError.value = e.message || t("admin.loadConfigFailed");
   } finally {
     loading.value = false;
   }
-}
-
-const savingGeneral: Record<string, boolean> = reactive({
-  knowledgeMaxResult: false,
-  dslCookerTimeout: false,
-  lang: false,
-});
-
-async function saveGeneralConfig(key: GeneralConfigKey, value: unknown) {
-  savingGeneral[key] = true;
-  try {
-    const res = await api.saveGeneralConfig(key, value);
-    if (res?.success) {
-      ElMessage.success(t("admin.configSaveSuccess"));
-    } else {
-      ElMessage.error(res?.message || t("admin.saveFailed"));
-    }
-  } catch (e: any) {
-    ElMessage.error(e.message || t("admin.saveFailed"));
-  } finally {
-    savingGeneral[key] = false;
-  }
-}
-
-async function saveGeneralField(key: GeneralConfigKey) {
-  await saveGeneralConfig(key, config[key]);
 }
 
 const dataAdapterMode = ref("");
@@ -153,9 +106,7 @@ async function testConnection(request: DataAdapterRequest): Promise<DataAdapterT
   try {
     const res = await api.testDataAdapter(request);
     const report = dataAdapterTestResultSchema.safeParse(res.data);
-    return report.success
-      ? { ok: true, result: report.data }
-      : { ok: false, message: t("admin.dataAdapterInvalidReport") };
+    return report.success ? { ok: true, result: report.data } : { ok: false, message: t("admin.dataAdapterInvalidReport") };
   } catch (e: any) {
     return { ok: false, message: e.message };
   }
@@ -191,9 +142,7 @@ async function loadOntology() {
 }
 
 watch(dataAdapterMode, (mode) => {
-  if (mode === multiDataSourceType && ontology.value === null && !loadingOntology.value) {
-    loadOntology();
-  }
+  if (mode === multiDataSourceType && ontology.value === null && !loadingOntology.value) loadOntology();
 });
 
 // The data engine checks the whole definition against the ontology; a rejection lists every located problem.
@@ -204,10 +153,10 @@ async function saveMultiDataSource() {
     await api.useMultiDataSource(multiDataSourceDefinition(multiDraft.value, ontology.value!));
     ElMessage.success(t("admin.switchedDataAdapter", { name: selectedDataAdapter().label }));
     config.dataAdapter = multiDataSourceType;
-  } catch (e: any) {
+  } catch (e) {
     const rejection = e instanceof PlatformBusinessError ? multiDataSourceRejectionSchema.safeParse(e.body) : null;
     multiSaveFailure.value = {
-      message: e.message,
+      message: e instanceof Error ? e.message : String(e),
       problems: rejection?.success ? rejection.data.data.problems : [],
     };
   } finally {
@@ -215,37 +164,26 @@ async function saveMultiDataSource() {
   }
 }
 
-onMounted(() => {
-  loadConfig();
-});
+onMounted(loadConfig);
 </script>
 
 <template>
-  <div class="system-config-container">
-    <div v-if="backendLoadError" class="config-load-error" role="alert">
-      <span>{{ t("admin.loadConfigFailed") }}{{ separators.detail }}{{ backendLoadError }}</span>
+  <div class="settings-tab">
+    <div v-if="loadError" class="config-load-error" role="alert">
+      <span>{{ t("admin.loadConfigFailed") }}{{ separators.detail }}{{ loadError }}</span>
       <el-button size="small" @click="loadConfig">{{ t("common.retry") }}</el-button>
     </div>
-
-    <GeneralConfigCard
-      v-model:config="config"
-      :saving="savingGeneral"
-      :language-options="businessConfig.languageOptions"
-      :default-language="businessConfig.defaultLanguage"
-      :disabled="loading || !!backendLoadError"
-      @save="saveGeneralField"
-    />
 
     <DataAdapterConfigCard
       v-model:config="config"
       v-model:mode="dataAdapterMode"
+      v-model:multi-draft="multiDraft"
       :adapters="dataAdapters"
       :adapter-display="businessConfig.adapterDisplay"
       :saving="savingAdapter"
       :testing="testingAdapter"
       :test="adapterTest"
-      :disabled="loading || !!backendLoadError"
-      v-model:multi-draft="multiDraft"
+      :disabled="loading || !!loadError"
       :ontology="ontology"
       :ontology-load-error="ontologyLoadError"
       :test-connection="testConnection"
@@ -257,27 +195,27 @@ onMounted(() => {
   </div>
 </template>
 
-<style scoped src="../config/components/config.css"></style>
+<style scoped src="./config.css"></style>
 
 <style scoped>
-.system-config-container {
+.settings-tab {
   display: flex;
+  min-width: 0;
   flex-direction: column;
   gap: var(--spacing-lg);
-  min-width: 0;
+  padding: var(--spacing-lg);
 }
 
 .config-load-error {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: var(--spacing-md);
   padding: var(--spacing-md);
-  margin: var(--spacing-lg) 0;
   border: 1px solid var(--el-color-danger-light-5);
   border-radius: var(--radius-md);
   background: var(--el-color-danger-light-9);
   color: var(--el-color-danger);
   font-size: var(--text-sm);
-  flex-wrap: wrap;
 }
 </style>

@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { computed, ref, shallowRef, watch } from "vue";
-import { ElMessageBox } from "element-plus";
+import { computed, reactive, ref, shallowRef, watch } from "vue";
+import { ElMessage, ElMessageBox } from "element-plus";
 import { ChevronDown, ChevronRight, CircleCheck, CircleX, Download, Plus, Trash2 } from "lucide-vue-next";
 import { useI18n } from "vue-i18n";
 import {
@@ -12,6 +12,7 @@ import {
 import { modelLabel } from "@ontomato/contracts/model-selection";
 import { modelApiBaseUrls, modelApiLabels } from "../apis";
 import type { RuntimeModelDiscoveryResponse } from "@ontomato/contracts/runtime-model-test";
+import { useAgentModelsDraft } from "../agents";
 import { usePlatformHost } from "../../context";
 import { useModelErrors } from "../errors";
 import {
@@ -21,6 +22,7 @@ import {
   draftConnection,
   modelName,
   modelRef,
+  splitModelRef,
   useModelDraft,
   type ClearedDefault,
   type DraftChange,
@@ -38,10 +40,11 @@ const emit = defineEmits<{
   renamed: [from: string, to: string];
   removed: [];
 }>();
-const { t } = useI18n();
+const { t, te } = useI18n();
 const { api } = usePlatformHost();
 const describeError = useModelErrors();
 const draft = useModelDraft();
+const agentDraft = useAgentModelsDraft();
 
 // The provider lives in the shared draft and the panel edits it there. The page shows the panel only for a provider of
 // the draft; right after the provider is removed, until the page drops the panel, the last one found stands in.
@@ -89,18 +92,10 @@ function modelMeta(model: ModelEntry): string[] {
   ];
 }
 
-// ---- Check: one minimal call with a model of the unsaved provider ----
-const checkModelId = ref<string | null>(null);
-watch(
-  () => provider.value.models.map((m) => m.id),
-  (ids) => {
-    if (checkModelId.value === null || !ids.includes(checkModelId.value)) checkModelId.value = ids[0] ?? null;
-  },
-  { immediate: true }
-);
-const checking = ref(false);
-const checkResult = shallowRef<{ ok: boolean; text: string } | null>(null);
-watch(() => props.providerId, () => (checkResult.value = null));
+// ---- Check: one minimal call with one model of the unsaved provider, row by row ----
+const checking = ref<string | null>(null);
+const checkResults = reactive(new Map<string, { ok: boolean; text: string }>());
+watch(() => props.providerId, () => checkResults.clear());
 
 function connectionProblem(): string | null {
   if (!provider.value.baseUrl.trim()) return t("admin.baseUrlRequired");
@@ -108,29 +103,27 @@ function connectionProblem(): string | null {
   return null;
 }
 
-async function check() {
-  const model = provider.value.models.find((m) => m.id === checkModelId.value);
-  if (!model) return;
+async function check(model: ModelEntry) {
   const problem = connectionProblem();
   if (problem) {
-    checkResult.value = { ok: false, text: problem };
+    checkResults.set(model.id, { ok: false, text: problem });
     return;
   }
-  checking.value = true;
-  checkResult.value = null;
+  checking.value = model.id;
+  checkResults.delete(model.id);
   try {
     const result = await api.testModel({ ...draftConnection(draft, provider.value), model });
-    checkResult.value = {
+    checkResults.set(model.id, {
       ok: true,
       text:
         result.type === "embedding"
           ? t("admin.checkEmbeddingPassed", { n: result.dimensions })
           : t("admin.checkChatPassed", { content: result.content.trim().slice(0, 200) }),
-    };
+    });
   } catch (e) {
-    checkResult.value = { ok: false, text: describeError(e, "admin.checkFailed") };
+    checkResults.set(model.id, { ok: false, text: describeError(e, "admin.checkFailed") });
   } finally {
-    checking.value = false;
+    checking.value = null;
   }
 }
 
@@ -230,12 +223,42 @@ async function removeProvider() {
   if (await confirmChange(t("admin.removeProvider"), lines, t("common.delete"))) emit("removed");
 }
 
+// ---- Who uses this provider's models: the domain defaults and the ontology agents (Agent Platform agents are its own) ----
+const usages = computed(() => {
+  const providerId = provider.value.id;
+  const owns = (ref: string | null) => ref !== null && ref.startsWith(`${providerId}/`);
+  const rows: { kind: "chatDefault" | "embeddingDefault" | "agent"; name: string; ref: string }[] = [];
+  if (owns(draft.defaultModelId)) {
+    rows.push({ kind: "chatDefault", name: t("admin.domainDefaultModel"), ref: draft.defaultModelId! });
+  }
+  if (owns(draft.embeddingModelId)) {
+    rows.push({ kind: "embeddingDefault", name: t("admin.embeddingModel"), ref: draft.embeddingModelId! });
+  }
+  for (const agent of agentDraft.saved ?? []) {
+    const ref = agentDraft.selections[agent.id] ?? null;
+    if (owns(ref)) rows.push({ kind: "agent", name: agentName(agent), ref: ref! });
+  }
+  return rows;
+});
+
+function agentName(agent: { kind: string; name: string }) {
+  const key = `admin.ontologyAgentKinds.${agent.kind}`;
+  return te(key) ? t(key) : agent.name;
+}
+
+/** The model's name in this provider (the ID when it has no other). */
+function refLabel(ref: string) {
+  const { modelId } = splitModelRef(ref);
+  const model = provider.value.models.find((candidate) => candidate.id === modelId);
+  return model ? modelName(model) : modelId;
+}
+
 // ---- Discovery ----
 const discoverVisible = ref(false);
 function openDiscover() {
   const problem = connectionProblem();
   if (problem) {
-    checkResult.value = { ok: false, text: problem };
+    ElMessage.warning(problem);
     return;
   }
   discoverVisible.value = true;
@@ -289,32 +312,6 @@ function addManually() {
         />
         <p class="field-hint">
           {{ provider.savedKeyMask ? t("admin.savedKeyHint") : t("admin.apiKeyHint") }}
-        </p>
-      </el-form-item>
-      <el-form-item :label="t('admin.checkConnection')">
-        <div class="check-row">
-          <el-select
-            v-model="checkModelId"
-            :disabled="provider.models.length === 0"
-            :placeholder="t('admin.checkNeedsModel')"
-            :aria-label="t('admin.checkModel')"
-            class="check-model"
-          >
-            <el-option
-              v-for="model in provider.models"
-              :key="model.id"
-              :value="model.id"
-              :label="`${modelName(model)} · ${t(`admin.modelTypes.${model.type}`)}`"
-            />
-          </el-select>
-          <el-button :loading="checking" :disabled="checkModelId === null" @click="check">
-            {{ t("admin.check") }}
-          </el-button>
-        </div>
-        <p v-if="checkResult" :class="['check-result', checkResult.ok ? 'ok' : 'failed']" role="status">
-          <CircleCheck v-if="checkResult.ok" :size="14" aria-hidden="true" />
-          <CircleX v-else :size="14" aria-hidden="true" />
-          <span>{{ checkResult.text }}</span>
         </p>
       </el-form-item>
     </el-form>
@@ -372,8 +369,16 @@ function addManually() {
               </span>
               <span class="model-row-meta">
                 <span v-for="item in modelMeta(model)" :key="item">{{ item }}</span>
+                <p v-if="checkResults.get(model.id)" :class="['check-result', checkResults.get(model.id)!.ok ? 'ok' : 'failed']" role="status">
+                  <CircleCheck v-if="checkResults.get(model.id)!.ok" :size="14" aria-hidden="true" />
+                  <CircleX v-else :size="14" aria-hidden="true" />
+                  <span>{{ checkResults.get(model.id)!.text }}</span>
+                </p>
               </span>
               <span class="model-row-actions">
+                <el-button link size="small" :loading="checking === model.id" @click="check(model)">
+                  {{ t("admin.check") }}
+                </el-button>
                 <el-button
                   link
                   type="primary"
@@ -390,6 +395,17 @@ function addManually() {
           </ul>
         </div>
       </template>
+    </div>
+
+    <div class="usage-section">
+      <h3 class="section-title">{{ t("admin.providerUsage") }}</h3>
+      <p v-if="usages.length === 0" class="model-empty">{{ t("admin.providerUnused") }}</p>
+      <ul v-else class="usage-rows">
+        <li v-for="row in usages" :key="`${row.kind}:${row.name}:${row.ref}`" class="usage-row">
+          <span class="usage-where">{{ row.name }}</span>
+          <span class="usage-model">{{ refLabel(row.ref) }}</span>
+        </li>
+      </ul>
     </div>
 
     <ModelEditDialog

@@ -8,7 +8,7 @@ import { createPlatformRouter } from "../router";
 import ServiceLayout from "../layout/ServiceLayout.vue";
 import { providePlatformHost, type PlatformPageHost } from "../context";
 import type { PlatformAccess, PlatformNavigation } from "../navigation";
-import { pageRoutes, platformGroups, platformPages } from "../pages";
+import { ossPlatformPages, pageRoutes, platformGroups, platformPages } from "../pages";
 import { testHost, testI18n } from "./host";
 
 const count = ref<number | null>(null);
@@ -18,8 +18,8 @@ const navigation: PlatformNavigation = {
     { path: "/playground", titleKey: "nav.graph", icon: Network, permissions: ["ontology-modeling"], group: "ontology", ownHeader: true },
     { path: "/objects", titleKey: "nav.objects", permissions: ["ontology-modeling"], group: "ontology", ownHeader: true, count: () => count.value },
     { path: "/data", titleKey: "nav.data", permissions: ["data-browser"], group: "ontology", ownHeader: true },
-    platformPages.auditLog,
-    platformPages.systemMonitor,
+    platformPages.runRecords,
+    platformPages.modelConfig,
   ],
 };
 
@@ -35,9 +35,9 @@ const routes: RouteRecordRaw[] = [
       { path: "/data", component: page("data-browser"), meta: { page: "/data" } },
     ],
   },
-  ...pageRoutes([platformPages.auditLog, platformPages.systemMonitor], {
-    [platformPages.auditLog.path]: async () => page("audit"),
-    [platformPages.systemMonitor.path]: async () => page("monitor"),
+  ...pageRoutes([platformPages.runRecords, platformPages.modelConfig], {
+    [platformPages.runRecords.path]: async () => page("records"),
+    [platformPages.modelConfig.path]: async () => page("models"),
   }),
 ];
 
@@ -74,7 +74,7 @@ describe("Ontology Service sidebar", () => {
       "nav.ontology",
       "Platform Management",
     ]);
-    expect(rows(wrapper)).toEqual(["nav.data", "Audit Logs"]);
+    expect(rows(wrapper)).toEqual(["nav.data", "Run Records"]);
   });
 
   it("highlights the entry of the current page, detail pages included, and shows a count once known", async () => {
@@ -110,23 +110,50 @@ describe("Ontology Service sidebar", () => {
   });
 
   it("draws the 48px page header for platform pages and leaves it to pages that have their own", async () => {
-    const { wrapper, router } = await mountLayout("/admin/audit-log", ["ontology-modeling", "audit-logs"]);
-    expect(wrapper.find(".page-header .page-title").text()).toBe("Audit Logs");
+    const { wrapper, router } = await mountLayout("/admin/records/audit-log", ["ontology-modeling", "audit-logs"]);
+    expect(wrapper.find(".page-header .page-title").text()).toBe("Run Records");
     expect(wrapper.find(".page-header .page-description").text()).toBe(
-      "Sign-ins and changes recorded across the platform"
+      "Change history and the service status of the data engine"
     );
     expect(wrapper.find(".page-body.platform-page").exists()).toBe(true);
+    // The page keeps the entry highlighted while a tab of it is shown.
+    expect(wrapper.find(".nav-row.active .nav-label").text()).toBe("Run Records");
     await router.push("/playground");
     await flushPromises();
     expect(wrapper.find(".page-header").exists()).toBe(false);
     expect(wrapper.find(".page-body.platform-page").exists()).toBe(false);
   });
 
+  it("lists a page under either of its tabs' codes, and one entry for all of them", async () => {
+    const audit = await mountLayout("/admin/records/audit-log", ["audit-logs"]);
+    expect(rows(audit.wrapper)).toEqual(["Run Records"]);
+    const monitor = await mountLayout("/admin/records/system-monitor", ["system-monitoring"]);
+    expect(rows(monitor.wrapper)).toEqual(["Run Records"]);
+    // A tab route is the page it belongs to: the entry stays highlighted there and at the page's own address.
+    expect(monitor.wrapper.find(".nav-row.active .nav-label").text()).toBe("Run Records");
+    expect(audit.wrapper.find(".nav-row.active .nav-label").text()).toBe("Run Records");
+  });
+
+  it("the open-source system settings have no license tab (open source runs no licenses)", async () => {
+    expect(ossPlatformPages.find(({ path }) => path === "/admin/system-config")?.tabs?.map(({ titleKey }) => titleKey)).toEqual([
+      "nav.systemGeneralTab",
+      "nav.systemDataAdaptersTab",
+    ]);
+  });
+
+  it("a page with its own header is listed under the same entry as its tabs", async () => {
+    const { wrapper } = await mountLayout("/admin/model-config/usage", ["system-config"]);
+    expect(rows(wrapper)).toEqual(["Models"]);
+    expect(wrapper.find(".nav-row.active .nav-label").text()).toBe("Models");
+  });
+
   it("an account with no page sees the no-permission state; a reduced layout hides the navigation", async () => {
     expect((await mountLayout("/", [])).wrapper.find(".permission-empty").text()).toBe("No available menu permissions");
-    const reduced = await mountLayout("/admin/audit-log", ["audit-logs"], { navigationHidden: computed(() => true) });
+    const reduced = await mountLayout("/admin/records/audit-log", ["audit-logs"], {
+      navigationHidden: computed(() => true),
+    });
     expect(reduced.wrapper.find(".nav-row").exists()).toBe(false);
-    expect(reduced.wrapper.find(".page-double").text()).toBe("audit");
+    expect(reduced.wrapper.find(".page-double").text()).toBe("records");
   });
 
   it("the footer switches the theme and shows the account with sign-out", async () => {

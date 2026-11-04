@@ -1,4 +1,4 @@
-import { inject, type ComputedRef, type InjectionKey, type Ref } from "vue";
+import { inject, type Component, type ComputedRef, type InjectionKey, type Ref } from "vue";
 import type { PlatformAccess, PlatformLink, PlatformNavigation } from "./navigation";
 import type { PlatformApi } from "./api";
 import type { BusinessConfigProps } from "./config/business-config";
@@ -35,6 +35,11 @@ export interface PlatformPageHost<Api extends PlatformApi = PlatformApi> {
   systemConfig: BusinessConfigProps;
   /** Punctuation between a message and its detail (`：` for Chinese-style text, `:` otherwise). */
   separators: { detail: string };
+  /**
+   * Screens an edition supplies in place of a page's tab: the tab's address to the component that draws it (the licence
+   * page is the enterprise edition's). A tab without one draws nothing.
+   */
+  tabPanels?: Readonly<Record<string, Component>>;
 }
 
 export const platformHostKey: InjectionKey<PlatformPageHost> = Symbol("platform-page-host");

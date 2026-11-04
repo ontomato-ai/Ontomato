@@ -28,6 +28,12 @@ export interface PlatformPage {
   /** Menu group this page belongs to; pages whose group is not visible are not listed. */
   group: string;
   /**
+   * Tabs of a page that holds several screens under one entry, in display order; absent for a page without tabs.
+   * A tab is shown when the account holds any one of its permission codes, and the page is listed when at least one of
+   * its tabs is; the page's own `permissions` is the union of its tabs' codes.
+   */
+  tabs?: readonly PlatformPageTab[];
+  /**
    * The page can be entered without its permissions (it is still listed only with them). The license page is the
    * landing for a failed license check, when the account's permissions cannot be read.
    */
@@ -41,6 +47,16 @@ export interface PlatformPage {
 export interface PlatformNavigation {
   groups: readonly PlatformGroup[];
   pages: readonly PlatformPage[];
+}
+
+/** One tab of a page: the screen's own address and the permission codes that grant it. */
+export interface PlatformPageTab {
+  /** The tab's address (a route of its own); the page's own address lands on the first tab the account may see. */
+  path: string;
+  /** Title message key in the platform locale. */
+  titleKey: string;
+  /** Permission codes that grant this tab (any one of them); empty means every account that reached the page. */
+  permissions: readonly string[];
 }
 
 /** A navigation group; shown when at least one of its pages is available. */
@@ -82,6 +98,20 @@ export function availablePages(navigation: PlatformNavigation, access: PlatformA
 }
 
 /** Groups that have at least one available page, in navigation order. */
+/** The tabs of a page the account may see, in display order; every page has one empty tab when it has no tabs. */
+export function availableTabs(page: PlatformPage, access: PlatformAccess): PlatformPageTab[] {
+  return (page.tabs ?? []).filter(
+    (tab) => tab.permissions.length === 0 || tab.permissions.some((permission) => access.can(permission))
+  );
+}
+
+/** The tab a route shows when the account may open it, otherwise the page's first tab it may open; null for a page
+ * without tabs. */
+export function shownTab(page: PlatformPage, access: PlatformAccess, path?: string): PlatformPageTab | null {
+  const tabs = availableTabs(page, access);
+  return tabs.find((tab) => tab.path === path) ?? tabs[0] ?? null;
+}
+
 export function availableGroups(navigation: PlatformNavigation, access: PlatformAccess): PlatformGroup[] {
   const keys = new Set(availablePages(navigation, access).map((page) => page.group));
   return navigation.groups.filter((group) => keys.has(group.key));

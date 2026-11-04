@@ -114,8 +114,8 @@ export default {
     "followDomainDefault": "Domain default ({model})",
     "modelUnavailable": "{id} (unavailable)",
     "modelSelectionMissing": "Model \"{id}\" is no longer configured. Choose another model; until then this agent cannot run.",
-    "ontologyAgentModels": "Ontology Agent Models",
-    "ontologyAgentModelsHint": "Models used by the ontology service's agents, saved with this page. Agent Platform agents choose their models in the Agent Platform.",
+    "ontologyAgentModels": "Ontology service agents",
+    "ontologyAgentModelsHint": "Every agent follows the chat default. This lists the ones given a model of their own; Agent Platform agents choose their models in the Agent Platform.",
     "ontologyAgentModelsLoadFailed": "Failed to load the ontology agents",
     "ontologyAgentKinds": {
       "retrieval": "Data retrieval",
@@ -132,15 +132,39 @@ export default {
       "quality": "Question quality check",
       "knowledgeGovernance": "Knowledge governance"
     },
-    "modelTabs": {
-      "providers": "Providers and models",
-      "defaults": "Default models",
-      "retry": "Timeout and retries"
+    "agentPurposes": {
+      "retrieval": "Data retrieval",
+      "knowledge": "Knowledge",
+      "modeling": "Modeling",
+      "generation": "Generation"
+    },
+    "allAgents": "All agents",
+    "allAgentsFollowDefault": "Every agent follows the chat default; none is given a model of its own.",
+    "specifyAgent": "Give an agent its own model",
+    "followDefaultAction": "Follow the chat default",
+    "showAllAgents": "Show all agents",
+    "hideAllAgents": "Show specified agents only",
+    "callPolicy": "Call policy",
+    "vectorRebuildStates": {
+      "READY": "Vectors ready",
+      "PENDING": "Vectors need rebuilding",
+      "RUNNING": "Rebuilding",
+      "PAUSING": "Pausing",
+      "PAUSED": "Paused",
+      "INTERRUPTED": "Interrupted",
+      "FAILED": "Rebuild failed"
     },
     "modelProviders": "Model providers",
     "searchProviders": "Search providers",
     "addProvider": "Add provider",
     "providerModelCount": "{n} models",
+    "providerStates": {
+      "ready": "Connection complete",
+      "incomplete": "Address, key or models missing",
+      "draft": "Not saved yet"
+    },
+    "providerUsage": "Where this provider's models are used",
+    "providerUnused": "No default or ontology agent uses a model of this provider yet.",
     "noProviders": "No providers yet",
     "noProvidersHint": "Add a provider with its protocol, address and key, then add its models.",
     "noMatchingProviders": "No matching providers",
@@ -231,6 +255,32 @@ export default {
     "maxRetriesHint": "Retries after a failed request; 0 means no retry.",
     "maxRetryDelay": "Max retry wait (s)",
     "maxRetryDelayHint": "The longest wait a provider may ask for before a retry; 0 means no limit.",
+    "feedbackExport": "Export",
+    "feedbackExportEmpty": "No records to export",
+    "feedbackExportSucceeded": "Exported",
+    "feedbackExportFailed": "Export failed",
+    "feedbackLoadFailed": "Failed to load feedback records",
+    "feedbackSearchPlaceholder": "Search the question, answer or comment",
+    "feedbackDetailTitle": "Feedback record",
+    "feedbackSources": {
+      "qa": "Query",
+      "analysis_task": "Analysis task"
+    },
+    "feedbackRatings": {
+      "like": "Like",
+      "dislike": "Dislike"
+    },
+    "feedbackColumns": {
+      "time": "Time",
+      "source": "Source",
+      "rating": "Rating",
+      "user": "User",
+      "turnKey": "Turn key",
+      "input": "Question",
+      "output": "Answer",
+      "feedback": "Comment",
+      "relatedId": "Related"
+    },
     "modelErrors": {
       "INVALID_REQUEST": "The configuration was rejected",
       "MODEL_NOT_CONFIGURED": "The model is not configured",
@@ -294,10 +344,19 @@ export default {
   },
   "nav": {
     "systemManagement": "System Management",
-    "systemConfig": "System Configuration",
+    "systemConfig": "System Settings",
     "auditLogs": "Audit Logs",
     "systemMonitoring": "System Monitoring",
-    "modelConfig": "Model Configuration"
+    "modelConfig": "Models",
+    "modelUsageTab": "Usage",
+    "modelProvidersTab": "Providers",
+    "systemGeneralTab": "General",
+    "systemDataAdaptersTab": "Data Adapters",
+    "systemAuthorizationTab": "License",
+    "runRecords": "Run Records",
+    "auditLogTab": "Audit Logs",
+    "systemMonitorTab": "System Monitoring",
+    "userFeedback": "User Feedback"
   },
   "hotData": {
     "running": "Running",
@@ -336,7 +395,9 @@ export default {
       "auditLog": "Sign-ins and changes recorded across the platform",
       "systemMonitor": "Service status and resource usage of the data engine",
       "modelConfig": "Models used by the agents, the ontology and knowledge search",
-      "systemConfig": "Data adapters, languages and general parameters"
+      "systemConfig": "Data adapters, languages, general parameters and the license",
+      "runRecords": "Change history and the service status of the data engine",
+      "userFeedback": "Ratings and comments users give on query and analysis results"
     }
   }
 };

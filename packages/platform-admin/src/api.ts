@@ -21,6 +21,7 @@ import {
   type GeneralConfigKey,
 } from "./config/types";
 import { vectorRebuildStatusSchema } from "./models/types";
+import { feedbackPageSchema, feedbackPath, type FeedbackQuery } from "./feedback";
 
 /**
  * Platform area requests. The platform pages live next to the Ontology Manager and call the Java service through the
@@ -91,14 +92,20 @@ export type PlatformClient = ReturnType<typeof createPlatformClient>;
 
 type RequestOptions = NonNullable<Parameters<typeof fetch>[1]>;
 
+/**
+ * Which service of the deployment an address belongs to: the data engine (Java) under `/api/data-query`, or the
+ * workbench (Node) under `/api` — feedback records are the workbench's.
+ */
+export type PlatformScope = "/data-query" | "";
+
 export function createPlatformClient(context: PlatformRequestContext) {
   let disposed = false;
 
-  async function request(path: string, init: RequestOptions = {}): Promise<Response> {
+  async function request(path: string, init: RequestOptions = {}, scope: PlatformScope = "/data-query"): Promise<Response> {
     if (disposed) throw new DOMException("Request dropped: the page was rebuilt", "AbortError");
     const credential = context.credential;
     if (!credential) throw new Error("No credential for a platform request");
-    const response = await fetch(`${context.apiBase}/data-query${path}`, {
+    const response = await fetch(`${context.apiBase}${scope}${path}`, {
       ...init,
       headers: {
         ...(init.body !== undefined ? { "Content-Type": "application/json" } : {}),
@@ -120,8 +127,8 @@ export function createPlatformClient(context: PlatformRequestContext) {
     return response;
   }
 
-  async function read(path: string, init: RequestOptions) {
-    const json = await (await request(path, init)).json();
+  async function read(path: string, init: RequestOptions, scope?: PlatformScope) {
+    const json = await (await request(path, init, scope)).json();
     if (json && json.success === false) {
       throw new PlatformBusinessError(json.error || json.message || json.msg || "Request failed", json);
     }
@@ -129,10 +136,11 @@ export function createPlatformClient(context: PlatformRequestContext) {
   }
 
   return {
-    get: (path: string) => read(path, { method: "GET" }),
-    post: (path: string, body?: unknown) =>
-      read(path, { method: "POST", body: JSON.stringify(body ?? {}) }),
-    put: (path: string, body: unknown) => read(path, { method: "PUT", body: JSON.stringify(body) }),
+    get: (path: string, scope?: PlatformScope) => read(path, { method: "GET" }, scope),
+    post: (path: string, body?: unknown, scope?: PlatformScope) =>
+      read(path, { method: "POST", body: JSON.stringify(body ?? {}) }, scope),
+    put: (path: string, body: unknown, scope?: PlatformScope) =>
+      read(path, { method: "PUT", body: JSON.stringify(body) }, scope),
     dispose: () => {
       disposed = true;
     },
@@ -170,6 +178,9 @@ export function platformApi(client: PlatformClient) {
       ontologyAgentModelSchema.parse(
         (await client.put(`/ontology/ai/agent-models/${encodeURIComponent(id)}`, { modelSelection })).data
       ),
+    // The workbench's feedback records (Node under /api, not the data engine): read only, filtered and paged.
+    listFeedback: async (query: FeedbackQuery) =>
+      feedbackPageSchema.parse((await client.get(feedbackPath(query), "")).data),
     getVectorRebuildStatus: async () =>
       vectorRebuildStatusSchema.parse((await client.get("/businessConfig/vectorRebuildStatus")).data),
     rebuildVectors: () => client.post("/businessConfig/rebuildVectors"),
