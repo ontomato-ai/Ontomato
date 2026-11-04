@@ -911,7 +911,7 @@ function handleViewDsl(payload) {
 .empty-state__icon {
   width: 72px;
   height: 72px;
-  border-radius: var(--radius-3xl);
+  border-radius: var(--radius-md);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -923,7 +923,7 @@ function handleViewDsl(payload) {
 
 .empty-state__title {
   font-size: var(--text-xl);
-  font-weight: var(--font-bold);
+  font-weight: var(--font-semibold);
   color: var(--el-text-color-primary);
   margin-bottom: 8px;
 }
@@ -953,7 +953,7 @@ function handleViewDsl(payload) {
   flex-direction: column;
   background: var(--el-bg-color);
   border: 1px solid var(--el-border-color);
-  border-radius: var(--radius-2xl);
+  border-radius: var(--radius-md);
   padding: 20px 20px 16px;
   box-shadow: var(--shadow-card);
 }
@@ -991,7 +991,7 @@ function handleViewDsl(payload) {
 .group-title {
   flex: 1;
   font-size: var(--text-lg);
-  font-weight: var(--font-bold);
+  font-weight: var(--font-semibold);
   color: var(--el-text-color-primary);
   line-height: 1;
   display: flex;
@@ -1060,7 +1060,7 @@ function handleViewDsl(payload) {
 .charts-section--empty {
   min-height: 200px;
   border: 1.5px dashed var(--el-border-color-dark);
-  border-radius: var(--radius-2xl);
+  border-radius: var(--radius-md);
   background: var(--el-fill-color-extra-light);
 }
 
@@ -1102,11 +1102,11 @@ function handleViewDsl(payload) {
 ================================ */
 .drag-ghost {
   opacity: 0.45;
-  border-radius: var(--radius-2xl);
+  border-radius: var(--radius-md);
 }
 .drag-dragging {
   cursor: grabbing !important;
-  border-radius: var(--radius-2xl);
+  border-radius: var(--radius-md);
 }
 
 /* Others */

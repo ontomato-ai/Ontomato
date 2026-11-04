@@ -356,7 +356,7 @@ onMounted(() => {
   color: var(--el-text-color-secondary);
   font-size: var(--text-sm);
   background: var(--el-fill-color-lighter);
-  border-radius: var(--radius-xl);
+  border-radius: var(--radius-md);
   border: 2px dashed var(--el-border-color);
 }
 
