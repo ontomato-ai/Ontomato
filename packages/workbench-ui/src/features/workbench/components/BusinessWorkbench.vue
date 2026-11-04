@@ -57,6 +57,11 @@ const appearance = ref<WorkbenchAppearance | null>(null);
 const editingBrand = ref(false);
 const agentId = ref<string | null>(readRemembered());
 const featureId = ref<string | null>(null);
+/**
+ * The feature the address asked for, kept until the shell has resolved its agents: resolving a remembered agent that no
+ * longer exists clears the open feature, which would also drop the page the address asked for. It is replayed once.
+ */
+const requestedFeatureId = ref<string | null>(null);
 const conversationId = ref<string | null>(null);
 const shell = ref<{ reloadAgents: () => Promise<void> } | null>(null);
 
@@ -73,6 +78,9 @@ watch(agentId, (id) => {
   } catch {
     // Remembering the agent is a convenience only.
   }
+  if (!requestedFeatureId.value) return;
+  if (featureId.value === null) featureId.value = requestedFeatureId.value;
+  requestedFeatureId.value = null;
 });
 
 const workbench = computed<ShellWorkbenchDeclaration>(() => ({
@@ -140,6 +148,7 @@ watch(
   () => route.query.feature,
   (requested) => {
     if (requested !== "agents" && requested !== "dashboards" && requested !== "schedule") return;
+    requestedFeatureId.value = requested;
     featureId.value = requested;
     agentsTab.value = requested === "agents" ? requestedTab() : null;
     const query = { ...route.query };
