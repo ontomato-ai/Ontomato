@@ -3,7 +3,7 @@ import { modelSettingsConfigurationSchema, type ModelEntry, type ModelSettingsWr
 import { type LegacyEmbeddingImport, type ModelMigrationMap } from "@ontomato/contracts/model-migration";
 import { runtimeJsonObjectSchema } from "@ontomato/contracts/agent-runtime-values";
 
-export const defaultModelRetry = () => ({ provider: { timeoutMs: 300000, maxRetries: 0, maxRetryDelayMs: 60000 } });
+export const defaultModelRetry = () => ({ provider: { timeoutMs: 300000, maxRetries: 3, maxRetryDelayMs: 60000 } });
 export const emptyModelSettings = (): ModelSettingsWrite => ({ providers: {}, defaultModelId: null, embeddingModelId: null, retry: defaultModelRetry() });
 const legacyModelSchema = z.object({
   name: z.string().min(1), modelName: z.string().min(1), baseUrl: z.string().url(),

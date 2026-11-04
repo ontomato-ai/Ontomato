@@ -104,6 +104,10 @@ export const modelSettingsConfigurationSchema = z.object({
   retry: modelRetrySchema,
 }).strict();
 export const modelSettingsWriteSchema = modelSettingsConfigurationSchema.superRefine((settings, ctx) => {
+  for (const id of Object.keys(settings.providers)) {
+    if (id === "legacy" || id === "legacy-unconfigured") ctx.addIssue({ code: z.ZodIssueCode.custom,
+      path: ["providers", id], message: "Provider ID is reserved for unavailable legacy model references" });
+  }
   for (const [field, type] of [["defaultModelId", "chat"], ["embeddingModelId", "embedding"]] as const) {
     const ref = settings[field];
     if (ref === null) continue;

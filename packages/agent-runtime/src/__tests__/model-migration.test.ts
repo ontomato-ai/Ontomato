@@ -1,7 +1,7 @@
 import { expect, it } from "vitest";
-import { migrateLegacyModelSettings, importLegacyEmbedding, emptyModelSettings } from "../model-migration";
+import { migrateLegacyModelSettings, importLegacyEmbedding, emptyModelSettings, defaultModelRetry } from "../model-migration";
 import { migrateModelReference } from "@ontomato/contracts/model-migration";
-import { modelSettingsWriteSchema } from "@ontomato/contracts/model-settings";
+import { modelSettingsWriteSchema, modelReferenceSchema } from "@ontomato/contracts/model-settings";
 import { sealModelKey, openSealedModelKey } from "@ontomato/contracts/model-key-seal";
 const key = sealModelKey("effective-key", "test-token");
 const old = (name: string, extra = {}) => ({ name, modelName: "chat", baseUrl: "https://gateway/v1", apiKeys: [key], ...extra });
@@ -28,7 +28,7 @@ it("preserves headers, duplicate IDs, parameters and selections while discarding
   expect(result.settings.providers.gateway!.models[1]).toEqual({ id: "embed", type: "embedding", dimensions: 2 });
   expect(result.settings.retry.provider.timeoutMs).toBe(180000);
 });
-it("retains missing defaults, uses pi retry defaults, and preserves user embedding choices", () => {
+it("retains missing defaults, uses runtime retry defaults, and preserves user embedding choices", () => {
   const result = migrateLegacyModelSettings({ models: [], defaultModelId: "gone" }, value => value);
   expect(result.settings.defaultModelId).toBe("legacy/gone");
   expect(result.settings.retry).toEqual(emptyModelSettings().retry);
@@ -45,4 +45,30 @@ it("rejects expressions, unsupported APIs and non-OpenAI embedding providers", (
     expect(modelSettingsWriteSchema.safeParse({ ...settings, providers: { gateway: { ...settings.providers.gateway, api } } }).success).toBe(false);
   for (const apiKey of ["$KEY", "${KEY}", "!printenv KEY", "enc:v1:cipher"])
     expect(modelSettingsWriteSchema.safeParse({ ...settings, providers: { gateway: { ...settings.providers.gateway, apiKey } } }).success).toBe(false);
+});
+
+it("preserves three default retries unless legacy models explicitly configure a retry count", () => {
+  expect(defaultModelRetry().provider).toEqual({ timeoutMs: 300000, maxRetries: 3, maxRetryDelayMs: 60000 });
+  for (const models of [[], [old("unset"), old("null", { maxRetries: null })]]) {
+    const result = migrateLegacyModelSettings({ models, defaultModelId: null }, value => openSealedModelKey(value, "test-token"));
+    expect(result.settings.retry.provider.maxRetries).toBe(3);
+  }
+  for (const [counts, expected] of [[[0], 0], [[1, 2], 2]] as const) {
+    const result = migrateLegacyModelSettings({ models: [old("unset"), ...counts.map((maxRetries, index) => old(`set-${index}`, { maxRetries }))], defaultModelId: null },
+      value => openSealedModelKey(value, "test-token"));
+    expect(result.settings.retry.provider.maxRetries).toBe(expected);
+  }
+});
+it("rejects reserved provider IDs on write while keeping unavailable legacy references valid", () => {
+  const settings = emptyModelSettings();
+  importLegacyEmbedding(settings, { baseUrl: "https://gateway/v1", apiKey: "key", modelName: "embed", dimensions: 2 });
+  for (const id of ["legacy", "legacy-unconfigured"]) {
+    const result = modelSettingsWriteSchema.safeParse({ ...settings,
+      providers: { [id]: settings.providers.gateway }, embeddingModelId: `${id}/embed` });
+    expect(result.success).toBe(false);
+    if (!result.success) expect(result.error.issues).toContainEqual(expect.objectContaining({ path: ["providers", id] }));
+    expect(modelReferenceSchema.safeParse(`${id}/missing`).success).toBe(true);
+  }
+  expect(modelSettingsWriteSchema.safeParse({ ...settings,
+    providers: { "legacy-2": settings.providers.gateway }, embeddingModelId: "legacy-2/embed" }).success).toBe(true);
 });
