@@ -80,15 +80,12 @@ public class DslContractViolationException extends RuntimeException {
 
 	private static String buildMessage(List<Violation> violations) {
 		StringBuilder sb = new StringBuilder();
-		sb.append("DSL rejected by the execution contract (")
-				.append(violations.size())
-				.append(" violation").append(violations.size() == 1 ? "" : "s")
-				.append("); the query was not executed. ");
+		sb.append(violations.size() == 1 ? "DSL error at " : "DSL errors at ");
 		for (int i = 0; i < violations.size(); i++) {
 			if (i > 0) {
 				sb.append("; ");
 			}
-			sb.append(violations.get(i));
+			sb.append(violations.get(i).getDslPath()).append(": ").append(violations.get(i).getDetail());
 		}
 		return sb.toString();
 	}

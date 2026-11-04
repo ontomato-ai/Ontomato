@@ -431,7 +431,11 @@ public class PostgreAdapter implements DataAdapter {
 				for (int i = 0; i < secondOutputFields.size(); i++) {
 					JSONObject field = secondOutputFields.getJSONObject(i);
 					String colSql = "";
-					if (field.getString("variable") != null) {
+					String expr = field.getString("expr");
+					if (expr != null && !expr.isBlank()) {
+						// The grammar gate restricts expr to arithmetic over the temporary table's fields.
+						colSql = expr;
+					} else if (field.getString("variable") != null) {
 						if (field.getString("function") != null && !"".equals(field.getString("function").trim())) {
 							colSql = field.getString("function") + "(" + (field.getBoolean("distinct") != null && field.getBoolean("distinct") ? "distinct " : "") + "\"" + tmpClassAs + "\".\"" + field.getString("field") + "\"" + ")";
 						} else {

@@ -57,9 +57,31 @@ class HttpRequestUtilGrammarTest {
 
 		assertTrue(results[1].failed());
 		String message = results[1].failure().cause().getMessage();
-		assertTrue(message.contains("DSL rejected by the execution contract"), message);
-		assertTrue(message.contains("INVALID_GRAMMAR"), message);
+		assertTrue(message.contains("DSL error at"), message);
 		assertTrue(message.contains("conditions.timeseries"), message);
+		verify(adapter, never()).executeDsl(anyString(), anyString(), any(), any());
+	}
+
+	@Test
+	void sqlExpressionInAnOutputFieldIsRejectedBeforeTheAdapterRuns() throws Exception {
+		DataAdapter adapter = mock(DataAdapter.class);
+		String dsl = """
+				[{"answer":{"steps":[
+				 {"graph":{"patterns":[{"objects":[{"idx":0,"variable":"p","class":"/person"}]}],"pattern_logic":"and"},
+				  "output":{"fields":[{"as":"person_id","variable":"p","field":"id"},{"as":"person_status","variable":"p","field":"status"}],"to_user":false,"save_table":"/person_all"}},
+				 {"graph":{"patterns":[{"objects":[{"class":"/person_all","variable":"t"}]}],"pattern_logic":"and"},
+				  "output":{"fields":[{"as":"all_person_count","variable":"t","field":"person_id","function":"count","distinct":true},
+				   {"as":"active_person_count","expr":"SUM(CASE WHEN t.person_status = 'active' THEN 1 ELSE 0 END)"}],"to_user":true}}]}}]""";
+
+		DslExecutionResult[] results = run(adapter, dsl);
+
+		assertTrue(results[1].failed());
+		String message = results[1].failure().cause().getMessage();
+		assertTrue(message.contains("DSL error at"), message);
+		assertTrue(message.contains("steps[1].output.fields[1].expr"), message);
+		assertTrue(message.contains("arithmetic"), message);
+		assertTrue(message.contains("CASE"), message);
+		assertFalse(message.contains("the query was not executed"), message);
 		verify(adapter, never()).executeDsl(anyString(), anyString(), any(), any());
 	}
 
