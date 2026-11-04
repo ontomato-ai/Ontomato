@@ -1,5 +1,5 @@
 ---
-version: 0.2
+version: 0.3
 name: Ontomato Product UI
 description: >
   The design system for the Ontomato product interface: the Agent Platform (workbench,
@@ -7,144 +7,115 @@ description: >
   type, spacing, shape, motion and component rules — and the open-source brand layer: a
   calm, editorial palette of warm paper, olive ink and leaf green taken from ontomato.ai.
 status: >
-  Adopted 2026-11-04 with the amendments in "Applications and shells" (user decision after
-  reviewing mock-ups). Not implemented yet; "Current vs proposed" lists what changes. On
-  implementation the hex values move into one code source per edition (see "Scope and
-  ownership") and this front matter keeps only roles and rules.
+  Implemented 2026-11-04. Every value is written once, in code: the foundation (type,
+  spacing, shape, density, shell sizes, elevation, motion) in `@ontomato/design-tokens`
+  `src/foundation.css`; the colours of each edition in its brand source — open source
+  `@ontomato/design-tokens` `src/oss.ts`, enterprise `packages/brand-enterprise`. This file
+  defines only the roles, their names and the rules; it holds no values.
 
 # ── Shared foundation (all editions) ─────────────────────────────────────────
+# Values and CSS variables: packages/design-tokens/src/foundation.css (its comments name
+# the role each variable serves). Below: role names and what each is for.
 
 typography:
-  font-sans: 'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", "Helvetica Neue", Arial, sans-serif'
-  font-mono: 'ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace'
-  caption:   { fontSize: 12px, lineHeight: 16px, fontWeight: 400 }
-  label:     { fontSize: 12px, lineHeight: 16px, fontWeight: 600, letterSpacing: 0.02em }
-  body-sm:   { fontSize: 13px, lineHeight: 20px, fontWeight: 400 }
-  body:      { fontSize: 14px, lineHeight: 22px, fontWeight: 400 }
-  reading:   { fontSize: 15px, lineHeight: 26px, fontWeight: 400 }
-  title-sm:  { fontSize: 14px, lineHeight: 20px, fontWeight: 600 }
-  title:     { fontSize: 16px, lineHeight: 24px, fontWeight: 600 }
-  title-lg:  { fontSize: 20px, lineHeight: 28px, fontWeight: 600 }
-  display:   { fontSize: 28px, lineHeight: 36px, fontWeight: 600, letterSpacing: -0.02em }
-  mono:      { fontSize: 12.5px, lineHeight: 18px, fontWeight: 400 }
+  font-sans: the system UI stack for all text, including Chinese; no web fonts
+  font-mono: identifiers users must recognise exactly
+  caption:   meta only — timestamps, counts, ids under a name, tags
+  label:     group headings, semibold, muted
+  body-sm:   tables, list rows, form labels, buttons
+  body:      default UI text
+  reading:   chat answers and long text, on the content-max column
+  title-sm:  small headings, semibold
+  title:     page and dialog titles, semibold
+  title-lg:  large headings, semibold
+  display:   welcome and empty states only
+  mono:      API names, field paths, SQL, DSL
 
-spacing:      # 4px grid
-  1: 4px
-  2: 8px
-  3: 12px
-  4: 16px
-  5: 20px
-  6: 24px
-  8: 32px
+spacing: 4px grid, steps --spacing-xs … --spacing-2xl
 
 rounded:
-  xs: 4px      # tags, checkboxes, inline code
-  sm: 6px      # buttons, inputs, selects, segmented controls
-  md: 8px      # cards inside content, menus, popovers, list-row highlight
-  lg: 12px     # dialogs, drawers
-  full: 9999px # avatars, status dots
-  shell: 0     # shell panels sit edge to edge
+  xs:    tags, checkboxes, inline code
+  sm:    buttons, inputs, selects, segmented controls
+  md:    cards inside content, menus, popovers, list-row highlight
+  lg:    dialogs, drawers
+  full:  avatars, status dots
+  shell: shell panels sit edge to edge (no radius)
 
 density:
-  control-sm: 24px     # table row actions, inline filters
-  control:    32px     # default button / input / select (Element Plus default size)
-  control-lg: 40px     # login form and the chat composer only
-  nav-row:    32px     # sidebar navigation, conversation history, tree rows
-  list-row:   44px     # two-line rows (name + id / description)
-  table-head: 36px
-  table-row:  40px
-  table-row-compact: 32px
-  page-header: 48px
-  panel-header: 44px
+  control-sm:  table row actions, inline filters
+  control:     default button / input / select (Element Plus default size)
+  control-lg:  login form and the chat composer only
+  nav-row:     sidebar navigation, conversation history, tree rows
+  list-row:    two-line rows (name + id / description)
+  table-head:  table head
+  table-row:   table rows
+  table-row-compact: compact table rows
+  page-header: page header
+  panel-header: panel header
 
 shell:
-  agent-rail: 232px        # collapses to 56px icon rail below 1280px
-  conversation-gutter: 10px  # Agent Platform: gap around the raised conversation panel
-  conversation-radius: 18px  # Agent Platform: radius of the raised conversation panel
-  composer-height: 56px      # Agent Platform: pill composer (radius = height / 2)
-  list-panel: 264px
-  inspector:  320px
-  content-max: 960px       # reading width for chat answers
+  agent-rail:          sidebar; collapses to an icon rail below 1280px
+  conversation-gutter: Agent Platform, gap around the raised conversation panel
+  conversation-radius: Agent Platform, radius of the raised conversation panel
+  composer-height:     Agent Platform, pill composer (radius = height / 2)
+  list-panel:          list panel
+  inspector:           right-docked inspector
+  content-max:         reading width for chat answers
 
 elevation:
-  flat: none                                    # everything in the data shell's page flow
-  panel:   "0 1px 2px rgba(0,0,0,.04), 0 8px 24px rgba(0,0,0,.04)" # Agent Platform conversation panel only
-  composer: "0 6px 20px rgba(0,0,0,.08)"        # Agent Platform composer only
-  overlay: "0 0 0 1px {line}, 0 8px 24px rgba(0,0,0,.10)"   # dropdown, popover, toast
-  modal:   "0 0 0 1px {line}, 0 24px 64px rgba(0,0,0,.18)"  # dialog, drawer
+  flat:     everything in the data shell's page flow
+  panel:    Agent Platform conversation panel only
+  composer: Agent Platform composer only
+  overlay:  dropdown, popover, toast (ring in `line`)
+  modal:    dialog, drawer (ring in `line`)
 
 motion:
-  fast: 120ms cubic-bezier(.2,0,0,1)    # hover, press
-  base: 180ms cubic-bezier(.2,0,0,1)    # expand, tab switch
-  slow: 260ms cubic-bezier(.2,0,0,1)    # drawer, dialog
+  fast: hover, press
+  base: expand, tab switch
+  slow: drawer, dialog
 
-# ── Open-source brand layer ──────────────────────────────────────────────────
+# ── Brand layer (per edition) ────────────────────────────────────────────────
+# Values: the edition's brand source (open source `@ontomato/design-tokens` src/oss.ts,
+# enterprise `packages/brand-enterprise`), typed by `BrandSource` in
+# `@ontomato/design-tokens` src/index.ts, whose keys are the camelCase of these roles.
+# Every role has one value per mode (light, dark).
 
 colors:
-  light:
-    canvas:        "#f8f8f4"   # shell panels: rail, list panel, admin nav
-    surface:       "#ffffff"   # workspace, tables, forms
-    raised:        "#ffffff"   # overlays (with elevation.overlay)
-    sunken:        "#f1f2ec"   # inset wells, code blocks, table head
-    hover:         "#eef1e8"
-    line:          "#e2e5dc"
-    line-strong:   "#d8dcd1"
-    ink:           "#282c25"
-    ink-2:         "#3d4238"
-    muted:         "#62665c"
-    placeholder:   "#6c7166"   # 5.0:1 on surface
-    faint:         "#8a8f82"   # disabled text only (exempt from contrast)
-    primary:       "#42613f"   # leaf green — actions, links, focus (white text 7.0:1)
-    primary-hover: "#36512f"
-    primary-press: "#2c4327"
-    on-primary:    "#ffffff"
-    primary-soft:  "#e8ede3"   # sage — also the selected state
-    brand-mark:    "#639c2d"   # logo green — the mark only, never a text or button colour
-    accent:        "#dc4b35"   # tomato — brand moments only
-    accent-ink:    "#bc3928"   # same family as danger by design; see Colour
-    accent-soft:   "#f3e5dd"   # blush
-    success:       "#3d7a1a"   # 5.3:1
-    warning:       "#946000"   # 5.3:1
-    danger:        "#bc3928"   # 5.6:1
-    info:          "#62665c"
-  dark:
-    canvas:        "#161814"
-    surface:       "#1c1f1a"
-    raised:        "#242822"
-    sunken:        "#121410"
-    hover:         "#262a23"
-    line:          "#2c3128"
-    line-strong:   "#3a4035"
-    ink:           "#e9ece3"
-    ink-2:         "#cfd4c6"
-    muted:         "#a3a99a"
-    placeholder:   "#8f9586"   # 5.4:1 on surface
-    faint:         "#7d8376"
-    primary:       "#8fbf5a"
-    primary-hover: "#a0cb6e"
-    primary-press: "#7dad49"
-    on-primary:    "#14180f"   # dark text on light green (8.4:1)
-    primary-soft:  "#2c3527"
-    brand-mark:    "#8fbf5a"
-    accent:        "#ef7b65"
-    accent-ink:    "#ef7b65"
-    accent-soft:   "#3a231d"
-    success:       "#7dbb4b"
-    warning:       "#d9a441"
-    danger:        "#ef7b65"
-    info:          "#a3a99a"
+  canvas:        shell panels — sidebar, list panel, admin navigation
+  surface:       workspace, tables, forms, input fills
+  raised:        overlays (with elevation.overlay)
+  sunken:        inset wells, code blocks, table head
+  hover:         hover background
+  line:          hairline dividers and borders
+  line-strong:   control borders
+  ink:           primary text
+  ink-2:         regular text
+  muted:         secondary text
+  placeholder:   placeholders, at least 4.5:1 on surface and raised
+  faint:         disabled text only (exempt from contrast)
+  primary:       actions, links, focus
+  primary-hover: filled primary hover; on-primary keeps at least 4.5:1
+  primary-press: filled primary active state
+  on-primary:    text on filled primary
+  primary-soft:  the selected state
+  link:          optional — primary-coloured text where primary itself is under 4.5:1 as text
+  brand-mark:    optional — the logo mark only, never a text or button colour
+  accent:        brand signature only, never a state
+  accent-ink:    accent as text
+  accent-soft:   accent fill
+  success:       status, with an icon or label
+  warning:       status, with an icon or label
+  danger:        status and destructive buttons, with an icon or label
+  info:          neutral notes
 
-dataviz:   # categorical order is fixed; validated (CVD ΔE ≥ 8, normal ΔE ≥ 15, ≥ 3:1)
-  categorical-light: ["#4a8f1f", "#3d6fd1", "#b97d08", "#0f9488", "#d4553c", "#9b4fb5", "#7a7f1a", "#d24d8a"]
-  categorical-dark:  ["#68a03b", "#6a8fe0", "#b98820", "#2ba597", "#dc6e58", "#a970c8", "#919530", "#d86b9c"]
-  sequential: primary   # one hue, light → dark
+dataviz:
+  categorical: 8 colours per mode in a fixed order, validated (CVD ΔE ≥ 8, normal ΔE ≥ 15, ≥ 3:1 on surface)
+  sequential:  primary, one hue light → dark
 ---
 
 # Ontomato Product UI
 
 ## Applications and shells
-
-Decided 2026-11-04 after reviewing mock-ups; this section overrides any older wording below.
 
 The product has two applications with their own pages, services and shells. They share this
 design language (colour roles, type, density, controls, navigation rows, group labels) but
@@ -166,12 +137,12 @@ navigation rows with an external-link mark, and open in a new tab:
 - Ontology Service: "Agent Platform" and (enterprise) "Data Governance Platform" at the top of
   its sidebar, above the navigation groups.
 
-**Conversation shell (Agent Platform).** Keep the current structure: logo, function area,
-agent selector, recent conversations, user row. The sidebar sits on `canvas` with no divider.
+**Conversation shell (Agent Platform).** Logo, function area, agent selector, recent
+conversations, user row. The sidebar sits on `canvas` with no divider.
 The workspace is one raised panel: `surface`, `conversation-radius`, `conversation-gutter`
 around it, a 1px `line` and `elevation.panel`. The composer is a pill of `composer-height`
 with `elevation.composer` and a round send button. Admin pages of the Agent Platform keep
-their current layout and only adopt the colour roles and component rules.
+their own layout and follow the colour roles and component rules.
 
 **Data shell (Ontology Service, data-dense pages).** Edge to edge, separated by tone and a
 1px `line` (the Layout section below). One sidebar and one router: groups Ontology (graph,
@@ -195,12 +166,14 @@ its admin pages) and the Ontology Service. The marketing site keeps its own styl
 It has two layers:
 
 - **Foundation** — type, spacing, shape, density, shell layout, motion and component rules.
-  Owned here for every edition. An edition never redefines it.
-- **Brand** — colours (light and dark), the chart palette and the shell signature. This
-  file defines the open-source brand. Another edition defines its own brand layer in its
-  own DESIGN.md and inherits everything else from here.
+  Its roles and rules are owned here and its values in `foundation.css`, for every edition.
+  An edition never redefines it.
+- **Brand** — the values of the colour roles (light and dark), the chart palette and the
+  brand mark. Each edition writes them in its one brand source; this file defines the roles
+  and the open-source brand rules. Another edition states its brand rules in its own
+  DESIGN.md and inherits everything else from here.
 
-Where the values live in code once adopted:
+Where the values live in code:
 
 | Layer | Code owner |
 |---|---|
@@ -212,14 +185,13 @@ Where the values live in code once adopted:
 `@ontomato/design-tokens` has no runtime dependencies; both applications depend on it and
 not on each other's packages. One brand source per edition generates the Agent Platform
 theme, the Ontology Service presentation and the graph `nodePalette` (one per mode, the
-`dataviz` order). Dashboard chart colours are still a separate copy in the Agent Platform
-and move onto the brand source with its restyle. (Before 2026-11-04 each edition kept its
-colours twice: `apps/workbench/web/src/theme.css` and `apps/ontology-manager/src/presentation.ts`.)
+`dataviz` order), and the Agent Platform's dashboard and chart colours. No other file
+declares a generated brand variable (the single-source tests guard this).
 
 ### Colour roles → Element Plus
 
-Roles map onto the Element Plus 2.13 variables the code already uses everywhere, following
-Element Plus's own meaning of each variable. Only roles Element Plus lacks get new
+Roles map onto the Element Plus 2.13 variables the code uses everywhere, following
+Element Plus's own meaning of each variable. Only roles Element Plus lacks have their own
 variables.
 
 | Role | Variable | Element Plus uses it for |
@@ -238,12 +210,11 @@ variables.
 | link | `--brand-link` (enterprise defines it; open source uses primary) | every place primary is used as **text**: links, text and link buttons, active tab and menu item, selected option |
 | primary tint | `--brand-primary-tint` (primary at 10% over `surface`) | fill behind primary-coloured text: primary tags, plain primary buttons |
 | primary ladder | `--el-color-primary-light-3/5/7/8` | derived the Element Plus way: primary mixed with `surface` at 30/50/70/80% |
-| primary-hover | `--brand-primary-hover` (new) | applied through the button variables below |
-| on-primary | `--on-primary` (exists) | applied through the button variables below |
+| primary-hover | `--brand-primary-hover` | applied through the button variables below |
+| on-primary | `--on-primary` | applied through the button variables below |
 | success / warning / danger / info | `--el-color-*` and their `-light-8/-light-9` | status |
-| brand-mark, accent, accent-ink, accent-soft | `--brand-mark`, `--brand-accent`, `--brand-accent-ink`, `--brand-accent-soft` (new) | — |
-| shell rail | `--shell-rail-bg`, `--shell-rail-ink`, `--shell-rail-muted`, `--shell-rail-active`, `--shell-rail-active-ink` (new) | — |
-| chart 1–8 | `--chart-1` … `--chart-8` (new) | — |
+| brand-mark, accent, accent-ink, accent-soft | `--brand-mark`, `--brand-accent`, `--brand-accent-ink`, `--brand-accent-soft` | — |
+| chart 1–8 | `--chart-1` … `--chart-8` | — |
 
 Element Plus component variables that must be set, because the global ones above do not
 reach them or carry a different meaning:
@@ -253,10 +224,10 @@ reach them or carry a different meaning:
 | `:root` | `--el-disabled-text-color: faint` |
 | `.el-button--primary` | `--el-button-text-color`, `--el-button-hover-text-color`, `--el-button-active-text-color`: `var(--on-primary)`; `--el-button-hover-bg-color`, `--el-button-hover-border-color`: `var(--brand-primary-hover)` (Element Plus defaults to the lighter `light-3`; `primary-hover` is chosen per mode so on-primary text keeps at least 4.5:1); disabled uses the disabled roles, not a paler primary: `--el-button-disabled-bg-color: var(--el-fill-color-light)` (`hover`), `--el-button-disabled-border-color: var(--el-border-color-light)`, `--el-button-disabled-text-color: var(--el-disabled-text-color)` (`faint`) (Element Plus's `light-5` fill under on-primary text looks enabled in dark mode) |
 | `.el-table` | `--el-table-header-bg-color: var(--el-fill-color)`; row hover and current row keep the defaults (`hover`, `selected`) |
-| `.el-menu` | `--el-menu-hover-bg-color: var(--el-fill-color-light)` (default is the selected colour); `--el-menu-item-height: 32px` |
+| `.el-menu` | `--el-menu-hover-bg-color: var(--el-fill-color-light)` (default is the selected colour); `--el-menu-item-height: var(--nav-row-height)` |
 
-The open-source shell rail has no signature colour: rail = `canvas`, rail ink = `ink-2`,
-rail muted = `muted`, rail active = `selected` with `ink`.
+No edition gives the sidebar a colour of its own: it sits on `canvas` with `ink-2` text and
+`muted` meta; the current row is `selected` with `ink` text.
 
 ## Principles
 
@@ -281,6 +252,9 @@ rail muted = `muted`, rail active = `selected` with `ink`.
 
 ### Shell
 
+The data shell; the conversation shell's raised panel is described in "Applications and
+shells".
+
 ```
 ┌──────────┬──────────────┬──────────────────────────────────┐
 │ agent    │ list panel   │ workspace                        │
@@ -294,7 +268,7 @@ rail muted = `muted`, rail active = `selected` with `ink`.
 - Panels are full height, edge to edge, `rounded.shell` (0), divided by a 1px `line`.
   No outer page gutter.
 - The agent rail collapses to a 56px icon rail below 1280px; on mobile each column becomes
-  its own view (the current mobile behaviour stays).
+  its own view.
 - An inspector (path search, element details) docks on the right at 320px with the same
   rule: hairline, no card.
 
@@ -343,9 +317,9 @@ only if field use shows it is needed.
 The palette comes from ontomato.ai: warm paper (`canvas`), olive ink, leaf green and a
 tomato accent. It should feel like a well-set technical document.
 
-- **Primary is leaf green `#42613f`**, not the logo green. Logo green `#639c2d` gives
-  white text only 3.3:1, which fails body-text contrast; it stays on the brand mark.
-- **Sage `#e8ede3`** is the selected state: current nav row, selected table row, active
+- **Primary is leaf green**, not the logo green (`brand-mark`). The logo green under white
+  text fails body-text contrast, so it stays on the brand mark.
+- **Sage (`primary-soft`)** is the selected state: current nav row, selected table row, active
   segment.
 - **Tomato is the accent**, used only for brand moments: the brand mark, the emphasised
   word in a welcome or empty-state headline, and illustrations. It is never used for
@@ -355,17 +329,17 @@ tomato accent. It should feel like a well-set technical document.
   confused because they never meet: accent text appears only in welcome and empty-state
   headlines, which carry no status, and danger always comes with an icon and a verb
   ("Delete", "Connection failed").
-- **Dark mode** keeps the warm olive tint in every neutral; primary becomes light green
-  `#8fbf5a` with dark text on it.
+- **Dark mode** keeps the warm olive tint in every neutral; primary becomes a light green
+  with dark `on-primary` text on it.
 
 ### Status
 
-| State | Light | Dark | Rule |
-|---|---|---|---|
-| success | `#3d7a1a` | `#7dbb4b` | icon + label |
-| warning | `#946000` | `#d9a441` | icon + label |
-| danger  | `#bc3928` | `#ef7b65` | icon + label; destructive buttons |
-| info    | muted | muted | neutral notes |
+| State | Rule |
+|---|---|
+| success | icon + label |
+| warning | icon + label |
+| danger  | icon + label; destructive buttons |
+| info    | same value as `muted`; neutral notes |
 
 Status tags use the soft fill (status at ~10% over `surface`) with status-coloured text;
 every pair stays at or above 4.5:1 on that fill.
@@ -395,7 +369,7 @@ region; secondary is `surface` with a `line-strong` border; tertiary is text-onl
 row actions are 24px text buttons. The chat send button and login submit may use 40px.
 
 **Input / select.** 32px, `surface` fill, `line-strong` border, `rounded.sm`; focus is a
-1px primary border plus a 2px primary ring at 20% opacity. Placeholder in `faint`.
+1px primary border plus a 2px primary ring at 20% opacity. Placeholder in `placeholder`.
 
 **Navigation row.** 32px, `rounded.md` highlight inset 8px from the panel edge, 16px icon,
 `body-sm`. Hover → `hover`; current → `selected` with `ink` text and 600 weight. Counts
@@ -449,21 +423,3 @@ table and chart rules above. Trace and evidence ("why this answer") collapse und
 - Don't use logo green for text or buttons, or tomato for anything interactive.
 - Don't hard-code hex colours in components; use the role variables.
 - Don't render a list as a stack of cards.
-
-## Current vs proposed
-
-As of 2026-10-28 the code differs from this proposal as follows.
-
-| Area | Current | Proposed |
-|---|---|---|
-| Primary (light) | logo green `#639c2d` (3.3:1 with white) | leaf green `#42613f` (7.0:1) |
-| Page background | `#fbfdf8`, green-tinted fills | warm paper `#f8f8f4`, sage selection |
-| Shell | three floating cards, 16px gutters, 24px radius | Agent Platform: one raised conversation panel, 10px gutter, 18px radius; Ontology Service and data pages: edge-to-edge panels, hairline dividers |
-| Ontology Manager | two shells (workspace header with text controls; platform area with its own header, back link and icon controls) | one Ontology Service shell: one sidebar, one router, cross-application links in the sidebar |
-| Body size | 15px | 14px (13px in tables and lists) |
-| Table | head 44px, rows 48px, card shadow | head 36px, rows 40px, border only |
-| List rows | 56–72px cards | 32px single-line or 44px two-line rows |
-| Shadows | green-tinted shadows on cards and primary buttons | overlays only |
-| Graph and chart colours | `nodePalette` of 6 greens and browns in the Manager presentation; Ontology Manager components hold 122 distinct hard-coded hex values | 8 validated colours in fixed order, one per object type |
-| Colour sources | `theme.css` and the Manager `presentation.ts`, copied by hand | one brand source per edition generating both |
-| Placeholder | `#a0ad96` (2.3:1) | `#6c7166` (5.0:1) |

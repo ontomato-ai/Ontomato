@@ -2,9 +2,9 @@
    Foundation - docs/design/DESIGN.md (shared by every edition)
    ========================================
    Type, spacing, shape, density, shell sizes, elevation and motion, plus the Element Plus component variables that
-   the global colour variables do not reach. The workbench loads this through @ontomato/workbench-ui style.css; the
-   Ontology Manager page (Manager workspace and platform area) imports it directly. Colours are not here: each
-   edition's brand source generates them (src/index.ts). */
+   the global colour variables do not reach: the only place these values are written (DESIGN.md keeps the role names
+   and rules). The workbench loads this through @ontomato/workbench-ui style.css; the Ontology Service page imports it
+   directly. Colours are not here: each edition's brand source generates them (src/index.ts). */
 
 :root {
   /* ---- Type ---- */
@@ -104,7 +104,7 @@
 
 /* ---- Elevation ----
    The overlay and modal rings use the line colour. A custom property that references another is resolved where it is
-   declared, and the Ontology Manager component binds its colours on its own root, so these are declared there too. */
+   declared, and the Ontology Service component binds its colours on its own root, so these are declared there too. */
 :root,
 .ontology-manager {
   --elevation-flat: none;
