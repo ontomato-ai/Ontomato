@@ -16,7 +16,7 @@ const original: WorkbenchAppearance = {
 };
 async function editor() {
   const wrapper = mount(WorkbenchAppearanceDialog, {
-    props: { defaultLogo: "/logo.png" },
+    props: { defaultLogo: "/logo.png", defaultBrandName: "Ontomato" },
     global: {
       plugins: [createI18n({ legacy: false, locale: "en", messages: { en } }), ElementPlus],
       stubs: { ElDialog: { template: "<div><slot/><slot name='footer'/></div>" } },

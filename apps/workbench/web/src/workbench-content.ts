@@ -3,12 +3,11 @@ import { ossProduct } from "../../src/product";
 import { ossWorkspaceArtifactText } from "../../src/workspace-artifact-text";
 
 /**
- * Static workbench content for this edition (original values). The subgraph fence and product display name come directly
- * from this edition's Node product; the rest are the original matching rules, sentences and colours from the web source
- * before extraction, independent of the UI locale.
+ * Static workbench content for this edition (original values). The MCP server names and observe protocol values come
+ * directly from this edition's Node product; the rest are the original matching rules and sentences from the web source
+ * before extraction, independent of the UI locale. Colours are not here: they come from the brand source.
  */
 export const workbenchContent: WorkbenchContent = {
-  serviceDisplayName: ossProduct.serviceDisplayName,
   analysisMcpServerName: ossProduct.analysisMcpServerName,
   opsMcpServerName: ossProduct.opsMcpServerName,
   skillDebugEchartsInput: JSON.stringify(
@@ -78,55 +77,8 @@ export const workbenchContent: WorkbenchContent = {
   },
   dashboard: {
     themeName: "ontomatoDashboard",
-    series: ["#639C2D", "#2FA98E", "#D9A441", "#BC4B39", "#5B8CD6", "#7FA653", "#C9864E", "#4FA3D1", "#9B8CC4", "#6BA583"],
-    themeColors: (isDark) => ({
-      text: isDark ? "#F2F8EE" : "#25321F",
-      textSecondary: isDark ? "#AEBEA4" : "#6F7D63",
-      axis: isDark ? "#AEBEA4" : "#415035",
-      splitLine: isDark ? "#3B5632" : "#E1EAD9",
-      border: isDark ? "#3B5632" : "#E1EAD9",
-      visualMap: isDark
-        ? ["#2A421D", "#43652D", "#639C2D", "#8FD04D", "#C6E8A6", "#E2F3D5"]
-        : ["#EFF5EA", "#D0E1C0", "#92BA6C", "#639C2D", "#4F7D24", "#33521A"],
-      kPositive: isDark ? "#8FCF59" : "#63A33E",
-      timelineLine: isDark ? "#3B5632" : "#D0E1C0",
-      timelineAccent: isDark ? "#8FD04D" : "#92BA6C",
-      timelineCheck: isDark ? "#8FD04D" : "#639C2D",
-    }),
-    barGradients: {
-      "#639C2D": ["#92ba6c", "#639C2D"],
-      "#2FA98E": ["#6ac4af", "#2FA98E"],
-      "#D9A441": ["#e6c47a", "#D9A441"],
-      "#BC4B39": ["#d58b7e", "#BC4B39"],
-      "#5B8CD6": ["#8fb0e2", "#5B8CD6"],
-      "#7FA653": ["#a6c580", "#7FA653"],
-      "#C9864E": ["#d9a97f", "#C9864E"],
-      "#4FA3D1": ["#8bc3e2", "#4FA3D1"],
-      "#9B8CC4": ["#bfb4d8", "#9B8CC4"],
-      "#6BA583": ["#97c2ab", "#6BA583"],
-    },
-    areaGradients: {
-      "#639C2D": ["rgba(99,156,45,0.42)", "rgba(99,156,45,0.12)", "rgba(99,156,45,0.02)"],
-      "#2FA98E": ["rgba(47,169,142,0.40)", "rgba(47,169,142,0.10)", "rgba(47,169,142,0.02)"],
-      "#D9A441": ["rgba(217,164,65,0.38)", "rgba(217,164,65,0.10)", "rgba(217,164,65,0.02)"],
-      "#BC4B39": ["rgba(188,75,57,0.40)", "rgba(188,75,57,0.10)", "rgba(188,75,57,0.02)"],
-      "#5B8CD6": ["rgba(91,140,214,0.38)", "rgba(91,140,214,0.10)", "rgba(91,140,214,0.02)"],
-      "#7FA653": ["rgba(127,166,83,0.38)", "rgba(127,166,83,0.10)", "rgba(127,166,83,0.02)"],
-      "#C9864E": ["rgba(201,134,78,0.38)", "rgba(201,134,78,0.10)", "rgba(201,134,78,0.02)"],
-      "#4FA3D1": ["rgba(79,163,209,0.38)", "rgba(79,163,209,0.10)", "rgba(79,163,209,0.02)"],
-      "#9B8CC4": ["rgba(155,140,196,0.40)", "rgba(155,140,196,0.12)", "rgba(155,140,196,0.02)"],
-      "#6BA583": ["rgba(107,165,131,0.38)", "rgba(107,165,131,0.10)", "rgba(107,165,131,0.02)"],
-    },
-    defaultAreaGradient: ["rgba(99,156,45,0.42)", "rgba(99,156,45,0.12)", "rgba(99,156,45,0.02)"],
     zoomChartTheme: "dashboard",
     loadingMask: "transparent",
-    chartColors: {
-      primaryRgb: "99,156,45",
-      label: "#25321F",
-      labelSecondary: "#6F7D63",
-      radarSplitLine: "#E1EAD9",
-      gaugeTrack: "#E1EAD9",
-    },
     chartTooltips: {
       valueWithPercent: (value, percent) => `${value} (${percent}%)`,
       valueWithShare: (key, value, percent) => `${key}: ${value}<br/>Share: ${percent}%`,

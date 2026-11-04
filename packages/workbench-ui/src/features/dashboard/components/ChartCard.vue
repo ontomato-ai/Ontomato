@@ -425,7 +425,7 @@ onBeforeUnmount(() => {
   height: 100%;
   padding: 18px;
   background-color: var(--el-bg-color);
-  border-radius: var(--radius-2xl);
+  border-radius: var(--radius-md);
   border: 1px solid var(--el-border-color);
   box-shadow: var(--shadow-card);
   position: relative;
@@ -510,7 +510,7 @@ onBeforeUnmount(() => {
   align-items: center;
   gap: 4px;
   padding: 6px 10px;
-  border-radius: var(--radius-xl);
+  border-radius: var(--radius-md);
   background: color-mix(in srgb, var(--el-bg-color) 92%, transparent);
   border: 1px solid var(--el-border-color);
   box-shadow: var(--shadow-card);

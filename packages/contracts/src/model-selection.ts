@@ -1,8 +1,9 @@
 /*
- * The rule of choosing an agent's model, shared by the hosts that offer the choice (the workbench and the Ontology
- * Manager's platform area); each host renders it with its own controls and language. Null is the host-named choice
- * (follow the domain default, or no default). A stored ID that is no longer configured stays selected as it is and is
- * reported, never replaced by the null choice: the reference fails explicitly until someone chooses again.
+ * The rule of choosing an agent's model (the stored `modelSelectionSchema` in model-settings.ts), shared by the pages
+ * that offer the choice (the Agent Platform and the Ontology Service); each renders it with its own controls and
+ * language. Null is the host-named choice (follow the domain default, or no default). A stored ID that is no longer
+ * configured stays selected as it is and is reported, never replaced by the null choice: the reference fails
+ * explicitly until someone chooses again.
  */
 
 /** A model as a selection lists it: `name` is the stable configuration ID, `displayName` may repeat across models. */

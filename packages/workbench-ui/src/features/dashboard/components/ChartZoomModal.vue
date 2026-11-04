@@ -171,8 +171,8 @@ onBeforeUnmount(() => {
   width: min(1100px, 92vw);
   height: min(720px, 92vh);
   background: var(--el-bg-color);
-  border-radius: 12px;
-  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.25);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--elevation-modal);
   display: flex;
   flex-direction: column;
   overflow: hidden;

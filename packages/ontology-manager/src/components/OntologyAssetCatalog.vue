@@ -125,7 +125,7 @@ onMounted(() => void loadCatalog());
 <template>
   <section v-loading="loading" class="asset-catalog">
     <header class="catalog-titlebar">
-      <div>
+      <div class="catalog-heading">
         <h1>{{ currentMeta.title }}</h1>
         <p>{{ currentMeta.description }}</p>
       </div>
@@ -194,15 +194,25 @@ onMounted(() => void loadCatalog());
 .asset-catalog {
   min-height: 100%;
   flex-shrink: 0;
-  padding: var(--spacing-xl) var(--spacing-2xl);
+  display: flex;
+  flex-direction: column;
   background: var(--el-bg-color);
+}
+.catalog-heading {
+  display: flex;
+  min-width: 0;
+  align-items: baseline;
+  gap: var(--spacing-md);
 }
 .catalog-titlebar {
   display: flex;
-  min-height: 76px;
+  height: var(--page-header-height);
+  flex: 0 0 var(--page-header-height);
   align-items: center;
   justify-content: space-between;
-  gap: var(--spacing-lg);
+  gap: var(--spacing-md);
+  padding: 0 var(--spacing-lg);
+  border-bottom: 1px solid var(--el-border-color);
 }
 .catalog-titlebar :deep(.el-button) {
   display: inline-flex;
@@ -212,24 +222,26 @@ onMounted(() => void loadCatalog());
 h1 {
   margin: 0;
   color: var(--el-text-color-primary);
-  font-size: var(--text-2xl);
+  font-size: var(--text-lg);
   font-weight: var(--font-semibold);
+  line-height: var(--leading-lg);
+  white-space: nowrap;
 }
 p {
-  margin: 5px 0 0;
+  margin: 0;
+  overflow: hidden;
   color: var(--el-text-color-secondary);
   font-size: var(--text-sm);
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .catalog-toolbar {
   display: flex;
-  min-height: 54px;
+  min-height: 40px;
   align-items: center;
-  gap: var(--spacing-md);
-  margin-top: var(--spacing-lg);
-  padding: 9px var(--spacing-md);
-  border: 1px solid var(--el-border-color);
-  border-radius: var(--radius-sm);
-  background: var(--el-bg-color);
+  gap: var(--spacing-sm);
+  margin-top: var(--spacing-md);
+  padding: 0 var(--spacing-lg);
 }
 .catalog-toolbar :deep(.el-input) {
   width: 260px;
@@ -240,9 +252,9 @@ p {
 }
 .resource-table {
   overflow: hidden;
-  margin-top: var(--spacing-lg);
+  margin: var(--spacing-md) var(--spacing-lg) var(--spacing-lg);
   border: 1px solid var(--el-border-color);
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-md);
   background: var(--el-bg-color);
 }
 .resource-table-head,
@@ -259,18 +271,17 @@ p {
   grid-template-columns: minmax(250px, 1.7fr) minmax(140px, 1fr) 20px;
 }
 .resource-table-head {
-  min-height: 40px;
+  min-height: var(--table-head-height);
   padding: 0 var(--spacing-md);
-  border-bottom: 1px solid var(--el-border-color-dark);
+  border-bottom: 1px solid var(--el-border-color);
   color: var(--el-text-color-secondary);
-  background: var(--el-fill-color-light);
+  background: var(--el-fill-color);
   font-size: var(--text-xs);
   font-weight: var(--font-semibold);
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
+  letter-spacing: 0.02em;
 }
 .resource-table-row {
-  min-height: 62px;
+  min-height: var(--list-row-height);
   padding: 8px var(--spacing-md);
   border: 0;
   border-bottom: 1px solid var(--el-border-color-light);
@@ -334,11 +345,8 @@ p {
   color: var(--el-text-color-tertiary);
 }
 @container ontology-manager (max-width: 900px) {
-  .asset-catalog {
-    padding: var(--spacing-md);
-  }
-  h1 {
-    font-size: var(--text-xl);
+  .catalog-heading p {
+    display: none;
   }
   .resource-table-head,
   .resource-table-row {
@@ -371,8 +379,11 @@ p {
 }
 @container ontology-manager (max-width: 560px) {
   .catalog-titlebar {
+    height: auto;
+    flex-basis: auto;
     align-items: flex-start;
     flex-direction: column;
+    padding: var(--spacing-sm) var(--spacing-lg);
   }
   .catalog-titlebar :deep(.el-button),
   .catalog-toolbar :deep(.el-input) {

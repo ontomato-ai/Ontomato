@@ -1,164 +1,194 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
-import { defineComponent, h, nextTick } from "vue";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { defineComponent, h } from "vue";
 
-/** Component double: records the props the shell hands to the component and can emit events on its behalf. */
-const host = vi.hoisted(() => ({
-  props: null as Record<string, unknown> | null,
-  emit: null as ((event: string, ...args: unknown[]) => void) | null,
+// The heavy Manager pages (graph libraries, Markdown) are doubled; the router, layout, catalogs and requests are real.
+vi.mock("../../../../packages/ontology-manager/src/components/OntologyPlayground.vue", () => ({
+  __esModule: true,
+  default: defineComponent({ name: "PlaygroundDouble", setup: () => () => h("p", { class: "page-double" }, "graph") }),
+}));
+vi.mock("../../../../packages/ontology-manager/src/visual-modeling/VisualModeling.vue", () => ({
+  __esModule: true,
+  default: defineComponent({
+    name: "VisualModelingDouble",
+    props: { focus: String, focusId: String },
+    setup: (props) => () => h("p", { class: "page-double" }, `modeling ${props.focus}:${props.focusId}`),
+  }),
+}));
+vi.mock("../../../../packages/ontology-manager/src/data-browser/DataBrowser.vue", () => ({
+  __esModule: true,
+  default: defineComponent({
+    name: "DataBrowserDouble",
+    props: { initialClass: String },
+    setup: (props) => () => h("p", { class: "page-double" }, `data ${props.initialClass}`),
+  }),
 }));
 
-// The whole component is doubled (it has its own tests); this file only checks the props the shell hands over, the header
-// controls it puts into the component header, how component events are handled, and the status messages used.
-vi.mock("@ontomato/ontology-manager", async () => {
-  const { defineComponent, h } = await import("vue");
-  const OntologyManager = defineComponent({
-    props: {
-      apiBase: { type: String, required: true },
-      credential: { type: Object, required: true },
-      locale: { type: String, required: true },
-      messages: { type: Object, required: true },
-      theme: { type: String, required: true },
-      view: { type: String, required: true },
-      dataFallbacks: { type: Object, required: true },
-      presentation: { type: Object, required: true },
-      knowledgeTagValues: { type: Object, required: true },
-    },
-    emits: ["update:view", "auth-failure"],
-    setup(props, { emit, slots }) {
-      host.props = props;
-      host.emit = emit as typeof host.emit;
-      return () => h("div", { class: "manager-double" }, slots["header-actions"]?.());
-    },
-  });
-  return { OntologyManager };
-});
+vi.mock("../../../../packages/ontology-manager/src/knowledge-governance/GovernancePage.vue", () => ({
+  __esModule: true,
+  default: defineComponent({
+    name: "GovernanceDouble",
+    props: { sessionId: String },
+    setup: (props) => () => h("p", { class: "page-double" }, `governance ${props.sessionId ?? ""}`),
+  }),
+}));
 
-const { englishMessages } = await import("@ontomato/ontology-manager/i18n");
+// Model configuration reads a structured settings response; its own package tests it.
+vi.mock("../../../../packages/platform-admin/src/pages/ModelConfigPage.vue", () => ({
+  __esModule: true,
+  default: defineComponent({ name: "ModelConfigDouble", setup: () => () => h("p", { class: "page-double" }, "models") }),
+}));
+
 const { isolateShellPerTest } = await import("./isolation");
 const { ossProfile } = await import("../profile");
-const { ossPresentation } = await import("../presentation");
-const { startManagerShell } = await import("../shell");
+const { startOssManager } = await import("../platform");
 
 const resetShell = isolateShellPerTest();
+let requests: { url: string; headers: Record<string, string> }[];
+let statusFor: (url: string) => number;
 
-function start(url: string, extra: Parameters<typeof startManagerShell>[1] = { credential: { type: "anonymous" } }) {
-  host.props = null;
+async function settle() {
+  for (let index = 0; index < 10; index += 1) {
+    await vi.dynamicImportSettled();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  }
+}
+
+async function start(url: string) {
   resetShell();
   document.body.innerHTML = '<div id="app"></div>';
   window.history.replaceState({}, "", url);
-  startManagerShell(ossProfile, extra);
+  startOssManager(ossProfile);
+  await settle();
 }
 
-describe("open-source standalone shell", () => {
+const hash = () => window.location.hash;
+const navRows = () => [...document.querySelectorAll(".nav-group .nav-row .nav-label")].map((row) => row.textContent);
+const headings = () => [...document.querySelectorAll(".nav-heading")].map((heading) => heading.textContent);
+
+describe("open-source Ontology Service page", () => {
   beforeEach(() => {
     sessionStorage.clear();
     localStorage.clear();
     document.documentElement.className = "";
-    document.documentElement.lang = "en";
+    document.documentElement.removeAttribute("style");
+    requests = [];
+    statusFor = () => 200;
     window.__ONTOLOGY_MANAGER_CONFIG__ = { API_BASE: "/custom-base/api/", INITIAL_ROUTE: "" };
+    vi.stubGlobal("fetch", async (url: string, init: { headers?: unknown } = {}) => {
+      requests.push({ url, headers: (init.headers ?? {}) as Record<string, string> });
+      return new Response(JSON.stringify({ success: true, data: [] }), { status: statusFor(url) });
+    });
   });
 
-  it("hands the host credential, fixed en with English messages, open-source data defaults and apiBase from config.js", () => {
-    start("/?view=assets");
-    expect(host.props).toMatchObject({
-      // A relative or root-relative API_BASE resolves against the page URL, so one image serves any gateway prefix.
-      apiBase: new URL("/custom-base/api", window.location.href).href,
-      credential: { type: "anonymous" },
-      locale: "en",
-      messages: englishMessages,
-      theme: "light",
-      view: "/assets/metrics",
-      dataFallbacks: {
-        noBusinessDescription: "No business description provided",
-        unnamedAsset: "Unnamed asset",
-      },
-    });
-    expect(host.props?.knowledgeTagValues).toEqual({
-      general: "General",
-      business: "Business",
-      tech: "Tech",
-    });
-    // Open-source presentation values (b6437c86): the same static object is handed to the component.
-    expect(host.props?.presentation).toBe(ossPresentation);
-    expect(host.props).not.toHaveProperty("embedded");
+  afterEach(() => {
+    vi.unstubAllGlobals();
   });
 
-  it("an old launch link loses only tk/apiKey and never becomes a credential; an old tab session is dropped", () => {
+  it("one sidebar lists the ontology, asset, knowledge and platform pages without enterprise pages", async () => {
+    await start("/");
+    expect(document.querySelector(".sidebar-brand")?.textContent).toBe("Ontology Service");
+    expect(document.title).toBe("Ontology Service");
+    expect(headings()).toEqual(["Ontology", "Assets", "Knowledge", "Platform Management"]);
+    expect(navRows()).toEqual([
+      "Ontomap",
+      "Object Types",
+      "Properties",
+      "Relation Types",
+      "Action Types",
+      "Visual Modeling",
+      "Data Browser",
+      "Metric Views",
+      "Functions",
+      "Schedule Tasks",
+      "Business Knowledge",
+      "Model Configuration",
+      "System Configuration",
+      "Audit Logs",
+      "System Monitoring",
+    ]);
+    // No back link to a separate workspace and no second header.
+    expect(document.querySelector(".back-btn, .workspace-header, .platform-header")).toBeNull();
+  });
+
+  it("the Agent Platform link opens the deployment root in a new tab", async () => {
+    await start("/");
+    const link = document.querySelector<HTMLAnchorElement>(".nav-links a.nav-row")!;
+    expect(link.textContent).toContain("Agent Platform");
+    expect(link.getAttribute("href")).toBe("/custom-base/");
+    expect(link.target).toBe("_blank");
+    expect(link.rel).toContain("noopener");
+    expect(document.querySelectorAll(".nav-links .nav-row")).toHaveLength(1);
+  });
+
+  it.each([
+    ["/", "#/playground", "graph"],
+    ["/#/", "#/playground", "graph"],
+    ["/?view=data-browser", "#/data", "data "],
+    ["/?view=assets", "#/assets/metrics", null],
+    ["/?view=visual-modeling&focus=object&id=Order", "#/visual-modeling?focus=object&id=Order", "modeling object:Order"],
+    ["/#/data/Order", "#/data/Order", "data Order"],
+    ["/#/objects", "#/objects", null],
+    ["/#/admin/ontology/visual-modeling", "#/visual-modeling", "modeling :"],
+    ["/#/admin", "#/admin/model-config", "models"],
+    ["/#/admin/audit-log", "#/admin/audit-log", null],
+    ["/#/no-such-page", "#/playground", "graph"],
+  ])("old address %s lands on %s", async (url, landed, page) => {
+    await start(url);
+    expect(hash()).toBe(landed);
+    if (page) expect(document.querySelector(".page-double")?.textContent).toBe(page);
+  });
+
+  it("the current page's navigation row is highlighted and the platform pages get the 48px page header", async () => {
+    await start("/#/admin/audit-log");
+    expect(document.querySelector(".nav-row.active .nav-label")?.textContent).toBe("Audit Logs");
+    expect(document.querySelector(".page-header .page-title")?.textContent).toBe("Audit Logs");
+    await start("/#/objects");
+    expect(document.querySelector(".nav-row.active .nav-label")?.textContent).toBe("Object Types");
+    expect(document.querySelector(".page-header")).toBeNull();
+    expect(document.querySelector(".ontology-manager")).not.toBeNull();
+  });
+
+  it("knowledge governance fills the window without the service sidebar", async () => {
+    await start("/#/knowledge-governance/s1");
+    expect(document.querySelector(".page-double")?.textContent).toBe("governance s1");
+    expect(document.querySelector(".service-layout")).toBeNull();
+    expect(document.querySelector(".ontology-manager")).not.toBeNull();
+  });
+
+  it("requests go anonymously to the configured API root, and an old launch link loses its credential", async () => {
     sessionStorage.setItem("ontology_manager_token", "old-token");
-    sessionStorage.setItem("ontology_manager_api_key", "old-key");
-    start("/?view=data-browser&tk=t1&apiKey=k1&theme=dark#/data");
-    expect(host.props?.credential).toEqual({ type: "anonymous" });
+    await start("/?view=data-browser&tk=t1&apiKey=k1&theme=dark#/objects");
     expect(window.location.search).toBe("?view=data-browser&theme=dark");
-    expect(window.location.hash).toBe("#/data");
     expect(sessionStorage.getItem("ontology_manager_token")).toBeNull();
-    expect(sessionStorage.getItem("ontology_manager_api_key")).toBeNull();
+    expect(requests.length).toBeGreaterThan(0);
+    for (const request of requests) {
+      expect(request.url.startsWith(new URL("/custom-base/api/data-query/", window.location.href).href)).toBe(true);
+      expect(request.headers).not.toHaveProperty("tk");
+      expect(request.headers).not.toHaveProperty("x-api-key");
+    }
   });
 
-  it("URL theme/locale and the workbench preference keys do not drive the Manager", () => {
+  it("with one locale there is no language control; the theme control switches the whole page and is stored under the Ontology Service key", async () => {
     localStorage.setItem("theme-preference", "dark");
-    localStorage.setItem("app-locale", "zh-CN");
-    start("/?theme=dark&locale=zh-CN");
-    expect(host.props?.theme).toBe("light");
-    expect(host.props?.locale).toBe("en");
-  });
-
-  it("the header shows the theme control and, with one locale, no language control; the theme is stored under the Manager key", async () => {
-    start("/");
-    expect(document.querySelector(".manager-shell-locale")).toBeNull();
-    const toggle = document.querySelector<HTMLButtonElement>(".manager-shell-theme")!;
-    expect(toggle.textContent).toBe("Dark Mode");
-    toggle.click();
-    await nextTick();
-    expect(host.props?.theme).toBe("dark");
+    await start("/?theme=dark");
+    expect(document.documentElement.classList.contains("dark")).toBe(false);
+    expect(document.querySelector(".lang-button")).toBeNull();
+    const light = document.documentElement.style.getPropertyValue("--el-bg-color");
+    document.querySelector<HTMLButtonElement>(".theme-button")!.click();
+    await settle();
     expect(document.documentElement.classList.contains("dark")).toBe(true);
+    expect(document.documentElement.style.getPropertyValue("--el-bg-color")).not.toBe(light);
+    expect(document.querySelector(".ontology-manager")?.classList.contains("is-dark")).toBe(true);
     expect(localStorage.getItem("ontology_manager_theme")).toBe("dark");
-    expect(localStorage.getItem("theme-preference")).toBeNull();
-    expect(document.querySelector(".manager-shell-theme")?.textContent).toBe("Light Mode");
   });
 
-  it("host header actions follow the shell controls and receive the current messages", () => {
-    const received: unknown[] = [];
-    const Account = defineComponent({
-      props: { messages: { type: Object, required: true } },
-      setup(props) {
-        received.push(props.messages);
-        return () => h("span", { class: "account-double" });
-      },
-    });
-    start("/", { credential: { type: "token", token: "t1" }, headerActions: Account });
-    expect(host.props?.credential).toEqual({ type: "token", token: "t1" });
-    expect(document.querySelector(".manager-shell-controls + .account-double")).not.toBeNull();
-    expect(received).toEqual([englishMessages]);
-  });
-
-  it("component navigation replaces the hash", async () => {
-    start("/");
-    const length = window.history.length;
-    host.emit?.("update:view", "/objects/Order");
-    await nextTick();
-    expect(host.props?.view).toBe("/objects/Order");
-    expect(window.location.hash).toBe("#/objects/Order");
-    expect(window.history.length).toBe(length);
-  });
-
-  it("without a host handler a 401 stops the component and reports it; a 402 keeps the component", async () => {
-    start("/");
-    host.emit?.("auth-failure", 402);
-    await nextTick();
-    expect(document.querySelector(".manager-double")).not.toBeNull();
-    host.emit?.("auth-failure", 401);
-    await nextTick();
-    expect(document.querySelector(".manager-double")).toBeNull();
+  it("a 401 stops the page with its status; a 402 keeps it", async () => {
+    statusFor = (url) => (url.endsWith("/action/queryList") ? 402 : 200);
+    await start("/#/objects");
+    expect(document.querySelector(".service-layout")).not.toBeNull();
+    statusFor = (url) => (url.endsWith("/function/queryList") ? 401 : 200);
+    await start("/#/objects");
+    expect(document.querySelector(".service-layout")).toBeNull();
     expect(document.querySelector('[role="alert"]')?.textContent).toBe("Request failed (401)");
-  });
-
-  it("a host handler decides 401 and 402 itself", async () => {
-    const failures: number[] = [];
-    start("/", { credential: { type: "token", token: "t1" }, onAuthFailure: (status) => failures.push(status) });
-    host.emit?.("auth-failure", 401);
-    host.emit?.("auth-failure", 402);
-    await nextTick();
-    expect(failures).toEqual([401, 402]);
-    expect(document.querySelector(".manager-double")).not.toBeNull();
   });
 });

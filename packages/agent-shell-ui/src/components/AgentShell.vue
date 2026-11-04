@@ -265,20 +265,27 @@ onMounted(async () => {
 </template>
 
 <style scoped>
+/*
+ * Conversation shell (DESIGN.md "Applications and shells"): the sidebar sits on canvas with no divider; the
+ * conversation is one raised surface panel with the conversation gutter around it. Its composer is raised too.
+ */
 .agent-shell {
+  --shell-composer-shadow: var(--elevation-composer);
   display: flex;
-  gap: 12px;
+  gap: var(--shell-conversation-gutter);
   height: 100vh;
   height: 100dvh;
-  padding: 12px 12px 12px 0;
+  padding: var(--shell-conversation-gutter) var(--shell-conversation-gutter) var(--shell-conversation-gutter) 0;
   box-sizing: border-box;
   overflow: hidden;
   background: var(--el-bg-color-page);
   color: var(--el-text-color-primary);
   font-family: var(--font-sans, inherit);
+  font-size: var(--text-base);
+  line-height: var(--leading-base);
 }
 .shell-nav {
-  width: var(--agent-shell-nav-width, 264px);
+  width: var(--shell-agent-rail);
   flex-shrink: 0;
 }
 .shell-main {
@@ -287,9 +294,10 @@ onMounted(async () => {
   flex-direction: column;
   flex: 1;
   min-width: 0;
-  border-radius: 24px;
+  border: 1px solid var(--el-border-color);
+  border-radius: var(--shell-conversation-radius);
   background: var(--el-bg-color);
-  box-shadow: var(--shadow-card);
+  box-shadow: var(--elevation-panel);
   overflow: hidden;
 }
 .feature-page {
@@ -306,6 +314,7 @@ onMounted(async () => {
     padding: 0;
   }
   .shell-main {
+    border: 0;
     border-radius: 0;
     box-shadow: none;
   }
@@ -316,7 +325,7 @@ onMounted(async () => {
     bottom: 0;
     left: 0;
     width: min(86vw, 300px);
-    background: var(--el-bg-color);
+    background: var(--el-bg-color-page);
     transform: translateX(-100%);
     visibility: hidden;
     transition:
@@ -326,7 +335,7 @@ onMounted(async () => {
   .nav-open .shell-nav {
     transform: none;
     visibility: visible;
-    box-shadow: var(--el-shadow-xl);
+    box-shadow: var(--elevation-modal);
   }
   .nav-scrim {
     position: fixed;
@@ -341,22 +350,23 @@ onMounted(async () => {
     display: flex;
     align-items: center;
     gap: 8px;
-    height: 52px;
-    padding: 0 10px;
-    border-bottom: 1px solid var(--el-border-color-light);
+    height: var(--panel-header-height);
+    padding: 0 8px;
+    border-bottom: 1px solid var(--el-border-color);
   }
   .mobile-menu {
     display: grid;
     place-items: center;
-    width: 38px;
-    height: 38px;
+    width: var(--control-height);
+    height: var(--control-height);
     border: 0;
-    border-radius: 10px;
+    border-radius: var(--radius-sm);
     background: transparent;
     color: var(--el-text-color-regular);
     cursor: pointer;
   }
   .mobile-title {
+    font-size: var(--text-base);
     font-weight: 600;
     overflow: hidden;
     text-overflow: ellipsis;

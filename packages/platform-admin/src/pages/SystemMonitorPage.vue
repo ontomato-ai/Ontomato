@@ -37,10 +37,11 @@ async function fetchStatus() {
   }
 }
 
+/** Usage bars take the status roles: danger from 90%, warning from 70%, success below. */
 function usageColor(value: number) {
-  if (value >= 90) return "#F56C6C";
-  if (value >= 70) return "#E6A23C";
-  return "#67C23A";
+  if (value >= 90) return "var(--el-color-danger)";
+  if (value >= 70) return "var(--el-color-warning)";
+  return "var(--el-color-success)";
 }
 
 const cpuColor = computed(() => (status.value ? usageColor(status.value.server.cpu.userate) : ""));

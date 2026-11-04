@@ -40,6 +40,7 @@ return computed<ShellLabels>(() => ({
   preparing: t("assistant.preparing"),
   artifactMissing: t("assistant.artifactMissing"),
   menu: t("assistant.menu"),
+  opensInNewTab: t("assistant.opensInNewTab"),
   scrollToBottom: t("assistant.scrollToBottom"),
   loading: t("assistant.loading"),
   rows: (count) => t("assistant.rows", { n: count }, count),

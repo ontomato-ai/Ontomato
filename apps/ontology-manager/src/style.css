@@ -1,4 +1,4 @@
-/* Document-level rules of the standalone shell (the html/body/#app part of the original ontology-manager/src/style.css); the component height comes from here. */
+/* Document-level rules of the Ontology Service page; the layout height comes from here. */
 html,
 body,
 #app {
@@ -8,7 +8,7 @@ body,
 }
 
 body {
-  background: var(--el-bg-color-page);
+  background: var(--el-bg-color);
 }
 
 #app {
@@ -19,14 +19,4 @@ body {
   margin: 0;
   padding: 24px;
   color: var(--el-text-color-regular);
-}
-
-.manager-shell-controls {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.manager-shell-locale {
-  width: 132px;
 }

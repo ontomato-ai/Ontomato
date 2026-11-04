@@ -256,8 +256,8 @@ async function submit(value: ShellFeedbackValue) {
   color: var(--el-color-warning);
 }
 .end-note.error {
-  padding: 10px 12px;
-  border-radius: var(--radius-lg, 12px);
+  padding: 8px 12px;
+  border-radius: var(--radius-md);
   background: var(--el-color-danger-light-9);
   color: var(--el-color-danger);
   overflow-wrap: anywhere;
@@ -271,10 +271,10 @@ async function submit(value: ShellFeedbackValue) {
 .action {
   display: grid;
   place-items: center;
-  width: 30px;
-  height: 30px;
+  width: 28px;
+  height: 28px;
   border: 0;
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
   background: transparent;
   color: var(--el-text-color-tertiary);
   cursor: pointer;
@@ -287,7 +287,7 @@ async function submit(value: ShellFeedbackValue) {
   color: var(--el-text-color-regular);
 }
 .action.on {
-  color: var(--el-color-primary);
+  color: var(--brand-link);
 }
 .action:focus-visible {
   outline: 2px solid var(--el-color-primary);
@@ -300,9 +300,9 @@ async function submit(value: ShellFeedbackValue) {
   width: 100%;
   box-sizing: border-box;
   resize: vertical;
-  padding: 10px 12px;
-  border: 1px solid var(--el-border-color);
-  border-radius: var(--radius-lg, 12px);
+  padding: 6px 10px;
+  border: 1px solid var(--el-border-color-dark);
+  border-radius: var(--radius-sm);
   background: var(--el-bg-color);
   color: var(--el-text-color-primary);
   font: inherit;
@@ -319,21 +319,25 @@ async function submit(value: ShellFeedbackValue) {
   margin-top: 8px;
 }
 .reason-actions button {
-  padding: 6px 14px;
-  border-radius: 999px;
+  height: var(--control-height);
+  padding: 0 14px;
+  border-radius: var(--radius-sm);
   font: inherit;
   font-size: var(--text-sm, 13px);
   cursor: pointer;
 }
 .ghost {
-  border: 1px solid var(--el-border-color);
-  background: transparent;
+  border: 1px solid var(--el-border-color-dark);
+  background: var(--el-bg-color);
   color: var(--el-text-color-regular);
 }
 .primary {
   border: 0;
   background: var(--el-color-primary);
-  color: var(--on-primary, #fff);
+  color: var(--on-primary);
+}
+.primary:hover:not(:disabled) {
+  background: var(--brand-primary-hover);
 }
 .primary:disabled {
   opacity: 0.5;

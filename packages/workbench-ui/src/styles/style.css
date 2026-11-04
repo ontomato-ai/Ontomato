@@ -2,68 +2,9 @@
    Global Styles - Modern Chat UI
    ======================================== */
 
-/* ========================================
-   CSS Variables - Font System
-   ======================================== */
-:root {
-  /* Font families */
-  --font-sans:
-    system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei",
-    "Helvetica Neue", Arial, sans-serif;
-  --font-mono:
-    ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New",
-    monospace;
-  --el-font-family: var(--font-sans);
-
-  /* Font size scale */
-  --text-xs: 0.6875rem; /* 11px */
-  --text-sm: 0.8125rem; /* 13px */
-  --text-base: 0.9375rem; /* 15px */
-  --text-lg: 1.0625rem; /* 17px */
-  --text-xl: 1.25rem; /* 20px */
-  --text-2xl: 1.5rem; /* 24px */
-  --text-3xl: 1.875rem; /* 30px */
-
-  /* Font weights */
-  --font-normal: 400;
-  --font-medium: 500;
-  --font-semibold: 600;
-  --font-bold: 700;
-
-  /* Line heights */
-  --leading-tight: 1.25;
-  --leading-snug: 1.375;
-  --leading-normal: 1.5;
-  --leading-relaxed: 1.625;
-  --leading-loose: 2;
-
-  /* Border radius */
-  --radius-sm: 0.5rem; /* 8px */
-  --radius-md: 0.625rem; /* 10px */
-  --radius-lg: 0.75rem; /* 12px */
-  --radius-xl: 0.875rem; /* 14px */
-  --radius-2xl: 1.125rem; /* 18px */
-  --radius-3xl: 1.5rem; /* 24px */
-  --radius-full: 9999px;
-
-  /* Spacing scale */
-  --spacing-xs: 4px;
-  --spacing-sm: 8px;
-  --spacing-md: 12px;
-  --spacing-lg: 16px;
-  --spacing-xl: 24px;
-  --spacing-2xl: 32px;
-  --spacing-3xl: 48px;
-
-  /* Transitions */
-  --transition-fast: 150ms cubic-bezier(0.4, 0, 0.2, 1);
-  --transition-base: 200ms cubic-bezier(0.4, 0, 0.2, 1);
-  --transition-slow: 300ms cubic-bezier(0.4, 0, 0.2, 1);
-  --transition-spring: 500ms cubic-bezier(0.34, 1.56, 0.64, 1);
-
-  /* Conversation page content width */
-  --chat-content-max-width: 960px;
-}
+/* Foundation tokens (type, spacing, shape, density, shell, elevation, motion) and the Element Plus component
+   variables; colours come from the edition's brand source (@ontomato/design-tokens). */
+@import "@ontomato/design-tokens/foundation.css";
 
 * {
   box-sizing: border-box;
@@ -84,7 +25,7 @@ body {
   margin: 0;
   padding: 0;
   font-size: var(--text-base);
-  line-height: var(--leading-relaxed);
+  line-height: var(--leading-base);
   color: var(--el-text-color-regular);
 }
 
@@ -119,7 +60,7 @@ body {
   margin-bottom: var(--spacing-lg);
   padding: var(--spacing-md);
   background: var(--el-bg-color);
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-md);
   border: 1px solid var(--el-border-color);
   flex-wrap: wrap;
 }
@@ -139,7 +80,7 @@ body {
 }
 
 /* ========================================
-   Dialogs and Popovers
+   Dialogs and Popovers - DESIGN.md "Dialog": raised, rounded.lg, elevation.modal, 20px padding, `title` header
    ======================================== */
 .el-overlay-dialog {
   display: flex !important;
@@ -148,83 +89,89 @@ body {
 }
 
 .el-dialog {
-  border-radius: var(--radius-2xl) !important;
+  border-radius: var(--radius-lg) !important;
   padding: 0;
-  box-shadow: var(--shadow-dropdown) !important;
+  box-shadow: var(--elevation-modal) !important;
   margin: 0 !important;
 }
 
 .el-dialog__header {
-  padding: var(--spacing-xl) var(--spacing-xl) var(--spacing-lg) !important;
-  border-bottom: 1px solid var(--el-border-color-light) !important;
+  padding: var(--spacing-lg-xl) var(--spacing-lg-xl) var(--spacing-md) !important;
+  border-bottom: 1px solid var(--el-border-color) !important;
   margin: 0 !important;
 }
 
 .el-dialog__title {
-  font-size: var(--text-xl) !important;
-  font-weight: var(--font-bold) !important;
+  font-size: var(--text-lg) !important;
+  line-height: var(--leading-lg) !important;
+  font-weight: var(--font-semibold) !important;
   color: var(--el-text-color-primary) !important;
 }
 
 .el-dialog__body {
-  padding: var(--spacing-xl) !important;
+  padding: var(--spacing-lg-xl) !important;
 }
 
 .el-dialog__footer {
   display: flex !important;
   justify-content: flex-end !important;
-  gap: var(--spacing-md) !important;
-  padding: var(--spacing-lg) var(--spacing-xl) !important;
-  border-top: 1px solid var(--el-border-color-light) !important;
+  gap: var(--spacing-sm) !important;
+  padding: var(--spacing-md) var(--spacing-lg-xl) !important;
+  border-top: 1px solid var(--el-border-color) !important;
 }
 
 .el-dialog__footer .el-button {
   margin: 0 !important;
-  border-radius: var(--radius-lg) !important;
 }
 
 .el-message-box {
-  border-radius: var(--radius-2xl) !important;
-  box-shadow: var(--shadow-dropdown) !important;
+  border-radius: var(--radius-lg) !important;
+  box-shadow: var(--elevation-modal) !important;
 }
 
 .el-message-box__btns {
   display: flex !important;
   justify-content: flex-end !important;
-  gap: var(--spacing-md) !important;
+  gap: var(--spacing-sm) !important;
   padding-top: var(--spacing-lg) !important;
 }
 
 .el-message-box__btns .el-button {
   margin: 0 !important;
-  border-radius: var(--radius-lg) !important;
 }
 
 .el-drawer {
-  border-radius: var(--radius-2xl) 0 0 var(--radius-2xl) !important;
+  border-radius: var(--radius-lg) 0 0 var(--radius-lg) !important;
+  box-shadow: var(--elevation-modal) !important;
 }
 
 .el-drawer__header {
-  padding: var(--spacing-xl) !important;
+  padding: var(--spacing-lg-xl) !important;
   margin-bottom: 0 !important;
-  border-bottom: 1px solid var(--el-border-color-light) !important;
+  border-bottom: 1px solid var(--el-border-color) !important;
+}
+
+.el-drawer__title {
+  font-size: var(--text-lg);
+  line-height: var(--leading-lg);
+  font-weight: var(--font-semibold);
+  color: var(--el-text-color-primary);
 }
 
 .el-drawer__body {
-  padding: var(--spacing-xl) !important;
+  padding: var(--spacing-lg-xl) !important;
 }
 
 .el-drawer__footer {
   display: flex !important;
   justify-content: flex-end !important;
-  gap: var(--spacing-md) !important;
-  padding: var(--spacing-lg) var(--spacing-xl) !important;
-  border-top: 1px solid var(--el-border-color-light) !important;
+  gap: var(--spacing-sm) !important;
+  padding: var(--spacing-md) var(--spacing-lg-xl) !important;
+  border-top: 1px solid var(--el-border-color) !important;
 }
 
 .el-drawer__footer .el-button {
   margin: 0 !important;
-  border-radius: var(--radius-lg) !important;
 }
 
 /* Unify form label width */
@@ -273,29 +220,26 @@ body {
   align-items: center;
   justify-content: center;
   gap: 8px;
-  min-height: 36px;
-  padding: 8px 12px;
-  border-radius: 12px;
-  font-size: 13px;
-  line-height: 1.4;
+  min-height: var(--control-height);
+  padding: 0 12px;
+  border-color: var(--el-border-color-dark);
+  border-radius: var(--radius-sm);
+  font-size: var(--text-sm);
+  font-weight: var(--font-medium);
+  line-height: var(--leading-sm);
 }
 
 .ui-btn:hover {
   border-color: var(--el-color-primary);
-  color: var(--el-color-primary);
+  color: var(--brand-link);
   background: var(--el-fill-color-blank);
-}
-
-.ui-icon-btn:hover {
-  border-color: var(--el-color-primary-light-5);
-  background: color-mix(in srgb, var(--el-color-primary) 6%, var(--el-bg-color));
 }
 
 .ui-btn:focus-visible,
 .ui-icon-btn:focus-visible {
   outline: none;
   border-color: var(--el-color-primary);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--el-color-primary) 12%, transparent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--el-color-primary) 20%, transparent);
 }
 
 .ui-btn:disabled,
@@ -312,11 +256,11 @@ body {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 30px;
-  height: 30px;
+  width: 28px;
+  height: 28px;
   padding: 0;
   border-color: transparent;
-  border-radius: 10px;
+  border-radius: var(--radius-sm);
   color: var(--el-text-color-secondary);
 }
 
@@ -332,8 +276,8 @@ body {
    Markdown Content Styles
    ======================================== */
 .markdown-content {
-  font-size: 14px;
-  line-height: 1.6;
+  font-size: var(--text-base);
+  line-height: var(--leading-base);
   font-family: var(--font-sans);
 }
 
@@ -401,7 +345,7 @@ body {
 
 .markdown-content th,
 .markdown-content td {
-  padding: 12px 16px;
+  padding: 8px 12px;
   text-align: left;
   font-size: var(--text-sm);
   border: none;
@@ -415,24 +359,22 @@ body {
 }
 
 .markdown-content code {
-  background: var(--el-fill-color-light);
-  padding: 4px 8px;
-  border-radius: var(--radius-md);
+  background: var(--el-fill-color);
+  padding: 1px 6px;
+  border-radius: var(--radius-xs);
   font-family: var(--font-mono);
   font-size: 0.875em;
-  color: var(--el-text-color-regular);
-  border: 1px solid var(--el-border-color-light);
+  color: var(--el-text-color-primary);
 }
 
 .markdown-content pre {
-  background: var(--el-bg-color-overlay);
+  background: var(--el-fill-color);
   color: var(--el-text-color-primary);
-  padding: 16px;
-  border-radius: var(--radius-xl);
+  padding: 12px 16px;
+  border-radius: var(--radius-md);
   overflow-x: auto;
   margin: 16px 0;
   border: 1px solid var(--el-border-color);
-  box-shadow: var(--el-shadow-sm);
 }
 
 .markdown-content pre code {
@@ -440,12 +382,12 @@ body {
   color: inherit;
   padding: 0;
   border: none;
-  font-size: var(--text-sm);
-  line-height: var(--leading-relaxed);
+  font-size: var(--text-mono);
+  line-height: var(--leading-mono);
 }
 
 .markdown-content blockquote {
-  border-left: 3px solid var(--el-color-primary);
+  border-left: 3px solid var(--el-border-color-dark);
   margin: 16px 0;
   padding: 12px 16px;
   background: var(--el-fill-color-extra-light);
@@ -470,14 +412,14 @@ body {
 }
 
 .markdown-content a {
-  color: var(--el-color-primary);
+  color: var(--brand-link);
   text-decoration: none;
   border-bottom: 1px solid transparent;
   transition: border-color var(--transition-fast);
 }
 
 .markdown-content a:hover {
-  border-bottom-color: var(--el-color-primary);
+  border-bottom-color: var(--brand-link);
 }
 
 /* ========================================
@@ -529,31 +471,23 @@ body {
 }
 
 /* ========================================
-   Element Plus Table Global Styles
+   Element Plus Table Global Styles - 40px rows (DESIGN.md density `table-row`)
    ======================================== */
 .el-table__cell {
-  padding: 12px 16px !important;
+  padding: 8px 12px !important;
 }
 
 /* ========================================
    Button Style Optimizations
    ======================================== */
 .el-button {
-  transition: all var(--transition-base);
+  transition: all var(--transition-fast);
   font-weight: var(--font-medium);
 }
 
 .el-button.is-link:hover,
 .el-button.is-text:hover {
   background-color: transparent !important;
-}
-
-.el-button--primary {
-  box-shadow: var(--shadow-primary);
-}
-
-.el-button--primary:hover {
-  box-shadow: var(--shadow-primary-hover);
 }
 
 /* Button group spacing */

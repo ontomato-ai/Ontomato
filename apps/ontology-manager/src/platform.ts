@@ -1,12 +1,13 @@
-import { computed, defineComponent, h } from "vue";
 import en from "element-plus/es/locale/lang/en";
+import { computed } from "vue";
+import { managerRoutes, managerStandaloneRoutes } from "@ontomato/ontology-manager";
 import {
   createPlatformClient,
-  createPlatformI18n,
-  isPlatformHash,
   openAccess,
-  ossNavigation,
+  ossPlatformPages,
+  pageRoutes,
   platformApi,
+  platformGroups,
   platformPageComponents,
   startPlatformAdmin,
   type PlatformLocale,
@@ -14,51 +15,65 @@ import {
 import platformEn from "@ontomato/platform-admin/locales/en";
 import { readRuntimeConfig } from "./config";
 import { ossSystemConfig } from "./system-config";
-import { openWorkspace, PlatformEntryLink, reloadOnAreaChange } from "./area";
-import { startManagerShell, startShellPreferences, type ManagerShellProfile } from "./shell";
+import {
+  agentPlatformLink,
+  createServiceI18n,
+  createServiceManager,
+  deploymentRoot,
+  discardLegacyLaunchCredential,
+  reloadOnStaleBuild,
+  serviceNavigation,
+  startPage,
+  startShellPreferences,
+  stopPage,
+  type ManagerShellProfile,
+} from "./shell";
 
-const ossLocales: Record<string, PlatformLocale> = { en: { messages: platformEn, element: en } };
+const ossPlatformLocales: Record<string, PlatformLocale> = { en: { messages: platformEn, element: en } };
 
 /**
- * The open-source Ontology Manager page: anonymous, no sign-in and no permission logic. The hash picks the platform area
- * (audit logs, system monitoring, system configuration) or the Manager workspace; the workspace header links to the
- * platform area.
+ * The open-source Ontology Service page: anonymous, no sign-in and no permission logic. One router and one vue-i18n
+ * serve the Manager pages and the platform administration pages inside one sidebar layout.
  */
 export function startOssManager(profile: ManagerShellProfile) {
+  reloadOnStaleBuild();
+  discardLegacyLaunchCredential();
+  const { apiBase } = readRuntimeConfig();
   const preferences = startShellPreferences(profile);
-  const i18n = createPlatformI18n(ossLocales, "en");
-  reloadOnAreaChange((hash) => (isPlatformHash(hash) ? "platform" : "workspace"));
-
-  if (!isPlatformHash(window.location.hash)) {
-    const EntryLink = defineComponent({
-      setup: () => () => h(PlatformEntryLink, { label: () => i18n.global.t("platform.title") }),
-    });
-    startManagerShell(profile, { credential: { type: "anonymous" }, headerActions: EntryLink }, preferences);
-    return;
-  }
-
-  const client = createPlatformClient({
-    apiBase: readRuntimeConfig().apiBase,
-    credential: { type: "anonymous" },
-    locale: () => preferences.locale.value,
-  });
-  startPlatformAdmin({
-    navigation: ossNavigation,
-    components: platformPageComponents,
+  const { locales, i18n } = createServiceI18n(profile, ossPlatformLocales, preferences);
+  let stop: (status: number) => void = () => {};
+  const manager = createServiceManager({
+    profile,
+    preferences,
     i18n,
-    locales: ossLocales,
+    credential: { type: "anonymous" },
+    // 402 (license failure) keeps the page; the page shows the error.
+    onAuthFailure: (status) => {
+      if (status === 401) stop(status);
+    },
+  });
+  const client = createPlatformClient({ apiBase, credential: { type: "anonymous" }, locale: () => preferences.locale.value });
+  const navigation = serviceNavigation(manager, platformGroups.platform, ossPlatformPages);
+  const { app } = startPlatformAdmin({
+    navigation,
+    routes: [...managerRoutes(), ...pageRoutes(ossPlatformPages, platformPageComponents)],
+    standalone: managerStandaloneRoutes(),
+    home: startPage(),
+    i18n,
+    locales,
     themeProperties: profile.presentation.themeProperties,
     host: {
       access: openAccess,
       api: platformApi(client),
       preferences,
-      navigation: computed(() => ossNavigation),
+      navigation: computed(() => navigation),
       account: null,
-      actions: [],
+      links: [agentPlatformLink(deploymentRoot(apiBase))],
       navigationHidden: computed(() => false),
-      openWorkspace,
       systemConfig: ossSystemConfig,
       separators: { detail: ": " },
     },
+    configure: (app) => manager.install(app),
   });
+  stop = (status) => stopPage(app, i18n.global.t("ontology.requestFailedStatus", { status }));
 }

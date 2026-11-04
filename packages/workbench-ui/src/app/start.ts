@@ -8,15 +8,22 @@ import { installAuthHost, type WorkbenchAuthHost } from "../utils/auth";
 import { installErrorPunctuation, type ErrorPunctuation } from "../utils/error-punctuation";
 import { installWorkbenchContent, type WorkbenchContent } from "../content";
 import { turnDiagnosisAccessKey, type TurnDiagnosisAccess } from "../features/diagnosis/access";
+import { ontologyServiceAccessKey, type OntologyServiceAccess } from "./ontology-service";
+import { installBrandTheme, type BrandSource } from "@ontomato/design-tokens";
+import { installWorkbenchBrand } from "../brand";
 
 export interface WorkbenchWebOptions {
+  /** This edition's brand source; the workbench colour variables and the chart colours are generated from it. */
+  brand: BrandSource;
   language: WorkbenchLanguage;
   auth: WorkbenchAuthHost;
   errorPunctuation: ErrorPunctuation;
-  /** Static workbench content (original matching rules, sentences and colours; module-level code reads it at call time). */
+  /** Static workbench content (original matching rules and sentences; module-level code reads it at call time). */
   content: WorkbenchContent;
   /** Visibility of the chat turn diagnosis entry (components read it via inject). */
   turnDiagnosis: TurnDiagnosisAccess;
+  /** Visibility of the entries that open the Ontology Service (function-area link and admin tab). */
+  ontologyService: OntologyServiceAccess;
   routes: RouteRecordRaw[];
   /** App navigation guards; the Pinia instance is passed explicitly so stores in guards do not depend on mount timing. */
   installGuards?: (router: Router, pinia: Pinia) => void;
@@ -25,11 +32,13 @@ export interface WorkbenchWebOptions {
 }
 
 /**
- * The single web startup order: install the host, punctuation, workbench content and language first
+ * The single web startup order: install the brand colours, the host, punctuation, workbench content and language first
  * (module-level code reads them at call time), then create Pinia and the router and install app guards, and finally
  * install everything into the app and mount; the router's first navigation happens after Pinia is installed.
  */
 export function startWorkbenchWeb(options: WorkbenchWebOptions): void {
+  installBrandTheme(options.brand);
+  installWorkbenchBrand(options.brand);
   installAuthHost(options.auth);
   installErrorPunctuation(options.errorPunctuation);
   installWorkbenchContent(options.content);
@@ -40,6 +49,7 @@ export function startWorkbenchWeb(options: WorkbenchWebOptions): void {
 
   const app = createApp(App);
   app.provide(turnDiagnosisAccessKey, options.turnDiagnosis);
+  app.provide(ontologyServiceAccessKey, options.ontologyService);
   app.use(i18n);
   app.use(ElementPlus);
   app.use(pinia);

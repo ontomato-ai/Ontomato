@@ -31,6 +31,7 @@ import {
 import { useManagerFeedback } from "../feedback";
 import type { OntologyObject, OntologyRelation } from "../api";
 import { useManagerClient, useManagerContext, useOntologyText, useSharedText } from "../context";
+import { readGraphColors } from "../graph-colors";
 import { graphLayout, initialNodePosition } from "../ontology-graph-layout";
 
 const emit = defineEmits<{ "open-modeling": [focus: "object" | "relation", id: string] }>();
@@ -108,30 +109,19 @@ const attributeCount = computed(() =>
 );
 
 function graphColors() {
-  const styles = getComputedStyle(graphRef.value!);
-  const dark = context.theme === "dark";
-  return {
-    text: dark ? "#f4f6ff" : styles.getPropertyValue("--el-text-color-primary").trim() || "#1b2559",
-    muted: dark
-      ? "#c4cce8"
-      : styles.getPropertyValue("--el-text-color-secondary").trim() || "#6b7a99",
-    surface: dark ? "#181a2e" : styles.getPropertyValue("--el-bg-color").trim() || "#fff",
-    edge: dark ? "#7180a8" : styles.getPropertyValue("--el-border-color-dark").trim() || "#dce3f4",
-    nodeStroke: dark ? "#303858" : styles.getPropertyValue("--el-bg-color").trim() || "#fff",
-    shadow: dark ? "rgba(0, 0, 0, 0.48)" : "rgba(30, 42, 90, 0.16)",
-    primary: styles.getPropertyValue("--el-color-primary").trim() || "#5b3fff",
-  };
+  return readGraphColors(graphRef.value!);
+}
+
+function colorForClass(className: string) {
+  const palette = context.presentation.nodePalette[context.theme];
+  let hash = 5381;
+  for (const character of className) {
+    hash = (hash * 33) ^ character.charCodeAt(0);
+  }
+  return palette[(hash >>> 0) % palette.length];
 }
 
 function graphData() {
-  const palette = context.presentation.nodePalette;
-  const colorForClass = (className: string) => {
-    let hash = 5381;
-    for (const character of className) {
-      hash = (hash * 33) ^ character.charCodeAt(0);
-    }
-    return palette[(hash >>> 0) % palette.length];
-  };
   const savedPositions = loadLayout();
   return {
     nodes: objects.value.map((object, index) => ({
@@ -196,7 +186,7 @@ function nodeOptions(colors: ReturnType<typeof graphColors>) {
     },
     state: {
       selected: { stroke: colors.primary, lineWidth: 6 },
-      highlighted: { stroke: "#ffb547", lineWidth: 7 },
+      highlighted: { stroke: colors.highlight, lineWidth: 7 },
     },
   };
 }
@@ -219,7 +209,7 @@ function edgeOptions(colors: ReturnType<typeof graphColors>) {
     },
     state: {
       selected: { stroke: colors.primary, lineWidth: 4 },
-      highlighted: { stroke: "#ffb547", lineWidth: 4 },
+      highlighted: { stroke: colors.highlight, lineWidth: 4 },
     },
   };
 }
@@ -479,6 +469,8 @@ async function updateGraphTheme() {
   graph.updateNodeData(
     objects.value.map((object) => ({
       id: object.className,
+      // The palette is per theme; a class keeps its slot.
+      data: { object, color: colorForClass(object.className) },
       style: {
         stroke: colors.nodeStroke,
         shadowColor: colors.shadow,
@@ -531,7 +523,7 @@ onBeforeUnmount(() => {
 <template>
   <section v-loading="loading" class="playground">
     <header class="playground-header">
-      <div>
+      <div class="playground-heading">
         <h1>{{ t("nav.ontologyGraph") }}</h1>
         <p>{{ ot("ontologyGraphDesc") }}</p>
       </div>
@@ -785,35 +777,48 @@ onBeforeUnmount(() => {
   min-width: 0;
   flex-direction: column;
   overflow: hidden;
-  background: var(--el-bg-color-page);
+  background: var(--el-bg-color);
 }
 .playground-header {
   display: flex;
-  min-height: 84px;
+  height: var(--page-header-height);
+  flex: 0 0 var(--page-header-height);
   align-items: center;
   justify-content: space-between;
-  gap: var(--spacing-lg);
-  padding: var(--spacing-md) var(--spacing-xl);
+  gap: var(--spacing-md);
+  padding: 0 var(--spacing-lg);
   border-bottom: 1px solid var(--el-border-color);
   background: var(--el-bg-color);
+}
+.playground-heading {
+  display: flex;
+  min-width: 0;
+  align-items: baseline;
+  gap: var(--spacing-md);
 }
 .playground-header h1 {
   margin: 0;
   color: var(--el-text-color-primary);
-  font-size: var(--text-xl);
-  letter-spacing: 0;
+  font-size: var(--text-lg);
+  font-weight: var(--font-semibold);
+  line-height: var(--leading-lg);
+  white-space: nowrap;
 }
 .playground-header p {
-  margin: 2px 0 0;
+  margin: 0;
+  overflow: hidden;
   color: var(--el-text-color-secondary);
   font-size: var(--text-sm);
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .summary-strip {
   display: flex;
   align-items: center;
-  gap: var(--spacing-lg);
+  gap: var(--spacing-md);
   color: var(--el-text-color-secondary);
   font-size: var(--text-sm);
+  font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
 .summary-strip span {
@@ -823,13 +828,13 @@ onBeforeUnmount(() => {
 }
 .summary-strip strong {
   color: var(--el-text-color-primary);
-  font-size: var(--text-lg);
+  font-weight: var(--font-semibold);
 }
 .playground-grid {
   display: grid;
   min-height: 0;
   flex: 1;
-  grid-template-columns: 240px minmax(320px, 1fr) 320px;
+  grid-template-columns: var(--shell-list-panel) minmax(320px, 1fr) var(--shell-inspector);
   overflow: hidden;
 }
 .explorer-panel,
@@ -842,6 +847,7 @@ onBeforeUnmount(() => {
 }
 .explorer-panel {
   border-right: 1px solid var(--el-border-color);
+  background: var(--el-bg-color-page);
 }
 .inspector-panel {
   border-left: 1px solid var(--el-border-color);
@@ -849,13 +855,13 @@ onBeforeUnmount(() => {
 }
 .panel-heading {
   display: flex;
-  height: 54px;
-  min-height: 54px;
-  flex: 0 0 54px;
+  height: var(--panel-header-height);
+  min-height: var(--panel-header-height);
+  flex: 0 0 var(--panel-header-height);
   align-items: center;
   justify-content: space-between;
-  padding: var(--spacing-md);
-  border-bottom: 1px solid var(--el-border-color-light);
+  padding: 0 var(--spacing-md);
+  border-bottom: 1px solid var(--el-border-color);
   color: var(--el-text-color-secondary);
 }
 .panel-heading strong,
@@ -988,13 +994,9 @@ onBeforeUnmount(() => {
   min-width: 0;
   min-height: 0;
   overflow: hidden;
-  background-color: var(--el-bg-color-page);
-  background-image: radial-gradient(var(--el-border-color-dark) 1px, transparent 1px);
-  background-size: 18px 18px;
-}
-.ontology-manager.is-dark .graph-panel {
-  background-color: #0a0b16;
-  background-image: radial-gradient(#3a4265 1px, transparent 1px);
+  background-color: var(--el-bg-color);
+  background-image: radial-gradient(var(--el-border-color) 1px, transparent 1px);
+  background-size: 20px 20px;
 }
 .graph-canvas {
   position: absolute;
@@ -1257,8 +1259,14 @@ code {
     overflow: auto;
   }
   .playground-header {
+    height: auto;
+    flex-basis: auto;
     align-items: flex-start;
     flex-direction: column;
+    padding: var(--spacing-sm) var(--spacing-lg);
+  }
+  .playground-header p {
+    display: none;
   }
   .summary-strip {
     width: 100%;
@@ -1290,9 +1298,6 @@ code {
   }
 }
 @container ontology-manager (max-width: 560px) {
-  .playground-header {
-    padding: var(--spacing-md);
-  }
   .summary-strip {
     flex-wrap: wrap;
     gap: var(--spacing-sm);

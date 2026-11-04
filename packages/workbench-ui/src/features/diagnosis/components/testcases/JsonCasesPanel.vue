@@ -158,7 +158,7 @@ const { t } = useI18n();
   background: var(--observe-bg-card, var(--el-bg-color));
   border: 0.5px solid var(--observe-border, var(--el-border-color));
   border-radius: 8px;
-  box-shadow: 0 6px 18px rgb(15 23 42 / 8%);
+  box-shadow: var(--elevation-overlay);
   cursor: pointer;
   transition:
     color var(--transition-fast),
@@ -171,7 +171,7 @@ const { t } = useI18n();
 .json-expand-button:hover {
   color: var(--el-color-primary);
   border-color: var(--el-color-primary-light-5);
-  box-shadow: 0 8px 24px rgb(15 23 42 / 12%);
+  box-shadow: var(--elevation-overlay);
 }
 
 .json-expand-icon {

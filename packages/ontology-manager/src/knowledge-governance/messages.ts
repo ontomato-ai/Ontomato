@@ -120,20 +120,25 @@ export const englishGovernance: GovernanceMessages = {
     "elapsed": "{time} elapsed",
   }
 };
-export function shellLabels(messages: GovernanceMessages): ShellLabels {
-  const labels = messages.shell;
-  /** "one | many" choices, as the shell's own label files write plurals. */
-  const count = (text: string) => (n: number) => {
-    const choices = text.split(" | ");
-    return choices[Math.min(n === 1 ? 0 : 1, choices.length - 1)].replace(/\{(?:n|count)\}/g, String(n));
-  };
-  const { steps, rows, elapsed, ...rest } = labels;
+/** The page's vue-i18n translation: a named-parameter lookup and a plural lookup that sets `{n}` and `{count}`. */
+export interface GovernanceTranslate {
+  (key: string, params?: Record<string, string | number>): string;
+  (key: string, plural: number): string;
+}
+
+/** The agent shell's labels from the `governance.shell` messages of the page's vue-i18n tree. */
+export function shellLabels(t: GovernanceTranslate): ShellLabels {
+  const keys = Object.keys(englishGovernance.shell) as (keyof GovernanceMessages["shell"])[];
+  const labels = Object.fromEntries(keys.map((key) => [key, t(`governance.shell.${key}`)])) as Record<
+    keyof GovernanceMessages["shell"],
+    string
+  >;
   return {
-    ...rest,
-    placeholder: messages.text.placeholder,
-    greeting: messages.text.welcomeTitle,
-    steps: count(steps),
-    rows: count(rows),
-    elapsed: (time: string) => elapsed.replace("{time}", time),
+    ...labels,
+    placeholder: t("governance.text.placeholder"),
+    greeting: t("governance.text.welcomeTitle"),
+    steps: (n: number) => t("governance.shell.steps", n),
+    rows: (n: number) => t("governance.shell.rows", n),
+    elapsed: (time: string) => t("governance.shell.elapsed", { time }),
   };
 }

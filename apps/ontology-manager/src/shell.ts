@@ -1,28 +1,39 @@
-import { computed, createApp, h, ref, type Component, type ComputedRef } from "vue";
+import type { App } from "vue";
 import "element-plus/dist/index.css";
 import "element-plus/theme-chalk/dark/css-vars.css";
+// Design foundation shared with the workbench (type, spacing, shape, density, elevation, motion, component variables).
+import "@ontomato/design-tokens/foundation.css";
+import { Sparkles } from "lucide-vue-next";
 import {
-  OntologyManager,
+  createManager,
+  managerNavigation,
   type ManagerAuthFailureStatus,
   type ManagerCredential,
   type ManagerDataFallbacks,
   type ManagerKnowledgeTagValues,
   type ManagerPresentation,
 } from "@ontomato/ontology-manager";
-import { ontologyText, type ManagerMessages } from "@ontomato/ontology-manager/i18n";
+import { managerMessageTree, type ManagerMessages } from "@ontomato/ontology-manager/i18n";
+import {
+  createPlatformI18n,
+  mergeMessages,
+  type PlatformGroup,
+  type PlatformI18n,
+  type PlatformLink,
+  type PlatformLocale,
+  type PlatformNavigation,
+  type PlatformPage,
+} from "@ontomato/platform-admin";
 import { readRuntimeConfig } from "./config";
-import { ShellHeaderControls } from "./header-controls";
 import { syncLocale, syncTheme, type LocalePreference, type ThemePreference } from "./preferences";
-import { syncView } from "./view";
+import { serviceHome } from "./view";
 import "./style.css";
 
-export { ShellHeaderControls };
-
-/** Every static difference between the two products' standalone shells. */
+/** Every static difference between the two products' Manager pages. */
 export interface ManagerShellProfile {
   /** Default UI locale; with a single supported locale it is fixed and no language control is shown. */
   locale: string;
-  /** Messages per supported locale; its keys are the locales the shell accepts. */
+  /** Manager messages per supported locale; its keys are the locales the page accepts. */
   messages: Readonly<Record<string, ManagerMessages>>;
   /** Fixed data defaults, independent of the UI locale. */
   dataFallbacks: ManagerDataFallbacks;
@@ -32,28 +43,15 @@ export interface ManagerShellProfile {
   knowledgeTagValues: ManagerKnowledgeTagValues;
 }
 
-/**
- * What the page's host supplies for one page load. The credential is fixed for the page: a host whose credential can
- * change (another tab signs in or out) rebuilds the whole page, so no old data or request outlives its credential.
- */
-export interface ManagerShellHost {
-  credential: ManagerCredential;
-  /** 401/402 from a Manager request. Without it a 401 stops the component and reports the status. */
-  onAuthFailure?: (status: ManagerAuthFailureStatus) => void;
-  /** Host controls after the shell's theme and language controls (e.g. account and log out); receives `messages`. */
-  headerActions?: Component;
-}
-
-/** The page's theme and language, shared by the Manager view and any host page on the same document. */
+/** The page's theme and language, shared by the layout, the Manager pages and the platform pages. */
 export interface ManagerShellPreferences extends ThemePreference, LocalePreference {
   locales: readonly string[];
-  messages: ComputedRef<ManagerMessages>;
 }
 
 const LEGACY_SESSION_KEYS = ["ontology_manager_token", "ontology_manager_api_key"];
 
 /**
- * The Manager no longer takes credentials from its URL or keeps a tab session. Old launch links lose only their tk/apiKey
+ * The page no longer takes credentials from its URL or keeps a tab session. Old launch links lose only their tk/apiKey
  * (the rest of the query and the hash stay) and a credential left in this tab's session by the old launch is dropped,
  * never migrated.
  */
@@ -75,24 +73,17 @@ export function discardLegacyLaunchCredential() {
 /** Starts the page's theme and language once; call it before mounting anything that reads them. */
 export function startShellPreferences(profile: ManagerShellProfile): ManagerShellPreferences {
   const locales = Object.keys(profile.messages);
-  const theme = syncTheme();
-  const locale = syncLocale(profile.locale, locales);
-  return {
-    ...theme,
-    ...locale,
-    locales,
-    messages: computed(() => profile.messages[locale.locale.value]),
-  };
+  return { ...syncTheme(), ...syncLocale(profile.locale, locales), locales };
 }
 
 const STALE_BUILD_RELOAD_KEY = "ontology_manager_stale_build_reload";
 
 /*
  * Pages load as hashed chunks on first entry. After a redeployment an open tab still runs the old entry, whose chunks
- * no longer exist; reload once so the tab picks up the new build (the view is kept in the hash). The key records which
+ * no longer exist; reload once so the tab picks up the new build (the page is kept in the hash). The key records which
  * entry already reloaded, so a chunk that still fails after the reload surfaces its error instead of reloading in a loop.
  */
-function reloadOnStaleBuild() {
+export function reloadOnStaleBuild() {
   window.addEventListener("vite:preloadError", (event) => {
     const entry = import.meta.url;
     if (sessionStorage.getItem(STALE_BUILD_RELOAD_KEY) === entry) return;
@@ -102,57 +93,95 @@ function reloadOnStaleBuild() {
   });
 }
 
-export function startManagerShell(
+/**
+ * The page's locales: per supported locale, the platform pages' messages and Element Plus locale plus the Manager's
+ * messages, in one vue-i18n tree. Both sides must cover the same locales.
+ */
+export function serviceLocales(
   profile: ManagerShellProfile,
-  host: ManagerShellHost,
-  preferences: ManagerShellPreferences = startShellPreferences(profile)
+  platformLocales: Readonly<Record<string, PlatformLocale>>
+): Record<string, PlatformLocale> {
+  return Object.fromEntries(
+    Object.keys(profile.messages).map((locale) => {
+      const platform = platformLocales[locale];
+      if (!platform) throw new Error(`No platform messages for locale ${locale}`);
+      return [
+        locale,
+        { messages: mergeMessages(platform.messages, managerMessageTree(profile.messages[locale])), element: platform.element },
+      ];
+    })
+  );
+}
+
+/** The page's one vue-i18n instance over `serviceLocales`. */
+export function createServiceI18n(
+  profile: ManagerShellProfile,
+  platformLocales: Readonly<Record<string, PlatformLocale>>,
+  preferences: ManagerShellPreferences
 ) {
-  reloadOnStaleBuild();
-  discardLegacyLaunchCredential();
-  const authExpired = ref(false);
-  const { apiBase, initialRoute } = readRuntimeConfig();
-  const { view, replaceView } = syncView(initialRoute);
+  const locales = serviceLocales(profile, platformLocales);
+  return { locales, i18n: createPlatformI18n(locales, preferences.locale.value) };
+}
 
-  function onAuthFailure(status: ManagerAuthFailureStatus) {
-    if (host.onAuthFailure) {
-      host.onAuthFailure(status);
-      return;
-    }
-    // 402 (license failure) keeps the component; the component shows the error.
-    if (status === 401) authExpired.value = true;
-  }
+/** The Manager pages' state for this page load, following the page's preferences and text. */
+export function createServiceManager(options: {
+  profile: ManagerShellProfile;
+  preferences: ManagerShellPreferences;
+  i18n: PlatformI18n;
+  credential: ManagerCredential;
+  onAuthFailure: (status: ManagerAuthFailureStatus) => void;
+}) {
+  const { profile, preferences, i18n } = options;
+  return createManager({
+    apiBase: readRuntimeConfig().apiBase,
+    credential: options.credential,
+    theme: preferences.theme,
+    locale: preferences.locale,
+    translate: (key, params) => i18n.global.t(key, params ?? {}),
+    dataFallbacks: profile.dataFallbacks,
+    presentation: profile.presentation,
+    knowledgeTagValues: profile.knowledgeTagValues,
+    onAuthFailure: options.onAuthFailure,
+  });
+}
 
-  createApp({
-    render: () =>
-      authExpired.value
-        ? h(
-            "p",
-            { class: "manager-shell-status", role: "alert" },
-            ontologyText(preferences.messages.value, "requestFailedStatus", { status: 401 })
-          )
-        : h(
-            OntologyManager,
-            {
-              apiBase,
-              credential: host.credential,
-              locale: preferences.locale.value,
-              messages: preferences.messages.value,
-              theme: preferences.theme.value,
-              view: view.value,
-              dataFallbacks: profile.dataFallbacks,
-              presentation: profile.presentation,
-              knowledgeTagValues: profile.knowledgeTagValues,
-              "onUpdate:view": replaceView,
-              onAuthFailure,
-            },
-            {
-              "header-actions": () => [
-                h(ShellHeaderControls, { preferences }),
-                host.headerActions
-                  ? h(host.headerActions, { messages: preferences.messages.value })
-                  : null,
-              ],
-            }
-          ),
-  }).mount("#app");
+/**
+ * The Ontology Service navigation: the Manager's groups (ontology, assets, knowledge) followed by this edition's
+ * platform administration group, in display order.
+ */
+export function serviceNavigation(
+  manager: ReturnType<typeof createManager>,
+  platformGroup: PlatformGroup,
+  platformPages: readonly PlatformPage[]
+): PlatformNavigation {
+  const ontology = managerNavigation(manager.counts);
+  return { groups: [...ontology.groups, platformGroup], pages: [...ontology.pages, ...platformPages] };
+}
+
+/** The root address's landing page for this deployment (see `serviceHome`). */
+export function startPage() {
+  return serviceHome(readRuntimeConfig().initialRoute);
+}
+
+/** The Agent Platform (the workbench, at the deployment root next to `ontology-manager/`), opened in a new tab. */
+export function agentPlatformLink(href: string): PlatformLink {
+  return { key: "agent-platform", titleKey: "platform.agentPlatform", icon: Sparkles, href };
+}
+
+/** The deployment root derived from the API root (`P/api` → `P/`), where the workbench lives. */
+export function deploymentRoot(apiBase: string) {
+  const url = new URL(apiBase, window.location.href);
+  return `${url.pathname.replace(/\/+$/, "").replace(/\/api$/, "")}/`;
+}
+
+/** Unmounts the page and shows only this status line (open source: a 401 has no sign-in to go to). */
+export function stopPage(app: App, message: string) {
+  app.unmount();
+  const root = document.querySelector("#app");
+  if (!root) return;
+  const status = document.createElement("p");
+  status.className = "manager-shell-status";
+  status.setAttribute("role", "alert");
+  status.textContent = message;
+  root.append(status);
 }

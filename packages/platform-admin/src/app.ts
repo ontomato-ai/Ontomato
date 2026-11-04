@@ -3,26 +3,28 @@ import { RouterView, type NavigationGuard, type RouteRecordRaw, type Router } fr
 import ElementPlus, { ElConfigProvider } from "element-plus";
 import "element-plus/dist/index.css";
 import "element-plus/theme-chalk/dark/css-vars.css";
-import { createPlatformRouter, type PlatformPageComponents } from "./router";
-import PlatformLayout from "./layout/PlatformLayout.vue";
+import { createPlatformRouter } from "./router";
+import ServiceLayout from "./layout/ServiceLayout.vue";
 import { platformHostKey, type PlatformPageHost, type PlatformTheme } from "./context";
 import type { PlatformNavigation } from "./navigation";
 import type { PlatformI18n, PlatformLocale } from "./i18n";
 import "./styles/platform.css";
 import "./styles/admin-common.css";
 
-/** Assembly input of the platform area; the host supplies everything edition-specific. */
+/** Assembly input of the Ontology Service page; the host supplies everything edition-specific. */
 export interface PlatformAdminOptions {
-  /** Navigation pages (paths and permissions the router guards), in display order. */
+  /** Navigation groups and pages (paths and permissions the router guards), in display order. */
   navigation: PlatformNavigation;
-  /** Page components keyed by navigation path. */
-  components: PlatformPageComponents;
+  /** Routes inside the service layout: the Manager's and the platform pages' (`pageRoutes`). */
+  routes: readonly RouteRecordRaw[];
+  /** Where the root address lands (the deployment's start page). */
+  home: string;
   /** Pages rendered without the platform layout (sign-in, SSO callback, super admin console). */
   standalone?: readonly RouteRecordRaw[];
   /** Host guard run before the permission guard. */
   guard?: NavigationGuard;
   host: PlatformPageHost<any>;
-  /** vue-i18n instance built from this edition's platform locales by `createPlatformI18n`. */
+  /** The page's one vue-i18n instance, built from this edition's locales by `createPlatformI18n`. */
   i18n: PlatformI18n;
   /** The same locales, for the Element Plus widget locale. */
   locales: Readonly<Record<string, PlatformLocale>>;
@@ -33,26 +35,27 @@ export interface PlatformAdminOptions {
 }
 
 /**
- * Mounts the platform area into #app: one vue-router (hash mode) for the platform pages and one vue-i18n for their
- * text. The Ontology Manager workspace is the other area of the same page; the shell starts only one of them per page
- * load, so only one router owns the hash.
+ * Mounts the Ontology Service page into #app: one vue-router (hash mode) for every page — ontology, assets, knowledge
+ * and platform administration inside one layout, plus the standalone pages — and one vue-i18n for all their text.
  */
 export function startPlatformAdmin(options: PlatformAdminOptions) {
   const { host, i18n } = options;
   const router = createPlatformRouter({
     navigation: options.navigation,
+    routes: options.routes,
+    home: options.home,
     standalone: options.standalone ?? [],
     access: host.access,
-    components: options.components,
     guard: options.guard,
-    layout: PlatformLayout,
+    layout: ServiceLayout,
   });
 
-  // The page's language control drives the platform text; vue-i18n holds no language of its own.
+  // The page's language control drives the text and the tab title; vue-i18n holds no language of its own.
   watch(
     host.preferences.locale,
     (locale) => {
       if (locale in options.locales) i18n.global.locale.value = locale;
+      document.title = i18n.global.t("platform.serviceName");
     },
     { immediate: true }
   );

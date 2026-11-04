@@ -1,5 +1,5 @@
 import type { DataAdaptersData } from "@ontomato/contracts/data-adapters";
-import { ontologyText, type ManagerMessages } from "./i18n";
+import type { MessageKey, TextParams } from "./i18n";
 
 export type ManagerCredential =
   | { type: "token"; token: string }
@@ -24,8 +24,8 @@ export interface ManagerRequestContext {
   /** null means the host has cleared or not yet obtained a credential: no business request is sent and it is not treated as anonymous. */
   readonly credential: ManagerCredential | null;
   readonly locale: string;
-  /** Messages for the current locale, supplied by the host. */
-  readonly messages: ManagerMessages;
+  /** The request layer's own error texts in the current locale. */
+  readonly text: (key: MessageKey, params?: TextParams) => string;
   readonly dataFallbacks: ManagerDataFallbacks;
 }
 
@@ -219,12 +219,12 @@ export function createManagerClient(
 ) {
   let disposed = false;
   const stale = () =>
-    new DOMException(ontologyText(context.messages, "staleResponseDropped"), "AbortError");
+    new DOMException(context.text("staleResponseDropped"), "AbortError");
 
   async function request(path: string, init: RequestInit = {}) {
     if (disposed) throw stale();
     const credential = context.credential;
-    if (!credential) throw new Error(ontologyText(context.messages, "credentialMissing"));
+    if (!credential) throw new Error(context.text("credentialMissing"));
     const source = hostSource(context);
     const assertCurrent = () => {
       if (disposed || hostSource(context) !== source) throw stale();
@@ -246,7 +246,7 @@ export function createManagerClient(
       const body = await response.json().catch(() => null);
       assertCurrent();
       throw Object.assign(new Error(body?.error?.message || body?.message ||
-        ontologyText(context.messages, "requestFailedStatus", { status: response.status })),
+        context.text("requestFailedStatus", { status: response.status })),
         { code: body?.error?.code ?? body?.code });
     }
     return response;
@@ -257,7 +257,7 @@ export function createManagerClient(
     const json = await (await request(path, init)).json();
     if (disposed || hostSource(context) !== source) throw stale();
     if (json?.success === false) {
-      throw Object.assign(new Error(json.message || json.error || ontologyText(context.messages, "requestFailed")), { code: json.code });
+      throw Object.assign(new Error(json.message || json.error || context.text("requestFailed")), { code: json.code });
     }
     return json;
   }
@@ -493,13 +493,13 @@ export function createManagerClient(
 
   async function searchInstanceGraph(term: string, version: string, className?: string) {
     const response = await post("/data/instanceGraph/search", { term, version, class: className, limit: 50 });
-    if (response.status !== "READY") throw new Error(ontologyText(context.messages, "instanceGraphNotGenerated"));
+    if (response.status !== "READY") throw new Error(context.text("instanceGraphNotGenerated"));
     return response.data as { nodes: InstanceGraphNode[]; hasMore: boolean; version: string };
   }
 
   async function loadInstanceNeighborhood(id: string, version: string, offset = 0, filters?: { relationType?: string; neighborClass?: string; direction?: string }) {
     const response = await post("/data/instanceGraph/neighborhood", { id, version, offset, limit: 100, ...filters });
-    if (response.status !== "READY") throw new Error(ontologyText(context.messages, "instanceGraphNotGenerated"));
+    if (response.status !== "READY") throw new Error(context.text("instanceGraphNotGenerated"));
     return response.data as InstanceNeighborhood;
   }
 

@@ -2,7 +2,7 @@
 import { computed } from "vue";
 import { useI18n } from "vue-i18n";
 import type { ModelOptions } from "@ontomato/contracts/model-settings";
-import { modelLabel, modelSelectionView, selectedModelId } from "@ontomato/agent-shell-ui/model-selection";
+import { modelLabel, modelSelectionView, selectedModelId } from "@ontomato/contracts/model-selection";
 
 /** Element Plus rendering of the shared model selection rule for an agent: null follows the domain default. */
 const props = defineProps<{

@@ -1,4 +1,5 @@
-// Platform area messages (English); the enterprise edition adds its translations and its own pages' messages.
+// Ontology Service shell and platform administration messages (English); the enterprise edition adds its translations
+// and its own pages' messages.
 export default {
   "admin": {
     "noAvailableMenuPermission": "No available menu permissions",
@@ -140,7 +141,7 @@ export default {
     "modelUnavailable": "{id} (unavailable)",
     "modelSelectionMissing": "Model \"{id}\" is no longer configured. Choose another model; until then this agent cannot run.",
     "ontologyAgentModels": "Ontology Agent Models",
-    "ontologyAgentModelsHint": "Models used by the ontology service's agents. Each change is saved at once; workbench agents choose their models in the workbench.",
+    "ontologyAgentModelsHint": "Models used by the ontology service's agents. Each change is saved at once; Agent Platform agents choose their models in the Agent Platform.",
     "ontologyAgentModelsLoadFailed": "Failed to load the ontology agents",
     "agentModelSaved": "Agent model saved",
     "ontologyAgentKinds": {
@@ -234,6 +235,15 @@ export default {
   },
   "platform": {
     "title": "Platform Management",
-    "backToWorkspace": "Back to Ontology Manager"
+    "serviceName": "Ontology Service",
+    "navigation": "Ontology Service navigation",
+    "agentPlatform": "Agent Platform",
+    "openInNewTab": "Opens in a new tab",
+    "descriptions": {
+      "auditLog": "Sign-ins and changes recorded across the platform",
+      "systemMonitor": "Service status and resource usage of the data engine",
+      "modelConfig": "Models used by the agents, the ontology and knowledge search",
+      "systemConfig": "Data adapters, languages and general parameters"
+    }
   }
 };

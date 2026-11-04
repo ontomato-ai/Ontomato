@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed } from "vue";
 import { useI18n } from "vue-i18n";
-import { modelSelectionView, selectedModelId, type ModelChoice } from "@ontomato/agent-shell-ui/model-selection";
+import { modelSelectionView, selectedModelId, type ModelChoice } from "@ontomato/contracts/model-selection";
 
 /** Element Plus rendering of the shared model selection rule, in the platform language. */
 const props = defineProps<{

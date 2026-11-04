@@ -1,11 +1,11 @@
 import { inject, type ComputedRef, type InjectionKey, type Ref } from "vue";
-import type { PlatformAccess, PlatformNavigation } from "./navigation";
+import type { PlatformAccess, PlatformLink, PlatformNavigation } from "./navigation";
 import type { PlatformApi } from "./api";
 import type { BusinessConfigProps } from "./config/business-config";
 
 export type PlatformTheme = "light" | "dark";
 
-/** The page's theme and language; the Ontology Manager page owns them and shares them with the platform area. */
+/** The page's theme and language, owned by the Ontology Service page; the layout's controls change them. */
 export interface PlatformPreferences {
   /** Supported locales; a single entry means no language control. */
   readonly locales: readonly string[];
@@ -15,14 +15,7 @@ export interface PlatformPreferences {
   setTheme(theme: PlatformTheme): void;
 }
 
-/** A header tab that only runs an action (e.g. the signed jump to data governance). */
-export interface PlatformAction {
-  key: string;
-  titleKey: string;
-  select(): void;
-}
-
-/** What the platform layout and pages read from the host for one page load. */
+/** What the service layout and the platform pages read from the host for one page load. */
 export interface PlatformPageHost<Api extends PlatformApi = PlatformApi> {
   access: PlatformAccess;
   api: Api;
@@ -34,12 +27,10 @@ export interface PlatformPageHost<Api extends PlatformApi = PlatformApi> {
   navigation: ComputedRef<PlatformNavigation>;
   /** Signed-in account display name and sign-out; null in editions without sign-in. */
   account: { readonly userName: string; signOut(): void } | null;
-  /** Header action tabs, after the title. */
-  actions: readonly PlatformAction[];
-  /** Reduced layout (header only), e.g. on the license page while the license is invalid. */
+  /** Links to the other applications at the top of the sidebar, in display order. */
+  links: readonly PlatformLink[];
+  /** Reduced layout (no navigation), e.g. on the license page while the license is invalid. */
   navigationHidden: ComputedRef<boolean>;
-  /** Leave the platform area for the Ontology Manager workspace. */
-  openWorkspace(): void;
   /** This edition's values for the system configuration page (backend languages, data adapter card layout). */
   systemConfig: BusinessConfigProps;
   /** Punctuation between a message and its detail (`：` for Chinese-style text, `:` otherwise). */

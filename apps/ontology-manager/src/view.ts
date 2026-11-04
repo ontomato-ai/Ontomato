@@ -1,11 +1,9 @@
-import { ref } from "vue";
-
 function normalizeInitialRoute(value: string) {
   const trimmed = value.trim().replace(/^#/, "");
   return trimmed.startsWith("/") ? trimmed : `/${trimmed}`;
 }
 
-// Location parameters from the main system's old visual modeling entry form the Manager view query as-is.
+// Location parameters from the main system's old visual modeling entry form the modeling address query as-is.
 function visualModelingQuery(params: URLSearchParams) {
   const query = new URLSearchParams();
   for (const key of ["focus", "id", "back"]) {
@@ -16,10 +14,11 @@ function visualModelingQuery(params: URLSearchParams) {
   return text ? `?${text}` : "";
 }
 
-// A non-root hash wins (reloads and deep links), then the view passed by the main system, then the deployment's initial route.
-function initialView(initialRoute: string) {
-  const hashPath = window.location.hash.slice(1);
-  if (hashPath && hashPath !== "/") return hashPath;
+/**
+ * Where the root address (`#/` or no hash) lands: the view passed by the main system's old launch links
+ * (`?view=...`), then the deployment's initial route, then the ontology graph. Any other hash is a route of its own.
+ */
+export function serviceHome(initialRoute: string) {
   const params = new URLSearchParams(window.location.search);
   const view = params.get("view");
   if (view === "data-browser") return "/data";
@@ -27,16 +26,4 @@ function initialView(initialRoute: string) {
   if (view === "knowledge") return "/knowledge";
   if (view === "visual-modeling") return `/visual-modeling${visualModelingQuery(params)}`;
   return initialRoute ? normalizeInitialRoute(initialRoute) : "/playground";
-}
-
-/** Keeps the component view and the address bar hash in sync: component navigation replaces the hash (no history entry) and manual hash changes are followed. */
-export function syncView(initialRoute: string) {
-  const view = ref("");
-  const replaceView = (value: string) => {
-    view.value = value;
-    window.history.replaceState(window.history.state, "", `#${value}`);
-  };
-  replaceView(initialView(initialRoute));
-  window.addEventListener("hashchange", () => (view.value = window.location.hash.slice(1)));
-  return { view, replaceView };
 }

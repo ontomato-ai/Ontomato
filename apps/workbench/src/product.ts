@@ -7,8 +7,6 @@ export const ossProduct: WorkbenchProduct = {
   analysisMcpServerName: "ontomato-analysis-agents",
   opsMcpServerName: "ontomato-ops-agent",
   systemMcpCatalogName: "ontomato-mcp",
-  serviceDisplayName: "Ontomato",
-  emailFooter: "This email was sent automatically by Ontomato",
   logDirEnvName: "ONTOMATO_LOG_DIR",
   logSource: "ontomato",
   appLogSourceType: "ontomato-app",

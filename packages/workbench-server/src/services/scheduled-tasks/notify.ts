@@ -3,7 +3,6 @@ import { createTransport } from "nodemailer";
 import { environment } from "../../config/environment";
 import { tForLocale } from "../../i18n";
 import { createLogger } from "../../logging/logger";
-import { workbenchProduct } from "../../product/installed";
 import { productMarkdownOptions } from "../analysis-agent/delivery/marked";
 import type { RunFailure } from "./store";
 
@@ -63,7 +62,7 @@ ${mail.failure ? row(t("error"), [tForLocale(mail.locale, `scheduledTasks.error.
 ${answer ? `<div style="border:1px solid #e5e7eb;border-radius:8px;padding:16px 20px;margin-bottom:16px">${answer}</div>` : mail.failure ? "" : `<p>${escapeHtml(t("noAnswer"))}</p>`}
 <p style="color:#6b7280">${escapeHtml(t("openHint"))}</p>
 <hr style="border:none;border-top:1px solid #e5e7eb;margin:24px 0 12px">
-<div style="font-size:12px;color:#9ca3af">${escapeHtml(workbenchProduct().emailFooter)}</div>
+<div style="font-size:12px;color:#9ca3af">${escapeHtml(t("footer"))}</div>
 </div></body></html>`;
   try {
     await createTransport({
