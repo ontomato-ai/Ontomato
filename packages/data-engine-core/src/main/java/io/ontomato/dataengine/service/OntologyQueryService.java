@@ -212,10 +212,16 @@ public class OntologyQueryService {
     return result;
   }
 
+  /** Request bodies are bound by Spring MVC, which leaves nested objects as plain maps. */
+  static JSONObject normalized(JSONObject query) {
+    return query == null ? null
+        : JSON.parseObject(JSON.toJSONString(query, com.alibaba.fastjson2.JSONWriter.Feature.WriteMapNullValue));
+  }
+
   private Map<String, Object> executeAuthorized(JSONObject query, QueryAccessService.Access access) {
     Map<String, Object> result;
     try {
-      result = executeQuery(query, access);
+      result = executeQuery(normalized(query), access);
     } catch (ResponseStatusException error) {
       if (error.getStatusCode().value() != HttpStatus.FORBIDDEN.value()
           && error.getStatusCode().value() != HttpStatus.NOT_FOUND.value())
