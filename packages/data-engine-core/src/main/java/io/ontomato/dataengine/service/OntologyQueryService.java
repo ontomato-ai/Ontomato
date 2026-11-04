@@ -223,6 +223,8 @@ public class OntologyQueryService {
       if (access.grant() != null) grants.recordQueryError(access.grant(), error.getReason());
       throw error;
     } catch (Exception error) {
+      // The caller only sees a sanitized message; keep the real cause in the service log.
+      log.warn("DSL execution failed before returning a result", error);
       throw queryFailure(io.ontomato.dataengine.util.ErrorText.queryError(error), access);
     }
     if (result.get("error") != null) throw queryFailure(result.get("error").toString(), access);
