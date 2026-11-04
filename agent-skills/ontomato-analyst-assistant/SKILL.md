@@ -48,8 +48,9 @@ They do not share execution results. Only a successfully executed binding can
 return early; no match or a binding failure keeps ask waiting for the retriever.
 A successful result with zero rows is still a result, with its completeness flags.
 The response includes pending branch status, a result cursor and downloaded files.
-If a binding answers the question, explicitly cancel the retriever. Otherwise
-wait with the returned cursor for later results. Keep the new cursor after every
+A binding is found by similarity and may answer a different question. Cancel the
+retriever only after `files[].binding` (name and parameter values) matches this
+question; otherwise ignore it and wait with the returned cursor for later results. Keep the new cursor after every
 wait. Do not restart ask for this question or treat lookup failure as empty data.
 Binding files are formal host results with null selfCheck, not agent self-checks.
 The retriever retains its existing metric-use and comparison requirements.
