@@ -3,10 +3,10 @@ import type { RouteRecordRaw } from "vue-router";
 const placeholder = () => import("../views/observe/ObservePlaceholder.vue");
 
 /*
- * The /observe root and its 11 child routes (1 redirect, 10 leaves). Each app assembles its own root: an app may add
- * auth/permission meta and its own shell; the open-source root has no meta. meta keeps only group, which has consumers
- * (ObserveLayout and session-context); the original title had no reader. The observability, auto-test and DSL groups are
- * rendered inline by ObserveLayout; routes only carry group identification and direct URLs (neutral placeholder components).
+ * The /observe root and its child addresses. Each app assembles its own root: an app may add auth/permission meta and
+ * its own shell; the open-source root has no meta. ObserveLayout renders the page an address names (turn evidence,
+ * automatic tests, live logs, DSL, knowledge) inside the agent shell, so every child is a neutral placeholder; the
+ * addresses exist for deep links and for the shell's browser history.
  */
 export const observeRoutes = {
   root: {
@@ -15,30 +15,15 @@ export const observeRoutes = {
   },
   children: [
     { path: "", redirect: "/observe/diagnosis" },
-    {
-      path: "diagnosis",
-      name: "ObserveDiagnosis",
-      component: placeholder,
-      meta: { group: "diagnosis" },
-    },
-    {
-      path: "knowledge",
-      name: "ObserveKnowledge",
-      component: () => import("../features/diagnosis/components/knowledge/KnowledgePage.vue"),
-      meta: { group: "diagnosis" },
-    },
-    { path: "turn", name: "ObserveTurn", component: placeholder, meta: { group: "observe" } },
-    { path: "turn/:turnKey", name: "ObserveTurnDetail", component: placeholder, meta: { group: "observe" } },
-    { path: "live-logs", name: "ObserveLiveLogs", component: placeholder, meta: { group: "observe" } },
-    { path: "test", name: "ObserveTest", component: placeholder, meta: { group: "autotest" } },
-    { path: "results", name: "ObserveResults", component: placeholder, meta: { group: "autotest" } },
-    { path: "cases", name: "ObserveCases", component: placeholder, meta: { group: "autotest" } },
-    {
-      path: "autotest/runs/:runId/cases/:caseId",
-      name: "ObserveAutoTestCaseDetail",
-      component: () => import("../features/diagnosis/components/results/CaseArtifactPage.vue"),
-      meta: { group: "autotest" },
-    },
-    { path: "dsl", name: "ObserveDsl", component: placeholder, meta: { group: "dsl" } },
+    { path: "diagnosis", name: "ObserveDiagnosis", component: placeholder },
+    { path: "knowledge", name: "ObserveKnowledge", component: placeholder },
+    { path: "turn", name: "ObserveTurn", component: placeholder },
+    { path: "turn/:turnKey", name: "ObserveTurnDetail", component: placeholder },
+    { path: "live-logs", name: "ObserveLiveLogs", component: placeholder },
+    { path: "test", name: "ObserveTest", component: placeholder },
+    { path: "results", name: "ObserveResults", component: placeholder },
+    { path: "cases", name: "ObserveCases", component: placeholder },
+    { path: "autotest/runs/:runId/cases/:caseId", name: "ObserveAutoTestCaseDetail", component: placeholder },
+    { path: "dsl", name: "ObserveDsl", component: placeholder },
   ] satisfies RouteRecordRaw[],
 };

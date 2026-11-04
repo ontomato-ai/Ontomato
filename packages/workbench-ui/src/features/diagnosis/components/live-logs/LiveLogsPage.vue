@@ -538,4 +538,10 @@ onBeforeUnmount(() => {
 .log-debug {
   color: var(--el-text-color-placeholder);
 }
+/* In the narrow side panel (DESIGN "Agent apps") the split panes stack. */
+@container page (max-width: 720px) {
+  .live-logs-page { flex-direction: column; gap: 8px; overflow: auto; }
+  .log-panel { width: 100% !important; flex: 1 0 320px; }
+  .drag-handle { display: none; }
+}
 </style>

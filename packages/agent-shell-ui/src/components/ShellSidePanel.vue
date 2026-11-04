@@ -1,10 +1,11 @@
 <script setup lang="ts">
-import { computed, inject, onBeforeUnmount, ref } from "vue";
+import { computed, inject } from "vue";
 import { Download, X } from "lucide-vue-next";
 import { fileKind, fileName, formatSize, saveBlob } from "../artifacts";
 import { shellContextKey } from "../context";
 import { artifactIcon } from "../icons";
 import type { OpenArtifact } from "../types";
+import { usePanelWidth } from "../usePanelWidth";
 import ArtifactView from "./ArtifactView.vue";
 import SlotOutlet from "./SlotOutlet.vue";
 
@@ -12,25 +13,8 @@ import SlotOutlet from "./SlotOutlet.vue";
 const props = defineProps<{ open: OpenArtifact }>();
 const emit = defineEmits<{ close: [] }>();
 const shell = inject(shellContextKey)!;
-const width = ref(Math.round(Math.min(Math.max(window.innerWidth * 0.42, 420), 760)));
+const { width, startResize } = usePanelWidth();
 const icon = computed(() => artifactIcon(props.open.artifact.path));
-let dragStart: { x: number; width: number } | null = null;
-
-function startResize(event: PointerEvent) {
-  dragStart = { x: event.clientX, width: width.value };
-  window.addEventListener("pointermove", resize);
-  window.addEventListener("pointerup", stopResize, { once: true });
-}
-function resize(event: PointerEvent) {
-  if (!dragStart) return;
-  const next = dragStart.width + (dragStart.x - event.clientX);
-  width.value = Math.min(Math.max(next, 360), Math.round(window.innerWidth * 0.7));
-}
-function stopResize() {
-  dragStart = null;
-  window.removeEventListener("pointermove", resize);
-}
-onBeforeUnmount(stopResize);
 
 async function download() {
   saveBlob(await shell.readArtifact(props.open.artifact), fileName(props.open.artifact.path));

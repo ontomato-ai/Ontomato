@@ -152,6 +152,19 @@ administration (permission centre, models, system configuration, licence, audit 
 monitor), each entry shown by permission. There is no separate "platform area" with its
 own header and back button.
 
+**Agent apps.** An agent app is one agent plus a few pages, one page per piece of business,
+each able to finish that business without the agent. It has three states: the conversation
+alone; the conversation with one page beside it (a raised side panel of the artifact
+panel's geometry, draggable width); and the page full, with the composer below it. The
+left function area opens a page full; collapsing it, sending from it, or opening an in-app
+link from an answer puts it beside the conversation; closing it returns to the
+conversation. The same page component serves both widths, so pages stay usable at the side
+panel's width (360px and up), stacking split panes below a 720px container. Messages sent
+while a page is open carry one line naming the page and its selection. The side panel is a
+container, not something authored: it shows a page (written in code) or an expanded card
+(an artifact the agent produced, which cannot write data). Results people need later live
+on the page, not only in the conversation.
+
 **Light and dark.** Each mode is uniform: in light mode the sidebar, list panel and workspace
 are all light; in dark mode all dark. No dark sidebar beside a light workspace.
 

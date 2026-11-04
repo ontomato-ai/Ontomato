@@ -771,4 +771,11 @@ onUnmounted(() => {
   display: flex;
   gap: 8px;
 }
+/* In the narrow side panel (DESIGN "Agent apps") the split panes stack. */
+@container page (max-width: 720px) {
+  .three-panel { flex-direction: column; overflow: auto; }
+  .three-panel > * { width: 100% !important; flex: none !important; }
+  .panel-resizer { display: none; }
+  .panel-center { min-width: 0; padding: 16px; }
+}
 </style>

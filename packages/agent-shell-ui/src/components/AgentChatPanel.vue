@@ -107,6 +107,7 @@ provide(shellContextKey, {
       .catch((error) => emit("error", error instanceof Error ? error.message : String(error)));
   },
   openArtifactKey: noOpenArtifact,
+  pageLink: () => null,
 });
 
 watch(

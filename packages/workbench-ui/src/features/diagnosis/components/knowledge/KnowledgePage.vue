@@ -410,4 +410,10 @@ onMounted(loadTree);
     padding: 16px;
   }
 }
+/* In the narrow side panel (DESIGN "Agent apps") the split panes stack. */
+@container page (max-width: 720px) {
+  .knowledge-page { flex-direction: column; overflow: auto; }
+  .tree-panel { width: 100%; height: 40%; min-height: 200px; }
+  .content-panel { flex: 1 0 320px; }
+}
 </style>

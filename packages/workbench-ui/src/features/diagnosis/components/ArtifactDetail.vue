@@ -77,4 +77,8 @@ table { width: 100%; border-collapse: collapse; } th, td { text-align: left; pad
 code, pre { overflow-wrap: anywhere; white-space: pre-wrap; }
 .files { display: grid; grid-template-columns: minmax(150px, 1fr) minmax(0, 4fr); min-height: 250px; gap: 12px; }
 @media(max-width: 700px) { .files { display: block; } }
+/* In the narrow side panel (DESIGN "Agent apps") the split panes stack. */
+@container page (max-width: 720px) {
+  .files { display: block; }
+}
 </style>

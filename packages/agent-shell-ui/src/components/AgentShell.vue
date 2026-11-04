@@ -15,6 +15,7 @@ import type {
 } from "../types";
 import { useAgentConversation } from "../useAgentConversation";
 import ShellConversation from "./ShellConversation.vue";
+import ShellPagePane from "./ShellPagePane.vue";
 import ShellSidePanel from "./ShellSidePanel.vue";
 import ShellSidebar from "./ShellSidebar.vue";
 
@@ -22,6 +23,10 @@ import ShellSidebar from "./ShellSidebar.vue";
  * Two-column agent shell with a right outlet: navigation (features, agent, sessions) and the
  * conversation. Rendering defaults live here; hosts pass overrides and fill the slots:
  * `brand`, `footer`, `feature` (feature pages), `artifact-actions` and `message-actions`.
+ *
+ * A feature declared `withConversation` follows the agent-app states (DESIGN "Agent apps"): conversation only, the
+ * page beside the conversation, or the page full with a composer. Messages sent while such a page is open end with the
+ * host's `pageContext` line, so the agent knows what "this" refers to.
  */
 const props = withDefaults(
   defineProps<{
@@ -32,6 +37,10 @@ const props = withDefaults(
     artifactRenderers?: readonly ArtifactRendererOverride[];
     toolRenderers?: readonly ToolRendererOverride[];
     chartTheme?: ChartTheme;
+    /** One line naming the open page and its selection, appended to messages sent while a paired page is open. */
+    pageContext?: string | null;
+    /** Recognises an in-app address in an answer and returns how to open its page; null leaves it as text. */
+    pageLinks?: (href: string) => (() => void) | null;
   }>(),
   { artifactRenderers: () => [], toolRenderers: () => [], chartTheme: () => defaultChartTheme },
 );
@@ -45,6 +54,8 @@ const sessions = ref<AgentHostSession[]>([]);
 const sessionsState = ref<"loading" | "ready" | "error">("loading");
 const nextCursor = ref<string | null>(null);
 const sessionId = defineModel<string | null>("sessionId", { default: null });
+/** Where a paired page sits: filling the workspace, or beside the conversation. Hosts may set it. */
+const pageView = defineModel<"full" | "side">("pageView", { default: "full" });
 const openArtifact = ref<OpenArtifact | null>(null);
 const navOpen = ref(false);
 let sessionsLoad = 0;
@@ -58,6 +69,10 @@ const runStatus = (run: Pick<AgentHostRun, "id" | "status" | "stopReason">): Age
 });
 const currentAgent = computed(() => agents.value.find((agent) => agent.id === agentId.value) ?? null);
 const currentSession = computed(() => sessions.value.find((session) => session.id === sessionId.value));
+const currentFeature = computed(() => props.workbench.features.find((feature) => feature.id === featureId.value) ?? null);
+/** A page that sits in the agent-app states rather than replacing the conversation. */
+const pairedPage = computed(() => currentFeature.value?.withConversation === true);
+const pageFull = computed(() => pairedPage.value && pageView.value === "full");
 
 provide(shellContextKey, {
   labels: toRef(props, "labels"),
@@ -79,9 +94,20 @@ provide(shellContextKey, {
   readRetrievalRun: (...args) => props.client.readRetrievalRun(...args),
   subscribeRetrieval: (...args) => props.client.subscribeRetrieval(...args),
   openArtifact: (open) => {
+    // The side holds one thing at a time: an expanded card replaces a page beside the conversation.
+    if (pairedPage.value) featureId.value = null;
     openArtifact.value = open;
   },
   openArtifactKey: computed(() => openArtifact.value?.key ?? null),
+  pageLink: (href) => {
+    const open = props.pageLinks?.(href);
+    if (!open) return null;
+    return () => {
+      openArtifact.value = null;
+      pageView.value = "side";
+      open();
+    };
+  },
 });
 
 function report(error: unknown) {
@@ -141,8 +167,20 @@ watch(sessionId, (id) => {
 
 function selectFeature(id: string) {
   featureId.value = id;
+  pageView.value = "full";
   openArtifact.value = null;
   navOpen.value = false;
+}
+
+function closePage() {
+  featureId.value = null;
+  pageView.value = "full";
+}
+
+/** Sending from a full page brings the conversation back beside it, so the reply is visible. */
+function sendFromPage(text: string) {
+  pageView.value = "side";
+  void send(text);
 }
 
 async function removeSession(id: string) {
@@ -155,9 +193,11 @@ async function removeSession(id: string) {
   }
 }
 
-async function send(text: string) {
+async function send(input: string) {
   const agent = agentId.value;
   if (!agent) return;
+  const context = pairedPage.value ? props.pageContext?.trim() : "";
+  const text = context ? `${input}\n\n${context}` : input;
   const result = await conversation.send(agent, text);
   if (!result) return;
   const latestRun = runStatus(result.snapshot.run);
@@ -195,6 +235,8 @@ watch(agentId, (_, previous) => {
 defineExpose({ reloadAgents: loadAgents });
 
 onMounted(async () => {
+  // An address that names both a conversation and a paired page reopens them side by side.
+  if (sessionId.value && pairedPage.value) pageView.value = "side";
   const requested = agentId.value;
   await loadAgents();
   // When the host's agent was valid the watcher did not fire, so load its sessions here.
@@ -228,15 +270,15 @@ onMounted(async () => {
       <template #footer><slot name="footer" /></template>
     </ShellSidebar>
 
-    <main class="shell-main">
+    <main v-show="!pageFull" class="shell-main">
       <div class="mobile-bar">
         <button type="button" class="mobile-menu" :aria-label="labels.menu" @click="navOpen = true">
           <Menu :size="19" />
         </button>
         <span class="mobile-title">{{ currentSession?.title || currentAgent?.name }}</span>
       </div>
-      <div v-if="featureId" class="feature-page">
-        <slot name="feature" :feature-id="featureId" />
+      <div v-if="featureId && !pairedPage" class="feature-page">
+        <slot name="feature" :feature-id="featureId" view="full" />
       </div>
       <ShellConversation
         v-else
@@ -259,6 +301,22 @@ onMounted(async () => {
         @load-older="conversation.loadOlder"
       />
     </main>
+
+    <ShellPagePane
+      v-if="featureId && pairedPage"
+      :feature="currentFeature"
+      :view="pageView"
+      :busy="conversation.busy.value"
+      :disabled="!currentAgent?.enabled"
+      @send="sendFromPage"
+      @stop="conversation.cancel"
+      @expand="pageView = 'full'"
+      @collapse="pageView = 'side'"
+      @close="closePage"
+      @menu="navOpen = true"
+    >
+      <slot name="feature" :feature-id="featureId" :view="pageView" />
+    </ShellPagePane>
 
     <ShellSidePanel v-if="openArtifact && !featureId" :open="openArtifact" @close="openArtifact = null" />
   </div>

@@ -568,4 +568,11 @@ onBeforeUnmount(() => {
 .dragging .drag-handle {
   background: var(--el-color-primary-light-5);
 }
+/* In the narrow side panel (DESIGN "Agent apps") the split panes stack. */
+@container page (max-width: 720px) {
+  .test-page { flex-direction: column; overflow: auto; }
+  .test-page > * { width: 100% !important; flex: none; }
+  .test-page > :last-child { flex: 1 0 360px; }
+  .drag-handle { display: none; }
+}
 </style>

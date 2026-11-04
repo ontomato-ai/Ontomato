@@ -42,6 +42,8 @@ return computed<ShellLabels>(() => ({
   menu: t("assistant.menu"),
   opensInNewTab: t("assistant.opensInNewTab"),
   scrollToBottom: t("assistant.scrollToBottom"),
+  expand: t("assistant.expand"),
+  collapse: t("assistant.collapse"),
   loading: t("assistant.loading"),
   rows: (count) => t("assistant.rows", { n: count }, count),
   emptyFile: t("assistant.emptyFile"),

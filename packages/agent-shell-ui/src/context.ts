@@ -22,6 +22,8 @@ export interface ShellContext extends Pick<AgentHostClient, "readRetrieval" | "r
   readArtifact(artifact: RuntimeArtifact): Promise<Blob>;
   openArtifact(open: OpenArtifact): void;
   openArtifactKey: Ref<string | null>;
+  /** Opens an in-app page link beside the conversation, or null when the host does not recognise the address. */
+  pageLink(href: string): (() => void) | null;
 }
 
 /** The message whose Markdown is rendering; artifact references resolve within its run. */

@@ -129,7 +129,7 @@ onBeforeUnmount(() => {
       </template>
     </div>
 
-    <div ref="agentMenu" class="agent-picker">
+    <div v-if="agents.length > 1" ref="agentMenu" class="agent-picker">
       <button
         type="button"
         class="agent-trigger"

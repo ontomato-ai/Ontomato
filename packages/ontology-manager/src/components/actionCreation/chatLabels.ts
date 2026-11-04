@@ -40,6 +40,8 @@ export function actionChatLabels(overrides: Partial<ShellLabels> = {}): ShellLab
     artifactMissing: "File not available",
     menu: "Menu",
     scrollToBottom: "Scroll to latest",
+    expand: "Expand page",
+    collapse: "Show beside chat",
     loading: "Loading…",
     rows: (count) => `${count} row${count === 1 ? "" : "s"}`,
     emptyFile: "This file is empty.",

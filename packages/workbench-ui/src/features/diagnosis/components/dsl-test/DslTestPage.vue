@@ -335,4 +335,10 @@ async function executeDsl() {
 .result-tabs :deep(.codemirror-editor) {
   height: 100%;
 }
+/* In the narrow side panel (DESIGN "Agent apps") the split panes stack. */
+@container page (max-width: 720px) {
+  .dsl-test-page { flex-direction: column; gap: 8px; overflow: auto; }
+  .dsl-panel { width: 100% !important; flex: 1 0 300px; }
+  .drag-handle { display: none; }
+}
 </style>

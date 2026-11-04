@@ -60,6 +60,11 @@ export interface ShellFeatureDeclaration {
   availability: "page" | "action" | "link" | "unavailable";
   href?: string;
   hint?: string;
+  /**
+   * The page can sit beside the conversation (DESIGN "Agent apps"): opened full with a composer below it, it can be
+   * collapsed into the side panel and expanded again, and messages sent while it is open carry the host's page context.
+   */
+  withConversation?: boolean;
 }
 
 /** A workbench is a code declaration; its agents come from the host. */
@@ -138,6 +143,9 @@ export interface ShellLabels {
   /** Accessible name of the mark on links that open in a new tab; without it the mark is decorative. */
   opensInNewTab?: string;
   scrollToBottom: string;
+  /** Page controls: show the page full width, or beside the conversation. */
+  expand: string;
+  collapse: string;
   loading: string;
   rows: (count: number) => string;
   emptyFile: string;

@@ -57,6 +57,17 @@ it in the main area through the `feature` slot, keyed by feature ID), `action`
 (navigates away) or `unavailable` (visible placeholder). The business workbench's
 scheduled tasks are a `page`. Editions supply their own entries to the same workbench.
 
+A `page` declared `withConversation` follows the agent-app states (DESIGN.md
+"Agent apps"): picking it opens it full with a composer below; it can collapse
+beside the conversation and expand again (`pageView` model: `full` | `side`,
+which hosts may also set), and closing it returns to the conversation. The page
+renders once and keeps its state while it moves; the `feature` slot also gets
+`view`. While such a page is open, a sent message ends with the host's
+`pageContext` line (plain text, visible in the message), so the agent knows what
+"this" means. `pageLinks(href)` lets a host recognise its own addresses in
+answers; a recognised link opens its page beside the conversation. The agent
+selector shows only when there is more than one agent.
+
 ## Default rendering and overrides
 
 The shell renders everything by default; hosts override only where they mean to.

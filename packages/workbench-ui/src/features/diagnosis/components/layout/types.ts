@@ -3,12 +3,6 @@ import type {
   WorkspaceManifest as RemoteWorkspaceManifest,
   ArtifactRetention,
 } from "@ontomato/contracts/observe";
-export type ObserveNavGroupKey = "diagnosis" | "observe" | "autotest" | "dsl";
-
-export type ObserveActiveView = "turns" | "live-logs";
-
-export type AutotestActiveView = "run" | "test" | "cases";
-
 // Navigation placeholders have no retention result until their first server response.
 export type WorkspaceManifest = RemoteWorkspaceManifest & Partial<ArtifactRetention>;
 export type AutotestRunMeta = RunMeta & Partial<ArtifactRetention>;

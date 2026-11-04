@@ -1,5 +1,6 @@
 import type { Component } from "vue";
 import {
+  Activity,
   BookOpen,
   Bot,
   CalendarClock,
@@ -7,12 +8,16 @@ import {
   Circle,
   File,
   FileCode,
+  FileSearch,
   FileText,
+  FlaskConical,
+  ListChecks,
   Image,
   LayoutDashboard,
   Network,
   Puzzle,
   Settings2,
+  SquareTerminal,
   Table2,
   Waypoints,
 } from "lucide-vue-next";
@@ -28,6 +33,11 @@ const featureIcons: Record<string, Component> = {
   settings: Settings2,
   knowledge: BookOpen,
   ontology: Waypoints,
+  evidence: FileSearch,
+  logs: Activity,
+  test: FlaskConical,
+  query: SquareTerminal,
+  review: ListChecks,
 };
 
 export function featureIcon(name: string): Component {
