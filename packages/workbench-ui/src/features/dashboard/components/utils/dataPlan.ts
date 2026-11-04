@@ -5,7 +5,12 @@ import { t } from "../../../../i18n";
 
 type Row = Record<string, unknown>;
 
-type GroupState = { keyParts: unknown[]; count: number; sums: Record<string, number> };
+type GroupState = {
+  keyParts: unknown[];
+  count: number;
+  sums: Record<string, number>;
+  numeric: Record<string, boolean>;
+};
 
 function toNumber(v: unknown): number | null {
   if (v == null) return null;
@@ -24,14 +29,15 @@ function applyTransformSpec(rows: unknown, spec: TransformSpec): Row[] {
       const keyParts = (spec.groupBy || []).map((field) => row?.[field] ?? t("common.unknown"));
       const key = keyParts.join("||");
       if (!map.has(key)) {
-        map.set(key, { keyParts, count: 0, sums: {} });
+        map.set(key, { keyParts, count: 0, sums: {}, numeric: {} });
       }
       const state = map.get(key)!;
       state.count += 1;
       for (const metric of spec.metrics || []) {
         if (!metric?.field) continue;
-        state.sums[metric.field] =
-          (state.sums[metric.field] || 0) + (toNumber(row?.[metric.field]) || 0);
+        const value = toNumber(row?.[metric.field]);
+        state.sums[metric.field] = (state.sums[metric.field] || 0) + (value ?? 0);
+        if (value !== null) state.numeric[metric.field] = true;
       }
     }
 
@@ -81,7 +87,9 @@ function computeMetricValue(metric: MetricSpec, state: GroupState) {
   }
 
   if (op === "sum") {
-    if (sumValue === 0 && count > 0) {
+    // Only a field without any numeric value means the plan summed an
+    // identifier-like column; show the row count then. A real zero stays zero.
+    if ((!field || !state.numeric[field]) && count > 0) {
       return count;
     }
     return sumValue;
