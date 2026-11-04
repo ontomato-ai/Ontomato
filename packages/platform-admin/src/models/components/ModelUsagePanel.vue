@@ -4,7 +4,7 @@ import { useI18n } from "vue-i18n";
 import type { OntologyAgentModel } from "@ontomato/contracts/model-settings";
 import { modelLabel } from "@ontomato/contracts/model-selection";
 import { usePlatformHost } from "../../context";
-import { agentPurposes, agentPurpose, specifiedAgents, type AgentPurpose } from "../agents";
+import { agentPurpose, specifiedAgents, type AgentPurpose } from "../agents";
 import { draftChoices, findModel, useModelDraft } from "../draft";
 import type { VectorRebuildState, VectorRebuildStatus } from "../types";
 import ModelSelectionSelect from "./ModelSelectionSelect.vue";
@@ -77,10 +77,13 @@ const stateAlerts: Record<Exclude<VectorRebuildState, "READY" | "FAILED" | null>
   PAUSED: { type: "warning", key: "admin.vectorRebuildPaused" },
   INTERRUPTED: { type: "warning", key: "admin.vectorRebuildInterrupted" },
 };
+/**
+ * What the rebuild has to say: nothing until an embedding model is chosen (the select already says "not set"), and
+ * nothing while the vectors are simply ready except the line that offers a rebuild.
+ */
 const rebuildAlert = computed((): { type: AlertType; title: string } | null => {
   const status = props.rebuildStatus;
-  if (!status || status.state === "READY") return null;
-  if (!status.configured) return { type: "info", title: t("admin.noEmbeddingModel") };
+  if (!status || !status.configured || status.state === "READY") return null;
   const progress = { done: status.done, total: status.total };
   if (status.state === "FAILED") {
     const { phase, itemType, itemId, reason } = status.error;
@@ -91,7 +94,9 @@ const rebuildAlert = computed((): { type: AlertType; title: string } | null => {
   const alert = stateAlerts[status.state];
   return { type: alert.type, title: t(alert.key, progress) };
 });
-const rebuildLabel = computed(() => (rebuildState.value === null ? "" : t(`admin.vectorRebuildStates.${rebuildState.value}`)));
+const rebuildLabel = computed(() =>
+  !props.rebuildStatus?.configured || rebuildState.value === null ? "" : t(`admin.vectorRebuildStates.${rebuildState.value}`)
+);
 const embeddingDimensions = computed(() => {
   const model = findModel(draft, draft.embeddingModelId);
   return model?.type === "embedding" ? model.dimensions : null;
@@ -107,17 +112,13 @@ const specified = computed(() => specifiedAgents(props.agents ?? [], props.agent
 const followed = computed(() => (props.agents ?? []).filter((agent) => (props.agentSelections[agent.id] ?? null) === null));
 const showAll = ref(false);
 
-/** Agents that can still be given a model: the rest for the purpose of the new row. */
-const adding = ref<AgentPurpose | null>(null);
-const addingChoices = computed(() => (adding.value === null ? [] : followed.value.filter((a) => agentPurpose(a.kind) === adding.value)));
-
-function startAdding(purpose: AgentPurpose) {
-  adding.value = adding.value === purpose ? null : purpose;
-}
+/** Whether the list of agents still following the default is open, to give one of them a model. */
+const addVisible = ref(false);
 
 function addAgent(agent: OntologyAgentModel) {
-  emit("agentChange", agent.id, draft.defaultModelId ?? choices.value.find((c) => c.type === "chat")?.ref ?? null);
-  adding.value = null;
+  // The agent starts from the chat default; the row's select then points it elsewhere.
+  emit("agentChange", agent.id, draft.defaultModelId);
+  addVisible.value = false;
 }
 
 function purposeTitle(purpose: AgentPurpose) {
@@ -198,9 +199,14 @@ const timeoutSeconds = secondsField("timeoutMs");
       <section class="settings-section">
         <div class="section-bar">
           <h3 class="section-title">{{ t("admin.ontologyAgentModels") }}</h3>
-          <el-button v-if="followed.length > 0 || showAll" link size="small" @click="showAll = !showAll">
-            {{ showAll ? t("admin.hideAllAgents") : t("admin.showAllAgents") }}
-          </el-button>
+          <div class="section-actions">
+            <el-button v-if="props.agents && (followed.length > 0 || showAll)" link size="small" @click="showAll = !showAll">
+              {{ showAll ? t("admin.hideAllAgents") : t("admin.showAllAgents") }}
+            </el-button>
+            <el-button v-if="props.agents && !showAll" size="small" @click="addVisible = !addVisible">
+              {{ t("admin.specifyAgent") }}
+            </el-button>
+          </div>
         </div>
         <p class="section-hint">{{ t("admin.ontologyAgentModelsHint") }}</p>
         <el-skeleton v-if="props.agentsLoading && !props.agents" :rows="3" animated />
@@ -209,63 +215,55 @@ const timeoutSeconds = secondsField("timeoutMs");
           <el-button size="small" @click="emit('retryAgents')">{{ t("common.retry") }}</el-button>
         </div>
         <template v-else-if="props.agents">
-          <p v-if="specified.length === 0" class="empty-note">{{ t("admin.allAgentsFollowDefault") }}</p>
-          <div v-for="group in specified" :key="group.purpose" class="agent-group">
-            <p class="group-label">{{ purposeTitle(group.purpose) }}</p>
-            <div v-for="agent in group.agents" :key="agent.id" class="setting-row compact">
-              <span class="setting-label">{{ agentName(agent) }}</span>
-              <div class="setting-control agent-control">
+          <!-- The agents given a model of their own, one table row each: purpose, name, model, back to default. -->
+          <div v-if="specified.length > 0" class="agent-table">
+            <div v-for="group in specified" :key="group.purpose" class="agent-group">
+              <div v-for="agent in group.agents" :key="agent.id" class="agent-line">
+                <span class="agent-purpose">{{ purposeTitle(group.purpose) }}</span>
+                <span class="agent-name">{{ agentName(agent) }}</span>
                 <ModelSelectionSelect
+                  class="agent-model"
                   :model-value="props.agentSelections[agent.id] ?? null"
                   :models="choices"
                   :null-label="followDefaultLabel"
                   :aria-label="agentName(agent)"
                   @update:model-value="emit('agentChange', agent.id, $event)"
                 />
-                <el-button link size="small" @click="emit('agentChange', agent.id, null)">
+                <el-button class="agent-reset" link size="small" @click="emit('agentChange', agent.id, null)">
                   {{ t("admin.followDefaultAction") }}
                 </el-button>
               </div>
             </div>
           </div>
-          <div class="agent-add">
-            <el-dropdown v-if="!showAll" trigger="click" @command="startAdding">
-              <el-button size="small">{{ t("admin.specifyAgent") }}</el-button>
-              <template #dropdown>
-                <el-dropdown-menu>
-                  <el-dropdown-item
-                    v-for="purpose in agentPurposes"
-                    :key="purpose"
-                    :command="purpose"
-                    :disabled="followed.every((agent) => agentPurpose(agent.kind) !== purpose)"
-                  >
-                    {{ purposeTitle(purpose) }}
-                  </el-dropdown-item>
-                </el-dropdown-menu>
-              </template>
-            </el-dropdown>
-            <ul v-if="adding !== null && addingChoices.length > 0" class="agent-picker">
-              <li v-for="agent in addingChoices" :key="agent.id">
-                <button type="button" class="agent-pick" @click="addAgent(agent)">
-                  <span>{{ agentName(agent) }}</span>
-                  <span class="agent-pick-meta">{{ t("admin.followDefaultAction") }}</span>
-                </button>
-              </li>
-            </ul>
-          </div>
-          <div v-if="showAll" class="agent-group">
+          <p v-else class="empty-note">{{ t("admin.allAgentsFollowDefault") }}</p>
+
+          <!-- Adding one: an agent of a purpose that still follows the default. -->
+          <ul v-if="addVisible && !showAll && followed.length > 0" class="agent-picker">
+            <li v-for="agent in followed" :key="agent.id">
+              <button type="button" class="agent-pick" @click="addAgent(agent)">
+                <span class="agent-pick-name">{{ agentName(agent) }}</span>
+                <span class="agent-pick-meta">{{ purposeTitle(agentPurpose(agent.kind)) }}</span>
+              </button>
+            </li>
+          </ul>
+
+          <!-- Everything, for reference: the rows above stay the ones with a model of their own. -->
+          <div v-if="showAll" class="agent-table">
             <p class="group-label">{{ t("admin.allAgents") }}</p>
-            <div v-for="agent in props.agents" :key="agent.id" class="setting-row compact">
-              <span class="setting-label">{{ agentName(agent) }}</span>
-              <div class="setting-control agent-control">
-                <ModelSelectionSelect
-                  :model-value="props.agentSelections[agent.id] ?? null"
-                  :models="choices"
-                  :null-label="followDefaultLabel"
-                  :aria-label="agentName(agent)"
-                  @update:model-value="emit('agentChange', agent.id, $event)"
-                />
-              </div>
+            <div v-for="agent in props.agents" :key="agent.id" class="agent-line">
+              <span class="agent-purpose">{{ purposeTitle(agentPurpose(agent.kind)) }}</span>
+              <span class="agent-name">{{ agentName(agent) }}</span>
+              <ModelSelectionSelect
+                class="agent-model"
+                :model-value="props.agentSelections[agent.id] ?? null"
+                :models="choices"
+                :null-label="followDefaultLabel"
+                :aria-label="agentName(agent)"
+                @update:model-value="emit('agentChange', agent.id, $event)"
+              />
+              <el-button class="agent-reset" link size="small" @click="emit('agentChange', agent.id, null)">
+                {{ t("admin.followDefaultAction") }}
+              </el-button>
             </div>
           </div>
         </template>
