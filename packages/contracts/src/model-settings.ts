@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { runtimeHttpUrlSchema, runtimeJsonObjectSchema } from "./agent-runtime-values";
 
 export const SECRET_MASK_PREFIX = "******";
 export function isMaskedSecret(value: string | null | undefined): boolean {
@@ -7,103 +8,134 @@ export function isMaskedSecret(value: string | null | undefined): boolean {
 export function maskModelKey(value: string): string {
   return value ? SECRET_MASK_PREFIX + (value.length > 8 ? value.slice(-4) : "") : value;
 }
-const optional = <T extends z.ZodTypeAny>(schema: T) => schema.nullish().transform(value => value ?? undefined);
 
-/** One provider parameter definition for saved models and unsaved connection tests. */
-export const modelConfigurationSchema = z.object({
-  name: z.string(),
-  baseUrl: z.string().url().refine(value => /^https?:/.test(value), "HTTP(S) URL required"),
-  modelName: z.string().trim().min(1),
-  maxTokens: z.number().int().positive().nullish().transform(value => value ?? 50000),
-  contextWindow: z.number().int().positive().nullish().transform(value => value ?? 256000),
-  timeout: optional(z.string().refine(value => {
-    try { return parseIsoDurationSeconds(value) > 0; } catch { return false; }
-  }, "Positive ISO-8601 duration required")),
-  maxRetries: optional(z.number().int().nonnegative()),
-  temperature: optional(z.number()),
-  topP: optional(z.number()),
-  customRequestParameters: optional(z.record(z.unknown())),
-  customHeaders: optional(z.record(z.string())),
-  organizationId: optional(z.string()),
-  projectId: optional(z.string()),
-  stop: optional(z.array(z.string())),
-  maxCompletionTokens: optional(z.number().int().positive()),
-  presencePenalty: optional(z.number()),
-  frequencyPenalty: optional(z.number()),
-  logitBias: optional(z.record(z.number())),
-  responseFormat: optional(z.string()),
-  strictJsonSchema: optional(z.boolean()),
-  seed: optional(z.number().int()),
-  user: optional(z.string()),
-  parallelToolCalls: optional(z.boolean()),
-  store: optional(z.boolean()),
-  metadata: optional(z.record(z.string())),
-  serviceTier: optional(z.string()),
-  reasoningEffort: optional(z.string()),
-  logRequests: optional(z.boolean()),
-  logResponses: optional(z.boolean()),
-  supportedCapabilities: optional(z.array(z.string())),
-});
+export const modelProviderIdSchema = z.string().min(1).regex(/^[^/\s]+$/);
+export const modelIdSchema = z.string().trim().min(1);
+/** Split only at the first slash: provider model IDs may themselves contain slashes. */
+export const modelReferenceSchema = z.string().trim().refine(value => {
+  const slash = value.indexOf("/");
+  return slash > 0 && modelProviderIdSchema.safeParse(value.slice(0, slash)).success
+    && modelIdSchema.safeParse(value.slice(slash + 1)).success
+    && value.slice(slash + 1) === value.slice(slash + 1).trim();
+}, "Expected provider/model-id");
+export type ModelReference = z.output<typeof modelReferenceSchema>;
 
-export const modelEntrySchema = modelConfigurationSchema.extend({
-  displayName: z.string().nullish().transform(value => value ?? ""),
-  apiKeys: z.array(z.string()).default([]),
-}).transform(model => ({ ...model, displayName: model.displayName.trim() || model.name }));
-export type BackendModelConfig = z.output<typeof modelEntrySchema>;
+/** Chat APIs registered by the pinned pi-ai 1.4.0 dependency; discovery is a smaller subset. */
+export const modelApiSchema = z.enum([
+  "openai-completions", "openai-responses", "anthropic-messages", "google-generative-ai",
+  "mistral-conversations", "azure-openai-responses", "openai-codex-responses",
+  "bedrock-converse-stream", "google-vertex", "pi-messages",
+]);
+export type ModelApi = z.output<typeof modelApiSchema>;
+export const modelTypeSchema = z.enum(["chat", "embedding"]);
+
+const modelFields = {
+  id: modelIdSchema,
+  name: z.string().trim().min(1).optional(),
+  reasoning: z.boolean().optional(),
+  input: z.array(z.enum(["text", "image"])).nonempty().optional(),
+  contextWindow: z.number().int().positive().optional(),
+  maxTokens: z.number().int().positive().optional(),
+  samplingParams: runtimeJsonObjectSchema.optional(),
+};
+export const modelEntrySchema = z.discriminatedUnion("type", [
+  z.object({ ...modelFields, type: z.literal("chat") }).strict(),
+  z.object({ ...modelFields, type: z.literal("embedding"), dimensions: z.number().int().positive() }).strict(),
+]);
+export type ModelEntry = z.output<typeof modelEntrySchema>;
 export type ModelEntryInput = z.input<typeof modelEntrySchema>;
-/** Null means the current domain default; explicit missing IDs never fall back. */
-export const modelSelectionSchema = z.object({
-  modelId: z.string().trim().min(1).nullish().transform(value => value ?? null),
+
+/** Configuration values are literals, never pi environment interpolation or commands. */
+const literalValueSchema = z.string().refine(value =>
+  !/^[!$]/.test(value.trimStart()) && !/\$(?:\{|[A-Za-z_])/.test(value),
+"Environment interpolation and commands are not supported");
+export const modelApiKeyWriteSchema = literalValueSchema
+  .refine(value => value.trim().length > 0, "An API key is required")
+  .refine(value => !value.trimStart().startsWith("enc:v1:"), "Enter an API key, not ciphertext");
+const providerFields = {
+  name: z.string().trim().min(1).optional(),
+  baseUrl: runtimeHttpUrlSchema,
+  api: modelApiSchema,
+  headers: z.record(literalValueSchema).optional(),
+};
+/** Draft credentials can retain a saved key only under the same domain and provider ID. */
+export const modelProviderConnectionSchema = z.object({
+  ...providerFields, apiKey: modelApiKeyWriteSchema,
 }).strict();
-export type ModelSelection = z.output<typeof modelSelectionSchema>;
-export const modelOptionsSchema = z.object({
-  models: z.array(z.object({ name: z.string(), displayName: z.string() }).strict()),
-  defaultModelId: z.string().nullable(),
+const uniqueModels = (provider: { models: ModelEntry[] }, ctx: z.RefinementCtx) => {
+  const seen = new Set<string>();
+  provider.models.forEach((model, index) => {
+    if (seen.has(model.id)) ctx.addIssue({ code: z.ZodIssueCode.custom,
+      path: ["models", index, "id"], message: "Model IDs must be unique within a provider" });
+    seen.add(model.id);
+  });
+};
+export const modelProviderWriteSchema = modelProviderConnectionSchema.extend({
+  models: z.array(modelEntrySchema),
+}).superRefine(uniqueModels);
+export const modelProviderSchema = z.object({
+  ...providerFields,
+  apiKey: z.string().refine(isMaskedSecret, "Model reads must contain masked keys"),
+  models: z.array(modelEntrySchema),
+}).strict().superRefine(uniqueModels);
+export type ModelProviderWrite = z.input<typeof modelProviderWriteSchema>;
+export type ModelProvider = z.output<typeof modelProviderSchema>;
+
+/** Provider-level settings from pi settings.json, shared by all calls in one domain. */
+export const modelRetrySchema = z.object({
+  provider: z.object({
+    timeoutMs: z.number().int().positive(),
+    maxRetries: z.number().int().nonnegative(),
+    maxRetryDelayMs: z.number().int().nonnegative(),
+  }).strict(),
 }).strict();
-export type ModelOptions = z.output<typeof modelOptionsSchema>;
+export type ModelRetry = z.output<typeof modelRetrySchema>;
+const defaults = {
+  defaultModelId: modelReferenceSchema.nullable(),
+  embeddingModelId: modelReferenceSchema.nullable(),
+};
 export const modelSettingsWriteSchema = z.object({
-  models: z.array(modelEntrySchema), defaultModelId: z.string().trim().min(1).nullable(),
-}).strict().superRefine(({ models, defaultModelId }, ctx) => {
-  const ids = new Set<string>();
-  for (const model of models) {
-    if (!model.name.trim() || ids.has(model.name))
-      ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Model IDs must be nonempty and unique" });
-    ids.add(model.name);
-    if (!model.apiKeys.some(key => key.trim()))
-      ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Each model requires an API key" });
+  providers: z.record(modelProviderIdSchema, modelProviderWriteSchema),
+  ...defaults,
+  retry: modelRetrySchema,
+}).strict().superRefine((settings, ctx) => {
+  for (const [field, type] of [["defaultModelId", "chat"], ["embeddingModelId", "embedding"]] as const) {
+    const ref = settings[field];
+    if (ref === null) continue;
+    const slash = ref.indexOf("/");
+    const model = settings.providers[ref.slice(0, slash)]?.models.find(item => item.id === ref.slice(slash + 1));
+    if (!model || model.type !== type) ctx.addIssue({ code: z.ZodIssueCode.custom,
+      path: [field], message: `Selection must reference a configured ${type} model` });
   }
-  if (defaultModelId !== null && !ids.has(defaultModelId))
-    ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Default references a missing model" });
 });
 export type ModelSettingsWrite = z.input<typeof modelSettingsWriteSchema>;
 export const modelSettingsSchema = z.object({
-  models: z.array(modelEntrySchema.refine(model => model.apiKeys.every(key => key === "" || isMaskedSecret(key)), "Model reads must contain masked keys")),
-  defaultModelId: z.string().nullable(),
+  providers: z.record(modelProviderIdSchema, modelProviderSchema),
+  ...defaults,
+  retry: modelRetrySchema,
 }).strict();
 export type ModelSettingsData = z.output<typeof modelSettingsSchema>;
 
-/**
- * Parses an ISO-8601 duration string (time part, e.g. PT5M, PT300S, PT1H30M, PT0.5S) into seconds.
- * Throws an error for invalid format.
- */
-export function parseIsoDurationSeconds(isoDuration: string): number {
-  if (typeof isoDuration !== "string" || !isoDuration.trim()) {
-    throw new Error(`Invalid ISO-8601 duration: "${isoDuration}"`);
-  }
-  const trimmed = isoDuration.trim();
-  const match = trimmed.match(
-    /^PT(?:(\d+(?:\.\d+)?)H)?(?:(\d+(?:\.\d+)?)M)?(?:(\d+(?:\.\d+)?)S)?$/
-  );
-  if (
-    !match ||
-    (match[1] === undefined && match[2] === undefined && match[3] === undefined)
-  ) {
-    throw new Error(`Invalid ISO-8601 duration: "${isoDuration}"`);
-  }
-  const hours = match[1] ? parseFloat(match[1]) : 0;
-  const minutes = match[2] ? parseFloat(match[2]) : 0;
-  const seconds = match[3] ? parseFloat(match[3]) : 0;
+/** Null follows the domain chat default; an explicit missing reference never falls back. */
+export const modelSelectionSchema = z.object({
+  modelId: modelReferenceSchema.nullish().transform(value => value ?? null),
+}).strict();
+export type ModelSelection = z.output<typeof modelSelectionSchema>;
+const optionFields = { ref: modelReferenceSchema, name: z.string().min(1) };
+export const modelOptionSchema = z.discriminatedUnion("type", [
+  z.object({ ...optionFields, type: z.literal("chat") }).strict(),
+  z.object({ ...optionFields, type: z.literal("embedding"), dimensions: z.number().int().positive() }).strict(),
+]);
+export type ModelOption = z.output<typeof modelOptionSchema>;
+export const modelOptionsSchema = z.object({ models: z.array(modelOptionSchema), ...defaults }).strict();
+export type ModelOptions = z.output<typeof modelOptionsSchema>;
 
-  return hours * 3600 + minutes * 60 + seconds;
-}
-
+/** The ontology host owns its agent catalog and selections, outside runtime model settings. */
+export const ontologyAgentModelSchema = z.object({
+  id: z.string().uuid(), kind: z.string().min(1), name: z.string().min(1), modelSelection: modelSelectionSchema,
+}).strict();
+export const ontologyAgentModelsSchema = z.object({ agents: z.array(ontologyAgentModelSchema) }).strict();
+export const ontologyAgentModelWriteSchema = z.object({ modelSelection: modelSelectionSchema }).strict();
+export type OntologyAgentModel = z.output<typeof ontologyAgentModelSchema>;
+export type OntologyAgentModels = z.output<typeof ontologyAgentModelsSchema>;
+export type OntologyAgentModelWrite = z.input<typeof ontologyAgentModelWriteSchema>;

@@ -1,3 +1,5 @@
+import type { ModelOption } from "./model-settings";
+
 /*
  * The rule of choosing an agent's model (the stored `modelSelectionSchema` in model-settings.ts), shared by the pages
  * that offer the choice (the Agent Platform and the Ontology Service); each renders it with its own controls and
@@ -6,11 +8,8 @@
  * explicitly until someone chooses again.
  */
 
-/** A model as a selection lists it: `name` is the stable configuration ID, `displayName` may repeat across models. */
-export interface ModelChoice {
-  name: string;
-  displayName: string;
-}
+/** Options use the full provider/model-id reference; display names may repeat. */
+export type ModelChoice = Pick<ModelOption, "ref" | "name">;
 
 /** Texts of the options, supplied by the host in its own language. */
 export interface ModelSelectionLabels {
@@ -41,7 +40,7 @@ const NULL_CHOICE = "";
 
 /** A model's name for people: the display name, followed by the ID when they differ. */
 export function modelLabel(model: ModelChoice): string {
-  return model.displayName === model.name ? model.name : `${model.displayName} (${model.name})`;
+  return model.name === model.ref ? model.ref : `${model.name} (${model.ref})`;
 }
 
 /** The options and state of a selection; `models` is null while the domain's models are not known. */
@@ -51,12 +50,12 @@ export function modelSelectionView(
   labels: ModelSelectionLabels
 ): ModelSelectionView {
   const missingId =
-    modelId !== null && models !== null && !models.some((model) => model.name === modelId) ? modelId : null;
+    modelId !== null && models !== null && !models.some((model) => model.ref === modelId) ? modelId : null;
   return {
     value: modelId ?? NULL_CHOICE,
     options: [
       { value: NULL_CHOICE, label: labels.nullChoice, disabled: false },
-      ...(models ?? []).map((model) => ({ value: model.name, label: modelLabel(model), disabled: false })),
+      ...(models ?? []).map((model) => ({ value: model.ref, label: modelLabel(model), disabled: false })),
       ...(missingId === null ? [] : [{ value: missingId, label: labels.unavailable(missingId), disabled: true }]),
     ],
     missingId,

@@ -1,5 +1,6 @@
 import { serviceLogCorrelationSchema } from "./service-logging";
 import { z } from "zod";
+import { modelSelectionSchema } from "./model-settings";
 import { codeLimitsSchema } from "./agent-runtime-code";
 import { runtimeMcpRefSchema } from "./agent-runtime-mcp";
 import { runtimeArtifactSchema } from "./agent-runtime-artifacts";
@@ -46,7 +47,7 @@ export const runtimeAgentDefinitionSchema = z
   .object({
     agentId: runtimeKeySchema.optional(),
     systemPrompt: z.string(),
-    modelId: runtimeKeySchema.nullish().transform(value => value ?? null),
+    modelId: modelSelectionSchema.shape.modelId,
     skills: z.array(runtimeSkillRefSchema),
     sandbox: z.object({ limits: codeLimitsSchema }).strict(),
     externalMcp: z.array(runtimeMcpRefSchema),
