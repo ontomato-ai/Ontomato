@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, inject, onBeforeUnmount, ref } from "vue";
-import { CalendarClock, Check, ChevronDown, SquarePen, Trash2 } from "lucide-vue-next";
+import { CalendarClock, Check, ChevronDown, ExternalLink, SquarePen, Trash2 } from "lucide-vue-next";
 import type { AgentHostAgent, AgentHostSession } from "@ontomato/contracts/agent-host";
 import type { ShellWorkbenchDeclaration } from "../types";
 import { shellContextKey } from "../context";
@@ -97,6 +97,13 @@ onBeforeUnmount(() => {
         >
           <component :is="featureIcon(feature.icon)" :size="17" />
           <span class="nav-label">{{ feature.label }}</span>
+          <ExternalLink
+            class="external-mark"
+            :size="13"
+            :role="labels.opensInNewTab ? 'img' : undefined"
+            :aria-label="labels.opensInNewTab"
+            :aria-hidden="labels.opensInNewTab ? undefined : 'true'"
+          />
         </a>
         <div
           v-else-if="feature.availability === 'unavailable'"
@@ -275,6 +282,9 @@ onBeforeUnmount(() => {
 }
 .nav-item.unavailable svg {
   color: var(--el-text-color-tertiary);
+}
+.external-mark {
+  flex-shrink: 0;
 }
 .nav-label {
   flex: 1;

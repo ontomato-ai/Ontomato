@@ -8,7 +8,6 @@ import { ossWorkspaceArtifactText } from "../../src/workspace-artifact-text";
  * before extraction, independent of the UI locale.
  */
 export const workbenchContent: WorkbenchContent = {
-  serviceDisplayName: ossProduct.serviceDisplayName,
   analysisMcpServerName: ossProduct.analysisMcpServerName,
   opsMcpServerName: ossProduct.opsMcpServerName,
   skillDebugEchartsInput: JSON.stringify(

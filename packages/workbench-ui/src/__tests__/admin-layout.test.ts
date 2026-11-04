@@ -19,7 +19,7 @@ async function mountLayout(config: AdminLayoutConfig, path: string, switchEnable
     messages: {
       en: {
         nav: {
-          ontologyManager: "Ontology Manager",
+          ontologyManager: "Ontology Service",
           agentsAndSkills: "Agents and Skills",
           systemAgents: "System Agents",
           systemManagement: "System Management",
@@ -69,7 +69,7 @@ const base: AdminLayoutConfig = {
 describe("shared admin layout", () => {
   it("open-source assembly: all tabs, the current route group's menu and the observe entry; no account and no language switch", async () => {
     const { el, tabs, menu } = await mountLayout(base, "/admin/feedback-records");
-    expect(tabs()).toEqual(["Ontology Manager", "System Management"]);
+    expect(tabs()).toEqual(["Ontology Service", "System Management"]);
     expect(el.querySelector(".tab-item.active")?.textContent?.trim()).toBe("System Management");
     expect(menu()).toEqual(["Feedback Records"]);
     expect(el.querySelector(".icon-btn")).not.toBeNull();
@@ -77,24 +77,24 @@ describe("shared admin layout", () => {
     expect(el.querySelector(".lang-switch-wrapper")).toBeNull();
   });
 
-  it("the Ontology Manager link tab shows by ontology-modeling and has no sidebar; the observe entry is hidden without its permission; the language switch follows the app setting", async () => {
+  it("the Ontology Service link tab shows by ontology-modeling and has no sidebar; the observe entry is hidden without its permission; the language switch follows the app setting", async () => {
     const granted = new Set(["ontology-modeling"]);
     const { el, tabs, menu } = await mountLayout(
       { ...base, access: { ready: true, can: (p) => granted.has(p) } },
       "/admin/feedback-records",
       true
     );
-    expect(tabs()).toEqual(["Ontology Manager"]);
+    expect(tabs()).toEqual(["Ontology Service"]);
     expect(menu()).toEqual([]);
     expect(el.querySelector(".admin-aside")).toBeNull();
     expect(el.querySelector(".icon-btn")).toBeNull();
     expect(el.querySelector(".lang-switch-wrapper")).not.toBeNull();
   });
 
-  it("the Ontology Manager tab is a real link opening the Manager page in a new window without an opener", async () => {
+  it("the Ontology Service tab is a real link opening the Manager page in a new window without an opener", async () => {
     const { el } = await mountLayout(base, "/admin/feedback-records");
     const link = el.querySelector<HTMLAnchorElement>(".header-tabs a.tab-item")!;
-    expect(link.textContent?.trim()).toBe("Ontology Manager");
+    expect(link.textContent?.trim()).toBe("Ontology Service");
     expect(link.getAttribute("href")).toBe(adminGroups.dataAssets.href);
     expect(link.getAttribute("href")).toMatch(/\/ontology-manager\/$/);
     expect(link.target).toBe("_blank");
@@ -102,7 +102,7 @@ describe("shared admin layout", () => {
     expect(link.classList.contains("active")).toBe(false);
   });
 
-  it("without ontology-modeling the Ontology Manager tab is hidden (the old group permission intelligence-engine no longer grants it)", async () => {
+  it("without ontology-modeling the Ontology Service tab is hidden (the old group permission intelligence-engine no longer grants it)", async () => {
     const granted = new Set(["intelligence-engine", "audit-logs"]);
     const { tabs } = await mountLayout(
       { ...base, access: { ready: true, can: (p) => granted.has(p) } },

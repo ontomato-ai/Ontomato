@@ -6,8 +6,6 @@
 import type { PromptTranscriptFormat } from "@ontomato/contracts/observe";
 
 export interface WorkbenchContent {
-  /** Product display name, the same value as Node product.serviceDisplayName: PPT author/company and the default brand name in appearance settings. */
-  serviceDisplayName: string;
   /** Analysis agent MCP server name, the same value as Node product.analysisMcpServerName: identifies that server among published services on the MCP page (McpManager.vue). */
   analysisMcpServerName: string;
   /** Operations agent MCP server name, the same value as Node product.opsMcpServerName: identifies that server the same way (McpManager.vue). */

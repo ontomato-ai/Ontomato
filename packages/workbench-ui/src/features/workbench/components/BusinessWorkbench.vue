@@ -21,13 +21,14 @@ import TurnDiagnoseButton from "../../diagnosis/components/TurnDiagnoseButton.vu
 import ConversationActions from "./ConversationActions.vue";
 import DatasetActions from "./DatasetActions.vue";
 import WorkbenchAppearanceDialog from "./WorkbenchAppearanceDialog.vue";
+import { workbenchFeatures } from "../features";
 
 /**
  * The one business workbench both editions mount. Editions add their own feature entries and
  * render those pages through the `feature` slot; everything else is shared.
  */
 const props = defineProps<{
-  /** Edition-specific entries, placed after the shared dashboard entry. */
+  /** Edition-specific entries, placed after the shared dashboard entry (see workbenchFeatures). */
   features?: ShellFeatureDeclaration[];
   defaultLogo: string;
   defaultBrandName: string;
@@ -69,14 +70,7 @@ watch(agentId, (id) => {
 const workbench = computed<ShellWorkbenchDeclaration>(() => ({
   id: WORKBENCH_ID,
   label: appearance.value?.brand.name || props.defaultBrandName,
-  features: [
-    { id: "dashboards", label: t("assistant.featureDashboards"), icon: "dashboard", availability: "page" },
-    ...(props.features ?? []),
-    ...(props.canManageAgents
-      ? [{ id: "agent-config", label: t("assistant.featureAgentConfig"), icon: "agents", availability: "page" as const }]
-      : []),
-    { id: "schedule", label: t("assistant.featureSchedule"), icon: "schedule", availability: "page" },
-  ],
+  features: workbenchFeatures(t, props.features ?? [], props.canManageAgents),
 }));
 
 const labels = useShellLabels();
@@ -160,6 +154,7 @@ function appearanceSaved(value: WorkbenchAppearance) {
   <WorkbenchAppearanceDialog
     v-if="editingBrand"
     :default-logo="defaultLogo"
+    :default-brand-name="defaultBrandName"
     @close="editingBrand = false"
     @saved="appearanceSaved"
   />
