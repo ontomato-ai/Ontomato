@@ -141,7 +141,7 @@ export default {
     "modelUnavailable": "{id} (unavailable)",
     "modelSelectionMissing": "Model \"{id}\" is no longer configured. Choose another model; until then this agent cannot run.",
     "ontologyAgentModels": "Ontology Agent Models",
-    "ontologyAgentModelsHint": "Models used by the ontology service's agents. Each change is saved at once; workbench agents choose their models in the workbench.",
+    "ontologyAgentModelsHint": "Models used by the ontology service's agents. Each change is saved at once; Agent Platform agents choose their models in the Agent Platform.",
     "ontologyAgentModelsLoadFailed": "Failed to load the ontology agents",
     "agentModelSaved": "Agent model saved",
     "ontologyAgentKinds": {
