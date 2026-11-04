@@ -161,7 +161,7 @@ Java owns an opaque caller admission scope. Runtime gains no parent/child model.
 
 | Ontology operation | Shape / meaning |
 | --- | --- |
-| POST `/ontology/retrieval-callers` | Existing service authorization plus verified end-user identity; UUID key; `{classNames,continuationIds,deadlineAt}`; return `{id,expiresAt}`. Persist before returning; identical retries replay, changed input conflicts. |
+| POST `/ontology/retrieval-callers` | Existing service authorization plus verified end-user identity; UUID key; `{classNames,continuationIds,deadlineAt,recentUserMessages}`; return `{id,expiresAt}`. `recentUserMessages` is the host-supplied conversation context: the last ten user messages in chronological order, including the message that starts this turn, never model-written. Persist before returning; identical retries replay, changed input conflicts. |
 | GET `/ontology/retrieval-callers/:id` | Owned scope and accepted `{retrievalId,runId}` references for reconciliation; no duplicate transcript |
 | POST `/ontology/retrieval-callers/:id/close` | Close admission/continuation atomically, then cancel still-active rounds bound to this scope; idempotent |
 
@@ -169,8 +169,10 @@ Workbench persists parent-run → caller ID before opening it. The single analys
 client forwards optional `ONTOMATO_RETRIEVAL_CALLER_ID` as
 `X-Ontomato-Retrieval-Caller-Id` on retrieval operations. This ID is association
 metadata, not a credential: normal tk verification and scope ownership are still
-required. Java applies the scope's class/deadline restrictions; request fields
-cannot widen them. Continuation is limited to this scope's children or the
+required. Java applies the scope's class/deadline restrictions and uses the scope's
+`recentUserMessages` as this retrieval's `userQuotes`, so the retriever sees the
+user's own words instead of a model-supplied rewrite; request fields cannot widen
+the scope. Continuation is limited to this scope's children or the
 validated continuationIds supplied by workbench for the same assistant session.
 No script calls a workbench retrieval route. Workbench stores only the association
 in `assistant_turns.retrieval_scope_id` and asks Java for child references.
@@ -196,9 +198,13 @@ Exploration-grant issuance ceases to be a workbench API.
 ## QC and limits
 
 Eligible stopped/stop runs with accepted datasets schedule existing Java QC once;
-questions without datasets do not. Retain late QC, scoring/candidate rules and
-stable job-ID recovery. Retrieval references the QC owner; workbench reads it as
-evidence. Feedback/decisions do not move into runtime. Model configuration,
+questions without datasets do not. QC compares the retrieved program against the
+user's own messages plus the confirmed decisions recorded on the retrieval; when
+no user messages are present it falls back to the retrieval question. A caller
+scope's `recentUserMessages` become those messages for the retriever and QC.
+Retain late QC, scoring/candidate rules and stable job-ID recovery. Retrieval
+references the QC owner; workbench reads it as evidence. Feedback/decisions do not
+move into runtime. Model configuration,
 MetricView remodeling, general MCP, knowledge governance, stored-data conversion
 and artifact retention stay outside this cutover.
 

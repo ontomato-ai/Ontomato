@@ -70,7 +70,9 @@ Do not look for problems just for the sake of finding problems. Do not treat the
 
 {{BUSSINESS_KNOWLEDGE}}
 
-# User Question
+# User's Actual Question
+
+The block below is the user's own words and any clarifications they confirmed. Use it as the question to check; do not substitute a rewritten version of the question.
 
 {{USER_QUESTION}}
 
