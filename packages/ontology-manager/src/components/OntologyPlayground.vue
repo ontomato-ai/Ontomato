@@ -123,15 +123,16 @@ function graphColors() {
   };
 }
 
+function colorForClass(className: string) {
+  const palette = context.presentation.nodePalette[context.theme];
+  let hash = 5381;
+  for (const character of className) {
+    hash = (hash * 33) ^ character.charCodeAt(0);
+  }
+  return palette[(hash >>> 0) % palette.length];
+}
+
 function graphData() {
-  const palette = context.presentation.nodePalette;
-  const colorForClass = (className: string) => {
-    let hash = 5381;
-    for (const character of className) {
-      hash = (hash * 33) ^ character.charCodeAt(0);
-    }
-    return palette[(hash >>> 0) % palette.length];
-  };
   const savedPositions = loadLayout();
   return {
     nodes: objects.value.map((object, index) => ({
@@ -479,6 +480,8 @@ async function updateGraphTheme() {
   graph.updateNodeData(
     objects.value.map((object) => ({
       id: object.className,
+      // The palette is per theme; a class keeps its slot.
+      data: { object, color: colorForClass(object.className) },
       style: {
         stroke: colors.nodeStroke,
         shadowColor: colors.shadow,

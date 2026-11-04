@@ -29,8 +29,11 @@ export interface ManagerPresentation {
    * header) and --manager-filter-drawer-radius (data browser filter drawer).
    */
   readonly themeProperties: Readonly<Record<ManagerTheme, Readonly<Record<string, string>>>>;
-  /** Node palette shared by the ontology graph and visual modeling; colours are picked by class-name hash. */
-  readonly nodePalette: readonly string[];
+  /**
+   * Node palette per theme, shared by the ontology graph, visual modeling and the instance graph; colours are picked by
+   * class-name hash, so a class keeps its slot in both themes.
+   */
+  readonly nodePalette: Readonly<Record<ManagerTheme, readonly string[]>>;
   /** Label fragment of the ontology graph edge style, spread into the edge style as-is. */
   readonly edgeLabel: Readonly<{ labelPlacement?: "center"; labelAutoRotate?: boolean }>;
   /** Zoom limit after the ontology graph fits the canvas; null means no limit. */

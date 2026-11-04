@@ -84,7 +84,7 @@ const base: ManagerHostContext = {
   // This file only checks context injection and requests; presentation values are unused but supplied in full as the contract requires.
   presentation: {
     themeProperties: { light: {}, dark: {} },
-    nodePalette: ["#000001", "#000002", "#000003", "#000004", "#000005", "#000006"],
+    nodePalette: { light: ["#000001", "#000002", "#000003"], dark: ["#000004", "#000005", "#000006"] },
     edgeLabel: {},
     maxFitZoom: null,
     dataBrowserDescription: () => "",

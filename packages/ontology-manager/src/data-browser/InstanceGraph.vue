@@ -128,7 +128,7 @@ const searchOptions = computed(() =>
 );
 
 function colorForClass(className: string) {
-  const palette = context.presentation.nodePalette;
+  const palette = context.presentation.nodePalette[context.theme];
   let hash = 5381;
   for (const character of className) {
     hash = (hash * 33) ^ character.charCodeAt(0);
@@ -658,6 +658,10 @@ async function updateGraphTheme() {
   target.setEdge(edgeOptions(colors));
   target.updateNodeData(target.getNodeData().map((node) => ({
     id: node.id,
+    // The palette is per theme; overview anchors carry no instance and keep their data.
+    data: node.data?.node
+      ? { ...node.data, color: colorForClass((node.data.node as InstanceGraphNode).class) }
+      : node.data,
     style: { stroke: colors.nodeStroke, shadowColor: colors.shadow, labelFill: colors.text },
   })));
   target.updateEdgeData(target.getEdgeData().map((edge) => ({

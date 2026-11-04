@@ -18,6 +18,7 @@
   "dependencies": {
     "@ontomato/ontology-manager": "workspace:*",
     "@ontomato/platform-admin": "workspace:*",
+    "@ontomato/workbench-ui": "workspace:*",
     "element-plus": "2.13.6",
     "vue": "3.5.30"
   },

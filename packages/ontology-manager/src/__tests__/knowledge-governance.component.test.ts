@@ -23,7 +23,7 @@ const base: ManagerHostContext = {
   dataFallbacks: { noBusinessDescription: "", unnamedAsset: "" },
   presentation: {
     themeProperties: { light: {}, dark: {} },
-    nodePalette: [],
+    nodePalette: { light: [], dark: [] },
     edgeLabel: {},
     maxFitZoom: null,
     dataBrowserDescription: () => "",

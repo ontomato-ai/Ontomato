@@ -72,7 +72,7 @@ const NODE_CENTER = NODE_SIZE / 2;
 const NODE_LABEL_OFFSET = 12;
 // The node palette comes from the host, the same input as the ontology graph.
 function nodeColor(className: string) {
-  const palette = context.presentation.nodePalette;
+  const palette = context.presentation.nodePalette[context.theme];
   let hash = 5381;
   for (const character of className) {
     hash = (hash * 33) ^ character.charCodeAt(0);

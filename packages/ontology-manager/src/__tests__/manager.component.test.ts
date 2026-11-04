@@ -241,7 +241,7 @@ const presentation: ManagerPresentation = {
     light: { "--el-color-primary": "#101010", "--manager-relation-icon-color": "#202020" },
     dark: { "--el-color-primary": "#e0e0e0", "--manager-relation-icon-color": "#d0d0d0" },
   },
-  nodePalette: ["#000001", "#000002", "#000003", "#000004", "#000005", "#000006"],
+  nodePalette: { light: ["#000001", "#000002", "#000003"], dark: ["#000004", "#000005", "#000006"] },
   edgeLabel: {},
   maxFitZoom: null,
   dataBrowserDescription: (objectLabel) => `description of ${objectLabel}`,
@@ -1001,14 +1001,23 @@ describe("OntologyManager root component with real pages", () => {
       maxFitZoom: 1,
     };
     graphRecord.zoom = 2.5;
-    mountHost({ ...base, presentation: oss });
+    const host = mountHost({ ...base, presentation: oss });
     await settle();
     const graph = graphRecord.options[0];
     const colors = graph.data.nodes.map((node: any) => node.data.color);
     expect(colors.length).toBe(2);
-    expect(colors.every((color: string) => presentation.nodePalette.includes(color))).toBe(true);
+    expect(colors.every((color: string) => presentation.nodePalette.light.includes(color))).toBe(true);
     expect(graph.edge.style).toMatchObject({ labelPlacement: "center", labelAutoRotate: false });
     expect(graphRecord.zoomTo).toEqual([[1, false]]);
+
+    // The palette follows the theme: each class moves to the same slot of the dark palette.
+    const slots = graph.data.nodes.map((node: any) => presentation.nodePalette.light.indexOf(node.data.color));
+    host.host.theme = "dark";
+    await settle();
+    const darkColors = graphRecord.nodeUpdates.at(-1).map((node: any) => node.data.color);
+    expect(darkColors).toEqual(slots.map((slot: number) => presentation.nodePalette.dark[slot]));
+    host.host.theme = "light";
+    await settle();
 
     // The native-size cap applies even when the host does not provide a fit limit.
     mountedApps.forEach((app) => app.unmount());

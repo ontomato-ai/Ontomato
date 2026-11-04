@@ -72,6 +72,9 @@ importers:
       '@ontomato/platform-admin':
         specifier: workspace:*
         version: link:../../packages/platform-admin
+      '@ontomato/workbench-ui':
+        specifier: workspace:*
+        version: link:../../packages/workbench-ui
       element-plus:
         specifier: 2.13.6
         version: 2.13.6(typescript@5.9.3)(vue@3.5.30(typescript@5.9.3))

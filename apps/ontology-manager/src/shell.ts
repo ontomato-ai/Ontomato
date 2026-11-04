@@ -1,6 +1,8 @@
 import { computed, createApp, h, ref, type Component, type ComputedRef } from "vue";
 import "element-plus/dist/index.css";
 import "element-plus/theme-chalk/dark/css-vars.css";
+// Design foundation shared with the workbench (type, spacing, shape, density, elevation, motion, component variables).
+import "@ontomato/workbench-ui/styles/foundation.css";
 import {
   OntologyManager,
   type ManagerAuthFailureStatus,

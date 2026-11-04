@@ -97,6 +97,8 @@ function fixture(t) {
     "packages/agent-shell-ui/src/index.ts": "export {};\n",
     "packages/contracts/package.json": '{"name":"@ontomato/contracts"}\n',
     "packages/contracts/src/index.ts": "export {};\n",
+    "packages/workbench-ui/package.json": '{"name":"@ontomato/workbench-ui"}\n',
+    "packages/workbench-ui/src/index.ts": "export {};\n",
   });
   repository(privateRoot, {
     "package.json": '{"name":"enterprise","private":true}\n',
@@ -284,6 +286,8 @@ test("the public entry builds ontomato-ontology-manager from its owners", (t) =>
       "workspace/ontomato/packages/ontology-manager/src/index.ts",
       "workspace/ontomato/packages/platform-admin/package.json",
       "workspace/ontomato/packages/platform-admin/src/index.ts",
+      "workspace/ontomato/packages/workbench-ui/package.json",
+      "workspace/ontomato/packages/workbench-ui/src/index.ts",
       "workspace/ontomato/pnpm-lock.yaml",
       "workspace/ontomato/pnpm-workspace.yaml",
     ],
@@ -352,6 +356,7 @@ test("an enterprise build takes its own app plus the public owners and stamps th
       "workspace/ontomato/packages/ontology-manager/package.json",
       "workspace/ontomato/packages/ontology-manager/src/index.ts",
       "workspace/ontomato/packages/platform-admin/package.json",
+      "workspace/ontomato/packages/workbench-ui/package.json",
       "workspace/ontomato/pnpm-lock.yaml",
       "workspace/ontomato/pnpm-workspace.yaml",
     ],
