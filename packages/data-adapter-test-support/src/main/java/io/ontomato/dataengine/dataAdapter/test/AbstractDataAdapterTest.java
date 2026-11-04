@@ -767,6 +767,7 @@ public abstract class AbstractDataAdapterTest {
 	@Test
 	void readLikeWithEscapeMatchesEscapedCharactersLiterally() throws Exception {
 		assume(DataAdapterCapability.READ_QUERY);
+		assume(DataAdapterCapability.LIKE_LITERAL_ESCAPE);
 		DataAdapter adapter = seedGraph();
 		JSONObject extra = new JSONObject();
 		extra.put(primaryKey(), "p9");
@@ -1294,6 +1295,7 @@ public abstract class AbstractDataAdapterTest {
 		for (JSONObject c : conds) {
 			arr.add(c);
 		}
+		a.put("operator", "logic");
 		a.put("and", arr);
 		return a;
 	}
@@ -1304,12 +1306,14 @@ public abstract class AbstractDataAdapterTest {
 		for (JSONObject c : conds) {
 			arr.add(c);
 		}
+		o.put("operator", "logic");
 		o.put("or", arr);
 		return o;
 	}
 
 	protected JSONObject readNot(JSONObject cond) {
 		JSONObject n = new JSONObject();
+		n.put("operator", "logic");
 		n.put("not", JSONArray.of(cond));
 		return n;
 	}

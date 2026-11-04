@@ -21,6 +21,9 @@ public enum DataAdapterCapability {
 	/** {@code executeDsl()} translates a DSL query to SQL and runs it. */
 	READ_QUERY,
 
+	/** LIKE patterns can escape %, _ and backslash to match those characters literally. */
+	LIKE_LITERAL_ESCAPE,
+
 	/** {@code getSampleDataFileName()} / {@code querySampleDataByClassName()}. */
 	SAMPLE_DATA,
 
@@ -57,10 +60,10 @@ public enum DataAdapterCapability {
 	 * excludes {@link #RELATIONSHIP_EDGES}, whose representation is the opposite one.
 	 */
 	public static final Set<DataAdapterCapability> FULL = EnumSet.of(
-			JDBC_CONNECTION, READ_QUERY, SAMPLE_DATA, NAMESPACE_LIFECYCLE, CLASS_SCHEMA, OBJECT_CRUD,
+			JDBC_CONNECTION, READ_QUERY, LIKE_LITERAL_ESCAPE, SAMPLE_DATA, NAMESPACE_LIFECYCLE, CLASS_SCHEMA, OBJECT_CRUD,
 			EDGE_CRUD, GRAPH_QUERY, VECTOR_ATTR);
 
 	/** The read-only relational path — what the query-only SQL adapters support. */
 	public static final Set<DataAdapterCapability> READ_ONLY = EnumSet.of(
-			JDBC_CONNECTION, READ_QUERY, SAMPLE_DATA);
+			JDBC_CONNECTION, READ_QUERY, LIKE_LITERAL_ESCAPE, SAMPLE_DATA);
 }

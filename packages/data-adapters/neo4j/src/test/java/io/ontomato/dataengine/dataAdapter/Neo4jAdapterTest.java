@@ -92,6 +92,7 @@ class Neo4jAdapterTest extends AbstractDataAdapterTest {
 	protected Set<DataAdapterCapability> capabilities() {
 		return java.util.EnumSet.of(
 				DataAdapterCapability.READ_QUERY,
+				DataAdapterCapability.LIKE_LITERAL_ESCAPE,
 				DataAdapterCapability.SAMPLE_DATA,
 				DataAdapterCapability.NAMESPACE_LIFECYCLE,
 				DataAdapterCapability.CLASS_SCHEMA,
