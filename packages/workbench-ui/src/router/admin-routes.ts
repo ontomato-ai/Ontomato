@@ -119,8 +119,8 @@ export const legacyAdminRoutes = {
     redirect: (to) => ({ path: `/observe/${String(to.params.page ?? "")}`, query: to.query }),
   },
   // Retired pages: the system configuration and the feedback records are no longer settings of this application.
-  systemConfig: { path: "/admin/system-config", redirect: "/chat" },
-  feedbackRecords: { path: "/admin/feedback-records", redirect: "/chat" },
+  systemConfig: { path: "/admin/system-config", redirect: "/chat?feature=chat" },
+  feedbackRecords: { path: "/admin/feedback-records", redirect: "/chat?feature=chat" },
 } satisfies Record<string, RouteRecordRaw>;
 
 /** @deprecated The admin console is gone; kept as an alias while old imports are removed. */

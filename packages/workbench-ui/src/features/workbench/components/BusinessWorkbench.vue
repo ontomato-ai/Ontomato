@@ -147,9 +147,11 @@ function handleFeatureAction(id: string) {
 watch(
   () => route.query.feature,
   (requested) => {
-    if (requested !== "agents" && requested !== "dashboards" && requested !== "schedule") return;
-    requestedFeatureId.value = requested;
-    featureId.value = requested;
+    if (requested !== "agents" && requested !== "dashboards" && requested !== "schedule" && requested !== "chat") return;
+    // "chat" names the conversation itself: it closes whatever page was open (the retired console pages land here).
+    const page = requested === "chat" ? null : requested;
+    requestedFeatureId.value = page;
+    featureId.value = page;
     agentsTab.value = requested === "agents" ? requestedTab() : null;
     const query = { ...route.query };
     delete query.feature;

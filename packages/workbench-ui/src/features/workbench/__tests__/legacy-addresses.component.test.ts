@@ -42,7 +42,9 @@ afterEach(() => {
   document.body.innerHTML = "";
 });
 
-async function openAddress(path: string): Promise<{ router: Router; featureId: string | null; html: string }> {
+async function openAddress(
+  path: string,
+): Promise<{ router: Router; wrapper: ReturnType<typeof mount>; featureId: string | null; html: string }> {
   const router = createRouter({
     history: createMemoryHistory(),
     routes: [
@@ -65,7 +67,7 @@ async function openAddress(path: string): Promise<{ router: Router; featureId: s
   wrappers.push(wrapper);
   await new Promise((resolve) => setTimeout(resolve, 0));
   const shell = wrapper.findComponent({ name: "AgentShell" });
-  return { router, featureId: (shell.props("featureId") as string | null) ?? null, html: wrapper.html() };
+  return { router, wrapper, featureId: (shell.props("featureId") as string | null) ?? null, html: wrapper.html() };
 }
 
 describe("old console addresses", () => {
@@ -92,4 +94,14 @@ describe("old console addresses", () => {
       expect(featureId).toBeNull();
     },
   );
+
+  it("closes an open page when a retired address is opened inside the running workbench", async () => {
+    const { router, wrapper } = await openAddress("/admin/skills");
+    const shell = wrapper.findComponent({ name: "AgentShell" });
+    expect(shell.props("featureId")).toBe("agents");
+    await router.push("/admin/system-config");
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(router.currentRoute.value.path).toBe("/chat");
+    expect(shell.props("featureId") ?? null).toBeNull();
+  });
 });
