@@ -2,7 +2,7 @@ import { readdirSync } from "node:fs";
 import { resolve } from "node:path";
 import { flushPromises, mount } from "@vue/test-utils";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import SystemConfigPage from "../pages/SystemConfigPage.vue";
+import GeneralSettingsTab from "../config/components/GeneralSettingsTab.vue";
 import { createPlatformClient, platformApi } from "../api";
 import { ossSystemConfig as businessConfig } from "../../../../apps/ontology-manager/src/system-config";
 import { pageGlobal, testHost, testI18n } from "./host";
@@ -46,7 +46,7 @@ async function mountPage() {
   const api = platformApi(
     createPlatformClient({ apiBase: "/api", credential: { type: "anonymous" }, locale: () => "en" })
   );
-  const page = mount(SystemConfigPage, {
+  const page = mount(GeneralSettingsTab, {
     global: pageGlobal(testHost(api, { systemConfig: businessConfig })),
     attachTo: document.body,
   });

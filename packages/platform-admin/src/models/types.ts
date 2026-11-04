@@ -1,3 +1,4 @@
+import { inject, type InjectionKey, type Ref } from "vue";
 import { z } from "zod";
 
 /*
@@ -38,3 +39,13 @@ export const vectorRebuildStatusSchema = z.union([
 
 export type VectorRebuildStatus = z.output<typeof vectorRebuildStatusSchema>;
 export type VectorRebuildState = VectorRebuildStatus["state"];
+
+/** The rebuild status as the page read it, shared with the panels that show it and act on it. */
+export const rebuildStatusKey: InjectionKey<Readonly<Ref<VectorRebuildStatus | null>>> =
+  Symbol("vector-rebuild-status");
+
+export function useRebuildStatus(): Readonly<Ref<VectorRebuildStatus | null>> {
+  const status = inject(rebuildStatusKey);
+  if (!status) throw new Error("Model panels must be mounted inside the model configuration page");
+  return status;
+}

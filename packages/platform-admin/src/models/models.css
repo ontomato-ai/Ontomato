@@ -472,6 +472,50 @@
   text-align: center;
 }
 
+/* Who uses this provider's models (the domain defaults and the ontology agents). */
+.usage-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+  border-top: 1px solid var(--el-border-color);
+  padding-top: var(--spacing-md);
+}
+
+.usage-rows {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.usage-row {
+  display: flex;
+  min-height: var(--list-row-height);
+  align-items: center;
+  gap: var(--spacing-md);
+  padding: var(--spacing-xs) 0;
+  border-bottom: 1px solid var(--el-border-color);
+  font-size: var(--text-sm);
+}
+
+.usage-row:last-child {
+  border-bottom: 0;
+}
+
+.usage-where {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  color: var(--el-text-color-primary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.usage-model {
+  flex: 0 0 auto;
+  color: var(--el-text-color-secondary);
+  font-size: var(--text-xs);
+}
+
 /* ---- Dialogs ---- */
 .model-form :deep(.el-form-item) {
   margin-bottom: var(--spacing-md);

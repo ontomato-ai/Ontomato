@@ -178,10 +178,9 @@ onMounted(() => {
 
 <style scoped>
 .audit-log-manager {
-  height: 100%;
   display: flex;
+  min-width: 0;
   flex-direction: column;
-  overflow: hidden;
 }
 
 .toolbar {

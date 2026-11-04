@@ -1,6 +1,6 @@
 import { flushPromises, mount } from "@vue/test-utils";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import SystemConfigPage from "../pages/SystemConfigPage.vue";
+import DataAdapterSettingsTab from "../config/components/DataAdapterSettingsTab.vue";
 import DataAdapterConfigCard from "../config/components/DataAdapterConfigCard.vue";
 import type {
   DataAdapterConnection,
@@ -175,7 +175,7 @@ async function mountCard(
   backend.adapters = adapters;
   backend.dataAdapter = dataAdapter;
   backend.connections = connections;
-  const page = mount(SystemConfigPage, { global });
+  const page = mount(DataAdapterSettingsTab, { global });
   wrappers.push(page);
   await flushPromises();
   return page.findComponent(DataAdapterConfigCard);
@@ -758,7 +758,7 @@ describe("the multi-source mode of the data adapter card", () => {
     backend.adapters = multiAdapters;
     backend.dataAdapter = "multi";
     // The dropdown is teleported to the body; the select's input names it through aria-controls.
-    const page = mount(SystemConfigPage, {
+    const page = mount(DataAdapterSettingsTab, {
       global: pageGlobal(host, i18n),
       attachTo: document.body,
     });

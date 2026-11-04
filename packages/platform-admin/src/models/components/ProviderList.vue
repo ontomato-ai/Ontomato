@@ -2,9 +2,10 @@
 import { computed, ref } from "vue";
 import { Plus, Search } from "lucide-vue-next";
 import { useI18n } from "vue-i18n";
+import { modelApiLabels } from "../apis";
 import type { ProviderDraft } from "../draft";
 
-/** The providers of the draft as a list panel: search by name or ID, add, and choose the one shown on the right. */
+/** The providers of the draft as a list: a status dot, the protocol and the model count, search, add, select. */
 const props = defineProps<{
   providers: readonly ProviderDraft[];
   selectedId: string | null;
@@ -20,6 +21,20 @@ const shown = computed(() => {
     (provider) => provider.id.toLowerCase().includes(text) || provider.name.toLowerCase().includes(text)
   );
 });
+
+/**
+ * The dot: a saved provider whose connection is complete is ready, an unsaved one or one missing its address, key or
+ * models is incomplete. Anything else is still being edited.
+ */
+function state(provider: ProviderDraft): "ready" | "incomplete" | "draft" {
+  if (!provider.savedKeyMask) return "draft";
+  const connected = provider.baseUrl.trim() !== "" && provider.apiKey.trim() !== "";
+  return connected && provider.models.length > 0 ? "ready" : "incomplete";
+}
+
+function stateLabel(value: ReturnType<typeof state>) {
+  return t(`admin.providerStates.${value}`);
+}
 </script>
 
 <template>
@@ -42,9 +57,12 @@ const shown = computed(() => {
           :aria-current="provider.id === props.selectedId ? 'true' : undefined"
           @click="emit('select', provider.id)"
         >
-          <span class="provider-row-name">{{ provider.name || provider.id }}</span>
+          <span class="provider-row-head">
+            <span :class="['provider-state', state(provider)]" :title="stateLabel(state(provider))" role="img" :aria-label="stateLabel(state(provider))" />
+            <span class="provider-row-name">{{ provider.name || provider.id }}</span>
+          </span>
           <span class="provider-row-meta">
-            <span class="mono">{{ provider.id }}</span>
+            <span class="provider-row-protocol">{{ modelApiLabels[provider.api] }}</span>
             <span>{{ t("admin.providerModelCount", { n: provider.models.length }) }}</span>
           </span>
         </button>
@@ -115,6 +133,30 @@ const shown = computed(() => {
   background: var(--el-color-primary-light-9);
 }
 
+.provider-row-head {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: var(--spacing-sm);
+}
+
+/* A status dot, not a badge: colour role plus a word for screen readers. */
+.provider-state {
+  width: 6px;
+  height: 6px;
+  flex: 0 0 6px;
+  border-radius: 9999px;
+  background: var(--el-text-color-disabled);
+}
+
+.provider-state.ready {
+  background: var(--el-color-success);
+}
+
+.provider-state.incomplete {
+  background: var(--el-color-warning);
+}
+
 .provider-row-name {
   overflow: hidden;
   font-size: var(--text-sm);
@@ -137,9 +179,8 @@ const shown = computed(() => {
   line-height: var(--leading-xs);
 }
 
-.provider-row-meta .mono {
+.provider-row-protocol {
   overflow: hidden;
-  font-family: var(--font-mono);
   text-overflow: ellipsis;
   white-space: nowrap;
 }

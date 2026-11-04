@@ -185,9 +185,10 @@ export function useModelDraft(): ModelSettingsDraft {
 export interface DraftProblem {
   key: string;
   params: Record<string, string>;
-  /** The provider to select; absent for problems of the defaults or the retry settings. */
+  /** The provider to select; absent for problems of the usage screen. */
   providerId?: string;
-  tab: "providers" | "defaults" | "retry";
+  /** The model screen the problem belongs to: the provider's connection and models, or the defaults and the call policy. */
+  tab: "providers" | "usage";
 }
 
 /**
@@ -205,9 +206,9 @@ export function draftProblem(draft: ModelSettingsDraft): DraftProblem | null {
   const issue = result.error.issues[0]!;
   const [area, providerId, field, index] = issue.path.map(String);
   const detail = { detail: issue.message };
-  if (area === "defaultModelId") return { key: "admin.draftProblems.defaultModel", params: {}, tab: "defaults" };
-  if (area === "embeddingModelId") return { key: "admin.draftProblems.embeddingModel", params: {}, tab: "defaults" };
-  if (area !== "providers" || providerId === undefined) return { key: "admin.draftProblems.retry", params: detail, tab: "retry" };
+  if (area === "defaultModelId") return { key: "admin.draftProblems.defaultModel", params: {}, tab: "usage" };
+  if (area === "embeddingModelId") return { key: "admin.draftProblems.embeddingModel", params: {}, tab: "usage" };
+  if (area !== "providers" || providerId === undefined) return { key: "admin.draftProblems.retry", params: detail, tab: "usage" };
   const provider = draft.providers.find((p) => p.id === providerId);
   const at = { provider: provider?.name || providerId, ...detail };
   const place = { providerId, tab: "providers" as const };

@@ -3,12 +3,13 @@ import { computed } from "vue";
 import { managerRoutes, managerStandaloneRoutes } from "@ontomato/ontology-manager";
 import {
   createPlatformClient,
+  legacyPageRedirects,
   openAccess,
   ossPlatformPages,
-  pageRoutes,
   platformApi,
   platformGroups,
-  platformPageComponents,
+  platformKnowledgePages,
+  sharedPageRoutes,
   startPlatformAdmin,
   type PlatformLocale,
 } from "@ontomato/platform-admin";
@@ -53,10 +54,10 @@ export function startOssManager(profile: ManagerShellProfile) {
     },
   });
   const client = createPlatformClient({ apiBase, credential: { type: "anonymous" }, locale: () => preferences.locale.value });
-  const navigation = serviceNavigation(manager, platformGroups.platform, ossPlatformPages);
+  const navigation = serviceNavigation(manager, platformGroups.platform, [...ossPlatformPages, ...platformKnowledgePages]);
   const { app } = startPlatformAdmin({
     navigation,
-    routes: [...managerRoutes(), ...pageRoutes(ossPlatformPages, platformPageComponents)],
+    routes: [...managerRoutes(), ...sharedPageRoutes(), ...legacyPageRedirects()],
     standalone: managerStandaloneRoutes(),
     home: startPage(),
     i18n,

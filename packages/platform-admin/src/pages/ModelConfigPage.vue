@@ -1,17 +1,15 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, provide, reactive, ref, shallowRef } from "vue";
-import { onBeforeRouteLeave } from "vue-router";
+import { onBeforeRouteLeave, useRouter } from "vue-router";
 import { ElMessage, ElMessageBox } from "element-plus";
 import { useI18n } from "vue-i18n";
 import type { ModelSettingsData, OntologyAgentModel } from "@ontomato/contracts/model-settings";
 import { usePlatformHost } from "../context";
-import { platformPages } from "../pages";
-import AddProviderDialog from "../models/components/AddProviderDialog.vue";
-import DefaultModelsPanel from "../models/components/DefaultModelsPanel.vue";
-import ProviderDetail from "../models/components/ProviderDetail.vue";
-import ProviderList from "../models/components/ProviderList.vue";
+import { modelConfigTabs, platformPages } from "../pages";
+import ModelUsagePanel from "../models/components/ModelUsagePanel.vue";
+import ModelProvidersPanel from "../models/components/ModelProvidersPanel.vue";
+import PageTabs from "../layout/PageTabs.vue";
 import {
-  applyDraftChange,
   draftFromSettings,
   draftProblem,
   findModel,
@@ -20,6 +18,8 @@ import {
   type ModelSettingsDraft,
 } from "../models/draft";
 import { useModelErrors } from "../models/errors";
+import { agentModelsDraftKey, type AgentModelsDraft } from "../models/agents";
+import { rebuildStatusKey } from "../models/types";
 import type { VectorRebuildStatus } from "../models/types";
 
 /*
@@ -27,17 +27,18 @@ import type { VectorRebuildStatus } from "../models/types";
  * embedding models, the domain defaults with each ontology service agent's model, and the provider timeout and
  * retries. The model settings are replaced as a whole on save; the agents' selections are then saved one by one
  * (the data engine accepts only models that are already saved). Agent Platform agents choose their models there.
+ *
+ * The page is two screens: Usage (the domain defaults, the vector model and the ontology agents that depart from the
+ * chat default, with the call policy at the bottom) and Providers (the provider list with its connection and models).
  */
 const { t } = useI18n();
 const host = usePlatformHost();
 const { api, separators } = host;
 const describeError = useModelErrors();
+const router = useRouter();
 
 const page = computed(() => host.navigation.value.pages.find((p) => p.path === platformPages.modelConfig.path));
 const title = computed(() => page.value?.title ?? t(platformPages.modelConfig.titleKey));
-
-type Tab = "providers" | "defaults" | "retry";
-const activeTab = ref<Tab>("providers");
 
 // ---- Model settings: the saved copy and the draft edited by every panel ----
 const draft = reactive<ModelSettingsDraft>({
@@ -78,15 +79,15 @@ async function loadSettings() {
 const settingsDirty = computed(() => saved.value !== null && JSON.stringify(settingsWrite(draft)) !== baseline.value);
 
 // ---- Ontology service agents: saved selections and their drafts ----
-const agents = shallowRef<OntologyAgentModel[] | null>(null);
-const agentSelections = reactive<Record<string, string | null>>({});
+const agentsDraft = reactive<AgentModelsDraft>({ saved: null, selections: {} });
+provide(agentModelsDraftKey, agentsDraft);
 const agentsLoading = ref(false);
 const agentsLoadError = ref("");
 
 function applyAgents(list: OntologyAgentModel[]) {
-  agents.value = list;
-  for (const key of Object.keys(agentSelections)) delete agentSelections[key];
-  for (const agent of list) agentSelections[agent.id] = agent.modelSelection.modelId;
+  agentsDraft.saved = list;
+  for (const key of Object.keys(agentsDraft.selections)) delete agentsDraft.selections[key];
+  for (const agent of list) agentsDraft.selections[agent.id] = agent.modelSelection.modelId;
 }
 
 async function loadAgents() {
@@ -102,52 +103,23 @@ async function loadAgents() {
 }
 
 const changedAgents = computed(
-  () => agents.value?.filter((agent) => agentSelections[agent.id] !== agent.modelSelection.modelId) ?? []
+  () =>
+    agentsDraft.saved?.filter((agent) => agentsDraft.selections[agent.id] !== agent.modelSelection.modelId) ?? []
 );
 const dirty = computed(() => settingsDirty.value || changedAgents.value.length > 0);
 
 // A renamed model takes its references on this page along; Agent Platform agents keep theirs and report them.
 function followRename(from: string, to: string) {
-  for (const [id, modelId] of Object.entries(agentSelections)) if (modelId === from) agentSelections[id] = to;
+  for (const [id, modelId] of Object.entries(agentsDraft.selections)) if (modelId === from) agentsDraft.selections[id] = to;
 }
 
 // ---- Providers ----
-const addProviderVisible = ref(false);
-const providerIds = computed(() => draft.providers.map((p) => p.id));
-
-function addProvider(input: { id: string; name: string; api: ModelSettingsDraft["providers"][number]["api"] }) {
-  draft.providers.push({
-    id: input.id,
-    savedKeyMask: null,
-    name: input.name,
-    baseUrl: "",
-    api: input.api,
-    apiKey: "",
-    headers: [],
-    models: [],
-  });
-  selectedProviderId.value = input.id;
-}
-
 function removeProvider(id: string) {
   const index = draft.providers.findIndex((p) => p.id === id);
-  applyDraftChange(draft, (target) => {
-    target.providers.splice(index, 1);
-  });
+  // The models' references follow the removal: a default whose model is gone is unset (the panel confirmed it).
+  draft.providers.splice(index, 1);
   selectedProviderId.value = draft.providers[Math.min(index, draft.providers.length - 1)]?.id ?? null;
 }
-
-// ---- Provider timeout and retries, shown in seconds and stored in milliseconds ----
-function secondsField(field: "timeoutMs" | "maxRetryDelayMs") {
-  return computed({
-    get: () => draft.retry.provider[field] / 1000,
-    set: (value: number | null | undefined) => {
-      draft.retry.provider[field] = Math.round((value ?? 0) * 1000);
-    },
-  });
-}
-const timeoutSeconds = secondsField("timeoutMs");
-const retryDelaySeconds = secondsField("maxRetryDelayMs");
 
 // ---- Save and discard ----
 const saving = ref(false);
@@ -175,12 +147,17 @@ async function confirmEmbeddingChange(): Promise<boolean> {
   );
 }
 
+/** Where a draft problem is shown: the tab the problem belongs to, and the provider whose panel must be open. */
+function showProblem(problem: NonNullable<ReturnType<typeof draftProblem>>) {
+  if (problem.providerId) selectedProviderId.value = problem.providerId;
+  void router.push(problem.tab === "providers" ? modelConfigTabs.providers.path : modelConfigTabs.usage.path);
+  ElMessage.error(t(problem.key, problem.params));
+}
+
 async function save() {
   const problem = draftProblem(draft);
   if (problem) {
-    activeTab.value = problem.tab;
-    if (problem.providerId) selectedProviderId.value = problem.providerId;
-    ElMessage.error(t(problem.key, problem.params));
+    showProblem(problem);
     return;
   }
   if (settingsDirty.value && !(await confirmEmbeddingChange())) return;
@@ -199,8 +176,8 @@ async function save() {
     const failed: string[] = [];
     for (const agent of changedAgents.value) {
       try {
-        const result = await api.saveOntologyAgentModel(agent.id, { modelId: agentSelections[agent.id] ?? null });
-        agents.value = agents.value?.map((a) => (a.id === agent.id ? result : a)) ?? null;
+        const result = await api.saveOntologyAgentModel(agent.id, { modelId: agentsDraft.selections[agent.id] ?? null });
+        agentsDraft.saved = agentsDraft.saved?.map((a) => (a.id === agent.id ? result : a)) ?? null;
       } catch (e) {
         failed.push(`${agent.name}${separators.detail}${describeError(e, "admin.saveFailed")}`);
       }
@@ -223,7 +200,7 @@ async function discard() {
   );
   if (!confirmed) return;
   if (saved.value) applySaved(saved.value);
-  if (agents.value) applyAgents(agents.value);
+  if (agentsDraft.saved) applyAgents(agentsDraft.saved);
 }
 
 onBeforeRouteLeave(async () => {
@@ -247,6 +224,7 @@ function warnBeforeUnload(event: BeforeUnloadEvent) {
 // ---- Vector rebuild status (data engine): polled while a round is alive, stopped when it ends or the page is left ----
 const REBUILD_POLL_MS = 3000;
 const rebuildStatus = shallowRef<VectorRebuildStatus | null>(null);
+provide(rebuildStatusKey, rebuildStatus);
 let rebuildPollTimer: ReturnType<typeof setTimeout> | undefined;
 let unmounted = false;
 // Reads overlap (polling, then a save, start or pause): only the latest may write the status and schedule the next.
@@ -327,102 +305,29 @@ onBeforeUnmount(() => {
       <span>{{ loadError }}</span>
       <el-button size="small" @click="loadSettings">{{ t("common.retry") }}</el-button>
     </div>
-    <el-tabs v-else v-model="activeTab" class="model-tabs">
-      <el-tab-pane :label="t('admin.modelTabs.providers')" name="providers">
-        <div class="providers-split">
-          <ProviderList
-            class="providers-list"
-            :providers="draft.providers"
-            :selected-id="selectedProviderId"
-            @select="selectedProviderId = $event"
-            @add="addProviderVisible = true"
-          />
-          <div class="providers-detail">
-            <ProviderDetail
-              v-if="selectedProviderId !== null && providerIds.includes(selectedProviderId)"
-              :key="selectedProviderId"
-              :provider-id="selectedProviderId"
-              @renamed="followRename"
-              @removed="removeProvider(selectedProviderId)"
-            />
-            <div v-else class="empty-detail">
-              <p class="empty-title">{{ t("admin.noProviders") }}</p>
-              <p class="empty-text">{{ t("admin.noProvidersHint") }}</p>
-              <el-button type="primary" @click="addProviderVisible = true">{{ t("admin.addProvider") }}</el-button>
-            </div>
-          </div>
-        </div>
-      </el-tab-pane>
-      <el-tab-pane :label="t('admin.modelTabs.defaults')" name="defaults">
-        <div class="tab-content">
-          <DefaultModelsPanel
-            :agents="agents"
-            :agent-selections="agentSelections"
-            :agents-loading="agentsLoading"
-            :agents-load-error="agentsLoadError"
-            :rebuild-status="rebuildStatus"
-            @agent-change="(id, modelId) => (agentSelections[id] = modelId)"
-            @retry-agents="loadAgents"
-            @rebuild="rebuildVectors"
-            @pause="rebuildAction(api.pauseVectorRebuild)"
-          />
-        </div>
-      </el-tab-pane>
-      <el-tab-pane :label="t('admin.modelTabs.retry')" name="retry">
-        <div class="tab-content">
-          <section class="settings-section">
-            <p class="section-hint">{{ t("admin.retryHint") }}</p>
-            <div class="setting-row">
-              <div class="setting-text">
-                <span class="setting-label">{{ t("admin.requestTimeout") }}</span>
-                <span class="setting-hint">{{ t("admin.requestTimeoutHint") }}</span>
-              </div>
-              <div class="setting-control narrow">
-                <el-input-number
-                  v-model="timeoutSeconds"
-                  :min="0.001"
-                  :step="10"
-                  controls-position="right"
-                  :aria-label="t('admin.requestTimeout')"
-                />
-              </div>
-            </div>
-            <div class="setting-row">
-              <div class="setting-text">
-                <span class="setting-label">{{ t("admin.maxRetries") }}</span>
-                <span class="setting-hint">{{ t("admin.maxRetriesHint") }}</span>
-              </div>
-              <div class="setting-control narrow">
-                <el-input-number
-                  v-model="draft.retry.provider.maxRetries"
-                  :min="0"
-                  :precision="0"
-                  controls-position="right"
-                  :aria-label="t('admin.maxRetries')"
-                />
-              </div>
-            </div>
-            <div class="setting-row">
-              <div class="setting-text">
-                <span class="setting-label">{{ t("admin.maxRetryDelay") }}</span>
-                <span class="setting-hint">{{ t("admin.maxRetryDelayHint") }}</span>
-              </div>
-              <div class="setting-control narrow">
-                <el-input-number
-                  v-model="retryDelaySeconds"
-                  :min="0"
-                  :step="10"
-                  controls-position="right"
-                  :aria-label="t('admin.maxRetryDelay')"
-                />
-              </div>
-            </div>
-          </section>
-        </div>
-      </el-tab-pane>
-    </el-tabs>
-
-    <AddProviderDialog v-model:visible="addProviderVisible" :taken-ids="providerIds" @add="addProvider" />
+    <PageTabs v-else :page="page!">
+      <template #default="{ tab }">
+        <ModelUsagePanel
+          v-if="tab?.path !== modelConfigTabs.providers.path"
+          :agents="agentsDraft.saved"
+          :agent-selections="agentsDraft.selections"
+          :agents-loading="agentsLoading"
+          :agents-load-error="agentsLoadError"
+          :rebuild-status="rebuildStatus"
+          @agent-change="(id, modelId) => (agentsDraft.selections[id] = modelId)"
+          @retry-agents="loadAgents"
+          @rebuild="rebuildVectors"
+          @pause="rebuildAction(api.pauseVectorRebuild)"
+        />
+        <ModelProvidersPanel
+          v-else
+          :selected-id="selectedProviderId"
+          @select="selectedProviderId = $event"
+          @renamed="followRename"
+          @removed="selectedProviderId !== null && removeProvider(selectedProviderId)"
+        />
+      </template>
+    </PageTabs>
   </div>
 </template>
 
