@@ -17,6 +17,11 @@ public class QueryQualityService {
   }
 
   public Object start(JSONObject body, User user, String lang) {
+    return start(body, user, lang, true);
+  }
+
+  public Object start(
+      JSONObject body, User user, String lang, boolean generateCandidates) {
     String id = body.getString("id");
     return jobs.start(
         id,
@@ -32,18 +37,25 @@ public class QueryQualityService {
           check.setFinished(false);
           var programs = body.getJSONArray("programs").toJavaList(ABCHarnessProgram.class);
           JSONArray recipes = body.getJSONArray("recipes");
-          for (int i = 0; i < programs.size(); i++)
-            if (programs.get(i).getCode() == null
-                && recipes != null
-                && "dsl".equals(recipes.getJSONObject(i).getString("kind")))
+          for (int i = 0; i < programs.size(); i++) {
+            JSONObject recipe =
+                recipes == null || i >= recipes.size() ? null : recipes.getJSONObject(i);
+            // Describe the DSL code as executed, but without the natural-language problem field.
+            if (recipe != null && "dsl".equals(recipe.getString("kind")))
               programs
                   .get(i)
                   .setCode(
-                      io.ontomato.dataengine.util.DslToPythonCodeUtil.generate(
-                          recipes.getJSONObject(i).getJSONObject("dsl"), ""));
+                      io.ontomato.dataengine.util.DslToPythonCodeUtil.generateForQuality(
+                          recipe.getJSONObject("dsl")));
+          }
           checks.saveCheckTask(check);
           checks.check(
-              check, programs, body.getList("classNames", String.class), user.getDomainId());
+              check,
+              programs,
+              recipes,
+              body.getList("classNames", String.class),
+              user.getDomainId(),
+              generateCandidates);
           return check;
         });
   }

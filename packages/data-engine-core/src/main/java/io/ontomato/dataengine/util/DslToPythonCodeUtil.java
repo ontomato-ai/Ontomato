@@ -18,6 +18,15 @@ public class DslToPythonCodeUtil {
     private static final String FOOTER = "\nrows = execute_dsl(dsl)\nprint(json.dumps({\"answer\": rows}, ensure_ascii=False))\n";
 
     /**
+     * Code for the program describer: the same DSL program without its natural-language problem.
+     */
+    public static String generateForQuality(JSONObject dsl) {
+        JSONObject sanitized = dsl == null ? new JSONObject() : JSONObject.from(dsl);
+        sanitized.put("problem", "");
+        return generate(sanitized, "");
+    }
+
+    /**
      * Entry method: DSL -> Python code
      */
     public static String generate(JSONObject dsl, String port) {
