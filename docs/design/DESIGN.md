@@ -141,8 +141,10 @@ navigation rows with an external-link mark, and open in a new tab:
 conversations, user row. The sidebar sits on `canvas` with no divider.
 The workspace is one raised panel: `surface`, `conversation-radius`, `conversation-gutter`
 around it, a 1px `line` and `elevation.panel`. The composer is a pill of `composer-height`
-with `elevation.composer` and a round send button. Admin pages of the Agent Platform keep
-their own layout and follow the colour roles and component rules.
+with `elevation.composer` and a round send button. The platform has no separate console:
+its own management pages (agents and the capability library, operations diagnosis) are
+pages of this shell, shown in the same raised panel by capability code and following the
+colour roles and component rules.
 
 **Data shell (Ontology Service, data-dense pages).** Edge to edge, separated by tone and a
 1px `line` (the Layout section below). One sidebar and one router: groups Ontology (graph,
@@ -161,7 +163,7 @@ so the current application is recognisable at a glance.
 ## Scope and ownership
 
 This file covers the product interface: the Agent Platform (agents, conversations, answers,
-its admin pages) and the Ontology Service. The marketing site keeps its own styles.
+and its function-area pages) and the Ontology Service. The marketing site keeps its own styles.
 
 It has two layers:
 
