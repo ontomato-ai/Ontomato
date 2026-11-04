@@ -1,6 +1,8 @@
 import { inject, type InjectionKey } from "vue";
 import {
+  RESERVED_MODEL_PROVIDER_IDS,
   isMaskedSecret,
+  modelProviderIdSchema,
   modelSettingsWriteSchema,
   type ModelApi,
   type ModelEntry,
@@ -16,9 +18,6 @@ import type { ModelChoice } from "@ontomato/contracts/model-selection";
  * replaces the settings on every save. The draft keeps providers in display order and headers as editable rows;
  * `settingsWrite` turns it back into the contract's write body.
  */
-
-/** pi's values for chat model fields that are left out (contract.md, "字段与引用"), shown as placeholders. */
-export const PI_CHAT_DEFAULTS = { contextWindow: 128000, maxTokens: 16384 } as const;
 
 export interface HeaderDraft {
   name: string;
@@ -40,6 +39,8 @@ export interface ProviderDraft {
 }
 
 export interface ModelSettingsDraft {
+  /** References of the models as last saved: other places (Agent Platform agents) may have chosen them. */
+  savedRefs: string[];
   providers: ProviderDraft[];
   defaultModelId: string | null;
   embeddingModelId: string | null;
@@ -63,6 +64,7 @@ export function modelName(model: ModelEntry): string {
 
 export function draftFromSettings(data: ModelSettingsData): ModelSettingsDraft {
   return {
+    savedRefs: Object.entries(data.providers).flatMap(([id, provider]) => provider.models.map((m) => modelRef(id, m.id))),
     providers: Object.entries(data.providers).map(([id, provider]) => ({
       id,
       savedKeyMask: isMaskedSecret(provider.apiKey) ? provider.apiKey : null,
@@ -122,18 +124,9 @@ export function draftChoices(draft: ModelSettingsDraft): ModelChoice[] {
   );
 }
 
-/**
- * Whether a provider ID may be added: checked with the contract's own write rules (ID format and reserved IDs) on a
- * settings body holding only that provider, so the page keeps no copy of those rules.
- */
+/** Whether a provider ID may be added: the contract's ID format, and not one of its reserved IDs. */
 export function providerIdAccepted(id: string): boolean {
-  const result = modelSettingsWriteSchema.safeParse({
-    providers: { [id]: { baseUrl: "https://example.com", api: "openai-completions", apiKey: "key", models: [] } },
-    defaultModelId: null,
-    embeddingModelId: null,
-    retry: { provider: { timeoutMs: 1, maxRetries: 0, maxRetryDelayMs: 0 } },
-  });
-  return result.success;
+  return modelProviderIdSchema.safeParse(id).success && !RESERVED_MODEL_PROVIDER_IDS.includes(id);
 }
 
 /**
@@ -147,6 +140,36 @@ export function retargetDefaults(draft: ModelSettingsDraft, from: string | null,
   }
   if (findModel(draft, draft.defaultModelId)?.type !== "chat") draft.defaultModelId = null;
   if (findModel(draft, draft.embeddingModelId)?.type !== "embedding") draft.embeddingModelId = null;
+}
+
+/** A change of the draft's providers or models; a rename returns the reference it moves from and to. */
+export type DraftChange = (draft: ModelSettingsDraft) => { from: string; to: string } | void;
+
+/** Apply a change, then retarget the defaults to it; returns the rename, if any. */
+export function applyDraftChange(draft: ModelSettingsDraft, change: DraftChange): ReturnType<DraftChange> {
+  const moved = change(draft);
+  retargetDefaults(draft, moved?.from ?? null, moved?.to ?? null);
+  return moved;
+}
+
+/** Asks whether an edited model may replace its entry; resolves false when the user declines. */
+export type ModelSaveCheck = (model: ModelEntry) => Promise<boolean>;
+
+export interface ClearedDefault {
+  kind: "chat" | "embedding";
+  ref: string;
+}
+
+/** The domain defaults a change would unset, found by applying it to a copy of the draft. */
+export function defaultsClearedBy(draft: ModelSettingsDraft, change: DraftChange): ClearedDefault[] {
+  const copy: ModelSettingsDraft = JSON.parse(JSON.stringify(draft));
+  applyDraftChange(copy, change);
+  const cleared: ClearedDefault[] = [];
+  if (draft.defaultModelId !== null && copy.defaultModelId === null) cleared.push({ kind: "chat", ref: draft.defaultModelId });
+  if (draft.embeddingModelId !== null && copy.embeddingModelId === null) {
+    cleared.push({ kind: "embedding", ref: draft.embeddingModelId });
+  }
+  return cleared;
 }
 
 /** The page's one draft, shared with the panels that edit it; it is replaced in place when the settings are read. */

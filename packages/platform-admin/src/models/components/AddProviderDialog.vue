@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, reactive, watch } from "vue";
 import { useI18n } from "vue-i18n";
-import { modelApiSchema, type ModelApi } from "@ontomato/contracts/model-settings";
+import { RESERVED_MODEL_PROVIDER_IDS, modelApiSchema, type ModelApi } from "@ontomato/contracts/model-settings";
 import { modelApiLabels } from "../apis";
 import { providerIdAccepted } from "../draft";
 
@@ -39,11 +39,12 @@ function setId(id: string) {
   form.idEdited = true;
 }
 
+const reserved = RESERVED_MODEL_PROVIDER_IDS.join(", ");
 const idProblem = computed(() => {
   const id = form.id.trim();
   if (!id) return t("admin.providerIdRequired");
   if (props.takenIds.includes(id)) return t("admin.providerIdTaken", { id });
-  if (!providerIdAccepted(id)) return t("admin.providerIdInvalid");
+  if (!providerIdAccepted(id)) return t("admin.providerIdInvalid", { reserved });
   return null;
 });
 
@@ -70,7 +71,7 @@ function submit() {
       </el-form-item>
       <el-form-item :label="t('admin.providerId')" required :error="form.tried && idProblem ? idProblem : ''">
         <el-input :model-value="form.id" class="mono-input" placeholder="openai" @update:model-value="setId" />
-        <p class="field-hint">{{ t("admin.providerIdHint") }}</p>
+        <p class="field-hint">{{ t("admin.providerIdHint", { reserved }) }}</p>
       </el-form-item>
       <el-form-item :label="t('admin.providerApi')">
         <el-select v-model="form.api" :aria-label="t('admin.providerApi')">

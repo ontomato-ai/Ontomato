@@ -1,13 +1,14 @@
 <script setup lang="ts">
 import { computed, reactive, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
+import type { ModelSaveCheck } from "../draft";
 import {
+  PI_CHAT_MODEL_DEFAULTS,
   modelEntrySchema,
   supportsEmbeddings,
   type ModelApi,
   type ModelEntry,
 } from "@ontomato/contracts/model-settings";
-import { PI_CHAT_DEFAULTS } from "../draft";
 
 /*
  * Add or edit one model of a provider. The type and, for an embedding model, the dimensions are always the user's
@@ -23,12 +24,14 @@ const props = defineProps<{
   existing: boolean;
   /** IDs of the provider's other models. */
   takenIds: readonly string[];
+  /** Asks what the change affects (a renamed ID, unset defaults); the dialog closes only when it resolves true. */
+  beforeSave: ModelSaveCheck;
 }>();
 const emit = defineEmits<{ "update:visible": [visible: boolean]; save: [model: ModelEntry] }>();
 const { t } = useI18n();
 
-const PI_CONTEXT_WINDOW = PI_CHAT_DEFAULTS.contextWindow;
-const PI_MAX_TOKENS = PI_CHAT_DEFAULTS.maxTokens;
+const PI_CONTEXT_WINDOW = PI_CHAT_MODEL_DEFAULTS.contextWindow;
+const PI_MAX_TOKENS = PI_CHAT_MODEL_DEFAULTS.maxTokens;
 
 const embeddingAllowed = computed(() => supportsEmbeddings(props.api));
 
@@ -66,7 +69,6 @@ watch(
   { immediate: true }
 );
 
-const renamed = computed(() => props.existing && !!props.model?.id && form.id.trim() !== props.model.id);
 
 /** A field is written when it differs from pi's default or the read model already had it. */
 function chatField(key: keyof ModelEntry, value: unknown, fallback: unknown): Record<string, unknown> {
@@ -112,12 +114,13 @@ function build(): ModelEntry | string {
   return parsed.success ? parsed.data : t("admin.modelInvalid", { detail: parsed.error.issues[0]?.message ?? "" });
 }
 
-function submit() {
+async function submit() {
   const result = build();
   if (typeof result === "string") {
     error.value = result;
     return;
   }
+  if (!(await props.beforeSave(result))) return;
   emit("save", result);
   emit("update:visible", false);
 }
@@ -150,9 +153,6 @@ function submit() {
           <el-input v-model="form.name" :placeholder="form.id || t('admin.displayNameDefault')" />
         </el-form-item>
       </div>
-      <p v-if="renamed" class="field-hint warning" role="note">
-        {{ t("admin.modelRenameHint", { id: props.model?.id }) }}
-      </p>
       <template v-if="form.type === 'chat'">
         <div class="form-row">
           <el-form-item :label="t('admin.contextWindow')">

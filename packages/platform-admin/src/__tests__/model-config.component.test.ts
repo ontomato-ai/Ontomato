@@ -1,20 +1,25 @@
 import { flushPromises, mount, type VueWrapper } from "@vue/test-utils";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { ElMessageBox } from "element-plus";
 import { defineComponent, h } from "vue";
 import { createMemoryHistory, createRouter, RouterView } from "vue-router";
 import type { ModelSettingsData, ModelSettingsWrite, OntologyAgentModel } from "@ontomato/contracts/model-settings";
 import DefaultModelsPanel from "../models/components/DefaultModelsPanel.vue";
+import ModelEditDialog from "../models/components/ModelEditDialog.vue";
 import ModelSelectionSelect from "../models/components/ModelSelectionSelect.vue";
 import ProviderDetail from "../models/components/ProviderDetail.vue";
 import ModelConfigPage from "../pages/ModelConfigPage.vue";
 import type { PlatformApi } from "../api";
-import { pageGlobal, testHost } from "./host";
+import { pageGlobal, testHost, testI18n } from "./host";
 
 /*
  * The conventions of the model configuration page: the settings are saved as a whole, a masked key that is not
  * changed is submitted as read, the agent selectors offer chat models only, and a reference that is no longer
- * configured stays as it is instead of falling back to the domain default.
+ * configured stays as it is instead of falling back to the domain default. Renaming a saved model and unsetting a
+ * domain default are confirmed first, naming what they affect.
  */
+
+const t = testI18n().global.t as (key: string, params?: Record<string, unknown>) => string;
 
 const RETRIEVAL = "00000000-0000-4000-8000-000000000001";
 const GOVERNANCE = "00000000-0000-4000-8000-000000000002";
@@ -63,6 +68,7 @@ beforeEach(() => {
   saveOntologyAgentModel.mockClear();
 });
 afterEach(() => {
+  vi.restoreAllMocks();
   wrappers.splice(0).forEach((wrapper) => wrapper.unmount());
   document.body.innerHTML = "";
 });
@@ -122,5 +128,37 @@ describe("model configuration page", () => {
     expect(saveModelSettings).not.toHaveBeenCalled();
     expect(saveOntologyAgentModel.mock.calls).toEqual([[RETRIEVAL, { modelId: "gateway/vendor/chat" }]]);
     expect(governance!.props("modelValue")).toBe("legacy/old-name");
+  });
+
+  it("confirms renaming a saved model, warning about other references, and moves the default along", async () => {
+    const confirm = vi.spyOn(ElMessageBox, "confirm").mockResolvedValue("confirm" as never);
+    const wrapper = await mountPage();
+    const detail = wrapper.findComponent(ProviderDetail);
+    await detail.findAll(".model-row")[0]!.findAll("button").find((b) => b.text() === "Edit")!.trigger("click");
+    const dialog = wrapper.findComponent(ModelEditDialog);
+    dialog.findAllComponents({ name: "ElInput" })[0]!.vm.$emit("update:modelValue", "vendor/chat-2");
+    await flushPromises();
+    await dialog.findAllComponents({ name: "ElButton" }).find((b) => b.text() === "Confirm")!.trigger("click");
+    await flushPromises();
+
+    expect(String(confirm.mock.calls[0]![0])).toContain(
+      t("admin.modelRenameConfirm", { from: "gateway/vendor/chat", to: "gateway/vendor/chat-2" })
+    );
+    await saveButton(wrapper).trigger("click");
+    await flushPromises();
+    expect(saveModelSettings.mock.calls[0]![0].defaultModelId).toBe("gateway/vendor/chat-2");
+  });
+
+  it("names the embedding default and vector search before a deletion unsets it, and keeps it when cancelled", async () => {
+    const confirm = vi.spyOn(ElMessageBox, "confirm").mockRejectedValue("cancel");
+    const wrapper = await mountPage();
+    const detail = wrapper.findComponent(ProviderDetail);
+    const embeddingRow = detail.findAll(".model-row")[1]!;
+    await embeddingRow.findAll("button").find((b) => b.text() === "Delete")!.trigger("click");
+    await flushPromises();
+
+    expect(String(confirm.mock.calls[0]![0])).toContain(t("admin.embeddingDefaultCleared", { name: "embed (gateway/embed)" }));
+    expect(detail.findAll(".model-row")).toHaveLength(2);
+    expect(saveButton(wrapper).attributes("disabled")).toBeDefined();
   });
 });

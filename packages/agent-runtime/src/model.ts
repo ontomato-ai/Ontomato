@@ -1,7 +1,7 @@
 import { logHeaders } from "@ontomato/service-logging";
 import { runtimeLogger, runtimeDiagnostic, runtimeFailureMessage } from "./logging";
 import { randomUUID } from "node:crypto";
-import type { ModelApi, ModelEntry, ModelProviderWrite, ModelRetry } from "@ontomato/contracts/model-settings";
+import { PI_CHAT_MODEL_DEFAULTS, type ModelApi, type ModelEntry, type ModelProviderWrite, type ModelRetry } from "@ontomato/contracts/model-settings";
 import type {
   Model,
   Message,
@@ -24,8 +24,8 @@ export function resolveModel(providerId: string, provider: Omit<ModelProviderWri
   return { id: model.id, name: model.name ?? model.id, provider: providerId, api: provider.api,
     baseUrl: provider.baseUrl, headers: provider.headers, apiKey: provider.apiKey, retry, kind: model.type,
     dimensions: model.type === "embedding" ? model.dimensions : undefined,
-    reasoning: model.reasoning ?? false, input: model.input ?? ["text"], contextWindow: model.contextWindow ?? 128000,
-    maxTokens: model.maxTokens ?? 16384, samplingParams: model.samplingParams,
+    reasoning: model.reasoning ?? false, input: model.input ?? ["text"], contextWindow: model.contextWindow ?? PI_CHAT_MODEL_DEFAULTS.contextWindow,
+    maxTokens: model.maxTokens ?? PI_CHAT_MODEL_DEFAULTS.maxTokens, samplingParams: model.samplingParams,
     cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } };
 }
 export function piModel(config: ResolvedModel): Model<ModelApi> {

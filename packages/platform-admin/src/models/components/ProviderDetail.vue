@@ -3,18 +3,27 @@ import { computed, ref, shallowRef, watch } from "vue";
 import { ElMessageBox } from "element-plus";
 import { ChevronDown, ChevronRight, CircleCheck, CircleX, Download, Plus, Trash2 } from "lucide-vue-next";
 import { useI18n } from "vue-i18n";
-import { modelApiSchema, supportsEmbeddings, type ModelEntry } from "@ontomato/contracts/model-settings";
+import {
+  PI_CHAT_MODEL_DEFAULTS,
+  modelApiSchema,
+  supportsEmbeddings,
+  type ModelEntry,
+} from "@ontomato/contracts/model-settings";
+import { modelLabel } from "@ontomato/contracts/model-selection";
 import { modelApiBaseUrls, modelApiLabels } from "../apis";
 import type { RuntimeModelDiscoveryResponse } from "@ontomato/contracts/runtime-model-test";
 import { usePlatformHost } from "../../context";
 import { useModelErrors } from "../errors";
 import {
-  PI_CHAT_DEFAULTS,
+  applyDraftChange,
+  defaultsClearedBy,
+  draftChoices,
   draftConnection,
   modelName,
   modelRef,
-  retargetDefaults,
   useModelDraft,
+  type ClearedDefault,
+  type DraftChange,
 } from "../draft";
 import DiscoverDialog from "./DiscoverDialog.vue";
 import ModelEditDialog from "./ModelEditDialog.vue";
@@ -73,7 +82,7 @@ function defaultTag(model: ModelEntry): string | null {
 function modelMeta(model: ModelEntry): string[] {
   if (model.type === "embedding") return [t("admin.dimensionsValue", { n: model.dimensions })];
   return [
-    t("admin.contextValue", { n: (model.contextWindow ?? PI_CHAT_DEFAULTS.contextWindow).toLocaleString() }),
+    t("admin.contextValue", { n: (model.contextWindow ?? PI_CHAT_MODEL_DEFAULTS.contextWindow).toLocaleString() }),
     ...(model.reasoning ? [t("admin.reasoning")] : []),
     ...(model.input?.includes("image") ? [t("admin.imageInput")] : []),
     ...(model.samplingParams && Object.keys(model.samplingParams).length > 0 ? [t("admin.samplingParams")] : []),
@@ -137,47 +146,88 @@ function openModel(index: number | null, model: Partial<ModelEntry> | null) {
   editVisible.value = true;
 }
 
+// A change that renames a saved model or unsets a domain default is confirmed first, naming what it affects.
+function labelOf(ref: string): string {
+  const choice = draftChoices(draft).find((c) => c.ref === ref);
+  return choice ? modelLabel(choice) : ref;
+}
+
+function clearedText(cleared: ClearedDefault[]): string[] {
+  return cleared.map((c) =>
+    t(c.kind === "chat" ? "admin.chatDefaultCleared" : "admin.embeddingDefaultCleared", { name: labelOf(c.ref) })
+  );
+}
+
+function confirmChange(title: string, lines: string[], confirmText: string): Promise<boolean> {
+  return ElMessageBox.confirm(lines.join(" "), title, {
+    type: "warning",
+    confirmButtonText: confirmText,
+    cancelButtonText: t("common.cancel"),
+  }).then(
+    () => true,
+    () => false
+  );
+}
+
+function replaceChange(index: number, model: ModelEntry): DraftChange {
+  const providerId = provider.value.id;
+  const from = modelRef(providerId, provider.value.models[index]!.id);
+  return (target) => {
+    target.providers.find((p) => p.id === providerId)!.models.splice(index, 1, model);
+    return { from, to: modelRef(providerId, model.id) };
+  };
+}
+
+async function beforeSaveModel(model: ModelEntry): Promise<boolean> {
+  const { index } = editing.value;
+  if (index === null) return true;
+  const from = modelRef(provider.value.id, provider.value.models[index]!.id);
+  const to = modelRef(provider.value.id, model.id);
+  const lines = [
+    ...(from !== to && draft.savedRefs.includes(from) ? [t("admin.modelRenameConfirm", { from, to })] : []),
+    ...clearedText(defaultsClearedBy(draft, replaceChange(index, model))),
+  ];
+  if (lines.length === 0) return true;
+  const title = from !== to ? t("admin.modelRenameTitle") : t("admin.clearDefaultsTitle");
+  return confirmChange(title, [...lines, t("admin.continueConfirm")], t("common.confirm"));
+}
+
 function saveModel(model: ModelEntry) {
   const { index } = editing.value;
   if (index === null) {
     provider.value.models.push(model);
-  } else {
-    const before = provider.value.models[index]!;
-    provider.value.models.splice(index, 1, model);
-    const from = modelRef(provider.value.id, before.id);
-    const to = modelRef(provider.value.id, model.id);
-    if (from !== to) emit("renamed", from, to);
-    retargetDefaults(draft, from, to);
+    return;
   }
+  const moved = applyDraftChange(draft, replaceChange(index, model));
+  if (moved && moved.from !== moved.to) emit("renamed", moved.from, moved.to);
 }
 
 async function removeModel(model: ModelEntry) {
-  const tag = defaultTag(model);
-  if (tag) {
-    const confirmed = await ElMessageBox.confirm(
-      t("admin.removeDefaultModelConfirm", { name: modelName(model) }),
-      t("admin.removeModel"),
-      { type: "warning", confirmButtonText: t("common.delete"), cancelButtonText: t("common.cancel") }
-    ).then(
-      () => true,
-      () => false
-    );
-    if (!confirmed) return;
+  const providerId = provider.value.id;
+  const change: DraftChange = (target) => {
+    const owner = target.providers.find((p) => p.id === providerId)!;
+    owner.models = owner.models.filter((m) => m.id !== model.id);
+  };
+  const cleared = clearedText(defaultsClearedBy(draft, change));
+  if (cleared.length > 0) {
+    const lines = [t("admin.removeModelConfirm", { name: modelName(model) }), ...cleared];
+    if (!(await confirmChange(t("admin.removeModel"), lines, t("common.delete")))) return;
   }
-  provider.value.models = provider.value.models.filter((m) => m !== model);
-  retargetDefaults(draft, null, null);
+  applyDraftChange(draft, change);
 }
 
 async function removeProvider() {
-  const confirmed = await ElMessageBox.confirm(
-    t("admin.removeProviderConfirm", { name: provider.value.name || provider.value.id, n: provider.value.models.length }),
-    t("admin.removeProvider"),
-    { type: "warning", confirmButtonText: t("common.delete"), cancelButtonText: t("common.cancel") }
-  ).then(
-    () => true,
-    () => false
+  const providerId = provider.value.id;
+  const cleared = clearedText(
+    defaultsClearedBy(draft, (target) => {
+      target.providers = target.providers.filter((p) => p.id !== providerId);
+    })
   );
-  if (confirmed) emit("removed");
+  const lines = [
+    t("admin.removeProviderConfirm", { name: provider.value.name || providerId, n: provider.value.models.length }),
+    ...cleared,
+  ];
+  if (await confirmChange(t("admin.removeProvider"), lines, t("common.delete"))) emit("removed");
 }
 
 // ---- Discovery ----
@@ -348,6 +398,7 @@ function addManually() {
       :model="editing.model"
       :existing="editing.index !== null"
       :taken-ids="takenIds"
+      :before-save="beforeSaveModel"
       @save="saveModel"
     />
     <DiscoverDialog

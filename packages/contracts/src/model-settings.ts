@@ -27,6 +27,9 @@ export const modelApiSchema = z.enum([
 export type ModelApi = z.output<typeof modelApiSchema>;
 export const modelTypeSchema = z.enum(["chat", "embedding"]);
 
+/** pi's values for chat model fields that are left out of an entry. */
+export const PI_CHAT_MODEL_DEFAULTS = { contextWindow: 128000, maxTokens: 16384 } as const;
+
 const modelFields = {
   id: modelIdSchema,
   name: z.string().trim().min(1).optional(),
@@ -103,9 +106,11 @@ export const modelSettingsConfigurationSchema = z.object({
   ...defaults,
   retry: modelRetrySchema,
 }).strict();
+/** Provider IDs that prefix unavailable legacy model references; no configured provider may use them. */
+export const RESERVED_MODEL_PROVIDER_IDS: readonly string[] = ["legacy", "legacy-unconfigured"];
 export const modelSettingsWriteSchema = modelSettingsConfigurationSchema.superRefine((settings, ctx) => {
   for (const id of Object.keys(settings.providers)) {
-    if (id === "legacy" || id === "legacy-unconfigured") ctx.addIssue({ code: z.ZodIssueCode.custom,
+    if (RESERVED_MODEL_PROVIDER_IDS.includes(id)) ctx.addIssue({ code: z.ZodIssueCode.custom,
       path: ["providers", id], message: "Provider ID is reserved for unavailable legacy model references" });
   }
   for (const [field, type] of [["defaultModelId", "chat"], ["embeddingModelId", "embedding"]] as const) {

@@ -11,11 +11,11 @@ import DefaultModelsPanel from "../models/components/DefaultModelsPanel.vue";
 import ProviderDetail from "../models/components/ProviderDetail.vue";
 import ProviderList from "../models/components/ProviderList.vue";
 import {
+  applyDraftChange,
   draftFromSettings,
   draftProblem,
   findModel,
   modelDraftKey,
-  retargetDefaults,
   settingsWrite,
   type ModelSettingsDraft,
 } from "../models/draft";
@@ -41,6 +41,7 @@ const activeTab = ref<Tab>("providers");
 
 // ---- Model settings: the saved copy and the draft edited by every panel ----
 const draft = reactive<ModelSettingsDraft>({
+  savedRefs: [],
   providers: [],
   defaultModelId: null,
   embeddingModelId: null,
@@ -130,8 +131,9 @@ function addProvider(input: { id: string; name: string; api: ModelSettingsDraft[
 
 function removeProvider(id: string) {
   const index = draft.providers.findIndex((p) => p.id === id);
-  draft.providers.splice(index, 1);
-  retargetDefaults(draft, null, null);
+  applyDraftChange(draft, (target) => {
+    target.providers.splice(index, 1);
+  });
   selectedProviderId.value = draft.providers[Math.min(index, draft.providers.length - 1)]?.id ?? null;
 }
 
