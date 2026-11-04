@@ -5,21 +5,22 @@
  * derived variables onto the workbench design tokens so light and dark themes follow the host.
  */
 .agent-shell .shell-markdown {
-  --ms-text-body: var(--text-base, 15px);
-  --ms-leading-body: 1.7;
+  /* Answers are `reading` text: 15px on a 26px line. */
+  --ms-text-body: var(--text-reading);
+  --ms-leading-body: 1.733;
   --ms-font-sans: var(--font-sans, inherit);
   --ms-font-mono: var(--font-mono, ui-monospace, monospace);
-  --ms-radius: 10px;
-  --link-color: var(--el-color-primary);
+  --ms-radius: var(--radius-md);
+  --link-color: var(--brand-link);
   --table-border: var(--el-border-color);
-  --table-header-bg: var(--el-fill-color-light);
+  --table-header-bg: var(--el-fill-color);
   --inline-code-bg: var(--el-fill-color);
   --inline-code-fg: var(--el-text-color-primary);
   --inline-code-border: transparent;
-  --code-bg: var(--el-fill-color-light);
+  --code-bg: var(--el-fill-color);
   --code-fg: var(--el-text-color-primary);
-  --code-border: var(--el-border-color-light);
-  --code-header-bg: var(--el-fill-color);
+  --code-border: var(--el-border-color);
+  --code-header-bg: var(--el-fill-color-light);
   --blockquote-border: var(--el-border-color-dark);
   --hr-border: var(--el-border-color);
   --list-marker: var(--el-text-color-tertiary);
@@ -29,7 +30,7 @@
 }
 /* What the agent says before calling tools: part of the process, quieter than the answer. */
 .agent-shell .commentary .shell-markdown {
-  --ms-text-body: var(--text-sm, 13px);
+  --ms-text-body: var(--text-sm);
   color: var(--el-text-color-secondary);
   margin: 2px 0 6px;
 }
@@ -61,9 +62,12 @@
   color: var(--el-text-color-primary);
 }
 .agent-shell .shell-markdown table {
-  font-size: var(--text-sm, 13px);
+  font-size: var(--text-sm);
+  font-variant-numeric: tabular-nums;
 }
 .agent-shell .shell-markdown pre {
-  border-radius: 12px;
-  font-size: var(--text-sm, 13px);
+  border-radius: var(--radius-md);
+  font-family: var(--font-mono);
+  font-size: var(--text-mono);
+  line-height: var(--leading-mono);
 }

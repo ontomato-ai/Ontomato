@@ -194,18 +194,19 @@ function send(text: string) {
 .greeting {
   margin: 0 0 8px;
   text-align: center;
-  font-size: var(--text-3xl, 30px);
+  font-size: var(--text-3xl);
+  line-height: var(--leading-3xl);
   font-weight: 600;
-  letter-spacing: -0.01em;
+  letter-spacing: var(--tracking-display);
   color: var(--el-text-color-primary);
 }
 .agent-description {
-  margin: 0 auto 28px;
+  margin: 0 auto 24px;
   max-width: 520px;
   text-align: center;
   color: var(--el-text-color-secondary);
-  font-size: var(--text-base, 15px);
-  line-height: 1.6;
+  font-size: var(--text-base);
+  line-height: var(--leading-base);
 }
 .scroller {
   flex: 1;
@@ -213,16 +214,17 @@ function send(text: string) {
   overflow-y: auto;
   scrollbar-gutter: stable;
 }
+/* Answers are `reading` text on the reading column (DESIGN.md "Typography", "Chat answer"). */
 .thread {
-  width: min(100% - 48px, 760px);
+  width: min(100% - 48px, var(--shell-content-max));
   margin: 0 auto;
-  padding: 28px 0 24px;
+  padding: 24px 0;
   display: flex;
   flex-direction: column;
-  gap: 22px;
+  gap: 24px;
   color: var(--el-text-color-primary);
-  font-size: var(--text-base, 15px);
-  line-height: 1.7;
+  font-size: var(--text-reading);
+  line-height: var(--leading-reading);
 }
 .history-more {
   display: flex;
@@ -230,12 +232,12 @@ function send(text: string) {
   align-items: center;
   gap: 8px;
   color: var(--el-text-color-secondary);
-  font-size: var(--text-sm, 13px);
+  font-size: var(--text-sm);
 }
 .history-more button {
   border: 0;
   background: none;
-  color: var(--el-color-primary);
+  color: var(--brand-link);
   font: inherit;
   cursor: pointer;
 }
@@ -244,11 +246,12 @@ function send(text: string) {
   display: flex;
   justify-content: flex-end;
 }
+/* The question: a right-aligned sunken bubble. */
 .user-bubble {
   max-width: min(85%, 620px);
-  padding: 10px 16px;
-  border-radius: 20px 20px 6px 20px;
-  background: var(--el-fill-color-dark);
+  padding: 8px 14px;
+  border-radius: var(--radius-lg);
+  background: var(--el-fill-color);
   color: var(--el-text-color-primary);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
@@ -281,7 +284,7 @@ function send(text: string) {
 }
 .line {
   height: 14px;
-  border-radius: 7px;
+  border-radius: var(--radius-sm);
   background: var(--el-fill-color);
 }
 .w60 {
@@ -298,21 +301,21 @@ function send(text: string) {
   align-items: center;
   gap: 8px;
   color: var(--el-color-danger);
-  font-size: var(--text-sm, 13px);
+  font-size: var(--text-sm);
 }
 .load-error button {
   border: 0;
   background: none;
-  color: var(--el-color-primary);
+  color: var(--brand-link);
   font: inherit;
   cursor: pointer;
   text-decoration: underline;
 }
 .dock {
   position: relative;
-  width: min(100% - 48px, 760px);
+  width: min(100% - 48px, var(--shell-content-max));
   margin: 0 auto;
-  padding: 0 0 18px;
+  padding: 0 0 16px;
 }
 /* Content scrolling under the composer fades out instead of being cut. */
 .dock::before {
@@ -332,13 +335,13 @@ function send(text: string) {
   transform: translateX(-50%);
   display: grid;
   place-items: center;
-  width: 34px;
-  height: 34px;
-  border: 1px solid var(--el-border-color);
-  border-radius: 50%;
-  background: var(--el-bg-color);
+  width: var(--control-height);
+  height: var(--control-height);
+  border: 0;
+  border-radius: var(--radius-full);
+  background: var(--el-bg-color-overlay);
   color: var(--el-text-color-regular);
-  box-shadow: var(--el-shadow-sm);
+  box-shadow: var(--elevation-overlay);
   cursor: pointer;
 }
 .send-error {
@@ -347,7 +350,7 @@ function send(text: string) {
   gap: 6px;
   margin: 0 0 8px 12px;
   color: var(--el-color-danger);
-  font-size: var(--text-sm, 13px);
+  font-size: var(--text-sm);
 }
 .empty .send-error {
   margin-top: 10px;
@@ -369,7 +372,7 @@ function send(text: string) {
     width: calc(100% - 28px);
   }
   .greeting {
-    font-size: var(--text-2xl, 24px);
+    font-size: var(--text-2xl);
   }
 }
 </style>

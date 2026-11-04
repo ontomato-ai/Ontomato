@@ -164,17 +164,17 @@ function appearanceSaved(value: WorkbenchAppearance) {
 .brand {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   min-width: 0;
-  border-radius: 10px;
+  border-radius: var(--radius-sm);
 }
 .brand:focus-visible {
   outline: 2px solid var(--el-color-primary);
   outline-offset: 2px;
 }
 .brand-logo {
-  width: 30px;
-  height: 30px;
+  width: 24px;
+  height: 24px;
   object-fit: contain;
   flex-shrink: 0;
 }
@@ -185,7 +185,8 @@ function appearanceSaved(value: WorkbenchAppearance) {
 }
 .brand-name {
   font-size: var(--text-base);
-  font-weight: 700;
+  line-height: var(--leading-sm);
+  font-weight: 600;
   color: var(--el-text-color-primary);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -193,6 +194,7 @@ function appearanceSaved(value: WorkbenchAppearance) {
 }
 .brand-subtitle {
   font-size: var(--text-xs);
+  line-height: var(--leading-xs);
   color: var(--el-text-color-secondary);
   overflow: hidden;
   text-overflow: ellipsis;
