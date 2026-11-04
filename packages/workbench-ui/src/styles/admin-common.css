@@ -78,7 +78,7 @@
   justify-content: flex-end;
 }
 
-/* Table base wrapper - width & overflow handled by theme.css .admin-table */
+/* Table base wrapper - the .el-table.admin-table rules are at the end of this file */
 .admin-table {
   width: 100%;
 }
@@ -312,4 +312,189 @@
   .admin-card-grid {
     grid-template-columns: 1fr;
   }
+}
+
+/* ========================================
+   Admin Table Styles - Modern Minimal
+   ======================================== */
+
+/* ---- Table container ---- */
+.el-table.admin-table {
+  background: var(--el-bg-color);
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--el-border-color);
+  box-shadow: var(--shadow-card);
+  overflow: hidden;
+}
+
+.el-table.admin-table::before {
+  height: 0;
+}
+
+/* ---- Table header ---- */
+.el-table.admin-table th.el-table__cell {
+  background-color: var(--el-fill-color-light);
+  color: var(--el-text-color-secondary);
+  font-weight: var(--font-semibold);
+  font-size: var(--text-sm);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  border-bottom: 1px solid var(--el-border-color-dark);
+  padding: 0 var(--spacing-lg);
+  height: 44px;
+}
+
+.el-table.admin-table th.el-table__cell .cell {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ---- Cells ---- */
+.el-table.admin-table td.el-table__cell {
+  background-color: var(--el-bg-color);
+  color: var(--el-text-color-regular);
+  font-size: var(--text-sm);
+  border-bottom: 1px solid var(--el-border-color-light);
+  transition: background-color var(--transition-fast);
+  padding: 0 var(--spacing-lg);
+  height: 48px;
+}
+
+/* ---- Last row has no bottom border ---- */
+.el-table.admin-table .el-table__body tr:last-child td.el-table__cell {
+  border-bottom: none;
+}
+
+/* ---- Striped rows ---- */
+.el-table.admin-table--striped .el-table__body tr.el-table__row--striped td.el-table__cell {
+  background-color: var(--el-fill-color-extra-light) !important;
+}
+
+/* ---- Hover effect ---- */
+.el-table.admin-table .el-table__body tr:hover > td.el-table__cell {
+  background-color: var(--el-fill-color-light) !important;
+}
+
+.el-table.admin-table--striped .el-table__body tr.el-table__row--striped:hover > td.el-table__cell {
+  background-color: var(--el-fill-color) !important;
+}
+
+/* ---- Selected row ---- */
+.el-table.admin-table .el-table__body tr.current-row > td.el-table__cell {
+  background-color: var(--el-fill-color) !important;
+}
+
+/* ---- Fixed column shadow optimization ---- */
+.el-table.admin-table .el-table__fixed::before,
+.el-table.admin-table .el-table__fixed-right::before {
+  background-color: transparent;
+  box-shadow: none;
+}
+
+/* ---- Empty data state ---- */
+.el-table.admin-table .el-table__empty-block {
+  background-color: var(--el-bg-color);
+}
+
+.el-table.admin-table .el-table__empty-text {
+  color: var(--el-text-color-secondary);
+}
+
+/* ---- Tags in table ---- */
+.el-table.admin-table .el-tag {
+  white-space: nowrap;
+  margin-right: var(--spacing-xs);
+}
+
+/* ---- Button groups in table ---- */
+.el-table.admin-table .el-button-group {
+  display: inline-flex;
+  flex-wrap: nowrap;
+}
+
+/* ---- Space component in table ---- */
+.el-table.admin-table .el-space {
+  flex-wrap: nowrap;
+  gap: var(--spacing-xs);
+}
+
+/* ========================================
+   Operation Column - Operation Cell
+   ======================================== */
+
+/* Operation column cell */
+.el-table.admin-table td.el-table__cell.operation-cell {
+  padding: 0 var(--spacing-sm) !important;
+  vertical-align: middle !important;
+}
+
+/* Operation column header */
+.el-table.admin-table th.el-table__cell.operation-cell .cell {
+  display: flex;
+  justify-content: center;
+}
+
+/* Operation column inner cell container - flex layout centering */
+.el-table.admin-table td.el-table__cell.operation-cell .cell {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--spacing-xs);
+  flex-wrap: nowrap;
+}
+
+/* Base styles for operation buttons */
+.el-table.admin-table .operation-cell .el-button {
+  white-space: nowrap;
+  flex-shrink: 0;
+  border-radius: var(--radius-sm);
+  padding: 2px 8px;
+  height: auto;
+  min-height: auto;
+  line-height: 1.5;
+  font-weight: var(--font-medium);
+  font-size: var(--text-xs);
+  transition: all var(--transition-fast);
+}
+
+/* Link-type button styles in the operation column */
+.el-table.admin-table .operation-cell .el-button.is-link {
+  padding: 2px 8px;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  border: none;
+  box-shadow: none;
+}
+
+.el-table.admin-table .operation-cell .el-button.is-link:hover {
+  background: var(--el-fill-color-light);
+}
+
+.el-table.admin-table .operation-cell .el-button.is-link:active {
+  background: var(--el-fill-color);
+}
+
+/* Reset button selected/focus state */
+.el-table.admin-table .operation-cell .el-button.is-link:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--el-color-primary) 20%, transparent);
+  background: var(--el-fill-color-light);
+}
+
+/* Button spacing is already controlled uniformly by the cell's gap */
+.el-table.admin-table .operation-cell .el-button + .el-button {
+  margin-left: 0;
+}
+
+/* ========================================
+   Table Cell Content Truncation
+   ======================================== */
+
+.el-table.admin-table .cell {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  padding: 0;
+  line-height: 1.5;
 }

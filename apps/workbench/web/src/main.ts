@@ -1,6 +1,5 @@
 import "element-plus/dist/index.css";
 import "element-plus/theme-chalk/dark/css-vars.css";
-import "./theme.css";
 import "@ontomato/workbench-ui/styles/style.css";
 import "./narrow-dialogs.css";
 import "@ontomato/workbench-ui/styles/admin-common.css";
@@ -15,6 +14,7 @@ import {
   startWorkbenchWeb,
   type AdminLayoutConfig,
 } from "@ontomato/workbench-ui";
+import { ossBrand } from "@ontomato/workbench-ui/brand/oss";
 import { anonymousAuthHost } from "./auth";
 import { workbenchContent } from "./workbench-content";
 
@@ -48,6 +48,7 @@ const adminLayout: AdminLayoutConfig = {
 };
 
 startWorkbenchWeb({
+  brand: ossBrand,
   language: {
     supported: ["en"],
     defaultLocale: "en",

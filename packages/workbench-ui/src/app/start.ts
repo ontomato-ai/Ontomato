@@ -8,8 +8,11 @@ import { installAuthHost, type WorkbenchAuthHost } from "../utils/auth";
 import { installErrorPunctuation, type ErrorPunctuation } from "../utils/error-punctuation";
 import { installWorkbenchContent, type WorkbenchContent } from "../content";
 import { turnDiagnosisAccessKey, type TurnDiagnosisAccess } from "../features/diagnosis/access";
+import { installBrandTheme, type BrandSource } from "../brand";
 
 export interface WorkbenchWebOptions {
+  /** This edition's brand source; the workbench colour variables are generated from it. */
+  brand: BrandSource;
   language: WorkbenchLanguage;
   auth: WorkbenchAuthHost;
   errorPunctuation: ErrorPunctuation;
@@ -25,11 +28,12 @@ export interface WorkbenchWebOptions {
 }
 
 /**
- * The single web startup order: install the host, punctuation, workbench content and language first
+ * The single web startup order: install the brand colours, the host, punctuation, workbench content and language first
  * (module-level code reads them at call time), then create Pinia and the router and install app guards, and finally
  * install everything into the app and mount; the router's first navigation happens after Pinia is installed.
  */
 export function startWorkbenchWeb(options: WorkbenchWebOptions): void {
+  installBrandTheme(options.brand);
   installAuthHost(options.auth);
   installErrorPunctuation(options.errorPunctuation);
   installWorkbenchContent(options.content);
