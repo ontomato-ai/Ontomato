@@ -305,8 +305,9 @@ rail muted = `muted`, rail active = `selected` with `ink`.
   Toolbars are not wrapped in a card — filters sit in the header row or one 40px row below.
 - **Content:** the table or form fills the remaining width with 16px padding. A table is a
   bordered surface with `rounded.md`; it does not float on a shadow.
-- **Admin navigation:** a 200px `canvas` sidebar with 32px `nav-row`s and `label` group
-  headings.
+- **Admin navigation:** a `canvas` sidebar with 32px `nav-row`s and `label` group headings.
+  The Ontology Service sidebar is 232px, the same as `agent-rail`; the Agent Platform admin
+  pages keep their existing 220px sidebar (64px collapsed).
 
 ### Grid
 
