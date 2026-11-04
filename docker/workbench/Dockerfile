@@ -35,13 +35,19 @@ RUN npm install -g pnpm@${PNPM_VERSION}
 ENV npm_config_store_dir=/pnpm/store
 
 WORKDIR /build
+COPY sources/ /build/workspace/
+WORKDIR /build/workspace/${WORKSPACE}
+# Install and report together: registry layer caches do not carry cache mounts.
+RUN --mount=type=cache,id=pnpm-store,target=/pnpm/store \
+    pnpm install --frozen-lockfile \
+ && { pnpm --filter "${APPLICATION}..." licenses list --json > /tmp/npm-licenses.json \
+      || { cat /tmp/npm-licenses.json >&2; exit 1; }; }
+
 COPY workspace/ /build/workspace/
 COPY inputs.json /inputs.json
 COPY tools/ /tmp/tools/
 COPY launch.sh /tmp/launch.sh
 
-WORKDIR /build/workspace/${WORKSPACE}
-RUN --mount=type=cache,id=pnpm-store,target=/pnpm/store pnpm install --frozen-lockfile
 WORKDIR /build/workspace/${WORKSPACE}/apps/workbench
 RUN pnpm build:web
 RUN TARGETPLATFORM=${TARGETPLATFORM} node /tmp/tools/workbench/stage-app.mjs
@@ -50,7 +56,6 @@ RUN cp /tmp/launch.sh /stage/launch.sh \
  && mkdir -p /stage/data
 
 COPY LICENSE NOTICE /stage/licenses/
-RUN --mount=type=cache,id=pnpm-store,target=/pnpm/store pnpm --filter "${APPLICATION}..." licenses list --json > /tmp/npm-licenses.json
 RUN python3 /tmp/tools/third_party_notices.py /stage/licenses/THIRD_PARTY_NOTICES.txt --npm /tmp/npm-licenses.json <<'EOF'
 Third-party notices for web assets and bundled application dependencies.
 EOF

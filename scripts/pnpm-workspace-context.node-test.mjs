@@ -105,17 +105,13 @@ test("collects only package metadata from two adjacent Git roots", (t) => {
   assert.equal(record.application, "@enterprise/workbench");
 });
 
-test("records HEAD, dirty state and content hashes for tracked and untracked metadata", (t) => {
+test("records content hashes for tracked and untracked metadata", (t) => {
   const fixture = workspaceFixture(t);
   json(join(fixture.publicRoot, "apps/new-app/package.json"), { name: "@ontomato/new-app" });
   const destination = join(fixture.dir, "context");
   const record = collect(sourcesOf(fixture), "enterprise", destination);
 
-  const [publicSource, privateSource] = record.sources;
-  assert.equal(publicSource.head, git(fixture.publicRoot, "rev-parse", "HEAD").trim());
-  assert.equal(privateSource.head, git(fixture.privateRoot, "rev-parse", "HEAD").trim());
-  assert.equal(publicSource.worktreeDirty, true);
-  assert.equal(privateSource.worktreeDirty, false);
+  const [publicSource] = record.sources;
   const paths = publicSource.candidates.map((candidate) => candidate.path);
   assert.deepEqual(paths, [...paths].sort());
   assert.equal(paths.includes("apps/new-app/package.json"), true);
@@ -127,13 +123,22 @@ test("records HEAD, dirty state and content hashes for tracked and untracked met
   assert.equal(record.application, "@enterprise/workbench");
 });
 
-test("copies the current bytes of a modified candidate and reports the worktree dirty", (t) => {
+test("source edits and commits preserve dependency inputs", (t) => {
+  const fixture = workspaceFixture(t);
+  const sources = sourcesOf(fixture);
+  const before = collect(sources, "enterprise", join(fixture.dir, "before"));
+  text(join(fixture.publicRoot, "src/index.ts"), "export const changed = true;\n");
+  assert.deepEqual(collect(sources, "enterprise", join(fixture.dir, "edited")), before);
+  commit(fixture.publicRoot, "source-only change");
+  assert.deepEqual(collect(sources, "enterprise", join(fixture.dir, "committed")), before);
+});
+
+test("copies the current bytes of modified dependency metadata", (t) => {
   const fixture = workspaceFixture(t);
   text(join(fixture.privateRoot, "pnpm-lock.yaml"), "lockfileVersion: '9.0'\n# edited\n");
   const destination = join(fixture.dir, "context");
   const record = collect(sourcesOf(fixture), "ontomato", destination);
 
-  assert.equal(record.sources[1].worktreeDirty, true);
   assert.equal(record.application, "@ontomato/workbench");
   assert.deepEqual(
     readFileSync(join(destination, "sources/enterprise/pnpm-lock.yaml")),

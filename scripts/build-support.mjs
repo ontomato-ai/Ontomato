@@ -44,7 +44,7 @@ export function execute(
   if (result.error) throw result.error;
   if (!allowFailure && result.status !== 0) {
     throw new Error(
-      `${executable} ${args.slice(0, 2).join(" ")} failed (${result.status ?? result.signal})${capture ? `\n${result.stderr}` : ""}`,
+      `${executable} ${args.slice(0, 2).join(" ")} failed (${result.status ?? result.signal})${capture ? `\n${result.stderr}${result.stdout}` : ""}`,
     );
   }
   return result;

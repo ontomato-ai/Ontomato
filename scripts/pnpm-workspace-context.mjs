@@ -146,14 +146,14 @@ export function collectMetadataContext({ sources, workspaceId, appImporter, dest
       throw new Error(`source ${entry.source.id} changed while collecting metadata`);
   }
 
+  // Image labels own source identity. Dependency inputs contain only metadata
+  // so a source-only commit can reuse the same installation layer.
   const record = {
     workspaceId,
     appImporter,
     application,
     sources: collected.map((entry) => ({
       id: entry.source.id,
-      head: entry.facts.head,
-      worktreeDirty: entry.facts.worktreeDirty,
       candidates: entry.facts.candidates,
     })),
   };

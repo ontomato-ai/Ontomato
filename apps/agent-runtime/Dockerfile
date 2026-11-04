@@ -15,11 +15,12 @@ FROM ${NODE_BUILDER_IMAGE} AS payload
 ARG TARGETPLATFORM
 RUN npm install -g pnpm@9.15.9
 ENV npm_config_store_dir=/pnpm/store
+COPY sources/ /build/workspace/
+WORKDIR /build/workspace/ontomato
+RUN --mount=type=cache,id=pnpm-store,target=/pnpm/store pnpm install --frozen-lockfile
 COPY workspace/ /build/workspace/
 COPY inputs.json /inputs.json
 COPY tools/ /tmp/tools/
-WORKDIR /build/workspace/ontomato
-RUN --mount=type=cache,id=pnpm-store,target=/pnpm/store pnpm install --frozen-lockfile
 RUN TARGETPLATFORM=${TARGETPLATFORM} node /tmp/tools/workbench/stage-app.mjs
 COPY LICENSE NOTICE /stage/licenses/
 FROM ${PYTHON_RUNTIME_IMAGE} AS python-runtime

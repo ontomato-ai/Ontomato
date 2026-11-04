@@ -15,6 +15,7 @@ import {
   buildStamp,
   imageCacheArgs,
   imageLabels,
+  output,
   parseOptions,
   sourceIdentity,
   stagingDirectory,
@@ -41,6 +42,13 @@ function git(dir, args) {
     },
   });
 }
+
+test("captured command failures retain JSON diagnostics written to stdout", () => {
+  assert.throws(
+    () => output(process.execPath, ["-e", 'process.stdout.write(JSON.stringify({ error: "MISSING_PACKAGE_INDEX_FILE" })); process.exit(1)']),
+    /MISSING_PACKAGE_INDEX_FILE/,
+  );
+});
 
 test("architecture is mandatory and flags remain literal argv", () => {
   const spec = {

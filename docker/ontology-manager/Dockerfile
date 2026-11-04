@@ -28,12 +28,16 @@ RUN npm install -g pnpm@${PNPM_VERSION}
 # pnpm's package store persists on the build machine across builds (a BuildKit
 # cache mount): packages are downloaded once and still installed exactly by the
 # frozen lock with integrity checks, so image contents do not depend on it.
-# Every step that reads the store (install, licenses) mounts the same cache.
+# The license report is saved with the installation, not with the cache mount.
 ENV npm_config_store_dir=/pnpm/store
 
-COPY workspace/ /build/workspace/
+COPY sources/ /build/workspace/
 WORKDIR /build/workspace/${WORKSPACE}
-RUN --mount=type=cache,id=pnpm-store,target=/pnpm/store pnpm install --frozen-lockfile --filter "${APPLICATION}..."
+RUN --mount=type=cache,id=pnpm-store,target=/pnpm/store \
+    pnpm install --frozen-lockfile --filter "${APPLICATION}..." \
+ && { pnpm --filter "${APPLICATION}..." licenses list --json > /tmp/npm-licenses.json \
+      || { cat /tmp/npm-licenses.json >&2; exit 1; }; }
+COPY workspace/ /build/workspace/
 WORKDIR /build/workspace/${WORKSPACE}/apps/ontology-manager
 RUN pnpm build
 # Third-party notices of the web bundle (bundling drops the packages' license
@@ -41,7 +45,6 @@ RUN pnpm build
 # dependencies included: listing more than the bundle uses is accepted where
 # listing less is not.
 COPY tools/third_party_notices.py /tmp/third_party_notices.py
-RUN --mount=type=cache,id=pnpm-store,target=/pnpm/store pnpm --filter "${APPLICATION}..." licenses list --json > /tmp/npm-licenses.json
 RUN python3 /tmp/third_party_notices.py /licenses/THIRD_PARTY_NOTICES.txt --npm /tmp/npm-licenses.json <<'EOF'
 Alpine packages of the nginx:1.27-alpine base and gettext: each package's
 license identifier is its L: field in /lib/apk/db/installed
