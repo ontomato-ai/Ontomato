@@ -226,10 +226,11 @@ function deleted(id: string) {
 </template>
 
 <style scoped>
+/* Fills the tab; the list and the editor scroll on their own, so a long agent list does not stretch the page. */
 .agent-settings {
   display: flex;
-  height: 100%;
-  min-height: 0;
+  height: calc(100vh - 220px);
+  min-height: 420px;
 }
 .agent-list {
   display: flex;

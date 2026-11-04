@@ -326,7 +326,7 @@ const kindLabel = (row: Row) =>
 
 <template>
   <div class="capability-library">
-    <div class="toolbar">
+    <div class="library-toolbar">
       <el-radio-group v-model="kindFilter" :aria-label="t('capabilities.filter')">
         <el-radio-button value="all">{{ t("common.all") }}</el-radio-button>
         <el-radio-button value="skill">{{ t("capabilities.skills") }}</el-radio-button>
@@ -347,7 +347,14 @@ const kindLabel = (row: Row) =>
       <el-button text @click="load">{{ t("common.retry") }}</el-button>
     </el-alert>
 
-    <el-table v-else v-loading="loading" :data="visibleRows" class="capability-table">
+    <el-table
+      v-else
+      v-loading="loading"
+      :data="visibleRows"
+      class="capability-table"
+      :fit="true"
+      :max-height="undefined"
+    >
       <el-table-column :label="t('capabilities.name')" min-width="240">
         <template #default="{ row }">
           <div class="name-cell">
@@ -422,20 +429,25 @@ const kindLabel = (row: Row) =>
       </template>
     </section>
 
-    <section v-if="publishedCards.length || publishedFailed" class="published">
-      <h3>{{ t("mcp.publishedTab") }}</h3>
-      <p class="published-hint">{{ t("mcp.publishedHint") }}</p>
-      <el-alert v-if="publishedFailed" type="warning" :closable="false" show-icon :title="t('mcp.loadFailed')" />
-      <article v-for="card in publishedCards" v-else :key="card.service.name" class="published-card">
-        <h4>{{ card.title }}</h4>
-        <code class="published-address">{{ card.service.mcpUrl }}</code>
-        <p v-if="card.hint" class="published-hint">{{ card.hint }}</p>
-        <details>
-          <summary>{{ t("mcp.availableTools") }} · {{ card.service.tools.length }}</summary>
-          <McpToolList :tools="card.service.tools" />
-        </details>
-      </article>
-    </section>
+    <details v-if="publishedCards.length || publishedFailed" class="published">
+      <summary>
+        <span class="published-title">{{ t("mcp.publishedTab") }}</span>
+        <span class="published-count">{{ publishedCards.length }}</span>
+      </summary>
+      <div class="published-body">
+        <p class="published-hint">{{ t("mcp.publishedHint") }}</p>
+        <el-alert v-if="publishedFailed" type="warning" :closable="false" show-icon :title="t('mcp.loadFailed')" />
+        <article v-for="card in publishedCards" v-else :key="card.service.name" class="published-card">
+          <h4>{{ card.title }}</h4>
+          <code class="published-address">{{ card.service.mcpUrl }}</code>
+          <p v-if="card.hint" class="published-hint">{{ card.hint }}</p>
+          <details class="published-tools">
+            <summary>{{ t("mcp.availableTools") }} · {{ card.service.tools.length }}</summary>
+            <McpToolList :tools="card.service.tools" />
+          </details>
+        </article>
+      </div>
+    </details>
 
     <SkillFormDialog
       v-model:visible="skillDialog"
@@ -450,24 +462,24 @@ const kindLabel = (row: Row) =>
 </template>
 
 <style scoped>
+/*
+ * The library grows with its content and the page scrolls: no scroll box inside the page, so the table is never squeezed
+ * into a few rows by whatever sits below it.
+ */
 .capability-library {
   display: flex;
   flex-direction: column;
   gap: var(--spacing-md);
-  height: 100%;
-  min-height: 0;
-  padding: 18px 24px;
-  overflow-y: auto;
+  min-height: 100%;
+  padding: 18px 24px 32px;
 }
-.toolbar {
+.library-toolbar {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
   gap: var(--spacing-sm);
-  height: auto;
-  margin-bottom: 0;
 }
-.toolbar .el-input {
+.library-toolbar .el-input {
   width: 240px;
 }
 .toolbar-actions {
@@ -530,17 +542,46 @@ const kindLabel = (row: Row) =>
   font-weight: 600;
   color: var(--el-text-color-primary);
 }
+/* A section of its own, collapsed by default: the table above is the page's subject. */
 .published {
-  display: grid;
-  gap: var(--spacing-sm);
-  padding-top: var(--spacing-md);
   border-top: 1px solid var(--el-border-color-lighter);
+  padding-top: var(--spacing-sm);
 }
-.published h3 {
-  margin: 0;
+.published > summary {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  height: var(--nav-row-height);
+  cursor: pointer;
   font-size: var(--text-sm);
   font-weight: 600;
   color: var(--el-text-color-primary);
+  border-radius: var(--radius-sm);
+  padding: 0 var(--spacing-sm);
+}
+.published > summary:hover {
+  background: var(--el-fill-color-light);
+}
+.published > summary:focus-visible {
+  outline: 2px solid var(--el-color-primary);
+  outline-offset: -2px;
+}
+.published > summary::marker,
+.published > summary::-webkit-details-marker {
+  color: var(--el-text-color-secondary);
+}
+.published-count {
+  padding: 0 6px;
+  border-radius: var(--radius-xs);
+  background: var(--el-fill-color);
+  color: var(--el-text-color-secondary);
+  font-size: var(--text-xs);
+  font-weight: 500;
+}
+.published-body {
+  display: grid;
+  gap: var(--spacing-sm);
+  padding: var(--spacing-sm) var(--spacing-sm) 0;
 }
 .published-hint {
   margin: 0;
@@ -565,10 +606,10 @@ const kindLabel = (row: Row) =>
   color: var(--el-text-color-regular);
   overflow-wrap: anywhere;
 }
-.published-card details {
+.published-card .published-tools {
   margin-top: 8px;
 }
-.published-card summary {
+.published-card .published-tools summary {
   cursor: pointer;
   font-size: var(--text-xs);
   color: var(--el-text-color-secondary);

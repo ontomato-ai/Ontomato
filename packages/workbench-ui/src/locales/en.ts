@@ -694,8 +694,6 @@ export default {
     "dataScopeIncludeAdjacent": "Include the adjacent object types",
     "dataScopeList": "Object types",
     "dataScopeNoClasses": "This domain has no object types yet",
-    "dataScopeZoomIn": "Zoom in",
-    "dataScopeZoomOut": "Zoom out",
     "dataScopeReset": "Reset view",
     "systemAgents": "System agents",
     "opsAgentModelOnly": "Model only",

@@ -58,6 +58,14 @@ describe("old admin addresses in the workbench", () => {
     );
   });
 
+  it("operations addresses open operations diagnosis, keeping the page they name", async () => {
+    expect((await open("/admin/observe")).path).toBe("/observe");
+    const turn = await open("/admin/observe/turn?x=1");
+    expect(turn.path).toBe("/observe/turn");
+    // It stays in the workbench application; the operations page renders it, not a tab replacement.
+    expect(turn.replaced).toBeNull();
+  });
+
   it("the console's pages redirect into the function area instead of rendering a page", async () => {
     const cases: Array<[string, string]> = [
       ["/admin", "/chat"],
