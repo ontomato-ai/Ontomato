@@ -24,6 +24,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 
 import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONArray;
@@ -52,8 +53,24 @@ public class DuckDBAdapter implements DataAdapter {
 
 	@Override
 	public Connection openConnection() throws SQLException {
-		return DriverManager.getConnection(connection.get("url"));
+		String url = connection.get("url");
+		// DuckDB keeps one instance per database file in the JVM. Two threads opening the same
+		// file at the same time race in the driver: the loser treats the file as a second,
+		// separately attachable database and fails with
+		// "Unique file handle conflict: Cannot attach \"<db>\" ...".
+		// Serializing the connect step (open only — queries stay parallel) removes the race;
+		// once an instance exists, later opens reuse it.
+		Object lock = isFileDatabase(url) ? CONNECT_LOCKS.computeIfAbsent(filePath(url), key -> new Object()) : null;
+		if (lock == null) {
+			return DriverManager.getConnection(url);
+		}
+		synchronized (lock) {
+			return DriverManager.getConnection(url);
+		}
 	}
+
+	/** One connect lock per database file; a JVM-wide lock would serialize unrelated databases too. */
+	private static final Map<String, Object> CONNECT_LOCKS = new ConcurrentHashMap<>();
 
 	/**
 	 * A missing database file fails the test without creating anything; the DuckDB
