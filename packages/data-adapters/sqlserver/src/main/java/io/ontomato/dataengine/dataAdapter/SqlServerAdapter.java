@@ -285,11 +285,90 @@ public class SqlServerAdapter implements DataAdapter {
 							String[] fromClassAlias = idxMap.get(fromIdx);
 							String[] toClassAlias = idxMap.get(toIdx);
 							String relationshipName = relationship.getJSONArray("type").getString(0).trim();
-							@SuppressWarnings("unchecked")
-							Map<String, Object> relationDef = (Map<String, Object>) relationship_rule
-									.get(relationshipName);
-							String fromField = (String) relationDef.get("fromField");
-							String toField = (String) relationDef.get("toField");
+							OntologyRelation rel = OntologyRelation.of(relationshipName,
+									relationship_rule.get(relationshipName),
+									"relationship_rule[" + relationshipName + "]");
+							if (!rel.usesKeyFields()) {
+								throw new DslContractViolationException(
+										DslContractViolationException.Code.UNSUPPORTED_CONSTRUCT,
+										"relationship[" + relationshipName + "]",
+										"relationship [" + relationshipName + "] declares type '" + rel.kind()
+												+ "', which this source cannot traverse; it stores edges as key columns");
+							}
+							if (rel.junction()) {
+								String linkTable = junctionTableName(rel);
+								String linkAlias = "__l" + i;
+								// The DSL may traverse the relationship either way; the junction columns belong to
+								// the ontomap's ends, so resolve which alias is which before placing them.
+								boolean fromIsOntoFrom = classMatches(fromClassAlias[0], rel.fromClass());
+								String ontoFromAlias = fromIsOntoFrom ? fromClassAlias[1] : toClassAlias[1];
+								String ontoToAlias = fromIsOntoFrom ? toClassAlias[1] : fromClassAlias[1];
+								String ontoFromClassName = fromIsOntoFrom ? fromClassAlias[0] : toClassAlias[0];
+								String ontoToClassName = fromIsOntoFrom ? toClassAlias[0] : fromClassAlias[0];
+								// Which end the DSL wrote first does not change what the columns mean: fromField
+								// is always the column on the ontomap's from-class, linkTableFromField always the
+								// junction column holding that class's key.
+								String ontoFromField = rel.fromField();
+								String ontoToField = rel.toField();
+								String ontoFromLink = rel.linkTableFromField();
+								String ontoToLink = rel.linkTableToField();
+								// Junction attached to the end that is already in the FROM clause.
+								String fromJunction = " inner join " + linkTable + " as [" + linkAlias + "] on ["
+										+ ontoFromAlias + "]." + ontoFromField + " = [" + linkAlias + "]." + ontoFromLink;
+								String toJunction = " inner join " + linkTable + " as [" + linkAlias + "] on ["
+										+ ontoToAlias + "]." + ontoToField + " = [" + linkAlias + "]." + ontoToLink;
+								// The other class, joined through the junction.
+								String joinTarget = " inner join " + ontoToClassName + " as [" + ontoToAlias + "] on ["
+										+ linkAlias + "]." + ontoToLink + " = [" + ontoToAlias + "]." + ontoToField;
+								String joinSource = " inner join " + ontoFromClassName + " as [" + ontoFromAlias + "] on ["
+										+ linkAlias + "]." + ontoFromLink + " = [" + ontoFromAlias + "]." + ontoFromField;
+
+								boolean ontoFromInSet = inJoinIdxs.contains(fromIsOntoFrom ? fromIdx : toIdx);
+								boolean ontoToInSet = inJoinIdxs.contains(fromIsOntoFrom ? toIdx : fromIdx);
+
+								if (inJoinIdxs.isEmpty()) {
+									// A logical one-hop edge is two joins here; the hop count the DSL wrote stays 1.
+									innerJoinSqls.add(ontoFromClassName + " as [" + ontoFromAlias + "]"
+											+ fromJunction + joinTarget);
+									inJoinIdxs.add(fromIdx);
+									inJoinIdxs.add(toIdx);
+									innerJoinClassesList.add(new HashSet<>(inJoinIdxs));
+									inJoinRelIndexes.add(i);
+								} else if (ontoFromInSet && !ontoToInSet) {
+									innerJoinSqls.add(fromJunction + joinTarget);
+									inJoinIdxs.add(fromIsOntoFrom ? toIdx : fromIdx);
+									innerJoinClassesList.add(new HashSet<>(inJoinIdxs));
+									inJoinRelIndexes.add(i);
+								} else if (!ontoFromInSet && ontoToInSet) {
+									innerJoinSqls.add(toJunction + joinSource);
+									inJoinIdxs.add(fromIsOntoFrom ? fromIdx : toIdx);
+									innerJoinClassesList.add(new HashSet<>(inJoinIdxs));
+									inJoinRelIndexes.add(i);
+								} else if (ontoFromInSet && ontoToInSet) {
+									// Both ends are already joined: require a junction row between them without
+									// introducing either class a second time.
+									Integer groupIndex = null;
+									for (int j = 0; j < innerJoinClassesList.size(); j++) {
+										Set<Integer> group = innerJoinClassesList.get(j);
+										if (group.contains(fromIdx) && group.contains(toIdx)) {
+											groupIndex = j;
+											break;
+										}
+									}
+									if (groupIndex == null) {
+										groupIndex = 0;
+									}
+									innerJoinSqls.set(groupIndex, innerJoinSqls.get(groupIndex)
+											+ " inner join " + linkTable + " as [" + linkAlias + "] on ["
+											+ ontoFromAlias + "]." + ontoFromField + " = [" + linkAlias + "]." + ontoFromLink
+											+ " and [" + linkAlias + "]." + ontoToLink + " = ["
+											+ ontoToAlias + "]." + ontoToField);
+									inJoinRelIndexes.add(i);
+								}
+								continue;
+							}
+							String fromField = rel.fromField();
+							String toField = rel.toField();
 							if (inJoinIdxs.isEmpty()) {
 								innerJoinSqls.add(fromClassAlias[0] + " as [" + fromClassAlias[1] + "]"
 										+ " inner join " + toClassAlias[0] + " as [" + toClassAlias[1] + "]"
@@ -689,7 +768,110 @@ public class SqlServerAdapter implements DataAdapter {
 
 	@Override
 	public void createEdgeType(String namespace, String edgeName) {
+		try {
+			Map<String, Object> relationship_rule = (Map<String, Object>) jsonRule.get("relationship_rule");
+			OntologyRelation rel = OntologyRelation.of(edgeName, relationship_rule.get(edgeName),
+					"relationship_rule[" + edgeName + "]");
+			if (!rel.junction()) {
+				return;
+			}
+			String table = junctionTable(namespace, rel);
+			// SQL Server has no `create table if not exists`; object_id is the idempotent form. It runs
+			// through executeDdl rather than executeUpdate: this driver rejects a guarded DDL sent as a
+			// batch inside a transaction ("valid transaction descriptor"), while a plain statement runs.
+			executeDdl("if object_id(N'" + table + "', N'U') is null create table " + table + " (\n"
+					+ " " + rel.linkTableFromField() + " " + joinColumnType(rel.fromClass(), rel.fromField()) + ",\n"
+					+ " " + rel.linkTableToField() + " " + joinColumnType(rel.toClass(), rel.toField()) + "\n"
+					+ ");");
+		} catch (Exception e) {
+			log.error(e.getMessage(), e);
+		}
 	}
+
+	/** The SQL type of a class's join column, so a junction column holds the same values its end does. */
+	private String joinColumnType(String className, String fieldName) {
+		List<Map<String, Object>> classDefs = (List<Map<String, Object>>) jsonRule.get("classDef");
+		for (Map<String, Object> classDef : classDefs) {
+			if (!className.equals(classDef.get("className"))) {
+				continue;
+			}
+			List<Map<String, Object>> attrs = (List<Map<String, Object>>) classDef.get("attrs");
+			if (attrs == null) {
+				break;
+			}
+			for (Map<String, Object> attr : attrs) {
+				if (!fieldName.equals(attr.get("name"))) {
+					continue;
+				}
+				String type = (String) attr.get("type");
+				if ("int".equals(type)) {
+					return "int";
+				}
+				if ("long".equals(type)) {
+					return "bigint";
+				}
+				if ("double".equals(type)) {
+					return "float";
+				}
+				if ("date".equals(type)) {
+					return "date";
+				}
+				if ("timestamp".equals(type)) {
+					return "datetime2";
+				}
+				if ("text".equals(type) || "vector".equals(type)) {
+					return "nvarchar(max)";
+				}
+				return "varchar(200)";
+			}
+		}
+		return "varchar(200)";
+	}
+
+	/**
+	 * The junction table name as the read path must spell it.
+	 *
+	 * <p>A sandbox run prefixes every class table with the namespace before the DSL reaches this
+	 * adapter, and the junction table has to follow the same rule or the query would read the
+	 * production junction. The prefix is recovered from a class definition rather than passed in,
+	 * because the read path receives the already-rewritten names and nothing else.</p>
+	 */
+	private String junctionTableName(OntologyRelation rel) {
+		String prefix = "";
+		List<Map<String, Object>> classDefs = (List<Map<String, Object>>) jsonRule.get("classDef");
+		if (classDefs != null) {
+			for (Map<String, Object> classDef : classDefs) {
+				String className = (String) classDef.get("className");
+				if (className != null && rel.fromClass() != null && className.endsWith(rel.fromClass())
+						&& !className.equals(rel.fromClass())) {
+					prefix = className.substring(0, className.length() - rel.fromClass().length());
+					break;
+				}
+			}
+		}
+		return prefix + rel.linkTable();
+	}
+
+	/**
+	 * Whether a class name as the DSL carries it names the given ontomap class. A sandbox run rewrites
+	 * every class name with the namespace prefix before the DSL reaches this adapter, so the
+	 * comparison cannot be plain equality.
+	 */
+	private boolean classMatches(String dslClassName, String ontoClassName) {
+		if (ontoClassName == null) {
+			return false;
+		}
+		if (ontoClassName.equals(dslClassName)) {
+			return true;
+		}
+		return dslClassName != null && dslClassName.endsWith(ontoClassName);
+	}
+
+	/** The junction table's physical name: it follows the same namespace rule as a class's table. */
+	private String junctionTable(String namespace, OntologyRelation rel) {
+		return inSandbox(namespace) ? sandboxClassName(namespace, rel.linkTable()) : rel.linkTable();
+	}
+
 
 	@Override
 	public void insertObjects(String namespace, Map<String, Object> classDef, JSONArray objs) throws Exception {
@@ -995,16 +1177,36 @@ public class SqlServerAdapter implements DataAdapter {
 			}
 		}
 		Map<String, Object> relDef = (Map<String, Object>) relationship_rule.get(relationName);
+		OntologyRelation rel = OntologyRelation.of(relationName, relDef,
+				"relationship_rule[" + relationName + "]");
 
-		if (relDef != null && sourceClassDef != null && targetClassDef != null && relDef.get("fromclass").equals(sourceClassName) && relDef.get("toclass").equals(targetClassName)) {
+		if (sourceClassDef == null || targetClassDef == null || !rel.fromEnd(sourceClassName)
+				|| !rel.toClass().equals(targetClassName)) {
+			throw new Exception("Object class [" + sourceClassName + "] and object class [" + targetClassName + "] have no relationship definition [" + relationName + "]");
+		}
+		if (rel.junction()) {
+			// One semantic edge is one junction row; the two classes themselves are never touched.
+			insertJunctionRow(namespace, rel, sourceObjId, targetObjId);
+			return;
+		}
+		if (!rel.usesKeyFields()) {
+			throw new UnsupportedDataAdapterOperationException("sqlserver",
+					"an edge stored as a graph relationship; relationship [" + relationName + "] declares type '"
+							+ rel.kind() + "' but this source stores edges as key columns");
+		}
+
+		{
 			String sourcePk = DslUtil.getPrimaryKey(sourceClassDef);
 			String targetPk = DslUtil.getPrimaryKey(targetClassDef);
-			String sourceInnerField = (String) relDef.get("fromField");
-			String targetInnerField = (String) relDef.get("toField");
+			String sourceInnerField = rel.fromField();
+			String targetInnerField = rel.toField();
 
 			String sql = null;
 			if (sourcePk.equals(sourceInnerField)) {
 				if (targetPk.equals(targetInnerField)) {
+					// Both join fields are the classes' own primary keys: a 1:1 link where the two rows
+					// share one key value. Nothing to write — the connection IS the equal key. Not a gap.
+					return;
 				} else {
 					String fullClassName = inSandbox ? namespace + ((String) targetClassDef.get("className")) : (String) targetClassDef.get("className");
 					sql = "update " + fullClassName + " set " + targetInnerField + " = " + toSqlValue("varchar", sourceObjId, null, null) + " where " + targetPk + " = " + toSqlValue("varchar", targetObjId, null, null);
@@ -1014,15 +1216,32 @@ public class SqlServerAdapter implements DataAdapter {
 					String fullClassName = inSandbox ? namespace + ((String) sourceClassDef.get("className")) : (String) sourceClassDef.get("className");
 					sql = "update " + fullClassName + " set " + sourceInnerField + " = " + toSqlValue("varchar", targetObjId, null, null) + " where " + sourcePk + " = " + toSqlValue("varchar", sourceObjId, null, null);
 				} else {
+					// Neither end is a primary key: no column can carry this connection, so a junction
+					// table is the only realization. Saying so beats silently writing nothing.
+					throw new DslContractViolationException(DslContractViolationException.Code.UNSUPPORTED_CONSTRUCT,
+							"relationship_rule[" + relationName + "]",
+							"relationship [" + relationName + "] joins two non-key fields (" + sourceInnerField + ", "
+									+ targetInnerField + "), which needs a junction table; declare it as n:n with a linkTable");
 				}
 			}
 
 			if (sql != null) {
 				executeUpdate(sql);
 			}
-		} else {
-			throw new Exception("Object class [" + sourceClassName + "] and object class [" + targetClassName + "] have no relationship definition [" + relationName + "]");
 		}
+	}
+
+	/** Insert one junction row, or leave it alone when this exact pairing is already recorded. */
+	private void insertJunctionRow(String namespace, OntologyRelation rel, String sourceObjId, String targetObjId)
+			throws Exception {
+		String table = junctionTable(namespace, rel);
+		String sql = "insert into " + table + " (" + rel.linkTableFromField() + ", " + rel.linkTableToField() + ")"
+				+ " select " + toSqlValue("varchar", sourceObjId, null, null) + ", "
+				+ toSqlValue("varchar", targetObjId, null, null)
+				+ " where not exists (select 1 from " + table + " where " + rel.linkTableFromField() + " = "
+				+ toSqlValue("varchar", sourceObjId, null, null) + " and " + rel.linkTableToField() + " = "
+				+ toSqlValue("varchar", targetObjId, null, null) + ")";
+		executeUpdate(sql);
 	}
 
 	@Override
@@ -1043,16 +1262,38 @@ public class SqlServerAdapter implements DataAdapter {
 			}
 		}
 		Map<String, Object> relDef = (Map<String, Object>) relationship_rule.get(relationName);
+		OntologyRelation rel = OntologyRelation.of(relationName, relDef,
+				"relationship_rule[" + relationName + "]");
 
-		if (relDef != null && sourceClassDef != null && targetClassDef != null && relDef.get("fromclass").equals(sourceClassName) && relDef.get("toclass").equals(targetClassName)) {
+		if (sourceClassDef == null || targetClassDef == null || !rel.fromEnd(sourceClassName)
+				|| !rel.toClass().equals(targetClassName)) {
+			throw new Exception("Object class [" + sourceClassName + "] and object class [" + targetClassName + "] have no relationship definition [" + relationName + "]");
+		}
+		if (rel.junction()) {
+			// Removing an edge removes that one pairing; the classes keep their rows.
+			String table = junctionTable(namespace, rel);
+			executeUpdate("delete from " + table + " where " + rel.linkTableFromField() + " = "
+					+ toSqlValue("varchar", sourceObjId, null, null) + " and " + rel.linkTableToField() + " = "
+					+ toSqlValue("varchar", targetObjId, null, null));
+			return;
+		}
+		if (!rel.usesKeyFields()) {
+			throw new UnsupportedDataAdapterOperationException("sqlserver",
+					"an edge stored as a graph relationship; relationship [" + relationName + "] declares type '"
+							+ rel.kind() + "' but this source stores edges as key columns");
+		}
+
+		{
 			String sourcePk = DslUtil.getPrimaryKey(sourceClassDef);
 			String targetPk = DslUtil.getPrimaryKey(targetClassDef);
-			String sourceInnerField = (String) relDef.get("fromField");
-			String targetInnerField = (String) relDef.get("toField");
+			String sourceInnerField = rel.fromField();
+			String targetInnerField = rel.toField();
 
 			String sql = null;
 			if (sourcePk.equals(sourceInnerField)) {
 				if (targetPk.equals(targetInnerField)) {
+					// A 1:1 shared key: the connection is the equal key value, so there is no column to clear.
+					return;
 				} else {
 					String fullClassName = inSandbox ? namespace + ((String) targetClassDef.get("className")) : (String) targetClassDef.get("className");
 					sql = "update " + fullClassName + " set " + targetInnerField + " = null where " + targetPk + " = " + toSqlValue("varchar", targetObjId, null, null);
@@ -1062,14 +1303,16 @@ public class SqlServerAdapter implements DataAdapter {
 					String fullClassName = inSandbox ? namespace + ((String) sourceClassDef.get("className")) : (String) sourceClassDef.get("className");
 					sql = "update " + fullClassName + " set " + sourceInnerField + " = null where " + sourcePk + " = " + toSqlValue("varchar", sourceObjId, null, null);
 				} else {
+					throw new DslContractViolationException(DslContractViolationException.Code.UNSUPPORTED_CONSTRUCT,
+							"relationship_rule[" + relationName + "]",
+							"relationship [" + relationName + "] joins two non-key fields (" + sourceInnerField + ", "
+									+ targetInnerField + "), which needs a junction table; declare it as n:n with a linkTable");
 				}
 			}
 
 			if (sql != null) {
 				executeUpdate(sql);
 			}
-		} else {
-			throw new Exception("Object class [" + sourceClassName + "] and object class [" + targetClassName + "] have no relationship definition [" + relationName + "]");
 		}
 	}
 
@@ -1077,6 +1320,32 @@ public class SqlServerAdapter implements DataAdapter {
 		List<String> sqls = new ArrayList<String>();
 		sqls.add(sql);
 		executeUpdate(sqls);
+	}
+
+	/**
+	 * Run one DDL statement directly instead of through the batch path.
+	 *
+	 * <p>The driver refuses a conditionally guarded DDL ({@code if object_id(...) is null create
+	 * table ...}) when it is sent as a batch on a transaction, failing with "New request is not
+	 * allowed to start because it should come with valid transaction descriptor" — the statement
+	 * never reaches the server. A plain {@code execute} on the same connection runs it fine, and
+	 * CREATE TABLE commits itself here as much as it can in SQL Server anyway.</p>
+	 */
+	private void executeDdl(String sql) throws Exception {
+		Connection conn = null;
+		Statement st = null;
+		try {
+			conn = openConnection();
+			st = conn.createStatement();
+			st.execute(sql);
+		} finally {
+			if (st != null) {
+				try { st.close(); } catch (Exception e) { log.error(e.getMessage(), e); }
+			}
+			if (conn != null) {
+				try { conn.close(); } catch (Exception e) { log.error(e.getMessage(), e); }
+			}
+		}
 	}
 
 	private void executeUpdate(List<String> sqls) throws Exception {
