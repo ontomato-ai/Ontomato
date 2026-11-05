@@ -76,7 +76,7 @@ export const platformPages = {
     titleKey: "nav.userFeedback",
     descriptionKey: "platform.descriptions.userFeedback",
     icon: MessageSquareText,
-    permissions: ["audit-logs"],
+    permissions: ["user-feedback"],
     group: "knowledge",
   },
   runRecords: {
