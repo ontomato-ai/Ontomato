@@ -109,6 +109,22 @@ export default [
     },
   },
   {
+    // The platform scheduled tasks page is a platform UI package: it takes the host's request function
+    // (whose signature uses DOM type names, not runtime globals) and depends on no host application.
+    files: ["packages/platform-schedules/src/**/*.{ts,vue}"],
+    rules: {
+      "no-undef": "off",
+      "no-restricted-imports": restrict([
+        {
+          regex:
+            "^@ontomato/(?!(contracts|design-tokens)(/|$))|(^|/)(workbench-ui|workbench-server|ontology-manager|platform-admin|agent-shell-ui)(/|$)",
+          message:
+            "platform-schedules may depend on contracts, design tokens and UI libraries only; hosts inject the request function and the catalogs",
+        },
+      ]),
+    },
+  },
+  {
     // Manager components consume only what the Manager installs in the page (context, client, text
     // helpers) and report navigation through events; they do not depend on the router, the page's
     // vue-i18n instance or a store. Only the route table, the frame around the pages and the context
