@@ -2,7 +2,7 @@
 import { computed, onMounted, ref } from "vue";
 import { ElMessageBox } from "element-plus";
 import { useI18n } from "vue-i18n";
-import { Plus, ScanEye } from "lucide-vue-next";
+import { Plus } from "lucide-vue-next";
 import type { ModelOptions } from "@ontomato/contracts/model-settings";
 import { useTheme } from "../../../composables/useTheme";
 import type { AssistantAgentDefinition as AgentDefinition } from "@ontomato/contracts/assistant-chat";
@@ -15,16 +15,13 @@ import {
 } from "../api";
 import { avatarIcon, lightAvatarColorOptions, themedAvatarColor } from "../avatar";
 import AgentEditor from "./AgentEditor.vue";
-import DiagnosisModelPanel from "./DiagnosisModelPanel.vue";
 
 /**
- * The agents tab: business agents and the built-in operations agent in one list, grouped. The built-in agent has only
- * its model to set; every other agent opens the long editor.
+ * The agents tab: the business agents, and the editor for the one that is open.
+ *
+ * The built-in operations agent is not listed: its one setting — the model the diagnosis runs on — is the operations
+ * application's own page, opened from that column's foot (DESIGN "Applications and shells").
  */
-const props = defineProps<{
-  /** The operations agent is shown only with the observer code (the same code as operations diagnosis). */
-  showSystemAgents: boolean;
-}>();
 const emit = defineEmits<{ changed: [] }>();
 const { t } = useI18n();
 const { isDark } = useTheme();
@@ -35,7 +32,6 @@ const loadFailed = ref(false);
 /** null while creating a new agent. */
 const selectedId = ref<string | null>(null);
 const creating = ref(false);
-const diagnosisOpen = ref(false);
 const editor = ref<{ dirty: boolean } | null>(null);
 const classes = ref<ObjectClassOption[]>([]);
 const relations = ref<ObjectRelationOption[]>([]);
@@ -107,24 +103,16 @@ async function leaveEditor(): Promise<boolean> {
 }
 
 async function select(id: string) {
-  if (id === selectedId.value && !creating.value && !diagnosisOpen.value) return;
+  if (id === selectedId.value && !creating.value) return;
   if (!(await leaveEditor())) return;
   creating.value = false;
-  diagnosisOpen.value = false;
   selectedId.value = id;
 }
 
 async function startNew() {
   if (creating.value || !(await leaveEditor())) return;
   creating.value = true;
-  diagnosisOpen.value = false;
   selectedId.value = null;
-}
-
-async function openDiagnosis() {
-  if (diagnosisOpen.value || !(await leaveEditor())) return;
-  diagnosisOpen.value = true;
-  creating.value = false;
 }
 
 function saved(agent: AgentDefinition) {
@@ -161,14 +149,14 @@ function deleted(id: string) {
         {{ t("agents.loadFailed") }}
         <button type="button" class="link" @click="load">{{ t("common.retry") }}</button>
       </div>
-      <div v-else-if="agents.length === 0 && !props.showSystemAgents" class="list-note">{{ t("agents.empty") }}</div>
+      <div v-else-if="agents.length === 0" class="list-note">{{ t("agents.empty") }}</div>
       <ul v-else>
         <li v-for="agent in agents" :key="agent.id">
           <button
             type="button"
             class="agent-item"
-            :class="{ active: agent.id === selectedId && !creating && !diagnosisOpen }"
-            :aria-current="agent.id === selectedId && !creating && !diagnosisOpen ? 'page' : undefined"
+            :class="{ active: agent.id === selectedId && !creating }"
+            :aria-current="agent.id === selectedId && !creating ? 'page' : undefined"
             @click="select(agent.id)"
           >
             <span class="item-avatar" :style="{ background: avatarOf(agent).color }">
@@ -182,32 +170,10 @@ function deleted(id: string) {
           </button>
         </li>
       </ul>
-      <template v-if="props.showSystemAgents">
-        <h3 class="list-group">{{ t("agents.systemAgents") }}</h3>
-        <button
-          type="button"
-          class="agent-item"
-          :class="{ active: diagnosisOpen }"
-          :aria-current="diagnosisOpen ? 'page' : undefined"
-          @click="openDiagnosis"
-        >
-          <span class="item-avatar system-avatar"><ScanEye :size="16" /></span>
-          <span class="item-text">
-            <span class="item-name">{{ t("admin.opsAgent") }}</span>
-            <span class="item-description">{{ t("agents.opsAgentModelOnly") }}</span>
-          </span>
-        </button>
-      </template>
     </aside>
     <section class="agent-detail">
-      <DiagnosisModelPanel
-        v-if="diagnosisOpen"
-        :model-options="modelOptions"
-        :model-options-failed="modelOptionsFailed"
-        @reload-model-options="reloadModelOptions"
-      />
       <AgentEditor
-        v-else-if="creating || selected"
+        v-if="creating || selected"
         ref="editor"
         :key="editorKey"
         :agent="creating ? null : selected"

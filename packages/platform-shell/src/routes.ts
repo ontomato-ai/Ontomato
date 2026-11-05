@@ -21,6 +21,7 @@ export const platformRoutes = {
   cases: { name: "ObserveCases", path: "/ops/cases" },
   caseDetail: { name: "ObserveAutoTestCaseDetail", path: "/ops/autotest/runs/:runId/cases/:caseId" },
   dsl: { name: "ObserveDsl", path: "/ops/dsl" },
+  opsModel: { name: "ObserveModel", path: "/ops/model" },
   governance: { name: "KnowledgeGovernance", path: "/governance/chat/:sessionId?" },
   feedback: { name: "Feedback", path: "/governance/feedback" },
   graph: { name: "LegacyGraph", path: "/browser/graph" },

@@ -8,7 +8,7 @@ export type Translate = (key: string, named?: Record<string, unknown>, count?: n
  * One task's display text: times in the reader's language and zone, and the states the contracts name. The list and the
  * run history share it so a status never reads two ways on one screen.
  *
- * A component reads its text under the package's own tree: the host merges `./locales/en` into its dictionary, so the
+ * A component reads its text under the package's own tree: the public English dictionary carries `./locales/en`, so the
  * keys a component resolves are `platformSchedules.<key>`, exactly like the `t` the page hands the list.
  */
 export function useSchedulesLabels() {

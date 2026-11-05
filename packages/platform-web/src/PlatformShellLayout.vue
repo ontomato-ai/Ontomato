@@ -73,12 +73,9 @@ const labels = computed(() => ({
   unsavedChanges: t("platform.unsavedChanges"),
 }));
 
-/**
- * Where an application's rail row goes: the address its declaration names, and otherwise the first page of it the
- * account may open. A rail row always leaves the current page.
- */
+/** Where an application's rail row goes: the address its declaration carries (worked out in `appDeclarations`). */
 function homeOf(app: PlatformAppDeclaration): string | null {
-  return app.home ?? app.groups?.flatMap((group) => group.pages).find((page) => page.id)?.id ?? null;
+  return app.home ?? null;
 }
 
 function selectApp(id: string) {

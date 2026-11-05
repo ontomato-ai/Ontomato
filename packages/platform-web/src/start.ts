@@ -5,8 +5,6 @@ import ElementPlus from "element-plus";
 import { createRouter, createWebHashHistory, type Router, type RouteRecordRaw } from "vue-router";
 import App from "./App.vue";
 import { installWorkbenchI18n, workbenchI18n, type WorkbenchI18n, type WorkbenchLanguage } from "@ontomato/workbench-ui/i18n";
-import platformSchedulesEn from "@ontomato/platform-schedules/locales/en";
-import platformSchedulesZh from "@ontomato/platform-schedules/locales/zh";
 import { installAuthHost, type WorkbenchAuthHost } from "@ontomato/workbench-ui/utils/auth";
 import {
   installErrorPunctuation,
@@ -20,23 +18,6 @@ import { ontologyServiceAccessKey, type OntologyServiceAccess } from "@ontomato/
 import { createAppColumn, appColumnKey } from "@ontomato/agent-shell-ui";
 import { installBrandTheme, type BrandSource } from "@ontomato/design-tokens";
 import { installWorkbenchBrand } from "@ontomato/workbench-ui/brand";
-
-/** The scheduled tasks page's dictionaries, by the platform's locale code. */
-const SCHEDULES_MESSAGES: Readonly<Record<string, unknown>> = {
-  "zh-CN": platformSchedulesZh,
-  "zh-TW": platformSchedulesZh,
-  en: platformSchedulesEn,
-};
-
-/**
- * The scheduled tasks page names its words `platformSchedules.*` and reads them from the page's own vue-i18n instance.
- * Every locale the platform serves merges the package's dictionary for it, so the page never shows a key.
- */
-function installSchedulesMessages() {
-  const i18n = workbenchI18n();
-  for (const locale of i18n.global.availableLocales)
-    i18n.global.mergeLocaleMessage(locale, { platformSchedules: SCHEDULES_MESSAGES[locale] ?? platformSchedulesEn });
-}
 
 export interface WorkbenchWebOptions {
   /** This edition's brand source; the workbench colour variables and the chart colours are generated from it. */
@@ -70,8 +51,6 @@ export function startWorkbenchWeb(options: WorkbenchWebOptions): void {
   installErrorPunctuation(options.errorPunctuation);
   installWorkbenchContent(options.content);
   const i18n = installWorkbenchI18n(options.language);
-  // The scheduled tasks page's text is merged under `platformSchedules`: it draws the page, the host owns the language.
-  installSchedulesMessages();
   const pinia = createPinia();
   const router = createRouter({ history: createWebHashHistory(), routes: [] });
   options.installGuards?.(router, pinia);

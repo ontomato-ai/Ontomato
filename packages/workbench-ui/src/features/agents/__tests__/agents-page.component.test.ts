@@ -61,6 +61,15 @@ describe("agents page tabs", () => {
     expect(wrapper.find(".capability-library").exists()).toBe(true);
   });
 
+  it("lists only the business agents: the operations agent's model is the operations application's own page", async () => {
+    const { wrapper } = await mountPage(["analysis-agent", "observer"]);
+    // The list drew no row of its own: every row is an agent definition (the account has none here), and the built-in
+    // operations agent has no row and no editor of its own any more — its model page belongs to operations.
+    expect(wrapper.findAll(".agent-item")).toHaveLength(0);
+    expect(wrapper.find(".system-avatar").exists()).toBe(false);
+    expect(wrapper.find(".diagnosis-model").exists()).toBe(false);
+  });
+
   it("opens the agents list when that is the only tab, and follows the address's tab", async () => {
     const { wrapper } = await mountPage(["analysis-agent"]);
     expect(wrapper.find(".agent-settings").exists()).toBe(true);

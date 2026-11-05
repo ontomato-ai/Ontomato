@@ -1,6 +1,9 @@
 /**
- * The scheduled tasks page's text. Hosts merge this into their own message tree under `platformSchedules` and load
- * the page's locales; one locale dictionary per language, the same shape in each file.
+ * The scheduled tasks page's English, under `platformSchedules`.
+ *
+ * The public English tree carries it (`@ontomato/workbench-ui/locales/en`), so every host loads it with the rest of the
+ * platform's words; an edition translates the remaining languages against these keys. The public repository maintains
+ * English only.
  */
 export default {
   platformSchedules: {

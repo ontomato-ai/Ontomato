@@ -26,5 +26,6 @@ export const observeRoutes = {
     { ...routes.cases, component: placeholder },
     { ...routes.caseDetail, component: placeholder },
     { ...routes.dsl, component: placeholder },
+    { ...routes.opsModel, component: placeholder },
   ] satisfies RouteRecordRaw[],
 };

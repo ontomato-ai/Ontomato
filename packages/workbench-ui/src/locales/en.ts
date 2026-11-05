@@ -1,3 +1,5 @@
+import platformSchedules from "@ontomato/platform-schedules/locales/en";
+
 // Generated from the original frontend messages using the keys the migrated pages actually use; extended as more pages are migrated.
 export default {
   ops: {"title": "Operations", "turns": "Turn evidence", "logs": "Live logs", "tests": "Automatic tests", "results": "Test results", "cases": "Test cases", "dsl": "DSL execution", "knowledge": "Operations knowledge", "modelSettings": "Model selection", "back": "Back to chat", "references": "Evidence references", "referenceHint": "This package contains references, not archived logs. Source authorization and retention still apply.", "legacy": "This older workspace has no runtime references. Refresh it to resolve current evidence.", "diagnose": "Diagnose", "refresh": "Refresh references", "greeting": "What should we diagnose?", "placeholder": "Describe what went wrong, or paste a Turn key…", "context": "(Current page: {page})", "contextTurn": "Turn {key}", "contextRun": "test run {run}", "contextCase": "case {case} of test run {run}"},
@@ -810,5 +812,9 @@ export default {
       "busy": "The previous run is still running.",
       "loginRequired": "Sign in again to schedule tasks."
     }
-  }
+  },
+
+  // The scheduled tasks page's own text: one page, shown by the platform and by the agent application, so its words
+  // belong to the message tree every host already loads rather than to a merge at startup.
+  platformSchedules: platformSchedules.platformSchedules,
 };

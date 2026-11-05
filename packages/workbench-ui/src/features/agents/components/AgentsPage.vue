@@ -41,13 +41,13 @@ watch(
 <template>
   <el-tabs v-if="showAgents && showCapabilities" v-model="tab" class="agents-page">
     <el-tab-pane name="agents" :label="t('agents.agentsTab')">
-      <AgentsListView :show-system-agents="props.can('observer')" @changed="emit('changed')" />
+      <AgentsListView @changed="emit('changed')" />
     </el-tab-pane>
     <el-tab-pane name="capabilities" :label="t('agents.capabilityLibrary')">
       <CapabilityLibrary />
     </el-tab-pane>
   </el-tabs>
-  <AgentsListView v-else-if="showAgents" :show-system-agents="props.can('observer')" @changed="emit('changed')" />
+  <AgentsListView v-else-if="showAgents" @changed="emit('changed')" />
   <CapabilityLibrary v-else-if="showCapabilities" />
 </template>
 

@@ -11,15 +11,14 @@ import type { AppPartition } from "./partition";
  * authority on what may be opened.
  */
 export interface PartitionOptions {
-  /** The edition has the enterprise applications (permissions). */
-  enterprise?: boolean;
+  /**
+   * An application the edition implements and declares itself, placed among the platform's own before the system
+   * settings (the enterprise edition's permission centre). The platform cannot name it: the pages are the edition's.
+   */
+  own?: readonly AppPartition[];
   /** An external application the edition reaches through its own signed jump (the data governance platform). */
   external?: readonly AppPartition[];
 }
-
-/** Applications only the enterprise edition has. */
-const enterpriseApps: readonly AppPartition[] = [
-];
 
 const platformApps: readonly AppPartition[] = [
   {
@@ -47,8 +46,8 @@ const platformApps: readonly AppPartition[] = [
     prefix: "/ops",
     panel: "conversation",
     // Choosing the model belongs to the diagnosis that uses it, not to the agent platform.
-    // Choosing the model belongs to the diagnosis that uses it; the page is the platform's model settings.
-    settings: { id: "ops-model", labelKey: "ops.modelSettings", icon: "settings", path: platformRoutes.usage.path },
+    // Choosing the model belongs to the diagnosis that runs on it: the entry opens the operations application's own page.
+    settings: { id: "ops-model", labelKey: "ops.modelSettings", icon: "settings", path: platformRoutes.opsModel.path },
     sections: [
       {
         key: "operations:pages",
@@ -155,9 +154,15 @@ const platformApps: readonly AppPartition[] = [
 ];
 
 /**
- * The applications of one edition, in rail order: the platform's own, then the edition's external applications.
- * An external application carries no pages: the rail opens it in a new tab and never makes it current.
+ * The applications of one edition, in rail order: the platform's own up to the scheduled tasks, the edition's own
+ * applications, the system settings, and last the external applications.
+ *
+ * The settings application is the platform's last one and stays last: it holds the account's own configuration, which
+ * nothing else is entered after. An external application carries no pages — the rail opens it in a new tab and never
+ * makes it current.
  */
 export function appPartition(options: PartitionOptions = {}): readonly AppPartition[] {
-  return [...platformApps, ...(options.enterprise ? enterpriseApps : []), ...(options.external ?? [])];
+  const settings = platformApps.filter((app) => app.id === "settings");
+  const platform = platformApps.filter((app) => app.id !== "settings");
+  return [...platform, ...(options.own ?? []), ...settings, ...(options.external ?? [])];
 }

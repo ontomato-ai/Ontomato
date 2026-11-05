@@ -98,18 +98,39 @@ describe.each(pagePaths)("the open-source platform at %s", (path) => {
 });
 
 describe("the open-source platform's column", () => {
-  it("opens the diagnosis model's own page from the column's foot", async () => {
+  it("opens the operations application's own model page from the column's foot", async () => {
     await open("/ops/diagnosis");
     const entry = document.querySelector<HTMLElement>(".panel-footer .settings-row");
     expect(entry, "the operations column has no model setting").not.toBeNull();
     entry!.click();
     await settle();
-    // Choosing the model belongs to the model settings page; the entry used to open the diagnosis home instead.
-    expect(landedAt()).toBe("/settings/model-config/usage");
+    // The model the diagnosis runs on is the operations application's own page, not the platform's model division
+    // (model-config), which answers a different question and needs a different permission.
+    expect(landedAt()).toBe("/ops/model");
+    const body = document.querySelector(".platform-page-body")!.innerHTML;
+    expect(body).not.toBe("");
+    expect(body).toContain("diagnosis-model");
   });
 });
 
 describe("the open-source platform's rail", () => {
+  it("lists this edition's applications, in order", async () => {
+    await open("/");
+    // Written out rather than derived from the partition: the point is that this edition shows these and no others (the
+    // permissions application exists only where permissions do).
+    document.querySelector<HTMLButtonElement>(".rail-toggle")!.click();
+    await settle();
+    expect([...document.querySelectorAll(".rail-row .rail-label")].map((row) => row.textContent)).toEqual([
+      "Agent Platform",
+      "Operations diagnosis",
+      "Knowledge governance",
+      "Object browser",
+      "Ontology manager",
+      "Scheduled tasks",
+      "System settings",
+    ]);
+  });
+
   it("opens a page this edition serves for every application", async () => {
     await open("/");
     // The rail lists the applications in the partition's order; an application without an external link or an

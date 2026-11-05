@@ -24,6 +24,7 @@ import KnowledgePage from "../knowledge/KnowledgePage.vue";
 import LiveLogsPage from "../live-logs/LiveLogsPage.vue";
 import AutotestPage from "../test-run/AutotestPage.vue";
 import TurnEvidencePage from "../turns/TurnEvidencePage.vue";
+import OpsModelPage from "../model/OpsModelPage.vue";
 
 /**
  * The operations agent app (DESIGN.md "Agent apps"): the diagnosis agent plus its pages. The address is the
@@ -41,11 +42,16 @@ const pages = [
   { id: "live-logs", path: "/ops/live-logs", label: "ops.logs", icon: "logs", match: ["/ops/live-logs"] },
   { id: "dsl", path: "/ops/dsl", label: "ops.dsl", icon: "query", match: ["/ops/dsl"] },
   { id: "knowledge", path: "/ops/knowledge", label: "ops.knowledge", icon: "knowledge", match: ["/ops/knowledge"] },
+  // The model the diagnosis runs on, reached from the column's foot rather than listed among the pages.
+  { id: "model", path: "/ops/model", label: "ops.modelSettings", icon: "settings", match: ["/ops/model"] },
 ] as const;
+
+/** The pages the column lists: the model is a setting, not a page of the application one browses. */
+const listedPages = pages.filter((page) => page.id !== "model");
 const workbench = computed<ShellWorkbenchDeclaration>(() => ({
   id: "operations",
   label: t("ops.title"),
-  features: pages.map(({ id, label, icon }) => ({ id, label: t(label), icon, availability: "page" as const, withConversation: true })),
+  features: listedPages.map(({ id, label, icon }) => ({ id, label: t(label), icon, availability: "page" as const, withConversation: true })),
 }));
 const pageOf = (path: string) =>
   pages.find((page) => page.match.some((prefix) => path === prefix || path.startsWith(prefix + "/")))?.id ?? null;
@@ -207,6 +213,7 @@ onMounted(async () => {
         <template #result-tabs="scope"><slot name="dsl-result-tabs" v-bind="scope" /></template>
       </DslTestPage>
       <KnowledgePage v-else-if="page === 'knowledge'" class="ops-padded" />
+      <OpsModelPage v-else-if="page === 'model'" />
     </template>
   </AgentShell>
 </template>

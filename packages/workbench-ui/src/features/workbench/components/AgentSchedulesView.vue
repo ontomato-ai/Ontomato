@@ -1,8 +1,7 @@
 <script setup lang="ts">
-import { PlatformSchedulesPage, type PlatformSchedulesHost } from "@ontomato/platform-schedules";
+import { PlatformSchedulesPage } from "@ontomato/platform-schedules";
 import { useI18n } from "vue-i18n";
-import { agentHostAgentListSchema } from "@ontomato/contracts/agent-host";
-import { nodeApiGet, nodeApiRequest } from "../../../utils/api";
+import { schedulesHost } from "../../../utils/schedules-host";
 
 /**
  * The agent platform's scheduled tasks: the platform's one list, limited to the agent this application is showing.
@@ -14,16 +13,11 @@ const props = defineProps<{ agentId: string | null }>();
 const emit = defineEmits<{ openSession: [sessionId: string] }>();
 const { locale } = useI18n();
 
-/**
- * The page's paths start at the gateway's `/api`; the app's requests already carry this deployment's prefix, so the
- * request layer adds the prefix and strips that one segment rather than doubling it.
- */
-const host: PlatformSchedulesHost = {
-  request: (path, init) => nodeApiRequest(path, init),
-  agents: async () => agentHostAgentListSchema.parse(await nodeApiGet("/assistant/agents")).agents,
+/** The same host the platform's own scheduled-tasks page reads through, with this view's way of opening a run. */
+const host = schedulesHost({
   openSession: (sessionId) => emit("openSession", sessionId),
   locale: () => locale.value,
-};
+});
 </script>
 
 <template>
