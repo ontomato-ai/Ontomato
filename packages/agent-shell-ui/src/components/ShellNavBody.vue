@@ -1,9 +1,8 @@
 <script setup lang="ts">
-import { computed, inject, onBeforeUnmount, ref } from "vue";
+import { computed, onBeforeUnmount, ref } from "vue";
 import { CalendarClock, Check, ChevronDown, ExternalLink, SquarePen, Trash2 } from "lucide-vue-next";
 import type { AgentHostAgent, AgentHostSession } from "@ontomato/contracts/agent-host";
-import type { ShellWorkbenchDeclaration } from "../types";
-import { shellContextKey } from "../context";
+import type { ShellLabels, ShellWorkbenchDeclaration } from "../types";
 import { featureIcon } from "../icons";
 
 /**
@@ -22,6 +21,8 @@ const props = defineProps<{
   hasMore: boolean;
   sessionId: string | null;
   featureId: string | null;
+  /** The shell's own words; the column is drawn outside the conversation's provider, so they are passed in. */
+  labels: ShellLabels;
 }>();
 const emit = defineEmits<{
   newConversation: [];
@@ -33,9 +34,6 @@ const emit = defineEmits<{
   loadMore: [];
   retry: [];
 }>();
-const shell = inject(shellContextKey)!;
-const labels = computed(() => shell.labels.value);
-
 const agentMenuOpen = ref(false);
 const agentMenu = ref<HTMLElement | null>(null);
 const confirmingDelete = ref<string | null>(null);

@@ -143,11 +143,10 @@ async function renderEmbedded() {
   return { root, read };
 }
 
-describe("embedded mode", () => {
-  it("draws no sidebar of its own and no panel chrome", async () => {
+describe("the conversation area", () => {
+  it("draws no navigation and no panel chrome of its own", async () => {
     const { root } = await renderEmbedded();
-    const shell = root.querySelector(".agent-shell");
-    expect(shell?.classList.contains("embedded")).toBe(true);
+    // The platform's application column is the only place the navigation is drawn.
     expect(root.querySelector(".shell-sidebar")).toBeNull();
     expect(root.querySelector(".mobile-bar")).toBeNull();
     expect(root.querySelector(".shell-main")).not.toBeNull();
@@ -176,19 +175,4 @@ describe("embedded mode", () => {
     expect(entries).toEqual(["How many orders last month?"]);
   });
 
-  it("keeps the standalone shell's own sidebar when no navigation is passed", async () => {
-    const root = document.createElement("div");
-    document.body.appendChild(root);
-    const { port } = client();
-    const Standalone = defineComponent({
-      setup: () => () => h(AgentShell, { workbench, client: port, labels }),
-    });
-    app = createApp(Standalone);
-    app.provide(shellContextKey, { labels: ref(labels) } as unknown as ShellContext);
-    app.mount(root);
-    await settle();
-    const shell = root.querySelector(".agent-shell");
-    expect(shell?.classList.contains("embedded")).toBe(false);
-    expect(root.querySelector(".shell-sidebar")).not.toBeNull();
-  });
 });

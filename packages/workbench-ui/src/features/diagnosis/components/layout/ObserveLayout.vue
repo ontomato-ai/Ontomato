@@ -1,10 +1,16 @@
 <script setup lang="ts">
 import { randomId } from "@ontomato/contracts/random-id";
-import { computed, onMounted, provide, ref, watch } from "vue";
+import { computed, h, onMounted, provide, ref, watch } from "vue";
 import { useRoute, useRouter, type LocationQueryRaw } from "vue-router";
 import { useI18n } from "vue-i18n";
 import { ElMessage } from "element-plus";
-import { AgentShell, type ShellWorkbenchDeclaration } from "@ontomato/agent-shell-ui";
+import {
+  AgentShell,
+  ShellNavBody,
+  useAgentNav,
+  useAppColumn,
+  type ShellWorkbenchDeclaration,
+} from "@ontomato/agent-shell-ui";
 import "@ontomato/agent-shell-ui/style.css";
 import { DIAGNOSIS_AGENT_ID, type DiagnosisTarget } from "@ontomato/contracts/ops-diagnosis";
 import { agentHostCreateSessionResponseSchema, agentHostAdmissionSchema } from "@ontomato/contracts/agent-host";
@@ -18,13 +24,11 @@ import KnowledgePage from "../knowledge/KnowledgePage.vue";
 import LiveLogsPage from "../live-logs/LiveLogsPage.vue";
 import AutotestPage from "../test-run/AutotestPage.vue";
 import TurnEvidencePage from "../turns/TurnEvidencePage.vue";
-import type { ObserveAccount } from "./types";
 
 /**
  * The operations agent app (DESIGN.md "Agent apps"): the diagnosis agent plus its pages. The address is the
  * only record of the open page; the open conversation rides along as `sessionId` and survives page navigation.
  */
-defineProps<{ account: ObserveAccount | null }>();
 const route = useRoute(), router = useRouter(), { t } = useI18n();
 const client = createDiagnosisClient(), shellLabels = useShellLabels();
 const labels = computed(() => ({ ...shellLabels.value, greeting: t("ops.greeting"), placeholder: t("ops.placeholder") }));
@@ -41,10 +45,7 @@ const pages = [
 const workbench = computed<ShellWorkbenchDeclaration>(() => ({
   id: "operations",
   label: t("ops.title"),
-  features: [
-    ...pages.map(({ id, label, icon }) => ({ id, label: t(label), icon, availability: "page" as const, withConversation: true })),
-    { id: "workbench", label: t("ops.back"), icon: "agents", availability: "action" as const },
-  ],
+  features: pages.map(({ id, label, icon }) => ({ id, label: t(label), icon, availability: "page" as const, withConversation: true })),
 }));
 const pageOf = (path: string) =>
   pages.find((page) => page.match.some((prefix) => path === prefix || path.startsWith(prefix + "/")))?.id ?? null;
@@ -137,11 +138,48 @@ watch(() => [route.query.diagnose, route.query.sourceSessionId, route.query.sour
     void startDiagnosis({ kind: "assistant-run", sessionId: route.query.sourceSessionId, runId: route.query.sourceRunId }, true);
 }, { immediate: true });
 
-function featureAction(id: string) {
-  if (id === "workbench") void router.push("/agents/chat");
-}
+/**
+ * The one navigation state of this application: the platform column lists the diagnosis conversation from it, and the
+ * conversation promotes into it while sending.
+ */
+const nav = useAgentNav({
+  client: () => client,
+  agentId: () => agentId.value,
+  setAgentId: (id) => (agentId.value = id),
+  sessionId: () => sessionId.value,
+  setSessionId: (id) => (sessionId.value = id),
+  onLeaveConversation: () => (featureId.value = null),
+});
+const { agents, sessions, sessionsState, nextCursor } = nav;
 
-onMounted(() => {
+useAppColumn(() => ({
+  appId: "ops",
+  content: () =>
+    h(ShellNavBody, {
+      workbench: workbench.value,
+      agents: agents.value,
+      agentId: agentId.value,
+      sessions: sessions.value,
+      sessionsState: sessionsState.value,
+      hasMore: nextCursor.value !== null,
+      sessionId: sessionId.value,
+      featureId: featureId.value,
+      // The column is drawn outside the conversation's provider, so the shell's words are passed in.
+      labels: labels.value,
+      onNewConversation: () => nav.startNew(),
+      onSelectFeature: (id: string) => (featureId.value = id),
+      onFeatureAction: () => {},
+      onSelectAgent: (id: string) => (agentId.value = id),
+      onSelectSession: (id: string) => (sessionId.value = id),
+      onDeleteSession: (id: string) => void nav.removeSession(id),
+      onLoadMore: () => void nav.loadSessions(true),
+      onRetry: () => void nav.loadSessions(),
+    }),
+}));
+
+onMounted(async () => {
+  await nav.loadAgents().catch(() => {});
+  await nav.loadSessions();
   // Entering operations is the explicit lazy-load boundary for the log source configuration.
   void diagnosisApi.initializeLogSourceConfig().catch((error) => console.warn("Failed to initialize observe backend config", error));
 });
@@ -156,10 +194,10 @@ onMounted(() => {
     :workbench="workbench"
     :client="client"
     :labels="labels"
+    :nav="nav"
     :page-context="pageContext"
     :page-links="pageLinks"
     @error="ElMessage.error($event)"
-    @feature-action="featureAction"
   >
     <template #feature="{ featureId: page }">
       <TurnEvidencePage v-if="page === 'turn'" />
@@ -170,9 +208,6 @@ onMounted(() => {
       </DslTestPage>
       <KnowledgePage v-else-if="page === 'knowledge'" class="ops-padded" />
     </template>
-    <template #footer>
-      <span v-if="account" class="ops-account">{{ account.userName }}</span>
-    </template>
   </AgentShell>
 </template>
 
@@ -181,14 +216,5 @@ onMounted(() => {
   box-sizing: border-box;
   height: 100%;
   padding: 12px;
-}
-.ops-account {
-  display: block;
-  padding: 0 8px;
-  color: var(--el-text-color-regular);
-  font-size: var(--text-sm);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 </style>

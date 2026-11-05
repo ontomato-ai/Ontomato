@@ -23,6 +23,24 @@ vi.mock("@ontomato/agent-shell-ui", () => ({
     emits: ["update:featureId"],
     template: '<div class="shell"><slot name="feature" :feature-id="featureId" /></div>',
   },
+  // The workbench contributes its navigation to the platform's column; the test only reads the page it opens.
+  ShellNavBody: { name: "ShellNavBody", template: "<div />" },
+  useAppColumn: () => {},
+  useAgentNav: () => ({
+    agents: { value: [] },
+    sessions: { value: [] },
+    sessionsState: { value: "ready" },
+    nextCursor: { value: null },
+    currentAgent: { value: null },
+    loadAgents: async () => {},
+    loadSessions: async () => {},
+    startNew: () => {},
+    selectSession: () => {},
+    removeSession: async () => {},
+    promoteSession: () => {},
+    markRun: () => {},
+    runStatus: () => null,
+  }),
 }));
 vi.mock("../api", () => ({ getWorkbenchAppearance: async () => ({ brand: { name: "", logo: "", subtitle: "" } }) }));
 vi.mock("../../dashboard", () => ({ DashboardHome: { template: '<div class="dashboards" />' } }));

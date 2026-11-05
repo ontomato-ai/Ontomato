@@ -1,10 +1,9 @@
 <script setup lang="ts">
-import { nextTick, computed, onMounted, provide, ref, toRef, useSlots, watch } from "vue";
-import { Menu } from "lucide-vue-next";
+import { computed, onMounted, provide, ref, toRef, useSlots, watch } from "vue";
 import { defaultChartTheme, type ChartTheme } from "../chart-theme";
 import { shellContextKey, type ShellContext } from "../context";
 import type { AgentHostClient } from "../host";
-import { useAgentNav, type AgentNav } from "../useAgentNav";
+import type { AgentNav } from "../useAgentNav";
 import type {
   ArtifactRendererOverride,
   OpenArtifact,
@@ -17,16 +16,15 @@ import { useAgentConversation } from "../useAgentConversation";
 import ShellConversation from "./ShellConversation.vue";
 import ShellPagePane from "./ShellPagePane.vue";
 import ShellSidePanel from "./ShellSidePanel.vue";
-import ShellSidebar from "./ShellSidebar.vue";
 
 /**
- * Two-column agent shell with a right outlet: navigation (features, agent, sessions) and the
- * conversation. Rendering defaults live here; hosts pass overrides and fill the slots:
- * `brand`, `footer`, `feature` (feature pages), `artifact-actions` and `message-actions`.
+ * The conversation area of an agent app, with the right outlet for an artifact: the conversation, or the page beside it,
+ * filling the workspace the platform shell gives it. It draws no navigation of its own — the platform's application
+ * column does that — and it owns no navigation state: the host passes one `nav` that the column and the conversation
+ * share, so a conversation created while sending appears in the column and the agents and sessions are read once.
  *
- * `embedded` is for a host that already draws the navigation around the shell: it renders the conversation area alone,
- * with no sidebar, gutter, radius or shadow, and it owns no navigation state of its own — the host passes its `nav`, so
- * the panel beside the conversation and the conversation itself read and write one list.
+ * Rendering defaults live here; hosts pass overrides and fill the slots `feature` (feature pages), `artifact-actions` and
+ * `message-actions`.
  *
  * A feature declared `withConversation` follows the agent-app states (DESIGN "Agent apps"): conversation only, the
  * page beside the conversation, or the page full with a composer. Messages sent while such a page is open end with the
@@ -46,13 +44,12 @@ const props = withDefaults(
     /** Recognises an in-app address in an answer and returns how to open its page; null leaves it as text. */
     pageLinks?: ShellContext["pageLink"];
     /**
-     * The host's navigation state, when the host draws the navigation itself (the platform shell's application panel).
-     * One instance is shared by that panel and this shell, so a conversation created while sending appears in the panel
-     * and the agents and sessions are read once. Embedded, this is required; standalone, the shell keeps its own.
+     * The navigation state the host shares with its application column: one instance, so a conversation created while
+     * sending appears in the column and the agents and sessions are read once.
      */
-    nav?: AgentNav;
+    nav: AgentNav;
   }>(),
-  { artifactRenderers: () => [], toolRenderers: () => [], chartTheme: () => defaultChartTheme, nav: undefined },
+  { artifactRenderers: () => [], toolRenderers: () => [], chartTheme: () => defaultChartTheme },
 );
 const slots = useSlots();
 const emit = defineEmits<{ error: [message: string]; featureAction: [id: string] }>();
@@ -62,30 +59,10 @@ const sessionId = defineModel<string | null>("sessionId", { default: null });
 /** Where a paired page sits: filling the workspace, or beside the conversation. Hosts may set it. */
 const pageView = defineModel<"full" | "side">("pageView", { default: "full" });
 const openArtifact = ref<OpenArtifact | null>(null);
-const navOpen = ref(false);
 
 const conversation = useAgentConversation(() => props.client);
-/** Embedded means the host owns the navigation: it passes one `nav` and this shell must not build a second. */
-const embedded = computed(() => props.nav !== undefined);
-
-/**
- * The navigation state: the host's when it passed one, otherwise the shell's own for its sidebar. Building a second one
- * while embedded would show a stale list in the panel and read the agents and sessions twice.
- */
-const ownNav = props.nav ? null : useAgentNav({
-  client: () => props.client,
-  agentId: () => agentId.value,
-  setAgentId: (id) => (agentId.value = id),
-  sessionId: () => sessionId.value,
-  setSessionId: (id) => (sessionId.value = id),
-  onLeaveConversation: () => {
-    featureId.value = null;
-    openArtifact.value = null;
-    navOpen.value = false;
-  },
-});
-const nav = props.nav ?? ownNav!;
-const { agents, sessions, sessionsState, nextCursor, currentAgent, loadSessions } = nav;
+const nav = props.nav;
+const { sessions, currentAgent } = nav;
 const currentSession = computed(() => sessions.value.find((session) => session.id === sessionId.value));
 const currentFeature = computed(() => props.workbench.features.find((feature) => feature.id === featureId.value) ?? null);
 /** A page that sits in the agent-app states rather than replacing the conversation. */
@@ -132,28 +109,6 @@ function report(error: unknown) {
   emit("error", error instanceof Error ? error.message : String(error));
 }
 
-/** The nav reports read failures to the host; `useAgentNav` itself only records the state. */
-function loadAgentsFromHost() {
-  return nav.loadAgents().catch(report);
-}
-
-/** The selection moves: the page beside the conversation closes with it, as it always has. */
-function startNew() {
-  nav.startNew();
-}
-
-function selectSession(id: string) {
-  nav.selectSession(id);
-}
-
-async function removeSession(id: string) {
-  try {
-    await nav.removeSession(id);
-  } catch (error) {
-    report(error);
-  }
-}
-
 // A new conversation writes its id while sending; that run is already open, so opening it again
 // would reset the pending message and the admitted snapshot.
 watch(sessionId, (id) => {
@@ -162,12 +117,6 @@ watch(sessionId, (id) => {
   void conversation.open(id);
 }, { immediate: true });
 
-function selectFeature(id: string) {
-  featureId.value = id;
-  pageView.value = "full";
-  openArtifact.value = null;
-  navOpen.value = false;
-}
 
 function closePage() {
   featureId.value = null;
@@ -210,59 +159,18 @@ watch(
   },
 );
 
-/** Hosts call this after editing agent definitions. */
-defineExpose({ reloadAgents: loadAgentsFromHost });
+/** Hosts call this after editing agent definitions; the column reads the same state. */
+defineExpose({ reloadAgents: () => nav.loadAgents().catch(report) });
 
-onMounted(async () => {
+onMounted(() => {
   // An address that names both a conversation and a paired page reopens them side by side.
   if (sessionId.value && pairedPage.value) pageView.value = "side";
-  // Embedded, the host loaded the agents and sessions for the panel it draws; reading them again here would duplicate
-  // both requests and could resolve the selected agent a second time.
-  if (embedded.value) return;
-  const requested = agentId.value;
-  await loadAgentsFromHost();
-  // When the host's agent was valid the watcher did not fire, so load its sessions here.
-  if (agentId.value && agentId.value === requested) void loadSessions();
 });
 </script>
 
 <template>
-  <div
-    class="agent-shell"
-    :class="{ 'nav-open': navOpen, 'panel-open': openArtifact, embedded }"
-  >
-    <div v-if="!embedded" class="nav-scrim" @click="navOpen = false" />
-    <ShellSidebar
-      v-if="!embedded"
-      class="shell-nav"
-      :workbench="workbench"
-      :agents="agents"
-      :agent-id="agentId"
-      :sessions="sessions"
-      :sessions-state="sessionsState"
-      :has-more="nextCursor !== null"
-      :session-id="sessionId"
-      :feature-id="featureId"
-      @new-conversation="startNew"
-      @select-feature="selectFeature"
-      @feature-action="emit('featureAction', $event); navOpen = false"
-      @select-agent="agentId = $event"
-      @select-session="selectSession"
-      @delete-session="removeSession"
-      @load-more="loadSessions(true)"
-      @retry="loadSessions()"
-    >
-      <template #brand><slot name="brand" /></template>
-      <template #footer><slot name="footer" /></template>
-    </ShellSidebar>
-
+  <div class="agent-shell" :class="{ 'panel-open': openArtifact }">
     <main v-show="!pageFull" class="shell-main">
-      <div v-if="!embedded" class="mobile-bar">
-        <button type="button" class="mobile-menu" :aria-label="labels.menu" @click="navOpen = true">
-          <Menu :size="19" />
-        </button>
-        <span class="mobile-title">{{ currentSession?.title || currentAgent?.name }}</span>
-      </div>
       <div v-if="featureId && !pairedPage" class="feature-page">
         <slot name="feature" :feature-id="featureId" view="full" />
       </div>
@@ -299,7 +207,6 @@ onMounted(async () => {
       @expand="pageView = 'full'"
       @collapse="pageView = 'side'"
       @close="closePage"
-      @menu="navOpen = true"
     >
       <slot name="feature" :feature-id="featureId" :view="pageView" />
     </ShellPagePane>
@@ -310,43 +217,20 @@ onMounted(async () => {
 
 <style scoped>
 /*
- * Conversation shell (DESIGN.md "Applications and shells"): the sidebar sits on canvas with no divider; the
- * conversation is one raised surface panel with the conversation gutter around it. Its composer is raised too.
+ * The conversation area of an agent app, filling the workspace band the platform shell gives it: one flat surface, no
+ * gutter, no border, no shadow of its own (DESIGN.md "Applications and shells"). Its composer is raised.
  */
 .agent-shell {
   --shell-composer-shadow: var(--elevation-composer);
   display: flex;
-  gap: var(--shell-conversation-gutter);
-  height: 100vh;
-  height: 100dvh;
-  padding: var(--shell-conversation-gutter) var(--shell-conversation-gutter) var(--shell-conversation-gutter) 0;
+  height: 100%;
+  min-height: 0;
   box-sizing: border-box;
   overflow: hidden;
-  background: var(--el-bg-color-page);
   color: var(--el-text-color-primary);
   font-family: var(--font-sans, inherit);
   font-size: var(--text-base);
   line-height: var(--leading-base);
-}
-.shell-nav {
-  width: var(--shell-agent-rail);
-  flex-shrink: 0;
-}
-/*
- * Embedded in the platform shell: the host draws the navigation and the three bands, so the conversation sits flat on
- * the workspace instead of being a raised panel with a gutter around it.
- */
-.agent-shell.embedded {
-  gap: 0;
-  padding: 0;
-  height: 100%;
-  background: transparent;
-}
-.agent-shell.embedded .shell-main {
-  border: 0;
-  border-radius: 0;
-  box-shadow: none;
-  background: transparent;
 }
 .shell-main {
   position: relative;
@@ -354,83 +238,11 @@ onMounted(async () => {
   flex-direction: column;
   flex: 1;
   min-width: 0;
-  border: 1px solid var(--el-border-color);
-  border-radius: var(--shell-conversation-radius);
-  background: var(--el-bg-color);
-  box-shadow: var(--elevation-panel);
   overflow: hidden;
 }
 .feature-page {
   flex: 1;
   min-height: 0;
   overflow: auto;
-}
-.mobile-bar,
-.nav-scrim {
-  display: none;
-}
-@media (max-width: 760px) {
-  .agent-shell {
-    padding: 0;
-  }
-  .shell-main {
-    border: 0;
-    border-radius: 0;
-    box-shadow: none;
-  }
-  .shell-nav {
-    position: fixed;
-    z-index: 50;
-    top: 0;
-    bottom: 0;
-    left: 0;
-    width: min(86vw, 300px);
-    background: var(--el-bg-color-page);
-    transform: translateX(-100%);
-    visibility: hidden;
-    transition:
-      transform var(--transition-base, 200ms),
-      visibility var(--transition-base, 200ms);
-  }
-  .nav-open .shell-nav {
-    transform: none;
-    visibility: visible;
-    box-shadow: var(--elevation-modal);
-  }
-  .nav-scrim {
-    position: fixed;
-    z-index: 45;
-    inset: 0;
-    background: rgba(0, 0, 0, 0.28);
-  }
-  .nav-open .nav-scrim {
-    display: block;
-  }
-  .mobile-bar {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    height: var(--panel-header-height);
-    padding: 0 8px;
-    border-bottom: 1px solid var(--el-border-color);
-  }
-  .mobile-menu {
-    display: grid;
-    place-items: center;
-    width: var(--control-height);
-    height: var(--control-height);
-    border: 0;
-    border-radius: var(--radius-sm);
-    background: transparent;
-    color: var(--el-text-color-regular);
-    cursor: pointer;
-  }
-  .mobile-title {
-    font-size: var(--text-base);
-    font-weight: 600;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
 }
 </style>
