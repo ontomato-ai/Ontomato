@@ -216,7 +216,12 @@ describe("standard runtime real HTTP/PG/processes", () => {
         user = [...request.messages]
           .reverse()
           .find((m: any) => m.role === "user");
-      if (last.role === "tool" && !String(user.content).includes("loop")) {
+      const toolResults = request.messages.filter((m: any) => m.role === "tool").length;
+      if (String(user.content).includes("vary") && toolResults < 4) {
+        const command = `echo ${["alpha", "beta", "gamma", "delta"][toolResults]}`;
+        frame({ role: "assistant", tool_calls: [{ index: 0, id: "vary-" + modelCalls, type: "function", function: { name: "bash", arguments: JSON.stringify({ command }) } }] });
+        frame({}, "tool_calls");
+      } else if (last.role === "tool" && !String(user.content).includes("loop")) {
         frame({
           role: "assistant",
           reasoning_content: "Checked the actual output.",
@@ -401,6 +406,10 @@ describe("standard runtime real HTTP/PG/processes", () => {
     expect(done.run.stopReason, logs).toBe("aborted");
     expect(done.run.errorMessage).toContain("3 repeated bash calls");
     expect(done.toolExecutions).toHaveLength(3);
+    // Calls whose arguments differ are not the same shape, whatever their number.
+    const varied = await settle((await run(await session(), "vary", [], { maxCalls: 100, maxSameShape: 3 })).id);
+    expect(varied.run.stopReason, logs).toBe("stop");
+    expect(varied.toolExecutions).toHaveLength(4);
   });
   it("does not allow a caller to replace runtime identity variables", () => {
     for (const name of runtimeIdentityEnvironment) {
