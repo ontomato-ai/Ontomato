@@ -4,8 +4,8 @@ import { ElMessage } from "element-plus";
 import { useI18n } from "vue-i18n";
 import { ScanEye } from "lucide-vue-next";
 import type { ModelOptions, ModelSelection } from "@ontomato/contracts/model-settings";
-import { diagnosisModelApi } from "../api";
-import ModelSelectionSelect from "./ModelSelectionSelect.vue";
+import { diagnosisModelApi } from "../../api/diagnosis-model";
+import ModelSelectionSelect from "../../../agents/components/ModelSelectionSelect.vue";
 
 /** The operations agent is built in: its only setting here is its model, saved as soon as it is chosen. */
 defineProps<{ modelOptions: ModelOptions | null; modelOptionsFailed: boolean }>();

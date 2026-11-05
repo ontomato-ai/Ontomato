@@ -220,7 +220,6 @@ export default {
     "objectBrowser": "Object browser",
     "ontologyManager": "Ontology manager",
     "schedules": "Scheduled tasks",
-    "permissions": "Permissions",
     "settings": "System settings",
     "dataGovernance": "Data governance platform"
   },
@@ -723,8 +722,6 @@ export default {
     "dataScopeList": "Object types",
     "dataScopeNoClasses": "This domain has no object types yet",
     "dataScopeReset": "Reset view",
-    "systemAgents": "System agents",
-    "opsAgentModelOnly": "Model only",
     "opsAgentModelHint": "The model the operations agent uses when diagnosing issues.",
     "opsAgentModelLoadFailed": "Couldn't load the operations agent's model."
   },

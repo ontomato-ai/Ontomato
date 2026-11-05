@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { onMounted, ref } from "vue";
 import type { ModelOptions } from "@ontomato/contracts/model-settings";
-import DiagnosisModelPanel from "../../../agents/components/DiagnosisModelPanel.vue";
+import DiagnosisModelPanel from "./DiagnosisModelPanel.vue";
+// The domain's models: the picker shows them, the agent editor is the other reader.
 import { loadModelOptions } from "../../../agents/api";
 
 /**

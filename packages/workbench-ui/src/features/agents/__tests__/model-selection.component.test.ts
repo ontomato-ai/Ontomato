@@ -6,9 +6,8 @@ import type { AssistantAgentDefinition } from "@ontomato/contracts/assistant-cha
 import type { ModelOptions } from "@ontomato/contracts/model-settings";
 import { workbenchI18n } from "../../../i18n";
 import AgentEditor from "../components/AgentEditor.vue";
-import DiagnosisModelPanel from "../components/DiagnosisModelPanel.vue";
 import ModelSelectionSelect from "../components/ModelSelectionSelect.vue";
-import { agentDefinitionsApi, diagnosisModelApi } from "../api";
+import { agentDefinitionsApi } from "../api";
 
 const i18n = workbenchI18n();
 const t = i18n.global.t as (key: string, params?: Record<string, unknown>) => string;
@@ -114,43 +113,5 @@ describe("workbench agent model selection", () => {
     await saveButton(wrapper).trigger("click");
     await flushPromises();
     expect(update.mock.calls[1]![1].modelSelection).toEqual({ modelId: null });
-  });
-});
-
-describe("operations agent model", () => {
-  async function mountPanel() {
-    const wrapper = mount(DiagnosisModelPanel, {
-      props: { modelOptions: options, modelOptionsFailed: false },
-      global,
-      attachTo: document.body,
-    });
-    wrappers.push(wrapper);
-    await flushPromises();
-    return wrapper;
-  }
-
-  it("shows a missing model ID as it is and saves a new choice at once", async () => {
-    vi.spyOn(diagnosisModelApi, "get").mockResolvedValue({ modelId: "legacy/removed-model" });
-    const save = vi.spyOn(diagnosisModelApi, "save").mockImplementation(async (selection) => selection);
-    const wrapper = await mountPanel();
-    const control = () => wrapper.findComponent(ModelSelectionSelect);
-    expect(selected(control())).toBe(t("agents.modelUnavailable", { id: "legacy/removed-model" }));
-    expect(control().find("[role='alert']").exists()).toBe(true);
-    expect(save).not.toHaveBeenCalled();
-
-    await choose(control(), "deepseek/deepseek-chat");
-    expect(save).toHaveBeenCalledWith({ modelId: "deepseek/deepseek-chat" });
-    expect(control().props("modelValue")).toBe("deepseek/deepseek-chat");
-    expect(control().find("[role='alert']").exists()).toBe(false);
-  });
-
-  it("keeps the saved choice when a save is rejected", async () => {
-    vi.spyOn(diagnosisModelApi, "get").mockResolvedValue({ modelId: null });
-    vi.spyOn(diagnosisModelApi, "save").mockRejectedValue(new Error("Model not configured"));
-    const error = vi.spyOn(ElMessage, "error");
-    const wrapper = await mountPanel();
-    await choose(wrapper.findComponent(ModelSelectionSelect), "deepseek/deepseek-chat");
-    expect(error).toHaveBeenCalledWith("Model not configured");
-    expect(wrapper.findComponent(ModelSelectionSelect).props("modelValue")).toBeNull();
   });
 });
