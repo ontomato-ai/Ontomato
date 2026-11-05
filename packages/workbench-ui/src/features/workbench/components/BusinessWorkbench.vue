@@ -46,8 +46,13 @@ const props = withDefaults(
     /** The edition's permission check for the function area's entries; open source shows everything. */
     can?: PermissionCheck;
   }>(),
-  { features: () => [], can: () => true },
+  // `can` is not defaulted here: Vue calls a function default on a prop with no declared type as a factory, and the
+  // prop would then hold `true` instead of a check. The one read below falls back to "allow everything".
+  { features: () => [] },
 );
+
+/** The edition's permission check; an edition that passes none allows every entry. */
+const can: PermissionCheck = props.can ?? (() => true);
 
 const emit = defineEmits<{ featureAction: [id: string] }>();
 
@@ -92,7 +97,7 @@ watch(agentId, (id) => {
 const workbench = computed<ShellWorkbenchDeclaration>(() => ({
   id: WORKBENCH_ID,
   label: appearance.value?.brand.name || props.defaultBrandName,
-  features: workbenchFeatures(t, props.features, props.can),
+  features: workbenchFeatures(t, props.features, can),
 }));
 
 const labels = useShellLabels();
@@ -187,7 +192,7 @@ const agentsTab = computed(() => route.query.tab === "capabilities" ? "capabilit
   >
     <template #feature="{ featureId: page }">
       <DashboardHome v-if="page === 'dashboards'" />
-      <AgentsPage v-else-if="page === 'agents'" :can="props.can" :initial-tab="agentsTab" @changed="shell?.reloadAgents()" />
+      <AgentsPage v-else-if="page === 'agents'" :can="can" :initial-tab="agentsTab" @changed="shell?.reloadAgents()" />
       <AgentSchedulesView
         v-else-if="page === 'schedule'"
         :agent-id="agentId"

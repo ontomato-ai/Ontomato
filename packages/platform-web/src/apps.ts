@@ -15,9 +15,14 @@ export interface PlatformAppDeclaration {
   icon: string;
   /** The application owns the addresses under this prefix. */
   prefix: string;
+  /** The address its rail row opens: the first page the account may open, or the entry the declaration names. */
+  home?: string;
   panel: PlatformAppPanelKind;
-  /** The application's own entry at the foot of its column (smart-agent settings, the diagnosis model). */
-  settings?: { id: string; label: string; icon: string };
+  /**
+   * The application's own entry at the foot of its column (smart-agent settings, the diagnosis model), and the page it
+   * opens: an application's own page by default, or a page of another application when that is where the setting lives.
+   */
+  settings?: { id: string; label: string; icon: string; path?: string };
   /** An external application: its fixed address, or the host's resolver for a signed jump; the rail opens it. */
   href?: string;
   open?: () => void;

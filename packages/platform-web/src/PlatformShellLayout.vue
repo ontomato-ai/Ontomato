@@ -73,9 +73,12 @@ const labels = computed(() => ({
   unsavedChanges: t("platform.unsavedChanges"),
 }));
 
-/** Where an application's rail row goes: the first page of it the account may open. */
+/**
+ * Where an application's rail row goes: the address its declaration names, and otherwise the first page of it the
+ * account may open. A rail row always leaves the current page.
+ */
 function homeOf(app: PlatformAppDeclaration): string | null {
-  return app.groups?.flatMap((group) => group.pages).find((page) => page.id)?.id ?? null;
+  return app.home ?? app.groups?.flatMap((group) => group.pages).find((page) => page.id)?.id ?? null;
 }
 
 function selectApp(id: string) {
@@ -91,7 +94,10 @@ function selectApp(id: string) {
  */
 function openSettings(appId: string, entryId: string) {
   const app = apps.value.find((candidate) => candidate.id === appId);
-  const target = app?.settings?.id === entryId ? homeOf(app) : null;
+  if (app?.settings?.id !== entryId) return;
+  // An entry that names a page opens it (the diagnosis model is chosen in the platform's settings); otherwise the
+  // application's own first page.
+  const target = app.settings.path ?? homeOf(app);
   if (target) void router.push(target);
 }
 
@@ -125,7 +131,6 @@ const blocked = computed(() => {
     :labels="labels"
     :page-actions="pageActions"
     :blocked="blocked"
-    :ready="host.access.ready"
     @select-app="selectApp"
     @open-settings="openSettings"
   />

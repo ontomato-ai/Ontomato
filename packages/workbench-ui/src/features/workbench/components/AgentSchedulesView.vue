@@ -2,7 +2,7 @@
 import { PlatformSchedulesPage, type PlatformSchedulesHost } from "@ontomato/platform-schedules";
 import { useI18n } from "vue-i18n";
 import { agentHostAgentListSchema } from "@ontomato/contracts/agent-host";
-import { apiGet, nodeApiRequest } from "../../../utils/api";
+import { nodeApiGet, nodeApiRequest } from "../../../utils/api";
 
 /**
  * The agent platform's scheduled tasks: the platform's one list, limited to the agent this application is showing.
@@ -20,7 +20,7 @@ const { locale } = useI18n();
  */
 const host: PlatformSchedulesHost = {
   request: (path, init) => nodeApiRequest(path, init),
-  agents: async () => agentHostAgentListSchema.parse(await apiGet("/assistant/agents")).agents,
+  agents: async () => agentHostAgentListSchema.parse(await nodeApiGet("/assistant/agents")).agents,
   openSession: (sessionId) => emit("openSession", sessionId),
   locale: () => locale.value,
 };

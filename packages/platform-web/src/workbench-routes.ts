@@ -21,5 +21,12 @@ export function workbenchPages(
   ];
 }
 
-/** The platform's scheduled tasks: one page for every task of every application. */
-export const schedulePages = (): RouteRecordRaw[] => [{ ...routes.schedules, component: PlatformSchedulesPage }];
+/**
+ * The platform's scheduled tasks: one page for every task of every application.
+ *
+ * The page is marked as a platform page (`meta.service`), which is what an edition's router guard reads to decide that
+ * it needs a signed-in account: every other application's pages carry the mark through `installPlatformPages`.
+ */
+export const schedulePages = (): RouteRecordRaw[] => [
+  { ...routes.schedules, component: PlatformSchedulesPage, meta: { service: true } },
+];

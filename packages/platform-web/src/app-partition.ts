@@ -11,9 +11,15 @@ import type { AppPartition } from "./partition";
  * authority on what may be opened.
  */
 export interface PartitionOptions {
+  /** The edition has the enterprise applications (permissions). */
+  enterprise?: boolean;
   /** An external application the edition reaches through its own signed jump (the data governance platform). */
   external?: readonly AppPartition[];
 }
+
+/** Applications only the enterprise edition has. */
+const enterpriseApps: readonly AppPartition[] = [
+];
 
 const platformApps: readonly AppPartition[] = [
   {
@@ -21,6 +27,8 @@ const platformApps: readonly AppPartition[] = [
     labelKey: "platform.agentPlatform",
     icon: "agents",
     prefix: "/agents",
+    // The conversation is where the platform is entered; the dashboards and settings follow it in the column.
+    home: platformRoutes.chat.path,
     panel: "conversation",
     // The agent settings page is the platform's own entry at the foot of the column.
     settings: { id: "agent-settings", labelKey: "assistant.featureAgents", icon: "agents" },
@@ -39,7 +47,8 @@ const platformApps: readonly AppPartition[] = [
     prefix: "/ops",
     panel: "conversation",
     // Choosing the model belongs to the diagnosis that uses it, not to the agent platform.
-    settings: { id: "ops-model", labelKey: "ops.modelSettings", icon: "settings" },
+    // Choosing the model belongs to the diagnosis that uses it; the page is the platform's model settings.
+    settings: { id: "ops-model", labelKey: "ops.modelSettings", icon: "settings", path: platformRoutes.usage.path },
     sections: [
       {
         key: "operations:pages",
@@ -128,21 +137,13 @@ const platformApps: readonly AppPartition[] = [
     ],
   },
   {
-    id: "permissions",
-    labelKey: "platform.permissions",
-    icon: "permissions",
-    prefix: platformRoutes.permissions.path,
-    panel: "pages",
-    sections: [
-      { key: "permissions:all", titleKey: "platform.permissions", paths: [platformRoutes.permissions.path] },
-    ],
-  },
-  {
     id: "settings",
     labelKey: "platform.settings",
     icon: "settings",
     prefix: "/settings",
     panel: "pages",
+    // The settings page is entered at its first tab; the address without one is not a page of its own.
+    home: platformRoutes.usage.path,
     sections: [
       {
         key: "settings:platform",
@@ -158,5 +159,5 @@ const platformApps: readonly AppPartition[] = [
  * An external application carries no pages: the rail opens it in a new tab and never makes it current.
  */
 export function appPartition(options: PartitionOptions = {}): readonly AppPartition[] {
-  return [...platformApps, ...(options.external ?? [])];
+  return [...platformApps, ...(options.enterprise ? enterpriseApps : []), ...(options.external ?? [])];
 }

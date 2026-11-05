@@ -118,7 +118,6 @@ describe("open-source Ontology Service page", () => {
       "Object browser",
       "Ontology manager",
       "Scheduled tasks",
-      "Permissions",
       "System settings",
     ]);
     expect(document.querySelector(".panel-title")?.textContent).toBe("Object browser");

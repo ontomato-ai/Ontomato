@@ -16,8 +16,16 @@ export interface AppPartition extends Omit<PlatformAppDeclaration, "groups" | "l
   open?: () => void;
   /** The application's name, a message key in the edition's tree. */
   labelKey: string;
-  /** The application's own entry at the foot of its column, a message key and the page it opens. */
-  settings?: { id: string; labelKey: string; icon: string };
+  /**
+   * The application's own entry at the foot of its column: its words, and the page it opens. An entry that opens a page
+   * of another application names that address (the diagnosis model is chosen in the platform's settings).
+   */
+  settings?: { id: string; labelKey: string; icon: string; path?: string };
+  /**
+   * Where its rail row opens. An application opens its first page unless the entry into it is another: the agent
+   * platform opens the conversation although the dashboards come first in its column.
+   */
+  home?: string;
   /** The pages this application lists, in display order: one group per entry. */
   sections: readonly { key: string; titleKey: string; paths: readonly string[] }[];
 }
@@ -67,9 +75,18 @@ export function appDeclarations(
       icon: app.icon,
       prefix: app.prefix,
       panel: app.panel,
-      settings: app.settings && { id: app.settings.id, label: t(app.settings.labelKey), icon: app.settings.icon },
+      settings: app.settings && {
+        id: app.settings.id,
+        label: t(app.settings.labelKey),
+        icon: app.settings.icon,
+        path: app.settings.path,
+      },
       href: app.href,
       open: app.open,
+      // The rail row opens the application's own first page. A declaration that names its entry keeps it (the agent
+      // platform is entered at the conversation); otherwise the first page the account may open decides, so a row never
+      // opens an address no route serves.
+      home: base(app.home ?? groups[0]?.pages[0]?.id ?? app.sections[0]?.paths[0] ?? app.prefix),
       groups,
     };
   });
