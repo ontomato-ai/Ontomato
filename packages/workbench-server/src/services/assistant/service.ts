@@ -426,7 +426,12 @@ export const assistantService = {
               s.messages.find((m) => m.message.role === "user")?.message ?? { content: "" },
             ));
           } else {
-            await client.request(`/v1/sessions/${turn.session_id}/run-intents/${turn.id}/cancel`, "POST", {});
+            // Blocks a late admission; a runtime that has no such session cannot admit it either.
+            try {
+              await client.request(`/v1/sessions/${turn.session_id}/run-intents/${turn.id}/cancel`, "POST", {});
+            } catch (e) {
+              if (!(e instanceof HttpError && e.status === 404)) throw e;
+            }
           }
         }
         if (!view || view.status === "stopped") await this.settleTurn(turn.id, owner);
