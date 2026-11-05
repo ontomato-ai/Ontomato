@@ -52,10 +52,22 @@ public enum DataAdapterCapability {
 	GRAPH_QUERY,
 
 	/** {@code queryVectorAttr()} reads a vector attribute's current value. */
-	VECTOR_ATTR;
+	VECTOR_ATTR,
 
 	/**
-	 * The full write path with key-field edges — what object-graph adapters such as
+	 * An {@code n:n} relationship: a junction table carries both keys, {@code createEdge()} writes one
+	 * junction row, and the read path joins the two classes through it.
+	 *
+	 * <p>Its own capability because it is its own realization, not a variant of a key field: an adapter
+	 * that stores edges as columns on one end can support {@link #EDGE_CRUD} and still have nothing to
+	 * write a many-to-many pairing into. Declaring it is how an adapter states which side of that line
+	 * it is on, instead of the gaps showing up as silently empty results.</p>
+	 */
+	RELATION_NN;
+
+	/**
+	 * The full write path with key-field edges, <em>without</em> {@link #RELATION_NN}: a junction table
+	 * is a separate realization an adapter must opt into, so it is never assumed by a bundle. — what object-graph adapters such as
 	 * PostgreSQL, MySQL, SQL Server, DuckDB, and Elasticsearch support. It deliberately
 	 * excludes {@link #RELATIONSHIP_EDGES}, whose representation is the opposite one.
 	 */
