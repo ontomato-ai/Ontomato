@@ -1,6 +1,12 @@
 import { ensurePlatformEventCursorSchema } from "./20261103-platform-events/schema";
 import { ensureOpsDiagnosisSchema } from "./20261029-ops-diagnosis/schema";
 import { ensureAssistantSchema } from "./20261028-assistant/schema";
+import { ensureAssistantDefaultPromptSchema } from "./20261105-assistant-default-prompts/schema";
+import {
+  ASSISTANT_DEFAULT_PROMPTS_NAME,
+  ASSISTANT_DEFAULT_PROMPTS_VERSION,
+  migrateAssistantDefaultPrompts,
+} from "./20261105-assistant-default-prompts/migration";
 import { ensureScheduledTaskSchema } from "./20261030-scheduled-tasks/schema";
 import { workbenchProduct } from "../../product/installed";
 import { ensureAnalysisHarnessLinks } from "./20260923-analysis-harness-links/schema";
@@ -83,6 +89,15 @@ export const POSTGRES_MIGRATION_REGISTRY: MigrationRegistration[] = [
   { directory: "20261103-platform-events", ensureSchema: ensurePlatformEventCursorSchema },
   { directory: "20261029-ops-diagnosis", ensureSchema: ensureOpsDiagnosisSchema },
   { directory: "20261028-assistant", ensureSchema: ensureAssistantSchema },
+  {
+    directory: "20261105-assistant-default-prompts",
+    ensureSchema: ensureAssistantDefaultPromptSchema,
+    migration: {
+      version: ASSISTANT_DEFAULT_PROMPTS_VERSION,
+      name: ASSISTANT_DEFAULT_PROMPTS_NAME,
+      run: runAssistantDefaultPrompts,
+    },
+  },
   { directory: "20261030-scheduled-tasks", ensureSchema: ensureScheduledTaskSchema },
   {
     directory: "20260827-core-schema-baseline",
@@ -350,6 +365,22 @@ async function runPresentation(
   if (result.terminalSkips.length)
     logger.warn(tApp("foundation.log.migrate.presentationDegraded"), result);
   else logger.info(tApp("foundation.log.migrate.presentationDone"), result);
+}
+
+async function runAssistantDefaultPrompts(
+  client: QueryableClient,
+  migration: MigrationIdentity,
+): Promise<void> {
+  if (await isMigrationApplied(client, migration.version)) return;
+  const result = await inMigrationTransaction(client, async () => {
+    const migrated = await migrateAssistantDefaultPrompts(client);
+    await recordMigration(client, migration.version, migration.name);
+    return migrated;
+  });
+  logger.info("Assistant default prompts migrated", {
+    version: migration.version,
+    cleared: result.cleared,
+  });
 }
 
 async function runAnalysisConversationTurns(

@@ -8,7 +8,6 @@ import {
 } from "../../infrastructure/postgres";
 import { transaction } from "../../infrastructure/postgres-transaction";
 import { HttpError } from "../../utils/errors";
-import { getPromptTemplate } from "../../core/prompts/loader";
 import type { RuntimeSkillRef } from "@ontomato/contracts/agent-runtime-skills";
 export interface AssistantOwner {
   domainId: string;
@@ -45,7 +44,7 @@ export interface AgentRow {
   description: string;
   icon: string | null;
   enabled: boolean;
-  system_prompt: string;
+  system_prompt: string | null;
   model_selection: ModelSelection;
   skills: RuntimeSkillRef[];
   class_names: string[];
@@ -74,7 +73,7 @@ export const assistantStore = {
             kind === "regular"
               ? "Ask questions about your data"
               : "Investigate questions and produce reports",
-            getPromptTemplate(`assistant.${kind}.system`),
+            null,
             JSON.stringify([
               {
                 namespace: { kind: "provider", provider: "ontology" },
