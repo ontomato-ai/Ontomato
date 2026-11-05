@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref, watch } from "vue";
-import { ChevronsLeft, ChevronsRight } from "lucide-vue-next";
+import { ChevronsLeft, ChevronsRight, Moon } from "lucide-vue-next";
 import type { PlatformAccount, PlatformApp, PlatformPreferences, PlatformShellLabels } from "./types";
 import { appIcon, ExternalLink } from "./icons";
 import PlatformAccountMenu from "./PlatformAccountMenu.vue";
@@ -158,19 +158,25 @@ onBeforeUnmount(() => document.removeEventListener("pointerdown", onDocumentPoin
       </li>
     </ul>
 
-    <div v-if="account" ref="menuRoot" class="rail-account">
+    <!--
+      The account menu is the only place the theme and language are chosen, so it exists in every edition: without a
+      signed-in account it holds those two and no name.
+    -->
+    <div ref="menuRoot" class="rail-account">
       <button
         type="button"
         class="account-trigger"
         aria-haspopup="menu"
         :aria-expanded="menuOpen"
         :aria-label="labels.account"
-        :title="collapsed ? account.userName : undefined"
+        :title="collapsed ? account?.userName : undefined"
         @click="menuOpen ? closeMenu() : openMenu()"
         @keydown.escape="closeMenu"
       >
-        <span class="account-avatar" aria-hidden="true">{{ initial }}</span>
-        <span v-if="!collapsed" class="account-name">{{ account.userName }}</span>
+        <span v-if="account" class="account-avatar" aria-hidden="true">{{ initial }}</span>
+        <Moon v-else class="account-avatar-icon" :size="16" aria-hidden="true" />
+        <span v-if="!collapsed && account" class="account-name">{{ account.userName }}</span>
+        <span v-if="!collapsed && !account" class="account-name">{{ labels.account }}</span>
       </button>
       <div v-if="menuOpen" class="account-menu-anchor">
         <PlatformAccountMenu
@@ -363,6 +369,10 @@ onBeforeUnmount(() => document.removeEventListener("pointerdown", onDocumentPoin
 }
 .account-trigger:hover {
   background: var(--el-fill-color-light);
+}
+.account-avatar-icon {
+  flex-shrink: 0;
+  color: var(--el-text-color-secondary);
 }
 .account-avatar {
   display: grid;

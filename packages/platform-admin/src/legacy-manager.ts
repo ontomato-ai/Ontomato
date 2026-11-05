@@ -29,6 +29,10 @@ const oldPages: Record<string, string> = {
   "/super-admin": routes.superAdmin.path,
 };
 
+/**
+ * Where an old Manager address lands now: the old pages keep their mapping, and an address that is already one of the
+ * platform's own is left as it is, so a current deep link is not sent back to a landing page.
+ */
 export function managerDestination(fullPath: string) {
   const separator = fullPath.indexOf("?");
   const path = separator < 0 ? fullPath : fullPath.slice(0, separator);
@@ -36,5 +40,9 @@ export function managerDestination(fullPath: string) {
   for (const [oldPath, newPath] of Object.entries(oldPages)) {
     if (path === oldPath || path.startsWith(oldPath + "/")) return newPath + path.slice(oldPath.length) + query;
   }
+  // A page's address may carry a parameter; a current deep link is recognised by its base address.
+  const base = (value: string) => value.split("/:")[0]!;
+  if (Object.values(routes).some((route) => path === base(route.path) || path.startsWith(base(route.path) + "/")))
+    return path + query;
   return routes.ontology.path;
 }

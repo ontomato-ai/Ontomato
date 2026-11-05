@@ -65,8 +65,9 @@ async function start(url: string) {
 }
 
 const hash = () => window.location.hash;
-const navRows = () => [...document.querySelectorAll(".nav-group .nav-row .nav-label")].map((row) => row.textContent);
-const headings = () => [...document.querySelectorAll(".nav-heading")].map((heading) => heading.textContent);
+// The platform shell's column: the pages of the application the address belongs to, under its group headings.
+const navRows = () => [...document.querySelectorAll(".page-row .page-label")].map((row) => row.textContent);
+const headings = () => [...document.querySelectorAll(".group-heading")].map((heading) => heading.textContent);
 
 describe("open-source Ontology Service page", () => {
   beforeEach(() => {
@@ -87,10 +88,10 @@ describe("open-source Ontology Service page", () => {
     vi.unstubAllGlobals();
   });
 
-  it("one sidebar lists the ontology, asset, knowledge and platform pages without enterprise pages", async () => {
-    await start("/");
-    expect(document.querySelector(".sidebar-brand")?.textContent).toBe("Ontology Service");
-    expect(headings()).toEqual(["Ontology", "Assets", "Knowledge", "Platform Management"]);
+  it("the ontology manager's column lists its own pages, grouped as the manager groups them", async () => {
+    await start("/#/ontology/objects");
+    expect(document.querySelector(".panel-title")?.textContent).toBe("Ontology manager");
+    expect(headings()).toEqual(["Ontology", "Assets", "Knowledge"]);
     expect(navRows()).toEqual([
       "Ontomap",
       "Object Types",
@@ -98,18 +99,30 @@ describe("open-source Ontology Service page", () => {
       "Relation Types",
       "Action Types",
       "Visual Modeling",
-      "Data Browser",
       "Metric Views",
       "Functions",
-      "Schedule Tasks",
       "Business Knowledge",
-      "User Feedback",
-      "Models",
-      "System Settings",
-      "Run Records",
     ]);
-    // No back link to a separate workspace and no second header.
-    expect(document.querySelector(".back-btn, .workspace-header, .platform-header")).toBeNull();
+  });
+
+  it("the rail holds every application, and the object browser owns the graph and data browsing", async () => {
+    await start("/#/browser/data");
+    // The rail starts collapsed at this width; expanding it is what shows the names.
+    document.querySelector<HTMLButtonElement>(".rail-toggle")!.click();
+    await settle();
+    const apps = [...document.querySelectorAll(".rail-row .rail-label")].map((row) => row.textContent);
+    expect(apps).toEqual([
+      "Agent Platform",
+      "Operations diagnosis",
+      "Knowledge governance",
+      "Object browser",
+      "Ontology manager",
+      "Scheduled tasks",
+      "Permissions",
+      "System settings",
+    ]);
+    expect(document.querySelector(".panel-title")?.textContent).toBe("Object browser");
+    expect(navRows()).toEqual(["Data Browser"]);
   });
 
   it.each([
@@ -132,19 +145,20 @@ describe("open-source Ontology Service page", () => {
 
   it("the current page's navigation row is highlighted and the platform pages get the 48px page header", async () => {
     await start("/#/admin/audit-log");
-    expect(document.querySelector(".nav-row.active .nav-label")?.textContent).toBe("Run Records");
-    expect(document.querySelector(".page-header .page-title")?.textContent).toBe("Run Records");
-    await start("/#/objects");
-    expect(document.querySelector(".nav-row.active .nav-label")?.textContent).toBe("Object Types");
-    expect(document.querySelector(".page-header")).toBeNull();
+    expect(document.querySelector(".page-row.active .page-label")?.textContent).toBe("Run Records");
+    expect(document.querySelector(".platform-page-header .page-title")?.textContent).toBe("Run Records");
+    await start("/#/ontology/objects");
+    expect(document.querySelector(".page-row.active .page-label")?.textContent).toBe("Object Types");
+    // The Manager's own pages draw their own header.
+    expect(document.querySelector(".platform-page-header")).toBeNull();
     expect(document.querySelector(".ontology-manager")).not.toBeNull();
   });
 
-  it("knowledge governance fills the window without the service sidebar", async () => {
-    await start("/#/knowledge-governance/s1");
+  it("knowledge governance is a conversation application of the platform", async () => {
+    await start("/#/governance/chat/s1");
     expect(document.querySelector(".page-double")?.textContent).toBe("governance s1");
-    expect(document.querySelector(".service-layout")).toBeNull();
-    expect(document.querySelector(".ontology-manager")).not.toBeNull();
+    expect(document.querySelector(".platform-shell")).not.toBeNull();
+    expect(document.querySelector(".panel-title")?.textContent).toBe("Knowledge governance");
   });
 
   it("requests go anonymously to the configured API root, and an old launch link loses its credential", async () => {
@@ -164,9 +178,15 @@ describe("open-source Ontology Service page", () => {
     localStorage.setItem("theme-preference", "light");
     await start("/?theme=dark");
     expect(document.documentElement.classList.contains("dark")).toBe(false);
-    expect(document.querySelector(".lang-button")).toBeNull();
-    const light = document.documentElement.style.getPropertyValue("--el-bg-color");
-    document.querySelector<HTMLButtonElement>(".theme-button")!.click();
+    // The theme and language live in the rail's account menu now.
+    document.querySelector<HTMLButtonElement>(".account-trigger")!.click();
+    await settle();
+    expect(document.querySelector(".menu-row[aria-checked]") ?? null).toBeNull();
+    const light = document.documentElement.style.getPropertyValue("--el-bg-color") ||
+      getComputedStyle(document.documentElement).getPropertyValue("--el-bg-color");
+    [...document.querySelectorAll<HTMLButtonElement>(".menu-row")]
+      .find((row) => row.textContent?.trim() === "Dark")!
+      .click();
     await settle();
     expect(document.documentElement.classList.contains("dark")).toBe(true);
     expect(document.documentElement.style.getPropertyValue("--el-bg-color")).not.toBe(light);
@@ -177,10 +197,10 @@ describe("open-source Ontology Service page", () => {
   it("a 401 stops the page with its status; a 402 keeps it", async () => {
     statusFor = (url) => (url.endsWith("/action/queryList") ? 402 : 200);
     await start("/#/objects");
-    expect(document.querySelector(".service-layout")).not.toBeNull();
+    expect(document.querySelector(".platform-shell")).not.toBeNull();
     statusFor = (url) => (url.endsWith("/function/queryList") ? 401 : 200);
     await start("/#/objects");
-    expect(document.querySelector(".service-layout")).toBeNull();
+    expect(document.querySelector(".platform-shell")).toBeNull();
     expect(document.querySelector('[role="alert"]')?.textContent).toBe("Request failed (401)");
   });
 });

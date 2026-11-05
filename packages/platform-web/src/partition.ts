@@ -33,7 +33,10 @@ export function appDeclarations(
   t: (key: string) => string,
 ): PlatformAppDeclaration[] {
   const pages = availablePages(navigation, access);
-  const byPath = new Map(pages.map((page) => [page.path, page]));
+  // A page's address may carry a parameter (`/browser/data/:className?`); the column lists the address up to it, which is
+  // also the address the router serves the page at.
+  const base = (path: string) => path.split("/:")[0]!;
+  const byPath = new Map(pages.map((page) => [base(page.path), page]));
 
   return partition.map((app): PlatformAppDeclaration => {
     const groups: PlatformPanelGroup[] = app.sections
@@ -41,11 +44,11 @@ export function appDeclarations(
         key: section.key,
         label: t(section.titleKey),
         pages: section.paths
-          .map((path) => byPath.get(path))
+          .map((path) => byPath.get(base(path)))
           .filter((page): page is NonNullable<typeof page> => page !== undefined)
           .map(
             (page): PlatformPanelPage => ({
-              id: page.path,
+              id: base(page.path),
               // A host may resolve a page's title itself (a registered permission name); otherwise its key is translated.
               label: page.title ?? t(page.titleKey),
               icon: page.icon ?? "pages",

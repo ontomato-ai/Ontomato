@@ -172,7 +172,8 @@ export function normalizeManagerEntry() {
   const url = new URL(window.location.href);
   if (!url.searchParams.has("__manager")) return;
   discardLegacyLaunchCredential();
-  const path = window.location.hash.slice(1);
+  // The old document put its page in the hash too (`<root>/#/objects`); that address is the page, not a suffix.
+  const path = window.location.hash.replace(/^#/, "");
   const target = path && path !== "/" ? managerDestination(path) : startPage();
   window.history.replaceState(window.history.state, "", url.pathname + "#" + target);
 }

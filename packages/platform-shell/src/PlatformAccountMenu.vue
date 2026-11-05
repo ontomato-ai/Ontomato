@@ -7,7 +7,8 @@ import type { PlatformAccount, PlatformPreferences, PlatformShellLabels } from "
  * applications used to draw in their own sidebars.
  */
 const props = defineProps<{
-  account: PlatformAccount;
+  /** Null in an edition without sign-in: the menu then holds the theme and language only. */
+  account: PlatformAccount | null;
   preferences: PlatformPreferences;
   labels: PlatformShellLabels;
 }>();
@@ -23,7 +24,7 @@ function chooseTheme() {
 }
 /** Signing out is the account's own action; the menu only reports that it is closing. */
 function signOut() {
-  props.account.signOut();
+  props.account?.signOut();
   emit("close");
 }
 </script>
@@ -52,7 +53,7 @@ function signOut() {
       <Moon v-else :size="15" aria-hidden="true" />
       <span>{{ preferences.theme === 'dark' ? labels.theme.light : labels.theme.dark }}</span>
     </button>
-    <button type="button" role="menuitem" class="menu-row" @click="signOut">
+    <button v-if="account" type="button" role="menuitem" class="menu-row" @click="signOut">
       <LogOut :size="15" aria-hidden="true" />
       <span>{{ labels.signOut }}</span>
     </button>

@@ -91,7 +91,7 @@ watch(agentId, (id) => {
 const workbench = computed<ShellWorkbenchDeclaration>(() => ({
   id: WORKBENCH_ID,
   label: appearance.value?.brand.name || props.defaultBrandName,
-  features: workbenchFeatures(t, props.features, props.can, false),
+  features: workbenchFeatures(t, props.features, props.can),
 }));
 
 const labels = useShellLabels();

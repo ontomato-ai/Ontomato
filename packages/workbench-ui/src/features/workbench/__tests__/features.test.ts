@@ -7,47 +7,34 @@ const t = (key: string) => key;
 const granting = (...granted: string[]) => (permission: string) => granted.includes(permission);
 
 /**
- * DESIGN.md "Applications and shells": the function area holds the workbench's own pages, shown by capability codes, and
- * links to the Ontology Service in a new tab.
+ * DESIGN.md "Applications and shells": an application's column holds its own pages, shown by capability codes. Another
+ * application is reached through the platform rail, so no entry here leaves this application.
  */
-describe("workbench function area", () => {
-  it("ends with the Ontology Service, an internal navigation action", () => {
-    const features = workbenchFeatures(t, [], granting(), true);
-    expect(features.at(-1)).toEqual({
-      id: "ontology-service",
-      label: "assistant.featureOntologyService",
-      icon: "ontology",
-      availability: "action",
-    });
+describe("the agent platform's column", () => {
+  it("holds only its own pages: no entry opens another application", () => {
+    const features = workbenchFeatures(t, [], granting("analysis-agent", "observer"));
+    expect(features.map((feature) => feature.id)).not.toContain("ontology-service");
+    expect(features.map((feature) => feature.id)).not.toContain("ops-diagnosis");
+    // Every entry is a page of this application, not an action that leaves it.
+    expect(features.every((feature) => feature.availability === "page")).toBe(true);
   });
 
   it("keeps the existing order around the edition's entries", () => {
-    const graph = { id: "graph", label: "Graph", icon: "graph", availability: "action" as const };
-    expect(workbenchFeatures(t, [graph], granting("analysis-agent", "observer"), true).map((feature) => feature.id)).toEqual([
+    const graph = { id: "graph", label: "Graph", icon: "graph", availability: "page" as const };
+    expect(workbenchFeatures(t, [graph], granting("analysis-agent")).map((feature) => feature.id)).toEqual([
       "dashboards",
       "graph",
       "agents",
-      "ops-diagnosis",
       "schedule",
-      "ontology-service",
     ]);
   });
 
-  it("shows agents with any one of its tabs' codes and operations diagnosis with observer", () => {
-    const ids = (...granted: string[]) => workbenchFeatures(t, [], granting(...granted), true).map((feature) => feature.id);
-    // Any one code grants the agents entry; when both apply, agents comes before operations diagnosis.
-    expect(ids("analysis-agent")).toEqual(["dashboards", "agents", "schedule", "ontology-service"]);
-    expect(ids("skill-management")).toEqual(["dashboards", "agents", "schedule", "ontology-service"]);
+  it("shows agents with any one of its tabs' codes", () => {
+    const ids = (...granted: string[]) => workbenchFeatures(t, [], granting(...granted)).map((feature) => feature.id);
+    expect(ids("analysis-agent")).toEqual(["dashboards", "agents", "schedule"]);
+    expect(ids("skill-management")).toEqual(["dashboards", "agents", "schedule"]);
     expect(ids("mcp-service")).toContain("agents");
-    // observer opens operations diagnosis only: the agent definitions are guarded by analysis-agent.
-    expect(ids("observer")).toEqual(["dashboards", "ops-diagnosis", "schedule", "ontology-service"]);
-    // Codes of the old console that no longer own an entry of the function area.
-    expect(ids("audit-logs", "system-config")).toEqual(["dashboards", "schedule", "ontology-service"]);
-  });
-
-  it("leaves the Ontology Service out when the app's access hides it", () => {
-    expect(workbenchFeatures(t, [], granting("observer"), false).map((feature) => feature.id)).not.toContain(
-      "ontology-service",
-    );
+    // Codes of the old console that no longer own an entry of the column.
+    expect(ids("audit-logs", "system-config")).toEqual(["dashboards", "schedule"]);
   });
 });
