@@ -5,7 +5,7 @@ import { getTableColumns, type QueryableClient } from "../helpers.js";
  * Single authority for report results + schedule rule retirement.
  *
  * 1. Schedule rows that never carried a report are deleted from the task table. Their rules are not carried over:
- *    scheduled tasks were rebuilt on the agent runtime and the old rules are dropped (see 20261030-scheduled-tasks).
+ *    scheduled tasks were rebuilt on the agent runtime and the old rules are dropped at the agent-runtime cutover.
  *    Dirty rows that are both a rule and once carried report results keep the task row as one report run.
  * 2. Task rows missing payload but holding result_report get a minimal backfill, so old task reviews never lose the body.
  * 3. Retires the report copy columns, schedule columns, and task snapshot table on the task table.

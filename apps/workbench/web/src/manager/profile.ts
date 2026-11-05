@@ -1,0 +1,14 @@
+import { englishMessages } from "@ontomato/ontology-manager/i18n";
+import type { ManagerShellProfile } from "@ontomato/workbench-ui/platform";
+import { ossPresentation } from "./presentation";
+
+export const ossProfile: ManagerShellProfile = {
+  locale: "en",
+  messages: { en: englishMessages },
+  dataFallbacks: {
+    noBusinessDescription: "No business description provided",
+    unnamedAsset: "Unnamed asset",
+  },
+  presentation: ossPresentation,
+  knowledgeTagValues: { general: "General", business: "Business", tech: "Tech" },
+};

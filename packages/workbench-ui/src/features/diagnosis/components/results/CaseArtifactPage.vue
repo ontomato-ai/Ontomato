@@ -21,7 +21,7 @@ function goBack() {
   if (window.history.length > 1) {
     router.back();
   } else {
-    router.push("/observe/results");
+    router.push("/ops/results");
   }
 }
 </script>

@@ -426,6 +426,15 @@ export class RuntimeStore {
     updateServiceLogContext({ runId: row.run.id, sessionId: row.run.sessionId, domainId: scope.domainId });
     return { run: row.run, seq: Number(row.seq), streamId: row.stream_id };
   }
+  /** The last assistant reply with text; the caller has already observed the stop. */
+  async finalReply(scope: Scope, id: string): Promise<RuntimeMessage | null> {
+    const result = await this.pool.query(
+      `SELECT message FROM ${this.table("messages")}
+       WHERE host_id=$1 AND domain_id=$2 AND run_id=$3 AND message->>'role'='assistant'
+         AND jsonb_path_exists(message, '$.content[*] ? (@.type == "text" && @.text != "")')
+       ORDER BY seq DESC LIMIT 1`, [...values(scope), id]);
+    return result.rows[0]?.message ?? null;
+  }
   async messages(
     scope: Scope,
     sessionId: string,

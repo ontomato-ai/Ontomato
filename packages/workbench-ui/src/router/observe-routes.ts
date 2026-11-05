@@ -1,3 +1,4 @@
+import { platformRoutes as routes } from "@ontomato/platform-admin/routes";
 import type { RouteRecordRaw } from "vue-router";
 
 const placeholder = () => import("../views/observe/ObservePlaceholder.vue");
@@ -10,20 +11,20 @@ const placeholder = () => import("../views/observe/ObservePlaceholder.vue");
  */
 export const observeRoutes = {
   root: {
-    path: "/observe",
+    ...routes.ops,
+    redirect: routes.diagnosis.path,
     component: () => import("../features/diagnosis/components/layout/ObserveLayout.vue"),
   },
   children: [
-    { path: "", redirect: "/observe/diagnosis" },
-    { path: "diagnosis", name: "ObserveDiagnosis", component: placeholder },
-    { path: "knowledge", name: "ObserveKnowledge", component: placeholder },
-    { path: "turn", name: "ObserveTurn", component: placeholder },
-    { path: "turn/:turnKey", name: "ObserveTurnDetail", component: placeholder },
-    { path: "live-logs", name: "ObserveLiveLogs", component: placeholder },
-    { path: "test", name: "ObserveTest", component: placeholder },
-    { path: "results", name: "ObserveResults", component: placeholder },
-    { path: "cases", name: "ObserveCases", component: placeholder },
-    { path: "autotest/runs/:runId/cases/:caseId", name: "ObserveAutoTestCaseDetail", component: placeholder },
-    { path: "dsl", name: "ObserveDsl", component: placeholder },
+    { ...routes.diagnosis, component: placeholder },
+    { ...routes.opsKnowledge, component: placeholder },
+    { ...routes.turn, component: placeholder },
+    { ...routes.turnDetail, component: placeholder },
+    { ...routes.logs, component: placeholder },
+    { ...routes.test, component: placeholder },
+    { ...routes.results, component: placeholder },
+    { ...routes.cases, component: placeholder },
+    { ...routes.caseDetail, component: placeholder },
+    { ...routes.dsl, component: placeholder },
   ] satisfies RouteRecordRaw[],
 };

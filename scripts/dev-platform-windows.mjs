@@ -84,8 +84,8 @@ function isTsxWorker(argv, script) {
   return argv.some((arg) => windowsPathKey(arg).includes("\\tsx\\"));
 }
 
-const DEVELOP_MODES = ["dev", "server", "web", "manager", "runtime"];
-const CONCURRENT_MODES = ["pnpm:dev:server", "pnpm:dev:web", "pnpm:dev:ontology-manager"];
+const DEVELOP_MODES = ["dev", "server", "web", "runtime"];
+const CONCURRENT_MODES = ["pnpm:dev:server", "pnpm:dev:web"];
 
 function flagValue(argv, flag) {
   const at = argv.indexOf(flag);
@@ -127,7 +127,6 @@ export function classifyWindows(row, ctx) {
       !argv.includes("-e") && !argv.includes("--eval") &&
       (windowsPathEndsWith(argv[1], "/tsx/dist/cli.mjs") || ["--require", "--import", "--loader", "-r"].includes(argv[1]))) return "frontend-root";
   const workbench = join(ctx.root, "apps/workbench");
-  const manager = join(ctx.root, "apps/ontology-manager");
   if (exe === "node.exe") {
     if (windowsPathEquals(argv[1], ctx.devCommand) && DEVELOP_MODES.includes(argv[2])) return "frontend-root";
     if (windowsPathEquals(argv[1], ctx.javaEntry)) return "java-helper";
@@ -138,7 +137,6 @@ export function classifyWindows(row, ctx) {
     if (isTsxWorker(argv, join(workbench, "src/index.ts"))) return "frontend-root";
     if (windowsPathEndsWith(argv[1], "/vite/bin/vite.js")) {
       if (windowsPathEquals(flagValue(argv, "--config"), join(workbench, "web/vite.config.ts"))) return "frontend-root";
-      if (windowsPathEquals(argv[2], manager) && flagValue(argv, "--port") === "5174") return "frontend-root";
     }
     if (windowsPathEndsWith(argv[1], "/scripts/dev-stack.mjs")) return "self";
     return undefined;

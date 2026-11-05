@@ -1,7 +1,6 @@
 import { startModelMigration, stopModelMigration } from "../platform/agent-runtime/model-migration";
 import assistantRouter from "../api/routes/assistant";
-import scheduledTasksRouter from "../api/routes/scheduled-tasks";
-import { startScheduledTaskScheduler } from "../services/scheduled-tasks/scheduler";
+import { validateScheduledAgent, startScheduledAgent, scheduledAgentStatus } from "../api/routes/scheduled-agent";
 import { startAssistantReconciliation } from "../services/assistant/service";
 import { registerAssistantSkills } from "../services/assistant/skills";
 import {
@@ -172,12 +171,14 @@ export function createWorkbenchApp(): Express {
     res.send(
       `window.__APP_CONFIG__ = ${JSON.stringify({
         DEFAULT_LOCALE: getDefaultLocale(),
+        INITIAL_ROUTE: process.env.ONTOLOGY_INITIAL_ROUTE || "/playground",
       })};\nwindow.__APP_CONFIG__.API_BASE = new URL("./api", document.currentScript.src).pathname;`,
     );
   });
 
   app.use(unwrapCallbackCredential);
   app.use(["/api/observe/logs", "/api/observe/runtime-logs"], serviceLogAuthResponse);
+  app.post("/internal/scheduled-agent/status", scheduledAgentStatus);
   app.use("/api", identity.authenticate);
   app.use("/api", (req, _res, next) => {
     const r = req as AuthenticatedRequest;
@@ -194,7 +195,8 @@ export function createWorkbenchApp(): Express {
 
   app.use("/api/analysis-tasks", analysisTasksRouter);
   app.use("/api/assistant", assistantRouter);
-  app.use("/api/scheduled-tasks", scheduledTasksRouter);
+  app.post("/api/assistant/scheduled-agent/validate", validateScheduledAgent);
+  app.post("/api/assistant/scheduled-agent/start", startScheduledAgent);
   app.use("/api/dashboards", dashboardsRouter);
   app.use("/api/feedback", feedbackRouter);
   app.use("/api/preferences", preferencesRouter);
@@ -267,7 +269,6 @@ export async function startWorkbench(
   await registerAssistantSkills();
 
   startArtifactCleanupScheduler();
-  startScheduledTaskScheduler();
   startAssistantReconciliation();
   logger.info(tApp("foundation.log.boot.cleanupStarted"));
   app.listen(port, () => {

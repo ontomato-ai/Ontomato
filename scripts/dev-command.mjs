@@ -12,7 +12,7 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const WINDOWS = process.platform === "win32";
 
 // Pure: mode + product -> the child's env/tool/args/cwd.
-// server/web/manager pass the entry, config and root as absolute paths so a
+// server/web pass the entry, config and root as absolute paths so a
 // Windows process can be bound back to this checkout by its argv alone (no cwd).
 export function configuration(mode, { root }, inherited = process.env) {
   const env = { ...inherited };
@@ -23,7 +23,7 @@ export function configuration(mode, { root }, inherited = process.env) {
     case "dev":
       env.NODE_ENV = "development";
       tool = "concurrently";
-      args = ["pnpm:dev:server", "pnpm:dev:web", "pnpm:dev:ontology-manager"];
+      args = ["pnpm:dev:server", "pnpm:dev:web"];
       break;
     case "server":
       env.NODE_ENV = "development";
@@ -45,11 +45,6 @@ export function configuration(mode, { root }, inherited = process.env) {
       tool = "vite";
       args = ["--config", join(root, "apps/workbench/web/vite.config.ts")];
       cwd = resolve(root, "apps/workbench");
-      break;
-    case "manager":
-      tool = "vite";
-      args = [resolve(root, "apps/ontology-manager"), "--port", "5174"];
-      cwd = resolve(root, "apps/ontology-manager");
       break;
     default:
       throw new Error(`Unknown development command: ${mode}`);

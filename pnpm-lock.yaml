@@ -64,49 +64,6 @@ importers:
         specifier: 5.9.3
         version: 5.9.3
 
-  apps/ontology-manager:
-    dependencies:
-      '@ontomato/design-tokens':
-        specifier: workspace:*
-        version: link:../../packages/design-tokens
-      '@ontomato/ontology-manager':
-        specifier: workspace:*
-        version: link:../../packages/ontology-manager
-      '@ontomato/platform-admin':
-        specifier: workspace:*
-        version: link:../../packages/platform-admin
-      element-plus:
-        specifier: 2.13.6
-        version: 2.13.6(typescript@5.9.3)(vue@3.5.30(typescript@5.9.3))
-      lucide-vue-next:
-        specifier: 1.0.0
-        version: 1.0.0(vue@3.5.30(typescript@5.9.3))
-      vue:
-        specifier: 3.5.30
-        version: 3.5.30(typescript@5.9.3)
-    devDependencies:
-      '@types/node':
-        specifier: 22.19.15
-        version: 22.19.15
-      '@vitejs/plugin-vue':
-        specifier: 5.2.4
-        version: 5.2.4(vite@5.4.21(@types/node@22.19.15))(vue@3.5.30(typescript@5.9.3))
-      happy-dom:
-        specifier: 20.14.3
-        version: 20.14.3
-      typescript:
-        specifier: 5.9.3
-        version: 5.9.3
-      vite:
-        specifier: 5.4.21
-        version: 5.4.21(@types/node@22.19.15)
-      vitest:
-        specifier: 1.6.0
-        version: 1.6.0(@types/node@22.19.15)(happy-dom@20.14.3)
-      vue-tsc:
-        specifier: 3.2.6
-        version: 3.2.6(typescript@5.9.3)
-
   apps/workbench:
     dependencies:
       '@ontomato/workbench-server':
@@ -125,6 +82,12 @@ importers:
       '@ontomato/design-tokens':
         specifier: workspace:*
         version: link:../../packages/design-tokens
+      '@ontomato/ontology-manager':
+        specifier: workspace:*
+        version: link:../../packages/ontology-manager
+      '@ontomato/platform-admin':
+        specifier: workspace:*
+        version: link:../../packages/platform-admin
       '@ontomato/workbench-ui':
         specifier: workspace:*
         version: link:../../packages/workbench-ui
@@ -161,6 +124,9 @@ importers:
       vue:
         specifier: 3.5.30
         version: 3.5.30(typescript@5.9.3)
+      vue-i18n:
+        specifier: 10.0.8
+        version: 10.0.8(vue@3.5.30(typescript@5.9.3))
       vue-router:
         specifier: 5.0.4
         version: 5.0.4(@vue/compiler-sfc@3.5.30)(pinia@3.0.4(typescript@5.9.3)(vue@3.5.30(typescript@5.9.3)))(vue@3.5.30(typescript@5.9.3))
@@ -305,6 +271,9 @@ importers:
       '@ontomato/contracts':
         specifier: workspace:*
         version: link:../contracts
+      '@ontomato/platform-admin':
+        specifier: workspace:*
+        version: link:../platform-admin
       element-plus:
         specifier: 2.13.6
         version: 2.13.6(typescript@5.9.3)(vue@3.5.30(typescript@5.9.3))
@@ -504,9 +473,6 @@ importers:
       multer:
         specifier: 2.1.1
         version: 2.1.1
-      nodemailer:
-        specifier: 8.0.8
-        version: 8.0.8
       pg:
         specifier: 8.20.0
         version: 8.20.0
@@ -553,9 +519,6 @@ importers:
       '@types/node':
         specifier: 22.19.15
         version: 22.19.15
-      '@types/nodemailer':
-        specifier: 8.0.0
-        version: 8.0.0
       '@types/pg':
         specifier: 8.20.0
         version: 8.20.0
@@ -610,6 +573,12 @@ importers:
       '@ontomato/design-tokens':
         specifier: workspace:*
         version: link:../design-tokens
+      '@ontomato/ontology-manager':
+        specifier: workspace:*
+        version: link:../ontology-manager
+      '@ontomato/platform-admin':
+        specifier: workspace:*
+        version: link:../platform-admin
       codemirror:
         specifier: 6.0.2
         version: 6.0.2
@@ -1784,9 +1753,6 @@ packages:
 
   '@types/node@22.19.15':
     resolution: {integrity: sha512-F0R/h2+dsy5wJAUe3tAU6oqa2qbWY5TpNfL/RGmo1y38hiyO1w3x2jPtt76wmuaJI4DQnOBu21cNXQ2STIUUWg==}
-
-  '@types/nodemailer@8.0.0':
-    resolution: {integrity: sha512-fyf8jWULsCo0d0BuoQ75i6IeoHs47qcqxWc7yUdUcV0pOZGjUTTOvwdG1PRXUDqN/8A64yQdQdnA2pZgcdi+cA==}
 
   '@types/pg@8.20.0':
     resolution: {integrity: sha512-bEPFOaMAHTEP1EzpvHTbmwR8UsFyHSKsRisLIHVMXnpNefSbGA1bD6CVy+qKjGSqmZqNqBDV2azOBo8TgkcVow==}
@@ -3537,10 +3503,6 @@ packages:
   node-fetch@3.3.2:
     resolution: {integrity: sha512-dRB78srN/l6gqWulah9SrxeYnxeddIG30+GOqK/9OlLVyLg3HPnr6SqOWTWOXKRwC2eGYCkZ59NNuSgvSrpgOA==}
     engines: {node: ^12.20.0 || ^14.13.1 || >=16.0.0}
-
-  nodemailer@8.0.8:
-    resolution: {integrity: sha512-p+XsnzXGdtIHXUu2ugxdfG+eX2nehsGhMjW9h0CWj1BhE30hrFz0kh0yIM0/VjUgVsRrDj+80ZO+I1nSkGE4tA==}
-    engines: {node: '>=6.0.0'}
 
   nopt@10.0.1:
     resolution: {integrity: sha512-df3sBr/6ax9hSGuC3CspvLlbnX8cP5L5nZwXF8cGN8l0zSWR6BvzmQ6jPUKjvo6+/xdpkNvEcucBNUdBeeV13g==}
@@ -5801,10 +5763,6 @@ snapshots:
     dependencies:
       undici-types: 6.21.0
 
-  '@types/nodemailer@8.0.0':
-    dependencies:
-      '@types/node': 22.19.15
-
   '@types/pg@8.20.0':
     dependencies:
       '@types/node': 22.19.15
@@ -7761,8 +7719,6 @@ snapshots:
       data-uri-to-buffer: 4.0.1
       fetch-blob: 3.2.0
       formdata-polyfill: 4.0.10
-
-  nodemailer@8.0.8: {}
 
   nopt@10.0.1:
     dependencies:

@@ -1,4 +1,4 @@
-import { computed, ref, watch } from "vue";
+import { computed, nextTick, ref, watch } from "vue";
 import type { AgentHostAgent, AgentHostRun, AgentHostRunStatus, AgentHostSession } from "@ontomato/contracts/agent-host";
 import type { AgentHostClient } from "./host";
 
@@ -36,6 +36,12 @@ export function useAgentNav(options: AgentNavOptions) {
   const sessionsState = ref<"loading" | "ready" | "error">("loading");
   const nextCursor = ref<string | null>(null);
   let sessionsLoad = 0;
+  /**
+   * False until the first agent read has settled. The read may replace a remembered agent that no longer exists, and
+   * that replacement is not the reader switching agents: it must not clear the page and conversation an address asked
+   * for (a bookmark to a feature or a session).
+   */
+  let initialAgentLoaded = false;
 
   const currentAgent = computed(() => agents.value.find((agent) => agent.id === options.agentId()) ?? null);
   const currentSession = computed(() => sessions.value.find((session) => session.id === options.sessionId()));
@@ -45,6 +51,9 @@ export function useAgentNav(options: AgentNavOptions) {
     const selected = options.agentId();
     if (!agents.value.some((agent) => agent.id === selected))
       options.setAgentId((agents.value.find((agent) => agent.enabled) ?? agents.value[0])?.id ?? null);
+    // Let the selection watcher run once with the flag still down, then treat later changes as the reader's.
+    await nextTick();
+    initialAgentLoaded = true;
   }
 
   async function loadSessions(more = false) {
@@ -97,7 +106,8 @@ export function useAgentNav(options: AgentNavOptions) {
     (_, previous) => {
       sessions.value = [];
       nextCursor.value = null;
-      if (previous !== null) startNew();
+      // Initial selection can replace a removed remembered agent while opening a bookmarked feature.
+      if (previous !== null && initialAgentLoaded) startNew();
       void loadSessions();
     },
   );

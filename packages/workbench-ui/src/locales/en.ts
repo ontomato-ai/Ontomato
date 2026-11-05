@@ -31,7 +31,7 @@ export default {
     "unsavedChangesConfirm": "Current case set has unsaved changes",
     "switchConfirmTitle": "Switch Confirmation",
     "saveAndSwitch": "Save & Switch",
-    "discardChanges": "Discard Changes",
+    "discardWorkbenchChanges": "Discard Changes",
     "nTestcases": "{n} test cases",
     "correctCount": "{correct}/{total} correct",
     "deletedSuccess": "Deleted successfully",
@@ -124,7 +124,7 @@ export default {
     "inProgress": "In progress",
     "failed": "Failed",
     "back": "Back",
-    "confirm": "Confirm",
+    "confirmWorkbenchAction": "Confirm",
     "loading": "Loading...",
     "loadMore": "Load More",
     "unknownError": "Unknown Error",
@@ -492,7 +492,7 @@ export default {
     "noFiles": "No knowledge base files",
     "selectMarkdownHint": "Select a Markdown file from the left"
   },
-  "lang": {
+  "workbenchLanguages": {
     "switch": "Language",
     "zhCN": "Simplified Chinese",
     "en": "English",

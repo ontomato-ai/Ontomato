@@ -7,7 +7,6 @@ import {
   ASSISTANT_DEFAULT_PROMPTS_VERSION,
   migrateAssistantDefaultPrompts,
 } from "./20261105-assistant-default-prompts/migration";
-import { ensureScheduledTaskSchema } from "./20261030-scheduled-tasks/schema";
 import { workbenchProduct } from "../../product/installed";
 import { ensureAnalysisHarnessLinks } from "./20260923-analysis-harness-links/schema";
 import {
@@ -98,7 +97,6 @@ export const POSTGRES_MIGRATION_REGISTRY: MigrationRegistration[] = [
       run: runAssistantDefaultPrompts,
     },
   },
-  { directory: "20261030-scheduled-tasks", ensureSchema: ensureScheduledTaskSchema },
   {
     directory: "20260827-core-schema-baseline",
     ensureSchema: ensureCoreSchemaBaseline,

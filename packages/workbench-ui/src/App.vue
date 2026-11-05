@@ -20,6 +20,7 @@ watch(
     }
     language.save?.(nextLocale);
     document.documentElement.lang = nextLocale;
+    document.documentElement.dir = nextLocale === "ar" ? "rtl" : "ltr";
   },
   { immediate: true }
 );

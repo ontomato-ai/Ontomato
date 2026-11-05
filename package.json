@@ -10,7 +10,6 @@
     "dev": "node scripts/dev-command.mjs dev",
     "dev:server": "node scripts/dev-command.mjs server",
     "dev:web": "node scripts/dev-command.mjs web",
-    "dev:ontology-manager": "node scripts/dev-command.mjs manager",
     "dev:up": "node scripts/dev-stack.mjs . up",
     "dev:down": "node scripts/dev-stack.mjs . down",
     "dev:status": "node scripts/dev-stack.mjs . status",

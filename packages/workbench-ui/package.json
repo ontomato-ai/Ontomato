@@ -19,7 +19,8 @@
     "./components/CodeMirrorEditor.vue": "./src/components/CodeMirrorEditor.vue",
     "./locales/*": "./src/locales/*.ts",
     "./styles/*": "./src/styles/*",
-    "./permission-data": "./src/features/agents/permission-data.ts"
+    "./permission-data": "./src/features/agents/permission-data.ts",
+    "./platform": "./src/platform/shell.ts"
   },
   "scripts": {
     "typecheck": "vue-tsc --noEmit",
@@ -54,7 +55,9 @@
     "vue-i18n": "10.0.8",
     "vue-router": "5.0.4",
     "vuedraggable": "4.1.0",
-    "zod": "3.25.76"
+    "zod": "3.25.76",
+    "@ontomato/platform-admin": "workspace:*",
+    "@ontomato/ontology-manager": "workspace:*"
   },
   "devDependencies": {
     "@types/markdown-it": "14.1.2",

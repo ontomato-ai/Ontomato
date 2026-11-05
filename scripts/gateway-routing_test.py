@@ -30,7 +30,6 @@ class GatewayRoutingTest(unittest.TestCase):
         name = "ontomato-gateway-routing-" + uuid.uuid4().hex[:12]
         legacy = "data-agent" if prefix else "ontomato"
         web_mount = prefix + "/" if development else "/"
-        manager_mount = prefix + "/ontology-manager/" if development else "/"
         with tempfile.TemporaryDirectory(prefix="ontomato-gateway-routing-") as temp:
             echoes = Path(temp) / "echo.conf"
             # Separate loopback upstreams distinguish a correct URI from routing to the wrong service.
@@ -43,7 +42,7 @@ class GatewayRoutingTest(unittest.TestCase):
     return 200 "$request\\n";
   }}
 }}'''
-                for port, service in [(9001, "java"), (9002, "node"), (9003, "manager"), (9004, "web")]
+                for port, service in [(9001, "java"), (9002, "node"), (9004, "web")]
             ))
             args = ["run", "--detach", "--pull=never", "--name", name,
                     "--publish", "127.0.0.1::80", "--entrypoint", "/bin/sh"]
@@ -56,8 +55,8 @@ class GatewayRoutingTest(unittest.TestCase):
             for key, value in {
                 "PUBLIC_BASE_PATH": prefix, "LEGACY_API_PREFIX": legacy,
                 "WORKBENCH_UPSTREAM": "127.0.0.1:9002", "WEB_UPSTREAM": "127.0.0.1:9004",
-                "MANAGER_UPSTREAM": "127.0.0.1:9003", "JAVA_UPSTREAM": "127.0.0.1:9001",
-                "WEB_MOUNT": web_mount, "MANAGER_MOUNT": manager_mount,
+                "JAVA_UPSTREAM": "127.0.0.1:9001",
+                "WEB_MOUNT": web_mount,
             }.items():
                 args += ["--env", f"{key}={value}"]
             try:
@@ -80,7 +79,6 @@ class GatewayRoutingTest(unittest.TestCase):
                 for source, target, service in [
                     ("/api/data-query/", "/", "java"),
                     ("/api/resources/", "/api/resources/", "node"),
-                    ("/ontology-manager/", manager_mount, "manager"),
                     (f"/{legacy}/", "/", "java"),
                     ("/assets/", web_mount + "assets/", "web"),
                 ]:
@@ -102,7 +100,13 @@ class GatewayRoutingTest(unittest.TestCase):
                             self.assert_upstream(port, prefix + source + params, target + params, service)
                 self.assert_upstream(port, prefix + "/api/data-query/" + suffix + query,
                                      "/" + suffix + query, "java", method="POST")
-                print(f"nginx -t and 23 upstream request lines passed: prefix={prefix or '/'} "
+                connection = http.client.HTTPConnection("127.0.0.1", port)
+                connection.request("GET", prefix + "/ontology-manager/?view=assets")
+                response = connection.getresponse()
+                self.assertEqual((response.status, response.getheader("Location")),
+                                 (302, prefix + "/?__manager=1&view=assets"))
+                connection.close()
+                print(f"nginx -t, legacy redirect and upstream request lines passed: prefix={prefix or '/'} "
                       f"mode={'development' if development else 'production'}", flush=True)
             finally:
                 subprocess.run(["docker", "rm", "--force", name], capture_output=True)

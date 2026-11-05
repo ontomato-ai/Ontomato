@@ -67,7 +67,6 @@ jobs:
           if [ "$GITHUB_REF_TYPE" = tag ]; then version="${GITHUB_REF_NAME#v}"; elif [ "$GITHUB_REF_NAME" = develop ]; then version=edge; else version="$GITHUB_REF_NAME"; fi
           BUILD_CACHE_REF="$REGISTRY/ontomato-workbench:cache-$version-$ARCH" make workbench ARCH="$ARCH"
           BUILD_CACHE_REF="$REGISTRY/ontomato-data-engine:cache-$version-$ARCH" make data-engine ARCH="$ARCH"
-          BUILD_CACHE_REF="$REGISTRY/ontomato-ontology-manager:cache-$version-$ARCH" make ontology-manager ARCH="$ARCH"
           BUILD_CACHE_REF="$REGISTRY/ontomato-agent-runtime:cache-$version-$ARCH" make agent-runtime ARCH="$ARCH"
           BUILD_CACHE_REF="$REGISTRY/ontomato-gateway:cache-$version-$ARCH" make gateway ARCH="$ARCH"
 
@@ -98,7 +97,6 @@ jobs:
           }
           publish "ontomato:deploy-$ARCH" "$REGISTRY/ontomato-workbench:$version-$ARCH"
           publish "datarag-opensource:deploy-$ARCH" "$REGISTRY/ontomato-data-engine:$version-$ARCH"
-          publish "ontomato-ontology-manager:deploy-$ARCH" "$REGISTRY/ontomato-ontology-manager:$version-$ARCH"
           publish "ontomato-agent-runtime:deploy-$ARCH" "$REGISTRY/ontomato-agent-runtime:$version-$ARCH"
           publish "ontomato-gateway:deploy-$ARCH" "$REGISTRY/ontomato-gateway:$version-$ARCH"
 
@@ -127,7 +125,7 @@ jobs:
               --annotation "index:org.opencontainers.image.source=$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" \
               "${tags[@]}" "$REGISTRY/$1:$2" "$REGISTRY/$1:$3"
           }
-          for image in ontomato-workbench ontomato-data-engine ontomato-ontology-manager ontomato-agent-runtime ontomato-gateway; do
+          for image in ontomato-workbench ontomato-data-engine ontomato-agent-runtime ontomato-gateway; do
             index "$image" "$version-amd64" "$version-arm64"
           done
 

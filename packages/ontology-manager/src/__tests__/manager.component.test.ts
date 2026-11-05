@@ -252,7 +252,7 @@ function mountHost(initial: HostOptions) {
     routes: [
       { path: "/", component: RouterView, children: managerRoutes() },
       // The service router sends unknown addresses to its root, which lands on the graph.
-      { path: "/:unknown(.*)*", redirect: "/playground" },
+      { path: "/:unknown(.*)*", redirect: "/ontology/playground" },
     ],
   });
   router.afterEach((to) => {
@@ -321,7 +321,7 @@ const base: HostOptions = {
   credential: { type: "apiKey", apiKey: "key-a" },
   ...english,
   theme: "light",
-  view: "/playground",
+  view: "/ontology/playground",
   dataFallbacks: hostFallbacks,
   presentation,
   knowledgeTagValues: { general: "tag-g", business: "tag-b", tech: "tag-t" },
@@ -344,7 +344,7 @@ describe("Manager pages in the service router", () => {
     vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue({
       width: 800, height: 600,
     } as DOMRect);
-    const { root } = mountHost({ ...base, view: "/data/Order" });
+    const { root } = mountHost({ ...base, view: "/browser/data/Order" });
     await settle();
     (root().querySelectorAll(".data-browser-header .el-segmented__item")[1] as HTMLElement).click();
     await settle();
@@ -367,7 +367,7 @@ describe("Manager pages in the service router", () => {
 
   it("aggregates overview connections by default and reveals selected instance connections", async () => {
     vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue({ width: 800, height: 600 } as DOMRect);
-    const { root } = mountHost({ ...base, view: "/data/Order" });
+    const { root } = mountHost({ ...base, view: "/browser/data/Order" });
     await settle();
     (root().querySelectorAll(".data-browser-header .el-segmented__item")[1] as HTMLElement).click();
     await settle();
@@ -422,7 +422,7 @@ describe("Manager pages in the service router", () => {
     vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue({
       width: 800, height: 600,
     } as DOMRect);
-    const { root } = mountHost({ ...base, view: "/data/Order" });
+    const { root } = mountHost({ ...base, view: "/browser/data/Order" });
     await settle();
     (root().querySelectorAll(".data-browser-header .el-segmented__item")[1] as HTMLElement).click();
     await settle();
@@ -472,7 +472,7 @@ describe("Manager pages in the service router", () => {
     { field: "relationType", index: 1, label: "has", value: "has" },
   ])("reloads direct neighbors after clearing $field and applying filters", async ({ field, index, label, value }) => {
     vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue({ width: 800, height: 600 } as DOMRect);
-    const { root } = mountHost({ ...base, view: "/data/Order" });
+    const { root } = mountHost({ ...base, view: "/browser/data/Order" });
     await settle();
     (root().querySelectorAll(".data-browser-header .el-segmented__item")[1] as HTMLElement).click();
     await settle();
@@ -512,7 +512,7 @@ describe("Manager pages in the service router", () => {
 
   it("caps automatic focus at native size when the graph fit would enlarge one node", async () => {
     vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue({ width: 800, height: 600 } as DOMRect);
-    const { root } = mountHost({ ...base, view: "/data/Order" });
+    const { root } = mountHost({ ...base, view: "/browser/data/Order" });
     await settle();
     (root().querySelectorAll(".data-browser-header .el-segmented__item")[1] as HTMLElement).click();
     await settle();
@@ -526,7 +526,7 @@ describe("Manager pages in the service router", () => {
 
   it("toggles relation names on existing edges without hiding node labels or reloading data", async () => {
     vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue({ width: 800, height: 600 } as DOMRect);
-    const { root } = mountHost({ ...base, view: "/data/Order" });
+    const { root } = mountHost({ ...base, view: "/browser/data/Order" });
     await settle();
     (root().querySelectorAll(".data-browser-header .el-segmented__item")[1] as HTMLElement).click();
     await settle();
@@ -554,7 +554,7 @@ describe("Manager pages in the service router", () => {
 
   it("keeps hidden relation labels and loaded data when switching themes", async () => {
     vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue({ width: 800, height: 600 } as DOMRect);
-    const { host, root } = mountHost({ ...base, view: "/data/Order" });
+    const { host, root } = mountHost({ ...base, view: "/browser/data/Order" });
     await settle();
     (root().querySelectorAll(".data-browser-header .el-segmented__item")[1] as HTMLElement).click();
     await settle();
@@ -601,7 +601,7 @@ describe("Manager pages in the service router", () => {
     metricDetail.function = { id: "function-1", name: "Revenue", operation: "OPERATION_READ", queryPackage,
       parameters: queryPackage.manifest.parameterDefs, returnDef: { classNames: [], columnLabels: {} } };
     metricDetail.bindings = [{ id: "saved-binding", name: "Existing", parameters: { amount: 7, region: "north" }, matchQuestions: [] }];
-    const { root } = mountHost({ ...base, view: "/assets/metrics" });
+    const { root } = mountHost({ ...base, view: "/ontology/assets/metrics" });
     await settle();
     (root().querySelector(".resource-table-row") as HTMLButtonElement).click();
     await settle();
@@ -632,7 +632,7 @@ describe("Manager pages in the service router", () => {
   });
 
   it("previews metric Markdown and lets the user switch to its source", async () => {
-    const { root } = mountHost({ ...base, view: "/assets/metrics" });
+    const { root } = mountHost({ ...base, view: "/ontology/assets/metrics" });
     await settle();
     (root().querySelector(".resource-table-row") as HTMLButtonElement).click();
     await settle();
@@ -655,29 +655,29 @@ describe("Manager pages in the service router", () => {
   });
 
   it("the address locates data browsing; page actions navigate through the router; unknown addresses land on the graph", async () => {
-    const { host, views } = mountHost({ ...base, view: "/data/Item" });
+    const { host, views } = mountHost({ ...base, view: "/browser/data/Item" });
     await settle();
 
     const page = requests.find((request) => request.url.endsWith("/data/getWholeClassDataByPage"));
     expect(page?.body).toEqual({ classname: "Item", pagenum: 1, pagecount: 20 });
     expect(page?.headers["x-api-key"]).toBe("key-a");
 
-    host.view = "/objects/Order";
+    host.view = "/ontology/objects/Order";
     await settle();
     clickButton("Browse Data");
     await settle();
-    expect(views.at(-1)).toBe("/data/Order");
+    expect(views.at(-1)).toBe("/browser/data/Order");
 
     // The navigation entry (a bare /data) returns to the object type last on show.
-    host.view = "/objects";
+    host.view = "/ontology/objects";
     await settle();
-    host.view = "/data";
+    host.view = "/browser/data";
     await settle();
-    expect(views.at(-1)).toBe("/data/Order");
+    expect(views.at(-1)).toBe("/browser/data/Order");
 
     host.view = "/unknown";
     await settle();
-    expect(views.at(-1)).toBe("/playground");
+    expect(views.at(-1)).toBe("/ontology/playground");
   });
 
   it("the frame follows the page theme and neither reads nor changes html.dark", async () => {
@@ -694,7 +694,7 @@ describe("Manager pages in the service router", () => {
   });
 
   it("the page's vue-i18n locale drives the text and Element Plus widgets; the locale drives Accept-Language", async () => {
-    const { host, root } = mountHost({ ...base, ...german, view: "/data/Order" });
+    const { host, root } = mountHost({ ...base, ...german, view: "/browser/data/Order" });
     await settle();
     expect(root().textContent).toContain("[de] Advanced Filter");
     expect(root().querySelector(".el-pagination__total")?.textContent).toContain("Gesamt");
@@ -708,7 +708,7 @@ describe("Manager pages in the service router", () => {
     expect(root().querySelector(".el-pagination__total")?.textContent).toContain("Total");
     expect(requests).toEqual([]);
 
-    host.view = "/objects";
+    host.view = "/ontology/objects";
     await settle();
     expect(requests.length).toBeGreaterThan(0);
     expect(requests.every((request) => request.headers["Accept-Language"] === "en")).toBe(true);
@@ -723,7 +723,7 @@ describe("Manager pages in the service router", () => {
 
     requests = [];
     statusFor = () => 200;
-    host.view = "/data/Order";
+    host.view = "/browser/data/Order";
     await settle();
     expect(requests.length).toBeGreaterThan(0);
     expect(requests.every((request) => request.headers["x-api-key"] === "key-a")).toBe(true);
@@ -732,7 +732,7 @@ describe("Manager pages in the service router", () => {
   it("visual modeling: focuses the object from the address, field-by-field edits keep the original order, and back returns to the graph", async () => {
     const { views } = mountHost({
       ...base,
-      view: "/visual-modeling?focus=object&id=Order&back=playground",
+      view: "/ontology/visual-modeling?focus=object&id=Order&back=playground",
     });
     await settle();
     // The current adapter type comes from the one adapter read; the full business config is never requested.
@@ -770,7 +770,7 @@ describe("Manager pages in the service router", () => {
 
     clickButton("Back to graph");
     await settle();
-    expect(views.at(-1)).toBe("/playground");
+    expect(views.at(-1)).toBe("/ontology/playground");
   });
 
   it.each([
@@ -779,7 +779,7 @@ describe("Manager pages in the service router", () => {
     ["m3", false],
   ])("visual modeling: with current adapter %s, the backend list's requiresJoinFields decides whether relations take join fields", async (current, requiresJoinFields) => {
     dataAdapter = current;
-    mountHost({ ...base, view: "/visual-modeling?focus=object&id=Order&back=playground" });
+    mountHost({ ...base, view: "/ontology/visual-modeling?focus=object&id=Order&back=playground" });
     await settle();
     expect(paths()).toContain("/businessConfig/dataAdapters");
 
@@ -792,7 +792,7 @@ describe("Manager pages in the service router", () => {
     dataAdapter = "elasticsearch";
     // No existing relation, so the dialog's default Order -> Item pair is new.
     metasFor = () => ({ success: true, data: { ...metas(["Order", "Item"]).data, relationship_rule: {} } });
-    mountHost({ ...base, view: "/visual-modeling?focus=object&id=Order&back=playground" });
+    mountHost({ ...base, view: "/ontology/visual-modeling?focus=object&id=Order&back=playground" });
     await settle();
     clickButton("Add Relation");
     await settle();
@@ -820,7 +820,7 @@ describe("Manager pages in the service router", () => {
   it("when only locale/theme change, the open edit dialog and its input are kept without reloading", async () => {
     const { host } = mountHost({
       ...base,
-      view: "/visual-modeling?focus=object&id=Order&back=playground",
+      view: "/ontology/visual-modeling?focus=object&id=Order&back=playground",
     });
     await settle();
     clickButton("Edit");
@@ -843,8 +843,8 @@ describe("Manager pages in the service router", () => {
 
   // Embedded case: the iframe loads with the startup locale and the host then sends its current locale; the first data for the same identity must still render (the original main system checked results by credential only).
   it.each([
-    ["data browsing", "/data/Order"],
-    ["visual modeling", "/visual-modeling?focus=object&id=Order&back=playground"],
+    ["data browsing", "/browser/data/Order"],
+    ["visual modeling", "/ontology/visual-modeling?focus=object&id=Order&back=playground"],
   ])("%s: the host switches locale while the first getMetas is in flight; data still renders and later requests carry the new locale", async (_name, view) => {
     holdPaths.add("/admin/getMetas");
     const { host, root } = mountHost({ ...base, view });
@@ -856,7 +856,7 @@ describe("Manager pages in the service router", () => {
     await settle();
 
     expect(document.querySelector(".el-message")).toBeNull();
-    if (view.startsWith("/data/")) {
+    if (view.startsWith("/browser/data/")) {
       const page = requests.find((request) => request.url.endsWith("/data/getWholeClassDataByPage"));
       expect(page?.body).toMatchObject({ classname: "Order" });
       expect(page?.headers["Accept-Language"]).toBe("de");
@@ -869,7 +869,7 @@ describe("Manager pages in the service router", () => {
     expect(metaRequests.every((request) => request.headers["Accept-Language"] === "en")).toBe(true);
 
     requests = [];
-    host.view = "/objects";
+    host.view = "/ontology/objects";
     await settle();
     expect(requests.length).toBeGreaterThan(0);
     expect(requests.every((request) => request.headers["Accept-Language"] === "de")).toBe(true);
@@ -878,7 +878,7 @@ describe("Manager pages in the service router", () => {
   it("switching only the locale during a multi-step save: later steps are sent once and sent requests are not repeated", async () => {
     const { host } = mountHost({
       ...base,
-      view: "/visual-modeling?focus=object&id=Order&back=playground",
+      view: "/ontology/visual-modeling?focus=object&id=Order&back=playground",
     });
     await settle();
     clickButton("Edit");
@@ -953,7 +953,7 @@ describe("Manager pages in the service router", () => {
       graphRecord.options[0].data.nodes.map((node: any) => [node.id, node.data.color])
     );
     mountedApps.forEach((app) => app.unmount());
-    mountHost({ ...base, view: "/visual-modeling" });
+    mountHost({ ...base, view: "/ontology/visual-modeling" });
     await settle();
     const fills = Object.fromEntries(
       graphRecord.addedNodes.map((node: any) => [node.id, node.attrs.body.fill])
@@ -968,7 +968,7 @@ describe("Manager pages in the service router", () => {
       success: true,
       data: { classDef: [{ className: "Order", showName: "Order", classDesc: "", attrs: [] }] },
     });
-    const { host, root } = mountHost({ ...base, view: "/objects/Order" });
+    const { host, root } = mountHost({ ...base, view: "/ontology/objects/Order" });
     await settle();
     const textarea = () => root().querySelector<HTMLTextAreaElement>("textarea")!;
     expect(textarea().value).toBe("Host: no description");
@@ -994,7 +994,7 @@ describe("Manager pages in the service router", () => {
 
   it("an unnamed function takes the host-supplied name, which is still submitted with the scheduled task payload after locale/theme switches", async () => {
     functions = [{ id: "fn-1", operation: "OPERATION_WRITE" }];
-    const { host, root } = mountHost({ ...base, view: "/assets/tasks/new" });
+    const { host, root } = mountHost({ ...base, view: "/schedules/functions/new" });
     await settle();
     const inputs = () => [...root().querySelectorAll<HTMLInputElement>(".asset-form input")];
     const name = inputs()[0];
@@ -1026,8 +1026,8 @@ describe("Manager pages in the service router", () => {
   });
 
   it.each([
-    ["object model catalog", "/objects", "New Object Type", ".object-create-dialog", "Create"],
-    ["visual modeling", "/visual-modeling", "Add Class", ".el-dialog", "Add"],
+    ["object model catalog", "/ontology/objects", "New Object Type", ".object-create-dialog", "Create"],
+    ["visual modeling", "/ontology/visual-modeling", "Add Class", ".el-dialog", "Add"],
   ])("%s creating a class: without a primary key nothing is submitted; after submitting with one, the primary key saved by the backend is shown", async (_name, view, open, selector, submit) => {
     // Only the metadata re-read after creation contains the new class and its primary key: the page must show the backend's saved result, not locally assembled empty attributes.
     metasFor = () => {
@@ -1077,7 +1077,7 @@ describe("Manager pages in the service router", () => {
       showName: "Pump-label",
       classDesc: "Pump desc",
     });
-    if (view === "/objects") {
+    if (view === "/ontology/objects") {
       expect(root().textContent).toContain("Primary key property: pump_no");
     } else {
       const panel = root().querySelector(".attr-item")!;
@@ -1087,7 +1087,7 @@ describe("Manager pages in the service router", () => {
   });
 
   it("edit dialogs mount in the popper container inside the Manager frame; opening and closing leave body unchanged", async () => {
-    const { root } = mountHost({ ...base, view: "/objects/Order" });
+    const { root } = mountHost({ ...base, view: "/ontology/objects/Order" });
     await settle();
     const bodyBefore = [
       document.body.className,
@@ -1132,7 +1132,7 @@ describe("Manager business knowledge page", () => {
     )!;
 
   it("lists knowledge and adds an entry in the detail panel; the success message stays inside the Manager frame", async () => {
-    const { root } = mountHost({ ...base, view: "/knowledge" });
+    const { root } = mountHost({ ...base, view: "/ontology/knowledge" });
     await settle();
     expect(paths()).toContain("/admin/getBussinessKnowledge");
     expect(root().textContent).toContain("Refund rule");
@@ -1160,7 +1160,7 @@ describe("Manager business knowledge page", () => {
   });
 
   it("deletes after a confirmation shown in the Manager frame; messages stay in the frame, not under body", async () => {
-    const { root } = mountHost({ ...base, view: "/knowledge" });
+    const { root } = mountHost({ ...base, view: "/ontology/knowledge" });
     await settle();
 
     buttonIn(root(), "Delete").click();
@@ -1198,7 +1198,7 @@ function confirmDialog() {
 }
 
 describe("business knowledge page", () => {
-  const knowledgeView = { ...base, view: "/knowledge" };
+  const knowledgeView = { ...base, view: "/ontology/knowledge" };
   const itemTitles = () =>
     [...document.querySelectorAll(".knowledge-item-title")].map((item) => item.textContent?.trim());
   const item = (title: string) =>

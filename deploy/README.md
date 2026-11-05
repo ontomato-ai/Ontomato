@@ -23,7 +23,7 @@ sent in an HTTP header. A deployment created before this setting existed,
 including one that follows a tag automatically, must add it to `.env` before taking a
 release that requires it.
 
-CI publishes a shared `<version>-ci<run>.<attempt>-g<commit>` tag for all five images,
+CI publishes a shared `<version>-ci<run>.<attempt>-g<commit>` tag for all four images,
 as well as `edge`, `stable`, release and `latest` aliases. Use the full build tag above so
 `docker ps` shows the deployed build. Update `ONTOMATO_VERSION`, then run `python3 prepare-env.py .env`, pull and up. Images come from GHCR. Build
 and publication happen before deployment; Compose has no build step.
@@ -42,7 +42,7 @@ This adds a Watchtower container (`nickfedor/watchtower`). Every 5 minutes it ch
 the tags of the workbench, data engine, ontology manager, agent runtime and gateway containers point to new images on
 GHCR; if so it pulls them, recreates those containers with their existing configuration and
 removes the replaced images. PostgreSQL is not touched, and only this Compose project's
-containers are watched. The five images update independently, and changes to the deployment
+containers are watched. The four images update independently, and changes to the deployment
 templates still need a manual update. Keep fixed versions without automatic updates for
 production sites.
 
@@ -216,14 +216,14 @@ with multiple ontology nodes, use a stable unique ID for each node.
 ## Gateway migration and reverse proxies
 
 The workbench is at `<origin><PUBLIC_BASE_PATH>/`, and the Manager at
-`<origin><PUBLIC_BASE_PATH>/ontology-manager/`. The default prefix is empty;
+`<origin><PUBLIC_BASE_PATH>/#/ontology`. The default prefix is empty;
 for example `/wenshu` has no trailing slash. Prefix segments accept letters,
 digits, underscores and hyphens. Each deployment needs its own origin (scheme,
 host and port): different path prefixes on one origin do not isolate browser credentials.
-The public edition is anonymous. Enterprise login belongs to the Manager at `#/login`.
+The public edition is anonymous. Enterprise login is at `#/login`.
 
 For the first update to the gateway layout, stop this project's Watchtower if enabled,
-back up `.env` and the Compose files, obtain all five application images, then stop
+back up `.env` and the Compose files, obtain the target release’s application images, then stop
 only the workbench (`docker compose stop ontomato`) to release its published port.
 Copy the new Compose templates into the existing deployment, keep the original `PORT`
 and secrets, add `GATEWAY_IMAGE`, and remove `ONTOLOGY_MANAGER_URL`,
@@ -257,3 +257,11 @@ business request still require browser acceptance by the deployment owner.
 ## Configuration reference
 
 Each installation and major-version deployment includes a complete, commented `.env.example` for the supported site configuration. Required values are marked; uncomment and fill them when starting Compose directly. Keep your existing `.env` when changing releases. New required values, renamed settings, and Compose topology changes are described in that release's notes rather than silently merged into site configuration.
+
+## Upgrade to the unified frontend (5.0)
+
+In the existing deployment directory, back up the active Compose files and `.env`. Keep the previous image digests with the backup for rollback. Pause the project's Watchtower if enabled. Before editing the templates record the retired service's container with `old_manager=$(docker compose ps -aq ontology-manager)`.
+
+Apply the target release’s changes to the base, GHCR and automatic-update Compose files in use. Remove the `ontology-manager` service, its gateway dependency and its update labels. Remove `MANAGER_IMAGE` and Manager-specific container overrides from `.env`. The workbench now reads `ONTOLOGY_INITIAL_ROUTE`. Preserve the site’s port, deployment prefix, project name, image sources, database settings and volumes.
+
+With the new images available, run `docker compose pull --policy always && docker compose up -d --wait`. Open a bookmarked Manager detail and confirm it reaches the same record at its new address. Remove only the recorded container with `[ -z "$old_manager" ] || docker rm -f "$old_manager"`. Keep the previous images until acceptance. To revert this frontend switch, restore the saved configuration and previous image digests and run `docker compose up -d --wait`.

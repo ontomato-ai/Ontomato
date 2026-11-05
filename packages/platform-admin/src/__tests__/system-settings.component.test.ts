@@ -10,7 +10,7 @@ import ServiceLayout from "../layout/ServiceLayout.vue";
 import SystemSettingsPage from "../pages/SystemSettingsPage.vue";
 import type { PlatformApi } from "../api";
 import { pageGlobal, testHost } from "./host";
-import { ossSystemConfig } from "../../../../apps/ontology-manager/src/system-config";
+import { ossSystemConfig } from "../../../../apps/workbench/web/src/manager/system-config";
 
 /*
  * The general screen of the system settings: one draft of the whole screen, one Save in the layout's page header, and
@@ -50,11 +50,11 @@ async function mountPage() {
         path: "/",
         component: ServiceLayout,
         children: [
-          { path: systemSettingsTabs.general.path, component: SystemSettingsPage, meta: { page: "/admin/system-config" } },
+          { path: systemSettingsTabs.general.path, component: SystemSettingsPage, meta: { page: "/settings/system-config" } },
           {
             path: systemSettingsTabs.dataAdapters.path,
             component: SystemSettingsPage,
-            meta: { page: "/admin/system-config" },
+            meta: { page: "/settings/system-config" },
           },
         ],
       },

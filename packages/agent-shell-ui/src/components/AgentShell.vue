@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { computed, onMounted, provide, ref, toRef, useSlots, watch } from "vue";
+import { nextTick, computed, onMounted, provide, ref, toRef, useSlots, watch } from "vue";
 import { Menu } from "lucide-vue-next";
 import { defaultChartTheme, type ChartTheme } from "../chart-theme";
-import { shellContextKey } from "../context";
+import { shellContextKey, type ShellContext } from "../context";
 import type { AgentHostClient } from "../host";
 import { useAgentNav, type AgentNav } from "../useAgentNav";
 import type {
@@ -44,7 +44,7 @@ const props = withDefaults(
     /** One line naming the open page and its selection, appended to messages sent while a paired page is open. */
     pageContext?: string | null;
     /** Recognises an in-app address in an answer and returns how to open its page; null leaves it as text. */
-    pageLinks?: (href: string) => (() => void) | null;
+    pageLinks?: ShellContext["pageLink"];
     /**
      * The host's navigation state, when the host draws the navigation itself (the platform shell's application panel).
      * One instance is shared by that panel and this shell, so a conversation created while sending appears in the panel

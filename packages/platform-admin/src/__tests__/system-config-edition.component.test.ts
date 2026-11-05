@@ -4,7 +4,7 @@ import { flushPromises, mount, type VueWrapper } from "@vue/test-utils";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { computed, defineComponent, h, shallowRef } from "vue";
 import { createMemoryHistory, createRouter, RouterView } from "vue-router";
-import { ossSystemConfig as businessConfig } from "../../../../apps/ontology-manager/src/system-config";
+import { ossSystemConfig as businessConfig } from "../../../../apps/workbench/web/src/manager/system-config";
 import { createPlatformClient, platformApi } from "../api";
 import { pageActionsKey, type PlatformPageActions } from "../context";
 import ServiceLayout from "../layout/ServiceLayout.vue";
@@ -61,7 +61,7 @@ async function mountPage() {
         path: "/",
         component: ServiceLayout,
         children: [
-          { path: systemSettingsTabs.general.path, component: SystemSettingsPage, meta: { page: "/admin/system-config" } },
+          { path: systemSettingsTabs.general.path, component: SystemSettingsPage, meta: { page: "/settings/system-config" } },
         ],
       },
     ],

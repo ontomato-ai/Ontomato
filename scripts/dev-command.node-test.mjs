@@ -14,7 +14,7 @@ const ENTRY = fileURLToPath(import.meta.url).replace(/\.node-test\.mjs$/, ".mjs"
 test("dev keeps the old three-process pnpm arguments and the open-source defaults", () => {
   const settings = configuration("dev", { root: ROOT }, {});
   assert.equal(settings.tool, "concurrently");
-  assert.deepEqual(settings.args, ["pnpm:dev:server", "pnpm:dev:web", "pnpm:dev:ontology-manager"]);
+  assert.deepEqual(settings.args, ["pnpm:dev:server", "pnpm:dev:web"]);
   assert.equal(settings.cwd, ROOT);
   assert.equal(settings.env.NODE_ENV, "development");
   assert.equal(settings.env.ONTOLOGY_MANAGER_URL, undefined);
@@ -36,11 +36,7 @@ test("server, web and manager keep their own cwd and pass this checkout's absolu
   // still has the parent set it for all of them.
   assert.equal(web.env.NODE_ENV, undefined);
 
-  const manager = configuration("manager", { root: ROOT }, {});
-  assert.equal(manager.tool, "vite");
-  assert.deepEqual(manager.args, [join(ROOT, "apps/ontology-manager"), "--port", "5174"]);
-  assert.equal(manager.cwd, join(ROOT, "apps/ontology-manager"));
-  assert.equal(manager.env.DATARAG_ORIGIN, undefined);
+
 });
 
 test("an unknown mode is rejected", () => {

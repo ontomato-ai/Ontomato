@@ -49,11 +49,11 @@ const applyTheme = () => {
   win.localStorage.setItem(THEME_KEY, isDark.value ? "dark" : "light");
 };
 
-const initTheme = () => {
+export const initializePlatformTheme = () => {
   const win = getWindow();
-  if (!win || isInitialized.value) return;
+  if (!win) return;
 
-  const savedTheme = win.localStorage.getItem(THEME_KEY);
+  const savedTheme = win.localStorage.getItem(THEME_KEY) ?? win.localStorage.getItem("ontology_manager_theme");
 
   isDark.value = savedTheme === "dark";
 
@@ -71,13 +71,17 @@ const setTheme = (theme: "light" | "dark") => {
   applyTheme();
 };
 
+export function followThemeChanges(event: StorageEvent) {
+  if (event.key === THEME_KEY) initializePlatformTheme();
+}
+
 export function useTheme() {
-  initTheme();
+  if (!isInitialized.value) initializePlatformTheme();
 
   return {
     isDark,
     toggleTheme,
-    initTheme,
+    initTheme: initializePlatformTheme,
     setTheme,
   };
 }

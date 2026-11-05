@@ -32,7 +32,7 @@ export const workbenchPermissionGroups = {
 export const workbenchPermissions = {
   businessAgents: {
     permissions: ["analysis-agent"],
-    path: "/chat?feature=agents",
+    path: "/agents/settings",
     titleKey: "nav.businessAgents",
     ownerApplication: "workbench",
     groupKey: "app-capabilities",
@@ -40,21 +40,21 @@ export const workbenchPermissions = {
   // The operations agent and its work live in operations diagnosis; observer opens that page.
   systemAgents: {
     permissions: ["observer"],
-    path: "/observe",
+    path: "/ops",
     titleKey: "nav.systemAgents",
     ownerApplication: "workbench",
     groupKey: "app-capabilities",
   },
   skills: {
     permissions: ["skill-management"],
-    path: "/chat?feature=agents&tab=capabilities",
+    path: "/agents/settings?tab=capabilities",
     titleKey: "nav.skills",
     ownerApplication: "workbench",
     groupKey: "app-capabilities",
   },
   mcpService: {
     permissions: ["mcp-service"],
-    path: "/chat?feature=agents&tab=capabilities",
+    path: "/agents/settings?tab=capabilities",
     titleKey: "nav.mcpService",
     ownerApplication: "workbench",
     groupKey: "app-capabilities",

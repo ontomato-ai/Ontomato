@@ -245,7 +245,7 @@ defineExpose({ dirty });
               <p>{{ t("agents.capabilitiesHint") }}</p>
             </div>
             <div class="section-actions">
-              <el-button size="small" tag="a" href="#/chat?feature=agents&tab=capabilities" :icon="ExternalLink">
+              <el-button size="small" tag="a" href="#/agents/settings?tab=capabilities" :icon="ExternalLink">
                 {{ t("agents.capabilityLibrary") }}
               </el-button>
             </div>
