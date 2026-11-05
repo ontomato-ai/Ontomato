@@ -194,10 +194,9 @@ public class KnowledgeGovernanceService {
   public void requireRun(String id,String run,Owner owner) throws Exception {
     session(id,owner);
     var row=store.run(id,run,owner);
-    if (!row.getBooleanValue("external")) {
-      var snapshot=runtime.run(owner.domainId(),run);
-      if (!"running".equals(snapshot.getJSONObject("run").getString("status"))) settle(run);
-    }
+    // A governance write is admitted only while its run is running; the lifecycle view is enough to tell.
+    if (!row.getBooleanValue("external")
+        && !"running".equals(runtime.status(owner.domainId(),run).getString("status"))) settle(run);
     store.transaction(() -> gate(id,run,owner));
   }
   private JSONObject mutate(String id,String run,Owner owner,Consumer<JSONObject> change) {

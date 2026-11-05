@@ -37,6 +37,8 @@ public class OntologyGenerationService {
   private final RuntimeCodeClient code;
   private final DataPermissionLookup permissions;
   private final Set<String> active = java.util.concurrent.ConcurrentHashMap.newKeySet();
+  /** How long a stop wait may last before the business, cancel and deadline checks run again. */
+  private static final long BUSINESS_CHECK_MS = 5_000;
   private static final org.slf4j.Logger LOG =
       org.slf4j.LoggerFactory.getLogger(OntologyGenerationService.class);
 
@@ -238,32 +240,26 @@ public class OntologyGenerationService {
                       JSONObject.of(
                           "ONTOMATO_TK", credential))),
           run);
-      JSONObject snapshot;
       while (true) {
         checkBusiness(businessId);
         var current = store.run(session, run, owner);
-        if (current.getBooleanValue("cancel_requested")
-            || Instant.parse(current.getString("deadline")).toEpochMilli()
-                <= System.currentTimeMillis()) throw closed();
-        snapshot = runtime.run(domain, run);
-        if (!"running".equals(snapshot.getJSONObject("run").getString("status"))) break;
-        if (AgentLoopGuard.runaway(snapshot)) {
-          JSONArray tools = snapshot.getJSONArray("toolExecutions");
-          LOG.warn(
-              "Cancelling looping {} generation run {} ({} tool calls)",
-              kind,
-              run,
-              tools == null ? 0 : tools.size());
-          throw new AgentHttpException(
-              409, "AGENT_LOOP", "The agent repeated a tool call without making progress");
-        }
-        Thread.sleep(150);
+        long left =
+            Instant.parse(current.getString("deadline")).toEpochMilli() - System.currentTimeMillis();
+        if (current.getBooleanValue("cancel_requested") || left <= 0) throw closed();
+        // The runtime answers at the stop; between bounded waits the business, cancel and deadline checks run again.
+        var view = runtime.waitStopped(domain, run, Math.min(BUSINESS_CHECK_MS, left));
+        if (!"running".equals(view.getString("status"))) break;
       }
+      JSONObject snapshot = runtime.run(domain, run);
       store.update(
           "UPDATE ontology_agent_runs SET open=false,observed_state=?::jsonb WHERE id=?",
           AgentJson.json(snapshot.getJSONObject("run")),
           uuid(run));
-      if (!"stop".equals(snapshot.getJSONObject("run").getString("stopReason")))
+      var finished = snapshot.getJSONObject("run");
+      // The runtime stops a looping agent itself and says why; that reason is the user's answer.
+      if ("aborted".equals(finished.getString("stopReason")) && finished.getString("errorMessage") != null)
+        throw new AgentHttpException(409, "AGENT_STOPPED", finished.getString("errorMessage"));
+      if (!"stop".equals(finished.getString("stopReason")))
         throw new IllegalStateException("Ontology generation did not complete successfully");
       var result = JSON.parseObject(file(domain, session, run, "outputs/result.json"));
       if (result == null) throw new IllegalArgumentException("Missing generation result");

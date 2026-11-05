@@ -165,6 +165,11 @@ class OntologyGenerationContractTest {
                     "run",
                     JSONObject.of(
                         "id", run, "sessionId", session, "status", "stopped", "stopReason", stop)));
+    // The lifecycle view and the stop wait answer with the run part of the same snapshot.
+    when(runtime.status(anyString(), anyString()))
+        .thenAnswer(call -> runtime.run(call.getArgument(0), call.getArgument(1)).getJSONObject("run"));
+    when(runtime.waitStopped(anyString(), anyString(), org.mockito.ArgumentMatchers.anyLong()))
+        .thenAnswer(call -> runtime.run(call.getArgument(0), call.getArgument(1)).getJSONObject("run"));
     when(runtime.bytes(anyString(), anyString(), anyString()))
         .thenAnswer(
             call ->

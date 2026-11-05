@@ -41,8 +41,9 @@ public class OntologyAgentHost {
       throws Exception {
     if (isRetrieval(session, owner)) retrieval.closeStoppedCallbacks(session, run, owner, snapshot);
     else if (!"running".equals(snapshot.getJSONObject("run").getString("status")))
+      // Before a page sees the stop the write gate is closed; once closed (and observed) this writes nothing.
       store.update(
-          "UPDATE ontology_agent_runs SET open=false,observed_state=?::jsonb WHERE id=?",
+          "UPDATE ontology_agent_runs SET open=false,observed_state=?::jsonb WHERE id=? AND (open OR observed_state IS NULL)",
           AgentJson.json(snapshot.getJSONObject("run")),
           uuid(run));
   }
@@ -201,6 +202,15 @@ public class OntologyAgentHost {
     var snapshot = runtime.run(owner.domainId(), run);
     closeStoppedCallbacks(session, run, owner, snapshot);
     return publicSnapshot(snapshot);
+  }
+
+  /** Answers at the run's stop (after the write gate is closed), or with it still running after timeoutMs. */
+  public JSONObject waitRun(String session, String run, Owner owner, boolean wait, long timeoutMs) throws Exception {
+    store.run(session, run, owner);
+    var view = wait ? runtime.waitStopped(owner.domainId(), run, timeoutMs) : runtime.status(owner.domainId(), run);
+    if (!"running".equals(view.getString("status")))
+      closeStoppedCallbacks(session, run, owner, runtime.run(owner.domainId(), run));
+    return JSONObject.of("run", publicRun(view));
   }
 
   public JSONObject start(

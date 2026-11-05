@@ -315,17 +315,12 @@ public class ActionCreationService {
         boolean expired =
             Instant.parse(row.getString("deadline")).toEpochMilli() <= System.currentTimeMillis();
         boolean stopped = false;
-        JSONObject snapshot = null;
         var owner = new Owner(row.getString("user_id"), row.getString("domain_id"));
-        if (!expired) {
-          snapshot = runtime.run(owner.domainId(), run);
-          stopped = !"running".equals(snapshot.getJSONObject("run").getString("status"));
-        }
-        if (!expired && !stopped && (looping(snapshot) || repeatingTest(run))) {
-          log.warn(
-              "Cancelling looping action-creation run {} ({} tool calls)",
-              run,
-              snapshot == null ? 0 : snapshot.getJSONArray("toolExecutions").size());
+        // The runtime stops a run that loops over tool calls (toolCallPolicy); only the lifecycle view is read here.
+        if (!expired)
+          stopped = !"running".equals(runtime.status(owner.domainId(), run).getString("status"));
+        if (!expired && !stopped && repeatingTest(run)) {
+          log.warn("Cancelling action-creation run {} that keeps testing the same code", run);
           cancel(row.getString("session_id"), run, owner);
           continue;
         }
@@ -335,15 +330,6 @@ public class ActionCreationService {
         // The run row remains open; the next sweep retries.
       }
     }
-  }
-
-  /**
-   * A runaway model can repeat the same tool call indefinitely. The generation runtime has no step
-   * limit, so the host closes such runs. {@link AgentLoopGuard} also catches a command that only
-   * drifts a line number, which an exact-argument comparison would miss.
-   */
-  private boolean looping(JSONObject snapshot) {
-    return AgentLoopGuard.runaway(snapshot);
   }
 
   /** Re-testing the same code and parameters produces the same digest without progress. */

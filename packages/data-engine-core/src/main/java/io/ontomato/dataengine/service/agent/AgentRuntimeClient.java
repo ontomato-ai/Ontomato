@@ -63,6 +63,9 @@ public class AgentRuntimeClient {
         var provider = retry == null ? null : retry.getJSONObject("provider");
         long configured = provider == null ? 300000 : provider.getLongValue("timeoutMs", 300000);
         timeout = Duration.ofMillis(Math.max(1, configured)).plusSeconds(10);
+      } else if (path.contains("/status?waitFor=stopped")) {
+        // The runtime holds a stop wait for at most 60 seconds; this must not time out first.
+        timeout = Duration.ofSeconds(70);
       }
       if (timeout != null) builder.timeout(timeout);
     }
@@ -146,6 +149,30 @@ public class AgentRuntimeClient {
 
   public JSONObject run(String domain, String id) throws Exception {
     return json(domain, id, "/v1/runs/" + id, "GET", null, null);
+  }
+
+  /** The run's lifecycle view only: no events, messages or artifacts, and no runtime session lock. */
+  public JSONObject status(String domain, String id) throws Exception {
+    return json(domain, id, "/v1/runs/" + id + "/status", "GET", null, null).getJSONObject("run");
+  }
+
+  /** Returns when the run stops, or with it still running after timeoutMs (clamped to the runtime's 60 s). */
+  public JSONObject waitStopped(String domain, String id, long timeoutMs) throws Exception {
+    long bounded = Math.max(0, Math.min(60_000, timeoutMs));
+    return json(domain, id, "/v1/runs/" + id + "/status?waitFor=stopped&timeoutMs=" + bounded, "GET", null, null)
+        .getJSONObject("run");
+  }
+
+  /**
+   * Waits for the runtime to report the stop by repeated bounded waits, never longer than the deadline. Between
+   * waits the host can check its own conditions; returns the last view (stopped, or running at the deadline).
+   */
+  public JSONObject waitUntilStopped(String domain, String id, long deadline, long stepMs) throws Exception {
+    while (true) {
+      long left = deadline - System.currentTimeMillis();
+      var view = waitStopped(domain, id, Math.min(stepMs, left));
+      if (!"running".equals(view.getString("status")) || System.currentTimeMillis() >= deadline) return view;
+    }
   }
 
   /**

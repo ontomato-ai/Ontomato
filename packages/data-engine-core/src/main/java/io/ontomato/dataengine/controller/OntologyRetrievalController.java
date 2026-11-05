@@ -193,7 +193,10 @@ public class OntologyRetrievalController {
         owner = access.callerOwner(req, AgentJson.id(id));
       } catch (AgentHttpException missing) {
         if (missing.status() != 404) throw missing;
-        owner = access.current(req).owner();
+        // Without a user there is no one to record a tombstone for: a caller that was never opened has
+        // nothing to close. The workbench's background settlement closes such turns this way.
+        access.service(req);
+        return JSONObject.of("id", id, "closed", true);
       }
     access.service(req);
     retrieval.closeCaller(AgentJson.id(id), owner);
