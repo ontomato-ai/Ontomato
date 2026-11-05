@@ -150,3 +150,7 @@ export const platformTaskRunPageSchema = z
 export type PlatformTask = z.infer<typeof platformTaskSchema>;
 export type PlatformTaskInput = z.infer<typeof platformTaskInputSchema>;
 export type PlatformTaskRun = z.infer<typeof platformTaskRunSchema>;
+export type PlatformTaskTarget = z.infer<typeof platformTaskTargetSchema>;
+export type PlatformTaskFrequency = z.infer<typeof platformTaskFrequencySchema>;
+export type PlatformTaskList = z.infer<typeof platformTaskListSchema>;
+export type PlatformTaskRunPage = z.infer<typeof platformTaskRunPageSchema>;
