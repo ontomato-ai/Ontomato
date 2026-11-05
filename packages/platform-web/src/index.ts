@@ -1,3 +1,4 @@
+export { default as PlatformShellLayout } from "./PlatformShellLayout.vue";
 export { default as PlatformLayout } from "./PlatformLayout.vue";
 export type { PlatformShownPage } from "./PlatformLayout.vue";
 export {

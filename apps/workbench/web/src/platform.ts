@@ -9,6 +9,7 @@ import { openOntologyServiceAccess } from "@ontomato/workbench-ui";
 import {
   legacyAdminRoutes,
   observeRoutes,
+  PlatformShellLayout,
   platformLayoutRoute,
   startWorkbenchWeb,
   workbenchPages,
@@ -43,10 +44,14 @@ export function startPlatform() {
     // The open-source edition has no platform permissions: the Ontology Service entry is always shown.
     ontologyService: openOntologyServiceAccess,
     routes: (app, router) => [
+      // One layout for every application: the platform shell draws the rail and the column, the routes fill it.
       platformLayoutRoute([
-        ...workbenchPages(() => import("./layout/UnifiedLayout.vue"), { ...observeRoutes.root, props: { account: null } }),
+        ...workbenchPages(() => import("@ontomato/workbench-ui/features/workbench").then((m) => m.BusinessWorkbench), {
+          ...observeRoutes.root,
+          props: { account: null },
+        }),
         ...ossServicePages(app, router),
-      ]),
+      ], PlatformShellLayout),
       ...legacyAdminRoutes,
       { path: "/:unknown(.*)*", redirect: platformRoutes.chat.path },
     ],

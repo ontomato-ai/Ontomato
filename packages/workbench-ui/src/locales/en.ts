@@ -197,6 +197,8 @@ export default {
     "codeEditorPlaceholder": "Write your code here"
   },
   "platform": {
+    "serviceName": "Ontomato",
+    "noPages": "No page is available to this account",
     "apps": "Applications",
     "expandRail": "Show application names",
     "collapseRail": "Hide application names",
