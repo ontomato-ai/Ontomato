@@ -2,6 +2,7 @@ import { startModelMigration, stopModelMigration } from "../platform/agent-runti
 import assistantRouter from "../api/routes/assistant";
 import scheduledTasksRouter from "../api/routes/scheduled-tasks";
 import { startScheduledTaskScheduler } from "../services/scheduled-tasks/scheduler";
+import { startAssistantReconciliation } from "../services/assistant/service";
 import { registerAssistantSkills } from "../services/assistant/skills";
 import {
   readAssistantTurnEvidence,
@@ -267,6 +268,7 @@ export async function startWorkbench(
 
   startArtifactCleanupScheduler();
   startScheduledTaskScheduler();
+  startAssistantReconciliation();
   logger.info(tApp("foundation.log.boot.cleanupStarted"));
   app.listen(port, () => {
     logger.info(`Server running on http://localhost:${port}`);

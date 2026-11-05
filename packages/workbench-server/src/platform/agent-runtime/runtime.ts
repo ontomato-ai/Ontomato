@@ -91,18 +91,31 @@ export function finalText(s: Pick<RuntimeRunSnapshot, "messages">) {
       .find(Boolean) ?? ""
   );
 }
+const WAIT_STEP_MS = 30_000;
+/**
+ * Waits for the runtime to report the stop, by repeated bounded waits rather than polling. Returns the stopped
+ * view, or the last view once the deadline passes.
+ */
+export async function waitUntilStopped(
+  client: RuntimeClient,
+  id: string,
+  options: { deadline?: number; signal?: AbortSignal } = {},
+) {
+  for (;;) {
+    options.signal?.throwIfAborted();
+    const left = options.deadline === undefined ? WAIT_STEP_MS : Math.min(WAIT_STEP_MS, options.deadline - Date.now());
+    const view = await client.waitStopped(id, left, options.signal);
+    if (view.status === "stopped" || (options.deadline !== undefined && Date.now() >= options.deadline)) return view;
+  }
+}
 export async function waitForRun(
   client: RuntimeClient,
   id: string,
   signal?: AbortSignal,
 ) {
   try {
-    for (;;) {
-      signal?.throwIfAborted();
-      const s = await client.run(id);
-      if (s.run.status === "stopped") return s;
-      await new Promise<void>((resolve) => setTimeout(resolve, 250));
-    }
+    await waitUntilStopped(client, id, { signal });
+    return await client.run(id);
   } catch (error) {
     if (signal?.aborted) await client.cancel(id);
     throw error;

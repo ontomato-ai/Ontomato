@@ -43,6 +43,12 @@ export async function ensureAssistantSchema(c: QueryableClient) {
     user_id text NOT NULL, key text NOT NULL, value jsonb NOT NULL,
     created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now(),
     PRIMARY KEY(user_id,key));`);
+  // settled: everything owed after the stop is done (write gate closed and child retrievals closed). Turns already
+  // closed before this column existed were settled by the reads of that time.
+  await c.query(`ALTER TABLE ${t("assistant_turns")} ADD COLUMN IF NOT EXISTS settled boolean;
+    UPDATE ${t("assistant_turns")} SET settled = NOT open WHERE settled IS NULL;
+    ALTER TABLE ${t("assistant_turns")} ALTER COLUMN settled SET DEFAULT false, ALTER COLUMN settled SET NOT NULL;
+    CREATE INDEX IF NOT EXISTS assistant_turns_unsettled ON ${t("assistant_turns")}(created_at) WHERE NOT settled`);
   for (const name of ["assistant_agents", "ops_diagnosis_settings"]) {
     await c.query(`ALTER TABLE ${t(name)} ADD COLUMN IF NOT EXISTS model_reference_migrated boolean NOT NULL DEFAULT false;
       ALTER TABLE ${t(name)} ALTER COLUMN model_reference_migrated SET DEFAULT true`);

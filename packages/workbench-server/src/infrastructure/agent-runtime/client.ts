@@ -5,6 +5,7 @@ import { createLogger } from "../../logging/logger";
 const logger = createLogger("runtime-client");
 import {
   runtimeRunSnapshotSchema,
+  runtimeRunStatusResponseSchema,
   runtimeSessionSnapshotSchema,
   runtimeAdmissionResponseSchema,
   runtimeCreateSessionResponseSchema,
@@ -160,6 +161,24 @@ export class RuntimeClient {
     return runtimeRunSnapshotSchema.parse(
       await this.request(`/v1/runs/${encodeURIComponent(id)}`),
     );
+  }
+  /** The run's lifecycle view only; no events, messages or artifacts. */
+  async status(id: string) {
+    return runtimeRunStatusResponseSchema.parse(
+      await this.request(`/v1/runs/${encodeURIComponent(id)}/status`),
+    ).run;
+  }
+  /** Returns when the run stops, or still running after timeoutMs (at most 60 s). */
+  async waitStopped(id: string, timeoutMs: number, signal?: AbortSignal) {
+    return runtimeRunStatusResponseSchema.parse(
+      await this.request(
+        `/v1/runs/${encodeURIComponent(id)}/status?waitFor=stopped&timeoutMs=${Math.max(0, Math.min(60000, Math.floor(timeoutMs)))}`,
+        "GET",
+        undefined,
+        undefined,
+        signal,
+      ),
+    ).run;
   }
   async start(sessionId: string, runId: string, input: RuntimeStartRunRequest) {
     return withServiceLogContext({ runId, sessionId }, async () => runtimeAdmissionResponseSchema.parse(

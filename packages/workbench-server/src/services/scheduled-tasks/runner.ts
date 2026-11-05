@@ -4,7 +4,7 @@ import type { ScheduledTaskPauseReason } from "@ontomato/contracts/scheduled-tas
 import { RuntimeClient } from "../../infrastructure/agent-runtime/client";
 import { runWithLogContext } from "../../logging/log-context";
 import { createLogger } from "../../logging/logger";
-import { finalText } from "../../platform/agent-runtime/runtime";
+import { finalText, waitUntilStopped } from "../../platform/agent-runtime/runtime";
 import { runOutcome } from "../../platform/agent-runtime/projection";
 import { AuthFailedError } from "../../utils/backend-client";
 import { HttpError, toErrorMessage } from "../../utils/errors";
@@ -96,6 +96,10 @@ async function startAdmittedRun(task: TaskRecord, trigger: RunRecord["trigger"],
       } catch (error) {
         throw startFailure(error);
       }
+      // Settle as soon as the runtime reports the stop; the scheduler tick remains the fallback.
+      void waitUntilStopped(new RuntimeClient(owner.domainId), runId, { deadline: Date.now() + LOST_AFTER_MS })
+        .then(() => settleScheduledRuns())
+        .catch(() => {});
     });
     return { ...started.run, sessionId: session };
   } catch (error) {
@@ -154,14 +158,15 @@ async function settle(run: RunRecord & { task: TaskRecord }, now: number) {
     if (lost) await finish(run, { code: "interrupted", message: "" });
     return;
   }
-  let snapshot;
+  const client = new RuntimeClient(run.task.domainId);
   try {
-    snapshot = await new RuntimeClient(run.task.domainId).run(run.id);
+    // The lifecycle view decides; the full snapshot is read once, for the answer, after the stop.
+    if ((await client.status(run.id)).status !== "stopped") return;
   } catch (error) {
     if (error instanceof HttpError && error.status === 404 && lost) await finish(run, { code: "interrupted", message: "" });
     return;
   }
-  if (snapshot.run.status !== "stopped") return;
+  const snapshot = await client.run(run.id);
   const ok = runOutcome(snapshot.run) === "completed";
   await finish(
     run,

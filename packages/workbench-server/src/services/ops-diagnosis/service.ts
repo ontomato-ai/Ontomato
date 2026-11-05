@@ -86,9 +86,10 @@ export const diagnosisService: AgentHostService = {
   },
   async snapshot(id, owner) {
     const row = await diagnosisSession(id, owner), snapshot = await new RuntimeClient(owner.domainId).session(id);
+    // start() records the title; a session whose start was interrupted before that shows its first question.
     if (!row.title) {
       const first = snapshot.messages.find((m) => m.message.role === "user");
-      if (first) { row.title = messageText(first.message); await db().query(`UPDATE ${table("ops_sessions")} SET title=$2 WHERE id=$1 AND title=''`, [id, row.title]); }
+      if (first) row.title = messageText(first.message);
     }
     return { session: view(row, snapshot.latestRun?.run ?? null), messages: publicMessages(snapshot.messages), latestRun: snapshot.latestRun ? publicSnapshot(snapshot.latestRun) : null };
   },
@@ -98,6 +99,8 @@ export const diagnosisService: AgentHostService = {
     const intent = (await db().query(`SELECT session_id FROM ${table("ops_run_intents")} WHERE id=$1`, [run])).rows[0];
     if (!intent || intent.session_id !== session) throw missing();
   },
+  // Diagnosis runs write nothing back into the workbench, so there is no gate to close.
+  async closeGate() {},
   async readRun(session, run, owner) {
     await diagnosisSession(session, owner);
     const snapshot = await new RuntimeClient(owner.domainId).run(run);
