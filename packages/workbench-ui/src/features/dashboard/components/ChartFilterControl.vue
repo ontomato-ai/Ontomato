@@ -33,7 +33,7 @@
     </div>
 
     <div class="actions">
-      <el-button type="primary" size="small" @click="confirm">{{ t("common.confirm") }}</el-button>
+      <el-button type="primary" size="small" @click="confirm">{{ t("common.confirmWorkbenchAction") }}</el-button>
     </div>
   </div>
 </template>

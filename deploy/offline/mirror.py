@@ -260,7 +260,7 @@ def export(args):
 
 def verify_bundle(bundle):
     data = json.loads((bundle / "delivery.json").read_text())
-    if data.get("schema") != 1 or data.get("arch") not in TOOL_SHA or set(data.get("images", {})) not in (set(IMAGE_KEYS), set(IMAGE_KEYS) - {"GATEWAY_IMAGE"}, set(IMAGE_KEYS) - {"GATEWAY_IMAGE", "AGENT_RUNTIME_IMAGE"}):
+    if data.get("schema") != 1 or data.get("arch") not in TOOL_SHA or set(data.get("images", {})) not in (set(IMAGE_KEYS), set(IMAGE_KEYS) - {"MANAGER_IMAGE"}, set(IMAGE_KEYS) - {"GATEWAY_IMAGE"}, set(IMAGE_KEYS) - {"GATEWAY_IMAGE", "AGENT_RUNTIME_IMAGE"}):
         raise ValueError("Invalid delivery metadata")
     # Older deliveries record their producer's tool/Registry tags. They do not select
     # the executor; the independently installed tools own that choice.
@@ -342,8 +342,9 @@ def main():
     resolve = commands.add_parser("resolve", help="Check the selected platform in the registry and print immutable references as a JSON array")
     exp = commands.add_parser("export", help="Export validated immutable images; retain --state between versions")
     for command in (resolve, exp):
-        for name in ("workbench", "data-engine", "manager", "agent-runtime", "postgres"):
+        for name in ("workbench", "data-engine", "agent-runtime", "postgres"):
             command.add_argument("--" + name, required=True)
+        command.add_argument("--manager", help="Historical standalone Manager image")
         command.add_argument("--gateway", help="Gateway image; omitted only for historical application exports")
         command.add_argument("--arch", choices=tuple(TOOL_SHA), required=True)
     for name in ("state", "output", "version"):

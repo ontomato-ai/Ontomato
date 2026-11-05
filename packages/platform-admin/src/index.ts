@@ -1,4 +1,4 @@
-export { startPlatformAdmin, type PlatformAdminOptions } from "./app";
+export { installPlatformPages, type PlatformAdminOptions } from "./app";
 export {
   availableGroups,
   availablePages,
@@ -13,7 +13,7 @@ export {
   type PlatformPage,
   type PlatformPageTab,
 } from "./navigation";
-export { SERVICE_ROOT, createPlatformRouter, type PlatformRouterOptions } from "./router";
+export { installPageGuard } from "./router";
 export {
   PlatformBusinessError,
   createPlatformClient,
@@ -37,7 +37,6 @@ export {
   type PlatformTheme,
 } from "./context";
 export {
-  legacyPageRedirects,
   modelConfigTabs,
   ossPlatformPages,
   ossSystemSettingsPage,

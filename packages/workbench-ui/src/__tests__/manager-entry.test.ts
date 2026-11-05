@@ -8,7 +8,6 @@ const { legacyAdminRoutes, managerLocation } = await import("../router/admin-rou
 
 /** Opens an old workbench address and returns where the tab was replaced to (null when it stayed in the workbench). */
 async function open(path: string) {
-  const replace = vi.spyOn(window.location, "replace").mockImplementation(() => {});
   const router = createRouter({
     history: createMemoryHistory(),
     routes: [
@@ -17,8 +16,7 @@ async function open(path: string) {
     ],
   });
   await router.push(path).catch(() => {});
-  const target = replace.mock.calls[0]?.[0];
-  return { replaced: target === undefined ? null : String(target), path: router.currentRoute.value.path };
+  return router.currentRoute.value;
 }
 
 afterEach(() => {
@@ -28,60 +26,58 @@ afterEach(() => {
 describe("old admin addresses in the workbench", () => {
   it("old Manager addresses leave for the Manager page under the same deployment root", async () => {
     for (const [path, target] of [
-      ["/admin/ontology-manager", "/nested/ontology-manager/"],
-      ["/admin/ontology", "/nested/ontology-manager/"],
-      ["/admin/intelligence-assets", "/nested/ontology-manager/#/assets/metrics"],
-      ["/admin/metric-views", "/nested/ontology-manager/#/assets/metrics"],
-      ["/admin/action-management", "/nested/ontology-manager/#/assets/metrics"],
-      ["/admin/write-tasks", "/nested/ontology-manager/#/assets/metrics"],
-      ["/admin/knowledge", "/nested/ontology-manager/#/knowledge"],
-      ["/admin/ontology-manager?view=data-browser", "/nested/ontology-manager/#/data"],
+      ["/admin/ontology-manager", "/ontology"],
+      ["/admin/ontology", "/ontology"],
+      ["/admin/intelligence-assets", "/ontology/assets/metrics"],
+      ["/admin/metric-views", "/ontology/assets/metrics"],
+      ["/admin/action-management", "/ontology/assets/metrics"],
+      ["/admin/write-tasks", "/ontology/assets/metrics"],
+      ["/admin/knowledge", "/ontology/knowledge"],
+      ["/admin/ontology-manager?view=data-browser", "/browser/data"],
     ]) {
-      expect((await open(path)).replaced, path).toBe(target);
+      expect((await open(path)).fullPath, path).toBe(target);
     }
   });
 
   it("visual modeling takes focus/id and only the Manager graph as back target; credentials and other parameters stay behind", async () => {
     expect(
-      (await open("/admin/ontology/visual-modeling?focus=object&id=Order%20A&back=playground&tk=leak&keep=1")).replaced,
-    ).toBe("/nested/ontology-manager/#/visual-modeling?focus=object&id=Order+A&back=playground");
-    expect((await open("/admin/ontology/visual-modeling?focus=object&id=Order&back=https://evil.test/")).replaced).toBe(
-      "/nested/ontology-manager/#/visual-modeling?focus=object&id=Order",
+      (await open("/admin/ontology/visual-modeling?focus=object&id=Order%20A&back=playground&tk=leak&keep=1")).fullPath,
+    ).toBe("/ontology/visual-modeling?focus=object&id=Order+A&back=playground");
+    expect((await open("/admin/ontology/visual-modeling?focus=object&id=Order&back=https://evil.test/")).fullPath).toBe(
+      "/ontology/visual-modeling?focus=object&id=Order",
     );
-    expect((await open("/admin/ontology/visual-modeling")).replaced).toBe("/nested/ontology-manager/#/visual-modeling");
+    expect((await open("/admin/ontology/visual-modeling")).fullPath).toBe("/ontology/visual-modeling");
   });
 
   it("an unknown view opens the Manager's own initial page, and focus/id/back only belong to visual modeling", () => {
-    expect(managerLocation({ view: "other", focus: "object" })).toBe("/nested/ontology-manager/");
+    expect(managerLocation({ view: "other", focus: "object" })).toBe("/ontology");
     expect(managerLocation({ view: "assets", focus: "object", id: "x" })).toBe(
-      "/nested/ontology-manager/#/assets/metrics",
+      "/ontology/assets/metrics",
     );
   });
 
   it("operations addresses open operations diagnosis, keeping the page they name", async () => {
-    expect((await open("/admin/observe")).path).toBe("/observe");
+    expect((await open("/admin/observe")).path).toBe("/ops/diagnosis");
     const turn = await open("/admin/observe/turn?x=1");
-    expect(turn.path).toBe("/observe/turn");
+    expect(turn.path).toBe("/ops/turn");
     // It stays in the workbench application; the operations page renders it, not a tab replacement.
-    expect(turn.replaced).toBeNull();
   });
 
   it("the console's pages redirect into the function area instead of rendering a page", async () => {
     const cases: Array<[string, string]> = [
-      ["/admin", "/chat"],
-      ["/admin/analysis", "/chat"],
-      ["/admin/system-agents", "/chat"],
-      ["/admin/skills", "/chat"],
-      ["/admin/skills/analysis", "/chat"],
-      ["/admin/skills/visualization", "/chat"],
-      ["/admin/mcp-service", "/chat"],
-      ["/admin/system-config", "/chat"],
-      ["/admin/feedback-records", "/chat"],
+      ["/admin", "/agents/chat"],
+      ["/admin/analysis", "/agents/settings"],
+      ["/admin/system-agents", "/agents/settings"],
+      ["/admin/skills", "/agents/settings"],
+      ["/admin/skills/analysis", "/agents/settings"],
+      ["/admin/skills/visualization", "/agents/settings"],
+      ["/admin/mcp-service", "/agents/settings"],
+      ["/admin/system-config", "/agents/chat"],
+      ["/admin/feedback-records", "/agents/chat"],
     ];
     for (const [path, expected] of cases) {
       const result = await open(path);
       // Left the workbench for nothing: the address redirects inside the workbench and no page is replaced.
-      expect(result.replaced, path).toBeNull();
       expect(result.path, path).toBe(expected);
     }
   });
@@ -95,8 +91,8 @@ describe("old admin addresses in the workbench", () => {
       ],
     });
     await router.push("/admin/skills");
-    expect(router.currentRoute.value.query).toEqual({ feature: "agents", tab: "capabilities" });
+    expect(router.currentRoute.value.query).toEqual({ tab: "capabilities" });
     await router.push("/admin/analysis");
-    expect(router.currentRoute.value.query).toEqual({ feature: "agents" });
+    expect(router.currentRoute.value.query).toEqual({});
   });
 });

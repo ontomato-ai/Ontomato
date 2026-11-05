@@ -54,7 +54,7 @@ test("windowsPathKey folds case and separators but keeps spaces and path boundar
 test("frontend root, java helper and self bind to this checkout's absolute entry", () => {
   assert.equal(role(`"${NODE}" "${CTX.devCommand}" dev`), "frontend-root");
   assert.equal(role(`"${NODE}" "${CTX.devCommand}" web`), "frontend-root");
-  assert.equal(role(`"${NODE}" "${CTX.devCommand}" manager`), "frontend-root");
+  assert.equal(role(`"${NODE}" "${CTX.devCommand}" manager`), undefined);
   assert.equal(role(`"${NODE}" "${CTX.devCommand}" unknown`), undefined);
   assert.equal(role(`"${NODE}" "C:\\other\\scripts\\dev-command.mjs" dev`), undefined);
   assert.equal(role(`"${NODE}" "${CTX.javaEntry}"`), "java-helper");
@@ -113,9 +113,9 @@ test("javaMainClass reads the position, skipping option values", () => {
 
 test("concurrently, tsx and the two vite entries bind their absolute paths only", () => {
   const workbench = `${CTX.root}\\apps\\workbench`;
-  assert.equal(role(`"${NODE}" "${CTX.root}\\node_modules\\concurrently\\dist\\bin\\concurrently.js" pnpm:dev:server pnpm:dev:web pnpm:dev:ontology-manager`), "frontend-root");
+  assert.equal(role(`"${NODE}" "${CTX.root}\\node_modules\\concurrently\\dist\\bin\\concurrently.js" pnpm:dev:server pnpm:dev:web`), "frontend-root");
   assert.equal(role(`"${NODE}" "${CTX.root}\\node_modules\\concurrently\\dist\\bin\\concurrently.js" pnpm:dev:server`), undefined);
-  assert.equal(role(`"${NODE}" "C:\\other\\node_modules\\concurrently\\dist\\bin\\concurrently.js" pnpm:dev:server pnpm:dev:web pnpm:dev:ontology-manager`), undefined);
+  assert.equal(role(`"${NODE}" "C:\\other\\node_modules\\concurrently\\dist\\bin\\concurrently.js" pnpm:dev:server pnpm:dev:web`), undefined);
   assert.equal(role(`"${NODE}" "${workbench}\\node_modules\\tsx\\dist\\cli.mjs" watch "${workbench}\\src\\index.ts"`), "frontend-root");
   assert.equal(role(`"${NODE}" "${workbench}\\node_modules\\tsx\\dist\\cli.mjs" watch "C:\\other\\src\\index.ts"`), undefined);
   // Actual worker process left behind after watcher exits (--require/--import form of tsx run).
@@ -125,7 +125,7 @@ test("concurrently, tsx and the two vite entries bind their absolute paths only"
   assert.equal(role(`"${NODE}" -e "x=${workbench}\\src\\index.ts"`), undefined);
   assert.equal(role(`"${NODE}" "${CTX.root}\\node_modules\\vite\\bin\\vite.js" --config "${workbench}\\web\\vite.config.ts"`), "frontend-root");
   assert.equal(role(`"${NODE}" "${CTX.root}\\node_modules\\vite\\bin\\vite.js" --config "C:\\other\\web\\vite.config.ts"`), undefined);
-  assert.equal(role(`"${NODE}" "${CTX.root}\\node_modules\\vite\\bin\\vite.js" "${CTX.root}\\apps\\ontology-manager" --port 5174`), "frontend-root");
+  assert.equal(role(`"${NODE}" "${CTX.root}\\node_modules\\vite\\bin\\vite.js" "${CTX.root}\\apps\\ontology-manager" --port 5174`), undefined);
   assert.equal(role(`"${NODE}" "${CTX.root}\\node_modules\\vite\\bin\\vite.js" "C:\\other\\apps\\ontology-manager" --port 5174`), undefined);
   assert.equal(role(`"${NODE}" "${CTX.root}\\node_modules\\vite\\bin\\vite.js" "${CTX.root}\\apps\\ontology-manager" --port 5175`), undefined);
   assert.equal(role(`"${NODE}" "${CTX.root}\\node_modules\\vitest\\vitest.mjs" run`), undefined);

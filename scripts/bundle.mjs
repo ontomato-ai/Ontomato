@@ -6,8 +6,8 @@ import { buildBundle, parseBundleOptions } from "./deploy-bundle.mjs";
 
 export function main(argv) {
   const options = parseBundleOptions(argv);
-  const repositories = ["ontomato-workbench", "ontomato-data-engine", "ontomato-ontology-manager", "ontomato-agent-runtime", "ontomato-gateway"];
-  const components = ["ontomato", "datarag-opensource", "ontomato-ontology-manager", "ontomato-agent-runtime", "ontomato-gateway"];
+  const repositories = ["ontomato-workbench", "ontomato-data-engine", "ontomato-agent-runtime", "ontomato-gateway"];
+  const components = ["ontomato", "datarag-opensource", "ontomato-agent-runtime", "ontomato-gateway"];
   return buildBundle(options, {
     name: "ontomato",
     deployDir: fileURLToPath(new URL("../deploy/", import.meta.url)),

@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import { workbenchFeatures } from "../features";
-import { ONTOLOGY_MANAGER_PATH } from "../../../config/app";
 
 const t = (key: string) => key;
 
@@ -12,16 +11,14 @@ const granting = (...granted: string[]) => (permission: string) => granted.inclu
  * links to the Ontology Service in a new tab.
  */
 describe("workbench function area", () => {
-  it("ends with the Ontology Service, a new-tab link to the Manager page", () => {
+  it("ends with the Ontology Service, an internal navigation action", () => {
     const features = workbenchFeatures(t, [], granting(), true);
     expect(features.at(-1)).toEqual({
       id: "ontology-service",
       label: "assistant.featureOntologyService",
       icon: "ontology",
-      availability: "link",
-      href: ONTOLOGY_MANAGER_PATH,
+      availability: "action",
     });
-    expect(ONTOLOGY_MANAGER_PATH.endsWith("/ontology-manager/")).toBe(true);
   });
 
   it("keeps the existing order around the edition's entries", () => {

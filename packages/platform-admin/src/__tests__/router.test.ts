@@ -1,9 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { defineComponent, h } from "vue";
 import { RouterView, type RouteRecordRaw } from "vue-router";
-import { createPlatformRouter } from "../router";
+import { installPageGuard } from "../router";
+import { createMemoryHistory, createRouter } from "vue-router";
+import { managerDestination } from "../legacy-manager";
+import { platformRoutes } from "../platform-routes";
 import { availableGroups, availablePages, openAccess, type PlatformAccess, type PlatformNavigation } from "../navigation";
-import { legacyPageRedirects, ossPlatformPages, pageRoutes, platformPages, sharedPageRoutes, systemSettingsTabs } from "../pages";
+import { ossPlatformPages, pageRoutes, platformPages, sharedPageRoutes, systemSettingsTabs } from "../pages";
 
 const navigation: PlatformNavigation = {
   groups: [
@@ -15,7 +18,7 @@ const navigation: PlatformNavigation = {
     { path: "/playground", titleKey: "g", permissions: ["ontology-modeling"], group: "ontology", ownHeader: true },
     { path: "/objects", titleKey: "o", permissions: ["ontology-modeling"], group: "ontology", ownHeader: true },
     { path: "/data", titleKey: "d", permissions: ["data-browser"], group: "ontology", ownHeader: true },
-    { path: "/admin/permissions", titleKey: "p", permissions: ["user-management", "role-management"], group: "platform" },
+    { path: "/permissions", titleKey: "p", permissions: ["user-management", "role-management"], group: "platform" },
     platformPages.userFeedback,
     platformPages.systemSettings,
     platformPages.modelConfig,
@@ -24,7 +27,7 @@ const navigation: PlatformNavigation = {
 };
 
 const page = defineComponent({ render: () => null });
-const adminPages = navigation.pages.filter(({ path }) => path.startsWith("/admin/") || path === platformPages.userFeedback.path);
+const adminPages = navigation.pages.filter(({ path }) => path.startsWith("/settings/") || path === "/permissions" || path === platformPages.userFeedback.path);
 const components = Object.fromEntries(adminPages.map(({ path }) => [path, async () => page]));
 // The host's routes: a frame route without a path of its own holding Manager-style pages, plus the platform pages.
 const routes: RouteRecordRaw[] = [
@@ -39,7 +42,7 @@ const routes: RouteRecordRaw[] = [
     ],
   },
   ...pageRoutes(adminPages, components),
-  ...legacyPageRedirects(),
+  { ...platformRoutes.ontology, component: page },
 ];
 const layout = defineComponent({ render: () => h(RouterView) });
 
@@ -58,7 +61,10 @@ function access(granted: string[], error: string | null = null): PlatformAccess 
 }
 
 async function land(path: string, account: PlatformAccess, home = "/playground") {
-  const router = createPlatformRouter({ navigation, routes, standalone: [], access: account, layout, home });
+  const router = createRouter({ history: createMemoryHistory(), routes: [{ path: "/_service", component: layout, children: routes }] });
+  installPageGuard(router, navigation, account, home);
+  if (path === "/" || path === "/no-such-page") path = platformRoutes.ontology.path;
+  else if (path === "/admin" || path.startsWith("/admin/")) path = managerDestination(path);
   await router.push(path);
   return router.currentRoute.value.fullPath;
 }
@@ -67,8 +73,8 @@ describe("one navigation filtered by permission codes", () => {
   it("lists a page when the account holds any one of its codes, and a group only with a listed page", () => {
     const account = access(["role-management", "system-monitoring"]);
     expect(availablePages(navigation, account).map(({ path }) => path)).toEqual([
-      "/admin/permissions",
-      "/admin/records",
+      "/permissions",
+      "/settings/records",
     ]);
     expect(availableGroups(navigation, access(["audit-logs"])).map(({ key }) => key)).toEqual(["platform"]);
     expect(availableGroups(navigation, access(["data-browser", "audit-logs"])).map(({ key }) => key)).toEqual([
@@ -83,7 +89,7 @@ describe("one navigation filtered by permission codes", () => {
     expect(navigation.pages.find(({ path }) => path === platformPages.systemSettings.path)?.enterableWithoutPermission).toBe(
       true
     );
-    expect(systemSettingsTabs.authorization.path).toBe("/admin/system-config/authorization");
+    expect(systemSettingsTabs.authorization.path).toBe("/settings/system-config/authorization");
   });
 });
 
@@ -91,55 +97,55 @@ describe("the service router", () => {
   it("separates feedback from audit navigation and direct URLs", async () => {
     const feedback = access(["user-feedback"]);
     const audit = access(["audit-logs"]);
-    expect(availablePages(navigation, feedback).map(({ path }) => path)).toEqual(["/knowledge/feedback"]);
+    expect(availablePages(navigation, feedback).map(({ path }) => path)).toEqual(["/governance/feedback"]);
     expect(availableGroups(navigation, feedback).map(({ key }) => key)).toEqual(["knowledge"]);
-    expect(availablePages(navigation, audit).map(({ path }) => path)).toEqual(["/admin/records"]);
-    expect(await land("/knowledge/feedback", feedback)).toBe("/knowledge/feedback");
-    expect(await land("/admin/records/audit-log", feedback)).toBe("/knowledge/feedback");
-    expect(await land("/knowledge/feedback", audit)).toBe("/admin/records/audit-log");
-    expect(await land("/knowledge/feedback", openAccess)).toBe("/knowledge/feedback");
-    expect(await land("/admin/records/audit-log", openAccess)).toBe("/admin/records/audit-log");
+    expect(availablePages(navigation, audit).map(({ path }) => path)).toEqual(["/settings/records"]);
+    expect(await land("/governance/feedback", feedback)).toBe("/governance/feedback");
+    expect(await land("/settings/records/audit-log", feedback)).toBe("/governance/feedback");
+    expect(await land("/governance/feedback", audit)).toBe("/settings/records/audit-log");
+    expect(await land("/governance/feedback", openAccess)).toBe("/governance/feedback");
+    expect(await land("/settings/records/audit-log", openAccess)).toBe("/settings/records/audit-log");
   });
 
   it("waits for the permissions before deciding and enters a granted page, its detail pages included", async () => {
     const account = access(["audit-logs", "ontology-modeling"]);
-    expect(await land("/admin/records/audit-log", account)).toBe("/admin/records/audit-log");
+    expect(await land("/settings/records/audit-log", account)).toBe("/settings/records/audit-log");
     expect(account.loads).toBe(1);
     expect(await land("/objects/Order%20A", account)).toBe("/objects/Order%20A");
   });
 
   it("sends a page the account cannot open to the first available page of its group, then of any group", async () => {
-    expect(await land("/admin/records", access(["data-browser", "system-monitoring"]))).toBe(
-      "/admin/records/system-monitor"
+    expect(await land("/settings/records", access(["data-browser", "system-monitoring"]))).toBe(
+      "/settings/records/system-monitor"
     );
     expect(await land("/objects/Order", access(["data-browser", "audit-logs"]))).toBe("/data");
-    expect(await land("/objects/Order", access(["audit-logs"]))).toBe("/admin/records/audit-log");
+    expect(await land("/objects/Order", access(["audit-logs"]))).toBe("/settings/records/audit-log");
   });
 
   it("lands a page's own address on the first tab the account may see", async () => {
-    expect(await land("/admin/records", access(["audit-logs", "system-monitoring"]))).toBe("/admin/records/audit-log");
-    expect(await land("/admin/records", access(["system-monitoring"]))).toBe("/admin/records/system-monitor");
-    expect(await land("/admin/model-config", access(["system-config"]))).toBe("/admin/model-config/usage");
-    expect(await land("/admin/system-config", access(["authorization-management"]))).toBe(
-      "/admin/system-config/authorization"
+    expect(await land("/settings/records", access(["audit-logs", "system-monitoring"]))).toBe("/settings/records/audit-log");
+    expect(await land("/settings/records", access(["system-monitoring"]))).toBe("/settings/records/system-monitor");
+    expect(await land("/settings/model-config", access(["system-config"]))).toBe("/settings/model-config/usage");
+    expect(await land("/settings/system-config", access(["authorization-management"]))).toBe(
+      "/settings/system-config/authorization"
     );
-    expect(await land("/admin/system-config", access(["system-config"]))).toBe("/admin/system-config/general");
+    expect(await land("/settings/system-config", access(["system-config"]))).toBe("/settings/system-config/general");
   });
 
   it("sends an old page address to the tab that replaced it", async () => {
-    expect(await land("/admin/audit-log", access(["audit-logs"]))).toBe("/admin/records/audit-log");
-    expect(await land("/admin/system-monitor", access(["system-monitoring"]))).toBe("/admin/records/system-monitor");
-    expect(await land("/admin/license", access(["authorization-management"]))).toBe("/admin/system-config/authorization");
+    expect(await land("/admin/audit-log", access(["audit-logs"]))).toBe("/settings/records/audit-log");
+    expect(await land("/admin/system-monitor", access(["system-monitoring"]))).toBe("/settings/records/system-monitor");
+    expect(await land("/admin/license", access(["authorization-management"]))).toBe("/settings/system-config/authorization");
   });
 
   it("the root lands on the deployment's start page when the account may open it, otherwise on its first page", async () => {
     expect(await land("/", access(["ontology-modeling"]))).toBe("/playground");
     expect(await land("/", access(["data-browser"]), "/data/Order")).toBe("/data/Order");
-    expect(await land("/", access(["audit-logs"]))).toBe("/admin/records/audit-log");
+    expect(await land("/", access(["audit-logs"]))).toBe("/settings/records/audit-log");
   });
 
   it("the old platform root opens the first available platform administration page", async () => {
-    expect(await land("/admin", access(["ontology-modeling", "system-monitoring"]))).toBe("/admin/records/system-monitor");
+    expect(await land("/admin", access(["ontology-modeling", "system-monitoring"]))).toBe("/settings/records/system-monitor");
     expect(await land("/admin", access(["ontology-modeling"]))).toBe("/playground");
   });
 
@@ -148,15 +154,15 @@ describe("the service router", () => {
   });
 
   it("lands an account with no page on the root instead of looping", async () => {
-    expect(await land("/admin/records", access([]))).toBe("/");
-    expect(await land("/admin", access([], "HTTP 402"))).toBe("/");
-    expect(await land("/", access([]))).toBe("/");
+    expect(await land("/settings/records", access([]))).toBe("/ontology");
+    expect(await land("/admin", access([], "HTTP 402"))).toBe("/ontology");
+    expect(await land("/", access([]))).toBe("/ontology");
   });
 
   it("enters the license page even when the permissions cannot be read (they fail while the license is invalid)", async () => {
     // The tab is still named, so the page opens on it although the account holds no code at all.
-    expect(await land("/admin/license", access([], "HTTP 402"))).toBe("/admin/system-config/authorization");
-    expect(await land("/admin/license", access(["system-config"]))).toBe("/admin/system-config/authorization");
+    expect(await land("/admin/license", access([], "HTTP 402"))).toBe("/settings/system-config/authorization");
+    expect(await land("/admin/license", access(["system-config"]))).toBe("/settings/system-config/authorization");
   });
 });
 

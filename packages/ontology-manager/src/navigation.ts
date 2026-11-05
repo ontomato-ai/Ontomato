@@ -1,3 +1,4 @@
+import { platformRoutes as routes } from "@ontomato/platform-admin/routes";
 import type { Component } from "vue";
 import {
   BookOpen,
@@ -36,17 +37,17 @@ export interface ManagerNavigationPage {
 
 /** Paths of the Manager pages; they are the hash addresses the Manager has always used. */
 export const managerPaths = {
-  graph: "/playground",
-  objects: "/objects",
-  attributes: "/attributes",
-  relations: "/relations",
-  actions: "/assets/actions",
-  visualModeling: "/visual-modeling",
-  dataBrowser: "/data",
-  metrics: "/assets/metrics",
-  functions: "/assets/functions",
-  tasks: "/assets/tasks",
-  knowledge: "/knowledge",
+  graph: routes.playground.path,
+  objects: routes.objects.path,
+  attributes: routes.attributes.path,
+  relations: routes.relations.path,
+  actions: routes.actions.path,
+  visualModeling: routes.modeling.path,
+  dataBrowser: routes.data.path.split("/:")[0]!,
+  metrics: routes.metrics.path,
+  functions: routes.functions.path,
+  tasks: routes.tasks.path,
+  knowledge: routes.knowledge.path,
 } as const;
 
 export const managerGroups = {

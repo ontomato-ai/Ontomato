@@ -1,8 +1,7 @@
 <script setup lang="ts">
 import { randomId } from "@ontomato/contracts/random-id";
 /**
- * Diagnosis entry of a reply: shown once the run has finished, and opens that run's diagnosis page in
- * a new tab. Who may see it is assembled by the app (TurnDiagnosisAccess): the enterprise build gates
+ * Diagnosis entry of a reply: shown once the run has finished, and opens that run's diagnosis page in the platform. Who may see it is assembled by the app (TurnDiagnosisAccess): the enterprise build gates
  * it by the observer permission, the open-source build has no permission gate on /observe.
  */
 import { inject, onMounted } from "vue";
@@ -22,8 +21,8 @@ if (!access) throw new Error("Turn diagnosis access is not provided");
 onMounted(() => access.prepare());
 
 function openDiagnosis() {
-  const target = router.resolve({
-    path: "/observe/diagnosis",
+  void router.push({
+    path: "/ops/diagnosis",
     query: {
       sourceSessionId: props.sessionId,
       sourceRunId: props.runId,
@@ -32,7 +31,6 @@ function openDiagnosis() {
       diagnosisRunId: randomId(),
     },
   });
-  window.open(target.href, "_blank", "noopener,noreferrer");
 }
 </script>
 

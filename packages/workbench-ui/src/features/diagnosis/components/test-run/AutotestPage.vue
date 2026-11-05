@@ -24,12 +24,12 @@ const { t } = useLocale();
 
 type Tab = "run" | "results" | "cases";
 const tabs = computed<{ id: Tab; path: string; label: string }[]>(() => [
-  { id: "run", path: "/observe/test", label: t("program.testExecution") },
-  { id: "results", path: "/observe/results", label: t("ops.results") },
-  { id: "cases", path: "/observe/cases", label: t("ops.cases") },
+  { id: "run", path: "/ops/test", label: t("program.testExecution") },
+  { id: "results", path: "/ops/results", label: t("ops.results") },
+  { id: "cases", path: "/ops/cases", label: t("ops.cases") },
 ]);
 const tab = computed<Tab>(() =>
-  route.path === "/observe/test" ? "run" : route.path === "/observe/cases" ? "cases" : "results",
+  route.path === "/ops/test" ? "run" : route.path === "/ops/cases" ? "cases" : "results",
 );
 const caseId = computed(() => (typeof route.params.caseId === "string" ? route.params.caseId : null));
 const runId = computed(() =>
@@ -67,7 +67,7 @@ function go(path: string, query: Record<string, string> = {}) {
   const session = typeof route.query.sessionId === "string" ? { sessionId: route.query.sessionId } : {};
   void router.push({ path, query: { ...session, ...query } }).catch(() => {});
 }
-const openRun = (id: string | null) => go("/observe/results", id ? { runId: id } : {});
+const openRun = (id: string | null) => go("/ops/results", id ? { runId: id } : {});
 
 function subtitle(run: AutotestRunMeta) {
   const parts: string[] = [];

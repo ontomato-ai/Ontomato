@@ -88,7 +88,7 @@ async function confirm() {
     <template #footer>
       <el-button :disabled="saving" @click="visible = false">{{ t("common.cancel") }}</el-button>
       <el-button type="primary" :loading="saving" :disabled="!creating && !groupId" @click="confirm">
-        {{ t("common.confirm") }}
+        {{ t("common.confirmWorkbenchAction") }}
       </el-button>
     </template>
   </el-dialog>

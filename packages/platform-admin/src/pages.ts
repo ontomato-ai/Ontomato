@@ -1,3 +1,4 @@
+import { platformRoutes } from "./platform-routes";
 import { Activity, Cpu, MessageSquareText, Settings } from "lucide-vue-next";
 import type { RouteRecordRaw } from "vue-router";
 import type { PlatformGroup, PlatformPage } from "./navigation";
@@ -15,8 +16,8 @@ export const platformGroups = {
 
 /** How models are used (`usage`) and where they come from (`providers`). */
 export const modelConfigTabs = {
-  usage: { path: "/admin/model-config/usage", titleKey: "nav.modelUsageTab", permissions: ["system-config"] },
-  providers: { path: "/admin/model-config/providers", titleKey: "nav.modelProvidersTab", permissions: ["system-config"] },
+  usage: { path: platformRoutes.usage.path, titleKey: "nav.modelUsageTab", permissions: ["system-config"] },
+  providers: { path: platformRoutes.providers.path, titleKey: "nav.modelProvidersTab", permissions: ["system-config"] },
 } as const;
 
 /**
@@ -25,14 +26,14 @@ export const modelConfigTabs = {
  * licences (open source) list no tabs at all.
  */
 export const systemSettingsTabs = {
-  general: { path: "/admin/system-config/general", titleKey: "nav.systemGeneralTab", permissions: ["system-config"] },
+  general: { path: platformRoutes.general.path, titleKey: "nav.systemGeneralTab", permissions: ["system-config"] },
   dataAdapters: {
-    path: "/admin/system-config/data-adapters",
+    path: platformRoutes.adapters.path,
     titleKey: "nav.systemDataAdaptersTab",
     permissions: ["system-config"],
   },
   authorization: {
-    path: "/admin/system-config/authorization",
+    path: platformRoutes.license.path,
     titleKey: "nav.systemAuthorizationTab",
     permissions: ["authorization-management"],
   },
@@ -40,13 +41,13 @@ export const systemSettingsTabs = {
 
 /** The change history (`audit-logs`) and the service status (`system-monitoring`). */
 export const runRecordsTabs = {
-  auditLog: { path: "/admin/records/audit-log", titleKey: "nav.auditLogTab", permissions: ["audit-logs"] },
-  systemMonitor: { path: "/admin/records/system-monitor", titleKey: "nav.systemMonitorTab", permissions: ["system-monitoring"] },
+  auditLog: { path: platformRoutes.audit.path, titleKey: "nav.auditLogTab", permissions: ["audit-logs"] },
+  systemMonitor: { path: platformRoutes.monitor.path, titleKey: "nav.systemMonitorTab", permissions: ["system-monitoring"] },
 } as const;
 
 export const platformPages = {
   modelConfig: {
-    path: "/admin/model-config",
+    path: platformRoutes.models.path,
     titleKey: "nav.modelConfig",
     descriptionKey: "platform.descriptions.modelConfig",
     icon: Cpu,
@@ -57,7 +58,7 @@ export const platformPages = {
     tabs: [modelConfigTabs.usage, modelConfigTabs.providers],
   },
   systemSettings: {
-    path: "/admin/system-config",
+    path: platformRoutes.settings.path,
     titleKey: "nav.systemConfig",
     descriptionKey: "platform.descriptions.systemConfig",
     icon: Settings,
@@ -72,7 +73,7 @@ export const platformPages = {
    * to platform administration; the records themselves are the workbench's.
    */
   userFeedback: {
-    path: "/knowledge/feedback",
+    path: platformRoutes.feedback.path,
     titleKey: "nav.userFeedback",
     descriptionKey: "platform.descriptions.userFeedback",
     icon: MessageSquareText,
@@ -80,7 +81,7 @@ export const platformPages = {
     group: "knowledge",
   },
   runRecords: {
-    path: "/admin/records",
+    path: platformRoutes.records.path,
     titleKey: "nav.runRecords",
     descriptionKey: "platform.descriptions.runRecords",
     icon: Activity,
@@ -102,6 +103,10 @@ export const platformPageComponents: Readonly<Record<string, () => Promise<unkno
  * One route per page, plus one per tab: a tab route renders the page at its own address and names the page it belongs
  * to in `meta.page`, so the guard and the navigation highlight treat a tab as the page it is a screen of.
  */
+function routeName(path: string) {
+  return Object.values(platformRoutes).find((route) => route.path === path)!.name;
+}
+
 export function pageRoutes(
   pages: readonly PlatformPage[],
   components: Readonly<Record<string, () => Promise<unknown>>>
@@ -109,9 +114,9 @@ export function pageRoutes(
   return pages.flatMap((page) => {
     const component = components[page.path];
     if (!component) throw new Error(`No component for platform page ${page.path}`);
-    const entry = { path: page.path, name: page.path, component, meta: { page: page.path } } as RouteRecordRaw;
+    const entry = { path: page.path, name: routeName(page.path), component, meta: { page: page.path } } as RouteRecordRaw;
     const tabs = (page.tabs ?? []).map(
-      (tab) => ({ path: tab.path, name: tab.path, component, meta: { page: page.path } }) as RouteRecordRaw
+      (tab) => ({ path: tab.path, name: routeName(tab.path), component, meta: { page: page.path } }) as RouteRecordRaw
     );
     return [entry, ...tabs];
   });
@@ -149,18 +154,4 @@ export const platformKnowledgePages: readonly PlatformPage[] = [platformPages.us
 export function sharedPageRoutes(pages: readonly PlatformPage[] = ossPlatformPages): RouteRecordRaw[] {
   const shared = pages.filter((page) => page.path in platformPageComponents);
   return pageRoutes([...shared, ...platformKnowledgePages], platformPageComponents);
-}
-
-/**
- * Addresses of pages that were split into tabs: each one opens the tab that replaced it, so old links and bookmarks
- * land on the same screen. Editions add the addresses only they used to have.
- */
-export function legacyPageRedirects(extra: readonly (readonly [string, string])[] = []): RouteRecordRaw[] {
-  const redirects: readonly (readonly [string, string])[] = [
-    ["/admin/license", systemSettingsTabs.authorization.path],
-    ["/admin/audit-log", runRecordsTabs.auditLog.path],
-    ["/admin/system-monitor", runRecordsTabs.systemMonitor.path],
-    ...extra,
-  ];
-  return redirects.map(([path, redirect]) => ({ path, redirect }));
 }

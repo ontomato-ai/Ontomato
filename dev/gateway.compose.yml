@@ -10,11 +10,9 @@ services:
     environment:
       WORKBENCH_UPSTREAM: host.docker.internal:3000
       WEB_UPSTREAM: host.docker.internal:5173
-      MANAGER_UPSTREAM: host.docker.internal:5174
       JAVA_UPSTREAM: host.docker.internal:${DEV_JAVA_PORT:-18087}
       PUBLIC_BASE_PATH: ${PUBLIC_BASE_PATH:-}
       WEB_MOUNT: ${PUBLIC_BASE_PATH:-}/
-      MANAGER_MOUNT: ${PUBLIC_BASE_PATH:-}/ontology-manager/
     volumes:
       - ${DEV_PUBLIC_ROOT:?}/docker/gateway/docker-entrypoint.sh:/gateway-entrypoint.sh:ro
       - ${DEV_PUBLIC_ROOT:?}/docker/gateway/nginx.conf.template:/etc/nginx/templates/gateway.conf.template:ro

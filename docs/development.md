@@ -13,13 +13,12 @@ credentials.
 
 ## Product build entry points
 
-`make build ARCH=amd64` (or `arm64`) builds three runnable images in order:
-workbench, data engine, ontology manager. Each also has its own Make target. Docker
-caches the dependency layers; application source is copied afterwards. No separate
-runtime image, compatibility lock or deployment-time build is needed.
+`make build ARCH=amd64` (or `arm64`) builds four runnable images in order:
+workbench, data engine, agent runtime and gateway. Each also has its own Make target. Docker
+caches the dependency layers; application source is copied afterwards. The workbench image also contains the browser application.
 
-Local aliases are `ontomato:deploy-<arch>`, `datarag-opensource:deploy-<arch>` and
-`ontomato-ontology-manager:deploy-<arch>`. Versioned tags include the source revision
+Local aliases are `ontomato:deploy-<arch>`, `datarag-opensource:deploy-<arch>` ,
+`ontomato-agent-runtime:deploy-<arch>` and `ontomato-gateway:deploy-<arch>`. Versioned tags include the source revision
 and a dirty marker when any participating source tree has uncommitted changes.
 
 The build host needs Node.js 24+, Git, Make and Docker with Buildx. `ARCH` defaults
@@ -40,26 +39,22 @@ runner uses its persistent local BuildKit cache.
 later runs reuse `MIRROR_STATE`. See [deployment](../deploy/README.md) for the offline workflow,
 baseline recovery and state retention. `build` never publishes images.
 
-## Local development (Node + main web app + Manager)
+## Local development (Node + unified web app)
 
 After `pnpm install`, one root command starts three processes:
 
-- `pnpm dev`: concurrently runs the three scripts below in the foreground and forwards
+- `pnpm dev`: starts the agent runtime, then concurrently runs the two scripts below in the foreground and forwards
   SIGINT/SIGTERM to the child processes;
 - `pnpm dev:server`: the Node service (`tsx watch src/index.ts` in `apps/workbench`,
   default port 3000);
 - `pnpm dev:web`: the main web app's Vite dev server (internal port 5173; use the gateway on 8080);
-- `pnpm dev:ontology-manager`: the Manager Vite upstream on 5174; use the gateway
-  `/ontology-manager/` entry. Java requests go through the gateway, not Vite.
 
 Node 24+ and pnpm 9+ are required. Run `pnpm install`, then `pnpm dev`. Dependencies
 always use exact versions, never `^` or `~` ranges; the root `.npmrc` sets
 `save-exact=true`, so `pnpm add` writes exact versions.
 
 The Node service reads the product root `.env` (the process environment takes priority)
-and writes runtime data under the product root `data/`. The Ontology Manager proxies to
-`DATARAG_ORIGIN` from the environment or `.env`, otherwise to `DATA_QUERY_BASE_URL`, so by
-default it reaches the same DataRAG as the Node service; with neither set, startup fails. The
+and writes runtime data under the product root `data/`. Manager requests go through the gateway to the data engine. The
 Java data engine and PostgreSQL are prepared separately; this entry point
 starts only the three processes above and is not a full-stack start.
 
@@ -92,7 +87,7 @@ Maven unchanged (for example `-o`).
   resources and language. The sync rules match the container's: same-name files are
   overwritten, new ones are added, extra ones are kept, and `application.yml` is copied
   only when missing. The prompt language is `en`; this repository accepts only `PROMPT_LANG=en`.
-- Prepare the root `.env` from `.env.example`; Node, Java and the Manager share it.
+- Prepare the root `.env` from `.env.example`; Node and Java share it.
   Process variables take priority. A missing file is reported before Maven starts.
 - This entry point starts only the JVM; PostgreSQL must be ready separately.
   External MCP servers are configured in the agent runtime.
@@ -140,7 +135,7 @@ SQL runs only on the first initialization of an empty volume.
 Prepare the root `.env` from `.env.example`. Configure any independently managed
 external MCP servers in the agent runtime.
 
-Ports: Node 3000, the main web app 5173 and the Manager 5174 are fixed; PG uses `POSTGRES_PORT`
+Ports: Node 3000, the unified web app 5173 are fixed; PG uses `POSTGRES_PORT`
 (default 5432), Java uses `SERVER_PORT` from `.env` (default 18087). When a port is taken by
 another process, `up` reports the error and exits without stopping other processes. Each
 product root needs one install in its own root, so one `pnpm install` in the enterprise
@@ -149,5 +144,5 @@ assembly root already includes the adjacent public repository.
 Existing checkouts: merge the values from `apps/data-engine/.env` into the root `.env` once, resolve duplicate keys, then remove the old file. Java now follows the same process-environment priority as Node. Rename old keys and site YAML placeholders as described in [deployment configuration](../deploy/README.md#configuration).
 
 The browser entry for `pnpm dev:up` is `http://localhost:8080/`; the Manager is at
-`/ontology-manager/`. `PUBLIC_BASE_PATH` prefixes pages and APIs together. Docker runs
+`/#/ontology`. `PUBLIC_BASE_PATH` prefixes pages and APIs together. Docker runs
 the pinned Nginx base with the shared route template; no product image is built.

@@ -22,12 +22,18 @@ map $http_upgrade $connection_upgrade { default upgrade; "" ""; }
 # Each target includes the original query exactly once; proxy_pass must not append $args.
 map $request_uri $gateway_target {
   default "";
-  ~^${PUBLIC_BASE_PATH}/ontology-manager/(?<manager_raw>.*)$ http://$manager${MANAGER_MOUNT}$manager_raw;
   ~^${PUBLIC_BASE_PATH}/api/data-query(?:/(?<java_raw>[^?]*))?(?<java_query>\?.*)?$ http://$java/$java_raw$java_query;
   ~^${PUBLIC_BASE_PATH}/api/auth/(?<auth_raw>doLogin|verify|verifyByApiKey|verifyTicket|logout)(?<auth_query>\?.*)?$ http://$java/sso/$auth_raw$auth_query;
   ~^${PUBLIC_BASE_PATH}/${LEGACY_API_PREFIX}/(?<legacy_raw>.*)$ http://$java/$legacy_raw;
   ~^${PUBLIC_BASE_PATH}/(?<node_raw>(?:api|mcp)(?:/[^?]*)?(?:\?.*)?|config\.js(?:\?.*)?)$ http://$workbench/$node_raw;
   ~^${PUBLIC_BASE_PATH}/(?<web_raw>.*)$ http://$web${WEB_MOUNT}$web_raw;
+}
+
+map $request_uri $legacy_page_redirect {
+  default "";
+  ~^${PUBLIC_BASE_PATH}/ontology-manager(?:/|/index\.html)?(?:\?.*)?$ "${PUBLIC_BASE_PATH}/?__manager=1&$args";
+  ~^${PUBLIC_BASE_PATH}/ontology-manager/(?<old_page>.+)$ "${PUBLIC_BASE_PATH}/?__manager=1#/$old_page";
+  ~^${PUBLIC_BASE_PATH}/observe(?<ops_tail>(?:/[^?]*)?(?:\?.*)?)$ "${PUBLIC_BASE_PATH}/#/ops$ops_tail";
 }
 
 server {
@@ -38,7 +44,6 @@ server {
   resolver 127.0.0.11 valid=10s ipv6=off;
   set $workbench ${WORKBENCH_UPSTREAM};
   set $web ${WEB_UPSTREAM};
-  set $manager ${MANAGER_UPSTREAM};
   set $java ${JAVA_UPSTREAM};
   client_max_body_size 0;
   proxy_http_version 1.1;
@@ -64,13 +69,12 @@ server {
   location ~ ^${PUBLIC_BASE_PATH}$ {
     return 308 ${PUBLIC_BASE_PATH}/$is_args$args;
   }
-  location = ${PUBLIC_BASE_PATH}/ontology-manager {
-    return 308 ${PUBLIC_BASE_PATH}/ontology-manager/$is_args$args;
-  }
+  # The browser carries the original fragment across this redirect. Only the SPA maps page names.
   location = ${PUBLIC_BASE_PATH}/login.html {
-    return 302 "${PUBLIC_BASE_PATH}/ontology-manager/#/login";
+    return 302 "${PUBLIC_BASE_PATH}/#/login$is_args$args";
   }
   location / {
+    if ($legacy_page_redirect != "") { return 302 $legacy_page_redirect; }
     if ($gateway_target = "") { return 404; }
     proxy_pass $gateway_target;
   }

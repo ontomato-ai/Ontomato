@@ -11,7 +11,7 @@ const router = createRouter({
   history: createMemoryHistory(),
   routes: [
     { path: "/", component: { template: "<div />" } },
-    { path: "/observe/diagnosis", component: { template: "<div />" } },
+    { path: "/ops/diagnosis", component: { template: "<div />" } },
   ],
 });
 
@@ -28,18 +28,12 @@ function render(access: TurnDiagnosisAccess = ossAccess) {
   });
 }
 
-it("opens that run's diagnosis page in a new tab", async () => {
-  const open = vi.spyOn(window, "open").mockReturnValue(null);
+it("opens that run's diagnosis page in the platform router", async () => {
   await render().find("button").trigger("click");
-
-  const [href, target] = open.mock.calls[0];
-  const url = new URL(href as string, "http://localhost");
-  expect(url.pathname).toBe("/observe/diagnosis");
-  expect(url.searchParams.get("sourceSessionId")).toBe("session-1");
-  expect(url.searchParams.get("sourceRunId")).toBe("run-1");
-  expect(url.searchParams.get("diagnose")).toBe("1");
-  expect(target).toBe("_blank");
-  open.mockRestore();
+  await vi.waitFor(() => expect(router.currentRoute.value.path).toBe("/ops/diagnosis"));
+  expect(router.currentRoute.value.query).toMatchObject({
+    sourceSessionId: "session-1", sourceRunId: "run-1", diagnose: "1",
+  });
 });
 
 it("calls prepare once on mount and follows the assembled visibility reactively", async () => {

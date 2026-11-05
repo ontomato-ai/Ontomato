@@ -119,6 +119,7 @@ services:
       ONTOMATO_QUERY_SERVICE_TOKEN: ${ONTOMATO_QUERY_SERVICE_TOKEN:?Run the deployment configuration preparation first}
       AGENT_RUNTIME_CALLBACK_URL: http://ontomato:3000
       PORT: "3000"
+      ONTOLOGY_INITIAL_ROUTE: ${ONTOLOGY_INITIAL_ROUTE:-/playground}
       NODE_ENV: production
       TZ: ${TZ:-UTC}
     shm_size: "1gb"
@@ -137,22 +138,6 @@ services:
       datarag:
         condition: service_healthy
 
-  ontology-manager:
-    image: ${MANAGER_IMAGE:-ontomato-ontology-manager:deploy-${ARCH:?ARCH not set}}
-    platform: linux/${ARCH:?ARCH not set}
-    pull_policy: missing
-    restart: unless-stopped
-    environment:
-      ONTOLOGY_INITIAL_ROUTE: ${ONTOLOGY_INITIAL_ROUTE:-/playground}
-    logging:
-      driver: json-file
-      options:
-        max-size: "50m"
-        max-file: "5"
-    depends_on:
-      datarag:
-        condition: service_healthy
-
   gateway:
     image: ${GATEWAY_IMAGE:-ontomato-gateway:deploy-${ARCH:?ARCH not set}}
     platform: linux/${ARCH:?ARCH not set}
@@ -167,8 +152,6 @@ services:
       TRUSTED_PROXY_CIDR: ${TRUSTED_PROXY_CIDR:-127.0.0.1/32}
     depends_on:
       ontomato:
-        condition: service_started
-      ontology-manager:
         condition: service_started
       datarag:
         condition: service_healthy

@@ -365,7 +365,7 @@ async function deleteCaseSet() {
   try {
     await ElMessageBox.confirm(message, t("common.deleteConfirm"), {
       type: "warning",
-      confirmButtonText: t("common.confirm"),
+      confirmButtonText: t("common.confirmWorkbenchAction"),
       cancelButtonText: t("common.cancel"),
     });
     clearDraft();
@@ -497,7 +497,7 @@ watch(selectedCaseSetId, async (newId) => {
       await ElMessageBox.confirm(t("admin.unsavedChangesConfirm"), t("admin.switchConfirmTitle"), {
         distinguishCancelAndClose: true,
         confirmButtonText: t("admin.saveAndSwitch"),
-        cancelButtonText: t("admin.discardChanges"),
+        cancelButtonText: t("admin.discardWorkbenchChanges"),
         type: "warning",
       });
       const saved = await saveCases(prevLoadedId);

@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { computed, onMounted, provide, ref, toRef, useSlots, watch } from "vue";
+import { nextTick, computed, onMounted, provide, ref, toRef, useSlots, watch } from "vue";
 import { Menu } from "lucide-vue-next";
 import { defaultChartTheme, type ChartTheme } from "../chart-theme";
-import { shellContextKey } from "../context";
+import { shellContextKey, type ShellContext } from "../context";
 import type { AgentHostAgent, AgentHostRun, AgentHostRunStatus, AgentHostSession } from "@ontomato/contracts/agent-host";
 import type { AgentHostClient } from "../host";
 import type {
@@ -40,7 +40,7 @@ const props = withDefaults(
     /** One line naming the open page and its selection, appended to messages sent while a paired page is open. */
     pageContext?: string | null;
     /** Recognises an in-app address in an answer and returns how to open its page; null leaves it as text. */
-    pageLinks?: (href: string) => (() => void) | null;
+    pageLinks?: ShellContext["pageLink"];
   }>(),
   { artifactRenderers: () => [], toolRenderers: () => [], chartTheme: () => defaultChartTheme },
 );
@@ -114,6 +114,7 @@ function report(error: unknown) {
   emit("error", error instanceof Error ? error.message : String(error));
 }
 
+let initialAgentLoaded = false;
 async function loadAgents() {
   try {
     agents.value = await props.client.listAgents();
@@ -227,7 +228,8 @@ watch(
 watch(agentId, (_, previous) => {
   sessions.value = [];
   nextCursor.value = null;
-  if (previous !== null) startNew();
+  // Initial selection can replace a removed remembered agent while opening a bookmarked feature.
+  if (previous !== null && initialAgentLoaded) startNew();
   void loadSessions();
 });
 
@@ -239,6 +241,8 @@ onMounted(async () => {
   if (sessionId.value && pairedPage.value) pageView.value = "side";
   const requested = agentId.value;
   await loadAgents();
+  await nextTick();
+  initialAgentLoaded = true;
   // When the host's agent was valid the watcher did not fire, so load its sessions here.
   if (agentId.value && agentId.value === requested) void loadSessions();
 });

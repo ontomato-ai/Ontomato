@@ -3,7 +3,10 @@ import "element-plus/dist/index.css";
 import "element-plus/theme-chalk/dark/css-vars.css";
 // Design foundation shared with the workbench (type, spacing, shape, density, elevation, motion, component variables).
 import "@ontomato/design-tokens/foundation.css";
-import { Sparkles } from "lucide-vue-next";
+import { computed } from "vue";
+import { useTheme } from "../composables/useTheme";
+import { workbenchI18n, type SupportedLocale } from "../i18n";
+import { managerDestination } from "@ontomato/platform-admin/legacy-manager";
 import {
   createManager,
   managerNavigation,
@@ -15,17 +18,15 @@ import {
 } from "@ontomato/ontology-manager";
 import { managerMessageTree, type ManagerMessages } from "@ontomato/ontology-manager/i18n";
 import {
-  createPlatformI18n,
+  type PlatformPreferences,
   mergeMessages,
   type PlatformGroup,
-  type PlatformI18n,
-  type PlatformLink,
   type PlatformLocale,
   type PlatformNavigation,
   type PlatformPage,
 } from "@ontomato/platform-admin";
 import { readRuntimeConfig } from "./config";
-import { syncLocale, syncTheme, type LocalePreference, type ThemePreference } from "./preferences";
+export { readRuntimeConfig } from "./config";
 import { serviceHome } from "./view";
 import "./style.css";
 
@@ -44,9 +45,7 @@ export interface ManagerShellProfile {
 }
 
 /** The page's theme and language, shared by the layout, the Manager pages and the platform pages. */
-export interface ManagerShellPreferences extends ThemePreference, LocalePreference {
-  locales: readonly string[];
-}
+type ManagerShellPreferences = PlatformPreferences;
 
 const LEGACY_SESSION_KEYS = ["ontology_manager_token", "ontology_manager_api_key"];
 
@@ -72,8 +71,15 @@ export function discardLegacyLaunchCredential() {
 
 /** Starts the page's theme and language once; call it before mounting anything that reads them. */
 export function startShellPreferences(profile: ManagerShellProfile): ManagerShellPreferences {
+  const { isDark, setTheme } = useTheme();
+  const locale = workbenchI18n().global.locale;
   const locales = Object.keys(profile.messages);
-  return { ...syncTheme(), ...syncLocale(profile.locale, locales), locales };
+  return {
+    locales, locale,
+    setLocale(value) { if (locales.includes(value)) locale.value = value as SupportedLocale; },
+    theme: computed(() => isDark.value ? "dark" : "light"),
+    setTheme,
+  };
 }
 
 const STALE_BUILD_RELOAD_KEY = "ontology_manager_stale_build_reload";
@@ -113,21 +119,19 @@ export function serviceLocales(
   );
 }
 
-/** The page's one vue-i18n instance over `serviceLocales`. */
-export function createServiceI18n(
-  profile: ManagerShellProfile,
-  platformLocales: Readonly<Record<string, PlatformLocale>>,
-  preferences: ManagerShellPreferences
-) {
-  const locales = serviceLocales(profile, platformLocales);
-  return { locales, i18n: createPlatformI18n(locales, preferences.locale.value) };
+export function installServiceMessages(profile: ManagerShellProfile, platformLocales: Readonly<Record<string, PlatformLocale>>) {
+  const i18n = workbenchI18n();
+  for (const [locale, { messages }] of Object.entries(serviceLocales(profile, platformLocales))) {
+    i18n.global.mergeLocaleMessage(locale, messages);
+  }
+  return i18n;
 }
 
 /** The Manager pages' state for this page load, following the page's preferences and text. */
 export function createServiceManager(options: {
   profile: ManagerShellProfile;
   preferences: ManagerShellPreferences;
-  i18n: PlatformI18n;
+  i18n: { global: { t(key: string, params?: Record<string, unknown>): string } };
   credential: ManagerCredential;
   onAuthFailure: (status: ManagerAuthFailureStatus) => void;
 }) {
@@ -160,18 +164,17 @@ export function serviceNavigation(
 
 /** The root address's landing page for this deployment (see `serviceHome`). */
 export function startPage() {
-  return serviceHome(readRuntimeConfig().initialRoute);
+  return managerDestination(serviceHome(readRuntimeConfig().initialRoute));
 }
 
-/** The Agent Platform (the workbench, at the deployment root next to `ontology-manager/`), opened in a new tab. */
-export function agentPlatformLink(href: string): PlatformLink {
-  return { key: "agent-platform", titleKey: "platform.agentPlatform", icon: Sparkles, href };
-}
-
-/** The deployment root derived from the API root (`P/api` → `P/`), where the workbench lives. */
-export function deploymentRoot(apiBase: string) {
-  const url = new URL(apiBase, window.location.href);
-  return `${url.pathname.replace(/\/+$/, "").replace(/\/api$/, "")}/`;
+/** The gateway sends old Manager documents to the root with a source marker and their original fragment. */
+export function normalizeManagerEntry() {
+  const url = new URL(window.location.href);
+  if (!url.searchParams.has("__manager")) return;
+  discardLegacyLaunchCredential();
+  const path = window.location.hash.slice(1);
+  const target = path && path !== "/" ? managerDestination(path) : startPage();
+  window.history.replaceState(window.history.state, "", url.pathname + "#" + target);
 }
 
 /** Unmounts the page and shows only this status line (open source: a 401 has no sign-in to go to). */

@@ -7,7 +7,7 @@ import { openAccess } from "../navigation";
 import { ossPlatformPages, platformGroups } from "../pages";
 import type { PlatformApi } from "../api";
 import platformEn from "../locales/en";
-import { ossSystemConfig } from "../../../../apps/ontology-manager/src/system-config";
+import { ossSystemConfig } from "../../../../apps/workbench/web/src/manager/system-config";
 
 export function testI18n() {
   return createPlatformI18n({ en: { messages: platformEn, element: en } }, "en");
