@@ -60,7 +60,7 @@ public class PlatformScheduler {
     transactions.executeWithoutResult(
         tx -> {
           var ids =
-              store.db.queryForList(
+              store.jdbc().queryForList(
                   """
 SELECT id FROM platform_task WHERE enabled AND paused_reason IS NULL AND next_run_at<=?
 ORDER BY next_run_at,id LIMIT 100 FOR UPDATE SKIP LOCKED""",
@@ -69,7 +69,7 @@ ORDER BY next_run_at,id LIMIT 100 FOR UPDATE SKIP LOCKED""",
           for (var id : ids) {
             var t = store.get(id, false);
             var next = t.definition().next(t.nextRunAt(), now);
-            store.db.update(
+            store.jdbc().update(
                 "UPDATE platform_task SET next_run_at=? WHERE id=?", TaskStore.timestamp(next), id);
             boolean expiredCron =
                 "cron".equals(t.definition().frequency().path("kind").asText())
@@ -80,7 +80,7 @@ ORDER BY next_run_at,id LIMIT 100 FOR UPDATE SKIP LOCKED""",
     // Queue admission and execution are separately durable. Both manual and scheduled runs enter
     // here.
     for (var id :
-        store.db.queryForList(
+        store.jdbc().queryForList(
             "SELECT id FROM platform_task_run WHERE status='running' AND dispatched_at IS NULL"
                 + " ORDER BY started_at,id LIMIT 100",
             UUID.class)) submit(id);
@@ -121,7 +121,7 @@ ORDER BY next_run_at,id LIMIT 100 FOR UPDATE SKIP LOCKED""",
     boolean agent = "agent".equals(run.target().path("kind").asText());
     // A dispatched write is never submitted again. On a lost response only its outcome is
     // uncertain.
-    if (store.db.update(
+    if (store.jdbc().update(
             """
             UPDATE platform_task_run SET dispatched_at=now(),deadline=now()+interval '10 minutes'
             WHERE id=? AND status='running' AND dispatched_at IS NULL""",
@@ -139,7 +139,7 @@ ORDER BY next_run_at,id LIMIT 100 FOR UPDATE SKIP LOCKED""",
             });
       } else {
         int timeout = functions.timeout(t.domain());
-        store.db.update(
+        store.jdbc().update(
             "UPDATE platform_task_run SET deadline=now()+(? * interval '1 minute') WHERE id=?",
             Math.max(timeout, 1) + 1,
             id);
@@ -148,7 +148,7 @@ ORDER BY next_run_at,id LIMIT 100 FOR UPDATE SKIP LOCKED""",
               // This row lock lives exactly as long as execution. Recovery skips a live write on
               // any instance.
               if (store
-                  .db
+                  .jdbc()
                   .queryForList(
                       "SELECT id FROM platform_task_run WHERE id=? AND status='running' FOR UPDATE",
                       UUID.class,
@@ -233,7 +233,7 @@ ORDER BY next_run_at,id LIMIT 100 FOR UPDATE SKIP LOCKED""",
   void settle(Instant now) {
     // Visit every outstanding record; long-running turns cannot starve later rows.
     var ids =
-        store.db.queryForList(
+        store.jdbc().queryForList(
             "SELECT id FROM platform_task_run WHERE status='running' AND dispatched_at IS NOT NULL"
                 + " ORDER BY started_at,id",
             UUID.class);
@@ -253,7 +253,7 @@ ORDER BY next_run_at,id LIMIT 100 FOR UPDATE SKIP LOCKED""",
     if (t == null) return;
     boolean expired =
         Boolean.TRUE.equals(
-            store.db.queryForObject(
+            store.jdbc().queryForObject(
                 "SELECT EXISTS(SELECT FROM platform_task_run WHERE id=? AND deadline<=?)",
                 Boolean.class,
                 id,
@@ -263,7 +263,7 @@ ORDER BY next_run_at,id LIMIT 100 FOR UPDATE SKIP LOCKED""",
         transactions.executeWithoutResult(
             tx -> {
               if (!store
-                  .db
+                  .jdbc()
                   .queryForList(
                       "SELECT id FROM platform_task_run WHERE id=? AND status='running' FOR UPDATE"
                           + " SKIP LOCKED",
@@ -316,7 +316,7 @@ ORDER BY next_run_at,id LIMIT 100 FOR UPDATE SKIP LOCKED""",
     transactions.executeWithoutResult(
         tx -> {
           int count =
-              store.db.update(
+              store.jdbc().update(
                   """
 UPDATE platform_task_run SET status=?,result=?,spend_time=?,error_code=?,error_message=?,finished_at=now()
 WHERE id=? AND status='running'""",
@@ -328,7 +328,7 @@ WHERE id=? AND status='running'""",
                   run.id());
           if (count == 1 && pause != null) {
             // A renewal or target edit may already have corrected the cause of this run's failure.
-            store.db.update(
+            store.jdbc().update(
                 """
 UPDATE platform_task SET paused_reason=?,next_run_at=NULL WHERE id=? AND enabled AND target=?::jsonb
 AND (? <> 'credential_invalid' OR NOT EXISTS (SELECT FROM platform_task_credential

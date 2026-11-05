@@ -72,7 +72,7 @@ public class TaskCredentials {
   }
 
   void lockOwner(String domain, String owner) {
-    store.db.query(
+    store.jdbc().query(
         "SELECT pg_advisory_xact_lock(hashtextextended(?,0))", r -> {}, domain + "/" + owner);
   }
 
@@ -80,7 +80,7 @@ public class TaskCredentials {
   public void prepare(User user, boolean onlyRenew) {
     lockOwner(user.getDomainId(), user.getId());
     var states =
-        store.db.queryForList(
+        store.jdbc().queryForList(
             "SELECT valid FROM platform_task_credential WHERE domain_id=? AND owner_id=?",
             Boolean.class,
             user.getDomainId(),
@@ -90,7 +90,7 @@ public class TaskCredentials {
     if (!identity.interactiveLogin())
       throw new ResponseStatusException(HttpStatus.FORBIDDEN, "A login session is required");
     var sealed = seal(identity.issueKey(user), secret);
-    store.db.update(
+    store.jdbc().update(
         """
         INSERT INTO platform_task_credential VALUES(?,?,?,true)
         ON CONFLICT(domain_id,owner_id) DO UPDATE SET valid=true,sealed_key=EXCLUDED.sealed_key""",
@@ -99,7 +99,7 @@ public class TaskCredentials {
         sealed);
     for (var task : store.credentialPaused(user.getDomainId(), user.getId())) {
       Instant now = Instant.now();
-      store.db.update(
+      store.jdbc().update(
           "UPDATE platform_task SET paused_reason=NULL,next_run_at=? WHERE id=?",
           TaskStore.timestamp(task.definition().next(now, now)),
           task.id());
@@ -122,7 +122,7 @@ public class TaskCredentials {
 
   public String forOwner(String domain, String owner) {
     var rows =
-        store.db.queryForList(
+        store.jdbc().queryForList(
             "SELECT sealed_key FROM platform_task_credential WHERE domain_id=? AND owner_id=? AND"
                 + " valid",
             String.class,
@@ -138,7 +138,7 @@ public class TaskCredentials {
       readable = false;
     }
     if (readable && identity.accepts(key, domain, owner)) return key;
-    store.db.update(
+    store.jdbc().update(
         "UPDATE platform_task_credential SET valid=false WHERE domain_id=? AND owner_id=? AND"
             + " sealed_key IS NOT DISTINCT FROM ?",
         domain,

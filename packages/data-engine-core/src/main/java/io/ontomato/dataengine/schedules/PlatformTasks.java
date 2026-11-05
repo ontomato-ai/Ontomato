@@ -143,7 +143,7 @@ public class PlatformTasks {
     } else {
       if (!identity.permits(user, SAVE)) throw new ResponseStatusException(HttpStatus.FORBIDDEN);
       String id = d.target().get("functionId").asText();
-      store.db.queryForList("SELECT id FROM function WHERE id=? FOR UPDATE", String.class, id);
+      store.jdbc().queryForList("SELECT id FROM function WHERE id=? FOR UPDATE", String.class, id);
       functions.require(user.getDomainId(), id);
     }
   }
@@ -153,7 +153,7 @@ public class PlatformTasks {
     var user = current();
     var input = normalized(d);
     // Serialize creation for a given key, including attempts from other users.
-    store.db.query("SELECT pg_advisory_xact_lock(hashtextextended(?,1))", r -> {}, id.toString());
+    store.jdbc().query("SELECT pg_advisory_xact_lock(hashtextextended(?,1))", r -> {}, id.toString());
     var old = store.get(id, false);
     if (old != null) {
       if (old.domain().equals(user.getDomainId())
@@ -164,7 +164,7 @@ public class PlatformTasks {
     }
     prepare(user, input);
     if (input.isAgent()
-        && store.db.queryForObject(
+        && store.jdbc().queryForObject(
                 "SELECT count(*) FROM platform_task WHERE domain_id=? AND owner_id=?",
                 Integer.class,
                 user.getDomainId(),
@@ -179,7 +179,7 @@ public class PlatformTasks {
         locale,
         input.next(now, now));
     if (!enabled)
-      store.db.update("UPDATE platform_task SET enabled=false,next_run_at=NULL WHERE id=?", id);
+      store.jdbc().update("UPDATE platform_task SET enabled=false,next_run_at=NULL WHERE id=?", id);
     return new Created(view(store.get(id, false)), true);
   }
 
@@ -202,7 +202,7 @@ public class PlatformTasks {
     var t = accessible(id, user, SAVE, true);
     if (enabled) prepare(user, t.definition());
     var now = Instant.now();
-    store.db.update(
+    store.jdbc().update(
         "UPDATE platform_task SET enabled=?,paused_reason=NULL,next_run_at=?,updated_at=now() WHERE"
             + " id=?",
         enabled,
@@ -214,7 +214,7 @@ public class PlatformTasks {
   @Transactional
   public void delete(UUID id) {
     accessible(id, current(), DELETE, true);
-    store.db.update("DELETE FROM platform_task WHERE id=?", id);
+    store.jdbc().update("DELETE FROM platform_task WHERE id=?", id);
   }
 
   @Transactional

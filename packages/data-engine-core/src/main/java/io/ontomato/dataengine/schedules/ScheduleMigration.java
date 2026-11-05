@@ -148,24 +148,24 @@ public class ScheduleMigration {
   }
 
   void copy() {
-    store.db.execute("SELECT pg_advisory_xact_lock(42861475)");
-    if (exists(store.db, "platform_task_import")) {
+    store.jdbc().execute("SELECT pg_advisory_xact_lock(42861475)");
+    if (exists(store.jdbc(), "platform_task_import")) {
       checkSource();
       return;
     }
     if (Boolean.TRUE.equals(
-        store.db.queryForObject("SELECT EXISTS(SELECT FROM platform_task)", Boolean.class)))
+        store.jdbc().queryForObject("SELECT EXISTS(SELECT FROM platform_task)", Boolean.class)))
       throw new IllegalStateException("Import before creating new platform tasks");
     if (exists(node, "analysis_schedule_rules") && !exists(node, "scheduled_tasks"))
       throw new IllegalStateException(
           "Expected the agent-runtime scheduled_tasks baseline; preserve the older database");
     requireHistoryParent(node, "scheduled_task_runs", "scheduled_tasks");
-    requireHistoryParent(store.db, "write_task_result", "write_task");
+    requireHistoryParent(store.jdbc(), "write_task_result", "write_task");
     if (exists(node, "scheduled_task_credentials")) {
       for (var r : node.queryForList("SELECT * FROM scheduled_task_credentials")) {
         var domain = string(r, "domain_id");
         String plain = oldKey(string(r, "sealed_key"), sourceToken);
-        store.db.update(
+        store.jdbc().update(
             "INSERT INTO platform_task_credential VALUES(?,?,?,?)",
             domain,
             owner(domain, string(r, "owner_id")),
@@ -178,10 +178,10 @@ public class ScheduleMigration {
       if (exists(node, "scheduled_task_runs")) {
         // Stream the source by task, then catch any unrelated/orphan record with the total below.
         for (var t :
-            store.db.queryForList(
+            store.jdbc().queryForList(
                 "SELECT id FROM platform_task WHERE owner_id IS NOT NULL", UUID.class))
           for (var r : node.queryForList("SELECT * FROM scheduled_task_runs WHERE task_id=?", t))
-            store.db.update(
+            store.jdbc().update(
                 """
 INSERT INTO platform_task_run(id,task_id,target,session_id,trigger,status,error_code,error_message,
     started_at,finished_at,dispatched_at,deadline)
@@ -201,11 +201,11 @@ SELECT ?,id,target,?,?,?,?,?,?,?,?,? FROM platform_task WHERE id=?""",
       }
       compareCount(node, "scheduled_tasks", "platform_task");
     }
-    if (exists(store.db, "write_task")) {
-      for (var r : store.db.queryForList("SELECT * FROM write_task")) importFunction(r);
-      if (exists(store.db, "write_task_result")) {
+    if (exists(store.jdbc(), "write_task")) {
+      for (var r : store.jdbc().queryForList("SELECT * FROM write_task")) importFunction(r);
+      if (exists(store.jdbc(), "write_task_result")) {
         int rows =
-            store.db.update(
+            store.jdbc().update(
                 """
 INSERT INTO platform_task_run(id,task_id,target,trigger,status,started_at,finished_at,result,
     error_code,error_message,spend_time)
@@ -214,16 +214,16 @@ to_timestamp(r.execute_timestamp/1000.0),to_timestamp((r.execute_timestamp+coale
 r.result,CASE WHEN r.error IS NULL THEN NULL ELSE 'run_failed' END,r.error,r.spend_time
 FROM write_task_result r JOIN platform_task t ON t.id=r.write_task_id::uuid AND t.owner_id IS NULL""");
         if (rows
-            != store.db.queryForObject("SELECT count(*) FROM write_task_result", Integer.class))
+            != store.jdbc().queryForObject("SELECT count(*) FROM write_task_result", Integer.class))
           throw new IllegalStateException(
               "Orphan write_task_result; archive or restore its task before cutover");
       }
     }
-    store.db.execute(
+    store.jdbc().execute(
         "CREATE TABLE platform_task_import (completed_at timestamptz NOT NULL, source_database text"
             + " NOT NULL, source_schema text NOT NULL)");
     var source = sourceLocation();
-    store.db.update(
+    store.jdbc().update(
         "INSERT INTO platform_task_import VALUES(now(),?,?)",
         source.get("source_database"),
         source.get("source_schema"));
@@ -240,7 +240,7 @@ FROM write_task_result r JOIN platform_task t ON t.id=r.write_task_id::uuid AND 
 
   private void compareCount(JdbcTemplate source, String sourceTable, String targetTable) {
     long expected = source.queryForObject("SELECT count(*) FROM " + sourceTable, Long.class);
-    if (expected != store.db.queryForObject("SELECT count(*) FROM " + targetTable, Long.class))
+    if (expected != store.jdbc().queryForObject("SELECT count(*) FROM " + targetTable, Long.class))
       throw new IllegalStateException("Count mismatch in " + sourceTable);
   }
 
@@ -265,20 +265,20 @@ FROM write_task_result r JOIN platform_task t ON t.id=r.write_task_id::uuid AND 
               string(r, "notify_email"));
       d.validate();
       store.insert(id, domain, user, d, string(r, "locale"), null);
-      store.db.update(
+      store.jdbc().update(
           "INSERT INTO platform_task_credential VALUES(?,?,NULL,?) ON CONFLICT DO NOTHING",
           domain,
           user,
           oss);
       boolean valid =
-          store.db.queryForObject(
+          store.jdbc().queryForObject(
               "SELECT valid FROM platform_task_credential WHERE domain_id=? AND owner_id=?",
               Boolean.class,
               domain,
               user);
       String pause = string(r, "paused_reason");
       if ((boolean) r.get("enabled") && pause == null && !valid) pause = "credential_invalid";
-      store.db.update(
+      store.jdbc().update(
           "UPDATE platform_task SET"
               + " enabled=?,paused_reason=?,next_run_at=?,created_at=?,updated_at=? WHERE id=?",
           r.get("enabled"),
@@ -299,7 +299,7 @@ FROM write_task_result r JOIN platform_task t ON t.id=r.write_task_id::uuid AND 
       if (!serviceId.equals(r.get("service_id")))
         throw new IllegalStateException("Different SERVICE_ID");
       if (!Boolean.TRUE.equals(
-          store.db.queryForObject(
+          store.jdbc().queryForObject(
               """
 SELECT EXISTS(SELECT FROM function WHERE id=? AND domain_id=? AND operation=?
   AND coalesce(nullif(query_package::jsonb,'null'::jsonb)#>'{manifest,parameterDefs}', parameters::jsonb)='[]'::jsonb)""",
@@ -322,7 +322,7 @@ SELECT EXISTS(SELECT FROM function WHERE id=? AND domain_id=? AND operation=?
           };
       Instant now = Instant.now();
       store.insert(id, domain, null, d, "en", enabled ? d.next(now, now) : null);
-      store.db.update(
+      store.jdbc().update(
           """
 UPDATE platform_task SET enabled=?,created_at=coalesce(to_timestamp(?::bigint/1000.0),created_at),
 updated_at=coalesce(to_timestamp(?::bigint/1000.0),updated_at) WHERE id=?""",
@@ -342,7 +342,7 @@ updated_at=coalesce(to_timestamp(?::bigint/1000.0),updated_at) WHERE id=?""",
 
   private void checkSource() {
     if (!store
-        .db
+        .jdbc()
         .queryForMap("SELECT source_database,source_schema FROM platform_task_import")
         .equals(sourceLocation()))
       throw new IllegalStateException(
@@ -350,11 +350,11 @@ updated_at=coalesce(to_timestamp(?::bigint/1000.0),updated_at) WHERE id=?""",
   }
 
   void retire() {
-    if (!exists(store.db, "platform_task_import"))
+    if (!exists(store.jdbc(), "platform_task_import"))
       throw new IllegalStateException("Import has not committed");
     checkSource();
     node.execute(
         "DROP TABLE IF EXISTS scheduled_task_runs,scheduled_tasks,scheduled_task_credentials");
-    store.db.execute("DROP TABLE IF EXISTS write_task_result,write_task");
+    store.jdbc().execute("DROP TABLE IF EXISTS write_task_result,write_task");
   }
 }
