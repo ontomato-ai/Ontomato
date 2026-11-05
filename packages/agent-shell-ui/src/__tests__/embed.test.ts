@@ -1,8 +1,10 @@
-import { afterEach, describe, expect, it } from "vitest";
-import { createApp, h, nextTick, ref, type App } from "vue";
+/* eslint-disable vue/one-component-per-file -- each test defines the host component that owns the navigation */
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { createApp, defineComponent, h, nextTick, onMounted, ref, type App } from "vue";
 import AgentShell from "../components/AgentShell.vue";
 import { shellContextKey, type ShellContext } from "../context";
 import type { AgentHostClient } from "../host";
+import { useAgentNav } from "../useAgentNav";
 import type { ShellLabels, ShellWorkbenchDeclaration } from "../types";
 
 const workbench: ShellWorkbenchDeclaration = {
@@ -11,14 +13,66 @@ const workbench: ShellWorkbenchDeclaration = {
   features: [{ id: "dashboards", label: "Dashboards", icon: "dashboard", availability: "page" }],
 };
 
-/** A host that serves nothing: the shell only has to render, not to load. */
-function client(): AgentHostClient {
-  const empty = {
-    listAgents: async () => [],
-    listSessions: async () => ({ sessions: [], nextCursor: null }),
-    readHistory: async () => ({ messages: [], runs: [], cursor: null }),
-  };
-  return empty as unknown as AgentHostClient;
+const agentId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+const createdSessionId = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+const runId = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
+const streamId = "dddddddd-dddd-4ddd-8ddd-dddddddddddd";
+
+const labels = { placeholder: "Message", send: "Send", stop: "Stop" } as unknown as ShellLabels;
+
+/**
+ * A host port that records what the shell asks for, so the test can tell a second read from the first: a single
+ * navigation state reads the agents and sessions once, a forked one reads them twice.
+ */
+function client() {
+  const read = { agents: vi.fn(), sessions: vi.fn(), createSession: vi.fn(), startRun: vi.fn() };
+  read.agents.mockResolvedValue([
+    { id: agentId, name: "assistant", description: "", icon: null, enabled: true },
+  ]);
+  read.sessions.mockResolvedValue({ sessions: [], nextCursor: null });
+  read.createSession.mockResolvedValue({
+    id: createdSessionId,
+    agentId,
+    title: "",
+    origin: "user",
+    createdAt: new Date(0).toISOString(),
+    latestRun: null,
+  });
+  read.startRun.mockResolvedValue({
+    run: {
+      id: runId,
+      sessionId: createdSessionId,
+      status: "running",
+      stopReason: null,
+      errorMessage: null,
+      createdAt: new Date(0).toISOString(),
+      finishedAt: null,
+      resolvedSkills: [],
+      retrievals: [],
+    },
+    cursor: { runId, seq: 1, streamId },
+    messages: [],
+    pendingMessages: [],
+    toolExecutions: [],
+    artifacts: [],
+  });
+  const port = {
+    listAgents: read.agents,
+    listSessions: read.sessions,
+    createSession: read.createSession,
+    startRun: read.startRun,
+    subscribe: () => () => {},
+    readRun: vi.fn(),
+    readHistory: vi.fn(),
+    deleteSession: vi.fn(),
+    cancel: vi.fn(),
+    resolveArtifact: vi.fn(),
+    readArtifact: vi.fn(),
+    readRetrieval: vi.fn(),
+    readRetrievalRun: vi.fn(),
+    subscribeRetrieval: vi.fn(),
+  } as unknown as AgentHostClient;
+  return { port, read };
 }
 
 let app: App | null = null;
@@ -28,44 +82,113 @@ afterEach(() => {
   document.body.innerHTML = "";
 });
 
-async function render(embedded: boolean) {
+/**
+ * The platform shell's arrangement: the host owns one navigation state and draws the panel itself, so the panel's list
+ * and the conversation read and write the same sessions.
+ */
+/** Lets the host's mount-time loads (two awaits deep) settle before the test reads the result. */
+async function settle() {
+  for (let i = 0; i < 4; i++) {
+    await nextTick();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  }
+}
+
+async function renderEmbedded() {
   const root = document.createElement("div");
   document.body.appendChild(root);
-  app = createApp({
-    render: () =>
-      h(AgentShell, {
-        workbench,
-        client: client(),
-        labels: {} as ShellLabels,
-        embedded,
-      }),
+  const { port, read } = client();
+  const hostAgentId = ref<string | null>(agentId);
+  const sessionId = ref<string | null>(null);
+
+  const Host = defineComponent({
+    setup() {
+      const nav = useAgentNav({
+        client: () => port,
+        agentId: () => hostAgentId.value,
+        setAgentId: (id) => (hostAgentId.value = id),
+        sessionId: () => sessionId.value,
+        setSessionId: (id) => (sessionId.value = id),
+      });
+      // Embedded, loading is the host's: it is the one that draws the panel from this state.
+      onMounted(async () => {
+        await nav.loadAgents().catch(() => {});
+        await nav.loadSessions();
+      });
+      return () => [
+        // The application panel's half of the list.
+        h(
+          "ul",
+          { class: "panel-sessions" },
+          nav.sessions.value.map((session) => h("li", { class: "panel-session" }, session.title)),
+        ),
+        h(AgentShell, {
+          workbench,
+          client: port,
+          labels,
+          nav,
+          "onUpdate:agentId": (id: string | null) => (hostAgentId.value = id),
+          agentId: hostAgentId.value,
+          "onUpdate:sessionId": (id: string | null) => (sessionId.value = id),
+          sessionId: sessionId.value,
+        }),
+      ];
+    },
   });
-  app.provide(shellContextKey, { labels: ref({} as ShellLabels) } as unknown as ShellContext);
+
+  app = createApp(Host);
+  app.provide(shellContextKey, { labels: ref(labels) } as unknown as ShellContext);
   app.mount(root);
-  await nextTick();
-  await nextTick();
-  return root;
+  await settle();
+  return { root, read };
 }
 
 describe("embedded mode", () => {
   it("draws no sidebar of its own and no panel chrome", async () => {
-    const root = await render(true);
+    const { root } = await renderEmbedded();
     const shell = root.querySelector(".agent-shell");
     expect(shell?.classList.contains("embedded")).toBe(true);
     expect(root.querySelector(".shell-sidebar")).toBeNull();
-    // The conversation sits flat on the workspace: the panel border, radius and shadow are the host's business now.
+    expect(root.querySelector(".mobile-bar")).toBeNull();
     expect(root.querySelector(".shell-main")).not.toBeNull();
   });
 
-  it("keeps the standalone shell exactly as it was by default", async () => {
-    const root = await render(false);
+  it("builds no navigation state of its own: the host's agents and sessions are read once", async () => {
+    const { read, root } = await renderEmbedded();
+    // Only the host's load runs; a second navigation state inside the shell would read both again and pick an agent
+    // a second time. The composer is enabled from the host's single state, which proves that state reached the shell.
+    expect(read.agents).toHaveBeenCalledTimes(1);
+    expect(read.sessions).toHaveBeenCalledTimes(1);
+    expect(root.querySelector<HTMLTextAreaElement>("textarea")?.disabled).toBe(false);
+  });
+
+  it("shows a conversation created while sending in the host's panel list", async () => {
+    const { root } = await renderEmbedded();
+    const input = root.querySelector<HTMLTextAreaElement>("textarea");
+    expect(input).not.toBeNull();
+    input!.value = "How many orders last month?";
+    input!.dispatchEvent(new Event("input"));
+    await nextTick();
+    root.querySelector<HTMLFormElement>("form.composer")!.dispatchEvent(new Event("submit"));
+    await settle();
+
+    const entries = [...root.querySelectorAll(".panel-session")].map((node) => node.textContent);
+    expect(entries).toEqual(["How many orders last month?"]);
+  });
+
+  it("keeps the standalone shell's own sidebar when no navigation is passed", async () => {
+    const root = document.createElement("div");
+    document.body.appendChild(root);
+    const { port } = client();
+    const Standalone = defineComponent({
+      setup: () => () => h(AgentShell, { workbench, client: port, labels }),
+    });
+    app = createApp(Standalone);
+    app.provide(shellContextKey, { labels: ref(labels) } as unknown as ShellContext);
+    app.mount(root);
+    await settle();
     const shell = root.querySelector(".agent-shell");
     expect(shell?.classList.contains("embedded")).toBe(false);
     expect(root.querySelector(".shell-sidebar")).not.toBeNull();
-  });
-
-  it("leaves the mobile bar to the host when embedded", async () => {
-    const root = await render(true);
-    expect(root.querySelector(".mobile-bar")).toBeNull();
   });
 });

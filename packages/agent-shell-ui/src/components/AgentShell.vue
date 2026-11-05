@@ -4,7 +4,7 @@ import { Menu } from "lucide-vue-next";
 import { defaultChartTheme, type ChartTheme } from "../chart-theme";
 import { shellContextKey } from "../context";
 import type { AgentHostClient } from "../host";
-import { useAgentNav } from "../useAgentNav";
+import { useAgentNav, type AgentNav } from "../useAgentNav";
 import type {
   ArtifactRendererOverride,
   OpenArtifact,
@@ -25,7 +25,8 @@ import ShellSidebar from "./ShellSidebar.vue";
  * `brand`, `footer`, `feature` (feature pages), `artifact-actions` and `message-actions`.
  *
  * `embedded` is for a host that already draws the navigation around the shell: it renders the conversation area alone,
- * with no sidebar, gutter, radius or shadow.
+ * with no sidebar, gutter, radius or shadow, and it owns no navigation state of its own — the host passes its `nav`, so
+ * the panel beside the conversation and the conversation itself read and write one list.
  *
  * A feature declared `withConversation` follows the agent-app states (DESIGN "Agent apps"): conversation only, the
  * page beside the conversation, or the page full with a composer. Messages sent while such a page is open end with the
@@ -44,10 +45,14 @@ const props = withDefaults(
     pageContext?: string | null;
     /** Recognises an in-app address in an answer and returns how to open its page; null leaves it as text. */
     pageLinks?: (href: string) => (() => void) | null;
-    /** The host draws the navigation itself (the platform shell's application panel): no sidebar, no panel chrome. */
-    embedded?: boolean;
+    /**
+     * The host's navigation state, when the host draws the navigation itself (the platform shell's application panel).
+     * One instance is shared by that panel and this shell, so a conversation created while sending appears in the panel
+     * and the agents and sessions are read once. Embedded, this is required; standalone, the shell keeps its own.
+     */
+    nav?: AgentNav;
   }>(),
-  { artifactRenderers: () => [], toolRenderers: () => [], chartTheme: () => defaultChartTheme, embedded: false },
+  { artifactRenderers: () => [], toolRenderers: () => [], chartTheme: () => defaultChartTheme, nav: undefined },
 );
 const slots = useSlots();
 const emit = defineEmits<{ error: [message: string]; featureAction: [id: string] }>();
@@ -60,11 +65,14 @@ const openArtifact = ref<OpenArtifact | null>(null);
 const navOpen = ref(false);
 
 const conversation = useAgentConversation(() => props.client);
+/** Embedded means the host owns the navigation: it passes one `nav` and this shell must not build a second. */
+const embedded = computed(() => props.nav !== undefined);
+
 /**
- * The navigation state. Embedded, the host (the platform shell) owns it and drives its own second column; the shell keeps
- * it unused rather than forking the list into a second implementation.
+ * The navigation state: the host's when it passed one, otherwise the shell's own for its sidebar. Building a second one
+ * while embedded would show a stale list in the panel and read the agents and sessions twice.
  */
-const nav = useAgentNav({
+const ownNav = props.nav ? null : useAgentNav({
   client: () => props.client,
   agentId: () => agentId.value,
   setAgentId: (id) => (agentId.value = id),
@@ -76,6 +84,7 @@ const nav = useAgentNav({
     navOpen.value = false;
   },
 });
+const nav = props.nav ?? ownNav!;
 const { agents, sessions, sessionsState, nextCursor, currentAgent, loadSessions } = nav;
 const currentSession = computed(() => sessions.value.find((session) => session.id === sessionId.value));
 const currentFeature = computed(() => props.workbench.features.find((feature) => feature.id === featureId.value) ?? null);
@@ -207,6 +216,9 @@ defineExpose({ reloadAgents: loadAgentsFromHost });
 onMounted(async () => {
   // An address that names both a conversation and a paired page reopens them side by side.
   if (sessionId.value && pairedPage.value) pageView.value = "side";
+  // Embedded, the host loaded the agents and sessions for the panel it draws; reading them again here would duplicate
+  // both requests and could resolve the selected agent a second time.
+  if (embedded.value) return;
   const requested = agentId.value;
   await loadAgentsFromHost();
   // When the host's agent was valid the watcher did not fire, so load its sessions here.
@@ -217,7 +229,7 @@ onMounted(async () => {
 <template>
   <div
     class="agent-shell"
-    :class="{ 'nav-open': navOpen, 'panel-open': openArtifact, embedded: props.embedded }"
+    :class="{ 'nav-open': navOpen, 'panel-open': openArtifact, embedded }"
   >
     <div v-if="!embedded" class="nav-scrim" @click="navOpen = false" />
     <ShellSidebar

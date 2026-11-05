@@ -27,6 +27,9 @@ export interface AgentNavOptions {
  * Session titles and run states are kept here too: hosts hand them back after sending, so the list stays in step with
  * the open conversation without a second read.
  */
+/** The navigation state and actions one host owns; `AgentShell` and a platform panel share one instance. */
+export type AgentNav = ReturnType<typeof useAgentNav>;
+
 export function useAgentNav(options: AgentNavOptions) {
   const agents = ref<AgentHostAgent[]>([]);
   const sessions = ref<AgentHostSession[]>([]);
