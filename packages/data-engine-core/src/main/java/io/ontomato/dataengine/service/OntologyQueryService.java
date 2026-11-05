@@ -74,8 +74,26 @@ public class OntologyQueryService {
       item.put("description", c.get("classDesc"));
       list.add(item);
     }
+    var rule = rule(access);
     return Map.of(
-        "description", Objects.toString(rule(access).get("datasetdesc"), ""), "classes", list);
+        "description", Objects.toString(rule.get("datasetdesc"), ""),
+        "classes", list,
+        "relationships", overviewRelationships(rule, list));
+  }
+
+  /** The visible map: relationships whose two ends are both visible classes. */
+  static List<Object> overviewRelationships(Map<String, Object> rule, List<Object> classes) {
+    Set<Object> visible = new HashSet<>();
+    for (Object item : classes) visible.add(((Map<?, ?>) item).get("name"));
+    List<Object> relationships = new ArrayList<>();
+    if (rule.get("relationship_rule") instanceof Map<?, ?> rules)
+      rules.forEach((name, value) -> {
+        var relation = JSONObject.from(value);
+        if (visible.contains(relation.getString("fromclass")) && visible.contains(relation.getString("toclass")))
+          relationships.add(JSONObject.of("name", name, "from", relation.getString("fromclass"),
+              "to", relation.getString("toclass"), "description", relation.getString("desc")));
+      });
+    return relationships;
   }
 
   private JSONObject classSpecification(Map<String, Object> definition) {

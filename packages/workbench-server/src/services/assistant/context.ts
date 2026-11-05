@@ -10,7 +10,10 @@ export async function assistantOntologyContext(
   const response = await backendGet("assistant:ontology-overview",
     buildUrl(getApiConfig(), "/ontology/query/overview"), credentials);
   const overview = JSON.parse(response.text);
-  if (agent.class_names.length)
+  if (agent.class_names.length) {
     overview.classes = overview.classes.filter((cls: { name: string }) => agent.class_names.includes(cls.name));
+    overview.relationships = (overview.relationships ?? []).filter((rel: { from: string; to: string }) =>
+      agent.class_names.includes(rel.from) && agent.class_names.includes(rel.to));
+  }
   return JSON.stringify(overview);
 }
