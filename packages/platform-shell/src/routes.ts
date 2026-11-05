@@ -40,10 +40,10 @@ export const platformRoutes = {
   actions: { name: "Actions", path: "/ontology/assets/actions" },
   action: { name: "Action", path: "/ontology/assets/actions/:id" },
   knowledge: { name: "BusinessKnowledge", path: "/ontology/knowledge" },
+  /** One page for every scheduled task of the platform. */
   schedules: { name: "Schedules", path: "/schedules" },
-  agentTasks: { name: "AgentSchedules", path: "/schedules/agents" },
-  tasks: { name: "FunctionSchedules", path: "/schedules/functions" },
-  task: { name: "FunctionSchedule", path: "/schedules/functions/:id" },
+  /** The agent platform's own scheduled tasks: this agent's, listed by the same page. */
+  agentSchedules: { name: "AgentSchedules", path: "/agents/schedules" },
   permissions: { name: "Permissions", path: "/permissions" },
   models: { name: "ModelConfig", path: "/settings/model-config" },
   usage: { name: "ModelUsage", path: "/settings/model-config/usage" },

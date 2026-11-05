@@ -44,7 +44,6 @@ vi.mock("@ontomato/agent-shell-ui", () => ({
 }));
 vi.mock("../api", () => ({ getWorkbenchAppearance: async () => ({ brand: { name: "", logo: "", subtitle: "" } }) }));
 vi.mock("../../dashboard", () => ({ DashboardHome: { template: '<div class="dashboards" />' } }));
-vi.mock("../../scheduled-tasks", () => ({ ScheduledTasksPage: { template: '<div class="scheduled" />' } }));
 vi.mock("../assistant-host", () => ({
   createAssistantClient: () => ({}),
   createAssistantFeedback: () => ({}),

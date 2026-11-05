@@ -25,6 +25,7 @@ import TurnDiagnoseButton from "../../diagnosis/components/TurnDiagnoseButton.vu
 import ConversationActions from "./ConversationActions.vue";
 import DatasetActions from "./DatasetActions.vue";
 import WorkbenchAppearanceDialog from "./WorkbenchAppearanceDialog.vue";
+import AgentSchedulesView from "./AgentSchedulesView.vue";
 import { workbenchFeatures } from "../features";
 
 /**
@@ -62,7 +63,7 @@ const dashboards = useDashboardStore();
 const appearance = ref<WorkbenchAppearance | null>(null);
 const editingBrand = ref(false);
 const agentId = ref<string | null>(readRemembered());
-const featureRoutes = { dashboards: routes.dashboards, agents: routes.agents };
+const featureRoutes = { dashboards: routes.dashboards, agents: routes.agents, schedule: routes.agentSchedules };
 const featureId = computed<string | null>({
   get: () => Object.entries(featureRoutes).find(([, page]) => page.name === route.name)?.[0] ?? null,
   set: (id) => {
@@ -149,6 +150,12 @@ onMounted(async () => {
   await nav.loadSessions();
 });
 
+/** A scheduled run's conversation opens in this application, where the agent it ran belongs. */
+function openRunSession(sessionId: string) {
+  featureId.value = null;
+  conversationId.value = sessionId;
+}
+
 function openDashboard(id: string) {
   void dashboards.selectDashboard(id);
   featureId.value = "dashboards";
@@ -181,6 +188,11 @@ const agentsTab = computed(() => route.query.tab === "capabilities" ? "capabilit
     <template #feature="{ featureId: page }">
       <DashboardHome v-if="page === 'dashboards'" />
       <AgentsPage v-else-if="page === 'agents'" :can="props.can" :initial-tab="agentsTab" @changed="shell?.reloadAgents()" />
+      <AgentSchedulesView
+        v-else-if="page === 'schedule'"
+        :agent-id="agentId"
+        @open-session="openRunSession"
+      />
       <slot v-else name="feature" :feature-id="page" />
     </template>
     <template #artifact-actions="{ artifact }">

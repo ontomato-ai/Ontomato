@@ -479,6 +479,9 @@ importers:
       '@ontomato/platform-admin':
         specifier: workspace:*
         version: link:../platform-admin
+      '@ontomato/platform-schedules':
+        specifier: workspace:*
+        version: link:../platform-schedules
       '@ontomato/platform-shell':
         specifier: workspace:*
         version: link:../platform-shell
@@ -695,6 +698,9 @@ importers:
       '@ontomato/design-tokens':
         specifier: workspace:*
         version: link:../design-tokens
+      '@ontomato/platform-schedules':
+        specifier: workspace:*
+        version: link:../platform-schedules
       '@ontomato/platform-shell':
         specifier: workspace:*
         version: link:../platform-shell

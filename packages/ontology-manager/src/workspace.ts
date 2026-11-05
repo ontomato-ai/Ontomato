@@ -1,4 +1,4 @@
-export type AssetTab = "metrics" | "actions" | "tasks" | "functions";
+export type AssetTab = "metrics" | "actions" | "functions";
 export type ModelResource = "objects" | "attributes" | "relations";
 
 export interface OntologyResourceCounts {
@@ -8,7 +8,6 @@ export interface OntologyResourceCounts {
   metrics: number | null;
   actions: number | null;
   functions: number | null;
-  tasks: number | null;
 }
 
 export const emptyOntologyResourceCounts = (): OntologyResourceCounts => ({
@@ -18,5 +17,4 @@ export const emptyOntologyResourceCounts = (): OntologyResourceCounts => ({
   metrics: null,
   actions: null,
   functions: null,
-  tasks: null,
 });

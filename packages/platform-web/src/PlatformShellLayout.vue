@@ -96,7 +96,10 @@ function openSettings(appId: string, entryId: string) {
 }
 
 /** Language names: the platform's own tree names each supported locale. */
-const localeLabel = (locale: string) => t(`lang.${locale.replace("-", "")}`);
+/** Language names: the platform's own tree names each supported locale. */
+const localeNames = computed(() =>
+  Object.fromEntries(host.preferences.locales.map((code) => [code, t(`lang.${code.replace("-", "")}`)])),
+);
 
 const pageActions = usePageActionsOf();
 
@@ -118,7 +121,7 @@ const blocked = computed(() => {
     :shown-page="shownPage"
     :account="account"
     :preferences="preferences"
-    :locale-label="localeLabel"
+    :locale-names="localeNames"
     :labels="labels"
     :page-actions="pageActions"
     :blocked="blocked"

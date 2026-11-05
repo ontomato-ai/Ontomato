@@ -4,7 +4,6 @@ import {
   BookOpen,
   Boxes,
   ChartColumn,
-  Clock3,
   Link2,
   MousePointerClick,
   Network,
@@ -46,7 +45,6 @@ export const managerPaths = {
   dataBrowser: routes.data.path.split("/:")[0]!,
   metrics: routes.metrics.path,
   functions: routes.functions.path,
-  tasks: routes.tasks.path,
   knowledge: routes.knowledge.path,
 } as const;
 
@@ -84,7 +82,6 @@ const pages = [
   page(managerPaths.dataBrowser, "nav.dataBrowser", Table2, "ontology", ["data-browser"]),
   page(managerPaths.metrics, "nav.metrics", ChartColumn, "assets", MODELING, "metrics"),
   page(managerPaths.functions, "nav.functionDefinitions", SquareFunction, "assets", MODELING, "functions"),
-  page(managerPaths.tasks, "nav.scheduledWriteTasks", Clock3, "assets", MODELING, "tasks"),
   page(managerPaths.knowledge, "nav.businessKnowledge", BookOpen, "knowledge", ["business-knowledge"]),
 ];
 

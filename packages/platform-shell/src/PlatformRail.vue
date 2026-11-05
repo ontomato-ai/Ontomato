@@ -21,7 +21,7 @@ const props = defineProps<{
   brand?: { name: string; logo?: string };
   collapsed: boolean;
   /** The name of each supported language, for the account menu. */
-  localeLabel?: (locale: string) => string;
+  localeNames?: Readonly<Record<string, string>>;
 }>();
 
 const emit = defineEmits<{
@@ -185,7 +185,7 @@ onBeforeUnmount(() => document.removeEventListener("pointerdown", onDocumentPoin
           :account="account"
           :preferences="preferences"
           :labels="labels"
-          :locale-label="localeLabel"
+          :locale-names="localeNames"
           @close="closeMenu"
         />
       </div>

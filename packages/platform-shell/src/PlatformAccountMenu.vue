@@ -12,7 +12,7 @@ const props = defineProps<{
   preferences: PlatformPreferences;
   labels: PlatformShellLabels;
   /** The name of each supported language in its own terms; the account menu lists the languages by name. */
-  localeLabel?: (locale: string) => string;
+  localeNames?: Readonly<Record<string, string>>;
 }>();
 
 const emit = defineEmits<{ close: [] }>();
@@ -45,7 +45,7 @@ function signOut() {
         @click="chooseLocale(locale)"
       >
         <Languages :size="15" aria-hidden="true" />
-        <span>{{ localeLabel ? localeLabel(locale) : locale }}</span>
+        <span>{{ localeNames?.[locale] ?? locale }}</span>
         <Check v-if="preferences.locale === locale" :size="15" class="menu-check" aria-hidden="true" />
       </button>
       <div class="menu-divider" role="separator" />

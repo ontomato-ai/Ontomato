@@ -39,6 +39,7 @@
     "@ontomato/agent-shell-ui": "workspace:*",
     "@ontomato/contracts": "workspace:*",
     "@ontomato/design-tokens": "workspace:*",
+    "@ontomato/platform-schedules": "workspace:*",
     "@ontomato/platform-shell": "workspace:*",
     "codemirror": "6.0.2",
     "echarts": "6.0.0",

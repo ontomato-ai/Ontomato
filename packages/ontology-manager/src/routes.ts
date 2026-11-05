@@ -23,8 +23,8 @@ const VisualModeling = defineAsyncComponent(() => import("./visual-modeling/Visu
 const OntologyAssetDetail = defineAsyncComponent(() => import("./components/OntologyAssetDetail.vue"));
 const OntologyPlayground = defineAsyncComponent(() => import("./components/OntologyPlayground.vue"));
 
-const assetDetails = { metrics: routes.metric, actions: routes.action, functions: routes.function, tasks: routes.task };
-const ASSET_KINDS: readonly AssetTab[] = ["metrics", "actions", "functions", "tasks"];
+const assetDetails = { metrics: routes.metric, actions: routes.action, functions: routes.function };
+const ASSET_KINDS: readonly AssetTab[] = ["metrics", "actions", "functions"];
 
 const GraphPage = defineComponent({
   name: "ManagerGraphPage",

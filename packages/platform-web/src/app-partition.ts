@@ -28,7 +28,7 @@ const platformApps: readonly AppPartition[] = [
       {
         key: "agents:pages",
         titleKey: "platform.agentPlatform",
-        paths: [platformRoutes.dashboards.path, platformRoutes.agents.path],
+        paths: [platformRoutes.dashboards.path, platformRoutes.agents.path, platformRoutes.agentSchedules.path],
       },
     ],
   },

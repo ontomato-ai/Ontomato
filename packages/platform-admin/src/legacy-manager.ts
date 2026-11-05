@@ -9,7 +9,8 @@ const oldPages: Record<string, string> = {
   "/data": "/browser/data",
   "/assets/actions": routes.actions.path,
   "/assets/functions": routes.functions.path,
-  "/assets/tasks": routes.tasks.path,
+  // The scheduled tasks of functions are the platform's now: one page lists every task.
+  "/assets/tasks": routes.schedules.path,
   "/assets/metrics": routes.metrics.path,
   "/visual-modeling": routes.modeling.path,
   "/admin/ontology/visual-modeling": routes.modeling.path,

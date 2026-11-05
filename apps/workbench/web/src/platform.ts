@@ -11,6 +11,7 @@ import {
   observeRoutes,
   PlatformShellLayout,
   platformLayoutRoute,
+  schedulePages,
   startWorkbenchWeb,
   workbenchPages,
 } from "@ontomato/platform-web";
@@ -50,6 +51,7 @@ export function startPlatform() {
           ...observeRoutes.root,
           props: { account: null },
         }),
+        ...schedulePages(),
         ...ossServicePages(app, router),
       ], PlatformShellLayout),
       ...legacyAdminRoutes,

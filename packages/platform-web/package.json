@@ -17,6 +17,7 @@
     "@ontomato/design-tokens": "workspace:*",
     "@ontomato/ontology-manager": "workspace:*",
     "@ontomato/platform-admin": "workspace:*",
+    "@ontomato/platform-schedules": "workspace:*",
     "@ontomato/platform-shell": "workspace:*",
     "@ontomato/workbench-ui": "workspace:*",
     "element-plus": "2.13.6",
