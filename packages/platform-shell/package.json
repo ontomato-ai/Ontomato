@@ -5,7 +5,8 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
-    "./style.css": "./src/style.css"
+    "./style.css": "./src/style.css",
+    "./routes": "./src/routes.ts"
   },
   "scripts": {
     "typecheck": "vue-tsc --noEmit",
