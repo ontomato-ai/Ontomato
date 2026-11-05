@@ -61,6 +61,17 @@ export interface PlatformAppPanel {
   settings?: { id: string; label: string; icon: string };
 }
 
+/**
+ * What a page hands to the platform's page header: the unsaved marker and the Save / Discard actions of a page that
+ * holds one draft. The same shape the platform pages have always provided, so their pages do not change.
+ */
+export interface PlatformPageActions {
+  readonly dirty: boolean;
+  readonly saving: boolean;
+  save(): void;
+  discard(): void;
+}
+
 /** Fixed text the shell draws; the host supplies it from its own i18n. */
 export interface PlatformShellLabels {
   /** Name of the control that expands the rail. */
@@ -80,4 +91,8 @@ export interface PlatformShellLabels {
   opensInNewTab?: string;
   /** The application panel's navigation landmark. */
   pages: string;
+  /** The page header's own actions: shown only for a page that hands over a draft. */
+  save: string;
+  discard: string;
+  unsavedChanges: string;
 }

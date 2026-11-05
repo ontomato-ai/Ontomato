@@ -14,6 +14,9 @@ const labels: PlatformShellLabels = {
   signOut: "Sign out",
   opensInNewTab: "Opens in a new tab",
   pages: "Pages",
+  save: "Save",
+  discard: "Discard",
+  unsavedChanges: "Unsaved changes",
 };
 
 const apps: PlatformApp[] = [
