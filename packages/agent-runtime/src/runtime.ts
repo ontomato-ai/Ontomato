@@ -71,6 +71,8 @@ interface Active {
   outputBaseline: Map<string, string>;
   toolCalls: number;
   toolShapes: Map<string, number>;
+  // Arguments of the tool calls in progress: the end event does not carry them.
+  toolArgs: Map<string, unknown>;
 }
 /** Aborts a run on its own behalf with the reason the stop notice reports. */
 class RunStop extends Error {}
@@ -283,6 +285,7 @@ export class AgentRuntime {
         outputBaseline: new Map(),
         toolCalls: 0,
         toolShapes: new Map(),
+        toolArgs: new Map(),
       };
       // Register before any further await so a cancel that follows the admission response always
       // finds this run instead of returning it still running.
@@ -438,9 +441,12 @@ export class AgentRuntime {
       result.details.artifactIds = await this.collect(active, event.toolCallId);
       const envelope = await this.emit(active, { ...event, result });
       event.result.details = result.details;
-      this.enforceToolCallPolicy(active, event.toolName, event.args);
+      const args = active.toolArgs.get(event.toolCallId);
+      active.toolArgs.delete(event.toolCallId);
+      this.enforceToolCallPolicy(active, event.toolName, args);
       return envelope;
     }
+    if (event.type === "tool_execution_start") active.toolArgs.set(event.toolCallId, event.args);
     if (event.type === "tool_execution_update")
       return this.emit(active, {
         type: "tool_execution_update",
