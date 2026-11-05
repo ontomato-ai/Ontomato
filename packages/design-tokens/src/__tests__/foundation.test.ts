@@ -91,3 +91,18 @@ describe("foundation text colours", () => {
     });
   });
 });
+
+describe("foundation shell sizes", () => {
+  /*
+   * The platform rail holds applications only, so it is narrower than the old agent rail, and it uses its own
+   * variables rather than borrowing that rail's meaning.
+   */
+  it("declares the platform rail's own widths and its 36px toggle", () => {
+    expect(declarationsFor(":root")).toMatchObject({
+      "--shell-platform-rail": "188px",
+      "--shell-platform-rail-collapsed": "56px",
+      "--shell-rail-button": "36px",
+    });
+    expect(declarationsFor(":root")["--shell-platform-rail"]).not.toBe(declarationsFor(":root")["--shell-agent-rail"]);
+  });
+});

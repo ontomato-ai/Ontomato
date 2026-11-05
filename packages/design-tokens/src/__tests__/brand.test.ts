@@ -40,7 +40,13 @@ describe("brand generation", () => {
       const c = ossBrand[mode];
       const p = brandProperties(ossBrand, mode);
       expect(p).toMatchObject({
-        "--el-bg-color-page": c.canvas,
+        // The page background is the workspace band; the rail and panel of the platform shell use their own roles.
+        "--el-bg-color-page": c.workspace,
+        "--shell-rail-bg": c.rail,
+        "--shell-panel-bg": c.panel,
+        "--shell-workspace-bg": c.workspace,
+        "--shell-rail-selected": c.railSelected,
+        "--shell-panel-selected": c.panelSelected,
         "--el-bg-color": c.surface,
         "--el-bg-color-overlay": c.raised,
         "--el-fill-color": c.sunken,
@@ -117,6 +123,38 @@ describe("brand generation", () => {
   it("the chart palette has the eight categorical colours of each mode", () => {
     expect(ossBrand.dataviz.light).toHaveLength(8);
     expect(ossBrand.dataviz.dark).toHaveLength(8);
+  });
+
+  /**
+   * Three bands with no divider: light mode goes rail darkest, panel, workspace whitest; dark mode reverses it. The
+   * order is judged from the colours themselves, so a future palette is only kept if it still reads as three bands.
+   */
+  it("orders the three shell bands: rail darkest in light mode, lightest in dark mode", () => {
+    const light = ossBrand.light;
+    const dark = ossBrand.dark;
+    const lighter = (a: string, b: string) => contrastRatio(a, "#000000") > contrastRatio(b, "#000000");
+    expect(lighter(light.panel, light.rail)).toBe(true);
+    expect(lighter(light.workspace, light.panel)).toBe(true);
+    expect(lighter(dark.rail, dark.panel)).toBe(true);
+    expect(lighter(dark.panel, dark.workspace)).toBe(true);
+    // Selected rows stay visible on their own band.
+    for (const mode of ["light", "dark"] as const) {
+      const c = ossBrand[mode];
+      expect(contrastRatio(c.railSelected, c.rail)).toBeGreaterThan(1.04);
+      expect(contrastRatio(c.panelSelected, c.panel)).toBeGreaterThan(1.04);
+    }
+  });
+
+  it("borrows the open-source bands from existing steps, adding no colour", () => {
+    const steps = (mode: "light" | "dark") => {
+      const c = ossBrand[mode];
+      return [c.canvas, c.surface, c.raised, c.sunken, c.primarySoft];
+    };
+    for (const mode of ["light", "dark"] as const) {
+      const c = ossBrand[mode];
+      for (const role of [c.rail, c.panel, c.workspace, c.railSelected, c.panelSelected])
+        expect(steps(mode)).toContain(role);
+    }
   });
 
   it("the single-source guard finds declarations in stylesheets, components and TypeScript, not reads", () => {

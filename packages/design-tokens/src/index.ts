@@ -1,7 +1,7 @@
 import { contrastRatio, mix, rgbTriplet } from "./color";
 
 /** Colour arithmetic for consumers that derive further shades from a brand source (chart gradients, ramps). */
-export { mix, rgbTriplet } from "./color";
+export { contrastRatio, mix, rgbTriplet } from "./color";
 
 /*
  * @ontomato/design-tokens: the design foundation and the brand layer of docs/design/DESIGN.md as code, free of
@@ -43,8 +43,21 @@ export interface BrandColors {
   primaryHover: string;
   primaryPress: string;
   onPrimary: string;
-  /** Selected state (current nav row, selected table row). */
+  /** The selected state (current nav row, selected table row). */
   primarySoft: string;
+  /**
+   * The platform shell's three bands, darkest to lightest in light mode and the reverse in dark mode: the application
+   * rail, the application panel, and the workspace below them. They carry no divider between bands, only tone.
+   */
+  rail: string;
+  panel: string;
+  workspace: string;
+  /**
+   * The selected row inside the rail and inside the panel. Each band needs its own, because one selected fill cannot
+   * stay legible on two different band tones.
+   */
+  railSelected: string;
+  panelSelected: string;
   /**
    * Text drawn in the primary colour (links, active tab, active menu item, selected option) when it differs from
    * primary; such text uses primary otherwise. Needed when primary, chosen to carry on-primary text, is under 4.5:1
@@ -100,9 +113,17 @@ export function brandProperties(brand: BrandSource, mode: BrandMode): Record<str
     ...statusFamily("error", c.danger, c),
     ...statusFamily("info", c.info, c),
 
-    "--el-bg-color-page": c.canvas,
+    "--el-bg-color-page": c.workspace,
     "--el-bg-color": c.surface,
     "--el-bg-color-overlay": c.raised,
+
+    // The platform shell's bands. The rail and the panel of the other application sit on their own roles, so a page
+    // panel that fills with `surface` never shares a colour with the rail beside it.
+    "--shell-rail-bg": c.rail,
+    "--shell-panel-bg": c.panel,
+    "--shell-workspace-bg": c.workspace,
+    "--shell-rail-selected": c.railSelected,
+    "--shell-panel-selected": c.panelSelected,
 
     "--el-fill-color": c.sunken,
     "--el-fill-color-light": c.hover,
@@ -176,6 +197,8 @@ export function installBrandTheme(brand: BrandSource, doc: Document = document) 
 
 const BODY_TEXT = 4.5;
 const GRAPHIC = 3;
+/** Enough tone difference between two shell bands to see the edge with no divider drawn. */
+const BAND_SEPARATION = 1.04;
 
 /**
  * Contrast pairs DESIGN.md requires, per mode: text colours on every surface they sit on, the selected background
@@ -191,14 +214,27 @@ export function brandContrastFailures(brand: BrandSource): string[] {
       const ratio = contrastRatio(foreground, background);
       if (ratio < minimum) failures.push(`${mode} ${label}: ${ratio.toFixed(2)} < ${minimum}`);
     };
-    const backgrounds = { canvas: c.canvas, surface: c.surface, raised: c.raised, sunken: c.sunken, hover: c.hover, selected: c.primarySoft };
+    const backgrounds = {
+      canvas: c.canvas,
+      surface: c.surface,
+      raised: c.raised,
+      sunken: c.sunken,
+      hover: c.hover,
+      selected: c.primarySoft,
+      rail: c.rail,
+      panel: c.panel,
+      workspace: c.workspace,
+      railSelected: c.railSelected,
+      panelSelected: c.panelSelected,
+    };
     for (const role of ["ink", "ink2", "muted"] as const)
       for (const [name, background] of Object.entries(backgrounds)) check(`${role} on ${name}`, c[role], background, BODY_TEXT);
     check("placeholder on surface", c.placeholder, c.surface, BODY_TEXT);
     check("placeholder on raised", c.placeholder, c.raised, BODY_TEXT);
     for (const state of ["primary", "primaryHover", "primaryPress"] as const)
       check(`onPrimary on ${state}`, c.onPrimary, c[state], BODY_TEXT);
-    for (const name of ["canvas", "surface", "raised"] as const) check(`link on ${name}`, c.link ?? c.primary, c[name], BODY_TEXT);
+    for (const name of ["canvas", "surface", "raised", "rail", "panel", "workspace", "railSelected", "panelSelected"] as const)
+      check(`link on ${name}`, c.link ?? c.primary, c[name], BODY_TEXT);
     check("link on primary tint", c.link ?? c.primary, primaryTint(c), BODY_TEXT);
     for (const status of ["success", "warning", "danger", "info"] as const) {
       check(`${status} on surface`, c[status], c.surface, BODY_TEXT);
@@ -206,6 +242,10 @@ export function brandContrastFailures(brand: BrandSource): string[] {
     }
     check("accentInk on surface", c.accentInk, c.surface, BODY_TEXT);
     check("accentInk on accentSoft", c.accentInk, c.accentSoft, BODY_TEXT);
+    // The three bands carry no divider, so their tones alone must tell them apart; this is a separation floor, not a
+    // reading requirement.
+    check("rail and panel tones apart", c.rail, c.panel, BAND_SEPARATION);
+    check("panel and workspace tones apart", c.panel, c.workspace, BAND_SEPARATION);
     brand.dataviz[mode].forEach((color, index) => check(`chart ${index + 1} on surface`, color, c.surface, GRAPHIC));
   }
   return failures;
@@ -231,6 +271,7 @@ const guardColors: BrandColors = {
   canvas: "#000000", surface: "#000000", raised: "#000000", sunken: "#000000", hover: "#000000", line: "#000000",
   lineStrong: "#000000", ink: "#000000", ink2: "#000000", muted: "#000000", placeholder: "#000000", faint: "#000000",
   primary: "#000000", primaryHover: "#000000", primaryPress: "#000000", onPrimary: "#000000", primarySoft: "#000000",
+  rail: "#000000", panel: "#000000", workspace: "#000000", railSelected: "#000000", panelSelected: "#000000",
   accent: "#000000", accentInk: "#000000", accentSoft: "#000000", success: "#000000", warning: "#000000",
   danger: "#000000", info: "#000000",
 };
