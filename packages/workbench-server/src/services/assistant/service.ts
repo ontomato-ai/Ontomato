@@ -26,12 +26,11 @@ import {
   qualifiedTable as table,
 } from "../../infrastructure/postgres";
 import { getQueryTimeoutMs } from "../../config/query-settings";
-import { assistantStore, type AssistantOwner, type SessionRow } from "./store";
+import { assistantStore, type AssistantOwner, type SessionRow, type TurnRow } from "./store";
 import {
   messageText,
   runDefinition,
   userSkillEnvironment,
-  waitUntilStopped,
   type AssistantCredentials,
 } from "../../platform/agent-runtime/runtime";
 import { OntologyRetrievalClient } from "./ontology-retrieval";
@@ -42,9 +41,9 @@ import { HttpError } from "../../utils/errors";
 import { createLogger } from "../../logging/logger";
 const db = () => getPostgresPool(),
   logger = createLogger("assistant"),
-  observing = new Set<string>(),
   // Longer than any start() takes to admit a run, so an unadmitted turn older than this is not still starting.
-  ADMISSION_GRACE_MS = 10 * 60_000;
+  ADMISSION_GRACE_MS = 10 * 60_000,
+  RECONCILE_PAGE = 200;
 export { publicSnapshot } from "../../platform/agent-runtime/projection";
 import { publicMessages, publicSnapshot, publicRun, runStatusView } from "../../platform/agent-runtime/projection";
 type LatestRun = Parameters<typeof runStatusView>[0];
@@ -166,7 +165,6 @@ export const assistantService = {
   async history(id: string, owner: AssistantOwner, query: SessionHistoryQuery) {
     await assistantStore.session(id, owner);
     const page = await new RuntimeClient(owner.domainId).history(id, query);
-    if (page.latestRun) await this.gate(page.latestRun.run);
     const runs = await Promise.all(page.runs.map(async run => (await this.withRetrievals({ run }, owner)).run));
     // The live run view is the page's own run; the retrieval links on it come from the page's run
     // list when that list holds it, otherwise they are read once for this run.
@@ -185,7 +183,6 @@ export const assistantService = {
   async snapshot(id: string, owner: AssistantOwner) {
     const row = await assistantStore.session(id, owner),
       s = await new RuntimeClient(owner.domainId).session(id);
-    if (s.latestRun) await this.gate(s.latestRun.run);
     return {
       session: sessionView(await assistantStore.session(row.id, owner), s.latestRun?.run ?? null),
       messages: publicMessages(s.messages),
@@ -206,7 +203,6 @@ export const assistantService = {
   async readRun(sessionId: string, id: string, owner: AssistantOwner) {
     await this.ownRun(sessionId, id, owner);
     const s = await new RuntimeClient(owner.domainId).run(id);
-    await this.gate(s.run);
     return this.withRetrievals(s, owner);
   },
   /**
@@ -227,19 +223,8 @@ export const assistantService = {
       return s;
     }
   },
-  /**
-   * Every exit that hands a stopped run to a page closes the write gate first, so a page never sees the stop
-   * while the run can still write. Once the gate is closed this writes nothing.
-   */
-  async gate(run: { id: string; status: string }) {
-    if (run.status === "stopped") await assistantStore.close(run.id);
-  },
-  async closeGate(_sessionId: string, id: string) {
-    await assistantStore.close(id);
-  },
-  /** Everything owed after the stop, in order: the write gate, then the child retrievals. Safe to repeat. */
+  /** What a turn owes after it ends: closing its child retrievals in the ontology service. Safe to repeat. */
   async settleTurn(id: string, owner: AssistantOwner, credentials: AssistantCredentials = {}) {
-    await assistantStore.close(id);
     await this.stopChildren(id, owner, credentials);
     await assistantStore.settled(id);
   },
@@ -260,16 +245,6 @@ export const assistantService = {
     const session = await assistantStore.session(sessionId, owner),
       client = new RuntimeClient(owner.domainId);
     const a = await assistantStore.agent(session.agent_id, owner);
-    if (session.latest_run_id) {
-      // A previous turn that has stopped is settled before the next one opens.
-      try {
-        const previous = await assistantStore.turn(session.latest_run_id, owner);
-        if (!previous.settled && (await client.status(previous.id)).status === "stopped")
-          await this.settleTurn(previous.id, owner, credentials);
-      } catch (e) {
-        if (!(e instanceof HttpError && e.status === 404)) throw e;
-      }
-    }
     if (!a.enabled)
       throw new HttpError(409, "Agent disabled", "AGENT_DISABLED");
     const { row: turn, replayed } = await assistantStore.reserve(
@@ -296,8 +271,7 @@ export const assistantService = {
         credentials,
       );
     } catch (error) {
-      await assistantStore.close(id);
-      await this.stopChildren(id, owner, credentials);
+      await this.settleTurn(id, owner, credentials);
       throw error;
     }
     try {
@@ -353,12 +327,10 @@ export const assistantService = {
       try {
         const found = await client.run(id);
         await assistantStore.admitted(id, message);
-        this.observe(id, owner, credentials);
         return { snapshot: publicSnapshot(found), replayed };
       } catch (readError) {
         if (readError instanceof HttpError && readError.status === 404) {
-          await assistantStore.close(id);
-          await this.stopChildren(id, owner, credentials);
+          await this.settleTurn(id, owner, credentials);
         }
       }
       if (error instanceof HttpError && error.status === 410)
@@ -366,83 +338,55 @@ export const assistantService = {
       throw error;
     }
     await assistantStore.admitted(id, message);
-    this.observe(id, owner, credentials);
     return { snapshot: publicSnapshot(await client.run(id)), replayed };
   },
   /**
-   * Follows a running turn until the runtime reports the stop (or the turn's deadline passes), then settles it.
-   * A failure leaves the turn unsettled for the reconciliation sweep.
-   */
-  observe(
-    id: string,
-    owner: AssistantOwner,
-    credentials: AssistantCredentials,
-    startedAt = Date.now(),
-  ) {
-    if (observing.has(id)) return;
-    observing.add(id);
-    void (async () => {
-      try {
-        try {
-          await waitUntilStopped(new RuntimeClient(owner.domainId), id, {
-            deadline: startedAt + getQueryTimeoutMs(),
-          });
-        } catch (e) {
-          // The runtime no longer knows the run (deleted session, lost data): nothing more will happen to it.
-          if (!(e instanceof HttpError && e.status === 404)) throw e;
-        }
-        await this.settleTurn(id, owner, credentials);
-      } catch (e) {
-        logger.warn("Assistant run settlement deferred to reconciliation", {
-          runId: id,
-          error: e instanceof Error ? e.message : String(e),
-        });
-      } finally {
-        observing.delete(id);
-      }
-    })();
-  },
-  /**
-   * Finishes turns that still owe something: after a restart, a lost start response, or a failed settlement.
-   * Reads only this host's records and the runtime's lifecycle view; idempotent across instances.
+   * The one place a turn is finished after it ends, and repaired after a lost start response: walks every
+   * unsettled turn, reads the runtime's lifecycle view and leaves running ones for the next pass.
+   * Idempotent across instances.
    */
   async reconcile(now = Date.now()) {
-    for (const turn of await assistantStore.unsettled(200)) {
-      if (observing.has(turn.id)) continue;
-      const owner = { domainId: turn.domainId, userId: turn.userId },
-        client = new RuntimeClient(owner.domainId);
+    let after: { createdAt: Date; id: string } | undefined;
+    for (;;) {
+      const page = await assistantStore.unsettled(RECONCILE_PAGE, after);
+      for (const turn of page) await this.reconcileTurn(turn, now);
+      if (page.length < RECONCILE_PAGE) return;
+      after = { createdAt: page.at(-1)!.created_at, id: page.at(-1)!.id };
+    }
+  },
+  async reconcileTurn(turn: TurnRow & AssistantOwner, now: number) {
+    const owner = { domainId: turn.domainId, userId: turn.userId },
+      client = new RuntimeClient(owner.domainId);
+    try {
+      let view;
       try {
-        let view;
-        try {
-          view = await client.status(turn.id);
-        } catch (e) {
-          if (!(e instanceof HttpError && e.status === 404)) throw e;
-        }
-        if (!turn.admitted) {
-          // start() may still be admitting it; past the grace period it either reached the runtime or never will.
-          if (now - new Date(turn.created_at).getTime() < ADMISSION_GRACE_MS) continue;
-          if (view) {
-            const s = await client.run(turn.id);
-            await assistantStore.admitted(turn.id, messageText(
-              s.messages.find((m) => m.message.role === "user")?.message ?? { content: "" },
-            ));
-          } else {
-            // Blocks a late admission; a runtime that has no such session cannot admit it either.
-            try {
-              await client.request(`/v1/sessions/${turn.session_id}/run-intents/${turn.id}/cancel`, "POST", {});
-            } catch (e) {
-              if (!(e instanceof HttpError && e.status === 404)) throw e;
-            }
+        view = await client.status(turn.id);
+      } catch (e) {
+        if (!(e instanceof HttpError && e.status === 404)) throw e;
+      }
+      if (!turn.admitted) {
+        // start() may still be admitting it; past the grace period it either reached the runtime or never will.
+        if (now - new Date(turn.created_at).getTime() < ADMISSION_GRACE_MS) return;
+        if (view) {
+          const s = await client.run(turn.id);
+          await assistantStore.admitted(turn.id, messageText(
+            s.messages.find((m) => m.message.role === "user")?.message ?? { content: "" },
+          ));
+        } else {
+          // Blocks a late admission; a runtime that has no such session cannot admit it either.
+          try {
+            await client.request(`/v1/sessions/${turn.session_id}/run-intents/${turn.id}/cancel`, "POST", {});
+          } catch (e) {
+            if (!(e instanceof HttpError && e.status === 404)) throw e;
           }
         }
-        if (!view || view.status === "stopped") await this.settleTurn(turn.id, owner);
-        else this.observe(turn.id, owner, {}, new Date(turn.created_at).getTime());
-      } catch (e) {
-        logger.warn("Assistant turn reconciliation failed", {
-          runId: turn.id,
-          error: e instanceof Error ? e.message : String(e),
-        });
       }
+      if (!view || view.status === "stopped") await this.settleTurn(turn.id, owner);
+    } catch (e) {
+      logger.warn("Assistant turn reconciliation failed", {
+        runId: turn.id,
+        error: e instanceof Error ? e.message : String(e),
+      });
     }
   },
   async cancel(
@@ -472,8 +416,7 @@ export const assistantService = {
       if (runtime && runtime.run.sessionId !== sessionId)
         throw new HttpError(404, "Run not found");
     }
-    await assistantStore.close(id);
-    await this.stopChildren(id, owner, credentials);
+    await this.settleTurn(id, owner, credentials);
     const c = new RuntimeClient(owner.domainId);
     await c.request(
       `/v1/sessions/${sessionId}/run-intents/${id}/cancel`,
@@ -655,10 +598,10 @@ function feedbackView(row: Record<string, any>) {
   });
 }
 
-const RECONCILE_MS = 60_000;
+const RECONCILE_MS = 30_000;
 let reconcileTimer: ReturnType<typeof setInterval> | null = null;
 let reconciling = false;
-/** Runs the reconciliation once at startup and then every minute. */
+/** Runs the reconciliation once at startup and then every 30 seconds. */
 export function startAssistantReconciliation() {
   if (reconcileTimer) return;
   const tick = async () => {

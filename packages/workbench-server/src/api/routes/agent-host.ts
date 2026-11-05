@@ -4,8 +4,7 @@ import { z } from "zod";
 import { agentHostCreateSessionSchema, agentHostStartRunSchema } from "@ontomato/contracts/agent-host";
 import { runtimeRelativePathSchema } from "@ontomato/contracts/agent-runtime-values";
 import { RuntimeClient } from "../../infrastructure/agent-runtime/client";
-import { publicSnapshot, publicFrame, publicRun } from "../../platform/agent-runtime/projection";
-import { runtimeRunStatusQuerySchema } from "@ontomato/contracts/agent-runtime";
+import { publicSnapshot, publicFrame } from "../../platform/agent-runtime/projection";
 import { buildAttachmentContentDisposition } from "../utils/http";
 import { context, id, wrap } from "../utils/agent-host";
 import type { AgentHostService } from "../../services/agent-host/types";
@@ -113,30 +112,6 @@ router.post(
   }),
 );
 router.get(
-  "/sessions/:sessionId/runs/:runId/status",
-  wrap(async (req, res) => {
-    const c = context(req),
-      sessionId = id(req, "sessionId"),
-      runId = id(req, "runId");
-    const query = runtimeRunStatusQuerySchema.parse(req.query);
-    await service.ownRun(sessionId, runId, c.owner);
-    const gone = new AbortController();
-    res.on("close", () => gone.abort());
-    const client = new RuntimeClient(c.owner.domainId);
-    let run;
-    try {
-      run = query.waitFor
-        ? await client.waitStopped(runId, query.timeoutMs ?? 30000, gone.signal)
-        : await client.status(runId);
-    } catch (error) {
-      if (gone.signal.aborted) return;
-      throw error;
-    }
-    if (run.status === "stopped") await service.closeGate(sessionId, runId, c.owner);
-    if (!gone.signal.aborted) res.json({ run: publicRun(run) });
-  }),
-);
-router.get(
   "/sessions/:sessionId/runs/:runId/events",
   wrap(async (req, res) => {
     const c = context(req),
@@ -162,8 +137,6 @@ router.get(
         async (raw) => {
           const frame = publicFrame(raw);
           if (!frame) return;
-          if (frame.type === "event" && frame.envelope.event.type === "agent_end")
-            await service.closeGate(id(req, "sessionId"), runId, c.owner);
           res.write(
             `${frame.type === "event" ? `id: ${frame.envelope.cursor.seq}\n` : ""}event: runtime\ndata: ${JSON.stringify(frame)}\n\n`,
           );

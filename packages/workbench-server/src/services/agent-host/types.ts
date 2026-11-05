@@ -17,8 +17,6 @@ export interface AgentHostService {
   start(session: string, run: string, message: string, owner: AgentHostOwner, credentials: AssistantCredentials): Promise<AgentHostAdmission>;
   /** Rejects with 404 unless the run belongs to the owner's session, by the host's own records only. */
   ownRun(session: string, run: string, owner: AgentHostOwner): Promise<void>;
-  /** Called before a page is told that the run stopped: closes the host's write gate if it has one. */
-  closeGate(session: string, run: string, owner: AgentHostOwner): Promise<void>;
   readRun(session: string, run: string, owner: AgentHostOwner): Promise<RuntimeRunSnapshot>;
   cancel(session: string, run: string, owner: AgentHostOwner, credentials: AssistantCredentials): Promise<AgentHostCancelResponse>;
   artifact(session: string, artifact: string, owner: AgentHostOwner): Promise<RuntimeArtifact>;

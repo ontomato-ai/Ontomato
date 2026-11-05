@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, provide, ref, toRef, watch } from "vue";
+import { computed, provide, ref, toRef, watch } from "vue";
 import type { AgentHostAgent } from "@ontomato/contracts/agent-host";
 import type { AgentHostClient } from "../host";
 import { defaultChartTheme } from "../chart-theme";
@@ -118,19 +118,8 @@ watch(
   { immediate: true },
 );
 
-// The previous check gave up after 300 reads two seconds apart; the wait keeps the same ten-minute bound.
-const COMPLETION_WATCH_MS = 10 * 60_000,
-  COMPLETION_WAIT_STEP_MS = 30_000;
 let lastRunId: string | null = null;
 let reportedRunId: string | null = null;
-let completionWait: AbortController | null = null;
-let completionRunId: string | null = null;
-
-function stopCompletionWatch() {
-  completionWait?.abort();
-  completionWait = null;
-  completionRunId = null;
-}
 
 function emitRunComplete(sessionId: string, runId: string, ok: boolean) {
   if (reportedRunId === runId) return;
@@ -138,49 +127,16 @@ function emitRunComplete(sessionId: string, runId: string, ok: boolean) {
   emit("runComplete", { sessionId, runId, ok });
 }
 
-/**
- * The live conversation projection can lag behind the run row (or be reset while a new session is
- * opening). Read the authoritative run after sending so the draft request is never skipped just
- * because the SSE status was stale.
- */
-function startCompletionWatch(sessionId: string, runId: string) {
-  stopCompletionWatch();
-  completionRunId = runId;
-  const wait = new AbortController();
-  completionWait = wait;
-  const deadline = Date.now() + COMPLETION_WATCH_MS;
-  const check = async () => {
-    while (completionRunId === runId && reportedRunId !== runId && Date.now() < deadline) {
-      try {
-        const run = await props.client.waitRun(sessionId, runId, COMPLETION_WAIT_STEP_MS, wait.signal);
-        if (completionRunId !== runId) return;
-        if (run.status === "stopped") {
-          emitRunComplete(sessionId, runId, run.stopReason !== "aborted" && !run.errorMessage);
-          stopCompletionWatch();
-          return;
-        }
-      } catch {
-        if (wait.signal.aborted) return;
-        // The run may not be readable yet; try again shortly while the deadline allows it.
-        await new Promise((resolve) => setTimeout(resolve, 2000));
-      }
-    }
-  };
-  void check();
-}
-
 watch(
   () => conversation.activeRunId.value,
   (id) => {
-    if (!id) return;
-    lastRunId = id;
-    const sessionId = conversation.state.sessionId;
-    if (sessionId) startCompletionWatch(sessionId, id);
+    if (id) lastRunId = id;
   },
 );
-// Emit only when the run itself reaches "stopped". Watching `busy` also fires when opening a
-// freshly created session resets the conversation, which used to ask for a draft while the run
-// was still starting.
+// The one completion exit: the run's state in the conversation reaches "stopped", whichever way the conversation
+// learned it (the start response, the stream's final frame, or the snapshot read after a reconnect or reset).
+// Watching `busy` also fires when opening a freshly created session resets the conversation, which used to ask
+// for a draft while the run was still starting.
 watch(
   () => (lastRunId ? conversation.state.runs[lastRunId]?.status : undefined),
   (status) => {
@@ -189,11 +145,8 @@ watch(
     const sessionId = conversation.state.sessionId;
     if (!run || !sessionId) return;
     emitRunComplete(sessionId, lastRunId, run.stopReason !== "aborted" && !run.errorMessage);
-    stopCompletionWatch();
   },
 );
-
-onBeforeUnmount(stopCompletionWatch);
 
 async function send(text: string) {
   const result = await conversation.send(props.agentId, text);
@@ -204,7 +157,9 @@ async function send(text: string) {
   if (result.createdSession) emit("update:sessionId", result.createdSession.id);
   const sessionId =
     result.snapshot.run.sessionId ?? result.createdSession?.id ?? conversation.state.sessionId;
-  if (sessionId) startCompletionWatch(sessionId, result.snapshot.run.id);
+  const run = result.snapshot.run;
+  if (sessionId && run.status === "stopped")
+    emitRunComplete(sessionId, run.id, run.stopReason !== "aborted" && !run.errorMessage);
 }
 
 function report(error: unknown) {

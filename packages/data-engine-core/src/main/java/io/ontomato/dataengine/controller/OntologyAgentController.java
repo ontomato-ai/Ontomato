@@ -96,19 +96,6 @@ public class OntologyAgentController {
     return host.run(AgentJson.id(id), AgentJson.id(run), access.reader(req, id, run));
   }
 
-  @GetMapping("/sessions/{id}/runs/{run}/status")
-  public Object status(
-      @PathVariable String id,
-      @PathVariable String run,
-      @RequestParam(required = false) String waitFor,
-      @RequestParam(required = false, defaultValue = "30000") long timeoutMs,
-      HttpServletRequest req)
-      throws Exception {
-    if (waitFor != null && !"stopped".equals(waitFor)) throw AgentHttpException.invalid("waitFor must be stopped");
-    if (timeoutMs < 0 || timeoutMs > 60_000) throw AgentHttpException.invalid("timeoutMs must be between 0 and 60000");
-    return host.waitRun(AgentJson.id(id), AgentJson.id(run), access.reader(req, id, run), waitFor != null, timeoutMs);
-  }
-
   @PostMapping("/sessions/{id}/runs/{run}/cancel")
   public Object cancel(@PathVariable String id, @PathVariable String run, HttpServletRequest req)
       throws Exception {

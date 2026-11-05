@@ -205,11 +205,16 @@ context marks a missing tool result as unknown outcome without altering history.
 HTTP/SSE transport failure does not change run state. Hosts retry reads and use
 the authoritative snapshot after reconnection.
 
-Hosts learn that a run stopped from the runtime instead of re-reading snapshots:
-`GET /v1/runs/:id/status?waitFor=stopped` returns as soon as the stop is
-committed, or with the run still running after `timeoutMs`; a host keeps waiting
-by repeating it. A dropped wait says nothing about the run. After a runtime
-restart every unfinished run is already stopped, so the next wait returns at once.
+Pages follow a run through its event stream and snapshots. Hosts ask
+`GET /v1/runs/:id/status` instead of re-reading snapshots: it returns only the
+lifecycle view, without events or the session lock. A host that owes something
+after a run ends (closing child work, delivering results) scans its own pending
+records and reads this view, skipping runs still running; a write entry checks it
+before accepting a skill callback. A caller that must hold its request until the
+run ends adds `waitFor=stopped`: it returns as soon as the stop is committed, or
+with the run still running after `timeoutMs`, and the caller repeats it. A dropped
+wait says nothing about the run. After a runtime restart every unfinished run is
+already stopped, so the next read or wait answers at once.
 
 Existing ordered PI lifecycle events remain. agent_end contains the same
 RunState as the committed run. Tool errors remain PI tool-result errors and may

@@ -331,8 +331,13 @@ class OntologyRetrievalContractTest {
     if (fixture != null) Files.writeString(Path.of(fixture), wire);
     runs.get(run).getJSONObject("run").put("status", "stopped");
     runs.get(run).getJSONObject("run").put("stopReason", "error");
+    // Reading the run is only a read; the recovery pass that finishes the stopped run closes its write gate.
     http.perform(get("/ontology/ai/sessions/" + retrievalId + "/runs/" + run))
         .andExpect(status().isOk());
+    assertTrue(store.run(retrievalId, run, owner).getBooleanValue("open"));
+    retrieval.recover();
+    for (int attempt = 0; attempt < 200 && store.run(retrievalId, run, owner).getBooleanValue("open"); attempt++)
+      Thread.sleep(10);
     assertThrows(AgentHttpException.class,
         () -> store.transaction(() -> store.gate(retrievalId, run, owner)));
     http.perform(
