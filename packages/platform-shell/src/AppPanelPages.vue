@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { PlatformPanelGroup } from "./types";
-import { appIcon } from "./icons";
+import { resolveIcon } from "./icons";
 
 /**
  * The pages of an application that has only pages (the ontology manager, the object browser, platform settings), listed
@@ -21,7 +21,7 @@ const emit = defineEmits<{ selectPage: [id: string] }>();
           aria-disabled="true"
           :title="page.unavailableHint"
         >
-          <component :is="appIcon(page.icon)" class="page-icon" :size="16" aria-hidden="true" />
+          <component :is="resolveIcon(page.icon)" class="page-icon" :size="16" aria-hidden="true" />
           <span class="page-label">{{ page.label }}</span>
         </span>
         <button
@@ -32,7 +32,7 @@ const emit = defineEmits<{ selectPage: [id: string] }>();
           :aria-current="page.id === activePageId ? 'page' : undefined"
           @click="emit('selectPage', page.id)"
         >
-          <component :is="appIcon(page.icon)" class="page-icon" :size="16" aria-hidden="true" />
+          <component :is="resolveIcon(page.icon)" class="page-icon" :size="16" aria-hidden="true" />
           <span class="page-label">{{ page.label }}</span>
           <span v-if="page.count !== null && page.count !== undefined" class="page-count">{{ page.count }}</span>
         </button>

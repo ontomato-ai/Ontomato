@@ -44,4 +44,9 @@ export function appIcon(name: string): Component {
   return appIcons[name] ?? Circle;
 }
 
+/** An icon the shell was given: a component stays as it is, a name resolves through the curated set. */
+export function resolveIcon(icon: string | Component): Component {
+  return typeof icon === "string" ? appIcon(icon) : icon;
+}
+
 export { ExternalLink };

@@ -34,11 +34,17 @@ export interface PlatformPreferences {
   setTheme(theme: "light" | "dark"): void;
 }
 
+/**
+ * An icon the column shows: a name from the shell's curated set, or a component the application already carries (the
+ * ontology manager's pages hold their own icons, and the column shows them as they are).
+ */
+export type PlatformIcon = string | import("vue").Component;
+
 /** One page of an application that only has pages; the host groups and orders them. */
 export interface PlatformPanelPage {
   id: string;
   label: string;
-  icon: string;
+  icon: PlatformIcon;
   /** Count shown at the end of the row; null or absent shows none. */
   count?: number | null;
   /** Shown disabled with this hint (a page the application has not taken over yet). */
@@ -58,7 +64,7 @@ export interface PlatformAppPanel {
   /** The application's name at the top of the panel. */
   label: string;
   /** The application's own entry at the bottom of the panel (smart-agent settings, the diagnosis model). */
-  settings?: { id: string; label: string; icon: string };
+  settings?: { id: string; label: string; icon: PlatformIcon };
 }
 
 /**

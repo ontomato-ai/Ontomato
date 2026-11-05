@@ -4,12 +4,13 @@ export { default as PlatformAccountMenu } from "./PlatformAccountMenu.vue";
 export { default as AppPanel } from "./AppPanel.vue";
 export { default as AppPanelPages } from "./AppPanelPages.vue";
 export { default as PlatformPageHeader } from "./PlatformPageHeader.vue";
-export { appIcon } from "./icons";
+export { appIcon, resolveIcon } from "./icons";
 export { platformPath, platformRoutes } from "./routes";
 export type {
   PlatformAccount,
   PlatformApp,
   PlatformAppPanel,
+  PlatformIcon,
   PlatformPageActions,
   PlatformPanelGroup,
   PlatformPanelPage,

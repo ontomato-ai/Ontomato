@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { PlatformAppPanel } from "./types";
-import { appIcon } from "./icons";
+import { resolveIcon } from "./icons";
 
 /**
  * The second column of an application: its name, its own bottom entry (the app's settings) and, in between, whatever
@@ -23,7 +23,7 @@ const emit = defineEmits<{ openSettings: [id: string] }>();
     </nav>
     <div v-if="panel.settings" class="panel-footer">
       <button type="button" class="settings-row" @click="emit('openSettings', panel.settings!.id)">
-        <component :is="appIcon(panel.settings.icon)" class="settings-icon" :size="16" aria-hidden="true" />
+        <component :is="resolveIcon(panel.settings.icon)" class="settings-icon" :size="16" aria-hidden="true" />
         <span class="settings-label">{{ panel.settings.label }}</span>
       </button>
     </div>
