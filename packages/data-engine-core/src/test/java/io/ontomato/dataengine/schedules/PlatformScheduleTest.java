@@ -1,13 +1,16 @@
 package io.ontomato.dataengine.schedules;
 
+import static org.awaitility.Awaitility.await;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.ontomato.dataengine.bean.PythonExecuteResult;
 import io.ontomato.dataengine.bean.function.Function;
+import io.ontomato.dataengine.config.BusinessConfig;
 import io.ontomato.dataengine.dao.FunctionDao;
 import io.ontomato.dataengine.service.*;
 import io.ontomato.dataengine.service.sys.bean.UserDetail;
@@ -17,13 +20,24 @@ import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicReference;
+import javax.sql.DataSource;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.aop.support.AopUtils;
+import org.springframework.context.annotation.AnnotationConfigApplicationContext;
+import org.springframework.dao.annotation.PersistenceExceptionTranslationPostProcessor;
+import org.springframework.http.MediaType;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.DataSourceTransactionManager;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.annotation.EnableTransactionManagement;
 import org.springframework.transaction.support.TransactionTemplate;
 
 class PlatformScheduleTest extends PostgresTestDatabase {
+  @EnableTransactionManagement(proxyTargetClass = true)
+  static class Transactions {}
+
   private final ObjectMapper json = new ObjectMapper();
   private TaskStore store;
   private TransactionTemplate transactions;
@@ -105,6 +119,96 @@ INSERT INTO function (id,domain_id,operation,parameters,query_package,modify_tim
         json.createObjectNode().put("kind", "interval").put("unit", "hour").put("every", 1),
         "Asia/Shanghai",
         null);
+  }
+
+  @Test
+  void springRepositoryProxyServesTargetsCreatesTaskAndRunsDueSlot() throws Exception {
+    var user = new UserDetail();
+    user.setId("alice");
+    user.setDomainId("sales");
+    var auth = mock(IdentityService.class);
+    when(auth.getCurrentUser()).thenReturn(user);
+    var permissions = mock(ScheduleIdentity.class);
+    when(permissions.permits(user, ScheduleIdentity.FunctionOperation.LIST)).thenReturn(true);
+    when(permissions.permits(user, ScheduleIdentity.FunctionOperation.SAVE)).thenReturn(true);
+    var configs = mock(BusinessConfigService.class);
+    when(configs.get("sales")).thenReturn(new BusinessConfig());
+    var programs = mock(ABCProgramService.class);
+    var result = new PythonExecuteResult();
+    result.setResult("balances posted");
+    when(programs.execute(
+            anyString(),
+            any(Function.class),
+            isNull(),
+            any(),
+            anyString(),
+            anyString(),
+            anyInt(),
+            eq("sales")))
+        .thenReturn(new Object[] {null, result});
+
+    try (var context = new AnnotationConfigApplicationContext()) {
+      context.register(Transactions.class, PersistenceExceptionTranslationPostProcessor.class);
+      context.registerBean(DataSource.class, () -> dataSource);
+      context.registerBean(JdbcTemplate.class, () -> jdbc);
+      context.registerBean(ObjectMapper.class, () -> json);
+      context.registerBean(PlatformTransactionManager.class, transactions::getTransactionManager);
+      context.registerBean(TransactionTemplate.class, () -> transactions);
+      context.registerBean(IdentityService.class, () -> auth);
+      context.registerBean(ScheduleIdentity.class, () -> permissions);
+      context.registerBean(BusinessConfigService.class, () -> configs);
+      context.registerBean(ABCProgramService.class, () -> programs);
+      context.registerBean(LangService.class, () -> mock(LangService.class));
+      context.register(
+          FunctionDao.class,
+          TaskStore.class,
+          FunctionTarget.class,
+          TaskCredentials.class,
+          AgentHost.class,
+          TaskMail.class,
+          PlatformTasks.class,
+          PlatformTaskController.class,
+          PlatformScheduler.class);
+      context.refresh();
+
+      assertTrue(AopUtils.isCglibProxy(context.getBean(TaskStore.class)));
+      var http =
+          MockMvcBuilders.standaloneSetup(context.getBean(PlatformTaskController.class)).build();
+      String path = "/platform/scheduled-tasks";
+      var targets =
+          http.perform(get(path + "/function-targets"))
+              .andExpect(status().isOk())
+              .andReturn()
+              .getResponse();
+      assertEquals(
+          function, json.readTree(targets.getContentAsByteArray()).get(0).get("id").asText());
+
+      var id = UUID.randomUUID();
+      var created =
+          http.perform(
+                  post(path)
+                      .header("Idempotency-Key", id.toString())
+                      .contentType(MediaType.APPLICATION_JSON)
+                      .content(json.writeValueAsBytes(task(false))))
+              .andExpect(status().isCreated())
+              .andReturn()
+              .getResponse();
+      assertEquals(
+          id.toString(), json.readTree(created.getContentAsByteArray()).get("id").asText());
+      jdbc.update("UPDATE platform_task SET next_run_at=now()-interval '1 second' WHERE id=?", id);
+      context.getBean(PlatformScheduler.class).tick();
+      await()
+          .atMost(Duration.ofSeconds(5))
+          .untilAsserted(
+              () ->
+                  assertEquals(
+                      List.of("balances posted"),
+                      jdbc.queryForList(
+                          "SELECT result FROM platform_task_run WHERE task_id=? AND"
+                              + " trigger='schedule' AND status='completed'",
+                          String.class,
+                          id)));
+    }
   }
 
   @Test

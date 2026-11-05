@@ -20,7 +20,7 @@ import org.springframework.stereotype.Repository;
 @Repository
 @DependsOn("functionDao")
 public class TaskStore {
-  final JdbcTemplate db;
+  private final JdbcTemplate db;
   private final ObjectMapper mapper;
   private final DataSource source;
 
@@ -28,6 +28,10 @@ public class TaskStore {
     this.db = db;
     this.mapper = mapper;
     this.source = source;
+  }
+
+  JdbcTemplate jdbc() {
+    return db;
   }
 
   @PostConstruct
