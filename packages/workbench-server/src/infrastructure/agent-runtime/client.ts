@@ -1,3 +1,4 @@
+import { runtimeMessageSchema } from "@ontomato/contracts/agent-runtime-messages";
 import { runtimeSessionHistorySchema, type SessionHistoryQuery } from "@ontomato/contracts/session-history";
 import { modelOptionsSchema } from "@ontomato/contracts/model-settings";
 import { correlationId as normalizeCorrelationId, getServiceLogContext, logHeaders, withServiceLogContext } from "@ontomato/service-logging";
@@ -167,6 +168,9 @@ export class RuntimeClient {
     return runtimeRunStatusResponseSchema.parse(
       await this.request(`/v1/runs/${encodeURIComponent(id)}/status`),
     ).run;
+  }
+  async finalReply(id: string) {
+    return runtimeMessageSchema.nullable().parse(await this.request(`/v1/runs/${encodeURIComponent(id)}/final-reply`));
   }
   /** Returns when the run stops, or still running after timeoutMs (at most 60 s). */
   async waitStopped(id: string, timeoutMs: number, signal?: AbortSignal) {

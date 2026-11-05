@@ -25,7 +25,7 @@ node skills/ops-diagnosis/scripts/ops.mjs knowledge '{"path":"index.md"}'
 ```
 
 The query example is only an input shape: supply valid read DSL steps from current
-metadata. No raw SQL, Action, WriteTask, Python execution or environment mutation
+metadata. No raw SQL, Action, scheduled function execution, Python execution or environment mutation
 is exposed. `session` takes owner/sessionId. `artifact` defaults to metadata;
 `content:true` reads immutable bytes, and optional `out:"work/source.ext"` saves
 those bytes in the local working directory. It never reads a server path.

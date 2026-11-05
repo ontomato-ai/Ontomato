@@ -1,37 +1,12 @@
 import { z } from "zod";
 import { runtimeIdSchema, runtimeTimestampSchema } from "./agent-runtime-values";
 
-/**
- * Scheduled tasks of the workbench: a prompt that an agent runs for its owner on a schedule, each run in a new
- * conversation. Times of day are wall-clock times of the server's schedule time zone.
- */
-const timeOfDaySchema = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, "HH:MM");
-
-export const scheduledTaskFrequencySchema = z.discriminatedUnion("kind", [
-  /**
-   * Every `every` units on a fixed cadence from the previous scheduled slot; the first slot is one interval after the
-   * task is created, edited, switched on or resumed. Missed slots are not made up: one run, then the cadence goes on.
-   */
-  z
-    .object({
-      kind: z.literal("interval"),
-      every: z.number().int().min(1).max(1000),
-      unit: z.enum(["minute", "hour", "day"]),
-    })
-    .strict(),
-  z.object({ kind: z.literal("daily"), time: timeOfDaySchema }).strict(),
-  /** weekday: 1 = Monday … 7 = Sunday. */
-  z
-    .object({ kind: z.literal("weekly"), weekday: z.number().int().min(1).max(7), time: timeOfDaySchema })
-    .strict(),
-  /** A day past the end of a month runs on that month's last day. */
-  z
-    .object({ kind: z.literal("monthly"), day: z.number().int().min(1).max(31), time: timeOfDaySchema })
-    .strict(),
-]);
-export type ScheduledTaskFrequency = z.infer<typeof scheduledTaskFrequencySchema>;
-
-export const SCHEDULED_TASK_PROMPT_MAX = 4000;
+/** Kept for the outgoing workbench UI until its replacement is integrated. */
+import { scheduledTaskFrequencySchema, SCHEDULED_TASK_PROMPT_MAX,
+  scheduledTaskPauseReasonSchema, scheduledTaskRunErrorCodeSchema } from "./platform-schedules";
+export { scheduledTaskFrequencySchema, SCHEDULED_TASK_PROMPT_MAX,
+  scheduledTaskPauseReasonSchema, scheduledTaskRunErrorCodeSchema } from "./platform-schedules";
+export type { ScheduledTaskFrequency, ScheduledTaskPauseReason, ScheduledTaskRunErrorCode } from "./platform-schedules";
 
 export const scheduledTaskInputSchema = z
   .object({
@@ -45,29 +20,6 @@ export const scheduledTaskInputSchema = z
 export type ScheduledTaskInput = z.infer<typeof scheduledTaskInputSchema>;
 
 export const scheduledTaskEnabledInputSchema = z.object({ enabled: z.boolean() }).strict();
-
-/**
- * Why the system stopped scheduling a task that its owner left on. credential_invalid: the owner's internal
- * credential no longer works; the owner's next visit to the scheduled tasks page with a valid login renews it and
- * resumes these tasks. agent_unavailable: the agent was disabled or deleted; editing or switching the task on again
- * resumes it.
- */
-export const scheduledTaskPauseReasonSchema = z.enum(["credential_invalid", "agent_unavailable"]);
-export type ScheduledTaskPauseReason = z.infer<typeof scheduledTaskPauseReasonSchema>;
-
-/**
- * credential_invalid / agent_unavailable: as the pause reasons. start_failed: the conversation could not start.
- * run_failed: the agent's run ended with an error or was cancelled. interrupted: the run was lost, e.g. by a restart.
- */
-export const scheduledTaskRunErrorCodeSchema = z.enum([
-  "credential_invalid",
-  "agent_unavailable",
-  "dependency_unavailable",
-  "start_failed",
-  "run_failed",
-  "interrupted",
-]);
-export type ScheduledTaskRunErrorCode = z.infer<typeof scheduledTaskRunErrorCodeSchema>;
 
 export const scheduledTaskRunSchema = z
   .object({

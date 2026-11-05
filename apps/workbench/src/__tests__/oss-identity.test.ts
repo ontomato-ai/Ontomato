@@ -19,21 +19,6 @@ describe("oss identity", () => {
     expect(workbenchIdentity().requireDomainId({})).toBe("1");
   });
 
-  it("runs scheduled tasks without issuing or verifying a credential", async () => {
-    const fetchMock = vi.fn(async () => {
-      throw new Error("must not verify");
-    });
-    vi.stubGlobal("fetch", fetchMock);
-    vi.stubEnv("DATA_QUERY_API_KEY", "deployment-key");
-    await expect(workbenchIdentity().issueScheduledCredential({ token: "tk" })).resolves.toBeNull();
-    await expect(
-      workbenchIdentity().resolveScheduledCredential({ userId: "system", domainId: "1" }, null)
-    ).resolves.toEqual({ apiKey: "deployment-key" });
-    expect(fetchMock).not.toHaveBeenCalled();
-    vi.unstubAllEnvs();
-    vi.unstubAllGlobals();
-  });
-
   it("keeps MCP on system/1 and autotest on the run domain", async () => {
     const req = { header: () => "secret", query: { apiKey: "secret" } } as never;
     await expect(workbenchIdentity().resolveMcpCaller(req, "tool-key")).resolves.toEqual({

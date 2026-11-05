@@ -374,24 +374,10 @@ export const en = {
   "autotest.verdict.reason.evalWrong": "Evaluation determined as wrong",
 
   // Scheduled tasks
-  "scheduledTasks.mail.completedSubject": "Scheduled task finished: {title}",
-  "scheduledTasks.mail.failedSubject": "Scheduled task failed: {title}",
-  "scheduledTasks.mail.agent": "Agent",
-  "scheduledTasks.mail.prompt": "Task",
-  "scheduledTasks.mail.error": "Error",
-  "scheduledTasks.mail.noAnswer": "The run finished without a text answer.",
-  "scheduledTasks.mail.openHint": "The full conversation is in the Agent Platform, under Scheduled tasks.",
-  "scheduledTasks.mail.footer": "This email was sent automatically by Agent Platform",
   "product.name": "Agent Platform",
   "mcp.catalog.analysisTitle": "Agent Platform Agents MCP",
   "mcp.catalog.opsTitle": "Agent Platform Ops Agent MCP",
   "mcp.catalog.systemTitle": "Agent Platform MCP",
-  "scheduledTasks.error.credential_invalid": "The background credential no longer works. Open Scheduled tasks while signed in to renew it.",
-  "scheduledTasks.error.agent_unavailable": "The agent is disabled or deleted.",
-  "scheduledTasks.error.dependency_unavailable": "A required service was unavailable.",
-  "scheduledTasks.error.start_failed": "The conversation could not start.",
-  "scheduledTasks.error.run_failed": "The run ended with an error.",
-  "scheduledTasks.error.interrupted": "The run was interrupted.",
 } satisfies import("../index").TranslationMessages;
 
 export const enLocaleMeta = {

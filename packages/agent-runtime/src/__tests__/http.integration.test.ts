@@ -346,6 +346,10 @@ describe("standard runtime real HTTP/PG/processes", () => {
       first = await run(s, "create"),
       done = await settle(first.id);
     expect(done.run.stopReason, logs).toBe("stop");
+    const reply = await api(`/v1/runs/${first.id}/final-reply`);
+    expect(reply.status).toBe(200);
+    expect(reply.body).toEqual(done.messages.filter(({message}) =>
+      message.role === "assistant" && message.content.some(part => part.type === "text" && part.text)).at(-1)?.message);
     expect(done.artifacts).toHaveLength(1);
     expect(
       done.messages.some(
