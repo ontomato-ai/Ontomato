@@ -43,5 +43,9 @@ export function installPlatformPages(app: App, router: Router, options: Platform
       for (const [key, value] of previous) root.style.setProperty(key, value);
     });
   });
-  return [{ ...platformRoutes.ontology, component: { render: () => null } }, ...options.routes];
+  // Every page of this area is marked as a platform page (`meta.service`): the edition's router guard reads the mark to
+  // decide what needs a signed-in account, and the document tokens above apply while one is shown. The mark used to sit
+  // on the layout route; it belongs to the pages, since the layout is the caller's now.
+  return [{ ...platformRoutes.ontology, component: { render: () => null }, meta: { service: true } },
+    ...options.routes.map((route) => ({ ...route, meta: { ...route.meta, service: true } }))];
 }

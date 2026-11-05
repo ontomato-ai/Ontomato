@@ -33,6 +33,8 @@ const props = defineProps<{
   shownPage: PlatformShownPage | null;
   account: PlatformAccount | null;
   preferences: PlatformPreferences;
+  /** The name of each supported language, in the words the shell shows. */
+  localeLabel?: (locale: string) => string;
   labels: PlatformShellLabels;
   brand?: { name: string; logo?: string };
   pageActions: PlatformPageActions | null;
@@ -75,6 +77,7 @@ const headerShown = computed(() => props.shownPage !== null && !props.shownPage.
     :active-app-id="activeAppId"
     :account="account"
     :preferences="preferences"
+    :locale-label="localeLabel"
     :labels="labels"
     :brand="brand"
     @select-app="emit('selectApp', $event)"

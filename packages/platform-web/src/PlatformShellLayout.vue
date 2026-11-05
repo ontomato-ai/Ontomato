@@ -95,6 +95,9 @@ function openSettings(appId: string, entryId: string) {
   if (target) void router.push(target);
 }
 
+/** Language names: the platform's own tree names each supported locale. */
+const localeLabel = (locale: string) => t(`lang.${locale.replace("-", "")}`);
+
 const pageActions = usePageActionsOf();
 
 /**
@@ -115,6 +118,7 @@ const blocked = computed(() => {
     :shown-page="shownPage"
     :account="account"
     :preferences="preferences"
+    :locale-label="localeLabel"
     :labels="labels"
     :page-actions="pageActions"
     :blocked="blocked"

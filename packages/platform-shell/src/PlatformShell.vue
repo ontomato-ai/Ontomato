@@ -18,6 +18,8 @@ const props = withDefaults(
     preferences: PlatformPreferences;
     labels: PlatformShellLabels;
     brand?: { name: string; logo?: string };
+    /** The name of each supported language, for the account menu. */
+    localeLabel?: (locale: string) => string;
     /** Controlled from outside; when absent the shell remembers the choice itself. */
     collapsed?: boolean;
   }>(),
@@ -83,6 +85,7 @@ onBeforeUnmount(() => query?.removeEventListener("change", onNarrow));
       :preferences="preferences"
       :labels="labels"
       :brand="brand"
+      :locale-label="localeLabel"
       :collapsed="collapsed"
       @select-app="emit('selectApp', $event)"
       @update:collapsed="collapsed = $event"

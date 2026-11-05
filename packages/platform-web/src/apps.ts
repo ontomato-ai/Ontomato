@@ -25,9 +25,15 @@ export interface PlatformAppDeclaration {
   groups?: readonly PlatformPanelGroup[];
 }
 
-/** The rail entry of one declaration. */
+/** The rail entry of one declaration, carrying how the rail opens it: a page, a fixed address, or the host's resolver. */
 export function railApp(declaration: PlatformAppDeclaration): PlatformApp {
-  return { id: declaration.id, label: declaration.label, icon: declaration.icon };
+  return {
+    id: declaration.id,
+    label: declaration.label,
+    icon: declaration.icon,
+    href: declaration.href,
+    open: declaration.open,
+  };
 }
 
 /** The column heading of one declaration. */

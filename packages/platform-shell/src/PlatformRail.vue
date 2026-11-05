@@ -20,6 +20,8 @@ const props = defineProps<{
   labels: PlatformShellLabels;
   brand?: { name: string; logo?: string };
   collapsed: boolean;
+  /** The name of each supported language, for the account menu. */
+  localeLabel?: (locale: string) => string;
 }>();
 
 const emit = defineEmits<{
@@ -183,6 +185,7 @@ onBeforeUnmount(() => document.removeEventListener("pointerdown", onDocumentPoin
           :account="account"
           :preferences="preferences"
           :labels="labels"
+          :locale-label="localeLabel"
           @close="closeMenu"
         />
       </div>
