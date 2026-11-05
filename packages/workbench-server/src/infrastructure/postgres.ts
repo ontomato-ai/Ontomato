@@ -42,6 +42,8 @@ export async function initializePostgres(): Promise<void> {
       await client.query(`CREATE SCHEMA IF NOT EXISTS ${escapeIdentifier(schemaName)}`);
     }
 
+    const legacy = await client.query("SELECT to_regclass($1) IS NOT NULL AS present", [qualifiedTable("scheduled_tasks")]);
+    if (legacy.rows[0].present) throw new Error("Import and retire the old scheduled tasks before starting the workbench (see platform-schedules-upgrade.md)");
     await runPostgresBusinessMigrations(client);
 
     logger.info(tApp("foundation.log.pg.schemaReady"));

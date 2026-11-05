@@ -9,7 +9,8 @@ import io.ontomato.dataengine.bean.function.ReturnDef;
 import io.ontomato.dataengine.dao.ActionDao;
 import io.ontomato.dataengine.dao.FunctionDao;
 import io.ontomato.dataengine.dao.MetricViewDao;
-import io.ontomato.dataengine.dao.WriteTaskDao;
+import io.ontomato.dataengine.schedules.TaskStore;
+import org.springframework.transaction.annotation.Transactional;
 import io.ontomato.dataengine.service.AdminService;
 import io.ontomato.dataengine.service.BusinessConfigService;
 import io.ontomato.dataengine.service.FunctionService;
@@ -43,7 +44,7 @@ public class FunctionServiceImpl implements FunctionService {
 
   @Autowired private ActionDao actionDao;
 
-  @Autowired private WriteTaskDao writeTaskDao;
+  @Autowired private TaskStore scheduledTasks;
 
   @Autowired private OntologyGenerationService generationService;
 
@@ -91,10 +92,7 @@ public class FunctionServiceImpl implements FunctionService {
 							String functionId = (String)o[1];
 							functionIds.add(functionId);
 						}
-						for (Object[] o : writeTaskDao.queryList(null, null, null, null)) {
-							String functionId = (String)o[1];
-							functionIds.add(functionId);
-						}
+						functionIds.addAll(scheduledTasks.referencedFunctions());
 						for (Function function : functions) {
 							if (!Function.ORIGIN_SYSTEM.equals(function.getOrigin())) {
 								if (!functionIds.contains(function.getId())) {
@@ -181,11 +179,13 @@ public class FunctionServiceImpl implements FunctionService {
   }
 
   @Override
+	@Transactional(rollbackFor = Exception.class)
 	public Function save(Function function, String lang) throws Exception {
         if (Function.OPERATION_READ.equals(function.getOperation()))
             io.ontomato.dataengine.service.QueryPackage.prepareReadFunction(function,
                 (List<Map<String, Object>>) adminService.getJSONRule(function.getDomainId()).get("classDef"));
 		if (function.getId() != null) {
+			functionDao.lock(function.getId());
 			Function existFunction = functionDao.queryById(function.getId());
 			if (existFunction == null) {
 				throw new Exception(langService.get(lang, "Function.notFound"));
@@ -213,13 +213,15 @@ public class FunctionServiceImpl implements FunctionService {
 			throw new Exception(langService.get(lang, "Function.referencedByAction"));
 		}
 		// A Function referenced by a WriteTask cannot be modified or deleted
-		if (writeTaskDao.queryList(null, functionId, null, null).size() > 0) {
+		if (scheduledTasks.references(functionId)) {
 			throw new Exception(langService.get(lang, "Function.referencedByWriteTask"));
 		}
 	}
 
   @Override
+	@Transactional(rollbackFor = Exception.class)
 	public void delete(String id, String lang) throws Exception {
+		functionDao.lock(id);
 		Function function = functionDao.queryById(id);
 		if (function != null) {
 			if (Function.ORIGIN_SYSTEM.equals(function.getOrigin())) {

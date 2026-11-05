@@ -5,17 +5,9 @@ import { appTextEn } from "../../../i18n/app-text-en";
 import { installWorkbenchProduct } from "../../../product/installed";
 import type { WorkbenchProduct } from "../../../product/types";
 
-const sendMail = vi.hoisted(() => vi.fn());
 vi.mock("../../../config/mcp", () => ({ getSystemMcpUrl: () => "http://mcp.invalid/mcp", getAnalysisAgentMcpUrlOverride: () => "" }));
 vi.mock("../client", () => ({ listMcpTools: async () => [] }));
-vi.mock("nodemailer", () => ({ createTransport: () => ({ sendMail }) }));
-vi.mock("../../../config/environment", async (importOriginal) => {
-  const original = await importOriginal<typeof import("../../../config/environment")>();
-  return { environment: { ...original.environment, smtp: () => ({ host: "smtp.invalid", port: 25, secure: false, from: "bot@invalid" }) } };
-});
-
 const { buildMcpSystemToolsResponse } = await import("../catalog");
-const { sendRunMail } = await import("../../scheduled-tasks/notify");
 
 beforeEach(() => {
   configureI18n({
@@ -39,11 +31,4 @@ it("titles the MCP services with the Agent Platform name and keeps their identif
     ["ontomato-analysis-agents", "Agent Platform Agents MCP"],
     ["ontomato-ops-agent", "Agent Platform Ops Agent MCP"],
   ]);
-});
-
-it("signs scheduled-task mail with the Agent Platform name in the recipient's language", async () => {
-  await sendRunMail({ to: "a@invalid", locale: "en", agentName: "Analyst", prompt: "Weekly numbers", answer: "Done" });
-  const html = String(sendMail.mock.calls[0]?.[0]?.html);
-  expect(html).toContain("This email was sent automatically by Agent Platform");
-  expect(html).toContain("The full conversation is in the Agent Platform");
 });

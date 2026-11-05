@@ -1,5 +1,61 @@
 [
   {
+    "key": "scheduledTasks.mail.completedSubject",
+    "value": "Scheduled task finished: {title}"
+  },
+  {
+    "key": "scheduledTasks.mail.failedSubject",
+    "value": "Scheduled task failed: {title}"
+  },
+  {
+    "key": "scheduledTasks.mail.agent",
+    "value": "Agent"
+  },
+  {
+    "key": "scheduledTasks.mail.prompt",
+    "value": "Task"
+  },
+  {
+    "key": "scheduledTasks.mail.error",
+    "value": "Error"
+  },
+  {
+    "key": "scheduledTasks.mail.noAnswer",
+    "value": "The run finished without a text answer."
+  },
+  {
+    "key": "scheduledTasks.mail.openHint",
+    "value": "The full conversation is in the Agent Platform, under Scheduled tasks."
+  },
+  {
+    "key": "scheduledTasks.mail.footer",
+    "value": "This email was sent automatically by Agent Platform"
+  },
+  {
+    "key": "scheduledTasks.error.credential_invalid",
+    "value": "The background credential no longer works. Open Scheduled tasks while signed in to renew it."
+  },
+  {
+    "key": "scheduledTasks.error.agent_unavailable",
+    "value": "The agent is disabled or deleted."
+  },
+  {
+    "key": "scheduledTasks.error.dependency_unavailable",
+    "value": "A required service was unavailable."
+  },
+  {
+    "key": "scheduledTasks.error.start_failed",
+    "value": "The conversation could not start."
+  },
+  {
+    "key": "scheduledTasks.error.run_failed",
+    "value": "The run ended with an error."
+  },
+  {
+    "key": "scheduledTasks.error.interrupted",
+    "value": "The run was interrupted."
+  },
+  {
     "key": "lang",
     "value": "English"
   },
@@ -306,26 +362,6 @@
   {
     "key": "MetricView.snapshotUnreadable",
     "value": "Failed to read hot data result snapshot"
-  },
-  {
-    "key": "WriteTask.notFound",
-    "value": "WriteTask does not exist"
-  },
-  {
-    "key": "WriteTask.domainMismatch",
-    "value": "WriteTask domain mismatch"
-  },
-  {
-    "key": "WriteTask.functionMustBeNoParam",
-    "value": "Function must have no parameters"
-  },
-  {
-    "key": "WriteTask.invalidStatus",
-    "value": "Invalid WriteTask status"
-  },
-  {
-    "key": "WriteTask.invalidCrontab",
-    "value": "Invalid WriteTask crontab expression"
   },
   {
     "key": "WriteFunctionOperation.classNotExist",

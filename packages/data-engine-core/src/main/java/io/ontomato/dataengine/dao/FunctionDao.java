@@ -109,6 +109,10 @@ public class FunctionDao {
 		jdbcTemplate.update("DELETE FROM " + TABLE_NAME + " WHERE id = ?", id);
 	}
 
+	public void lock(String id) {
+		jdbcTemplate.queryForList("SELECT id FROM function WHERE id=? FOR UPDATE", String.class, id);
+	}
+
 	public Function queryById(String id) {
 		Function function = null;
 		try {

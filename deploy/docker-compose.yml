@@ -43,6 +43,7 @@ services:
     # Keep unset and empty optional values distinct; internal addresses are fixed here.
     environment:
       AGENT_RUNTIME_URL: http://agent-runtime:3001
+      WORKBENCH_INTERNAL_URL: http://ontomato:3000
       AGENT_RUNTIME_ONTOLOGY_TOKEN: ${AGENT_RUNTIME_ONTOLOGY_TOKEN:?Run the deployment configuration preparation first}
       ONTOMATO_QUERY_SERVICE_TOKEN: ${ONTOMATO_QUERY_SERVICE_TOKEN:?Run the deployment configuration preparation first}
       ONTOMATO_QUERY_SIGNING_KEY: ${ONTOMATO_QUERY_SIGNING_KEY:?Run the deployment configuration preparation first}

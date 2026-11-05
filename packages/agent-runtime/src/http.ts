@@ -332,6 +332,9 @@ export function createRuntimeHttp(runtime: AgentRuntime) {
         );
     }),
   );
+  app.get("/v1/runs/:runId/final-reply", route(async (req, res) => {
+    res.json(await runtime.store.finalReply(scope(req).scope, runtimeIdSchema.parse(req.params.runId)));
+  }));
   app.get(
     "/v1/runs/:runId/status",
     route(async (req, res) => {
