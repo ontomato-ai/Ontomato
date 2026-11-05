@@ -13,6 +13,7 @@ import { HttpError } from "../../utils/errors";
 import { resolveAssistantSkillReferences } from "./skill-references";
 import { validateAssistantSkills } from "./skills";
 import { withDomainSkills } from "../skills/operations";
+import { effectiveSystemPrompt, storedSystemPrompt } from "./prompts";
 const view = (a: AgentRow) =>
   assistantAgentDefinitionSchema.parse({
     id: a.id,
@@ -25,7 +26,7 @@ const view = (a: AgentRow) =>
     classNames: a.class_names,
     enabledMcpServiceIds: a.enabled_mcp_service_ids,
     sortOrder: a.sort_order,
-    systemPrompt: a.system_prompt,
+    systemPrompt: effectiveSystemPrompt(a),
   });
 export async function readAgentDefinition(id: string, owner: AssistantOwner) {
   return view(await assistantStore.agent(id, owner));
@@ -39,7 +40,7 @@ export async function saveAgentDefinition(
     await validateModelSelection(owner.domainId, input.modelSelection);
     const skills = resolveAssistantSkillReferences(input.skills, owner.domainId);
     await validateAssistantSkills(owner.domainId, skills);
-    await assistantStore.agent(id, owner);
+    const agent = await assistantStore.agent(id, owner);
     await getPostgresPool().query(
       `UPDATE ${t("assistant_agents")} SET name=$3,description=$4,enabled=$5,system_prompt=$6,model_selection=$7,model_reference_migrated=true,skills=$8,icon=$9,class_names=$10,enabled_mcp_service_ids=$11,sort_order=$12 WHERE id=$1 AND domain_id=$2`,
       [
@@ -48,7 +49,7 @@ export async function saveAgentDefinition(
         input.name,
         input.description,
         input.enabled,
-        input.systemPrompt,
+        storedSystemPrompt(agent.kind, input.systemPrompt),
         JSON.stringify(input.modelSelection),
         JSON.stringify(skills),
         input.icon,

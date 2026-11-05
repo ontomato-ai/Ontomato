@@ -35,6 +35,7 @@ import {
   type AssistantCredentials,
 } from "../../platform/agent-runtime/runtime";
 import { OntologyRetrievalClient } from "./ontology-retrieval";
+import { effectiveSystemPrompt } from "./prompts";
 import { recentUserMessages } from "./user-quotes";
 import { transaction } from "../../infrastructure/postgres-transaction";
 import { HttpError } from "../../utils/errors";
@@ -328,7 +329,7 @@ export const assistantService = {
             timestamp: new Date(turn.created_at).getTime(),
           },
           definition: { agentId: session.agent_id, ...runDefinition(
-            a.system_prompt +
+            effectiveSystemPrompt(a) +
               "\n\nInitial ontology context:\n" +
               ontologyContext +
               "\n\n" +
