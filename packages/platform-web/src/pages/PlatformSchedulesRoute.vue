@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { useRouter } from "vue-router";
+import { computed } from "vue";
+import { useRoute, useRouter } from "vue-router";
 import { useI18n } from "vue-i18n";
 import { PlatformSchedulesPage } from "@ontomato/platform-schedules";
 import { platformRoutes } from "@ontomato/platform-shell/routes";
@@ -14,7 +15,17 @@ import { schedulesHost } from "../schedules";
  * prefix and the session's credential, the agents a task may run, and the way to open a run's conversation.
  */
 const router = useRouter();
+const route = useRoute();
 const { locale } = useI18n();
+
+/**
+ * The task an address points at. The old function deep links and the Manager's asset links arrive as `?taskId=`, so the
+ * page opens that task's run history; an id it cannot see only leaves the list.
+ */
+const taskId = computed(() => {
+  const value = route.query.taskId;
+  return typeof value === "string" && value ? value : null;
+});
 
 const host = schedulesHost({
   agents: async () => agentHostAgentListSchema.parse(await apiGet("/assistant/agents")).agents,
@@ -26,5 +37,5 @@ const host = schedulesHost({
 </script>
 
 <template>
-  <PlatformSchedulesPage :host="host" />
+  <PlatformSchedulesPage :host="host" :task-id="taskId" />
 </template>
