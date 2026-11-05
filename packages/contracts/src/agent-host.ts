@@ -44,6 +44,9 @@ export const agentHostRunSchema = runtimeRunViewSchema
       .optional(),
   })
   .strict();
+/** Answer to waiting for a run: returned at its stop, or still running at the timeout. */
+export const agentHostRunWaitResponseSchema = z.object({ run: agentHostRunSchema }).strict();
+export type AgentHostRunWaitResponse = z.infer<typeof agentHostRunWaitResponseSchema>;
 /** A session row names its latest run without carrying the run's body: lists stay one read per page. */
 export const agentHostRunStatusSchema = z
   .object({

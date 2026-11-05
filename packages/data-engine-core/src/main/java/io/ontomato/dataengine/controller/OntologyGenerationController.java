@@ -65,12 +65,11 @@ public class OntologyGenerationController {
             || !run.equals(grant.getString("runId")))) throw AgentHttpException.missing();
     var row = store.one("SELECT * FROM ontology_agent_runs WHERE id=?", uuid(run));
     store.run(row.getString("session_id"), run, owner);
-    if (!row.getBooleanValue("external")) {
-      var snapshot = runtime.run(owner.domainId(), run);
-      if (!"running".equals(snapshot.getJSONObject("run").getString("status"))) {
-        store.update("UPDATE ontology_agent_runs SET open=false WHERE id=?", uuid(run));
-        throw closed();
-      }
+    // A skill callback writes only while its run is running; the lifecycle view is enough to tell.
+    if (!row.getBooleanValue("external")
+        && !"running".equals(runtime.status(owner.domainId(), run).getString("status"))) {
+      store.update("UPDATE ontology_agent_runs SET open=false WHERE id=? AND open", uuid(run));
+      throw closed();
     }
     return owner;
   }

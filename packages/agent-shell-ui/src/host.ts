@@ -7,7 +7,9 @@ import type {
   AgentHostAdmission,
   AgentHostArtifactResolution,
   AgentHostCreateSessionResponse,
+  AgentHostRun,
   AgentHostRunSnapshot,
+  AgentHostRunWaitResponse,
   AgentHostSession,
   AgentHostSessionPage,
   AgentHostSessionHistory,
@@ -37,6 +39,8 @@ export interface AgentHostClient {
   /** Every message, including the answer to a clarifying question, starts a run in the same session. */
   startRun(sessionId: string, message: string): Promise<AgentHostRunSnapshot>;
   readRun(sessionId: string, runId: string): Promise<AgentHostRunSnapshot>;
+  /** Answers when the run stops (the host has closed its write gate), or still running after timeoutMs. */
+  waitRun(sessionId: string, runId: string, timeoutMs: number, signal?: AbortSignal): Promise<AgentHostRun>;
   subscribe(
     sessionId: string,
     runId: string,
@@ -144,6 +148,10 @@ export function createAgentHostClient(options: AgentHostClientOptions): AgentHos
     },
     readRun(sessionId, runId) {
       return json<AgentHostRunSnapshot>(run(sessionId, runId));
+    },
+    async waitRun(sessionId, runId, timeoutMs, signal) {
+      const params = query({ waitFor: "stopped", timeoutMs: String(timeoutMs) });
+      return (await json<AgentHostRunWaitResponse>(`${run(sessionId, runId)}/status?${params}`, { signal })).run;
     },
     subscribe(sessionId, runId, after, handlers) {
       return subscribe(run(sessionId, runId), sessionId, after, handlers);

@@ -60,7 +60,7 @@ describe("standard runtime real HTTP/PG/processes", () => {
     });
     return { status: r.status, body: r.status === 204 ? null : await r.json() };
   }
-  const input = (text: string, externalMcp: {id: string}[] = []) => ({
+  const input = (text: string, externalMcp: {id: string}[] = [], toolCallPolicy?: {maxCalls: number; maxSameShape: number}) => ({
     language: "en",
     input: { role: "user", content: text, timestamp: Date.now() },
     definition: {
@@ -68,6 +68,7 @@ describe("standard runtime real HTTP/PG/processes", () => {
       modelId: null,
       skills: [skill],
       externalMcp,
+      ...(toolCallPolicy ? { toolCallPolicy } : {}),
       sandbox: {
         limits: codeLimitsSchema.parse({
           memoryBytes: 16 * 1024 ** 3,
@@ -148,13 +149,9 @@ describe("standard runtime real HTTP/PG/processes", () => {
     }
   }
   async function settle(id: string) {
-    for (let i = 0; i < 400; i++) {
-      const r = await api(`/v1/runs/${id}`);
-      if (r.body.run.status === "stopped")
-        return runtimeRunSnapshotSchema.parse(r.body);
-      await pause(25);
-    }
-    throw new Error("Did not stop: " + logs);
+    const waited = await api(`/v1/runs/${id}/status?waitFor=stopped&timeoutMs=20000`);
+    if (waited.body.run?.status !== "stopped") throw new Error("Did not stop: " + logs);
+    return runtimeRunSnapshotSchema.parse((await api(`/v1/runs/${id}`)).body);
   }
   async function session() {
     const id = randomUUID();
@@ -163,9 +160,9 @@ describe("standard runtime real HTTP/PG/processes", () => {
     ).toBe(201);
     return id;
   }
-  async function run(s: string, text: string, externalMcp: {id: string}[] = []) {
+  async function run(s: string, text: string, externalMcp: {id: string}[] = [], toolCallPolicy?: {maxCalls: number; maxSameShape: number}) {
     const id = randomUUID(),
-      request = input(text, externalMcp);
+      request = input(text, externalMcp, toolCallPolicy);
     expect(
       (await api(`/v1/sessions/${s}/runs`, request, { "idempotency-key": id }))
         .status,
@@ -219,7 +216,7 @@ describe("standard runtime real HTTP/PG/processes", () => {
         user = [...request.messages]
           .reverse()
           .find((m: any) => m.role === "user");
-      if (last.role === "tool") {
+      if (last.role === "tool" && !String(user.content).includes("loop")) {
         frame({
           role: "assistant",
           reasoning_content: "Checked the actual output.",
@@ -236,6 +233,8 @@ describe("standard runtime real HTTP/PG/processes", () => {
           ? "printf changed > outputs/result.txt"
           : String(user.content).includes("hang")
             ? "sleep 60"
+            : String(user.content).includes("loop")
+              ? `printf ${modelCalls}`
             : "node skills/fixture-skill/scripts/run.mjs";
         frame({
           role: "assistant",
@@ -377,6 +376,31 @@ describe("standard runtime real HTTP/PG/processes", () => {
     const prompt = JSON.stringify(inputs[0]);
     expect(prompt).toContain("fixture-skill");
     expect(prompt).not.toContain("Read scripts/run.mjs and execute");
+  });
+  it("tells a waiting host when the run stops, and only then", async () => {
+    const s = await session(),
+      r = await run(s, "hang");
+    const started = Date.now();
+    const early = await api(`/v1/runs/${r.id}/status?waitFor=stopped&timeoutMs=300`);
+    expect(early.body.run.status).toBe("running");
+    expect(Date.now() - started).toBeGreaterThanOrEqual(250);
+    const waiting = api(`/v1/runs/${r.id}/status?waitFor=stopped&timeoutMs=20000`);
+    await pause(200);
+    const cancelledAt = Date.now();
+    await api(`/v1/runs/${r.id}/cancel`, {});
+    const woke = await waiting;
+    expect(woke.body.run.status).toBe("stopped");
+    expect(woke.body.run.stopReason).toBe("aborted");
+    expect(Date.now() - cancelledAt).toBeLessThan(5000);
+    expect((await api(`/v1/runs/${r.id}/status`)).body.run.status).toBe("stopped");
+  });
+  it("stops a run that repeats the same tool call shape, naming the limit", async () => {
+    const s = await session(),
+      r = await run(s, "loop", [], { maxCalls: 100, maxSameShape: 3 });
+    const done = await settle(r.id);
+    expect(done.run.stopReason, logs).toBe("aborted");
+    expect(done.run.errorMessage).toContain("3 repeated bash calls");
+    expect(done.toolExecutions).toHaveLength(3);
   });
   it("does not allow a caller to replace runtime identity variables", () => {
     for (const name of runtimeIdentityEnvironment) {

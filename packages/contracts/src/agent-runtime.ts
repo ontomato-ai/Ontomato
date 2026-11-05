@@ -50,6 +50,15 @@ export const runtimeAgentDefinitionSchema = z
     modelId: modelSelectionSchema.shape.modelId,
     skills: z.array(runtimeSkillRefSchema),
     sandbox: z.object({ limits: codeLimitsSchema }).strict(),
+    // Optional loop protection, counted per run: the run stops as aborted with the reason once the
+    // total exceeds maxCalls, or once maxSameShape calls share a tool name and digit-free arguments.
+    toolCallPolicy: z
+      .object({
+        maxCalls: z.number().int().positive(),
+        maxSameShape: z.number().int().positive(),
+      })
+      .strict()
+      .optional(),
     externalMcp: z.array(runtimeMcpRefSchema),
     // Host-rendered instructions; the runtime prepends conversation and previous-summary blocks.
     compaction: z
@@ -190,6 +199,17 @@ export const runtimeSessionStatusesResponseSchema = z
     sessions: z.array(runtimeSessionStatusSchema),
   })
   .strict();
+/** Without waitFor the current state is returned at once; with it, at stop or after timeoutMs. */
+export const runtimeRunStatusQuerySchema = z
+  .object({
+    waitFor: z.literal("stopped").optional(),
+    timeoutMs: z.coerce.number().int().min(0).max(60000).optional(),
+  })
+  .strict();
+export const runtimeRunStatusResponseSchema = z
+  .object({ run: runtimeRunViewSchema })
+  .strict();
+export type RuntimeRunStatusQuery = z.infer<typeof runtimeRunStatusQuerySchema>;
 export const runtimeEventSubscriptionSchema = z
   .object({
     afterSeq: runtimeSequenceSchema,

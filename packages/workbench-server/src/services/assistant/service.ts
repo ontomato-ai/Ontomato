@@ -1,5 +1,4 @@
 import type { SessionHistoryQuery } from "@ontomato/contracts/session-history";
-import { getLogContext } from "../../logging/log-context";
 import { assistantOntologyContext } from "./context";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
@@ -16,7 +15,6 @@ import {
   runtimeArtifactSchema,
   type RuntimeArtifact,
 } from "@ontomato/contracts/agent-runtime-artifacts";
-import type { RuntimeRunSnapshot } from "@ontomato/contracts/agent-runtime";
 import {
   datasetPayloadSchema,
 } from "@ontomato/contracts/data-retrieval";
@@ -33,6 +31,7 @@ import {
   messageText,
   runDefinition,
   userSkillEnvironment,
+  waitUntilStopped,
   type AssistantCredentials,
 } from "../../platform/agent-runtime/runtime";
 import { OntologyRetrievalClient } from "./ontology-retrieval";
@@ -42,7 +41,9 @@ import { HttpError } from "../../utils/errors";
 import { createLogger } from "../../logging/logger";
 const db = () => getPostgresPool(),
   logger = createLogger("assistant"),
-  observing = new Set<string>();
+  observing = new Set<string>(),
+  // Longer than any start() takes to admit a run, so an unadmitted turn older than this is not still starting.
+  ADMISSION_GRACE_MS = 10 * 60_000;
 export { publicSnapshot } from "../../platform/agent-runtime/projection";
 import { publicMessages, publicSnapshot, publicRun, runStatusView } from "../../platform/agent-runtime/projection";
 type LatestRun = Parameters<typeof runStatusView>[0];
@@ -164,17 +165,7 @@ export const assistantService = {
   async history(id: string, owner: AssistantOwner, query: SessionHistoryQuery) {
     await assistantStore.session(id, owner);
     const page = await new RuntimeClient(owner.domainId).history(id, query);
-    if (page.latestRun) {
-      const live = page.latestRun.run;
-      await assistantStore.admitted(live.id, messageText(
-        page.messages.find(m => m.runId === live.id && m.message.role === "user")?.message ?? { content: "" },
-      ));
-      await this.settle(page.latestRun, owner);
-      if (live.status === "running") {
-        const c = getLogContext();
-        this.observe(live.id, owner, { token: c?.token, apiKey: c?.apiKey });
-      }
-    }
+    if (page.latestRun) await this.gate(page.latestRun.run);
     const runs = await Promise.all(page.runs.map(async run => (await this.withRetrievals({ run }, owner)).run));
     // The live run view is the page's own run; the retrieval links on it come from the page's run
     // list when that list holds it, otherwise they are read once for this run.
@@ -193,23 +184,7 @@ export const assistantService = {
   async snapshot(id: string, owner: AssistantOwner) {
     const row = await assistantStore.session(id, owner),
       s = await new RuntimeClient(owner.domainId).session(id);
-    if (s.latestRun) {
-      await assistantStore.admitted(
-        s.latestRun.run.id,
-        messageText(
-          s.latestRun.messages.find((m) => m.message.role === "user")
-            ?.message ?? { content: "" },
-        ),
-      );
-      await this.settle(s.latestRun, owner);
-      if (s.latestRun.run.status === "running") {
-        const c = getLogContext();
-        this.observe(s.latestRun.run.id, owner, {
-          token: c?.token,
-          apiKey: c?.apiKey,
-        });
-      }
-    }
+    if (s.latestRun) await this.gate(s.latestRun.run);
     return {
       session: sessionView(await assistantStore.session(row.id, owner), s.latestRun?.run ?? null),
       messages: publicMessages(s.messages),
@@ -221,24 +196,16 @@ export const assistantService = {
     if (turn.session_id !== sessionId) throw new HttpError(404, "Run not found", "NOT_FOUND");
     return new OntologyRetrievalClient(owner, turn.retrieval_scope_id);
   },
-  async readRun(sessionId: string, id: string, owner: AssistantOwner) {
+  /** The run belongs to this user's session by the workbench's own turn record; no runtime read is needed. */
+  async ownRun(sessionId: string, id: string, owner: AssistantOwner) {
     const turn = await assistantStore.turn(id, owner);
     if (turn.session_id !== sessionId)
       throw new HttpError(404, "Run not found");
+  },
+  async readRun(sessionId: string, id: string, owner: AssistantOwner) {
+    await this.ownRun(sessionId, id, owner);
     const s = await new RuntimeClient(owner.domainId).run(id);
-    await assistantStore.admitted(
-      id,
-      messageText(
-        s.messages.find((m) => m.message.role === "user")?.message ?? {
-          content: "",
-        },
-      ),
-    );
-    await this.settle(s, owner);
-    if (s.run.status === "running") {
-      const c = getLogContext();
-      this.observe(id, owner, { token: c?.token, apiKey: c?.apiKey });
-    }
+    await this.gate(s.run);
     return this.withRetrievals(s, owner);
   },
   /**
@@ -259,15 +226,21 @@ export const assistantService = {
       return s;
     }
   },
-  async settle(s: { run: Pick<RuntimeRunSnapshot["run"], "id" | "status"> }, owner: AssistantOwner) {
-    if (s.run.status === "stopped") {
-      await assistantStore.close(s.run.id);
-      const context = getLogContext();
-      await this.stopChildren(s.run.id, owner, {
-        token: context?.token,
-        apiKey: context?.apiKey,
-      });
-    }
+  /**
+   * Every exit that hands a stopped run to a page closes the write gate first, so a page never sees the stop
+   * while the run can still write. Once the gate is closed this writes nothing.
+   */
+  async gate(run: { id: string; status: string }) {
+    if (run.status === "stopped") await assistantStore.close(run.id);
+  },
+  async closeGate(_sessionId: string, id: string) {
+    await assistantStore.close(id);
+  },
+  /** Everything owed after the stop, in order: the write gate, then the child retrievals. Safe to repeat. */
+  async settleTurn(id: string, owner: AssistantOwner, credentials: AssistantCredentials = {}) {
+    await assistantStore.close(id);
+    await this.stopChildren(id, owner, credentials);
+    await assistantStore.settled(id);
   },
   async stopChildren(
     id: string,
@@ -287,8 +260,11 @@ export const assistantService = {
       client = new RuntimeClient(owner.domainId);
     const a = await assistantStore.agent(session.agent_id, owner);
     if (session.latest_run_id) {
+      // A previous turn that has stopped is settled before the next one opens.
       try {
-        await this.readRun(sessionId, session.latest_run_id, owner);
+        const previous = await assistantStore.turn(session.latest_run_id, owner);
+        if (!previous.settled && (await client.status(previous.id)).status === "stopped")
+          await this.settleTurn(previous.id, owner, credentials);
       } catch (e) {
         if (!(e instanceof HttpError && e.status === 404)) throw e;
       }
@@ -392,45 +368,81 @@ export const assistantService = {
     this.observe(id, owner, credentials);
     return { snapshot: publicSnapshot(await client.run(id)), replayed };
   },
+  /**
+   * Follows a running turn until the runtime reports the stop (or the turn's deadline passes), then settles it.
+   * A failure leaves the turn unsettled for the reconciliation sweep.
+   */
   observe(
     id: string,
     owner: AssistantOwner,
     credentials: AssistantCredentials,
+    startedAt = Date.now(),
   ) {
     if (observing.has(id)) return;
     observing.add(id);
     void (async () => {
-      const deadline = Date.now() + getQueryTimeoutMs();
       try {
-        for (;;) {
-          let s;
-          try {
-            s = await new RuntimeClient(owner.domainId).run(id);
-          } catch (e) {
-            // A run the runtime cannot read (deleted session, restarted runtime) is over for this
-            // process: leaving the turn open would make every later read treat it as still running.
-            logger.warn("Assistant run observation lost the run", {
-              runId: id,
-              error: e instanceof Error ? e.message : String(e),
-            });
-            return;
-          }
-          if (s.run.status === "stopped" || Date.now() >= deadline) return;
-          await new Promise((resolve) => setTimeout(resolve, 500));
-        }
-      } finally {
         try {
-          await assistantStore.close(id);
-          await this.stopChildren(id, owner, credentials);
-        } catch (e) {
-          logger.error("Assistant observation needs reconciliation", {
-            runId: id,
-            error: e,
+          await waitUntilStopped(new RuntimeClient(owner.domainId), id, {
+            deadline: startedAt + getQueryTimeoutMs(),
           });
+        } catch (e) {
+          // The runtime no longer knows the run (deleted session, lost data): nothing more will happen to it.
+          if (!(e instanceof HttpError && e.status === 404)) throw e;
         }
+        await this.settleTurn(id, owner, credentials);
+      } catch (e) {
+        logger.warn("Assistant run settlement deferred to reconciliation", {
+          runId: id,
+          error: e instanceof Error ? e.message : String(e),
+        });
+      } finally {
         observing.delete(id);
       }
     })();
+  },
+  /**
+   * Finishes turns that still owe something: after a restart, a lost start response, or a failed settlement.
+   * Reads only this host's records and the runtime's lifecycle view; idempotent across instances.
+   */
+  async reconcile(now = Date.now()) {
+    for (const turn of await assistantStore.unsettled(200)) {
+      if (observing.has(turn.id)) continue;
+      const owner = { domainId: turn.domainId, userId: turn.userId },
+        client = new RuntimeClient(owner.domainId);
+      try {
+        let view;
+        try {
+          view = await client.status(turn.id);
+        } catch (e) {
+          if (!(e instanceof HttpError && e.status === 404)) throw e;
+        }
+        if (!turn.admitted) {
+          // start() may still be admitting it; past the grace period it either reached the runtime or never will.
+          if (now - new Date(turn.created_at).getTime() < ADMISSION_GRACE_MS) continue;
+          if (view) {
+            const s = await client.run(turn.id);
+            await assistantStore.admitted(turn.id, messageText(
+              s.messages.find((m) => m.message.role === "user")?.message ?? { content: "" },
+            ));
+          } else {
+            // Blocks a late admission; a runtime that has no such session cannot admit it either.
+            try {
+              await client.request(`/v1/sessions/${turn.session_id}/run-intents/${turn.id}/cancel`, "POST", {});
+            } catch (e) {
+              if (!(e instanceof HttpError && e.status === 404)) throw e;
+            }
+          }
+        }
+        if (!view || view.status === "stopped") await this.settleTurn(turn.id, owner);
+        else this.observe(turn.id, owner, {}, new Date(turn.created_at).getTime());
+      } catch (e) {
+        logger.warn("Assistant turn reconciliation failed", {
+          runId: turn.id,
+          error: e instanceof Error ? e.message : String(e),
+        });
+      }
+    }
   },
   async cancel(
     sessionId: string,
@@ -535,7 +547,7 @@ export const assistantService = {
     path: string,
     owner: AssistantOwner,
   ) {
-    await this.readRun(sessionId, runId, owner);
+    await this.ownRun(sessionId, runId, owner);
     const result = z
       .object({ artifacts: z.array(runtimeArtifactSchema) })
       .parse(
@@ -640,4 +652,26 @@ function feedbackView(row: Record<string, any>) {
     text: row.text,
     updatedAt: new Date(row.updated_at).toISOString(),
   });
+}
+
+const RECONCILE_MS = 60_000;
+let reconcileTimer: ReturnType<typeof setInterval> | null = null;
+let reconciling = false;
+/** Runs the reconciliation once at startup and then every minute. */
+export function startAssistantReconciliation() {
+  if (reconcileTimer) return;
+  const tick = async () => {
+    if (reconciling) return;
+    reconciling = true;
+    try {
+      await assistantService.reconcile();
+    } catch (error) {
+      logger.error("Assistant reconciliation failed", { error: error instanceof Error ? error.message : String(error) });
+    } finally {
+      reconciling = false;
+    }
+  };
+  void tick();
+  reconcileTimer = setInterval(() => void tick(), RECONCILE_MS);
+  reconcileTimer.unref?.();
 }

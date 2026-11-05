@@ -89,8 +89,15 @@ public class OntologyAgentDefinitions {
         null);
   }
 
+  /**
+   * Generation agents have no step limit of their own, so a model can spin on the same command; the runtime stops
+   * such a run. The values are the ones the former host-side loop guard used.
+   */
+  static final Map<String, Object> TOOL_LOOP_POLICY = Map.of("maxCalls", 100, "maxSameShape", 12);
+
   public JSONObject generation(String domain, String kind, String prompt, String language, long remainingMs) {
     var definition = definition(domain, language, remainingMs);
+    definition.put("toolCallPolicy", TOOL_LOOP_POLICY);
     definition.put("agentId", OntologyGenerationService.agentId(kind));
     definition.put(
         "modelId", models.modelId(domain, OntologyGenerationService.agentId(kind)));
@@ -135,6 +142,7 @@ public class OntologyAgentDefinitions {
 
   public JSONObject metricView(String domain, String prompt, String language, long remainingMs) {
     var definition = definition(domain, language, remainingMs);
+    definition.put("toolCallPolicy", TOOL_LOOP_POLICY);
     definition.put("agentId", METRICVIEW_AGENT);
     definition.put("modelId", models.modelId(domain, METRICVIEW_AGENT));
     definition.put("skills", List.of(RuntimeCodeClient.SKILL, DATASET_SKILL, METRICVIEW_SKILL));
@@ -199,6 +207,7 @@ public class OntologyAgentDefinitions {
    */
   public JSONObject actionCreation(String domain, String prompt, String language, long remainingMs) {
     var value = definition(domain, language, remainingMs);
+    value.put("toolCallPolicy", TOOL_LOOP_POLICY);
     value.put("agentId", ActionCreationService.AGENT);
     value.put("modelId", models.modelId(domain, ActionCreationService.AGENT));
     value.put("skills", List.of(RuntimeCodeClient.SKILL, GENERATION_SKILL));

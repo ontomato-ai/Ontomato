@@ -33,6 +33,8 @@ public class OntologyRetrievalService {
   private final ConcurrentMap<String, AdmissionFlight> preparing = new ConcurrentHashMap<>();
   private final Set<String> observing = ConcurrentHashMap.newKeySet();
   private final ExecutorService workers = Executors.newCachedThreadPool();
+  /** Upper bound of one stop wait; the waits repeat until the stop or the run's deadline. */
+  private static final long WAIT_STEP_MS = 30_000;
   private static final org.slf4j.Logger LOG =
       org.slf4j.LoggerFactory.getLogger(OntologyRetrievalService.class);
 
@@ -422,8 +424,8 @@ public class OntologyRetrievalService {
     long cursor=deliveries.isEmpty()?after:deliveries.get(deliveries.size()-1).getLongValue("cursor");
     var observed=row.getJSONObject("observed_state");
     boolean delivered = !store.rows("SELECT 1 AS delivered FROM ontology_retrieval_deliveries WHERE run_id=? AND source='retriever'",uuid(row.getString("id"))).isEmpty();
+    // A stopped run that still owes its delivery is finished by the recovery sweep, not by this read.
     boolean pending = !row.getBooleanValue("external") && !delivered;
-    observeMissingDelivery(id, row.getString("id"), owner, observed, pending);
     var response = JSONObject.of("id",id,"roundId",row.getString("id"),"cursor",cursor,"deliveries",deliveries,
         "decisionRevision",row.getIntValue("decision_revision"),"runtimeSessionId",row.getBooleanValue("runtime_admitted")?id:null,
         "runtimeRunId",row.getBooleanValue("runtime_admitted")?row.getString("id"):null,
@@ -575,21 +577,9 @@ public class OntologyRetrievalService {
     return get(id, store.retrieval(id, owner).getString("current_run_id"), owner);
   }
 
+  /** A read only reads: a stopped run that still owes its delivery is finished by the recovery sweep. */
   public JSONObject get(String id, String runId, Owner owner) throws Exception {
-    var result = snapshot(id, runId, owner);
-    observeMissingDelivery(id, runId, owner, result.getJSONObject("run"), result.getBooleanValue("retrieverPending"));
-    return result;
-  }
-
-  private void observeMissingDelivery(String id, String run, Owner owner, JSONObject observed, boolean pending) {
-    // Reuse result polling's lazy projection for old terminal rounds, without blocking reads.
-    if (pending && observed != null && "stopped".equals(observed.getString("status")) && observing.add(run)) {
-      workers.submit(() -> {
-        try { reconcile(id, run, owner, runtime.run(owner.domainId(), run)); }
-        catch (Exception error) { LOG.warn("Retrieval result projection failed: {}", run, error); }
-        finally { observing.remove(run); }
-      });
-    }
+    return snapshot(id, runId, owner);
   }
 
   public JSONObject snapshot(String id, String runId, Owner owner) throws Exception {
@@ -657,7 +647,7 @@ public class OntologyRetrievalService {
   public void closeStoppedCallbacks(String id, String runId, Owner owner, JSONObject snapshot) {
     if ("stopped".equals(snapshot.getJSONObject("run").getString("status"))) {
       store.run(id, runId, owner);
-      store.update("UPDATE ontology_agent_runs SET open=false WHERE id=?", uuid(runId));
+      store.update("UPDATE ontology_agent_runs SET open=false WHERE id=? AND open", uuid(runId));
     }
   }
 
@@ -1025,7 +1015,10 @@ public class OntologyRetrievalService {
                 + " (r.observed_state IS NULL OR r.observed_state->>'status'<>'stopped')) OR"
                 + " (r.observed_state->>'status'='stopped' AND"
                 + " r.observed_state->>'stopReason'='stop' AND jsonb_array_length(r.dataset_ids)>0"
-                + " AND r.qc_admitted=false))")) {
+                + " AND r.qc_admitted=false) OR"
+                // Stopped without its delivery: the projection still owes the retriever's result.
+                + " (r.external=false AND r.observed_state->>'status'='stopped' AND NOT EXISTS"
+                + " (SELECT 1 FROM ontology_retrieval_deliveries d WHERE d.run_id=r.id AND d.source='retriever')))")) {
       String id = row.getString("id");
       if (preparing.containsKey(id) || launching.contains(id) || !observing.add(id)) continue;
       workers.submit(
@@ -1047,13 +1040,16 @@ public class OntologyRetrievalService {
                 return;
               }
               if (row.getBooleanValue("cancel_requested")) cancelWork(session, id, owner);
-              var snapshot = runtime.run(owner.domainId(), id);
+              // Held until the runtime reports the stop or the deadline passes; meanwhile the sweep skips this
+              // run. A cancel stops the runtime run, which ends the wait.
+              var view =
+                  runtime.waitUntilStopped(
+                      owner.domainId(), id, Instant.parse(row.getString("deadline")).toEpochMilli(), WAIT_STEP_MS);
               if(!row.getBooleanValue("runtime_admitted")) store.update("UPDATE ontology_agent_runs SET runtime_admitted=true WHERE id=?",uuid(id));
+              var snapshot = runtime.run(owner.domainId(), id);
               io.ontomato.dataengine.logging.ServiceLogContext.put("correlationId", snapshot.getJSONObject("run").getString("correlationId"));
               reconcile(session, id, owner, snapshot);
-              if ("running".equals(snapshot.getJSONObject("run").getString("status"))
-                  && Instant.parse(row.getString("deadline")).toEpochMilli()
-                      <= System.currentTimeMillis()) {
+              if ("running".equals(view.getString("status"))) {
                 store.closeRun(session, id, owner);
                 cancelWork(session, id, owner);
               }
@@ -1061,6 +1057,9 @@ public class OntologyRetrievalService {
               if (error.status() == 404) {
                 try {
                   if(!row.getBooleanValue("runtime_admitted")) admissionFailed(row.getString("session_id"),id,owner(row),"Retriever admission was interrupted");
+                  // An admitted run the runtime no longer has can never deliver: close the round with that failure.
+                  else results.publish(row.getString("session_id"),id,owner(row),"retriever",id,JSONObject.of("answer","","run",null,
+                      "error","Retriever run is no longer available","datasets",new JSONArray()));
                   store.closeRun(row.getString("session_id"), id, owner(row));
                   cancelWork(row.getString("session_id"), id, owner(row));
                 } catch (Exception failure) {

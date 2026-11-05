@@ -16,6 +16,7 @@ import {
   runtimeRequestHeadersSchema,
   runtimeEventSubscriptionSchema,
   runtimeSessionStatusesRequestSchema,
+  runtimeRunStatusQuerySchema,
 } from "@ontomato/contracts/agent-runtime";
 import { runtimeIdSchema } from "@ontomato/contracts/agent-runtime-values";
 import type { RuntimeStreamFrame } from "@ontomato/contracts/agent-runtime-events";
@@ -329,6 +330,20 @@ export function createRuntimeHttp(runtime: AgentRuntime) {
             req.body,
           ),
         );
+    }),
+  );
+  app.get(
+    "/v1/runs/:runId/status",
+    route(async (req, res) => {
+      const query = runtimeRunStatusQuerySchema.parse(req.query);
+      const gone = new AbortController();
+      res.on("close", () => gone.abort());
+      const run = await runtime.runStatus(
+        scope(req).scope,
+        runtimeIdSchema.parse(req.params.runId),
+        query.waitFor ? { timeoutMs: query.timeoutMs ?? 30000, signal: gone.signal } : undefined,
+      );
+      if (!res.writableEnded && !gone.signal.aborted) res.json({ run });
     }),
   );
   app.get(

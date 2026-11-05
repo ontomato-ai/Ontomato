@@ -69,7 +69,15 @@ interface Active {
   subscribers: Set<Subscriber>;
   sandbox?: SessionSandbox;
   outputBaseline: Map<string, string>;
+  toolCalls: number;
+  toolShapes: Map<string, number>;
 }
+/** Aborts a run on its own behalf with the reason the stop notice reports. */
+class RunStop extends Error {}
+const stopMessage = (signal: AbortSignal) =>
+  signal.reason instanceof RunStop ? signal.reason.message : "Run cancelled";
+/** Digits and whitespace are noise for a command that only drifts a line number or an ID. */
+const shape = (value: string) => value.replace(/\d+/g, "#").replace(/\s+/g, " ").trim();
 export interface RuntimeOptions {
   store: RuntimeStore;
   worker?: WorkerPolicy;
@@ -115,6 +123,7 @@ export class AgentRuntime {
   readonly models: RuntimeModelSettings;
   private active = new Map<string, Active>();
   private locks = new Map<string, Promise<unknown>>();
+  private waiters = new Map<string, Set<() => void>>();
   constructor(readonly options: RuntimeOptions) {
     modelKeySealKey(options.modelRuntimeToken);
     this.store = options.store;
@@ -272,6 +281,8 @@ export class AgentRuntime {
         turnIndex: -1,
         subscribers: new Set(),
         outputBaseline: new Map(),
+        toolCalls: 0,
+        toolShapes: new Map(),
       };
       // Register before any further await so a cancel that follows the admission response always
       // finds this run instead of returning it still running.
@@ -427,6 +438,7 @@ export class AgentRuntime {
       result.details.artifactIds = await this.collect(active, event.toolCallId);
       const envelope = await this.emit(active, { ...event, result });
       event.result.details = result.details;
+      this.enforceToolCallPolicy(active, event.toolName, event.args);
       return envelope;
     }
     if (event.type === "tool_execution_update")
@@ -444,6 +456,19 @@ export class AgentRuntime {
       });
     return this.emit(active, event as RuntimeAgentEvent);
   }
+  /** Counted after the call is recorded; aborting from the event sink lets the loop end and settle normally. */
+  private enforceToolCallPolicy(active: Active, toolName: string, args: unknown) {
+    const policy = active.run.definition.toolCallPolicy;
+    if (!policy || active.controller.signal.aborted) return;
+    active.toolCalls++;
+    const key = shape(toolName) + ":" + shape(JSON.stringify(args ?? null));
+    const same = (active.toolShapes.get(key) ?? 0) + 1;
+    active.toolShapes.set(key, same);
+    if (active.toolCalls > policy.maxCalls)
+      active.controller.abort(new RunStop(`Stopped after more than ${policy.maxCalls} tool calls`));
+    else if (same >= policy.maxSameShape)
+      active.controller.abort(new RunStop(`Stopped after ${same} repeated ${toolName} calls without progress`));
+  }
   private async execute(
     active: Active,
     config: ResolvedModel,
@@ -453,7 +478,7 @@ export class AgentRuntime {
     const { scope, run, controller } = active;
     const signal = controller.signal;
     if (signal.aborted) {
-      await this.settle(active, "aborted", "Run cancelled");
+      await this.settle(active, "aborted", stopMessage(signal));
       return;
     }
     runtimeLogger.info("run started");
@@ -647,12 +672,12 @@ export class AgentRuntime {
       );
       if (signal.aborted) {
         reason = "aborted";
-        failure = "Run cancelled";
+        failure = stopMessage(signal);
       }
     } catch (error) {
       if (!signal.aborted) runtimeLogger.error("run execution failed", runtimeDiagnostic(error));
       reason = signal.aborted ? "aborted" : "error";
-      failure = signal.aborted ? "Run cancelled" : safeMessage(error);
+      failure = signal.aborted ? stopMessage(signal) : safeMessage(error);
     }
     await closeMcp();
     await active.sandbox?.stop();
@@ -678,6 +703,8 @@ export class AgentRuntime {
       for (const envelope of await this.store.events(scope, run.id))
         if (envelope.cursor.seq > before) this.publish(active, envelope);
     });
+    // The stop is committed: wake everyone waiting for it.
+    for (const wake of this.waiters.get(key(scope, run.id)) ?? []) wake();
   }
   private async collect(active: Active, toolCallId: string | null) {
     const sandbox = active.sandbox;
@@ -782,6 +809,34 @@ export class AgentRuntime {
       toolExecutions: [...tools.values()],
       artifacts: includeHistory ? await this.store.artifacts(scope, runId) : [],
     };
+  }
+  /**
+   * The run's lifecycle view, read without events or the session lock. With a wait it returns once the
+   * stop is committed, or still running at the timeout or when the caller goes away.
+   */
+  async runStatus(scope: Scope, runId: string, wait?: { timeoutMs: number; signal: AbortSignal }) {
+    if (!wait) return this.store.runView(scope, runId);
+    const id = key(scope, runId);
+    let wake!: () => void;
+    const woken = new Promise<void>((resolve) => (wake = resolve));
+    // Register before reading, so a stop committed between the read and the wait still wakes this caller.
+    const waiting = this.waiters.get(id) ?? new Set<() => void>();
+    waiting.add(wake);
+    this.waiters.set(id, waiting);
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      const current = await this.store.runView(scope, runId);
+      if (current.status === "stopped") return current;
+      wait.signal.addEventListener("abort", wake, { once: true });
+      timer = setTimeout(wake, wait.timeoutMs);
+      await woken;
+      return await this.store.runView(scope, runId);
+    } finally {
+      clearTimeout(timer);
+      wait.signal.removeEventListener("abort", wake);
+      waiting.delete(wake);
+      if (!waiting.size && this.waiters.get(id) === waiting) this.waiters.delete(id);
+    }
   }
   async snapshot(scope: Scope, runId: string) {
     const { run } = await this.store.run(scope, runId);

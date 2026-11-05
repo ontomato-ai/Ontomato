@@ -34,6 +34,7 @@ export interface TurnRow {
   class_names: string[];
   open: boolean;
   admitted: boolean;
+  settled: boolean;
   created_at: Date;
 }
 export interface AgentRow {
@@ -223,11 +224,28 @@ export const assistantStore = {
         );
     });
   },
+  /** Closes the write gate; a no-op when it is already closed. */
   async close(id: string) {
     await db().query(
-      `UPDATE ${table("assistant_turns")} SET open=false WHERE id=$1`,
+      `UPDATE ${table("assistant_turns")} SET open=false WHERE id=$1 AND open`,
       [id],
     );
+  },
+  async settled(id: string) {
+    await db().query(
+      `UPDATE ${table("assistant_turns")} SET open=false,settled=true WHERE id=$1`,
+      [id],
+    );
+  },
+  /** Turns that still owe something after their stop, oldest first, with the owner needed to finish them. */
+  async unsettled(limit: number): Promise<(TurnRow & AssistantOwner)[]> {
+    return (
+      await db().query(
+        `SELECT t.*,s.domain_id AS "domainId",s.owner_id AS "userId" FROM ${table("assistant_turns")} t
+         JOIN ${table("assistant_sessions")} s ON s.id=t.session_id WHERE NOT t.settled ORDER BY t.created_at LIMIT $1`,
+        [limit],
+      )
+    ).rows;
   },
   async turns(sessionId: string): Promise<TurnRow[]> {
     return (
