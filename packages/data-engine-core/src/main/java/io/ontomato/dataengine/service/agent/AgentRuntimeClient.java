@@ -163,17 +163,6 @@ public class AgentRuntimeClient {
         .getJSONObject("run");
   }
 
-  /**
-   * Waits for the runtime to report the stop by repeated bounded waits, never longer than the deadline. Between
-   * waits the host can check its own conditions; returns the last view (stopped, or running at the deadline).
-   */
-  public JSONObject waitUntilStopped(String domain, String id, long deadline, long stepMs) throws Exception {
-    while (true) {
-      long left = deadline - System.currentTimeMillis();
-      var view = waitStopped(domain, id, Math.min(stepMs, left));
-      if (!"running".equals(view.getString("status")) || System.currentTimeMillis() >= deadline) return view;
-    }
-  }
 
   /**
    * One short completion with the domain default model. Used for lightweight guidance text,

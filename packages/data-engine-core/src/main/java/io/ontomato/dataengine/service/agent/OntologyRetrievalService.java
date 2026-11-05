@@ -33,8 +33,6 @@ public class OntologyRetrievalService {
   private final ConcurrentMap<String, AdmissionFlight> preparing = new ConcurrentHashMap<>();
   private final Set<String> observing = ConcurrentHashMap.newKeySet();
   private final ExecutorService workers = Executors.newCachedThreadPool();
-  /** Upper bound of one stop wait; the waits repeat until the stop or the run's deadline. */
-  private static final long WAIT_STEP_MS = 30_000;
   private static final org.slf4j.Logger LOG =
       org.slf4j.LoggerFactory.getLogger(OntologyRetrievalService.class);
 
@@ -1040,19 +1038,19 @@ public class OntologyRetrievalService {
                 return;
               }
               if (row.getBooleanValue("cancel_requested")) cancelWork(session, id, owner);
-              // Held until the runtime reports the stop or the deadline passes; meanwhile the sweep skips this
-              // run. A cancel stops the runtime run, which ends the wait.
-              var view =
-                  runtime.waitUntilStopped(
-                      owner.domainId(), id, Instant.parse(row.getString("deadline")).toEpochMilli(), WAIT_STEP_MS);
+              // Only the lifecycle view is read each pass; the full snapshot once the run has stopped.
+              var view = runtime.status(owner.domainId(), id);
               if(!row.getBooleanValue("runtime_admitted")) store.update("UPDATE ontology_agent_runs SET runtime_admitted=true WHERE id=?",uuid(id));
+              if ("running".equals(view.getString("status"))) {
+                if (Instant.parse(row.getString("deadline")).toEpochMilli() <= System.currentTimeMillis()) {
+                  store.closeRun(session, id, owner);
+                  cancelWork(session, id, owner);
+                }
+                return;
+              }
               var snapshot = runtime.run(owner.domainId(), id);
               io.ontomato.dataengine.logging.ServiceLogContext.put("correlationId", snapshot.getJSONObject("run").getString("correlationId"));
               reconcile(session, id, owner, snapshot);
-              if ("running".equals(view.getString("status"))) {
-                store.closeRun(session, id, owner);
-                cancelWork(session, id, owner);
-              }
             } catch (AgentHttpException error) {
               if (error.status() == 404) {
                 try {

@@ -26,7 +26,7 @@ export async function ensureAssistantSchema(c: QueryableClient) {
   CREATE INDEX IF NOT EXISTS assistant_sessions_owner ON ${t("assistant_sessions")}(domain_id,owner_id,updated_at DESC,id DESC);
   CREATE TABLE IF NOT EXISTS ${t("assistant_turns")} (
     id uuid PRIMARY KEY, session_id uuid NOT NULL REFERENCES ${t("assistant_sessions")}(id) ON DELETE CASCADE,
-    retrieval_scope_id uuid NOT NULL, request_seq integer NOT NULL, input_hash text NOT NULL, class_names jsonb NOT NULL DEFAULT '[]', open boolean NOT NULL DEFAULT true, admitted boolean NOT NULL DEFAULT false,
+    retrieval_scope_id uuid NOT NULL, request_seq integer NOT NULL, input_hash text NOT NULL, class_names jsonb NOT NULL DEFAULT '[]', admitted boolean NOT NULL DEFAULT false,
     created_at timestamptz NOT NULL DEFAULT now(), UNIQUE(session_id,request_seq));
   CREATE TABLE IF NOT EXISTS ${t("assistant_feedback")} (
     id uuid PRIMARY KEY, session_id uuid NOT NULL REFERENCES ${t("assistant_sessions")}(id) ON DELETE CASCADE,
@@ -43,12 +43,18 @@ export async function ensureAssistantSchema(c: QueryableClient) {
     user_id text NOT NULL, key text NOT NULL, value jsonb NOT NULL,
     created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now(),
     PRIMARY KEY(user_id,key));`);
-  // settled: everything owed after the stop is done (write gate closed and child retrievals closed). Turns already
-  // closed before this column existed were settled by the reads of that time.
-  await c.query(`ALTER TABLE ${t("assistant_turns")} ADD COLUMN IF NOT EXISTS settled boolean;
-    UPDATE ${t("assistant_turns")} SET settled = NOT open WHERE settled IS NULL;
+  // settled: the turn's child retrievals have been closed after it ended. The former open column was written and
+  // never read; turns it marked closed had their children closed by the reads of that time, so it seeds settled
+  // once and is then dropped.
+  await c.query(`ALTER TABLE ${t("assistant_turns")} ADD COLUMN IF NOT EXISTS settled boolean`);
+  const legacyOpen = await c.query(`SELECT EXISTS (SELECT 1 FROM pg_attribute WHERE attrelid=to_regclass($1) AND attname='open' AND NOT attisdropped) AS present`, [t("assistant_turns")]);
+  if (legacyOpen.rows[0]?.present)
+    await c.query(`UPDATE ${t("assistant_turns")} SET settled = NOT open WHERE settled IS NULL;
+      ALTER TABLE ${t("assistant_turns")} DROP COLUMN open`);
+  await c.query(`UPDATE ${t("assistant_turns")} SET settled=false WHERE settled IS NULL;
     ALTER TABLE ${t("assistant_turns")} ALTER COLUMN settled SET DEFAULT false, ALTER COLUMN settled SET NOT NULL;
-    CREATE INDEX IF NOT EXISTS assistant_turns_unsettled ON ${t("assistant_turns")}(created_at) WHERE NOT settled`);
+    DROP INDEX IF EXISTS ${t("assistant_turns_unsettled")};
+    CREATE INDEX IF NOT EXISTS assistant_turns_unsettled_order ON ${t("assistant_turns")}(created_at,id) WHERE NOT settled`);
   for (const name of ["assistant_agents", "ops_diagnosis_settings"]) {
     await c.query(`ALTER TABLE ${t(name)} ADD COLUMN IF NOT EXISTS model_reference_migrated boolean NOT NULL DEFAULT false;
       ALTER TABLE ${t(name)} ALTER COLUMN model_reference_migrated SET DEFAULT true`);

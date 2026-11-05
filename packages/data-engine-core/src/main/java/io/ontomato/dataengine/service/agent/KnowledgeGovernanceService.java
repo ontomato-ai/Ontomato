@@ -80,8 +80,20 @@ public class KnowledgeGovernanceService {
   }
 
   private record Admission(JSONObject row, boolean replayed) {}
+  /** A previous run holds the session only while the runtime still runs it (an external run: while open). */
+  private boolean busy(Owner owner,String run) {
+    var row=store.one("SELECT open,external FROM ontology_agent_runs WHERE id=?",uuid(run));
+    if (!row.getBooleanValue("open")) return false;
+    if (row.getBooleanValue("external")) return true;
+    try { return "running".equals(runtime.status(owner.domainId(),run).getString("status")); }
+    catch (AgentHttpException missing) { if (missing.status()==404) return false; throw missing; }
+    catch (Exception failure) { throw new IllegalStateException(failure); }
+  }
   private Admission admit(String id,String run,JSONObject input,OntologyAgentAccess.Context context,boolean external) {
     Owner owner=context.owner();
+    // Asked before the transaction: a runtime call does not belong inside it.
+    String previousRun=state(id,owner,false).getString("latest_run_id");
+    boolean previousBusy=previousRun!=null && busy(owner,previousRun);
     return store.transaction(() -> {
       var state=state(id,owner,true);
       if (session(id,owner).getBooleanValue("runtime_owned")==external)
@@ -97,7 +109,8 @@ public class KnowledgeGovernanceService {
       JSONObject work=emptyWork();
       if (latest!=null) {
         var old=store.one("SELECT * FROM ontology_agent_runs WHERE id=? FOR UPDATE",uuid(latest));
-        if (!external && old.getBooleanValue("open"))
+        boolean active=latest.equals(previousRun) ? previousBusy : old.getBooleanValue("open");
+        if (!external && active)
           throw new AgentHttpException(409,"SESSION_BUSY","A governance run is active");
         store.update("UPDATE ontology_agent_runs SET open=false WHERE id=?",uuid(latest));
         work=store.one("SELECT work FROM ontology_governance_work WHERE run_id=?",uuid(latest)).getJSONObject("work");

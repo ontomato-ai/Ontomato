@@ -99,8 +99,6 @@ export const diagnosisService: AgentHostService = {
     const intent = (await db().query(`SELECT session_id FROM ${table("ops_run_intents")} WHERE id=$1`, [run])).rows[0];
     if (!intent || intent.session_id !== session) throw missing();
   },
-  // Diagnosis runs write nothing back into the workbench, so there is no gate to close.
-  async closeGate() {},
   async readRun(session, run, owner) {
     await diagnosisSession(session, owner);
     const snapshot = await new RuntimeClient(owner.domainId).run(run);

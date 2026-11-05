@@ -31,8 +31,8 @@ export interface TurnRow {
   retrieval_scope_id: string;
   input_hash: string;
   class_names: string[];
-  open: boolean;
   admitted: boolean;
+  // The turn's child retrievals have been closed after it ended.
   settled: boolean;
   created_at: Date;
 }
@@ -223,26 +223,18 @@ export const assistantStore = {
         );
     });
   },
-  /** Closes the write gate; a no-op when it is already closed. */
-  async close(id: string) {
-    await db().query(
-      `UPDATE ${table("assistant_turns")} SET open=false WHERE id=$1 AND open`,
-      [id],
-    );
-  },
   async settled(id: string) {
-    await db().query(
-      `UPDATE ${table("assistant_turns")} SET open=false,settled=true WHERE id=$1`,
-      [id],
-    );
+    await db().query(`UPDATE ${table("assistant_turns")} SET settled=true WHERE id=$1`, [id]);
   },
-  /** Turns that still owe something after their stop, oldest first, with the owner needed to finish them. */
-  async unsettled(limit: number): Promise<(TurnRow & AssistantOwner)[]> {
+  /** Turns not yet settled, oldest first and after the given position, with the owner needed to finish them. */
+  async unsettled(limit: number, after?: { createdAt: Date; id: string }): Promise<(TurnRow & AssistantOwner)[]> {
     return (
       await db().query(
         `SELECT t.*,s.domain_id AS "domainId",s.owner_id AS "userId" FROM ${table("assistant_turns")} t
-         JOIN ${table("assistant_sessions")} s ON s.id=t.session_id WHERE NOT t.settled ORDER BY t.created_at LIMIT $1`,
-        [limit],
+         JOIN ${table("assistant_sessions")} s ON s.id=t.session_id
+         WHERE NOT t.settled AND ($2::timestamptz IS NULL OR (t.created_at,t.id)>($2,$3::uuid))
+         ORDER BY t.created_at,t.id LIMIT $1`,
+        [limit, after?.createdAt ?? null, after?.id ?? null],
       )
     ).rows;
   },

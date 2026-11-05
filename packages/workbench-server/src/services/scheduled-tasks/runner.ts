@@ -4,7 +4,7 @@ import type { ScheduledTaskPauseReason } from "@ontomato/contracts/scheduled-tas
 import { RuntimeClient } from "../../infrastructure/agent-runtime/client";
 import { runWithLogContext } from "../../logging/log-context";
 import { createLogger } from "../../logging/logger";
-import { finalText, waitUntilStopped } from "../../platform/agent-runtime/runtime";
+import { finalText } from "../../platform/agent-runtime/runtime";
 import { runOutcome } from "../../platform/agent-runtime/projection";
 import { AuthFailedError } from "../../utils/backend-client";
 import { HttpError, toErrorMessage } from "../../utils/errors";
@@ -96,10 +96,6 @@ async function startAdmittedRun(task: TaskRecord, trigger: RunRecord["trigger"],
       } catch (error) {
         throw startFailure(error);
       }
-      // Settle as soon as the runtime reports the stop; the scheduler tick remains the fallback.
-      void waitUntilStopped(new RuntimeClient(owner.domainId), runId, { deadline: Date.now() + LOST_AFTER_MS })
-        .then(() => settleScheduledRuns())
-        .catch(() => {});
     });
     return { ...started.run, sessionId: session };
   } catch (error) {
