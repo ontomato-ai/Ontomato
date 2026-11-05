@@ -2,6 +2,7 @@ import { apiGet, apiPost } from "../../utils/api";
 
 export const queryViewApi = {
   getMetas: () => apiPost("/admin/getMetas", {}),
+  listPublishedActions: () => apiPost("/action/queryList", { status: "PUBLISHED" }),
   getWholeClassDataByPage: (payload: unknown) => apiPost("/data/getWholeClassDataByPage", payload),
   queryDistinctAttrValue: (payload: unknown) => apiPost("/data/queryDistinctAttrValue", payload),
   listBusinessExamples: () => apiPost("/bussinessexample/getall", {}),

@@ -60,16 +60,36 @@
   background-clip: padding-box;
 }
 
-/* Element Plus wraps icon and button text in one span. Keep command labels readable. */
+/* Use the same spacing for slotted icons and Element Plus's icon prop. */
+.ontology-manager-shell .el-button {
+  --manager-button-icon-gap: 6px;
+  gap: var(--manager-button-icon-gap);
+}
 .ontology-manager-shell .el-button > span:has(> .lucide) {
   display: inline-flex;
   align-items: center;
-  gap: var(--spacing-sm);
+  gap: var(--manager-button-icon-gap);
 }
+.ontology-manager-shell .el-button > .el-icon + span,
+.ontology-manager-shell .el-button > span + .el-icon {
+  margin-inline: 0;
+}
+.ontology-manager-shell .el-button .lucide { flex-shrink: 0; }
 
 .ontology-manager-shell button,
 .ontology-manager-shell .el-button {
   box-shadow: none !important;
+}
+
+/* Button variants express action priority; labels and icons share one spacing rule. */
+.ontology-manager-shell .el-button > span {
+  gap: var(--manager-button-icon-gap);
+}
+.ontology-manager-shell .el-button.is-text:not(.is-disabled):not(.el-button--danger):not(.el-button--primary) {
+  color: var(--el-text-color-secondary);
+}
+.ontology-manager-shell .el-button.is-text:not(.is-disabled):hover {
+  background-color: var(--el-fill-color-light);
 }
 
 .ontology-manager-shell .el-dialog {

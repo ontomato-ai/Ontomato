@@ -72,6 +72,7 @@ export function assembleLoopDispatchCapability(params: {
   };
   workerTools: {
     evidence: (dispatchActivityId: string) => AgentTool;
+    readEvidence?: AgentTool;
     probe: (dispatchActivityId: string) => AgentTool[];
     skills: AgentTool[];
     notebook: (dispatchActivityId: string) => AgentTool[];
@@ -108,13 +109,15 @@ export function assembleLoopDispatchCapability(params: {
       systemPrompt: renderPrompt("analysis-agent.loop.subagent.system", params.workerPrompt),
       createChildTools: (dispatchActivityId) => [
         params.workerTools.evidence(dispatchActivityId),
+        ...(params.workerTools.readEvidence ? [params.workerTools.readEvidence] : []),
         ...params.workerTools.probe(dispatchActivityId),
         ...params.workerTools.skills,
         ...params.workerTools.notebook(dispatchActivityId),
       ],
       saveAudit: persistSubagentAudit,
     },
-    onAccepted: (topic) => params.trajectory.start("dispatch", { topic }),
+    onAccepted: (topic, toolCallId) =>
+      params.trajectory.start("dispatch", { topic, toolCallId }),
     onSettled: (activityId, status, fields) => params.trajectory.settle(activityId, status, fields),
   });
 }
@@ -151,7 +154,7 @@ export function lastAssistantText(messages: AgentMessage[]): {
 export function createDispatchAnalystTool(params: {
   deps: LoopDispatchDeps;
   /** Invoked when a dispatch is accepted, to register the trajectory activity */
-  onAccepted: (topic: string) => string;
+  onAccepted: (topic: string, toolCallId: string) => string;
   /** Invoked when a dispatch settles, to finalize the trajectory activity */
   onSettled: (
     activityId: string,
@@ -178,13 +181,13 @@ export function createDispatchAnalystTool(params: {
       },
       required: ["topic"],
     },
-    async execute(_toolCallId: string, toolParams: Record<string, unknown>, signal?: AbortSignal) {
+    async execute(toolCallId: string, toolParams: Record<string, unknown>, signal?: AbortSignal) {
       signal?.throwIfAborted();
       const topic = parseTopic(toolParams);
-      const activityId = params.onAccepted(topic);
+      const activityId = params.onAccepted(topic, toolCallId);
 
       const childSessionId = uuidv4();
-      await harnessSessions.create(childSessionId, deps.parentSessionId, _toolCallId);
+      await harnessSessions.create(childSessionId, deps.parentSessionId, toolCallId);
       const turn = await harnessSessions.beginTurn(childSessionId);
       let child: Agent | undefined;
       const settle = async (

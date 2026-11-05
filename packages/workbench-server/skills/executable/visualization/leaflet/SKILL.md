@@ -31,6 +31,8 @@ Render tabular data with latitude and longitude fields as an interactive Leaflet
 | longitudeField | No | Longitude field name. If omitted, the skill auto-detects common names such as `longitude`, `lng`, `lon`, and some localized variants. |
 | labelField | No | Label field for each point. If omitted, the skill auto-detects common names such as `name`, `location`, and some localized variants. |
 | valueField | No | Numeric field used for marker radius scaling and popup display. |
+| showTitle | No | Set to `false` when the host card already displays a title. |
+| locale | No | Host interface language, used for map controls and resource errors. |
 
 ## Configuration Rules
 
@@ -39,6 +41,7 @@ Render tabular data with latitude and longitude fields as an interactive Leaflet
 - `labelField` should point to a readable location name such as a site, store, project, device, or administrative region.
 - `valueField` can be a numeric metric such as headcount, revenue, or quantity. Marker radius is scaled by relative value size.
 - Do not use this skill for province- or city-level aggregate data without coordinates. That kind of data should use an administrative boundary map skill instead.
+- Coordinates use WGS-84 with the Esri World Topographic basemap. Browser network access to `server.arcgisonline.com` is required. Markers and popups inherit host theme tokens from the embedding frame; the tile pane adapts to the host background's light/dark mode.
 
 ## Example
 

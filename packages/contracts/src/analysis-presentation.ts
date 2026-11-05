@@ -74,6 +74,12 @@ export interface AnalysisActivity {
   probeTool?: "probe_classes" | "probe_class_data";
   probeArguments?: Record<string, unknown>;
   dispatchId?: string;
+  /**
+   * The supervisor tool call that produced this activity, as it appears in the turn's public
+   * messages. Display identity only; absent for worker-side activities (their calls belong to the
+   * worker trace) and for records saved before it was recorded.
+   */
+  toolCallId?: string;
 }
 
 export interface AnalysisSection {

@@ -12,10 +12,11 @@ import {
   Table2,
   Workflow,
 } from "lucide-vue-next";
-import { useSharedText } from "../context";
+import { useOntologyText, useSharedText } from "../context";
 import type { AssetTab, ModelResource, OntologyResourceCounts, Workspace } from "../workspace";
 
 const { t } = useSharedText();
+const { ot } = useOntologyText();
 
 defineProps<{
   activeWorkspace: Workspace;
@@ -108,6 +109,14 @@ defineEmits<{
         >
           <Table2 :size="16" />
           <span>{{ t("nav.dataBrowser") }}</span>
+        </button>
+        <button
+          :class="['nav-item', { active: activeWorkspace === 'instance-graph' }]"
+          :title="ot('instanceGraphTitle')"
+          @click="$emit('workspace', 'instance-graph')"
+        >
+          <Network :size="16" />
+          <span>{{ ot("instanceGraphTitle") }}</span>
         </button>
       </section>
 

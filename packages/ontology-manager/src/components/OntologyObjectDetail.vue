@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref, watch } from "vue";
-import { ArrowLeft, ChevronDown, ChevronUp, Plus, Save, Table2, Trash2 } from "lucide-vue-next";
+import { ArrowLeft, ChevronDown, ChevronUp, Plus, Save, Settings2, Table2, Trash2 } from "lucide-vue-next";
 import { ElAlert, ElButton, ElEmpty, ElForm, ElFormItem, ElInput, vLoading } from "element-plus";
 import { useManagerFeedback } from "../feedback";
 import type { OntologyObject, OntologyRelation } from "../api";
@@ -18,6 +18,7 @@ const emit = defineEmits<{
   updated: [];
   browse: [className: string];
   relation: [relationship: string];
+  view: [className: string];
 }>();
 
 const loading = ref(false);
@@ -49,7 +50,7 @@ const primaryKeyStatus = computed(() => {
     return { type: "warning" as const, message: ot("primaryKeyDisabled") };
   }
   return {
-    type: "success" as const,
+    type: "info" as const,
     message: ot("primaryKeyLabel", { name: primaryKeys[0].showName }),
   };
 });
@@ -166,9 +167,10 @@ onMounted(() => void loadDetail());
       >
         {{ ot("delete") }}
       </el-button>
-      <el-button v-if="object" :icon="Table2" @click="emit('browse', object.className)">
+      <el-button v-if="object" text :icon="Table2" @click="emit('browse', object.className)">
         {{ ot("browseData") }}
       </el-button>
+      <el-button v-if="object" type="primary" plain :icon="Settings2" @click="emit('view', object.className)">{{ ot('ovConfigureObject') }}</el-button>
       <el-button type="primary" :icon="Save" :loading="saving" @click="save">
         {{ ot("saveChanges") }}
       </el-button>
@@ -324,9 +326,11 @@ onMounted(() => void loadDetail());
 }
 .detail-titlebar {
   display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-sm);
   min-height: 64px;
   align-items: center;
-  padding: 0 var(--spacing-2xl);
+  padding: var(--spacing-sm) var(--spacing-2xl);
   border-bottom: 1px solid var(--el-border-color);
   background: var(--el-bg-color);
 }
@@ -379,6 +383,7 @@ onMounted(() => void loadDetail());
 }
 .section-title {
   display: flex;
+  flex-wrap: wrap;
   align-items: flex-start;
   justify-content: space-between;
   gap: var(--spacing-md);
@@ -452,7 +457,7 @@ h2 {
     );
 }
 .detail-table-head {
-  min-height: 36px;
+  min-height: 40px;
   padding: 0 var(--spacing-md);
   border-bottom: 1px solid var(--el-border-color-dark);
   color: var(--el-text-color-secondary);
@@ -541,11 +546,11 @@ h2 {
   }
   .attribute-table .detail-table-head,
   .attribute-table .detail-table-row {
-    grid-template-columns: minmax(150px, 1fr) 80px 20px;
+    grid-template-columns: minmax(0, 1fr) 80px 20px;
   }
   .relation-table .detail-table-head,
   .relation-table .detail-table-row {
-    grid-template-columns: minmax(150px, 1fr) 80px;
+    grid-template-columns: minmax(0, 1fr) 80px;
   }
   .detail-table-head span:nth-child(3),
   .detail-table-head span:nth-child(4),

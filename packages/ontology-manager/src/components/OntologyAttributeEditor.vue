@@ -142,8 +142,10 @@ async function remove() {
 }
 .attribute-editor-actions {
   display: flex;
+  flex-wrap: wrap;
   justify-content: flex-end;
   gap: var(--spacing-sm);
   margin-top: var(--spacing-lg);
 }
+.attribute-editor-actions :deep(.el-button + .el-button) { margin-inline-start: 0; }
 </style>

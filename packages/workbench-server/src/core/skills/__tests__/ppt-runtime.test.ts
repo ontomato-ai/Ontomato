@@ -20,14 +20,15 @@ afterAll(async () => {skillRegistryManager.dispose(); await fs.rm(root, {recursi
 describe("PPT Skill runtime", () => {
   it("executes the real Skill with host context, enforces selection and live disable, and settles activity", async () => {
     const registry = await skillRegistryManager.forDomain("domain");
+    registry.setSkillEnabled("generate-ppt", true);
     const generatePpt = vi.fn(async () => ({url: "/api/ppt/files/example", fileName: "conversation.pptx", warnings: []}));
     const trajectory = {start: vi.fn(() => "activity"), settle: vi.fn()};
     const deps = {domainId: "domain", selectedSkillIds: ["generate-ppt"], resolveEvidence: () => undefined, generatePpt, trajectory};
     const capability = await assembleLoopSkillCapability(deps);
-    expect(capability.prompt).toContain("generate-ppt");
     const run = capability.supervisorTools.find(tool => tool.name === "run_skill")!;
+    expect(run).toBeDefined();
     const result = await run.execute("call", {skill_id: "generate-ppt", conversation: "untrusted model history"});
-    expect(result.content[0].text).toContain("conversation.pptx");
+    expect(JSON.parse(result.content[0].text!)).toEqual({url: "/api/ppt/files/example", fileName: "conversation.pptx", warnings: []});
     expect(generatePpt).toHaveBeenCalledTimes(1);
     expect(generatePpt.mock.calls[0]).toEqual([undefined]);
     expect(trajectory.settle).toHaveBeenLastCalledWith("activity", "completed", expect.anything());
@@ -39,10 +40,13 @@ describe("PPT Skill runtime", () => {
     registry.setSkillEnabled("generate-ppt", true);
     await run.execute("restored", {skill_id: "generate-ppt"});
     expect(generatePpt).toHaveBeenCalledTimes(2);
+    expect(trajectory.settle).toHaveBeenLastCalledWith("activity", "completed", expect.anything());
     const unselected = createLoopSkillTools({...deps, selectedSkillIds: []}).find(tool => tool.name === "run_skill")!;
     await unselected.execute("unselected", {skill_id: "generate-ppt"});
     expect(generatePpt).toHaveBeenCalledTimes(2);
+    expect(trajectory.settle).toHaveBeenLastCalledWith("activity", "failed", expect.anything());
     await run.execute("invalid-entry", {skill_id: "generate-ppt", entry: "../other.mjs"});
     expect(generatePpt).toHaveBeenCalledTimes(2);
+    expect(trajectory.settle).toHaveBeenLastCalledWith("activity", "failed", expect.anything());
   });
 });

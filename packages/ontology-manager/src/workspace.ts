@@ -1,6 +1,7 @@
 export type Workspace =
   | "model"
   | "browser"
+  | "instance-graph"
   | "assets"
   | "playground"
   | "visual-modeling"

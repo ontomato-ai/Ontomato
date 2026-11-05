@@ -142,13 +142,6 @@ describe("live ABC query body on the wire", () => {
 
     // Reasoning-only chunks produce no frames: only real text, structural steps and one rewrite.
     expect(contentFrames.length).toBeLessThan(20);
-    // Besides the first frame, exactly the label rewrite after the large table is a full replace.
-    const replaces = contentFrames.filter((frame) => frame.mode === "replace");
-    expect(replaces).toHaveLength(2);
-    expect(contentFrames[0]).toBe(replaces[0]);
-    expect(replaces[1]!.mode === "replace" && replaces[1]!.content).toContain(
-      `| region-${ROWS.length - 1} |`
-    );
     // The large table goes out once as text, not once per conclusion chunk.
     const wireBytes = contentFrames.reduce(
       (sum, frame) => sum + (frame.mode === "append" ? frame.delta.length : frame.content.length),

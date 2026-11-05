@@ -23,7 +23,7 @@ export function stageInstallEntry(installDir, staging) {
 
 const FLAGS = {
   "--arch": "value", "--version": "value", "--image-tag": "value",
-  "--registry": "value", "--state": "value", "--cache-dir": "value", "--bootstrap": "boolean",
+  "--registry": "value", "--state": "value", "--cache-dir": "value",
   "--network": "value", "--insecure-source": "boolean", "--postgres": "value",
   "--tool-bundle": "value", "--source-version": "value", "--application-only": "boolean",
 };
@@ -31,10 +31,11 @@ const FLAGS = {
 // The pack is the only place that rewrites a template file, and only this line.
 export function renderEnvExample(text, arch) {
   const lines = text.split("\n");
-  if (lines.filter((line) => line.startsWith("ARCH=")).length !== 1)
+  if (lines.filter((line) => /^(?:#\s*)?ARCH=/.test(line)).length !== 1)
     throw new Error(".env.example must contain exactly one ARCH= line");
   return lines
-    .map((line) => (line.startsWith("ARCH=") ? `ARCH=${arch}` : line))
+    .map((line) => /^(?:#\s*)?ARCH=/.test(line)
+      ? `${line.startsWith("#") ? "# " : ""}ARCH=${arch}` : line)
     .join("\n");
 }
 

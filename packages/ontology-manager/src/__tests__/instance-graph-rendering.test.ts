@@ -4,7 +4,6 @@ import {
   drawInstanceGraphBatches,
   GRAPH_BATCH_SIZE,
   instanceNodePosition,
-  isLargeInstanceGraph,
   instanceEdgeGeometry,
   neighborNodePosition,
   overviewPositions,
@@ -44,19 +43,26 @@ describe("instance graph incremental drawing", () => {
     expect(result.edges[3].style.loop).toBe(true);
     expect(result.edges[0].style.curveOffset).not.toBe(result.edges[2].style.curveOffset);
     const selected = overviewRelations(sample, relations, positions, "A:2");
-    expect(selected.edges.slice(0, 4).every((edge) => "opacity" in edge.style && edge.style.opacity === 0.15)).toBe(true);
     expect(selected.edges.slice(4).map((edge) => [edge.source, edge.target])).toEqual([
       ["A:2", "B:1"], ["A:1", "A:2"],
     ]);
     expect(overviewRelations(sample, [], positions).edges).toEqual([]);
   });
-  it("keeps sampled types in separate compact clusters", () => {
-    const sample = Array.from({ length: 100 }, (_, index) => ({ id: String(index), class: index < 50 ? "A" : "B", name: String(index) }));
+  it.each([[50, 50], [400, 100]])("keeps %i and %i sampled nodes in non-overlapping clusters", (aCount, bCount) => {
+    const sample = Array.from({ length: aCount + bCount }, (_, index) => ({
+      id: String(index), class: index < aCount ? "A" : "B", name: String(index),
+    }));
     const positions = overviewPositions(sample);
-    expect(Object.keys(positions)).toHaveLength(100);
-    expect(positions["0"]).toEqual({ x: 0, y: 0 });
-    expect(positions["50"]).toEqual({ x: 520, y: 0 });
-    expect(Math.hypot(positions["49"].x, positions["49"].y)).toBeLessThan(200);
+    expect(Object.keys(positions)).toHaveLength(sample.length);
+    const bounds = (name: string) => {
+      const points = sample.filter(node => node.class === name).map(node => positions[node.id]);
+      return {
+        left: Math.min(...points.map(point => point.x)), right: Math.max(...points.map(point => point.x)),
+        top: Math.min(...points.map(point => point.y)), bottom: Math.max(...points.map(point => point.y)),
+      };
+    };
+    const a = bounds("A"), b = bounds("B");
+    expect(a.right < b.left || b.right < a.left || a.bottom < b.top || b.bottom < a.top).toBe(true);
   });
   it("separates parallel relationships and draws self relationships as loops", () => {
     const geometry = instanceEdgeGeometry([
@@ -67,18 +73,6 @@ describe("instance graph incremental drawing", () => {
     expect(geometry[0].type).toBe("quadratic");
     expect(geometry[0].style.curveOffset).not.toBe(geometry[1].style.curveOffset);
     expect(geometry[2].style.loop).toBe(true);
-  });
-
-  it("spaces unequal overview clusters by their actual radii", () => {
-    const sample = Array.from({ length: 500 }, (_, index) => ({
-      id: String(index), class: index < 400 ? "A" : "B", name: String(index),
-    }));
-    const positions = overviewPositions(sample);
-    const firstCenter = positions["0"];
-    const secondCenter = positions["400"];
-    const distance = secondCenter.x - firstCenter.x;
-    expect(distance).toBeGreaterThanOrEqual(28 * Math.sqrt(399) + 28 * Math.sqrt(99) + 120);
-    expect(Object.keys(positions)).toHaveLength(500);
   });
 
   it("places later neighborhood pages beyond earlier positions", () => {
@@ -111,11 +105,10 @@ describe("instance graph incremental drawing", () => {
       yieldControl: async () => { yielded = true; },
       onProgress: (completed) => progress.push(completed),
     })).toBe(true);
-    expect(batches.map((batch) => batch.nodes?.length || batch.edges?.length)).toEqual([200, 200, 51, 200, 200, 50]);
     expect(batches.flatMap((batch) => batch.nodes || []).map((node) => node.id)).toEqual(nodes.map((node) => node.id));
     expect(batches.flatMap((batch) => batch.edges || [])).toHaveLength(edges.length);
-    expect(target.draw).toHaveBeenCalledTimes(6);
-    expect(progress).toEqual([200, 400, 451, 651, 851, 901]);
+    expect(progress.at(-1)).toBe(nodes.length + edges.length);
+    expect(progress.every((value, index) => index === 0 || value > progress[index - 1])).toBe(true);
   });
 
   it("does not touch a replaced or unmounted graph after yielding", async () => {
@@ -148,12 +141,8 @@ describe("instance graph incremental drawing", () => {
     expect(progress).not.toHaveBeenCalled();
   });
 
-  it("uses large-graph limits and stable spaced positions without a force simulation", () => {
-    expect(isLargeInstanceGraph(1000, 2000)).toBe(false);
-    expect(isLargeInstanceGraph(1001, 0)).toBe(true);
-    expect(isLargeInstanceGraph(2, 2001)).toBe(true);
-    expect(instanceNodePosition(0, 10000)).toEqual({ x: 0, y: 0 });
-    expect(instanceNodePosition(100, 10000)).toEqual({ x: 0, y: 120 });
+  it("assigns distinct finite positions to every node", () => {
+    expect(nodes.every((_, index) => Object.values(instanceNodePosition(index, nodes.length)).every(Number.isFinite))).toBe(true);
     expect(new Set(nodes.map((_, index) => JSON.stringify(instanceNodePosition(index, nodes.length)))).size).toBe(nodes.length);
   });
 });

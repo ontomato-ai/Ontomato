@@ -55,6 +55,8 @@ export interface AnalysisTaskRunRequest {
   verifiedIdentity?: Pick<RequestIdentity, "userId" | "domainId">;
   /** The user API key for the MCP entry; page and scheduler use the token on the task row */
   apiKey?: string;
+  /** Name of the verified caller of a regular-session turn, given to the agent */
+  userName?: string;
   /** External cancellation trigger provided by the entry; the AbortController stays with the orchestrator */
   cancelSignal?: AbortSignal;
   /** Abort timeout in milliseconds; on expiry treated as cancellation, with the reason written into the terminal state */
@@ -177,6 +179,7 @@ async function executeRun(
       agentId: task.agentId,
       token: task.token || "",
       apiKey: request.apiKey,
+      userName: request.userName,
       onEvent: (event) => emitRunEvent(task.id, entry, event),
       signal: controller.signal,
       conversationTurn: request.conversationTurn,

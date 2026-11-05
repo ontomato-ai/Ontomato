@@ -37,7 +37,7 @@ function formatArguments(args: Record<string, unknown>): string {
         <div v-if="part.type === 'text'" class="loop-trace-text">
           <div
             v-if="variant === 'turn'"
-            class="markdown-body"
+            class="markdown-body markdown-content"
             v-html="renderAgentMarkdownWithJsonFormatting(part.text)"
           ></div>
           <template v-else>{{ part.text }}</template>
@@ -84,6 +84,26 @@ function formatArguments(args: Record<string, unknown>): string {
 .loop-trace-text :deep(a) {
   color: var(--el-color-primary);
   text-decoration: underline;
+}
+
+.loop-trace-text .markdown-body {
+  white-space: normal;
+  font-size: inherit;
+  line-height: inherit;
+}
+
+.loop-trace-text :deep(> .markdown-body > :first-child) {
+  margin-top: 0;
+}
+
+.loop-trace-text :deep(> .markdown-body > :last-child) {
+  margin-bottom: 0;
+}
+
+.loop-trace-text :deep(table) {
+  display: block;
+  max-width: 100%;
+  overflow-x: auto;
 }
 
 .loop-trace-text :deep(p) {

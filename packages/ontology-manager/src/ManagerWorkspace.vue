@@ -2,11 +2,14 @@
 import { computed, onMounted, ref, watch } from "vue";
 import type { ManagerAuthFailureStatus } from "./api";
 import { provideManagerContext, type ManagerHostContext } from "./context";
-import { sharedText, type SharedKey } from "./i18n";
 import { provideManagerFeedback } from "./feedback";
 import ManagerConfirmDialog from "./ManagerConfirmDialog.vue";
 import BusinessKnowledge from "./components/BusinessKnowledge.vue";
 import DataBrowser from "./data-browser/DataBrowser.vue";
+import InstanceGraph from "./data-browser/InstanceGraph.vue";
+import ObjectViewBuilder from "./object-views/ObjectViewBuilder.vue";
+import ObjectViewPage from "./object-views/ObjectViewPage.vue";
+import type { ObjectReference } from "@ontomato/contracts/object-views";
 import VisualModeling from "./visual-modeling/VisualModeling.vue";
 import OntologyAssetCatalog from "./components/OntologyAssetCatalog.vue";
 import OntologyAssetDetail from "./components/OntologyAssetDetail.vue";
@@ -40,8 +43,8 @@ const { loadOntology, loadSmartAssets } = provideManagerContext(context, (status
   emit("auth-failure", status)
 );
 const shell = ref<HTMLElement>();
+const graphSummaryTarget = ref<HTMLElement | null>(null);
 provideManagerFeedback(shell);
-const t = (key: SharedKey) => sharedText(context.messages, key);
 /** The host-supplied view replaces the original hash routing: the path locates the workspace and resource, the query carries from/focus/id/back. */
 const route = computed(() => {
   const [path, query = ""] = context.view.split("?");
@@ -57,6 +60,16 @@ const selectedObjectClass = ref("");
 const selectedRelation = ref("");
 const objectCreateVisible = ref(false);
 const browserObjectClass = ref("");
+const viewClass = ref("");
+const viewPrimaryKey = ref("");
+const viewEditing = ref(false);
+const viewBuilder = ref<InstanceType<typeof ObjectViewBuilder>>();
+function openInstance(reference: ObjectReference) {
+  navigate(`/views/${encodeURIComponent(reference.className)}?key=${encodeURIComponent(reference.primaryKey)}`);
+}
+function configureView(className: string, primaryKey = "") {
+  navigate(`/views/${encodeURIComponent(className)}?${new URLSearchParams({ edit: "true", ...(primaryKey ? { key: primaryKey } : {}) })}`);
+}
 const objectLabels = ref<Record<string, string>>({});
 
 function queryString(params: Record<string, string>) {
@@ -70,11 +83,16 @@ function resourcePath(resource: ModelResource) {
   return "/objects";
 }
 
-function navigate(path: string) {
+async function navigate(path: string) {
+  if (viewBuilder.value && !await viewBuilder.value.canLeave()) return;
   emit("navigate", path);
 }
 
 function changeWorkspace(workspace: Workspace) {
+  if (workspace === "instance-graph") {
+    navigate("/instance-graph");
+    return;
+  }
   if (workspace === "browser") {
     navigate(
       browserObjectClass.value ? `/data/${encodeURIComponent(browserObjectClass.value)}` : "/data"
@@ -104,6 +122,17 @@ function applyRouteState() {
   selectedRelation.value = "";
   selectedAsset.value = null;
   isAssetCreating.value = false;
+  viewClass.value = "";
+  viewPrimaryKey.value = "";
+  viewEditing.value = false;
+
+  if (section === "views" && first) {
+    activeWorkspace.value = "browser";
+    viewClass.value = first;
+    viewPrimaryKey.value = route.value.query.get("key") || "";
+    viewEditing.value = route.value.query.get("edit") === "true";
+    return;
+  }
 
   if (section === "objects") {
     activeWorkspace.value = "model";
@@ -139,6 +168,10 @@ function applyRouteState() {
   if (section === "data") {
     activeWorkspace.value = "browser";
     browserObjectClass.value = first || "";
+    return;
+  }
+  if (section === "instance-graph") {
+    activeWorkspace.value = "instance-graph";
     return;
   }
   if (section === "playground") {
@@ -304,7 +337,9 @@ onMounted(() => {
       />
 
       <section class="content-area">
-        <section v-if="activeWorkspace === 'model'" class="model-surface">
+        <ObjectViewBuilder v-if="viewClass && viewEditing" ref="viewBuilder" :key="viewClass" :class-name="viewClass" :initial-primary-key="viewPrimaryKey" @open="openInstance" @back="emit('navigate', viewPrimaryKey ? `/views/${encodeURIComponent(viewClass)}?key=${encodeURIComponent(viewPrimaryKey)}` : `/data/${encodeURIComponent(viewClass)}`)" />
+        <ObjectViewPage v-else-if="viewClass" :reference="{ className: viewClass, primaryKey: viewPrimaryKey }" @open="openInstance" @edit="configureView(viewClass, viewPrimaryKey)" @back="openObjectData(viewClass)" />
+        <section v-else-if="activeWorkspace === 'model'" class="model-surface">
           <OntologyModelCatalog
             v-if="!selectedObjectClass && !selectedRelation"
             :resource="activeModelResource"
@@ -319,6 +354,7 @@ onMounted(() => {
             @updated="loadResourceCounts"
             @browse="openObjectData"
             @relation="editObjectRelation"
+            @view="configureView"
           />
           <OntologyRelationDetail
             v-else-if="selectedRelation"
@@ -329,7 +365,11 @@ onMounted(() => {
           />
         </section>
         <section v-else-if="activeWorkspace === 'browser'" class="legacy-surface">
-          <DataBrowser :initial-class="browserObjectClass" />
+          <DataBrowser :initial-class="browserObjectClass" @open="openInstance" @configure="configureView" />
+        </section>
+        <section v-else-if="activeWorkspace === 'instance-graph'" class="legacy-surface graph-surface">
+          <div ref="graphSummaryTarget" class="graph-summary-slot" />
+          <InstanceGraph :summary-target="graphSummaryTarget" @open="openInstance" @configure="configureView" />
         </section>
         <section v-else-if="activeWorkspace === 'assets'" class="asset-surface">
           <OntologyAssetCatalog
@@ -421,6 +461,18 @@ onMounted(() => {
 }
 .legacy-surface :deep(.data-browser) {
   min-height: 100%;
+}
+.graph-surface {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.graph-summary-slot:not(:empty) {
+  margin-bottom: var(--spacing-lg);
+}
+.graph-surface :deep(.instance-graph) {
+  min-height: 0;
+  flex: 1;
 }
 .assets-content {
   display: flex;

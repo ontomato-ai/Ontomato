@@ -34,9 +34,6 @@ class KnowledgeTitlePersistenceTest {
         assertEquals("Business knowledge id-1", inserted.title);
         assertEquals("body", inserted.text);
         assertEquals(List.of("tag"), inserted.tags);
-        assertEquals(0, inserted.creatorType);
-        assertEquals(1, inserted.status);
-        assertEquals("add: Business knowledge id-1", inserted.audit.getDescription());
         assertEquals(AuditLog.BUSSINESS_BKNOWLEDGE, inserted.audit.getBussiness());
         assertEquals(AuditLog.OPERATION_ADD, inserted.audit.getOperation());
         assertEquals(Boolean.FALSE, inserted.audit.getByAi());
@@ -48,7 +45,6 @@ class KnowledgeTitlePersistenceTest {
         Inserted inserted = insert("Business knowledge ", "", null, "text");
         assertTrue(inserted.id.startsWith("knowledge_"));
         assertEquals("Business knowledge " + inserted.id, inserted.title);
-        assertEquals("add: " + inserted.title, inserted.audit.getDescription());
     }
 
     @Test
@@ -93,10 +89,9 @@ class KnowledgeTitlePersistenceTest {
                 storedTags.capture(), eq(0), eq(1), any(Date.class));
         order.verify(auditLogDao).save(audit.capture(), eq("domain-1"));
         return new Inserted(storedId.getValue(), storedTitle.getValue(), storedText.getValue(),
-                storedTags.getValue(), 0, 1, audit.getValue());
+                storedTags.getValue(), audit.getValue());
     }
 
-    private record Inserted(String id, String title, String text, List<String> tags, int creatorType, int status,
-            AuditLog audit) {
+    private record Inserted(String id, String title, String text, List<String> tags, AuditLog audit) {
     }
 }

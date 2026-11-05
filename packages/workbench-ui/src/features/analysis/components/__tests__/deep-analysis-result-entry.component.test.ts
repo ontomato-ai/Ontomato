@@ -179,35 +179,63 @@ describe("deferred query facts", () => {
   });
 });
 
-/** The skill block reports real skills; a skill stage without entries is a placeholder. */
-describe("skill execution block", () => {
-  const skillStage = (skills: NonNullable<AnalysisActivity["skills"]>): AnalysisActivity => ({
-    activityId: "skill",
+/** Every recorded skill entry is shown where it was used: under its planned dimension, otherwise in the process. */
+describe("skill execution in process", () => {
+  const skillStage = (
+    skills: NonNullable<AnalysisActivity["skills"]>,
+    groupId?: string
+  ): AnalysisActivity => ({
+    activityId: `skill-${groupId || "summary"}`,
     kind: "skill",
+    groupId,
     seq: 3,
     revision: 3,
     status: "completed",
     startedAt: 1,
     skills,
   });
-  const mountWith = (extra: AnalysisActivity[], status: "completed" | "cancelled" = "completed") =>
+  const mountWith = (
+    extra: AnalysisActivity[],
+    status: "completed" | "cancelled" = "completed",
+    base: AnalysisActivity[] = activities
+  ) =>
     mount(DeepAnalysisResult, {
       props: {
-        activities: [...activities, ...extra],
+        activities: [...base, ...extra],
         runState: { status, revision: 1, progress: { done: 100, label: "" } },
       },
       global,
     });
 
-  it("is hidden for a completed or stopped run whose skill stage has no skills", () => {
-    expect(mountWith([skillStage([])]).find(".skill-execution-status").exists()).toBe(false);
+  it("renders no skill items when a skill stage has no entries", () => {
+    expect(mountWith([skillStage([])]).find(".skill-item").exists()).toBe(false);
     const stopped = mountWith([skillStage([])], "cancelled");
-    expect(stopped.find(".skill-execution-status").exists()).toBe(false);
+    expect(stopped.find(".skill-item").exists()).toBe(false);
     expect(stopped.find(".thinking-status.stopped").exists()).toBe(true);
   });
 
-  it("reports real skills as before", () => {
-    const w = mountWith([skillStage([{ skillId: "s1", action: "run", status: "completed" }])]);
-    expect(w.find(".skill-status-item.complete").exists()).toBe(true);
+  it("places a dimension's skills under that dimension and keeps every other skill in the process", () => {
+    const w = mountWith([
+      skillStage([{ skillId: "dim-skill", entry: "run.py", action: "run", status: "completed" }], "dim-1"),
+      skillStage([{ skillId: "orphan-skill", action: "run", status: "completed" }], "dim-unplanned"),
+      skillStage([{ skillId: "summary-skill", action: "run", status: "failed", error: "skill-err" }]),
+    ]);
+    const [dimension, other] = w.findAll(".tree-dimension");
+    expect(dimension.text()).toContain("By town");
+    expect(dimension.find(".skill-item").text()).toContain("dim-skill · run.py");
+    const others = other.findAll(".skill-item");
+    expect(others.map((item) => item.text()).join("|")).toContain("orphan-skill");
+    expect(others.map((item) => item.text()).join("|")).toContain("summary-skill");
+    expect(other.text()).toContain("skill-err");
+  });
+
+  it("still shows recorded skills when there is no dimension tree", () => {
+    const w = mountWith(
+      [skillStage([{ skillId: "loop-skill", action: "load", status: "running" }])],
+      "completed",
+      []
+    );
+    expect(w.find(".thinking-header").exists()).toBe(false);
+    expect(w.find(".skill-item").text()).toContain("loop-skill");
   });
 });

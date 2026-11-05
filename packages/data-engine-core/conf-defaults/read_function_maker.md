@@ -196,6 +196,7 @@ if len(sys.argv) > 3:
     parameterFilePath = sys.argv[3]  # "absolute path of the parameter file"
 ```
 - **With the original values supplied as parameters, the new program must produce the same result as the original program. Changing parameter values changes only the corresponding query inputs; the query and calculation logic must remain the same.**
+- **The keys of every row in the printed `answer` of the new program must be exactly those of the original program: do not rename, add or drop any. Keep a key unchanged even when it contains a value you parameterized (such as the year in `admission_total_2026`): downstream consumers reference the result by these keys.**
 
 ### Notes on writing python code
 - ** It is best to print the exception stack `traceback.print_exc()`, as this helps troubleshooting **

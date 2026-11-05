@@ -1,15 +1,15 @@
 <template>
   <div class="deep-analysis-result" :class="{ compact: props.compact }">
     <!-- Thinking panel: shows the dimension tree and query status -->
-    <div v-if="thinkingTree.length > 0" class="thinking-tree">
-      <div class="thinking-header">
+    <div v-if="thinkingTree.length > 0 || otherSkills.length > 0" class="thinking-tree">
+      <div v-if="thinkingTree.length > 0" class="thinking-header">
         <el-icon><Folder /></el-icon>
         <span class="thinking-title">{{ t("analysis.analysisProgress") }}</span>
-        <span v-if="allDimensionsDone && !skillsStopped" class="thinking-status success">
+        <span v-if="allDimensionsDone && !runStopped" class="thinking-status success">
           <el-icon><CircleCheck /></el-icon>
           {{ t("analysis.queryComplete") }}
         </span>
-        <span v-else-if="skillsStopped" class="thinking-status stopped">
+        <span v-else-if="runStopped" class="thinking-status stopped">
           <el-icon><Folder /></el-icon>
           {{ t("common.stopped") }}
         </span>
@@ -89,29 +89,50 @@
                 :scope="executionScope"
               />
             </div>
+            <div
+              v-for="(skill, sIndex) in skillsByDimension.get(dim.dimensionId) || []"
+              :key="`skill-${dim.dimensionId}-${sIndex}`"
+              class="question-item skill-item"
+              :class="{ done: skill.status === 'completed', failed: skill.status === 'failed' }"
+            >
+              <div class="question-left">
+                <el-icon :class="skillIcon(skill.status).className">
+                  <component :is="skillIcon(skill.status).icon" />
+                </el-icon>
+                <span class="question-text">
+                  {{ t("analysis.loopActivitySkill") }}: {{ skill.skillId
+                  }}{{ skill.entry ? ` · ${skill.entry}` : "" }}
+                </span>
+              </div>
+              <span v-if="skill.error" class="status-text error" :title="skill.error">
+                {{ skill.error }}
+              </span>
+            </div>
           </div>
         </div>
-      </div>
-    </div>
-
-    <!-- Skill execution status -->
-    <div v-if="showSkillStatus" class="skill-execution-status">
-      <div class="skill-status-header">
-        <el-icon><Cog /></el-icon>
-        <span>{{ t("analysis.analysisSkillExecution") }}</span>
-      </div>
-      <div class="skill-status-content">
-        <div v-if="skillsExecuting" class="skill-status-item executing">
-          <el-icon><Loader2 /></el-icon>
-          <span>{{ t("analysis.executingSkills") }}</span>
-        </div>
-        <div v-else-if="skillsStopped" class="skill-status-item stopped">
-          <el-icon><Folder /></el-icon>
-          <span>{{ t("common.stopped") }}</span>
-        </div>
-        <div v-else-if="skillsComplete" class="skill-status-item complete">
-          <el-icon><CircleCheck /></el-icon>
-          <span>{{ t("analysis.completedSkills", { n: skillSuccessCount }) }}</span>
+        <!-- Skills not tied to a planned dimension (e.g. the summary stage) stay in the process -->
+        <div v-if="otherSkills.length > 0" class="tree-dimension">
+          <div class="dim-questions">
+            <div
+              v-for="(skill, sIndex) in otherSkills"
+              :key="`skill-other-${sIndex}`"
+              class="question-item skill-item"
+              :class="{ done: skill.status === 'completed', failed: skill.status === 'failed' }"
+            >
+              <div class="question-left">
+                <el-icon :class="skillIcon(skill.status).className">
+                  <component :is="skillIcon(skill.status).icon" />
+                </el-icon>
+                <span class="question-text">
+                  {{ t("analysis.loopActivitySkill") }}: {{ skill.skillId
+                  }}{{ skill.entry ? ` · ${skill.entry}` : "" }}
+                </span>
+              </div>
+              <span v-if="skill.error" class="status-text error" :title="skill.error">
+                {{ skill.error }}
+              </span>
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -125,7 +146,6 @@ import {
   CircleCheck,
   CircleX,
   Loader2,
-  Cog,
   ChevronDown,
   ChevronRight,
 } from "lucide-vue-next";
@@ -153,12 +173,35 @@ const props = defineProps<{
 }>();
 
 const thinkingTree = computed(() => buildDimensionTree(props.activities));
-const skillActivities = computed(() => props.activities.filter((a) => a.kind === "skill"));
-const skillSuccessCount = computed(
-  () =>
-    skillActivities.value.flatMap((a) => a.skills || []).filter((s) => s.status === "completed")
-      .length
+type SkillEntry = NonNullable<AnalysisActivity["skills"]>[number];
+
+const plannedDimensionIds = computed(
+  () => new Set(thinkingTree.value.map((dim) => dim.dimensionId))
 );
+const skillActivities = computed(() => props.activities.filter((a) => a.kind === "skill"));
+/** Skill entries placed under the planned dimension their activity belongs to. */
+const skillsByDimension = computed(() => {
+  const placed = new Map<string, SkillEntry[]>();
+  for (const activity of skillActivities.value) {
+    const groupId = activity.groupId;
+    if (!groupId || !plannedDimensionIds.value.has(groupId)) continue;
+    placed.set(groupId, [...(placed.get(groupId) || []), ...(activity.skills || [])]);
+  }
+  return placed;
+});
+/** Every other skill entry (no group, or a group outside the plan) so no recorded skill is dropped. */
+const otherSkills = computed(() =>
+  skillActivities.value
+    .filter((a) => !a.groupId || !plannedDimensionIds.value.has(a.groupId))
+    .flatMap((a) => a.skills || [])
+);
+
+function skillIcon(status: SkillEntry["status"]) {
+  if (status === "failed") return { icon: CircleX, className: "failed-icon" };
+  if (status === "completed") return { icon: CircleCheck, className: "done-icon" };
+  if (status === "running") return { icon: Loader2, className: "loading-icon" };
+  return { icon: Folder, className: "pending-icon" };
+}
 
 const expandedDimensions = ref<Record<number, boolean>>({});
 const expandedQuestions = ref<Record<string, boolean>>({});
@@ -191,23 +234,7 @@ watch(
   { immediate: true }
 );
 
-// Skill execution status
-const skillsExecuting = computed(
-  () =>
-    skillActivities.value.some((a) => a.status === "running") &&
-    props.runState?.status === "running"
-);
-const skillsComplete = computed(
-  () =>
-    skillActivities.value.length > 0 && skillActivities.value.every((a) => a.status !== "running")
-);
-const skillsStopped = computed(() => props.runState?.status === "cancelled");
-// A skill stage without skill entries is only a placeholder; the block reports real skills only.
-const showSkillStatus = computed(
-  () =>
-    skillActivities.value.some((a) => a.skills?.length) &&
-    (skillsExecuting.value || skillsComplete.value || skillsStopped.value)
-);
+const runStopped = computed(() => props.runState?.status === "cancelled");
 
 // Dimension query status
 const allDimensionsDone = computed(() => {
@@ -477,50 +504,6 @@ const isDimensionDone = (dim: DeepAnalysisDimension) => {
   white-space: nowrap;
 }
 
-.skill-execution-status {
-  margin-top: 10px;
-  border: 1px solid var(--el-border-color);
-  border-radius: var(--radius-xl);
-  overflow: hidden;
-  background: var(--el-bg-color);
-}
-
-.skill-status-header {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 12px 16px;
-  background: linear-gradient(
-    180deg,
-    color-mix(in srgb, var(--el-color-primary) 4%, transparent) 0%,
-    transparent 100%
-  );
-  border-bottom: 1px solid var(--el-border-color-light);
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--el-text-color-primary);
-}
-
-.skill-status-content {
-  padding: 12px 16px;
-  background: var(--el-bg-color-overlay);
-}
-
-.skill-status-item {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  font-size: 14px;
-  color: var(--el-text-color-regular);
-}
-
-.skill-status-item.executing {
-  color: var(--el-color-warning);
-}
-
-.skill-status-item.complete {
-  color: var(--el-color-success);
-}
 /* Preserve the compact conversation-list hierarchy while retaining expandable data details. */
 .deep-analysis-result.compact :deep(.thinking-tree) {
   background: transparent;

@@ -29,7 +29,10 @@ export interface AnalysisScheduleRule {
   enabled: boolean;
   notifyEmail?: string;
   notifyOnComplete: boolean;
+  /** Login token of a rule created before scheduled credentials; exchanged for one on the next run, then dropped. */
   token?: string;
+  /** Switched off because the owner's scheduled credential stopped working; the owner's next visit resumes it. */
+  pausedForCredential: boolean;
   /** Why the last trigger failed; cleared on a successful claim */
   lastError?: string;
   lastRunAt?: number;
@@ -48,7 +51,6 @@ export interface RegisterScheduleRuleParams {
   scheduleExpression: string;
   notifyEmail?: string;
   notifyOnComplete?: boolean;
-  token?: string;
 }
 
 export interface UpdateScheduleRuleParams {
@@ -59,7 +61,6 @@ export interface UpdateScheduleRuleParams {
   enabled?: boolean;
   notifyEmail?: string;
   notifyOnComplete?: boolean;
-  token?: string;
 }
 
 interface AnalysisScheduleRuleRow {
@@ -75,6 +76,7 @@ interface AnalysisScheduleRuleRow {
   notify_email: string | null;
   notify_on_complete: boolean;
   token: string | null;
+  paused_for_credential: boolean;
   last_error: string | null;
   last_run_at: string | null;
   next_run_at: string | null;
@@ -96,6 +98,7 @@ function mapRuleRow(row: AnalysisScheduleRuleRow): AnalysisScheduleRule {
     notifyEmail: row.notify_email || undefined,
     notifyOnComplete: row.notify_on_complete,
     token: row.token || undefined,
+    pausedForCredential: row.paused_for_credential === true,
     lastError: row.last_error || undefined,
     lastRunAt: row.last_run_at ? parseInt(row.last_run_at, 10) : undefined,
     nextRunAt: row.next_run_at ? parseInt(row.next_run_at, 10) : undefined,
@@ -124,7 +127,6 @@ export function toScheduleRuleTask(rule: AnalysisScheduleRule): AnalysisTask {
     notifyOnComplete: rule.notifyOnComplete,
     resultSummary: rule.lastError,
     triggerSource: "scheduled",
-    token: rule.token,
     lastRunAt: rule.lastRunAt,
     nextRunAt: rule.nextRunAt,
     createdAt: rule.createdAt,
@@ -154,8 +156,8 @@ export class AnalysisScheduleRuleService {
     const result = await this.pool.query(
       `INSERT INTO ${qualifiedTable("analysis_schedule_rules")}
        (id, agent_id, user_id, name, description, question, schedule_expression, enabled,
-        notify_email, notify_on_complete, token, next_run_at, created_at, updated_at, domain_id)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,true,$8,$9,$10,$11,$12,$12,$13)
+        notify_email, notify_on_complete, next_run_at, created_at, updated_at, domain_id)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,true,$8,$9,$10,$11,$11,$12)
        RETURNING *`,
       [
         id,
@@ -167,7 +169,6 @@ export class AnalysisScheduleRuleService {
         params.scheduleExpression,
         params.notifyEmail || null,
         params.notifyOnComplete || false,
-        params.token || null,
         nextRunAt,
         now,
         params.domainId,
@@ -204,7 +205,6 @@ export class AnalysisScheduleRuleService {
       enabled: "enabled",
       notifyEmail: "notify_email",
       notifyOnComplete: "notify_on_complete",
-      token: "token",
     };
     for (const [key, column] of Object.entries(fieldMap)) {
       const value = updates[key as keyof UpdateScheduleRuleParams];
@@ -214,6 +214,7 @@ export class AnalysisScheduleRuleService {
       }
     }
 
+    if (updates.enabled === true) sets.push("paused_for_credential = false");
     if (updates.enabled === false) {
       sets.push("next_run_at = NULL");
     } else if (updates.scheduleExpression) {
@@ -229,6 +230,55 @@ export class AnalysisScheduleRuleService {
       vals
     );
     return result.rows[0] ? mapRuleRow(result.rows[0]) : null;
+  }
+
+  /** Switches the rule off until the owner's next visit with a valid login renews the credential. */
+  async pauseForCredential(id: string, message: string): Promise<void> {
+    await this.pool.query(
+      `UPDATE ${qualifiedTable("analysis_schedule_rules")}
+       SET enabled = false, paused_for_credential = true, next_run_at = NULL, last_error = $2, updated_at = $3
+       WHERE id = $1`,
+      [id, message, Date.now()]
+    );
+  }
+
+  async hasCredentialPaused(owner: { userId: string; domainId: string }): Promise<boolean> {
+    const result = await this.pool.query(
+      `SELECT 1 FROM ${qualifiedTable("analysis_schedule_rules")}
+       WHERE user_id = $1 AND domain_id = $2 AND paused_for_credential = true LIMIT 1`,
+      [owner.userId, owner.domainId]
+    );
+    return (result.rowCount ?? 0) > 0;
+  }
+
+  /** Switches the credential-paused rules back on, each from its next slot after now. */
+  async resumeCredentialPaused(owner: { userId: string; domainId: string }): Promise<void> {
+    const result = await this.pool.query(
+      `SELECT * FROM ${qualifiedTable("analysis_schedule_rules")}
+       WHERE user_id = $1 AND domain_id = $2 AND paused_for_credential = true`,
+      [owner.userId, owner.domainId]
+    );
+    for (const rule of result.rows.map(mapRuleRow)) {
+      await this.pool.query(
+        `UPDATE ${qualifiedTable("analysis_schedule_rules")}
+         SET enabled = true, paused_for_credential = false, last_error = NULL, next_run_at = $2, updated_at = $3
+         WHERE id = $1 AND paused_for_credential = true`,
+        [rule.id, rule.scheduleExpression ? parseScheduleToNextRun(rule.scheduleExpression) : null, Date.now()]
+      );
+    }
+  }
+
+  /** Drops the plaintext login tokens older rules kept, once the owner has a scheduled credential. */
+  async clearLegacyTokens(owner: { userId: string; domainId: string }): Promise<void> {
+    await this.pool.query(
+      `UPDATE ${qualifiedTable("analysis_schedule_rules")} SET token = NULL
+       WHERE user_id = $1 AND domain_id = $2 AND token IS NOT NULL`,
+      [owner.userId, owner.domainId]
+    );
+  }
+
+  async deleteByUser(userId: string): Promise<void> {
+    await this.pool.query(`DELETE FROM ${qualifiedTable("analysis_schedule_rules")} WHERE user_id = $1 AND domain_id <> ''`, [userId]);
   }
 
   async remove(id: string, domainId: string): Promise<boolean> {

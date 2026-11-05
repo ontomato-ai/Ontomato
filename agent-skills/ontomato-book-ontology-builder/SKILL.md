@@ -1,11 +1,11 @@
 ---
 name: ontomato-book-ontology-builder
-description: "Derive a book-specific ontology from full reading, with precise properties, source evidence and meaningful analysis; deliver one ontology Excel, one Markdown design guide and a ready-to-deploy Ontomato handoff package. Use with ontomato-ontomap-builder when the result must answer questions, not for ordinary book summaries."
+description: "Build a book-specific ontology for Ontomato from full reading, with precise properties, property-specific evidence and meaningful analysis. Deliver one ontology Excel, one readable Markdown guide and a matching import package. Use with ontomato-ontomap-builder for deployment, not for ordinary book summaries."
 ---
 
 # Book ontology builder
 
-Explain what makes this book distinctive through a sourced, queryable model. The accepted version produces **one ontology Excel, one readable Markdown design guide and, when the result must answer questions, one Ontomato handoff package**. All required workflow rules are here; use the [guide template](#markdown-guide-template) when writing the Markdown. No bundled scripts, CLI or historical catalogues are required.
+Explain what makes this book distinctive through a sourced, queryable model. Deliver **one ontology Excel, one readable Markdown design guide and one matching Ontomato import package** from the same accepted version. All required workflow rules are here; use the [guide template](#markdown-guide-template) when writing the Markdown. No bundled scripts, CLI or historical catalogues are required.
 
 ## Ontomato: work through one ontology
 
@@ -17,19 +17,14 @@ Ontomato is an ontology platform: it describes a domain and uses that shared mea
 | Attribute | A named property with a type and business meaning. Display names and descriptions explain a field; they do not replace its technical name. |
 | Relationship | A directed connection with one meaning, such as Character **belongs to** Faction. Direction is part of the meaning. |
 | ontomap | The machine-readable definition of classes, attributes, relationships and their data mappings. It describes the data; it is not the records themselves. |
-| Evidence | The exact source passage that supports a value. In Ontomato it is stored as a `vector` attribute so the passage can be retrieved semantically. |
+| Evidence | Exact source passages and property-specific links identifying support, contradiction or context, with attribution and limits. |
 | Analysis | A sourced judgment about a record: conclusion, reason, limits and method. It is data, not commentary kept outside the workbook. |
 
-This skill works in two layers and keeps them distinct:
-
-- **Semantic layer** — the Excel workbook and design guide. Full fidelity: book-specific classes, qualified references, evidence and analysis.
-- **Runtime layer** — the ontomap. A declared, deliberately lossy projection of the semantic layer that a data source can actually serve.
-
-Never present the runtime layer as if it preserved everything. Every downgrade is recorded in the projection register (§7).
+Maintain **one accepted ontology** across Excel, the guide and Ontomato. The final Excel is the authoritative import specification: classes, properties, records, IDs, relationships, evidence, analysis and uncertainty must correspond 1:1. Explicit naming and lossless storage conversions may differ (§7); import must not silently add, omit or change meaning.
 
 ## This skill's role
 
-Own the path from source text to an accepted book ontology: read the declared scope, derive the smallest useful model, keep evidence inside the ontology, include analysis, deliver the workbook and guide, and prepare the handoff package when questions must run against a deployed Ontomato.
+Own the path from source text to an accepted ontology and matching import package: read the declared scope, derive the smallest useful model, retain evidence and analysis, and prepare the synchronized deliverables.
 
 This skill does **not** connect data sources, create business tables, replace an ontomap, upload resources or run questions. Those are deployment actions with their own authorization and verification rules; `ontomato-ontomap-builder` owns them. This package ships no `ontomato.mjs` and no `application.yml`; do not vendor a second client.
 
@@ -37,9 +32,9 @@ This skill does **not** connect data sources, create business tables, replace an
 
 - The authoritative book files and the requested milestone.
 - One recording language for names and prose, confirmed once per project.
-- For a queryable result: a deployed Ontomato, an authorized data source, and the `ontomato-ontomap-builder` package. Without them, deliver the semantic layer and state that deployment is pending.
+- For import preparation: the target adapter's confirmed format and `ontomato-ontomap-builder` guidance. Actual deployment also needs Ontomato and an authorized data source. Identify missing prerequisites and report import readiness and deployment separately.
 
-Reading and modeling do not require a deployment. Start with the book; ask for environment details only when the handoff actually begins.
+Reading can proceed independently. Use the companion builder's confirmed import rules when checking the initial sample; ask only for missing details needed to resolve its mappings.
 
 ## 1. Establish scope and read
 
@@ -66,11 +61,11 @@ Split parts or phases only when both a source-supported boundary and an independ
 
 Make important filters, changes and joins structured; incidental context can remain supported prose. Preserve uncertainty, native quantities/units and time precision. Separate occurrence time from reporting time, attributed belief from established fact, intention from execution, capability from use, and immediate outcome from final objective. Later revelations do not give characters earlier knowledge. Do not invent reciprocal links, causal continuity, unnamed identities or considered alternatives.
 
-Before bulk population, fix class identity: every class needs one stable, text-valued primary key that survives re-sorting and re-extraction, and every physical name must be a safe data-source identifier. §7 defines the naming and projection rules; deciding them late forces an ID migration.
+Before bulk population, fix stable text primary keys and check the connected sample against §7's import mappings. Resolve required structural adaptations in the workbook model before scaling. Reuse confirmed platform rules; missing rules leave compatibility pending.
 
 ## 3. Keep evidence inside the ontology
 
-Every workbook includes **Evidence Passage** and **Evidence Support** as actual class sheets, with localized names allowed.
+Every final workbook and imported ontology includes **Evidence Passage** and **Evidence Support** as actual classes, with localized display names allowed.
 
 An Evidence Passage identifies a complete contextual paragraph or contiguous paragraph group in the source, reconstructed from segments when necessary. Preserve exact wording, punctuation, whitespace, paragraph boundaries, source identity and locators. Reuse the same span rather than duplicating it. Declare its content as `vector`, while storing the complete original text in Excel; this does not generate or upload embeddings. Never substitute a summary, clipped quote or invented text. Split oversized spans at paragraph boundaries; if a single paragraph still exceeds cell capacity, use ordered, nonoverlapping segments retaining its source/paragraph ID and character offsets. Link supports to the complete logical passage, keep all segments in Excel, and verify their reassembly from exported cells exactly matches the source.
 
@@ -78,7 +73,7 @@ Each Evidence Support row identifies its own ID, target class/record, exact targ
 
 Review each material value against full passages for identity, attribution, timing, scope and meaning. Evidence that someone made a claim does not establish the claim's truth. Where speech is modeled, preserve speaker continuity, nested quotation and speech/thought distinctions; account for relevant expression candidates without inventing turns at each paragraph break. Noncontiguous spans need an explicit assembly rule.
 
-**Evidence Support is an independent class by default.** It carries the per-property provenance that a passage-level link cannot express. Downgrade it to a single `evidence_id` field on each target class only when table count or upload volume is a stated constraint; record the lost `target_property` dimension in the projection register. Never drop it silently.
+Preserve this many-to-many evidence model through import: a property may have multiple support rows, and a passage may support multiple targets. Keep each support's ID, target property/value, passage, role and qualifiers. Never replace these classes with one `evidence_id` per object; table or upload limits require a faithful mapping or unresolved import status.
 
 ## 4. Include meaningful analysis by default
 
@@ -108,9 +103,9 @@ Apply these checks to the declared milestone:
 
 Check **analytical coverage independently**: selected questions, eligible records, completed/pending judgments and justified exclusions. Reconcile counts with retrievable records. Retrieve conclusions, reasons, limits, methods and source support; verify reasoning is case-specific and supported, rather than merely nonempty.
 
-**Semantic acceptance gate (always):** record pass, pending, fail or justified not-applicable separately for **structure/export (§6), source/extraction coverage and analytical coverage**, with checked scope, results and remaining issues. Declare the milestone complete only when every applicable gate passes. Known omissions, unsupported material claims and unchecked material blanks block completion; verified uncertainty does not. Sample acceptance is not full extraction, and extraction completion cannot close pending analysis. New defects reopen the affected gate.
+**Ontology acceptance gate (always):** record pass, pending, fail or justified not-applicable separately for **structure/export (§6), source/extraction coverage and analytical coverage**, with checked scope, results and remaining issues. Declare the milestone complete only when every applicable gate passes. Known omissions, unsupported material claims and unchecked material blanks block completion; verified uncertainty does not. Sample acceptance is not full extraction, and extraction completion cannot close pending analysis. New defects reopen the affected gate.
 
-**Deployment acceptance gate (only when a queryable result was requested):** the projection package exists and passes its own checks (§7); the target domain is dedicated or explicitly cleared; `get-ontomap` was saved as a backup; `set-ontomap` succeeded and reads back; every non-empty passage has one uploaded resource; and one cross-relationship question returns a value that matches the source. A saved ontomap without a successful question is not deployment acceptance. Running the question and uploading resources belong to `ontomato-ontomap-builder`.
+**Import readiness:** the saved package passes §7's Excel correspondence checks with no unresolved mappings. **Deployment acceptance:** the deployment skill completes the authorized import, reads back the model/data/evidence for reconciliation, and verifies the declared central questions. Report ontology acceptance, import readiness and deployment acceptance separately; creating files alone cannot establish deployment.
 
 ## 6. Deliver readable, verified files
 
@@ -142,62 +137,48 @@ Write for someone unfamiliar with the schema and chat. Localize and adapt the [t
 
 Apply §2's usefulness test to every exported class/property; remove bookkeeping-only content. Check keys, types, vocabularies, cardinalities, references, inheritance/identity, relevant cycles, exact evidence spans and analytical support. Compare exported class sheets, headers, types, IDs and values with the accepted data; reconcile the Markdown inventory and relationship map with the workbook. Walk an actual central query through records → property-specific support → full source, including analysis and a meaningful unknown when available. Inspect workbook presentation; preview Mermaid when a renderer is available and state any rendering limitation. Read the guide independently for clarity.
 
-Use these results in the §5 acceptance gate. Preserve earlier releases and deliver both files together with their exact milestone, material changes and remaining limits. Successful export does not establish source or analytical acceptance.
+Use these results in the §5 acceptance gates. Preserve earlier releases and deliver the workbook, guide and import package together with their exact milestone, material changes and remaining limits. Successful export does not establish source, analytical or deployment acceptance.
 
-## 7. Ontomato projection
+## 7. Ontomato mapping and import
 
-The runtime layer must be explicitly derived, not assumed. Produce it only after the semantic layer is accepted; a model change after projection reopens the affected projection checks.
+Derive the ontomap, import files and evidence manifest from the same accepted schema and data as the final saved Excel. Check mappings on the initial sample; finalize the package after ontology acceptance. Later changes reopen affected checks.
 
-### What can and cannot be preserved
+### 1:1 correspondence
 
-| Semantic construct | Ontomato representation | Loss / rule |
-| --- | --- | --- |
-| Class | One class, `name` = physical table or index name | The class name is an identifier, not prose. |
-| Property | One attribute with `name`, `showName`, `desc`, `type` | Rich value kinds collapse into one column type. |
-| Typed reference | Relationship with `fromClass`, `toClass`, predicate `desc`, and join fields | Only concrete, single-target pairs can be enforced. |
-| Polymorphic reference | Concrete relationship per endpoint, or `documented-only` | Cannot be one relationship with a discriminator. |
-| Parent/subclass | Separate flat classes, or one class with a discriminator column | Ontomato has no inheritance. |
-| Multi-valued property | Child class + relationship, or serialized `text` | No array attribute type. |
-| Evidence Passage | Class with a `vector` attribute holding the exact text | The Excel text is the source; the runtime stores references. |
-| Evidence Support | Class with target class/ID/property columns | Target is polymorphic, so it is not a relationship. |
-| Analysis judgment | Attributes on the owning class, or a separate assessment class | Only project what the questions actually use. |
+| Excel content | Required correspondence in Ontomato |
+| --- | --- |
+| Class sheets and instance rows | Same classes, record grain, ID sets and values. |
+| Properties and definitions | Matching attributes/references, types, units, null meaning and interpretation rules. Preserve shared analytical methods in visible metadata. |
+| Relationship map and reference values | Same predicates, endpoints, direction, multiplicity and instance links, including their qualifiers. |
+| Evidence Passage | Same passage IDs, source locators and exact text; storage resources remain bound to those records. |
+| Evidence Support | Same support IDs, exact targets/properties, passages, roles and qualifiers; all links remain navigable. |
+| Analysis and uncertainty | Same conclusions, reasons, limits, attribution, methods and justified unknowns. |
 
-If a construct cannot be represented faithfully, keep it in the semantic layer and add it to the **documented-only register**: construct, why it matters, why the runtime cannot carry it, and what a reader loses. “Not supported” without that explanation is not a projection decision.
+Excel rows 1–3 become schema metadata; the relationship map becomes relationship definitions, not extra object rows. Presentation settings need no database equivalent. Declare physical-name, serialization and resource-storage conversions and decode them for comparison.
 
-### Naming
+Any required structural adaptation must appear in the Excel class sheets, relationship map and guide before final export. Do not add runtime-only ontology classes/properties, omit accepted content or treat documented information loss as success. If no faithful mapping is available, identify the affected construct/questions and keep import readiness pending.
 
-- `name` is ASCII snake_case, starts with a letter, uses only `a-z`, `0-9` and `_`, avoids reserved words, and is unique within the domain. It is pasted into SQL unquoted by relational adapters.
-- `showName` and `desc` carry the book's language and meaning. Never put Chinese or spaces into `name`.
-- Prefix every physical table with one project slug, such as `book_<slug>_`, so a shared data source cannot collide with another ontology.
-- Keep a name map in the package: semantic name → physical class/attribute name → display name. Reuse it across rebuilds; a rename is an identity change, not a cosmetic edit.
+### Names and identity
 
-### Primary key
+- Use safe ASCII snake_case physical identifiers and a project prefix for table names. Keep the recording language in display names and descriptions; follow the target adapter's confirmed identifier rules.
+- Maintain one map from Excel classes/properties to physical names and display names. Apply it consistently to references and evidence target class/property fields.
+- Every class has one stable, non-empty text primary key already present in Excel. Use the companion builder's confirmed key declaration; do not generate replacement IDs during import or derive them from row order.
+- Physical renames require explicit mappings and migration checks; they do not by themselves change object identity.
 
-Exactly one attribute per class is the primary key, with `type: varchar` and `enable: true`. Use a stable business or source-derived ID, never a row number or sort position. Every reference and every evidence target stores that exact value. If the source key is numeric, add a text key during import rather than changing the label.
+### Relationships and structural adaptations
 
-### Relationships
+Map every declared reference with its actual predicate, join fields, direction and multiplicity. For polymorphic targets, constrain joins by target class through a confirmed discriminator-aware or typed mapping; an ID match alone must not join the wrong class. Keep the complete Evidence Support class and its target identity.
 
-- Write each relationship as `from → predicate → to`, with a verb phrase in `desc` (`belongs to`, `is located in`, `is parent of`; in a Chinese deployment `属于`, `位于`, `是…的上级`).
-- Relational sources need real `fromField` and `toField` columns; the condition is `fromClass.fromField = toClass.toField`. Resolve the pair, direction and multiplicity from data, not from similar column names.
-- A relationship key is a short, stable identifier; its meaning lives in `desc`.
-- Split a qualified or polymorphic reference into one relationship per concrete endpoint pair, and keep the qualifier as a column on the source class. If that produces a meaningless explosion, mark it `documented-only`.
-- Two relationships between the same pair need distinct predicates; do not merge them.
+If time, claimant or another qualifier varies per relationship occurrence, retain it on that scoped relationship record. Do not move it to a single field on the source object. Any required association classes or typed endpoint fields must already be represented in the final Excel.
 
-### Inheritance and subclasses
+When native inheritance or multi-value support is unavailable, adapt the workbook model using faithful class/relationship records or explicit membership discriminators. Preserve canonical identity and membership rules. Serialized lists are suitable only when display is sufficient and decoding is lossless; values needed for joins require queryable structure. Never create numbered columns such as `member_1`, `member_2`.
 
-Flatten. Either create one class per concrete subtype with its own table and key, or one class with a `_type` discriminator and the union of attributes. Do not claim inherited constraints that the runtime cannot enforce; record which invariants moved into review checks.
+### Evidence storage
 
-### Multi-valued attributes
-
-Use a child class with a foreign key and a relationship when the values must be queried or joined. Use a serialized `text` attribute only for display-only lists, and document the serialization. Never spread one semantic property across numbered columns (`member_1`, `member_2`).
-
-### Evidence and vector
-
-- **Modeling:** Evidence Passage `content` is declared `vector`; Excel holds the complete original text. No embedding is generated or uploaded in this phase.
-- **Projection:** the attribute is `type: vector`; its runtime value is the text-array representation `[{"path":"...","text":"..."}]`, not a numeric vector. Do not write paths into Excel.
-- **Upload:** one resource per non-empty passage, with `className`, `attrName`, `objectId` and the exact text; empty passages are skipped. Upload appends a reference, so a first upload does not require clearing `[]`, but a re-upload does. Never upload twice to “repair” an uncertain result; read the field first.
-- **Verification:** read the evidence field back and confirm the reference shape; retrieval proves the resource works, a success message does not.
-- **Ownership:** upload, embedding configuration and vector rebuilds belong to the deployment skill and the operator. If embedding is unconfigured or vectors need rebuilding, report it as a deployment prerequisite; do not alter the model or write vector storage directly.
+- Excel retains the complete original text in the `vector`-typed content property. Storage references must not replace that text in Excel.
+- Use the companion builder's confirmed resource format. Cover every non-empty passage or declared segment exactly once in the upload manifest, with its stable class/property/object binding. Preserve logical-passage links and segment order; reassembled text must match Excel and the source.
+- Retain property-specific Evidence Support records independently of resource storage. Retrieval must follow target → support → passage, including multiple passages, contradictions and qualified claims.
+- Upload, embedding configuration and retry handling belong to the deployment skill. Verify existing bindings before retries so references are not duplicated; a resource success message alone does not prove exact content or correct attribution.
 
 ### Handoff package
 
@@ -205,37 +186,36 @@ Create `ontomato/` beside the workbook:
 
 | Artifact | Contents |
 |---|---|
-| `ontomap.draft.json` | Complete definition for the target domain: dataset description, flat classes, attributes, primary keys, relationships, vector attributes. |
-| `ddl.sql` | Idempotent-enough table creation for the target adapter, with the project prefix, text primary keys, evidence tables and indexes. No destructive statements. |
-| `import/<class>.csv` | One file per class, UTF-8, header row = physical names, values matching the declared types. |
-| `upload-manifest.jsonl` | One line per non-empty passage: class, attribute, object ID, exact text, suffix. Order is stable. |
-| `projection.md` | Name map, key choices, relationship decisions, documented-only register, evidence-class decision, open deployment prerequisites. |
+| `ontomap.draft.json` | Matching classes, attributes, metadata, primary keys and relationship definitions. |
+| `ddl.sql` | Non-destructive table/index definitions for the confirmed adapter, matching the workbook classes and keys. |
+| `import/<class>.csv` | One file per class with mapped headers, identical records and explicit lossless type/null/list encoding. |
+| `upload-manifest.jsonl` | Exact evidence text and stable resource bindings, including any declared segments. |
+| `import-map.md` | Name/type/storage mappings, readiness results and unresolved prerequisites. Keep repair history and detailed audits in the existing project review. |
 
-Validate the package before handoff: every class in the ontomap has a table and an import file; every relationship endpoint and join field exists; every primary key is unique, non-empty text; every vector attribute has a matching manifest entry set; the documented-only register accounts for every unprojected construct. State the validation results in `projection.md`.
+Read the saved Excel and package independently. Reconcile class/property inventories, metadata, full ID sets, values and nulls in both directions; compare relationship links/qualifiers, support targets and exact evidence text after decoding. Check manifest coverage and duplicate bindings. Counts alone are insufficient; any unexplained addition, omission or value change blocks readiness.
 
-### Deployment boundary
+### Deployment verification
 
-Hand the package to `ontomato-ontomap-builder`; do not execute its commands from this skill.
+Hand the package to `ontomato-ontomap-builder`; this skill does not execute deployment commands.
 
-- `set-ontomap` **replaces the whole ontomap of the domain**. It is not a merge. Before any write, read and save the current definition, and confirm the domain is dedicated to this book or explicitly cleared for replacement. Shared test environments are not safe defaults.
-- Prefer a dedicated domain or a dedicated database schema. A project prefix reduces collisions but does not isolate the whole-domain replacement.
-- `upload-vector` is append-only per object; re-running it without a reset duplicates references.
-- `ask` is the only proof that the runtime answers from this model. Use one question that requires a relationship and one that requires evidence retrieval.
-- Enterprise deployments add login and domain selection; the enterprise `ontomato-ontomap-builder` package owns those details. Never place credentials or tokens in the workbook, guide or projection package.
+- The deployment skill must save the current domain definition and confirm the intended replacement scope before writing. A table prefix does not isolate a whole-domain ontomap replacement.
+- After import, read back the actual model, records and evidence resources and repeat the Excel reconciliation above. Check model metadata as well as data, preserving shared methods and blank semantics.
+- Execute the declared central questions through actual imported records and evidence. Include multiple supports and a meaningful unknown or conflicting claim when available. Verify returned values, supporting record IDs, attribution and time scope; a plausible answer alone is insufficient.
+- Unresolved differences, unavailable readback or unsupported required questions keep deployment acceptance pending. Never place credentials or tokens in the workbook, guide or package.
 
 ## 8. Continue without rebuilding
 
 For follow-ups, test the current model/data first. Distinguish missing population, missing query, schema limitation and source uncertainty; make the smallest faithful change. Compare retained IDs and assertion meanings with the **immediately preceding published export**, including IDs first issued there. Persist newly allocated IDs independently of row/sort order; retire changed identities with explicit mappings instead of reassigning or reusing IDs. Preserve user edits and history, documenting changed meanings or language. Recheck affected evidence, definitions, queries and guide examples together. Existing project layouts need no migration merely to follow this skill.
 
-When the runtime layer exists, also recheck the projection: name map, primary keys, relationship endpoints, evidence bindings and the documented-only register. A semantic change that alters a projected name or key requires an explicit migration note, not a silent re-export.
+When an import package or deployed ontology exists, recheck §7 correspondence after affected changes, including name mappings, keys, relationship endpoints and evidence bindings. Record migrations explicitly; preserve stable object identities.
 
-While work remains, keep a short `CONTINUE_HERE.md` with source/pass, accepted versus draft work, versions, next location, unresolved issues and latest checks.
+While work remains, keep a short `CONTINUE_HERE.md` with source/pass, accepted versus draft work, versions, next location, unresolved issues and latest checks. Reuse existing review files instead of creating parallel registries.
 
 Invoking the skill does not authorize unrelated project changes, delegation, uploads or background work.
 
 ## Markdown guide template
 
-Use the following outline when creating the companion design guide. Replace its placeholders with the book-specific content required by §6. When a handoff package exists, add one short section pointing to it and state the deployment gate separately from semantic acceptance.
+Use the following outline for the companion guide. Replace its placeholders with the book-specific content required by §6. State ontology acceptance, import readiness and deployment separately.
 
 ````markdown
 # {{Book title}} — Ontology design guide
@@ -270,7 +250,7 @@ Use the following outline when creating the companion design guide. Replace its 
 
 ## Ontomato handoff
 
-{{Whether a queryable result was requested; package location; what is projected and what is documented-only; deployment status and remaining prerequisites. Omit this section when no handoff was requested.}}
+{{Package location, the 1:1 Excel/Ontomato mapping and necessary storage conversions; import readiness, deployment status and any unresolved prerequisites.}}
 
 ## Scope and limits
 

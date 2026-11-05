@@ -43,6 +43,26 @@ async function writePackage(base: string, id: string, version: string) {
 }
 
 describe("public skill ownership across domains", () => {
+  it("passes skill options alongside stored evidence without allowing host input overrides", async () => {
+    const dir = await writePackage(publicRoot, "option-reader", "1.0.0");
+    await fs.writeFile(path.join(dir, "index.mjs"), 'export async function execute(input) { return {json: {valueField: input.valueField, locations: input.locations, data: input.data, query: input.query}}; }');
+    const tools = createLoopSkillTools({
+      domainId: "options", selectedSkillIds: ["option-reader"],
+      resolveEvidence: id => id === "q" ? { question: "Sales", entries: [{ index: 0, title: "Daily sales", data: [{ cups: 12 }], dataCount: 1 }] } : undefined,
+      trajectory: { start: () => "activity", settle: vi.fn() },
+    });
+    const run = tools.find(tool => tool.name === "run_skill")!;
+    const locations = [{ city: "Shanghai", latitude: 31.23, longitude: 121.47 }];
+    const output = await run.execute("run", { skill_id: "option-reader", question_id: "q", parameters: { valueField: "cups", locations } });
+    expect(output.content[0].text).toContain('"valueField": "cups"');
+    expect(output.content[0].text).toContain('"latitude": 31.23');
+    expect(output.content[0].text).toContain('"cups": 12');
+    for (const parameters of [[], { data: [] }, { services: {} }]) {
+      const rejected = await run.execute("invalid", { skill_id: "option-reader", question_id: "q", parameters });
+      expect(rejected.content[0].text).toMatch(/must be a JSON object|cannot override/);
+    }
+  });
+
   it("refreshes existing and new domains while preserving switches and domain-only packages", async () => {
     const oldRoot = skillRegistryManager.getDomainSkillsRoot("old");
     const oldCopy = await writePackage(oldRoot, "shared", "local-edit");

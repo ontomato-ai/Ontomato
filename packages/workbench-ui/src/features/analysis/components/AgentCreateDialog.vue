@@ -126,6 +126,9 @@ const classesLoading = ref(false);
 const externalMcpServiceNames = ref<string[]>([]);
 const mcpServicesLoading = ref(false);
 const mcpServicesLoadFailed = ref(false);
+const publishedActions = ref<Array<{ id: string; name: string }>>([]);
+const actionsLoading = ref(false);
+const actionsLoadFailed = ref(false);
 const hotReports = ref<AnalysisReportHotCardSummary[]>([]);
 const hotReportsLoading = ref(false);
 const hotReportsLoadFailed = ref(false);
@@ -168,6 +171,21 @@ async function loadExternalMcpServices() {
     mcpServicesLoadFailed.value = true;
   } finally {
     mcpServicesLoading.value = false;
+  }
+}
+
+async function loadPublishedActions() {
+  actionsLoading.value = true;
+  actionsLoadFailed.value = false;
+  try {
+    const json = await queryViewApi.listPublishedActions();
+    publishedActions.value = (Array.isArray(json.data) ? json.data : [])
+      .filter((action: any) => typeof action?.id === "string")
+      .map((action: any) => ({ id: action.id, name: String(action.name || action.id) }));
+  } catch {
+    actionsLoadFailed.value = true;
+  } finally {
+    actionsLoading.value = false;
   }
 }
 
@@ -342,6 +360,7 @@ const form = ref({
   hotReportEnabled: true,
   summaryPosition: "bottom" as AnalysisReportSummaryPosition,
   enabledMcpServiceNames: [] as string[],
+  enabledActionIds: [] as string[],
   analysisDimensionPrompt: "",
   summarizerPrompt: "",
   conclusionMakerPrompt: "",
@@ -387,6 +406,7 @@ function fillFormFromAgent(agent: AnalysisAgent) {
     hotReportEnabled: agent.hotReportEnabled !== false,
     summaryPosition: agent.summaryPosition === "top" ? "top" : "bottom",
     enabledMcpServiceNames: agent.enabledMcpServiceNames || [],
+    enabledActionIds: agent.enabledActionIds || [],
     analysisDimensionPrompt: agent.analysisDimensionPrompt || "",
     summarizerPrompt: agent.summarizerPrompt || "",
     conclusionMakerPrompt: agent.conclusionMakerPrompt || "",
@@ -414,6 +434,7 @@ function resetForm() {
     hotReportEnabled: true,
     summaryPosition: "bottom",
     enabledMcpServiceNames: [],
+    enabledActionIds: [],
     analysisDimensionPrompt: "",
     summarizerPrompt: "",
     conclusionMakerPrompt: "",
@@ -503,6 +524,7 @@ watch(
         loadObjectClasses();
       }
       loadExternalMcpServices();
+      loadPublishedActions();
       if (props.editingAgent) {
         fillFormFromAgent(props.editingAgent);
         if (props.editingAgent.id) {
@@ -824,8 +846,6 @@ watch(isDark, () => {
             v-model="form.enabledMcpServiceNames"
             multiple
             filterable
-            collapse-tags
-            collapse-tags-tooltip
             clearable
             :loading="mcpServicesLoading"
             :disabled="mcpServicesLoading || mcpServicesLoadFailed"
@@ -849,6 +869,37 @@ watch(isDark, () => {
             :closable="false"
             :title="t('admin.externalMcpServicesLoadFailed')"
           />
+          <template v-if="!form.reportDeliverableEnabled">
+            <AgentConfigurationHeader class="actions-header" :title="t('admin.actions')" :hint="t('admin.actionsHint')" :count="form.enabledActionIds.length">
+              <template #icon><Workflow :size="16" /></template>
+              <template #actions>
+                <el-button size="small" :loading="actionsLoading" :icon="RefreshCw" @click="loadPublishedActions">{{ t('common.refresh') }}</el-button>
+              </template>
+            </AgentConfigurationHeader>
+            <el-select
+              popper-class="agent-editor-select-dropdown"
+              v-model="form.enabledActionIds"
+              multiple
+              filterable
+              clearable
+              :loading="actionsLoading"
+              :disabled="actionsLoading || actionsLoadFailed"
+              :aria-label="t('admin.actions')"
+              :placeholder="t('admin.actionsPlaceholder')"
+              fit-input-width
+              style="width: 100%"
+            >
+              <el-option v-for="action in publishedActions" :key="action.id" :label="action.name" :value="action.id" />
+              <el-option v-for="id in form.enabledActionIds.filter(id => !publishedActions.some(action => action.id === id))" :key="id" :label="id" :value="id" disabled />
+            </el-select>
+            <el-alert
+              v-if="actionsLoadFailed"
+              class="mcp-load-alert"
+              type="warning"
+              :closable="false"
+              :title="t('admin.actionsLoadFailed')"
+            />
+          </template>
         </div>
       </div>
     </div>
@@ -963,6 +1014,7 @@ watch(isDark, () => {
 .mcp-manage-link { text-decoration: none; }
 .mcp-manage-link:hover, .mcp-manage-link:focus { text-decoration: none; }
 .mcp-load-alert { width: 100%; }
+.tools-panel .actions-header { margin-top: var(--spacing-lg); }
 
 .form-left,
 .form-right {

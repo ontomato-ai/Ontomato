@@ -35,6 +35,12 @@ import { stripMarkdown } from "../../../utils/markdown";
 import { formatRelativeTime } from "../../../utils/relative-time";
 import { useI18n } from "vue-i18n";
 import { workbenchContent } from "../../../content";
+import {
+  SCHEDULE_FREQUENCIES,
+  SCHEDULE_HOUR_INTERVALS,
+  buildScheduleExpression,
+  type ScheduleFrequency,
+} from "../utils/schedule-expression";
 
 const { t } = useI18n();
 const analysisStore = useAnalysisStore();
@@ -82,7 +88,8 @@ async function handleSelectTask(task: AnalysisTask) {
 const showInlineCreate = ref(false);
 const taskTitle = ref("");
 const scheduleEnabled = ref(false);
-const scheduleFrequency = ref(t("task.daily"));
+const scheduleFrequency = ref<ScheduleFrequency>("daily");
+const scheduleEveryHours = ref<number>(1);
 const scheduleTime = ref("08:00");
 const scheduleDayOfWeek = ref<number>(1);
 const scheduleDayOfMonth = ref<number>(1);
@@ -149,6 +156,13 @@ const dayOfWeekOptions = computed(() => [
   { label: t("common.saturday"), value: 6 },
   { label: t("common.sunday"), value: 7 },
 ]);
+
+const frequencyLabels = computed<Record<ScheduleFrequency, string>>(() => ({
+  hourly: t("task.hourly"),
+  daily: t("task.daily"),
+  weekly: t("task.weekly"),
+  monthly: t("task.monthly"),
+}));
 
 const dayOfMonthOptions = computed(() =>
   [1, 5, 10, 15, 20, 25].map((d) => ({
@@ -229,6 +243,8 @@ const formatScheduleExpression = (expr: string): string => {
     6: t("common.saturday"),
     7: t("common.sunday"),
   };
+  const hourly = expr.match(/^(\d+)h$/i);
+  if (hourly) return t("analysis.everyNHours", parseInt(hourly[1], 10));
   const match = expr.match(/^(\d+[mhd])@(\d{1,2}:\d{2})(?:\/(\d+))?$/i);
   if (match) {
     const freq = freqMap[match[1]] || match[1];
@@ -336,7 +352,8 @@ function toggleCreate() {
   if (showInlineCreate.value) {
     taskTitle.value = "";
     scheduleEnabled.value = false;
-    scheduleFrequency.value = t("task.daily");
+    scheduleFrequency.value = "daily";
+    scheduleEveryHours.value = 1;
     scheduleTime.value = "08:00";
     scheduleDayOfWeek.value = 1;
     scheduleDayOfMonth.value = 1;
@@ -349,21 +366,15 @@ function handleCreate() {
   const title = taskTitle.value.trim();
   if (!title || !selectedAgentId.value || !selectedAgent.value) return;
 
-  let scheduleExpression = "";
-  if (scheduleEnabled.value) {
-    const freqMap: Record<string, string> = {
-      [t("task.daily")]: "1d",
-      [t("task.weekly")]: "7d",
-      [t("task.monthly")]: "30d",
-    };
-    const freq = freqMap[scheduleFrequency.value] || "1d";
-    scheduleExpression = freq + "@" + scheduleTime.value;
-    if (scheduleFrequency.value === t("task.weekly")) {
-      scheduleExpression += "/" + scheduleDayOfWeek.value;
-    } else if (scheduleFrequency.value === t("task.monthly")) {
-      scheduleExpression += "/" + scheduleDayOfMonth.value;
-    }
-  }
+  const scheduleExpression = scheduleEnabled.value
+    ? buildScheduleExpression({
+        frequency: scheduleFrequency.value,
+        everyHours: scheduleEveryHours.value,
+        time: scheduleTime.value,
+        dayOfWeek: scheduleDayOfWeek.value,
+        dayOfMonth: scheduleDayOfMonth.value,
+      })
+    : "";
 
   void analysisStore.createTask(
     handleSelectTask,
@@ -373,8 +384,6 @@ function handleCreate() {
     {
       scheduleEnabled: scheduleEnabled.value,
       scheduleExpression,
-      scheduleFrequency: scheduleFrequency.value,
-      scheduleTime: scheduleTime.value,
       emailEnabled: emailEnabled.value,
       emailRecipient: emailRecipient.value.trim(),
     }
@@ -483,12 +492,26 @@ function handleDelete(e: Event, taskId: string) {
             <div class="option-sub-row">
               <label>{{ t("analysis.frequency") }}</label>
               <el-select v-model="scheduleFrequency" size="small" style="flex: 1">
-                <el-option :label="t('task.daily')" :value="t('task.daily')" />
-                <el-option :label="t('task.weekly')" :value="t('task.weekly')" />
-                <el-option :label="t('task.monthly')" :value="t('task.monthly')" />
+                <el-option
+                  v-for="f in SCHEDULE_FREQUENCIES"
+                  :key="f"
+                  :label="frequencyLabels[f]"
+                  :value="f"
+                />
               </el-select>
             </div>
-            <div v-if="scheduleFrequency === t('task.weekly')" class="option-sub-row">
+            <div v-if="scheduleFrequency === 'hourly'" class="option-sub-row">
+              <label>{{ t("analysis.hourInterval") }}</label>
+              <el-select v-model="scheduleEveryHours" size="small" style="flex: 1">
+                <el-option
+                  v-for="n in SCHEDULE_HOUR_INTERVALS"
+                  :key="n"
+                  :label="t('analysis.everyNHours', n)"
+                  :value="n"
+                />
+              </el-select>
+            </div>
+            <div v-if="scheduleFrequency === 'weekly'" class="option-sub-row">
               <label>{{ t("analysis.dayOfWeek") }}</label>
               <el-select v-model="scheduleDayOfWeek" size="small" style="flex: 1">
                 <el-option
@@ -499,7 +522,7 @@ function handleDelete(e: Event, taskId: string) {
                 />
               </el-select>
             </div>
-            <div v-if="scheduleFrequency === t('task.monthly')" class="option-sub-row">
+            <div v-if="scheduleFrequency === 'monthly'" class="option-sub-row">
               <label>{{ t("common.date") }}</label>
               <el-select v-model="scheduleDayOfMonth" size="small" style="flex: 1">
                 <el-option
@@ -510,7 +533,7 @@ function handleDelete(e: Event, taskId: string) {
                 />
               </el-select>
             </div>
-            <div class="option-sub-row">
+            <div v-if="scheduleFrequency !== 'hourly'" class="option-sub-row">
               <label>{{ t("common.time") }}</label>
               <el-select v-model="scheduleTime" size="small" style="flex: 1" filterable>
                 <el-option v-for="opt in timeOptions" :key="opt" :label="opt" :value="opt" />
@@ -612,7 +635,12 @@ function handleDelete(e: Event, taskId: string) {
                     {{ getTaskStatusText(task).text }}
                   </span>
                 </div>
-                <div class="progress-text">{{ getStageText(task) }}</div>
+                <div
+                  v-if="task.reportDeliverableEnabled !== false && getStageText(task)"
+                  class="progress-text"
+                >
+                  {{ getStageText(task) }}
+                </div>
               </div>
               <div
                 v-if="taskProgressMap[task.id]?.progress !== undefined"
@@ -664,7 +692,10 @@ function handleDelete(e: Event, taskId: string) {
                     {{ getTaskStatusText(task).text }}
                   </span>
                 </div>
-                <div v-if="task.resultSummary" class="task-summary">
+                <div
+                  v-if="task.reportDeliverableEnabled !== false && task.resultSummary"
+                  class="task-summary"
+                >
                   {{ getTaskSummary(task) }}
                 </div>
               </div>

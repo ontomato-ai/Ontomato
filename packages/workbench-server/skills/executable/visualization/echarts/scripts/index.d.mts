@@ -6,9 +6,13 @@ export interface EchartsSkillInput {
   data?: unknown;
   chartType: string;
   title: string;
+  showTitle?: boolean;
+  locale?: string;
   xField?: string;
   yField?: string;
   seriesField?: string;
+  dateField?: string;
+  descriptionField?: string;
   sortBy?: ChartSortBy;
   sortOrder?: "asc" | "desc";
   topN?: number;

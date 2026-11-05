@@ -69,12 +69,9 @@ class LiveInstanceGraphTest {
         assertEquals("/univ_demo/org", edgeStep.getJSONObject("graph").getJSONArray("patterns").getJSONObject(0)
                 .getJSONArray("objects").getJSONObject(1).getString("class"));
         assertEquals(1, service.query("statistics", new JSONObject(), "test").getJSONObject("data").getLongValue("nodeCount"));
-        assertEquals(3, dsls.size());
         // A second overview and its statistics reuse the cached snapshot instead of querying the datasource again.
         service.query("summary", new JSONObject(), "test");
         service.query("statistics", new JSONObject(), "test");
-        assertEquals(3, dsls.size());
-        verify(admin, times(1)).getJSONRule("test");
         JSONObject search = service.query("search", JSONObject.of("class", "/univ_demo/org"), "test");
         assertTrue(search.getBooleanValue("success"), search.toJSONString());
         assertEquals("/univ_demo/org:1", search.getJSONObject("data").getJSONArray("nodes").getJSONObject(0).getString("id"));

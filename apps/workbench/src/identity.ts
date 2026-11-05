@@ -35,12 +35,21 @@ export const ossIdentity: WorkbenchIdentity = {
 
   async confirmTaskOwner() {},
 
+  async issueScheduledCredential() {
+    return null;
+  },
+
+  async resolveScheduledCredential() {
+    const apiKey = environment.queryKey();
+    return apiKey ? { apiKey } : {};
+  },
+
   async resolveAutotestActor(input) {
     return { userId: "system", domainId: input.domainId || "default" };
   },
 
   async resolveMcpCaller() {
-    return { userId: "system", domainId: "default" };
+    return { userId: "system", userName: "system", domainId: "default" };
   },
 
   async resolveSkillResourceDomain(req) {

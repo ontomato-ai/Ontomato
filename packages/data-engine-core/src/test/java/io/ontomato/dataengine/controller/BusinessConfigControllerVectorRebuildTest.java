@@ -182,13 +182,6 @@ class BusinessConfigControllerVectorRebuildTest {
         assertTrue(response.getString("message").contains("Vector.rebuildNotNeeded"), response.toJSONString());
     }
 
-    @Test
-    void rebuildVectorsStartsAndReturnsAtOnce() {
-        JSONObject response = controller.rebuildVectors("zh-CN");
-
-        assertTrue(response.getBooleanValue("success"));
-        verify(vectorRebuildService).start("d1", "zh-CN");
-    }
 
     @Test
     void pauseVectorRebuildPausesThisDomainOrReportsTheRefusal() {

@@ -14,6 +14,7 @@ export interface SkillMeta {
 }
 
 export interface SkillInput {
+  locale?: string;
   query?: string;
   data?: any[] | any[][];
   datasets?: Array<{

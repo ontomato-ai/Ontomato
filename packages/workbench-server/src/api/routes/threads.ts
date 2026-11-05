@@ -8,8 +8,7 @@ import {
 } from "../../services/chat/thread-service";
 import { updateThreadTitle } from "../../services/chat/thread-store";
 import { buildAttachmentContentDisposition, asyncHandler } from "../utils/http";
-import { tApp } from "../../i18n";
-import { HttpError, toErrorMessage } from "../../utils/errors";
+import { HttpError } from "../../utils/errors";
 import { requireDomainId, type AuthenticatedRequest } from "../../utils/request-identity";
 const router: ReturnType<typeof Router> = Router();
 
@@ -47,15 +46,7 @@ router.delete(
     const checkpointerInstance = getCheckpointer();
 
     if (checkpointerInstance) {
-      try {
-        await deleteThread(threadId, userId, domainId);
-      } catch (err) {
-        if (err instanceof HttpError) throw err;
-        if (err instanceof Error && err.message.includes(tApp("threads.noAccess"))) {
-          throw new HttpError(403, err.message);
-        }
-        throw err;
-      }
+      await deleteThread(threadId, userId, domainId);
     }
 
     res.json({ success: true });
@@ -74,16 +65,10 @@ router.put(
       throw new HttpError(400, "title is required");
     }
 
-    try {
-      const checkpointerInstance = getCheckpointer();
-      if (checkpointerInstance) {
-        await checkpointerInstance.verifyThreadAccess(threadId, userId, domainId);
-        await updateThreadTitle(threadId, title, userId, domainId, { lockTitle: true });
-      }
-    } catch (error) {
-      if (error instanceof HttpError) throw error;
-      const message = toErrorMessage(error);
-      throw new HttpError(message.includes(tApp("threads.noAccess")) ? 403 : 500, message);
+    const checkpointerInstance = getCheckpointer();
+    if (checkpointerInstance) {
+      await checkpointerInstance.verifyThreadAccess(threadId, userId, domainId);
+      await updateThreadTitle(threadId, title, userId, domainId, { lockTitle: true });
     }
 
     res.json({ success: true });
@@ -101,13 +86,7 @@ router.get(
       return;
     }
 
-    try {
-      res.json(await getThreadMessagesPayload(threadId, { userId, domainId }));
-    } catch (error) {
-      if (error instanceof HttpError) throw error;
-      const message = toErrorMessage(error);
-      throw new HttpError(message.includes(tApp("threads.noAccess")) ? 403 : 500, message);
-    }
+    res.json(await getThreadMessagesPayload(threadId, { userId, domainId }));
   })
 );
 
@@ -117,26 +96,15 @@ router.get(
     const { threadId, requestSeq } = req.params;
     const userId = (req as AuthenticatedRequest).userId;
     const domainId = requireDomainId(req as AuthenticatedRequest);
-    try {
-      const download = await getThreadDataDownload(
-        threadId,
-        parseInt(requestSeq, 10),
-        userId,
-        domainId
-      );
-      res.setHeader("Content-Type", download.contentType);
-      res.setHeader("Content-Disposition", buildAttachmentContentDisposition(download.fileName));
-      res.send(download.body);
-    } catch (error) {
-      if (error instanceof HttpError) throw error;
-      const message = toErrorMessage(error);
-      const status = message.includes(tApp("threads.noAccess"))
-        ? 403
-        : message.includes(tApp("threads.notFound"))
-          ? 404
-          : 500;
-      throw new HttpError(status, message);
-    }
+    const download = await getThreadDataDownload(
+      threadId,
+      parseInt(requestSeq, 10),
+      userId,
+      domainId
+    );
+    res.setHeader("Content-Type", download.contentType);
+    res.setHeader("Content-Disposition", buildAttachmentContentDisposition(download.fileName));
+    res.send(download.body);
   })
 );
 
@@ -146,26 +114,15 @@ router.get(
     const { threadId, requestSeq } = req.params;
     const userId = (req as AuthenticatedRequest).userId;
     const domainId = requireDomainId(req as AuthenticatedRequest);
-    try {
-      const download = await getThreadDslDownload(
-        threadId,
-        parseInt(requestSeq, 10),
-        userId,
-        domainId
-      );
-      res.setHeader("Content-Type", download.contentType);
-      res.setHeader("Content-Disposition", buildAttachmentContentDisposition(download.fileName));
-      res.send(download.body);
-    } catch (error) {
-      if (error instanceof HttpError) throw error;
-      const message = toErrorMessage(error);
-      const status = message.includes(tApp("threads.noAccess"))
-        ? 403
-        : message.includes(tApp("threads.notFound"))
-          ? 404
-          : 500;
-      throw new HttpError(status, message);
-    }
+    const download = await getThreadDslDownload(
+      threadId,
+      parseInt(requestSeq, 10),
+      userId,
+      domainId
+    );
+    res.setHeader("Content-Type", download.contentType);
+    res.setHeader("Content-Disposition", buildAttachmentContentDisposition(download.fileName));
+    res.send(download.body);
   })
 );
 

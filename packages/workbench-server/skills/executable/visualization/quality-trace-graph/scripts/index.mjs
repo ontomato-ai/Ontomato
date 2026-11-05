@@ -48,55 +48,141 @@ const CATEGORY_DEFINITIONS = {
   other: { name: "Other object", symbol: "roundRect" },
 };
 
-const LIGHT_THEME = {
-  background: "#F8FAFC",
-  text: "#101828",
-  muted: "#475467",
-  border: "#D0D5DD",
-  edge: "#667085",
-  derivedEdge: "#475467",
-  gapEdge: "#B54708",
-  tooltipBackground: "rgba(16, 24, 40, 0.96)",
-  tooltipText: "#FFFFFF",
-  tooltipBorder: "#344054",
-  select: "#175CD3",
-  category: {
-    anchor: { fill: "#FFF4ED", border: "#C4320A" },
-    risk: { fill: "#FEF3F2", border: "#D92D20" },
-    gap: { fill: "#FFFAEB", border: "#B54708" },
-    batch: { fill: "#ECFDF3", border: "#027A48" },
-    event: { fill: "#F2F4F7", border: "#475467" },
-    product: { fill: "#EFF8FF", border: "#175CD3" },
-    material: { fill: "#F0F9FF", border: "#026AA2" },
-    party: { fill: "#F9F5FF", border: "#6941C6" },
-    other: { fill: "#F2F4F7", border: "#667085" },
+const THEME = {
+  "background": {
+    "$themeColor": "--el-bg-color"
   },
+  "text": {
+    "$themeColor": "--el-text-color-primary"
+  },
+  "muted": {
+    "$themeColor": "--el-text-color-secondary"
+  },
+  "border": {
+    "$themeColor": "--el-border-color"
+  },
+  "edge": {
+    "$themeColor": "--el-color-info"
+  },
+  "derivedEdge": {
+    "$themeColor": "--el-text-color-regular"
+  },
+  "gapEdge": {
+    "$themeColor": "--el-color-warning"
+  },
+  "tooltipBackground": {
+    "$themeColor": "--el-bg-color-overlay"
+  },
+  "tooltipText": {
+    "$themeColor": "--el-text-color-primary"
+  },
+  "tooltipBorder": {
+    "$themeColor": "--el-border-color"
+  },
+  "select": {
+    "$themeColor": "--el-color-primary"
+  },
+  "category": {
+    "anchor": {
+      "fill": {
+        "$themeColor": "--el-color-primary-light-9"
+      },
+      "border": {
+        "$themeColor": "--el-color-primary"
+      }
+    },
+    "risk": {
+      "fill": {
+        "$themeColor": "--el-color-danger-light-9"
+      },
+      "border": {
+        "$themeColor": "--el-color-danger"
+      }
+    },
+    "gap": {
+      "fill": {
+        "$themeColor": "--el-color-warning-light-9"
+      },
+      "border": {
+        "$themeColor": "--el-color-warning"
+      }
+    },
+    "batch": {
+      "fill": {
+        "$themeColor": "--el-color-success-light-9"
+      },
+      "border": {
+        "$themeColor": "--el-color-success"
+      }
+    },
+    "event": {
+      "fill": {
+        "$themeColor": "--el-color-info-light-9"
+      },
+      "border": {
+        "$themeColor": "--el-color-info"
+      }
+    },
+    "product": {
+      "fill": {
+        "$themeColor": "--el-color-primary-light-9"
+      },
+      "border": {
+        "$themeColor": "--el-color-primary"
+      }
+    },
+    "material": {
+      "fill": {
+        "$themeColor": "--el-color-success-light-9"
+      },
+      "border": {
+        "$themeColor": "--el-color-success"
+      }
+    },
+    "party": {
+      "fill": {
+        "$themeColor": "--el-color-primary-light-9"
+      },
+      "border": {
+        "$themeColor": "--el-color-primary"
+      }
+    },
+    "other": {
+      "fill": {
+        "$themeColor": "--el-color-info-light-9"
+      },
+      "border": {
+        "$themeColor": "--el-color-info"
+      }
+    }
+  }
 };
 
-const DARK_THEME = {
-  background: "#101828",
-  text: "#F2F4F7",
-  muted: "#D0D5DD",
-  border: "#475467",
-  edge: "#98A2B3",
-  derivedEdge: "#D0D5DD",
-  gapEdge: "#FDB022",
-  tooltipBackground: "rgba(242, 244, 247, 0.97)",
-  tooltipText: "#101828",
-  tooltipBorder: "#98A2B3",
-  select: "#84CAFF",
-  category: {
-    anchor: { fill: "#4E1D09", border: "#FF692E" },
-    risk: { fill: "#55160C", border: "#F97066" },
-    gap: { fill: "#4E2F0E", border: "#FDB022" },
-    batch: { fill: "#074D31", border: "#32D583" },
-    event: { fill: "#344054", border: "#D0D5DD" },
-    product: { fill: "#102A56", border: "#84CAFF" },
-    material: { fill: "#0B4A6F", border: "#7CD4FD" },
-    party: { fill: "#3E1C96", border: "#BDB4FE" },
-    other: { fill: "#344054", border: "#98A2B3" },
-  },
-};
+function resolveThemeColors(value) {
+  let root = document.documentElement;
+  try { if (parent !== window && parent.document) root = parent.document.documentElement; } catch (error) {}
+  const style = root.ownerDocument.defaultView.getComputedStyle(root);
+  function resolve(item) {
+    if (!item || typeof item !== "object") return item;
+    if (item.$themeColor) return style.getPropertyValue(item.$themeColor).trim() || (item.$themeColor.includes("bg-color") || item.$themeColor.includes("light-9") ? "Canvas" : "CanvasText");
+    if (Array.isArray(item)) return item.map(resolve);
+    return Object.fromEntries(Object.entries(item).map(([key, child]) => [key, resolve(child)]));
+  }
+  return resolve(value);
+}
+
+function observeThemeChanges(update) {
+  let root = document.documentElement;
+  try { if (parent !== window && parent.document) root = parent.document.documentElement; } catch (error) {}
+  const observer = new MutationObserver(update);
+  observer.observe(root, { attributes: true, attributeFilter: ["class", "style", "data-theme"] });
+  const scheme = window.matchMedia("(prefers-color-scheme: dark)");
+  scheme.addEventListener("change", update);
+  const timer = window.setInterval(update, 500);
+  window.addEventListener("pagehide", () => {
+    observer.disconnect(); scheme.removeEventListener("change", update); window.clearInterval(timer);
+  }, { once: true });
+}
 
 function pick(object, keys) {
   if (!object || typeof object !== "object") return undefined;
@@ -947,9 +1033,8 @@ function errorHtml(message) {
 </html>`;
 }
 
-function generateHtml(lightOption, darkOption, title) {
-  const lightJson = safeJson(lightOption);
-  const darkJson = safeJson(darkOption);
+function generateHtml(option, title) {
+  const optionJson = safeJson(option);
   const ariaTitle = escapeHtml(title);
   return `<!DOCTYPE html>
 <html lang="en">
@@ -970,12 +1055,13 @@ function generateHtml(lightOption, darkOption, title) {
   <div id="chart" role="img" aria-label="${ariaTitle}"></div>
   <div id="selection-summary" class="sr-only" aria-live="polite"></div>
   <script>
-    const lightOption = ${lightJson};
-    const darkOption = ${darkJson};
+    ${resolveThemeColors.toString()}
+    ${observeThemeChanges.toString()}
+    const baseOption = ${optionJson};
     const chartElement = document.getElementById("chart");
     const selectionSummary = document.getElementById("selection-summary");
     const chart = echarts.init(chartElement, null, { renderer: "canvas", useDirtyRect: true });
-    let renderedDark = null;
+    let renderedTheme = null;
     let renderedCompact = null;
 
     function escapeTooltip(value) {
@@ -985,19 +1071,6 @@ function generateHtml(lightOption, darkOption, title) {
         .replaceAll(">", "&gt;")
         .replaceAll('"', "&quot;")
         .replaceAll("'", "&#39;");
-    }
-
-    function isDarkMode() {
-      try {
-        if (parent && parent.document && parent.document.documentElement) {
-          return parent.document.documentElement.classList.contains("dark");
-        }
-      } catch (error) {}
-      return window.matchMedia("(prefers-color-scheme: dark)").matches;
-    }
-
-    function cloneOption(option) {
-      return JSON.parse(JSON.stringify(option));
     }
 
     function hydrateOption(option, compact) {
@@ -1053,15 +1126,16 @@ function generateHtml(lightOption, darkOption, title) {
     }
 
     function render(force = false) {
-      const dark = isDarkMode();
+      const themedOption = resolveThemeColors(baseOption);
+      const signature = JSON.stringify(themedOption);
       const compact = window.innerWidth < 560;
-      if (!force && dark === renderedDark && compact === renderedCompact) {
+      if (!force && signature === renderedTheme && compact === renderedCompact) {
         chart.resize();
         return;
       }
-      renderedDark = dark;
+      renderedTheme = signature;
       renderedCompact = compact;
-      const option = hydrateOption(cloneOption(dark ? darkOption : lightOption), compact);
+      const option = hydrateOption(themedOption, compact);
       chart.setOption(option, true);
       chart.resize();
     }
@@ -1072,13 +1146,7 @@ function generateHtml(lightOption, darkOption, title) {
       selectionSummary.textContent = "Selected " + (data.fullName || data.name) + "; type " + (data.typeLabel || "Unknown") + "; status " + (data.statusLabel || "Unknown");
     });
 
-    const colorScheme = window.matchMedia("(prefers-color-scheme: dark)");
-    colorScheme.addEventListener("change", () => render(true));
-    try {
-      if (parent && parent.document && parent.document.documentElement) {
-        new MutationObserver(() => render(true)).observe(parent.document.documentElement, { attributes: true, attributeFilter: ["class"] });
-      }
-    } catch (error) {}
+    observeThemeChanges(() => render(false));
 
     let resizeTimer;
     window.addEventListener("resize", () => {
@@ -1115,9 +1183,8 @@ export async function execute(input = {}) {
 
     const graph = truncateGraph(normalized, maxNodes);
     const renderedCycle = topologicalOrder(graph.nodes, graph.links).hasCycle;
-    const lightOption = buildOption(graph, title, direction, LIGHT_THEME, showRelationLabels);
-    const darkOption = buildOption(graph, title, direction, DARK_THEME, showRelationLabels);
-    const html = generateHtml(lightOption, darkOption, title);
+    const option = buildOption(graph, title, direction, THEME, showRelationLabels);
+    const html = generateHtml(option, title);
 
     const objectTypes = new Set(graph.nodes.map((node) => node.type));
     const relationTypes = new Set(graph.links.map((link) => link.relation));

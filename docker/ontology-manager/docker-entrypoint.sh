@@ -7,9 +7,11 @@ set -eu
 : "${DATARAG_ORIGIN:?DATARAG_ORIGIN must be the DataRAG origin, e.g. http://datarag:18087}"
 : "${ONTOLOGY_API_BASE:=/api}"
 : "${ONTOLOGY_INITIAL_ROUTE:=/discover}"
+: "${WORKBENCH_ORIGIN:=http://data-agent:3000}"
 
 # Strip a trailing slash so the proxy target cannot produce a // path.
 DATARAG_ORIGIN="${DATARAG_ORIGIN%/}"
+WORKBENCH_ORIGIN="${WORKBENCH_ORIGIN%/}"
 
 export ONTOLOGY_API_BASE ONTOLOGY_INITIAL_ROUTE
 
@@ -17,17 +19,30 @@ envsubst '${ONTOLOGY_API_BASE} ${ONTOLOGY_INITIAL_ROUTE}' \
   < /usr/share/nginx/html/config.js.template \
   > /usr/share/nginx/html/config.js
 
-# proxy_read_timeout stays unset on purpose: the Nginx default (60s) is kept.
+# Action generation and other synchronous model calls can exceed Nginx's 60s default.
 # The model runtime service credential belongs to the workbench server alone: an empty value
 # keeps a browser-supplied one from reaching DataRAG through this proxy.
 API_LOCATION="location ${ONTOLOGY_API_BASE}/data-query/ {
   proxy_pass ${DATARAG_ORIGIN}/;
   proxy_http_version 1.1;
+  proxy_read_timeout 900s;
   proxy_set_header X-Ontomato-Model-Runtime-Token \"\";
   proxy_set_header Host \$proxy_host;
   proxy_set_header X-Real-IP \$remote_addr;
   proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
   proxy_set_header X-Forwarded-Proto \$scheme;
+}
+location ${ONTOLOGY_API_BASE}/skills/ {
+  proxy_pass ${WORKBENCH_ORIGIN}/api/skills/;
+  proxy_set_header Host \$proxy_host;
+}
+location = ${ONTOLOGY_API_BASE}/skills {
+  proxy_pass ${WORKBENCH_ORIGIN}/api/skills;
+  proxy_set_header Host \$proxy_host;
+}
+location ${ONTOLOGY_API_BASE}/echart/ {
+  proxy_pass ${WORKBENCH_ORIGIN}/api/echart/;
+  proxy_set_header Host \$proxy_host;
 }"
 
 export API_LOCATION

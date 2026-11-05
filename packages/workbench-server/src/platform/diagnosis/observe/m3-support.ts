@@ -16,22 +16,12 @@ export interface M3QueryLogic {
 }
 
 /**
- * Diagnosis's understanding of the data engine's M3 data platform: M3 query events and MQL, and the MQL query language.
+ * Diagnosis's understanding of the data engine's M3 query events and generated MQL.
  * The enterprise app assembles the object; the open-source app assembles null (it never parsed these).
  * This decides diagnosis output only and says nothing about whether the data engine supports M3.
  */
 export interface M3DiagnosticSupport {
   queryLogic: M3QueryLogic;
-  /** The query language submitted when the data adapter is m3. */
-  queryLanguage: "MQL";
-  /**
-   * The authoring hint the enterprise app appends when the adapter is m3 and the reference file exists.
-   * When the open-source app assembles null the file is never read.
-   */
-  mqlReference: {
-    fileName: string;
-    hint: (absolutePath: string) => string;
-  };
 }
 
 let installed: M3DiagnosticSupport | null | undefined;

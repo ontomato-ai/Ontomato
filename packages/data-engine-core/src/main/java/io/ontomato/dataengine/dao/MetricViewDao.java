@@ -285,8 +285,10 @@ public class MetricViewDao extends BaseDao {
 
 			String sql = "SELECT " + COLUMNS + ", brief_vector <-> ?::vector AS distance FROM " + TABLE_NAME
 					+ " WHERE " + whereSql + " AND brief_vector IS NOT NULL ORDER BY distance LIMIT ?";
-			List<Object> queryParams = new ArrayList<>(params);
+			// Bind in placeholder order: the SELECT's vector comes before the WHERE filters.
+			List<Object> queryParams = new ArrayList<>();
 			queryParams.add(pgVector);
+			queryParams.addAll(params);
 			queryParams.add(maxResult);
 
 			List<Object[]> rows = jdbcTemplate.query(sql,

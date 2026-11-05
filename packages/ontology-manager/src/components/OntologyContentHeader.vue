@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ElButton } from "element-plus";
-import { Database } from "lucide-vue-next";
+import { Table2 } from "lucide-vue-next";
 import type { Workspace } from "../workspace";
 import { useOntologyText } from "../context";
 
@@ -24,7 +24,7 @@ defineEmits<{ browse: [] }>();
     <el-button
       v-if="workspace === 'model'"
       type="primary"
-      :icon="Database"
+      :icon="Table2"
       @click="$emit('browse')"
     >
       {{ ot("browseObjectData") }}

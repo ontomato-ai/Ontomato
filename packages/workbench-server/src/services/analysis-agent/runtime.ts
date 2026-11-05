@@ -24,6 +24,7 @@ type RunDeepAnalysisParams = {
   domainId: string;
   token: string;
   apiKey?: string;
+  userName?: string;
   onEvent: (event: DeepAnalysisEmittedEvent) => void;
   signal?: AbortSignal;
   conversationTurn?: AnalysisConversationTurnRecord;
@@ -107,6 +108,7 @@ export async function runDeepAnalysis(
       domainId: params.domainId,
       token: params.token,
       apiKey: params.apiKey,
+      userName: params.userName,
       onEvent: params.onEvent,
       signal: params.signal,
       conversationTurn: params.conversationTurn,

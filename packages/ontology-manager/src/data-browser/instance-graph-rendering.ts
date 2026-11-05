@@ -7,8 +7,8 @@ export function isLargeInstanceGraph(nodeCount: number, edgeCount: number) {
   return nodeCount > 1000 || edgeCount > 2000;
 }
 
-export function instanceGraphNodeLabel(name: string | undefined, id: string) {
-  const label = name?.trim() || id;
+export function instanceGraphNodeLabel(name: string | undefined, _id: string) {
+  const label = name?.trim() || "—";
   const characters = Array.from(label);
   return characters.length > 24 ? `${characters.slice(0, 23).join("")}…` : label;
 }

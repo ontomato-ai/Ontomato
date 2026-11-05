@@ -15,10 +15,12 @@ vi.mock("../../../logging/model-agents", () => ({
   modelAgentName: () => "chartPlanner",
 }));
 
+const response = vi.hoisted(() => ({ empty: false }));
+
 vi.mock("../../../config/model-factory", () => ({
   createModel: () => ({
     invoke: async () => ({
-      content: JSON.stringify([
+      content: JSON.stringify(response.empty ? [] : [
         {
           title: "Sales By Department",
           chartType: "bar",
@@ -76,6 +78,15 @@ vi.mock("../../../core/skills/execution/runtime", () => ({
 }));
 
 describe("generateChartsFromCandidates", () => {
+  it("returns no_viable_plan when the model supplies no plan", async () => {
+    response.empty = true;
+    try {
+      const result = await generateChartsFromCandidates({ domainId: "domain-1", userQuestion: "q", scopeId: "scope-1",
+        candidates: [{ sourceSubQuestion: "q1", data: [{ x: 1, y: 2 }] }], maxCharts: 1 });
+      expect(result.charts).toEqual([]);
+      expect(result.diagnostics).toMatchObject([{ scopeId: "scope-1", reason: "no_viable_plan" }]);
+    } finally { response.empty = false; }
+  });
   it("executes and produces chart for executable skill without chart type declaration", async () => {
     const result = await generateChartsFromCandidates({
       domainId: "domain-1",

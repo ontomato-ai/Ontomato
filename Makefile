@@ -20,7 +20,6 @@ VERSION ?= $(shell $(NODE) --input-type=module -e 'import {readFileSync} from "n
 IMAGE_TAG ?= $(VERSION)
 IMAGE_REGISTRY ?= ghcr.io/ontomato-ai
 MIRROR_STATE ?= $(CURDIR)/.build/mirror/$(ARCH)
-BOOTSTRAP ?= 0
 TOOL_BUNDLE ?= $(CURDIR)/.build/offline-tools/$(ARCH)
 
 # Export already published final images. Keep MIRROR_STATE between releases.
@@ -31,5 +30,4 @@ tools-bundle:
 
 bundle:
 	$(NODE) scripts/bundle.mjs --arch $(ARCH) \
-	  --version $(VERSION) --image-tag $(IMAGE_TAG) --registry $(IMAGE_REGISTRY) --state "$(MIRROR_STATE)" --tool-bundle "$(TOOL_BUNDLE)" \
-	  $(if $(filter 1,$(BOOTSTRAP)),--bootstrap,)
+	  --version $(VERSION) --image-tag $(IMAGE_TAG) --registry $(IMAGE_REGISTRY) --state "$(MIRROR_STATE)" --tool-bundle "$(TOOL_BUNDLE)"

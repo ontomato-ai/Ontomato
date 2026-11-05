@@ -36,7 +36,7 @@ function errorResult(message, meta = {}) {
   };
 }
 
-function generateHtml({ title, points, valueField }) {
+function generateHtml({ title, points, valueField, showTitle, locale }) {
   const safeTitle = escapeHtml(title);
   const serializedPoints = JSON.stringify(points).replace(/</g, "\\u003c");
   const serializedValueField = JSON.stringify(valueField || null);
@@ -49,42 +49,40 @@ function generateHtml({ title, points, valueField }) {
   <link rel="stylesheet" href="/api/skills/resources/executable/visualization/leaflet/scripts/leaflet.css">
   <style>
     html, body, #map { height: 100%; margin: 0; }
-    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: #fff; color: #1f2937; }
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: var(--map-bg, Canvas); color: var(--map-text, CanvasText); }
     .map-shell { height: 100%; display: flex; flex-direction: column; }
     .map-title { padding: 12px 16px; font-size: 16px; font-weight: 600; border-bottom: 1px solid #e5e7eb; }
-    #map { flex: 1; min-height: 320px; }
+    #map { flex: 1; min-height: 0; background: var(--map-bg, Canvas); }
     .leaflet-popup-content { margin: 12px 14px; min-width: 180px; }
     .popup-title { font-weight: 600; margin-bottom: 6px; }
     .popup-row { display: flex; gap: 12px; margin-top: 4px; font-size: 12px; }
-    .popup-key { color: #64748b; }
-    @media (prefers-color-scheme: dark) {
-      body { background: #111827; color: #f9fafb; }
-      .map-title { border-color: #374151; }
-      .leaflet-popup-content-wrapper, .leaflet-popup-tip { background: #1f2937; color: #f9fafb; }
-      .popup-key { color: #cbd5e1; }
-    }
+    .popup-key { color: var(--map-muted, GrayText); }
+    .leaflet-popup-content-wrapper, .leaflet-popup-tip, .leaflet-bar a { background: var(--map-bg, Canvas); color: var(--map-text, CanvasText); }
   </style>
 </head>
 <body>
-  <div class="map-shell"><div class="map-title">${safeTitle}</div><div id="map"></div></div>
+  <div class="map-shell">${showTitle === false ? '' : `<div class="map-title">${safeTitle}</div>`}<div id="map"></div></div>
   <script src="/api/skills/resources/executable/visualization/leaflet/scripts/leaflet.js"></script>
   <script>
     const points = ${serializedPoints};
     const valueField = ${serializedValueField};
+    const locale = ${JSON.stringify(locale || 'en')};
+    const isChinese = locale.startsWith('zh');
     if (!window.L) {
-      document.getElementById("map").textContent = "Failed to load map resources. Please check the network connection and try again.";
+      document.getElementById("map").textContent = isChinese ? "地图资源加载失败，请检查网络连接。" : "Failed to load map resources.";
       throw new Error("Leaflet library failed to load");
     }
-    const map = L.map("map", { scrollWheelZoom: true });
+    const map = L.map("map", { scrollWheelZoom: false, zoomControl: false });
+    L.control.zoom({ zoomInTitle: isChinese ? '放大' : 'Zoom in', zoomOutTitle: isChinese ? '缩小' : 'Zoom out' }).addTo(map);
     const isDark = window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
-    const tiles = isDark
-      ? "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
-      : "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png";
-    L.tileLayer(tiles, { maxZoom: 19, attribution: "&copy; OpenStreetMap contributors &copy; CARTO" }).addTo(map);
+    const tileLayer = L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}", {
+      maxZoom: 19, attribution: "Tiles &copy; Esri — Sources: Esri, HERE, Garmin, USGS, OpenStreetMap contributors"
+    }).addTo(map);
     const values = points.map((point) => Number(point.value)).filter(Number.isFinite);
     const minValue = values.length ? Math.min(...values) : 0;
     const maxValue = values.length ? Math.max(...values) : 0;
     const bounds = [];
+    const markers = [];
     const createPopupRow = (key, value) => {
       const row = document.createElement("div");
       row.className = "popup-row";
@@ -102,6 +100,7 @@ function generateHtml({ title, points, valueField }) {
       const marker = L.circleMarker([point.latitude, point.longitude], {
         radius, color: "#1d4ed8", weight: 1.5, fillColor: "#3b82f6", fillOpacity: 0.7
       }).addTo(map);
+      markers.push(marker);
       const popup = document.createElement("div");
       const popupTitle = document.createElement("div");
       popupTitle.className = "popup-title";
@@ -117,6 +116,26 @@ function generateHtml({ title, points, valueField }) {
     if (bounds.length === 1) map.setView(bounds[0], 12);
     else map.fitBounds(bounds, { padding: [28, 28], maxZoom: 14 });
     setTimeout(() => map.invalidateSize(), 0);
+    new ResizeObserver(() => map.invalidateSize()).observe(document.getElementById('map'));
+    function updateTheme() {
+      const host = window.frameElement || document.documentElement;
+      const style = host.ownerDocument.defaultView.getComputedStyle(host);
+      const color = style.getPropertyValue('--el-color-primary').trim() || '#409eff';
+      const probe = host.ownerDocument.createElement('span');
+      probe.style.color = style.getPropertyValue('--el-bg-color').trim() || 'Canvas';
+      host.ownerDocument.body.appendChild(probe);
+      const channels = host.ownerDocument.defaultView.getComputedStyle(probe).color.match(/[\\d.]+/g)?.map(Number);
+      probe.remove();
+      const dark = channels && channels.length >= 3 ? channels[0] * .299 + channels[1] * .587 + channels[2] * .114 < 128 : isDark;
+      map.getPane('tilePane').style.filter = dark ? 'invert(1) hue-rotate(180deg) brightness(.8) saturate(.65)' : '';
+      for (const [name, token] of [['bg','--el-bg-color'],['text','--el-text-color-primary'],['muted','--el-text-color-secondary']]) {
+        document.documentElement.style.setProperty('--map-' + name, style.getPropertyValue(token).trim());
+      }
+      markers.forEach(marker => marker.setStyle({ color, fillColor: color }));
+    }
+    updateTheme();
+    const timer = setInterval(updateTheme, 500);
+    window.addEventListener('pagehide', () => { clearInterval(timer); map.remove(); }, { once: true });
   </script>
 </body>
 </html>`;
@@ -158,7 +177,7 @@ export async function execute(input) {
   if (!points.length) return errorResult("No rows contain valid latitude and longitude", { latitudeField, longitudeField });
 
   return {
-    html: generateHtml({ title, points, valueField }),
+    html: generateHtml({ title, points, valueField, showTitle: input.showTitle, locale: input.locale }),
     meta: { skillId: "leaflet", chartType, title, dataRows: points.length, originalRows: data.length, skippedRows, latitudeField, longitudeField, labelField, valueField },
   };
 }

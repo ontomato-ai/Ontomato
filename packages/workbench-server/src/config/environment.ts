@@ -23,6 +23,8 @@ export const environment = {
   queryBase: () => read("DATA_QUERY_BASE_URL"),
   queryTimeout: () => parseInt(read("DATA_QUERY_TIMEOUT") || "30000", 10),
   queryKey: () => read("DATA_QUERY_API_KEY"),
+  /** Seals the scheduled-task credentials kept in Postgres; only an edition that issues credentials needs it. */
+  scheduledCredentialSecret: () => read("ONTOMATO_MODEL_RUNTIME_TOKEN"),
   subQuestionInterval: (fallback: number | undefined) =>
     nonNegative(read("SUB_QUESTION_QUERY_INTERVAL_MS"), fallback),
   reportCooldown: (fallback: number | undefined) =>

@@ -81,7 +81,7 @@ Execute only when the candidate cause falls on business knowledge / prompts:
 ### 5. Verify Candidate Causes on Demand
 
 - `read_metadata`: verify the current classes, fields, relations, and dataset descriptions. On task-planning deviation, compare the range actually injected by the task planner this round with the current full metadata.
-- `data_query_execute`: use the current database dialect SQL as described by the tool to verify value domains, data facts, or query logic in the current query data source; it cannot establish a business correctness baseline.
+- `data_query_execute`: pass a non-empty DSL JSON object in `query` to verify value domains, data facts, or query logic. Reuse the DSL from the Turn artifacts and check its classes, fields and conditions with `read_metadata`; do not pass SQL/MQL text or wrap it in a `sql` field. The query runs in the caller's domain with the caller's data permissions. At most 25 sample rows are shown; a partial-result notice means the full total is unknown. The result cannot establish a business correctness baseline.
 - Raw logs: read only when processed evidence is missing or contradictory, or when the error boundary needs confirmation; avoid aimless roaming.
 
 ## Recommendations, Verification, and Stop Conditions

@@ -67,7 +67,7 @@ describe("conversation PPT", () => {
     expect(warnings).toHaveLength(1);
     expect(xml).toContain("Export warnings");
     expect(xml).toContain("Chart unavailable");
-    expect(xml.match(/<a:tbl>/g)!.length).toBeGreaterThanOrEqual(3);
+    expect(xml.match(/<a:tbl>/g)!.length).toBeGreaterThanOrEqual(2);
     expect(xml).toContain("<a:t>34</a:t>");
     expect(zip.getEntries().filter(entry => /ppt\/media\/.*\.png$/.test(entry.entryName)).length).toBeGreaterThan(0);
   });

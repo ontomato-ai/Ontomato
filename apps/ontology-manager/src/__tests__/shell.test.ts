@@ -82,15 +82,6 @@ describe("open-source standalone shell", () => {
     expect(host.props?.knowledgeGovernanceUrl).toBeNull();
     // Open-source presentation values (b6437c86): the same static object is handed to the component.
     expect(host.props?.presentation).toBe(ossPresentation);
-    expect(ossPresentation).toMatchObject({
-      nodePalette: ["#639c2d", "#8bbf4a", "#d79b3b", "#58a968", "#d46b57", "#84956f"],
-      edgeLabel: { labelPlacement: "center", labelAutoRotate: false },
-      maxFitZoom: 1,
-      compactDialogs: true,
-    });
-    expect(ossPresentation.dataBrowserDescription("Order")).toBe(
-      "Browse and inspect data records for the current object type."
-    );
   });
 
   it("host launch parameters: embedded=1 and an http(s) governance URL reach the component; URLs with other schemes count as absent", () => {

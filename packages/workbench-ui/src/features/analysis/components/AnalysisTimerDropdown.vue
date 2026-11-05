@@ -1,6 +1,12 @@
 <script setup lang="ts">
 import { ref } from "vue";
 import { useI18n } from "vue-i18n";
+import {
+  SCHEDULE_FREQUENCIES,
+  SCHEDULE_HOUR_INTERVALS,
+  type ScheduleFrequency,
+  type ScheduleSettings,
+} from "../utils/schedule-expression";
 
 const { t } = useI18n();
 
@@ -10,30 +16,23 @@ defineProps<{
 
 const emit = defineEmits<{
   close: [];
-  save: [
-    settings: {
-      frequency: string;
-      time: string;
-      dayOfWeek: number;
-      dayOfMonth: number;
-      emailNotify: boolean;
-      emails: string;
-    },
-  ];
+  save: [settings: ScheduleSettings & { emailNotify: boolean; emails: string }];
 }>();
 
-const frequency = ref(t("task.daily"));
+const frequency = ref<ScheduleFrequency>("daily");
+const everyHours = ref<number>(1);
 const execTime = ref("08:00");
 const dayOfWeek = ref(1);
 const dayOfMonth = ref(1);
 const emailNotify = ref(false);
 const emails = ref("");
 
-const frequencyOptions = [
-  { label: t("task.daily"), value: t("task.daily") },
-  { label: t("task.weekly"), value: t("task.weekly") },
-  { label: t("task.monthly"), value: t("task.monthly") },
-];
+const frequencyLabels: Record<ScheduleFrequency, string> = {
+  hourly: "task.hourly",
+  daily: "task.daily",
+  weekly: "task.weekly",
+  monthly: "task.monthly",
+};
 
 const timeOptions = [
   "00:00",
@@ -101,6 +100,7 @@ const dayOfMonthOptions = [1, 5, 10, 15, 20, 25];
 function handleSave() {
   emit("save", {
     frequency: frequency.value,
+    everyHours: everyHours.value,
     time: execTime.value,
     dayOfWeek: dayOfWeek.value,
     dayOfMonth: dayOfMonth.value,
@@ -124,15 +124,27 @@ function handleSave() {
             <label class="form-label">{{ t("analysis.frequency") }}</label>
             <el-select v-model="frequency" size="small" class="form-full">
               <el-option
-                v-for="opt in frequencyOptions"
-                :key="opt.value"
-                :label="opt.label"
-                :value="opt.value"
+                v-for="f in SCHEDULE_FREQUENCIES"
+                :key="f"
+                :label="t(frequencyLabels[f])"
+                :value="f"
               />
             </el-select>
           </div>
 
-          <div v-if="frequency === t('task.weekly')" class="form-group">
+          <div v-if="frequency === 'hourly'" class="form-group">
+            <label class="form-label">{{ t("analysis.hourInterval") }}</label>
+            <el-select v-model="everyHours" size="small" class="form-full">
+              <el-option
+                v-for="n in SCHEDULE_HOUR_INTERVALS"
+                :key="n"
+                :label="t('analysis.everyNHours', n)"
+                :value="n"
+              />
+            </el-select>
+          </div>
+
+          <div v-if="frequency === 'weekly'" class="form-group">
             <label class="form-label">{{ t("analysis.dayOfWeek") }}</label>
             <el-select v-model="dayOfWeek" size="small" class="form-full">
               <el-option
@@ -144,7 +156,7 @@ function handleSave() {
             </el-select>
           </div>
 
-          <div v-if="frequency === t('task.monthly')" class="form-group">
+          <div v-if="frequency === 'monthly'" class="form-group">
             <label class="form-label">{{ t("common.date") }}</label>
             <el-select v-model="dayOfMonth" size="small" class="form-full">
               <el-option
@@ -156,7 +168,7 @@ function handleSave() {
             </el-select>
           </div>
 
-          <div class="form-group">
+          <div v-if="frequency !== 'hourly'" class="form-group">
             <label class="form-label">{{ t("analysis.time") }}</label>
             <el-select v-model="execTime" size="small" class="form-full" filterable>
               <el-option v-for="opt in timeOptions" :key="opt" :label="opt" :value="opt" />

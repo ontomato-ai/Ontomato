@@ -7,14 +7,9 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 import java.util.List;
-import java.util.UUID;
 
-import org.junit.jupiter.api.AfterEach;
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
-import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.jdbc.datasource.DriverManagerDataSource;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import com.pgvector.PGvector;
@@ -27,26 +22,7 @@ import io.ontomato.dataengine.config.BusinessConfig;
  * schema and drops it; without the variable the class is skipped.
  */
 @EnabledIfEnvironmentVariable(named = "ONTOMATO_TEST_POSTGRES_URL", matches = ".+")
-class VectorStoragePostgresBoundaryTest {
-
-    private final String schema = "vector_boundary_" + UUID.randomUUID().toString().replace("-", "");
-    private JdbcTemplate jdbc;
-
-    @BeforeEach
-    void setUp() {
-        DriverManagerDataSource admin = new DriverManagerDataSource(System.getenv("ONTOMATO_TEST_POSTGRES_URL"),
-                System.getenv("ONTOMATO_TEST_POSTGRES_USER"), System.getenv("ONTOMATO_TEST_POSTGRES_PASSWORD"));
-        new JdbcTemplate(admin).execute("CREATE SCHEMA " + schema);
-        DriverManagerDataSource scoped = new DriverManagerDataSource(System.getenv("ONTOMATO_TEST_POSTGRES_URL"),
-                System.getenv("ONTOMATO_TEST_POSTGRES_USER"), System.getenv("ONTOMATO_TEST_POSTGRES_PASSWORD"));
-        scoped.setSchema(schema);
-        jdbc = new JdbcTemplate(scoped);
-    }
-
-    @AfterEach
-    void tearDown() {
-        jdbc.execute("DROP SCHEMA " + schema + " CASCADE");
-    }
+class VectorStoragePostgresBoundaryTest extends io.ontomato.dataengine.test.PostgresTestDatabase {
 
     @Test
     void aWholeConfigSaveKeepsTheStoredEmbeddingConfigurationAndOnlyItsOwnerReplacesIt() {
@@ -130,6 +106,57 @@ class VectorStoragePostgresBoundaryTest {
         assertFalse(dao.listDomainPending("d2").isEmpty());
     }
 
+    @Test
+    void configurationAndStateRollBackTogetherWhenEitherStoreRejectsTheNewGeneration() {
+        BusinessConfigDao configs = wire(new BusinessConfigDao());
+        VectorRebuildStateDao states = wire(new VectorRebuildStateDao());
+        configs.initIndex();
+        states.initIndex();
+        var business = new io.ontomato.dataengine.service.impl.BusinessConfigServiceImpl();
+        ReflectionTestUtils.setField(business, "businessConfigDao", configs);
+        var tracker = new io.ontomato.dataengine.service.vector.VectorRebuildTracker();
+        var gate = new io.ontomato.dataengine.service.vector.VectorRetrievalGate();
+        ReflectionTestUtils.setField(gate, "stateDao", states);
+        var service = new io.ontomato.dataengine.service.vector.VectorRebuildService();
+        ReflectionTestUtils.setField(service, "businessConfigService", business);
+        ReflectionTestUtils.setField(service, "stateDao", states);
+        ReflectionTestUtils.setField(service, "retrievalGate", gate);
+        ReflectionTestUtils.setField(service, "rebuildTracker", tracker);
+        ReflectionTestUtils.setField(service, "transactions", new org.springframework.transaction.support.TransactionTemplate(
+                new org.springframework.jdbc.datasource.DataSourceTransactionManager(dataSource)));
+        // Data inventory is outside this transaction; its existing row requires a pending generation after a successful save.
+        KnowledgeDao inventory = org.mockito.Mockito.mock(KnowledgeDao.class);
+        org.mockito.Mockito.when(inventory.countDomainRows("d1")).thenReturn(1);
+        ReflectionTestUtils.setField(service, "knowledgeDao", inventory);
+        ReflectionTestUtils.setField(service, "bussinessExampleDao", org.mockito.Mockito.mock(BussinessExampleDao.class));
+        ReflectionTestUtils.setField(service, "questionSpliterDao", org.mockito.Mockito.mock(BusinessExampleQuestionSpliterDao.class));
+        ReflectionTestUtils.setField(service, "actionDao", org.mockito.Mockito.mock(ActionDao.class));
+        ReflectionTestUtils.setField(service, "metricViewDao", org.mockito.Mockito.mock(MetricViewDao.class));
+        ReflectionTestUtils.setField(service, "vectorResourceDao", org.mockito.Mockito.mock(VectorResourceDao.class));
+        var oldState = VectorRebuildState.of(config("m1").getEmbeddingModelProperties(), VectorRebuildState.Status.READY, true);
+        for (String table : List.of("business_config", "vector_rebuild_state")) {
+            configs.save(config("m1"), "d1");
+            configs.saveEmbeddingModel(config("m1").getEmbeddingModelProperties(), "d1");
+            states.save("d1", oldState);
+            String before = jdbc.queryForObject("SELECT content FROM business_config WHERE id = 'd1'", String.class);
+            String model = table.equals("business_config") ? "content::jsonb->'embeddingModelProperties'->>'modelName'" : "model_name";
+            jdbc.execute("ALTER TABLE " + table + " ADD CONSTRAINT reject_generation CHECK ((" + model + ") <> 'm2')");
+            try {
+                org.junit.jupiter.api.Assertions.assertThrows(org.springframework.dao.DataIntegrityViolationException.class,
+                        () -> service.saveEmbeddingModel("d1", "en", config("m2").getEmbeddingModelProperties()));
+                assertEquals(before, jdbc.queryForObject("SELECT content FROM business_config WHERE id = 'd1'", String.class));
+                assertEquals(oldState, wire(new VectorRebuildStateDao()).find("d1"));
+                assertEquals("m1", wire(new BusinessConfigDao()).query("d1").getEmbeddingModelProperties().getModelName());
+            } finally {
+                jdbc.execute("ALTER TABLE " + table + " DROP CONSTRAINT reject_generation");
+            }
+            service.saveEmbeddingModel("d1", "en", config("m2").getEmbeddingModelProperties());
+            assertEquals("m2", configs.query("d1").getEmbeddingModelProperties().getModelName());
+            assertEquals("m2", states.find("d1").getModelName());
+            assertEquals(VectorRebuildState.Status.PENDING, states.find("d1").getStatus());
+        }
+    }
+
     private float[] vectorOf(String id) {
         return jdbc.queryForObject("SELECT knowledge_vector FROM knowledgeindex WHERE knowledge_id = ?",
                 (rs, rowNum) -> new PGvector(rs.getString(1)).toArray(), id);
@@ -141,6 +168,7 @@ class VectorStoragePostgresBoundaryTest {
         properties.setBaseUrl("http://emb/v1");
         properties.setModelName(modelName);
         properties.setDimensions(2);
+        businessConfig.setModels(new java.util.ArrayList<>());
         businessConfig.setEmbeddingModelProperties(properties);
         return businessConfig;
     }

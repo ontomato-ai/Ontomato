@@ -9,7 +9,6 @@ import { appTextEn } from "../../i18n/app-text-en";
 import { en, enLocaleMeta } from "../../i18n/locales/en";
 import {
   ModelNotConfiguredError,
-  getRoleNotConfiguredMessage,
   resolveModelForRole,
 } from "../model-resolver";
 
@@ -56,17 +55,6 @@ describe("model-resolver", () => {
       expect(() => parseIsoDurationSeconds("PT")).toThrow("Invalid ISO-8601 duration");
       expect(() => parseIsoDurationSeconds("invalid")).toThrow("Invalid ISO-8601 duration");
       expect(() => parseIsoDurationSeconds("PT5X")).toThrow("Invalid ISO-8601 duration");
-    });
-  });
-
-  describe("getRoleNotConfiguredMessage", () => {
-    it("returns formatted message via i18n", () => {
-      expect(getRoleNotConfiguredMessage("general")).toBe(
-        "No model configured for role 'General', please configure it in model settings"
-      );
-      expect(getRoleNotConfiguredMessage("query")).toBe(
-        "No model configured for role 'Query', please configure it in model settings"
-      );
     });
   });
 

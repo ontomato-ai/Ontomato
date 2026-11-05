@@ -35,7 +35,12 @@ When calling this skill, the following configuration parameters must be provided
 | topN        | No   | Limit the displayed count, used when the data volume is large         |
 | excludeCategoryValues | No | Array of category original values to exactly exclude from `xField`, keeping string or number types |
 
-Supported chart types: `bar`, `line`, `pie`, `scatter`, `area`, `radar`, `heatmap`, `funnel`, `sankey`, `treemap`, `sunburst`, `gauge`.
+Supported chart types: `bar`, `line`, `pie`, `donut`, `timeline`, `scatter`, `area`, `radar`, `heatmap`, `funnel`, `sankey`, `treemap`, `sunburst`, `gauge`.
+
+`donut` uses the same category/numeric fields as `pie`. `timeline` uses `xField`
+for the event title, `dateField` for its date and optional `descriptionField` for
+details; it does not require `yField`. Events are ordered newest first; undated
+records remain visible at the end. Input labels are rendered as canvas text.
 
 ## Analysis Methodology
 

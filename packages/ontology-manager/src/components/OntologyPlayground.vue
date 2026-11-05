@@ -548,7 +548,7 @@ onBeforeUnmount(() => {
           <strong>{{ relations.length }}</strong>
           {{ t("nav.relationTypes") }}
         </span>
-        <el-button :icon="RefreshCw" circle :title="t('common.refresh')" @click="refresh" />
+        <el-button :icon="RefreshCw" text circle :title="t('common.refresh')" @click="refresh" />
       </div>
     </header>
 
@@ -1012,7 +1012,7 @@ onBeforeUnmount(() => {
 }
 .graph-toolbar button {
   display: grid;
-  width: 34px;
+  width: 32px;
   height: 32px;
   place-items: center;
   border: 0;
@@ -1111,7 +1111,7 @@ onBeforeUnmount(() => {
   border-radius: 999px;
   color: var(--el-color-primary);
   background: var(--el-color-primary-light-9);
-  font-size: 11px;
+  font-size: var(--text-xs);
   font-weight: var(--font-semibold);
   line-height: 16px;
 }
@@ -1233,7 +1233,7 @@ code {
   font-size: var(--text-sm);
 }
 .inspector-empty span {
-  max-width: 220px;
+  max-width: 100%;
   font-size: var(--text-xs);
   line-height: var(--leading-relaxed);
   white-space: normal;

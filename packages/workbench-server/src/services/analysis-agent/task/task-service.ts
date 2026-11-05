@@ -43,6 +43,7 @@ import { PERSISTED_RESULT_KEYS } from "../../data-query/query-fact";
 import type { AnalysisEvidenceQuestion } from "@ontomato/contracts/analysis-presentation";
 import { tApp } from "../../../i18n";
 import { normalizeAnalysisGraphScope } from "../config/graph-scope";
+import { deleteAnalysisNotebook } from "../loop/notebook";
 
 
 const logger = createLogger("analysis-task-service");
@@ -862,6 +863,16 @@ export class AnalysisTaskService {
     );
     if ((result.rowCount ?? 0) === 0) return null;
     return mapTaskRow(result.rows[0]);
+  }
+
+  async deleteByUser(userId: string): Promise<void> {
+    const { rows } = await this.pool.query(
+      `SELECT id, domain_id FROM ${qualifiedTable("analysis_tasks")} WHERE user_id = $1 AND domain_id <> ''`, [userId]
+    );
+    for (const row of rows) {
+      await deleteAnalysisNotebook(row.id);
+      await this.deleteTask(row.id, row.domain_id);
+    }
   }
 
   async deleteTask(id: string, domainId: string): Promise<boolean> {

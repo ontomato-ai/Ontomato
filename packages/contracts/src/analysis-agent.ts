@@ -38,6 +38,8 @@ export interface AnalysisAgent {
   enabledVisualizationSkillIds?: string[];
   /** Snapshot of external MCP service names explicitly authorized to the loop supervisor */
   enabledMcpServiceNames?: string[];
+  /** Published ontology Action IDs a regular-session agent may execute after the user confirms in the conversation */
+  enabledActionIds?: string[];
   /** Associated object class names, limiting dimension splitting and query scope */
   classNames?: string[];
   /** Initial ontology exploration scope. Panorama is the backward-compatible default. */

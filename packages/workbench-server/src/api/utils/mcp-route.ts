@@ -11,6 +11,7 @@ import { asyncHandler } from "./http";
 
 export interface McpIdentity {
   userId: string;
+  userName?: string;
   domainId: string;
   token?: string;
   apiKey?: string;

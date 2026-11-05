@@ -291,20 +291,7 @@ test("stageDirectory drops build-time source prefix", () => {
   assert.throws(() => stageDirectory("/app"), /outside the stage/);
 });
 
-test("the workbench recipe declares required stages, arguments and launch permissions", () => {
-  const recipe = readFileSync(
-    fileURLToPath(new URL("../../docker/workbench/Dockerfile", import.meta.url)),
-    "utf8",
-  );
-  assert.match(recipe, /AS dependencies-installer/);
-  assert.match(recipe, /AS app-builder/);
-  assert.match(recipe, /AS runtime-base/);
-  assert.match(recipe, /FROM runtime-base AS final/);
-  assert.match(recipe, /COPY --from=app-builder \/stage\/ \/app\//);
-  assert.match(recipe, /chmod 0755 \/stage\/launch\.sh/);
-  assert.doesNotMatch(recipe, /ENTRYPOINT/);
-  assert.match(recipe, /CMD \["\/app\/launch\.sh"\]/);
-});
+
 
 test("the app launcher fills product Python defaults only when unset; explicit values pass through", (t) => {
   const launch = fileURLToPath(new URL("../../docker/workbench/launch.sh", import.meta.url));

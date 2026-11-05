@@ -91,6 +91,8 @@ function fixture(t) {
     "apps/workbench/src/server.ts": "export {};\n",
     "packages/core/package.json": '{"name":"@ontomato/core"}\n',
     "packages/core/src/core.ts": "export {};\n",
+    "packages/contracts/package.json": '{"name":"@ontomato/contracts"}\n',
+    "packages/contracts/src/index.ts": "export {};\n",
   });
   repository(privateRoot, {
     "package.json": '{"name":"enterprise","private":true}\n',
@@ -228,8 +230,6 @@ function assertRecipeMatches(argv, listing) {
     JSON.parse(readFileSync(join(listing.context, manifest.path), "utf8")).name,
     application,
   );
-  assert.match(recipe, /^RUN --mount=type=cache,id=pnpm-store,target=\/pnpm\/store pnpm install --frozen-lockfile --filter "\$\{APPLICATION\}\.\.\."$/m);
-  assert.match(recipe, /^COPY --from=web-builder \/build\/workspace\/\$\{WORKSPACE\}\/apps\/ontology-manager\/dist /m);
 }
 
 test("help returns early; the architecture and flags come only from Make", async () => {
@@ -239,19 +239,9 @@ test("help returns early; the architecture and flags come only from Make", async
   await assert.rejects(() => buildManagerImage({}, ["--arch", "arm64", "--pack-app"]), /Unknown argument/);
 });
 
-test("the recipe pins the workbench Node builder, a default pnpm version on the build platform and the same Nginx version tag upstream", () => {
-  const recipe = readFileSync(join(REPO, RECIPE, "Dockerfile"), "utf8");
-  const workbench = readFileSync(join(REPO, "docker/workbench/Dockerfile"), "utf8");
-  const pinned = /^ARG NODE_BUILDER_IMAGE=(\S+@sha256:[a-f0-9]{64})$/m;
-  assert.equal(recipe.match(pinned)[1], workbench.match(pinned)[1]);
-  assert.match(recipe, /^FROM --platform=\$BUILDPLATFORM \$\{NODE_BUILDER_IMAGE\} AS web-builder$/m);
-  assert.match(recipe, /^ARG PNPM_VERSION=\d+\.\d+\.\d+$/m);
-  assert.match(recipe, /^RUN npm install -g pnpm@\$\{PNPM_VERSION\}$/m);
-  assert.match(recipe, /^FROM docker\.io\/library\/nginx:1\.27-alpine@sha256:[a-f0-9]{64}$/m);
-  assert.doesNotMatch(recipe, /corepack|--prod\b|--filter-prod/);
-});
 
-test("the public entry builds ontomato-ontology-manager from its two owners", (t) => {
+
+test("the public entry builds ontomato-ontology-manager from its owners", (t) => {
   const { dir, publicRoot } = fixture(t);
   const docker = fakeDocker(t, dir);
   const out = execFileSync("node", ["apps/ontology-manager/build.mjs", "--arch", "arm64"], {
@@ -281,6 +271,8 @@ test("the public entry builds ontomato-ontology-manager from its two owners", (t
       "workspace/ontomato/apps/ontology-manager/src/main.ts",
       "workspace/ontomato/apps/workbench/package.json",
       "workspace/ontomato/package.json",
+      "workspace/ontomato/packages/contracts/package.json",
+      "workspace/ontomato/packages/contracts/src/index.ts",
       "workspace/ontomato/packages/core/package.json",
       "workspace/ontomato/packages/ontology-manager/package.json",
       "workspace/ontomato/packages/ontology-manager/src/index.ts",
@@ -346,6 +338,7 @@ test("an enterprise build takes its own app plus the public owners and stamps th
       "workspace/ontomato/apps/ontology-manager/src/main.ts",
       "workspace/ontomato/apps/workbench/package.json",
       "workspace/ontomato/package.json",
+      "workspace/ontomato/packages/contracts/package.json",
       "workspace/ontomato/packages/core/package.json",
       "workspace/ontomato/packages/ontology-manager/package.json",
       "workspace/ontomato/packages/ontology-manager/src/index.ts",

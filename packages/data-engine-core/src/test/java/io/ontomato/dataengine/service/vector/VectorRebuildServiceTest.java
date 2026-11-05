@@ -88,9 +88,8 @@ class VectorRebuildServiceTest {
     private final MetricViewDao metricViewDao = mock(MetricViewDao.class);
     private final VectorResourceDao resourceDao = mock(VectorResourceDao.class);
 
-    private volatile boolean failNextEmbeddingWrite;
-    /** One transaction over the config and state stores: a rollback restores both. */
-    private final TransactionTemplate transactions = new TransactionTemplate(new SnapshotTransactions());
+    /** State-machine tests use memory; real commit/rollback behavior belongs to VectorStoragePostgresBoundaryTest. */
+    private final TransactionTemplate transactions = new TransactionTemplate(new InMemoryTransactions());
 
     private VectorRebuildTracker tracker;
     private VectorRetrievalGate gate;
@@ -112,10 +111,6 @@ class VectorRebuildServiceTest {
             return null;
         }).when(businessConfigService).set(any(), anyString());
         org.mockito.Mockito.doAnswer(inv -> {
-            if (failNextEmbeddingWrite) {
-                failNextEmbeddingWrite = false;
-                throw new RuntimeException("connection reset");
-            }
             String domainId = inv.getArgument(1);
             BusinessConfig stored = businessConfigService.get(domainId);
             stored.setEmbeddingModelProperties(inv.getArgument(0));
@@ -505,20 +500,6 @@ class VectorRebuildServiceTest {
         assertArrayEquals(m2, vector("d1", "k2"));
     }
 
-    @Test
-    void aFailedConfigurationWriteLeavesNeitherTheConfigurationNorItsStateChanged() {
-        write("d1", "k1", "hello");
-        assertEquals(State.READY, service.status("d1").getState());
-
-        failNextEmbeddingWrite = true;
-        assertThrows(RuntimeException.class, () -> save("d1", "http://emb/v1", "m2", 1024, KEY));
-
-        assertEquals("m1", currentProps("d1").getModelName());
-        assertEquals("m1", stateDao.find("d1").getModelName());
-        assertEquals(State.READY, service.status("d1").getState());
-        save("d1", "http://emb/v1", "m2", 1024, KEY);
-        assertEquals(State.PENDING, service.status("d1").getState());
-    }
 
     @Test
     void anEmptyDomainFlaggedEarlierBecomesReadyOnStatusOrResave() {
@@ -681,31 +662,10 @@ class VectorRebuildServiceTest {
         return businessConfig;
     }
 
-    /** Snapshots both stores when a transaction begins and restores them on rollback. */
-    private class SnapshotTransactions implements PlatformTransactionManager {
-
-        private Map<String, String> configSnapshot;
-        private Map<String, String> stateSnapshot;
-
-        @Override
-        public TransactionStatus getTransaction(TransactionDefinition definition) {
-            configSnapshot = new LinkedHashMap<>(configs);
-            stateSnapshot = new LinkedHashMap<>(stateDao.rows);
-            return new SimpleTransactionStatus();
-        }
-
-        @Override
-        public void commit(TransactionStatus status) {
-        }
-
-        @Override
-        public void rollback(TransactionStatus status) {
-            configs.clear();
-            configs.putAll(configSnapshot);
-            stateDao.rows.clear();
-            stateDao.rows.putAll(stateSnapshot);
-        }
-
+    private static class InMemoryTransactions implements PlatformTransactionManager {
+        public TransactionStatus getTransaction(TransactionDefinition definition) { return new SimpleTransactionStatus(); }
+        public void commit(TransactionStatus status) {}
+        public void rollback(TransactionStatus status) {}
     }
 
     /** The vector_rebuild_state rows, stored as JSON copies like a table. */

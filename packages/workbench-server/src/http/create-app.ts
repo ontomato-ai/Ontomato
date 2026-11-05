@@ -56,6 +56,8 @@ const logger = createLogger("server");
 const SERVER_NOW_HEADER = "X-Server-Now";
 
 export interface WorkbenchMounts {
+  /** Edition-owned backend routes, followed by the ordinary transparent proxy. */
+  backendProxyRouter?: Router;
   /** Enterprise SSO. Must run before the unified authenticate. OSS has no such route. */
   authRouter?: Router;
   /** Enterprise governance platform connection proxy. Absent in OSS. */
@@ -109,8 +111,8 @@ export function createWorkbenchApp(mounts: WorkbenchMounts = {}): Express {
   });
 
   if (mounts.authRouter) app.use("/api/auth", mounts.authRouter);
-  app.use("/api/data-query", backendProxyRouter);
-  app.use(product.proxyMountPath, backendProxyRouter);
+  app.use("/api/data-query", mounts.backendProxyRouter ?? backendProxyRouter);
+  app.use(product.proxyMountPath, mounts.backendProxyRouter ?? backendProxyRouter);
   app.use("/mcp/analysis-agents", analysisAgentMcpRouter);
   app.use("/mcp/ops-agent", opsAgentMcpRouter);
   app.use(

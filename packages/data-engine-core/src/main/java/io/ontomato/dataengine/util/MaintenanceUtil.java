@@ -1,6 +1,7 @@
 package io.ontomato.dataengine.util;
 
 import java.io.*;
+import java.lang.management.ManagementFactory;
 import java.net.InetAddress;
 import java.nio.charset.StandardCharsets;
 import java.time.ZonedDateTime;
@@ -9,6 +10,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 import com.alibaba.fastjson2.*;
+import com.sun.management.OperatingSystemMXBean;
 
 /**
  * System monitoring class: collects the resources visible to this process (CPU, memory, disk) and the status of the
@@ -16,14 +18,16 @@ import com.alibaba.fastjson2.*;
  */
 public class MaintenanceUtil {
 
-        /** Used to parse the CPU usage (us/sy/id/wa) from the top command output */
+        /** Used to parse the CPU usage (us/sy/id/wa) from the Linux top command output */
         private static final Pattern CPU_PATTERN = Pattern.compile(
                 "(\\d+\\.?\\d*)\\s*us.*?(\\d+\\.?\\d*)\\s*sy.*?(\\d+\\.?\\d*)\\s*id.*?(\\d+\\.?\\d*)\\s*wa");
-        /** Used to parse the memory information (total/free/used) from the top command output */
-        private static final Pattern MEM_PATTERN = Pattern.compile(
-                ":?\\s*(\\d+\\.?\\d*)\\s*\\S*\\s*total[,\\s]*" +
-                        "(\\d+\\.?\\d*)\\s*\\S*\\s*free[,\\s]*" +
-                        "(\\d+\\.?\\d*)\\s*\\S*\\s*used");
+        /** Used to parse the macOS top output, which has no wait time: "CPU usage: 21.3% user, 6.1% sys, 72.4% idle" */
+        private static final Pattern MAC_CPU_PATTERN = Pattern.compile(
+                "(\\d+\\.?\\d*)%\\s*user,\\s*(\\d+\\.?\\d*)%\\s*sys,\\s*(\\d+\\.?\\d*)%\\s*idle");
+        /** Used to parse the page size from the macOS vm_stat header */
+        private static final Pattern VM_PAGE_SIZE_PATTERN = Pattern.compile("page size of (\\d+) bytes");
+        /** Used to parse one "Pages xxx: 123." counter of the macOS vm_stat output */
+        private static final Pattern VM_PAGE_COUNT_PATTERN = Pattern.compile("^Pages ([^:]+):\\s*(\\d+)\\.");
         /** Used to parse the process running time format (dd-HH:MM:SS) */
         private static final Pattern ETIME_PATTERN = Pattern.compile(
                 "(?:(\\d+)-)?(?:(\\d{2}):)?(\\d{2}):(\\d{2})");
@@ -58,7 +62,9 @@ public class MaintenanceUtil {
         }
 
         /**
-         * Gets CPU usage information (via the top command)
+         * Gets CPU usage information. Linux is read from top, macOS from top's CPU usage line and, when
+         * neither command is available (for example a slim container image), from the JVM's own view of
+         * the host.
          * @return JSON object containing user/system/idle/wait and the usage rate
          */
         private JSONObject getCpuInfo() {
@@ -68,6 +74,19 @@ public class MaintenanceUtil {
             cpu.put("idle", 100.0);
             cpu.put("wait", 0);
             cpu.put("userate", 0);
+            boolean parsed = isMac() ? parseMacCpu(cpu) : parseLinuxCpu(cpu);
+            if (!parsed) {
+                applyJvmCpuLoad(cpu);
+            }
+            return cpu;
+        }
+
+        /**
+         * Parses the CPU line of the Linux top command.
+         * @param cpu JSON object to fill
+         * @return true when the output was parsed
+         */
+        private boolean parseLinuxCpu(JSONObject cpu) {
             try {
                 String output = runCommand("bash", "-c",
                         "LC_ALL=C top -bn2 -d 1 2>/dev/null | grep '%Cpu' | tail -1");
@@ -83,16 +102,67 @@ public class MaintenanceUtil {
                         cpu.put("idle", id);
                         cpu.put("wait", wa);
                         cpu.put("userate", Math.round((100.0 - id) * 10.0) / 10.0);
+                        return true;
                     }
+                }
+            } catch (Exception e) {
+                // fall through to the JVM view
+            }
+            return false;
+        }
+
+        /**
+         * Parses the CPU line of the macOS top command. macOS reports no wait time, so it stays 0.
+         * @param cpu JSON object to fill
+         * @return true when the output was parsed
+         */
+        private boolean parseMacCpu(JSONObject cpu) {
+            try {
+                String output = runCommand("bash", "-c",
+                        "LC_ALL=C top -l 2 -n 0 2>/dev/null | grep 'CPU usage' | tail -1");
+                if (output != null && !output.isEmpty()) {
+                    Matcher m = MAC_CPU_PATTERN.matcher(output);
+                    if (m.find()) {
+                        double us = Double.parseDouble(m.group(1));
+                        double sy = Double.parseDouble(m.group(2));
+                        double id = Double.parseDouble(m.group(3));
+                        cpu.put("user", us);
+                        cpu.put("system", sy);
+                        cpu.put("idle", id);
+                        cpu.put("wait", 0);
+                        cpu.put("userate", Math.round((100.0 - id) * 10.0) / 10.0);
+                        return true;
+                    }
+                }
+            } catch (Exception e) {
+                // fall through to the JVM view
+            }
+            return false;
+        }
+
+        /**
+         * Uses the JVM's host CPU load when the platform commands are unavailable.
+         * @param cpu JSON object to fill
+         */
+        private void applyJvmCpuLoad(JSONObject cpu) {
+            try {
+                double load = ManagementFactory.getPlatformMXBean(OperatingSystemMXBean.class).getCpuLoad();
+                if (load >= 0) {
+                    double userate = Math.round(load * 1000.0) / 10.0;
+                    cpu.put("user", userate);
+                    cpu.put("system", 0);
+                    cpu.put("idle", Math.round((100.0 - userate) * 10.0) / 10.0);
+                    cpu.put("wait", 0);
+                    cpu.put("userate", userate);
                 }
             } catch (Exception e) {
                 // keep defaults
             }
-            return cpu;
         }
 
         /**
-         * Gets memory usage information (via the top command)
+         * Gets memory usage information. Linux is read from free, macOS from vm_stat and sysctl and, when
+         * neither command is available, from the JVM's own view of the host.
          * @return JSON object containing total_gb/used_gb/free_gb/usage_percent
          */
         private JSONObject getMemoryInfo() {
@@ -101,6 +171,19 @@ public class MaintenanceUtil {
             memory.put("used_gb", 0);
             memory.put("free_gb", 0);
             memory.put("usage_percent", 0);
+            boolean parsed = isMac() ? parseMacMemory(memory) : parseLinuxMemory(memory);
+            if (!parsed) {
+                applyJvmMemory(memory);
+            }
+            return memory;
+        }
+
+        /**
+         * Parses the memory line of the Linux free command.
+         * @param memory JSON object to fill
+         * @return true when the output was parsed
+         */
+        private boolean parseLinuxMemory(JSONObject memory) {
             try {
                 String output = runCommand("bash", "-c",
                         "LC_ALL=C free -g 2>/dev/null | grep '^Mem:' | head -1");
@@ -110,22 +193,133 @@ public class MaintenanceUtil {
                         double total = Double.parseDouble(parts[1]);
                         double used = Double.parseDouble(parts[2]);
                         double free = Double.parseDouble(parts[3]);
-                        double totalRounded = Math.round(total * 100.0) / 100.0;
-                        double usedRounded = Math.round(used * 100.0) / 100.0;
-                        double freeRounded = Math.round(free * 100.0) / 100.0;
-                        double usagePercent = total > 0
-                                ? Math.round(used / total * 1000.0) / 10.0
-                                : 0;
-                        memory.put("total_gb", totalRounded);
-                        memory.put("used_gb", usedRounded);
-                        memory.put("free_gb", freeRounded);
-                        memory.put("usage_percent", usagePercent);
+                        putMemory(memory, total, used, free);
+                        return true;
                     }
+                }
+            } catch (Exception e) {
+                // fall through to the JVM view
+            }
+            return false;
+        }
+
+        /**
+         * Reads the macOS physical memory from vm_stat and sysctl. Used memory is the sum of active,
+         * wired and compressed pages, matching the value Activity Monitor reports as "Memory Used".
+         * @param memory JSON object to fill
+         * @return true when the output was parsed
+         */
+        private boolean parseMacMemory(JSONObject memory) {
+            try {
+                String totalOutput = runCommand("sysctl", "-n", "hw.memsize");
+                String vmOutput = runCommand("vm_stat");
+                if (totalOutput == null || totalOutput.trim().isEmpty() || vmOutput == null
+                        || vmOutput.isEmpty()) {
+                    return false;
+                }
+                long totalBytes = Long.parseLong(totalOutput.trim());
+                Matcher pageSizeMatcher = VM_PAGE_SIZE_PATTERN.matcher(vmOutput);
+                if (totalBytes <= 0 || !pageSizeMatcher.find()) {
+                    return false;
+                }
+                long pageSize = Long.parseLong(pageSizeMatcher.group(1));
+                long activePages = 0;
+                long wiredPages = 0;
+                long compressedPages = 0;
+                for (String line : vmOutput.split("\n")) {
+                    Matcher m = VM_PAGE_COUNT_PATTERN.matcher(line.trim());
+                    if (!m.find()) {
+                        continue;
+                    }
+                    String counter = m.group(1).trim();
+                    long pages = Long.parseLong(m.group(2));
+                    if ("active".equalsIgnoreCase(counter)) {
+                        activePages = pages;
+                    } else if ("wired down".equalsIgnoreCase(counter)) {
+                        wiredPages = pages;
+                    } else if ("occupied by compressor".equalsIgnoreCase(counter)) {
+                        compressedPages = pages;
+                    }
+                }
+                long usedBytes = (activePages + wiredPages + compressedPages) * pageSize;
+                if (usedBytes <= 0 || usedBytes > totalBytes) {
+                    usedBytes = Math.max(0, totalBytes - freeBytesFromJvm());
+                }
+                long freeBytes = Math.max(0, totalBytes - usedBytes);
+                double totalGb = Math.round(bytesToGb(totalBytes) * 100.0) / 100.0;
+                double usedGb = Math.round(bytesToGb(usedBytes) * 100.0) / 100.0;
+                double freeGb = Math.round(bytesToGb(freeBytes) * 100.0) / 100.0;
+                putMemory(memory, totalGb, usedGb, freeGb);
+                return true;
+            } catch (Exception e) {
+                // fall through to the JVM view
+            }
+            return false;
+        }
+
+        /**
+         * Uses the JVM's host memory sizes when the platform commands are unavailable.
+         * @param memory JSON object to fill
+         */
+        private void applyJvmMemory(JSONObject memory) {
+            try {
+                OperatingSystemMXBean os = ManagementFactory.getPlatformMXBean(OperatingSystemMXBean.class);
+                long totalBytes = os.getTotalMemorySize();
+                long freeBytes = os.getFreeMemorySize();
+                if (totalBytes > 0) {
+                    long usedBytes = Math.max(0, totalBytes - Math.max(0, freeBytes));
+                    putMemory(memory, bytesToGb(totalBytes), bytesToGb(usedBytes), bytesToGb(freeBytes));
                 }
             } catch (Exception e) {
                 // keep defaults
             }
-            return memory;
+        }
+
+        /**
+         * Stores the memory sizes rounded to two decimals and derives the usage percentage.
+         * @param memory JSON object to fill
+         * @param totalGb total memory in GB
+         * @param usedGb used memory in GB
+         * @param freeGb free memory in GB
+         */
+        private void putMemory(JSONObject memory, double totalGb, double usedGb, double freeGb) {
+            memory.put("total_gb", Math.round(totalGb * 100.0) / 100.0);
+            memory.put("used_gb", Math.round(usedGb * 100.0) / 100.0);
+            memory.put("free_gb", Math.max(0, Math.round(freeGb * 100.0) / 100.0));
+            memory.put("usage_percent", totalGb > 0
+                    ? Math.round(usedGb / totalGb * 1000.0) / 10.0
+                    : 0);
+        }
+
+        /**
+         * Converts bytes to gigabytes.
+         * @param bytes byte count
+         * @return the value in GB
+         */
+        private double bytesToGb(long bytes) {
+            return bytes / 1024.0 / 1024.0 / 1024.0;
+        }
+
+        /**
+         * Reads the JVM-visible free memory, used only to keep the macOS split consistent.
+         * @return free bytes, or 0 when unavailable
+         */
+        private long freeBytesFromJvm() {
+            try {
+                return Math.max(0,
+                        ManagementFactory.getPlatformMXBean(OperatingSystemMXBean.class).getFreeMemorySize());
+            } catch (Exception e) {
+                return 0;
+            }
+        }
+
+        /**
+         * Whether the current platform is macOS.
+         * @return true on macOS
+         */
+        private boolean isMac() {
+            String os = System.getProperty("os.name", "");
+            return os.toLowerCase().contains("mac");
         }
 
         /**
@@ -227,7 +421,7 @@ public class MaintenanceUtil {
             detail.put("uptime_seconds", 0);
             detail.put("user", "");
             try {
-                String output = runCommand("ps", "--no-headers", "-p", pid, "-o", "pcpu,rss,etime,user");
+                String output = runCommand("ps", "-p", pid, "-o", "pcpu=,rss=,etime=,user=");
                 if (output != null && !output.trim().isEmpty()) {
                     String[] parts = output.trim().split("\\s+");
                     if (parts.length >= 3) {

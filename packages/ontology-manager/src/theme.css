@@ -17,6 +17,11 @@
     ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New",
     monospace;
   --el-font-family: var(--font-sans);
+  --el-font-size-base: var(--text-sm);
+  --el-component-size: 32px;
+  --el-component-size-small: 28px;
+  --manager-button-height: 32px;
+  --manager-button-compact-height: 28px;
   --text-xs: 0.6875rem;
   --text-sm: 0.8125rem;
   --text-base: 0.9375rem;
@@ -141,7 +146,6 @@
 .ontology-manager,
 .ontology-manager * {
   box-sizing: border-box;
-  outline: none;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
@@ -211,6 +215,10 @@
   margin-left: 0;
 }
 
+:where(.ontology-manager) :is(.title-actions, .detail-titlebar, .catalog-toolbar, .toolbar-actions, .toolbar-group, .zoom-controls, .task-actions) > .el-button + .el-button {
+  margin-inline-start: 0;
+}
+
 :where(.ontology-manager) .toolbar .el-input,
 :where(.ontology-manager) .toolbar .el-select,
 :where(.ontology-manager) .toolbar .el-date-picker {
@@ -225,6 +233,7 @@
 }
 
 :where(.ontology-manager) .el-dialog {
+  max-width: calc(100cqw - 32px);
   border-radius: var(--radius-2xl) !important;
   padding: 0;
   box-shadow: var(--shadow-dropdown) !important;
@@ -233,6 +242,7 @@
 
 :where(.ontology-manager) .el-dialog__header {
   padding: var(--spacing-xl) var(--spacing-xl) var(--spacing-lg) !important;
+  padding-inline-end: 56px !important;
   border-bottom: 1px solid var(--el-border-color-light) !important;
   margin: 0 !important;
 }
@@ -248,6 +258,7 @@
 }
 
 :where(.ontology-manager) .el-dialog__footer {
+  flex-wrap: wrap;
   display: flex !important;
   justify-content: flex-end !important;
   gap: var(--spacing-md) !important;
@@ -275,6 +286,7 @@
 }
 
 :where(.ontology-manager) .el-drawer__footer {
+  flex-wrap: wrap;
   display: flex !important;
   justify-content: flex-end !important;
   gap: var(--spacing-md) !important;
@@ -290,6 +302,31 @@
 :where(.ontology-manager) .el-form--label-top .el-form-item__label,
 :where(.ontology-manager) .el-form .el-form-item__label {
   font-weight: var(--font-medium) !important;
+  font-size: var(--text-sm);
+  line-height: 20px;
+}
+
+:where(.ontology-manager) button,
+:where(.ontology-manager) textarea {
+  font-family: inherit;
+}
+
+:where(.ontology-manager) button:focus-visible,
+:where(.ontology-manager) a:focus-visible,
+:where(.ontology-manager) [role="button"]:focus-visible {
+  outline: 2px solid var(--el-color-primary);
+  outline-offset: -2px;
+}
+
+:where(.ontology-manager) .el-textarea__inner {
+  font-size: var(--text-sm);
+  line-height: 22px;
+}
+
+:where(.ontology-manager) .el-empty__description p {
+  font-size: var(--text-sm);
+  line-height: 22px;
+  overflow-wrap: anywhere;
 }
 
 :where(.ontology-manager) .zoom-controls .el-button {
@@ -303,6 +340,30 @@
 :where(.ontology-manager) .el-button {
   transition: all var(--transition-base);
   font-weight: var(--font-medium);
+  font-size: var(--text-sm);
+}
+
+:where(.ontology-manager) .el-button:not(.is-link):not(.is-circle) {
+  min-height: var(--manager-button-height);
+  padding: 5px 12px;
+  line-height: 20px;
+}
+
+:where(.ontology-manager) .el-button.el-button--small:not(.is-link):not(.is-circle) {
+  height: var(--manager-button-compact-height);
+  min-height: var(--manager-button-compact-height);
+  padding: 3px 8px;
+}
+
+:where(.ontology-manager) .el-button.is-circle {
+  width: var(--manager-button-height);
+  height: var(--manager-button-height);
+  padding: 0;
+}
+
+:where(.ontology-manager) .el-button.is-circle.el-button--small {
+  width: var(--manager-button-compact-height);
+  height: var(--manager-button-compact-height);
 }
 
 :where(.ontology-manager) .el-button.is-link:hover,
@@ -573,10 +634,10 @@
   border-radius: var(--radius-sm);
   padding: 2px 8px;
   height: auto;
-  min-height: auto;
+  min-height: 28px;
   line-height: 1.5;
   font-weight: var(--font-medium);
-  font-size: var(--text-xs);
+  font-size: var(--text-sm);
   transition: all var(--transition-fast);
 }
 

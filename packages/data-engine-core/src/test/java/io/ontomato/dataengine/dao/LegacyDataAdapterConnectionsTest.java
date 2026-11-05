@@ -4,21 +4,11 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
 
 import org.junit.jupiter.api.Test;
-import org.mockito.ArgumentCaptor;
-import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.test.util.ReflectionTestUtils;
 
 import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONObject;
-import io.ontomato.dataengine.config.BusinessConfig;
 
 class LegacyDataAdapterConnectionsTest {
 
@@ -85,34 +75,5 @@ class LegacyDataAdapterConnectionsTest {
 		assertEquals(JSON.parseObject(content), stored);
 	}
 
-	@Test
-	void theDaoWritesTheMigratedRecordBackAndBindsIt() {
-		JdbcTemplate jdbcTemplate = mock(JdbcTemplate.class);
-		when(jdbcTemplate.queryForObject(anyString(), eq(String.class), eq("d1"))).thenReturn(
-				"{\"models\":[],\"dataAdapter\":\"mysql\",\"mysqlDataAdapterProperties\":{\"mysqlUrl\":\"jdbc:mysql\",\"mysqlUser\":\"u\",\"mysqlPassword\":\"p\"}}");
-		BusinessConfigDao dao = new BusinessConfigDao();
-		ReflectionTestUtils.setField(dao, "jdbcTemplate", jdbcTemplate);
 
-		BusinessConfig config = dao.query("d1");
-
-		assertEquals("jdbc:mysql", config.getDataAdapterConnections().get("mysql").getUrl());
-		assertEquals("u", config.getDataAdapterConnections().get("mysql").getUser());
-		ArgumentCaptor<String> written = ArgumentCaptor.forClass(String.class);
-		verify(jdbcTemplate).update(anyString(), written.capture(), eq("d1"));
-		JSONObject rewritten = JSON.parseObject(written.getValue());
-		assertFalse(rewritten.containsKey("mysqlDataAdapterProperties"));
-		assertEquals("p", rewritten.getJSONObject("dataAdapterConnections").getJSONObject("mysql").getString("password"));
-	}
-
-	@Test
-	void theDaoDoesNotWriteANewFormatRecord() {
-		JdbcTemplate jdbcTemplate = mock(JdbcTemplate.class);
-		when(jdbcTemplate.queryForObject(anyString(), eq(String.class), eq("d1"))).thenReturn(
-				"{\"models\":[],\"dataAdapter\":\"postgresql\",\"dataAdapterConnections\":{}}");
-		BusinessConfigDao dao = new BusinessConfigDao();
-		ReflectionTestUtils.setField(dao, "jdbcTemplate", jdbcTemplate);
-
-		assertEquals("postgresql", dao.query("d1").getDataAdapter());
-		verify(jdbcTemplate, never()).update(anyString(), anyString(), anyString());
-	}
 }

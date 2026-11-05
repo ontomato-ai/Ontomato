@@ -42,6 +42,7 @@ import { assembleLoopEvidenceCapability } from "./evidence";
 import { combineResultTruncation } from "../../data-query/protocol";
 import { partialReportNotice } from "../report/partial-result-notice";
 import { assembleLoopExternalMcpCapability } from "./external-mcp";
+import { assembleLoopActionCapability } from "./actions";
 import { assembleLoopNotebookCapability } from "./notebook";
 import { assembleLoopDataProbeCapability } from "./probe";
 import { collectPptConversation } from "../delivery/ppt-conversation";
@@ -69,6 +70,8 @@ export const ANALYSIS_LOOP_COMPACTION_PROMPT_KEYS: CompactionPromptKeys = {
 export interface RunAnalysisLoopParams {
   userQuestion: string;
   userId: string;
+  /** Display name of the user the session talks to; regular-session turns carry it from the verified caller. */
+  userName?: string;
   threadId: string;
   taskId?: string;
   /** Run identity captured at acceptance; artifacts and terminal states use it to confirm the current task is still writable. */
@@ -97,6 +100,8 @@ function buildSystemPrompt(params: {
   chartCapability: string;
   skillCapability: string;
   externalMcpCapability: string;
+  actionCapability: string;
+  userName?: string;
 }): string {
   const trimmed = params.loopPrompt?.trim();
   return renderPrompt("analysis-agent.loop.system", {
@@ -108,6 +113,10 @@ function buildSystemPrompt(params: {
     chartCapability: params.chartCapability,
     skillCapability: params.skillCapability,
     externalMcpCapability: params.externalMcpCapability,
+    actionCapability: params.actionCapability,
+    currentUser: params.userName?.trim()
+      ? tApp("analysis.loop.current-user", { userName: params.userName.trim() })
+      : "",
   });
 }
 
@@ -258,6 +267,17 @@ export async function runAnalysisLoopWorkflow(
         trajectory,
       });
 
+      // Only a regular session has a user who can confirm an Action before it runs.
+      const actionCapability = await assembleLoopActionCapability({
+        selectedActionIds: conversationTurn ? agent.enabledActionIds || [] : [],
+        token,
+        apiKey,
+        userId,
+        locale: params.locale,
+        signal: loopSignal,
+        trajectory,
+      });
+
       const notebookCapability = assembleLoopNotebookCapability({
         reportDeliverableEnabled,
         dirKey: taskId || `${threadId}-${requestSeq}`,
@@ -361,6 +381,7 @@ export async function runAnalysisLoopWorkflow(
         },
         workerTools: {
           evidence: evidenceCapability.createWorkerTool,
+          readEvidence: evidenceCapability.readTool,
           probe: dataProbeCapability.createWorkerTools,
           skills: skillCapability.workerTools,
           notebook: notebookCapability.createWorkerTools,
@@ -381,10 +402,12 @@ export async function runAnalysisLoopWorkflow(
 
       const tools = [
         evidenceCapability.supervisorTool,
+        evidenceCapability.readTool,
         dispatchTool,
         ...dataProbeCapability.supervisorTools,
         ...skillCapability.supervisorTools,
         ...externalMcpCapability.supervisorTools,
+        ...actionCapability.supervisorTools,
         ...notebookCapability.supervisorTools,
         ...chartCapability.supervisorTools,
       ];
@@ -399,6 +422,8 @@ export async function runAnalysisLoopWorkflow(
           chartCapability: chartCapability.prompt,
           skillCapability: skillCapability.prompt,
           externalMcpCapability: externalMcpCapability.prompt,
+          actionCapability: actionCapability.prompt,
+          userName: params.userName,
         }),
         messages: [],
         tools,

@@ -12,7 +12,6 @@ import {
   ElPagination,
   ElRadio,
   ElRadioGroup,
-  ElSegmented,
   ElSelect,
   ElTable,
   ElTableColumn,
@@ -20,16 +19,22 @@ import {
   vLoading,
 } from "element-plus";
 import { useManagerFeedback } from "../feedback";
-import { Filter, Download, Plus, Trash2, Search } from "lucide-vue-next";
+import { Filter, Download, Plus, Trash2, Search, Settings2 } from "lucide-vue-next";
 import { useManagerClient, useOntologyText, useSharedText } from "../context";
-import InstanceGraph from "./InstanceGraph.vue";
+import type { ObjectReference } from "@ontomato/contracts/object-views";
+import { businessNameAttribute, instanceName } from "../object-views/instance-name";
 
 const { t } = useSharedText();
 const { ot } = useOntologyText();
 const { message } = useManagerFeedback();
 const { getMetas, loadObjectData } = useManagerClient();
 const props = defineProps<{ initialClass?: string }>();
-const graphSummaryTarget = ref<HTMLElement | null>(null);
+const emit = defineEmits<{ open: [reference: ObjectReference]; configure: [className: string, primaryKey?: string] }>();
+const primaryKeys = ref<Record<string, string>>({});
+function openRow(row: DataItem) {
+  const key = primaryKeys.value[selectedClass.value];
+  if (key && row[key] != null) emit("open", { className: selectedClass.value, primaryKey: String(row[key]) });
+}
 
 interface ClassDef {
   className: string;
@@ -42,6 +47,8 @@ interface AttrDef {
   name: string;
   showName: string;
   type: string;
+  businessKey?: boolean;
+  enable?: boolean;
 }
 
 interface DataItem {
@@ -62,16 +69,13 @@ const pageNum = ref(1);
 const pageSize = ref(20);
 const total = ref(0);
 const loading = ref(false);
-const viewMode = ref<"table" | "graph">("table");
-
-const viewModeOptions = computed(() => [
-  { label: ot("tableView"), value: "table" },
-  { label: ot("instanceGraphTitle"), value: "graph" },
-]);
 
 const currentClassAttrs = computed(() => {
   const cls = classList.value.find((c) => c.className === selectedClass.value);
   return cls?.attrs || [];
+});
+const titleAttribute = computed(() => {
+  return businessNameAttribute(currentClassAttrs.value);
 });
 
 const filterDrawerVisible = ref(false);
@@ -227,6 +231,7 @@ function applyFilters() {
 async function loadClassList() {
   try {
     const res = await getMetas();
+    primaryKeys.value = Object.fromEntries((res.data?.classDef || []).map((cls: any) => [cls.className, cls.attrs?.find((attr: any) => attr.primaryKey === true || attr.primary_key === true)?.name]));
     classList.value = (res.data?.classDef || []).map((cls: any) => ({
       className: cls.className,
       showName: cls.showName || cls.classDesc || cls.className,
@@ -235,6 +240,8 @@ async function loadClassList() {
         name: a.name,
         showName: a.showName || a.name,
         type: a.type || "",
+        businessKey: a.bizzkey === true || a.bizzKey === true || a.bizzkeyBool === true,
+        enable: a.enable !== false,
       })),
     }));
     if (classList.value.length > 0) {
@@ -347,11 +354,6 @@ watch(
 
 <template>
   <div class="data-browser">
-    <div class="mode-bar">
-      <el-segmented v-model="viewMode" :options="viewModeOptions" />
-      <div v-show="viewMode === 'graph'" ref="graphSummaryTarget" class="graph-summary-slot" />
-    </div>
-    <template v-if="viewMode === 'table'">
       <div class="toolbar">
       <el-select
         v-model="selectedClass"
@@ -402,6 +404,18 @@ watch(
             </el-dropdown-menu>
           </template>
         </el-dropdown>
+        <el-button
+          class="toolbar-action configure-view-action"
+          type="primary"
+          plain
+          :icon="Settings2"
+          :title="ot('ovConfigureObject')"
+          :aria-label="ot('ovConfigureObject')"
+          :disabled="!selectedClass"
+          @click="emit('configure', selectedClass)"
+        >
+          <span class="toolbar-action-label">{{ ot('ovConfigure') }}</span>
+        </el-button>
       </div>
 
       <el-tag
@@ -422,10 +436,16 @@ watch(
       class="admin-table"
       style="width: 100%"
       max-height="600"
+      highlight-current-row
+      @row-click="openRow"
     >
-      <el-table-column type="index" width="50" />
+      <el-table-column :label="currentClassAttrs.find(attr => attr.name === titleAttribute?.name)?.showName || ot('ovTitle')" :prop="titleAttribute?.name" min-width="200" fixed="left">
+        <template #default="scope">
+          <button class="object-title-link" :title="ot('ovOpenView')" :disabled="!primaryKeys[selectedClass] || scope.row[primaryKeys[selectedClass]] == null" @click.stop="openRow(scope.row)">{{ instanceName(currentClassAttrs, scope.row) }}</button>
+        </template>
+      </el-table-column>
       <el-table-column
-        v-for="attr in visibleAttrs"
+        v-for="attr in visibleAttrs.filter(item => item.name !== titleAttribute?.name)"
         :key="attr.name"
         :prop="attr.name"
         :label="attr.showName"
@@ -465,7 +485,7 @@ watch(
 
       <div class="filter-section">
         <div class="filter-title">{{ t("dataBrowser.filterConditions") }}</div>
-        <el-button type="primary" size="small" :icon="Plus" @click="addFilterCondition">
+        <el-button type="primary" plain size="small" :icon="Plus" @click="addFilterCondition">
           {{ t("dataBrowser.addCondition") }}
         </el-button>
 
@@ -491,7 +511,7 @@ watch(
             :placeholder="t('common.value')"
             :disabled="cond.operator === 'null' || cond.operator === 'notnull'"
           />
-          <el-button type="danger" :icon="Trash2" link @click="removeFilterCondition(idx)" />
+          <el-button type="danger" :icon="Trash2" :title="t('common.delete')" :aria-label="t('common.delete')" link @click="removeFilterCondition(idx)" />
         </div>
       </div>
 
@@ -512,12 +532,10 @@ watch(
       </div>
 
       <template #footer>
-        <el-button @click="clearAllFilters">{{ t("dataBrowser.clearAll") }}</el-button>
+        <el-button text @click="clearAllFilters">{{ t("dataBrowser.clearAll") }}</el-button>
         <el-button type="primary" @click="applyFilters">{{ t("dataBrowser.apply") }}</el-button>
       </template>
       </el-drawer>
-    </template>
-    <InstanceGraph v-else :summary-target="graphSummaryTarget" />
   </div>
 </template>
 
@@ -528,27 +546,6 @@ watch(
   display: flex;
   flex-direction: column;
   overflow: hidden;
-}
-
-.mode-bar {
-  display: flex;
-  align-items: center;
-  flex-shrink: 0;
-  margin-bottom: var(--spacing-lg);
-  gap: var(--spacing-lg);
-  flex-wrap: wrap;
-}
-
-.mode-bar :deep(.el-segmented) { flex-shrink: 0; }
-.graph-summary-slot { flex: 1; min-width: min(360px, 100%); }
-
-.mode-bar :deep(.el-segmented) {
-  --el-segmented-item-selected-bg-color: var(--el-color-primary);
-}
-
-.data-browser :deep(.instance-graph) {
-  min-height: 0;
-  flex: 1;
 }
 
 .data-browser :deep(.el-table) {
@@ -567,6 +564,8 @@ watch(
 
 .toolbar-actions {
   display: flex;
+  flex-wrap: wrap;
+  max-width: 100%;
   align-items: center;
   gap: var(--spacing-md);
   flex-shrink: 0;
@@ -575,6 +574,8 @@ watch(
 .toolbar-action {
   white-space: nowrap;
 }
+
+.configure-view-action { margin-inline-start: var(--spacing-sm); }
 
 .pagination {
   margin-top: var(--spacing-lg);
@@ -628,10 +629,6 @@ watch(
     max-height: calc(100cqh - 330px) !important;
   }
 
-  .filter-condition {
-    grid-template-columns: minmax(0, 1fr) 28px;
-  }
-
   .filter-condition .el-select:nth-child(2),
   .filter-condition .el-input {
     grid-column: 1 / -1;
@@ -652,8 +649,8 @@ watch(
 }
 
 .filter-title {
-  font-size: 14px;
-  font-weight: 500;
+  font-size: var(--text-sm);
+  font-weight: var(--font-medium);
   margin-bottom: var(--spacing-md);
   color: var(--el-text-color-regular);
 }
@@ -672,6 +669,10 @@ watch(
   width: 100%;
 }
 
+@container ontology-manager (max-width: 640px) {
+  .filter-condition { grid-template-columns: minmax(0, 1fr) 28px; }
+}
+
 .admin-table :deep(th.el-table__cell .cell) {
   white-space: nowrap;
   overflow: visible;
@@ -682,4 +683,22 @@ watch(
 :global(.ontology-manager .el-drawer.data-browser-filter-drawer) {
   border-radius: var(--manager-filter-drawer-radius) !important;
 }
+
+.object-title-link {
+  display: block;
+  max-width: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--el-color-primary);
+  font: inherit;
+  font-weight: 500;
+  line-height: 24px;
+  text-align: start;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.object-title-link:not(:disabled):hover { text-decoration: underline; text-underline-offset: 3px; }
+.object-title-link:disabled { color: var(--el-text-color-secondary); }
 </style>

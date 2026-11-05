@@ -196,7 +196,7 @@ function createAnalysisAgentMcpServer(req: Request) {
             task.id,
             identity.domainId,
             normalizedQuestion,
-            { token: identity.token, apiKey: identity.apiKey }
+            { token: identity.token, apiKey: identity.apiKey, userName: identity.userName }
           );
           if (requestSeq === null) {
             return textJson({ success: false, error: "Analysis session is already running" });

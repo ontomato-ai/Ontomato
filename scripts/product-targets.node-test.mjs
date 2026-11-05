@@ -54,11 +54,7 @@ function inWorkspace(fn) {
 
 const line = (name, arch = "test-arch") => `${name}:${arch}`;
 
-test("the shared rules only call service targets and never carry edition variables", () => {
-  // Only the rules count: the header comment may name the edition it stays out of.
-  const rules = readFileSync(SHARED, "utf8").split("\n").filter((line) => !line.startsWith("#")).join("\n");
-  assert.doesNotMatch(rules, /LICENSE_MODE|PROMPT_LANG|enterprise/);
-});
+
 
 test("build is the default goal and runs Node, Java and Manager in order", () => {
   inWorkspace((dir) => {

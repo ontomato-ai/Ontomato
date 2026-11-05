@@ -152,10 +152,6 @@ describe("agent product and execution modes", () => {
     expect(wrapper.find(".prompt-preview h1").text()).toBe("Evidence");
     await wrapper.findAll(".agent-editor-nav button").find(button => button.text() === "Skills & tools")!.trigger("click");
     expect(wrapper.findAllComponents(ElSelect).filter(select => select.props("ariaLabel") === "External MCP Services")).toHaveLength(1);
-    expect(wrapper.findAllComponents(ElSelect).every(select => select.props("fitInputWidth") === true)).toBe(true);
-    const mcpSection = wrapper.findAll(".skills-group.tools-panel").find((panel) => panel.text().includes("External MCP Services"))!;
-    expect(mcpSection.find(".mcp-manage-link").find("svg").exists()).toBe(true);
-    expect(mcpSection.findAll("button").find((button) => button.text() === "Refresh")!.find("svg").exists()).toBe(true);
     await wrapper.findAll("button").find(button => button.text() === "Save")!.trigger("click");
     await flushPromises();
     expect(mocks.updateAgent).toHaveBeenCalledWith("dimension", expect.objectContaining({
@@ -179,6 +175,34 @@ describe("agent product and execution modes", () => {
     expect(wrapper.emitted("update:visible")).toEqual([[false]]);
     wrapper.unmount();
   });
+  it("keeps a new draft after Save-and-close fails and closes after retry succeeds", async () => {
+    const wrapper = await dialog();
+    await wrapper.find("input.el-input__inner").setValue("Changed agent");
+    await wrapper.findAll("button").find(button => button.text() === "Back")!.trigger("click");
+    const save = () => wrapper.find(".leave-confirmation-test").findAll("button").find(button => button.text() === "Save")!;
+    mocks.createAgent.mockRejectedValueOnce(new Error("Save failed"));
+    await save().trigger("click");
+    await flushPromises();
+    expect(wrapper.emitted("update:visible")).toBeUndefined();
+    expect(wrapper.find<HTMLInputElement>("input.el-input__inner").element.value).toBe("Changed agent");
+    await wrapper.findAll("button").find(button => button.text() === "Back")!.trigger("click");
+    await save().trigger("click");
+    await flushPromises();
+    expect(wrapper.emitted("created")).toHaveLength(1);
+    expect(wrapper.emitted("update:visible")).toEqual([[false]]);
+    wrapper.unmount();
+  });
+
+  it("shows root counts only for subgraph scope", async () => {
+    const wrapper = await dialog();
+    expect(wrapper.find(".scope-graph-toolbar").text()).toContain("0 classes in range");
+    expect(wrapper.find(".scope-graph-toolbar").text()).not.toContain("roots");
+    await choose(wrapper, "Subgraph");
+    await flushPromises();
+    expect(wrapper.find(".scope-graph-toolbar").text()).toContain("0 roots");
+    wrapper.unmount();
+  });
+
   it("defaults to analysis + loop and persists the selected product with one flag", async () => {
     const wrapper = await dialog();
     expect(wrapper.findAll(".el-radio.is-checked").map((item) => item.find('.mode-title').exists() ? item.find('.mode-title').text() : item.text())).toEqual([

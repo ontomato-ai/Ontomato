@@ -102,6 +102,13 @@ function fromRow(row: Record<string, unknown>): GovernanceRecord {
 }
 
 export const governanceStore = {
+  async deleteByUser(userId: string): Promise<void> {
+    const { rows } = await getPostgresPool().query(
+      `DELETE FROM ${qualifiedTable("knowledge_governance_sessions")} WHERE initiator_id = $1 AND domain_id <> '' RETURNING harness_session_id`, [userId]
+    );
+    for (const row of rows) if (row.harness_session_id) await harnessSessions.deleteSession(row.harness_session_id);
+  },
+
   async create(owner: GovernanceOwner): Promise<GovernanceRecord> {
     const id = randomUUID();
     await harnessSessions.create(id);

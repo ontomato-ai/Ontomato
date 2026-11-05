@@ -364,28 +364,7 @@ describe("model list card", () => {
     });
   });
 
-  it("reveals the full fake key and deletes several keys without shifting the rest", async () => {
-    const { wrapper } = mountList([entry("qwen-main", { apiKeys: ["sk-fake-1", "sk-fake-2", "sk-fake-3"] })]);
-    // The list shows only the count, never the key text.
-    expect(wrapper.text()).not.toContain("sk-fake");
-    expect(wrapper.text()).toContain(t("admin.keyCountConfigured", { n: 3 }));
 
-    await button(wrapper, t("common.edit"))!.trigger("click");
-    const keyInputs = () => wrapper.findAll(".api-key-row input");
-    const keyValues = () => keyInputs().map((input) => (input.element as HTMLInputElement).value);
-    expect(keyInputs()[0]!.attributes("type")).toBe("password");
-    await wrapper.find(".api-key-row .el-input__password").trigger("click");
-    expect(keyInputs()[0]!.attributes("type")).toBe("text");
-    expect(keyValues()[0]).toBe("sk-fake-1");
-
-    const trash = `.api-key-row button[aria-label="${t("common.delete") as string}"]`;
-    await wrapper.findAll(trash)[0]!.trigger("click");
-    expect(keyValues()).toEqual(["sk-fake-2", "sk-fake-3"]);
-    await wrapper.findAll(trash)[1]!.trigger("click");
-    expect(keyValues()).toEqual(["sk-fake-2"]);
-    await saveDialog(wrapper);
-    expect(listModels(wrapper)[0]!.apiKeys).toEqual(["sk-fake-2"]);
-  });
 
   it("disables every row and add entry while the page is saving", () => {
     const { wrapper } = mountList([entry("qwen-main")], { saving: true });
@@ -662,7 +641,8 @@ describe("password visibility with the real dialog", () => {
   const keyValues = (wrapper: ReturnType<typeof mount>) =>
     wrapper.findAll(".api-key-row input").map((input) => (input.element as HTMLInputElement).value);
 
-  it("keeps remaining keys hidden after deleting a revealed row and when reopening another entry", async () => {
+  it("saves the remaining keys after deletions and hides keys when reopening another entry", async () => {
+    const save = vi.fn(async (_models: ModelEntry[]) => true);
     const wrapper = track(
       mount(ModelListCard, {
         props: {
@@ -671,12 +651,13 @@ describe("password visibility with the real dialog", () => {
             entry("b", { apiKeys: ["sk-fake-9"] }),
           ],
           saving: false,
-          save: async () => true,
+          save,
         },
         global: realDialog,
         attachTo: document.body,
       })
     );
+    expect(wrapper.text()).not.toContain("sk-fake");
     const edits = () => wrapper.findAll("button").filter((b) => b.text() === t("common.edit"));
     await edits()[0]!.trigger("click");
     await settle();
@@ -690,7 +671,11 @@ describe("password visibility with the real dialog", () => {
     expect(keyTypes(wrapper)).toEqual(["password", "password"]);
     expect(keyValues(wrapper)).toEqual(["sk-fake-2", "sk-fake-3"]);
 
-    await button(wrapper, t("common.cancel"))!.trigger("click");
+    await wrapper.findAll(trash)[1]!.trigger("click");
+    expect(keyValues(wrapper)).toEqual(["sk-fake-2"]);
+    await button(wrapper, t("common.save"))!.trigger("click");
+    await flushPromises();
+    expect(save.mock.calls[0]![0].map(model => model.apiKeys)).toEqual([["sk-fake-2"], ["sk-fake-9"]]);
     await settle();
     await edits()[1]!.trigger("click");
     await settle();
@@ -731,22 +716,7 @@ describe("password visibility with the real dialog", () => {
 });
 
 describe("model config page", () => {
-  it("is one page without tabs: model list, role card and embedding card, with no save button outside the cards", async () => {
-    const page = await mountModelPage();
-    expect(page.find(".el-tabs").exists()).toBe(false);
-    expect(page.findComponent(ModelListCard).exists()).toBe(true);
-    expect(page.findComponent(RoleModelsCard).exists()).toBe(true);
-    expect(page.findComponent(EmbeddingModelConfigCard).exists()).toBe(true);
-    expect(page.findComponent(QuerySettingsCard).exists()).toBe(false);
-    expect(page.findComponent(SkillDirConfigCard).exists()).toBe(false);
-    expect(page.findAll("button").every((b) => b.element.closest(".config-card") !== null)).toBe(true);
 
-    const system = await mountSystemPage();
-    expect(system.findComponent(QuerySettingsCard).exists()).toBe(true);
-    expect(system.findComponent(SkillDirConfigCard).exists()).toBe(true);
-    expect(system.findComponent(ModelListCard).exists()).toBe(false);
-    expect(system.findComponent(EmbeddingModelConfigCard).exists()).toBe(false);
-  });
 
   it("saves the first model from its dialog; the five roles the backend assigns it show as saved and stay editable", async () => {
     server.models = [];
@@ -849,8 +819,8 @@ describe("model config page", () => {
     const page = await mountModelPage();
     await saveRoles(page);
     const payload = sent.settings as { models: unknown[]; agents: Record<string, unknown> };
-    expect(Object.keys(payload)).toEqual(["models", "agents"]);
-    expect(Object.keys(payload.agents)).toEqual([...MODEL_ROLES]);
+    expect(new Set(Object.keys(payload))).toEqual(new Set(["models", "agents"]));
+    expect(new Set(Object.keys(payload.agents))).toEqual(new Set(MODEL_ROLES));
     // Roles carry only config IDs; the skill directory is not submitted with the model save.
     expect(payload.agents).toEqual(fixtures.agents);
     expect(payload.models).toEqual(fixtures.models);

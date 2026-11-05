@@ -88,4 +88,16 @@ describe("schedule time zone resolution", () => {
       "2026-03-08T19:30:00.000Z"
     );
   });
+
+  it("anchors an hourly interval at the previous slot instead of the late trigger time", async () => {
+    const { nextRunAfterSlot } = await loadInZone("Asia/Shanghai");
+    const slot = Date.parse("2026-11-04T02:00:00Z");
+    const iso = (value: number | null) => (value == null ? null : new Date(value).toISOString());
+    // The scheduler polls every 30s, so a due slot fires slightly late; the cadence must not drift.
+    expect(iso(nextRunAfterSlot("2h", slot, slot + 25_000))).toBe("2026-11-04T04:00:00.000Z");
+    // After an outage the next slot is the first one still ahead, not one per missed slot.
+    expect(iso(nextRunAfterSlot("2h", slot, slot + 5 * 3_600_000))).toBe("2026-11-04T08:00:00.000Z");
+    // A manual run before the slot is due restarts the cadence from now.
+    expect(iso(nextRunAfterSlot("2h", slot, slot - 600_000))).toBe("2026-11-04T03:50:00.000Z");
+  });
 });

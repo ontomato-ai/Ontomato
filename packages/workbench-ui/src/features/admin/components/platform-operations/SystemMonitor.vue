@@ -36,21 +36,32 @@ async function fetchStatus() {
   }
 }
 
-const cpuColor = computed(() => {
-  if (!status.value) return "";
-  const u = status.value.server.cpu.userate;
-  if (u >= 90) return "#F56C6C";
-  if (u >= 70) return "#E6A23C";
+function usageColor(value: number) {
+  if (value >= 90) return "#F56C6C";
+  if (value >= 70) return "#E6A23C";
   return "#67C23A";
+}
+
+const cpuColor = computed(() => (status.value ? usageColor(status.value.server.cpu.userate) : ""));
+
+const memColor = computed(() =>
+  status.value ? usageColor(status.value.server.memory.usage_percent) : ""
+);
+
+const primaryDisk = computed(() => {
+  const disks = status.value?.server.disk ?? [];
+  return disks.length
+    ? disks.reduce((main, disk) => (disk.used > main.used ? disk : main))
+    : null;
 });
 
-const memColor = computed(() => {
-  if (!status.value) return "";
-  const u = status.value.server.memory.usage_percent;
-  if (u >= 90) return "#F56C6C";
-  if (u >= 70) return "#E6A23C";
-  return "#67C23A";
-});
+const diskUsage = computed(() => primaryDisk.value?.usage_percent ?? 0);
+
+const diskColor = computed(() => usageColor(diskUsage.value));
+
+const diskTooltip = computed(() =>
+  (status.value?.server.disk ?? []).map((d) => `${d.partition} ${d.usage_percent}%`).join("\n")
+);
 
 onMounted(() => {
   fetchStatus();
@@ -221,21 +232,15 @@ onUnmounted(() => {
                 <el-icon><Coins /></el-icon>
                 {{ t("hotData.disk") }}
               </span>
-              <span class="resource-value">
-                {{ status.server.disk.map((d) => d.usage_percent).join(" / ") }}%
+              <span class="resource-value" :style="{ color: diskColor }" :title="diskTooltip">
+                {{ diskUsage }}%
               </span>
             </div>
             <div v-for="disk in status.server.disk" :key="disk.partition" class="disk-row">
-              <span class="disk-partition">{{ disk.partition }}</span>
+              <span class="disk-partition" :title="disk.partition">{{ disk.partition }}</span>
               <el-progress
                 :percentage="disk.usage_percent"
-                :color="
-                  disk.usage_percent >= 90
-                    ? '#F56C6C'
-                    : disk.usage_percent >= 70
-                      ? '#E6A23C'
-                      : '#67C23A'
-                "
+                :color="usageColor(disk.usage_percent)"
                 :stroke-width="6"
               />
               <span class="disk-detail">{{ disk.used }} / {{ disk.size }} GB</span>
@@ -350,6 +355,12 @@ onUnmounted(() => {
 
 .resource-overview {
   flex-shrink: 0;
+  align-items: stretch;
+}
+
+.resource-overview :deep(.el-col) {
+  display: flex;
+  min-width: 0;
 }
 
 .resource-card {
@@ -358,6 +369,10 @@ onUnmounted(() => {
   border-radius: 8px;
   padding: 16px;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
 }
 
 .resource-header {
@@ -395,10 +410,12 @@ onUnmounted(() => {
   align-items: center;
   gap: 8px;
   margin-top: 8px;
+  min-width: 0;
 }
 
 .disk-row .el-progress {
-  flex: 1;
+  flex: 1 1 40px;
+  min-width: 40px;
 }
 
 .disk-partition {
@@ -406,13 +423,17 @@ onUnmounted(() => {
   font-weight: 500;
   color: var(--el-text-color-regular);
   white-space: nowrap;
-  min-width: 70px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+  max-width: 40%;
 }
 
 .disk-detail {
   font-size: 12px;
   color: var(--el-text-color-secondary);
   white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .single-service-info {

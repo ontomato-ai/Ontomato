@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { AgentEvent, AgentState } from "../../../core/agent-loop/types";
+import { HttpError } from "../../../utils/errors";
 import type { AgentLoopHooks } from "../../../core/agent-loop/agent-loop";
 
 const order = vi.hoisted(() => [] as string[]);
@@ -193,4 +194,35 @@ describe("governance response stream", () => {
     expect(order).toContain("finish:cancelled");
     release();
   });
+  it.each([
+    ["another user", { domainId: "d", userId: "other" }],
+    ["another domain", { domainId: "other", userId: "u" }],
+  ])("honors the authorizer's refusal for %s without exposing or stopping the active turn", async (_case, caller) => {
+    loop.run = (_state, _emit, signal) => new Promise(resolve => signal.addEventListener("abort", () => resolve()));
+    const runtime = new GovernanceRuntime();
+    await runtime.start(owner, credentials, "en", "Private question");
+    const stream = (await runtime.responseStream("g1", owner, "t1"))!;
+    const refusal = new HttpError(404, "unavailable");
+    const authorize = vi.mocked(governanceStore.authorize);
+    try {
+      authorize.mockRejectedValueOnce(refusal);
+      await expect(runtime.responseStream("g1", caller, "t1")).rejects.toBe(refusal);
+      expect(authorize).toHaveBeenLastCalledWith("g1", caller);
+      authorize.mockRejectedValueOnce(refusal);
+      await expect(runtime.stop("g1", caller)).rejects.toBe(refusal);
+      expect(authorize).toHaveBeenLastCalledWith("g1", caller);
+      expect(stream.controller.signal.aborted).toBe(false);
+      expect(stream.status).toBe("running");
+      // The same refusal on the read boundary must also prevent admission of a new turn.
+      vi.mocked(governanceStore.get).mockRejectedValueOnce(refusal);
+      await expect(runtime.respond("g1", caller, credentials, "en", "Intrusion")).rejects.toBe(refusal);
+      expect(governanceStore.get).toHaveBeenLastCalledWith("g1", caller);
+      expect(await runtime.responseStream("g1", owner, "t1")).toBe(stream);
+    } finally {
+      await runtime.stop("g1", owner);
+      await runtime.wait("g1");
+    }
+    expect(stream.status).toBe("cancelled");
+  });
+
 });

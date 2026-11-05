@@ -99,18 +99,24 @@ export function createLoopDataProbeTools(deps: LoopDataProbeDeps): AgentTool[] {
   const selectedClassNames = new Set(
     (deps.classNames || []).map((className) => className.trim()).filter(Boolean)
   );
-  const dispatchFields = deps.dispatchId ? { dispatchId: deps.dispatchId } : {};
+  // Worker calls belong to the worker trace; only supervisor calls carry their call identity.
   const startProbe = (
     probeTool: "probe_classes" | "probe_class_data",
-    probeArguments: Record<string, unknown>
-  ) => deps.trajectory.start("probe", { probeTool, probeArguments, ...dispatchFields });
+    probeArguments: Record<string, unknown>,
+    toolCallId: string
+  ) =>
+    deps.trajectory.start("probe", {
+      probeTool,
+      probeArguments,
+      ...(deps.dispatchId ? { dispatchId: deps.dispatchId } : { toolCallId }),
+    });
 
   const probeClasses: AgentTool = {
     name: "probe_classes",
     description: tApp("analysis.loop.probe.337"),
     parameters: { type: "object", properties: {} },
-    async execute(_toolCallId, _params, signal) {
-      const activityId = startProbe("probe_classes", {});
+    async execute(toolCallId, _params, signal) {
+      const activityId = startProbe("probe_classes", {}, toolCallId);
       const requestSignal = signal || deps.signal;
       try {
         requestSignal.throwIfAborted();
@@ -158,7 +164,7 @@ export function createLoopDataProbeTools(deps: LoopDataProbeDeps): AgentTool[] {
       },
       required: ["class_name"],
     },
-    async execute(_toolCallId, params, signal) {
+    async execute(toolCallId, params, signal) {
       const className = typeof params.class_name === "string" ? params.class_name.trim() : "";
       let page: { number: number; size: number };
       try {
@@ -166,13 +172,13 @@ export function createLoopDataProbeTools(deps: LoopDataProbeDeps): AgentTool[] {
         page = parsePage(params.page);
       } catch (error: unknown) {
         const message = errorMessage(error);
-        const activityId = startProbe("probe_class_data", params);
+        const activityId = startProbe("probe_class_data", params, toolCallId);
         deps.trajectory.settle(activityId, "failed", { error: message });
         return textResult(tApp("analysis.loop.probe.346", { message: message }));
       }
 
       const probeArguments = { class_name: className, page };
-      const activityId = startProbe("probe_class_data", probeArguments);
+      const activityId = startProbe("probe_class_data", probeArguments, toolCallId);
       if (selectedClassNames.size > 0 && !selectedClassNames.has(className)) {
         const message = tApp("analysis.loop.probe.347", { className: className });
         deps.trajectory.settle(activityId, "failed", { error: message });

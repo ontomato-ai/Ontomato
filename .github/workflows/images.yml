@@ -2,16 +2,18 @@ name: Images
 
 # Formal releases publish three final images; deployments only pull and run them.
 #
-# develop pushes publish the edge version, formal v* tags publish the stripped
-# version plus latest. Pull requests never publish: they run pr-checks.yml.
+# develop pushes publish the edge version, stable pushes publish the stable
+# version (the maintenance line of released versions), and formal v* tags publish
+# the stripped version plus latest. Pull requests never publish: they run
+# pr-checks.yml.
 #
-# Keep each ref's build, publication and verification together. A newer develop
-# push cancels the superseded run, so only the current head publishes; the head
-# check still rejects stale reruns because cancellation can lose the race.
+# Keep each ref's build, publication and verification together. A newer push to
+# the same branch cancels the superseded run, so only the current head publishes;
+# the head check still rejects stale reruns because cancellation can lose the race.
 
 on:
   push:
-    branches: ["develop"]
+    branches: ["develop", "stable"]
     tags: ["v*"]
 
 concurrency:
@@ -66,7 +68,13 @@ jobs:
         id: stack-start
         working-directory: deploy
         run: |
-          sed "s/^ARCH=.*/ARCH=$ARCH/" .env.example > .env
+          # .env.example is an inactive, fully commented reference; CI supplies its own site inputs.
+          cp .env.example .env
+          {
+            echo "ARCH=$ARCH"
+            echo "POSTGRES_PASSWORD=ci-verify-password"
+            echo "PUBLIC_HOST=127.0.0.1"
+          } >> .env
           docker pull pgvector/pgvector:pg18
           docker compose up -d --wait --wait-timeout 300
           for port in 3000 3005; do
@@ -81,22 +89,22 @@ jobs:
           docker compose ps -a
           docker compose logs --tail 200
 
-      # Edge guard: an outdated develop run must not publish after the branch
-      # has advanced. Release-tag builds do not track develop.
-      - name: Refuse a stale edge publish
+      # Branch guard: an outdated branch run must not publish after the branch
+      # has advanced. Release-tag builds do not track a branch.
+      - name: Refuse a stale branch publish
         run: |
           if [ "$GITHUB_REF_TYPE" = tag ]; then exit 0; fi
           head=$(git rev-parse HEAD)
-          remote=$(git ls-remote "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" refs/heads/develop | cut -f1)
+          remote=$(git ls-remote "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" "refs/heads/$GITHUB_REF_NAME" | cut -f1)
           [ "$head" = "$remote" ] || {
-            echo "develop has advanced to $remote; not publishing edge from stale $head" >&2
+            echo "$GITHUB_REF_NAME has advanced to $remote; not publishing from stale $head" >&2
             exit 1
           }
 
       - name: Publish the images of this architecture
         id: publish
         run: |
-          if [ "$GITHUB_REF_TYPE" = tag ]; then version="${GITHUB_REF_NAME#v}"; else version=edge; fi
+          if [ "$GITHUB_REF_TYPE" = tag ]; then version="${GITHUB_REF_NAME#v}"; elif [ "$GITHUB_REF_NAME" = develop ]; then version=edge; else version="$GITHUB_REF_NAME"; fi
           publish() {
             local build
             build=$(docker image inspect --format '{{index .Config.Labels "io.ontomato.build"}}' "$1")
@@ -114,19 +122,19 @@ jobs:
     needs: build
     runs-on: ubuntu-24.04
     steps:
-      - name: Refuse a stale edge publish
+      - name: Refuse a stale branch publish
         run: |
           if [ "$GITHUB_REF_TYPE" = tag ]; then exit 0; fi
-          remote=$(git ls-remote "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" refs/heads/develop | cut -f1)
+          remote=$(git ls-remote "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" "refs/heads/$GITHUB_REF_NAME" | cut -f1)
           [ "${{ github.sha }}" = "$remote" ] || {
-            echo "develop has advanced to $remote; not indexing edge from stale ${{ github.sha }}" >&2
+            echo "$GITHUB_REF_NAME has advanced to $remote; not indexing from stale ${{ github.sha }}" >&2
             exit 1
           }
 
       - name: Publish the multi-architecture images
         run: |
           echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
-          if [ "$GITHUB_REF_TYPE" = tag ]; then version="${GITHUB_REF_NAME#v}"; else version=edge; fi
+          if [ "$GITHUB_REF_TYPE" = tag ]; then version="${GITHUB_REF_NAME#v}"; elif [ "$GITHUB_REF_NAME" = develop ]; then version=edge; else version="$GITHUB_REF_NAME"; fi
           # index <image> <amd64 tag> <arm64 tag>
           index() {
             local tags=(-t "$REGISTRY/$1:$version" -t "$REGISTRY/$1:${{ needs.build.outputs.build-tag }}")
@@ -161,8 +169,14 @@ jobs:
         working-directory: deploy
         run: |
           echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
-          if [ "$GITHUB_REF_TYPE" = tag ]; then export ONTOMATO_VERSION="${GITHUB_REF_NAME#v}"; else export ONTOMATO_VERSION=edge; fi
-          sed "s/^ARCH=.*/ARCH=$ARCH/" .env.example > .env
+          if [ "$GITHUB_REF_TYPE" = tag ]; then export ONTOMATO_VERSION="${GITHUB_REF_NAME#v}"; elif [ "$GITHUB_REF_NAME" = develop ]; then export ONTOMATO_VERSION=edge; else export ONTOMATO_VERSION="$GITHUB_REF_NAME"; fi
+          # .env.example is an inactive, fully commented reference; CI supplies its own site inputs.
+          cp .env.example .env
+          {
+            echo "ARCH=$ARCH"
+            echo "POSTGRES_PASSWORD=ci-verify-password"
+            echo "PUBLIC_HOST=127.0.0.1"
+          } >> .env
           echo "COMPOSE_FILE=docker-compose.yml:docker-compose.ghcr.yml" >> .env
           docker compose up -d --wait --wait-timeout 300
           for port in 3000 3005; do

@@ -97,6 +97,16 @@ export class PostgresStore implements BaseStore {
     );
   }
 
+  async deleteByUser(userId: string): Promise<void> {
+    // Only these namespaces encode personal ownership; all other namespaces are retained.
+    await this.pool.query(
+      `DELETE FROM ${qualifiedTable("kv_store")} WHERE namespace = $1 OR starts_with(namespace, $1 || '/')
+       OR (split_part(namespace, '/', 1) = 'memories' AND split_part(namespace, '/', 2) <> ''
+           AND split_part(namespace, '/', 3) = $2)`,
+      [this.namespaceToString(["preferences", userId]), userId]
+    );
+  }
+
   async deleteByNamespace(namespace: string[]): Promise<void> {
     const ns = this.namespaceToString(namespace);
     await this.pool.query(

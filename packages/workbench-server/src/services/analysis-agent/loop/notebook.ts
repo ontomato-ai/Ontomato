@@ -25,6 +25,12 @@ const logger = createLogger("analysis-loop-notebook");
 /** Parent directory of all task notebooks; each task owns its own working directory beneath it. */
 const NOTEBOOK_ROOT = path.join(os.tmpdir(), "analysis-loop-notebook");
 
+export async function deleteAnalysisNotebook(dirKey: string): Promise<void> {
+  // Sanitized legacy names can collide; delete only a key that already names its exact directory.
+  if (!/^[A-Za-z0-9_-]+$/.test(dirKey)) return;
+  await fs.promises.rm(path.join(NOTEBOOK_ROOT, dirKey), { recursive: true, force: true });
+}
+
 /** Assembly separator between chapters. */
 const CHAPTER_SEPARATOR = "\n\n";
 
@@ -143,11 +149,13 @@ export function assembleLoopNotebookCapability(params: {
   const recordChapterActivity = (
     kind: "chapter" | "publish",
     chapter: string,
+    toolCallId: string,
     dispatchId?: string
   ) => {
     const activityId = params.trajectory.start(kind, {
       chapter,
-      ...(dispatchId ? { dispatchId } : {}),
+      // Worker calls belong to the worker trace; only supervisor calls carry their call identity.
+      ...(dispatchId ? { dispatchId } : { toolCallId }),
     });
     params.trajectory.settle(activityId, "completed", { chapter });
   };
@@ -156,7 +164,8 @@ export function assembleLoopNotebookCapability(params: {
     notebook
       ? createNotebookTools({
           notebook,
-          onChapterWritten: (chapter) => recordChapterActivity("chapter", chapter, dispatchId),
+          onChapterWritten: (chapter, toolCallId) =>
+            recordChapterActivity("chapter", chapter, toolCallId, dispatchId),
         })
       : [];
 
@@ -165,8 +174,8 @@ export function assembleLoopNotebookCapability(params: {
     supervisorTools.push(
       createPublishChapterTool({
         notebook,
-        onPublished: (chapter) => {
-          recordChapterActivity("publish", chapter);
+        onPublished: (chapter, toolCallId) => {
+          recordChapterActivity("publish", chapter, toolCallId);
           params.trajectory.section({
             sectionId: "report",
             markdown: notebook.assemblePublished(),
@@ -263,7 +272,7 @@ function textResult(text: string): AgentToolResult {
  */
 export function createNotebookTools(params: {
   notebook: ReportNotebook;
-  onChapterWritten: (chapter: string) => void;
+  onChapterWritten: (chapter: string, toolCallId: string) => void;
 }): AgentTool[] {
   const { notebook } = params;
 
@@ -283,7 +292,7 @@ export function createNotebookTools(params: {
         },
         required: ["chapter", "content"],
       },
-      async execute(_toolCallId: string, toolParams: Record<string, unknown>) {
+      async execute(toolCallId: string, toolParams: Record<string, unknown>) {
         const resolved = notebook.resolve(toolParams.chapter);
         if ("rejected" in resolved) return textResult(resolved.rejected);
         const content = typeof toolParams.content === "string" ? toolParams.content : "";
@@ -291,7 +300,7 @@ export function createNotebookTools(params: {
 
         const chapter = path.basename(resolved.filePath);
         fs.writeFileSync(resolved.filePath, content, "utf-8");
-        params.onChapterWritten(chapter);
+        params.onChapterWritten(chapter, toolCallId);
         return textResult(tApp("analysis.loop.notebook.306", { chapter: chapter, length: content.length }));
       },
     },
@@ -309,7 +318,7 @@ export function createNotebookTools(params: {
         },
         required: ["chapter", "old_string", "new_string"],
       },
-      async execute(_toolCallId: string, toolParams: Record<string, unknown>) {
+      async execute(toolCallId: string, toolParams: Record<string, unknown>) {
         const resolved = notebook.resolve(toolParams.chapter);
         if ("rejected" in resolved) return textResult(resolved.rejected);
 
@@ -338,7 +347,7 @@ export function createNotebookTools(params: {
           content.slice(0, first) + newString + content.slice(first + oldString.length),
           "utf-8"
         );
-        params.onChapterWritten(chapter);
+        params.onChapterWritten(chapter, toolCallId);
         return textResult(tApp("analysis.loop.notebook.314", { chapter: chapter }));
       },
     },
@@ -393,7 +402,7 @@ export function createNotebookTools(params: {
  */
 export function createPublishChapterTool(params: {
   notebook: ReportNotebook;
-  onPublished: (chapter: string) => void;
+  onPublished: (chapter: string, toolCallId: string) => void;
 }): AgentTool {
   const { notebook } = params;
 
@@ -408,7 +417,7 @@ export function createPublishChapterTool(params: {
       },
       required: ["chapter"],
     },
-    async execute(_toolCallId: string, toolParams: Record<string, unknown>) {
+    async execute(toolCallId: string, toolParams: Record<string, unknown>) {
       const resolved = notebook.resolve(toolParams.chapter);
       if ("rejected" in resolved) return textResult(resolved.rejected);
 
@@ -420,7 +429,7 @@ export function createPublishChapterTool(params: {
       }
 
       notebook.markPublished(chapter);
-      params.onPublished(chapter);
+      params.onPublished(chapter, toolCallId);
       return textResult(tApp("analysis.loop.notebook.325", { chapter: chapter }));
     },
   };

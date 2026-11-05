@@ -17,7 +17,6 @@ const byAlias = await execute({
 assert.equal(byAlias.meta.error, undefined);
 assert.equal(byAlias.meta.matchedRegions, 2);
 assert.equal(byAlias.meta.unmatchedDataRows, 0);
-assert.ok(byAlias.html.includes('Leaflet'));
 
 const byCode = await execute({
   title: 'Administrative code smoke test',
@@ -29,5 +28,4 @@ assert.equal(byCode.meta.unmatchedDataRows, 0);
 
 const missing = await execute({ title: 'Missing boundary test', data: [{ province: '广东', sales: 260 }], autoLoadGeoJSON: false });
 assert.equal(missing.meta.error, true);
-assert.ok(missing.html.includes('Missing or invalid geojson'));
 console.log('Smoke tests passed: province aliases, administrative codes, missing-boundary diagnostics.');

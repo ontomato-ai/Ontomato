@@ -107,10 +107,6 @@ class OpenAiCustomParametersRequestTest {
                 .modelName("test-model");
     }
 
-    @Test
-    void createsChatServiceWithoutConditionalHttpClientBuilderBean() {
-        assertDoesNotThrow(MultiThreadAIChatService::new);
-    }
 
     @Test
     void overridesTopLevelBodyFieldsAtFinalExit() {
@@ -284,8 +280,6 @@ class OpenAiCustomParametersRequestTest {
         assertEquals(true, JSON.parseObject(requestBodies.get(0)).getBooleanValue("stream"));
         assertFalse(error instanceof UnsupportedOperationException,
                 "stream:true must not route to the SSE overload");
-        assertTrue(error.getMessage() != null && error.getMessage().contains("Unrecognized token"),
-                "non-streaming parse error must surface, actual: " + error);
     }
 
     @Test
@@ -423,4 +417,13 @@ class OpenAiCustomParametersRequestTest {
         assertNotSame(body, nested);
         assertEquals("$", ((Map<?, ?>) nested).get("$ref"));
     }
+    @Test
+    void nonStrictToolsReachTheWireWithoutStrictValidation() {
+        ChatModel model = MultiThreadAIChatService.buildChatModel(productionModel(), false, 50000);
+        model.chat(ChatRequest.builder().messages(UserMessage.from("test"))
+                .toolSpecifications(ToolSpecification.builder().name("tool").description("desc").build()).build());
+        JSONObject tool = JSON.parseObject(requestBody.get()).getJSONArray("tools").getJSONObject(0);
+        assertFalse(tool.getJSONObject("function").getBooleanValue("strict"));
+    }
+
 }

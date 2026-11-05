@@ -48,6 +48,10 @@ import {
 } from "../../services/analysis-agent/delivery/report-pdf";
 import { asyncHandler, buildAttachmentContentDisposition } from "../utils/http";
 import { HttpError } from "../../utils/errors";
+import {
+  ensureScheduleCredential,
+  renewScheduleCredential,
+} from "../../services/analysis-agent/task/schedule-credentials";
 
 const logger = createLogger("api:analysis-tasks");
 const router: ReturnType<typeof Router> = Router();
@@ -217,6 +221,11 @@ router.get(
       throw new HttpError(400, "reportDeliverableEnabled must be true or false");
     }
     const { limit, offset } = parsePagination(req);
+    // A visit with a valid login renews a scheduled credential that runs found dead and resumes the paused rules.
+    await renewScheduleCredential(
+      { userId, domainId },
+      { token: (req as AuthenticatedRequest).token, apiKey: (req as AuthenticatedRequest).apiKey }
+    );
     const page = await taskService.listTaskSummaries({
       agentId: agentId || undefined,
       userId,
@@ -351,6 +360,7 @@ router.post(
     const requestSeq = await startConversationTurn(task.id, task.domainId, req.body.message, {
       token: authReq.token,
       apiKey: authReq.apiKey,
+      userName: authReq.userName,
     });
     if (requestSeq === null) {
       throw new HttpError(409, t("api.taskIsRunning"));
@@ -563,6 +573,10 @@ router.post(
 
     // Creating with a schedule registers a schedule rule; it does not build one report run.
     if (body.scheduleEnabled) {
+      await ensureScheduleCredential(
+        { userId: authReq.userId, domainId },
+        { token: authReq.token, apiKey: authReq.apiKey }
+      );
       const rule = await getAnalysisScheduleRuleService().register({
         agentId: body.agentId,
         userId: authReq.userId,
@@ -573,7 +587,6 @@ router.post(
         scheduleExpression: body.scheduleExpression || "",
         notifyEmail: body.notifyEmail || undefined,
         notifyOnComplete: body.notifyOnComplete || false,
-        token: authReq.token || undefined,
       });
       const triggered = body.executeImmediately
         ? await triggerScheduleRule(rule.id, rule.domainId)
@@ -613,6 +626,7 @@ router.post(
         await startConversationTurn(task.id, task.domainId, body.question, {
           token: authReq.token,
           apiKey: authReq.apiKey,
+          userName: authReq.userName,
         });
       } else {
         executeTask(task.id, task.domainId).catch((error) => {
@@ -641,16 +655,15 @@ router.post(
     }
 
     const requestToken = (req as AuthenticatedRequest).token;
-    if (requestToken && requestToken !== task.token) {
-      if (rule)
-        await getAnalysisScheduleRuleService().update(rule.id, rule.domainId, {
-          token: requestToken,
-        });
-      else
-        await taskService.updateTask(req.params.id, task.domainId, { token: requestToken } as any);
+    if (!rule && requestToken && requestToken !== task.token) {
+      await taskService.updateTask(req.params.id, task.domainId, { token: requestToken } as any);
     }
 
     if (rule) {
+      await ensureScheduleCredential(
+        { userId: rule.userId, domainId: rule.domainId },
+        { token: requestToken, apiKey: (req as AuthenticatedRequest).apiKey }
+      );
       const reportTask = await triggerScheduleRule(rule.id, rule.domainId);
       if (!reportTask) {
         throw new HttpError(409, t("api.taskIsRunning"));
@@ -668,7 +681,7 @@ router.post(
         task.id,
         task.domainId,
         task.question || task.name,
-        { token: requestToken || task.token }
+        { token: requestToken || task.token, userName: (req as AuthenticatedRequest).userName }
       );
       if (requestSeq === null) {
         throw new HttpError(409, t("api.taskIsRunning"));
@@ -727,8 +740,14 @@ router.put(
 
     const ruleService = getAnalysisScheduleRuleService();
     const updates = { ...req.body, token: undefined } as Partial<AnalysisTask>;
+    const authReq = req as AuthenticatedRequest;
+    const caller = { token: authReq.token, apiKey: authReq.apiKey };
 
     if (owned.rule) {
+      // Editing or switching on a rule that will run makes sure its owner has a working scheduled credential.
+      if (updates.scheduleEnabled ?? owned.rule.enabled) {
+        await ensureScheduleCredential({ userId: owned.rule.userId, domainId: owned.rule.domainId }, caller);
+      }
       const rule = await ruleService.update(owned.rule.id, owned.rule.domainId, {
         ...updates,
         enabled: updates.scheduleEnabled,
@@ -741,6 +760,7 @@ router.put(
     }
 
     if (updates.scheduleEnabled) {
+      await ensureScheduleCredential({ userId: owned.task.userId, domainId: owned.task.domainId }, caller);
       const rule = await ruleService.register({
         agentId: owned.task.agentId,
         userId: owned.task.userId,
@@ -751,7 +771,6 @@ router.put(
         scheduleExpression: updates.scheduleExpression || "",
         notifyEmail: updates.notifyEmail ?? owned.task.notifyEmail,
         notifyOnComplete: updates.notifyOnComplete ?? owned.task.notifyOnComplete,
-        token: (req as AuthenticatedRequest).token || owned.task.token,
       });
       res.json({ success: true, data: toClientTask(toScheduleRuleTask(rule)) });
       return;

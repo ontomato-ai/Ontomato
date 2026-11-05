@@ -47,6 +47,8 @@ import { ensureAnalysisAgentMcpServicesSchema } from "./20260901-analysis-agent-
 import { ensureKnowledgeGovernanceSchema } from "./20260910-knowledge-governance/schema.js";
 import { ensureAnalysisReportSummaryPositionSchema } from "./20260918-analysis-report-summary-position/schema.js";
 import { ensureAnalysisAgentHotReportSchema } from "./20260929-analysis-agent-hot-report/schema.js";
+import { ensureAnalysisAgentActionsSchema } from "./20261104-analysis-agent-actions/schema.js";
+import { ensureScheduleCredentialSchema } from "./20261105-schedule-credentials/schema.js";
 import {
   QUERY_RUN_BACKEND_SESSIONS_NAME,
   QUERY_RUN_BACKEND_SESSIONS_VERSION,
@@ -100,6 +102,10 @@ export const POSTGRES_MIGRATION_REGISTRY: MigrationRegistration[] = [
     ensureSchema: ensureAnalysisAgentHotReportSchema,
   },
   {
+    directory: "20261104-analysis-agent-actions",
+    ensureSchema: ensureAnalysisAgentActionsSchema,
+  },
+  {
     directory: "20260625-business-storage-v1",
     ensureSchema: ensureBusinessStorageV1Schema,
     migration: {
@@ -125,6 +131,10 @@ export const POSTGRES_MIGRATION_REGISTRY: MigrationRegistration[] = [
       name: REPORT_AUTHORITY_SPLIT_NAME,
       run: runReportSplit,
     },
+  },
+  {
+    directory: "20261105-schedule-credentials",
+    ensureSchema: ensureScheduleCredentialSchema,
   },
   {
     directory: "20260831-query-fact-storage-template",

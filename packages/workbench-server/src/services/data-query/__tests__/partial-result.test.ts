@@ -127,6 +127,11 @@ describe("saved report completeness", () => {
 });
 
 describe("answer protocol", () => {
+  it("accepts row arrays and rejects a non-array answer or an empty pack list", () => {
+    expect(m.parseQueryAnswerPayload({ answer: [1] }).answer).toEqual([1]);
+    expect(() => m.parseQueryAnswerPayload({ answer: "no" })).toThrow();
+    expect(() => m.parseQueryAnswerPayloads([])).toThrow();
+  });
   it("keeps a partial pack's marker and leaves complete packs unmarked", () => {
     const [partial, complete] = m.parseQueryAnswerPayloads([
       { answer: [{ a: 1 }], ...MARKER },

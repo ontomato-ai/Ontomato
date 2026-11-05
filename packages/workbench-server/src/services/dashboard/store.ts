@@ -166,6 +166,10 @@ export async function saveDashboard(ownerId: string, domainId: string, detail: D
   }
 }
 
+export async function deleteUserDashboards(userId: string): Promise<void> {
+  await getPostgresPool().query(`DELETE FROM ${qualifiedTable("dashboards")} WHERE owner_id = $1 AND domain_id <> ''`, [userId]);
+}
+
 export async function deleteDashboard(ownerId: string, domainId: string, id: string) {
   const pool = getPool();
   await pool.query(

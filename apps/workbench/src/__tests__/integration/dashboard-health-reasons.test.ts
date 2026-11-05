@@ -5,19 +5,12 @@ import { workbenchContent } from "../../../web/src/workbench-content";
 
 installWorkbenchContent(workbenchContent);
 
-const reasons = (type: string) =>
-  new EchartsGenerator().generateWithHealth(type, "t", {}, []).health.reasons;
-
-// The public method generateWithHealth returns the original reason sentences for this edition's assembly; sentences shared by several charts carry each chart's name.
-it("returns this edition's original health reasons", () => {
-  expect(reasons("radar")).toEqual([
-    "radar: radar.indicator is empty",
-    "radar: series[0].data[0].value is empty",
-    "radar: too few dimensions (≤2), the radar chart can hardly present a meaningful comparison",
-  ]);
-  expect(reasons("area-line")).toEqual([
-    "area-line: xAxis.data is empty",
-    "area-line: series[0].data is empty",
-    "area-line: series[0].data is all zeros (ECharts often renders it blank",
-  ]);
+it.each([
+  ["radar", "RADAR_INVALID", { category: "name", value: "amount" }],
+  ["area-line", "AREALINE_INVALID", { xAxis: "name", yAxis: "amount" }],
+])("distinguishes missing input from renderable %s data", (type, code, fields) => {
+  const generator = new EchartsGenerator();
+  expect(generator.generateWithHealth(type, "t", {}, []).health).toMatchObject({ ok: false, code });
+  const rows = [{ name: "A", amount: 1 }, { name: "B", amount: 2 }, { name: "C", amount: 3 }];
+  expect(generator.generateWithHealth(type, "t", fields, rows).health).toMatchObject({ ok: true, code: "OK" });
 });

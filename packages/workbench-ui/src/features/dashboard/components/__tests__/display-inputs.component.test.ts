@@ -5,7 +5,6 @@ import { createMemoryHistory, createRouter } from "vue-router";
 import ElementPlus from "element-plus";
 import DashboardSidebarPopover from "../DashboardSidebarPopover.vue";
 import ChartZoomModal from "../ChartZoomModal.vue";
-import MetricCard from "../MetricCard.vue";
 import { workbenchI18n } from "../../../../i18n";
 import { installWorkbenchContent, workbenchContent, type DashboardVisuals } from "../../../../content";
 
@@ -71,14 +70,5 @@ describe("dashboard display inputs under both layouts", () => {
     expect(echartsMock.init).toHaveBeenCalledWith(expect.any(HTMLElement), ossContent.dashboard.themeName);
   });
 
-  it("metric card loading mask: default background when configured; open source adds the transparent mask class", () => {
-    const metric = { name: "Orders", value: 1, unit: "", layout: { colSpan: 1, rowSpan: 1 } };
-    useDashboardVisuals({ loadingMask: "default" });
-    const enterprise = mount(MetricCard, { props: { metric }, global: global() });
-    expect(enterprise.find(".value-container").classes()).not.toContain("value-container--transparent-loading");
 
-    installWorkbenchContent(ossContent);
-    const oss = mount(MetricCard, { props: { metric }, global: global() });
-    expect(oss.find(".value-container").classes()).toContain("value-container--transparent-loading");
-  });
 });

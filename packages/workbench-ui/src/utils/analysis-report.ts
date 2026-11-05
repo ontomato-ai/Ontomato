@@ -85,8 +85,6 @@ function replaceChartMarkersWithHtml(
   unmatchedMarkers: Map<string, ChartMarkerReference>
 ): string {
   let result = String(markdown || "");
-  result = result.replace(PARTIAL_CHART_MARKER_LINE_REGEX, "");
-
   result = result.replace(CHART_MARKER_LINE_REGEX, (_match, scope, chartId) => {
     const marker: ChartMarkerReference = {
       scope: scope as ChartMarkerReference["scope"],
@@ -101,7 +99,7 @@ function replaceChartMarkersWithHtml(
     return "";
   });
 
-  return result;
+  return result.replace(PARTIAL_CHART_MARKER_LINE_REGEX, "");
 }
 
 function logUnmatchedMarkers(

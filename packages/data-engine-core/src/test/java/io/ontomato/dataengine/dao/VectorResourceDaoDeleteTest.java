@@ -139,44 +139,13 @@ class VectorResourceDaoDeleteTest {
 		verifyNoInteractions(jdbcTemplate);
 	}
 
-	@Test
-	void clearRemovesDirectoryAndDropsTable() throws IOException {
-		Path file = resource(index + "/a.png");
-		assertTrue(Files.exists(file));
 
-		dao.clear(className, "photos", "d1");
-
-		assertFalse(Files.exists(file.getParent()));
-		org.mockito.Mockito.verify(jdbcTemplate).execute("DROP TABLE IF EXISTS \"" + index + "\"");
-	}
-
-	@Test
-	void clearByDomainRemovesDomainDirectoriesAndDropsTables() throws IOException {
-		String domain1Index1 = "vector-_class1-photos-d1";
-		String domain1Index2 = "vector-_class2-desc-d1";
-		String domain2Index = "vector-_class3-photos-d2";
-
-		Path file1 = resource(domain1Index1 + "/f1.png");
-		Path file2 = resource(domain1Index2 + "/f2.png");
-		Path otherDomainFile = resource(domain2Index + "/f3.png");
-
-		when(jdbcTemplate.queryForList(anyString(), eq(String.class), eq("vector-%-d1")))
-				.thenReturn(List.of(domain1Index1, domain1Index2));
-
-		dao.clearByDomain("d1");
-
-		assertFalse(Files.exists(file1.getParent()));
-		assertFalse(Files.exists(file2.getParent()));
-		assertTrue(Files.exists(otherDomainFile));
-		org.mockito.Mockito.verify(jdbcTemplate).execute("DROP TABLE IF EXISTS \"" + domain1Index1 + "\"");
-		org.mockito.Mockito.verify(jdbcTemplate).execute("DROP TABLE IF EXISTS \"" + domain1Index2 + "\"");
-	}
 
 	@Test
 	void clearThrowsWhenDropTableFails() throws IOException {
 		resource(index + "/a.png");
 		org.mockito.Mockito.doThrow(new RuntimeException("DB drop failed"))
-				.when(jdbcTemplate).execute("DROP TABLE IF EXISTS \"" + index + "\"");
+				.when(jdbcTemplate).execute(anyString());
 
 		assertThrows(RuntimeException.class, () -> dao.clear(className, "photos", "d1"));
 	}

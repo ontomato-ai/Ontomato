@@ -15,14 +15,14 @@ docker compose up -d --wait --wait-timeout 600
 ```
 
 CI publishes a shared `<version>-ci<run>.<attempt>-g<commit>` tag for all three images,
-as well as `edge`, release and `latest` aliases. Use the full build tag above so
+as well as `edge`, `stable`, release and `latest` aliases. Use the full build tag above so
 `docker ps` shows the deployed build. Update `ONTOMATO_VERSION`, then repeat pull
 and up. Images come from GHCR. Build
 and publication happen before deployment; Compose has no build step.
 
 ### Automatic updates (optional)
 
-A development or test deployment that should always follow a tag, usually `edge`, can add
+A development or test deployment that should always follow a tag, usually `edge` or `stable`, can add
 `docker-compose.autoupdate.yml` to the end of `COMPOSE_FILE` and run `docker compose up -d`:
 
 ```bash
@@ -157,3 +157,8 @@ To inspect the **running** build, including a deployment tracking `edge`:
 ```bash
 docker inspect --format '{{.Name}} {{index .Config.Labels "org.opencontainers.image.version"}} {{index .Config.Labels "io.ontomato.build"}}' $(docker compose ps -q)
 ```
+
+
+## Configuration reference
+
+Each installation and major-version deployment includes a complete, commented `.env.example` for the supported site configuration. Required values are marked; uncomment and fill them when starting Compose directly. Keep your existing `.env` when changing releases. New required values, renamed settings, and Compose topology changes are described in that release's notes rather than silently merged into site configuration.

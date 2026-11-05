@@ -25,7 +25,7 @@ export function buildTaskProgressMap(
     const { done, total, label } = runState.progress;
     map[task.id] = {
       progress: total === undefined ? undefined : Math.round((100 * done) / total),
-      stageText: total === undefined ? t("analysis.loopProgress", { done, label }) : label,
+      stageText: total === undefined ? t("analysis.loopActivityCount", { done }) : label,
     };
   }
   return map;

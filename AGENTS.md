@@ -43,7 +43,10 @@ Use an ordinary outer directory for an isolated pair of checkouts; do not add a 
 repository, lock file or build configuration there. Public development uses `develop`, and each repository
 branches, commits and merges on its own; a branch of the same name is not bound
 automatically. Normal work starts from each repository's own `develop` as
-`feature/<topic>` or `fix/<topic>` and merges back into `develop` when done. The main
+`feature/<topic>` or `fix/<topic>` and merges back into `develop` when done. `stable` is
+the maintenance line of released versions: fixes for a released version start from
+`stable`, merge back into `stable`, and `stable` is then merged into `develop`; a new
+version is prepared by merging `develop` into `stable` and is released from `stable`. The main
 directory checks out `develop` + `develop` by default, and `main` is kept. Builds do not
 implicitly fetch, pull or switch branches. Do not introduce a workspace manager.
 

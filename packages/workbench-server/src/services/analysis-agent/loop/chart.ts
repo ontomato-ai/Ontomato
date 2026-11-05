@@ -76,7 +76,7 @@ export function assembleLoopChartCapability(params: {
               onCharts: (charts, diagnostics) =>
                 params.trajectory.charts("report", charts, diagnostics),
             },
-            onAccepted: () => params.trajectory.start("chart"),
+            onAccepted: (toolCallId) => params.trajectory.start("chart", { toolCallId }),
             onSettled: (activityId, status, fields) =>
               params.trajectory.settle(activityId, status, fields),
           }),
@@ -113,7 +113,7 @@ function describeCharts(charts: Array<AnalysisChartResult & { marker: string }>)
 export function createGenerateChartTool(params: {
   deps: LoopChartDeps;
   /** Invoked when a chart request is accepted, to register the trajectory activity */
-  onAccepted: () => string;
+  onAccepted: (toolCallId: string) => string;
   /** Invoked when a chart request settles, to finalize the trajectory activity */
   onSettled: (
     activityId: string,
@@ -144,10 +144,10 @@ export function createGenerateChartTool(params: {
       },
       required: ["questionIds"],
     },
-    async execute(_toolCallId: string, toolParams: Record<string, unknown>) {
+    async execute(toolCallId: string, toolParams: Record<string, unknown>) {
       const questionIds = parseQuestionIds(toolParams);
       const focus = typeof toolParams.focus === "string" ? toolParams.focus.trim() : "";
-      const activityId = params.onAccepted();
+      const activityId = params.onAccepted(toolCallId);
 
       const candidates = deps.resolveCandidates(questionIds);
       if (candidates.length === 0) {

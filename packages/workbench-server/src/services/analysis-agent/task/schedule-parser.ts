@@ -140,6 +140,37 @@ function nextDayOfMonth(base: number, targetDay: number, hours: number, minutes:
   return candidateTs;
 }
 
+const INTERVAL_UNIT_MS = { m: 60_000, h: 3_600_000, d: 86_400_000 } as const;
+
+/** Step of a pure interval (`30m`, `2h`, `3d`, `*\/15`); null for times of day, weeks and months. */
+function intervalStepMs(expression: string): number | null {
+  const simple = expression.match(/^(\d+)\s*(m|h|d)$/i);
+  if (simple) {
+    const unit = simple[2].toLowerCase() as keyof typeof INTERVAL_UNIT_MS;
+    return parseInt(simple[1], 10) * INTERVAL_UNIT_MS[unit];
+  }
+  const cron = expression.match(/^\*\/(\d+)$/);
+  return cron ? parseInt(cron[1], 10) * INTERVAL_UNIT_MS.m : null;
+}
+
+/**
+ * The slot after a due slot fires at `now`. An interval keeps its cadence anchored at the previous slot: the next
+ * slot is the first `previous + k * interval` strictly after now, so the scheduler's polling delay does not push the
+ * schedule back and an outage fires once instead of once per missed slot. A manual run before the slot is due, and
+ * every other expression, follows `now`.
+ */
+export function nextRunAfterSlot(
+  expression: string,
+  previousSlot: number | undefined,
+  now: number
+): number | null {
+  const step = intervalStepMs(expression);
+  if (!step || previousSlot === undefined || previousSlot > now) {
+    return parseScheduleToNextRun(expression, now);
+  }
+  return previousSlot + Math.max(1, Math.floor((now - previousSlot) / step) + 1) * step;
+}
+
 export function parseScheduleToNextRun(expression: string, lastRunAt?: number): number | null {
   const now = Date.now();
   const base = lastRunAt || now;
