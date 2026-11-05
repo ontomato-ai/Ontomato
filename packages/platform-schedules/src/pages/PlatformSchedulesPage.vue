@@ -2,15 +2,17 @@
 import { computed, onMounted, ref } from "vue";
 import { useI18n } from "vue-i18n";
 import type { AgentHostAgent } from "@ontomato/contracts/agent-host";
+import type { PlatformTaskFunctionTarget } from "@ontomato/contracts/platform-schedules";
 import { createSchedulesApi } from "../api";
-import type { PlatformScheduleFunction, PlatformSchedulesHost } from "../host";
+import type { PlatformSchedulesHost } from "../host";
 import type { Translate } from "../i18n";
 import PlatformSchedulesList from "../components/PlatformSchedulesList.vue";
 
 /**
  * The platform's scheduled tasks page: the list with its form and run history. The host supplies the request layer and
- * the two target catalogs; the page draws only the content area, because the platform shell owns the page header (DESIGN
- * "Data shell"). Which tasks exist, who may see them and which function tasks exist are the service's answers.
+ * the agents; the functions a task may run come from the service's own function-targets answer, by the rule it enforces
+ * when a task is saved. The page draws only the content area, because the platform shell owns the page header (DESIGN
+ * "Data shell").
  */
 const props = withDefaults(
   defineProps<{
@@ -33,14 +35,22 @@ const text: Translate = (key, named, count) =>
 
 const api = createSchedulesApi(props.host);
 const agents = ref<readonly AgentHostAgent[]>([]);
-const functions = ref<readonly PlatformScheduleFunction[]>([]);
+const functions = ref<readonly PlatformTaskFunctionTarget[]>([]);
+/** 403 on the function targets: this account may not schedule functions. Agent tasks stay available. */
+const functionsRefused = ref(false);
 const pageLocale = computed(() => props.host.locale?.() ?? locale.value);
 
-/** Both catalogs are the host's; a picker that fails to load leaves the list usable. */
+/**
+ * The agents are the host's; the function targets are the service's. Either one failing leaves the list usable, and a
+ * refused function list is not an error: the account simply may not schedule functions.
+ */
 onMounted(async () => {
   const [agentList, functionList] = await Promise.all([
     props.host.agents().catch(() => [] as readonly AgentHostAgent[]),
-    props.host.functions().catch(() => [] as readonly PlatformScheduleFunction[]),
+    api.functionTargets().catch((error: unknown) => {
+      functionsRefused.value = api.statusOf(error) === 403;
+      return [] as PlatformTaskFunctionTarget[];
+    }),
   ]);
   agents.value = agentList;
   functions.value = functionList;
@@ -57,6 +67,7 @@ function openSession(sessionId: string) {
     :api="api"
     :agents="agents"
     :functions="functions"
+    :functions-refused="functionsRefused"
     :agent-id="agentId"
     :app-id="appId"
     :locale="pageLocale"

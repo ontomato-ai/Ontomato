@@ -3,9 +3,12 @@ import { computed, onMounted, ref } from "vue";
 import { ElMessage, ElMessageBox } from "element-plus";
 import { History, Pencil, Play, Plus, RotateCcw, Trash2 } from "lucide-vue-next";
 import type { AgentHostAgent } from "@ontomato/contracts/agent-host";
-import type { PlatformTask, PlatformTaskInput } from "@ontomato/contracts/platform-schedules";
+import type {
+  PlatformTask,
+  PlatformTaskFunctionTarget,
+  PlatformTaskInput,
+} from "@ontomato/contracts/platform-schedules";
 import type { SchedulesApi } from "../api";
-import type { PlatformScheduleFunction } from "../host";
 import type { Translate } from "../i18n";
 import { describeFrequency, targetSummary } from "../frequency";
 import { useSchedulesLabels } from "../labels";
@@ -21,7 +24,10 @@ import PlatformScheduleRuns from "./PlatformScheduleRuns.vue";
 const props = defineProps<{
   api: SchedulesApi;
   agents: readonly AgentHostAgent[];
-  functions: readonly PlatformScheduleFunction[];
+  /** What the service says this account may schedule as a function; empty when it may schedule none. */
+  functions: readonly PlatformTaskFunctionTarget[];
+  /** The service refused the function list (403): the function target is unavailable, not merely empty. */
+  functionsRefused?: boolean;
   /** Show only this agent's tasks and preselect it for a new task (the agent platform's entry). */
   agentId?: string | null;
   /** Show only this application's tasks, e.g. `agents` or `ontology`; the user may still change the filter. */
@@ -338,6 +344,7 @@ defineExpose({ reload: load });
         :task="editing"
         :agents="agents"
         :functions="functions"
+        :functions-refused="functionsRefused ?? false"
         :time-zone="timeZone"
         :default-agent-id="agentId ?? null"
         :locale="locale"

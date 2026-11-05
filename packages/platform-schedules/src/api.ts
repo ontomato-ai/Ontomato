@@ -1,11 +1,13 @@
 import { randomId } from "@ontomato/contracts/random-id";
 import {
   platformSchedulesPath,
+  platformTaskFunctionTargetsSchema,
   platformTaskListSchema,
   platformTaskRunPageSchema,
   platformTaskRunSchema,
   platformTaskSchema,
   type PlatformTask,
+  type PlatformTaskFunctionTarget,
   type PlatformTaskInput,
   type PlatformTaskList,
   type PlatformTaskRun,
@@ -16,6 +18,17 @@ import type { PlatformSchedulesHost } from "./host";
 const base = platformSchedulesPath;
 const task = (id: string) => `${base}/${encodeURIComponent(id)}`;
 
+/** The host answered non-2xx; the page reads the status to tell a refusal from a failure. */
+export class SchedulesRequestError extends Error {
+  constructor(
+    message: string,
+    readonly status: number,
+  ) {
+    super(message);
+    this.name = "SchedulesRequestError";
+  }
+}
+
 /**
  * The page's one way to the platform's scheduled tasks: the gateway resource the data engine owns
  * (`/api/data-query/platform/scheduled-tasks`). Every response is parsed with the contract, so a service that changed
@@ -25,6 +38,7 @@ export function createSchedulesApi(host: PlatformSchedulesHost) {
   async function read(path: string, init: RequestInit = {}): Promise<unknown> {
     const response = await host.request(path, init);
     if (response.status === 204) return null;
+    if (!response.ok) throw new SchedulesRequestError(`Request failed: HTTP ${response.status}`, response.status);
     return response.json();
   }
 
@@ -60,6 +74,14 @@ export function createSchedulesApi(host: PlatformSchedulesHost) {
      */
     async renewCredential(): Promise<void> {
       await read(`${base}/credential/renew`, { method: "POST" });
+    },
+    /**
+     * The write functions this caller may schedule, as the service picks them: the same rule it enforces when a function
+     * task is saved or run, so the picker offers nothing the service would refuse. An account without the function tasks'
+     * list permission is refused (403); that is a refusal, not a failure, and callers show no function choice for it.
+     */
+    async functionTargets(): Promise<PlatformTaskFunctionTarget[]> {
+      return platformTaskFunctionTargetsSchema.parse(await read(`${base}/function-targets`));
     },
     /** `enabled: false` registers the task switched off; the service replays a repeated ID instead of creating twice. */
     async create(input: PlatformTaskInput, enabled = true): Promise<PlatformTask> {
@@ -113,6 +135,10 @@ export function createSchedulesApi(host: PlatformSchedulesHost) {
       return platformTaskRunSchema.parse(await read(`${task(id)}/runs/${encodeURIComponent(runId)}`));
     },
     errorCode,
+    /** The status of a request this layer refused, or null when the failure came from elsewhere. */
+    statusOf(error: unknown): number | null {
+      return error instanceof SchedulesRequestError ? error.status : null;
+    },
   };
 }
 

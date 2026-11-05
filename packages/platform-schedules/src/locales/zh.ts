@@ -70,6 +70,8 @@ export default {
       function: "函数",
       functionRequired: "请选择函数。",
       noFunctions: "本域还没有零参数写函数。",
+      functionsRefused: "你不能创建函数任务",
+      functionsRefusedHint: "创建函数任务需要函数任务的权限；智能体任务不受影响。",
       functionHint: "只有本域内没有参数的写函数可以按计划运行。",
       frequencyInvalid: "请填写有效的频率。",
       frequency: "频率",

@@ -135,6 +135,25 @@ describe("platform schedule form", () => {
     expect(text(wrapper)).toContain("This domain has no zero-parameter write function yet.");
   });
 
+  it("says the account may not schedule functions, and still submits an agent task", async () => {
+    const wrapper = mountForm({ functions: [], functionsRefused: true });
+    await type(wrapper, 0, "Agent only");
+    await type(wrapper, 2, "Do the thing");
+    // Switching the target away from the agent drops the prompt and its pending measuring tick.
+    await flushPromises();
+
+    await wrapper.findComponent({ name: "ElSegmented" }).vm.$emit("update:modelValue", "function");
+    expect(text(wrapper)).toContain("You cannot schedule functions");
+    expect(text(wrapper)).toContain("Scheduling functions needs the function tasks permission.");
+
+    // The refusal only removes one kind of task; the agent side still saves.
+    await wrapper.findComponent({ name: "ElSegmented" }).vm.$emit("update:modelValue", "agent");
+    await wrapper.find("form").trigger("submit");
+
+    const input = submitted(wrapper);
+    expect(input.target).toEqual({ kind: "agent", agentId: AGENT.id, prompt: "Do the thing" });
+  });
+
   it("sends the mail address only when asked to mail the result", async () => {
     const wrapper = mountForm();
     await type(wrapper, 0, "Mailed task");

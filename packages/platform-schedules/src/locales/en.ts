@@ -75,6 +75,8 @@ export default {
       function: "Function",
       functionRequired: "Choose a function.",
       noFunctions: "This domain has no zero-parameter write function yet.",
+      functionsRefused: "You cannot schedule functions",
+      functionsRefusedHint: "Scheduling functions needs the function tasks permission. Agent tasks can still be scheduled.",
       functionHint: "Only zero-parameter write functions of this domain can run on a schedule.",
       frequencyInvalid: "Enter a valid frequency.",
       frequency: "Frequency",

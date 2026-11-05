@@ -38,7 +38,9 @@ function fakeApi(overrides: Record<string, Mock> = {}) {
     runNow: vi.fn(async () => run()),
     runs: vi.fn(async (): Promise<PlatformTaskRunPage> => ({ runs: [], nextCursor: null })),
     run: vi.fn(async () => run()),
+    functionTargets: vi.fn(async () => [FUNCTION]),
     errorCode: vi.fn(() => null),
+    statusOf: vi.fn(() => null),
     ...overrides,
   };
   return api;

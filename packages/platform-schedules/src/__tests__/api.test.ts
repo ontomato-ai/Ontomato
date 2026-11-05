@@ -87,6 +87,26 @@ describe("schedules api", () => {
     expect((calls[1]!.init.headers as Record<string, string>)["Idempotency-Key"]).toBeTruthy();
   });
 
+  it("reads the function targets the service offers, and reports a refusal by its status", async () => {
+    const { host, calls } = fakeHost((path) =>
+      path.endsWith("/function-targets")
+        ? { body: [{ id: "f-1", name: "Refresh revenue", description: null }] }
+        : { body: { tasks: [], timeZone: "UTC" } },
+    );
+    const api = createSchedulesApi(host);
+
+    await expect(api.functionTargets()).resolves.toEqual([{ id: "f-1", name: "Refresh revenue", description: null }]);
+    expect(calls[0]!.path).toBe(`${base}/function-targets`);
+
+    const refused = createSchedulesApi(
+      fakeHost(() => ({ status: 403 })).host,
+    );
+    const error = await refused.functionTargets().catch((thrown: unknown) => thrown);
+    // A refusal is not a failed parse: the page tells "not allowed" from "failed" by the status.
+    expect(refused.statusOf(error)).toBe(403);
+    expect(refused.statusOf(new Error("elsewhere"))).toBeNull();
+  });
+
   it("refuses a response the contract does not describe instead of half-rendering it", async () => {
     const { host } = fakeHost(() => ({ body: { tasks: [{ id: "not-a-uuid" }], timeZone: "UTC" } }));
     await expect(createSchedulesApi(host).list()).rejects.toThrow();

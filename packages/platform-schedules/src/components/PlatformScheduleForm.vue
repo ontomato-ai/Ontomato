@@ -6,11 +6,11 @@ import {
   platformTaskInputSchema,
   type PlatformTask,
   type PlatformTaskFrequency,
+  type PlatformTaskFunctionTarget,
   type PlatformTaskInput,
 } from "@ontomato/contracts/platform-schedules";
 import { weekdayName } from "../frequency";
 import type { Translate } from "../i18n";
-import type { PlatformScheduleFunction } from "../host";
 
 /**
  * One task's definition: what it runs (an agent with a prompt, or a zero-parameter write function), how often, in
@@ -21,7 +21,10 @@ const props = defineProps<{
   /** null registers a new task. */
   task: PlatformTask | null;
   agents: readonly AgentHostAgent[];
-  functions: readonly PlatformScheduleFunction[];
+  /** The service's function targets; empty when it offers none or this account may not schedule functions. */
+  functions: readonly PlatformTaskFunctionTarget[];
+  /** The account may not schedule functions at all: say so instead of "this domain has none". */
+  functionsRefused?: boolean;
   /** The service's zone: a new task's default; an edited task keeps the zone it was saved with. */
   timeZone: string;
   /** The agent whose tasks the page is showing, preselected for a new task. */
@@ -209,7 +212,7 @@ function submit() {
     >
       <el-select
         v-model="form.functionId"
-        :placeholder="functions.length ? t('form.function') : t('form.noFunctions')"
+        :placeholder="functions.length ? t('form.function') : t(functionsRefused ? 'form.functionsRefused' : 'form.noFunctions')"
         :disabled="functions.length === 0"
         filterable
       >
@@ -218,7 +221,7 @@ function submit() {
           <span v-if="fn.description" class="option-hint">{{ fn.description }}</span>
         </el-option>
       </el-select>
-      <p class="hint">{{ t('form.functionHint') }}</p>
+      <p class="hint">{{ t(functionsRefused ? 'form.functionsRefusedHint' : 'form.functionHint') }}</p>
     </el-form-item>
 
     <el-form-item :label="t('form.frequency')" :error="attempted && issues.frequency ? t('form.frequencyInvalid') : ''">
