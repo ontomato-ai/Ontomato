@@ -36,8 +36,13 @@ const props = defineProps<{
   labels: PlatformShellLabels;
   brand?: { name: string; logo?: string };
   pageActions: PlatformPageActions | null;
-  /** A page's permission state could not be read, or it holds none: shown instead of the page. */
-  blocked?: { message: string } | null;
+  /** The host shows no application at all (its licence is not in force, or the account holds no page). */
+  blocked?: { reason: "licence" | "no-pages"; message: string } | null;
+  /**
+   * Whether the host has finished reading what the account may open. Until it has, no page is mounted: a page may need
+   * a host the entry has not built yet (the ontology manager is only installed once a credential exists).
+   */
+  ready?: boolean;
 }>();
 
 const emit = defineEmits<{ selectApp: [id: string]; openSettings: [appId: string, entryId: string] }>();
@@ -64,8 +69,9 @@ const headerShown = computed(() => props.shownPage !== null && !props.shownPage.
 </script>
 
 <template>
+  <!-- A blocked edition shows the rail's account alone: no applications, no column, the reason in the page area. -->
   <PlatformShell
-    :apps="railApps"
+    :apps="blocked ? [] : railApps"
     :active-app-id="activeAppId"
     :account="account"
     :preferences="preferences"
@@ -75,7 +81,7 @@ const headerShown = computed(() => props.shownPage !== null && !props.shownPage.
   >
     <template #panel>
       <AppPanel
-        v-if="panel"
+        v-if="panel && !blocked"
         :panel="panel"
         :labels="labels"
         @open-settings="emit('openSettings', activeAppId ?? '', $event)"
@@ -90,7 +96,7 @@ const headerShown = computed(() => props.shownPage !== null && !props.shownPage.
     </template>
 
     <PlatformPageHeader
-      v-if="headerShown && shownPage"
+      v-if="headerShown && shownPage && !blocked"
       :title="shownPage.title"
       :description="shownPage.description"
       :actions="pageActions"
@@ -99,7 +105,7 @@ const headerShown = computed(() => props.shownPage !== null && !props.shownPage.
       @discard="pageActions?.discard()"
     />
     <div v-if="blocked" class="platform-blocked" role="alert">{{ blocked.message }}</div>
-    <div v-else class="platform-page-body">
+    <div v-else-if="ready !== false" class="platform-page-body">
       <RouterView />
     </div>
   </PlatformShell>

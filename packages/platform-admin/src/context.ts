@@ -41,6 +41,11 @@ export interface PlatformPageHost<Api extends PlatformApi = PlatformApi> {
   links: readonly PlatformLink[];
   /** Reduced layout (no navigation), e.g. on the license page while the license is invalid. */
   navigationHidden: ComputedRef<boolean>;
+  /**
+   * Why the platform shows no application at all: the edition's licence is not in force, or the account holds no page.
+   * The host decides, because it owns licences and permissions; a shell only renders the answer.
+   */
+  blocked?: ComputedRef<{ reason: "licence" | "no-pages"; messageKey: string } | null>;
   /** This edition's values for the system configuration page (backend languages, data adapter card layout). */
   systemConfig: BusinessConfigProps;
   /** Punctuation between a message and its detail (`：` for Chinese-style text, `:` otherwise). */

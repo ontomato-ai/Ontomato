@@ -18,6 +18,9 @@ export interface PlatformAppDeclaration {
   panel: PlatformAppPanelKind;
   /** The application's own entry at the foot of its column (smart-agent settings, the diagnosis model). */
   settings?: { id: string; label: string; icon: string };
+  /** An external application: its fixed address, or the host's resolver for a signed jump; the rail opens it. */
+  href?: string;
+  open?: () => void;
   /** Pages of a page-only application, in display order. */
   groups?: readonly PlatformPanelGroup[];
 }

@@ -11,6 +11,9 @@ import type { PlatformAppDeclaration } from "./apps";
  * unit of ownership.
  */
 export interface AppPartition extends Omit<PlatformAppDeclaration, "groups" | "label" | "settings"> {
+  /** An external application: the host resolves or fixes its address and the rail opens it in a new tab. */
+  href?: string;
+  open?: () => void;
   /** The application's name, a message key in the edition's tree. */
   labelKey: string;
   /** The application's own entry at the foot of its column, a message key and the page it opens. */
@@ -65,6 +68,8 @@ export function appDeclarations(
       prefix: app.prefix,
       panel: app.panel,
       settings: app.settings && { id: app.settings.id, label: t(app.settings.labelKey), icon: app.settings.icon },
+      href: app.href,
+      open: app.open,
       groups,
     };
   });

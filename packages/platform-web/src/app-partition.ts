@@ -10,7 +10,12 @@ import type { AppPartition } from "./partition";
  * inherits the place it is shown in. Nothing here restates a page's permission, so the router guard stays the only
  * authority on what may be opened.
  */
-export const appPartition: readonly AppPartition[] = [
+export interface PartitionOptions {
+  /** An external application the edition reaches through its own signed jump (the data governance platform). */
+  external?: readonly AppPartition[];
+}
+
+const platformApps: readonly AppPartition[] = [
   {
     id: "agents",
     labelKey: "platform.agentPlatform",
@@ -147,3 +152,11 @@ export const appPartition: readonly AppPartition[] = [
     ],
   },
 ];
+
+/**
+ * The applications of one edition, in rail order: the platform's own, then the edition's external applications.
+ * An external application carries no pages: the rail opens it in a new tab and never makes it current.
+ */
+export function appPartition(options: PartitionOptions = {}): readonly AppPartition[] {
+  return [...platformApps, ...(options.external ?? [])];
+}
