@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { computed, type Component } from "vue";
-import { useRoute, useRouter, RouterView } from "vue-router";
+import { computed } from "vue";
+import { useRoute, RouterView } from "vue-router";
 import {
   AppPanel,
   AppPanelPages,
@@ -13,60 +13,54 @@ import {
 } from "@ontomato/platform-shell";
 import type { PlatformAppDeclaration } from "./apps";
 import { panelOf, railApp } from "./apps";
+import { useAppColumnOf } from "@ontomato/agent-shell-ui";
 
 /**
- * The page an address shows, as the platform knows it: the words of its header and whether it draws that header itself.
- * The host derives this from the same navigation it lists in the column, so a page cannot appear in one place and not
- * the other.
+ * The page the current address shows: its words, and whether it draws its own header. Which application it belongs to is
+ * not given here: the address decides that, so the column cannot name one application while showing another's page.
  */
 export interface PlatformShownPage {
-  /** The application the page belongs to. */
-  appId: string;
-  /** The page's own address, which is also the address of its route. */
-  path: string;
   title: string;
   description?: string | null;
   /** The page draws its own 48px header (the ontology graph, the model settings, the conversation). */
   ownHeader?: boolean;
-  /** `meta.page` of the route: a tab or a detail page names the page it is a screen of. */
-  page: string;
 }
 
 const props = defineProps<{
+  /** The applications the account may see, in rail order. */
   apps: readonly PlatformAppDeclaration[];
+  /** Where the address belongs and what it shows; null on an address that is no page (a conversation). */
+  shownPage: PlatformShownPage | null;
   account: PlatformAccount | null;
   preferences: PlatformPreferences;
   labels: PlatformShellLabels;
   brand?: { name: string; logo?: string };
-  /** The page the current address shows; null on an address that is not a page (a conversation, a standalone screen). */
-  shownPage: PlatformShownPage | null;
   pageActions: PlatformPageActions | null;
-  /** The account's display name for the rail's menu. */
-  signOut(): void;
-  /** The word for a conversation application's column, e.g. the agent selector's label. */
-  conversationPanel: Component | null;
+  /** A page's permission state could not be read, or it holds none: shown instead of the page. */
+  blocked?: { message: string } | null;
 }>();
 
 const emit = defineEmits<{ selectApp: [id: string]; openSettings: [appId: string, entryId: string] }>();
 
-const route = useRoute();
+/** The application whose prefix holds an address, the longest match winning: the column follows the address. */
+function appFor(path: string): PlatformAppDeclaration | null {
+  let match: PlatformAppDeclaration | null = null;
+  for (const app of props.apps ?? []) {
+    if (path !== app.prefix && !path.startsWith(`${app.prefix}/`)) continue;
+    if (!match || app.prefix.length > match.prefix.length) match = app;
+  }
+  return match;
+}
 
-const railApps = computed(() => props.apps.map(railApp));
-const activeAppId = computed(() => {
-  const page = props.shownPage;
-  if (page) return page.appId;
-  const path = route.path;
-  const match = props.apps
-    .filter((app) => path === app.prefix || path.startsWith(`${app.prefix}/`))
-    .sort((a, b) => b.prefix.length - a.prefix.length)[0];
-  return match?.id ?? null;
-});
+const route = useRoute();
+const railApps = computed(() => (props.apps ?? []).map(railApp));
+const activeAppId = computed(() => appFor(route.path)?.id ?? null);
 const activeApp = computed(() => props.apps.find((app) => app.id === activeAppId.value) ?? null);
 const panel = computed(() => (activeApp.value ? panelOf(activeApp.value) : null));
-const headerShown = computed(() => {
-  const page = props.shownPage;
-  return page !== null && !page.ownHeader;
-});
+/** What the current page contributes to the column, if it is a conversation application. */
+const column = useAppColumnOf();
+const contributed = computed(() => (column.value?.appId === activeAppId.value ? column.value : null));
+const headerShown = computed(() => props.shownPage !== null && !props.shownPage.ownHeader);
 </script>
 
 <template>
@@ -84,14 +78,14 @@ const headerShown = computed(() => {
         v-if="panel"
         :panel="panel"
         :labels="labels"
-        @open-settings="emit('openSettings', activeApp?.id ?? '', $event)"
+        @open-settings="emit('openSettings', activeAppId ?? '', $event)"
       >
+        <component :is="contributed.content" v-if="contributed" />
         <AppPanelPages
-          v-if="activeApp?.panel === 'pages'"
+          v-else-if="activeApp"
           :groups="activeApp.groups ?? []"
           :active-page-id="(route.meta.page as string | undefined) ?? null"
         />
-        <component :is="conversationPanel" v-else-if="conversationPanel" />
       </AppPanel>
     </template>
 
@@ -104,7 +98,8 @@ const headerShown = computed(() => {
       @save="pageActions?.save()"
       @discard="pageActions?.discard()"
     />
-    <div class="platform-page-body" :class="{ 'with-header': headerShown }">
+    <div v-if="blocked" class="platform-blocked" role="alert">{{ blocked.message }}</div>
+    <div v-else class="platform-page-body">
       <RouterView />
     </div>
   </PlatformShell>
@@ -113,11 +108,22 @@ const headerShown = computed(() => {
 <style scoped>
 /* The page area scrolls on its own: the header stays at the top of the workspace. */
 .platform-page-body {
+  display: flex;
   flex: 1;
   min-height: 0;
+  flex-direction: column;
   overflow: auto;
+  padding: 16px;
 }
 .platform-page-body :deep(.platform-page) {
   height: 100%;
+}
+.platform-blocked {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  justify-content: center;
+  color: var(--el-text-color-secondary);
+  font-size: var(--text-base);
 }
 </style>
