@@ -92,68 +92,75 @@ export class RuntimeStore {
         host_id text NOT NULL, domain_id text NOT NULL, id uuid NOT NULL,
         name text NOT NULL, url text NOT NULL, headers jsonb NOT NULL DEFAULT '{}',
         PRIMARY KEY(host_id,domain_id,id), UNIQUE(host_id,domain_id,name));`);
-      if (versions.some((row) => row.version === 2)) {
-        await c.query(`ALTER TABLE ${this.table("runs")} ADD COLUMN IF NOT EXISTS log_context jsonb NOT NULL DEFAULT '{}'`);
-        await c.query(`CREATE TABLE IF NOT EXISTS ${this.table("code_executions")} (
-          host_id text NOT NULL, domain_id text NOT NULL, id uuid NOT NULL,
-          fingerprint text NOT NULL, execution jsonb NOT NULL, outputs jsonb NOT NULL DEFAULT '{}',
-          PRIMARY KEY(host_id,domain_id,id))`);
-        await c.query(`ALTER TABLE ${this.table("code_executions")} ADD COLUMN IF NOT EXISTS log_context jsonb NOT NULL DEFAULT '{}'`);
-        return;
+      if (!versions.some((row) => row.version === 2)) {
+        if (versions.length)
+          throw new Error(
+            "Legacy runtime data requires the release conversion before startup",
+          );
+        await c.query(`
+          CREATE TABLE ${this.table("sessions")} (
+            host_id text NOT NULL, domain_id text NOT NULL, id uuid NOT NULL,
+            worker_uid bigint, active_run_id uuid, latest_run_id uuid, message_seq bigint NOT NULL DEFAULT 0,
+            created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now(),
+            PRIMARY KEY(host_id,domain_id,id));
+          CREATE TABLE ${this.table("admissions")} (
+            host_id text NOT NULL, domain_id text NOT NULL, key uuid NOT NULL, operation text NOT NULL,
+            fingerprint text NOT NULL, session_id uuid NOT NULL, deleted boolean NOT NULL DEFAULT false,
+            PRIMARY KEY(host_id,domain_id,key));
+          CREATE TABLE ${this.table("runs")} (
+            host_id text NOT NULL, domain_id text NOT NULL, id uuid NOT NULL, session_id uuid NOT NULL,
+            run jsonb NOT NULL, log_context jsonb NOT NULL DEFAULT '{}', seq bigint NOT NULL DEFAULT 0, stream_id uuid NOT NULL,
+            PRIMARY KEY(host_id,domain_id,id),
+            FOREIGN KEY(host_id,domain_id,session_id) REFERENCES ${this.table("sessions")}(host_id,domain_id,id) ON DELETE CASCADE);
+          CREATE UNIQUE INDEX ON ${this.table("runs")}(host_id,domain_id,session_id) WHERE run->>'status'='running';
+          CREATE TABLE ${this.table("messages")} (
+            host_id text NOT NULL, domain_id text NOT NULL, id uuid NOT NULL, session_id uuid NOT NULL,
+            run_id uuid NOT NULL, seq bigint NOT NULL, message jsonb NOT NULL,
+            PRIMARY KEY(host_id,domain_id,id), UNIQUE(host_id,domain_id,session_id,seq),
+            FOREIGN KEY(host_id,domain_id,run_id) REFERENCES ${this.table("runs")}(host_id,domain_id,id) ON DELETE CASCADE);
+          CREATE TABLE ${this.table("events")} (
+            host_id text NOT NULL, domain_id text NOT NULL, run_id uuid NOT NULL, seq bigint NOT NULL, envelope jsonb NOT NULL,
+            PRIMARY KEY(host_id,domain_id,run_id,seq),
+            FOREIGN KEY(host_id,domain_id,run_id) REFERENCES ${this.table("runs")}(host_id,domain_id,id) ON DELETE CASCADE);
+          CREATE TABLE ${this.table("artifacts")} (
+            host_id text NOT NULL, domain_id text NOT NULL, id uuid NOT NULL, session_id uuid NOT NULL, run_id uuid NOT NULL,
+            tool_call_id text, path text NOT NULL, sha256 text NOT NULL, size bigint NOT NULL, media_type text NOT NULL,
+            created_at timestamptz NOT NULL, seq bigint NOT NULL,
+            PRIMARY KEY(host_id,domain_id,id),
+            FOREIGN KEY(host_id,domain_id,run_id) REFERENCES ${this.table("runs")}(host_id,domain_id,id) ON DELETE CASCADE);
+          CREATE TABLE ${this.table("compactions")} (
+            host_id text NOT NULL, domain_id text NOT NULL, session_id uuid NOT NULL, covered_seq bigint NOT NULL,
+            summary text NOT NULL, created_at timestamptz NOT NULL DEFAULT now(),
+            PRIMARY KEY(host_id,domain_id,session_id,covered_seq),
+            FOREIGN KEY(host_id,domain_id,session_id) REFERENCES ${this.table("sessions")}(host_id,domain_id,id) ON DELETE CASCADE);
+          CREATE TABLE ${this.table("skills")} (
+            identity text NOT NULL, digest text NOT NULL, metadata jsonb NOT NULL, PRIMARY KEY(identity,digest));
+          CREATE TABLE ${this.table("skill_names")} (identity text PRIMARY KEY, digest text NOT NULL);
+          CREATE TABLE ${this.table("model_calls")} (
+            id uuid PRIMARY KEY, host_id text NOT NULL, domain_id text NOT NULL, run_id uuid NOT NULL,
+            record jsonb NOT NULL,
+            FOREIGN KEY(host_id,domain_id,run_id) REFERENCES ${this.table("runs")}(host_id,domain_id,id) ON DELETE CASCADE);
+          CREATE TABLE ${this.table("code_executions")} (
+            host_id text NOT NULL, domain_id text NOT NULL, id uuid NOT NULL,
+            fingerprint text NOT NULL, execution jsonb NOT NULL, outputs jsonb NOT NULL DEFAULT '{}',
+            log_context jsonb NOT NULL DEFAULT '{}',
+            PRIMARY KEY(host_id,domain_id,id));
+          INSERT INTO ${this.table("schema_migrations")} VALUES (2);
+        `);
       }
-      if (versions.length)
-        throw new Error(
-          "Legacy runtime data requires the release conversion before startup",
-        );
+      // Additive changes to version 2, applied to fresh and existing schemas alike.
+      await c.query(`ALTER TABLE ${this.table("runs")} ADD COLUMN IF NOT EXISTS log_context jsonb NOT NULL DEFAULT '{}'`);
+      await c.query(`CREATE TABLE IF NOT EXISTS ${this.table("code_executions")} (
+        host_id text NOT NULL, domain_id text NOT NULL, id uuid NOT NULL,
+        fingerprint text NOT NULL, execution jsonb NOT NULL, outputs jsonb NOT NULL DEFAULT '{}',
+        PRIMARY KEY(host_id,domain_id,id))`);
+      await c.query(`ALTER TABLE ${this.table("code_executions")} ADD COLUMN IF NOT EXISTS log_context jsonb NOT NULL DEFAULT '{}'`);
+      // Every per-run and per-session read path needs its own index; without them each read scans the whole table.
       await c.query(`
-        CREATE TABLE ${this.table("sessions")} (
-          host_id text NOT NULL, domain_id text NOT NULL, id uuid NOT NULL,
-          worker_uid bigint, active_run_id uuid, latest_run_id uuid, message_seq bigint NOT NULL DEFAULT 0,
-          created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now(),
-          PRIMARY KEY(host_id,domain_id,id));
-        CREATE TABLE ${this.table("admissions")} (
-          host_id text NOT NULL, domain_id text NOT NULL, key uuid NOT NULL, operation text NOT NULL,
-          fingerprint text NOT NULL, session_id uuid NOT NULL, deleted boolean NOT NULL DEFAULT false,
-          PRIMARY KEY(host_id,domain_id,key));
-        CREATE TABLE ${this.table("runs")} (
-          host_id text NOT NULL, domain_id text NOT NULL, id uuid NOT NULL, session_id uuid NOT NULL,
-          run jsonb NOT NULL, log_context jsonb NOT NULL DEFAULT '{}', seq bigint NOT NULL DEFAULT 0, stream_id uuid NOT NULL,
-          PRIMARY KEY(host_id,domain_id,id),
-          FOREIGN KEY(host_id,domain_id,session_id) REFERENCES ${this.table("sessions")}(host_id,domain_id,id) ON DELETE CASCADE);
-        CREATE UNIQUE INDEX ON ${this.table("runs")}(host_id,domain_id,session_id) WHERE run->>'status'='running';
-        CREATE TABLE ${this.table("messages")} (
-          host_id text NOT NULL, domain_id text NOT NULL, id uuid NOT NULL, session_id uuid NOT NULL,
-          run_id uuid NOT NULL, seq bigint NOT NULL, message jsonb NOT NULL,
-          PRIMARY KEY(host_id,domain_id,id), UNIQUE(host_id,domain_id,session_id,seq),
-          FOREIGN KEY(host_id,domain_id,run_id) REFERENCES ${this.table("runs")}(host_id,domain_id,id) ON DELETE CASCADE);
-        CREATE TABLE ${this.table("events")} (
-          host_id text NOT NULL, domain_id text NOT NULL, run_id uuid NOT NULL, seq bigint NOT NULL, envelope jsonb NOT NULL,
-          PRIMARY KEY(host_id,domain_id,run_id,seq),
-          FOREIGN KEY(host_id,domain_id,run_id) REFERENCES ${this.table("runs")}(host_id,domain_id,id) ON DELETE CASCADE);
-        CREATE TABLE ${this.table("artifacts")} (
-          host_id text NOT NULL, domain_id text NOT NULL, id uuid NOT NULL, session_id uuid NOT NULL, run_id uuid NOT NULL,
-          tool_call_id text, path text NOT NULL, sha256 text NOT NULL, size bigint NOT NULL, media_type text NOT NULL,
-          created_at timestamptz NOT NULL, seq bigint NOT NULL,
-          PRIMARY KEY(host_id,domain_id,id),
-          FOREIGN KEY(host_id,domain_id,run_id) REFERENCES ${this.table("runs")}(host_id,domain_id,id) ON DELETE CASCADE);
-        CREATE TABLE ${this.table("compactions")} (
-          host_id text NOT NULL, domain_id text NOT NULL, session_id uuid NOT NULL, covered_seq bigint NOT NULL,
-          summary text NOT NULL, created_at timestamptz NOT NULL DEFAULT now(),
-          PRIMARY KEY(host_id,domain_id,session_id,covered_seq),
-          FOREIGN KEY(host_id,domain_id,session_id) REFERENCES ${this.table("sessions")}(host_id,domain_id,id) ON DELETE CASCADE);
-        CREATE TABLE ${this.table("skills")} (
-          identity text NOT NULL, digest text NOT NULL, metadata jsonb NOT NULL, PRIMARY KEY(identity,digest));
-        CREATE TABLE ${this.table("skill_names")} (identity text PRIMARY KEY, digest text NOT NULL);
-        CREATE TABLE ${this.table("model_calls")} (
-          id uuid PRIMARY KEY, host_id text NOT NULL, domain_id text NOT NULL, run_id uuid NOT NULL,
-          record jsonb NOT NULL,
-          FOREIGN KEY(host_id,domain_id,run_id) REFERENCES ${this.table("runs")}(host_id,domain_id,id) ON DELETE CASCADE);
-        CREATE TABLE ${this.table("code_executions")} (
-          host_id text NOT NULL, domain_id text NOT NULL, id uuid NOT NULL,
-          fingerprint text NOT NULL, execution jsonb NOT NULL, outputs jsonb NOT NULL DEFAULT '{}',
-          log_context jsonb NOT NULL DEFAULT '{}',
-          PRIMARY KEY(host_id,domain_id,id));
-        INSERT INTO ${this.table("schema_migrations")} VALUES (2);
+        CREATE INDEX IF NOT EXISTS messages_run_idx ON ${this.table("messages")}(host_id,domain_id,run_id,seq);
+        CREATE INDEX IF NOT EXISTS artifacts_run_idx ON ${this.table("artifacts")}(host_id,domain_id,run_id,seq);
+        CREATE INDEX IF NOT EXISTS artifacts_session_idx ON ${this.table("artifacts")}(host_id,domain_id,session_id);
+        CREATE INDEX IF NOT EXISTS artifacts_sha256_idx ON ${this.table("artifacts")}(sha256);
       `);
     });
     this.lease = await this.pool.connect();

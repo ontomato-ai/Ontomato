@@ -92,6 +92,12 @@ export const diagnosisService: AgentHostService = {
     }
     return { session: view(row, snapshot.latestRun?.run ?? null), messages: publicMessages(snapshot.messages), latestRun: snapshot.latestRun ? publicSnapshot(snapshot.latestRun) : null };
   },
+  async ownRun(session, run, owner) {
+    // Ownership comes from this host's own run intent; reading the whole runtime snapshot is not needed.
+    await diagnosisSession(session, owner);
+    const intent = (await db().query(`SELECT session_id FROM ${table("ops_run_intents")} WHERE id=$1`, [run])).rows[0];
+    if (!intent || intent.session_id !== session) throw missing();
+  },
   async readRun(session, run, owner) {
     await diagnosisSession(session, owner);
     const snapshot = await new RuntimeClient(owner.domainId).run(run);
@@ -162,7 +168,7 @@ export const diagnosisService: AgentHostService = {
     return new RuntimeClient(owner.domainId).bytes(`/v1/artifacts/${id}/content`);
   },
   async resolve(session, run, filePath, owner) {
-    await this.readRun(session, run, owner);
+    await this.ownRun(session, run, owner);
     const result = z.object({ artifacts: z.array(runtimeArtifactSchema) }).parse(await new RuntimeClient(owner.domainId).request(`/v1/runs/${run}/artifacts?path=${encodeURIComponent(filePath)}`));
     return { artifact: result.artifacts.at(-1) ?? null };
   },

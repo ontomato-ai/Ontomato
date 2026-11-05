@@ -116,7 +116,7 @@ router.get(
   wrap(async (req, res) => {
     const c = context(req),
       runId = id(req, "runId");
-    await service.readRun(id(req, "sessionId"), runId, c.owner);
+    await service.ownRun(id(req, "sessionId"), runId, c.owner);
     const cursor = {
         runId,
         seq: z.coerce.number().int().nonnegative().parse(req.query.afterSeq),

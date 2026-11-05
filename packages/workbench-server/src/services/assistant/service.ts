@@ -221,10 +221,14 @@ export const assistantService = {
     if (turn.session_id !== sessionId) throw new HttpError(404, "Run not found", "NOT_FOUND");
     return new OntologyRetrievalClient(owner, turn.retrieval_scope_id);
   },
-  async readRun(sessionId: string, id: string, owner: AssistantOwner) {
+  /** The run belongs to this user's session by the workbench's own turn record; no runtime read is needed. */
+  async ownRun(sessionId: string, id: string, owner: AssistantOwner) {
     const turn = await assistantStore.turn(id, owner);
     if (turn.session_id !== sessionId)
       throw new HttpError(404, "Run not found");
+  },
+  async readRun(sessionId: string, id: string, owner: AssistantOwner) {
+    await this.ownRun(sessionId, id, owner);
     const s = await new RuntimeClient(owner.domainId).run(id);
     await assistantStore.admitted(
       id,
@@ -535,7 +539,7 @@ export const assistantService = {
     path: string,
     owner: AssistantOwner,
   ) {
-    await this.readRun(sessionId, runId, owner);
+    await this.ownRun(sessionId, runId, owner);
     const result = z
       .object({ artifacts: z.array(runtimeArtifactSchema) })
       .parse(
