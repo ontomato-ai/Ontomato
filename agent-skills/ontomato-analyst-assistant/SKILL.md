@@ -70,9 +70,9 @@ asynchronous; inspect ask --status later.
 
 ## Query workflow and result meaning
 
-Read overview, schema/relationships and knowledge before asking. Retrieve metric
-specifications before inventing a calculation. `ask` does this orchestration
-for natural-language questions. It can take several minutes.
+The overview gives the visible classes and relationships; that is enough to ask.
+Schema, knowledge and metric commands answer questions about definitions; `ask`
+decides the query logic and its scope itself. It can take several minutes.
 
 An `answer` is data, not permission to claim complete coverage. Preserve `truncated`,
 `rowLimit` and `truncationHint`, including an empty partial result. Null, false and

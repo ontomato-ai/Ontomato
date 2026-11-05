@@ -822,8 +822,13 @@ public class OntologyRetrievalService {
 
   private Object scopedOverview(QueryAccessService.Access access, List<String> classNames) {
     var value = JSONObject.from(ontology.overview(access));
-    if (classNames != null && !classNames.isEmpty()) value.put("classes", value.getJSONArray("classes").stream()
-        .map(JSONObject::from).filter(c -> classNames.contains(c.getString("name"))).toList());
+    if (classNames != null && !classNames.isEmpty()) {
+      value.put("classes", value.getJSONArray("classes").stream()
+          .map(JSONObject::from).filter(c -> classNames.contains(c.getString("name"))).toList());
+      var relationships = value.getJSONArray("relationships");
+      if (relationships != null) value.put("relationships", relationships.stream().map(JSONObject::from)
+          .filter(r -> classNames.contains(r.getString("from")) && classNames.contains(r.getString("to"))).toList());
+    }
     return value;
   }
 
