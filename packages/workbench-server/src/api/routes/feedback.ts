@@ -5,6 +5,7 @@ import type {
 import { Request, Response, Router } from "express";
 import type { AuthenticatedRequest } from "../../utils/request-identity";
 import { listFeedback } from "../../services/admin/feedback-store";
+import { requirePermission } from "../../identity/installed";
 import { asyncHandler } from "../utils/http";
 const router: ReturnType<typeof Router> = Router();
 
@@ -18,6 +19,7 @@ function normalizeRating(value: unknown): FeedbackRating | null {
 
 router.get(
   "/",
+  requirePermission(["user-feedback"]),
   asyncHandler(async (req: Request, res: Response) => {
     const sourceType = normalizeSourceType(req.query.sourceType);
     const rating = normalizeRating(req.query.rating);

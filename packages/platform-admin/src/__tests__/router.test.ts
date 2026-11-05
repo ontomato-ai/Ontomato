@@ -2,12 +2,13 @@ import { describe, expect, it } from "vitest";
 import { defineComponent, h } from "vue";
 import { RouterView, type RouteRecordRaw } from "vue-router";
 import { createPlatformRouter } from "../router";
-import { availableGroups, availablePages, type PlatformAccess, type PlatformNavigation } from "../navigation";
+import { availableGroups, availablePages, openAccess, type PlatformAccess, type PlatformNavigation } from "../navigation";
 import { legacyPageRedirects, ossPlatformPages, pageRoutes, platformPages, sharedPageRoutes, systemSettingsTabs } from "../pages";
 
 const navigation: PlatformNavigation = {
   groups: [
     { key: "ontology", titleKey: "nav.ontology" },
+    { key: "knowledge", titleKey: "nav.knowledge" },
     { key: "platform", titleKey: "nav.platform" },
   ],
   pages: [
@@ -15,6 +16,7 @@ const navigation: PlatformNavigation = {
     { path: "/objects", titleKey: "o", permissions: ["ontology-modeling"], group: "ontology", ownHeader: true },
     { path: "/data", titleKey: "d", permissions: ["data-browser"], group: "ontology", ownHeader: true },
     { path: "/admin/permissions", titleKey: "p", permissions: ["user-management", "role-management"], group: "platform" },
+    platformPages.userFeedback,
     platformPages.systemSettings,
     platformPages.modelConfig,
     platformPages.runRecords,
@@ -22,7 +24,7 @@ const navigation: PlatformNavigation = {
 };
 
 const page = defineComponent({ render: () => null });
-const adminPages = navigation.pages.filter(({ path }) => path.startsWith("/admin/"));
+const adminPages = navigation.pages.filter(({ path }) => path.startsWith("/admin/") || path === platformPages.userFeedback.path);
 const components = Object.fromEntries(adminPages.map(({ path }) => [path, async () => page]));
 // The host's routes: a frame route without a path of its own holding Manager-style pages, plus the platform pages.
 const routes: RouteRecordRaw[] = [
@@ -86,6 +88,19 @@ describe("one navigation filtered by permission codes", () => {
 });
 
 describe("the service router", () => {
+  it("separates feedback from audit navigation and direct URLs", async () => {
+    const feedback = access(["user-feedback"]);
+    const audit = access(["audit-logs"]);
+    expect(availablePages(navigation, feedback).map(({ path }) => path)).toEqual(["/knowledge/feedback"]);
+    expect(availableGroups(navigation, feedback).map(({ key }) => key)).toEqual(["knowledge"]);
+    expect(availablePages(navigation, audit).map(({ path }) => path)).toEqual(["/admin/records"]);
+    expect(await land("/knowledge/feedback", feedback)).toBe("/knowledge/feedback");
+    expect(await land("/admin/records/audit-log", feedback)).toBe("/knowledge/feedback");
+    expect(await land("/knowledge/feedback", audit)).toBe("/admin/records/audit-log");
+    expect(await land("/knowledge/feedback", openAccess)).toBe("/knowledge/feedback");
+    expect(await land("/admin/records/audit-log", openAccess)).toBe("/admin/records/audit-log");
+  });
+
   it("waits for the permissions before deciding and enters a granted page, its detail pages included", async () => {
     const account = access(["audit-logs", "ontology-modeling"]);
     expect(await land("/admin/records/audit-log", account)).toBe("/admin/records/audit-log");
