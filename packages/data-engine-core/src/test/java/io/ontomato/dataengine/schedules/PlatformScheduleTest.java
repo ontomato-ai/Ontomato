@@ -2,10 +2,13 @@ package io.ontomato.dataengine.schedules;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.ontomato.dataengine.bean.PythonExecuteResult;
 import io.ontomato.dataengine.bean.function.Function;
+import io.ontomato.dataengine.dao.FunctionDao;
 import io.ontomato.dataengine.service.*;
 import io.ontomato.dataengine.service.sys.bean.UserDetail;
 import io.ontomato.dataengine.test.PostgresTestDatabase;
@@ -17,6 +20,7 @@ import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.jdbc.datasource.DataSourceTransactionManager;
+import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.transaction.support.TransactionTemplate;
 
 class PlatformScheduleTest extends PostgresTestDatabase {
@@ -27,17 +31,63 @@ class PlatformScheduleTest extends PostgresTestDatabase {
 
   @BeforeEach
   void tables() {
-    jdbc.execute(
-        "CREATE TABLE function(id text PRIMARY KEY, domain_id text, operation text, parameters"
-            + " text, query_package text)");
+    wire(new FunctionDao()).initIndex();
     jdbc.update(
-        "INSERT INTO function VALUES(?,?,?,'[]',null)",
+        "INSERT INTO function (id, domain_id, operation, parameters) VALUES(?,?,?,'[]')",
         function,
         "sales",
         Function.OPERATION_WRITE);
     store = new TaskStore(jdbc, json, dataSource);
     store.initialize();
     transactions = new TransactionTemplate(new DataSourceTransactionManager(dataSource));
+  }
+
+  @Test
+  void functionTargetsListOnlyRunnableFunctionsInTheCurrentDomainWithListPermission()
+      throws Exception {
+    jdbc.update(
+        "UPDATE function SET name='Post balances', description='Nightly posting',"
+            + " modify_timestamp=2 WHERE id=?",
+        function);
+    jdbc.update(
+        """
+INSERT INTO function (id,domain_id,operation,parameters,query_package,modify_timestamp) VALUES
+('other-domain','another',?,'[]',null,1),
+('read-only','sales',?,'[]',null,1),
+('takes-arguments','sales',?,'[{}]',null,1),
+('missing-parameters','sales',?,null,null,1),
+('package-with-argument','sales',?,'[]','{"manifest":{"parameterDefs":[{}]}}',1),
+('package-without-arguments','sales',?,null,'{"manifest":{"parameterDefs":[]}}',1)
+""",
+        Function.OPERATION_WRITE,
+        Function.OPERATION_READ,
+        Function.OPERATION_WRITE,
+        Function.OPERATION_WRITE,
+        Function.OPERATION_WRITE,
+        Function.OPERATION_WRITE);
+    var auth = mock(IdentityService.class);
+    var user = new UserDetail();
+    user.setId("alice");
+    user.setDomainId("sales");
+    when(auth.getCurrentUser()).thenReturn(user);
+    var permissions = mock(ScheduleIdentity.class);
+    var target = new FunctionTarget(wire(new FunctionDao()), null, null);
+    var tasks =
+        new PlatformTasks(
+            store, auth, permissions, mock(TaskCredentials.class), target, mock(AgentHost.class));
+    var http = MockMvcBuilders.standaloneSetup(new PlatformTaskController(tasks)).build();
+    String path = "/platform/scheduled-tasks/function-targets";
+    when(permissions.permits(user, ScheduleIdentity.FunctionOperation.SAVE)).thenReturn(true);
+    http.perform(get(path)).andExpect(status().isForbidden());
+    when(permissions.permits(user, ScheduleIdentity.FunctionOperation.LIST)).thenReturn(true);
+    var response = http.perform(get(path)).andExpect(status().isOk()).andReturn().getResponse();
+    assertEquals(
+        json.readTree(
+            """
+[{"id":"write-balances","name":"Post balances","description":"Nightly posting"},
+ {"id":"package-without-arguments","name":"package-without-arguments","description":null}]
+"""),
+        json.readTree(response.getContentAsByteArray()));
   }
 
   private TaskDefinition task(boolean agent) {

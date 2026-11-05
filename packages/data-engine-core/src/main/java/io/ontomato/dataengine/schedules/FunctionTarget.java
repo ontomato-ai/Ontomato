@@ -7,6 +7,7 @@ import io.ontomato.dataengine.dao.FunctionDao;
 import io.ontomato.dataengine.service.ABCProgramService;
 import io.ontomato.dataengine.service.BusinessConfigService;
 import io.ontomato.dataengine.service.sys.bean.permission.UserDataPermission;
+import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
@@ -17,13 +18,33 @@ class FunctionTarget {
   private final ABCProgramService programs;
   private final BusinessConfigService configs;
 
-  Function require(String domain, String id) {
-    var function = functions.queryById(id);
+  record Option(String id, String name, String description) {}
+
+  private boolean eligible(String domain, Function function) {
     if (function == null
         || !domain.equals(function.getDomainId())
-        || !Function.OPERATION_WRITE.equals(function.getOperation())
-        || function.getParameters() == null
-        || !function.getParameters().isEmpty())
+        || !Function.OPERATION_WRITE.equals(function.getOperation())) return false;
+    var parameters = function.getParameters();
+    return parameters != null && parameters.isEmpty();
+  }
+
+  List<Option> list(String domain) {
+    return functions.queryList(Function.OPERATION_WRITE, null, domain).stream()
+        .filter(function -> eligible(domain, function))
+        .map(
+            function ->
+                new Option(
+                    function.getId(),
+                    function.getName() == null || function.getName().isBlank()
+                        ? function.getId()
+                        : function.getName(),
+                    function.getDescription()))
+        .toList();
+  }
+
+  Function require(String domain, String id) {
+    var function = functions.queryById(id);
+    if (!eligible(domain, function))
       throw TaskDefinition.bad("Expected a zero-parameter write function in the current domain");
     return function;
   }

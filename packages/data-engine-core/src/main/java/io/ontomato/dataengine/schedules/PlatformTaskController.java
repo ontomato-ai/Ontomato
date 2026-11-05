@@ -1,5 +1,6 @@
 package io.ontomato.dataengine.schedules;
 
+import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
@@ -35,6 +36,11 @@ public class PlatformTaskController {
   public Map<String, Object> list(
       @RequestParam(required = false) String appId, @RequestParam(required = false) UUID agentId) {
     return service.list(appId, agentId);
+  }
+
+  @GetMapping("/function-targets")
+  public List<FunctionTarget.Option> functionTargets() {
+    return service.functionTargets();
   }
 
   @PostMapping("/credential/renew")
