@@ -2,6 +2,7 @@ package io.ontomato.dataengine.dataAdapter;
 
 import java.nio.file.Path;
 import java.sql.DriverManager;
+import java.util.EnumSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -55,7 +56,10 @@ class DuckDBAdapterTest extends AbstractDataAdapterTest {
 
 	@Override
 	protected Set<DataAdapterCapability> capabilities() {
-		return DataAdapterCapability.FULL;
+		// FULL plus the n:n realization: this adapter writes a junction row and joins through it.
+		Set<DataAdapterCapability> capabilities = EnumSet.copyOf(DataAdapterCapability.FULL);
+		capabilities.add(DataAdapterCapability.RELATION_NN);
+		return capabilities;
 	}
 
 	@Override
