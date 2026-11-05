@@ -3,8 +3,8 @@ import { computed, onMounted, provide, ref, toRef, useSlots, watch } from "vue";
 import { Menu } from "lucide-vue-next";
 import { defaultChartTheme, type ChartTheme } from "../chart-theme";
 import { shellContextKey } from "../context";
-import type { AgentHostAgent, AgentHostRun, AgentHostRunStatus, AgentHostSession } from "@ontomato/contracts/agent-host";
 import type { AgentHostClient } from "../host";
+import { useAgentNav } from "../useAgentNav";
 import type {
   ArtifactRendererOverride,
   OpenArtifact,
@@ -24,6 +24,9 @@ import ShellSidebar from "./ShellSidebar.vue";
  * conversation. Rendering defaults live here; hosts pass overrides and fill the slots:
  * `brand`, `footer`, `feature` (feature pages), `artifact-actions` and `message-actions`.
  *
+ * `embedded` is for a host that already draws the navigation around the shell: it renders the conversation area alone,
+ * with no sidebar, gutter, radius or shadow.
+ *
  * A feature declared `withConversation` follows the agent-app states (DESIGN "Agent apps"): conversation only, the
  * page beside the conversation, or the page full with a composer. Messages sent while such a page is open end with the
  * host's `pageContext` line, so the agent knows what "this" refers to.
@@ -41,33 +44,39 @@ const props = withDefaults(
     pageContext?: string | null;
     /** Recognises an in-app address in an answer and returns how to open its page; null leaves it as text. */
     pageLinks?: (href: string) => (() => void) | null;
+    /** The host draws the navigation itself (the platform shell's application panel): no sidebar, no panel chrome. */
+    embedded?: boolean;
   }>(),
-  { artifactRenderers: () => [], toolRenderers: () => [], chartTheme: () => defaultChartTheme },
+  { artifactRenderers: () => [], toolRenderers: () => [], chartTheme: () => defaultChartTheme, embedded: false },
 );
 const slots = useSlots();
 const emit = defineEmits<{ error: [message: string]; featureAction: [id: string] }>();
 const featureId = defineModel<string | null>("featureId", { default: null });
 const agentId = defineModel<string | null>("agentId", { default: null });
-
-const agents = ref<AgentHostAgent[]>([]);
-const sessions = ref<AgentHostSession[]>([]);
-const sessionsState = ref<"loading" | "ready" | "error">("loading");
-const nextCursor = ref<string | null>(null);
 const sessionId = defineModel<string | null>("sessionId", { default: null });
 /** Where a paired page sits: filling the workspace, or beside the conversation. Hosts may set it. */
 const pageView = defineModel<"full" | "side">("pageView", { default: "full" });
 const openArtifact = ref<OpenArtifact | null>(null);
 const navOpen = ref(false);
-let sessionsLoad = 0;
 
 const conversation = useAgentConversation(() => props.client);
-/** The list only carries a run's name and state; its body is read when the conversation opens. */
-const runStatus = (run: Pick<AgentHostRun, "id" | "status" | "stopReason">): AgentHostRunStatus => ({
-  id: run.id,
-  status: run.status,
-  stopReason: run.stopReason,
+/**
+ * The navigation state. Embedded, the host (the platform shell) owns it and drives its own second column; the shell keeps
+ * it unused rather than forking the list into a second implementation.
+ */
+const nav = useAgentNav({
+  client: () => props.client,
+  agentId: () => agentId.value,
+  setAgentId: (id) => (agentId.value = id),
+  sessionId: () => sessionId.value,
+  setSessionId: (id) => (sessionId.value = id),
+  onLeaveConversation: () => {
+    featureId.value = null;
+    openArtifact.value = null;
+    navOpen.value = false;
+  },
 });
-const currentAgent = computed(() => agents.value.find((agent) => agent.id === agentId.value) ?? null);
+const { agents, sessions, sessionsState, nextCursor, currentAgent, loadSessions } = nav;
 const currentSession = computed(() => sessions.value.find((session) => session.id === sessionId.value));
 const currentFeature = computed(() => props.workbench.features.find((feature) => feature.id === featureId.value) ?? null);
 /** A page that sits in the agent-app states rather than replacing the conversation. */
@@ -114,47 +123,26 @@ function report(error: unknown) {
   emit("error", error instanceof Error ? error.message : String(error));
 }
 
-async function loadAgents() {
-  try {
-    agents.value = await props.client.listAgents();
-    if (!agents.value.some((agent) => agent.id === agentId.value))
-      agentId.value = (agents.value.find((agent) => agent.enabled) ?? agents.value[0])?.id ?? null;
-  } catch (error) {
-    report(error);
-  }
+/** The nav reports read failures to the host; `useAgentNav` itself only records the state. */
+function loadAgentsFromHost() {
+  return nav.loadAgents().catch(report);
 }
 
-async function loadSessions(more = false) {
-  const agent = agentId.value;
-  if (!agent) return;
-  const load = ++sessionsLoad;
-  sessionsState.value = "loading";
-  try {
-    const page = await props.client.listSessions(agent, more ? nextCursor.value : null);
-    if (load !== sessionsLoad) return;
-    sessions.value = more ? [...sessions.value, ...page.sessions] : page.sessions;
-    nextCursor.value = page.nextCursor;
-    sessionsState.value = "ready";
-  } catch {
-    if (load === sessionsLoad) sessionsState.value = "error";
-  }
-}
-
+/** The selection moves: the page beside the conversation closes with it, as it always has. */
 function startNew() {
-  featureId.value = null;
-  sessionId.value = null;
-  openArtifact.value = null;
-  navOpen.value = false;
-
+  nav.startNew();
 }
 
 function selectSession(id: string) {
-  featureId.value = null;
-  navOpen.value = false;
-  if (id === sessionId.value) return;
-  sessionId.value = id;
-  openArtifact.value = null;
+  nav.selectSession(id);
+}
 
+async function removeSession(id: string) {
+  try {
+    await nav.removeSession(id);
+  } catch (error) {
+    report(error);
+  }
 }
 
 // A new conversation writes its id while sending; that run is already open, so opening it again
@@ -183,16 +171,6 @@ function sendFromPage(text: string) {
   void send(text);
 }
 
-async function removeSession(id: string) {
-  try {
-    await props.client.deleteSession(id);
-    sessions.value = sessions.value.filter((session) => session.id !== id);
-    if (id === sessionId.value) startNew();
-  } catch (error) {
-    report(error);
-  }
-}
-
 async function send(input: string) {
   const agent = agentId.value;
   if (!agent) return;
@@ -200,17 +178,16 @@ async function send(input: string) {
   const text = context ? `${input}\n\n${context}` : input;
   const result = await conversation.send(agent, text);
   if (!result) return;
-  const latestRun = runStatus(result.snapshot.run);
+  const latestRun = result.snapshot.run;
   const created = result.createdSession;
   if (created) {
     // The state already carries this session and its admitted run; linking the id afterwards keeps
     // the watch from opening it again and discarding the pending message.
-    sessions.value = [{ ...created, title: created.title || text, latestRun }, ...sessions.value];
+    nav.promoteSession(created, text, latestRun);
     sessionId.value = created.id;
     return;
   }
-  const entry = sessions.value.find((session) => session.id === sessionId.value);
-  if (entry) sessions.value = [{ ...entry, latestRun }, ...sessions.value.filter((session) => session !== entry)];
+  nav.markRun(latestRun);
 }
 
 // Keep the session list's run state in step with the conversation that is open.
@@ -220,34 +197,31 @@ watch(
     const entry = currentSession.value;
     const run = previous ? conversation.state.runs[previous] : undefined;
     if (entry?.latestRun && run && entry.latestRun.id === run.id && run.status === "stopped")
-      entry.latestRun = runStatus(run);
+      entry.latestRun = nav.runStatus(run);
   },
 );
 
-watch(agentId, (_, previous) => {
-  sessions.value = [];
-  nextCursor.value = null;
-  if (previous !== null) startNew();
-  void loadSessions();
-});
-
 /** Hosts call this after editing agent definitions. */
-defineExpose({ reloadAgents: loadAgents });
+defineExpose({ reloadAgents: loadAgentsFromHost });
 
 onMounted(async () => {
   // An address that names both a conversation and a paired page reopens them side by side.
   if (sessionId.value && pairedPage.value) pageView.value = "side";
   const requested = agentId.value;
-  await loadAgents();
+  await loadAgentsFromHost();
   // When the host's agent was valid the watcher did not fire, so load its sessions here.
   if (agentId.value && agentId.value === requested) void loadSessions();
 });
 </script>
 
 <template>
-  <div class="agent-shell" :class="{ 'nav-open': navOpen, 'panel-open': openArtifact }">
-    <div class="nav-scrim" @click="navOpen = false" />
+  <div
+    class="agent-shell"
+    :class="{ 'nav-open': navOpen, 'panel-open': openArtifact, embedded: props.embedded }"
+  >
+    <div v-if="!embedded" class="nav-scrim" @click="navOpen = false" />
     <ShellSidebar
+      v-if="!embedded"
       class="shell-nav"
       :workbench="workbench"
       :agents="agents"
@@ -271,7 +245,7 @@ onMounted(async () => {
     </ShellSidebar>
 
     <main v-show="!pageFull" class="shell-main">
-      <div class="mobile-bar">
+      <div v-if="!embedded" class="mobile-bar">
         <button type="button" class="mobile-menu" :aria-label="labels.menu" @click="navOpen = true">
           <Menu :size="19" />
         </button>
@@ -345,6 +319,22 @@ onMounted(async () => {
 .shell-nav {
   width: var(--shell-agent-rail);
   flex-shrink: 0;
+}
+/*
+ * Embedded in the platform shell: the host draws the navigation and the three bands, so the conversation sits flat on
+ * the workspace instead of being a raised panel with a gutter around it.
+ */
+.agent-shell.embedded {
+  gap: 0;
+  padding: 0;
+  height: 100%;
+  background: transparent;
+}
+.agent-shell.embedded .shell-main {
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  background: transparent;
 }
 .shell-main {
   position: relative;
