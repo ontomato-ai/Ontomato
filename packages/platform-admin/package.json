@@ -5,7 +5,9 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
-    "./locales/*": "./src/locales/*.ts"
+    "./locales/*": "./src/locales/*.ts",
+    "./routes": "./src/platform-routes.ts",
+    "./legacy-manager": "./src/legacy-manager.ts"
   },
   "scripts": {
     "typecheck": "vue-tsc --noEmit",

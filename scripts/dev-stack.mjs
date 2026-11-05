@@ -143,17 +143,16 @@ export function classify(command, cwd, ctx) {
     if (node !== undefined) {
       for (const script of ["scripts/dev-command.mjs", join(ctx.root, "scripts/dev-command.mjs")]) {
         const args = afterScript(node, script);
-        if (args !== undefined && /^(dev|server|web|manager|runtime)(?:\s|$)/.test(args)) return "frontend-root";
+        if (args !== undefined && /^(dev|server|web|runtime)(?:\s|$)/.test(args)) return "frontend-root";
       }
       const concurrent = moduleArgs(node, "/concurrently/dist/bin/concurrently.js");
-      if (concurrent !== undefined && ["server", "web", "ontology-manager"].every((mode) => hasArg(concurrent, `pnpm:dev:${mode}`))) return "frontend-root";
+      if (concurrent !== undefined && ["server", "web"].every((mode) => hasArg(concurrent, `pnpm:dev:${mode}`))) return "frontend-root";
     }
     const pnpm = executableArgs(command, "pnpm") ?? (node !== undefined ? moduleArgs(node, "/pnpm.cjs") ?? moduleArgs(node, "/pnpm.js") : undefined);
     if (pnpm !== undefined && /^(?:run\s+)?dev(?:\s|$)/.test(pnpm)) return "frontend-root";
   }
   if (node === undefined) return undefined;
   const workbench = join(ctx.root, "apps/workbench");
-  const manager = join(ctx.root, "apps/ontology-manager");
   if (cwd === workbench) {
     const tsx = moduleArgs(node, "/tsx/dist/cli.mjs");
     if (tsx !== undefined && ["src/index.ts", join(workbench, "src/index.ts")].some((script) => afterScript(tsx, `watch ${script}`) !== undefined)) return "frontend-root";
@@ -162,10 +161,6 @@ export function classify(command, cwd, ctx) {
     const vite = moduleArgs(node, "/vite/bin/vite.js");
     if (vite !== undefined && ["web/vite.config.ts", join(workbench, "web/vite.config.ts")].some((config) => afterScript(vite, `--config ${config}`) !== undefined)) return "frontend-root";
   }
-  const vite = moduleArgs(node, "/vite/bin/vite.js");
-  // Current dev-command manager passes checkout absolute root; also preserve relative form of legacy apps/ontology-manager scripts.
-  if (cwd === manager && vite !== undefined &&
-      (afterScript(vite, "--port 5174") !== undefined || afterScript(vite, `${manager} --port 5174`) !== undefined)) return "frontend-root";
   return undefined;
 }
 function psSnapshot() {
@@ -195,7 +190,7 @@ function isAlive(pid) {
 function identifyUnix(ctx) {
   const rows = psSnapshot();
   const byPid = new Map(rows.map((row) => [row.pid, row]));
-  const cwdsToCheck = [ctx.root, ctx.devRoot, join(ctx.root, "apps/workbench"), join(ctx.root, "apps/ontology-manager")];
+  const cwdsToCheck = [ctx.root, ctx.devRoot, join(ctx.root, "apps/workbench")];
   const candidates = rows.filter((row) => MARKERS.some((marker) => row.command.includes(marker)) &&
     cwdsToCheck.some((cwd) => { const role = classify(row.command, cwd, ctx); return role && role !== "self"; }));
   const cwds = lsofCwds(candidates.map((row) => row.pid));
@@ -384,7 +379,7 @@ async function up(ctx) {
   const pg = postgresState(ctx, dbPort);
   const ownJava = pre.group.filter((entry) => entry.role === "ragmain");
   assertNoForeign(javaPort, { group: ownJava }, "Java");
-  for (const [port, label] of [[runtimePort(ctx), "Agent runtime"], [3000, "Node"], [5173, "Workbench Web"], [5174, "Manager"]]) assertNoForeign(port, { group: [] }, label);
+  for (const [port, label] of [[runtimePort(ctx), "Agent runtime"], [3000, "Node"], [5173, "Workbench Web"]]) assertNoForeign(port, { group: [] }, label);
   if (!pg || !pg.running || !pg.healthy || !pg.published) {
     if (pg && pg.running && pg.published) throw new Error(`PG container not healthy (state=${pg.state}, health=${pg.health}), stopping`);
     assertNoForeign(dbPort, pre, "PG");
@@ -407,7 +402,7 @@ async function up(ctx) {
   snapshot = identify(ctx);
   if (snapshot.unattributable.length) throw new Error("Unable to confirm candidate process ownership");
   if (snapshot.group.some((entry) => FRONTEND_ROLES.includes(entry.role))) throw new Error("Frontend in this checkout is already running");
-  for (const [port, label] of [[runtimePort(ctx), "Agent runtime"], [3000, "Node"], [5173, "Workbench Web"], [5174, "Manager"]]) assertNoForeign(port, { group: [] }, label);
+  for (const [port, label] of [[runtimePort(ctx), "Agent runtime"], [3000, "Node"], [5173, "Workbench Web"]]) assertNoForeign(port, { group: [] }, label);
   const gatewayState = compose(ctx, dbPort, ["ps", "-q", "gateway"]);
   if (gatewayState.status !== 0) throw new Error("Unable to inspect development gateway");
   if (!gatewayState.stdout.trim()) assertNoForeign(8080, { group: [] }, "Gateway");
@@ -546,7 +541,7 @@ function status(ctx) {
     const pids = snapshot.group.filter((entry) => entry.role === role).map((entry) => entry.pid);
     process.stdout.write(`[dev] ${label}: ${pids.join(", ") || "not running"}\n`);
   }
-  const ports = pgOwned ? [[javaPort, "Java"], [runtimePort(ctx), "Agent runtime"], [3000, "Node"], [5173, "Workbench Web"], [5174, "Manager"]] : [[dbPort, "PG"], [javaPort, "Java"], [runtimePort(ctx), "Agent runtime"], [3000, "Node"], [5173, "Workbench Web"], [5174, "Manager"]];
+  const ports = pgOwned ? [[javaPort, "Java"], [runtimePort(ctx), "Agent runtime"], [3000, "Node"], [5173, "Workbench Web"]] : [[dbPort, "PG"], [javaPort, "Java"], [runtimePort(ctx), "Agent runtime"], [3000, "Node"], [5173, "Workbench Web"]];
   for (const [port, label] of ports)
     if (foreignListeners(port, snapshot.group).length) process.stdout.write(`[dev] ${label} port ${port} occupied by external process\n`);
 }

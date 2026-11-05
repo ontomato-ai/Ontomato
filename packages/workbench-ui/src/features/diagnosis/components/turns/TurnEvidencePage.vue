@@ -53,7 +53,7 @@ async function load() {
 /** Keeps the conversation that is open beside the page. */
 function go(turnKey: string | null) {
   const query = typeof route.query.sessionId === "string" ? { sessionId: route.query.sessionId } : {};
-  void router.push({ path: turnKey ? `/observe/turn/${encodeURIComponent(turnKey)}` : "/observe/turn", query }).catch(() => {});
+  void router.push({ path: turnKey ? `/ops/turn/${encodeURIComponent(turnKey)}` : "/ops/turn", query }).catch(() => {});
 }
 
 async function search() {

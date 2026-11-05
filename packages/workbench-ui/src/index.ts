@@ -33,3 +33,4 @@ export { legacyAdminRoutes, managerLocation } from "./router/admin-routes";
 export { observeRoutes } from "./router/observe-routes";
 export { ObserveLayout } from "./features/diagnosis";
 export type { ObserveAccount } from "./features/diagnosis/components/layout/types";
+export { workbenchPages } from "./router/workbench";

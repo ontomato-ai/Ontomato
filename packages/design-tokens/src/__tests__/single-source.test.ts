@@ -24,7 +24,7 @@ function sources(directory: string) {
 
 it("no public source declares a generated brand variable outside the brand source", () => {
   const files = { ...sources("apps"), ...sources("packages") };
-  expect(Object.keys(files)).toContain("apps/ontology-manager/src/presentation.ts");
+  expect(Object.keys(files)).toContain("apps/workbench/web/src/manager/presentation.ts");
   expect(Object.keys(files)).toContain("packages/ontology-manager/src/theme.css");
   expect(findBrandDeclarations(files)).toEqual([]);
 });

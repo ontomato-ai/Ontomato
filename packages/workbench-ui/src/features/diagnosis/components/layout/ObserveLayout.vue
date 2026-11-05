@@ -32,11 +32,11 @@ const agentId = ref<string | null>(DIAGNOSIS_AGENT_ID);
 const pageView = ref<"full" | "side">("full");
 
 const pages = [
-  { id: "turn", path: "/observe/turn", label: "ops.turns", icon: "evidence", match: ["/observe/turn"] },
-  { id: "test", path: "/observe/test", label: "ops.tests", icon: "test", match: ["/observe/test", "/observe/results", "/observe/cases", "/observe/autotest"] },
-  { id: "live-logs", path: "/observe/live-logs", label: "ops.logs", icon: "logs", match: ["/observe/live-logs"] },
-  { id: "dsl", path: "/observe/dsl", label: "ops.dsl", icon: "query", match: ["/observe/dsl"] },
-  { id: "knowledge", path: "/observe/knowledge", label: "ops.knowledge", icon: "knowledge", match: ["/observe/knowledge"] },
+  { id: "turn", path: "/ops/turn", label: "ops.turns", icon: "evidence", match: ["/ops/turn"] },
+  { id: "test", path: "/ops/test", label: "ops.tests", icon: "test", match: ["/ops/test", "/ops/results", "/ops/cases", "/ops/autotest"] },
+  { id: "live-logs", path: "/ops/live-logs", label: "ops.logs", icon: "logs", match: ["/ops/live-logs"] },
+  { id: "dsl", path: "/ops/dsl", label: "ops.dsl", icon: "query", match: ["/ops/dsl"] },
+  { id: "knowledge", path: "/ops/knowledge", label: "ops.knowledge", icon: "knowledge", match: ["/ops/knowledge"] },
 ] as const;
 const workbench = computed<ShellWorkbenchDeclaration>(() => ({
   id: "operations",
@@ -66,8 +66,9 @@ function navigate() {
     scheduled = false;
     const page = pendingPage.value;
     const changesPage = page !== undefined && page !== pageOf(route.path);
-    const path = !changesPage ? route.path : pages.find((item) => item.id === page)?.path ?? "/observe/diagnosis";
-    const { sessionId: _previous, ...rest } = route.query;
+    const path = !changesPage ? route.path : pages.find((item) => item.id === page)?.path ?? "/ops/diagnosis";
+    const rest = { ...route.query };
+    delete rest.sessionId;
     const query: LocationQueryRaw = { ...(changesPage ? {} : rest), ...(conversation.value ? { sessionId: conversation.value } : {}) };
     const done = changesPage ? router.push({ path, query }) : router.replace({ path, query });
     void done.catch(() => {}).finally(() => (pendingPage.value = undefined));
@@ -102,7 +103,7 @@ const pageContext = computed(() => {
 
 /** Answers may link the app's own pages (e.g. `/observe/turn/<key>`); they open beside the conversation. */
 function pageLinks(href: string) {
-  const path = href.replace(/^#/, "").split("?")[0] ?? "";
+  const path = href.replace(/^#/, "").replace(/^\/observe(?=\/)/, "/ops").split("?")[0] ?? "";
   if (!pageOf(path)) return null;
   return () => {
     const query = conversation.value ? { sessionId: conversation.value } : {};
@@ -137,7 +138,7 @@ watch(() => [route.query.diagnose, route.query.sourceSessionId, route.query.sour
 }, { immediate: true });
 
 function featureAction(id: string) {
-  if (id === "workbench") void router.push("/chat");
+  if (id === "workbench") void router.push("/agents/chat");
 }
 
 onMounted(() => {

@@ -5,16 +5,13 @@ PROMPT_LANG ?= en
 
 include scripts/product-targets.mk
 
-.PHONY: workbench data-engine ontology-manager agent-runtime gateway bundle deploy-kit
+.PHONY: workbench data-engine agent-runtime gateway bundle deploy-kit
 
 workbench:
 	$(NODE) apps/workbench/build.mjs --arch $(ARCH)
 
 data-engine:
 	$(NODE) apps/data-engine/build.mjs --arch $(ARCH) --prompt-lang $(PROMPT_LANG)
-
-ontology-manager:
-	$(NODE) apps/ontology-manager/build.mjs --arch $(ARCH)
 
 agent-runtime:
 	$(NODE) apps/agent-runtime/build.mjs --arch $(ARCH)

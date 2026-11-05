@@ -4,6 +4,5 @@
 build:
 	$(MAKE) workbench
 	$(MAKE) data-engine
-	$(MAKE) ontology-manager
 	$(MAKE) agent-runtime
 	$(MAKE) gateway

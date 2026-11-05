@@ -4,7 +4,8 @@ import { flushPromises, mount } from "@vue/test-utils";
 import ElementPlus from "element-plus";
 import { RouterView, type RouteRecordRaw } from "vue-router";
 import { Database, Network, Sparkles } from "lucide-vue-next";
-import { createPlatformRouter } from "../router";
+import { installPageGuard } from "../router";
+import { createMemoryHistory, createRouter } from "vue-router";
 import ServiceLayout from "../layout/ServiceLayout.vue";
 import { providePlatformHost, type PlatformPageHost } from "../context";
 import type { PlatformAccess, PlatformNavigation } from "../navigation";
@@ -47,14 +48,8 @@ function access(granted: string[]): PlatformAccess {
 
 async function mountLayout(path: string, granted: string[], overrides: Partial<PlatformPageHost> = {}) {
   const host = testHost({}, { access: access(granted), navigation: computed(() => navigation), ...overrides });
-  const router = createPlatformRouter({
-    navigation,
-    routes,
-    standalone: [],
-    access: host.access,
-    layout: ServiceLayout,
-    home: "/playground",
-  });
+  const router = createRouter({ history: createMemoryHistory(), routes: [{ path: "/", component: ServiceLayout, children: routes }] });
+  installPageGuard(router, navigation, host.access, "/playground");
   await router.push(path);
   const wrapper = mount(defineComponent({ render: () => h(RouterView) }), {
     global: { plugins: [testI18n(), ElementPlus, router], provide: providePlatformHost(host) },
@@ -110,7 +105,7 @@ describe("Ontology Service sidebar", () => {
   });
 
   it("draws the 48px page header for platform pages and leaves it to pages that have their own", async () => {
-    const { wrapper, router } = await mountLayout("/admin/records/audit-log", ["ontology-modeling", "audit-logs"]);
+    const { wrapper, router } = await mountLayout("/settings/records/audit-log", ["ontology-modeling", "audit-logs"]);
     expect(wrapper.find(".page-header .page-title").text()).toBe("Run Records");
     expect(wrapper.find(".page-header .page-description").text()).toBe(
       "Change history and the service status of the data engine"
@@ -125,9 +120,9 @@ describe("Ontology Service sidebar", () => {
   });
 
   it("lists a page under either of its tabs' codes, and one entry for all of them", async () => {
-    const audit = await mountLayout("/admin/records/audit-log", ["audit-logs"]);
+    const audit = await mountLayout("/settings/records/audit-log", ["audit-logs"]);
     expect(rows(audit.wrapper)).toEqual(["Run Records"]);
-    const monitor = await mountLayout("/admin/records/system-monitor", ["system-monitoring"]);
+    const monitor = await mountLayout("/settings/records/system-monitor", ["system-monitoring"]);
     expect(rows(monitor.wrapper)).toEqual(["Run Records"]);
     // A tab route is the page it belongs to: the entry stays highlighted there and at the page's own address.
     expect(monitor.wrapper.find(".nav-row.active .nav-label").text()).toBe("Run Records");
@@ -135,21 +130,21 @@ describe("Ontology Service sidebar", () => {
   });
 
   it("the open-source system settings have no license tab (open source runs no licenses)", async () => {
-    expect(ossPlatformPages.find(({ path }) => path === "/admin/system-config")?.tabs?.map(({ titleKey }) => titleKey)).toEqual([
+    expect(ossPlatformPages.find(({ path }) => path === "/settings/system-config")?.tabs?.map(({ titleKey }) => titleKey)).toEqual([
       "nav.systemGeneralTab",
       "nav.systemDataAdaptersTab",
     ]);
   });
 
   it("a page with its own header is listed under the same entry as its tabs", async () => {
-    const { wrapper } = await mountLayout("/admin/model-config/usage", ["system-config"]);
+    const { wrapper } = await mountLayout("/settings/model-config/usage", ["system-config"]);
     expect(rows(wrapper)).toEqual(["Models"]);
     expect(wrapper.find(".nav-row.active .nav-label").text()).toBe("Models");
   });
 
   it("an account with no page sees the no-permission state; a reduced layout hides the navigation", async () => {
     expect((await mountLayout("/", [])).wrapper.find(".permission-empty").text()).toBe("No available menu permissions");
-    const reduced = await mountLayout("/admin/records/audit-log", ["audit-logs"], {
+    const reduced = await mountLayout("/settings/records/audit-log", ["audit-logs"], {
       navigationHidden: computed(() => true),
     });
     expect(reduced.wrapper.find(".nav-row").exists()).toBe(false);

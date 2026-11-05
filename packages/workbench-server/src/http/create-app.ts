@@ -172,6 +172,7 @@ export function createWorkbenchApp(): Express {
     res.send(
       `window.__APP_CONFIG__ = ${JSON.stringify({
         DEFAULT_LOCALE: getDefaultLocale(),
+        INITIAL_ROUTE: process.env.ONTOLOGY_INITIAL_ROUTE || "/playground",
       })};\nwindow.__APP_CONFIG__.API_BASE = new URL("./api", document.currentScript.src).pathname;`,
     );
   });

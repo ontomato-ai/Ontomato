@@ -1,3 +1,4 @@
+import { platformRoutes as routes } from "@ontomato/platform-admin/routes";
 import { defineAsyncComponent, defineComponent, h, ref, type PropType } from "vue";
 import { useRoute, useRouter, type RouteRecordRaw } from "vue-router";
 import { useManagerClient, useManagerCounts } from "./context";
@@ -22,6 +23,7 @@ const VisualModeling = defineAsyncComponent(() => import("./visual-modeling/Visu
 const OntologyAssetDetail = defineAsyncComponent(() => import("./components/OntologyAssetDetail.vue"));
 const OntologyPlayground = defineAsyncComponent(() => import("./components/OntologyPlayground.vue"));
 
+const assetDetails = { metrics: routes.metric, actions: routes.action, functions: routes.function, tasks: routes.task };
 const ASSET_KINDS: readonly AssetTab[] = ["metrics", "actions", "functions", "tasks"];
 
 const GraphPage = defineComponent({
@@ -150,9 +152,9 @@ const AssetCatalogPage = defineComponent({
         h(OntologyAssetCatalog, {
           kind: props.kind,
           onSelect: (asset: { id?: string }) => {
-            if (asset.id) void router.push(`/assets/${props.kind}/${encodeURIComponent(asset.id)}`);
+            if (asset.id) void router.push({ name: assetDetails[props.kind].name, params: { id: asset.id } });
           },
-          onCreate: () => void router.push(`/assets/${props.kind}/new`),
+          onCreate: () => void router.push({ name: assetDetails[props.kind].name, params: { id: "new" } }),
         }),
       ]);
   },
@@ -174,7 +176,7 @@ const AssetDetailPage = defineComponent({
           asset: props.id === "new" ? null : { id: props.id, name: props.id },
           creating: props.id === "new",
           onBack: () => {
-            void router.push(`/assets/${props.kind}`);
+            void router.push(routes[props.kind].path);
             void counts.refresh();
           },
           onSaved: () => void counts.refresh(),
@@ -208,7 +210,7 @@ const KnowledgePage = defineComponent({
     const router = useRouter();
     return () =>
       h("section", { class: "knowledge-surface" }, [
-        h(BusinessKnowledge, { onGovernance: () => void router.push("/knowledge-governance") }),
+        h(BusinessKnowledge, { onGovernance: () => void router.push({ name: routes.governance.name }) }),
       ]);
   },
 });
@@ -223,7 +225,7 @@ const KnowledgeGovernancePage = defineComponent({
         sessionId: props.sessionId || null,
         // Opening or starting a conversation updates the address of the same page.
         onSession: (id: string | null) =>
-          void router.replace(id ? `/knowledge-governance/${encodeURIComponent(id)}` : "/knowledge-governance"),
+          void router.replace({ name: routes.governance.name, params: { sessionId: id || "" } }),
         onBack: () => void router.push(managerPaths.knowledge),
       });
   },
@@ -246,30 +248,27 @@ export function managerRoutes(): RouteRecordRaw[] {
       path: "",
       component: ManagerFrame,
       children: [
-        { path: managerPaths.graph, component: GraphPage, meta: { page: managerPaths.graph } },
+        { ...routes.playground, component: GraphPage, meta: { page: managerPaths.graph } },
         ...(["objects", "attributes", "relations"] as const).map((resource) => ({
-          path: managerPaths[resource],
+          ...routes[resource],
           component: ModelCatalogPage,
           props: { resource },
           meta: { page: managerPaths[resource] },
         })),
         {
-          path: `${managerPaths.objects}/:className`,
-          name: "manager-object",
+          ...routes.object,
           component: ObjectDetailPage,
           props: stringParam("className"),
           meta: { page: managerPaths.objects },
         },
         {
-          path: `${managerPaths.relations}/:relationship`,
-          name: "manager-relation",
+          ...routes.relation,
           component: RelationDetailPage,
           props: stringParam("relationship"),
           meta: { page: managerPaths.relations },
         },
         {
-          path: `${managerPaths.dataBrowser}/:className?`,
-          name: "manager-data",
+          ...routes.data,
           component: dataBrowserPage(dataBrowser),
           props: stringParam("className"),
           meta: { page: managerPaths.dataBrowser },
@@ -279,20 +278,18 @@ export function managerRoutes(): RouteRecordRaw[] {
               : true,
         },
         ...ASSET_KINDS.flatMap((kind) => [
-          { path: `/assets/${kind}`, component: AssetCatalogPage, props: { kind }, meta: { page: `/assets/${kind}` } },
+          { ...routes[kind], component: AssetCatalogPage, props: { kind }, meta: { page: routes[kind].path } },
           {
-            path: `/assets/${kind}/:id`,
+            ...assetDetails[kind],
             component: AssetDetailPage,
             props: (route: { params: Record<string, unknown> }) => ({ kind, ...stringParam("id")(route) }),
-            meta: { page: `/assets/${kind}` },
+            meta: { page: routes[kind].path },
           },
         ]),
-        { path: managerPaths.visualModeling, component: VisualModelingPage, meta: { page: managerPaths.visualModeling } },
-        { path: managerPaths.knowledge, component: KnowledgePage, meta: { page: managerPaths.knowledge } },
+        { ...routes.modeling, component: VisualModelingPage, meta: { page: managerPaths.visualModeling } },
+        { ...routes.knowledge, component: KnowledgePage, meta: { page: managerPaths.knowledge } },
       ],
     },
-    // The old platform address of visual modeling.
-    { path: "/admin/ontology/visual-modeling", redirect: managerPaths.visualModeling },
   ];
 }
 
@@ -304,11 +301,12 @@ export function managerRoutes(): RouteRecordRaw[] {
 export function managerStandaloneRoutes(): RouteRecordRaw[] {
   return [
     {
-      path: "/knowledge-governance",
+      path: "/governance/chat",
+      meta: { service: true },
       component: ManagerFrame,
       children: [
         {
-          path: ":sessionId?",
+          ...routes.governance,
           component: KnowledgeGovernancePage,
           props: stringParam("sessionId"),
           meta: { page: managerPaths.knowledge },

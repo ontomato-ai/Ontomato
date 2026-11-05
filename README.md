@@ -218,7 +218,7 @@ Tell your agent which database to model, for example:
 
 The agent connects the database, reads the tables, drafts the ontology, imports it and
 asks test questions. Review and refine the ontology in the Ontology Manager at
-`http://<host>:3000/ontology-manager/`, and ask questions in the Workbench at `http://<host>:3000`.
+`http://<host>:3000/#/ontology`, and ask questions in the Workbench at `http://<host>:3000`.
 
 <details>
 <summary>For AI agents setting up Ontomato</summary>
@@ -255,7 +255,7 @@ Ontomato is in beta. Current limits:
 
 | Path | Contents |
 | --- | --- |
-| `apps/` | application entry points: Workbench, data engine, Ontology Manager |
+| `apps/` | application entry points: Workbench, data engine and agent runtime |
 | `packages/` | shared implementation and contracts |
 | `agent-skills/` | the agent skills |
 | `deploy/` | the Docker Compose stack |
@@ -289,8 +289,8 @@ Runtime state lives in `data/agent-runtime` and its own PostgreSQL schema.
 
 ### Gateway development entry
 
-`pnpm dev:up` serves both applications through `http://localhost:8080/` (Manager:
-`/ontology-manager/`). `PUBLIC_BASE_PATH` prefixes both pages and APIs. Vite 5173/5174,
+`pnpm dev:up` serves the unified platform through `http://localhost:8080/` (Manager:
+`/#/ontology`). `PUBLIC_BASE_PATH` prefixes both pages and APIs. Vite 5173,
 Node 3000 and Java 18087 are development upstreams, not browser entry URLs.
 Docker supplies the pinned Nginx gateway; no product image is built. On Linux its
 host-gateway must reach the host's Vite/Node/Java listeners. `dev:status` includes the

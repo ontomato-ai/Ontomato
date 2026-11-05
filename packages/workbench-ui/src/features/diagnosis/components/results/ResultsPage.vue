@@ -161,7 +161,7 @@ async function deleteRun() {
 function goToCaseDetail(row: CaseResult) {
   if (!row.caseId || !props.runId) return;
   router.push({
-    path: `/observe/autotest/runs/${encodeURIComponent(props.runId)}/cases/${encodeURIComponent(row.caseId)}`,
+    path: `/ops/autotest/runs/${encodeURIComponent(props.runId)}/cases/${encodeURIComponent(row.caseId)}`,
   });
 }
 

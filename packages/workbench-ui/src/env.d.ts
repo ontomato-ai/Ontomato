@@ -10,6 +10,7 @@ declare module "*.vue" {
 interface Window {
   __APP_CONFIG__?: {
     API_BASE?: string;
+    INITIAL_ROUTE?: string;
     DEFAULT_LOCALE?: string;
     LANGUAGE_SWITCH_ENABLED?: boolean;
   };

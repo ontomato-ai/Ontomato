@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, ref, watch } from "vue";
+import { platformRoutes as routes } from "@ontomato/platform-admin/routes";
 import { ElMessage } from "element-plus";
 import { useI18n } from "vue-i18n";
 import { useRoute, useRouter } from "vue-router";
@@ -29,6 +30,8 @@ import { useOntologyServiceAccess } from "../../../app/ontology-service";
  * The one business workbench both editions mount. Editions add their own feature entries and render those pages through
  * the `feature` slot; everything else is shared.
  */
+type PermissionCheck = Parameters<typeof workbenchFeatures>[2];
+
 const props = withDefaults(
   defineProps<{
     /** Edition-specific entries, placed after the shared dashboard entry (see workbenchFeatures). */
@@ -36,7 +39,7 @@ const props = withDefaults(
     defaultLogo: string;
     defaultBrandName: string;
     /** The edition's permission check for the function area's entries; open source shows everything. */
-    can?: (permission: string) => boolean;
+    can?: PermissionCheck;
   }>(),
   { features: () => [], can: () => true },
 );
@@ -56,12 +59,14 @@ const dashboards = useDashboardStore();
 const appearance = ref<WorkbenchAppearance | null>(null);
 const editingBrand = ref(false);
 const agentId = ref<string | null>(readRemembered());
-const featureId = ref<string | null>(null);
-/**
- * The feature the address asked for, kept until the shell has resolved its agents: resolving a remembered agent that no
- * longer exists clears the open feature, which would also drop the page the address asked for. It is replayed once.
- */
-const requestedFeatureId = ref<string | null>(null);
+const featureRoutes = { dashboards: routes.dashboards, agents: routes.agents, schedule: routes.agentTasks };
+const featureId = computed<string | null>({
+  get: () => Object.entries(featureRoutes).find(([, page]) => page.name === route.name)?.[0] ?? null,
+  set: (id) => {
+    const target = featureRoutes[id as keyof typeof featureRoutes] ?? routes.chat;
+    if (route.name !== target.name) void router.push({ name: target.name });
+  },
+});
 const conversationId = ref<string | null>(null);
 const shell = ref<{ reloadAgents: () => Promise<void> } | null>(null);
 
@@ -78,9 +83,7 @@ watch(agentId, (id) => {
   } catch {
     // Remembering the agent is a convenience only.
   }
-  if (!requestedFeatureId.value) return;
-  if (featureId.value === null) featureId.value = requestedFeatureId.value;
-  requestedFeatureId.value = null;
+
 });
 
 const workbench = computed<ShellWorkbenchDeclaration>(() => ({
@@ -122,44 +125,13 @@ function appearanceSaved(value: WorkbenchAppearance) {
 }
 
 /** The agents page's tab is part of the address, so a link to the capability library opens it directly. */
-const agentsTab = ref<"agents" | "capabilities" | null>(null);
-
-function requestedTab(): "agents" | "capabilities" | null {
-  const tab = route.query.tab;
-  return tab === "capabilities" ? "capabilities" : tab === "agents" ? "agents" : null;
-}
-
-/** Entries that are pages of their own conversation shell open in a new tab, like the Ontology Service link. */
-function openSeparatePage(path: string) {
-  window.open(router.resolve(path).href, "_blank", "noopener");
-}
+const agentsTab = computed(() => route.query.tab === "capabilities" ? "capabilities" : "agents");
 
 function handleFeatureAction(id: string) {
-  if (id === "ops-diagnosis") openSeparatePage("/observe");
-  emit("featureAction", id);
+  if (id === "ops-diagnosis") void router.push({ name: routes.ops.name });
+  else if (id === "ontology-service") void router.push({ name: routes.ontology.name });
+  else emit("featureAction", id);
 }
-
-/**
- * An address may name a feature and a tab (the legacy console addresses and deep links); the shell opens it, and drops
- * the parameters so a later navigation to plain /chat is a clean conversation. Watched on mount and on every query
- * change, because a link inside the running workbench does not remount it.
- */
-watch(
-  () => route.query.feature,
-  (requested) => {
-    if (requested !== "agents" && requested !== "dashboards" && requested !== "schedule" && requested !== "chat") return;
-    // "chat" names the conversation itself: it closes whatever page was open (the retired console pages land here).
-    const page = requested === "chat" ? null : requested;
-    requestedFeatureId.value = page;
-    featureId.value = page;
-    agentsTab.value = requested === "agents" ? requestedTab() : null;
-    const query = { ...route.query };
-    delete query.feature;
-    delete query.tab;
-    void router.replace({ path: route.path, query });
-  },
-  { immediate: true },
-);
 </script>
 
 <template>

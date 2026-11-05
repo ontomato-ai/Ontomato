@@ -1,3 +1,4 @@
+import { platformRoutes } from "@ontomato/platform-admin/routes";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createMemoryHistory, createRouter, type Router } from "vue-router";
 import { mount } from "@vue/test-utils";
@@ -48,7 +49,7 @@ async function openAddress(
   const router = createRouter({
     history: createMemoryHistory(),
     routes: [
-      { path: "/chat", component: { render: () => null } },
+      ...[platformRoutes.chat, platformRoutes.agents].map((route) => ({ ...route, component: { render: () => null } })),
       ...Object.values(legacyAdminRoutes),
     ],
   });
@@ -73,7 +74,7 @@ async function openAddress(
 describe("old console addresses", () => {
   it("opens the agents tab for the business agents address", async () => {
     const { router, featureId } = await openAddress("/admin/analysis");
-    expect(router.currentRoute.value.path).toBe("/chat");
+    expect(router.currentRoute.value.path).toBe("/agents/settings");
     expect(featureId).toBe("agents");
   });
 
@@ -90,7 +91,7 @@ describe("old console addresses", () => {
     "opens the plain workbench for %s, which has no new place",
     async (path) => {
       const { router, featureId } = await openAddress(path);
-      expect(router.currentRoute.value.path).toBe("/chat");
+      expect(router.currentRoute.value.path).toBe("/agents/chat");
       expect(featureId).toBeNull();
     },
   );
@@ -101,7 +102,7 @@ describe("old console addresses", () => {
     expect(shell.props("featureId")).toBe("agents");
     await router.push("/admin/system-config");
     await new Promise((resolve) => setTimeout(resolve, 0));
-    expect(router.currentRoute.value.path).toBe("/chat");
+    expect(router.currentRoute.value.path).toBe("/agents/chat");
     expect(shell.props("featureId") ?? null).toBeNull();
   });
 });

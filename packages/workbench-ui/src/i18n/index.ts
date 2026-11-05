@@ -17,6 +17,8 @@ export interface WorkbenchLanguage {
   switchEnabled: boolean;
   /** Persistence of the locale choice; null in open source, which does not save it. */
   save: ((locale: SupportedLocale) => void) | null;
+  /** Read a locale changed by another tab. The edition owns its storage key. */
+  storedChange?(event: StorageEvent): SupportedLocale | undefined;
   messages: Partial<Record<SupportedLocale, Messages>>;
   /** Element Plus locale for a UI locale; always en in open source. */
   elementLocale(locale: string): ElementLocale;
