@@ -5,8 +5,15 @@ export interface PlatformApp {
   label: string;
   /** Icon name from the shell's curated set (see icons.ts). */
   icon: string;
-  /** An external application: opened in a new tab and never the current application. */
+  /**
+   * An external application's fixed address; it opens in a new tab and is never the current application.
+   */
   href?: string;
+  /**
+   * An external application the host must resolve first (a signed jump): called on click, and it opens the target in a
+   * new tab itself. Either `href` or `open`, like the platform navigation's links.
+   */
+  open?: () => void;
   /** Declared but not built yet; shown disabled with this hint rather than hidden. */
   unavailableHint?: string;
 }

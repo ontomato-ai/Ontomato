@@ -24,7 +24,7 @@ const props = withDefaults(
   { collapsed: undefined, brand: undefined },
 );
 
-const emit = defineEmits<{ selectApp: [id: string]; "update:collapsed": [value: boolean]; signOut: [] }>();
+const emit = defineEmits<{ selectApp: [id: string]; "update:collapsed": [value: boolean] }>();
 
 const RAIL_KEY = "ontomato.platform.railCollapsed";
 
@@ -86,7 +86,6 @@ onBeforeUnmount(() => query?.removeEventListener("change", onNarrow));
       :collapsed="collapsed"
       @select-app="emit('selectApp', $event)"
       @update:collapsed="collapsed = $event"
-      @sign-out="emit('signOut')"
     />
     <slot name="panel" />
     <main class="platform-workspace">

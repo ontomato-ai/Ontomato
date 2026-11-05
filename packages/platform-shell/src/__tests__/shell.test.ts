@@ -84,6 +84,31 @@ describe("platform rail", () => {
     expect(external.classList.contains("active")).toBe(false);
   });
 
+  it("opens an external application whose address the host resolves, as a button, without selecting it", async () => {
+    const open = vi.fn();
+    const onSelect = vi.fn();
+    const withSigned = [...apps, { id: "governance-sso", label: "Governance (signed jump)", icon: "governance", open }];
+    const root = await mount(PlatformRail, {
+      apps: withSigned,
+      activeAppId: "agents",
+      account,
+      preferences: preferences(),
+      labels,
+      collapsed: false,
+      onSelectApp: onSelect,
+    });
+    const row = [...root.querySelectorAll<HTMLElement>(".rail-row.external")].find((node) =>
+      node.textContent?.includes("Governance (signed jump)"),
+    );
+    // A target the host must sign first is a button: the host opens the tab when it has the address.
+    expect(row?.tagName).toBe("BUTTON");
+    row?.click();
+    expect(open).toHaveBeenCalledTimes(1);
+    // An external application is never the current application.
+    expect(onSelect).not.toHaveBeenCalled();
+    expect(row?.classList.contains("active")).toBe(false);
+  });
+
   it("marks the current application with the rail's selected band", async () => {
     const root = await mount(PlatformRail, { apps, activeAppId: "ontology", account, preferences: preferences(), labels, collapsed: false });
     const active = [...root.querySelectorAll(".rail-row.active")];
@@ -158,7 +183,7 @@ describe("account menu", () => {
     expect([...root.querySelectorAll(".menu-row")].map((row) => row.textContent?.trim())).toEqual(["Dark", "Sign out"]);
   });
 
-  it("switches theme and language through the host's preferences, and signs out", async () => {
+  it("switches theme and language through the host's preferences, and signs out once through the account", async () => {
     const setTheme = vi.fn();
     const setLocale = vi.fn();
     const signOut = vi.fn();
@@ -169,7 +194,6 @@ describe("account menu", () => {
       preferences: prefs,
       labels,
       onClose,
-      onSignOut: signOut,
     });
     const rows = [...root.querySelectorAll<HTMLButtonElement>(".menu-row")];
     rows.find((row) => row.textContent?.includes("Light"))?.click();
@@ -177,7 +201,9 @@ describe("account menu", () => {
     rows[0].click();
     expect(setLocale).toHaveBeenCalledWith("en");
     rows.at(-1)?.click();
-    expect(signOut).toHaveBeenCalled();
+    // Exactly one sign-out: the account owns it, the menu does not also report one of its own.
+    expect(signOut).toHaveBeenCalledTimes(1);
+    expect(onClose).toHaveBeenCalled();
   });
 });
 

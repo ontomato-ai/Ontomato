@@ -12,7 +12,7 @@ const props = defineProps<{
   labels: PlatformShellLabels;
 }>();
 
-const emit = defineEmits<{ close: []; signOut: [] }>();
+const emit = defineEmits<{ close: [] }>();
 
 function chooseLocale(locale: string) {
   props.preferences.setLocale(locale);
@@ -21,9 +21,10 @@ function chooseLocale(locale: string) {
 function chooseTheme() {
   props.preferences.setTheme(props.preferences.theme === "dark" ? "light" : "dark");
 }
+/** Signing out is the account's own action; the menu only reports that it is closing. */
 function signOut() {
+  props.account.signOut();
   emit("close");
-  emit("signOut");
 }
 </script>
 

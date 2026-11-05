@@ -25,13 +25,13 @@ const props = defineProps<{
 const emit = defineEmits<{
   selectApp: [id: string];
   "update:collapsed": [value: boolean];
-  signOut: [];
 }>();
 
 const brandName = computed(() => props.brand?.name || props.labels.brand);
 
 function selectApp(app: PlatformApp) {
-  if (app.href || app.unavailableHint) return;
+  // External applications are never the current application; they open outside the platform.
+  if (app.href || app.open || app.unavailableHint) return;
   emit("selectApp", app.id);
 }
 
@@ -54,11 +54,6 @@ function closeMenu() {
   menuOpen.value = false;
   document.removeEventListener("pointerdown", onDocumentPointer);
 }
-function signOut() {
-  emit("signOut");
-  props.account?.signOut();
-}
-
 const initial = computed(() => props.account?.userName.trim().charAt(0).toUpperCase() ?? "");
 
 // The menu is part of the rail: collapsing it while open would leave it floating beside an icon rail.
@@ -117,6 +112,26 @@ onBeforeUnmount(() => document.removeEventListener("pointerdown", onDocumentPoin
             :aria-hidden="labels.opensInNewTab ? undefined : 'true'"
           />
         </a>
+        <!-- An external application whose address the host must resolve first (a signed jump). -->
+        <button
+          v-else-if="app.open"
+          type="button"
+          class="rail-row external"
+          :title="collapsed ? app.label : undefined"
+          :aria-label="collapsed ? app.label : undefined"
+          @click="app.open()"
+        >
+          <component :is="appIcon(app.icon)" class="rail-icon" :size="16" aria-hidden="true" />
+          <span v-if="!collapsed" class="rail-label">{{ app.label }}</span>
+          <ExternalLink
+            v-if="!collapsed"
+            class="rail-external"
+            :size="13"
+            :role="labels.opensInNewTab ? 'img' : undefined"
+            :aria-label="labels.opensInNewTab"
+            :aria-hidden="labels.opensInNewTab ? undefined : 'true'"
+          />
+        </button>
         <span
           v-else-if="app.unavailableHint"
           class="rail-row unavailable"
@@ -163,7 +178,6 @@ onBeforeUnmount(() => document.removeEventListener("pointerdown", onDocumentPoin
           :preferences="preferences"
           :labels="labels"
           @close="closeMenu"
-          @sign-out="signOut"
         />
       </div>
     </div>
