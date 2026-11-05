@@ -10,6 +10,8 @@ import type { AnalysisScheduleRule } from "./schedule-rules";
 import type { AnalysisTask } from "../task-types";
 import type { AnalysisConversationTurnRecord } from "./conversation-types";
 import { tApp } from "../../../i18n";
+import { resolveScheduleCredential } from "./schedule-credentials";
+import type { ScheduledRunCredentials } from "../../../identity/types";
 
 
 const logger = createLogger("task-scheduler");
@@ -58,6 +60,13 @@ export async function triggerScheduleRule(
   if (!claimed) return null;
 
   try {
+    const owner = { userId: rule.userId, domainId: rule.domainId };
+    const credentials = await resolveScheduleCredential(owner, rule.token);
+    if (!credentials) {
+      logger.warn("Schedule rule paused: the owner's scheduled credential no longer works", { ruleId: rule.id });
+      await ruleService.pauseForCredential(rule.id, tApp("analysis.task.task-scheduler.credential-paused"));
+      return null;
+    }
     const agentService = await getAnalysisAgentService();
     const agent = await agentService.getAgent(rule.agentId, rule.domainId);
     if (!agent) throw new Error(tApp("analysis.task.task-scheduler.426"));
@@ -73,7 +82,6 @@ export async function triggerScheduleRule(
       notifyEmail: rule.notifyEmail,
       notifyOnComplete: rule.notifyOnComplete,
       triggerSource: "scheduled",
-      token: rule.token,
     });
 
     logger.info(tApp("analysis.task.task-scheduler.425"), {
@@ -82,7 +90,7 @@ export async function triggerScheduleRule(
       nextRunAt: claimed.nextRunAt,
     });
 
-    executeTask(reportTask.id, reportTask.domainId).catch((error) => {
+    executeTask(reportTask.id, reportTask.domainId, { credentials, owner }).catch((error) => {
       logger.error(tApp("analysis.task.task-scheduler.426", { id: reportTask.id }), { error });
     });
 
@@ -106,7 +114,11 @@ export async function triggerScheduleRule(
  * Claims one pending one-shot task and hands it to the run orchestrator.
  * The scheduler side owns only claim and execution preconditions; the run itself (events, terminal states, notifications, cancellation) lives in the orchestrator.
  */
-async function executeTask(taskId: string, domainId: string): Promise<void> {
+async function executeTask(
+  taskId: string,
+  domainId: string,
+  scheduled?: { credentials: ScheduledRunCredentials; owner: { userId: string; domainId: string } }
+): Promise<void> {
   const taskService = getAnalysisTaskService();
   const agentService = await getAnalysisAgentService();
 
@@ -124,7 +136,17 @@ async function executeTask(taskId: string, domainId: string): Promise<void> {
     return;
   }
 
-  const { completion } = await startAnalysisTaskRun({ task, agent });
+  // A scheduled run carries the owner's verified scheduled credential instead of a login kept on the task row.
+  const { completion } = await startAnalysisTaskRun(
+    scheduled
+      ? {
+          task: { ...task, token: scheduled.credentials.token ?? task.token },
+          agent,
+          apiKey: scheduled.credentials.apiKey,
+          verifiedIdentity: scheduled.owner,
+        }
+      : { task, agent }
+  );
   await completion;
 }
 

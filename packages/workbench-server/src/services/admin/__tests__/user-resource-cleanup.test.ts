@@ -3,12 +3,13 @@ import { beforeEach, expect, it, vi } from "vitest";
 // These doubles are the resource owners, not SQL interpreters. This suite protects
 // orchestration and failure isolation; database predicates are reviewed at each owner.
 const owners = vi.hoisted(() => ({
-  schedules: vi.fn(), tasks: vi.fn(), threads: vi.fn(), dashboards: vi.fn(),
+  schedules: vi.fn(), credentials: vi.fn(), tasks: vi.fn(), threads: vi.fn(), dashboards: vi.fn(),
   store: vi.fn(), governance: vi.fn(), files: vi.fn(), error: vi.fn(),
 }));
 vi.mock("../../../infrastructure/connection", () => ({ getStore: () => ({ deleteByUser: owners.store }) }));
 vi.mock("../../../logging/logger", () => ({ createLogger: () => ({ error: owners.error }) }));
 vi.mock("../../analysis-agent/task/schedule-rules", () => ({ getAnalysisScheduleRuleService: () => ({ deleteByUser: owners.schedules }) }));
+vi.mock("../../analysis-agent/task/schedule-credentials", () => ({ deleteScheduleCredentialsOfUser: owners.credentials }));
 vi.mock("../../analysis-agent/task/task-service", () => ({ getAnalysisTaskService: () => ({ deleteByUser: owners.tasks }) }));
 vi.mock("../../chat/thread-service", () => ({ deleteUserThreads: owners.threads }));
 vi.mock("../../dashboard/store", () => ({ deleteUserDashboards: owners.dashboards }));
@@ -16,7 +17,7 @@ vi.mock("../../knowledge-governance/store", () => ({ governanceStore: { deleteBy
 vi.mock("../../analysis-agent/delivery/ppt-artifacts", () => ({ pptArtifactStore: () => ({ deleteByUser: owners.files }) }));
 import { cleanupDeletedUsers } from "../user-resource-cleanup";
 
-const stages = ["schedules", "tasks", "threads", "dashboards", "store", "governance", "files"] as const;
+const stages = ["schedules", "credentials", "tasks", "threads", "dashboards", "store", "governance", "files"] as const;
 const calls: string[] = [];
 const data = new Map<string, Set<string>>();
 beforeEach(() => {

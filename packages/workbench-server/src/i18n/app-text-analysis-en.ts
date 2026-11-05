@@ -436,6 +436,7 @@ export const appTextAnalysisEn = {
   "analysis.task.task-scheduler.426": "Scheduled report task execution error: {id}",
   "analysis.task.task-scheduler.427": "Schedule rule trigger failed",
   "analysis.task.task-scheduler.428": "Trigger failed: {errorMessage}",
+  "analysis.task.task-scheduler.credential-paused": "The owner's scheduled-task credential no longer works, so this schedule is paused. Opening the task list with a valid login renews it and resumes the schedule.",
   "analysis.task.task-scheduler.429": "Failed to record schedule trigger error reason",
   "analysis.task.task-scheduler.430": "Task execution failed: analysis agent {agentId} does not exist",
   "analysis.task.task-scheduler.431": "Agent does not exist",
