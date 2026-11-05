@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from "vue";
+import { computed, nextTick, onMounted, ref, watch } from "vue";
 import { ElMessage, ElMessageBox } from "element-plus";
 import { History, Pencil, Play, Plus, RotateCcw, Trash2 } from "lucide-vue-next";
 import type { AgentHostAgent } from "@ontomato/contracts/agent-host";
@@ -32,6 +32,11 @@ const props = defineProps<{
   agentId?: string | null;
   /** Show only this application's tasks, e.g. `agents` or `ontology`; the user may still change the filter. */
   appId?: string | null;
+  /**
+   * The one task a link (or an old address) points at: its run history opens under its row. A task this caller cannot
+   * see, or one that is gone, leaves the plain list, because an address is a hint rather than a promise.
+   */
+  taskId?: string | null;
   /** The page's language, used for times and weekday names. */
   locale: string;
   /** The page's own text, from the host's message tree under `platformSchedules`. */
@@ -53,6 +58,8 @@ const busy = ref(new Set<string>());
 const histories = ref<Record<string, { reload: () => Promise<void> } | null>>({});
 /** The row whose history is open; one at a time, so a scrolled table never holds several run lists. */
 const historyRow = ref<string | null>(null);
+/** The table's own handle, used to mark the row a link points at. */
+const table = ref<{ setCurrentRow: (row: PlatformTask | null) => void } | null>(null);
 
 /** The agent's name for the row, or the fact that it is gone: the task pauses when its agent is unavailable. */
 const agentName = (id: string) =>
@@ -79,10 +86,31 @@ async function load() {
     tasks.value = list.tasks;
     timeZone.value = list.timeZone;
     state.value = "ready";
+    locate();
   } catch {
     state.value = "error";
   }
 }
+
+/**
+ * A link names one task: open its run history and mark the row, so the reader lands on what the address was about. An
+ * application filter the reader set earlier does not hide it, and a task that is absent changes nothing.
+ */
+function locate() {
+  const target = props.taskId ? tasks.value.find((task) => task.id === props.taskId) : undefined;
+  if (!target) return;
+  if (appFilter.value && appFilter.value !== target.appId) appFilter.value = "";
+  historyRow.value = target.id;
+  void nextTick(() => table.value?.setCurrentRow(target));
+}
+
+// The page stays mounted while the address changes, so a second link must land as surely as the first.
+watch(
+  () => props.taskId,
+  () => {
+    if (state.value === "ready") locate();
+  },
+);
 
 async function open() {
   // Renewing before the first read lets a task that paused on an expired credential return to its schedule, exactly as
@@ -211,8 +239,10 @@ defineExpose({ reload: load });
     <el-empty v-else-if="shown.length === 0" :description="t('empty')" />
     <el-table
       v-else
+      ref="table"
       :data="shown"
       row-key="id"
+      highlight-current-row
       class="table"
       :expand-row-keys="historyRow ? [historyRow] : []"
     >

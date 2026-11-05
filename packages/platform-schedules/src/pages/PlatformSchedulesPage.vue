@@ -21,8 +21,13 @@ const props = withDefaults(
     agentId?: string | null;
     /** Start on one application's tasks; the reader can change the filter. */
     appId?: string | null;
+    /**
+     * The task a link points at (the platform reads it from the address and hands it over; the package knows no router).
+     * Its run history opens under its row; a task this caller cannot see only leaves the list, with no error.
+     */
+    taskId?: string | null;
   }>(),
-  { agentId: null, appId: null },
+  { agentId: null, appId: null, taskId: null },
 );
 const emit = defineEmits<{ openSession: [sessionId: string] }>();
 
@@ -70,6 +75,7 @@ function openSession(sessionId: string) {
     :functions-refused="functionsRefused"
     :agent-id="agentId"
     :app-id="appId"
+    :task-id="taskId"
     :locale="pageLocale"
     :t="text"
     @open-session="openSession"

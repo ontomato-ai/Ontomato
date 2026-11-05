@@ -114,6 +114,10 @@ export default [
     files: ["packages/platform-schedules/src/**/*.{ts,vue}"],
     rules: {
       "no-undef": "off",
+      // The base rule reads a function type's parameter name as an unused variable in a single-file component; the
+      // TypeScript-aware rule (already configured for .ts) tells a type position from a value one.
+      "no-unused-vars": "off",
+      "@typescript-eslint/no-unused-vars": ["warn", { argsIgnorePattern: "^_", varsIgnorePattern: "^_" }],
       "no-restricted-imports": restrict([
         {
           regex:

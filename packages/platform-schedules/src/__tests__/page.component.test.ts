@@ -111,6 +111,30 @@ describe("platform schedules page", () => {
     expect(form.props("functionsRefused")).toBe(false);
   });
 
+  it("opens the run history of the task the address named, without asking the service for it separately", async () => {
+    const { host: pageHost, paths } = host();
+    const wrapper = mount(PlatformSchedulesPage, {
+      props: { host: pageHost, taskId: task().id },
+      global: pageGlobal(),
+    });
+    await flushPromises();
+
+    expect(wrapper.findAllComponents({ name: "PlatformScheduleRuns" })).toHaveLength(1);
+    expect(paths).toContain(`/api/data-query/platform/scheduled-tasks/${task().id}/runs`);
+  });
+
+  it("shows the plain list when the address names a task this caller cannot see", async () => {
+    const { host: pageHost } = host();
+    const wrapper = mount(PlatformSchedulesPage, {
+      props: { host: pageHost, taskId: "99999999-9999-4999-8999-999999999999" },
+      global: pageGlobal(),
+    });
+    await flushPromises();
+
+    expect(text(wrapper)).toContain("Nightly summary");
+    expect(wrapper.findAllComponents({ name: "PlatformScheduleRuns" })).toHaveLength(0);
+  });
+
   it("hands a run's session to the host's openSession", async () => {
     const openSession = vi.fn();
     const { host: pageHost } = host({

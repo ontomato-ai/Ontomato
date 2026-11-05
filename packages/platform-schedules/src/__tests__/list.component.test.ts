@@ -217,6 +217,41 @@ describe("platform schedules list", () => {
     expect(wrapper.findAllComponents({ name: "PlatformScheduleRuns" })).toHaveLength(0);
   });
 
+  it("opens the history of the task a link names", async () => {
+    const api = fakeApi();
+    const wrapper = mountList(api, { taskId: "55555555-5555-4555-8555-555555555555" });
+    await flushPromises();
+
+    // One row's history is open, and it is the named row's, not the first one's.
+    const runs = wrapper.findAllComponents({ name: "PlatformScheduleRuns" });
+    expect(runs).toHaveLength(1);
+    expect((runs[0]!.props("task") as { id: string }).id).toBe("55555555-5555-4555-8555-555555555555");
+    expect(wrapper.find(".el-table__row.current-row").text()).toContain("Refresh revenue");
+  });
+
+  it("clears the reader's application filter when the linked task sits in the other application", async () => {
+    const api = fakeApi();
+    const wrapper = mountList(api, { appId: "agents" });
+    await flushPromises();
+    expect(text(wrapper)).not.toContain("Refresh revenue");
+
+    await wrapper.setProps({ taskId: "55555555-5555-4555-8555-555555555555" });
+    await flushPromises();
+
+    expect(text(wrapper)).toContain("Refresh revenue");
+    expect(wrapper.findAllComponents({ name: "PlatformScheduleRuns" })).toHaveLength(1);
+  });
+
+  it("shows the plain list when the linked task is gone or out of sight", async () => {
+    const api = fakeApi();
+    const wrapper = mountList(api, { taskId: "99999999-9999-4999-8999-999999999999" });
+    await flushPromises();
+
+    expect(text(wrapper)).toContain("Nightly summary");
+    expect(wrapper.findAllComponents({ name: "PlatformScheduleRuns" })).toHaveLength(0);
+    expect(wrapper.emitted("openSession")).toBeUndefined();
+  });
+
   it("shows a paused task's reason with the action that resumes it", async () => {
     const api = fakeApi({
       list: vi.fn(async () => ({
