@@ -1,5 +1,5 @@
 import type { RouteLocation, RouteRecordRaw } from "vue-router";
-import { platformRoutes as routes } from "@ontomato/platform-admin/routes";
+import { platformRoutes as routes } from "@ontomato/platform-shell/routes";
 
 export function managerViewQuery(query: Record<string, unknown>) {
   return Object.fromEntries(["focus", "id", "back"].flatMap((key) => {

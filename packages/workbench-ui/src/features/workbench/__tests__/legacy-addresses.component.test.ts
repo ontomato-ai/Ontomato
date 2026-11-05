@@ -1,4 +1,4 @@
-import { platformRoutes } from "@ontomato/platform-admin/routes";
+import { platformRoutes } from "@ontomato/platform-shell/routes";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createMemoryHistory, createRouter, type Router } from "vue-router";
 import { mount } from "@vue/test-utils";
@@ -6,7 +6,7 @@ import ElementPlus from "element-plus";
 import { workbenchI18n } from "../../../i18n";
 import { ontologyServiceAccessKey, openOntologyServiceAccess } from "../../../app/ontology-service";
 import BusinessWorkbench from "../components/BusinessWorkbench.vue";
-import { legacyAdminRoutes } from "../../../router/admin-routes";
+import { legacyAdminRoutes } from "@ontomato/platform-web";
 
 /*
  * The old console addresses open the place the page moved to: the agents page on its agents or capability-library tab,

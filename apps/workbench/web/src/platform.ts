@@ -5,18 +5,20 @@ import "./narrow-dialogs.css";
 import "@ontomato/workbench-ui/styles/admin-common.css";
 import en from "element-plus/es/locale/lang/en";
 import publicEn from "@ontomato/workbench-ui/locales/en";
+import { openOntologyServiceAccess } from "@ontomato/workbench-ui";
 import {
-  workbenchPages, legacyAdminRoutes,
+  legacyAdminRoutes,
   observeRoutes,
-  openOntologyServiceAccess,
+  platformLayoutRoute,
   startWorkbenchWeb,
-} from "@ontomato/workbench-ui";
+  workbenchPages,
+} from "@ontomato/platform-web";
 import { ossBrand } from "@ontomato/design-tokens/oss";
 import { anonymousAuthHost } from "./auth";
 import { workbenchContent } from "./workbench-content";
 
-import { platformLayoutRoute, platformRoutes } from "@ontomato/platform-admin/routes";
-import { normalizeManagerEntry, reloadOnStaleBuild } from "@ontomato/workbench-ui/platform";
+import { platformRoutes } from "@ontomato/platform-shell/routes";
+import { normalizeManagerEntry, reloadOnStaleBuild } from "@ontomato/platform-web";
 import { ossServicePages } from "./manager/platform";
 
 export function startPlatform() {

@@ -4,7 +4,7 @@ import { createMemoryHistory, createRouter } from "vue-router";
 // config/app.ts reads the runtime config on import: the deployment root is /nested/.
 window.__APP_CONFIG__ = { API_BASE: "/nested/api" };
 
-const { legacyAdminRoutes, managerLocation } = await import("../router/admin-routes");
+const { legacyAdminRoutes, managerLocation } = await import("../admin-routes");
 
 /** Opens an old workbench address and returns where the tab was replaced to (null when it stayed in the workbench). */
 async function open(path: string) {

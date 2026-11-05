@@ -1,7 +1,7 @@
 import { watchEffect, type App } from "vue";
 import type { Router, RouteRecordRaw } from "vue-router";
 import { installPageGuard } from "./router";
-import { platformRoutes } from "./platform-routes";
+import { platformRoutes } from "@ontomato/platform-shell/routes";
 import ServiceLayout from "./layout/ServiceLayout.vue";
 import { platformHostKey, providePageActions, type PlatformPageHost, type PlatformTheme } from "./context";
 import type { PlatformNavigation } from "./navigation";

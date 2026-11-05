@@ -1,5 +1,5 @@
 import type { RouteMeta, RouteRecordRaw, RouteRecordSingleView } from "vue-router";
-import { platformRoutes as routes } from "@ontomato/platform-admin/routes";
+import { platformRoutes as routes } from "@ontomato/platform-shell/routes";
 import { observeRoutes } from "./observe-routes";
 
 type PageComponent = NonNullable<RouteRecordSingleView["component"]>;

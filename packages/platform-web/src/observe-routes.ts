@@ -1,7 +1,7 @@
-import { platformRoutes as routes } from "@ontomato/platform-admin/routes";
+import { platformRoutes as routes } from "@ontomato/platform-shell/routes";
 import type { RouteRecordRaw } from "vue-router";
 
-const placeholder = () => import("../views/observe/ObservePlaceholder.vue");
+const placeholder = () => import("./views/ObservePlaceholder.vue");
 
 /*
  * The /observe root and its child addresses. Each app assembles its own root: an app may add auth/permission meta and
@@ -13,7 +13,7 @@ export const observeRoutes = {
   root: {
     ...routes.ops,
     redirect: routes.diagnosis.path,
-    component: () => import("../features/diagnosis/components/layout/ObserveLayout.vue"),
+    component: () => import("@ontomato/workbench-ui/features/diagnosis").then((module) => module.ObserveLayout),
   },
   children: [
     { ...routes.diagnosis, component: placeholder },

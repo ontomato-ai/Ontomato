@@ -1,4 +1,4 @@
-import { platformRoutes as routes } from "./platform-routes";
+import { platformRoutes as routes } from "@ontomato/platform-shell/routes";
 
 /** Translate only the Manager document's old addresses. Workbench /admin links have different meanings. */
 const oldPages: Record<string, string> = {

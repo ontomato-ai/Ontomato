@@ -1,4 +1,4 @@
-import { platformRoutes } from "./platform-routes";
+import { platformRoutes } from "@ontomato/platform-shell/routes";
 import { Activity, Cpu, MessageSquareText, Settings } from "lucide-vue-next";
 import type { RouteRecordRaw } from "vue-router";
 import type { PlatformGroup, PlatformPage } from "./navigation";

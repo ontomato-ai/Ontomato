@@ -1,17 +1,22 @@
-import { followThemeChanges, initializePlatformTheme } from "../composables/useTheme";
+import { followThemeChanges, initializePlatformTheme } from "@ontomato/workbench-ui/composables/useTheme";
 import { createApp, type App as VueApp } from "vue";
 import { createPinia, type Pinia } from "pinia";
 import ElementPlus from "element-plus";
 import { createRouter, createWebHashHistory, type Router, type RouteRecordRaw } from "vue-router";
-import App from "../App.vue";
-import { installWorkbenchI18n, type WorkbenchI18n, type WorkbenchLanguage } from "../i18n";
-import { installAuthHost, type WorkbenchAuthHost } from "../utils/auth";
-import { installErrorPunctuation, type ErrorPunctuation } from "../utils/error-punctuation";
-import { installWorkbenchContent, type WorkbenchContent } from "../content";
-import { turnDiagnosisAccessKey, type TurnDiagnosisAccess } from "../features/diagnosis/access";
-import { ontologyServiceAccessKey, type OntologyServiceAccess } from "./ontology-service";
+import App from "./App.vue";
+import { installWorkbenchI18n, type WorkbenchI18n, type WorkbenchLanguage } from "@ontomato/workbench-ui/i18n";
+import { installAuthHost, type WorkbenchAuthHost } from "@ontomato/workbench-ui/utils/auth";
+import {
+  installErrorPunctuation,
+  installWorkbenchContent,
+  turnDiagnosisAccessKey,
+  type ErrorPunctuation,
+  type TurnDiagnosisAccess,
+  type WorkbenchContent,
+} from "@ontomato/workbench-ui";
+import { ontologyServiceAccessKey, type OntologyServiceAccess } from "@ontomato/workbench-ui";
 import { installBrandTheme, type BrandSource } from "@ontomato/design-tokens";
-import { installWorkbenchBrand } from "../brand";
+import { installWorkbenchBrand } from "@ontomato/workbench-ui/brand";
 
 export interface WorkbenchWebOptions {
   /** This edition's brand source; the workbench colour variables and the chart colours are generated from it. */

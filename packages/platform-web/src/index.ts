@@ -1,0 +1,20 @@
+export { startWorkbenchWeb, type WorkbenchWebOptions } from "./start";
+export { platformLayoutRoute } from "./layout-route";
+export {
+  discardLegacyLaunchCredential,
+  installServiceMessages,
+  createServiceManager,
+  normalizeManagerEntry,
+  reloadOnStaleBuild,
+  serviceLocales,
+  serviceNavigation,
+  startPage,
+  startShellPreferences,
+  stopPage,
+  type ManagerShellProfile,
+} from "./shell";
+export { readRuntimeConfig } from "./config";
+export { serviceHome } from "./view";
+export { legacyAdminRoutes, managerLocation, managerViewQuery } from "./admin-routes";
+export { observeRoutes } from "./observe-routes";
+export { workbenchPages } from "./workbench-routes";

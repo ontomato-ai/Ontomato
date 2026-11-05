@@ -1,4 +1,4 @@
-import { apiUrl } from "../utils/api-base";
+import { apiUrl } from "@ontomato/workbench-ui";
 
 export function readRuntimeConfig() {
   return {

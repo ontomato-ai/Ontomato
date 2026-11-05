@@ -1,4 +1,4 @@
-import { platformRoutes as routes } from "@ontomato/platform-admin/routes";
+import { platformRoutes as routes } from "@ontomato/platform-shell/routes";
 import { defineAsyncComponent, defineComponent, h, ref, type PropType } from "vue";
 import { useRoute, useRouter, type RouteRecordRaw } from "vue-router";
 import { useManagerClient, useManagerCounts } from "./context";

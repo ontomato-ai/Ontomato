@@ -1,4 +1,4 @@
-import { platformRoutes as routes } from "@ontomato/platform-admin/routes";
+import { platformRoutes as routes } from "@ontomato/platform-shell/routes";
 import type { Component } from "vue";
 import {
   BookOpen,

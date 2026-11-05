@@ -4,8 +4,8 @@ import ElementPlus from "element-plus";
 import en from "element-plus/es/locale/lang/en";
 import { createMemoryHistory, createRouter } from "vue-router";
 import App from "../App.vue";
-import { useLocale } from "../composables/useLocale";
-import { installWorkbenchI18n, type SupportedLocale } from "../i18n";
+import { useLocale } from "@ontomato/workbench-ui";
+import { installWorkbenchI18n, type SupportedLocale } from "@ontomato/workbench-ui/i18n";
 
 async function mountWithLocale(initialLocale: SupportedLocale, save: ((l: SupportedLocale) => void) | null) {
   const i18n = installWorkbenchI18n({

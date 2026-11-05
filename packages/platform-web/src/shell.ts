@@ -4,8 +4,8 @@ import "element-plus/theme-chalk/dark/css-vars.css";
 // Design foundation shared with the workbench (type, spacing, shape, density, elevation, motion, component variables).
 import "@ontomato/design-tokens/foundation.css";
 import { computed } from "vue";
-import { useTheme } from "../composables/useTheme";
-import { workbenchI18n, type SupportedLocale } from "../i18n";
+import { useTheme } from "@ontomato/workbench-ui/composables/useTheme";
+import { workbenchI18n, type SupportedLocale } from "@ontomato/workbench-ui/i18n";
 import { managerDestination } from "@ontomato/platform-admin/legacy-manager";
 import {
   createManager,
