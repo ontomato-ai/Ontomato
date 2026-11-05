@@ -118,16 +118,17 @@ watch(
   { immediate: true },
 );
 
+// The previous check gave up after 300 reads two seconds apart; the wait keeps the same ten-minute bound.
+const COMPLETION_WATCH_MS = 10 * 60_000,
+  COMPLETION_WAIT_STEP_MS = 30_000;
 let lastRunId: string | null = null;
 let reportedRunId: string | null = null;
-let completionTimer: ReturnType<typeof setTimeout> | null = null;
+let completionWait: AbortController | null = null;
 let completionRunId: string | null = null;
 
 function stopCompletionWatch() {
-  if (completionTimer !== null) {
-    clearTimeout(completionTimer);
-    completionTimer = null;
-  }
+  completionWait?.abort();
+  completionWait = null;
   completionRunId = null;
 }
 
@@ -145,29 +146,25 @@ function emitRunComplete(sessionId: string, runId: string, ok: boolean) {
 function startCompletionWatch(sessionId: string, runId: string) {
   stopCompletionWatch();
   completionRunId = runId;
-  let attempts = 0;
+  const wait = new AbortController();
+  completionWait = wait;
+  const deadline = Date.now() + COMPLETION_WATCH_MS;
   const check = async () => {
-    if (completionRunId !== runId || reportedRunId === runId) return;
-    if (attempts++ >= 300) {
-      stopCompletionWatch();
-      return;
-    }
-    try {
-      const snapshot = await props.client.readRun(sessionId, runId);
-      if (completionRunId !== runId) return;
-      if (snapshot.run.status === "stopped") {
-        emitRunComplete(
-          sessionId,
-          runId,
-          snapshot.run.stopReason !== "aborted" && !snapshot.run.errorMessage
-        );
-        stopCompletionWatch();
-        return;
+    while (completionRunId === runId && reportedRunId !== runId && Date.now() < deadline) {
+      try {
+        const run = await props.client.waitRun(sessionId, runId, COMPLETION_WAIT_STEP_MS, wait.signal);
+        if (completionRunId !== runId) return;
+        if (run.status === "stopped") {
+          emitRunComplete(sessionId, runId, run.stopReason !== "aborted" && !run.errorMessage);
+          stopCompletionWatch();
+          return;
+        }
+      } catch {
+        if (wait.signal.aborted) return;
+        // The run may not be readable yet; try again shortly while the deadline allows it.
+        await new Promise((resolve) => setTimeout(resolve, 2000));
       }
-    } catch {
-      // The run may not be readable yet; retry while the deadline allows it.
     }
-    if (completionRunId === runId) completionTimer = setTimeout(check, 2000);
   };
   void check();
 }

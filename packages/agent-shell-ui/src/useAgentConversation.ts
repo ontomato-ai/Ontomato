@@ -16,7 +16,6 @@ import {
 import { conversationItems } from "./view";
 import { runsAnalystAsk } from "./tools";
 
-const RETRIEVAL_LINK_RETRY_MS = 1500;
 
 /**
  * Drives one selected conversation through the host port. Every async continuation checks the
@@ -40,6 +39,8 @@ export function useAgentConversation(port: () => AgentHostClient) {
   const olderError = ref<string | null>(null);
   const historyRevision = ref(0);
   let knownMessageSeq = 0;
+  // Running ask calls, by tool call: true once their retrieval association has been read.
+  const askCalls = new Map<string, boolean>();
 
   const items = computed(() => conversationItems(state));
   const activeRunId = computed(
@@ -49,6 +50,7 @@ export function useAgentConversation(port: () => AgentHostClient) {
 
   function reset(sessionId: string | null) {
     token++;
+    askCalls.clear();
     stream.stop();
     Object.assign(state, emptyConversation(sessionId));
     loading.value = false;
@@ -108,45 +110,36 @@ export function useAgentConversation(port: () => AgentHostClient) {
     if (envelope.event.type === "message_end") knownMessageSeq = Math.max(knownMessageSeq, envelope.event.messageSeq);
     if (type === "artifact_registered") artifactRevision.value++;
     if (type === "tool_execution_start") {
-      // The ask command blocks until the retrieval ends, so tool_execution_end is too late: start
-      // looking when the bash call starts. A wrapper script that hides the analyst entry is not
-      // covered; its retrievals arrive on the next history read.
+      // The ask command blocks until the retrieval ends, so tool_execution_end is too late on its own.
+      // A wrapper script that hides the analyst entry is not covered; its retrievals arrive on the next
+      // history read.
       const event = envelope.event;
       const command = event.args.command;
       if (event.toolName === "bash" && typeof command === "string" && runsAnalystAsk(command))
-        void watchRetrievals(envelope.cursor.runId, event.toolCallId, token);
+        askCalls.set(event.toolCallId, false);
+    }
+    // The ask command prints the retrieval it opened; that line is the moment the association exists.
+    if (type === "tool_execution_update" && askCalls.get(envelope.event.toolCallId) === false
+      && envelope.event.partialResult.text.includes('"retrievalId"')) {
+      askCalls.set(envelope.event.toolCallId, true);
+      void readRetrievals(envelope.cursor.runId, token);
+    }
+    if (type === "tool_execution_end" && askCalls.has(envelope.event.toolCallId)) {
+      askCalls.delete(envelope.event.toolCallId);
+      void readRetrievals(envelope.cursor.runId, token);
     }
   }
 
-  /**
-   * Reads the run until its retrieval associations appear, then hands over to the activity
-   * area's child-run subscription. Each read happens before the stop check, so a retrieval that finishes
-   * within one interval is still picked up.
-   */
-  async function watchRetrievals(runId: string, toolCallId: string, current: number) {
+  /** Reads the run's retrieval associations once, then the activity area follows the child run. */
+  async function readRetrievals(runId: string, current: number) {
     const sessionId = state.sessionId;
     if (!sessionId) return;
-    const linkKey = (links: readonly { retrievalId: string; runId: string }[]) =>
-      links.map((link) => `${link.retrievalId}:${link.runId}`).join(",");
-    // A new retrieval adds a link; a continuation moves an existing link to its new run.
-    const known = linkKey(state.runs[runId]?.retrievals ?? []);
-    for (;;) {
-      try {
-        const snapshot = await port().readRun(sessionId, runId);
-        if (current !== token) return;
-        const retrievals = snapshot.run.retrievals ?? [];
-        const run = state.runs[runId];
-        if (run && linkKey(retrievals) !== known) {
-          run.retrievals = retrievals;
-          return;
-        }
-      } catch {
-        if (current !== token) return;
-      }
+    try {
+      const snapshot = await port().readRun(sessionId, runId);
       const run = state.runs[runId];
-      if (!run || run.status !== "running" || run.tools[toolCallId]?.status !== "running") return;
-      await new Promise((resolve) => setTimeout(resolve, RETRIEVAL_LINK_RETRY_MS));
-      if (current !== token) return;
+      if (current === token && run) run.retrievals = snapshot.run.retrievals ?? [];
+    } catch {
+      // The next history read carries the associations.
     }
   }
 
