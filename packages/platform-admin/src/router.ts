@@ -1,4 +1,4 @@
-import { platformRoutes } from "./platform-routes";
+import { platformRoutes } from "@ontomato/platform-shell/routes";
 import {
   type RouteLocationNormalized,
   type Router,

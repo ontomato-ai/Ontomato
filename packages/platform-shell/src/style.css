@@ -1,0 +1,11 @@
+/*
+ * Entry stylesheet of the platform shell. Colours and sizes come from @ontomato/design-tokens (foundation.css for
+ * sizes, the edition's brand source for the rail, panel and workspace tones), so this file only declares what the
+ * components need but nothing owns yet: the page background of the three-band layout.
+ */
+.platform-shell,
+.platform-rail,
+.app-panel,
+.platform-workspace {
+  box-sizing: border-box;
+}

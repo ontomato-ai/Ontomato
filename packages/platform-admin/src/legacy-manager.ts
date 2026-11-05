@@ -1,4 +1,4 @@
-import { platformRoutes as routes } from "./platform-routes";
+import { platformRoutes as routes } from "@ontomato/platform-shell/routes";
 
 /** Translate only the Manager document's old addresses. Workbench /admin links have different meanings. */
 const oldPages: Record<string, string> = {
@@ -9,7 +9,8 @@ const oldPages: Record<string, string> = {
   "/data": "/browser/data",
   "/assets/actions": routes.actions.path,
   "/assets/functions": routes.functions.path,
-  "/assets/tasks": routes.tasks.path,
+  // The scheduled tasks of functions are the platform's now: one page lists every task.
+  "/assets/tasks": routes.schedules.path,
   "/assets/metrics": routes.metrics.path,
   "/visual-modeling": routes.modeling.path,
   "/admin/ontology/visual-modeling": routes.modeling.path,
@@ -29,6 +30,10 @@ const oldPages: Record<string, string> = {
   "/super-admin": routes.superAdmin.path,
 };
 
+/**
+ * Where an old Manager address lands now: the old pages keep their mapping, and an address that is already one of the
+ * platform's own is left as it is, so a current deep link is not sent back to a landing page.
+ */
 export function managerDestination(fullPath: string) {
   const separator = fullPath.indexOf("?");
   const path = separator < 0 ? fullPath : fullPath.slice(0, separator);
@@ -36,5 +41,9 @@ export function managerDestination(fullPath: string) {
   for (const [oldPath, newPath] of Object.entries(oldPages)) {
     if (path === oldPath || path.startsWith(oldPath + "/")) return newPath + path.slice(oldPath.length) + query;
   }
+  // A page's address may carry a parameter; a current deep link is recognised by its base address.
+  const base = (value: string) => value.split("/:")[0]!;
+  if (Object.values(routes).some((route) => path === base(route.path) || path.startsWith(base(route.path) + "/")))
+    return path + query;
   return routes.ontology.path;
 }

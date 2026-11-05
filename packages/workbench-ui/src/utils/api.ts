@@ -285,6 +285,18 @@ export async function nodeApiBlobPost(path: string, body?: any, opts?: any): Pro
   return res.blob();
 }
 
+/**
+ * A request to a path the API root already prefixes: the platforms outside this app (the schedules page) are given paths
+ * that begin with the gateway's `/api`, which `nodeApiFetch` would add a second time. This strips that one segment and
+ * otherwise sends exactly what `nodeApiFetch` sends — the same credential, the same host error handling.
+ */
+export async function nodeApiRequest(path: string, init: any = {}): Promise<Response> {
+  const relative = path.replace(/^\/api(?=\/)/, "");
+  return nodeApiFetch(relative, init.method ?? "GET", init.body ? JSON.parse(String(init.body)) : undefined, {
+    headers: init.headers,
+  });
+}
+
 export async function nodeApiFetch(
   path: string,
   method: string,

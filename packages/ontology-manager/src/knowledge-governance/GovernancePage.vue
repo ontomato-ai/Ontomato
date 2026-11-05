@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { computed, ref, watch } from "vue";
-import { ArrowLeft, X } from "lucide-vue-next";
-import { AgentShell, createAgentHostClient } from "@ontomato/agent-shell-ui";
+import { computed, h, onMounted, ref, watch } from "vue";
+import { X } from "lucide-vue-next";
+import { AgentShell, ShellNavBody, createAgentHostClient, useAgentNav, useAppColumn } from "@ontomato/agent-shell-ui";
 import "@ontomato/agent-shell-ui/style.css";
 import {
   governanceSourceReadSchema, governanceWorkResponseSchema,
@@ -16,7 +16,7 @@ import { governanceAgentId } from "./messages";
  * means in the next message. Sources open inside the finding that cites them.
  */
 const props = defineProps<{ sessionId: string | null }>();
-const emit = defineEmits<{ session: [id: string | null]; back: [] }>();
+const emit = defineEmits<{ session: [id: string | null] }>();
 const manager = useManagerClient();
 const { t, labels } = useGovernanceText();
 const agentId = ref<string | null>(governanceAgentId);
@@ -65,6 +65,50 @@ const client = createAgentHostClient({
     if (session === sessionId.value && envelope.event.type === "agent_end") void readWork();
   },
 });
+/**
+ * The one navigation state of this application: the platform column lists its conversations and the report entry, and
+ * the conversation promotes into it while sending.
+ */
+const nav = useAgentNav({
+  client: () => client,
+  agentId: () => agentId.value,
+  setAgentId: (id) => (agentId.value = id),
+  sessionId: () => sessionId.value,
+  setSessionId: (id) => (sessionId.value = id),
+  onLeaveConversation: () => (featureId.value = null),
+});
+const { agents, sessions, sessionsState, nextCursor } = nav;
+
+useAppColumn(() => ({
+  appId: "governance",
+  content: () =>
+    h(ShellNavBody, {
+      workbench: workbench.value,
+      agents: agents.value,
+      agentId: agentId.value,
+      sessions: sessions.value,
+      sessionsState: sessionsState.value,
+      hasMore: nextCursor.value !== null,
+      sessionId: sessionId.value,
+      featureId: featureId.value,
+      // The column is drawn outside the conversation's provider, so the shell's words are passed in.
+      labels: labels.value,
+      onNewConversation: () => nav.startNew(),
+      onSelectFeature: (id: string) => (featureId.value = id),
+      onFeatureAction: () => {},
+      onSelectAgent: (id: string) => (agentId.value = id),
+      onSelectSession: (id: string) => (sessionId.value = id),
+      onDeleteSession: (id: string) => void nav.removeSession(id),
+      onLoadMore: () => void nav.loadSessions(true),
+      onRetry: () => void nav.loadSessions(),
+    }),
+}));
+
+onMounted(async () => {
+  await nav.loadAgents().catch(() => {});
+  await nav.loadSessions();
+});
+
 watch(sessionId, () => {
   sourceRead++; source.value = null; work.value = null; selectedIssue.value = null; void readWork();
 }, { immediate: true });
@@ -88,16 +132,7 @@ function toggleIssue(id: string) {
       <button type="button" :aria-label="labels.close" @click="error = ''"><X :size="14" /></button>
     </p>
     <AgentShell v-model:session-id="sessionId" v-model:agent-id="agentId" v-model:feature-id="featureId"
-      :workbench="workbench" :client="client" :labels="labels" :page-context="pageContext" @error="fail">
-      <template #brand>
-        <div class="governance-brand">
-          <button type="button" class="governance-back" :title="t('back')" :aria-label="t('back')" @click="emit('back')">
-            <ArrowLeft :size="16" />
-          </button>
-          <span class="governance-title">{{ t("title") }}</span>
-        </div>
-      </template>
-      <template #footer><p class="governance-saved">{{ t("saved") }}</p></template>
+      :workbench="workbench" :client="client" :labels="labels" :nav="nav" :page-context="pageContext" @error="fail">
       <template #feature>
         <div class="report" :aria-busy="loading">
           <section class="report-summary">

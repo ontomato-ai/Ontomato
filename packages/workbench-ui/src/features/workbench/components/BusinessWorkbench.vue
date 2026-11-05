@@ -1,11 +1,14 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, ref, watch } from "vue";
-import { platformRoutes as routes } from "@ontomato/platform-admin/routes";
+import { computed, h, onMounted, ref, watch } from "vue";
+import { platformRoutes as routes } from "@ontomato/platform-shell/routes";
 import { ElMessage } from "element-plus";
 import { useI18n } from "vue-i18n";
 import { useRoute, useRouter } from "vue-router";
 import {
   AgentShell,
+  ShellNavBody,
+  useAgentNav,
+  useAppColumn,
   type ShellFeatureDeclaration,
   type ShellWorkbenchDeclaration,
 } from "@ontomato/agent-shell-ui";
@@ -13,7 +16,6 @@ import "@ontomato/agent-shell-ui/style.css";
 import type { WorkbenchAppearance } from "@ontomato/contracts/workbench-appearance";
 import { AgentsPage } from "../../agents";
 import { DashboardHome } from "../../dashboard";
-import { ScheduledTasksPage } from "../../scheduled-tasks";
 import { useDashboardStore } from "../../dashboard/stores/dashboard";
 import { getWorkbenchAppearance } from "../api";
 import { nativeEchartsTheme } from "../../dashboard/components/utils/echartsTheme";
@@ -23,12 +25,15 @@ import TurnDiagnoseButton from "../../diagnosis/components/TurnDiagnoseButton.vu
 import ConversationActions from "./ConversationActions.vue";
 import DatasetActions from "./DatasetActions.vue";
 import WorkbenchAppearanceDialog from "./WorkbenchAppearanceDialog.vue";
+import AgentSchedulesView from "./AgentSchedulesView.vue";
 import { workbenchFeatures } from "../features";
-import { useOntologyServiceAccess } from "../../../app/ontology-service";
 
 /**
- * The one business workbench both editions mount. Editions add their own feature entries and render those pages through
- * the `feature` slot; everything else is shared.
+ * The agent platform's conversation area: the assistant, its conversation and its own pages. Both editions mount it; the
+ * edition adds the entries only it has and renders those pages through the `feature` slot.
+ *
+ * The navigation is not drawn here: it is contributed to the platform's application column, from the same navigation
+ * state this conversation sends from, so a conversation created while sending appears in the column immediately.
  */
 type PermissionCheck = Parameters<typeof workbenchFeatures>[2];
 
@@ -52,14 +57,13 @@ const AGENT_KEY = "ontomato.workbench.agent";
 const { t } = useI18n();
 const route = useRoute();
 const router = useRouter();
-const ontologyService = useOntologyServiceAccess();
 const client = createAssistantClient();
 const feedback = createAssistantFeedback();
 const dashboards = useDashboardStore();
 const appearance = ref<WorkbenchAppearance | null>(null);
 const editingBrand = ref(false);
 const agentId = ref<string | null>(readRemembered());
-const featureRoutes = { dashboards: routes.dashboards, agents: routes.agents, schedule: routes.agentTasks };
+const featureRoutes = { dashboards: routes.dashboards, agents: routes.agents, schedule: routes.agentSchedules };
 const featureId = computed<string | null>({
   get: () => Object.entries(featureRoutes).find(([, page]) => page.name === route.name)?.[0] ?? null,
   set: (id) => {
@@ -83,18 +87,57 @@ watch(agentId, (id) => {
   } catch {
     // Remembering the agent is a convenience only.
   }
-
 });
 
 const workbench = computed<ShellWorkbenchDeclaration>(() => ({
   id: WORKBENCH_ID,
   label: appearance.value?.brand.name || props.defaultBrandName,
-  features: workbenchFeatures(t, props.features, props.can, ontologyService.visible()),
+  features: workbenchFeatures(t, props.features, props.can),
 }));
 
 const labels = useShellLabels();
 
-const logo = computed(() => appearance.value?.brand.logo || props.defaultLogo);
+/**
+ * The one navigation state: the platform column lists the agents and conversations from it, and this conversation
+ * sends and promotes into it, so the two cannot disagree.
+ */
+const nav = useAgentNav({
+  client: () => client,
+  agentId: () => agentId.value,
+  setAgentId: (id) => (agentId.value = id),
+  sessionId: () => conversationId.value,
+  setSessionId: (id) => (conversationId.value = id),
+  onLeaveConversation: () => (featureId.value = null),
+});
+const { agents, sessions, sessionsState, nextCursor } = nav;
+
+/** The column shows this application's navigation: new conversation, its entries, the agent and the history. */
+useAppColumn(() => ({
+  appId: "agents",
+  content: () =>
+    h(ShellNavBody, {
+      workbench: workbench.value,
+      agents: agents.value,
+      agentId: agentId.value,
+      sessions: sessions.value,
+      sessionsState: sessionsState.value,
+      hasMore: nextCursor.value !== null,
+      sessionId: conversationId.value,
+      featureId: featureId.value,
+      // The column is drawn outside the conversation's provider, so the shell's words are passed in.
+      labels: labels.value,
+      onNewConversation: () => nav.startNew(),
+      onSelectFeature: (id: string) => {
+        featureId.value = id;
+      },
+      onFeatureAction: (id: string) => emit("featureAction", id),
+      onSelectAgent: (id: string) => (agentId.value = id),
+      onSelectSession: (id: string) => nav.selectSession(id),
+      onDeleteSession: (id: string) => void nav.removeSession(id),
+      onLoadMore: () => void nav.loadSessions(true),
+      onRetry: () => void nav.loadSessions(),
+    }),
+}));
 
 onMounted(async () => {
   try {
@@ -102,21 +145,20 @@ onMounted(async () => {
   } catch {
     ElMessage.error(t("appearance.loadFailed"));
   }
+  // The column shows the list, so the agent platform loads it; the conversation only reads the state.
+  await nav.loadAgents().catch((error) => ElMessage.error(error instanceof Error ? error.message : String(error)));
+  await nav.loadSessions();
 });
+
+/** A scheduled run's conversation opens in this application, where the agent it ran belongs. */
+function openRunSession(sessionId: string) {
+  featureId.value = null;
+  conversationId.value = sessionId;
+}
 
 function openDashboard(id: string) {
   void dashboards.selectDashboard(id);
   featureId.value = "dashboards";
-}
-
-/** Opens a conversation that a scheduled run started; switching the agent first resets the shell's session. */
-async function openScheduledSession(target: { agentId: string; sessionId: string }) {
-  featureId.value = null;
-  if (agentId.value !== target.agentId) {
-    agentId.value = target.agentId;
-    await nextTick();
-  }
-  conversationId.value = target.sessionId;
 }
 
 function appearanceSaved(value: WorkbenchAppearance) {
@@ -126,12 +168,6 @@ function appearanceSaved(value: WorkbenchAppearance) {
 
 /** The agents page's tab is part of the address, so a link to the capability library opens it directly. */
 const agentsTab = computed(() => route.query.tab === "capabilities" ? "capabilities" : "agents");
-
-function handleFeatureAction(id: string) {
-  if (id === "ops-diagnosis") void router.push({ name: routes.ops.name });
-  else if (id === "ontology-service") void router.push({ name: routes.ontology.name });
-  else emit("featureAction", id);
-}
 </script>
 
 <template>
@@ -143,29 +179,20 @@ function handleFeatureAction(id: string) {
     :workbench="workbench"
     :client="client"
     :labels="labels"
+    :nav="nav"
     :feedback="feedback"
     :chart-theme="nativeEchartsTheme"
     @error="ElMessage.error($event)"
-    @feature-action="handleFeatureAction"
+    @feature-action="emit('featureAction', $event)"
   >
-    <template #brand>
-      <div
-        class="brand"
-        tabindex="0"
-        @contextmenu.prevent="editingBrand = true"
-        @keydown.shift.f10.prevent="editingBrand = true"
-      >
-        <img class="brand-logo" :src="logo" alt="" />
-        <span class="brand-text">
-          <span class="brand-name">{{ workbench.label }}</span>
-          <span v-if="appearance?.brand.subtitle" class="brand-subtitle">{{ appearance.brand.subtitle }}</span>
-        </span>
-      </div>
-    </template>
     <template #feature="{ featureId: page }">
       <DashboardHome v-if="page === 'dashboards'" />
       <AgentsPage v-else-if="page === 'agents'" :can="props.can" :initial-tab="agentsTab" @changed="shell?.reloadAgents()" />
-      <ScheduledTasksPage v-else-if="page === 'schedule'" @open-session="openScheduledSession" />
+      <AgentSchedulesView
+        v-else-if="page === 'schedule'"
+        :agent-id="agentId"
+        @open-session="openRunSession"
+      />
       <slot v-else name="feature" :feature-id="page" />
     </template>
     <template #artifact-actions="{ artifact }">
@@ -174,9 +201,6 @@ function handleFeatureAction(id: string) {
     <template #message-actions="{ sessionId, runId }">
       <TurnDiagnoseButton v-if="sessionId && runId" :session-id="sessionId" :run-id="runId" />
       <ConversationActions v-if="sessionId" :session-id="sessionId" />
-    </template>
-    <template #footer>
-      <slot name="footer" />
     </template>
   </AgentShell>
   <WorkbenchAppearanceDialog
@@ -195,37 +219,5 @@ function handleFeatureAction(id: string) {
   gap: 8px;
   min-width: 0;
   border-radius: var(--radius-sm);
-}
-.brand:focus-visible {
-  outline: 2px solid var(--el-color-primary);
-  outline-offset: 2px;
-}
-.brand-logo {
-  width: 24px;
-  height: 24px;
-  object-fit: contain;
-  flex-shrink: 0;
-}
-.brand-text {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-}
-.brand-name {
-  font-size: var(--text-base);
-  line-height: var(--leading-sm);
-  font-weight: 600;
-  color: var(--el-text-color-primary);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.brand-subtitle {
-  font-size: var(--text-xs);
-  line-height: var(--leading-xs);
-  color: var(--el-text-color-secondary);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 </style>

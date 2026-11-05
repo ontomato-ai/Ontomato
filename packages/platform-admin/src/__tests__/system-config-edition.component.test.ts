@@ -7,10 +7,9 @@ import { createMemoryHistory, createRouter, RouterView } from "vue-router";
 import { ossSystemConfig as businessConfig } from "../../../../apps/workbench/web/src/manager/system-config";
 import { createPlatformClient, platformApi } from "../api";
 import { pageActionsKey, type PlatformPageActions } from "../context";
-import ServiceLayout from "../layout/ServiceLayout.vue";
 import { ossPlatformPages, systemSettingsTabs } from "../pages";
 import SystemSettingsPage from "../pages/SystemSettingsPage.vue";
-import { pageGlobal, testHost } from "./host";
+import { PageHeaderStandIn, pageGlobal, testHost } from "./host";
 
 /** Language resources the open-source data engine ships (conf-defaults/lang/*.json); tests run from this package. */
 const shippedLanguages = readdirSync(resolve(process.cwd(), "../data-engine-core/conf-defaults/lang"))
@@ -59,7 +58,10 @@ async function mountPage() {
     routes: [
       {
         path: "/",
-        component: ServiceLayout,
+        // The frame belongs to the platform shell; the test draws the header's contract by hand around the page.
+        component: {
+          render: () => h("div", [h(PageHeaderStandIn, { title: "System Settings" }), h(RouterView)]),
+        },
         children: [
           { path: systemSettingsTabs.general.path, component: SystemSettingsPage, meta: { page: "/settings/system-config" } },
         ],

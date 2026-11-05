@@ -82,6 +82,11 @@
   /* ---- Shell ---- */
   --shell-agent-rail: 232px;
   --shell-agent-rail-collapsed: 56px;
+  /* Platform rail: applications only, so it is narrower than the old agent rail. */
+  --shell-platform-rail: 188px;
+  --shell-platform-rail-collapsed: 56px;
+  /* The expand/collapse button of the platform rail (16px icon). */
+  --shell-rail-button: 36px;
   --shell-conversation-gutter: 10px;
   --shell-conversation-radius: 18px;
   --shell-composer-height: 56px;

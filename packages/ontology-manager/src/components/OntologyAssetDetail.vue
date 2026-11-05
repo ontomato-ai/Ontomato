@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from "vue";
 import MarkdownIt from "markdown-it";
-import { ArrowLeft, History, Play, Plus, Save, Sparkles, Trash2 } from "lucide-vue-next";
+import { ArrowLeft, Play, Plus, Save, Sparkles, Trash2 } from "lucide-vue-next";
 import {
   ElAlert,
   ElButton,
@@ -10,13 +10,10 @@ import {
   ElFormItem,
   ElInput,
   ElOption,
-  ElPagination,
   ElRadio,
   ElRadioGroup,
   ElSelect,
   ElTabPane,
-  ElTable,
-  ElTableColumn,
   ElTabs,
   ElTag,
   vLoading,
@@ -42,7 +39,7 @@ const emit = defineEmits<{ back: []; saved: []; created: [] }>();
 
 const { ot } = useOntologyText();
 const { message, confirm } = useManagerFeedback();
-const { loadSmartAssets, requestSmartAsset } = useManagerClient();
+const { requestSmartAsset } = useManagerClient();
 
 const loading = ref(false);
 const saving = ref(false);
@@ -90,7 +87,6 @@ function testMetricDraft() {
   return draft;
 }
 
-const functionChoices = ref<SmartAsset[]>([]);
 const showGeneration = ref(false);
 const metricGenerationPrompt = ref("");
 const metricGenerationVisible = ref(false);
@@ -102,26 +98,17 @@ const markdownView = ref("preview");
 const markdown = new MarkdownIt({ html: false, linkify: true, breaks: true });
 const testMarkdownPreview = computed(() => markdown.render(testMarkdown.value));
 const testJson = ref("");
-const taskResultsVisible = ref(false);
-const taskResultLoading = ref(false);
-const taskResults = ref<AssetRecord[]>([]);
-const taskResultPage = ref(1);
-const taskResultPageSize = ref(10);
-const taskResultTotal = ref(0);
-const selectedTaskResult = ref<AssetRecord | null>(null);
 
 const meta = computed(() => {
   const titles = {
     metrics: ot("assetKindMetrics"),
     actions: ot("assetKindActions"),
     functions: ot("assetKindFunctions"),
-    tasks: ot("assetKindTasks"),
   };
   return { title: titles[props.kind] };
 });
 
 const canDelete = computed(() => Boolean(record.value?.id) && record.value?.origin !== "SYSTEM");
-const isTask = computed(() => props.kind === "tasks");
 const isFunction = computed(() => props.kind === "functions");
 const functionRecord = computed(() =>
   props.kind === "functions" ? record.value : record.value?.function || null
@@ -170,9 +157,6 @@ const matchQuestionText = computed({
       .filter(Boolean);
   },
 });
-const taskResultPages = computed(() =>
-  Math.max(1, Math.ceil(taskResultTotal.value / taskResultPageSize.value))
-);
 
 // The explanation tab belongs only to actions with segments; other assets and actions without segments show no tab bar.
 const activeTab = ref<"definition" | "explainer">("definition");
@@ -384,8 +368,6 @@ function createRecord(kind: AssetTab): AssetRecord {
 async function loadDetail() {
   if (props.creating && props.kind !== "actions") {
     record.value = createRecord(props.kind);
-    if (props.kind === "tasks")
-      functionChoices.value = await loadSmartAssets("functions").catch(() => []);
     return;
   }
   if (props.creating && props.kind === "actions") {
@@ -400,8 +382,6 @@ async function loadDetail() {
   try {
     const response = await requestSmartAsset(props.kind, "queryById", { id: props.asset.id });
     record.value = structuredClone(response?.data ?? response);
-    if (props.kind === "tasks")
-      functionChoices.value = await loadSmartAssets("functions").catch(() => []);
   } catch (error) {
     message.error(error instanceof Error ? error.message : ot("assetLoadDetailFailed"));
     record.value = null;
@@ -414,10 +394,6 @@ async function save() {
   if (!record.value) return;
   if (!record.value.name?.trim()) {
     message.warning(ot("assetNameRequired"));
-    return;
-  }
-  if (isTask.value && (!record.value.cron?.trim() || !record.value.function?.id)) {
-    message.warning(ot("assetTaskFieldsRequired"));
     return;
   }
   saving.value = true;
@@ -471,17 +447,6 @@ async function remove() {
   }
 }
 
-async function runTask() {
-  if (!record.value?.id) return;
-  try {
-    await requestSmartAsset("tasks", "runOnce", { id: record.value.id });
-    message.success(ot("taskRunSubmitted"));
-    await openTaskResults();
-  } catch (error) {
-    message.error(error instanceof Error ? error.message : ot("taskRunFailed"));
-  }
-}
-
 function addParameter() {
   if (!functionRecord.value) return;
   functionRecord.value.parameters = functionRecord.value.parameters || [];
@@ -508,42 +473,6 @@ function updateParameterClassNames(parameter: AssetRecord, value: string) {
     .split(",")
     .map((item: string) => item.trim())
     .filter(Boolean);
-}
-
-async function openTaskResults() {
-  if (!record.value?.id) return;
-  taskResultsVisible.value = true;
-  taskResultPage.value = 1;
-  selectedTaskResult.value = null;
-  await loadTaskResults();
-}
-
-async function loadTaskResults() {
-  if (!record.value?.id) return;
-  taskResultLoading.value = true;
-  try {
-    const response = await requestSmartAsset("tasks", "queryResultPageByTaskId", {
-      id: record.value.id,
-      pageNum: taskResultPage.value,
-      pageSize: taskResultPageSize.value,
-    });
-    const payload = response?.data ?? response ?? {};
-    taskResults.value = Array.isArray(payload.data) ? payload.data : [];
-    taskResultTotal.value = Number(payload.totalRows || 0);
-  } catch (error) {
-    message.error(error instanceof Error ? error.message : ot("taskResultsLoadFailed"));
-  } finally {
-    taskResultLoading.value = false;
-  }
-}
-
-async function viewTaskResult(result: AssetRecord) {
-  try {
-    const response = await requestSmartAsset("tasks", "queryResultById", { resultId: result.id });
-    selectedTaskResult.value = response?.data ?? response;
-  } catch (error) {
-    message.error(error instanceof Error ? error.message : ot("taskResultLoadFailed"));
-  }
 }
 
 function openMetricTest() {
@@ -631,7 +560,7 @@ onMounted(() => void loadDetail());
 <template>
   <section
     v-loading="loading"
-    :class="['asset-detail', { 'task-detail': isTask }, { 'with-explainer-tab': showExplainerTab }]"
+    :class="['asset-detail', { 'with-explainer-tab': showExplainerTab }]"
   >
     <header class="detail-titlebar">
       <el-button text :icon="ArrowLeft" @click="emit('back')">
@@ -728,15 +657,9 @@ onMounted(() => void loadDetail());
           </el-form-item>
           <el-form-item v-if="!isFunction" :label="ot('status')">
             <el-select v-model="record.status">
-              <el-option
-                v-if="!isTask"
-                :label="ot('assetStatusPendingReview')"
-                value="PENDING_REVIEW"
-              />
-              <el-option v-if="!isTask" :label="ot('published')" value="PUBLISHED" />
-              <el-option v-if="!isTask" :label="ot('unused')" value="UNUSED" />
-              <el-option v-if="isTask" :label="ot('running')" value="RUNNING" />
-              <el-option v-if="isTask" :label="ot('stopped')" value="STOPPED" />
+              <el-option :label="ot('assetStatusPendingReview')" value="PENDING_REVIEW" />
+              <el-option :label="ot('published')" value="PUBLISHED" />
+              <el-option :label="ot('unused')" value="UNUSED" />
             </el-select>
           </el-form-item>
           <el-form-item v-if="kind === 'metrics'" :label="ot('assetMatchQuestions')">
@@ -752,24 +675,6 @@ onMounted(() => void loadDetail());
               <el-radio value="OPERATION_READ">{{ ot("assetOperationRead") }}</el-radio>
               <el-radio value="OPERATION_WRITE">{{ ot("assetOperationWrite") }}</el-radio>
             </el-radio-group>
-          </el-form-item>
-          <el-form-item v-if="isTask" :label="ot('taskCron')">
-            <el-input v-model="record.cron" :placeholder="ot('taskCronPlaceholder')" />
-          </el-form-item>
-          <el-form-item v-if="isTask" :label="ot('taskLinkedFunction')">
-            <el-select
-              v-model="record.function"
-              value-key="id"
-              filterable
-              :placeholder="ot('taskSelectFunction')"
-            >
-              <el-option
-                v-for="item in functionChoices"
-                :key="item.id"
-                :label="item.name"
-                :value="item"
-              />
-            </el-select>
           </el-form-item>
         </el-form>
 
@@ -915,11 +820,11 @@ onMounted(() => void loadDetail());
         </section>
       </section>
 
-      <section v-if="!isTask" class="logic-section">
+      <section class="logic-section">
         <div class="section-title">
           <div>
             <span class="eyebrow">{{ ot("assetExecutionDefinition") }}</span>
-            <h2>{{ isFunction ? ot("assetFunctionLogic") : ot("taskLinkedFunction") }}</h2>
+            <h2>{{ ot("assetFunctionLogic") }}</h2>
           </div>
         </div>
         <el-form label-position="top" class="asset-form">
@@ -997,37 +902,6 @@ onMounted(() => void loadDetail());
         </el-form>
       </section>
 
-      <section v-else class="task-execution-section">
-        <div class="section-title">
-          <div>
-            <span class="eyebrow">{{ ot("taskExecutionEyebrow") }}</span>
-            <h2>{{ ot("taskExecutionTitle") }}</h2>
-          </div>
-        </div>
-        <div class="task-summary">
-          <div>
-            <span>{{ ot("status") }}</span>
-            <strong>{{ record.status === "RUNNING" ? ot("running") : ot("stopped") }}</strong>
-          </div>
-          <div>
-            <span>{{ ot("taskSchedule") }}</span>
-            <strong>{{ record.cron || ot("taskNotConfigured") }}</strong>
-          </div>
-          <div>
-            <span>{{ ot("taskLinkedFunction") }}</span>
-            <strong>{{ record.function?.name || ot("taskNotSelected") }}</strong>
-          </div>
-        </div>
-        <div class="task-actions">
-          <el-button v-if="record.id" type="primary" :icon="Play" @click="runTask">
-            {{ ot("taskRunOnce") }}
-          </el-button>
-          <el-button v-if="record.id" :icon="History" @click="openTaskResults">
-            {{ ot("taskViewResults") }}
-          </el-button>
-        </div>
-        <p class="task-hint">{{ ot("taskRunOnceHint") }}</p>
-      </section>
     </div>
 
     <ActionCreateDialog
@@ -1122,67 +996,6 @@ onMounted(() => void loadDetail());
       </template>
     </el-dialog>
 
-    <el-dialog
-      v-model="taskResultsVisible"
-      :lock-scroll="false"
-      :title="ot('taskResultsTitle')"
-      width="min(960px, calc(100cqw - 32px))"
-      class="task-results-dialog"
-    >
-      <div class="task-results-content">
-        <el-table
-          v-loading="taskResultLoading"
-          :data="taskResults"
-          border
-          class="task-results-table"
-        >
-          <el-table-column :label="ot('taskResultTime')" width="190">
-            <template #default="{ row }">
-              {{ row.executeTimestamp ? new Date(row.executeTimestamp).toLocaleString() : "-" }}
-            </template>
-          </el-table-column>
-          <el-table-column :label="ot('status')" width="90">
-            <template #default="{ row }">
-              <el-tag :type="row.error ? 'danger' : 'success'">
-                {{ row.error ? ot("taskResultFailed") : ot("taskResultSucceeded") }}
-              </el-tag>
-            </template>
-          </el-table-column>
-          <el-table-column prop="spendTime" :label="ot('taskResultElapsed')" width="100" />
-          <el-table-column :label="ot('taskResultActions')" width="90">
-            <template #default="{ row }">
-              <el-button link type="primary" @click="viewTaskResult(row)">
-                {{ ot("taskResultView") }}
-              </el-button>
-            </template>
-          </el-table-column>
-        </el-table>
-        <el-pagination
-          v-if="taskResultTotal"
-          v-model:current-page="taskResultPage"
-          v-model:page-size="taskResultPageSize"
-          class="task-pagination"
-          layout="total, prev, pager, next"
-          :total="taskResultTotal"
-          :page-count="taskResultPages"
-          @current-change="loadTaskResults"
-        />
-        <el-alert
-          v-if="selectedTaskResult"
-          class="task-result-preview"
-          :title="selectedTaskResult.error || ot('taskResultOutput')"
-          :type="selectedTaskResult.error ? 'error' : 'success'"
-          :closable="false"
-        >
-          <pre>{{
-            selectedTaskResult.error || selectedTaskResult.result || ot("taskResultNoOutput")
-          }}</pre>
-        </el-alert>
-      </div>
-      <template #footer>
-        <el-button @click="taskResultsVisible = false">{{ ot("close") }}</el-button>
-      </template>
-    </el-dialog>
   </section>
 </template>
 
@@ -1477,13 +1290,6 @@ onMounted(() => void loadDetail());
 
 .definition-section,
 .logic-section,
-.task-execution-section {
-  min-width: 0;
-  padding: var(--spacing-lg);
-  border: 1px solid var(--el-border-color);
-  border-radius: var(--radius-md);
-  background: var(--el-bg-color);
-}
 .section-title {
   display: flex;
   justify-content: space-between;
@@ -1548,83 +1354,8 @@ h2 {
   min-width: 28px;
   justify-self: center;
 }
-.task-pagination {
-  margin-top: var(--spacing-lg);
-}
-.task-result-preview {
-  margin-top: var(--spacing-lg);
-}
-.task-result-preview :deep(pre) {
-  max-height: 260px;
-  margin: var(--spacing-sm) 0 0;
-  overflow: auto;
-  white-space: pre-wrap;
-  word-break: break-word;
-  font-family: var(--font-mono);
-}
-.task-detail .detail-body {
-  grid-template-columns: minmax(360px, 0.95fr) minmax(360px, 1.05fr);
-}
-.task-summary {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: var(--spacing-md);
-  margin-top: var(--spacing-xl);
-  padding: var(--spacing-md);
-  border: 1px solid var(--el-border-color-light);
-  border-radius: var(--radius-sm);
-  background: var(--el-fill-color-light);
-}
-.task-summary span,
-.task-summary strong {
-  display: block;
-}
-.task-summary span {
-  color: var(--el-text-color-secondary);
-  font-size: var(--text-xs);
-}
-.task-summary strong {
-  margin-top: 4px;
-  overflow: hidden;
-  color: var(--el-text-color-primary);
-  font-size: var(--text-sm);
-  font-weight: var(--font-medium);
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.task-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--spacing-sm);
-  margin-top: var(--spacing-xl);
-}
-.task-hint {
-  margin: var(--spacing-lg) 0 0;
-  color: var(--el-text-color-secondary);
-  font-size: var(--text-xs);
-  line-height: 1.6;
-}
-.task-results-content {
-  max-height: min(62cqh, 560px);
-  overflow: auto;
-  padding-right: var(--spacing-xs);
-}
-.task-results-table {
-  min-width: 560px;
-}
-.task-results-dialog :deep(.el-dialog) {
-  max-width: calc(100cqw - var(--spacing-xl));
-  margin: 0 auto;
-}
-.task-results-dialog :deep(.el-dialog__body) {
-  padding-top: var(--spacing-md);
-  padding-bottom: var(--spacing-md);
-}
 @container ontology-manager (max-width: 980px) {
   .detail-body {
-    grid-template-columns: 1fr;
-  }
-  .task-detail .detail-body {
     grid-template-columns: 1fr;
   }
 }
@@ -1655,12 +1386,6 @@ h2 {
   .detail-body {
     padding: var(--spacing-md);
     gap: var(--spacing-md);
-  }
-  .task-summary {
-    grid-template-columns: 1fr;
-  }
-  .task-results-content {
-    max-height: 58cqh;
   }
   .detail-titlebar :deep(.el-button:not(:first-child)) {
     padding-left: var(--spacing-sm);

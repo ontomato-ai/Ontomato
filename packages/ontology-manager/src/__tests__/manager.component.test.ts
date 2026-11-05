@@ -582,7 +582,6 @@ describe("Manager pages in the service router", () => {
         "/metricView/queryList",
         "/action/queryList",
         "/function/queryList",
-        "/writeTask/queryList",
       ])
     );
     for (const request of requests) {
@@ -989,39 +988,6 @@ describe("Manager pages in the service router", () => {
     expect(requests.find((r) => r.url.endsWith("/admin/editClassDesc"))?.body).toEqual({
       className: "Order",
       desc: "Host: no description (amended)",
-    });
-  });
-
-  it("an unnamed function takes the host-supplied name, which is still submitted with the scheduled task payload after locale/theme switches", async () => {
-    functions = [{ id: "fn-1", operation: "OPERATION_WRITE" }];
-    const { host, root } = mountHost({ ...base, view: "/schedules/functions/new" });
-    await settle();
-    const inputs = () => [...root().querySelectorAll<HTMLInputElement>(".asset-form input")];
-    const name = inputs()[0];
-    name.value = "nightly";
-    name.dispatchEvent(new Event("input"));
-    const cron = inputs().find((input) => input.placeholder === "e.g. 0 */5 * * * ?")!;
-    cron.value = "0 0 * * * ?";
-    cron.dispatchEvent(new Event("input"));
-    const option = [...root().querySelectorAll<HTMLElement>(".el-select-dropdown__item")].find(
-      (item) => item.textContent?.trim() === "Host: unnamed asset"
-    )!;
-    option.click();
-    await settle();
-
-    Object.assign(host, german);
-    host.theme = "dark";
-    await settle();
-    requests = [];
-    clickButton("[de] Save");
-    await settle();
-    const saved = requests.find((r) => r.url.endsWith("/writeTask/save"))?.body;
-    // Wire JSON: undefined fields are absent and name is the host-supplied value.
-    expect(saved?.function).toStrictEqual({
-      id: "fn-1",
-      operation: "OPERATION_WRITE",
-      name: "Host: unnamed asset",
-      description: null,
     });
   });
 

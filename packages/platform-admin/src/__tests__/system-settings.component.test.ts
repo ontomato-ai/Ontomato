@@ -6,10 +6,9 @@ import { createMemoryHistory, createRouter, RouterView } from "vue-router";
 import { ossPlatformPages, systemSettingsTabs } from "../pages";
 import { pageActionsKey, providePlatformHost, type PlatformPageActions, type PlatformPageHost } from "../context";
 import { shallowRef } from "vue";
-import ServiceLayout from "../layout/ServiceLayout.vue";
 import SystemSettingsPage from "../pages/SystemSettingsPage.vue";
 import type { PlatformApi } from "../api";
-import { pageGlobal, testHost } from "./host";
+import { PageHeaderStandIn, pageGlobal, testHost } from "./host";
 import { ossSystemConfig } from "../../../../apps/workbench/web/src/manager/system-config";
 
 /*
@@ -48,7 +47,10 @@ async function mountPage() {
     routes: [
       {
         path: "/",
-        component: ServiceLayout,
+        // The frame belongs to the platform shell; the test draws the header's contract by hand around the page.
+        component: {
+          render: () => h("div", [h(PageHeaderStandIn, { title: "System Settings" }), h(RouterView)]),
+        },
         children: [
           { path: systemSettingsTabs.general.path, component: SystemSettingsPage, meta: { page: "/settings/system-config" } },
           {

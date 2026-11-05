@@ -1,4 +1,4 @@
-import { platformRoutes } from "@ontomato/platform-admin/routes";
+import { platformRoutes } from "@ontomato/platform-shell/routes";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createMemoryHistory, createRouter, type Router } from "vue-router";
 import { mount } from "@vue/test-utils";
@@ -6,7 +6,7 @@ import ElementPlus from "element-plus";
 import { workbenchI18n } from "../../../i18n";
 import { ontologyServiceAccessKey, openOntologyServiceAccess } from "../../../app/ontology-service";
 import BusinessWorkbench from "../components/BusinessWorkbench.vue";
-import { legacyAdminRoutes } from "../../../router/admin-routes";
+import { legacyAdminRoutes } from "@ontomato/platform-web";
 
 /*
  * The old console addresses open the place the page moved to: the agents page on its agents or capability-library tab,
@@ -23,10 +23,27 @@ vi.mock("@ontomato/agent-shell-ui", () => ({
     emits: ["update:featureId"],
     template: '<div class="shell"><slot name="feature" :feature-id="featureId" /></div>',
   },
+  // The workbench contributes its navigation to the platform's column; the test only reads the page it opens.
+  ShellNavBody: { name: "ShellNavBody", template: "<div />" },
+  useAppColumn: () => {},
+  useAgentNav: () => ({
+    agents: { value: [] },
+    sessions: { value: [] },
+    sessionsState: { value: "ready" },
+    nextCursor: { value: null },
+    currentAgent: { value: null },
+    loadAgents: async () => {},
+    loadSessions: async () => {},
+    startNew: () => {},
+    selectSession: () => {},
+    removeSession: async () => {},
+    promoteSession: () => {},
+    markRun: () => {},
+    runStatus: () => null,
+  }),
 }));
 vi.mock("../api", () => ({ getWorkbenchAppearance: async () => ({ brand: { name: "", logo: "", subtitle: "" } }) }));
 vi.mock("../../dashboard", () => ({ DashboardHome: { template: '<div class="dashboards" />' } }));
-vi.mock("../../scheduled-tasks", () => ({ ScheduledTasksPage: { template: '<div class="scheduled" />' } }));
 vi.mock("../assistant-host", () => ({
   createAssistantClient: () => ({}),
   createAssistantFeedback: () => ({}),

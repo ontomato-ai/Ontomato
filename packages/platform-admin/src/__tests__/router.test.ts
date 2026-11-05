@@ -4,7 +4,7 @@ import { RouterView, type RouteRecordRaw } from "vue-router";
 import { installPageGuard } from "../router";
 import { createMemoryHistory, createRouter } from "vue-router";
 import { managerDestination } from "../legacy-manager";
-import { platformRoutes } from "../platform-routes";
+import { platformRoutes } from "@ontomato/platform-shell/routes";
 import { availableGroups, availablePages, openAccess, type PlatformAccess, type PlatformNavigation } from "../navigation";
 import { ossPlatformPages, pageRoutes, platformPages, sharedPageRoutes, systemSettingsTabs } from "../pages";
 

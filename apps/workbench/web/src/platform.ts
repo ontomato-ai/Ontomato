@@ -5,18 +5,22 @@ import "./narrow-dialogs.css";
 import "@ontomato/workbench-ui/styles/admin-common.css";
 import en from "element-plus/es/locale/lang/en";
 import publicEn from "@ontomato/workbench-ui/locales/en";
+import { openOntologyServiceAccess } from "@ontomato/workbench-ui";
 import {
-  workbenchPages, legacyAdminRoutes,
+  legacyAdminRoutes,
   observeRoutes,
-  openOntologyServiceAccess,
+  PlatformShellLayout,
+  platformLayoutRoute,
+  schedulePages,
   startWorkbenchWeb,
-} from "@ontomato/workbench-ui";
+  workbenchPages,
+} from "@ontomato/platform-web";
 import { ossBrand } from "@ontomato/design-tokens/oss";
 import { anonymousAuthHost } from "./auth";
 import { workbenchContent } from "./workbench-content";
 
-import { platformLayoutRoute, platformRoutes } from "@ontomato/platform-admin/routes";
-import { normalizeManagerEntry, reloadOnStaleBuild } from "@ontomato/workbench-ui/platform";
+import { platformRoutes } from "@ontomato/platform-shell/routes";
+import { normalizeManagerEntry, reloadOnStaleBuild } from "@ontomato/platform-web";
 import { ossServicePages } from "./manager/platform";
 
 export function startPlatform() {
@@ -41,10 +45,15 @@ export function startPlatform() {
     // The open-source edition has no platform permissions: the Ontology Service entry is always shown.
     ontologyService: openOntologyServiceAccess,
     routes: (app, router) => [
+      // One layout for every application: the platform shell draws the rail and the column, the routes fill it.
       platformLayoutRoute([
-        ...workbenchPages(() => import("./layout/UnifiedLayout.vue"), { ...observeRoutes.root, props: { account: null } }),
+        ...workbenchPages(() => import("@ontomato/workbench-ui/features/workbench").then((m) => m.BusinessWorkbench), {
+          ...observeRoutes.root,
+          props: { account: null },
+        }),
+        ...schedulePages(),
         ...ossServicePages(app, router),
-      ]),
+      ], PlatformShellLayout),
       ...legacyAdminRoutes,
       { path: "/:unknown(.*)*", redirect: platformRoutes.chat.path },
     ],

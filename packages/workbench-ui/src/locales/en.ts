@@ -1,6 +1,6 @@
 // Generated from the original frontend messages using the keys the migrated pages actually use; extended as more pages are migrated.
 export default {
-  ops: {"title": "Operations", "turns": "Turn evidence", "logs": "Live logs", "tests": "Automatic tests", "results": "Test results", "cases": "Test cases", "dsl": "DSL execution", "knowledge": "Operations knowledge", "back": "Back to chat", "references": "Evidence references", "referenceHint": "This package contains references, not archived logs. Source authorization and retention still apply.", "legacy": "This older workspace has no runtime references. Refresh it to resolve current evidence.", "diagnose": "Diagnose", "refresh": "Refresh references", "greeting": "What should we diagnose?", "placeholder": "Describe what went wrong, or paste a Turn key…", "context": "(Current page: {page})", "contextTurn": "Turn {key}", "contextRun": "test run {run}", "contextCase": "case {case} of test run {run}"},
+  ops: {"title": "Operations", "turns": "Turn evidence", "logs": "Live logs", "tests": "Automatic tests", "results": "Test results", "cases": "Test cases", "dsl": "DSL execution", "knowledge": "Operations knowledge", "modelSettings": "Model selection", "back": "Back to chat", "references": "Evidence references", "referenceHint": "This package contains references, not archived logs. Source authorization and retention still apply.", "legacy": "This older workspace has no runtime references. Refresh it to resolve current evidence.", "diagnose": "Diagnose", "refresh": "Refresh references", "greeting": "What should we diagnose?", "placeholder": "Describe what went wrong, or paste a Turn key…", "context": "(Current page: {page})", "contextTurn": "Turn {key}", "contextRun": "test run {run}", "contextCase": "case {case} of test run {run}"},
   "admin": {
     "agentEditorEnabledHint": "Allow this agent to be selected and used in the workspace.",
     "agentEditorPreview": "Preview",
@@ -195,6 +195,32 @@ export default {
     "level": "Level",
     "markdownEditorPlaceholder": "## Title\n\nWrite Markdown content here...",
     "codeEditorPlaceholder": "Write your code here"
+  },
+  "platform": {
+    "serviceName": "Ontomato",
+    "noPages": "No page is available to this account",
+    "apps": "Applications",
+    "expandRail": "Show application names",
+    "collapseRail": "Hide application names",
+    "account": "Account",
+    "signOut": "Log out",
+    "language": "Language",
+    "themeLight": "Light",
+    "themeDark": "Dark",
+    "save": "Save",
+    "discard": "Discard",
+    "unsavedChanges": "Unsaved changes",
+    "openInNewTab": "Opens in a new tab",
+    "pages": "Pages",
+    "agentPlatform": "Agent platform",
+    "operations": "Operations diagnosis",
+    "governance": "Knowledge governance",
+    "objectBrowser": "Object browser",
+    "ontologyManager": "Ontology manager",
+    "schedules": "Scheduled tasks",
+    "permissions": "Permissions",
+    "settings": "System settings",
+    "dataGovernance": "Data governance platform"
   },
   "nav": {
     "agentsAndSkills": "Agents and Skills",

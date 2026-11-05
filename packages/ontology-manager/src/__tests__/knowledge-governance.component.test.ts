@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createApp, defineComponent, h, nextTick, reactive, ref, type App } from "vue";
 import { createI18n } from "vue-i18n";
+import { appColumnKey, createAppColumn } from "@ontomato/agent-shell-ui";
 import { createManager } from "../context";
 import { englishMessages, managerMessageTree } from "../i18n";
 import GovernancePage from "../knowledge-governance/GovernancePage.vue";
@@ -65,13 +66,20 @@ const page = (id: string, text: string, next: number | null) => ({
 /** Mounts the page with a reactive session prop, the way a host switches conversations. */
 function mountPage(sessionId: string | null) {
   const props = reactive({ sessionId });
+  // The platform's application column: the page contributes its navigation here, and the test renders it beside the page
+  // the way the platform layout does.
+  const column = createAppColumn();
   const Root = defineComponent({
-    setup: () => () => h(GovernancePage, { sessionId: props.sessionId }),
+    setup: () => () => [
+      h("div", { class: "column" }, column.value ? [column.value.content()] : []),
+      h(GovernancePage, { sessionId: props.sessionId }),
+    ],
   });
   const host = document.createElement("div");
   document.body.appendChild(host);
   const app = createApp(Root);
   installManager(app);
+  app.provide(appColumnKey, column);
   app.mount(host);
   mounted.push(app);
   return { host, props };
@@ -83,6 +91,8 @@ async function settle() {
 
 /** Opens the report feature, which is where the page reads and shows the work. */
 async function openReport(host: HTMLElement) {
+  // The column is filled on the render after the page mounts, so the report entry appears one tick later.
+  await settle();
   const report = [...host.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent?.trim() === "Report");
   report!.click();
   await settle();

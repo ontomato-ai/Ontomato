@@ -23,7 +23,7 @@
     "vue": "3.5.30",
     "vue-i18n": "10.0.8",
     "vue-router": "5.0.4",
-    "@ontomato/platform-admin": "workspace:*"
+    "@ontomato/platform-shell": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "22.19.15",

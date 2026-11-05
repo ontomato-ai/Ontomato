@@ -1,22 +1,20 @@
-export { startWorkbenchWeb } from "./app/start";
 export { workbenchI18n, type SupportedLocale, type WorkbenchLanguage } from "./i18n";
 export type { WorkbenchAuthHost } from "./utils/auth";
-export type { TurnDiagnosisAccess } from "./features/diagnosis/access";
-export {
-  ontologyServiceAccessKey,
-  openOntologyServiceAccess,
-  type OntologyServiceAccess,
-} from "./app/ontology-service";
-export type { WorkbenchContent } from "./content";
+export { turnDiagnosisAccessKey, type TurnDiagnosisAccess } from "./features/diagnosis/access";
+export { installWorkbenchContent, type WorkbenchContent } from "./content";
 export {
   apiGet,
   apiPost,
   nodeApiDelete,
+  nodeApiFetch,
   nodeApiGet,
   nodeApiPatch,
   nodeApiPost,
+  nodeApiRequest,
+  nodeApiPut,
 } from "./utils/api";
 export { apiUrl } from "./utils/api-base";
+export { installErrorPunctuation, type ErrorPunctuation } from "./utils/error-punctuation";
 export { useLocale } from "./composables/useLocale";
 export {
   AGENT_PAGE_PERMISSIONS,
@@ -29,8 +27,11 @@ export {
 } from "./features/agents";
 export type { WorkbenchPermissionData, WorkbenchPermissionGroupData } from "./features/agents";
 export { workbenchFeatures } from "./features/workbench";
-export { legacyAdminRoutes, managerLocation } from "./router/admin-routes";
-export { observeRoutes } from "./router/observe-routes";
 export { ObserveLayout } from "./features/diagnosis";
 export type { ObserveAccount } from "./features/diagnosis/components/layout/types";
-export { workbenchPages } from "./router/workbench";
+export {
+  ontologyServiceAccessKey,
+  openOntologyServiceAccess,
+  useOntologyServiceAccess,
+  type OntologyServiceAccess,
+} from "./app/ontology-service";

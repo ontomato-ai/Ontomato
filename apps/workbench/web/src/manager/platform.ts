@@ -11,7 +11,7 @@ import platformEn from "@ontomato/platform-admin/locales/en";
 import {
   createServiceManager, installServiceMessages, readRuntimeConfig, serviceNavigation,
   startPage, startShellPreferences, stopPage,
-} from "@ontomato/workbench-ui/platform";
+} from "@ontomato/platform-web";
 import { ossProfile as profile } from "./profile";
 import { ossSystemConfig } from "./system-config";
 
@@ -31,5 +31,7 @@ export function ossServicePages(app: App, router: Router) {
     host: { access: openAccess, api: platformApi(client), preferences, navigation: computed(() => navigation),
       account: null, links: [], navigationHidden: computed(() => false), systemConfig: ossSystemConfig, separators: { detail: ": " } },
   });
-  return [area, ...managerStandaloneRoutes()];
+  // `installPlatformPages` returns the pages as routes under the caller's layout; the standalone conversation pages
+  // (knowledge governance) join them so one layout holds both.
+  return [...area, ...managerStandaloneRoutes()];
 }

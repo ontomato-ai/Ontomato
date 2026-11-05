@@ -4,7 +4,6 @@ import { ElButton, ElEmpty, ElInput, vLoading } from "element-plus";
 import {
   ChartColumn,
   ChevronRight,
-  Clock3,
   MousePointerClick,
   Search,
   SquareFunction,
@@ -52,12 +51,6 @@ const meta: Record<
     description: "functionsDesc",
     create: "createFunction",
     icon: SquareFunction,
-  },
-  tasks: {
-    title: "tasksTitle",
-    description: "tasksDesc",
-    create: "createTask",
-    icon: Clock3,
   },
 };
 

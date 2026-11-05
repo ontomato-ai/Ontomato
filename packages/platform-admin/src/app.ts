@@ -1,8 +1,7 @@
 import { watchEffect, type App } from "vue";
 import type { Router, RouteRecordRaw } from "vue-router";
 import { installPageGuard } from "./router";
-import { platformRoutes } from "./platform-routes";
-import ServiceLayout from "./layout/ServiceLayout.vue";
+import { platformRoutes } from "@ontomato/platform-shell/routes";
 import { platformHostKey, providePageActions, type PlatformPageHost, type PlatformTheme } from "./context";
 import type { PlatformNavigation } from "./navigation";
 import "./styles/platform.css";
@@ -16,7 +15,14 @@ export interface PlatformAdminOptions {
   themeProperties: Readonly<Record<PlatformTheme, Readonly<Record<string, string>>>>;
 }
 
-export function installPlatformPages(app: App, router: Router, options: PlatformAdminOptions): RouteRecordRaw {
+/**
+ * The platform's pages as routes, under the layout the caller mounts them in.
+ *
+ * This keeps the three things a page area needs and nothing about its frame: the host the pages read is provided on the
+ * app, the page guard is installed on the router, and the routes come back for the caller's layout to hold. The caller
+ * owns the frame, so the platform's shell is the only one and this package depends on no presentation package.
+ */
+export function installPlatformPages(app: App, router: Router, options: PlatformAdminOptions): RouteRecordRaw[] {
   const { host } = options;
   app.provide(platformHostKey, host);
   providePageActions(app);
@@ -37,13 +43,9 @@ export function installPlatformPages(app: App, router: Router, options: Platform
       for (const [key, value] of previous) root.style.setProperty(key, value);
     });
   });
-  return {
-    path: "/_service",
-    component: ServiceLayout,
-    meta: { service: true },
-    children: [
-      { ...platformRoutes.ontology, component: { render: () => null } },
-      ...options.routes,
-    ],
-  };
+  // Every page of this area is marked as a platform page (`meta.service`): the edition's router guard reads the mark to
+  // decide what needs a signed-in account, and the document tokens above apply while one is shown. The mark used to sit
+  // on the layout route; it belongs to the pages, since the layout is the caller's now.
+  return [{ ...platformRoutes.ontology, component: { render: () => null }, meta: { service: true } },
+    ...options.routes.map((route) => ({ ...route, meta: { ...route.meta, service: true } }))];
 }
