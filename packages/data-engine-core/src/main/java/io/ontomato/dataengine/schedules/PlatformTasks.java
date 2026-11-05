@@ -101,6 +101,12 @@ public class PlatformTasks {
     credentials.prepare(current(), true);
   }
 
+  public List<FunctionTarget.Option> functionTargets() {
+    var user = current();
+    if (!identity.permits(user, LIST)) throw new ResponseStatusException(HttpStatus.FORBIDDEN);
+    return functions.list(user.getDomainId());
+  }
+
   public Map<String, Object> list(String app, UUID agent) {
     var user = current();
     var tasks =

@@ -74,6 +74,14 @@ export type ScheduledTaskRunErrorCode = z.infer<
 
 /** Gateway-relative DataRAG resource. Lists combine private agent tasks and permitted domain function tasks. */
 export const platformSchedulesPath = "/api/data-query/platform/scheduled-tasks";
+/** GET /function-targets lists the write functions available to the caller's task picker. */
+export const platformTaskFunctionTargetSchema = z
+  .object({ id: z.string().min(1), name: z.string(), description: z.string().nullable() })
+  .strict();
+export const platformTaskFunctionTargetsSchema = z.array(platformTaskFunctionTargetSchema);
+export type PlatformTaskFunctionTarget = z.infer<typeof platformTaskFunctionTargetSchema>;
+export type PlatformTaskFunctionTargets = z.infer<typeof platformTaskFunctionTargetsSchema>;
+
 export const platformTaskAppSchema = z.enum(["agents", "ontology"]);
 export const platformTaskTargetSchema = z.discriminatedUnion("kind", [
   z
@@ -150,3 +158,7 @@ export const platformTaskRunPageSchema = z
 export type PlatformTask = z.infer<typeof platformTaskSchema>;
 export type PlatformTaskInput = z.infer<typeof platformTaskInputSchema>;
 export type PlatformTaskRun = z.infer<typeof platformTaskRunSchema>;
+export type PlatformTaskTarget = z.infer<typeof platformTaskTargetSchema>;
+export type PlatformTaskFrequency = z.infer<typeof platformTaskFrequencySchema>;
+export type PlatformTaskList = z.infer<typeof platformTaskListSchema>;
+export type PlatformTaskRunPage = z.infer<typeof platformTaskRunPageSchema>;

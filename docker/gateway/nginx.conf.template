@@ -69,6 +69,10 @@ server {
   location ~ ^${PUBLIC_BASE_PATH}$ {
     return 308 ${PUBLIC_BASE_PATH}/$is_args$args;
   }
+  # Internal workbench routes are service-to-service only. Express matches paths case-insensitively.
+  location ~* ^${PUBLIC_BASE_PATH}/internal/ {
+    return 404;
+  }
   # The browser carries the original fragment across this redirect. Only the SPA maps page names.
   location = ${PUBLIC_BASE_PATH}/login.html {
     return 302 "${PUBLIC_BASE_PATH}/#/login$is_args$args";
