@@ -100,6 +100,11 @@ class GatewayRoutingTest(unittest.TestCase):
                             self.assert_upstream(port, prefix + source + params, target + params, service)
                 self.assert_upstream(port, prefix + "/api/data-query/" + suffix + query,
                                      "/" + suffix + query, "java", method="POST")
+                for method, path in [("GET", "/internal/"), ("POST", "/internal/scheduled-agent/status"),
+                                     ("POST", "/Internal/scheduled-agent/status")]:
+                    with self.subTest(prefix=prefix, development=development, path=path):
+                        status, upstream, _ = self.request(port, prefix + path, method)
+                        self.assertEqual((status, upstream), (404, None))
                 connection = http.client.HTTPConnection("127.0.0.1", port)
                 connection.request("GET", prefix + "/ontology-manager/?view=assets")
                 response = connection.getresponse()
