@@ -30,6 +30,7 @@ plain JSON; HTTP failures retain `{error:{code,message},correlationId}`.
 | POST /v1/sessions/status | `{sessionIds}`; ordered `{sessions:[{session,latestRun}]}` |
 | POST /v1/sessions/:id/runs | StartRun below; 202 `{run,replayed}` |
 | GET /v1/runs/:id | `{run,messages,pendingMessages,toolExecutions,artifacts,cursor}` |
+| GET /v1/runs/:id/status | `{run}` lifecycle view only; with `waitFor=stopped` (and `timeoutMs` ≤ 60000, default 30000) held until the run stops or the timeout, which returns it still running |
 | GET /v1/runs/:id/events | SSE, query `afterSeq` + `streamId` |
 | POST /v1/runs/:id/cancel | `{}`; 200 `{run}` after stopping |
 | POST /v1/sessions/:id/run-intents/:runId/cancel | 204, including unadmitted intents |
@@ -80,6 +81,7 @@ type StartRun = {
     externalMcp: {id:string}[];
     compaction: {systemPrompt:string; summarizePrompt:string; updatePrompt:string};
     sandbox: {limits: CodeLimits};
+    toolCallPolicy?: {maxCalls: number; maxSameShape: number};
   };
   environment: {
     values: Record<string,string>;
@@ -87,6 +89,12 @@ type StartRun = {
   };
 };
 ```
+
+`toolCallPolicy` is optional loop protection for hosts whose agents have no other
+step bound. It counts the run's completed tool calls: more than `maxCalls`, or
+`maxSameShape` calls whose tool name and arguments match after removing digits
+and collapsing whitespace, stops the run as aborted with a runtime notice naming
+the limit. It is the same termination path as cancel, not another status.
 
 The runtime always exposes PI `read`, `write`, `edit`, `bash`. There is no Python
 switch, context entry or business tool registration. Python runs through bash.
@@ -196,6 +204,12 @@ new admission and never replays a possibly executed tool. Reconstructed model
 context marks a missing tool result as unknown outcome without altering history.
 HTTP/SSE transport failure does not change run state. Hosts retry reads and use
 the authoritative snapshot after reconnection.
+
+Hosts learn that a run stopped from the runtime instead of re-reading snapshots:
+`GET /v1/runs/:id/status?waitFor=stopped` returns as soon as the stop is
+committed, or with the run still running after `timeoutMs`; a host keeps waiting
+by repeating it. A dropped wait says nothing about the run. After a runtime
+restart every unfinished run is already stopped, so the next wait returns at once.
 
 Existing ordered PI lifecycle events remain. agent_end contains the same
 RunState as the committed run. Tool errors remain PI tool-result errors and may

@@ -500,6 +500,12 @@ export class RuntimeStore {
       },
     };
   }
+  /** The lifecycle view of one run, without definition, events or messages. */
+  async runView(scope: Scope, id: string): Promise<RuntimeRunView> {
+    const [view] = await this.historyRuns(scope, [id]);
+    if (!view) missing();
+    return view;
+  }
   async historyRuns(scope: Scope, ids: string[]): Promise<RuntimeRunView[]> {
     if (!ids.length) return [];
     const fields = Object.keys(runtimeRunViewSchema.shape).map(name => `'${name}',run->'${name}'`).join(",");
@@ -774,9 +780,7 @@ export class RuntimeStore {
     errorMessage?: string | null,
   ) {
     const { run } = await this.run(scope, id);
-    let messages = (await this.messages(scope, run.sessionId))
-      .filter((m) => m.runId === id)
-      .map((m) => m.message);
+    let messages = (await this.messages(scope, run.sessionId, this.pool, id)).map((m) => m.message);
     const last = [...messages].reverse().find((m) => m.role === "assistant");
     if (
       reason &&
@@ -801,9 +805,7 @@ export class RuntimeStore {
           errorMessage: errorMessage ?? undefined,
         },
       });
-      messages = (await this.messages(scope, run.sessionId))
-        .filter((m) => m.runId === id)
-        .map((m) => m.message);
+      messages = (await this.messages(scope, run.sessionId, this.pool, id)).map((m) => m.message);
     }
     const final = [...messages].reverse().find((m) => m.role === "assistant");
     const stopReason =
