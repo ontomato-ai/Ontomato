@@ -7,7 +7,9 @@ import { describe, expect, it } from "vitest";
  * option, text and link buttons, links) uses the link role, rows on the selected background use ink, and disabled
  * primary buttons use the disabled roles.
  */
-const css = readFileSync(new URL("../foundation.css", import.meta.url), "utf8").replace(/\/\*[\s\S]*?\*\//g, "");
+const css = readFileSync(new URL("../foundation.css", import.meta.url), "utf8")
+  .replace(/\/\*[\s\S]*?\*\//g, "")
+  .replace(/@import\s+[^;]+;/g, "");
 
 /** A selector list split at top-level commas (not the ones inside `:is(...)`). */
 function selectorList(selectors: string) {

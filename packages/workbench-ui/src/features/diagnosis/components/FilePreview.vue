@@ -140,7 +140,7 @@ defineExpose({ openSearch });
   border-bottom: 1px solid var(--el-border-color-lighter);
   color: var(--el-text-color-secondary);
   background: var(--el-fill-color-lighter);
-  font-size: 12px;
+  font-size: var(--text-sm);
   line-height: 1.5;
 }
 
@@ -181,7 +181,7 @@ defineExpose({ openSearch });
 .fp-table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 12px;
+  font-size: var(--text-sm);
 }
 
 .fp-table th,

@@ -244,7 +244,7 @@ p {
   font-size: var(--text-sm);
 }
 .resource-table {
-  overflow: hidden;
+  overflow: auto;
   margin: var(--spacing-md) var(--spacing-lg) var(--spacing-lg);
   border: 1px solid var(--el-border-color);
   border-radius: var(--radius-md);
@@ -283,6 +283,13 @@ p {
   cursor: pointer;
   font-size: var(--text-sm);
   transition: background-color var(--transition-fast);
+}
+.resource-table-head > span,
+.resource-table-row > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .resource-table-row:last-child {
   border-bottom: 0;

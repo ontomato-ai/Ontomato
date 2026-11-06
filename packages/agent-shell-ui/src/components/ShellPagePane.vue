@@ -65,8 +65,8 @@ const paired = computed(() => props.feature?.withConversation === true);
 
 <style scoped>
 /*
- * Full: the workspace panel itself (same surface, radius, line and elevation as the conversation panel).
- * Side: a raised panel of the artifact panel's geometry. The header is the page header of the data density.
+ * Full pages are continuous workspaces, not conversation cards. Only the detached side panel has a rounded boundary.
+ * Keep the same page geometry in both modes; the header uses the data density.
  */
 .page-pane {
   position: relative;
@@ -75,10 +75,10 @@ const paired = computed(() => props.feature?.withConversation === true);
   min-width: 0;
   min-height: 0;
   height: 100%;
-  border: 1px solid var(--el-border-color);
-  border-radius: var(--shell-conversation-radius);
+  border: 0;
+  border-radius: var(--radius-shell);
   background: var(--el-bg-color);
-  box-shadow: var(--elevation-panel);
+  box-shadow: none;
   overflow: hidden;
   container-type: inline-size;
   container-name: page;
@@ -89,6 +89,9 @@ const paired = computed(() => props.feature?.withConversation === true);
 .page-pane.side {
   width: var(--panel-width);
   flex-shrink: 0;
+  border: 1px solid var(--el-border-color);
+  border-radius: var(--radius-md);
+  box-shadow: var(--elevation-panel);
 }
 .pane-resize {
   position: absolute;

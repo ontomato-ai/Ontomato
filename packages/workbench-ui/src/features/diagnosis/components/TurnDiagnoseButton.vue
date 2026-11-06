@@ -38,10 +38,11 @@ function openDiagnosis() {
   <button
     v-if="access.visible()"
     type="button"
+    class="shell-message-action"
     :title="t('chat.diagnoseTurn')"
     :aria-label="t('chat.diagnoseTurn')"
     @click="openDiagnosis"
   >
-    <Wrench :size="14" />
+    <Wrench :size="15" />
   </button>
 </template>

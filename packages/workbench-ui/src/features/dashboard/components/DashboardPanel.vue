@@ -874,11 +874,7 @@ function handleViewDsl(payload) {
   height: 100%;
   align-self: stretch;
   overflow: auto;
-  background: radial-gradient(
-    circle at 50% 20%,
-    color-mix(in srgb, var(--el-color-primary) 6%, transparent),
-    transparent 40%
-  );
+  background: var(--shell-workspace-bg, var(--el-bg-color));
 }
 
 .dash-root.is-layout-pending {
@@ -896,11 +892,7 @@ function handleViewDsl(payload) {
   padding: 0 24px;
   margin: 0;
   box-sizing: border-box;
-  background: radial-gradient(
-    circle at 50% 28%,
-    color-mix(in srgb, var(--el-color-primary) 6%, transparent),
-    transparent 32%
-  );
+  background: transparent;
 }
 
 .empty-state__content {
@@ -916,9 +908,9 @@ function handleViewDsl(payload) {
   align-items: center;
   justify-content: center;
   font-size: 34px;
-  margin: 0 auto 14px;
-  background: var(--el-bg-color);
-  box-shadow: var(--shadow-card);
+  margin: 0 auto var(--spacing-lg);
+  background: var(--el-fill-color-light);
+  color: var(--el-text-color-secondary);
 }
 
 .empty-state__title {
@@ -945,7 +937,7 @@ function handleViewDsl(payload) {
   position: relative;
   display: flex;
   flex-direction: column;
-  gap: 20px;
+  gap: var(--spacing-lg-xl);
 }
 
 .block {
@@ -954,7 +946,7 @@ function handleViewDsl(payload) {
   background: var(--el-bg-color);
   border: 1px solid var(--el-border-color);
   border-radius: var(--radius-md);
-  padding: 20px 20px 16px;
+  padding: var(--surface-padding);
   box-shadow: var(--shadow-card);
 }
 

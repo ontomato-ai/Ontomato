@@ -293,7 +293,7 @@ onBeforeUnmount(() => {
   flex-direction: column;
   gap: 2px;
   border: 1px solid var(--el-border-color);
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-md);
   background: var(--el-bg-color-overlay);
   box-shadow: var(--elevation-overlay);
 }

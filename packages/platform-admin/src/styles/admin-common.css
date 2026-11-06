@@ -12,6 +12,10 @@
   flex-wrap: wrap;
   gap: var(--spacing-sm);
   margin-bottom: var(--spacing-md);
+  padding: var(--spacing-sm) 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
 }
 
 .platform-page .toolbar .el-button,

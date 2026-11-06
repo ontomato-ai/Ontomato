@@ -130,7 +130,7 @@
     max-height: calc(100cqh - 24px);
     display: flex;
     flex-direction: column;
-    border-radius: 14px !important;
+    border-radius: var(--radius-lg) !important;
   }
 
   .ontology-manager.is-compact-dialogs .el-dialog__header {

@@ -136,6 +136,7 @@ onMounted(() => void load(null));
 <style scoped>
 .runs {
   padding: var(--spacing-xs) 0 0;
+  overflow-x: auto;
 }
 .run-table {
   width: 100%;

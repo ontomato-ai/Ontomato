@@ -106,7 +106,7 @@ onMounted(async () => {
 .tab {
   display: flex;
   align-items: center;
-  border-radius: 10px;
+  border-radius: var(--radius-md);
   flex-shrink: 0;
 }
 .tab:hover {

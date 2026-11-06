@@ -197,8 +197,7 @@ onMounted(() => void loadDetail());
 .title-copy {
   min-width: 0;
 }
-.title-copy strong,
-.title-copy small {
+.title-copy strong {
   display: block;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -208,11 +207,6 @@ onMounted(() => void loadDetail());
   color: var(--el-text-color-primary);
   font-size: var(--text-sm);
   font-weight: var(--font-semibold);
-}
-.title-copy small {
-  margin-top: 1px;
-  color: var(--el-text-color-secondary);
-  font-size: var(--text-xs);
 }
 .title-spacer {
   flex: 1;
@@ -299,19 +293,18 @@ h2 {
 }
 @container ontology-manager (max-width: 850px) {
   .detail-body {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
     padding: var(--spacing-md);
     gap: var(--spacing-md);
   }
   .detail-titlebar {
     padding: 0 var(--spacing-md);
   }
-  .title-divider,
-  .title-copy small {
+  .title-divider {
     display: none;
   }
   .endpoints-flow {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
   .relation-arrow {
     height: 24px;

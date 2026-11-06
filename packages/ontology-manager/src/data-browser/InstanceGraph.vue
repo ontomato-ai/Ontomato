@@ -906,8 +906,7 @@ onBeforeUnmount(() => {
       </div>
       <div class="panel-heading">
         <div>
-          <strong>{{ ot("instanceInspector") }}</strong>
-          <small>{{ ot("instanceInspectorDesc") }}</small>
+          <strong :title="ot('instanceInspectorDesc')">{{ ot("instanceInspector") }}</strong>
         </div>
       </div>
       <div v-if="selectedNode" class="detail-content">
@@ -1046,7 +1045,7 @@ onBeforeUnmount(() => {
   z-index: 2;
   padding: 6px;
   border: 1px solid var(--el-border-color);
-  border-radius: 10px;
+  border-radius: var(--radius-md);
   background: var(--el-bg-color);
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08);
 }
@@ -1269,17 +1268,12 @@ onBeforeUnmount(() => {
   color: var(--el-text-color-secondary);
   font-size: var(--text-xs);
 }
-.panel-heading strong,
-.panel-heading small {
+.panel-heading strong {
   display: block;
 }
 .panel-heading strong {
   color: var(--el-text-color-primary);
   font-size: var(--text-sm);
-}
-.panel-heading small {
-  margin-top: 1px;
-  font-size: var(--text-xs);
 }
 .detail-content {
   padding: var(--spacing-md);

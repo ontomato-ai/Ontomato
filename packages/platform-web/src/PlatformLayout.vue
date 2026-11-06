@@ -163,6 +163,7 @@ const headerShown = computed(
   flex-direction: column;
   overflow: auto;
   padding: 16px var(--page-gutter) 24px;
+  container: platform-page / inline-size;
 }
 /*
  * A page with a header of its own carries that header's gutter, and so does an application whose pages are not in the
@@ -196,6 +197,15 @@ const headerShown = computed(
   flex: 1;
   min-width: 0;
   min-height: 0;
+}
+@media (max-width: 760px) {
+  .platform-page-body {
+    padding-inline: var(--spacing-lg);
+  }
+  .platform-page-body.own-header,
+  .platform-page-body.own-frame {
+    padding: 0;
+  }
 }
 .platform-blocked {
   display: flex;

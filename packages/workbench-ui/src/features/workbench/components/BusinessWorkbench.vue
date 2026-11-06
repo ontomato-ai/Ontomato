@@ -115,7 +115,7 @@ watch(agentId, (id) => {
 
 const workbench = computed<ShellWorkbenchDeclaration>(() => ({
   id: WORKBENCH_ID,
-  label: appearance.value?.brand.name || props.defaultBrandName,
+  label: appearance.value?.brand?.name || props.defaultBrandName,
   features: workbenchFeatures(props.features),
 }));
 

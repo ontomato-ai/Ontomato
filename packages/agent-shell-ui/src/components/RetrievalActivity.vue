@@ -95,7 +95,9 @@ const detail = computed(() => {
 
 <style scoped>
 .retrieval {
-  margin: 0 0 4px -8px;
+  margin: 0 0 0 -8px;
+  font-size: var(--text-sm);
+  line-height: var(--leading-sm);
 }
 .retrieval-summary {
   display: inline-flex;
@@ -104,7 +106,7 @@ const detail = computed(() => {
   max-width: 100%;
   padding: 4px 10px 4px 8px;
   border: 0;
-  border-radius: 999px;
+  border-radius: var(--radius-sm);
   background: transparent;
   color: var(--el-text-color-secondary);
   font: inherit;
@@ -165,7 +167,7 @@ const detail = computed(() => {
   gap: 8px;
   margin: 6px 0 0 14px;
   padding: 8px 10px;
-  border-radius: var(--radius-lg, 12px);
+  border-radius: var(--radius-md);
   background: var(--el-color-danger-light-9);
   color: var(--el-color-danger);
   font-size: var(--text-sm, 13px);

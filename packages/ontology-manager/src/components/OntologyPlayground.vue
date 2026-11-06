@@ -550,8 +550,7 @@ onBeforeUnmount(() => {
       <aside class="explorer-panel">
         <div class="panel-heading">
           <div>
-            <strong>{{ t("nav.ontologyResources") }}</strong>
-            <small>{{ ot("locateGraphElements") }}</small>
+            <strong :title="ot('locateGraphElements')">{{ t("nav.ontologyResources") }}</strong>
           </div>
         </div>
         <div class="search-box">
@@ -641,8 +640,7 @@ onBeforeUnmount(() => {
         <section class="path-panel">
           <div class="panel-heading">
             <div>
-              <strong>{{ ot("pathFinder") }}</strong>
-              <small>{{ ot("pathFinderDesc") }}</small>
+              <strong :title="ot('pathFinderDesc')">{{ ot("pathFinder") }}</strong>
             </div>
             <Route :size="17" />
           </div>
@@ -864,17 +862,12 @@ onBeforeUnmount(() => {
   border-bottom: 1px solid var(--el-border-color);
   color: var(--el-text-color-secondary);
 }
-.panel-heading strong,
-.panel-heading small {
+.panel-heading strong {
   display: block;
 }
 .panel-heading strong {
   color: var(--el-text-color-primary);
   font-size: var(--text-sm);
-}
-.panel-heading small {
-  margin-top: 1px;
-  font-size: var(--text-xs);
 }
 .search-box {
   display: grid;
@@ -1014,11 +1007,11 @@ onBeforeUnmount(() => {
 }
 .graph-toolbar button {
   display: grid;
-  width: 34px;
+  width: var(--control-height);
   height: 32px;
   place-items: center;
   border: 0;
-  border-radius: 5px;
+  border-radius: var(--radius-sm);
   color: var(--el-text-color-secondary);
   background: transparent;
 }

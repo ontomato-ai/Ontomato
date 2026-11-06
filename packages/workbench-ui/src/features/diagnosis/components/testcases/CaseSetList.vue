@@ -82,14 +82,14 @@ function caseDisplayName(c: TestCase): string {
 }
 
 .panel-title {
-  font-size: 11px;
+  font-size: var(--text-sm);
   font-weight: 500;
   color: var(--el-text-color-secondary);
   letter-spacing: 0;
 }
 
 .panel-count {
-  font-size: 11px;
+  font-size: var(--text-xs);
   color: var(--el-text-color-tertiary);
 }
 
@@ -108,7 +108,7 @@ function caseDisplayName(c: TestCase): string {
 .add-case-btn {
   width: 100%;
   padding: 6px 0;
-  font-size: 12px;
+  font-size: var(--text-sm);
   color: var(--el-text-color-secondary);
   background: var(--el-fill-color-light);
   border: 0.5px dashed var(--el-border-color-dark);
@@ -162,7 +162,7 @@ function caseDisplayName(c: TestCase): string {
 }
 
 .case-item-id {
-  font-size: 11px;
+  font-size: var(--text-xs);
   font-family: var(--font-mono);
   color: var(--el-text-color-tertiary);
 }

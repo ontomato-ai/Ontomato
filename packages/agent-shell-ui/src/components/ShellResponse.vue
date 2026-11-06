@@ -132,8 +132,8 @@ async function submit(value: ShellFeedbackValue) {
       :session-id="sessionId ?? ''"
     />
     <template v-for="block in item.blocks" :key="block.key">
-      <ShellProcess v-if="block.kind === 'process'" :steps="block.steps" :active="block.active" />
-      <div v-else :class="{ commentary: block.commentary }">
+      <ShellProcess v-if="block.kind === 'process'" class="response-process" :steps="block.steps" :active="block.active" />
+      <div v-else class="response-text" :class="{ commentary: block.commentary }">
         <ShellMarkdown :content="block.text" :final="block.final" :run-id="block.runId" />
       </div>
     </template>
@@ -150,14 +150,14 @@ async function submit(value: ShellFeedbackValue) {
     </div>
 
     <div v-if="!item.running && item.answerMessageId" class="actions">
-      <button type="button" class="action" :title="labels.copy" :aria-label="labels.copy" @click="copy">
+      <button type="button" class="shell-message-action" :title="labels.copy" :aria-label="labels.copy" @click="copy">
         <Check v-if="copied" :size="15" />
         <Copy v-else :size="15" />
       </button>
       <template v-if="feedback">
         <button
           type="button"
-          class="action"
+          class="shell-message-action"
           :class="{ on: rating?.rating === 'like' }"
           :title="labels.like"
           :aria-label="labels.like"
@@ -168,7 +168,7 @@ async function submit(value: ShellFeedbackValue) {
         </button>
         <button
           type="button"
-          class="action"
+          class="shell-message-action"
           :class="{ on: rating?.rating === 'dislike' }"
           :title="labels.dislike"
           :aria-label="labels.dislike"
@@ -197,11 +197,20 @@ async function submit(value: ShellFeedbackValue) {
 .response {
   min-width: 0;
 }
+.response > .response-text + .response-text,
+.response > .response-process + .response-text,
+.response > .retrieval + .response-text {
+  margin-top: var(--conversation-block-gap);
+}
+.response > .response-text + .response-process {
+  margin-top: var(--conversation-process-gap);
+}
 .status-line {
   display: flex;
   align-items: center;
   gap: 6px;
-  margin-bottom: 6px;
+  margin-bottom: var(--conversation-process-gap);
+  line-height: var(--leading-xs);
   color: var(--el-text-color-tertiary);
   font-size: var(--text-xs, 12px);
   font-variant-numeric: tabular-nums;
@@ -264,33 +273,9 @@ async function submit(value: ShellFeedbackValue) {
 }
 .actions {
   display: flex;
-  gap: 2px;
-  margin-top: 6px;
+  gap: var(--spacing-xs);
+  margin-top: var(--conversation-process-gap);
   margin-left: -6px;
-}
-.action {
-  display: grid;
-  place-items: center;
-  width: 28px;
-  height: 28px;
-  border: 0;
-  border-radius: var(--radius-sm);
-  background: transparent;
-  color: var(--el-text-color-tertiary);
-  cursor: pointer;
-  transition:
-    color var(--transition-fast, 150ms),
-    background-color var(--transition-fast, 150ms);
-}
-.action:hover {
-  background: var(--el-fill-color);
-  color: var(--el-text-color-regular);
-}
-.action.on {
-  color: var(--brand-link);
-}
-.action:focus-visible {
-  outline: 2px solid var(--el-color-primary);
 }
 .reason {
   margin-top: 8px;

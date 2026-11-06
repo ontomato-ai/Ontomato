@@ -153,7 +153,6 @@ onMounted(() => void loadDetail());
       <span class="title-divider"></span>
       <span class="title-copy">
         <strong>{{ object?.showName || className }}</strong>
-        <small>{{ className }}</small>
       </span>
       <span class="title-spacer"></span>
       <el-button
@@ -340,8 +339,7 @@ onMounted(() => void loadDetail());
 .title-copy {
   min-width: 0;
 }
-.title-copy strong,
-.title-copy small {
+.title-copy strong {
   display: block;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -351,11 +349,6 @@ onMounted(() => void loadDetail());
   color: var(--el-text-color-primary);
   font-size: var(--text-sm);
   font-weight: var(--font-semibold);
-}
-.title-copy small {
-  margin-top: 1px;
-  color: var(--el-text-color-secondary);
-  font-size: var(--text-xs);
 }
 .title-spacer {
   flex: 1;
@@ -522,7 +515,7 @@ h2 {
 }
 @container ontology-manager (max-width: 1050px) {
   .detail-body {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
   .definition-section {
     grid-row: auto;
@@ -536,8 +529,7 @@ h2 {
     padding: var(--spacing-md);
     gap: var(--spacing-md);
   }
-  .title-divider,
-  .title-copy small {
+  .title-divider {
     display: none;
   }
   .attribute-table .detail-table-head,

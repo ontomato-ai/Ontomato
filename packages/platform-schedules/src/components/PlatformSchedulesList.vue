@@ -266,7 +266,7 @@ defineExpose({ reload: load, openNewTask });
       :data="shown"
       row-key="id"
       highlight-current-row
-      class="table"
+      class="table admin-table"
       :expand-row-keys="historyRow ? [historyRow] : []"
     >
       <el-table-column :label="t('columns.name')" min-width="200">
@@ -423,6 +423,7 @@ defineExpose({ reload: load, openNewTask });
   justify-content: space-between;
   gap: var(--spacing-md);
   min-height: var(--control-height);
+  flex-wrap: wrap;
 }
 .scope {
   display: flex;
@@ -500,6 +501,8 @@ defineExpose({ reload: load, openNewTask });
   display: flex;
   flex-direction: column;
   gap: var(--spacing-sm);
+  background: transparent;
+  animation: none;
 }
 .skeleton span {
   height: var(--table-row-height);

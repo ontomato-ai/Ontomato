@@ -19,15 +19,11 @@
   background: var(--el-bg-color-page);
 }
 
-/* Element Plus button shadows: suppressed in the data shell (nothing in the page flow has a shadow). */
+/* Flat button surfaces; keyboard focus is owned by foundation rather than erased here. */
 .platform-document button,
 .platform-document .el-button,
 .platform-document button:hover,
 .platform-document .el-button:hover,
-.platform-document button:focus,
-.platform-document .el-button:focus,
-.platform-document button:focus-visible,
-.platform-document .el-button:focus-visible,
 .platform-document button:active,
 .platform-document .el-button:active {
   box-shadow: none !important;
