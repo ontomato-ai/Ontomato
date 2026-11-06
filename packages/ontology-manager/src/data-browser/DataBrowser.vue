@@ -21,7 +21,7 @@ import {
 } from "element-plus";
 import { useManagerFeedback } from "../feedback";
 import { Filter, Download, Plus, Trash2, Search } from "lucide-vue-next";
-import { useManagerClient, useManagerContext, useOntologyText, useSharedText } from "../context";
+import { useManagerClient, useOntologyText, useSharedText } from "../context";
 // The graph view loads AntV G6 only when the user switches to it.
 const InstanceGraph = defineAsyncComponent(() => import("./InstanceGraph.vue"));
 
@@ -29,7 +29,6 @@ const { t } = useSharedText();
 const { ot } = useOntologyText();
 const { message } = useManagerFeedback();
 const { getMetas, loadObjectData } = useManagerClient();
-const context = useManagerContext();
 const props = defineProps<{ initialClass?: string }>();
 /** The object type on show, whether it came from `initialClass` or from the type selector. */
 const emit = defineEmits<{ classChange: [className: string] }>();
@@ -60,12 +59,6 @@ interface FilterCondition {
 
 const classList = ref<ClassDef[]>([]);
 const selectedClass = ref("");
-/** The page header's one-line description for the selected object type (each edition words it its own way). */
-const description = computed(() =>
-  context.presentation.dataBrowserDescription(
-    classList.value.find((item) => item.className === selectedClass.value)?.showName
-  )
-);
 const dataList = ref<DataItem[]>([]);
 const searchQuery = ref("");
 const pageNum = ref(1);
@@ -361,84 +354,51 @@ watch(
 
 <template>
   <div class="data-browser">
-    <!-- The application's header carries the title and the tabs; this row is the page's own line and its tools. -->
+    <!-- One contextual toolbar; the working surface fills the remaining height. -->
     <div class="data-browser-toolbar">
-      <p v-if="description" class="page-note">{{ description }}</p>
-      <span class="header-spacer" />
+      <template v-if="viewMode === 'table'">
+        <div class="data-browser-filters">
+          <el-select
+            v-model="selectedClass" :placeholder="t('common.selectObjectClass')"
+            :aria-label="t('common.selectObjectClass')" class="class-selector" filterable @change="handleClassChange">
+            <el-option v-for="cls in classList" :key="cls.className" :label="cls.showName" :value="cls.className" />
+          </el-select>
+          <el-input
+            v-model="searchQuery" :placeholder="t('dataBrowser.fullTextSearch')"
+            :aria-label="t('dataBrowser.fullTextSearch')" :prefix-icon="Search" clearable class="data-search"
+            @keyup.enter="handleSearch" @clear="handleSearchClear" />
+        </div>
+        <el-tag v-if="appliedFilterConditions.length > 0" type="info" closable @close="clearAllFilters">
+          {{ t("dataBrowser.filterCount", { n: appliedFilterConditions.length }) }}
+        </el-tag>
+        <div class="data-browser-actions">
+          <el-button
+            :icon="Filter" :title="t('dataBrowser.advancedFilter')"
+            :aria-label="t('dataBrowser.advancedFilter')" @click="openFilterDrawer" />
+          <el-dropdown>
+            <el-button :icon="Download" :title="t('common.export')" :aria-label="t('common.export')" />
+            <template #dropdown>
+              <el-dropdown-menu>
+                <el-dropdown-item @click="exportData">{{ t("dataBrowser.exportCsv") }}</el-dropdown-item>
+                <el-dropdown-item @click="exportExcel">{{ t("dataBrowser.exportExcel") }}</el-dropdown-item>
+              </el-dropdown-menu>
+            </template>
+          </el-dropdown>
+        </div>
+      </template>
+      <div v-show="viewMode === 'graph'" class="mode-bar">
+      <div ref="graphSummaryTarget" class="graph-summary-slot" />
+      </div>
       <el-segmented v-model="viewMode" :options="viewModeOptions" />
     </div>
-    <div v-show="viewMode === 'graph'" class="mode-bar">
-      <div ref="graphSummaryTarget" class="graph-summary-slot" />
-    </div>
     <template v-if="viewMode === 'table'">
-      <div class="toolbar">
-      <el-select
-        v-model="selectedClass"
-        :placeholder="t('common.selectObjectClass')"
-        style="width: 300px"
-        @change="handleClassChange"
-      >
-        <el-option
-          v-for="cls in classList"
-          :key="cls.className"
-          :label="cls.showName"
-          :value="cls.className"
-        />
-      </el-select>
-
-      <el-input
-        v-model="searchQuery"
-        :placeholder="t('dataBrowser.fullTextSearch')"
-        :prefix-icon="Search"
-        clearable
-        style="width: 240px"
-        @keyup.enter="handleSearch"
-        @clear="handleSearchClear"
-      />
-
-      <div class="toolbar-actions">
-        <el-button
-          class="toolbar-action"
-          :icon="Filter"
-          :aria-label="t('dataBrowser.advancedFilter')"
-          @click="openFilterDrawer"
-        >
-          <span class="toolbar-action-label">{{ t("dataBrowser.advancedFilter") }}</span>
-        </el-button>
-
-        <el-dropdown>
-          <el-button class="toolbar-action" :icon="Download" :aria-label="t('common.export')">
-            <span class="toolbar-action-label">{{ t("common.export") }}</span>
-          </el-button>
-          <template #dropdown>
-            <el-dropdown-menu>
-              <el-dropdown-item @click="exportData">
-                {{ t("dataBrowser.exportCsv") }}
-              </el-dropdown-item>
-              <el-dropdown-item @click="exportExcel">
-                {{ t("dataBrowser.exportExcel") }}
-              </el-dropdown-item>
-            </el-dropdown-menu>
-          </template>
-        </el-dropdown>
-      </div>
-
-      <el-tag
-        v-if="appliedFilterConditions.length > 0"
-        type="info"
-        closable
-        @close="clearAllFilters"
-      >
-        {{ t("dataBrowser.filterCount", { n: appliedFilterConditions.length }) }}
-      </el-tag>
-    </div>
-
+    <div class="data-browser-table">
     <el-table
       v-loading="loading"
       :data="filteredData"
       border
       class="admin-table"
-      max-height="600"
+      height="100%"
     >
       <el-table-column type="index" width="50" />
       <el-table-column
@@ -450,6 +410,7 @@ watch(
         show-overflow-tooltip
       />
     </el-table>
+    </div>
 
     <div class="pagination">
       <el-pagination
@@ -541,32 +502,25 @@ watch(
 <style scoped>
 .data-browser {
   height: 100%;
+  min-height: 0;
   min-width: 0;
   display: flex;
   flex-direction: column;
   overflow: hidden;
 }
 
-/* The page's own row: the line about the selected object type, and the table/graph switch at the right. */
+/* The page's view switch stays aligned with its filters and table. */
 .data-browser-toolbar {
   display: flex;
   flex: 0 0 auto;
   align-items: center;
+  justify-content: space-between;
   gap: var(--spacing-md);
+  min-width: 0;
+  padding-block: var(--spacing-sm);
+  border-bottom: 1px solid var(--el-border-color);
+  flex-wrap: wrap;
 }
-.page-note {
-  margin: 0;
-  overflow: hidden;
-  color: var(--el-text-color-secondary);
-  font-size: var(--text-sm);
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.header-spacer {
-  flex: 1;
-}
-
 /* Segmented control: active segment is surface with ink text on a sunken track. */
 .data-browser-toolbar :deep(.el-segmented) {
   flex-shrink: 0;
@@ -577,99 +531,88 @@ watch(
 
 /*
  * No horizontal padding of the page's own: the platform's page body around it carries the page gutter, the same one as
- * the header above, so the object type's line, the filters, the table and the pager start and end where the title and
- * the tabs do (DESIGN.md "Page applications").
+ * the header above, so the toolbar, the table and the pager start and end where the title and the tabs do (DESIGN.md
+ * "Page architecture").
  */
 .mode-bar {
   display: flex;
   align-items: center;
   flex-shrink: 0;
-  padding: var(--spacing-md) 0 0;
+  flex: 1 1 240px;
+  min-width: 0;
 }
 
-.graph-summary-slot { flex: 1; min-width: min(360px, 100%); }
+.graph-summary-slot { flex: 1; min-width: 0; }
 
 .data-browser :deep(.instance-graph) {
   min-height: 0;
   flex: 1;
-  margin: var(--spacing-md) 0 var(--spacing-lg);
+  margin: 0;
 }
 
-.data-browser :deep(.el-table) {
-  max-height: min(600px, calc(100cqh - 260px)) !important;
+.data-browser-table {
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  margin-top: var(--spacing-sm);
 }
 
-.toolbar {
+.data-browser-filters {
   display: flex;
   align-items: center;
   gap: var(--spacing-sm);
-  min-height: 40px;
-  padding: var(--spacing-md) 0;
+  flex: 1 1 360px;
+  min-width: 0;
   flex-wrap: wrap;
   /* Not squeezed by the table in the fixed-height column layout; otherwise on narrow screens the action buttons wrap into a second column outside the viewport. */
   flex-shrink: 0;
 }
+.class-selector {
+  flex: 1 1 160px;
+  width: 220px;
+  min-width: 0;
+  max-width: 100%;
+}
+.data-search {
+  flex: 1 1 180px;
+  width: 240px;
+  min-width: 0;
+  max-width: 100%;
+}
 
-.toolbar-actions {
+.data-browser-actions {
   display: flex;
   align-items: center;
-  gap: var(--spacing-md);
+  gap: var(--component-gap);
+  flex-wrap: wrap;
   flex-shrink: 0;
 }
 
-.toolbar-action {
-  white-space: nowrap;
+.data-browser-actions :deep(.el-button) {
+  width: var(--control-height-sm);
+  padding: 0;
+  margin: 0;
 }
 
-.data-browser > :deep(.el-table) {
+.data-browser-table > :deep(.el-table) {
+  width: 100%;
   border: 1px solid var(--el-border-color);
   border-radius: var(--radius-md);
 }
 
-.data-browser > :deep(.el-table)::before,
-.data-browser > :deep(.el-table .el-table__inner-wrapper)::before {
+.data-browser-table > :deep(.el-table)::before,
+.data-browser-table > :deep(.el-table .el-table__inner-wrapper)::before {
   display: none;
 }
 
 .pagination {
-  padding: var(--spacing-md) 0 var(--spacing-lg);
+  padding: var(--spacing-sm) 0;
   display: flex;
   justify-content: flex-end;
   min-width: 0;
   overflow-x: auto;
-  padding-bottom: 2px;
   /* In short containers the table shrinks so the pagination bar keeps its full, clickable height. */
   flex-shrink: 0;
-}
-
-@container ontology-manager (max-width: 1024px) {
-  .toolbar {
-    flex-direction: column;
-    align-items: stretch;
-  }
-
-  .toolbar .el-input,
-  .toolbar .el-select {
-    width: 100%;
-  }
-
-  .toolbar :deep(.el-dropdown),
-  .toolbar :deep(.el-dropdown .el-button) {
-    width: 100%;
-  }
-
-  .toolbar-actions {
-    align-self: flex-start;
-  }
-
-  .toolbar-actions :deep(.el-dropdown),
-  .toolbar-actions :deep(.el-dropdown .el-button) {
-    width: auto;
-  }
-
-  .toolbar-action-label {
-    display: none;
-  }
 }
 
 @container ontology-manager (max-width: 768px) {
@@ -679,8 +622,8 @@ watch(
 }
 
 @container ontology-manager (max-width: 640px) {
-  .data-browser :deep(.el-table) {
-    max-height: calc(100cqh - 330px) !important;
+  .data-browser-filters {
+    flex-basis: 100%;
   }
 
   .filter-condition {

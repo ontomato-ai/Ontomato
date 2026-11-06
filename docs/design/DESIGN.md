@@ -182,6 +182,10 @@ eyebrow in a dense titlebar; contextual help can be available separately. Preser
 application whose header carries its own name and line (Object Browser, System settings) keeps that header where it has
 a single page — the open-source Object Browser, or an account that may open only one of its pages — without tabs.
 
+Ontology Manager catalogs, graph, modeling and business knowledge use the shared `compact` header variant: a single
+title/actions row in the page gutter and no standing generic description. Detail headers show the selected entity
+name. Standard administrative headers retain useful descriptions; do not suppress them through global CSS.
+
 Headers and content share one gutter, written once in the shell (`platform-page-gutter`): the header carries it, and
 the frame or page that shows content under a header puts the class on the element holding that content, so no page
 writes a side padding of its own and wrappers do not accumulate padding. A page drawing its own header takes the class
@@ -212,6 +216,16 @@ pagination/filter/error/loading treatments are consistent. Preserve readable hea
 A table fills the width it is given; when its columns need more, it scrolls sideways inside its own border (a row's
 actions column may stay pinned at the right), and nothing of it is cut off.
 Do not constrain a complex editor to a small generic modal or remove functionality for visual simplicity.
+
+Manager-specific button integration lives in `ontology-manager/src/buttons.css`, scoped to `.ontology-manager`
+including instance-local overlays. Manager page actions and icon-only tools use a compact 28px minimum height with
+13px text, 16px icons and restrained horizontal padding. Dialog/drawer footer actions retain a 32px minimum height.
+Buttons may grow for wrapped text; do not shrink labels to fit. This task-specific density does not change the
+platform's general control baseline.
+Save/create/apply/approve are primary; navigation, refresh, preview and local add operations are neutral; delete is
+danger plain/link. Status colours describe results rather than creating extra competing action hierarchies. Loading
+uses a progress cursor; disabled tools retain their box and never acquire an enabled hover background. Narrow headers
+wrap labelled actions instead of hiding their text with zero font size. Record/list buttons retain their own layout.
 
 ## 9. Agent conversation
 

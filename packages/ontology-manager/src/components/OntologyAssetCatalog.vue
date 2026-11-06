@@ -119,7 +119,7 @@ onMounted(() => void loadCatalog());
 <template>
   <section v-loading="loading" class="asset-catalog">
     <!-- The platform's one page header: the title, its line of description, and this page's own button. -->
-    <PlatformPageHeader :title="currentMeta.title" :description="currentMeta.description">
+    <PlatformPageHeader compact :title="currentMeta.title">
       <template #actions>
         <el-button type="primary" @click="emit('create')">
           <component :is="currentMeta.icon" :size="16" />

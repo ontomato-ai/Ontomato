@@ -15,6 +15,8 @@ withDefaults(
     /** The page's title; absent on a header that carries only its tabs (a page that draws its own title below). */
     title?: string;
     description?: string | null;
+    /** Dense technical pages keep the shared title/actions in a single compact row. */
+    compact?: boolean;
     /**
      * The pages of an application that holds several, in its own order: the header switches between them, so an
      * application with two screens is one header with two tabs rather than a second navigation band.
@@ -32,6 +34,7 @@ withDefaults(
   {
     title: "",
     description: null,
+    compact: false,
     tabs: undefined,
     activePath: undefined,
     actions: undefined,
@@ -44,11 +47,11 @@ const emit = defineEmits<{ discard: []; save: []; selectTab: [path: string] }>()
 </script>
 
 <template>
-  <header class="platform-page-header platform-page-gutter" :class="{ 'has-tabs': tabs && tabs.length > 0 }">
+  <header class="platform-page-header platform-page-gutter" :class="{ 'has-tabs': tabs && tabs.length > 0, compact }">
     <div v-if="title || description || actions?.length || draft || $slots.actions" class="header-row">
       <div class="header-text">
         <h1 v-if="title" class="page-title">{{ title }}</h1>
-        <p v-if="description" class="page-description">{{ description }}</p>
+        <p v-if="description && !compact" class="page-description">{{ description }}</p>
       </div>
       <div v-if="actions?.length || draft || $slots.actions" class="page-actions">
         <span v-if="draft?.dirty" class="unsaved" role="status">{{ labels.unsavedChanges }}</span>
@@ -229,5 +232,32 @@ const emit = defineEmits<{ discard: []; save: []; selectTab: [path: string] }>()
 .page-tab:focus-visible {
   outline: 2px solid var(--el-color-primary);
   outline-offset: -2px;
+}
+/* The compact row is denser only vertically: its sides are the page gutter, like every header's and the content's. */
+.platform-page-header.compact {
+  padding-block: var(--spacing-sm);
+  border-bottom: 1px solid var(--el-border-color);
+}
+.compact .header-row {
+  min-height: var(--control-height);
+  align-items: center;
+  gap: var(--component-gap) var(--spacing-lg);
+  padding: 0;
+}
+.compact .header-text {
+  flex: 1 1 160px;
+}
+.compact .page-title {
+  margin: 0;
+  font-size: var(--text-lg);
+  line-height: var(--leading-lg);
+  text-wrap: wrap;
+}
+.compact .page-actions {
+  padding-top: 0;
+  gap: var(--component-gap);
+}
+.compact .page-actions :deep(.el-button + .el-button) {
+  margin-left: 0;
 }
 </style>

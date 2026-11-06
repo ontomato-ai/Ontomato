@@ -1408,7 +1408,7 @@ async function saveClassDesc(cls: ClassDef) {
 <template>
   <div class="visual-modeling">
     <!-- The platform's one page header: the title, its line of description, and this page's own buttons. -->
-    <PlatformPageHeader :title="t('nav.visualModeling')" :description="ot('visualModelingDesc')">
+    <PlatformPageHeader compact :title="t('nav.visualModeling')">
       <template #actions>
         <el-button v-if="backToPlayground" :icon="ArrowLeft" @click="emit('back')">
           {{ ot("backToGraph") }}
@@ -1458,6 +1458,7 @@ async function saveClassDesc(cls: ClassDef) {
             </el-button>
             <el-button
               type="danger"
+              plain
               :icon="Trash2"
               :disabled="!selectedNode && !selectedEdge"
               @click="selectedNode ? handleTrash2Node() : handleTrash2Edge()"

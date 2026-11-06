@@ -524,7 +524,7 @@ onBeforeUnmount(() => {
 <template>
   <section v-loading="loading" class="playground">
     <!-- The platform's one page header: the title, its line of description, and this page's own summary at the right. -->
-    <PlatformPageHeader :title="t('nav.ontologyGraph')" :description="ot('ontologyGraphDesc')">
+    <PlatformPageHeader compact :title="t('nav.ontologyGraph')">
       <template #actions>
         <div class="summary-strip" :aria-label="ot('ontologyStats')">
           <span>
@@ -539,7 +539,7 @@ onBeforeUnmount(() => {
             <strong>{{ relations.length }}</strong>
             {{ t("nav.relationTypes") }}
           </span>
-          <el-button :icon="RefreshCw" circle :title="t('common.refresh')" @click="refresh" />
+          <el-button :icon="RefreshCw" class="manager-icon-button" :title="t('common.refresh')" :aria-label="t('common.refresh')" @click="refresh" />
         </div>
       </template>
     </PlatformPageHeader>
@@ -625,13 +625,13 @@ onBeforeUnmount(() => {
             <span>{{ ot("createObjectsFirst") }}</span>
           </div>
           <div class="graph-toolbar">
-            <button :title="ot('zoomIn')" @click="zoomIn"><Plus :size="18" /></button>
-            <button :title="ot('zoomOut')" @click="zoomOut"><Minus :size="18" /></button>
-            <button :title="ot('fitCanvas')" @click="fitGraph"><Maximize :size="18" /></button>
-            <button :title="ot('relayout')" :disabled="layouting" @click="relayoutGraph">
+            <button :title="ot('zoomIn')" :aria-label="ot('zoomIn')" @click="zoomIn"><Plus :size="18" /></button>
+            <button :title="ot('zoomOut')" :aria-label="ot('zoomOut')" @click="zoomOut"><Minus :size="18" /></button>
+            <button :title="ot('fitCanvas')" :aria-label="ot('fitCanvas')" @click="fitGraph"><Maximize :size="18" /></button>
+            <button :title="ot('relayout')" :aria-label="ot('relayout')" :disabled="layouting" @click="relayoutGraph">
               <Network :size="18" />
             </button>
-            <button :title="ot('downloadPng')" @click="downloadGraph"><Download :size="18" /></button>
+            <button :title="ot('downloadPng')" :aria-label="ot('downloadPng')" @click="downloadGraph"><Download :size="18" /></button>
           </div>
           <div class="graph-hint">
             <span />
@@ -679,8 +679,6 @@ onBeforeUnmount(() => {
               <el-button
                 v-if="selectedObject || selectedRelation"
                 class="modeling-link"
-                type="primary"
-                plain
                 size="small"
                 :icon="Workflow"
                 @click="openSelectionInVisualModeling"

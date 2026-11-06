@@ -1,0 +1,104 @@
+/* Manager button treatment, including its instance-local teleported dialogs. Geometry belongs to each toolbar. */
+.ontology-manager .el-button {
+  --el-button-size: var(--control-height-sm);
+  min-height: var(--control-height-sm);
+  height: auto;
+  padding: 3px 10px;
+  border-radius: var(--radius-sm);
+  font-size: var(--text-sm);
+  line-height: var(--leading-sm);
+}
+.ontology-manager .el-button.el-button--small {
+  --el-button-size: var(--control-height-sm);
+  min-height: var(--control-height-sm);
+}
+.ontology-manager .el-dialog__footer .el-button,
+.ontology-manager .el-drawer__footer .el-button {
+  --el-button-size: var(--control-height);
+  min-height: var(--control-height);
+  padding: 5px var(--spacing-md);
+}
+.ontology-manager .el-button.is-link {
+  padding-inline: var(--spacing-xs);
+}
+.ontology-manager .el-button:not(.el-button--primary, .el-button--danger, .el-button--success, .el-button--warning, .el-button--info) {
+  --el-button-hover-text-color: var(--el-text-color-primary);
+  --el-button-hover-bg-color: var(--el-fill-color-light);
+  --el-button-hover-border-color: var(--el-border-color-dark);
+  --el-button-active-text-color: var(--el-text-color-primary);
+  --el-button-active-bg-color: var(--el-fill-color);
+  --el-button-active-border-color: var(--el-border-color-dark);
+}
+.ontology-manager .el-button.is-text:not(:disabled):hover {
+  background: var(--el-fill-color-light);
+}
+.ontology-manager .el-button.is-link:not(:disabled):hover {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.ontology-manager .el-button:disabled {
+  --el-button-disabled-text-color: var(--el-disabled-text-color);
+  --el-button-disabled-bg-color: var(--el-fill-color-light);
+  --el-button-disabled-border-color: var(--el-border-color);
+  cursor: not-allowed;
+}
+.ontology-manager .el-button.is-loading {
+  cursor: progress;
+}
+.ontology-manager .el-button:focus-visible {
+  outline: 2px solid var(--el-color-primary);
+  outline-offset: 2px;
+}
+.ontology-manager .el-button > span:has(> .lucide) {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+}
+.ontology-manager .el-button > span > .lucide {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+}
+.ontology-manager .manager-icon-button,
+.ontology-manager .zoom-controls .el-button,
+.ontology-manager .graph-toolbar button,
+.ontology-manager .node-actions button {
+  width: var(--control-height-sm);
+  height: var(--control-height-sm);
+  min-height: var(--control-height-sm);
+  flex: 0 0 var(--control-height-sm);
+  padding: 0;
+  border-radius: var(--radius-sm);
+  transition: background-color var(--transition-fast), color var(--transition-fast);
+}
+.ontology-manager .graph-toolbar button > svg,
+.ontology-manager .node-actions button > svg {
+  width: 16px;
+  height: 16px;
+}
+.ontology-manager .graph-toolbar button:not(:disabled):hover,
+.ontology-manager .node-actions button:not(:disabled):hover {
+  background: var(--el-fill-color-light);
+  color: var(--el-text-color-primary);
+}
+.ontology-manager .graph-toolbar button:not(:disabled):active,
+.ontology-manager .node-actions button:not(:disabled):active {
+  background: var(--el-fill-color);
+}
+.ontology-manager .graph-toolbar button:disabled,
+.ontology-manager .node-actions button:disabled {
+  opacity: 1;
+  color: var(--el-disabled-text-color);
+  background: transparent;
+  cursor: not-allowed;
+}
+.ontology-manager .graph-toolbar button:focus-visible,
+.ontology-manager .node-actions button:focus-visible {
+  outline: 2px solid var(--el-color-primary);
+  outline-offset: -2px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .ontology-manager .el-button,
+  .ontology-manager .graph-toolbar button,
+  .ontology-manager .node-actions button { transition: none; }
+}

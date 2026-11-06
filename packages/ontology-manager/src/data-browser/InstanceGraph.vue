@@ -1023,7 +1023,7 @@ onBeforeUnmount(() => {
 .neighbor-filter-actions { display: grid; grid-column: 1 / -1; gap: var(--spacing-sm); padding-top: var(--spacing-xs); }
 .neighbor-filter-actions .el-checkbox { height: 24px; margin: 0; }
 .neighbor-filter-actions :deep(.el-checkbox__label) { padding-left: var(--spacing-sm); font-size: var(--text-xs); line-height: 16px; }
-.neighbor-filter-actions .el-button { width: 100%; min-height: 32px; margin: 0; padding: 6px var(--spacing-md); }
+.neighbor-filter-actions .el-button { width: 100%; margin: 0; }
 .neighbor-filter-actions :deep(.el-button .el-icon) { font-size: 15px; }
 .node-actions { position: absolute; z-index: 3; display: flex; transform: translateX(-50%); padding: 4px; gap: 2px; border: 1px solid var(--el-border-color); border-radius: 6px; background: var(--el-bg-color); box-shadow: 0 3px 12px rgba(0, 0, 0, 0.12); }
 .node-actions button { display: grid; place-items: center; width: 32px; height: 32px; border: 0; border-radius: 4px; background: transparent; color: var(--el-text-color-regular); cursor: pointer; }
