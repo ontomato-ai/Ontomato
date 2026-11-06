@@ -89,6 +89,8 @@
   --shell-rail-button: 38px;
   /* The current application is one surface on the rail: rounded only where it meets the rail. */
   --shell-app-radius: 16px;
+  /* An application's own column, when it draws one inside its area (the conversation applications do). */
+  --shell-app-column: 244px;
   --shell-conversation-gutter: 10px;
   --shell-conversation-radius: 18px;
   --shell-composer-height: 56px;

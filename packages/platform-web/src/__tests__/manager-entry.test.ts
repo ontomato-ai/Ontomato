@@ -12,6 +12,10 @@ async function open(path: string) {
     history: createMemoryHistory(),
     routes: [
       { path: "/chat", component: { render: () => null } },
+      // The settings' screens, so a redirect to one lands on it rather than falling through to the catch-all.
+      ...["/agents/settings", "/agents/settings/capabilities", "/agents/settings/:agentId"].map((path) => ({
+        path, component: { render: () => null },
+      })),
       ...Object.values(legacyAdminRoutes),
     ],
   });
@@ -68,10 +72,10 @@ describe("old admin addresses in the workbench", () => {
       ["/admin", "/agents/chat"],
       ["/admin/analysis", "/agents/settings"],
       ["/admin/system-agents", "/agents/settings"],
-      ["/admin/skills", "/agents/settings"],
-      ["/admin/skills/analysis", "/agents/settings"],
-      ["/admin/skills/visualization", "/agents/settings"],
-      ["/admin/mcp-service", "/agents/settings"],
+      ["/admin/skills", "/agents/settings/capabilities"],
+      ["/admin/skills/analysis", "/agents/settings/capabilities"],
+      ["/admin/skills/visualization", "/agents/settings/capabilities"],
+      ["/admin/mcp-service", "/agents/settings/capabilities"],
       ["/admin/system-config", "/agents/chat"],
       ["/admin/feedback-records", "/agents/chat"],
     ];
@@ -82,17 +86,22 @@ describe("old admin addresses in the workbench", () => {
     }
   });
 
-  it("keeps the feature and tab in the redirect so the destination opens the right place", async () => {
+  it("sends the old console's capability links to the library's own address", async () => {
     const router = createRouter({
       history: createMemoryHistory(),
       routes: [
         { path: "/chat", component: { render: () => null } },
+        ...["/agents/settings", "/agents/settings/capabilities", "/agents/settings/:agentId"].map((path) => ({
+          path, component: { render: () => null },
+        })),
         ...Object.values(legacyAdminRoutes),
       ],
     });
-    await router.push("/admin/skills");
-    expect(router.currentRoute.value.query).toEqual({ tab: "capabilities" });
+    for (const path of ["/admin/skills", "/admin/mcp-service"]) {
+      await router.push(path);
+      expect(router.currentRoute.value.path, path).toBe("/agents/settings/capabilities");
+    }
     await router.push("/admin/analysis");
-    expect(router.currentRoute.value.query).toEqual({});
+    expect(router.currentRoute.value.path).toBe("/agents/settings");
   });
 });

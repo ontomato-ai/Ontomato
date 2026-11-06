@@ -23,9 +23,9 @@ vi.mock("@ontomato/agent-shell-ui", () => ({
     emits: ["update:featureId"],
     template: '<div class="shell"><slot name="feature" :feature-id="featureId" /></div>',
   },
-  // The workbench contributes its navigation to the platform's column; the test only reads the page it opens.
+  // The shell draws the column and the conversation; this test only reads the page the workbench opens.
   ShellNavBody: { name: "ShellNavBody", template: "<div />" },
-  useAppColumn: () => {},
+  ShellColumn: { name: "ShellColumn", template: "<div><slot /></div>" },
   useAgentNav: () => ({
     agents: { value: [] },
     sessions: { value: [] },

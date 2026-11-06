@@ -19,10 +19,8 @@ export { installErrorPunctuation, type ErrorPunctuation } from "./utils/error-pu
 export { useLocale } from "./composables/useLocale";
 export {
   AGENT_PAGE_PERMISSIONS,
-  AGENT_TAB_PERMISSIONS,
   OPS_DIAGNOSIS_PERMISSION,
   anyPermission,
-  showsAgentTab,
   workbenchPermissionGroups,
   workbenchPermissions,
 } from "./features/agents";

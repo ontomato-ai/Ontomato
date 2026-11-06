@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { computed, h, onMounted, ref, watch } from "vue";
+import { computed, onMounted, ref, watch } from "vue";
 import { X } from "lucide-vue-next";
-import { AgentShell, ShellNavBody, createAgentHostClient, useAgentNav, useAppColumn } from "@ontomato/agent-shell-ui";
+import { AgentShell, createAgentHostClient, useAgentNav } from "@ontomato/agent-shell-ui";
 import "@ontomato/agent-shell-ui/style.css";
 import {
   governanceSourceReadSchema, governanceWorkResponseSchema,
@@ -66,8 +66,8 @@ const client = createAgentHostClient({
   },
 });
 /**
- * The one navigation state of this application: the platform column lists its conversations and the report entry, and
- * the conversation promotes into it while sending.
+ * The one navigation state of this application: its column lists its conversations and the report entry, and the
+ * conversation promotes into it while sending.
  */
 const nav = useAgentNav({
   client: () => client,
@@ -77,32 +77,6 @@ const nav = useAgentNav({
   setSessionId: (id) => (sessionId.value = id),
   onLeaveConversation: () => (featureId.value = null),
 });
-const { agents, sessions, sessionsState, nextCursor } = nav;
-
-useAppColumn(() => ({
-  appId: "governance",
-  content: () =>
-    h(ShellNavBody, {
-      workbench: workbench.value,
-      agents: agents.value,
-      agentId: agentId.value,
-      sessions: sessions.value,
-      sessionsState: sessionsState.value,
-      hasMore: nextCursor.value !== null,
-      sessionId: sessionId.value,
-      featureId: featureId.value,
-      // The column is drawn outside the conversation's provider, so the shell's words are passed in.
-      labels: labels.value,
-      onNewConversation: () => nav.startNew(),
-      onSelectFeature: (id: string) => (featureId.value = id),
-      onFeatureAction: () => {},
-      onSelectAgent: (id: string) => (agentId.value = id),
-      onSelectSession: (id: string) => (sessionId.value = id),
-      onDeleteSession: (id: string) => void nav.removeSession(id),
-      onLoadMore: () => void nav.loadSessions(true),
-      onRetry: () => void nav.loadSessions(),
-    }),
-}));
 
 onMounted(async () => {
   await nav.loadAgents().catch(() => {});
@@ -132,7 +106,8 @@ function toggleIssue(id: string) {
       <button type="button" :aria-label="labels.close" @click="error = ''"><X :size="14" /></button>
     </p>
     <AgentShell v-model:session-id="sessionId" v-model:agent-id="agentId" v-model:feature-id="featureId"
-      :workbench="workbench" :client="client" :labels="labels" :nav="nav" :page-context="pageContext" @error="fail">
+      :workbench="workbench" :title="t('title')" :client="client" :labels="labels" :nav="nav"
+      :page-context="pageContext" @error="fail">
       <template #feature>
         <div class="report" :aria-busy="loading">
           <section class="report-summary">

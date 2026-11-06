@@ -90,15 +90,21 @@ describe("open-source Ontology Service page", () => {
    * the rail and draws its own menu there. The ontology manager's menu is its own; the business applications' columns
    * are the conversation shell's.
    */
-  it("the ontology manager owns the surface beside the rail and draws its own menu there", async () => {
+  it("the ontology manager owns the surface beside the rail and keeps its own menu there", async () => {
     await start("/#/ontology/objects");
     const app = document.querySelector(".platform-app");
     expect(app).not.toBeNull();
-    // No shell-made column anywhere: not the panel frame, not its title, not its page rows.
+    // No shell-made column frame: the manager's groups are its own menu, drawn inside the application's area.
     expect(document.querySelector(".app-panel")).toBeNull();
     expect(document.querySelector(".panel-title")).toBeNull();
-    expect(document.querySelector(".page-row")).toBeNull();
-    // The manager's own frame is what fills the application's area.
+    expect(document.querySelector(".platform-app-menu")).not.toBeNull();
+    expect([...document.querySelectorAll(".platform-app-menu .group-heading")].map((heading) => heading.textContent)).toEqual([
+      "Ontology",
+      "Assets",
+      "Knowledge",
+    ]);
+    expect(document.querySelector(".platform-app-menu .page-row.active .page-label")?.textContent).toBe("Object Types");
+    // The manager's own frame fills the page beside that menu.
     expect(app!.querySelector(".ontology-manager")).not.toBeNull();
   });
 
@@ -117,7 +123,7 @@ describe("open-source Ontology Service page", () => {
     );
     expect(sections).toEqual([
       ["Ontology manager", "Object browser"],
-      ["Agent Platform", "Operations diagnosis", "Knowledge governance", "Scheduled tasks"],
+      ["Agent Platform", "Operations diagnosis", "Knowledge governance", "Dashboards", "Scheduled tasks"],
       ["System settings"],
     ]);
     // The object browser owns the graph and data browsing, and draws its own pages.

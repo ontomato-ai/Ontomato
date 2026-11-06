@@ -8,8 +8,16 @@
 export const platformRoutes = {
   layout: { name: "PlatformLayout", path: "/" },
   chat: { name: "Chat", path: "/agents/chat" },
-  dashboards: { name: "Dashboards", path: "/agents/dashboards" },
+  /** The dashboards are an application of their own: the charts and datasets conversations add to. */
+  dashboards: { name: "Dashboards", path: "/dashboards" },
   agents: { name: "AgentSettings", path: "/agents/settings" },
+  /**
+   * The settings screens: a new agent, the capability library, and one agent's editor. The two fixed addresses come
+   * before the parameter, so `/agents/settings/new` is the new agent and never an agent whose id is "new".
+   */
+  agentSettingsNew: { name: "AgentSettingsNew", path: "/agents/settings/new" },
+  agentSettingsCapabilities: { name: "AgentSettingsCapabilities", path: "/agents/settings/capabilities" },
+  agentSettings: { name: "AgentSettingsAgent", path: "/agents/settings/:agentId" },
   ops: { name: "Operations", path: "/ops" },
   diagnosis: { name: "ObserveDiagnosis", path: "/ops/diagnosis" },
   opsKnowledge: { name: "ObserveKnowledge", path: "/ops/knowledge" },
