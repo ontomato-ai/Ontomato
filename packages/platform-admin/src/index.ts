@@ -44,6 +44,7 @@ export {
   pageRoutes,
   platformGroups,
   platformPageComponents,
+  platformPageScreen,
   platformKnowledgePages,
   platformPages,
   runRecordsTabs,

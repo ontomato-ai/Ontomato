@@ -1,13 +1,14 @@
 import type { App } from "vue";
-import { computed } from "vue";
+import { computed, defineAsyncComponent } from "vue";
 import type { Router } from "vue-router";
 import en from "element-plus/es/locale/lang/en";
-import { managerRoutes, managerStandaloneRoutes } from "@ontomato/ontology-manager";
+import { managerRoutes, managerStandaloneRoutes, registerGovernanceScreen } from "@ontomato/ontology-manager";
 import {
   createPlatformClient, installPlatformPages, openAccess, ossPlatformPages, platformApi,
-  platformGroups, platformKnowledgePages, sharedPageRoutes,
+  platformGroups, platformKnowledgePages, platformPageScreen, sharedPageRoutes,
 } from "@ontomato/platform-admin";
 import platformEn from "@ontomato/platform-admin/locales/en";
+import { platformRoutes } from "@ontomato/platform-shell/routes";
 import {
   createServiceManager, installServiceMessages, readRuntimeConfig, serviceNavigation,
   startPage, startShellPreferences, stopPage,
@@ -31,6 +32,10 @@ export function ossServicePages(app: App, router: Router) {
     host: { access: openAccess, api: platformApi(client), preferences, navigation: computed(() => navigation),
       account: null, links: [], navigationHidden: computed(() => false), systemConfig: ossSystemConfig, separators: { detail: ": " } },
   });
+  // The feedback records are a page of the knowledge governance application (its column surrounds them): its screen is
+  // this package's, so the assembly that holds both hands it over instead of either application importing the other.
+  const screens = platformPageScreen(platformRoutes.feedback.path);
+  if (screens) registerGovernanceScreen("feedback", defineAsyncComponent(screens as () => Promise<never>));
   // `installPlatformPages` returns the pages as routes under the caller's layout; the standalone conversation pages
   // (knowledge governance) join them so one layout holds both.
   return [...area, ...managerStandaloneRoutes()];

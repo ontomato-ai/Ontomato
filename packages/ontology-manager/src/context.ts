@@ -206,6 +206,15 @@ export function useSharedText() {
   return { t };
 }
 
+/**
+ * The platform's own words, from its groups (`platform`, ...) of the page's vue-i18n tree: an application's name is one
+ * entry, read by the rail and by the application's own column, so the two cannot name it differently.
+ */
+export function usePlatformText() {
+  const { t: translate } = useI18n();
+  return { pt: (key: "platform.operations" | "platform.governance") => translate(key) };
+}
+
 /** Knowledge governance text from the `governance` entries, and the agent shell's labels in the current language. */
 export function useGovernanceText() {
   const i18n = useI18n();

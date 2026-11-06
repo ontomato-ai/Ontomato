@@ -45,12 +45,18 @@ const props = defineProps<{
 const emit = defineEmits<{ openSession: [sessionId: string]; updateAgentFilter: [agentId: string] }>();
 const labels = useSchedulesLabels();
 
-type AppFilter = "" | "agents" | "ontology";
+/**
+ * The application filter. An empty value is not an option: a select with an empty value shows its placeholder ("Select"),
+ * so "no narrowing" is its own choice with the words the list shows.
+ */
+const ANY_APP = "any";
+const ANY_AGENT = "any";
+type AppFilter = typeof ANY_APP | "agents" | "ontology";
 
 const tasks = ref<PlatformTask[]>([]);
 const timeZone = ref("");
 const state = ref<"loading" | "ready" | "error">("loading");
-const appFilter = ref<AppFilter>("");
+const appFilter = ref<AppFilter>(ANY_APP);
 /** undefined: the form is closed; null: registering a new task; a task: editing it. */
 const editing = ref<PlatformTask | null | undefined>(undefined);
 const saving = ref(false);
@@ -73,7 +79,7 @@ const pickAgent = (id: string) => emit("updateAgentFilter", id);
 
 /** The rows on screen: the agent scope is fixed by the host, the application filter is the reader's. */
 const shown = computed(() =>
-  appFilter.value ? tasks.value.filter((task) => task.appId === appFilter.value) : tasks.value,
+  appFilter.value === ANY_APP ? tasks.value : tasks.value.filter((task) => task.appId === appFilter.value),
 );
 
 const formOpen = computed({
@@ -105,7 +111,7 @@ async function load() {
 function locate() {
   const target = props.taskId ? tasks.value.find((task) => task.id === props.taskId) : undefined;
   if (!target) return;
-  if (appFilter.value && appFilter.value !== target.appId) appFilter.value = "";
+  if (appFilter.value !== ANY_APP && appFilter.value !== target.appId) appFilter.value = ANY_APP;
   historyRow.value = target.id;
   void nextTick(() => table.value?.setCurrentRow(target));
 }
@@ -226,13 +232,17 @@ defineExpose({ reload: load, openNewTask });
 
 <template>
   <div class="schedules">
-    <div class="toolbar">
+    <!--
+      The filters are not an admin toolbar: the admin stylesheet's `.toolbar` draws a fixed-height box around its
+      contents, which cuts through the selects' own labels and border. This is the page's own filter row.
+    -->
+    <div class="filters">
       <div class="scope">
         <!-- The filters carry their own labels: what a select narrows is not something to guess (DESIGN.md). -->
         <label class="filter">
           <span class="filter-label">{{ t("filter.app") }}</span>
           <el-select v-model="appFilter" class="app-filter" :aria-label="t('filter.app')">
-            <el-option value="" :label="t('filter.all')" />
+            <el-option :value="ANY_APP" :label="t('filter.all')" />
             <el-option value="agents" :label="t('filter.agentsOnly')" />
             <el-option value="ontology" :label="t('filter.functionsOnly')" />
           </el-select>
@@ -240,12 +250,12 @@ defineExpose({ reload: load, openNewTask });
         <label class="filter">
           <span class="filter-label">{{ t("filter.agent") }}</span>
           <el-select
-            :model-value="chosenAgent ?? ''"
+            :model-value="chosenAgent || ANY_AGENT"
             class="agent-filter"
             :aria-label="t('filter.agent')"
-            @update:model-value="pickAgent(String($event || ''))"
+            @update:model-value="pickAgent(String($event) === ANY_AGENT ? '' : String($event))"
           >
-            <el-option value="" :label="t('filter.allAgents')" />
+            <el-option :value="ANY_AGENT" :label="t('filter.allAgents')" />
             <el-option v-for="agent in agents" :key="agent.id" :value="agent.id" :label="agent.name" />
           </el-select>
         </label>
@@ -269,7 +279,7 @@ defineExpose({ reload: load, openNewTask });
       class="table"
       :expand-row-keys="historyRow ? [historyRow] : []"
     >
-      <el-table-column :label="t('columns.name')" min-width="200">
+      <el-table-column :label="t('columns.name')" min-width="240">
         <template #default="{ row }">
           <span class="name">{{ row.name }}</span>
           <p v-if="row.description" class="caption">{{ row.description }}</p>
@@ -330,7 +340,7 @@ defineExpose({ reload: load, openNewTask });
           </div>
         </template>
       </el-table-column>
-      <el-table-column :label="t('columns.actions')" width="260" fixed="right">
+      <el-table-column :label="t('columns.actions')" width="300" fixed="right" align="right">
         <template #default="{ row }">
           <div class="actions">
             <el-button
@@ -411,18 +421,20 @@ defineExpose({ reload: load, openNewTask });
 </template>
 
 <style scoped>
+/*
+ * The page's body: the filters and the table, nothing else. Its padding comes from the frame that mounts it (the page
+ * header's gutter), so the filters and the table start where the header's title does.
+ */
 .schedules {
   display: flex;
   flex-direction: column;
   gap: var(--spacing-md);
-  padding: var(--spacing-lg);
 }
-.toolbar {
+.filters {
   display: flex;
   align-items: flex-end;
   justify-content: space-between;
   gap: var(--spacing-md);
-  min-height: var(--control-height);
 }
 .scope {
   display: flex;
@@ -454,6 +466,14 @@ defineExpose({ reload: load, openNewTask });
   font-weight: var(--font-medium);
   color: var(--el-text-color-primary);
 }
+/* A task's name stays one line where it fits and at most two where it does not; the table never folds it further. */
+.name {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
 .caption {
   margin: var(--spacing-xs) 0 0;
   font-size: var(--text-xs);
@@ -471,10 +491,15 @@ defineExpose({ reload: load, openNewTask });
   align-items: center;
   gap: var(--spacing-xs);
 }
+/* The row's four actions stay on one line: the column is wide enough for them, and a header never folds. */
 .actions {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
+  justify-content: flex-end;
   gap: 0;
+}
+:deep(.el-table th .cell) {
+  white-space: nowrap;
 }
 .actions .el-button {
   margin-left: 0;
@@ -510,7 +535,7 @@ defineExpose({ reload: load, openNewTask });
 :deep(.expand-hidden) {
   display: none;
 }
-@media (max-width: 760px) {
+@media (max-width: 1100px) {
   .action-label {
     display: none;
   }

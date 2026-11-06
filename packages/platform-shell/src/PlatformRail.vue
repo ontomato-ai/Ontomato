@@ -416,8 +416,8 @@ onBeforeUnmount(() => document.removeEventListener("pointerdown", onDocumentPoin
   align-items: center;
   gap: 10px;
   width: 100%;
-  height: 34px;
-  padding: 0 10px;
+  min-height: 34px;
+  padding: 6px 10px;
   box-sizing: border-box;
   border: 0;
   border-radius: var(--radius-md);
@@ -452,12 +452,16 @@ onBeforeUnmount(() => document.removeEventListener("pointerdown", onDocumentPoin
 .rail-row .rail-external {
   color: var(--el-text-color-tertiary);
 }
+/*
+ * An expanded rail shows every application's name in full, in every language: a long name wraps onto a second line and
+ * its row grows, rather than being cut to an ellipsis that tells the reader nothing.
+ */
 .rail-label {
   flex: 1;
   min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+  white-space: normal;
 }
 .rail-external {
   flex-shrink: 0;

@@ -19,6 +19,7 @@ import {
 import { ApiRequestError } from "../../../utils/api";
 import { authHost } from "../../../utils/auth";
 import { workbenchContent } from "../../../content";
+import { PlatformPageHeader } from "@ontomato/platform-shell";
 import McpServiceDialog from "../../mcp/components/McpServiceDialog.vue";
 import McpToolList from "../../mcp/components/McpToolList.vue";
 import SkillDebugDialog from "../../skills/components/SkillDebugDialog.vue";
@@ -326,6 +327,17 @@ const kindLabel = (row: Row) =>
 
 <template>
   <div class="capability-library">
+    <!-- The library's own page header: it is a page of the agent settings, not a panel inside another page. -->
+    <PlatformPageHeader :title="t('capabilities.title')" :description="t('capabilities.description')">
+      <template #actions>
+        <el-button :icon="RefreshCw" :loading="loading" @click="load">{{ t("common.refresh") }}</el-button>
+        <el-upload :show-file-list="false" accept=".zip" :auto-upload="false" :on-change="uploadSkill">
+          <el-button :icon="Upload">{{ t("admin.importSkill") }}</el-button>
+        </el-upload>
+        <el-button :icon="Plus" @click="addSkill">{{ t("admin.addSkill") }}</el-button>
+        <el-button type="primary" :icon="Plug" @click="addService">{{ t("hotData.addService") }}</el-button>
+      </template>
+    </PlatformPageHeader>
     <div class="library-toolbar">
       <el-radio-group v-model="kindFilter" :aria-label="t('capabilities.filter')">
         <el-radio-button value="all">{{ t("common.all") }}</el-radio-button>
@@ -333,14 +345,6 @@ const kindLabel = (row: Row) =>
         <el-radio-button value="tool">{{ t("capabilities.tools") }}</el-radio-button>
       </el-radio-group>
       <el-input v-model="search" :placeholder="t('capabilities.search')" :prefix-icon="Search" clearable />
-      <div class="toolbar-actions">
-        <el-button :icon="RefreshCw" :loading="loading" @click="load">{{ t("common.refresh") }}</el-button>
-        <el-upload :show-file-list="false" accept=".zip" :auto-upload="false" :on-change="uploadSkill">
-          <el-button :icon="Upload">{{ t("admin.importSkill") }}</el-button>
-        </el-upload>
-        <el-button :icon="Plus" @click="addSkill">{{ t("admin.addSkill") }}</el-button>
-        <el-button type="primary" :icon="Plug" @click="addService">{{ t("hotData.addService") }}</el-button>
-      </div>
     </div>
 
     <el-alert v-if="loadFailed" type="error" :closable="false" show-icon :title="t('capabilities.loadFailed')">
@@ -466,12 +470,20 @@ const kindLabel = (row: Row) =>
  * The library grows with its content and the page scrolls: no scroll box inside the page, so the table is never squeezed
  * into a few rows by whatever sits below it.
  */
+/*
+ * The page fills the area it is mounted in. Its horizontal padding is the page header's grid: this page is its own
+ * frame (it draws the header), so nothing above it supplies the gutter.
+ */
 .capability-library {
   display: flex;
   flex-direction: column;
   gap: var(--spacing-md);
   min-height: 100%;
-  padding: 18px 24px 32px;
+  padding: 0 0 var(--spacing-xl);
+  box-sizing: border-box;
+}
+.capability-library > :not(.platform-page-header) {
+  padding: 0 var(--page-gutter);
 }
 .library-toolbar {
   display: flex;

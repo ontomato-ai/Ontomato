@@ -46,7 +46,8 @@ const listedPages = pages.filter((page) => page.id !== "model");
 const bottomEntry = computed(() => ({ label: t("ops.modelSettings"), icon: "settings" }));
 const workbench = computed<ShellWorkbenchDeclaration>(() => ({
   id: "operations",
-  label: t("ops.title"),
+  // The application's name is the platform's (the rail and this column read one entry): the platform decides it.
+  label: t("platform.operations"),
   features: listedPages.map(({ id, label, icon }) => ({ id, label: t(label), icon, availability: "page" as const, withConversation: true })),
 }));
 const pageOf = (path: string) =>
@@ -168,7 +169,7 @@ onMounted(async () => {
     v-model:session-id="sessionId"
     v-model:page-view="pageView"
     :workbench="workbench"
-    :title="t('ops.title')"
+    :title="t('platform.operations')"
     :bottom="bottomEntry"
     :client="client"
     :labels="labels"

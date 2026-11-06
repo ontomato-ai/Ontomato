@@ -26,6 +26,7 @@ export const modelConfigTabs = {
  * licences (open source) list no tabs at all.
  */
 export const systemSettingsTabs = {
+  // Not "System settings": that is the application's own name, and a tab that repeats its parent's name says nothing.
   general: { path: platformRoutes.general.path, titleKey: "nav.systemGeneralTab", permissions: ["system-config"] },
   dataAdapters: {
     path: platformRoutes.adapters.path,
@@ -58,7 +59,8 @@ export const platformPages = {
   },
   systemSettings: {
     path: platformRoutes.settings.path,
-    titleKey: "nav.systemConfig",
+    // The application is "System settings"; this page under it is the general settings, not a second page of that name.
+    titleKey: "nav.systemGeneralSettings",
     descriptionKey: "platform.descriptions.systemConfig",
     icon: Settings,
     permissions: ["system-config", "authorization-management"],
@@ -78,6 +80,8 @@ export const platformPages = {
     icon: MessageSquareText,
     permissions: ["user-feedback"],
     group: "knowledge",
+    // The knowledge governance application's frame surrounds it (its column, its header): the platform draws no header.
+    ownHeader: true,
   },
   runRecords: {
     path: platformRoutes.records.path,
@@ -145,12 +149,26 @@ export const ossPlatformPages: readonly PlatformPage[] = [
 /** The pages outside platform administration that this package ships: the feedback records, under knowledge. */
 export const platformKnowledgePages: readonly PlatformPage[] = [platformPages.userFeedback];
 
+/** Pages whose screen another application's frame surrounds, so their route is that application's. */
+const MULTI_APPLICATION_PAGES = new Set<string>([platformRoutes.feedback.path]);
+
+/**
+ * The screen of a shared page: the page's component, for an edition that mounts it inside another application's frame.
+ * The feedback records show inside the knowledge governance application's column, so their route is that application's
+ * and this package only supplies the screen.
+ */
+export const platformPageScreen = (path: string) => platformPageComponents[path];
+
 /**
  * Every route the shared pages need: the edition's platform pages (with their tabs, so an edition whose system
  * settings hold the licence tab gets that tab's address too) and the pages beside them. Pages this package does not
  * ship, such as an edition's own permission centre, are routed by the edition.
+ *
+ * The feedback records are routed by the knowledge governance application (its column surrounds them), so they are
+ * listed in the navigation and left out of the routes here.
  */
 export function sharedPageRoutes(pages: readonly PlatformPage[] = ossPlatformPages): RouteRecordRaw[] {
   const shared = pages.filter((page) => page.path in platformPageComponents);
-  return pageRoutes([...shared, ...platformKnowledgePages], platformPageComponents);
+  const routed = [...shared, ...platformKnowledgePages].filter((page) => !MULTI_APPLICATION_PAGES.has(page.path));
+  return pageRoutes(routed, platformPageComponents);
 }

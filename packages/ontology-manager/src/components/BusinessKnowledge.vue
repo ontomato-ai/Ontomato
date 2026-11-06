@@ -18,6 +18,7 @@ import {
 import { ArrowLeft, BookOpen, Check, Pencil, Plus, Search, Trash2 } from "lucide-vue-next";
 import type { BusinessKnowledge } from "../api";
 import { useManagerClient, useManagerContext, useOntologyText, useSharedText } from "../context";
+import { PlatformPageHeader } from "@ontomato/platform-shell";
 import { useManagerFeedback } from "../feedback";
 
 const context = useManagerContext();
@@ -262,15 +263,10 @@ onMounted(load);
 
 <template>
   <section class="business-knowledge" :class="{ 'narrow-detail': narrowDetail }">
-    <header class="knowledge-titlebar">
-      <div class="knowledge-heading">
-        <h1>{{ t("nav.businessKnowledge") }}</h1>
-        <p>{{ ot("knowledgeDesc") }}</p>
-      </div>
-      <div class="knowledge-actions">
-        <el-button
-          @click="emit('governance')"
-        >
+    <!-- The platform's one page header: the title, its line of description, and this page's own buttons. -->
+    <PlatformPageHeader :title="t('nav.businessKnowledge')" :description="ot('knowledgeDesc')">
+      <template #actions>
+        <el-button @click="emit('governance')">
           <BookOpen :size="16" />
           {{ ot("knowledgeGovernance") }}
         </el-button>
@@ -278,8 +274,8 @@ onMounted(load);
           <Plus :size="16" />
           {{ ot("knowledgeAdd") }}
         </el-button>
-      </div>
-    </header>
+      </template>
+    </PlatformPageHeader>
 
     <div class="knowledge-toolbar">
       <el-input
@@ -459,44 +455,6 @@ onMounted(load);
   flex-direction: column;
   min-height: 0;
   background: var(--el-bg-color);
-}
-.knowledge-titlebar {
-  display: flex;
-  height: var(--page-header-height);
-  flex: 0 0 var(--page-header-height);
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--spacing-md);
-  padding: 0 var(--spacing-lg);
-  border-bottom: 1px solid var(--el-border-color);
-}
-.knowledge-heading {
-  display: flex;
-  min-width: 0;
-  align-items: baseline;
-  gap: var(--spacing-md);
-}
-.knowledge-titlebar h1 {
-  margin: 0;
-  color: var(--el-text-color-primary);
-  font-size: var(--text-lg);
-  font-weight: var(--font-semibold);
-  line-height: var(--leading-lg);
-  white-space: nowrap;
-}
-.knowledge-heading p {
-  margin: 0;
-  overflow: hidden;
-  color: var(--el-text-color-secondary);
-  font-size: var(--text-sm);
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.knowledge-actions {
-  display: flex;
-  flex: 0 0 auto;
-  flex-wrap: wrap;
-  gap: var(--spacing-sm);
 }
 .business-knowledge :deep(.el-button) {
   display: inline-flex;
