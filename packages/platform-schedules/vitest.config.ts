@@ -7,5 +7,7 @@ export default defineConfig({
     environment: "happy-dom",
     include: ["src/**/__tests__/**/*.test.ts"],
     setupFiles: ["src/__tests__/setup.ts"],
+    // The components' own styles are applied, so a test can read the layout they give Element Plus's elements.
+    css: true,
   },
 });

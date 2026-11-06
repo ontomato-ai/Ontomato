@@ -447,6 +447,36 @@ async function submit() {
 </template>
 
 <style scoped>
+/*
+ * The dialog never grows past the window, whatever the application declares. It opens where every dialog does (Element
+ * Plus's top margin) and grows downward until it keeps a margin above the window's bottom edge; from there its title and
+ * its buttons stay where they are and only the form between them scrolls, so choosing an application never moves the
+ * title. The bound is a share of the overlay, so it holds when a narrow window pads the overlay too.
+ */
+:global(.el-dialog.schedule-dialog) {
+  --schedule-dialog-gap: var(--spacing-2xl);
+  display: flex;
+  flex-direction: column;
+  max-height: calc(100% - var(--el-dialog-margin-top, 15vh) - var(--schedule-dialog-gap));
+  margin-bottom: var(--schedule-dialog-gap);
+}
+:global(.schedule-dialog .el-dialog__header),
+:global(.schedule-dialog .el-dialog__footer) {
+  flex: none;
+}
+:global(.schedule-dialog .el-dialog__body) {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+/* A narrow window keeps the same small margin above and below, rather than a share of its height above. */
+@media (max-width: 760px) {
+  :global(.el-dialog.schedule-dialog) {
+    --el-dialog-margin-top: var(--spacing-lg);
+    --schedule-dialog-gap: var(--spacing-lg);
+  }
+}
 .dialog-head {
   display: flex;
   flex-direction: column;

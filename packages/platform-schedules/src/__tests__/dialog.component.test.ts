@@ -49,6 +49,8 @@ async function mountDialog(route: (call: Call) => Answer | Promise<Answer>, prop
       ...props,
     },
     global: pageGlobal(),
+    // In the document, so that its styles apply and a test can read the layout they give it.
+    attachTo: document.body,
   });
   mounted.push(wrapper);
   // The dialog draws its content once it has opened.
@@ -192,6 +194,33 @@ describe("writing a scheduled task", () => {
     expect(keys[1]).toBe(keys[0]);
     expect(keys[2]).not.toBe(keys[1]);
     expect(wrapper.emitted("saved")).toEqual([[task("governance-instruction"), true]]);
+  });
+
+  it("keeps the title and the buttons in view while a long form scrolls between them", async () => {
+    const { wrapper } = await mountDialog((call) => {
+      if (call.path === `${BASE}/applications/ontology/form`) {
+        return { status: 200, body: form("ontology-selection-clears-old-parameters") };
+      }
+      throw new Error(`Unexpected ${call.method} ${call.path}`);
+    });
+    await chooseApp(wrapper, "ontology");
+    await flushPromises();
+
+    const dialog = wrapper.find(".el-dialog.schedule-dialog");
+    const [header, body, footer] = (["header", "body", "footer"] as const).map((part) => dialog.find(`.el-dialog__${part}`));
+    // The title and the buttons sit outside the part that scrolls; every field the action declares is inside it.
+    expect(header.text()).toContain("New scheduled task");
+    expect(footer.find('[data-action="submit"]').exists()).toBe(true);
+    expect(body.find('[data-action="submit"]').exists()).toBe(false);
+    expect(body.findAll('[data-field^="parameter:"]')).toHaveLength(4);
+
+    // The overlay bounds the dialog: a column whose header and footer keep their height and whose body scrolls.
+    const style = (element: Element) => getComputedStyle(element);
+    expect([style(dialog.element).display, style(dialog.element).flexDirection]).toEqual(["flex", "column"]);
+    expect(style(dialog.element).maxHeight).toMatch(/^calc\(100% - /);
+    expect(style(body.element).overflowY).toBe("auto");
+    expect(style(body.element).minHeight).toMatch(/^0(px)?$/);
+    for (const fixed of [header, footer]) expect(style(fixed.element).flexShrink).toBe("0");
   });
 
   it("puts the service's field errors on the fields they name", async () => {

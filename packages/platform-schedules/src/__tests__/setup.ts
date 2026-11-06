@@ -11,15 +11,16 @@ Object.defineProperty(HTMLElement.prototype, "offsetHeight", {
 });
 
 /*
- * For the same reason a computed width is empty. A form whose labels share the widest one's width (`label-width="auto"`)
- * measures each label that way and reports every width it cannot keep (an empty one, or 0); here every label is 64px.
+ * For the same reason a computed width is empty, or `auto` once the components' styles apply. A form whose labels
+ * share the widest one's width (`label-width="auto"`) measures each label that way and reports every width it cannot
+ * keep (one that is not a length, or 0); here every label is 64px.
  */
 const computedStyle = window.getComputedStyle.bind(window);
 window.getComputedStyle = ((element: Element, pseudo?: string | null) => {
   const style = computedStyle(element, pseudo);
   return new Proxy(style, {
     get(target, key) {
-      if (key === "width" && !target.width) return "64px";
+      if (key === "width" && !(Number.parseFloat(target.width) > 0)) return "64px";
       const value = Reflect.get(target, key, target);
       return typeof value === "function" ? value.bind(target) : value;
     },
