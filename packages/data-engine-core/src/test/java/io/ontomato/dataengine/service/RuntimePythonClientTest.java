@@ -42,6 +42,37 @@ class RuntimePythonClientTest {
   }
 
   @Test
+  void executorProtocolAdmissionMatchesTheSharedLocalizedRule() throws Exception {
+    var runtime = mock(RuntimeCodeClient.class);
+    var grants = mock(QueryGrantService.class);
+    var executor = new PythonExecuteServiceImpl(runtime, grants);
+    for (String language : java.util.List.of("en", "zh-CN")) {
+      for (String source :
+          java.util.Arrays.asList(
+              null, "", "print('legacy')", "# ontomato-python:1\nprint('legacy')")) {
+        assertFalse(PythonProgramProtocol.supported(source));
+        var failure =
+            assertThrows(
+                ProgramExecutionException.class,
+                () ->
+                    executor.execute(
+                        "session",
+                        source,
+                        1,
+                        language,
+                        PythonAuthority.write("user", "domain", "none"),
+                        new JSONObject(),
+                        Map.of()));
+        assertEquals(
+            PythonProgramProtocol.unavailableReason(source, language), failure.getMessage());
+      }
+    }
+    assertTrue(PythonProgramProtocol.supported("# ontomato-python:2\nprint('current')"));
+    assertNull(PythonProgramProtocol.unavailableReason("# ontomato-python:2", "en"));
+    verifyNoInteractions(runtime, grants);
+  }
+
+  @Test
   void newProtocolDelegatesIdentityAndPreservesPartialNullShapedOutput() throws Exception {
     RuntimeCodeClient runtime = mock(RuntimeCodeClient.class);
     when(runtime.pythonHelper()).thenReturn("# private fixture helper");
@@ -184,6 +215,40 @@ class RuntimePythonClientTest {
     var forged = executor.execute("session", "# ontomato-python:2", 1, "en",
         PythonAuthority.read("user", "domain").forExecution(execution), new JSONObject(), Map.of());
     assertEquals("RuntimeError", forged.getError());
+  }
+
+  @Test
+  void writeFailureDisclosureDoesNotReplaceCancellationSignals() throws Exception {
+    var python = mock(PythonExecuteService.class);
+    var programs = new io.ontomato.dataengine.service.impl.ABCProgramServiceImpl();
+    org.springframework.test.util.ReflectionTestUtils.setField(
+        programs, "pythonExecuteService", python);
+    var function = new io.ontomato.dataengine.bean.function.Function();
+    function.setDomainId("domain");
+    function.setOperation(io.ontomato.dataengine.bean.function.Function.OPERATION_WRITE);
+    function.setParameters(java.util.List.of());
+    function.setCode("# ontomato-python:2");
+    for (Exception failure :
+        java.util.List.of(
+            new SessionCancelledException("session"), new InterruptedException("cancelled"))) {
+      doThrow(failure)
+          .when(python)
+          .execute(anyString(), anyString(), anyInt(), anyString(), any(), any(), anyMap());
+      assertSame(
+          failure,
+          assertThrows(
+              Exception.class,
+              () ->
+                  programs.execute(
+                      "session",
+                      function,
+                      "user",
+                      new io.ontomato.dataengine.service.sys.bean.permission.UserDataPermission(),
+                      "none",
+                      "en",
+                      1,
+                      "domain")));
+    }
   }
 
   @Test

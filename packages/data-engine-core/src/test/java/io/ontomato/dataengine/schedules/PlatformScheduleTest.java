@@ -499,6 +499,193 @@ class PlatformScheduleTest extends PostgresTestDatabase {
   }
 
   @Test
+  void retiredActionAndFunctionProtocolsAreDisabledAndPauseExistingTasksWithTheExecutorReason()
+      throws Exception {
+    var grants =
+        new QueryGrantService(
+            jdbc, "fixture-signing", new WorkbenchServiceAuthentication("service"));
+    grants.initialize();
+    var runtime = mock(RuntimeCodeClient.class);
+    ReflectionTestUtils.setField(
+        programs, "pythonExecuteService", new PythonExecuteServiceImpl(runtime, grants));
+    var action = new Action();
+    action.setId("a");
+    action.setName("Legacy action");
+    action.setDomainId("sales");
+    action.setStatus(Action.STATUS_PUBLISHED);
+    action.setFunction(functions.queryById("f"));
+    when(actions.queryById("a")).thenReturn(action);
+    when(actions.queryList(Action.STATUS_PUBLISHED, null, null, "sales"))
+        .thenReturn(List.of(action));
+    jdbc.update("INSERT INTO action VALUES('a')");
+    var manual = spy(new io.ontomato.dataengine.service.impl.ActionServiceImpl());
+    doReturn(action).when(manual).queryById("a");
+    ReflectionTestUtils.setField(manual, "identity", identities);
+    ReflectionTestUtils.setField(manual, "abcProgramService", programs);
+    String current = "# ontomato-python:2\nprint('current')", legacy = "print('retired')";
+    for (String locale : List.of("en", "zh-CN"))
+      for (String target : List.of("action:a", "function:f")) {
+        jdbc.update("UPDATE function SET code=? WHERE id='f'", current);
+        action.getFunction().setCode(current);
+        var input = definition(target);
+        UUID task = UUID.randomUUID(), run = UUID.randomUUID();
+        tasks.create(task, input, locale, true);
+        tasks.manual(task, run, locale);
+        jdbc.update("UPDATE function SET code=? WHERE id='f'", legacy);
+        action.getFunction().setCode(legacy);
+        var direct =
+            assertThrows(
+                ProgramExecutionException.class,
+                () ->
+                    manual.execute(
+                        "a",
+                        new com.alibaba.fastjson2.JSONObject(),
+                        locale,
+                        user,
+                        identity.dataPermission("sales", "alice"),
+                        1));
+        var actor =
+            new ScheduleApplication.Actor(
+                user, identity.dataPermission("sales", "alice"), null, null, locale);
+        var form =
+            ontology.form(
+                new ScheduleApplication.FormInput(
+                    object("execution", target), null, task, "Asia/Shanghai"),
+                actor);
+        var option =
+            java.util.stream.StreamSupport.stream(
+                    form.path("fields").get(0).path("options").spliterator(), false)
+                .filter(value -> target.equals(value.path("value").asText()))
+                .findFirst()
+                .orElseThrow();
+        assertTrue(option.path("disabled").asBoolean());
+        assertEquals(direct.getMessage(), option.path("disabledReason").asText());
+        assertFalse(form.path("submittable").asBoolean());
+        sample("platformScheduleFormSchema", form);
+        var refused =
+            assertThrows(
+                ScheduleException.class,
+                () -> tasks.create(UUID.randomUUID(), input, locale, true));
+        assertEquals("TARGET_UNAVAILABLE", refused.code);
+        assertEquals(direct.getMessage(), refused.getReason());
+        var scheduler =
+            new PlatformScheduler(
+                store, transactions, applications, credentials, identity, mock(TaskMail.class));
+        try {
+          scheduler.dispatch(run);
+        } finally {
+          scheduler.stop();
+        }
+        var record = store.run(run);
+        assertEquals("target_unavailable", record.error().code());
+        assertEquals(direct.getMessage(), record.error().message());
+        assertEquals("target_unavailable", store.get(task, false).pause().code());
+        assertEquals(direct.getMessage(), store.get(task, false).pause().message());
+        sample("platformTaskRunSchema", record.wire());
+        assertEquals(
+            "TARGET_UNAVAILABLE",
+            assertThrows(
+                    ScheduleException.class, () -> tasks.manual(task, UUID.randomUUID(), locale))
+                .code);
+        var update = (com.fasterxml.jackson.databind.node.ObjectNode) input.deepCopy();
+        update.put("revision", store.get(task, false).revision());
+        assertEquals(
+            "TARGET_UNAVAILABLE",
+            assertThrows(ScheduleException.class, () -> tasks.update(task, update, locale)).code);
+      }
+    verifyNoInteractions(runtime);
+    assertEquals(
+        0, jdbc.queryForObject("SELECT count(*) FROM query_runtime_grants", Integer.class));
+  }
+
+  @Test
+  void actionAndFunctionTransportFailuresKeepTheSameSafeReasonAsManualExecution() throws Exception {
+    var entrance = new BackendSessionEntrance();
+    ReflectionTestUtils.setField(
+        entrance, "sessionRegistryService", mock(SessionRegistryService.class));
+    entrance.publishInstance();
+    var grants =
+        new QueryGrantService(
+            jdbc, "fixture-signing", new WorkbenchServiceAuthentication("service"));
+    grants.initialize();
+    var runtime = mock(RuntimeCodeClient.class);
+    when(runtime.pythonHelper()).thenReturn("# fixture helper");
+    when(runtime.ontologyUrl()).thenReturn("http://fixture");
+    var cause = new AtomicReference<Exception>();
+    doAnswer(
+            call -> {
+              throw cause.get();
+            })
+        .when(runtime)
+        .request(
+            anyString(), anyString(), eq("/v1/code-executions"), eq("POST"), any(), anyString());
+    ReflectionTestUtils.setField(
+        programs, "pythonExecuteService", new PythonExecuteServiceImpl(runtime, grants));
+    var action = new Action();
+    action.setId("a");
+    action.setDomainId("sales");
+    action.setName("Action");
+    action.setStatus(Action.STATUS_PUBLISHED);
+    action.setFunction(functions.queryById("f"));
+    when(actions.queryById("a")).thenReturn(action);
+    when(actions.queryList(Action.STATUS_PUBLISHED, null, null, "sales"))
+        .thenReturn(List.of(action));
+    jdbc.update("INSERT INTO action VALUES('a')");
+    var manual = spy(new io.ontomato.dataengine.service.impl.ActionServiceImpl());
+    doReturn(action).when(manual).queryById("a");
+    ReflectionTestUtils.setField(manual, "identity", identities);
+    ReflectionTestUtils.setField(manual, "abcProgramService", programs);
+    for (Exception failure :
+        List.of(
+            new java.io.IOException(
+                "https://user:private-password@host Authorization: Bearer synthetic-secret\n"
+                    + " at private.Client.call(Client.java:1)"),
+            new java.net.http.HttpTimeoutException("X-API-Key: synthetic-secret"))) {
+      cause.set(failure);
+      for (String locale : List.of("en", "zh-CN"))
+        for (String target : List.of("action:a", "function:f")) {
+          UUID task = UUID.randomUUID(), run = UUID.randomUUID();
+          tasks.create(task, definition(target), locale, true);
+          tasks.manual(task, run, locale);
+          var scheduler =
+              new PlatformScheduler(
+                  store, transactions, applications, credentials, identity, mock(TaskMail.class));
+          try {
+            scheduler.dispatch(run);
+          } finally {
+            scheduler.stop();
+          }
+          var direct =
+              assertThrows(
+                  ProgramExecutionException.class,
+                  () ->
+                      manual.execute(
+                          "a",
+                          new com.alibaba.fastjson2.JSONObject(),
+                          locale,
+                          user,
+                          identity.dataPermission("sales", "alice"),
+                          1));
+          var record = store.run(run);
+          assertEquals("run_failed", record.error().code());
+          assertEquals(direct.getMessage(), record.error().message());
+          assertEquals(
+              failure instanceof java.net.http.HttpTimeoutException
+                  ? (locale.equals("zh-CN") ? "程序执行超时" : "Python execution timed out")
+                  : (locale.equals("zh-CN")
+                      ? "暂时无法连接程序运行服务"
+                      : "The program runtime could not be reached"),
+              record.error().message());
+          assertFalse(record.wire().toString().contains("synthetic-secret"));
+          assertFalse(record.wire().toString().contains("private-password"));
+          assertFalse(record.wire().toString().contains("Client.java"));
+          assertNull(store.get(task, false).pause());
+          sample("platformTaskRunSchema", record.wire());
+        }
+    }
+  }
+
+  @Test
   void scheduledActionsAndFunctionsReachRealGrantSigningAndVerification() throws Exception {
     jdbc.update(
         "UPDATE function SET parameters=? WHERE id='f'",
@@ -512,6 +699,7 @@ class PlatformScheduleTest extends PostgresTestDatabase {
     grants.initialize();
     var claims = new AtomicReference<com.alibaba.fastjson2.JSONObject>();
     var fixtureError = new AtomicReference<Throwable>();
+    var failureStderr = new AtomicReference<String>();
     var fixture = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
     fixture.createContext(
         "/v1/code-executions",
@@ -561,6 +749,12 @@ class PlatformScheduleTest extends PostgresTestDatabase {
               output = "{}".getBytes();
             } else if (exchange.getRequestURI().getPath().endsWith("/outputs/stdout"))
               output = "done".getBytes();
+            else if (exchange.getRequestURI().getPath().endsWith("/outputs/stderr"))
+              output = failureStderr.get().getBytes();
+            else if (failureStderr.get() != null)
+              output =
+                  "{\"status\":\"stopped\",\"exitCode\":1,\"outputs\":[{\"name\":\"stderr\"}]}"
+                      .getBytes();
             else
               output =
                   "{\"status\":\"stopped\",\"exitCode\":0,\"outputs\":[{\"name\":\"stdout\"}]}"
@@ -646,6 +840,63 @@ class PlatformScheduleTest extends PostgresTestDatabase {
         sample("platformTaskRunSchema", result.wire());
         assertTrue(references.references("f"));
       }
+      failureStderr.set(
+          "Traceback (most recent call last):\n"
+              + "  File \"/private/program.py\", line 7, in main\n"
+              + "    raise ValueError('X-API-Key: synthetic-secret')\n"
+              + "ValueError: private-password\n");
+      var manual = spy(new io.ontomato.dataengine.service.impl.ActionServiceImpl());
+      doReturn(action).when(manual).queryById("a");
+      ReflectionTestUtils.setField(manual, "identity", identities);
+      ReflectionTestUtils.setField(manual, "abcProgramService", programs);
+      for (String locale : List.of("en", "zh-CN"))
+        for (String target : List.of("action:a", "function:f")) {
+          UUID task = UUID.randomUUID(), run = UUID.randomUUID();
+          var input = (com.fasterxml.jackson.databind.node.ObjectNode) definition(target);
+          input.set(
+              "content",
+              object(
+                  "execution",
+                  target,
+                  "parameter:org_id",
+                  "",
+                  "parameter:up",
+                  "",
+                  "parameter:tags",
+                  "",
+                  "parameter:amounts",
+                  "",
+                  "parameter:dates",
+                  "",
+                  "parameter:cutoff",
+                  ""));
+          tasks.create(task, input, locale, true);
+          tasks.manual(task, run, locale);
+          var scheduler =
+              new PlatformScheduler(
+                  store, transactions, applications, credentials, identity, mock(TaskMail.class));
+          try {
+            scheduler.dispatch(run);
+          } finally {
+            scheduler.stop();
+          }
+          var record = store.run(run);
+          assertEquals("failed", record.status());
+          assertEquals("ValueError at program.py line 7", record.error().message());
+          assertFalse(record.wire().toString().contains("synthetic-secret"));
+          assertFalse(record.wire().toString().contains("private-password"));
+          assertFalse(record.wire().toString().contains("Traceback"));
+          sample("platformTaskRunSchema", record.wire());
+          var parameters =
+              ScheduleParameters.values(
+                  action.getFunction(), input.path("content"), "Asia/Shanghai", Instant.now());
+          var direct =
+              manual.execute(
+                  "a", parameters, locale, user, identity.dataPermission("sales", "alice"), 1);
+          assertEquals(direct.getError(), record.error().message());
+          assertNull(direct.getResult());
+          assertNull(fixtureError.get(), String.valueOf(fixtureError.get()));
+        }
       verify(identities, atLeastOnce()).requireActionExecutionAccess("alice", "sales");
       assertThrows(
           IllegalArgumentException.class,

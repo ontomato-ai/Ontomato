@@ -1,6 +1,10 @@
 package io.ontomato.dataengine.util;
 
 import io.ontomato.dataengine.dataAdapter.DslContractViolationException;
+import io.ontomato.dataengine.service.ProgramExecutionException;
+import io.ontomato.dataengine.service.ProgramExecutionException.Reason;
+import io.ontomato.dataengine.service.SessionCancelledException;
+import io.ontomato.dataengine.service.agent.AgentHttpException;
 import java.sql.SQLException;
 import java.util.Set;
 import java.util.regex.Pattern;
@@ -42,6 +46,37 @@ public final class ErrorText {
       }
     }
     return "Query execution failed";
+  }
+
+  /**
+   * Preserve only host-owned execution reasons; raw exception messages may contain credentials or
+   * stacks.
+   */
+  public static Reason programFailure(Throwable error) {
+    var seen =
+        java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<Throwable, Boolean>());
+    Reason fallback = Reason.FAILED;
+    for (Throwable current = error;
+        current != null && seen.add(current);
+        current = current.getCause()) {
+      if (current instanceof ProgramExecutionException failure) return failure.reason();
+      if (current instanceof SessionCancelledException || current instanceof InterruptedException)
+        return Reason.CANCELLED;
+      if (current instanceof java.net.http.HttpTimeoutException
+          || current instanceof java.net.SocketTimeoutException) fallback = Reason.TIMED_OUT;
+      else if (current instanceof java.io.IOException && fallback == Reason.FAILED)
+        fallback = Reason.RUNTIME_UNAVAILABLE;
+      else if (current instanceof AgentHttpException runtime)
+        fallback =
+            runtime.status() == 401 || runtime.status() == 403
+                ? Reason.RUNTIME_AUTHORIZATION_DENIED
+                : Reason.RUNTIME_REJECTED;
+    }
+    return fallback;
+  }
+
+  public static String programError(Throwable error, String locale) {
+    return programFailure(error).message(locale);
   }
 
   /** Only a built-in type and an integer frame number may come from untrusted stderr. */

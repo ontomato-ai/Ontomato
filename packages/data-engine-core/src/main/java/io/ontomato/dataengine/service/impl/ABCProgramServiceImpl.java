@@ -6,6 +6,7 @@ import io.ontomato.dataengine.bean.abcHarness.*;
 import io.ontomato.dataengine.bean.function.Function;
 import io.ontomato.dataengine.service.*;
 import io.ontomato.dataengine.service.sys.bean.permission.UserDataPermission;
+import io.ontomato.dataengine.util.ErrorText;
 import java.util.List;
 import java.util.Map;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -62,8 +63,14 @@ public class ABCProgramServiceImpl implements ABCProgramService {
     var authority = read ? PythonAuthority.read(user, domain) : PythonAuthority.write(user, domain, sandbox)
         .withClasses(function.getReturnDef() == null ? null : function.getReturnDef().getClassNames());
     if (executionId != null) authority = authority.forExecution(executionId.toString());
-    var result = pythonExecuteService.execute(id, function.getCode(), timeout, lang,
-        authority, parameters, Map.of());
+    PythonExecuteResult result;
+    try {
+      result = pythonExecuteService.execute(id, function.getCode(), timeout, lang, authority, parameters, Map.of());
+    } catch (Exception error) {
+      SessionCancelledException.throwIfCancelled(error);
+      if (read || error instanceof InterruptedException) throw error;
+      throw new ProgramExecutionException(ErrorText.programFailure(error), lang, error);
+    }
     return new Object[]{read ? authorized(result, graph, permission) : null, result};
   }
 

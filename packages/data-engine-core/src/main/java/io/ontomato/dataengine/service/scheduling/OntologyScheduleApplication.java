@@ -11,6 +11,7 @@ import io.ontomato.dataengine.config.ServiceConst;
 import io.ontomato.dataengine.dao.FunctionDao;
 import io.ontomato.dataengine.schedules.*;
 import io.ontomato.dataengine.service.*;
+import io.ontomato.dataengine.util.ErrorText;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.time.Instant;
@@ -61,7 +62,7 @@ public class OntologyScheduleApplication implements ScheduleApplication {
 
   private record Target(String actionId, Function function, String label) {}
 
-  private Target target(String value, String domain) {
+  private Target target(String value, String domain, String locale) {
     int split = value.indexOf(':');
     if (split < 1) throw unavailable();
     String kind = value.substring(0, split), id = value.substring(split + 1);
@@ -71,16 +72,24 @@ public class OntologyScheduleApplication implements ScheduleApplication {
           || !domain.equals(action.getDomainId())
           || !Action.STATUS_PUBLISHED.equals(action.getStatus())
           || action.getFunction() == null
-          || !domain.equals(action.getFunction().getDomainId())
-          || ScheduleParameters.unsupported(action.getFunction()) != null) throw unavailable();
+          || !domain.equals(action.getFunction().getDomainId())) throw unavailable();
+      String reason = unsupportedReason(action.getFunction(), locale);
+      if (reason != null) throw new ScheduleException(422, "TARGET_UNAVAILABLE", reason);
       return new Target(id, action.getFunction(), label(action.getName(), id));
     }
     if (!kind.equals("function")) throw unavailable();
     var function = functions.queryById(id);
-    if (function == null
-        || !domain.equals(function.getDomainId())
-        || ScheduleParameters.unsupported(function) != null) throw unavailable();
+    if (function == null || !domain.equals(function.getDomainId())) throw unavailable();
+    String reason = unsupportedReason(function, locale);
+    if (reason != null) throw new ScheduleException(422, "TARGET_UNAVAILABLE", reason);
     return new Target(null, function, label(function.getName(), id));
+  }
+
+  private static String unsupportedReason(Function function, String locale) {
+    String reason = ScheduleParameters.unsupported(function);
+    return reason != null
+        ? reason
+        : PythonProgramProtocol.unavailableReason(function.getCode(), locale);
   }
 
   private static ScheduleException unavailable() {
@@ -127,7 +136,7 @@ public class OntologyScheduleApplication implements ScheduleApplication {
       String reason =
           action.getFunction() == null || !actor.domain().equals(action.getFunction().getDomainId())
               ? "Target unavailable"
-              : ScheduleParameters.unsupported(action.getFunction());
+              : unsupportedReason(action.getFunction(), actor.locale());
       options.add(
           ScheduleForms.option(
               "action:" + action.getId(),
@@ -140,7 +149,7 @@ public class OntologyScheduleApplication implements ScheduleApplication {
           ScheduleForms.option(
               "function:" + function.getId(),
               label(function.getName(), function.getId()) + (zh ? " · 函数" : " · Function"),
-              ScheduleParameters.unsupported(function),
+              unsupportedReason(function, actor.locale()),
               function.getDescription()));
     String selected = input.values().path("execution").asText("");
     boolean found = false;
@@ -153,7 +162,7 @@ public class OntologyScheduleApplication implements ScheduleApplication {
     String revision = "ontology-unselected-v1";
     if (!selected.isBlank()) {
       try {
-        var target = target(selected, actor.domain());
+        var target = target(selected, actor.domain(), actor.locale());
         revision = formRevision(target.function(), target.actionId());
         for (var parameter : target.function().getParameters()) {
           boolean time = Parameter.TYPE_TIME.equals(parameter.getType());
@@ -181,7 +190,7 @@ public class OntologyScheduleApplication implements ScheduleApplication {
     if (form.path("submittable").asBoolean() && !selected.isBlank()) {
       try {
         ScheduleParameters.values(
-            target(selected, actor.domain()).function(),
+            target(selected, actor.domain(), actor.locale()).function(),
             form.path("values"),
             input.timeZone(),
             Instant.now());
@@ -203,10 +212,11 @@ public class OntologyScheduleApplication implements ScheduleApplication {
   public Validation validate(TaskDefinition definition, Actor actor) {
     authorize(actor);
     String selected = definition.content().path("execution").asText();
-    if (!selected.isBlank()) target(selected, actor.domain());
+    if (!selected.isBlank()) target(selected, actor.domain(), actor.locale());
     var form = form(new FormInput(definition.content(), null, null, definition.timeZone()), actor);
     var validation = ScheduleForms.validate(definition, form);
-    var target = target(definition.content().path("execution").asText(), actor.domain());
+    var target =
+        target(definition.content().path("execution").asText(), actor.domain(), actor.locale());
     ScheduleParameters.values(
         target.function(), definition.content(), definition.timeZone(), Instant.now());
     return new Validation(
@@ -231,7 +241,10 @@ public class OntologyScheduleApplication implements ScheduleApplication {
   public JsonNode start(Execution execution, Actor actor) {
     validate(execution.definition(), actor);
     var target =
-        target(execution.definition().content().path("execution").asText(), actor.domain());
+        target(
+            execution.definition().content().path("execution").asText(),
+            actor.domain(),
+            actor.locale());
     if (!execution
         .definition()
         .formRevision()
@@ -284,7 +297,10 @@ public class OntologyScheduleApplication implements ScheduleApplication {
       } else state.put("resultSummary", zh(actor) ? "执行完成" : "Execution completed");
     } catch (Exception error) {
       state.put("status", "failed");
-      state.set("error", object("code", "run_failed", "message", "Program execution failed"));
+      state.set(
+          "error",
+          object(
+              "code", "run_failed", "message", ErrorText.programError(error, execution.locale())));
     }
     return state;
   }

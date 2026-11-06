@@ -32,18 +32,15 @@ public class PythonExecuteServiceImpl implements PythonExecuteService {
       Map<String, String> inputFiles)
       throws Exception {
     if (authority.domainId() == null)
-      throw new IllegalArgumentException("Python execution requires the owning domain");
-    if (authority.purpose() != null && !code.contains("# ontomato-python:2"))
-      throw new IllegalArgumentException(
-          "This saved program uses the retired Python protocol. Convert or regenerate it before"
-              + " execution (ontomato-python:2 required).");
+      throw new ProgramExecutionException(ProgramExecutionException.Reason.DOMAIN_REQUIRED, lang);
+    if (authority.purpose() != null) PythonProgramProtocol.requireSupported(code, lang);
     String id =
         authority.executionId() == null ? UUID.randomUUID().toString() : authority.executionId();
     UUID.fromString(id);
     long started = System.currentTimeMillis(), timeout = Math.max(1, timeoutMinutes) * 60000L;
     if (authority.parentGrant() != null)
       timeout = Math.min(timeout, authority.parentGrant().expiresAt() - started);
-    if (timeout <= 0) throw new IllegalStateException("Parent query grant expired");
+    if (timeout <= 0) throw new ProgramExecutionException(ProgramExecutionException.Reason.AUTHORITY_EXPIRED, lang);
     String token =
         authority.purpose() == null
                 ? null
@@ -70,7 +67,7 @@ public class PythonExecuteServiceImpl implements PythonExecuteService {
                 com.alibaba.fastjson2.JSONWriter.Feature.WriteMapNullValue)));
     for (var file : inputFiles.entrySet()) {
       if (file.getKey().equals("program.py") || file.getKey().equals("parameters.json") || file.getKey().equals("query_runtime.py"))
-        throw new IllegalArgumentException("Input shadows an execution-owned file");
+        throw new ProgramExecutionException(ProgramExecutionException.Reason.INPUT_CONFLICT, lang);
       files.add(Map.of("path", file.getKey(), "content", file.getValue()));
     }
     Map<String, String> values = new java.util.HashMap<>();
@@ -101,7 +98,7 @@ public class PythonExecuteServiceImpl implements PythonExecuteService {
           break;
         }
         if (System.currentTimeMillis() > started + timeout + 1000)
-          throw new IllegalStateException("Python execution timed out");
+          throw new ProgramExecutionException(ProgramExecutionException.Reason.TIMED_OUT, lang);
         Thread.sleep(100);
       }
       PythonExecuteResult result = new PythonExecuteResult();

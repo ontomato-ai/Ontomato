@@ -572,7 +572,7 @@ public class ActionServiceImpl implements ActionService {
                 Function function = io.ontomato.dataengine.service.MetricViewBindings.executionWriteFunction(action.getFunction(), param);
 				Object[] o = abcProgramService.execute(UUID.randomUUID().toString(), function, user.getId(), permission, ServiceConst.NOT_SANDBOX, lang, timeoutMinutes, user.getDomainId());
 				PythonExecuteResult result = (PythonExecuteResult)o[1];
-                if (result.getError() != null && !result.getError().isBlank()) { result.setResult(null); result.setError("Action execution failed"); }
+                if (result.getError() != null && !result.getError().isBlank()) { result.setResult(null); }
                 else result.setResult(o[0] == null ? "{\"completed\":true}" : JSON.toJSONString(JSONObject.of("answer", o[0]), Feature.WriteMapNullValue));
 				return result;
 			} else {
