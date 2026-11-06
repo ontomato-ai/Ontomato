@@ -65,9 +65,6 @@ async function start(url: string) {
 }
 
 const hash = () => window.location.hash;
-// The platform shell's column: the pages of the application the address belongs to, under its group headings.
-const navRows = () => [...document.querySelectorAll(".page-row .page-label")].map((row) => row.textContent);
-const headings = () => [...document.querySelectorAll(".group-heading")].map((heading) => heading.textContent);
 
 describe("open-source Ontology Service page", () => {
   beforeEach(() => {
@@ -88,40 +85,44 @@ describe("open-source Ontology Service page", () => {
     vi.unstubAllGlobals();
   });
 
-  it("the ontology manager's column lists its own pages, grouped as the manager groups them", async () => {
+  /*
+   * The platform draws no second column (DESIGN.md "Applications and shells"): the application owns the surface beside
+   * the rail and draws its own menu there. The ontology manager's menu is its own; the business applications' columns
+   * are the conversation shell's.
+   */
+  it("the ontology manager owns the surface beside the rail and draws its own menu there", async () => {
     await start("/#/ontology/objects");
-    expect(document.querySelector(".panel-title")?.textContent).toBe("Ontology manager");
-    expect(headings()).toEqual(["Ontology", "Assets", "Knowledge"]);
-    expect(navRows()).toEqual([
-      "Ontomap",
-      "Object Types",
-      "Properties",
-      "Relation Types",
-      "Action Types",
-      "Visual Modeling",
-      "Metric Views",
-      "Functions",
-      "Business Knowledge",
-    ]);
+    const app = document.querySelector(".platform-app");
+    expect(app).not.toBeNull();
+    // No shell-made column anywhere: not the panel frame, not its title, not its page rows.
+    expect(document.querySelector(".app-panel")).toBeNull();
+    expect(document.querySelector(".panel-title")).toBeNull();
+    expect(document.querySelector(".page-row")).toBeNull();
+    // The manager's own frame is what fills the application's area.
+    expect(app!.querySelector(".ontology-manager")).not.toBeNull();
   });
 
-  it("the rail holds every application, and the object browser owns the graph and data browsing", async () => {
+  it("the rail holds every application of this edition, in its three sections", async () => {
     await start("/#/browser/data");
-    // The rail starts collapsed at this width; expanding it is what shows the names.
+    // The rail starts collapsed; expanding it is what shows the names.
     document.querySelector<HTMLButtonElement>(".rail-toggle")!.click();
     await settle();
-    const apps = [...document.querySelectorAll(".rail-row .rail-label")].map((row) => row.textContent);
-    expect(apps).toEqual([
-      "Agent Platform",
-      "Operations diagnosis",
-      "Knowledge governance",
-      "Object browser",
-      "Ontology manager",
-      "Scheduled tasks",
-      "System settings",
+    const sections = [...document.querySelectorAll(".rail-scroll > *")].reduce<string[][]>(
+      (all, node) => {
+        if (node.classList.contains("rail-divider")) all.push([]);
+        else all[all.length - 1]!.push(...[...node.querySelectorAll(".rail-label")].map((row) => row.textContent ?? ""));
+        return all;
+      },
+      [[]],
+    );
+    expect(sections).toEqual([
+      ["Ontology manager", "Object browser"],
+      ["Agent Platform", "Operations diagnosis", "Knowledge governance", "Scheduled tasks"],
+      ["System settings"],
     ]);
-    expect(document.querySelector(".panel-title")?.textContent).toBe("Object browser");
-    expect(navRows()).toEqual(["Data Browser"]);
+    // The object browser owns the graph and data browsing, and draws its own pages.
+    expect(document.querySelector(".rail-row.active .rail-label")?.textContent).toBe("Object browser");
+    expect(document.querySelector(".app-panel")).toBeNull();
   });
 
   it.each([
@@ -142,12 +143,12 @@ describe("open-source Ontology Service page", () => {
     if (page) expect(document.querySelector(".page-double")?.textContent).toBe(page);
   });
 
-  it("the current page's navigation row is highlighted and the platform pages get the 48px page header", async () => {
+  it("the current application is marked in the rail, and the platform pages get the 48px page header", async () => {
     await start("/#/admin/audit-log");
-    expect(document.querySelector(".page-row.active .page-label")?.textContent).toBe("Run Records");
+    expect(document.querySelector(".rail-row.active")?.getAttribute("aria-label")).toBe("System settings");
     expect(document.querySelector(".platform-page-header .page-title")?.textContent).toBe("Run Records");
     await start("/#/ontology/objects");
-    expect(document.querySelector(".page-row.active .page-label")?.textContent).toBe("Object Types");
+    expect(document.querySelector(".rail-row.active")?.getAttribute("aria-label")).toBe("Ontology manager");
     // The Manager's own pages draw their own header.
     expect(document.querySelector(".platform-page-header")).toBeNull();
     expect(document.querySelector(".ontology-manager")).not.toBeNull();
@@ -157,7 +158,7 @@ describe("open-source Ontology Service page", () => {
     await start("/#/governance/chat/s1");
     expect(document.querySelector(".page-double")?.textContent).toBe("governance s1");
     expect(document.querySelector(".platform-shell")).not.toBeNull();
-    expect(document.querySelector(".panel-title")?.textContent).toBe("Knowledge governance");
+    expect(document.querySelector(".rail-row.active")?.getAttribute("aria-label")).toBe("Knowledge governance");
   });
 
   it("requests go anonymously to the configured API root, and an old launch link loses its credential", async () => {

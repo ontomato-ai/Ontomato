@@ -40,9 +40,10 @@ afterEach(() => {
   document.body.innerHTML = "";
 });
 
-const rows = (wrapper: ReturnType<typeof mount>) =>
-  wrapper.findAll(".page-row").map((row) => row.find(".page-label").text());
-const activeRow = (wrapper: ReturnType<typeof mount>) => wrapper.find(".page-row.active .page-label").text();
+/** A rail row's name: the visible label when the rail is expanded, its accessible name when it is collapsed. */
+const rowName = (row: { text(): string; attributes(name: string): string | undefined }) =>
+  (row.text().replace("Opens in a new tab", "").trim() || row.attributes("aria-label") || "").trim();
+const railRows = (wrapper: ReturnType<typeof mount>) => wrapper.findAll(".rail-row").map(rowName);
 
 async function mountLayout(path: string, granted: string[]) {
   const navigation = generatedNavigation();
@@ -69,49 +70,34 @@ async function mountLayout(path: string, granted: string[]) {
   return { wrapper, router, apps };
 }
 
-describe("the platform's application column", () => {
-  it("lists the pages this account may open, grouping them as the application does", async () => {
+describe("the platform layout", () => {
+  /*
+   * The platform draws no second column: the rail and the application's own surface, nothing between them (DESIGN.md
+   * "Applications and shells"). An application that wants a column draws it inside its own page.
+   */
+  it("draws the rail and the application's surface, with no shell-made column", async () => {
     const { wrapper } = await mountLayout("/ontology/objects", ["ontology-modeling"]);
-    expect(wrapper.find(".panel-title").text()).toBe("platform.ontologyManager");
-    expect(rows(wrapper)).toEqual(["nav.objectTypes"]);
-    // A group whose pages are all unavailable disappears with them.
-    expect(wrapper.findAll(".group-heading").map((heading) => heading.text())).toEqual(["nav.groupOntology"]);
+    expect(wrapper.find(".platform-app").exists()).toBe(true);
+    expect(wrapper.find(".app-panel").exists()).toBe(false);
+    expect(wrapper.find(".panel-title").exists()).toBe(false);
+    // The page is drawn into the surface beside the rail.
+    expect(wrapper.find(".platform-app .page-double").exists()).toBe(true);
   });
 
-  it("marks the current entry, keeping it marked on a detail address", async () => {
+  it("lists the applications in the sections they declare, whatever the account holds", async () => {
+    const { wrapper } = await mountLayout("/ontology/objects", []);
+    // In the order the partition declares, and both in the rail's first section.
+    expect(railRows(wrapper)).toEqual(["platform.objectBrowser", "platform.ontologyManager"]);
+    expect(wrapper.findAll(".rail-scroll > .rail-divider")).toHaveLength(0);
+    // The rail is not filtered by permission: every application is listed (the task requires it).
+    expect(wrapper.findAll(".rail-row")).toHaveLength(2);
+  });
+
+  it("marks the current application by the address, keeping it marked on a detail address", async () => {
     const { wrapper, router } = await mountLayout("/ontology/objects/Order", ["ontology-modeling"]);
-    expect(activeRow(wrapper)).toBe("nav.objectTypes");
-    await router.push("/ontology/objects");
-    await flushPromises();
-    expect(activeRow(wrapper)).toBe("nav.objectTypes");
-  });
-
-  it("lists the same page once, under the one application that owns it", async () => {
-    const { apps } = await mountLayout("/browser/data", ["data-browser", "ontology-modeling"]);
-    // The object browser holds the graph and data browsing; the ontology manager does not list them again.
-    const browser = apps.find((app) => app.id === "browser")!;
-    const ontology = apps.find((app) => app.id === "ontology")!;
-    expect(browser.groups?.flatMap((group) => group.pages.map((entry) => entry.id))).toEqual([
-      "/ontology/playground",
-      "/browser/data",
-    ]);
-    expect(ontology.groups?.flatMap((group) => group.pages.map((entry) => entry.id))).toEqual([
-      "/ontology/objects",
-    ]);
-  });
-
-  it("switches the column to the application that owns the address", async () => {
-    const { wrapper, router } = await mountLayout("/ontology/objects", ["ontology-modeling", "data-browser"]);
+    expect(rowName(wrapper.find(".rail-row.active"))).toBe("platform.ontologyManager");
     await router.push("/browser/data");
     await flushPromises();
-    expect(wrapper.find(".panel-title").text()).toBe("platform.objectBrowser");
-  });
-
-  it("lists no page for an account that holds no code, while the rail still shows every application", async () => {
-    const { wrapper, apps } = await mountLayout("/ontology/objects", []);
-    expect(apps.every((app) => (app.groups ?? []).length === 0)).toBe(true);
-    expect(wrapper.findAll(".page-row")).toHaveLength(0);
-    // The platform rail is not filtered: the task requires every application to be listed.
-    expect(wrapper.findAll(".rail-row")).toHaveLength(apps.length);
+    expect(rowName(wrapper.find(".rail-row.active"))).toBe("platform.objectBrowser");
   });
 });

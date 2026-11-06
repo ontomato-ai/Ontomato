@@ -32,7 +32,7 @@ const lightPalette = {
   warning: "#946000",
   danger: "#bc3928",
   info: "#62665c",
-} satisfies Omit<BrandColors, "rail" | "panel" | "workspace" | "railSelected" | "panelSelected">;
+} satisfies Omit<BrandColors, "rail" | "panel" | "workspace" | "railSelected" | "panelSelected" | "edge">;
 
 /** The dark palette, without the shell bands for the same reason. */
 const darkPalette = {
@@ -61,7 +61,7 @@ const darkPalette = {
   warning: "#d9a441",
   danger: "#ef7b65",
   info: "#a3a99a",
-} satisfies Omit<BrandColors, "rail" | "panel" | "workspace" | "railSelected" | "panelSelected">;
+} satisfies Omit<BrandColors, "rail" | "panel" | "workspace" | "railSelected" | "panelSelected" | "edge">;
 
 export const ossBrand: BrandSource = {
   light: {
@@ -74,6 +74,8 @@ export const ossBrand: BrandSource = {
     workspace: lightPalette.surface,
     railSelected: lightPalette.primarySoft,
     panelSelected: lightPalette.primarySoft,
+    // The hairline between the rail and an application's surface: a tint of the palette's ink, never an opaque colour.
+    edge: "rgba(40, 44, 37, 0.08)",
   },
   dark: {
     ...darkPalette,
@@ -84,6 +86,7 @@ export const ossBrand: BrandSource = {
     workspace: darkPalette.canvas,
     railSelected: darkPalette.primarySoft,
     panelSelected: darkPalette.primarySoft,
+    edge: "rgba(233, 236, 227, 0.08)",
   },
   dataviz: {
     light: ["#4a8f1f", "#3d6fd1", "#b97d08", "#0f9488", "#d4553c", "#9b4fb5", "#7a7f1a", "#d24d8a"],

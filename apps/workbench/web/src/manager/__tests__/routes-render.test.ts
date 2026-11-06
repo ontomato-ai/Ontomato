@@ -147,36 +147,40 @@ describe("the open-source platform's conversations", () => {
 });
 
 describe("the open-source platform's column", () => {
-  it("opens the operations application's own model page from the column's foot", async () => {
-    await open("/ops/diagnosis");
-    const entry = document.querySelector<HTMLElement>(".panel-footer .settings-row");
-    expect(entry, "the operations column has no model setting").not.toBeNull();
-    entry!.click();
-    await settle();
-    // The model the diagnosis runs on is the operations application's own page, not the platform's model division
-    // (model-config), which answers a different question and needs a different permission.
+  /*
+   * The platform draws no column of its own, so nothing here can be opened from the shell. The operations application
+   * draws its own column, and its model page is the foot of it; that is the page this checks, reached by its address.
+   */
+  it("draws the operations application's own model page", async () => {
+    await open("/ops/model");
     expect(landedAt()).toBe("/ops/model");
     const body = document.querySelector(".platform-page-body")!.innerHTML;
     expect(body).not.toBe("");
+    // The model the diagnosis runs on is the operations application's own page, not the platform's model division
+    // (model-config), which answers a different question and needs a different permission.
     expect(body).toContain("diagnosis-model");
   });
 });
 
 describe("the open-source platform's rail", () => {
-  it("lists this edition's applications, in order", async () => {
+  it("lists this edition's applications, in the three sections of the rail", async () => {
     await open("/");
     // Written out rather than derived from the partition: the point is that this edition shows these and no others (the
-    // permissions application exists only where permissions do).
+    // permissions application and the data governance platform exist only in the enterprise edition).
     document.querySelector<HTMLButtonElement>(".rail-toggle")!.click();
     await settle();
-    expect([...document.querySelectorAll(".rail-row .rail-label")].map((row) => row.textContent)).toEqual([
-      "Agent Platform",
-      "Operations diagnosis",
-      "Knowledge governance",
-      "Object browser",
-      "Ontology manager",
-      "Scheduled tasks",
-      "System settings",
+    const sections = [...document.querySelectorAll(".rail-scroll > *")].reduce<string[][]>(
+      (all, node) => {
+        if (node.classList.contains("rail-divider")) all.push([]);
+        else all[all.length - 1]!.push(...[...node.querySelectorAll(".rail-label")].map((row) => row.textContent ?? ""));
+        return all;
+      },
+      [[]],
+    );
+    expect(sections).toEqual([
+      ["Ontology manager", "Object browser"],
+      ["Agent Platform", "Operations diagnosis", "Knowledge governance", "Scheduled tasks"],
+      ["System settings"],
     ]);
   });
 

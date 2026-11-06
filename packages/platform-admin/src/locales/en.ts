@@ -396,7 +396,7 @@ export default {
   },
   "platform": {
     "title": "Platform Management",
-    "serviceName": "Ontology Service",
+    "serviceName": "Ontomato",
     "navigation": "Ontology Service navigation",
     "agentPlatform": "Agent Platform",
     "openInNewTab": "Opens in a new tab",

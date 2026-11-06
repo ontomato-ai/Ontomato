@@ -15,5 +15,6 @@ export type {
   PlatformPanelGroup,
   PlatformPanelPage,
   PlatformPreferences,
+  PlatformRailSection,
   PlatformShellLabels,
 } from "./types";

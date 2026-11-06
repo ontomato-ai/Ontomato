@@ -23,7 +23,7 @@ export interface AppPartition extends Omit<PlatformAppDeclaration, "groups" | "l
   settings?: { id: string; labelKey: string; icon: string; path?: string };
   /**
    * Where its rail row opens. An application opens its first page unless the entry into it is another: the agent
-   * platform opens the conversation although the dashboards come first in its column.
+   * platform opens the conversation although its settings come first in the column.
    */
   home?: string;
   /** The pages this application lists, in display order: one group per entry. */
@@ -73,6 +73,7 @@ export function appDeclarations(
       id: app.id,
       label: t(app.labelKey),
       icon: app.icon,
+      rail: app.rail ?? "apps",
       prefix: app.prefix,
       panel: app.panel,
       settings: app.settings && {

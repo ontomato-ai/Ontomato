@@ -47,6 +47,7 @@ describe("brand generation", () => {
         "--shell-workspace-bg": c.workspace,
         "--shell-rail-selected": c.railSelected,
         "--shell-panel-selected": c.panelSelected,
+        "--shell-app-edge": c.edge,
         "--el-bg-color": c.surface,
         "--el-bg-color-overlay": c.raised,
         "--el-fill-color": c.sunken,

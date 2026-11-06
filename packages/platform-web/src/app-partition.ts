@@ -9,11 +9,16 @@ import type { AppPartition } from "./partition";
  * table, the titles from the edition's message tree, and the ownership is the platform's decision: an application module
  * inherits the place it is shown in. Nothing here restates a page's permission, so the router guard stays the only
  * authority on what may be opened.
+ *
+ * The rail has three sections and no group names: the ontology applications, the business applications, and the
+ * platform's own settings above the account. An application declares the section it sits in (`rail`), and this table is
+ * the only place that decides it.
  */
 export interface PartitionOptions {
   /**
-   * An application the edition implements and declares itself, placed among the platform's own before the system
-   * settings (the enterprise edition's permission centre). The platform cannot name it: the pages are the edition's.
+   * An application the edition implements and declares itself, placed among the platform's own (the enterprise
+   * edition's permission centre). The platform cannot name it: the pages are the edition's. Its `rail` decides the
+   * section like any other application's.
    */
   own?: readonly AppPartition[];
   /** An external application the edition reaches through its own signed jump (the data governance platform). */
@@ -22,80 +27,10 @@ export interface PartitionOptions {
 
 const platformApps: readonly AppPartition[] = [
   {
-    id: "agents",
-    labelKey: "platform.agentPlatform",
-    icon: "agents",
-    prefix: "/agents",
-    // The conversation is where the platform is entered; the dashboards and settings follow it in the column.
-    home: platformRoutes.chat.path,
-    panel: "conversation",
-    // The agent settings page is the platform's own entry at the foot of the column.
-    settings: { id: "agent-settings", labelKey: "assistant.featureAgents", icon: "agents" },
-    sections: [
-      {
-        key: "agents:pages",
-        titleKey: "platform.agentPlatform",
-        paths: [platformRoutes.dashboards.path, platformRoutes.agents.path, platformRoutes.agentSchedules.path],
-      },
-    ],
-  },
-  {
-    id: "operations",
-    labelKey: "platform.operations",
-    icon: "diagnosis",
-    prefix: "/ops",
-    panel: "conversation",
-    // Choosing the model belongs to the diagnosis that uses it, not to the agent platform.
-    // Choosing the model belongs to the diagnosis that runs on it: the entry opens the operations application's own page.
-    settings: { id: "ops-model", labelKey: "ops.modelSettings", icon: "settings", path: platformRoutes.opsModel.path },
-    sections: [
-      {
-        key: "operations:pages",
-        titleKey: "platform.operations",
-        paths: [
-          platformRoutes.turn.path,
-          platformRoutes.test.path,
-          platformRoutes.logs.path,
-          platformRoutes.dsl.path,
-          platformRoutes.opsKnowledge.path,
-        ],
-      },
-    ],
-  },
-  {
-    id: "governance",
-    labelKey: "platform.governance",
-    icon: "knowledge",
-    prefix: "/governance",
-    panel: "conversation",
-    sections: [
-      {
-        key: "governance:pages",
-        titleKey: "platform.governance",
-        // User feedback sits with the conversations it was given on.
-        paths: [platformRoutes.feedback.path],
-      },
-    ],
-  },
-  {
-    id: "browser",
-    labelKey: "platform.objectBrowser",
-    icon: "objects",
-    prefix: "/browser",
-    panel: "pages",
-    sections: [
-      {
-        key: "browser:pages",
-        titleKey: "platform.objectBrowser",
-        // The graph and data browsing, in one application: both are ways to look at objects.
-        paths: [platformRoutes.graph.path, platformRoutes.data.path],
-      },
-    ],
-  },
-  {
     id: "ontology",
     labelKey: "platform.ontologyManager",
     icon: "ontology",
+    rail: "top",
     prefix: "/ontology",
     panel: "pages",
     sections: [
@@ -126,19 +61,93 @@ const platformApps: readonly AppPartition[] = [
     ],
   },
   {
+    id: "browser",
+    labelKey: "platform.objectBrowser",
+    icon: "objects",
+    rail: "top",
+    prefix: "/browser",
+    panel: "pages",
+    sections: [
+      {
+        key: "browser:pages",
+        titleKey: "platform.objectBrowser",
+        // The graph and data browsing, in one application: both are ways to look at objects.
+        paths: [platformRoutes.graph.path, platformRoutes.data.path],
+      },
+    ],
+  },
+  {
+    id: "agents",
+    labelKey: "platform.agentPlatform",
+    icon: "agents",
+    rail: "apps",
+    prefix: "/agents",
+    // The conversation is where the platform is entered; the agent settings follow it in the column.
+    home: platformRoutes.chat.path,
+    panel: "conversation",
+    // The agent settings are the application's own entry at the foot of its column.
+    settings: { id: "agent-settings", labelKey: "assistant.featureAgents", icon: "agents" },
+    sections: [
+      {
+        key: "agents:pages",
+        titleKey: "platform.agentPlatform",
+        paths: [platformRoutes.dashboards.path, platformRoutes.agents.path, platformRoutes.agentSchedules.path],
+      },
+    ],
+  },
+  {
+    id: "operations",
+    labelKey: "platform.operations",
+    icon: "diagnosis",
+    rail: "apps",
+    prefix: "/ops",
+    panel: "conversation",
+    // Choosing the model belongs to the diagnosis that runs on it: the entry opens the operations application's own page.
+    settings: { id: "ops-model", labelKey: "ops.modelSettings", icon: "settings", path: platformRoutes.opsModel.path },
+    sections: [
+      {
+        key: "operations:pages",
+        titleKey: "platform.operations",
+        paths: [
+          platformRoutes.turn.path,
+          platformRoutes.test.path,
+          platformRoutes.logs.path,
+          platformRoutes.dsl.path,
+          platformRoutes.opsKnowledge.path,
+        ],
+      },
+    ],
+  },
+  {
+    id: "governance",
+    labelKey: "platform.governance",
+    icon: "knowledge",
+    rail: "apps",
+    prefix: "/governance",
+    panel: "conversation",
+    sections: [
+      {
+        key: "governance:pages",
+        titleKey: "platform.governance",
+        // User feedback sits with the conversations it was given on.
+        paths: [platformRoutes.feedback.path],
+      },
+    ],
+  },
+  {
     id: "schedules",
     labelKey: "platform.schedules",
     icon: "schedule",
+    rail: "apps",
     prefix: platformRoutes.schedules.path,
     panel: "pages",
-    sections: [
-      { key: "schedules:all", titleKey: "platform.schedules", paths: [platformRoutes.schedules.path] },
-    ],
+    sections: [{ key: "schedules:all", titleKey: "platform.schedules", paths: [platformRoutes.schedules.path] }],
   },
   {
     id: "settings",
     labelKey: "platform.settings",
     icon: "settings",
+    rail: "bottom",
     prefix: "/settings",
     panel: "pages",
     // The settings page is entered at its first tab; the address without one is not a page of its own.
@@ -154,12 +163,11 @@ const platformApps: readonly AppPartition[] = [
 ];
 
 /**
- * The applications of one edition, in rail order: the platform's own up to the scheduled tasks, the edition's own
- * applications, the system settings, and last the external applications.
+ * The applications of one edition, in rail order: the platform's own, the edition's own applications, then the
+ * platform's settings and last the external applications.
  *
- * The settings application is the platform's last one and stays last: it holds the account's own configuration, which
- * nothing else is entered after. An external application carries no pages — the rail opens it in a new tab and never
- * makes it current.
+ * The order is stable inside a section and the shell groups by `rail`; the edition's own applications and external ones
+ * join the section they declare, so an edition that adds none draws no empty section.
  */
 export function appPartition(options: PartitionOptions = {}): readonly AppPartition[] {
   const settings = platformApps.filter((app) => app.id === "settings");

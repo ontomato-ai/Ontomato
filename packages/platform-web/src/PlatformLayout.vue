@@ -2,8 +2,6 @@
 import { computed } from "vue";
 import { useRoute, RouterView } from "vue-router";
 import {
-  AppPanel,
-  AppPanelPages,
   PlatformPageHeader,
   PlatformShell,
   type PlatformAccount,
@@ -12,17 +10,16 @@ import {
   type PlatformShellLabels,
 } from "@ontomato/platform-shell";
 import type { PlatformAppDeclaration } from "./apps";
-import { panelOf, railApp } from "./apps";
-import { useAppColumnOf } from "@ontomato/agent-shell-ui";
+import { railApp } from "./apps";
 
 /**
  * The page the current address shows: its words, and whether it draws its own header. Which application it belongs to is
- * not given here: the address decides that, so the column cannot name one application while showing another's page.
+ * not given here: the address decides that, so the shell cannot name one application while showing another's page.
  */
 export interface PlatformShownPage {
   title: string;
   description?: string | null;
-  /** The page draws its own 48px header (the ontology graph, the model settings, the conversation). */
+  /** The page draws its own header (the ontology graph, the model settings, the conversation). */
   ownHeader?: boolean;
 }
 
@@ -44,7 +41,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{ selectApp: [id: string]; openSettings: [appId: string, entryId: string] }>();
 
-/** The application whose prefix holds an address, the longest match winning: the column follows the address. */
+/** The application whose prefix holds an address, the longest match winning: the rail's current row follows the address. */
 function appFor(path: string): PlatformAppDeclaration | null {
   let match: PlatformAppDeclaration | null = null;
   for (const app of props.apps ?? []) {
@@ -57,16 +54,11 @@ function appFor(path: string): PlatformAppDeclaration | null {
 const route = useRoute();
 const railApps = computed(() => (props.apps ?? []).map(railApp));
 const activeAppId = computed(() => appFor(route.path)?.id ?? null);
-const activeApp = computed(() => props.apps.find((app) => app.id === activeAppId.value) ?? null);
-const panel = computed(() => (activeApp.value ? panelOf(activeApp.value) : null));
-/** What the current page contributes to the column, if it is a conversation application. */
-const column = useAppColumnOf();
-const contributed = computed(() => (column.value?.appId === activeAppId.value ? column.value : null));
 const headerShown = computed(() => props.shownPage !== null && !props.shownPage.ownHeader);
 </script>
 
 <template>
-  <!-- A blocked edition shows the rail's account alone: no applications, no column, the reason in the page area. -->
+  <!-- A blocked edition shows the rail's account alone: no applications, the reason in the page area. -->
   <PlatformShell
     :apps="blocked ? [] : railApps"
     :active-app-id="activeAppId"
@@ -77,22 +69,10 @@ const headerShown = computed(() => props.shownPage !== null && !props.shownPage.
     :brand="brand"
     @select-app="emit('selectApp', $event)"
   >
-    <template #panel>
-      <AppPanel
-        v-if="panel && !blocked"
-        :panel="panel"
-        :labels="labels"
-        @open-settings="emit('openSettings', activeAppId ?? '', $event)"
-      >
-        <component :is="contributed.content" v-if="contributed" />
-        <AppPanelPages
-          v-else-if="activeApp"
-          :groups="activeApp.groups ?? []"
-          :active-page-id="(route.meta.page as string | undefined) ?? null"
-        />
-      </AppPanel>
-    </template>
-
+    <!--
+      The application's own header, then its page. The application owns the whole surface beside the rail: an
+      application that wants a column draws it inside its page, not here (DESIGN.md "Applications and shells").
+    -->
     <PlatformPageHeader
       v-if="headerShown && shownPage && !blocked"
       :title="shownPage.title"
@@ -110,14 +90,16 @@ const headerShown = computed(() => props.shownPage !== null && !props.shownPage.
 </template>
 
 <style scoped>
-/* The page area scrolls on its own: the header stays at the top of the workspace. */
+/*
+ * The page area is the application's: it fills the surface beside the rail with no gutter of its own, so a page that
+ * wants the full width is not inset by the platform (DESIGN.md "Layout").
+ */
 .platform-page-body {
   display: flex;
   flex: 1;
   min-height: 0;
   flex-direction: column;
   overflow: auto;
-  padding: 16px;
 }
 .platform-page-body :deep(.platform-page) {
   height: 100%;

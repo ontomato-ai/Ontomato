@@ -1,4 +1,10 @@
-import type { PlatformApp, PlatformAppPanel, PlatformPanelGroup, PlatformPanelPage } from "@ontomato/platform-shell";
+import type {
+  PlatformApp,
+  PlatformAppPanel,
+  PlatformPanelGroup,
+  PlatformPanelPage,
+  PlatformRailSection,
+} from "@ontomato/platform-shell";
 import type { Component } from "vue";
 
 /** How an application's second column is filled. */
@@ -13,6 +19,11 @@ export interface PlatformAppDeclaration {
   id: string;
   label: string;
   icon: string;
+  /**
+   * Which of the rail's three sections it sits in; the shell groups by it and draws a divider between sections. A
+   * declaration made outside this module may leave it out, which puts the application among the business ones.
+   */
+  rail?: PlatformRailSection;
   /** The application owns the addresses under this prefix. */
   prefix: string;
   /** The address its rail row opens: the first page the account may open, or the entry the declaration names. */
@@ -36,6 +47,7 @@ export function railApp(declaration: PlatformAppDeclaration): PlatformApp {
     id: declaration.id,
     label: declaration.label,
     icon: declaration.icon,
+    rail: declaration.rail,
     href: declaration.href,
     open: declaration.open,
   };
