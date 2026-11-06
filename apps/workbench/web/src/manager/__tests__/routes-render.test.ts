@@ -1,4 +1,7 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { App } from "vue";
+import { agentHostAgentListSchema, agentHostSessionPageSchema } from "@ontomato/contracts/agent-host";
+import type { WorkbenchAppearance } from "@ontomato/contracts/workbench-appearance";
 import { appPartition } from "../../../../../../packages/platform-web/src/app-partition";
 
 /*
@@ -8,8 +11,8 @@ import { appPartition } from "../../../../../../packages/platform-web/src/app-pa
  * defects, so they are checked here against the edition's real assembly.
  */
 
-// Nothing here exercises a page's own behaviour: the network answers "nothing" and the heavy pages are doubled, so a
-// failure means the shell did not mount the page, not that a page's data was missing.
+// Nothing here exercises a page's own behaviour: the heavy pages are doubled and the network answers only what a page
+// needs to draw, so a failure means the shell did not mount the page or the page broke while drawing.
 vi.hoisted(() => { window.__APP_CONFIG__ = { API_BASE: "/custom-base/api" }; });
 vi.mock("../../../../../../packages/ontology-manager/src/components/OntologyPlayground.vue", () => ({
   __esModule: true,
@@ -35,6 +38,38 @@ const { startPlatform } = await import("../../platform");
 
 const resetShell = isolateShellPerTest();
 
+/**
+ * The network as the pages see it. The Node API answers in its own shapes, checked against the contracts so the doubles
+ * cannot drift from them: one enabled agent without sessions for the agent platform and for the diagnosis, and the
+ * workbench's appearance. Every other address answers the data engine's envelope with nothing in it.
+ */
+const AGENT = { id: "6a1f3c52-2d0e-4c1b-9a57-0f0e7c2a9b11", name: "analysis", description: "", icon: null, enabled: true };
+const NODE_ANSWERS: Readonly<Record<string, unknown>> = {
+  "GET /assistant/agents": agentHostAgentListSchema.parse({ agents: [AGENT] }),
+  "GET /assistant/sessions": agentHostSessionPageSchema.parse({ sessions: [], nextCursor: null }),
+  "GET /observe/agent/agents": agentHostAgentListSchema.parse({ agents: [AGENT] }),
+  "GET /observe/agent/sessions": agentHostSessionPageSchema.parse({ sessions: [], nextCursor: null }),
+  "GET /workbench-appearance": { brand: { name: "Ontomato", subtitle: "", logo: "" } } satisfies WorkbenchAppearance,
+};
+
+type FetchInput = Parameters<typeof fetch>[0];
+type FetchInit = Parameters<typeof fetch>[1];
+
+function answer(input: FetchInput, init?: FetchInit): Response {
+  const request = input instanceof Request ? input : null;
+  const url = new URL(request ? request.url : String(input), window.location.origin);
+  const key = `${init?.method ?? request?.method ?? "GET"} ${url.pathname.replace(/^\/custom-base\/api/, "")}`;
+  const body = key in NODE_ANSWERS ? NODE_ANSWERS[key] : { success: true, data: [] };
+  return new Response(JSON.stringify(body), { status: 200, headers: { "Content-Type": "application/json" } });
+}
+
+/**
+ * What broke while the shell drew the current page: a component's setup, render or update (Vue hands those to the app's
+ * error handler) or an error thrown to the window. Every test ends with none.
+ */
+let drawErrors: unknown[] = [];
+window.addEventListener("error", (event) => drawErrors.push(event.error ?? event.message));
+
 /** Every address the running router serves, read after each start. */
 let served = new Set<string>();
 
@@ -47,14 +82,17 @@ async function settle() {
 
 async function open(path: string) {
   resetShell();
+  drawErrors = [];
   document.body.innerHTML = '<div id="app"></div>';
   window.history.replaceState({}, "", new URL(`/#${path}`, window.location.origin));
   startPlatform();
+  // The app mounts synchronously and its first navigation resolves afterwards, so every page the router draws reports
+  // its errors here instead of to the console.
+  const app = (document.querySelector("#app") as (Element & { __vue_app__?: App }) | null)?.__vue_app__;
+  app!.config.errorHandler = (error) => drawErrors.push(error);
   await settle();
   type Router = { getRoutes(): { path: string }[] };
-  const router = (document.querySelector("#app") as unknown as {
-    __vue_app__?: { config: { globalProperties: { $router: Router } } };
-  } | null)?.__vue_app__?.config.globalProperties.$router;
+  const router = app?.config.globalProperties.$router as Router | undefined;
   // A route pattern carries parameters (`/browser/data/:className?`); a rail row opens the address with them absent, so
   // each pattern is recorded up to its first parameter.
   served = new Set((router?.getRoutes() ?? []).map((route) => route.path.split("/:")[0]!).filter(Boolean));
@@ -77,23 +115,34 @@ beforeEach(() => {
   sessionStorage.clear();
   localStorage.clear();
   window.__APP_CONFIG__ = { API_BASE: "/custom-base/api/", INITIAL_ROUTE: "" };
-  vi.stubGlobal("fetch", async () => new Response(JSON.stringify({ success: true, data: [] }), { status: 200 }));
+  vi.stubGlobal("fetch", async (input: FetchInput, init?: FetchInit) => answer(input, init));
+});
+
+afterEach(() => {
+  expect(drawErrors, "a page broke while the shell drew it").toEqual([]);
 });
 
 describe.each(pagePaths)("the open-source platform at %s", (path) => {
   it("draws the page into the main area", async () => {
-    const thrown: unknown[] = [];
-    const onError = (event: ErrorEvent) => thrown.push(event.error ?? event.message);
-    window.addEventListener("error", onError);
     await open(path);
-    window.removeEventListener("error", onError);
 
     // Either the page's own content or a page that draws no text but does draw its region: both mean the route filled
     // the main area. An empty main area is the failure this test exists for.
     const body = document.querySelector(".platform-page-body");
     expect(body, `no main area at ${path}`).not.toBeNull();
     expect(body!.innerHTML.trim(), `empty main area at ${path}`).not.toBe("");
-    expect(thrown, `a page threw while rendering ${path}`).toEqual([]);
+    expect(drawErrors, `a page broke while drawing ${path}`).toEqual([]);
+  });
+});
+
+describe("the open-source platform's conversations", () => {
+  // The acceptance run found the agent platform drawing its shell but no conversation to type into.
+  it.each(["/agents/chat", "/ops/diagnosis"])("%s draws a conversation one can type into", async (path) => {
+    await open(path);
+    expect(
+      document.querySelector(".platform-page-body form.composer textarea:not([disabled])"),
+      `no composer at ${path}`
+    ).not.toBeNull();
   });
 });
 
