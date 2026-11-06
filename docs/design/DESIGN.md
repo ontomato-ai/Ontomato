@@ -159,8 +159,8 @@ Each application shows one frame in its area:
 |---|---|
 | Agent Platform, Operations Diagnosis, Knowledge Governance | Its own conversation column, then the conversation (§9) |
 | Ontology Service (Ontology Manager) | Its own menu (ontology, assets, knowledge) in its band, pages beside it |
-| Object Browser, System Settings | PlatformPageHeader with the application's pages as tabs; a page's own tabs stay in it |
-| Dashboards, Scheduled Tasks, Permissions (enterprise) | One page: header and page |
+| System Settings | PlatformPageHeader with the application's pages as tabs; a page's own tabs stay in it |
+| Object Browser, Dashboards, Scheduled Tasks, Permissions (enterprise) | One page: header and page |
 
 Pages and the frames around them paint no background of their own: the main area (§5) shows through, so no page sits on
 it as a lighter card; tables, inputs, cards, toolbars and dialogs keep their surfaces, and a canvas takes the page tone
@@ -180,7 +180,8 @@ Standard management pages use PlatformPageHeader: one title, optional useful des
 tabs. Compact technical headers reference 48px and grow/wrap as necessary. No redundant type subtitle or explanatory
 eyebrow in a dense titlebar; contextual help can be available separately. Preserve useful business descriptions. An
 application whose header carries its own name and line (Object Browser, System settings) keeps that header where it has
-a single page — the open-source Object Browser, or an account that may open only one of its pages — without tabs.
+a single page — the Object Browser, whose graph and table are modes of one page (§10), or an account that may open only
+one System settings page — without tabs.
 
 Ontology Manager catalogs, graph, modeling and business knowledge use the shared `compact` header variant: a single
 title/actions row in the page gutter. A concise menu-function description follows the title on the same
