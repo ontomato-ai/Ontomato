@@ -1,2 +1,7 @@
 # Frontend deployment base URL, without an API path or browser route
 envUrl: http://host:3000
+# Business database for db-sql and db-import: postgresql or mysql
+databaseType:
+# JSON argv of a client that reads SQL from stdin; put the password in PGPASSWORD or MYSQL_PWD, not here
+# e.g. ["psql", "-X", "-q", "-v", "ON_ERROR_STOP=1", "-h", "db-host", "-U", "user", "-d", "business"]
+databaseCommand:

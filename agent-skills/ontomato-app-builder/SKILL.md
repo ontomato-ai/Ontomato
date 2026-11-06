@@ -1,9 +1,9 @@
 ---
 name: ontomato-app-builder
-description: "Build applications on an existing Ontomato ontology using MetricViews for queries and Actions for business operations. Use for interface development, authorized test data and resources, application pages and explicit production synchronization in the deployment topology provided."
+description: "Ontomato MetricViews, Actions and apps: on an existing ontology, provide queries with MetricViews (read-only Functions) and business operations with Actions, develop interfaces and application pages, and in a two-environment deployment import the ontology and sync interfaces to production. Test data and resources are written by ontomato-ontomap-builder; agents are configured with ontomato-agent-builder."
 ---
 
-# Ontomato app builder
+# Ontomato MetricViews, Actions and apps
 
 ## Ontomato: work through one ontology
 
@@ -22,11 +22,11 @@ Classes and attributes must map to real structures in the selected data source. 
 
 Use one consistent ontology context: deployment, domain where applicable, object identities and resource references. Reuse the business intent, access and scope already established in the session. Resolve technical facts, such as JOIN columns and existing grant sources, through commands, authorized data tools and bundled references. Ask only for missing business decisions or access that those tools cannot supply; do not ask a nontechnical user to guess technical facts. If a required capability is unavailable, explain the missing prerequisite and affected business task while preserving the requested outcome.
 
-The skills cover different tasks on this same platform: `ontomato-ontomap-builder` maintains definitions and mappings; `ontomato-analyst` queries and analyzes them; `ontomato-app-builder` builds applications on their capabilities. Adapter development and enterprise permission management support this platform at their own boundaries. These names explain the roles, not dependencies on other installed skills. Keep this package's files together; its local references travel with it.
+The skills cover different tasks on this same platform: `ontomato-ontomap-builder` maintains the ontology and its data (definitions, mappings, business data and resources); `ontomato-app-builder` builds MetricViews, Actions and applications on it; `ontomato-agent-builder` configures agents and MCP services; `ontomato-analyst` queries and analyzes. Adapter development and enterprise permission management support this platform at their own boundaries. These names explain the roles, not dependencies on other installed skills. Keep this package's files together; its local references travel with it.
 
 ## This skill’s role
 
-Build an application around the objects and relationships in an existing ontology. Reuse suitable MetricViews and Actions, or define and verify the interfaces the application needs; pages call MetricViews for queries and Actions for business writes. This package works through deployed APIs without the product source. It can write definitions, test data and resources, and execute Actions: the environment and the authorized business effect matter for each operation.
+Build an application around the objects and relationships in an existing ontology. Reuse suitable MetricViews and Actions, or define and verify the interfaces the application needs; pages call MetricViews for queries and Actions for business writes. This package works through deployed APIs without the product source. It can write definitions and execute Actions; test data and vector resources are written with `ontomato-ontomap-builder`: the environment and the authorized business effect matter for each operation.
 
 ## Two environments
 
@@ -46,7 +46,7 @@ Do not infer the shape from a failed `import-schema`. The backend also fails it 
 
 ### Two-environment details
 
-- **Test environment**: the Ontomato deployment at `envUrl`. This skill imports definitions and test data there, generates and debugs MetricViews and Actions there, and pages call its interfaces.
+- **Test environment**: the Ontomato deployment at `envUrl`. This skill imports definitions there and generates and debugs MetricViews and Actions there (test data is loaded with `ontomato-ontomap-builder`), and pages call its interfaces.
 - **Production environment**: another Ontomato deployment, read only until the final sync. The test environment's backend reaches it through the environment variable `PRODUCTION_ENV_URL` (the production **backend** URL, such as `http://prod-host:18087`). An open-source production deployment needs no login, so leave `PRODUCTION_ENV_USER` and `PRODUCTION_ENV_PASSWORD` empty. `import-schema`, the `prod-*` commands and `sync-production` go through the test backend to production; the script never calls production directly. Production must run the same Ontomato version as the test environment.
 
 **`import-schema` wipes data in the current test domain.** It drops and recreates the current domain's namespace and all its classes and replaces the domain's whole ontomap with the production class and relationship definitions. Run it only against a dedicated test deployment, never against a deployment with business data.
@@ -87,10 +87,6 @@ node ontomato.mjs import-schema
 node ontomato.mjs prod-distinct-values <class> <attribute> [--like <pattern>] [--limit <n>]
 node ontomato.mjs prod-query @query.json
 node ontomato.mjs prod-knowledge [--max <n>] <question>
-node ontomato.mjs import-test-data testData.zip
-node ontomato.mjs vector-upload <class> <attribute> <object-id> --text <text|@file>
-node ontomato.mjs vector-upload <class> <attribute> <object-id> --file <path> --text <description|@file>
-node ontomato.mjs vector-delete <class> <attribute> <object-id> <path>
 node ontomato.mjs distinct-values <class> <attribute> [--like <pattern>] [--limit <n>]
 node ontomato.mjs execute-dsl @query.json
 node ontomato.mjs metric-view generate [--save] <description>
@@ -117,9 +113,6 @@ node ontomato.mjs ask "How many orders were placed last month?"
 | `prod-distinct-values` | `POST /productionEnv/queryDistinctAttrValue` | production | Distinct values of a `varchar` or `text` attribute |
 | `prod-query` | `POST /productionEnv/queryData` | production | DSL result JSON |
 | `prod-knowledge` | `POST /productionEnv/queryBusinessKnowledge` | production | Business knowledge related to the question |
-| `import-test-data` | `POST /testEnv/importData` | test | Uploads a test data file and writes it |
-| `vector-upload` | `POST /vectorResource/upload` | test | Uploads text or attachment resource and binds to object attribute |
-| `vector-delete` | `POST /vectorResource/delete` | test | Deletes specified vector resource of an object |
 | `distinct-values` | `POST /admin/queryDistinctAttrValue` | test | Same as `prod-distinct-values` |
 | `execute-dsl` | `POST /dsl/executeV1` | test | DSL result JSON |
 | `metric-view ...` / `action ...` | `/metricView/*`, `/action/*` | test | See below |
@@ -129,7 +122,7 @@ node ontomato.mjs ask "How many orders were placed last month?"
 
 - After `import-schema`, `dataset-desc`, `classes`, `schema` and `relationships` return the production definitions.
 - `distinct-values` / `prod-distinct-values`: `--like` filters values; without `%` the pattern is wrapped as `%pattern%`. Without `--limit` at most 100 values are shown. Use them to find the exact stored value before writing an `=` or `in` condition.
-- `schema` may include `vector` attribute type, representing files or text resources attached to an object, maintained by vector upload interfaces, not supporting equality or range comparisons, only semantic retrieval via DSL vector conditions.
+- `schema` may include `vector` attribute type, representing files or text resources attached to an object, maintained by the resource commands of `ontomato-ontomap-builder`, not supporting equality or range comparisons, only semantic retrieval via DSL vector conditions.
 - A non-2xx response prints the status and body and exits non-zero. A JSON body with `success: false` prints its message and exits non-zero.
 
 ## Workflow
@@ -139,66 +132,21 @@ Read the existing ontology and reusable interfaces first: identify the objects t
 1. `env-mode`. If it returns `single-env`, skip steps 2 and 8 and work directly in `envUrl`.
 2. `import-schema` to bring the production definitions into the test environment.
 3. `dataset-desc`, `classes`, `schema` and `relationships` to learn the dataset; `prod-knowledge` for business knowledge the application depends on; `prod-distinct-values` and `prod-query` (with a `limit`, to keep results small) to see what real production data looks like.
-4. Write a test data zip in the format below and load it with `import-test-data`; vector resources are declared inline in `data.json` (their files packed under `files/`) and imported automatically; check the result with `distinct-values` and `execute-dsl`.
+4. Keep test data small and typical, covering the cases to test, and load it with `import-test-data` of `ontomato-ontomap-builder` in the zip format it documents (vector resources declared inline in `data.json`); check the result with `distinct-values` and `execute-dsl`.
 5. Generate the interfaces the pages need with `metric-view generate` / `action generate`, and debug them with `execute`. Once you understand the structure, editing the definition from `get` and running `save` is usually faster than generating again from natural language.
-6. For a full test pass on the designated disposable dataset, restore the agreed baseline with `import-test-data` so earlier Action writes do not confuse the checks (re-importing clears the vector resources of classes present in the file and re-attaches the ones in the zip).
+6. For a full test pass on the designated disposable dataset, re-import the agreed test data so earlier Action writes do not confuse the checks.
 7. Build the pages on the tested MetricViews and Actions; see [Calling interfaces from a page](#calling-interfaces-from-a-page).
 8. In `two-env`, run `action re-explain --missing`, then sync the interfaces the pages use to production with `sync-production`. Dry run first, show the user the exact list, and wait for explicit confirmation before running with `--confirm`; see [Sync interfaces back to production](#sync-interfaces-back-to-production).
 9. Deploy the application code to production with the customer's web server or hosting process.
-
-## Test data
-
-Test data should be varied and typical enough to cover the cases the application must handle, but small. It is uploaded as a **zip archive** with this layout:
-
-```
-- data.json          the object and relationship data
-- files/             the files referenced by vector attributes
-  - file1.suffix
-  - ...
-```
-
-`data.json` keeps the same top-level structure; a `vector` attribute's value is an array of `{"path": "...", "text": "..."}` entries, where `path` is the file's relative path inside the zip (e.g. `files/photo.jpg`) and `text` is the content used to generate the embedding:
-
-```json
-{
-  "objDatas": [
-    {
-      "className": "/namespace/class1",
-      "rows": [
-        {"id": "c1", "attr1": "East", "attr2": 3.5, "photo": [{"path": "files/c1.jpg", "text": "a bright ward"}]}
-      ]
-    }
-  ],
-  "relDatas": [
-    {"relationName": "relationship type", "sourceObjId": "source primary key value", "targetObjId": "target primary key value"}
-  ]
-}
-```
-
-Before writing anything, the backend checks the archive's structure, the rows, the references and the vector files and text, and rejects the whole file, with the reason, on the first violation:
-
-- `className` must be an existing class in the test environment, written as `classes` returns it.
-- A row may contain only the class's **enabled** attributes (the ones `schema` lists).
-- Every row must have a non-empty primary key value. The primary key is the attribute `schema` marks as primary key; when a class has none, `import-schema` makes its first enabled attribute the primary key.
-- Primary key values must be unique across the whole file, across classes as well.
-- `relationName` must be an existing relationship type. `sourceObjId` must be the primary key value of a row of the relationship's source class in this file, and `targetObjId` of a row of its target class.
-- A `vector` attribute's value must be an array of `{"path": "...", "text": "..."}` entries (or empty/omitted). Each `path` must point to an existing, non-empty file under the archive's `files/` directory whose name has a 1–16 character alphanumeric extension (it becomes the stored resource's suffix), and `text` must be non-empty. The file is stored as the vector resource and `text` is embedded; for string resources (txt/doc/pdf…) `text` is the verbatim string content, and for video/audio `text` is the transcription/description produced by a speech-to-text model — the backend does not transcribe media, so the caller must supply that text in `data.json`.
-- The archive must contain a `data.json` at its root.
-- On import, every class that appears in the file is emptied along with its associated vector resources and then written (objects first, then their vector resources); classes not in the file are left alone.
-- Vector write and storage are supported on PostgreSQL, MySQL, SQL Server, DuckDB, Neo4j, Elasticsearch, and OpenSearch; performing vector write operations on GaussDB will explicitly report an unsupported error.
-- Production environments do not expose vector upload or delete interfaces; vector links returned by `prod-query` point directly to the production environment, while test environment vector resources must be prepared by testers using the above interfaces.
-
-The import is not atomic: an error while writing (for example embedding or storage) is reported with its reason, but whatever was already cleared or written stays as it is. Fix the cause and run `import-test-data` again.
 
 ## Write effects and completion
 
 | Operation | Actual effect and verification |
 | --- | --- |
 | Read ontology/data, `find` / `get` | Use current definitions/results to identify reusable capabilities; a successful call is not yet a business answer. |
-| `import-schema` / `import-test-data` | Replaces or clears the documented test scope; it is not a read-only preview or a general production-database migration command. |
+| `import-schema` | Replaces or clears the documented test scope; it is not a read-only preview or a general production-database migration command. |
 | `generate` / `save` / `delete` | `generate` without `--save` only generates. Saving/deleting changes capability definitions, not execution of an Action. Edit an existing definition from `get` and preserve unrelated fields. |
 | `metric-view execute` / `action execute` | The former queries; the latter actually executes the defined business operation. A test-named endpoint does not imply no writes. Read the definition/explanation and execute within the authorized business scope. |
-| `vector-upload` / `vector-delete` | Upload appends a resource and writes the object reference; delete removes both. Class/attribute/object must belong to the current ontology. Pass original bytes with `--file`; `--text` is the embedding input, not an instruction for the backend to transcribe the file. |
 | `sync-production` | Copies only selected interface definitions, not data, pages, knowledge or the ontomap. Follow the exact-plan confirmation rule below. |
 
 Completion requires checking the actual business result and page calls, not just generation, saving or HTTP 200. Resource bindings depend on context, class/attribute names, object keys and paths; renaming or switching sources does not automatically migrate them. Identify a missing definition/binding and handle it within the authorized scope rather than bypassing the capability contract with direct database writes.
@@ -215,6 +163,40 @@ A MetricView is a read-only query interface and an Action is a write interface. 
 - `delete <id>`: deletes the interface.
 
 The core of a definition is `function`: `logic` says in natural language what the interface does, `parameters` are its inputs (`name`, `type`, `description`, `sample`), `code` is the program that runs, and `returnDef` describes the returned structure.
+
+### Retrieval Function: knowledge search for agents
+
+A knowledge-base search is also a read-only MetricView: its Function always searches one `vector` attribute of one class. The DSL has two steps and puts `query` and `topK` on the vector output field of the second; without a `sort` in the last step, results come nearest first. `topK` is 1 to 50 and defaults to 20.
+
+```python
+import sys, json, requests
+
+userId, domainId, parameterFilePath = sys.argv[1], sys.argv[2], sys.argv[3]
+with open(parameterFilePath, "r", encoding="utf-8") as f:
+    params = json.load(f)
+
+def executeDsl(dsl):
+    resp = requests.post("http://127.0.0.1:18087/dsl/execute", json={"dsl": dsl, "userId": userId, "domainId": domainId}).json()
+    if resp.get("error"):
+        raise Exception(resp["error"])
+    return resp["data"][0].get("answer", [])
+
+dsl = {"problem": "search document chunks", "answer": {"steps": [
+    {"graph": {"patterns": [{"objects": [{"idx": 0, "variable": "p", "class": "paragraph"}]}], "pattern_logic": "and"},
+     "output": {"to_user": False, "save_table": "/temp_paragraph", "fields": [
+         {"as": "title", "variable": "p", "field": "title"},
+         {"as": "passages", "variable": "p", "field": "content"}]}},
+    {"graph": {"patterns": [{"objects": [{"idx": 0, "class": "/temp_paragraph", "variable": "t"}]}], "pattern_logic": "and"},
+     "output": {"to_user": True, "fields": [
+         {"as": "title", "variable": "t", "field": "title"},
+         {"as": "passages", "variable": "t", "field": "passages", "query": params["query"], "topK": int(params.get("top_k") or 8)}]}}]}}
+
+result = [{"title": r.get("title"), "text": p.get("text"), "source": p.get("path")}
+          for r in executeDsl(dsl) for p in r.get("passages") or []]
+print(json.dumps({"answer": result}, ensure_ascii=False))
+```
+
+In the definition, set `function.operation` to `OPERATION_READ`, declare `query` (`TYPE_STRING`) and `top_k` (`TYPE_NUMBER`) as parameters, point `text` and `source` in `returnDef.outKeyRefs` at the `vector` attribute and the other keys at their attributes, and save with `status: "PUBLISHED"`. `text` is the chunk content written at import, `source` the resource download link. Try it with `metric-view execute <id> '{"query":"…"}'`, then select it for an agent with `ontomato-agent-builder`.
 
 > **Action code and vector attributes:** an Action's `code` is a Python write function. Its object writes use `/writeFunctionOperation/insert` and `/writeFunctionOperation/update`, which write **only non-vector attributes** — `insert` silently ignores any vector attribute and `update` raises an error. Write vector attributes only through the vector primitives `appendVector` / `updateVector` / `deleteVector`, never through `insert`/`update`.
 

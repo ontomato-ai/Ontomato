@@ -86,6 +86,10 @@ public class ActionController {
 			User user = SystemUtils.getCurUser();
 			Action action = param.to(Action.class);
 			action.setDomainId(user.getDomainId());
+			// The saved Function belongs to the caller's domain whatever the request says; the DAO keys the vector write by it.
+			if (action.getFunction() != null) {
+				action.getFunction().setDomainId(user.getDomainId());
+			}
 			actionService.save(action, lang);
 			ret.put("success", true);
 		} catch (Exception e) {

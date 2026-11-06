@@ -1,0 +1,2 @@
+# Frontend deployment base URL, without an API path or browser route
+envUrl: http://host:3000
