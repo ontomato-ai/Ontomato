@@ -1,3 +1,4 @@
+import type { ComputedRef, InjectionKey } from "vue";
 import { managerPaths } from "@ontomato/ontology-manager";
 import { platformRoutes } from "@ontomato/platform-shell/routes";
 import type { AppPartition } from "./partition";
@@ -171,3 +172,9 @@ export function appPartition(options: PartitionOptions = {}): readonly AppPartit
   const platform = platformApps.filter((app) => app.id !== "settings");
   return [...platform, ...(options.own ?? []), ...settings, ...(options.external ?? [])];
 }
+
+/**
+ * The applications the shell draws, handed to the pages under it: a page that names applications (the scheduled
+ * tasks, which lists those that can run on a schedule) shows the rail's names, icons and order rather than a copy.
+ */
+export const appPartitionKey: InjectionKey<ComputedRef<readonly AppPartition[]>> = Symbol("platform-app-partition");

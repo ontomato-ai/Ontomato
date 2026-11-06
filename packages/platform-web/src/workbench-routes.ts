@@ -36,11 +36,9 @@ export function workbenchPages(
  */
 export const schedulePages = (): RouteRecordRaw[] => [
   { ...routes.schedules, component: PlatformSchedulesPage, meta: { service: true } },
-  // The agent platform's own scheduled tasks are gone: the platform's one list carries them, narrowed by `?agent=`.
-  {
-    path: routes.agentSchedules.path,
-    redirect: (to) => ({ path: routes.schedules.path, query: typeof to.query.agent === "string" ? { agent: to.query.agent } : {} }),
-  },
+  // The agent platform's own scheduled tasks are the platform's list narrowed to that application. The list is filtered
+  // by application only, so an old link's agent is dropped.
+  { path: routes.agentSchedules.path, redirect: { path: routes.schedules.path, query: { app: "agents" } } },
 ];
 
 /**

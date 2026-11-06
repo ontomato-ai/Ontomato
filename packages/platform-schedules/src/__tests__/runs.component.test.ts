@@ -1,134 +1,80 @@
-import { describe, expect, it, vi } from "vitest";
-import PlatformScheduleRuns from "../components/PlatformScheduleRuns.vue";
-import type { SchedulesApi } from "../api";
-import { flushPromises, mount, pageGlobal, run, task, text, translate, testI18n } from "./fixtures";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import type { VueWrapper } from "@vue/test-utils";
+import { createSchedulesApi } from "../api";
+import ScheduleRunsDrawer from "../components/ScheduleRunsDrawer.vue";
+import { BASE, fakeHost, flushPromises, mount, pageGlobal, run, task, text, type Answer, type Call } from "./fixtures";
 
-const i18n = testI18n();
-const t = translate(i18n);
+const agents = task("agents-instruction");
+const going = run("agents-running");
+const earlier = run("agents-running", {
+  id: "30000000-0000-4000-8000-00000000000b",
+  trigger: "schedule",
+  status: "completed",
+  scheduledAt: "2026-11-05T02:00:00Z",
+  startedAt: "2026-11-05T02:00:01Z",
+  finishedAt: "2026-11-05T02:02:00Z",
+  resultSummary: "Stock fell in two warehouses",
+  spendTime: 119000,
+});
 
-/** The run list only reads, so a test replaces those two methods and reads how they were called. */
-function mountRuns(api: Partial<Pick<SchedulesApi, "runs" | "run">>, props: Record<string, unknown> = {}) {
-  // The other methods belong to the list, not to one task's history; a test that reaches them is wrong.
-  const unused = () => Promise.reject(new Error("not read by the run history"));
-  const full: SchedulesApi = {
-    list: unused,
-    renewCredential: unused,
-    create: unused,
-    update: unused,
-    setEnabled: unused,
-    remove: unused,
-    runNow: unused,
-    functionTargets: unused,
-    errorCode: () => null,
-    statusOf: () => null,
-    runs: async () => ({ runs: [run()], nextCursor: null }),
-    run: async () => run(),
-    ...api,
-  };
-  return {
-    api: full,
-    wrapper: mount(PlatformScheduleRuns, {
-      props: { api: full, task: task(), t, ...props },
-      global: pageGlobal(i18n),
-    }),
-  };
+let mounted: VueWrapper[] = [];
+afterEach(() => {
+  mounted.forEach((wrapper) => wrapper.unmount());
+  mounted = [];
+  vi.useRealTimers();
+});
+
+async function mountDrawer(route: (call: Call) => Answer) {
+  const service = fakeHost(route);
+  const wrapper = mount(ScheduleRunsDrawer, {
+    props: { api: createSchedulesApi(service.host), task: agents },
+    global: pageGlobal(),
+  });
+  mounted.push(wrapper);
+  await flushPromises();
+  return { wrapper, ...service };
 }
 
-describe("platform schedule runs", () => {
-  it("reads the first page on mount and pages forward with the service's cursor", async () => {
-    const runs = vi.fn(async (_id: string, cursor: string | null) =>
-      cursor
-        ? { runs: [run({ id: "66666666-6666-4666-8666-666666666666", startedAt: "2026-11-04T01:00:00Z" })], nextCursor: null }
-        : { runs: [run()], nextCursor: "cursor-2" },
+describe("a task's run records", () => {
+  it("reads them a page at a time, newest first", async () => {
+    const { wrapper, calls } = await mountDrawer((call) =>
+      call.path.includes("cursor=")
+        ? { status: 200, body: { runs: [earlier], nextCursor: null } }
+        : { status: 200, body: { runs: [{ ...going, status: "failed", finishedAt: "2026-11-06T02:02:00Z", error: { code: "interrupted", message: null } }], nextCursor: "page-2" } },
     );
-    const { wrapper } = mountRuns({ runs });
+
+    expect(text(wrapper)).toContain("It was interrupted; check what it did before running it again");
+    await wrapper.find(".more button").trigger("click");
     await flushPromises();
 
-    expect(runs).toHaveBeenCalledWith(task().id, null);
-    expect(text(wrapper)).toContain("Page 1");
-
-    await wrapper.findAll("button").find((button) => button.text() === "Next")!.trigger("click");
-    await flushPromises();
-
-    expect(runs).toHaveBeenLastCalledWith(task().id, "cursor-2");
-    expect(text(wrapper)).toContain("Page 2");
-    // The next page replaced the first: the older run is gone and the newer one stays.
-    expect(text(wrapper)).toContain("Nov 4, 2026");
-    expect(text(wrapper)).not.toContain("Nov 5, 2026");
-    expect(wrapper.findAll("button").find((button) => button.text() === "Next")!.attributes("disabled")).toBeDefined();
+    expect(calls.map((call) => call.path)).toEqual([`${BASE}/${agents.id}/runs`, `${BASE}/${agents.id}/runs?cursor=page-2`]);
+    expect(wrapper.findAll("[data-run]").map((item) => item.attributes("data-run"))).toEqual([going.id, earlier.id]);
+    expect(text(wrapper)).toContain("Stock fell in two warehouses");
+    expect(wrapper.find(".more").exists()).toBe(false);
   });
 
-  it("goes back to the page it came from", async () => {
-    const runs = vi.fn(async (_id: string, cursor: string | null) =>
-      cursor ? { runs: [run()], nextCursor: null } : { runs: [run()], nextCursor: "cursor-2" },
-    );
-    const { wrapper } = mountRuns({ runs });
-    await flushPromises();
-
-    await wrapper.findAll("button").find((button) => button.text() === "Next")!.trigger("click");
-    await flushPromises();
-    await wrapper.findAll("button").find((button) => button.text() === "Previous")!.trigger("click");
-    await flushPromises();
-
-    expect(runs).toHaveBeenLastCalledWith(task().id, null);
-    expect(text(wrapper)).toContain("Page 1");
-  });
-
-  it("opens the conversation an agent run started", async () => {
-    const { wrapper } = mountRuns({});
-    await flushPromises();
-
-    wrapper.findAll("button").find((button) => button.text() === "Open conversation")!.trigger("click");
-    expect(wrapper.emitted("openSession")).toEqual([[run().sessionId]]);
-  });
-
-  it("shows a function run's error and duration, and its result once asked for", async () => {
-    const functionRun = run({
-      target: { kind: "function", functionId: "f-1" },
-      sessionId: null,
-      status: "failed",
-      error: { code: "run_failed", message: "exit 1" },
-      result: null,
+  it("reads a run that is going again every five seconds until it stops, and says when it did", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    const done = { ...going, status: "completed" as const, finishedAt: "2026-11-06T02:03:00Z", resultSummary: "Summary sent", spendTime: 120000 };
+    let reads = 0;
+    const { wrapper, calls } = await mountDrawer((call) => {
+      if (call.path === `${BASE}/${agents.id}/runs`) return { status: 200, body: { runs: [going, earlier], nextCursor: null } };
+      reads += 1;
+      return { status: 200, body: reads === 1 ? going : done };
     });
-    const { wrapper } = mountRuns({
-      runs: vi.fn(async () => ({ runs: [functionRun], nextCursor: null })),
-      run: vi.fn(async () => ({ ...functionRun, result: "12 rows written" })),
-    });
+
+    await vi.advanceTimersByTimeAsync(5000);
     await flushPromises();
+    expect(calls.filter((call) => call.path === `${BASE}/${agents.id}/runs/${going.id}`)).toHaveLength(1);
+    expect(wrapper.emitted("settled")).toBeUndefined();
 
-    expect(text(wrapper)).toContain("The run ended with an error or was cancelled. exit 1");
-    expect(text(wrapper)).toContain("Took 1.2s");
-    // A function run has no conversation, so it names no session and offers no conversation link.
-    expect(text(wrapper)).not.toContain("Open conversation");
-
-    await wrapper.findAll("button").find((button) => button.text() === "Details")!.trigger("click");
+    await vi.advanceTimersByTimeAsync(5000);
     await flushPromises();
+    expect(text(wrapper.find(`[data-run="${going.id}"]`))).toContain("Summary sent");
+    expect(wrapper.emitted("settled")).toHaveLength(1);
 
-    expect(text(wrapper)).toContain("12 rows written");
-    expect(wrapper.findAll("button").some((button) => button.text() === "Hide")).toBe(true);
-  });
-
-  it("says so when the history cannot be read, and retries the same page", async () => {
-    const runs = vi
-      .fn()
-      .mockRejectedValueOnce(new Error("500"))
-      .mockResolvedValue({ runs: [run()], nextCursor: null });
-    const { wrapper } = mountRuns({ runs });
-    await flushPromises();
-
-    expect(text(wrapper)).toContain("Couldn't load the run history.");
-
-    await wrapper.findAll("button").find((button) => button.text() === "Retry")!.trigger("click");
-    await flushPromises();
-
-    expect(runs).toHaveBeenLastCalledWith(task().id, null);
-    expect(text(wrapper)).toContain("Completed");
-  });
-
-  it("says so when there are no runs", async () => {
-    const { wrapper } = mountRuns({ runs: vi.fn(async () => ({ runs: [], nextCursor: null })) });
-    await flushPromises();
-
-    expect(text(wrapper)).toContain("No runs yet.");
+    // Nothing is going any more: the drawer stops reading, and the finished run is never read again.
+    await vi.advanceTimersByTimeAsync(20000);
+    expect(calls.filter((call) => call.path.includes("/runs/"))).toHaveLength(2);
   });
 });

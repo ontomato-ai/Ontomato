@@ -123,7 +123,7 @@ export default [
           regex:
             "^@ontomato/(?!(contracts|design-tokens)(/|$))|(^|/)(workbench-ui|workbench-server|ontology-manager|platform-admin|agent-shell-ui)(/|$)",
           message:
-            "platform-schedules may depend on contracts, design tokens and UI libraries only; hosts inject the request function and the catalogs",
+            "platform-schedules may depend on contracts, design tokens and UI libraries only; hosts inject the request function, the applications and the way to a result",
         },
       ]),
     },

@@ -1,54 +1,50 @@
 <script setup lang="ts">
-import { computed, ref } from "vue";
-import { useRoute, useRouter } from "vue-router";
+import { computed, inject, ref } from "vue";
+import { useRoute, useRouter, type LocationQueryValue } from "vue-router";
 import { useI18n } from "vue-i18n";
 import { Plus } from "lucide-vue-next";
 import { PlatformSchedulesPage } from "@ontomato/platform-schedules";
-import { platformRoutes } from "@ontomato/platform-shell/routes";
+import { appIcon } from "@ontomato/platform-shell";
 import { schedulesHost } from "@ontomato/workbench-ui";
+import { appPartitionKey } from "../app-partition";
 import AppPage from "./AppPage.vue";
 
 /**
- * The scheduled-tasks application: every agent's and every function's tasks, in one list.
+ * The scheduled tasks application: every task the account created, of every application that can run on a schedule,
+ * as cards.
  *
- * The header is the platform's one page header, and its button is the page's own: it opens the list's "new task" form.
- * The page itself draws the content only — the filters, the table and the run history. The request layer and the agents
- * a task may run come from the one host both places share (`schedulesHost`); the reader's agent filter and the task a
- * link names live in the address.
+ * The header is the platform's one page header, and its button opens the page's form. The page names applications as
+ * the rail does — from the partition the shell draws — and opens a result through this router, which adds the
+ * deployment's prefix. The address keeps the application filter (`?app=`) and the run record a link opens
+ * (`?taskId=&runId=`, the address an action's or a function's result points at).
  */
 const router = useRouter();
 const route = useRoute();
-const { locale, t } = useI18n();
+const { t } = useI18n();
 const page = ref<{ openNewTask: () => void } | null>(null);
 
-/**
- * The task an address points at. The old function deep links and the Manager's asset links arrive as `?taskId=`, so the
- * page opens that task's run history; an id it cannot see only leaves the list.
- */
-const taskId = computed(() => {
-  const value = route.query.taskId;
-  return typeof value === "string" && value ? value : null;
-});
-
-/** The agent the reader narrowed to (`?agent=`), so the filter survives a reload and can be linked. */
-const filterAgentId = computed(() => {
-  const value = route.query.agent;
-  return typeof value === "string" && value ? value : null;
-});
-
-function setFilterAgent(agentId: string) {
-  const query = { ...route.query };
-  if (agentId) query.agent = agentId;
-  else delete query.agent;
-  void router.replace({ path: route.path, query });
-}
+const partition = inject(appPartitionKey);
+if (!partition) throw new Error("The scheduled tasks page is shown outside the platform shell that names its applications");
 
 const host = schedulesHost({
-  locale: () => locale.value,
-  openSession: (sessionId) => {
-    void router.push({ name: platformRoutes.chat.name, query: { sessionId } });
-  },
+  applications: () => partition.value.map((app) => ({ id: app.id, label: t(app.labelKey), icon: appIcon(app.icon) })),
+  openResult: (link) => void router.push(link.path),
 });
+
+const single = (value: LocationQueryValue | LocationQueryValue[] | undefined) =>
+  typeof value === "string" && value ? value : null;
+const app = computed(() => single(route.query.app));
+const taskId = computed(() => single(route.query.taskId));
+const runId = computed(() => single(route.query.runId));
+
+function changeQuery(change: Record<string, string | null>) {
+  const query = { ...route.query };
+  for (const [key, value] of Object.entries(change)) {
+    if (value) query[key] = value;
+    else delete query[key];
+  }
+  void router.replace({ path: route.path, query });
+}
 
 const actions = computed(() => [
   {
@@ -66,14 +62,16 @@ const actions = computed(() => [
     :title="t('platformSchedules.title')"
     :description="t('platformSchedules.intro')"
     :actions="actions"
-    :labels="{ save: t('common.save'), discard: t('common.cancel'), unsavedChanges: t('admin.unsavedChanges') }"
+    :labels="{ save: t('platform.save'), discard: t('platform.discard'), unsavedChanges: t('platform.unsavedChanges') }"
   >
     <PlatformSchedulesPage
       ref="page"
       :host="host"
+      :app="app"
       :task-id="taskId"
-      :filter-agent-id="filterAgentId"
-      @update-filter-agent="setFilterAgent"
+      :run-id="runId"
+      @select-app="changeQuery({ app: $event })"
+      @records-closed="changeQuery({ taskId: null, runId: null })"
     />
   </AppPage>
 </template>
