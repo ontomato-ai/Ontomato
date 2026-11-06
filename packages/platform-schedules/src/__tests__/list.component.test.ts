@@ -106,7 +106,8 @@ describe("platform schedules list", () => {
     const wrapper = mountList(api);
     await flushPromises();
 
-    await wrapper.findAll("button").find((button) => button.text().includes("New task"))!.trigger("click");
+    // The page's header owns the button; the list opens its form when asked.
+    (wrapper.vm as unknown as { openNewTask: () => void }).openNewTask();
     await flushPromises();
 
     const form = wrapper.findComponent({ name: "PlatformScheduleForm" });
@@ -136,7 +137,8 @@ describe("platform schedules list", () => {
     const wrapper = mountList(api);
     await flushPromises();
 
-    await wrapper.findAll("button").find((button) => button.text().includes("New task"))!.trigger("click");
+    // The page's header owns the button; the list opens its form when asked.
+    (wrapper.vm as unknown as { openNewTask: () => void }).openNewTask();
     await flushPromises();
 
     wrapper.findComponent({ name: "PlatformScheduleForm" }).vm.$emit("submit", {

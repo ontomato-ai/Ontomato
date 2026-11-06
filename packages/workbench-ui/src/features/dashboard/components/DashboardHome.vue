@@ -21,8 +21,8 @@ onMounted(async () => {
 
 <template>
   <div class="dashboard-home">
+    <!-- The application's own header names it; this bar is the page's own: its boards and the way to make one. -->
     <header class="home-bar">
-      <h2 class="home-title">{{ t("analysis.myDashboards") }}</h2>
       <div v-loading="loadingDashboards" class="tabs" role="tablist">
         <div
           v-for="item in dashboardItems"
@@ -86,15 +86,15 @@ onMounted(async () => {
   display: flex;
   align-items: center;
   gap: 16px;
-  padding: 16px 20px 12px;
-  border-bottom: 1px solid var(--el-border-color-light);
+  padding: 0 28px 12px;
+  flex-shrink: 0;
+  border-bottom: 1px solid var(--el-border-color);
 }
-.home-title {
-  margin: 0;
-  font-size: var(--text-lg);
-  font-weight: 600;
-  white-space: nowrap;
-  color: var(--el-text-color-primary);
+.home-body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 16px 28px 24px;
 }
 .tabs {
   display: flex;
@@ -151,10 +151,5 @@ onMounted(async () => {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-}
-.home-body {
-  flex: 1;
-  min-height: 0;
-  overflow: auto;
 }
 </style>

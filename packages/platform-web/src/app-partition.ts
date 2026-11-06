@@ -33,6 +33,8 @@ const platformApps: readonly AppPartition[] = [
     rail: "top",
     prefix: "/ontology",
     panel: "pages",
+    // The manager keeps its own three groups: they are its menu, drawn in its own band inside the area.
+    frame: "menu",
     sections: [
       {
         key: "ontology:model",
@@ -87,13 +89,9 @@ const platformApps: readonly AppPartition[] = [
     panel: "conversation",
     // The agent settings are the application's own entry at the foot of its column.
     settings: { id: "agent-settings", labelKey: "assistant.featureAgents", icon: "agents" },
-    sections: [
-      {
-        key: "agents:pages",
-        titleKey: "platform.agentPlatform",
-        paths: [platformRoutes.dashboards.path, platformRoutes.agents.path, platformRoutes.agentSchedules.path],
-      },
-    ],
+    // The column is the application's own: the conversation, its pages and the settings. Nothing of another application
+    // is listed here, so this application has no page group of its own in the platform's table.
+    sections: [],
   },
   {
     id: "operations",
@@ -133,6 +131,15 @@ const platformApps: readonly AppPartition[] = [
         paths: [platformRoutes.feedback.path],
       },
     ],
+  },
+  {
+    id: "dashboards",
+    labelKey: "assistant.featureDashboards",
+    icon: "dashboards",
+    rail: "apps",
+    prefix: platformRoutes.dashboards.path,
+    panel: "pages",
+    sections: [{ key: "dashboards:all", titleKey: "assistant.featureDashboards", paths: [platformRoutes.dashboards.path] }],
   },
   {
     id: "schedules",

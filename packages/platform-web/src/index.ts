@@ -31,4 +31,4 @@ export { readRuntimeConfig } from "./config";
 export { serviceHome } from "./view";
 export { legacyAdminRoutes, managerLocation, managerViewQuery } from "./admin-routes";
 export { observeRoutes } from "./observe-routes";
-export { schedulePages, workbenchPages } from "./workbench-routes";
+export { dashboardPages, schedulePages, workbenchPages } from "./workbench-routes";

@@ -1,16 +1,10 @@
 <script setup lang="ts">
 import { randomId } from "@ontomato/contracts/random-id";
-import { computed, h, onMounted, provide, ref, watch } from "vue";
+import { computed, onMounted, provide, ref, watch } from "vue";
 import { useRoute, useRouter, type LocationQueryRaw } from "vue-router";
 import { useI18n } from "vue-i18n";
 import { ElMessage } from "element-plus";
-import {
-  AgentShell,
-  ShellNavBody,
-  useAgentNav,
-  useAppColumn,
-  type ShellWorkbenchDeclaration,
-} from "@ontomato/agent-shell-ui";
+import { AgentShell, useAgentNav, type ShellWorkbenchDeclaration } from "@ontomato/agent-shell-ui";
 import "@ontomato/agent-shell-ui/style.css";
 import { DIAGNOSIS_AGENT_ID, type DiagnosisTarget } from "@ontomato/contracts/ops-diagnosis";
 import { agentHostCreateSessionResponseSchema, agentHostAdmissionSchema } from "@ontomato/contracts/agent-host";
@@ -48,6 +42,8 @@ const pages = [
 
 /** The pages the column lists: the model is a setting, not a page of the application one browses. */
 const listedPages = pages.filter((page) => page.id !== "model");
+/** The application's own entry at the foot of its column: the model the diagnosis runs on. */
+const bottomEntry = computed(() => ({ label: t("ops.modelSettings"), icon: "settings" }));
 const workbench = computed<ShellWorkbenchDeclaration>(() => ({
   id: "operations",
   label: t("ops.title"),
@@ -145,7 +141,7 @@ watch(() => [route.query.diagnose, route.query.sourceSessionId, route.query.sour
 }, { immediate: true });
 
 /**
- * The one navigation state of this application: the platform column lists the diagnosis conversation from it, and the
+ * The one navigation state of this application: its column lists the diagnosis conversation from it, and the
  * conversation promotes into it while sending.
  */
 const nav = useAgentNav({
@@ -157,31 +153,6 @@ const nav = useAgentNav({
   onLeaveConversation: () => (featureId.value = null),
 });
 const { agents, sessions, sessionsState, nextCursor } = nav;
-
-useAppColumn(() => ({
-  appId: "ops",
-  content: () =>
-    h(ShellNavBody, {
-      workbench: workbench.value,
-      agents: agents.value,
-      agentId: agentId.value,
-      sessions: sessions.value,
-      sessionsState: sessionsState.value,
-      hasMore: nextCursor.value !== null,
-      sessionId: sessionId.value,
-      featureId: featureId.value,
-      // The column is drawn outside the conversation's provider, so the shell's words are passed in.
-      labels: labels.value,
-      onNewConversation: () => nav.startNew(),
-      onSelectFeature: (id: string) => (featureId.value = id),
-      onFeatureAction: () => {},
-      onSelectAgent: (id: string) => (agentId.value = id),
-      onSelectSession: (id: string) => (sessionId.value = id),
-      onDeleteSession: (id: string) => void nav.removeSession(id),
-      onLoadMore: () => void nav.loadSessions(true),
-      onRetry: () => void nav.loadSessions(),
-    }),
-}));
 
 onMounted(async () => {
   await nav.loadAgents().catch(() => {});
@@ -198,11 +169,14 @@ onMounted(async () => {
     v-model:session-id="sessionId"
     v-model:page-view="pageView"
     :workbench="workbench"
+    :title="t('ops.title')"
+    :bottom="bottomEntry"
     :client="client"
     :labels="labels"
     :nav="nav"
     :page-context="pageContext"
     :page-links="pageLinks"
+    @open-bottom="featureId = 'model'"
     @error="ElMessage.error($event)"
   >
     <template #feature="{ featureId: page }">

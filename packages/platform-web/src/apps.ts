@@ -7,6 +7,12 @@ import type {
 } from "@ontomato/platform-shell";
 import type { Component } from "vue";
 
+/**
+ * How an application that holds several pages shows them: in the header as tabs (the object browser, the system
+ * settings), or as a menu in its own band beside its pages (the ontology manager, whose groups stay).
+ */
+export type PlatformAppFrame = "tabs" | "menu";
+
 /** How an application's second column is filled. */
 export type PlatformAppPanelKind =
   /** A conversation application: the agent, new conversation and history, contributed by the page itself. */
@@ -26,6 +32,8 @@ export interface PlatformAppDeclaration {
   rail?: PlatformRailSection;
   /** The application owns the addresses under this prefix. */
   prefix: string;
+  /** How its pages are shown when it holds several; absent means header tabs. */
+  frame?: PlatformAppFrame;
   /** The address its rail row opens: the first page the account may open, or the entry the declaration names. */
   home?: string;
   panel: PlatformAppPanelKind;

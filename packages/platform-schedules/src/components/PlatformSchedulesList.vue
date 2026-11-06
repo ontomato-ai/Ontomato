@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, ref, watch } from "vue";
 import { ElMessage, ElMessageBox } from "element-plus";
-import { History, Pencil, Play, Plus, RotateCcw, Trash2 } from "lucide-vue-next";
+import { History, Pencil, Play, RotateCcw, Trash2 } from "lucide-vue-next";
 import type { AgentHostAgent } from "@ontomato/contracts/agent-host";
 import type {
   PlatformTask,
@@ -30,6 +30,11 @@ const props = defineProps<{
   functionsRefused?: boolean;
   /** Show only this agent's tasks and preselect it for a new task (the agent platform's entry). */
   agentId?: string | null;
+  /**
+   * The reader's own agent filter, when the host keeps it in the address: the entry narrows the list, the address
+   * carries the choice, and "all agents" clears it.
+   */
+  agentFilter?: string | null;
   /** Show only this application's tasks, e.g. `agents` or `ontology`; the user may still change the filter. */
   appId?: string | null;
   /**
@@ -42,7 +47,7 @@ const props = defineProps<{
   /** The page's own text, from the host's message tree under `platformSchedules`. */
   t: Translate;
 }>();
-const emit = defineEmits<{ openSession: [sessionId: string] }>();
+const emit = defineEmits<{ openSession: [sessionId: string]; updateAgentFilter: [agentId: string] }>();
 const labels = useSchedulesLabels();
 
 type AppFilter = "" | "agents" | "ontology";
@@ -67,6 +72,10 @@ const agentName = (id: string) =>
 const functionName = (id: string) =>
   props.functions.find((fn) => fn.id === id)?.name ?? props.t("unknownFunction");
 
+/** The agent the list is narrowed to: the host's fixed scope, or the reader's choice from the page's filter. */
+const chosenAgent = computed(() => (props.agentId === undefined ? props.agentFilter ?? "" : null));
+const pickAgent = (id: string) => emit("updateAgentFilter", id);
+
 /** The rows on screen: the agent scope is fixed by the host, the application filter is the reader's. */
 const shown = computed(() =>
   appFilter.value ? tasks.value.filter((task) => task.appId === appFilter.value) : tasks.value,
@@ -82,7 +91,9 @@ const formOpen = computed({
 async function load() {
   state.value = "loading";
   try {
-    const list = await props.api.list(props.agentId ? { agentId: props.agentId } : {});
+    // The agent scope: the host's fixed one, or the reader's filter from the page's address.
+    const agent = props.agentId ?? (props.agentFilter || null);
+    const list = await props.api.list(agent ? { agentId: agent } : {});
     tasks.value = list.tasks;
     timeZone.value = list.timeZone;
     state.value = "ready";
@@ -204,29 +215,52 @@ function toggleHistory(id: string) {
 }
 
 onMounted(() => void open());
-defineExpose({ reload: load });
+// The address's agent filter narrows what the service returns, so the list is read again when it changes.
+watch(
+  () => props.agentFilter,
+  (next, previous) => {
+    if (next !== previous) void load();
+  },
+);
+/** The page's header owns the "new task" button; this is how it opens the form. */
+function openNewTask() {
+  editing.value = null;
+}
+defineExpose({ reload: load, openNewTask });
 </script>
 
 <template>
   <div class="schedules">
     <div class="toolbar">
       <div class="scope">
-        <el-select
-          v-if="!agentId"
-          v-model="appFilter"
-          class="app-filter"
-          :aria-label="t('filter.app')"
-        >
-          <el-option value="" :label="t('filter.all')" />
-          <el-option value="agents" :label="t('filter.agentsOnly')" />
-          <el-option value="ontology" :label="t('filter.functionsOnly')" />
-        </el-select>
-        <span v-else class="scoped-note">{{ t("agentScoped") }}</span>
+        <!-- The filters carry their own labels: what a select narrows is not something to guess (DESIGN.md). -->
+        <label class="filter">
+          <span class="filter-label">{{ t("filter.app") }}</span>
+          <el-select
+            v-if="agentId === undefined"
+            v-model="appFilter"
+            class="app-filter"
+            :aria-label="t('filter.app')"
+          >
+            <el-option value="" :label="t('filter.all')" />
+            <el-option value="agents" :label="t('filter.agentsOnly')" />
+            <el-option value="ontology" :label="t('filter.functionsOnly')" />
+          </el-select>
+          <span v-else class="scoped-note">{{ t("agentScoped") }}</span>
+        </label>
+        <label v-if="agentId === undefined" class="filter">
+          <span class="filter-label">{{ t("filter.agent") }}</span>
+          <el-select
+            :model-value="chosenAgent ?? ''"
+            class="agent-filter"
+            :aria-label="t('filter.agent')"
+            @update:model-value="pickAgent(String($event || ''))"
+          >
+            <el-option value="" :label="t('filter.allAgents')" />
+            <el-option v-for="agent in agents" :key="agent.id" :value="agent.id" :label="agent.name" />
+          </el-select>
+        </label>
       </div>
-      <el-button type="primary" :disabled="state === 'loading'" @click="editing = null">
-        <Plus :size="16" />
-        <span>{{ t("newTask") }}</span>
-      </el-button>
     </div>
 
     <div v-if="state === 'loading' && tasks.length === 0" class="skeleton" aria-busy="true">
@@ -396,12 +430,29 @@ defineExpose({ reload: load });
 }
 .toolbar {
   display: flex;
-  align-items: center;
+  align-items: flex-end;
   justify-content: space-between;
   gap: var(--spacing-md);
   min-height: var(--control-height);
 }
-.app-filter {
+.scope {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--spacing-md);
+  flex-wrap: wrap;
+}
+.filter {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.filter-label {
+  font-size: var(--text-xs);
+  line-height: var(--leading-xs);
+  color: var(--el-text-color-secondary);
+}
+.app-filter,
+.agent-filter {
   width: 180px;
 }
 .scoped-note {

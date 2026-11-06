@@ -76,6 +76,7 @@ export function appDeclarations(
       rail: app.rail ?? "apps",
       prefix: app.prefix,
       panel: app.panel,
+      frame: app.frame,
       settings: app.settings && {
         id: app.settings.id,
         label: t(app.settings.labelKey),

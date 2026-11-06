@@ -2,6 +2,7 @@ import type { Component } from "vue";
 import {
   BookOpen,
   CalendarClock,
+  LayoutDashboard,
   Circle,
   Database,
   ExternalLink,
@@ -29,6 +30,8 @@ const appIcons: Record<string, Component> = {
   ontology: Waypoints,
   /** 定时任务 */
   schedule: CalendarClock,
+  /** 看板 */
+  dashboards: LayoutDashboard,
   /** 权限管理 */
   permissions: ShieldCheck,
   /** 系统设置 */

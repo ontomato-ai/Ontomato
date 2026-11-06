@@ -36,6 +36,8 @@ export default {
       all: "All applications",
       agentsOnly: "Agent tasks",
       functionsOnly: "Function tasks",
+      agent: "Agent",
+      allAgents: "All agents",
     },
     // An agent entry opens with the agent already chosen.
     agentScoped: "Tasks for this agent",

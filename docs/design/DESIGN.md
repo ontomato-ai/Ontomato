@@ -54,7 +54,11 @@ density:
   panel-header: panel header
 
 shell:
-  agent-rail:          sidebar; collapses to an icon rail below 1280px
+  platform-rail:            the platform's ground layer, expanded (196px)
+  platform-rail-collapsed:  the same rail, collapsed to icons (58px)
+  rail-button:              the rail's expand/collapse control, and an icon row when collapsed
+  application-radius:       the radius of the corners where an application meets the rail (16px)
+  application-column:       an application's own column, when it draws one (244px)
   conversation-gutter: Agent Platform, gap around the raised conversation panel
   conversation-radius: Agent Platform, radius of the raised conversation panel
   composer-height:     Agent Platform, pill composer (radius = height / 2)
@@ -81,7 +85,7 @@ motion:
 # Every role has one value per mode (light, dark).
 
 colors:
-  canvas:        shell panels — sidebar, list panel, admin navigation
+  canvas:        shell panels — list panel, admin navigation
   surface:       workspace, tables, forms, input fills
   raised:        overlays (with elevation.overlay)
   sunken:        inset wells, code blocks, table head
@@ -103,6 +107,12 @@ colors:
   accent:        brand signature only, never a state
   accent-ink:    accent as text
   accent-soft:   accent fill
+  rail:          the platform rail: the ground layer of the shell
+  panel:         an application's own column or menu, drawn inside its area
+  workspace:     an application's main area; its page background
+  rail-selected: the selected row on the rail
+  panel-selected: the selected row in an application's column or menu
+  edge:          the hairline between the rail and the application, a translucent tone
   success:       status, with an icon or label
   warning:       status, with an icon or label
   danger:        status and destructive buttons, with an icon or label
@@ -117,48 +127,60 @@ dataviz:
 
 ## Applications and shells
 
-The product has two applications with their own pages, services and shells. They share this
-design language (colour roles, type, density, controls, navigation rows, group labels) but
-not a shell, and they do not switch inside one page:
+The product is one platform with several applications. They share this design language (colour
+roles, type, density, controls, navigation rows, group labels) and one platform shell; each
+application owns the area the shell gives it and organises its own pages there.
 
-| Application | Former name | What it is | Shell |
-|---|---|---|---|
-| Agent Platform (智能体平台) | workbench, "Data Agent", 数据分析平台 | where business users talk to agents | conversation shell |
-| Ontology Service (本体服务) | Ontology Manager (本体管理器) | the platform: ontology, assets, knowledge and platform administration | data shell |
+**Two layers.** The platform rail is the ground. The current application is one surface on top
+of it: it fills everything to the right of the rail, with no margin above, right or below, and
+is rounded only at the two corners where it meets the rail (`shell.application-radius`). One
+hairline (`edge`) separates it from the rail. There is no shadow: the surface is a layer, not a
+floating card.
 
-Renaming covers interface text and documents only. URL paths (`/ontology-manager/`),
-package names and image names stay, so deployments do not change again.
+The platform draws the rail and nothing else. A second column and a page header are pieces an
+application may use (`AppPanel`/`AppPanelPages`, `PlatformPageHeader`); the platform never draws
+them on an application's behalf.
 
-**Cross-application links** sit in each application's left function area as ordinary
-navigation rows with an external-link mark, and open in a new tab:
+**The rail.** Collapsed by default: the expand control at the top, then application icons, each
+named by its tooltip and its accessible name. Expanded: the brand mark, the product name
+(Ontomato), the collapse control, and the application names. The rail is a launcher — the
+applications open full page beside it — and remembers the reader's choice.
 
-- Agent Platform: "Ontology Service" among New chat, Dashboards, Graph, Agent settings and
-  Scheduled tasks.
-- Ontology Service: "Agent Platform" and (enterprise) "Data Governance Platform" at the top of
-  its sidebar, above the navigation groups.
+Its rows sit in three sections separated by a hairline and named by no heading:
 
-**Conversation shell (Agent Platform).** Logo, function area, agent selector, recent
-conversations, user row. The sidebar sits on `canvas` with no divider.
-The workspace is one raised panel: `surface`, `conversation-radius`, `conversation-gutter`
-around it, a 1px `line` and `elevation.panel`. The composer is a pill of `composer-height`
-with `elevation.composer` and a round send button. The platform has no separate console:
-its own management pages (agents and the capability library, operations diagnosis) are
-pages of this shell, shown in the same raised panel by capability code and following the
-colour roles and component rules.
+1. the ontology applications: Ontology Manager, Object Browser;
+2. the business applications: Agent Platform, Operations diagnosis, Knowledge governance,
+   Dashboards, Scheduled tasks — and, in the enterprise edition, the external Data Governance
+   Platform last among them (it opens in a new tab and is never current);
+3. the platform's own settings above the account: Permissions (enterprise), System settings.
 
-**Data shell (Ontology Service, data-dense pages).** Edge to edge, separated by tone and a
-1px `line` (the Layout section below). One sidebar and one router: groups Ontology (graph,
-object types, attributes, relation types, actions, visual modelling, data browser), Assets
-(metric views, functions, scheduled tasks), Knowledge (business knowledge) and Platform
-administration (permission centre, models, system configuration, licence, audit log, system
-monitor), each entry shown by permission. There is no separate "platform area" with its
-own header and back button.
+An application's row opens its own entry (its first page, or the conversation). `app-builder` is
+not built yet and is not listed.
+
+**Applications.** Each application shows one of these frames inside its area:
+
+| Application | Frame |
+|---|---|
+| Agent Platform (智能体平台), Operations diagnosis, Knowledge governance | conversation column: its own column, then the conversation |
+| Ontology Manager (平台的前身本体服务) | its own menu (ontology, assets, knowledge) in its band, pages beside it |
+| Object Browser, System settings | header with tabs; the page's own second-level tabs stay in the page |
+| Dashboards, Scheduled tasks, Permissions | one page: header and page |
+
+**Conversation applications.** The column belongs to the application and is drawn by the
+conversation shell. From top to bottom: its head, a new conversation, the application's own
+pages, the recent conversations, and the application's own entry at the foot. The head is the
+agent switcher when the application runs on more than one agent — the current agent's name and a
+dropdown of the agents, each with its name and one line of description, the current one checked
+— and the application's name when it runs on one. The Agent Platform's column holds only a new
+conversation, the recent conversations and "smart-agent settings" at the foot; its settings
+replace the column with the settings' own navigation (back to the conversation, the agents, a
+new agent, the capability library) while the main area edits the chosen agent.
 
 **Agent apps.** An agent app is one agent plus a few pages, one page per piece of business,
 each able to finish that business without the agent. It has three states: the conversation
 alone; the conversation with one page beside it (a raised side panel of the artifact
 panel's geometry, draggable width); and the page full, with the composer below it. The
-left function area opens a page full; collapsing it, sending from it, or opening an in-app
+column's page entries open a page full; collapsing it, sending from it, or opening an in-app
 link from an answer puts it beside the conversation; closing it returns to the
 conversation. The same page component serves both widths, so pages stay usable at the side
 panel's width (360px and up), stacking split panes below a 720px container. Messages sent
@@ -167,11 +189,28 @@ container, not something authored: it shows a page (written in code) or an expan
 (an artifact the agent produced, which cannot write data). Results people need later live
 on the page, not only in the conversation.
 
-**Light and dark.** Each mode is uniform: in light mode the sidebar, list panel and workspace
-are all light; in dark mode all dark. No dark sidebar beside a light workspace.
+**Page applications.** One page that fills the area: a header with the title, one line of
+description and the page's actions (the one "new task", the Save of a draft), then the page. An
+application of several pages switches between them in its header as tabs; a page that holds
+several screens keeps its own second-level tabs in the page. The Dashboards' boards are tabs of
+their own page, and the Scheduled tasks' filters carry labels.
 
-**Brand mark.** The Agent Platform mark uses `accent`, the Ontology Service mark `primary`,
-so the current application is recognisable at a glance.
+**Addresses.** An application owns the addresses under its prefix. Old addresses that changed
+home redirect in the front end: `/agents/dashboards` → `/dashboards`, `/agents/schedules` →
+`/schedules` (carrying the agent it was narrowed to), `/agents/settings?tab=capabilities` →
+`/agents/settings/capabilities`.
+
+**Colour roles.** Three bands, each with its own role: the rail (`rail`), an application's own
+column or menu (`panel`), and the application's main area (`workspace`). In light mode the rail
+is the darkest and the main area the lightest; in dark mode the order reverses and the main area
+is the darkest. `edge` is the hairline between the rail and the application, a translucent tone
+rather than an opaque colour.
+
+**Light and dark.** Each mode is uniform: every band of one mode belongs to that mode. No dark
+rail beside a light application.
+
+**Brand mark.** The rail carries the product's mark, not an application's: the current
+application is named by its row and by its own header, not by a second mark.
 
 ## Scope and ownership
 
@@ -267,23 +306,27 @@ No edition gives the sidebar a colour of its own: it sits on `canvas` with `ink-
 
 ### Shell
 
-The data shell; the conversation shell's raised panel is described in "Applications and
-shells".
+Two layers, not three columns:
 
 ```
-┌──────────┬──────────────┬──────────────────────────────────┐
-│ agent    │ list panel   │ workspace                        │
-│ rail     │ (history,    │ page header 48px                 │
-│ 232px    │  objects)    ├──────────────────────────────────┤
-│ canvas   │ 264px canvas │ surface                          │
-│          │              │                                  │
-└──────────┴──────────────┴──────────────────────────────────┘
+┌──────┬──────────────────────────────────────────────────┐
+│ rail │ application                                      │
+│ 58px │ one surface, rounded at the two left corners      │
+│ rail │ ├ column/menu (panel) ─┬─ main area (workspace) ─┤ │
+│      │ │ the app's own        │ page header 48px      │ │
+│      │ │ navigation           │ page                  │ │
+└──────┴──────────────────────────────────────────────────┘
 ```
 
-- Panels are full height, edge to edge, `rounded.shell` (0), divided by a 1px `line`.
-  No outer page gutter.
-- The agent rail collapses to a 56px icon rail below 1280px; on mobile each column becomes
-  its own view.
+- The rail is the ground and is full height; the application fills everything to its right
+  with no margin above, right or below, rounded `application-radius` at the two corners where
+  the two meet, divided from the rail by a 1px `edge` and by no shadow.
+- The rail is `platform-rail` wide expanded (196px) and `platform-rail-collapsed` collapsed
+  (58px); it starts collapsed. Below 760px the two layers stack, the application taking the
+  full width and rounding its top corners instead.
+- Inside an application, its own column (`panel`, `application-column` wide) and its main area
+  (`workspace`) are divided by a 1px `line`. An application without its own column uses the
+  whole surface.
 - An inspector (path search, element details) docks on the right at 320px with the same
   rule: hairline, no card.
 
@@ -292,11 +335,14 @@ shells".
 - **Page header, 48px:** title (`title`) on the left; the one-line description is muted
   `body-sm` after the title or in a tooltip; primary and secondary actions on the right.
   Toolbars are not wrapped in a card — filters sit in the header row or one 40px row below.
+  An application of several pages puts them in the header as tabs (a 40px row under the title,
+  on the `line` the header closes with); a page that holds several screens keeps its own tabs
+  in the page, under the header.
 - **Content:** the table or form fills the remaining width with 16px padding. A table is a
   bordered surface with `rounded.md`; it does not float on a shadow.
-- **Admin navigation:** a `canvas` sidebar with 32px `nav-row`s and `label` group headings.
-  The Ontology Service sidebar is 232px, the same as `agent-rail`; the Agent Platform admin
-  pages keep their existing 220px sidebar (64px collapsed).
+- **Admin navigation:** an application's own column or menu, on `panel`, `application-column`
+  wide, with 32px `nav-row`s and `label` group headings. The Ontology Manager's three groups
+  are its menu; the conversation applications' columns are the conversation shell's.
 
 ### Grid
 

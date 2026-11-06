@@ -7,6 +7,7 @@ import en from "element-plus/es/locale/lang/en";
 import publicEn from "@ontomato/workbench-ui/locales/en";
 import { openOntologyServiceAccess } from "@ontomato/workbench-ui";
 import {
+  dashboardPages,
   legacyAdminRoutes,
   observeRoutes,
   PlatformShellLayout,
@@ -51,6 +52,7 @@ export function startPlatform() {
           ...observeRoutes.root,
           props: { account: null },
         }),
+        ...dashboardPages(),
         ...schedulePages(),
         ...ossServicePages(app, router),
       ], PlatformShellLayout),

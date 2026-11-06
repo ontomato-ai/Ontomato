@@ -146,6 +146,22 @@ describe("the open-source platform's conversations", () => {
   });
 });
 
+describe("the open-source platform's page headers", () => {
+  it("switches the system settings' three screens in the application's header", async () => {
+    await open("/settings/records/audit-log");
+    // An application of several pages is one header with its pages as tabs; the page keeps its own second-level tabs.
+    const tabs = [...document.querySelectorAll(".platform-page-header .page-tab")].map((tab) => tab.textContent?.trim());
+    expect(tabs).toEqual(["Models", "System Settings", "Run Records"]);
+    expect(document.querySelector(".platform-page-header .page-tab.active")?.textContent?.trim()).toBe("Run Records");
+  });
+
+  it("gives a single-page application its header and page, with no tabs", async () => {
+    await open("/dashboards");
+    expect(document.querySelector(".platform-page-header")).toBeNull();
+    expect(document.querySelector(".dashboards-application .head-title")?.textContent).toBe("Dashboards");
+  });
+});
+
 describe("the open-source platform's column", () => {
   /*
    * The platform draws no column of its own, so nothing here can be opened from the shell. The operations application
@@ -179,7 +195,7 @@ describe("the open-source platform's rail", () => {
     );
     expect(sections).toEqual([
       ["Ontology manager", "Object browser"],
-      ["Agent Platform", "Operations diagnosis", "Knowledge governance", "Scheduled tasks"],
+      ["Agent Platform", "Operations diagnosis", "Knowledge governance", "Dashboards", "Scheduled tasks"],
       ["System settings"],
     ]);
   });
@@ -187,8 +203,8 @@ describe("the open-source platform's rail", () => {
   it("opens a page this edition serves for every application", async () => {
     await open("/");
     // The rail lists the applications in the partition's order; an application without an external link or an
-    // unavailability hint is a row that switches the shell.
-    const switching = appPartition().filter((app) => app.sections.length > 0);
+    // unavailability hint is a row that switches the shell. Every one of them opens somewhere.
+    const switching = appPartition();
     const rows = [...document.querySelectorAll<HTMLElement>(".rail-row:not(.external):not(.unavailable)")];
     expect(rows.length).toBe(switching.length);
 
