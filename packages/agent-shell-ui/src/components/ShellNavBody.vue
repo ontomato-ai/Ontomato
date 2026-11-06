@@ -274,7 +274,7 @@ onBeforeUnmount(() => {
   cursor: pointer;
 }
 .switch-trigger:hover {
-  background: var(--shell-nav-hover, var(--el-fill-color-light));
+  background: var(--shell-panel-hover);
 }
 .switch-name {
   overflow: hidden;
@@ -323,9 +323,15 @@ onBeforeUnmount(() => {
   text-align: left;
   cursor: pointer;
 }
-.agent-option:hover,
+.agent-option:hover {
+  background: var(--shell-panel-hover);
+}
 .agent-option.current {
-  background: var(--shell-nav-hover, var(--el-fill-color-light));
+  background: var(--shell-panel-selected);
+  font-weight: var(--font-semibold);
+}
+.agent-option.current:hover {
+  background: var(--shell-panel-selected-hover);
 }
 .option-text {
   display: flex;
@@ -370,17 +376,19 @@ onBeforeUnmount(() => {
   color: var(--el-text-color-secondary);
 }
 .nav-item:hover:not(.unavailable) {
-  background: var(--shell-nav-hover, var(--el-fill-color-light));
+  background: var(--shell-panel-hover);
+  color: var(--el-text-color-primary);
 }
 .nav-item.active {
-  background: var(--shell-nav-selected, var(--el-color-primary-light-9));
+  background: var(--shell-panel-selected);
   color: var(--el-text-color-primary);
   font-weight: var(--font-semibold);
 }
 .nav-item.active svg,
 .nav-item.primary svg {
-  color: var(--el-color-primary);
+  color: var(--brand-link);
 }
+.nav-item.active:hover { background: var(--shell-panel-selected-hover); }
 .nav-item.unavailable {
   cursor: default;
   color: var(--el-text-color-tertiary);
@@ -450,11 +458,12 @@ onBeforeUnmount(() => {
   transition: background-color var(--transition-fast);
 }
 .session-item:hover {
-  background: var(--shell-nav-hover, var(--el-fill-color-light));
+  background: var(--shell-panel-hover);
 }
 .session-item.active {
-  background: var(--shell-nav-selected, var(--el-color-primary-light-9));
+  background: var(--shell-panel-selected);
 }
+.session-item.active:hover { background: var(--shell-panel-selected-hover); }
 .session-open {
   display: flex;
   align-items: center;
@@ -564,7 +573,7 @@ onBeforeUnmount(() => {
   cursor: pointer;
 }
 .more:hover {
-  background: var(--shell-nav-hover, var(--el-fill-color-light));
+  background: var(--shell-panel-hover);
 }
 /* The application's own entry, behind the one divider inside the column. */
 .nav-foot {

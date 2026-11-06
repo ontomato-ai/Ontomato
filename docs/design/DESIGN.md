@@ -212,6 +212,12 @@ muted labels. Exact graph/editor dimensions may follow the technical task rather
 
 ## 11. Interaction states
 
+Navigation hover is derived from ink mixed lightly over the actual rail/panel background, owned by the brand
+generator (`--shell-rail-hover`, `--shell-panel-hover`). Selection retains each band's existing brand-tinted fill,
+ink text, semibold label and readable link-coloured icon. Hovering a selected row uses its selected-hover derivative,
+never the unselected hover fill. Keyboard focus adds an independent inset outline; unavailable items do not hover.
+Conversation history follows the same panel rules. No new page-specific palette or geometry is introduced.
+
 Implement default, hover, focus, pressed, selected, disabled, loading, success, warning and error consistently.
 Hover never shifts geometry. Selection has an explicit semantic/non-colour cue (weight/checkmark/aria state).
 Focus is visible, progress is clear without uncontrolled jumps, errors are useful, destructive actions explicit.

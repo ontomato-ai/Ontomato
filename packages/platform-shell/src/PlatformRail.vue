@@ -434,7 +434,8 @@ onBeforeUnmount(() => document.removeEventListener("pointerdown", onDocumentPoin
   color: var(--el-text-color-secondary);
 }
 .rail-row:hover:not(.unavailable) {
-  background: var(--el-fill-color-light);
+  background: var(--shell-rail-hover);
+  color: var(--el-text-color-primary);
 }
 .rail-row.active {
   background: var(--shell-rail-selected);
@@ -442,7 +443,14 @@ onBeforeUnmount(() => document.removeEventListener("pointerdown", onDocumentPoin
   font-weight: var(--font-semibold);
 }
 .rail-row.active .rail-icon {
-  color: var(--el-text-color-primary);
+  color: var(--brand-link);
+}
+.rail-row.active:hover {
+  background: var(--shell-rail-selected-hover);
+}
+.rail-row:focus-visible {
+  outline: 2px solid var(--el-color-primary);
+  outline-offset: -2px;
 }
 .rail-row.unavailable {
   cursor: default;
