@@ -57,6 +57,7 @@ interface AnalysisAgentRow {
   enabled_visualization_skill_ids: string[] | null;
   enabled_mcp_service_names: string[] | null;
   enabled_action_ids: string[] | null;
+  enabled_metric_view_ids: string[] | null;
   class_names: string[] | null;
   graph_scope: unknown;
   is_enabled: boolean;
@@ -179,6 +180,7 @@ export class AnalysisAgentService {
         : agent.enabledVisualizationSkillIds;
     const enabledMcpServiceNames = normalizeStringList(agent.enabledMcpServiceNames);
     const enabledActionIds = normalizeStringList(agent.enabledActionIds);
+    const enabledMetricViewIds = normalizeStringList(agent.enabledMetricViewIds);
     const classNames = normalizeStringList(agent.classNames);
     const graphScope = normalizeAnalysisGraphScope(agent.graphScope);
     await this.validateSkillSelections(enabledSkillIds, SkillCategory.ANALYSIS, domainId);
@@ -197,8 +199,8 @@ export class AnalysisAgentService {
         conclusion_maker_prompt, enabled_skill_ids, enabled_visualization_skill_ids,
         enabled_mcp_service_names, class_names, is_enabled, sort_order, domain_id,
          report_deliverable_enabled, hot_report_enabled, summary_position, graph_scope, created_at, updated_at,
-         enabled_action_ids)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23)`,
+         enabled_action_ids, enabled_metric_view_ids)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24)`,
       [
         id,
         agent.name,
@@ -227,6 +229,7 @@ export class AnalysisAgentService {
         now,
         now,
         enabledActionIds,
+        enabledMetricViewIds,
       ]
     );
     logger.info(tApp("analysis.config.agent-service.3", { id: id, name: agent.name }));
@@ -254,6 +257,9 @@ export class AnalysisAgentService {
     }
     if (updates.enabledActionIds !== undefined) {
       updates.enabledActionIds = normalizeStringList(updates.enabledActionIds);
+    }
+    if (updates.enabledMetricViewIds !== undefined) {
+      updates.enabledMetricViewIds = normalizeStringList(updates.enabledMetricViewIds);
     }
     if (updates.classNames !== undefined) {
       updates.classNames = normalizeStringList(updates.classNames);
@@ -302,6 +308,10 @@ export class AnalysisAgentService {
     if (updates.enabledActionIds !== undefined) {
       vals.push(updates.enabledActionIds);
       sets.push(`enabled_action_ids = $${idx++}`);
+    }
+    if (updates.enabledMetricViewIds !== undefined) {
+      vals.push(updates.enabledMetricViewIds);
+      sets.push(`enabled_metric_view_ids = $${idx++}`);
     }
     if (updates.loopPrompt !== undefined) {
       vals.push(updates.loopPrompt);
@@ -475,6 +485,7 @@ function mapAgentRow(row: AnalysisAgentRow): AnalysisAgent {
     enabledVisualizationSkillIds: row.enabled_visualization_skill_ids || [],
     enabledMcpServiceNames: row.enabled_mcp_service_names || [],
     enabledActionIds: row.enabled_action_ids || [],
+    enabledMetricViewIds: row.enabled_metric_view_ids || [],
     classNames: row.class_names || [],
     graphScope: normalizeAnalysisGraphScope(row.graph_scope),
     isEnabled: row.is_enabled,

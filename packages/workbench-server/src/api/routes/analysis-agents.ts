@@ -137,6 +137,7 @@ router.post(
         enabledVisualizationSkillIds,
         enabledMcpServiceNames,
         enabledActionIds,
+        enabledMetricViewIds,
         classNames,
         graphScope,
         isEnabled,
@@ -181,6 +182,7 @@ router.post(
       }
       assertOptionalStringArray(enabledMcpServiceNames, "enabledMcpServiceNames");
       assertOptionalStringArray(enabledActionIds, "enabledActionIds");
+      assertOptionalStringArray(enabledMetricViewIds, "enabledMetricViewIds");
 
       const service = await getAnalysisAgentService();
       const agent = await service.createAgent(
@@ -200,6 +202,7 @@ router.post(
           enabledVisualizationSkillIds,
           enabledMcpServiceNames: enabledMcpServiceNames ?? [],
           enabledActionIds: enabledActionIds ?? [],
+          enabledMetricViewIds: enabledMetricViewIds ?? [],
            classNames: Array.isArray(classNames) ? classNames : [],
            graphScope: normalizeAnalysisGraphScope(graphScope),
           isEnabled: isEnabled !== false,
@@ -235,6 +238,7 @@ router.put(
         summaryPosition,
         enabledMcpServiceNames,
         enabledActionIds,
+        enabledMetricViewIds,
       } = req.body ?? {};
       if (executionMode !== undefined && !isAnalysisAgentExecutionMode(executionMode)) {
         throw new HttpError(400, INVALID_EXECUTION_MODE_ERROR);
@@ -253,6 +257,7 @@ router.put(
       }
       assertOptionalStringArray(enabledMcpServiceNames, "enabledMcpServiceNames");
       assertOptionalStringArray(enabledActionIds, "enabledActionIds");
+      assertOptionalStringArray(enabledMetricViewIds, "enabledMetricViewIds");
 
       const service = await getAnalysisAgentService();
       const existing = await service.getAgent(

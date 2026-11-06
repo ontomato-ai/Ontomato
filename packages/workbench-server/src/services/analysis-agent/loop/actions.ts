@@ -1,19 +1,13 @@
 import type { AgentTool, AgentToolResult } from "../../../core/agent-loop/types";
-import { buildHeaders, getApiConfig } from "../../../config/data-query-api";
-import { config } from "../../../config/application";
-import * as backend from "../../../utils/backend-client";
+import { errorMessage, isRecord, postDataEngine, type DataEngineCaller } from "./data-engine";
 import type { DeepAnalysisArtifactStore } from "../task/artifacts";
 import { tApp } from "../../../i18n";
 
 /** Shown as the service of an Action call in the trajectory; the Action name is the tool. */
 const ACTION_SERVICE_NAME = "Action";
 
-interface LoopActionDeps {
+interface LoopActionDeps extends DataEngineCaller {
   selectedActionIds: readonly string[];
-  token: string;
-  apiKey: string;
-  userId: string;
-  locale?: string;
   signal: AbortSignal;
   trajectory: Pick<DeepAnalysisArtifactStore, "start" | "settle">;
 }
@@ -26,36 +20,14 @@ interface LoopActionDefinition {
 }
 
 const textResult = (text: string): AgentToolResult => ({ content: [{ type: "text", text }] });
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  !!value && typeof value === "object" && !Array.isArray(value);
-const errorMessage = (error: unknown): string => {
-  if (error instanceof backend.AuthFailedError || error instanceof backend.BackendResponseError)
-    return `HTTP ${error.status}${error.detail ? ` ${error.detail}` : ""}`;
-  if (error instanceof backend.BackendUnavailableError && error.cause) return errorMessage(error.cause);
-  return error instanceof Error ? error.message : String(error);
-};
 
-async function postDataEngine(
+/** An Action writes business data, so a failed execution is never retried. */
+const callDataEngine = async (
   deps: LoopActionDeps,
   endpoint: string,
   body: Record<string, unknown> | URLSearchParams,
   signal: AbortSignal
-): Promise<unknown> {
-  const baseUrl = config.dataQuery.baseUrl.replace(/\/+$/, "");
-  const headers = buildHeaders(getApiConfig(), deps.token, deps.userId, deps.locale, deps.apiKey);
-  if (body instanceof URLSearchParams) headers["Content-Type"] = "application/x-www-form-urlencoded";
-  // An Action writes business data, so a failed execution is never retried.
-  const response = await backend
-    .backendPost(endpoint, `${baseUrl}${endpoint}`, body, { headers, signal, retries: 1 })
-    .catch((error) => {
-      throw signal.aborted ? signal.reason : error;
-    });
-  const payload: unknown = JSON.parse(response.text);
-  if (!isRecord(payload) || payload.success !== true) {
-    throw new Error(isRecord(payload) && typeof payload.message === "string" ? payload.message : response.text);
-  }
-  return payload.data;
-}
+): Promise<unknown> => (await postDataEngine(deps, endpoint, body, signal, 1)).data;
 
 function toDefinition(action: unknown): LoopActionDefinition | null {
   if (!isRecord(action) || typeof action.id !== "string") return null;
@@ -84,7 +56,7 @@ export async function assembleLoopActionCapability(deps: LoopActionDeps) {
 
   let actions: LoopActionDefinition[];
   try {
-    const published = await postDataEngine(deps, "/action/queryList", { status: "PUBLISHED" }, deps.signal);
+    const published = await callDataEngine(deps, "/action/queryList", { status: "PUBLISHED" }, deps.signal);
     const selected = new Set(deps.selectedActionIds);
     actions = (Array.isArray(published) ? published : [])
       .map(toDefinition)
@@ -128,7 +100,7 @@ export async function assembleLoopActionCapability(deps: LoopActionDeps) {
       const requestSignal = signal || deps.signal;
       try {
         const form = new URLSearchParams({ id: action.id, param: JSON.stringify(toolArguments) });
-        const result = await postDataEngine(deps, "/action/execute", form, requestSignal);
+        const result = await callDataEngine(deps, "/action/execute", form, requestSignal);
         deps.trajectory.settle(activityId, "completed");
         return textResult(JSON.stringify(result ?? null));
       } catch (error) {

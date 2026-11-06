@@ -40,6 +40,8 @@ export interface AnalysisAgent {
   enabledMcpServiceNames?: string[];
   /** Published ontology Action IDs a regular-session agent may execute after the user confirms in the conversation */
   enabledActionIds?: string[];
+  /** Published read-only metric view IDs the agent's loop may execute, such as a knowledge search over a vector attribute */
+  enabledMetricViewIds?: string[];
   /** Associated object class names, limiting dimension splitting and query scope */
   classNames?: string[];
   /** Initial ontology exploration scope. Panorama is the backward-compatible default. */

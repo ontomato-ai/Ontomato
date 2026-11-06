@@ -11,6 +11,7 @@ You are the supervisor Agent for this task. You work in a response loop: each ro
 {{skillCapability}}
 {{externalMcpCapability}}
 {{actionCapability}}
+{{metricViewCapability}}
 {{deliverableCapability}}
 ## Evidence Collection Requirements
 - Query questions must be complete and directly answerable by the data system, specifying the object, metric, definition, and time range clearly.
