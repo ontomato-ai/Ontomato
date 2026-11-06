@@ -4,6 +4,7 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.annotation.PostConstruct;
+import java.nio.charset.StandardCharsets;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Timestamp;
@@ -249,10 +250,13 @@ SELECT * FROM platform_task_run WHERE task_id=? AND
     return rows == 1 ? run(id) : null;
   }
 
-  // A new scheduled run always starts a new session. Use its UUID for both admission keys until
-  // acknowledged.
+  // Runtime admission keys are shared across operations. Derive a separate session key so
+  // dispatch and settlement agree even before the host acknowledges it.
   static UUID hostSession(Run run) {
-    return run.sessionId() == null ? run.id() : run.sessionId();
+    return run.sessionId() != null
+        ? run.sessionId()
+        : UUID.nameUUIDFromBytes(
+            ("platform-task-session:" + run.id()).getBytes(StandardCharsets.UTF_8));
   }
 
   void acknowledgeSession(Run run) {
