@@ -129,6 +129,11 @@ export function brandProperties(brand: BrandSource, mode: BrandMode): Record<str
     "--shell-workspace-bg": c.workspace,
     "--shell-rail-selected": c.railSelected,
     "--shell-panel-selected": c.panelSelected,
+    // Navigation hover is relative to its own band, not to the workspace's component fill.
+    "--shell-rail-hover": mix(c.ink, c.rail, 0.94),
+    "--shell-panel-hover": mix(c.ink, c.panel, 0.94),
+    "--shell-rail-selected-hover": mix(c.ink, c.railSelected, 0.96),
+    "--shell-panel-selected-hover": mix(c.ink, c.panelSelected, 0.96),
     "--shell-app-edge": c.edge,
 
     "--el-fill-color": c.sunken,
