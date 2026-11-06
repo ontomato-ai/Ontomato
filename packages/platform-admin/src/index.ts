@@ -2,6 +2,7 @@ export { installPlatformPages, type PlatformAdminOptions } from "./app";
 export {
   availableGroups,
   availablePages,
+  landingPages,
   availableTabs,
   fallbackPage,
   openAccess,

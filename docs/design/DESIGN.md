@@ -59,6 +59,7 @@ shell:
   rail-button:              the rail's expand/collapse control, and an icon row when collapsed
   application-radius:       the radius of the corners where an application meets the rail (16px)
   application-column:       an application's own column, when it draws one (244px)
+  page-gutter:              the one horizontal padding of a page and of its header (28px)
   conversation-gutter: Agent Platform, gap around the raised conversation panel
   conversation-radius: Agent Platform, radius of the raised conversation panel
   composer-height:     Agent Platform, pill composer (radius = height / 2)
@@ -189,11 +190,16 @@ container, not something authored: it shows a page (written in code) or an expan
 (an artifact the agent produced, which cannot write data). Results people need later live
 on the page, not only in the conversation.
 
-**Page applications.** One page that fills the area: a header with the title, one line of
-description and the page's actions (the one "new task", the Save of a draft), then the page. An
-application of several pages switches between them in its header as tabs; a page that holds
-several screens keeps its own second-level tabs in the page. The Dashboards' boards are tabs of
-their own page, and the Scheduled tasks' filters carry labels.
+**Page applications.** One page that fills the area, under one header: the title, one line of
+description below it, the page's own buttons at the right, and — for an application of several
+pages — its tabs in a row under them. There is one header component for every page; an
+application of several pages shows the application's name there and switches between its pages,
+and a page that holds several screens keeps its own second-level tabs in the page. The
+Dashboards' boards are tabs of their own page, and the Scheduled tasks' filters carry labels.
+
+The header and the page share one horizontal padding (`shell.page-gutter`), written once: a
+title, a toolbar and the content under them start at the same place, and a page never writes a
+gutter of its own. A page that draws its own header carries that header's gutter instead.
 
 **Addresses.** An application owns the addresses under its prefix. Old addresses that changed
 home redirect in the front end: `/agents/dashboards` → `/dashboards`, `/agents/schedules` →

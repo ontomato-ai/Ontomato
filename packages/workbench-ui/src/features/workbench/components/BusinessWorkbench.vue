@@ -58,11 +58,17 @@ const featureRoutes = { agents: routes.agents };
 const SETTINGS_PATH = routes.agents.path;
 const settingsPath = (suffix = "") => `${SETTINGS_PATH}${suffix}`;
 const inSettings = computed(() => route.path === SETTINGS_PATH || route.path.startsWith(`${SETTINGS_PATH}/`));
+/**
+ * The settings screen the address names. "new" is its own address (`/agents/settings/new`), not a parameter value, so it
+ * is recognised by route name and by the path — an agent whose id happened to be "new" would still open its editor.
+ */
+const creatingAgent = computed(
+  () => route.name === routes.agentSettingsNew.name || route.path === `${SETTINGS_PATH}/new`,
+);
 const settingsAgentId = computed(() => {
   const id = route.params.agentId;
-  return typeof id === "string" && id !== "new" ? id : null;
+  return typeof id === "string" && !creatingAgent.value ? id : null;
 });
-const creatingAgent = computed(() => route.params.agentId === "new");
 const capabilitiesOpen = computed(() => route.path === settingsPath("/capabilities"));
 /**
  * The page the shell shows: the settings are the `agents` page, whose addresses are the settings' own screens; every

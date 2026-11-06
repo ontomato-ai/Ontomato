@@ -66,18 +66,6 @@ export interface PlatformPanelGroup {
   pages: readonly PlatformPanelPage[];
 }
 
-/** What an application's second column says about itself, apart from its contents. */
-export interface PlatformAppPanel {
-  id: string;
-  /** The application's name at the top of the panel. */
-  label: string;
-  /**
-   * The application's own entry at the bottom of the panel (smart-agent settings, the diagnosis model) and the page it
-   * opens; without a page it opens the application's first.
-   */
-  settings?: { id: string; label: string; icon: PlatformIcon; path?: string };
-}
-
 /**
  * What a page hands to the platform's page header: the unsaved marker and the Save / Discard actions of a page that
  * holds one draft. The same shape the platform pages have always provided, so their pages do not change.

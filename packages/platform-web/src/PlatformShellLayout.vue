@@ -85,19 +85,6 @@ function selectApp(id: string) {
   if (path) void router.push(path);
 }
 
-/**
- * A page's own entry at the foot of the column (the agent settings, the diagnosis model) opens a page of the same
- * application, so the column does not change under it.
- */
-function openSettings(appId: string, entryId: string) {
-  const app = apps.value.find((candidate) => candidate.id === appId);
-  if (app?.settings?.id !== entryId) return;
-  // An entry that names a page opens it (the diagnosis model is chosen in the platform's settings); otherwise the
-  // application's own first page.
-  const target = app.settings.path ?? homeOf(app);
-  if (target) void router.push(target);
-}
-
 /** Language names: the platform's own tree names each supported locale. */
 /** Language names: the platform's own tree names each supported locale. */
 const localeNames = computed(() =>
@@ -129,6 +116,5 @@ const blocked = computed(() => {
     :page-actions="pageActions"
     :blocked="blocked"
     @select-app="selectApp"
-    @open-settings="openSettings"
   />
 </template>

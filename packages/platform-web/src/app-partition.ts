@@ -32,7 +32,6 @@ const platformApps: readonly AppPartition[] = [
     icon: "ontology",
     rail: "top",
     prefix: "/ontology",
-    panel: "pages",
     // The manager keeps its own three groups: they are its menu, drawn in its own band inside the area.
     frame: "menu",
     sections: [
@@ -65,10 +64,10 @@ const platformApps: readonly AppPartition[] = [
   {
     id: "browser",
     labelKey: "platform.objectBrowser",
+    descriptionKey: "platform.descriptions.objectBrowser",
     icon: "objects",
     rail: "top",
     prefix: "/browser",
-    panel: "pages",
     sections: [
       {
         key: "browser:pages",
@@ -86,9 +85,6 @@ const platformApps: readonly AppPartition[] = [
     prefix: "/agents",
     // The conversation is where the platform is entered; the agent settings follow it in the column.
     home: platformRoutes.chat.path,
-    panel: "conversation",
-    // The agent settings are the application's own entry at the foot of its column.
-    settings: { id: "agent-settings", labelKey: "assistant.featureAgents", icon: "agents" },
     // The column is the application's own: the conversation, its pages and the settings. Nothing of another application
     // is listed here, so this application has no page group of its own in the platform's table.
     sections: [],
@@ -99,9 +95,6 @@ const platformApps: readonly AppPartition[] = [
     icon: "diagnosis",
     rail: "apps",
     prefix: "/ops",
-    panel: "conversation",
-    // Choosing the model belongs to the diagnosis that runs on it: the entry opens the operations application's own page.
-    settings: { id: "ops-model", labelKey: "ops.modelSettings", icon: "settings", path: platformRoutes.opsModel.path },
     sections: [
       {
         key: "operations:pages",
@@ -122,7 +115,6 @@ const platformApps: readonly AppPartition[] = [
     icon: "knowledge",
     rail: "apps",
     prefix: "/governance",
-    panel: "conversation",
     sections: [
       {
         key: "governance:pages",
@@ -138,7 +130,6 @@ const platformApps: readonly AppPartition[] = [
     icon: "dashboards",
     rail: "apps",
     prefix: platformRoutes.dashboards.path,
-    panel: "pages",
     sections: [{ key: "dashboards:all", titleKey: "assistant.featureDashboards", paths: [platformRoutes.dashboards.path] }],
   },
   {
@@ -147,16 +138,15 @@ const platformApps: readonly AppPartition[] = [
     icon: "schedule",
     rail: "apps",
     prefix: platformRoutes.schedules.path,
-    panel: "pages",
     sections: [{ key: "schedules:all", titleKey: "platform.schedules", paths: [platformRoutes.schedules.path] }],
   },
   {
     id: "settings",
     labelKey: "platform.settings",
+    descriptionKey: "platform.descriptions.settings",
     icon: "settings",
     rail: "bottom",
     prefix: "/settings",
-    panel: "pages",
     // The settings page is entered at its first tab; the address without one is not a page of its own.
     home: platformRoutes.usage.path,
     sections: [

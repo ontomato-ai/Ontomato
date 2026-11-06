@@ -3,8 +3,8 @@ import type { PlatformPanelGroup } from "./types";
 import { resolveIcon } from "./icons";
 
 /**
- * The pages of an application that has only pages (the ontology manager, the object browser, platform settings), listed
- * by group in the order the host gives. Groups and their order belong to the application, not to this component.
+ * The pages of an application whose pages are its own menu (the ontology manager), listed by group in the order the host
+ * gives. Groups and their order belong to the application, not to this component.
  */
 defineProps<{ groups: readonly PlatformPanelGroup[]; activePageId: string | null }>();
 const emit = defineEmits<{ selectPage: [id: string] }>();

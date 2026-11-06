@@ -21,9 +21,9 @@ onMounted(async () => {
 
 <template>
   <div class="dashboard-home">
-    <!-- The application's own header names it; this bar is the page's own: its boards and the way to make one. -->
-    <header class="home-bar">
-      <div v-loading="loadingDashboards" class="tabs" role="tablist">
+    <!-- The page's own bar: its boards and the way to make one. The title above it is the application header's. -->
+    <div class="home-bar" role="tablist" :aria-label="t('analysis.myDashboards')">
+      <div v-loading="loadingDashboards" class="tabs">
         <div
           v-for="item in dashboardItems"
           :key="item.id"
@@ -67,7 +67,7 @@ onMounted(async () => {
         <Plus :size="15" />
         <span>{{ t("analysis.createDashboard") }}</span>
       </el-button>
-    </header>
+    </div>
     <div class="home-body">
       <DashboardPanel v-if="currentDashboardId" :key="currentDashboardId" :dashboard-id="currentDashboardId" />
       <el-empty v-else-if="!loadingDashboards" :description="t('analysis.noDashboards')" />
@@ -86,7 +86,7 @@ onMounted(async () => {
   display: flex;
   align-items: center;
   gap: 16px;
-  padding: 0 28px 12px;
+  padding: 0 0 12px;
   flex-shrink: 0;
   border-bottom: 1px solid var(--el-border-color);
 }
@@ -94,7 +94,7 @@ onMounted(async () => {
   flex: 1;
   min-height: 0;
   overflow: auto;
-  padding: 16px 28px 24px;
+  padding: 0;
 }
 .tabs {
   display: flex;

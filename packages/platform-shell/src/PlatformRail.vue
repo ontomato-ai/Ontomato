@@ -33,15 +33,18 @@ const emit = defineEmits<{
 
 const brandName = computed(() => props.brand?.name || props.labels.brand);
 
-/**
- * The rail's three sections, in display order: the ontology applications first, then the business applications (the
- * edition's external application last among them), and the platform's own settings above the account. A section with no
- * application shows nothing, so an edition without one does not draw an empty divider.
- */
-const sections = computed(() => {
+/** The rail's applications, in order: the ontology applications, then the business ones (the external one last). */
+const scrolling = computed(() => {
   const of = (rail: PlatformApp["rail"]) => props.apps.filter((app) => (app.rail ?? "apps") === rail);
-  return [of("top"), of("apps"), of("bottom")].filter((section) => section.length > 0);
+  return [of("top"), of("apps")].filter((section) => section.length > 0);
 });
+
+/**
+ * The platform's own applications, at the foot of the rail above the account. They are not part of the scrolling area:
+ * the business applications scroll under them, and a gap of the rail's own tone separates the two (DESIGN.md
+ * "Applications and shells").
+ */
+const foot = computed(() => props.apps.filter((app) => app.rail === "bottom"));
 
 function selectApp(app: PlatformApp) {
   // External applications are never the current application; they open outside the platform.
@@ -113,7 +116,7 @@ onBeforeUnmount(() => document.removeEventListener("pointerdown", onDocumentPoin
     </div>
 
     <div class="rail-scroll">
-      <template v-for="(section, index) in sections" :key="index">
+      <template v-for="(section, index) in scrolling" :key="index">
         <div v-if="index > 0" class="rail-divider" aria-hidden="true" />
         <ul class="rail-section">
           <li v-for="app in section" :key="app.id">
@@ -184,6 +187,66 @@ onBeforeUnmount(() => document.removeEventListener("pointerdown", onDocumentPoin
         </ul>
       </template>
     </div>
+
+    <!-- The platform's own applications: the foot of the rail, above the account and outside the scrolling area. -->
+    <ul v-if="foot.length > 0" class="rail-foot">
+      <li v-for="app in foot" :key="app.id">
+        <a
+          v-if="app.href"
+          class="rail-row external"
+          :href="app.href"
+          target="_blank"
+          rel="noopener noreferrer"
+          :title="collapsed ? app.label : undefined"
+          :aria-label="collapsed ? app.label : undefined"
+        >
+          <component :is="appIcon(app.icon)" class="rail-icon" :size="16" aria-hidden="true" />
+          <span v-if="!collapsed" class="rail-label">{{ app.label }}</span>
+          <ExternalLink
+            v-if="!collapsed"
+            class="rail-external"
+            :size="10"
+            :role="labels.opensInNewTab ? 'img' : undefined"
+            :aria-label="labels.opensInNewTab"
+            :aria-hidden="labels.opensInNewTab ? undefined : 'true'"
+          />
+        </a>
+        <button
+          v-else-if="app.open"
+          type="button"
+          class="rail-row external"
+          :title="collapsed ? app.label : undefined"
+          :aria-label="collapsed ? app.label : undefined"
+          @click="app.open()"
+        >
+          <component :is="appIcon(app.icon)" class="rail-icon" :size="16" aria-hidden="true" />
+          <span v-if="!collapsed" class="rail-label">{{ app.label }}</span>
+        </button>
+        <span
+          v-else-if="app.unavailableHint"
+          class="rail-row unavailable"
+          aria-disabled="true"
+          :title="app.unavailableHint"
+          :aria-label="collapsed ? app.label : undefined"
+        >
+          <component :is="appIcon(app.icon)" class="rail-icon" :size="16" aria-hidden="true" />
+          <span v-if="!collapsed" class="rail-label">{{ app.label }}</span>
+        </span>
+        <button
+          v-else
+          type="button"
+          class="rail-row"
+          :class="{ active: app.id === activeAppId }"
+          :aria-current="app.id === activeAppId ? 'page' : undefined"
+          :title="collapsed ? app.label : undefined"
+          :aria-label="collapsed ? app.label : undefined"
+          @click="selectApp(app)"
+        >
+          <component :is="appIcon(app.icon)" class="rail-icon" :size="16" aria-hidden="true" />
+          <span v-if="!collapsed" class="rail-label">{{ app.label }}</span>
+        </button>
+      </li>
+    </ul>
 
     <!--
       The account menu is the only place the theme and language are chosen, so it exists in every edition: without a
@@ -320,13 +383,22 @@ onBeforeUnmount(() => document.removeEventListener("pointerdown", onDocumentPoin
   overflow-y: auto;
   overflow-x: hidden;
 }
-.rail-section {
+.rail-section,
+.rail-foot {
   display: flex;
   flex-direction: column;
   gap: 2px;
   margin: 0;
   padding: 0;
   list-style: none;
+}
+/*
+ * The foot sits at the bottom, above the account: the business applications scroll under it, and the gap between the two
+ * is the rail's own tone — no divider, and nothing of the platform among the applications.
+ */
+.rail-foot {
+  flex-shrink: 0;
+  margin-top: 12px;
 }
 /* The hairline between the rail's sections: a short rule, never a group name. */
 .rail-divider {
@@ -396,8 +468,12 @@ onBeforeUnmount(() => document.removeEventListener("pointerdown", onDocumentPoin
   height: var(--shell-rail-button);
   padding: 0;
 }
-.collapsed .rail-section {
+.collapsed .rail-section,
+.collapsed .rail-foot {
   align-items: center;
+}
+.collapsed .rail-foot {
+  width: 100%;
 }
 .rail-account {
   position: relative;

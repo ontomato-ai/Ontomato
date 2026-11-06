@@ -121,6 +121,8 @@ describe("open-source Ontology Service page", () => {
       },
       [[]],
     );
+    // The foot is a section of its own, above the account and outside the scrolling area.
+    sections.push([...document.querySelectorAll(".rail-foot .rail-label")].map((row) => row.textContent ?? ""));
     expect(sections).toEqual([
       ["Ontology manager", "Object browser"],
       ["Agent Platform", "Operations diagnosis", "Knowledge governance", "Dashboards", "Scheduled tasks"],
@@ -152,7 +154,9 @@ describe("open-source Ontology Service page", () => {
   it("the current application is marked in the rail, and the platform pages get the 48px page header", async () => {
     await start("/#/admin/audit-log");
     expect(document.querySelector(".rail-row.active")?.getAttribute("aria-label")).toBe("System settings");
-    expect(document.querySelector(".platform-page-header .page-title")?.textContent).toBe("Run Records");
+    // The application's own header names the application and its pages as tabs; the page's title is the tab it is in.
+    expect(document.querySelector(".platform-page-header .page-title")?.textContent).toBe("System settings");
+    expect(document.querySelector(".platform-page-header .page-tab.active")?.textContent?.trim()).toBe("Run Records");
     await start("/#/ontology/objects");
     expect(document.querySelector(".rail-row.active")?.getAttribute("aria-label")).toBe("Ontology manager");
     // The Manager's own pages draw their own header.

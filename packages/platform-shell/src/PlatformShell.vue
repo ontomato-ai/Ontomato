@@ -8,8 +8,8 @@ import PlatformRail from "./PlatformRail.vue";
  * top of it, filling everything to the right, rounded only where it meets the rail and separated from it by a hairline
  * (`--shell-app-edge`), with no shadow.
  *
- * The application owns its inside: an application that wants a column draws it in its own area (DESIGN.md "Applications
- * and shells"). The shell knows nothing about columns and does not draw one.
+ * The application owns its inside: an application that wants a column, a menu or tabs draws them in its own area
+ * (DESIGN.md "Applications and shells"). The shell draws none of them.
  */
 const props = withDefaults(
   defineProps<{
@@ -73,7 +73,6 @@ const collapsed = computed({
     />
     <!-- The application: one surface on the rail's ground, filling the rest of the page. -->
     <div class="platform-app">
-      <slot name="panel" />
       <main class="platform-workspace">
         <slot />
       </main>

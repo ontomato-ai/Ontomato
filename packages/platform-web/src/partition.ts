@@ -10,23 +10,20 @@ import type { PlatformAppDeclaration } from "./apps";
  * graph and the data browser out of the ontology group while the ontology manager keeps the rest, so a group is not the
  * unit of ownership.
  */
-export interface AppPartition extends Omit<PlatformAppDeclaration, "groups" | "label" | "settings"> {
+export interface AppPartition extends Omit<PlatformAppDeclaration, "groups" | "label"> {
   /** An external application: the host resolves or fixes its address and the rail opens it in a new tab. */
   href?: string;
   open?: () => void;
   /** The application's name, a message key in the edition's tree. */
   labelKey: string;
-  /**
-   * The application's own entry at the foot of its column: its words, and the page it opens. An entry that opens a page
-   * of another application names that address (the diagnosis model is chosen in the platform's settings).
-   */
-  settings?: { id: string; labelKey: string; icon: string; path?: string };
+  /** One line under the name, when the application's pages share one header (a message key in the edition's tree). */
+  descriptionKey?: string;
   /**
    * Where its rail row opens. An application opens its first page unless the entry into it is another: the agent
-   * platform opens the conversation although its settings come first in the column.
+   * platform opens the conversation, and its settings are reached from the head of that column.
    */
   home?: string;
-  /** The pages this application lists, in display order: one group per entry. */
+  /** The pages this application lists, in display order: one group per entry, or one entry per header tab. */
   sections: readonly { key: string; titleKey: string; paths: readonly string[] }[];
 }
 
@@ -72,17 +69,11 @@ export function appDeclarations(
     return {
       id: app.id,
       label: t(app.labelKey),
+      description: app.descriptionKey ? t(app.descriptionKey) : null,
       icon: app.icon,
       rail: app.rail ?? "apps",
       prefix: app.prefix,
-      panel: app.panel,
       frame: app.frame,
-      settings: app.settings && {
-        id: app.settings.id,
-        label: t(app.settings.labelKey),
-        icon: app.settings.icon,
-        path: app.settings.path,
-      },
       href: app.href,
       open: app.open,
       // The rail row opens the application's own first page. A declaration that names its entry keeps it (the agent

@@ -152,7 +152,6 @@ const nav = useAgentNav({
   setSessionId: (id) => (sessionId.value = id),
   onLeaveConversation: () => (featureId.value = null),
 });
-const { agents, sessions, sessionsState, nextCursor } = nav;
 
 onMounted(async () => {
   await nav.loadAgents().catch(() => {});

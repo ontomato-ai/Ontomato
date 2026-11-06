@@ -42,6 +42,7 @@ const page = computed(() => host.navigation.value.pages.find((p) => p.path === p
   min-width: 0;
   flex-direction: column;
   gap: var(--spacing-lg);
-  padding: var(--spacing-lg);
+  /* The page area carries the horizontal gutter once; a page pads vertically only. */
+  padding: var(--spacing-lg) 0;
 }
 </style>

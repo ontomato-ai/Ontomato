@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createApp, h, nextTick, type App } from "vue";
-import { PlatformShell, PlatformRail, PlatformAccountMenu, AppPanel, AppPanelPages } from "..";
+import { PlatformShell, PlatformRail, PlatformAccountMenu, AppPanelPages } from "..";
 import type { PlatformAccount, PlatformApp, PlatformPreferences, PlatformShellLabels } from "../types";
 
 const labels: PlatformShellLabels = {
@@ -82,7 +82,10 @@ const openSourceRails: string[][] = [
   ["System settings"],
 ];
 
-/** The section each row is in, read off the rendered dividers. */
+/**
+ * The section each row is in, read off the rail as it renders: the dividers inside the scrolling area, then the foot
+ * below it. The foot is a section of its own and is not part of the scroll area.
+ */
 function railsOf(root: HTMLElement) {
   const sections: string[][] = [];
   let current: string[] = [];
@@ -97,6 +100,10 @@ function railsOf(root: HTMLElement) {
     }
   }
   if (current.length > 0) sections.push(current);
+  const foot = [...(root.querySelector(".rail-foot")?.querySelectorAll(".rail-row") ?? [])].map(
+    (row) => row.textContent?.replace("Opens in a new tab", "").trim() ?? "",
+  );
+  if (foot.length > 0) sections.push(foot);
   return sections;
 }
 
@@ -104,6 +111,12 @@ describe("platform rail", () => {
   it("lists the enterprise applications in three sections, with the external one last among the business ones", async () => {
     const root = await mount(PlatformRail, { apps, activeAppId: "agents", account, preferences: preferences(), labels, collapsed: false });
     expect(railsOf(root)).toEqual(enterpriseRails);
+    // The platform's own applications sit at the foot, above the account and outside the scrolling area.
+    const foot = root.querySelector(".rail-foot")!;
+    const accountRow = root.querySelector(".rail-account")!;
+    expect(foot).not.toBeNull();
+    expect(root.querySelector(".rail-scroll .rail-foot")).toBeNull();
+    expect(foot.compareDocumentPosition(accountRow) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     // The external application is a link to another product and opens in a new tab; nothing selects it.
     const external = root.querySelector<HTMLAnchorElement>(".rail-row.external");
     expect(external?.textContent?.trim()).toContain("Data governance platform");
@@ -250,30 +263,8 @@ describe("account menu", () => {
   });
 });
 
-describe("application panel", () => {
-  it("draws the application name and its own settings entry at the foot", async () => {
-    const onSettings = vi.fn();
-    const root = await mount(
-      AppPanel,
-      {
-        panel: { id: "agents", label: "Agent Platform", settings: { id: "agent-settings", label: "Agent settings", icon: "settings" } },
-        labels,
-        onOpenSettings: onSettings,
-      },
-      { default: () => h("div", { class: "panel-slot" }, "contents") },
-    );
-    expect(root.querySelector(".panel-title")?.textContent).toBe("Agent Platform");
-    expect(root.querySelector(".panel-slot")).not.toBeNull();
-    root.querySelector<HTMLButtonElement>(".settings-row")?.click();
-    expect(onSettings).toHaveBeenCalledWith("agent-settings");
-  });
-
-  it("leaves the foot out when the application has no settings entry", async () => {
-    const root = await mount(AppPanel, { panel: { id: "objects", label: "Object browser" }, labels });
-    expect(root.querySelector(".panel-footer")).toBeNull();
-  });
-
-  it("lists pages by group and marks the current one with the panel's selected band", async () => {
+describe("the menu of an application whose pages are its own menu", () => {
+  it("lists pages by group and marks the current one with the selected band", async () => {
     const onSelect = vi.fn();
     const root = await mount(AppPanelPages, {
       groups: [
@@ -308,12 +299,11 @@ describe("platform shell", () => {
     const root = await mount(
       PlatformShell,
       { apps, activeAppId: "agents", account, preferences: preferences(), labels, collapsed: false },
-      { panel: () => h("div", { class: "panel-slot" }), default: () => h("div", { class: "workspace-slot" }) },
+      { default: () => h("div", { class: "workspace-slot" }) },
     );
     const app = root.querySelector(".platform-app");
     expect(app).not.toBeNull();
-    // Whatever the page contributes sits inside the surface, beside the rail — never as a shell-drawn column.
-    expect(app?.querySelector(".panel-slot")).not.toBeNull();
+    // The application's content sits inside the surface, beside the rail; the shell draws no column of its own.
     expect(app?.querySelector(".workspace-slot")).not.toBeNull();
     expect(app?.querySelector(".app-panel")).toBeNull();
   });

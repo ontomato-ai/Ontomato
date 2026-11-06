@@ -16,10 +16,9 @@ import PlatformScheduleForm from "./PlatformScheduleForm.vue";
 import PlatformScheduleRuns from "./PlatformScheduleRuns.vue";
 
 /**
- * The platform's scheduled tasks, the one list both entrances use: the platform's own page shows everything the
- * caller may see, and the agent platform's entry mounts the same component with `agentId`, so an agent's tasks are
- * this list narrowed, never a second one. Which function tasks are visible is the service's answer; the page adds no
- * permission of its own.
+ * The platform's scheduled tasks: the one list the platform's page shows. It draws the list, its filters and its form,
+ * and never the page's header (the page owns that). Which tasks are visible is the service's answer, and the agent
+ * filter is the reader's, carried in the page's address; the list adds no permission of its own.
  */
 const props = defineProps<{
   api: SchedulesApi;
@@ -28,15 +27,11 @@ const props = defineProps<{
   functions: readonly PlatformTaskFunctionTarget[];
   /** The service refused the function list (403): the function target is unavailable, not merely empty. */
   functionsRefused?: boolean;
-  /** Show only this agent's tasks and preselect it for a new task (the agent platform's entry). */
-  agentId?: string | null;
   /**
    * The reader's own agent filter, when the host keeps it in the address: the entry narrows the list, the address
    * carries the choice, and "all agents" clears it.
    */
   agentFilter?: string | null;
-  /** Show only this application's tasks, e.g. `agents` or `ontology`; the user may still change the filter. */
-  appId?: string | null;
   /**
    * The one task a link (or an old address) points at: its run history opens under its row. A task this caller cannot
    * see, or one that is gone, leaves the plain list, because an address is a hint rather than a promise.
@@ -55,7 +50,7 @@ type AppFilter = "" | "agents" | "ontology";
 const tasks = ref<PlatformTask[]>([]);
 const timeZone = ref("");
 const state = ref<"loading" | "ready" | "error">("loading");
-const appFilter = ref<AppFilter>((props.appId as AppFilter | null | undefined) ?? "");
+const appFilter = ref<AppFilter>("");
 /** undefined: the form is closed; null: registering a new task; a task: editing it. */
 const editing = ref<PlatformTask | null | undefined>(undefined);
 const saving = ref(false);
@@ -72,8 +67,8 @@ const agentName = (id: string) =>
 const functionName = (id: string) =>
   props.functions.find((fn) => fn.id === id)?.name ?? props.t("unknownFunction");
 
-/** The agent the list is narrowed to: the host's fixed scope, or the reader's choice from the page's filter. */
-const chosenAgent = computed(() => (props.agentId === undefined ? props.agentFilter ?? "" : null));
+/** The agent the reader narrowed to, kept in the page's address. */
+const chosenAgent = computed(() => props.agentFilter ?? "");
 const pickAgent = (id: string) => emit("updateAgentFilter", id);
 
 /** The rows on screen: the agent scope is fixed by the host, the application filter is the reader's. */
@@ -91,8 +86,8 @@ const formOpen = computed({
 async function load() {
   state.value = "loading";
   try {
-    // The agent scope: the host's fixed one, or the reader's filter from the page's address.
-    const agent = props.agentId ?? (props.agentFilter || null);
+    // The agent the reader narrowed to, read from the page's address.
+    const agent = props.agentFilter || null;
     const list = await props.api.list(agent ? { agentId: agent } : {});
     tasks.value = list.tasks;
     timeZone.value = list.timeZone;
@@ -236,19 +231,13 @@ defineExpose({ reload: load, openNewTask });
         <!-- The filters carry their own labels: what a select narrows is not something to guess (DESIGN.md). -->
         <label class="filter">
           <span class="filter-label">{{ t("filter.app") }}</span>
-          <el-select
-            v-if="agentId === undefined"
-            v-model="appFilter"
-            class="app-filter"
-            :aria-label="t('filter.app')"
-          >
+          <el-select v-model="appFilter" class="app-filter" :aria-label="t('filter.app')">
             <el-option value="" :label="t('filter.all')" />
             <el-option value="agents" :label="t('filter.agentsOnly')" />
             <el-option value="ontology" :label="t('filter.functionsOnly')" />
           </el-select>
-          <span v-else class="scoped-note">{{ t("agentScoped") }}</span>
         </label>
-        <label v-if="agentId === undefined" class="filter">
+        <label class="filter">
           <span class="filter-label">{{ t("filter.agent") }}</span>
           <el-select
             :model-value="chosenAgent ?? ''"
@@ -410,7 +399,7 @@ defineExpose({ reload: load, openNewTask });
         :functions="functions"
         :functions-refused="functionsRefused ?? false"
         :time-zone="timeZone"
-        :default-agent-id="agentId ?? null"
+        :default-agent-id="agentFilter ?? null"
         :locale="locale"
         :saving="saving"
         :t="t"
@@ -454,10 +443,6 @@ defineExpose({ reload: load, openNewTask });
 .app-filter,
 .agent-filter {
   width: 180px;
-}
-.scoped-note {
-  font-size: var(--text-sm);
-  color: var(--el-text-color-secondary);
 }
 .table {
   border: 1px solid var(--el-border-color);

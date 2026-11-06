@@ -155,10 +155,12 @@ describe("the open-source platform's page headers", () => {
     expect(document.querySelector(".platform-page-header .page-tab.active")?.textContent?.trim()).toBe("Run Records");
   });
 
-  it("gives a single-page application its header and page, with no tabs", async () => {
+  it("gives a single-page application its header and its page, with no tabs", async () => {
     await open("/dashboards");
-    expect(document.querySelector(".platform-page-header")).toBeNull();
-    expect(document.querySelector(".dashboards-application .head-title")?.textContent).toBe("Dashboards");
+    expect(document.querySelector(".platform-page-header .page-title")?.textContent).toBe("Dashboards");
+    expect(document.querySelector(".platform-page-header .page-tab")).toBeNull();
+    // The page draws no second title: the header is the only one.
+    expect(document.querySelector(".dashboards-application h1")).toBeNull();
   });
 });
 
@@ -193,11 +195,15 @@ describe("the open-source platform's rail", () => {
       },
       [[]],
     );
+    // The foot is a section of its own, above the account and outside the scrolling area.
+    sections.push([...document.querySelectorAll(".rail-foot .rail-label")].map((row) => row.textContent ?? ""));
     expect(sections).toEqual([
       ["Ontology manager", "Object browser"],
       ["Agent Platform", "Operations diagnosis", "Knowledge governance", "Dashboards", "Scheduled tasks"],
       ["System settings"],
     ]);
+    // The platform's own applications sit at the foot of the rail, above the account, not under the applications.
+    expect(document.querySelector(".rail-foot .rail-label")?.textContent).toBe("System settings");
   });
 
   it("opens a page this edition serves for every application", async () => {

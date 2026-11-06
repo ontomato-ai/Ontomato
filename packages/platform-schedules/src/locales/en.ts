@@ -39,8 +39,6 @@ export default {
       agent: "Agent",
       allAgents: "All agents",
     },
-    // An agent entry opens with the agent already chosen.
-    agentScoped: "Tasks for this agent",
     agentMissing: "Deleted agent",
     unknownFunction: "Deleted function",
     action: {
