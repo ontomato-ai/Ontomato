@@ -180,9 +180,13 @@ const edges = computed<Edge[]>(() => {
   }
 
   // role -> workflow: platform authority to author one, read from the chain the interceptor enforces.
+  // A management role holds every enabled operation by rule, so it passes on the flag rather than on a
+  // listed path — reading only the list would silently omit the roles that can actually author.
   for (const access of platformAccess.value) {
     if (!access.roleCode) continue;
-    if (!(access.apiPermissions ?? []).includes(WORKFLOW_SAVE)) continue;
+    const mayAuthor =
+      access.managementRole === true || (access.apiPermissions ?? []).includes(WORKFLOW_SAVE);
+    if (!mayAuthor) continue;
     for (const workflow of workflows.value) {
       if (!workflow.id) continue;
       result.push({

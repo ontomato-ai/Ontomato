@@ -23,8 +23,11 @@ public interface PlatformAccessQuery {
      *
      * @param roleCode the role's code in this domain, the same vocabulary a workflow step uses
      * @param apiPermissions the request paths this role may call, as the interceptor compares them
+     * @param managementRole true when the role holds every enabled operation by rule rather than by
+     *     listed rows; {@code apiPermissions} is then empty because expanding it here would go stale
+     *     the moment an endpoint is added
      */
-    record RoleAccess(String roleId, String roleCode, Set<String> apiPermissions) {}
+    record RoleAccess(String roleId, String roleCode, Set<String> apiPermissions, boolean managementRole) {}
 
     /** Every role in the domain with its platform operations. Bounded by the domain's roles. */
     List<RoleAccess> rolesInDomain(String domainId);

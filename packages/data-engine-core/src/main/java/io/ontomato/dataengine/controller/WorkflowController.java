@@ -173,6 +173,9 @@ public class WorkflowController {
                 item.put("roleId", role.roleId());
                 item.put("roleCode", role.roleCode());
                 item.put("apiPermissions", JSONArray.of(role.apiPermissions().toArray()));
+                // A management role holds every enabled operation by rule, so its listed paths are empty
+                // by design; the flag is what lets a reader know it may still author.
+                item.put("managementRole", role.managementRole());
                 data.add(item);
             }
             ret.put("success", true);

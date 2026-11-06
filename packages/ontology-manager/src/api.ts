@@ -247,11 +247,17 @@ export interface CapabilityGrantRecord {
   activatedByWorkflowVersion?: string | null;
 }
 
-/** One role and the platform operations it may call. Empty for a management role, which holds all. */
+/**
+ * One role and the platform operations it may call.
+ *
+ * `apiPermissions` is empty for a management role: it holds every enabled operation by rule rather
+ * than by listed rows, and expanding that list here would go stale as endpoints are added.
+ */
 export interface PlatformAccessRecord {
   roleId?: string | null;
   roleCode?: string | null;
   apiPermissions?: string[];
+  managementRole?: boolean;
 }
 
 /** One subject of the domain and the roles in effect for them here. */
