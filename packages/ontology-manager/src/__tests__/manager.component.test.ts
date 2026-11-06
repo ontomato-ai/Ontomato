@@ -102,16 +102,6 @@ function respond(url: string, body?: Record<string, unknown>): Response {
     nodes: [{ id: "Item:2", name: "Spare part", class: "Item" }, { id: "Order:1", name: "First order", class: "Order" }],
     edges: [{ source: "Order:1", target: "Item:2" }], total: 1, nextOffset: null, version: "v1",
   } });
-  if (path === "/data/queryWholeDataMode0")
-    return json({ success: true, status: "READY", data: {
-      nodes: instanceNodeCount > 2 ? Array.from({ length: instanceNodeCount }, (_, index) => ({
-        id: `Order:${index}`, name: `Order ${index}`, class: "Order",
-      })) : [
-        { id: "Order:1", name: "First order", class: "Order" },
-        { id: "Item:2", name: "Spare part", class: "Item" },
-      ],
-      edges: [{ source: "Order:1", target: instanceNodeCount > 2 ? "Order:2" : "Item:2" }],
-    } });
   if (path === "/data/queryInfoByNode")
     return json({ success: true, data: {
       classDef: { attrs: [{ name: "id", showName: "ID" }] },
@@ -356,7 +346,6 @@ describe("Manager pages in the service router", () => {
     expect(graphRecord.dataBatches.map((batch) => batch.nodes?.length || batch.edges?.length))
       .toEqual([2, 2, 1]);
     expect(paths()).toContain("/data/instanceGraph/summary");
-    expect(paths()).not.toContain("/data/queryWholeDataMode0");
     expect(root().querySelector(".node-search input")?.hasAttribute("disabled")).toBe(false);
 
     (root().querySelector(".graph-toolbar button[title='Relayout']") as HTMLButtonElement).click();

@@ -102,16 +102,13 @@ async function open(path: string) {
 /** The address in the bar, without the query: that is what a rail row navigates to. */
 const landedAt = () => window.location.hash.replace(/^#/, "").split("?")[0]!;
 
-/**
- * Every page address the applications own in this edition, deduplicated in rail order. The partition is shared by both
- * editions; the star map is the enterprise edition's page (its navigation adds it), so this edition has no address there.
- */
+/** Every page address the applications own in this edition, deduplicated in rail order. */
 const pagePaths = [
   ...new Set(
     appPartition()
       .flatMap((app) => app.sections.flatMap((section) => section.paths))
       // The addresses are route patterns; the ones with parameters are covered by their own page tests.
-      .filter((path) => !path.includes(":") && path !== platformRoutes.graph.path)
+      .filter((path) => !path.includes(":"))
   ),
 ];
 

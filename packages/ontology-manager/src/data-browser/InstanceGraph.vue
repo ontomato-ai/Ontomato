@@ -22,7 +22,7 @@ import {
 import { computed, onBeforeUnmount, onMounted, ref, shallowRef, watch } from "vue";
 import { ElButton, ElPopover, ElSelect, ElOption, ElCheckbox, ElSwitch, ElSelectV2, vLoading } from "element-plus";
 import { useManagerFeedback } from "../feedback";
-import type { InstanceGraphEdge, InstanceGraphNode, InstanceGraphResult, InstanceGraphSummary } from "../api";
+import type { InstanceGraphEdge, InstanceGraphNode, InstanceGraphStatus, InstanceGraphSummary } from "../api";
 import { useManagerClient, useManagerContext, useOntologyText, useSharedText } from "../context";
 import { readGraphColors } from "../graph-colors";
 import {
@@ -50,7 +50,7 @@ const { loadInstanceGraphSummary, searchInstanceGraph, loadInstanceNeighborhood,
 const graphRef = ref<HTMLDivElement | null>(null);
 const loading = ref(false);
 const error = ref("");
-const status = ref<InstanceGraphResult["status"]>("READY");
+const status = ref<InstanceGraphStatus>("READY");
 const nodes = shallowRef<InstanceGraphNode[]>([]);
 const edges = shallowRef<InstanceGraphEdge[]>([]);
 const selectedNode = ref<InstanceGraphNode | null>(null);
@@ -790,7 +790,6 @@ async function refresh() {
   }
 }
 
-// Generation scans all star-chart data, so it is confirmed first; the empty state and the toolbar share this entry.
 const isEmpty = computed(() => !loading.value && !error.value && nodes.value.length === 0);
 
 watch(() => context.theme, () => void updateGraphTheme());

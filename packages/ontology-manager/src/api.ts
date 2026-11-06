@@ -98,7 +98,7 @@ export interface OntologyRelation {
   desc: string;
 }
 
-/** A data instance node in the star-chart instance graph. */
+/** A data instance node in the instance graph. */
 export interface InstanceGraphNode {
   id: string;
   name: string;
@@ -143,13 +143,8 @@ export interface InstanceNeighborhood extends InstanceGraphData {
   version: string;
 }
 
-/**
- * Star-chart data state reported by the data engine. Only READY carries data; GENERATING and NOT_GENERATED mean the
- * domain has never been generated, with or without a build currently running.
- */
-export type InstanceGraphResult =
-  | { status: "READY"; graph: InstanceGraphData }
-  | { status: "GENERATING" | "NOT_GENERATED" };
+/** The instance graph state the data engine reports; only READY carries data. */
+export type InstanceGraphStatus = "READY" | "GENERATING" | "NOT_GENERATED";
 
 export interface CreateOntologyObjectInput {
   className: string;
@@ -457,29 +452,8 @@ export function createManagerClient(
     };
   }
 
-  function normalizeInstanceGraph(data: unknown): InstanceGraphData {
-    const graph = (data ?? {}) as Record<string, unknown>;
-    const rawNodes = Array.isArray(graph.nodes) ? (graph.nodes as InstanceGraphNode[]) : [];
-    const rawEdges = Array.isArray(graph.edges) ? (graph.edges as InstanceGraphEdge[]) : [];
-    // The star chart injects a synthetic center ("virtual_root") when there is no single center; drop it and its edges.
-    const virtualIds = new Set(
-      rawNodes.filter((node) => node.class === "virtual_root" || node.id === "root").map((node) => node.id)
-    );
-    return {
-      nodes: rawNodes.filter((node) => !virtualIds.has(node.id)),
-      edges: rawEdges.filter((edge) => !virtualIds.has(edge.source) && !virtualIds.has(edge.target)),
-    };
-  }
-
-  /** Pre-built star-chart instance graph (all inStarChart classes); nodes are data instances, edges their relations. */
-  async function loadInstanceGraph(): Promise<InstanceGraphResult> {
-    const response = await send("/data/queryWholeDataMode0", { method: "GET" });
-    if (response.status !== "READY") return { status: response.status };
-    return { status: "READY", graph: normalizeInstanceGraph(response.data) };
-  }
-
   async function loadInstanceGraphSummary(): Promise<
-    { status: "READY"; summary: InstanceGraphSummary } | { status: "GENERATING" | "NOT_GENERATED" }
+    { status: "READY"; summary: InstanceGraphSummary } | { status: Exclude<InstanceGraphStatus, "READY"> }
   > {
     const response = await send("/data/instanceGraph/summary", { method: "GET" });
     return response.status === "READY"
@@ -501,14 +475,6 @@ export function createManagerClient(
     const response = await post("/data/instanceGraph/neighborhood", { id, version, offset, limit: 100, ...filters });
     if (response.status !== "READY") throw new Error(context.text("instanceGraphNotGenerated"));
     return response.data as InstanceNeighborhood;
-  }
-
-  /**
-   * Rebuilds the star-chart data from the current Ontology and returns once it is done; GENERATING means a build for
-   * this domain was already running.
-   */
-  async function refreshStarChartData(): Promise<"GENERATED" | "GENERATING"> {
-    return (await send("/data/refreshStarChartData", { method: "POST" })).status;
   }
 
   /** One instance's full record; the data engine returns classDef plus a flat attribute map. */
@@ -590,11 +556,9 @@ export function createManagerClient(
     deleteOntologyRelation,
     loadObjectData,
     loadSmartAssets,
-    loadInstanceGraph,
     loadInstanceGraphSummary,
     searchInstanceGraph,
     loadInstanceNeighborhood,
-    refreshStarChartData,
     queryInstanceInfo,
     listDataAdapters,
     listKnowledge,

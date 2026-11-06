@@ -32,7 +32,6 @@ export const platformRoutes = {
   opsModel: { name: "ObserveModel", path: "/ops/model" },
   governance: { name: "KnowledgeGovernance", path: "/governance/chat/:sessionId?" },
   feedback: { name: "Feedback", path: "/governance/feedback" },
-  graph: { name: "LegacyGraph", path: "/browser/graph" },
   data: { name: "manager-data", path: "/browser/data/:className?" },
   ontology: { name: "OntologyHome", path: "/ontology" },
   playground: { name: "OntologyGraph", path: "/ontology/playground" },
