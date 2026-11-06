@@ -144,7 +144,7 @@ onMounted(() => {
 <template>
   <section v-loading="loading" class="model-catalog">
     <!-- The platform's one page header: the title, its line of description, and this page's own button. -->
-    <PlatformPageHeader :title="meta.title" :description="meta.description">
+    <PlatformPageHeader compact :title="meta.title">
       <template #actions>
         <el-button
           v-if="resource === 'objects'"

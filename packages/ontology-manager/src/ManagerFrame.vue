@@ -8,6 +8,7 @@ import { nextElementIdPrefix } from "./instance-id";
 import ManagerConfirmDialog from "./ManagerConfirmDialog.vue";
 import "./theme.css";
 import "./style.css";
+import "./buttons.css";
 
 /*
  * The frame around the Manager pages inside the service layout. It stays mounted while the address moves between

@@ -155,6 +155,10 @@ Standard management pages use PlatformPageHeader: one title, optional useful des
 tabs. Compact technical headers reference 48px and grow/wrap as necessary. No redundant type subtitle or explanatory
 eyebrow in a dense titlebar; contextual help can be available separately. Preserve useful business descriptions.
 
+Ontology Manager catalogs, graph, modeling and business knowledge use the shared `compact` header variant: a single
+title/actions row with a 16px content gutter and no standing generic description. Detail headers show the selected
+entity name. Standard administrative headers retain useful descriptions; do not suppress them through global CSS.
+
 Headers and content share a gutter; do not accumulate wrapper padding. Application tabs use a 40px row; a page's
 own tabs remain inside its content. Tabs may scroll horizontally on narrow widths, retaining keyboard focus.
 Content fills remaining space; toolbars are plain rows, filters have labels, empty states stay in their content area.
@@ -177,6 +181,16 @@ Content fills remaining space; toolbars are plain rows, filters have labels, emp
 Table alignment follows data type, numeric values are tabular, long cells use deliberate wrap/truncation, and
 pagination/filter/error/loading treatments are consistent. Preserve readable headers and action reachability at zoom.
 Do not constrain a complex editor to a small generic modal or remove functionality for visual simplicity.
+
+Manager-specific button integration lives in `ontology-manager/src/buttons.css`, scoped to `.ontology-manager`
+including instance-local overlays. Manager page actions and icon-only tools use a compact 28px minimum height with
+13px text, 16px icons and restrained horizontal padding. Dialog/drawer footer actions retain a 32px minimum height.
+Buttons may grow for wrapped text; do not shrink labels to fit. This task-specific density does not change the
+platform's general control baseline.
+Save/create/apply/approve are primary; navigation, refresh, preview and local add operations are neutral; delete is
+danger plain/link. Status colours describe results rather than creating extra competing action hierarchies. Loading
+uses a progress cursor; disabled tools retain their box and never acquire an enabled hover background. Narrow headers
+wrap labelled actions instead of hiding their text with zero font size. Record/list buttons retain their own layout.
 
 ## 9. Agent conversation
 

@@ -230,7 +230,7 @@ onMounted(() => void loadDetail());
           <div>
             <h2>{{ ot("attributes") }}</h2>
           </div>
-          <el-button type="primary" :icon="Plus" @click="attributeCreateVisible = true">
+          <el-button :icon="Plus" @click="attributeCreateVisible = true">
             {{ ot("createAttribute") }}
           </el-button>
         </div>

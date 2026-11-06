@@ -134,13 +134,8 @@
 }
 
 :where(.ontology-manager) .el-button {
-  transition: all var(--transition-base);
+  transition: background-color var(--transition-fast), border-color var(--transition-fast), color var(--transition-fast);
   font-weight: var(--font-medium);
-}
-
-:where(.ontology-manager) .el-button.is-link:hover,
-:where(.ontology-manager) .el-button.is-text:hover {
-  background-color: transparent !important;
 }
 
 :where(.ontology-manager) .el-button--primary {

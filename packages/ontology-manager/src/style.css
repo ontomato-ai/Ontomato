@@ -60,13 +60,6 @@
   background-clip: padding-box;
 }
 
-/* Element Plus wraps icon and button text in one span. Keep command labels readable. */
-.ontology-manager-shell .el-button > span:has(> .lucide) {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--spacing-sm);
-}
-
 .ontology-manager-shell button,
 .ontology-manager-shell .el-button {
   box-shadow: none !important;

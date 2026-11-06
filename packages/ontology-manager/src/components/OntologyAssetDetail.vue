@@ -1409,14 +1409,5 @@ h2 {
     padding: var(--spacing-md);
     gap: var(--spacing-md);
   }
-  .detail-titlebar :deep(.el-button:not(:first-child)) {
-    padding-left: var(--spacing-sm);
-    padding-right: var(--spacing-sm);
-    font-size: 0;
-  }
-  .detail-titlebar :deep(.el-button:not(:first-child) .el-icon) {
-    margin: 0;
-    font-size: 16px;
-  }
 }
 </style>

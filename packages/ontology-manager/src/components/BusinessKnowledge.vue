@@ -264,7 +264,7 @@ onMounted(load);
 <template>
   <section class="business-knowledge" :class="{ 'narrow-detail': narrowDetail }">
     <!-- The platform's one page header: the title, its line of description, and this page's own buttons. -->
-    <PlatformPageHeader :title="t('nav.businessKnowledge')" :description="ot('knowledgeDesc')">
+    <PlatformPageHeader compact :title="t('nav.businessKnowledge')">
       <template #actions>
         <el-button @click="emit('governance')">
           <BookOpen :size="16" />
@@ -427,7 +427,7 @@ onMounted(load);
             </template>
           </div>
           <div class="knowledge-detail-actions">
-            <el-button v-if="selected.status !== 1" type="success" @click="approve(selected)">
+            <el-button v-if="selected.status !== 1" type="primary" @click="approve(selected)">
               <Check :size="16" />
               {{ ot("knowledgeApprove") }}
             </el-button>
