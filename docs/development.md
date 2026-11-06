@@ -71,8 +71,7 @@ Queries are read-only, have a 10-second statement timeout and share a four-reque
 concurrency limit. Overview refresh recounts instances; these counts are also cached
 for the statistics endpoint for 60 seconds;
 full connection counts and connectivity statistics are not calculated during browsing.
-Refresh reads current data; the legacy star-chart generation endpoint remains an
-explicit operation for its existing callers. Stable ordering makes pages reproducible
+Refresh reads current data. Stable ordering makes pages reproducible
 for unchanged data, but concurrent source edits can change offset-based page boundaries.
 
 `node apps/data-engine/dev.mjs [extra Maven arguments]`: runs the platform's official

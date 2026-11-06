@@ -30,27 +30,6 @@ public class DataController {
 	@Autowired
     private DataService dataService;
 	
-	@PostMapping("/data/refreshStarChartData")
-    @ResponseBody
-    public JSONObject refreshStarChartData() {
-		User user = SystemUtils.getCurUser();
-		return dataService.refreshStarChartData(user.getDomainId());
-	}
-
-	@GetMapping("/data/queryWholeDataMode0")
-    @ResponseBody
-    public JSONObject queryWholeDataMode0() {
-		User user = SystemUtils.getCurUser();
-		return dataService.queryWholeDataMode0(user.getDomainId());
-	}
-	
-	@GetMapping("/data/queryWholeDataMode1")
-    @ResponseBody
-    public JSONObject queryWholeDataMode1() {
-		User user = SystemUtils.getCurUser();
-		return dataService.queryWholeDataMode1(user.getDomainId());
-	}
-
 	@GetMapping("/data/instanceGraph/summary")
 	public JSONObject instanceGraphSummary() {
 		return dataService.queryInstanceGraph("summary", new JSONObject(),
