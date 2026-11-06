@@ -136,8 +136,10 @@ public class WorkflowController {
         workflow.setDescription(param.getString("description"));
         workflow.setRunClassName(param.getString("runClassName"));
         if (param.getJSONArray("steps") != null) {
+            // The request body is bound by the container's own JSON mapper, so the array's elements are
+            // plain maps rather than JSONObject; convert before reading them as steps.
             workflow.setSteps(param.getJSONArray("steps").stream()
-                    .map(step -> ((JSONObject) step).to(WorkflowStep.class)).toList());
+                    .map(step -> JSONObject.from(step).to(WorkflowStep.class)).toList());
         }
         return workflow;
     }
