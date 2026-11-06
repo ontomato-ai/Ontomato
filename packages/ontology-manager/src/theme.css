@@ -154,8 +154,8 @@
   margin-left: 0;
 }
 
-:where(.ontology-manager) .el-popper.is-dark,
-:where(.ontology-manager) .el-popper.is-light,
+:where(.ontology-manager) .el-popper.is-dark:not(.el-select__popper, .el-cascader__dropdown),
+:where(.ontology-manager) .el-popper.is-light:not(.el-select__popper, .el-cascader__dropdown),
 :where(.ontology-manager) .el-tooltip__popper {
   max-width: 400px !important;
   font-size: var(--text-sm) !important;

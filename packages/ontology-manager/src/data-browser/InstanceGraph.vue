@@ -35,6 +35,8 @@ import {
   instanceGraphNodeLabel,
   overviewPositions,
   overviewRelations,
+  overviewClassHeadings,
+  type OverviewRect,
 } from "./instance-graph-rendering";
 
 const context = useManagerContext();
@@ -77,6 +79,7 @@ const summary = shallowRef<InstanceGraphSummary | null>(null);
 const overview = ref(true);
 const aggregateRelations = ref(true);
 const selectedClass = ref("");
+const classGroups = shallowRef<Array<{ name: string; x: number; y: number; width: number; height: number }>>([]);
 const searchNodes = shallowRef<InstanceGraphNode[]>([]);
 const searching = ref(false);
 const searchMore = ref(false);
@@ -253,6 +256,11 @@ async function fitGraph(target: Graph) {
   if (!graphRef.value) return;
   const { width, height } = graphRef.value.getBoundingClientRect();
   if (!width || !height) return;
+  if (overview.value) {
+    updateClassGroups();
+    const headingSpace = Math.max(96, ...classGroups.value.map((group) => group.height + 40));
+    target.setOptions({ padding: [headingSpace, 48, 48, 48] });
+  }
   target.resize(Math.round(width), Math.round(height));
   await target.fitView({ when: "always", direction: "both" });
   const maxZoom = Math.min(1, context.presentation.maxFitZoom ?? 1);
@@ -260,6 +268,7 @@ async function fitGraph(target: Graph) {
     await target.zoomTo(maxZoom, false);
   }
   await target.fitCenter();
+  if (target === graph) updateClassGroups();
 }
 
 function yieldToBrowser() {
@@ -297,6 +306,7 @@ async function renderGraph(request: number) {
   target.on("canvas:click", clearSelection);
   target.on("aftertransform", updateNodeActionPosition);
   target.on("afterdraw", updateNodeActionPosition);
+  target.on("node:drag", updateNodeActionPosition);
   target.on("node:dragend", updateNodeActionPosition);
   target.on("node:dragend", saveOverviewLayout);
   target.on("node:dragend", () => { void updateOverviewRelations(); });
@@ -429,6 +439,7 @@ async function selectNode(id: string) {
 }
 
 function updateNodeActionPosition() {
+  updateClassGroups();
   if (!graph || !graphRef.value || !selectedNode.value) {
     nodeActionPosition.value = null;
     return;
@@ -441,6 +452,48 @@ function updateNodeActionPosition() {
     x: Math.max(90, Math.min(width - 90, point[0])),
     y: graphRef.value.offsetTop + Math.max(42, Math.min(height - 60, point[1] + 42)),
   };
+}
+
+/** Screen-space headings follow pan, zoom and dragged nodes, including their visible labels. */
+function updateClassGroups() {
+  if (!graph || !graphRef.value || !overview.value) { classGroups.value = []; return; }
+  const groups = new Map<string, Array<{ x: number; y: number }>>();
+  const instances: OverviewRect[] = [];
+  const zoom = graph.getZoom();
+  const measure = document.createElement("canvas").getContext("2d");
+  const fontFamily = getComputedStyle(graphRef.value).fontFamily;
+  const textWidth = (text: string, size: number) => {
+    if (!measure) return Array.from(text).length * size;
+    measure.font = `600 ${size}px ${fontFamily}`;
+    return measure.measureText(text).width;
+  };
+  for (const datum of graph.getNodeData()) {
+    const node = datum.data?.node as InstanceGraphNode | undefined;
+    if (!node || datum.data?.anchor) continue;
+    const point = graph.getViewportByCanvas([Number(datum.style?.x || 0), Number(datum.style?.y || 0)]);
+    if (!Number.isFinite(point[0]) || !Number.isFinite(point[1])) continue;
+    const points = groups.get(node.class) || [];
+    points.push({ x: point[0], y: point[1] }); groups.set(node.class, points);
+    const halfWidth = Math.max(18, textWidth(instanceGraphNodeLabel(node.name, node.id), 12) / 2) * zoom;
+    instances.push({ x: point[0] - halfWidth, y: point[1] - 18 * zoom,
+      width: halfWidth * 2, height: 58 * zoom });
+  }
+  classGroups.value = overviewClassHeadings([...groups].map(([name, points]) => {
+    const label = classLabels.value[name] || name;
+    const width = Math.min(Math.max(160, textWidth(label, 14) + 24), 280,
+      Math.max(80, graphRef.value!.clientWidth - 32));
+    let lines = 1, lineWidth = 0;
+    for (const character of Array.from(label)) {
+      const size = textWidth(character, 14);
+      if (character === "\n" || lineWidth + size > width - 24) { lines++; lineWidth = 0; }
+      if (character !== "\n") lineWidth += size;
+    }
+    const left = Math.min(...points.map(p => p.x));
+    const right = Math.max(...points.map(p => p.x));
+    const top = Math.min(...points.map(p => p.y)) - 18 * zoom;
+    const bottom = Math.max(...points.map(p => p.y)) + 40 * zoom;
+    return { name, bounds: { x: left, y: top, width: right - left, height: bottom - top }, width, height: lines * 20 + 34 };
+  }), instances);
 }
 
 async function showDirectNeighborhood() {
@@ -746,7 +799,10 @@ onMounted(() => {
   resizeObserver = new ResizeObserver(([entry]) => {
     if (!graph || !entry) return;
     const { width, height } = entry.contentRect;
-    if (width && height) graph.resize(Math.round(width), Math.round(height));
+    if (width && height) {
+      graph.resize(Math.round(width), Math.round(height));
+      updateClassGroups();
+    }
   });
   if (graphRef.value) resizeObserver.observe(graphRef.value);
   void refresh();
@@ -770,7 +826,21 @@ onBeforeUnmount(() => {
     :element-loading-text="rendering ? ot('instanceGraphRenderProgress', { completed: renderedElements, total: nodes.length + edges.length }) : undefined"
     class="instance-graph"
   >
-    <div ref="graphRef" class="graph-canvas" />
+    <div class="graph-canvas">
+      <div ref="graphRef" class="graph-viewport" />
+      <div v-if="summary && overview" class="sample-legend class-groups" :aria-label="t('nav.objectTypes')">
+        <div v-for="group in classGroups" :key="group.name" class="class-group"
+          :style="{ left: `${group.x}px`, top: `${group.y}px`, width: `${group.width}px`, height: `${group.height}px`, '--group-color': colorForClass(group.name) }">
+        <button
+          :title="`${classLabels[group.name] || group.name} · ${ot('instanceGraphStatistics')}`"
+          :class="{ 'is-selected': selectedClass === group.name }" :aria-pressed="selectedClass === group.name"
+          @click.stop="chooseClass(group.name)">
+          <span class="legend-label">{{ classLabels[group.name] || group.name }}</span>
+          <span class="legend-count">{{ nodes.filter(node => node.class === group.name).length }} / {{ summary.classes.find(item => item.class === group.name)?.instanceCount?.toLocaleString(context.locale) ?? '…' }}</span>
+        </button>
+        </div>
+      </div>
+    </div>
     <el-button v-if="summary && !overview" class="back-to-overview" :icon="ArrowLeft" :disabled="loading || rendering || expanding || layouting" @click="showOverview()">{{ ot('instanceGraphBackToOverview') }}</el-button>
     <div v-if="selectedNode && nodeActionPosition" class="node-actions"
       :style="{ left: `${nodeActionPosition.x}px`, top: `${nodeActionPosition.y}px` }"
@@ -849,9 +919,6 @@ onBeforeUnmount(() => {
             <span v-if="overview && summary.overviewEdgesTruncated" class="graph-warning">{{ ot('instanceGraphSampleEdgesLimited') }}</span>
           </div>
         </el-popover>
-      </div>
-      <div v-if="overview" class="sample-legend">
-        <button v-for="item in summary.classes" :key="item.class" :title="classLabels[item.class] || item.class" :class="{ 'is-selected': selectedClass === item.class }" @click="chooseClass(item.class)"><span :style="{ background: colorForClass(item.class) }" />{{ classLabels[item.class] || item.class }} ({{ item.instanceCount == null ? '…' : item.instanceCount.toLocaleString(context.locale) }})</button>
       </div>
       <small v-if="overview && summary.overviewEdgesTruncated" class="graph-warning">{{ ot('instanceGraphSampleEdgesLimited') }}</small>
       <small v-if="summary.complete === false" role="alert" class="graph-warning">{{ ot('instanceGraphPartial', { failures: (summary.failures || []).join(', ') }) }}</small>
@@ -988,19 +1055,26 @@ onBeforeUnmount(() => {
   min-height: 0;
   flex: 1;
   overflow: hidden;
-  border: 1px solid var(--el-border-color);
-  border-radius: var(--radius-md);
+  border: 0;
+  border-radius: var(--radius-shell);
   background-color: var(--el-bg-color);
   background-image: radial-gradient(var(--el-border-color) 1px, transparent 1px);
   background-size: 20px 20px;
 }
 .graph-canvas {
   position: relative;
+  display: flex;
+  flex-direction: column;
   grid-column: 1;
   grid-row: 1;
   min-width: 0;
+  min-height: 0;
   overflow: hidden;
 }
+.graph-viewport { flex: 1; min-width: 0; min-height: 0; position: relative; }
+.class-groups { position: absolute; inset: 0; pointer-events: none; z-index: 1; }
+.class-group { position: absolute; box-sizing: border-box; pointer-events: none; }
+.class-group > button { pointer-events: auto; width: 100%; }
 .back-to-overview { position: absolute; top: 16px; left: 16px; z-index: 3; margin: 0; max-width: calc(100% - var(--inspector-width) - 32px); box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08); }
 .neighbor-filters {
   display: grid;
@@ -1218,10 +1292,12 @@ onBeforeUnmount(() => {
 .summary-info:hover { color: var(--el-color-primary); background: var(--el-fill-color-light); }
 .summary-details { display: grid; gap: var(--spacing-sm); font-size: var(--text-xs); line-height: var(--leading-relaxed); }
 .summary-details strong { font-size: var(--text-sm); }
-.sample-legend { display: flex; flex: 1 1 240px; flex-wrap: wrap; justify-content: flex-end; align-content: start; margin-left: auto; min-width: 0; max-height: 64px; overflow-y: auto; gap: 4px 12px; }
-.sample-legend button { pointer-events: auto; display: inline-flex; max-width: 100%; align-items: center; gap: 5px; padding: 2px 0; border: 0; background: transparent; color: var(--el-text-color-secondary); font-size: var(--text-xs); line-height: 18px; text-align: left; overflow-wrap: anywhere; cursor: pointer; }
-.sample-legend button:hover, .sample-legend button.is-selected { color: var(--el-color-primary); }
-.sample-legend button > span { width: 8px; height: 8px; flex: 0 0 8px; border-radius: 50%; }
+.sample-legend button { display: flex; flex-direction: column; box-sizing: border-box; max-width: 100%; min-width: 0; align-items: center; gap: 2px; padding: 8px 12px; border: 0; border-radius: var(--radius-sm); background: color-mix(in srgb, var(--group-color) 18%, var(--el-bg-color)); box-shadow: 0 2px 6px var(--el-color-info-light-8); color: var(--el-text-color-primary); font: inherit; font-size: 14px; font-weight: 600; line-height: 20px; text-align: center; cursor: pointer; }
+.sample-legend button:hover { background: color-mix(in srgb, var(--group-color) 26%, var(--el-bg-color)); }
+.sample-legend button.is-selected { background: color-mix(in srgb, var(--group-color) 32%, var(--el-bg-color)); color: var(--el-text-color-primary); font-weight: var(--font-semibold); }
+.sample-legend button:focus-visible { outline: 2px solid var(--el-color-primary); outline-offset: -2px; }
+.legend-label { width: 100%; min-width: 0; white-space: pre-wrap; word-break: break-all; color: color-mix(in srgb, var(--group-color) 45%, var(--el-text-color-primary)); }
+.legend-count { color: var(--el-text-color-secondary); font-size: 12px; font-weight: 400; line-height: 16px; font-variant-numeric: tabular-nums; }
 .instance-candidates { display: grid; gap: 2px; min-width: 0; max-height: 260px; overflow: auto; }
 .instance-candidates button {
   display: flex;

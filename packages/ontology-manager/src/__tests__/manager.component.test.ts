@@ -346,7 +346,7 @@ describe("Manager pages in the service router", () => {
     } as DOMRect);
     const { root } = mountHost({ ...base, view: "/browser/data/Order" });
     await settle();
-    (root().querySelectorAll(".data-browser-toolbar .el-segmented__item")[1] as HTMLElement).click();
+    (root().querySelectorAll(".data-browser-toolbar .el-segmented__item")[0] as HTMLElement).click();
     await settle();
     await settle();
     const options = graphRecord.options.at(-1);
@@ -369,7 +369,7 @@ describe("Manager pages in the service router", () => {
     vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue({ width: 800, height: 600 } as DOMRect);
     const { root } = mountHost({ ...base, view: "/browser/data/Order" });
     await settle();
-    (root().querySelectorAll(".data-browser-toolbar .el-segmented__item")[1] as HTMLElement).click();
+    (root().querySelectorAll(".data-browser-toolbar .el-segmented__item")[0] as HTMLElement).click();
     await settle();
     await settle();
     expect(graphRecord.dataBatches.at(-1).edges[0].data).toMatchObject({ aggregated: true, count: 1, type: "has" });
@@ -424,7 +424,7 @@ describe("Manager pages in the service router", () => {
     } as DOMRect);
     const { root } = mountHost({ ...base, view: "/browser/data/Order" });
     await settle();
-    (root().querySelectorAll(".data-browser-toolbar .el-segmented__item")[1] as HTMLElement).click();
+    (root().querySelectorAll(".data-browser-toolbar .el-segmented__item")[0] as HTMLElement).click();
     await settle();
 
     const input = root().querySelector<HTMLInputElement>(".node-search input")!;
@@ -474,7 +474,7 @@ describe("Manager pages in the service router", () => {
     vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue({ width: 800, height: 600 } as DOMRect);
     const { root } = mountHost({ ...base, view: "/browser/data/Order" });
     await settle();
-    (root().querySelectorAll(".data-browser-toolbar .el-segmented__item")[1] as HTMLElement).click();
+    (root().querySelectorAll(".data-browser-toolbar .el-segmented__item")[0] as HTMLElement).click();
     await settle();
     graphHandlers["node:click"]({ target: { id: "Order:1" } });
     await settle();
@@ -514,7 +514,7 @@ describe("Manager pages in the service router", () => {
     vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue({ width: 800, height: 600 } as DOMRect);
     const { root } = mountHost({ ...base, view: "/browser/data/Order" });
     await settle();
-    (root().querySelectorAll(".data-browser-toolbar .el-segmented__item")[1] as HTMLElement).click();
+    (root().querySelectorAll(".data-browser-toolbar .el-segmented__item")[0] as HTMLElement).click();
     await settle();
     graphRecord.zoom = 3;
     (root().querySelector(".sample-legend button") as HTMLElement).click();
@@ -528,7 +528,7 @@ describe("Manager pages in the service router", () => {
     vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue({ width: 800, height: 600 } as DOMRect);
     const { root } = mountHost({ ...base, view: "/browser/data/Order" });
     await settle();
-    (root().querySelectorAll(".data-browser-toolbar .el-segmented__item")[1] as HTMLElement).click();
+    (root().querySelectorAll(".data-browser-toolbar .el-segmented__item")[0] as HTMLElement).click();
     await settle();
     const edge = graphRecord.dataBatches.flatMap((batch) => batch.edges || [])[0];
     const node = graphRecord.dataBatches.flatMap((batch) => batch.nodes || [])[0];
@@ -556,7 +556,7 @@ describe("Manager pages in the service router", () => {
     vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue({ width: 800, height: 600 } as DOMRect);
     const { host, root } = mountHost({ ...base, view: "/browser/data/Order" });
     await settle();
-    (root().querySelectorAll(".data-browser-toolbar .el-segmented__item")[1] as HTMLElement).click();
+    (root().querySelectorAll(".data-browser-toolbar .el-segmented__item")[0] as HTMLElement).click();
     await settle();
     const edge = graphRecord.dataBatches.flatMap((batch) => batch.edges || [])[0];
     (root().querySelector(".graph-toolbar button[aria-label='Display settings']") as HTMLButtonElement).click();
@@ -654,9 +654,12 @@ describe("Manager pages in the service router", () => {
   });
 
   it("the address locates data browsing; page actions navigate through the router; unknown addresses land on the graph", async () => {
-    const { host, views } = mountHost({ ...base, view: "/browser/data/Item" });
+    const { host, views, root } = mountHost({ ...base, view: "/browser/data/Item" });
     await settle();
 
+    expect(paths()).not.toContain("/data/getWholeClassDataByPage");
+    (root().querySelectorAll(".data-browser-toolbar .el-segmented__item")[1] as HTMLElement).click();
+    await settle();
     const page = requests.find((request) => request.url.endsWith("/data/getWholeClassDataByPage"));
     expect(page?.body).toEqual({ classname: "Item", pagenum: 1, pagecount: 20 });
     expect(page?.headers["x-api-key"]).toBe("key-a");
@@ -694,6 +697,8 @@ describe("Manager pages in the service router", () => {
 
   it("the page's vue-i18n locale drives the text and Element Plus widgets; the locale drives Accept-Language", async () => {
     const { host, root } = mountHost({ ...base, ...german, view: "/browser/data/Order" });
+    await settle();
+    (root().querySelectorAll(".data-browser-toolbar .el-segmented__item")[1] as HTMLElement).click();
     await settle();
     expect(root().textContent).toContain("[de] Advanced Filter");
     expect(root().querySelector(".el-pagination__total")?.textContent).toContain("Gesamt");
@@ -856,6 +861,8 @@ describe("Manager pages in the service router", () => {
 
     expect(document.querySelector(".el-message")).toBeNull();
     if (view.startsWith("/browser/data/")) {
+      (root().querySelectorAll(".data-browser-toolbar .el-segmented__item")[1] as HTMLElement).click();
+      await settle();
       const page = requests.find((request) => request.url.endsWith("/data/getWholeClassDataByPage"));
       expect(page?.body).toMatchObject({ classname: "Order" });
       expect(page?.headers["Accept-Language"]).toBe("de");

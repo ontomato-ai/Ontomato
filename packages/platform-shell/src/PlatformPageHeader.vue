@@ -51,7 +51,7 @@ const emit = defineEmits<{ discard: []; save: []; selectTab: [path: string] }>()
     <div v-if="title || description || actions?.length || draft || $slots.actions" class="header-row">
       <div class="header-text">
         <h1 v-if="title" class="page-title">{{ title }}</h1>
-        <p v-if="description && !compact" class="page-description">{{ description }}</p>
+        <p v-if="description" class="page-description">{{ description }}</p>
       </div>
       <div v-if="actions?.length || draft || $slots.actions" class="page-actions">
         <span v-if="draft?.dirty" class="unsaved" role="status">{{ labels.unsavedChanges }}</span>
@@ -246,12 +246,23 @@ const emit = defineEmits<{ discard: []; save: []; selectTab: [path: string] }>()
 }
 .compact .header-text {
   flex: 1 1 160px;
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: var(--spacing-xs) var(--spacing-md);
 }
 .compact .page-title {
   margin: 0;
   font-size: var(--text-lg);
   line-height: var(--leading-lg);
   text-wrap: wrap;
+  flex-shrink: 0;
+}
+.compact .page-description {
+  flex: 1 1 180px;
+  min-width: 0;
+  line-height: var(--leading-sm);
+  overflow-wrap: anywhere;
 }
 .compact .page-actions {
   padding-top: 0;

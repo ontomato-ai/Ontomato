@@ -1,4 +1,8 @@
 /* Shared visual treatment for both editions and the embedded Manager. Layout stays with the owning component. */
+.el-overlay {
+  background-color: var(--el-overlay-color-lighter);
+}
+
 .el-dialog,
 .el-message-box,
 .el-drawer {
@@ -126,6 +130,29 @@
   max-width: 100%;
 }
 
+/* Dropdown options must share the panel's viewport, including long labels and wide triggers. */
+.el-popper.el-select__popper {
+  max-width: min(640px, calc(100vw - 32px));
+}
+.el-select__popper .el-select-dropdown {
+  /* EP sets an inline min-width from the trigger; it must not defeat the viewport/panel cap. */
+  min-width: 0 !important;
+  max-width: min(638px, calc(100vw - 34px));
+  overflow: hidden;
+}
+.el-select__popper .el-select-dropdown__list {
+  box-sizing: border-box;
+}
+.el-select__popper .el-select-dropdown__item {
+  box-sizing: border-box;
+  min-width: 0;
+  max-width: 100%;
+}
+.el-select__popper .el-select-dropdown__item > * {
+  min-width: 0;
+  max-width: 100%;
+}
+
 /*
  * The segmented control's thumb is the selected background (a solid primary tone), so its label must use the
  * on-primary role in both modes. Element Plus inherits the track's ink colour here, which reads white on white.
@@ -194,6 +221,21 @@
 :where(button, a, input, textarea, select, [tabindex]):focus-visible {
   outline: 2px solid var(--el-color-primary);
   outline-offset: 2px;
+}
+
+/* Composite dropdowns own their border on the wrapper; an outline on the internal input makes a second rectangle. */
+.el-select .el-select__input:focus-visible,
+.el-cascader .el-input__inner:focus-visible,
+.el-tree-select .el-input__inner:focus-visible {
+  outline: none;
+}
+.el-select .el-select__wrapper:focus-visible {
+  outline: none;
+}
+.el-select .el-select__wrapper:has(.el-select__input:focus-visible),
+.el-select .el-select__wrapper:focus-visible,
+.el-cascader .el-input__wrapper:has(.el-input__inner:focus-visible) {
+  box-shadow: 0 0 0 1px var(--el-color-primary) inset;
 }
 
 @media (prefers-reduced-motion: reduce) {

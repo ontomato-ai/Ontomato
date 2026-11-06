@@ -121,6 +121,10 @@ export function brandProperties(brand: BrandSource, mode: BrandMode): Record<str
     "--el-bg-color-page": c.workspace,
     "--el-bg-color": c.surface,
     "--el-bg-color-overlay": c.raised,
+    // A quiet scrim derived from the edition's neutral palette; loading masks remain independent.
+    "--el-overlay-color-lighter": `color-mix(in srgb, ${mode === "dark" ? c.sunken : c.ink} ${mode === "dark" ? "64%" : "28%"}, transparent)`,
+    "--el-overlay-color-light": `color-mix(in srgb, ${mode === "dark" ? c.sunken : c.ink} ${mode === "dark" ? "64%" : "28%"}, transparent)`,
+    "--el-overlay-color": `color-mix(in srgb, ${mode === "dark" ? c.sunken : c.ink} ${mode === "dark" ? "64%" : "28%"}, transparent)`,
 
     // The platform shell's bands. The rail and the panel of the other application sit on their own roles, so a page
     // panel that fills with `surface` never shares a colour with the rail beside it.
