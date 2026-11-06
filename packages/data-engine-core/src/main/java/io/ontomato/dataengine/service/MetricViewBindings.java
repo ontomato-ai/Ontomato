@@ -85,6 +85,18 @@ public final class MetricViewBindings {
     return JSON.parseObject(JSON.toJSONString(values, com.alibaba.fastjson2.JSONWriter.Feature.WriteMapNullValue));
   }
 
+  /** Write definitions have no required marker. Omitted inputs retain the manual Action default of null. */
+  public static Function executionWriteFunction(Function definition, JSONObject supplied) {
+    if (!Function.OPERATION_WRITE.equals(definition.getOperation()))
+      throw new IllegalArgumentException("Expected a write function");
+    if (supplied == null) throw new IllegalArgumentException("Parameter values must be an object");
+    JSONObject values = new JSONObject(supplied);
+    if (definition.getParameters() != null)
+      for (Parameter parameter : definition.getParameters())
+        if (!values.containsKey(parameter.getName())) values.put(parameter.getName(), null);
+    return executionFunction(definition, values);
+  }
+
   /** Execution gets a detached value map; the saved Function remains the definition. */
   public static Function executionFunction(Function definition, JSONObject values) {
     validateValues(definition, values);

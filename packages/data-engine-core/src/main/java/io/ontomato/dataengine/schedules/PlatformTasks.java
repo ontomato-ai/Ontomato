@@ -154,7 +154,26 @@ public class PlatformTasks {
     var result = array();
     var tasks = store.visible(user.getDomainId(), user.getId(), null);
     for (var entry : applications.all().entrySet()) {
-      var descriptor = (ObjectNode) entry.getValue().describe(actor);
+      var provider = entry.getValue();
+      ObjectNode descriptor;
+      try {
+        descriptor = (ObjectNode) provider.describe(actor);
+      } catch (RuntimeException unavailable) {
+        descriptor =
+            object(
+                "id",
+                entry.getKey(),
+                "description",
+                provider.description(locale),
+                "available",
+                false,
+                "unavailableReason",
+                locale.startsWith("zh")
+                    ? "暂时无法确认你能否使用这个应用"
+                    : "Unable to confirm whether you can use this application right now",
+                "taskCount",
+                0);
+      }
       descriptor.put(
           "taskCount",
           tasks.stream().filter(task -> entry.getKey().equals(task.definition().appId())).count());

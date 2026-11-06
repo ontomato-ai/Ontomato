@@ -19,8 +19,11 @@ export async function describeScheduleApplication(id: string, context: ScheduleC
   let unavailableReason: string | null = null;
   try { await application.authorize(context); }
   catch (error) {
-    if (!(error instanceof HttpError) || error.status !== 403) throw error;
-    unavailableReason = error.message;
+    unavailableReason = error instanceof HttpError && error.status === 403
+      ? error.message
+      : context.credentials.locale?.startsWith("zh")
+        ? "暂时无法确认你能否使用这个应用"
+        : "Unable to confirm whether you can use this application right now";
   }
   return { id, description: application.description(context.credentials.locale), available: unavailableReason === null, unavailableReason, taskCount: 0 };
 }
