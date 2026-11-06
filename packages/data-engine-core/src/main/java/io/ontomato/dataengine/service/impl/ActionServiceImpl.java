@@ -16,6 +16,7 @@ import io.ontomato.dataengine.dao.ActionDao;
 import io.ontomato.dataengine.dao.FunctionDao;
 import io.ontomato.dataengine.dao.KnowledgeDao;
 import io.ontomato.dataengine.service.ABCProgramService;
+import io.ontomato.dataengine.service.ActionPreconditionService;
 import io.ontomato.dataengine.service.ActionService;
 import io.ontomato.dataengine.service.AdminService;
 import io.ontomato.dataengine.service.BusinessConfigService;
@@ -63,6 +64,8 @@ public class ActionServiceImpl implements ActionService {
   @Autowired private OntologyGenerationService generationService;
 
   @Autowired private AgentRuntimeClient runtimeClient;
+
+  @Autowired private ActionPreconditionService preconditions;
 
   @PostConstruct
 	public void initService() {
@@ -265,6 +268,7 @@ public class ActionServiceImpl implements ActionService {
     BusinessMeaning storedBusinessMeaning = null;
     String storedCodeHash = null;
     Integer storedExplanationVersion = null;
+    String storedStatus = null;
     if (action.getId() != null) {
       Object[] exist = actionDao.queryById(action.getId());
       if (exist == null) {
@@ -281,6 +285,7 @@ public class ActionServiceImpl implements ActionService {
       storedBusinessMeaning = existAction.getBusinessMeaning();
       storedCodeHash = existAction.getCodeHash();
       storedExplanationVersion = existAction.getExplanationVersion();
+      storedStatus = existAction.getStatus();
     }
     // Explanations are server-derived. A request cannot supply them; they are reused only when the
     // stored explanation belongs to exactly this code and to the current explanation version.
@@ -307,6 +312,12 @@ public class ActionServiceImpl implements ActionService {
       codeChanged = !existFunction.getCode().equals(function.getCode());
     } else if (!Function.OPERATION_WRITE.equals(function.getOperation())) {
       throw new Exception(langService.get(lang, "Function.notWrite"));
+    }
+    // Publication freezes the program. Whoever approved the action approved exactly this code, so
+    // rewriting it in place would keep the approval while replacing what it approved. A change is a
+    // new action, reviewed on its own; re-explaining the same code stays allowed above.
+    if (Action.STATUS_PUBLISHED.equals(storedStatus) && codeChanged) {
+      throw new Exception(langService.get(lang, "Action.publishedIsFrozen"));
     }
     String codeHash = CodeHashUtil.sha256(function.getCode());
     boolean reusable =
@@ -560,6 +571,20 @@ public class ActionServiceImpl implements ActionService {
             if (!user.getDomainId().equals(action.getDomainId()) || action.getFunction() == null ||
                 !user.getDomainId().equals(action.getFunction().getDomainId())) throw new IllegalArgumentException("Action is outside the current domain");
 			if (Action.STATUS_PUBLISHED.equals(action.getStatus())) {
+				// The declared preconditions are the action's own statement of when it may run, and the
+				// only guard that can tell "this report is mine" from "this report exists". They are
+				// evaluated once here, before any write, so a program never starts on state it must not see.
+				ActionPreconditionService.Verdict verdict =
+						preconditions.evaluate(action, param, user, permission);
+				if (!verdict.satisfied()) {
+					PythonExecuteResult refused = new PythonExecuteResult();
+					refused.setResult(null);
+					refused.setError(
+							langService.get(lang, "Action.preconditionFailed")
+									+ ": "
+									+ String.join("; ", verdict.violations()));
+					return refused;
+				}
 				Function function = action.getFunction();
 				for (Parameter parameter : function.getParameters()) {
 					Object value = param.get(parameter.getName());
