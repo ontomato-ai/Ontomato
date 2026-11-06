@@ -73,9 +73,6 @@ public class DataServiceImpl implements DataService {
 	private static final String STATUS_NOT_GENERATED = "NOT_GENERATED";
 	private static final String STATUS_GENERATED = "GENERATED";
 
-	// Current A/B file suffix per domain; absent means the domain has no current data in this process.
-	// Package-visible so focused unit tests can drive the read states without a database.
-	final Map<String, String> currentSuffix = new ConcurrentHashMap<>();
 	// Domains with a generation in progress; guarantees at most one generation per domain at a time.
 	// Package-visible so focused unit tests can drive the read states without a database.
 	final Set<String> generatingDomains = ConcurrentHashMap.newKeySet();
@@ -83,7 +80,8 @@ public class DataServiceImpl implements DataService {
 	private LiveInstanceGraph liveInstanceGraph;
 	
 	public void initService() {
-		// Legacy star-chart files are generated only by the explicit refresh endpoint.
+		// Legacy star-chart files are generated only by the explicit refresh endpoint. The last complete generation is
+		// recorded beside them (StarChartDao.readCurrentSuffix), so a restart serves it again without scanning anything.
 	}
 
 	@Override
@@ -118,7 +116,7 @@ public class DataServiceImpl implements DataService {
 	private JSONObject queryWholeData(String mode, String domainId) {
 		JSONObject ret = new JSONObject();
 		ret.put("success", true);
-		String suffix = currentSuffix.get(domainId);
+		String suffix = starChartDao.readCurrentSuffix(domainId);
 		if (suffix != null) {
 			JSONObject data = starChartDao.readWholeData(mode, suffix, domainId);
 			ret.put("status", STATUS_READY);
@@ -131,13 +129,14 @@ public class DataServiceImpl implements DataService {
 
 	private void generate(String domainId) {
 		JSONObject wholeData = cutWholeData(domainId, businessConfigService.get(domainId));
-		String suffix = currentSuffix.get(domainId);
-		String newSuffix = suffix == null ? "A" : (suffix.equals("A") ? "B" : "A");
+		// Write the pair not in use, then record it as current: until both files are written the previous pair stays
+		// the one read, now and after a restart, so a generation that stops halfway never serves a partial pair.
+		String newSuffix = "A".equals(starChartDao.readCurrentSuffix(domainId)) ? "B" : "A";
 		log.info("generate star chart data writeWholeData start...");
 		starChartDao.writeWholeData(wholeData, MODE_0, newSuffix, domainId);
 		starChartDao.writeWholeData(fromMode0ToMode1(wholeData, domainId), MODE_1, newSuffix, domainId);
 		log.info("generate star chart data writeWholeData end...");
-		currentSuffix.put(domainId, newSuffix);
+		starChartDao.writeCurrentSuffix(newSuffix, domainId);
 	}
 
 	@Override
