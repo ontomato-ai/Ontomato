@@ -575,11 +575,16 @@ watch(
   --el-segmented-item-selected-color: var(--el-text-color-primary);
 }
 
+/*
+ * No horizontal padding of the page's own: the platform's page body around it carries the page gutter, the same one as
+ * the header above, so the object type's line, the filters, the table and the pager start and end where the title and
+ * the tabs do (DESIGN.md "Page applications").
+ */
 .mode-bar {
   display: flex;
   align-items: center;
   flex-shrink: 0;
-  padding: var(--spacing-md) var(--spacing-lg) 0;
+  padding: var(--spacing-md) 0 0;
 }
 
 .graph-summary-slot { flex: 1; min-width: min(360px, 100%); }
@@ -587,7 +592,7 @@ watch(
 .data-browser :deep(.instance-graph) {
   min-height: 0;
   flex: 1;
-  margin: var(--spacing-md) var(--spacing-lg) var(--spacing-lg);
+  margin: var(--spacing-md) 0 var(--spacing-lg);
 }
 
 .data-browser :deep(.el-table) {
@@ -599,7 +604,7 @@ watch(
   align-items: center;
   gap: var(--spacing-sm);
   min-height: 40px;
-  padding: var(--spacing-md) var(--spacing-lg);
+  padding: var(--spacing-md) 0;
   flex-wrap: wrap;
   /* Not squeezed by the table in the fixed-height column layout; otherwise on narrow screens the action buttons wrap into a second column outside the viewport. */
   flex-shrink: 0;
@@ -617,8 +622,6 @@ watch(
 }
 
 .data-browser > :deep(.el-table) {
-  width: auto;
-  margin: 0 var(--spacing-lg);
   border: 1px solid var(--el-border-color);
   border-radius: var(--radius-md);
 }
@@ -629,7 +632,7 @@ watch(
 }
 
 .pagination {
-  padding: var(--spacing-md) var(--spacing-lg) var(--spacing-lg);
+  padding: var(--spacing-md) 0 var(--spacing-lg);
   display: flex;
   justify-content: flex-end;
   min-width: 0;

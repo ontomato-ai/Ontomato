@@ -76,12 +76,16 @@ const menuPages = computed(() => (activeApp.value?.frame === "menu" ? (activeApp
 
 /**
  * The one header: an application of several pages shows the application's name, its one line of description and its
- * pages as tabs; a single-page application shows its page's name and description. A page that draws its own title (the
- * ontology manager's) is left to draw it, and its application's tabs, if any, still sit above it.
+ * pages as tabs; a single-page application shows its page's name and description. An application that declares a line
+ * of its own (the object browser, the system settings) is named in the header however many of its pages there are: with
+ * one — the open-source object browser, or an account that may open only one — it is the same header without tabs. A
+ * page that draws its own title (the ontology manager's) is left to draw it, and its application's tabs, if any, still
+ * sit above it.
  */
-const headerTitle = computed(() => (pageTabs.value.length > 0 ? (activeApp.value?.label ?? "") : (props.shownPage?.title ?? "")));
+const namedByApp = computed(() => pageTabs.value.length > 0 || activeApp.value?.description != null);
+const headerTitle = computed(() => (namedByApp.value ? (activeApp.value?.label ?? "") : (props.shownPage?.title ?? "")));
 const headerDescription = computed(() =>
-  pageTabs.value.length > 0 ? (activeApp.value?.description ?? null) : (props.shownPage?.description ?? null),
+  namedByApp.value ? (activeApp.value?.description ?? null) : (props.shownPage?.description ?? null),
 );
 const headerShown = computed(
   () => !props.blocked && (pageTabs.value.length > 0 || (props.shownPage !== null && !props.shownPage.ownHeader)),

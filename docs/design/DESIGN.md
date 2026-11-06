@@ -194,8 +194,11 @@ on the page, not only in the conversation.
 description below it, the page's own buttons at the right, and — for an application of several
 pages — its tabs in a row under them. There is one header component for every page; an
 application of several pages shows the application's name there and switches between its pages,
-and a page that holds several screens keeps its own second-level tabs in the page. The
-Dashboards' boards are tabs of their own page, and the Scheduled tasks' filters carry labels.
+and a page that holds several screens keeps its own second-level tabs in the page. An
+application whose header carries its own name and line (Object Browser, System settings) keeps
+that header where it has a single page — the open-source Object Browser, or an account that may
+open only one of its pages — just without tabs. The Dashboards' boards are tabs of their own
+page, and the Scheduled tasks' filters carry labels.
 
 The header and the page share one horizontal padding (`shell.page-gutter`), written once: a
 title, a toolbar and the content under them start at the same place, and a page never writes a

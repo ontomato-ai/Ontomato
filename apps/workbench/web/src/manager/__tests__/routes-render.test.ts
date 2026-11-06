@@ -163,6 +163,17 @@ describe("the open-source platform's page headers", () => {
     // The page draws no second title: the header is the only one.
     expect(document.querySelector(".dashboards-application h1")).toBeNull();
   });
+
+  it("names the object browser in its header though this edition gives it one page", async () => {
+    await open("/browser/data");
+    // The same header as the enterprise edition's, without the tabs: the application's name and its line.
+    const header = document.querySelector(".platform-page-header");
+    expect(header?.querySelector(".page-title")?.textContent).toBe("Object browser");
+    expect(header?.querySelector(".page-description")?.textContent?.trim()).toBeTruthy();
+    expect(header?.querySelector(".page-tab")).toBeNull();
+    // The data browser draws no header of its own, so the platform's page body around it carries the page gutter.
+    expect(document.querySelector(".platform-page-body")?.classList.contains("own-header")).toBe(false);
+  });
 });
 
 describe("the open-source platform's column", () => {
