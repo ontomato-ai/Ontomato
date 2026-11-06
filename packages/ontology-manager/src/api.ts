@@ -200,6 +200,10 @@ export interface SmartAsset {
   status?: string;
   origin?: string;
   modifyTimestamp?: number;
+  /** Subject id that created this asset; resolve to a name through the subject directory. */
+  createdBy?: string | null;
+  /** Subject id that last published it; publication is the review moment. */
+  reviewedBy?: string | null;
   function?: { name?: string } | null;
   [key: string]: unknown;
 }
@@ -227,6 +231,35 @@ export interface WorkflowRecord {
   version?: number | null;
   runClassName?: string | null;
   steps?: WorkflowStepRecord[];
+  /** Subject id that created the process. */
+  createdBy?: string | null;
+  /** Subject id on the most recent activation — this object's review moment. */
+  reviewedBy?: string | null;
+}
+
+/** One capability grant in force: which role may run which object. */
+export interface CapabilityGrantRecord {
+  roleId?: string | null;
+  roleCode?: string | null;
+  capabilityKind?: string | null;
+  capabilityId?: string | null;
+  capabilityVersion?: string | null;
+  activatedByWorkflowVersion?: string | null;
+}
+
+/** One role and the platform operations it may call. Empty for a management role, which holds all. */
+export interface PlatformAccessRecord {
+  roleId?: string | null;
+  roleCode?: string | null;
+  apiPermissions?: string[];
+}
+
+/** One subject of the domain and the roles in effect for them here. */
+export interface SubjectRecord {
+  id: string;
+  loginCode?: string | null;
+  displayName?: string | null;
+  roleIds?: string[];
 }
 
 export type ManagerClient = ReturnType<typeof createManagerClient>;
@@ -558,6 +591,8 @@ export function createManagerClient(
       origin: typeof asset.origin === "string" ? asset.origin : undefined,
       modifyTimestamp:
         typeof asset.modifyTimestamp === "number" ? asset.modifyTimestamp : undefined,
+      createdBy: typeof asset.createdBy === "string" ? asset.createdBy : null,
+      reviewedBy: typeof asset.reviewedBy === "string" ? asset.reviewedBy : null,
       function: asset.function as SmartAsset["function"],
     })) as SmartAsset[];
   }
@@ -621,6 +656,32 @@ export function createManagerClient(
     return post("/workflow/delete", { id });
   }
 
+  /**
+   * The capability grants in force in this domain.
+   *
+   * The executor only ever asks "may this subject run this action", so without this the stored grants
+   * are write-only from the product's side and a published revision cannot be audited from the UI.
+   */
+  async function loadCapabilityGrants(): Promise<CapabilityGrantRecord[]> {
+    const response = await post("/workflow/grants", {});
+    const source = Array.isArray(response.data) ? response.data : [];
+    return source as CapabilityGrantRecord[];
+  }
+
+  /** Which roles hold which platform operations, as the request interceptor enforces them. */
+  async function loadPlatformAccess(): Promise<PlatformAccessRecord[]> {
+    const response = await post("/workflow/platform-access", {});
+    const source = Array.isArray(response.data) ? response.data : [];
+    return source as PlatformAccessRecord[];
+  }
+
+  /** The domain's subjects with their effective roles; provenance ids resolve to names through this. */
+  async function loadSubjects(): Promise<SubjectRecord[]> {
+    const response = await post("/workflow/subjects", {});
+    const source = Array.isArray(response.data) ? response.data : [];
+    return source as SubjectRecord[];
+  }
+
   return {
     request,
     loadInstanceGraphStatistics,
@@ -656,5 +717,8 @@ export function createManagerClient(
     activateWorkflow,
     deactivateWorkflow,
     deleteWorkflow,
+    loadCapabilityGrants,
+    loadPlatformAccess,
+    loadSubjects,
   };
 }

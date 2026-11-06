@@ -48,6 +48,15 @@ public class Workflow {
     /** The object class a run of this process describes, when the process tracks one. */
     private String runClassName;
 
+    /**
+     * The subject who created this workflow, taken from the authenticated request. Set once.
+     *
+     * <p>There is no {@code reviewedBy} column here on purpose: activation is this object's review
+     * moment and {@code workflow_event} already records its principal for every Activated row, so the
+     * last activation event is the reviewer. Storing it again would be a second copy that can drift.</p>
+     */
+    private String createdBy;
+
     public static List<String> statuses() {
         return List.of(STATUS_DRAFT, STATUS_ACTIVE, STATUS_INACTIVE);
     }

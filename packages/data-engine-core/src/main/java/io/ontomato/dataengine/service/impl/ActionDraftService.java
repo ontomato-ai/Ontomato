@@ -189,6 +189,10 @@ public class ActionDraftService {
     action.setFunction(function);
     action.setStatus(Action.STATUS_PUBLISHED);
     action.setDomainId(owner.domainId());
+    // A draft is authored and published by the same subject at this point; the snapshot carries it so
+    // saving the draft does not have to re-derive who wrote it.
+    action.setCreatedBy(owner.userId());
+    action.setReviewedBy(owner.userId());
     action.setSubmissionCriteria(result.getJSONObject("submissionCriteria"));
     boolean explanationMissing = false;
     try {
@@ -307,6 +311,8 @@ public class ActionDraftService {
       throw new AgentHttpException(409, "DRAFT_CHANGED", "The draft no longer matches its code");
     function.setDomainId(owner.domainId());
     action.setDomainId(owner.domainId());
+    if (action.getCreatedBy() == null) action.setCreatedBy(owner.userId());
+    action.setReviewedBy(owner.userId());
     action.setExplanationVersion(Action.EXPLANATION_VERSION);
     action.setDefinition(ActionDefinitionProjector.project(action));
     action.setFunction(functionDao.save(function));

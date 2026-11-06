@@ -109,6 +109,10 @@ public class ActionController {
 			User user = SystemUtils.getCurUser();
 			Action action = param.to(Action.class);
 			action.setDomainId(user.getDomainId());
+			// Provenance comes from the authenticated request, never from the body: a caller must not be
+			// able to name someone else as the author or the approver.
+			action.setCreatedBy(user.getId());
+			if (Action.STATUS_PUBLISHED.equals(action.getStatus())) action.setReviewedBy(user.getId());
 			actionService.save(action, lang);
 			ret.put("success", true);
 		} catch (Exception e) {

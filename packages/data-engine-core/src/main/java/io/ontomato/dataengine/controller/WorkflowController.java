@@ -14,6 +14,10 @@ import com.alibaba.fastjson2.JSONObject;
 import io.ontomato.dataengine.bean.workflow.Workflow;
 import io.ontomato.dataengine.bean.workflow.WorkflowStep;
 import io.ontomato.dataengine.core.bean.User;
+import io.ontomato.dataengine.dao.WorkflowDao;
+import io.ontomato.dataengine.service.CapabilityGrantQuery;
+import io.ontomato.dataengine.service.PlatformAccessQuery;
+import io.ontomato.dataengine.service.SubjectDirectory;
 import io.ontomato.dataengine.service.WorkflowService;
 import io.ontomato.dataengine.util.SystemUtils;
 
@@ -33,6 +37,18 @@ public class WorkflowController {
     @Autowired
     private WorkflowService workflowService;
 
+    @Autowired
+    private WorkflowDao workflowDao;
+
+    @Autowired
+    private CapabilityGrantQuery grants;
+
+    @Autowired
+    private PlatformAccessQuery platformAccess;
+
+    @Autowired
+    private SubjectDirectory subjects;
+
     @PostMapping("/workflow/save")
     @ResponseBody
     public JSONObject save(@RequestBody JSONObject param) {
@@ -41,6 +57,9 @@ public class WorkflowController {
             User user = SystemUtils.getCurUser();
             Workflow workflow = parse(param);
             workflow.setDomainId(user.getDomainId());
+            // The author comes from the request context, not the body. The DAO keeps the first value, so
+            // editing a draft later does not reassign authorship.
+            workflow.setCreatedBy(user.getId());
             Workflow saved = workflowService.save(workflow);
             ret.put("success", true);
             ret.put("data", render(saved));
@@ -103,6 +122,103 @@ public class WorkflowController {
         return ret;
     }
 
+    /**
+     * Who can act in this domain, with the roles each subject effectively holds.
+     *
+     * <p>Provenance columns store a subject id; this is how a reader turns one into a name without the
+     * stored value carrying a copy of it. Roles are folded in through the same resolution authorization
+     * uses, so a graph drawn from this cannot claim authority the executor would refuse.</p>
+     */
+    @PostMapping("/workflow/subjects")
+    @ResponseBody
+    public JSONObject subjects() {
+        JSONObject ret = new JSONObject();
+        try {
+            User user = SystemUtils.getCurUser();
+            JSONArray data = new JSONArray();
+            for (SubjectDirectory.Subject subject : subjects.subjectsInDomain(user.getDomainId())) {
+                JSONObject item = new JSONObject();
+                item.put("id", subject.id());
+                item.put("loginCode", subject.loginCode());
+                item.put("displayName", subject.displayName());
+                item.put("roleIds", JSONArray.of(subject.roleIds().toArray()));
+                data.add(item);
+            }
+            ret.put("success", true);
+            ret.put("data", data);
+        } catch (Exception e) {
+            log.error(e.getMessage(), e);
+            ret.put("success", false);
+            ret.put("message", e.getMessage());
+        }
+        return ret;
+    }
+
+    /**
+     * Which roles may perform platform operations here, and which operations.
+     *
+     * <p>Answers "which role may create a workflow" from the same chain the request interceptor
+     * enforces, so the cross-layer graph can draw role-to-workflow authority without claiming a
+     * permission the platform does not actually check.</p>
+     */
+    @PostMapping("/workflow/platform-access")
+    @ResponseBody
+    public JSONObject platformAccess() {
+        JSONObject ret = new JSONObject();
+        try {
+            User user = SystemUtils.getCurUser();
+            JSONArray data = new JSONArray();
+            for (PlatformAccessQuery.RoleAccess role : platformAccess.rolesInDomain(user.getDomainId())) {
+                JSONObject item = new JSONObject();
+                item.put("roleId", role.roleId());
+                item.put("roleCode", role.roleCode());
+                item.put("apiPermissions", JSONArray.of(role.apiPermissions().toArray()));
+                data.add(item);
+            }
+            ret.put("success", true);
+            ret.put("data", data);
+        } catch (Exception e) {
+            log.error(e.getMessage(), e);
+            ret.put("success", false);
+            ret.put("message", e.getMessage());
+        }
+        return ret;
+    }
+
+    /**
+     * What this domain's roles are actually allowed to run.
+     *
+     * <p>The executor only asks "may this subject run this action", so the stored grants are otherwise
+     * write-only from the product's side. An operator asking what a published revision approved needs
+     * this view; it is also what lets the cross-layer graph draw role-to-capability edges.</p>
+     */
+    @PostMapping("/workflow/grants")
+    @ResponseBody
+    public JSONObject grants() {
+        JSONObject ret = new JSONObject();
+        try {
+            User user = SystemUtils.getCurUser();
+            JSONArray data = new JSONArray();
+            for (CapabilityGrantQuery.Grant grant : grants.grantsInDomain(user.getDomainId())) {
+                JSONObject item = new JSONObject();
+                item.put("roleId", grant.roleId());
+                item.put("roleCode", grant.roleCode());
+                item.put("capabilityKind", grant.capabilityKind());
+                item.put("capabilityId", grant.capabilityId());
+                item.put("capabilityVersion", grant.capabilityVersion());
+                item.put("activatedByWorkflowVersion", grant.activatedByWorkflowVersion());
+                data.add(item);
+            }
+            ret.put("success", true);
+            ret.put("data", data);
+        } catch (Exception e) {
+            log.error(e.getMessage(), e);
+            ret.put("success", false);
+            ret.put("message", e.getMessage());
+        }
+        return ret;
+    }
+
     @PostMapping("/workflow/query")
     @ResponseBody
     public JSONObject query(@RequestBody JSONObject param) {
@@ -152,6 +268,12 @@ public class WorkflowController {
         result.put("status", workflow.getStatus());
         result.put("version", workflow.getVersion());
         result.put("runClassName", workflow.getRunClassName());
+        result.put("createdBy", workflow.getCreatedBy());
+        // Activation is this object's review moment and the events are its record, so the reviewer is
+        // the principal on the most recent Activated row rather than a second stored copy.
+        result.put("reviewedBy", workflow.getId() == null
+                ? null
+                : workflowDao.queryLastEventPrincipal(workflow.getId(), Workflow.EVENT_ACTIVATED));
         result.put("steps", workflow.getSteps() == null ? new JSONArray() : JSONArray.of(workflow.getSteps().toArray()));
         return result;
     }

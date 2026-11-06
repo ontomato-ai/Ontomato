@@ -2,6 +2,7 @@ package io.ontomato.dataengine.dao;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.nio.file.Path;
@@ -144,6 +145,40 @@ class WorkflowDaoDuckDbTest {
         assertEquals(0, jdbc.queryForObject("SELECT COUNT(*) FROM workflow", Integer.class));
         assertEquals(0, jdbc.queryForObject("SELECT COUNT(*) FROM workflow_version", Integer.class));
         assertEquals(0, jdbc.queryForObject("SELECT COUNT(*) FROM workflow_event", Integer.class));
+    }
+
+    @Test
+    void theCreatorSurvivesLaterSavesWhileTheActivatorFollowsTheEvents() {
+        dao.initIndex();
+        Workflow workflow = workflow("w1", step(1, "LEADER", "approve"));
+        workflow.setCreatedBy("U1");
+        dao.save(workflow);
+
+        // Someone else edits the draft afterwards. Authorship is who wrote it first, not who touched it
+        // last, so the stored value must not move — this is the whole reason created_by is left out of
+        // the upsert's SET list.
+        workflow.setCreatedBy("U2");
+        workflow.setName("采购审批（修订）");
+        dao.save(workflow);
+
+        assertEquals("U1", dao.queryById("w1").getCreatedBy());
+
+        // There is no reviewed_by column: the reviewer is the principal on the newest Activated row, so
+        // each activation names its own approver and the last one wins by reading the events back.
+        workflow.setVersion(1);
+        dao.appendEvent(workflow, Workflow.EVENT_ACTIVATED, "U3");
+        dao.appendEvent(workflow, Workflow.EVENT_ACTIVATED, "U4");
+        assertEquals("U4", dao.queryLastEventPrincipal("w1", Workflow.EVENT_ACTIVATED));
+    }
+
+    @Test
+    void aWorkflowWithNoRecordedCreatorReadsBackAsAbsent() {
+        dao.initIndex();
+        // Rows written before provenance existed must stay readable; absence is not an error.
+        dao.save(workflow("w1", step(1, "LEADER", "approve")));
+
+        assertNull(dao.queryById("w1").getCreatedBy());
+        assertNull(dao.queryLastEventPrincipal("w1", Workflow.EVENT_ACTIVATED));
     }
 
     private Workflow workflow(String id, WorkflowStep... steps) {

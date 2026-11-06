@@ -23,6 +23,7 @@ import io.ontomato.dataengine.dao.MetricViewDao;
 import io.ontomato.dataengine.dataAdapter.DslRowLimit;
 import io.ontomato.dataengine.service.ABCProgramService;
 import io.ontomato.dataengine.service.AdminService;
+import io.ontomato.dataengine.service.IdentityService;
 import io.ontomato.dataengine.service.BackendSessionEntrance;
 import io.ontomato.dataengine.service.BusinessConfigService;
 import io.ontomato.dataengine.service.LangService;
@@ -68,6 +69,8 @@ public class MetricViewServiceImpl implements MetricViewService {
   @Autowired private OntologyGenerationService generationService;
 
   @Autowired private PlatformTransactionManager transactionManager;
+
+  @Autowired private IdentityService identityService;
 
   @PostConstruct
 	public void initService() {
@@ -219,6 +222,19 @@ public class MetricViewServiceImpl implements MetricViewService {
       if (!Objects.equals(other.getId(), metric.getId())) MetricViewBindings.validate(function, other.getBindings());
     metric.setOrigin(previous == null ? MetricView.ORIGIN_USER : previous.getOrigin());
     metric.setCreateTimestamp(previous == null ? null : previous.getCreateTimestamp());
+    // Provenance is resolved here rather than at a controller, because generation and import reach the
+    // same funnel without passing a request body: one place to set it, no path that forgets.
+    String subject = currentSubjectId();
+    if (previous != null) {
+      metric.setCreatedBy(previous.getCreatedBy());
+    } else if (metric.getCreatedBy() == null) {
+      metric.setCreatedBy(subject);
+    }
+    if (MetricView.STATUS_PUBLISHED.equals(metric.getStatus()) && subject != null) {
+      metric.setReviewedBy(subject);
+    } else if (previous != null && metric.getReviewedBy() == null) {
+      metric.setReviewedBy(previous.getReviewedBy());
+    }
     functionDao.save(function);
     metricViewDao.save(metric);
     // A shared definition's class projection follows the same edit as its bindings.
@@ -228,6 +244,18 @@ public class MetricViewServiceImpl implements MetricViewService {
       metricViewDao.save(other);
     }
     return metric;
+  }
+
+  /**
+   * The authenticated subject, or null when there is none. Absence is tolerated rather than fatal: a
+   * background or anonymous run must still be able to persist, it just records no provenance.
+   */
+  private String currentSubjectId() {
+    try {
+      return identityService == null ? null : identityService.getCurrentUserId();
+    } catch (RuntimeException noIdentity) {
+      return null;
+    }
   }
 
   @Override

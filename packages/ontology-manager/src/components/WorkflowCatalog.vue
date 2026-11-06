@@ -15,7 +15,7 @@ import {
   vLoading,
 } from "element-plus";
 import { ArrowDownUp, Pause, Play, Plus, Trash2 } from "lucide-vue-next";
-import type { SmartAsset, WorkflowRecord, WorkflowStepRecord } from "../api";
+import type { SmartAsset, SubjectRecord, WorkflowRecord, WorkflowStepRecord } from "../api";
 import { useManagerClient, useOntologyText } from "../context";
 import { useManagerFeedback } from "../feedback";
 
@@ -28,10 +28,13 @@ const {
   deactivateWorkflow,
   deleteWorkflow,
   loadSmartAssets,
+  loadSubjects,
 } = useManagerClient();
 
 const workflows = ref<WorkflowRecord[]>([]);
 const actions = ref<SmartAsset[]>([]);
+/** Provenance ids are what is stored; names are resolved here so a renamed account reads current. */
+const subjectNames = ref<Record<string, string>>({});
 const loading = ref(false);
 const saving = ref(false);
 const editing = ref(false);
@@ -45,6 +48,16 @@ function statusTag(status?: string) {
   if (status === "ACTIVE") return { type: "success" as const, text: ot("workflowActive") };
   if (status === "INACTIVE") return { type: "info" as const, text: ot("workflowInactive") };
   return { type: "warning" as const, text: ot("workflowDraft") };
+}
+
+/**
+ * Provenance is stored as a subject id, so the table resolves it rather than storing a copy of the
+ * name. An unresolvable id shows as a dash instead of the raw id: a bare uuid in a column that says
+ * "who" reads as a person, which it is not.
+ */
+function subjectName(id?: string | null) {
+  if (!id) return ot("unspecified");
+  return subjectNames.value[id] ?? ot("unspecified");
 }
 
 /** Only actions with an id can be named by a step; the catalogue's drafts may have none. */
@@ -68,6 +81,18 @@ async function refresh() {
 
 onMounted(async () => {
   await refresh();
+  try {
+    // Names are a display concern: a missing directory must not block the page.
+    const subjects = await loadSubjects();
+    subjectNames.value = Object.fromEntries(
+      subjects.map((subject: SubjectRecord) => [
+        subject.id,
+        subject.displayName || subject.loginCode || subject.id,
+      ])
+    );
+  } catch {
+    subjectNames.value = {};
+  }
   try {
     actions.value = await loadSmartAssets("actions");
   } catch {
@@ -215,6 +240,12 @@ function stepSummary(workflow: WorkflowRecord) {
           <template #default="{ row }">
             <span class="workflow-steps">{{ stepSummary(row) }}</span>
           </template>
+        </el-table-column>
+        <el-table-column :label="ot('workflowColumnCreatedBy')" width="130">
+          <template #default="{ row }">{{ subjectName(row.createdBy) }}</template>
+        </el-table-column>
+        <el-table-column :label="ot('workflowColumnReviewedBy')" width="130">
+          <template #default="{ row }">{{ subjectName(row.reviewedBy) }}</template>
         </el-table-column>
         <el-table-column :label="ot('workflowColumnOps')" width="300" fixed="right">
           <template #default="{ row }">

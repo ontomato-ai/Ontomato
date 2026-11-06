@@ -436,6 +436,7 @@ public class ActionServiceImpl implements ActionService {
     JSONArray array = JSON.parseArray(new String(jsonBytes, StandardCharsets.UTF_8));
     User user = SystemUtils.getCurUser();
     String domainId = user == null ? null : user.getDomainId();
+    String importer = user == null ? null : user.getId();
     int successCount = 0;
     JSONArray failures = new JSONArray();
     for (int i = 0; i < array.size(); i++) {
@@ -470,6 +471,10 @@ public class ActionServiceImpl implements ActionService {
         }
         action.setCodeHash(codeHash);
         action.setExplanationVersion(Action.EXPLANATION_VERSION);
+        // An import publishes what it writes, so the importer is its approver; the author is whoever
+        // the bundle records, falling back to the importer when the bundle carries none.
+        if (action.getCreatedBy() == null) action.setCreatedBy(importer);
+        action.setReviewedBy(importer);
         functionDao.save(function);
         actionDao.save(action);
         successCount++;

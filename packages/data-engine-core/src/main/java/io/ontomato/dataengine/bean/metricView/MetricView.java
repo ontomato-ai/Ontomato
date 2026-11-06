@@ -31,5 +31,11 @@ public class MetricView {
 	private String domainId;
 	private String originQuestion;
 	private OriginCheckResult originCheckResult;
+
+	/** The subject who created this metric view; taken from the request, never from a body. */
+	private String createdBy;
+
+	/** The subject who last published it; publication is the review moment. */
+	private String reviewedBy;
 	
 }

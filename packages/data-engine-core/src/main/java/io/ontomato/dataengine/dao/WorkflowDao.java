@@ -35,7 +35,7 @@ public class WorkflowDao {
 	private static final String EVENT_TABLE = "workflow_event";
 
 	private static final String COLUMNS =
-			"id, name, description, domain_id, status, version, steps, run_class_name, create_timestamp, modify_timestamp";
+			"id, name, description, domain_id, status, version, steps, run_class_name, create_timestamp, modify_timestamp, created_by";
 
 	@Autowired
 	private JdbcTemplate jdbcTemplate;
@@ -52,8 +52,10 @@ public class WorkflowDao {
 				+ "steps TEXT, "
 				+ "run_class_name VARCHAR(255), "
 				+ "create_timestamp BIGINT, "
+				+ "created_by VARCHAR(64), "
 				+ "modify_timestamp BIGINT"
 				+ ")");
+		jdbcTemplate.execute("ALTER TABLE " + TABLE + " ADD COLUMN IF NOT EXISTS created_by VARCHAR(64)");
 		jdbcTemplate.execute("CREATE INDEX IF NOT EXISTS idx_" + TABLE + "_domain_id ON " + TABLE + "(domain_id)");
 
 		// One row per published revision: the steps are frozen with the version they were published as.
@@ -94,13 +96,14 @@ public class WorkflowDao {
 
 		String steps = JSON.toJSONString(workflow.getSteps() == null ? List.of() : workflow.getSteps());
 		jdbcTemplate.update(
-				"INSERT INTO " + TABLE + " (" + COLUMNS + ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
+				"INSERT INTO " + TABLE + " (" + COLUMNS + ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
 						+ "ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, description = EXCLUDED.description, "
 						+ "status = EXCLUDED.status, version = EXCLUDED.version, steps = EXCLUDED.steps, "
+						// created_by is deliberately absent: it records the first save and must survive later ones.
 						+ "run_class_name = EXCLUDED.run_class_name, modify_timestamp = EXCLUDED.modify_timestamp",
 				workflow.getId(), workflow.getName(), workflow.getDescription(), workflow.getDomainId(),
 				workflow.getStatus(), workflow.getVersion(), steps, workflow.getRunClassName(),
-				workflow.getCreateTimestamp(), workflow.getModifyTimestamp());
+				workflow.getCreateTimestamp(), workflow.getModifyTimestamp(), workflow.getCreatedBy());
 		return workflow;
 	}
 
@@ -161,6 +164,15 @@ public class WorkflowDao {
 		jdbcTemplate.update("DELETE FROM " + EVENT_TABLE + " WHERE workflow_id = ?", workflowId);
 	}
 
+	/** The principal of the most recent row for this workflow and event, or null when there is none. */
+	public String queryLastEventPrincipal(String workflowId, String event) {
+		List<String> found = jdbcTemplate.query(
+				"SELECT principal_id FROM " + EVENT_TABLE + " WHERE workflow_id = ? AND event = ? "
+						+ "ORDER BY create_timestamp DESC LIMIT 1",
+				(rs, rowNum) -> rs.getString("principal_id"), workflowId, event);
+		return found.isEmpty() ? null : found.get(0);
+	}
+
 	private Workflow map(java.sql.ResultSet rs) throws java.sql.SQLException {
 		Workflow workflow = new Workflow();
 		workflow.setId(rs.getString("id"));
@@ -173,6 +185,7 @@ public class WorkflowDao {
 		workflow.setRunClassName(rs.getString("run_class_name"));
 		workflow.setCreateTimestamp(rs.getLong("create_timestamp"));
 		workflow.setModifyTimestamp(rs.getLong("modify_timestamp"));
+		workflow.setCreatedBy(rs.getString("created_by"));
 		return workflow;
 	}
 

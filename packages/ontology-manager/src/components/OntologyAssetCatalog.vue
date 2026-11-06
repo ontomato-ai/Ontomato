@@ -9,12 +9,12 @@ import {
   Search,
   SquareFunction,
 } from "lucide-vue-next";
-import type { SmartAsset } from "../api";
+import type { SmartAsset, SubjectRecord } from "../api";
 import type { AssetTab } from "../workspace";
 import { useManagerClient, useOntologyText } from "../context";
 
 const { ot } = useOntologyText();
-const { loadSmartAssets } = useManagerClient();
+const { loadSmartAssets, loadSubjects } = useManagerClient();
 
 const props = defineProps<{ kind: AssetTab }>();
 const emit = defineEmits<{
@@ -25,6 +25,14 @@ const emit = defineEmits<{
 const assets = ref<SmartAsset[]>([]);
 const loading = ref(false);
 const query = ref("");
+/** Provenance is stored as a subject id; names are resolved here so a renamed account reads current. */
+const subjectNames = ref<Record<string, string>>({});
+
+/** An unresolvable id shows as a dash, not the raw id: a uuid in a "who" column reads as a person. */
+function subjectName(id?: string | null) {
+  if (!id) return ot("unspecified");
+  return subjectNames.value[id] ?? ot("unspecified");
+}
 
 const meta: Record<
   AssetTab,
@@ -119,7 +127,21 @@ watch(
   () => props.kind,
   () => void loadCatalog()
 );
-onMounted(() => void loadCatalog());
+onMounted(async () => {
+  void loadCatalog();
+  try {
+    // Names are a display concern: a missing directory must not hide the catalogue.
+    const subjects = await loadSubjects();
+    subjectNames.value = Object.fromEntries(
+      subjects.map((subject: SubjectRecord) => [
+        subject.id,
+        subject.displayName || subject.loginCode || subject.id,
+      ])
+    );
+  } catch {
+    subjectNames.value = {};
+  }
+});
 </script>
 
 <template>
@@ -152,6 +174,8 @@ onMounted(() => void loadCatalog());
         <span v-else>{{ ot("linkedFunction") }}</span>
         <span v-if="kind !== 'functions'">{{ ot("source") }}</span>
         <span v-if="kind !== 'functions'">{{ ot("status") }}</span>
+        <span v-if="kind !== 'functions'">{{ ot("createdBy") }}</span>
+        <span v-if="kind !== 'functions'">{{ ot("reviewedBy") }}</span>
         <span v-if="kind !== 'functions'">{{ ot("lastUpdated") }}</span>
         <span></span>
       </div>
@@ -179,6 +203,8 @@ onMounted(() => void loadCatalog());
             {{ statusLabel(asset.status) }}
           </span>
         </span>
+        <span v-if="kind !== 'functions'">{{ subjectName(asset.createdBy) }}</span>
+        <span v-if="kind !== 'functions'">{{ subjectName(asset.reviewedBy) }}</span>
         <span v-if="kind !== 'functions'">{{ formatTime(asset.modifyTimestamp) }}</span>
         <ChevronRight :size="16" class="row-chevron" />
       </button>
