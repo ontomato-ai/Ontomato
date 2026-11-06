@@ -531,8 +531,13 @@ defineExpose({ reload: load, openNewTask });
   border-radius: var(--radius-sm);
   background: var(--el-fill-color);
 }
-/* The history sits under its row; the expand column only carries it, so its arrow stays out of the way. */
-:deep(.expand-hidden) {
+/*
+ * The history sits under its row; the expand column only carries it, so its arrow stays out of the way. Only the cell's
+ * content is hidden: the cells keep their place in the table. Hiding the cells themselves took them out of the row, and
+ * under the table's fixed layout the next cell (the actions, which Element Plus places after this column because they
+ * are fixed to the right) slid into this column's 1px instead of its own 300px (128 screenshots, 2026-11-06).
+ */
+:deep(.expand-hidden .cell) {
   display: none;
 }
 @media (max-width: 1100px) {
