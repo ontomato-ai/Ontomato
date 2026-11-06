@@ -188,8 +188,10 @@ ORDER BY m.create_time ASC NULLS LAST,m.user_id ASC
               row.get("return_def").toString(),
               io.ontomato.dataengine.bean.function.ReturnDef.class));
     value.setParameters(
-        com.alibaba.fastjson2.JSON.parseArray(
-            java.util.Objects.toString(row.get("parameters"), "[]"), Parameter.class));
+        row.get("parameters") == null
+            ? null
+            : com.alibaba.fastjson2.JSON.parseArray(
+                row.get("parameters").toString(), Parameter.class));
     if (row.get("query_package") != null)
       value.setQueryPackage(
           com.alibaba.fastjson2.JSON.parseObject(row.get("query_package").toString()));
@@ -216,7 +218,7 @@ ORDER BY m.create_time ASC NULLS LAST,m.user_id ASC
         function = null;
       content = object("execution", "function:" + id);
       revision =
-          function == null
+          function == null || function.getParameters() == null
               ? "unavailable"
               : OntologyScheduleApplication.formRevision(function, null);
       if (title == null || title.isBlank())

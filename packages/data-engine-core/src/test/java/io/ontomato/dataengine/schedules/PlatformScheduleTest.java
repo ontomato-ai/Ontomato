@@ -835,6 +835,24 @@ CREATE TABLE write_task_result(id text,write_task_id text,execute_timestamp bigi
   }
 
   @Test
+  void unavailableFunctionPausesForTheTargetRatherThanAFormVersionChange() {
+    UUID task = UUID.randomUUID(), run = UUID.randomUUID();
+    tasks.create(task, definition("function:f"), "en", true);
+    tasks.manual(task, run, "en");
+    jdbc.update("UPDATE function SET operation=? WHERE id='f'", Function.OPERATION_READ);
+    var scheduler =
+        new PlatformScheduler(
+            store, transactions, applications, credentials, identity, mock(TaskMail.class));
+    try {
+      scheduler.dispatch(run);
+      assertEquals("target_unavailable", store.run(run).error().code());
+      assertEquals("target_unavailable", store.get(task, false).pause().code());
+    } finally {
+      scheduler.stop();
+    }
+  }
+
+  @Test
   void intervalMonthlyAndLocalTimeParametersKeepTheirSemantics() {
     var monthly =
         new TaskDefinition(

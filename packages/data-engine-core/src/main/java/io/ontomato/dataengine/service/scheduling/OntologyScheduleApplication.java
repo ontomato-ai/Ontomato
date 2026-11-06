@@ -192,6 +192,8 @@ public class OntologyScheduleApplication implements ScheduleApplication {
 
   public Validation validate(TaskDefinition definition, Actor actor) {
     authorize(actor);
+    String selected = definition.content().path("execution").asText();
+    if (!selected.isBlank()) target(selected, actor.domain());
     var form = form(new FormInput(definition.content(), null, null, definition.timeZone()), actor);
     var validation = ScheduleForms.validate(definition, form);
     var target = target(definition.content().path("execution").asText(), actor.domain());
