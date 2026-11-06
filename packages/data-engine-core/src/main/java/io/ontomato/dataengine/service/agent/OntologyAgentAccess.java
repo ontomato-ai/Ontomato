@@ -52,6 +52,15 @@ public class OntologyAgentAccess {
       identity.getCurrentCredentialExpiresAt(), null);
   }
 
+  /** Build the same governance context for a verified persisted background creator. */
+  public Context scheduledGovernance(io.ontomato.dataengine.core.bean.User user, String language) {
+    if (user == null || !user.isEnable() || user.getDomainId() == null)
+      throw new AgentHttpException(403, "FORBIDDEN", "A current domain member is required");
+    if (!identity.hasKnowledgeGovernanceAccess(user.getId(), user.getDomainId()))
+      throw new AgentHttpException(403, "FORBIDDEN", "Business knowledge permission is required");
+    return new Context(new OntologyAgentStore.Owner(user.getId(), user.getDomainId()), null, null, null, language, null, null);
+  }
+
   public boolean governanceAllowed() { return identity.hasKnowledgeGovernanceAccess(); }
 
   public Context forAgent(HttpServletRequest request, String agent) {

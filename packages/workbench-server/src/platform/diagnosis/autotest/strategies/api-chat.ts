@@ -15,6 +15,7 @@ export interface ApiChatOptions {
   threadId?: string;
   userId?: string;
   tk?: string;
+  apiKey?: string;
   signal?: AbortSignal;
   caseTimeoutMs?: number;
   onStep?: (label: string) => void;
@@ -44,7 +45,7 @@ export async function executeApiChat(
       method,
       headers: {
         "Content-Type": "application/json",
-        tk: o.tk ?? "",
+        ...(o.apiKey ? { "X-API-Key": o.apiKey } : { tk: o.tk ?? "" }),
         ...(key ? { "Idempotency-Key": key } : {}),
       },
       body: body === undefined ? undefined : JSON.stringify(body),

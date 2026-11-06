@@ -43,6 +43,7 @@ export interface SingleCaseOptions {
   testCase: TestCase;
   userId?: string;
   tk?: string;
+  apiKey?: string;
   signal?: AbortSignal;
   caseTimeoutMs?: number;
   /**
@@ -53,8 +54,8 @@ export interface SingleCaseOptions {
 }
 
 export async function executeSingleCase(options: SingleCaseOptions): Promise<CaseResult> {
-  const { runId, testCase, userId, domainId, tk, signal, caseTimeoutMs, onStep } = options;
-  return runWithLogContext({ domainId, userId, token: tk }, async () => {
+  const { runId, testCase, userId, domainId, tk, apiKey, signal, caseTimeoutMs, onStep } = options;
+  return runWithLogContext({ domainId, userId, token: tk, apiKey }, async () => {
     const threadId = `autotest-${randomUUID().replace(/-/g, "").slice(0, 16)}`;
 
   const reportStep = (label: string): void => {
@@ -87,6 +88,7 @@ export async function executeSingleCase(options: SingleCaseOptions): Promise<Cas
       userId,
       domainId,
       tk,
+      apiKey,
       signal,
       caseTimeoutMs,
       // Forwards workflow node switches (query data / analyze data / generate charts) upward.
@@ -119,7 +121,7 @@ export async function executeSingleCase(options: SingleCaseOptions): Promise<Cas
 
       const postProcess = withRunArtifactWrite(runId, async () => {
         if (!signal?.aborted) reportStep(tApp("diag.autotest.runner.single-case.2"));
-        return safePostProcess(result, effectiveTestCase, runId, domainId, tk);
+        return safePostProcess(result, effectiveTestCase, runId, domainId, { token: tk, apiKey, userId });
       });
       ppResult = signal
         ? await Promise.race([postProcess, waitForAbort(signal)])
@@ -203,7 +205,7 @@ async function safePostProcess(
   testCase: TestCase,
   runId: string,
   domainId: string,
-  token?: string
+  credentials: { token?: string; apiKey?: string; userId?: string }
 ): Promise<WorkspaceArtifactResult | undefined> {
   try {
     if (!result.turnKey) {
@@ -230,7 +232,7 @@ async function safePostProcess(
         durationMs: result.durationMs,
         error: result.error,
       },
-      token,
+      ...credentials,
     });
     return evidenceResult.artifactResult;
   } catch (err) {

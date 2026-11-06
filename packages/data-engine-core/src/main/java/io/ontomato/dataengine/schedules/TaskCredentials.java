@@ -5,17 +5,14 @@ import java.nio.charset.StandardCharsets;
 import java.security.GeneralSecurityException;
 import java.security.MessageDigest;
 import java.security.SecureRandom;
-import java.time.Instant;
 import java.util.Arrays;
 import java.util.Base64;
 import javax.crypto.Cipher;
 import javax.crypto.spec.GCMParameterSpec;
 import javax.crypto.spec.SecretKeySpec;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.web.server.ResponseStatusException;
 
 @Service
 public class TaskCredentials {
@@ -72,43 +69,43 @@ public class TaskCredentials {
   }
 
   void lockOwner(String domain, String owner) {
-    store.jdbc().query(
-        "SELECT pg_advisory_xact_lock(hashtextextended(?,0))", r -> {}, domain + "/" + owner);
+    store
+        .jdbc()
+        .query(
+            "SELECT pg_advisory_xact_lock(hashtextextended(?,0))", r -> {}, domain + "/" + owner);
   }
 
   @Transactional
   public void prepare(User user, boolean onlyRenew) {
     lockOwner(user.getDomainId(), user.getId());
     var states =
-        store.jdbc().queryForList(
-            "SELECT valid FROM platform_task_credential WHERE domain_id=? AND owner_id=?",
-            Boolean.class,
-            user.getDomainId(),
-            user.getId());
+        store
+            .jdbc()
+            .queryForList(
+                "SELECT valid FROM platform_task_credential WHERE domain_id=? AND creator_id=?",
+                Boolean.class,
+                user.getDomainId(),
+                user.getId());
     if (states.contains(true) || (onlyRenew && (states.isEmpty() || !identity.interactiveLogin())))
       return;
     if (!identity.interactiveLogin())
-      throw new ResponseStatusException(HttpStatus.FORBIDDEN, "A login session is required");
+      throw new ScheduleException(403, "INTERACTIVE_LOGIN_REQUIRED", "A login session is required");
     var sealed = seal(identity.issueKey(user), secret);
-    store.jdbc().update(
-        """
-        INSERT INTO platform_task_credential VALUES(?,?,?,true)
-        ON CONFLICT(domain_id,owner_id) DO UPDATE SET valid=true,sealed_key=EXCLUDED.sealed_key""",
-        user.getDomainId(),
-        user.getId(),
-        sealed);
-    for (var task : store.credentialPaused(user.getDomainId(), user.getId())) {
-      Instant now = Instant.now();
-      store.jdbc().update(
-          "UPDATE platform_task SET paused_reason=NULL,next_run_at=? WHERE id=?",
-          TaskStore.timestamp(task.definition().next(now, now)),
-          task.id());
-    }
+    store
+        .jdbc()
+        .update(
+            """
+INSERT INTO platform_task_credential VALUES(?,?,?,true)
+ON CONFLICT(domain_id,creator_id) DO UPDATE SET valid=true,sealed_key=EXCLUDED.sealed_key""",
+            user.getDomainId(),
+            user.getId(),
+            sealed);
   }
 
   static class Invalid extends RuntimeException {}
 
-  void prepareForSetup(User user) {
+  @Transactional
+  public void prepareForSetup(User user) {
     prepare(user, false);
     try {
       forOwner(user.getDomainId(), user.getId());
@@ -120,14 +117,43 @@ public class TaskCredentials {
     }
   }
 
+  public void invalidate(String domain, String creator, String rejectedKey) {
+    var rows =
+        store
+            .jdbc()
+            .queryForList(
+                "SELECT sealed_key FROM platform_task_credential WHERE domain_id=? AND creator_id=?"
+                    + " AND valid",
+                String.class,
+                domain,
+                creator);
+    if (rows.isEmpty()) return;
+    String sealed = rows.getFirst();
+    try {
+      if (!java.util.Objects.equals(open(sealed), rejectedKey)) return;
+    } catch (GeneralSecurityException | IllegalArgumentException unreadable) {
+      return;
+    }
+    store
+        .jdbc()
+        .update(
+            "UPDATE platform_task_credential SET valid=false WHERE domain_id=? AND creator_id=? AND"
+                + " sealed_key IS NOT DISTINCT FROM ?",
+            domain,
+            creator,
+            sealed);
+  }
+
   public String forOwner(String domain, String owner) {
     var rows =
-        store.jdbc().queryForList(
-            "SELECT sealed_key FROM platform_task_credential WHERE domain_id=? AND owner_id=? AND"
-                + " valid",
-            String.class,
-            domain,
-            owner);
+        store
+            .jdbc()
+            .queryForList(
+                "SELECT sealed_key FROM platform_task_credential WHERE domain_id=? AND creator_id=?"
+                    + " AND valid",
+                String.class,
+                domain,
+                owner);
     if (rows.isEmpty()) throw new Invalid();
     String sealed = rows.getFirst();
     String key = null;
@@ -138,12 +164,14 @@ public class TaskCredentials {
       readable = false;
     }
     if (readable && identity.accepts(key, domain, owner)) return key;
-    store.jdbc().update(
-        "UPDATE platform_task_credential SET valid=false WHERE domain_id=? AND owner_id=? AND"
-            + " sealed_key IS NOT DISTINCT FROM ?",
-        domain,
-        owner,
-        sealed);
+    store
+        .jdbc()
+        .update(
+            "UPDATE platform_task_credential SET valid=false WHERE domain_id=? AND creator_id=? AND"
+                + " sealed_key IS NOT DISTINCT FROM ?",
+            domain,
+            owner,
+            sealed);
     throw new Invalid();
   }
 }

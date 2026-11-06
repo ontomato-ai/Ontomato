@@ -1,5 +1,5 @@
 import type { RunMeta, RunSummary } from "@ontomato/contracts/autotest";
-import type { CaseResult } from "../types";
+import type { CaseResult, ScheduledRunSource } from "../types";
 /**
  * Run & CaseResult file-based store.
  *
@@ -60,21 +60,32 @@ function atomicWriteJson(filePath: string, data: unknown): void {
 /*  RunMeta                                                            */
 /* ------------------------------------------------------------------ */
 
-export function saveRunMeta(meta: RunMeta): void {
+export function saveRunMeta(meta: RunMeta, schedule?: ScheduledRunSource): void {
   const dir = runDir(meta.runId);
   ensureDir(dir);
-  atomicWriteJson(path.join(dir, "run.json"), meta);
+  const source = schedule ?? readStoredRun(meta.runId)?.schedule;
+  atomicWriteJson(path.join(dir, "run.json"), { ...meta, ...(source ? { schedule: source } : {}) });
   logger.debug("Run meta saved", { runId: meta.runId, status: meta.status });
 }
 
-export function loadRunMeta(runId: string): RunMeta | null {
+function readStoredRun(runId: string): (RunMeta & { schedule?: ScheduledRunSource }) | null {
   const fp = path.join(runDir(runId), "run.json");
   if (!fs.existsSync(fp)) return null;
-  try {
-    return JSON.parse(fs.readFileSync(fp, "utf-8")) as RunMeta;
-  } catch {
-    return null;
-  }
+  const value = JSON.parse(fs.readFileSync(fp, "utf-8")) as RunMeta & { schedule?: ScheduledRunSource };
+  if (value.runId !== runId || !value.summary) throw new Error("Invalid test run metadata");
+  return value;
+}
+
+export function loadRunMeta(runId: string): RunMeta | null {
+  const stored = readStoredRun(runId);
+  if (!stored) return null;
+  // Scheduling attribution belongs to the file store, not the existing public autotest response.
+  const { schedule: _schedule, ...meta } = stored;
+  return meta;
+}
+
+export function scheduledRunSource(runId: string): ScheduledRunSource | null {
+  return readStoredRun(runId)?.schedule ?? null;
 }
 
 export function settleStaleRunMeta(meta: RunMeta): RunMeta {

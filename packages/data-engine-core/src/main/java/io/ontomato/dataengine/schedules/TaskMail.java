@@ -44,19 +44,19 @@ class TaskMail {
     props.setProperty("mail.smtp.writetimeout", "30000");
   }
 
-  void send(TaskStore.Task task, TaskStore.Run run, String result, TaskStore.Failure failure) {
+  void send(TaskStore.Run run, String result, TaskStore.Failure failure) {
     if (sender.getHost().isBlank()) {
-      log.warn("Mail skipped for {}: SMTP_HOST is unset", task.id());
+      log.warn("Mail skipped for {}: SMTP_HOST is unset", run.taskId());
       return;
     }
     try {
-      String locale = task.locale();
+      String locale = run.snapshot().locale();
       String subject =
           language
               .get(
                   locale,
                   "scheduledTasks.mail." + (failure == null ? "completedSubject" : "failedSubject"))
-              .replace("{title}", task.definition().name().replaceAll("[\\r\\n]+", " "));
+              .replace("{title}", run.snapshot().definition().title().replaceAll("[\\r\\n]+", " "));
       String content =
           failure == null
               ? result
@@ -68,18 +68,9 @@ class TaskMail {
               ? language.get(locale, "scheduledTasks.mail.noAnswer")
               : content;
       String html =
-          failure == null && run.target().has("agentId")
+          failure == null
               ? HTML.render(MARKDOWN.parse(summary))
               : "<pre>" + htmlEscape(summary) + "</pre>";
-      if (run.target().has("prompt"))
-        html =
-            "<p>"
-                + htmlEscape(run.target().get("prompt").asText())
-                + "</p>"
-                + html
-                + "<p>"
-                + htmlEscape(language.get(locale, "scheduledTasks.mail.openHint"))
-                + "</p>";
       html =
           "<h2>"
               + htmlEscape(subject)
@@ -91,12 +82,12 @@ class TaskMail {
       var mime = sender.createMimeMessage();
       var message = new MimeMessageHelper(mime, true, "UTF-8");
       message.setFrom(from);
-      message.setTo(task.definition().notifyEmail());
+      message.setTo(run.snapshot().definition().notifyEmail());
       message.setSubject(subject);
       message.setText(summary, html);
       sender.send(mime);
     } catch (RuntimeException | jakarta.mail.MessagingException e) {
-      log.warn("Mail delivery failed for {}: {}", task.id(), e.getClass().getSimpleName());
+      log.warn("Mail delivery failed for {}: {}", run.taskId(), e.getClass().getSimpleName());
     }
   }
 }

@@ -31,9 +31,10 @@ export interface SkillResourceDomainFailure {
 export interface WorkbenchIdentity {
   /** Enterprise verifies the ticket; OSS writes the fixed system/1. Proxies mounted before `/api` never pass through it. */
   authenticate: RequestHandler;
-  /** Enterprise verifies the tk and the domain must equal this run; OSS uses the domainId from run parameters, defaulting to 1. */
+  /** Verify the current credential and ensure that its domain is the run's persisted domain. */
   resolveAutotestActor(input: {
-    token: string;
+    token?: string;
+    apiKey?: string;
     domainId?: string | null;
   }): Promise<{ userId: string; domainId: string }>;
   /**

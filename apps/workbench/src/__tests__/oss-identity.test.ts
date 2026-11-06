@@ -19,7 +19,7 @@ describe("oss identity", () => {
     expect(workbenchIdentity().requireDomainId({})).toBe("1");
   });
 
-  it("keeps MCP on system/1 and autotest on the run domain", async () => {
+  it("keeps MCP and scheduled test actors on system/1 despite declared domains", async () => {
     const req = { header: () => "secret", query: { apiKey: "secret" } } as never;
     await expect(workbenchIdentity().resolveMcpCaller(req, "tool-key")).resolves.toEqual({
       userId: "system",
@@ -30,6 +30,6 @@ describe("oss identity", () => {
     ).resolves.toEqual({ userId: "system", domainId: "1" });
     await expect(
       workbenchIdentity().resolveAutotestActor({ token: "tk", domainId: "run-domain" })
-    ).resolves.toEqual({ userId: "system", domainId: "run-domain" });
+    ).resolves.toEqual({ userId: "system", domainId: "1" });
   });
 });

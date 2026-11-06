@@ -36,8 +36,32 @@
     "value": "The background credential no longer works. Open Scheduled tasks while signed in to renew it."
   },
   {
-    "key": "scheduledTasks.error.agent_unavailable",
-    "value": "The agent is disabled or deleted."
+    "key": "scheduledTasks.error.target_unavailable",
+    "value": "The selected target is disabled, missing or no longer supported."
+  },
+  {
+    "key": "scheduledTasks.error.creator_unavailable",
+    "value": "The creator is no longer an active member of this domain."
+  },
+  {
+    "key": "scheduledTasks.error.permission_denied",
+    "value": "The creator no longer has permission to execute this task."
+  },
+  {
+    "key": "scheduledTasks.error.definition_changed",
+    "value": "The execution definition changed. Review and save the task again."
+  },
+  {
+    "key": "scheduledTasks.error.application_unavailable",
+    "value": "The task's application is no longer installed."
+  },
+  {
+    "key": "scheduledTasks.error.cancelled",
+    "value": "The run was cancelled."
+  },
+  {
+    "key": "scheduledTasks.error.legacy_failure",
+    "value": "A legacy execution failed. See its recorded error for details."
   },
   {
     "key": "scheduledTasks.error.dependency_unavailable",

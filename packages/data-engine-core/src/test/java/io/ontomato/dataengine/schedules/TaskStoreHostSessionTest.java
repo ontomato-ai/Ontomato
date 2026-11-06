@@ -6,31 +6,11 @@ import java.util.UUID;
 import org.junit.jupiter.api.Test;
 
 class TaskStoreHostSessionTest {
-  private TaskStore.Run run(UUID id, UUID sessionId) {
-    return new TaskStore.Run(
-        id, UUID.randomUUID(), null, sessionId, "schedule", "running", null, null, null, null, null);
-  }
-
   @Test
-  void sessionAndRunUseSeparateRuntimeAdmissionKeys() {
-    UUID id = UUID.randomUUID();
-    UUID session = TaskStore.hostSession(run(id, null));
-    assertNotEquals(id, session);
-    assertNotEquals(session, TaskStore.hostSession(run(UUID.randomUUID(), null)));
-  }
-
-  @Test
-  void settlementFindsTheSameSessionAfterALostAdmissionResponse() {
-    UUID id = UUID.randomUUID();
-    UUID dispatched = TaskStore.hostSession(run(id, null));
-    assertEquals(dispatched, TaskStore.hostSession(run(id, null)));
-    assertEquals(dispatched, TaskStore.hostSession(run(id, dispatched)));
-  }
-
-  @Test
-  void existingAndImportedSessionLinksArePreserved() {
-    UUID id = UUID.randomUUID(), session = UUID.randomUUID();
-    assertEquals(session, TaskStore.hostSession(run(id, session)));
-    assertEquals(id, TaskStore.hostSession(run(id, id)));
+  void admissionAndRecoveryUseAStableSeparateSession() {
+    UUID run = UUID.fromString("30000000-0000-4000-8000-000000000002");
+    assertNotEquals(run, TaskStore.session(run));
+    assertEquals(TaskStore.session(run), TaskStore.session(run));
+    assertNotEquals(TaskStore.session(run), TaskStore.session(UUID.randomUUID()));
   }
 }

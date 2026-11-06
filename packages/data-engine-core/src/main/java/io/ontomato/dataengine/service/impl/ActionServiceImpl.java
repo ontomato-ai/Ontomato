@@ -64,6 +64,10 @@ public class ActionServiceImpl implements ActionService {
 
   @Autowired private AgentRuntimeClient runtimeClient;
 
+  @Autowired private io.ontomato.dataengine.service.scheduling.OntologyScheduleReferences scheduledReferences;
+
+  @Autowired private io.ontomato.dataengine.service.IdentityService identity;
+
   @PostConstruct
 	public void initService() {
 		// Periodically clean up unpublished actions older than 12 hours
@@ -78,7 +82,7 @@ public class ActionServiceImpl implements ActionService {
 						for (Object[] o : oList) {
 							Action action = (Action)o[0];
 							if (!Action.ORIGIN_SYSTEM.equals(action.getOrigin())) {
-								if (now - action.getModifyTimestamp() > timeoutTimeRange) {
+								if (now - action.getModifyTimestamp() > timeoutTimeRange && !scheduledReferences.referencesAction(action.getId())) {
 									actionDao.delete(action.getId());
 								}
 							}
@@ -277,6 +281,9 @@ public class ActionServiceImpl implements ActionService {
       if (!action.getDomainId().equals(existAction.getDomainId())) {
         throw new Exception(langService.get(lang, "Action.domainMismatch"));
       }
+      if (scheduledReferences.referencesAction(action.getId()) && (action.getFunction() == null
+          || !java.util.Objects.equals(exist[1], action.getFunction().getId())))
+        throw new IllegalArgumentException("A scheduled action must retain its referenced function");
       storedCodeSegments = existAction.getCodeSegments();
       storedBusinessMeaning = existAction.getBusinessMeaning();
       storedCodeHash = existAction.getCodeHash();
@@ -346,6 +353,7 @@ public class ActionServiceImpl implements ActionService {
 
   @Override
 	public void delete(String id, String lang) throws Exception {
+    if (scheduledReferences.referencesAction(id)) throw new IllegalArgumentException("Action is referenced by a scheduled task");
 		Object[] exist = actionDao.queryById(id);
 		if (exist != null) {
 			Action existAction = (Action)exist[0];
@@ -555,16 +563,13 @@ public class ActionServiceImpl implements ActionService {
 
   @Override
 	public PythonExecuteResult execute(String id, JSONObject param, String lang, User user, UserDataPermission permission, int timeoutMinutes) throws Exception {
+        identity.requireActionExecutionAccess(user.getId(), user.getDomainId());
 		Action action = queryById(id);
 		if (action != null) {
             if (!user.getDomainId().equals(action.getDomainId()) || action.getFunction() == null ||
                 !user.getDomainId().equals(action.getFunction().getDomainId())) throw new IllegalArgumentException("Action is outside the current domain");
 			if (Action.STATUS_PUBLISHED.equals(action.getStatus())) {
-				Function function = action.getFunction();
-				for (Parameter parameter : function.getParameters()) {
-					Object value = param.get(parameter.getName());
-					parameter.setValue(value);
-				}
+                Function function = io.ontomato.dataengine.service.MetricViewBindings.executionFunction(action.getFunction(), param);
 				Object[] o = abcProgramService.execute(UUID.randomUUID().toString(), function, user.getId(), permission, ServiceConst.NOT_SANDBOX, lang, timeoutMinutes, user.getDomainId());
 				PythonExecuteResult result = (PythonExecuteResult)o[1];
                 if (result.getError() != null && !result.getError().isBlank()) { result.setResult(null); result.setError("Action execution failed"); }

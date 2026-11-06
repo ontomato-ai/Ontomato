@@ -19,6 +19,10 @@ public interface ABCProgramService {
 	public Object[] execute(String sessionId, ABCHarnessDashboard dashboard, String userId, UserDataPermission curUserDataPermission, String lang, int timeoutMinutes, String domainId) throws Exception;
 	
 	public Object[] execute(String sessionId, Function function, String userId, UserDataPermission curUserDataPermission, String sandboxId, String lang, int timeoutMinutes, String domainId) throws Exception;
+
+    /** Use a caller-assigned runtime execution ID when durable admission already owns one. */
+    public Object[] execute(String sessionId, Function function, String userId, UserDataPermission permission,
+        String sandboxId, String lang, int timeoutMinutes, String domainId, java.util.UUID executionId) throws Exception;
 	
 	public JSONArray parsePythonReturn(String pythonOutput, String errorMessage) throws Exception;
 

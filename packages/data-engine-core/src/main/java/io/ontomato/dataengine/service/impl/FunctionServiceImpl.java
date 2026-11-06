@@ -9,7 +9,7 @@ import io.ontomato.dataengine.bean.function.ReturnDef;
 import io.ontomato.dataengine.dao.ActionDao;
 import io.ontomato.dataengine.dao.FunctionDao;
 import io.ontomato.dataengine.dao.MetricViewDao;
-import io.ontomato.dataengine.schedules.TaskStore;
+import io.ontomato.dataengine.service.scheduling.OntologyScheduleReferences;
 import org.springframework.transaction.annotation.Transactional;
 import io.ontomato.dataengine.service.AdminService;
 import io.ontomato.dataengine.service.BusinessConfigService;
@@ -44,7 +44,7 @@ public class FunctionServiceImpl implements FunctionService {
 
   @Autowired private ActionDao actionDao;
 
-  @Autowired private TaskStore scheduledTasks;
+  @Autowired private OntologyScheduleReferences scheduledTasks;
 
   @Autowired private OntologyGenerationService generationService;
 

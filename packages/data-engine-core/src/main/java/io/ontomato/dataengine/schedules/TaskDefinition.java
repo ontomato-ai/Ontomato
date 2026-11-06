@@ -2,52 +2,91 @@ package io.ontomato.dataengine.schedules;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import java.time.*;
-import java.util.UUID;
-import org.springframework.http.HttpStatus;
 import org.springframework.scheduling.support.CronExpression;
-import org.springframework.web.server.ResponseStatusException;
 
 public record TaskDefinition(
-    String name,
-    String description,
-    JsonNode target,
+    String title,
+    String appId,
+    JsonNode content,
+    String formRevision,
     JsonNode frequency,
     String timeZone,
     String notifyEmail) {
-  static ResponseStatusException bad(String message) {
-    return new ResponseStatusException(HttpStatus.BAD_REQUEST, message);
+  static ScheduleException bad(String message) {
+    return ScheduleJson.bad(message);
   }
 
-  String application() {
-    return isAgent() ? "agents" : "ontology";
+  static TaskDefinition input(JsonNode value, String defaultZone, boolean update) {
+    if (update)
+      ScheduleJson.keys(
+          value,
+          "title",
+          "appId",
+          "content",
+          "formRevision",
+          "frequency",
+          "timeZone",
+          "notifyEmail",
+          "revision");
+    else
+      ScheduleJson.keys(
+          value,
+          "title",
+          "appId",
+          "content",
+          "formRevision",
+          "frequency",
+          "timeZone",
+          "notifyEmail");
+    if (!value.has("notifyEmail")
+        || (!value.get("notifyEmail").isNull() && !value.get("notifyEmail").isTextual()))
+      throw bad("Notification email must be text or null");
+    if (value.has("timeZone") && !value.get("timeZone").isTextual()) throw bad("Invalid time zone");
+    var result =
+        new TaskDefinition(
+            ScheduleJson.text(value, "title").trim(),
+            ScheduleJson.text(value, "appId"),
+            value.get("content"),
+            ScheduleJson.text(value, "formRevision"),
+            value.get("frequency"),
+            value.has("timeZone") ? value.get("timeZone").asText() : defaultZone,
+            value.get("notifyEmail").isNull() ? null : value.get("notifyEmail").asText());
+    result.validate();
+    return result;
   }
 
-  boolean isAgent() {
-    return "agent".equals(target.path("kind").asText());
+  TaskDefinition validated(ScheduleApplication.Validation validation) {
+    return new TaskDefinition(
+        title,
+        appId,
+        validation.content(),
+        validation.formRevision(),
+        frequency,
+        timeZone,
+        notifyEmail);
   }
 
   void validate() {
-    if (name == null
-        || name.isBlank()
-        || target == null
-        || !target.isObject()
+    if (title == null
+        || title.isBlank()
+        || title.length() > 200
+        || appId == null
+        || !appId.matches("[a-z][a-z0-9-]{0,63}")
+        || formRevision == null
+        || formRevision.isBlank()
         || frequency == null
-        || !frequency.isObject()) throw bad("Name, target and frequency are required");
-    if (isAgent()) {
-      if (target.size() != 3
-          || !target.path("prompt").isTextual()
-          || target.path("prompt").asText().isBlank()
-          || target.path("prompt").asText().length() > 4000) throw bad("Invalid agent prompt");
-      try {
-        UUID.fromString(target.path("agentId").asText());
-      } catch (IllegalArgumentException e) {
-        throw bad("Invalid agent ID");
-      }
-    } else if (!"function".equals(target.path("kind").asText())
-        || target.size() != 2
-        || !target.path("functionId").isTextual()
-        || target.path("functionId").asText().isBlank()) {
-      throw bad("Invalid function target");
+        || !frequency.isObject()
+        || timeZone == null
+        || timeZone.isBlank())
+      throw bad("Title, application, form revision, frequency and time zone are required");
+    ScheduleJson.content(content);
+    switch (frequency.path("kind").asText()) {
+      case "interval" -> ScheduleJson.keys(frequency, "kind", "every", "unit");
+      case "daily" -> ScheduleJson.keys(frequency, "kind", "time");
+      case "weekly" -> ScheduleJson.keys(frequency, "kind", "weekday", "time");
+      case "monthly" -> ScheduleJson.keys(frequency, "kind", "day", "time");
+      case "cron" -> ScheduleJson.keys(frequency, "kind", "expression");
+      default -> throw bad("Invalid frequency");
     }
     if (notifyEmail != null
         && (notifyEmail.length() > 320 || !notifyEmail.matches("[^\\s@]+@[^\\s@]+\\.[^\\s@]+")))

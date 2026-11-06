@@ -329,6 +329,7 @@ router.post("/runs", async (req: Request, res: Response<HttpResponse<RunMeta>>) 
         caseTimeoutSeconds === undefined ? autotestConfig.caseTimeoutMs : caseTimeoutSeconds * 1000,
       userId: identity.userId,
       tk: identity.token,
+      apiKey: identity.apiKey,
     };
 
     const meta = await startRun(runConfig);

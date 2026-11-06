@@ -45,6 +45,12 @@ public class ABCProgramServiceImpl implements ABCProgramService {
   @Override
   public Object[] execute(String id, Function function, String user, UserDataPermission permission,
       String sandbox, String lang, int timeout, String domain) throws Exception {
+    return execute(id, function, user, permission, sandbox, lang, timeout, domain, null);
+  }
+
+  @Override
+  public Object[] execute(String id, Function function, String user, UserDataPermission permission,
+      String sandbox, String lang, int timeout, String domain, java.util.UUID executionId) throws Exception {
     if (!domain.equals(function.getDomainId())) throw new IllegalArgumentException("Function is outside the current domain");
     var parameters = MetricViewBindings.values(function);
     boolean read = Function.OPERATION_READ.equals(function.getOperation());
@@ -53,9 +59,11 @@ public class ABCProgramServiceImpl implements ABCProgramService {
     var graph = read ? sourceAnalysis(function.getReturnDef().getSourceAnalysis(), function.getReturnDef().getOutKeyRefs()) : null;
     if (read && function.getQueryPackage() != null)
       return executePackage(id, function.getQueryPackage(), parameters, graph, user, permission, lang, timeout, domain);
+    var authority = read ? PythonAuthority.read(user, domain) : PythonAuthority.write(user, domain, sandbox)
+        .withClasses(function.getReturnDef() == null ? null : function.getReturnDef().getClassNames());
+    if (executionId != null) authority = authority.forExecution(executionId.toString());
     var result = pythonExecuteService.execute(id, function.getCode(), timeout, lang,
-        read ? PythonAuthority.read(user, domain) : PythonAuthority.write(user, domain, sandbox)
-            .withClasses(function.getReturnDef() == null ? null : function.getReturnDef().getClassNames()), parameters, Map.of());
+        authority, parameters, Map.of());
     return new Object[]{read ? authorized(result, graph, permission) : null, result};
   }
 

@@ -2,19 +2,34 @@ package io.ontomato.dataengine.service.impl;
 
 import io.ontomato.dataengine.core.bean.User;
 import io.ontomato.dataengine.schedules.ScheduleIdentity;
+import io.ontomato.dataengine.service.sys.bean.permission.UserDataPermission;
 import org.springframework.stereotype.Component;
 
 @Component
 public class AnonymousScheduleIdentity implements ScheduleIdentity {
-  public boolean permits(User user, FunctionOperation operation) {
-    return true;
+  private final AnonymousIdentityService identities;
+
+  public AnonymousScheduleIdentity(AnonymousIdentityService identities) {
+    this.identities = identities;
   }
 
-  public String hostOwner(String owner) {
+  public User creator(String domain, String creator) {
+    return "1".equals(domain) && "admin".equals(creator) ? identities.getCurrentUser() : null;
+  }
+
+  public UserDataPermission dataPermission(String domain, String creator) {
+    return identities.getCurrentUserDataPermission();
+  }
+
+  public String hostOwner(String creator) {
     return "system";
   }
 
   public String onlineToken() {
+    return null;
+  }
+
+  public String onlineApiKey() {
     return null;
   }
 
@@ -26,7 +41,7 @@ public class AnonymousScheduleIdentity implements ScheduleIdentity {
     return null;
   }
 
-  public boolean accepts(String key, String domain, String owner) {
-    return "1".equals(domain) && "admin".equals(owner);
+  public boolean accepts(String key, String domain, String creator) {
+    return creator(domain, creator) != null;
   }
 }

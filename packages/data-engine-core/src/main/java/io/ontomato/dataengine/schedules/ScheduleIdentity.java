@@ -1,37 +1,28 @@
 package io.ontomato.dataengine.schedules;
 
 import io.ontomato.dataengine.core.bean.User;
+import io.ontomato.dataengine.service.sys.bean.permission.UserDataPermission;
 
 /**
- * Edition-specific identity only. Function operations retain their existing permission identifiers.
+ * Edition-specific recovery of a persisted creator; application authorization stays with
+ * IdentityService.
  */
 public interface ScheduleIdentity {
-  enum FunctionOperation {
-    LIST("queryList"),
-    READ("queryById"),
-    RESULT("queryResultById"),
-    SAVE("save"),
-    DELETE("delete"),
-    RUN("runOnce"),
-    HISTORY("queryResultPageByTaskId");
-    public final String permission;
+  User creator(String domain, String creator);
 
-    FunctionOperation(String operation) {
-      permission = "/writeTask/" + operation;
-    }
-  }
+  UserDataPermission dataPermission(String domain, String creator);
 
-  boolean permits(User user, FunctionOperation operation);
-
-  default String hostOwner(String owner) {
-    return owner;
+  default String hostOwner(String creator) {
+    return creator;
   }
 
   String onlineToken();
+
+  String onlineApiKey();
 
   boolean interactiveLogin();
 
   String issueKey(User user);
 
-  boolean accepts(String key, String domain, String owner);
+  boolean accepts(String key, String domain, String creator);
 }

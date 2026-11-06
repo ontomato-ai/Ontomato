@@ -1,4 +1,9 @@
 import type { RunCaseResult } from "@ontomato/contracts/autotest";
+export interface ScheduledRunSource {
+  platformRunId: string;
+  creatorId: string;
+  fingerprint: string;
+}
 export interface RunConfig {
   domainId: string;
   caseSetId: string;
@@ -12,6 +17,9 @@ export interface RunConfig {
   userId?: string;
   /** Optional token for authentication passthrough. */
   tk?: string;
+  /** Verified API Key, kept in memory and never written into run metadata. */
+  apiKey?: string;
+  schedule?: ScheduledRunSource;
 }
 
 // ---- Execution Result (from strategy) --------------------------------

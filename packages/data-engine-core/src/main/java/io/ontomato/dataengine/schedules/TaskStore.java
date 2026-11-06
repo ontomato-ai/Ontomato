@@ -1,6 +1,7 @@
 package io.ontomato.dataengine.schedules;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
+import static io.ontomato.dataengine.schedules.ScheduleJson.*;
+
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.annotation.PostConstruct;
@@ -22,21 +23,23 @@ import org.springframework.stereotype.Repository;
 @DependsOn("functionDao")
 public class TaskStore {
   private final JdbcTemplate db;
-  private final ObjectMapper mapper;
   private final DataSource source;
 
   public TaskStore(JdbcTemplate db, ObjectMapper mapper, DataSource source) {
     this.db = db;
-    this.mapper = mapper;
     this.source = source;
   }
 
-  JdbcTemplate jdbc() {
+  public JdbcTemplate jdbc() {
     return db;
   }
 
   @PostConstruct
   void initialize() {
+    if (ScheduleMigration.exists(db, "platform_task") && column(db, "platform_task", "target"))
+      throw new IllegalStateException(
+          "Convert platform schedules offline with forms-check/forms-upgrade before starting"
+              + " DataRAG");
     if (ScheduleMigration.exists(db, "write_task")
         && !ScheduleMigration.exists(db, "platform_task_import")
         && Boolean.TRUE.equals(
@@ -46,95 +49,203 @@ public class TaskStore {
     createTables();
   }
 
+  public static boolean column(JdbcTemplate db, String table, String name) {
+    return Boolean.TRUE.equals(
+        db.queryForObject(
+            "SELECT EXISTS(SELECT FROM information_schema.columns WHERE"
+                + " table_schema=current_schema() AND table_name=? AND column_name=?)",
+            Boolean.class,
+            table,
+            name));
+  }
+
   void createTables() {
     new ResourceDatabasePopulator(new ClassPathResource("platform-schedules.sql")).execute(source);
   }
 
-  record Task(
+  public record Task(
       UUID id,
       String domain,
-      String owner,
-      String appId,
+      String creator,
       TaskDefinition definition,
+      JsonNode summary,
       String locale,
       boolean enabled,
-      String pausedReason,
+      Failure pause,
       Instant nextRunAt,
+      long revision,
       Instant createdAt,
       Instant updatedAt) {}
 
   public record Failure(String code, String message) {}
 
+  public record Snapshot(
+      String domainId,
+      String creatorId,
+      TaskDefinition definition,
+      JsonNode summary,
+      String locale,
+      long taskRevision) {
+    JsonNode wire() {
+      return object(
+          "title",
+          definition.title(),
+          "appId",
+          definition.appId(),
+          "content",
+          definition.content(),
+          "formRevision",
+          definition.formRevision(),
+          "creatorId",
+          creatorId,
+          "summary",
+          summary,
+          "timeZone",
+          definition.timeZone(),
+          "locale",
+          locale,
+          "taskRevision",
+          taskRevision);
+    }
+  }
+
   public record Run(
       UUID id,
       UUID taskId,
-      JsonNode target,
-      UUID sessionId,
+      Snapshot snapshot,
       String trigger,
       String status,
+      Instant scheduledAt,
       Instant startedAt,
       Instant finishedAt,
+      Instant dispatchedAt,
+      Instant deadline,
+      JsonNode handle,
+      JsonNode resultLink,
+      String resultSummary,
+      JsonNode executionDetails,
       Failure error,
       String result,
-      Long spendTime) {}
+      Long spendTime) {
+    public ScheduleApplication.Execution execution() {
+      return new ScheduleApplication.Execution(
+          taskId,
+          id,
+          snapshot.domainId(),
+          snapshot.creatorId(),
+          snapshot.definition(),
+          snapshot.locale(),
+          trigger,
+          scheduledAt,
+          startedAt);
+    }
 
-  private JsonNode json(ResultSet row, String key) throws SQLException {
-    try {
-      return mapper.readTree(row.getString(key));
-    } catch (JsonProcessingException e) {
-      throw new SQLException(e);
+    public JsonNode summaryView() {
+      return object(
+          "id",
+          id,
+          "taskId",
+          taskId,
+          "trigger",
+          trigger,
+          "status",
+          status,
+          "scheduledAt",
+          scheduledAt,
+          "startedAt",
+          startedAt,
+          "finishedAt",
+          finishedAt,
+          "error",
+          error,
+          "resultSummary",
+          resultSummary,
+          "resultLink",
+          resultLink,
+          "spendTime",
+          spendTime);
+    }
+
+    public JsonNode wire() {
+      var value = (com.fasterxml.jackson.databind.node.ObjectNode) summaryView();
+      value.set("snapshot", snapshot.wire());
+      value.set("result", JSON.valueToTree(result));
+      value.set("executionDetails", JSON.valueToTree(executionDetails));
+      return value;
     }
   }
 
   private static Instant instant(ResultSet row, String key) throws SQLException {
-    var stamp = row.getTimestamp(key);
-    return stamp == null ? null : stamp.toInstant();
+    var value = row.getTimestamp(key);
+    return value == null ? null : value.toInstant();
   }
 
-  static Timestamp timestamp(Instant value) {
+  private static JsonNode json(ResultSet row, String key) throws SQLException {
+    String value = row.getString(key);
+    return value == null ? null : parse(value);
+  }
+
+  public static Timestamp timestamp(Instant value) {
     return value == null ? null : Timestamp.from(value);
   }
 
-  private Task task(ResultSet r, int index) throws SQLException {
-    var def =
+  private Task task(ResultSet row, int index) throws SQLException {
+    var definition =
         new TaskDefinition(
-            r.getString("name"),
-            r.getString("description"),
-            json(r, "target"),
-            json(r, "frequency"),
-            r.getString("time_zone"),
-            r.getString("notify_email"));
+            row.getString("title"),
+            row.getString("app_id"),
+            json(row, "content"),
+            row.getString("form_revision"),
+            json(row, "frequency"),
+            row.getString("time_zone"),
+            row.getString("notify_email"));
     return new Task(
-        r.getObject("id", UUID.class),
-        r.getString("domain_id"),
-        r.getString("owner_id"),
-        r.getString("app_id"),
-        def,
-        r.getString("locale"),
-        r.getBoolean("enabled"),
-        r.getString("paused_reason"),
-        instant(r, "next_run_at"),
-        instant(r, "created_at"),
-        instant(r, "updated_at"));
+        row.getObject("id", UUID.class),
+        row.getString("domain_id"),
+        row.getString("creator_id"),
+        definition,
+        json(row, "summary"),
+        row.getString("locale"),
+        row.getBoolean("enabled"),
+        row.getString("pause_code") == null
+            ? null
+            : new Failure(row.getString("pause_code"), row.getString("pause_message")),
+        instant(row, "next_run_at"),
+        row.getLong("revision"),
+        instant(row, "created_at"),
+        instant(row, "updated_at"));
   }
 
-  private Run mapRun(ResultSet r, int index) throws SQLException {
-    var code = r.getString("error_code");
+  private Run mapRun(ResultSet row, int index) throws SQLException {
+    Snapshot snapshot;
+    try {
+      snapshot = JSON.treeToValue(json(row, "definition_snapshot"), Snapshot.class);
+    } catch (Exception error) {
+      throw new SQLException("Invalid execution snapshot", error);
+    }
     return new Run(
-        r.getObject("id", UUID.class),
-        r.getObject("task_id", UUID.class),
-        json(r, "target"),
-        r.getObject("session_id", UUID.class),
-        r.getString("trigger"),
-        r.getString("status"),
-        instant(r, "started_at"),
-        instant(r, "finished_at"),
-        code == null ? null : new Failure(code, r.getString("error_message")),
-        r.getString("result"),
-        r.getObject("spend_time", Long.class));
+        row.getObject("id", UUID.class),
+        row.getObject("task_id", UUID.class),
+        snapshot,
+        row.getString("trigger"),
+        row.getString("status"),
+        instant(row, "scheduled_at"),
+        instant(row, "started_at"),
+        instant(row, "finished_at"),
+        instant(row, "dispatched_at"),
+        instant(row, "deadline"),
+        json(row, "handle"),
+        json(row, "result_link"),
+        row.getString("result_summary"),
+        json(row, "execution_details"),
+        row.getString("error_code") == null
+            ? null
+            : new Failure(row.getString("error_code"), row.getString("error_message")),
+        row.getString("result"),
+        row.getObject("spend_time", Long.class));
   }
 
-  Task get(UUID id, boolean lock) {
+  public Task get(UUID id, boolean lock) {
     return db
         .query(
             "SELECT * FROM platform_task WHERE id=?" + (lock ? " FOR UPDATE" : ""), this::task, id)
@@ -143,144 +254,163 @@ public class TaskStore {
         .orElse(null);
   }
 
-  List<Task> visible(String domain, String owner, boolean functions, String app, UUID agent) {
+  public List<Task> visible(String domain, String creator, String app) {
     return db.query(
         """
-        SELECT * FROM platform_task WHERE domain_id=? AND (owner_id=? OR (? AND owner_id IS NULL))
-          AND (?::text IS NULL OR app_id=?) AND (?::text IS NULL OR target->>'agentId'=?)
-        ORDER BY created_at DESC,id DESC""",
+SELECT t.* FROM platform_task t LEFT JOIN LATERAL
+(SELECT status FROM platform_task_run WHERE task_id=t.id ORDER BY started_at DESC,id DESC LIMIT 1) r ON true
+WHERE t.domain_id=? AND t.creator_id=? AND (?::text IS NULL OR t.app_id=?)
+ORDER BY (t.pause_code IS NOT NULL OR coalesce(r.status='failed',false)) DESC,
+CASE WHEN t.pause_code IS NOT NULL OR r.status='failed' THEN t.updated_at END DESC NULLS LAST,
+CASE WHEN t.pause_code IS NULL AND r.status IS DISTINCT FROM 'failed' THEN t.next_run_at END ASC NULLS LAST,t.id
+""",
         this::task,
         domain,
-        owner,
-        functions,
+        creator,
         app,
-        app,
-        agent == null ? null : agent.toString(),
-        agent == null ? null : agent.toString());
+        app);
   }
 
-  List<Task> credentialPaused(String domain, String owner) {
-    return db.query(
-        "SELECT * FROM platform_task WHERE domain_id=? AND owner_id=? AND enabled AND"
-            + " paused_reason='credential_invalid' FOR UPDATE",
-        this::task,
-        domain,
-        owner);
-  }
-
-  void insert(UUID id, String domain, String owner, TaskDefinition d, String locale, Instant next) {
+  public void insert(
+      UUID id,
+      String domain,
+      String creator,
+      TaskDefinition definition,
+      JsonNode summary,
+      String locale,
+      Instant next,
+      boolean enabled) {
     db.update(
         """
-INSERT INTO platform_task(id,domain_id,owner_id,app_id,name,description,target,frequency,time_zone,
-    notify_email,locale,next_run_at) VALUES (?,?,?,?,?,?,?::jsonb,?::jsonb,?,?,?,?)""",
+INSERT INTO platform_task(id,domain_id,creator_id,app_id,title,content,form_revision,summary,frequency,
+time_zone,notify_email,locale,next_run_at,enabled) VALUES(?,?,?,?,?,?::jsonb,?,?::jsonb,?::jsonb,?,?,?,?,?)
+""",
         id,
         domain,
-        owner,
-        d.application(),
-        d.name(),
-        d.description(),
-        d.target().toString(),
-        d.frequency().toString(),
-        d.timeZone(),
-        d.notifyEmail(),
-        locale,
-        timestamp(next));
-  }
-
-  void update(Task t, TaskDefinition d, String locale, Instant next) {
-    db.update(
-        """
-UPDATE platform_task SET name=?,description=?,target=?::jsonb,frequency=?::jsonb,time_zone=?,
-notify_email=?,locale=?,next_run_at=?,paused_reason=NULL,updated_at=now() WHERE id=?""",
-        d.name(),
-        d.description(),
-        d.target().toString(),
-        d.frequency().toString(),
-        d.timeZone(),
-        d.notifyEmail(),
+        creator,
+        definition.appId(),
+        definition.title(),
+        definition.content().toString(),
+        definition.formRevision(),
+        summary.toString(),
+        definition.frequency().toString(),
+        definition.timeZone(),
+        definition.notifyEmail(),
         locale,
         timestamp(next),
-        t.id());
+        enabled);
   }
 
-  Run run(UUID id) {
+  public void update(
+      Task task, TaskDefinition definition, JsonNode summary, String locale, Instant next) {
+    db.update(
+        """
+UPDATE platform_task SET title=?,app_id=?,content=?::jsonb,form_revision=?,summary=?::jsonb,frequency=?::jsonb,
+time_zone=?,notify_email=?,locale=?,next_run_at=?,pause_code=NULL,pause_message=NULL,revision=revision+1,updated_at=now() WHERE id=?
+""",
+        definition.title(),
+        definition.appId(),
+        definition.content().toString(),
+        definition.formRevision(),
+        summary.toString(),
+        definition.frequency().toString(),
+        definition.timeZone(),
+        definition.notifyEmail(),
+        locale,
+        timestamp(next),
+        task.id());
+  }
+
+  public Run run(UUID id) {
     return db.query("SELECT * FROM platform_task_run WHERE id=?", this::mapRun, id).stream()
         .findFirst()
         .orElse(null);
   }
 
-  java.util.Map<UUID, Run> latest(List<UUID> taskIds) {
-    if (taskIds.isEmpty()) return java.util.Map.of();
-    var named = new org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate(db);
-    return named
-        .query(
-            """
-            SELECT DISTINCT ON (task_id) * FROM platform_task_run WHERE task_id IN (:ids)
-            ORDER BY task_id,started_at DESC,id DESC""",
-            java.util.Map.of("ids", taskIds),
-            this::mapRun)
-        .stream()
-        .collect(
-            java.util.stream.Collectors.toMap(Run::taskId, java.util.function.Function.identity()));
-  }
-
-  List<Run> history(UUID task, Instant before, UUID beforeId, int limit) {
+  public List<Run> history(UUID id, Instant before, UUID beforeId, int limit) {
     return db.query(
         """
-SELECT * FROM platform_task_run WHERE task_id=? AND
-(?::timestamptz IS NULL OR (started_at,id)<(?,?)) ORDER BY started_at DESC,id DESC LIMIT ?""",
+SELECT * FROM platform_task_run WHERE task_id=? AND (?::timestamptz IS NULL OR (started_at,id)<(?,?))
+ORDER BY started_at DESC,id DESC LIMIT ?
+""",
         this::mapRun,
-        task,
+        id,
         timestamp(before),
         timestamp(before),
         beforeId,
         limit);
   }
 
-  Run admit(Task t, UUID id, String trigger) {
+  public UUID active(UUID id) {
+    return db
+        .queryForList(
+            "SELECT id FROM platform_task_run WHERE task_id=? AND status='running'", UUID.class, id)
+        .stream()
+        .findFirst()
+        .orElse(null);
+  }
+
+  public Run latestResult(UUID id) {
+    return db
+        .query(
+            "SELECT * FROM platform_task_run WHERE task_id=? AND result_link IS NOT NULL ORDER BY"
+                + " started_at DESC,id DESC LIMIT 1",
+            this::mapRun,
+            id)
+        .stream()
+        .findFirst()
+        .orElse(null);
+  }
+
+  public Run admit(Task task, UUID id, String trigger, Instant scheduledAt) {
+    var snapshot =
+        new Snapshot(
+            task.domain(),
+            task.creator(),
+            task.definition(),
+            task.summary(),
+            task.locale(),
+            task.revision());
     int rows =
         db.update(
             """
-            INSERT INTO platform_task_run(id,task_id,target,trigger) VALUES(?,?,?::jsonb,?)
-            ON CONFLICT DO NOTHING""",
+INSERT INTO platform_task_run(id,task_id,definition_snapshot,trigger,scheduled_at) VALUES(?,?,?::jsonb,?,?) ON CONFLICT DO NOTHING
+""",
             id,
-            t.id(),
-            t.definition().target().toString(),
-            trigger);
+            task.id(),
+            JSON.valueToTree(snapshot).toString(),
+            trigger,
+            timestamp(scheduledAt));
     return rows == 1 ? run(id) : null;
   }
 
-  // Runtime admission keys are shared across operations. Derive a separate session key so
-  // dispatch and settlement agree even before the host acknowledges it.
-  static UUID hostSession(Run run) {
-    return run.sessionId() != null
-        ? run.sessionId()
-        : UUID.nameUUIDFromBytes(
-            ("platform-task-session:" + run.id()).getBytes(StandardCharsets.UTF_8));
+  public void skipped(Task task, Instant scheduledAt) {
+    var snapshot =
+        new Snapshot(
+            task.domain(),
+            task.creator(),
+            task.definition(),
+            task.summary(),
+            task.locale(),
+            task.revision());
+    db.update(
+        """
+INSERT INTO platform_task_run(id,task_id,definition_snapshot,trigger,status,scheduled_at,finished_at,error_code,error_message)
+VALUES(?,?,?::jsonb,'schedule','skipped',?,now(),'prior_run_active','The previous execution is still running')
+""",
+        UUID.randomUUID(),
+        task.id(),
+        JSON.valueToTree(snapshot).toString(),
+        timestamp(scheduledAt));
   }
 
-  void acknowledgeSession(Run run) {
-    if (run.sessionId() == null)
-      db.update(
-          "UPDATE platform_task_run SET session_id=? WHERE id=? AND session_id IS NULL",
-          hostSession(run),
-          run.id());
-  }
-
-  public List<String> referencedFunctions() {
-    return db.queryForList(
-        "SELECT DISTINCT function_id FROM platform_task WHERE function_id IS NOT NULL",
-        String.class);
-  }
-
-  public boolean references(String id) {
-    return Boolean.TRUE.equals(
-        db.queryForObject(
-            "SELECT EXISTS(SELECT FROM platform_task WHERE function_id=?)", Boolean.class, id));
+  public static UUID session(UUID runId) {
+    return UUID.nameUUIDFromBytes(
+        ("platform-task-session:" + runId).getBytes(StandardCharsets.UTF_8));
   }
 
   public void deleteUser(String id) {
-    db.update("DELETE FROM platform_task WHERE owner_id=?", id);
-    db.update("DELETE FROM platform_task_credential WHERE owner_id=?", id);
+    db.update("DELETE FROM platform_task WHERE creator_id=?", id);
+    db.update("DELETE FROM platform_task_credential WHERE creator_id=?", id);
   }
 }

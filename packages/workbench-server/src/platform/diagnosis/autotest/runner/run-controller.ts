@@ -19,6 +19,7 @@ import {
   computeSummary,
   createEmptyRunSummary,
   loadCaseResults,
+  loadRunMeta,
   saveRunMeta,
   upsertCaseResult,
 } from "../results/store";
@@ -175,7 +176,10 @@ function startSingleRun(runConfig: RunConfig): RunMeta {
     throw new Error("Case set has no cases");
   }
 
-  const runId = `run-${Date.now()}-${randomUUID().replace(/-/g, "").slice(0, 8)}`;
+  const runId = runConfig.schedule
+    ? `run-${runConfig.schedule.platformRunId}`
+    : `run-${Date.now()}-${randomUUID().replace(/-/g, "").slice(0, 8)}`;
+  if (loadRunMeta(runId)) throw new Error("The test run already exists");
   const now = new Date().toISOString();
 
   const meta: RunMeta = {
@@ -189,7 +193,7 @@ function startSingleRun(runConfig: RunConfig): RunMeta {
     updatedAt: now,
   };
 
-  saveRunMeta(meta);
+  saveRunMeta(meta, runConfig.schedule);
 
   const globalAbort = new AbortController();
 
@@ -281,6 +285,7 @@ async function executeRun(runId: string, cases: TestCase[], runConfig: RunConfig
           testCase,
           userId: runConfig.userId,
           tk: runConfig.tk,
+          apiKey: runConfig.apiKey,
           signal: caseAbort.signal,
           caseTimeoutMs: runConfig.caseTimeoutMs,
           // Relay stage-level steps to listeners; caseId lets the frontend

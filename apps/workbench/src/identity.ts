@@ -33,8 +33,8 @@ export const ossIdentity: WorkbenchIdentity = {
     );
   },
 
-  async resolveAutotestActor(input) {
-    return { userId: "system", domainId: input.domainId || "1" };
+  async resolveAutotestActor() {
+    return { userId: "system", domainId: "1" };
   },
 
   async resolveMcpCaller() {

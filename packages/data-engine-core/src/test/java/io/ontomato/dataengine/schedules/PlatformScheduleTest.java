@@ -1,485 +1,891 @@
 package io.ontomato.dataengine.schedules;
 
+import static io.ontomato.dataengine.schedules.ScheduleJson.*;
 import static org.awaitility.Awaitility.await;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
-import io.ontomato.dataengine.bean.PythonExecuteResult;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.sun.net.httpserver.HttpServer;
+import io.ontomato.dataengine.bean.action.Action;
 import io.ontomato.dataengine.bean.function.Function;
+import io.ontomato.dataengine.bean.function.Parameter;
 import io.ontomato.dataengine.config.BusinessConfig;
 import io.ontomato.dataengine.dao.FunctionDao;
 import io.ontomato.dataengine.service.*;
+import io.ontomato.dataengine.service.agent.AgentRuntimeClient;
+import io.ontomato.dataengine.service.impl.ABCProgramServiceImpl;
+import io.ontomato.dataengine.service.impl.PythonExecuteServiceImpl;
+import io.ontomato.dataengine.service.scheduling.*;
 import io.ontomato.dataengine.service.sys.bean.UserDetail;
+import io.ontomato.dataengine.service.sys.bean.permission.UserDataPermission;
 import io.ontomato.dataengine.test.PostgresTestDatabase;
-import java.time.Duration;
+import java.net.InetSocketAddress;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.time.Instant;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicReference;
-import javax.sql.DataSource;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.springframework.aop.support.AopUtils;
-import org.springframework.context.annotation.AnnotationConfigApplicationContext;
-import org.springframework.dao.annotation.PersistenceExceptionTranslationPostProcessor;
 import org.springframework.http.MediaType;
-import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.DataSourceTransactionManager;
+import org.springframework.mock.web.MockHttpServletRequest;
+import org.springframework.test.util.ReflectionTestUtils;
+import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
-import org.springframework.transaction.PlatformTransactionManager;
-import org.springframework.transaction.annotation.EnableTransactionManagement;
 import org.springframework.transaction.support.TransactionTemplate;
 
 class PlatformScheduleTest extends PostgresTestDatabase {
-  @EnableTransactionManagement(proxyTargetClass = true)
-  static class Transactions {}
-
-  private final ObjectMapper json = new ObjectMapper();
   private TaskStore store;
   private TransactionTemplate transactions;
-  private final String function = "write-balances";
+  private FunctionDao functions;
+  private IdentityService identities;
+  private ScheduleIdentity identity;
+  private TaskCredentials credentials;
+  private ScheduleApplications applications;
+  private OntologyScheduleApplication ontology;
+  private PlatformTasks tasks;
+  private UserDetail user;
+  private ActionService actions;
+  private ABCProgramServiceImpl programs;
+  private OntologyScheduleReferences references;
+  private MockMvc http;
 
   @BeforeEach
-  void tables() {
-    wire(new FunctionDao()).initIndex();
-    jdbc.update(
-        "INSERT INTO function (id, domain_id, operation, parameters) VALUES(?,?,?,'[]')",
-        function,
-        "sales",
-        Function.OPERATION_WRITE);
-    store = new TaskStore(jdbc, json, dataSource);
+  void setup() {
+    functions = wire(new FunctionDao());
+    functions.initIndex();
+    jdbc.execute("CREATE TABLE action(id varchar(64) PRIMARY KEY)");
+    store = new TaskStore(jdbc, JSON, dataSource);
     store.initialize();
     transactions = new TransactionTemplate(new DataSourceTransactionManager(dataSource));
-  }
-
-  @Test
-  void functionTargetsListOnlyRunnableFunctionsInTheCurrentDomainWithListPermission()
-      throws Exception {
-    jdbc.update(
-        "UPDATE function SET name='Post balances', description='Nightly posting',"
-            + " modify_timestamp=2 WHERE id=?",
-        function);
-    jdbc.update(
-        """
-INSERT INTO function (id,domain_id,operation,parameters,query_package,modify_timestamp) VALUES
-('other-domain','another',?,'[]',null,1),
-('read-only','sales',?,'[]',null,1),
-('takes-arguments','sales',?,'[{}]',null,1),
-('missing-parameters','sales',?,null,null,1),
-('package-with-argument','sales',?,'[]','{"manifest":{"parameterDefs":[{}]}}',1),
-('package-without-arguments','sales',?,null,'{"manifest":{"parameterDefs":[]}}',1)
-""",
-        Function.OPERATION_WRITE,
-        Function.OPERATION_READ,
-        Function.OPERATION_WRITE,
-        Function.OPERATION_WRITE,
-        Function.OPERATION_WRITE,
-        Function.OPERATION_WRITE);
-    var auth = mock(IdentityService.class);
-    var user = new UserDetail();
+    references = new OntologyScheduleReferences(jdbc);
+    ReflectionTestUtils.invokeMethod(references, "initialize");
+    user = new UserDetail();
     user.setId("alice");
     user.setDomainId("sales");
-    when(auth.getCurrentUser()).thenReturn(user);
-    var permissions = mock(ScheduleIdentity.class);
-    var target = new FunctionTarget(wire(new FunctionDao()), null, null);
-    var tasks =
-        new PlatformTasks(
-            store, auth, permissions, mock(TaskCredentials.class), target, mock(AgentHost.class));
-    var http = MockMvcBuilders.standaloneSetup(new PlatformTaskController(tasks)).build();
-    String path = "/platform/scheduled-tasks/function-targets";
-    when(permissions.permits(user, ScheduleIdentity.FunctionOperation.SAVE)).thenReturn(true);
-    http.perform(get(path)).andExpect(status().isForbidden());
-    when(permissions.permits(user, ScheduleIdentity.FunctionOperation.LIST)).thenReturn(true);
-    var response = http.perform(get(path)).andExpect(status().isOk()).andReturn().getResponse();
-    assertEquals(
-        json.readTree(
-            """
-[{"id":"write-balances","name":"Post balances","description":"Nightly posting"},
- {"id":"package-without-arguments","name":"package-without-arguments","description":null}]
-"""),
-        json.readTree(response.getContentAsByteArray()));
+    user.setEnable(true);
+    identities = mock(IdentityService.class);
+    when(identities.getCurrentUser()).thenReturn(user);
+    identity = mock(ScheduleIdentity.class);
+    when(identity.creator("sales", "alice")).thenReturn(user);
+    var permission = new UserDataPermission();
+    permission.setFullData(true);
+    when(identity.dataPermission(anyString(), anyString())).thenReturn(permission);
+    when(identity.interactiveLogin()).thenReturn(true);
+    when(identity.issueKey(user)).thenReturn("test-key");
+    when(identity.accepts("test-key", "sales", "alice")).thenReturn(true);
+    credentials = new TaskCredentials(store, identity, "test-seal");
+    actions = mock(ActionService.class);
+    when(actions.queryList(anyString(), isNull(), isNull(), anyString())).thenReturn(List.of());
+    programs = new ABCProgramServiceImpl();
+    var configs = mock(BusinessConfigService.class);
+    var config = new BusinessConfig();
+    config.setReportCardPythonTimeout(1);
+    when(configs.get("sales")).thenReturn(config);
+    ontology =
+        new OntologyScheduleApplication(
+            functions, actions, programs, configs, identities, references);
+    var remote = mock(WorkbenchScheduleApplications.class);
+    when(remote.ids()).thenReturn(Set.of());
+    applications = new ScheduleApplications(List.of(ontology), remote);
+    tasks = new PlatformTasks(store, identities, identity, credentials, applications, transactions);
+    ReflectionTestUtils.setField(tasks, "configuredZone", "Asia/Shanghai");
+    http = MockMvcBuilders.standaloneSetup(new PlatformTaskController(tasks)).build();
+    jdbc.update(
+        "INSERT INTO function(id,name,domain_id,operation,parameters,code) VALUES('f','Post"
+            + " balances','sales',?,'[]',?)",
+        Function.OPERATION_WRITE,
+        "# ontomato-python:2\nprint('done')");
   }
 
-  private TaskDefinition task(boolean agent) {
-    var target =
-        agent
-            ? json.createObjectNode()
-                .put("kind", "agent")
-                .put("agentId", UUID.randomUUID().toString())
-                .put("prompt", "check invoices")
-            : json.createObjectNode().put("kind", "function").put("functionId", function);
-    return new TaskDefinition(
-        "Invoices",
-        null,
-        target,
-        json.createObjectNode().put("kind", "interval").put("unit", "hour").put("every", 1),
+  private JsonNode definition(String execution) {
+    Function function = functions.queryById("f");
+    return object(
+        "title",
+        "Daily posting",
+        "appId",
+        "ontology",
+        "content",
+        object("execution", execution),
+        "formRevision",
+        OntologyScheduleApplication.formRevision(
+            function, execution.startsWith("action:") ? "a" : null),
+        "frequency",
+        object("kind", "interval", "every", 1, "unit", "hour"),
+        "timeZone",
         "Asia/Shanghai",
+        "notifyEmail",
         null);
   }
 
+  private void sample(String schema, JsonNode value) throws Exception {
+    String output = System.getenv("SCHEDULE_CONTRACT_OUTPUT");
+    if (output != null)
+      Files.writeString(
+          Path.of(output),
+          object("schema", schema, "value", value).toString() + "\n",
+          java.nio.file.StandardOpenOption.CREATE,
+          java.nio.file.StandardOpenOption.APPEND);
+  }
+
   @Test
-  void springRepositoryProxyServesTargetsCreatesTaskAndRunsDueSlot() throws Exception {
-    var user = new UserDetail();
+  void privateOwnershipTypedHttpAndRevisionChecks() throws Exception {
+    UUID id = UUID.randomUUID();
+    var definition = definition("function:f");
+    var created =
+        http.perform(
+                post("/platform/scheduled-tasks")
+                    .header("Idempotency-Key", id)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(definition.toString()))
+            .andExpect(status().isCreated())
+            .andReturn()
+            .getResponse();
+    var task = parse(created.getContentAsString());
+    sample("platformTaskSchema", task);
+    assertEquals("alice", task.path("creatorId").asText());
+    http.perform(
+            post("/platform/scheduled-tasks")
+                .header("Idempotency-Key", id)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(definition.toString()))
+        .andExpect(status().isOk());
+    user.setId("bob");
+    assertEquals(0, tasks.list(null).path("tasks").size());
+    http.perform(get("/platform/scheduled-tasks/" + id)).andExpect(status().isNotFound());
     user.setId("alice");
-    user.setDomainId("sales");
-    var auth = mock(IdentityService.class);
-    when(auth.getCurrentUser()).thenReturn(user);
-    var permissions = mock(ScheduleIdentity.class);
-    when(permissions.permits(user, ScheduleIdentity.FunctionOperation.LIST)).thenReturn(true);
-    when(permissions.permits(user, ScheduleIdentity.FunctionOperation.SAVE)).thenReturn(true);
-    var configs = mock(BusinessConfigService.class);
-    when(configs.get("sales")).thenReturn(new BusinessConfig());
-    var programs = mock(ABCProgramService.class);
-    var result = new PythonExecuteResult();
-    result.setResult("balances posted");
-    when(programs.execute(
-            anyString(),
-            any(Function.class),
-            isNull(),
-            any(),
-            anyString(),
-            anyString(),
-            anyInt(),
-            eq("sales")))
-        .thenReturn(new Object[] {null, result});
+    var invalid =
+        ((com.fasterxml.jackson.databind.node.ObjectNode) definition.deepCopy())
+            .put("ownerId", "bob");
+    http.perform(
+            post("/platform/scheduled-tasks")
+                .header("Idempotency-Key", UUID.randomUUID())
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(invalid.toString()))
+        .andExpect(status().isBadRequest());
+    var update =
+        ((com.fasterxml.jackson.databind.node.ObjectNode) definition.deepCopy()).put("revision", 2);
+    http.perform(
+            put("/platform/scheduled-tasks/" + id)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(update.toString()))
+        .andExpect(status().isConflict());
+    var switched = tasks.enabled(id, object("enabled", false, "revision", 1), "en");
+    sample("platformTaskSchema", switched);
+    assertNull(store.get(id, false).nextRunAt());
+    sample("platformTaskListSchema", tasks.list(null));
+    sample("platformScheduleApplicationsSchema", tasks.applications("zh-CN"));
+  }
 
-    try (var context = new AnnotationConfigApplicationContext()) {
-      context.register(Transactions.class, PersistenceExceptionTranslationPostProcessor.class);
-      context.registerBean(DataSource.class, () -> dataSource);
-      context.registerBean(JdbcTemplate.class, () -> jdbc);
-      context.registerBean(ObjectMapper.class, () -> json);
-      context.registerBean(PlatformTransactionManager.class, transactions::getTransactionManager);
-      context.registerBean(TransactionTemplate.class, () -> transactions);
-      context.registerBean(IdentityService.class, () -> auth);
-      context.registerBean(ScheduleIdentity.class, () -> permissions);
-      context.registerBean(BusinessConfigService.class, () -> configs);
-      context.registerBean(ABCProgramService.class, () -> programs);
-      context.registerBean(LangService.class, () -> mock(LangService.class));
-      context.register(
-          FunctionDao.class,
-          TaskStore.class,
-          FunctionTarget.class,
-          TaskCredentials.class,
-          AgentHost.class,
-          TaskMail.class,
-          PlatformTasks.class,
-          PlatformTaskController.class,
-          PlatformScheduler.class);
-      context.refresh();
-
-      assertTrue(AopUtils.isCglibProxy(context.getBean(TaskStore.class)));
-      var http =
-          MockMvcBuilders.standaloneSetup(context.getBean(PlatformTaskController.class)).build();
-      String path = "/platform/scheduled-tasks";
-      var targets =
-          http.perform(get(path + "/function-targets"))
-              .andExpect(status().isOk())
-              .andReturn()
-              .getResponse();
-      assertEquals(
-          function, json.readTree(targets.getContentAsByteArray()).get(0).get("id").asText());
-
-      var id = UUID.randomUUID();
-      var created =
-          http.perform(
-                  post(path)
-                      .header("Idempotency-Key", id.toString())
-                      .contentType(MediaType.APPLICATION_JSON)
-                      .content(json.writeValueAsBytes(task(false))))
-              .andExpect(status().isCreated())
-              .andReturn()
-              .getResponse();
-      assertEquals(
-          id.toString(), json.readTree(created.getContentAsByteArray()).get("id").asText());
-      jdbc.update("UPDATE platform_task SET next_run_at=now()-interval '1 second' WHERE id=?", id);
-      context.getBean(PlatformScheduler.class).tick();
-      await()
-          .atMost(Duration.ofSeconds(5))
-          .untilAsserted(
-              () ->
-                  assertEquals(
-                      List.of("balances posted"),
-                      jdbc.queryForList(
-                          "SELECT result FROM platform_task_run WHERE task_id=? AND"
-                              + " trigger='schedule' AND status='completed'",
-                          String.class,
-                          id)));
+  @Test
+  void governanceUsesThePersistedCreatorAndItsOwnWorkRecord() throws Exception {
+    var agentStore =
+        new io.ontomato.dataengine.service.agent.OntologyAgentStore(
+            jdbc, transactions.getTransactionManager());
+    agentStore.initialize();
+    var grants =
+        new QueryGrantService(
+            jdbc, "governance-signing", new WorkbenchServiceAuthentication("service"));
+    grants.initialize();
+    var captured = new AtomicReference<com.alibaba.fastjson2.JSONObject>();
+    var fixtureError = new AtomicReference<Throwable>();
+    var fixture = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+    fixture.createContext(
+        "/v1",
+        exchange -> {
+          byte[] response;
+          try {
+            String path = exchange.getRequestURI().getPath();
+            if (exchange.getRequestMethod().equals("POST") && path.endsWith("/runs")) {
+              var request =
+                  com.alibaba.fastjson2.JSON.parseObject(exchange.getRequestBody().readAllBytes());
+              String run = exchange.getRequestHeaders().getFirst("Idempotency-Key");
+              String token =
+                  request
+                      .getJSONObject("environment")
+                      .getJSONObject("secrets")
+                      .getString("ONTOMATO_GOVERNANCE_TK");
+              captured.set(
+                  grants.verify(
+                      token,
+                      run,
+                      "/ontology/ai/knowledge-governance/session/runs/" + run + "/actions/read"));
+              response = "{}".getBytes();
+            } else if (path.endsWith("/status"))
+              response = "{\"run\":{\"status\":\"stopped\",\"stopReason\":\"stop\"}}".getBytes();
+            else if (path.endsWith("/final-reply"))
+              response =
+                  "{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"Review completed\"}]}"
+                      .getBytes();
+            else response = "{\"latestRun\":null}".getBytes();
+            exchange.sendResponseHeaders(200, response.length);
+            exchange.getResponseBody().write(response);
+          } catch (Throwable error) {
+            fixtureError.set(error);
+            response = error.toString().getBytes();
+            exchange.sendResponseHeaders(500, response.length);
+            exchange.getResponseBody().write(response);
+          } finally {
+            exchange.close();
+          }
+        });
+    fixture.start();
+    try {
+      var runtime =
+          new AgentRuntimeClient(
+              "http://127.0.0.1:" + fixture.getAddress().getPort(), "host", "http://fixture");
+      var definitions = mock(io.ontomato.dataengine.service.agent.OntologyAgentDefinitions.class);
+      when(definitions.resource(anyString())).thenCallRealMethod();
+      when(definitions.governance(anyString(), anyString(), anyLong()))
+          .thenReturn(new com.alibaba.fastjson2.JSONObject());
+      var governance =
+          new io.ontomato.dataengine.service.agent.KnowledgeGovernanceService(
+              agentStore,
+              runtime,
+              definitions,
+              grants,
+              mock(KnowledgeService.class),
+              mock(AdminService.class));
+      governance.initialize();
+      when(identities.hasKnowledgeGovernanceAccess("alice", "sales")).thenReturn(true);
+      var access =
+          new io.ontomato.dataengine.service.agent.OntologyAgentAccess(
+              mock(QueryAccessService.class), identities, grants, agentStore);
+      var provider =
+          new io.ontomato.dataengine.service.agent.scheduling.GovernanceScheduleApplication(
+              governance, access, runtime, agentStore, identities);
+      var registry = new ScheduleApplications(List.of(provider), mockWorkbench());
+      var service =
+          new PlatformTasks(store, identities, identity, credentials, registry, transactions);
+      ReflectionTestUtils.setField(service, "configuredZone", "UTC");
+      UUID task = UUID.randomUUID(), run = UUID.randomUUID();
+      var input = fixtureDefinition("governance");
+      ((com.fasterxml.jackson.databind.node.ObjectNode) input)
+          .set("content", object("instruction", "Review knowledge"));
+      ((com.fasterxml.jackson.databind.node.ObjectNode) input).put("formRevision", "governance-v1");
+      service.create(task, input, "en", true);
+      service.manual(task, run, "en");
+      var scheduler =
+          new PlatformScheduler(
+              store, transactions, registry, credentials, identity, mock(TaskMail.class));
+      try {
+        scheduler.dispatch(run);
+        assertNull(fixtureError.get(), String.valueOf(fixtureError.get()));
+        assertEquals("alice", captured.get().getString("userId"));
+        assertEquals("sales", captured.get().getString("domainId"));
+        assertEquals("knowledge-governance", captured.get().getString("purpose"));
+        jdbc.update(
+            "UPDATE ontology_governance_work SET work=jsonb_set(work,'{summary}','\"Three"
+                + " recommendations\"') WHERE run_id=?",
+            run);
+        scheduler.settle(Instant.now());
+        assertEquals("completed", store.run(run).status());
+        assertEquals("Three recommendations", store.run(run).resultSummary());
+        assertEquals("Review completed", store.run(run).result());
+        sample("platformTaskRunSchema", store.run(run).wire());
+        assertEquals(
+            0, jdbc.queryForObject("SELECT count(*) FROM platform_task_credential", Integer.class));
+        when(identities.hasKnowledgeGovernanceAccess("alice", "sales")).thenReturn(false);
+        assertEquals(
+            "PERMISSION_DENIED",
+            assertThrows(
+                    ScheduleException.class, () -> service.manual(task, UUID.randomUUID(), "en"))
+                .code);
+      } finally {
+        scheduler.stop();
+      }
+    } finally {
+      fixture.stop(0);
     }
   }
 
   @Test
-  void bothDueTargetsUseTheSameAdmissionAndOnlyTheScannerSettlesAnAgent() throws Exception {
-    UUID a = UUID.randomUUID(), f = UUID.randomUUID();
-    var agent = task(true);
-    Instant due = Instant.now().minusSeconds(1);
-    store.insert(a, "sales", "alice", agent, "en", due);
-    store.insert(f, "sales", null, task(false), "en", due);
-    var host = mock(AgentHost.class);
-    var started = new AtomicReference<TaskStore.Run>();
-    doAnswer(
-            call -> {
-              started.set(call.getArgument(1));
-              return null;
-            })
-        .when(host)
-        .start(any(), any(), eq("alice-key"));
-    var functions = mock(FunctionTarget.class);
-    var result = new PythonExecuteResult();
-    result.setResult("3 updated");
-    result.setSpendTime(56L);
-    when(functions.timeout("sales")).thenReturn(1);
-    when(functions.execute(any(), any(), eq(1))).thenReturn(result);
-    var credentials = mock(TaskCredentials.class);
-    when(credentials.forOwner("sales", "alice")).thenReturn("alice-key");
-    var identity = mock(ScheduleIdentity.class);
-    when(identity.hostOwner("alice")).thenReturn("alice");
-    when(host.status(any(), any(), eq("alice")))
-        .thenReturn(json.createObjectNode().put("status", "running"));
+  void emptyObjectPostBodiesFromTheWorkbenchAreAccepted() throws Exception {
+    UUID taskId = UUID.randomUUID();
+    tasks.create(taskId, definition("function:f"), "en", true);
+    http.perform(
+            post("/platform/scheduled-tasks/credential/renew")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{}"))
+        .andExpect(status().isNoContent());
+    var response =
+        http.perform(
+                post("/platform/scheduled-tasks/" + taskId + "/runs")
+                    .header("Idempotency-Key", UUID.randomUUID())
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content("{}"))
+            .andExpect(status().isAccepted())
+            .andReturn()
+            .getResponse();
+    sample("platformTaskRunSchema", parse(response.getContentAsString()));
+  }
+
+  @Test
+  void dynamicFormsClearParametersAndPreserveUnavailableTargets() throws Exception {
+    var parameter = new Parameter();
+    parameter.setName("departments");
+    parameter.setType(Parameter.TYPE_STRING_ARRAY);
+    jdbc.update(
+        "UPDATE function SET parameters=? WHERE id='f'",
+        com.alibaba.fastjson2.JSON.toJSONString(List.of(parameter)));
+    var actor =
+        new ScheduleApplication.Actor(
+            user, identity.dataPermission("sales", "alice"), null, null, "en");
+    var form =
+        ontology.form(
+            new ScheduleApplication.FormInput(
+                object("execution", "function:f", "parameter:obsolete", "old"),
+                "execution",
+                null,
+                "Asia/Shanghai"),
+            actor);
+    assertFalse(form.path("values").has("parameter:obsolete"));
+    assertEquals("", form.path("values").path("parameter:departments").asText());
+    sample("platformScheduleFormSchema", form);
+    var removed =
+        ontology.form(
+            new ScheduleApplication.FormInput(
+                object("execution", "function:missing"), null, UUID.randomUUID(), "Asia/Shanghai"),
+            actor);
+    assertFalse(removed.path("submittable").asBoolean());
+    sample("platformScheduleFormSchema", removed);
+  }
+
+  @Test
+  void scheduledActionsAndFunctionsReachRealGrantSigningAndVerification() throws Exception {
+    var grants =
+        new QueryGrantService(jdbc, "test-signing", new WorkbenchServiceAuthentication("service"));
+    grants.initialize();
+    var claims = new AtomicReference<com.alibaba.fastjson2.JSONObject>();
+    var fixtureError = new AtomicReference<Throwable>();
+    var fixture = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+    fixture.createContext(
+        "/v1/code-executions",
+        exchange -> {
+          byte[] output;
+          try {
+            if (exchange.getRequestMethod().equals("POST")) {
+              var body =
+                  com.alibaba.fastjson2.JSON.parseObject(exchange.getRequestBody().readAllBytes());
+              String token =
+                  body.getJSONObject("environment")
+                      .getJSONObject("secrets")
+                      .getString("ONTOMATO_TK");
+              String run = exchange.getRequestHeaders().getFirst("Idempotency-Key");
+              claims.set(grants.verify(token, run, "/writeFunctionOperation/update"));
+              assertEquals("alice", claims.get().getString("userId"));
+              assertEquals("sales", claims.get().getString("domainId"));
+              assertEquals("sandbox-write", claims.get().getString("purpose"));
+              var request = new MockHttpServletRequest();
+              request.addHeader("tk", token);
+              request.setAttribute(QueryGrantService.ATTRIBUTE, claims.get());
+              var lookup = mock(DataPermissionLookup.class);
+              var currentPermission = identity.dataPermission("sales", "alice");
+              when(lookup.getDataPermission("alice", "sales")).thenReturn(currentPermission);
+              assertEquals(
+                  "alice",
+                  new QueryAccessService(identities, lookup, grants)
+                      .access(request)
+                      .user()
+                      .getId());
+              output = "{}".getBytes();
+            } else if (exchange.getRequestURI().getPath().endsWith("/outputs/stdout"))
+              output = "done".getBytes();
+            else
+              output =
+                  "{\"status\":\"stopped\",\"exitCode\":0,\"outputs\":[{\"name\":\"stdout\"}]}"
+                      .getBytes();
+            exchange.sendResponseHeaders(200, output.length);
+            exchange.getResponseBody().write(output);
+          } catch (Throwable failure) {
+            fixtureError.set(failure);
+            output = failure.toString().getBytes();
+            exchange.sendResponseHeaders(500, output.length);
+            exchange.getResponseBody().write(output);
+          } finally {
+            exchange.close();
+          }
+        });
+    fixture.start();
+    try {
+      var entrance = new BackendSessionEntrance();
+      ReflectionTestUtils.setField(
+          entrance, "sessionRegistryService", mock(SessionRegistryService.class));
+      entrance.publishInstance();
+      var runtime =
+          new AgentRuntimeClient(
+              "http://127.0.0.1:" + fixture.getAddress().getPort(), "host", "http://fixture");
+      ReflectionTestUtils.setField(
+          programs,
+          "pythonExecuteService",
+          new PythonExecuteServiceImpl(new RuntimeCodeClient(runtime), grants));
+      var action = new Action();
+      action.setId("a");
+      action.setName("Action posting");
+      action.setDomainId("sales");
+      action.setStatus(Action.STATUS_PUBLISHED);
+      action.setFunction(functions.queryById("f"));
+      when(actions.queryById("a")).thenReturn(action);
+      when(actions.queryList(Action.STATUS_PUBLISHED, null, null, "sales"))
+          .thenReturn(List.of(action));
+      jdbc.update("INSERT INTO action VALUES('a')");
+      for (String target : List.of("function:f", "action:a")) {
+        UUID id = UUID.randomUUID();
+        tasks.create(id, definition(target), "en", true);
+        UUID runId = UUID.randomUUID();
+        tasks.manual(id, runId, "en");
+        var scheduler =
+            new PlatformScheduler(
+                store, transactions, applications, credentials, identity, mock(TaskMail.class));
+        scheduler.dispatch(runId);
+        scheduler.stop();
+        var result = store.run(runId);
+        assertNull(fixtureError.get(), String.valueOf(fixtureError.get()));
+        assertEquals("completed", result.status(), String.valueOf(result.error()));
+        assertEquals("done", result.result());
+        assertNotNull(claims.get());
+        sample("platformTaskRunSchema", result.wire());
+        assertTrue(references.references("f"));
+      }
+      verify(identities, atLeastOnce()).requireActionExecutionAccess("alice", "sales");
+      assertThrows(
+          IllegalArgumentException.class,
+          () ->
+              grants.issue(
+                  null,
+                  "sales",
+                  "sandbox-write",
+                  UUID.randomUUID().toString(),
+                  System.currentTimeMillis() + 60000,
+                  List.of(),
+                  "none"));
+    } finally {
+      fixture.stop(0);
+    }
+  }
+
+  @Test
+  void liveRunsPreventEditingAndManualReplayKeepsTheSnapshot() {
+    UUID id = UUID.randomUUID();
+    tasks.create(id, definition("function:f"), "en", true);
+    UUID run = UUID.randomUUID();
+    var first = tasks.manual(id, run, "en");
+    assertEquals(first, tasks.manual(id, run, "en"));
+    var update =
+        ((com.fasterxml.jackson.databind.node.ObjectNode) definition("function:f"))
+            .put("revision", 1);
+    assertEquals(
+        "TASK_RUNNING",
+        assertThrows(ScheduleException.class, () -> tasks.update(id, update, "en")).code);
+    assertEquals(
+        "TASK_RUNNING",
+        assertThrows(ScheduleException.class, () -> tasks.delete(id, "\"1\"")).code);
+  }
+
+  @Test
+  void revokedExecutionPermissionPausesWithoutNullUserExecution() {
+    UUID id = UUID.randomUUID();
+    tasks.create(id, definition("function:f"), "en", true);
+    UUID run = UUID.randomUUID();
+    tasks.manual(id, run, "en");
+    doThrow(
+            new org.springframework.web.server.ResponseStatusException(
+                org.springframework.http.HttpStatus.FORBIDDEN, "No execution permission"))
+        .when(identities)
+        .requireActionExecutionAccess("alice", "sales");
     var scheduler =
         new PlatformScheduler(
-            store, transactions, host, functions, credentials, identity, mock(TaskMail.class));
+            store, transactions, applications, credentials, identity, mock(TaskMail.class));
+    scheduler.dispatch(run);
+    scheduler.stop();
+    assertEquals("permission_denied", store.run(run).error().code());
+    assertEquals("permission_denied", store.get(id, false).pause().code());
+  }
+
+  private ScheduleApplication fixtureApplication(
+      String id, boolean remote, AtomicReference<Boolean> fail) {
+    return new ScheduleApplication() {
+      public String id() {
+        return id;
+      }
+
+      public String description(String locale) {
+        return "Test scheduling application";
+      }
+
+      public boolean remote() {
+        return remote;
+      }
+
+      public void authorize(Actor actor) {
+        if (fail.get()) throw new ScheduleException(403, "PERMISSION_DENIED", "Revoked");
+      }
+
+      public JsonNode form(FormInput input, Actor actor) {
+        return ScheduleForms.form(id, "v1", array(), object());
+      }
+
+      public Validation validate(TaskDefinition definition, Actor actor) {
+        return new Validation(definition.content(), "v1", definition.timeZone(), array(), null);
+      }
+
+      public JsonNode start(Execution execution, Actor actor) {
+        var state = ScheduleForms.execution("running");
+        state.set("handle", object("runId", execution.runId()));
+        return state;
+      }
+
+      public JsonNode status(Execution execution, JsonNode handle) {
+        return ScheduleForms.execution("completed");
+      }
+    };
+  }
+
+  private JsonNode fixtureDefinition(String app) {
+    return object(
+        "title",
+        "Fixture",
+        "appId",
+        app,
+        "content",
+        object(),
+        "formRevision",
+        "v1",
+        "frequency",
+        object("kind", "interval", "every", 1, "unit", "hour"),
+        "timeZone",
+        "UTC",
+        "notifyEmail",
+        null);
+  }
+
+  @Test
+  void dueSlotSkipsAnActiveRunAndScannerSettlesWithoutReadSideEffects() throws Exception {
+    var provider = fixtureApplication("fixture", false, new AtomicReference<>(false));
+    var registry = new ScheduleApplications(List.of(provider), mockWorkbench());
+    var service =
+        new PlatformTasks(store, identities, identity, credentials, registry, transactions);
+    ReflectionTestUtils.setField(service, "configuredZone", "UTC");
+    UUID task = UUID.randomUUID();
+    service.create(task, fixtureDefinition("fixture"), "en", true);
+    jdbc.update("UPDATE platform_task SET next_run_at=now()-interval '1 second' WHERE id=?", task);
+    var scheduler =
+        new PlatformScheduler(
+            store, transactions, registry, credentials, identity, mock(TaskMail.class));
+    ReflectionTestUtils.setField(scheduler, "nextSettlement", Instant.now().plusSeconds(3600));
     try {
       scheduler.tick();
-      long until = System.nanoTime() + Duration.ofSeconds(5).toNanos();
-      while (started.get() == null
-          || !store.history(f, null, null, 1).getFirst().status().equals("completed")) {
-        assertTrue(System.nanoTime() < until, "both due runs should be dispatched");
-        Thread.sleep(20);
-      }
+      await()
+          .atMost(java.time.Duration.ofSeconds(5))
+          .until(
+              () -> store.active(task) != null && store.run(store.active(task)).handle() != null);
+      UUID run = store.active(task);
+      assertEquals("running", service.detail(task, run).path("status").asText());
+      jdbc.update(
+          "UPDATE platform_task SET next_run_at=now()-interval '1 second' WHERE id=?", task);
       scheduler.tick();
-      assertEquals("running", store.run(started.get().id()).status());
-      assertEquals("schedule", started.get().trigger());
-      assertEquals("3 updated", store.history(f, null, null, 1).getFirst().result());
-      verify(functions, times(1)).execute(any(), any(), eq(1));
-      when(host.status(any(), any(), eq("alice")))
-          .thenReturn(json.createObjectNode().put("status", "completed").put("answer", "Done"));
+      assertEquals(
+          1,
+          jdbc.queryForObject(
+              "SELECT count(*) FROM platform_task_run WHERE task_id=? AND status='skipped'",
+              Integer.class,
+              task));
       scheduler.settle(Instant.now());
-      assertEquals("Done", store.run(started.get().id()).result());
-      assertEquals(1, store.history(a, null, null, 10).size());
-      assertTrue(store.references(function));
+      assertEquals("completed", store.run(run).status());
+      sample("platformTaskRunSchema", store.run(run).wire());
     } finally {
       scheduler.stop();
     }
   }
 
+  private WorkbenchScheduleApplications mockWorkbench() {
+    var workbench = mock(WorkbenchScheduleApplications.class);
+    when(workbench.ids()).thenReturn(Set.of());
+    return workbench;
+  }
+
   @Test
-  void listCombinesOnlyPermittedDomainTasksAndPrivateAgentTasks() {
-    UUID a = UUID.randomUUID(), b = UUID.randomUUID(), f = UUID.randomUUID();
-    var agent = task(true);
-    store.insert(a, "sales", "alice", agent, "en", null);
-    store.insert(b, "sales", "bob", task(true), "en", null);
-    store.insert(f, "sales", null, task(false), "en", null);
-    store.insert(UUID.randomUUID(), "another", "alice", task(true), "en", null);
-    assertEquals(
-        List.of(a),
-        store.visible("sales", "alice", false, null, null).stream()
-            .map(TaskStore.Task::id)
-            .toList());
-    assertEquals(2, store.visible("sales", "alice", true, null, null).size());
-    assertEquals(f, store.visible("sales", "bob", true, "ontology", null).getFirst().id());
-    assertEquals(
-        a,
-        store
-            .visible(
-                "sales",
-                "alice",
-                true,
-                "agents",
-                UUID.fromString(agent.target().get("agentId").asText()))
-            .getFirst()
-            .id());
-    var auth = mock(IdentityService.class);
-    var user = new UserDetail();
-    user.setId("alice");
-    user.setDomainId("sales");
-    when(auth.getCurrentUser()).thenReturn(user);
-    var permissions = mock(ScheduleIdentity.class);
+  void credentialRenewalOnlyResumesEnabledTasksAfterRevalidation() {
+    var failure = new AtomicReference<>(false);
+    var provider = fixtureApplication("fixture", true, failure);
+    var registry = new ScheduleApplications(List.of(provider), mockWorkbench());
     var service =
-        new PlatformTasks(
-            store,
-            auth,
-            permissions,
-            mock(TaskCredentials.class),
-            mock(FunctionTarget.class),
-            mock(AgentHost.class));
-    assertEquals(
-        404,
-        assertThrows(
-                org.springframework.web.server.ResponseStatusException.class,
-                () -> service.history(b, null, 20))
-            .getStatusCode()
-            .value());
-    assertEquals(
-        403,
-        assertThrows(
-                org.springframework.web.server.ResponseStatusException.class,
-                () -> service.manual(f, UUID.randomUUID()))
-            .getStatusCode()
-            .value());
-    when(permissions.permits(user, ScheduleIdentity.FunctionOperation.RUN)).thenReturn(true);
-    UUID key = UUID.randomUUID();
-    assertEquals(key, service.manual(f, key).id());
-    assertEquals(key, service.manual(f, key).id());
-    assertThrows(
-        org.springframework.web.server.ResponseStatusException.class,
-        () -> service.manual(f, UUID.randomUUID()));
-  }
-
-  @Test
-  void importedWorkbenchKeyResolvesOnlyForItsOriginalOwnerAndLoginRenewsAfterRejection() {
-    var sealed = "stc1.BwcHBwcHBwcHBwcH_2uRKjV3Jn-h1oWwwXzofQQ7RyqdBlkVXpyD2l04Dg";
-    jdbc.execute(
-        "CREATE TABLE scheduled_task_credentials(domain_id text,owner_id text,sealed_key text,state"
-            + " text)");
-    jdbc.update("INSERT INTO scheduled_task_credentials VALUES('sales','alice',?,'valid')", sealed);
-    var migration =
-        new ScheduleMigration(
-            jdbc,
-            store,
-            false,
-            "UTC",
-            "UTC",
-            "",
-            "old-runtime-test-token",
-            "new-runtime-test-token");
-    transactions.executeWithoutResult(tx -> migration.copy());
-    var identity = mock(ScheduleIdentity.class);
-    when(identity.accepts("member-test-key", "sales", "alice")).thenReturn(true, false);
-    when(identity.accepts("replacement", "sales", "alice")).thenReturn(true);
-    var credentials = new TaskCredentials(store, identity, "new-runtime-test-token");
-    assertEquals("member-test-key", credentials.forOwner("sales", "alice"));
-    assertThrows(TaskCredentials.Invalid.class, () -> credentials.forOwner("sales", "alice"));
-    var task = UUID.randomUUID();
-    store.insert(task, "sales", "alice", task(true), "en", null);
-    jdbc.update("UPDATE platform_task SET paused_reason='credential_invalid' WHERE id=?", task);
-    var user = new UserDetail();
-    user.setId("alice");
-    user.setDomainId("sales");
-    when(identity.interactiveLogin()).thenReturn(true);
-    when(identity.issueKey(user)).thenReturn("replacement");
-    transactions.executeWithoutResult(tx -> credentials.prepare(user, true));
-    assertEquals("replacement", credentials.forOwner("sales", "alice"));
-    assertNull(store.get(task, false).pausedReason());
+        new PlatformTasks(store, identities, identity, credentials, registry, transactions);
+    ReflectionTestUtils.setField(service, "configuredZone", "UTC");
+    UUID task = UUID.randomUUID();
+    service.create(task, fixtureDefinition("fixture"), "en", true);
+    UUID run = UUID.randomUUID();
+    service.manual(task, run, "en");
+    when(identity.accepts("test-key", "sales", "alice")).thenReturn(false);
+    var scheduler =
+        new PlatformScheduler(
+            store, transactions, registry, credentials, identity, mock(TaskMail.class));
+    scheduler.dispatch(run);
+    scheduler.stop();
+    assertEquals("credential_invalid", store.get(task, false).pause().code());
+    when(identity.accepts("test-key", "sales", "alice")).thenReturn(true);
+    failure.set(true);
+    service.renewOnVisit("en");
+    assertEquals("permission_denied", store.get(task, false).pause().code());
+    assertNull(store.get(task, false).nextRunAt());
+    failure.set(false);
+    service.enabled(
+        task, object("enabled", true, "revision", store.get(task, false).revision()), "en");
+    assertNull(store.get(task, false).pause());
     assertNotNull(store.get(task, false).nextRunAt());
+    long revision = store.get(task, false).revision();
+    service.enabled(task, object("enabled", false, "revision", revision), "en");
+    service.renewOnVisit("en");
+    assertFalse(store.get(task, false).enabled());
+    assertNull(store.get(task, false).nextRunAt());
+  }
+
+  @Test
+  void aLateFailureCannotRepauseATaskTheCreatorAlreadyDisabled() {
+    var failure = new AtomicReference<>(false);
+    var provider = fixtureApplication("fixture", false, failure);
+    var registry = new ScheduleApplications(List.of(provider), mockWorkbench());
+    var service =
+        new PlatformTasks(store, identities, identity, credentials, registry, transactions);
+    ReflectionTestUtils.setField(service, "configuredZone", "UTC");
+    UUID task = UUID.randomUUID(), run = UUID.randomUUID();
+    service.create(task, fixtureDefinition("fixture"), "en", true);
+    service.manual(task, run, "en");
+    service.enabled(task, object("enabled", false, "revision", 1), "en");
+    failure.set(true);
+    var scheduler =
+        new PlatformScheduler(
+            store, transactions, registry, credentials, identity, mock(TaskMail.class));
+    scheduler.dispatch(run);
+    scheduler.stop();
+    assertEquals("failed", store.run(run).status());
+    assertNull(store.get(task, false).pause());
+    assertFalse(store.get(task, false).enabled());
+  }
+
+  @Test
+  void workbenchAuthenticationRejectionInvalidatesTheSealedCredentialAndPausesTheTask()
+      throws Exception {
+    var fixture = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+    fixture.createContext(
+        "/api/platform/schedule-applications/agents",
+        exchange -> {
+          assertEquals("test-key", exchange.getRequestHeaders().getFirst("X-API-Key"));
+          byte[] body =
+              "{\"success\":false,\"code\":\"AUTH_INVALID\",\"error\":\"Invalid credential\"}"
+                  .getBytes();
+          exchange.sendResponseHeaders(401, body.length);
+          exchange.getResponseBody().write(body);
+          exchange.close();
+        });
+    fixture.start();
+    try {
+      var remote =
+          new WorkbenchScheduleApplications(
+              "http://127.0.0.1:" + fixture.getAddress().getPort(), "service", identity);
+      var registry =
+          new ScheduleApplications(List.of(remote.application("agents")), mockWorkbench());
+      credentials.prepareForSetup(user);
+      UUID task = UUID.randomUUID();
+      var definition = TaskDefinition.input(fixtureDefinition("agents"), "UTC", false);
+      store.insert(task, "sales", "alice", definition, array(), "en", Instant.now(), true);
+      UUID run = UUID.randomUUID();
+      transactions.executeWithoutResult(
+          tx -> store.admit(store.get(task, false), run, "schedule", Instant.now()));
+      var scheduler =
+          new PlatformScheduler(
+              store, transactions, registry, credentials, identity, mock(TaskMail.class));
+      scheduler.dispatch(run);
+      scheduler.stop();
+      assertEquals("credential_invalid", store.run(run).error().code());
+      assertEquals("credential_invalid", store.get(task, false).pause().code());
+      assertFalse(
+          jdbc.queryForObject(
+              "SELECT valid FROM platform_task_credential WHERE domain_id='sales' AND"
+                  + " creator_id='alice'",
+              Boolean.class));
+    } finally {
+      fixture.stop(0);
+    }
+  }
+
+  @Test
+  void migrationPreservesHistoryAndDeterministicallySelectsTheOldestBuiltInAdministrator()
+      throws Exception {
+    jdbc.execute(
+        "DROP TABLE ontology_schedule_reference; DROP TABLE platform_task_run; DROP TABLE"
+            + " platform_task; DROP TABLE platform_task_credential");
+    jdbc.execute(
+        """
+CREATE TABLE sys_domain(id text PRIMARY KEY);
+CREATE TABLE sys_user(id text PRIMARY KEY,active int,enable int);
+CREATE TABLE sys_domain_membership(user_id text,domain_id text,is_admin int,create_time timestamptz);
+INSERT INTO sys_domain VALUES('sales');
+INSERT INTO sys_user VALUES('admin-z',1,1),('admin-a',1,1),('admin-new',1,1);
+INSERT INTO sys_domain_membership VALUES('admin-z','sales',1,'2026-01-01Z'),('admin-a','sales',1,'2026-01-01Z'),('admin-new','sales',1,'2026-02-01Z');
+CREATE TABLE platform_task(id uuid PRIMARY KEY,domain_id text,owner_id text,app_id text,name text,description text,target jsonb,
+frequency jsonb,time_zone text,function_id text GENERATED ALWAYS AS(target->>'functionId') STORED REFERENCES function(id),enabled boolean,paused_reason text,next_run_at timestamptz,notify_email text,locale text,created_at timestamptz,updated_at timestamptz);
+CREATE TABLE platform_task_run(id uuid PRIMARY KEY,task_id uuid REFERENCES platform_task(id),target jsonb,session_id uuid,trigger text,status text,dispatched_at timestamptz,deadline timestamptz,started_at timestamptz,finished_at timestamptz,result text,error_code text,error_message text,spend_time bigint);
+CREATE TABLE platform_task_credential(domain_id text,owner_id text,sealed_key text,valid boolean,PRIMARY KEY(domain_id,owner_id));
+""");
+    UUID functionTask = UUID.randomUUID(),
+        agentTask = UUID.randomUUID(),
+        history = UUID.randomUUID(),
+        session = UUID.randomUUID();
+    var functionTarget = object("kind", "function", "functionId", "f");
+    var agentTarget =
+        object("kind", "agent", "agentId", UUID.randomUUID(), "prompt", "First line\nSecond line");
+    for (UUID id : List.of(functionTask, agentTask))
+      jdbc.update(
+          "INSERT INTO platform_task VALUES(?, 'sales', ?, ?,"
+              + " '',NULL,?::jsonb,?::jsonb,'Asia/Shanghai',DEFAULT,true,NULL,'2026-12-01Z',NULL,'en','2026-01-01Z','2026-01-02Z')",
+          id,
+          id.equals(agentTask) ? "alice" : null,
+          id.equals(agentTask) ? "agents" : "ontology",
+          id.equals(agentTask) ? agentTarget.toString() : functionTarget.toString(),
+          object("kind", "daily", "time", "09:00").toString());
+    jdbc.update(
+        "INSERT INTO platform_task_run"
+            + " VALUES(?,?,?::jsonb,?,'schedule','completed',NULL,NULL,'2026-01-03Z','2026-01-03Z','old"
+            + " result',NULL,NULL,7)",
+        history,
+        functionTask,
+        functionTarget.toString(),
+        null);
+    jdbc.update(
+        "INSERT INTO platform_task_credential VALUES('sales','alice',?,true)",
+        TaskCredentials.seal("test-key", "test-seal"));
+    var migration = new ScheduleMigration(jdbc, store, false);
+    migration.check();
+    assertTrue(TaskStore.column(jdbc, "platform_task", "target"));
+    transactions.executeWithoutResult(tx -> migration.upgrade());
+    assertEquals("admin-a", store.get(functionTask, false).creator());
+    assertEquals("First line", store.get(agentTask, false).definition().title());
+    assertEquals("old result", store.run(history).result());
+    assertEquals("unknown", store.run(history).executionDetails().path("legacyIdentity").asText());
+    assertTrue(references.references("f"));
+    assertFalse(TaskStore.column(jdbc, "platform_task", "target"));
+    assertEquals(Instant.parse("2026-12-01T00:00:00Z"), store.get(functionTask, false).nextRunAt());
+    transactions.executeWithoutResult(tx -> migration.upgrade());
+    assertEquals(2, jdbc.queryForObject("SELECT count(*) FROM platform_task", Integer.class));
+    sample("platformTaskSchema", tasks.detail(agentTask));
+    sample("platformTaskRunSchema", store.run(history).wire());
+  }
+
+  @Test
+  void migrationWithNoBuiltInAdministratorStopsWithoutChangingTables() {
+    jdbc.execute(
+        "DROP TABLE ontology_schedule_reference; DROP TABLE platform_task_run; DROP TABLE"
+            + " platform_task; DROP TABLE platform_task_credential");
+    jdbc.execute(
+        """
+CREATE TABLE platform_task(id uuid PRIMARY KEY,domain_id text,owner_id text,target jsonb);
+CREATE TABLE platform_task_run(status text,finished_at timestamptz);
+CREATE TABLE sys_domain(id text); CREATE TABLE sys_user(id text,active int,enable int);
+CREATE TABLE sys_domain_membership(user_id text,domain_id text,is_admin int,create_time timestamptz);
+INSERT INTO platform_task VALUES('10000000-0000-4000-8000-000000000001','sales',NULL,'{"kind":"function","functionId":"f"}');
+""");
+    var migration = new ScheduleMigration(jdbc, store, false);
+    assertThrows(IllegalStateException.class, migration::check);
+    assertTrue(TaskStore.column(jdbc, "platform_task", "target"));
+  }
+
+  @Test
+  void originalFunctionImportWritesOnlyTheNewShapeAndRetiresSeparately() throws Exception {
+    jdbc.update("UPDATE function SET domain_id='1' WHERE id='f'");
+    jdbc.execute(
+        """
+CREATE TABLE write_task(id text,name text,description text,function_id text,status text,cron text,service_id text,domain_id text,create_timestamp bigint,modify_timestamp bigint);
+CREATE TABLE write_task_result(id text,write_task_id text,execute_timestamp bigint,spend_time bigint,result text,error text);
+""");
+    UUID task = UUID.randomUUID(), run = UUID.randomUUID();
+    jdbc.update(
+        "INSERT INTO write_task VALUES(?,'Old function',NULL,'f','STOPPED','0 0 2 * *"
+            + " *','','1',1000,2000)",
+        task.toString());
+    jdbc.update(
+        "INSERT INTO write_task_result VALUES(?,?,3000,7,'original output',NULL)",
+        run.toString(),
+        task.toString());
+    var migration = new ScheduleMigration(jdbc, store, true);
+    transactions.executeWithoutResult(
+        tx ->
+            ReflectionTestUtils.invokeMethod(
+                migration, "importOriginal", jdbc, "UTC", "Asia/Shanghai"));
+    assertEquals("admin", store.get(task, false).creator());
+    assertFalse(store.get(task, false).enabled());
+    assertEquals("unknown", store.run(run).trigger());
+    assertEquals("original output", store.run(run).result());
+    assertFalse(TaskStore.column(jdbc, "platform_task", "target"));
+    assertTrue(ScheduleMigration.exists(jdbc, "write_task"));
+    transactions.executeWithoutResult(
+        tx ->
+            ReflectionTestUtils.invokeMethod(
+                migration, "importOriginal", jdbc, "UTC", "Asia/Shanghai"));
+    assertEquals(1, jdbc.queryForObject("SELECT count(*) FROM platform_task", Integer.class));
+    ReflectionTestUtils.invokeMethod(migration, "retire", jdbc);
+    assertFalse(ScheduleMigration.exists(jdbc, "write_task"));
+    sample("platformTaskRunSchema", store.run(run).wire());
+  }
+
+  @Test
+  void intervalMonthlyAndLocalTimeParametersKeepTheirSemantics() {
+    var monthly =
+        new TaskDefinition(
+            "Month end",
+            "ontology",
+            object(),
+            "v1",
+            object("kind", "monthly", "day", 31, "time", "09:00"),
+            "Asia/Shanghai",
+            null);
+    Instant now = Instant.parse("2026-02-01T00:00:00Z");
+    assertEquals(Instant.parse("2026-02-28T01:00:00Z"), monthly.next(now, now));
+    var time = new Parameter();
+    time.setName("cutoff");
+    time.setType(Parameter.TYPE_TIME);
+    var array = new Parameter();
+    array.setName("times");
+    array.setType(Parameter.TYPE_TIME_ARRAY);
+    var numbers = new Parameter();
+    numbers.setName("numbers");
+    numbers.setType(Parameter.TYPE_NUMBER_ARRAY);
+    var function = new Function();
+    function.setParameters(List.of(time, array, numbers));
+    var values =
+        ScheduleParameters.values(
+            function,
+            object(
+                "parameter:cutoff",
+                "",
+                "parameter:times",
+                "2026-11-06\n\n2026-11-07 09:30\n2026-11-08T01:30:00Z",
+                "parameter:numbers",
+                "10\n\n20.5"),
+            "Asia/Shanghai",
+            now);
+    assertEquals(now.toString(), values.getString("cutoff"));
+    assertEquals("2026-11-05T16:00:00Z", values.getJSONArray("times").getString(0));
+    assertEquals(2, values.getJSONArray("numbers").size());
     assertThrows(
-        TaskCredentials.Invalid.class, () -> credentials.forOwner("other-domain", "alice"));
-  }
-
-  @Test
-  void functionDispatchRetainsTheLegacyExecutionIdentity() throws Exception {
-    var dao = mock(io.ontomato.dataengine.dao.FunctionDao.class);
-    var programs = mock(ABCProgramService.class);
-    var asset = new Function();
-    asset.setId(function);
-    asset.setDomainId("sales");
-    asset.setOperation(Function.OPERATION_WRITE);
-    asset.setParameters(List.of());
-    when(dao.queryById(function)).thenReturn(asset);
-    UUID id = UUID.randomUUID();
-    store.insert(id, "sales", null, task(false), "en", null);
-    var t = store.get(id, false);
-    var run = store.admit(t, UUID.randomUUID(), "manual");
-    var result = new PythonExecuteResult();
-    when(programs.execute(
-            eq(id.toString()),
-            same(asset),
-            isNull(),
-            eq(new io.ontomato.dataengine.service.sys.bean.permission.UserDataPermission()),
-            eq(io.ontomato.dataengine.config.ServiceConst.NOT_SANDBOX),
-            eq("en"),
-            eq(60),
-            eq("sales")))
-        .thenReturn(new Object[] {null, result});
-    assertSame(result, new FunctionTarget(dao, programs, null).execute(t, run, 60));
-  }
-
-  @Test
-  void endOfMonthAndIntervalSlotsRetainLocalTimeAndCadence() {
-    var target = task(true).target();
-    var month =
-        new TaskDefinition(
-            "Month",
-            null,
-            target,
-            json.createObjectNode().put("kind", "monthly").put("day", 31).put("time", "09:00"),
-            "Asia/Shanghai",
-            null);
-    var feb = Instant.parse("2028-02-02T00:00:00Z");
-    assertEquals(Instant.parse("2028-02-29T01:00:00Z"), month.next(feb, feb));
-    var hour = task(true);
-    assertEquals(feb.plusSeconds(4 * 3600), hour.next(feb, feb.plusSeconds(3 * 3600 + 20)));
-    var cron =
-        new TaskDefinition(
-            "Cron",
-            null,
-            target,
-            json.createObjectNode().put("kind", "cron").put("expression", "5 0 9 L * ?"),
-            "Asia/Shanghai",
-            null);
-    assertEquals(Instant.parse("2028-02-29T01:00:05Z"), cron.next(feb, feb));
-  }
-
-  @Test
-  void offlineImportPreservesBothRuleTypesAndHistoriesWithoutAssigningFunctionOwners() {
-    var agent = UUID.randomUUID();
-    var fn = UUID.randomUUID();
-    var agentId = UUID.randomUUID();
-    var session = UUID.randomUUID();
-    jdbc.execute(
-        "CREATE TABLE scheduled_tasks(id uuid,domain_id text,owner_id text,agent_id uuid,prompt"
-            + " text,frequency jsonb,notify_email text,locale text,enabled boolean,paused_reason"
-            + " text,next_run_at timestamptz,created_at timestamptz,updated_at timestamptz)");
-    jdbc.update(
-        "INSERT INTO scheduled_tasks VALUES(?,'sales','alice',?,'weekly"
-            + " invoices','{\"kind\":\"weekly\",\"weekday\":1,\"time\":\"09:00\"}',null,'en',true,null,now(),now(),now())",
-        agent,
-        agentId);
-    jdbc.execute(
-        "CREATE TABLE scheduled_task_runs(id uuid,task_id uuid,session_id uuid,trigger text,status"
-            + " text,error_code text,error_message text,started_at timestamptz,finished_at"
-            + " timestamptz)");
-    jdbc.update(
-        "INSERT INTO scheduled_task_runs"
-            + " VALUES(?,?,?,'schedule','completed',null,null,now(),now())",
-        UUID.randomUUID(),
-        agent,
-        session);
-    jdbc.execute(
-        "CREATE TABLE write_task(id text,domain_id text,service_id text,function_id text,name"
-            + " text,description text,status text,cron text,create_timestamp"
-            + " bigint,modify_timestamp bigint)");
-    jdbc.update(
-        "INSERT INTO write_task VALUES(?,'sales','svc',?,'End of month','post ledger','STOPPED','0"
-            + " 0 12 L * ?',0,1000)",
-        fn.toString(),
-        function);
-    jdbc.execute(
-        "CREATE TABLE write_task_result(id text,write_task_id text,execute_timestamp bigint,result"
-            + " text,error text,spend_time bigint)");
-    jdbc.update(
-        "INSERT INTO write_task_result VALUES(?,?,1000,'posted',null,25)",
-        UUID.randomUUID().toString(),
-        fn.toString());
-    var migration =
-        new ScheduleMigration(
-            jdbc, store, false, "America/New_York", "Asia/Shanghai", "svc", "", "");
-    transactions.executeWithoutResult(tx -> migration.copy());
-    transactions.executeWithoutResult(tx -> migration.copy());
-    assertEquals("alice", store.get(agent, false).owner());
-    assertEquals("credential_invalid", store.get(agent, false).pausedReason());
-    assertEquals("America/New_York", store.get(agent, false).definition().timeZone());
-    assertEquals(session, store.history(agent, null, null, 1).getFirst().sessionId());
-    assertNull(store.get(fn, false).owner());
-    assertFalse(store.get(fn, false).enabled());
-    assertEquals("posted", store.history(fn, null, null, 1).getFirst().result());
-    assertEquals("unknown", store.history(fn, null, null, 1).getFirst().trigger());
-    assertEquals(25L, store.history(fn, null, null, 1).getFirst().spendTime());
-    migration.retire();
-    assertNull(jdbc.queryForObject("SELECT to_regclass('write_task')::text", String.class));
-    assertEquals(2, jdbc.queryForObject("SELECT count(*) FROM platform_task_run", Integer.class));
+        ScheduleException.class,
+        () ->
+            ScheduleParameters.values(
+                function,
+                object(
+                    "parameter:cutoff",
+                    "2026-02-30",
+                    "parameter:times",
+                    "2026-11-06",
+                    "parameter:numbers",
+                    "1"),
+                "Asia/Shanghai",
+                now));
   }
 }
