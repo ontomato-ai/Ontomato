@@ -8,6 +8,7 @@ import OntologyModelCatalog from "./components/OntologyModelCatalog.vue";
 import OntologyObjectCreateDialog from "./components/OntologyObjectCreateDialog.vue";
 import OntologyObjectDetail from "./components/OntologyObjectDetail.vue";
 import OntologyRelationDetail from "./components/OntologyRelationDetail.vue";
+import WorkflowCatalog from "./components/WorkflowCatalog.vue";
 import { managerPaths } from "./navigation";
 import type { AssetTab, ModelResource } from "./workspace";
 
@@ -184,6 +185,13 @@ const AssetDetailPage = defineComponent({
   },
 });
 
+const WorkflowPage = defineComponent({
+  name: "ManagerWorkflowPage",
+  setup() {
+    return () => h("section", { class: "asset-surface" }, [h(WorkflowCatalog)]);
+  },
+});
+
 const VisualModelingPage = defineComponent({
   name: "ManagerVisualModelingPage",
   setup() {
@@ -287,6 +295,7 @@ export function managerRoutes(): RouteRecordRaw[] {
             meta: { page: `/assets/${kind}` },
           },
         ]),
+        { path: managerPaths.workflows, component: WorkflowPage, meta: { page: managerPaths.workflows } },
         { path: managerPaths.visualModeling, component: VisualModelingPage, meta: { page: managerPaths.visualModeling } },
         { path: managerPaths.knowledge, component: KnowledgePage, meta: { page: managerPaths.knowledge } },
       ],

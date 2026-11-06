@@ -204,6 +204,31 @@ export interface SmartAsset {
   [key: string]: unknown;
 }
 
+/** One step of a workflow: the role that owns it and the action it runs. */
+export interface WorkflowStepRecord {
+  stepNo?: number;
+  name?: string;
+  roleCode?: string;
+  actionId?: string;
+  actionType?: string;
+  assignRule?: string;
+  description?: string;
+}
+
+/**
+ * A business process published as one unit of authority. `status` is only a projection of the newest
+ * event; `version` is the revision whose grants are in force.
+ */
+export interface WorkflowRecord {
+  id?: string;
+  name: string;
+  description?: string | null;
+  status?: string;
+  version?: number | null;
+  runClassName?: string | null;
+  steps?: WorkflowStepRecord[];
+}
+
 export type ManagerClient = ReturnType<typeof createManagerClient>;
 
 /**
@@ -570,6 +595,32 @@ export function createManagerClient(
     return post("/admin/delBussinessKnowledge", { knowledgeID });
   }
 
+  /** The domain's workflows; a workflow is a published unit of authority, not a running process. */
+  async function loadWorkflows(): Promise<WorkflowRecord[]> {
+    const response = await post("/workflow/query", {});
+    const source = Array.isArray(response.data) ? response.data : [];
+    return source as WorkflowRecord[];
+  }
+
+  /** Create (no id) or edit a draft workflow. A draft grants nothing until it is activated. */
+  function saveWorkflow(workflow: WorkflowRecord) {
+    return post("/workflow/save", { ...workflow });
+  }
+
+  /** Activation freezes a numbered revision and writes the grants its steps name. */
+  function activateWorkflow(id: string) {
+    return post("/workflow/activate", { id });
+  }
+
+  /** Deactivation withdraws only the grants the active revision wrote. */
+  function deactivateWorkflow(id: string) {
+    return post("/workflow/deactivate", { id });
+  }
+
+  function deleteWorkflow(id: string) {
+    return post("/workflow/delete", { id });
+  }
+
   return {
     request,
     loadInstanceGraphStatistics,
@@ -600,5 +651,10 @@ export function createManagerClient(
     listKnowledge,
     saveKnowledge,
     deleteKnowledge,
+    loadWorkflows,
+    saveWorkflow,
+    activateWorkflow,
+    deactivateWorkflow,
+    deleteWorkflow,
   };
 }

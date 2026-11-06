@@ -10,7 +10,8 @@ import {
   SquareFunction,
   Table2,
   Tags,
-  Workflow,
+  Workflow as WorkflowIcon,
+  GitBranch,
 } from "lucide-vue-next";
 import type { ManagerCounts } from "./context";
 import type { OntologyResourceCounts } from "./workspace";
@@ -41,6 +42,7 @@ export const managerPaths = {
   attributes: "/attributes",
   relations: "/relations",
   actions: "/assets/actions",
+  workflows: "/assets/workflows",
   visualModeling: "/visual-modeling",
   dataBrowser: "/data",
   metrics: "/assets/metrics",
@@ -79,7 +81,8 @@ const pages = [
   page(managerPaths.attributes, "nav.ontologyAttributes", Tags, "ontology", MODELING, "attributes"),
   page(managerPaths.relations, "nav.relationTypes", Link2, "ontology", MODELING, "relations"),
   page(managerPaths.actions, "nav.actionManagement", MousePointerClick, "ontology", ["action-management"], "actions"),
-  page(managerPaths.visualModeling, "nav.visualModeling", Workflow, "ontology", MODELING),
+  page(managerPaths.workflows, "nav.workflowManagement", GitBranch, "ontology", ["action-management"]),
+  page(managerPaths.visualModeling, "nav.visualModeling", WorkflowIcon, "ontology", MODELING),
   page(managerPaths.dataBrowser, "nav.dataBrowser", Table2, "ontology", ["data-browser"]),
   page(managerPaths.metrics, "nav.metrics", ChartColumn, "assets", MODELING, "metrics"),
   page(managerPaths.functions, "nav.functionDefinitions", SquareFunction, "assets", MODELING, "functions"),
