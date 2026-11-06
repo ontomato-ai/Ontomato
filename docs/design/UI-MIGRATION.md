@@ -59,8 +59,8 @@ long data, keyboard, dropdown/overlay and permission variants.
 | Object browser | /browser/data/:className? | DataBrowser + InstanceGraph; table/filter/graph | In progress | Pending |
 | Star map (enterprise) | /browser/graph | LegacyGraphView + legacy-graph; iframe/WebGL | Not started | Pending theme/interaction |
 | Dashboards | /dashboards | DashboardView/Panel; board/chart/table/AI drawer | Implemented | Pending populated charts and editor |
-| Platform schedules | /schedules | PlatformSchedulesList/Form/Runs; table/dialog | In progress | Pending |
-| Agent schedules | /agents/schedules | Same schedules components; agent scope | In progress | Pending owner/agent filtering |
+| Platform schedules | /schedules, ?app=, ?taskId=&runId= | PlatformSchedulesPage + ScheduleCard/ScheduleTaskDialog/ScheduleRunsDrawer; cards, one form, records drawer | Implemented | Pending 128 screenshots (both themes, both editions) |
+| Agent schedules | /agents/schedules | Redirect to /schedules?app=agents | Implemented | Not applicable (redirect) |
 | Operations chat | /ops/diagnosis | ObserveLayout / AgentShell | Implemented (shared) | Pending |
 | Turn evidence | /ops/turn, /:turnKey | ListDetail/ArtifactDetail/FilePreview | Implemented | Pending real artifacts |
 | Operations tests/results/cases | /ops/test, /results, /cases, /autotest/runs/:runId/cases/:caseId | AutotestPage/TestPage/TestcasesPage/ResultsPage/CaseArtifactPage | In progress | Pending run history/edit dialogs |
@@ -133,5 +133,5 @@ workbench-ui 81. Both frontend builds pass. These establish implementation healt
 
 Still **Pending** and requiring a human or image-capable reviewer with real data: populated tables and long values,
 expanded/streaming conversations with artifacts, every dialog and drawer, permission-gated enterprise pages,
-the legacy star-map iframe in both themes, and the full 200% zoom pass. `/agents/schedules` still redirects to
-`/schedules`; that is existing routing, not a styling defect.
+the legacy star-map iframe in both themes, and the full 200% zoom pass. `/agents/schedules` redirects to
+`/schedules?app=agents`; that is routing, not a styling defect.

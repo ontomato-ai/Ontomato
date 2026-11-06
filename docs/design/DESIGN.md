@@ -167,8 +167,8 @@ it as a lighter card; tables, inputs, cards, toolbars and dialogs keep their sur
 (`--el-bg-color-page`).
 
 An application owns the addresses under its prefix. Addresses that moved redirect in the front end:
-`/agents/dashboards` → `/dashboards`, `/agents/schedules` → `/schedules` (carrying the agent it was narrowed to),
-`/agents/settings?tab=capabilities` → `/agents/settings/capabilities`.
+`/agents/dashboards` → `/dashboards`, `/agents/schedules` → `/schedules?app=agents` (the list filters by application
+only), `/agents/settings?tab=capabilities` → `/agents/settings/capabilities`.
 
 Application columns reference 244px; inspectors 320px. Continuous panels use 1px separators without shadows. At
 1440×900 use standard density; at 1280×720 retain usable actions; below 760px reflow/stack. Use container queries for
