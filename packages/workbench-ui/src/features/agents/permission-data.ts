@@ -1,7 +1,10 @@
+import { platformRoutes as routes } from "@ontomato/platform-shell/routes";
+
 /**
  * The capability codes of the agent platform, as the permission centre declares them. They are the codes of the pages
  * the old admin console had, unchanged, so existing grants keep working (those pages now live in the function area).
- * This module is data only — no Vue, no browser APIs — so the application declaration can be generated without a browser.
+ * This module is data only — no Vue, no browser APIs — so the application declaration can be generated without a browser;
+ * the addresses come from the platform's route table, which is data only as well.
  */
 export interface WorkbenchPermissionGroupData {
   key: string;
@@ -32,7 +35,7 @@ export const workbenchPermissionGroups = {
 export const workbenchPermissions = {
   businessAgents: {
     permissions: ["analysis-agent"],
-    path: "/agents/settings",
+    path: routes.agents.path,
     titleKey: "nav.businessAgents",
     ownerApplication: "workbench",
     groupKey: "app-capabilities",
@@ -40,21 +43,21 @@ export const workbenchPermissions = {
   // The operations agent and its work live in operations diagnosis; observer opens that page.
   systemAgents: {
     permissions: ["observer"],
-    path: "/ops",
+    path: routes.ops.path,
     titleKey: "nav.systemAgents",
     ownerApplication: "workbench",
     groupKey: "app-capabilities",
   },
   skills: {
     permissions: ["skill-management"],
-    path: "/agents/settings?tab=capabilities",
+    path: routes.agentSettingsCapabilities.path,
     titleKey: "nav.skills",
     ownerApplication: "workbench",
     groupKey: "app-capabilities",
   },
   mcpService: {
     permissions: ["mcp-service"],
-    path: "/agents/settings?tab=capabilities",
+    path: routes.agentSettingsCapabilities.path,
     titleKey: "nav.mcpService",
     ownerApplication: "workbench",
     groupKey: "app-capabilities",

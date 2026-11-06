@@ -1,0 +1,10 @@
+/*
+ * The page gutter, written once (DESIGN.md "Page applications"): the horizontal padding of a page's header and of the
+ * content under it. The header carries it itself; a frame or a page puts `platform-page-gutter` on the element that
+ * holds its content and writes no side padding of its own, so a toolbar, a table or a form starts where the title does.
+ * The element keeps its own vertical padding; nothing else on it sets a horizontal one.
+ */
+.platform-page-gutter {
+  box-sizing: border-box;
+  padding-inline: var(--page-gutter);
+}

@@ -144,7 +144,7 @@ onMounted(() => {
 <template>
   <section v-loading="loading" class="model-catalog">
     <!-- The platform's one page header: the title, its line of description, and this page's own button. -->
-    <PlatformPageHeader :title="meta.title" :description="meta.description">
+    <PlatformPageHeader compact :title="meta.title" :description="meta.description">
       <template #actions>
         <el-button
           v-if="resource === 'objects'"
@@ -168,152 +168,155 @@ onMounted(() => {
       </template>
     </PlatformPageHeader>
 
-    <div class="catalog-toolbar">
-      <el-input v-model="query" :prefix-icon="Search" :placeholder="meta.search" clearable />
-      <el-select
-        v-if="resource === 'attributes'"
-        v-model="ownerFilter"
-        class="owner-filter"
-        :placeholder="ot('allObjectTypes')"
-        clearable
-      >
-        <el-option
-          v-for="object in objects"
-          :key="object.className"
-          :label="`${object.showName} (${object.className})`"
-          :value="object.className"
-        />
-      </el-select>
-      <span class="resource-count">
-        {{
-          resource === "objects"
-            ? objectRows.length
-            : resource === "attributes"
-              ? attributeRows.length
-              : relationRows.length
-        }}
-        {{ ot("items") }}
-      </span>
-    </div>
-
-    <div class="resource-table">
-      <template v-if="resource === 'objects'">
-        <div class="resource-table-head object-grid">
-          <span>{{ ot("objectTypesTitle") }}</span>
-          <span>{{ ot("businessDescription") }}</span>
-          <span>{{ ot("attributes") }}</span>
-          <span>{{ ot("businessKey") }}</span>
-          <span></span>
-        </div>
-        <button
-          v-for="object in objectRows"
-          :key="object.className"
-          class="resource-table-row object-grid"
-          @click="emit('editObject', object.className)"
+    <!-- The page under the header takes the page gutter, so the filters and the table start where the title does. -->
+    <div class="catalog-body platform-page-gutter">
+      <div class="catalog-toolbar">
+        <el-input v-model="query" :prefix-icon="Search" :placeholder="meta.search" clearable />
+        <el-select
+          v-if="resource === 'attributes'"
+          v-model="ownerFilter"
+          class="owner-filter"
+          :placeholder="ot('allObjectTypes')"
+          clearable
         >
-          <span class="resource-name">
-            <span>
-              <strong>{{ object.showName }}</strong>
-              <small>{{ object.className }}</small>
-            </span>
-          </span>
-          <span class="resource-description">{{ object.classDesc }}</span>
-          <span>{{ object.attrs.length }}</span>
-          <span>{{ businessKeyCount(object) }}</span>
-          <ChevronRight :size="16" class="row-chevron" />
-        </button>
-        <el-empty
-          v-if="!loading && objectRows.length === 0"
-          :description="ot('notFoundObjectTypes')"
-        />
-      </template>
+          <el-option
+            v-for="object in objects"
+            :key="object.className"
+            :label="`${object.showName} (${object.className})`"
+            :value="object.className"
+          />
+        </el-select>
+        <span class="resource-count">
+          {{
+            resource === "objects"
+              ? objectRows.length
+              : resource === "attributes"
+                ? attributeRows.length
+                : relationRows.length
+          }}
+          {{ ot("items") }}
+        </span>
+      </div>
 
-      <template v-else-if="resource === 'attributes'">
-        <div class="resource-table-head attribute-grid">
-          <span>{{ ot("attributes") }}</span>
-          <span>{{ ot("ownerObjectType") }}</span>
-          <span>{{ ot("dataType") }}</span>
-          <span>{{ ot("businessKey") }}</span>
-          <span>{{ ot("primaryKey") }}</span>
-          <span></span>
-        </div>
-        <div
-          v-for="row in attributeRows"
-          :key="`${row.object.className}-${row.attribute.name}`"
-          class="attribute-row-group"
-          :class="{ expanded: isAttributeExpanded(row) }"
-        >
-          <div
-            class="resource-table-row attribute-grid"
-            role="button"
-            tabindex="0"
-            :aria-expanded="isAttributeExpanded(row)"
-            @click="toggleAttribute(row)"
-            @keydown.enter.prevent="toggleAttribute(row)"
-            @keydown.space.prevent="toggleAttribute(row)"
+      <div class="resource-table">
+        <template v-if="resource === 'objects'">
+          <div class="resource-table-head object-grid">
+            <span>{{ ot("objectTypesTitle") }}</span>
+            <span>{{ ot("businessDescription") }}</span>
+            <span>{{ ot("attributes") }}</span>
+            <span>{{ ot("businessKey") }}</span>
+            <span></span>
+          </div>
+          <button
+            v-for="object in objectRows"
+            :key="object.className"
+            class="resource-table-row object-grid"
+            @click="emit('editObject', object.className)"
           >
             <span class="resource-name">
               <span>
-                <strong>{{ attributeLabel(row.attribute) }}</strong>
-                <small>{{ row.attribute.name }}</small>
+                <strong>{{ object.showName }}</strong>
+                <small>{{ object.className }}</small>
               </span>
             </span>
-            <button
-              class="inline-link"
-              @click.stop="emit('editObject', row.object.className)"
-              @keydown.stop
-            >
-              {{ row.object.showName }}
-            </button>
-            <span>{{ row.attribute.type }}</span>
-            <span>{{ row.attribute.bizzkeyBool ? ot("yes") : "-" }}</span>
-            <span>{{ row.attribute.primaryKey ? ot("yes") : "-" }}</span>
-            <ChevronUp v-if="isAttributeExpanded(row)" :size="16" class="row-chevron" />
-            <ChevronDown v-else :size="16" class="row-chevron" />
-          </div>
-          <OntologyAttributeEditor
-            v-if="isAttributeExpanded(row)"
-            :class-name="row.object.className"
-            :attribute="row.attribute"
-            @saved="loadCatalog"
-            @deleted="loadCatalog"
+            <span class="resource-description">{{ object.classDesc }}</span>
+            <span>{{ object.attrs.length }}</span>
+            <span>{{ businessKeyCount(object) }}</span>
+            <ChevronRight :size="16" class="row-chevron" />
+          </button>
+          <el-empty
+            v-if="!loading && objectRows.length === 0"
+            :description="ot('notFoundObjectTypes')"
           />
-        </div>
-        <el-empty
-          v-if="!loading && attributeRows.length === 0"
-          :description="ot('notFoundAttributes')"
-        />
-      </template>
+        </template>
 
-      <template v-else>
-        <div class="resource-table-head relation-grid">
-          <span>{{ ot("relationTypesTitle") }}</span>
-          <span>{{ ot("sourceObject") }}</span>
-          <span>{{ ot("targetObject") }}</span>
-          <span>{{ ot("description") }}</span>
-          <span></span>
-        </div>
-        <button
-          v-for="relation in relationRows"
-          :key="relation.relationship"
-          class="resource-table-row relation-grid"
-          @click="emit('editRelation', relation.relationship)"
-        >
-          <span class="resource-name">
-            <span>
-              <strong>{{ relation.desc || relation.relationship }}</strong>
+        <template v-else-if="resource === 'attributes'">
+          <div class="resource-table-head attribute-grid">
+            <span>{{ ot("attributes") }}</span>
+            <span>{{ ot("ownerObjectType") }}</span>
+            <span>{{ ot("dataType") }}</span>
+            <span>{{ ot("businessKey") }}</span>
+            <span>{{ ot("primaryKey") }}</span>
+            <span></span>
+          </div>
+          <div
+            v-for="row in attributeRows"
+            :key="`${row.object.className}-${row.attribute.name}`"
+            class="attribute-row-group"
+            :class="{ expanded: isAttributeExpanded(row) }"
+          >
+            <div
+              class="resource-table-row attribute-grid"
+              role="button"
+              tabindex="0"
+              :aria-expanded="isAttributeExpanded(row)"
+              @click="toggleAttribute(row)"
+              @keydown.enter.prevent="toggleAttribute(row)"
+              @keydown.space.prevent="toggleAttribute(row)"
+            >
+              <span class="resource-name">
+                <span>
+                  <strong>{{ attributeLabel(row.attribute) }}</strong>
+                  <small>{{ row.attribute.name }}</small>
+                </span>
+              </span>
+              <button
+                class="inline-link"
+                @click.stop="emit('editObject', row.object.className)"
+                @keydown.stop
+              >
+                {{ row.object.showName }}
+              </button>
+              <span>{{ row.attribute.type }}</span>
+              <span>{{ row.attribute.bizzkeyBool ? ot("yes") : "-" }}</span>
+              <span>{{ row.attribute.primaryKey ? ot("yes") : "-" }}</span>
+              <ChevronUp v-if="isAttributeExpanded(row)" :size="16" class="row-chevron" />
+              <ChevronDown v-else :size="16" class="row-chevron" />
+            </div>
+            <OntologyAttributeEditor
+              v-if="isAttributeExpanded(row)"
+              :class-name="row.object.className"
+              :attribute="row.attribute"
+              @saved="loadCatalog"
+              @deleted="loadCatalog"
+            />
+          </div>
+          <el-empty
+            v-if="!loading && attributeRows.length === 0"
+            :description="ot('notFoundAttributes')"
+          />
+        </template>
+
+        <template v-else>
+          <div class="resource-table-head relation-grid">
+            <span>{{ ot("relationTypesTitle") }}</span>
+            <span>{{ ot("sourceObject") }}</span>
+            <span>{{ ot("targetObject") }}</span>
+            <span>{{ ot("description") }}</span>
+            <span></span>
+          </div>
+          <button
+            v-for="relation in relationRows"
+            :key="relation.relationship"
+            class="resource-table-row relation-grid"
+            @click="emit('editRelation', relation.relationship)"
+          >
+            <span class="resource-name">
+              <span>
+                <strong>{{ relation.desc || relation.relationship }}</strong>
+              </span>
             </span>
-          </span>
-          <span>{{ objectLabel(relation.fromclass) }}</span>
-          <span>{{ objectLabel(relation.toclass) }}</span>
-          <span class="resource-description">{{ relation.desc || "-" }}</span>
-          <ChevronRight :size="16" class="row-chevron" />
-        </button>
-        <el-empty
-          v-if="!loading && relationRows.length === 0"
-          :description="ot('notFoundRelationTypes')"
-        />
-      </template>
+            <span>{{ objectLabel(relation.fromclass) }}</span>
+            <span>{{ objectLabel(relation.toclass) }}</span>
+            <span class="resource-description">{{ relation.desc || "-" }}</span>
+            <ChevronRight :size="16" class="row-chevron" />
+          </button>
+          <el-empty
+            v-if="!loading && relationRows.length === 0"
+            :description="ot('notFoundRelationTypes')"
+          />
+        </template>
+      </div>
     </div>
     <OntologyAttributeCreateDialog
       v-model="attributeCreateVisible"
@@ -330,13 +333,16 @@ onMounted(() => {
 </template>
 
 <style scoped>
+/*
+ * The page paints no background of its own: it sits on the application's area, the darkest band in dark mode
+ * (DESIGN.md "Colour roles"); the table keeps its own surface.
+ */
 .model-catalog {
   /* The value is supplied by the host presentation (open source: auto). */
   min-height: var(--manager-model-catalog-min-height);
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
-  background: var(--el-bg-color);
 }
 .catalog-toolbar {
   display: flex;
@@ -344,7 +350,6 @@ onMounted(() => {
   align-items: center;
   gap: var(--spacing-sm);
   margin-top: var(--spacing-md);
-  padding: 0 var(--spacing-lg);
 }
 .catalog-toolbar :deep(.el-input) {
   width: 260px;
@@ -358,7 +363,7 @@ onMounted(() => {
 }
 .resource-table {
   overflow: hidden;
-  margin: var(--spacing-md) var(--spacing-lg) var(--spacing-lg);
+  margin: var(--spacing-md) 0 var(--spacing-lg);
   border: 1px solid var(--el-border-color);
   border-radius: var(--radius-md);
   background: var(--el-bg-color);

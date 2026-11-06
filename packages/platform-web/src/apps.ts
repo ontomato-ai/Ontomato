@@ -10,7 +10,10 @@ export type PlatformAppFrame = "tabs" | "menu";
 export interface PlatformAppDeclaration {
   id: string;
   label: string;
-  /** One line under the application's name, when its pages share one header. */
+  /**
+   * One line under the application's name in the header its pages share. An application that declares it is named in
+   * that header even where it shows a single page (the open-source object browser); see `PlatformLayout`.
+   */
   description?: string | null;
   icon: string;
   /**

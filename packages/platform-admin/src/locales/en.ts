@@ -408,7 +408,7 @@ export default {
       "systemConfig": "Data adapters, languages, general parameters and the license",
       "runRecords": "Change history and the service status of the data engine",
       "userFeedback": "Ratings and comments users give on query and analysis results",
-      "objectBrowser": "The ontology's star map and the data of each object type",
+      "objectBrowser": "Explore instances and relationships in a graph or browse object records in a table",
       "settings": "Models, general parameters and run records"
     }
   }

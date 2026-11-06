@@ -62,13 +62,13 @@ function caseDisplayName(c: TestCase): string {
 </template>
 
 <style scoped>
+/* The page's areas paint no background of their own: in dark mode the application's area is the darkest band. */
 .panel-left {
   display: flex;
   flex-direction: column;
   flex: 0 1 auto;
   min-width: 180px;
   max-width: 560px;
-  background: var(--observe-bg-card, var(--el-bg-color));
   overflow: hidden;
 }
 

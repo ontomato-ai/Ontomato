@@ -60,13 +60,6 @@
   background-clip: padding-box;
 }
 
-/* Element Plus wraps icon and button text in one span. Keep command labels readable. */
-.ontology-manager-shell .el-button > span:has(> .lucide) {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--spacing-sm);
-}
-
 .ontology-manager-shell button,
 .ontology-manager-shell .el-button {
   box-shadow: none !important;
@@ -174,7 +167,6 @@
   min-height: 0;
   flex: 1;
   overflow: auto;
-  background: var(--el-bg-color);
 }
 
 .ontology-manager-shell > .legacy-surface .data-browser {
@@ -185,11 +177,6 @@
   min-height: 0;
   flex: 1;
   overflow: hidden;
-}
-
-.ontology-manager-shell > .visual-content .visual-modeling,
-.ontology-manager-shell > .visual-content .graph-container {
-  background: var(--el-bg-color);
 }
 
 .ontology-manager-shell > .knowledge-surface {

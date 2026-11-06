@@ -69,7 +69,8 @@ watch(() => props.apiPrefix, load, { immediate: true });
   </section>
 </template>
 <style scoped>
-.artifact-detail { height: 100%; overflow: auto; padding: var(--surface-padding); box-sizing: border-box; font-size: var(--text-sm); line-height: var(--leading-sm); background: var(--el-bg-color); }
+/* The detail fills its page's pane and paints no background: the application's area shows through (DESIGN.md). */
+.artifact-detail { height: 100%; overflow: auto; padding: var(--surface-padding); box-sizing: border-box; font-size: var(--text-sm); line-height: var(--leading-sm); }
 header { display: flex; gap: var(--component-gap); align-items: center; flex-wrap: wrap; }
 header strong { margin-right: auto; overflow-wrap: anywhere; font-weight: var(--font-semibold); }
 p { color: var(--el-text-color-secondary); }

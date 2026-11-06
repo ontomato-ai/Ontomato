@@ -72,8 +72,8 @@ const platformApps: readonly AppPartition[] = [
       {
         key: "browser:pages",
         titleKey: "platform.objectBrowser",
-        // The graph and data browsing, in one application: both are ways to look at objects.
-        paths: [platformRoutes.graph.path, platformRoutes.data.path],
+        // Instance graph and table are modes of one browser, not separate application tabs.
+        paths: [platformRoutes.data.path],
       },
     ],
   },

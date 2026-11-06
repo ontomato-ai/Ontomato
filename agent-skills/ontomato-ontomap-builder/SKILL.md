@@ -182,11 +182,11 @@ Do not put regional JDBC parameters such as `serverTimezone=Asia/Shanghai` in th
 | Field | What to write |
 | --- | --- |
 | `datasetDesc` | Business description of the whole dataset. It is inserted into the abcHarness programmer prompt and the question-splitter prompt. Write the business meaning, units, and enumeration values in the language the model should use. |
-| `classList` | Class names. The star-chart cut uses the first name as the root class. |
+| `classList` | Class names. |
 | class `name` | SQL table name, or the index name for Elasticsearch/OpenSearch. A name matches a class only as an exact string; a leading `/` is accepted only when the stored name has none. Relational adapters paste it unchanged and unquoted into `from` and `join`, add no schema prefix and change no case; put the schema in the JDBC URL, such as PostgreSQL `currentSchema`. Elasticsearch/OpenSearch derive the physical index from it: trimmed, lower-cased, each `/` and every character outside `a-z0-9_-` becomes `_`, and a leading `-`, `_`, `+` or `.` gets an `i` prefix, so an existing index is reachable only when its name already equals that derived form. |
 | class `showName` | Display label. The question-split subgraph shows this instead of the class name. It is not the SQL name and not the class description in the prompt. |
 | class `desc` | Class description in the prompt. The programmer's class list and `getSchemaByClassName` both show it. Write the business meaning, units, and enumeration values. |
-| `inStarChart` | `true` includes the class in the star chart. A relationship is kept only when both classes are `true`. Use `true`. |
+| `inStarChart` | Saved with the class and returned by `get-ontomap`; nothing reads it since the star chart was retired. Use `true`. |
 | attr `name` | SQL column name, or document field name for Elasticsearch/OpenSearch. Relational adapters paste it unchanged and unquoted (`alias.column`); search requests use it as the document field name. Same exact-match rule as the class name. |
 | attr `showName` | Saved on the ontomap and returned by `get-ontomap`. The schema text and SQL use `name` and `desc`. |
 | attr `desc` | Field description the model reads. `getSchemaByClassName` and the question-splitter schema put it in the "field description" column. Write the business meaning, units, and enumeration values. |

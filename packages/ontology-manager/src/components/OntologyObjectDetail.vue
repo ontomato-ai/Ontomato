@@ -146,7 +146,7 @@ onMounted(() => void loadDetail());
 
 <template>
   <section v-loading="loading" class="object-detail">
-    <header class="detail-titlebar">
+    <header class="detail-titlebar platform-page-gutter">
       <el-button text :icon="ArrowLeft" @click="emit('back')">
         {{ ot("backToObjectTypes") }}
       </el-button>
@@ -173,7 +173,7 @@ onMounted(() => void loadDetail());
       </el-button>
     </header>
 
-    <div v-if="object" class="detail-body">
+    <div v-if="object" class="detail-body platform-page-gutter">
       <section class="definition-section">
         <div class="section-title">
           <div>
@@ -230,7 +230,7 @@ onMounted(() => void loadDetail());
           <div>
             <h2>{{ ot("attributes") }}</h2>
           </div>
-          <el-button type="primary" :icon="Plus" @click="attributeCreateVisible = true">
+          <el-button :icon="Plus" @click="attributeCreateVisible = true">
             {{ ot("createAttribute") }}
           </el-button>
         </div>
@@ -317,18 +317,20 @@ onMounted(() => void loadDetail());
 </template>
 
 <style scoped>
+/*
+ * The page paints no background of its own: it sits on the application's area, the darkest band in dark mode
+ * (DESIGN.md "Colour roles"); its sections keep their own surfaces. The title row and the sections under it take the
+ * page gutter (`platform-page-gutter`), so they start where the other pages' titles do.
+ */
 .object-detail {
   min-height: 100%;
-  background: var(--el-bg-color);
 }
 .detail-titlebar {
   display: flex;
   height: var(--page-header-height);
   flex: 0 0 var(--page-header-height);
   align-items: center;
-  padding: 0 var(--spacing-lg);
   border-bottom: 1px solid var(--el-border-color);
-  background: var(--el-bg-color);
 }
 .title-divider {
   width: 1px;
@@ -357,7 +359,7 @@ onMounted(() => void loadDetail());
   display: grid;
   grid-template-columns: minmax(300px, 0.9fr) minmax(460px, 1.5fr);
   gap: var(--spacing-lg);
-  padding: var(--spacing-lg);
+  padding-block: var(--spacing-lg);
 }
 .definition-section {
   grid-row: span 2;
@@ -522,11 +524,8 @@ h2 {
   }
 }
 @container ontology-manager (max-width: 900px) {
-  .detail-titlebar {
-    padding: 0 var(--spacing-md);
-  }
   .detail-body {
-    padding: var(--spacing-md);
+    padding-block: var(--spacing-md);
     gap: var(--spacing-md);
   }
   .title-divider {

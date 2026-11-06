@@ -121,6 +121,10 @@ export function brandProperties(brand: BrandSource, mode: BrandMode): Record<str
     "--el-bg-color-page": c.workspace,
     "--el-bg-color": c.surface,
     "--el-bg-color-overlay": c.raised,
+    // A quiet scrim derived from the edition's neutral palette; loading masks remain independent.
+    "--el-overlay-color-lighter": `color-mix(in srgb, ${mode === "dark" ? c.sunken : c.ink} ${mode === "dark" ? "64%" : "28%"}, transparent)`,
+    "--el-overlay-color-light": `color-mix(in srgb, ${mode === "dark" ? c.sunken : c.ink} ${mode === "dark" ? "64%" : "28%"}, transparent)`,
+    "--el-overlay-color": `color-mix(in srgb, ${mode === "dark" ? c.sunken : c.ink} ${mode === "dark" ? "64%" : "28%"}, transparent)`,
 
     // The platform shell's bands. The rail and the panel of the other application sit on their own roles, so a page
     // panel that fills with `surface` never shares a colour with the rail beside it.
@@ -129,6 +133,11 @@ export function brandProperties(brand: BrandSource, mode: BrandMode): Record<str
     "--shell-workspace-bg": c.workspace,
     "--shell-rail-selected": c.railSelected,
     "--shell-panel-selected": c.panelSelected,
+    // Navigation hover is relative to its own band, not to the workspace's component fill.
+    "--shell-rail-hover": mix(c.ink, c.rail, 0.94),
+    "--shell-panel-hover": mix(c.ink, c.panel, 0.94),
+    "--shell-rail-selected-hover": mix(c.ink, c.railSelected, 0.96),
+    "--shell-panel-selected-hover": mix(c.ink, c.panelSelected, 0.96),
     "--shell-app-edge": c.edge,
 
     "--el-fill-color": c.sunken,

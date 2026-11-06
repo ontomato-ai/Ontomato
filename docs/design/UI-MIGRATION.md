@@ -11,7 +11,7 @@ owning page rather than treated as independent designs.
 workbench-ui. Enterprise consumes the same source plus platform-admin-enterprise and workbench-ui-enterprise.
 Agent-shell-ui owns conversations for agents, operations and governance. Node/Java API and permission contracts
 are outside this visual migration. Vue/Element Plus controls, AntV G6/X6 canvases, ECharts, CodeMirror and
-markstream renderers retain their implementations. The star map is a separately built iframe, not a Vue page.
+markstream renderers retain their implementations.
 
 Foundation and components.css own shared values/treatment; oss.ts and enterprise/brand-enterprise own colours.
 Host preferences install the brand and persist theme/locale. Manager also has instance-level theme selectors:
@@ -31,7 +31,6 @@ verify teleported overlays as well as the document theme. Do not rewrite generat
 | Graph/modeling/browser | ontology-manager | Preserve selection/pan/editing; no blanket card or height changes |
 | Schedules | platform-schedules | Long labels, filters, run history and dialog widths need rendered checks |
 | Brand/status/charts | edition brand sources + chart-theme | Contrast tests exist; do not use category colour as status |
-| Legacy star map | enterprise/apps/workbench/legacy-graph | Separate build, WebGL and iframe theme integration need explicit verification |
 
 Regression risks: shared size changes affect small controls; global CSS may override scoped styles; larger headings
 may wrap; fixed grid minima and fixed title bars can overflow; theme inheritance differs across poppers and iframes.
@@ -57,7 +56,6 @@ long data, keyboard, dropdown/overlay and permission variants.
 | Metric/action/function detail/new | /ontology/assets/{metrics,actions,functions}/:id | OntologyAssetDetail; forms/query/code/test/generation | Implemented | Browser fixture checked at 1200/800/480; full matrix pending |
 | Business knowledge | /ontology/knowledge | BusinessKnowledge; list/editor/dialog | In progress | Pending |
 | Object browser | /browser/data/:className? | DataBrowser + InstanceGraph; table/filter/graph | In progress | Pending |
-| Star map (enterprise) | /browser/graph | LegacyGraphView + legacy-graph; iframe/WebGL | Not started | Pending theme/interaction |
 | Dashboards | /dashboards | DashboardView/Panel; board/chart/table/AI drawer | Implemented | Pending populated charts and editor |
 | Platform schedules | /schedules | PlatformSchedulesList/Form/Runs; table/dialog | In progress | Pending |
 | Agent schedules | /agents/schedules | Same schedules components; agent scope | In progress | Pending owner/agent filtering |
@@ -132,6 +130,6 @@ platform-admin 142; platform-admin 63; platform-schedules 44; platform-shell 16;
 workbench-ui 81. Both frontend builds pass. These establish implementation health, not page acceptance.
 
 Still **Pending** and requiring a human or image-capable reviewer with real data: populated tables and long values,
-expanded/streaming conversations with artifacts, every dialog and drawer, permission-gated enterprise pages,
-the legacy star-map iframe in both themes, and the full 200% zoom pass. `/agents/schedules` still redirects to
+expanded/streaming conversations with artifacts, every dialog and drawer, permission-gated enterprise pages
+and the full 200% zoom pass. `/agents/schedules` still redirects to
 `/schedules`; that is existing routing, not a styling defect.

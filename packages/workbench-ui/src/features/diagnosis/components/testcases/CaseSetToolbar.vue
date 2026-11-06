@@ -67,6 +67,7 @@ defineExpose({ focus });
 </template>
 
 <style scoped>
+/* The page's areas paint no background of their own: in dark mode the application's area is the darkest band. */
 .page-header {
   display: flex;
   align-items: center;
@@ -74,7 +75,6 @@ defineExpose({ focus });
   padding: 8px 16px;
   border-bottom: 0.5px solid var(--observe-border, var(--el-border-color));
   flex-shrink: 0;
-  background: var(--observe-bg-card, var(--el-bg-color));
 }
 
 .header-left {

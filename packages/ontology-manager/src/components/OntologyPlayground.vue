@@ -524,7 +524,7 @@ onBeforeUnmount(() => {
 <template>
   <section v-loading="loading" class="playground">
     <!-- The platform's one page header: the title, its line of description, and this page's own summary at the right. -->
-    <PlatformPageHeader :title="t('nav.ontologyGraph')" :description="ot('ontologyGraphDesc')">
+    <PlatformPageHeader compact :title="t('nav.ontologyGraph')" :description="ot('ontologyGraphDesc')">
       <template #actions>
         <div class="summary-strip" :aria-label="ot('ontologyStats')">
           <span>
@@ -539,235 +539,241 @@ onBeforeUnmount(() => {
             <strong>{{ relations.length }}</strong>
             {{ t("nav.relationTypes") }}
           </span>
-          <el-button :icon="RefreshCw" circle :title="t('common.refresh')" @click="refresh" />
+          <el-button :icon="RefreshCw" class="manager-icon-button" :title="t('common.refresh')" :aria-label="t('common.refresh')" @click="refresh" />
         </div>
       </template>
     </PlatformPageHeader>
 
-    <el-alert v-if="error" :title="error" type="error" :closable="false" show-icon />
+    <!-- The page under the header takes the page gutter: the explorer, the graph and the inspector start where the
+         title does, in one bordered block like a table. -->
+    <div class="playground-body platform-page-gutter">
+      <el-alert v-if="error" :title="error" type="error" :closable="false" show-icon />
 
-    <div v-else class="playground-grid">
-      <aside class="explorer-panel">
-        <div class="panel-heading">
-          <div>
-            <strong :title="ot('locateGraphElements')">{{ t("nav.ontologyResources") }}</strong>
+      <div v-else class="playground-grid">
+        <aside class="explorer-panel">
+          <div class="panel-heading">
+            <div>
+              <strong :title="ot('locateGraphElements')">{{ t("nav.ontologyResources") }}</strong>
+            </div>
           </div>
-        </div>
-        <div class="search-box">
-          <el-input
-            v-model="keyword"
-            clearable
-            :placeholder="`${t('common.search')} ${t('nav.ontologyResources')}`"
-          >
-            <template #prefix><Search :size="15" /></template>
-          </el-input>
-          <el-segmented
-            v-model="resourceFilter"
-            :options="[
-              { label: t('common.all'), value: 'all' },
-              { label: t('nav.objectTypes'), value: 'objects' },
-              { label: t('nav.relationTypes'), value: 'relations' },
-            ]"
-            size="small"
-          />
-        </div>
-        <div class="resource-list">
-          <div v-if="filteredObjects.length" class="list-section">
-            <p>{{ t("nav.objectTypes") }} · {{ filteredObjects.length }}</p>
-            <button
-              v-for="object in filteredObjects"
-              :key="object.className"
-              :class="['resource-row', { active: selectedObject?.className === object.className }]"
-              @click="selectObject(object.className)"
+          <div class="search-box">
+            <el-input
+              v-model="keyword"
+              clearable
+              :placeholder="`${t('common.search')} ${t('nav.ontologyResources')}`"
             >
-              <span class="resource-icon object-icon"><Box :size="14" /></span>
-              <span>
-                <strong>{{ object.showName }}</strong>
-                <small>{{ object.className }}</small>
-              </span>
-              <ChevronRight :size="14" />
-            </button>
-          </div>
-          <div v-if="filteredRelations.length" class="list-section">
-            <p>{{ t("nav.relationTypes") }} · {{ filteredRelations.length }}</p>
-            <button
-              v-for="relation in filteredRelations"
-              :key="relation.relationship"
-              :class="[
-                'resource-row',
-                { active: selectedRelation?.relationship === relation.relationship },
+              <template #prefix><Search :size="15" /></template>
+            </el-input>
+            <el-segmented
+              v-model="resourceFilter"
+              :options="[
+                { label: t('common.all'), value: 'all' },
+                { label: t('nav.objectTypes'), value: 'objects' },
+                { label: t('nav.relationTypes'), value: 'relations' },
               ]"
-              @click="selectRelation(relation.relationship)"
-            >
-              <span class="resource-icon relation-icon"><Waypoints :size="14" /></span>
-              <span>
-                <strong>{{ relation.showName }}</strong>
-              </span>
-              <ChevronRight :size="14" />
-            </button>
-          </div>
-          <el-empty
-            v-if="!filteredObjects.length && !filteredRelations.length"
-            :description="ot('noMatchingResources')"
-            :image-size="54"
-          />
-        </div>
-      </aside>
-
-      <main class="graph-panel">
-        <div ref="graphRef" class="graph-canvas" />
-        <div v-if="!objects.length && !loading" class="graph-empty">
-          <Unplug :size="30" />
-          <strong>{{ ot("noObjects") }}</strong>
-          <span>{{ ot("createObjectsFirst") }}</span>
-        </div>
-        <div class="graph-toolbar">
-          <button :title="ot('zoomIn')" @click="zoomIn"><Plus :size="18" /></button>
-          <button :title="ot('zoomOut')" @click="zoomOut"><Minus :size="18" /></button>
-          <button :title="ot('fitCanvas')" @click="fitGraph"><Maximize :size="18" /></button>
-          <button :title="ot('relayout')" :disabled="layouting" @click="relayoutGraph">
-            <Network :size="18" />
-          </button>
-          <button :title="ot('downloadPng')" @click="downloadGraph"><Download :size="18" /></button>
-        </div>
-        <div class="graph-hint">
-          <span />
-          {{ ot("graphHint") }}
-        </div>
-      </main>
-
-      <aside class="inspector-panel">
-        <section class="path-panel">
-          <div class="panel-heading">
-            <div>
-              <strong :title="ot('pathFinderDesc')">{{ ot("pathFinder") }}</strong>
-            </div>
-            <Route :size="17" />
-          </div>
-          <div class="path-controls">
-            <el-select v-model="pathFrom" filterable :placeholder="ot('sourceObject')">
-              <el-option
-                v-for="object in objects"
-                :key="object.className"
-                :label="object.showName"
-                :value="object.className"
-              />
-            </el-select>
-            <ChevronRight :size="16" />
-            <el-select v-model="pathTo" filterable :placeholder="ot('targetObject')">
-              <el-option
-                v-for="object in objects"
-                :key="object.className"
-                :label="object.showName"
-                :value="object.className"
-              />
-            </el-select>
-          </div>
-          <el-button type="primary" plain :disabled="!pathFrom || !pathTo" @click="findPath">
-            {{ ot("findPath") }}
-          </el-button>
-        </section>
-
-        <section class="detail-panel">
-          <div class="panel-heading">
-            <div>
-              <strong>{{ ot("inspector") }}</strong>
-            </div>
-            <el-button
-              v-if="selectedObject || selectedRelation"
-              class="modeling-link"
-              type="primary"
-              plain
               size="small"
-              :icon="Workflow"
-              @click="openSelectionInVisualModeling"
-            >
-              {{ ot("goModeling") }}
-            </el-button>
+            />
           </div>
-          <div v-if="selectedObject" class="detail-content">
-            <div class="detail-title">
-              <span class="resource-icon object-icon"><Box :size="16" /></span>
-              <div class="detail-title-copy">
-                <h2>{{ selectedObject.showName }}</h2>
-                <code>{{ selectedObject.className }}</code>
-              </div>
-              <span class="detail-title-count">
-                {{ selectedObject.attrs.length }} {{ ot("attributes") }}
-              </span>
-            </div>
-            <p class="description">{{ selectedObject.classDesc }}</p>
-            <div class="detail-section">
-              <div class="section-label">
-                <span>{{ ot("attributes") }}</span>
-                <small>{{ selectedObject.attrs.length }}</small>
-              </div>
-              <div v-if="selectedObject.attrs.length" class="attribute-list">
-                <div
-                  v-for="attribute in selectedObject.attrs"
-                  :key="attribute.name"
-                  class="attribute-row"
-                >
-                  <span>
-                    <strong>{{ attribute.showName }}</strong>
-                    <code>{{ attribute.name }}</code>
-                  </span>
-                  <el-tag size="small" effect="plain">{{ attribute.type }}</el-tag>
-                </div>
-              </div>
-              <el-empty v-else :description="ot('noAttributes')" :image-size="42" />
-            </div>
-            <div class="detail-section">
-              <div class="section-label">
-                <span>{{ ot("relations") }}</span>
-                <small>{{ selectedConnections.length }}</small>
-              </div>
+          <div class="resource-list">
+            <div v-if="filteredObjects.length" class="list-section">
+              <p>{{ t("nav.objectTypes") }} · {{ filteredObjects.length }}</p>
               <button
-                v-for="relation in selectedConnections"
+                v-for="object in filteredObjects"
+                :key="object.className"
+                :class="['resource-row', { active: selectedObject?.className === object.className }]"
+                @click="selectObject(object.className)"
+              >
+                <span class="resource-icon object-icon"><Box :size="14" /></span>
+                <span>
+                  <strong>{{ object.showName }}</strong>
+                  <small>{{ object.className }}</small>
+                </span>
+                <ChevronRight :size="14" />
+              </button>
+            </div>
+            <div v-if="filteredRelations.length" class="list-section">
+              <p>{{ t("nav.relationTypes") }} · {{ filteredRelations.length }}</p>
+              <button
+                v-for="relation in filteredRelations"
                 :key="relation.relationship"
-                class="connection-row"
+                :class="[
+                  'resource-row',
+                  { active: selectedRelation?.relationship === relation.relationship },
+                ]"
                 @click="selectRelation(relation.relationship)"
               >
-                <span>{{ objectMap.get(relation.fromclass)?.showName || relation.fromclass }}</span>
-                <span class="connection-name">{{ relation.showName }}</span>
-                <span>{{ objectMap.get(relation.toclass)?.showName || relation.toclass }}</span>
+                <span class="resource-icon relation-icon"><Waypoints :size="14" /></span>
+                <span>
+                  <strong>{{ relation.showName }}</strong>
+                </span>
+                <ChevronRight :size="14" />
               </button>
             </div>
+            <el-empty
+              v-if="!filteredObjects.length && !filteredRelations.length"
+              :description="ot('noMatchingResources')"
+              :image-size="54"
+            />
           </div>
-          <div v-else-if="selectedRelation" class="detail-content">
-            <div class="detail-title">
-              <span class="resource-icon relation-icon"><Waypoints :size="16" /></span>
+        </aside>
+
+        <main class="graph-panel">
+          <div ref="graphRef" class="graph-canvas" />
+          <div v-if="!objects.length && !loading" class="graph-empty">
+            <Unplug :size="30" />
+            <strong>{{ ot("noObjects") }}</strong>
+            <span>{{ ot("createObjectsFirst") }}</span>
+          </div>
+          <div class="graph-toolbar">
+            <button :title="ot('zoomIn')" :aria-label="ot('zoomIn')" @click="zoomIn"><Plus :size="18" /></button>
+            <button :title="ot('zoomOut')" :aria-label="ot('zoomOut')" @click="zoomOut"><Minus :size="18" /></button>
+            <button :title="ot('fitCanvas')" :aria-label="ot('fitCanvas')" @click="fitGraph"><Maximize :size="18" /></button>
+            <button :title="ot('relayout')" :aria-label="ot('relayout')" :disabled="layouting" @click="relayoutGraph">
+              <Network :size="18" />
+            </button>
+            <button :title="ot('downloadPng')" :aria-label="ot('downloadPng')" @click="downloadGraph"><Download :size="18" /></button>
+          </div>
+          <div class="graph-hint">
+            <span />
+            {{ ot("graphHint") }}
+          </div>
+        </main>
+
+        <aside class="inspector-panel">
+          <section class="path-panel">
+            <div class="panel-heading">
               <div>
-                <h2>{{ selectedRelation.showName }}</h2>
+                <strong :title="ot('pathFinderDesc')">{{ ot("pathFinder") }}</strong>
+              </div>
+              <Route :size="17" />
+            </div>
+            <div class="path-controls">
+              <el-select v-model="pathFrom" filterable :placeholder="ot('sourceObject')">
+                <el-option
+                  v-for="object in objects"
+                  :key="object.className"
+                  :label="object.showName"
+                  :value="object.className"
+                />
+              </el-select>
+              <ChevronRight :size="16" />
+              <el-select v-model="pathTo" filterable :placeholder="ot('targetObject')">
+                <el-option
+                  v-for="object in objects"
+                  :key="object.className"
+                  :label="object.showName"
+                  :value="object.className"
+                />
+              </el-select>
+            </div>
+            <el-button type="primary" plain :disabled="!pathFrom || !pathTo" @click="findPath">
+              {{ ot("findPath") }}
+            </el-button>
+          </section>
+
+          <section class="detail-panel">
+            <div class="panel-heading">
+              <div>
+                <strong>{{ ot("inspector") }}</strong>
+              </div>
+              <el-button
+                v-if="selectedObject || selectedRelation"
+                class="modeling-link"
+                size="small"
+                :icon="Workflow"
+                @click="openSelectionInVisualModeling"
+              >
+                {{ ot("goModeling") }}
+              </el-button>
+            </div>
+            <div v-if="selectedObject" class="detail-content">
+              <div class="detail-title">
+                <span class="resource-icon object-icon"><Box :size="16" /></span>
+                <div class="detail-title-copy">
+                  <h2>{{ selectedObject.showName }}</h2>
+                  <code>{{ selectedObject.className }}</code>
+                </div>
+                <span class="detail-title-count">
+                  {{ selectedObject.attrs.length }} {{ ot("attributes") }}
+                </span>
+              </div>
+              <p class="description">{{ selectedObject.classDesc }}</p>
+              <div class="detail-section">
+                <div class="section-label">
+                  <span>{{ ot("attributes") }}</span>
+                  <small>{{ selectedObject.attrs.length }}</small>
+                </div>
+                <div v-if="selectedObject.attrs.length" class="attribute-list">
+                  <div
+                    v-for="attribute in selectedObject.attrs"
+                    :key="attribute.name"
+                    class="attribute-row"
+                  >
+                    <span>
+                      <strong>{{ attribute.showName }}</strong>
+                      <code>{{ attribute.name }}</code>
+                    </span>
+                    <el-tag size="small" effect="plain">{{ attribute.type }}</el-tag>
+                  </div>
+                </div>
+                <el-empty v-else :description="ot('noAttributes')" :image-size="42" />
+              </div>
+              <div class="detail-section">
+                <div class="section-label">
+                  <span>{{ ot("relations") }}</span>
+                  <small>{{ selectedConnections.length }}</small>
+                </div>
+                <button
+                  v-for="relation in selectedConnections"
+                  :key="relation.relationship"
+                  class="connection-row"
+                  @click="selectRelation(relation.relationship)"
+                >
+                  <span>{{ objectMap.get(relation.fromclass)?.showName || relation.fromclass }}</span>
+                  <span class="connection-name">{{ relation.showName }}</span>
+                  <span>{{ objectMap.get(relation.toclass)?.showName || relation.toclass }}</span>
+                </button>
               </div>
             </div>
-            <div class="relation-flow">
-              <button @click="selectObject(selectedRelation.fromclass)">
-                {{
-                  objectMap.get(selectedRelation.fromclass)?.showName || selectedRelation.fromclass
-                }}
-              </button>
-              <span>
-                <Waypoints :size="15" />
-                {{ selectedRelation.showName }}
-              </span>
-              <button @click="selectObject(selectedRelation.toclass)">
-                {{ objectMap.get(selectedRelation.toclass)?.showName || selectedRelation.toclass }}
-              </button>
+            <div v-else-if="selectedRelation" class="detail-content">
+              <div class="detail-title">
+                <span class="resource-icon relation-icon"><Waypoints :size="16" /></span>
+                <div>
+                  <h2>{{ selectedRelation.showName }}</h2>
+                </div>
+              </div>
+              <div class="relation-flow">
+                <button @click="selectObject(selectedRelation.fromclass)">
+                  {{
+                    objectMap.get(selectedRelation.fromclass)?.showName || selectedRelation.fromclass
+                  }}
+                </button>
+                <span>
+                  <Waypoints :size="15" />
+                  {{ selectedRelation.showName }}
+                </span>
+                <button @click="selectObject(selectedRelation.toclass)">
+                  {{ objectMap.get(selectedRelation.toclass)?.showName || selectedRelation.toclass }}
+                </button>
+              </div>
             </div>
-          </div>
-          <div v-else class="inspector-empty">
-            <div class="empty-mark"><MousePointerClick :size="24" /></div>
-            <strong>{{ ot("selectGraphElement") }}</strong>
-            <span>{{ ot("inspectorEmptyDesc") }}</span>
-          </div>
-        </section>
-      </aside>
+            <div v-else class="inspector-empty">
+              <div class="empty-mark"><MousePointerClick :size="24" /></div>
+              <strong>{{ ot("selectGraphElement") }}</strong>
+              <span>{{ ot("inspectorEmptyDesc") }}</span>
+            </div>
+          </section>
+        </aside>
+      </div>
     </div>
   </section>
 </template>
 
 <style scoped>
+/*
+ * The page paints no background of its own: it sits on the application's area, the darkest band in dark mode
+ * (DESIGN.md "Colour roles"). The graph keeps its own canvas, in the area's tone.
+ */
 .playground {
   --el-font-size-base: var(--text-sm);
   --el-font-size-small: var(--text-xs);
@@ -775,7 +781,13 @@ onBeforeUnmount(() => {
   min-width: 0;
   flex-direction: column;
   overflow: hidden;
-  background: var(--el-bg-color);
+}
+.playground-body {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+  padding-bottom: var(--spacing-xl);
 }
 .summary-strip {
   display: flex;
@@ -801,6 +813,8 @@ onBeforeUnmount(() => {
   flex: 1;
   grid-template-columns: var(--shell-list-panel) minmax(320px, 1fr) var(--shell-inspector);
   overflow: hidden;
+  border: 1px solid var(--el-border-color);
+  border-radius: var(--radius-md);
 }
 .explorer-panel,
 .inspector-panel {
@@ -808,11 +822,9 @@ onBeforeUnmount(() => {
   min-width: 0;
   min-height: 0;
   flex-direction: column;
-  background: var(--el-bg-color);
 }
 .explorer-panel {
   border-right: 1px solid var(--el-border-color);
-  background: var(--el-bg-color-page);
 }
 .inspector-panel {
   border-left: 1px solid var(--el-border-color);
@@ -949,12 +961,13 @@ onBeforeUnmount(() => {
   color: var(--manager-relation-icon-color);
   background: var(--manager-relation-icon-background);
 }
+/* The canvas in the area's own tone, opaque, so a downloaded picture of the graph has the same ground. */
 .graph-panel {
   position: relative;
   min-width: 0;
   min-height: 0;
   overflow: hidden;
-  background-color: var(--el-bg-color);
+  background-color: var(--el-bg-color-page);
   background-image: radial-gradient(var(--el-border-color) 1px, transparent 1px);
   background-size: 20px 20px;
 }

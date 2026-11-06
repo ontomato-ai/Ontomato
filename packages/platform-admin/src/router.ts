@@ -7,7 +7,6 @@ import {
   availablePages,
   availableTabs,
   fallbackPage,
-  landingPages,
   type PlatformAccess,
   type PlatformNavigation,
   type PlatformPage,
@@ -37,10 +36,9 @@ export function installPageGuard(router: Router, navigation: PlatformNavigation,
       if (to.query.section !== "admin") {
         const homePage = pageOf(navigation, router.resolve(home));
         if (homePage && pages.includes(homePage)) return home;
-        return landingPages(navigation, access)[0]?.path ?? true;
+        return pages[0]?.path ?? true;
       }
-      return pages.find((page) => page.group === "platform")?.path ?? landingPages(navigation, access)[0]?.path ??
-        { name: platformRoutes.ontology.name };
+      return pages.find((page) => page.group === "platform")?.path ?? pages[0]?.path ?? { name: platformRoutes.ontology.name };
     }
     const page = pageOf(navigation, to);
     if (!page) return true;

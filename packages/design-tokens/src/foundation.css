@@ -134,6 +134,13 @@
   --el-border-radius-base: var(--radius-sm);
 }
 
+/* Narrow windows take a smaller page gutter: the one value narrows, so the header and the content stay aligned. */
+@media (max-width: 760px) {
+  :root {
+    --page-gutter: var(--spacing-lg);
+  }
+}
+
 /* ---- Elevation ----
    The overlay and modal rings use the line colour. A custom property that references another is resolved where it is
    declared, and the Ontology Service component binds its colours on its own root, so these are declared there too. */

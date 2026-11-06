@@ -67,8 +67,8 @@ const emit = defineEmits<{ selectPage: [id: string] }>();
   align-items: center;
   gap: 10px;
   width: 100%;
-  height: var(--nav-row-height);
-  padding: 0 8px;
+  min-height: var(--nav-row-height);
+  padding: var(--spacing-xs) var(--spacing-sm);
   box-sizing: border-box;
   border: 0;
   border-radius: var(--radius-md);
@@ -85,7 +85,8 @@ const emit = defineEmits<{ selectPage: [id: string] }>();
   color: var(--el-text-color-secondary);
 }
 .page-row:hover:not(.unavailable) {
-  background: var(--el-fill-color-light);
+  background: var(--shell-panel-hover);
+  color: var(--el-text-color-primary);
 }
 .page-row.active {
   background: var(--shell-panel-selected);
@@ -93,7 +94,10 @@ const emit = defineEmits<{ selectPage: [id: string] }>();
   font-weight: 600;
 }
 .page-row.active .page-icon {
-  color: var(--el-text-color-primary);
+  color: var(--brand-link);
+}
+.page-row.active:hover {
+  background: var(--shell-panel-selected-hover);
 }
 .page-row.unavailable {
   cursor: default;

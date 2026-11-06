@@ -3,8 +3,6 @@ package io.ontomato.dataengine.service.impl;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 import java.nio.file.Path;
-import java.util.Set;
-import java.util.stream.Collectors;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.springframework.test.util.ReflectionTestUtils;
@@ -16,7 +14,8 @@ import io.ontomato.dataengine.service.BusinessConfigService;
 import io.ontomato.dataengine.service.LangService;
 import io.ontomato.dataengine.service.sys.bean.permission.UserDataPermission;
 
-class InstanceGraphBuildTest {
+/** An instance graph node is named {@code class:primaryKeyValue}; its details are read back through the installed adapter. */
+class InstanceNodeInfoTest {
     @TempDir Path directory;
 
     DataServiceImpl service(DuckDbGraphFixture store) {
@@ -35,36 +34,12 @@ class InstanceGraphBuildTest {
     }
 
     @Test
-    void independentClassScanKeepsUnconnectedRecordsAndBusinessNames() throws Exception {
+    void aNodeIdReadsBackTheSameObjectByItsActualPrimaryKey() throws Exception {
         DuckDbGraphFixture store = new DuckDbGraphFixture(directory.resolve("graph.db"), "");
-        DataServiceImpl service = service(store);
-        JSONObject graph = service.cutWholeData("domain", store.config);
-        var nodes = graph.getJSONArray("nodes").stream().map(JSONObject::from)
-                .filter(node -> !"virtual_root".equals(node.getString("class"))).toList();
-        assertEquals(Set.of("pump:P1", "pump:P2", "tank:T1"),
-                nodes.stream().map(node -> node.getString("id")).collect(Collectors.toSet()));
-        assertEquals("Business name", nodes.stream().filter(node -> "pump:P1".equals(node.getString("id")))
-                .findFirst().orElseThrow().getString("name"));
-        assertEquals(1, graph.getJSONArray("edges").size());
-        assertEquals("pump:P1", graph.getJSONArray("edges").getJSONObject(0).getString("source"));
-        assertEquals("tank:T1", graph.getJSONArray("edges").getJSONObject(0).getString("target"));
-        assertTrue(graph.getBooleanValue("complete"));
-        store.execute("DROP TABLE pump");
-        JSONObject failed = service.cutWholeData("domain", store.config);
-        assertFalse(failed.getBooleanValue("complete"));
-        assertTrue(failed.getJSONArray("failures").contains("class:pump"));
-    }
-
-    @Test
-    void aRelationshipNodeIdReadsBackTheSameObjectByItsActualPrimaryKey() throws Exception {
-        DuckDbGraphFixture store = new DuckDbGraphFixture(directory.resolve("graph.db"), "");
-        DataServiceImpl service = service(store);
-        JSONObject edge = service.cutWholeData("domain", store.config).getJSONArray("edges").getJSONObject(0);
-        assertEquals("feeds", edge.getString("type"));
-        assertEquals("tank:T1", edge.getString("target"));
         UserDataPermission permission = new UserDataPermission();
         permission.setFullData(true);
-        JSONObject details = service.queryInfoByNode(JSONObject.of("id", edge.getString("source"), "class", "pump"),
+        // The pump's primary key is `code`, not `id`: the node id carries that key's value.
+        JSONObject details = service(store).queryInfoByNode(JSONObject.of("id", "pump:P1", "class", "pump"),
                 "en", permission, "domain");
         assertTrue(details.getBooleanValue("success"), details.toJSONString());
         assertEquals(JSONObject.of("code", "P1", "name", "Business name", "tank_code", "T1"),

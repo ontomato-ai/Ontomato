@@ -161,8 +161,9 @@ function createSettingsAgent() {
   void router.push(settingsPath("/new"));
 }
 
+/** The capability library, from the column's row and from the editor's button alike. */
 function openCapabilities() {
-  void router.push(settingsPath("/capabilities"));
+  void router.push({ name: routes.agentSettingsCapabilities.name });
 }
 
 /** The column's own entry at the foot: the agent settings, which replace the column while they are open. */
@@ -228,6 +229,7 @@ function appearanceSaved(value: WorkbenchAppearance) {
         :creating="creatingAgent"
         :capabilities="capabilitiesOpen"
         @changed="shell?.reloadAgents()"
+        @open-capabilities="openCapabilities"
       />
       <slot v-else name="feature" :feature-id="page" />
     </template>

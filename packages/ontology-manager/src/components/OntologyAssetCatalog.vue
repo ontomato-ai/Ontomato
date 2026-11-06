@@ -119,7 +119,7 @@ onMounted(() => void loadCatalog());
 <template>
   <section v-loading="loading" class="asset-catalog">
     <!-- The platform's one page header: the title, its line of description, and this page's own button. -->
-    <PlatformPageHeader :title="currentMeta.title" :description="currentMeta.description">
+    <PlatformPageHeader compact :title="currentMeta.title" :description="currentMeta.description">
       <template #actions>
         <el-button type="primary" @click="emit('create')">
           <component :is="currentMeta.icon" :size="16" />
@@ -128,68 +128,74 @@ onMounted(() => void loadCatalog());
       </template>
     </PlatformPageHeader>
 
-    <div class="catalog-toolbar">
-      <el-input
-        v-model="query"
-        :prefix-icon="Search"
-        :placeholder="ot('filterPrefix', { title: currentMeta.title })"
-        clearable
-      />
-      <span class="resource-count">{{ filteredAssets.length }} {{ ot("items") }}</span>
-    </div>
-
-    <div class="resource-table">
-      <div :class="['resource-table-head', { 'function-grid': kind === 'functions' }]">
-        <span>{{ currentMeta.title }}</span>
-        <span v-if="kind === 'functions'">{{ ot("assetOperationType") }}</span>
-        <span v-else>{{ ot("linkedFunction") }}</span>
-        <span v-if="kind !== 'functions'">{{ ot("source") }}</span>
-        <span v-if="kind !== 'functions'">{{ ot("status") }}</span>
-        <span v-if="kind !== 'functions'">{{ ot("lastUpdated") }}</span>
-        <span></span>
+    <!-- The page under the header takes the page gutter, so the filter and the table start where the title does. -->
+    <div class="catalog-body platform-page-gutter">
+      <div class="catalog-toolbar">
+        <el-input
+          v-model="query"
+          :prefix-icon="Search"
+          :placeholder="ot('filterPrefix', { title: currentMeta.title })"
+          clearable
+        />
+        <span class="resource-count">{{ filteredAssets.length }} {{ ot("items") }}</span>
       </div>
-      <button
-        v-for="asset in filteredAssets"
-        :key="asset.id || asset.name"
-        :class="['resource-table-row', { 'function-grid': kind === 'functions' }]"
-        @click="emit('select', asset)"
-      >
-        <span class="resource-name">
-          <span>
-            <strong>{{ asset.name }}</strong>
-            <small>{{ asset.description || ot("notFilledDescription") }}</small>
+
+      <div class="resource-table">
+        <div :class="['resource-table-head', { 'function-grid': kind === 'functions' }]">
+          <span>{{ currentMeta.title }}</span>
+          <span v-if="kind === 'functions'">{{ ot("assetOperationType") }}</span>
+          <span v-else>{{ ot("linkedFunction") }}</span>
+          <span v-if="kind !== 'functions'">{{ ot("source") }}</span>
+          <span v-if="kind !== 'functions'">{{ ot("status") }}</span>
+          <span v-if="kind !== 'functions'">{{ ot("lastUpdated") }}</span>
+          <span></span>
+        </div>
+        <button
+          v-for="asset in filteredAssets"
+          :key="asset.id || asset.name"
+          :class="['resource-table-row', { 'function-grid': kind === 'functions' }]"
+          @click="emit('select', asset)"
+        >
+          <span class="resource-name">
+            <span>
+              <strong>{{ asset.name }}</strong>
+              <small>{{ asset.description || ot("notFilledDescription") }}</small>
+            </span>
           </span>
-        </span>
-        <span v-if="kind === 'functions'">{{ operationLabel(asset.operation) }}</span>
-        <span v-else>{{ asset.function?.name || "-" }}</span>
-        <span v-if="kind !== 'functions'">
-          {{
-            asset.origin === "SYSTEM" ? ot("system") : asset.origin === "USER" ? ot("user") : "-"
-          }}
-        </span>
-        <span v-if="kind !== 'functions'">
-          <span :class="['status-pill', statusClass(asset.status)]">
-            {{ statusLabel(asset.status) }}
+          <span v-if="kind === 'functions'">{{ operationLabel(asset.operation) }}</span>
+          <span v-else>{{ asset.function?.name || "-" }}</span>
+          <span v-if="kind !== 'functions'">
+            {{
+              asset.origin === "SYSTEM" ? ot("system") : asset.origin === "USER" ? ot("user") : "-"
+            }}
           </span>
-        </span>
-        <span v-if="kind !== 'functions'">{{ formatTime(asset.modifyTimestamp) }}</span>
-        <ChevronRight :size="16" class="row-chevron" />
-      </button>
-      <el-empty
-        v-if="!loading && filteredAssets.length === 0"
-        :description="ot('notFoundNamed', { title: currentMeta.title })"
-      />
+          <span v-if="kind !== 'functions'">
+            <span :class="['status-pill', statusClass(asset.status)]">
+              {{ statusLabel(asset.status) }}
+            </span>
+          </span>
+          <span v-if="kind !== 'functions'">{{ formatTime(asset.modifyTimestamp) }}</span>
+          <ChevronRight :size="16" class="row-chevron" />
+        </button>
+        <el-empty
+          v-if="!loading && filteredAssets.length === 0"
+          :description="ot('notFoundNamed', { title: currentMeta.title })"
+        />
+      </div>
     </div>
   </section>
 </template>
 
 <style scoped>
+/*
+ * The page paints no background of its own: it sits on the application's area, the darkest band in dark mode
+ * (DESIGN.md "Colour roles"); the table keeps its own surface.
+ */
 .asset-catalog {
   min-height: 100%;
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
-  background: var(--el-bg-color);
 }
 .catalog-titlebar :deep(.el-button) {
   display: inline-flex;
@@ -202,7 +208,6 @@ onMounted(() => void loadCatalog());
   align-items: center;
   gap: var(--spacing-sm);
   margin-top: var(--spacing-md);
-  padding: 0 var(--spacing-lg);
 }
 .catalog-toolbar :deep(.el-input) {
   width: 260px;
@@ -213,7 +218,7 @@ onMounted(() => void loadCatalog());
 }
 .resource-table {
   overflow: auto;
-  margin: var(--spacing-md) var(--spacing-lg) var(--spacing-lg);
+  margin: var(--spacing-md) 0 var(--spacing-lg);
   border: 1px solid var(--el-border-color);
   border-radius: var(--radius-md);
   background: var(--el-bg-color);

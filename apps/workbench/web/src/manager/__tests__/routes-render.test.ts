@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { App } from "vue";
 import { agentHostAgentListSchema, agentHostSessionPageSchema } from "@ontomato/contracts/agent-host";
 import type { WorkbenchAppearance } from "@ontomato/contracts/workbench-appearance";
+import { platformRoutes } from "@ontomato/platform-shell/routes";
 import { appPartition } from "../../../../../../packages/platform-web/src/app-partition";
 
 /*
@@ -101,7 +102,7 @@ async function open(path: string) {
 /** The address in the bar, without the query: that is what a rail row navigates to. */
 const landedAt = () => window.location.hash.replace(/^#/, "").split("?")[0]!;
 
-/** Every page address the applications own, deduplicated in rail order. */
+/** Every page address the applications own in this edition, deduplicated in rail order. */
 const pagePaths = [
   ...new Set(
     appPartition()
@@ -133,6 +134,29 @@ describe.each(pagePaths)("the open-source platform at %s", (path) => {
     expect(body!.innerHTML.trim(), `empty main area at ${path}`).not.toBe("");
     expect(drawErrors, `a page broke while drawing ${path}`).toEqual([]);
   });
+
+  /*
+   * An address no route serves falls through to the conversation, which also fills the main area: only the address
+   * shows that the page itself was drawn (the enterprise edition lost its dashboards route this way, 2026-11-06). The page
+   * stays at its address or at one of its own screens under it.
+   */
+  it("stays at its own address", async () => {
+    await open(path);
+    const landed = landedAt();
+    expect(landed === path || landed.startsWith(`${path}/`), `${path} landed on ${landed}`).toBe(true);
+  });
+});
+
+describe("the open-source platform's old capability library links", () => {
+  /*
+   * Before the library had an address of its own it was the agents page's `?tab=capabilities`. Opening such a bookmark
+   * (which is also what reloading it does) once landed on the conversation or on the first agent's editor instead (128
+   * acceptance, 2026-11-06); it lands on the library's address, so a later reload stays there.
+   */
+  it.each(["/agents?tab=capabilities", "/agents/settings?tab=capabilities"])("%s lands on the capability library", async (path) => {
+    await open(path);
+    expect(window.location.hash).toBe(`#${platformRoutes.agentSettingsCapabilities.path}`);
+  });
 });
 
 describe("the open-source platform's conversations", () => {
@@ -162,6 +186,17 @@ describe("the open-source platform's page headers", () => {
     expect(document.querySelector(".platform-page-header .page-tab")).toBeNull();
     // The page draws no second title: the header is the only one.
     expect(document.querySelector(".dashboards-application h1")).toBeNull();
+  });
+
+  it("names the object browser in its header though this edition gives it one page", async () => {
+    await open("/browser/data");
+    // The same header as the enterprise edition's, without the tabs: the application's name and its line.
+    const header = document.querySelector(".platform-page-header");
+    expect(header?.querySelector(".page-title")?.textContent).toBe("Object browser");
+    expect(header?.querySelector(".page-description")?.textContent?.trim()).toBeTruthy();
+    expect(header?.querySelector(".page-tab")).toBeNull();
+    // The data browser draws no header of its own, so the platform's page body around it carries the page gutter.
+    expect(document.querySelector(".platform-page-body")?.classList.contains("own-header")).toBe(false);
   });
 });
 

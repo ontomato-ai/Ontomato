@@ -264,7 +264,7 @@ onMounted(load);
 <template>
   <section class="business-knowledge" :class="{ 'narrow-detail': narrowDetail }">
     <!-- The platform's one page header: the title, its line of description, and this page's own buttons. -->
-    <PlatformPageHeader :title="t('nav.businessKnowledge')" :description="ot('knowledgeDesc')">
+    <PlatformPageHeader compact :title="t('nav.businessKnowledge')" :description="ot('knowledgeDesc')">
       <template #actions>
         <el-button @click="emit('governance')">
           <BookOpen :size="16" />
@@ -277,184 +277,198 @@ onMounted(load);
       </template>
     </PlatformPageHeader>
 
-    <div class="knowledge-toolbar">
-      <el-input
-        v-model="query"
-        :prefix-icon="Search"
-        :placeholder="ot('knowledgeSearchPlaceholder')"
-        clearable
-        class="knowledge-search"
-      />
-      <div class="knowledge-filters" role="tablist">
-        <button
-          v-for="tab in statusTabs"
-          :key="tab.value"
-          type="button"
-          role="tab"
-          :aria-selected="statusFilter === tab.value"
-          :class="['knowledge-filter', { active: statusFilter === tab.value }]"
-          @click="statusFilter = tab.value"
-        >
-          {{ tab.label }} <span>{{ tab.count }}</span>
-        </button>
-      </div>
-    </div>
-
-    <div class="knowledge-body">
-      <aside v-loading="loading" class="knowledge-list">
-        <div class="knowledge-list-head">
-          <template v-if="checked.length">
-            <span class="knowledge-checked">{{ ot("knowledgeChecked", { n: checked.length }) }}</span>
-            <el-button v-if="checkedPending.length" size="small" @click="approveChecked">
-              <Check :size="14" />
-              {{ ot("knowledgeBatchApprove") }}
-            </el-button>
-            <el-button size="small" @click="removeChecked">
-              <Trash2 :size="14" />
-              {{ ot("knowledgeBatchDelete") }}
-            </el-button>
-            <el-button size="small" link @click="checked = []">{{ ot("knowledgeClearChecked") }}</el-button>
-          </template>
-          <el-checkbox
-            v-else
-            :model-value="allVisibleChecked"
-            :disabled="!visible.length"
-            @update:model-value="toggleAllVisible(Boolean($event))"
+    <!-- The page under the header takes the page gutter: the filters and the list with its detail start where the title
+         does, and the two panes sit in one bordered block like a table. -->
+    <div class="knowledge-page platform-page-gutter">
+      <div class="knowledge-toolbar">
+        <el-input
+          v-model="query"
+          :prefix-icon="Search"
+          :placeholder="ot('knowledgeSearchPlaceholder')"
+          clearable
+          class="knowledge-search"
+        />
+        <div class="knowledge-filters" role="tablist">
+          <button
+            v-for="tab in statusTabs"
+            :key="tab.value"
+            type="button"
+            role="tab"
+            :aria-selected="statusFilter === tab.value"
+            :class="['knowledge-filter', { active: statusFilter === tab.value }]"
+            @click="statusFilter = tab.value"
           >
-            {{ ot("knowledgeCheckAll") }}
-          </el-checkbox>
+            {{ tab.label }} <span>{{ tab.count }}</span>
+          </button>
         </div>
-        <div
-          v-for="item in visible"
-          :key="item.knowledgeID"
-          :class="['knowledge-item', { active: !editing && selected?.knowledgeID === item.knowledgeID }]"
-        >
-          <el-checkbox
-            :model-value="checked.includes(item.knowledgeID)"
-            class="knowledge-item-check"
-            @update:model-value="toggleChecked(item.knowledgeID, Boolean($event))"
-          />
-          <button type="button" class="knowledge-item-main" @click="select(item)">
-            <span class="knowledge-item-title">
-              <i :class="['knowledge-dot', { pending: item.status !== 1 }]" />
-              <span>
-                <template v-for="(part, index) in segments(item.knowledgeTitle)" :key="index">
+      </div>
+
+      <div class="knowledge-body">
+        <aside v-loading="loading" class="knowledge-list">
+          <div class="knowledge-list-head">
+            <template v-if="checked.length">
+              <span class="knowledge-checked">{{ ot("knowledgeChecked", { n: checked.length }) }}</span>
+              <el-button v-if="checkedPending.length" size="small" @click="approveChecked">
+                <Check :size="14" />
+                {{ ot("knowledgeBatchApprove") }}
+              </el-button>
+              <el-button size="small" @click="removeChecked">
+                <Trash2 :size="14" />
+                {{ ot("knowledgeBatchDelete") }}
+              </el-button>
+              <el-button size="small" link @click="checked = []">{{ ot("knowledgeClearChecked") }}</el-button>
+            </template>
+            <el-checkbox
+              v-else
+              :model-value="allVisibleChecked"
+              :disabled="!visible.length"
+              @update:model-value="toggleAllVisible(Boolean($event))"
+            >
+              {{ ot("knowledgeCheckAll") }}
+            </el-checkbox>
+          </div>
+          <div
+            v-for="item in visible"
+            :key="item.knowledgeID"
+            :class="['knowledge-item', { active: !editing && selected?.knowledgeID === item.knowledgeID }]"
+          >
+            <el-checkbox
+              :model-value="checked.includes(item.knowledgeID)"
+              class="knowledge-item-check"
+              @update:model-value="toggleChecked(item.knowledgeID, Boolean($event))"
+            />
+            <button type="button" class="knowledge-item-main" @click="select(item)">
+              <span class="knowledge-item-title">
+                <i :class="['knowledge-dot', { pending: item.status !== 1 }]" />
+                <span>
+                  <template v-for="(part, index) in segments(item.knowledgeTitle)" :key="index">
+                    <mark v-if="part.hit">{{ part.text }}</mark><template v-else>{{ part.text }}</template>
+                  </template>
+                </span>
+              </span>
+              <span class="knowledge-item-summary">
+                <template v-for="(part, index) in summary(item.knowledgeText)" :key="index">
                   <mark v-if="part.hit">{{ part.text }}</mark><template v-else>{{ part.text }}</template>
                 </template>
               </span>
-            </span>
-            <span class="knowledge-item-summary">
-              <template v-for="(part, index) in summary(item.knowledgeText)" :key="index">
-                <mark v-if="part.hit">{{ part.text }}</mark><template v-else>{{ part.text }}</template>
-              </template>
-            </span>
-            <span v-if="item.knowledgeTags.length" class="knowledge-item-tags">
-              <el-tag v-for="tag in item.knowledgeTags" :key="tag" size="small" type="info">{{ tag }}</el-tag>
-            </span>
+              <span v-if="item.knowledgeTags.length" class="knowledge-item-tags">
+                <el-tag v-for="tag in item.knowledgeTags" :key="tag" size="small" type="info">{{ tag }}</el-tag>
+              </span>
+            </button>
+          </div>
+          <el-empty
+            v-if="!loading && !visible.length"
+            :description="ot(list.length ? 'knowledgeNoMatch' : 'knowledgeNoData')"
+            :image-size="72"
+          />
+        </aside>
+
+        <article class="knowledge-detail">
+          <button type="button" class="knowledge-back" @click="narrowDetail = false">
+            <ArrowLeft :size="16" />
+            {{ ot("knowledgeBackToList") }}
           </button>
-        </div>
-        <el-empty
-          v-if="!loading && !visible.length"
-          :description="ot(list.length ? 'knowledgeNoMatch' : 'knowledgeNoData')"
-          :image-size="72"
-        />
-      </aside>
 
-      <article class="knowledge-detail">
-        <button type="button" class="knowledge-back" @click="narrowDetail = false">
-          <ArrowLeft :size="16" />
-          {{ ot("knowledgeBackToList") }}
-        </button>
-
-        <el-form v-if="editing" :model="draft" label-position="top" class="knowledge-form">
-          <h2>{{ ot(draft.knowledgeID ? "knowledgeEdit" : "knowledgeAdd") }}</h2>
-          <el-form-item :label="ot('knowledgeTitle')" required>
-            <el-input v-model="draft.knowledgeTitle" :placeholder="ot('knowledgeTitlePlaceholder')" />
-          </el-form-item>
-          <el-form-item :label="ot('knowledgeContent')" required>
-            <el-input
-              v-model="draft.knowledgeText"
-              type="textarea"
-              :autosize="{ minRows: 8, maxRows: 24 }"
-              :placeholder="ot('knowledgeContentPlaceholder')"
-            />
-          </el-form-item>
-          <el-form-item :label="ot('knowledgeTags')">
-            <el-select
-              v-model="draft.knowledgeTags"
-              multiple
-              filterable
-              allow-create
-              :placeholder="ot('knowledgeTagsPlaceholder')"
-              class="knowledge-tag-select"
-            >
-              <el-option
-                v-for="option in tagOptions"
-                :key="option.value"
-                :label="option.label"
-                :value="option.value"
+          <el-form v-if="editing" :model="draft" label-position="top" class="knowledge-form">
+            <h2>{{ ot(draft.knowledgeID ? "knowledgeEdit" : "knowledgeAdd") }}</h2>
+            <el-form-item :label="ot('knowledgeTitle')" required>
+              <el-input v-model="draft.knowledgeTitle" :placeholder="ot('knowledgeTitlePlaceholder')" />
+            </el-form-item>
+            <el-form-item :label="ot('knowledgeContent')" required>
+              <el-input
+                v-model="draft.knowledgeText"
+                type="textarea"
+                :autosize="{ minRows: 8, maxRows: 24 }"
+                :placeholder="ot('knowledgeContentPlaceholder')"
               />
-            </el-select>
-          </el-form-item>
-          <el-form-item :label="ot('status')">
-            <el-radio-group v-model="draft.status">
-              <el-radio :value="0">{{ ot("pendingReview") }}</el-radio>
-              <el-radio :value="1">{{ ot("knowledgeApproved") }}</el-radio>
-            </el-radio-group>
-          </el-form-item>
-          <div class="knowledge-detail-actions">
-            <el-button @click="leaveEdit">{{ ot("cancel") }}</el-button>
-            <el-button type="primary" :loading="saving" @click="save">{{ ot("save") }}</el-button>
-          </div>
-        </el-form>
+            </el-form-item>
+            <el-form-item :label="ot('knowledgeTags')">
+              <el-select
+                v-model="draft.knowledgeTags"
+                multiple
+                filterable
+                allow-create
+                :placeholder="ot('knowledgeTagsPlaceholder')"
+                class="knowledge-tag-select"
+              >
+                <el-option
+                  v-for="option in tagOptions"
+                  :key="option.value"
+                  :label="option.label"
+                  :value="option.value"
+                />
+              </el-select>
+            </el-form-item>
+            <el-form-item :label="ot('status')">
+              <el-radio-group v-model="draft.status">
+                <el-radio :value="0">{{ ot("pendingReview") }}</el-radio>
+                <el-radio :value="1">{{ ot("knowledgeApproved") }}</el-radio>
+              </el-radio-group>
+            </el-form-item>
+            <div class="knowledge-detail-actions">
+              <el-button @click="leaveEdit">{{ ot("cancel") }}</el-button>
+              <el-button type="primary" :loading="saving" @click="save">{{ ot("save") }}</el-button>
+            </div>
+          </el-form>
 
-        <template v-else-if="selected">
-          <header class="knowledge-detail-head">
-            <h2>
-              <template v-for="(part, index) in segments(selected.knowledgeTitle)" :key="index">
+          <template v-else-if="selected">
+            <header class="knowledge-detail-head">
+              <h2>
+                <template v-for="(part, index) in segments(selected.knowledgeTitle)" :key="index">
+                  <mark v-if="part.hit">{{ part.text }}</mark><template v-else>{{ part.text }}</template>
+                </template>
+              </h2>
+              <el-tag v-if="selected.status === 1" type="success">{{ ot("knowledgeApproved") }}</el-tag>
+              <el-tag v-else type="warning">{{ ot("pendingReview") }}</el-tag>
+            </header>
+            <div v-if="selected.knowledgeTags.length" class="knowledge-detail-tags">
+              <el-tag v-for="tag in selected.knowledgeTags" :key="tag" size="small" type="info">{{ tag }}</el-tag>
+            </div>
+            <div class="knowledge-detail-text">
+              <template v-for="(part, index) in segments(selected.knowledgeText)" :key="index">
                 <mark v-if="part.hit">{{ part.text }}</mark><template v-else>{{ part.text }}</template>
               </template>
-            </h2>
-            <el-tag v-if="selected.status === 1" type="success">{{ ot("knowledgeApproved") }}</el-tag>
-            <el-tag v-else type="warning">{{ ot("pendingReview") }}</el-tag>
-          </header>
-          <div v-if="selected.knowledgeTags.length" class="knowledge-detail-tags">
-            <el-tag v-for="tag in selected.knowledgeTags" :key="tag" size="small" type="info">{{ tag }}</el-tag>
-          </div>
-          <div class="knowledge-detail-text">
-            <template v-for="(part, index) in segments(selected.knowledgeText)" :key="index">
-              <mark v-if="part.hit">{{ part.text }}</mark><template v-else>{{ part.text }}</template>
-            </template>
-          </div>
-          <div class="knowledge-detail-actions">
-            <el-button v-if="selected.status !== 1" type="success" @click="approve(selected)">
-              <Check :size="16" />
-              {{ ot("knowledgeApprove") }}
-            </el-button>
-            <el-button @click="openEdit(selected)">
-              <Pencil :size="16" />
-              {{ t("common.edit") }}
-            </el-button>
-            <el-button type="danger" plain @click="remove(selected)">
-              <Trash2 :size="16" />
-              {{ ot("delete") }}
-            </el-button>
-          </div>
-        </template>
+            </div>
+            <div class="knowledge-detail-actions">
+              <el-button v-if="selected.status !== 1" type="primary" @click="approve(selected)">
+                <Check :size="16" />
+                {{ ot("knowledgeApprove") }}
+              </el-button>
+              <el-button @click="openEdit(selected)">
+                <Pencil :size="16" />
+                {{ t("common.edit") }}
+              </el-button>
+              <el-button type="danger" plain @click="remove(selected)">
+                <Trash2 :size="16" />
+                {{ ot("delete") }}
+              </el-button>
+            </div>
+          </template>
 
-        <el-empty v-else :description="ot('knowledgeSelectHint')" :image-size="72" />
-      </article>
+          <el-empty v-else :description="ot('knowledgeSelectHint')" :image-size="72" />
+        </article>
+      </div>
     </div>
   </section>
 </template>
 
 <style scoped>
+/*
+ * The page paints no background of its own: it sits on the application's area, the darkest band in dark mode
+ * (DESIGN.md "Colour roles").
+ */
 .business-knowledge {
   display: flex;
   flex: 1;
   flex-direction: column;
   min-height: 0;
-  background: var(--el-bg-color);
+}
+.knowledge-page {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+  padding-bottom: var(--spacing-xl);
 }
 .business-knowledge :deep(.el-button) {
   display: inline-flex;
@@ -467,7 +481,7 @@ onMounted(load);
   min-height: 40px;
   align-items: center;
   gap: var(--spacing-sm);
-  padding: var(--spacing-sm) var(--spacing-lg);
+  padding-block: var(--spacing-sm);
 }
 .knowledge-search {
   flex: 0 1 360px;
@@ -506,7 +520,9 @@ onMounted(load);
   flex: 1;
   grid-template-columns: minmax(280px, 380px) minmax(0, 1fr);
   min-height: 0;
-  border-top: 1px solid var(--el-border-color);
+  overflow: hidden;
+  border: 1px solid var(--el-border-color);
+  border-radius: var(--radius-md);
 }
 .knowledge-list {
   overflow-y: auto;
