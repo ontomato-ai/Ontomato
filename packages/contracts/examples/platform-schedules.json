@@ -1,0 +1,210 @@
+{
+  "applications": {
+    "method": "GET", "path": "/api/data-query/platform/scheduled-tasks/applications", "status": 200,
+    "response": {"applications":[
+      {"id":"ontology","available":true,"unavailableReason":null,"taskCount":1},
+      {"id":"agents","available":true,"unavailableReason":null,"taskCount":1},
+      {"id":"operations","available":true,"unavailableReason":null,"taskCount":1},
+      {"id":"governance","available":true,"unavailableReason":null,"taskCount":1}
+    ],"totalCount":4}
+  },
+  "forms": [
+    {
+      "name":"ontology-empty", "appId":"ontology",
+      "request":{"values":{},"changedField":null,"taskId":null,"timeZone":"Asia/Shanghai"},
+      "response":{"appId":"ontology","formRevision":"ontology-unselected-v1","fields":[
+        {"key":"execution","label":"执行","required":true,"defaultValue":null,"help":null,"type":"select","refreshOnChange":true,"options":[
+          {"value":"action:correct-status","label":"离职状态校正 · 动作","description":"校正到期员工状态","disabled":false,"disabledReason":null},
+          {"value":"function:rebuild-cache","label":"重建缓存 · 函数","description":null,"disabled":false,"disabledReason":null},
+          {"value":"action:upload-documents","label":"上传附件 · 动作","description":null,"disabled":true,"disabledReason":"含有向量参数，暂不支持定时"}
+        ]}
+      ],"values":{"execution":""},"summary":[],"errors":[],"submittable":false}
+    },
+    {
+      "name":"ontology-selection-clears-old-parameters", "appId":"ontology",
+      "request":{"values":{"execution":"action:correct-status","parameter:obsolete":"旧值"},"changedField":"execution","taskId":null,"timeZone":"Asia/Shanghai"},
+      "response":{"appId":"ontology","formRevision":"correct-status-sha256-v1","fields":[
+        {"key":"execution","label":"执行","required":true,"defaultValue":null,"help":null,"type":"select","refreshOnChange":true,"options":[
+          {"value":"action:correct-status","label":"离职状态校正 · 动作","description":"校正到期员工状态","disabled":false,"disabledReason":null},
+          {"value":"function:rebuild-cache","label":"重建缓存 · 函数","description":null,"disabled":false,"disabledReason":null}
+        ]},
+        {"key":"parameter:cutoff","label":"截止日期","required":false,"defaultValue":null,"help":"日期或日期时间按任务时区解释；也可填写 RFC3339，留空使用实际开始时刻","type":"text","multiline":false,"placeholder":"2026-11-06 或 2026-11-06 23:00","maxLength":4000},
+        {"key":"parameter:departments","label":"部门","required":true,"defaultValue":null,"help":"每行一项，空行忽略","type":"text","multiline":true,"placeholder":"销售部\n市场部","maxLength":4000},
+        {"key":"parameter:thresholds","label":"阈值","required":true,"defaultValue":null,"help":"每行一个数字，空行忽略","type":"text","multiline":true,"placeholder":"10\n20.5","maxLength":4000},
+        {"key":"parameter:checkpoints","label":"检查时刻","required":true,"defaultValue":null,"help":"每行一个明确时间，按任务时区解释，也接受 RFC3339；空行忽略","type":"text","multiline":true,"placeholder":"2026-11-06\n2026-11-07 09:30","maxLength":4000}
+      ],"values":{"execution":"action:correct-status","parameter:cutoff":"","parameter:departments":"","parameter:thresholds":"","parameter:checkpoints":""},"summary":[{"key":"execution","label":"执行","value":"离职状态校正"}],"errors":[],"submittable":false}
+    },
+    {
+      "name":"agents-empty", "appId":"agents",
+      "request":{"values":{},"changedField":null,"taskId":null,"timeZone":"Asia/Shanghai"},
+      "response":{"appId":"agents","formRevision":"agents-v1","fields":[
+        {"key":"agentId","label":"智能体","required":true,"defaultValue":null,"help":null,"type":"select","refreshOnChange":false,"options":[
+          {"value":"20000000-0000-4000-8000-000000000001","label":"助理","description":null,"disabled":false,"disabledReason":null},
+          {"value":"20000000-0000-4000-8000-000000000002","label":"已停用的智能体","description":null,"disabled":true,"disabledReason":"智能体已停用"}
+        ]},
+        {"key":"instruction","label":"指令","required":true,"defaultValue":null,"help":null,"type":"text","multiline":true,"placeholder":"写清任务要求","maxLength":4000}
+      ],"values":{"agentId":"","instruction":""},"summary":[],"errors":[],"submittable":false}
+    },
+    {
+      "name":"operations-empty", "appId":"operations",
+      "request":{"values":{},"changedField":null,"taskId":null,"timeZone":"Asia/Shanghai"},
+      "response":{"appId":"operations","formRevision":"autotest-v1","fields":[
+        {"key":"operation","label":"做什么","required":true,"defaultValue":"autotest","help":null,"type":"select","refreshOnChange":true,"options":[
+          {"value":"autotest","label":"跑自动测试","description":null,"disabled":false,"disabledReason":null},
+          {"value":"inspection","label":"巡检","description":null,"disabled":false,"disabledReason":null}
+        ]},
+        {"key":"caseSetId","label":"用例集","required":true,"defaultValue":null,"help":"上一批还没跑完时，本次跳过并记下原因","type":"select","refreshOnChange":false,"options":[
+          {"value":"set-regression","label":"问数回归（32题）","description":null,"disabled":false,"disabledReason":null},
+          {"value":"set-empty","label":"待补用例集（0题）","description":null,"disabled":true,"disabledReason":"用例集没有题目"}
+        ]}
+      ],"values":{"operation":"autotest","caseSetId":""},"summary":[{"key":"operation","label":"做什么","value":"跑自动测试"}],"errors":[],"submittable":false}
+    },
+    {
+      "name":"operations-switch-to-inspection", "appId":"operations",
+      "request":{"values":{"operation":"inspection","caseSetId":"set-regression"},"changedField":"operation","taskId":null,"timeZone":"Asia/Shanghai"},
+      "response":{"appId":"operations","formRevision":"inspection-v1","fields":[
+        {"key":"operation","label":"做什么","required":true,"defaultValue":"autotest","help":null,"type":"select","refreshOnChange":true,"options":[
+          {"value":"autotest","label":"跑自动测试","description":null,"disabled":false,"disabledReason":null},
+          {"value":"inspection","label":"巡检","description":null,"disabled":false,"disabledReason":null}
+        ]},
+        {"key":"instruction","label":"指令","required":true,"defaultValue":null,"help":null,"type":"text","multiline":true,"placeholder":"写清检查范围和要求","maxLength":4000}
+      ],"values":{"operation":"inspection","instruction":""},"summary":[{"key":"operation","label":"做什么","value":"巡检"}],"errors":[],"submittable":false}
+    },
+    {
+      "name":"operations-switch-back-to-autotest", "appId":"operations",
+      "request":{"values":{"operation":"autotest","instruction":"旧巡检指令"},"changedField":"operation","taskId":null,"timeZone":"Asia/Shanghai"},
+      "response":{"appId":"operations","formRevision":"autotest-v1","fields":[
+        {"key":"operation","label":"做什么","required":true,"defaultValue":"autotest","help":null,"type":"select","refreshOnChange":true,"options":[
+          {"value":"autotest","label":"跑自动测试","description":null,"disabled":false,"disabledReason":null},
+          {"value":"inspection","label":"巡检","description":null,"disabled":false,"disabledReason":null}
+        ]},
+        {"key":"caseSetId","label":"用例集","required":true,"defaultValue":null,"help":null,"type":"select","refreshOnChange":false,"options":[
+          {"value":"set-regression","label":"问数回归（32题）","description":null,"disabled":false,"disabledReason":null}
+        ]}
+      ],"values":{"operation":"autotest","caseSetId":""},"summary":[{"key":"operation","label":"做什么","value":"跑自动测试"}],"errors":[],"submittable":false}
+    },
+    {
+      "name":"governance-empty", "appId":"governance",
+      "request":{"values":{},"changedField":null,"taskId":null,"timeZone":"Asia/Shanghai"},
+      "response":{"appId":"governance","formRevision":"governance-v1","fields":[
+        {"key":"instruction","label":"指令","required":true,"defaultValue":null,"help":null,"type":"text","multiline":true,"placeholder":"写清要检查的业务知识范围","maxLength":4000}
+      ],"values":{"instruction":""},"summary":[],"errors":[],"submittable":false}
+    },
+    {
+      "name":"edit-unavailable-agent", "appId":"agents",
+      "request":{"values":{"agentId":"20000000-0000-4000-8000-000000000002","instruction":"保留原指令"},"changedField":null,"taskId":"10000000-0000-4000-8000-000000000002","timeZone":"Asia/Shanghai"},
+      "response":{"appId":"agents","formRevision":"agents-v1","fields":[
+        {"key":"agentId","label":"智能体","required":true,"defaultValue":null,"help":null,"type":"select","refreshOnChange":false,"options":[
+          {"value":"20000000-0000-4000-8000-000000000001","label":"助理","description":null,"disabled":false,"disabledReason":null},
+          {"value":"20000000-0000-4000-8000-000000000002","label":"原智能体","description":null,"disabled":true,"disabledReason":"智能体已停用"}
+        ]},
+        {"key":"instruction","label":"指令","required":true,"defaultValue":null,"help":null,"type":"text","multiline":true,"placeholder":null,"maxLength":4000}
+      ],"values":{"agentId":"20000000-0000-4000-8000-000000000002","instruction":"保留原指令"},"summary":[{"key":"instruction","label":"指令","value":"保留原指令"}],"errors":[{"field":"/values/agentId","code":"target_unavailable","message":"智能体已停用"}],"submittable":false}
+    },
+    {
+      "name":"governance-ready", "appId":"governance",
+      "request":{"values":{"instruction":"核对库存口径的相互冲突，给出建议和来源"},"changedField":null,"taskId":null,"timeZone":"Asia/Shanghai"},
+      "response":{"appId":"governance","formRevision":"governance-v1","fields":[
+        {"key":"instruction","label":"指令","required":true,"defaultValue":null,"help":null,"type":"text","multiline":true,"placeholder":null,"maxLength":4000}
+      ],"values":{"instruction":"核对库存口径的相互冲突，给出建议和来源"},"summary":[{"key":"instruction","label":"指令","value":"核对库存口径的相互冲突，给出建议和来源"}],"errors":[],"submittable":true}
+    }
+  ],
+  "creates": [
+    {
+      "name":"ontology-with-line-arrays", "method":"POST", "path":"/api/data-query/platform/scheduled-tasks",
+      "headers":{"Idempotency-Key":"10000000-0000-4000-8000-000000000001"}, "status":201, "replayStatus":200,
+      "request":{"title":"每晚校正离职状态","appId":"ontology","content":{"execution":"action:correct-status","parameter:cutoff":"","parameter:departments":"销售部\n\n市场部","parameter:thresholds":"10\n20.5","parameter:checkpoints":"2026-11-06\n2026-11-07 09:30\n2026-11-08T01:30:00Z"},"formRevision":"correct-status-sha256-v1","frequency":{"kind":"daily","time":"23:00"},"timeZone":"Asia/Shanghai","notifyEmail":null},
+      "response":{"id":"10000000-0000-4000-8000-000000000001","creatorId":"member-a","title":"每晚校正离职状态","appId":"ontology","content":{"execution":"action:correct-status","parameter:cutoff":"","parameter:departments":"销售部\n\n市场部","parameter:thresholds":"10\n20.5","parameter:checkpoints":"2026-11-06\n2026-11-07 09:30\n2026-11-08T01:30:00Z"},"formRevision":"correct-status-sha256-v1","summary":[{"key":"execution","label":"执行","value":"离职状态校正"},{"key":"parameter:cutoff","label":"截止日期","value":"运行时刻"},{"key":"parameter:departments","label":"部门","value":"销售部、市场部"}],"frequency":{"kind":"daily","time":"23:00"},"timeZone":"Asia/Shanghai","notifyEmail":null,"enabled":true,"pause":null,"nextRunAt":"2026-11-06T15:00:00Z","revision":1,"createdAt":"2026-11-06T02:00:00Z","updatedAt":"2026-11-06T02:00:00Z","activeRunId":null,"lastRun":null,"latestResult":null}
+    },
+    {
+      "name":"agents-instruction", "method":"POST", "path":"/api/data-query/platform/scheduled-tasks",
+      "headers":{"Idempotency-Key":"10000000-0000-4000-8000-000000000002"}, "status":201, "replayStatus":200,
+      "request":{"title":"每日库存摘要","appId":"agents","content":{"agentId":"20000000-0000-4000-8000-000000000001","instruction":"生成库存变化摘要"},"formRevision":"agents-v1","frequency":{"kind":"interval","every":2,"unit":"hour"},"timeZone":"Asia/Shanghai","notifyEmail":"owner@example.com"},
+      "response":{"id":"10000000-0000-4000-8000-000000000002","creatorId":"member-a","title":"每日库存摘要","appId":"agents","content":{"agentId":"20000000-0000-4000-8000-000000000001","instruction":"生成库存变化摘要"},"formRevision":"agents-v1","summary":[{"key":"agentId","label":"智能体","value":"助理"},{"key":"instruction","label":"指令","value":"生成库存变化摘要"}],"frequency":{"kind":"interval","every":2,"unit":"hour"},"timeZone":"Asia/Shanghai","notifyEmail":"owner@example.com","enabled":true,"pause":null,"nextRunAt":"2026-11-06T04:00:00Z","revision":1,"createdAt":"2026-11-06T02:00:00Z","updatedAt":"2026-11-06T02:00:00Z","activeRunId":null,"lastRun":null,"latestResult":null}
+    },
+    {
+      "name":"operations-autotest", "method":"POST", "path":"/api/data-query/platform/scheduled-tasks",
+      "headers":{"Idempotency-Key":"10000000-0000-4000-8000-000000000003"}, "status":201, "replayStatus":200,
+      "request":{"title":"每夜问数回归","appId":"operations","content":{"operation":"autotest","caseSetId":"set-regression"},"formRevision":"autotest-v1","frequency":{"kind":"cron","expression":"0 0 2 * * *"},"timeZone":"Asia/Shanghai","notifyEmail":null},
+      "response":{"id":"10000000-0000-4000-8000-000000000003","creatorId":"member-a","title":"每夜问数回归","appId":"operations","content":{"operation":"autotest","caseSetId":"set-regression"},"formRevision":"autotest-v1","summary":[{"key":"operation","label":"做什么","value":"跑自动测试"},{"key":"caseSetId","label":"用例集","value":"问数回归（32题）"}],"frequency":{"kind":"cron","expression":"0 0 2 * * *"},"timeZone":"Asia/Shanghai","notifyEmail":null,"enabled":true,"pause":null,"nextRunAt":"2026-11-06T18:00:00Z","revision":1,"createdAt":"2026-11-06T02:00:00Z","updatedAt":"2026-11-06T02:00:00Z","activeRunId":null,"lastRun":null,"latestResult":null}
+    },
+    {
+      "name":"governance-instruction", "method":"POST", "path":"/api/data-query/platform/scheduled-tasks",
+      "headers":{"Idempotency-Key":"10000000-0000-4000-8000-000000000004"}, "status":201, "replayStatus":200,
+      "request":{"title":"每周知识核对","appId":"governance","content":{"instruction":"核对库存口径的相互冲突，给出建议和来源"},"formRevision":"governance-v1","frequency":{"kind":"weekly","weekday":1,"time":"09:00"},"notifyEmail":null},
+      "response":{"id":"10000000-0000-4000-8000-000000000004","creatorId":"member-a","title":"每周知识核对","appId":"governance","content":{"instruction":"核对库存口径的相互冲突，给出建议和来源"},"formRevision":"governance-v1","summary":[{"key":"instruction","label":"指令","value":"核对库存口径的相互冲突，给出建议和来源"}],"frequency":{"kind":"weekly","weekday":1,"time":"09:00"},"timeZone":"Asia/Shanghai","notifyEmail":null,"enabled":true,"pause":null,"nextRunAt":"2026-11-09T01:00:00Z","revision":1,"createdAt":"2026-11-06T02:00:00Z","updatedAt":"2026-11-06T02:00:00Z","activeRunId":null,"lastRun":null,"latestResult":null}
+    }
+  ],
+  "runs": [
+    {
+      "name":"ontology-completed-with-resolved-parameters", "status":200,
+      "response":{"id":"30000000-0000-4000-8000-000000000001","taskId":"10000000-0000-4000-8000-000000000001","trigger":"schedule","status":"completed","scheduledAt":"2026-11-06T15:00:00Z","startedAt":"2026-11-06T15:00:03Z","finishedAt":"2026-11-06T15:00:05Z","error":null,"resultSummary":"执行完成","resultLink":{"appId":"ontology","path":"/schedules?taskId=10000000-0000-4000-8000-000000000001&runId=30000000-0000-4000-8000-000000000001"},"spendTime":2000,
+        "snapshot":{"title":"每晚校正离职状态","appId":"ontology","content":{"execution":"action:correct-status","parameter:cutoff":"","parameter:departments":"销售部\n\n市场部","parameter:thresholds":"10\n20.5","parameter:checkpoints":"2026-11-06\n2026-11-07 09:30\n2026-11-08T01:30:00Z"},"formRevision":"correct-status-sha256-v1","creatorId":"member-a","summary":[{"key":"execution","label":"执行","value":"离职状态校正"}],"timeZone":"Asia/Shanghai","locale":"zh-CN","taskRevision":1},
+        "result":"{\"completed\":true}","executionDetails":{"parameters":{"cutoff":"2026-11-06T15:00:03Z","departments":["销售部","市场部"],"thresholds":[10,20.5],"checkpoints":["2026-11-05T16:00:00Z","2026-11-07T01:30:00Z","2026-11-08T01:30:00Z"]}}}
+    },
+    {
+      "name":"agents-running", "status":202,
+      "response":{"id":"30000000-0000-4000-8000-000000000002","taskId":"10000000-0000-4000-8000-000000000002","trigger":"manual","status":"running","scheduledAt":null,"startedAt":"2026-11-06T02:01:00Z","finishedAt":null,"error":null,"resultSummary":null,"resultLink":{"appId":"agents","path":"/agents/chat?sessionId=40000000-0000-4000-8000-000000000002"},"spendTime":null,
+        "snapshot":{"title":"每日库存摘要","appId":"agents","content":{"agentId":"20000000-0000-4000-8000-000000000001","instruction":"生成库存变化摘要"},"formRevision":"agents-v1","creatorId":"member-a","summary":[{"key":"instruction","label":"指令","value":"生成库存变化摘要"}],"timeZone":"Asia/Shanghai","locale":"zh-CN","taskRevision":1},"result":null,"executionDetails":null}
+    },
+    {
+      "name":"operations-batch-skipped", "status":200,
+      "response":{"id":"30000000-0000-4000-8000-000000000003","taskId":"10000000-0000-4000-8000-000000000003","trigger":"schedule","status":"skipped","scheduledAt":"2026-11-06T18:00:00Z","startedAt":"2026-11-06T18:00:00Z","finishedAt":"2026-11-06T18:00:01Z","error":{"code":"autotest_busy","message":"上一批测试尚未结束"},"resultSummary":"本次已跳过","resultLink":null,"spendTime":null,
+        "snapshot":{"title":"每夜问数回归","appId":"operations","content":{"operation":"autotest","caseSetId":"set-regression"},"formRevision":"autotest-v1","creatorId":"member-a","summary":[{"key":"caseSetId","label":"用例集","value":"问数回归（32题）"}],"timeZone":"Asia/Shanghai","locale":"zh-CN","taskRevision":1},"result":null,"executionDetails":null}
+    },
+    {
+      "name":"governance-completed", "status":200,
+      "response":{"id":"30000000-0000-4000-8000-000000000004","taskId":"10000000-0000-4000-8000-000000000004","trigger":"manual","status":"completed","scheduledAt":null,"startedAt":"2026-11-06T02:01:00Z","finishedAt":"2026-11-06T02:02:00Z","error":null,"resultSummary":"已审阅20条，发现3条建议","resultLink":{"appId":"governance","path":"/governance/chat/40000000-0000-4000-8000-000000000004"},"spendTime":60000,
+        "snapshot":{"title":"每周知识核对","appId":"governance","content":{"instruction":"核对库存口径的相互冲突，给出建议和来源"},"formRevision":"governance-v1","creatorId":"member-a","summary":[{"key":"instruction","label":"指令","value":"核对库存口径的相互冲突，给出建议和来源"}],"timeZone":"Asia/Shanghai","locale":"zh-CN","taskRevision":1},"result":"治理建议已保存在这段会话的治理报告中。","executionDetails":null}
+    },
+    {
+      "name":"operations-lost-busy-response-is-interrupted", "status":200,
+      "response":{"id":"30000000-0000-4000-8000-000000000005","taskId":"10000000-0000-4000-8000-000000000003","trigger":"schedule","status":"failed","scheduledAt":"2026-11-07T18:00:00Z","startedAt":"2026-11-07T18:00:00Z","finishedAt":"2026-11-07T18:10:00Z","error":{"code":"interrupted","message":"未找到批次 run-30000000-0000-4000-8000-000000000005；未自动重跑"},"resultSummary":null,"resultLink":null,"spendTime":null,
+        "snapshot":{"title":"每夜问数回归","appId":"operations","content":{"operation":"autotest","caseSetId":"set-regression"},"formRevision":"autotest-v1","creatorId":"member-a","summary":[],"timeZone":"Asia/Shanghai","locale":"zh-CN","taskRevision":1},"result":null,"executionDetails":null}
+    }
+  ],
+  "serviceExchanges": [
+    {
+      "name":"autotest-start", "method":"POST", "path":"/api/platform/schedule-applications/operations/runs", "status":202,
+      "request":{"taskId":"10000000-0000-4000-8000-000000000003","runId":"30000000-0000-4000-8000-000000000006","appId":"operations","title":"每夜问数回归","content":{"operation":"autotest","caseSetId":"set-regression"},"formRevision":"autotest-v1","timeZone":"Asia/Shanghai","locale":"zh-CN","trigger":"manual","scheduledAt":null,"admittedAt":"2026-11-06T02:03:00Z"},
+      "response":{"status":"running","handle":{"batchId":"run-30000000-0000-4000-8000-000000000006"},"resultLink":{"appId":"operations","path":"/ops/results?runId=run-30000000-0000-4000-8000-000000000006"},"resultSummary":null,"result":null,"spendTime":null,"error":null,"pause":null,"executionDetails":null}
+    },
+    {
+      "name":"inspection-start", "method":"POST", "path":"/api/platform/schedule-applications/operations/runs", "status":202,
+      "request":{"taskId":"10000000-0000-4000-8000-000000000003","runId":"30000000-0000-4000-8000-000000000007","appId":"operations","title":"问数故障晨检","content":{"operation":"inspection","instruction":"核对最近24小时失败的问数，给出有证据的建议"},"formRevision":"inspection-v1","timeZone":"Asia/Shanghai","locale":"zh-CN","trigger":"schedule","scheduledAt":"2026-11-06T23:30:00Z","admittedAt":"2026-11-06T23:30:01Z"},
+      "response":{"status":"running","handle":{"sessionId":"40000000-0000-4000-8000-000000000007"},"resultLink":{"appId":"operations","path":"/ops/diagnosis?sessionId=40000000-0000-4000-8000-000000000007"},"resultSummary":null,"result":null,"spendTime":null,"error":null,"pause":null,"executionDetails":null}
+    }
+  ],
+  "mutations": {
+    "update": {
+      "method":"PUT", "path":"/api/data-query/platform/scheduled-tasks/10000000-0000-4000-8000-000000000004", "status":200,
+      "request":{"title":"每月知识核对","appId":"governance","content":{"instruction":"核对库存口径的相互冲突，给出建议和来源"},"formRevision":"governance-v1","frequency":{"kind":"monthly","day":31,"time":"09:00"},"timeZone":"Asia/Shanghai","notifyEmail":null,"revision":1},
+      "response":{"id":"10000000-0000-4000-8000-000000000004","creatorId":"member-a","title":"每月知识核对","appId":"governance","content":{"instruction":"核对库存口径的相互冲突，给出建议和来源"},"formRevision":"governance-v1","summary":[{"key":"instruction","label":"指令","value":"核对库存口径的相互冲突，给出建议和来源"}],"frequency":{"kind":"monthly","day":31,"time":"09:00"},"timeZone":"Asia/Shanghai","notifyEmail":null,"enabled":true,"pause":null,"nextRunAt":"2026-11-30T01:00:00Z","revision":2,"createdAt":"2026-11-06T02:00:00Z","updatedAt":"2026-11-06T02:10:00Z","activeRunId":null,"lastRun":null,"latestResult":null}
+    },
+    "disable": {
+      "method":"PUT", "path":"/api/data-query/platform/scheduled-tasks/10000000-0000-4000-8000-000000000004/enabled", "status":200,
+      "request":{"enabled":false,"revision":2},
+      "response":{"id":"10000000-0000-4000-8000-000000000004","creatorId":"member-a","title":"每月知识核对","appId":"governance","content":{"instruction":"核对库存口径的相互冲突，给出建议和来源"},"formRevision":"governance-v1","summary":[{"key":"instruction","label":"指令","value":"核对库存口径的相互冲突，给出建议和来源"}],"frequency":{"kind":"monthly","day":31,"time":"09:00"},"timeZone":"Asia/Shanghai","notifyEmail":null,"enabled":false,"pause":null,"nextRunAt":null,"revision":3,"createdAt":"2026-11-06T02:00:00Z","updatedAt":"2026-11-06T02:11:00Z","activeRunId":null,"lastRun":null,"latestResult":null}
+    },
+    "delete": {
+      "method":"DELETE", "path":"/api/data-query/platform/scheduled-tasks/10000000-0000-4000-8000-000000000004", "headers":{"If-Match":"\"3\""}, "status":204
+    }
+  },
+  "errors": [
+    {"name":"permission-lost","status":403,"response":{"error":{"code":"PERMISSION_DENIED","message":"需要动作执行权限"},"correlationId":"schedule-example-permission"}},
+    {"name":"foreign-task","status":404,"response":{"error":{"code":"TASK_NOT_FOUND","message":"任务不存在"},"correlationId":"schedule-example-not-found"}},
+    {"name":"already-running","status":409,"response":{"error":{"code":"TASK_RUNNING","message":"任务正在执行","activeRunId":"30000000-0000-4000-8000-000000000002"},"correlationId":"schedule-example-running"}},
+    {"name":"idempotency-conflict","status":409,"response":{"error":{"code":"IDEMPOTENCY_CONFLICT","message":"该幂等键已用于其他请求"},"correlationId":"schedule-example-idempotency"}},
+    {"name":"numeric-array-validation","status":422,"response":{"error":{"code":"FIELD_VALIDATION_FAILED","message":"请检查参数","fields":[{"field":"/content/parameter:thresholds","code":"invalid_number","message":"第2行不是有效数字"}]},"correlationId":"schedule-example-parameter"}},
+    {"name":"local-time-validation","status":422,"response":{"error":{"code":"FIELD_VALIDATION_FAILED","message":"请检查时间","fields":[{"field":"/content/parameter:cutoff","code":"invalid_time","message":"请输入有效日期、日期时间或 RFC3339"}]},"correlationId":"schedule-example-time"}},
+    {"name":"dependency-unavailable","status":503,"response":{"error":{"code":"DEPENDENCY_UNAVAILABLE","message":"暂时无法读取应用表单"},"correlationId":"schedule-example-unavailable"}},
+    {"name":"form-changed","status":409,"response":{"error":{"code":"FORM_CHANGED","message":"执行定义已变化，请核对后重新保存","form":{"appId":"ontology","formRevision":"rebuild-cache-sha256-v2","fields":[{"key":"execution","label":"执行","required":true,"defaultValue":null,"help":null,"type":"select","refreshOnChange":true,"options":[{"value":"function:rebuild-cache","label":"重建缓存 · 函数","description":null,"disabled":false,"disabledReason":null}]}],"values":{"execution":"function:rebuild-cache"},"summary":[{"key":"execution","label":"执行","value":"重建缓存"}],"errors":[],"submittable":true}},"correlationId":"schedule-example-form-changed"}}
+  ],
+  "frequencies": [
+    {"kind":"interval","every":15,"unit":"minute"},
+    {"kind":"daily","time":"23:00"},
+    {"kind":"weekly","weekday":1,"time":"09:00"},
+    {"kind":"monthly","day":31,"time":"09:00"},
+    {"kind":"cron","expression":"0 0 2 * * *"}
+  ]
+}
