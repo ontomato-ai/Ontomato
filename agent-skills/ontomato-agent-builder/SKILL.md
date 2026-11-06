@@ -111,6 +111,8 @@ You are the ××× knowledge assistant. Answer quickly and accurately, with sour
 - Do not write a report or draw a chart unless asked.
 ```
 
+A complete example from modeling, loading data and the retrieval MetricView to the agent definition and verification is in [references/knowledge-and-data-agent.md](references/knowledge-and-data-agent.md).
+
 `execute_metric_view`, `collect_evidence` and `execute_action` are fixed tool names of the agent runtime. The MetricViews' names, descriptions and parameters go into the prompt automatically; `loopPrompt` only needs to say when to use which.
 
 ## External MCP services
