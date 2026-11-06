@@ -76,12 +76,16 @@ const menuPages = computed(() => (activeApp.value?.frame === "menu" ? (activeApp
 
 /**
  * The one header: an application of several pages shows the application's name, its one line of description and its
- * pages as tabs; a single-page application shows its page's name and description. A page that draws its own title (the
- * ontology manager's) is left to draw it, and its application's tabs, if any, still sit above it.
+ * pages as tabs; a single-page application shows its page's name and description. An application that declares a line
+ * of its own (the object browser, the system settings) is named in the header however many of its pages there are: with
+ * one — the open-source object browser, or an account that may open only one — it is the same header without tabs. A
+ * page that draws its own title (the ontology manager's) is left to draw it, and its application's tabs, if any, still
+ * sit above it.
  */
-const headerTitle = computed(() => (pageTabs.value.length > 0 ? (activeApp.value?.label ?? "") : (props.shownPage?.title ?? "")));
+const namedByApp = computed(() => pageTabs.value.length > 0 || activeApp.value?.description != null);
+const headerTitle = computed(() => (namedByApp.value ? (activeApp.value?.label ?? "") : (props.shownPage?.title ?? "")));
 const headerDescription = computed(() =>
-  pageTabs.value.length > 0 ? (activeApp.value?.description ?? null) : (props.shownPage?.description ?? null),
+  namedByApp.value ? (activeApp.value?.description ?? null) : (props.shownPage?.description ?? null),
 );
 const headerShown = computed(
   () => !props.blocked && (pageTabs.value.length > 0 || (props.shownPage !== null && !props.shownPage.ownHeader)),
@@ -121,7 +125,10 @@ const headerShown = computed(
           @discard="pageActions?.discard()"
           @select-tab="router.push($event)"
         />
-        <div class="platform-page-body" :class="{ 'own-header': shownPage?.ownHeader === true, 'own-frame': shownPage === null }">
+        <div
+          class="platform-page-body platform-page-gutter"
+          :class="{ 'own-header': shownPage?.ownHeader === true, 'own-frame': shownPage === null }"
+        >
           <RouterView />
         </div>
       </div>
@@ -143,7 +150,11 @@ const headerShown = computed(
       <!--
         A page that draws its own header carries its own gutter; every other page gets it here, once, with the header's.
       -->
-      <div v-else class="platform-page-body" :class="{ 'own-header': shownPage?.ownHeader === true, 'own-frame': shownPage === null }">
+      <div
+        v-else
+        class="platform-page-body platform-page-gutter"
+        :class="{ 'own-header': shownPage?.ownHeader === true, 'own-frame': shownPage === null }"
+      >
         <RouterView />
       </div>
     </template>
@@ -152,9 +163,9 @@ const headerShown = computed(
 
 <style scoped>
 /*
- * The page area is the application's: it fills the surface beside the rail. Its one horizontal gutter is the header's,
- * written here once (DESIGN.md "Layout"), so a title, a toolbar and the content under them start at the same place and
- * no page writes a left padding of its own.
+ * The page area is the application's: it fills the surface beside the rail. Its side padding is the header's gutter
+ * (`platform-page-gutter`), so a title, a toolbar and the content under them start at the same place and no page writes
+ * a side padding of its own.
  */
 .platform-page-body {
   display: flex;
@@ -162,12 +173,12 @@ const headerShown = computed(
   min-height: 0;
   flex-direction: column;
   overflow: auto;
-  padding: 16px var(--page-gutter) 24px;
+  padding-block: 16px 24px;
   container: platform-page / inline-size;
 }
 /*
  * A page with a header of its own carries that header's gutter, and so does an application whose pages are not in the
- * navigation (the dashboards, the scheduled tasks): its own frame writes the gutter, so the value occurs once.
+ * navigation (the dashboards, the scheduled tasks): its own frame takes the gutter, so it is not given twice.
  */
 .platform-page-body.own-header,
 .platform-page-body.own-frame {
@@ -197,15 +208,6 @@ const headerShown = computed(
   flex: 1;
   min-width: 0;
   min-height: 0;
-}
-@media (max-width: 760px) {
-  .platform-page-body {
-    padding-inline: var(--spacing-lg);
-  }
-  .platform-page-body.own-header,
-  .platform-page-body.own-frame {
-    padding: 0;
-  }
 }
 .platform-blocked {
   display: flex;

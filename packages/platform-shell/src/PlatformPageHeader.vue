@@ -47,7 +47,7 @@ const emit = defineEmits<{ discard: []; save: []; selectTab: [path: string] }>()
 </script>
 
 <template>
-  <header class="platform-page-header" :class="{ 'has-tabs': tabs && tabs.length > 0, compact }">
+  <header class="platform-page-header platform-page-gutter" :class="{ 'has-tabs': tabs && tabs.length > 0, compact }">
     <div v-if="title || description || actions?.length || draft || $slots.actions" class="header-row">
       <div class="header-text">
         <h1 v-if="title" class="page-title">{{ title }}</h1>
@@ -109,14 +109,14 @@ const emit = defineEmits<{ discard: []; save: []; selectTab: [path: string] }>()
 <style scoped>
 /*
  * One header for every page: the title and its description in one block, actions at the right, tabs under a hairline
- * (DESIGN.md "Admin page anatomy"). Its horizontal padding is the same value as the page body's, so a title and the
- * content under it start at the same place.
+ * (DESIGN.md "Admin page anatomy"). Its side padding is the page gutter (`platform-page-gutter`), the one the content
+ * under it takes too, so a title and the content start at the same place.
  */
 .platform-page-header {
   display: flex;
   flex-direction: column;
   flex-shrink: 0;
-  padding: var(--page-gutter) var(--page-gutter) 0;
+  padding-top: var(--page-gutter);
   box-sizing: border-box;
   container: page-header / inline-size;
 }
@@ -221,12 +221,6 @@ const emit = defineEmits<{ discard: []; save: []; selectTab: [path: string] }>()
   font-size: var(--text-sm);
   cursor: pointer;
 }
-@media (max-width: 760px) {
-  .platform-page-header {
-    padding-top: var(--spacing-lg);
-    padding-inline: var(--spacing-lg);
-  }
-}
 .page-tab:hover {
   color: var(--el-text-color-primary);
 }
@@ -239,8 +233,9 @@ const emit = defineEmits<{ discard: []; save: []; selectTab: [path: string] }>()
   outline: 2px solid var(--el-color-primary);
   outline-offset: -2px;
 }
+/* The compact row is denser only vertically: its sides are the page gutter, like every header's and the content's. */
 .platform-page-header.compact {
-  padding: var(--spacing-sm) var(--spacing-lg);
+  padding-block: var(--spacing-sm);
   border-bottom: 1px solid var(--el-border-color);
 }
 .compact .header-row {

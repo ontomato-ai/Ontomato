@@ -271,7 +271,9 @@ onMounted(() => {
   font-size: var(--text-base);
   line-height: var(--leading-base);
 }
+/* The conversation's ground is the application's own area, the page tone; what fades into it fades into that. */
 .shell-main {
+  --shell-conversation-ground: var(--el-bg-color-page);
   position: relative;
   display: flex;
   flex-direction: column;

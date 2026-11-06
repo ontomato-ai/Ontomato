@@ -338,120 +338,124 @@ const kindLabel = (row: Row) =>
         <el-button type="primary" :icon="Plug" @click="addService">{{ t("hotData.addService") }}</el-button>
       </template>
     </PlatformPageHeader>
-    <div class="library-toolbar">
-      <el-radio-group v-model="kindFilter" :aria-label="t('capabilities.filter')">
-        <el-radio-button value="all">{{ t("common.all") }}</el-radio-button>
-        <el-radio-button value="skill">{{ t("capabilities.skills") }}</el-radio-button>
-        <el-radio-button value="tool">{{ t("capabilities.tools") }}</el-radio-button>
-      </el-radio-group>
-      <el-input v-model="search" :placeholder="t('capabilities.search')" :prefix-icon="Search" clearable />
-    </div>
-
-    <el-alert v-if="loadFailed" type="error" :closable="false" show-icon :title="t('capabilities.loadFailed')">
-      <el-button text @click="load">{{ t("common.retry") }}</el-button>
-    </el-alert>
-
-    <el-table
-      v-else
-      v-loading="loading"
-      :data="visibleRows"
-      class="capability-table"
-      :fit="true"
-      :max-height="undefined"
-    >
-      <el-table-column :label="t('capabilities.name')" min-width="240">
-        <template #default="{ row }">
-          <div class="name-cell">
-            <span class="row-name">{{ row.name }}</span>
-            <el-tag size="small" effect="plain">{{ kindLabel(row) }}</el-tag>
-          </div>
-          <p v-if="row.description" class="row-description">{{ row.description }}</p>
-        </template>
-      </el-table-column>
-      <el-table-column :label="t('capabilities.source')" width="140">
-        <template #default="{ row }">{{ sourceLabel(row) }}</template>
-      </el-table-column>
-      <el-table-column :label="t('capabilities.usedBy')" min-width="180">
-        <template #default="{ row }">
-          <span v-if="row.usedBy.length">{{ row.usedBy.join(", ") }}</span>
-          <span v-else class="muted">{{ t("capabilities.unused") }}</span>
-        </template>
-      </el-table-column>
-      <el-table-column :label="t('capabilities.status')" width="130">
-        <template #default="{ row }">
-          <el-switch
-            v-if="row.kind === 'skill'"
-            :model-value="row.enabled"
-            :loading="toggleLoading[row.skill.id]"
-            size="small"
-            :aria-label="t('capabilities.status')"
-            @change="toggle(row)"
-          />
-          <el-tag v-else size="small" :type="row.failed ? 'danger' : 'success'" effect="plain">
-            {{ row.failed ? t("capabilities.unreachable") : t("capabilities.available") }}
-          </el-tag>
-        </template>
-      </el-table-column>
-      <el-table-column :label="t('capabilities.actions')" width="260" align="right">
-        <template #default="{ row }">
-          <div class="row-actions">
-            <el-button v-if="row.kind === 'tool'" size="small" text :loading="checking === row.key" @click="check(row)">
-              {{ t("capabilities.check") }}
-            </el-button>
-            <el-button v-if="row.kind === 'skill' && row.skill.type === 'executable'" size="small" text @click="debug(row)">
-              {{ t("common.debug") }}
-            </el-button>
-            <el-button v-if="row.kind === 'skill'" size="small" text :icon="Download" :aria-label="t('common.export')" @click="exportSkill(row)" />
-            <el-button size="small" text :icon="Pencil" :aria-label="t('common.edit')" @click="edit(row)">
-              {{ row.kind === "skill" && row.skill.isPublic ? t("common.view") : t("common.edit") }}
-            </el-button>
-            <el-button
-              v-if="row.kind === 'tool' || !row.skill.isPublic"
-              size="small"
-              text
-              type="danger"
-              :icon="Trash2"
-              :aria-label="t('common.delete')"
-              @click="remove(row)"
-            />
-          </div>
-        </template>
-      </el-table-column>
-      <template #empty>
-        <div class="empty">
-          <span>{{ search ? t("capabilities.noMatch") : t("capabilities.empty") }}</span>
-        </div>
-      </template>
-    </el-table>
-
-    <section v-if="visibleRows.some((row) => row.kind === 'tool' && row.tools)" class="discovered">
-      <template v-for="row in visibleRows" :key="row.key">
-        <article v-if="row.kind === 'tool' && row.tools" class="discovered-card">
-          <h4>{{ row.name }}</h4>
-          <McpToolList :tools="row.tools" />
-        </article>
-      </template>
-    </section>
-
-    <details v-if="publishedCards.length || publishedFailed" class="published">
-      <summary>
-        <span class="published-title">{{ t("mcp.publishedTab") }}</span>
-        <span class="published-count">{{ publishedCards.length }}</span>
-      </summary>
-      <div class="published-body">
-        <p class="published-hint">{{ t("mcp.publishedHint") }}</p>
-        <el-alert v-if="publishedFailed" type="warning" :closable="false" show-icon :title="t('mcp.loadFailed')" />
-        <article v-for="card in publishedCards" v-else :key="card.service.name" class="published-card">
-          <h4>{{ card.title }}</h4>
-          <code class="published-address">{{ card.service.mcpUrl }}</code>
-          <p v-if="card.hint" class="published-hint">{{ card.hint }}</p>
-          <details class="published-tools">
-            <summary>{{ t("mcp.availableTools") }} · {{ card.service.tools.length }}</summary>
-            <McpToolList :tools="card.service.tools" />
-          </details>
-        </article>
+    <!-- The page under its header: the one wrapper that takes the page gutter, so no element of the page pads itself
+         (the table's own root must not: Element Plus lays its columns out across its padding too). -->
+    <div class="library-body platform-page-gutter">
+      <div class="library-toolbar">
+        <el-radio-group v-model="kindFilter" :aria-label="t('capabilities.filter')">
+          <el-radio-button value="all">{{ t("common.all") }}</el-radio-button>
+          <el-radio-button value="skill">{{ t("capabilities.skills") }}</el-radio-button>
+          <el-radio-button value="tool">{{ t("capabilities.tools") }}</el-radio-button>
+        </el-radio-group>
+        <el-input v-model="search" :placeholder="t('capabilities.search')" :prefix-icon="Search" clearable />
       </div>
-    </details>
+
+      <el-alert v-if="loadFailed" type="error" :closable="false" show-icon :title="t('capabilities.loadFailed')">
+        <el-button text @click="load">{{ t("common.retry") }}</el-button>
+      </el-alert>
+
+      <el-table
+        v-else
+        v-loading="loading"
+        :data="visibleRows"
+        class="capability-table"
+        :fit="true"
+        :max-height="undefined"
+      >
+        <el-table-column :label="t('capabilities.name')" min-width="240">
+          <template #default="{ row }">
+            <div class="name-cell">
+              <span class="row-name">{{ row.name }}</span>
+              <el-tag size="small" effect="plain">{{ kindLabel(row) }}</el-tag>
+            </div>
+            <p v-if="row.description" class="row-description">{{ row.description }}</p>
+          </template>
+        </el-table-column>
+        <el-table-column :label="t('capabilities.source')" width="140">
+          <template #default="{ row }">{{ sourceLabel(row) }}</template>
+        </el-table-column>
+        <el-table-column :label="t('capabilities.usedBy')" min-width="180">
+          <template #default="{ row }">
+            <span v-if="row.usedBy.length">{{ row.usedBy.join(", ") }}</span>
+            <span v-else class="muted">{{ t("capabilities.unused") }}</span>
+          </template>
+        </el-table-column>
+        <el-table-column :label="t('capabilities.status')" width="130">
+          <template #default="{ row }">
+            <el-switch
+              v-if="row.kind === 'skill'"
+              :model-value="row.enabled"
+              :loading="toggleLoading[row.skill.id]"
+              size="small"
+              :aria-label="t('capabilities.status')"
+              @change="toggle(row)"
+            />
+            <el-tag v-else size="small" :type="row.failed ? 'danger' : 'success'" effect="plain">
+              {{ row.failed ? t("capabilities.unreachable") : t("capabilities.available") }}
+            </el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column :label="t('capabilities.actions')" width="260" align="right">
+          <template #default="{ row }">
+            <div class="row-actions">
+              <el-button v-if="row.kind === 'tool'" size="small" text :loading="checking === row.key" @click="check(row)">
+                {{ t("capabilities.check") }}
+              </el-button>
+              <el-button v-if="row.kind === 'skill' && row.skill.type === 'executable'" size="small" text @click="debug(row)">
+                {{ t("common.debug") }}
+              </el-button>
+              <el-button v-if="row.kind === 'skill'" size="small" text :icon="Download" :aria-label="t('common.export')" @click="exportSkill(row)" />
+              <el-button size="small" text :icon="Pencil" :aria-label="t('common.edit')" @click="edit(row)">
+                {{ row.kind === "skill" && row.skill.isPublic ? t("common.view") : t("common.edit") }}
+              </el-button>
+              <el-button
+                v-if="row.kind === 'tool' || !row.skill.isPublic"
+                size="small"
+                text
+                type="danger"
+                :icon="Trash2"
+                :aria-label="t('common.delete')"
+                @click="remove(row)"
+              />
+            </div>
+          </template>
+        </el-table-column>
+        <template #empty>
+          <div class="empty">
+            <span>{{ search ? t("capabilities.noMatch") : t("capabilities.empty") }}</span>
+          </div>
+        </template>
+      </el-table>
+
+      <section v-if="visibleRows.some((row) => row.kind === 'tool' && row.tools)" class="discovered">
+        <template v-for="row in visibleRows" :key="row.key">
+          <article v-if="row.kind === 'tool' && row.tools" class="discovered-card">
+            <h4>{{ row.name }}</h4>
+            <McpToolList :tools="row.tools" />
+          </article>
+        </template>
+      </section>
+
+      <details v-if="publishedCards.length || publishedFailed" class="published">
+        <summary>
+          <span class="published-title">{{ t("mcp.publishedTab") }}</span>
+          <span class="published-count">{{ publishedCards.length }}</span>
+        </summary>
+        <div class="published-body">
+          <p class="published-hint">{{ t("mcp.publishedHint") }}</p>
+          <el-alert v-if="publishedFailed" type="warning" :closable="false" show-icon :title="t('mcp.loadFailed')" />
+          <article v-for="card in publishedCards" v-else :key="card.service.name" class="published-card">
+            <h4>{{ card.title }}</h4>
+            <code class="published-address">{{ card.service.mcpUrl }}</code>
+            <p v-if="card.hint" class="published-hint">{{ card.hint }}</p>
+            <details class="published-tools">
+              <summary>{{ t("mcp.availableTools") }} · {{ card.service.tools.length }}</summary>
+              <McpToolList :tools="card.service.tools" />
+            </details>
+          </article>
+        </div>
+      </details>
+    </div>
 
     <SkillFormDialog
       v-model:visible="skillDialog"
@@ -472,7 +476,9 @@ const kindLabel = (row: Row) =>
  */
 /*
  * The page fills the area it is mounted in. Its horizontal padding is the page header's grid: this page is its own
- * frame (it draws the header), so nothing above it supplies the gutter.
+ * frame (it draws the header), so nothing above it supplies the gutter. The body under the header takes it
+ * (`platform-page-gutter`): the table inside keeps the full width it is given, and scrolls sideways in its own frame
+ * when its columns need more.
  */
 .capability-library {
   display: flex;
@@ -482,8 +488,10 @@ const kindLabel = (row: Row) =>
   padding: 0 0 var(--spacing-xl);
   box-sizing: border-box;
 }
-.capability-library > :not(.platform-page-header) {
-  padding: 0 var(--page-gutter);
+.library-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-md);
 }
 .library-toolbar {
   display: flex;

@@ -280,12 +280,16 @@ onMounted(loadRecords);
 </template>
 
 <style scoped>
+/*
+ * The page paints no background of its own: it sits on the application's area, the darkest band in dark mode
+ * (DESIGN.md "Colour roles"), so it never floats as a card inside the page gutter; its tables, inputs and cards keep
+ * their own surfaces.
+ */
 .feedback-records {
   display: flex;
   height: 100%;
   min-height: 0;
   flex-direction: column;
-  background: var(--el-bg-color);
 }
 
 .page-body {
