@@ -1,12 +1,12 @@
 <script setup lang="ts">
-import { computed } from "vue";
+import { computed, provide } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { useI18n } from "vue-i18n";
 import { usePageActionsOf, usePlatformHost, type PlatformPage } from "@ontomato/platform-admin";
 import PlatformLayout from "./PlatformLayout.vue";
 import type { PlatformShownPage } from "./PlatformLayout.vue";
 import { appDeclarations } from "./partition";
-import { appPartition, type PartitionOptions } from "./app-partition";
+import { appPartition, appPartitionKey, type PartitionOptions } from "./app-partition";
 import type { PlatformAppDeclaration } from "./apps";
 
 /**
@@ -26,8 +26,12 @@ const { t } = useI18n();
 const route = useRoute();
 const router = useRouter();
 
-const apps = computed<PlatformAppDeclaration[]>(() =>
-  appDeclarations(host.navigation.value, host.access, appPartition(props.apps), (key) => t(key)),
+/** This edition's applications in rail order; the pages under the shell read the same list (`appPartitionKey`). */
+const partition = computed(() => appPartition(props.apps));
+provide(appPartitionKey, partition);
+
+const declarations = computed<PlatformAppDeclaration[]>(() =>
+  appDeclarations(host.navigation.value, host.access, partition.value, (key) => t(key)),
 );
 
 /** The page the navigation names for this address; a tab names the page it is a screen of. */
@@ -79,7 +83,7 @@ function homeOf(app: PlatformAppDeclaration): string | null {
 }
 
 function selectApp(id: string) {
-  const app = apps.value.find((candidate) => candidate.id === id);
+  const app = declarations.value.find((candidate) => candidate.id === id);
   // An external application is opened by the rail itself; nothing here makes it current.
   const path = app ? homeOf(app) : null;
   if (path) void router.push(path);
@@ -107,7 +111,7 @@ const blocked = computed(() => {
 
 <template>
   <PlatformLayout
-    :apps="apps"
+    :apps="declarations"
     :shown-page="shownPage"
     :account="account"
     :preferences="preferences"

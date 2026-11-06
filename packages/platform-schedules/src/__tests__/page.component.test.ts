@@ -1,172 +1,213 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
+import type { VueWrapper } from "@vue/test-utils";
+import type { PlatformTask } from "@ontomato/contracts/platform-schedules";
 import PlatformSchedulesPage from "../pages/PlatformSchedulesPage.vue";
-import type { PlatformSchedulesHost } from "../host";
-import { flushPromises, mount, pageGlobal, run, task, text } from "./fixtures";
+import ScheduleCard from "../components/ScheduleCard.vue";
+import ScheduleRunsDrawer from "../components/ScheduleRunsDrawer.vue";
+import {
+  BASE,
+  applications,
+  deferred,
+  dropped,
+  fakeHost,
+  flushPromises,
+  mount,
+  pageGlobal,
+  refusal,
+  run,
+  summaryOf,
+  task,
+  text,
+  type Answer,
+  type Call,
+} from "./fixtures";
 
-const AGENT = { id: "22222222-2222-4222-8222-222222222222", name: "Analyst", description: "", icon: null, enabled: true };
-const FUNCTION_TARGETS = [{ id: "f-1", name: "Refresh revenue", description: "Rebuilds the revenue table" }];
+const governance = task("governance-instruction", {
+  pause: { code: "definition_changed", message: "The function it runs was changed" },
+  nextRunAt: null,
+});
+const completedOntologyRun = run("ontology-completed-with-resolved-parameters");
+const ontology = task("ontology-with-line-arrays", {
+  lastRun: summaryOf(
+    run("ontology-completed-with-resolved-parameters", {
+      id: "30000000-0000-4000-8000-00000000000a",
+      status: "failed",
+      error: { code: "permission_denied", message: "You can no longer execute this action" },
+      resultSummary: null,
+      resultLink: null,
+    }),
+  ),
+  latestResult: { runId: completedOntologyRun.id, link: completedOntologyRun.resultLink! },
+});
+const operations = task("operations-autotest");
+const runningAgentRun = run("agents-running");
+const agents = task("agents-instruction", { lastRun: summaryOf(runningAgentRun), activeRunId: runningAgentRun.id });
+/**
+ * The service's order: what needs attention first, then by next run. The two scheduled tasks come in an order no
+ * client-side sort would give them (the later next run first, titles out of order), so a page that sorted would show it.
+ */
+const listed = [governance, ontology, operations, agents];
 
-/** A host that answers its paths and records them; `functionTargets` sets what the service says to that one path. */
-function host(
-  options: { functionTargets?: { status: number; body?: unknown }; overrides?: Partial<PlatformSchedulesHost> } = {},
-) {
-  const paths: string[] = [];
-  const request = vi.fn(async (path: string) => {
-    paths.push(path);
-    if (path.endsWith("/credential/renew")) return { status: 204, ok: true, json: async () => null } as Response;
-    if (path.endsWith("/function-targets")) {
-      const answer = options.functionTargets ?? { status: 200, body: FUNCTION_TARGETS };
-      return { status: answer.status, ok: answer.status < 400, json: async () => answer.body ?? null } as Response;
+let mounted: VueWrapper[] = [];
+afterEach(() => {
+  mounted.forEach((wrapper) => wrapper.unmount());
+  mounted = [];
+});
+
+/** A service with the caller's four tasks; `answer` takes any request a test wants to answer itself. */
+function service(answer: (call: Call) => Answer | Promise<Answer> | undefined = () => undefined) {
+  return fakeHost(async (call) => {
+    const own = await answer(call);
+    if (own) return own;
+    if (call.path === `${BASE}/credential/renew`) return { status: 204 };
+    if (call.path === `${BASE}/applications`) return { status: 200, body: applications() };
+    if (call.method === "GET" && call.path.startsWith(BASE) && !call.path.slice(BASE.length).startsWith("/")) {
+      return { status: 200, body: { tasks: listed, timeZone: "Asia/Shanghai" } };
     }
-    return { status: 200, ok: true, json: async () => ({ tasks: [task()], timeZone: "Asia/Shanghai" }) } as Response;
+    if (call.method === "GET" && call.path.endsWith("/runs")) return { status: 200, body: { runs: [], nextCursor: null } };
+    throw new Error(`Unexpected ${call.method} ${call.path}`);
   });
-  const full: PlatformSchedulesHost = { request, agents: async () => [AGENT], ...options.overrides };
-  return { host: full, paths };
 }
 
-describe("platform schedules page", () => {
-  it("reads the list and the function targets through the host's request function", async () => {
-    const { host: pageHost, paths } = host();
-    const wrapper = mount(PlatformSchedulesPage, { props: { host: pageHost }, global: pageGlobal() });
-    await flushPromises();
+async function mountPage(host: ReturnType<typeof service>["host"], props: Record<string, unknown> = {}) {
+  const wrapper = mount(PlatformSchedulesPage, { props: { host, ...props }, global: pageGlobal() });
+  mounted.push(wrapper);
+  await flushPromises();
+  return wrapper;
+}
 
-    // The renewal comes first; the list and the function targets are asked for together after it.
-    expect(paths[0]).toBe("/api/data-query/platform/scheduled-tasks/credential/renew");
-    expect(paths.slice(1).sort()).toEqual([
-      "/api/data-query/platform/scheduled-tasks",
-      "/api/data-query/platform/scheduled-tasks/function-targets",
+const titles = (wrapper: VueWrapper) => wrapper.findAll(".card .title").map((title) => title.text());
+const card = (wrapper: VueWrapper, item: PlatformTask) =>
+  wrapper.findAllComponents(ScheduleCard).find((found) => found.props("task").id === item.id)!;
+
+describe("the scheduled tasks page", () => {
+  it("renews the credential, then shows the service's cards in the service's order with the rail's names", async () => {
+    const { host, calls } = service();
+    const wrapper = await mountPage(host);
+
+    expect(calls[0]!.path).toBe(`${BASE}/credential/renew`);
+    expect(calls.slice(1).map((call) => call.path).sort()).toEqual([BASE, `${BASE}/applications`]);
+    expect(titles(wrapper)).toEqual(listed.map((item) => item.title));
+    // The filters: all, then every application that declares a form, in the rail's order, each with its count.
+    expect(wrapper.findAll(".chip").map((chip) => chip.findAll("span").map((part) => part.text()).join(" "))).toEqual([
+      "All 4",
+      "Ontology Manager 1",
+      "Agent Platform 1",
+      "Operations diagnosis 1",
+      "Knowledge governance 1",
     ]);
-    expect(text(wrapper)).toContain("Nightly summary");
-    expect(text(wrapper)).toContain("Analyst");
+
+    // A card shows what it was given as the application summarised it, why it is paused, and its last run.
+    expect(text(card(wrapper, ontology))).toContain("执行: 离职状态校正 · 截止日期: 运行时刻 · 部门: 销售部、市场部");
+    expect(text(card(wrapper, ontology))).toContain("Failed");
+    expect(text(card(wrapper, ontology))).toContain("You can no longer execute this action");
+    expect(text(card(wrapper, governance))).toContain("Paused: The function it runs was changed");
+    expect(text(card(wrapper, governance))).toContain("Every Monday at 09:00");
+    expect(text(card(wrapper, agents))).toContain("Running");
   });
 
-  it("narrows to the agent the page's filter names", async () => {
-    const { host: pageHost, paths } = host();
-    mount(PlatformSchedulesPage, {
-      props: { host: pageHost, filterAgentId: AGENT.id },
-      global: pageGlobal(),
-    });
-    await flushPromises();
-
-    expect(paths).toContain(`/api/data-query/platform/scheduled-tasks?agentId=${AGENT.id}`);
-  });
-
-  it("offers the functions the service lists, and only those", async () => {
-    const { host: pageHost } = host();
-    const wrapper = mount(PlatformSchedulesPage, { props: { host: pageHost }, global: pageGlobal() });
-    await flushPromises();
-
-    // The page's header owns the button; the page opens the list's form when asked.
-    (wrapper.vm as unknown as { openNewTask: () => void }).openNewTask();
-    await flushPromises();
-    await wrapper.findComponent({ name: "ElSegmented" }).vm.$emit("update:modelValue", "function");
-
-    const form = wrapper.findComponent({ name: "PlatformScheduleForm" });
-    expect(form.props("functions")).toEqual(FUNCTION_TARGETS);
-    expect(form.props("functionsRefused")).toBe(false);
-  });
-
-  it("says functions are not available to an account the service refuses, and still schedules agent tasks", async () => {
-    const { host: pageHost } = host({ functionTargets: { status: 403 } });
-    const wrapper = mount(PlatformSchedulesPage, { props: { host: pageHost }, global: pageGlobal() });
-    await flushPromises();
-
-    // A refused function list leaves the page usable: the answer is a refusal, not a failure.
-    expect(text(wrapper)).toContain("Nightly summary");
-
-    // The page's header owns the button; the page opens the list's form when asked.
-    (wrapper.vm as unknown as { openNewTask: () => void }).openNewTask();
-    await flushPromises();
-    const form = wrapper.findComponent({ name: "PlatformScheduleForm" });
-    expect(form.props("functions")).toEqual([]);
-    expect(form.props("functionsRefused")).toBe(true);
-
-    await wrapper.findComponent({ name: "ElSegmented" }).vm.$emit("update:modelValue", "function");
-    expect(text(wrapper)).toContain("Scheduling functions needs the function tasks permission.");
-
-    // The agent side is untouched by the refusal.
-    await wrapper.findComponent({ name: "ElSegmented" }).vm.$emit("update:modelValue", "agent");
-    form.vm.$emit("submit", {
-      name: "Nightly summary",
-      description: null,
-      target: { kind: "agent", agentId: AGENT.id, prompt: "Summarise yesterday's orders" },
-      frequency: { kind: "daily", time: "09:00" },
-      timeZone: "Asia/Shanghai",
-      notifyEmail: null,
-    });
-    await flushPromises();
-    expect(pageHost.request).toHaveBeenCalledWith(
-      "/api/data-query/platform/scheduled-tasks",
-      expect.objectContaining({ method: "POST" }),
+  it("keeps a card where it stands when its answer changes", async () => {
+    const switchedOff = { ...operations, enabled: false, nextRunAt: null, revision: 2 };
+    const { host, calls } = service((call) =>
+      call.method === "PUT" ? { status: 200, body: switchedOff } : undefined,
     );
-  });
+    const wrapper = await mountPage(host);
 
-  it("treats a failed function-target read as an empty list, not a refusal", async () => {
-    const { host: pageHost } = host({ functionTargets: { status: 500 } });
-    const wrapper = mount(PlatformSchedulesPage, { props: { host: pageHost }, global: pageGlobal() });
+    card(wrapper, operations).findComponent({ name: "ElSwitch" }).vm.$emit("update:modelValue", false);
     await flushPromises();
 
-    // The page's header owns the button; the page opens the list's form when asked.
-    (wrapper.vm as unknown as { openNewTask: () => void }).openNewTask();
-    await flushPromises();
-    const form = wrapper.findComponent({ name: "PlatformScheduleForm" });
-    expect(form.props("functions")).toEqual([]);
-    expect(form.props("functionsRefused")).toBe(false);
+    const put = calls.find((call) => call.method === "PUT")!;
+    expect(put.path).toBe(`${BASE}/${operations.id}/enabled`);
+    expect(put.body).toEqual({ enabled: false, revision: operations.revision });
+    expect(titles(wrapper)).toEqual(listed.map((item) => item.title));
+    expect(text(card(wrapper, operations))).toContain("Switched off");
   });
 
-  it("opens the run history of the task the address named, without asking the service for it separately", async () => {
-    const { host: pageHost, paths } = host();
-    const wrapper = mount(PlatformSchedulesPage, {
-      props: { host: pageHost, taskId: task().id },
-      global: pageGlobal(),
+  it("narrows by application through the address, and searches titles without reordering", async () => {
+    const { host, calls } = service();
+    const wrapper = await mountPage(host);
+
+    await wrapper.find('.chip[data-app="agents"]').trigger("click");
+    expect(wrapper.emitted("selectApp")).toEqual([["agents"]]);
+    await wrapper.setProps({ app: "agents" });
+    await flushPromises();
+    expect(calls.at(-1)!.path).toBe(`${BASE}?appId=agents`);
+    expect(wrapper.find('.chip[data-app="agents"]').attributes("aria-pressed")).toBe("true");
+
+    await wrapper.setProps({ app: null });
+    await flushPromises();
+    await wrapper.findComponent({ name: "ElInput" }).vm.$emit("update:modelValue", "每");
+    expect(titles(wrapper)).toEqual(listed.map((item) => item.title).filter((title) => title.includes("每")));
+    await wrapper.findComponent({ name: "ElInput" }).vm.$emit("update:modelValue", "回归");
+    expect(titles(wrapper)).toEqual([operations.title]);
+  });
+
+  it("opens a result through the host, and has none to open before a run left one", async () => {
+    const { host, opened } = service();
+    const wrapper = await mountPage(host);
+
+    await card(wrapper, ontology).find("button.result").trigger("click");
+    expect(opened).toEqual([completedOntologyRun.resultLink]);
+    expect(card(wrapper, operations).find("button.result").attributes("disabled")).toBeDefined();
+  });
+
+  it("resends a manual run with its key after no answer came, and takes a new key once one did", async () => {
+    let posts = 0;
+    const { host, calls } = service((call) => {
+      if (call.method !== "POST" || !call.path.endsWith("/runs")) return undefined;
+      posts += 1;
+      return posts === 1 ? dropped() : { status: 202, body: run("operations-batch-skipped") };
     });
-    await flushPromises();
+    const wrapper = await mountPage(host);
+    const runNow = async () => {
+      card(wrapper, operations).findComponent({ name: "ElDropdown" }).vm.$emit("command", "runNow");
+      await flushPromises();
+    };
 
-    expect(wrapper.findAllComponents({ name: "PlatformScheduleRuns" })).toHaveLength(1);
-    expect(paths).toContain(`/api/data-query/platform/scheduled-tasks/${task().id}/runs`);
+    await runNow();
+    await runNow();
+    await runNow();
+
+    const keys = calls
+      .filter((call) => call.method === "POST" && call.path === `${BASE}/${operations.id}/runs`)
+      .map((call) => call.headers["Idempotency-Key"]);
+    expect(keys).toHaveLength(3);
+    expect(keys[1]).toBe(keys[0]);
+    expect(keys[2]).not.toBe(keys[1]);
   });
 
-  it("shows the plain list when the address names a task this caller cannot see", async () => {
-    const { host: pageHost } = host();
-    const wrapper = mount(PlatformSchedulesPage, {
-      props: { host: pageHost, taskId: "99999999-9999-4999-8999-999999999999" },
-      global: pageGlobal(),
+  it("reads the task and the run a link names before it opens their record", async () => {
+    const held = deferred<Answer>();
+    const { host, calls } = service((call) => {
+      if (call.path === `${BASE}/${ontology.id}`) return { status: 200, body: ontology };
+      if (call.path === `${BASE}/${ontology.id}/runs/${completedOntologyRun.id}`) return held.promise;
+      return undefined;
     });
+    const wrapper = await mountPage(host, { taskId: ontology.id, runId: completedOntologyRun.id });
+
+    expect(calls.map((call) => call.path)).toContain(`${BASE}/${ontology.id}`);
+    expect(wrapper.findComponent(ScheduleRunsDrawer).exists()).toBe(false);
+
+    held.resolve({ status: 200, body: completedOntologyRun });
     await flushPromises();
 
-    expect(text(wrapper)).toContain("Nightly summary");
-    expect(wrapper.findAllComponents({ name: "PlatformScheduleRuns" })).toHaveLength(0);
+    const drawer = wrapper.findComponent(ScheduleRunsDrawer);
+    expect(drawer.props("focusRun")).toEqual(completedOntologyRun);
+    // The linked run opens expanded: what the action really ran with is on screen.
+    expect(text(drawer)).toContain("The run this link opened");
+    expect(text(drawer)).toContain("Execution details");
+    expect(text(drawer)).toContain('"cutoff": "2026-11-06T15:00:03Z"');
   });
 
-  it("hands a run's session to the host's openSession", async () => {
-    const openSession = vi.fn();
-    const { host: pageHost } = host({
-      overrides: {
-        openSession,
-        request: vi.fn(async (path: string) => {
-          if (path.endsWith("/credential/renew")) return { status: 204, ok: true, json: async () => null } as Response;
-          if (path.endsWith("/function-targets")) return { status: 200, ok: true, json: async () => FUNCTION_TARGETS } as Response;
-          if (path.includes("/runs")) return { status: 200, ok: true, json: async () => ({ runs: [run()], nextCursor: null }) } as Response;
-          return { status: 200, ok: true, json: async () => ({ tasks: [task()], timeZone: "Asia/Shanghai" }) } as Response;
-        }),
-      },
-    });
-    const wrapper = mount(PlatformSchedulesPage, { props: { host: pageHost }, global: pageGlobal() });
-    await flushPromises();
+  it("stays on the cards and gives the link back when the run it names cannot be read", async () => {
+    const missing = refusal("foreign-task");
+    const { host } = service((call) =>
+      call.path.startsWith(`${BASE}/${ontology.id}`) ? { status: missing.status, body: missing.body } : undefined,
+    );
+    const wrapper = await mountPage(host, { taskId: ontology.id, runId: completedOntologyRun.id });
 
-    await wrapper.findAll("button").find((button) => button.text().includes("History"))!.trigger("click");
-    await flushPromises();
-    await wrapper.findAll("button").find((button) => button.text() === "Open conversation")!.trigger("click");
-
-    expect(openSession).toHaveBeenCalledWith(run().sessionId);
-    expect(wrapper.emitted("openSession")).toEqual([[run().sessionId]]);
-  });
-
-  it("keeps the list usable when the agent catalog fails to load", async () => {
-    const { host: pageHost } = host({ overrides: { agents: async () => Promise.reject(new Error("403")) } });
-    const wrapper = mount(PlatformSchedulesPage, { props: { host: pageHost }, global: pageGlobal() });
-    await flushPromises();
-
-    expect(text(wrapper)).toContain("Nightly summary");
+    expect(wrapper.findComponent(ScheduleRunsDrawer).exists()).toBe(false);
+    expect(wrapper.emitted("recordsClosed")).toHaveLength(1);
+    expect(titles(wrapper)).toEqual(listed.map((item) => item.title));
   });
 });
