@@ -18,6 +18,7 @@ export const englishGovernance: GovernanceMessages = {
     "progress": "Reviewed {done} of {total} knowledge entries",
     "sources": "Sources",
     "report": "Report",
+    "feedback": "User feedback",
     "placeholder": "Explain the business rule, ask a question, or add an exception…",
     "saved": "Suggestions only — knowledge, ontology and data are not changed. Saved automatically.",
     "reportHint": "These are proposed changes for people to apply. Confirmation does not modify knowledge, ontology or data.",

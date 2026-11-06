@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from "vue";
+import { computed, onMounted, ref, watch, type Component } from "vue";
 import { X } from "lucide-vue-next";
 import { AgentShell, createAgentHostClient, useAgentNav } from "@ontomato/agent-shell-ui";
 import "@ontomato/agent-shell-ui/style.css";
@@ -7,30 +7,48 @@ import {
   governanceSourceReadSchema, governanceWorkResponseSchema,
   type GovernanceSourceRead, type GovernanceWork,
 } from "@ontomato/contracts/knowledge-governance";
-import { useGovernanceText, useManagerClient } from "../context";
+import { useGovernanceText, useManagerClient, usePlatformText } from "../context";
 import { governanceAgentId } from "./messages";
 
 /**
- * Knowledge governance as an agent app (DESIGN.md "Agent apps"): the governance agent plus one page, the
- * report of findings. The report sits full or beside the conversation; the finding the reader selects is what "this"
- * means in the next message. Sources open inside the finding that cites them.
+ * Knowledge governance as an agent app (DESIGN.md "Agent apps"): the governance agent plus its pages, the report of
+ * findings and the feedback the conversations were given on. The report sits full or beside the conversation; the
+ * finding the reader selects is what "this" means in the next message. Sources open inside the finding that cites them.
  */
-const props = defineProps<{ sessionId: string | null }>();
-const emit = defineEmits<{ session: [id: string | null] }>();
+const props = defineProps<{
+  sessionId: string | null;
+  /** The page of this application the address opened, when it named one (the feedback records). */
+  page?: string | null;
+  /**
+   * The screens this application shows that are not this package's: the feedback records belong to the platform's
+   * pages, so the edition that assembles both hands the screen over rather than this package importing it.
+   */
+  screens?: Readonly<Record<string, Component>>;
+}>();
+const emit = defineEmits<{ session: [id: string | null]; page: [id: string | null] }>();
 const manager = useManagerClient();
 const { t, labels } = useGovernanceText();
+// The application's name is the platform's entry, the same one the rail reads.
+const { pt } = usePlatformText();
 const agentId = ref<string | null>(governanceAgentId);
 const sessionId = computed({ get: () => props.sessionId, set: (id) => emit("session", id) });
-const featureId = ref<string | null>(null);
+const featureId = ref<string | null>(props.page ?? null);
 const work = ref<GovernanceWork | null>(null);
 const error = ref(""), loading = ref(false);
 const selectedIssue = ref<string | null>(null);
 /** The source being read and where it shows: under a finding, or under the source list ("all"). */
 const source = ref<{ read: GovernanceSourceRead; anchor: string } | null>(null);
+const pages = computed(() => {
+  const entries = [{ id: "report", label: t("report"), icon: "review" }];
+  if (props.screens?.feedback) entries.push({ id: "feedback", label: t("feedback"), icon: "review" });
+  return entries;
+});
 const workbench = computed(() => ({
-  id: "knowledge-governance", label: t("title"),
-  features: [{ id: "report", label: t("report"), icon: "review", availability: "page" as const, withConversation: true }],
+  id: "knowledge-governance", label: pt("platform.governance"),
+  features: pages.value.map((page) => ({ ...page, availability: "page" as const, withConversation: true })),
 }));
+/** The screen of the page the address names, and the report when it names none. */
+const screen = computed(() => (featureId.value === "feedback" ? props.screens?.feedback ?? null : null));
 const base = "/ontology/ai/knowledge-governance";
 let workRead = 0, sourceRead = 0;
 const fail = (value: unknown) => { error.value = value instanceof Error ? value.message : String(value); };
@@ -86,7 +104,18 @@ onMounted(async () => {
 watch(sessionId, () => {
   sourceRead++; source.value = null; work.value = null; selectedIssue.value = null; void readWork();
 }, { immediate: true });
-watch(featureId, (value) => { if (value === "report") void readWork(); });
+watch(featureId, (value) => {
+  if (value === "report") void readWork();
+  // Every page of the application has an address of its own, so the column's entries can be linked and reloaded.
+  emit("page", value);
+});
+// The address opened one page already (`/governance/feedback`); a later one arrives as the route's own page.
+watch(
+  () => props.page,
+  (value) => {
+    if (value && value !== featureId.value) featureId.value = value;
+  },
+);
 
 const progress = computed(() => work.value?.knowledgeTotal === null || !work.value ? "" :
   t("progress", { done: work.value.reviewedKnowledgeIds.length, total: work.value.knowledgeTotal }));
@@ -106,10 +135,12 @@ function toggleIssue(id: string) {
       <button type="button" :aria-label="labels.close" @click="error = ''"><X :size="14" /></button>
     </p>
     <AgentShell v-model:session-id="sessionId" v-model:agent-id="agentId" v-model:feature-id="featureId"
-      :workbench="workbench" :title="t('title')" :client="client" :labels="labels" :nav="nav"
+      :workbench="workbench" :title="pt('platform.governance')" :client="client" :labels="labels" :nav="nav"
       :page-context="pageContext" @error="fail">
       <template #feature>
-        <div class="report" :aria-busy="loading">
+        <!-- The page the address names: another package's screen when the edition handed one over, else the report. -->
+        <component :is="screen" v-if="screen" />
+        <div v-else class="report" :aria-busy="loading">
           <section class="report-summary">
             <p class="report-hint">{{ t("reportHint") }}</p>
             <p v-if="loading && !work" role="status">{{ t("loading") }}</p>

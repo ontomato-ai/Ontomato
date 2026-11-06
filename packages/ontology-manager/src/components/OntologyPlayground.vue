@@ -32,6 +32,7 @@ import { useManagerFeedback } from "../feedback";
 import type { OntologyObject, OntologyRelation } from "../api";
 import { useManagerClient, useManagerContext, useOntologyText, useSharedText } from "../context";
 import { readGraphColors } from "../graph-colors";
+import { PlatformPageHeader } from "@ontomato/platform-shell";
 import { graphLayout, initialNodePosition } from "../ontology-graph-layout";
 
 const emit = defineEmits<{ "open-modeling": [focus: "object" | "relation", id: string] }>();
@@ -522,27 +523,26 @@ onBeforeUnmount(() => {
 
 <template>
   <section v-loading="loading" class="playground">
-    <header class="playground-header">
-      <div class="playground-heading">
-        <h1>{{ t("nav.ontologyGraph") }}</h1>
-        <p>{{ ot("ontologyGraphDesc") }}</p>
-      </div>
-      <div class="summary-strip" :aria-label="ot('ontologyStats')">
-        <span>
-          <strong>{{ objects.length }}</strong>
-          {{ t("nav.objectTypes") }}
-        </span>
-        <span>
-          <strong>{{ attributeCount }}</strong>
-          {{ t("nav.ontologyAttributes") }}
-        </span>
-        <span>
-          <strong>{{ relations.length }}</strong>
-          {{ t("nav.relationTypes") }}
-        </span>
-        <el-button :icon="RefreshCw" circle :title="t('common.refresh')" @click="refresh" />
-      </div>
-    </header>
+    <!-- The platform's one page header: the title, its line of description, and this page's own summary at the right. -->
+    <PlatformPageHeader :title="t('nav.ontologyGraph')" :description="ot('ontologyGraphDesc')">
+      <template #actions>
+        <div class="summary-strip" :aria-label="ot('ontologyStats')">
+          <span>
+            <strong>{{ objects.length }}</strong>
+            {{ t("nav.objectTypes") }}
+          </span>
+          <span>
+            <strong>{{ attributeCount }}</strong>
+            {{ t("nav.ontologyAttributes") }}
+          </span>
+          <span>
+            <strong>{{ relations.length }}</strong>
+            {{ t("nav.relationTypes") }}
+          </span>
+          <el-button :icon="RefreshCw" circle :title="t('common.refresh')" @click="refresh" />
+        </div>
+      </template>
+    </PlatformPageHeader>
 
     <el-alert v-if="error" :title="error" type="error" :closable="false" show-icon />
 
@@ -776,39 +776,6 @@ onBeforeUnmount(() => {
   flex-direction: column;
   overflow: hidden;
   background: var(--el-bg-color);
-}
-.playground-header {
-  display: flex;
-  height: var(--page-header-height);
-  flex: 0 0 var(--page-header-height);
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--spacing-md);
-  padding: 0 var(--spacing-lg);
-  border-bottom: 1px solid var(--el-border-color);
-  background: var(--el-bg-color);
-}
-.playground-heading {
-  display: flex;
-  min-width: 0;
-  align-items: baseline;
-  gap: var(--spacing-md);
-}
-.playground-header h1 {
-  margin: 0;
-  color: var(--el-text-color-primary);
-  font-size: var(--text-lg);
-  font-weight: var(--font-semibold);
-  line-height: var(--leading-lg);
-  white-space: nowrap;
-}
-.playground-header p {
-  margin: 0;
-  overflow: hidden;
-  color: var(--el-text-color-secondary);
-  font-size: var(--text-sm);
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 .summary-strip {
   display: flex;
@@ -1250,16 +1217,6 @@ code {
 @container ontology-manager (max-width: 900px) {
   .playground {
     overflow: auto;
-  }
-  .playground-header {
-    height: auto;
-    flex-basis: auto;
-    align-items: flex-start;
-    flex-direction: column;
-    padding: var(--spacing-sm) var(--spacing-lg);
-  }
-  .playground-header p {
-    display: none;
   }
   .summary-strip {
     width: 100%;

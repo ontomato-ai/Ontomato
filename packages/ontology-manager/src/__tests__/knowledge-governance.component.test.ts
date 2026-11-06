@@ -152,4 +152,22 @@ describe("governance report", () => {
     expect(host.textContent).not.toContain("First session report");
     expect(host.textContent).not.toContain("First finding");
   });
+
+  it("lists the feedback records in the column and shows the screen the edition handed over", async () => {
+    // The feedback screen belongs to the platform's pages; the edition that holds both passes it in.
+    const screen = { render: () => h("p", { class: "feedback-double" }, "Feedback records") };
+    const host = document.createElement("div");
+    document.body.appendChild(host);
+    const app = createApp({
+      render: () => h(GovernancePage, { sessionId: null, page: "feedback", screens: { feedback: screen } }),
+    });
+    installManager(app);
+    app.mount(host);
+    mounted.push(app);
+    await settle();
+
+    // The column surrounds the screen: the application's own column is still there.
+    expect([...host.querySelectorAll("button")].map((button) => button.textContent?.trim())).toContain("User feedback");
+    expect(host.querySelector(".feedback-double")).not.toBeNull();
+  });
 });

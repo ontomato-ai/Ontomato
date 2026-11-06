@@ -1,5 +1,5 @@
 import { platformRoutes as routes } from "@ontomato/platform-shell/routes";
-import { defineAsyncComponent, defineComponent, h, ref, type PropType } from "vue";
+import { defineAsyncComponent, defineComponent, h, ref, type Component, type PropType } from "vue";
 import { useRoute, useRouter, type RouteRecordRaw } from "vue-router";
 import { useManagerClient, useManagerCounts } from "./context";
 import ManagerFrame from "./ManagerFrame.vue";
@@ -215,17 +215,44 @@ const KnowledgePage = defineComponent({
   },
 });
 
+/**
+ * The knowledge governance app's pages that another package ships. The feedback records belong to the platform's pages
+ * (they read the workbench's records through the platform host), so the edition that assembles both registers the
+ * screen here instead of this package importing another application's module (DESIGN.md "Applications and shells").
+ */
+const governanceScreens: { feedback?: Component } = {};
+
+/** Registers a page of the governance application the edition supplies; called once, before the routes mount. */
+export function registerGovernanceScreen(id: "feedback", screen: Component) {
+  governanceScreens[id] = screen;
+}
+
+/** The address of each page of the governance application; `null` is the conversation it opens on. */
+const governancePageRoutes: Record<string, { name: string; path: string } | null> = {
+  report: null,
+  feedback: routes.feedback,
+};
+
 const KnowledgeGovernancePage = defineComponent({
   name: "ManagerKnowledgeGovernancePage",
-  props: { sessionId: { type: String, default: "" } },
+  props: { sessionId: { type: String, default: "" }, page: { type: String, default: "" } },
   setup(props) {
     const router = useRouter();
     return () =>
       h(GovernancePage, {
         sessionId: props.sessionId || null,
+        page: props.page || null,
+        // A page this package does not ship (the feedback records) comes from the edition that assembles both.
+        screens: governanceScreens,
         // Opening or starting a conversation updates the address of the same page.
         onSession: (id: string | null) =>
           void router.replace({ name: routes.governance.name, params: { sessionId: id || "" } }),
+        // Switching pages keeps the one column: each page has its own address, so an entry can be linked and reloaded.
+        onPage: (id: string | null) => {
+          if ((props.page || null) === id) return;
+          const target = id ? governancePageRoutes[id] : null;
+          void router.push(target ? { name: target.name } : { name: routes.governance.name, params: { sessionId: "" } });
+        },
         onBack: () => void router.push(managerPaths.knowledge),
       });
   },
@@ -310,6 +337,20 @@ export function managerStandaloneRoutes(): RouteRecordRaw[] {
           component: KnowledgeGovernancePage,
           props: stringParam("sessionId"),
           meta: { page: managerPaths.knowledge },
+        },
+      ],
+    },
+    // The feedback records are a page of the same application: same column, same conversation, its own screen.
+    {
+      path: "/governance/feedback",
+      meta: { service: true },
+      component: ManagerFrame,
+      children: [
+        {
+          ...routes.feedback,
+          component: KnowledgeGovernancePage,
+          props: () => ({ page: "feedback" }),
+          meta: { page: routes.feedback.path },
         },
       ],
     },

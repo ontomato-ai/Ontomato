@@ -8,6 +8,7 @@ import OntologyAttributeEditor from "./OntologyAttributeEditor.vue";
 import OntologyRelationCreateDialog from "./OntologyRelationCreateDialog.vue";
 import type { ModelResource } from "../workspace";
 import { useManagerClient, useOntologyText } from "../context";
+import { PlatformPageHeader } from "@ontomato/platform-shell";
 
 const { ot } = useOntologyText();
 const { loadOntology } = useManagerClient();
@@ -142,12 +143,9 @@ onMounted(() => {
 
 <template>
   <section v-loading="loading" class="model-catalog">
-    <header class="catalog-titlebar">
-      <div class="catalog-heading">
-        <h1>{{ meta.title }}</h1>
-        <p>{{ meta.description }}</p>
-      </div>
-      <div class="title-actions">
+    <!-- The platform's one page header: the title, its line of description, and this page's own button. -->
+    <PlatformPageHeader :title="meta.title" :description="meta.description">
+      <template #actions>
         <el-button
           v-if="resource === 'objects'"
           type="primary"
@@ -167,8 +165,8 @@ onMounted(() => {
         <el-button v-else type="primary" :icon="Plus" @click="relationCreateVisible = true">
           {{ ot("createRelationType") }}
         </el-button>
-      </div>
-    </header>
+      </template>
+    </PlatformPageHeader>
 
     <div class="catalog-toolbar">
       <el-input v-model="query" :prefix-icon="Search" :placeholder="meta.search" clearable />
@@ -340,44 +338,6 @@ onMounted(() => {
   flex-direction: column;
   background: var(--el-bg-color);
 }
-.catalog-heading {
-  display: flex;
-  min-width: 0;
-  align-items: baseline;
-  gap: var(--spacing-md);
-}
-.catalog-titlebar {
-  display: flex;
-  height: var(--page-header-height);
-  flex: 0 0 var(--page-header-height);
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--spacing-md);
-  padding: 0 var(--spacing-lg);
-  border-bottom: 1px solid var(--el-border-color);
-}
-.title-actions {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-  gap: var(--spacing-sm);
-}
-h1 {
-  margin: 0;
-  color: var(--el-text-color-primary);
-  font-size: var(--text-lg);
-  font-weight: var(--font-semibold);
-  line-height: var(--leading-lg);
-  white-space: nowrap;
-}
-p {
-  margin: 0;
-  overflow: hidden;
-  color: var(--el-text-color-secondary);
-  font-size: var(--text-sm);
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
 .catalog-toolbar {
   display: flex;
   min-height: 40px;
@@ -513,9 +473,6 @@ p {
   color: var(--el-text-color-tertiary);
 }
 @container ontology-manager (max-width: 900px) {
-  .catalog-heading p {
-    display: none;
-  }
   .object-grid {
     grid-template-columns: minmax(190px, 1fr) 64px 20px;
   }
@@ -533,14 +490,6 @@ p {
   }
 }
 @container ontology-manager (max-width: 560px) {
-  .catalog-titlebar {
-    height: auto;
-    flex-basis: auto;
-    align-items: flex-start;
-    flex-direction: column;
-    padding: var(--spacing-sm) var(--spacing-lg);
-  }
-  .catalog-titlebar :deep(.el-button),
   .catalog-toolbar :deep(.el-input),
   .catalog-toolbar .owner-filter {
     width: 100%;

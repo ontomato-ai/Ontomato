@@ -2,6 +2,7 @@
 import { ref, onMounted, onUnmounted, watch } from "vue";
 import { ElButton, ElTag, vLoading } from "element-plus";
 import { D3ForceLayout } from "@antv/g6";
+import { PlatformPageHeader } from "@ontomato/platform-shell";
 import { graphLayout, initialNodePosition } from "../ontology-graph-layout";
 import { useManagerFeedback } from "../feedback";
 import { ArrowLeft, Box, Link2, Maximize, Minus, Network, Pencil, Plus, Trash2 } from "lucide-vue-next";
@@ -1406,12 +1407,9 @@ async function saveClassDesc(cls: ClassDef) {
 
 <template>
   <div class="visual-modeling">
-    <header class="modeling-header">
-      <div class="modeling-heading">
-        <h1>{{ t("nav.visualModeling") }}</h1>
-        <p>{{ ot("visualModelingDesc") }}</p>
-      </div>
-      <div class="toolbar-group">
+    <!-- The platform's one page header: the title, its line of description, and this page's own buttons. -->
+    <PlatformPageHeader :title="t('nav.visualModeling')" :description="ot('visualModelingDesc')">
+      <template #actions>
         <el-button v-if="backToPlayground" :icon="ArrowLeft" @click="emit('back')">
           {{ ot("backToGraph") }}
         </el-button>
@@ -1421,8 +1419,8 @@ async function saveClassDesc(cls: ClassDef) {
         <el-button type="primary" :icon="Box" @click="openAddNodeDialog">
           {{ t("hotData.addClass") }}
         </el-button>
-      </div>
-    </header>
+      </template>
+    </PlatformPageHeader>
 
     <div class="toolbar">
       <div class="zoom-controls" role="toolbar" :aria-label="ot('fitCanvas')">
@@ -1530,45 +1528,7 @@ async function saveClassDesc(cls: ClassDef) {
   overflow: hidden;
 }
 
-/* The page's 48px header: title, one-line description and the create actions. */
-.modeling-header {
-  display: flex;
-  height: var(--page-header-height);
-  flex: 0 0 var(--page-header-height);
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--spacing-md);
-  padding: 0 var(--spacing-lg);
-  background: var(--el-bg-color);
-  border-bottom: 1px solid var(--el-border-color);
-}
-
-.modeling-heading {
-  display: flex;
-  min-width: 0;
-  align-items: baseline;
-  gap: var(--spacing-md);
-}
-
-.modeling-heading h1 {
-  margin: 0;
-  color: var(--el-text-color-primary);
-  font-size: var(--text-lg);
-  font-weight: var(--font-semibold);
-  line-height: var(--leading-lg);
-  white-space: nowrap;
-}
-
-.modeling-heading p {
-  margin: 0;
-  overflow: hidden;
-  color: var(--el-text-color-secondary);
-  font-size: var(--text-sm);
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-/* The 40px canvas toolbar under the header: zoom and layout on the left, the current selection on the right. */
+/* The canvas toolbar under the header: zoom and layout on the left, the current selection on the right. */
 .toolbar {
   display: flex;
   min-height: 40px;
@@ -1581,7 +1541,6 @@ async function saveClassDesc(cls: ClassDef) {
   flex-wrap: wrap;
 }
 
-.modeling-header :deep(.el-button),
 .toolbar :deep(.el-button) {
   white-space: nowrap;
   flex-shrink: 0;

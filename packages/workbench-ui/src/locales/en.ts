@@ -180,7 +180,7 @@ export default {
     "parallel": "Parallel",
     "cancelled": "Cancelled",
     "unknown": "Unknown",
-    "backToChat": "Back to Chat",
+    "backToChat": "Back to conversation",
     "query": "Query",
     "test": "Test",
     "enterKeyword": "Enter keyword",
@@ -627,7 +627,7 @@ export default {
     "emptyFile": "This file is empty.",
     "invalidChart": "This chart file could not be drawn.",
     "featureDashboards": "Dashboards",
-    "featureAgents": "Agents",
+    "featureAgents": "Agent settings",
     "featureOpsDiagnosis": "Operations diagnosis",
     "featureSchedule": "Scheduled tasks",
     "featureOntologyService": "Ontology Service",
@@ -660,6 +660,8 @@ export default {
     "exportFailed": "Export failed"
   },
   "capabilities": {
+    "title": "Capability library",
+    "description": "The skills and external tools every agent draws from, kept in one place.",
     "filter": "Capability type",
     "skills": "Skills",
     "tools": "External tools",

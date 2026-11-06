@@ -26,10 +26,18 @@ withDefaults(
     actions?: readonly { id: string; label: string; primary?: boolean; icon?: Component; onClick: () => void }[];
     /** The one Save of a page holding a draft, with its unsaved marker. */
     draft?: PlatformPageActions | null;
-    /** The header's own words, from the host's i18n. */
-    labels: { save: string; discard: string; unsavedChanges: string };
+    /** The header's own words, from the host's i18n; read only by the draft's Save and its unsaved marker. */
+    labels?: { save: string; discard: string; unsavedChanges: string };
   }>(),
-  { title: "", description: null, tabs: undefined, activePath: undefined, actions: undefined, draft: null },
+  {
+    title: "",
+    description: null,
+    tabs: undefined,
+    activePath: undefined,
+    actions: undefined,
+    draft: null,
+    labels: () => ({ save: "", discard: "", unsavedChanges: "" }),
+  },
 );
 
 const emit = defineEmits<{ discard: []; save: []; selectTab: [path: string] }>();
@@ -37,12 +45,12 @@ const emit = defineEmits<{ discard: []; save: []; selectTab: [path: string] }>()
 
 <template>
   <header class="platform-page-header" :class="{ 'has-tabs': tabs && tabs.length > 0 }">
-    <div v-if="title || description || actions?.length || draft" class="header-row">
+    <div v-if="title || description || actions?.length || draft || $slots.actions" class="header-row">
       <div class="header-text">
         <h1 v-if="title" class="page-title">{{ title }}</h1>
         <p v-if="description" class="page-description">{{ description }}</p>
       </div>
-      <div v-if="actions?.length || draft" class="page-actions">
+      <div v-if="actions?.length || draft || $slots.actions" class="page-actions">
         <span v-if="draft?.dirty" class="unsaved" role="status">{{ labels.unsavedChanges }}</span>
         <button
           v-if="draft"
@@ -62,6 +70,8 @@ const emit = defineEmits<{ discard: []; save: []; selectTab: [path: string] }>()
         >
           {{ labels.save }}
         </button>
+        <!-- A page's own buttons, when it hands over markup rather than a list of actions. -->
+        <slot name="actions" />
         <button
           v-for="action in actions ?? []"
           :key="action.id"

@@ -13,7 +13,7 @@ import { featureIcon } from "../icons";
  * Codex switches products) and the application's name when it runs on one. The column is drawn by the application inside
  * the area the platform gives it; this component owns no frame, no brand and no footer chrome.
  */
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   workbench: ShellWorkbenchDeclaration;
   /** The application's name, shown at the top when it runs on one agent. */
   title: string;
@@ -28,7 +28,17 @@ const props = defineProps<{
   bottom?: { label: string; icon: string } | null;
   /** The shell's own words; the column is drawn outside the conversation's provider, so they are passed in. */
   labels: ShellLabels;
-}>();
+}>(), {
+  // A column drawn before its reads settle (or after the host was torn down) shows an empty column, not a crash.
+  agents: () => [],
+  sessions: () => [],
+  sessionsState: "loading",
+  hasMore: false,
+  agentId: null,
+  sessionId: null,
+  featureId: null,
+  bottom: null,
+});
 const emit = defineEmits<{
   newConversation: [];
   selectFeature: [id: string];

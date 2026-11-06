@@ -361,12 +361,12 @@ watch(
 
 <template>
   <div class="data-browser">
-    <header class="data-browser-header">
-      <h1>{{ t("nav.dataBrowser") }}</h1>
-      <p v-if="description">{{ description }}</p>
+    <!-- The application's header carries the title and the tabs; this row is the page's own line and its tools. -->
+    <div class="data-browser-toolbar">
+      <p v-if="description" class="page-note">{{ description }}</p>
       <span class="header-spacer" />
       <el-segmented v-model="viewMode" :options="viewModeOptions" />
-    </header>
+    </div>
     <div v-show="viewMode === 'graph'" class="mode-bar">
       <div ref="graphSummaryTarget" class="graph-summary-slot" />
     </div>
@@ -547,28 +547,14 @@ watch(
   overflow: hidden;
 }
 
-/* 48px page header: title, one-line description, then the table/graph switch. */
-.data-browser-header {
+/* The page's own row: the line about the selected object type, and the table/graph switch at the right. */
+.data-browser-toolbar {
   display: flex;
-  height: var(--page-header-height);
-  flex: 0 0 var(--page-header-height);
+  flex: 0 0 auto;
   align-items: center;
   gap: var(--spacing-md);
-  padding: 0 var(--spacing-lg);
-  border-bottom: 1px solid var(--el-border-color);
 }
-
-.data-browser-header h1 {
-  margin: 0;
-  color: var(--el-text-color-primary);
-  font-size: var(--text-lg);
-  font-weight: var(--font-semibold);
-  line-height: var(--leading-lg);
-  white-space: nowrap;
-}
-
-.data-browser-header p {
-  min-width: 0;
+.page-note {
   margin: 0;
   overflow: hidden;
   color: var(--el-text-color-secondary);
@@ -582,7 +568,7 @@ watch(
 }
 
 /* Segmented control: active segment is surface with ink text on a sunken track. */
-.data-browser-header :deep(.el-segmented) {
+.data-browser-toolbar :deep(.el-segmented) {
   flex-shrink: 0;
   --el-segmented-bg-color: var(--el-fill-color);
   --el-segmented-item-selected-bg-color: var(--el-bg-color);

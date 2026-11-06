@@ -354,6 +354,7 @@ export default {
   "nav": {
     "systemManagement": "System Management",
     "systemConfig": "System Settings",
+    "systemGeneralSettings": "General settings",
     "auditLogs": "Audit Logs",
     "systemMonitoring": "System Monitoring",
     "modelConfig": "Models",

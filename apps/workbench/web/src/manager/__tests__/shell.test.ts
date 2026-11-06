@@ -157,10 +157,17 @@ describe("open-source Ontology Service page", () => {
     // The application's own header names the application and its pages as tabs; the page's title is the tab it is in.
     expect(document.querySelector(".platform-page-header .page-title")?.textContent).toBe("System settings");
     expect(document.querySelector(".platform-page-header .page-tab.active")?.textContent?.trim()).toBe("Run Records");
+    await start("/#/settings/system-config/general");
+    const tabs = [...document.querySelectorAll(".platform-page-header .page-tab")].map((tab) => tab.textContent?.trim());
+    // The page under the application is the general settings, not a second "System settings".
+    expect(tabs).toEqual(["Models", "General settings", "Run Records"]);
     await start("/#/ontology/objects");
     expect(document.querySelector(".rail-row.active")?.getAttribute("aria-label")).toBe("Ontology manager");
-    // The Manager's own pages draw their own header.
-    expect(document.querySelector(".platform-page-header")).toBeNull();
+    // The Manager's pages use the platform's one header too: the shell draws none for them, and their own page does.
+    expect(document.querySelectorAll(".platform-page-header")).toHaveLength(1);
+    expect(document.querySelector(".ontology-manager .platform-page-header .page-title")?.textContent).toBe(
+      "Object Types"
+    );
     expect(document.querySelector(".ontology-manager")).not.toBeNull();
   });
 

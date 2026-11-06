@@ -10,7 +10,7 @@ export {
   type ManagerPresentation,
   type ManagerTheme,
 } from "./context";
-export { managerRoutes, managerStandaloneRoutes } from "./routes";
+export { managerRoutes, managerStandaloneRoutes, registerGovernanceScreen } from "./routes";
 export {
   managerGroups,
   managerNavigation,
