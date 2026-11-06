@@ -450,7 +450,9 @@ muted (ids in `mono`). Rows are not cards: no border, no shadow, highlight on ho
 
 **Table.** Head 36px on `sunken`, `label` style; rows 40px (`compact` 32px), 1px `line`
 between rows, no zebra stripes, hover → `hover`, selected → `selected`. The table sits in
-a `line` border with `rounded.md`. The empty state lives inside the table body.
+a `line` border with `rounded.md`. The empty state lives inside the table body. A table fills
+the width it is given; when its columns need more, it scrolls sideways inside its own border
+(a row's actions column may stay pinned at the right), and nothing of it is cut off.
 
 **Tag.** 20px high, `rounded.xs`, `caption` 500, soft fill. Never use a primary-filled tag.
 
