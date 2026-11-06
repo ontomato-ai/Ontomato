@@ -21,7 +21,8 @@ export function managerLocation(query: Record<string, unknown>) {
   }
 }
 
-const capabilityTab = { path: routes.agents.path, query: { tab: "capabilities" } };
+// The capability library has an address of its own now; the old console's links point straight at it.
+const capabilityTab = { path: routes.agentSettingsCapabilities.path };
 export const legacyAdminRoutes: RouteRecordRaw[] = [
   { path: "/admin/ontology-manager", redirect: (to) => to.query.view === "visual-modeling"
     ? { path: routes.modeling.path, query: managerViewQuery(to.query) }
@@ -44,13 +45,14 @@ export const legacyAdminRoutes: RouteRecordRaw[] = [
     }),
   })),
   ...["/analysis", "/admin", "/admin/system-config", "/admin/feedback-records"].map((path) => ({ path, redirect: routes.chat.path })),
-  // The two schedules pages of the transition are gone: the platform lists every task in one page, and the agent
-  // platform lists its own agent's under its own address.
-  { path: "/schedules/agents", redirect: routes.agentSchedules.path },
+  // One list for every kind of task: the agent platform's own page is gone, and its address carries the agent it was
+  // narrowed to into the platform's filter.
+  { path: "/schedules/agents", redirect: routes.schedules.path },
   { path: "/schedules/functions/:id?", redirect: (to) => ({ path: routes.schedules.path, query: to.params.id ? { taskId: String(to.params.id) } : {} }) },
   { path: "/chat", redirect(to) {
     const { feature, ...query } = to.query;
-    const path = feature === "schedule" ? routes.agentSchedules.path : feature === "agents" ? routes.agents.path :
+    // The agent platform's column has no dashboards and no scheduled tasks any more: both are applications of their own.
+    const path = feature === "schedule" ? routes.schedules.path : feature === "agents" ? routes.agents.path :
       feature === "dashboards" ? routes.dashboards.path : routes.chat.path;
     return { path, query };
   } },

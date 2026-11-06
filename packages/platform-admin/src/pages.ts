@@ -53,8 +53,7 @@ export const platformPages = {
     icon: Cpu,
     permissions: ["system-config"],
     group: "platform",
-    // The page draws its own header: the save of the whole draft and the unsaved marker sit there.
-    ownHeader: true,
+    // The page shares its application's header: the save of the whole draft and the unsaved marker are the header's.
     tabs: [modelConfigTabs.usage, modelConfigTabs.providers],
   },
   systemSettings: {

@@ -146,45 +146,71 @@ describe("the open-source platform's conversations", () => {
   });
 });
 
+describe("the open-source platform's page headers", () => {
+  it("switches the system settings' three screens in the application's header", async () => {
+    await open("/settings/records/audit-log");
+    // An application of several pages is one header with its pages as tabs; the page keeps its own second-level tabs.
+    const tabs = [...document.querySelectorAll(".platform-page-header .page-tab")].map((tab) => tab.textContent?.trim());
+    expect(tabs).toEqual(["Models", "System Settings", "Run Records"]);
+    expect(document.querySelector(".platform-page-header .page-tab.active")?.textContent?.trim()).toBe("Run Records");
+  });
+
+  it("gives a single-page application its header and its page, with no tabs", async () => {
+    await open("/dashboards");
+    expect(document.querySelector(".platform-page-header .page-title")?.textContent).toBe("Dashboards");
+    expect(document.querySelector(".platform-page-header .page-tab")).toBeNull();
+    // The page draws no second title: the header is the only one.
+    expect(document.querySelector(".dashboards-application h1")).toBeNull();
+  });
+});
+
 describe("the open-source platform's column", () => {
-  it("opens the operations application's own model page from the column's foot", async () => {
-    await open("/ops/diagnosis");
-    const entry = document.querySelector<HTMLElement>(".panel-footer .settings-row");
-    expect(entry, "the operations column has no model setting").not.toBeNull();
-    entry!.click();
-    await settle();
-    // The model the diagnosis runs on is the operations application's own page, not the platform's model division
-    // (model-config), which answers a different question and needs a different permission.
+  /*
+   * The platform draws no column of its own, so nothing here can be opened from the shell. The operations application
+   * draws its own column, and its model page is the foot of it; that is the page this checks, reached by its address.
+   */
+  it("draws the operations application's own model page", async () => {
+    await open("/ops/model");
     expect(landedAt()).toBe("/ops/model");
     const body = document.querySelector(".platform-page-body")!.innerHTML;
     expect(body).not.toBe("");
+    // The model the diagnosis runs on is the operations application's own page, not the platform's model division
+    // (model-config), which answers a different question and needs a different permission.
     expect(body).toContain("diagnosis-model");
   });
 });
 
 describe("the open-source platform's rail", () => {
-  it("lists this edition's applications, in order", async () => {
+  it("lists this edition's applications, in the three sections of the rail", async () => {
     await open("/");
     // Written out rather than derived from the partition: the point is that this edition shows these and no others (the
-    // permissions application exists only where permissions do).
+    // permissions application and the data governance platform exist only in the enterprise edition).
     document.querySelector<HTMLButtonElement>(".rail-toggle")!.click();
     await settle();
-    expect([...document.querySelectorAll(".rail-row .rail-label")].map((row) => row.textContent)).toEqual([
-      "Agent Platform",
-      "Operations diagnosis",
-      "Knowledge governance",
-      "Object browser",
-      "Ontology manager",
-      "Scheduled tasks",
-      "System settings",
+    const sections = [...document.querySelectorAll(".rail-scroll > *")].reduce<string[][]>(
+      (all, node) => {
+        if (node.classList.contains("rail-divider")) all.push([]);
+        else all[all.length - 1]!.push(...[...node.querySelectorAll(".rail-label")].map((row) => row.textContent ?? ""));
+        return all;
+      },
+      [[]],
+    );
+    // The foot is a section of its own, above the account and outside the scrolling area.
+    sections.push([...document.querySelectorAll(".rail-foot .rail-label")].map((row) => row.textContent ?? ""));
+    expect(sections).toEqual([
+      ["Ontology manager", "Object browser"],
+      ["Agent Platform", "Operations diagnosis", "Knowledge governance", "Dashboards", "Scheduled tasks"],
+      ["System settings"],
     ]);
+    // The platform's own applications sit at the foot of the rail, above the account, not under the applications.
+    expect(document.querySelector(".rail-foot .rail-label")?.textContent).toBe("System settings");
   });
 
   it("opens a page this edition serves for every application", async () => {
     await open("/");
     // The rail lists the applications in the partition's order; an application without an external link or an
-    // unavailability hint is a row that switches the shell.
-    const switching = appPartition().filter((app) => app.sections.length > 0);
+    // unavailability hint is a row that switches the shell. Every one of them opens somewhere.
+    const switching = appPartition();
     const rows = [...document.querySelectorAll<HTMLElement>(".rail-row:not(.external):not(.unavailable)")];
     expect(rows.length).toBe(switching.length);
 

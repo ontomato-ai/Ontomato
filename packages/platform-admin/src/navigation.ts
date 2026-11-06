@@ -38,6 +38,12 @@ export interface PlatformPage {
    * landing for a failed license check, when the account's permissions cannot be read.
    */
   enterableWithoutPermission?: boolean;
+  /**
+   * The page may be the landing for an account whose page is unavailable; true unless declared false. A page that
+   * needs no permission code at all (the object browser's star map) must not become everyone's landing page, so it
+   * says so here while staying listed and reachable.
+   */
+  fallback?: boolean;
 }
 
 /**
@@ -97,6 +103,11 @@ export function availablePages(navigation: PlatformNavigation, access: PlatformA
   );
 }
 
+/** The pages that may be a landing: every available page that does not opt out of being one. */
+export function landingPages(navigation: PlatformNavigation, access: PlatformAccess): PlatformPage[] {
+  return availablePages(navigation, access).filter((page) => page.fallback !== false);
+}
+
 /** Groups that have at least one available page, in navigation order. */
 /** The tabs of a page the account may see, in display order; every page has one empty tab when it has no tabs. */
 export function availableTabs(page: PlatformPage, access: PlatformAccess): PlatformPageTab[] {
@@ -126,7 +137,7 @@ export function fallbackPage(
   access: PlatformAccess,
   preferredGroup?: string
 ): PlatformPage | null {
-  const pages = availablePages(navigation, access);
+  const pages = landingPages(navigation, access);
   if (preferredGroup) {
     const inGroup = pages.find((page) => page.group === preferredGroup);
     if (inGroup) return inGroup;

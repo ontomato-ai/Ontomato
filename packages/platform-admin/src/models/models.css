@@ -1,7 +1,8 @@
 /*
- * Model configuration page (DESIGN.md data shell): a 48px page header, text tabs, then panels edge to edge separated
- * by one hairline. The provider list is a canvas list panel; the detail, defaults and retry panels are surface with
- * 16px padding. Lists are rows with hairlines, not cards. Colours are role variables only, so both modes follow.
+ * Model configuration page: the platform's page header above it (the title, its description and the draft's Save), then
+ * the page's own text tabs and panels edge to edge separated by one hairline. The provider list is a canvas list panel;
+ * the detail, defaults and retry panels are surface with 16px padding. Lists are rows with hairlines, not cards. Colours
+ * are role variables only, so both modes follow.
  */
 
 /* ---- Page ---- */
@@ -11,53 +12,6 @@
   min-height: 0;
   flex-direction: column;
   background: var(--el-bg-color);
-}
-
-.page-header {
-  display: flex;
-  height: var(--page-header-height);
-  flex: 0 0 var(--page-header-height);
-  align-items: center;
-  gap: var(--spacing-md);
-  padding: 0 var(--spacing-lg);
-  border-bottom: 1px solid var(--el-border-color);
-}
-
-.page-title {
-  margin: 0;
-  color: var(--el-text-color-primary);
-  font-size: var(--text-lg);
-  font-weight: var(--font-semibold);
-  line-height: var(--leading-lg);
-  white-space: nowrap;
-}
-
-.page-description {
-  min-width: 0;
-  margin: 0;
-  overflow: hidden;
-  color: var(--el-text-color-secondary);
-  font-size: var(--text-sm);
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.page-actions {
-  display: flex;
-  flex: 0 0 auto;
-  align-items: center;
-  gap: var(--spacing-sm);
-  margin-inline-start: auto;
-}
-
-.page-actions .el-button {
-  margin: 0;
-}
-
-.unsaved {
-  color: var(--el-color-warning);
-  font-size: var(--text-sm);
-  white-space: nowrap;
 }
 
 .page-state {

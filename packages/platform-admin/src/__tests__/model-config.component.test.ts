@@ -1,7 +1,7 @@
 import { flushPromises, mount, type VueWrapper } from "@vue/test-utils";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ElMessage, ElMessageBox } from "element-plus";
-import { computed, defineComponent, h } from "vue";
+import { computed, defineComponent, h, shallowRef, type Ref } from "vue";
 import { createMemoryHistory, createRouter, RouterView } from "vue-router";
 import type { ModelSettingsData, ModelSettingsWrite, OntologyAgentModel } from "@ontomato/contracts/model-settings";
 import { vectorRebuildStatusSchema } from "../models/types";
@@ -13,6 +13,7 @@ import ProviderDetail from "../models/components/ProviderDetail.vue";
 import ModelConfigPage from "../pages/ModelConfigPage.vue";
 import { modelConfigTabs, ossPlatformPages } from "../pages";
 import type { PlatformApi } from "../api";
+import { pageActionsKey, type PlatformPageActions } from "../context";
 import { pageGlobal, testHost, testI18n } from "./host";
 
 /*
@@ -96,17 +97,26 @@ async function mountPage(path: string = modelConfigTabs.usage.path) {
   const host = pageGlobal(
     testHost(api, { navigation: computed(() => ({ groups: [], pages: [...ossPlatformPages] })) })
   );
+  // The draft's one Save is the layout header's: the page writes it to the app's slot, and the test reads it there.
+  const actions = shallowRef<PlatformPageActions | null>(null);
   const wrapper = mount(defineComponent({ render: () => h(RouterView) }), {
-    global: { ...host, plugins: [...host.plugins, router] },
+    global: {
+      ...host,
+      plugins: [...host.plugins, router],
+      provide: { ...host.provide, [pageActionsKey as symbol]: actions },
+    },
     attachTo: document.body,
   });
   wrappers.push(wrapper);
   await flushPromises();
-  return wrapper;
+  return { wrapper, actions };
 }
 
-const saveButton = (wrapper: VueWrapper) =>
-  wrapper.findAll(".page-actions button").find((button) => button.text() === "Save")!;
+/**
+ * The page's draft as the header shows it: the Save is enabled only while the draft differs, and disabled while the
+ * request runs. The page hands it over instead of drawing a header of its own.
+ */
+const saveButton = (actions: Ref<PlatformPageActions | null>) => actions.value!;
 
 const usagePanel = (wrapper: VueWrapper) => wrapper.findComponent(ModelUsagePanel);
 
@@ -117,7 +127,7 @@ describe("model configuration page", () => {
     const status = vectorRebuildStatusSchema.parse({ configured: false });
     expect(status).toEqual({ configured: false, state: null, total: null, done: null, error: null });
     vi.spyOn(api, "getVectorRebuildStatus").mockResolvedValue(status);
-    const wrapper = await mountPage();
+    const { wrapper } = await mountPage();
     const panel = usagePanel(wrapper);
     // The select shows "not set"; there is no state to speak of, so no box repeats it.
     expect(panel.find(".rebuild-status").exists()).toBe(false);
@@ -129,16 +139,17 @@ describe("model configuration page", () => {
     vi.spyOn(api, "getVectorRebuildStatus").mockResolvedValue(
       vectorRebuildStatusSchema.parse({ configured: true, state: "PAUSED", total: 10, done: 4 })
     );
-    const wrapper = await mountPage();
+    const { wrapper } = await mountPage();
     expect(usagePanel(wrapper).find(".rebuild-status").text()).toContain(t("admin.vectorRebuildStates.PAUSED"));
   });
 
   it("saves the whole settings at once and submits an unchanged masked key as read", async () => {
-    const wrapper = await mountPage(modelConfigTabs.providers.path);
-    expect(saveButton(wrapper).attributes("disabled")).toBeDefined();
+    const { wrapper, actions } = await mountPage(modelConfigTabs.providers.path);
+    expect(saveButton(actions).dirty).toBe(false);
 
     await wrapper.findComponent(ProviderDetail).find("input").setValue("Gateway EU");
-    await saveButton(wrapper).trigger("click");
+    saveButton(actions).save();
+    await flushPromises();
     await flushPromises();
 
     expect(saveModelSettings).toHaveBeenCalledTimes(1);
@@ -150,7 +161,7 @@ describe("model configuration page", () => {
   });
 
   it("lists only the agents given a model of their own, grouped by purpose, and follow-the-default removes a row", async () => {
-    const wrapper = await mountPage();
+    const { wrapper, actions } = await mountPage();
     const panel = usagePanel(wrapper);
     // The retriever follows the default, so it is not listed; the governance agent and the dashboard generator are, one
     // row each with their purpose as a label.
@@ -181,7 +192,8 @@ describe("model configuration page", () => {
 
     await rows[0]!.find(".agent-reset").trigger("click");
     await flushPromises();
-    await saveButton(wrapper).trigger("click");
+    saveButton(actions).save();
+    await flushPromises();
     await flushPromises();
 
     expect(saveModelSettings).not.toHaveBeenCalled();
@@ -193,7 +205,7 @@ describe("model configuration page", () => {
 
   it("confirms renaming a saved model, warning about other references, and moves the default along", async () => {
     const confirm = vi.spyOn(ElMessageBox, "confirm").mockResolvedValue("confirm" as never);
-    const wrapper = await mountPage(modelConfigTabs.providers.path);
+    const { wrapper, actions } = await mountPage(modelConfigTabs.providers.path);
     const detail = wrapper.findComponent(ProviderDetail);
     await detail.findAll(".model-row")[0]!.findAll("button").find((b) => b.text() === "Edit")!.trigger("click");
     const dialog = wrapper.findComponent(ModelEditDialog);
@@ -205,14 +217,15 @@ describe("model configuration page", () => {
     expect(String(confirm.mock.calls[0]![0])).toContain(
       t("admin.modelRenameConfirm", { from: "gateway/vendor/chat", to: "gateway/vendor/chat-2" })
     );
-    await saveButton(wrapper).trigger("click");
+    saveButton(actions).save();
+    await flushPromises();
     await flushPromises();
     expect(saveModelSettings.mock.calls[0]![0].defaultModelId).toBe("gateway/vendor/chat-2");
   });
 
   it("names the embedding default and vector search before a deletion unsets it, and keeps it when cancelled", async () => {
     const confirm = vi.spyOn(ElMessageBox, "confirm").mockRejectedValue("cancel");
-    const wrapper = await mountPage(modelConfigTabs.providers.path);
+    const { wrapper, actions } = await mountPage(modelConfigTabs.providers.path);
     const detail = wrapper.findComponent(ProviderDetail);
     const embeddingRow = detail.findAll(".model-row")[1]!;
     await embeddingRow.findAll("button").find((b) => b.text() === "Delete")!.trigger("click");
@@ -220,11 +233,11 @@ describe("model configuration page", () => {
 
     expect(String(confirm.mock.calls[0]![0])).toContain(t("admin.embeddingDefaultCleared", { name: "embed (gateway/embed)" }));
     expect(detail.findAll(".model-row")).toHaveLength(2);
-    expect(saveButton(wrapper).attributes("disabled")).toBeDefined();
+    expect(saveButton(actions).dirty).toBe(false);
   });
 
   it("checks one model with the smallest call of that very model and shows the result on its row", async () => {
-    const wrapper = await mountPage(modelConfigTabs.providers.path);
+    const { wrapper, actions } = await mountPage(modelConfigTabs.providers.path);
     const rows = wrapper.findComponent(ProviderDetail).findAll(".model-row");
     expect(rows).toHaveLength(2);
 

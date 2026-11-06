@@ -6,14 +6,17 @@ import type { ShellLabels, ShellWorkbenchDeclaration } from "../types";
 import { featureIcon } from "../icons";
 
 /**
- * The conversation shell's navigation content: new conversation, the function area, the agent picker and the
- * conversation history. It is the body its own sidebar shows, and the platform's application panel shows the same
- * component, so an application's second column and the shell's sidebar cannot drift apart.
+ * The navigation column of a conversation application: its head, a new conversation, the application's own pages, the
+ * recent conversations, and the application's own entry at the foot.
  *
- * It owns no brand, no footer and no panel chrome: those belong to whatever puts it on screen.
+ * The head is the agent switcher when the application runs on more than one agent (the agent platform, switched the way
+ * Codex switches products) and the application's name when it runs on one. The column is drawn by the application inside
+ * the area the platform gives it; this component owns no frame, no brand and no footer chrome.
  */
 const props = defineProps<{
   workbench: ShellWorkbenchDeclaration;
+  /** The application's name, shown at the top when it runs on one agent. */
+  title: string;
   agents: AgentHostAgent[];
   agentId: string | null;
   sessions: AgentHostSession[];
@@ -21,6 +24,8 @@ const props = defineProps<{
   hasMore: boolean;
   sessionId: string | null;
   featureId: string | null;
+  /** The application's own entry at the foot (its settings, the model the diagnosis runs on). */
+  bottom?: { label: string; icon: string } | null;
   /** The shell's own words; the column is drawn outside the conversation's provider, so they are passed in. */
   labels: ShellLabels;
 }>();
@@ -31,6 +36,7 @@ const emit = defineEmits<{
   selectAgent: [id: string];
   selectSession: [id: string];
   deleteSession: [id: string];
+  openBottom: [];
   loadMore: [];
   retry: [];
 }>();
@@ -40,6 +46,10 @@ const confirmingDelete = ref<string | null>(null);
 let confirmTimer: ReturnType<typeof setTimeout> | null = null;
 
 const currentAgent = computed(() => props.agents.find((agent) => agent.id === props.agentId) ?? null);
+/** The switch's accessible name: what it switches, and the agent it currently shows. */
+const switchLabel = computed(() => `${props.labels.agent}: ${currentAgent.value?.name ?? "—"}`);
+/** More than one agent means the head is a switcher; one agent leaves the application's name there. */
+const hasPicker = computed(() => props.agents.length > 1);
 
 function onDocumentPointer(event: PointerEvent) {
   if (agentMenu.value && !agentMenu.value.contains(event.target as Node)) closeAgentMenu();
@@ -76,84 +86,78 @@ onBeforeUnmount(() => {
 
 <template>
   <div class="shell-nav-body">
-    <div class="features">
+    <!-- The head: the agent this conversation runs on, or the application's name. -->
+    <div v-if="hasPicker" ref="agentMenu" class="agent-switch">
       <button
         type="button"
-        class="nav-item primary"
-        :class="{ active: featureId === null && sessionId === null }"
-        @click="emit('newConversation')"
-      >
-        <SquarePen :size="16" />
-        <span class="nav-label">{{ labels.newConversation }}</span>
-      </button>
-      <template v-for="feature in workbench.features" :key="feature.id">
-        <a
-          v-if="feature.availability === 'link'"
-          class="nav-item"
-          :href="feature.href"
-          target="_blank"
-          rel="noopener"
-        >
-          <component :is="featureIcon(feature.icon)" :size="16" />
-          <span class="nav-label">{{ feature.label }}</span>
-          <ExternalLink
-            class="external-mark"
-            :size="13"
-            :role="labels.opensInNewTab ? 'img' : undefined"
-            :aria-label="labels.opensInNewTab"
-            :aria-hidden="labels.opensInNewTab ? undefined : 'true'"
-          />
-        </a>
-        <div
-          v-else-if="feature.availability === 'unavailable'"
-          class="nav-item unavailable"
-          aria-disabled="true"
-          :title="feature.hint || labels.unavailable"
-        >
-          <component :is="featureIcon(feature.icon)" :size="16" />
-          <span class="nav-label">{{ feature.label }}</span>
-          <span class="badge">{{ feature.hint || labels.unavailable }}</span>
-        </div>
-        <button
-          v-else
-          type="button"
-          class="nav-item"
-          :class="{ active: featureId === feature.id }"
-          :aria-current="featureId === feature.id ? 'page' : undefined"
-          @click="feature.availability === 'action' ? emit('featureAction', feature.id) : emit('selectFeature', feature.id)"
-        >
-          <component :is="featureIcon(feature.icon)" :size="16" />
-          <span class="nav-label">{{ feature.label }}</span>
-        </button>
-      </template>
-    </div>
-
-    <div v-if="agents.length > 1" ref="agentMenu" class="agent-picker">
-      <button
-        type="button"
-        class="agent-trigger"
+        class="switch-trigger"
         aria-haspopup="listbox"
         :aria-expanded="agentMenuOpen"
-        :aria-label="labels.agent"
+        :aria-label="switchLabel"
         @click="agentMenuOpen ? closeAgentMenu() : openAgentMenu()"
         @keydown.escape="closeAgentMenu"
       >
-        <span class="agent-caption">{{ labels.agent }}</span>
-        <span class="agent-name">{{ currentAgent?.name ?? "—" }}</span>
-        <ChevronDown :size="15" class="agent-chevron" :class="{ open: agentMenuOpen }" />
+        <span class="switch-name">{{ currentAgent?.name ?? "—" }}</span>
+        <ChevronDown :size="16" class="switch-chevron" :class="{ open: agentMenuOpen }" aria-hidden="true" />
       </button>
-      <ul v-if="agentMenuOpen" class="agent-menu" role="listbox" @keydown.escape="closeAgentMenu">
+      <ul v-if="agentMenuOpen" class="agent-menu" role="listbox" :aria-label="labels.agent" @keydown.escape="closeAgentMenu">
         <li v-for="agent in agents" :key="agent.id" role="option" :aria-selected="agent.id === agentId">
-          <button type="button" class="agent-option" @click="chooseAgent(agent.id)">
+          <button type="button" class="agent-option" :class="{ current: agent.id === agentId }" @click="chooseAgent(agent.id)">
             <span class="option-text">
               <span class="option-name">{{ agent.name }}</span>
               <span v-if="agent.description" class="option-description">{{ agent.description }}</span>
             </span>
-            <Check v-if="agent.id === agentId" :size="15" class="option-check" />
+            <Check v-if="agent.id === agentId" :size="16" class="option-check" aria-hidden="true" />
           </button>
         </li>
       </ul>
     </div>
+    <div v-else class="column-head">{{ title }}</div>
+
+    <button
+      type="button"
+      class="nav-item primary"
+      :class="{ active: featureId === null && sessionId === null }"
+      @click="emit('newConversation')"
+    >
+      <SquarePen :size="16" aria-hidden="true" />
+      <span class="nav-label">{{ labels.newConversation }}</span>
+    </button>
+
+    <template v-for="feature in workbench.features" :key="feature.id">
+      <a v-if="feature.availability === 'link'" class="nav-item" :href="feature.href" target="_blank" rel="noopener">
+        <component :is="featureIcon(feature.icon)" :size="16" aria-hidden="true" />
+        <span class="nav-label">{{ feature.label }}</span>
+        <ExternalLink
+          class="external-mark"
+          :size="13"
+          :role="labels.opensInNewTab ? 'img' : undefined"
+          :aria-label="labels.opensInNewTab"
+          :aria-hidden="labels.opensInNewTab ? undefined : 'true'"
+        />
+      </a>
+      <div
+        v-else-if="feature.availability === 'unavailable'"
+        class="nav-item unavailable"
+        aria-disabled="true"
+        :title="feature.hint || labels.unavailable"
+      >
+        <component :is="featureIcon(feature.icon)" :size="16" aria-hidden="true" />
+        <span class="nav-label">{{ feature.label }}</span>
+        <span class="badge">{{ feature.hint || labels.unavailable }}</span>
+      </div>
+      <button
+        v-else
+        type="button"
+        class="nav-item"
+        :class="{ active: featureId === feature.id }"
+        :aria-current="featureId === feature.id ? 'page' : undefined"
+        @click="feature.availability === 'action' ? emit('featureAction', feature.id) : emit('selectFeature', feature.id)"
+      >
+        <component :is="featureIcon(feature.icon)" :size="16" aria-hidden="true" />
+        <span class="nav-label">{{ feature.label }}</span>
+      </button>
+    </template>
 
     <div class="sessions">
       <div class="section-title">{{ labels.sessions }}</div>
@@ -206,25 +210,132 @@ onBeforeUnmount(() => {
         </li>
       </ul>
     </div>
+
+    <div v-if="bottom" class="nav-foot">
+      <button type="button" class="nav-item" @click="emit('openBottom')">
+        <component :is="featureIcon(bottom.icon)" :size="16" aria-hidden="true" />
+        <span class="nav-label">{{ bottom.label }}</span>
+      </button>
+    </div>
   </div>
 </template>
 
 <style scoped>
 /*
- * 32px navigation rows (DESIGN.md "Navigation row"), `label` group headings and single-line 32px conversation rows.
- * The current row takes the selected background of the band it sits on, which the host provides.
+ * 32px navigation rows (DESIGN.md "Navigation row"), the application's name or the agent switch at the top, and the
+ * application's own entry at the foot behind a hairline. The current row takes the selected background of the band it
+ * sits on, which the application provides.
  */
 .shell-nav-body {
   display: flex;
   flex-direction: column;
   flex: 1;
   min-height: 0;
+  gap: 2px;
 }
-.features {
+.column-head {
+  display: flex;
+  align-items: center;
+  min-height: 36px;
+  padding: 0 10px;
+  font-size: var(--text-lg);
+  font-weight: var(--font-semibold);
+  color: var(--el-text-color-primary);
+}
+.agent-switch {
+  position: relative;
+  padding: 0 0 6px;
+}
+.switch-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  height: 36px;
+  padding: 0 10px;
+  box-sizing: border-box;
+  border: 0;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--el-text-color-primary);
+  font: inherit;
+  font-size: var(--text-lg);
+  font-weight: var(--font-semibold);
+  cursor: pointer;
+}
+.switch-trigger:hover {
+  background: var(--shell-nav-hover, var(--el-fill-color-light));
+}
+.switch-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.switch-chevron {
+  flex-shrink: 0;
+  color: var(--el-text-color-secondary);
+  transition: transform var(--transition-fast);
+}
+.switch-chevron.open {
+  transform: rotate(180deg);
+}
+.agent-menu {
+  position: absolute;
+  z-index: 20;
+  top: 40px;
+  left: 0;
+  width: 240px;
+  margin: 0;
+  padding: 6px;
+  box-sizing: border-box;
+  list-style: none;
   display: flex;
   flex-direction: column;
   gap: 2px;
-  padding-top: 4px;
+  border: 1px solid var(--el-border-color);
+  border-radius: var(--radius-lg);
+  background: var(--el-bg-color-overlay);
+  box-shadow: var(--elevation-overlay);
+}
+.agent-option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 10px;
+  box-sizing: border-box;
+  border: 0;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.agent-option:hover,
+.agent-option.current {
+  background: var(--shell-nav-hover, var(--el-fill-color-light));
+}
+.option-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.option-name {
+  font-size: var(--text-base);
+  font-weight: var(--font-semibold);
+  color: var(--el-text-color-primary);
+}
+.option-description {
+  font-size: var(--text-xs);
+  line-height: var(--leading-xs);
+  color: var(--el-text-color-secondary);
+}
+.option-check {
+  flex-shrink: 0;
+  color: var(--el-color-primary);
 }
 .nav-item {
   display: flex;
@@ -232,7 +343,7 @@ onBeforeUnmount(() => {
   gap: 8px;
   width: 100%;
   height: var(--nav-row-height);
-  padding: 0 8px;
+  padding: 0 10px;
   box-sizing: border-box;
   border: 0;
   border-radius: var(--radius-md);
@@ -254,7 +365,7 @@ onBeforeUnmount(() => {
 .nav-item.active {
   background: var(--shell-nav-selected, var(--el-color-primary-light-9));
   color: var(--el-text-color-primary);
-  font-weight: 600;
+  font-weight: var(--font-semibold);
 }
 .nav-item.active svg,
 .nav-item.primary svg {
@@ -288,112 +399,16 @@ onBeforeUnmount(() => {
   color: var(--el-text-color-secondary);
   font-size: var(--text-xs);
   line-height: var(--leading-xs);
-  font-weight: 500;
+  font-weight: var(--font-medium);
 }
 .nav-item:focus-visible,
-.agent-trigger:focus-visible,
+.switch-trigger:focus-visible,
 .agent-option:focus-visible,
 .session-open:focus-visible,
 .session-delete:focus-visible,
 .more:focus-visible {
   outline: 2px solid var(--el-color-primary);
   outline-offset: -2px;
-}
-.agent-picker {
-  position: relative;
-  margin: 12px 0 4px;
-}
-.agent-trigger {
-  display: grid;
-  grid-template-columns: 1fr auto;
-  grid-template-rows: auto auto;
-  align-items: center;
-  width: 100%;
-  padding: 6px 10px;
-  border: 1px solid var(--el-border-color);
-  border-radius: var(--radius-md);
-  background: var(--el-bg-color);
-  color: inherit;
-  font: inherit;
-  text-align: left;
-  cursor: pointer;
-  transition: border-color var(--transition-fast);
-}
-.agent-trigger:hover {
-  border-color: var(--el-border-color-dark);
-}
-.agent-caption {
-  grid-column: 1;
-  font-size: var(--text-xs);
-  line-height: var(--leading-xs);
-  color: var(--el-text-color-secondary);
-}
-.agent-name {
-  grid-column: 1;
-  font-weight: 600;
-  color: var(--el-text-color-primary);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.agent-chevron {
-  grid-column: 2;
-  grid-row: 1 / 3;
-  color: var(--el-text-color-secondary);
-  transition: transform var(--transition-fast);
-}
-.agent-chevron.open {
-  transform: rotate(180deg);
-}
-.agent-menu {
-  position: absolute;
-  z-index: 20;
-  top: calc(100% + 4px);
-  left: 0;
-  right: 0;
-  margin: 0;
-  padding: 4px;
-  list-style: none;
-  border-radius: var(--radius-md);
-  background: var(--el-bg-color-overlay);
-  box-shadow: var(--elevation-overlay);
-}
-.agent-option {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  width: 100%;
-  padding: 6px 8px;
-  border: 0;
-  border-radius: var(--radius-sm);
-  background: transparent;
-  color: inherit;
-  font: inherit;
-  text-align: left;
-  cursor: pointer;
-}
-.agent-option:hover {
-  background: var(--el-fill-color-light);
-}
-.option-text {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  flex: 1;
-  min-width: 0;
-}
-.option-name {
-  font-weight: 600;
-  color: var(--el-text-color-primary);
-}
-.option-description {
-  font-size: var(--text-xs);
-  line-height: var(--leading-xs);
-  color: var(--el-text-color-secondary);
-}
-.option-check {
-  color: var(--el-color-primary);
-  flex-shrink: 0;
 }
 .sessions {
   flex: 1;
@@ -402,11 +417,9 @@ onBeforeUnmount(() => {
   flex-direction: column;
 }
 .section-title {
-  padding: 8px 8px 4px;
+  padding: 14px 10px 4px;
   font-size: var(--text-xs);
   line-height: var(--leading-xs);
-  font-weight: 600;
-  letter-spacing: var(--tracking-label);
   color: var(--el-text-color-secondary);
 }
 .session-list {
@@ -439,7 +452,7 @@ onBeforeUnmount(() => {
   flex: 1;
   min-width: 0;
   height: var(--nav-row-height);
-  padding: 0 8px;
+  padding: 0 10px;
   border: 0;
   border-radius: var(--radius-md);
   background: transparent;
@@ -450,7 +463,7 @@ onBeforeUnmount(() => {
 }
 .session-item.active .session-open {
   color: var(--el-text-color-primary);
-  font-weight: 600;
+  font-weight: var(--font-semibold);
 }
 .session-title {
   overflow: hidden;
@@ -492,17 +505,16 @@ onBeforeUnmount(() => {
 .session-delete.confirming {
   opacity: 1;
 }
-.session-delete:hover {
+.session-delete:hover,
+.session-delete.confirming {
   color: var(--el-color-danger);
   background: var(--el-color-danger-light-9);
 }
 .session-delete.confirming {
-  color: var(--el-color-danger);
-  background: var(--el-color-danger-light-9);
-  font-weight: 600;
+  font-weight: var(--font-semibold);
 }
 .session-note {
-  padding: 6px 8px;
+  padding: 6px 10px;
   color: var(--el-text-color-secondary);
 }
 .link {
@@ -516,7 +528,7 @@ onBeforeUnmount(() => {
   display: flex;
   flex-direction: column;
   gap: 10px;
-  padding: 8px;
+  padding: 8px 10px;
 }
 .session-skeleton span {
   height: 12px;
@@ -532,7 +544,7 @@ onBeforeUnmount(() => {
 .more {
   width: 100%;
   height: var(--nav-row-height);
-  padding: 0 8px;
+  padding: 0 10px;
   border: 0;
   border-radius: var(--radius-md);
   background: transparent;
@@ -543,6 +555,12 @@ onBeforeUnmount(() => {
 }
 .more:hover {
   background: var(--shell-nav-hover, var(--el-fill-color-light));
+}
+/* The application's own entry, behind the one divider inside the column. */
+.nav-foot {
+  flex-shrink: 0;
+  padding-top: 8px;
+  border-top: 1px solid var(--el-border-color);
 }
 @keyframes breathe {
   0%,

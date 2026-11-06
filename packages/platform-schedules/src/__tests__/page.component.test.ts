@@ -40,10 +40,10 @@ describe("platform schedules page", () => {
     expect(text(wrapper)).toContain("Analyst");
   });
 
-  it("narrows to the agent the host names, for the agent platform's entry", async () => {
+  it("narrows to the agent the page's filter names", async () => {
     const { host: pageHost, paths } = host();
     mount(PlatformSchedulesPage, {
-      props: { host: pageHost, agentId: AGENT.id },
+      props: { host: pageHost, filterAgentId: AGENT.id },
       global: pageGlobal(),
     });
     await flushPromises();
@@ -56,7 +56,8 @@ describe("platform schedules page", () => {
     const wrapper = mount(PlatformSchedulesPage, { props: { host: pageHost }, global: pageGlobal() });
     await flushPromises();
 
-    await wrapper.findAll("button").find((button) => button.text().includes("New task"))!.trigger("click");
+    // The page's header owns the button; the page opens the list's form when asked.
+    (wrapper.vm as unknown as { openNewTask: () => void }).openNewTask();
     await flushPromises();
     await wrapper.findComponent({ name: "ElSegmented" }).vm.$emit("update:modelValue", "function");
 
@@ -73,7 +74,8 @@ describe("platform schedules page", () => {
     // A refused function list leaves the page usable: the answer is a refusal, not a failure.
     expect(text(wrapper)).toContain("Nightly summary");
 
-    await wrapper.findAll("button").find((button) => button.text().includes("New task"))!.trigger("click");
+    // The page's header owns the button; the page opens the list's form when asked.
+    (wrapper.vm as unknown as { openNewTask: () => void }).openNewTask();
     await flushPromises();
     const form = wrapper.findComponent({ name: "PlatformScheduleForm" });
     expect(form.props("functions")).toEqual([]);
@@ -104,7 +106,8 @@ describe("platform schedules page", () => {
     const wrapper = mount(PlatformSchedulesPage, { props: { host: pageHost }, global: pageGlobal() });
     await flushPromises();
 
-    await wrapper.findAll("button").find((button) => button.text().includes("New task"))!.trigger("click");
+    // The page's header owns the button; the page opens the list's form when asked.
+    (wrapper.vm as unknown as { openNewTask: () => void }).openNewTask();
     await flushPromises();
     const form = wrapper.findComponent({ name: "PlatformScheduleForm" });
     expect(form.props("functions")).toEqual([]);

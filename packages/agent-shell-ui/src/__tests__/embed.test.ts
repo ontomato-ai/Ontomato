@@ -110,13 +110,13 @@ async function renderEmbedded() {
         sessionId: () => sessionId.value,
         setSessionId: (id) => (sessionId.value = id),
       });
-      // Embedded, loading is the host's: it is the one that draws the panel from this state.
+      // Embedded, loading is the host's: the shell draws the column and the conversation from this one state.
       onMounted(async () => {
         await nav.loadAgents().catch(() => {});
         await nav.loadSessions();
       });
       return () => [
-        // The application panel's half of the list.
+        // The host's own read of the same state, beside the shell: one instance, two readers.
         h(
           "ul",
           { class: "panel-sessions" },
@@ -127,6 +127,7 @@ async function renderEmbedded() {
           client: port,
           labels,
           nav,
+          title: workbench.label,
           "onUpdate:agentId": (id: string | null) => (hostAgentId.value = id),
           agentId: hostAgentId.value,
           "onUpdate:sessionId": (id: string | null) => (sessionId.value = id),
@@ -143,11 +144,13 @@ async function renderEmbedded() {
   return { root, read };
 }
 
-describe("the conversation area", () => {
-  it("draws no navigation and no panel chrome of its own", async () => {
+describe("the conversation application", () => {
+  it("draws its own column and the conversation, and no chrome of the platform's", async () => {
     const { root } = await renderEmbedded();
-    // The platform's application column is the only place the navigation is drawn.
-    expect(root.querySelector(".shell-sidebar")).toBeNull();
+    // The column belongs to the application (DESIGN.md "Applications and shells"): the shell draws it, and the
+    // platform draws none of its own.
+    expect(root.querySelector(".shell-column")).not.toBeNull();
+    expect(root.querySelector(".shell-nav-body")).not.toBeNull();
     expect(root.querySelector(".mobile-bar")).toBeNull();
     expect(root.querySelector(".shell-main")).not.toBeNull();
   });
@@ -173,6 +176,10 @@ describe("the conversation area", () => {
 
     const entries = [...root.querySelectorAll(".panel-session")].map((node) => node.textContent);
     expect(entries).toEqual(["How many orders last month?"]);
+    // The column reads the same state: the new conversation is listed there too.
+    expect([...root.querySelectorAll(".shell-column .session-title")].map((node) => node.textContent)).toEqual([
+      "How many orders last month?",
+    ]);
   });
 
 });

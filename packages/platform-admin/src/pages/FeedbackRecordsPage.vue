@@ -293,7 +293,8 @@ onMounted(loadRecords);
   min-height: 0;
   flex: 1;
   flex-direction: column;
-  padding: var(--spacing-lg);
+  /* The page area carries the horizontal gutter once; a page pads vertically only. */
+  padding: var(--spacing-lg) 0;
 }
 
 .filter-source {

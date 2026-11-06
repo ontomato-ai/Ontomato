@@ -13,15 +13,22 @@ import type {
   ToolRendererOverride,
 } from "../types";
 import { useAgentConversation } from "../useAgentConversation";
+import ShellColumn from "./ShellColumn.vue";
 import ShellConversation from "./ShellConversation.vue";
+import ShellNavBody from "./ShellNavBody.vue";
 import ShellPagePane from "./ShellPagePane.vue";
 import ShellSidePanel from "./ShellSidePanel.vue";
 
 /**
- * The conversation area of an agent app, with the right outlet for an artifact: the conversation, or the page beside it,
- * filling the workspace the platform shell gives it. It draws no navigation of its own — the platform's application
- * column does that — and it owns no navigation state: the host passes one `nav` that the column and the conversation
- * share, so a conversation created while sending appears in the column and the agents and sessions are read once.
+ * A conversation application inside the area the platform gives it: its own column, then the conversation with the right
+ * outlet for an artifact (the page beside it, or the page full).
+ *
+ * The column belongs to the application (DESIGN.md "Applications and shells"): this component draws its frame and, by
+ * default, the application's navigation — the agent switch or the application's name, a new conversation, the
+ * application's own pages, the recent conversations and the application's own entry at the foot. A host that needs a
+ * different column (the agent platform's settings navigation) fills the `column` slot instead. One `nav` is shared with
+ * the conversation, so a conversation created while sending appears in the column and the agents and sessions are read
+ * once.
  *
  * Rendering defaults live here; hosts pass overrides and fill the slots `feature` (feature pages), `artifact-actions` and
  * `message-actions`.
@@ -44,15 +51,19 @@ const props = withDefaults(
     /** Recognises an in-app address in an answer and returns how to open its page; null leaves it as text. */
     pageLinks?: ShellContext["pageLink"];
     /**
-     * The navigation state the host shares with its application column: one instance, so a conversation created while
-     * sending appears in the column and the agents and sessions are read once.
+     * The navigation state the host shares with its column: one instance, so a conversation created while sending
+     * appears in the column and the agents and sessions are read once.
      */
     nav: AgentNav;
+    /** The application's name, at the top of the column when the application runs on one agent. */
+    title?: string;
+    /** The application's own entry at the foot of its column (its settings, the model the diagnosis runs on). */
+    bottom?: { label: string; icon: string } | null;
   }>(),
-  { artifactRenderers: () => [], toolRenderers: () => [], chartTheme: () => defaultChartTheme },
+  { artifactRenderers: () => [], toolRenderers: () => [], chartTheme: () => defaultChartTheme, title: "", bottom: null },
 );
 const slots = useSlots();
-const emit = defineEmits<{ error: [message: string]; featureAction: [id: string] }>();
+const emit = defineEmits<{ error: [message: string]; featureAction: [id: string]; openBottom: [] }>();
 const featureId = defineModel<string | null>("featureId", { default: null });
 const agentId = defineModel<string | null>("agentId", { default: null });
 const sessionId = defineModel<string | null>("sessionId", { default: null });
@@ -170,6 +181,34 @@ onMounted(() => {
 
 <template>
   <div class="agent-shell" :class="{ 'panel-open': openArtifact }">
+    <!-- The application's own column. A host with its own navigation (the agent settings) fills the slot. -->
+    <ShellColumn :label="title">
+      <slot name="column">
+        <ShellNavBody
+          :workbench="workbench"
+          :title="title"
+          :agents="nav.agents.value"
+          :agent-id="agentId"
+          :sessions="nav.sessions.value"
+          :sessions-state="nav.sessionsState.value"
+          :has-more="nav.nextCursor.value !== null"
+          :session-id="sessionId"
+          :feature-id="featureId"
+          :bottom="bottom"
+          :labels="labels"
+          @new-conversation="nav.startNew()"
+          @select-feature="featureId = $event"
+          @feature-action="emit('featureAction', $event)"
+          @select-agent="agentId = $event"
+          @select-session="nav.selectSession($event)"
+          @delete-session="void nav.removeSession($event)"
+          @open-bottom="emit('openBottom')"
+          @load-more="void nav.loadSessions(true)"
+          @retry="void nav.loadSessions()"
+        />
+      </slot>
+    </ShellColumn>
+
     <main v-show="!pageFull" class="shell-main">
       <div v-if="featureId && !pairedPage" class="feature-page">
         <slot name="feature" :feature-id="featureId" view="full" />
@@ -217,8 +256,8 @@ onMounted(() => {
 
 <style scoped>
 /*
- * The conversation area of an agent app, filling the workspace band the platform shell gives it: one flat surface, no
- * gutter, no border, no shadow of its own (DESIGN.md "Applications and shells"). Its composer is raised.
+ * The conversation application, filling the surface the platform gives it: its own column, then the conversation on one
+ * flat area, no gutter, no border and no shadow of its own (DESIGN.md "Applications and shells"). Its composer is raised.
  */
 .agent-shell {
   --shell-composer-shadow: var(--elevation-composer);

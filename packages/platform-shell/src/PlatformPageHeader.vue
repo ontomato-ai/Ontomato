@@ -1,79 +1,141 @@
 <script setup lang="ts">
+import type { Component } from "vue";
 import type { PlatformPageActions } from "./types";
 
 /**
- * The 48px page header the platform draws above a page that does not draw its own: the title, one line of description,
- * and the actions a page hands to the header (the one Save of a page holding a draft).
+ * The one page header every page of the platform uses: the title on top, one line of description under it, the page's
+ * own actions on the right, and — for an application of several pages — its tabs in a row below them (DESIGN.md
+ * "Admin page anatomy").
  *
- * A page's own header stays its own: pages that draw one (the ontology graph, the model settings, the conversation) are
- * left alone, which is why the declaration says so per page.
+ * It is the only header: a page either uses it or, for a page that draws its own toolbars, the application passes no
+ * title and only the tabs appear above it. A second-level tab of one page stays in the page's content, under this.
  */
 withDefaults(
   defineProps<{
-    title: string;
+    /** The page's title; absent on a header that carries only its tabs (a page that draws its own title below). */
+    title?: string;
     description?: string | null;
-    actions?: PlatformPageActions | null;
+    /**
+     * The pages of an application that holds several, in its own order: the header switches between them, so an
+     * application with two screens is one header with two tabs rather than a second navigation band.
+     */
+    tabs?: readonly { path: string; label: string }[];
+    /** The address the tabs mark as current. */
+    activePath?: string;
+    /** The page's own buttons at the right of the title row. */
+    actions?: readonly { id: string; label: string; primary?: boolean; icon?: Component; onClick: () => void }[];
+    /** The one Save of a page holding a draft, with its unsaved marker. */
+    draft?: PlatformPageActions | null;
     /** The header's own words, from the host's i18n. */
     labels: { save: string; discard: string; unsavedChanges: string };
   }>(),
-  { description: null, actions: null },
+  { title: "", description: null, tabs: undefined, activePath: undefined, actions: undefined, draft: null },
 );
 
-const emit = defineEmits<{ save: []; discard: [] }>();
+const emit = defineEmits<{ discard: []; save: []; selectTab: [path: string] }>();
 </script>
 
 <template>
-  <header class="platform-page-header">
-    <h1 class="page-title">{{ title }}</h1>
-    <p v-if="description" class="page-description">{{ description }}</p>
-    <div v-if="actions" class="page-actions">
-      <span v-if="actions.dirty" class="unsaved" role="status">{{ labels.unsavedChanges }}</span>
-      <button type="button" class="action secondary" :disabled="!actions.dirty || actions.saving" @click="emit('discard')">
-        {{ labels.discard }}
-      </button>
-      <button type="button" class="action primary" :disabled="!actions.dirty || actions.saving" @click="emit('save')">
-        {{ labels.save }}
+  <header class="platform-page-header" :class="{ 'has-tabs': tabs && tabs.length > 0 }">
+    <div v-if="title || description || actions?.length || draft" class="header-row">
+      <div class="header-text">
+        <h1 v-if="title" class="page-title">{{ title }}</h1>
+        <p v-if="description" class="page-description">{{ description }}</p>
+      </div>
+      <div v-if="actions?.length || draft" class="page-actions">
+        <span v-if="draft?.dirty" class="unsaved" role="status">{{ labels.unsavedChanges }}</span>
+        <button
+          v-if="draft"
+          type="button"
+          class="action secondary"
+          :disabled="!draft.dirty || draft.saving"
+          @click="emit('discard')"
+        >
+          {{ labels.discard }}
+        </button>
+        <button
+          v-if="draft"
+          type="button"
+          class="action primary"
+          :disabled="!draft.dirty || draft.saving"
+          @click="emit('save')"
+        >
+          {{ labels.save }}
+        </button>
+        <button
+          v-for="action in actions ?? []"
+          :key="action.id"
+          type="button"
+          class="action"
+          :class="action.primary ? 'primary' : 'secondary'"
+          @click="action.onClick()"
+        >
+          <component :is="action.icon" v-if="action.icon" :size="16" aria-hidden="true" />
+          <span>{{ action.label }}</span>
+        </button>
+      </div>
+    </div>
+    <!-- The pages of one application, switched in its header: a tab is the page's own address. -->
+    <div v-if="tabs && tabs.length > 0" class="page-tabs" role="tablist" :aria-label="title">
+      <button
+        v-for="tab in tabs"
+        :key="tab.path"
+        type="button"
+        role="tab"
+        class="page-tab"
+        :class="{ active: tab.path === activePath }"
+        :aria-selected="tab.path === activePath"
+        @click="emit('selectTab', tab.path)"
+      >
+        {{ tab.label }}
       </button>
     </div>
   </header>
 </template>
 
 <style scoped>
-/* 48px: the platform's one page-header height (DESIGN.md "Admin page anatomy"). */
+/*
+ * One header for every page: the title and its description in one block, actions at the right, tabs under a hairline
+ * (DESIGN.md "Admin page anatomy"). Its horizontal padding is the same value as the page body's, so a title and the
+ * content under it start at the same place.
+ */
 .platform-page-header {
   display: flex;
-  align-items: center;
-  gap: 12px;
-  height: var(--page-header-height);
+  flex-direction: column;
   flex-shrink: 0;
-  padding: 0 24px;
+  padding: var(--page-gutter) var(--page-gutter) 0;
   box-sizing: border-box;
 }
+.header-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--spacing-lg);
+  padding-bottom: 14px;
+}
+.header-text {
+  min-width: 0;
+}
 .page-title {
-  margin: 0;
-  font-size: var(--text-lg);
-  line-height: var(--leading-lg);
-  font-weight: 600;
+  margin: 0 0 2px;
+  font-size: var(--text-xl);
+  line-height: var(--leading-xl);
+  font-weight: var(--font-semibold);
   color: var(--el-text-color-primary);
-  white-space: nowrap;
+  text-wrap: balance;
 }
 .page-description {
   margin: 0;
-  flex: 1;
-  min-width: 0;
   font-size: var(--text-sm);
   line-height: var(--leading-sm);
   color: var(--el-text-color-secondary);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 .page-actions {
   display: flex;
   align-items: center;
   gap: 8px;
-  margin-left: auto;
   flex-shrink: 0;
+  padding-top: 2px;
 }
 .unsaved {
   font-size: var(--text-xs);
@@ -81,11 +143,14 @@ const emit = defineEmits<{ save: []; discard: [] }>();
   color: var(--el-text-color-secondary);
 }
 .action {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   height: var(--control-height);
   padding: 0 12px;
   border-radius: var(--radius-sm);
   font-size: var(--text-sm);
-  font-weight: 500;
+  font-weight: var(--font-medium);
   cursor: pointer;
 }
 .action.secondary {
@@ -103,6 +168,34 @@ const emit = defineEmits<{ save: []; discard: [] }>();
   opacity: 0.6;
 }
 .action:focus-visible {
+  outline: 2px solid var(--el-color-primary);
+  outline-offset: -2px;
+}
+.page-tabs {
+  display: flex;
+  gap: var(--spacing-xl);
+  border-bottom: 1px solid var(--el-border-color);
+}
+.page-tab {
+  height: 40px;
+  padding: 0;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: none;
+  color: var(--el-text-color-regular);
+  font: inherit;
+  font-size: var(--text-sm);
+  cursor: pointer;
+}
+.page-tab:hover {
+  color: var(--el-text-color-primary);
+}
+.page-tab.active {
+  border-bottom-color: var(--el-color-primary);
+  color: var(--brand-link);
+  font-weight: var(--font-medium);
+}
+.page-tab:focus-visible {
   outline: 2px solid var(--el-color-primary);
   outline-offset: -2px;
 }

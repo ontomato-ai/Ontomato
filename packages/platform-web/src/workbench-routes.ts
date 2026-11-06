@@ -1,22 +1,29 @@
 import type { RouteMeta, RouteRecordRaw, RouteRecordSingleView } from "vue-router";
 import { platformRoutes as routes } from "@ontomato/platform-shell/routes";
 import { observeRoutes } from "./observe-routes";
+import DashboardsPage from "./pages/DashboardsRoute.vue";
 import PlatformSchedulesPage from "./pages/PlatformSchedulesRoute.vue";
 
 type PageComponent = NonNullable<RouteRecordSingleView["component"]>;
 
-/** The agent platform's pages: the conversation, its two own pages, its scheduled tasks, and the diagnosis app's root. */
+/**
+ * The agent platform's pages: the conversation and its settings, the diagnosis app's root, and the pages of its own that
+ * the platform assembles.
+ *
+ * The settings keep one address per screen on purpose: `/agents/settings` (the first agent), `/agents/settings/:agentId`
+ * (that agent), `/agents/settings/new` (a new one) and `/agents/settings/capabilities` (the capability library). Each is
+ * a page of the same component, and the router has to serve every one of them, so they are registered as siblings under
+ * the workbench's component rather than as children of the settings address.
+ */
 export function workbenchPages(
   component: PageComponent,
   observe: { component: PageComponent; meta?: RouteMeta; props?: Record<string, unknown> },
 ): RouteRecordRaw[] {
   return [
-    ...[routes.chat, routes.agents, routes.dashboards].map((location) => ({
-      ...location, component, meta: { workbench: true },
-    })),
-    // The agent platform's scheduled tasks are a page of the agent platform itself, so the application column stays the
-    // conversation's: the workbench renders the platform's list for that entry.
-    { ...routes.agentSchedules, component, meta: { workbench: true } },
+    { ...routes.chat, component, meta: { workbench: true } },
+    ...[routes.agents, routes.agentSettingsNew, routes.agentSettingsCapabilities, routes.agentSettings].map(
+      (location) => ({ ...location, component, meta: { workbench: true } }),
+    ),
     { ...observeRoutes.root, ...observe, children: observeRoutes.children },
   ];
 }
@@ -29,4 +36,18 @@ export function workbenchPages(
  */
 export const schedulePages = (): RouteRecordRaw[] => [
   { ...routes.schedules, component: PlatformSchedulesPage, meta: { service: true } },
+  // The agent platform's own scheduled tasks are gone: the platform's one list carries them, narrowed by `?agent=`.
+  {
+    path: routes.agentSchedules.path,
+    redirect: (to) => ({ path: routes.schedules.path, query: typeof to.query.agent === "string" ? { agent: to.query.agent } : {} }),
+  },
+];
+
+/**
+ * The dashboards: an application of their own. Their address carries the open board as `?dashboardId=`, so a board can
+ * be linked; the old address under the agent platform moves here.
+ */
+export const dashboardPages = (): RouteRecordRaw[] => [
+  { ...routes.dashboards, component: DashboardsPage, meta: { workbench: true } },
+  { path: "/agents/dashboards", redirect: (to) => ({ path: routes.dashboards.path, query: to.query }) },
 ];

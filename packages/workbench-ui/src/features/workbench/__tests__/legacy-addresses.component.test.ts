@@ -23,9 +23,9 @@ vi.mock("@ontomato/agent-shell-ui", () => ({
     emits: ["update:featureId"],
     template: '<div class="shell"><slot name="feature" :feature-id="featureId" /></div>',
   },
-  // The workbench contributes its navigation to the platform's column; the test only reads the page it opens.
+  // The shell draws the column and the conversation; this test only reads the page the workbench opens.
   ShellNavBody: { name: "ShellNavBody", template: "<div />" },
-  useAppColumn: () => {},
+  ShellColumn: { name: "ShellColumn", template: "<div><slot /></div>" },
   useAgentNav: () => ({
     agents: { value: [] },
     sessions: { value: [] },
@@ -66,17 +66,23 @@ async function openAddress(
   const router = createRouter({
     history: createMemoryHistory(),
     routes: [
-      ...[platformRoutes.chat, platformRoutes.agents].map((route) => ({ ...route, component: { render: () => null } })),
+      /*
+       * Every address the settings have, with their real names: the workbench tells the editor from an agent's page by
+       * the route it is on, so a route with a missing name would open the wrong screen.
+       */
+      ...[
+        platformRoutes.chat,
+        platformRoutes.agents,
+        platformRoutes.agentSettingsNew,
+        platformRoutes.agentSettingsCapabilities,
+        platformRoutes.agentSettings,
+      ].map((route) => ({ ...route, component: { render: () => null } })),
       ...Object.values(legacyAdminRoutes),
     ],
   });
   await router.push(path);
   const wrapper = mount(BusinessWorkbench, {
-    props: {
-      defaultLogo: "",
-      defaultBrandName: "Ontomato",
-      can: () => true,
-    },
+    props: { defaultLogo: "", defaultBrandName: "Ontomato" },
     global: {
       plugins: [i18n, ElementPlus, router],
       provide: { [ontologyServiceAccessKey as symbol]: openOntologyServiceAccess },
@@ -87,6 +93,28 @@ async function openAddress(
   const shell = wrapper.findComponent({ name: "AgentShell" });
   return { router, wrapper, featureId: (shell.props("featureId") as string | null) ?? null, html: wrapper.html() };
 }
+
+describe("the agent settings' addresses", () => {
+  /*
+   * `/agents/settings/new` is an address of its own, not an agent id: the editor must open the new-agent form. The
+   * check runs through the real route table, because a branch that reads `route.params.agentId === "new"` is always
+   * false here and would silently open the first agent instead.
+   */
+  it("opens the new-agent form at /agents/settings/new", async () => {
+    const { router, wrapper } = await openAddress("/agents/settings/new");
+    expect(router.currentRoute.value.path).toBe("/agents/settings/new");
+    const page = wrapper.findComponent({ name: "AgentSettingsPage" });
+    expect(page.props("creating")).toBe(true);
+    expect(page.props("agentId")).toBeNull();
+  });
+
+  it("opens one agent's editor at /agents/settings/<id>", async () => {
+    const { wrapper } = await openAddress("/agents/settings/agent-42");
+    const page = wrapper.findComponent({ name: "AgentSettingsPage" });
+    expect(page.props("creating")).toBe(false);
+    expect(page.props("agentId")).toBe("agent-42");
+  });
+});
 
 describe("old console addresses", () => {
   it("opens the agents tab for the business agents address", async () => {

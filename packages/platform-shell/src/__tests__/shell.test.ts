@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createApp, h, nextTick, type App } from "vue";
-import { PlatformShell, PlatformRail, PlatformAccountMenu, AppPanel, AppPanelPages } from "..";
+import { PlatformShell, PlatformRail, PlatformAccountMenu, AppPanelPages } from "..";
 import type { PlatformAccount, PlatformApp, PlatformPreferences, PlatformShellLabels } from "../types";
 
 const labels: PlatformShellLabels = {
@@ -19,17 +19,22 @@ const labels: PlatformShellLabels = {
   unsavedChanges: "Unsaved changes",
 };
 
+/** The enterprise rail in display order: the ontology applications, the business ones, the platform's own settings. */
 const apps: PlatformApp[] = [
+  { id: "ontology", label: "Ontology manager", icon: "ontology", rail: "top" },
+  { id: "objects", label: "Object browser", icon: "objects", rail: "top" },
   { id: "agents", label: "Agent Platform", icon: "agents" },
   { id: "diagnosis", label: "Operations diagnosis", icon: "diagnosis" },
   { id: "knowledge", label: "Knowledge governance", icon: "knowledge" },
-  { id: "objects", label: "Object browser", icon: "objects" },
-  { id: "ontology", label: "Ontology manager", icon: "ontology" },
+  { id: "dashboards", label: "Dashboards", icon: "pages" },
   { id: "schedule", label: "Scheduled tasks", icon: "schedule" },
-  { id: "permissions", label: "Permissions", icon: "permissions" },
-  { id: "settings", label: "System settings", icon: "settings" },
   { id: "governance", label: "Data governance platform", icon: "governance", href: "https://example.test/governance" },
+  { id: "permissions", label: "Permissions", icon: "permissions", rail: "bottom" },
+  { id: "settings", label: "System settings", icon: "settings", rail: "bottom" },
 ];
+
+/** The same rail without the enterprise edition's permission centre and external application. */
+const openSourceApps: PlatformApp[] = apps.filter((app) => app.id !== "permissions" && app.id !== "governance");
 
 function preferences(overrides: Partial<PlatformPreferences> = {}): PlatformPreferences {
   return {
@@ -61,30 +66,69 @@ async function mount(component: unknown, props: Record<string, unknown>, slots: 
   return root;
 }
 
-/** The order the rail lists, straight from the task: no grouping, app-builder absent, external application last. */
-const expectedOrder = [
-  "Agent Platform",
-  "Operations diagnosis",
-  "Knowledge governance",
-  "Object browser",
-  "Ontology manager",
-  "Scheduled tasks",
-  "Permissions",
-  "System settings",
-  "Data governance platform",
+/**
+ * The rails of both editions, written out here (the task asks for the names to be fixed in the test): the ontology
+ * applications first, then the business ones with the external application last among them, and the platform's own
+ * settings above the account. No section carries a group name.
+ */
+const enterpriseRails: string[][] = [
+  ["Ontology manager", "Object browser"],
+  ["Agent Platform", "Operations diagnosis", "Knowledge governance", "Dashboards", "Scheduled tasks", "Data governance platform"],
+  ["Permissions", "System settings"],
+];
+const openSourceRails: string[][] = [
+  ["Ontology manager", "Object browser"],
+  ["Agent Platform", "Operations diagnosis", "Knowledge governance", "Dashboards", "Scheduled tasks"],
+  ["System settings"],
 ];
 
+/**
+ * The section each row is in, read off the rail as it renders: the dividers inside the scrolling area, then the foot
+ * below it. The foot is a section of its own and is not part of the scroll area.
+ */
+function railsOf(root: HTMLElement) {
+  const sections: string[][] = [];
+  let current: string[] = [];
+  for (const node of root.querySelectorAll(".rail-scroll > *")) {
+    if (node.classList.contains("rail-divider")) {
+      if (current.length > 0) sections.push(current);
+      current = [];
+      continue;
+    }
+    for (const row of node.querySelectorAll(".rail-row")) {
+      current.push(row.textContent?.replace("Opens in a new tab", "").trim() ?? "");
+    }
+  }
+  if (current.length > 0) sections.push(current);
+  const foot = [...(root.querySelector(".rail-foot")?.querySelectorAll(".rail-row") ?? [])].map(
+    (row) => row.textContent?.replace("Opens in a new tab", "").trim() ?? "",
+  );
+  if (foot.length > 0) sections.push(foot);
+  return sections;
+}
+
 describe("platform rail", () => {
-  it("lists the applications flat, in the agreed order, with the external one marked", async () => {
+  it("lists the enterprise applications in three sections, with the external one last among the business ones", async () => {
     const root = await mount(PlatformRail, { apps, activeAppId: "agents", account, preferences: preferences(), labels, collapsed: false });
-    const rows = [...root.querySelectorAll(".rail-row")];
-    expect(rows.map((row) => row.textContent?.replace("Opens in a new tab", "").trim())).toEqual(expectedOrder);
-    // The external application is a link to another product and opens in a new tab.
-    const external = rows.at(-1) as HTMLAnchorElement;
-    expect(external.tagName).toBe("A");
-    expect(external.getAttribute("target")).toBe("_blank");
-    expect(external.getAttribute("rel")).toContain("noopener");
-    expect(external.classList.contains("active")).toBe(false);
+    expect(railsOf(root)).toEqual(enterpriseRails);
+    // The platform's own applications sit at the foot, above the account and outside the scrolling area.
+    const foot = root.querySelector(".rail-foot")!;
+    const accountRow = root.querySelector(".rail-account")!;
+    expect(foot).not.toBeNull();
+    expect(root.querySelector(".rail-scroll .rail-foot")).toBeNull();
+    expect(foot.compareDocumentPosition(accountRow) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    // The external application is a link to another product and opens in a new tab; nothing selects it.
+    const external = root.querySelector<HTMLAnchorElement>(".rail-row.external");
+    expect(external?.textContent?.trim()).toContain("Data governance platform");
+    expect(external?.getAttribute("target")).toBe("_blank");
+    expect(external?.getAttribute("rel")).toContain("noopener");
+    expect(external?.classList.contains("active")).toBe(false);
+  });
+
+  it("lists the open-source rail without the permission centre and the external application", async () => {
+    const root = await mount(PlatformRail, { apps: openSourceApps, activeAppId: "agents", account, preferences: preferences(), labels, collapsed: false });
+    expect(railsOf(root)).toEqual(openSourceRails);
+    expect(root.querySelector(".rail-row.external")).toBeNull();
   });
 
   it("opens an external application whose address the host resolves, as a button, without selecting it", async () => {
@@ -132,20 +176,29 @@ describe("platform rail", () => {
     expect(pending?.getAttribute("title")).toBe("Coming soon");
   });
 
-  it("collapses to icons only, keeping every accessible name", async () => {
-    const root = await mount(PlatformRail, { apps, activeAppId: "agents", account, preferences: preferences(), labels, collapsed: false });
-    expect(root.querySelectorAll(".rail-label")).toHaveLength(apps.length);
-    expect(root.querySelectorAll(".rail-row button, .rail-row a").length + root.querySelectorAll("button.rail-row").length).toBeGreaterThan(0);
+  /*
+   * Collapsed — the default — the rail is the icon column: names appear on hover only, and the expand control replaces
+   * the brand mark at the top (DESIGN.md "Applications and shells").
+   */
+  it("collapses to icons only, keeping every accessible name and putting the expand control at the top", async () => {
+    const expanded = await mount(PlatformRail, { apps, activeAppId: "agents", account, preferences: preferences(), labels, collapsed: false });
+    expect(expanded.querySelectorAll(".rail-label")).toHaveLength(apps.length);
+    expect(expanded.querySelector(".brand-name")?.textContent).toBe("Ontomato");
+    expect(expanded.querySelector(".rail-brand .rail-mark, .brand-mark")).not.toBeNull();
+    expect(expanded.querySelector(".rail-toggle")?.getAttribute("aria-label")).toBe(labels.collapseRail);
     app?.unmount();
 
     const collapsedRoot = await mount(PlatformRail, { apps, activeAppId: "agents", account, preferences: preferences(), labels, collapsed: true });
     // No visible names, but each row still carries its label for assistive technology and a tooltip.
     expect(collapsedRoot.querySelectorAll(".rail-label")).toHaveLength(0);
-    const buttons = [...collapsedRoot.querySelectorAll<HTMLElement>("button.rail-row")];
-    expect(buttons).toHaveLength(apps.length - 1);
-    buttons.forEach((button, index) => {
-      expect(button.getAttribute("aria-label")).toBe(apps[index].label);
-      expect(button.getAttribute("title")).toBe(apps[index].label);
+    expect(collapsedRoot.querySelector(".brand-name")).toBeNull();
+    expect(collapsedRoot.querySelector(".brand-mark, .brand-logo")).toBeNull();
+    expect(collapsedRoot.querySelector(".rail-toggle")?.getAttribute("aria-label")).toBe(labels.expandRail);
+    const rows = [...collapsedRoot.querySelectorAll<HTMLElement>(".rail-row")];
+    expect(rows).toHaveLength(apps.length);
+    rows.forEach((row, index) => {
+      expect(row.getAttribute("aria-label")).toBe(apps[index].label);
+      expect(row.getAttribute("title")).toBe(apps[index].label);
     });
   });
 
@@ -210,30 +263,8 @@ describe("account menu", () => {
   });
 });
 
-describe("application panel", () => {
-  it("draws the application name and its own settings entry at the foot", async () => {
-    const onSettings = vi.fn();
-    const root = await mount(
-      AppPanel,
-      {
-        panel: { id: "agents", label: "Agent Platform", settings: { id: "agent-settings", label: "Agent settings", icon: "settings" } },
-        labels,
-        onOpenSettings: onSettings,
-      },
-      { default: () => h("div", { class: "panel-slot" }, "contents") },
-    );
-    expect(root.querySelector(".panel-title")?.textContent).toBe("Agent Platform");
-    expect(root.querySelector(".panel-slot")).not.toBeNull();
-    root.querySelector<HTMLButtonElement>(".settings-row")?.click();
-    expect(onSettings).toHaveBeenCalledWith("agent-settings");
-  });
-
-  it("leaves the foot out when the application has no settings entry", async () => {
-    const root = await mount(AppPanel, { panel: { id: "objects", label: "Object browser" }, labels });
-    expect(root.querySelector(".panel-footer")).toBeNull();
-  });
-
-  it("lists pages by group and marks the current one with the panel's selected band", async () => {
+describe("the menu of an application whose pages are its own menu", () => {
+  it("lists pages by group and marks the current one with the selected band", async () => {
     const onSelect = vi.fn();
     const root = await mount(AppPanelPages, {
       groups: [
@@ -263,24 +294,37 @@ describe("application panel", () => {
 });
 
 describe("platform shell", () => {
-  it("remembers the collapsed rail and lets a controlled value win", async () => {
-    localStorage.setItem("ontomato.platform.railCollapsed", "true");
+  /* The application is one surface on the rail's ground: it fills the rest of the page and only its left corners round. */
+  it("puts the application on the rail as one surface and draws no column of its own", async () => {
     const root = await mount(
       PlatformShell,
-      { apps, activeAppId: "agents", account, preferences: preferences(), labels },
-      { panel: () => h("div", { class: "panel-slot" }), default: () => h("div", { class: "workspace-slot" }) },
+      { apps, activeAppId: "agents", account, preferences: preferences(), labels, collapsed: false },
+      { default: () => h("div", { class: "workspace-slot" }) },
     );
-    expect(root.querySelector(".platform-shell")?.classList.contains("rail-collapsed")).toBe(true);
-    expect(root.querySelector(".panel-slot")).not.toBeNull();
-    expect(root.querySelector(".workspace-slot")).not.toBeNull();
+    const app = root.querySelector(".platform-app");
+    expect(app).not.toBeNull();
+    // The application's content sits inside the surface, beside the rail; the shell draws no column of its own.
+    expect(app?.querySelector(".workspace-slot")).not.toBeNull();
+    expect(app?.querySelector(".app-panel")).toBeNull();
   });
 
-  it("keeps an explicit expansion even when the stored value says collapsed", async () => {
+  it("starts collapsed unless the reader expanded it", async () => {
+    const fresh = await mount(PlatformShell, { apps, activeAppId: "agents", account, preferences: preferences(), labels }, { default: () => h("div") });
+    // The rail is collapsed on a fresh load, whatever the screen width: the applications open full page.
+    expect(fresh.querySelector(".platform-shell")?.classList.contains("rail-collapsed")).toBe(true);
+    app?.unmount();
+
+    localStorage.setItem("ontomato.platform.railCollapsed", "false");
+    const remembered = await mount(PlatformShell, { apps, activeAppId: "agents", account, preferences: preferences(), labels }, { default: () => h("div") });
+    expect(remembered.querySelector(".platform-shell")?.classList.contains("rail-collapsed")).toBe(false);
+  });
+
+  it("lets a controlled value win over the stored one", async () => {
     localStorage.setItem("ontomato.platform.railCollapsed", "true");
     const root = await mount(
       PlatformShell,
       { apps, activeAppId: "agents", account, preferences: preferences(), labels, collapsed: false },
-      { panel: () => h("div") },
+      { default: () => h("div") },
     );
     expect(root.querySelector(".platform-shell")?.classList.contains("rail-collapsed")).toBe(false);
   });
@@ -297,7 +341,7 @@ describe("platform shell", () => {
         labels,
         "onUpdate:collapsed": onUpdate,
       },
-      { panel: () => h("div") },
+      { default: () => h("div") },
     );
     const shell = root.querySelector(".platform-shell");
     const startedCollapsed = shell?.classList.contains("rail-collapsed") === true;
@@ -313,16 +357,5 @@ describe("platform shell", () => {
     expect(onUpdate).toHaveBeenLastCalledWith(startedCollapsed);
     expect(localStorage.getItem("ontomato.platform.railCollapsed")).toBe(String(startedCollapsed));
     expect(shell?.classList.contains("rail-collapsed")).toBe(startedCollapsed);
-  });
-
-  it("starts collapsed on a narrow screen until the reader expands it", async () => {
-    // The narrow-screen default is the only reason the rail may start collapsed on a fresh load.
-    const root = await mount(
-      PlatformShell,
-      { apps, activeAppId: "agents", account, preferences: preferences(), labels },
-      { panel: () => h("div") },
-    );
-    expect(window.matchMedia("(max-width: 1279px)").matches).toBe(true);
-    expect(root.querySelector(".platform-shell")?.classList.contains("rail-collapsed")).toBe(true);
   });
 });

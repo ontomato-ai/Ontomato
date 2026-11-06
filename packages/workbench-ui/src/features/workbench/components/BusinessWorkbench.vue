@@ -1,22 +1,13 @@
 <script setup lang="ts">
-import { computed, h, onMounted, ref, watch } from "vue";
+import { computed, onMounted, ref, watch } from "vue";
 import { platformRoutes as routes } from "@ontomato/platform-shell/routes";
 import { ElMessage } from "element-plus";
 import { useI18n } from "vue-i18n";
 import { useRoute, useRouter } from "vue-router";
-import {
-  AgentShell,
-  ShellNavBody,
-  useAgentNav,
-  useAppColumn,
-  type ShellFeatureDeclaration,
-  type ShellWorkbenchDeclaration,
-} from "@ontomato/agent-shell-ui";
+import { AgentShell, useAgentNav, type ShellFeatureDeclaration, type ShellWorkbenchDeclaration } from "@ontomato/agent-shell-ui";
 import "@ontomato/agent-shell-ui/style.css";
 import type { WorkbenchAppearance } from "@ontomato/contracts/workbench-appearance";
-import { AgentsPage } from "../../agents";
-import { DashboardHome } from "../../dashboard";
-import { useDashboardStore } from "../../dashboard/stores/dashboard";
+import { AgentSettingsNav, AgentSettingsPage } from "../../agents";
 import { getWorkbenchAppearance } from "../api";
 import { nativeEchartsTheme } from "../../dashboard/components/utils/echartsTheme";
 import { createAssistantClient, createAssistantFeedback } from "../assistant-host";
@@ -25,34 +16,25 @@ import TurnDiagnoseButton from "../../diagnosis/components/TurnDiagnoseButton.vu
 import ConversationActions from "./ConversationActions.vue";
 import DatasetActions from "./DatasetActions.vue";
 import WorkbenchAppearanceDialog from "./WorkbenchAppearanceDialog.vue";
-import AgentSchedulesView from "./AgentSchedulesView.vue";
 import { workbenchFeatures } from "../features";
 
 /**
- * The agent platform's conversation area: the assistant, its conversation and its own pages. Both editions mount it; the
- * edition adds the entries only it has and renders those pages through the `feature` slot.
+ * The agent platform: the assistant, its conversation and its settings. Both editions mount it; the edition adds
+ * entries only it has and renders those pages through the `feature` slot.
  *
- * The navigation is not drawn here: it is contributed to the platform's application column, from the same navigation
- * state this conversation sends from, so a conversation created while sending appears in the column immediately.
+ * Its column is the conversation shell's, from the same navigation state this conversation sends from, so a
+ * conversation created while sending appears in the column immediately. In the settings the column is the settings
+ * navigation instead, and the main area holds the editor of one agent.
  */
-type PermissionCheck = Parameters<typeof workbenchFeatures>[2];
-
 const props = withDefaults(
   defineProps<{
-    /** Edition-specific entries, placed after the shared dashboard entry (see workbenchFeatures). */
+    /** Edition-specific entries of this application's column (the enterprise edition's graph). */
     features?: ShellFeatureDeclaration[];
     defaultLogo: string;
     defaultBrandName: string;
-    /** The edition's permission check for the function area's entries; open source shows everything. */
-    can?: PermissionCheck;
   }>(),
-  // `can` is not defaulted here: Vue calls a function default on a prop with no declared type as a factory, and the
-  // prop would then hold `true` instead of a check. The one read below falls back to "allow everything".
   { features: () => [] },
 );
-
-/** The edition's permission check; an edition that passes none allows every entry. */
-const can: PermissionCheck = props.can ?? (() => true);
 
 const emit = defineEmits<{ featureAction: [id: string] }>();
 
@@ -64,19 +46,56 @@ const route = useRoute();
 const router = useRouter();
 const client = createAssistantClient();
 const feedback = createAssistantFeedback();
-const dashboards = useDashboardStore();
 const appearance = ref<WorkbenchAppearance | null>(null);
 const editingBrand = ref(false);
 const agentId = ref<string | null>(readRemembered());
-const featureRoutes = { dashboards: routes.dashboards, agents: routes.agents, schedule: routes.agentSchedules };
+/**
+ * The application's own pages, by the name the shell shows for them. The dashboards and the scheduled tasks are
+ * applications of their own now, so nothing here leaves this application.
+ */
+const featureRoutes = { agents: routes.agents };
+/** The settings' addresses: the editor of one agent, a new one, or the capability library. */
+const SETTINGS_PATH = routes.agents.path;
+const settingsPath = (suffix = "") => `${SETTINGS_PATH}${suffix}`;
+const inSettings = computed(() => route.path === SETTINGS_PATH || route.path.startsWith(`${SETTINGS_PATH}/`));
+/**
+ * The settings screen the address names. "new" is its own address (`/agents/settings/new`), not a parameter value, so it
+ * is recognised by route name and by the path — an agent whose id happened to be "new" would still open its editor.
+ */
+const creatingAgent = computed(
+  () => route.name === routes.agentSettingsNew.name || route.path === `${SETTINGS_PATH}/new`,
+);
+const settingsAgentId = computed(() => {
+  const id = route.params.agentId;
+  return typeof id === "string" && !creatingAgent.value ? id : null;
+});
+const capabilitiesOpen = computed(() => route.path === settingsPath("/capabilities"));
+/**
+ * The page the shell shows: the settings are the `agents` page, whose addresses are the settings' own screens; every
+ * other page names its route. Closing the page (a new conversation) returns to the conversation.
+ */
 const featureId = computed<string | null>({
-  get: () => Object.entries(featureRoutes).find(([, page]) => page.name === route.name)?.[0] ?? null,
+  get: () => {
+    if (inSettings.value) return "agents";
+    return Object.entries(featureRoutes).find(([, page]) => page.name === route.name)?.[0] ?? null;
+  },
   set: (id) => {
+    if (id === "agents" && inSettings.value) return;
     const target = featureRoutes[id as keyof typeof featureRoutes] ?? routes.chat;
     if (route.name !== target.name) void router.push({ name: target.name });
   },
 });
-const conversationId = ref<string | null>(null);
+/**
+ * The open conversation. The address carries it while the settings are shown, so leaving them (or reloading) returns to
+ * the conversation the reader came from instead of to a blank one.
+ */
+const conversationId = ref<string | null>(typeof route.query.sessionId === "string" ? route.query.sessionId : null);
+watch(
+  () => route.query.sessionId,
+  (id) => {
+    if (typeof id === "string" && id !== conversationId.value) conversationId.value = id;
+  },
+);
 const shell = ref<{ reloadAgents: () => Promise<void> } | null>(null);
 
 function readRemembered(): string | null {
@@ -97,7 +116,7 @@ watch(agentId, (id) => {
 const workbench = computed<ShellWorkbenchDeclaration>(() => ({
   id: WORKBENCH_ID,
   label: appearance.value?.brand.name || props.defaultBrandName,
-  features: workbenchFeatures(t, props.features, can),
+  features: workbenchFeatures(props.features),
 }));
 
 const labels = useShellLabels();
@@ -114,35 +133,45 @@ const nav = useAgentNav({
   setSessionId: (id) => (conversationId.value = id),
   onLeaveConversation: () => (featureId.value = null),
 });
-const { agents, sessions, sessionsState, nextCursor } = nav;
 
-/** The column shows this application's navigation: new conversation, its entries, the agent and the history. */
-useAppColumn(() => ({
-  appId: "agents",
-  content: () =>
-    h(ShellNavBody, {
-      workbench: workbench.value,
-      agents: agents.value,
-      agentId: agentId.value,
-      sessions: sessions.value,
-      sessionsState: sessionsState.value,
-      hasMore: nextCursor.value !== null,
-      sessionId: conversationId.value,
-      featureId: featureId.value,
-      // The column is drawn outside the conversation's provider, so the shell's words are passed in.
-      labels: labels.value,
-      onNewConversation: () => nav.startNew(),
-      onSelectFeature: (id: string) => {
-        featureId.value = id;
-      },
-      onFeatureAction: (id: string) => emit("featureAction", id),
-      onSelectAgent: (id: string) => (agentId.value = id),
-      onSelectSession: (id: string) => nav.selectSession(id),
-      onDeleteSession: (id: string) => void nav.removeSession(id),
-      onLoadMore: () => void nav.loadSessions(true),
-      onRetry: () => void nav.loadSessions(),
-    }),
-}));
+/** The conversation the reader came from, so leaving the settings returns to it rather than to a new one. */
+const returnTo = ref<string | null>(null);
+watch(inSettings, (open) => {
+  if (!open) returnTo.value = null;
+});
+
+/** The agent settings: the agent the conversation runs on, or the first one the account has. */
+function openSettings() {
+  returnTo.value = conversationId.value;
+  void router.push(agentId.value ? settingsPath(`/${agentId.value}`) : SETTINGS_PATH);
+}
+
+function backToChat() {
+  const session = returnTo.value;
+  featureId.value = null;
+  conversationId.value = session;
+  void router.push({ name: routes.chat.name, query: session ? { sessionId: session } : {} });
+}
+
+function selectSettingsAgent(id: string) {
+  void router.push(settingsPath(`/${id}`));
+}
+
+function createSettingsAgent() {
+  void router.push(settingsPath("/new"));
+}
+
+function openCapabilities() {
+  void router.push(settingsPath("/capabilities"));
+}
+
+/** The column's own entry at the foot: the agent settings, which replace the column while they are open. */
+const bottomEntry = computed(() => ({ label: t("assistant.featureAgents"), icon: "agents" }));
+
+/** The board a conversation just added a dataset to: the dashboards application, opened on that board. */
+function openDashboardApplication(dashboardId: string) {
+  void router.push({ path: routes.dashboards.path, query: { dashboardId } });
+}
 
 onMounted(async () => {
   try {
@@ -155,24 +184,11 @@ onMounted(async () => {
   await nav.loadSessions();
 });
 
-/** A scheduled run's conversation opens in this application, where the agent it ran belongs. */
-function openRunSession(sessionId: string) {
-  featureId.value = null;
-  conversationId.value = sessionId;
-}
-
-function openDashboard(id: string) {
-  void dashboards.selectDashboard(id);
-  featureId.value = "dashboards";
-}
-
 function appearanceSaved(value: WorkbenchAppearance) {
   appearance.value = value;
   editingBrand.value = false;
 }
 
-/** The agents page's tab is part of the address, so a link to the capability library opens it directly. */
-const agentsTab = computed(() => route.query.tab === "capabilities" ? "capabilities" : "agents");
 </script>
 
 <template>
@@ -182,6 +198,8 @@ const agentsTab = computed(() => route.query.tab === "capabilities" ? "capabilit
     v-model:feature-id="featureId"
     v-model:session-id="conversationId"
     :workbench="workbench"
+    :title="workbench.label"
+    :bottom="bottomEntry"
     :client="client"
     :labels="labels"
     :nav="nav"
@@ -189,19 +207,33 @@ const agentsTab = computed(() => route.query.tab === "capabilities" ? "capabilit
     :chart-theme="nativeEchartsTheme"
     @error="ElMessage.error($event)"
     @feature-action="emit('featureAction', $event)"
+    @open-bottom="openSettings"
   >
+    <!-- In the settings the application's column is the settings navigation; the editor is the whole main area. -->
+    <template v-if="inSettings" #column>
+      <AgentSettingsNav
+        :agent-id="settingsAgentId"
+        :creating="creatingAgent"
+        :capabilities="capabilitiesOpen"
+        @back="backToChat"
+        @select-agent="selectSettingsAgent"
+        @create-agent="createSettingsAgent"
+        @open-capabilities="openCapabilities"
+      />
+    </template>
     <template #feature="{ featureId: page }">
-      <DashboardHome v-if="page === 'dashboards'" />
-      <AgentsPage v-else-if="page === 'agents'" :can="can" :initial-tab="agentsTab" @changed="shell?.reloadAgents()" />
-      <AgentSchedulesView
-        v-else-if="page === 'schedule'"
-        :agent-id="agentId"
-        @open-session="openRunSession"
+      <AgentSettingsPage
+        v-if="page === 'agents'"
+        :agent-id="settingsAgentId"
+        :creating="creatingAgent"
+        :capabilities="capabilitiesOpen"
+        @changed="shell?.reloadAgents()"
       />
       <slot v-else name="feature" :feature-id="page" />
     </template>
     <template #artifact-actions="{ artifact }">
-      <DatasetActions :artifact="artifact" @open-dashboard="openDashboard" />
+      <!-- A dataset added to a board opens the dashboards application, which is where boards live. -->
+      <DatasetActions :artifact="artifact" @open-dashboard="openDashboardApplication" />
     </template>
     <template #message-actions="{ sessionId, runId }">
       <TurnDiagnoseButton v-if="sessionId && runId" :session-id="sessionId" :run-id="runId" />

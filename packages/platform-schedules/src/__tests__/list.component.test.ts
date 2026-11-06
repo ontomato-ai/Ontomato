@@ -91,14 +91,14 @@ describe("platform schedules list", () => {
     expect(api.list).toHaveBeenCalledOnce();
   });
 
-  it("shows only the scoped agent's tasks and hides the application filter", async () => {
+  it("narrows to the agent the page's filter names", async () => {
     const api = fakeApi();
-    const wrapper = mountList(api, { agentId: AGENT.id });
+    const wrapper = mountList(api, { agentFilter: AGENT.id });
     await flushPromises();
 
     expect(api.list).toHaveBeenCalledWith({ agentId: AGENT.id });
-    expect(text(wrapper)).toContain("Tasks for this agent");
-    expect(wrapper.findAllComponents({ name: "ElSelect" })).toHaveLength(0);
+    // The reader may still widen it: the filters are the page's, not a fixed scope.
+    expect(wrapper.findAllComponents({ name: "ElSelect" })).toHaveLength(2);
   });
 
   it("registers an agent task from the dialog with the contract's input", async () => {
@@ -106,7 +106,8 @@ describe("platform schedules list", () => {
     const wrapper = mountList(api);
     await flushPromises();
 
-    await wrapper.findAll("button").find((button) => button.text().includes("New task"))!.trigger("click");
+    // The page's header owns the button; the list opens its form when asked.
+    (wrapper.vm as unknown as { openNewTask: () => void }).openNewTask();
     await flushPromises();
 
     const form = wrapper.findComponent({ name: "PlatformScheduleForm" });
@@ -136,7 +137,8 @@ describe("platform schedules list", () => {
     const wrapper = mountList(api);
     await flushPromises();
 
-    await wrapper.findAll("button").find((button) => button.text().includes("New task"))!.trigger("click");
+    // The page's header owns the button; the list opens its form when asked.
+    (wrapper.vm as unknown as { openNewTask: () => void }).openNewTask();
     await flushPromises();
 
     wrapper.findComponent({ name: "PlatformScheduleForm" }).vm.$emit("submit", {
@@ -231,7 +233,13 @@ describe("platform schedules list", () => {
 
   it("clears the reader's application filter when the linked task sits in the other application", async () => {
     const api = fakeApi();
-    const wrapper = mountList(api, { appId: "agents" });
+    const wrapper = mountList(api);
+    await flushPromises();
+
+    // The application filter is the reader's own: choosing one narrows the list, and a linked task in the other
+    // application clears it rather than hiding the row the address is about.
+    const selects = wrapper.findAllComponents({ name: "ElSelect" });
+    selects[0]!.vm.$emit("update:modelValue", "agents");
     await flushPromises();
     expect(text(wrapper)).not.toContain("Refresh revenue");
 

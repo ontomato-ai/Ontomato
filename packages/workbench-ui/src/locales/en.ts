@@ -264,6 +264,7 @@ export default {
     "renameChart": "Rename Chart",
     "deleteChartConfirm": "Confirm delete chart \"{name}\"?",
     "myDashboards": "My Dashboards",
+    "dashboardsIntro": "The charts and datasets conversations add to.",
     "noDashboards": "No dashboards",
     "getDashboardFailed": "Failed to get dashboard list"
   },
@@ -708,6 +709,8 @@ export default {
     "modelOptionsLoadFailed": "Couldn't load the models to choose from.",
     "modelSaved": "Model saved",
     "agentsTab": "Agents",
+    "agentsGroup": "Agents",
+    "capabilityGroup": "Capabilities",
     "capabilities": "Capabilities",
     "capabilitiesHint": "The skills and external tools this agent can use.",
     "capabilityLibrary": "Capability library",

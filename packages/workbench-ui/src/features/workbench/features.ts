@@ -1,23 +1,13 @@
 import type { ShellFeatureDeclaration } from "@ontomato/agent-shell-ui";
-import { AGENT_PAGE_PERMISSIONS, anyPermission } from "../agents/permissions";
 
 /**
- * The agent platform's own entries in its column, after the conversation itself.
+ * The agent platform's own entries in its column, after a new conversation and before the recent conversations.
  *
- * Only this application's pages: another application is reached through the platform rail, never through an entry here,
- * and the rail opens it without leaving the page. An edition adds the entries only it has.
+ * The platform's pages are not listed here: the agent settings are the column's own foot, the dashboards are an
+ * application of their own, the scheduled tasks are the platform's one list, and the star map belongs to the object
+ * browser (DESIGN.md "Applications and shells"). So neither edition has an entry left, and an edition that later needs
+ * one of its own passes it in.
  */
-export function workbenchFeatures(
-  t: (key: string) => string,
-  editionFeatures: readonly ShellFeatureDeclaration[],
-  can: (permission: string) => boolean,
-): ShellFeatureDeclaration[] {
-  return [
-    { id: "dashboards", label: t("assistant.featureDashboards"), icon: "dashboard", availability: "page" },
-    ...editionFeatures,
-    ...(anyPermission(can, AGENT_PAGE_PERMISSIONS)
-      ? [{ id: "agents", label: t("assistant.featureAgents"), icon: "agents", availability: "page" as const }]
-      : []),
-    { id: "schedule", label: t("assistant.featureSchedule"), icon: "schedule", availability: "page" },
-  ];
+export function workbenchFeatures(editionFeatures: readonly ShellFeatureDeclaration[]): ShellFeatureDeclaration[] {
+  return [...editionFeatures];
 }

@@ -396,7 +396,7 @@ export default {
   },
   "platform": {
     "title": "Platform Management",
-    "serviceName": "Ontology Service",
+    "serviceName": "Ontomato",
     "navigation": "Ontology Service navigation",
     "agentPlatform": "Agent Platform",
     "openInNewTab": "Opens in a new tab",
@@ -406,7 +406,9 @@ export default {
       "modelConfig": "Models used by the agents, the ontology and knowledge search",
       "systemConfig": "Data adapters, languages, general parameters and the license",
       "runRecords": "Change history and the service status of the data engine",
-      "userFeedback": "Ratings and comments users give on query and analysis results"
+      "userFeedback": "Ratings and comments users give on query and analysis results",
+      "objectBrowser": "The ontology's star map and the data of each object type",
+      "settings": "Models, general parameters and run records"
     }
   }
 };

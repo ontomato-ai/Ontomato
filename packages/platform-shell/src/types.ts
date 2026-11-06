@@ -6,6 +6,11 @@ export interface PlatformApp {
   /** Icon name from the shell's curated set (see icons.ts). */
   icon: string;
   /**
+   * Which of the rail's three sections the application sits in, top to bottom: the ontology applications, the business
+   * applications, and the platform's own settings above the account. Absent means `apps`.
+   */
+  rail?: PlatformRailSection;
+  /**
    * An external application's fixed address; it opens in a new tab and is never the current application.
    */
   href?: string;
@@ -17,6 +22,9 @@ export interface PlatformApp {
   /** Declared but not built yet; shown disabled with this hint rather than hidden. */
   unavailableHint?: string;
 }
+
+/** The rail's sections, top to bottom; a divider separates them and none carries a group name. */
+export type PlatformRailSection = "top" | "apps" | "bottom";
 
 /** The signed-in account in the rail's footer; null in editions without sign-in. */
 export interface PlatformAccount {
@@ -58,18 +66,6 @@ export interface PlatformPanelGroup {
   pages: readonly PlatformPanelPage[];
 }
 
-/** What an application's second column says about itself, apart from its contents. */
-export interface PlatformAppPanel {
-  id: string;
-  /** The application's name at the top of the panel. */
-  label: string;
-  /**
-   * The application's own entry at the bottom of the panel (smart-agent settings, the diagnosis model) and the page it
-   * opens; without a page it opens the application's first.
-   */
-  settings?: { id: string; label: string; icon: PlatformIcon; path?: string };
-}
-
 /**
  * What a page hands to the platform's page header: the unsaved marker and the Save / Discard actions of a page that
  * holds one draft. The same shape the platform pages have always provided, so their pages do not change.
@@ -89,7 +85,10 @@ export interface PlatformShellLabels {
   collapseRail: string;
   /** Accessible name of the rail's navigation landmark. */
   applications: string;
-  /** The rail's brand name; the host may override it with a configured brand. */
+  /**
+   * The product's name on the rail (`Ontomato`). It is the product the applications belong to, not any one application's
+   * former name.
+   */
   brand: string;
   /** Accessible name of the account menu's trigger. */
   account: string;

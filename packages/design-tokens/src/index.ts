@@ -59,6 +59,11 @@ export interface BrandColors {
   railSelected: string;
   panelSelected: string;
   /**
+   * The hairline where an application's surface meets the rail. The application sits on the rail as one surface and
+   * draws no shadow, so this line is the whole edge; it is a translucent tone, never an opaque colour of its own.
+   */
+  edge: string;
+  /**
    * Text drawn in the primary colour (links, active tab, active menu item, selected option) when it differs from
    * primary; such text uses primary otherwise. Needed when primary, chosen to carry on-primary text, is under 4.5:1
    * as text on canvas, surface or raised.
@@ -124,6 +129,7 @@ export function brandProperties(brand: BrandSource, mode: BrandMode): Record<str
     "--shell-workspace-bg": c.workspace,
     "--shell-rail-selected": c.railSelected,
     "--shell-panel-selected": c.panelSelected,
+    "--shell-app-edge": c.edge,
 
     "--el-fill-color": c.sunken,
     "--el-fill-color-light": c.hover,
@@ -272,6 +278,7 @@ const guardColors: BrandColors = {
   lineStrong: "#000000", ink: "#000000", ink2: "#000000", muted: "#000000", placeholder: "#000000", faint: "#000000",
   primary: "#000000", primaryHover: "#000000", primaryPress: "#000000", onPrimary: "#000000", primarySoft: "#000000",
   rail: "#000000", panel: "#000000", workspace: "#000000", railSelected: "#000000", panelSelected: "#000000",
+  edge: "transparent",
   accent: "#000000", accentInk: "#000000", accentSoft: "#000000", success: "#000000", warning: "#000000",
   danger: "#000000", info: "#000000",
 };

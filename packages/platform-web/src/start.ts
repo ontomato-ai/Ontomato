@@ -15,7 +15,6 @@ import {
   type WorkbenchContent,
 } from "@ontomato/workbench-ui";
 import { ontologyServiceAccessKey, type OntologyServiceAccess } from "@ontomato/workbench-ui";
-import { createAppColumn, appColumnKey } from "@ontomato/agent-shell-ui";
 import { installBrandTheme, type BrandSource } from "@ontomato/design-tokens";
 import { installWorkbenchBrand } from "@ontomato/workbench-ui/brand";
 
@@ -65,8 +64,6 @@ export function startWorkbenchWeb(options: WorkbenchWebOptions): void {
   app.onUnmount(() => window.removeEventListener("storage", followPreferences));
   app.provide(turnDiagnosisAccessKey, options.turnDiagnosis);
   app.provide(ontologyServiceAccessKey, options.ontologyService);
-  // The application column's content: pages under the router contribute to it, the layout draws it.
-  app.provide(appColumnKey, createAppColumn());
   app.use(i18n);
   app.use(ElementPlus);
   app.use(pinia);

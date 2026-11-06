@@ -4,7 +4,7 @@ import { onBeforeRouteLeave, useRouter } from "vue-router";
 import { ElMessage, ElMessageBox } from "element-plus";
 import { useI18n } from "vue-i18n";
 import type { ModelSettingsData, OntologyAgentModel } from "@ontomato/contracts/model-settings";
-import { usePlatformHost } from "../context";
+import { usePageActions, usePlatformHost } from "../context";
 import { modelConfigTabs, platformPages } from "../pages";
 import ModelUsagePanel from "../models/components/ModelUsagePanel.vue";
 import ModelProvidersPanel from "../models/components/ModelProvidersPanel.vue";
@@ -38,7 +38,6 @@ const describeError = useModelErrors();
 const router = useRouter();
 
 const page = computed(() => host.navigation.value.pages.find((p) => p.path === platformPages.modelConfig.path));
-const title = computed(() => page.value?.title ?? t(platformPages.modelConfig.titleKey));
 
 // ---- Model settings: the saved copy and the draft edited by every panel ----
 const draft = reactive<ModelSettingsDraft>({
@@ -107,6 +106,8 @@ const changedAgents = computed(
     agentsDraft.saved?.filter((agent) => agentsDraft.selections[agent.id] !== agent.modelSelection.modelId) ?? []
 );
 const dirty = computed(() => settingsDirty.value || changedAgents.value.length > 0);
+// The one header's Save and its unsaved marker: the page hands its draft over instead of drawing a second header.
+usePageActions(() => ({ get dirty() { return dirty.value; }, get saving() { return saving.value; }, save: () => void save(), discard }));
 
 // A renamed model takes its references on this page along; Agent Platform agents keep theirs and report them.
 function followRename(from: string, to: string) {
@@ -288,16 +289,6 @@ onBeforeUnmount(() => {
 
 <template>
   <div class="model-config platform-page">
-    <header class="page-header">
-      <h1 class="page-title">{{ title }}</h1>
-      <p class="page-description">{{ t("platform.descriptions.modelConfig") }}</p>
-      <div class="page-actions">
-        <span v-if="dirty" class="unsaved" role="status">{{ t("admin.unsavedChanges") }}</span>
-        <el-button :disabled="!dirty || saving" @click="discard">{{ t("admin.discardChanges") }}</el-button>
-        <el-button type="primary" :disabled="!dirty" :loading="saving" @click="save">{{ t("common.save") }}</el-button>
-      </div>
-    </header>
-
     <div v-if="loading && !saved" class="page-state">
       <el-skeleton :rows="6" animated />
     </div>

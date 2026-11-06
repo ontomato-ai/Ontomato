@@ -1,14 +1,15 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from "vue";
+import { computed, ref } from "vue";
 import type { PlatformAccount, PlatformApp, PlatformPreferences, PlatformShellLabels } from "./types";
 import PlatformRail from "./PlatformRail.vue";
 
 /**
- * The platform shell: the application rail, the current application's own column, and the workspace. It is what both
- * products' pages are mounted inside, so switching applications never reloads the page and the rail never goes away.
+ * The platform shell: two layers, not three columns. The rail is the ground; the current application is one surface on
+ * top of it, filling everything to the right, rounded only where it meets the rail and separated from it by a hairline
+ * (`--shell-app-edge`), with no shadow.
  *
- * The rail and the columns sit edge to edge on their own colour roles (rail, panel, workspace) with no dividers; the
- * order of their tones reverses between light and dark in the brand source, never here.
+ * The application owns its inside: an application that wants a column, a menu or tabs draws them in its own area
+ * (DESIGN.md "Applications and shells"). The shell draws none of them.
  */
 const props = withDefaults(
   defineProps<{
@@ -30,27 +31,20 @@ const emit = defineEmits<{ selectApp: [id: string]; "update:collapsed": [value: 
 
 const RAIL_KEY = "ontomato.platform.railCollapsed";
 
+/** Collapsed unless the reader expanded it: the rail is a launcher, and the applications open full page. */
 function readRemembered(): boolean {
   try {
-    return localStorage.getItem(RAIL_KEY) === "true";
+    return localStorage.getItem(RAIL_KEY) !== "false";
   } catch {
-    return false;
+    return true;
   }
 }
 
 const remembered = ref(readRemembered());
-/** The reader collapsed or expanded the rail themselves: their choice wins over the narrow-screen default. */
-const explicit = ref(false);
-/* Below 1280px the rail starts collapsed; an explicit choice still wins, at any width. */
-const narrow = ref(false);
 const collapsed = computed({
-  get: () => {
-    if (props.collapsed !== undefined) return props.collapsed;
-    return narrow.value && !explicit.value ? true : remembered.value;
-  },
+  get: () => (props.collapsed !== undefined ? props.collapsed : remembered.value),
   set: (value: boolean) => {
     if (props.collapsed === undefined) {
-      explicit.value = true;
       remembered.value = value;
       try {
         localStorage.setItem(RAIL_KEY, String(value));
@@ -61,19 +55,6 @@ const collapsed = computed({
     emit("update:collapsed", value);
   },
 });
-
-let query: MediaQueryList | null = null;
-const onNarrow = () => {
-  narrow.value = query?.matches ?? false;
-};
-
-onMounted(() => {
-  if (typeof window === "undefined" || !window.matchMedia) return;
-  query = window.matchMedia("(max-width: 1279px)");
-  onNarrow();
-  query.addEventListener("change", onNarrow);
-});
-onBeforeUnmount(() => query?.removeEventListener("change", onNarrow));
 </script>
 
 <template>
@@ -90,25 +71,43 @@ onBeforeUnmount(() => query?.removeEventListener("change", onNarrow));
       @select-app="emit('selectApp', $event)"
       @update:collapsed="collapsed = $event"
     />
-    <slot name="panel" />
-    <main class="platform-workspace">
-      <slot />
-    </main>
+    <!-- The application: one surface on the rail's ground, filling the rest of the page. -->
+    <div class="platform-app">
+      <main class="platform-workspace">
+        <slot />
+      </main>
+    </div>
   </div>
 </template>
 
 <style scoped>
-/* Three full-height columns, edge to edge, separated by tone alone (DESIGN.md "Layout"). */
+/*
+ * Two layers: the rail is the ground and the page's background; the application sits on it as one surface. Only the
+ * corners where the two meet are rounded, and only a hairline separates them (DESIGN.md "Layout").
+ */
 .platform-shell {
   display: flex;
   height: 100vh;
   height: 100dvh;
   overflow: hidden;
-  background: var(--shell-workspace-bg);
+  background: var(--shell-rail-bg);
   color: var(--el-text-color-primary);
   font-family: var(--font-sans, inherit);
   font-size: var(--text-base);
   line-height: var(--leading-base);
+}
+.platform-app {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  margin: 0;
+  box-sizing: border-box;
+  border: 1px solid var(--shell-app-edge);
+  border-right: 0;
+  border-radius: var(--shell-app-radius) 0 0 var(--shell-app-radius);
+  background: var(--shell-workspace-bg);
+  overflow: hidden;
 }
 .platform-workspace {
   display: flex;
@@ -124,6 +123,11 @@ onBeforeUnmount(() => query?.removeEventListener("change", onNarrow));
     flex-direction: column;
     height: auto;
     min-height: 100dvh;
+  }
+  .platform-app {
+    border-radius: var(--shell-app-radius) var(--shell-app-radius) 0 0;
+    border-right: 1px solid var(--shell-app-edge);
+    border-bottom: 0;
   }
   .platform-workspace {
     min-height: 60vh;
