@@ -24,6 +24,34 @@ export function neighborNodePosition(index: number, center: { x: number; y: numb
   return { x: center.x + Math.cos(angle) * radius, y: center.y + Math.sin(angle) * radius };
 }
 
+export interface OverviewRect { x: number; y: number; width: number; height: number }
+
+/** Anchor headings to their own cluster; prefer above, then below, without drifting into other rows. */
+export function overviewClassHeadings(
+  groups: Array<{ name: string; bounds: OverviewRect; width: number; height: number }>,
+  instances: OverviewRect[],
+) {
+  const placed: OverviewRect[] = [];
+  return [...groups].sort((a, b) => a.bounds.y - b.bounds.y || a.name.localeCompare(b.name)).map((group) => {
+    const heading = {
+      name: group.name,
+      x: group.bounds.x + (group.bounds.width - group.width) / 2,
+      y: group.bounds.y - 16 - group.height,
+      width: group.width,
+      height: group.height,
+    };
+    const obstacles = [...instances, ...placed];
+    const overlapArea = (y: number) => obstacles.reduce((area, rect) => area
+      + Math.max(0, Math.min(heading.x + heading.width, rect.x + rect.width + 8) - Math.max(heading.x, rect.x - 8))
+      * Math.max(0, Math.min(y + heading.height, rect.y + rect.height + 8) - Math.max(y, rect.y - 8)), 0);
+    const above = heading.y;
+    const below = group.bounds.y + group.bounds.height + 16;
+    if (overlapArea(above) > 0 && overlapArea(below) < overlapArea(above)) heading.y = below;
+    placed.push(heading);
+    return heading;
+  });
+}
+
 export function overviewPositions(nodes: InstanceGraphNode[]) {
   const groups = new Map<string, InstanceGraphNode[]>();
   nodes.forEach((node) => groups.set(node.class, [...(groups.get(node.class) || []), node]));

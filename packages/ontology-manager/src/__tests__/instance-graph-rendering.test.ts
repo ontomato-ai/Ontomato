@@ -8,6 +8,7 @@ import {
   neighborNodePosition,
   overviewPositions,
   overviewRelations,
+  overviewClassHeadings,
 } from "../data-browser/instance-graph-rendering";
 
 const nodes = Array.from({ length: 451 }, (_, index) => ({
@@ -16,6 +17,42 @@ const nodes = Array.from({ length: 451 }, (_, index) => ({
 const edges = nodes.slice(1).map((node) => ({ source: nodes[0].id, target: node.id }));
 
 describe("instance graph incremental drawing", () => {
+  it("keeps a multiline heading with its own cluster when another row blocks the space above", () => {
+    const instances = [
+      { x: 80, y: 200, width: 80, height: 58 },
+      { x: 20, y: 90, width: 200, height: 58 },
+    ];
+    const headings = overviewClassHeadings([
+      { name: "A", bounds: { x: 80, y: 200, width: 80, height: 58 }, width: 240, height: 94 },
+    ], instances);
+    for (const heading of headings) {
+      expect(heading.x + heading.width / 2).toBe(120);
+      for (const obstacle of [...instances, ...headings.filter(item => item !== heading)]) {
+        expect(heading.x + heading.width <= obstacle.x || obstacle.x + obstacle.width <= heading.x
+          || heading.y + heading.height <= obstacle.y - 8 || obstacle.y + obstacle.height <= heading.y - 8).toBe(true);
+      }
+    }
+    expect(headings[0].y).toBe(274);
+  });
+
+  it("does not push headings across neighboring rows when both sides are crowded", () => {
+    const bounds = { x: 100, y: 200, width: 80, height: 58 };
+    const [heading] = overviewClassHeadings([
+      { name: "A", bounds, width: 200, height: 54 },
+    ], [
+      { x: 20, y: 70, width: 240, height: 114 },
+      { x: 20, y: 274, width: 240, height: 114 },
+    ]);
+    expect(heading.x + heading.width / 2).toBe(140);
+    expect(heading.y + heading.height).toBe(bounds.y - 16);
+  });
+
+  it("keeps an unobstructed class heading close to its instances", () => {
+    expect(overviewClassHeadings([
+      { name: "A", bounds: { x: 100, y: 200, width: 80, height: 50 }, width: 200, height: 54 },
+    ], [])[0]).toEqual({ name: "A", x: 40, y: 130, width: 200, height: 54 });
+  });
+
   it("aggregates sample edges by ordered class pair and relation type", () => {
     const sample = [
       { id: "A:1", class: "A", name: "A1" }, { id: "A:2", class: "A", name: "A2" }, { id: "B:1", class: "B", name: "B1" },
