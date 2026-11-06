@@ -18,7 +18,11 @@ const props = defineProps<{
   creating: boolean;
   capabilities: boolean;
 }>();
-const emit = defineEmits<{ changed: [] }>();
+const emit = defineEmits<{
+  changed: [];
+  /** The editor's capability library button; the host owns the addresses, as for the column's library row. */
+  openCapabilities: [];
+}>();
 const { t } = useI18n();
 const { agents, loading, classes, relations, outlineLoading, modelOptions, modelOptionsFailed, ensureLoaded, reloadModelOptions, remember, forget } =
   useAgentDefinitions();
@@ -57,6 +61,7 @@ onMounted(() => {
       @saved="saved"
       @deleted="deleted"
       @reload-model-options="reloadModelOptions()"
+      @open-capabilities="emit('openCapabilities')"
     />
     <!-- The list is the column's: an empty main area means the column could not name an agent, not a second list. -->
     <p v-else-if="!loading" class="empty">{{ t("agents.empty") }}</p>

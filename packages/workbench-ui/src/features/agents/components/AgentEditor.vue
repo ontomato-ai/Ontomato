@@ -37,6 +37,8 @@ const emit = defineEmits<{
   saved: [agent: AssistantAgentDefinition];
   deleted: [id: string];
   reloadModelOptions: [];
+  /** The capability library button: the settings' host opens the library at its own address. */
+  openCapabilities: [];
 }>();
 const { t } = useI18n();
 const { isDark } = useTheme();
@@ -245,7 +247,7 @@ defineExpose({ dirty });
               <p>{{ t("agents.capabilitiesHint") }}</p>
             </div>
             <div class="section-actions">
-              <el-button size="small" tag="a" href="#/agents/settings?tab=capabilities" :icon="ExternalLink">
+              <el-button size="small" :icon="ExternalLink" @click="emit('openCapabilities')">
                 {{ t("agents.capabilityLibrary") }}
               </el-button>
             </div>

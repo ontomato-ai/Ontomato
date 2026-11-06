@@ -1,10 +1,21 @@
-import type { RouteMeta, RouteRecordRaw, RouteRecordSingleView } from "vue-router";
+import type { LocationQuery, RouteLocationRaw, RouteMeta, RouteRecordRaw, RouteRecordSingleView } from "vue-router";
 import { platformRoutes as routes } from "@ontomato/platform-shell/routes";
 import { observeRoutes } from "./observe-routes";
 import DashboardsPage from "./pages/DashboardsRoute.vue";
 import PlatformSchedulesPage from "./pages/PlatformSchedulesRoute.vue";
 
 type PageComponent = NonNullable<RouteRecordSingleView["component"]>;
+
+/**
+ * The capability library's old address: before it had one of its own it was the agents page's `?tab=capabilities`, on
+ * `/agents/settings` or on the bare `/agents`. Such a link (a bookmark, an old page) lands on the library's own address,
+ * keeping the rest of its query; any other address is not this link.
+ */
+function capabilityTabLink(to: { query: LocationQuery }): RouteLocationRaw | undefined {
+  if (to.query.tab !== "capabilities") return undefined;
+  const { tab: _tab, ...query } = to.query;
+  return { name: routes.agentSettingsCapabilities.name, query };
+}
 
 /**
  * The agent platform's pages: the conversation and its settings, the diagnosis app's root, and the pages of its own that
@@ -21,7 +32,12 @@ export function workbenchPages(
 ): RouteRecordRaw[] {
   return [
     { ...routes.chat, component, meta: { workbench: true } },
-    ...[routes.agents, routes.agentSettingsNew, routes.agentSettingsCapabilities, routes.agentSettings].map(
+    // The application's prefix is no page: it opens the conversation, which is where the platform is entered.
+    { path: "/agents", redirect: (to) => capabilityTabLink(to) ?? { name: routes.chat.name, query: to.query } },
+    // The first agent's screen is a page, so its old tab link moves on as the screen is entered: from a bookmark, a
+    // reload or another page. The platform's own links name the library's address.
+    { ...routes.agents, component, meta: { workbench: true }, beforeEnter: (to) => capabilityTabLink(to) ?? true },
+    ...[routes.agentSettingsNew, routes.agentSettingsCapabilities, routes.agentSettings].map(
       (location) => ({ ...location, component, meta: { workbench: true } }),
     ),
     { ...observeRoutes.root, ...observe, children: observeRoutes.children },

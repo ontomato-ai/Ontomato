@@ -150,6 +150,18 @@ describe.each(pagePaths)("the open-source platform at %s", (path) => {
   });
 });
 
+describe("the open-source platform's old capability library links", () => {
+  /*
+   * Before the library had an address of its own it was the agents page's `?tab=capabilities`. Opening such a bookmark
+   * (which is also what reloading it does) once landed on the conversation or on the first agent's editor instead (128
+   * acceptance, 2026-11-06); it lands on the library's address, so a later reload stays there.
+   */
+  it.each(["/agents?tab=capabilities", "/agents/settings?tab=capabilities"])("%s lands on the capability library", async (path) => {
+    await open(path);
+    expect(window.location.hash).toBe(`#${platformRoutes.agentSettingsCapabilities.path}`);
+  });
+});
+
 describe("the open-source platform's conversations", () => {
   // The acceptance run found the agent platform drawing its shell but no conversation to type into.
   it.each(["/agents/chat", "/ops/diagnosis"])("%s draws a conversation one can type into", async (path) => {
