@@ -1,6 +1,6 @@
 ---
 name: ontomato-agent-builder
-description: "Ontomato agents and MCP: create and change the definitions of regular and report agents (prompt, usable MetricViews, Actions, external MCP services and skills, data scope) and maintain the connections of external MCP services. Not for building the ontology, writing data, or generating MetricViews and Actions."
+description: "Ontomato agents and MCP: create and change the definitions of regular and report agents (prompt, callable MetricViews and Actions, external MCP services and skills, data scope) and maintain the connections of external MCP services. Not for building the ontology or writing data; MetricViews and Actions are written and published with ontomato-app-builder."
 ---
 
 # Ontomato agents and MCP
@@ -88,8 +88,8 @@ To change an agent, `agent get` and keep its current definition, change the fiel
 | `executionMode` | `loop`. `dimension` is the old dimension orchestration; do not use it for new agents |
 | `reportDeliverableEnabled` | `false` for a regular agent that answers turn by turn; `true` for a report agent that produces analysis reports |
 | `loopPrompt` | The agent's own prompt: role, which capability to use for which question, answer format |
-| `enabledMetricViewIds` | MetricView `id`s it may execute directly (`readOnly: true` in `metric-views`); available in every run |
-| `enabledActionIds` | Action `id`s it may execute; offered in regular conversations only, and the agent lists the parameters and waits for the user's confirmation first |
+| `enabledMetricViewIds` | The agent's query tools: MetricView `id`s it may execute directly (read-only Functions, `readOnly: true` in `metric-views`), knowledge search included; available in every run |
+| `enabledActionIds` | The agent's write operations: Action `id`s (write Functions) it may execute; offered in regular conversations only, and the agent lists the parameters and waits for the user's confirmation first |
 | `enabledMcpServiceNames` | External MCP services it may call |
 | `enabledSkillIds`, `enabledVisualizationSkillIds` | Analysis and chart skill `id`s |
 | `classNames` | Classes its queries may access; empty means unrestricted |
