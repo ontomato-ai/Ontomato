@@ -221,7 +221,7 @@ function send(text: string) {
   padding: 24px 0;
   display: flex;
   flex-direction: column;
-  gap: 24px;
+   gap: var(--conversation-message-gap);
   color: var(--el-text-color-primary);
   font-size: var(--text-reading);
   line-height: var(--leading-reading);
@@ -245,6 +245,10 @@ function send(text: string) {
 .user-turn {
   display: flex;
   justify-content: flex-end;
+}
+/* A new question starts a new visual group; streaming and pending messages keep the same geometry. */
+.thread > .response + .user-turn {
+  margin-top: calc(var(--conversation-turn-gap) - var(--conversation-message-gap));
 }
 /* The question: a right-aligned sunken bubble. */
 .user-bubble {

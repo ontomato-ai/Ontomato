@@ -338,15 +338,15 @@ const fallbackMarkdown = computed(() => {
 }
 
 .agent-step__section {
-  font-size: 11px;
-  font-weight: 600;
+  font-size: var(--text-xs);
+  font-weight: var(--font-semibold);
   margin-top: 4px;
 }
 
 .agent-step__text,
 .agent-step__thinking {
   margin: 2px 0 4px;
-  font-size: 12px;
+  font-size: var(--text-sm);
   line-height: 1.5;
   white-space: pre-wrap;
   word-break: break-word;

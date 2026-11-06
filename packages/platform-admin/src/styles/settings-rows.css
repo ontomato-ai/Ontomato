@@ -1,0 +1,42 @@
+/* Shared form rows for general settings and model configuration; imported by scoped page styles. */
+.setting-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 360px);
+  gap: var(--spacing-lg);
+  align-items: start;
+  padding: var(--spacing-md) 0;
+  border-bottom: 1px solid var(--el-border-color);
+}
+.setting-text {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+}
+.setting-label {
+  color: var(--el-text-color-primary);
+  font-size: var(--text-sm);
+  font-weight: var(--font-medium);
+}
+.setting-hint {
+  color: var(--el-text-color-secondary);
+  font-size: var(--text-sm);
+  line-height: var(--leading-sm);
+}
+.setting-control {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+}
+.setting-control .el-select {
+  width: 100%;
+}
+.setting-control.narrow .el-input-number {
+  width: min(200px, 100%);
+}
+@media (max-width: 768px) {
+  .setting-row { grid-template-columns: minmax(0, 1fr); }
+}
+@container platform-page (max-width: 680px) {
+  .setting-row { grid-template-columns: minmax(0, 1fr); }
+}

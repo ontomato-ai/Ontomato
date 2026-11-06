@@ -569,7 +569,6 @@ onMounted(() => void loadDetail());
       <span class="title-divider"></span>
       <span class="title-copy">
         <strong>{{ record?.name || ot("assetNew", { title: meta.title }) }}</strong>
-        <small>{{ meta.title }}</small>
       </span>
       <span class="title-spacer"></span>
       <el-button v-if="kind === 'metrics' && record" :icon="Play" @click="openMetricTest">
@@ -641,7 +640,12 @@ onMounted(() => void loadDetail());
       <ActionCodeExplainer v-else :code="savedCodeSnapshot" :segments="explainerSegments" />
     </div>
 
-    <div v-if="record" v-show="!showExplainerTab || activeTab === 'definition'" class="detail-body platform-page-gutter">
+    <div
+      v-if="record"
+      v-show="!showExplainerTab || activeTab === 'definition'"
+      class="detail-body platform-page-gutter"
+      :class="{ 'metric-detail-body': kind === 'metrics' }"
+    >
       <section class="definition-section">
         <div class="section-title">
           <div>
@@ -1002,9 +1006,9 @@ onMounted(() => void loadDetail());
 <style scoped>
 .metric-binding {
   border: 1px solid var(--el-border-color);
-  border-radius: 8px;
-  padding: 16px;
-  margin-top: 12px;
+  border-radius: var(--radius-sm);
+  padding: var(--surface-padding);
+  margin-top: var(--spacing-md);
 }
 
 .markdown-view-toggle { margin-bottom: var(--spacing-md); }
@@ -1080,10 +1084,12 @@ onMounted(() => void loadDetail());
 }
 .detail-titlebar {
   display: flex;
-  height: var(--page-header-height);
-  flex: 0 0 var(--page-header-height);
+  flex-wrap: wrap;
+  min-height: var(--page-header-height);
+  flex: 0 0 auto;
   align-items: center;
   gap: var(--spacing-sm);
+  padding-block: var(--spacing-sm);
   border-bottom: 1px solid var(--el-border-color);
 }
 .title-divider {
@@ -1094,9 +1100,9 @@ onMounted(() => void loadDetail());
 }
 .title-copy {
   min-width: 0;
+  max-width: 100%;
 }
-.title-copy strong,
-.title-copy small {
+.title-copy strong {
   display: block;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1107,11 +1113,6 @@ onMounted(() => void loadDetail());
   font-size: var(--text-sm);
   font-weight: var(--font-semibold);
 }
-.title-copy small {
-  margin-top: 1px;
-  color: var(--el-text-color-secondary);
-  font-size: var(--text-xs);
-}
 .title-spacer {
   flex: 1;
 }
@@ -1120,6 +1121,14 @@ onMounted(() => void loadDetail());
   grid-template-columns: minmax(300px, 0.9fr) minmax(460px, 1.4fr);
   gap: var(--spacing-lg);
   padding-block: var(--spacing-lg);
+  align-items: start;
+}
+.metric-detail-body > .logic-section {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+}
+.metric-detail-body > .metric-bindings {
+  grid-column: 1;
 }
 .action-definition {
   margin-top: var(--spacing-xl);
@@ -1228,7 +1237,7 @@ onMounted(() => void loadDetail());
   font-size: 12px;
   color: var(--el-text-color-secondary);
   background: var(--el-fill-color-light);
-  border-radius: 10px;
+  border-radius: var(--radius-md);
   padding: 0 6px;
 }
 
@@ -1290,10 +1299,24 @@ onMounted(() => void loadDetail());
 }
 
 .definition-section,
-.logic-section,
+.logic-section {
+  min-width: 0;
+  padding: var(--surface-padding);
+  border: 1px solid var(--el-border-color);
+  border-radius: var(--radius-md);
+  background: var(--el-bg-color);
+}
+.metric-bindings > p {
+  margin: var(--spacing-sm) 0;
+  color: var(--el-text-color-secondary);
+  font-size: var(--text-sm);
+  line-height: var(--leading-sm);
+}
 .section-title {
   display: flex;
+  align-items: flex-start;
   justify-content: space-between;
+  gap: var(--component-gap);
 }
 h1,
 h2 {
@@ -1323,6 +1346,7 @@ h2 {
 }
 .parameter-header {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: var(--spacing-md);
@@ -1357,7 +1381,12 @@ h2 {
 }
 @container ontology-manager (max-width: 980px) {
   .detail-body {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .metric-detail-body > .logic-section,
+  .metric-detail-body > .metric-bindings {
+    grid-column: auto;
+    grid-row: auto;
   }
 }
 @container ontology-manager (max-width: 900px) {
@@ -1374,8 +1403,7 @@ h2 {
   .explainer-pane {
     padding-block: var(--spacing-md);
   }
-  .title-divider,
-  .title-copy small {
+  .title-divider {
     display: none;
   }
   .detail-body {

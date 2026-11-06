@@ -330,9 +330,10 @@ defineExpose({ dirty });
 }
 .editor-bar {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 12px;
-  padding: 14px 24px;
+  gap: var(--component-gap);
+  padding: var(--spacing-md) var(--spacing-xl);
   border-bottom: 1px solid var(--el-border-color-light);
 }
 .editor-avatar {
@@ -372,16 +373,17 @@ defineExpose({ dirty });
   background: var(--el-fill-color);
   border-radius: var(--radius-sm);
   overflow-x: auto;
+  max-width: 100%;
 }
 .section-anchors button {
-  height: 24px;
+  min-height: var(--control-height-sm);
   padding: 0 10px;
   border: 0;
   border-radius: var(--radius-xs);
   background: transparent;
   color: var(--el-text-color-regular);
   font: inherit;
-  font-size: var(--text-xs);
+  font-size: var(--text-sm);
   white-space: nowrap;
   cursor: pointer;
 }
@@ -404,7 +406,7 @@ defineExpose({ dirty });
   margin: 0 auto;
 }
 .editor-section {
-  padding: 22px 0;
+  padding: var(--spacing-xl) 0;
   border-bottom: 1px solid var(--el-border-color-lighter);
   scroll-margin-top: 12px;
 }

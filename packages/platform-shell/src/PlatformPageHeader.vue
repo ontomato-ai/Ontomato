@@ -115,21 +115,24 @@ const emit = defineEmits<{ discard: []; save: []; selectTab: [path: string] }>()
   flex-shrink: 0;
   padding-top: var(--page-gutter);
   box-sizing: border-box;
+  container: page-header / inline-size;
 }
 .header-row {
   display: flex;
+  flex-wrap: wrap;
   align-items: flex-start;
   justify-content: space-between;
   gap: var(--spacing-lg);
-  padding-bottom: 14px;
+  padding-bottom: var(--spacing-lg);
 }
 .header-text {
   min-width: 0;
+  flex: 1 1 240px;
 }
 .page-title {
   margin: 0 0 2px;
-  font-size: var(--text-xl);
-  line-height: var(--leading-xl);
+  font-size: var(--text-title);
+  line-height: var(--leading-title);
   font-weight: var(--font-semibold);
   color: var(--el-text-color-primary);
   text-wrap: balance;
@@ -142,9 +145,10 @@ const emit = defineEmits<{ discard: []; save: []; selectTab: [path: string] }>()
 }
 .page-actions {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 8px;
-  flex-shrink: 0;
+  min-width: 0;
   padding-top: 2px;
 }
 .unsaved {
@@ -161,7 +165,10 @@ const emit = defineEmits<{ discard: []; save: []; selectTab: [path: string] }>()
   border-radius: var(--radius-sm);
   font-size: var(--text-sm);
   font-weight: var(--font-medium);
+  font-family: var(--font-sans);
+  line-height: var(--leading-sm);
   cursor: pointer;
+  transition: background-color var(--transition-fast), border-color var(--transition-fast), color var(--transition-fast);
 }
 .action.secondary {
   border: 1px solid var(--el-border-color-dark);
@@ -173,9 +180,21 @@ const emit = defineEmits<{ discard: []; save: []; selectTab: [path: string] }>()
   background: var(--el-color-primary);
   color: var(--on-primary);
 }
+.action.secondary:not(:disabled):hover {
+  background: var(--el-fill-color-light);
+}
+.action.primary:not(:disabled):hover {
+  background: var(--brand-primary-hover);
+  border-color: var(--brand-primary-hover);
+}
+.action.primary:not(:disabled):active {
+  background: var(--el-color-primary-dark-2);
+}
 .action:disabled {
-  cursor: default;
-  opacity: 0.6;
+  cursor: not-allowed;
+  color: var(--el-disabled-text-color);
+  background: var(--el-fill-color-light);
+  border-color: var(--el-border-color-light);
 }
 .action:focus-visible {
   outline: 2px solid var(--el-color-primary);
@@ -185,8 +204,10 @@ const emit = defineEmits<{ discard: []; save: []; selectTab: [path: string] }>()
   display: flex;
   gap: var(--spacing-xl);
   border-bottom: 1px solid var(--el-border-color);
+  overflow-x: auto;
 }
 .page-tab {
+  flex-shrink: 0;
   height: 40px;
   padding: 0;
   border: 0;

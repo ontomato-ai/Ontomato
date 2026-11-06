@@ -102,7 +102,7 @@ function open() {
   width: 36px;
   height: 36px;
   flex-shrink: 0;
-  border-radius: 10px;
+  border-radius: var(--radius-md);
   background: var(--el-fill-color);
   color: var(--el-color-primary);
 }

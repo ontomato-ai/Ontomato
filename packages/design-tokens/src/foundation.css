@@ -6,6 +6,8 @@
    and rules). The workbench loads this through @ontomato/workbench-ui style.css; the Ontology Service page imports it
    directly. Colours are not here: each edition's brand source generates them (src/index.ts). */
 
+@import "./components.css";
+
 :root {
   /* ---- Type ---- */
   --font-sans:
@@ -27,13 +29,26 @@
   --leading-lg: 24px;
   --text-xl: 20px; /* title-lg */
   --leading-xl: 28px;
+  --text-title: 18px;
+  --leading-title: 26px;
+  --text-title-lg: 22px;
+  --leading-title-lg: 30px;
   --text-2xl: 24px; /* not a DESIGN role; kept for existing headings */
   --text-3xl: 28px; /* display: welcome and empty states only */
   --leading-3xl: 36px;
-  --text-mono: 12.5px;
-  --leading-mono: 18px;
+  --text-mono: 13px;
+  --leading-mono: 20px;
   --tracking-label: 0.02em;
   --tracking-display: -0.02em;
+
+  /* Shared component rhythm; page frames retain their own layout. */
+  --dialog-padding: var(--spacing-lg-xl);
+  --component-gap: var(--spacing-sm);
+  --surface-padding: var(--spacing-lg);
+  --conversation-message-gap: var(--spacing-xl);
+  --conversation-turn-gap: 36px;
+  --conversation-block-gap: var(--spacing-md);
+  --conversation-process-gap: var(--spacing-sm);
 
   --font-normal: 400;
   --font-medium: 500;
@@ -53,7 +68,9 @@
   --spacing-lg-xl: 20px;
   --spacing-xl: 24px;
   --spacing-2xl: 32px;
-  --spacing-3xl: 48px; /* not a DESIGN step; kept for existing layouts */
+  --spacing-section: 40px;
+  --spacing-4xl: 48px;
+  --spacing-3xl: var(--spacing-4xl); /* Compatibility: existing 3xl consumers retain 48px. */
 
   /* ---- Shape ---- */
   --radius-xs: 4px; /* tags, checkboxes, inline code */
@@ -68,7 +85,8 @@
   --radius-3xl: 24px;
 
   /* ---- Density ---- */
-  --control-height-sm: 24px;
+  --control-height-sm: 28px;
+  --control-height-inline: 24px;
   --control-height: 32px;
   --control-height-lg: 40px;
   --nav-row-height: 32px;
@@ -116,11 +134,19 @@
   --el-border-radius-base: var(--radius-sm);
 }
 
+/* Narrow windows take a smaller page gutter: the one value narrows, so the header and the content stay aligned. */
+@media (max-width: 760px) {
+  :root {
+    --page-gutter: var(--spacing-lg);
+  }
+}
+
 /* ---- Elevation ----
    The overlay and modal rings use the line colour. A custom property that references another is resolved where it is
    declared, and the Ontology Service component binds its colours on its own root, so these are declared there too. */
 :root,
 .ontology-manager {
+  --focus-ring: 0 0 0 2px color-mix(in srgb, var(--el-color-primary) 24%, transparent);
   --elevation-flat: none;
   --elevation-panel: 0 1px 2px rgba(0, 0, 0, 0.04), 0 8px 24px rgba(0, 0, 0, 0.04);
   --elevation-composer: 0 6px 20px rgba(0, 0, 0, 0.08);

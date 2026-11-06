@@ -115,7 +115,7 @@ const { t } = useI18n();
 }
 
 .section-title {
-  font-size: 11px;
+  font-size: var(--text-sm);
   font-weight: 500;
   color: var(--el-text-color-tertiary);
   letter-spacing: 0;
@@ -147,7 +147,7 @@ const { t } = useI18n();
 }
 
 .label-key {
-  font-size: 11px;
+  font-size: var(--text-xs);
   font-family: var(--font-mono);
   color: var(--el-text-color-tertiary);
   padding: 1px 4px;

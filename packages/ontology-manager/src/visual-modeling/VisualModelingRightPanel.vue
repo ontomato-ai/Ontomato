@@ -51,9 +51,7 @@ const { t } = useSharedText();
   <div class="right-panel">
     <div class="panel-header">
       <div class="panel-heading-copy">
-        <span class="panel-eyebrow">{{ t("hotData.className") }}</span>
-        <h2 class="panel-title">{{ selectedNode.showName }}</h2>
-        <code>{{ selectedNode.className }}</code>
+        <h2 class="panel-title" :title="selectedNode.className">{{ selectedNode.showName || selectedNode.className }}</h2>
       </div>
       <el-button text size="small" @click="emit('close')">{{ t("common.close") }}</el-button>
     </div>
@@ -213,16 +211,6 @@ const { t } = useSharedText();
 
 .panel-heading-copy {
   min-width: 0;
-}
-
-.panel-eyebrow {
-  display: block;
-  margin-bottom: 3px;
-  color: var(--el-text-color-tertiary);
-  font-size: var(--text-xs);
-  font-weight: var(--font-semibold);
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
 }
 
 .panel-title {

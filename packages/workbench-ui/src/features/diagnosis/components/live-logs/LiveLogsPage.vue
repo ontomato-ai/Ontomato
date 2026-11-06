@@ -407,10 +407,10 @@ onBeforeUnmount(() => {
   display: flex;
   flex-direction: column;
   min-width: 0;
-  border: 1px solid var(--observe-border, var(--el-border-color-light));
-  border-radius: 8px;
+  border: 1px solid var(--el-border-color);
+  border-radius: var(--radius-md);
   overflow: hidden;
-  background: var(--observe-bg-card);
+  background: var(--el-bg-color);
   margin: 4px;
 }
 
@@ -420,8 +420,8 @@ onBeforeUnmount(() => {
   align-items: center;
   gap: 8px;
   padding: 8px 12px;
-  background: var(--observe-bg-sidebar);
-  border-bottom: 1px solid var(--observe-border, var(--el-border-color-lighter));
+  background: var(--el-fill-color-light);
+  border-bottom: 1px solid var(--el-border-color);
   flex-shrink: 0;
 }
 
@@ -439,8 +439,8 @@ onBeforeUnmount(() => {
 }
 
 .panel-subtitle {
-  font-size: 11px;
-  color: var(--el-text-color-placeholder);
+  font-size: var(--text-xs);
+  color: var(--el-text-color-secondary);
 }
 
 .status-dot {

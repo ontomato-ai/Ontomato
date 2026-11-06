@@ -298,7 +298,7 @@ const negativeEffect = computed(() => definition.value?.businessMeaning?.negativ
   padding: 0 4px;
   border-radius: 999px;
   background: var(--el-fill-color);
-  font-size: 10px;
+  font-size: var(--text-xs);
 }
 .rule-row {
   padding: 8px 10px;
@@ -315,14 +315,14 @@ const negativeEffect = computed(() => definition.value?.businessMeaning?.negativ
   gap: 6px;
 }
 .rule-target {
-  font-size: var(--text-xs, 12px);
+  font-size: var(--text-sm);
   font-weight: 600;
   overflow-wrap: anywhere;
 }
 .rule-line {
   display: flex;
   gap: 6px;
-  font-size: var(--text-xs, 12px);
+  font-size: var(--text-sm);
   overflow-wrap: anywhere;
 }
 .rule-key {
@@ -335,14 +335,14 @@ const negativeEffect = computed(() => definition.value?.businessMeaning?.negativ
   gap: 2px;
 }
 .rule-guard {
-  font-size: 11px;
+  font-size: var(--text-mono);
   color: var(--el-text-color-secondary);
   overflow-wrap: anywhere;
 }
 .param-table {
   width: 100%;
   border-collapse: collapse;
-  font-size: var(--text-xs, 12px);
+  font-size: var(--text-sm);
 }
 .param-table th,
 .param-table td {
@@ -357,7 +357,7 @@ const negativeEffect = computed(() => definition.value?.businessMeaning?.negativ
 }
 .param-chip {
   font-family: var(--font-mono, monospace);
-  font-size: 12px;
+  font-size: var(--text-mono);
   font-weight: 500;
 }
 .criteria-block {
@@ -389,7 +389,7 @@ const negativeEffect = computed(() => definition.value?.businessMeaning?.negativ
   gap: 6px;
 }
 .kt {
-  font-size: 10px;
+  font-size: var(--text-xs);
   color: var(--el-text-color-secondary);
 }
 .criteria-msg {
@@ -422,7 +422,7 @@ const negativeEffect = computed(() => definition.value?.businessMeaning?.negativ
   white-space: pre-wrap;
 }
 .definition-view :deep(.param-link) {
-  color: var(--el-color-primary);
+  color: var(--brand-link);
   text-decoration: underline;
   text-underline-offset: 2px;
   cursor: pointer;

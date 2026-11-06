@@ -78,14 +78,14 @@ const { t } = useI18n();
 }
 
 .panel-title {
-  font-size: 11px;
+  font-size: var(--text-sm);
   font-weight: 500;
   color: var(--el-text-color-secondary);
   letter-spacing: 0;
 }
 
 .panel-count {
-  font-size: 11px;
+  font-size: var(--text-xs);
   color: var(--el-text-color-tertiary);
 }
 
@@ -127,7 +127,7 @@ const { t } = useI18n();
   box-shadow: none;
   resize: none;
   background: var(--el-bg-color);
-  font-size: 12px;
+  font-size: var(--text-mono);
   font-family: var(--font-mono);
   line-height: 1.6;
   color: var(--el-text-color-regular);
@@ -140,7 +140,7 @@ const { t } = useI18n();
 .json-error {
   flex-shrink: 0;
   padding: 0 12px 10px;
-  font-size: 12px;
+  font-size: var(--text-sm);
   color: var(--el-color-danger);
 }
 

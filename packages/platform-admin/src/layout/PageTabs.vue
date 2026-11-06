@@ -64,9 +64,11 @@ function select(tab: PlatformPageTab) {
   gap: var(--spacing-lg);
   padding: 0 var(--spacing-lg);
   border-bottom: 1px solid var(--el-border-color);
+  overflow-x: auto;
 }
 
 .page-tab {
+  flex-shrink: 0;
   height: 40px;
   padding: 0;
   border: 0;

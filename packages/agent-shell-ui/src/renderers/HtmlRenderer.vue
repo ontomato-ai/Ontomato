@@ -27,7 +27,7 @@ const { text, error } = useArtifactText(props);
 }
 .panel iframe {
   height: calc(100vh - 140px);
-  border-radius: 10px;
+  border-radius: var(--radius-md);
 }
 .state {
   padding: 18px;

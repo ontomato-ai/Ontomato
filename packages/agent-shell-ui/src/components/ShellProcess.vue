@@ -66,7 +66,9 @@ function stepComponent(step: ProcessStepView) {
 
 <style scoped>
 .process {
-  margin: 0 0 4px -8px;
+  margin: 0 0 0 -8px;
+  font-size: var(--text-sm);
+  line-height: var(--leading-sm);
 }
 .process-summary {
   display: inline-flex;
@@ -75,7 +77,7 @@ function stepComponent(step: ProcessStepView) {
   max-width: 100%;
   padding: 4px 10px 4px 8px;
   border: 0;
-  border-radius: 999px;
+  border-radius: var(--radius-sm);
   background: transparent;
   color: var(--el-text-color-secondary);
   font: inherit;
@@ -97,7 +99,7 @@ function stepComponent(step: ProcessStepView) {
 .summary-subject {
   flex-shrink: 0;
   padding: 1px 6px;
-  border-radius: 6px;
+  border-radius: var(--radius-xs);
   background: var(--el-fill-color);
   color: var(--el-text-color-regular);
   font-family: var(--font-mono, ui-monospace, monospace);

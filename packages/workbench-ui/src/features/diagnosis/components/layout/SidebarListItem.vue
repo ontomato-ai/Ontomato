@@ -76,7 +76,7 @@ defineEmits<{
   align-items: center;
   gap: 8px;
   padding: 8px 10px;
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   cursor: pointer;
   margin-bottom: 2px;
   transition: background 0.15s;
@@ -104,17 +104,17 @@ defineEmits<{
 }
 
 .item-title {
-  font-size: 13px;
-  font-weight: 500;
+  font-size: var(--text-sm);
+  font-weight: var(--font-medium);
   color: var(--el-text-color-primary);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-family: var(--font-mono);
+  font-family: var(--font-sans);
 }
 
 .item-subtitle {
-  font-size: 11px;
+  font-size: var(--text-xs);
   color: var(--el-text-color-secondary);
   overflow: hidden;
   text-overflow: ellipsis;

@@ -63,7 +63,7 @@ async function download() {
   height: 100%;
   min-height: 0;
   border: 1px solid var(--el-border-color);
-  border-radius: var(--shell-conversation-radius);
+  border-radius: var(--radius-md);
   background: var(--el-bg-color);
   box-shadow: var(--elevation-panel);
   overflow: hidden;

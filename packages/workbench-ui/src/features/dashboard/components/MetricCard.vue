@@ -150,14 +150,11 @@ onBeforeUnmount(() => {
   box-shadow: var(--shadow-card);
   height: 102px;
   position: relative;
-  transition:
-    box-shadow var(--transition-fast),
-    transform var(--transition-fast);
+  transition: border-color var(--transition-fast);
 }
 
 .metric-card:hover {
-  box-shadow: var(--shadow-card-hover);
-  transform: translateY(-1px);
+  border-color: var(--el-border-color-dark);
 }
 
 .metric-container {
@@ -167,7 +164,7 @@ onBeforeUnmount(() => {
   justify-content: space-between;
   background: var(--el-bg-color);
   text-align: center;
-  padding: 16px;
+  padding: var(--surface-padding);
   height: 100%;
   border-radius: var(--radius-md);
 }
@@ -213,9 +210,17 @@ onBeforeUnmount(() => {
   transition: opacity 0.15s ease;
 }
 
-.metric-card:hover .metric-more {
+.metric-card:hover .metric-more,
+.metric-card:focus-within .metric-more {
   opacity: 1;
   pointer-events: auto;
+}
+
+@media (hover: none) {
+  .metric-more {
+    opacity: 1;
+    pointer-events: auto;
+  }
 }
 
 .metric-more:hover {

@@ -288,18 +288,18 @@ const { t } = useI18n();
 }
 
 .left-form :deep(.el-form-item) {
-  margin-bottom: 14px;
+  margin-bottom: var(--spacing-lg);
 }
 
 .left-form :deep(.el-form-item__label) {
-  font-size: 12px;
+  font-size: var(--text-sm);
   padding-bottom: 4px;
 }
 
 .config-hint {
   font-size: 12px;
   color: var(--el-text-color-secondary);
-  white-space: nowrap;
+  overflow-wrap: anywhere;
 }
 
 .progress-section {
@@ -335,7 +335,7 @@ const { t } = useI18n();
 .progress-percent {
   font-size: 14px;
   font-variant-numeric: tabular-nums;
-  font-weight: 700;
+  font-weight: var(--font-semibold);
   color: var(--el-text-color-primary);
 }
 

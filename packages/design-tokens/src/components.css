@@ -1,0 +1,205 @@
+/* Shared visual treatment for both editions and the embedded Manager. Layout stays with the owning component. */
+.el-dialog,
+.el-message-box,
+.el-drawer {
+  border: 1px solid var(--el-border-color);
+  box-shadow: var(--elevation-modal) !important;
+}
+
+.el-dialog,
+.el-message-box {
+  border-radius: var(--radius-lg) !important;
+}
+
+.el-dialog {
+  padding: 0;
+  max-width: calc(100vw - 32px);
+}
+
+.el-drawer {
+  border-radius: var(--radius-lg) 0 0 var(--radius-lg) !important;
+}
+
+.el-dialog__header,
+.el-drawer__header {
+  padding: var(--dialog-padding) var(--dialog-padding) var(--spacing-md) !important;
+  margin: 0 !important;
+  border-bottom: 1px solid var(--el-border-color) !important;
+}
+
+.el-dialog__title,
+.el-drawer__title,
+.el-message-box__title {
+  font-size: var(--text-title) !important;
+  line-height: var(--leading-title) !important;
+  font-weight: var(--font-semibold) !important;
+  color: var(--el-text-color-primary) !important;
+}
+
+.el-dialog__body,
+.el-drawer__body {
+  padding: var(--dialog-padding) !important;
+  font-size: var(--text-sm);
+  line-height: var(--leading-sm);
+}
+
+.el-dialog__footer,
+.el-drawer__footer {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--component-gap) !important;
+  padding: var(--spacing-md) var(--dialog-padding) !important;
+  border-top: 1px solid var(--el-border-color) !important;
+}
+
+.el-dialog__footer .el-button,
+.el-drawer__footer .el-button,
+.el-message-box__btns .el-button {
+  margin: 0 !important;
+  border-radius: var(--radius-sm) !important;
+}
+
+.el-message-box__btns {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--component-gap);
+  padding-top: var(--spacing-lg);
+}
+
+.el-button {
+  font-family: var(--font-sans);
+  font-size: var(--text-sm);
+  font-weight: var(--font-medium);
+}
+
+/* Element Plus small variants declare local size variables, overriding the root mapping. */
+.el-button--small {
+  --el-button-size: var(--control-height-sm);
+  min-height: var(--control-height-sm);
+  font-size: var(--text-sm);
+}
+/* Element Plus computes 5px for small buttons (base radius minus 1px); one control radius applies at every size. */
+.el-button.el-button--small:not(.is-round, .is-circle) {
+  border-radius: var(--radius-sm);
+}
+.el-input--small {
+  --el-input-height: var(--control-height-sm);
+  font-size: var(--text-sm);
+}
+.el-select--small {
+  --el-select-input-font-size: var(--text-sm);
+  --el-select-input-font-size-small: var(--text-sm);
+}
+.el-select--small .el-select__wrapper {
+  min-height: var(--control-height-sm);
+}
+
+.el-input,
+.el-select,
+.el-textarea,
+.el-form-item__label,
+.el-table {
+  font-size: var(--text-sm);
+}
+
+.el-form-item__label {
+  font-weight: var(--font-medium);
+}
+
+.el-form-item {
+  margin-bottom: var(--spacing-lg);
+}
+
+.el-form-item__content,
+.el-dialog__header,
+.el-drawer__header {
+  min-width: 0;
+}
+
+.el-alert {
+  --el-alert-border-radius-base: var(--radius-sm);
+  font-size: var(--text-sm);
+}
+
+.el-tabs__nav-wrap {
+  max-width: 100%;
+}
+
+/*
+ * The segmented control's thumb is the selected background (a solid primary tone), so its label must use the
+ * on-primary role in both modes. Element Plus inherits the track's ink colour here, which reads white on white.
+ */
+.el-segmented {
+  --el-segmented-item-selected-color: var(--on-primary);
+  --el-segmented-item-selected-bg-color: var(--el-color-primary);
+  --el-segmented-item-selected-disabled-color: var(--el-disabled-text-color);
+  --el-segmented-item-hover-bg-color: var(--el-fill-color);
+  --el-segmented-radius: var(--radius-sm);
+  --el-segmented-item-border-radius: var(--radius-sm);
+  --el-border-radius-base: var(--radius-sm);
+  border-radius: var(--radius-sm);
+}
+.el-segmented .el-segmented__item-selected,
+.el-segmented .el-segmented__item {
+  /* Element Plus derives the thumb from (base radius - 2px); keep the declared control radius. */
+  border-radius: var(--radius-sm);
+}
+.el-segmented__item.is-selected {
+  font-weight: var(--font-medium);
+}
+
+/* Element Plus derives several control radii from a 2px/4px base; shared radii stay on the design scale. */
+.el-pagination {
+  --el-pagination-border-radius: var(--radius-sm);
+  --el-pagination-button-width-small: var(--control-height-sm);
+  --el-pagination-button-height-small: var(--control-height-sm);
+}
+.el-pagination button,
+.el-pagination .el-pager li,
+.el-pager li {
+  border-radius: var(--radius-sm) !important;
+}
+.el-progress-bar__outer,
+.el-progress-bar__inner {
+  border-radius: var(--radius-full);
+}
+.el-switch__core {
+  border-radius: var(--radius-full);
+}
+.el-checkbox__inner,
+.el-radio__inner {
+  border-radius: var(--radius-xs);
+}
+.el-radio__inner {
+  border-radius: var(--radius-full);
+}
+
+.el-tag {
+  border-radius: var(--radius-xs);
+  font-weight: var(--font-medium);
+}
+
+.el-table {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Neutral secondary controls change tone, not meaning, on hover. */
+.el-button--default:not(.is-text, .is-link) {
+  --el-button-hover-text-color: var(--el-text-color-primary);
+  --el-button-hover-bg-color: var(--el-fill-color-light);
+  --el-button-hover-border-color: var(--el-border-color-dark);
+}
+
+:where(button, a, input, textarea, select, [tabindex]):focus-visible {
+  outline: 2px solid var(--el-color-primary);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .el-button,
+  .el-input__wrapper,
+  .el-select__wrapper {
+    transition: none;
+  }
+}

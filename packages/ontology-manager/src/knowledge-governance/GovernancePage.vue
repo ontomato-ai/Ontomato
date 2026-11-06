@@ -370,7 +370,7 @@ function toggleIssue(id: string) {
 }
 .tag {
   padding: 0 8px;
-  border-radius: 999px;
+  border-radius: var(--radius-xs);
   background: var(--el-fill-color);
   color: var(--el-text-color-secondary);
   font-size: var(--text-xs);
@@ -391,7 +391,7 @@ function toggleIssue(id: string) {
 }
 .issue-fields {
   display: grid;
-  grid-template-columns: max-content 1fr;
+  grid-template-columns: max-content minmax(0, 1fr);
   gap: 6px 16px;
   margin: 0;
 }
@@ -412,7 +412,7 @@ function toggleIssue(id: string) {
   max-width: 100%;
   padding: 2px 10px;
   border: 1px solid var(--el-border-color);
-  border-radius: 999px;
+  border-radius: var(--radius-sm);
   background: var(--el-bg-color);
   color: var(--el-text-color-regular);
   font: inherit;
@@ -426,7 +426,7 @@ function toggleIssue(id: string) {
 .chip:hover,
 .chip.active {
   border-color: var(--el-color-primary-light-5);
-  color: var(--el-color-primary);
+  color: var(--brand-link);
 }
 .source {
   margin-top: 10px;

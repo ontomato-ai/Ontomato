@@ -91,7 +91,7 @@ const colors = computed(() => (isDark.value ? darkAvatarColorOptions : lightAvat
   width: 36px;
   height: 36px;
   border: 1.5px solid var(--el-border-color);
-  border-radius: 10px;
+  border-radius: var(--radius-md);
   background: var(--el-fill-color-extra-light);
   color: var(--el-color-primary);
   display: flex;
@@ -112,7 +112,7 @@ const colors = computed(() => (isDark.value ? darkAvatarColorOptions : lightAvat
   width: 36px;
   height: 36px;
   border: 2px solid transparent;
-  border-radius: 10px;
+  border-radius: var(--radius-md);
   cursor: pointer;
   transition: all 0.16s ease;
   padding: 0;

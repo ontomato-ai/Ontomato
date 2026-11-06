@@ -49,7 +49,7 @@ async function download() {
   place-items: center;
   width: 36px;
   height: 36px;
-  border-radius: 10px;
+  border-radius: var(--radius-md);
   background: var(--el-fill-color);
   color: var(--el-text-color-secondary);
   flex-shrink: 0;

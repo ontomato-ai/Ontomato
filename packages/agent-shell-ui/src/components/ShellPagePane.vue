@@ -65,10 +65,10 @@ const paired = computed(() => props.feature?.withConversation === true);
 
 <style scoped>
 /*
- * Full: the page fills the application's main area the way the conversation it replaces does, flat on the area's own
- * tone with no surface, line, radius or shadow of its own, so in dark mode it is the darkest band like the conversation
- * (DESIGN.md "Colour roles", "Agent apps"). Side: a raised panel of the artifact panel's geometry. The header is the page
- * header of the data density.
+ * Full pages are continuous workspaces, not conversation cards: flat on the application's own area like the
+ * conversation they replace, with no surface, line, radius or shadow of their own, so in dark mode the area stays the
+ * darkest band. Only the detached side panel has a rounded, raised boundary. Keep the same page geometry in both modes;
+ * the header uses the data density.
  */
 .page-pane {
   position: relative;
@@ -88,7 +88,7 @@ const paired = computed(() => props.feature?.withConversation === true);
   width: var(--panel-width);
   flex-shrink: 0;
   border: 1px solid var(--el-border-color);
-  border-radius: var(--shell-conversation-radius);
+  border-radius: var(--radius-md);
   background: var(--el-bg-color);
   box-shadow: var(--elevation-panel);
 }

@@ -58,9 +58,9 @@ defineExpose({ scrollToBottom });
   min-width: 0;
   display: flex;
   flex-direction: column;
-  background: var(--observe-bg-card);
-  border: 0.5px solid var(--observe-border, var(--el-border-color));
-  border-radius: 8px;
+  background: var(--el-bg-color);
+  border: 1px solid var(--el-border-color);
+  border-radius: var(--radius-md);
   margin: 8px 8px 8px 0;
   overflow: hidden;
 }
@@ -70,8 +70,8 @@ defineExpose({ scrollToBottom });
   align-items: center;
   gap: 8px;
   padding: 7px 12px;
-  background: var(--observe-bg-sidebar);
-  border-bottom: 0.5px solid var(--observe-border, var(--el-border-color-lighter));
+  background: var(--el-fill-color-light);
+  border-bottom: 1px solid var(--el-border-color);
   flex-shrink: 0;
 }
 
@@ -100,18 +100,18 @@ defineExpose({ scrollToBottom });
 }
 
 .log-bar-title {
-  font-size: 12px;
-  font-weight: 600;
+  font-size: var(--text-sm);
+  font-weight: var(--font-semibold);
   color: var(--el-text-color-secondary);
   letter-spacing: 0.3px;
 }
 
 .log-count {
-  font-size: 11px;
+  font-size: var(--text-xs);
   color: var(--el-text-color-placeholder);
   background: var(--el-fill-color);
   padding: 1px 6px;
-  border-radius: 8px;
+  border-radius: var(--radius-xs);
 }
 
 .log-bar-spacer {
@@ -133,7 +133,7 @@ defineExpose({ scrollToBottom });
   align-items: center;
   justify-content: center;
   gap: 6px;
-  color: var(--el-text-color-placeholder);
+  color: var(--el-text-color-secondary);
 }
 
 .log-empty-icon {
@@ -149,7 +149,8 @@ defineExpose({ scrollToBottom });
 }
 
 .log-empty-sub {
-  font-size: 12px;
+  font-size: var(--text-sm);
+  color: var(--el-text-color-secondary);
 }
 
 .log-terminal {
@@ -158,7 +159,7 @@ defineExpose({ scrollToBottom });
   margin: 0;
   padding: 10px 14px;
   font-family: var(--font-mono);
-  font-size: 12px;
+  font-size: var(--text-sm);
   line-height: 1.8;
   color: var(--el-text-color-primary);
   white-space: pre-wrap;
@@ -172,7 +173,7 @@ defineExpose({ scrollToBottom });
 }
 
 .log-info {
-  color: var(--el-color-success);
+  color: var(--el-text-color-regular);
 }
 
 .log-warn,

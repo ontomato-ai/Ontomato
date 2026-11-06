@@ -180,7 +180,7 @@ onUnmounted(() => {
       <!-- Resource overview -->
       <p v-if="status" class="resource-scope">{{ t("admin.monitorResourceScope") }}</p>
       <el-row v-if="status" :gutter="16" class="resource-overview">
-        <el-col :span="8">
+        <el-col :xs="24" :sm="12" :lg="8">
           <div class="resource-card cpu-card">
             <div class="resource-header">
               <span class="resource-title">
@@ -204,7 +204,7 @@ onUnmounted(() => {
             </div>
           </div>
         </el-col>
-        <el-col :span="8">
+        <el-col :xs="24" :sm="12" :lg="8">
           <div class="resource-card mem-card">
             <div class="resource-header">
               <span class="resource-title">
@@ -227,7 +227,7 @@ onUnmounted(() => {
             </div>
           </div>
         </el-col>
-        <el-col :span="8">
+        <el-col :xs="24" :sm="12" :lg="8">
           <div class="resource-card disk-card">
             <div class="resource-header">
               <span class="resource-title">
@@ -256,7 +256,7 @@ onUnmounted(() => {
         <template #header>
           <div class="section-header">
             <span class="section-title">
-              <el-tag type="success" effect="dark" round size="small">backend</el-tag>
+              <el-tag type="info" effect="light" size="small">backend</el-tag>
               {{ status.backend.service.name }}
             </span>
           </div>
@@ -308,10 +308,14 @@ onUnmounted(() => {
   overflow-y: auto;
   overflow-x: hidden;
   min-width: 0;
+  /* Element Plus rows use negative inline margins for their gutters; the padding keeps them inside this scroller. */
+  padding-inline: var(--spacing-sm);
 }
 
 .top-bar {
   display: flex;
+  flex-wrap: wrap;
+  gap: var(--component-gap);
   align-items: center;
   justify-content: space-between;
   padding: 0 4px;
@@ -358,6 +362,7 @@ onUnmounted(() => {
 .resource-overview {
   flex-shrink: 0;
   align-items: stretch;
+  row-gap: var(--spacing-lg);
 }
 
 .resource-overview :deep(.el-col) {
@@ -368,9 +373,8 @@ onUnmounted(() => {
 .resource-card {
   background: var(--el-bg-color);
   border: 1px solid var(--el-border-color-light);
-  border-radius: 8px;
-  padding: 16px;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+  border-radius: var(--radius-md);
+  padding: var(--surface-padding);
   flex: 1;
   min-width: 0;
   display: flex;
@@ -395,12 +399,13 @@ onUnmounted(() => {
 
 .resource-value {
   font-size: 28px;
-  font-weight: 700;
+  font-weight: var(--font-semibold);
   font-variant-numeric: tabular-nums;
 }
 
 .resource-detail {
   display: flex;
+  flex-wrap: wrap;
   gap: 16px;
   margin-top: 10px;
   font-size: 12px;
@@ -434,8 +439,8 @@ onUnmounted(() => {
 .disk-detail {
   font-size: 12px;
   color: var(--el-text-color-secondary);
-  white-space: nowrap;
-  flex-shrink: 0;
+  overflow-wrap: anywhere;
+  min-width: 0;
 }
 
 .single-service-info {

@@ -704,7 +704,7 @@ function renderNodes() {
                   text: {
                     text: rel.desc,
                     fill: colors.edgeLabelFill,
-                    fontSize: 11,
+                    fontSize: 12,
                   },
                   rect: {
                     fill: colors.edgeLabelBg,

@@ -423,7 +423,7 @@ onBeforeUnmount(() => {
   grid-column: span var(--col-span, 1);
   grid-row: span var(--row-span, 1);
   height: 100%;
-  padding: 18px;
+  padding: var(--surface-padding);
   background-color: var(--el-bg-color);
   border-radius: var(--radius-md);
   border: 1px solid var(--el-border-color);
@@ -431,22 +431,19 @@ onBeforeUnmount(() => {
   position: relative;
   display: flex;
   flex-direction: column;
-  transition:
-    box-shadow var(--transition-fast),
-    transform var(--transition-fast);
+  transition: border-color var(--transition-fast);
 }
 
 .chart-container:hover {
-  box-shadow: var(--shadow-card-hover);
-  transform: translateY(-1px);
+  border-color: var(--el-border-color-dark);
 }
 
 .chart-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding-bottom: 12px;
-  margin-bottom: 10px;
+  padding-bottom: var(--spacing-md);
+  margin-bottom: var(--spacing-sm);
   border-bottom: 1px solid var(--el-border-color);
 }
 
@@ -524,11 +521,20 @@ onBeforeUnmount(() => {
 }
 
 .chart-container:hover :deep(.ai-chart-toolbar),
+.chart-container:focus-within :deep(.ai-chart-toolbar),
 :deep(.ai-chart-toolbar[data-open="1"]) {
   opacity: 1;
   transform: translateX(0);
   pointer-events: auto;
   user-select: auto;
+}
+
+@media (hover: none) {
+  :deep(.ai-chart-toolbar) {
+    opacity: 1;
+    transform: none;
+    pointer-events: auto;
+  }
 }
 
 :deep(button.ai-chart-tool-btn) {

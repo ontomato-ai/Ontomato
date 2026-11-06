@@ -43,7 +43,7 @@ function download() { window.open(diagnosisApi.artifactDownloadUrl(props.apiPref
 watch(() => props.apiPrefix, load, { immediate: true });
 </script>
 <template>
-  <section class="artifact-detail" v-loading="loading">
+  <section v-loading="loading" class="artifact-detail">
     <header>
       <strong>{{ question || title || t('ops.references') }}</strong>
       <el-button v-if="diagnose && manifest?.evidence" @click="diagnose(manifest.evidence.target)">{{ t('ops.diagnose') }}</el-button>
@@ -69,12 +69,19 @@ watch(() => props.apiPrefix, load, { immediate: true });
   </section>
 </template>
 <style scoped>
-.artifact-detail { height: 100%; overflow: auto; padding: 12px; box-sizing: border-box; }
-header { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
-header strong { margin-right: auto; overflow-wrap: anywhere; }
-.references { overflow: auto; margin: 12px 0; }
+/* The detail fills its page's pane and paints no background: the application's area shows through (DESIGN.md). */
+.artifact-detail { height: 100%; overflow: auto; padding: var(--surface-padding); box-sizing: border-box; font-size: var(--text-sm); line-height: var(--leading-sm); }
+header { display: flex; gap: var(--component-gap); align-items: center; flex-wrap: wrap; }
+header strong { margin-right: auto; overflow-wrap: anywhere; font-weight: var(--font-semibold); }
+p { color: var(--el-text-color-secondary); }
+.references { overflow: auto; margin: var(--spacing-md) 0; }
 table { width: 100%; border-collapse: collapse; } th, td { text-align: left; padding: 8px; border-bottom: 1px solid var(--el-border-color); vertical-align: top; }
 code, pre { overflow-wrap: anywhere; white-space: pre-wrap; }
+code { font-family: var(--font-mono); font-size: var(--text-mono); }
+th { color: var(--el-text-color-secondary); background: var(--el-fill-color-light); font-weight: var(--font-semibold); }
+details { margin-top: var(--spacing-md); }
+summary { cursor: pointer; color: var(--el-text-color-secondary); }
+pre { padding: var(--spacing-md); border: 1px solid var(--el-border-color); border-radius: var(--radius-sm); background: var(--el-fill-color-light); font-family: var(--font-mono); font-size: var(--text-mono); }
 .files { display: grid; grid-template-columns: minmax(150px, 1fr) minmax(0, 4fr); min-height: 250px; gap: 12px; }
 @media(max-width: 700px) { .files { display: block; } }
 /* In the narrow side panel (DESIGN "Agent apps") the split panes stack. */

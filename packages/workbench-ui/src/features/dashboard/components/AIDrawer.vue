@@ -272,7 +272,7 @@ async function run(userAsk) {
 
 .ai-title-text {
   font-size: 14px;
-  font-weight: 700;
+  font-weight: var(--font-semibold);
   color: var(--el-text-color-primary);
   min-width: 0;
   overflow: hidden;
@@ -293,7 +293,7 @@ async function run(userAsk) {
 .ai-body {
   flex: 1;
   overflow: auto;
-  padding: 14px;
+  padding: var(--surface-padding);
 }
 
 /* alert / skeleton */
@@ -308,9 +308,9 @@ async function run(userAsk) {
 .ai-card {
   background: var(--el-bg-color);
   border: 1px solid var(--el-border-color);
-  border-radius: 14px;
-  padding: 12px 12px;
-  margin-bottom: 12px;
+  border-radius: var(--radius-md);
+  padding: var(--spacing-md);
+  margin-bottom: var(--spacing-md);
   box-shadow: var(--shadow-card);
 }
 
@@ -320,7 +320,7 @@ async function run(userAsk) {
 
 .ai-card-title {
   font-size: 13px;
-  font-weight: 700;
+  font-weight: var(--font-semibold);
   color: var(--el-text-color-primary);
   margin-bottom: 10px;
 }
@@ -348,7 +348,7 @@ async function run(userAsk) {
 }
 .ai-insight-title {
   font-size: 13px;
-  font-weight: 700;
+  font-weight: var(--font-semibold);
   color: var(--el-text-color-primary);
 }
 .ai-insight-detail {
@@ -362,13 +362,13 @@ async function run(userAsk) {
 .ai-empty {
   background: var(--el-bg-color);
   border: 1px dashed var(--el-border-color);
-  border-radius: 14px;
-  padding: 14px;
-  margin-bottom: 12px;
+  border-radius: var(--radius-md);
+  padding: var(--surface-padding);
+  margin-bottom: var(--spacing-md);
 }
 .ai-empty-title {
   font-size: 13px;
-  font-weight: 700;
+  font-weight: var(--font-semibold);
   color: var(--el-text-color-primary);
 }
 .ai-empty-sub {

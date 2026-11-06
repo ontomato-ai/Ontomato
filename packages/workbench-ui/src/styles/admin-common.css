@@ -3,16 +3,16 @@
 /* Toolbar styles */
 .toolbar,
 .admin-toolbar {
-  display: flex !important;
-  align-items: center !important;
-  flex-wrap: wrap !important;
-  gap: var(--spacing-sm) !important;
-  height: 54px;
-  margin-bottom: var(--spacing-lg) !important;
-  padding: 10px 12px !important;
-  background: var(--el-bg-color) !important;
-  border: 1px solid var(--el-border-color) !important;
-  border-radius: var(--radius-md) !important;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--component-gap);
+  min-height: var(--control-height);
+  margin-bottom: var(--spacing-lg);
+  padding: var(--spacing-sm) 0;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
 }
 
 .toolbar .el-button,
@@ -49,7 +49,7 @@
   .toolbar,
   .admin-toolbar {
     height: auto;
-    min-height: 54px;
+    min-height: var(--control-height);
     align-items: stretch !important;
   }
 
@@ -457,7 +457,7 @@
   min-height: var(--control-height-sm);
   line-height: var(--leading-xs);
   font-weight: var(--font-medium);
-  font-size: var(--text-xs);
+  font-size: var(--text-sm);
   transition: all var(--transition-fast);
 }
 
@@ -481,7 +481,7 @@
 /* Reset button selected/focus state */
 .el-table.admin-table .operation-cell .el-button.is-link:focus-visible {
   outline: none;
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--el-color-primary) 20%, transparent);
+  box-shadow: var(--focus-ring);
   background: var(--el-fill-color-light);
 }
 

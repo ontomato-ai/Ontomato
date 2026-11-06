@@ -174,6 +174,7 @@ const headerShown = computed(
   flex-direction: column;
   overflow: auto;
   padding-block: 16px 24px;
+  container: platform-page / inline-size;
 }
 /*
  * A page with a header of its own carries that header's gutter, and so does an application whose pages are not in the

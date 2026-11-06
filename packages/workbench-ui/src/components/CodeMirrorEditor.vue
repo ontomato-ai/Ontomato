@@ -54,7 +54,7 @@ const lightTheme = EditorView.theme(
     },
     ".cm-gutters": {
       backgroundColor: "var(--observe-bg-card, var(--el-fill-color-lighter))",
-      color: "var(--el-text-color-placeholder)",
+      color: "var(--el-text-color-secondary)",
       border: "none",
     },
     ".cm-activeLineGutter": {
@@ -100,7 +100,7 @@ const readonlyThemeLight = EditorView.theme(
     },
     ".cm-gutters": {
       backgroundColor: "var(--observe-bg-card, var(--el-fill-color-lighter))",
-      color: "var(--el-text-color-placeholder)",
+      color: "var(--el-text-color-secondary)",
       border: "none",
     },
     ".cm-activeLineGutter": {
@@ -129,7 +129,7 @@ const readonlyThemeDark = EditorView.theme(
     },
     ".cm-gutters": {
       backgroundColor: "var(--observe-bg-main, var(--el-bg-color))",
-      color: "var(--el-text-color-placeholder)",
+      color: "var(--el-text-color-secondary)",
       border: "none",
     },
     ".cm-activeLineGutter": {
@@ -378,7 +378,7 @@ defineExpose({
   color: var(--el-text-color-regular);
   box-shadow: none;
   font: inherit;
-  font-size: 11px;
+  font-size: var(--text-sm);
   cursor: pointer;
   transition:
     color 160ms ease,
@@ -448,7 +448,7 @@ defineExpose({
 
 .codemirror-editor.readonly-mode :deep(.cm-search label::after) {
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: var(--text-xs);
   line-height: 1;
 }
 
