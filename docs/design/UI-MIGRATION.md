@@ -57,7 +57,7 @@ long data, keyboard, dropdown/overlay and permission variants.
 | Metric/action/function detail/new | /ontology/assets/{metrics,actions,functions}/:id | OntologyAssetDetail; forms/query/code/test/generation | Implemented | Browser fixture checked at 1200/800/480; full matrix pending |
 | Business knowledge | /ontology/knowledge | BusinessKnowledge; list/editor/dialog | In progress | Pending |
 | Object browser | /browser/data/:className? | DataBrowser + InstanceGraph; table/filter/graph | In progress | Pending |
-| Star map (enterprise) | /browser/graph | LegacyGraphView + legacy-graph; iframe/WebGL | Not started | Pending theme/interaction |
+| Star map (enterprise) | /browser/graph | LegacyGraphView + legacy-graph; iframe/WebGL, bordered block, not-generated/generating empty states, regenerate | In progress | Pending theme/interaction |
 | Dashboards | /dashboards | DashboardView/Panel; board/chart/table/AI drawer | Implemented | Pending populated charts and editor |
 | Platform schedules | /schedules | PlatformSchedulesList/Form/Runs; table/dialog | In progress | Pending |
 | Agent schedules | /agents/schedules | Same schedules components; agent scope | In progress | Pending owner/agent filtering |
