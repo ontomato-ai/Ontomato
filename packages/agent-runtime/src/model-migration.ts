@@ -12,7 +12,9 @@ const legacyModelSchema = z.object({
   contextWindow: z.number().int().positive().nullish(), maxTokens: z.number().int().positive().nullish(),
   customHeaders: z.record(z.string()).nullish(), customRequestParameters: runtimeJsonObjectSchema.nullish(),
 }).passthrough();
-const legacySettingsSchema = z.object({ models: z.array(legacyModelSchema), defaultModelId: z.string().nullable() });
+// A stored row may predate the selection field entirely, so absent means "no default chosen" (~ null),
+// not a malformed row: refusing to start on it would strand an existing domain behind a crash.
+const legacySettingsSchema = z.object({ models: z.array(legacyModelSchema), defaultModelId: z.string().nullable().optional() });
 export function durationMs(value: string): number {
   const m = /^PT(?:(\d+(?:\.\d+)?)H)?(?:(\d+(?:\.\d+)?)M)?(?:(\d+(?:\.\d+)?)S)?$/.exec(value);
   if (!m || !m.slice(1).some(Boolean)) throw new Error("Invalid legacy model timeout");
@@ -68,7 +70,7 @@ export function migrateLegacyModelSettings(raw: unknown, open: (key: string) => 
     timeouts.push(model.timeout ? durationMs(model.timeout) : defaults.timeoutMs);
     retries.push(model.maxRetries ?? defaults.maxRetries);
   }
-  settings.defaultModelId = old.defaultModelId === null ? null : mapping.references[old.defaultModelId] ?? `legacy/${old.defaultModelId}`;
+  settings.defaultModelId = old.defaultModelId == null ? null : mapping.references[old.defaultModelId] ?? `legacy/${old.defaultModelId}`;
   if (timeouts.length) settings.retry.provider.timeoutMs = Math.max(...timeouts);
   if (retries.length) settings.retry.provider.maxRetries = Math.max(...retries);
   return { settings: modelSettingsConfigurationSchema.parse(settings), mapping, discardedKeys };
