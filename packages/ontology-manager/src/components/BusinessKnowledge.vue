@@ -264,7 +264,7 @@ onMounted(load);
 <template>
   <section class="business-knowledge" :class="{ 'narrow-detail': narrowDetail }">
     <!-- The platform's one page header: the title, its line of description, and this page's own buttons. -->
-    <PlatformPageHeader compact :title="t('nav.businessKnowledge')">
+    <PlatformPageHeader compact :title="t('nav.businessKnowledge')" :description="ot('knowledgeDesc')">
       <template #actions>
         <el-button @click="emit('governance')">
           <BookOpen :size="16" />

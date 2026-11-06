@@ -411,8 +411,8 @@ body {
 /* ========================================
    Tooltip and Popper
    ======================================== */
-.el-popper.is-dark,
-.el-popper.is-light,
+.el-popper.is-dark:not(.el-select__popper, .el-cascader__dropdown),
+.el-popper.is-light:not(.el-select__popper, .el-cascader__dropdown),
 .el-tooltip__popper {
   max-width: 400px !important;
   font-size: var(--text-sm) !important;

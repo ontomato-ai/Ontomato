@@ -65,11 +65,11 @@ const pageNum = ref(1);
 const pageSize = ref(20);
 const total = ref(0);
 const loading = ref(false);
-const viewMode = ref<"table" | "graph">("table");
+const viewMode = ref<"table" | "graph">("graph");
 
 const viewModeOptions = computed(() => [
-  { label: ot("tableView"), value: "table" },
   { label: ot("instanceGraphTitle"), value: "graph" },
+  { label: ot("tableView"), value: "table" },
 ]);
 
 const currentClassAttrs = computed(() => {
@@ -244,7 +244,7 @@ async function loadClassList() {
       selectedClass.value =
         classList.value.find((item) => item.className === props.initialClass)?.className ||
         classList.value[0].className;
-      loadData();
+      if (viewMode.value === "table") void loadData();
     }
   } catch (e: any) {
     message.error(e.message || t("dataBrowser.loadClassFailed"));
@@ -341,13 +341,17 @@ watch(selectedClass, (className) => {
   if (className) emit("classChange", className);
 });
 
+watch(viewMode, (mode) => {
+  if (mode === "table") void loadData();
+});
+
 watch(
   () => props.initialClass,
   (className) => {
     if (!className || !classList.value.some((item) => item.className === className)) return;
     selectedClass.value = className;
     pageNum.value = 1;
-    loadData();
+    if (viewMode.value === "table") void loadData();
   }
 );
 </script>
@@ -356,6 +360,7 @@ watch(
   <div class="data-browser">
     <!-- One contextual toolbar; the working surface fills the remaining height. -->
     <div class="data-browser-toolbar">
+      <el-segmented v-model="viewMode" :options="viewModeOptions" />
       <template v-if="viewMode === 'table'">
         <div class="data-browser-filters">
           <el-select
@@ -389,7 +394,6 @@ watch(
       <div v-show="viewMode === 'graph'" class="mode-bar">
       <div ref="graphSummaryTarget" class="graph-summary-slot" />
       </div>
-      <el-segmented v-model="viewMode" :options="viewModeOptions" />
     </div>
     <template v-if="viewMode === 'table'">
     <div class="data-browser-table">
@@ -514,7 +518,7 @@ watch(
   display: flex;
   flex: 0 0 auto;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-start;
   gap: var(--spacing-md);
   min-width: 0;
   padding: var(--spacing-sm) var(--spacing-lg);
@@ -556,27 +560,27 @@ watch(
   display: flex;
   align-items: center;
   gap: var(--spacing-sm);
-  flex: 1 1 360px;
+  flex: 0 1 auto;
   min-width: 0;
   flex-wrap: wrap;
   /* Not squeezed by the table in the fixed-height column layout; otherwise on narrow screens the action buttons wrap into a second column outside the viewport. */
-  flex-shrink: 0;
 }
 .class-selector {
-  flex: 1 1 160px;
-  width: 220px;
+  flex: 0 1 180px;
+  width: 180px;
   min-width: 0;
   max-width: 100%;
 }
 .data-search {
-  flex: 1 1 180px;
-  width: 240px;
+  flex: 0 1 220px;
+  width: 220px;
   min-width: 0;
   max-width: 100%;
 }
 
 .data-browser-actions {
   display: flex;
+  margin-inline-start: auto;
   align-items: center;
   gap: var(--component-gap);
   flex-wrap: wrap;

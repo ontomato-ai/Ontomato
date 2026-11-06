@@ -156,7 +156,8 @@ tabs. Compact technical headers reference 48px and grow/wrap as necessary. No re
 eyebrow in a dense titlebar; contextual help can be available separately. Preserve useful business descriptions.
 
 Ontology Manager catalogs, graph, modeling and business knowledge use the shared `compact` header variant: a single
-title/actions row with a 16px content gutter and no standing generic description. Detail headers show the selected
+title/actions row with a 16px content gutter. A concise menu-function description follows the title on the same
+baseline in secondary text, wrapping naturally on narrow widths. Detail headers show the selected
 entity name. Standard administrative headers retain useful descriptions; do not suppress them through global CSS.
 
 Headers and content share a gutter; do not accumulate wrapper padding. Application tabs use a 40px row; a page's
@@ -205,12 +206,21 @@ Never apply composer geometry to ordinary inputs. Preserve streaming, cancellati
 
 ## 10. Technical workspaces
 
+Object Browser is one workspace with instance graph (default) and table modes. It has no separate legacy star-map
+tab. The contextual toolbar contains graph summary or table controls plus the mode switch; the canvas/table fills
+remaining height. Table records load only when table mode is selected. Old star-map URLs redirect to the browser.
+
 Quiet canvas, no decorative background/card, intentional grid where useful, stable zoom/pan and consistent controls.
 Inspector docks right with 320px reference width, independent scroll and 1px separator. Graph nodes reference 28px,
 stable categorical colour, 2px surface ring and selected primary ring; caption labels. Edges use 1px strong line and
 muted labels. Exact graph/editor dimensions may follow the technical task rather than a generic form rule.
 
 ## 11. Interaction states
+
+Modal and drawer scrims share the brand generator's neutral overlay family: light mode uses ink at 28% opacity;
+dark mode uses sunken at 64%. Avoid saturated brand tints, opaque black and backdrop blur. The scrim dims context
+without erasing it; the raised modal surface owns separation. Loading masks are independent and must not inherit
+modal opacity. Nested modal overlays retain their own stacking and close behaviour.
 
 Navigation hover is derived from ink mixed lightly over the actual rail/panel background, owned by the brand
 generator (`--shell-rail-hover`, `--shell-panel-hover`). Selection retains each band's existing brand-tinted fill,

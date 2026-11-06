@@ -1055,8 +1055,8 @@ onBeforeUnmount(() => {
   min-height: 0;
   flex: 1;
   overflow: hidden;
-  border: 1px solid var(--el-border-color);
-  border-radius: var(--radius-md);
+  border: 0;
+  border-radius: var(--radius-shell);
   background-color: var(--el-bg-color);
   background-image: radial-gradient(var(--el-border-color) 1px, transparent 1px);
   background-size: 20px 20px;

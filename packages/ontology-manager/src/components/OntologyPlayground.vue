@@ -524,7 +524,7 @@ onBeforeUnmount(() => {
 <template>
   <section v-loading="loading" class="playground">
     <!-- The platform's one page header: the title, its line of description, and this page's own summary at the right. -->
-    <PlatformPageHeader compact :title="t('nav.ontologyGraph')">
+    <PlatformPageHeader compact :title="t('nav.ontologyGraph')" :description="ot('ontologyGraphDesc')">
       <template #actions>
         <div class="summary-strip" :aria-label="ot('ontologyStats')">
           <span>
