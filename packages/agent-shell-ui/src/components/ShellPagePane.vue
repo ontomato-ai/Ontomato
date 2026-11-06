@@ -65,8 +65,10 @@ const paired = computed(() => props.feature?.withConversation === true);
 
 <style scoped>
 /*
- * Full: the workspace panel itself (same surface, radius, line and elevation as the conversation panel).
- * Side: a raised panel of the artifact panel's geometry. The header is the page header of the data density.
+ * Full: the page fills the application's main area the way the conversation it replaces does, flat on the area's own
+ * tone with no surface, line, radius or shadow of its own, so in dark mode it is the darkest band like the conversation
+ * (DESIGN.md "Colour roles", "Agent apps"). Side: a raised panel of the artifact panel's geometry. The header is the page
+ * header of the data density.
  */
 .page-pane {
   position: relative;
@@ -75,10 +77,6 @@ const paired = computed(() => props.feature?.withConversation === true);
   min-width: 0;
   min-height: 0;
   height: 100%;
-  border: 1px solid var(--el-border-color);
-  border-radius: var(--shell-conversation-radius);
-  background: var(--el-bg-color);
-  box-shadow: var(--elevation-panel);
   overflow: hidden;
   container-type: inline-size;
   container-name: page;
@@ -89,6 +87,10 @@ const paired = computed(() => props.feature?.withConversation === true);
 .page-pane.side {
   width: var(--panel-width);
   flex-shrink: 0;
+  border: 1px solid var(--el-border-color);
+  border-radius: var(--shell-conversation-radius);
+  background: var(--el-bg-color);
+  box-shadow: var(--elevation-panel);
 }
 .pane-resize {
   position: absolute;
@@ -180,11 +182,6 @@ const paired = computed(() => props.feature?.withConversation === true);
 @media (max-width: 760px) {
   .pane-button.pane-menu {
     display: grid;
-  }
-  .page-pane.full {
-    border: 0;
-    border-radius: 0;
-    box-shadow: none;
   }
 }
 </style>

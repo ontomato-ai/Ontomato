@@ -338,9 +338,9 @@ const kindLabel = (row: Row) =>
         <el-button type="primary" :icon="Plug" @click="addService">{{ t("hotData.addService") }}</el-button>
       </template>
     </PlatformPageHeader>
-    <!-- The page under its header: the one wrapper that carries the header's gutter, so no element of the page pads
-         itself (the table's own root must not: Element Plus lays its columns out across its padding too). -->
-    <div class="library-body">
+    <!-- The page under its header: the one wrapper that takes the page gutter, so no element of the page pads itself
+         (the table's own root must not: Element Plus lays its columns out across its padding too). -->
+    <div class="library-body platform-page-gutter">
       <div class="library-toolbar">
         <el-radio-group v-model="kindFilter" :aria-label="t('capabilities.filter')">
           <el-radio-button value="all">{{ t("common.all") }}</el-radio-button>
@@ -476,8 +476,9 @@ const kindLabel = (row: Row) =>
  */
 /*
  * The page fills the area it is mounted in. Its horizontal padding is the page header's grid: this page is its own
- * frame (it draws the header), so nothing above it supplies the gutter. The body under the header carries it, once: the
- * table inside keeps the full width it is given, and scrolls sideways in its own frame when its columns need more.
+ * frame (it draws the header), so nothing above it supplies the gutter. The body under the header takes it
+ * (`platform-page-gutter`): the table inside keeps the full width it is given, and scrolls sideways in its own frame
+ * when its columns need more.
  */
 .capability-library {
   display: flex;
@@ -491,7 +492,6 @@ const kindLabel = (row: Row) =>
   display: flex;
   flex-direction: column;
   gap: var(--spacing-md);
-  padding: 0 var(--page-gutter);
 }
 .library-toolbar {
   display: flex;

@@ -170,16 +170,6 @@
   scrollbar-gutter: stable;
 }
 
-/*
- * The data browser draws no header: it sits in the platform's page body, under the header the platform draws and inside
- * its gutter, on the application's own tone. Neither its surface nor the frame around it paints one, or in dark mode
- * (where the surface is lighter than the application's area) the page would float as a card inside the gutter. Its
- * table, toolbar and graph keep their own surfaces.
- */
-.ontology-manager > .ontology-manager-shell:has(> .legacy-surface) {
-  background: none;
-}
-
 .ontology-manager-shell > .legacy-surface {
   min-height: 0;
   flex: 1;
@@ -194,11 +184,6 @@
   min-height: 0;
   flex: 1;
   overflow: hidden;
-}
-
-.ontology-manager-shell > .visual-content .visual-modeling,
-.ontology-manager-shell > .visual-content .graph-container {
-  background: var(--el-bg-color);
 }
 
 .ontology-manager-shell > .knowledge-surface {

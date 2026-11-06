@@ -44,6 +44,7 @@ function goBack() {
 </template>
 
 <style scoped>
+/* The page's areas paint no background of their own: in dark mode the application's area is the darkest band. */
 .case-artifact-page {
   display: flex;
   flex-direction: column;
@@ -56,7 +57,6 @@ function goBack() {
   align-items: center;
   gap: 10px;
   padding: 10px 16px;
-  background: var(--el-bg-color);
   border-bottom: 1px solid var(--el-border-color-light);
   flex-shrink: 0;
 }
@@ -81,6 +81,5 @@ function goBack() {
   flex: 1;
   overflow: hidden;
   min-height: 0;
-  background: var(--el-bg-color);
 }
 </style>

@@ -1,3 +1,7 @@
+// The page gutter every frame and page references (DESIGN.md "Page applications"): loaded with the shell, so the
+// class is there wherever a page shows.
+import "./page.css";
+
 export { default as PlatformShell } from "./PlatformShell.vue";
 export { default as PlatformRail } from "./PlatformRail.vue";
 export { default as PlatformAccountMenu } from "./PlatformAccountMenu.vue";

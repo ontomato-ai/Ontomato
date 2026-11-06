@@ -180,15 +180,15 @@ new agent, the capability library) while the main area edits the chosen agent.
 **Agent apps.** An agent app is one agent plus a few pages, one page per piece of business,
 each able to finish that business without the agent. It has three states: the conversation
 alone; the conversation with one page beside it (a raised side panel of the artifact
-panel's geometry, draggable width); and the page full, with the composer below it. The
-column's page entries open a page full; collapsing it, sending from it, or opening an in-app
-link from an answer puts it beside the conversation; closing it returns to the
-conversation. The same page component serves both widths, so pages stay usable at the side
-panel's width (360px and up), stacking split panes below a 720px container. Messages sent
-while a page is open carry one line naming the page and its selection. The side panel is a
-container, not something authored: it shows a page (written in code) or an expanded card
-(an artifact the agent produced, which cannot write data). Results people need later live
-on the page, not only in the conversation.
+panel's geometry, draggable width); and the page full, flat on the application's area like
+the conversation it replaces, with the composer below it. The column's page entries open a page
+full; collapsing it, sending from it, or opening an in-app link from an answer puts it beside
+the conversation; closing it returns to the conversation. The same page component serves
+both widths, so pages stay usable at the side panel's width (360px and up), stacking split
+panes below a 720px container. Messages sent while a page is open carry one line naming the
+page and its selection. The side panel is a container, not something authored: it shows a
+page (written in code) or an expanded card (an artifact the agent produced, which cannot write
+data). Results people need later live on the page, not only in the conversation.
 
 **Page applications.** One page that fills the area, under one header: the title, one line of
 description below it, the page's own buttons at the right, and — for an application of several
@@ -200,9 +200,16 @@ that header where it has a single page — the open-source Object Browser, or an
 open only one of its pages — just without tabs. The Dashboards' boards are tabs of their own
 page, and the Scheduled tasks' filters carry labels.
 
-The header and the page share one horizontal padding (`shell.page-gutter`), written once: a
-title, a toolbar and the content under them start at the same place, and a page never writes a
-gutter of its own. A page that draws its own header carries that header's gutter instead.
+The header and the page share one horizontal padding (`shell.page-gutter`), written once, in
+the shell (`platform-page-gutter`): the header carries it, and a frame or a page that shows
+content under a header puts it on the element that holds that content, so a title, a toolbar
+and the content under them start at the same place and no page writes a gutter of its own. A
+page that draws its own header (the Ontology Manager's, the capability library) takes it under
+that header; a page another application hosts (the feedback records in knowledge governance)
+gets it from that host. Several panes under one header — a list and its detail, an explorer, a
+canvas and an inspector — sit together in one block inside the gutter, with the table's `line`
+border and `rounded.md` and hairlines between them: the page's content, like a table, not a
+floating card.
 
 **Addresses.** An application owns the addresses under its prefix. Old addresses that changed
 home redirect in the front end: `/agents/dashboards` → `/dashboards`, `/agents/schedules` →
@@ -213,7 +220,10 @@ home redirect in the front end: `/agents/dashboards` → `/dashboards`, `/agents
 column or menu (`panel`), and the application's main area (`workspace`). In light mode the rail
 is the darkest and the main area the lightest; in dark mode the order reverses and the main area
 is the darkest. `edge` is the hairline between the rail and the application, a translucent tone
-rather than an opaque colour.
+rather than an opaque colour. Pages and the frames around them paint no background of their own:
+the main area shows through, so in dark mode it stays the darkest band and no page sits on it as
+a lighter card. Tables, inputs, cards, toolbars and dialogs keep their surfaces; a canvas takes
+the page tone (`--el-bg-color-page`).
 
 **Light and dark.** Each mode is uniform: every band of one mode belongs to that mode. No dark
 rail beside a light application.
@@ -347,7 +357,7 @@ Two layers, not three columns:
   An application of several pages puts them in the header as tabs (a 40px row under the title,
   on the `line` the header closes with); a page that holds several screens keeps its own tabs
   in the page, under the header.
-- **Content:** the table or form fills the remaining width with 16px padding. A table is a
+- **Content:** the table or form fills the remaining width inside the page gutter. A table is a
   bordered surface with `rounded.md`; it does not float on a shadow.
 - **Admin navigation:** an application's own column or menu, on `panel`, `application-column`
   wide, with 32px `nav-row`s and `label` group headings. The Ontology Manager's three groups
@@ -355,8 +365,8 @@ Two layers, not three columns:
 
 ### Grid
 
-4px spacing grid. Panel padding 12px; page content padding 16px (24px max on wide
-screens); gap between related controls 8px, between groups 16px.
+4px spacing grid. Panel padding 12px; page content inset by the page gutter (28px) on both
+sides; gap between related controls 8px, between groups 16px.
 
 ## Typography
 

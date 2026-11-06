@@ -44,7 +44,7 @@ const emit = defineEmits<{ discard: []; save: []; selectTab: [path: string] }>()
 </script>
 
 <template>
-  <header class="platform-page-header" :class="{ 'has-tabs': tabs && tabs.length > 0 }">
+  <header class="platform-page-header platform-page-gutter" :class="{ 'has-tabs': tabs && tabs.length > 0 }">
     <div v-if="title || description || actions?.length || draft || $slots.actions" class="header-row">
       <div class="header-text">
         <h1 v-if="title" class="page-title">{{ title }}</h1>
@@ -106,14 +106,14 @@ const emit = defineEmits<{ discard: []; save: []; selectTab: [path: string] }>()
 <style scoped>
 /*
  * One header for every page: the title and its description in one block, actions at the right, tabs under a hairline
- * (DESIGN.md "Admin page anatomy"). Its horizontal padding is the same value as the page body's, so a title and the
- * content under it start at the same place.
+ * (DESIGN.md "Admin page anatomy"). Its side padding is the page gutter (`platform-page-gutter`), the one the content
+ * under it takes too, so a title and the content start at the same place.
  */
 .platform-page-header {
   display: flex;
   flex-direction: column;
   flex-shrink: 0;
-  padding: var(--page-gutter) var(--page-gutter) 0;
+  padding-top: var(--page-gutter);
   box-sizing: border-box;
 }
 .header-row {

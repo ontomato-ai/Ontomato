@@ -667,12 +667,12 @@ onUnmounted(() => {
 </template>
 
 <style scoped>
+/* The page's areas paint no background of their own: in dark mode the application's area is the darkest band. */
 .testcases-page {
   display: flex;
   flex-direction: column;
   height: 100%;
   overflow: hidden;
-  background: var(--observe-bg-main, var(--el-bg-color-page));
 }
 
 /* ======== Main Body ======== */
@@ -740,7 +740,6 @@ onUnmounted(() => {
   overflow-y: auto;
   min-width: 200px;
   padding: 28px 36px 48px;
-  background: var(--el-bg-color);
 }
 
 /* ======== Footer ======== */
@@ -752,7 +751,6 @@ onUnmounted(() => {
   padding: 8px 16px;
   border-top: 0.5px solid var(--observe-border, var(--el-border-color));
   flex-shrink: 0;
-  background: var(--observe-bg-card, var(--el-bg-color));
 }
 
 .footer-left {

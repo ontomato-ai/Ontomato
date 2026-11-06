@@ -317,7 +317,10 @@ function send(text: string) {
   margin: 0 auto;
   padding: 0 0 16px;
 }
-/* Content scrolling under the composer fades out instead of being cut. */
+/*
+ * Content scrolling under the composer fades out instead of being cut, into whatever the conversation sits on: the
+ * application's area in the agent shell (in dark mode darker than a surface), a dialog's surface elsewhere.
+ */
 .dock::before {
   content: "";
   position: absolute;
@@ -325,7 +328,7 @@ function send(text: string) {
   right: 0;
   top: -28px;
   height: 28px;
-  background: linear-gradient(to bottom, transparent, var(--el-bg-color));
+  background: linear-gradient(to bottom, transparent, var(--shell-conversation-ground, var(--el-bg-color)));
   pointer-events: none;
 }
 .to-bottom {

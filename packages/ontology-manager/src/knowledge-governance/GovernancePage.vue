@@ -138,8 +138,13 @@ function toggleIssue(id: string) {
       :workbench="workbench" :title="pt('platform.governance')" :client="client" :labels="labels" :nav="nav"
       :page-context="pageContext" @error="fail">
       <template #feature>
-        <!-- The page the address names: another package's screen when the edition handed one over, else the report. -->
-        <component :is="screen" v-if="screen" />
+        <!--
+          The page the address names: another package's screen when the edition handed one over, else the report. A
+          handed-over screen is a platform page, so it takes the page gutter here, like every page does from its frame.
+        -->
+        <div v-if="screen" class="governance-screen platform-page-gutter">
+          <component :is="screen" />
+        </div>
         <div v-else class="report" :aria-busy="loading">
           <section class="report-summary">
             <p class="report-hint">{{ t("reportHint") }}</p>
@@ -228,6 +233,9 @@ function toggleIssue(id: string) {
   height: 100%;
 }
 .governance-page :deep(.agent-shell) {
+  height: 100%;
+}
+.governance-screen {
   height: 100%;
 }
 .governance-error {

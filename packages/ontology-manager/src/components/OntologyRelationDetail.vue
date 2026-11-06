@@ -92,7 +92,7 @@ onMounted(() => void loadDetail());
 
 <template>
   <section v-loading="loading" class="relation-detail">
-    <header class="detail-titlebar">
+    <header class="detail-titlebar platform-page-gutter">
       <el-button text :icon="ArrowLeft" @click="emit('back')">
         {{ ot("backToRelationTypes") }}
       </el-button>
@@ -115,7 +115,7 @@ onMounted(() => void loadDetail());
         {{ ot("save") }}
       </el-button>
     </header>
-    <div v-if="relation" class="detail-body">
+    <div v-if="relation" class="detail-body platform-page-gutter">
       <section class="definition-section">
         <div class="section-title">
           <div>
@@ -174,9 +174,13 @@ onMounted(() => void loadDetail());
 </template>
 
 <style scoped>
+/*
+ * The page paints no background of its own: it sits on the application's area, the darkest band in dark mode
+ * (DESIGN.md "Colour roles"); its sections keep their own surfaces. The title row and the sections under it take the
+ * page gutter (`platform-page-gutter`), so they start where the other pages' titles do.
+ */
 .relation-detail {
   min-height: 100%;
-  background: var(--el-bg-color);
 }
 .detail-titlebar {
   display: flex;
@@ -184,9 +188,7 @@ onMounted(() => void loadDetail());
   flex: 0 0 var(--page-header-height);
   align-items: center;
   gap: var(--spacing-sm);
-  padding: 0 var(--spacing-lg);
   border-bottom: 1px solid var(--el-border-color);
-  background: var(--el-bg-color);
 }
 .title-divider {
   width: 1px;
@@ -221,7 +223,7 @@ onMounted(() => void loadDetail());
   display: grid;
   grid-template-columns: minmax(320px, 0.85fr) minmax(420px, 1.15fr);
   gap: var(--spacing-lg);
-  padding: var(--spacing-lg);
+  padding-block: var(--spacing-lg);
 }
 .definition-section,
 .endpoints-section {
@@ -300,11 +302,8 @@ h2 {
 @container ontology-manager (max-width: 850px) {
   .detail-body {
     grid-template-columns: 1fr;
-    padding: var(--spacing-md);
+    padding-block: var(--spacing-md);
     gap: var(--spacing-md);
-  }
-  .detail-titlebar {
-    padding: 0 var(--spacing-md);
   }
   .title-divider,
   .title-copy small {
