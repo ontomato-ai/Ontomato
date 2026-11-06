@@ -159,7 +159,7 @@ public class OntologyScheduleApplication implements ScheduleApplication {
                       : parameter.getDescription();
           fields.add(
               ScheduleForms.text(
-                  "parameter:" + parameter.getName(), parameter.getName(), !time, lines, help));
+                  "parameter:" + parameter.getName(), parameter.getName(), false, lines, help));
         }
       } catch (ScheduleException unavailable) {
         /* The unavailable selection remains visible and disabled. */
@@ -235,7 +235,7 @@ public class OntologyScheduleApplication implements ScheduleApplication {
             execution.definition().content(),
             execution.definition().timeZone(),
             started);
-    var function = MetricViewBindings.executionFunction(target.function(), values);
+    var function = MetricViewBindings.executionWriteFunction(target.function(), values);
     var state = ScheduleForms.execution("completed");
     state.set(
         "resultLink",

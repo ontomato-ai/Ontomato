@@ -569,7 +569,7 @@ public class ActionServiceImpl implements ActionService {
             if (!user.getDomainId().equals(action.getDomainId()) || action.getFunction() == null ||
                 !user.getDomainId().equals(action.getFunction().getDomainId())) throw new IllegalArgumentException("Action is outside the current domain");
 			if (Action.STATUS_PUBLISHED.equals(action.getStatus())) {
-                Function function = io.ontomato.dataengine.service.MetricViewBindings.executionFunction(action.getFunction(), param);
+                Function function = io.ontomato.dataengine.service.MetricViewBindings.executionWriteFunction(action.getFunction(), param);
 				Object[] o = abcProgramService.execute(UUID.randomUUID().toString(), function, user.getId(), permission, ServiceConst.NOT_SANDBOX, lang, timeoutMinutes, user.getDomainId());
 				PythonExecuteResult result = (PythonExecuteResult)o[1];
                 if (result.getError() != null && !result.getError().isBlank()) { result.setResult(null); result.setError("Action execution failed"); }

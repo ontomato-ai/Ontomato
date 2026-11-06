@@ -359,6 +359,13 @@ class PlatformScheduleTest extends PostgresTestDatabase {
 
   @Test
   void scheduledActionsAndFunctionsReachRealGrantSigningAndVerification() throws Exception {
+    jdbc.update(
+        "UPDATE function SET parameters=? WHERE id='f'",
+        """
+        [{"name":"org_id","type":"TYPE_STRING"},{"name":"up","type":"TYPE_NUMBER"},
+         {"name":"tags","type":"TYPE_STRING_ARRAY"},{"name":"amounts","type":"TYPE_NUMBER_ARRAY"},
+         {"name":"dates","type":"TYPE_TIME_ARRAY"},{"name":"cutoff","type":"TYPE_TIME"}]
+        """);
     var grants =
         new QueryGrantService(jdbc, "test-signing", new WorkbenchServiceAuthentication("service"));
     grants.initialize();
@@ -373,6 +380,22 @@ class PlatformScheduleTest extends PostgresTestDatabase {
             if (exchange.getRequestMethod().equals("POST")) {
               var body =
                   com.alibaba.fastjson2.JSON.parseObject(exchange.getRequestBody().readAllBytes());
+              var files = body.getJSONArray("files");
+              var parameterFile =
+                  files.stream()
+                      .map(com.alibaba.fastjson2.JSONObject::from)
+                      .filter(file -> "parameters.json".equals(file.getString("path")))
+                      .findFirst()
+                      .orElseThrow();
+              var parameters =
+                  com.alibaba.fastjson2.JSON.parseObject(parameterFile.getString("content"));
+              assertTrue(parameters.containsKey("org_id"));
+              assertNull(parameters.get("org_id"));
+              assertTrue(parameters.containsKey("up"));
+              assertNull(parameters.get("up"));
+              for (String key : List.of("tags", "amounts", "dates"))
+                assertTrue(parameters.getJSONArray(key).isEmpty());
+              assertNotNull(Instant.parse(parameters.getString("cutoff")));
               String token =
                   body.getJSONObject("environment")
                       .getJSONObject("secrets")
@@ -437,7 +460,36 @@ class PlatformScheduleTest extends PostgresTestDatabase {
       jdbc.update("INSERT INTO action VALUES('a')");
       for (String target : List.of("function:f", "action:a")) {
         UUID id = UUID.randomUUID();
-        tasks.create(id, definition(target), "en", true);
+        var input = (com.fasterxml.jackson.databind.node.ObjectNode) definition(target);
+        input.set(
+            "content",
+            object(
+                "execution",
+                target,
+                "parameter:org_id",
+                "",
+                "parameter:up",
+                "  ",
+                "parameter:tags",
+                "\n",
+                "parameter:amounts",
+                "",
+                "parameter:dates",
+                "",
+                "parameter:cutoff",
+                ""));
+        var form =
+            ontology.form(
+                new ScheduleApplication.FormInput(
+                    input.get("content"), null, null, "Asia/Shanghai"),
+                new ScheduleApplication.Actor(
+                    user, identity.dataPermission("sales", "alice"), null, null, "en"));
+        for (var field : form.path("fields"))
+          if (field.path("key").asText().startsWith("parameter:"))
+            assertFalse(field.path("required").asBoolean());
+        assertTrue(form.path("submittable").asBoolean());
+        sample("platformScheduleFormSchema", form);
+        tasks.create(id, input, "en", true);
         UUID runId = UUID.randomUUID();
         tasks.manual(id, runId, "en");
         var scheduler =
@@ -850,6 +902,64 @@ CREATE TABLE write_task_result(id text,write_task_id text,execute_timestamp bigi
     } finally {
       scheduler.stop();
     }
+  }
+
+  @Test
+  void oneUnavailableApplicationDoesNotHideOtherApplicationsOrTheirTaskCounts() throws Exception {
+    var unavailable = mock(ScheduleApplication.class);
+    when(unavailable.id()).thenReturn("operations");
+    when(unavailable.describe(any()))
+        .thenThrow(
+            new ScheduleException(503, "DEPENDENCY_UNAVAILABLE", "Permission lookup unavailable"));
+    var agents = fixtureApplication("agents", false, new AtomicReference<>(false));
+    var registry =
+        new ScheduleApplications(List.of(ontology, agents, unavailable), mockWorkbench());
+    var service =
+        new PlatformTasks(store, identities, identity, credentials, registry, transactions);
+    ReflectionTestUtils.setField(service, "configuredZone", "UTC");
+    UUID id = UUID.randomUUID();
+    store.insert(
+        id,
+        "sales",
+        "alice",
+        TaskDefinition.input(fixtureDefinition("operations"), "UTC", false),
+        array(),
+        "en",
+        Instant.now(),
+        true);
+    var mvc = MockMvcBuilders.standaloneSetup(new PlatformTaskController(service)).build();
+    var response =
+        mvc.perform(
+                get("/platform/scheduled-tasks/applications").header("Accept-Language", "zh-CN"))
+            .andExpect(status().isOk())
+            .andReturn()
+            .getResponse();
+    var body = parse(response.getContentAsString());
+    sample("platformScheduleApplicationsSchema", body);
+    assertEquals(3, body.path("applications").size());
+    assertEquals(1, body.path("totalCount").asInt());
+    for (var application : body.path("applications")) {
+      if (application.path("id").asText().equals("operations")) {
+        assertFalse(application.path("available").asBoolean());
+        assertEquals(1, application.path("taskCount").asInt());
+        assertEquals("暂时无法确认你能否使用这个应用", application.path("unavailableReason").asText());
+      } else assertTrue(application.path("available").asBoolean());
+    }
+  }
+
+  @Test
+  void missingInstalledApplicationDiscoveryStillFailsTheWholeList() throws Exception {
+    var workbench = mockWorkbench();
+    when(workbench.ids())
+        .thenThrow(
+            new ScheduleException(
+                503, "DEPENDENCY_UNAVAILABLE", "Cannot discover installed applications"));
+    var registry = new ScheduleApplications(List.of(ontology), workbench);
+    var service =
+        new PlatformTasks(store, identities, identity, credentials, registry, transactions);
+    var mvc = MockMvcBuilders.standaloneSetup(new PlatformTaskController(service)).build();
+    mvc.perform(get("/platform/scheduled-tasks/applications"))
+        .andExpect(status().isServiceUnavailable());
   }
 
   @Test

@@ -51,6 +51,9 @@ public final class ScheduleParameters {
     for (var parameter : function.getParameters()) {
       String key = "parameter:" + parameter.getName();
       String text = content.path(key).asText();
+      if (text.isBlank()
+          && (Parameter.TYPE_STRING.equals(parameter.getType())
+              || Parameter.TYPE_NUMBER.equals(parameter.getType()))) continue;
       try {
         result.put(
             parameter.getName(), value(parameter.getType(), text, ZoneId.of(zone), executionAt));
@@ -76,16 +79,12 @@ public final class ScheduleParameters {
 
   private static Object value(String type, String text, ZoneId zone, Instant now) {
     return switch (type) {
-      case Parameter.TYPE_STRING -> {
-        if (text.isBlank()) throw new IllegalArgumentException();
-        yield text;
-      }
+      case Parameter.TYPE_STRING -> text;
       case Parameter.TYPE_NUMBER -> number(text.trim());
       case Parameter.TYPE_TIME ->
           text.isBlank() ? now.toString() : time(text.trim(), zone).toString();
       case Parameter.TYPE_STRING_ARRAY, Parameter.TYPE_NUMBER_ARRAY, Parameter.TYPE_TIME_ARRAY -> {
         var lines = text.lines().map(String::trim).filter(line -> !line.isEmpty()).toList();
-        if (lines.isEmpty()) throw new IllegalArgumentException();
         yield lines.stream()
             .map(
                 line ->
