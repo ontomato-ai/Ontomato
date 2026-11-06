@@ -1,12 +1,16 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createApp, h, nextTick, reactive, ref, type App } from "vue";
 import { createI18n } from "vue-i18n";
+import { createMemoryHistory, createRouter, RouterView } from "vue-router";
 import { createManager } from "../context";
 import { englishMessages, managerMessageTree } from "../i18n";
 import GovernancePage from "../knowledge-governance/GovernancePage.vue";
+import { managerStandaloneRoutes, registerGovernanceScreen } from "../routes";
 
 /* The page's own reads are what this covers: the report of the current session, source paging, and
- * that switching sessions neither keeps the previous report on screen nor mixes the two. */
+ * that switching sessions neither keeps the previous report on screen nor mixes the two. And the application's
+ * addresses: opening its pages from the column keeps the open conversation, so the report is always that
+ * conversation's. */
 
 let mounted: App[];
 let responses: Map<string, unknown>;
@@ -88,6 +92,50 @@ async function openReport(host: HTMLElement) {
   await settle();
 }
 
+/** A conversation of the governance agent in the column's recent list (the column reads them as the service lists them). */
+function recentConversation(title: string) {
+  const entry = {
+    id: "7b0c2f9e-1d2a-4c3b-8e5f-6a7b8c9d0e1f",
+    agentId: "56a15178-ae22-4e6f-9974-ababeb42a676",
+    title,
+    createdAt: "2026-11-06T01:00:00Z",
+    updatedAt: "2026-11-06T01:00:00Z",
+    latestRun: null,
+  };
+  responses.set("/sessions", { sessions: [entry], nextCursor: null });
+  return entry;
+}
+
+/** Clicks an entry of the application's column and lets the navigation it starts finish, over a few turns. */
+async function clickEntry(host: HTMLElement, label: string) {
+  await vi.waitFor(() =>
+    expect([...host.querySelectorAll("button")].some((button) => button.textContent?.trim().includes(label))).toBe(true),
+  );
+  [...host.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent?.trim().includes(label))!.click();
+  for (let turn = 0; turn < 5; turn++) {
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await settle();
+  }
+}
+
+/** Mounts the application at an address of its own, under the routes the platform registers for it. */
+async function mountAt(path: string) {
+  const history = createMemoryHistory();
+  history.replace(path);
+  const router = createRouter({ history, routes: [{ path: "/", component: RouterView, children: managerStandaloneRoutes() }] });
+  const host = document.createElement("div");
+  document.body.appendChild(host);
+  const app = createApp(RouterView);
+  installManager(app);
+  app.use(router);
+  app.mount(host);
+  mounted.push(app);
+  await router.isReady();
+  // The page is loaded on first use; its column is drawn once it is in.
+  await vi.waitFor(() => expect(host.querySelector("button")).not.toBeNull());
+  return { host, router };
+}
+
 beforeEach(() => {
   mounted = [];
   responses = new Map([
@@ -151,6 +199,64 @@ describe("governance report", () => {
     expect(host.textContent).toContain("Second session report");
     expect(host.textContent).not.toContain("First session report");
     expect(host.textContent).not.toContain("First finding");
+  });
+
+  it("opens the report of the conversation the address names, and keeps that conversation in the address", async () => {
+    responses.set("/s1/work", work("Checked the order rule", [issue("Order status rule")]));
+    const { host, router } = await mountAt("/governance/chat/s1");
+    await clickEntry(host, "Report");
+
+    // The report is that conversation's work record: opening it from the column neither leaves the conversation nor
+    // waits for a report that has no conversation to belong to.
+    expect(router.currentRoute.value.fullPath).toBe("/governance/chat/s1");
+    expect(host.textContent).toContain("Checked the order rule");
+    expect(host.textContent).not.toContain("Loading…");
+  });
+
+  it("keeps the conversation while the feedback records are open, so the report shows it again", async () => {
+    const conversation = recentConversation("Earlier review");
+    responses.set(`/${conversation.id}/work`, work("Earlier review report"));
+    registerGovernanceScreen("feedback", { render: () => h("p", "Feedback records") });
+    const { host, router } = await mountAt(`/governance/chat/${conversation.id}`);
+
+    await clickEntry(host, "User feedback");
+    expect(router.currentRoute.value.fullPath).toBe(`/governance/feedback?sessionId=${conversation.id}`);
+    await clickEntry(host, "Report");
+    expect(router.currentRoute.value.fullPath).toBe(`/governance/chat/${conversation.id}`);
+    expect(host.textContent).toContain("Earlier review report");
+  });
+
+  it("opens a recent conversation chosen while the feedback records are open", async () => {
+    const conversation = recentConversation("Earlier review");
+    registerGovernanceScreen("feedback", { render: () => h("p", "Feedback records") });
+    const { host, router } = await mountAt("/governance/feedback");
+
+    await clickEntry(host, "Earlier review");
+    expect(router.currentRoute.value.fullPath).toBe(`/governance/chat/${conversation.id}`);
+  });
+
+  it("stops loading the report of a conversation the reader has left", async () => {
+    let answer!: () => void;
+    const held = new Promise<void>((resolve) => (answer = resolve));
+    vi.stubGlobal("fetch", async (url: string) => {
+      if (url.includes("/s1/work")) {
+        await held;
+        return json(work("First session report"));
+      }
+      for (const [suffix, body] of responses) if (url.includes(suffix)) return json(body);
+      return json({});
+    });
+    const { host, props } = mountPage("s1");
+    await openReport(host);
+    expect(host.textContent).toContain("Loading…");
+
+    props.sessionId = null;
+    await settle();
+    answer();
+    await settle();
+
+    expect(host.textContent).not.toContain("Loading…");
+    expect(host.textContent).not.toContain("First session report");
   });
 
   it("lists the feedback records in the column and shows the screen the edition handed over", async () => {

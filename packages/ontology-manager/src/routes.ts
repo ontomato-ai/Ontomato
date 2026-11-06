@@ -1,6 +1,6 @@
 import { platformRoutes as routes } from "@ontomato/platform-shell/routes";
-import { defineAsyncComponent, defineComponent, h, ref, type Component, type PropType } from "vue";
-import { useRoute, useRouter, type RouteRecordRaw } from "vue-router";
+import { defineAsyncComponent, defineComponent, h, ref, watch, type Component, type PropType } from "vue";
+import { useRoute, useRouter, type RouteLocationRaw, type RouteRecordRaw } from "vue-router";
 import { useManagerClient, useManagerCounts } from "./context";
 import ManagerFrame from "./ManagerFrame.vue";
 import BusinessKnowledge from "./components/BusinessKnowledge.vue";
@@ -227,31 +227,52 @@ export function registerGovernanceScreen(id: "feedback", screen: Component) {
   governanceScreens[id] = screen;
 }
 
-/** The address of each page of the governance application; `null` is the conversation it opens on. */
+/**
+ * The address of each page of the governance application. `null` is the conversation's own address: the report is the
+ * open conversation's work record, so it has no address of its own.
+ */
 const governancePageRoutes: Record<string, { name: string; path: string } | null> = {
   report: null,
   feedback: routes.feedback,
 };
 
+/**
+ * The governance application at its address: the page its column opened and the conversation open with it. Switching
+ * pages never drops the conversation (the agent-app states): the report shows that conversation's work, and the feedback
+ * records carry it in their address (`?sessionId=`), so coming back to the report or the conversation finds it again.
+ */
 const KnowledgeGovernancePage = defineComponent({
   name: "ManagerKnowledgeGovernancePage",
   props: { sessionId: { type: String, default: "" }, page: { type: String, default: "" } },
   setup(props) {
     const router = useRouter();
+    // The conversation the page last asked for. The address catches up a few turns later, and a page change in between
+    // (a recent conversation chosen while the feedback records are open) must keep this one, not the address's.
+    let conversation = props.sessionId || null;
+    watch(
+      () => props.sessionId,
+      (id) => (conversation = id || null),
+    );
+    function address(page: string | null): RouteLocationRaw {
+      const target = page ? governancePageRoutes[page] : null;
+      return target
+        ? { name: target.name, query: conversation ? { sessionId: conversation } : {} }
+        : { name: routes.governance.name, params: { sessionId: conversation ?? "" } };
+    }
     return () =>
       h(GovernancePage, {
         sessionId: props.sessionId || null,
         page: props.page || null,
         // A page this package does not ship (the feedback records) comes from the edition that assembles both.
         screens: governanceScreens,
-        // Opening or starting a conversation updates the address of the same page.
-        onSession: (id: string | null) =>
-          void router.replace({ name: routes.governance.name, params: { sessionId: id || "" } }),
-        // Switching pages keeps the one column: each page has its own address, so an entry can be linked and reloaded.
+        // Opening or starting a conversation updates the address of the page that is open.
+        onSession: (id: string | null) => {
+          conversation = id;
+          void router.replace(address(props.page || null));
+        },
+        // Each page has an address of its own, so a column entry can be linked and reloaded.
         onPage: (id: string | null) => {
-          if ((props.page || null) === id) return;
-          const target = id ? governancePageRoutes[id] : null;
-          void router.push(target ? { name: target.name } : { name: routes.governance.name, params: { sessionId: "" } });
+          if ((props.page || null) !== id) void router.push(address(id));
         },
         onBack: () => void router.push(managerPaths.knowledge),
       });
@@ -340,7 +361,8 @@ export function managerStandaloneRoutes(): RouteRecordRaw[] {
         },
       ],
     },
-    // The feedback records are a page of the same application: same column, same conversation, its own screen.
+    // The feedback records are a page of the same application: same column, same conversation (`?sessionId=`), its
+    // own screen.
     {
       path: "/governance/feedback",
       meta: { service: true },
@@ -349,7 +371,10 @@ export function managerStandaloneRoutes(): RouteRecordRaw[] {
         {
           ...routes.feedback,
           component: KnowledgeGovernancePage,
-          props: () => ({ page: "feedback" }),
+          props: (route: { query: Record<string, unknown> }) => ({
+            page: "feedback",
+            sessionId: typeof route.query.sessionId === "string" ? route.query.sessionId : "",
+          }),
           meta: { page: routes.feedback.path },
         },
       ],

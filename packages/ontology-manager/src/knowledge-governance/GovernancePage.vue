@@ -55,7 +55,8 @@ const fail = (value: unknown) => { error.value = value instanceof Error ? value.
 
 async function readWork() {
   const id = sessionId.value, version = ++workRead;
-  if (!id) { work.value = null; return; }
+  // Without a conversation there is no work record, and a read still on its way for the one left no longer counts.
+  if (!id) { work.value = null; loading.value = false; return; }
   loading.value = true;
   try {
     const result = governanceWorkResponseSchema.parse(await (await manager.request(`${base}/${id}/work`)).json());
