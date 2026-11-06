@@ -11,17 +11,18 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
+import org.springframework.transaction.support.TransactionTemplate;
+import org.springframework.util.DigestUtils;
 
-import com.alibaba.fastjson2.JSON;
 import com.pgvector.PGvector;
 import io.ontomato.dataengine.bean.VectorResource;
 import io.ontomato.dataengine.service.ai.EmbeddingService;
 import io.ontomato.dataengine.service.vector.VectorRetrievalGate;
-import io.ontomato.dataengine.util.AutoKMeansClusteringUtil;
 
 import dev.langchain4j.data.embedding.Embedding;
 import dev.langchain4j.model.output.Response;
@@ -40,7 +41,19 @@ public class VectorResourceDao extends BaseDao {
 	@Autowired
 	private VectorRetrievalGate retrievalGate;
 
+	@Autowired
+	private TransactionTemplate transactions;
+
 	private String dirName = "vectorResource";
+
+	/** pgvector builds HNSW indexes on {@code halfvec} of at most this many dimensions. */
+	static final int HNSW_MAX_DIMENSIONS = 4000;
+
+	/** The fewest HNSW candidates a search keeps; pgvector's own default. */
+	private static final int MIN_EF_SEARCH = 40;
+
+	/** Vector indexes this process has confirmed, as {@code table#dimensions}; cleared with the table. */
+	private final Set<String> ensuredIndexes = ConcurrentHashMap.newKeySet();
 
 	private String generateIndexNamePrefix(String tmpNamespace) {
 		return "vector-" + tmpNamespace.replace("/", "_");
@@ -64,10 +77,67 @@ public class VectorResourceDao extends BaseDao {
 		return "\"" + indexName + "\"";
 	}
 
-	private String replace(String brief) {
+	/** The text a resource is embedded with: the stored brief and every batch embedding go through it. */
+	public String replace(String brief) {
 		String regex = "[\\+\\-\\=\\&\\|\\>\\<!\\(\\)\\{\\}\\[\\]\\^\\\\\\\"\\~\\*\\?\\:\\/\\s]";
 		String replaceBrief = brief.replaceAll(regex, "");
 		return replaceBrief;
+	}
+
+	/**
+	 * The HNSW index of one vector table for vectors of one dimension count. It is partial
+	 * ({@code vector_dims(brief_vector) = n}), so rows of another generation's dimensions, which a
+	 * table holds while a rebuild of its domain is pending, neither break the cast nor enter it.
+	 */
+	private static String vectorIndexName(String indexName, int dimensions) {
+		return "vidx_" + DigestUtils.md5DigestAsHex(indexName.getBytes(StandardCharsets.UTF_8)).substring(0, 24)
+				+ "_" + dimensions;
+	}
+
+	/**
+	 * Make sure the table has the HNSW index searches of this dimension count use. Every path that
+	 * stores a vector calls it with that vector's length, so a new table, a new generation after a
+	 * rebuild and a table from before the index all get it on their next write.
+	 */
+	public void ensureVectorIndex(String indexName, int dimensions) {
+		String key = indexName + "#" + dimensions;
+		if (ensuredIndexes.contains(key)) {
+			return;
+		}
+		if (dimensions > HNSW_MAX_DIMENSIONS) {
+			log.warn("Vector table {} holds {}-dimension vectors; pgvector indexes at most {} dimensions, so its searches scan the table",
+					indexName, dimensions, HNSW_MAX_DIMENSIONS);
+			ensuredIndexes.add(key);
+			return;
+		}
+		String name = vectorIndexName(indexName, dimensions);
+		Integer existing = jdbcTemplate.queryForObject(
+				"SELECT count(*) FROM pg_indexes WHERE schemaname = current_schema() AND indexname = ?", Integer.class, name);
+		if (existing == null || existing == 0) {
+			log.info("Creating vector index {} on {} for {} dimensions", name, indexName, dimensions);
+			jdbcTemplate.execute("CREATE INDEX IF NOT EXISTS \"" + name + "\" ON " + quotedTable(indexName)
+					+ " USING hnsw ((brief_vector::halfvec(" + dimensions + ")) halfvec_l2_ops)"
+					+ " WHERE vector_dims(brief_vector) = " + dimensions);
+		}
+		ensuredIndexes.add(key);
+	}
+
+	/** Forget the confirmed indexes of a table that was dropped or whose vector indexes were dropped. */
+	private void forgetVectorIndexes(String indexName) {
+		ensuredIndexes.removeIf(key -> key.startsWith(indexName + "#"));
+	}
+
+	/** Every vector resource table of the current schema, across domains. */
+	public List<String> listAllTables() {
+		return jdbcTemplate.queryForList(
+				"SELECT table_name FROM information_schema.tables WHERE table_schema = current_schema() AND table_type = 'BASE TABLE' AND table_name LIKE 'vector-%'",
+				String.class);
+	}
+
+	/** The dimension counts of the vectors a table currently stores. */
+	public List<Integer> storedDimensions(String indexName) {
+		return jdbcTemplate.queryForList("SELECT DISTINCT vector_dims(brief_vector) FROM " + quotedTable(indexName)
+				+ " WHERE brief_vector IS NOT NULL", Integer.class);
 	}
 
 	private float[] briefToVector(String replaceBrief, String domainId) {
@@ -108,6 +178,15 @@ public class VectorResourceDao extends BaseDao {
 	}
 
 	public VectorResource insert(VectorResource vectorResource, InputStream is, String suffix, String domainId) {
+		return insert(vectorResource, is, suffix, domainId, null);
+	}
+
+	/**
+	 * Store one resource: its file, its brief and its vector. {@code vector} is the embedding of
+	 * {@link #replace}d content computed by a batch upload inside the same write boundary; null
+	 * embeds the content here.
+	 */
+	public VectorResource insert(VectorResource vectorResource, InputStream is, String suffix, String domainId, float[] vector) {
 		if (vectorResource.getContent() == null || vectorResource.getContent().trim().isEmpty()) {
 			throw new IllegalArgumentException("content is required");
 		}
@@ -143,7 +222,10 @@ public class VectorResourceDao extends BaseDao {
 			String brief = vectorResource.getContent();
 			String replaceBrief = this.replace(brief);
 			vectorResource.setContent(replaceBrief);
-			retrievalGate.write(domainId, () -> jdbcTemplate.update(
+			retrievalGate.write(domainId, () -> {
+				float[] stored = vector != null ? vector : this.briefToVector(replaceBrief, domainId);
+				ensureVectorIndex(indexName, stored.length);
+				return jdbcTemplate.update(
 					"INSERT INTO " + quotedTable(indexName) + " (id, brief, path, class_name, attr_name, object_id, brief_vector) "
 							+ "VALUES (?, ?, ?, ?, ?, ?, ?::vector) "
 							+ "ON CONFLICT (id) DO UPDATE SET brief = EXCLUDED.brief, path = EXCLUDED.path, "
@@ -151,7 +233,8 @@ public class VectorResourceDao extends BaseDao {
 							+ "object_id = EXCLUDED.object_id, brief_vector = EXCLUDED.brief_vector",
 					vectorResource.getId(), vectorResource.getContent(), vectorResource.getPath(),
 					vectorResource.getClassName(), vectorResource.getAttrName(), vectorResource.getObjectId(),
-					new PGvector(this.briefToVector(replaceBrief, domainId))));
+					new PGvector(stored));
+			});
 
 			return vectorResource;
 		} catch (Exception e) {
@@ -166,15 +249,33 @@ public class VectorResourceDao extends BaseDao {
 		}
 	}
 
-	public List<VectorResource> find(String question, int maxResult, String className, String attrName, String domainId) {
-		return retrievalGate.read(domainId, () -> search(question, maxResult, className, attrName, domainId));
+	/**
+	 * The {@code topK} resources of a class attribute nearest to the question, nearest first. The
+	 * count is the caller's: no score threshold trims it.
+	 */
+	public List<VectorResource> find(String question, int topK, String className, String attrName, String domainId) {
+		if (topK <= 0) {
+			throw new IllegalArgumentException("topK must be positive: " + topK);
+		}
+		return retrievalGate.read(domainId, () -> search(question, topK, className, attrName, domainId));
 	}
 
-	/** Runs inside the read boundary: the query vector and the rows belong to one generation. */
-	private List<VectorResource> search(String question, int maxResult, String className, String attrName, String domainId) {
+	/** The nearest-first search of one table; its filter and ordering match the index of {@link #ensureVectorIndex}. */
+	static String searchSql(String indexName, int dimensions) {
+		return "SELECT id, brief, path, class_name, attr_name, object_id FROM " + "\"" + indexName + "\""
+				+ " WHERE vector_dims(brief_vector) = " + dimensions
+				+ " ORDER BY brief_vector::halfvec(" + dimensions + ") <-> (?::vector)::halfvec(" + dimensions + ")"
+				+ " LIMIT ?";
+	}
+
+	/**
+	 * Runs inside the read boundary: the query vector and the rows belong to one generation. The
+	 * ordering expression and the filter match {@link #ensureVectorIndex}, so the planner uses the
+	 * HNSW index; {@code hnsw.ef_search} is raised to at least {@code topK}, otherwise the index scan
+	 * would return fewer rows than asked.
+	 */
+	private List<VectorResource> search(String question, int topK, String className, String attrName, String domainId) {
 		String indexName = this.generateIndexName(className, attrName, domainId);
-		String tableName = quotedTable(indexName);
-		List<VectorResource> vectorResources = new ArrayList<VectorResource>();
 		float[] findVector = null;
 		String queryString = "";
 		try {
@@ -183,72 +284,33 @@ public class VectorResourceDao extends BaseDao {
 			String replaceQuestion = this.replace(question);
 			Response<Embedding> embeddingResponse = embeddingService.embedding(replaceQuestion, domainId);
 			findVector = embeddingResponse.content().vector();
+			int dimensions = findVector.length;
 
-			queryString = "SELECT id, brief, path, class_name, attr_name, object_id, brief_vector <-> ?::vector AS distance FROM " + tableName
-					+ " WHERE brief_vector IS NOT NULL ORDER BY distance LIMIT ?";
+			queryString = searchSql(indexName, dimensions);
+			String sql = queryString;
 			PGvector pgVector = new PGvector(findVector);
-
-			List<Object[]> rows = jdbcTemplate.query(queryString,
-					(rs, rowNum) -> new Object[] {
-							rs.getString("id"),
-							rs.getString("brief"),
-							rs.getString("path"),
-							rs.getString("class_name"),
-							rs.getString("attr_name"),
-							rs.getString("object_id"),
-							rs.getDouble("distance")
-					},
-					pgVector, maxResult);
-
-			if (rows != null && !rows.isEmpty()) {
-				log.info("Hits:" + rows.size());
-				List<Double> listScores = new ArrayList<>();
-				for (Object[] row : rows) {
-					double distance = (Double) row[6];
-					double score = distanceToScore(distance);
-					listScores.add(score);
-				}
-				log.info("listScores:" + JSON.toJSONString(listScores));
-				AutoKMeansClusteringUtil autoKMeansClusteringUtil = new AutoKMeansClusteringUtil(listScores);
-				autoKMeansClusteringUtil.runAutoKMeans();
-				double dMinScore = autoKMeansClusteringUtil.getHighClustersMinX();
-				log.info("dMinScore:" + dMinScore);
-
-				for (Object[] row : rows) {
-					double distance = (Double) row[6];
-					double score = distanceToScore(distance);
-					if (score >= dMinScore) {
-						VectorResource vectorResource = new VectorResource();
-						vectorResource.setId((String) row[0]);
-						vectorResource.setContent((String) row[1]);
-						vectorResource.setPath((String) row[2]);
-						vectorResource.setClassName((String) row[3]);
-						vectorResource.setAttrName((String) row[4]);
-						vectorResource.setObjectId((String) row[5]);
-						vectorResources.add(vectorResource);
-					}
-				}
-			}
+			List<VectorResource> rows = transactions.execute(status -> {
+				jdbcTemplate.execute("SET LOCAL hnsw.ef_search = " + Math.max(MIN_EF_SEARCH, topK));
+				return jdbcTemplate.query(sql, (rs, rowNum) -> {
+					VectorResource vectorResource = new VectorResource();
+					vectorResource.setId(rs.getString("id"));
+					vectorResource.setContent(rs.getString("brief"));
+					vectorResource.setPath(rs.getString("path"));
+					vectorResource.setClassName(rs.getString("class_name"));
+					vectorResource.setAttrName(rs.getString("attr_name"));
+					vectorResource.setObjectId(rs.getString("object_id"));
+					return vectorResource;
+				}, pgVector, topK);
+			});
+			log.info("Vector search of {} returned {} of top {}", indexName, rows.size(), topK);
+			return rows;
 		} catch (Exception e) {
-			if (findVector == null) {
-				log.error("Exception:{},question:{},findVector length={},queryString:\n{}", e.getMessage(), question, 0, queryString);
-			} else {
-				log.error("Exception:{},question:{},findVector length={},queryString:\n{}", e.getMessage(), question, findVector.length, queryString);
-			}
+			log.error("Exception:{},question:{},findVector length={},queryString:\n{}", e.getMessage(), question,
+					findVector == null ? 0 : findVector.length, queryString);
 			if (e instanceof RuntimeException re) {
 				throw re;
 			}
 			throw new RuntimeException("Vector search failed: " + e.getMessage(), e);
-		}
-		return vectorResources;
-	}
-
-	public int getResourceTotal(String className, String attrName, String domainId) {
-		File dir = new File("conf/" + dirName + "/" + this.generateIndexName(className, attrName, domainId));
-		if (dir.exists() && dir.isDirectory()) {
-			return dir.list().length;
-		} else {
-			return 0;
 		}
 	}
 
@@ -343,9 +405,13 @@ public class VectorResourceDao extends BaseDao {
 			}
 		}
 		String replaceBrief = this.replace(content);
-		int updated = retrievalGate.write(domainId, () -> jdbcTemplate.update(
+		int updated = retrievalGate.write(domainId, () -> {
+			float[] vector = this.briefToVector(replaceBrief, domainId);
+			ensureVectorIndex(indexName, vector.length);
+			return jdbcTemplate.update(
 				"UPDATE " + quotedTable(indexName) + " SET brief = ?, brief_vector = ?::vector WHERE object_id = ? AND path = ?",
-				replaceBrief, new PGvector(this.briefToVector(replaceBrief, domainId)), objectId, path));
+				replaceBrief, new PGvector(vector), objectId, path);
+		});
 		if (updated == 0) {
 			throw new IllegalArgumentException("Vector resource not found for object " + objectId + ": " + path);
 		}
@@ -358,6 +424,7 @@ public class VectorResourceDao extends BaseDao {
 		log.info(">>>rebuild " + indexName);
 
 		jdbcTemplate.execute("DROP TABLE IF EXISTS " + tableName);
+		forgetVectorIndexes(indexName);
 		jdbcTemplate.execute("CREATE TABLE " + tableName + " ("
 				+ "id VARCHAR(64) PRIMARY KEY, "
 				+ "brief TEXT, "
@@ -402,12 +469,24 @@ public class VectorResourceDao extends BaseDao {
 				(rs, rowNum) -> new VectorRebuildItem(rs.getString("id"), rs.getString("brief")));
 	}
 
+	/**
+	 * Start a new generation of the table: every vector is cleared and the indexes of the previous
+	 * generation are dropped; the refill creates the index of the new dimensions.
+	 */
 	public void clearTableVectors(String indexName) {
 		jdbcTemplate.execute("UPDATE " + quotedTable(indexName) + " SET brief_vector = NULL");
+		List<String> indexes = jdbcTemplate.queryForList(
+				"SELECT indexname FROM pg_indexes WHERE schemaname = current_schema() AND tablename = ? AND indexname LIKE 'vidx\\_%'",
+				String.class, indexName);
+		for (String index : indexes) {
+			jdbcTemplate.execute("DROP INDEX IF EXISTS \"" + index + "\"");
+		}
+		forgetVectorIndexes(indexName);
 	}
 
 	/** Fill a pending row only: a row written meanwhile keeps the vector of its newer content. */
 	public void fillTableVector(String indexName, String id, float[] vector) {
+		ensureVectorIndex(indexName, vector.length);
 		jdbcTemplate.update("UPDATE " + quotedTable(indexName) + " SET brief_vector = ?::vector WHERE id = ? AND brief_vector IS NULL",
 				new PGvector(vector), id);
 	}
@@ -438,6 +517,7 @@ public class VectorResourceDao extends BaseDao {
 		String prefix = generateIndexNamePrefix(tmpNamespace);
 		for (String tableName : listVectorTables(prefix, domainId)) {
 			jdbcTemplate.execute("DROP TABLE IF EXISTS " + quotedTable(tableName));
+			forgetVectorIndexes(tableName);
 			deleteFilesInDirectory(tableName);
 			File dir = new File("conf/" + dirName + "/" + tableName);
 			if (dir.isDirectory() && !dir.delete()) {
@@ -508,6 +588,7 @@ public class VectorResourceDao extends BaseDao {
 
 	private void clearIndex(String indexName) {
 		jdbcTemplate.execute("DROP TABLE IF EXISTS " + quotedTable(indexName));
+		forgetVectorIndexes(indexName);
 		File dir = new File("conf/" + dirName + "/" + indexName);
 		if (dir.exists()) {
 			File[] files = dir.listFiles();

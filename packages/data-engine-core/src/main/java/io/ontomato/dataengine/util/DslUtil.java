@@ -18,6 +18,7 @@ import com.alibaba.fastjson2.JSONWriter;
 import com.alibaba.fastjson2.JSONWriter.Feature;
 import io.ontomato.dataengine.bean.DslConsanguinity;
 import io.ontomato.dataengine.bean.VectorResource;
+import io.ontomato.dataengine.dataAdapter.DslGrammarValidator;
 import io.ontomato.dataengine.dao.VectorResourceDao;
 
 import lombok.extern.slf4j.Slf4j;
@@ -988,8 +989,8 @@ public class DslUtil {
 							if (vectorAttrs.contains(cond.getString("field")) && cond.getString("query") != null && !"".equals(cond.getString("query").trim())) {
 								// Query the vector store
 								String queryStr = cond.getString("query").trim();
-								int total = vectorResourceDao.getResourceTotal(className, cond.getString("field"), domainId);
-								List<VectorResource> vectorResources = vectorResourceDao.find(queryStr, total, className, cond.getString("field"), domainId);
+								List<VectorResource> vectorResources = vectorResourceDao.find(queryStr,
+										DslGrammarValidator.vectorTopK(cond), className, cond.getString("field"), domainId);
 								Set<String> objIds = new HashSet<String>();
 								for (VectorResource vectorResource : vectorResources) {
 									objIds.add(vectorResource.getObjectId());
@@ -1043,8 +1044,8 @@ public class DslUtil {
 					if (field.getString("query") != null && !"".equals(field.getString("query").trim())) {
 						// Query the vector store
 						String queryStr = field.getString("query").trim();
-						int total = vectorResourceDao.getResourceTotal(className, attrName, domainId);
-						List<VectorResource> vectorResources = vectorResourceDao.find(queryStr, total, className, attrName, domainId);
+						List<VectorResource> vectorResources = vectorResourceDao.find(queryStr,
+								DslGrammarValidator.vectorTopK(field), className, attrName, domainId);
 						Set<String> objIds = new HashSet<String>();
 						List<String> filePaths = new ArrayList<String>();
 						for (VectorResource vectorResource : vectorResources) {
@@ -1059,9 +1060,11 @@ public class DslUtil {
 							ids.retainAll(objIds);
 						}
 						
+						// Nearest first: the result rows and their resources are ordered by it.
 						selectAsFilePathsMap.put(as, filePaths);
 						field.remove("query");
 					}
+					field.remove("topK");
 					vectorResourceAsSet.add(as);
 				}
 			}

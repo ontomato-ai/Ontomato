@@ -21,7 +21,37 @@ import com.alibaba.fastjson2.JSONObject;
  */
 public final class DslGrammarValidator {
 
+	/** Resources a vector query returns when it names no {@code topK}. */
+	public static final int VECTOR_TOP_K_DEFAULT = 20;
+
+	/** The most resources one vector query may ask for. */
+	public static final int VECTOR_TOP_K_MAX = 50;
+
 	private DslGrammarValidator() {
+	}
+
+	/**
+	 * The {@code topK} of a vector query item (a {@code conditions.vector} entry or an output field
+	 * with {@code query}), or the default when absent. {@link #validate} has already rejected any
+	 * value outside 1..{@value #VECTOR_TOP_K_MAX}.
+	 */
+	public static int vectorTopK(JSONObject item) {
+		Integer topK = item.getInteger("topK");
+		return topK == null ? VECTOR_TOP_K_DEFAULT : topK;
+	}
+
+	private static void checkTopK(JSONObject item, String path) {
+		Object value = item == null ? null : item.get("topK");
+		if (value == null) {
+			return;
+		}
+		if (!(value instanceof Integer || value instanceof Long) || ((Number) value).longValue() < 1
+				|| ((Number) value).longValue() > VECTOR_TOP_K_MAX) {
+			throw new DslContractViolationException(
+					DslContractViolationException.Code.INVALID_GRAMMAR,
+					path + ".topK",
+					"topK of a vector query must be an integer from 1 to " + VECTOR_TOP_K_MAX + ", got " + value);
+		}
 	}
 
 	/**
@@ -40,6 +70,7 @@ public final class DslGrammarValidator {
 		}
 		for (int s = 0; s < steps.size(); s++) {
 			JSONObject step = steps.getJSONObject(s);
+			checkOutputTopK(step, "steps[" + s + "].output.fields");
 			JSONArray patterns = step == null || step.getJSONObject("graph") == null
 					? null
 					: step.getJSONObject("graph").getJSONArray("patterns");
@@ -55,6 +86,8 @@ public final class DslGrammarValidator {
 				for (int o = 0; o < objects.size(); o++) {
 					JSONObject object = objects.getJSONObject(o);
 					JSONObject conditions = object == null ? null : object.getJSONObject("conditions");
+					String conditionsPath = "steps[" + s + "].patterns[" + p + "].objects[" + o + "].conditions";
+					checkVectorTopK(conditions == null ? null : conditions.getJSONObject("vector"), conditionsPath + ".vector");
 					JSONObject timeseries = conditions == null ? null : conditions.getJSONObject("timeseries");
 					if (timeseries == null) {
 						continue;
@@ -68,6 +101,32 @@ public final class DslGrammarValidator {
 					checkTimeseriesFields(timeseries.getJSONObject("properties"), path, object.getString("class"),
 							classDef);
 				}
+			}
+		}
+	}
+
+	/** Each {@code and}/{@code or} entry of a {@code vector} condition may carry a valid {@code topK}. */
+	private static void checkVectorTopK(JSONObject vector, String path) {
+		JSONArray entries = vector == null ? null : logicList(vector.getJSONObject("properties"));
+		if (entries == null) {
+			return;
+		}
+		for (int i = 0; i < entries.size(); i++) {
+			checkTopK(entries.getJSONObject(i), path + ".properties[" + i + "]");
+		}
+	}
+
+	/** An output field that queries a vector attribute may carry a valid {@code topK}. */
+	private static void checkOutputTopK(JSONObject step, String path) {
+		JSONObject output = step == null ? null : step.getJSONObject("output");
+		JSONArray fields = output == null ? null : output.getJSONArray("fields");
+		if (fields == null) {
+			return;
+		}
+		for (int i = 0; i < fields.size(); i++) {
+			Object field = fields.get(i);
+			if (field instanceof JSONObject json) {
+				checkTopK(json, path + "[" + i + "]");
 			}
 		}
 	}

@@ -101,7 +101,6 @@ class HttpRequestUtilVectorTest {
 
 	private VectorResourceDao createRealDaoWithFailingEmbedding(String errorMessage) {
 		VectorResourceDao vectorResourceDao = org.mockito.Mockito.spy(new VectorResourceDao());
-		org.mockito.Mockito.doReturn(1).when(vectorResourceDao).getResourceTotal(anyString(), anyString(), anyString());
 		JdbcTemplate jdbcTemplate = mock(JdbcTemplate.class);
 		EmbeddingService embeddingService = mock(EmbeddingService.class);
 		when(embeddingService.embedding(anyString(), anyString())).thenThrow(new RuntimeException(errorMessage));
@@ -200,7 +199,6 @@ class HttpRequestUtilVectorTest {
 		hit.setObjectId("P'1");
 		hit.setPath("idx/a.png");
 		VectorResourceDao vectorResourceDao = mock(VectorResourceDao.class);
-		when(vectorResourceDao.getResourceTotal("/Product", "photos", "d1")).thenReturn(2);
 		when(vectorResourceDao.find(eq("red"), anyInt(), eq("/Product"), eq("photos"), eq("d1"))).thenReturn(List.of(hit));
 
 		DataAdapter adapter = mock(DataAdapter.class);

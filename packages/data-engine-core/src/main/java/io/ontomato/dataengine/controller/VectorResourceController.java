@@ -1,6 +1,8 @@
 package io.ontomato.dataengine.controller;
 
 import java.io.InputStream;
+import java.util.ArrayList;
+import java.util.List;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.core.io.FileSystemResource;
@@ -16,6 +18,8 @@ import org.springframework.web.bind.annotation.ResponseBody;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 
+import com.alibaba.fastjson2.JSON;
+import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
 import io.ontomato.dataengine.bean.VectorResource;
 import io.ontomato.dataengine.core.bean.User;
@@ -67,12 +71,27 @@ public class VectorResourceController {
 	@ResponseBody
 	public JSONObject upload(
 			@RequestParam(value = "file", required = false) MultipartFile file,
-			@RequestParam(value = "content") String content,
-			@RequestParam(value = "className") String className,
-			@RequestParam(value = "attrName") String attrName,
-			@RequestParam(value = "objectId") String objectId,
-			@RequestParam(value = "suffix", required = false) String suffix) {
+			@RequestParam(value = "content", required = false) String content,
+			@RequestParam(value = "className", required = false) String className,
+			@RequestParam(value = "attrName", required = false) String attrName,
+			@RequestParam(value = "objectId", required = false) String objectId,
+			@RequestParam(value = "suffix", required = false) String suffix,
+			@RequestParam(value = "items", required = false) String items) {
+		if (items != null) {
+			if (file != null || content != null || className != null || attrName != null || objectId != null || suffix != null) {
+				JSONObject ret = new JSONObject();
+				ret.put("success", false);
+				ret.put("message", "items uploads text-only resources in a batch and cannot be combined with file, content, className, attrName, objectId or suffix");
+				return ret;
+			}
+			return uploadAll(items);
+		}
 		JSONObject ret = new JSONObject();
+		if (content == null || className == null || attrName == null || objectId == null) {
+			ret.put("success", false);
+			ret.put("message", "content, className, attrName and objectId are required");
+			return ret;
+		}
 		InputStream is = null;
 		try {
 			User user = SystemUtils.getCurUser();
@@ -108,6 +127,43 @@ public class VectorResourceController {
 		return ret;
 	}
 	
+	/**
+	 * The batch form of {@code /vectorResource/upload}: {@code items} is a JSON array of text-only
+	 * resources {@code {content, className, attrName, objectId}}. Each one succeeds or fails on its
+	 * own; {@code data} lists one result per item in order and {@code failed} counts the failures.
+	 */
+	private JSONObject uploadAll(String items) {
+		JSONObject ret = new JSONObject();
+		try {
+			JSONArray array = JSON.parseArray(items);
+			if (array == null || array.isEmpty()) {
+				ret.put("success", false);
+				ret.put("message", "items must be a non-empty JSON array");
+				return ret;
+			}
+			List<VectorResource> resources = new ArrayList<>(array.size());
+			for (int i = 0; i < array.size(); i++) {
+				JSONObject item = array.getJSONObject(i);
+				VectorResource resource = new VectorResource();
+				resource.setContent(item.getString("content"));
+				resource.setClassName(item.getString("className"));
+				resource.setAttrName(item.getString("attrName"));
+				resource.setObjectId(item.getString("objectId"));
+				resources.add(resource);
+			}
+			User user = SystemUtils.getCurUser();
+			List<JSONObject> results = vectorResourceService.saveAndAttachAll(resources, user.getDomainId());
+			ret.put("success", true);
+			ret.put("data", results);
+			ret.put("failed", results.stream().filter(result -> !result.getBooleanValue("success")).count());
+		} catch (Exception e) {
+			log.error(e.getMessage(), e);
+			ret.put("success", false);
+			ret.put("message", e.getMessage());
+		}
+		return ret;
+	}
+
 	@GetMapping("/vectorResource/resource/{indexName}/{fileName}")
 	public ResponseEntity<Resource> download(@PathVariable String indexName, @PathVariable String fileName) {
 		Resource resource = new FileSystemResource(vectorResourceService.getFile(indexName, fileName));

@@ -1,5 +1,8 @@
 package io.ontomato.dataengine.service.ai;
 
+import java.util.ArrayList;
+import java.util.List;
+
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
@@ -8,6 +11,7 @@ import io.ontomato.dataengine.config.BusinessConfig;
 import io.ontomato.dataengine.service.BusinessConfigService;
 
 import dev.langchain4j.data.embedding.Embedding;
+import dev.langchain4j.data.segment.TextSegment;
 import dev.langchain4j.model.embedding.EmbeddingModel;
 import dev.langchain4j.model.openai.OpenAiEmbeddingModel;
 import dev.langchain4j.model.output.Response;
@@ -21,6 +25,25 @@ public class EmbeddingService {
 	public Response<Embedding> embedding(String content, String domainId) {
 		BusinessConfig businessConfig = businessConfigService.get(domainId);
 		return embedWith(businessConfig.getEmbeddingModelProperties(), content);
+	}
+
+	/** Embed several texts in one request with the domain's configuration, in input order. */
+	public List<float[]> embedAll(List<String> contents, String domainId) {
+		BusinessConfig businessConfig = businessConfigService.get(domainId);
+		List<TextSegment> segments = new ArrayList<>(contents.size());
+		for (String content : contents) {
+			segments.add(TextSegment.from(content));
+		}
+		List<Embedding> embeddings = buildModel(businessConfig.getEmbeddingModelProperties()).embedAll(segments).content();
+		if (embeddings.size() != contents.size()) {
+			throw new IllegalStateException("The embedding model returned " + embeddings.size() + " vectors for "
+					+ contents.size() + " texts");
+		}
+		List<float[]> vectors = new ArrayList<>(embeddings.size());
+		for (Embedding embedding : embeddings) {
+			vectors.add(embedding.vector());
+		}
+		return vectors;
 	}
 
 	/** Embed with a pinned configuration: the rebuild passes the configuration taken when it started. */
