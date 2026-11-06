@@ -38,7 +38,17 @@ public class OntologyScheduleApplication implements ScheduleApplication {
   }
 
   public void authorize(Actor actor) {
-    identity.requireActionExecutionAccess(actor.creator(), actor.domain());
+    try {
+      identity.requireActionExecutionAccess(actor.creator(), actor.domain());
+    } catch (org.springframework.web.server.ResponseStatusException denied) {
+      if (denied.getStatusCode().value() != 403) throw denied;
+      throw new ScheduleException(
+          403,
+          "PERMISSION_DENIED",
+          actor.locale().startsWith("zh")
+              ? "你没有执行动作或函数的权限"
+              : "You do not have permission to execute actions or functions");
+    }
   }
 
   public boolean asynchronous() {

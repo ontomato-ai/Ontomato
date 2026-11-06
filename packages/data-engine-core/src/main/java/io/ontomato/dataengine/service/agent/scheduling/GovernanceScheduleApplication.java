@@ -31,7 +31,11 @@ public class GovernanceScheduleApplication implements ScheduleApplication {
   public void authorize(Actor actor) {
     if (!identity.hasKnowledgeGovernanceAccess(actor.creator(), actor.domain()))
       throw new ScheduleException(
-          403, "PERMISSION_DENIED", "Business knowledge permission is required");
+          403,
+          "PERMISSION_DENIED",
+          actor.locale().startsWith("zh")
+              ? "你没有治理业务知识的权限"
+              : "You do not have permission to govern business knowledge");
   }
 
   public JsonNode form(FormInput input, Actor actor) {

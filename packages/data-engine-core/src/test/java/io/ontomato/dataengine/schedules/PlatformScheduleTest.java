@@ -306,6 +306,147 @@ class PlatformScheduleTest extends PostgresTestDatabase {
   }
 
   @Test
+  void localApplicationDenialsUseTheRequestAndPersistedRunLanguageWithoutPermissionCodes()
+      throws Exception {
+    doThrow(
+            new org.springframework.web.server.ResponseStatusException(
+                org.springframework.http.HttpStatus.FORBIDDEN,
+                "Operation permission is required: /action/execute"))
+        .when(identities)
+        .requireActionExecutionAccess("alice", "sales");
+    var governance =
+        new io.ontomato.dataengine.service.agent.scheduling.GovernanceScheduleApplication(
+            mock(io.ontomato.dataengine.service.agent.KnowledgeGovernanceService.class),
+            mock(io.ontomato.dataengine.service.agent.OntologyAgentAccess.class),
+            mock(AgentRuntimeClient.class),
+            mock(io.ontomato.dataengine.service.agent.OntologyAgentStore.class),
+            identities);
+    var registry = new ScheduleApplications(List.of(ontology, governance), mockWorkbench());
+    var service =
+        new PlatformTasks(store, identities, identity, credentials, registry, transactions);
+    ReflectionTestUtils.setField(service, "configuredZone", "UTC");
+    var mvc = MockMvcBuilders.standaloneSetup(new PlatformTaskController(service)).build();
+    for (String locale : List.of("zh-CN", "en")) {
+      var directoryResponse =
+          mvc.perform(
+                  get("/platform/scheduled-tasks/applications").header("Accept-Language", locale))
+              .andExpect(status().isOk())
+              .andReturn()
+              .getResponse();
+      var directory = parse(directoryResponse.getContentAsString());
+      sample("platformScheduleApplicationsSchema", directory);
+      for (String app : List.of("ontology", "governance")) {
+        String expected =
+            app.equals("ontology")
+                ? (locale.equals("zh-CN")
+                    ? "你没有执行动作或函数的权限"
+                    : "You do not have permission to execute actions or functions")
+                : (locale.equals("zh-CN")
+                    ? "你没有治理业务知识的权限"
+                    : "You do not have permission to govern business knowledge");
+        var descriptor =
+            java.util.stream.StreamSupport.stream(
+                    directory.path("applications").spliterator(), false)
+                .filter(value -> app.equals(value.path("id").asText()))
+                .findFirst()
+                .orElseThrow();
+        assertFalse(descriptor.path("available").asBoolean());
+        assertEquals(expected, descriptor.path("unavailableReason").asText());
+        var input =
+            (com.fasterxml.jackson.databind.node.ObjectNode)
+                (app.equals("ontology") ? definition("function:f") : fixtureDefinition(app));
+        if (app.equals("governance")) {
+          input.set("content", object("instruction", "Review knowledge"));
+          input.put("formRevision", "governance-v1");
+        }
+        UUID taskId = UUID.randomUUID();
+        store.insert(
+            taskId,
+            "sales",
+            "alice",
+            TaskDefinition.input(input, "UTC", false),
+            array(),
+            locale,
+            Instant.now(),
+            true);
+        for (var request :
+            List.of(
+                post("/platform/scheduled-tasks/applications/" + app + "/form")
+                    .content(
+                        object(
+                                "values",
+                                object(),
+                                "changedField",
+                                null,
+                                "taskId",
+                                null,
+                                "timeZone",
+                                "UTC")
+                            .toString()),
+                post("/platform/scheduled-tasks")
+                    .header("Idempotency-Key", UUID.randomUUID())
+                    .content(input.toString()),
+                put("/platform/scheduled-tasks/" + taskId)
+                    .content(
+                        ((com.fasterxml.jackson.databind.node.ObjectNode) input.deepCopy())
+                            .put("revision", 1)
+                            .toString()),
+                post("/platform/scheduled-tasks/" + taskId + "/runs")
+                    .header("Idempotency-Key", UUID.randomUUID())
+                    .content("{}"),
+                put("/platform/scheduled-tasks/" + taskId + "/enabled")
+                    .content(object("enabled", true, "revision", 1).toString()))) {
+          var response =
+              mvc.perform(
+                      request
+                          .header("Accept-Language", locale)
+                          .contentType(MediaType.APPLICATION_JSON))
+                  .andExpect(status().isForbidden())
+                  .andReturn()
+                  .getResponse();
+          var body = parse(response.getContentAsString());
+          assertEquals("PERMISSION_DENIED", body.path("error").path("code").asText());
+          assertEquals(expected, body.path("error").path("message").asText());
+          assertFalse(body.path("error").path("message").asText().contains("/action/execute"));
+          sample("platformScheduleErrorSchema", body);
+        }
+        UUID runId = UUID.randomUUID();
+        transactions.executeWithoutResult(
+            tx -> store.admit(store.get(taskId, false), runId, "schedule", Instant.now()));
+        var scheduler =
+            new PlatformScheduler(
+                store, transactions, registry, credentials, identity, mock(TaskMail.class));
+        try {
+          scheduler.dispatch(runId);
+          assertEquals("permission_denied", store.run(runId).error().code());
+          assertEquals(expected, store.run(runId).error().message());
+          assertEquals(expected, store.get(taskId, false).pause().message());
+          sample("platformTaskRunSchema", store.run(runId).wire());
+        } finally {
+          scheduler.stop();
+        }
+      }
+    }
+  }
+
+  @Test
+  void actionAuthorizationDependencyErrorsRemainDependencyErrors() {
+    var unavailable =
+        new org.springframework.web.server.ResponseStatusException(
+            org.springframework.http.HttpStatus.SERVICE_UNAVAILABLE,
+            "Identity service unavailable");
+    doThrow(unavailable).when(identities).requireActionExecutionAccess("alice", "sales");
+    var actor =
+        new ScheduleApplication.Actor(
+            user, identity.dataPermission("sales", "alice"), null, null, "zh-CN");
+    assertSame(
+        unavailable,
+        assertThrows(
+            org.springframework.web.server.ResponseStatusException.class,
+            () -> ontology.authorize(actor)));
+  }
+
+  @Test
   void emptyObjectPostBodiesFromTheWorkbenchAreAccepted() throws Exception {
     UUID taskId = UUID.randomUUID();
     tasks.create(taskId, definition("function:f"), "en", true);
