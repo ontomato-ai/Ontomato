@@ -18,6 +18,7 @@ import io.ontomato.dataengine.dao.KnowledgeDao;
 import io.ontomato.dataengine.service.ABCProgramService;
 import io.ontomato.dataengine.service.ActionPreconditionService;
 import io.ontomato.dataengine.service.ActionService;
+import io.ontomato.dataengine.service.CapabilityGrantLookup;
 import io.ontomato.dataengine.service.AdminService;
 import io.ontomato.dataengine.service.BusinessConfigService;
 import io.ontomato.dataengine.service.LangService;
@@ -66,6 +67,8 @@ public class ActionServiceImpl implements ActionService {
   @Autowired private AgentRuntimeClient runtimeClient;
 
   @Autowired private ActionPreconditionService preconditions;
+
+  @Autowired private CapabilityGrantLookup capabilityGrants;
 
   @PostConstruct
 	public void initService() {
@@ -571,6 +574,15 @@ public class ActionServiceImpl implements ActionService {
             if (!user.getDomainId().equals(action.getDomainId()) || action.getFunction() == null ||
                 !user.getDomainId().equals(action.getFunction().getDomainId())) throw new IllegalArgumentException("Action is outside the current domain");
 			if (Action.STATUS_PUBLISHED.equals(action.getStatus())) {
+				// Being able to see an action in the catalogue is not being allowed to run it. The grant is
+				// the single answer to "who may run this", so it is asked before any precondition or program.
+				if (!capabilityGrants.allows(
+						user.getId(), user.getDomainId(), CapabilityGrantLookup.ACTION, action.getId())) {
+					PythonExecuteResult refused = new PythonExecuteResult();
+					refused.setResult(null);
+					refused.setError(langService.get(lang, "Action.notGranted"));
+					return refused;
+				}
 				// The declared preconditions are the action's own statement of when it may run, and the
 				// only guard that can tell "this report is mine" from "this report exists". They are
 				// evaluated once here, before any write, so a program never starts on state it must not see.

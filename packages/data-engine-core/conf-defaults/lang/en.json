@@ -236,6 +236,10 @@
     "value": "Action preconditions are not met"
   },
   {
+    "key": "Action.notGranted",
+    "value": "No role grants this action to the current subject"
+  },
+  {
     "key": "Action.publishedIsFrozen",
     "value": "A published action cannot be changed; publish a new one instead"
   },
