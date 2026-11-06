@@ -517,7 +517,7 @@ watch(
   justify-content: space-between;
   gap: var(--spacing-md);
   min-width: 0;
-  padding: var(--spacing-sm) var(--spacing-lg);
+  padding-block: var(--spacing-sm);
   border-bottom: 1px solid var(--el-border-color);
   flex-wrap: wrap;
 }
@@ -529,6 +529,11 @@ watch(
   --el-segmented-item-selected-color: var(--el-text-color-primary);
 }
 
+/*
+ * No horizontal padding of the page's own: the platform's page body around it carries the page gutter, the same one as
+ * the header above, so the toolbar, the table and the pager start and end where the title and the tabs do (DESIGN.md
+ * "Page architecture").
+ */
 .mode-bar {
   display: flex;
   align-items: center;
@@ -549,7 +554,7 @@ watch(
   flex: 1;
   min-height: 0;
   min-width: 0;
-  margin: var(--spacing-sm) var(--spacing-lg) 0;
+  margin-top: var(--spacing-sm);
 }
 
 .data-browser-filters {
@@ -601,7 +606,7 @@ watch(
 }
 
 .pagination {
-  padding: var(--spacing-sm) var(--spacing-lg);
+  padding: var(--spacing-sm) 0;
   display: flex;
   justify-content: flex-end;
   min-width: 0;

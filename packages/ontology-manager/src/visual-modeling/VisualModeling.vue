@@ -1202,7 +1202,7 @@ onUnmounted(() => {
 function refreshGraphTheme() {
   if (graph) {
     const colors = getGraphColors();
-    graph.container.style.backgroundColor = "var(--el-bg-color)";
+    graph.container.style.backgroundColor = "var(--el-bg-color-page)";
     graph.container.style.backgroundImage = "radial-gradient(var(--el-border-color) 1px, transparent 1px)";
     graph.container.style.backgroundSize = "20px 20px";
 
@@ -1422,72 +1422,76 @@ async function saveClassDesc(cls: ClassDef) {
       </template>
     </PlatformPageHeader>
 
-    <div class="toolbar">
-      <div class="zoom-controls" role="toolbar" :aria-label="ot('fitCanvas')">
-        <el-button :title="ot('zoomIn')" :aria-label="ot('zoomIn')" @click="onZoomIn"><Plus :size="18" /></el-button>
-        <el-button :title="ot('zoomOut')" :aria-label="ot('zoomOut')" @click="onZoomOut"><Minus :size="18" /></el-button>
-        <el-button :title="ot('fitCanvas')" :aria-label="ot('fitCanvas')" @click="onZoomFit"><Maximize :size="18" /></el-button>
-        <el-button :title="ot('relayout')" :aria-label="ot('relayout')" :disabled="loading || layouting || !classList.length" @click="onRelayout"><Network :size="18" /></el-button>
-      </div>
-
-      <div class="selection-cluster">
-        <div class="selection-info">
-          <el-tag v-if="selectedNode" type="primary">
-            {{ t("hotData.selected") }} {{ selectedNode.showName }}
-          </el-tag>
-          <el-tag v-else-if="selectedEdge" type="success">
-            {{ t("hotData.selectedRel") }} {{ selectedEdge.desc || t("hotData.newRelation") }}
-          </el-tag>
+    <!-- The page under the header takes the page gutter: the canvas toolbar and the canvas with its panel start where
+         the title does, the canvas in one bordered block like a table. -->
+    <div class="modeling-body platform-page-gutter">
+      <div class="toolbar">
+        <div class="zoom-controls" role="toolbar" :aria-label="ot('fitCanvas')">
+          <el-button :title="ot('zoomIn')" :aria-label="ot('zoomIn')" @click="onZoomIn"><Plus :size="18" /></el-button>
+          <el-button :title="ot('zoomOut')" :aria-label="ot('zoomOut')" @click="onZoomOut"><Minus :size="18" /></el-button>
+          <el-button :title="ot('fitCanvas')" :aria-label="ot('fitCanvas')" @click="onZoomFit"><Maximize :size="18" /></el-button>
+          <el-button :title="ot('relayout')" :aria-label="ot('relayout')" :disabled="loading || layouting || !classList.length" @click="onRelayout"><Network :size="18" /></el-button>
         </div>
-        <div class="toolbar-group toolbar-group-selection">
-          <el-button
-            :icon="Pencil"
-            :disabled="!selectedNode && !selectedEdge"
-            @click="
-              selectedNode
-                ? openPencilNodeDialog(selectedNode)
-                : selectedEdge
-                  ? openPencilEdgeDialog(selectedEdge)
-                  : undefined
-            "
-          >
-            {{ t("common.edit") }}
-          </el-button>
-          <el-button
-            type="danger"
-            plain
-            :icon="Trash2"
-            :disabled="!selectedNode && !selectedEdge"
-            @click="selectedNode ? handleTrash2Node() : handleTrash2Edge()"
-          >
-            {{ t("common.delete") }}
-          </el-button>
+
+        <div class="selection-cluster">
+          <div class="selection-info">
+            <el-tag v-if="selectedNode" type="primary">
+              {{ t("hotData.selected") }} {{ selectedNode.showName }}
+            </el-tag>
+            <el-tag v-else-if="selectedEdge" type="success">
+              {{ t("hotData.selectedRel") }} {{ selectedEdge.desc || t("hotData.newRelation") }}
+            </el-tag>
+          </div>
+          <div class="toolbar-group toolbar-group-selection">
+            <el-button
+              :icon="Pencil"
+              :disabled="!selectedNode && !selectedEdge"
+              @click="
+                selectedNode
+                  ? openPencilNodeDialog(selectedNode)
+                  : selectedEdge
+                    ? openPencilEdgeDialog(selectedEdge)
+                    : undefined
+              "
+            >
+              {{ t("common.edit") }}
+            </el-button>
+            <el-button
+              type="danger"
+              plain
+              :icon="Trash2"
+              :disabled="!selectedNode && !selectedEdge"
+              @click="selectedNode ? handleTrash2Node() : handleTrash2Edge()"
+            >
+              {{ t("common.delete") }}
+            </el-button>
+          </div>
         </div>
       </div>
-    </div>
 
-    <div class="main-content">
-      <div v-loading="loading" class="graph-container">
-        <div ref="graphRef" class="graph-canvas"></div>
+      <div class="main-content">
+        <div v-loading="loading" class="graph-container">
+          <div ref="graphRef" class="graph-canvas"></div>
+        </div>
+
+        <VisualModelingRightPanel
+          v-if="rightPanelVisible && selectedNode"
+          :selected-node="selectedNode"
+          @close="closeRightPanel"
+          @update-class-field="updateSelectedNodeField"
+          @update-attr-field="updateSelectedAttrField"
+          @class-show-name-focus="onClassShowNameFocus"
+          @class-show-name-blur="onClassShowNameBlur"
+          @save-class-desc="saveClassDesc"
+          @attr-enable-change="onAttrEnableChange"
+          @attr-biz-key-change="onAttrBizKeyChange"
+          @attr-primary-key-change="onAttrPrimaryKeyChange"
+          @attr-show-name-focus="onAttrShowNameFocus"
+          @attr-show-name-blur="onAttrShowNameBlur"
+          @save-attr-desc="saveAttrDesc"
+          @create-attr="openAddAttrDialog"
+        />
       </div>
-
-      <VisualModelingRightPanel
-        v-if="rightPanelVisible && selectedNode"
-        :selected-node="selectedNode"
-        @close="closeRightPanel"
-        @update-class-field="updateSelectedNodeField"
-        @update-attr-field="updateSelectedAttrField"
-        @class-show-name-focus="onClassShowNameFocus"
-        @class-show-name-blur="onClassShowNameBlur"
-        @save-class-desc="saveClassDesc"
-        @attr-enable-change="onAttrEnableChange"
-        @attr-biz-key-change="onAttrBizKeyChange"
-        @attr-primary-key-change="onAttrPrimaryKeyChange"
-        @attr-show-name-focus="onAttrShowNameFocus"
-        @attr-show-name-blur="onAttrShowNameBlur"
-        @save-attr-desc="saveAttrDesc"
-        @create-attr="openAddAttrDialog"
-      />
     </div>
 
     <VisualModelingDialogs
@@ -1522,11 +1526,23 @@ async function saveClassDesc(cls: ClassDef) {
 </template>
 
 <style scoped>
+/*
+ * The page paints no background of its own: it sits on the application's area, the darkest band in dark mode
+ * (DESIGN.md "Colour roles"). The canvas keeps its own ground, in the area's tone.
+ */
 .visual-modeling {
   height: 100%;
   display: flex;
   flex-direction: column;
   overflow: hidden;
+}
+
+.modeling-body {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  flex-direction: column;
+  padding-bottom: var(--spacing-xl);
 }
 
 /* The canvas toolbar under the header: zoom and layout on the left, the current selection on the right. */
@@ -1536,9 +1552,7 @@ async function saveClassDesc(cls: ClassDef) {
   flex-shrink: 0;
   align-items: center;
   gap: var(--spacing-sm);
-  padding: var(--spacing-xs) var(--spacing-lg);
-  background: var(--el-bg-color);
-  border-bottom: 1px solid var(--el-border-color);
+  padding-block: var(--spacing-xs);
   flex-wrap: wrap;
 }
 
@@ -1580,12 +1594,14 @@ async function saveClassDesc(cls: ClassDef) {
   min-height: 0;
   display: flex;
   overflow: hidden;
+  border: 1px solid var(--el-border-color);
+  border-radius: var(--radius-md);
 }
 
 .graph-container {
   flex: 1;
   min-width: 0;
-  background-color: var(--el-bg-color);
+  background-color: var(--el-bg-color-page);
   background-image: radial-gradient(var(--el-border-color) 1px, transparent 1px);
   background-size: 20px 20px;
   position: relative;
@@ -1595,7 +1611,7 @@ async function saveClassDesc(cls: ClassDef) {
 .graph-canvas {
   width: 100%;
   height: 100%;
-  background-color: var(--el-bg-color);
+  background-color: var(--el-bg-color-page);
   background-image: radial-gradient(var(--el-border-color) 1px, transparent 1px);
   background-size: 20px 20px;
 }

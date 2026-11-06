@@ -58,13 +58,13 @@ const { t } = useI18n();
 </template>
 
 <style scoped>
+/* The page's areas paint no background of their own: in dark mode the application's area is the darkest band. */
 .panel-right {
   display: flex;
   flex-direction: column;
   flex: 0 1 auto;
   min-width: 220px;
   max-width: 760px;
-  background: var(--observe-bg-card, var(--el-bg-color));
   overflow: hidden;
 }
 

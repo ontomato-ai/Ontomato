@@ -562,7 +562,7 @@ onMounted(() => void loadDetail());
     v-loading="loading"
     :class="['asset-detail', { 'with-explainer-tab': showExplainerTab }]"
   >
-    <header class="detail-titlebar">
+    <header class="detail-titlebar platform-page-gutter">
       <el-button text :icon="ArrowLeft" @click="emit('back')">
         {{ ot("assetBackTo", { title: meta.title }) }}
       </el-button>
@@ -596,7 +596,7 @@ onMounted(() => void loadDetail());
       </el-button>
     </header>
 
-    <nav v-if="record && showExplainerTab" class="detail-tabs" role="tablist">
+    <nav v-if="record && showExplainerTab" class="detail-tabs platform-page-gutter" role="tablist">
       <button
         type="button"
         role="tab"
@@ -620,7 +620,7 @@ onMounted(() => void loadDetail());
     <div
       v-if="record && showExplainerTab"
       v-show="activeTab === 'explainer'"
-      class="explainer-pane"
+      class="explainer-pane platform-page-gutter"
       role="tabpanel"
     >
       <el-alert
@@ -640,7 +640,12 @@ onMounted(() => void loadDetail());
       <ActionCodeExplainer v-else :code="savedCodeSnapshot" :segments="explainerSegments" />
     </div>
 
-    <div v-if="record" v-show="!showExplainerTab || activeTab === 'definition'" class="detail-body" :class="{ 'metric-detail-body': kind === 'metrics' }">
+    <div
+      v-if="record"
+      v-show="!showExplainerTab || activeTab === 'definition'"
+      class="detail-body platform-page-gutter"
+      :class="{ 'metric-detail-body': kind === 'metrics' }"
+    >
       <section class="definition-section">
         <div class="section-title">
           <div>
@@ -1035,9 +1040,13 @@ onMounted(() => void loadDetail());
 .metric-markdown-preview :deep(blockquote) { margin-left: 0; padding-left: var(--spacing-md); border-left: 3px solid var(--el-border-color); color: var(--el-text-color-secondary); }
 .metric-markdown-preview :deep(a) { color: var(--el-color-primary); }
 .metric-markdown-preview :deep(img) { max-width: 100%; }
+/*
+ * The page paints no background of its own: it sits on the application's area, the darkest band in dark mode
+ * (DESIGN.md "Colour roles"); its sections keep their own surfaces. The title row, the tabs and the panes under them take
+ * the page gutter (`platform-page-gutter`), so they start where the other pages' titles do.
+ */
 .asset-detail {
   min-height: 100%;
-  background: var(--el-bg-color);
 }
 .asset-detail.with-explainer-tab {
   display: flex;
@@ -1048,9 +1057,8 @@ onMounted(() => void loadDetail());
   display: flex;
   flex: 0 0 auto;
   gap: var(--spacing-sm);
-  padding: var(--spacing-sm) var(--spacing-lg) 0;
+  padding-top: var(--spacing-sm);
   border-bottom: 1px solid var(--el-border-color);
-  background: var(--el-bg-color);
 }
 .detail-tab {
   padding: var(--spacing-sm) var(--spacing-md);
@@ -1072,7 +1080,7 @@ onMounted(() => void loadDetail());
   flex: 1;
   flex-direction: column;
   gap: var(--spacing-md);
-  padding: var(--spacing-md) var(--spacing-lg) var(--spacing-lg);
+  padding-block: var(--spacing-md) var(--spacing-lg);
 }
 .detail-titlebar {
   display: flex;
@@ -1081,9 +1089,8 @@ onMounted(() => void loadDetail());
   flex: 0 0 auto;
   align-items: center;
   gap: var(--spacing-sm);
-  padding: var(--spacing-sm) var(--spacing-lg);
+  padding-block: var(--spacing-sm);
   border-bottom: 1px solid var(--el-border-color);
-  background: var(--el-bg-color);
 }
 .title-divider {
   width: 1px;
@@ -1113,7 +1120,7 @@ onMounted(() => void loadDetail());
   display: grid;
   grid-template-columns: minmax(300px, 0.9fr) minmax(460px, 1.4fr);
   gap: var(--spacing-lg);
-  padding: var(--spacing-lg);
+  padding-block: var(--spacing-lg);
   align-items: start;
 }
 .metric-detail-body > .logic-section {
@@ -1393,20 +1400,14 @@ h2 {
   }
 }
 @container ontology-manager (max-width: 640px) {
-  .detail-titlebar {
-    padding: 0 var(--spacing-md);
-  }
-  .detail-tabs {
-    padding: var(--spacing-sm) var(--spacing-md) 0;
-  }
   .explainer-pane {
-    padding: var(--spacing-md);
+    padding-block: var(--spacing-md);
   }
   .title-divider {
     display: none;
   }
   .detail-body {
-    padding: var(--spacing-md);
+    padding-block: var(--spacing-md);
     gap: var(--spacing-md);
   }
 }

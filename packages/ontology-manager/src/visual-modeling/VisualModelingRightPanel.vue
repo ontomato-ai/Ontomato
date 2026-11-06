@@ -180,9 +180,9 @@ const { t } = useSharedText();
 </template>
 
 <style scoped>
+/* A panel beside the canvas, divided by a hairline and in the area's own tone (DESIGN.md "Colour roles"). */
 .right-panel {
   width: 360px;
-  background: var(--el-bg-color);
   border-left: 1px solid var(--el-border-color);
   display: flex;
   flex-direction: column;
@@ -228,7 +228,6 @@ const { t } = useSharedText();
   flex: 1;
   overflow-y: auto;
   padding: var(--spacing-lg);
-  background: var(--el-bg-color);
 }
 
 .section {

@@ -29,8 +29,11 @@ export interface ManagerNavigationPage {
   /** Permission codes that grant the page (any one of them); editions without permissions ignore them. */
   permissions: readonly string[];
   group: string;
-  /** Manager pages render their own page header. */
-  ownHeader: true;
+  /**
+   * The page draws the platform's page header itself, inside the Manager's frame, and carries that header's gutter. The
+   * data browser does not: it is a page of the object browser, whose header and gutter the platform draws around it.
+   */
+  ownHeader: boolean;
   count?: () => number | null;
 }
 
@@ -69,7 +72,7 @@ function page(
   permissions: readonly string[],
   count?: keyof OntologyResourceCounts
 ) {
-  return { path, titleKey, icon, group, permissions, ownHeader: true as const, count };
+  return { path, titleKey, icon, group, permissions, ownHeader: true, count };
 }
 
 const pages = [
@@ -79,7 +82,8 @@ const pages = [
   page(managerPaths.relations, "nav.relationTypes", Link2, "ontology", MODELING, "relations"),
   page(managerPaths.actions, "nav.actionManagement", MousePointerClick, "ontology", ["action-management"], "actions"),
   page(managerPaths.visualModeling, "nav.visualModeling", Workflow, "ontology", MODELING),
-  page(managerPaths.dataBrowser, "nav.dataBrowser", Table2, "ontology", ["data-browser"]),
+  // A page of the object browser: the platform draws the application's header above it and the page gutter around it.
+  { ...page(managerPaths.dataBrowser, "nav.dataBrowser", Table2, "ontology", ["data-browser"]), ownHeader: false },
   page(managerPaths.metrics, "nav.metrics", ChartColumn, "assets", MODELING, "metrics"),
   page(managerPaths.functions, "nav.functionDefinitions", SquareFunction, "assets", MODELING, "functions"),
   page(managerPaths.knowledge, "nav.businessKnowledge", BookOpen, "knowledge", ["business-knowledge"]),

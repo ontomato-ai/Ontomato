@@ -63,12 +63,15 @@ onMounted(() => {
   container: ontology-manager / size;
 }
 
+/*
+ * The frame paints no background: the Manager's pages sit on the application's own area, which is the darkest band in
+ * dark mode (DESIGN.md "Colour roles"). Their tables, inputs and cards keep their own surfaces.
+ */
 .ontology-manager-shell {
   display: flex;
   height: 100%;
   min-height: 0;
   flex-direction: column;
   overflow: hidden;
-  background: var(--el-bg-color);
 }
 </style>

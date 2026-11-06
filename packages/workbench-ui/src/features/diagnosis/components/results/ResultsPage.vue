@@ -220,12 +220,12 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
+/* The page's areas paint no background of their own: in dark mode the application's area is the darkest band. */
 .results-page {
   display: flex;
   flex-direction: column;
   height: 100%;
   overflow: hidden;
-  background: var(--observe-bg-main, var(--el-bg-color));
   border-radius: 8px;
 }
 </style>
