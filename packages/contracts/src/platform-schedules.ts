@@ -156,6 +156,8 @@ export const platformScheduleFormSchema = z.object({
 
 export const platformScheduleApplicationSchema = z.object({
   id: platformTaskAppSchema,
+  /** The application's scheduling declaration supplies this sentence in the requested Accept-Language. */
+  description: z.string().nullable(),
   available: z.boolean(),
   unavailableReason: nonempty.nullable(),
   taskCount: z.number().int().nonnegative().safe(),

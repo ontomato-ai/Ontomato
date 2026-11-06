@@ -1,11 +1,20 @@
 {
   "applications": {
-    "method": "GET", "path": "/api/data-query/platform/scheduled-tasks/applications", "status": 200,
+    "method": "GET", "path": "/api/data-query/platform/scheduled-tasks/applications", "headers":{"Accept-Language":"zh-CN"}, "status": 200,
     "response": {"applications":[
-      {"id":"ontology","available":true,"unavailableReason":null,"taskCount":1},
-      {"id":"agents","available":true,"unavailableReason":null,"taskCount":1},
-      {"id":"operations","available":true,"unavailableReason":null,"taskCount":1},
-      {"id":"governance","available":true,"unavailableReason":null,"taskCount":1}
+      {"id":"ontology","description":"执行一个动作或函数","available":true,"unavailableReason":null,"taskCount":1},
+      {"id":"agents","description":"按指令运行一个智能体","available":true,"unavailableReason":null,"taskCount":1},
+      {"id":"operations","description":"跑自动测试，或按指令巡检","available":true,"unavailableReason":null,"taskCount":1},
+      {"id":"governance","description":"按指令巡检业务知识","available":true,"unavailableReason":null,"taskCount":1}
+    ],"totalCount":4}
+  },
+  "applicationsEnglish": {
+    "method":"GET", "path":"/api/data-query/platform/scheduled-tasks/applications", "headers":{"Accept-Language":"en"}, "status":200,
+    "response":{"applications":[
+      {"id":"ontology","description":"Execute an action or function","available":true,"unavailableReason":null,"taskCount":1},
+      {"id":"agents","description":"Run an agent with your instructions","available":true,"unavailableReason":null,"taskCount":1},
+      {"id":"operations","description":"Run automated tests or inspect as instructed","available":true,"unavailableReason":null,"taskCount":1},
+      {"id":"governance","description":"Inspect business knowledge with your instructions","available":true,"unavailableReason":null,"taskCount":1}
     ],"totalCount":4}
   },
   "forms": [
