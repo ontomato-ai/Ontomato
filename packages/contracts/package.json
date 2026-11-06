@@ -10,7 +10,8 @@
     "typecheck": "tsc --noEmit",
     "generate:query-package": "node --import tsx scripts/query-package-schema.mjs",
     "generate:query-subgraph": "node scripts/query-subgraph-schema.mjs",
-    "check:query-subgraph": "node scripts/check-query-subgraph.mjs"
+    "check:query-subgraph": "node scripts/check-query-subgraph.mjs",
+    "check:platform-schedules": "node --import tsx --test scripts/platform-schedules.node-test.mjs"
   },
   "dependencies": {
     "zod": "3.25.76"
