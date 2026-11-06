@@ -13,6 +13,17 @@ function roundTrip(schema, value) {
 const form = (name) => examples.forms.find((example) => example.name === name).response;
 const run = (name) => examples.runs.find((example) => example.name === name).response;
 
+test("application descriptions round trip in either locale and remain an explicit nullable field", () => {
+  for (const exchange of [examples.applications, examples.applicationsEnglish]) {
+    const parsed = roundTrip(contract.platformScheduleApplicationsSchema, exchange.response);
+    assert.deepEqual(parsed.applications.map((value) => value.description), exchange.response.applications.map((value) => value.description));
+  }
+  const application = examples.applications.response.applications[0];
+  contract.platformScheduleApplicationSchema.parse({ ...application, description: null });
+  assert.equal(contract.platformScheduleApplicationSchema.safeParse({ ...application, description: undefined }).success, false);
+  assert.equal(contract.platformScheduleApplicationSchema.safeParse({ ...application, description: 12 }).success, false);
+});
+
 test("shared form and create exchanges cover all four applications", () => {
   roundTrip(contract.platformScheduleApplicationsSchema, examples.applications.response);
   for (const example of examples.forms) {
