@@ -49,6 +49,7 @@ function fakeService() {
       snapshot: async (id: string, caller: AgentHostOwner) => (
         own(caller), { session: { ...view, id }, messages: [], latestRun: null }
       ),
+      rename: async (_id: string, title: string, caller: AgentHostOwner) => { own(caller); view.title = title; },
       create: async (id: string, caller: AgentHostOwner) => {
         own(caller);
         const replayed = created.has(id);
@@ -108,4 +109,15 @@ it("creates a session with the verified owner and replays the same id", async ()
   expect(await (await create()).json()).toEqual({ session: view, replayed: false });
   expect(await (await create()).json()).toEqual({ session: view, replayed: true });
   expect(fake.seen()).toEqual([owner, owner]);
+});
+
+it("renames only the caller's conversation and rejects blank or oversized titles", async () => {
+  const rename = (title: string, user = owner.userId) => fetch(url + `/sessions/${sessionId}`, {
+    method: "PATCH", headers: { ...auth, "fixture-auth": user }, body: JSON.stringify({ title }),
+  });
+  expect((await rename("Private title", "bob")).status).toBe(404);
+  expect((await rename("   ")).status).toBe(400);
+  expect((await rename("a".repeat(201))).status).toBe(400);
+  expect((await rename("  Renamed conversation  ")).status).toBe(204);
+  expect((await (await fetch(url + `/sessions/${sessionId}`, { headers: auth })).json()).session.title).toBe("Renamed conversation");
 });

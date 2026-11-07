@@ -88,6 +88,10 @@ export function useAgentNav(options: AgentNavOptions) {
     sessions.value = sessions.value.filter((session) => session.id !== id);
     if (id === options.sessionId()) startNew();
   }
+  async function renameSession(id: string, title: string) {
+    await options.client().renameSession(id, title);
+    sessions.value = sessions.value.map(session => session.id === id ? { ...session, title } : session);
+  }
 
   /** A conversation that sending just created, placed at the top of the list. */
   function promoteSession(session: AgentHostSession, title: string, run: Pick<AgentHostRun, "id" | "status" | "stopReason">) {
@@ -124,6 +128,7 @@ export function useAgentNav(options: AgentNavOptions) {
     startNew,
     selectSession,
     removeSession,
+    renameSession,
     promoteSession,
     markRun,
     runStatus,

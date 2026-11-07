@@ -590,7 +590,7 @@ export default {
     "more": "Show more",
     "loadFailed": "Couldn't load",
     "retry": "Retry",
-    "deleteSession": "Delete conversation",
+    "deleteSession": "Delete",
     "deleteConfirm": "Delete?",
     "unavailable": "Unavailable",
     "scheduledSession": "Started by a scheduled task",

@@ -76,6 +76,12 @@ public class OntologyAgentController {
   public void delete(@PathVariable String id, HttpServletRequest req) throws Exception {
     host.delete(AgentJson.id(id), access.reader(req, id, null));
   }
+  @org.springframework.web.bind.annotation.PatchMapping("/sessions/{id}")
+  @ResponseStatus(HttpStatus.NO_CONTENT)
+  public void rename(@PathVariable String id, @RequestBody JSONObject body, HttpServletRequest req) {
+    AgentJson.fields(body, "title");
+    host.rename(AgentJson.id(id), body.getString("title"), access.reader(req, id, null));
+  }
 
   @PostMapping("/sessions/{id}/runs")
   @ResponseStatus(HttpStatus.ACCEPTED)

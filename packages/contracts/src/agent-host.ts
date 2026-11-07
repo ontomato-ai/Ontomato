@@ -99,6 +99,7 @@ export const agentHostSessionPageSchema = z
 export const agentHostCreateSessionSchema = z
   .object({ agentId: runtimeIdSchema })
   .strict();
+export const agentHostRenameSessionSchema = z.object({ title: z.string().trim().min(1).max(200) }).strict();
 export const agentHostCreateSessionResponseSchema = z
   .object({ session: agentHostSessionSchema, replayed: z.boolean() })
   .strict();

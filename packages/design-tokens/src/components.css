@@ -1,4 +1,12 @@
 /* Shared visual treatment for both editions and the embedded Manager. Layout stays with the owning component. */
+/* Product controls use their existing border and background states rather than an additional outline. */
+*,
+*::before,
+*::after {
+  outline: none !important;
+  outline-offset: 0 !important;
+}
+
 .el-overlay {
   background-color: var(--el-overlay-color-lighter);
 }
@@ -63,6 +71,53 @@
 .el-message-box__btns .el-button {
   margin: 0 !important;
   border-radius: var(--radius-sm) !important;
+  min-height: var(--control-height);
+  height: auto;
+  padding: 5px var(--spacing-md);
+  transition: background-color var(--transition-fast), border-color var(--transition-fast), color var(--transition-fast);
+}
+
+/* Native dialogs share the same action states as the component-library dialogs. */
+.dialog-action {
+  box-sizing: border-box;
+  min-height: var(--control-height);
+  padding: 5px var(--spacing-md);
+  border: 1px solid var(--el-border-color);
+  border-radius: var(--radius-sm);
+  background: var(--el-bg-color);
+  color: var(--el-text-color-regular);
+  font-family: var(--font-sans);
+  font-size: var(--text-sm);
+  font-weight: var(--font-medium);
+  line-height: var(--leading-sm);
+  cursor: pointer;
+  transition: background-color var(--transition-fast), border-color var(--transition-fast), color var(--transition-fast);
+}
+.dialog-action:not(:disabled):hover {
+  background: var(--el-fill-color-light);
+  border-color: var(--el-border-color-dark);
+  color: var(--el-text-color-primary);
+}
+.dialog-action:not(:disabled):active { background: var(--el-fill-color); }
+.dialog-action.is-primary { background: var(--el-color-primary); border-color: var(--el-color-primary); color: var(--on-primary); }
+.dialog-action.is-primary:not(:disabled):hover { background: var(--brand-primary-hover); border-color: var(--brand-primary-hover); color: var(--on-primary); }
+.dialog-action.is-primary:not(:disabled):active { background: var(--el-color-primary-dark-2); border-color: var(--el-color-primary-dark-2); }
+.dialog-action:disabled { background: var(--el-fill-color-light); border-color: var(--el-border-color-light); color: var(--el-disabled-text-color); cursor: not-allowed; }
+.dialog-close { display: grid; place-items: center; width: var(--control-height-sm); height: var(--control-height-sm); padding: 0; border: 0; border-radius: var(--radius-sm); color: var(--el-text-color-secondary); background: transparent; cursor: pointer; transition: background-color var(--transition-fast), color var(--transition-fast); }
+.dialog-close:hover { color: var(--el-text-color-primary); background: var(--el-fill-color-light); }
+.dialog-close:active { background: var(--el-fill-color); }
+
+:is(.el-dialog, .el-message-box, .el-drawer) .el-button:not(.el-button--primary, .el-button--danger, .el-button--success, .el-button--warning, .el-button--info, .is-text, .is-link) {
+  --el-button-hover-text-color: var(--el-text-color-primary);
+  --el-button-hover-bg-color: var(--el-fill-color-light);
+  --el-button-hover-border-color: var(--el-border-color-dark);
+  --el-button-active-text-color: var(--el-text-color-primary);
+  --el-button-active-bg-color: var(--el-fill-color);
+  --el-button-active-border-color: var(--el-border-color-dark);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dialog-action, .dialog-close { transition: none; }
 }
 
 .el-message-box__btns {

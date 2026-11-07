@@ -466,6 +466,10 @@ export const assistantService = {
       );
     });
   },
+  async rename(sessionId: string, title: string, owner: AssistantOwner) {
+    await assistantStore.session(sessionId, owner);
+    await db().query(`UPDATE ${table("assistant_sessions")} SET title=$4 WHERE id=$1 AND domain_id=$2 AND owner_id=$3`, [sessionId, owner.domainId, owner.userId, title]);
+  },
   async artifact(
     sessionId: string,
     id: string,

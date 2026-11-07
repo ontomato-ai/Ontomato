@@ -111,6 +111,8 @@ export interface ShellLabels {
   loadFailed: string;
   retry: string;
   deleteSession: string;
+  renameSession?: string;
+  sessionActions?: string;
   deleteConfirm: string;
   unavailable: string;
   /** Marks a session that one of the user's scheduled tasks started. */

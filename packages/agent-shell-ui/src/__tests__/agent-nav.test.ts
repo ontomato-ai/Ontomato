@@ -31,6 +31,20 @@ function nav(agents: { id: string; enabled: boolean }[], initialAgentId: string 
 }
 
 describe("first agent read", () => {
+  it("updates a title only after the host saves it and retains the selected conversation", async () => {
+    const client = port([]);
+    client.renameSession = vi.fn().mockResolvedValue(undefined);
+    const selected = ref<string | null>(served);
+    const state = useAgentNav({ client: () => client, agentId: () => remembered, setAgentId: () => {}, sessionId: () => selected.value, setSessionId: id => { selected.value = id; } });
+    state.sessions.value = [{ id: served, agentId: remembered, title: "Before", latestRun: null, createdAt: "", updatedAt: "" }];
+    await state.renameSession(served, "After");
+    expect(client.renameSession).toHaveBeenCalledWith(served, "After");
+    expect(state.sessions.value[0].title).toBe("After");
+    expect(selected.value).toBe(served);
+    vi.mocked(client.renameSession).mockRejectedValueOnce(new Error("offline"));
+    await expect(state.renameSession(served, "Unsaved")).rejects.toThrow("offline");
+    expect(state.sessions.value[0].title).toBe("After");
+  });
   /**
    * A bookmark names a page and a conversation. The remembered agent may be gone, and the first read then selects
    * another one; clearing the conversation at that moment would drop what the address asked for.

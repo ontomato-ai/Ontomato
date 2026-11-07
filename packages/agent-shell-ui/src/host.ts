@@ -34,6 +34,7 @@ export interface AgentHostClient {
   createSession(agentId: string): Promise<AgentHostSession>;
   readHistory(sessionId: string, query?: SessionHistoryQuery): Promise<AgentHostSessionHistory>;
   deleteSession(sessionId: string): Promise<void>;
+  renameSession(sessionId: string, title: string): Promise<void>;
   /** Every message, including the answer to a clarifying question, starts a run in the same session. */
   startRun(sessionId: string, message: string): Promise<AgentHostRunSnapshot>;
   readRun(sessionId: string, runId: string): Promise<AgentHostRunSnapshot>;
@@ -136,6 +137,9 @@ export function createAgentHostClient(options: AgentHostClientOptions): AgentHos
     },
     async deleteSession(sessionId) {
       await call(session(sessionId), { method: "DELETE" });
+    },
+    async renameSession(sessionId, title) {
+      await call(session(sessionId), send("PATCH", { title }));
     },
     async startRun(sessionId, message) {
       return (

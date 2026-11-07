@@ -158,6 +158,10 @@ export const diagnosisService: AgentHostService = {
     catch (e) { if (!(e instanceof HttpError && e.status === 404)) throw e; }
     await db().query(`DELETE FROM ${table("ops_sessions")} WHERE id=$1 AND domain_id=$2 AND owner_id=$3`, [id, owner.domainId, owner.userId]);
   },
+  async rename(id, title, owner) {
+    await diagnosisSession(id, owner);
+    await db().query(`UPDATE ${table("ops_sessions")} SET title=$4 WHERE id=$1 AND domain_id=$2 AND owner_id=$3`, [id, owner.domainId, owner.userId, title]);
+  },
   async artifact(session, id, owner) {
     await diagnosisSession(session, owner);
     const artifact = runtimeArtifactSchema.parse(await new RuntimeClient(owner.domainId).request(`/v1/artifacts/${id}`));

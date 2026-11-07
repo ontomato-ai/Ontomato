@@ -22,9 +22,9 @@ describe("where the root address lands", () => {
     );
   });
 
-  it("next comes the deployment's initial route normalized to a path, and finally the ontology graph", () => {
+  it("next comes the deployment's initial route normalized to a path, and finally the agent platform", () => {
     expect(home("/?view=other", "#objects/A")).toBe("/objects/A");
     expect(home("/", " /data ")).toBe("/data");
-    expect(home("/")).toBe("/playground");
+    expect(home("/")).toBe("/agents/chat");
   });
 });

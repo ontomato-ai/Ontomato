@@ -1,7 +1,7 @@
 import { sessionHistoryQuerySchema } from "@ontomato/contracts/session-history";
 import { Router } from "express";
 import { z } from "zod";
-import { agentHostCreateSessionSchema, agentHostStartRunSchema } from "@ontomato/contracts/agent-host";
+import { agentHostCreateSessionSchema, agentHostStartRunSchema, agentHostRenameSessionSchema } from "@ontomato/contracts/agent-host";
 import { runtimeRelativePathSchema } from "@ontomato/contracts/agent-runtime-values";
 import { RuntimeClient } from "../../infrastructure/agent-runtime/client";
 import { publicSnapshot, publicFrame } from "../../platform/agent-runtime/projection";
@@ -66,6 +66,10 @@ router.delete(
     res.sendStatus(204);
   }),
 );
+router.patch("/sessions/:sessionId", wrap(async (req, res) => {
+  await service.rename(id(req, "sessionId"), agentHostRenameSessionSchema.parse(req.body).title, context(req).owner);
+  res.sendStatus(204);
+}));
 router.post(
   "/sessions/:sessionId/runs",
   wrap(async (req, res) => {

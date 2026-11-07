@@ -12,6 +12,8 @@ return computed<ShellLabels>(() => ({
   loadFailed: t("assistant.loadFailed"),
   retry: t("assistant.retry"),
   deleteSession: t("assistant.deleteSession"),
+  renameSession: t("common.rename"),
+  sessionActions: t("assistant.more"),
   deleteConfirm: t("assistant.deleteConfirm"),
   unavailable: t("assistant.unavailable"),
   scheduledSession: t("assistant.scheduledSession"),

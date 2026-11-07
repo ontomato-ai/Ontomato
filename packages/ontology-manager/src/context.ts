@@ -221,6 +221,8 @@ export function useGovernanceText() {
   const translate = i18n.t as GovernanceTranslate;
   const t = (key: string, params: TextParams = {}) => translate(`governance.text.${key}`, params);
   // Reading the locale makes the labels follow a language switch.
-  const labels = computed(() => (void i18n.locale.value, shellLabels(translate)));
+  const labels = computed(() => (void i18n.locale.value, {
+    ...shellLabels(translate), sessionActions: i18n.t("governance.shell.more"),
+  }));
   return { t, labels };
 }

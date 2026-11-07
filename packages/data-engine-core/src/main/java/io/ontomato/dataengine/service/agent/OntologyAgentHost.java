@@ -67,6 +67,12 @@ public class OntologyAgentHost {
           return null;
         });
   }
+  public void rename(String session, String title, Owner owner) {
+    store.session(session, owner);
+    if (title == null || title.isBlank() || title.strip().length() > 200)
+      throw new IllegalArgumentException("Conversation title must contain 1 to 200 characters");
+    store.update("UPDATE ontology_agent_sessions SET title=? WHERE id=?", title.strip(), uuid(session));
+  }
 
   public JSONObject agents(boolean governanceAllowed) {
     var response = JSONObject.of(

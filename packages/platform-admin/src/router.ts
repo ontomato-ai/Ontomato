@@ -35,6 +35,7 @@ export function installPageGuard(router: Router, navigation: PlatformNavigation,
       const pages = availablePages(navigation, access);
       if (to.query.section !== "admin") {
         const homePage = pageOf(navigation, router.resolve(home));
+        if (home === platformRoutes.chat.path) return home;
         if (homePage && pages.includes(homePage)) return home;
         return pages[0]?.path ?? true;
       }

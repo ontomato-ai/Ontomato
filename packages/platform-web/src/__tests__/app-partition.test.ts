@@ -13,8 +13,8 @@ const named = (section: string) => declarations.filter((app) => app.rail === sec
 
 describe("the platform's applications", () => {
   it("sits in three sections: the ontology applications, the business ones, and the settings above the account", () => {
-    expect(named("top")).toEqual(["ontology", "browser"]);
-    expect(named("apps")).toEqual(["agents", "operations", "governance", "dashboards", "schedules"]);
+    expect(named("top")).toEqual(["agents", "dashboards", "schedules", "browser"]);
+    expect(named("apps")).toEqual(["ontology", "governance", "operations"]);
     expect(named("bottom")).toEqual(["settings"]);
   });
 

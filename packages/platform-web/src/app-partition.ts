@@ -11,7 +11,7 @@ import type { AppPartition } from "./partition";
  * inherits the place it is shown in. Nothing here restates a page's permission, so the router guard stays the only
  * authority on what may be opened.
  *
- * The rail has three sections and no group names: the ontology applications, the business applications, and the
+ * The rail has three sections and no group names: everyday work, administration and governance, and the
  * platform's own settings above the account. An application declares the section it sits in (`rail`), and this table is
  * the only place that decides it.
  */
@@ -31,7 +31,7 @@ const platformApps: readonly AppPartition[] = [
     id: "ontology",
     labelKey: "platform.ontologyManager",
     icon: "ontology",
-    rail: "top",
+    rail: "apps",
     prefix: "/ontology",
     // The manager keeps its own three groups: they are its menu, drawn in its own band inside the area.
     frame: "menu",
@@ -82,7 +82,7 @@ const platformApps: readonly AppPartition[] = [
     id: "agents",
     labelKey: "platform.agentPlatform",
     icon: "agents",
-    rail: "apps",
+    rail: "top",
     prefix: "/agents",
     // The conversation is where the platform is entered; the agent settings follow it in the column.
     home: platformRoutes.chat.path,
@@ -129,7 +129,7 @@ const platformApps: readonly AppPartition[] = [
     id: "dashboards",
     labelKey: "assistant.featureDashboards",
     icon: "dashboards",
-    rail: "apps",
+    rail: "top",
     prefix: platformRoutes.dashboards.path,
     sections: [{ key: "dashboards:all", titleKey: "assistant.featureDashboards", paths: [platformRoutes.dashboards.path] }],
   },
@@ -137,7 +137,7 @@ const platformApps: readonly AppPartition[] = [
     id: "schedules",
     labelKey: "platform.schedules",
     icon: "schedule",
-    rail: "apps",
+    rail: "top",
     prefix: platformRoutes.schedules.path,
     sections: [{ key: "schedules:all", titleKey: "platform.schedules", paths: [platformRoutes.schedules.path] }],
   },
@@ -170,7 +170,9 @@ const platformApps: readonly AppPartition[] = [
 export function appPartition(options: PartitionOptions = {}): readonly AppPartition[] {
   const settings = platformApps.filter((app) => app.id === "settings");
   const platform = platformApps.filter((app) => app.id !== "settings");
-  return [...platform, ...(options.own ?? []), ...settings, ...(options.external ?? [])];
+  const order = ["agents", "dashboards", "schedules", "browser", "ontology", "governance", "operations"];
+  const ordered = [...platform].sort((a, b) => order.indexOf(a.id) - order.indexOf(b.id));
+  return [...ordered, ...(options.own ?? []), ...settings, ...(options.external ?? [])];
 }
 
 /**
