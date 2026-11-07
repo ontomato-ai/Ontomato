@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref, watch } from "vue";
-import { ArrowLeft, ChevronDown, ChevronUp, Plus, Save, Table2, Trash2 } from "lucide-vue-next";
+import { ArrowLeft, ChevronDown, ChevronUp, Plus, Save, Settings2, Table2, Trash2 } from "lucide-vue-next";
 import { ElAlert, ElButton, ElEmpty, ElForm, ElFormItem, ElInput, vLoading } from "element-plus";
 import { useManagerFeedback } from "../feedback";
 import type { OntologyObject, OntologyRelation } from "../api";
@@ -17,6 +17,7 @@ const emit = defineEmits<{
   back: [];
   updated: [];
   browse: [className: string];
+  configureView: [];
   relation: [relationship: string];
 }>();
 
@@ -155,6 +156,7 @@ onMounted(() => void loadDetail());
         <strong>{{ object?.showName || className }}</strong>
       </span>
       <span class="title-spacer"></span>
+      <el-button v-if="object" :icon="Settings2" @click="emit('configureView')">{{ ot('ovConfigureObject') }}</el-button>
       <el-button
         v-if="object"
         type="danger"

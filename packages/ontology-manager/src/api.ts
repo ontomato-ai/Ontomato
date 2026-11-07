@@ -1,4 +1,5 @@
 import type { DataAdaptersData } from "@ontomato/contracts/data-adapters";
+import type { ObjectViewDocument, ObjectViewState } from "@ontomato/contracts/object-views";
 import type { MessageKey, TextParams } from "./i18n";
 
 export type ManagerCredential =
@@ -216,7 +217,7 @@ export function createManagerClient(
   const stale = () =>
     new DOMException(context.text("staleResponseDropped"), "AbortError");
 
-  async function request(path: string, init: RequestInit = {}) {
+  async function request(path: string, init: RequestInit = {}, service = "/data-query") {
     if (disposed) throw stale();
     const credential = context.credential;
     if (!credential) throw new Error(context.text("credentialMissing"));
@@ -225,11 +226,11 @@ export function createManagerClient(
       if (disposed || hostSource(context) !== source) throw stale();
     };
 
-    const response = await fetch(`${context.apiBase}/data-query${path}`, {
+    const response = await fetch(`${context.apiBase}${service}${path}`, {
       ...init,
       headers: {
         ...(init.headers as Record<string,string> | undefined),
-        ...(init.method === "POST" ? { "Content-Type": "application/json" } : {}),
+        ...(init.method === "POST" && !(init.body instanceof FormData) ? { "Content-Type": "application/json" } : {}),
         "Accept-Language": context.locale,
         "X-Requested-With": "XMLHttpRequest",
         ...credentialHeaders(credential),
@@ -240,16 +241,16 @@ export function createManagerClient(
     if (!response.ok) {
       const body = await response.json().catch(() => null);
       assertCurrent();
-      throw Object.assign(new Error(body?.error?.message || body?.message ||
+      throw Object.assign(new Error(response.status === 409 && path.startsWith("/objectView/") ? context.text("ovConflict") : body?.error?.message || body?.message ||
         context.text("requestFailedStatus", { status: response.status })),
         { code: body?.error?.code ?? body?.code });
     }
     return response;
   }
 
-  async function send(path: string, init: RequestInit) {
+  async function send(path: string, init: RequestInit, service = "/data-query") {
     const source = hostSource(context);
-    const json = await (await request(path, init)).json();
+    const json = await (await request(path, init, service)).json();
     if (disposed || hostSource(context) !== source) throw stale();
     if (json?.success === false) {
       throw Object.assign(new Error(json.message || json.error || context.text("requestFailed")), { code: json.code });
@@ -480,7 +481,87 @@ export function createManagerClient(
   /** One instance's full record; the data engine returns classDef plus a flat attribute map. */
   async function queryInstanceInfo(id: string, className: string) {
     const response = await post("/data/queryInfoByNode", { id, class: className });
-    return (response.data ?? {}) as Record<string, unknown>;
+    const info = (response.data ?? {}) as Record<string, any>;
+    const key = info.classDef?.attrs?.find((attr: Record<string, unknown>) => attr.primaryKey === true || attr.primary_key === true)?.name;
+    if (key && info.data && typeof info.data === "object" && id.startsWith(`${className}:`)) {
+      info.data = { ...info.data, [key]: id.slice(className.length + 1) };
+    }
+    return info as Record<string, unknown>;
+  }
+
+  async function objectViewRequest(operation: "read" | "edit" | "save" | "publish", className: string, form: "full" | "panel", values: Record<string, unknown> = {}): Promise<ObjectViewState> {
+    return (await post(`/objectView/${operation}`, { className, form, ...values })).data;
+  }
+
+  function saveObjectView(document: ObjectViewDocument, form: "full" | "panel", expectedRevision: number, description: string) {
+    return objectViewRequest("save", document.className, form, { document, expectedRevision, description });
+  }
+
+  async function executeViewMetric(id: string, param: Record<string, unknown>) {
+    const definition = await requestSmartAsset("metrics", "queryById", { id });
+    const parameters = definition.data?.function?.queryPackage?.manifest?.parameterDefs
+      ?? definition.data?.function?.parameters ?? [];
+    const defaults = Object.fromEntries(parameters
+      .filter((parameter: { name: string; value?: unknown }) => Object.hasOwn(parameter, "value") && parameter.value !== null)
+      .map((parameter: { name: string; value: unknown }) => [parameter.name, parameter.value]));
+    const response = await post("/metricView/execute", { id, param: { ...defaults, ...param } });
+    if (response.truncated === true || response.partial === true || response.complete === false) throw new Error(response.truncationHint || context.text("ovIncompleteResults"));
+    return response.data;
+  }
+
+  async function loadViewSkills() {
+    const response = await send("/skills", { method: "GET" }, "");
+    return (response.skills as Array<{ id: string; title?: string; enabled?: boolean; type: string; category: string }>).filter(skill => skill.enabled !== false && skill.type === "executable" && skill.category === "visualization");
+  }
+
+  async function renderViewSkill(id: string, input: Record<string, unknown>) {
+    const response = await send(`/skills/${encodeURIComponent(id)}/render`, { method: "POST", body: JSON.stringify({ input }) }, "");
+    return String(response.result.html);
+  }
+
+  function viewSkillHtml(html: string) {
+    return html.replace(/(["'])(\/api\/(?:skills\/resources|echart)\/[^"'<>\s]+)\1/g, (_match, quote: string, resource: string) => {
+      const url = new URL(resource, "http://skill.local");
+      if (url.pathname.endsWith("/echarts/scripts/echarts.min.js")) return `${quote}${context.apiBase}/echart/echarts.min.js${quote}`;
+      url.searchParams.delete("tk"); url.searchParams.delete("apiKey");
+      if (context.credential?.type === "token") url.searchParams.set("tk", context.credential.token);
+      if (context.credential?.type === "apiKey") url.searchParams.set("apiKey", context.credential.apiKey);
+      return `${quote}${context.apiBase}${url.pathname.slice(4)}${url.search}${quote}`;
+    });
+  }
+
+  async function executeViewAction(id: string, param: Record<string, unknown>) {
+    const body = new FormData();
+    body.set("id", id);
+    body.set("param", JSON.stringify(param));
+    return (await send("/action/execute", { method: "POST", body })).data;
+  }
+
+  async function loadViewLinks(className: string, primaryKey: string, relationship: string, direction: "incoming" | "outgoing", offset: number) {
+    const ontology = await loadOntology();
+    const relation = ontology.relations.find(item => item.relationship === relationship);
+    if (!relation || (direction === "outgoing" ? relation.fromclass : relation.toclass) !== className) throw new Error(context.text("ovInvalidRelation"));
+    const targetClass = direction === "outgoing" ? relation.toclass : relation.fromclass;
+    const source = ontology.objects.find(item => item.className === className);
+    const target = ontology.objects.find(item => item.className === targetClass);
+    const sourcePk = source?.attrs.find(attr => attr.primaryKey)?.name;
+    const targetPk = target?.attrs.find(attr => attr.primaryKey)?.name;
+    if (!sourcePk || !targetPk || !target) throw new Error(context.text("ovPrimaryKeyRequired"));
+    const response = await post("/dsl/executeV1", { problem: "", answer: { steps: [{
+      graph: { pattern_logic: "and", patterns: [{
+        objects: [
+          { idx: 0, variable: "source", class: className, conditions: { properties: { field: sourcePk, operator: "=", value: primaryKey } } },
+          { idx: 1, variable: "target", class: targetClass },
+        ],
+        relationship: [{ from: direction === "outgoing" ? 0 : 1, to: direction === "outgoing" ? 1 : 0, type: [relationship] }],
+      }] },
+      output: { to_user: true, fields: target.attrs.filter(attr => attr.enable !== false).map(attr => ({ variable: "target", field: attr.name, as: attr.name })),
+        sort: { fields: [{ variable: "target", field: targetPk, order: "asc" }] }, limit: { count: 51, offset } },
+    }] } });
+    if (response.error) throw new Error(String(response.error));
+    const result = response.data?.[0]?.answer;
+    if (!Array.isArray(result)) throw new Error(context.text("ovUnexpectedResponse"));
+    return { rows: result.slice(0, 50) as Record<string, unknown>[], hasMore: result.length > 50, targetClass, targetPk };
   }
 
   async function loadSmartAssets(kind: SmartAssetKind) {
@@ -537,6 +618,14 @@ export function createManagerClient(
   }
 
   return {
+    objectViewRequest,
+    saveObjectView,
+    executeViewMetric,
+    executeViewAction,
+    loadViewLinks,
+    loadViewSkills,
+    renderViewSkill,
+    viewSkillHtml,
     request,
     loadInstanceGraphStatistics,
     dispose: () => {

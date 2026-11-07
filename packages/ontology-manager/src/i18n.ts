@@ -1,10 +1,12 @@
 import sharedEn from "./locales/en";
+import { objectViewEn } from "./object-views/messages";
 import { englishGovernance, type GovernanceMessages } from "./knowledge-governance/messages";
 
 export type TextParams = Record<string, string | number>;
 
 /** The Manager's own English messages; other languages are supplied by the host. */
 const ontologyEn = {
+  ...objectViewEn,
   ontologyGraphDesc:
     "Search and inspect objects, properties, and relations in the current Ontology",
   ontologyStats: "Ontology Summary",

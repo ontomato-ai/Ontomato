@@ -37,7 +37,7 @@ function errorResult(message, meta = {}) {
   };
 }
 
-function generateHtml({ title, points, valueField }) {
+function generateHtml({ title, points, valueField, showTitle }) {
   const safeTitle = escapeHtml(title);
   const serializedPoints = JSON.stringify(points).replace(/</g, "\\u003c");
   const serializedValueField = JSON.stringify(valueField || null);
@@ -53,7 +53,7 @@ function generateHtml({ title, points, valueField }) {
     body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: #fff; color: #1f2937; }
     .map-shell { height: 100%; display: flex; flex-direction: column; }
     .map-title { padding: 12px 16px; font-size: 16px; font-weight: 600; border-bottom: 1px solid #e5e7eb; }
-    #map { flex: 1; min-height: 320px; }
+    #map { flex: 1; min-height: 0; }
     .leaflet-popup-content { margin: 12px 14px; min-width: 180px; }
     .popup-title { font-weight: 600; margin-bottom: 6px; }
     .popup-row { display: flex; gap: 12px; margin-top: 4px; font-size: 12px; }
@@ -67,7 +67,7 @@ function generateHtml({ title, points, valueField }) {
   </style>
 </head>
 <body>
-  <div class="map-shell"><div class="map-title">${safeTitle}</div><div id="map"></div></div>
+  <div class="map-shell">${showTitle === false ? '' : `<div class="map-title">${safeTitle}</div>`}<div id="map"></div></div>
   <script>${readBundledAsset(new URL("leaflet.js", import.meta.url), "utf8").replaceAll("</script", "<\\/script")}</script>
   <script>
     const points = ${serializedPoints};
@@ -159,7 +159,7 @@ export async function execute(input) {
   if (!points.length) return errorResult("No rows contain valid latitude and longitude", { latitudeField, longitudeField });
 
   return {
-    html: generateHtml({ title, points, valueField }),
+    html: generateHtml({ title, points, valueField, showTitle: input.showTitle }),
     meta: { skillId: "leaflet", chartType, title, dataRows: points.length, originalRows: data.length, skippedRows, latitudeField, longitudeField, labelField, valueField },
   };
 }

@@ -1,7 +1,7 @@
 import { readFileSync as readBundledAsset } from "node:fs";
 function resolveThemeColors(value) {
   let root = document.documentElement;
-  try { if (parent !== window && parent.document) root = parent.document.documentElement; } catch (error) {}
+  try { if (parent !== window && window.frameElement) root = window.frameElement; } catch (error) {}
   const style = root.ownerDocument.defaultView.getComputedStyle(root);
   function resolve(item) {
     if (!item || typeof item !== "object") return item;
@@ -14,7 +14,7 @@ function resolveThemeColors(value) {
 
 function observeThemeChanges(update) {
   let root = document.documentElement;
-  try { if (parent !== window && parent.document) root = parent.document.documentElement; } catch (error) {}
+  try { if (parent !== window && window.frameElement) root = window.frameElement; } catch (error) {}
   const observer = new MutationObserver(update);
   observer.observe(root, { attributes: true, attributeFilter: ["class", "style", "data-theme"] });
   const scheme = window.matchMedia("(prefers-color-scheme: dark)");
@@ -82,15 +82,16 @@ function normalizeInput(input) {
   }
   return { nodeMap, links, warnings };
 }
-function generateHtml({ title, nodes, links, layout, directed, showRelationLabels, width, height, dark }) {
+function generateHtml({ title, nodes, links, layout, directed, showRelationLabels, showTitle, width, height, dark }) {
 
   const safeTitle = esc(title);
+  const titleHtml = showTitle === false ? "" : `<div class="title">${safeTitle}</div>`;
   const serializedNodes = jsonForScript(nodes);
   const serializedLinks = jsonForScript(links);
   const serializedConfig = jsonForScript({ layout, directed, showRelationLabels, dark });
   return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>
   *{box-sizing:border-box}html,body{margin:0;width:100%;height:100%;font-family:Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:var(--graph-bg, Canvas);color:var(--graph-text, CanvasText)}.shell{height:100%;display:flex;flex-direction:column}.title{font-size:15px;font-weight:650;padding:12px 16px;border-bottom:1px solid var(--graph-border, CanvasText)}#chart{flex:1;width:100%;outline:none}.hint{font-size:11px;color:var(--graph-muted, CanvasText);padding:5px 12px}
-  </style><script>${readBundledAsset(new URL("echarts.min.js", import.meta.url), "utf8").replaceAll("</script", "<\\/script")}</script></head><body><div class="shell"><div class="title">${safeTitle}</div><div id="chart" role="img" aria-label="Interactive network graph"></div><div class="hint">Drag nodes to explore · Scroll to zoom · Click a node to highlight its neighbors</div></div><script>
+  </style><script>${readBundledAsset(new URL("echarts.min.js", import.meta.url), "utf8").replaceAll("</script", "<\\/script")}</script></head><body><div class="shell">${titleHtml}<div id="chart" role="img" aria-label="Interactive network graph"></div><div class="hint">Drag nodes to explore · Scroll to zoom · Click a node to highlight its neighbors</div></div><script>
   const nodes=${serializedNodes}; const links=${serializedLinks}; const cfg=${serializedConfig};
   const root=document.getElementById('chart');
   if(!window.echarts){root.textContent='ECharts resource failed to load.';throw new Error('ECharts resource failed to load');}
@@ -146,7 +147,7 @@ export async function execute(input) {
   const nodes = selected.map(n => ({ id:n.id, name:n.name, type:n.type||"Other", status:n.status, isAnchor:n.isAnchor, degree:n.degree, x:n.x, y:n.y, symbolSize:n.symbolSize, properties:n.properties, statusColor: /risk|danger|critical|recalled|defective|error/i.test(n.status) ? "danger" : /warning|affected|pending/i.test(n.status) ? "warning" : undefined }));
   const layoutInput = ["force","circular","none"].includes(input.layout) ? input.layout : "force";
   const layout = layoutInput === "none" && nodes.every(n=>Number.isFinite(n.x)&&Number.isFinite(n.y)) ? "none" : (layoutInput === "none" ? "force" : layoutInput);
-  const html = generateHtml({ title, nodes, links:renderLinks, layout, directed:input.directed !== false, showRelationLabels:input.showRelationLabels === true, width:Math.max(360,Math.min(2400,Number(input.width)||800)), dark:input.theme === "dark" });
+  const html = generateHtml({ title, nodes, links:renderLinks, layout, directed:input.directed !== false, showRelationLabels:input.showRelationLabels === true, showTitle: input.showTitle, width:Math.max(360,Math.min(2400,Number(input.width)||800)), dark:input.theme === "dark" });
   return { html, meta: { skillId:"network-graph", chartType, title, dataRows:renderLinks.length, nodeCount:nodes.length, originalNodeCount:allNodes.length, linkCount:renderLinks.length, originalLinkCount:links.length, truncated, warnings, layout } };
 }
 

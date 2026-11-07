@@ -100,7 +100,8 @@ public final class MetricViewBindings {
   /** Execution gets a detached value map; the saved Function remains the definition. */
   public static Function executionFunction(Function definition, JSONObject values) {
     validateValues(definition, values);
-    Function execution = JSON.parseObject(JSON.toJSONString(definition), Function.class);
+    Function execution = JSON.parseObject(
+        JSON.toJSONString(definition, com.alibaba.fastjson2.JSONWriter.Feature.WriteMapNullValue), Function.class);
     if (execution.getQueryPackage() != null) {
       for (Object item : execution.getQueryPackage().getJSONObject("manifest").getJSONArray("parameterDefs")) {
         var parameter = (JSONObject) item;

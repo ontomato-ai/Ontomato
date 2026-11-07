@@ -73,6 +73,7 @@ function respond(url: string, body?: Record<string, unknown>): Response {
   if (path === "/admin/delBussinessKnowledge" && knowledgeDeleteFails.has(String(body?.knowledgeID)))
     return json({ success: false, message: "locked" });
   if (path === "/admin/getMetas") return json(metasFor(url));
+  if (path === "/objectView/read" || path === "/objectView/edit") return json({ success: true, data: { revision: 0, publishedRevision: null, versions: [] } });
   if (path === "/metricView/queryList") return json({ success: true, data: [
     { id: "metric-1", name: "Revenue metric", status: "PUBLISHED", origin: "USER" },
   ] });
@@ -329,6 +330,16 @@ function clickButton(text: string) {
 }
 
 describe("Manager pages in the service router", () => {
+  it("opens the routed object view fallback and its type-level editor", async () => {
+    const { root, views } = mountHost({ ...base, view: "/browser/views/Order?key=001" });
+    await settle();
+    expect(root().querySelector(".object-view-runtime")).not.toBeNull();
+    expect(requests.find(request => request.url.endsWith("/objectView/read"))?.body).toMatchObject({ className: "Order", form: "full" });
+    clickButton("Configure view");
+    await settle();
+    expect(views.at(-1)).toContain("/ontology/objects/Order/view");
+    expect(root().querySelector(".view-builder")).not.toBeNull();
+  });
   it("a 50,000-instance graph initially loads only the type summary", async () => {
     instanceNodeCount = 50000;
     vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue({
@@ -690,14 +701,14 @@ describe("Manager pages in the service router", () => {
     await settle();
     (root().querySelectorAll(".data-browser-toolbar .el-segmented__item")[1] as HTMLElement).click();
     await settle();
-    expect(root().querySelector(".data-browser-actions button")?.getAttribute("aria-label")).toBe("[de] Advanced Filter");
+    expect(root().querySelector(".data-browser-actions button[aria-label='[de] Advanced Filter']")).not.toBeNull();
     expect(root().querySelector(".el-pagination__total")?.textContent).toContain("Gesamt");
     expect(requests.every((request) => request.headers["Accept-Language"] === "de")).toBe(true);
 
     requests = [];
     Object.assign(host, english);
     await settle();
-    expect(root().querySelector(".data-browser-actions button")?.getAttribute("aria-label")).toBe("Advanced Filter");
+    expect(root().querySelector(".data-browser-actions button[aria-label='Advanced Filter']")).not.toBeNull();
     expect(root().textContent).not.toContain("[de] ");
     expect(root().querySelector(".el-pagination__total")?.textContent).toContain("Total");
     expect(requests).toEqual([]);
