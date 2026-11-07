@@ -5,6 +5,7 @@ import { shellContextKey } from "../context";
 import type { ArtifactRendererProps } from "../types";
 import { useDarkMode } from "../useDarkMode";
 import { useArtifactText } from "./useArtifactBlob";
+import { chartReadingLayout } from "./chart-layout";
 
 /** .chart.json: an ECharts option object as plain JSON, drawn with the host's chart theme. */
 const props = defineProps<ArtifactRendererProps>();
@@ -43,14 +44,17 @@ async function draw() {
   echarts.registerTheme(themeName, shell.chartTheme.value(isDark.value));
   chart = echarts.init(el.value, themeName);
   try {
-    chart.setOption(option.value.value, { notMerge: true });
+    chart.setOption(chartReadingLayout(option.value.value, el.value.clientHeight), { notMerge: true });
     drawError.value = false;
   } catch {
     drawError.value = true;
     dispose();
     return;
   }
-  observer = new ResizeObserver(() => chart?.resize());
+  observer = new ResizeObserver(() => {
+    chart?.resize();
+    if (chart && el.value && option.value.value) chart.setOption(chartReadingLayout(option.value.value, el.value.clientHeight), { notMerge: true });
+  });
   observer.observe(el.value);
 }
 

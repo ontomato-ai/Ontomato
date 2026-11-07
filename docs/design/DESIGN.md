@@ -305,6 +305,11 @@ Tools use 13px/20px and restrained inset details. All message actions, including
 `shell-message-action`. Composer has a 40px minimum control, pill geometry, owned elevation, focus and multiline growth.
 Never apply composer geometry to ordinary inputs. Preserve streaming, cancellation, feedback and artifact behaviour.
 
+Read-only continuation suggestions show at most three short business-labelled buttons after an answer. They retain
+source run and dataset references, scope and decisions. Dataset selections persist across pagination and continue with
+raw selected rows, never reformatted cell strings for JSON datasets. Only selected rows are in scope unless the user
+asks to expand it. Analysis and comparison never authorize a write; mutations still require a separate Action confirmation.
+
 Markdown renderer slots own answer spacing: 12px between paragraphs, lists, datasets and charts; 24px before a new
 heading and 8px from a heading to its content; no outer gap on the first or last block. List items use 4px separation.
 Report tables also clear the renderer's internal table margin: heading-to-table is 8px, ordinary blocks 12px,

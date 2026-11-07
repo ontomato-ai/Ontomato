@@ -126,5 +126,7 @@ export function shellLabels(t: GovernanceTranslate): ShellLabels {
     steps: (n: number) => t("governance.shell.steps", n),
     rows: (n: number) => t("governance.shell.rows", n),
     elapsed: (time: string) => t("governance.shell.elapsed", { time }),
+    selectRow: undefined,
+    selectedRows: undefined,
   };
 }

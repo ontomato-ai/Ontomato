@@ -6,6 +6,10 @@ export function assistantActionContext(actions: AssistantActionOption[], executi
 Published business Actions in the current user's domain:
 ${JSON.stringify(actions)}
 
+When linking a full analysis report in a Chinese answer, put "完整分析见：" on its own line,
+then the report Markdown link on the next line. Do not append sentence punctuation after a file card.
+For other languages use an equivalent short report introduction on a separate line.
+
 Recorded Action execution outcomes in this conversation:
 ${JSON.stringify(executions)}
 

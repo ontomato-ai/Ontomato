@@ -3,6 +3,28 @@ import { expect, it } from "vitest";
 import ShellMarkdown from "../components/ShellMarkdown.vue";
 import { shellContextKey, type ShellContext } from "../context";
 
+it("does not render an orphan sentence mark after a report card while preserving ordinary link punctuation", async () => {
+  const root = document.createElement("div"); document.body.append(root);
+  const app = createApp({ render: () => h(ShellMarkdown, {
+    content: "完整分析见[分析报告](outputs/report.md)。\n\n访问[网站](https://example.com)。",
+    final: true, runId: "run",
+  }) });
+  app.provide(shellContextKey, {
+    labels: ref({ artifactMissing: "Missing" }), slots: {}, artifactRevision: ref(0),
+    openArtifactKey: ref(null), resolveArtifact: async () => null, pageLink: () => null,
+  } as unknown as ShellContext);
+  app.mount(root);
+  try {
+    await nextTick(); await nextTick();
+    const paragraphs = root.querySelectorAll("p");
+    expect(paragraphs[0]!.textContent).not.toContain("。");
+    expect(paragraphs[0]!.textContent).toMatch(/^完整分析见：/);
+    expect(paragraphs[0]!.querySelector("br")).not.toBeNull();
+    expect(paragraphs[0]!.querySelector(".artifact-card")).not.toBeNull();
+    expect(paragraphs[1]!.textContent).toBe("访问网站。");
+  } finally { app.unmount(); root.remove(); }
+});
+
 it("renders consecutive datasets alongside prose without losing their block boundaries", async () => {
   const root = document.createElement("div");
   document.body.append(root);

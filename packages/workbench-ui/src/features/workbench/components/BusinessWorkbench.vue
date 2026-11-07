@@ -18,7 +18,11 @@ import DatasetActions from "./DatasetActions.vue";
 import WorkbenchAppearanceDialog from "./WorkbenchAppearanceDialog.vue";
 import { workbenchFeatures } from "../features";
 import ActionProposalRenderer from "./ActionProposalRenderer.vue";
-const artifactRenderers = [{ path: /(?:\.action\.json$|(?:^|\/)action-[^/]+\.json$)/i, component: ActionProposalRenderer }];
+import FollowUpRenderer from "./FollowUpRenderer.vue";
+const artifactRenderers = [
+  { path: /(?:\.action\.json$|(?:^|\/)action-[^/]+\.json$)/i, component: ActionProposalRenderer },
+  { path: /\.follow-ups\.json$/i, component: FollowUpRenderer },
+];
 
 /**
  * The agent platform: the assistant, its conversation and its settings. Both editions mount it; the edition adds

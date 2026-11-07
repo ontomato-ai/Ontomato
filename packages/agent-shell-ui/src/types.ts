@@ -105,6 +105,12 @@ export interface MessageActionContext {
 
 /** Fixed shell text supplied by the host's i18n. */
 export interface ShellLabels {
+  analysisContext?: string;
+  selectRow?: (row: number) => string;
+  selectedRows?: (count: number) => string;
+  analyzeSelection?: string;
+  compareSelection?: string;
+  clearSelection?: string;
   newConversation: string;
   agent: string;
   sessions: string;

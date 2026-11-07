@@ -2,8 +2,14 @@ import { computed } from "vue";
 import { useI18n } from "vue-i18n";
 import type { ShellLabels } from "@ontomato/agent-shell-ui";
 export function useShellLabels() {
-const { t } = useI18n();
+const { t, locale } = useI18n();
 return computed<ShellLabels>(() => ({
+   analysisContext: locale.value.startsWith("zh") ? "分析上下文" : "Analysis context",
+   selectRow: (row) => locale.value.startsWith("zh") ? `选择第 ${row} 行` : `Select row ${row}`,
+   selectedRows: (count) => locale.value.startsWith("zh") ? `已选 ${count} 条` : `${count} selected`,
+   analyzeSelection: locale.value.startsWith("zh") ? "分析所选记录" : "Analyze selection",
+   compareSelection: locale.value.startsWith("zh") ? "比较所选记录" : "Compare selection",
+   clearSelection: locale.value.startsWith("zh") ? "取消选择" : "Clear selection",
   newConversation: t("assistant.newConversation"),
   agent: t("assistant.agent"),
   sessions: t("assistant.sessions"),

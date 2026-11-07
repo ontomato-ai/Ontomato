@@ -1,4 +1,4 @@
-import type { InjectionKey, Ref, Slot } from "vue";
+import { inject, type InjectionKey, type Ref, type Slot } from "vue";
 import type { RuntimeArtifact } from "@ontomato/contracts/agent-runtime-artifacts";
 import type { AgentHostClient } from "./host";
 import type { ChartTheme } from "./chart-theme";
@@ -37,3 +37,8 @@ export const shellContextKey: InjectionKey<ShellContext> = Symbol("agent-shell")
 export const messageContextKey: InjectionKey<Ref<MessageContext>> = Symbol("agent-shell-message");
 /** Each artifact provides its own header outlet for renderer-specific controls. */
 export const artifactHeaderKey: InjectionKey<Ref<HTMLElement | null>> = Symbol("artifact-header");
+
+/** Artifact overrides can use the conversation capability even through a renderer wrapper. */
+export function useConversationContinuation() {
+  return inject(shellContextKey, undefined)?.continueConversation;
+}
