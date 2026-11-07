@@ -21,7 +21,9 @@ import {
   vLoading,
 } from "element-plus";
 import { useManagerFeedback } from "../feedback";
-import { Filter, Download, Plus, Trash2, Search } from "lucide-vue-next";
+import { Filter, Download, Plus, Trash2, Search, Settings2 } from "lucide-vue-next";
+import type { ObjectReference } from "@ontomato/contracts/object-views";
+import { businessNameAttribute, instanceName } from "../object-views/instance-name";
 import { useManagerClient, useOntologyText, useSharedText } from "../context";
 // The graph view loads AntV G6 only when the user switches to it.
 const InstanceGraph = defineAsyncComponent(() => import("./InstanceGraph.vue"));
@@ -33,7 +35,11 @@ const overlayTarget = inject(managerOverlayKey);
 const { getMetas, loadObjectData } = useManagerClient();
 const props = defineProps<{ initialClass?: string }>();
 /** The object type on show, whether it came from `initialClass` or from the type selector. */
-const emit = defineEmits<{ classChange: [className: string] }>();
+const emit = defineEmits<{ classChange: [className: string]; openObject: [reference: ObjectReference]; configureView: [className: string] }>();
+function openObject(row: DataItem) {
+  const key = currentClassAttrs.value.find((attr) => attr.primaryKey)?.name;
+  if (key && row[key] != null) emit("openObject", { className: selectedClass.value, primaryKey: String(row[key]) });
+}
 const graphSummaryTarget = ref<HTMLElement | null>(null);
 
 interface ClassDef {
@@ -44,6 +50,9 @@ interface ClassDef {
 }
 
 interface AttrDef {
+  primaryKey?: boolean;
+  businessKey?: boolean;
+  enable?: boolean;
   name: string;
   showName: string;
   type: string;
@@ -78,6 +87,7 @@ const currentClassAttrs = computed(() => {
   const cls = classList.value.find((c) => c.className === selectedClass.value);
   return cls?.attrs || [];
 });
+const titleAttribute = computed(() => businessNameAttribute(currentClassAttrs.value));
 
 const filterDrawerVisible = ref(false);
 const columnVisibility = ref<Record<string, boolean>>({});
@@ -237,6 +247,9 @@ async function loadClassList() {
       showName: cls.showName || cls.classDesc || cls.className,
       classDesc: cls.classDesc || "",
       attrs: (cls.attrs || []).map((a: any) => ({
+        primaryKey: a.primaryKey === true || a.primary_key === true,
+        businessKey: a.bizzkey === true || a.bizzKey === true || a.bizzkeyBool === true,
+        enable: a.enable !== false,
         name: a.name,
         showName: a.showName || a.name,
         type: a.type || "",
@@ -379,6 +392,7 @@ watch(
           {{ t("dataBrowser.filterCount", { n: appliedFilterConditions.length }) }}
         </el-tag>
         <div class="data-browser-actions">
+          <el-button :icon="Settings2" :disabled="!selectedClass" :aria-label="ot('ovConfigure')" @click="emit('configureView', selectedClass)">{{ ot('ovConfigure') }}</el-button>
           <el-button
             :icon="Filter" :title="t('dataBrowser.advancedFilter')"
             :aria-label="t('dataBrowser.advancedFilter')" @click="openFilterDrawer">
@@ -409,10 +423,14 @@ watch(
       border
       class="admin-table"
       height="100%"
+      @row-dblclick="openObject"
     >
       <el-table-column type="index" width="50" />
+      <el-table-column :label="currentClassAttrs.find(attr => attr.name === titleAttribute?.name)?.showName || ot('ovTitle')" min-width="180" fixed="left">
+        <template #default="scope"><el-button type="primary" link @click="openObject(scope.row)">{{ instanceName(currentClassAttrs, scope.row) }}</el-button></template>
+      </el-table-column>
       <el-table-column
-        v-for="attr in visibleAttrs"
+        v-for="attr in visibleAttrs.filter(item => item.name !== titleAttribute?.name)"
         :key="attr.name"
         :prop="attr.name"
         :label="attr.showName"
@@ -507,7 +525,7 @@ watch(
       </template>
       </el-drawer>
     </template>
-    <InstanceGraph v-else :summary-target="graphSummaryTarget" />
+    <InstanceGraph v-else :summary-target="graphSummaryTarget" @open-object="emit('openObject', $event)" />
   </div>
 </template>
 

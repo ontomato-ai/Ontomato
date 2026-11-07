@@ -1,6 +1,7 @@
 import { platformRoutes as routes } from "@ontomato/platform-shell/routes";
 import { defineAsyncComponent, defineComponent, h, ref, watch, type Component, type PropType } from "vue";
-import { useRoute, useRouter, type RouteLocationRaw, type RouteRecordRaw } from "vue-router";
+import { onBeforeRouteLeave, onBeforeRouteUpdate, useRoute, useRouter, type RouteLocationRaw, type RouteRecordRaw } from "vue-router";
+import type { ObjectReference } from "@ontomato/contracts/object-views";
 import { useManagerClient, useManagerCounts } from "./context";
 import ManagerFrame from "./ManagerFrame.vue";
 import BusinessKnowledge from "./components/BusinessKnowledge.vue";
@@ -22,6 +23,42 @@ const DataBrowser = defineAsyncComponent(() => import("./data-browser/DataBrowse
 const VisualModeling = defineAsyncComponent(() => import("./visual-modeling/VisualModeling.vue"));
 const OntologyAssetDetail = defineAsyncComponent(() => import("./components/OntologyAssetDetail.vue"));
 const OntologyPlayground = defineAsyncComponent(() => import("./components/OntologyPlayground.vue"));
+const ObjectViewPage = defineAsyncComponent(() => import("./object-views/ObjectViewPage.vue"));
+const ObjectViewBuilder = defineAsyncComponent(() => import("./object-views/ObjectViewBuilder.vue"));
+
+function objectViewLocation(reference: ObjectReference) {
+  return { name: routes.objectView.name, params: { className: reference.className }, query: { key: reference.primaryKey } };
+}
+
+const ObjectViewRoute = defineComponent({
+  setup() {
+    const route = useRoute();
+    const router = useRouter();
+    return () => h(ObjectViewPage, {
+      reference: { className: String(route.params.className), primaryKey: String(route.query.key ?? "") },
+      onOpen: (reference: ObjectReference) => void router.push(objectViewLocation(reference)),
+      onEdit: () => void router.push({ name: routes.objectViewEditor.name, params: route.params, query: route.query }),
+      onBack: () => void router.push({ name: routes.data.name, params: { className: route.params.className } }),
+    });
+  },
+});
+
+const ObjectViewEditorRoute = defineComponent({
+  setup() {
+    const route = useRoute();
+    const router = useRouter();
+    const editor = ref<{ canLeave: () => Promise<boolean> }>();
+    onBeforeRouteLeave(() => editor.value?.canLeave() ?? true);
+    onBeforeRouteUpdate(() => editor.value?.canLeave() ?? true);
+    return () => h(ObjectViewBuilder, {
+      ref: editor,
+      className: String(route.params.className),
+      initialPrimaryKey: String(route.query.key ?? ""),
+      onOpen: (reference: ObjectReference) => void router.push(objectViewLocation(reference)),
+      onBack: () => void router.push({ name: routes.object.name, params: { className: route.params.className } }),
+    });
+  },
+});
 
 const assetDetails = { metrics: routes.metric, actions: routes.action, functions: routes.function };
 const ASSET_KINDS: readonly AssetTab[] = ["metrics", "actions", "functions"];
@@ -82,6 +119,7 @@ const ObjectDetailPage = defineComponent({
             void counts.refresh();
           },
           onUpdated: () => void counts.refresh(),
+          onConfigureView: () => void router.push({ name: routes.objectViewEditor.name, params: { className: props.className } }),
           onBrowse: (className: string) => void router.push({ name: "manager-data", params: { className } }),
           onRelation: (relationship: string) =>
             void router.push({ name: "manager-relation", params: { relationship }, query: { from: "object" } }),
@@ -137,7 +175,11 @@ function dataBrowserPage(memory: DataBrowserMemory) {
         if (className !== props.className) void router.replace({ name: "manager-data", params: { className } });
       };
       return () =>
-        h("section", { class: "legacy-surface" }, [h(DataBrowser, { initialClass: props.className, onClassChange })]);
+        h("section", { class: "legacy-surface" }, [h(DataBrowser, {
+          initialClass: props.className, onClassChange,
+          onOpenObject: (reference: ObjectReference) => void router.push(objectViewLocation(reference)),
+          onConfigureView: (className: string) => void router.push({ name: routes.objectViewEditor.name, params: { className } }),
+        })]);
     },
   });
 }
@@ -296,6 +338,9 @@ export function managerRoutes(): RouteRecordRaw[] {
       path: "",
       component: ManagerFrame,
       children: [
+        { ...routes.objectView, component: ObjectViewRoute, meta: { page: managerPaths.dataBrowser, ownHeader: true } },
+        { ...routes.objectViewEditor, component: ObjectViewEditorRoute, meta: { page: managerPaths.objects } },
+        { path: "/views/:className", redirect: (to) => ({ name: to.query.edit === "true" ? routes.objectViewEditor.name : routes.objectView.name, params: to.params, query: to.query }) },
         { ...routes.playground, component: GraphPage, meta: { page: managerPaths.graph } },
         ...(["objects", "attributes", "relations"] as const).map((resource) => ({
           ...routes[resource],

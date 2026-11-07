@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { Graph } from "@antv/g6";
+import type { ObjectReference } from "@ontomato/contracts/object-views";
 import {
   Box,
   ArrowLeft,
@@ -18,6 +19,7 @@ import {
   SlidersHorizontal,
   X,
   Info,
+  Eye,
 } from "lucide-vue-next";
 import { computed, onBeforeUnmount, onMounted, ref, shallowRef, watch } from "vue";
 import { ElButton, ElPopover, ElSelect, ElOption, ElCheckbox, ElSwitch, ElSelectV2, vLoading } from "element-plus";
@@ -41,6 +43,12 @@ import {
 
 const context = useManagerContext();
 const props = defineProps<{ summaryTarget?: HTMLElement | null }>();
+const emit = defineEmits<{ openObject: [reference: ObjectReference] }>();
+function openSelectedObject() {
+  const node = selectedNode.value;
+  if (!node) return;
+  emit("openObject", { className: node.class, primaryKey: node.id.startsWith(`${node.class}:`) ? node.id.slice(node.class.length + 1) : node.id });
+}
 const { message } = useManagerFeedback();
 const { ot } = useOntologyText();
 const { t } = useSharedText();
@@ -90,6 +98,7 @@ let searchRequest = 0;
 let searchTimer: ReturnType<typeof setTimeout> | undefined;
 
 let graph: Graph | null = null;
+let graphReady = false;
 let selectedId = "";
 let nodeInfoRequest = 0;
 let graphRequest = 0;
@@ -260,8 +269,10 @@ async function renderGraph(request: number) {
   if (request !== graphRequest || !graphRef.value) return;
   const { width, height } = graphRef.value.getBoundingClientRect();
   if (!width || !height) return;
-  graph?.destroy();
+  graphReady = false;
+  const previous = graph;
   graph = null;
+  previous?.destroy();
   selectedId = "";
   const colors = graphColors();
   const target = new Graph({
@@ -283,10 +294,13 @@ async function renderGraph(request: number) {
     }
   });
   target.on("canvas:click", clearSelection);
-  target.on("aftertransform", updateNodeActionPosition);
-  target.on("afterdraw", updateNodeActionPosition);
-  target.on("node:drag", updateNodeActionPosition);
-  target.on("node:dragend", updateNodeActionPosition);
+  const updateOverlays = () => {
+    if (graph === target && graphReady && request === graphRequest) updateNodeActionPosition();
+  };
+  target.on("aftertransform", updateOverlays);
+  target.on("afterdraw", updateOverlays);
+  target.on("node:drag", updateOverlays);
+  target.on("node:dragend", updateOverlays);
   target.on("node:dragend", saveOverviewLayout);
   target.on("node:dragend", () => { void updateOverviewRelations(); });
   target.on("node:dblclick", (event: any) => {
@@ -300,6 +314,7 @@ async function renderGraph(request: number) {
   try {
     await target.render();
     if (!isCurrent()) return;
+    graphReady = true;
     const complete = await drawInstanceGraphBatches(target, nodes.value, overview.value ? [] : edges.value, colorForClass, {
       isCurrent,
       yieldControl: yieldToBrowser,
@@ -421,7 +436,7 @@ async function selectNode(id: string) {
 
 function updateNodeActionPosition() {
   updateClassGroups();
-  if (!graph || !graphRef.value || !selectedNode.value) {
+  if (!graph || !graphReady || !graphRef.value || !selectedNode.value) {
     nodeActionPosition.value = null;
     return;
   }
@@ -443,7 +458,7 @@ function updateNodeActionPosition() {
 
 /** Screen-space headings follow pan, zoom and dragged nodes, including their visible labels. */
 function updateClassGroups() {
-  if (!graph || !graphRef.value || !overview.value) { classGroups.value = []; return; }
+  if (!graph || !graphReady || !graphRef.value || !overview.value) { classGroups.value = []; return; }
   const groups = new Map<string, Array<{ x: number; y: number }>>();
   const instances: OverviewRect[] = [];
   const zoom = graph.getZoom();
@@ -751,8 +766,10 @@ async function refresh() {
   searching.value = false;
   searchNodes.value = [];
   clearSelection();
-  graph?.destroy();
+  graphReady = false;
+  const previous = graph;
   graph = null;
+  previous?.destroy();
   rendering.value = false;
   layouting.value = false;
   nodes.value = [];
@@ -805,8 +822,10 @@ onBeforeUnmount(() => {
   graphRequest += 1;
   nodeInfoRequest += 1;
   resizeObserver?.disconnect();
-  graph?.destroy();
+  graphReady = false;
+  const previous = graph;
   graph = null;
+  previous?.destroy();
 });
 </script>
 
@@ -961,11 +980,6 @@ onBeforeUnmount(() => {
           </button>
         </div>
       </div>
-      <div class="panel-heading">
-        <div>
-          <strong :title="ot('instanceInspectorDesc')">{{ ot("instanceInspector") }}</strong>
-        </div>
-      </div>
       <div v-if="selectedNode" class="detail-content">
         <div class="neighbor-filters">
           <div class="neighbor-field neighbor-field-wide">
@@ -1000,6 +1014,7 @@ onBeforeUnmount(() => {
             <h2>{{ selectedNode.name || selectedNode.id }}</h2>
             <code>{{ selectedNode.id }}</code>
           </div>
+          <el-button class="object-view-entry" :icon="Eye" @click="openSelectedObject">{{ ot('ovViewDetails') }}</el-button>
         </div>
         <div class="detail-section">
           <div class="section-label">
@@ -1377,6 +1392,7 @@ onBeforeUnmount(() => {
   min-width: 0;
   flex: 1;
 }
+.object-view-entry { flex-shrink: 0; margin: 0; }
 .detail-title h2 {
   margin: 0;
   color: var(--el-text-color-primary);

@@ -46,7 +46,7 @@ const shownPage = computed<PlatformShownPage | null>(() => {
   return {
     title: page.title ?? t(page.titleKey),
     description: page.descriptionKey ? t(page.descriptionKey) : null,
-    ownHeader: page.ownHeader === true,
+    ownHeader: route.meta.ownHeader === true || page.ownHeader === true,
   };
 });
 

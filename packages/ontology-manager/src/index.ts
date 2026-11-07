@@ -18,3 +18,4 @@ export {
   type ManagerNavigationGroup,
   type ManagerNavigationPage,
 } from "./navigation";
+export { default as ObjectViewRuntime } from "./object-views/ObjectViewRuntime.vue";

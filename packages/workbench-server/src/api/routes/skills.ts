@@ -3,6 +3,7 @@ import { z } from "zod";
 import multer from "multer";
 import { skillManager } from "../../services/skills/skill-manager";
 import { previewSkill } from "../../services/skills/preview";
+import { renderObjectView } from "../../services/skills/render-view";
 import {
   InvalidSkillPackageError,
   SkillCategorySchema,
@@ -57,6 +58,15 @@ const UpdateSkillSchema = z.object({
 const DebugSkillSchema = z.object({
   input: z.record(z.unknown()).optional().default({}),
 });
+
+router.post("/:id/render", requireDomain, validateBody(z.object({ input: z.object({
+  data: z.unknown(), chartType: z.string().max(100), title: z.string().max(200),
+}).catchall(z.unknown()) })), asyncHandler(async (req: Request, res: Response) => {
+  const request = req as AuthenticatedRequest;
+  const result = await renderObjectView({ domainId: request.domainId!, userId: request.userId },
+    { token: request.token, apiKey: request.apiKey, locale: request.locale }, req.params.id, req.body.input);
+  res.json({ success: true, result });
+}));
 
 // Read-only endpoints — authenticated by the shared /api boundary.
 router.get(

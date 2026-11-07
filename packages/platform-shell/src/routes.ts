@@ -33,6 +33,8 @@ export const platformRoutes = {
   governance: { name: "KnowledgeGovernance", path: "/governance/chat/:sessionId?" },
   feedback: { name: "Feedback", path: "/governance/feedback" },
   data: { name: "manager-data", path: "/browser/data/:className?" },
+  objectView: { name: "manager-object-view", path: "/browser/views/:className" },
+  objectViewEditor: { name: "manager-object-view-editor", path: "/ontology/objects/:className/view" },
   ontology: { name: "OntologyHome", path: "/ontology" },
   playground: { name: "OntologyGraph", path: "/ontology/playground" },
   objects: { name: "Objects", path: "/ontology/objects" },
