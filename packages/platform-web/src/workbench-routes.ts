@@ -31,6 +31,9 @@ export function workbenchPages(
   observe: { component: PageComponent; meta?: RouteMeta; props?: Record<string, unknown> },
 ): RouteRecordRaw[] {
   return [
+    { ...routes.ontologyCapabilities,
+      component: () => import("@ontomato/workbench-ui/features/workbench").then(module => module.CapabilityLibrary),
+      meta: { service: true, page: routes.ontologyCapabilities.path, ownHeader: true } },
     { ...routes.chat, component, meta: { workbench: true } },
     // The application's prefix is no page: it opens the conversation, which is where the platform is entered.
     { path: "/agents", redirect: (to) => capabilityTabLink(to) ?? { name: routes.chat.name, query: to.query } },

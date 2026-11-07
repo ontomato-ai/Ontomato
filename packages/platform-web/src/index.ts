@@ -13,6 +13,7 @@ export {
   reloadOnStaleBuild,
   serviceLocales,
   serviceNavigation,
+  ontologyWorkspacePages,
   startPage,
   startShellPreferences,
   stopPage,

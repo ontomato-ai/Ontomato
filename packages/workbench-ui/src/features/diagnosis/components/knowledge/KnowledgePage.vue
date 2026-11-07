@@ -302,7 +302,7 @@ onMounted(loadTree);
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  padding: 12px 18px;
+  padding: var(--spacing-md) var(--page-section-padding);
 }
 
 .content-title-wrap {
@@ -311,8 +311,8 @@ onMounted(loadTree);
 
 .content-title {
   margin: 0;
-  font-size: 17px;
-  font-weight: 650;
+  font-size: var(--text-lg);
+  font-weight: var(--font-semibold);
   color: var(--el-text-color-primary);
 }
 
@@ -338,7 +338,7 @@ onMounted(loadTree);
   flex: 1;
   min-height: 0;
   overflow: auto;
-  padding: 22px 28px;
+  padding: var(--page-section-padding);
 }
 
 .markdown-body {

@@ -102,7 +102,7 @@
   --shell-agent-rail-collapsed: 56px;
   /* Platform rail: applications only. Collapsed it is the icon column; expanded it carries the names. */
   --shell-platform-rail: 196px;
-  --shell-platform-rail-collapsed: 58px;
+  --shell-platform-rail-collapsed: 50px;
   /* The expand/collapse button of the platform rail and the icon rows of the collapsed rail (16px icon). */
   --shell-rail-button: 38px;
   /* The current application is one surface on the rail: rounded only where it meets the rail. */
@@ -111,7 +111,9 @@
    * The horizontal padding of a page and of the header above it, in one place: a title, a description, a toolbar and the
    * content under them all start at the same place, and a page never writes its own.
    */
-  --page-gutter: 28px;
+  --page-gutter: var(--spacing-lg-xl);
+  --page-content-gap: var(--spacing-lg-xl);
+  --page-section-padding: var(--spacing-lg-xl);
   /* An application's own column, when it draws one inside its area (the conversation applications do). */
   --shell-app-column: 244px;
   --shell-conversation-gutter: 10px;
@@ -134,7 +136,7 @@
   --el-border-radius-base: var(--radius-sm);
 }
 
-/* Dense Manager pages share a compact gutter across headers, catalogs and detail bodies. */
+/* Manager pages keep breathing room around dense controls and tables. */
 .ontology-manager,
 .object-browser-layout {
   --page-gutter: var(--spacing-lg);
@@ -145,10 +147,25 @@
   --manager-module-padding: var(--spacing-lg);
 }
 
+.ontology-manager {
+  --page-gutter: var(--spacing-lg-xl);
+  --manager-module-gap: var(--spacing-lg-xl);
+  --manager-content-gap: var(--spacing-lg);
+  --manager-module-padding: var(--spacing-lg-xl);
+}
+
 /* Narrow windows take a smaller page gutter: the one value narrows, so the header and the content stay aligned. */
 @media (max-width: 760px) {
   :root {
     --page-gutter: var(--spacing-lg);
+    --page-content-gap: var(--spacing-lg);
+    --page-section-padding: var(--spacing-lg);
+  }
+  .ontology-manager {
+    --page-gutter: var(--spacing-lg);
+    --manager-module-gap: var(--spacing-lg);
+    --manager-content-gap: var(--spacing-md);
+    --manager-module-padding: var(--spacing-lg);
   }
 }
 

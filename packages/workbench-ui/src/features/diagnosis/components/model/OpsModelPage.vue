@@ -39,6 +39,6 @@ onMounted(reloadModelOptions);
 <style scoped>
 .ops-model {
   box-sizing: border-box;
-  padding: 12px 16px;
+  padding: var(--page-section-padding);
 }
 </style>

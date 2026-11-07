@@ -203,7 +203,7 @@ onMounted(loadConfig);
   min-width: 0;
   flex-direction: column;
   gap: var(--spacing-lg);
-  padding: var(--spacing-lg);
+  padding-block: var(--spacing-lg);
 }
 
 .config-load-error {

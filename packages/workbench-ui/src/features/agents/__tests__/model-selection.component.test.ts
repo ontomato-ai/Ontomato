@@ -79,6 +79,19 @@ const saveButton = (wrapper: VueWrapper) =>
   wrapper.findAll(".editor-bar button").find((button) => button.text() === t("common.save"))!;
 
 describe("workbench agent model selection", () => {
+  it("saves edits across configuration sections without avatar or color controls", async () => {
+    const { wrapper, update } = await mountEditor(null);
+    expect(wrapper.find('.admin-avatar-picker').exists()).toBe(false);
+    expect(wrapper.find('.editor-avatar').exists()).toBe(false);
+    await wrapper.find('input').setValue('Updated analyst');
+    expect(wrapper.find('[data-section="model"]').isVisible()).toBe(true);
+    expect(wrapper.find('[data-section="basics"]').isVisible()).toBe(true);
+    await choose(wrapper.findComponent(ModelSelectionSelect), 'deepseek/deepseek-chat');
+    await saveButton(wrapper).trigger('click');
+    await flushPromises();
+    expect(update.mock.calls[0]![1]).toMatchObject({ name: 'Updated analyst', icon: null, modelSelection: { modelId: 'deepseek/deepseek-chat' } });
+  });
+
   it("keeps a missing model ID as it is, reports it, and saves it unchanged when other fields change", async () => {
     const { wrapper, update } = await mountEditor("legacy/removed-model");
     const control = wrapper.findComponent(ModelSelectionSelect);

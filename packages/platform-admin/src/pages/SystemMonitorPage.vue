@@ -301,15 +301,10 @@ onUnmounted(() => {
 
 <style scoped>
 .system-monitor {
-  height: 100%;
   display: flex;
   flex-direction: column;
-  gap: 16px;
-  overflow-y: auto;
-  overflow-x: hidden;
+  gap: var(--spacing-lg);
   min-width: 0;
-  /* Element Plus rows use negative inline margins for their gutters; the padding keeps them inside this scroller. */
-  padding-inline: var(--spacing-sm);
 }
 
 .top-bar {
@@ -318,13 +313,14 @@ onUnmounted(() => {
   gap: var(--component-gap);
   align-items: center;
   justify-content: space-between;
-  padding: 0 4px;
 }
 
 .top-left {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: var(--spacing-md);
+  flex-wrap: wrap;
+  min-width: 0;
 }
 
 .hostname {
@@ -334,6 +330,8 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   gap: 6px;
+  overflow-wrap: anywhere;
+  min-width: 0;
 }
 
 .timestamp {
@@ -344,7 +342,8 @@ onUnmounted(() => {
 .top-right {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: var(--spacing-md);
+  flex-wrap: wrap;
 }
 
 .last-refresh {
@@ -354,13 +353,15 @@ onUnmounted(() => {
 
 .resource-scope {
   margin: 0;
-  padding: 0 4px;
   font-size: 12px;
   color: var(--el-text-color-secondary);
 }
 
 .resource-overview {
-  flex-shrink: 0;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--spacing-lg);
+  margin-inline: 0 !important;
   align-items: stretch;
   row-gap: var(--spacing-lg);
 }
@@ -368,13 +369,15 @@ onUnmounted(() => {
 .resource-overview :deep(.el-col) {
   display: flex;
   min-width: 0;
+  max-width: none;
+  padding-inline: 0 !important;
 }
 
 .resource-card {
   background: var(--el-bg-color);
   border: 1px solid var(--el-border-color-light);
   border-radius: var(--radius-md);
-  padding: var(--surface-padding);
+  padding: var(--spacing-lg);
   flex: 1;
   min-width: 0;
   display: flex;
@@ -532,5 +535,14 @@ onUnmounted(() => {
 
 .skeleton-card-body {
   padding: 16px;
+}
+
+@container platform-page (max-width: 1000px) {
+  .resource-overview { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@container platform-page (max-width: 680px) {
+  .resource-overview { grid-template-columns: minmax(0, 1fr); }
+  .disk-row { flex-wrap: wrap; }
+  .disk-detail { flex-basis: 100%; }
 }
 </style>

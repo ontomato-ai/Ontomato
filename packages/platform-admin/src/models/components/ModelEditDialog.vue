@@ -138,10 +138,10 @@ async function submit() {
     <el-form label-position="top" class="model-form" @submit.prevent="submit">
       <el-form-item :label="t('admin.modelType')" required>
         <el-radio-group v-model="form.type">
-          <el-radio-button value="chat">{{ t("admin.modelTypes.chat") }}</el-radio-button>
-          <el-radio-button value="embedding" :disabled="!embeddingAllowed">
+          <el-radio value="chat">{{ t("admin.modelTypes.chat") }}</el-radio>
+          <el-radio value="embedding" :disabled="!embeddingAllowed">
             {{ t("admin.modelTypes.embedding") }}
-          </el-radio-button>
+          </el-radio>
         </el-radio-group>
         <p v-if="!embeddingAllowed" class="field-hint">{{ t("admin.embeddingNeedsOpenAi") }}</p>
       </el-form-item>

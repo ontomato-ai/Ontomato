@@ -131,6 +131,7 @@ describe("agent editor data scope", () => {
     wrappers.push(wrapper);
     await flushPromises();
     const sections = wrapper.findAll(".editor-section").map((section) => section.attributes("data-section"));
-    expect(sections).toEqual(["basics", "data", "capabilities", "model", "prompt"]);
+    expect(sections).toEqual(["basics", "capabilities", "prompt", "data"]);
+    expect(wrapper.find('[data-section="basics"] [data-section="model"]').exists()).toBe(true);
   });
 });

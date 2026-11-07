@@ -931,7 +931,7 @@ function handleViewDsl(payload) {
   flex: 1 1 auto;
   min-height: 0;
   width: 100%;
-  padding: 28px 24px;
+  padding: var(--spacing-lg) 0 0;
   box-sizing: border-box;
   background-color: transparent;
   position: relative;
@@ -1114,7 +1114,7 @@ function handleViewDsl(payload) {
 }
 @media (max-width: 700px) {
   :where(html.workbench-mobile-navigation) .bi-dashboard {
-    padding: 12px 10px calc(12px + env(safe-area-inset-bottom));
+    padding: var(--spacing-lg) 0 env(safe-area-inset-bottom);
     gap: 12px;
   }
   :where(html.workbench-mobile-navigation) .block {

@@ -48,6 +48,7 @@ const view = computed(() => {
 
 <style scoped>
 .model-selection {
+  width: 100%;
   display: flex;
   flex-direction: column;
   gap: 6px;

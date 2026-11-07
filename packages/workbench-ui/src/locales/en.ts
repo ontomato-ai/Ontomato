@@ -661,7 +661,7 @@ export default {
   },
   "capabilities": {
     "title": "Capability library",
-    "description": "The skills and external tools every agent draws from, kept in one place",
+    "description": "Manage skills and external tools available to agents",
     "filter": "Capability type",
     "skills": "Skills",
     "tools": "External tools",

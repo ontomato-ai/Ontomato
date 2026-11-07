@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref, watch } from "vue";
-import { ChevronsLeft, ChevronsRight, Moon } from "lucide-vue-next";
+import { PanelLeftClose, PanelLeftOpen, Moon } from "lucide-vue-next";
 import type { PlatformAccount, PlatformApp, PlatformPreferences, PlatformShellLabels } from "./types";
 import { appIcon, ExternalLink } from "./icons";
 import PlatformAccountMenu from "./PlatformAccountMenu.vue";
@@ -96,7 +96,7 @@ onBeforeUnmount(() => document.removeEventListener("pointerdown", onDocumentPoin
         :aria-expanded="false"
         @click="toggle"
       >
-        <ChevronsRight :size="16" aria-hidden="true" />
+        <PanelLeftOpen :size="16" aria-hidden="true" />
       </button>
     </div>
     <div v-else class="rail-brand">
@@ -111,7 +111,7 @@ onBeforeUnmount(() => document.removeEventListener("pointerdown", onDocumentPoin
         :aria-expanded="true"
         @click="toggle"
       >
-        <ChevronsLeft :size="16" aria-hidden="true" />
+        <PanelLeftClose :size="16" aria-hidden="true" />
       </button>
     </div>
 
@@ -361,7 +361,8 @@ onBeforeUnmount(() => document.removeEventListener("pointerdown", onDocumentPoin
   transition: background-color var(--transition-fast);
 }
 .rail-toggle:hover {
-  background: var(--el-fill-color-light);
+  background: var(--shell-rail-hover);
+  color: var(--el-text-color-primary);
 }
 /* Collapsed: the expand control is the top row, at the size of the icon rows below it. */
 .collapsed .rail-brand {
@@ -499,20 +500,21 @@ onBeforeUnmount(() => document.removeEventListener("pointerdown", onDocumentPoin
   align-items: center;
   gap: 10px;
   width: 100%;
-  height: 42px;
-  padding: 0 6px;
+  min-height: 34px;
+  padding: 6px 10px;
   box-sizing: border-box;
   border: 0;
   border-radius: var(--radius-md);
   background: transparent;
-  color: inherit;
+  color: var(--el-text-color-regular);
   font: inherit;
   text-align: left;
   cursor: pointer;
   transition: background-color var(--transition-fast);
 }
 .account-trigger:hover {
-  background: var(--el-fill-color-light);
+  background: var(--shell-rail-hover);
+  color: var(--el-text-color-primary);
 }
 .account-avatar-icon {
   flex-shrink: 0;
@@ -539,9 +541,10 @@ onBeforeUnmount(() => document.removeEventListener("pointerdown", onDocumentPoin
 }
 .collapsed .account-trigger {
   justify-content: center;
-  width: 42px;
+  width: var(--shell-rail-button);
+  height: var(--shell-rail-button);
   padding: 0;
-  border-radius: var(--radius-full);
+  border-radius: var(--radius-md);
 }
 /* The menu anchors to the account row and opens upward, or beside the rail when it is collapsed. */
 .account-menu-anchor {

@@ -111,18 +111,18 @@ const relationshipRows = computed(() =>
     <div class="multi-source-heading">{{ t("admin.multiSourceDataSources") }}</div>
     <p v-if="sourceRows.length === 0" class="card-empty">{{ t("admin.multiSourceNoSources") }}</p>
     <div v-for="(row, index) in sourceRows" :key="index" class="multi-source-entry">
-      <el-row :gutter="24">
-        <el-col :span="adapterDisplay.credentialSpan">
+      <div class="multi-source-fields">
+        <div>
           <el-form-item :label="t('admin.multiSourceId')">
             <el-input v-model="row.source.id" />
           </el-form-item>
-        </el-col>
-        <el-col :span="adapterDisplay.credentialSpan">
+        </div>
+        <div>
           <el-form-item :label="t('admin.multiSourceLabel')">
             <el-input v-model="row.source.label" />
           </el-form-item>
-        </el-col>
-        <el-col :span="adapterDisplay.credentialSpan">
+        </div>
+        <div>
           <el-form-item :label="t('admin.multiSourceAdapterType')">
             <el-select v-model="row.source.adapterType">
               <el-option
@@ -133,13 +133,13 @@ const relationshipRows = computed(() =>
               />
             </el-select>
           </el-form-item>
-        </el-col>
-        <el-col :span="adapterDisplay.credentialSpan">
+        </div>
+        <div>
           <el-form-item :label="t('admin.multiSourceReadOnly')">
             <el-switch v-model="row.source.readOnly" />
           </el-form-item>
-        </el-col>
-      </el-row>
+        </div>
+      </div>
       <DataAdapterConnectionFields
         v-if="row.adapter"
         v-model:connection="row.source.connection"

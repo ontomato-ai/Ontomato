@@ -86,7 +86,6 @@ export const platformPages = {
   runRecords: {
     path: platformRoutes.records.path,
     titleKey: "nav.runRecords",
-    descriptionKey: "platform.descriptions.runRecords",
     icon: Activity,
     permissions: ["audit-logs", "system-monitoring"],
     group: "platform",

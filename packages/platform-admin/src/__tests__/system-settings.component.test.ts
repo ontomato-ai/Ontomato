@@ -36,9 +36,16 @@ afterEach(() => {
   document.body.innerHTML = "";
 });
 
-async function mountPage() {
+async function mountPage(config: Record<string, unknown> = {}) {
   sent.length = 0;
-  const host: PlatformPageHost = testHost(api, {
+  const host: PlatformPageHost = testHost({
+    ...api,
+    getBusinessConfig: async () => {
+      const result = await api.getBusinessConfig!();
+      return { ...result, data: { ...result.data, ...config } };
+    },
+    listDataAdapters: async () => ({ success: true, data: { adapters: [], currentType: "" } }),
+  }, {
     navigation: computed(() => ({ groups: [], pages: [...ossPlatformPages] })),
     systemConfig: ossSystemConfig,
   });
@@ -83,6 +90,40 @@ const headerSave = (wrapper: VueWrapper) =>
   wrapper.findAll(".page-header .page-actions button").find((button) => button.text() === "Save")!;
 
 describe("system settings, general screen", () => {
+  it.each([
+    {},
+    { knowledgeMaxResult: "10", dslCookerTimeout: "300000" },
+    { knowledgeMaxResult: 0, dslCookerTimeout: 0 },
+    { knowledgeMaxResult: null, dslCookerTimeout: null },
+  ])("switches tabs without a warning or writes after loading %j", async (config) => {
+    const confirm = vi.spyOn(ElMessageBox, "confirm").mockRejectedValue("cancel");
+    const { wrapper, router } = await mountPage(config);
+    expect(headerSave(wrapper).attributes("disabled")).toBeDefined();
+    await router.push(systemSettingsTabs.dataAdapters.path);
+    await flushPromises();
+    expect(router.currentRoute.value.path).toBe(systemSettingsTabs.dataAdapters.path);
+    await router.push(systemSettingsTabs.general.path);
+    await flushPromises();
+    expect(headerSave(wrapper).attributes("disabled")).toBeDefined();
+    expect(confirm).not.toHaveBeenCalled();
+    expect(sent).toEqual([]);
+  });
+
+  it("does not warn when an edit is restored to its loaded value", async () => {
+    const confirm = vi.spyOn(ElMessageBox, "confirm").mockRejectedValue("cancel");
+    const { wrapper, router } = await mountPage();
+    const input = wrapper.findAll(".setting-row")[0]!.findComponent({ name: "ElInputNumber" });
+    input.vm.$emit("update:modelValue", 20);
+    await flushPromises();
+    expect(headerSave(wrapper).attributes("disabled")).toBeUndefined();
+    input.vm.$emit("update:modelValue", 10);
+    await flushPromises();
+    expect(headerSave(wrapper).attributes("disabled")).toBeDefined();
+    await router.push(systemSettingsTabs.dataAdapters.path);
+    expect(confirm).not.toHaveBeenCalled();
+    expect(router.currentRoute.value.path).toBe(systemSettingsTabs.dataAdapters.path);
+  });
+
   it("has one page header: the layout's, with the Save in it and the tabs right under it", async () => {
     const { wrapper } = await mountPage();
     expect(wrapper.findAll(".page-header")).toHaveLength(1);

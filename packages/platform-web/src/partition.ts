@@ -24,7 +24,7 @@ export interface AppPartition extends Omit<PlatformAppDeclaration, "groups" | "l
    */
   home?: string;
   /** The pages this application lists, in display order: one group per entry, or one entry per header tab. */
-  sections: readonly { key: string; titleKey: string; paths: readonly string[] }[];
+  sections: readonly { key: string; titleKey: string; paths: readonly string[]; showWhenEmpty?: boolean }[];
 }
 
 /**
@@ -50,6 +50,7 @@ export function appDeclarations(
     const groups: PlatformPanelGroup[] = app.sections
       .map((section) => ({
         key: section.key,
+        showWhenEmpty: section.showWhenEmpty,
         label: t(section.titleKey),
         pages: section.paths
           .map((path) => byPath.get(base(path)))
@@ -64,7 +65,7 @@ export function appDeclarations(
             }),
           ),
       }))
-      .filter((group) => group.pages.length > 0);
+      .filter((group) => group.pages.length > 0 || group.showWhenEmpty);
 
     return {
       id: app.id,

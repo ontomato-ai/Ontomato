@@ -39,8 +39,8 @@ const selectedIssue = ref<string | null>(null);
 /** The source being read and where it shows: under a finding, or under the source list ("all"). */
 const source = ref<{ read: GovernanceSourceRead; anchor: string } | null>(null);
 const pages = computed(() => {
-  const entries = [{ id: "report", label: t("report"), icon: "review" }];
-  if (props.screens?.feedback) entries.push({ id: "feedback", label: t("feedback"), icon: "review" });
+  const entries = [{ id: "report", label: t("report"), icon: "report" }];
+  if (props.screens?.feedback) entries.push({ id: "feedback", label: t("feedback"), icon: "feedback" });
   return entries;
 });
 const workbench = computed(() => ({
@@ -146,10 +146,17 @@ function toggleIssue(id: string) {
         <div v-if="screen" class="governance-screen platform-page-gutter">
           <component :is="screen" />
         </div>
-        <div v-else class="report" :aria-busy="loading">
+        <div v-else class="report platform-page-gutter" :aria-busy="loading">
+          <div v-if="loading && !work" class="report-state" role="status">
+            <p>{{ t("loading") }}</p>
+          </div>
+          <div v-else-if="!work?.summary && !work?.issues.length && !work?.sources.length && !progress" class="report-state">
+            <h2>{{ t("report") }}</h2>
+            <p>{{ t("noIssues") }}</p>
+          </div>
+          <template v-else>
           <section class="report-summary">
             <p class="report-hint">{{ t("reportHint") }}</p>
-            <p v-if="loading && !work" role="status">{{ t("loading") }}</p>
             <p v-if="progress" class="report-progress">{{ progress }}</p>
             <p v-if="work?.summary" class="report-text">{{ work.summary }}</p>
           </section>
@@ -219,6 +226,7 @@ function toggleIssue(id: string) {
                 @click="readSource(source.read.source.id, 'all', source.read.page.next.offset)">{{ t("more") }}</button>
             </section>
           </section>
+          </template>
         </div>
       </template>
     </AgentShell>
@@ -308,12 +316,35 @@ function toggleIssue(id: string) {
   line-height: var(--leading-xs);
 }
 .report {
-  max-width: 880px;
-  margin: 0 auto;
-  padding: 16px 20px 32px;
+  padding-block: var(--spacing-lg) var(--spacing-xl);
   font-size: var(--text-sm);
   line-height: var(--leading-sm);
   overflow-wrap: anywhere;
+}
+.report > * {
+  max-width: var(--shell-content-max);
+}
+.report-state {
+  display: flex;
+  max-width: none;
+  min-height: 240px;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--spacing-sm);
+  padding: var(--spacing-xl) var(--spacing-lg);
+  text-align: center;
+}
+.report-state h2 {
+  margin: 0;
+  color: var(--el-text-color-primary);
+  font-size: var(--text-lg);
+  font-weight: var(--font-semibold);
+}
+.report-state p {
+  max-width: 420px;
+  margin: 0;
+  color: var(--el-text-color-secondary);
 }
 .report p {
   margin: 0 0 8px;

@@ -64,11 +64,17 @@ export function useGeneralSettings(options: {
   /** The values as last saved (or read), in the draft's units. */
   const baseline = ref<GeneralDraft>({ ...draft });
 
-  const dirty = computed(() => loaded.value && JSON.stringify(draft) !== JSON.stringify(baseline.value));
+  const dirty = computed(() => loaded.value && fields.some((field) => field.value(draft) !== field.value(baseline.value)));
+
+  function positiveInteger(value: unknown, fallback: number): number {
+    const number = value == null || value === "" ? fallback : Number(value);
+    return Number.isFinite(number) ? Math.max(1, Math.round(number)) : fallback;
+  }
 
   function apply(data: BusinessConfig) {
-    draft.knowledgeMaxResult = data.knowledgeMaxResult ?? 10;
-    draft.dslCookerTimeoutSeconds = Math.round((data.dslCookerTimeout ?? 300000) / 1000);
+    // Match numeric controls before taking the baseline; mounting a control must not create an edit.
+    draft.knowledgeMaxResult = positiveInteger(data.knowledgeMaxResult, 10);
+    draft.dslCookerTimeoutSeconds = positiveInteger(Number(data.dslCookerTimeout ?? 300000) / 1000, 300);
     // Only languages this edition ships are selectable; any other stored value shows the default until saved explicitly.
     draft.lang = businessConfig.languageOptions.some(({ value }) => value === data.lang)
       ? data.lang

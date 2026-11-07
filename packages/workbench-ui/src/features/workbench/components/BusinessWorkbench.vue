@@ -194,6 +194,7 @@ function appearanceSaved(value: WorkbenchAppearance) {
 
 <template>
   <AgentShell
+    agent-picker
     ref="shell"
     v-model:agent-id="agentId"
     v-model:feature-id="featureId"

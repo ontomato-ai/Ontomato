@@ -4,6 +4,7 @@ import { useRoute, useRouter } from "vue-router";
 import { useI18n } from "vue-i18n";
 import { availableTabs, type PlatformPage, type PlatformPageTab } from "../navigation";
 import { usePlatformHost } from "../context";
+import { PlatformTabs } from "@ontomato/platform-shell";
 
 /*
  * The tabs of a page that holds several screens: text tabs with the primary underline (DESIGN.md admin page anatomy),
@@ -30,19 +31,12 @@ function select(tab: PlatformPageTab) {
 
 <template>
   <div class="page-tabs">
-    <div class="page-tabs-bar" role="tablist" :aria-label="t(props.page.titleKey)">
-      <button
-        v-for="tab in tabs"
-        :key="tab.path"
-        type="button"
-        role="tab"
-        :class="['page-tab', { active: tab.path === active?.path }]"
-        :aria-selected="tab.path === active?.path"
-        @click="select(tab)"
-      >
-        {{ t(tab.titleKey) }}
-      </button>
-    </div>
+    <PlatformTabs
+      :tabs="tabs.map(tab => ({ id: tab.path, label: t(tab.titleKey) }))"
+      :active-id="active?.path"
+      :label="t(props.page.titleKey)"
+      @select="id => { const tab = tabs.find(tab => tab.path === id); if (tab) select(tab); }"
+    />
     <div class="page-tabs-body">
       <component :is="supplied" v-if="supplied" />
       <slot v-else :tab="active" />
@@ -58,48 +52,12 @@ function select(tab: PlatformPageTab) {
   flex-direction: column;
 }
 
-.page-tabs-bar {
-  display: flex;
-  flex: 0 0 auto;
-  gap: var(--spacing-lg);
-  padding: 0 var(--spacing-lg);
-  border-bottom: 1px solid var(--el-border-color);
-  overflow-x: auto;
-}
-
-.page-tab {
-  flex-shrink: 0;
-  height: 40px;
-  padding: 0;
-  border: 0;
-  border-bottom: 2px solid transparent;
-  background: none;
-  color: var(--el-text-color-regular);
-  font: inherit;
-  font-size: var(--text-sm);
-  cursor: pointer;
-}
-
-.page-tab:hover {
-  color: var(--el-text-color-primary);
-}
-
-.page-tab:focus-visible {
-  outline: 2px solid var(--el-color-primary);
-  outline-offset: -2px;
-}
-
-.page-tab.active {
-  border-bottom-color: var(--el-color-primary);
-  color: var(--el-color-primary);
-  font-weight: var(--font-medium);
-}
-
 .page-tabs-body {
   display: flex;
   min-height: 0;
   flex: 1;
   flex-direction: column;
   overflow: auto;
+  min-width: 0;
 }
 </style>

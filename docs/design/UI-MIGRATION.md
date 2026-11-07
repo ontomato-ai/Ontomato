@@ -99,6 +99,15 @@ There is no complete checked-in screenshot baseline. Keep artifacts outside trac
 
 ## Evidence
 
+**2026-11-07 density pass.** Management headers default to the compact title/description row with 12px vertical
+padding. Page gutters, content gaps and section padding use 20px (16px below 760px). Applied to capabilities,
+agent editing, dashboards, schedules, operations pages, feedback, permissions and the super admin frame. Narrow
+platform layouts retain the rail beside the application; agent navigation stacks above its page with a bounded height.
+Browser fixture checks at 1440/1280/640/430px covered agent editing, capabilities, dashboards, schedules, turn evidence,
+automatic tests, DSL, operations knowledge/model and feedback: no document overflow or uncaught runtime errors.
+These checks cover fixture states, not full real-data acceptance. Related package suites: 388 tests passed; changed
+TypeScript/Vue application packages passed type checking.
+
 **Screenshot capability caveat.** Visual review by reading screenshots was attempted twice in this session and the
 runtime rejected image input ("this model does not support image input"). No page below is accepted on the strength of
 a screenshot I read. The script `ui-audit.mjs` (kept outside the repositories) renders every route with deterministic

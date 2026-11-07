@@ -4,7 +4,7 @@
   grid-template-columns: minmax(0, 1fr) minmax(0, 360px);
   gap: var(--spacing-lg);
   align-items: start;
-  padding: var(--spacing-md) 0;
+  padding: var(--spacing-lg) 0;
   border-bottom: 1px solid var(--el-border-color);
 }
 .setting-text {
@@ -32,7 +32,7 @@
   width: 100%;
 }
 .setting-control.narrow .el-input-number {
-  width: min(200px, 100%);
+  width: min(240px, 100%);
 }
 @media (max-width: 768px) {
   .setting-row { grid-template-columns: minmax(0, 1fr); }

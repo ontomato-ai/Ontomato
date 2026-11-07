@@ -85,19 +85,21 @@ for exact character recognition; table numerals are tabular. Control long-form w
 Related controls use 8px, blocks 12–16px, major groups 24–32px. The existing `--spacing-3xl:48px` remains a compatibility
 alias; `--spacing-4xl` is the canonical 48px name and `--spacing-section` provides 40px without silently changing old
 layouts. Migrate consumers deliberately. `--page-gutter` is the header/content horizontal alignment owner, applied once
-by the shell's `platform-page-gutter` class (§7); page content uses 16px vertical padding. Below 760px the token itself
+by the shell's `platform-page-gutter` class (§7); ordinary page gutters, content gaps and section padding use 20px.
+`--page-content-gap` and `--page-section-padding` own the latter two roles and narrow to 16px below 760px. The gutter itself
 narrows to 16px, so headers and content narrow together; that narrow value is defined only there, in foundation.css,
 never in a component.
 
-Ontology Manager uses a compact 16px page gutter at every width. Its headers, catalogs and detail bodies share this
+Ontology Manager uses a 20px page gutter, narrowing to 16px below 760px. Its headers, catalogs and detail bodies share this
 foundation-owned value; panel contents keep their own internal spacing. Graph and modeling workspaces fill the page
 below the header, with the gutter applied only to their toolbars rather than around the canvas.
 
-Manager spacing has four explicit levels, owned by foundation tokens: `--manager-module-gap` (16px) separates
-independent modules and form fields; `--manager-content-gap` (12px) separates a section heading from its content and
+Manager spacing has four explicit levels, owned by foundation tokens: `--manager-module-gap` (20px) separates
+independent modules and form fields; `--manager-content-gap` (16px) separates a section heading from its content and
 related content groups; `--manager-control-gap` (8px) separates controls and repeated compact rows;
-`--manager-label-gap` (4px) separates a label from supporting text. Modules use `--manager-module-padding` (16px),
-while nested groups use 12px. A divider has 12px on each side. Each boundary has one spacing owner: prefer container
+`--manager-label-gap` (4px) separates a label from supporting text. Modules use `--manager-module-padding` (20px),
+while nested groups use 12px. Below 760px module gaps and padding narrow to 16px, and content
+gaps to 12px. A divider has 12px on each side. Each boundary has one spacing owner: prefer container
 gap, reset paragraph margins in structured panels, and remove the final form field's bottom margin. Empty modules
 keep the same heading and content rhythm as populated modules; their position must not depend on another column's height.
 
@@ -170,7 +172,7 @@ text contrast. For more categories use filtering, labels, patterns or small mult
 ## 6. Platform shell and layout
 
 Two layers: platform rail and current application. The application fills remaining space, with only its rail-facing
-corners rounded and one subtle edge; it is not a floating card. Rail widths are 196px expanded / 58px collapsed,
+corners rounded and one subtle edge; it is not a floating card. Rail widths are 196px expanded / 50px collapsed,
 initially collapsed with persisted preference. Icons need accessible labels/tooltips. Group applications with quiet
 separators: ontology, business, platform settings. Applications own columns, headers and content. The rail carries
 the product's mark, not an application's: the current application is named by its row and its own header.
@@ -198,6 +200,13 @@ embedded pages. At 200% zoom no essential action or content may become inaccessi
 
 ## 7. Page architecture
 
+Ontology Manager navigation follows four layers: Facts (graph, object types, properties, relationships and visual
+modeling), Capabilities (metric views, functions, actions and the shared capability library), Governance (business
+knowledge review), Products (a heading reserved for future screens, with no entries). The capability
+library is mounted at `/ontology/capabilities` using the same implementation as agent settings. Cross-application links
+retain their destination frames and permissions. This navigation organization does not assert that the four-layer
+runtime architecture or currently absent capability types have been implemented.
+
 Short page subtitles and single-line function summaries omit a trailing full stop in every locale. Multi-sentence
 instructions, warnings and confirmation body text retain normal punctuation; question marks retain their meaning.
 Edit the authoritative message rather than stripping punctuation in rendering components.
@@ -209,10 +218,13 @@ application whose header carries its own name and line (Object Browser, System s
 a single page — the Object Browser, whose graph and table are modes of one page (§10), or an account that may open only
 one System settings page — without tabs.
 
-Ontology Manager catalogs, graph, modeling and business knowledge use the shared `compact` header variant: a single
+Management pages use the shared `compact` header variant by default, including System Settings, permissions, dashboards,
+schedules, capability libraries and Ontology Manager catalogs, graph, modeling and business knowledge: a single
 title/actions row in the page gutter. A concise menu-function description follows the title on the same
-baseline in secondary text, wrapping naturally on narrow widths. Detail headers show the selected
-entity name. Standard administrative headers retain useful descriptions; do not suppress them through global CSS.
+baseline in secondary text, wrapping naturally on narrow widths. The title/actions row uses 12px vertical padding;
+application tabs follow with an 8px gap. Detail headers show the selected
+entity name. Headers retain useful descriptions; do not suppress them through global CSS. Technical and conversation
+workspaces retain their owned geometry; their embedded page headers follow the same 12px vertical rhythm.
 
 Headers and content share one gutter, written once in the shell (`platform-page-gutter`): the header carries it, and
 the frame or page that shows content under a header puts the class on the element holding that content, so no page

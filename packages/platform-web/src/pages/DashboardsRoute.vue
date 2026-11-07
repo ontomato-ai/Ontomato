@@ -26,7 +26,6 @@ void opened;
 <template>
   <AppPage
     :title="t('assistant.featureDashboards')"
-    :description="t('analysis.dashboardsIntro')"
     :labels="{ save: t('common.save'), discard: t('common.cancel'), unsavedChanges: t('admin.unsavedChanges') }"
   >
     <DashboardHome />

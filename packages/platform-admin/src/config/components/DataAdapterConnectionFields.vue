@@ -80,10 +80,6 @@ const fields = computed<DataAdapterFieldInfo[]>(() => {
   }));
 });
 
-function spanOf(field: DataAdapterFieldInfo): number {
-  return field.fullWidth ? 24 : props.adapterDisplay.credentialSpan;
-}
-
 function valueOf(name: string): string {
   return connection.value[name] ?? "";
 }
@@ -94,12 +90,11 @@ function setValue(name: string, value: string): void {
 </script>
 
 <template>
-  <el-row v-if="fields.length > 0" :gutter="24">
-    <el-col
+  <div v-if="fields.length > 0" class="connection-fields">
+    <div
       v-for="field in fields"
       :key="field.name"
-      :xs="24"
-      :sm="spanOf(field)"
+      :class="{ 'full-width': field.fullWidth || props.adapterDisplay.credentialSpan === 24 }"
     >
       <el-form-item :label="labelFor(field)" :required="Boolean(field.required)">
         <el-input
@@ -111,6 +106,22 @@ function setValue(name: string, value: string): void {
           @update:model-value="setValue(field.name, $event)"
         />
       </el-form-item>
-    </el-col>
-  </el-row>
+    </div>
+  </div>
 </template>
+
+<style scoped>
+.connection-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0 var(--spacing-lg);
+  min-width: 0;
+}
+.full-width { grid-column: 1 / -1; }
+@container platform-page (max-width: 680px) {
+  .connection-fields { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 680px) {
+  .connection-fields { grid-template-columns: minmax(0, 1fr); }
+}
+</style>

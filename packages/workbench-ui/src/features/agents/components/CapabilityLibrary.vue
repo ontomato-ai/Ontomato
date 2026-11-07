@@ -2,7 +2,7 @@
 import { computed, onMounted, ref } from "vue";
 import { ElMessage, ElMessageBox, type UploadFile } from "element-plus";
 import { useI18n } from "vue-i18n";
-import { Download, Pencil, Plug, Plus, RefreshCw, Search, Trash2, Upload } from "lucide-vue-next";
+import { ChevronRight, Download, Pencil, Plug, Plus, RefreshCw, Search, Trash2, Upload } from "lucide-vue-next";
 import type { SkillInfo } from "@ontomato/contracts/skills";
 import { runtimeSkillKey } from "@ontomato/contracts/agent-runtime-skills";
 import type { McpServiceView } from "@ontomato/contracts/agent-runtime-mcp";
@@ -326,7 +326,7 @@ const kindLabel = (row: Row) =>
 </script>
 
 <template>
-  <div class="capability-library">
+  <div class="capability-library platform-page">
     <!-- The library's own page header: it is a page of the agent settings, not a panel inside another page. -->
     <PlatformPageHeader :title="t('capabilities.title')" :description="t('capabilities.description')">
       <template #actions>
@@ -342,11 +342,11 @@ const kindLabel = (row: Row) =>
          (the table's own root must not: Element Plus lays its columns out across its padding too). -->
     <div class="library-body platform-page-gutter">
       <div class="library-toolbar">
-        <el-radio-group v-model="kindFilter" :aria-label="t('capabilities.filter')">
-          <el-radio-button value="all">{{ t("common.all") }}</el-radio-button>
-          <el-radio-button value="skill">{{ t("capabilities.skills") }}</el-radio-button>
-          <el-radio-button value="tool">{{ t("capabilities.tools") }}</el-radio-button>
-        </el-radio-group>
+        <el-select v-model="kindFilter" :aria-label="t('capabilities.filter')" class="kind-filter">
+          <el-option value="all" :label="t('common.all')" />
+          <el-option value="skill" :label="t('capabilities.skills')" />
+          <el-option value="tool" :label="t('capabilities.tools')" />
+        </el-select>
         <el-input v-model="search" :placeholder="t('capabilities.search')" :prefix-icon="Search" clearable />
       </div>
 
@@ -438,6 +438,7 @@ const kindLabel = (row: Row) =>
 
       <details v-if="publishedCards.length || publishedFailed" class="published">
         <summary>
+          <ChevronRight class="disclosure-arrow" :size="14" aria-hidden="true" />
           <span class="published-title">{{ t("mcp.publishedTab") }}</span>
           <span class="published-count">{{ publishedCards.length }}</span>
         </summary>
@@ -449,7 +450,7 @@ const kindLabel = (row: Row) =>
             <code class="published-address">{{ card.service.mcpUrl }}</code>
             <p v-if="card.hint" class="published-hint">{{ card.hint }}</p>
             <details class="published-tools">
-              <summary>{{ t("mcp.availableTools") }} · {{ card.service.tools.length }}</summary>
+              <summary><span class="disclosure-indicator"><ChevronRight :size="14" aria-hidden="true" /></span>{{ t("mcp.availableTools") }} · {{ card.service.tools.length }}</summary>
               <McpToolList :tools="card.service.tools" />
             </details>
           </article>
@@ -483,15 +484,17 @@ const kindLabel = (row: Row) =>
 .capability-library {
   display: flex;
   flex-direction: column;
-  gap: var(--spacing-md);
   min-height: 100%;
-  padding: 0 0 var(--spacing-xl);
+  padding: 0;
   box-sizing: border-box;
+  min-width: 0;
 }
 .library-body {
   display: flex;
   flex-direction: column;
-  gap: var(--spacing-md);
+  gap: var(--page-content-gap);
+  padding-block: var(--page-content-gap) var(--spacing-xl);
+  min-width: 0;
 }
 .library-toolbar {
   display: flex;
@@ -501,12 +504,15 @@ const kindLabel = (row: Row) =>
 }
 .library-toolbar .el-input {
   width: 240px;
+  max-width: 100%;
 }
+.kind-filter { width: 160px; max-width: 100%; }
 .toolbar-actions {
   display: flex;
   align-items: center;
   gap: var(--spacing-sm);
   margin-left: auto;
+  flex-wrap: wrap;
 }
 .toolbar-actions :deep(.el-button) {
   margin: 0;
@@ -517,6 +523,32 @@ const kindLabel = (row: Row) =>
   gap: 8px;
   min-width: 0;
 }
+.capability-table {
+  --el-table-header-bg-color: var(--el-fill-color);
+  --el-table-row-hover-bg-color: var(--el-fill-color-light);
+  --el-table-border-color: var(--el-border-color-light);
+  border: 1px solid var(--el-border-color);
+  border-radius: var(--radius-md);
+  background: var(--el-bg-color);
+}
+.capability-table :deep(.el-table__inner-wrapper::before) { display: none; }
+.capability-table :deep(th.el-table__cell) {
+  height: var(--table-head-height);
+  padding-block: 0;
+  background: var(--el-fill-color);
+  color: var(--el-text-color-secondary);
+  font-size: var(--text-xs);
+  font-weight: var(--font-semibold);
+  border-bottom-color: var(--el-border-color);
+}
+.capability-table :deep(td.el-table__cell) {
+  height: var(--list-row-height);
+  padding-block: var(--spacing-sm);
+  font-size: var(--text-sm);
+  color: var(--el-text-color-regular);
+}
+.capability-table :deep(.cell) { padding-inline: var(--spacing-md); }
+.capability-table :deep(tr:last-child td.el-table__cell) { border-bottom: 0; }
 .row-name {
   font-size: var(--text-sm);
   font-weight: 600;
@@ -552,7 +584,7 @@ const kindLabel = (row: Row) =>
   gap: var(--spacing-md);
 }
 .discovered-card {
-  padding: 14px;
+  padding: var(--page-section-padding);
   border: 1px solid var(--el-border-color-light);
   border-radius: var(--radius-md);
 }
@@ -588,8 +620,18 @@ const kindLabel = (row: Row) =>
 }
 .published > summary::marker,
 .published > summary::-webkit-details-marker {
-  color: var(--el-text-color-secondary);
+  display: none;
+  content: "";
 }
+.disclosure-arrow { flex-shrink: 0; color: var(--el-text-color-secondary); transition: transform var(--transition-fast); }
+details[open] > summary > .disclosure-arrow { transform: rotate(90deg); }
+.disclosure-indicator {
+  display: inline-flex;
+  flex: 0 0 14px;
+  color: var(--el-text-color-secondary);
+  transition: transform var(--transition-fast);
+}
+.published-tools[open] > summary > .disclosure-indicator { transform: rotate(90deg); }
 .published-count {
   padding: 0 6px;
   border-radius: var(--radius-xs);
@@ -610,7 +652,7 @@ const kindLabel = (row: Row) =>
   color: var(--el-text-color-secondary);
 }
 .published-card {
-  padding: 12px 14px;
+  padding: var(--page-section-padding);
   border: 1px solid var(--el-border-color-light);
   border-radius: var(--radius-md);
 }
@@ -630,10 +672,15 @@ const kindLabel = (row: Row) =>
   margin-top: 8px;
 }
 .published-card .published-tools summary {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  list-style: none;
   cursor: pointer;
   font-size: var(--text-xs);
   color: var(--el-text-color-secondary);
 }
+.published-tools summary::-webkit-details-marker { display: none; }
 @media (max-width: 900px) {
   .toolbar .el-input {
     width: 100%;

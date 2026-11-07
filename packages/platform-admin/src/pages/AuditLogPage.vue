@@ -87,11 +87,13 @@ onMounted(() => {
 <template>
   <div class="audit-log-manager">
     <div class="toolbar">
-      <el-select
+      <label class="audit-filter">
+        <span>{{ t("admin.bizType") }}</span>
+        <el-select
         v-model="filterForm.bussiness"
         :placeholder="t('admin.bizType')"
         clearable
-        style="width: 150px"
+        :aria-label="t('admin.bizType')"
       >
         <el-option
           v-for="item in businessTypes"
@@ -100,11 +102,14 @@ onMounted(() => {
           :value="item.value"
         />
       </el-select>
-      <el-select
+      </label>
+      <label class="audit-filter">
+        <span>{{ t("admin.operationType") }}</span>
+        <el-select
         v-model="filterForm.operation"
         :placeholder="t('admin.operationType')"
         clearable
-        style="width: 120px"
+        :aria-label="t('admin.operationType')"
       >
         <el-option
           v-for="op in operationTypes"
@@ -113,6 +118,7 @@ onMounted(() => {
           :value="op.value"
         />
       </el-select>
+      </label>
       <el-button type="primary" :icon="Search" @click="handleSearch">
         {{ t("common.query") }}
       </el-button>
@@ -166,7 +172,8 @@ onMounted(() => {
     <div class="pagination">
       <el-pagination
         background
-        layout="prev, pager, next, jumper, ->, total"
+        layout="total, prev, pager, next"
+        :pager-count="5"
         :total="total"
         :page-size="pageSize"
         :current-page="pageNum"
@@ -188,12 +195,26 @@ onMounted(() => {
   align-items: center;
   gap: var(--spacing-md);
   margin-bottom: var(--spacing-lg);
+  flex-wrap: wrap;
+  align-items: flex-end;
 }
+
+.audit-filter {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+  width: 200px;
+  max-width: 100%;
+  color: var(--el-text-color-regular);
+  font-size: var(--text-sm);
+}
+.audit-filter .el-select { width: 100%; }
 
 .pagination {
   margin-top: var(--spacing-lg);
   display: flex;
   justify-content: flex-end;
+  overflow-x: auto;
 }
 
 @media (max-width: 1024px) {

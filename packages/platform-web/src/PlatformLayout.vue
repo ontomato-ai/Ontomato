@@ -108,6 +108,7 @@ const headerShown = computed(
     <!-- The application's menu of its own (the ontology manager): its groups in their band, the page beside it. -->
     <div v-if="menuPages.length > 0 && !blocked" class="platform-app-body has-menu">
       <aside class="platform-app-menu">
+        <h2 class="app-menu-title">{{ activeApp?.label }}</h2>
         <AppPanelPages
           :groups="menuPages"
           :active-page-id="(route.meta.page as string | undefined) ?? route.path"
@@ -117,7 +118,6 @@ const headerShown = computed(
       <div class="platform-app-page">
         <PlatformPageHeader
           v-if="headerShown"
-          :compact="browserWorkspace"
           :title="headerTitle"
           :description="headerDescription"
           :tabs="pageTabs.length > 0 ? pageTabs : undefined"
@@ -130,7 +130,7 @@ const headerShown = computed(
         />
         <div
           class="platform-page-body platform-page-gutter"
-          :class="{ 'own-header': shownPage?.ownHeader === true, 'own-frame': shownPage === null, 'browser-workspace': browserWorkspace }"
+          :class="{ 'own-header': shownPage?.ownHeader === true, 'own-frame': shownPage === null, 'browser-workspace': browserWorkspace, 'tabbed-workspace': pageTabs.length > 0 }"
         >
           <RouterView />
         </div>
@@ -139,7 +139,6 @@ const headerShown = computed(
     <template v-else>
       <PlatformPageHeader
         v-if="headerShown"
-        :compact="browserWorkspace"
         :title="headerTitle"
         :description="headerDescription"
         :tabs="pageTabs.length > 0 ? pageTabs : undefined"
@@ -157,7 +156,7 @@ const headerShown = computed(
       <div
         v-else
         class="platform-page-body platform-page-gutter"
-        :class="{ 'own-header': shownPage?.ownHeader === true, 'own-frame': shownPage === null, 'browser-workspace': browserWorkspace }"
+        :class="{ 'own-header': shownPage?.ownHeader === true, 'own-frame': shownPage === null, 'browser-workspace': browserWorkspace, 'tabbed-workspace': pageTabs.length > 0 }"
       >
         <RouterView />
       </div>
@@ -177,8 +176,11 @@ const headerShown = computed(
   min-height: 0;
   flex-direction: column;
   overflow: auto;
-  padding-block: 16px 24px;
+  padding-block: var(--page-content-gap) var(--spacing-xl);
   container: platform-page / inline-size;
+}
+.platform-page-body.tabbed-workspace {
+  padding-top: var(--spacing-sm);
 }
 /*
  * A page with a header of its own carries that header's gutter, and so does an application whose pages are not in the
@@ -209,6 +211,17 @@ const headerShown = computed(
   background: var(--shell-panel-bg);
   border-right: 1px solid var(--el-border-color);
   overflow-y: auto;
+}
+.app-menu-title {
+  display: flex;
+  align-items: center;
+  min-height: 36px;
+  margin: 0;
+  padding: 0 10px;
+  color: var(--el-text-color-primary);
+  font-size: var(--text-lg);
+  font-weight: var(--font-semibold);
+  line-height: var(--leading-lg);
 }
 .platform-app-page {
   display: flex;

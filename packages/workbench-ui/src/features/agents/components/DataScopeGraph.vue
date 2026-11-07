@@ -222,12 +222,20 @@ const summary = computed(() =>
 .scope-graph {
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  padding: 14px;
+  gap: var(--spacing-md);
+  padding: var(--spacing-lg);
   border: 1px solid var(--el-border-color-light);
   border-radius: var(--radius-md);
   background: var(--el-fill-color-blank);
 }
+.scope-disclosure {
+  cursor: pointer;
+  color: var(--el-text-color-primary);
+  font-size: var(--text-sm);
+  font-weight: var(--font-medium);
+}
+.scope-disclosure span { margin-inline-start: var(--spacing-md); color: var(--el-text-color-secondary); font-weight: var(--font-normal); }
+.scope-graph[open] > .graph-toolbar { margin-top: var(--spacing-lg); }
 .graph-toolbar {
   display: flex;
   align-items: center;

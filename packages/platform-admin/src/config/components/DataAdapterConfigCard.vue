@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import { computed } from "vue";
-import { Link2 } from "lucide-vue-next";
 import { useI18n } from "vue-i18n";
 import {
   multiDataSourceType,
@@ -57,17 +56,13 @@ function connection(type: string): DataAdapterConnection {
 </script>
 
 <template>
-  <div class="admin-card config-card">
-    <div class="card-header">
-      <el-icon :size="20"><Link2 /></el-icon>
-      <span>{{ t("admin.dataAdapterConfig") }}</span>
-    </div>
+  <section class="adapter-settings" :aria-label="t('admin.dataAdapterConfig')">
+    <h2 class="settings-heading">{{ t("admin.dataAdapterConfig") }}</h2>
     <div class="card-body">
       <el-form
         class="config-form"
         :disabled="disabled"
-        :label-width="adapterDisplay.labelWidth"
-        label-position="left"
+        label-position="top"
         size="default"
       >
         <el-form-item :label="t('admin.adapterMode')">
@@ -108,7 +103,7 @@ function connection(type: string): DataAdapterConnection {
           <el-button
             type="primary"
             :loading="saving"
-            :disabled="disabled || (mode === multiDataSourceType && !ontology)"
+            :disabled="disabled || !selected || (mode === multiDataSourceType && !ontology)"
             @click="emit('save')"
           >
             {{ t("common.saveAdapterConfig") }}
@@ -134,7 +129,48 @@ function connection(type: string): DataAdapterConnection {
         <pre v-else class="adapter-test-message">{{ multiSaveFailure.message }}</pre>
       </el-alert>
     </div>
-  </div>
+  </section>
 </template>
 
 <style scoped src="./config.css"></style>
+
+<style scoped>
+.adapter-settings {
+  width: 100%;
+  max-width: 960px;
+  min-width: 0;
+}
+
+.settings-heading {
+  margin: 0 0 var(--spacing-lg);
+  color: var(--el-text-color-primary);
+  font-size: var(--text-base);
+  font-weight: var(--font-semibold);
+}
+
+.config-form :deep(.el-form-item) {
+  margin-bottom: var(--spacing-lg);
+}
+
+.config-form :deep(.el-radio-group) {
+  gap: var(--spacing-xs) var(--spacing-lg);
+}
+
+.config-form :deep(.el-radio) {
+  margin-inline-end: 0;
+  white-space: normal;
+}
+
+.form-actions {
+  padding-top: var(--spacing-md);
+  border-top: 1px solid var(--el-border-color);
+}
+
+.form-actions :deep(.el-form-item__content) {
+  gap: var(--spacing-sm);
+}
+
+.form-actions :deep(.el-button) {
+  margin: 0;
+}
+</style>

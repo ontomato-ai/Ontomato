@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted } from "vue";
+import { onMounted, ref } from "vue";
 import { storeToRefs } from "pinia";
 import { useI18n } from "vue-i18n";
 import { MoreHorizontal, Plus } from "lucide-vue-next";
@@ -9,6 +9,7 @@ import DashboardPanel from "./DashboardPanel.vue";
 /** The dashboard feature page of the workbench shell: dashboard tabs above the selected board. */
 const { t } = useI18n();
 const store = useDashboardStore();
+const openMenuId = ref<string | null>(null);
 const { dashboardItems, loadingDashboards, currentDashboardId, editingDashboardId, editingDashboardName } =
   storeToRefs(store);
 
@@ -28,7 +29,7 @@ onMounted(async () => {
           v-for="item in dashboardItems"
           :key="item.id"
           class="tab"
-          :class="{ active: item.id === currentDashboardId }"
+          :class="{ active: item.id === currentDashboardId, 'menu-open': item.id === openMenuId }"
         >
           <el-input
             v-if="editingDashboardId === item.id"
@@ -49,7 +50,11 @@ onMounted(async () => {
             >
               {{ item.name }}
             </button>
-            <el-dropdown trigger="click" @command="(command: string) => store.handleDashboardCommand(command, item)">
+            <el-dropdown
+              trigger="click"
+              @visible-change="(visible: boolean) => { if (visible) openMenuId = item.id; else if (openMenuId === item.id) openMenuId = null; }"
+              @command="(command: string) => store.handleDashboardCommand(command, item)"
+            >
               <button type="button" class="tab-more" :aria-label="t('common.more')">
                 <MoreHorizontal :size="14" />
               </button>
@@ -85,8 +90,9 @@ onMounted(async () => {
 .home-bar {
   display: flex;
   align-items: center;
-  gap: 16px;
-  padding: 0 0 12px;
+  gap: var(--spacing-lg);
+  padding-bottom: var(--spacing-md);
+  flex-wrap: wrap;
   flex-shrink: 0;
   border-bottom: 1px solid var(--el-border-color);
 }
@@ -136,10 +142,22 @@ onMounted(async () => {
   height: 26px;
   margin-right: 3px;
   border: 0;
-  border-radius: 7px;
+  border-radius: var(--radius-sm);
   background: transparent;
   color: var(--el-text-color-tertiary);
   cursor: pointer;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--transition-fast);
+}
+.tab:hover .tab-more,
+.tab:focus-within .tab-more,
+.tab.menu-open .tab-more {
+  opacity: 1;
+  pointer-events: auto;
+}
+@media (hover: none) {
+  .tab-more { opacity: 1; pointer-events: auto; }
 }
 .tab-more:hover {
   color: var(--el-text-color-primary);
@@ -151,5 +169,8 @@ onMounted(async () => {
   display: inline-flex;
   align-items: center;
   gap: 6px;
+}
+@container platform-page (max-width: 600px) {
+  .tabs { flex-basis: 100%; }
 }
 </style>

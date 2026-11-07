@@ -23,7 +23,8 @@ const { draft, loading, loaded, loadError, load } = useGeneralDraft();
 
     <el-skeleton v-if="loading && !loaded" :rows="4" animated />
 
-    <div v-else class="setting-rows">
+    <section v-else class="setting-rows" :aria-label="t('admin.generalParamConfig')">
+      <h2 class="settings-heading">{{ t("admin.generalParamConfig") }}</h2>
       <div class="setting-row">
         <div class="setting-text">
           <span class="setting-label">{{ t("admin.knowledgeMaxResults") }}</span>
@@ -72,7 +73,7 @@ const { draft, loading, loaded, loadError, load } = useGeneralDraft();
           </el-select>
         </div>
       </div>
-    </div>
+    </section>
   </div>
 </template>
 
@@ -82,7 +83,8 @@ const { draft, loading, loaded, loadError, load } = useGeneralDraft();
   display: flex;
   min-width: 0;
   flex-direction: column;
-  padding: var(--spacing-lg);
+  gap: var(--spacing-lg);
+  padding-block: var(--spacing-lg);
 }
 
 .config-load-error {
@@ -101,8 +103,36 @@ const { draft, loading, loaded, loadError, load } = useGeneralDraft();
 /* Rows of the data shell, the same rules the model page's settings rows use: text left, control right, a hairline. */
 .setting-rows {
   display: flex;
-  max-width: 880px;
+  width: 100%;
+  max-width: 960px;
   flex-direction: column;
 }
 
+.settings-heading {
+  margin: 0 0 var(--spacing-xs);
+  color: var(--el-text-color-primary);
+  font-size: var(--text-base);
+  font-weight: var(--font-semibold);
+}
+
+.setting-row {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 240px);
+  padding-block: var(--spacing-lg);
+}
+
+.setting-row:last-child {
+  border-bottom: 0;
+}
+
+.setting-control.narrow .el-input-number {
+  width: 100%;
+}
+
+@container platform-page (max-width: 680px) {
+  .setting-row { grid-template-columns: minmax(0, 1fr); }
+}
+
+@media (max-width: 768px) {
+  .setting-row { grid-template-columns: minmax(0, 1fr); }
+}
 </style>

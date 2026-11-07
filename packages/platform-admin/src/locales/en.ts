@@ -396,6 +396,7 @@ export default {
     "loadFailed": "Load Failed"
   },
   "platform": {
+    "layers": { "facts": "Facts", "capabilities": "Capabilities", "governance": "Governance", "products": "Products" },
     "title": "Platform Management",
     "serviceName": "Ontomato",
     "navigation": "Ontology Service navigation",
@@ -408,7 +409,7 @@ export default {
       "systemConfig": "Data adapters, languages, general parameters and the license",
       "runRecords": "Change history and the service status of the data engine",
       "userFeedback": "Ratings and comments users give on query and analysis results",
-      "objectBrowser": "Explore instances and relationships in a graph or browse object records in a table",
+      "objectBrowser": "Browse object records and explore relationships between instances",
       "settings": "Models, general parameters and run records"
     }
   }

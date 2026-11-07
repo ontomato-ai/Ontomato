@@ -18,6 +18,7 @@ const props = withDefaults(defineProps<{
   /** The application's name, shown at the top when it runs on one agent. */
   title: string;
   agents: AgentHostAgent[];
+  agentPicker?: boolean;
   agentId: string | null;
   sessions: AgentHostSession[];
   sessionsState: "loading" | "ready" | "error";
@@ -136,7 +137,7 @@ const currentAgent = computed(() => props.agents.find((agent) => agent.id === pr
 /** The switch's accessible name: what it switches, and the agent it currently shows. */
 const switchLabel = computed(() => `${props.labels.agent}: ${currentAgent.value?.name ?? "—"}`);
 /** More than one agent means the head is a switcher; one agent leaves the application's name there. */
-const hasPicker = computed(() => props.agents.length > 1);
+const hasPicker = computed(() => props.agentPicker || props.agents.length > 1);
 
 function onDocumentPointer(event: PointerEvent) {
   if (agentMenu.value && !agentMenu.value.contains(event.target as Node)) closeAgentMenu();
@@ -203,10 +204,11 @@ onBeforeUnmount(() => {
         aria-haspopup="listbox"
         :aria-expanded="agentMenuOpen"
         :aria-label="switchLabel"
+        :disabled="agents.length === 0"
         @click="agentMenuOpen ? closeAgentMenu() : openAgentMenu()"
         @keydown.escape="closeAgentMenu"
       >
-        <span class="switch-name">{{ currentAgent?.name ?? "—" }}</span>
+        <span class="switch-name">{{ currentAgent?.name ?? labels.agent }}</span>
         <ChevronDown :size="16" class="switch-chevron" :class="{ open: agentMenuOpen }" aria-hidden="true" />
       </button>
       <ul v-if="agentMenuOpen" ref="agentPopup" popover="manual" :style="popupStyle" class="agent-menu" role="listbox" :aria-label="labels.agent" @keydown.escape="closeAgentMenu">
@@ -363,13 +365,14 @@ onBeforeUnmount(() => {
 }
 .agent-switch {
   position: relative;
-  padding: 0 0 6px;
+  min-height: 36px;
 }
 .switch-trigger {
   display: inline-flex;
   align-items: center;
   gap: 6px;
   max-width: 100%;
+  width: 100%;
   height: 36px;
   padding: 0 10px;
   box-sizing: border-box;
@@ -385,7 +388,16 @@ onBeforeUnmount(() => {
 .switch-trigger:hover {
   background: var(--shell-panel-hover);
 }
+.switch-trigger:disabled {
+  cursor: default;
+}
+.switch-trigger:disabled:hover {
+  background: transparent;
+}
 .switch-name {
+  flex: 1;
+  min-width: 0;
+  text-align: start;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;

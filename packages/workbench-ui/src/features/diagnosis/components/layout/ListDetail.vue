@@ -41,14 +41,14 @@ const { t } = useI18n();
   border-right: 1px solid var(--el-border-color);
 }
 .ld-toolbar {
-  padding: 8px;
+  padding: var(--spacing-md);
   border-bottom: 1px solid var(--el-border-color);
 }
 .ld-items {
   flex: 1;
   min-height: 0;
   overflow: auto;
-  padding: 4px;
+  padding: var(--spacing-sm);
 }
 .ld-detail {
   display: flex;

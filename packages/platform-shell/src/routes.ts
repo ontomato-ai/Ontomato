@@ -36,6 +36,7 @@ export const platformRoutes = {
   objectView: { name: "manager-object-view", path: "/browser/views/:className" },
   objectViewEditor: { name: "manager-object-view-editor", path: "/ontology/objects/:className/view" },
   ontology: { name: "OntologyHome", path: "/ontology" },
+  ontologyCapabilities: { name: "OntologyCapabilities", path: "/ontology/capabilities" },
   playground: { name: "OntologyGraph", path: "/ontology/playground" },
   objects: { name: "Objects", path: "/ontology/objects" },
   object: { name: "manager-object", path: "/ontology/objects/:className" },

@@ -491,7 +491,7 @@ defineExpose({ openNewTask });
 .schedules {
   display: flex;
   flex-direction: column;
-  gap: var(--spacing-lg);
+  gap: var(--page-content-gap);
 }
 .toolbar {
   display: flex;
@@ -584,7 +584,7 @@ defineExpose({ openNewTask });
 .grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(min(320px, 100%), 1fr));
-  gap: var(--spacing-lg);
+  gap: var(--page-content-gap);
   margin: 0;
   padding: 0;
   list-style: none;

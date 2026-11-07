@@ -79,7 +79,7 @@ function stateLabel(value: ReturnType<typeof state>) {
   display: flex;
   min-height: 0;
   flex-direction: column;
-  background: var(--el-bg-color-page);
+  background: var(--el-fill-color-light);
 }
 
 .provider-list-tools {
@@ -87,6 +87,8 @@ function stateLabel(value: ReturnType<typeof state>) {
   gap: var(--spacing-sm);
   padding: var(--spacing-md);
 }
+
+.provider-list-tools .el-input { min-width: 0; }
 
 .provider-list-tools .el-button {
   flex: 0 0 auto;

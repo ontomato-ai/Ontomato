@@ -12,6 +12,7 @@ import {
   FileText,
   FlaskConical,
   ListChecks,
+  ThumbsUp,
   Image,
   LayoutDashboard,
   Network,
@@ -39,6 +40,8 @@ const featureIcons: Record<string, Component> = {
   test: FlaskConical,
   query: SquareTerminal,
   review: ListChecks,
+  report: FileText,
+  feedback: ThumbsUp,
   diagnosis: ScanEye,
 };
 

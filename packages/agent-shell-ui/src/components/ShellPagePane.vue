@@ -2,7 +2,6 @@
 import { computed, inject } from "vue";
 import { Maximize2, Menu, Minimize2, X } from "lucide-vue-next";
 import { shellContextKey } from "../context";
-import { featureIcon } from "../icons";
 import type { ShellFeatureDeclaration } from "../types";
 import { usePanelWidth } from "../usePanelWidth";
 import ShellComposer from "./ShellComposer.vue";
@@ -33,11 +32,10 @@ const paired = computed(() => props.feature?.withConversation === true);
     :aria-label="feature?.label"
   >
     <div v-if="view === 'side'" class="pane-resize" role="separator" aria-orientation="vertical" @pointerdown.prevent="startResize" />
-    <header v-if="paired" class="pane-header">
+    <header v-if="paired" class="pane-header platform-page-gutter">
       <button v-if="view === 'full'" type="button" class="pane-button pane-menu" :aria-label="labels.menu" @click="emit('menu')">
         <Menu :size="18" />
       </button>
-      <component :is="featureIcon(feature?.icon ?? '')" :size="16" class="pane-icon" />
       <h1 class="pane-title">{{ feature?.label }}</h1>
       <button
         v-if="view === 'full'"
@@ -108,20 +106,16 @@ const paired = computed(() => props.feature?.withConversation === true);
   display: flex;
   align-items: center;
   gap: 8px;
-  height: var(--page-header-height);
-  padding: 0 8px 0 16px;
+  min-height: var(--page-header-height);
+  padding-block: var(--spacing-md);
   flex-shrink: 0;
   border-bottom: 1px solid var(--el-border-color);
-}
-.pane-icon {
-  flex-shrink: 0;
-  color: var(--el-text-color-secondary);
 }
 .pane-title {
   flex: 1;
   min-width: 0;
   margin: 0;
-  font-size: var(--text-base);
+  font-size: var(--text-lg);
   line-height: var(--leading-sm);
   font-weight: 600;
   color: var(--el-text-color-primary);

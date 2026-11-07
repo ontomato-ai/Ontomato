@@ -34,7 +34,7 @@ withDefaults(
   {
     title: "",
     description: null,
-    compact: false,
+    compact: true,
     tabs: undefined,
     activePath: undefined,
     actions: undefined,
@@ -235,8 +235,15 @@ const emit = defineEmits<{ discard: []; save: []; selectTab: [path: string] }>()
 }
 /* The compact row is denser only vertically: its sides are the page gutter, like every header's and the content's. */
 .platform-page-header.compact {
-  padding-block: var(--spacing-sm);
+  padding-block: var(--spacing-md);
   border-bottom: 1px solid var(--el-border-color);
+}
+.platform-page-header.compact.has-tabs {
+  padding-bottom: 0;
+  border-bottom: 0;
+}
+.compact .page-tabs {
+  margin-top: var(--spacing-sm);
 }
 .compact .header-row {
   min-height: var(--control-height);

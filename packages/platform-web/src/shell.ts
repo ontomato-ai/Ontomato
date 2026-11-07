@@ -4,6 +4,8 @@ import "element-plus/theme-chalk/dark/css-vars.css";
 // Design foundation shared with the workbench (type, spacing, shape, density, elevation, motion, component variables).
 import "@ontomato/design-tokens/foundation.css";
 import { computed } from "vue";
+import { Puzzle } from "lucide-vue-next";
+import { platformRoutes } from "@ontomato/platform-shell/routes";
 import { useTheme } from "@ontomato/workbench-ui/composables/useTheme";
 import { workbenchI18n, type SupportedLocale } from "@ontomato/workbench-ui/i18n";
 import { managerDestination } from "@ontomato/platform-admin/legacy-manager";
@@ -153,13 +155,17 @@ export function createServiceManager(options: {
  * The Ontology Service navigation: the Manager's groups (ontology, assets, knowledge) followed by this edition's
  * platform administration group, in display order.
  */
+export const ontologyWorkspacePages: readonly PlatformPage[] = [
+  { path: platformRoutes.ontologyCapabilities.path, titleKey: "capabilities.title", icon: Puzzle, permissions: [], group: "assets", ownHeader: true },
+];
+
 export function serviceNavigation(
   manager: ReturnType<typeof createManager>,
   platformGroup: PlatformGroup,
   platformPages: readonly PlatformPage[]
 ): PlatformNavigation {
   const ontology = managerNavigation(manager.counts);
-  return { groups: [...ontology.groups, platformGroup], pages: [...ontology.pages, ...platformPages] };
+  return { groups: [...ontology.groups, platformGroup], pages: [...ontology.pages, ...platformPages, ...ontologyWorkspacePages] };
 }
 
 /** The root address's landing page for this deployment (see `serviceHome`). */

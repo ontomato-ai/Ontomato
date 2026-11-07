@@ -1,10 +1,10 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from "vue";
+import { computed, onMounted, ref } from "vue";
+import { PlatformTabs } from "@ontomato/platform-shell";
 import { ElMessage, ElMessageBox } from "element-plus";
 import { useI18n } from "vue-i18n";
 import { ExternalLink, RefreshCw, Trash2 } from "lucide-vue-next";
 import CodeMirrorEditor from "../../../components/CodeMirrorEditor.vue";
-import { useTheme } from "../../../composables/useTheme";
 import { renderAgentMarkdown } from "../../../utils/agent-markdown";
 import type {
   AssistantAgentDefinition,
@@ -14,15 +14,13 @@ import type { McpServiceOption } from "@ontomato/contracts/agent-runtime-mcp";
 import type { ModelOptions } from "@ontomato/contracts/model-settings";
 import type { RuntimeSkillRef } from "@ontomato/contracts/agent-runtime-skills";
 import { agentDefinitionsApi, type ObjectClassOption, type ObjectRelationOption } from "../api";
-import { avatarIcon, lightAvatarColorOptions, themedAvatarColor } from "../avatar";
 import AgentBasicInfoFields from "./AgentBasicInfoFields.vue";
 import DataScopeGraph from "./DataScopeGraph.vue";
 import ModelSelectionSelect from "./ModelSelectionSelect.vue";
 import SkillSelector from "./SkillSelector.vue";
 
 /**
- * Edits one agent definition as one long page, in the order the work is done: basics, data scope, capabilities (skills
- * and external tools), model and instructions. A null agent is a new one. The section titles double as in-page anchors.
+ * One draft in responsive configuration sections, saved together from the page header.
  */
 const props = defineProps<{
   agent: AssistantAgentDefinition | null;
@@ -41,13 +39,10 @@ const emit = defineEmits<{
   openCapabilities: [];
 }>();
 const { t } = useI18n();
-const { isDark } = useTheme();
 
 interface Form {
   name: string;
   description: string;
-  avatarKey: string;
-  avatarColor: string;
   enabled: boolean;
   systemPrompt: string;
   /** The agent's own model; null follows the domain default. */
@@ -58,17 +53,9 @@ interface Form {
 }
 
 function toForm(agent: AssistantAgentDefinition | null): Form {
-  let avatar = { key: "Brain", color: lightAvatarColorOptions[0]! };
-  try {
-    if (agent?.icon) avatar = { ...avatar, ...JSON.parse(agent.icon) };
-  } catch {
-    // A malformed stored avatar falls back to the default.
-  }
   return {
     name: agent?.name ?? "",
     description: agent?.description ?? "",
-    avatarKey: avatar.key,
-    avatarColor: themedAvatarColor(avatar.color, isDark.value),
     enabled: agent?.enabled ?? true,
     systemPrompt: agent?.systemPrompt ?? "",
     modelId: agent?.modelSelection.modelId ?? null,
@@ -84,29 +71,17 @@ const dirty = computed(() => JSON.stringify(form.value) !== baseline.value);
 const saving = ref(false);
 const skillsReady = ref(false);
 const promptPreview = ref(false);
+const workspaceTab = ref("prompt");
+const workspaceTabs = computed(() => [
+  { id: "prompt", label: t("agents.prompt") },
+  { id: "capabilities", label: t("agents.capabilities") },
+  { id: "data", label: t("agents.data") },
+]);
 const mcpOptions = ref<McpServiceOption[]>([]);
 const mcpLoading = ref(false);
 const mcpFailed = ref(false);
 
-const sections = computed(() => [
-  { id: "basics", label: t("agents.basic") },
-  { id: "data", label: t("agents.data") },
-  { id: "capabilities", label: t("agents.capabilities") },
-  { id: "model", label: t("agents.model") },
-  { id: "prompt", label: t("agents.prompt") },
-]);
 
-const bodyRef = ref<HTMLElement | null>(null);
-
-/** Section titles are in-page anchors: the editor is one page, so jumping to a part does not reload anything. */
-function jumpTo(id: string) {
-  const target = bodyRef.value?.querySelector<HTMLElement>(`[data-section="${id}"]`);
-  target?.scrollIntoView({ block: "start", behavior: "smooth" });
-}
-
-watch(isDark, (dark) => {
-  form.value.avatarColor = themedAvatarColor(form.value.avatarColor, dark);
-});
 
 async function loadMcp() {
   mcpLoading.value = true;
@@ -130,7 +105,7 @@ function validInput(): AssistantAgentInput | null {
   return {
     name: value.name.trim(),
     description: value.description,
-    icon: JSON.stringify({ key: value.avatarKey, color: value.avatarColor }),
+    icon: props.agent?.icon ?? null,
     enabled: value.enabled,
     systemPrompt: value.systemPrompt,
     modelSelection: { modelId: value.modelId },
@@ -190,32 +165,37 @@ defineExpose({ dirty });
 <template>
   <div class="agent-editor">
     <header class="editor-bar">
-      <span class="editor-avatar" :style="{ background: form.avatarColor }">
-        <component :is="avatarIcon(form.avatarKey)" :size="18" />
-      </span>
       <div class="editor-title">
         <strong>{{ form.name.trim() || (agent ? agent.name : t("agents.newAgent")) }}</strong>
         <small :class="{ dirty }">{{ dirty ? t("admin.agentEditorUnsaved") : t("admin.agentEditorSaved") }}</small>
       </div>
-      <nav class="section-anchors" :aria-label="t('agents.sections')">
-        <button v-for="section in sections" :key="section.id" type="button" @click="jumpTo(section.id)">
-          {{ section.label }}
-        </button>
-      </nav>
+      <div class="editor-actions">
       <el-button v-if="agent" text :icon="Trash2" :disabled="saving" @click="remove">{{ t("common.delete") }}</el-button>
       <el-button type="primary" :loading="saving" :disabled="!skillsReady || (!dirty && !!agent)" @click="save">{{ t("common.save") }}</el-button>
+      </div>
     </header>
 
-    <div ref="bodyRef" class="editor-body">
-      <el-form label-position="top" :disabled="saving" @submit.prevent>
-        <section class="editor-section" data-section="basics">
+    <div class="editor-body">
+      <el-form class="editor-form" label-position="top" :disabled="saving" @submit.prevent>
+        <div class="configuration-column">
+        <section class="editor-section basics-section" data-section="basics">
           <h3>{{ t("agents.basic") }}</h3>
+          <div class="basic-layout">
+          <div class="identity-fields">
           <AgentBasicInfoFields
             v-model:name="form.name"
             v-model:description="form.description"
-            v-model:avatar-key="form.avatarKey"
-            v-model:avatar-color="form.avatarColor"
           />
+          </div>
+          <div class="runtime-fields" data-section="model">
+            <el-form-item :label="t('agents.model')">
+              <ModelSelectionSelect v-model="form.modelId" :options="modelOptions" :aria-label="t('agents.model')" />
+              <p class="field-note">{{ t("agents.modelHint") }}</p>
+            </el-form-item>
+            <div v-if="modelOptionsFailed" class="model-options-failed" role="alert">
+              <span>{{ t("agents.modelOptionsLoadFailed") }}</span>
+              <el-button size="small" link type="primary" @click="emit('reloadModelOptions')">{{ t("common.retry") }}</el-button>
+            </div>
           <div class="setting-row">
             <div>
               <strong>{{ t("common.enable") }}</strong>
@@ -223,27 +203,16 @@ defineExpose({ dirty });
             </div>
             <el-switch v-model="form.enabled" :aria-label="t('common.enable')" />
           </div>
-        </section>
-
-        <section class="editor-section" data-section="data">
-          <div class="section-head">
-            <div>
-              <h3>{{ t("agents.data") }}</h3>
-              <p>{{ t("agents.dataHint") }}</p>
-            </div>
           </div>
-          <DataScopeGraph
-            v-model="form.classNames"
-            :classes="classes"
-            :relations="relations"
-            :loading="outlineLoading"
-          />
+          </div>
         </section>
 
-        <section class="editor-section" data-section="capabilities">
+        </div>
+        <div class="configuration-workspace">
+          <PlatformTabs :tabs="workspaceTabs" :active-id="workspaceTab" :label="t('agents.sections')" @select="workspaceTab = $event" />
+        <section v-show="workspaceTab === 'capabilities'" class="editor-section capabilities-section" data-section="capabilities">
           <div class="section-head">
             <div>
-              <h3>{{ t("agents.capabilities") }}</h3>
               <p>{{ t("agents.capabilitiesHint") }}</p>
             </div>
             <div class="section-actions">
@@ -253,10 +222,13 @@ defineExpose({ dirty });
             </div>
           </div>
 
+          <div class="capability-group">
           <h4 class="group-title">{{ t("agents.skills") }}</h4>
           <p class="group-hint">{{ t("agents.skillsHint") }}</p>
           <SkillSelector v-model="form.skills" @ready="skillsReady = $event" />
+          </div>
 
+          <div class="capability-group">
           <div class="section-head tool-head">
             <div>
               <h4 class="group-title">{{ t("admin.externalMcpServices") }}</h4>
@@ -287,37 +259,30 @@ defineExpose({ dirty });
             />
           </el-select>
           <el-alert v-if="mcpFailed" class="mcp-alert" type="warning" :closable="false" :title="t('admin.externalMcpServicesLoadFailed')" />
-        </section>
-
-        <section class="editor-section" data-section="model">
-          <div class="section-head">
-            <div>
-              <h3>{{ t("agents.model") }}</h3>
-              <p>{{ t("agents.modelHint") }}</p>
-            </div>
-          </div>
-          <ModelSelectionSelect v-model="form.modelId" :options="modelOptions" :aria-label="t('agents.model')" />
-          <div v-if="modelOptionsFailed" class="model-options-failed" role="alert">
-            <span>{{ t("agents.modelOptionsLoadFailed") }}</span>
-            <el-button size="small" link type="primary" @click="emit('reloadModelOptions')">{{ t("common.retry") }}</el-button>
           </div>
         </section>
 
-        <section class="editor-section" data-section="prompt">
+        <section v-show="workspaceTab === 'prompt'" class="editor-section prompt-section" data-section="prompt">
           <div class="section-head">
             <div>
               <h3>{{ t("agents.prompt") }}</h3>
               <p>{{ t("agents.promptHint") }}</p>
             </div>
-            <el-radio-group v-model="promptPreview" size="small">
-              <el-radio-button :value="false">{{ t("common.edit") }}</el-radio-button>
-              <el-radio-button :value="true">{{ t("admin.agentEditorPreview") }}</el-radio-button>
-            </el-radio-group>
+            <el-button size="small" @click="promptPreview = !promptPreview">
+              {{ promptPreview ? t("common.edit") : t("admin.agentEditorPreview") }}
+            </el-button>
           </div>
           <div v-if="promptPreview" class="prompt-preview markdown-body" v-html="renderAgentMarkdown(form.systemPrompt)" />
-          <CodeMirrorEditor v-else v-model="form.systemPrompt" language="markdown" :min-height="320" />
+           <CodeMirrorEditor v-else v-model="form.systemPrompt" language="markdown" :min-height="480" />
           <small class="prompt-count">{{ t("admin.agentEditorCharacters", { count: form.systemPrompt.length }) }} · Markdown</small>
         </section>
+        <section v-show="workspaceTab === 'data'" class="editor-section data-section" data-section="data">
+          <div class="section-head">
+            <div><h3>{{ t("agents.data") }}</h3><p>{{ t("agents.dataHint") }}</p></div>
+          </div>
+          <DataScopeGraph v-model="form.classNames" :classes="classes" :relations="relations" :loading="outlineLoading" />
+        </section>
+        </div>
       </el-form>
     </div>
   </div>
@@ -325,6 +290,7 @@ defineExpose({ dirty });
 
 <style scoped>
 .agent-editor {
+  container: agent-editor / inline-size;
   display: flex;
   flex-direction: column;
   height: 100%;
@@ -335,25 +301,19 @@ defineExpose({ dirty });
   flex-wrap: wrap;
   align-items: center;
   gap: var(--component-gap);
-  padding: var(--spacing-md) var(--spacing-xl);
+  padding: var(--spacing-md) var(--page-section-padding);
   border-bottom: 1px solid var(--el-border-color-light);
-}
-.editor-avatar {
-  display: grid;
-  place-items: center;
-  width: 36px;
-  height: 36px;
-  flex-shrink: 0;
-  border-radius: var(--radius-md);
-  color: var(--el-color-primary);
 }
 .editor-title {
   display: flex;
-  flex-direction: column;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: var(--spacing-sm) var(--spacing-md);
+  flex: 1;
   min-width: 0;
 }
 .editor-title strong {
-  font-size: var(--text-base);
+  font-size: var(--text-lg);
   color: var(--el-text-color-primary);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -366,57 +326,88 @@ defineExpose({ dirty });
 .editor-title small.dirty {
   color: var(--el-color-warning);
 }
-.section-anchors {
+.editor-actions {
   display: flex;
   align-items: center;
-  gap: 2px;
+  gap: var(--spacing-sm);
   margin-left: auto;
-  padding: 2px;
-  background: var(--el-fill-color);
-  border-radius: var(--radius-sm);
-  overflow-x: auto;
-  max-width: 100%;
+  flex-wrap: wrap;
 }
-.section-anchors button {
-  min-height: var(--control-height-sm);
-  padding: 0 10px;
-  border: 0;
-  border-radius: var(--radius-xs);
-  background: transparent;
-  color: var(--el-text-color-regular);
-  font: inherit;
-  font-size: var(--text-sm);
-  white-space: nowrap;
-  cursor: pointer;
-}
-.section-anchors button:hover {
-  color: var(--el-text-color-primary);
-  background: var(--el-bg-color);
-}
-.section-anchors button:focus-visible {
-  outline: 2px solid var(--el-color-primary);
-  outline-offset: -2px;
+.editor-actions :deep(.el-button) {
+  margin: 0;
 }
 .editor-body {
   flex: 1;
   min-height: 0;
-  overflow-y: auto;
-  padding: 8px 24px 40px;
+  overflow: auto;
 }
-.editor-body :deep(.el-form) {
-  max-width: 820px;
-  margin: 0 auto;
+.editor-form {
+  display: grid;
+  grid-template-columns: minmax(320px, 380px) minmax(0, 1fr);
+  min-height: 100%;
+  align-items: stretch;
+  margin: 0;
+}
+.configuration-column {
+  min-width: 0;
+  padding: var(--page-section-padding);
+  border-inline-end: 1px solid var(--el-border-color);
+}
+.configuration-column > .editor-section + .editor-section {
+  margin-top: var(--spacing-xl);
+  padding-top: var(--spacing-lg);
+  border-top: 1px solid var(--el-border-color);
+}
+.configuration-heading {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  list-style: none;
+  cursor: pointer;
+  color: var(--el-text-color-primary);
+  font-size: var(--text-base);
+  font-weight: var(--font-semibold);
+}
+.configuration-heading::-webkit-details-marker { display: none; }
+.disclosure-arrow { flex-shrink: 0; color: var(--el-text-color-secondary); transition: transform var(--transition-fast); }
+details[open] > summary .disclosure-arrow { transform: rotate(90deg); }
+.data-section {
+  padding-block: var(--page-section-padding);
+}
+.configuration-workspace { min-width: 0; padding: 0 var(--page-section-padding) var(--spacing-xl); }
+.configuration-workspace > .editor-section { padding-block: var(--page-section-padding); }
+.configuration-heading span {
+  margin-inline-start: var(--spacing-sm);
+  color: var(--el-text-color-secondary);
+  font-size: var(--text-xs);
+  font-weight: var(--font-normal);
+}
+details[open] > .configuration-heading { margin-bottom: var(--spacing-lg); }
+.editor-form :deep(.el-form-item) { margin-bottom: var(--spacing-lg); }
+.editor-form :deep(.el-form-item__content) { min-width: 0; }
+.editor-form :deep(.el-form-item:last-child) { margin-bottom: 0; }
+.prompt-section { padding-inline: 0; }
+.basic-layout {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-lg);
+}
+.identity-fields, .runtime-fields { min-width: 0; }
+.runtime-fields {
+  padding-top: var(--spacing-lg);
+  border-top: 1px solid var(--el-border-color);
+}
+.field-note {
+  margin: var(--spacing-sm) 0 0;
+  font-size: var(--text-sm);
+  line-height: var(--leading-sm);
+  color: var(--el-text-color-secondary);
 }
 .editor-section {
-  padding: var(--spacing-xl) 0;
-  border-bottom: 1px solid var(--el-border-color-lighter);
-  scroll-margin-top: 12px;
-}
-.editor-section:last-child {
-  border-bottom: 0;
+  min-width: 0;
 }
 .editor-section h3 {
-  margin: 0 0 14px;
+  margin: 0 0 var(--spacing-lg);
   font-size: var(--text-base);
   font-weight: 600;
   color: var(--el-text-color-primary);
@@ -425,8 +416,9 @@ defineExpose({ dirty });
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 16px;
-  margin-bottom: 14px;
+  gap: var(--spacing-lg);
+  margin-bottom: var(--spacing-lg);
+  flex-wrap: wrap;
 }
 .section-head h3 {
   margin-bottom: 4px;
@@ -457,16 +449,23 @@ defineExpose({ dirty });
   color: var(--el-text-color-secondary);
 }
 .tool-head {
-  margin-top: 20px;
+  margin-top: 0;
+}
+.capability-group {
+  min-width: 0;
+}
+.capability-group + .capability-group {
+  margin-top: var(--spacing-lg);
+  padding-top: var(--spacing-lg);
+  border-top: 1px solid var(--el-border-color);
 }
 .setting-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  padding: 12px 14px;
-  border-radius: var(--radius-md);
-  background: var(--el-fill-color-light);
+  padding-top: var(--spacing-lg);
+  border-top: 1px solid var(--el-border-color);
 }
 .setting-row strong {
   font-size: var(--text-sm);
@@ -474,12 +473,12 @@ defineExpose({ dirty });
 }
 .setting-row p {
   margin: 2px 0 0;
-  font-size: var(--text-xs);
+  font-size: var(--text-sm);
   color: var(--el-text-color-secondary);
 }
 .prompt-preview {
-  min-height: 320px;
-  padding: 14px 18px;
+  min-height: 480px;
+  padding: var(--page-section-padding);
   border: 1px solid var(--el-border-color);
   border-radius: var(--radius-md);
   overflow: auto;
@@ -503,5 +502,11 @@ defineExpose({ dirty });
   margin-top: 8px;
   font-size: var(--text-sm);
   color: var(--el-color-warning);
+}
+@container agent-editor (max-width: 760px) {
+  .editor-form {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .configuration-column { border-inline-end: 0; border-bottom: 1px solid var(--el-border-color); }
 }
 </style>

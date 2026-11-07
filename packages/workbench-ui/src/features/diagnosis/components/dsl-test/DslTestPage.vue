@@ -174,7 +174,6 @@ async function executeDsl() {
     <section class="dsl-panel left" :style="{ width: leftPercent + '%' }">
       <div class="panel-header">
         <span class="panel-title">{{ t("nav.dslTest") }}</span>
-        <span class="panel-subtitle">{{ t("dsl.executeDescription") }}</span>
         <span style="flex: 1" />
         <el-button
           type="primary"

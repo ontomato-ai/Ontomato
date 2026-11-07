@@ -118,19 +118,4 @@ const collapsed = computed({
   background: var(--shell-workspace-bg);
   overflow: hidden;
 }
-@media (max-width: 760px) {
-  .platform-shell {
-    flex-direction: column;
-    height: auto;
-    min-height: 100dvh;
-  }
-  .platform-app {
-    border-radius: var(--shell-app-radius) var(--shell-app-radius) 0 0;
-    border-right: 1px solid var(--shell-app-edge);
-    border-bottom: 0;
-  }
-  .platform-workspace {
-    min-height: 60vh;
-  }
-}
 </style>

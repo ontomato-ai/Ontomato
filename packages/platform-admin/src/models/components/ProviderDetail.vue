@@ -285,12 +285,9 @@ function addManually() {
       </el-button>
     </header>
 
-    <el-form label-position="left" label-width="120px" class="provider-form" @submit.prevent>
+    <el-form label-position="top" class="provider-form" @submit.prevent>
       <el-form-item :label="t('admin.providerName')">
         <el-input v-model="provider.name" :placeholder="provider.id" />
-      </el-form-item>
-      <el-form-item :label="t('admin.providerId')">
-        <span class="readonly-value mono">{{ provider.id }}</span>
       </el-form-item>
       <el-form-item :label="t('admin.providerApi')">
         <el-select v-model="provider.api" :aria-label="t('admin.providerApi')">
@@ -298,10 +295,10 @@ function addManually() {
         </el-select>
         <p v-if="embeddingsMisplaced" class="field-hint warning" role="alert">{{ t("admin.embeddingNeedsOpenAi") }}</p>
       </el-form-item>
-      <el-form-item :label="t('admin.baseUrl')">
+      <el-form-item class="provider-field-wide" :label="t('admin.baseUrl')">
         <el-input v-model="provider.baseUrl" :placeholder="modelApiBaseUrls[provider.api]" />
       </el-form-item>
-      <el-form-item :label="t('admin.apiKey')">
+      <el-form-item class="provider-field-wide" :label="t('admin.apiKey')">
         <el-input
           v-model="keyInput"
           type="password"

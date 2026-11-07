@@ -55,6 +55,7 @@ const props = withDefaults(
      * appears in the column and the agents and sessions are read once.
      */
     nav: AgentNav;
+    agentPicker?: boolean;
     /** The application's name, at the top of the column when the application runs on one agent. */
     title?: string;
     /** The application's own entry at the foot of its column (its settings, the model the diagnosis runs on). */
@@ -188,6 +189,7 @@ onMounted(() => {
           :workbench="workbench"
           :title="title"
           :agents="nav.agents.value"
+          :agent-picker="agentPicker"
           :agent-id="agentId"
           :sessions="nav.sessions.value"
           :sessions-state="nav.sessionsState.value"
@@ -286,5 +288,14 @@ onMounted(() => {
   flex: 1;
   min-height: 0;
   overflow: auto;
+}
+@media (max-width: 760px) {
+  .agent-shell { flex-direction: column; }
+  .agent-shell > :deep(.shell-column) {
+    flex: 0 0 auto;
+    max-height: 240px;
+    overflow: auto;
+  }
+  .shell-main { min-height: 0; }
 }
 </style>

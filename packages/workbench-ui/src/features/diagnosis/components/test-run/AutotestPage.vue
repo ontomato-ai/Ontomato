@@ -204,14 +204,14 @@ onMounted(() => load());
 }
 .autotest-tabs {
   display: flex;
-  gap: 4px;
-  padding: 0 12px;
+  gap: var(--spacing-lg);
+  padding: 0 var(--page-section-padding);
   flex-shrink: 0;
   border-bottom: 1px solid var(--el-border-color);
 }
 .autotest-tab {
   height: 40px;
-  padding: 0 10px;
+  padding: 0;
   border: 0;
   border-bottom: 2px solid transparent;
   background: transparent;

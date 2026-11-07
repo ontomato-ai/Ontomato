@@ -102,8 +102,9 @@ describe("capability library", () => {
   it("filters by kind: all, skills, external tools", async () => {
     const { wrapper, names } = await mountLibrary();
     const choose = async (label: string) => {
-      const input = wrapper.findAll(".el-radio-button").find((item) => item.text() === label)!;
-      await input.find("input").setValue(true);
+      const select = wrapper.findComponent({ name: "ElSelect" });
+      const option = select.findAllComponents({ name: "ElOption" }).find(item => item.props("label") === label)!;
+      select.vm.$emit("update:modelValue", option.props("value"));
       await flushPromises();
     };
     await choose(t("capabilities.skills"));

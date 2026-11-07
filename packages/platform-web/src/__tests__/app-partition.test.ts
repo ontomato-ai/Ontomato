@@ -12,6 +12,26 @@ const declarations = appDeclarations(generatedNavigation(), closedAccess([]), ap
 const named = (section: string) => declarations.filter((app) => app.rail === section).map((app) => app.id);
 
 describe("the platform's applications", () => {
+  it("opens knowledge governance in the conversation rather than feedback records", () => {
+    expect(declarations.find(app => app.id === "governance")?.home).toBe("/governance/chat");
+  });
+  it("organizes the ontology menu into four layers with the capability library", () => {
+    const ontology = appPartition().find(app => app.id === "ontology")!;
+    expect(ontology.sections.map(section => section.key)).toEqual([
+      "ontology:facts", "ontology:capabilities", "ontology:governance", "ontology:products",
+    ]);
+    expect(ontology.sections[0]!.paths).not.toContain("/ontology/assets/actions");
+    expect(ontology.sections[1]!.paths).toEqual([
+      "/ontology/assets/metrics", "/ontology/assets/functions", "/ontology/assets/actions", "/ontology/capabilities",
+    ]);
+    expect(ontology.sections[2]!.paths).toEqual(["/ontology/knowledge"]);
+    expect(ontology.sections[3]!.paths).toEqual([]);
+    const menu = appDeclarations(generatedNavigation(), closedAccess(["ontology-modeling"]), appPartition(), t)
+      .find(app => app.id === "ontology")!;
+    expect(menu.groups?.find(group => group.key === "ontology:products")).toMatchObject({
+      label: "platform.layers.products", pages: [],
+    });
+  });
   it("sits in three sections: the ontology applications, the business ones, and the settings above the account", () => {
     expect(named("top")).toEqual(["agents", "dashboards", "schedules", "browser"]);
     expect(named("apps")).toEqual(["ontology", "governance", "operations"]);

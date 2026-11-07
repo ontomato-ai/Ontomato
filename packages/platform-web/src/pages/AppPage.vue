@@ -48,6 +48,7 @@ withDefaults(
   flex: 1;
   min-height: 0;
   overflow: auto;
-  padding-block: 16px 24px;
+  padding-block: var(--page-content-gap) var(--spacing-xl);
+  container: platform-page / inline-size;
 }
 </style>

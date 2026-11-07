@@ -196,6 +196,6 @@ onMounted(async () => {
 .ops-padded {
   box-sizing: border-box;
   height: 100%;
-  padding: 12px;
+  padding: var(--page-section-padding);
 }
 </style>

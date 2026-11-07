@@ -33,33 +33,33 @@ const platformApps: readonly AppPartition[] = [
     icon: "ontology",
     rail: "apps",
     prefix: "/ontology",
-    // The manager keeps its own three groups: they are its menu, drawn in its own band inside the area.
+    // Four layers organize existing screens; cross-application entries keep their original routes and permissions.
     frame: "menu",
     sections: [
       {
-        key: "ontology:model",
-        titleKey: "nav.groupOntology",
+        key: "ontology:facts",
+        titleKey: "platform.layers.facts",
         paths: [
           managerPaths.graph,
           managerPaths.objects,
           managerPaths.attributes,
           managerPaths.relations,
-          managerPaths.actions,
           managerPaths.visualModeling,
         ],
       },
       {
-        key: "ontology:assets",
-        titleKey: "nav.groupAssets",
+        key: "ontology:capabilities",
+        titleKey: "platform.layers.capabilities",
         // Scheduled tasks of functions are the platform's: one list for every kind of task.
-        paths: [managerPaths.metrics, managerPaths.functions],
+        paths: [managerPaths.metrics, managerPaths.functions, managerPaths.actions, platformRoutes.ontologyCapabilities.path],
       },
       {
-        key: "ontology:knowledge",
-        titleKey: "nav.groupKnowledge",
+        key: "ontology:governance",
+        titleKey: "platform.layers.governance",
         // Business knowledge stays with the ontology it describes.
         paths: [managerPaths.knowledge],
       },
+      { key: "ontology:products", titleKey: "platform.layers.products", paths: [], showWhenEmpty: true },
     ],
   },
   {
@@ -116,6 +116,7 @@ const platformApps: readonly AppPartition[] = [
     icon: "knowledge",
     rail: "apps",
     prefix: "/governance",
+    home: platformRoutes.governance.path,
     sections: [
       {
         key: "governance:pages",
@@ -144,7 +145,6 @@ const platformApps: readonly AppPartition[] = [
   {
     id: "settings",
     labelKey: "platform.settings",
-    descriptionKey: "platform.descriptions.settings",
     icon: "settings",
     rail: "bottom",
     prefix: "/settings",

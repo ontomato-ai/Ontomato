@@ -102,7 +102,7 @@ describe("foundation shell sizes", () => {
   it("declares the platform rail's own widths, its icon-row toggle and the application's corner radius", () => {
     expect(declarationsFor(":root")).toMatchObject({
       "--shell-platform-rail": "196px",
-      "--shell-platform-rail-collapsed": "58px",
+      "--shell-platform-rail-collapsed": "50px",
       "--shell-rail-button": "38px",
       "--shell-app-radius": "16px",
     });

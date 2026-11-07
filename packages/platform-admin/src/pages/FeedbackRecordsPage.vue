@@ -259,7 +259,8 @@ onMounted(loadRecords);
       <div class="admin-pagination">
         <el-pagination
           background
-          layout="prev, pager, next, jumper, ->, total"
+          layout="total, prev, pager, next"
+          :pager-count="5"
           :total="total"
           :page-size="pageSize"
           :current-page="pageNum"
@@ -297,9 +298,11 @@ onMounted(loadRecords);
   min-height: 0;
   flex: 1;
   flex-direction: column;
-  /* The page area carries the horizontal gutter once; a page pads vertically only. */
-  padding: var(--spacing-lg) 0;
+  padding-block: var(--spacing-lg);
+  min-width: 0;
 }
+
+.admin-pagination { overflow-x: auto; }
 
 .filter-source {
   width: 140px;

@@ -72,7 +72,9 @@ defineExpose({ focus });
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 8px 16px;
+  padding: var(--spacing-md) var(--page-section-padding);
+  flex-wrap: wrap;
+  gap: var(--spacing-md);
   border-bottom: 0.5px solid var(--observe-border, var(--el-border-color));
   flex-shrink: 0;
 }
@@ -81,6 +83,8 @@ defineExpose({ focus });
   display: flex;
   align-items: center;
   gap: 12px;
+  flex-wrap: wrap;
+  min-width: 0;
 }
 
 .header-label {
@@ -97,7 +101,7 @@ defineExpose({ focus });
 }
 
 .selector-wrap :deep(.el-select) {
-  width: 240px;
+  width: min(240px, 100%);
 }
 
 .dirty-indicator {
@@ -127,5 +131,6 @@ defineExpose({ focus });
 .header-right {
   display: flex;
   gap: 8px;
+  flex-wrap: wrap;
 }
 </style>
