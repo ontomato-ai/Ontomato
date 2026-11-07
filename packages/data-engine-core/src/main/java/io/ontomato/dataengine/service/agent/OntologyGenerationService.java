@@ -37,6 +37,7 @@ public class OntologyGenerationService {
   private final RuntimeCodeClient code;
   private final DataPermissionLookup permissions;
   private final Set<String> active = java.util.concurrent.ConcurrentHashMap.newKeySet();
+  private final CleanupRetry cleanupRetries = new CleanupRetry();
   /** How long a stop wait may last before the business, cancel and deadline checks run again. */
   private static final long BUSINESS_CHECK_MS = 5_000;
   private static final org.slf4j.Logger LOG =
@@ -352,23 +353,25 @@ public class OntologyGenerationService {
   private void reconcileCancellation(String session, String run, Owner owner) {
     boolean interrupted = Thread.interrupted();
     try {
-      grants.revoke(owner.domainId(), run);
-      sessions.markSessionCancelled(run, System.currentTimeMillis());
+      tolerateMissing(() -> grants.revoke(owner.domainId(), run));
+      tolerateMissing(() -> sessions.markSessionCancelled(run, System.currentTimeMillis()));
       for (var test :
           store.rows(
               "SELECT execution_id FROM ontology_generation_tests WHERE run_id=?", uuid(run)))
-        code.closeIntent(owner.domainId(), test.getString("execution_id"));
+        tolerateMissing(() -> code.closeIntent(owner.domainId(), test.getString("execution_id")));
       if (!store.run(session, run, owner).getBooleanValue("external"))
-        runtime.json(
-            owner.domainId(),
-            run,
-            "/v1/sessions/" + session + "/run-intents/" + run + "/cancel",
-            "POST",
-            Map.of(),
-            null);
+        tolerateMissing(
+            () ->
+                runtime.json(
+                    owner.domainId(),
+                    run,
+                    "/v1/sessions/" + session + "/run-intents/" + run + "/cancel",
+                    "POST",
+                    Map.of(),
+                    null));
       var g = store.one("SELECT * FROM ontology_generations WHERE run_id=?", uuid(run));
       if (g.getString("sandbox_id") != null)
-        operations.dropSandbox(g.getString("sandbox_id"), owner.domainId());
+        tolerateMissing(() -> operations.dropSandbox(g.getString("sandbox_id"), owner.domainId()));
       store.transaction(
           () -> {
             store.update(
@@ -379,15 +382,52 @@ public class OntologyGenerationService {
                 "UPDATE ontology_agent_runs SET cancel_confirmed=true WHERE id=?", uuid(run));
             return null;
           });
+      cleanupRetries.succeeded(run);
     } catch (Exception error) {
-      LOG.warn("Generation cleanup awaits reconciliation: {}", run, error);
+      String reason = failureReason(error);
+      if (cleanupRetries.failed(run, reason))
+        LOG.warn("Generation cleanup awaits reconciliation: {} ({})", run, reason, error);
+      else LOG.debug("Generation cleanup retry suppressed: {} ({})", run, reason);
     } finally {
       if (interrupted) Thread.currentThread().interrupt();
     }
   }
 
+  @FunctionalInterface
+  private interface CleanupStep {
+    void run() throws Exception;
+  }
+
+  /** A missing remote resource already has the end state cleanup wants, so it is not a failure. */
+  private static void tolerateMissing(CleanupStep step) throws Exception {
+    try {
+      step.run();
+    } catch (Exception error) {
+      if (!notFound(error)) throw error;
+    }
+  }
+
+  private static boolean notFound(Throwable error) {
+    for (Throwable cause = error; cause != null; cause = cause.getCause()) {
+      if (cause instanceof AgentHttpException http && http.status() == 404) return true;
+      if (cause.getCause() == cause) break;
+    }
+    return false;
+  }
+
+  /** A stable key for the failure, so an unchanged cause does not warn again on every retry. */
+  private static String failureReason(Throwable error) {
+    Throwable cause = error;
+    while (cause.getCause() != null && cause.getCause() != cause) cause = cause.getCause();
+    if (cause instanceof AgentHttpException http)
+      return "HTTP " + http.status() + " " + http.code() + ": " + http.getMessage();
+    String message = cause.getMessage();
+    return cause.getClass().getSimpleName() + (message == null ? "" : ": " + message);
+  }
+
   @org.springframework.scheduling.annotation.Scheduled(fixedDelay = 1000)
   public void recover() {
+    long now = System.currentTimeMillis();
     for (var row :
         store.rows(
             "SELECT r.*,s.user_id,s.domain_id FROM ontology_generations g JOIN ontology_agent_runs"
@@ -396,11 +436,11 @@ public class OntologyGenerationService {
             sessions.getNodeId(),
             uuid(ActionCreationService.AGENT))) {
       String run = row.getString("id");
-      boolean expired =
-          Instant.parse(row.getString("deadline")).toEpochMilli() <= System.currentTimeMillis();
-      if (row.getBooleanValue("cancel_requested")
-          || expired
-          || (!row.getBooleanValue("external") && !active.contains(run)))
+      boolean expired = Instant.parse(row.getString("deadline")).toEpochMilli() <= now;
+      if ((row.getBooleanValue("cancel_requested")
+              || expired
+              || (!row.getBooleanValue("external") && !active.contains(run)))
+          && cleanupRetries.due(run))
         close(row.getString("session_id"), run, OntologyAgentStore.owner(row));
     }
   }
