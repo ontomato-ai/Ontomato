@@ -64,13 +64,6 @@
   flex-direction: column;
   gap: var(--conversation-block-gap);
 }
-/* What the agent says before calling tools: part of the process, quieter than the answer. */
-.agent-shell .commentary .shell-markdown {
-  --ms-text-body: var(--text-sm);
-  --ms-leading-body: 1.538;
-  color: var(--el-text-color-secondary);
-  margin: 0;
-}
 .agent-shell .shell-markdown > .node-slot {
   min-width: 0;
 }

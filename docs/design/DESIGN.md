@@ -286,6 +286,9 @@ wrap labelled actions instead of hiding their text with zero font size. Record/l
 
 ## 9. Agent conversation
 
+The interaction stages, controls, confirmation boundaries and implementation sequence are specified in
+[AGENT-INTERACTIONS.md](AGENT-INTERACTIONS.md).
+
 The column belongs to the application and is drawn by the conversation shell; from top to bottom: its head, a new
 conversation, the application's own pages, the recent conversations, and the application's own entry at the foot. The
 head is the agent switcher when the application runs on several agents — the current agent's name and a dropdown of

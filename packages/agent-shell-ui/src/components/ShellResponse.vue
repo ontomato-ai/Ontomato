@@ -133,7 +133,7 @@ async function submit(value: ShellFeedbackValue) {
     />
     <template v-for="block in item.blocks" :key="block.key">
       <ShellProcess v-if="block.kind === 'process'" class="response-process" :steps="block.steps" :active="block.active" />
-      <div v-else class="response-text" :class="{ commentary: block.commentary }">
+      <div v-else class="response-text">
         <ShellMarkdown :content="block.text" :final="block.final" :run-id="block.runId" />
       </div>
     </template>
@@ -201,7 +201,7 @@ async function submit(value: ShellFeedbackValue) {
   gap: var(--conversation-process-gap);
 }
 /* The response owns each gap; answer boundaries get more space than process metadata. */
-.response > .response-text:not(.commentary):not(:first-child) {
+.response > .response-text:not(:first-child) {
   margin-top: calc(var(--conversation-block-gap) - var(--conversation-process-gap));
 }
 .status-line {

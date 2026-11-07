@@ -19,9 +19,11 @@ import WorkbenchAppearanceDialog from "./WorkbenchAppearanceDialog.vue";
 import { workbenchFeatures } from "../features";
 import ActionProposalRenderer from "./ActionProposalRenderer.vue";
 import FollowUpRenderer from "./FollowUpRenderer.vue";
+import ClarificationRenderer from "./ClarificationRenderer.vue";
 const artifactRenderers = [
   { path: /(?:\.action\.json$|(?:^|\/)action-[^/]+\.json$)/i, component: ActionProposalRenderer },
   { path: /\.follow-ups\.json$/i, component: FollowUpRenderer },
+  { path: /\.clarification\.json$/i, component: ClarificationRenderer },
 ];
 
 /**
