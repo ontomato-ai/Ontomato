@@ -690,14 +690,14 @@ describe("Manager pages in the service router", () => {
     await settle();
     (root().querySelectorAll(".data-browser-toolbar .el-segmented__item")[1] as HTMLElement).click();
     await settle();
-    expect(root().textContent).toContain("[de] Advanced Filter");
+    expect(root().querySelector(".data-browser-actions button")?.getAttribute("aria-label")).toBe("[de] Advanced Filter");
     expect(root().querySelector(".el-pagination__total")?.textContent).toContain("Gesamt");
     expect(requests.every((request) => request.headers["Accept-Language"] === "de")).toBe(true);
 
     requests = [];
     Object.assign(host, english);
     await settle();
-    expect(root().textContent).toContain("Advanced Filter");
+    expect(root().querySelector(".data-browser-actions button")?.getAttribute("aria-label")).toBe("Advanced Filter");
     expect(root().textContent).not.toContain("[de] ");
     expect(root().querySelector(".el-pagination__total")?.textContent).toContain("Total");
     expect(requests).toEqual([]);
@@ -1177,7 +1177,7 @@ describe("business knowledge page", () => {
       button.textContent?.trim()
     );
   const tabTexts = () =>
-    [...document.querySelectorAll(".knowledge-filter")].map((tab) =>
+    [...document.querySelectorAll(".knowledge-filters .el-segmented__item")].map((tab) =>
       tab.textContent?.replace(/\s+/g, " ").trim()
     );
   const messageText = () =>
@@ -1233,7 +1233,9 @@ describe("business knowledge page", () => {
     expect(detailTitle()).toBe("Refund rule");
     expect(detailButtons()).toEqual(["Edit", "Delete"]);
 
-    clickButton("Pending Review 1");
+    const pendingFilter = [...document.querySelectorAll<HTMLElement>(".knowledge-filters .el-segmented__item")]
+      .find((option) => option.textContent?.replace(/\s+/g, " ").trim() === "Pending Review 1")!;
+    pendingFilter.click();
     await settle();
     expect(itemTitles()).toEqual(["Legacy note"]);
     expect(detailTitle()).toBe("Legacy note");

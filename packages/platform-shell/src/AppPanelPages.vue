@@ -58,7 +58,7 @@ const emit = defineEmits<{ selectPage: [id: string] }>();
   padding: 8px 8px 4px;
   font-size: var(--text-xs);
   line-height: var(--leading-xs);
-  font-weight: 600;
+  font-weight: var(--font-semibold);
   letter-spacing: var(--tracking-label);
   color: var(--el-text-color-secondary);
 }
@@ -74,7 +74,10 @@ const emit = defineEmits<{ selectPage: [id: string] }>();
   border-radius: var(--radius-md);
   background: transparent;
   color: var(--el-text-color-regular);
-  font: inherit;
+  font-family: var(--font-sans);
+  font-size: var(--text-sm);
+  line-height: var(--leading-sm);
+  font-weight: var(--font-normal);
   text-align: left;
   text-decoration: none;
   cursor: pointer;
@@ -91,7 +94,7 @@ const emit = defineEmits<{ selectPage: [id: string] }>();
 .page-row.active {
   background: var(--shell-panel-selected);
   color: var(--el-text-color-primary);
-  font-weight: 600;
+  font-weight: var(--font-semibold);
 }
 .page-row.active .page-icon {
   color: var(--brand-link);

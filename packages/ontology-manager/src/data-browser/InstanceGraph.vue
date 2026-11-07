@@ -144,27 +144,6 @@ function graphColors() {
   return readGraphColors(graphRef.value!);
 }
 
-function seededRandom(seed = 20261008) {
-  let value = seed >>> 0;
-  return () => {
-    value += 0x6d2b79f5;
-    let next = value;
-    next = Math.imul(next ^ (next >>> 15), next | 1);
-    next ^= next + Math.imul(next ^ (next >>> 7), next | 61);
-    return ((next ^ (next >>> 14)) >>> 0) / 4294967296;
-  };
-}
-
-function graphLayout() {
-  return {
-    type: "d3-force" as const,
-    preventOverlap: true,
-    linkDistance: 140,
-    nodeStrength: -380,
-    randomSource: seededRandom(),
-  };
-}
-
 function nodeOptions(colors: ReturnType<typeof graphColors>) {
   return {
     type: "circle" as const,
@@ -325,7 +304,7 @@ async function renderGraph(request: number) {
       isCurrent,
       yieldControl: yieldToBrowser,
       onProgress: (completed) => { renderedElements.value = completed; },
-      positions: overview.value ? overviewPositions(nodes.value) : undefined,
+      positions: overviewPositions(nodes.value),
     });
     if (!complete) return;
     const savedLayout = readOverviewLayout();
@@ -333,7 +312,7 @@ async function renderGraph(request: number) {
       const defaults = overviewPositions(nodes.value);
       target.updateNodeData(nodes.value.map((node, index) => ({ id: node.id, style: savedLayout[node.id] || defaults[node.id] || instanceNodePosition(index, nodes.value.length) })));
       await target.draw();
-    } else if (!overview.value && !largeGraph.value && nodes.value.length) await target.layout(graphLayout());
+    }
     if (isCurrent() && overview.value) await updateOverviewRelations();
     if (isCurrent()) await fitGraph(target);
   } finally {
@@ -364,7 +343,9 @@ async function relayoutGraph() {
         await target.draw();
       }
     } else {
-      await target.layout(graphLayout());
+      const positions = overviewPositions(nodes.value);
+      target.updateNodeData(nodes.value.map((node) => ({ id: node.id, style: positions[node.id] })));
+      await target.draw();
     }
     if (isCurrent()) await fitGraph(target);
     if (isCurrent()) saveOverviewLayout();
@@ -448,9 +429,15 @@ function updateNodeActionPosition() {
   if (!style) return;
   const point = graph.getViewportByCanvas([Number(style.x || 0), Number(style.y || 0)]);
   const { width, height } = graphRef.value.getBoundingClientRect();
+  if (point[0] < 0 || point[0] > width || point[1] < 0 || point[1] > height) {
+    nodeActionPosition.value = null;
+    return;
+  }
+  // Node geometry scales with the canvas; the gap and HTML toolbar stay in screen pixels.
+  const nodeRadius = (16 + 2.5) * graph.getZoom();
   nodeActionPosition.value = {
-    x: Math.max(90, Math.min(width - 90, point[0])),
-    y: graphRef.value.offsetTop + Math.max(42, Math.min(height - 60, point[1] + 42)),
+    x: point[0],
+    y: graphRef.value.offsetTop + point[1] - nodeRadius - 12,
   };
 }
 
@@ -618,7 +605,7 @@ async function expandNeighbors() {
   try {
     const result = await loadInstanceNeighborhood(node.id, version, page?.nextOffset ?? 0, appliedNeighborFilters.value);
     if (request !== graphRequest || graph !== target) return;
-    overview.value = false;
+    const fromOverview = overview.value;
     const knownNodes = new Set(nodes.value.map((item) => item.id));
     const knownEdges = new Set(edges.value.map((item) => JSON.stringify([item.source, item.target, item.type])));
     const addedNodes = result.nodes.filter((item) => !knownNodes.has(item.id));
@@ -634,14 +621,18 @@ async function expandNeighbors() {
       nodes: addedNodes.map((item, index) => ({ id: item.id, data: { node: item, color: colorForClass(item.class) },
         style: neighborNodePosition((page?.loaded ?? 0) + index, { x: Number(center.x || 0), y: Number(center.y || 0) }),
       })),
-      edges: addedEdges.map((item) => ({ ...item, id: `connection:${JSON.stringify([item.source, item.target, item.type])}`,
+      edges: (fromOverview ? [] : addedEdges).map((item) => ({ ...item, id: `connection:${JSON.stringify([item.source, item.target, item.type])}`,
         data: { type: item.type, label: item.label } })),
     });
-    const geometry = instanceEdgeGeometry(edges.value);
-    target.updateEdgeData(target.getEdgeData().map((item) => {
+    if (fromOverview) {
+      await updateOverviewRelations();
+    } else {
+      const geometry = instanceEdgeGeometry(edges.value);
+      target.updateEdgeData(target.getEdgeData().map((item) => {
       const index = edges.value.findIndex((edge) => edge.source === item.source && edge.target === item.target && edge.type === item.data?.type);
       return { id: item.id, ...geometry[index] };
-    }));
+      }));
+    }
     await target.draw();
     if (request !== graphRequest) return;
     neighborPages.value = { ...neighborPages.value, [node.id]: {
@@ -1045,7 +1036,7 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .instance-graph {
-  --inspector-width: 320px;
+  --inspector-width: var(--shell-inspector);
   --el-font-size-base: var(--text-sm);
   position: relative;
   display: grid;
@@ -1056,7 +1047,7 @@ onBeforeUnmount(() => {
   overflow: hidden;
   border: 0;
   border-radius: var(--radius-shell);
-  background-color: var(--el-bg-color);
+   background-color: var(--el-bg-color-page);
   background-image: radial-gradient(var(--el-border-color) 1px, transparent 1px);
   background-size: 20px 20px;
 }
@@ -1078,10 +1069,11 @@ onBeforeUnmount(() => {
 .neighbor-filters {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  gap: var(--spacing-md) var(--spacing-sm);
-  margin-bottom: var(--spacing-lg);
-  padding-bottom: var(--spacing-lg);
-  border-bottom: 1px solid var(--el-border-color-light);
+  order: 1;
+  gap: var(--manager-content-gap) var(--manager-control-gap);
+  margin: 0;
+  padding-top: var(--manager-content-gap);
+  border-top: 1px solid var(--el-border-color-light);
   font-size: var(--text-sm);
 }
 .neighbor-field { display: grid; min-width: 0; gap: var(--spacing-xs); }
@@ -1098,34 +1090,40 @@ onBeforeUnmount(() => {
 .neighbor-filter-actions :deep(.el-checkbox__label) { padding-left: var(--spacing-sm); font-size: var(--text-xs); line-height: 16px; }
 .neighbor-filter-actions .el-button { width: 100%; margin: 0; }
 .neighbor-filter-actions :deep(.el-button .el-icon) { font-size: 15px; }
-.node-actions { position: absolute; z-index: 3; display: flex; transform: translateX(-50%); padding: 4px; gap: 2px; border: 1px solid var(--el-border-color); border-radius: 6px; background: var(--el-bg-color); box-shadow: 0 3px 12px rgba(0, 0, 0, 0.12); }
-.node-actions button { display: grid; place-items: center; width: 32px; height: 32px; border: 0; border-radius: 4px; background: transparent; color: var(--el-text-color-regular); cursor: pointer; }
-.node-actions button:hover { background: var(--el-fill-color-light); color: var(--el-color-primary); }
-.node-actions button:disabled { opacity: 0.4; cursor: default; }
-.node-actions button:focus-visible { outline: 2px solid var(--el-color-primary); }
-.graph-warning { color: var(--el-color-warning); }
-.graph-toolbar button:focus-visible { outline: 2px solid var(--el-color-primary); outline-offset: 2px; }
-.graph-toolbar button:disabled { opacity: 0.45; cursor: default; }
+.node-actions { position: absolute; z-index: 3; transform: translate(-50%, -100%); }
+.node-actions,
 .graph-toolbar {
-  position: absolute;
-  bottom: 18px;
-  left: 18px;
   display: flex;
   align-items: center;
-  gap: 3px;
-  max-width: calc(100% - var(--inspector-width) - 36px);
+  padding: var(--spacing-xs);
+  gap: var(--spacing-xs);
+  border: 0;
+  border-radius: var(--radius-md);
+  background: var(--el-bg-color-overlay);
+  box-shadow: var(--elevation-overlay);
+}
+.graph-warning { color: var(--el-color-warning); }
+.graph-toolbar {
+  position: absolute;
+  bottom: 16px;
+  left: 16px;
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+  max-width: calc(100% - var(--inspector-width) - 32px);
   flex-wrap: wrap;
   z-index: 2;
-  padding: 6px;
-  border: 1px solid var(--el-border-color);
+  padding: var(--spacing-xs);
+  border: 0;
   border-radius: var(--radius-md);
-  background: var(--el-bg-color);
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08);
+  background: var(--el-bg-color-overlay);
+  box-shadow: var(--elevation-overlay);
 }
 .toolbar-separator { flex: 0 0 1px; height: 18px; margin: 0 3px; background: var(--el-border-color-light); }
 .graph-toolbar button[aria-expanded="true"] { color: var(--el-color-primary); background: var(--el-color-primary-light-9); }
 .graph-toolbar button[aria-pressed="true"] { color: var(--el-color-primary); background: var(--el-color-primary-light-9); }
-.graph-toolbar button {
+.graph-toolbar button,
+.node-actions button {
   display: grid;
   width: 34px;
   height: 34px;
@@ -1139,7 +1137,8 @@ onBeforeUnmount(() => {
   cursor: pointer;
   transition: background-color 120ms ease, color 120ms ease;
 }
-.graph-toolbar button:hover:not(:disabled) {
+.graph-toolbar button:hover:not(:disabled),
+.node-actions button:hover:not(:disabled) {
   color: var(--el-color-primary);
   background: var(--el-fill-color-light);
 }
@@ -1150,7 +1149,7 @@ onBeforeUnmount(() => {
   bottom: 20px;
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--manager-control-gap);
   color: var(--el-text-color-tertiary);
   font-size: var(--text-xs);
 }
@@ -1198,10 +1197,11 @@ onBeforeUnmount(() => {
 }
 .panel-heading {
   display: flex;
-  min-height: 54px;
+  box-sizing: border-box;
+  min-height: var(--panel-header-height);
   align-items: center;
   justify-content: space-between;
-  padding: var(--spacing-md);
+  padding: var(--manager-content-gap) var(--manager-module-padding);
   border-bottom: 1px solid var(--el-border-color-light);
   color: var(--el-text-color-secondary);
 }
@@ -1214,7 +1214,7 @@ onBeforeUnmount(() => {
   display: grid;
   min-width: 0;
   gap: var(--spacing-sm);
-  padding: var(--spacing-md);
+  padding: var(--manager-module-padding);
   border-bottom: 1px solid var(--el-border-color-light);
   font-size: var(--text-sm);
   line-height: var(--leading-normal);
@@ -1351,13 +1351,16 @@ onBeforeUnmount(() => {
   font-size: var(--text-sm);
 }
 .detail-content {
-  padding: var(--spacing-md);
+  display: flex;
+  flex-direction: column;
+  gap: var(--manager-module-gap);
+  padding: var(--manager-module-padding);
 }
 .detail-title {
   display: flex;
   align-items: flex-start;
-  gap: 10px;
-  padding-bottom: 8px;
+  gap: var(--manager-content-gap);
+  padding-bottom: var(--manager-content-gap);
   border-bottom: 1px solid var(--el-border-color-light);
 }
 .resource-icon {
@@ -1367,8 +1370,8 @@ onBeforeUnmount(() => {
   flex: 0 0 28px;
   place-items: center;
   border-radius: var(--radius-sm);
-  color: var(--el-color-primary);
-  background: var(--el-color-primary-light-9);
+  color: var(--brand-link);
+  background: var(--brand-primary-tint);
 }
 .detail-title-copy {
   min-width: 0;
@@ -1396,14 +1399,14 @@ code {
   white-space: nowrap;
 }
 .detail-section {
-  margin-top: var(--spacing-md);
+  display: flex;
+  flex-direction: column;
+  gap: var(--manager-content-gap);
 }
 .section-label {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding-bottom: 6px;
-  border-bottom: 1px solid var(--el-border-color-light);
   color: var(--el-text-color-primary);
   font-size: var(--text-sm);
   font-weight: var(--font-semibold);
@@ -1412,12 +1415,12 @@ code {
   color: var(--el-text-color-tertiary);
 }
 .class-label {
-  margin: 8px 0 0;
+  margin: 0;
   color: var(--el-text-color-regular);
   font-size: var(--text-sm);
 }
 .attribute-list {
-  margin-top: 4px;
+  margin: 0;
 }
 .attribute-row {
   display: flex;
@@ -1440,7 +1443,7 @@ code {
   user-select: text;
 }
 .empty-hint {
-  margin: 8px 0 0;
+  margin: 0;
   color: var(--el-text-color-tertiary);
   font-size: var(--text-xs);
 }
@@ -1449,8 +1452,8 @@ code {
   flex: 1;
   place-content: center;
   justify-items: center;
-  gap: 7px;
-  padding: var(--spacing-xl);
+  gap: var(--manager-control-gap);
+  padding: var(--manager-module-padding);
   color: var(--el-text-color-secondary);
   text-align: center;
 }

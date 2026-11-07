@@ -12,6 +12,7 @@ import {
   ElRadio,
   ElRadioGroup,
   ElSelect,
+  ElSegmented,
   ElTag,
   vLoading,
 } from "element-plus";
@@ -290,19 +291,11 @@ onMounted(load);
           clearable
           class="knowledge-search"
         />
-        <div class="knowledge-filters" role="tablist">
-          <button
-            v-for="tab in statusTabs"
-            :key="tab.value"
-            type="button"
-            role="tab"
-            :aria-selected="statusFilter === tab.value"
-            :class="['knowledge-filter', { active: statusFilter === tab.value }]"
-            @click="statusFilter = tab.value"
-          >
-            {{ tab.label }} <span>{{ tab.count }}</span>
-          </button>
-        </div>
+        <el-segmented v-model="statusFilter" :options="statusTabs" class="knowledge-filters secondary-segmented" :aria-label="ot('status')">
+          <template #default="{ item }">
+            <span class="knowledge-filter-label"><span>{{ item.label }}</span> <span class="knowledge-filter-count">{{ item.count }}</span></span>
+          </template>
+        </el-segmented>
       </div>
 
       <div class="knowledge-body">
@@ -486,41 +479,27 @@ onMounted(load);
   flex-wrap: wrap;
   min-height: 40px;
   align-items: center;
-  gap: var(--spacing-sm);
-  padding-block: var(--spacing-sm);
+  gap: var(--manager-content-gap);
+  margin-block: var(--manager-content-gap);
 }
 .knowledge-search {
   flex: 0 1 360px;
   min-width: 0;
 }
 .knowledge-filters {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--spacing-xs);
+  max-width: 100%;
+  min-width: 0;
+  overflow-x: auto;
 }
-.knowledge-filter {
-  padding: 5px 12px;
-  border: 0;
-  border-radius: var(--radius-sm);
-  color: var(--el-text-color-regular);
-  background: transparent;
-  cursor: pointer;
-  font-size: var(--text-sm);
+.knowledge-filter-label {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--manager-control-gap);
 }
-.knowledge-filter span {
-  margin-left: 2px;
-  color: var(--el-text-color-secondary);
-}
-.knowledge-filter:hover {
-  background: var(--el-fill-color-light);
-}
-.knowledge-filter.active {
-  color: var(--el-text-color-primary);
-  background: var(--el-color-primary-light-9);
-  font-weight: var(--font-semibold);
-}
-.knowledge-filter.active span {
+.knowledge-filter-count {
   color: inherit;
+  font-size: var(--text-xs);
+  font-variant-numeric: tabular-nums;
 }
 .knowledge-body {
   display: grid;
@@ -566,7 +545,8 @@ onMounted(load);
   flex-wrap: wrap;
   align-items: center;
   gap: var(--manager-control-gap);
-  padding-top: var(--manager-control-gap);
+  margin-top: var(--manager-label-gap);
+  padding-top: var(--manager-content-gap);
   border-top: 1px solid var(--el-border-color-lighter);
 }
 .knowledge-list-head :deep(.el-button + .el-button) {
@@ -581,7 +561,7 @@ onMounted(load);
   display: flex;
   align-items: flex-start;
   gap: var(--spacing-sm);
-  padding: 10px var(--spacing-md);
+  padding: var(--manager-content-gap);
   border-bottom: 1px solid var(--el-border-color-lighter);
 }
 .knowledge-item:hover {
@@ -599,7 +579,7 @@ onMounted(load);
   min-width: 0;
   flex: 1;
   flex-direction: column;
-  gap: 4px;
+  gap: var(--manager-label-gap);
   padding: 0;
   border: 0;
   color: inherit;
@@ -661,7 +641,7 @@ onMounted(load);
   gap: var(--spacing-md);
 }
 .knowledge-detail-tags {
-  margin-top: var(--spacing-sm);
+  margin-top: var(--manager-content-gap);
 }
 .knowledge-detail-text {
   margin-top: var(--manager-content-gap);
@@ -673,11 +653,19 @@ onMounted(load);
   white-space: pre-wrap;
   word-break: break-word;
 }
-.knowledge-form h2 {
-  margin-bottom: var(--manager-content-gap);
+.knowledge-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--manager-module-gap);
+}
+.knowledge-form h2,
+.knowledge-form :deep(.el-form-item),
+.knowledge-form .knowledge-detail-actions {
+  margin: 0;
 }
 .knowledge-detail-actions {
   display: flex;
+  flex-wrap: wrap;
   justify-content: flex-end;
   gap: var(--spacing-sm);
   margin-top: var(--manager-module-gap);

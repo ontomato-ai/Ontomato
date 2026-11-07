@@ -264,7 +264,7 @@ export default {
     "renameChart": "Rename Chart",
     "deleteChartConfirm": "Confirm delete chart \"{name}\"?",
     "myDashboards": "My Dashboards",
-    "dashboardsIntro": "The charts and datasets conversations add to.",
+    "dashboardsIntro": "The charts and datasets conversations add to",
     "noDashboards": "No dashboards",
     "getDashboardFailed": "Failed to get dashboard list"
   },
@@ -661,7 +661,7 @@ export default {
   },
   "capabilities": {
     "title": "Capability library",
-    "description": "The skills and external tools every agent draws from, kept in one place.",
+    "description": "The skills and external tools every agent draws from, kept in one place",
     "filter": "Capability type",
     "skills": "Skills",
     "tools": "External tools",

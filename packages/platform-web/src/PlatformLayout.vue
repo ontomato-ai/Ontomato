@@ -57,6 +57,7 @@ const router = useRouter();
 const railApps = computed(() => (props.apps ?? []).map(railApp));
 const activeAppId = computed(() => appFor(route.path)?.id ?? null);
 const activeApp = computed(() => props.apps.find((app) => app.id === activeAppId.value) ?? null);
+const browserWorkspace = computed(() => route.path === "/browser/data" || route.path.startsWith("/browser/data/"));
 
 /**
  * The pages of the current application, in its own order, as one row: an application of several pages switches between
@@ -94,6 +95,7 @@ const headerShown = computed(
 
 <template>
   <PlatformShell
+    :class="{ 'object-browser-layout': browserWorkspace }"
     :apps="blocked ? [] : railApps"
     :active-app-id="activeAppId"
     :account="account"
@@ -115,6 +117,7 @@ const headerShown = computed(
       <div class="platform-app-page">
         <PlatformPageHeader
           v-if="headerShown"
+          :compact="browserWorkspace"
           :title="headerTitle"
           :description="headerDescription"
           :tabs="pageTabs.length > 0 ? pageTabs : undefined"
@@ -127,7 +130,7 @@ const headerShown = computed(
         />
         <div
           class="platform-page-body platform-page-gutter"
-          :class="{ 'own-header': shownPage?.ownHeader === true, 'own-frame': shownPage === null }"
+          :class="{ 'own-header': shownPage?.ownHeader === true, 'own-frame': shownPage === null, 'browser-workspace': browserWorkspace }"
         >
           <RouterView />
         </div>
@@ -136,6 +139,7 @@ const headerShown = computed(
     <template v-else>
       <PlatformPageHeader
         v-if="headerShown"
+        :compact="browserWorkspace"
         :title="headerTitle"
         :description="headerDescription"
         :tabs="pageTabs.length > 0 ? pageTabs : undefined"
@@ -153,7 +157,7 @@ const headerShown = computed(
       <div
         v-else
         class="platform-page-body platform-page-gutter"
-        :class="{ 'own-header': shownPage?.ownHeader === true, 'own-frame': shownPage === null }"
+        :class="{ 'own-header': shownPage?.ownHeader === true, 'own-frame': shownPage === null, 'browser-workspace': browserWorkspace }"
       >
         <RouterView />
       </div>
@@ -183,6 +187,10 @@ const headerShown = computed(
 .platform-page-body.own-header,
 .platform-page-body.own-frame {
   padding: 0;
+}
+.platform-page-body.browser-workspace {
+  padding: 0;
+  overflow: hidden;
 }
 .platform-page-body :deep(.platform-page) {
   height: 100%;

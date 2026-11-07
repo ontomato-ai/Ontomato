@@ -152,6 +152,18 @@
   max-width: 100%;
 }
 
+/* Auxiliary filters stay quiet; primary view switches retain the standard filled selection. */
+.el-segmented.secondary-segmented {
+  --el-segmented-bg-color: transparent;
+  --el-segmented-item-selected-bg-color: var(--el-fill-color);
+  --el-segmented-item-selected-color: var(--el-text-color-primary);
+  --el-segmented-item-hover-bg-color: var(--el-fill-color-light);
+  --el-segmented-item-color: var(--el-text-color-secondary);
+}
+.el-segmented.secondary-segmented .el-segmented__item.is-selected {
+  font-weight: var(--font-medium);
+}
+
 /*
  * The segmented control's thumb is the selected background (a solid primary tone), so its label must use the
  * on-primary role in both modes. Element Plus inherits the track's ink colour here, which reads white on white.

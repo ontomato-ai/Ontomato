@@ -135,7 +135,8 @@
 }
 
 /* Dense Manager pages share a compact gutter across headers, catalogs and detail bodies. */
-.ontology-manager {
+.ontology-manager,
+.object-browser-layout {
   --page-gutter: var(--spacing-lg);
   --manager-module-gap: var(--spacing-lg);
   --manager-content-gap: var(--spacing-md);

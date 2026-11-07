@@ -423,7 +423,10 @@ onBeforeUnmount(() => document.removeEventListener("pointerdown", onDocumentPoin
   border-radius: var(--radius-md);
   background: transparent;
   color: var(--el-text-color-regular);
-  font: inherit;
+  font-family: var(--font-sans);
+  font-size: var(--text-sm);
+  line-height: var(--leading-sm);
+  font-weight: var(--font-normal);
   text-align: left;
   text-decoration: none;
   cursor: pointer;

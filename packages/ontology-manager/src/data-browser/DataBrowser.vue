@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { ref, computed, defineAsyncComponent, onMounted, watch } from "vue";
+import { ref, computed, defineAsyncComponent, inject, onMounted, watch } from "vue";
+import { managerOverlayKey } from "../overlay";
 import {
   ElButton,
   ElCheckbox,
@@ -28,6 +29,7 @@ const InstanceGraph = defineAsyncComponent(() => import("./InstanceGraph.vue"));
 const { t } = useSharedText();
 const { ot } = useOntologyText();
 const { message } = useManagerFeedback();
+const overlayTarget = inject(managerOverlayKey);
 const { getMetas, loadObjectData } = useManagerClient();
 const props = defineProps<{ initialClass?: string }>();
 /** The object type on show, whether it came from `initialClass` or from the type selector. */
@@ -359,8 +361,8 @@ watch(
 <template>
   <div class="data-browser">
     <!-- One contextual toolbar; the working surface fills the remaining height. -->
-    <div class="data-browser-toolbar">
-      <el-segmented v-model="viewMode" :options="viewModeOptions" />
+    <div class="data-browser-toolbar platform-page-gutter">
+      <el-segmented v-model="viewMode" :options="viewModeOptions" :aria-label="t('nav.dataBrowser')" />
       <template v-if="viewMode === 'table'">
         <div class="data-browser-filters">
           <el-select
@@ -379,9 +381,13 @@ watch(
         <div class="data-browser-actions">
           <el-button
             :icon="Filter" :title="t('dataBrowser.advancedFilter')"
-            :aria-label="t('dataBrowser.advancedFilter')" @click="openFilterDrawer" />
+            :aria-label="t('dataBrowser.advancedFilter')" @click="openFilterDrawer">
+            <span class="action-label">{{ t('dataBrowser.advancedFilter') }}</span>
+          </el-button>
           <el-dropdown>
-            <el-button :icon="Download" :title="t('common.export')" :aria-label="t('common.export')" />
+            <el-button :icon="Download" :title="t('common.export')" :aria-label="t('common.export')">
+              <span class="action-label">{{ t('common.export') }}</span>
+            </el-button>
             <template #dropdown>
               <el-dropdown-menu>
                 <el-dropdown-item @click="exportData">{{ t("dataBrowser.exportCsv") }}</el-dropdown-item>
@@ -396,7 +402,7 @@ watch(
       </div>
     </div>
     <template v-if="viewMode === 'table'">
-    <div class="data-browser-table">
+    <div class="data-browser-table platform-page-gutter">
     <el-table
       v-loading="loading"
       :data="filteredData"
@@ -416,7 +422,7 @@ watch(
     </el-table>
     </div>
 
-    <div class="pagination">
+    <div class="pagination platform-page-gutter">
       <el-pagination
         background
         layout="prev, pager, next, jumper, ->, total, sizes"
@@ -431,6 +437,8 @@ watch(
 
     <el-drawer
       v-model="filterDrawerVisible"
+      :append-to="overlayTarget || 'body'"
+      append-to-body
       :lock-scroll="false"
       class="data-browser-filter-drawer"
       :title="t('dataBrowser.advancedFilter')"
@@ -487,7 +495,7 @@ watch(
             :value="column.name"
           />
         </el-select>
-        <el-radio-group v-model="sortOrder" style="margin-left: 12px">
+        <el-radio-group v-model="sortOrder" class="sort-order">
           <el-radio value="asc">{{ t("dataBrowser.asc") }}</el-radio>
           <el-radio value="desc">{{ t("dataBrowser.desc") }}</el-radio>
         </el-radio-group>
@@ -515,28 +523,25 @@ watch(
 
 /* The page's view switch stays aligned with its filters and table. */
 .data-browser-toolbar {
+  box-sizing: border-box;
+  min-height: var(--page-header-height);
   display: flex;
   flex: 0 0 auto;
   align-items: center;
   justify-content: flex-start;
-  gap: var(--spacing-md);
+  gap: var(--manager-control-gap) var(--manager-content-gap);
   min-width: 0;
   padding-block: var(--spacing-sm);
   border-bottom: 1px solid var(--el-border-color);
   flex-wrap: wrap;
 }
-/* Segmented control: active segment is surface with ink text on a sunken track. */
+/* Mode selection follows the shared segmented control treatment. */
 .data-browser-toolbar :deep(.el-segmented) {
   flex-shrink: 0;
-  --el-segmented-bg-color: var(--el-fill-color);
-  --el-segmented-item-selected-bg-color: var(--el-bg-color);
-  --el-segmented-item-selected-color: var(--el-text-color-primary);
 }
 
 /*
- * No horizontal padding of the page's own: the platform's page body around it carries the page gutter, the same one as
- * the header above, so the toolbar, the table and the pager start and end where the title and the tabs do (DESIGN.md
- * "Page architecture").
+ * The workspace fills its frame. Only controls and the table carry the shared header gutter; the graph stays edge to edge.
  */
 .mode-bar {
   display: flex;
@@ -558,7 +563,7 @@ watch(
   flex: 1;
   min-height: 0;
   min-width: 0;
-  margin-top: var(--spacing-sm);
+  margin-top: var(--manager-content-gap);
 }
 
 .data-browser-filters {
@@ -593,8 +598,6 @@ watch(
 }
 
 .data-browser-actions :deep(.el-button) {
-  width: var(--control-height-sm);
-  padding: 0;
   margin: 0;
 }
 
@@ -610,7 +613,7 @@ watch(
 }
 
 .pagination {
-  padding: var(--spacing-sm) 0;
+  padding-block: var(--manager-content-gap);
   display: flex;
   justify-content: flex-end;
   min-width: 0;
@@ -620,6 +623,19 @@ watch(
 }
 
 @container ontology-manager (max-width: 768px) {
+  .data-browser-actions .action-label {
+    display: none;
+  }
+  .data-browser-actions :deep(.el-button) {
+    width: var(--control-height-sm);
+    padding: 0;
+  }
+  .data-browser-actions :deep(.el-button > span) {
+    display: none;
+  }
+  .data-browser-actions :deep(.el-button > .el-icon) {
+    margin: 0;
+  }
   .operation-cell .el-button + .el-button {
     margin-left: 0;
   }
@@ -650,23 +666,37 @@ watch(
 }
 
 .filter-section {
-  margin-bottom: 20px;
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: var(--manager-content-gap);
+  margin-bottom: var(--manager-content-gap);
+  padding-bottom: var(--manager-content-gap);
+  border-bottom: 1px solid var(--el-border-color-lighter);
 }
+.filter-section:last-child { margin-bottom: 0; padding-bottom: 0; border-bottom: 0; }
+.sort-order { display: flex; flex-wrap: wrap; gap: var(--manager-control-gap); }
+.col-checkbox :deep(.el-checkbox) { height: auto; min-height: var(--control-height-sm); margin: 0; }
+.col-checkbox :deep(.el-checkbox__label) { white-space: normal; overflow-wrap: anywhere; }
 
 .filter-title {
-  font-size: 14px;
-  font-weight: 500;
-  margin-bottom: var(--spacing-md);
-  color: var(--el-text-color-regular);
+  font-size: var(--text-sm);
+  font-weight: var(--font-semibold);
+  color: var(--el-text-color-primary);
 }
 
 .filter-condition {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 96px minmax(0, 1fr) 28px;
+  grid-template-columns: minmax(0, 1fr) 28px;
   align-items: center;
-  gap: 8px;
-  margin-top: var(--spacing-md);
+  gap: var(--manager-control-gap);
+  padding: var(--manager-content-gap);
+  border: 1px solid var(--el-border-color-light);
+  border-radius: var(--radius-sm);
 }
+.filter-condition .el-select:nth-child(2),
+.filter-condition .el-input { grid-column: 1 / -1; }
+.filter-condition .el-button { grid-column: 2; grid-row: 1; }
 
 .filter-condition .el-select,
 .filter-condition .el-input {

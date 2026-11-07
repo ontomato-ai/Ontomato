@@ -551,11 +551,6 @@ onBeforeUnmount(() => {
 
       <div v-else class="playground-grid">
         <aside class="explorer-panel">
-          <div class="panel-heading">
-            <div>
-              <strong :title="ot('locateGraphElements')">{{ t("nav.ontologyResources") }}</strong>
-            </div>
-          </div>
           <div class="search-box">
             <el-input
               v-model="keyword"
@@ -672,20 +667,6 @@ onBeforeUnmount(() => {
           </section>
 
           <section class="detail-panel">
-            <div class="panel-heading">
-              <div>
-                <strong>{{ ot("inspector") }}</strong>
-              </div>
-              <el-button
-                v-if="selectedObject || selectedRelation"
-                class="modeling-link"
-                size="small"
-                :icon="Workflow"
-                @click="openSelectionInVisualModeling"
-              >
-                {{ ot("goModeling") }}
-              </el-button>
-            </div>
             <div v-if="selectedObject" class="detail-content">
               <div class="detail-title">
                 <span class="resource-icon object-icon"><Box :size="16" /></span>
@@ -693,11 +674,11 @@ onBeforeUnmount(() => {
                   <h2>{{ selectedObject.showName }}</h2>
                   <code>{{ selectedObject.className }}</code>
                 </div>
-                <span class="detail-title-count">
-                  {{ selectedObject.attrs.length }} {{ ot("attributes") }}
-                </span>
+                <el-button class="modeling-link" size="small" :icon="Workflow" @click="openSelectionInVisualModeling">
+                  {{ ot("goModeling") }}
+                </el-button>
               </div>
-              <p class="description">{{ selectedObject.classDesc }}</p>
+              <p v-if="selectedObject.classDesc" class="description">{{ selectedObject.classDesc }}</p>
               <div class="detail-section">
                 <div class="section-label">
                   <span>{{ ot("attributes") }}</span>
@@ -738,9 +719,12 @@ onBeforeUnmount(() => {
             <div v-else-if="selectedRelation" class="detail-content">
               <div class="detail-title">
                 <span class="resource-icon relation-icon"><Waypoints :size="16" /></span>
-                <div>
+                <div class="detail-title-copy">
                   <h2>{{ selectedRelation.showName }}</h2>
                 </div>
+                <el-button class="modeling-link" size="small" :icon="Workflow" @click="openSelectionInVisualModeling">
+                  {{ ot("goModeling") }}
+                </el-button>
               </div>
               <div class="relation-flow">
                 <button @click="selectObject(selectedRelation.fromclass)">
@@ -1079,26 +1063,9 @@ onBeforeUnmount(() => {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.detail-title-count {
-  flex: none;
-  padding: 2px 7px;
-  border-radius: 999px;
-  color: var(--el-color-primary);
-  background: var(--el-color-primary-light-9);
-  font-size: 11px;
-  font-weight: var(--font-semibold);
-  line-height: 16px;
-}
 .modeling-link {
-  border-color: var(--el-border-color-dark);
-  color: var(--el-text-color-primary);
-  background: color-mix(in srgb, var(--el-bg-color), var(--el-color-primary-light-9) 44%);
-  font-weight: var(--font-medium);
-}
-.modeling-link:hover {
-  border-color: var(--el-color-primary);
-  color: var(--el-color-primary);
-  background: var(--el-color-primary-light-9);
+  flex-shrink: 0;
+  margin: 0;
 }
 code {
   display: block;

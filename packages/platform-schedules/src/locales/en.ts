@@ -8,7 +8,7 @@
 export default {
   platformSchedules: {
     title: "Scheduled tasks",
-    intro: "Run work in each application on a schedule; the results go back to that application.",
+    intro: "Run work in each application on a schedule; the results go back to that application",
     newTask: "New task",
     retry: "Retry",
     loadFailed: "Couldn't load the scheduled tasks.",

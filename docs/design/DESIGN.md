@@ -198,6 +198,10 @@ embedded pages. At 200% zoom no essential action or content may become inaccessi
 
 ## 7. Page architecture
 
+Short page subtitles and single-line function summaries omit a trailing full stop in every locale. Multi-sentence
+instructions, warnings and confirmation body text retain normal punctuation; question marks retain their meaning.
+Edit the authoritative message rather than stripping punctuation in rendering components.
+
 Standard management pages use PlatformPageHeader: one title, optional useful description, actions and application
 tabs. Compact technical headers reference 48px and grow/wrap as necessary. No redundant type subtitle or explanatory
 eyebrow in a dense titlebar; contextual help can be available separately. Preserve useful business descriptions. An
@@ -221,6 +225,15 @@ focus. Content fills remaining space; toolbars are plain rows, filters have labe
 area.
 
 ## 8. Shared components
+
+Action buttons show their icon and full label when space permits. Reserve icon-only treatment for constrained layouts
+or familiar canvas tools; hide labels responsively only when the available content width requires it, preserving
+accessible names and tooltips.
+
+Primary view switches and auxiliary filters have separate emphasis. Primary switches use the standard filled
+segmented selection; auxiliary status filters use `secondary-segmented`: transparent track, neutral soft selection,
+secondary text at rest and medium-weight ink on selection. Each tier stays consistent across pages; auxiliary filters
+must not compete with the page's primary action or workspace mode switch.
 
 Manager modal dialogs mount in an instance-owned, themed overlay host under body. Scrims cover the entire viewport,
 including the application navigation; dialogs center within that viewport. The host has no layout containment and

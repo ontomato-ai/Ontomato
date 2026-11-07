@@ -95,6 +95,9 @@ onMounted(() => {
 .manager-overlay-host :deep(.el-overlay) {
   pointer-events: auto;
 }
+.manager-overlay-host :deep(.el-drawer) {
+  max-width: calc(100vw - 32px);
+}
 .manager-overlay-host :deep(.el-popper) {
   pointer-events: auto;
 }
