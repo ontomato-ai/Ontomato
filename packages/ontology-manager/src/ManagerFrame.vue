@@ -6,6 +6,7 @@ import { useManagerContext, useManagerCounts } from "./context";
 import { provideManagerFeedback } from "./feedback";
 import { nextElementIdPrefix } from "./instance-id";
 import ManagerConfirmDialog from "./ManagerConfirmDialog.vue";
+import { managerOverlayKey } from "./overlay";
 import "./theme.css";
 import "./style.css";
 import "./buttons.css";
@@ -26,6 +27,8 @@ const idPrefix = nextElementIdPrefix();
 provide(ID_INJECTION_KEY, { prefix: idPrefix, current: 0 });
 const namespace = useGetDerivedNamespace();
 const popperContainerId = computed(() => `${namespace.value}-popper-container-${idPrefix}`);
+const overlayId = `ontology-manager-overlay-${idPrefix}`;
+provide(managerOverlayKey, `#${overlayId}`);
 
 const shell = ref<HTMLElement>();
 provideManagerFeedback(shell);
@@ -45,7 +48,13 @@ onMounted(() => {
       { 'is-dark': context.theme === 'dark', 'is-compact-dialogs': context.presentation.compactDialogs },
     ]"
   >
-    <div :id="popperContainerId" />
+    <Teleport to="body">
+      <div :id="overlayId" class="ontology-manager ontology-manager-shell manager-overlay-host"
+        :class="{ 'is-dark': context.theme === 'dark', 'is-compact-dialogs': context.presentation.compactDialogs }"
+        :style="context.presentation.themeProperties[context.theme]">
+        <div :id="popperContainerId" />
+      </div>
+    </Teleport>
     <main ref="shell" class="ontology-manager-shell">
       <RouterView v-if="mounted" />
       <ManagerConfirmDialog />
@@ -73,5 +82,20 @@ onMounted(() => {
   min-height: 0;
   flex-direction: column;
   overflow: hidden;
+}
+.manager-overlay-host {
+  position: fixed;
+  inset: 0;
+  height: auto;
+  contain: none;
+  container-type: normal;
+  overflow: visible;
+  pointer-events: none;
+}
+.manager-overlay-host :deep(.el-overlay) {
+  pointer-events: auto;
+}
+.manager-overlay-host :deep(.el-popper) {
+  pointer-events: auto;
 }
 </style>

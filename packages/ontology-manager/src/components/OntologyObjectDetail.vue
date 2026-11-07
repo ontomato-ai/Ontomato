@@ -327,19 +327,23 @@ onMounted(() => void loadDetail());
 }
 .detail-titlebar {
   display: flex;
-  height: var(--page-header-height);
-  flex: 0 0 var(--page-header-height);
+  min-height: var(--page-header-height);
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+  gap: var(--spacing-sm);
+  padding-block: var(--spacing-sm);
   align-items: center;
   border-bottom: 1px solid var(--el-border-color);
 }
 .title-divider {
   width: 1px;
   height: 22px;
-  margin: 0 var(--spacing-md);
+  margin: 0 var(--spacing-xs);
   background: var(--el-border-color);
 }
 .title-copy {
   min-width: 0;
+  max-width: 100%;
 }
 .title-copy strong {
   display: block;
@@ -358,8 +362,8 @@ onMounted(() => void loadDetail());
 .detail-body {
   display: grid;
   grid-template-columns: minmax(300px, 0.9fr) minmax(460px, 1.5fr);
-  gap: var(--spacing-lg);
-  padding-block: var(--spacing-lg);
+  gap: var(--manager-module-gap);
+  padding-block: var(--manager-module-gap);
 }
 .definition-section {
   grid-row: span 2;
@@ -368,7 +372,7 @@ onMounted(() => void loadDetail());
 .properties-section,
 .relations-section {
   min-width: 0;
-  padding: var(--spacing-lg);
+  padding: var(--manager-module-padding);
   border: 1px solid var(--el-border-color);
   border-radius: var(--radius-md);
   background: var(--el-bg-color);
@@ -394,10 +398,13 @@ h2 {
   font-size: var(--text-xs);
 }
 .object-form {
-  margin-top: var(--spacing-xl);
+  margin-top: var(--manager-content-gap);
 }
 .object-form :deep(.el-form-item) {
-  margin-bottom: var(--spacing-lg);
+  margin-bottom: var(--manager-module-gap);
+}
+.object-form :deep(.el-form-item:last-child) {
+  margin-bottom: 0;
 }
 .object-form :deep(.el-form-item__label) {
   color: var(--el-text-color-secondary);
@@ -407,7 +414,8 @@ h2 {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: var(--spacing-sm);
-  padding-top: var(--spacing-lg);
+  margin-top: var(--manager-content-gap);
+  padding-top: var(--manager-content-gap);
   border-top: 1px solid var(--el-border-color-light);
 }
 .object-summary span {
@@ -425,14 +433,15 @@ h2 {
   margin-top: var(--spacing-lg);
 }
 .detail-table {
-  overflow: hidden;
-  margin-top: var(--spacing-lg);
+  overflow: auto;
+  margin-top: var(--manager-content-gap);
   border: 1px solid var(--el-border-color);
   border-radius: var(--radius-sm);
 }
 .detail-table-head,
 .detail-table-row {
   display: grid;
+  box-sizing: border-box;
   align-items: center;
   gap: var(--spacing-md);
 }
@@ -448,20 +457,19 @@ h2 {
     );
 }
 .detail-table-head {
-  min-height: 36px;
+  min-height: var(--table-head-height);
   padding: 0 var(--spacing-md);
-  border-bottom: 1px solid var(--el-border-color-dark);
+  border-bottom: 1px solid var(--el-border-color);
   color: var(--el-text-color-secondary);
-  background: var(--el-fill-color-light);
+  background: var(--el-fill-color);
   font-size: var(--text-xs);
   font-weight: var(--font-semibold);
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
+  letter-spacing: 0.02em;
   white-space: nowrap;
 }
 .detail-table-row {
   width: 100%;
-  min-height: 50px;
+  min-height: var(--list-row-height);
   padding: 7px var(--spacing-md);
   border: 0;
   border-bottom: 1px solid var(--el-border-color-light);
@@ -526,7 +534,7 @@ h2 {
 @container ontology-manager (max-width: 900px) {
   .detail-body {
     padding-block: var(--spacing-md);
-    gap: var(--spacing-md);
+    gap: var(--manager-module-gap);
   }
   .title-divider {
     display: none;

@@ -135,7 +135,7 @@ async function remove() {
 .attribute-editor-switches {
   display: flex;
   flex-wrap: wrap;
-  gap: var(--spacing-xl);
+  gap: var(--manager-module-gap);
 }
 .attribute-editor-switches :deep(.el-form-item) {
   margin-bottom: 0;

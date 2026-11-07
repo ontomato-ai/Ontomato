@@ -629,17 +629,18 @@ describe("Manager pages in the service router", () => {
     clickButton("Test and generate Markdown");
     await settle();
 
-    const preview = root().querySelector(".metric-markdown-preview")!;
+    const overlay = document.querySelector(".manager-overlay-host")!;
+    const preview = overlay.querySelector(".metric-markdown-preview")!;
     expect(preview.querySelector("h1")?.textContent).toBe("Revenue");
     expect(preview.querySelector("table")?.textContent).toContain("42");
-    expect(root().querySelector(".metric-markdown-preview textarea")).toBeNull();
+    expect(overlay.querySelector(".metric-markdown-preview textarea")).toBeNull();
 
-    const sourceRadio = [...root().querySelectorAll<HTMLElement>(".markdown-view-toggle .el-radio")]
+    const sourceRadio = [...overlay.querySelectorAll<HTMLElement>(".markdown-view-toggle .el-radio")]
       .find((item) => item.textContent?.trim() === "Source")!;
     sourceRadio.querySelector("input")!.click();
     await settle();
-    expect(root().querySelector(".metric-markdown-preview")).toBeNull();
-    expect((root().querySelector(".el-dialog textarea") as HTMLTextAreaElement).value).toContain("# Revenue");
+    expect(overlay.querySelector(".metric-markdown-preview")).toBeNull();
+    expect((overlay.querySelector(".el-dialog textarea") as HTMLTextAreaElement).value).toContain("# Revenue");
   });
 
   it("the address locates data browsing; page actions navigate through the router; unknown addresses land on the graph", async () => {
@@ -1048,7 +1049,7 @@ describe("Manager pages in the service router", () => {
     }
   });
 
-  it("edit dialogs mount in the popper container inside the Manager frame; opening and closing leave body unchanged", async () => {
+  it("edit dialogs mount in a themed viewport overlay; opening and closing leave body unchanged", async () => {
     const { root } = mountHost({ ...base, view: "/ontology/objects/Order" });
     await settle();
     const bodyBefore = [
@@ -1059,8 +1060,10 @@ describe("Manager pages in the service router", () => {
     clickButton("New Property");
     await settle();
     const dialog = openDialog("Create");
-    expect(dialog.closest(".ontology-manager > [id*='popper-container']")).not.toBeNull();
-    expect(root().contains(dialog)).toBe(true);
+    const overlay = dialog.closest(".manager-overlay-host");
+    expect(overlay?.parentElement).toBe(document.body);
+    expect(overlay?.classList.contains("ontology-manager")).toBe(true);
+    expect(root().contains(dialog)).toBe(false);
     expect([
       document.body.className,
       document.body.getAttribute("style"),
@@ -1121,15 +1124,16 @@ describe("Manager business knowledge page", () => {
     expect(document.body.querySelector(":scope > .el-message")).toBeNull();
   });
 
-  it("deletes after a confirmation shown in the Manager frame; messages stay in the frame, not under body", async () => {
+  it("deletes after a viewport confirmation; messages stay in the Manager frame", async () => {
     const { root } = mountHost({ ...base, view: "/ontology/knowledge" });
     await settle();
 
     buttonIn(root(), "Delete").click();
     await settle();
-    expect(root().querySelector(".manager-confirm")).not.toBeNull();
+    const overlay = document.querySelector(".manager-overlay-host")!;
+    expect(overlay.querySelector(".manager-confirm")).not.toBeNull();
 
-    buttonIn(root(), "OK").click();
+    buttonIn(overlay, "OK").click();
     await settle();
     const deleted = requests.find((r) => r.url.endsWith("/admin/delBussinessKnowledge"));
     expect(deleted?.url.startsWith("/tenant-a/api/")).toBe(true);

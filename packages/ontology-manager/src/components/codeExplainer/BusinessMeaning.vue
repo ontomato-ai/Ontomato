@@ -32,7 +32,7 @@ const { ot } = useOntologyText();
 
 <style scoped>
 .business-meaning {
-  margin-top: var(--spacing-xl);
+  margin-top: var(--manager-module-gap);
 }
 .bm-title {
   margin: 0;

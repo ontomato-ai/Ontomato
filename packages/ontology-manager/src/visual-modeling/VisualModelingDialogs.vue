@@ -1,8 +1,8 @@
 <script setup lang="ts">
+import ElDialog from "../ManagerDialog.vue";
 import { computed } from "vue";
 import {
   ElButton,
-  ElDialog,
   ElForm,
   ElFormItem,
   ElIcon,

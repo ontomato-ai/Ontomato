@@ -89,6 +89,23 @@ by the shell's `platform-page-gutter` class (§7); page content uses 16px vertic
 narrows to 16px, so headers and content narrow together; that narrow value is defined only there, in foundation.css,
 never in a component.
 
+Ontology Manager uses a compact 16px page gutter at every width. Its headers, catalogs and detail bodies share this
+foundation-owned value; panel contents keep their own internal spacing. Graph and modeling workspaces fill the page
+below the header, with the gutter applied only to their toolbars rather than around the canvas.
+
+Manager spacing has four explicit levels, owned by foundation tokens: `--manager-module-gap` (16px) separates
+independent modules and form fields; `--manager-content-gap` (12px) separates a section heading from its content and
+related content groups; `--manager-control-gap` (8px) separates controls and repeated compact rows;
+`--manager-label-gap` (4px) separates a label from supporting text. Modules use `--manager-module-padding` (16px),
+while nested groups use 12px. A divider has 12px on each side. Each boundary has one spacing owner: prefer container
+gap, reset paragraph margins in structured panels, and remove the final form field's bottom margin. Empty modules
+keep the same heading and content rhythm as populated modules; their position must not depend on another column's height.
+
+Top-aligned form labels use the body-sm line height and an 8px gap before their control. The 16px field gap is measured
+from the previous control's bottom to the next label's top, including multiline inputs. Textarea containers must not
+reserve a single-line control's baseline height. Mixed logic forms use a container gap with zero field margins so
+conditional alerts, JSON textareas, parameter groups and descriptions follow the same rhythm.
+
 | Radius | Reference | Usage |
 |---|---:|---|
 | xs | 4px | Tags, inline code |
@@ -140,6 +157,11 @@ need 4.5:1 on surface/raised. Disabled text remains distinguishable. Check rende
 
 Status uses an explicit label or icon and restrained soft fills. Success, warning and danger express meaning; info is
 neutral. Large summary cards remain neutral with local status marks. Activation/submission uses primary, not success.
+
+Auxiliary hues keep clear chroma alongside the primary: enterprise indigo pairs with violet, emerald, amber and rose;
+OSS green pairs with a warm tomato accent, fresh green, amber and red. Keep light-mode status text readable on its
+tinted fill; use brighter, higher-chroma marks in dark mode rather than dimming the light chart palette. Accent fills
+are pale in light mode and chromatic inset tones in dark mode; neutral metadata retains the info role.
 
 Charts use eight fixed categorical colours and a primary sequential scale; stable identity determines entity colour.
 Labels/values use ink; do not rely on colour alone. Validate category contrast and CVD distinction separately from
@@ -199,6 +221,14 @@ focus. Content fills remaining space; toolbars are plain rows, filters have labe
 area.
 
 ## 8. Shared components
+
+Manager modal dialogs mount in an instance-owned, themed overlay host under body. Scrims cover the entire viewport,
+including the application navigation; dialogs center within that viewport. The host has no layout containment and
+is removed with its Manager instance. Dropdowns share that themed host so modal controls stay above their scrim.
+
+Select panels preserve the component's trigger-derived minimum width so short options do not produce a narrower
+popup. Long options may widen the panel within the viewport; do not impose a fixed cap smaller than a wide trigger.
+Keep option contents constrained to their panel and let the positioning engine handle viewport edges.
 
 | Component | Contract |
 |---|---|
@@ -263,8 +293,9 @@ muted labels. Exact graph/editor dimensions may follow the technical task rather
 
 ## 11. Interaction states
 
-Modal and drawer scrims share the brand generator's neutral overlay family: light mode uses ink at 28% opacity;
-dark mode uses sunken at 64%. Avoid saturated brand tints, opaque black and backdrop blur. The scrim dims context
+Modal and drawer scrims share the brand generator's neutral overlay family: light mode uses ink at 22% opacity;
+dark mode uses sunken at 48%. Modal outlines use one light border, with lighter internal separators and no second
+outline in the shadow. Avoid saturated brand tints, opaque black and backdrop blur. The scrim dims context
 without erasing it; the raised modal surface owns separation. Loading masks are independent and must not inherit
 modal opacity. Nested modal overlays retain their own stacking and close behaviour.
 

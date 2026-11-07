@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed } from "vue";
-import { ElButton, ElDialog, useLocale } from "element-plus";
+import { ElButton, useLocale } from "element-plus";
+import ElDialog from "./ManagerDialog.vue";
 import { TriangleAlert } from "lucide-vue-next";
 import { useManagerFeedback } from "./feedback";
 

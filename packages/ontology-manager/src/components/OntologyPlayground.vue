@@ -546,7 +546,7 @@ onBeforeUnmount(() => {
 
     <!-- The page under the header takes the page gutter: the explorer, the graph and the inspector start where the
          title does, in one bordered block like a table. -->
-    <div class="playground-body platform-page-gutter">
+    <div class="playground-body">
       <el-alert v-if="error" :title="error" type="error" :closable="false" show-icon />
 
       <div v-else class="playground-grid">
@@ -778,6 +778,8 @@ onBeforeUnmount(() => {
   --el-font-size-base: var(--text-sm);
   --el-font-size-small: var(--text-xs);
   display: flex;
+  flex: 1;
+  min-height: 0;
   min-width: 0;
   flex-direction: column;
   overflow: hidden;
@@ -787,7 +789,6 @@ onBeforeUnmount(() => {
   min-height: 0;
   flex: 1;
   flex-direction: column;
-  padding-bottom: var(--spacing-xl);
 }
 .summary-strip {
   display: flex;
@@ -813,8 +814,6 @@ onBeforeUnmount(() => {
   flex: 1;
   grid-template-columns: var(--shell-list-panel) minmax(320px, 1fr) var(--shell-inspector);
   overflow: hidden;
-  border: 1px solid var(--el-border-color);
-  border-radius: var(--radius-md);
 }
 .explorer-panel,
 .inspector-panel {
@@ -1005,7 +1004,7 @@ onBeforeUnmount(() => {
   bottom: 20px;
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--manager-control-gap);
   color: var(--el-text-color-tertiary);
   font-size: var(--text-xs);
 }
@@ -1021,7 +1020,7 @@ onBeforeUnmount(() => {
   display: grid;
   place-content: center;
   justify-items: center;
-  gap: 6px;
+  gap: var(--manager-control-gap);
   color: var(--el-text-color-secondary);
   pointer-events: none;
 }
@@ -1039,7 +1038,7 @@ onBeforeUnmount(() => {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
   align-items: center;
-  gap: 5px;
+  gap: var(--manager-control-gap);
   padding: var(--spacing-md);
 }
 .path-panel > .el-button {
@@ -1058,7 +1057,7 @@ onBeforeUnmount(() => {
 .detail-title {
   display: flex;
   align-items: flex-start;
-  gap: 10px;
+  gap: var(--manager-content-gap);
   padding-bottom: 8px;
   border-bottom: 1px solid var(--el-border-color-light);
 }
@@ -1112,7 +1111,7 @@ code {
   white-space: nowrap;
 }
 .description {
-  margin: 10px 0 0;
+  margin: var(--manager-content-gap) 0 0;
   color: var(--el-text-color-secondary);
   font-size: var(--text-sm);
   line-height: var(--leading-relaxed);
@@ -1154,7 +1153,7 @@ code {
   width: 100%;
   grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
   align-items: center;
-  gap: 5px;
+  gap: var(--manager-control-gap);
   padding: 8px 0;
   border: 0;
   border-bottom: 1px solid var(--el-border-color-extra-light);
@@ -1176,7 +1175,7 @@ code {
 .relation-flow {
   display: grid;
   gap: var(--spacing-md);
-  margin-top: var(--spacing-xl);
+  margin-top: var(--manager-module-gap);
 }
 .relation-flow button {
   min-height: 42px;

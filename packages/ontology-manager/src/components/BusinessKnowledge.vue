@@ -105,6 +105,8 @@ const selected = computed(
 const allVisibleChecked = computed(
   () => visible.value.length > 0 && visible.value.every((item) => checked.value.includes(item.knowledgeID))
 );
+const someVisibleChecked = computed(() => !allVisibleChecked.value
+  && visible.value.some((item) => checked.value.includes(item.knowledgeID)));
 const checkedEntries = computed(() => list.value.filter((item) => checked.value.includes(item.knowledgeID)));
 const checkedPending = computed(() => checkedEntries.value.filter((item) => item.status !== 1));
 
@@ -306,26 +308,30 @@ onMounted(load);
       <div class="knowledge-body">
         <aside v-loading="loading" class="knowledge-list">
           <div class="knowledge-list-head">
+            <div class="knowledge-selection-row">
+              <el-checkbox
+                :model-value="allVisibleChecked"
+                :indeterminate="someVisibleChecked"
+                :disabled="!visible.length"
+                @update:model-value="toggleAllVisible(Boolean($event))"
+              >
+                {{ ot("knowledgeCheckAll") }}
+              </el-checkbox>
+              <span v-if="checked.length" class="knowledge-checked" role="status">{{ ot("knowledgeChecked", { n: checked.length }) }}</span>
+            </div>
             <template v-if="checked.length">
-              <span class="knowledge-checked">{{ ot("knowledgeChecked", { n: checked.length }) }}</span>
-              <el-button v-if="checkedPending.length" size="small" @click="approveChecked">
+              <div class="knowledge-batch-actions" role="group" :aria-label="ot('knowledgeChecked', { n: checked.length })">
+              <el-button v-if="checkedPending.length" size="small" text @click="approveChecked">
                 <Check :size="14" />
                 {{ ot("knowledgeBatchApprove") }}
               </el-button>
-              <el-button size="small" @click="removeChecked">
+              <el-button size="small" text type="danger" @click="removeChecked">
                 <Trash2 :size="14" />
                 {{ ot("knowledgeBatchDelete") }}
               </el-button>
               <el-button size="small" link @click="checked = []">{{ ot("knowledgeClearChecked") }}</el-button>
+              </div>
             </template>
-            <el-checkbox
-              v-else
-              :model-value="allVisibleChecked"
-              :disabled="!visible.length"
-              @update:model-value="toggleAllVisible(Boolean($event))"
-            >
-              {{ ot("knowledgeCheckAll") }}
-            </el-checkbox>
           </div>
           <div
             v-for="item in visible"
@@ -468,7 +474,7 @@ onMounted(load);
   flex: 1;
   flex-direction: column;
   min-height: 0;
-  padding-bottom: var(--spacing-xl);
+  padding-bottom: var(--manager-module-gap);
 }
 .business-knowledge :deep(.el-button) {
   display: inline-flex;
@@ -489,6 +495,7 @@ onMounted(load);
 }
 .knowledge-filters {
   display: flex;
+  flex-wrap: wrap;
   gap: var(--spacing-xs);
 }
 .knowledge-filter {
@@ -533,20 +540,42 @@ onMounted(load);
   z-index: 1;
   top: 0;
   display: flex;
-  min-height: 44px;
-  align-items: center;
-  gap: var(--spacing-sm);
-  padding: 0 var(--spacing-md);
+  flex-direction: column;
+  gap: var(--manager-control-gap);
+  padding: var(--manager-control-gap) var(--manager-content-gap);
   border-bottom: 1px solid var(--el-border-color-light);
-  background: var(--el-fill-color-light);
+  background: var(--el-bg-color);
   font-size: var(--text-sm);
+}
+.knowledge-selection-row {
+  display: flex;
+  min-height: var(--control-height-sm);
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--manager-control-gap);
+}
+.knowledge-selection-row :deep(.el-checkbox) {
+  height: var(--control-height-sm);
+  margin: 0;
+}
+.knowledge-selection-row :deep(.el-checkbox__label) {
+  font-size: var(--text-sm);
+}
+.knowledge-batch-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--manager-control-gap);
+  padding-top: var(--manager-control-gap);
+  border-top: 1px solid var(--el-border-color-lighter);
 }
 .knowledge-list-head :deep(.el-button + .el-button) {
   margin-left: 0;
 }
 .knowledge-checked {
-  margin-right: auto;
   color: var(--el-text-color-secondary);
+  font-size: var(--text-xs);
+  font-variant-numeric: tabular-nums;
 }
 .knowledge-item {
   display: flex;
@@ -614,8 +643,9 @@ onMounted(load);
   gap: var(--spacing-xs);
 }
 .knowledge-detail {
+  min-width: 0;
   overflow-y: auto;
-  padding: var(--spacing-lg) var(--spacing-xl);
+  padding: var(--manager-module-padding);
 }
 .knowledge-detail h2 {
   margin: 0;
@@ -625,6 +655,7 @@ onMounted(load);
 }
 .knowledge-detail-head {
   display: flex;
+  flex-wrap: wrap;
   align-items: flex-start;
   justify-content: space-between;
   gap: var(--spacing-md);
@@ -633,8 +664,8 @@ onMounted(load);
   margin-top: var(--spacing-sm);
 }
 .knowledge-detail-text {
-  margin-top: var(--spacing-lg);
-  padding-top: var(--spacing-lg);
+  margin-top: var(--manager-content-gap);
+  padding-top: var(--manager-content-gap);
   border-top: 1px solid var(--el-border-color-lighter);
   color: var(--el-text-color-regular);
   font-size: var(--text-sm);
@@ -643,13 +674,13 @@ onMounted(load);
   word-break: break-word;
 }
 .knowledge-form h2 {
-  margin-bottom: var(--spacing-lg);
+  margin-bottom: var(--manager-content-gap);
 }
 .knowledge-detail-actions {
   display: flex;
   justify-content: flex-end;
   gap: var(--spacing-sm);
-  margin-top: var(--spacing-xl);
+  margin-top: var(--manager-module-gap);
 }
 .knowledge-detail-actions :deep(.el-button + .el-button) {
   margin-left: 0;
@@ -665,7 +696,7 @@ onMounted(load);
 .knowledge-back {
   display: none;
 }
-@media (max-width: 760px) {
+@container ontology-manager (max-width: 760px) {
   .knowledge-body {
     grid-template-columns: minmax(0, 1fr);
   }
@@ -683,7 +714,7 @@ onMounted(load);
     margin-bottom: var(--spacing-md);
     padding: 0;
     border: 0;
-    color: var(--el-color-primary);
+    color: var(--brand-link);
     background: transparent;
     cursor: pointer;
     font-size: var(--text-sm);

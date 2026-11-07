@@ -9,6 +9,27 @@
   font: inherit;
 }
 
+/* Forms own field spacing; their final field must not add a second gap before the next module or action row. */
+:where(.ontology-manager) .el-form-item {
+  margin-bottom: var(--manager-module-gap);
+}
+:where(.ontology-manager) .el-form-item:last-child {
+  margin-bottom: 0;
+}
+/* Top labels and multiline controls must not inherit the single-line control's baseline spacing. */
+.ontology-manager .el-form--label-top .el-form-item__label {
+  height: auto;
+  margin-bottom: var(--manager-control-gap);
+  padding: 0;
+  line-height: var(--leading-sm);
+}
+.ontology-manager .el-form-item__content:has(> .el-textarea) {
+  line-height: normal;
+}
+.ontology-manager .el-form-item__content > .el-textarea {
+  display: block;
+}
+
 :where(.ontology-manager) button:not(:disabled),
 :where(.ontology-manager) [role="button"]:not([aria-disabled="true"]) {
   cursor: pointer;
@@ -68,7 +89,7 @@
 .ontology-manager-shell .el-dialog {
   width: min(720px, calc(100cqw - 32px));
   max-width: calc(100cqw - 32px);
-  margin: 6cqh auto !important;
+  margin: auto !important;
 }
 
 /* Confirmations keep their own width (the original message box limit of 420) instead of the form dialog width above; the container max-width and the narrow-screen rules still apply. */
@@ -93,7 +114,7 @@
   .ontology-manager-shell .el-dialog {
     width: calc(100cqw - 24px);
     max-width: calc(100cqw - 24px);
-    margin: 24px auto !important;
+    margin: auto !important;
   }
 
   .ontology-manager-shell .el-dialog__body {

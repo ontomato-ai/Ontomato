@@ -1422,10 +1422,9 @@ async function saveClassDesc(cls: ClassDef) {
       </template>
     </PlatformPageHeader>
 
-    <!-- The page under the header takes the page gutter: the canvas toolbar and the canvas with its panel start where
-         the title does, the canvas in one bordered block like a table. -->
-    <div class="modeling-body platform-page-gutter">
-      <div class="toolbar">
+    <!-- The workspace fills the page; only the toolbar and panel contents carry inner spacing. -->
+    <div class="modeling-body">
+      <div class="toolbar platform-page-gutter">
         <div class="zoom-controls" role="toolbar" :aria-label="ot('fitCanvas')">
           <el-button :title="ot('zoomIn')" :aria-label="ot('zoomIn')" @click="onZoomIn"><Plus :size="18" /></el-button>
           <el-button :title="ot('zoomOut')" :aria-label="ot('zoomOut')" @click="onZoomOut"><Minus :size="18" /></el-button>
@@ -1532,6 +1531,8 @@ async function saveClassDesc(cls: ClassDef) {
  */
 .visual-modeling {
   height: 100%;
+  min-height: 0;
+  min-width: 0;
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -1542,13 +1543,13 @@ async function saveClassDesc(cls: ClassDef) {
   flex: 1;
   min-height: 0;
   flex-direction: column;
-  padding-bottom: var(--spacing-xl);
 }
 
 /* The canvas toolbar under the header: zoom and layout on the left, the current selection on the right. */
 .toolbar {
   display: flex;
-  min-height: 40px;
+  min-height: 48px;
+  margin: 0;
   flex-shrink: 0;
   align-items: center;
   gap: var(--spacing-sm);
@@ -1574,6 +1575,7 @@ async function saveClassDesc(cls: ClassDef) {
 
 .zoom-controls {
   display: flex;
+  align-items: center;
   gap: var(--spacing-xs);
 }
 
@@ -1594,8 +1596,7 @@ async function saveClassDesc(cls: ClassDef) {
   min-height: 0;
   display: flex;
   overflow: hidden;
-  border: 1px solid var(--el-border-color);
-  border-radius: var(--radius-md);
+  border-top: 1px solid var(--el-border-color);
 }
 
 .graph-container {

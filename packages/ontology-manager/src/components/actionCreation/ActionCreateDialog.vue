@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from "vue";
-import { ElButton, ElDialog } from "element-plus";
+import { ElButton } from "element-plus";
+import ElDialog from "../../ManagerDialog.vue";
 import {
   AgentChatPanel,
   createAgentHostClient,

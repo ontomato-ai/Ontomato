@@ -1,11 +1,11 @@
 <script setup lang="ts">
+import ElDialog from "../ManagerDialog.vue";
 import { computed, onMounted, ref, watch } from "vue";
 import MarkdownIt from "markdown-it";
 import { ArrowLeft, Play, Plus, Save, Sparkles, Trash2 } from "lucide-vue-next";
 import {
   ElAlert,
   ElButton,
-  ElDialog,
   ElForm,
   ElFormItem,
   ElInput,
@@ -646,6 +646,7 @@ onMounted(() => void loadDetail());
       class="detail-body platform-page-gutter"
       :class="{ 'metric-detail-body': kind === 'metrics' }"
     >
+      <div class="definition-column">
       <section class="definition-section">
         <div class="section-title">
           <div>
@@ -824,6 +825,8 @@ onMounted(() => void loadDetail());
         </section>
       </section>
 
+      </div>
+
       <section class="logic-section">
         <div class="section-title">
           <div>
@@ -831,7 +834,7 @@ onMounted(() => void loadDetail());
             <h2>{{ ot("assetFunctionLogic") }}</h2>
           </div>
         </div>
-        <el-form label-position="top" class="asset-form">
+        <el-form label-position="top" class="asset-form logic-form">
           <el-form-item v-if="functionRecord" :label="ot('assetFunctionName')">
             <el-input v-model="functionRecord.name" />
           </el-form-item>
@@ -1008,7 +1011,7 @@ onMounted(() => void loadDetail());
   border: 1px solid var(--el-border-color);
   border-radius: var(--radius-sm);
   padding: var(--surface-padding);
-  margin-top: var(--spacing-md);
+  margin: 0;
 }
 
 .markdown-view-toggle { margin-bottom: var(--spacing-md); }
@@ -1071,7 +1074,7 @@ onMounted(() => void loadDetail());
 }
 .detail-tab.is-active {
   border-bottom-color: var(--el-color-primary);
-  color: var(--el-color-primary);
+  color: var(--brand-link);
   font-weight: var(--font-medium);
 }
 .explainer-pane {
@@ -1119,25 +1122,27 @@ onMounted(() => void loadDetail());
 .detail-body {
   display: grid;
   grid-template-columns: minmax(300px, 0.9fr) minmax(460px, 1.4fr);
-  gap: var(--spacing-lg);
-  padding-block: var(--spacing-lg);
+  gap: var(--manager-module-gap);
+  padding-block: var(--manager-module-gap);
   align-items: start;
 }
-.metric-detail-body > .logic-section {
-  grid-column: 2;
-  grid-row: 1 / span 2;
+.definition-column {
+  display: contents;
 }
-.metric-detail-body > .metric-bindings {
-  grid-column: 1;
+.metric-detail-body > .definition-column {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: var(--manager-module-gap);
 }
 .action-definition {
-  margin-top: var(--spacing-xl);
-  padding-top: var(--spacing-lg);
+  margin-top: var(--manager-content-gap);
+  padding-top: var(--manager-content-gap);
   border-top: 1px solid var(--el-border-color-lighter);
 }
 
 .action-definition :deep(.param-link) {
-  color: var(--el-color-primary);
+  color: var(--brand-link);
   text-decoration: underline;
   text-underline-offset: 2px;
   cursor: pointer;
@@ -1151,11 +1156,12 @@ onMounted(() => void loadDetail());
 }
 
 .action-definition :deep(.param-link:hover) {
-  color: var(--el-color-primary-dark-2);
+  color: var(--brand-link);
+  text-decoration-thickness: 2px;
 }
 
 .param-chip {
-  font-family: var(--el-font-family-mono);
+  font-family: var(--font-mono);
   font-size: 12px;
   font-weight: 500;
 }
@@ -1164,20 +1170,20 @@ onMounted(() => void loadDetail());
   width: 100%;
   border-collapse: collapse;
   font-size: 12px;
-  margin-top: 10px;
+  margin-top: var(--manager-content-gap);
 }
 
 .param-table th {
   text-align: left;
   color: var(--el-text-color-secondary);
   font-weight: 500;
-  padding: 7px 9px;
+  padding: var(--manager-control-gap) var(--manager-content-gap);
   border-bottom: 1px solid var(--el-border-color-lighter);
   background: var(--el-fill-color-lighter);
 }
 
 .param-table td {
-  padding: 7px 9px;
+  padding: var(--manager-control-gap) var(--manager-content-gap);
   border-bottom: 1px solid var(--el-border-color-lighter);
 }
 
@@ -1199,7 +1205,7 @@ onMounted(() => void loadDetail());
 .criteria-row {
   border: 1px solid var(--el-border-color-lighter);
   border-radius: 6px;
-  padding: 9px 11px;
+  padding: var(--manager-content-gap);
 }
 
 .criteria-main {
@@ -1216,13 +1222,13 @@ onMounted(() => void loadDetail());
 }
 
 .criteria-custom {
-  margin-top: 10px;
+  margin-top: var(--manager-control-gap);
   font-size: 12px;
   color: var(--el-text-color-regular);
 }
 
 .rule-group {
-  margin-top: 14px;
+  margin-top: var(--manager-content-gap);
 }
 
 .rule-group-title {
@@ -1244,15 +1250,15 @@ onMounted(() => void loadDetail());
 .rule-row {
   border: 1px solid var(--el-border-color-lighter);
   border-radius: 6px;
-  padding: 10px 12px;
-  margin-bottom: 8px;
+  padding: var(--manager-content-gap);
+  margin-bottom: var(--manager-control-gap);
 }
 
 .rule-head {
   display: flex;
   align-items: center;
   gap: 8px;
-  margin-bottom: 6px;
+  margin-bottom: var(--manager-control-gap);
 }
 
 .rule-target {
@@ -1278,7 +1284,7 @@ onMounted(() => void loadDetail());
 }
 
 .rule-guard {
-  font-family: var(--el-font-family-mono);
+  font-family: var(--font-mono);
   background: var(--el-fill-color-light);
   padding: 1px 4px;
   border-radius: 3px;
@@ -1301,13 +1307,18 @@ onMounted(() => void loadDetail());
 .definition-section,
 .logic-section {
   min-width: 0;
-  padding: var(--surface-padding);
+  padding: var(--manager-module-padding);
   border: 1px solid var(--el-border-color);
   border-radius: var(--radius-md);
   background: var(--el-bg-color);
 }
+.metric-bindings {
+  display: flex;
+  flex-direction: column;
+  gap: var(--manager-content-gap);
+}
 .metric-bindings > p {
-  margin: var(--spacing-sm) 0;
+  margin: 0;
   color: var(--el-text-color-secondary);
   font-size: var(--text-sm);
   line-height: var(--leading-sm);
@@ -1326,14 +1337,31 @@ h2 {
   font-weight: var(--font-semibold);
 }
 .asset-form {
-  margin-top: var(--spacing-xl);
+  margin-top: var(--manager-content-gap);
 }
 .asset-form :deep(.el-form-item__label) {
   color: var(--el-text-color-secondary);
   font-size: var(--text-sm);
 }
 .asset-form :deep(.el-form-item) {
-  margin-bottom: var(--spacing-lg);
+  margin-bottom: var(--manager-module-gap);
+}
+.asset-form :deep(.el-form-item:last-child) {
+  margin-bottom: 0;
+}
+.logic-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--manager-module-gap);
+}
+.logic-form :deep(.el-form-item),
+.logic-form :deep(.el-form-item:last-child),
+.logic-form > .parameter-header,
+.logic-form > .parameter-row {
+  margin: 0;
+}
+.metric-binding > .el-button {
+  margin-top: var(--manager-content-gap);
 }
 .asset-form :deep(.el-select) {
   width: 100%;
@@ -1350,7 +1378,10 @@ h2 {
   align-items: center;
   justify-content: space-between;
   gap: var(--spacing-md);
-  margin: var(--spacing-sm) 0 var(--spacing-xs);
+  margin: 0 0 var(--manager-control-gap);
+}
+.metric-bindings > .parameter-header {
+  margin: 0;
 }
 .field-label {
   color: var(--el-text-color-secondary);
@@ -1383,11 +1414,6 @@ h2 {
   .detail-body {
     grid-template-columns: minmax(0, 1fr);
   }
-  .metric-detail-body > .logic-section,
-  .metric-detail-body > .metric-bindings {
-    grid-column: auto;
-    grid-row: auto;
-  }
 }
 @container ontology-manager (max-width: 900px) {
   .parameter-row {
@@ -1408,7 +1434,7 @@ h2 {
   }
   .detail-body {
     padding-block: var(--spacing-md);
-    gap: var(--spacing-md);
+    gap: var(--manager-module-gap);
   }
 }
 </style>

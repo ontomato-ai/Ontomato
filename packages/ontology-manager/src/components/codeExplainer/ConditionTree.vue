@@ -73,16 +73,16 @@ const singleChild = computed(() => {
   display: inline-block;
   padding: 1px 6px;
   border-radius: var(--radius-sm);
-  color: #fff;
+  background: var(--el-fill-color-light);
   font-size: var(--text-xs);
   font-weight: var(--font-semibold);
   letter-spacing: 0.05em;
 }
 .ce-cond-and > .ce-cond-op {
-  background: var(--seg-QUERY);
+  color: var(--seg-QUERY);
 }
 .ce-cond-or > .ce-cond-op {
-  background: var(--seg-EXTERNAL_CALL);
+  color: var(--seg-EXTERNAL_CALL);
 }
 .ce-cond-items {
   display: flex;

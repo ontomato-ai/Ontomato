@@ -6,7 +6,8 @@
 .el-dialog,
 .el-message-box,
 .el-drawer {
-  border: 1px solid var(--el-border-color);
+  border: 1px solid var(--el-border-color-light);
+  background-color: var(--el-bg-color-overlay);
   box-shadow: var(--elevation-modal) !important;
 }
 
@@ -28,7 +29,7 @@
 .el-drawer__header {
   padding: var(--dialog-padding) var(--dialog-padding) var(--spacing-md) !important;
   margin: 0 !important;
-  border-bottom: 1px solid var(--el-border-color) !important;
+  border-bottom: 1px solid var(--el-border-color-lighter) !important;
 }
 
 .el-dialog__title,
@@ -54,7 +55,7 @@
   justify-content: flex-end;
   gap: var(--component-gap) !important;
   padding: var(--spacing-md) var(--dialog-padding) !important;
-  border-top: 1px solid var(--el-border-color) !important;
+  border-top: 1px solid var(--el-border-color-lighter) !important;
 }
 
 .el-dialog__footer .el-button,
@@ -130,14 +131,12 @@
   max-width: 100%;
 }
 
-/* Dropdown options must share the panel's viewport, including long labels and wide triggers. */
+/* Keep Element Plus's trigger-derived minimum width; only the viewport limits wider option panels. */
 .el-popper.el-select__popper {
-  max-width: min(640px, calc(100vw - 32px));
+  max-width: calc(100vw - 32px);
 }
 .el-select__popper .el-select-dropdown {
-  /* EP sets an inline min-width from the trigger; it must not defeat the viewport/panel cap. */
-  min-width: 0 !important;
-  max-width: min(638px, calc(100vw - 34px));
+  max-width: calc(100vw - 34px);
   overflow: hidden;
 }
 .el-select__popper .el-select-dropdown__list {

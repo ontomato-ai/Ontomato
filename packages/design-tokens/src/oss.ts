@@ -25,12 +25,12 @@ const lightPalette = {
   onPrimary: "#ffffff",
   primarySoft: "#e8ede3",
   brandMark: "#639c2d",
-  accent: "#dc4b35",
-  accentInk: "#bc3928",
-  accentSoft: "#f3e5dd",
-  success: "#3d7a1a",
-  warning: "#946000",
-  danger: "#bc3928",
+  accent: "#ed593e",
+  accentInk: "#c13d27",
+  accentSoft: "#fff0e9",
+  success: "#247b2a",
+  warning: "#9a5c00",
+  danger: "#c23827",
   info: "#62665c",
 } satisfies Omit<BrandColors, "rail" | "panel" | "workspace" | "railSelected" | "panelSelected" | "edge">;
 
@@ -54,12 +54,12 @@ const darkPalette = {
   onPrimary: "#14180f",
   primarySoft: "#2c3527",
   brandMark: "#8fbf5a",
-  accent: "#ef7b65",
-  accentInk: "#ef7b65",
-  accentSoft: "#3a231d",
-  success: "#7dbb4b",
-  warning: "#d9a441",
-  danger: "#ef7b65",
+  accent: "#ff9478",
+  accentInk: "#ffab92",
+  accentSoft: "#402820",
+  success: "#98d768",
+  warning: "#efbd59",
+  danger: "#ff917d",
   info: "#a3a99a",
 } satisfies Omit<BrandColors, "rail" | "panel" | "workspace" | "railSelected" | "panelSelected" | "edge">;
 
@@ -90,6 +90,6 @@ export const ossBrand: BrandSource = {
   },
   dataviz: {
     light: ["#4a8f1f", "#3d6fd1", "#b97d08", "#0f9488", "#d4553c", "#9b4fb5", "#7a7f1a", "#d24d8a"],
-    dark: ["#68a03b", "#6a8fe0", "#b98820", "#2ba597", "#dc6e58", "#a970c8", "#919530", "#d86b9c"],
+    dark: ["#98d768", "#88adff", "#efbd59", "#4ed0b9", "#ff917d", "#c995ed", "#c0cd62", "#f28cbb"],
   },
 };

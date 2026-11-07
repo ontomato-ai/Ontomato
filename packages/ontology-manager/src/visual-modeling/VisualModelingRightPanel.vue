@@ -182,7 +182,9 @@ const { t } = useSharedText();
 <style scoped>
 /* A panel beside the canvas, divided by a hairline and in the area's own tone (DESIGN.md "Colour roles"). */
 .right-panel {
-  width: 360px;
+  width: var(--shell-inspector);
+  flex-shrink: 0;
+  min-width: 0;
   border-left: 1px solid var(--el-border-color);
   display: flex;
   flex-direction: column;
@@ -231,13 +233,15 @@ const { t } = useSharedText();
 }
 
 .section {
-  padding-bottom: var(--spacing-lg);
-  margin-bottom: var(--spacing-lg);
+  padding-bottom: var(--manager-content-gap);
+  margin-bottom: var(--manager-content-gap);
   border-bottom: 1px solid var(--el-border-color-light);
 }
 
 .section:last-child {
   margin-bottom: 0;
+  padding-bottom: 0;
+  border-bottom: 0;
 }
 
 .section-title {
@@ -249,8 +253,7 @@ const { t } = useSharedText();
   font-size: var(--text-xs);
   font-weight: var(--font-semibold);
   color: var(--el-text-color-secondary);
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
+  letter-spacing: 0.02em;
 }
 
 .section-title small {
@@ -276,7 +279,7 @@ const { t } = useSharedText();
 .field {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: var(--manager-label-gap);
   margin-bottom: var(--spacing-md);
 }
 
@@ -297,7 +300,7 @@ const { t } = useSharedText();
 code {
   display: block;
   overflow: hidden;
-  margin-top: 3px;
+  margin-top: var(--manager-label-gap);
   color: var(--el-text-color-tertiary);
   font-family: var(--font-mono);
   font-size: var(--text-xs);

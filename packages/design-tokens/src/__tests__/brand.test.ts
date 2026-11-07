@@ -126,6 +126,12 @@ describe("brand generation", () => {
     expect(ossBrand.dataviz.dark).toHaveLength(8);
   });
 
+  it("uses brighter chart marks in dark mode instead of dimming the light palette", () => {
+    ossBrand.dataviz.dark.forEach((color, index) => {
+      expect(contrastRatio(color, "#000000")).toBeGreaterThan(contrastRatio(ossBrand.dataviz.light[index], "#000000"));
+    });
+  });
+
   /**
    * Three bands with no divider: light mode goes rail darkest, panel, workspace whitest; dark mode reverses it. The
    * order is judged from the colours themselves, so a future palette is only kept if it still reads as three bands.

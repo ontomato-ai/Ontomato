@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { reactive, ref, watch } from "vue";
-import { ElButton, ElDialog, ElForm, ElFormItem, ElInput } from "element-plus";
+import { ElButton, ElForm, ElFormItem, ElInput } from "element-plus";
+import ElDialog from "../ManagerDialog.vue";
 import { useManagerFeedback } from "../feedback";
 import { useManagerClient, useOntologyText } from "../context";
 

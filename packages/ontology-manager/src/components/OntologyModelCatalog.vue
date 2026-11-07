@@ -346,13 +346,15 @@ onMounted(() => {
 }
 .catalog-toolbar {
   display: flex;
+  flex-wrap: wrap;
   min-height: 40px;
   align-items: center;
   gap: var(--spacing-sm);
-  margin-top: var(--spacing-md);
+  margin-top: var(--manager-content-gap);
 }
 .catalog-toolbar :deep(.el-input) {
   width: 260px;
+  max-width: 100%;
 }
 .catalog-toolbar .owner-filter {
   width: 220px;
@@ -362,8 +364,8 @@ onMounted(() => {
   font-size: var(--text-sm);
 }
 .resource-table {
-  overflow: hidden;
-  margin: var(--spacing-md) 0 var(--spacing-lg);
+  overflow: auto;
+  margin: var(--manager-content-gap) 0 var(--manager-module-gap);
   border: 1px solid var(--el-border-color);
   border-radius: var(--radius-md);
   background: var(--el-bg-color);
@@ -371,6 +373,7 @@ onMounted(() => {
 .resource-table-head,
 .resource-table-row {
   display: grid;
+  box-sizing: border-box;
   width: 100%;
   align-items: center;
   column-gap: var(--spacing-md);
@@ -464,7 +467,7 @@ onMounted(() => {
   overflow: hidden;
   padding: 0;
   border: 0;
-  color: var(--el-color-primary);
+  color: var(--brand-link);
   background: transparent;
   font: inherit;
   text-align: left;
@@ -482,19 +485,27 @@ onMounted(() => {
     grid-template-columns: minmax(190px, 1fr) 64px 20px;
   }
   .attribute-grid {
-    grid-template-columns: minmax(190px, 1fr) minmax(100px, 1fr) 20px;
+    grid-template-columns: minmax(150px, 1.4fr) minmax(100px, 1fr) minmax(80px, 0.8fr) 20px;
   }
   .relation-grid {
     grid-template-columns: minmax(190px, 1fr) minmax(100px, 1fr) 20px;
   }
-  .resource-table-head span:nth-child(2),
-  .resource-table-head span:nth-child(4),
-  .resource-table-row > span:nth-child(2),
-  .resource-table-row > span:nth-child(4) {
+  .object-grid > :nth-child(2),
+  .object-grid > :nth-child(4),
+  .attribute-grid > :nth-child(4),
+  .attribute-grid > :nth-child(5),
+  .relation-grid > :nth-child(2),
+  .relation-grid > :nth-child(4) {
     display: none;
   }
 }
 @container ontology-manager (max-width: 560px) {
+  .attribute-grid {
+    grid-template-columns: minmax(140px, 1fr) minmax(80px, 0.8fr) 20px;
+  }
+  .attribute-grid > :nth-child(2) {
+    display: none;
+  }
   .catalog-toolbar :deep(.el-input),
   .catalog-toolbar .owner-filter {
     width: 100%;
