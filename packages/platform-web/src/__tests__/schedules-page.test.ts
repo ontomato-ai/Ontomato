@@ -63,16 +63,19 @@ const task = platformTaskSchema.parse({
   lastRun: null,
   latestResult: { runId: "30000000-0000-4000-8000-000000000001", link: { appId: "ontology", path: RESULT } },
 });
-/** The service lists the applications in its own order; the page shows them in the rail's. */
+/**
+ * The service lists the applications in its own order; the page shows them in the rail's. Each holds a task, since the
+ * filter row names only the applications that do.
+ */
 const applications = platformScheduleApplicationsSchema.parse({
   applications: ["governance", "operations", "agents", "ontology"].map((id) => ({
     id,
     description: null,
     available: true,
     unavailableReason: null,
-    taskCount: id === "ontology" ? 1 : 0,
+    taskCount: 1,
   })),
-  totalCount: 1,
+  totalCount: 4,
 });
 
 beforeEach(() => {

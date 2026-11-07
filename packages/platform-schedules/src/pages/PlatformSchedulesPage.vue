@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, shallowRef, watch } from "vue";
 import { ElMessage, ElMessageBox } from "element-plus";
-import { Circle, Search } from "lucide-vue-next";
+import { ChevronDown, Circle, Search } from "lucide-vue-next";
 import type {
   PlatformScheduleApplications,
   PlatformTask,
@@ -82,17 +82,33 @@ interface Chip {
   /** The caller's tasks there, as the service counts them; null while it is not known. */
   count: number | null;
 }
-const chips = computed<Chip[]>(() => {
-  const chips: Chip[] = [
-    { id: null, label: t("filter.all"), count: served.value?.totalCount ?? null },
-    ...scheduleApps.value.map((app) => ({ id: app.id, label: app.label, count: app.taskCount })),
-  ];
+/** At most this many applications stand in the filter row; the others wait behind "more", in the same order. */
+const ROW_APPS = 5;
+/**
+ * The applications to narrow to: the ones holding the caller's tasks, in the rail's order. The one the address narrows
+ * to stays even while it holds none, so the filter in force is always on screen.
+ */
+const appChips = computed<Chip[]>(() => {
+  const chips: Chip[] = scheduleApps.value
+    .filter((app) => app.taskCount > 0 || app.id === props.app)
+    .map((app) => ({ id: app.id, label: app.label, count: app.taskCount }));
   // An address may narrow to an application that no longer declares a form: its own tasks are still the reader's.
   if (props.app && !chips.some((chip) => chip.id === props.app)) {
     chips.push({ id: props.app, label: appInfo(props.app).label, count: null });
   }
   return chips;
 });
+const rowChips = computed<Chip[]>(() => [
+  { id: null, label: t("filter.all"), count: served.value?.totalCount ?? null },
+  ...appChips.value.slice(0, ROW_APPS),
+]);
+const moreChips = computed(() => appChips.value.slice(ROW_APPS));
+/** The chosen application when it waits behind "more": the button then carries its name and count. */
+const chosenMore = computed(() => moreChips.value.find((chip) => chip.id === props.app) ?? null);
+
+function pick(appId: string | null) {
+  if (appId !== props.app) emit("selectApp", appId);
+}
 
 /** What keeps the applications from being offered for a new task, shown above the cards until it is resolved. */
 const applicationsProblem = computed<string | null>(() => {
@@ -365,18 +381,40 @@ defineExpose({ openNewTask });
     <div class="toolbar">
       <div class="chips" role="group" :aria-label="t('filter.label')">
         <button
-          v-for="chip in chips"
+          v-for="chip in rowChips"
           :key="chip.id ?? ''"
           type="button"
           class="chip"
           :class="{ selected: chip.id === app }"
           :aria-pressed="chip.id === app"
           :data-app="chip.id ?? ''"
-          @click="chip.id !== app && emit('selectApp', chip.id)"
+          @click="pick(chip.id)"
         >
           <span>{{ chip.label }}</span>
           <span v-if="chip.count !== null" class="count">{{ chip.count }}</span>
         </button>
+        <el-dropdown v-if="moreChips.length > 0" trigger="click" @command="pick">
+          <button type="button" class="chip more" :class="{ selected: chosenMore }">
+            <span>{{ chosenMore?.label ?? t("filter.more") }}</span>
+            <span v-if="chosenMore && chosenMore.count !== null" class="count">{{ chosenMore.count }}</span>
+            <ChevronDown :size="14" aria-hidden="true" />
+          </button>
+          <template #dropdown>
+            <el-dropdown-menu>
+              <el-dropdown-item
+                v-for="chip in moreChips"
+                :key="chip.id!"
+                :command="chip.id"
+                class="schedule-filter-item"
+                :class="{ 'schedule-filter-chosen': chip.id === app }"
+                :data-app="chip.id"
+              >
+                <span>{{ chip.label }}</span>
+                <span v-if="chip.count !== null" class="schedule-filter-count">{{ chip.count }}</span>
+              </el-dropdown-item>
+            </el-dropdown-menu>
+          </template>
+        </el-dropdown>
       </div>
       <el-input
         v-model="search"
@@ -496,6 +534,22 @@ defineExpose({ openNewTask });
   font-variant-numeric: tabular-nums;
 }
 .chip.selected .count {
+  color: inherit;
+}
+/* "More" opens the applications that do not fit in the row, each with its count; the chosen one reads as in the row. */
+:global(.el-dropdown-menu__item.schedule-filter-item) {
+  justify-content: space-between;
+  gap: var(--spacing-lg);
+}
+:global(.el-dropdown-menu__item.schedule-filter-item .schedule-filter-count) {
+  color: var(--el-text-color-secondary);
+  font-variant-numeric: tabular-nums;
+}
+:global(.el-dropdown-menu__item.schedule-filter-chosen) {
+  color: var(--brand-link);
+  font-weight: var(--font-semibold);
+}
+:global(.el-dropdown-menu__item.schedule-filter-chosen .schedule-filter-count) {
   color: inherit;
 }
 .search {

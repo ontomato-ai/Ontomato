@@ -1,11 +1,12 @@
 import { afterEach, describe, expect, it } from "vitest";
-import type { VueWrapper } from "@vue/test-utils";
-import type { PlatformTask } from "@ontomato/contracts/platform-schedules";
+import type { DOMWrapper, VueWrapper } from "@vue/test-utils";
+import { platformScheduleApplicationsSchema, type PlatformTask } from "@ontomato/contracts/platform-schedules";
 import PlatformSchedulesPage from "../pages/PlatformSchedulesPage.vue";
 import ScheduleCard from "../components/ScheduleCard.vue";
 import ScheduleRunsDrawer from "../components/ScheduleRunsDrawer.vue";
 import {
   BASE,
+  HOST_APPS,
   applications,
   deferred,
   dropped,
@@ -77,6 +78,9 @@ async function mountPage(host: ReturnType<typeof service>["host"], props: Record
 }
 
 const titles = (wrapper: VueWrapper) => wrapper.findAll(".card .title").map((title) => title.text());
+/** A filter as read: the application's name and its count. */
+const parts = (chip: DOMWrapper<Element>) => chip.findAll("span").map((part) => part.text()).join(" ");
+const chipTexts = (wrapper: VueWrapper) => wrapper.findAll(".chip").map(parts);
 const card = (wrapper: VueWrapper, item: PlatformTask) =>
   wrapper.findAllComponents(ScheduleCard).find((found) => found.props("task").id === item.id)!;
 
@@ -88,8 +92,8 @@ describe("the scheduled tasks page", () => {
     expect(calls[0]!.path).toBe(`${BASE}/credential/renew`);
     expect(calls.slice(1).map((call) => call.path).sort()).toEqual([BASE, `${BASE}/applications`]);
     expect(titles(wrapper)).toEqual(listed.map((item) => item.title));
-    // The filters: all, then every application that declares a form, in the rail's order, each with its count.
-    expect(wrapper.findAll(".chip").map((chip) => chip.findAll("span").map((part) => part.text()).join(" "))).toEqual([
+    // The filters: all, then every application holding tasks, in the rail's order, each with its count.
+    expect(chipTexts(wrapper)).toEqual([
       "All 4",
       "Ontology Manager 1",
       "Agent Platform 1",
@@ -140,6 +144,56 @@ describe("the scheduled tasks page", () => {
     expect(titles(wrapper)).toEqual(listed.map((item) => item.title).filter((title) => title.includes("每")));
     await wrapper.findComponent({ name: "ElInput" }).vm.$emit("update:modelValue", "回归");
     expect(titles(wrapper)).toEqual([operations.title]);
+  });
+
+  it("filters only by the applications holding tasks, and keeps the one the address narrows to", async () => {
+    const counts: Record<string, number> = { ontology: 2, governance: 1 };
+    const served = applications();
+    const body = platformScheduleApplicationsSchema.parse({
+      applications: served.applications.map((application) => ({ ...application, taskCount: counts[application.id] ?? 0 })),
+      totalCount: 3,
+    });
+    const { host } = service((call) => (call.path === `${BASE}/applications` ? { status: 200, body } : undefined));
+    const wrapper = await mountPage(host);
+
+    expect(chipTexts(wrapper)).toEqual(["All 3", "Ontology Manager 2", "Knowledge governance 1"]);
+
+    await wrapper.setProps({ app: "operations" });
+    await flushPromises();
+    expect(chipTexts(wrapper)).toEqual(["All 3", "Ontology Manager 2", "Operations diagnosis 0", "Knowledge governance 1"]);
+    expect(wrapper.find('.chip[data-app="operations"]').attributes("aria-pressed")).toBe("true");
+
+    await wrapper.setProps({ app: null });
+    await flushPromises();
+    expect(chipTexts(wrapper)).toEqual(["All 3", "Ontology Manager 2", "Knowledge governance 1"]);
+  });
+
+  it("puts the applications beyond five behind “more”, which names the one chosen there", async () => {
+    const rail = Array.from({ length: 7 }, (_, index) => ({
+      id: `app${index + 1}`,
+      label: `App ${index + 1}`,
+      icon: HOST_APPS[0]!.icon,
+    }));
+    const body = platformScheduleApplicationsSchema.parse({
+      applications: rail.map(({ id }) => ({ id, description: null, available: true, unavailableReason: null, taskCount: 1 })),
+      totalCount: 7,
+    });
+    const { host } = service((call) => (call.path === `${BASE}/applications` ? { status: 200, body } : undefined));
+    const wrapper = await mountPage({ ...host, applications: () => rail });
+    const row = ["All 7", "App 1 1", "App 2 1", "App 3 1", "App 4 1", "App 5 1"];
+
+    expect(chipTexts(wrapper)).toEqual([...row, "More"]);
+    await wrapper.find(".chip.more").trigger("click");
+    await flushPromises();
+    expect(wrapper.findAll(".schedule-filter-item").map(parts)).toEqual(["App 6 1", "App 7 1"]);
+
+    await wrapper.find('.schedule-filter-item[data-app="app7"]').trigger("click");
+    expect(wrapper.emitted("selectApp")).toEqual([["app7"]]);
+    await wrapper.setProps({ app: "app7" });
+    await flushPromises();
+    expect(chipTexts(wrapper)).toEqual([...row, "App 7 1"]);
+    expect(wrapper.find(".chip.more").classes()).toContain("selected");
+    expect(wrapper.find('.schedule-filter-item[data-app="app7"]').classes()).toContain("schedule-filter-chosen");
   });
 
   it("opens a result through the host, and has none to open before a run left one", async () => {

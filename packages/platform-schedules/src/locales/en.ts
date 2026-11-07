@@ -15,6 +15,7 @@ export default {
     filter: {
       label: "Filter by application",
       all: "All",
+      more: "More",
       search: "Search tasks",
     },
     empty: {
