@@ -26,7 +26,7 @@ const { text, error } = useArtifactText(props);
   padding: 14px 18px;
 }
 .markdown-renderer-file.panel {
-  padding: 4px 6px 24px;
+  padding: var(--spacing-lg) 6px var(--spacing-xl);
 }
 .state {
   padding: 18px;

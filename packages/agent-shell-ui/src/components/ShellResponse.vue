@@ -30,7 +30,7 @@ const target = computed(() =>
     ? { sessionId: props.sessionId, runId: props.item.runId, messageId: props.item.answerMessageId }
     : null,
 );
-const waiting = computed(() => props.item.running && props.item.blocks.length === 0);
+const waiting = computed(() => props.item.running && props.item.blocks.length === 0 && props.item.retrievals.length === 0);
 
 /** Elapsed time since the request: ticking while the run is active, final once it stopped. */
 const now = ref(Date.now());
@@ -196,20 +196,18 @@ async function submit(value: ShellFeedbackValue) {
 <style scoped>
 .response {
   min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--conversation-process-gap);
 }
-.response > .response-text + .response-text,
-.response > .response-process + .response-text,
-.response > .retrieval + .response-text {
-  margin-top: var(--conversation-block-gap);
-}
-.response > .response-text + .response-process {
-  margin-top: var(--conversation-process-gap);
+/* The response owns each gap; answer boundaries get more space than process metadata. */
+.response > .response-text:not(.commentary):not(:first-child) {
+  margin-top: calc(var(--conversation-block-gap) - var(--conversation-process-gap));
 }
 .status-line {
   display: flex;
   align-items: center;
   gap: 6px;
-  margin-bottom: var(--conversation-process-gap);
   line-height: var(--leading-xs);
   color: var(--el-text-color-tertiary);
   font-size: var(--text-xs, 12px);
@@ -246,7 +244,6 @@ async function submit(value: ShellFeedbackValue) {
   display: flex;
   align-items: flex-start;
   gap: 8px;
-  margin-top: 10px;
   font-size: var(--text-sm, 13px);
   line-height: 1.5;
 }
@@ -274,11 +271,12 @@ async function submit(value: ShellFeedbackValue) {
 .actions {
   display: flex;
   gap: var(--spacing-xs);
-  margin-top: var(--conversation-process-gap);
   margin-left: -6px;
 }
+.response > .response-text:has(.artifact-card, .inline-artifact) + .actions {
+  margin-top: calc(var(--conversation-block-gap) - var(--conversation-process-gap));
+}
 .reason {
-  margin-top: 8px;
   max-width: 480px;
 }
 .reason textarea {

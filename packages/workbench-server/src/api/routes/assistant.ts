@@ -4,6 +4,7 @@ import { exportConversationPpt } from "../../services/assistant/export";
 import { safePptFileName } from "../../services/analysis-agent/delivery/ppt-artifacts";
 import { requirePermission } from "../../identity/installed";
 import { assistantSkillCatalog } from "../../services/assistant/skills";
+import { actionCard, confirmAction } from "../../services/assistant/actions";
 import {
   readAgentDefinition,
   listAgentDefinitions,
@@ -27,6 +28,15 @@ const router: ReturnType<typeof Router> = Router(),
 import { context, id, wrap } from "../utils/agent-host";
 import { createAgentHostRouter } from "./agent-host";
 router.use(createAgentHostRouter(assistantService));
+router.get("/sessions/:sessionId/artifacts/:artifactId/action", wrap(async (req, res) => {
+  const c = context(req);
+  res.json(await actionCard(id(req, "sessionId"), id(req, "artifactId"), c.owner, c.credentials));
+}));
+router.post("/sessions/:sessionId/artifacts/:artifactId/action/confirm", wrap(async (req, res) => {
+  const c = context(req);
+  const input = z.object({ parameters: z.record(z.unknown()) }).strict().parse(req.body);
+  res.json(await confirmAction(id(req, "sessionId"), id(req, "artifactId"), c.owner, c.credentials, input.parameters));
+}));
 const agentAdmin = requirePermission(["analysis-agent"]);
 router.get("/diagnosis-model", agentAdmin, wrap(async (req, res) => {
   res.json(await readDiagnosisModel(context(req).owner.domainId));

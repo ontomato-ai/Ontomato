@@ -145,6 +145,7 @@ async function remove() {
     await ElMessageBox.confirm(t("agents.deleteConfirm", { name: agent.name }), t("common.deleteConfirm"), {
       type: "warning",
       confirmButtonText: t("common.delete"),
+      confirmButtonClass: "el-button--danger",
       cancelButtonText: t("common.cancel"),
     });
   } catch {
@@ -170,7 +171,7 @@ defineExpose({ dirty });
         <small :class="{ dirty }">{{ dirty ? t("admin.agentEditorUnsaved") : t("admin.agentEditorSaved") }}</small>
       </div>
       <div class="editor-actions">
-      <el-button v-if="agent" text :icon="Trash2" :disabled="saving" @click="remove">{{ t("common.delete") }}</el-button>
+      <el-button v-if="agent" type="danger" text :icon="Trash2" :disabled="saving" @click="remove">{{ t("common.delete") }}</el-button>
       <el-button type="primary" :loading="saving" :disabled="!skillsReady || (!dirty && !!agent)" @click="save">{{ t("common.save") }}</el-button>
       </div>
     </header>

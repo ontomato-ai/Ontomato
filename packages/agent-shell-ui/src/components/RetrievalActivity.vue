@@ -141,12 +141,12 @@ const detail = computed(() => {
 }
 .steps {
   list-style: none;
-  margin: 6px 0 0 14px;
-  padding: 2px 0 2px 14px;
+  margin: var(--conversation-process-gap) 0 0 14px;
+  padding: 0 0 0 14px;
   border-left: 1px solid var(--el-border-color);
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: var(--spacing-xs);
 }
 .binding {
   display: flex;

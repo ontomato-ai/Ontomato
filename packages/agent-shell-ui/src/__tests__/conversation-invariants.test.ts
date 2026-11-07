@@ -65,6 +65,40 @@ function history(
   };
 }
 
+describe("retrieval activity projection", () => {
+  it("uses the associated retrieval as the single entry while preserving other tools and thinking", () => {
+    const state = emptyConversation(sessionId);
+    applyRunSnapshot(state, snapshot({ pendingMessages: [{ id: partialId, message: {
+      ...partial,
+      content: [
+        { type: "thinking", thinking: "Find the requested data" },
+        { type: "toolCall", id: "ask", name: "bash", arguments: { command: "node skills/ontomato-analyst-assistant/ontomato.mjs ask 'Sales total'" } },
+        { type: "toolCall", id: "schema", name: "bash", arguments: { command: "node skills/ontomato-analyst-assistant/ontomato.mjs schema Sales" } },
+      ],
+    } }] }));
+    const steps = () => conversationItems(state).flatMap((item) => item.kind === "response"
+      ? item.blocks.flatMap((block) => block.kind === "process" ? block.steps : []) : []);
+    expect(steps()).toHaveLength(3);
+    state.runs[runId]!.retrievals = [{ retrievalId: "retrieval", runId: "child" }];
+    expect(steps().map((step) => step.key)).toEqual([`${partialId}:0`, `${partialId}:2`]);
+    state.runs[runId]!.tools.ask = { toolCallId: "ask", toolName: "bash", args: {}, status: "failed", output: "Retrieval failed" };
+    expect(steps().map((step) => step.key)).toContain(`${partialId}:1`);
+  });
+
+  it("removes an empty process group after consolidating an ask-only call", () => {
+    const state = emptyConversation(sessionId);
+    applyRunSnapshot(state, snapshot({
+      run: run({ retrievals: [{ retrievalId: "retrieval", runId: "child" }] }),
+      pendingMessages: [{ id: partialId, message: { ...partial, content: [
+        { type: "toolCall", id: "ask", name: "bash", arguments: { command: "node ontomato.mjs ask 'Sales total'" } },
+      ] } }],
+    }));
+    const response = conversationItems(state).find((item) => item.kind === "response")!;
+    expect(response.retrievals).toHaveLength(1);
+    expect(response.blocks).toEqual([]);
+  });
+});
+
 describe("live cut over partials", () => {
   it("replaces a pending message with its settled version instead of keeping both", () => {
     const state = emptyConversation(sessionId);

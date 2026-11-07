@@ -32,6 +32,12 @@
  * derived variables onto the workbench design tokens so light and dark themes follow the host.
  */
 .agent-shell .shell-markdown {
+  /* Block slots own vertical rhythm, including renderers with an extra internal wrapper. */
+  --ms-flow-table-y: 0px;
+  --ms-flow-codeblock-y: 0px;
+  --ms-flow-diagram-y: 0px;
+  --ms-flow-admonition-y: 0px;
+  --ms-flow-hr-y: 0px;
   /* Answers are `reading` text: 15px on a 26px line. */
   --ms-text-body: var(--text-reading);
   --ms-leading-body: 1.733;
@@ -54,6 +60,9 @@
   --list-counter-marker: var(--el-text-color-secondary);
   color: var(--el-text-color-primary);
   overflow-wrap: anywhere;
+  display: flex;
+  flex-direction: column;
+  gap: var(--conversation-block-gap);
 }
 /* What the agent says before calling tools: part of the process, quieter than the answer. */
 .agent-shell .commentary .shell-markdown {
@@ -62,21 +71,56 @@
   color: var(--el-text-color-secondary);
   margin: 0;
 }
-.agent-shell .shell-markdown :is(p, ul, ol, blockquote, pre, table) {
-  margin-block: var(--conversation-block-gap);
+.agent-shell .shell-markdown > .node-slot {
+  min-width: 0;
+}
+/* Renderer slots own top-level spacing, so nested margins cannot accumulate across wrappers. */
+.agent-shell .shell-markdown > .node-slot > .node-content > :is(p, ul, ol, blockquote, pre, table, div, hr, h1, h2, h3, h4, h5, h6) {
+  margin-block: 0;
+}
+.agent-shell .shell-markdown > .node-slot:not(:first-child):has(> .node-content > :is(h1, h2, h3, h4, h5, h6)) {
+  margin-top: calc(var(--spacing-xl) - var(--conversation-block-gap));
+}
+.agent-shell .shell-markdown > .node-slot:has(> .node-content > :is(h1, h2, h3, h4, h5, h6)) + .node-slot {
+  margin-top: calc(var(--spacing-sm) - var(--conversation-block-gap));
+}
+/* Embedded datasets and process details retain their own internal spacing. */
+.agent-shell .shell-markdown .table-renderer :is(table, .filters),
+.agent-shell .shell-markdown .step-body pre {
+  margin-block: 0;
+}
+/* Markdown paragraphs own artifact spacing; block previews must not add margins or an inline baseline. */
+.agent-shell .shell-markdown p:has(> .inline-artifact):not(:has(> :not(.inline-artifact, br))) {
+  line-height: 0;
+}
+.agent-shell .shell-markdown .inline-artifact + .inline-artifact,
+.agent-shell .shell-markdown .inline-artifact + br + .inline-artifact {
+  margin-top: var(--conversation-block-gap);
+}
+.agent-shell .shell-markdown p > .text-node ~ .inline-artifact {
+  margin-top: var(--conversation-block-gap);
+}
+/* A file link becomes a block card even when the model puts it in the same paragraph as its introduction. */
+.agent-shell .shell-markdown .artifact-card {
+  margin-block: var(--conversation-process-gap) 0;
+}
+.agent-shell .shell-markdown p > .artifact-card:first-child {
+  margin-top: 0;
 }
 .agent-shell .shell-markdown :is(h1, h2, h3, h4, h5, h6) {
-  margin-block: var(--spacing-xl) var(--spacing-sm);
   font-weight: var(--font-semibold);
 }
 .agent-shell .shell-markdown li > :is(p, ul, ol) {
   margin-block: var(--spacing-xs);
 }
-.agent-shell .shell-markdown > :first-child {
+.agent-shell .shell-markdown .list-item > p:first-child {
   margin-top: 0;
 }
-.agent-shell .shell-markdown > :last-child {
+.agent-shell .shell-markdown .list-item > p:last-child {
   margin-bottom: 0;
+}
+.agent-shell .shell-markdown .list-item + .list-item {
+  margin-top: var(--spacing-xs);
 }
 .agent-shell .shell-markdown h1,
 .agent-shell .shell-markdown h2,
@@ -108,4 +152,19 @@
   font-family: var(--font-mono);
   font-size: var(--text-mono);
   line-height: var(--leading-mono);
+}
+/* Report sections have a reading hierarchy independent of the compact conversation process. */
+.agent-shell .markdown-renderer-file .shell-markdown > .node-slot:not(:first-child):has(> .node-content > :is(h3, h4, h5, h6)) {
+  margin-top: calc(var(--spacing-lg-xl) - var(--conversation-block-gap));
+}
+.agent-shell .markdown-renderer-file .shell-markdown > .node-slot:has(> .node-content > h1) + .node-slot {
+  margin-top: calc(var(--spacing-lg) - var(--conversation-block-gap));
+}
+.agent-shell .markdown-renderer-file .shell-markdown .table-node {
+  margin-block: 0;
+  line-height: var(--leading-sm);
+  box-shadow: none;
+}
+.agent-shell .markdown-renderer-file .shell-markdown .table-node :is(th, td) {
+  padding: var(--spacing-sm) var(--spacing-md);
 }

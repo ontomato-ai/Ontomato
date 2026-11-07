@@ -37,7 +37,8 @@ function buildBaseHeaders(extraHeaders: Record<string, string> = {}): Record<str
   return { ...headers, ...extraHeaders };
 }
 
-interface ApiErrorPayload extends Partial<HttpErrorResponse> {
+interface ApiErrorPayload extends Partial<Omit<HttpErrorResponse, "error">> {
+  error?: unknown;
   message?: string;
   msg?: string;
   [key: string]: unknown;
@@ -54,8 +55,18 @@ export class ApiRequestError extends Error {
   }
 
   get code(): string | undefined {
-    return this.payload.code;
+    const nested = this.payload.error;
+    return this.payload.code ?? (nested && typeof nested === "object" && "code" in nested && typeof nested.code === "string" ? nested.code : undefined);
   }
+}
+
+/** Only human-readable strings reach UI errors; structured envelopes are never coerced to text. */
+function errorMessage(payload: ApiErrorPayload, fallback: string): string {
+  const nested = payload.error;
+  const nestedMessage = nested && typeof nested === "object" && "message" in nested ? nested.message : undefined;
+  return [nestedMessage, nested, payload.message, payload.msg].find(
+    (value): value is string => typeof value === "string" && Boolean(value.trim()) && !value.includes("[object Object]"),
+  ) ?? fallback;
 }
 
 function formatErrorDetails(details: unknown): string {
@@ -78,7 +89,7 @@ async function createApiRequestError(res: Response, _path: string): Promise<ApiR
     const contentType = res.headers.get("content-type") || "";
     if (contentType.includes("application/json")) {
       const payload = (await res.json()) as ApiErrorPayload;
-      const message = payload.error || payload.message || payload.msg || fallback;
+      const message = errorMessage(payload, fallback);
       const details = formatErrorDetails(payload.details);
       return new ApiRequestError(details ? `${message}${errorPunctuation().detailSeparator}${details}` : message, res.status, payload);
     }
@@ -102,7 +113,7 @@ export class ApiBusinessError extends Error {
 
 function assertBusinessSuccess(json: any, _path: string) {
   if (json && json.success === false) {
-    const msg = json.error || json.message || json.msg || t("admin.requestFailed");
+    const msg = errorMessage(json, t("admin.requestFailed"));
     throw new ApiBusinessError(msg, json);
   }
   return json;

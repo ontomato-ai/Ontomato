@@ -65,8 +65,8 @@ function open() {
   width: min(100%, 380px);
   margin: 2px 0;
   padding: 10px 12px 10px 10px;
-  border: 1px solid var(--el-border-color);
-  border-radius: var(--radius-lg, 12px);
+  border: 1px solid var(--el-border-color-light);
+  border-radius: var(--radius-md);
   background: var(--el-bg-color);
   color: inherit;
   font: inherit;
@@ -77,18 +77,20 @@ function open() {
   white-space: normal;
   line-height: 1.4;
   transition:
-    border-color var(--transition-fast, 150ms),
-    box-shadow var(--transition-fast, 150ms),
     background-color var(--transition-fast, 150ms);
 }
 .artifact-card:hover:not(:disabled) {
-  border-color: var(--el-border-color-dark);
-  box-shadow: var(--el-shadow-sm);
+  background: var(--el-fill-color-light);
 }
+.artifact-card:active:not(:disabled) { background: var(--el-fill-color); }
 .artifact-card.active {
   border-color: var(--el-color-primary-light-5);
   background: var(--el-color-primary-light-9);
 }
+.artifact-card.active:hover:not(:disabled) {
+  background: var(--el-color-primary-light-9);
+}
+.artifact-card:hover:not(:disabled) .artifact-card__chevron { color: var(--el-text-color-primary); }
 .artifact-card:disabled {
   cursor: default;
 }
@@ -132,5 +134,8 @@ function open() {
 .artifact-card__chevron {
   color: var(--el-text-color-tertiary);
   flex-shrink: 0;
+}
+@media (prefers-reduced-motion: reduce) {
+  .artifact-card { transition: none; }
 }
 </style>

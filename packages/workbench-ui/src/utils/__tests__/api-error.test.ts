@@ -4,6 +4,19 @@ import { nodeApiPost, nodeApiPostFormData } from "../api";
 import { installErrorPunctuation } from "../error-punctuation";
 
 describe("web API errors", () => {
+  it("reads structured assistant errors without coercing the error object", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(jsonResponse(400, {
+      error: { code: "INVALID_ACTION_PARAMETERS", message: "Invalid parameter: person_id" }, correlationId: "test",
+    })));
+    await expect(nodeApiPost("/assistant/action", {})).rejects.toMatchObject({
+      message: "Invalid parameter: person_id", code: "INVALID_ACTION_PARAMETERS",
+    });
+  });
+
+  it("uses readable fallback text when an error contains only structured data", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(jsonResponse(400, { error: { details: {} } })));
+    await expect(nodeApiPost("/assistant/action", {})).rejects.not.toThrow("[object Object]");
+  });
   // Distinct app punctuation, so the message shows the details are joined with the installed value.
   beforeEach(() => installErrorPunctuation({ detailSeparator: " — ", listSeparator: " | " }));
 

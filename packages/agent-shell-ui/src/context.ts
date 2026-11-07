@@ -24,6 +24,8 @@ export interface ShellContext extends Pick<AgentHostClient, "readRetrieval" | "r
   openArtifactKey: Ref<string | null>;
   /** Opens an in-app page link beside the conversation, or null when the host does not recognise the address. */
   pageLink(href: string): (() => void) | null;
+  /** Continue the current conversation from an explicit artifact action. */
+  continueConversation?: (message: string) => Promise<void>;
 }
 
 /** The message whose Markdown is rendering; artifact references resolve within its run. */
@@ -33,3 +35,5 @@ export interface MessageContext {
 
 export const shellContextKey: InjectionKey<ShellContext> = Symbol("agent-shell");
 export const messageContextKey: InjectionKey<Ref<MessageContext>> = Symbol("agent-shell-message");
+/** Each artifact provides its own header outlet for renderer-specific controls. */
+export const artifactHeaderKey: InjectionKey<Ref<HTMLElement | null>> = Symbol("artifact-header");

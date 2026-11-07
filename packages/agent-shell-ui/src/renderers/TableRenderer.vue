@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, inject, ref, watch } from "vue";
 import { ChevronLeft, ChevronRight } from "lucide-vue-next";
-import { shellContextKey } from "../context";
+import { artifactHeaderKey, shellContextKey } from "../context";
 import type { ArtifactRendererProps } from "../types";
 import type { QuerySubgraph } from "@ontomato/contracts/query-subgraph";
 import { jsonTable, parseCsv, type TableData } from "./table-data";
@@ -14,6 +14,7 @@ import SubgraphView from "./SubgraphView.vue";
  */
 const props = defineProps<ArtifactRendererProps>();
 const shell = inject(shellContextKey)!;
+const headerControls = inject(artifactHeaderKey, ref<HTMLElement | null>(null));
 const labels = computed(() => shell.labels.value);
 const { text, error } = useArtifactText(props);
 const page = ref(1);
@@ -58,7 +59,8 @@ watch(() => props.artifact.id, () => {
     <div v-if="error" class="state error">{{ error }}</div>
     <div v-else-if="text === null" class="state">{{ labels.loading }}</div>
     <template v-else-if="table">
-      <div v-if="parsed.graph" class="views" role="tablist">
+      <Teleport v-if="parsed.graph" :to="headerControls ?? 'body'" :disabled="!headerControls">
+      <div class="views" role="tablist" :aria-label="title">
         <button type="button" role="tab" :aria-selected="view === 'data'" :class="{ on: view === 'data' }" @click="view = 'data'">
           {{ labels.datasetData }}
         </button>
@@ -66,6 +68,7 @@ watch(() => props.artifact.id, () => {
           {{ labels.datasetLineage }}
         </button>
       </div>
+      </Teleport>
       <SubgraphView v-if="parsed.graph && view === 'lineage'" :graph="parsed.graph" />
       <template v-else>
       <div class="table-scroll">
@@ -114,21 +117,32 @@ watch(() => props.artifact.id, () => {
 }
 .views {
   display: flex;
-  gap: 2px;
-  padding: 6px 8px;
+  align-items: center;
+  gap: var(--spacing-xs);
+  padding: 0;
+  flex-shrink: 0;
 }
 .views button {
-  padding: 3px 10px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: var(--control-height-sm);
+  padding: 0 10px;
   border: 0;
-  border-radius: 999px;
+  border-radius: var(--radius-sm);
   background: transparent;
   color: var(--el-text-color-secondary);
   font: inherit;
   font-size: var(--text-xs, 12px);
+  line-height: var(--leading-xs);
   cursor: pointer;
 }
 .views button:hover {
   background: var(--el-fill-color);
+}
+.views button:focus-visible {
+  outline: 2px solid var(--el-color-primary);
+  outline-offset: 1px;
 }
 .views button.on {
   background: var(--el-fill-color);

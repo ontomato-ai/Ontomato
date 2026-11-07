@@ -26,7 +26,14 @@ it("offers rename and confirmed delete from the recent conversation menu", async
     root.querySelector<HTMLButtonElement>(".session-more")!.click(); await nextTick();
     root.querySelector<HTMLButtonElement>(".session-delete")!.click(); await nextTick();
     expect(remove).not.toHaveBeenCalled();
-    root.querySelector<HTMLButtonElement>(".session-delete")!.click();
+    expect(root.querySelector(".session-menu")).toBeNull();
+    expect(root.querySelector(".delete-dialog")!.textContent).toContain("Before");
+    root.querySelector<HTMLButtonElement>(".delete-cancel")!.click(); await nextTick();
+    expect(remove).not.toHaveBeenCalled();
+    expect(root.querySelector(".delete-dialog")).toBeNull();
+    root.querySelector<HTMLButtonElement>(".session-more")!.click(); await nextTick();
+    root.querySelector<HTMLButtonElement>(".session-delete")!.click(); await nextTick();
+    root.querySelector(".delete-dialog form")!.dispatchEvent(new Event("submit", { cancelable: true }));
     expect(remove).toHaveBeenCalledWith("session");
   } finally { app.unmount(); root.remove(); }
 });

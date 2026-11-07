@@ -221,7 +221,7 @@ function send(text: string) {
   padding: 24px 0;
   display: flex;
   flex-direction: column;
-   gap: var(--conversation-message-gap);
+  gap: var(--conversation-message-gap);
   color: var(--el-text-color-primary);
   font-size: var(--text-reading);
   line-height: var(--leading-reading);

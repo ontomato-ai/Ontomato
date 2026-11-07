@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { computed, inject } from "vue";
+import { computed, inject, provide, ref } from "vue";
 import { Download, X } from "lucide-vue-next";
-import { fileKind, fileName, formatSize, saveBlob } from "../artifacts";
-import { shellContextKey } from "../context";
+import { fileName, saveBlob } from "../artifacts";
+import { artifactHeaderKey, shellContextKey } from "../context";
 import { artifactIcon } from "../icons";
 import type { OpenArtifact } from "../types";
 import { usePanelWidth } from "../usePanelWidth";
@@ -13,6 +13,8 @@ import SlotOutlet from "./SlotOutlet.vue";
 const props = defineProps<{ open: OpenArtifact }>();
 const emit = defineEmits<{ close: [] }>();
 const shell = inject(shellContextKey)!;
+const headerControls = ref<HTMLElement | null>(null);
+provide(artifactHeaderKey, headerControls);
 const { width, startResize } = usePanelWidth();
 const icon = computed(() => artifactIcon(props.open.artifact.path));
 
@@ -28,11 +30,8 @@ async function download() {
       <span class="panel-icon"><component :is="icon" :size="17" /></span>
       <span class="panel-heading">
         <span class="panel-title">{{ open.title || fileName(open.artifact.path) }}</span>
-        <span class="panel-meta">
-          {{ fileName(open.artifact.path) }} · {{ fileKind(open.artifact.path).toUpperCase() }} ·
-          {{ formatSize(open.artifact.size) }}
-        </span>
       </span>
+      <div ref="headerControls" class="artifact-header-controls" />
       <SlotOutlet :content="shell.slots.artifactActions" :scope="{ artifact: open.artifact }" />
       <button type="button" class="panel-button" :title="shell.labels.value.download" :aria-label="shell.labels.value.download" @click="download">
         <Download :size="16" />
@@ -62,10 +61,9 @@ async function download() {
   width: var(--panel-width);
   height: 100%;
   min-height: 0;
-  border: 1px solid var(--el-border-color);
-  border-radius: var(--radius-md);
+  border-left: 1px solid var(--el-border-color);
+  border-radius: 0;
   background: var(--el-bg-color);
-  box-shadow: var(--elevation-panel);
   overflow: hidden;
   animation: slide-in var(--transition-slow);
 }
@@ -100,6 +98,8 @@ async function download() {
   background: var(--el-fill-color);
   color: var(--el-text-color-secondary);
 }
+.artifact-header-controls { display: flex; align-items: center; flex-shrink: 0; }
+.artifact-header-controls:empty { display: none; }
 .panel-heading {
   display: flex;
   flex-direction: column;
@@ -112,14 +112,6 @@ async function download() {
   line-height: var(--leading-sm);
   font-weight: 600;
   color: var(--el-text-color-primary);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.panel-meta {
-  font-size: var(--text-xs);
-  line-height: var(--leading-xs);
-  color: var(--el-text-color-secondary);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;

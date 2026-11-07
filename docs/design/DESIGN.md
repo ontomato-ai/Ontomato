@@ -299,9 +299,24 @@ maximum reading width around 960px. Answers dominate; process, tools and provena
 Do not expose all technical detail by default. Keep evidence accessible without hiding warnings/failures.
 
 Rhythm: question→response 24px; response→next question 36px; answer blocks 12px; process/actions 8px. One owner per
-gap. Tools use 13px/20px and restrained inset details. All message actions, including host slots, share
+gap. Elapsed status and process rows share the 8px rhythm; process→answer uses 12px. Expanded thinking shows the
+content directly without repeating the disclosure's thinking label or adding an icon-sized text indent.
+Tools use 13px/20px and restrained inset details. All message actions, including host slots, share
 `shell-message-action`. Composer has a 40px minimum control, pill geometry, owned elevation, focus and multiline growth.
 Never apply composer geometry to ordinary inputs. Preserve streaming, cancellation, feedback and artifact behaviour.
+
+Markdown renderer slots own answer spacing: 12px between paragraphs, lists, datasets and charts; 24px before a new
+heading and 8px from a heading to its content; no outer gap on the first or last block. List items use 4px separation.
+Report tables also clear the renderer's internal table margin: heading-to-table is 8px, ordinary blocks 12px,
+major sections 24px, subsections 20px, and the report title-to-introduction gap is 16px. Table cells use 8px vertical
+and 12px horizontal padding with 13px/20px text. Code, diagrams and callouts do not add a second outer margin to slots.
+Embedded artifacts own their internal caption, tabs, table and footer spacing; prose margins must not cascade into
+them. Dataset tabs use centered labels in 28px controls in the artifact header's right-hand actions, without a separate
+toolbar row. Docked artifact panels have square edges and only a left separator; artifact cards use an 8px radius and
+a light border that stays unchanged on hover. Hover uses only a quiet neutral fill, without elevation or movement.
+Process disclosures use
+8px before expanded details and 4px between steps. There is no universal chat spacing standard; these relationships
+apply the shared 4px scale and proximity hierarchy consistently across text, evidence and execution state.
 
 ## 10. Technical workspaces
 
