@@ -47,7 +47,7 @@ public class LiveInstanceGraph {
     private final Semaphore permits = new Semaphore(4);
     private static final int PAGE_SIZE = 100;
     private static final int MAX_OVERVIEW_EDGES = 2000;
-    private static final int PARALLEL_THRESHOLD = 6;
+    private static final int PARALLEL_THRESHOLD = 2;
     private static final long SCHEMA_TTL_MS = 5_000;
     private static final long STATISTICS_TTL_MS = 60_000;
     private static final long OVERVIEW_TTL_MS = 30_000;
@@ -58,7 +58,7 @@ public class LiveInstanceGraph {
     });
     private record CachedStatistics(long expiresAt, JSONObject data) {}
     private record CachedOverview(long expiresAt, JSONObject data) {}
-    private record CacheKey(String domainId, String version, int connections, String permission) {}
+    private record CacheKey(String domainId, String version, int connections, String permission, boolean nodesOnly) {}
     private record Reader(DataAdapter adapter, Map<String, Object> schema, UserDataPermission permission) {}
     private record SchemaSnapshot(String version, Map<String, Object> schema,
             Map<String, ObjectType> types, long expiresAt) {}
@@ -133,13 +133,13 @@ public class LiveInstanceGraph {
                 return JSONObject.of("success", false, "code", "GRAPH_VERSION_CHANGED", "message", "Ontology changed. Reload the overview.");
             // Cache and single-flight sharing require the same effective row AND column permissions.
             CacheKey cacheKey = new CacheKey(domainId, version, config.getDataAdapterConnections().hashCode(),
-                    JSON.toJSONString(permission));
+                    JSON.toJSONString(permission), "nodes".equals(operation) || "connections".equals(operation));
             if ("statistics".equals(operation)) {
                 CachedStatistics cached = statisticsCache.get(cacheKey);
                 if (cached != null && cached.expiresAt > System.currentTimeMillis())
                     return ready(cached.data);
             }
-            if ("summary".equals(operation)) {
+            if ("summary".equals(operation) || "nodes".equals(operation)) {
                 CachedOverview cached = overviewCache.get(cacheKey);
                 if (cached != null && cached.expiresAt > System.currentTimeMillis())
                     return ready(cached.data);
@@ -155,6 +155,23 @@ public class LiveInstanceGraph {
             AdapterPool pool = new AdapterPool(adapterFactory);
             JSONObject data = switch (operation) {
                 case "summary" -> cachedOverview(adapter, pool, types, relations, version, cacheKey);
+                case "nodes" -> cachedOverview(adapter, pool, types, relations, version, cacheKey);
+                case "connections" -> {
+                    CachedOverview cached = overviewCache.get(cacheKey);
+                    if (cached == null || !cached.data.getString("sampleToken").equals(request.getString("sampleToken")))
+                        throw new IllegalStateException("Graph sample expired. Reload the overview.");
+                    JSONObject sampled = cached.data;
+                    Map<String, List<String>> ids = new LinkedHashMap<>();
+                    types.keySet().forEach(name -> ids.put(name, new ArrayList<>()));
+                    for (Object raw : sampled.getJSONArray("overviewNodes")) {
+                        JSONObject node = (JSONObject) raw;
+                        String type = node.getString("class");
+                        ids.get(type).add(node.getString("id").substring(type.length() + 1));
+                    }
+                    JSONObject connected = overviewConnections(adapter, pool, relations, ids);
+                    connected.put("version", version);
+                    yield connected;
+                }
                 case "statistics" -> cachedStatistics(adapter, pool, types, cacheKey);
                 case "search" -> search(adapter, nodeTypes, request, version);
                 case "neighborhood" -> neighborhood(adapter, nodeTypes, relations, request, version);
@@ -205,6 +222,7 @@ public class LiveInstanceGraph {
 
     private JSONObject cachedStatistics(Reader adapter, AdapterPool pool,
             Map<String, ObjectType> types, CacheKey cacheKey) throws Exception {
+        cacheKey = new CacheKey(cacheKey.domainId, cacheKey.version, cacheKey.connections, cacheKey.permission, false);
         CachedStatistics cached = statisticsCache.get(cacheKey);
         if (cached != null && cached.expiresAt > System.currentTimeMillis()) return cached.data;
         JSONObject data = statistics(adapter, pool, types);
@@ -294,7 +312,9 @@ public class LiveInstanceGraph {
 
     private JSONObject overview(Reader adapter, AdapterPool pool,
             Map<String, ObjectType> types, List<Relation> relations, String version, CacheKey cacheKey) throws Exception {
+        long started = System.nanoTime();
         JSONObject statistics = cachedStatistics(adapter, pool, types, cacheKey);
+        long counted = System.nanoTime();
         Map<String, Long> counts = new LinkedHashMap<>();
         for (Object raw : statistics.getJSONArray("classes")) {
             JSONObject item = (JSONObject) raw;
@@ -331,8 +351,26 @@ public class LiveInstanceGraph {
             ids.put(type.name, keys);
             classes.add(JSONObject.of("class", type.name, "sampleCount", keys.size(), "instanceCount", counts.get(type.name)));
         }
+        long sampledAt = System.nanoTime();
+        JSONObject connections = cacheKey.nodesOnly
+                ? JSONObject.of("overviewEdges", new JSONArray(), "overviewEdgesTruncated", false)
+                : overviewConnections(adapter, pool, relations, ids);
+        org.slf4j.LoggerFactory.getLogger(LiveInstanceGraph.class).info(
+                "Instance graph overview: nodes={}, statisticsMs={}, samplingMs={}, connectionsMs={}, nodesOnly={}",
+                nodes.size(), (counted - started) / 1_000_000, (sampledAt - counted) / 1_000_000,
+                (System.nanoTime() - sampledAt) / 1_000_000, cacheKey.nodesOnly);
+        return JSONObject.of("classes", classes, "overviewNodes", nodes, "sampleToken", UUID.randomUUID().toString(), "overviewEdges", connections.get("overviewEdges"),
+                "overviewEdgesTruncated", connections.get("overviewEdgesTruncated"), "nodeCount", statistics.get("nodeCount"), "edgeCount", null,
+                "version", version, "live", true,
+                "relationTypes", new JSONArray(relations.stream().map(Relation::type).toList()));
+    }
+
+    private JSONObject overviewConnections(Reader adapter, AdapterPool pool, List<Relation> relations,
+            Map<String, List<String>> ids) throws Exception {
+        long started = System.nanoTime();
+        JSONArray edges = new JSONArray();
         boolean truncated = false;
-        if (relations.size() < PARALLEL_THRESHOLD) {
+        if (relations.size() < 6) {
             relationLoop:
             for (Relation relation : relations) {
                 int remaining = MAX_OVERVIEW_EDGES - edges.size();
@@ -349,7 +387,7 @@ public class LiveInstanceGraph {
             for (int index = 0; index < relations.size(); ) {
                 int remaining = MAX_OVERVIEW_EDGES - edges.size();
                 if (remaining <= 0) { truncated = true; break; }
-                int end = Math.min(index + PARALLEL_THRESHOLD, relations.size());
+                int end = Math.min(index + 4, relations.size());
                 List<Relation> active = new ArrayList<>();
                 List<AdapterTask<List<JSONObject>>> tasks = new ArrayList<>();
                 for (Relation relation : relations.subList(index, end)) {
@@ -369,10 +407,10 @@ public class LiveInstanceGraph {
                 index = end;
             }
         }
-        return JSONObject.of("classes", classes, "overviewNodes", nodes, "overviewEdges", edges,
-                "overviewEdgesTruncated", truncated, "nodeCount", statistics.get("nodeCount"), "edgeCount", null,
-                "version", version, "live", true,
-                "relationTypes", new JSONArray(relations.stream().map(Relation::type).toList()));
+        org.slf4j.LoggerFactory.getLogger(LiveInstanceGraph.class).info(
+                "Instance graph connections: relations={}, edges={}, durationMs={}",
+                relations.size(), edges.size(), (System.nanoTime() - started) / 1_000_000);
+        return JSONObject.of("overviewEdges", edges, "overviewEdgesTruncated", truncated);
     }
 
     private JSONObject relationDsl(Relation relation, List<String> from, List<String> to, int limit) {

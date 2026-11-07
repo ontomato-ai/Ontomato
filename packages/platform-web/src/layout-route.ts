@@ -7,5 +7,10 @@ import { platformRoutes } from "@ontomato/platform-shell/routes";
  * route table.
  */
 export function platformLayoutRoute(children: RouteRecordRaw[], component: RouteComponent = RouterView): RouteRecordRaw {
-  return { ...platformRoutes.layout, component, redirect: { name: platformRoutes.chat.name }, children };
+  return {
+    ...platformRoutes.layout,
+    component,
+    redirect: { name: platformRoutes.chat.name },
+    children: [{ path: "", name: "PlatformHome", redirect: { name: platformRoutes.chat.name } }, ...children],
+  };
 }

@@ -28,7 +28,7 @@ const ontologyEn = {
   instanceGraphLiveDescription: "Queries read the current datasource on demand. Only connections between loaded instances are shown. Full graph connectivity is not calculated.",
   instanceGraphStatisticsUnavailable: "Total count unavailable. Exploration remains available.",
   instanceGraphConnectionsMore: "Loaded {loaded} connections · more available",
-  instanceGraphSample: "Sample: {shown} / {total} instances · {edges} connections · up to 500 instances allocated proportionally by object type",
+  instanceGraphSample: "Sample: {shown} / {total} instances · {edges} connections · up to 1,000 instances allocated proportionally by object type",
   instanceGraphSampleEdgesLimited: "Sample connections limited to 2,000",
   instanceGraphAggregateRelations: "Aggregate connections",
   instanceGraphAggregateHint: "Counts reflect sample connections. Select an instance to reveal its connections.",

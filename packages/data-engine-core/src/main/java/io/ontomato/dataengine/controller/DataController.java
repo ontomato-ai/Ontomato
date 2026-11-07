@@ -42,6 +42,18 @@ public class DataController {
 				identityService.getCurrentUserDataPermission(), SystemUtils.getCurUser().getDomainId());
 	}
 
+	@GetMapping("/data/instanceGraph/nodes")
+	public JSONObject instanceGraphNodes() {
+		return dataService.queryInstanceGraph("nodes", new JSONObject(),
+				identityService.getCurrentUserDataPermission(), SystemUtils.getCurUser().getDomainId());
+	}
+
+	@PostMapping("/data/instanceGraph/connections")
+	public JSONObject instanceGraphConnections(@RequestBody JSONObject param) {
+		return dataService.queryInstanceGraph("connections", param,
+				identityService.getCurrentUserDataPermission(), SystemUtils.getCurUser().getDomainId());
+	}
+
 	@PostMapping("/data/instanceGraph/search")
 	public JSONObject instanceGraphSearch(@RequestBody JSONObject param) {
 		return dataService.queryInstanceGraph("search", param,

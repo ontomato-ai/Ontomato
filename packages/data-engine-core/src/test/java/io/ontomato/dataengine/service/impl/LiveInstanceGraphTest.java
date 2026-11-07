@@ -52,6 +52,7 @@ class LiveInstanceGraphTest {
             JSONObject row = new JSONObject();
             if (count) { row.put("cnt", 1); }
             else if (edge) {
+                Thread.sleep(120);
                 for (Object value : step.getJSONObject("output").getJSONArray("fields")) {
                     String key = JSONObject.from(value).getString("as");
                     row.put(key, key.equals("name") ? "Entity" : "1");
@@ -64,18 +65,37 @@ class LiveInstanceGraphTest {
             return JSONArray.of(envelope).toJSONString();
         });
         var service = new LiveInstanceGraph(admin, configs, adapters);
+        long firstStarted = System.nanoTime();
+        var firstScreen = service.query("nodes", new JSONObject(), fullPermission(), "test");
+        long firstScreenMs = (System.nanoTime() - firstStarted) / 1_000_000;
+        assertTrue(firstScreen.getBooleanValue("success"));
+        assertEquals(1, firstScreen.getJSONObject("data").getJSONArray("overviewNodes").size());
+        assertTrue(firstScreen.getJSONObject("data").getJSONArray("overviewEdges").isEmpty());
+        assertEquals(2, dsls.size(), "First screen must not execute relationship queries");
+        var connections = service.query("connections", JSONObject.of(
+                "version", firstScreen.getJSONObject("data").getString("version"),
+                "sampleToken", firstScreen.getJSONObject("data").getString("sampleToken")), fullPermission(), "test");
+        assertTrue(connections.getBooleanValue("success"));
+        assertEquals(1, connections.getJSONObject("data").getJSONArray("overviewEdges").size());
+        assertFalse(service.query("connections", JSONObject.of("sampleToken", "wrong"), fullPermission(), "test")
+                .getBooleanValue("success"));
+        dsls.clear();
+        long fullStarted = System.nanoTime();
         var response = service.query("summary", new JSONObject(), fullPermission(), "test");
+        long fullMs = (System.nanoTime() - fullStarted) / 1_000_000;
+        System.out.printf("Graph latency fixture (120ms relationship read): nodes=%dms, full=%dms%n", firstScreenMs, fullMs);
+        assertTrue(fullMs >= 100, "Full overview still waits for the slow relationship read");
         assertTrue(response.getBooleanValue("success"));
         assertEquals(1, response.getJSONObject("data").getJSONArray("overviewNodes").size());
         assertEquals(1, response.getJSONObject("data").getJSONArray("overviewEdges").size());
         assertEquals(1, response.getJSONObject("data").getLongValue("nodeCount"));
         assertEquals(1, response.getJSONObject("data").getJSONArray("classes").getJSONObject(0).getIntValue("sampleCount"));
         // Counts precede bounded node and edge reads.
-        JSONObject nodeStep = JSON.parseArray(dsls.get(1)).getJSONObject(0).getJSONObject("answer").getJSONArray("steps").getJSONObject(0);
+        JSONObject nodeStep = JSON.parseArray(dsls.get(0)).getJSONObject(0).getJSONObject("answer").getJSONArray("steps").getJSONObject(0);
         assertEquals(1, nodeStep.getJSONObject("output").getJSONObject("limit").getIntValue("count"));
         assertEquals("/univ_demo/org", nodeStep.getJSONObject("graph").getJSONArray("patterns").getJSONObject(0)
                 .getJSONArray("objects").getJSONObject(0).getString("class"));
-        JSONObject edgeStep = JSON.parseArray(dsls.get(2)).getJSONObject(0).getJSONObject("answer").getJSONArray("steps").getJSONObject(0);
+        JSONObject edgeStep = JSON.parseArray(dsls.get(1)).getJSONObject(0).getJSONObject("answer").getJSONArray("steps").getJSONObject(0);
         assertEquals(2001, edgeStep.getJSONObject("output").getJSONObject("limit").getIntValue("count"));
         assertTrue(edgeStep.getJSONObject("graph").getJSONArray("patterns").getJSONObject(0).containsKey("relationship"));
         assertEquals("/univ_demo/org", edgeStep.getJSONObject("graph").getJSONArray("patterns").getJSONObject(0)
@@ -253,8 +273,8 @@ class LiveInstanceGraphTest {
         });
         JSONObject result = new LiveInstanceGraph(admin, configs, adapters).query("summary", new JSONObject(), fullPermission(), "test");
         assertTrue(result.getBooleanValue("success"), result.toJSONString());
-        assertEquals(java.util.Map.of("A", 400, "B", 100), limits);
-        assertEquals(500, result.getJSONObject("data").getJSONArray("overviewNodes").size());
+        assertEquals(java.util.Map.of("A", 800, "B", 200), limits);
+        assertEquals(1000, result.getJSONObject("data").getJSONArray("overviewNodes").size());
         assertEquals(10000, result.getJSONObject("data").getLongValue("nodeCount"));
         assertEquals(3, result.getJSONObject("data").getJSONArray("classes").size());
     }

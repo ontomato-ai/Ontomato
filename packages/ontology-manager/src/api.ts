@@ -121,6 +121,7 @@ export interface InstanceGraphData {
 }
 
 export interface InstanceGraphSummary {
+  sampleToken?: string;
   classes: Array<{ class: string; instanceCount: number | null; sampleCount?: number }>;
   relationships: Array<{ source: string; target: string; count: number; type?: string; types?: string[] }>;
   nodeCount: number | null;
@@ -456,10 +457,16 @@ export function createManagerClient(
   async function loadInstanceGraphSummary(): Promise<
     { status: "READY"; summary: InstanceGraphSummary } | { status: Exclude<InstanceGraphStatus, "READY"> }
   > {
-    const response = await send("/data/instanceGraph/summary", { method: "GET" });
+    const response = await send("/data/instanceGraph/nodes", { method: "GET" });
     return response.status === "READY"
       ? { status: "READY", summary: response.data as InstanceGraphSummary }
       : { status: response.status };
+  }
+
+  async function loadInstanceGraphConnections(version: string, sampleToken?: string) {
+    return (await post("/data/instanceGraph/connections", { version, sampleToken })).data as {
+      overviewEdges: InstanceGraphEdge[]; overviewEdgesTruncated: boolean; version: string;
+    };
   }
 
   async function loadInstanceGraphStatistics() {
@@ -646,6 +653,7 @@ export function createManagerClient(
     loadObjectData,
     loadSmartAssets,
     loadInstanceGraphSummary,
+    loadInstanceGraphConnections,
     searchInstanceGraph,
     loadInstanceNeighborhood,
     queryInstanceInfo,

@@ -8,7 +8,7 @@ import java.util.Map;
 
 /** A fixed overview budget apportioned by population, with nonempty class coverage where possible. */
 final class InstanceGraphSampling {
-    static final int NODE_LIMIT = 500;
+    static final int NODE_LIMIT = 1000;
 
     private InstanceGraphSampling() {}
 

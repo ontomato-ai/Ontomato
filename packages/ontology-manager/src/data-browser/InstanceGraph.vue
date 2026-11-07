@@ -52,11 +52,12 @@ function openSelectedObject() {
 const { message } = useManagerFeedback();
 const { ot } = useOntologyText();
 const { t } = useSharedText();
-const { loadInstanceGraphSummary, searchInstanceGraph, loadInstanceNeighborhood, queryInstanceInfo, loadOntology } =
+const { loadInstanceGraphSummary, loadInstanceGraphConnections, searchInstanceGraph, loadInstanceNeighborhood, queryInstanceInfo, loadOntology } =
   useManagerClient();
 
 const graphRef = ref<HTMLDivElement | null>(null);
 const loading = ref(false);
+const connectionsLoading = ref(false);
 const error = ref("");
 const status = ref<InstanceGraphStatus>("READY");
 const nodes = shallowRef<InstanceGraphNode[]>([]);
@@ -755,6 +756,7 @@ function downloadGraph() {
 }
 
 async function refresh() {
+  connectionsLoading.value = false;
   clearTimeout(generationTimer);
   versionChanged.value = false;
   const request = ++graphRequest;
@@ -787,6 +789,19 @@ async function refresh() {
     if (result.status === "READY") {
       summary.value = result.summary;
       await showOverview(request);
+      loading.value = false;
+      connectionsLoading.value = true;
+      void loadInstanceGraphConnections(result.summary.version, result.summary.sampleToken).then(async connections => {
+        if (request !== graphRequest || !summary.value || connections.version !== summary.value.version) return;
+        const visible = new Set(summary.value.overviewNodes?.map(node => node.id));
+        const connectedEdges = connections.overviewEdges.filter(edge => visible.has(edge.source) && visible.has(edge.target));
+        summary.value = { ...summary.value, overviewEdges: connectedEdges, overviewEdgesTruncated: connections.overviewEdgesTruncated };
+        if (overview.value) {
+          edges.value = connectedEdges;
+          await updateOverviewRelations();
+        }
+      }).catch(reason => { if (request === graphRequest) reportGraphError(reason); })
+        .finally(() => { if (request === graphRequest) connectionsLoading.value = false; });
     } else if (result.status === "GENERATING") {
       generationTimer = setTimeout(() => { void refresh(); }, 2000);
     }
@@ -916,6 +931,7 @@ onBeforeUnmount(() => {
       <div class="summary-row">
         <strong class="summary-title">{{ overview ? ot('instanceGraphOverview') : selectedNode?.name }}</strong>
         <span class="summary-counts">{{ ot('instanceGraphLiveCount', { nodes: nodes.length.toLocaleString(context.locale), totalNodes: summary.nodeCount == null ? '…' : summary.nodeCount.toLocaleString(context.locale), edges: edges.length.toLocaleString(context.locale) }) }}</span>
+        <span v-if="connectionsLoading && overview" class="summary-counts" role="status">{{ ot('instanceGraphGenerating') }}</span>
         <el-popover trigger="click" :width="300" :teleported="false" placement="bottom-start">
           <template #reference>
             <button class="summary-info" :title="ot('instanceGraphStatistics')" :aria-label="ot('instanceGraphStatistics')"><Info :size="15" /></button>
