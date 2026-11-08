@@ -3,6 +3,8 @@ export { default as AgentChatPanel } from "./components/AgentChatPanel.vue";
 export { default as ShellNavBody } from "./components/ShellNavBody.vue";
 export { default as ShellColumn } from "./components/ShellColumn.vue";
 export { default as ToolStep } from "./components/ToolStep.vue";
+export { useConversationContinuation } from "./context";
+export { continuationMessage } from "./continuation-message";
 export { useAgentNav, type AgentNav, type AgentNavOptions } from "./useAgentNav";
 export { defaultChartTheme, type ChartTheme } from "./chart-theme";
 export { createAgentHostClient, type AgentHostClient, type AgentHostClientOptions } from "./host";

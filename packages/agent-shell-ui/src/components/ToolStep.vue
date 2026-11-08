@@ -61,6 +61,7 @@ const argsText = computed(() => JSON.stringify(props.step.args, null, 2));
   color: var(--el-text-color-regular);
   font: inherit;
   font-size: var(--text-sm, 13px);
+  line-height: var(--leading-sm);
   text-align: left;
   cursor: pointer;
 }
@@ -112,10 +113,10 @@ const argsText = computed(() => JSON.stringify(props.step.args, null, 2));
   color: var(--el-color-danger);
 }
 .step-body {
-  margin: 2px 8px 8px 29px;
+  margin: var(--spacing-xs) var(--spacing-sm) var(--spacing-sm) 29px;
 }
 .body-label {
-  margin: 6px 0 4px;
+  margin: var(--spacing-sm) 0 var(--spacing-xs);
   font-size: var(--text-xs, 11px);
   font-weight: 600;
   letter-spacing: 0.04em;

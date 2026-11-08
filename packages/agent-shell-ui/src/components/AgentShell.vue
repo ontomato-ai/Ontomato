@@ -115,6 +115,10 @@ provide(shellContextKey, {
       open();
     };
   },
+  continueConversation: async (message) => {
+    if (conversation.busy.value) throw new Error(props.labels.working);
+    await send(message);
+  },
 });
 
 function report(error: unknown) {

@@ -1,5 +1,8 @@
 import type { SessionHistoryQuery } from "@ontomato/contracts/session-history";
 import { assistantOntologyContext } from "./context";
+import { actionCatalogue } from "./actions";
+import { assistantActionContext } from "./action-context";
+import { ASSISTANT_INTERACTION_CONTEXT } from "./interaction-context";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import {
@@ -265,11 +268,20 @@ export const assistantService = {
       }
     }
     let ontologyContext: string;
+    let actionContext = "";
     try {
       ontologyContext = await assistantOntologyContext(
         a,
         credentials,
       );
+      try {
+        const actions = await actionCatalogue(owner, credentials);
+        const executions = (await db().query(`SELECT action_id,status,parameters,result,error FROM ${table("assistant_action_executions")} WHERE session_id=$1 AND domain_id=$2 AND owner_id=$3 ORDER BY created_at DESC LIMIT 20`,
+          [sessionId, owner.domainId, owner.userId])).rows;
+        actionContext = assistantActionContext(actions, executions);
+      } catch (error) {
+        logger.warn("Action discovery unavailable for assistant turn", error);
+      }
     } catch (error) {
       await this.settleTurn(id, owner, credentials);
       throw error;
@@ -307,7 +319,7 @@ export const assistantService = {
               "\n\nInitial ontology context:\n" +
               ontologyContext +
               "\n\n" +
-              ARTIFACT_MARKDOWN_PROMPT,
+               ARTIFACT_MARKDOWN_PROMPT + actionContext + ASSISTANT_INTERACTION_CONTEXT,
             a.model_selection.modelId,
             skills,
             credentials.locale,

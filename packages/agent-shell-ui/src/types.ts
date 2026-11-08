@@ -9,6 +9,8 @@ export interface ArtifactRendererProps {
   title: string;
   presentation: ArtifactPresentation;
   read: () => Promise<Blob>;
+  openDetails?: () => void;
+  continueConversation?: (message: string) => Promise<void>;
   /** The renderer this one replaces (shell default or file card), so an override can wrap it. */
   fallback?: Component | null;
 }
@@ -103,6 +105,12 @@ export interface MessageActionContext {
 
 /** Fixed shell text supplied by the host's i18n. */
 export interface ShellLabels {
+  analysisContext?: string;
+  selectRow?: (row: number) => string;
+  selectedRows?: (count: number) => string;
+  analyzeSelection?: string;
+  compareSelection?: string;
+  clearSelection?: string;
   newConversation: string;
   agent: string;
   sessions: string;

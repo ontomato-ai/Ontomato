@@ -1,6 +1,6 @@
 import type { RuntimeJsonValue, RuntimeStopReason } from "@ontomato/contracts/agent-runtime-values";
 import { orderedMessages, type ConversationState, type RetrievalLink } from "./conversation";
-import { skillOfCommand } from "./tools";
+import { runsAnalystAsk, skillOfCommand } from "./tools";
 import type { ProcessStepView } from "./types";
 
 export type ProcessStep = ProcessStepView;
@@ -157,6 +157,17 @@ export function conversationItems(state: ConversationState): ConversationItem[] 
     const run = state.runs[item.runId];
     item.running = run?.status === "running";
     item.retrievals = run?.retrievals ?? [];
+    // Associated retrievals own the business activity; keep unassociated or failed calls visible.
+    if (item.retrievals.length) {
+      for (const block of item.blocks) {
+        if (block.kind !== "process") continue;
+        block.steps = block.steps.filter((step) => !(
+          step.kind === "tool" && step.toolName === "bash" && step.status !== "failed" &&
+          typeof step.args.command === "string" && runsAnalystAsk(step.args.command)
+        ));
+      }
+      item.blocks = item.blocks.filter((block) => block.kind !== "process" || block.steps.length > 0);
+    }
     item.startedAt = run?.createdAt ? Date.parse(run.createdAt) : null;
     item.finishedAt = run?.finishedAt ? Date.parse(run.finishedAt) : null;
     item.end = run && run.status === "stopped"

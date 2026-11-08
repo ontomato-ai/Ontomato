@@ -17,6 +17,14 @@ import ConversationActions from "./ConversationActions.vue";
 import DatasetActions from "./DatasetActions.vue";
 import WorkbenchAppearanceDialog from "./WorkbenchAppearanceDialog.vue";
 import { workbenchFeatures } from "../features";
+import ActionProposalRenderer from "./ActionProposalRenderer.vue";
+import FollowUpRenderer from "./FollowUpRenderer.vue";
+import ClarificationRenderer from "./ClarificationRenderer.vue";
+const artifactRenderers = [
+  { path: /(?:\.action\.json$|(?:^|\/)action-[^/]+\.json$)/i, component: ActionProposalRenderer },
+  { path: /\.follow-ups\.json$/i, component: FollowUpRenderer },
+  { path: /\.clarification\.json$/i, component: ClarificationRenderer },
+];
 
 /**
  * The agent platform: the assistant, its conversation and its settings. Both editions mount it; the edition adds
@@ -207,6 +215,7 @@ function appearanceSaved(value: WorkbenchAppearance) {
     :nav="nav"
     :feedback="feedback"
     :chart-theme="nativeEchartsTheme"
+    :artifact-renderers="artifactRenderers"
     @error="ElMessage.error($event)"
     @feature-action="emit('featureAction', $event)"
     @open-bottom="openSettings"

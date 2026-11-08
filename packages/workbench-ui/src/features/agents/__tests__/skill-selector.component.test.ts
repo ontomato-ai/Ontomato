@@ -14,6 +14,25 @@ const option = (skill: RuntimeSkillRef) => ({ skill, title: skill.name, descript
 afterEach(() => { vi.restoreAllMocks(); });
 
 describe("complete skill references in agent configuration", () => {
+  it("shows missing saved skills so their references can be removed without losing available selections", async () => {
+    const missing: RuntimeSkillRef = { ...provider, name: "action-invocation" };
+    vi.spyOn(agentDefinitionsApi, "skills").mockResolvedValue([option(provider)]);
+    const wrapper = mount(SkillSelector, {
+      props: { modelValue: [provider, missing] },
+      global: { plugins: [workbenchI18n(), ElementPlus], stubs: { SkillFormDialog: true } },
+    });
+    try {
+      await flushPromises();
+      const card = wrapper.findAll(".skill-card").find((item) => item.text().includes(missing.name))!;
+      expect(card.classes()).toContain("selected");
+      expect(card.text()).toContain("Unavailable");
+      expect(wrapper.emitted("update:modelValue")).toBeUndefined();
+      await card.trigger("click");
+      expect(wrapper.emitted("update:modelValue")?.at(-1)).toEqual([[provider]]);
+      expect(wrapper.text()).not.toContain(missing.name);
+    } finally { wrapper.unmount(); }
+  });
+
   it("imports a domain package after overwrite confirmation without losing the provider selection", async () => {
     const skill = { id: domain.name, skill: domain, type: "knowledge", category: "analysis", tags: [], enabled: true, version: "1" };
     vi.spyOn(agentDefinitionsApi, "skills").mockResolvedValueOnce([option(provider)]).mockResolvedValueOnce([option(provider), option(domain)]);

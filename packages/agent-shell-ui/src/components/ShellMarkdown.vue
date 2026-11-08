@@ -10,6 +10,14 @@ setCustomComponents(SHELL_MARKDOWN_ID, { image: ArtifactImageNode, link: Artifac
 
 /** Standard Markdown of one assistant text block; raw HTML is escaped, files go through renderers. */
 const props = defineProps<{ content: string; final: boolean; runId: string }>();
+// Artifact links render as blocks, so a trailing sentence mark must not occupy its own line.
+const displayContent = computed(() => props.content.replace(
+  /完整分析见\s*[：:]?\s*(\[[^\]\n]+\]\((?:\.\/)?outputs\/[^\n)]+\))/g,
+  "\n\n完整分析见：\n$1",
+).replace(
+  /(\[[^\]\n]+\]\(outputs\/[^\n)]+\))[。.!！](?=\s*(?:\n|$))/g,
+  "$1",
+));
 provide(
   messageContextKey,
   computed(() => ({ runId: props.runId })),
@@ -20,7 +28,7 @@ provide(
   <MarkdownRender
     class="shell-markdown"
     :custom-id="SHELL_MARKDOWN_ID"
-    :content="content"
+    :content="displayContent"
     :final="final"
     :parse-options="shellParseOptions"
     mode="chat"

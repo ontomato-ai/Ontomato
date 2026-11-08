@@ -18,7 +18,7 @@
     />
     <div v-loading="loading" class="skill-list">
       <div
-        v-for="skill in skills"
+        v-for="skill in displayedSkills"
         :key="runtimeSkillKey(skill.skill)"
         class="skill-card"
         :class="{ selected: isSelected(skill.skill) }"
@@ -27,7 +27,10 @@
         <div class="skill-header">
           <div class="skill-title-row">
             <div class="skill-title">{{ skill.title || skill.skill.name }}</div>
-            <el-tag v-if="!skill.enabled" size="small" type="warning">
+            <el-tag v-if="skill.unavailable" size="small" type="warning">
+              {{ t("assistant.unavailable") }}
+            </el-tag>
+            <el-tag v-else-if="!skill.enabled" size="small" type="warning">
               {{ t("common.disabled") }}
             </el-tag>
           </div>
@@ -48,7 +51,7 @@
       </div>
 
       <el-empty
-        v-if="!loading && !loadError && skills.length === 0"
+        v-if="!loading && !loadError && displayedSkills.length === 0"
         :image-size="48"
         :description="t('admin.noAvailableSkills')"
       />
@@ -62,7 +65,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch } from "vue";
+import { computed, ref, watch } from "vue";
 import { skillsApi } from "../../skills/api";
 import { agentDefinitionsApi } from "../api";
 import type { AssistantSkillOption } from "@ontomato/contracts/assistant-chat";
@@ -97,6 +100,15 @@ const loadError = ref("");
 const showCreateDialog = ref(false);
 const loading = ref(false);
 const importLoading = ref(false);
+const displayedSkills = computed(() => {
+  const available = new Set(skills.value.map((item) => runtimeSkillKey(item.skill)));
+  return [
+    ...skills.value.map((item) => ({ ...item, unavailable: false })),
+    ...selectedSkills.value
+      .filter((skill) => !available.has(runtimeSkillKey(skill)))
+      .map((skill) => ({ skill, title: skill.name, description: "", tags: [], enabled: false, unavailable: true })),
+  ];
+});
 
 async function importSkill(file: File, overwrite = false) {
   importLoading.value = true;

@@ -50,7 +50,6 @@ function stepComponent(step: ProcessStepView) {
     <ol v-if="open" class="steps">
       <li v-for="step in steps" :key="step.key">
         <template v-if="step.kind === 'thinking'">
-          <div class="thinking-head"><Brain :size="13" />{{ shell.labels.value.thinking }}</div>
           <p class="thinking-text">{{ step.text }}</p>
         </template>
         <component
@@ -124,30 +123,20 @@ function stepComponent(step: ProcessStepView) {
 }
 .steps {
   list-style: none;
-  margin: 6px 0 0 14px;
-  padding: 2px 0 2px 14px;
+  margin: var(--conversation-process-gap) 0 0 14px;
+  padding: 0 0 0 14px;
   border-left: 1px solid var(--el-border-color);
   display: flex;
   flex-direction: column;
-  gap: 2px;
-}
-.thinking-head {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 5px 8px;
-  color: var(--el-text-color-secondary);
-  font-size: var(--text-sm, 13px);
-}
-.thinking-head svg {
-  color: var(--el-text-color-tertiary);
+  gap: var(--spacing-xs);
 }
 .thinking-text {
-  margin: 0 8px 6px 29px;
+  margin: var(--spacing-xs) var(--spacing-sm);
   color: var(--el-text-color-secondary);
   font-size: var(--text-sm, 13px);
-  line-height: 1.6;
+  line-height: var(--leading-sm);
   white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 .spin {
   animation: spin 1s linear infinite;

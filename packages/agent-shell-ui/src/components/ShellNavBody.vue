@@ -56,7 +56,8 @@ const agentMenuOpen = ref(false);
 const agentMenu = ref<HTMLElement | null>(null);
 const agentPopup = ref<HTMLElement | null>(null);
 const popupStyle = ref<Record<string, string>>({});
-const confirmingDelete = ref<string | null>(null);
+const deletingSession = ref<AgentHostSession | null>(null);
+const deleteDialog = ref<HTMLDialogElement | null>(null);
 const sessionMenu = ref<string | null>(null);
 const editingSession = ref<string | null>(null);
 const draftTitle = ref("");
@@ -131,7 +132,6 @@ function saveRename(id: string) {
   emit('renameSession', id, title);
   cancelRename();
 }
-let confirmTimer: ReturnType<typeof setTimeout> | null = null;
 
 const currentAgent = computed(() => props.agents.find((agent) => agent.id === props.agentId) ?? null);
 /** The switch's accessible name: what it switches, and the agent it currently shows. */
@@ -175,22 +175,28 @@ function chooseAgent(id: string) {
   if (id !== props.agentId) emit("selectAgent", id);
 }
 
-function requestDelete(id: string) {
-  if (confirmingDelete.value === id) {
-    confirmingDelete.value = null;
-    emit("deleteSession", id);
-    closeSessionMenu();
-    return;
-  }
-  confirmingDelete.value = id;
-  if (confirmTimer) clearTimeout(confirmTimer);
-  confirmTimer = setTimeout(() => (confirmingDelete.value = null), 3000);
+function requestDelete(session: AgentHostSession) {
+  closeSessionMenu();
+  deletingSession.value = session;
+  void nextTick(() => {
+    deleteDialog.value?.showModal?.();
+    deleteDialog.value?.querySelector<HTMLButtonElement>(".delete-cancel")?.focus();
+  });
+}
+function cancelDelete() {
+  deleteDialog.value?.close();
+  deletingSession.value = null;
+}
+function confirmDelete() {
+  if (!deletingSession.value) return;
+  const id = deletingSession.value.id;
+  cancelDelete();
+  emit("deleteSession", id);
 }
 
 onBeforeUnmount(() => {
   closeAgentMenu();
   closeSessionMenu();
-  if (confirmTimer) clearTimeout(confirmTimer);
 });
 </script>
 
@@ -307,12 +313,10 @@ onBeforeUnmount(() => {
             <button
               type="button"
               class="session-delete"
-              :class="{ confirming: confirmingDelete === session.id }"
-              :aria-label="confirmingDelete === session.id ? labels.deleteConfirm : labels.deleteSession"
-              @click="requestDelete(session.id)"
+              :aria-label="labels.deleteSession"
+              @click="requestDelete(session)"
             >
-              <span v-if="confirmingDelete === session.id">{{ labels.deleteConfirm }}</span>
-              <template v-else><Trash2 :size="14" />{{ labels.deleteSession }}</template>
+              <Trash2 :size="14" />{{ labels.deleteSession }}
             </button>
             </div>
           </div>
@@ -330,6 +334,13 @@ onBeforeUnmount(() => {
         <header><h2>{{ labels.renameSession || 'Rename conversation' }}</h2><button type="button" class="dialog-close" :aria-label="labels.close" @click="cancelRename"><X :size="18" /></button></header>
         <div class="rename-body"><input v-model="draftTitle" required maxlength="200" :aria-label="labels.renameSession || 'Rename conversation'" /></div>
         <footer><button type="button" class="dialog-action" @click="cancelRename">{{ labels.cancel }}</button><button type="submit" class="dialog-action is-primary" :disabled="!draftTitle.trim()">{{ labels.submit }}</button></footer>
+      </form>
+    </dialog>
+    <dialog v-if="deletingSession" ref="deleteDialog" class="rename-dialog delete-dialog" :aria-label="labels.deleteConfirm" aria-describedby="delete-session-title" @cancel.prevent="cancelDelete">
+      <form class="rename-form" @submit.prevent="confirmDelete">
+        <header><h2>{{ labels.deleteConfirm }}</h2><button type="button" class="dialog-close" :aria-label="labels.close" @click="cancelDelete"><X :size="18" /></button></header>
+        <div id="delete-session-title" class="delete-body">{{ deletingSession.title || labels.newConversation }}</div>
+        <footer><button type="button" class="dialog-action delete-cancel" @click="cancelDelete">{{ labels.cancel }}</button><button type="submit" class="dialog-action delete-confirm">{{ labels.deleteSession }}</button></footer>
       </form>
     </dialog>
     <div v-if="bottom" class="nav-foot">
@@ -597,6 +608,10 @@ onBeforeUnmount(() => {
 .rename-form header { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 16px 20px; border-bottom: 1px solid var(--el-border-color-lighter); }
 .rename-form h2 { margin: 0; font-size: var(--text-title); line-height: var(--leading-title); font-weight: var(--font-semibold); }
 .rename-body { padding: 20px; }
+.delete-body { padding: 20px; overflow-wrap: anywhere; font-size: var(--text-base); line-height: var(--leading-base); }
+.delete-confirm { background: var(--el-color-danger); border-color: var(--el-color-danger); color: var(--on-primary); }
+.delete-confirm:not(:disabled):hover { background: var(--el-color-danger-light-3); border-color: var(--el-color-danger-light-3); color: var(--on-primary); }
+.delete-confirm:not(:disabled):active { background: var(--el-color-danger-dark-2); border-color: var(--el-color-danger-dark-2); }
 .rename-body input { box-sizing: border-box; width: 100%; min-width: 0; height: 32px; padding: 4px 12px; border: 1px solid var(--el-border-color-dark); border-radius: var(--radius-sm); font: inherit; font-size: var(--text-sm); color: var(--el-text-color-primary); background: var(--el-bg-color); }
 .rename-body input:focus-visible { outline: 2px solid var(--el-color-primary); outline-offset: 1px; }
 .rename-form footer { display: flex; justify-content: flex-end; gap: 8px; padding: 12px 20px; border-top: 1px solid var(--el-border-color-lighter); }
@@ -663,17 +678,12 @@ onBeforeUnmount(() => {
   opacity: 0;
 }
 .session-item:hover .session-delete,
-.session-delete:focus-visible,
-.session-delete.confirming {
+.session-delete:focus-visible {
   opacity: 1;
 }
-.session-delete:hover,
-.session-delete.confirming {
+.session-delete:hover {
   color: var(--el-color-danger);
   background: var(--el-color-danger-light-9);
-}
-.session-delete.confirming {
-  font-weight: var(--font-semibold);
 }
 .session-note {
   padding: 6px 10px;
