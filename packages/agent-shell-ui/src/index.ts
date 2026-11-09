@@ -1,4 +1,5 @@
 export { default as AgentShell } from "./components/AgentShell.vue";
+export { default as DatasetSelectionButton } from "./components/DatasetSelectionButton.vue";
 export { default as AgentChatPanel } from "./components/AgentChatPanel.vue";
 export { default as ShellNavBody } from "./components/ShellNavBody.vue";
 export { default as ShellColumn } from "./components/ShellColumn.vue";

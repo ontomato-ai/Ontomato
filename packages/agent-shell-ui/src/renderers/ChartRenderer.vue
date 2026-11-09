@@ -6,6 +6,7 @@ import type { ArtifactRendererProps } from "../types";
 import { useDarkMode } from "../useDarkMode";
 import { useArtifactText } from "./useArtifactBlob";
 import { chartReadingLayout } from "./chart-layout";
+import { chartBrandColors } from "./chart-colors";
 
 /** .chart.json: an ECharts option object as plain JSON, drawn with the host's chart theme. */
 const props = defineProps<ArtifactRendererProps>();
@@ -41,10 +42,12 @@ async function draw() {
   await nextTick();
   if (!el.value || !option.value.value) return;
   const themeName = isDark.value ? "agent-shell-dark" : "agent-shell-light";
-  echarts.registerTheme(themeName, shell.chartTheme.value(isDark.value));
+  const theme = shell.chartTheme.value(isDark.value);
+  echarts.registerTheme(themeName, theme);
+  const themedOption = chartBrandColors(option.value.value, theme);
   chart = echarts.init(el.value, themeName);
   try {
-    chart.setOption(chartReadingLayout(option.value.value, el.value.clientHeight, props.presentation), { notMerge: true });
+    chart.setOption(chartReadingLayout(themedOption, el.value.clientHeight, props.presentation), { notMerge: true });
     drawError.value = false;
   } catch {
     drawError.value = true;
@@ -53,7 +56,7 @@ async function draw() {
   }
   observer = new ResizeObserver(() => {
     chart?.resize();
-    if (chart && el.value && option.value.value) chart.setOption(chartReadingLayout(option.value.value, el.value.clientHeight, props.presentation), { notMerge: true });
+    if (chart && el.value) chart.setOption(chartReadingLayout(themedOption, el.value.clientHeight, props.presentation), { notMerge: true });
   });
   observer.observe(el.value);
 }

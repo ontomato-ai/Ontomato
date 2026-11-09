@@ -20,3 +20,11 @@ export const assistantClarificationSchema = z.object({
       context.addIssue({ code: "custom", path: ["questions", index], message: "Option identities must be unique" });
   });
 });
+
+export const clarificationValuesSchema = z.object({
+  values: z.record(z.union([z.string().max(4000), z.array(z.string().max(1000)).max(12)])),
+  notes: z.string().max(4000).default(""),
+}).strict();
+export const clarificationStateSchema = clarificationValuesSchema.extend({
+  status: z.enum(["draft", "submitted"]), continuationRunId: z.string().uuid().nullable(),
+});

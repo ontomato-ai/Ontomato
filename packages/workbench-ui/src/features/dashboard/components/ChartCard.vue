@@ -63,6 +63,7 @@ import { extractTabularDataFromOption, safeCloneOption } from "./utils/chartTabu
 import { modifyResultSetName, deleteResultSet } from "../api";
 import { clamp, parseGridColumns, partialResultNotice } from "./utils/dashboardHelper";
 import { getEchartsTheme } from "./utils/echartsTheme";
+import { chartBrandColors } from "@ontomato/contracts/chart-presentation";
 import { useI18n } from "vue-i18n";
 import { workbenchContent } from "../../../content";
 
@@ -241,7 +242,7 @@ function applyOption(option) {
 
   if (option && typeof option === "object") {
     try {
-      instance.setOption(option, { notMerge: true, lazyUpdate: true });
+      instance.setOption(chartBrandColors(option, getEchartsTheme()), { notMerge: true, lazyUpdate: true });
     } catch {
       // Fall back to the table directly after catching an exception
       fallbackToTableNow();

@@ -30,6 +30,7 @@ import * as echarts from "echarts";
 import ChartDataTable from "./ChartDataTable.vue";
 import { safeCloneOption } from "./utils/chartTabular";
 import { getEchartsTheme } from "./utils/echartsTheme";
+import { chartBrandColors } from "@ontomato/contracts/chart-presentation";
 import { useI18n } from "vue-i18n";
 import { workbenchContent } from "../../../content";
 
@@ -67,7 +68,7 @@ function getModalOption() {
     opt.backgroundColor = "transparent";
     if (opt.title) opt.title = undefined;
   }
-  return opt;
+  return chartBrandColors(opt, getEchartsTheme());
 }
 
 async function ensureChartReady() {
