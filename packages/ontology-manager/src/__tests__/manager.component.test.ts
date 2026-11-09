@@ -726,6 +726,65 @@ describe("OntologyManager root component with real pages", () => {
       .toMatchObject({ relationDesc: "contains", fromField: "order_id", toField: "id" });
   });
 
+  it.each(["postgresql", "m3"])("relation catalog: %s creation submits the required join fields selected from each object", async (current) => {
+    dataAdapter = current;
+    dataAdapters.push({ type: "postgresql", label: "PostgreSQL", requiresJoinFields: true, fields: [], examples: {} });
+    metasFor = () => ({ success: true, data: {
+      classDef: [
+        { className: "Order", showName: "Order", attrs: [{ name: "item_id", showName: "Item link", type: "varchar" }] },
+        { className: "Item", showName: "Item", attrs: [{ name: "id", showName: "Item key", type: "varchar" }] },
+      ],
+      relationship_rule: {},
+    } });
+    mountHost({ ...base, view: "/relations" });
+    await settle();
+    clickButton("New Relation Type");
+    await settle();
+    const dialog = openDialog("New Relation Type");
+    typeInto(dialog.querySelector("input[maxlength='80']")!, "contains");
+    typeInto(dialog.querySelector("textarea")!, "contains an item");
+    const select = async (label: string, optionText: string) => {
+      const item = [...dialog.querySelectorAll(".el-form-item")]
+        .find((item) => item.querySelector("label")?.textContent?.trim() === label)!;
+      (item.querySelector(".el-select__wrapper") as HTMLElement).click();
+      await settle();
+      const list = document.getElementById(item.querySelector("input")!.getAttribute("aria-controls")!)!;
+      const option = [...list.querySelectorAll<HTMLElement>(".el-select-dropdown__item")]
+        .find((option) => option.textContent?.trim() === optionText)!;
+      option.click();
+      await settle();
+    };
+    await select("Source Object", "Order (Order)");
+    await select("Target Object", "Item (Item)");
+
+    if (current === "postgresql") {
+      clickButton("Create");
+      await settle();
+      expect(paths()).not.toContain("/admin/addRelationship");
+      await select("Src Field", "Item link (item_id)");
+      await select("Tgt Field", "Item key (id)");
+      await select("Source Object", "Item (Item)");
+      await select("Source Object", "Order (Order)");
+      clickButton("Create");
+      await settle();
+      expect(paths()).not.toContain("/admin/addRelationship");
+      await select("Src Field", "Item link (item_id)");
+    } else {
+      expect(dialog.textContent).not.toContain("Src Field");
+      expect(dialog.textContent).not.toContain("Tgt Field");
+    }
+
+    clickButton("Create");
+    await settle();
+    expect(requests.find((request) => request.url.endsWith("/admin/addRelationship"))?.body).toEqual({
+      relationName: "contains",
+      fromClassName: "Order",
+      toClassName: "Item",
+      relationDesc: "contains an item",
+      ...(current === "postgresql" ? { fromField: "item_id", toField: "id" } : {}),
+    });
+  });
+
   it("when only locale/theme change, the open edit dialog and its input are kept without reloading", async () => {
     const { host } = mountHost({
       ...base,
