@@ -11,6 +11,7 @@ import org.springframework.web.bind.annotation.RestController;
 import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
 
+import io.ontomato.dataengine.bean.workflow.RunContract;
 import io.ontomato.dataengine.bean.workflow.Workflow;
 import io.ontomato.dataengine.bean.workflow.WorkflowStep;
 import io.ontomato.dataengine.core.bean.User;
@@ -209,6 +210,7 @@ public class WorkflowController {
                 item.put("capabilityKind", grant.capabilityKind());
                 item.put("capabilityId", grant.capabilityId());
                 item.put("capabilityVersion", grant.capabilityVersion());
+                item.put("workflowId", grant.workflowId());
                 item.put("activatedByWorkflowVersion", grant.activatedByWorkflowVersion());
                 data.add(item);
             }
@@ -254,6 +256,9 @@ public class WorkflowController {
         workflow.setName(param.getString("name"));
         workflow.setDescription(param.getString("description"));
         workflow.setRunClassName(param.getString("runClassName"));
+        if (param.getJSONObject("runContract") != null) {
+            workflow.setRunContract(param.getJSONObject("runContract").to(RunContract.class));
+        }
         if (param.getJSONArray("steps") != null) {
             // The request body is bound by the container's own JSON mapper, so the array's elements are
             // plain maps rather than JSONObject; convert before reading them as steps.
@@ -271,6 +276,9 @@ public class WorkflowController {
         result.put("status", workflow.getStatus());
         result.put("version", workflow.getVersion());
         result.put("runClassName", workflow.getRunClassName());
+        result.put("runContract", workflow.getRunContract());
+        // Reported so an operator who just activated learns whether the convenient queries were produced.
+        result.put("activationNotes", workflow.getActivationNotes());
         result.put("createdBy", workflow.getCreatedBy());
         // Activation is this object's review moment and the events are its record, so the reviewer is
         // the principal on the most recent Activated row rather than a second stored copy.

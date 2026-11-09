@@ -1,7 +1,9 @@
 package io.ontomato.dataengine.dao;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 import org.springframework.beans.factory.annotation.Autowired;
@@ -35,7 +37,7 @@ public class WorkflowDao {
 	private static final String EVENT_TABLE = "workflow_event";
 
 	private static final String COLUMNS =
-			"id, name, description, domain_id, status, version, steps, run_class_name, create_timestamp, modify_timestamp, created_by";
+			"id, name, description, domain_id, status, version, steps, run_class_name, create_timestamp, modify_timestamp, created_by, run_contract";
 
 	@Autowired
 	private JdbcTemplate jdbcTemplate;
@@ -51,11 +53,13 @@ public class WorkflowDao {
 				+ "version INTEGER, "
 				+ "steps TEXT, "
 				+ "run_class_name VARCHAR(255), "
+				+ "run_contract TEXT, "
 				+ "create_timestamp BIGINT, "
 				+ "created_by VARCHAR(64), "
 				+ "modify_timestamp BIGINT"
 				+ ")");
 		jdbcTemplate.execute("ALTER TABLE " + TABLE + " ADD COLUMN IF NOT EXISTS created_by VARCHAR(64)");
+		jdbcTemplate.execute("ALTER TABLE " + TABLE + " ADD COLUMN IF NOT EXISTS run_contract TEXT");
 		jdbcTemplate.execute("CREATE INDEX IF NOT EXISTS idx_" + TABLE + "_domain_id ON " + TABLE + "(domain_id)");
 
 		// One row per published revision: the steps are frozen with the version they were published as.
@@ -66,8 +70,10 @@ public class WorkflowDao {
 				+ "version INTEGER, "
 				+ "steps TEXT, "
 				+ "run_class_name VARCHAR(255), "
+				+ "run_contract TEXT, "
 				+ "create_timestamp BIGINT"
 				+ ")");
+		jdbcTemplate.execute("ALTER TABLE " + VERSION_TABLE + " ADD COLUMN IF NOT EXISTS run_contract TEXT");
 		jdbcTemplate.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_" + VERSION_TABLE
 				+ "_workflow_version ON " + VERSION_TABLE + "(workflow_id, version)");
 
@@ -95,28 +101,70 @@ public class WorkflowDao {
 		if (workflow.getVersion() == null) workflow.setVersion(0);
 
 		String steps = JSON.toJSONString(workflow.getSteps() == null ? List.of() : workflow.getSteps());
+		String runContract = workflow.getRunContract() == null
+				? null : JSON.toJSONString(workflow.getRunContract());
+		// version is deliberately absent from the SET list. A draft edit carries no version, and copying
+		// that over the row would erase the number of the newest published revision: activation would then
+		// compute 1 again, publishVersion would collide with the revision already frozen as 1, and the
+		// revision actually in force would no longer be the one on record. The number only moves forward,
+		// through updateVersion below.
 		jdbcTemplate.update(
-				"INSERT INTO " + TABLE + " (" + COLUMNS + ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
+				"INSERT INTO " + TABLE + " (" + COLUMNS + ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
 						+ "ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, description = EXCLUDED.description, "
-						+ "status = EXCLUDED.status, version = EXCLUDED.version, steps = EXCLUDED.steps, "
+						+ "status = EXCLUDED.status, steps = EXCLUDED.steps, "
 						// created_by is deliberately absent: it records the first save and must survive later ones.
-						+ "run_class_name = EXCLUDED.run_class_name, modify_timestamp = EXCLUDED.modify_timestamp",
+						+ "run_class_name = EXCLUDED.run_class_name, run_contract = EXCLUDED.run_contract, "
+						+ "modify_timestamp = EXCLUDED.modify_timestamp",
 				workflow.getId(), workflow.getName(), workflow.getDescription(), workflow.getDomainId(),
 				workflow.getStatus(), workflow.getVersion(), steps, workflow.getRunClassName(),
-				workflow.getCreateTimestamp(), workflow.getModifyTimestamp(), workflow.getCreatedBy());
+				workflow.getCreateTimestamp(), workflow.getModifyTimestamp(), workflow.getCreatedBy(), runContract);
+		if (workflow.getVersion() != null && workflow.getVersion() > 0) {
+			updateVersion(workflow.getId(), workflow.getVersion());
+		}
 		return workflow;
 	}
 
-	/** Freeze the current steps as a published revision; the version in the row is what grants name. */
-	public void publishVersion(Workflow workflow) {
-		int version = workflow.getVersion() == null ? 1 : workflow.getVersion();
+	/** Move the projected version forward; a smaller number is a stale caller and is ignored. */
+	public void updateVersion(String id, int version) {
 		jdbcTemplate.update(
+				"UPDATE " + TABLE + " SET version = ? WHERE id = ? AND (version IS NULL OR version < ?)",
+				version, id, version);
+	}
+
+	/** The number the next published revision must take, derived from the frozen rows rather than the row. */
+	public int nextVersion(String workflowId) {
+		Integer next = jdbcTemplate.queryForObject(
+				"SELECT COALESCE(MAX(version), 0) + 1 FROM " + VERSION_TABLE + " WHERE workflow_id = ?",
+				Integer.class, workflowId);
+		return next == null ? 1 : next;
+	}
+
+	/**
+	 * Freeze the current steps as the next published revision, and number it from the frozen rows.
+	 *
+	 * <p>The revision number is allocated here rather than taken from the caller: the row's version is a
+	 * projection that a draft edit may not touch, so it cannot be trusted to say which revision is next.
+	 * A collision means two activations raced; that is reported rather than silently dropped, because a
+	 * dropped revision leaves the grants naming a version whose frozen steps are someone else's.</p>
+	 */
+	public int publishVersion(Workflow workflow) {
+		int version = nextVersion(workflow.getId());
+		int inserted = jdbcTemplate.update(
 				"INSERT INTO " + VERSION_TABLE
-						+ " (id, workflow_id, domain_id, version, steps, run_class_name, create_timestamp) "
-						+ "VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT (workflow_id, version) DO NOTHING",
+						+ " (id, workflow_id, domain_id, version, steps, run_class_name, run_contract, create_timestamp) "
+						+ "VALUES (?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT (workflow_id, version) DO NOTHING",
 				UUID.randomUUID().toString(), workflow.getId(), workflow.getDomainId(), version,
 				JSON.toJSONString(workflow.getSteps() == null ? List.of() : workflow.getSteps()),
-				workflow.getRunClassName(), System.currentTimeMillis());
+				workflow.getRunClassName(),
+				workflow.getRunContract() == null ? null : JSON.toJSONString(workflow.getRunContract()),
+				System.currentTimeMillis());
+		if (inserted == 0) {
+			throw new IllegalStateException("Workflow revision " + version
+					+ " was published concurrently for " + workflow.getId()
+					+ "; the steps it froze are not the ones being granted");
+		}
+		workflow.setVersion(version);
+		return version;
 	}
 
 	public void appendEvent(Workflow workflow, String event, String principalId) {
@@ -164,6 +212,25 @@ public class WorkflowDao {
 		jdbcTemplate.update("DELETE FROM " + EVENT_TABLE + " WHERE workflow_id = ?", workflowId);
 	}
 
+	/**
+	 * The revisions currently in force in a domain, keyed by workflow id.
+	 *
+	 * <p>A grant names the workflow and the version that activated it; only a grant whose version is
+	 * still the effective one conveys authority. Reading the whole set once keeps that decision to one
+	 * query instead of one per grant, and a workflow that is no longer active is simply absent — which is
+	 * what makes deactivation withdraw authority even for rows a revoke never removed.</p>
+	 */
+	public Map<String, Integer> activeVersions(String domainId) {
+		Map<String, Integer> versions = new HashMap<>();
+		jdbcTemplate.query(
+				"SELECT id, version FROM " + TABLE + " WHERE domain_id = ? AND status = ?",
+				rs -> {
+					versions.put(rs.getString("id"), rs.getInt("version"));
+				},
+				domainId, Workflow.STATUS_ACTIVE);
+		return versions;
+	}
+
 	/** The principal of the most recent row for this workflow and event, or null when there is none. */
 	public String queryLastEventPrincipal(String workflowId, String event) {
 		List<String> found = jdbcTemplate.query(
@@ -183,6 +250,10 @@ public class WorkflowDao {
 		workflow.setVersion(rs.getInt("version"));
 		workflow.setSteps(parseSteps(rs.getString("steps")));
 		workflow.setRunClassName(rs.getString("run_class_name"));
+		String runContract = rs.getString("run_contract");
+		workflow.setRunContract(
+				runContract == null || runContract.isBlank()
+						? null : JSON.parseObject(runContract, io.ontomato.dataengine.bean.workflow.RunContract.class));
 		workflow.setCreateTimestamp(rs.getLong("create_timestamp"));
 		workflow.setModifyTimestamp(rs.getLong("modify_timestamp"));
 		workflow.setCreatedBy(rs.getString("created_by"));

@@ -310,6 +310,9 @@ public class PostgreAdapter implements DataAdapter {
 			String subSelectFrom = "";
 			JSONArray relationships = firstStep.getJSONObject("graph").getJSONArray("patterns").getJSONObject(0)
 					.getJSONArray("relationship");
+			// This source joins key columns directly, so exactly one hop is all it can render. A wider range
+			// must fail loudly: returning the one-hop answer would look like the requested result.
+			KeyFieldHops.requireSingleHop(relationships, "relationship");
 			if (relationships != null && relationships.size() > 0) {
 				Set<Integer> inJoinIdxs = new HashSet<>();
 				Set<Integer> inJoinRelIndexes = new HashSet<>();

@@ -15,6 +15,7 @@ public class AnonymousWorkflowGrantSink implements WorkflowGrantSink {
     @Override
     public void grant(
             String domainId,
+            String workflowId,
             String roleCode,
             String capabilityKind,
             String capabilityId,
@@ -23,7 +24,7 @@ public class AnonymousWorkflowGrantSink implements WorkflowGrantSink {
     }
 
     @Override
-    public void revokeActivatedBy(String domainId, int workflowVersion) {
+    public void revokeActivatedBy(String domainId, String workflowId, int workflowVersion) {
         // Nothing was granted, so nothing is withdrawn.
     }
 }

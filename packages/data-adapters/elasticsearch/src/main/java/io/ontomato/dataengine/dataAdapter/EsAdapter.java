@@ -710,6 +710,10 @@ public class EsAdapter implements DataAdapter {
 		JSONObject pattern = step.getJSONObject("graph").getJSONArray("patterns").getJSONObject(0);
 		JSONArray objects = pattern.getJSONArray("objects");
 		JSONArray relationships = pattern.getJSONArray("relationship");
+		// This source resolves an edge to the two ends' key fields, so exactly one hop is all it can
+		// render. A wider range must fail loudly: returning the one-hop pairing would look like the
+		// requested traversal and no caller could tell the difference.
+		KeyFieldHops.requireSingleHop(relationships, "relationship");
 
 		Map<String, Map<String, String>> attrTypesByClass = new HashMap<>();
 		Map<String, Set<String>> enabledAttrsByClass = new HashMap<>();

@@ -83,31 +83,70 @@ class WorkflowDaoDuckDbTest {
     }
 
     @Test
-    void publishingTheSameRevisionTwiceKeepsOneFrozenRow() {
+    void eachPublicationFreezesANewRevisionNumberedFromTheFrozenRows() {
         dao.initIndex();
         Workflow workflow = workflow("w1", step(1, "LEADER", "approve"));
-        workflow.setVersion(1);
 
-        dao.publishVersion(workflow);
-        dao.publishVersion(workflow);
+        assertEquals(1, dao.publishVersion(workflow));
+        // Republishing the same object is a new revision, not a silent no-op: the number is allocated
+        // from what is already frozen, so two activations can never share one frozen row.
+        assertEquals(2, dao.publishVersion(workflow));
 
         assertEquals(1, jdbc.queryForObject(
                 "SELECT COUNT(*) FROM workflow_version WHERE workflow_id = 'w1' AND version = 1",
                 Integer.class));
+        assertEquals(1, jdbc.queryForObject(
+                "SELECT COUNT(*) FROM workflow_version WHERE workflow_id = 'w1' AND version = 2",
+                Integer.class));
         assertEquals("LEADER", dao.versionSteps("w1", 1).get(0).getRoleCode());
-        assertTrue(dao.versionSteps("w1", 2).isEmpty());
+        assertTrue(dao.versionSteps("w1", 3).isEmpty());
+    }
+
+    @Test
+    void aDraftEditDoesNotResetThePublishedRevisionNumber() {
+        // The defect this guards: save() copied the request's version (absent on a draft edit) over the
+        // row, so the next activation computed 1 again, collided with the revision already frozen as 1,
+        // and the new steps were dropped while the grants named the older revision.
+        dao.initIndex();
+        Workflow workflow = workflow("w1", step(1, "LEADER", "approve"));
+        int published = dao.publishVersion(workflow);
+        dao.save(workflow);
+
+        // Someone edits the draft through the save path, which carries no version at all.
+        Workflow draft = workflow("w1", step(1, "LEADER", "approve"), step(2, "FINANCE", "pay"));
+        draft.setStatus(Workflow.STATUS_DRAFT);
+        dao.save(draft);
+
+        assertEquals(published, dao.queryById("w1").getVersion());
+        assertEquals(2, dao.nextVersion("w1"));
+
+        // The next activation therefore freezes its own revision instead of colliding with v1.
+        int next = dao.publishVersion(draft);
+        assertEquals(2, next);
+        assertEquals(2, dao.versionSteps("w1", 2).size());
+        assertEquals(1, dao.versionSteps("w1", 1).size());
+    }
+
+    @Test
+    void aStaleCallerCannotDragTheVersionBackwards() {
+        dao.initIndex();
+        Workflow workflow = workflow("w1", step(1, "LEADER", "approve"));
+        dao.save(workflow);
+        dao.updateVersion("w1", 3);
+
+        dao.updateVersion("w1", 1);
+
+        assertEquals(3, dao.queryById("w1").getVersion());
     }
 
     @Test
     void aLaterRevisionKeepsTheEarlierOneReadable() {
         dao.initIndex();
         Workflow workflow = workflow("w1", step(1, "LEADER", "approve"));
-        workflow.setVersion(1);
-        dao.publishVersion(workflow);
+        assertEquals(1, dao.publishVersion(workflow));
 
         workflow.setSteps(List.of(step(1, "LEADER", "approve"), step(2, "FINANCE", "pay")));
-        workflow.setVersion(2);
-        dao.publishVersion(workflow);
+        assertEquals(2, dao.publishVersion(workflow));
 
         assertEquals(1, dao.versionSteps("w1", 1).size());
         assertEquals(2, dao.versionSteps("w1", 2).size());

@@ -33,11 +33,26 @@ import org.springframework.stereotype.Service;
 public class ActionPreconditionService {
 
     /** The criteria of an action whose preconditions hold, or an empty result when it declares none. */
-    public record Verdict(boolean satisfied, List<String> violations) {
+    public record Verdict(boolean satisfied, List<String> violations, List<Proven> proven) {
         static Verdict pass() {
-            return new Verdict(true, List.of());
+            return new Verdict(true, List.of(), List.of());
+        }
+
+        /** A verdict that carries no proof: every caller that only asks "held or not" keeps working. */
+        public Verdict(boolean satisfied, List<String> violations) {
+            this(satisfied, violations, List.of());
         }
     }
+
+    /**
+     * One object this evaluation actually read and found in the state the action declared.
+     *
+     * <p>This is the server's own reading, not the caller's claim: the identification came from the
+     * parameters, but every condition the author declared about it had to hold against stored state.
+     * That is what lets a program be told "this is the run you are working on" without trusting a
+     * parameter it could have made up — the pair is recorded only when the row proved out.</p>
+     */
+    public record Proven(String className, String objectId) {}
 
     private final DslService queries;
     private final AdminService admin;
@@ -72,13 +87,31 @@ public class ActionPreconditionService {
                 (List<Map<String, Object>>) jsonRule.get("classDef");
 
         List<String> violations = new ArrayList<>();
+        List<Proven> proven = new ArrayList<>();
         for (Object value : conditions) {
             JSONObject condition = JSONObject.from(value);
             if (!holds(condition, parameters, user, permission, classDefs, domainId)) {
                 violations.add(message(condition));
+                continue;
             }
+            proven.add(proven(condition, parameters, classDefs));
         }
-        return new Verdict(violations.isEmpty(), List.copyOf(violations));
+        if (!violations.isEmpty()) return new Verdict(false, List.copyOf(violations));
+        List<Proven> distinct = new ArrayList<>();
+        for (Proven item : proven) {
+            if (item != null && !distinct.contains(item)) distinct.add(item);
+        }
+        return new Verdict(true, List.of(), List.copyOf(distinct));
+    }
+
+    /** The object one satisfied condition was about, or null when it names none this evaluation read. */
+    private Proven proven(
+            JSONObject condition, JSONObject parameters, List<Map<String, Object>> classDefs) {
+        String className = normalize(condition.getString("className"), classDefs);
+        Object identification =
+                parameters == null ? null : parameters.get(condition.getString("objectParameter"));
+        if (className == null || identification == null) return null;
+        return new Proven(className, String.valueOf(identification));
     }
 
     /**
@@ -273,11 +306,7 @@ public class ActionPreconditionService {
      * means, so it stays literal.
      */
     private boolean isSubjectReference(String text) {
-        if (!text.startsWith("{{") || !text.endsWith("}}")) return false;
-        String body = text.substring(2, text.length() - 2);
-        if (body.contains("{{") || body.contains("}}")) return false;
-        int dot = body.indexOf('.');
-        return dot > 0 && dot < body.length() - 1;
+        return SubjectReference.parse(text) != null;
     }
 
     /**
@@ -285,11 +314,8 @@ public class ActionPreconditionService {
      * which can never equal an object value: an unresolvable reference must not turn into a match.
      */
     private Object resolveReference(String text, User user) {
-        String body = text.substring(2, text.length() - 2);
-        int dot = body.indexOf('.');
-        String source = body.substring(0, dot);
-        String attribute = body.substring(dot + 1);
-        return subjects.attribute(user, source, attribute);
+        SubjectReference.Parsed reference = SubjectReference.parse(text);
+        return reference == null ? text : subjects.attribute(user, reference.source(), reference.attribute());
     }
 
     /** The message a violation reports; the author supplies it, otherwise it names the failed check. */

@@ -252,6 +252,9 @@ public class MysqlAdapter implements DataAdapter {
 			// Generate the from clause of the sub-query
 			String subSelectFrom = "";
 			JSONArray relationships = firstStep.getJSONObject("graph").getJSONArray("patterns").getJSONObject(0).getJSONArray("relationship");
+			// This source joins key columns directly, so exactly one hop is all it can render. A wider range
+			// must fail loudly: returning the one-hop answer would look like the requested result.
+			KeyFieldHops.requireSingleHop(relationships, "relationship");
 			if (relationships != null && relationships.size() > 0) {
 				Set<Integer> inJoinIdxs = new HashSet<Integer>();
 				Set<Integer> inJoinRelIndexes = new HashSet<Integer>();

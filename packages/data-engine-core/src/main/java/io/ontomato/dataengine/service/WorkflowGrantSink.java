@@ -16,25 +16,31 @@ import io.ontomato.dataengine.bean.workflow.Workflow;
 public interface WorkflowGrantSink {
 
     /**
-     * Grant one capability to the role a step names, recording the workflow version that activated it.
+     * Grant one capability to the role a step names, recording the workflow revision that activated it.
+     *
+     * <p>The workflow is named as well as the revision: a revision number alone means nothing outside its
+     * own workflow, and the executor needs both to tell a grant that is still in force from one whose
+     * workflow has moved on.</p>
      *
      * @param roleCode the role the step names, in the business vocabulary the workflow was written in
      * @param capabilityKind one of {@link CapabilityGrantLookup#KINDS}
      */
     void grant(
             String domainId,
+            String workflowId,
             String roleCode,
             String capabilityKind,
             String capabilityId,
             int workflowVersion);
 
     /**
-     * Withdraw exactly the grants that this workflow version activated.
+     * Withdraw exactly the grants that this workflow revision activated.
      *
-     * <p>Scoped by version, not by workflow: deactivating the current revision must not silently remove
-     * authority that an earlier revision granted and that is still in force.</p>
+     * <p>Scoped by revision, not by workflow: deactivating the current revision must not silently remove
+     * authority that an earlier revision granted and that is still in force. Scoped by workflow too,
+     * because revision numbers repeat across workflows.</p>
      */
-    void revokeActivatedBy(String domainId, int workflowVersion);
+    void revokeActivatedBy(String domainId, String workflowId, int workflowVersion);
 
     /** Record that a workflow became effective, so the change itself is auditable. */
     default void activated(Workflow workflow, String principalId) {}

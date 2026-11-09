@@ -19,6 +19,17 @@ public interface ABCProgramService {
 	public Object[] execute(String sessionId, ABCHarnessDashboard dashboard, String userId, UserDataPermission curUserDataPermission, String lang, int timeoutMinutes, String domainId) throws Exception;
 	
 	public Object[] execute(String sessionId, Function function, String userId, UserDataPermission curUserDataPermission, String sandboxId, String lang, int timeoutMinutes, String domainId) throws Exception;
+
+	/**
+	 * Runs a stored program with an identity snapshot the caller established.
+	 *
+	 * <p>Passed on this call rather than looked up here because only the caller knows facts the environment
+	 * cannot derive — an action execution knows which workflow run its preconditions just proved. The
+	 * snapshot still reaches the program as a server-written read-only file, never as a parameter.</p>
+	 *
+	 * @param identity extra snapshot fields to publish, or null to publish the subject's own identity only
+	 */
+	public Object[] execute(String sessionId, Function function, String userId, UserDataPermission curUserDataPermission, String sandboxId, String lang, int timeoutMinutes, String domainId, com.alibaba.fastjson2.JSONObject identity) throws Exception;
 	
 	public JSONArray parsePythonReturn(String pythonOutput, String errorMessage) throws Exception;
 

@@ -1460,6 +1460,67 @@ public abstract class AbstractDataAdapterTest {
 		assertThrows(DslContractViolationException.class, () -> queryPersons(properties));
 	}
 
+	// ----------------------------------------------------------------------------------
+	// The hop range is part of what the answer means, so a source that can only join one
+	// hop must refuse a wider range instead of quietly returning the one-hop rows.
+	// ----------------------------------------------------------------------------------
+
+	@Test
+	void multiHopRangeIsRejectedNotRenderedAsOneHop() {
+		assume(DataAdapterCapability.READ_QUERY);
+		// A graph-native source traverses a range by design; a key-field source cannot.
+		assumeFalse(capabilities().contains(DataAdapterCapability.RELATIONSHIP_EDGES),
+				"this source traverses edges natively");
+
+		DslContractViolationException e = assertThrows(DslContractViolationException.class,
+				() -> readQuery(twoClassDslWithHops(1, 2)));
+		assertTrue(e.getViolations().stream().anyMatch(
+				v -> v.getCode() == DslContractViolationException.Code.UNSUPPORTED_CONSTRUCT), e.getMessage());
+		assertTrue(e.getViolations().get(0).getDslPath() != null
+				&& !e.getViolations().get(0).getDslPath().isBlank(), e.getMessage());
+	}
+
+	@Test
+	void unboundedHopRangeIsRejectedNotRenderedAsOneHop() {
+		assume(DataAdapterCapability.READ_QUERY);
+		assumeFalse(capabilities().contains(DataAdapterCapability.RELATIONSHIP_EDGES),
+				"this source traverses edges natively");
+
+		// max_hops = -1 means unlimited in the DSL; a key-field source can render neither that nor a range.
+		assertThrows(DslContractViolationException.class, () -> readQuery(twoClassDslWithHops(1, -1)));
+	}
+
+	@Test
+	void oneHopRelationshipStillRunsWhenTheRangeIsSpelledOut() throws Exception {
+		assume(DataAdapterCapability.READ_QUERY);
+		assumeFalse(capabilities().contains(DataAdapterCapability.RELATIONSHIP_EDGES),
+				"this source traverses edges natively");
+
+		// Stating the default explicitly must not be mistaken for a wider request: the guard is about
+		// what the range admits, not about whether the fields are present.
+		seedGraph();
+		try {
+			readQuery(twoClassDslWithHops(1, 1));
+		} finally {
+			dropGraph();
+		}
+	}
+
+	/** A two-class read with an explicit hop range on its single relationship. */
+	private String twoClassDslWithHops(int minHops, int maxHops) {
+		JSONArray objects = new JSONArray();
+		objects.add(readObject(0, "s", 0));
+		objects.add(readObject(1, "t", 1));
+		JSONObject relation = readRelation(0, 1, firstRelation());
+		relation.put("min_hops", minHops);
+		relation.put("max_hops", maxHops);
+		JSONArray relationships = new JSONArray();
+		relationships.add(relation);
+		JSONArray fields = new JSONArray();
+		fields.add(readField("s", primaryKey(), "source_id"));
+		return singleStepDsl(objects, relationships, fields, null, null, null);
+	}
+
 	protected JSONObject readObject(int graphIdx, String variable, int idx) {
 		JSONObject o = new JSONObject();
 		o.put("class", namespace() + graphClass(graphIdx));

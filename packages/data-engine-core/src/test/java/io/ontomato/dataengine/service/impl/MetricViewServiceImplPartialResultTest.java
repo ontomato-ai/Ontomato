@@ -26,6 +26,8 @@ import io.ontomato.dataengine.bean.metricView.MetricView;
 import io.ontomato.dataengine.bean.metricView.MetricViewContent;
 import io.ontomato.dataengine.core.bean.User;
 import io.ontomato.dataengine.service.ABCProgramService;
+import io.ontomato.dataengine.service.SubjectAttributeLookup;
+import io.ontomato.dataengine.service.SubjectValueResolver;
 import io.ontomato.dataengine.service.sys.bean.permission.UserDataPermission;
 
 /** A MetricView card built from a partial execution says so in its text. */
@@ -38,6 +40,9 @@ class MetricViewServiceImplPartialResultTest {
 	@BeforeEach
 	void setUp() {
 		ReflectionTestUtils.setField(service, "abcProgramService", abcProgramService);
+		// Direct construction skips Spring, so the resolver is wired by hand; literal values need no lookup.
+		ReflectionTestUtils.setField(service, "subjectValues",
+				new SubjectValueResolver(mock(SubjectAttributeLookup.class)));
 		when(user.getId()).thenReturn("user-1");
 		when(user.getDomainId()).thenReturn("domain");
 	}

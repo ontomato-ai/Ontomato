@@ -49,6 +49,15 @@ public class Workflow {
     private String runClassName;
 
     /**
+     * How this process's runs are read, declared rather than assumed.
+     *
+     * <p>Optional: a process without one still runs, but the generic read capabilities that need to know
+     * where the lifecycle lives cannot be offered for it. When declared, activation verifies every name
+     * in it against the class definition, so a typo fails there instead of silently matching nothing.</p>
+     */
+    private RunContract runContract;
+
+    /**
      * The subject who created this workflow, taken from the authenticated request. Set once.
      *
      * <p>There is no {@code reviewedBy} column here on purpose: activation is this object's review
@@ -56,6 +65,15 @@ public class Workflow {
      * last activation event is the reviewer. Storing it again would be a second copy that can drift.</p>
      */
     private String createdBy;
+
+    /**
+     * Warnings raised while generating this revision's read capabilities.
+     *
+     * <p>Response-only: the DAO never writes this column. It exists so an operator who activated a
+     * process learns that its convenient queries were not produced, instead of discovering later that
+     * "no pending items" was really "no query".</p>
+     */
+    private List<String> activationNotes;
 
     public static List<String> statuses() {
         return List.of(STATUS_DRAFT, STATUS_ACTIVE, STATUS_INACTIVE);

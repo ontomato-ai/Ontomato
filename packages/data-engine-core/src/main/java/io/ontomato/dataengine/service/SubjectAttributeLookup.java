@@ -1,6 +1,7 @@
 package io.ontomato.dataengine.service;
 
 import io.ontomato.dataengine.core.bean.User;
+import java.util.List;
 
 /**
  * One attribute of the acting subject, read for precondition evaluation.
@@ -26,4 +27,15 @@ public interface SubjectAttributeLookup {
      *     the subject has no such attribute or has cleared it
      */
     Object attribute(User user, String source, String attribute);
+
+    /**
+     * The account field names this edition offers, used to refuse a reference to a field that does not
+     * exist while the definition is still being written.
+     *
+     * <p>An edition that reports none is not second-guessed: the check is skipped there and execution
+     * still fails closed on an unresolvable reference.</p>
+     */
+    default List<String> supportedAccountFields() {
+        return List.of();
+    }
 }

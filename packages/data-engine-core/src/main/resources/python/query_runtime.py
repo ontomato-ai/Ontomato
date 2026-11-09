@@ -9,6 +9,8 @@ _token = os.environ["ONTOMATO_TK"]
 _status = Path("query-status.json")
 _status.write_text("{}", encoding="utf-8")
 parameters = json.loads(Path("parameters.json").read_text(encoding="utf-8")) if Path("parameters.json").exists() else {}
+# Written by the runtime host, not by the caller: a business rule may read it, authorization may not.
+identity = json.loads(Path("identity.json").read_text(encoding="utf-8")) if Path("identity.json").exists() else {}
 
 
 def _call(path, body):

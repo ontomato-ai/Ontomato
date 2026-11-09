@@ -19,6 +19,7 @@ import io.ontomato.dataengine.service.ABCProgramService;
 import io.ontomato.dataengine.service.ActionPreconditionService;
 import io.ontomato.dataengine.service.ActionService;
 import io.ontomato.dataengine.service.CapabilityGrantLookup;
+import io.ontomato.dataengine.service.IdentitySnapshotLookup;
 import io.ontomato.dataengine.service.AdminService;
 import io.ontomato.dataengine.service.BusinessConfigService;
 import io.ontomato.dataengine.service.LangService;
@@ -69,6 +70,10 @@ public class ActionServiceImpl implements ActionService {
   @Autowired private ActionPreconditionService preconditions;
 
   @Autowired private CapabilityGrantLookup capabilityGrants;
+
+  @Autowired private IdentitySnapshotLookup identitySnapshots;
+
+  @Autowired private WorkflowRunResolver workflowRuns;
 
   @PostConstruct
 	public void initService() {
@@ -607,7 +612,8 @@ public class ActionServiceImpl implements ActionService {
 					Object value = param.get(parameter.getName());
 					parameter.setValue(value);
 				}
-				Object[] o = abcProgramService.execute(UUID.randomUUID().toString(), function, user.getId(), permission, ServiceConst.NOT_SANDBOX, lang, timeoutMinutes, user.getDomainId());
+				Object[] o = abcProgramService.execute(UUID.randomUUID().toString(), function, user.getId(), permission, ServiceConst.NOT_SANDBOX, lang, timeoutMinutes, user.getDomainId(),
+					identitySnapshot(action, user, verdict));
 				PythonExecuteResult result = (PythonExecuteResult)o[1];
                 if (result.getError() != null && !result.getError().isBlank()) { result.setResult(null); result.setError("Action execution failed"); }
                 else result.setResult(o[0] == null ? "{\"completed\":true}" : JSON.toJSONString(JSONObject.of("answer", o[0]), Feature.WriteMapNullValue));
@@ -618,6 +624,22 @@ public class ActionServiceImpl implements ActionService {
 		} else {
 			throw new Exception(langService.get(lang, "Action.notFound"));
 		}
+	}
+
+	/**
+	 * The identity this run is allowed to see, assembled from what the server established.
+	 *
+	 * <p>The subject fields come from the authenticated request; the run id comes from the objects the
+	 * preconditions just proved, never from the parameters. A program that records "which run did I act on"
+	 * therefore records an attribution the platform verified, and cannot be steered by a caller that
+	 * passes someone else's run id — that call is refused by the preconditions before reaching here.</p>
+	 */
+	private JSONObject identitySnapshot(
+			Action action, User user, ActionPreconditionService.Verdict verdict) {
+		JSONObject snapshot = identitySnapshots.snapshot(user, user.getDomainId());
+		String runId = workflowRuns.resolve(user.getDomainId(), action.getId(), verdict.proven());
+		if (runId != null) snapshot.put("workflowRunId", runId);
+		return snapshot;
 	}
 
   /**

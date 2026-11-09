@@ -36,6 +36,11 @@ public class AnonymousSubjectAttributeLookup implements SubjectAttributeLookup {
     }
 
     @Override
+    public java.util.List<String> supportedAccountFields() {
+        return accountFieldNames();
+    }
+
+    @Override
     public Object attribute(User user, String source, String attribute) {
         if (user == null || attribute == null || !ACCOUNT.equals(source)) return null;
         Function<User, String> field = ACCOUNT_FIELDS.get(attribute);
