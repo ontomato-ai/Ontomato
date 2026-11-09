@@ -390,7 +390,6 @@ const form = ref({
   graphScopeRootClassNames: [] as string[],
   graphScopeMaxDepth: 1 as number | undefined,
   isEnabled: true,
-  sortOrder: 0 as number,
   avatarKey: "Brain",
   avatarColor: defaultAvatarColor.value,
 });
@@ -438,7 +437,6 @@ function fillFormFromAgent(agent: AnalysisAgent) {
       agent.graphScope?.mode === "subgraph" ? [...agent.graphScope.rootClassNames] : [],
     graphScopeMaxDepth: agent.graphScope?.mode === "subgraph" ? agent.graphScope.maxDepth : 1,
     isEnabled: agent.isEnabled,
-    sortOrder: agent.sortOrder ?? 0,
     avatarKey,
     avatarColor,
   };
@@ -466,7 +464,6 @@ function resetForm() {
     graphScopeRootClassNames: [],
     graphScopeMaxDepth: 1,
     isEnabled: true,
-    sortOrder: 0,
     avatarKey: "Brain",
     avatarColor: defaultAvatarColor.value,
   };

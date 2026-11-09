@@ -5,7 +5,11 @@ import type {
   AnalysisConversationTurn,
   LoopSubagentTrace,
 } from "@ontomato/contracts/analysis-task";
-import type { AnalysisAgent } from "@ontomato/contracts/analysis-agent";
+import type {
+  AgentLineupEntry,
+  AnalysisAgent,
+  SaveAgentLineupRequest,
+} from "@ontomato/contracts/analysis-agent";
 import type { QueryExecutionDisplayFact } from "@ontomato/contracts/query-execution";
 import type { AnalysisReportHotCardSummary } from "@ontomato/contracts/analysis-report";
 import type { AnalysisStreamEvent } from "@ontomato/contracts/analysis-events";
@@ -24,29 +28,14 @@ import {
 import { workbenchContent } from "../../content";
 
 export const analysisAgentApi = {
-  async listAgents(): Promise<AnalysisAgent[]> {
-    const res = await nodeApiGet("/analysis-agents");
-    // Handle two response formats: { success: true, data: [...] } or directly return [...]
-    if (res.success && Array.isArray(res.data)) {
-      return res.data;
-    }
-    if (Array.isArray(res)) {
-      return res;
-    }
-    return [];
+  /** The domain's agents (enabled or not) and the built-in Q&A agent, in display order. */
+  async getAgentLineup(): Promise<AgentLineupEntry[]> {
+    const res = await nodeApiGet("/analysis-agents/lineup");
+    if (!res?.success || !Array.isArray(res.data)) throw new Error("Invalid agent lineup response");
+    return res.data;
   },
-  async getEnabledAgents(): Promise<AnalysisAgent[]> {
-    const res = await nodeApiGet("/analysis-agents/enabled");
-    if (res.success && Array.isArray(res.data)) {
-      return res.data;
-    }
-    if (res.data && Array.isArray(res.data.data)) {
-      return res.data.data;
-    }
-    if (Array.isArray(res)) {
-      return res;
-    }
-    return [];
+  async saveAgentLineup(order: string[]): Promise<void> {
+    await nodeApiPut("/analysis-agents/lineup", { order } satisfies SaveAgentLineupRequest);
   },
   async getAgent(id: string): Promise<AnalysisAgent> {
     const res = await nodeApiGet(`/analysis-agents/${id}`);

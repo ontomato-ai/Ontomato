@@ -3,7 +3,7 @@ import { computed } from "vue";
 import { MessageSquarePlus } from "lucide-vue-next";
 import { useLocale } from "../../../composables/useLocale";
 import type { AppearanceSection } from "@ontomato/contracts/workbench-appearance";
-import type { AnalysisAgent } from "@ontomato/contracts/analysis-agent";
+import type { AgentLineupEntry } from "@ontomato/contracts/analysis-agent";
 import type { WorkbenchAgent, WorkbenchSelectionMode } from "../types";
 import {
   displayAgentDescription,
@@ -21,7 +21,8 @@ const props = withDefaults(
   addAgentLabel: string;
   /** The Q&A entry's appearance is shared by the agent panel and the Q&A history panel, assembled once by the workbench. */
   qaAgent: WorkbenchAgent;
-  agents: AnalysisAgent[];
+  /** Enabled lineup entries in the server's display order; the Q&A entry renders as `qaAgent`. */
+  lineup: AgentLineupEntry[];
   selectionMode: WorkbenchSelectionMode;
   selectedAgentId: string;
   /** Compact rail of the open-source layout: when true, each entry shows a tooltip on the right; other layouts omit it. */
@@ -53,11 +54,9 @@ function agentDescription(agent: WorkbenchAgent) {
   );
 }
 
-const allAgents = computed<WorkbenchAgent[]>(() => [
-  props.qaAgent,
-  { _divider: true } as WorkbenchAgent,
-  ...props.agents.filter((agent) => agent.isEnabled),
-]);
+const allAgents = computed<WorkbenchAgent[]>(() =>
+  props.lineup.map((entry) => (entry.kind === "qa" ? props.qaAgent : entry.agent))
+);
 </script>
 
 <template>
@@ -80,10 +79,8 @@ const allAgents = computed<WorkbenchAgent[]>(() => [
 
   <div class="agent-section-title">{{ t("app.agent") }}</div>
   <div class="agent-list">
-    <template v-for="agent in allAgents" :key="agent.id || '_divider'">
-      <div v-if="agent._divider" class="agent-divider"></div>
+    <template v-for="agent in allAgents" :key="agent.id">
       <el-tooltip
-        v-else
         :disabled="!compact"
         :content="agent.isQA ? agent.name : displayAgentName(agent.name, t)"
         placement="right"
@@ -282,11 +279,6 @@ const allAgents = computed<WorkbenchAgent[]>(() => [
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-}
-.agent-divider {
-  height: 1px;
-  background: var(--el-border-color);
-  margin: 8px 12px;
 }
 .agent-add-wrap {
   padding: 10px 14px 12px;

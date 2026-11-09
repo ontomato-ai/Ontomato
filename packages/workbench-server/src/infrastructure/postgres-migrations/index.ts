@@ -49,6 +49,7 @@ import { ensureAnalysisReportSummaryPositionSchema } from "./20260918-analysis-r
 import { ensureAnalysisAgentHotReportSchema } from "./20260929-analysis-agent-hot-report/schema.js";
 import { ensureAnalysisAgentActionsSchema } from "./20261104-analysis-agent-actions/schema.js";
 import { ensureAnalysisAgentMetricViewsSchema } from "./20261106-analysis-agent-metric-views/schema.js";
+import { ensureQaAgentSortOrderSchema } from "./20261109-qa-agent-sort-order/schema.js";
 import { ensureScheduleCredentialSchema } from "./20261105-schedule-credentials/schema.js";
 import {
   QUERY_RUN_BACKEND_SESSIONS_NAME,
@@ -109,6 +110,10 @@ export const POSTGRES_MIGRATION_REGISTRY: MigrationRegistration[] = [
   {
     directory: "20261106-analysis-agent-metric-views",
     ensureSchema: ensureAnalysisAgentMetricViewsSchema,
+  },
+  {
+    directory: "20261109-qa-agent-sort-order",
+    ensureSchema: ensureQaAgentSortOrderSchema,
   },
   {
     directory: "20260625-business-storage-v1",

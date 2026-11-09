@@ -80,6 +80,7 @@ export default {
     "selectVisualSkills": "Select chart skills for report-embedded charts",
     "dragToSort": "Drag left handle to adjust sort order",
     "noSkillsConfigured": "No skills configured",
+    "qaAgentOrderOnly": "Built-in Query Agent: it can only be reordered",
     "noAgentHint": "No agents yet, click \"Create Agent\" to create one",
     "reportDeliverable": "Report Deliverable",
     "reportDeliverableEnabled": "Attach the report deliverable to this agent",

@@ -8,6 +8,8 @@ export {
   getAgentIconComponent,
 } from "./utils/agentDisplay";
 export { default as WorkbenchAppearanceDialog } from "./components/WorkbenchAppearanceDialog.vue";
+export { createQaAgent } from "./utils/qaAgent";
+export { getWorkbenchAppearance } from "./api";
 export type {
   DashboardSidebarItem,
   QAThread,

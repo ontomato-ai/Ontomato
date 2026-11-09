@@ -14,17 +14,17 @@
     </div>
 
     <div class="agents-container">
-      <div v-if="agents.length > 1" class="sort-hint">
+      <div v-if="lineup.length > 1" class="sort-hint">
         <el-icon :size="14"><GripVertical /></el-icon>
         {{ t("admin.dragToSort") }}
       </div>
       <div v-loading="loading" class="agents-grid">
         <div
-          v-for="(agent, index) in agents"
-          :key="agent.id"
+          v-for="(entry, index) in lineup"
+          :key="lineupEntryId(entry)"
           class="agent-card"
           :class="{
-            disabled: !agent.isEnabled,
+            disabled: entry.kind === 'agent' && !entry.agent.isEnabled,
             dragging: dragIndex === index,
             'drag-over': dragOverIndex === index && dragIndex !== index,
           }"
@@ -34,64 +34,83 @@
           @dragend="onDragEnd"
           @drop="onDrop($event, index)"
         >
-          <div class="agent-header">
-            <div class="agent-title-row">
-              <div class="drag-handle">
-                <el-icon :size="16"><GripVertical /></el-icon>
-              </div>
-              <span class="agent-title">{{ displayAgentName(agent.name) }}</span>
-              <div class="agent-actions">
-                <el-dropdown trigger="click" placement="bottom-end">
-                  <el-button class="more-btn" :icon="MoreHorizontal" size="small" text />
-                  <template #dropdown>
-                    <el-dropdown-menu class="agent-dropdown-menu">
-                      <el-dropdown-item @click="editAgent(agent)">
-                        {{ t("common.edit") }}
-                      </el-dropdown-item>
-                      <el-dropdown-item @click="toggleAgentStatus(agent)">
-                        {{ agent.isEnabled ? t("common.disable") : t("common.enable") }}
-                      </el-dropdown-item>
-                      <el-dropdown-item divided @click="deleteAgent(agent)">
-                        {{ t("common.delete") }}
-                      </el-dropdown-item>
-                    </el-dropdown-menu>
-                  </template>
-                </el-dropdown>
+          <template v-if="entry.kind === 'qa'">
+            <div class="agent-header">
+              <div class="agent-title-row">
+                <div class="drag-handle">
+                  <el-icon :size="16"><GripVertical /></el-icon>
+                </div>
+                <span class="agent-title">{{ qaAgent.name }}</span>
               </div>
             </div>
-          </div>
+            <div class="agent-description">{{ qaAgent.description }}</div>
+            <div class="no-skills">{{ t("admin.qaAgentOrderOnly") }}</div>
+          </template>
+          <template v-else>
+            <div class="agent-header">
+              <div class="agent-title-row">
+                <div class="drag-handle">
+                  <el-icon :size="16"><GripVertical /></el-icon>
+                </div>
+                <span class="agent-title">{{ displayAgentName(entry.agent.name) }}</span>
+                <div class="agent-actions">
+                  <el-dropdown trigger="click" placement="bottom-end">
+                    <el-button class="more-btn" :icon="MoreHorizontal" size="small" text />
+                    <template #dropdown>
+                      <el-dropdown-menu class="agent-dropdown-menu">
+                        <el-dropdown-item @click="editAgent(entry.agent)">
+                          {{ t("common.edit") }}
+                        </el-dropdown-item>
+                        <el-dropdown-item @click="toggleAgentStatus(entry.agent)">
+                          {{ entry.agent.isEnabled ? t("common.disable") : t("common.enable") }}
+                        </el-dropdown-item>
+                        <el-dropdown-item divided @click="deleteAgent(entry.agent)">
+                          {{ t("common.delete") }}
+                        </el-dropdown-item>
+                      </el-dropdown-menu>
+                    </template>
+                  </el-dropdown>
+                </div>
+              </div>
+            </div>
 
-          <div class="agent-description">
-            {{ displayAgentDescription(agent.description) || t("common.noDescription") }}
-          </div>
+            <div class="agent-description">
+              {{ displayAgentDescription(entry.agent.description) || t("common.noDescription") }}
+            </div>
 
-          <div
-            v-if="agent.enabledSkillIds?.length || agent.enabledVisualizationSkillIds?.length"
-            class="agent-skills"
-          >
-            <el-tag
-              v-for="skillName in getSkillNames(agent.enabledSkillIds)"
-              :key="skillName"
-              size="small"
-              type="primary"
-              effect="plain"
+            <div
+              v-if="
+                entry.agent.enabledSkillIds?.length ||
+                entry.agent.enabledVisualizationSkillIds?.length
+              "
+              class="agent-skills"
             >
-              {{ skillName }}
-            </el-tag>
-            <el-tag
-              v-for="skillName in getVisualizationSkillNames(agent.enabledVisualizationSkillIds)"
-              :key="skillName"
-              size="small"
-              type="success"
-              effect="plain"
-            >
-              📊 {{ skillName }}
-            </el-tag>
-          </div>
-          <div v-else class="no-skills">{{ t("admin.noSkillsConfigured") }}</div>
+              <el-tag
+                v-for="skillName in getSkillNames(entry.agent.enabledSkillIds)"
+                :key="skillName"
+                size="small"
+                type="primary"
+                effect="plain"
+              >
+                {{ skillName }}
+              </el-tag>
+              <el-tag
+                v-for="skillName in getVisualizationSkillNames(
+                  entry.agent.enabledVisualizationSkillIds
+                )"
+                :key="skillName"
+                size="small"
+                type="success"
+                effect="plain"
+              >
+                📊 {{ skillName }}
+              </el-tag>
+            </div>
+            <div v-else class="no-skills">{{ t("admin.noSkillsConfigured") }}</div>
+          </template>
         </div>
       </div>
-      <div v-if="!loading && agents.length === 0" class="empty-state">
+      <div v-if="!loading && !lineup.some((entry) => entry.kind === 'agent')" class="empty-state">
         <el-empty :description="t('admin.noAgentHint')" />
       </div>
     </div>
@@ -107,15 +126,21 @@
 </template>
 
 <script setup lang="ts">
-import type { AnalysisAgent } from "@ontomato/contracts/analysis-agent";
+import {
+  QA_AGENT_LINEUP_ID,
+  type AgentLineupEntry,
+  type AnalysisAgent,
+} from "@ontomato/contracts/analysis-agent";
+import type { WorkbenchAppearance } from "@ontomato/contracts/workbench-appearance";
 
-import { ref, onMounted, watch } from "vue";
+import { computed, ref, onMounted, watch } from "vue";
 import { ElMessage, ElMessageBox } from "element-plus";
 import { analysisAgentApi } from "../../analysis/api";
 import { skillsApi, type AnalysisSkill } from "../../skills/api";
 import { Plus, MoreHorizontal, GripVertical } from "lucide-vue-next";
 import { useI18n } from "vue-i18n";
 import AgentCreateDialog from "../../analysis/components/AgentCreateDialog.vue";
+import { createQaAgent, getWorkbenchAppearance } from "../../workbench";
 import { workbenchContent } from "../../../content";
 
 const { t } = useI18n();
@@ -136,7 +161,10 @@ function displayAgentDescription(desc?: string): string {
 
 const loading = ref(false);
 
-const agents = ref<AnalysisAgent[]>([]);
+/** The domain's whole lineup (disabled agents included) in the server's display order. */
+const lineup = ref<AgentLineupEntry[]>([]);
+const appearance = ref<WorkbenchAppearance | null>(null);
+const qaAgent = computed(() => createQaAgent(appearance.value, t));
 const dragIndex = ref<number | null>(null);
 const dragOverIndex = ref<number | null>(null);
 const allSkills = ref<AnalysisSkill[]>([]);
@@ -154,21 +182,32 @@ async function loadVisualizationSkills() {
   }
 }
 
+function lineupEntryId(entry: AgentLineupEntry): string {
+  return entry.kind === "qa" ? QA_AGENT_LINEUP_ID : entry.agent.id;
+}
+
 async function loadAgents() {
   loading.value = true;
   try {
-    const data = await analysisAgentApi.listAgents();
-
-    agents.value = Array.isArray(data) ? data : [];
+    lineup.value = await analysisAgentApi.getAgentLineup();
   } catch (error) {
     ElMessage.error(
       t("admin.loadFailed") +
         content.analysisAgentLoadErrorSeparator +
         (error instanceof Error ? error.message : String(error))
     );
-    agents.value = [];
+    lineup.value = [];
   } finally {
     loading.value = false;
+  }
+}
+
+/** Only the Q&A card's name, description and avatar come from appearance; it falls back to the built-in texts. */
+async function loadAppearance() {
+  try {
+    appearance.value = await getWorkbenchAppearance();
+  } catch {
+    ElMessage.error(t("appearance.loadFailed"));
   }
 }
 
@@ -244,24 +283,16 @@ async function onDrop(_e: DragEvent, dropIndex: number) {
     return;
   }
 
-  const list = [...agents.value];
+  const list = [...lineup.value];
   const [moved] = list.splice(fromIndex, 1);
   list.splice(dropIndex, 0, moved);
 
-  agents.value = list;
+  lineup.value = list;
 
   onDragEnd();
 
-  const updates: Promise<any>[] = [];
-  list.forEach((agent, i) => {
-    if (agent.sortOrder !== i) {
-      updates.push(analysisAgentApi.updateAgent(agent.id, { sortOrder: i }));
-      agent.sortOrder = i;
-    }
-  });
-
   try {
-    await Promise.all(updates);
+    await analysisAgentApi.saveAgentLineup(list.map(lineupEntryId));
   } catch {
     ElMessage({ message: t("admin.sortUpdateFailed"), type: "error" });
     await loadAgents();
@@ -326,6 +357,7 @@ watch(showCreateDialog, (visible) => {
 
 onMounted(() => {
   loadAgents();
+  loadAppearance();
   loadSkills();
   loadVisualizationSkills();
 });

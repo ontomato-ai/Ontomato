@@ -1,4 +1,4 @@
-import type { AnalysisAgent } from "@ontomato/contracts/analysis-agent";
+import type { AgentLineupEntry, AnalysisAgent } from "@ontomato/contracts/analysis-agent";
 import pg from "pg";
 import { createLogger } from "../../../logging/logger";
 import {
@@ -14,6 +14,7 @@ import { SkillCategory, SkillType } from "../../../core/skills/constants";
 import { skillRegistryManager } from "../../../core/skills/registry/manager";
 import { t, tApp } from "../../../i18n";
 import { DEFAULT_ANALYSIS_GRAPH_SCOPE, normalizeAnalysisGraphScope } from "./graph-scope";
+import { placeQaAgent, resolveLineupSortOrders } from "./agent-lineup";
 
 const logger = createLogger("analysis-agent-service");
 
@@ -159,6 +160,57 @@ export class AnalysisAgentService {
     return result.rows.map(mapAgentRow);
   }
 
+  /** All agents of the domain, enabled or not, with the built-in Q&A agent placed among them. */
+  async listAgentLineup(domainId: string): Promise<AgentLineupEntry[]> {
+    const agents = await this.listAgents(domainId);
+    const qa = await this.pool.query<{ sort_order: number }>(
+      `SELECT sort_order FROM ${qualifiedTable("qa_agent_sort_orders")} WHERE domain_id = $1`,
+      [domainId]
+    );
+    return placeQaAgent(agents, qa.rows[0]?.sort_order ?? null);
+  }
+
+  /** The only writer of agent order: one request saves the whole lineup, Q&A included. */
+  async saveAgentLineup(domainId: string, order: readonly string[]): Promise<void> {
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN");
+      await client.query("SELECT pg_advisory_xact_lock(hashtext($1))", [`agent-lineup-${domainId}`]);
+      const current = await client.query<{ id: string }>(
+        `SELECT id FROM ${qualifiedTable("analysis_agents")} WHERE domain_id = $1 FOR UPDATE`,
+        [domainId]
+      );
+      const { qaSortOrder, agentSortOrders } = resolveLineupSortOrders(
+        order,
+        current.rows.map((row) => row.id)
+      );
+      await client.query(
+        `UPDATE ${qualifiedTable("analysis_agents")} AS agent
+         SET sort_order = lineup.sort_order
+         FROM unnest($2::text[], $3::int[]) AS lineup(id, sort_order)
+         WHERE agent.domain_id = $1 AND agent.id = lineup.id`,
+        [
+          domainId,
+          agentSortOrders.map((entry) => entry.id),
+          agentSortOrders.map((entry) => entry.sortOrder),
+        ]
+      );
+      await client.query(
+        `INSERT INTO ${qualifiedTable("qa_agent_sort_orders")} (domain_id, sort_order, updated_at)
+         VALUES ($1, $2, $3)
+         ON CONFLICT (domain_id) DO UPDATE
+           SET sort_order = EXCLUDED.sort_order, updated_at = EXCLUDED.updated_at`,
+        [domainId, qaSortOrder, Date.now()]
+      );
+      await client.query("COMMIT");
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
   async getAgent(id: string, domainId?: string): Promise<AnalysisAgent | null> {
     const result = await this.pool.query(
       `SELECT * FROM ${qualifiedTable("analysis_agents")} WHERE id = $1 AND domain_id = $2`,
@@ -168,7 +220,10 @@ export class AnalysisAgentService {
   }
 
   async createAgent(
-    agent: Omit<AnalysisAgent, "id" | "createdAt" | "updatedAt" | "reportDeliverableEnabled"> & {
+    agent: Omit<
+      AnalysisAgent,
+      "id" | "createdAt" | "updatedAt" | "reportDeliverableEnabled" | "sortOrder"
+    > & {
       reportDeliverableEnabled?: boolean;
     },
     domainId: string
@@ -218,7 +273,7 @@ export class AnalysisAgentService {
         enabledMcpServiceNames,
         classNames,
         agent.isEnabled !== false ? true : false,
-        agent.sortOrder ?? 0,
+        DEFAULT_AGENT_SORT_ORDER,
         domainId,
         agent.reportDeliverableEnabled ?? true,
         agent.hotReportEnabled ?? true,
@@ -356,10 +411,6 @@ export class AnalysisAgentService {
     if (updates.isEnabled !== undefined) {
       vals.push(updates.isEnabled);
       sets.push(`is_enabled = $${idx++}`);
-    }
-    if (updates.sortOrder !== undefined) {
-      vals.push(updates.sortOrder);
-      sets.push(`sort_order = $${idx++}`);
     }
 
     if (sets.length === 1) return this.getAgent(id, domainId);

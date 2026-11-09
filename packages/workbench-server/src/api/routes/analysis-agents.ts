@@ -22,6 +22,11 @@ import {
   isAnalysisReportSummaryPosition,
 } from "../../services/analysis-agent/config/agent-types";
 import { InvalidAgentSkillSelectionError } from "../../services/analysis-agent/config/agent-service";
+import { AgentLineupMismatchError } from "../../services/analysis-agent/config/agent-lineup";
+import {
+  QA_AGENT_LINEUP_ID,
+  type SaveAgentLineupRequest,
+} from "@ontomato/contracts/analysis-agent";
 import { getAnalysisDimensionService } from "../../services/analysis-agent/config/dimension-service";
 import { listAgentHotReports } from "../../services/analysis-agent/hot-card/analysis-report-hot-cards";
 
@@ -41,6 +46,13 @@ function assertOptionalStringArray(value: unknown, field: string): void {
     (!Array.isArray(value) || value.some((item: unknown) => typeof item !== "string" || !item.trim()))
   ) {
     throw new HttpError(400, `${field} must be a string array`);
+  }
+}
+
+/** The built-in Q&A agent only takes part in the lineup order; its record-level writes are refused. */
+function rejectQaAgentWrite(id: string): void {
+  if (id === QA_AGENT_LINEUP_ID) {
+    throw new HttpError(403, "The built-in Q&A agent can only be reordered", "QA_AGENT_READ_ONLY");
   }
 }
 
@@ -88,6 +100,43 @@ router.get(
     const service = await getAnalysisAgentService();
     const agents = await service.getEnabledAgents((req as AuthenticatedRequest).domainId);
     res.json({ success: true, data: agents });
+  })
+);
+
+/**
+ * GET /api/analysis-agents/lineup
+ * Lists the domain's agent lineup in display order: every agent, enabled or not, plus the built-in Q&A agent
+ */
+router.get(
+  "/lineup",
+  asyncHandler(async (req: Request, res: Response) => {
+    const service = await getAnalysisAgentService();
+    const lineup = await service.listAgentLineup(requireDomainId(req as AuthenticatedRequest));
+    res.json({ success: true, data: lineup });
+  })
+);
+
+/**
+ * PUT /api/analysis-agents/lineup
+ * Saves the domain's agent lineup order; the body lists every agent ID and the Q&A entry exactly once
+ */
+router.put(
+  "/lineup",
+  asyncHandler(async (req: Request, res: Response) => {
+    const order = (req.body as Partial<SaveAgentLineupRequest> | undefined)?.order;
+    if (!Array.isArray(order) || order.some((id) => typeof id !== "string" || !id)) {
+      throw new HttpError(400, "order must be a string array");
+    }
+    const service = await getAnalysisAgentService();
+    try {
+      await service.saveAgentLineup(requireDomainId(req as AuthenticatedRequest), order);
+    } catch (error) {
+      if (error instanceof AgentLineupMismatchError) {
+        throw new HttpError(409, error.message, error.code);
+      }
+      throw error;
+    }
+    res.json({ success: true });
   })
 );
 
@@ -141,7 +190,6 @@ router.post(
         classNames,
         graphScope,
         isEnabled,
-        sortOrder,
       } = req.body;
 
       if (executionMode !== undefined && !isAnalysisAgentExecutionMode(executionMode)) {
@@ -206,7 +254,6 @@ router.post(
            classNames: Array.isArray(classNames) ? classNames : [],
            graphScope: normalizeAnalysisGraphScope(graphScope),
           isEnabled: isEnabled !== false,
-          sortOrder: sortOrder ?? 0,
         },
         domainId
       );
@@ -230,6 +277,7 @@ router.post(
 router.put(
   "/:id",
   asyncHandler(async (req: Request, res: Response) => {
+    rejectQaAgentWrite(req.params.id);
     try {
       const {
         executionMode,
@@ -302,6 +350,7 @@ router.put(
 router.delete(
   "/:id",
   asyncHandler(async (req: Request, res: Response) => {
+    rejectQaAgentWrite(req.params.id);
     const service = await getAnalysisAgentService();
     const deleted = await service.deleteAgent(
       req.params.id,

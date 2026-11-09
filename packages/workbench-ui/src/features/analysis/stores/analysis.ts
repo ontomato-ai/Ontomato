@@ -3,7 +3,7 @@ import type {
   AnalysisTaskRun,
   AnalysisConversationTurn,
 } from "@ontomato/contracts/analysis-task";
-import type { AnalysisAgent } from "@ontomato/contracts/analysis-agent";
+import type { AgentLineupEntry, AnalysisAgent } from "@ontomato/contracts/analysis-agent";
 import { computed, ref } from "vue";
 import { defineStore } from "pinia";
 import { ElMessage, ElMessageBox } from "element-plus";
@@ -62,7 +62,11 @@ function createRunId(prefix: string, id: string) {
 }
 
 export const useAnalysisStore = defineStore("analysis", () => {
-  const agents = ref<AnalysisAgent[]>([]);
+  /** Enabled entries of the domain's agent lineup, Q&A included, in the server's display order. */
+  const agentLineup = ref<AgentLineupEntry[]>([]);
+  const agents = computed<AnalysisAgent[]>(() =>
+    agentLineup.value.flatMap((entry) => (entry.kind === "agent" ? [entry.agent] : []))
+  );
   const selectedAgentId = ref("");
   const tasks = ref<AnalysisTask[]>([]);
   const taskTotal = ref(0);
@@ -248,7 +252,8 @@ export const useAnalysisStore = defineStore("analysis", () => {
 
   async function loadAgents(): Promise<void> {
     try {
-      agents.value = await analysisAgentApi.getEnabledAgents();
+      const lineup = await analysisAgentApi.getAgentLineup();
+      agentLineup.value = lineup.filter((entry) => entry.kind === "qa" || entry.agent.isEnabled);
     } catch (error) {
       console.error(workbenchContent().console.loadAgentsFailed, error);
     }
@@ -1210,6 +1215,7 @@ export const useAnalysisStore = defineStore("analysis", () => {
   }
 
   return {
+    agentLineup,
     agents,
     selectedAgentId,
     tasks,

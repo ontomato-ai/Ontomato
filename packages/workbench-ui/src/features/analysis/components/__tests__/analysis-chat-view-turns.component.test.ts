@@ -157,7 +157,7 @@ function seed(options: {
 }) {
   const store = useAnalysisStore();
   const report = options.report ?? false;
-  store.agents = [agent(report)];
+  store.agentLineup = [{ kind: "agent", agent: agent(report) }];
   store.selectedAgentId = "agent-1";
   store.tasks = [taskFixture({ reportDeliverableEnabled: report, ...options.taskPatch })];
   store.currentTaskId = "task-1";
@@ -1318,7 +1318,7 @@ it("does not carry L2 expansion or L3 worker traces between historical runs that
 describe("conversation loading placeholder", () => {
   it("stays static with no task selected", () => {
     const store = useAnalysisStore();
-    store.agents = [agent(false)];
+    store.agentLineup = [{ kind: "agent", agent: agent(false) }];
     store.selectedAgentId = "agent-1";
     store.tasks = [];
     store.currentTaskId = null;
@@ -1340,7 +1340,7 @@ describe("conversation loading placeholder", () => {
       })
     );
     const store = useAnalysisStore();
-    store.agents = [agent(false)];
+    store.agentLineup = [{ kind: "agent", agent: agent(false) }];
     store.selectedAgentId = "agent-1";
     const empty = taskFixture({ question: "" });
     store.tasks = [empty];

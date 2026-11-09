@@ -11,11 +11,11 @@ const getTurns = vi.fn();
 const continueConversation = vi.fn();
 const streamTaskExecution = vi.fn();
 const streamFollowUp = vi.fn();
-const getEnabledAgents = vi.fn();
+const getAgentLineup = vi.fn();
 const getRunSnapshot = vi.fn();
 
 vi.mock("../../api", () => ({
-  analysisAgentApi: { getEnabledAgents: () => getEnabledAgents() },
+  analysisAgentApi: { getAgentLineup: () => getAgentLineup() },
   analysisTaskApi: {
     listTaskPage: (...args: unknown[]) => listTaskPage(...args),
     getTask: (...args: unknown[]) => getTask(...args),
@@ -72,7 +72,11 @@ beforeEach(() => {
   setActivePinia(createPinia());
   vi.clearAllMocks();
   streamTaskExecution.mockReturnValue(() => {});
-  getEnabledAgents.mockResolvedValue([harnessAgent, reportAgent]);
+  getAgentLineup.mockResolvedValue([
+    { kind: "qa" },
+    { kind: "agent", agent: harnessAgent },
+    { kind: "agent", agent: reportAgent },
+  ]);
   listTaskPage.mockResolvedValue({ tasks: [], total: 0, limit: 50, offset: 0 });
   getTaskMessages.mockResolvedValue({ messages: [] });
   getTurns.mockResolvedValue([]);
