@@ -6,6 +6,7 @@ import type { ArtifactRendererProps } from "../types";
 import { useDarkMode } from "../useDarkMode";
 import { useArtifactText } from "./useArtifactBlob";
 import { chartReadingLayout } from "./chart-layout";
+import { chartBrandColors } from "./chart-colors";
 
 /** .chart.json: an ECharts option object as plain JSON, drawn with the host's chart theme. */
 const props = defineProps<ArtifactRendererProps>();
@@ -17,13 +18,19 @@ const theme = computed(() => shell.chartTheme.value(isDark.value));
 const drawnHeight = ref<number>();
 const drawError = ref(false);
 
-/** The file's option in the reading layout; a file that is not an option object, or cannot be laid out, is invalid. */
+/**
+ * The file's option in the brand colours of the theme and the reading layout; a file that is not an option object,
+ * or cannot be recoloured or laid out, is invalid.
+ */
 const option = computed<{ value: Record<string, unknown> | null; invalid: boolean }>(() => {
   if (text.value === null) return { value: null, invalid: false };
   try {
     const value: unknown = JSON.parse(text.value);
     return value && typeof value === "object" && !Array.isArray(value)
-      ? { value: chartReadingLayout(value as Record<string, unknown>, drawnHeight.value, props.presentation), invalid: false }
+      ? {
+          value: chartReadingLayout(chartBrandColors(value as Record<string, unknown>, theme.value), drawnHeight.value, props.presentation),
+          invalid: false,
+        }
       : { value: null, invalid: true };
   } catch {
     return { value: null, invalid: true };

@@ -1,6 +1,10 @@
 <script setup lang="ts">
 import type { ArtifactRendererProps } from "../types";
 import { useArtifactText } from "./useArtifactBlob";
+import { computed, inject } from "vue";
+import { shellContextKey } from "../context";
+import { useDarkMode } from "../useDarkMode";
+import { themedChartHtml } from "@ontomato/contracts/chart-presentation";
 
 /**
  * Agent HTML runs in an opaque-origin sandbox: scripts only, no same-origin, forms, popups or
@@ -8,12 +12,20 @@ import { useArtifactText } from "./useArtifactBlob";
  */
 const props = defineProps<ArtifactRendererProps>();
 const { text, error } = useArtifactText(props);
+const shell = inject(shellContextKey)!;
+const dark = useDarkMode();
+const html = computed(() => {
+  const theme = shell.chartTheme.value(dark.value);
+  const css = getComputedStyle(document.documentElement);
+  const properties = Object.fromEntries(Array.from(css).filter((key) => key.startsWith("--el-") || key.startsWith("--chart-")).map((key) => [key, css.getPropertyValue(key).trim()]));
+  return themedChartHtml(text.value ?? "", theme, properties);
+});
 </script>
 
 <template>
   <div class="html-artifact" :class="presentation">
     <div v-if="error" class="state">{{ error }}</div>
-    <iframe v-else-if="text !== null" :srcdoc="text" sandbox="allow-scripts" :title="title" referrerpolicy="no-referrer" />
+    <iframe v-else-if="text !== null" :srcdoc="html" sandbox="allow-scripts" :title="title" referrerpolicy="no-referrer" />
   </div>
 </template>
 

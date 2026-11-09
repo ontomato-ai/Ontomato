@@ -7,6 +7,8 @@ import type { QuerySubgraph } from "@ontomato/contracts/query-subgraph";
 import { jsonTable, parseCsv, type TableData } from "./table-data";
 import { useArtifactText } from "./useArtifactBlob";
 import SubgraphView from "./SubgraphView.vue";
+import SlotOutlet from "../components/SlotOutlet.vue";
+import DatasetSelectionButton from "../components/DatasetSelectionButton.vue";
 
 /**
  * .csv and .json datasets: paginated table; non-tabular JSON falls back to formatted text.
@@ -101,9 +103,10 @@ watch(() => props.artifact.id, () => {
       <template v-else>
       <div v-if="continueConversation && selected.length" class="selection-actions">
         <span>{{ labels.selectedRows?.(selected.length) ?? `${selected.length} selected` }}</span>
-        <button type="button" :disabled="continuing" @click="analyzeSelection()">{{ labels.analyzeSelection ?? 'Analyze selection' }}</button>
-        <button v-if="selected.length > 1" type="button" :disabled="continuing" @click="analyzeSelection(true)">{{ labels.compareSelection ?? 'Compare selection' }}</button>
-        <button type="button" :disabled="continuing" @click="selected = []">{{ labels.clearSelection ?? 'Clear selection' }}</button>
+        <SlotOutlet :content="shell.slots?.datasetSelectionActions" :scope="{ artifact, selectedRowIndices: selected, refreshConversation: shell.refreshConversation }" />
+        <DatasetSelectionButton :disabled="continuing" @click="analyzeSelection()">{{ labels.analyzeSelection ?? 'Analyze selection' }}</DatasetSelectionButton>
+        <DatasetSelectionButton v-if="selected.length > 1" :disabled="continuing" @click="analyzeSelection(true)">{{ labels.compareSelection ?? 'Compare selection' }}</DatasetSelectionButton>
+        <DatasetSelectionButton :disabled="continuing" @click="selected = []">{{ labels.clearSelection ?? 'Clear selection' }}</DatasetSelectionButton>
       </div>
       <p v-if="continuationError" class="selection-error" role="alert">{{ continuationError }}</p>
       <div class="table-scroll">
@@ -153,11 +156,7 @@ watch(() => props.artifact.id, () => {
   overflow: auto;
 }
 .selection-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--spacing-sm); padding: var(--spacing-sm) var(--spacing-md); border-bottom: 1px solid var(--el-border-color-light); font-size: var(--text-xs); }
-.selection-actions button { min-height: var(--control-height-sm); padding: 0 var(--spacing-sm); border: 1px solid var(--el-border-color); border-radius: var(--radius-sm); background: var(--el-bg-color); color: var(--el-text-color-regular); font: inherit; cursor: pointer; }
-.selection-actions button:hover:not(:disabled) { background: var(--el-fill-color-light); border-color: var(--el-border-color-dark); }
-.selection-actions button:active:not(:disabled) { background: var(--el-fill-color); }
-.selection-actions button:disabled { cursor: not-allowed; color: var(--el-disabled-text-color); }
-.selection-actions button:focus-visible, .select-column input:focus-visible { outline: 2px solid var(--el-color-primary); outline-offset: 2px; }
+.select-column input:focus-visible { outline: 2px solid var(--el-color-primary); outline-offset: 2px; }
 .select-column { width: 28px; }
 .select-column input { accent-color: var(--el-color-primary); cursor: pointer; }
 tr.selected td { background: var(--el-color-primary-light-9); }

@@ -17,7 +17,7 @@
       :class="['chart-wrapper', { 'chart-wrapper--transparent-loading': transparentLoading }]"
       :element-loading-text="t('common.loading')"
     >
-      <EChart v-if="chart.option" :option="chart.option" :theme="theme" height="100%" />
+      <EChart v-if="chart.option" :option="brandedOption" :theme="theme" height="100%" />
       <ChartDataOverlay :open="dataOpen" :tabular="tabular" @view-dsl="handleViewDsl" />
       <div v-if="state === 'empty'" class="chart-mask">
         {{ partialNotice || t("common.noData") }}
@@ -63,6 +63,7 @@ import { extractTabularDataFromOption, safeCloneOption } from "./utils/chartTabu
 import { modifyResultSetName, deleteResultSet } from "../api";
 import { clamp, parseGridColumns, partialResultNotice } from "./utils/dashboardHelper";
 import { nativeEchartsTheme } from "./utils/echartsTheme";
+import { chartBrandColors } from "@ontomato/contracts/chart-presentation";
 import { useI18n } from "vue-i18n";
 import { workbenchContent } from "../../../content";
 import { useTheme } from "../../../composables/useTheme";
@@ -94,6 +95,8 @@ const rootRef = ref(null);
 let interactable = null;
 const { isDark } = useTheme();
 const theme = computed(() => nativeEchartsTheme(isDark.value));
+/** The card's option in the brand colours of the dashboard theme. */
+const brandedOption = computed(() => chartBrandColors(props.chart.option, theme.value));
 const dataOpen = ref(false);
 const tabular = ref(null);
 

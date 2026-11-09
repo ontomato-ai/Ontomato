@@ -35,6 +35,7 @@ import { computed, onBeforeUnmount, watch } from "vue";
 import { EChart } from "@ontomato/foundation-ui/chart";
 import ChartDataTable from "./ChartDataTable.vue";
 import { nativeEchartsTheme } from "./utils/echartsTheme";
+import { chartBrandColors } from "@ontomato/contracts/chart-presentation";
 import { useI18n } from "vue-i18n";
 import { workbenchContent } from "../../../content";
 import { useTheme } from "../../../composables/useTheme";
@@ -54,9 +55,15 @@ const emit = defineEmits(["close"]);
 
 const { isDark } = useTheme();
 const { zoomChartTheme } = workbenchContent().dashboard;
-const theme = computed(() => (zoomChartTheme === "dashboard" ? nativeEchartsTheme(isDark.value) : undefined));
-/** The card's chart on the dialog's background; the dialog header shows the title. */
-const modalOption = computed(() => ({ ...props.option, backgroundColor: "transparent", title: undefined }));
+const dashboardTheme = computed(() => nativeEchartsTheme(isDark.value));
+const theme = computed(() => (zoomChartTheme === "dashboard" ? dashboardTheme.value : undefined));
+/**
+ * The card's chart on the dialog's background, without the title the dialog header shows; brand colours come from
+ * the dashboard theme in either zoom theme.
+ */
+const modalOption = computed(() =>
+  chartBrandColors({ ...props.option, backgroundColor: "transparent", title: undefined }, dashboardTheme.value)
+);
 
 function handleMaskClick(e) {
   if (e.target?.classList?.contains("ai-dashboard-chart-zoom-modal")) emit("close");

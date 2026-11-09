@@ -97,7 +97,7 @@ const THEME = {
         "$themeColor": "--el-color-danger-light-9"
       },
       "border": {
-        "$themeColor": "--el-color-danger"
+        "$themeColor": "--chart-5"
       }
     },
     "gap": {
@@ -105,7 +105,7 @@ const THEME = {
         "$themeColor": "--el-color-warning-light-9"
       },
       "border": {
-        "$themeColor": "--el-color-warning"
+        "$themeColor": "--chart-4"
       }
     },
     "batch": {
@@ -113,7 +113,7 @@ const THEME = {
         "$themeColor": "--el-color-success-light-9"
       },
       "border": {
-        "$themeColor": "--el-color-success"
+        "$themeColor": "--chart-3"
       }
     },
     "event": {
@@ -121,7 +121,7 @@ const THEME = {
         "$themeColor": "--el-color-info-light-9"
       },
       "border": {
-        "$themeColor": "--el-color-info"
+        "$themeColor": "--chart-2"
       }
     },
     "product": {
@@ -129,7 +129,7 @@ const THEME = {
         "$themeColor": "--el-color-primary-light-9"
       },
       "border": {
-        "$themeColor": "--el-color-primary"
+        "$themeColor": "--chart-1"
       }
     },
     "material": {
@@ -137,7 +137,7 @@ const THEME = {
         "$themeColor": "--el-color-success-light-9"
       },
       "border": {
-        "$themeColor": "--el-color-success"
+        "$themeColor": "--chart-7"
       }
     },
     "party": {
@@ -145,7 +145,7 @@ const THEME = {
         "$themeColor": "--el-color-primary-light-9"
       },
       "border": {
-        "$themeColor": "--el-color-primary"
+        "$themeColor": "--chart-6"
       }
     },
     "other": {
@@ -153,7 +153,7 @@ const THEME = {
         "$themeColor": "--el-color-info-light-9"
       },
       "border": {
-        "$themeColor": "--el-color-info"
+        "$themeColor": "--chart-8"
       }
     }
   }

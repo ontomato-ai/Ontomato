@@ -99,7 +99,7 @@ function generateHtml({ title, nodes, links, layout, directed, showRelationLabel
   const types=[...new Set(nodes.map(n=>n.type||'Other'))];
   ${resolveThemeColors.toString()}
   ${observeThemeChanges.toString()}
-  const themeTokens={"bg": {"$themeColor": "--el-bg-color"}, "text": {"$themeColor": "--el-text-color-primary"}, "regular": {"$themeColor": "--el-text-color-regular"}, "muted": {"$themeColor": "--el-text-color-secondary"}, "border": {"$themeColor": "--el-border-color"}, "overlay": {"$themeColor": "--el-bg-color-overlay"}, "primary": {"$themeColor": "--el-color-primary"}, "danger": {"$themeColor": "--el-color-danger"}, "warning": {"$themeColor": "--el-color-warning"}, "palette": [{"$themeColor": "--el-color-primary"}, {"$themeColor": "--el-color-primary-dark-2"}, {"$themeColor": "--el-color-primary-light-3"}, {"$themeColor": "--el-color-success"}, {"$themeColor": "--el-color-info"}, {"$themeColor": "--el-color-warning"}, {"$themeColor": "--el-color-danger"}, {"$themeColor": "--el-text-color-regular"}, {"$themeColor": "--el-text-color-secondary"}, {"$themeColor": "--el-color-primary-light-5"}]};
+   const themeTokens={"bg": {"$themeColor": "--el-bg-color"}, "text": {"$themeColor": "--el-text-color-primary"}, "regular": {"$themeColor": "--el-text-color-regular"}, "muted": {"$themeColor": "--el-text-color-secondary"}, "border": {"$themeColor": "--el-border-color"}, "overlay": {"$themeColor": "--el-bg-color-overlay"}, "primary": {"$themeColor": "--el-color-primary"}, "danger": {"$themeColor": "--el-color-danger"}, "warning": {"$themeColor": "--el-color-warning"}, "palette": Array.from({length:8},(_,index)=>({"$themeColor":"--chart-"+(index+1)}))};
   let previousTheme='';
   let nodeData=[];
   function renderTheme() {

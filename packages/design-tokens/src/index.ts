@@ -85,6 +85,8 @@ export interface BrandSource {
   dark: BrandColors;
   /** Categorical chart and graph palette per mode, fixed order (DESIGN.md `dataviz.categorical`). */
   dataviz: Readonly<Record<BrandMode, readonly string[]>>;
+  /** A fixed product colour card uses labels and mark outlines instead of standalone colour contrast. */
+  datavizLabeled?: boolean;
 }
 
 const LADDER = [3, 5, 7, 8] as const;
@@ -261,7 +263,7 @@ export function brandContrastFailures(brand: BrandSource): string[] {
     // reading requirement.
     check("rail and panel tones apart", c.rail, c.panel, BAND_SEPARATION);
     check("panel and workspace tones apart", c.panel, c.workspace, BAND_SEPARATION);
-    brand.dataviz[mode].forEach((color, index) => check(`chart ${index + 1} on surface`, color, c.surface, GRAPHIC));
+    if (!brand.datavizLabeled) brand.dataviz[mode].forEach((color, index) => check(`chart ${index + 1} on surface`, color, c.surface, GRAPHIC));
   }
   return failures;
 }

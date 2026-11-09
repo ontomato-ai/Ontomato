@@ -1167,12 +1167,10 @@ function readTheme(root) {
       tooltipText: color("--el-text-color-primary"),
       onPrimary: color("--on-primary", "Canvas"),
       primaryColor: primary,
-      colors: [primary, ...["success", "warning", "danger", "info"].map((name) => color("--el-color-" + name)),
-        ...[3, 5, 7].map((level) => color("--el-color-primary-light-" + level, primary))],
-      visualMapColor: [9, 7, 5, 3].map((level) => color("--el-color-primary-light-" + level, primary)),
+      colors: Array.from({ length: 8 }, (_, index) => color("--chart-" + (index + 1), primary)),
+      visualMapColor: [color("--chart-8", primary), primary],
       shadowColor: colorWithAlpha(primary, 0.25),
     };
-    theme.visualMapColor.push(primary, color("--el-color-primary-dark-2", primary));
     return theme;
   } finally {
     probe.remove();

@@ -15,6 +15,7 @@ import { useShellLabels } from "../../../composables/useShellLabels";
 import TurnDiagnoseButton from "../../diagnosis/components/TurnDiagnoseButton.vue";
 import ConversationActions from "./ConversationActions.vue";
 import DatasetActions from "./DatasetActions.vue";
+import DatasetDrilldown from "./DatasetDrilldown.vue";
 import WorkbenchAppearanceDialog from "./WorkbenchAppearanceDialog.vue";
 import { workbenchFeatures } from "../features";
 import ActionProposalRenderer from "./ActionProposalRenderer.vue";
@@ -205,11 +206,11 @@ function appearanceSaved(value: WorkbenchAppearance) {
 
 <template>
   <AgentShell
-    agent-picker
     ref="shell"
     v-model:agent-id="agentId"
     v-model:feature-id="featureId"
     v-model:session-id="conversationId"
+    agent-picker
     :workbench="workbench"
     :title="workbench.label"
     :bottom="bottomEntry"
@@ -246,9 +247,12 @@ function appearanceSaved(value: WorkbenchAppearance) {
       />
       <slot v-else name="feature" :feature-id="page" />
     </template>
-    <template #artifact-actions="{ artifact }">
+    <template #dataset-selection-actions="{ artifact, selectedRowIndices, refreshConversation }">
+      <DatasetDrilldown :artifact="artifact" :selected-row-indices="selectedRowIndices" :refresh-conversation="refreshConversation" />
+    </template>
+    <template #artifact-actions="{ artifact, refreshConversation }">
       <!-- A dataset added to a board opens the dashboards application, which is where boards live. -->
-      <DatasetActions :artifact="artifact" @open-dashboard="openDashboardApplication" />
+      <DatasetActions :artifact="artifact" :refresh-conversation="refreshConversation" @open-dashboard="openDashboardApplication" />
     </template>
     <template #message-actions="{ sessionId, runId }">
       <TurnDiagnoseButton v-if="sessionId && runId" :session-id="sessionId" :run-id="runId" />
