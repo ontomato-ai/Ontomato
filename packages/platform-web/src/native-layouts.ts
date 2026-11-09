@@ -112,7 +112,7 @@ export function catalogPartition(applications: import("@ontomato/contracts/platf
   return applications.map((app) => {
     const embedded = app.kind === "hosted" || app.kind === "connected";
     const layout = embedded ? { sections: [] } : { ...nativeLayouts[app.entry.renderer!], ...renderers[app.entry.renderer!] };
-    return { ...layout, id: app.id, label: app.names[locale] ?? app.names.en!, icon: app.icon, rail: app.rail,
+    return { ...layout, id: app.id, label: app.names[locale] ?? app.names.en!, description: app.descriptions[locale] ?? app.descriptions.en ?? null, icon: app.icon, rail: app.rail,
       prefix: embedded ? `/applications/${app.id}` : app.entry.path,
       home: embedded ? `/applications/${app.id}` : app.entry.home ?? layout.home };
   });

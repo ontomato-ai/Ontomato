@@ -1,3 +1,4 @@
+import { catalogFixture } from "../../../../../../packages/platform-web/src/__tests__/fixtures";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { defineComponent, h } from "vue";
 
@@ -77,7 +78,7 @@ describe("open-source Ontology Service page", () => {
     window.__APP_CONFIG__ = { API_BASE: "/custom-base/api/", INITIAL_ROUTE: "" };
     vi.stubGlobal("fetch", async (url: string, init: { headers?: unknown } = {}) => {
       requests.push({ url, headers: (init.headers ?? {}) as Record<string, string> });
-      return new Response(JSON.stringify({ success: true, data: [] }), { status: statusFor(url) });
+      return new Response(JSON.stringify({ success: true, data: new URL(url, window.location.origin).pathname.endsWith("/platform/applications") ? catalogFixture() : [] }), { status: statusFor(url) });
     });
   });
 
@@ -99,9 +100,10 @@ describe("open-source Ontology Service page", () => {
     expect(document.querySelector(".panel-title")).toBeNull();
     expect(document.querySelector(".platform-app-menu")).not.toBeNull();
     expect([...document.querySelectorAll(".platform-app-menu .group-heading")].map((heading) => heading.textContent)).toEqual([
-      "Ontology",
-      "Assets",
-      "Knowledge",
+      "Facts",
+      "Capabilities",
+      "Governance",
+      "Products",
     ]);
     expect(document.querySelector(".platform-app-menu .page-row.active .page-label")?.textContent).toBe("Object Types");
     // The manager's own frame fills the page beside that menu.
@@ -123,11 +125,8 @@ describe("open-source Ontology Service page", () => {
     );
     // The foot is a section of its own, above the account and outside the scrolling area.
     sections.push([...document.querySelectorAll(".rail-foot .rail-label")].map((row) => row.textContent ?? ""));
-    expect(sections).toEqual([
-      ["Ontology manager", "Object browser"],
-      ["Agent Platform", "Operations diagnosis", "Knowledge governance", "Dashboards", "Scheduled tasks"],
-      ["System settings"],
-    ]);
+    const catalog = catalogFixture();
+    expect(sections).toEqual(["top", "apps", "bottom"].map(rail => catalog.filter(app => app.rail === rail).map(app => app.names.en)));
     // The object browser owns the graph and data browsing, and draws its own pages.
     expect(document.querySelector(".rail-row.active .rail-label")?.textContent).toBe("Object browser");
     expect(document.querySelector(".app-panel")).toBeNull();
@@ -185,7 +184,7 @@ describe("open-source Ontology Service page", () => {
     expect(sessionStorage.getItem("ontology_manager_token")).toBeNull();
     expect(requests.length).toBeGreaterThan(0);
     for (const request of requests) {
-      expect(request.url.startsWith(new URL("/custom-base/api/data-query/", window.location.href).href)).toBe(true);
+      expect(new URL(request.url, window.location.href).href.startsWith(new URL("/custom-base/api/data-query/", window.location.href).href)).toBe(true);
       expect(request.headers).not.toHaveProperty("tk");
       expect(request.headers).not.toHaveProperty("x-api-key");
     }
