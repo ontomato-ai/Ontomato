@@ -5,7 +5,7 @@ import { ElMessage, ElMessageBox } from "element-plus";
 import { useI18n } from "vue-i18n";
 import { ExternalLink, RefreshCw, Trash2 } from "lucide-vue-next";
 import CodeMirrorEditor from "../../../components/CodeMirrorEditor.vue";
-import { renderAgentMarkdown } from "../../../utils/agent-markdown";
+import { MarkdownView } from "@ontomato/foundation-ui/markdown";
 import type {
   AssistantAgentDefinition,
   AssistantAgentInput,
@@ -278,7 +278,7 @@ defineExpose({ dirty });
               {{ promptPreview ? t("common.edit") : t("admin.agentEditorPreview") }}
             </el-button>
           </div>
-          <div v-if="promptPreview" class="prompt-preview markdown-body" v-html="renderAgentMarkdown(form.systemPrompt)" />
+          <div v-if="promptPreview" class="prompt-preview"><MarkdownView :content="form.systemPrompt" /></div>
            <CodeMirrorEditor v-else v-model="form.systemPrompt" language="markdown" :min-height="480" />
           <small class="prompt-count">{{ t("admin.agentEditorCharacters", { count: form.systemPrompt.length }) }} · Markdown</small>
         </section>

@@ -176,16 +176,16 @@ export default [
   },
   {
     // The foundation UI is the bottom layer every application and the SDK share (one implementation per
-    // capability, exported by capability subpath): it depends only on Vue, Element Plus and ECharts, never on
-    // a platform package or a host. It may name the wire contracts' types, so a shape it draws has one definition,
-    // but carries no contract code: the TypeScript form of the rule tells a type import from a value import.
+    // capability, exported by capability subpath): it depends only on Vue, Element Plus, ECharts and markstream-vue,
+    // never on a platform package or a host. It may name the wire contracts' types, so a shape it draws has one
+    // definition, but carries no contract code: the TypeScript form of the rule tells a type import from a value import.
     files: ["packages/foundation-ui/src/**/*.{ts,vue}"],
     rules: {
       "no-restricted-imports": "off",
       "@typescript-eslint/no-restricted-imports": restrict([
         {
-          regex: "^(?!(vue|element-plus|echarts|@ontomato/contracts)(/|$)|\\.)",
-          message: "foundation-ui may depend only on Vue, Element Plus and ECharts; the packages that use it depend on it, not the other way round",
+          regex: "^(?!(vue|element-plus|echarts|markstream-vue|@ontomato/contracts)(/|$)|\\.)",
+          message: "foundation-ui may depend only on Vue, Element Plus, ECharts and markstream-vue; the packages that use it depend on it, not the other way round",
         },
         {
           regex: "^@ontomato/contracts(/|$)",

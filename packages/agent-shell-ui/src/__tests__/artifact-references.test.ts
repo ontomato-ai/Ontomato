@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { getMarkdown, parseMarkdownToStructure } from "markstream-vue";
+import { createApp, defineComponent, h, nextTick, type PropType } from "vue";
 import { artifactPath } from "@ontomato/contracts/agent-artifact-markdown";
+import { MarkdownView } from "@ontomato/foundation-ui/markdown";
 import { resolveArtifactRenderer } from "../artifacts";
 import { runsAnalystAsk, skillOfCommand, stepActivity } from "../tools";
-import { shellParseOptions } from "../markdown";
 
 /** The artifact Markdown contract: which destinations are files, and which renderer gets them. */
 describe("artifact references", () => {
@@ -49,15 +49,23 @@ describe("artifact references", () => {
     expect(runsAnalystAsk(reading)).toBe(false);
   });
 
-  it("keeps unclosed references pending while streaming and line breaks as breaks", () => {
-    const parse = (source: string, final: boolean) =>
-      parseMarkdownToStructure(source, getMarkdown(), { ...shellParseOptions, final });
-    const [streaming] = parse("![Sales](outputs/sal", false) as { children: { type: string; loading?: boolean }[] }[];
-    expect(streaming!.children.at(-1)).toMatchObject({ type: "image", loading: true });
-    const [settled] = parse("a\nb [Report](outputs/r.md)", true) as {
-      children: { type: string; href?: string; loading?: boolean }[];
-    }[];
-    expect(settled!.children.map((node) => node.type)).toEqual(["text", "hardbreak", "text", "link"]);
-    expect(settled!.children.at(-1)).toMatchObject({ href: "outputs/r.md", loading: false });
+  it("keeps unclosed references pending while streaming", async () => {
+    // Stand-ins for the shell's artifact nodes: they show what MarkdownView hands them.
+    const reference = defineComponent({
+      props: { node: { type: Object as PropType<{ href?: string; src?: string; loading?: boolean }>, required: true } },
+      setup: (props) => () =>
+        h("span", { class: "reference", "data-loading": String(Boolean(props.node.loading)) }, props.node.href ?? props.node.src),
+    });
+    const nodes = { link: reference, image: reference };
+    const draw = async (content: string, final: boolean) => {
+      const element = document.createElement("div");
+      createApp(() => h(MarkdownView, { content, final, nodes })).mount(element);
+      await nextTick();
+      return element.querySelector(".reference")!;
+    };
+    expect((await draw("![Sales](outputs/sal", false)).getAttribute("data-loading")).toBe("true");
+    const settled = await draw("a [Report](outputs/r.md)", true);
+    expect(settled.getAttribute("data-loading")).toBe("false");
+    expect(settled.textContent).toBe("outputs/r.md");
   });
 });
