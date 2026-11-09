@@ -1,10 +1,8 @@
 import type { MarkdownIt, MarkdownToken, ParseOptions } from "markstream-vue";
 
 // The product Markdown dialect is GFM, plus two rules: a single newline is a line break, and a single tilde is plain
-// text. A text then means the same in every page as in the server's PDF and PPT exports (content rendering spec).
-// markstream's syntax beyond GFM is switched off below, so its markers show as written. Still differing from the
-// exports: markstream's [1] citation badges, its typographic replacements ("quotes", --, (c), ...) and links on bare
-// domain names such as example.com.
+// text (content rendering spec). Whatever markstream reads beyond GFM is switched off here, so it shows as written,
+// as in the server's PDF and PPT exports.
 
 /** A single newline is a line break, not a space: soft breaks become hard ones before the parser builds nodes. */
 function promoteSoftBreaks(tokens: MarkdownToken[]): MarkdownToken[] {
@@ -15,7 +13,29 @@ function promoteSoftBreaks(tokens: MarkdownToken[]): MarkdownToken[] {
   return tokens;
 }
 
-export const parseOptions: ParseOptions = { preTransformTokens: promoteSoftBreaks };
+/**
+ * GFM links a bare address only when it has a scheme, starts with www. or is an email address. markstream also links
+ * bare domain names, such as example.com, main.py or deploy.sh: those links go back to their plain text.
+ */
+function unlinkBareDomains(tokens: MarkdownToken[]): MarkdownToken[] {
+  for (const { children } of tokens) {
+    if (!children) continue;
+    for (let i = children.length - 1; i >= 0; i--) {
+      const open = children[i];
+      if (open.type !== "link_open" || open.markup !== "linkify") continue;
+      const text = children[i + 1];
+      const address = text.content!;
+      const href = open.attrs!.find(([name]) => name === "href")![1];
+      if (/^[a-z][a-z0-9+.-]*:\/\//i.test(address) || address.startsWith("www.") || href.startsWith("mailto:")) continue;
+      children.splice(i, 3, text);
+    }
+  }
+  return tokens;
+}
+
+export const parseOptions: ParseOptions = {
+  preTransformTokens: (tokens) => unlinkBareDomains(promoteSoftBreaks(tokens)),
+};
 
 /** The parser rules switched off, each a syntax markstream adds to GFM. */
 const beyondGfm = [
@@ -44,8 +64,14 @@ const beyondGfm = [
   "container_note",
   "container_caution",
   "vmr_container_fallback",
+  // Typographic replacements: "quotes" and 'quotes' stay straight, --, (c), ... and +- stay as typed.
+  "replacements",
+  "smartquotes",
 ];
 
 export function productMarkdownIt(md: MarkdownIt): MarkdownIt {
+  // [1] badges: markstream's citation rule shares its name with the block rule that reads standard [label]: url link
+  // definitions, which GFM has, so only the inline one is switched off.
+  md.inline.ruler.disable("reference");
   return md.disable(beyondGfm);
 }
