@@ -21,6 +21,7 @@ import type { PlatformAppDeclaration } from "./apps";
 const props = defineProps<{
   /** Edition-owned page layouts and link launchers; the catalog owns application metadata. */
   renderers?: Record<string, NativeLayout>;
+  brand?: { name: string; logo?: string };
 }>();
 
 const host = usePlatformHost();
@@ -113,11 +114,13 @@ const blocked = computed(() => {
 <template>
   <PlatformLayout
     :apps="declarations"
+    :loading="catalog.loading.value"
     :shown-page="shownPage"
     :account="account"
     :preferences="preferences"
     :locale-names="localeNames"
     :labels="labels"
+    :brand="brand ?? { name: 'Ontomato' }"
     :page-actions="pageActions"
     :blocked="catalog.error.value ? { reason: 'no-pages', message: catalog.error.value } : blocked"
     @select-app="selectApp"

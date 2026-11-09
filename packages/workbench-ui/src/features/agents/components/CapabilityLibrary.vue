@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from "vue";
+import { computed, onMounted, ref, watch } from "vue";
 import { ElMessage, ElMessageBox, type UploadFile } from "element-plus";
 import { useI18n } from "vue-i18n";
 import { ChevronRight, Download, Pencil, Plug, Plus, RefreshCw, Search, Trash2, Upload } from "lucide-vue-next";
@@ -30,7 +30,7 @@ import SkillFormDialog from "../../skills/components/SkillFormDialog.vue";
  * can use is read in one place: its type, where it comes from, which agents use it and whether it is available. Editing,
  * uploading, adding, checking a connection and deleting reuse the existing interfaces and dialogs.
  */
-const { t } = useI18n();
+const { t, locale } = useI18n();
 
 interface RowBase {
   key: string;
@@ -113,6 +113,7 @@ async function load() {
   }
 }
 onMounted(load);
+watch(locale, load);
 
 const visibleRows = computed(() => {
   const keyword = search.value.trim().toLowerCase();

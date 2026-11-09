@@ -1,6 +1,6 @@
 import type { SessionHistoryQuery } from "@ontomato/contracts/session-history";
 import { assistantOntologyContext } from "./context";
-import { assistantDescription } from "./labels";
+import { assistantDescription, assistantName } from "./labels";
 import { actionCatalogue } from "./actions";
 import { assistantActionContext } from "./action-context";
 import { ASSISTANT_INTERACTION_CONTEXT } from "./interaction-context";
@@ -39,6 +39,7 @@ import {
 } from "../../platform/agent-runtime/runtime";
 import { OntologyRetrievalClient } from "./ontology-retrieval";
 import { effectiveSystemPrompt } from "./prompts";
+import { resolveLocale } from "../../i18n";
 import { recentUserMessages } from "./user-quotes";
 import { transaction } from "../../infrastructure/postgres-transaction";
 import { HttpError } from "../../utils/errors";
@@ -69,7 +70,7 @@ export const assistantService = {
       agents: (await assistantStore.agents(owner.domainId, locale)).map((a) =>
         agentHostAgentSchema.parse({
           id: a.id,
-          name: a.name,
+          name: assistantName(a, locale),
           description: assistantDescription(a, locale),
           icon: a.icon ?? null,
           enabled: a.enabled,
@@ -311,14 +312,14 @@ export const assistantService = {
           recentUserMessages: userMessages,
         }, credentials);
         await client.start(sessionId, id, {
-          language: credentials.locale ?? "en",
+          language: resolveLocale(credentials.locale),
           input: {
             role: "user",
             content: message,
             timestamp: new Date(turn.created_at).getTime(),
           },
           definition: { agentId: session.agent_id, ...runDefinition(
-            effectiveSystemPrompt(a) +
+             effectiveSystemPrompt(a, resolveLocale(credentials.locale)) +
               "\n\nInitial ontology context:\n" +
               ontologyContext +
               "\n\n" +

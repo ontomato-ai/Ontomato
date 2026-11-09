@@ -214,7 +214,7 @@ td {
 th {
   position: sticky;
   top: 0;
-  background: var(--el-fill-color-light);
+  background: var(--el-fill-color-lighter);
   color: var(--el-text-color-secondary);
   font-weight: 600;
   font-size: var(--text-xs, 11px);

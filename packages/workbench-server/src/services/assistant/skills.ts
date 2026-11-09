@@ -8,6 +8,7 @@ import { readSkillMarkdown } from "../../core/skills/manifest";
 import { HttpError } from "../../utils/errors";
 import { skillManager, skillReference } from "../skills/skill-manager";
 import { publishSkill } from "../agent-runtime/skills";
+import { tForLocale } from "../../i18n";
 
 function platformSkills() {
   return ["assistant-report"].map((name) => {
@@ -25,9 +26,12 @@ export async function registerAssistantSkills() {
 }
 export async function assistantSkillCatalog(domainId: string, locale?: string) {
   return assistantSkillCatalogSchema.parse({ skills: [
-    ...platformSkills().map(({ root: _root, ...entry }) => entry),
+    ...platformSkills().map(({ root: _root, ...entry }) => ({ ...entry,
+      title: tForLocale(locale, "assistant.skills.report.title"),
+      description: tForLocale(locale, "assistant.skills.report.description") })),
     { skill: { namespace: { kind: "provider", provider: "ontology" }, name: "ontomato-analyst-assistant" },
-      title: "Ontology analyst", description: "Read ontology metadata and ask data questions", enabled: true },
+      title: tForLocale(locale, "assistant.skills.analyst.title"),
+      description: tForLocale(locale, "assistant.skills.analyst.description"), enabled: true },
     ...(await skillManager.getAllSkills(domainId, locale)).map((s) => ({
       skill: s.skill, title: s.title ?? s.id, description: s.description ?? "", enabled: s.enabled, tags: s.tags,
     })),

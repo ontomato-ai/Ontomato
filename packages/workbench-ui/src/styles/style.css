@@ -262,7 +262,7 @@ body {
 }
 
 .markdown-content th {
-  background: var(--el-fill-color);
+  background: var(--el-fill-color-lighter);
   font-weight: var(--font-semibold);
   color: var(--el-text-color-primary);
 }

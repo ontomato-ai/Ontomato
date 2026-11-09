@@ -3,6 +3,7 @@ import { applicationCatalogSchema, type CatalogApplication } from "@ontomato/con
 import { nodeApiRequest } from "@ontomato/workbench-ui";
 const applications = shallowRef<CatalogApplication[]>([]);
 const error = shallowRef<string | null>(null);
+const loading = shallowRef(true);
 export async function readApplicationCatalog(purpose = "navigation") {
   const response = await nodeApiRequest(`/api/data-query/platform/applications?purpose=${purpose}`, {});
   const body = await response.json();
@@ -10,9 +11,11 @@ export async function readApplicationCatalog(purpose = "navigation") {
   return applicationCatalogSchema.parse(body.data);
 }
 export function useApplicationCatalog() {
-  return { applications, error, async refresh() {
+  return { applications, error, loading, async refresh() {
+    loading.value = true;
     applications.value = []; error.value = null;
     try { applications.value = await readApplicationCatalog(); }
     catch (failure) { error.value = failure instanceof Error ? failure.message : String(failure); }
+    finally { loading.value = false; }
   } };
 }
