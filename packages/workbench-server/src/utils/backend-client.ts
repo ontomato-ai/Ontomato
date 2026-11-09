@@ -201,10 +201,14 @@ export function backendDelete(endpoint: string, url: string, options: BackendCal
   return backendRequest(endpoint, url, "DELETE", options) as Promise<BufferedBackendResponse>;
 }
 
+export function backendPut(endpoint: string, url: string, body: unknown, options: BackendCallOptions = {}): Promise<BufferedBackendResponse> {
+  return backendRequest(endpoint, url, "PUT", options, body) as Promise<BufferedBackendResponse>;
+}
+
 async function backendRequest(
   endpoint: string,
   url: string,
-  method: "GET" | "POST" | "DELETE",
+  method: "GET" | "POST" | "PUT" | "DELETE",
   options: BackendCallOptions & { stream?: boolean },
   body?: unknown
 ): Promise<BufferedBackendResponse | Response> {
@@ -236,7 +240,7 @@ async function backendRequest(
       const response = await fetch(url, {
         method,
         headers: { ...logHeaders(), ...(options.headers ?? buildBackendHeaders(token, userId, locale, apiKey)) },
-        ...(method === "POST" ? { body: JSON.stringify(body) } : {}),
+        ...(["POST", "PUT"].includes(method) ? { body: JSON.stringify(body) } : {}),
         signal: abortBridge.signal,
         dispatcher: backendDispatcher,
       } as NonNullable<Parameters<typeof fetch>[1]> & { dispatcher: Agent });

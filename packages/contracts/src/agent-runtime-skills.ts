@@ -69,6 +69,7 @@ export const runtimeIdentityEnvironment = [
   "ONTOMATO_CORRELATION_ID",
   "ONTOMATO_LANGUAGE",
   "ONTOMATO_WORKSPACE",
+  "ONTOMATO_SOURCE_DIR",
   "ONTOMATO_OUTPUT_DIR",
 ] as const;
 const variable = z.string().regex(/^[A-Za-z_][A-Za-z0-9_]*$/);

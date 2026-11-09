@@ -155,6 +155,14 @@ export class RuntimeStore {
         fingerprint text NOT NULL, execution jsonb NOT NULL, outputs jsonb NOT NULL DEFAULT '{}',
         PRIMARY KEY(host_id,domain_id,id))`);
       await c.query(`ALTER TABLE ${this.table("code_executions")} ADD COLUMN IF NOT EXISTS log_context jsonb NOT NULL DEFAULT '{}'`);
+      await c.query(`CREATE TABLE IF NOT EXISTS ${this.table("workspaces")} (
+        host_id text NOT NULL, domain_id text NOT NULL, id uuid NOT NULL, owner_id text NOT NULL,
+        name text NOT NULL, worker_uid bigint NOT NULL, active_run_id uuid,
+        created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now(),
+        PRIMARY KEY(host_id,domain_id,id));
+        CREATE INDEX IF NOT EXISTS workspaces_owner_idx ON ${this.table("workspaces")}(host_id,domain_id,owner_id,updated_at,id);
+        ALTER TABLE ${this.table("sessions")} ADD COLUMN IF NOT EXISTS workspace_id uuid;
+        CREATE INDEX IF NOT EXISTS sessions_workspace_idx ON ${this.table("sessions")}(host_id,domain_id,workspace_id);`);
       // Every per-run and per-session read path needs its own index; without them each read scans the whole table.
       await c.query(`
         CREATE INDEX IF NOT EXISTS messages_run_idx ON ${this.table("messages")}(host_id,domain_id,run_id,seq);
@@ -264,20 +272,24 @@ export class RuntimeStore {
       return false;
     });
   }
-  async createSession(scope: Scope, id: string) {
+  async createSession(scope: Scope, id: string, workspaceId?: string, owner?: string) {
     const replayed = await this.transaction(async (c) => {
+      if (workspaceId) {
+        const row = (await c.query(`SELECT id FROM ${this.table("workspaces")} WHERE host_id=$1 AND domain_id=$2 AND id=$3 AND owner_id=$4`, [...values(scope), workspaceId, owner])).rows[0];
+        if (!row) missing();
+      }
       const repeat = await this.admission(
         c,
         scope,
         id,
         "session",
-        digest({}),
+        digest(workspaceId ? { workspaceId, owner } : {}),
         id,
       );
       if (!repeat)
         await c.query(
-          `INSERT INTO ${this.table("sessions")} (host_id,domain_id,id) VALUES ($1,$2,$3)`,
-          [...values(scope), id],
+          `INSERT INTO ${this.table("sessions")} (host_id,domain_id,id,workspace_id) VALUES ($1,$2,$3,$4)`,
+          [...values(scope), id, workspaceId ?? null],
         );
       return repeat;
     });
@@ -299,6 +311,7 @@ export class RuntimeStore {
     return {
       id,
       domainId: scope.domainId,
+      workspaceId: row.workspace_id,
       activeRunId: row.active_run_id,
       latestRunId: row.latest_run_id,
       createdAt: row.created_at.toISOString(),
@@ -312,7 +325,7 @@ export class RuntimeStore {
     if (!ids.length) return [];
     // One statement gives session pointers and latest statuses the same MVCC snapshot.
     const { rows } = await this.pool.query(
-      `SELECT s.id,s.active_run_id,s.latest_run_id,s.created_at,s.updated_at,
+      `SELECT s.id,s.workspace_id,s.active_run_id,s.latest_run_id,s.created_at,s.updated_at,
         r.id AS run_id,r.run->>'status' AS run_status,r.run->>'stopReason' AS stop_reason
        FROM ${this.table("sessions")} s LEFT JOIN ${this.table("runs")} r
          ON r.host_id=s.host_id AND r.domain_id=s.domain_id AND r.session_id=s.id AND r.id=s.latest_run_id
@@ -327,6 +340,7 @@ export class RuntimeStore {
         session: {
           id,
           domainId: scope.domainId,
+          workspaceId: row.workspace_id,
           activeRunId: row.active_run_id,
           latestRunId: row.latest_run_id,
           createdAt: row.created_at.toISOString(),
@@ -360,6 +374,11 @@ export class RuntimeStore {
         )
       )
         return { run: (await this.run(scope, run.id, c)).run, replayed: true };
+      const binding = await this.session(scope, run.sessionId, c);
+      if (binding.workspaceId) {
+        const claimed = await c.query(`UPDATE ${this.table("workspaces")} SET active_run_id=$4 WHERE host_id=$1 AND domain_id=$2 AND id=$3 AND active_run_id IS NULL RETURNING id`, [...values(scope), binding.workspaceId, run.id]);
+        if (!claimed.rowCount) throw new RuntimeError(409, "WORKSPACE_BUSY", "Workspace has an active run");
+      }
       const session = (
         await c.query(
           `SELECT * FROM ${this.table("sessions")} WHERE host_id=$1 AND domain_id=$2 AND id=$3 FOR UPDATE`,
@@ -754,6 +773,7 @@ export class RuntimeStore {
           `UPDATE ${this.table("sessions")} SET active_run_id=NULL,updated_at=now() WHERE host_id=$1 AND domain_id=$2 AND id=$3 AND active_run_id=$4`,
           [...values(scope), run.sessionId, runId],
         );
+        await c.query(`UPDATE ${this.table("workspaces")} SET active_run_id=NULL,updated_at=now() WHERE host_id=$1 AND domain_id=$2 AND active_run_id=$3`, [...values(scope), runId]);
       }
       await c.query(
         `UPDATE ${this.table("runs")} SET seq=$4,run=$5 WHERE host_id=$1 AND domain_id=$2 AND id=$3`,

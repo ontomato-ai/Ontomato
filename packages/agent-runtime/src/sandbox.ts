@@ -1,4 +1,4 @@
-import { chmod, chown, mkdir, lstat } from "node:fs/promises";
+import { chmod, chown, mkdir, lstat, symlink } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { ChildProcess } from "node:child_process";
@@ -18,6 +18,7 @@ import type { InstalledSkill } from "./skills";
 
 export class SessionSandbox {
   readonly workspace: string;
+  private source?: string;
   private child?: ChildProcess;
   private closed?: Promise<void>;
   constructor(
@@ -39,18 +40,22 @@ export class SessionSandbox {
     const uid = await this.store.transaction(async (c) => {
       const row = (
         await c.query(
-          `SELECT worker_uid FROM ${this.store.table("sessions")} WHERE host_id=$1 AND domain_id=$2 AND id=$3 FOR UPDATE`,
+          `SELECT worker_uid, workspace_id FROM ${this.store.table("sessions")} WHERE host_id=$1 AND domain_id=$2 AND id=$3 FOR UPDATE`,
           [this.scope.hostId, this.scope.domainId, this.sessionId],
         )
       ).rows[0];
       if (!row) throw new Error("Session not found");
+      let workspaceUid: number | undefined;
+      if (row.workspace_id) {
+        const workspace = (await c.query(`SELECT worker_uid FROM ${this.store.table("workspaces")} WHERE host_id=$1 AND domain_id=$2 AND id=$3`, [this.scope.hostId, this.scope.domainId, row.workspace_id])).rows[0];
+        workspaceUid = Number(workspace.worker_uid);
+        this.source = path.join(this.root, "workspaces", digest([this.scope, row.workspace_id]), "tree");
+      }
       if (row.worker_uid !== null) {
         await lstat(this.workspace);
         return Number(row.worker_uid);
       }
-      const assigned = this.policy.development
-        ? 0
-        : await allocateUid(this.policy.uidStatePath!);
+      const assigned = workspaceUid ?? (this.policy.development ? 0 : await allocateUid(this.policy.uidStatePath!));
       // Allocation is monotonic; an interrupted initialization may burn a UID.
       await mkdir(this.workspace, { recursive: true, mode: 0o700 });
       await c.query(
@@ -69,6 +74,11 @@ export class SessionSandbox {
     await chmod(this.workspace, 0o1770);
     for (const name of ["work", "outputs", "home", "tmp"]) {
       const dir = path.join(this.workspace, name);
+      if (name === "work" && this.source) {
+        await removeWorkerFiles(dir);
+        await symlink(this.source, dir);
+        continue;
+      }
       await mkdir(dir, { recursive: true, mode: 0o700 });
       if (!this.policy.development) await chown(dir, uid, uid);
     }
@@ -114,6 +124,7 @@ export class SessionSandbox {
       ONTOMATO_CORRELATION_ID: correlationId,
       ONTOMATO_LANGUAGE: request.language,
       ONTOMATO_WORKSPACE: this.workspace,
+      ONTOMATO_SOURCE_DIR: path.join(this.workspace, "work"),
       ONTOMATO_OUTPUT_DIR: path.join(this.workspace, "outputs"),
     };
     const child = (this.child = spawnWorker(

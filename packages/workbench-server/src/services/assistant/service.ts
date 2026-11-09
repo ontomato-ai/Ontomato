@@ -55,6 +55,7 @@ const sessionView = (s: SessionRow, latestRun: LatestRun | null) =>
     id: s.id,
     agentId: s.agent_id,
     title: s.title,
+    workspaceId: s.workspace_id,
     createdAt: new Date(s.created_at).toISOString(),
     updatedAt: new Date(s.updated_at).toISOString(),
     latestRun: latestRun ? runStatusView(latestRun) : null,
@@ -76,15 +77,16 @@ export const assistantService = {
     };
   },
   /** Scheduled tasks start their conversations here too, marked with their origin. */
-  async create(id: string, owner: AssistantOwner, input: { agentId: string }, origin: SessionRow["origin"] = "user") {
+  async create(id: string, owner: AssistantOwner, input: { agentId: string; workspaceId?: string }, origin: SessionRow["origin"] = "user") {
     const { row, replayed } = await assistantStore.create(
       id,
       owner,
       input.agentId,
       origin,
+      input.workspaceId,
     );
     try {
-      await new RuntimeClient(owner.domainId).createSession(id);
+      await new RuntimeClient(owner.domainId, undefined, owner.userId).createSession(id, input.workspaceId);
     } catch (e) {
       if (e instanceof HttpError && e.status === 410) {
         await db().query(
@@ -95,7 +97,7 @@ export const assistantService = {
       }
       throw e;
     }
-    const latestRun = (await new RuntimeClient(owner.domainId).session(id))
+    const latestRun = (await new RuntimeClient(owner.domainId, undefined, owner.userId).session(id))
       .latestRun;
     return { session: sessionView(row, latestRun?.run ?? null), replayed };
   },
@@ -140,7 +142,7 @@ export const assistantService = {
     // One status read per page: a row names its latest run, and the run's body is only read by
     // the history call that opens the conversation.
     const statuses = selected.length
-      ? await new RuntimeClient(owner.domainId).sessionStatuses(
+      ? await new RuntimeClient(owner.domainId, undefined, owner.userId).sessionStatuses(
           selected.map((row) => row.id),
         )
       : [];
@@ -167,7 +169,7 @@ export const assistantService = {
   },
   async history(id: string, owner: AssistantOwner, query: SessionHistoryQuery) {
     await assistantStore.session(id, owner);
-    const page = await new RuntimeClient(owner.domainId).history(id, query);
+    const page = await new RuntimeClient(owner.domainId, undefined, owner.userId).history(id, query);
     const runs = await Promise.all(page.runs.map(async run => (await this.withRetrievals({ run }, owner)).run));
     // The live run view is the page's own run; the retrieval links on it come from the page's run
     // list when that list holds it, otherwise they are read once for this run.
@@ -185,7 +187,7 @@ export const assistantService = {
   },
   async snapshot(id: string, owner: AssistantOwner) {
     const row = await assistantStore.session(id, owner),
-      s = await new RuntimeClient(owner.domainId).session(id);
+      s = await new RuntimeClient(owner.domainId, undefined, owner.userId).session(id);
     return {
       session: sessionView(await assistantStore.session(row.id, owner), s.latestRun?.run ?? null),
       messages: publicMessages(s.messages),
@@ -205,7 +207,7 @@ export const assistantService = {
   },
   async readRun(sessionId: string, id: string, owner: AssistantOwner) {
     await this.ownRun(sessionId, id, owner);
-    const s = await new RuntimeClient(owner.domainId).run(id);
+    const s = await new RuntimeClient(owner.domainId, undefined, owner.userId).run(id);
     return this.withRetrievals(s, owner);
   },
   /**
@@ -246,7 +248,7 @@ export const assistantService = {
     credentials: AssistantCredentials,
   ) {
     const session = await assistantStore.session(sessionId, owner),
-      client = new RuntimeClient(owner.domainId);
+      client = new RuntimeClient(owner.domainId, undefined, owner.userId);
     const a = await assistantStore.agent(session.agent_id, owner);
     if (!a.enabled)
       throw new HttpError(409, "Agent disabled", "AGENT_DISABLED");
@@ -368,7 +370,7 @@ export const assistantService = {
   },
   async reconcileTurn(turn: TurnRow & AssistantOwner, now: number) {
     const owner = { domainId: turn.domainId, userId: turn.userId },
-      client = new RuntimeClient(owner.domainId);
+      client = new RuntimeClient(owner.domainId, undefined, owner.userId);
     try {
       let view;
       try {
@@ -421,7 +423,7 @@ export const assistantService = {
     } else {
       let runtime;
       try {
-        runtime = await new RuntimeClient(owner.domainId).run(id);
+        runtime = await new RuntimeClient(owner.domainId, undefined, owner.userId).run(id);
       } catch (e) {
         if (!(e instanceof HttpError && e.status === 404)) throw e;
       }
@@ -429,7 +431,7 @@ export const assistantService = {
         throw new HttpError(404, "Run not found");
     }
     await this.settleTurn(id, owner, credentials);
-    const c = new RuntimeClient(owner.domainId);
+    const c = new RuntimeClient(owner.domainId, undefined, owner.userId);
     await c.request(
       `/v1/sessions/${sessionId}/run-intents/${id}/cancel`,
       "POST",
@@ -444,7 +446,7 @@ export const assistantService = {
   },
   async delete(sessionId: string, owner: AssistantOwner) {
     await assistantStore.session(sessionId, owner);
-    const c = new RuntimeClient(owner.domainId);
+    const c = new RuntimeClient(owner.domainId, undefined, owner.userId);
     let snapshot;
     try {
       snapshot = await c.session(sessionId);
@@ -489,7 +491,7 @@ export const assistantService = {
   ): Promise<RuntimeArtifact> {
     await assistantStore.session(sessionId, owner);
     const a = runtimeArtifactSchema.parse(
-      await new RuntimeClient(owner.domainId).request(`/v1/artifacts/${id}`),
+      await new RuntimeClient(owner.domainId, undefined, owner.userId).request(`/v1/artifacts/${id}`),
     );
     if (a.sessionId !== sessionId)
       throw new HttpError(404, "Artifact not found");
@@ -497,7 +499,7 @@ export const assistantService = {
   },
   async content(sessionId: string, id: string, owner: AssistantOwner) {
     await this.artifact(sessionId, id, owner);
-    return new RuntimeClient(owner.domainId).bytes(
+    return new RuntimeClient(owner.domainId, undefined, owner.userId).bytes(
       `/v1/artifacts/${id}/content`,
     );
   },
@@ -511,7 +513,7 @@ export const assistantService = {
     const result = z
       .object({ artifacts: z.array(runtimeArtifactSchema) })
       .parse(
-        await new RuntimeClient(owner.domainId).request(
+        await new RuntimeClient(owner.domainId, undefined, owner.userId).request(
           `/v1/runs/${runId}/artifacts?path=${encodeURIComponent(path)}`,
         ),
       );

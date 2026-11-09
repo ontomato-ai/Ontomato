@@ -26,7 +26,7 @@ COPY LICENSE NOTICE /stage/licenses/
 FROM ${PYTHON_RUNTIME_IMAGE} AS python-runtime
 ARG PIP_INDEX_URL=https://pypi.org/simple
 COPY requirements-py310.txt /tmp/requirements-py310.txt
-RUN apt-get update && apt-get install -y --no-install-recommends libstdc++6 \
+RUN apt-get update && apt-get install -y --no-install-recommends libstdc++6 git \
  && rm -rf /var/lib/apt/lists/* \
  && pip install --no-cache-dir --no-deps -i "${PIP_INDEX_URL}" -r /tmp/requirements-py310.txt \
  && pip check && python -c "import requests, numpy, pandas, sympy"
