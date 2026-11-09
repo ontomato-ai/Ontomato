@@ -1,6 +1,6 @@
 import { platformRoutes as routes } from "@ontomato/platform-shell/routes";
 import { defineAsyncComponent, defineComponent, h, ref, watch, type Component, type PropType } from "vue";
-import { onBeforeRouteLeave, onBeforeRouteUpdate, useRoute, useRouter, type RouteLocationRaw, type RouteRecordRaw } from "vue-router";
+import { useRoute, useRouter, type RouteLocationRaw, type RouteRecordRaw } from "vue-router";
 import type { ObjectReference } from "@ontomato/contracts/object-views";
 import { useManagerClient, useManagerCounts } from "./context";
 import ManagerFrame from "./ManagerFrame.vue";
@@ -47,11 +47,7 @@ const ObjectViewEditorRoute = defineComponent({
   setup() {
     const route = useRoute();
     const router = useRouter();
-    const editor = ref<{ canLeave: () => Promise<boolean> }>();
-    onBeforeRouteLeave(() => editor.value?.canLeave() ?? true);
-    onBeforeRouteUpdate(() => editor.value?.canLeave() ?? true);
     return () => h(ObjectViewBuilder, {
-      ref: editor,
       className: String(route.params.className),
       initialPrimaryKey: String(route.query.key ?? ""),
       onOpen: (reference: ObjectReference) => void router.push(objectViewLocation(reference)),

@@ -4,7 +4,7 @@ import { ArrowDown, ArrowLeft, ArrowUp, Plus, Save, Trash2, Upload } from "lucid
 import { ElAlert, ElButton, ElInput, ElInputNumber, ElOption, ElSelect, ElSwitch } from "element-plus";
 import { createObjectView, createViewWidget, objectViewDocumentSchema, type ObjectReference, type ObjectViewDocument, type ObjectViewState, type ViewWidget } from "@ontomato/contracts/object-views";
 import { randomId } from "@ontomato/contracts/random-id";
-import { useManagerClient, useOntologyText } from "../context";
+import { useManagerClient, useManagerLeaveCheck, useOntologyText } from "../context";
 import { widgetMessageKeys } from "./messages";
 import { useManagerFeedback } from "../feedback";
 import type { OntologyObject, OntologyRelation, SmartAsset } from "../api";
@@ -231,7 +231,7 @@ async function canLeave() {
   if (loaded.value && dirty.value) { try { await confirm(ot("ovDiscard"), ot("ovLeaveEditor")); } catch { return false; } }
   return true;
 }
-defineExpose({ canLeave });
+useManagerLeaveCheck(canLeave);
 function beforeUnload(event: BeforeUnloadEvent) { if (dirty.value) { event.preventDefault(); event.returnValue = ""; } }
 window.addEventListener("beforeunload", beforeUnload);
 onBeforeUnmount(() => { generation++; sampleRequest++; objectSearchRequest++; window.removeEventListener("beforeunload", beforeUnload); });
