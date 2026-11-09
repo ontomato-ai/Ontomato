@@ -5,6 +5,7 @@ import "./narrow-dialogs.css";
 import "@ontomato/workbench-ui/styles/admin-common.css";
 import { openOntologyServiceAccess } from "@ontomato/workbench-ui";
 import {
+  appBuilderPages,
   dashboardPages,
   legacyAdminRoutes,
   observeRoutes,
@@ -45,6 +46,8 @@ export function startPlatform() {
         }),
         ...dashboardPages(),
         ...schedulePages(),
+        // The open-source edition has no permissions: every reader may build.
+        ...appBuilderPages(),
         ...ossServicePages(app, router),
       ], PlatformShellLayout),
       ...legacyAdminRoutes,

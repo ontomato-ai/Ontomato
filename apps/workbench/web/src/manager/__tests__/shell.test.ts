@@ -130,7 +130,7 @@ describe("open-source Ontology Service page", () => {
     sections.push([...document.querySelectorAll(".rail-foot .rail-label")].map((row) => row.textContent ?? ""));
     expect(sections).toEqual([
       ["Agent platform", "Dashboards", "Scheduled tasks", "Object browser"],
-      ["Ontology manager", "Knowledge governance", "Operations diagnosis"],
+      ["Ontology manager", "Knowledge governance", "Operations diagnosis", "App builder"],
       ["System settings"],
     ]);
     // The object browser owns the graph and data browsing, and draws its own pages.

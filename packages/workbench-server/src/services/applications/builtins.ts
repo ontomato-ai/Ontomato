@@ -99,5 +99,49 @@ export const workbenchApplications: BuiltinApplication[] = [
       "groups": [],
       "permissions": []
     }
+  },
+  {
+    "id": "app-builder",
+    "kind": "native",
+    "rail": "apps",
+    "sort": 40,
+    "entry": {
+      "path": "/app-builder",
+      "renderer": "app-builder",
+      "home": "/app-builder"
+    },
+    "entryAccess": [
+      "app-builder"
+    ],
+    "scheduleAdapter": null,
+    "declaration": {
+      "names": {
+        "en": "App builder",
+        "zh-CN": "应用构建"
+      },
+      "descriptions": {},
+      "icon": "builder",
+      "groups": [
+        {
+          "key": "entry",
+          "names": {
+            "en": "Application entry",
+            "zh-CN": "应用入口"
+          },
+          "sort": 0
+        }
+      ],
+      "permissions": [
+        {
+          "code": "app-builder",
+          "names": {
+            "en": "Open application",
+            "zh-CN": "打开应用"
+          },
+          "groupKey": "entry",
+          "sort": 0
+        }
+      ]
+    }
   }
 ];

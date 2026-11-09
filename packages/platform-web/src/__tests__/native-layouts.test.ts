@@ -34,7 +34,8 @@ describe("the platform's applications", () => {
   });
   it("sits in three sections: the ontology applications, the business ones, and the settings above the account", () => {
     expect(named("top")).toEqual(["agents", "dashboards", "schedules", "browser"]);
-    expect(named("apps")).toEqual(["ontology", "governance", "operations"]);
+    // 应用构建 comes after the operations diagnosis.
+    expect(named("apps")).toEqual(["ontology", "governance", "operations", "app-builder"]);
     expect(named("bottom")).toEqual(["settings"]);
   });
 

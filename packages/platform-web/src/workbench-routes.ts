@@ -61,6 +61,18 @@ export const schedulePages = (): RouteRecordRaw[] => [
 ];
 
 /**
+ * 应用构建: one page at the workspace its address names. An edition adds what its guard reads to let a reader in (the
+ * enterprise edition the application's entry permission, `app-builder`).
+ */
+export const appBuilderPages = (meta: RouteMeta = {}): RouteRecordRaw[] => [
+  {
+    ...routes.appBuilder,
+    component: () => import("@ontomato/workbench-ui/features/app-builder").then((module) => module.AppBuilder),
+    meta: { workbench: true, ...meta },
+  },
+];
+
+/**
  * The dashboards: an application of their own. Their address carries the open board as `?dashboardId=`, so a board can
  * be linked; the old address under the agent platform moves here.
  */

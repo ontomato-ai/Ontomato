@@ -34,7 +34,7 @@ Three environments share foundations but retain appropriate composition:
 
 | Environment | Applications | Composition |
 |---|---|---|
-| Agent workspace | Agents, Operations, Governance | Readable conversation, expandable process/evidence, artifacts, distinct composer |
+| Agent workspace | Agents, Operations, Governance, App builder | Readable conversation, expandable process/evidence, artifacts, distinct composer |
 | Data management | Manager catalogs, Browser, Dashboards, administration | Dense tables/forms, quiet toolbars, continuous working surfaces |
 | Technical workspace | Graphs, modeling, editors, diagnostics | Stable canvas/inspector geometry and precise interaction states |
 
@@ -181,7 +181,7 @@ Each application shows one frame in its area:
 
 | Application | Frame |
 |---|---|
-| Agent Platform, Operations Diagnosis, Knowledge Governance | Its own conversation column, then the conversation (§9) |
+| Agent Platform, Operations Diagnosis, Knowledge Governance, App builder | Its own conversation column, then the conversation (§9) |
 | Ontology Service (Ontology Manager) | Its own menu (ontology, assets, knowledge) in its band, pages beside it |
 | System Settings | PlatformPageHeader with the application's pages as tabs; a page's own tabs stay in it |
 | Object Browser, Dashboards, Scheduled Tasks, Permissions (enterprise) | One page: header and page |
