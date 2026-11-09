@@ -1,5 +1,6 @@
 import type { Component } from "vue";
 import type { RuntimeArtifact } from "@ontomato/contracts/agent-runtime-artifacts";
+import type { RuntimeRunStatus } from "@ontomato/contracts/agent-runtime-values";
 
 export type ArtifactPresentation = "inline" | "panel";
 
@@ -94,6 +95,18 @@ export interface ShellFeedbackPort {
   read(target: ShellFeedbackTarget): Promise<ShellFeedbackValue | null>;
   submit(target: ShellFeedbackTarget, value: ShellFeedbackValue): Promise<ShellFeedbackValue>;
   remove(target: ShellFeedbackTarget): Promise<void>;
+}
+
+/**
+ * A run of the open conversation started or stopped, whether the stream, a cancel or a re-read showed it: the host
+ * refreshes what the run changes from here rather than from the reply's words.
+ */
+export interface ShellRunChange {
+  sessionId: string;
+  runId: string;
+  status: RuntimeRunStatus;
+  /** The workspace commit a stopped run saved; null while it runs and for a run that changed no file. */
+  workspaceCommit: string | null;
 }
 
 /** Context passed to the host's message action slot. */

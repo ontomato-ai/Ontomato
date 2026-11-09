@@ -1,6 +1,7 @@
 import {
   createAgentHostClient,
   type AgentHostClientOptions,
+  type AgentHostWorkspaceScope,
   type ShellFeedbackPort,
   type ShellFeedbackTarget,
   type ShellFeedbackValue,
@@ -32,6 +33,11 @@ const workbenchRequest: AgentHostClientOptions["request"] = (path, init) =>
  */
 export function createAssistantClient(request: AgentHostClientOptions["request"] = workbenchRequest) {
   return createAgentHostClient({ request: (path, init) => request(`${PREFIX}${path}`, init) });
+}
+
+/** The same client with its conversations bound to one workspace (the app builder's): made in it, listed from it. */
+export function createWorkspaceAssistantClient(workspace: AgentHostWorkspaceScope) {
+  return createAgentHostClient({ request: (path, init) => workbenchRequest(`${PREFIX}${path}`, init), workspace });
 }
 
 /** Answer feedback, stored by the workbench, shown by the shell's rating buttons. */

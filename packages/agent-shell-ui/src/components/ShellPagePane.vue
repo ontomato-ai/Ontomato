@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, inject } from "vue";
+import { computed, inject, onBeforeUnmount, ref, useSlots, watch } from "vue";
 import { Maximize2, Menu, Minimize2, X } from "lucide-vue-next";
 import { shellContextKey } from "../context";
 import type { ShellFeatureDeclaration } from "../types";
@@ -8,8 +8,12 @@ import ShellComposer from "./ShellComposer.vue";
 
 /**
  * One host page, rendered once and kept mounted while it moves between the two places it can sit (DESIGN "Agent
- * apps"): `full` fills the workspace with a composer below it; `side` sits beside the conversation at a draggable
- * width. Pages that are not declared `withConversation` only ever show full, without composer or controls.
+ * apps"): `full` fills the workspace with a composer floating at its foot; `side` sits beside the conversation at a
+ * draggable width. Pages that are not declared `withConversation` only ever show full, without composer or controls.
+ *
+ * The page may put its own controls in the header row (`header`, in place of its title). Full, the composer floats over
+ * the bottom of the page with the host's `composer-context` line above it; the pane measures that dock and keeps as much
+ * room under the page's content, so multiline input or a longer context line never covers the end of the page.
  */
 const props = defineProps<{
   feature: ShellFeatureDeclaration | null;
@@ -20,23 +24,38 @@ const props = defineProps<{
 const emit = defineEmits<{ send: [text: string]; stop: []; expand: []; collapse: []; close: []; menu: [] }>();
 const shell = inject(shellContextKey)!;
 const labels = computed(() => shell.labels.value);
+const slots = useSlots();
 const { width, startResize } = usePanelWidth();
 const paired = computed(() => props.feature?.withConversation === true);
+
+const dock = ref<HTMLElement | null>(null);
+const dockSpace = ref(0);
+const dockObserver = new ResizeObserver(([entry]) => (dockSpace.value = (entry!.target as HTMLElement).offsetHeight));
+watch(dock, (element, previous) => {
+  if (previous) dockObserver.unobserve(previous);
+  if (element) dockObserver.observe(element);
+  else dockSpace.value = 0;
+}, { flush: "post" });
+onBeforeUnmount(() => dockObserver.disconnect());
+const paneStyle = computed(() => ({
+  ...(props.view === "side" ? { "--panel-width": `${width.value}px` } : {}),
+  "--pane-dock-space": `${dockSpace.value}px`,
+}));
 </script>
 
 <template>
   <section
     class="page-pane"
     :class="[view, { paired }]"
-    :style="view === 'side' ? { '--panel-width': `${width}px` } : undefined"
+    :style="paneStyle"
     :aria-label="feature?.label"
   >
     <div v-if="view === 'side'" class="pane-resize" role="separator" aria-orientation="vertical" @pointerdown.prevent="startResize" />
-    <header v-if="paired" class="pane-header platform-page-gutter">
+    <header v-if="paired" class="pane-header platform-page-gutter" :class="{ custom: slots.header }">
       <button v-if="view === 'full'" type="button" class="pane-button pane-menu" :aria-label="labels.menu" @click="emit('menu')">
         <Menu :size="18" />
       </button>
-      <h1 class="pane-title">{{ feature?.label }}</h1>
+      <slot name="header"><h1 class="pane-title">{{ feature?.label }}</h1></slot>
       <button
         v-if="view === 'full'"
         type="button"
@@ -55,7 +74,8 @@ const paired = computed(() => props.feature?.withConversation === true);
       </button>
     </header>
     <div class="pane-body"><slot /></div>
-    <div v-if="paired && view === 'full'" class="pane-dock">
+    <div v-if="paired && view === 'full'" ref="dock" class="pane-dock">
+      <div v-if="slots['composer-context']" class="composer-context"><slot name="composer-context" /></div>
       <ShellComposer :busy="busy" :disabled="disabled" @send="emit('send', $event)" @stop="emit('stop')" />
     </div>
   </section>
@@ -111,6 +131,14 @@ const paired = computed(() => props.feature?.withConversation === true);
   flex-shrink: 0;
   border-bottom: 1px solid var(--el-border-color);
 }
+/* A page's own header row (tabs and their tools) runs the full height, so a tab's underline meets the line under it. */
+.pane-header.custom {
+  padding-block: 0;
+  align-items: stretch;
+}
+.pane-header.custom > .pane-button {
+  align-self: center;
+}
 .pane-title {
   flex: 1;
   min-width: 0;
@@ -150,13 +178,28 @@ const paired = computed(() => props.feature?.withConversation === true);
   flex: 1;
   min-height: 0;
   overflow: auto;
+  padding-bottom: var(--pane-dock-space);
 }
+/* Full, the composer floats over the page; only its own controls take the pointer, the page shows around them. */
 .pane-dock {
-  flex-shrink: 0;
+  position: absolute;
+  z-index: 3;
+  left: 50%;
+  bottom: 0;
+  transform: translateX(-50%);
   width: min(760px, 100%);
-  margin: 0 auto;
   padding: 8px 16px 16px;
   box-sizing: border-box;
+  pointer-events: none;
+}
+.pane-dock > * {
+  pointer-events: auto;
+}
+.composer-context {
+  margin: 0 0 8px;
+}
+.composer-context:empty {
+  display: none;
 }
 @media (max-width: 1100px) {
   .page-pane.side {

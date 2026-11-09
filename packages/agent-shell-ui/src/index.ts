@@ -8,7 +8,12 @@ export { useConversationContinuation } from "./context";
 export { continuationMessage } from "./continuation-message";
 export { useAgentNav, type AgentNav, type AgentNavOptions } from "./useAgentNav";
 export { defaultChartTheme, type ChartTheme } from "./chart-theme";
-export { createAgentHostClient, type AgentHostClient, type AgentHostClientOptions } from "./host";
+export {
+  createAgentHostClient,
+  type AgentHostClient,
+  type AgentHostClientOptions,
+  type AgentHostWorkspaceScope,
+} from "./host";
 export type { AgentHostAgent } from "@ontomato/contracts/agent-host";
 export type {
   ArtifactPresentation,
@@ -21,6 +26,7 @@ export type {
   ShellFeedbackTarget,
   ShellFeedbackValue,
   ShellLabels,
+  ShellRunChange,
   ShellWorkbenchDeclaration,
   ToolRendererOverride,
   ToolStepProps,

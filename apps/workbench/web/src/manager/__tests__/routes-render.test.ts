@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { App } from "vue";
 import { agentHostAgentListSchema, agentHostSessionPageSchema } from "@ontomato/contracts/agent-host";
+import { appBuilderBootstrapSchema } from "@ontomato/contracts/app-builder";
 import type { WorkbenchAppearance } from "@ontomato/contracts/workbench-appearance";
 import { platformRoutes } from "@ontomato/platform-shell/routes";
 import { catalogFixture, catalogPartitionFixture as appPartition } from "../../../../../../packages/platform-web/src/__tests__/fixtures";
@@ -41,8 +42,9 @@ const resetShell = isolateShellPerTest();
 
 /**
  * The network as the pages see it. The Node API answers in its own shapes, checked against the contracts so the doubles
- * cannot drift from them: one enabled agent without sessions for the agent platform and for the diagnosis, and the
- * workbench's appearance. Every other address answers the data engine's envelope with nothing in it.
+ * cannot drift from them: one enabled agent without sessions for the agent platform and for the diagnosis, the
+ * workbench's appearance, and the app builder's agent without any workspace. Every other address answers the data
+ * engine's envelope with nothing in it.
  */
 const AGENT = { id: "6a1f3c52-2d0e-4c1b-9a57-0f0e7c2a9b11", name: "analysis", description: "", icon: null, enabled: true };
 const NODE_ANSWERS: Readonly<Record<string, unknown>> = {
@@ -51,6 +53,8 @@ const NODE_ANSWERS: Readonly<Record<string, unknown>> = {
   "GET /observe/agent/agents": agentHostAgentListSchema.parse({ agents: [AGENT] }),
   "GET /observe/agent/sessions": agentHostSessionPageSchema.parse({ sessions: [], nextCursor: null }),
   "GET /workbench-appearance": { brand: { name: "Ontomato", subtitle: "", logo: "" } } satisfies WorkbenchAppearance,
+  "GET /app-builder/bootstrap": appBuilderBootstrapSchema.parse({ agent: AGENT }),
+  "GET /workspaces": { items: [] },
 };
 
 type FetchInput = Parameters<typeof fetch>[0];
@@ -234,7 +238,7 @@ describe("the open-source platform's rail", () => {
     sections.push([...document.querySelectorAll(".rail-foot .rail-label")].map((row) => row.textContent ?? ""));
     expect(sections).toEqual([
       ["Agent platform", "Dashboards", "Scheduled tasks", "Object browser"],
-      ["Ontology manager", "Knowledge governance", "Operations diagnosis"],
+      ["Ontology manager", "Knowledge governance", "Operations diagnosis", "App builder"],
       ["System settings"],
     ]);
     // The platform's own applications sit at the foot of the rail, above the account, not under the applications.

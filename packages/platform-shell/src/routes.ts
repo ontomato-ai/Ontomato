@@ -31,6 +31,8 @@ export const platformRoutes = {
   dsl: { name: "ObserveDsl", path: "/ops/dsl" },
   opsModel: { name: "ObserveModel", path: "/ops/model" },
   governance: { name: "KnowledgeGovernance", path: "/governance/chat/:sessionId?" },
+  /** 应用构建: the workspace in the address, the open conversation as `?sessionId=`. */
+  appBuilder: { name: "AppBuilder", path: "/app-builder/:workspaceId?" },
   feedback: { name: "Feedback", path: "/governance/feedback" },
   data: { name: "manager-data", path: "/browser/data/:className?" },
   objectView: { name: "manager-object-view", path: "/browser/views/:className" },

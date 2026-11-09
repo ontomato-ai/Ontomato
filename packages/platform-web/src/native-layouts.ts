@@ -83,6 +83,11 @@ const layouts: readonly (NativeLayout & { renderer: string })[] = [
     ],
   },
   {
+    renderer: "app-builder",
+    // Its column is its own (the workspaces and their conversations), drawn inside the application, like the agents'.
+    sections: [],
+  },
+  {
     renderer: "dashboards",
     sections: [{ key: "dashboards:all", titleKey: "assistant.featureDashboards", paths: [platformRoutes.dashboards.path] }],
   },

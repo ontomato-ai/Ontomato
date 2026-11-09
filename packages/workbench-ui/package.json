@@ -10,6 +10,7 @@
     "./composables/useShellLabels": "./src/composables/useShellLabels.ts",
     "./composables/useTheme": "./src/composables/useTheme.ts",
     "./content": "./src/content.ts",
+    "./features/app-builder": "./src/features/app-builder/index.ts",
     "./features/dashboard": "./src/features/dashboard/index.ts",
     "./features/dashboard/components/utils/echartsGenerator": "./src/features/dashboard/components/utils/echartsGenerator.ts",
     "./features/diagnosis": "./src/features/diagnosis/index.ts",

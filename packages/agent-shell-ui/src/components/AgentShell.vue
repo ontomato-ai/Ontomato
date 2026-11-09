@@ -9,6 +9,7 @@ import type {
   OpenArtifact,
   ShellFeedbackPort,
   ShellLabels,
+  ShellRunChange,
   ShellWorkbenchDeclaration,
   ToolRendererOverride,
 } from "../types";
@@ -35,7 +36,11 @@ import ShellSidePanel from "./ShellSidePanel.vue";
  *
  * A feature declared `withConversation` follows the agent-app states (DESIGN "Agent apps"): conversation only, the
  * page beside the conversation, or the page full with a composer. Messages sent while such a page is open end with the
- * host's `pageContext` line, so the agent knows what "this" refers to.
+ * host's `pageContext` line, so the agent knows what "this" refers to. Such a page may fill `page-header` (its own
+ * controls, in the row of the shell's expand and close buttons) and `composer-context` (shown above whichever composer
+ * is in view; `pageOpen` tells whether a message sent now carries the page context).
+ *
+ * `run` reports the open conversation's run starting and stopping, with the workspace commit a stopped run saved.
  */
 const props = withDefaults(
   defineProps<{
@@ -64,7 +69,7 @@ const props = withDefaults(
   { artifactRenderers: () => [], toolRenderers: () => [], chartTheme: () => defaultChartTheme, title: "", bottom: null },
 );
 const slots = useSlots();
-const emit = defineEmits<{ error: [message: string]; featureAction: [id: string]; openBottom: [] }>();
+const emit = defineEmits<{ error: [message: string]; featureAction: [id: string]; openBottom: []; run: [change: ShellRunChange] }>();
 const featureId = defineModel<string | null>("featureId", { default: null });
 const agentId = defineModel<string | null>("agentId", { default: null });
 const sessionId = defineModel<string | null>("sessionId", { default: null });
@@ -168,14 +173,21 @@ async function send(input: string) {
   nav.markRun(latestRun);
 }
 
-// Keep the session list's run state in step with the conversation that is open.
+/*
+ * Keep the session list's run state in step with the conversation that is open, and tell the host. A run left behind
+ * by opening another conversation is no longer in the state, so only a run of this conversation reports stopping.
+ */
 watch(
   () => conversation.activeRunId.value,
-  (_, previous) => {
+  (current, previous) => {
     const entry = currentSession.value;
     const run = previous ? conversation.state.runs[previous] : undefined;
-    if (entry?.latestRun && run && entry.latestRun.id === run.id && run.status === "stopped")
-      entry.latestRun = nav.runStatus(run);
+    const session = conversation.state.sessionId;
+    if (run?.status === "stopped") {
+      if (entry?.latestRun?.id === run.id) entry.latestRun = nav.runStatus(run);
+      if (session) emit("run", { sessionId: session, runId: run.id, status: "stopped", workspaceCommit: run.workspaceCommit });
+    }
+    if (current && session) emit("run", { sessionId: session, runId: current, status: "running", workspaceCommit: null });
   },
 );
 
@@ -243,7 +255,11 @@ onMounted(() => {
         @stop="conversation.cancel"
         @retry="conversation.open(sessionId)"
         @load-older="conversation.loadOlder"
-      />
+      >
+        <template v-if="slots['composer-context']" #composer-context>
+          <slot name="composer-context" :page-open="pairedPage" />
+        </template>
+      </ShellConversation>
     </main>
 
     <ShellPagePane
@@ -258,6 +274,12 @@ onMounted(() => {
       @collapse="pageView = 'side'"
       @close="closePage"
     >
+      <template v-if="slots['page-header']" #header>
+        <slot name="page-header" :feature-id="featureId" :view="pageView" />
+      </template>
+      <template v-if="slots['composer-context']" #composer-context>
+        <slot name="composer-context" :page-open="true" />
+      </template>
       <slot name="feature" :feature-id="featureId" :view="pageView" />
     </ShellPagePane>
 
