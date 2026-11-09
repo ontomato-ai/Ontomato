@@ -4,6 +4,7 @@ import static io.ontomato.dataengine.schedules.ScheduleJson.*;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import io.ontomato.dataengine.schedules.*;
+import io.ontomato.dataengine.service.FormFields;
 import io.ontomato.dataengine.service.IdentityService;
 import io.ontomato.dataengine.service.agent.*;
 import lombok.RequiredArgsConstructor;
@@ -41,12 +42,13 @@ public class GovernanceScheduleApplication implements ScheduleApplication {
   public JsonNode form(FormInput input, Actor actor) {
     var fields = array();
     fields.add(
-        ScheduleForms.text(
+        FormFields.text(
             "instruction",
             actor.locale().startsWith("zh") ? "指令" : "Instruction",
             true,
             true,
-            null));
+            null,
+            ScheduleJson.TEXT_MAX));
     return ScheduleForms.form(id(), "governance-v1", fields, input.values());
   }
 

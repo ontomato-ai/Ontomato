@@ -4,6 +4,7 @@ import {
   runtimeJsonObjectSchema,
   runtimeTimestampSchema,
 } from "./agent-runtime-values";
+import { formFieldErrorSchema, formFieldSchema, formValuesSchema } from "./form-fields";
 
 /** Gateway-relative resource. Every task and execution belongs to its creator in the current domain. */
 export const platformSchedulesPath = "/api/data-query/platform/scheduled-tasks";
@@ -49,68 +50,28 @@ export const platformTaskFrequencySchema = z.discriminatedUnion("kind", [
 
 export const platformScheduleFieldKeySchema = z.string().min(1).max(PLATFORM_SCHEDULE_FIELD_KEY_MAX);
 /** Values stay text on the wire. Each application owns parameter parsing and validation. */
-export const platformScheduleContentSchema = z.record(
-  platformScheduleFieldKeySchema,
-  z.string().max(PLATFORM_SCHEDULE_TEXT_MAX),
-).superRefine((value, ctx) => {
+export const platformScheduleContentSchema = formValuesSchema.superRefine((value, ctx) => {
+  for (const [key, text] of Object.entries(value)) {
+    if (key.length > PLATFORM_SCHEDULE_FIELD_KEY_MAX)
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: [key], message: "The field key exceeds the platform's limit" });
+    if (text.length > PLATFORM_SCHEDULE_TEXT_MAX)
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: [key], message: "The value exceeds the platform's limit" });
+  }
   if (Object.keys(value).length > PLATFORM_SCHEDULE_FIELD_MAX)
     ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Too many form fields" });
   if (byteLength(value) > PLATFORM_SCHEDULE_CONTENT_MAX_BYTES)
     ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Form content exceeds 64 KiB of UTF-8 JSON" });
 });
 
-export const platformScheduleOptionSchema = z.object({
-  value: nonempty.max(PLATFORM_SCHEDULE_TEXT_MAX),
-  label: nonempty,
-  description: z.string().nullable(),
-  disabled: z.boolean(),
-  disabledReason: nonempty.nullable(),
-}).strict().refine(
-  (option) => option.disabled === (option.disabledReason !== null),
-  "A disabled option must explain why it is unavailable",
-);
-
-const fieldBase = {
-  key: platformScheduleFieldKeySchema,
-  label: nonempty,
-  required: z.boolean(),
-  defaultValue: z.string().max(PLATFORM_SCHEDULE_TEXT_MAX).nullable(),
-  help: z.string().nullable(),
-};
-export const platformScheduleFormFieldSchema = z.discriminatedUnion("type", [
-  z.object({
-    ...fieldBase,
-    type: z.literal("select"),
-    refreshOnChange: z.boolean(),
-    options: z.array(platformScheduleOptionSchema),
-  }).strict(),
-  z.object({
-    ...fieldBase,
-    type: z.literal("text"),
-    multiline: z.boolean(),
-    placeholder: z.string().nullable(),
-    maxLength: z.number().int().min(1).max(PLATFORM_SCHEDULE_TEXT_MAX),
-  }).strict(),
-]).superRefine((field, ctx) => {
-  if (field.type === "select") {
-    if (new Set(field.options.map((option) => option.value)).size !== field.options.length)
-      ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Option values must be unique" });
-    if (field.defaultValue !== null && !field.options.some((option) => option.value === field.defaultValue && !option.disabled))
-      ctx.addIssue({ code: z.ZodIssueCode.custom, message: "The default must name an available option" });
-  } else if (field.defaultValue !== null && field.defaultValue.length > field.maxLength) {
-    ctx.addIssue({ code: z.ZodIssueCode.custom, message: "The default exceeds the field's limit" });
-  }
+/** A field of an application's form: the shared field shape within the platform's limits. */
+export const platformScheduleFormFieldSchema = formFieldSchema.superRefine((field, ctx) => {
+  const tooLong = field.key.length > PLATFORM_SCHEDULE_FIELD_KEY_MAX
+    || (field.defaultValue?.length ?? 0) > PLATFORM_SCHEDULE_TEXT_MAX
+    || (field.type === "text"
+      ? field.maxLength > PLATFORM_SCHEDULE_TEXT_MAX
+      : field.options.some((option) => option.value.length > PLATFORM_SCHEDULE_TEXT_MAX));
+  if (tooLong) ctx.addIssue({ code: z.ZodIssueCode.custom, message: "The field exceeds the platform's limits" });
 });
-
-export const platformScheduleFieldErrorCodeSchema = z.enum([
-  "required", "invalid_option", "invalid_number", "invalid_time", "invalid_array", "value_too_long", "target_unavailable",
-]);
-export const platformScheduleFieldErrorSchema = z.object({
-  /** JSON Pointer: /values/<escaped-key> in a form, /content/<escaped-key> on save. */
-  field: z.string().regex(/^(?:\/(?:[^~/]|~[01])*)+$/),
-  code: platformScheduleFieldErrorCodeSchema,
-  message: nonempty,
-}).strict();
 export const platformScheduleSummaryItemSchema = z.object({
   key: platformScheduleFieldKeySchema,
   label: nonempty,
@@ -131,7 +92,7 @@ export const platformScheduleFormSchema = z.object({
   fields: z.array(platformScheduleFormFieldSchema).max(PLATFORM_SCHEDULE_FIELD_MAX),
   values: platformScheduleContentSchema,
   summary,
-  errors: z.array(platformScheduleFieldErrorSchema),
+  errors: z.array(formFieldErrorSchema),
   submittable: z.boolean(),
 }).strict().superRefine((form, ctx) => {
   const keys = form.fields.map((field) => field.key);
@@ -310,7 +271,7 @@ export const platformScheduleErrorSchema = z.object({
   error: z.object({
     code: platformScheduleHttpErrorCodeSchema,
     message: nonempty,
-    fields: z.array(platformScheduleFieldErrorSchema).optional(),
+    fields: z.array(formFieldErrorSchema).optional(),
     form: platformScheduleFormSchema.optional(),
     activeRunId: runtimeIdSchema.optional(),
   }).strict(),
@@ -370,10 +331,6 @@ export const platformScheduleExecutionStatusRequestSchema = z.object({
 export type PlatformTaskApp = z.infer<typeof platformTaskAppSchema>;
 export type PlatformTaskFrequency = z.infer<typeof platformTaskFrequencySchema>;
 export type PlatformScheduleContent = z.infer<typeof platformScheduleContentSchema>;
-export type PlatformScheduleOption = z.infer<typeof platformScheduleOptionSchema>;
-export type PlatformScheduleFormField = z.infer<typeof platformScheduleFormFieldSchema>;
-export type PlatformScheduleFieldErrorCode = z.infer<typeof platformScheduleFieldErrorCodeSchema>;
-export type PlatformScheduleFieldError = z.infer<typeof platformScheduleFieldErrorSchema>;
 export type PlatformScheduleSummaryItem = z.infer<typeof platformScheduleSummaryItemSchema>;
 export type PlatformScheduleFormRequest = z.infer<typeof platformScheduleFormRequestSchema>;
 export type PlatformScheduleForm = z.infer<typeof platformScheduleFormSchema>;

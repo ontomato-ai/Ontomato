@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { formFieldPointer, type FormField, type FormOption } from "@ontomato/contracts/form-fields";
 import {
   PLATFORM_SCHEDULE_TEXT_MAX,
   platformScheduleFormSchema,
@@ -7,9 +8,7 @@ import {
   type PlatformScheduleExecutionState,
   type PlatformScheduleExecutionStatusRequest,
   type PlatformScheduleForm,
-  type PlatformScheduleFormField,
   type PlatformScheduleFormRequest,
-  type PlatformScheduleOption,
   type PlatformScheduleSummaryItem,
   type PlatformScheduleValidation,
   type PlatformScheduleValidationRequest,
@@ -29,24 +28,24 @@ export interface ScheduleApplication {
   status(input: PlatformScheduleExecutionStatusRequest): Promise<PlatformScheduleExecutionState>;
 }
 
-export const option = (value: string, label: string, reason: string | null = null, description: string | null = null): PlatformScheduleOption => ({
+export const option = (value: string, label: string, reason: string | null = null, description: string | null = null): FormOption => ({
   value, label, description, disabled: reason !== null, disabledReason: reason,
 });
-export const select = (key: string, label: string, options: PlatformScheduleOption[], refreshOnChange = false, defaultValue: string | null = null): PlatformScheduleFormField => ({
+export const select = (key: string, label: string, options: FormOption[], refreshOnChange = false, defaultValue: string | null = null): FormField => ({
   key, label, options, refreshOnChange, defaultValue, type: "select", required: true, help: null,
 });
-export const instruction = (label: string): PlatformScheduleFormField => ({
+export const instruction = (label: string): FormField => ({
   key: "instruction", label, type: "text", required: true, defaultValue: null, help: null,
   multiline: true, placeholder: null, maxLength: PLATFORM_SCHEDULE_TEXT_MAX,
 });
 
-export function completeForm(appId: string, formRevision: string, fields: PlatformScheduleFormField[], source: PlatformScheduleContent, labels: Record<string, string> = {}): PlatformScheduleForm {
+export function completeForm(appId: string, formRevision: string, fields: FormField[], source: PlatformScheduleContent, labels: Record<string, string> = {}): PlatformScheduleForm {
   const values = Object.fromEntries(fields.map((field) => [field.key, source[field.key] ?? field.defaultValue ?? ""]));
   const errors: PlatformScheduleForm["errors"] = [];
   for (const field of fields) {
     const value = values[field.key];
     if (field.type === "select" && value && !field.options.some((item) => item.value === value && !item.disabled))
-      errors.push({ field: `/values/${pointer(field.key)}`, code: "target_unavailable", message: field.options.find((item) => item.value === value)?.disabledReason ?? "The selected target is unavailable" });
+      errors.push({ field: formFieldPointer("/values/", field.key), code: "target_unavailable", message: field.options.find((item) => item.value === value)?.disabledReason ?? "The selected target is unavailable" });
   }
   const summary: PlatformScheduleSummaryItem[] = fields.filter((field) => values[field.key]).map((field) => ({
     key: field.key, label: field.label,
@@ -59,7 +58,6 @@ export function completeForm(appId: string, formRevision: string, fields: Platfo
   });
 }
 
-function pointer(value: string) { return value.replaceAll("~", "~0").replaceAll("/", "~1"); }
 export function checkedForm(input: PlatformScheduleValidationRequest, form: PlatformScheduleForm): PlatformScheduleValidation {
   if (input.formRevision !== form.formRevision)
     throw new HttpError(409, "The form changed; review its current fields", "FORM_CHANGED", { form });
@@ -69,7 +67,7 @@ export function checkedForm(input: PlatformScheduleValidationRequest, form: Plat
   const errors = form.errors.map((error) => ({ ...error, field: error.field.replace(/^\/values\//, "/content/") }));
   for (const field of form.fields)
     if (field.required && !form.values[field.key].trim())
-      errors.push({ field: `/content/${pointer(field.key)}`, code: "required", message: `${field.label} is required` });
+      errors.push({ field: formFieldPointer("/content/", field.key), code: "required", message: `${field.label} is required` });
   if (errors.length) throw new HttpError(422, "Check the form values", "FIELD_VALIDATION_FAILED", { fields: errors });
   return { content: form.values, formRevision: form.formRevision, timeZone: input.timeZone, summary: form.summary, references: null };
 }

@@ -52,7 +52,8 @@ public final class MetricViewBindings {
       throw new IllegalArgumentException("Parameters must match the metric definition exactly");
   }
 
-  private static boolean accepts(String type, Object value) {
+  /** Whether a non-null value fits a parameter type; Action forms check what they interpret by the same rule. */
+  static boolean accepts(String type, Object value) {
     if (type == null) throw new IllegalArgumentException("Parameter type is required");
     return switch (type) {
       case Parameter.TYPE_STRING, Parameter.TYPE_TIME -> value instanceof String;

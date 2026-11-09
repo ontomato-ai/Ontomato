@@ -121,9 +121,9 @@ export default [
       "no-restricted-imports": restrict([
         {
           regex:
-            "^@ontomato/(?!(contracts|design-tokens)(/|$))|(^|/)(workbench-ui|workbench-server|ontology-manager|platform-admin|agent-shell-ui)(/|$)",
+            "^@ontomato/(?!(contracts|design-tokens|foundation-ui)(/|$))|(^|/)(workbench-ui|workbench-server|ontology-manager|platform-admin|agent-shell-ui)(/|$)",
           message:
-            "platform-schedules may depend on contracts, design tokens and UI libraries only; hosts inject the request function, the applications and the way to a result",
+            "platform-schedules may depend on contracts, design tokens, the shared foundation components and UI libraries only; hosts inject the request function, the applications and the way to a result",
         },
       ]),
     },
@@ -177,13 +177,20 @@ export default [
   {
     // The foundation UI is the bottom layer every application and the SDK share (one implementation per
     // capability, exported by capability subpath): it depends only on Vue, Element Plus and ECharts, never on
-    // a platform package or a host.
+    // a platform package or a host. It may name the wire contracts' types, so a shape it draws has one definition,
+    // but carries no contract code: the TypeScript form of the rule tells a type import from a value import.
     files: ["packages/foundation-ui/src/**/*.{ts,vue}"],
     rules: {
-      "no-restricted-imports": restrict([
+      "no-restricted-imports": "off",
+      "@typescript-eslint/no-restricted-imports": restrict([
         {
-          regex: "^(?!(vue|element-plus|echarts)(/|$)|\\.)",
+          regex: "^(?!(vue|element-plus|echarts|@ontomato/contracts)(/|$)|\\.)",
           message: "foundation-ui may depend only on Vue, Element Plus and ECharts; the packages that use it depend on it, not the other way round",
+        },
+        {
+          regex: "^@ontomato/contracts(/|$)",
+          allowTypeImports: true,
+          message: "foundation-ui may name contract types (import type) but carries no contract code",
         },
       ]),
     },

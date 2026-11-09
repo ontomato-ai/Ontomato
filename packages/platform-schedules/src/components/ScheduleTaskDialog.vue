@@ -1,22 +1,22 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, ref, watch, type Component } from "vue";
 import { Check } from "lucide-vue-next";
+import { formFieldKey, type FormField } from "@ontomato/contracts/form-fields";
 import {
   PLATFORM_SCHEDULE_TITLE_MAX,
   platformTaskInputSchema,
   platformTaskUpdateSchema,
   type PlatformScheduleContent,
-  type PlatformScheduleFormField,
   type PlatformTask,
   type PlatformTaskInput,
 } from "@ontomato/contracts/platform-schedules";
+import { FormFields } from "@ontomato/foundation-ui/form";
 import { scheduleFailure, type SchedulesApi } from "../api";
 import type { ScheduleApp } from "../apps";
 import type { Attempts } from "../attempts";
 import { useApplicationForm } from "../form-session";
 import { frequencyDraft, frequencyOf } from "../frequency";
 import { useScheduleText } from "../text";
-import ScheduleFormFields from "./ScheduleFormFields.vue";
 import ScheduleFrequency from "./ScheduleFrequency.vue";
 
 /**
@@ -152,7 +152,7 @@ function input(key: string, value: string) {
   clearSaveError(key);
 }
 
-function choose(field: Extract<PlatformScheduleFormField, { type: "select" }>, value: string) {
+function choose(field: Extract<FormField, { type: "select" }>, value: string) {
   input(field.key, value);
   if (field.refreshOnChange && appId.value) loadForm(appId.value, session.values.value, field.key);
 }
@@ -198,17 +198,11 @@ const localFieldErrors = computed(() => {
   return errors;
 });
 
-/** The field a JSON Pointer names under `/values/` or `/content/`, unescaped. */
-function pointerKey(pointer: string, prefix: "/values/" | "/content/"): string | null {
-  if (!pointer.startsWith(prefix)) return null;
-  return pointer.slice(prefix.length).split("/")[0]!.replace(/~1/g, "/").replace(/~0/g, "~");
-}
-
 /** The application's own errors stand until the reader changes that field; the browser's show once they tried to save. */
 const fieldErrors = computed(() => {
   const errors: Record<string, string> = {};
   for (const error of session.form.value?.errors ?? []) {
-    const key = pointerKey(error.field, "/values/");
+    const key = formFieldKey(error.field, "/values/");
     if (key !== null && !session.edited.value.has(key)) errors[key] = error.message;
   }
   if (attempted.value) Object.assign(errors, localFieldErrors.value);
@@ -249,7 +243,7 @@ function placeFieldErrors(fields: readonly { field: string; message: string }[])
   const platform: Partial<Record<PlatformField, string>> = {};
   let unplaced = false;
   for (const error of fields) {
-    const key = pointerKey(error.field, "/content/");
+    const key = formFieldKey(error.field, "/content/");
     const top = error.field.split("/")[1] as PlatformField | undefined;
     if (key !== null) content[key] = error.message;
     else if (top === "title" || top === "appId" || top === "frequency" || top === "notifyEmail") platform[top] = error.message;
@@ -407,15 +401,18 @@ async function submit() {
             {{ t("form.formFailed") }}{{ session.failure.value ? `: ${failureText(session.failure.value)}` : "" }}
             <button type="button" class="link" @click="session.retry()">{{ t("retry") }}</button>
           </p>
-          <ScheduleFormFields
-            v-if="session.form.value"
-            :form="session.form.value"
-            :values="session.values.value"
-            :errors="fieldErrors"
-            :disabled="session.state.value === 'loading'"
-            @input="input"
-            @choose="choose"
-          />
+          <template v-if="session.form.value">
+            <p v-if="session.form.value.fields.length === 0" class="form-state">{{ t("form.noFields") }}</p>
+            <FormFields
+              :fields="session.form.value.fields"
+              :values="session.values.value"
+              :errors="fieldErrors"
+              :disabled="session.state.value === 'loading'"
+              :choose-placeholder="t('form.choose')"
+              @input="input"
+              @choose="choose"
+            />
+          </template>
         </section>
 
         <section class="section">

@@ -4,7 +4,8 @@
   "version": "0.1.0",
   "type": "module",
   "exports": {
-    "./chart": "./src/chart/index.ts"
+    "./chart": "./src/chart/index.ts",
+    "./form": "./src/form/index.ts"
   },
   "scripts": {
     "typecheck": "vue-tsc --noEmit"
@@ -13,9 +14,12 @@
     "echarts": "6.0.0"
   },
   "peerDependencies": {
+    "element-plus": "^2.13.6",
     "vue": "^3.5.30"
   },
   "devDependencies": {
+    "@ontomato/contracts": "workspace:*",
+    "element-plus": "2.13.6",
     "typescript": "5.9.3",
     "vue": "3.5.30",
     "vue-tsc": "3.2.6"

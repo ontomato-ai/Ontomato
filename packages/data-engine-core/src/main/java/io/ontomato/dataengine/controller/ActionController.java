@@ -310,6 +310,29 @@ public class ActionController {
 		return ret;
 	}
 	
+	/**
+	 * An Action's form: without {@code values} its fields and their initial text from the bound {@code parameters};
+	 * with them the field errors, or the typed parameters that {@code /action/execute} then takes.
+	 */
+	@PostMapping("/action/form")
+    @ResponseBody
+    public JSONObject form(@RequestHeader(ControllerConst.LANG_HEADER_KEY) String lang, @RequestBody JSONObject param) {
+		JSONObject ret = new JSONObject();
+		try {
+			JSONObject bound = param.getJSONObject("parameters");
+			JSONArray readOnly = param.getJSONArray("readOnlyParameters");
+			ret.put("data", actionService.form(param.getString("id"), bound == null ? new JSONObject() : bound,
+					param.getJSONObject("values"), readOnly == null ? List.of() : readOnly.toJavaList(String.class),
+					lang, SystemUtils.getCurUser()));
+			ret.put("success", true);
+		} catch (Exception e) {
+			log.error(e.getMessage(), e);
+			ret.put("success", false);
+			ret.put("message", e.getMessage());
+		}
+		return ret;
+	}
+
 	@PostMapping("/action/execute")
     @ResponseBody
     public JSONObject execute(@RequestHeader(ControllerConst.LANG_HEADER_KEY) String lang,
