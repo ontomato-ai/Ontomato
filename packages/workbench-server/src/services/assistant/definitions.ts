@@ -28,8 +28,13 @@ const view = (a: AgentRow) =>
     sortOrder: a.sort_order,
     systemPrompt: effectiveSystemPrompt(a),
   });
+async function editableAgent(id: string, owner: AssistantOwner) {
+  const agent = await assistantStore.agent(id, owner);
+  if (agent.kind === "app-builder") throw new HttpError(404, "Agent definition not found", "NOT_FOUND");
+  return agent;
+}
 export async function readAgentDefinition(id: string, owner: AssistantOwner) {
-  return view(await assistantStore.agent(id, owner));
+  return view(await editableAgent(id, owner));
 }
 export async function saveAgentDefinition(
   id: string,
@@ -40,7 +45,7 @@ export async function saveAgentDefinition(
     await validateModelSelection(owner.domainId, input.modelSelection);
     const skills = resolveAssistantSkillReferences(input.skills, owner.domainId);
     await validateAssistantSkills(owner.domainId, skills);
-    const agent = await assistantStore.agent(id, owner);
+    const agent = await editableAgent(id, owner);
     await getPostgresPool().query(
       `UPDATE ${t("assistant_agents")} SET name=$3,description=$4,enabled=$5,system_prompt=$6,model_selection=$7,model_reference_migrated=true,skills=$8,icon=$9,class_names=$10,enabled_mcp_service_ids=$11,sort_order=$12 WHERE id=$1 AND domain_id=$2`,
       [
@@ -122,7 +127,7 @@ export async function listAgentDefinitions(owner: AssistantOwner) {
   return { agents: (await assistantStore.agents(owner.domainId)).map(view) };
 }
 export async function deleteAgentDefinition(id: string, owner: AssistantOwner) {
-  await assistantStore.agent(id, owner);
+  await editableAgent(id, owner);
   await getPostgresPool().query(
     `DELETE FROM ${t("assistant_agents")} WHERE id=$1 AND domain_id=$2`,
     [id, owner.domainId],

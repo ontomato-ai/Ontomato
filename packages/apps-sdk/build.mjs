@@ -1,5 +1,5 @@
 // Builds one product's apps SDK: `node build.mjs <edition module> <output root>`. The output root then holds exactly
-// one version directory with the browser modules, the stylesheet, the docs and the examples of that version. The source
+// current.json and one version directory with the browser modules, the stylesheet, the docs and the examples of that version. The source
 // facts come from the image builder in APPS_SDK_BUILD (scripts/workbench/build-images.mjs).
 import { cpSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
@@ -145,6 +145,7 @@ async function main() {
     libraries: Object.fromEntries(LIBRARIES.map((name) => [name, libraryVersion(name)])),
     docs: "docs/index.md",
   }, null, 2)}\n`);
+  writeFileSync(join(outRoot, "current.json"), `${JSON.stringify({ version })}\n`);
   console.log(`[apps-sdk] ${facts.product} ${version} -> ${outDir}`);
 }
 

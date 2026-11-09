@@ -180,7 +180,7 @@ async function submit(value: ShellFeedbackValue) {
       </template>
       <SlotOutlet
         :content="shell.slots.messageActions"
-        :scope="{ sessionId, runId: item.runId, messageId: item.answerMessageId, text: item.answerText }"
+        :scope="{ sessionId, runId: item.runId, messageId: item.answerMessageId, text: item.answerText, workspaceCommit: item.workspaceCommit }"
       />
     </div>
     <form v-if="reasonOpen" class="reason" @submit.prevent="submit({ rating: 'dislike', reason })">

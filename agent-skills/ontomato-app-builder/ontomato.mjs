@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import fs from "node:fs";
 import { analystCommand } from "./client.mjs";
+import { authenticate } from "./identity.mjs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -21,7 +22,8 @@ function loadConfig() {
     if (colon < 0) die(`application.yml line is not key: value: ${trimmed}`);
     cfg[trimmed.slice(0, colon).trim()] = trimmed.slice(colon + 1).trim();
   }
-  if (process.env.ONTOMATO_URL) cfg.envUrl = process.env.ONTOMATO_URL;
+  cfg.envUrl = (process.env.ONTOMATO_WORKBENCH_URL || process.env.ONTOMATO_URL || cfg.envUrl).replace(/\/$/, "");
+  cfg.ontologyUrl = (process.env.ONTOMATO_ONTOLOGY_URL || `${cfg.envUrl}/api/data-query`).replace(/\/$/, "");
   return cfg;
 }
 
@@ -47,7 +49,9 @@ function takeFlag(argv, name) {
 }
 
 function headers(api) {
-  return { "Accept-Language": api.lang };
+  return { "Accept-Language": api.lang,
+    ...(api.apiKey ? { "X-API-Key": api.apiKey } : api.tk ? { tk: api.tk } : {}),
+  };
 }
 
 function send(api, method, backendPath, body) {
@@ -57,10 +61,11 @@ function send(api, method, backendPath, body) {
     h["Content-Type"] = "application/json";
     payload = JSON.stringify(body);
   }
-  return fetch(`${api.envUrl}/api/data-query${backendPath}`, {
+  return fetch(`${api.ontologyUrl}${backendPath}`, {
     method,
     headers: h,
     body: payload,
+    redirect: "error",
   });
 }
 
@@ -68,7 +73,7 @@ async function readJson(res) {
   const text = await res.text();
   if (!res.ok) die(`${res.status}\n${text}`);
   const json = JSON.parse(text);
-  if (json.success === false) die(json.message);
+  if (json.success === false || json.error) die(json.message ?? json.error?.message ?? json.error);
   return json;
 }
 
@@ -116,7 +121,7 @@ async function importTestData(api, file) {
     new Blob([fs.readFileSync(file)], { type: "application/zip" }),
     path.basename(file),
   );
-  const res = await fetch(`${api.envUrl}/api/data-query/testEnv/importData`, {
+  const res = await fetch(`${api.ontologyUrl}/testEnv/importData`, {
     method: "POST",
     headers: headers(api),
     body: form,
@@ -144,7 +149,7 @@ async function vectorUpload(api, argv) {
     form.append("file", new Blob([fs.readFileSync(file)]), path.basename(file));
   }
   const res = await fetch(
-    `${api.envUrl}/api/data-query/vectorResource/upload`,
+    `${api.ontologyUrl}/vectorResource/upload`,
     {
       method: "POST",
       headers: headers(api),
@@ -207,7 +212,7 @@ async function assetCommand(api, prefix, argv) {
       form.append("param", JSON.stringify(param));
       for (const f of files)
         form.append("file", new Blob([fs.readFileSync(f)]), path.basename(f));
-      const res = await fetch(`${api.envUrl}/api/data-query/action/execute`, {
+      const res = await fetch(`${api.ontologyUrl}/action/execute`, {
         method: "POST",
         headers: headers(api),
         body: form,
@@ -240,13 +245,15 @@ async function assetCommand(api, prefix, argv) {
   }
   if (sub === "save") {
     if (rest[0] == null) die(`${prefix} save requires a JSON definition`);
-    await requestJson(
-      api,
-      "POST",
-      `/${prefix}/save`,
-      JSON.parse(readInput(rest[0])),
-    );
-    console.log("ok");
+    printData(await requestJson(api, "POST", `/${prefix}/save`, JSON.parse(readInput(rest[0]))));
+    return;
+  }
+  if (sub === "publish") {
+    if (rest.length !== 1) die(`${prefix} publish requires an id`);
+    const definition = (await requestJson(api, "POST", `/${prefix}/queryById`, { id: rest[0] })).data;
+    definition.status = "PUBLISHED";
+    const saved = (await requestJson(api, "POST", `/${prefix}/save`, definition)).data;
+    printData(await requestJson(api, "POST", `/${prefix}/queryById`, { id: saved.id }));
     return;
   }
   if (sub === "delete") {
@@ -295,8 +302,111 @@ async function syncProduction(api, rest) {
   }
 }
 
+async function workbench(api, method, endpoint, body) {
+  return readJson(await fetch(`${api.envUrl}/api${endpoint}`, {
+    method, headers: { ...headers(api), "Content-Type": "application/json" },
+    body: body === undefined ? undefined : JSON.stringify(body), redirect: "error",
+  }));
+}
+const print = value => console.log(JSON.stringify(value, null, 2));
+async function sdkCommand(api, args) {
+  const current = await workbench(api, "GET", "/apps-sdk/current");
+  if (args[0] === "current" && args.length === 1) return print(current);
+  if (args[0] !== "read" || args.length !== 2) die("sdk requires current or read <relative path>");
+  // The CLI reaches the deployment or internal Node URL; only HTML uses the returned public paths.
+  const response = await fetch(`${api.envUrl}/apps-sdk/${current.version}/${args[1]}`, { headers: headers(api), redirect: "error" });
+  const text = await response.text();
+  if (!response.ok) die(`${response.status}\n${text}`);
+  console.log(text);
+}
+async function functionCommand(api, [command, ...args]) {
+  if (command === "list") return printData(await requestJson(api, "POST", "/function/queryList", args[0] ? JSON.parse(readInput(args[0])) : {}));
+  if (args.length !== 1) die("function get/save/delete requires one id or definition");
+  if (command === "get") return printData(await requestJson(api, "POST", "/function/queryById", { id: args[0] }));
+  if (command === "save") return printData(await requestJson(api, "POST", "/function/save", JSON.parse(readInput(args[0]))));
+  if (command === "delete") return print(await requestJson(api, "POST", "/function/delete", { id: args[0] }));
+  usage();
+}
+function sourceFiles(directory) {
+  const files = [];
+  function visit(relative) {
+    for (const entry of fs.readdirSync(path.join(directory, relative), { withFileTypes: true })) {
+      if (entry.name === ".git") continue;
+      const name = path.posix.join(relative, entry.name);
+      if (entry.isDirectory()) visit(name);
+      else if (entry.isFile()) files.push({ path: name, encoding: "base64", content: fs.readFileSync(path.join(directory, name)).toString("base64") });
+      else throw new Error(`Source must contain regular files: ${name}`);
+    }
+  }
+  visit("");
+  return files;
+}
+async function workspaceCommand(api, [command, ...args]) {
+  const query = value => new URLSearchParams(value ? JSON.parse(readInput(value)) : {}).toString();
+  if (command === "list") return print(await workbench(api, "GET", `/workspaces?${query(args[0])}`));
+  if (command === "create") {
+    if (args.length !== 1) die("workspace create requires a name");
+    return print(await workbench(api, "POST", "/workspaces", { name: args[0] }));
+  }
+  if (!args[0]) die("workspace requires an id");
+  const base = `/workspaces/${encodeURIComponent(args[0])}`;
+  if (["get", "tree", "commits", "sessions", "releases"].includes(command))
+    return print(await workbench(api, "GET", `${base}${command === "get" ? "" : `/${command}`}?${query(args[1])}`));
+  if (command === "content") {
+    if (!args[1]) die("workspace content requires a path");
+    const params = new URLSearchParams({ path: args[1], ...(args[2] ? { commit: args[2] } : {}) });
+    const response = await fetch(`${api.envUrl}/api${base}/files/content?${params}`, { headers: headers(api), redirect: "error" });
+    if (!response.ok) die(`${response.status}\n${await response.text()}`);
+    process.stdout.write(Buffer.from(await response.arrayBuffer()));
+    return;
+  }
+  if (command === "diff") {
+    if (args.length !== 3) die("workspace diff requires id, from and to");
+    return print(await workbench(api, "GET", `${base}/diff?${new URLSearchParams({ from: args[1], to: args[2] })}`));
+  }
+  if (command === "delete") {
+    const response = await fetch(`${api.envUrl}/api${base}`, { method: "DELETE", headers: headers(api), redirect: "error" });
+    if (!response.ok) die(`${response.status}\n${await response.text()}`);
+    return;
+  }
+  if (command === "import") {
+    const message = takeOption(args, "--message");
+    if (args.length !== 2 || !message) die("workspace import requires id, directory and --message");
+    return print(await workbench(api, "POST", `${base}/import`, { files: sourceFiles(path.resolve(args[1])), message }));
+  }
+  if (command === "restore" || command === "rename") {
+    if (args.length !== 2) die(`workspace ${command} requires id and ${command === "restore" ? "commit" : "name"}`);
+    return print(await workbench(api, command === "restore" ? "POST" : "PATCH", `${base}${command === "restore" ? "/restore" : ""}`,
+      command === "restore" ? { commit: args[1] } : { name: args[1] }));
+  }
+  if (command === "publish" || command === "rollback") {
+    if (args.length !== 3) die(`workspace ${command} requires id, ${command === "publish" ? "commit" : "releaseId"} and declaration`);
+    return print(await workbench(api, "POST", `${base}/${command}`, {
+      [command === "publish" ? "commit" : "releaseId"]: args[1], declaration: JSON.parse(readInput(args[2])),
+    }));
+  }
+  usage();
+}
+
 function usage() {
   die(`usage: ontomato.mjs [--lang <tag>] <command>
+  sdk current
+  sdk read <relative path, e.g. docs/index.md>
+  function list [<filter json|@file>]
+  function get <id>
+  function save <definition json|@file>
+  function delete <id>
+  workspace list [<page json|@file>]
+  workspace create <name>
+  workspace get|tree|commits|sessions|releases <id> [<query json|@file>]
+  workspace content <id> <path> [<commit>]
+  workspace diff <id> <from> <to|working>
+  workspace rename <id> <name>
+  workspace delete <id>
+  workspace import <id> <directory> --message <text>
+  workspace restore <id> <commit>
+  workspace publish <id> <commit> <declaration json|@file>
+  workspace rollback <id> <releaseId> <declaration json|@file>
   dataset-desc
   classes
   schema <class> [<class> ...]
@@ -316,8 +426,9 @@ function usage() {
   metric-view find <class> [<question>]
   metric-view get <id>
   metric-view save <json|@file>
+  metric-view publish <id>
   metric-view delete <id>
-  action generate|execute|find|get|save|delete ...   (same arguments as metric-view)
+  action generate|execute|find|get|save|publish|delete ...   (same arguments as metric-view)
   action re-explain [--missing] [--id <id> ...]
   action execute <id> [<param json|@file>] [--file <path> ...]
   sync-production --action <id> [--action <id> ...] --metric-view <id> [--metric-view <id> ...] [--confirm]
@@ -330,7 +441,12 @@ async function main() {
   const cmd = argv[0];
   const cfg = loadConfig();
   if (!cfg.envUrl) die("Set ONTOMATO_URL or envUrl in application.yml");
-  const api = { ...cfg, lang };
+  const identity = process.env.ONTOMATO_API_KEY ? { apiKey: process.env.ONTOMATO_API_KEY }
+    : process.env.ONTOMATO_TK ? { tk: process.env.ONTOMATO_TK } : await authenticate(cfg, lang);
+  const api = { ...cfg, lang, ...identity };
+  if (cmd === "sdk") return sdkCommand(api, argv.slice(1));
+  if (cmd === "workspace") return workspaceCommand(api, argv.slice(1));
+  if (cmd === "function") return functionCommand(api, argv.slice(1));
   if (cmd === "dataset-desc") {
     printData(await requestJson(api, "GET", "/admin/getDatasetDesc"));
     return;

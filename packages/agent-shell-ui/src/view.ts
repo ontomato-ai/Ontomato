@@ -20,6 +20,7 @@ export interface ResponseItem {
   kind: "response";
   key: string;
   runId: string;
+  workspaceCommit: string | null;
   blocks: ResponseBlock[];
   running: boolean;
   /** Present once the run stopped; rendering decides how each PI reason is shown. */
@@ -70,6 +71,7 @@ export function conversationItems(state: ConversationState): ConversationItem[] 
       kind: "response",
       key: runId,
       runId,
+      workspaceCommit: null,
       blocks: [],
       running: false,
       end: null,
@@ -168,6 +170,7 @@ export function conversationItems(state: ConversationState): ConversationItem[] 
       }
       item.blocks = item.blocks.filter((block) => block.kind !== "process" || block.steps.length > 0);
     }
+    item.workspaceCommit = run?.workspaceCommit ?? null;
     item.startedAt = run?.createdAt ? Date.parse(run.createdAt) : null;
     item.finishedAt = run?.finishedAt ? Date.parse(run.finishedAt) : null;
     item.end = run && run.status === "stopped"

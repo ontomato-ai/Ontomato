@@ -15,7 +15,7 @@ function envelope(seq: number, event: RuntimeEventEnvelope["event"]): RuntimeEve
 }
 
 const snapshot: AgentHostRunSnapshot = {
-  run: { id: runId, sessionId, status: "running", stopReason: null, errorMessage: null, createdAt: new Date(0).toISOString(), finishedAt: null, resolvedSkills: [] },
+  run: { id: runId, sessionId, status: "running", stopReason: null, errorMessage: null, workspaceCommit: null, createdAt: new Date(0).toISOString(), finishedAt: null, resolvedSkills: [] },
   cursor: { runId, seq: 3, streamId },
   messages: [
     { id: userId, runId, messageSeq: 0, message: { role: "user", content: "hello", timestamp: 1 } },
@@ -56,7 +56,7 @@ describe("conversation projection", () => {
       messageSeq: 1,
       message: { ...partial, content: [{ type: "text", text: "Hi there" }], stopReason: "stop" },
     }));
-    applyEnvelope(state, envelope(8, { type: "agent_end", messages: [], status: "stopped", stopReason: "stop", errorMessage: null }));
+    applyEnvelope(state, envelope(8, { type: "agent_end", messages: [], status: "stopped", stopReason: "stop", errorMessage: null, workspaceCommit: null }));
     items = conversationItems(state);
     expect(items[1]).toMatchObject({
       running: false,

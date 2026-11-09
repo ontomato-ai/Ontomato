@@ -1,3 +1,4 @@
+import { appBuilderRouter } from "../api/routes/app-builder";
 import { workspacePreviewRouter, workspaceRouter, mountHostedStatic } from "../api/routes/workspaces";
 import { installAppSdk } from "../services/workspaces/hosted-apps";
 import { startModelMigration, stopModelMigration } from "../platform/agent-runtime/model-migration";
@@ -197,6 +198,7 @@ export function createWorkbenchApp(): Express {
     );
   });
 
+  app.use("/api", appBuilderRouter);
   app.use("/api/workspaces", workspaceRouter);
   app.use("/api/analysis-tasks", analysisTasksRouter);
   app.use("/api/assistant", assistantRouter);

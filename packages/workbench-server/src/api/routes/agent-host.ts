@@ -1,7 +1,7 @@
 import { sessionHistoryQuerySchema } from "@ontomato/contracts/session-history";
 import { Router } from "express";
 import { z } from "zod";
-import { agentHostCreateSessionSchema, agentHostStartRunSchema, agentHostRenameSessionSchema } from "@ontomato/contracts/agent-host";
+import { agentHostSessionPageQuerySchema, agentHostCreateSessionSchema, agentHostStartRunSchema, agentHostRenameSessionSchema } from "@ontomato/contracts/agent-host";
 import { runtimeRelativePathSchema } from "@ontomato/contracts/agent-runtime-values";
 import { RuntimeClient } from "../../infrastructure/agent-runtime/client";
 import { publicSnapshot, publicFrame } from "../../platform/agent-runtime/projection";
@@ -23,12 +23,7 @@ router.get(
     res.json(
       await service.list(
         context(req).owner,
-        z
-          .object({
-            agentId: uuid,
-            cursor: z.string().optional(),
-            limit: z.coerce.number().int().min(1).max(100).default(30),
-          })
+        agentHostSessionPageQuerySchema.extend({ agentId: uuid })
           .parse(req.query),
       ),
     );
