@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { ref, watch } from "vue";
 import { ElTabs, ElTabPane } from "element-plus";
-import { viewConditionMatches, type ObjectViewDocument, type ObjectReference } from "@ontomato/contracts/object-views";
+import { resolveViewParameters, viewConditionMatches, type ObjectViewDocument, type ObjectReference, type ViewWidget } from "@ontomato/contracts/object-views";
+import MetricViewData from "../app-components/MetricViewData.vue";
 import ObjectViewWidget from "./ObjectViewWidget.vue";
 const props = defineProps<{ document: ObjectViewDocument; object: Record<string, unknown>; reference: ObjectReference; preview?: boolean }>();
 const emit = defineEmits<{ open: [reference: ObjectReference]; refresh: [] }>();
@@ -14,6 +15,8 @@ watch(() => props.document, document => {
 }, { immediate: true });
 watch(() => JSON.stringify([props.reference.className, props.reference.primaryKey]), () => { variables.value = { ...props.document.variables }; });
 function reload() { refresh.value++; emit("refresh"); }
+/** Metrics, tables and charts bound to a MetricView read it through the MetricViewData that SDK apps use. */
+function readsMetricView(widget: ViewWidget) { return ["metric", "table", "chart"].includes(widget.kind) && !!widget.resourceId; }
 </script>
 <template>
   <div class="object-view-runtime">
@@ -25,7 +28,10 @@ function reload() { refresh.value++; emit("refresh"); }
             <template v-for="widget in section.widgets" :key="widget.id">
               <article v-if="viewConditionMatches(widget.visibleWhen, object, variables)" :style="{ gridColumn: 'span ' + widget.span }" :class="['widget-card', { 'chart-card': widget.kind === 'chart' }]" :data-kind="widget.kind">
                 <h4 v-if="widget.title">{{ widget.title }}</h4>
-                <ObjectViewWidget :widget="widget" :object="object" :reference="reference" :variables="variables" :refresh="refresh" :preview="preview" @variable="(name, value) => variables[name] = value" @refresh="reload" @open="emit('open', $event)" />
+                <MetricViewData v-if="readsMetricView(widget)" v-slot="read" :metric-view-id="widget.resourceId" :parameters="resolveViewParameters(widget.parameters, object, variables)">
+                  <ObjectViewWidget :widget="widget" :object="object" :reference="reference" :variables="variables" :refresh="refresh" :preview="preview" :metric-view="read" @variable="(name, value) => variables[name] = value" @refresh="reload" @open="emit('open', $event)" />
+                </MetricViewData>
+                <ObjectViewWidget v-else :widget="widget" :object="object" :reference="reference" :variables="variables" :refresh="refresh" :preview="preview" @variable="(name, value) => variables[name] = value" @refresh="reload" @open="emit('open', $event)" />
               </article>
             </template>
           </div>

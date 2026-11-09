@@ -114,6 +114,21 @@ describe("configured object view interaction", () => {
     await nextTick();
     expect(element.querySelector(".el-message--success")).toBeNull();
   });
+  it("reads a bound MetricView again after an Action succeeds", async () => {
+    const view = createObjectView("Order");
+    const metric = createViewWidget("metric"); metric.resourceId = "metric-1"; metric.valueField = "value";
+    const action = createViewWidget("action"); action.resourceId = "ship"; action.title = "Ship order";
+    view.tabs[0].sections[0].widgets = [metric, action];
+    let reads = 0;
+    vi.stubGlobal("fetch", async (url: string) => new Response(JSON.stringify({ success: true,
+      data: url.endsWith("/metricView/execute") ? [{ value: `read ${++reads}` }] : url.endsWith("/action/queryById") ? { function: { parameters: [] } } : {} })));
+    const element = mount(() => h(ObjectViewRuntime, { document: view, object: { id: "1" }, reference: { className: "Order", primaryKey: "1" } }));
+    await settle();
+    expect(element.querySelector(".metric")?.textContent).toBe("read 1");
+    Array.from(element.querySelectorAll("button")).find(button => button.textContent?.trim() === "Ship order")!.click(); await settle();
+    Array.from(element.querySelectorAll("button")).find(button => button.textContent?.trim() === "Submit")!.click(); await settle();
+    expect(element.querySelector(".metric")?.textContent).toBe("read 2");
+  });
   it("updates a bound metric and conditional component when an input variable changes", async () => {
     const view = createObjectView("Order");
     view.variables.filter = "initial";

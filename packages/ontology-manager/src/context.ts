@@ -7,6 +7,7 @@ import {
   type ManagerCredential,
   type ManagerDataFallbacks,
 } from "./api";
+import { metricViewsKey } from "./clients/metric-views";
 import type { MessageKey, SharedKey, TextParams } from "./i18n";
 import { shellLabels, type GovernanceTranslate } from "./knowledge-governance/messages";
 import { emptyOntologyResourceCounts, type OntologyResourceCounts } from "./workspace";
@@ -122,7 +123,8 @@ function createCounts(client: ManagerClient): ManagerCounts {
 
 /**
  * The Manager's page-wide state for one page load: the context its components read, the one request client and the
- * resource counts. `install` provides them to the whole app, so the shell's navigation and the Manager pages share them.
+ * resource counts. `install` provides them to the whole app, so the shell's navigation and the Manager pages share them,
+ * and provides the client's MetricView reads to the `MetricViewData` the object views share with SDK apps.
  */
 export function createManager(options: ManagerOptions) {
   const context: ManagerContext = {
@@ -159,6 +161,7 @@ export function createManager(options: ManagerOptions) {
       app.provide(contextKey, context);
       app.provide(clientKey, client);
       app.provide(countsKey, counts);
+      app.provide(metricViewsKey, client.metricViews);
     },
   };
 }
@@ -171,6 +174,7 @@ export function provideManager(manager: Manager) {
     [contextKey as symbol]: manager.context,
     [clientKey as symbol]: manager.client,
     [countsKey as symbol]: manager.counts,
+    [metricViewsKey as symbol]: manager.client.metricViews,
   };
 }
 
