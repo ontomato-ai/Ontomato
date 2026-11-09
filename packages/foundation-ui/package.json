@@ -1,0 +1,23 @@
+{
+  "name": "@ontomato/foundation-ui",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "exports": {
+    "./chart": "./src/chart/index.ts"
+  },
+  "scripts": {
+    "typecheck": "vue-tsc --noEmit"
+  },
+  "dependencies": {
+    "echarts": "6.0.0"
+  },
+  "peerDependencies": {
+    "vue": "^3.5.30"
+  },
+  "devDependencies": {
+    "typescript": "5.9.3",
+    "vue": "3.5.30",
+    "vue-tsc": "3.2.6"
+  }
+}

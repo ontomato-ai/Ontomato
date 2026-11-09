@@ -76,7 +76,6 @@ export const workbenchContent: WorkbenchContent = {
     },
   },
   dashboard: {
-    themeName: "ontomatoDashboard",
     zoomChartTheme: "dashboard",
     loadingMask: "transparent",
     chartTooltips: {

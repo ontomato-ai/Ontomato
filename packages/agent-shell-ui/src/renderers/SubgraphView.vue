@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, ref, watch } from "vue";
-import * as echarts from "echarts";
+import { computed, onMounted, ref, shallowRef, watch } from "vue";
+import { format } from "echarts";
+import { EChart } from "@ontomato/foundation-ui/chart";
 import type { QuerySubgraph } from "@ontomato/contracts/query-subgraph";
 import { useDarkMode } from "../useDarkMode";
 import { subgraphOption, subgraphSize } from "./subgraph-chart";
@@ -8,9 +9,8 @@ import { subgraphOption, subgraphSize } from "./subgraph-chart";
 /** A dataset's source analysis drawn as delivered; filters are listed per query under the graph. */
 const props = defineProps<{ graph: QuerySubgraph }>();
 const isDark = useDarkMode();
-const el = ref<HTMLElement | null>(null);
-let chart: echarts.ECharts | null = null;
-let observer: ResizeObserver | null = null;
+const frame = ref<HTMLElement>();
+const option = shallowRef<ReturnType<typeof subgraphOption>>();
 
 const measure = document.createElement("canvas").getContext("2d");
 if (measure) measure.font = "12px sans-serif";
@@ -23,20 +23,10 @@ const filterGroups = computed(() =>
     .filter((group) => group.filters.length),
 );
 
-function dispose() {
-  observer?.disconnect();
-  observer = null;
-  chart?.dispose();
-  chart = null;
-}
-
-function draw() {
-  dispose();
-  if (!el.value) return;
-  const css = getComputedStyle(el.value);
+function paint() {
+  const css = getComputedStyle(frame.value!);
   const token = (name: string, fallback: string) => css.getPropertyValue(name).trim() || fallback;
-  chart = echarts.init(el.value);
-  chart.setOption(subgraphOption(
+  option.value = subgraphOption(
     props.graph,
     {
       text: token("--el-text-color-regular", "#303133"),
@@ -49,21 +39,19 @@ function draw() {
       output: token("--el-color-success", "#67c23a"),
     },
     textWidth,
-    (value) => echarts.format.encodeHTML(value),
-  ));
-  observer = new ResizeObserver(() => chart?.resize());
-  observer.observe(el.value);
+    format.encodeHTML,
+  );
 }
 
-// CSS tokens are read at draw time, so a theme change redraws.
-watch([() => props.graph, isDark], () => nextTick(draw), { immediate: true });
-onBeforeUnmount(dispose);
+// CSS tokens are read where the graph is shown, so a theme change repaints.
+onMounted(paint);
+watch([() => props.graph, isDark], paint);
 </script>
 
 <template>
   <div class="subgraph">
-    <div class="frame">
-      <div ref="el" class="canvas" :style="{ width: `${size.width}px`, height: `${size.height}px` }" />
+    <div ref="frame" class="frame">
+      <EChart v-if="option" class="canvas" :option="option" :height="size.height" :style="{ width: `${size.width}px` }" />
     </div>
     <ul v-if="filterGroups.length" class="filters">
       <li v-for="group in filterGroups" :key="group.query.id">

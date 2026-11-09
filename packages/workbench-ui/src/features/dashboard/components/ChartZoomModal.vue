@@ -14,7 +14,13 @@
           </button>
         </div>
         <div class="ai-zoom-body">
-          <div v-show="mode === 'chart'" ref="chartRef" class="ai-zoom-chart"></div>
+          <EChart
+            v-if="mode === 'chart' && option"
+            class="ai-zoom-chart"
+            :option="modalOption"
+            :theme="theme"
+            height="100%"
+          />
           <div v-show="mode === 'table'" class="ai-zoom-table" @click.stop>
             <ChartDataTable :tabular="tabular" :max-rows="maxRows" />
           </div>
@@ -25,13 +31,13 @@
 </template>
 
 <script setup>
-import { nextTick, onBeforeUnmount, ref, watch } from "vue";
-import * as echarts from "echarts";
+import { computed, onBeforeUnmount, watch } from "vue";
+import { EChart } from "@ontomato/foundation-ui/chart";
 import ChartDataTable from "./ChartDataTable.vue";
-import { safeCloneOption } from "./utils/chartTabular";
-import { getEchartsTheme } from "./utils/echartsTheme";
+import { nativeEchartsTheme } from "./utils/echartsTheme";
 import { useI18n } from "vue-i18n";
 import { workbenchContent } from "../../../content";
+import { useTheme } from "../../../composables/useTheme";
 
 useI18n();
 
@@ -46,66 +52,11 @@ const props = defineProps({
 
 const emit = defineEmits(["close"]);
 
-const chartRef = ref(null);
-let modalChart = null;
-let resizeObs = null;
-
-function disposeChart() {
-  if (resizeObs) {
-    resizeObs.disconnect();
-    resizeObs = null;
-  }
-  if (modalChart) {
-    modalChart.dispose();
-    modalChart = null;
-  }
-}
-
-function getModalOption() {
-  const opt = safeCloneOption(props.option) || {};
-  if (opt && typeof opt === "object") {
-    opt.backgroundColor = "transparent";
-    if (opt.title) opt.title = undefined;
-  }
-  return opt;
-}
-
-async function ensureChartReady() {
-  await nextTick();
-  const el = chartRef.value;
-  if (!el) return;
-  if (!modalChart) {
-    const visuals = workbenchContent().dashboard;
-    if (visuals.zoomChartTheme === "dashboard") {
-      echarts.registerTheme(visuals.themeName, getEchartsTheme());
-      modalChart = echarts.init(el, visuals.themeName);
-    } else {
-      modalChart = echarts.init(el);
-    }
-    if (typeof ResizeObserver !== "undefined") {
-      resizeObs = new ResizeObserver(() => {
-        try {
-          modalChart?.resize?.();
-        } catch {
-          // Ignore resize errors
-        }
-      });
-      resizeObs.observe(el);
-    }
-  }
-}
-
-async function applyChart() {
-  if (!props.open || props.mode !== "chart") return;
-  if (!props.option) return;
-  await ensureChartReady();
-  if (!modalChart) return;
-  try {
-    modalChart.setOption(getModalOption(), { notMerge: true, lazyUpdate: false });
-  } catch {
-    disposeChart();
-  }
-}
+const { isDark } = useTheme();
+const { zoomChartTheme } = workbenchContent().dashboard;
+const theme = computed(() => (zoomChartTheme === "dashboard" ? nativeEchartsTheme(isDark.value) : undefined));
+/** The card's chart on the dialog's background; the dialog header shows the title. */
+const modalOption = computed(() => ({ ...props.option, backgroundColor: "transparent", title: undefined }));
 
 function handleMaskClick(e) {
   if (e.target?.classList?.contains("ai-dashboard-chart-zoom-modal")) emit("close");
@@ -120,39 +71,16 @@ watch(
         if (e.key === "Escape") emit("close");
       };
       window.addEventListener("keydown", keydownHandler);
-      void applyChart();
       return;
     }
     if (keydownHandler) window.removeEventListener("keydown", keydownHandler);
     keydownHandler = null;
-    disposeChart();
-  }
-);
-
-watch(
-  () => props.mode,
-  () => {
-    if (!props.open) return;
-    if (props.mode === "chart") {
-      void applyChart();
-      return;
-    }
-    disposeChart();
-  }
-);
-
-watch(
-  () => props.option,
-  () => {
-    if (!props.open || props.mode !== "chart") return;
-    void applyChart();
   }
 );
 
 onBeforeUnmount(() => {
   if (keydownHandler) window.removeEventListener("keydown", keydownHandler);
   keydownHandler = null;
-  disposeChart();
 });
 </script>
 

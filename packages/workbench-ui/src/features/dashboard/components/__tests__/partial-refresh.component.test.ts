@@ -10,7 +10,7 @@ import { workbenchI18n } from "../../../../i18n";
  * A dashboard widget refresh keeps the data engine's partial-result marker on the widget it fills:
  * the chart and the metric show the localized header with the hint verbatim, and a partial chart
  * without rows never says "no data". A complete refresh leaves no marker. Doubles: the dashboard
- * API boundary, echarts and the resize library.
+ * API boundary, the chart drawing and the resize library.
  */
 const api = vi.hoisted(() => ({ response: {} as Record<string, unknown> }));
 vi.mock("../../api", () => ({
@@ -34,10 +34,6 @@ vi.mock("../../api", () => ({
   }),
   getAnswerByDslConditionParam: async () => api.response,
   getConditionsFromDsl: async () => [],
-}));
-vi.mock("echarts", () => ({
-  registerTheme: vi.fn(),
-  init: vi.fn(() => ({ setOption: vi.fn(), dispose: vi.fn(), resize: vi.fn() })),
 }));
 vi.mock("interactjs", () => ({
   default: Object.assign(() => ({ resizable: () => ({ unset: () => {} }) }), {
@@ -75,7 +71,7 @@ describe("dashboard widget refresh with a partial result", () => {
     expect(metric.truncation).toEqual(MARKER);
 
     const notice = `${t("chat.partialResult", { rowLimit: 100000 })} ${MARKER.truncationHint}`;
-    const chartCard = mount(ChartCard, { props: { chart }, global: { plugins: [i18n, ElementPlus] } });
+    const chartCard = mount(ChartCard, { props: { chart }, global: { plugins: [i18n, ElementPlus], stubs: { EChart: true } } });
     expect(chartCard.find(".chart-mask").text()).toBe(notice);
     expect(chartCard.find(".chart-mask").text()).not.toContain(t("common.noData"));
 
@@ -87,7 +83,7 @@ describe("dashboard widget refresh with a partial result", () => {
     const { chart, metric } = await load({ data: [], rawData: [], fields: {}, dsl: {} });
     expect(chart.truncation).toBeUndefined();
     expect(metric.truncation).toBeUndefined();
-    const chartCard = mount(ChartCard, { props: { chart }, global: { plugins: [i18n, ElementPlus] } });
+    const chartCard = mount(ChartCard, { props: { chart }, global: { plugins: [i18n, ElementPlus], stubs: { EChart: true } } });
     expect(chartCard.find(".chart-mask").text()).toBe(t("common.noData"));
   });
 });

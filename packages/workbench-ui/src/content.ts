@@ -92,9 +92,7 @@ export interface WorkbenchFixedText {
  * the edition's brand source (features/dashboard/chart-palette.ts).
  */
 export interface DashboardVisuals {
-  /** Theme name registered with echarts (original value). */
-  themeName: string;
-  /** Chart theme of the zoom dialog: either echarts' default theme or (open source) the registered dashboard theme. */
+  /** Chart theme of the zoom dialog: either echarts' default theme or (open source) the dashboard theme. */
   zoomChartTheme: "default" | "dashboard";
   /** Loading mask of charts and metric cards: the Element Plus default background or (open source) transparent. */
   loadingMask: "default" | "transparent";

@@ -1,5 +1,5 @@
 import type { BrandMode } from "@ontomato/design-tokens";
-import { currentChartPalette, currentMode } from "../../chart-palette";
+import { currentChartPalette } from "../../chart-palette";
 
 /**
  * The native ECharts theme of dashboards and agent chart files, from the installed brand's chart palette, so charts
@@ -29,9 +29,4 @@ export function nativeEchartsTheme(isDark: boolean) {
     timeAxis: axis(true, false),
     logAxis: axis(false, true),
   };
-}
-
-/** The dashboard theme registered with ECharts for the mode shown now. */
-export function getEchartsTheme() {
-  return nativeEchartsTheme(currentMode() === "dark");
 }

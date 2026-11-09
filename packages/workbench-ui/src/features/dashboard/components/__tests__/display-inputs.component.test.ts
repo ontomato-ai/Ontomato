@@ -3,15 +3,12 @@ import { flushPromises, mount } from "@vue/test-utils";
 import { createPinia } from "pinia";
 import { createMemoryHistory, createRouter } from "vue-router";
 import ElementPlus from "element-plus";
+import { EChart } from "@ontomato/foundation-ui/chart";
 import ChartZoomModal from "../ChartZoomModal.vue";
+import { nativeEchartsTheme } from "../utils/echartsTheme";
 import { workbenchI18n } from "../../../../i18n";
 import { installWorkbenchContent, workbenchContent, type DashboardVisuals } from "../../../../content";
 
-const echartsMock = vi.hoisted(() => ({
-  registerTheme: vi.fn(),
-  init: vi.fn(() => ({ setOption: vi.fn(), dispose: vi.fn(), resize: vi.fn() })),
-}));
-vi.mock("echarts", () => echartsMock);
 vi.mock("interactjs", () => ({
   default: Object.assign(() => ({ resizable: () => ({ unset: () => {} }) }), {
     modifiers: { restrictSize: () => ({}) },
@@ -25,35 +22,27 @@ function useDashboardVisuals(patch: Partial<DashboardVisuals>) {
 }
 afterEach(() => {
   installWorkbenchContent(ossContent);
-  echartsMock.registerTheme.mockClear();
-  echartsMock.init.mockClear();
   document.body.innerHTML = "";
 });
 
 const router = createRouter({ history: createMemoryHistory(), routes: [{ path: "/", component: { template: "<div />" } }] });
-const global = () => ({ plugins: [workbenchI18n(), createPinia(), router, ElementPlus] });
+const global = () => ({ plugins: [workbenchI18n(), createPinia(), router, ElementPlus], stubs: { EChart: true } });
 
 describe("dashboard display inputs under both layouts", () => {
-  async function openZoom() {
+  async function zoomChartTheme() {
     const wrapper = mount(ChartZoomModal, { props: { option: { series: [] } }, global: global() });
     // The component is a JS <script setup>, so test-utils cannot infer its props type.
     await wrapper.setProps({ open: true } as never);
     await flushPromises();
-    return wrapper;
+    return wrapper.findComponent(EChart).props("theme");
   }
 
-  it("zoom dialog: echarts default theme when configured; open source registers the dashboard theme and initializes by theme name", async () => {
+  it("zoom dialog: echarts default theme when configured; open source draws with the dashboard theme", async () => {
     useDashboardVisuals({ zoomChartTheme: "default" });
-    await openZoom();
-    expect(echartsMock.registerTheme).not.toHaveBeenCalled();
-    expect(echartsMock.init).toHaveBeenCalledWith(expect.any(HTMLElement));
-    expect(echartsMock.init.mock.calls[0]).toHaveLength(1);
+    expect(await zoomChartTheme()).toBeUndefined();
 
     installWorkbenchContent(ossContent);
-    echartsMock.init.mockClear();
-    await openZoom();
-    expect(echartsMock.registerTheme).toHaveBeenCalledWith(ossContent.dashboard.themeName, expect.any(Object));
-    expect(echartsMock.init).toHaveBeenCalledWith(expect.any(HTMLElement), ossContent.dashboard.themeName);
+    expect(await zoomChartTheme()).toEqual(nativeEchartsTheme(false));
   });
 
 
