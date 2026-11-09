@@ -1,23 +1,8 @@
 <script setup lang="ts">
 import { ElFormItem, ElInput, ElOption, ElSelect } from "element-plus";
+import type { FormField } from "@ontomato/contracts/form-fields";
 
-interface Option {
-  value: string;
-  label: string;
-  description: string | null;
-  disabled: boolean;
-  disabledReason: string | null;
-}
-interface Base {
-  key: string;
-  label: string;
-  help: string | null;
-}
-/** A choice among options, or text on one or several lines; a page passes its form's fields, which carry these. */
-type Field =
-  | (Base & { type: "select"; options: readonly Option[] })
-  | (Base & { type: "text"; multiline: boolean; maxLength: number; placeholder: string | null });
-type SelectField = Extract<Field, { type: "select" }>;
+type SelectField = Extract<FormField, { type: "select" }>;
 
 /**
  * Draws a form exactly as its owner declared it: a choice is a select, whose unavailable options stay listed with the
@@ -25,7 +10,7 @@ type SelectField = Extract<Field, { type: "select" }>;
  * fields come in the owner's order with its labels, help and limits; the page adds no field and no rule.
  */
 defineProps<{
-  fields: readonly Field[];
+  fields: readonly FormField[];
   values: Readonly<Record<string, string>>;
   /** The message each field shows, by field key. */
   errors: Readonly<Record<string, string>>;
@@ -39,8 +24,8 @@ defineProps<{
 const emit = defineEmits<{
   /** A text changed: the draft follows it, the owner is not asked again. */
   input: [key: string, value: string];
-  /** A choice changed; the caller asks the owner again when its field says the form depends on it. */
-  choose: [key: string, value: string];
+  /** A choice changed; the caller asks the owner again when the field says the form depends on it. */
+  choose: [field: SelectField, value: string];
 }>();
 
 function chosen(field: SelectField, value: string | undefined) {
@@ -67,7 +52,7 @@ function chosen(field: SelectField, value: string | undefined) {
           class="control"
           popper-class="form-field-options"
           :aria-label="field.label"
-          @update:model-value="emit('choose', field.key, String($event ?? ''))"
+          @update:model-value="emit('choose', field, String($event ?? ''))"
         >
           <el-option
             v-for="option in field.options"

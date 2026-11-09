@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, ref, watch, type Component } from "vue";
 import { Check } from "lucide-vue-next";
-import { formFieldKey } from "@ontomato/contracts/form-fields";
+import { formFieldKey, type FormField } from "@ontomato/contracts/form-fields";
 import {
   PLATFORM_SCHEDULE_TITLE_MAX,
   platformTaskInputSchema,
@@ -152,10 +152,9 @@ function input(key: string, value: string) {
   clearSaveError(key);
 }
 
-function choose(key: string, value: string) {
-  input(key, value);
-  const field = session.form.value!.fields.find((candidate) => candidate.key === key)!;
-  if (field.type === "select" && field.refreshOnChange && appId.value) loadForm(appId.value, session.values.value, key);
+function choose(field: Extract<FormField, { type: "select" }>, value: string) {
+  input(field.key, value);
+  if (field.refreshOnChange && appId.value) loadForm(appId.value, session.values.value, field.key);
 }
 
 watch(title, () => delete savePlatformErrors.value.title);

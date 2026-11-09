@@ -5,6 +5,7 @@ import static io.ontomato.dataengine.schedules.ScheduleJson.*;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import io.ontomato.dataengine.service.FormFields;
 import java.util.Map;
 
 /**
@@ -12,63 +13,6 @@ import java.util.Map;
  */
 public final class ScheduleForms {
   private ScheduleForms() {}
-
-  public static JsonNode option(String value, String label, String reason, String description) {
-    return object(
-        "value",
-        value,
-        "label",
-        label,
-        "description",
-        description,
-        "disabled",
-        reason != null,
-        "disabledReason",
-        reason);
-  }
-
-  public static JsonNode select(String key, String label, JsonNode options, boolean refresh) {
-    return object(
-        "key",
-        key,
-        "label",
-        label,
-        "type",
-        "select",
-        "required",
-        true,
-        "defaultValue",
-        null,
-        "help",
-        null,
-        "refreshOnChange",
-        refresh,
-        "options",
-        options);
-  }
-
-  public static JsonNode text(
-      String key, String label, boolean required, boolean multiline, String help, int maxLength) {
-    return object(
-        "key",
-        key,
-        "label",
-        label,
-        "type",
-        "text",
-        "required",
-        required,
-        "defaultValue",
-        null,
-        "help",
-        help,
-        "multiline",
-        multiline,
-        "placeholder",
-        null,
-        "maxLength",
-        maxLength);
-  }
 
   public static JsonNode form(String app, String revision, ArrayNode fields, JsonNode supplied) {
     var values = object();
@@ -88,7 +32,7 @@ public final class ScheduleForms {
           if (value.equals(candidate.path("value").asText())) selected = candidate;
         if (selected == null || selected.path("disabled").asBoolean()) {
           errors.add(
-              error(
+              FormFields.error(
                   "/values/" + pointer(key),
                   "target_unavailable",
                   selected == null
@@ -125,10 +69,6 @@ public final class ScheduleForms {
         complete);
   }
 
-  public static ObjectNode error(String field, String code, String message) {
-    return object("field", field, "code", code, "message", message);
-  }
-
   public static ScheduleApplication.Validation validate(TaskDefinition definition, JsonNode form) {
     if (!definition.formRevision().equals(form.path("formRevision").asText()))
       throw new ScheduleException(
@@ -149,7 +89,7 @@ public final class ScheduleForms {
       String key = field.path("key").asText();
       if (field.path("required").asBoolean() && definition.content().path(key).asText().isBlank())
         errors.add(
-            error(
+            FormFields.error(
                 "/content/" + pointer(key),
                 "required",
                 field.path("label").asText() + " is required"));

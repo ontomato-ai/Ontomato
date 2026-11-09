@@ -324,6 +324,9 @@ importers:
         specifier: 6.0.0
         version: 6.0.0
     devDependencies:
+      '@ontomato/contracts':
+        specifier: workspace:*
+        version: link:../contracts
       element-plus:
         specifier: 2.13.6
         version: 2.13.6(typescript@5.9.3)(vue@3.5.30(typescript@5.9.3))

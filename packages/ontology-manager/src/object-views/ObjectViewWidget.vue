@@ -204,7 +204,7 @@ async function openAction() {
       <el-alert v-if="error" :title="error" type="error" :closable="false" />
       <dl v-if="widget.contextFields.length" class="action-context properties"><template v-for="field in widget.contextFields" :key="field"><dt>{{ widget.fieldLabels[field] || fieldLabels[field] || field }}</dt><dd>{{ displayField(field, object[field]) }}</dd></template></dl>
       <el-form label-position="top" @submit.prevent="execute">
-        <FormFields :fields="actionFormFields" :values="actionValues" :errors="actionErrors" :disabled="loading" :choose-placeholder="ot('ovChooseOption')" :read-only="widget.readOnlyParameters" @input="enterAction" @choose="enterAction" />
+        <FormFields :fields="actionFormFields" :values="actionValues" :errors="actionErrors" :disabled="loading" :choose-placeholder="ot('ovChooseOption')" :read-only="widget.readOnlyParameters" @input="enterAction" @choose="(field, value) => enterAction(field.key, value)" />
       </el-form>
       <template #footer><el-button @click="actionOpen = false">{{ ot('ovCancel') }}</el-button><el-button type="primary" :loading="loading" @click="execute">{{ ot('ovSubmit') }}</el-button></template>
     </el-dialog>

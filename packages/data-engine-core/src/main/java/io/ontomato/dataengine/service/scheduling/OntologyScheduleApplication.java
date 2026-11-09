@@ -179,7 +179,7 @@ public class OntologyScheduleApplication implements ScheduleApplication {
               ? "Target unavailable"
               : unsupportedReason(action.getFunction(), actor.locale());
       options.add(
-          ScheduleForms.option(
+          FormFields.option(
               "action:" + action.getId(),
               label(action.getName(), action.getId()) + (zh ? " · 动作" : " · Action"),
               reason,
@@ -187,7 +187,7 @@ public class OntologyScheduleApplication implements ScheduleApplication {
     }
     for (var function : functions.queryList(Function.OPERATION_WRITE, null, actor.domain()))
       options.add(
-          ScheduleForms.option(
+          FormFields.option(
               "function:" + function.getId(),
               label(function.getName(), function.getId()) + (zh ? " · 函数" : " · Function"),
               unsupportedReason(function, actor.locale()),
@@ -197,9 +197,9 @@ public class OntologyScheduleApplication implements ScheduleApplication {
     for (var option : options) if (selected.equals(option.path("value").asText())) found = true;
     if (!selected.isBlank() && !found)
       options.add(
-          ScheduleForms.option(selected, selected, zh ? "目标已不可用" : "Target unavailable", null));
+          FormFields.option(selected, selected, zh ? "目标已不可用" : "Target unavailable", null));
     var fields = array();
-    fields.add(ScheduleForms.select("execution", zh ? "执行" : "Execute", options, true));
+    fields.add(FormFields.select("execution", zh ? "执行" : "Execute", options, true));
     String revision = "ontology-unselected-v1";
     if (!selected.isBlank()) {
       try {

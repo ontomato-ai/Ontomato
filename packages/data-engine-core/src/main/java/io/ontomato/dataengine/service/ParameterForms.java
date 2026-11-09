@@ -8,7 +8,6 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectReader;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import io.ontomato.dataengine.bean.function.Parameter;
-import io.ontomato.dataengine.schedules.ScheduleForms;
 import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.time.*;
@@ -85,7 +84,7 @@ public final class ParameterForms {
     var fields = array();
     for (var parameter : parameters)
       fields.add(
-          ScheduleForms.text(
+          FormFields.text(
               keyPrefix + parameter.getName(),
               parameter.getName(),
               false,
@@ -145,7 +144,7 @@ public final class ParameterForms {
         if (value == null || MetricViewBindings.accepts(type, value)) values.put(name, value);
         else
           errors.add(
-              ScheduleForms.error(
+              FormFields.error(
                   field,
                   code(type, Context.INTERACTIVE),
                   zh ? name + " 的绑定值无效" : "The bound value of " + name + " is invalid"));
@@ -265,13 +264,13 @@ public final class ParameterForms {
   }
 
   private static JsonNode invalid(String field, String type, Context context, String name, boolean zh) {
-    return ScheduleForms.error(
+    return FormFields.error(
         field, code(type, context), zh ? name + " 的值无效" : "Invalid value for " + name);
   }
 
   private static JsonNode tooLong(String field, boolean zh) {
     int max = Context.INTERACTIVE.textMax;
-    return ScheduleForms.error(
+    return FormFields.error(
         field, "value_too_long", zh ? "最多 " + max + " 个字符" : "At most " + max + " characters");
   }
 }
