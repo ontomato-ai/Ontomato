@@ -8,6 +8,7 @@ import {
   type AppHostPreferences,
   type AppHostTheme,
   type AppHostUser,
+  type AppPageContext,
 } from "@ontomato/contracts/app-host";
 import MetricViewData from "@ontomato/ontology-manager/app-components/MetricViewData.vue";
 import {
@@ -35,6 +36,14 @@ export interface AppContext {
   readonly actions: ActionsClient;
   /** Opens a platform page in the shell, e.g. `navigate("/ontology/objects")`. */
   navigate(path: string): void;
+  /**
+   * Tells the platform what the reader looks at: the app's own page and the object selected on it, or `null`. Call it
+   * when the page starts, when the reader moves to another page of the app, and when they select an object or clear
+   * the selection. Where the platform shows the app beside its agent (the app builder's preview), the reader's messages
+   * carry it, so "this one" means that object; elsewhere it has no effect. Throws a `TypeError` unless `page` and each
+   * field of `selection` are non-empty strings.
+   */
+  setPageContext(context: AppPageContext): void;
   /** Installs the context into a Vue app: the platform's words, Element Plus's locale and `<metric-view-data>`. */
   install(app: App): void;
 }
@@ -50,6 +59,15 @@ export function contextTransport(context: AppContext) {
   const transport = transports.get(context);
   if (!transport) throw new Error("Pass the context createAppContext() returned");
   return transport;
+}
+
+const isText = (value: unknown) => typeof value === "string" && value.trim() !== "";
+
+/** The page context as the app wrote it, checked here: the page is plain script, the platform reads typed values. */
+function checkPageContext({ page, selection }: AppPageContext) {
+  if (!isText(page)) throw new TypeError("setPageContext: page must be the page's name, a non-empty string");
+  if (selection !== null && !(isText(selection?.className) && isText(selection.primaryKey) && isText(selection.name)))
+    throw new TypeError("setPageContext: selection must be null or { className, primaryKey, name }, each a non-empty string");
 }
 
 /**
@@ -106,6 +124,11 @@ export function createAppContext(): AppContext {
     metricViews,
     actions: createActionsClient(transport),
     navigate: (path) => host.navigate(path),
+    // The page's own window tells the shell which of its app frames speaks.
+    setPageContext(value) {
+      checkPageContext(value);
+      host.setPageContext(window, value);
+    },
     install(app) {
       app.use(i18n);
       provideGlobalConfig(computed(() => ({ locale: language.elementLocale(locale.value) })), app, true);

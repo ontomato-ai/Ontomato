@@ -16,7 +16,7 @@ keeps the behaviour of the version it names.
 | `docs/reference.md` | The API of `@ontomato/sdk` and `@ontomato/sdk/chat`, generated from their sources |
 | `docs/element-plus.web-types.json` | Element Plus's own metadata for every component of the bundled version: attributes, events, slots |
 | `examples/basic.html` | Platform context, Element Plus and an ECharts chart |
-| `examples/metric-action.html` | A published MetricView in a table and a chart, then an Action and a fresh read |
+| `examples/metric-action.html` | A published MetricView in a table and a chart, the selected row as page context, then an Action and a fresh read |
 | `examples/chat.html` | A conversation with one of the platform's agents |
 
 ## Modules
@@ -78,8 +78,40 @@ the page is not inside the shell. `app.use(context)` installs the platform's wor
 - Every request carries the current user's credential; the open-source edition sends none. The server decides every
   permission: an app sees and changes only what its user may. When the sign-in expires, the shell takes over.
 - `context.navigate(path)` opens a platform page in the shell, such as `context.navigate("/ontology/assets/metrics")`.
+- `context.setPageContext({ page, selection })` tells the platform what the reader looks at; see the next section.
 - An app reaches the platform only through the SDK: `context.metricViews` to read, `context.actions` to change data and
   `createAssistantClient(context)` for conversations. Other platform paths are internal and change between versions.
+
+## What the reader looks at: page context
+
+`context.setPageContext({ page, selection })` tells the platform which page of the app the reader is on and which
+business object they selected on it. Where the platform shows the app beside its agent, such as the app builder's
+preview, the reader's messages carry it, so "this order" or "this row" in a request means that object. Elsewhere,
+a published app included, the call has no effect, so an app calls it the same way everywhere.
+
+- `page` is the app's own name for the page in view, as the reader sees it: its title, or the label of the open tab.
+- `selection` is `null`, or the selected object: `className` is its ontology class by the class's name, `primaryKey`
+  its primary key as text, and `name` what the reader calls it, such as an order number.
+
+Call it when the page starts, with `selection: null`; when the reader moves to another page of the app; and whenever
+they select an object or clear the selection. It throws a `TypeError` unless `page` and every field of `selection` are
+non-empty strings, so pass a number as `String(value)`.
+
+```js
+const PAGE = "Overdue orders";
+context.setPageContext({ page: PAGE, selection: null });
+
+// The table's row-click handler: a second click on the selected row clears the selection.
+function toggle(row) {
+  selected.value = selected.value === row ? null : row;
+  context.setPageContext({
+    page: PAGE,
+    selection: selected.value && { className: "Order", primaryKey: String(row.id), name: row.orderNo },
+  });
+}
+```
+
+`examples/metric-action.html` reports the row selected in its table.
 
 ## Reading data: published MetricViews
 

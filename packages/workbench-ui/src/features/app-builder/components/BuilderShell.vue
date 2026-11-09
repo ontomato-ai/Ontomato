@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref, watch, watchEffect } from "vue";
+import { computed, onBeforeUnmount, ref, shallowRef, watch, watchEffect } from "vue";
 import { useI18n } from "vue-i18n";
 import { useRoute, useRouter } from "vue-router";
 import { ElMessage, ElMessageBox } from "element-plus";
@@ -19,6 +19,7 @@ import { useShellLabels } from "../../../composables/useShellLabels";
 import { authHost } from "../../../utils/auth";
 import { builderApi, createBuilderClient, WORKSPACE_PAGE } from "../api";
 import { PANEL_ID, PANEL_TABS, errorText, firstLine, shortCommit, type ChangeTarget, type PanelTab } from "../panel";
+import { selectedObject, usePreviewContext, type SubscribePageContext } from "../preview-context";
 import { useWorkspaceView, type LoadState } from "../workspace-view";
 import CommitMark from "./CommitMark.vue";
 import ComposerContext from "./ComposerContext.vue";
@@ -35,7 +36,7 @@ import WorkspacePanel from "./WorkspacePanel.vue";
  * The address names the workspace (`/app-builder/<id>`) and the open conversation (`?sessionId=`). The layout the reader
  * chose — only the conversation, beside it, or full — stays while they change conversation or workspace.
  */
-const props = defineProps<{ agent: AgentHostAgent }>();
+const props = defineProps<{ agent: AgentHostAgent; subscribePageContext: SubscribePageContext }>();
 const { t } = useI18n();
 const route = useRoute();
 const router = useRouter();
@@ -190,9 +191,14 @@ function showChanges(commit: string) {
   openPage("changes");
 }
 
+/** The frame the preview shows, while it shows one: what its app reports is the preview's context. */
+const previewFrame = shallowRef<Window | null>(null);
+const previewContext = usePreviewContext(props.subscribePageContext, () => previewFrame.value, () => workspaceId.value);
+
 /** The open view as a message names it, so "this" in the reader's words means what they look at. */
 const contextPage = computed(() => {
   const label = t(PANEL_TABS.find((item) => item.id === tab.value)!.label);
+  if (tab.value === "preview") return `${label} · ${previewContext.value?.page ?? workspaceName.value}`;
   if (tab.value === "files") return `${label} · ${file.value ?? workspaceName.value}`;
   if (tab.value !== "changes") return `${label} · ${workspaceName.value}`;
   if (target.value === "working") return `${label} · ${t("appBuilder.uncommitted")}`;
@@ -201,7 +207,16 @@ const contextPage = computed(() => {
   if (commit) return `${label} · ${shortCommit(commit.id)} ${commit.message}`;
   return id ? `${label} · ${shortCommit(id)}` : label;
 });
-const pageContext = computed(() => t("appBuilder.context", { page: contextPage.value }));
+/** The object selected in the preview's app, while the preview is the open view. */
+const contextObject = computed(() => {
+  const selection = tab.value === "preview" ? previewContext.value?.selection : null;
+  return selection ? selectedObject(selection, t) : null;
+});
+const pageContext = computed(() =>
+  contextObject.value
+    ? t("appBuilder.contextSelection", { page: contextPage.value, object: contextObject.value })
+    : t("appBuilder.context", { page: contextPage.value }),
+);
 const tabIcon = computed(() => PANEL_TABS.find((item) => item.id === tab.value)!.icon);
 
 const labels = computed<ShellLabels>(() => ({
@@ -352,6 +367,7 @@ const columnEvents = {
       <WorkspacePanel
         v-model:file="file"
         v-model:target="target"
+        v-model:preview-frame="previewFrame"
         :view="view"
         :tab="tab"
         :reload="reloadPreview"
@@ -364,6 +380,7 @@ const columnEvents = {
         :page-open="pageOpen"
         :page="contextPage"
         :icon="tabIcon"
+        :selection="contextObject"
         :busy="busy"
         @open-page="openPage('preview')"
         @open-session="selectSession"

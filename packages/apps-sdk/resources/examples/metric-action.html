@@ -10,13 +10,16 @@
     body { margin: 0; background: var(--el-bg-color-page); color: var(--el-text-color-primary); }
     .page { display: grid; gap: 16px; padding: 16px; }
     .chart { height: 300px; margin-top: 12px; }
+    .hint { margin: 0 0 12px; color: var(--el-text-color-secondary); font-size: 13px; }
+    .el-table .selected-row > td.el-table__cell { background-color: var(--el-color-primary-light-9); }
   </style>
 </head>
 <body>
   <!--
-    Reads a published MetricView into a table and a chart, executes an Action and reads the MetricView again.
-    A real app names its MetricView and Action in the page; this example asks for them, so it runs against any domain.
-    It shows MetricViews whose result is a list of row objects.
+    Reads a published MetricView into a table and a chart, executes an Action and reads the MetricView again. A click on
+    a row selects it as a business object and tells the platform with setPageContext; a second click clears it.
+    A real app names its MetricView, Action and object class in the page; this example asks for them, so it runs against
+    any domain. It shows MetricViews whose result is a list of row objects.
   -->
   <div id="app" class="page" v-cloak>
     <el-card>
@@ -42,7 +45,27 @@
         <el-alert v-else-if="data !== undefined && !Array.isArray(data)" type="warning" :closable="false" show-icon
           title="This MetricView does not return a list of rows, which is what this example shows."></el-alert>
         <template v-else>
-          <el-table v-loading="loading" :data="data ?? []" max-height="320" border>
+          <el-form inline>
+            <el-form-item label="Object class">
+              <el-input v-model="className" placeholder="The rows' ontology class" style="width: 180px"></el-input>
+            </el-form-item>
+            <el-form-item label="Key">
+              <el-select v-model="keyColumn" placeholder="Primary key column" style="width: 180px">
+                <el-option v-for="column in columnsOf(data)" :key="column" :label="column" :value="column"></el-option>
+              </el-select>
+            </el-form-item>
+            <el-form-item label="Name">
+              <el-select v-model="nameColumn" placeholder="Column readers know a row by" style="width: 180px">
+                <el-option v-for="column in columnsOf(data)" :key="column" :label="column" :value="column"></el-option>
+              </el-select>
+            </el-form-item>
+          </el-form>
+          <p class="hint">
+            {{ selectable ? "Click a row to select it, and click it again to clear the selection."
+              : "Name the class and the key and name columns to select rows." }}
+          </p>
+          <el-table v-loading="loading" :data="data ?? []" max-height="320" border
+            :row-class-name="rowClass" @row-click="toggleRow">
             <el-table-column v-for="column in columnsOf(data)" :key="column" :prop="column" :label="column">
             </el-table-column>
           </el-table>
@@ -83,12 +106,15 @@
   </div>
 
   <script type="module">
-    import { createApp, onBeforeUnmount, onMounted, ref, watch } from "vue";
+    import { computed, createApp, onBeforeUnmount, onMounted, ref, watch } from "vue";
     import ElementPlus, { ElMessage } from "element-plus";
     import * as echarts from "echarts";
     import { createAppContext } from "@ontomato/sdk";
 
     const context = createAppContext();
+    // The page's name as its reader sees it: with the selected row, it is what the platform's agent is told they look at.
+    const PAGE = "MetricView rows";
+    context.setPageContext({ page: PAGE, selection: null });
 
     // A bar chart of two chosen columns; the page decides what to plot, the chart only draws it.
     const RowsChart = {
@@ -150,10 +176,34 @@
         const actionParametersText = ref("{}");
         const executing = ref(false);
 
+        // The selected row as a business object: its class, its primary key and the name readers know it by.
+        const className = ref("");
+        const keyColumn = ref("");
+        const nameColumn = ref("");
+        const selection = ref(null);
+        const selectable = computed(() => Boolean(className.value.trim() && keyColumn.value && nameColumn.value));
+        function select(value) {
+          selection.value = value;
+          context.setPageContext({ page: PAGE, selection: value });
+        }
+        function toggleRow(row) {
+          if (!selectable.value) return;
+          const primaryKey = String(row[keyColumn.value]);
+          // Every field is text; a row without a name is known by its key.
+          const name = String(row[nameColumn.value] ?? "") || primaryKey;
+          select(selection.value?.primaryKey === primaryKey ? null : { className: className.value.trim(), primaryKey, name });
+        }
+        // The key names the selected row, so it stays selected when the rows are read again.
+        const rowClass = ({ row }) => (selection.value?.primaryKey === String(row[keyColumn.value]) ? "selected-row" : "");
+        // Another class or other columns no longer name the selected object.
+        watch([className, keyColumn, nameColumn], () => {
+          if (selection.value) select(null);
+        });
+
         function read() {
           const parameters = parseJson(parametersText.value, "MetricView parameters");
           if (!parameters) return;
-          x.value = y.value = "";
+          x.value = y.value = keyColumn.value = nameColumn.value = "";
           binding.value = { id: metricViewId.value.trim(), parameters };
         }
 
@@ -177,7 +227,8 @@
         return {
           theme: context.theme,
           metricViewId, parametersText, binding, x, y, actionId, actionParametersText, executing,
-          read, execute, columnsOf,
+          className, keyColumn, nameColumn, selectable,
+          read, execute, columnsOf, toggleRow, rowClass,
         };
       },
     }).use(ElementPlus).use(context).mount("#app");

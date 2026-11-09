@@ -1,23 +1,26 @@
 <script setup lang="ts">
-import type { Component } from "vue";
+import { computed, type Component } from "vue";
 import { useI18n } from "vue-i18n";
-import { Info, PanelRightOpen } from "lucide-vue-next";
+import { Info, PanelRightOpen, SquareMousePointer } from "lucide-vue-next";
 
 /**
- * Above the composer: what a message sent now carries (the open view of the workspace), or, with only the conversation
- * shown, the way back to the workspace page as a button of the ordinary size, so it is not missed. When another
- * conversation's run occupies the workspace it says which, and opens it; this conversation's message would be refused
- * until that run ends.
+ * Above the composer: what a message sent now carries (the open view of the workspace and the object selected in the
+ * preview's app), or, with only the conversation shown, the way back to the workspace page as a button of the ordinary
+ * size, so it is not missed. When another conversation's run occupies the workspace it says which, and opens it; this
+ * conversation's message would be refused until that run ends.
  */
-defineProps<{
+const props = defineProps<{
   pageOpen: boolean;
   /** The open view, as the message names it. */
   page: string;
   icon: Component;
+  /** The selected object, as the message names it; null when none goes with the message. */
+  selection: string | null;
   busy: { title: string | null; sessionId: string | null } | null;
 }>();
 const emit = defineEmits<{ openPage: []; openSession: [id: string] }>();
 const { t } = useI18n();
+const selected = computed(() => props.selection && t("appBuilder.selected", { object: props.selection }));
 </script>
 
 <template>
@@ -31,7 +34,10 @@ const { t } = useI18n();
     </p>
     <div v-if="pageOpen" class="carries">
       <span class="carries-label">{{ t("appBuilder.carries") }}</span>
-      <span class="chip"><component :is="icon" :size="13" aria-hidden="true" /><span class="chip-text">{{ page }}</span></span>
+      <span class="chip" :title="page"><component :is="icon" :size="13" aria-hidden="true" /><span class="chip-text">{{ page }}</span></span>
+      <span v-if="selected" class="chip" :title="selected">
+        <SquareMousePointer :size="13" aria-hidden="true" /><span class="chip-text">{{ selected }}</span>
+      </span>
     </div>
     <el-button v-else :icon="PanelRightOpen" @click="emit('openPage')">{{ t("appBuilder.openPreview") }}</el-button>
   </div>
@@ -63,8 +69,10 @@ const { t } = useI18n();
   margin-top: 3px;
   color: var(--el-color-warning);
 }
+/* Each chip keeps its own line when the two do not fit, and is cut short only when it alone is wider than the row. */
 .carries {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 6px;
   max-width: 100%;

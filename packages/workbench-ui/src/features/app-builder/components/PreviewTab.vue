@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch } from "vue";
+import { computed, onBeforeUnmount, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { Check, CircleAlert, Files, LoaderCircle } from "lucide-vue-next";
 import type { WorkspacePreviewToken } from "@ontomato/contracts/workspaces";
@@ -14,8 +14,11 @@ import type { WorkspaceView } from "../workspace-view";
  * reads the platform's host port for the reader, the theme and the language. The frame is loaded again when the
  * workspace's HEAD moves (a run's commit, a restore) or the reader asks; never while a run is still writing. Its token
  * is read again only when the next load finds it expired.
+ *
+ * `frameWindow` is the window of the frame shown now, null without one: the app speaks for the preview only from there.
  */
 const props = defineProps<{ view: WorkspaceView; reload: number; flash: string | null }>();
+const frameWindow = defineModel<Window | null>("frameWindow", { required: true });
 const { t } = useI18n();
 
 let token: (WorkspacePreviewToken & { workspaceId: string }) | null = null;
@@ -46,6 +49,11 @@ async function load() {
 }
 
 watch([() => workspace.value?.id, () => workspace.value?.headCommit, hasPage, () => props.reload], load, { immediate: true });
+
+// Each load makes a new frame element, so a reloaded app is a new window.
+const iframe = ref<HTMLIFrameElement | null>(null);
+watch(iframe, (element) => (frameWindow.value = element?.contentWindow ?? null), { flush: "post" });
+onBeforeUnmount(() => (frameWindow.value = null));
 </script>
 
 <template>
@@ -59,7 +67,7 @@ watch([() => workspace.value?.id, () => workspace.value?.headCommit, hasPage, ()
         <Check :size="13" class="ok" aria-hidden="true" />
         <span>{{ flash }}</span>
       </div>
-      <iframe v-if="src" :key="frame" :src="src" :title="t('appBuilder.tabPreview')" class="app-frame" />
+      <iframe v-if="src" :key="frame" ref="iframe" :src="src" :title="t('appBuilder.tabPreview')" class="app-frame" />
       <div v-else-if="error" class="frame-state" role="alert">
         <CircleAlert :size="20" aria-hidden="true" />
         <p>{{ error }}</p>
