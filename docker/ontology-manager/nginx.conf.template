@@ -6,6 +6,10 @@ server {
 
   ${API_LOCATION}
 
+  location = /index.html {
+    add_header Cache-Control "no-cache" always;
+  }
+
   location / {
     try_files $uri $uri/ /index.html;
   }

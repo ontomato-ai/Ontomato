@@ -387,12 +387,22 @@
   margin-left: 0;
 }
 
-:where(.ontology-manager) .el-popper.is-dark,
-:where(.ontology-manager) .el-popper.is-light,
+:where(.ontology-manager) .el-popper.is-dark:not(.el-select__popper, .el-cascader__dropdown),
+:where(.ontology-manager) .el-popper.is-light:not(.el-select__popper, .el-cascader__dropdown),
 :where(.ontology-manager) .el-tooltip__popper {
   max-width: 400px !important;
   font-size: var(--text-sm) !important;
   line-height: 1.5 !important;
+}
+
+:where(.ontology-manager) .ontology-relation-options .el-select-dropdown__item {
+  height: auto;
+  min-height: var(--el-select-option-height);
+  padding-top: 6px;
+  padding-bottom: 6px;
+  line-height: 1.5;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 
 :where(.ontology-manager) .el-popper.is-dark,
