@@ -1,3 +1,5 @@
+import { workspaceRouter, workspaceOwner } from "./workspace-http";
+import { runtimeCreateSessionRequestSchema } from "@ontomato/contracts/agent-runtime";
 import { sessionHistoryQuerySchema } from "@ontomato/contracts/session-history";
 import { runtimeHistoryQuerySchema } from "@ontomato/contracts/agent-runtime-history";
 import { correlationId, withServiceLogContext, updateServiceLogContext, getServiceLogContext, LogQueryError } from "@ontomato/service-logging";
@@ -93,6 +95,24 @@ export function createRuntimeHttp(runtime: AgentRuntime) {
     (req: Request, res: Response, next: NextFunction) => {
       void fn(req, res).catch(next);
     };
+  app.use("/v1/workspaces", workspaceRouter(runtime, req => scope(req).scope));
+  const checkWorkspaceSession = async (req: Request, sessionId: string) => {
+    const current = scope(req).scope;
+    const session = await runtime.store.session(current, sessionId);
+    if (session.workspaceId) await runtime.workspaces.row(current, workspaceOwner(req), session.workspaceId);
+  };
+  app.use("/v1/sessions/:sessionId", (req, _res, next) => {
+    if (req.params.sessionId === "status") { next(); return; }
+    void checkWorkspaceSession(req, runtimeIdSchema.parse(req.params.sessionId)).then(() => next(), next);
+  });
+  app.use("/v1/runs/:id", (req, _res, next) => {
+    void runtime.store.run(scope(req).scope, runtimeIdSchema.parse(req.params.id))
+      .then(({ run }) => checkWorkspaceSession(req, run.sessionId)).then(() => next(), next);
+  });
+  app.use("/v1/artifacts/:artifactId", (req, _res, next) => {
+    void runtime.store.artifact(scope(req).scope, runtimeIdSchema.parse(req.params.artifactId))
+      .then(artifact => checkWorkspaceSession(req, artifact.sessionId)).then(() => next(), next);
+  });
   app.get("/v1/logs", route(async (req, res) => {
     identity(req);
     res.json(await runtime.logs.query(req.query));
@@ -266,13 +286,15 @@ export function createRuntimeHttp(runtime: AgentRuntime) {
     route(async (req, res) => {
       const ctx = scope(req);
       const headers = runtimeAdmissionHeadersSchema.parse(req.headers);
-      z.object({}).strict().parse(req.body);
+      const input = runtimeCreateSessionRequestSchema.parse(req.body);
       res
         .status(201)
         .json(
           await runtime.store.createSession(
             ctx.scope,
             headers["idempotency-key"],
+            input.workspaceId,
+            input.workspaceId ? workspaceOwner(req) : undefined,
           ),
         );
     }),
@@ -284,6 +306,7 @@ export function createRuntimeHttp(runtime: AgentRuntime) {
       const { sessionIds } = runtimeSessionStatusesRequestSchema.parse(
         req.body,
       );
+      for (const sessionId of sessionIds) await checkWorkspaceSession(req, sessionId);
       res.json({
         sessions: await runtime.store.sessionStatuses(ctx.scope, sessionIds),
       });
@@ -518,6 +541,8 @@ export function createRuntimeHttp(runtime: AgentRuntime) {
         res.end();
         return;
       }
+      if ((error as { code?: string }).code === "55P03")
+        error = new RuntimeError(409, "WORKSPACE_BUSY", "Workspace is being modified");
       const status =
         (error instanceof RuntimeError || error instanceof LogQueryError)
           ? error.status

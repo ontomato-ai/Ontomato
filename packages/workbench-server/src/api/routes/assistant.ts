@@ -27,7 +27,7 @@ const router: ReturnType<typeof Router> = Router(),
 
 import { context, id, wrap } from "../utils/agent-host";
 import { createAgentHostRouter } from "./agent-host";
-router.use(createAgentHostRouter(assistantService));
+router.use(createAgentHostRouter(assistantService, true));
 router.get("/sessions/:sessionId/artifacts/:artifactId/action", wrap(async (req, res) => {
   const c = context(req);
   res.json(await actionCard(id(req, "sessionId"), id(req, "artifactId"), c.owner, c.credentials));

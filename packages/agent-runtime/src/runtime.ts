@@ -1,3 +1,4 @@
+import { Workspaces } from "./workspaces";
 import type { RuntimeSessionHistory, SessionHistoryQuery } from "@ontomato/contracts/session-history";
 import { ServiceLogStore, withServiceLogContext, getServiceLogContext, updateServiceLogContext } from "@ontomato/service-logging";
 import { runtimeLogging, runtimeLogger, runtimeDiagnostic } from "./logging";
@@ -115,6 +116,7 @@ function key(scope: Scope, id: string) {
 }
 
 export class AgentRuntime {
+  readonly workspaces: Workspaces;
   readonly store: RuntimeStore;
   readonly logs: ServiceLogStore;
   readonly registry: SkillRegistry;
@@ -139,6 +141,7 @@ export class AgentRuntime {
       }),
       uidStatePath: path.join(options.root, "worker-next-uid"),
     };
+    this.workspaces = new Workspaces(this.store, options.root, this.worker);
     this.registry = new SkillRegistry(
       this.store,
       path.join(options.root, "skills"),
@@ -175,7 +178,7 @@ export class AgentRuntime {
     if (!this.worker.development) {
       const rows = (
         await this.store.pool.query(
-          `SELECT worker_uid FROM ${this.store.table("sessions")} WHERE worker_uid IS NOT NULL`,
+          `SELECT worker_uid FROM ${this.store.table("sessions")} WHERE worker_uid IS NOT NULL UNION SELECT worker_uid FROM ${this.store.table("workspaces")}`,
         )
       ).rows;
       if (rows.length) {
@@ -191,6 +194,7 @@ export class AgentRuntime {
       }
     }
     await this.store.recover();
+    await this.workspaces.recover();
     await mkdir(this.options.root, { recursive: true, mode: 0o711 });
     await chmod(this.options.root, 0o711);
     await this.code.initialize();
@@ -701,6 +705,12 @@ export class AgentRuntime {
     failure: string | null,
   ) {
     const { scope, run } = active;
+    try {
+      await this.workspaces.saveSession(scope, run.sessionId, run.id);
+    } catch (error) {
+      reason = "error";
+      failure = safeMessage(error);
+    }
     runtimeLogger.info(reason === "error" ? "run failed" : "run completed");
     await this.locked(scope, run.sessionId, async () => {
       active.pending.clear();

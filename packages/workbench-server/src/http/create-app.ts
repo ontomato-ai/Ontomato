@@ -1,3 +1,5 @@
+import { workspacePreviewRouter, workspaceRouter, mountHostedStatic } from "../api/routes/workspaces";
+import { initializeAppSdk } from "../services/workspaces/hosted-apps";
 import { startModelMigration, stopModelMigration } from "../platform/agent-runtime/model-migration";
 import assistantRouter from "../api/routes/assistant";
 import { scheduleApplicationsRouter, scheduleDeclarations, scheduleExecutionStatus } from "../api/routes/schedule-applications";
@@ -176,6 +178,8 @@ export function createWorkbenchApp(): Express {
     );
   });
 
+  mountHostedStatic(app);
+  app.use("/api/workspaces", workspacePreviewRouter);
   app.use(unwrapCallbackCredential);
   app.use(["/api/observe/logs", "/api/observe/runtime-logs"], serviceLogAuthResponse);
   app.get("/internal/schedule-applications", scheduleDeclarations);
@@ -194,6 +198,7 @@ export function createWorkbenchApp(): Express {
     );
   });
 
+  app.use("/api/workspaces", workspaceRouter);
   app.use("/api/analysis-tasks", analysisTasksRouter);
   app.use("/api/assistant", assistantRouter);
   app.use("/api/platform/schedule-applications", scheduleApplicationsRouter);
@@ -257,6 +262,7 @@ export async function startWorkbench(
   await syncRuntimeDefaultResources();
   syncDefaultPrompts();
   await initializeConnection();
+  await initializeAppSdk();
   startModelMigration();
   getWorkbenchLogStore();
   const stopApplication = await initializeApplication?.();

@@ -8,7 +8,7 @@ import { publicSnapshot, publicFrame } from "../../platform/agent-runtime/projec
 import { buildAttachmentContentDisposition } from "../utils/http";
 import { context, id, wrap } from "../utils/agent-host";
 import type { AgentHostService } from "../../services/agent-host/types";
-export function createAgentHostRouter(service: AgentHostService) {
+export function createAgentHostRouter(service: AgentHostService, workspaces = false) {
 const router: ReturnType<typeof Router> = Router(), uuid = z.string().uuid();
 router.get(
   "/agents",
@@ -43,7 +43,7 @@ router.post(
         await service.create(
           uuid.parse(req.header("Idempotency-Key")),
           context(req).owner,
-          agentHostCreateSessionSchema.parse(req.body),
+          (workspaces ? agentHostCreateSessionSchema : agentHostCreateSessionSchema.omit({ workspaceId: true })).parse(req.body),
         ),
       );
   }),

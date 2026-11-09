@@ -9,7 +9,7 @@ export interface AgentHostOwner { domainId: string; userId: string }
 /** The common proxy has two workbench consumers; business actions stay outside it. */
 export interface AgentHostService {
   agents(owner: AgentHostOwner, locale?: string): Promise<AgentHostAgentList>;
-  create(id: string, owner: AgentHostOwner, input: { agentId: string }): Promise<AgentHostCreateSessionResponse>;
+  create(id: string, owner: AgentHostOwner, input: { agentId: string; workspaceId?: string }): Promise<AgentHostCreateSessionResponse>;
   list(owner: AgentHostOwner, input: { agentId: string; limit: number; cursor?: string }): Promise<AgentHostSessionPage>;
   history(id: string, owner: AgentHostOwner, query: SessionHistoryQuery): Promise<AgentHostSessionHistory>;
   snapshot(id: string, owner: AgentHostOwner): Promise<AgentHostSessionSnapshot>;

@@ -44,7 +44,10 @@ export class RuntimeClient {
       "content-type": "application/json",
       ...logHeaders({ ...getServiceLogContext(), correlationId: this.correlationId }),
     };
-    if (this.userId) headers["x-ontomato-user-id"] = this.userId;
+    if (this.userId) {
+      headers["x-ontomato-user-id"] = this.userId;
+      headers["x-workspace-owner-id"] = this.userId;
+    }
     if (this.domainId) headers["x-domain-id"] = this.domainId;
     if (key) headers["idempotency-key"] = key;
     return headers;
@@ -139,9 +142,9 @@ export class RuntimeClient {
       throw new HttpError(response.status, "Runtime output read failed");
     return Buffer.from(await response.arrayBuffer());
   }
-  async createSession(id: string) {
+  async createSession(id: string, workspaceId?: string) {
     return runtimeCreateSessionResponseSchema.parse(
-      await this.request("/v1/sessions", "POST", {}, id),
+      await this.request("/v1/sessions", "POST", { workspaceId }, id),
     );
   }
   async session(id: string) {

@@ -71,7 +71,7 @@ export const runtimeAgentDefinitionSchema = z
   })
   .strict();
 
-export const runtimeCreateSessionRequestSchema = z.object({}).strict();
+export const runtimeCreateSessionRequestSchema = z.object({ workspaceId: runtimeIdSchema.optional() }).strict();
 export const runtimeStartRunRequestSchema = z
   .object({
     language: runtimeKeySchema,
@@ -85,6 +85,7 @@ export const runtimeSessionSchema = z
   .object({
     id: runtimeIdSchema,
     domainId: runtimeKeySchema,
+    workspaceId: runtimeIdSchema.nullable().optional(),
     activeRunId: runtimeIdSchema.nullable(),
     latestRunId: runtimeIdSchema.nullable(),
     createdAt: runtimeTimestampSchema,

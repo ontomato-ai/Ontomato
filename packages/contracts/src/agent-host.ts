@@ -68,6 +68,7 @@ export const agentHostSessionSchema = z
     id: runtimeIdSchema,
     agentId: runtimeIdSchema,
     title: z.string(),
+    workspaceId: runtimeIdSchema.nullable().optional(),
     createdAt: runtimeTimestampSchema,
     updatedAt: runtimeTimestampSchema,
     latestRun: agentHostRunStatusSchema.nullable(),
@@ -97,7 +98,7 @@ export const agentHostSessionPageSchema = z
   })
   .strict();
 export const agentHostCreateSessionSchema = z
-  .object({ agentId: runtimeIdSchema })
+  .object({ agentId: runtimeIdSchema, workspaceId: runtimeIdSchema.optional() })
   .strict();
 export const agentHostRenameSessionSchema = z.object({ title: z.string().trim().min(1).max(200) }).strict();
 export const agentHostCreateSessionResponseSchema = z
