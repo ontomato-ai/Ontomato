@@ -3,7 +3,7 @@ import type { App } from "vue";
 import { agentHostAgentListSchema, agentHostSessionPageSchema } from "@ontomato/contracts/agent-host";
 import type { WorkbenchAppearance } from "@ontomato/contracts/workbench-appearance";
 import { platformRoutes } from "@ontomato/platform-shell/routes";
-import { appPartition } from "../../../../../../packages/platform-web/src/app-partition";
+import { catalogPartitionFixture as appPartition } from "../../../../../../packages/platform-web/src/__tests__/fixtures";
 
 /*
  * What this guards: every address an application owns draws that page into the platform's main area, and the rail

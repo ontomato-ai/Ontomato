@@ -156,7 +156,7 @@ export function createServiceManager(options: {
  * platform administration group, in display order.
  */
 export const ontologyWorkspacePages: readonly PlatformPage[] = [
-  { path: platformRoutes.ontologyCapabilities.path, titleKey: "capabilities.title", icon: Puzzle, permissions: [], group: "assets", ownHeader: true },
+  { path: platformRoutes.ontologyCapabilities.path, titleKey: "capabilities.title", icon: Puzzle, permissions: ["skill-management", "mcp-service"], group: "assets", ownHeader: true },
 ];
 
 export function serviceNavigation(

@@ -320,11 +320,6 @@ export const platformScheduleErrorSchema = z.object({
     ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Only FORM_CHANGED carries a required replacement form" });
 });
 
-/** Workbench-only declaration discovery. No form options or business definitions are copied into the registry. */
-export const platformScheduleDeclarationsSchema = z.object({ appIds: z.array(platformTaskAppSchema) }).strict().refine(
-  (value) => new Set(value.appIds).size === value.appIds.length,
-  "Application IDs must be unique",
-);
 export const platformScheduleValidationRequestSchema = z.object({
   content: platformScheduleContentSchema,
   formRevision: nonempty,
@@ -404,7 +399,6 @@ export type PlatformTaskList = z.infer<typeof platformTaskListSchema>;
 export type PlatformTaskRunPage = z.infer<typeof platformTaskRunPageSchema>;
 export type PlatformScheduleHttpErrorCode = z.infer<typeof platformScheduleHttpErrorCodeSchema>;
 export type PlatformScheduleError = z.infer<typeof platformScheduleErrorSchema>;
-export type PlatformScheduleDeclarations = z.infer<typeof platformScheduleDeclarationsSchema>;
 export type PlatformScheduleValidationRequest = z.infer<typeof platformScheduleValidationRequestSchema>;
 export type PlatformScheduleValidation = z.infer<typeof platformScheduleValidationSchema>;
 export type PlatformScheduleExecutionRequest = z.infer<typeof platformScheduleExecutionRequestSchema>;

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { appDeclarations } from "../partition";
-import { appPartition } from "../app-partition";
+import { catalogPartitionFixture as appPartition } from "./fixtures";
 import { closedAccess, generatedNavigation } from "./fixtures";
 
 /*
@@ -8,7 +8,7 @@ import { closedAccess, generatedNavigation } from "./fixtures";
  * business ones with the dashboards and the scheduled tasks among them, and the platform's own settings last.
  */
 const t = (key: string) => key;
-const declarations = appDeclarations(generatedNavigation(), closedAccess([]), appPartition(), t);
+const declarations = appDeclarations(generatedNavigation(), closedAccess(["business-knowledge"]), appPartition(), t);
 const named = (section: string) => declarations.filter((app) => app.rail === section).map((app) => app.id);
 
 describe("the platform's applications", () => {
@@ -49,18 +49,4 @@ describe("the platform's applications", () => {
     expect(agents.groups).toEqual([]);
   });
 
-  it("places an edition's own application in the section it declares", () => {
-    const own = {
-      id: "permissions",
-      labelKey: "platform.permissions",
-      icon: "permissions",
-      rail: "bottom" as const,
-      prefix: "/permissions",
-      panel: "pages" as const,
-      sections: [{ key: "permissions:all", titleKey: "nav.permissionCenter", paths: ["/permissions"] }],
-    };
-    const withOwn = appDeclarations(generatedNavigation(), closedAccess([]), appPartition({ own: [own] }), t);
-    expect(withOwn.filter((app) => app.rail === "bottom").map((app) => app.id)).toEqual(["permissions", "settings"]);
-    expect(withOwn.filter((app) => app.rail === "apps").map((app) => app.id)).not.toContain("permissions");
-  });
 });

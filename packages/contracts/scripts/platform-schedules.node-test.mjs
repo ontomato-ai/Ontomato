@@ -171,8 +171,6 @@ test("application result links are same-origin paths, including ontology's execu
 });
 
 test("service exchanges use stable execution IDs and opaque handles without online credentials in the body", () => {
-  contract.platformScheduleDeclarationsSchema.parse({ appIds: ["agents", "operations"] });
-  assert.equal(contract.platformScheduleDeclarationsSchema.safeParse({ appIds: ["agents", "agents"] }).success, false);
   for (const example of examples.serviceExchanges) {
     roundTrip(contract.platformScheduleExecutionRequestSchema, example.request);
     roundTrip(contract.platformScheduleExecutionStateSchema, example.response);

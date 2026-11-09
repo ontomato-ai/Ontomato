@@ -11,7 +11,7 @@ export interface WorkbenchPermissionGroupData {
   /** The group is listed when the user has this code or any permission in it. */
   permission: string;
   titleKey: string;
-  ownerApplication: "workbench";
+  ownerApplication: "agents" | "operations";
 }
 
 export interface WorkbenchPermissionData {
@@ -19,7 +19,7 @@ export interface WorkbenchPermissionData {
   permissions: readonly string[];
   path: string;
   titleKey: string;
-  ownerApplication: "workbench";
+  ownerApplication: "agents" | "operations";
   groupKey: string;
 }
 
@@ -28,7 +28,7 @@ export const workbenchPermissionGroups = {
     key: "app-capabilities",
     permission: "application-management",
     titleKey: "nav.agentsAndSkills",
-    ownerApplication: "workbench",
+    ownerApplication: "agents",
   },
 } satisfies Record<string, WorkbenchPermissionGroupData>;
 
@@ -37,7 +37,7 @@ export const workbenchPermissions = {
     permissions: ["analysis-agent"],
     path: routes.agents.path,
     titleKey: "nav.businessAgents",
-    ownerApplication: "workbench",
+    ownerApplication: "agents",
     groupKey: "app-capabilities",
   },
   // The operations agent and its work live in operations diagnosis; observer opens that page.
@@ -45,21 +45,21 @@ export const workbenchPermissions = {
     permissions: ["observer"],
     path: routes.ops.path,
     titleKey: "nav.systemAgents",
-    ownerApplication: "workbench",
+    ownerApplication: "operations",
     groupKey: "app-capabilities",
   },
   skills: {
     permissions: ["skill-management"],
     path: routes.agentSettingsCapabilities.path,
     titleKey: "nav.skills",
-    ownerApplication: "workbench",
+    ownerApplication: "agents",
     groupKey: "app-capabilities",
   },
   mcpService: {
     permissions: ["mcp-service"],
     path: routes.agentSettingsCapabilities.path,
     titleKey: "nav.mcpService",
-    ownerApplication: "workbench",
+    ownerApplication: "agents",
     groupKey: "app-capabilities",
   },
 } satisfies Record<string, WorkbenchPermissionData>;

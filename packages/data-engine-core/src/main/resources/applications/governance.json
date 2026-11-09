@@ -1,0 +1,26 @@
+{
+  "id": "governance",
+  "kind": "native",
+  "rail": "apps",
+  "sort": 20,
+  "entry": {
+    "path": "/governance",
+    "renderer": "governance",
+    "home": "/governance/chat"
+  },
+  "entryAccess": [
+    "business-knowledge",
+    "user-feedback"
+  ],
+  "scheduleAdapter": "java:governance",
+  "declaration": {
+    "names": {
+      "en": "Knowledge governance",
+      "zh-CN": "知识治理"
+    },
+    "descriptions": {},
+    "icon": "knowledge",
+    "groups": [],
+    "permissions": []
+  }
+}

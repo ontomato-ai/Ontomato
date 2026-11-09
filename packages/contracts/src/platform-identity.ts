@@ -6,11 +6,26 @@ const sequence = z.string().regex(/^[0-9]+$/).refine((value) => BigInt(value) <=
 
 export const applicationDeclarationSchema = z.object({
   names,
-  entryPath: z.string().regex(/^\/(?:[A-Za-z0-9_-]+\/)*$/),
+  descriptions: z.record(z.string()),
+  icon: z.string().min(1),
   groups: z.array(z.object({ key, names, sort: z.number().int() }).strict()),
   permissions: z.array(z.object({ code: key, names, groupKey: key, sort: z.number().int() }).strict()),
 }).strict();
 export type ApplicationDeclaration = z.infer<typeof applicationDeclarationSchema>;
+export const builtinApplicationSchema = z.object({
+  id: z.string().regex(/^[a-z][a-z0-9-]{0,63}$/), kind: z.enum(["native", "link"]),
+  rail: z.enum(["top", "apps", "bottom"]), sort: z.number().int(),
+  entry: z.object({ path: z.string(), renderer: z.string(), home: z.string().optional() }),
+  entryAccess: z.array(z.string()).min(1), scheduleAdapter: z.string().nullable(), declaration: applicationDeclarationSchema,
+});
+export type BuiltinApplication = z.infer<typeof builtinApplicationSchema>;
+export const applicationCatalogSchema = z.array(z.object({
+  id: z.string(), kind: z.enum(["native", "hosted", "connected", "link"]), names,
+  descriptions: z.record(z.string()), icon: z.string(), rail: z.enum(["top", "apps", "bottom"]), sort: z.number(),
+  entry: z.object({ path: z.string(), renderer: z.string().optional(), home: z.string().optional() }),
+  entryAccess: z.array(z.string()).min(1), scheduleAdapter: z.string().nullable(), releaseId: z.string().nullable(),
+}));
+export type CatalogApplication = z.infer<typeof applicationCatalogSchema>[number];
 
 export const accountDeletionPageSchema = z.object({
   events: z.array(z.object({
@@ -32,5 +47,5 @@ export interface ApplicationMenus {
 }
 export interface UserApplicationPermissions {
   userId: string; domainId: string; permissions: string[];
-  applications: { applicationId: string; permissions: string[] }[];
+  applications: { applicationId: string; ownerService: string; permissions: string[] }[];
 }

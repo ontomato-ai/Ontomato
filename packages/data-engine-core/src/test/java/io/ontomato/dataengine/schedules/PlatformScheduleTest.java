@@ -92,8 +92,7 @@ class PlatformScheduleTest extends PostgresTestDatabase {
         new OntologyScheduleApplication(
             functions, actions, programs, configs, identities, references);
     var remote = mock(WorkbenchScheduleApplications.class);
-    when(remote.ids()).thenReturn(Set.of());
-    applications = new ScheduleApplications(List.of(ontology), remote);
+    applications = scheduleApplications(List.of(ontology), remote);
     tasks = new PlatformTasks(store, identities, identity, credentials, applications, transactions);
     ReflectionTestUtils.setField(tasks, "configuredZone", "Asia/Shanghai");
     http = MockMvcBuilders.standaloneSetup(new PlatformTaskController(tasks)).build();
@@ -260,7 +259,7 @@ class PlatformScheduleTest extends PostgresTestDatabase {
       var provider =
           new io.ontomato.dataengine.service.agent.scheduling.GovernanceScheduleApplication(
               governance, access, runtime, agentStore, identities);
-      var registry = new ScheduleApplications(List.of(provider), mockWorkbench());
+      var registry = scheduleApplications(List.of(provider), mockWorkbench());
       var service =
           new PlatformTasks(store, identities, identity, credentials, registry, transactions);
       ReflectionTestUtils.setField(service, "configuredZone", "UTC");
@@ -321,7 +320,7 @@ class PlatformScheduleTest extends PostgresTestDatabase {
             mock(AgentRuntimeClient.class),
             mock(io.ontomato.dataengine.service.agent.OntologyAgentStore.class),
             identities);
-    var registry = new ScheduleApplications(List.of(ontology, governance), mockWorkbench());
+    var registry = scheduleApplications(List.of(ontology, governance), mockWorkbench());
     var service =
         new PlatformTasks(store, identities, identity, credentials, registry, transactions);
     ReflectionTestUtils.setField(service, "configuredZone", "UTC");
@@ -1012,7 +1011,7 @@ class PlatformScheduleTest extends PostgresTestDatabase {
   @Test
   void dueSlotSkipsAnActiveRunAndScannerSettlesWithoutReadSideEffects() throws Exception {
     var provider = fixtureApplication("fixture", false, new AtomicReference<>(false));
-    var registry = new ScheduleApplications(List.of(provider), mockWorkbench());
+    var registry = scheduleApplications(List.of(provider), mockWorkbench());
     var service =
         new PlatformTasks(store, identities, identity, credentials, registry, transactions);
     ReflectionTestUtils.setField(service, "configuredZone", "UTC");
@@ -1048,9 +1047,18 @@ class PlatformScheduleTest extends PostgresTestDatabase {
     }
   }
 
+  private ScheduleApplications scheduleApplications(List<ScheduleApplication> adapters, WorkbenchScheduleApplications workbench) {
+    var catalog = mock(io.ontomato.dataengine.applications.ApplicationCatalog.class);
+    var rows = adapters.stream().map(adapter -> com.alibaba.fastjson2.JSONObject.of("id",adapter.id(),"scheduleAdapter","java:" + adapter.id(),"domainId",null)).toList();
+    when(catalog.all()).thenReturn(rows);
+    when(catalog.canEnter(anyString(),any())).thenReturn(true);
+    when(catalog.require(anyString())).thenAnswer(call -> rows.stream().filter(row -> row.getString("id").equals(call.getArgument(0))).findFirst()
+        .orElseThrow(() -> new ScheduleException(404,"APPLICATION_NOT_FOUND","Application not found")));
+    return new ScheduleApplications(adapters,workbench,catalog);
+  }
+
   private WorkbenchScheduleApplications mockWorkbench() {
     var workbench = mock(WorkbenchScheduleApplications.class);
-    when(workbench.ids()).thenReturn(Set.of());
     return workbench;
   }
 
@@ -1058,7 +1066,7 @@ class PlatformScheduleTest extends PostgresTestDatabase {
   void credentialRenewalOnlyResumesEnabledTasksAfterRevalidation() {
     var failure = new AtomicReference<>(false);
     var provider = fixtureApplication("fixture", true, failure);
-    var registry = new ScheduleApplications(List.of(provider), mockWorkbench());
+    var registry = scheduleApplications(List.of(provider), mockWorkbench());
     var service =
         new PlatformTasks(store, identities, identity, credentials, registry, transactions);
     ReflectionTestUtils.setField(service, "configuredZone", "UTC");
@@ -1094,7 +1102,7 @@ class PlatformScheduleTest extends PostgresTestDatabase {
   void aLateFailureCannotRepauseATaskTheCreatorAlreadyDisabled() {
     var failure = new AtomicReference<>(false);
     var provider = fixtureApplication("fixture", false, failure);
-    var registry = new ScheduleApplications(List.of(provider), mockWorkbench());
+    var registry = scheduleApplications(List.of(provider), mockWorkbench());
     var service =
         new PlatformTasks(store, identities, identity, credentials, registry, transactions);
     ReflectionTestUtils.setField(service, "configuredZone", "UTC");
@@ -1134,7 +1142,7 @@ class PlatformScheduleTest extends PostgresTestDatabase {
           new WorkbenchScheduleApplications(
               "http://127.0.0.1:" + fixture.getAddress().getPort(), "service", identity);
       var registry =
-          new ScheduleApplications(List.of(remote.application("agents")), mockWorkbench());
+          scheduleApplications(List.of(remote.application("agents")), mockWorkbench());
       credentials.prepareForSetup(user);
       UUID task = UUID.randomUUID();
       var definition = TaskDefinition.input(fixtureDefinition("agents"), "UTC", false);
@@ -1305,7 +1313,7 @@ CREATE TABLE write_task_result(id text,write_task_id text,execute_timestamp bigi
             new ScheduleException(503, "DEPENDENCY_UNAVAILABLE", "Permission lookup unavailable"));
     var agents = fixtureApplication("agents", false, new AtomicReference<>(false));
     var registry =
-        new ScheduleApplications(List.of(ontology, agents, unavailable), mockWorkbench());
+        scheduleApplications(List.of(ontology, agents, unavailable), mockWorkbench());
     var service =
         new PlatformTasks(store, identities, identity, credentials, registry, transactions);
     ReflectionTestUtils.setField(service, "configuredZone", "UTC");
@@ -1337,21 +1345,6 @@ CREATE TABLE write_task_result(id text,write_task_id text,execute_timestamp bigi
         assertEquals("暂时无法确认你能否使用这个应用", application.path("unavailableReason").asText());
       } else assertTrue(application.path("available").asBoolean());
     }
-  }
-
-  @Test
-  void missingInstalledApplicationDiscoveryStillFailsTheWholeList() throws Exception {
-    var workbench = mockWorkbench();
-    when(workbench.ids())
-        .thenThrow(
-            new ScheduleException(
-                503, "DEPENDENCY_UNAVAILABLE", "Cannot discover installed applications"));
-    var registry = new ScheduleApplications(List.of(ontology), workbench);
-    var service =
-        new PlatformTasks(store, identities, identity, credentials, registry, transactions);
-    var mvc = MockMvcBuilders.standaloneSetup(new PlatformTaskController(service)).build();
-    mvc.perform(get("/platform/scheduled-tasks/applications"))
-        .andExpect(status().isServiceUnavailable());
   }
 
   @Test

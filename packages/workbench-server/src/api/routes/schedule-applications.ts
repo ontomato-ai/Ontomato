@@ -3,7 +3,6 @@ import { Router, type Request, type RequestHandler, type Response } from "expres
 import { z } from "zod";
 import {
   platformScheduleApplicationSchema,
-  platformScheduleDeclarationsSchema,
   platformScheduleErrorSchema,
   platformScheduleExecutionRequestSchema,
   platformScheduleExecutionStateSchema,
@@ -19,7 +18,7 @@ import { getRequestId } from "../../logging/log-context";
 import { createLogger } from "../../logging/logger";
 import { context } from "../utils/agent-host";
 import { HttpError } from "../../utils/errors";
-import { describeScheduleApplication, scheduleApplication, scheduleApplicationIds } from "../../services/scheduling/applications";
+import { describeScheduleApplication, scheduleApplication } from "../../services/scheduling/applications";
 
 const logger = createLogger("schedule-applications");
 function requirePlatform(req: Request) {
@@ -46,9 +45,6 @@ function route(handler: (req: Request, res: Response) => Promise<void>): Request
   };
 }
 
-export const scheduleDeclarations = route(async (_req, res) => {
-  res.json(platformScheduleDeclarationsSchema.parse({ appIds: scheduleApplicationIds() }));
-});
 export const scheduleExecutionStatus = route(async (req, res) => {
   const application = scheduleApplication(req.params.appId);
   const state = await application.status(platformScheduleExecutionStatusRequestSchema.parse(req.body));

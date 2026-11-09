@@ -153,7 +153,7 @@ public class PlatformTasks {
     var actor = actor(user, locale);
     var result = array();
     var tasks = store.visible(user.getDomainId(), user.getId(), null);
-    for (var entry : applications.all().entrySet()) {
+    for (var entry : applications.all(user.getDomainId()).entrySet()) {
       var provider = entry.getValue();
       ObjectNode descriptor;
       try {
@@ -173,6 +173,10 @@ public class PlatformTasks {
                     : "Unable to confirm whether you can use this application right now",
                 "taskCount",
                 0);
+      }
+      if (!applications.canEnter(entry.getKey(),user)) {
+        descriptor.put("available",false);
+        descriptor.put("unavailableReason",locale.startsWith("zh") ? "没有应用入口权限" : "Application entry permission is required");
       }
       descriptor.put(
           "taskCount",

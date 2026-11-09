@@ -1,0 +1,28 @@
+{
+  "id": "settings",
+  "kind": "native",
+  "rail": "bottom",
+  "sort": 20,
+  "entry": {
+    "path": "/settings",
+    "renderer": "settings",
+    "home": "/settings/model-config/usage"
+  },
+  "entryAccess": [
+    "system-config",
+    "authorization-management",
+    "audit-logs",
+    "system-monitoring"
+  ],
+  "scheduleAdapter": null,
+  "declaration": {
+    "names": {
+      "en": "System settings",
+      "zh-CN": "系统设置"
+    },
+    "descriptions": {},
+    "icon": "settings",
+    "groups": [],
+    "permissions": []
+  }
+}

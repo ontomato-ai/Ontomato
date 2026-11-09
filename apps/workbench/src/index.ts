@@ -30,4 +30,5 @@ const { createWorkbenchApp, startWorkbench } = await import(
 const { config } = await import("@ontomato/workbench-server/config/application");
 
 const app = createWorkbenchApp();
-await startWorkbench(app, config.port);
+const { registerApplications } = await import("@ontomato/workbench-server/services/applications/register");
+await startWorkbench(app, config.port, async () => { await registerApplications(); return async () => {}; });

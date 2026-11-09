@@ -15,7 +15,8 @@ export interface AppPartition extends Omit<PlatformAppDeclaration, "groups" | "l
   href?: string;
   open?: () => void;
   /** The application's name, a message key in the edition's tree. */
-  labelKey: string;
+  labelKey?: string;
+  label?: string;
   /** One line under the name, when the application's pages share one header (a message key in the edition's tree). */
   descriptionKey?: string;
   /**
@@ -23,6 +24,8 @@ export interface AppPartition extends Omit<PlatformAppDeclaration, "groups" | "l
    * platform opens the conversation, and its settings are reached from the head of that column.
    */
   home?: string;
+  /** The existing navigation page whose permission also governs this home route. */
+  homePage?: string;
   /** The pages this application lists, in display order: one group per entry, or one entry per header tab. */
   sections: readonly { key: string; titleKey: string; paths: readonly string[]; showWhenEmpty?: boolean }[];
 }
@@ -67,9 +70,10 @@ export function appDeclarations(
       }))
       .filter((group) => group.pages.length > 0 || group.showWhenEmpty);
 
+    const home = app.home && (!app.homePage || byPath.has(app.homePage)) ? app.home : undefined;
     return {
       id: app.id,
-      label: t(app.labelKey),
+      label: app.label ?? t(app.labelKey!),
       description: app.descriptionKey ? t(app.descriptionKey) : null,
       icon: app.icon,
       rail: app.rail ?? "apps",
@@ -80,7 +84,7 @@ export function appDeclarations(
       // The rail row opens the application's own first page. A declaration that names its entry keeps it (the agent
       // platform is entered at the conversation); otherwise the first page the account may open decides, so a row never
       // opens an address no route serves.
-      home: base(app.home ?? groups[0]?.pages[0]?.id ?? app.sections[0]?.paths[0] ?? app.prefix),
+      home: base(home ?? groups[0]?.pages[0]?.id ?? app.sections[0]?.paths[0] ?? app.prefix),
       groups,
     };
   });
