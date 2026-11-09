@@ -244,6 +244,13 @@ export interface CapabilityGrantRecord {
   capabilityKind?: string | null;
   capabilityId?: string | null;
   capabilityVersion?: string | null;
+  /**
+   * The workflow whose activation wrote this row; null for a grant made directly.
+   *
+   * Without it a revision number alone says nothing: "version 1" is a different revision in every
+   * workflow, so a page that groups grants by revision has to group by workflow first.
+   */
+  workflowId?: string | null;
   activatedByWorkflowVersion?: string | null;
 }
 

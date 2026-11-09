@@ -694,6 +694,22 @@ const ontologyEn = {
   workflowDeleteTitle: "Delete Process",
   workflowDeleteConfirm: 'Delete "{name}" and its revisions?',
   workflowDeleted: "Process deleted",
+  workflowColumnGrants: "Authority",
+  workflowGrantsSummary: "{capabilities} capabilities to {roles} roles",
+  workflowNoGrants: "No authority",
+  workflowGrantsTitle: "Authority in force",
+  workflowGrantsDesc:
+    "What this process's active revision actually lets roles run. The executor asks only whether a subject may run an action, so this is the only place that records what an activation approved.",
+  workflowGrantsInForce: "In force (revision v{version})",
+  workflowGrantsSuperseded: "Stored but no longer granted",
+  workflowGrantsSupersededHint:
+    "Left by an earlier revision. The executor accepts only the revision in force, so these rows convey no authority.",
+  workflowGrantsDirect: "Granted directly",
+  workflowGrantsDirectHint:
+    "Not written by any process. They stand on their own, so deactivating a process never withdraws them.",
+  workflowGrantsEmpty: "This process conveys no authority right now",
+  workflowGrantsUnavailable: "Authority could not be read",
+  workflowGrantsRefresh: "Refresh authority",
 
   mapTitle: "Governance & Capability Map",
   mapDesc:
