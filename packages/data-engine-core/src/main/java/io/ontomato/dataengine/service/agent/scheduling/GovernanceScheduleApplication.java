@@ -46,7 +46,8 @@ public class GovernanceScheduleApplication implements ScheduleApplication {
             actor.locale().startsWith("zh") ? "指令" : "Instruction",
             true,
             true,
-            null));
+            null,
+            ScheduleJson.TEXT_MAX));
     return ScheduleForms.form(id(), "governance-v1", fields, input.values());
   }
 

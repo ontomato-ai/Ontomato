@@ -172,6 +172,7 @@
                                 <include>**/BusinessConfigControllerModelKeyWriteOnlyTest.java</include>
                                 <include>**/MetadataPostgresBoundaryTest.java</include>
                                 <include>**/PlatformScheduleTest.java</include>
+                                <include>**/ParameterFormsTest.java</include>
                                 <include>**/VectorResourcePostgresBoundaryTest.java</include>
                                 <include>**/AssetLookupPostgresBoundaryTest.java</include>
                                 <include>**/KnowledgeDomainPostgresBoundaryTest.java</include>

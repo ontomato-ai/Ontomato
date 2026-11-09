@@ -16,6 +16,9 @@ public final class ScheduleJson {
           .findAndRegisterModules()
           .disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
 
+  /** The most characters one form value holds on the platform. */
+  public static final int TEXT_MAX = 4000;
+
   private ScheduleJson() {}
 
   public static ObjectNode object(Object... pairs) {
@@ -67,7 +70,7 @@ public final class ScheduleJson {
               if (field.getKey().isEmpty()
                   || field.getKey().length() > 256
                   || !field.getValue().isTextual()
-                  || field.getValue().asText().length() > 4000)
+                  || field.getValue().asText().length() > TEXT_MAX)
                 throw bad("Invalid form value: " + field.getKey());
             });
   }

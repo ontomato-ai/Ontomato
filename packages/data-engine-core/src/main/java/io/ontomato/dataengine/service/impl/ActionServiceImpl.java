@@ -15,11 +15,13 @@ import io.ontomato.dataengine.core.bean.User;
 import io.ontomato.dataengine.dao.ActionDao;
 import io.ontomato.dataengine.dao.FunctionDao;
 import io.ontomato.dataengine.dao.KnowledgeDao;
+import io.ontomato.dataengine.schedules.ScheduleJson;
 import io.ontomato.dataengine.service.ABCProgramService;
 import io.ontomato.dataengine.service.ActionService;
 import io.ontomato.dataengine.service.AdminService;
 import io.ontomato.dataengine.service.BusinessConfigService;
 import io.ontomato.dataengine.service.LangService;
+import io.ontomato.dataengine.service.ParameterForms;
 import io.ontomato.dataengine.service.SandboxService;
 import io.ontomato.dataengine.service.agent.AgentRuntimeClient;
 import io.ontomato.dataengine.service.agent.OntologyGenerationPrompts;
@@ -33,6 +35,7 @@ import jakarta.annotation.PostConstruct;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -561,27 +564,65 @@ public class ActionServiceImpl implements ActionService {
     return ret;
   }
 
+  /** The published Action of the user's domain, once the user may execute Actions. */
+  private Action executable(String id, String lang, User user) throws Exception {
+    identity.requireActionExecutionAccess(user.getId(), user.getDomainId());
+    Action action = queryById(id);
+    if (action == null) throw new Exception(langService.get(lang, "Action.notFound"));
+    if (!user.getDomainId().equals(action.getDomainId()) || action.getFunction() == null ||
+        !user.getDomainId().equals(action.getFunction().getDomainId())) throw new IllegalArgumentException("Action is outside the current domain");
+    if (!Action.STATUS_PUBLISHED.equals(action.getStatus())) throw new Exception(langService.get(lang, "Action.notPublished"));
+    return action;
+  }
+
   @Override
 	public PythonExecuteResult execute(String id, JSONObject param, String lang, User user, UserDataPermission permission, int timeoutMinutes) throws Exception {
-        identity.requireActionExecutionAccess(user.getId(), user.getDomainId());
-		Action action = queryById(id);
-		if (action != null) {
-            if (!user.getDomainId().equals(action.getDomainId()) || action.getFunction() == null ||
-                !user.getDomainId().equals(action.getFunction().getDomainId())) throw new IllegalArgumentException("Action is outside the current domain");
-			if (Action.STATUS_PUBLISHED.equals(action.getStatus())) {
-                Function function = io.ontomato.dataengine.service.MetricViewBindings.executionWriteFunction(action.getFunction(), param);
-				Object[] o = abcProgramService.execute(UUID.randomUUID().toString(), function, user.getId(), permission, ServiceConst.NOT_SANDBOX, lang, timeoutMinutes, user.getDomainId());
-				PythonExecuteResult result = (PythonExecuteResult)o[1];
-                if (result.getError() != null && !result.getError().isBlank()) { result.setResult(null); }
-                else result.setResult(o[0] == null ? "{\"completed\":true}" : JSON.toJSONString(JSONObject.of("answer", o[0]), Feature.WriteMapNullValue));
-				return result;
-			} else {
-				throw new Exception(langService.get(lang, "Action.notPublished"));
-			}
-		} else {
-			throw new Exception(langService.get(lang, "Action.notFound"));
-		}
+        Function function = io.ontomato.dataengine.service.MetricViewBindings.executionWriteFunction(executable(id, lang, user).getFunction(), param);
+		Object[] o = abcProgramService.execute(UUID.randomUUID().toString(), function, user.getId(), permission, ServiceConst.NOT_SANDBOX, lang, timeoutMinutes, user.getDomainId());
+		PythonExecuteResult result = (PythonExecuteResult)o[1];
+        if (result.getError() != null && !result.getError().isBlank()) { result.setResult(null); }
+        else result.setResult(o[0] == null ? "{\"completed\":true}" : JSON.toJSONString(JSONObject.of("answer", o[0]), Feature.WriteMapNullValue));
+		return result;
 	}
+
+  @Override
+  public JSONObject form(String id, JSONObject bound, JSONObject submitted, List<String> readOnly, String lang, User user) throws Exception {
+    List<Parameter> parameters = executable(id, lang, user).getFunction().getParameters();
+    var names = new HashSet<String>();
+    for (Parameter parameter : parameters) {
+      names.add(parameter.getName());
+      if (!ParameterForms.supports(parameter.getType(), ParameterForms.Context.INTERACTIVE))
+        throw new IllegalArgumentException("Unsupported parameter type: " + parameter.getType());
+    }
+    var named = new HashSet<String>(bound.keySet());
+    named.addAll(readOnly);
+    if (submitted != null) named.addAll(submitted.keySet());
+    for (String name : named)
+      if (!names.contains(name)) throw new IllegalArgumentException("Unknown parameter: " + name);
+    for (String name : readOnly)
+      if (!bound.containsKey(name)) throw new IllegalArgumentException("Read-only parameter without a bound value: " + name);
+    if (submitted != null)
+      for (var entry : submitted.entrySet())
+        if (!(entry.getValue() instanceof String)) throw new IllegalArgumentException("The text of " + entry.getKey() + " must be a string");
+    var values = ScheduleJson.object();
+    for (Parameter parameter : parameters) {
+      String name = parameter.getName();
+      values.put(name, submitted == null || readOnly.contains(name)
+          ? ParameterForms.text(bound.get(name)) : (String) submitted.getOrDefault(name, ""));
+    }
+    var form = new JSONObject();
+    form.put("fields", ParameterForms.fields(parameters, ParameterForms.Context.INTERACTIVE, "", lang));
+    form.put("values", values);
+    if (submitted == null) {
+      form.put("errors", ScheduleJson.array());
+      form.put("parameters", null);
+      return form;
+    }
+    var interpreted = ParameterForms.interactive(parameters, values, bound, readOnly, lang);
+    form.put("errors", interpreted.errors());
+    form.put("parameters", interpreted.errors().isEmpty() ? interpreted.values() : null);
+    return form;
+  }
 
   /**
    * Fills the explanation of an already assembled draft Action. Draft creation owns the only

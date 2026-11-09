@@ -48,7 +48,7 @@ public final class ScheduleForms {
   }
 
   public static JsonNode text(
-      String key, String label, boolean required, boolean multiline, String help) {
+      String key, String label, boolean required, boolean multiline, String help, int maxLength) {
     return object(
         "key",
         key,
@@ -67,7 +67,7 @@ public final class ScheduleForms {
         "placeholder",
         null,
         "maxLength",
-        4000);
+        maxLength);
   }
 
   public static JsonNode form(String app, String revision, ArrayNode fields, JsonNode supplied) {

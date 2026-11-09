@@ -2,11 +2,11 @@ package io.ontomato.dataengine.service.scheduling;
 
 import static io.ontomato.dataengine.schedules.ScheduleJson.*;
 
+import com.alibaba.fastjson2.JSONObject;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import io.ontomato.dataengine.bean.action.Action;
 import io.ontomato.dataengine.bean.function.Function;
-import io.ontomato.dataengine.bean.function.Parameter;
 import io.ontomato.dataengine.config.ServiceConst;
 import io.ontomato.dataengine.dao.FunctionDao;
 import io.ontomato.dataengine.schedules.*;
@@ -15,7 +15,10 @@ import io.ontomato.dataengine.util.ErrorText;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.time.Instant;
+import java.time.ZoneId;
+import java.util.HashSet;
 import java.util.HexFormat;
+import java.util.Map;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
@@ -23,6 +26,9 @@ import org.springframework.stereotype.Component;
 @Component
 @RequiredArgsConstructor
 public class OntologyScheduleApplication implements ScheduleApplication {
+  /** A saved task holds each parameter's text under this prefix and the parameter's name. */
+  private static final String PARAMETER_KEY = "parameter:";
+
   private final FunctionDao functions;
   private final ActionService actions;
   private final ABCProgramService programs;
@@ -86,10 +92,45 @@ public class OntologyScheduleApplication implements ScheduleApplication {
   }
 
   private static String unsupportedReason(Function function, String locale) {
-    String reason = ScheduleParameters.unsupported(function);
+    String reason = unsupported(function);
     return reason != null
         ? reason
         : PythonProgramProtocol.unavailableReason(function.getCode(), locale);
+  }
+
+  /** Whether a function can run on a schedule: a write function whose parameters fit the form and can be scheduled. */
+  private static String unsupported(Function function) {
+    if (function == null || !Function.OPERATION_WRITE.equals(function.getOperation()))
+      return "Expected a write function";
+    var names = new HashSet<String>();
+    if (function.getParameters() == null) return "Parameter definitions unavailable";
+    if (function.getParameters().size() >= 100) return "Too many parameters for the scheduled form";
+    for (var parameter : function.getParameters()) {
+      if (parameter.getName() == null
+          || parameter.getName().isBlank()
+          || parameter.getName().length() > 246
+          || !names.add(parameter.getName())) return "Invalid parameter names";
+      if (parameter.getType() == null) return "Parameter type is missing";
+      if (!ParameterForms.supports(parameter.getType(), ParameterForms.Context.INTERACTIVE))
+        return "Unsupported parameter type";
+      if (!ParameterForms.supports(parameter.getType(), ParameterForms.Context.SCHEDULED))
+        return "Object, dataset and vector parameters do not support scheduling";
+    }
+    return null;
+  }
+
+  /** The values a saved task's parameters take when it starts at {@code start}; invalid text refuses the task. */
+  private static JSONObject values(Function function, JsonNode content, String zone, Instant start, String locale) {
+    var parameters =
+        ParameterForms.scheduled(
+            function.getParameters(), PARAMETER_KEY, content, ZoneId.of(zone), start, "/content/", locale);
+    if (!parameters.errors().isEmpty())
+      throw new ScheduleException(
+          422,
+          "FIELD_VALIDATION_FAILED",
+          "Check the parameter values",
+          Map.of("fields", parameters.errors()));
+    return parameters.values();
   }
 
   private static ScheduleException unavailable() {
@@ -164,22 +205,12 @@ public class OntologyScheduleApplication implements ScheduleApplication {
       try {
         var target = target(selected, actor.domain(), actor.locale());
         revision = formRevision(target.function(), target.actionId());
-        for (var parameter : target.function().getParameters()) {
-          boolean time = Parameter.TYPE_TIME.equals(parameter.getType());
-          boolean lines = parameter.getType().endsWith("_ARRAY");
-          String help =
-              time
-                  ? (zh
-                      ? "留空使用实际开始时刻；日期与日期时间按任务时区解释，也可填写 RFC3339"
-                      : "Leave blank for the actual start time; local dates use the task time zone;"
-                          + " RFC3339 is also accepted")
-                  : lines
-                      ? (zh ? "每行一项，空行忽略" : "One item per line; blank lines are ignored")
-                      : parameter.getDescription();
-          fields.add(
-              ScheduleForms.text(
-                  "parameter:" + parameter.getName(), parameter.getName(), false, lines, help));
-        }
+        fields.addAll(
+            ParameterForms.fields(
+                target.function().getParameters(),
+                ParameterForms.Context.SCHEDULED,
+                PARAMETER_KEY,
+                actor.locale()));
       } catch (ScheduleException unavailable) {
         /* The unavailable selection remains visible and disabled. */
       }
@@ -188,20 +219,17 @@ public class OntologyScheduleApplication implements ScheduleApplication {
         "execution".equals(input.changedField()) ? object("execution", selected) : input.values();
     var form = (ObjectNode) ScheduleForms.form(id(), revision, fields, values);
     if (form.path("submittable").asBoolean() && !selected.isBlank()) {
-      try {
-        ScheduleParameters.values(
-            target(selected, actor.domain(), actor.locale()).function(),
-            form.path("values"),
-            input.timeZone(),
-            Instant.now());
-      } catch (ScheduleException invalid) {
-        var errors = array();
-        var source = JSON.valueToTree(invalid.details.get("fields"));
-        for (var item : source) {
-          var error = (ObjectNode) item.deepCopy();
-          error.put("field", error.path("field").asText().replaceFirst("^/content/", "/values/"));
-          errors.add(error);
-        }
+      var errors =
+          ParameterForms.scheduled(
+                  target(selected, actor.domain(), actor.locale()).function().getParameters(),
+                  PARAMETER_KEY,
+                  form.path("values"),
+                  ZoneId.of(input.timeZone()),
+                  Instant.now(),
+                  "/values/",
+                  actor.locale())
+              .errors();
+      if (!errors.isEmpty()) {
         form.set("errors", errors);
         form.put("submittable", false);
       }
@@ -217,8 +245,8 @@ public class OntologyScheduleApplication implements ScheduleApplication {
     var validation = ScheduleForms.validate(definition, form);
     var target =
         target(definition.content().path("execution").asText(), actor.domain(), actor.locale());
-    ScheduleParameters.values(
-        target.function(), definition.content(), definition.timeZone(), Instant.now());
+    values(
+        target.function(), definition.content(), definition.timeZone(), Instant.now(), actor.locale());
     return new Validation(
         validation.content(),
         validation.formRevision(),
@@ -253,11 +281,12 @@ public class OntologyScheduleApplication implements ScheduleApplication {
           409, "FORM_CHANGED", "The execution definition changed before admission");
     Instant started = Instant.now();
     var values =
-        ScheduleParameters.values(
+        values(
             target.function(),
             execution.definition().content(),
             execution.definition().timeZone(),
-            started);
+            started,
+            actor.locale());
     var function = MetricViewBindings.executionWriteFunction(target.function(), values);
     var state = ScheduleForms.execution("completed");
     state.set(
