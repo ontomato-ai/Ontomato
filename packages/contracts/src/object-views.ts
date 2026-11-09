@@ -118,6 +118,10 @@ export function resolveViewBinding(binding: ViewBinding | undefined, object: Rec
   if (binding.source === "literal") return binding.value;
   return readViewPath(binding.source === "object" ? object : variables, binding.path);
 }
+/** A component's MetricView or Action parameter values, each binding resolved against the object and the variables. */
+export function resolveViewParameters(parameters: ViewWidget["parameters"], object: Record<string, unknown>, variables: Record<string, unknown>): Record<string, unknown> {
+  return Object.fromEntries(Object.entries(parameters).map(([name, binding]) => [name, resolveViewBinding(binding, object, variables)]));
+}
 export function viewConditionMatches(condition: ViewWidget["visibleWhen"], object: Record<string, unknown>, variables: Record<string, unknown>): boolean {
   if (!condition) return true;
   const value = resolveViewBinding(condition.binding, object, variables);

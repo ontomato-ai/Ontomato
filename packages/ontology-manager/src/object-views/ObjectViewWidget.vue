@@ -4,13 +4,16 @@ import { Eye } from "lucide-vue-next";
 import { parseActionValue } from "./action-values";
 import { ElButton, ElInput, ElSelect, ElOption, ElTable, ElTableColumn, ElAlert, ElSkeleton, vLoading } from "element-plus";
 import ElDialog from "../ManagerDialog.vue";
-import { readViewPath, resolveViewBinding, type ViewWidget, type ObjectReference } from "@ontomato/contracts/object-views";
+import { readViewPath, resolveViewBinding, resolveViewParameters, type ViewWidget, type ObjectReference } from "@ontomato/contracts/object-views";
+import type { MetricViewDataSlots } from "../app-components/types";
 import { useManagerClient, useOntologyText } from "../context";
 import ObjectViewVisualization from "./ObjectViewVisualization.vue";
 import { useManagerFeedback } from "../feedback";
 const { ot } = useOntologyText();
 
-const props = defineProps<{ widget: ViewWidget; object: Record<string, unknown>; reference: ObjectReference; variables: Record<string, unknown>; refresh: number; preview?: boolean }>();
+/** What the runtime's MetricViewData hands to a component bound to a MetricView. */
+type MetricViewDataState = Parameters<MetricViewDataSlots["default"]>[0];
+const props = defineProps<{ widget: ViewWidget; object: Record<string, unknown>; reference: ObjectReference; variables: Record<string, unknown>; refresh: number; preview?: boolean; metricView?: MetricViewDataState }>();
 const emit = defineEmits<{ variable: [name: string, value: unknown]; refresh: []; open: [reference: ObjectReference] }>();
 const client = useManagerClient();
 const { message } = useManagerFeedback();
@@ -46,9 +49,14 @@ watch(() => JSON.stringify([props.reference.className, props.reference.primaryKe
   actionOpen.value = false;
   actionValues.value = {};
 });
-const parameters = computed(() => Object.fromEntries(Object.entries(props.widget.parameters).map(([name, binding]) => [name, resolveViewBinding(binding, props.object, props.variables)])));
+const parameters = computed(() => resolveViewParameters(props.widget.parameters, props.object, props.variables));
 const bindingValue = computed(() => resolveViewBinding(props.widget.binding, props.object, props.variables));
-const selectedData = computed(() => readViewPath(data.value, props.widget.resultPath));
+// After a failed read the component shows no result rather than the one read for earlier parameters.
+const selectedData = computed(() => props.metricView?.error ? undefined : readViewPath(props.metricView?.data, props.widget.resultPath));
+// Shown loading and failure: the bound MetricView's read, otherwise the component's own relation read and Action.
+const busy = computed(() => props.metricView?.loading ?? loading.value);
+const loaded = computed(() => props.metricView ? props.metricView.data !== undefined : dataLoaded.value);
+const failure = computed(() => props.metricView?.error ? `${props.widget.title || props.widget.resourceId}: ${props.metricView.error.message}` : error.value);
 const rows = computed<Record<string, unknown>[]>(() => {
   const value = props.widget.kind === "links" ? data.value : selectedData.value ?? bindingValue.value;
   return Array.isArray(value) ? value.filter(row => row !== null && typeof row === "object") : [];
@@ -67,30 +75,28 @@ function displayField(field: string, value: unknown) {
   return options.find(option => option.value === String(value))?.label || ot("ovUnrecognizedOption");
 }
 
+/** Reads a page of linked objects; a bound MetricView is read by the runtime's MetricViewData. */
 async function load() {
   const current = ++request;
   error.value = "";
-  if (!["table", "chart", "metric", "links"].includes(props.widget.kind)) { loading.value = false; return; }
+  if (props.widget.kind !== "links") { loading.value = false; return; }
   loading.value = true;
   data.value = undefined;
   hasMore.value = false;
   try {
-    if (props.widget.kind === "links") {
-      if (!props.widget.relation || !props.reference.primaryKey) return;
-      const result = await client.loadViewLinks(props.reference.className, props.reference.primaryKey, props.widget.relation, props.widget.direction, offset.value);
-      if (current !== request) return;
-      data.value = result.rows;
-      hasMore.value = result.hasMore;
-      linkTarget.value = { className: result.targetClass, primaryKey: result.targetPk };
-    } else if (props.widget.resourceId) {
-      const result = await client.metricViews.read({ id: props.widget.resourceId, parameters: parameters.value });
-      if (current === request) data.value = result;
-    }
+    if (!props.widget.relation || !props.reference.primaryKey) return;
+    const result = await client.loadViewLinks(props.reference.className, props.reference.primaryKey, props.widget.relation, props.widget.direction, offset.value);
+    if (current !== request) return;
+    data.value = result.rows;
+    hasMore.value = result.hasMore;
+    linkTarget.value = { className: result.targetClass, primaryKey: result.targetPk };
   } catch (reason) {
-    if (current === request) error.value = `${props.widget.title || props.widget.resourceId || props.widget.relation}: ${reason instanceof Error ? reason.message : String(reason)}`;
+    if (current === request) error.value = `${props.widget.title || props.widget.relation}: ${reason instanceof Error ? reason.message : String(reason)}`;
   } finally { if (current === request) { loading.value = false; dataLoaded.value = true; } }
 }
 watch(() => JSON.stringify([props.reference.className, props.reference.primaryKey, props.widget, parameters.value, props.refresh]), () => { offset.value = 0; void load(); }, { immediate: true });
+// A refresh, after an Action or from a button, reads the bound MetricView again.
+watch(() => props.refresh, () => { void props.metricView?.reload(); });
 function page(delta: number) { offset.value = Math.max(0, offset.value + delta); void load(); }
 function selectRow(row: Record<string, unknown>) {
   if (props.widget.variable) emit("variable", props.widget.variable, row);
@@ -148,9 +154,9 @@ async function openAction() {
 }
 </script>
 <template>
-  <div v-loading="loading && dataLoaded && isDataWidget" class="view-widget" :aria-busy="loading" :style="isDataWidget && loading && !dataLoaded ? { minHeight: widget.kind === 'metric' ? '40px' : Math.min(widget.height, 160) + 'px' } : undefined">
-    <el-alert v-if="error" :title="error" type="error" :closable="false" />
-    <el-skeleton v-if="loading && !dataLoaded && isDataWidget" :rows="widget.kind === 'metric' ? 1 : 4" animated :aria-label="ot('ovLoading')" />
+  <div v-loading="busy && loaded && isDataWidget" class="view-widget" :aria-busy="busy" :style="isDataWidget && busy && !loaded ? { minHeight: widget.kind === 'metric' ? '40px' : Math.min(widget.height, 160) + 'px' } : undefined">
+    <el-alert v-if="failure" :title="failure" type="error" :closable="false" />
+    <el-skeleton v-if="busy && !loaded && isDataWidget" :rows="widget.kind === 'metric' ? 1 : 4" animated :aria-label="ot('ovLoading')" />
     <p v-else-if="widget.kind === 'text'" class="view-text">{{ widget.text }}{{ widget.binding ? format(bindingValue) : '' }}</p>
     <dl v-else-if="widget.kind === 'properties'" class="properties">
       <template v-for="field in propertyFields" :key="field"><dt>{{ widget.fieldLabels[field] || fieldLabels[field] || field }}</dt><dd>{{ displayField(field, object[field]) }}</dd></template>
@@ -163,7 +169,7 @@ async function openAction() {
       </el-table>
       <div v-if="widget.kind === 'links' && (hasMore || offset > 0)" class="pages"><el-button :disabled="loading || offset === 0" @click="page(-50)">{{ ot('ovPrevious') }}</el-button><span>{{ rows.length ? offset + 1 : 0 }}–{{ offset + rows.length }}</span><el-button :disabled="loading || !hasMore" @click="page(50)">{{ ot('ovNext') }}</el-button></div>
     </template>
-    <template v-else-if="widget.kind === 'chart' && !error">
+    <template v-else-if="widget.kind === 'chart' && !failure">
       <ObjectViewVisualization :widget="widget" :rows="rows" :value="selectedData ?? bindingValue" />
     </template>
     <el-input v-else-if="widget.kind === 'input'" :model-value="format(variables[widget.variable] ?? '')" :placeholder="widget.text" @update:model-value="emit('variable', widget.variable, $event)" />

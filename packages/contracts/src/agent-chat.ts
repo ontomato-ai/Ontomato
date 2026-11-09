@@ -24,8 +24,6 @@ export const agentChatMessageSchema = z.object({
   segments: z.array(agentChatSegmentSchema).optional(),
 });
 
-export type AgentChatToolSegment = z.infer<typeof agentChatToolSegmentSchema>;
-export type AgentChatSegment = z.infer<typeof agentChatSegmentSchema>;
 export type AgentChatMessage = z.infer<typeof agentChatMessageSchema>;
 
 export type AgentResponseTerminalStatus = "completed" | "failed" | "cancelled";
