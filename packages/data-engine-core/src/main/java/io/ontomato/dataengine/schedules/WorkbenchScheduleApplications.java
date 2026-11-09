@@ -5,7 +5,6 @@ import static io.ontomato.dataengine.schedules.ScheduleJson.*;
 import com.fasterxml.jackson.databind.JsonNode;
 import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Set;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
@@ -16,7 +15,6 @@ import org.springframework.web.client.RestClientResponseException;
 public class WorkbenchScheduleApplications {
   private final RestClient http;
   private final ScheduleIdentity identity;
-  private Set<String> known = Set.of();
 
   public WorkbenchScheduleApplications(
       @Value("${WORKBENCH_INTERNAL_URL:${AGENT_RUNTIME_CALLBACK_URL:http://127.0.0.1:3000}}")
@@ -33,28 +31,6 @@ public class WorkbenchScheduleApplications {
             .baseUrl(url)
             .defaultHeader("X-Ontomato-Query-Service-Token", token)
             .build();
-  }
-
-  public synchronized Set<String> ids() {
-    try {
-      var result =
-          http.get().uri("/internal/schedule-applications").retrieve().body(JsonNode.class);
-      if (result == null || !result.path("appIds").isArray())
-        throw new IllegalStateException("Invalid application declarations");
-      var values = new java.util.LinkedHashSet<String>();
-      for (var id : result.path("appIds")) {
-        if (!id.isTextual()
-            || !id.asText().matches("[a-z][a-z0-9-]{0,63}")
-            || !values.add(id.asText())) throw new IllegalStateException("Invalid application ID");
-      }
-      known = Set.copyOf(values);
-      return known;
-    } catch (org.springframework.web.client.ResourceAccessException
-        | RestClientResponseException error) {
-      if (!known.isEmpty()) return known;
-      throw new ScheduleException(
-          503, "DEPENDENCY_UNAVAILABLE", "Workbench scheduling declarations unavailable");
-    }
   }
 
   public ScheduleApplication application(String id) {

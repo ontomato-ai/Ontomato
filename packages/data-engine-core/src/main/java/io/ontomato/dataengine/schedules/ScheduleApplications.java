@@ -9,24 +9,27 @@ import org.springframework.stereotype.Component;
 public class ScheduleApplications {
   private final Map<String, ScheduleApplication> local = new LinkedHashMap<>();
   private final WorkbenchScheduleApplications workbench;
+  private final io.ontomato.dataengine.applications.ApplicationCatalog catalog;
 
   public ScheduleApplications(
-      List<ScheduleApplication> declarations, WorkbenchScheduleApplications workbench) {
+      List<ScheduleApplication> declarations, WorkbenchScheduleApplications workbench, io.ontomato.dataengine.applications.ApplicationCatalog catalog) {
     this.workbench = workbench;
+    this.catalog = catalog;
     for (var application : declarations)
       if (local.putIfAbsent(application.id(), application) != null)
         throw new IllegalStateException("Duplicate scheduled application: " + application.id());
   }
 
-  public Map<String, ScheduleApplication> all() {
-    var result = new LinkedHashMap<>(local);
-    for (String id : workbench.ids()) {
-      var existing = result.get(id);
-      if (existing != null && !existing.remote())
-        throw new IllegalStateException("Duplicate scheduled application: " + id);
-      if (existing == null) result.put(id, workbench.application(id));
-    }
+  public Map<String, ScheduleApplication> all(String domain) {
+    var result = new LinkedHashMap<String, ScheduleApplication>();
+    for (var app : catalog.all())
+      if (app.getString("scheduleAdapter") != null && (app.getString("domainId") == null || domain.equals(app.getString("domainId"))))
+        result.put(app.getString("id"), require(app.getString("id")));
     return result;
+  }
+
+  public boolean canEnter(String id, io.ontomato.dataengine.core.bean.User user) {
+    return catalog.canEnter(id,user);
   }
 
   public void detach(java.util.UUID taskId) {
@@ -34,10 +37,9 @@ public class ScheduleApplications {
   }
 
   public ScheduleApplication require(String id) {
-    var application = local.get(id);
-    if (application != null) return application;
-    if (workbench.ids().contains(id)) return workbench.application(id);
-    throw new ScheduleException(
-        404, "APPLICATION_NOT_FOUND", "Scheduled application not installed");
+    String adapter = catalog.require(id).getString("scheduleAdapter");
+    if (adapter == null) throw new ScheduleException(404, "APPLICATION_NOT_FOUND", "Application has no schedule adapter");
+    String[] binding = adapter.split(":",2);
+    return binding[0].equals("java") ? java.util.Objects.requireNonNull(local.get(binding[1])) : workbench.application(binding[1]);
   }
 }

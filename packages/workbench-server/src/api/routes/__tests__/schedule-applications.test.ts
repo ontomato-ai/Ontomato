@@ -2,13 +2,12 @@ import express from "express";
 import { afterEach, expect, it, vi } from "vitest";
 import { createServer, type Server } from "node:http";
 import { randomUUID } from "node:crypto";
-import { scheduleApplicationsRouter, scheduleDeclarations, scheduleExecutionStatus } from "../schedule-applications";
+import { scheduleApplicationsRouter, scheduleExecutionStatus } from "../schedule-applications";
 import { platformScheduleErrorSchema, platformScheduleFormSchema, platformScheduleExecutionStateSchema } from "@ontomato/contracts/platform-schedules";
 import { HttpError } from "../../../utils/errors";
 
 const mocks=vi.hoisted(()=>({form:vi.fn(),validate:vi.fn(),authorize:vi.fn(),start:vi.fn(),status:vi.fn()}));
 vi.mock("../../../services/scheduling/applications",()=>({
-  scheduleApplicationIds:()=>["fixture"],
   scheduleApplication:()=>({id:"fixture",...mocks}),
   describeScheduleApplication:async()=>({id:"fixture",description:"Application-owned description",available:true,unavailableReason:null,taskCount:0}),
 }));
@@ -18,7 +17,6 @@ afterEach(async()=>{for(const server of servers.splice(0))await new Promise<void
 async function app() {
   vi.stubEnv("ONTOMATO_QUERY_SERVICE_TOKEN","fixture-platform");
   const router=express();router.use(express.json());
-  router.get("/internal/schedule-applications",scheduleDeclarations);
   router.post("/internal/schedule-applications/:appId/runs/status",scheduleExecutionStatus);
   router.use("/api",(req,_res,next)=>{Object.assign(req,{userId:"trusted-user",domainId:"trusted-domain",token:"login",apiKey:"",locale:"en"});next();});
   router.use("/api/platform/schedule-applications",scheduleApplicationsRouter);
@@ -31,7 +29,7 @@ async function app() {
 }
 it("requires the platform credential and derives form ownership from the authenticated request",async()=>{
   const request=await app();
-  const denied=await request("/internal/schedule-applications",undefined,false);expect(denied.status).toBe(403);platformScheduleErrorSchema.parse(await denied.json());
+  const denied=await request("/api/platform/schedule-applications/fixture",undefined,false);expect(denied.status).toBe(403);platformScheduleErrorSchema.parse(await denied.json());
   mocks.form.mockResolvedValue({appId:"fixture",formRevision:"v1",fields:[],values:{},summary:[],errors:[],submittable:true});
   const response=await request("/api/platform/schedule-applications/fixture/form",{values:{},changedField:null,taskId:null,timeZone:"UTC"});
   expect(response.status).toBe(200);platformScheduleFormSchema.parse(await response.json());

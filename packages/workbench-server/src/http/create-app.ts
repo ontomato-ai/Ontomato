@@ -2,7 +2,7 @@ import { workspacePreviewRouter, workspaceRouter, mountHostedStatic } from "../a
 import { initializeAppSdk } from "../services/workspaces/hosted-apps";
 import { startModelMigration, stopModelMigration } from "../platform/agent-runtime/model-migration";
 import assistantRouter from "../api/routes/assistant";
-import { scheduleApplicationsRouter, scheduleDeclarations, scheduleExecutionStatus } from "../api/routes/schedule-applications";
+import { scheduleApplicationsRouter, scheduleExecutionStatus } from "../api/routes/schedule-applications";
 import { startAssistantReconciliation } from "../services/assistant/service";
 import { registerAssistantSkills } from "../services/assistant/skills";
 import {
@@ -182,7 +182,6 @@ export function createWorkbenchApp(): Express {
   app.use("/api/workspaces", workspacePreviewRouter);
   app.use(unwrapCallbackCredential);
   app.use(["/api/observe/logs", "/api/observe/runtime-logs"], serviceLogAuthResponse);
-  app.get("/internal/schedule-applications", scheduleDeclarations);
   app.post("/internal/schedule-applications/:appId/runs/status", scheduleExecutionStatus);
   app.use("/api", identity.authenticate);
   app.use("/api", (req, _res, next) => {

@@ -1,12 +1,13 @@
 <script setup lang="ts">
-import { computed, inject, ref } from "vue";
+import { computed, onMounted, ref } from "vue";
 import { useRoute, useRouter, type LocationQueryValue } from "vue-router";
 import { useI18n } from "vue-i18n";
 import { Plus } from "lucide-vue-next";
 import { PlatformSchedulesPage } from "@ontomato/platform-schedules";
 import { appIcon } from "@ontomato/platform-shell";
 import { schedulesHost } from "@ontomato/workbench-ui";
-import { appPartitionKey } from "../app-partition";
+import { readApplicationCatalog } from "../catalog";
+import type { CatalogApplication } from "@ontomato/contracts/platform-identity";
 import AppPage from "./AppPage.vue";
 
 /**
@@ -20,14 +21,14 @@ import AppPage from "./AppPage.vue";
  */
 const router = useRouter();
 const route = useRoute();
-const { t } = useI18n();
+const { t, locale } = useI18n();
 const page = ref<{ openNewTask: () => void } | null>(null);
 
-const partition = inject(appPartitionKey);
-if (!partition) throw new Error("The scheduled tasks page is shown outside the platform shell that names its applications");
+const partition = ref<CatalogApplication[]>([]);
+onMounted(async () => { partition.value = await readApplicationCatalog("schedules"); });
 
 const host = schedulesHost({
-  applications: () => partition.value.map((app) => ({ id: app.id, label: t(app.labelKey), icon: appIcon(app.icon) })),
+  applications: () => partition.value.map((app) => ({ id: app.id, label: app.names[locale.value] ?? app.names.en!, icon: appIcon(app.icon as Parameters<typeof appIcon>[0]) })),
   openResult: (link) => void router.push(link.path),
 });
 

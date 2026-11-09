@@ -8,7 +8,6 @@ import type { ScheduleApplication, ScheduleContext } from "./application";
 const declarations: readonly ScheduleApplication[] = [assistantScheduleApplication, operationsScheduleApplication];
 const applications = new Map(declarations.map((application) => [application.id, application]));
 if (applications.size !== declarations.length) throw new Error("Duplicate scheduled application ID");
-export function scheduleApplicationIds(): string[] { return [...applications.keys()]; }
 export function scheduleApplication(id: string): ScheduleApplication {
   const application = applications.get(id);
   if (!application) throw new HttpError(404, "Scheduled application not found", "APPLICATION_NOT_FOUND");

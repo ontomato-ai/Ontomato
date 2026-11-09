@@ -1,12 +1,13 @@
 <script setup lang="ts">
-import { computed, provide } from "vue";
+import { computed, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { useI18n } from "vue-i18n";
 import { usePageActionsOf, usePlatformHost, type PlatformPage } from "@ontomato/platform-admin";
 import PlatformLayout from "./PlatformLayout.vue";
 import type { PlatformShownPage } from "./PlatformLayout.vue";
 import { appDeclarations } from "./partition";
-import { appPartition, appPartitionKey, type PartitionOptions } from "./app-partition";
+import { catalogPartition, type NativeLayout } from "./native-layouts";
+import { useApplicationCatalog } from "./catalog";
 import type { PlatformAppDeclaration } from "./apps";
 
 /**
@@ -17,8 +18,8 @@ import type { PlatformAppDeclaration } from "./apps";
  * the router guard all come from the same pages and the same permission codes.
  */
 const props = defineProps<{
-  /** Applications only this edition has (its external ones); the platform's own are always the same. */
-  apps?: PartitionOptions;
+  /** Edition-owned page layouts and link launchers; the catalog owns application metadata. */
+  renderers?: Record<string, NativeLayout>;
 }>();
 
 const host = usePlatformHost();
@@ -26,9 +27,9 @@ const { t } = useI18n();
 const route = useRoute();
 const router = useRouter();
 
-/** This edition's applications in rail order; the pages under the shell read the same list (`appPartitionKey`). */
-const partition = computed(() => appPartition(props.apps));
-provide(appPartitionKey, partition);
+const catalog = useApplicationCatalog();
+watch(() => host.navigation.value, () => { void catalog.refresh(); }, { immediate: true, deep: true });
+const partition = computed(() => catalogPartition(catalog.applications.value, host.preferences.locale.value, props.renderers));
 
 const declarations = computed<PlatformAppDeclaration[]>(() =>
   appDeclarations(host.navigation.value, host.access, partition.value, (key) => t(key)),
@@ -118,7 +119,7 @@ const blocked = computed(() => {
     :locale-names="localeNames"
     :labels="labels"
     :page-actions="pageActions"
-    :blocked="blocked"
+    :blocked="catalog.error.value ? { reason: 'no-pages', message: catalog.error.value } : blocked"
     @select-app="selectApp"
   />
 </template>

@@ -24,3 +24,6 @@ export { serviceHome } from "./view";
 export { legacyAdminRoutes, managerLocation, managerViewQuery } from "./admin-routes";
 export { observeRoutes } from "./observe-routes";
 export { dashboardPages, schedulePages, workbenchPages } from "./workbench-routes";
+
+export type { NativeLayout } from "./native-layouts";
+export { useApplicationCatalog } from "./catalog";

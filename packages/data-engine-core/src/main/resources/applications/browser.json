@@ -1,0 +1,25 @@
+{
+  "id": "browser",
+  "kind": "native",
+  "rail": "top",
+  "sort": 40,
+  "entry": {
+    "path": "/browser",
+    "renderer": "browser",
+    "home": "/browser/data"
+  },
+  "entryAccess": [
+    "data-browser"
+  ],
+  "scheduleAdapter": null,
+  "declaration": {
+    "names": {
+      "en": "Object browser",
+      "zh-CN": "对象浏览器"
+    },
+    "descriptions": {},
+    "icon": "objects",
+    "groups": [],
+    "permissions": []
+  }
+}

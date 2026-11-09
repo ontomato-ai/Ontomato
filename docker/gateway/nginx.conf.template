@@ -26,7 +26,22 @@ map $request_uri $gateway_target {
   ~^${PUBLIC_BASE_PATH}/api/auth/(?<auth_raw>doLogin|verify|verifyByApiKey|verifyTicket|logout)(?<auth_query>\?.*)?$ http://$java/sso/$auth_raw$auth_query;
   ~^${PUBLIC_BASE_PATH}/${LEGACY_API_PREFIX}/(?<legacy_raw>.*)$ http://$java/$legacy_raw;
   ~^${PUBLIC_BASE_PATH}/(?<node_raw>(?:api|mcp)(?:/[^?]*)?(?:\?.*)?|config\.js(?:\?.*)?)$ http://$workbench/$node_raw;
+  ~^${PUBLIC_BASE_PATH}/(?<sdk_raw>apps-sdk/.*)$ http://$workbench/$sdk_raw;
   ~^${PUBLIC_BASE_PATH}/(?<web_raw>.*)$ http://$web${WEB_MOUNT}$web_raw;
+}
+
+map $app_route_kind $app_proxy_origin {
+  default "";
+  hosted http://$workbench;
+  connected $app_registered_upstream;
+}
+map $request_uri $forwarded_prefix {
+  default "${PUBLIC_BASE_PATH}";
+  ~^${PUBLIC_BASE_PATH}/apps/(?<forwarded_app>app-[a-z0-9-]+)(?:/|\?|$) "${PUBLIC_BASE_PATH}/apps/$forwarded_app";
+}
+map $request_uri $app_request {
+  default 0;
+  ~^${PUBLIC_BASE_PATH}/apps(?:/|\?|$) 1;
 }
 
 map $request_uri $legacy_page_redirect {
@@ -56,7 +71,7 @@ server {
   proxy_set_header Host $public_host;
   proxy_set_header X-Forwarded-Host $public_host;
   proxy_set_header X-Forwarded-Proto $public_proto;
-  proxy_set_header X-Forwarded-Prefix "${PUBLIC_BASE_PATH}";
+  proxy_set_header X-Forwarded-Prefix $forwarded_prefix;
   proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
   proxy_set_header X-Real-IP $remote_addr;
   proxy_set_header X-Requested-With XMLHttpRequest;
@@ -70,14 +85,36 @@ server {
     return 308 ${PUBLIC_BASE_PATH}/$is_args$args;
   }
   # Internal workbench routes are service-to-service only. Express matches paths case-insensitively.
-  location ~* ^${PUBLIC_BASE_PATH}/internal/ {
+  location ~* ^${PUBLIC_BASE_PATH}/(?:internal|api/data-query/internal|${LEGACY_API_PREFIX}/internal)(?:/|$) {
     return 404;
+  }
+  location = /_app_entry_check {
+    internal;
+    proxy_pass http://$java/internal/app-entry;
+    proxy_pass_request_body off;
+    proxy_pass_request_headers off;
+    proxy_set_header Content-Length "";
+    proxy_set_header X-App-Credential $cookie_ontomato_app_entry;
+    proxy_set_header X-App-Request-Uri $request_uri;
+    proxy_set_header X-Forwarded-Prefix "${PUBLIC_BASE_PATH}";
+  }
+  location ~ ^${PUBLIC_BASE_PATH}/apps/ {
+    auth_request /_app_entry_check;
+    auth_request_set $app_route_kind $upstream_http_x_app_route_kind;
+    auth_request_set $app_registered_upstream $upstream_http_x_app_upstream;
+    auth_request_set $app_proxy_path $upstream_http_x_app_proxy_path;
+    proxy_pass $app_proxy_origin$app_proxy_path;
+    proxy_ssl_server_name on;
+    proxy_ssl_verify on;
+    proxy_ssl_trusted_certificate /etc/ssl/certs/ca-certificates.crt;
+    add_header Cache-Control "no-store" always;
   }
   # The browser carries the original fragment across this redirect. Only the SPA maps page names.
   location = ${PUBLIC_BASE_PATH}/login.html {
     return 302 "${PUBLIC_BASE_PATH}/#/login$is_args$args";
   }
   location / {
+    if ($app_request = 1) { return 403; }
     if ($legacy_page_redirect != "") { return 302 $legacy_page_redirect; }
     if ($gateway_target = "") { return 404; }
     proxy_pass $gateway_target;

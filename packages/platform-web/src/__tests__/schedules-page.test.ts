@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { computed, defineComponent, h } from "vue";
+import { defineComponent, h } from "vue";
 import { flushPromises, mount } from "@vue/test-utils";
 import ElementPlus from "element-plus";
 import { createMemoryHistory, createRouter, RouterView } from "vue-router";
@@ -11,7 +11,7 @@ import {
 import { installWorkbenchI18n } from "@ontomato/workbench-ui/i18n";
 import { installAuthHost } from "@ontomato/workbench-ui/utils/auth";
 import publicEn from "@ontomato/workbench-ui/locales/en";
-import { appPartition, appPartitionKey } from "../app-partition";
+import { catalogFixture } from "./fixtures";
 import { schedulePages } from "../workbench-routes";
 
 /*
@@ -86,6 +86,7 @@ beforeEach(() => {
     const path = new URL(url, "http://localhost").pathname;
     const json = (status: number, body?: unknown) =>
       new Response(body === undefined ? null : JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
+    if (path.endsWith("/platform/applications")) return json(200, { success: true, data: catalogFixture() });
     if (path.endsWith("/credential/renew")) return json(204);
     if (path.endsWith("/scheduled-tasks/applications")) return json(200, applications);
     if (path.endsWith("/scheduled-tasks") && (init?.method ?? "GET") === "GET") return json(200, { tasks: [task], timeZone: "Asia/Shanghai" });
@@ -105,8 +106,6 @@ async function mountPlatform(path: string) {
   const wrapper = mount(RouterView, {
     global: {
       plugins: [i18n, ElementPlus, router],
-      // The shell provides its partition to every page under it.
-      provide: { [appPartitionKey as symbol]: computed(() => appPartition()) },
     },
   });
   await flushPromises();

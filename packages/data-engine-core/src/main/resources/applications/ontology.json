@@ -1,0 +1,28 @@
+{
+  "id": "ontology",
+  "kind": "native",
+  "rail": "apps",
+  "sort": 10,
+  "entry": {
+    "path": "/ontology",
+    "renderer": "ontology"
+  },
+  "entryAccess": [
+    "ontology-modeling",
+    "action-management",
+    "business-knowledge",
+    "skill-management",
+    "mcp-service"
+  ],
+  "scheduleAdapter": "java:ontology",
+  "declaration": {
+    "names": {
+      "en": "Ontology manager",
+      "zh-CN": "本体管理器"
+    },
+    "descriptions": {},
+    "icon": "ontology",
+    "groups": [],
+    "permissions": []
+  }
+}
