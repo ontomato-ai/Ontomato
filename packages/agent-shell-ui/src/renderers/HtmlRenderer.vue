@@ -3,7 +3,7 @@ import type { ArtifactRendererProps } from "../types";
 import { useArtifactText } from "./useArtifactBlob";
 import { computed, inject } from "vue";
 import { shellContextKey } from "../context";
-import { useDarkMode } from "../useDarkMode";
+import { useDarkMode } from "@ontomato/foundation-ui/theme";
 import { themedChartHtml } from "@ontomato/contracts/chart-presentation";
 
 /**

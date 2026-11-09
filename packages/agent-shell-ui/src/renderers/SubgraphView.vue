@@ -2,8 +2,8 @@
 import { computed, onMounted, ref, shallowRef, watch } from "vue";
 import { format } from "echarts";
 import { EChart } from "@ontomato/foundation-ui/chart";
+import { useDarkMode } from "@ontomato/foundation-ui/theme";
 import type { QuerySubgraph } from "@ontomato/contracts/query-subgraph";
-import { useDarkMode } from "../useDarkMode";
 import { subgraphOption, subgraphSize } from "./subgraph-chart";
 
 /** A dataset's source analysis drawn as delivered; filters are listed per query under the graph. */

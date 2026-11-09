@@ -6,7 +6,8 @@
   "exports": {
     "./chart": "./src/chart/index.ts",
     "./form": "./src/form/index.ts",
-    "./markdown": "./src/markdown/index.ts"
+    "./markdown": "./src/markdown/index.ts",
+    "./theme": "./src/theme/index.ts"
   },
   "scripts": {
     "typecheck": "vue-tsc --noEmit"

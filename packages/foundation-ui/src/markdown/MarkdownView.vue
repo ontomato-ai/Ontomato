@@ -20,12 +20,14 @@ function nodesId(nodes: Nodes): string {
 <script setup lang="ts">
 import { computed } from "vue";
 import MarkdownRender from "markstream-vue";
+import { useDarkMode } from "../theme";
 import { parseOptions, productMarkdownIt } from "./dialect";
 
 /**
  * Draws Markdown in the product dialect, the same in every page: GFM, a single newline is a line break, only `~~`
- * strikes through, and raw HTML shows as text. Code blocks are plain preformatted text. What an address means
- * (a run's files, an app page, a document of the caller's own) belongs to the caller, through `nodes`.
+ * strikes through, and raw HTML shows as text. Code blocks are plain preformatted text in the page's light or dark
+ * theme. What an address means (a run's files, an app page, a document of the caller's own) belongs to the caller,
+ * through `nodes`.
  */
 const props = withDefaults(
   defineProps<{
@@ -38,6 +40,8 @@ const props = withDefaults(
   { final: true },
 );
 const customId = computed(() => (props.nodes ? nodesId(props.nodes) : undefined));
+// The stylesheet follows the `dark` class by itself; markstream picks a code block's colours from this property only.
+const isDark = useDarkMode();
 </script>
 
 <template>
@@ -48,6 +52,7 @@ const customId = computed(() => (props.nodes ? nodesId(props.nodes) : undefined)
     :final="final"
     :parse-options="parseOptions"
     :custom-markdown-it="productMarkdownIt"
+    :is-dark="isDark"
     mode="chat"
     html-policy="escape"
     :render-code-blocks-as-pre="true"

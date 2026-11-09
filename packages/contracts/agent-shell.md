@@ -15,10 +15,11 @@ navigation (feature entries, agent selector, the selected agent's sessions), the
 conversation stream, the composer, default rendering of messages, tool calls and
 artifacts, and the one client of the host proxy interface. Its product
 dependencies are `@ontomato/contracts` and `@ontomato/foundation-ui`, whose
-`EChart` draws its charts and `MarkdownView` its message text; third-party
-libraries include vue, echarts and lucide. It imports no host code, store,
-router or i18n instance; hosts pass labels, and theme values come from the CSS
-variables.
+`EChart` draws its charts, `MarkdownView` its message text and `useDarkMode`
+follows the host's dark mode (the `dark` class on the document root);
+third-party libraries include vue, echarts and lucide. It imports no host code,
+store, router or i18n instance; hosts pass labels, and theme values come from
+the CSS variables.
 
 A host owns its routes under its own prefix, credentials, menu authorization,
 feature pages, agent definitions, rendering overrides and business actions.
