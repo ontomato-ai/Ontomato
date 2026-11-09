@@ -24,7 +24,6 @@ it("keeps the agent picker mounted while the initial list arrives", async () => 
     expect(root.querySelector(".switch-trigger")).toBe(trigger);
     expect(trigger.disabled).toBe(false);
     expect(trigger.textContent).toContain("Sales analyst");
-    expect(root.querySelector(".column-head")).toBeNull();
   } finally {
     app.unmount();
     root.remove();

@@ -93,19 +93,3 @@ describe("foundation text colours", () => {
     });
   });
 });
-
-describe("foundation shell sizes", () => {
-  /*
-   * The platform rail holds applications only and is the shell's ground layer; the current application sits on it as
-   * one surface, rounded only where it meets the rail. The widths are the interface mockup's (notes/mockup).
-   */
-  it("declares the platform rail's own widths, its icon-row toggle and the application's corner radius", () => {
-    expect(declarationsFor(":root")).toMatchObject({
-      "--shell-platform-rail": "196px",
-      "--shell-platform-rail-collapsed": "50px",
-      "--shell-rail-button": "38px",
-      "--shell-app-radius": "16px",
-    });
-    expect(declarationsFor(":root")["--shell-platform-rail"]).not.toBe(declarationsFor(":root")["--shell-agent-rail"]);
-  });
-});

@@ -93,7 +93,10 @@ function respond(url: string, body?: Record<string, unknown>): Response {
   if (path === "/metricView/test") return json({ success: true, data: {
     md: "# Revenue\n\n| Month | Total |\n| --- | ---: |\n| Jan | 42 |",
   } });
-  if (path === "/data/instanceGraph/summary") return json({ success: true, status: "READY", data: {
+  if (path === "/data/instanceGraph/connections") return json({ success: true, data: {
+    overviewEdges: [{ source: "Order:1", target: "Item:2", type: "has" }], overviewEdgesTruncated: false, version: "v1",
+  } });
+  if (path === "/data/instanceGraph/nodes") return json({ success: true, status: "READY", data: {
     classes: [{ class: "Order", instanceCount: instanceNodeCount }, { class: "Item", instanceCount: 1 }],
     relationships: [{ source: "Order", target: "Item", count: 1 }],
     relationTypes: ["has"],
@@ -362,7 +365,7 @@ describe("Manager pages in the service router", () => {
     expect(options.node.style.shadowBlur).toBe(10);
     expect(graphRecord.dataBatches.map((batch) => batch.nodes?.length || batch.edges?.length))
       .toEqual([2, 2, 1]);
-    expect(paths()).toContain("/data/instanceGraph/summary");
+    expect(paths()).toContain("/data/instanceGraph/nodes");
     expect(root().querySelector(".node-search input")?.hasAttribute("disabled")).toBe(false);
 
     (root().querySelector(".graph-toolbar button[title='Relayout']") as HTMLButtonElement).click();
@@ -845,7 +848,7 @@ describe("Manager pages in the service router", () => {
       ],
       relationship_rule: {},
     } });
-    mountHost({ ...base, view: "/relations" });
+    mountHost({ ...base, view: "/ontology/relations" });
     await settle();
     clickButton("New Relation Type");
     await settle();

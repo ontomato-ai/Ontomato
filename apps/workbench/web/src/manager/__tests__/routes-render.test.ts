@@ -3,7 +3,7 @@ import type { App } from "vue";
 import { agentHostAgentListSchema, agentHostSessionPageSchema } from "@ontomato/contracts/agent-host";
 import type { WorkbenchAppearance } from "@ontomato/contracts/workbench-appearance";
 import { platformRoutes } from "@ontomato/platform-shell/routes";
-import { catalogFixture, catalogPartitionFixture as appPartition } from "../../../../../../packages/platform-web/src/__tests__/fixtures";
+import { catalogPartitionFixture as appPartition } from "../../../../../../packages/platform-web/src/__tests__/fixtures";
 
 /*
  * What this guards: every address an application owns draws that page into the platform's main area, and the rail
@@ -60,7 +60,7 @@ function answer(input: FetchInput, init?: FetchInit): Response {
   const request = input instanceof Request ? input : null;
   const url = new URL(request ? request.url : String(input), window.location.origin);
   const key = `${init?.method ?? request?.method ?? "GET"} ${url.pathname.replace(/^\/custom-base\/api/, "")}`;
-  const body = key in NODE_ANSWERS ? NODE_ANSWERS[key] : { success: true, data: url.pathname.endsWith("/platform/applications") ? catalogFixture() : [] };
+  const body = key in NODE_ANSWERS ? NODE_ANSWERS[key] : { success: true, data: [] };
   return new Response(JSON.stringify(body), { status: 200, headers: { "Content-Type": "application/json" } });
 }
 
@@ -219,7 +219,8 @@ describe("the open-source platform's column", () => {
 describe("the open-source platform's rail", () => {
   it("lists this edition's applications, in the three sections of the rail", async () => {
     await open("/");
-    // The Java and Node declarations own this edition's applications and their rail order.
+    // Written out rather than derived from the partition: the point is that this edition shows these and no others (the
+    // permissions application and the data governance platform exist only in the enterprise edition).
     document.querySelector<HTMLButtonElement>(".rail-toggle")!.click();
     await settle();
     const sections = [...document.querySelectorAll(".rail-scroll > *")].reduce<string[][]>(
@@ -232,14 +233,17 @@ describe("the open-source platform's rail", () => {
     );
     // The foot is a section of its own, above the account and outside the scrolling area.
     sections.push([...document.querySelectorAll(".rail-foot .rail-label")].map((row) => row.textContent ?? ""));
-    const catalog = catalogFixture();
-    expect(sections).toEqual(["top", "apps", "bottom"].map(rail => catalog.filter(app => app.rail === rail).map(app => app.names.en)));
+    expect(sections).toEqual([
+      ["Agent Platform", "Dashboards", "Scheduled tasks", "Object browser"],
+      ["Ontology manager", "Knowledge governance", "Operations diagnosis"],
+      ["System settings"],
+    ]);
     // The platform's own applications sit at the foot of the rail, above the account, not under the applications.
     expect(document.querySelector(".rail-foot .rail-label")?.textContent).toBe("System settings");
   });
 
   it("opens a page this edition serves for every application", async () => {
-    await open("/ontology/playground");
+    await open("/ontology/objects");
     // The rail lists the applications in the partition's order; an application without an external link or an
     // unavailability hint is a row that switches the shell. Every one of them opens somewhere.
     const switching = appPartition();
