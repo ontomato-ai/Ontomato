@@ -1,4 +1,6 @@
 export const en = {
+  "assistant.default.regular.description": "Ask questions about your data",
+  "assistant.default.analysis.description": "Investigate questions and produce reports",
   // Branch labels
   "query.branch.static": "Fixed Metrics Hot Data",
   "query.branch.hot": "Dynamic Metrics Hot Data",

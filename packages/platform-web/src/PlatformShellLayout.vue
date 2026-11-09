@@ -4,6 +4,7 @@ import { useRoute, useRouter } from "vue-router";
 import { useI18n } from "vue-i18n";
 import { usePageActionsOf, usePlatformHost, type PlatformPage } from "@ontomato/platform-admin";
 import PlatformLayout from "./PlatformLayout.vue";
+import { localeAutonyms } from "./locale-names";
 import type { PlatformShownPage } from "./PlatformLayout.vue";
 import { appDeclarations } from "./partition";
 import { appPartition, appPartitionKey, type PartitionOptions } from "./app-partition";
@@ -89,10 +90,9 @@ function selectApp(id: string) {
   if (path) void router.push(path);
 }
 
-/** Language names: the platform's own tree names each supported locale. */
-/** Language names: the platform's own tree names each supported locale. */
+/** Each language retains its own name when the UI locale changes. */
 const localeNames = computed(() =>
-  Object.fromEntries(host.preferences.locales.map((code) => [code, t(`lang.${code.replace("-", "")}`)])),
+  Object.fromEntries(host.preferences.locales.map((code) => [code, localeAutonyms[code] ?? code])),
 );
 
 const pageActions = usePageActionsOf();

@@ -1,5 +1,6 @@
 import type { SessionHistoryQuery } from "@ontomato/contracts/session-history";
 import { assistantOntologyContext } from "./context";
+import { assistantDescription } from "./labels";
 import { actionCatalogue } from "./actions";
 import { assistantActionContext } from "./action-context";
 import { ASSISTANT_INTERACTION_CONTEXT } from "./interaction-context";
@@ -68,7 +69,7 @@ export const assistantService = {
         agentHostAgentSchema.parse({
           id: a.id,
           name: a.name,
-          description: a.description,
+          description: assistantDescription(a, locale),
           icon: a.icon ?? null,
           enabled: a.enabled,
         }),
