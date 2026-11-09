@@ -4,7 +4,7 @@ vi.mock("../../../config/data-query-api", () => ({ getApiConfig: () => ({}), bui
 vi.mock("../../../logging/logger", () => ({ createLogger: () => ({ info() {}, warn() {}, error() {} }) }));
 afterEach(() => { vi.unstubAllGlobals(); });
 it.each([{ token: "current-token" }, { apiKey: "current-api-key" }])("sends the reviewed PUT contract using the current caller credential: %j", async credentials => {
-  const fetch = vi.fn(async () => new Response(JSON.stringify({ success: true, data: { id: "app-test" } }), { status: 200 }));
+  const fetch = vi.fn(async () => new Response(JSON.stringify({ code: 200, message: null, success: true, data: { applicationId: "app-test" } }), { status: 200 }));
   vi.stubGlobal("fetch", fetch);
   const declaration = { name: { en: "Demo" } };
   await writeHostedPublication("app-test", "release-test", declaration, { ...credentials, locale: "en" });
