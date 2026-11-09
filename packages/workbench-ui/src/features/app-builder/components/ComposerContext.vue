@@ -5,8 +5,9 @@ import { Info, PanelRightOpen } from "lucide-vue-next";
 
 /**
  * Above the composer: what a message sent now carries (the open view of the workspace), or, with only the conversation
- * shown, the way back to the workspace page. When another conversation's run occupies the workspace it says which, and
- * opens it; this conversation's message would be refused until that run ends.
+ * shown, the way back to the workspace page as a button of the ordinary size, so it is not missed. When another
+ * conversation's run occupies the workspace it says which, and opens it; this conversation's message would be refused
+ * until that run ends.
  */
 defineProps<{
   pageOpen: boolean;
@@ -32,10 +33,7 @@ const { t } = useI18n();
       <span class="carries-label">{{ t("appBuilder.carries") }}</span>
       <span class="chip"><component :is="icon" :size="13" aria-hidden="true" /><span class="chip-text">{{ page }}</span></span>
     </div>
-    <button v-else type="button" class="chip open-page" @click="emit('openPage')">
-      <PanelRightOpen :size="13" aria-hidden="true" />
-      <span class="chip-text">{{ t("appBuilder.openPreview") }}</span>
-    </button>
+    <el-button v-else :icon="PanelRightOpen" @click="emit('openPage')">{{ t("appBuilder.openPreview") }}</el-button>
   </div>
 </template>
 
@@ -104,13 +102,6 @@ const { t } = useI18n();
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.open-page {
-  cursor: pointer;
-}
-.open-page:hover {
-  border-color: var(--el-border-color);
-  color: var(--el-text-color-primary);
-}
 .link {
   flex-shrink: 0;
   padding: 0;
@@ -120,7 +111,6 @@ const { t } = useI18n();
   font: inherit;
   cursor: pointer;
 }
-.open-page:focus-visible,
 .link:focus-visible {
   outline: 2px solid var(--el-color-primary);
   outline-offset: 2px;

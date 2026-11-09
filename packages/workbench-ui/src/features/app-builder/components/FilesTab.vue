@@ -73,10 +73,8 @@ watch([() => props.view.workspace?.id, () => props.view.workspace?.headCommit, f
           </button>
         </li>
       </ul>
+      <!-- The tree's highlighted row names the open file; the code needs no second title. -->
       <div class="viewer">
-        <div v-if="file" class="viewer-head">
-          <span class="viewer-path">{{ file }}</span>
-        </div>
         <div v-if="error" class="files-state" role="alert">
           {{ error }}
           <el-button size="small" @click="read">{{ t("common.retry") }}</el-button>
@@ -149,23 +147,6 @@ watch([() => props.view.workspace?.id, () => props.view.workspace?.headCommit, f
   flex: 1;
   min-width: 0;
   min-height: 0;
-}
-.viewer-head {
-  display: flex;
-  align-items: center;
-  min-height: 40px;
-  padding: 0 var(--spacing-lg);
-  flex-shrink: 0;
-  border-bottom: 1px solid var(--el-border-color-lighter);
-}
-.viewer-path {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-family: var(--font-mono);
-  font-size: var(--text-sm);
-  color: var(--el-text-color-primary);
 }
 .code {
   flex: 1;
