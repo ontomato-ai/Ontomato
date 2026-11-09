@@ -4,7 +4,7 @@ import { useRoute, useRouter } from "vue-router";
 import { ElMessage, ElMessageBox } from "element-plus";
 import { useLocale } from "../../../../composables/useLocale";
 import { relativeTime } from "../../../../utils/relative-time";
-import { artifactRetentionRequestKey, diagnosisApi, setArtifactRetention } from "../../api";
+import { artifactRetentionRequestKey, diagnosisApi } from "../../api";
 import EmptyState from "../agent-chat/EmptyState.vue";
 import ListDetail from "../layout/ListDetail.vue";
 import SidebarListItem from "../layout/SidebarListItem.vue";
@@ -52,7 +52,7 @@ function placeholder(id: string): AutotestRunMeta {
 async function load(visible: string | null = runId.value) {
   loading.value = true;
   try {
-    runs.value = (await diagnosisApi.listRuns()).data || [];
+    runs.value = await diagnosisApi.listRuns();
   } catch (error) {
     runs.value = [];
     console.error("Failed to load autotest runs", error);
@@ -117,7 +117,7 @@ async function toggleRetention(run: AutotestRunMeta) {
   if (retentionKey.value) return;
   retentionKey.value = artifactRetentionRequestKey("autotest-run", run.runId);
   try {
-    const kept = await setArtifactRetention("autotest-run", run.runId, !run.kept);
+    const kept = await diagnosisApi.setArtifactRetention("autotest-run", run.runId, !run.kept);
     runs.value = runs.value.map((item) => (item.runId === run.runId ? { ...item, kept } : item));
   } catch (error) {
     ElMessage.error(error instanceof Error ? error.message : t("diagnosis.retentionUpdateFailed"));

@@ -5,7 +5,7 @@ import { ElMessage, ElMessageBox } from "element-plus";
 import { Search } from "lucide-vue-next";
 import { useLocale } from "../../../../composables/useLocale";
 import { relativeTime } from "../../../../utils/relative-time";
-import { artifactRetentionRequestKey, diagnosisApi, setArtifactRetention } from "../../api";
+import { artifactRetentionRequestKey, diagnosisApi } from "../../api";
 import EmptyState from "../agent-chat/EmptyState.vue";
 import ArtifactDetail from "../ArtifactDetail.vue";
 import ListDetail from "../layout/ListDetail.vue";
@@ -40,7 +40,7 @@ function ensureListed(turnKey = selectedKey.value) {
 async function load() {
   loading.value = true;
   try {
-    turns.value = (await diagnosisApi.listTurns()).data || [];
+    turns.value = await diagnosisApi.listTurns();
   } catch (error) {
     turns.value = [];
     console.error("Failed to load turns", error);
@@ -106,7 +106,7 @@ async function toggleRetention(turn: WorkspaceManifest) {
   const key = identity(turn);
   retentionKey.value = artifactRetentionRequestKey("turn-workspace", key);
   try {
-    const kept = await setArtifactRetention("turn-workspace", key, !turn.kept);
+    const kept = await diagnosisApi.setArtifactRetention("turn-workspace", key, !turn.kept);
     turns.value = turns.value.map((item) => (identity(item) === key ? { ...item, kept } : item));
   } catch (error) {
     ElMessage.error(error instanceof Error ? error.message : t("diagnosis.retentionUpdateFailed"));
@@ -161,9 +161,9 @@ onMounted(load);
       <ArtifactDetail
         v-else-if="selectedKey"
         :key="selectedKey"
-        :api-prefix="diagnosisApi.turnArtifactUrl(selectedKey)"
+        :api-prefix="diagnosisApi.turnArtifactPath(selectedKey)"
         :title="selectedKey"
-        :trigger-build-url="diagnosisApi.turnBuildUrl()"
+        :trigger-build-path="diagnosisApi.turnBuildPath()"
         :trigger-build-body="{ turnKey: selectedKey }"
         :kept="selected?.kept"
         :retention-loading="selected ? updating(selected) : false"

@@ -243,9 +243,7 @@ async function remove(row: Row) {
 
 async function importSkill(file: File, overwrite = false) {
   try {
-    const formData = new FormData();
-    formData.append("file", file);
-    const data = await skillsApi.importSkill(formData, overwrite);
+    const data = await skillsApi.importSkill(file, overwrite);
     if (data.success) {
       ElMessage.success(
         t("admin.skillImportSuccess", { id: data.skill.id, action: overwrite ? t("admin.overwrite") : t("common.import") }),

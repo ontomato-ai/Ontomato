@@ -13,7 +13,7 @@ const router = useRouter();
 
 const runId = computed(() => String(route.params.runId || ""));
 const caseId = computed(() => String(route.params.caseId || ""));
-const apiPrefix = computed(() => diagnosisApi.caseArtifactUrl(runId.value, caseId.value));
+const apiPrefix = computed(() => diagnosisApi.caseArtifactPath(runId.value, caseId.value));
 
 const title = computed(() => `Case ${caseId.value}`);
 

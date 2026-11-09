@@ -113,9 +113,7 @@ const displayedSkills = computed(() => {
 async function importSkill(file: File, overwrite = false) {
   importLoading.value = true;
   try {
-    const formData = new FormData();
-    formData.append("file", file);
-    const data = await skillsApi.importSkill(formData, overwrite);
+    const data = await skillsApi.importSkill(file, overwrite);
     if (!data.success) {
       ElMessage.error(data.error || t("admin.importFailed"));
       return;

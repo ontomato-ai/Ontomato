@@ -153,7 +153,7 @@ function normalizeJudgment(value: string): string {
 
 async function loadCaseSets() {
   try {
-    const data = await diagnosisApi.listRunCaseSets();
+    const data = await diagnosisApi.listCaseSets();
     caseSets.value = data || [];
     if (
       caseSets.value.length > 0 &&
@@ -241,8 +241,8 @@ async function restoreRun(id: string) {
 
   try {
     const [runDetail, resultDetail] = await Promise.all([
-      diagnosisApi.getRunData(encodeURIComponent(id)),
-      diagnosisApi.getRunResultsData(encodeURIComponent(id)),
+      diagnosisApi.getRun(id),
+      diagnosisApi.getRunResults(id),
     ]);
     const restoredState = normalizeRunState(runDetail.status);
     const resultRows = Array.isArray(resultDetail.results) ? resultDetail.results : [];

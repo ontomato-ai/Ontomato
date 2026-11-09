@@ -12,8 +12,8 @@ const stream = vi.hoisted(() => ({
 vi.mock("../../../../../utils/auth", () => ({ authHost: () => ({ getToken: () => "test-token" }) }));
 vi.mock("../../../api", () => ({
   diagnosisApi: {
-    getRunData: async () => ({ runId: "run-1", status: "running" }),
-    getRunResultsData: async () => ({ results: [] }),
+    getRun: async () => ({ runId: "run-1", status: "running" }),
+    getRunResults: async () => ({ results: [] }),
     openRunEvents: () => stream,
   },
 }));

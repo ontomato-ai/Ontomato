@@ -7,8 +7,6 @@ import { ElMessage } from "element-plus";
 import { AgentShell, useAgentNav, type ShellWorkbenchDeclaration } from "@ontomato/agent-shell-ui";
 import "@ontomato/agent-shell-ui/style.css";
 import { DIAGNOSIS_AGENT_ID, type DiagnosisTarget } from "@ontomato/contracts/ops-diagnosis";
-import { agentHostCreateSessionResponseSchema, agentHostAdmissionSchema } from "@ontomato/contracts/agent-host";
-import { nodeApiFetch } from "../../../../utils/api";
 import { useShellLabels } from "../../../../composables/useShellLabels";
 import { workbenchContent } from "../../../../content";
 import { diagnosisApi } from "../../api";
@@ -123,10 +121,7 @@ async function startDiagnosis(target: DiagnosisTarget, fromRoute = false) {
   const run = fromRoute && typeof route.query.diagnosisRunId === "string" ? route.query.diagnosisRunId : randomId();
   try {
     if (fromRoute) await router.replace({ path: route.path, query: { ...route.query, diagnosisSessionId: session, diagnosisRunId: run } });
-    const created = await nodeApiFetch("/observe/diagnoses", "POST", { target }, { headers: { "Idempotency-Key": session } });
-    agentHostCreateSessionResponseSchema.parse(await created.json());
-    const admitted = await nodeApiFetch(`/observe/agent/sessions/${session}/runs`, "POST", { message: workbenchContent().text.observe.autoTurnDiagnosisMessage }, { headers: { "Idempotency-Key": run } });
-    agentHostAdmissionSchema.parse(await admitted.json());
+    await diagnosisApi.startDiagnosis(target, session, run, workbenchContent().text.observe.autoTurnDiagnosisMessage);
     // Started from a page, the diagnosis opens beside the evidence it is about.
     if (pageOf(route.path)) pageView.value = "side";
     conversation.value = session;

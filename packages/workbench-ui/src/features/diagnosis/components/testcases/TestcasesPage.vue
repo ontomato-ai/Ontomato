@@ -315,7 +315,7 @@ async function saveCases(targetId?: string): Promise<boolean> {
 
   saving.value = true;
   try {
-    await diagnosisApi.saveCaseSet(id, JSON.stringify({ cases: valid }));
+    await diagnosisApi.saveCaseSet(id, { cases: valid });
     ElMessage.success(t("admin.saveSuccess"));
     editingCases.value = valid.map((c) => ({ ...c }));
     savedCasesJson.value = serializeCases(editingCases.value);
@@ -427,7 +427,7 @@ async function doImport() {
 
   importing.value = true;
   try {
-    await diagnosisApi.createCaseSet(JSON.stringify({ name: importName.value.trim(), cases }));
+    await diagnosisApi.createCaseSet({ name: importName.value.trim(), cases });
     ElMessage.success(t("diagnosis.importSuccess"));
     importVisible.value = false;
     await loadCaseSets();
@@ -455,12 +455,10 @@ async function doCreateCaseSet() {
 
   importing.value = true;
   try {
-    const result = await diagnosisApi.createCaseSet(
-      JSON.stringify({
-        name: newCaseSetName.value.trim(),
-        cases: [],
-      })
-    );
+    const result = await diagnosisApi.createCaseSet({
+      name: newCaseSetName.value.trim(),
+      cases: [],
+    });
     ElMessage.success(t("admin.createdSuccess"));
     newCaseSetVisible.value = false;
     await loadCaseSets();
