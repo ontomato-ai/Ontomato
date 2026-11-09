@@ -30,7 +30,9 @@ export interface HostStreamHandlers {
 
 export interface AgentHostClient {
   listAgents(): Promise<AgentHostAgent[]>;
+  /** The agent's conversations, or those of the client's workspace when it has one. */
   listSessions(agentId: string, cursor: string | null): Promise<AgentHostSessionPage>;
+  /** A new conversation with the agent, inside the client's workspace when it has one. */
   createSession(agentId: string): Promise<AgentHostSession>;
   readHistory(sessionId: string, query?: SessionHistoryQuery): Promise<AgentHostSessionHistory>;
   deleteSession(sessionId: string): Promise<void>;
@@ -60,6 +62,15 @@ export interface AgentHostClient {
   ): () => void;
 }
 
+/**
+ * The workspace a client's conversations belong to: they are created inside it and listed from the workspace's own
+ * conversation list, which is a read of the workspace interface rather than of this host's, so the host makes it.
+ */
+export interface AgentHostWorkspaceScope {
+  id: string;
+  listSessions(cursor: string | null): Promise<AgentHostSessionPage>;
+}
+
 export interface AgentHostClientOptions {
   /**
    * Authenticated request to a path relative to the host prefix. Resolves only for 2xx responses and
@@ -70,6 +81,8 @@ export interface AgentHostClientOptions {
   agents?(agents: AgentHostAgent[]): AgentHostAgent[];
   /** Called for every applied run frame, so a host page can refresh its own view of the run. */
   onEvent?(sessionId: string, envelope: RuntimeEventEnvelope): void;
+  /** Binds every conversation of this client to one workspace. */
+  workspace?: AgentHostWorkspaceScope;
 }
 
 const enc = encodeURIComponent;
@@ -127,10 +140,12 @@ export function createAgentHostClient(options: AgentHostClientOptions): AgentHos
       return options.agents ? options.agents(agents) : agents;
     },
     listSessions(agentId, cursor) {
+      if (options.workspace) return options.workspace.listSessions(cursor);
       return json<AgentHostSessionPage>(`/sessions?${query({ agentId, ...(cursor ? { cursor } : {}) })}`);
     },
     async createSession(agentId) {
-      return (await json<AgentHostCreateSessionResponse>("/sessions", send("POST", { agentId }, true))).session;
+      const body = options.workspace ? { agentId, workspaceId: options.workspace.id } : { agentId };
+      return (await json<AgentHostCreateSessionResponse>("/sessions", send("POST", body, true))).session;
     },
     async readHistory(sessionId, input = {}) {
       return agentHostSessionHistorySchema.parse(await json(`${session(sessionId)}/history?${new URLSearchParams(input)}`));

@@ -121,6 +121,7 @@ function send(text: string) {
       <div class="empty-inner">
         <h1 class="greeting">{{ labels.greeting }}</h1>
         <p v-if="agent?.description" class="agent-description">{{ agent.description }}</p>
+        <div v-if="$slots['composer-context']" class="composer-context"><slot name="composer-context" /></div>
         <ShellComposer :busy="busy" :disabled="!agent?.enabled" autofocus @send="send" @stop="emit('stop')" />
         <p v-if="sendError" class="send-error" role="alert"><CircleAlert :size="14" />{{ sendError }}</p>
       </div>
@@ -167,6 +168,7 @@ function send(text: string) {
           <ArrowDown :size="16" />
         </button>
         <p v-if="sendError" class="send-error" role="alert"><CircleAlert :size="14" />{{ sendError }}</p>
+        <div v-if="$slots['composer-context']" class="composer-context"><slot name="composer-context" /></div>
         <ShellComposer :busy="busy" :disabled="!agent?.enabled" @send="send" @stop="emit('stop')" />
       </div>
     </template>
@@ -359,6 +361,13 @@ function send(text: string) {
   margin: 0 0 8px 12px;
   color: var(--el-color-danger);
   font-size: var(--text-sm);
+}
+/* The host's line about what a message carries; the composer under it keeps its own geometry. */
+.composer-context {
+  margin: 0 0 8px;
+}
+.composer-context:empty {
+  display: none;
 }
 .empty .send-error {
   margin-top: 10px;
