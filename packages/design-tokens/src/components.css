@@ -11,6 +11,10 @@
   background-color: var(--el-overlay-color-lighter);
 }
 
+html.dark .el-loading-mask {
+  background-color: transparent;
+}
+
 .el-dialog,
 .el-message-box,
 .el-drawer {
