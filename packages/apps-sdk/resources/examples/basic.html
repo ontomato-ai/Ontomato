@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Basic page</title>
+  {{head}}
+  <style>
+    [v-cloak] { display: none; }
+    body { margin: 0; background: var(--el-bg-color-page); color: var(--el-text-color-primary); }
+    .page { display: grid; gap: 16px; padding: 16px; }
+    .chart { height: 280px; }
+  </style>
+</head>
+<body>
+  <!-- The platform context, a form built from Element Plus and an ECharts chart that follows the platform's theme. -->
+  <div id="app" class="page" v-cloak>
+    <el-card>
+      <template #header>Platform context</template>
+      <el-descriptions :column="1" border>
+        <el-descriptions-item label="User">{{ user?.userName ?? "No sign-in (open-source edition)" }}</el-descriptions-item>
+        <el-descriptions-item label="Language">{{ locale }}</el-descriptions-item>
+        <el-descriptions-item label="Theme">{{ theme }}</el-descriptions-item>
+      </el-descriptions>
+      <el-button style="margin-top: 12px" @click="openMetricViews">Open the platform's Metric Views</el-button>
+    </el-card>
+
+    <el-card>
+      <template #header>Element Plus</template>
+      <el-form :model="form" label-width="120px" @submit.prevent="submit">
+        <el-form-item label="Name">
+          <el-input v-model="form.name" placeholder="Any text"></el-input>
+        </el-form-item>
+        <el-form-item label="Date">
+          <el-date-picker v-model="form.date" type="date"></el-date-picker>
+        </el-form-item>
+        <el-form-item>
+          <el-button type="primary" native-type="submit">Show a message</el-button>
+        </el-form-item>
+      </el-form>
+    </el-card>
+
+    <el-card>
+      <template #header>ECharts (sample values)</template>
+      <sample-chart :theme="theme"></sample-chart>
+    </el-card>
+  </div>
+
+  <script type="module">
+    import { createApp, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue";
+    import ElementPlus, { ElMessage } from "element-plus";
+    import * as echarts from "echarts";
+    import { createAppContext } from "@ontomato/sdk";
+
+    const context = createAppContext();
+
+    // One chart: created after mount, created again for a new theme, resized with its element, disposed on unmount.
+    const SampleChart = {
+      props: { theme: { type: String, required: true } },
+      template: `<div ref="element" class="chart"></div>`,
+      setup(props) {
+        const element = ref(null);
+        let chart = null;
+        const option = {
+          tooltip: {},
+          xAxis: { type: "category", data: ["A", "B", "C", "D"] },
+          yAxis: { type: "value" },
+          series: [{ type: "bar", name: "Sample", data: [12, 20, 15, 8] }],
+        };
+        const draw = () => {
+          chart?.dispose();
+          chart = echarts.init(element.value, props.theme === "dark" ? "dark" : undefined);
+          chart.setOption({ backgroundColor: "transparent", ...option });
+        };
+        const resize = new ResizeObserver(() => chart?.resize());
+        onMounted(() => {
+          draw();
+          resize.observe(element.value);
+        });
+        watch(() => props.theme, draw);
+        onBeforeUnmount(() => {
+          resize.disconnect();
+          chart?.dispose();
+        });
+        return { element };
+      },
+    };
+
+    createApp({
+      components: { SampleChart },
+      setup() {
+        const form = reactive({ name: "", date: null });
+        return {
+          user: context.user,
+          locale: context.locale,
+          theme: context.theme,
+          form,
+          submit: () => ElMessage.success(`Hello, ${form.name || "app"}`),
+          openMetricViews: () => context.navigate("/ontology/assets/metrics"),
+        };
+      },
+    }).use(ElementPlus).use(context).mount("#app");
+  </script>
+</body>
+</html>

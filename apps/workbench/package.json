@@ -9,6 +9,7 @@
     "test": "vitest run",
     "dev:web": "vite --config web/vite.config.ts",
     "build:web": "vite build --config web/vite.config.ts",
+    "build:sdk": "node node_modules/@ontomato/apps-sdk/build.mjs web/src/sdk-edition.ts ../../dist/apps-sdk",
     "typecheck:web": "vue-tsc --noEmit -p web/tsconfig.json",
     "test:web": "vitest run --root web"
   },
@@ -18,6 +19,7 @@
     "tsx": "4.21.0"
   },
   "devDependencies": {
+    "@ontomato/apps-sdk": "workspace:*",
     "@ontomato/contracts": "workspace:*",
     "@ontomato/design-tokens": "workspace:*",
     "@ontomato/ontology-manager": "workspace:*",

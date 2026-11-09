@@ -38,7 +38,7 @@ jobs:
           pnpm typecheck:runtime
           pnpm typecheck:workbench
           pnpm --filter @ontomato/workbench typecheck:web
-          pnpm --filter @ontomato/workbench-ui --filter @ontomato/ontology-manager --filter @ontomato/platform-admin --filter @ontomato/agent-shell-ui --filter @ontomato/service-logging typecheck
+          pnpm --filter @ontomato/workbench-ui --filter @ontomato/ontology-manager --filter @ontomato/platform-admin --filter @ontomato/agent-shell-ui --filter @ontomato/service-logging --filter @ontomato/apps-sdk typecheck
 
       - name: Test
         run: |

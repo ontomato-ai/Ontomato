@@ -5,7 +5,9 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
-    "./i18n": "./src/i18n.ts"
+    "./i18n": "./src/i18n.ts",
+    "./clients": "./src/clients/index.ts",
+    "./app-components/MetricViewData.vue": "./src/app-components/MetricViewData.vue"
   },
   "scripts": {
     "typecheck": "vue-tsc --noEmit",

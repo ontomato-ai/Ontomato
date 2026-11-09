@@ -3,7 +3,7 @@
 // it checks pnpm's production selection against the graph closure,
 // materializes /stage (selected own members as real dirs, third-party as
 // absolute /opt/runtime links whose store paths come from this builder's own
-// install of the same lock), and copies the built web output. The launch
+// install of the same lock), and copies the built web output and apps SDK. The launch
 // script and the empty data mount point are placed by the recipe, not here.
 import {
   cpSync,
@@ -123,7 +123,8 @@ export function assembleAppStage({
   const { plan, copies } = stagePlan(graph, members, index);
   for (const copy of copies) copyMember(copy.from, join(stageRoot, copy.to));
   if (record.web !== false)
-    cpSync(join(root, "dist/web"), join(stageRoot, "dist/web"), { recursive: true });
+    for (const output of ["dist/web", "dist/apps-sdk"])
+      cpSync(join(root, output), join(stageRoot, output), { recursive: true });
   writeStage(stageRoot, storeRoot, plan);
   return { graph, plan, copies };
 }

@@ -1,5 +1,6 @@
 import {
   createAgentHostClient,
+  type AgentHostClientOptions,
   type ShellFeedbackPort,
   type ShellFeedbackTarget,
   type ShellFeedbackValue,
@@ -18,17 +19,19 @@ import { ApiRequestError, nodeApiFetch, nodeApiGet, nodeApiPut } from "../../uti
 const PREFIX = "/assistant";
 const sessionPath = (sessionId: string) => `${PREFIX}/sessions/${encodeURIComponent(sessionId)}`;
 
-/** The shared shell client over this host's authenticated requests. */
-export function createAssistantClient() {
-  return createAgentHostClient({
-    request: (path, init) =>
-      nodeApiFetch(
-        `${PREFIX}${path}`,
-        init.method ?? "GET",
-        typeof init.body === "string" ? JSON.parse(init.body) : undefined,
-        { headers: init.headers, signal: init.signal },
-      ),
+/** The workbench's own authenticated request to the API root. */
+const workbenchRequest: AgentHostClientOptions["request"] = (path, init) =>
+  nodeApiFetch(path, init.method ?? "GET", typeof init.body === "string" ? JSON.parse(init.body) : undefined, {
+    headers: init.headers,
+    signal: init.signal,
   });
+
+/**
+ * The shared shell client of the assistant's agents. `request` is an authenticated request to a path under the API
+ * root: the workbench's own by default, the app's when an SDK app embeds the conversation.
+ */
+export function createAssistantClient(request: AgentHostClientOptions["request"] = workbenchRequest) {
+  return createAgentHostClient({ request: (path, init) => request(`${PREFIX}${path}`, init) });
 }
 
 /** Answer feedback, stored by the workbench, shown by the shell's rating buttons. */

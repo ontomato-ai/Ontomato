@@ -10,7 +10,7 @@ import {
 import platformEn from "@ontomato/platform-admin/locales/en";
 import { platformRoutes } from "@ontomato/platform-shell/routes";
 import {
-  createServiceManager, installServiceMessages, readRuntimeConfig, serviceNavigation,
+  createServiceManager, installAppHost, installServiceMessages, readRuntimeConfig, serviceNavigation,
   startPage, startShellPreferences, stopPage,
 } from "@ontomato/platform-web";
 import { ossProfile as profile } from "./profile";
@@ -20,10 +20,12 @@ export function ossServicePages(app: App, router: Router) {
   const preferences = startShellPreferences(profile);
   const i18n = installServiceMessages(profile, { en: { messages: platformEn, element: en } });
   const credential = { type: "anonymous" } as const;
-  const manager = createServiceManager({ profile, preferences, i18n, credential,
-    onAuthFailure: (status) => { if (status === 401) stopPage(app, i18n.global.t("ontology.requestFailedStatus", { status })); },
-  });
+  const onAuthFailure = (status: 401 | 402) => {
+    if (status === 401) stopPage(app, i18n.global.t("ontology.requestFailedStatus", { status }));
+  };
+  const manager = createServiceManager({ profile, preferences, i18n, credential, onAuthFailure });
   manager.install(app);
+  installAppHost({ credential, preferences, router, onAuthFailure });
   const client = createPlatformClient({ ...readRuntimeConfig(), credential, locale: () => preferences.locale.value });
   const navigation = serviceNavigation(manager, platformGroups.platform, [...ossPlatformPages, ...platformKnowledgePages]);
   const area = installPlatformPages(app, router, {

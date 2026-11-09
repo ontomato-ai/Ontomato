@@ -20,6 +20,7 @@ export {
   type ManagerShellProfile,
 } from "./shell";
 export { readRuntimeConfig } from "./config";
+export { installAppHost } from "./app-host";
 export { serviceHome } from "./view";
 export { legacyAdminRoutes, managerLocation, managerViewQuery } from "./admin-routes";
 export { observeRoutes } from "./observe-routes";
