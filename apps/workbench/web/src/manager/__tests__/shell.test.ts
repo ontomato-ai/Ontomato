@@ -39,6 +39,9 @@ vi.mock("../../../../../../packages/platform-admin/src/pages/ModelConfigPage.vue
   __esModule: true,
   default: defineComponent({ name: "ModelConfigDouble", setup: () => () => h("p", { class: "page-double" }, "models") }),
 }));
+vi.mock("../../../../../../packages/workbench-ui/src/features/workbench/components/BusinessWorkbench.vue", () => ({
+  default: defineComponent({ name: "BusinessDouble", setup: () => () => h("p", { class: "page-double" }, "agents") }),
+}));
 
 const { isolateShellPerTest } = await import("./isolation");
 const { startPlatform } = await import("../../platform");
@@ -99,9 +102,10 @@ describe("open-source Ontology Service page", () => {
     expect(document.querySelector(".panel-title")).toBeNull();
     expect(document.querySelector(".platform-app-menu")).not.toBeNull();
     expect([...document.querySelectorAll(".platform-app-menu .group-heading")].map((heading) => heading.textContent)).toEqual([
-      "Ontology",
-      "Assets",
-      "Knowledge",
+      "Facts",
+      "Capabilities",
+      "Governance",
+      "Products",
     ]);
     expect(document.querySelector(".platform-app-menu .page-row.active .page-label")?.textContent).toBe("Object Types");
     // The manager's own frame fills the page beside that menu.
@@ -124,8 +128,8 @@ describe("open-source Ontology Service page", () => {
     // The foot is a section of its own, above the account and outside the scrolling area.
     sections.push([...document.querySelectorAll(".rail-foot .rail-label")].map((row) => row.textContent ?? ""));
     expect(sections).toEqual([
-      ["Ontology manager", "Object browser"],
-      ["Agent Platform", "Operations diagnosis", "Knowledge governance", "Dashboards", "Scheduled tasks"],
+      ["Agent Platform", "Dashboards", "Scheduled tasks", "Object browser"],
+      ["Ontology manager", "Knowledge governance", "Operations diagnosis"],
       ["System settings"],
     ]);
     // The object browser owns the graph and data browsing, and draws its own pages.
@@ -134,8 +138,8 @@ describe("open-source Ontology Service page", () => {
   });
 
   it.each([
-    ["/", "#/ontology/playground", "graph"],
-    ["/#/", "#/ontology/playground", "graph"],
+    ["/", "#/agents/chat", "agents"],
+    ["/#/", "#/agents/chat", "agents"],
     ["/?view=data-browser", "#/browser/data", "data "],
     ["/?view=assets", "#/ontology/assets/metrics", null],
     ["/?view=visual-modeling&focus=object&id=Order", "#/ontology/visual-modeling?focus=object&id=Order", "modeling object:Order"],
@@ -144,7 +148,7 @@ describe("open-source Ontology Service page", () => {
     ["/#/admin/ontology/visual-modeling", "#/ontology/visual-modeling", "modeling :"],
     ["/#/admin", "#/settings/model-config/usage", "models"],
     ["/#/admin/audit-log", "#/settings/records/audit-log", null],
-    ["/#/no-such-page", "#/ontology/playground", "graph"],
+    ["/#/no-such-page", "#/agents/chat", "agents"],
   ])("old address %s lands on %s", async (url, landed, page) => {
     await start(url);
     expect(hash()).toBe(landed);
@@ -193,7 +197,7 @@ describe("open-source Ontology Service page", () => {
 
   it("with one locale there is no language control; the theme control switches the whole page and is stored under the Ontology Service key", async () => {
     localStorage.setItem("theme-preference", "light");
-    await start("/?theme=dark");
+    await start("/?theme=dark#/ontology/objects");
     expect(document.documentElement.classList.contains("dark")).toBe(false);
     // The theme and language live in the rail's account menu now.
     document.querySelector<HTMLButtonElement>(".account-trigger")!.click();

@@ -234,8 +234,8 @@ describe("the open-source platform's rail", () => {
     // The foot is a section of its own, above the account and outside the scrolling area.
     sections.push([...document.querySelectorAll(".rail-foot .rail-label")].map((row) => row.textContent ?? ""));
     expect(sections).toEqual([
-      ["Ontology manager", "Object browser"],
-      ["Agent Platform", "Operations diagnosis", "Knowledge governance", "Dashboards", "Scheduled tasks"],
+      ["Agent Platform", "Dashboards", "Scheduled tasks", "Object browser"],
+      ["Ontology manager", "Knowledge governance", "Operations diagnosis"],
       ["System settings"],
     ]);
     // The platform's own applications sit at the foot of the rail, above the account, not under the applications.
@@ -243,7 +243,7 @@ describe("the open-source platform's rail", () => {
   });
 
   it("opens a page this edition serves for every application", async () => {
-    await open("/");
+    await open("/ontology/objects");
     // The rail lists the applications in the partition's order; an application without an external link or an
     // unavailability hint is a row that switches the shell. Every one of them opens somewhere.
     const switching = appPartition();
