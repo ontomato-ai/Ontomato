@@ -27,4 +27,6 @@ export const clarificationValuesSchema = z.object({
 }).strict();
 export const clarificationStateSchema = clarificationValuesSchema.extend({
   status: z.enum(["draft", "submitted"]), continuationRunId: z.string().uuid().nullable(),
+  locked: z.boolean().default(false),
+  continuation: z.enum(["not_started", "pending", "accepted", "conversation", "stale", "needs_attention", "unavailable"]).default("not_started"),
 });

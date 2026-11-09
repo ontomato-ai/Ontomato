@@ -82,6 +82,16 @@ No recommendation or default is consent. Preserve the original retrieval identit
 do not start a replacement retrieval to bypass unresolved questions. Optional notes supplement required choices rather
 than silently replacing them. Do not claim a decision was accepted before the underlying task accepts it.
 
+Clarification cards distinguish durable submission from retrieval acceptance. The server verifies acceptance only
+when this continuation links a new run of the same retrieval at the next decision revision. A completed assistant
+turn without that evidence needs attention; unavailable dependencies leave acceptance unverified. Cards without a
+retrieval identify goal clarification separately. Draft feedback shows saving, saved and failure states; reserved
+submissions lock their original choices while admission retries reuse the persisted continuation ID. Unchanged
+drafts are not saved repeatedly, successful saves stay silent, and failures expose retry. Outdated cards retain
+their choices read-only and offer the latest conversation; required text cannot be whitespace. Acceptance
+does not certify that the resulting dataset implements the chosen scope; final-result equivalence still requires
+end-to-end verification.
+
 ## Action and recovery
 
 Inline Action cards answer: what is suggested, for whom, what is current, what changes, and what confirmation does.
@@ -113,7 +123,7 @@ independent authorized read. Distinguish component tests, runtime tests and visu
 | Capability | Current implementation | Remaining acceptance/boundary |
 | --- | --- | --- |
 | Follow-ups and dataset selection | Implemented; references and raw selected JSON rows; component tests and selection browser smoke | Model recommendations are not server-validated query plans |
-| Structured clarification | Server-saved drafts and submitted choices; durable continuation run identity; explicit choices and recovery tests; browser reload restores a real draft | Server checks retrieval association and revision; full mid-retrieval resume still needs end-to-end acceptance |
+| Structured clarification | Server-saved drafts, silent autosave and retries; immutable submitted choices; stale-card detection; verified retrieval acceptance; durable continuation identity; real pre-query and mid-retrieval clarification verified | 2026-11-09 enterprise test-domain API/model acceptance: same retrieval 960bd52b-c449-42d3-8321-4ff0e388bcc3 resumed from revision 0 to 1; accepted dataset recipe filters staff_type to full-time teachers with no status filter, distinct account count 1373, decision IDs and execution receipt retained. This verifies that scenario, not universal automatic equivalence for arbitrary business definitions. |
 | Editable query conditions | Dataset header opens source filters from accepted dataset provenance; one business-language replacement starts a new query with original context; real dataset dialog, preview and HTTP 202 admission verified | This is a scoped natural-language requery, not direct editing of an executable query plan; typed field/operator controls and final model result acceptance remain future work |
 | Aggregate → detail records | Single selected aggregate row; server-owned group mapping and typed values; one-click query without confirmation; idempotent read-only continuation; shell selection reused for returned datasets | Initial support is one query and one direct aggregate with projected group fields; final model detail population and live data changes need end-to-end acceptance |
 | Multi-object change preview | Pending | Requires authorized target set, per-record effects and execution semantics |
