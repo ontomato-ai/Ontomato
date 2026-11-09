@@ -4,6 +4,7 @@ import { runtimeDefaults } from "../runtime/defaults";
 const read = (name: string) => process.env[name];
 
 export const environment = {
+  publicBasePath: () => (read("PUBLIC_BASE_PATH") || "").replace(/\/$/, ""),
   node: () => read("NODE_ENV"),
   level: () => read("LOG_LEVEL"),
   logDir: () => read(workbenchProduct().logDirEnvName),

@@ -124,7 +124,6 @@ export default {
     "view": "View",
     "noData": "No Data",
     "inProgress": "In progress",
-    "failed": "Failed",
     "back": "Back",
     "confirmWorkbenchAction": "Confirm",
     "loading": "Loading...",
@@ -175,8 +174,6 @@ export default {
     "color": "Color",
     "stop": "Stop",
     "pause": "Pause",
-    "parameters": "Parameters",
-    "complete": "Complete",
     "parallel": "Parallel",
     "cancelled": "Cancelled",
     "unknown": "Unknown",
@@ -386,8 +383,6 @@ export default {
     "troubleshootConfig": "Troubleshoot config issues",
     "checkLLM": "Check LLM connectivity",
     "viewRecentErrors": "View recent errors",
-    "executing": "Executing...",
-    "noResult": "(No result)",
     "requestFailed": "Request failed",
     "responseInterrupted": "The previous response was interrupted by a service restart. You can continue or send it again.",
     "diagnosisAgent": "Diagnosis Agent",
@@ -464,9 +459,6 @@ export default {
     "noConversations": "No Conversations",
     "historyConversations": "History Conversations",
     "diagnoseTurn": "Diagnose this Turn",
-    "send": "Send",
-    "toolCalls": "1 tool call | {count} tool calls",
-    "toolFailures": "{count} failed",
     "partialResult": "Partial result: a processing or output limit of {rowLimit} was reached, so these results (even if empty) may not cover all matches."
   },
   "appearance": {
@@ -512,9 +504,6 @@ export default {
   },
   "dataBrowser": {
     "filterConditions": "Filter Conditions"
-  },
-  "thinking": {
-    "thinkingProcess": "Thinking Process"
   },
   "knowledge": {
     "noFiles": "No knowledge base files",

@@ -1,3 +1,4 @@
+import { APP_BUILDER_SKILL } from "../app-builder/definition";
 import path from "node:path";
 import type { RuntimeSkillRef } from "@ontomato/contracts/agent-runtime-skills";
 import { runtimeSkillKey } from "@ontomato/contracts/agent-runtime-skills";
@@ -20,6 +21,7 @@ function platformSkills() {
   });
 }
 export async function registerAssistantSkills() {
+  await publishSkill(path.resolve(workbenchServerResourceRoot, "../../agent-skills/ontomato-app-builder"), APP_BUILDER_SKILL);
   for (const entry of platformSkills()) await publishSkill(entry.root, entry.skill);
   for (const skill of await skillRegistryManager.publicSkills())
     await publishSkill(skill.path, skillReference(skill, ""));

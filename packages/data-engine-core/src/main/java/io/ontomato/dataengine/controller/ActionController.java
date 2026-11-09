@@ -109,7 +109,7 @@ public class ActionController {
 			User user = SystemUtils.getCurUser();
 			Action action = param.to(Action.class);
 			action.setDomainId(user.getDomainId());
-			actionService.save(action, lang);
+			ret.put("data", actionService.save(action, lang));
 			ret.put("success", true);
 		} catch (Exception e) {
 			log.error(e.getMessage(), e);

@@ -1,3 +1,4 @@
+import { agentHostSessionPageQuerySchema } from "@ontomato/contracts/agent-host";
 import { randomBytes } from "node:crypto";
 import path from "node:path";
 import express, { Router, type Request, type Response, type NextFunction } from "express";
@@ -37,7 +38,7 @@ workspaceRouter.post("/:id/preview-token", wrap(async (req, res) => {
   res.json({ token, expiresAt: new Date(expiresAt).toISOString() });
 }));
 workspaceRouter.get("/:id/sessions", wrap(async (req, res) => {
-  res.json(await workspaceSessions(context(req).owner, id(req, "id")));
+  res.json(await workspaceSessions(context(req).owner, id(req, "id"), agentHostSessionPageQuerySchema.parse(req.query)));
 }));
 workspaceRouter.post("/:id/publish", wrap(async (req, res) => {
   const c = context(req), input = hostedPublishSchema.parse(req.body);

@@ -1,3 +1,4 @@
+import { workspaceCommitSchema } from "./workspaces";
 import { serviceLogCorrelationSchema } from "./service-logging";
 import { z } from "zod";
 import { modelSelectionSchema } from "./model-settings";
@@ -103,6 +104,8 @@ const runtimeRunFields = {
   finishedAt: runtimeTimestampSchema.nullable(),
   stopReason: runtimeStopReasonSchema.nullable(),
   errorMessage: z.string().nullable(),
+  /** Commit created by this run, never the workspace HEAD from another run. */
+  workspaceCommit: workspaceCommitSchema.nullable(),
   resolvedSkills: z.array(runtimeRegisteredSkillSchema),
   environment: z.object({
     values: z.record(z.string()),
@@ -126,6 +129,7 @@ export const runtimeRunViewSchema = z.object({
   status: runtimeRunFields.status,
   stopReason: runtimeRunFields.stopReason,
   errorMessage: runtimeRunFields.errorMessage,
+  workspaceCommit: runtimeRunFields.workspaceCommit,
   createdAt: runtimeRunFields.createdAt,
   finishedAt: runtimeRunFields.finishedAt,
   resolvedSkills: runtimeRunFields.resolvedSkills,

@@ -70,7 +70,6 @@ test("standalone skill distributions use the one analyst transport source", asyn
   for (const locale of ["en", "zh"])
     for (const skill of [
       "ontomato-analyst",
-      "ontomato-app-builder",
       "ontomato-ontomap-builder",
     ])
       roots.push(`../../ontomato-enterprise/agent-skills/${locale}/${skill}/`);
