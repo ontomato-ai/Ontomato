@@ -59,4 +59,41 @@ describe.each(entries)("$name read the product Markdown dialect", ({ render }) =
     expect(element.querySelector("pre")?.textContent).toContain('const range = "1~2"; // ~~kept~~');
     expect(element.querySelector("pre del, pre s")).toBeNull();
   });
+
+  // The dialect is GFM: syntax some renderers add beyond it reads as the characters written, in pages as in exports.
+  it.each([
+    ["superscript", "2^10^", "2^10^"],
+    ["highlight", "==重点==", "==重点=="],
+    ["insertion", "++新增++", "++新增++"],
+    ["inline math and amounts", "质能 $E=mc^2$，预算 $100 到 $200", "质能 $E=mc^2$，预算 $100 到 $200"],
+    ["a math block", "$$\nE=mc^2\n$$", "$$E=mc^2$$"],
+    ["a bracketed math block", "\\[\nx^2\n\\]", "[x^2]"],
+    ["an inline footnote", "正文^[内联脚注]", "正文^[内联脚注]"],
+    ["a footnote and its definition", "正文[^1]\n\n[^1]: 脚注内容", "正文^1"],
+    ["a ::: container", "::: tip\n提示内容\n:::", "::: tip提示内容:::"],
+    ["a citation", "见文献[1]和[2]", "见文献[1]和[2]"],
+    ["typographic replacements", "\"引号\" -- (c) ... +- 'single'", "\"引号\" -- (c) ... +- 'single'"],
+  ])("shows %s as written", async (_syntax, source, text) => {
+    expect((await render(source)).textContent?.trim()).toBe(text);
+  });
+
+  it("still reads a link through its [label]: url definition", async () => {
+    const element = await render("见[文档][1]\n\n[1]: https://example.com/doc");
+
+    expect(element.textContent?.trim()).toBe("见文档");
+    expect(element.querySelector("a")?.getAttribute("href")).toBe("https://example.com/doc");
+  });
+
+  it("links a bare address only with a scheme, www. or as an email, as GFM does", async () => {
+    const element = await render(
+      "README.md main.py deploy.sh example.com\nwww.x.com https://example.com/a foo@bar.com\n访问www.example.com 查看",
+    );
+
+    expect([...element.querySelectorAll("a")].map((link) => link.getAttribute("href"))).toEqual([
+      "http://www.x.com",
+      "https://example.com/a",
+      "mailto:foo@bar.com",
+      "http://www.example.com",
+    ]);
+  });
 });
