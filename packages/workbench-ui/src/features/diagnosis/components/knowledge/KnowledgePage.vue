@@ -4,13 +4,13 @@ import type {
   KnowledgeMarkdownFile,
 } from "@ontomato/contracts/diagnosis";
 import type { ComponentPublicInstance } from "vue";
-import { computed, onMounted, ref, watch } from "vue";
+import { onMounted, ref, watch } from "vue";
 
 import { ElMessage } from "element-plus";
 import { FileText, Folder, RefreshCw } from "lucide-vue-next";
+import { MarkdownView } from "@ontomato/foundation-ui/markdown";
 import { diagnosisApi } from "../../api";
 import { formatRelativeTime } from "../../../../utils/relative-time";
-import { renderAgentMarkdown } from "../../../../utils/agent-markdown";
 import { useI18n } from "vue-i18n";
 
 const { t } = useI18n();
@@ -34,10 +34,6 @@ const treeProps = {
   children: "children",
   label: "name",
 };
-
-const renderedContent = computed(() =>
-  selectedFile.value ? renderAgentMarkdown(selectedFile.value.content) : ""
-);
 
 function contentPathForNode(node: KnowledgeTreeNode): string | null {
   if (node.type === "file") return node.path;
@@ -194,8 +190,10 @@ onMounted(loadTree);
           <span class="content-time">{{ formatRelativeTime(selectedFile.updatedAt) }}</span>
         </div>
         <div v-loading="loadingContent" class="markdown-scroll">
-          <!-- eslint-disable-next-line vue/no-v-html -->
-          <article class="markdown-body" @click="handleMarkdownClick" v-html="renderedContent" />
+          <!-- A link to another .md file of the knowledge base opens it here (handleMarkdownClick). -->
+          <article class="markdown-body" @click="handleMarkdownClick">
+            <MarkdownView :content="selectedFile.content" />
+          </article>
         </div>
       </template>
       <div v-else class="content-empty">
@@ -343,45 +341,6 @@ onMounted(loadTree);
 
 .markdown-body {
   max-width: 980px;
-  color: var(--el-text-color-primary);
-  line-height: 1.75;
-  font-size: 14px;
-}
-
-.markdown-body :deep(h1),
-.markdown-body :deep(h2),
-.markdown-body :deep(h3) {
-  line-height: 1.35;
-  margin: 20px 0 10px;
-}
-
-.markdown-body :deep(h1) {
-  font-size: 24px;
-}
-
-.markdown-body :deep(h2) {
-  font-size: 19px;
-}
-
-.markdown-body :deep(h3) {
-  font-size: 16px;
-}
-
-.markdown-body :deep(p),
-.markdown-body :deep(ul),
-.markdown-body :deep(ol) {
-  margin: 10px 0;
-}
-
-.markdown-body :deep(pre) {
-  overflow: auto;
-  padding: 12px;
-  border-radius: 6px;
-  background: var(--el-fill-color-light);
-}
-
-.markdown-body :deep(code) {
-  font-family: var(--font-mono);
 }
 
 .content-empty {

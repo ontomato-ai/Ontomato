@@ -1,9 +1,9 @@
 <script setup lang="ts">
 import { computed, inject, onErrorCaptured, ref, watch } from "vue";
 import { EChart } from "@ontomato/foundation-ui/chart";
+import { useDarkMode } from "@ontomato/foundation-ui/theme";
 import { shellContextKey } from "../context";
 import type { ArtifactRendererProps } from "../types";
-import { useDarkMode } from "../useDarkMode";
 import { useArtifactText } from "./useArtifactBlob";
 import { chartReadingLayout } from "./chart-layout";
 import { chartBrandColors } from "./chart-colors";

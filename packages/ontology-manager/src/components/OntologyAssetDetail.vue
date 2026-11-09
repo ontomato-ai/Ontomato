@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import ElDialog from "../ManagerDialog.vue";
 import { computed, onMounted, ref, watch } from "vue";
-import MarkdownIt from "markdown-it";
 import { ArrowLeft, Play, Plus, Save, Sparkles, Trash2 } from "lucide-vue-next";
 import {
   ElAlert,
@@ -18,6 +17,7 @@ import {
   ElTag,
   vLoading,
 } from "element-plus";
+import { MarkdownView } from "@ontomato/foundation-ui/markdown";
 import { useManagerFeedback } from "../feedback";
 import type { SmartAsset } from "../api";
 import type { AssetTab } from "../workspace";
@@ -95,8 +95,6 @@ const testVisible = ref(false);
 const testTab = ref("markdown");
 const testMarkdown = ref("");
 const markdownView = ref("preview");
-const markdown = new MarkdownIt({ html: false, linkify: true, breaks: true });
-const testMarkdownPreview = computed(() => markdown.render(testMarkdown.value));
 const testJson = ref("");
 
 const meta = computed(() => {
@@ -968,7 +966,7 @@ onMounted(() => void loadDetail());
             <el-radio value="source">{{ ot('metricMarkdownSource') }}</el-radio>
           </el-radio-group>
           <div v-if="markdownView === 'preview'" class="metric-markdown-preview">
-            <div v-if="testMarkdown" v-html="testMarkdownPreview" />
+            <MarkdownView v-if="testMarkdown" :content="testMarkdown" />
             <p v-else class="markdown-placeholder">{{ ot('metricTestResultPlaceholder') }}</p>
           </div>
           <el-input
@@ -1022,27 +1020,9 @@ onMounted(() => void loadDetail());
   padding: var(--spacing-md);
   border: 1px solid var(--el-border-color);
   border-radius: var(--radius-sm);
-  color: var(--el-text-color-primary);
   background: var(--el-bg-color);
-  line-height: 1.7;
-  overflow-wrap: anywhere;
 }
 .markdown-placeholder { color: var(--el-text-color-placeholder); margin: 0; }
-.metric-markdown-preview :deep(h1),
-.metric-markdown-preview :deep(h2),
-.metric-markdown-preview :deep(h3) { margin: 1em 0 0.5em; line-height: 1.4; color: inherit; }
-.metric-markdown-preview :deep(h1) { font-size: var(--text-2xl); }
-.metric-markdown-preview :deep(h2) { font-size: var(--text-xl); }
-.metric-markdown-preview :deep(h3) { font-size: var(--text-lg); }
-.metric-markdown-preview :deep(table) { border-collapse: collapse; width: 100%; margin: 1em 0; }
-.metric-markdown-preview :deep(th),
-.metric-markdown-preview :deep(td) { padding: 8px 12px; border: 1px solid var(--el-border-color); text-align: left; }
-.metric-markdown-preview :deep(th) { background: var(--el-fill-color-light); }
-.metric-markdown-preview :deep(pre) { overflow: auto; padding: var(--spacing-md); background: var(--el-fill-color-light); border-radius: var(--radius-sm); }
-.metric-markdown-preview :deep(code) { font-family: var(--font-mono); background: var(--el-fill-color-light); }
-.metric-markdown-preview :deep(blockquote) { margin-left: 0; padding-left: var(--spacing-md); border-left: 3px solid var(--el-border-color); color: var(--el-text-color-secondary); }
-.metric-markdown-preview :deep(a) { color: var(--el-color-primary); }
-.metric-markdown-preview :deep(img) { max-width: 100%; }
 /*
  * The page paints no background of its own: it sits on the application's area, the darkest band in dark mode
  * (DESIGN.md "Colour roles"); its sections keep their own surfaces. The title row, the tabs and the panes under them take

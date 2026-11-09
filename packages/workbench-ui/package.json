@@ -21,9 +21,7 @@
     "./locales/*": "./src/locales/*.ts",
     "./permission-data": "./src/features/agents/permission-data.ts",
     "./styles/*": "./src/styles/*",
-    "./utils/agent-markdown": "./src/utils/agent-markdown.ts",
-    "./utils/auth": "./src/utils/auth.ts",
-    "./utils/marked": "./src/utils/marked.ts"
+    "./utils/auth": "./src/utils/auth.ts"
   },
   "scripts": {
     "typecheck": "vue-tsc --noEmit",
@@ -47,11 +45,8 @@
     "@ontomato/platform-shell": "workspace:*",
     "codemirror": "6.0.2",
     "element-plus": "2.13.6",
-    "highlight.js": "11.11.1",
     "interactjs": "1.10.27",
     "lucide-vue-next": "1.0.0",
-    "markdown-it": "14.2.0",
-    "marked": "17.0.5",
     "mermaid": "11.14.0",
     "pinia": "3.0.4",
     "pptxgenjs": "4.0.1",
@@ -64,7 +59,6 @@
   },
   "devDependencies": {
     "@ontomato/platform-web": "workspace:*",
-    "@types/markdown-it": "14.1.2",
     "@vitejs/plugin-vue": "5.2.4",
     "@vue/test-utils": "2.5.1",
     "happy-dom": "20.14.3",

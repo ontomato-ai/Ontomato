@@ -5,13 +5,16 @@
   "type": "module",
   "exports": {
     "./chart": "./src/chart/index.ts",
-    "./form": "./src/form/index.ts"
+    "./form": "./src/form/index.ts",
+    "./markdown": "./src/markdown/index.ts",
+    "./theme": "./src/theme/index.ts"
   },
   "scripts": {
     "typecheck": "vue-tsc --noEmit"
   },
   "dependencies": {
-    "echarts": "6.0.0"
+    "echarts": "6.0.0",
+    "markstream-vue": "2.0.19"
   },
   "peerDependencies": {
     "element-plus": "^2.13.6",
