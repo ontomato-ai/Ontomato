@@ -896,7 +896,7 @@ describe("Manager pages in the service router", () => {
     const state = metas(["Order", "Item"]);
     state.data.classDef[0].attrs.push({ name: "item_id", showName: "Item link", type: "varchar" });
     metasFor = () => state;
-    const view = entry === "detail" ? "/relations/has" : "/visual-modeling";
+    const view = entry === "detail" ? "/ontology/relations/has" : "/ontology/visual-modeling";
     const { host, root } = mountHost({ ...base, view });
     await settle();
     const openEditor = async () => {
@@ -919,7 +919,7 @@ describe("Manager pages in the service router", () => {
     expect(requests.find((request) => request.url.endsWith("/admin/editRelationshipDesc"))?.body)
       .toEqual({ relationship: "has", desc: "has", fromField: "item_id", toField: "id" });
 
-    host.view = "/objects";
+    host.view = "/ontology/objects";
     await settle();
     host.view = view;
     await settle();
