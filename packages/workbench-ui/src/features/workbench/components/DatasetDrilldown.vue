@@ -2,6 +2,7 @@
 import { computed, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import type { RuntimeArtifact } from "@ontomato/contracts/agent-runtime-artifacts";
+import { randomId } from "@ontomato/contracts/random-id";
 import { drilldownPreviewSchema } from "@ontomato/contracts/assistant-drilldown";
 import { DatasetSelectionButton } from "@ontomato/agent-shell-ui";
 import { nodeApiFetch, nodeApiGet } from "../../../utils/api";
@@ -12,12 +13,12 @@ const zh = computed(() => locale.value.startsWith("zh"));
 const preview = ref<ReturnType<typeof drilldownPreviewSchema.parse> | null>(null);
 const busy = ref(false);
 const error = ref("");
-const requestId = ref(crypto.randomUUID());
+const requestId = ref(randomId());
 const endpoint = computed(() => `/assistant/sessions/${props.artifact.sessionId}/artifacts/${props.artifact.id}/drilldown`);
 let revision = 0;
 watch(() => [endpoint.value, ...props.selectedRowIndices], async () => {
   const current = ++revision;
-  preview.value = null; error.value = ""; requestId.value = crypto.randomUUID();
+  preview.value = null; error.value = ""; requestId.value = randomId();
   if (props.selectedRowIndices.length !== 1) return;
   try {
     const result = drilldownPreviewSchema.parse(await nodeApiGet(`${endpoint.value}?rowIndex=${props.selectedRowIndices[0]}`));

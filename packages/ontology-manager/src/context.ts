@@ -1,4 +1,5 @@
-import { computed, inject, reactive, type App, type InjectionKey, type Ref } from "vue";
+import { computed, inject, onMounted, reactive, type App, type InjectionKey, type Ref } from "vue";
+import { onBeforeRouteLeave, onBeforeRouteUpdate } from "vue-router";
 import { useI18n } from "vue-i18n";
 import {
   createManagerClient,
@@ -190,6 +191,14 @@ export function useManagerContext() {
 
 export function useManagerClient() {
   return injectFromPage(clientKey);
+}
+
+/** Register a mounted editor's checks; Vue Router removes them when that editor unmounts. */
+export function useManagerLeaveCheck(check: () => Promise<boolean>) {
+  onMounted(() => {
+    onBeforeRouteLeave(check);
+    onBeforeRouteUpdate(check);
+  });
 }
 
 export function useManagerCounts() {

@@ -3,7 +3,8 @@ import { computed, onBeforeUnmount, ref, watch } from "vue";
 import { ArrowDown, ArrowLeft, ArrowUp, Plus, Save, Trash2, Upload } from "lucide-vue-next";
 import { ElAlert, ElButton, ElInput, ElInputNumber, ElOption, ElSelect, ElSwitch } from "element-plus";
 import { createObjectView, createViewWidget, objectViewDocumentSchema, type ObjectReference, type ObjectViewDocument, type ObjectViewState, type ViewWidget } from "@ontomato/contracts/object-views";
-import { useManagerClient, useOntologyText } from "../context";
+import { randomId } from "@ontomato/contracts/random-id";
+import { useManagerClient, useManagerLeaveCheck, useOntologyText } from "../context";
 import { widgetMessageKeys } from "./messages";
 import { useManagerFeedback } from "../feedback";
 import type { OntologyObject, OntologyRelation, SmartAsset } from "../api";
@@ -179,14 +180,14 @@ function widgetSummary(item: ViewWidget) {
   return ot("ovSelectConfigure");
 }
 function addTab() {
-  const item = { id: crypto.randomUUID(), title: ot("ovNewTab"), sections: [{ id: crypto.randomUUID(), title: "", widgets: [] }] };
+  const item = { id: randomId(), title: ot("ovNewTab"), sections: [{ id: randomId(), title: "", widgets: [] }] };
   document.value.tabs.push(item);
   selectedTab.value = item.id;
   selectedSection.value = item.sections[0].id;
   selectedWidget.value = "";
 }
 function addSection() {
-  const item = { id: crypto.randomUUID(), title: ot("ovNewSection"), widgets: [] };
+  const item = { id: randomId(), title: ot("ovNewSection"), widgets: [] };
   tab.value.sections.push(item);
   selectedSection.value = item.id;
   selectedWidget.value = "";
@@ -230,7 +231,7 @@ async function canLeave() {
   if (loaded.value && dirty.value) { try { await confirm(ot("ovDiscard"), ot("ovLeaveEditor")); } catch { return false; } }
   return true;
 }
-defineExpose({ canLeave });
+useManagerLeaveCheck(canLeave);
 function beforeUnload(event: BeforeUnloadEvent) { if (dirty.value) { event.preventDefault(); event.returnValue = ""; } }
 window.addEventListener("beforeunload", beforeUnload);
 onBeforeUnmount(() => { generation++; sampleRequest++; objectSearchRequest++; window.removeEventListener("beforeunload", beforeUnload); });

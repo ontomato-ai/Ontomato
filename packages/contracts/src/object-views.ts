@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { randomId } from "./random-id";
 
 export const viewBindingSchema = z.discriminatedUnion("source", [
   z.object({ source: z.literal("literal"), value: z.unknown() }),
@@ -90,13 +91,13 @@ export function createViewWidget(kind: ViewWidget["kind"]): ViewWidget {
     chart: { span: 6, height: 320 }, links: { span: 12, height: 360 },
     input: { span: 6, height: 80 }, action: { span: 4, height: 80 }, button: { span: 4, height: 80 },
   };
-  return viewWidgetSchema.parse({ id: crypto.randomUUID(), kind, title: kind, ...sizes[kind] });
+  return viewWidgetSchema.parse({ id: randomId(), kind, title: kind, ...sizes[kind] });
 }
 export function createObjectView(className: string, title = className): ObjectViewDocument {
   return objectViewDocumentSchema.parse({
     schemaVersion: 1, className, title,
-    tabs: [{ id: crypto.randomUUID(), title, sections: [{
-      id: crypto.randomUUID(), title: "", widgets: [createViewWidget("properties")],
+    tabs: [{ id: randomId(), title, sections: [{
+      id: randomId(), title: "", widgets: [createViewWidget("properties")],
     }] }],
   });
 }
