@@ -887,8 +887,15 @@ class PlatformScheduleTest extends PostgresTestDatabase {
           assertFalse(record.wire().toString().contains("Traceback"));
           sample("platformTaskRunSchema", record.wire());
           var parameters =
-              ScheduleParameters.values(
-                  action.getFunction(), input.path("content"), "Asia/Shanghai", Instant.now());
+              ParameterForms.scheduled(
+                      action.getFunction().getParameters(),
+                      "parameter:",
+                      input.path("content"),
+                      java.time.ZoneId.of("Asia/Shanghai"),
+                      Instant.now(),
+                      "/content/",
+                      locale)
+                  .values();
           var direct =
               manual.execute(
                   "a", parameters, locale, user, identity.dataPermission("sales", "alice"), 1);
@@ -1348,7 +1355,7 @@ CREATE TABLE write_task_result(id text,write_task_id text,execute_timestamp bigi
   }
 
   @Test
-  void intervalMonthlyAndLocalTimeParametersKeepTheirSemantics() {
+  void monthlySlotsPastTheMonthEndRunOnItsLastDay() {
     var monthly =
         new TaskDefinition(
             "Month end",
@@ -1360,45 +1367,5 @@ CREATE TABLE write_task_result(id text,write_task_id text,execute_timestamp bigi
             null);
     Instant now = Instant.parse("2026-02-01T00:00:00Z");
     assertEquals(Instant.parse("2026-02-28T01:00:00Z"), monthly.next(now, now));
-    var time = new Parameter();
-    time.setName("cutoff");
-    time.setType(Parameter.TYPE_TIME);
-    var array = new Parameter();
-    array.setName("times");
-    array.setType(Parameter.TYPE_TIME_ARRAY);
-    var numbers = new Parameter();
-    numbers.setName("numbers");
-    numbers.setType(Parameter.TYPE_NUMBER_ARRAY);
-    var function = new Function();
-    function.setParameters(List.of(time, array, numbers));
-    var values =
-        ScheduleParameters.values(
-            function,
-            object(
-                "parameter:cutoff",
-                "",
-                "parameter:times",
-                "2026-11-06\n\n2026-11-07 09:30\n2026-11-08T01:30:00Z",
-                "parameter:numbers",
-                "10\n\n20.5"),
-            "Asia/Shanghai",
-            now);
-    assertEquals(now.toString(), values.getString("cutoff"));
-    assertEquals("2026-11-05T16:00:00Z", values.getJSONArray("times").getString(0));
-    assertEquals(2, values.getJSONArray("numbers").size());
-    assertThrows(
-        ScheduleException.class,
-        () ->
-            ScheduleParameters.values(
-                function,
-                object(
-                    "parameter:cutoff",
-                    "2026-02-30",
-                    "parameter:times",
-                    "2026-11-06",
-                    "parameter:numbers",
-                    "1"),
-                "Asia/Shanghai",
-                now));
   }
 }

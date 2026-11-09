@@ -139,7 +139,6 @@ export const objectViewEn = {
   ovKindInput: "Input",
   ovKindAction: "Action form",
   ovKindButton: "Button",
-  ovInvalidParameter: "Invalid {type} value for {name}",
   ovIncompleteResults: "The query returned incomplete results",
   ovInvalidRelation: "Relationship does not apply to this object",
   ovPrimaryKeyRequired: "Object types require a primary key",

@@ -39,5 +39,12 @@ public interface ActionService {
 	public JSONObject importActions(byte[] zipData, String lang, boolean allowMissingExplanation) throws Exception;
 	
 	public PythonExecuteResult execute(String id, JSONObject param, String lang, User user, UserDataPermission permission, int timeoutMinutes) throws Exception;
+
+	/**
+	 * An Action's form: its fields and their text, from the values the page binds by parameter name. With the fields'
+	 * {@code submitted} text it also answers the field errors, or the typed parameters {@link #execute} takes; the
+	 * {@code readOnly} parameters keep their bound values.
+	 */
+	public JSONObject form(String id, JSONObject bound, JSONObject submitted, List<String> readOnly, String lang, User user) throws Exception;
 	
 }

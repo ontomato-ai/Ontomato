@@ -24,6 +24,12 @@ function mount(child: () => ReturnType<typeof h>) {
   app.mount(element); apps.push(app); return element;
 }
 async function settle() { for (let index = 0; index < 12; index++) { await new Promise(resolve => setTimeout(resolve, 0)); await nextTick(); } }
+const answer = (data: unknown) => new Response(JSON.stringify({ success: true, data }));
+/** The data engine's Action form with one text field per value; `parameters` answers a submission. */
+const actionForm = (values: Record<string, string>, parameters: Record<string, unknown> | null = null) => ({
+  fields: Object.keys(values).map(key => ({ key, label: key, type: "text", required: false, defaultValue: null, help: null, multiline: false, placeholder: null, maxLength: 65536 })),
+  values, errors: [], parameters,
+});
 
 describe("configured object view interaction", () => {
   it("selects a defined variable and accepts a nested variable path", async () => {
@@ -63,7 +69,7 @@ describe("configured object view interaction", () => {
     action.fieldOptions = properties.fieldOptions;
     action.parameters = { degree: { source: "object", path: "degree" } };
     view.tabs[0].sections[0].widgets = [properties, action];
-    vi.stubGlobal("fetch", async (url: string) => new Response(JSON.stringify({ success: true, data: url.endsWith("queryById") ? { function: { parameters: [{ name: "degree", type: "TYPE_STRING" }] } } : {} })));
+    vi.stubGlobal("fetch", async (url: string) => answer(url.endsWith("/action/form") ? actionForm({ degree: "2" }) : {}));
     const element = mount(() => h(ObjectViewRuntime, { document: view, object: { degree: "2" }, reference: { className: "Person", primaryKey: "1" } }));
     await settle();
     expect(element.querySelector("dd")?.textContent).toContain("Unrecognized value");
@@ -72,33 +78,67 @@ describe("configured object view interaction", () => {
     expect(element.querySelector(".object-action-dialog .el-select")).not.toBeNull();
     expect(element.querySelector(".object-action-dialog .el-select__selected-item")?.textContent).not.toBe("2");
   });
-  it("shows the current person and submits the bound identity even if the readonly input is tampered with", async () => {
+  it("shows the current person read-only and executes what the form answers for the bound identity", async () => {
     const view = createObjectView("Person");
     const action = createViewWidget("action"); action.resourceId = "degree"; action.title = "Edit degree";
     action.contextFields = ["name"];
     action.readOnlyParameters = ["person_id"];
     action.parameters = { person_id: { source: "object", path: "id" } };
     view.tabs[0].sections[0].widgets = [action];
+    const forms: unknown[] = [];
     let submitted: FormData | undefined;
     vi.stubGlobal("fetch", async (url: string, init: RequestInit) => {
+      if (url.endsWith("/action/form")) {
+        const body = JSON.parse(String(init.body));
+        forms.push(body);
+        return answer(actionForm({ person_id: "person-1" }, body.values ? { person_id: "person-1" } : null));
+      }
       if (url.endsWith("/execute")) submitted = init.body as FormData;
-      return new Response(JSON.stringify({ success: true, data: url.endsWith("queryById") ? { function: { parameters: [{ name: "person_id", type: "TYPE_STRING" }] } } : {} }));
+      return answer({});
     });
     const element = mount(() => h(ObjectViewRuntime, { document: view, object: { id: "person-1", name: "王维成" }, reference: { className: "Person", primaryKey: "person-1" } }));
     await settle();
     Array.from(element.querySelectorAll("button")).find(button => button.textContent?.trim() === "Edit degree")!.click(); await settle();
     expect(element.querySelector(".action-context")?.textContent).toContain("王维成");
-    expect(element.querySelector(".action-readonly-value")?.textContent).toBe("person-1");
+    expect(element.querySelector(".object-action-dialog .read-only")?.textContent).toBe("person-1");
     expect(element.querySelector(".object-action-dialog input")).toBeNull();
     Array.from(element.querySelectorAll("button")).find(button => button.textContent?.trim() === "Submit")!.click(); await settle();
+    expect(forms).toEqual([
+      { id: "degree", parameters: { person_id: "person-1" }, readOnlyParameters: ["person_id"] },
+      { id: "degree", parameters: { person_id: "person-1" }, values: { person_id: "person-1" }, readOnlyParameters: ["person_id"] },
+    ]);
     expect(JSON.parse(String(submitted?.get("param")))).toEqual({ person_id: "person-1" });
+  });
+  it("shows the field errors the form answers and executes nothing", async () => {
+    const view = createObjectView("Order");
+    const action = createViewWidget("action"); action.resourceId = "ship"; action.title = "Ship order";
+    view.tabs[0].sections[0].widgets = [action];
+    let executions = 0;
+    vi.stubGlobal("fetch", async (url: string, init: RequestInit) => {
+      if (url.endsWith("/execute")) executions++;
+      if (!url.endsWith("/action/form")) return answer({});
+      const body = JSON.parse(String(init.body));
+      return answer(body.values
+        ? { ...actionForm(body.values), errors: [{ field: "/values/quantity", code: "invalid_number", message: "Invalid value for quantity" }] }
+        : actionForm({ quantity: "" }));
+    });
+    const element = mount(() => h(ObjectViewRuntime, { document: view, object: { id: "1" }, reference: { className: "Order", primaryKey: "1" } }));
+    await settle();
+    Array.from(element.querySelectorAll("button")).find(button => button.textContent?.trim() === "Ship order")!.click(); await settle();
+    Array.from(element.querySelectorAll("button")).find(button => button.textContent?.trim() === "Submit")!.click(); await settle();
+    await vi.waitFor(() => expect(element.querySelector('.object-action-dialog [data-field="quantity"] .el-form-item__error')?.textContent).toContain("Invalid value for quantity"));
+    expect(executions).toBe(0);
   });
   it("shows success and refreshed properties after submitting an action", async () => {
     const view = createObjectView("Person");
     const properties = createViewWidget("properties"); properties.fields = ["degree"];
     const action = createViewWidget("action"); action.resourceId = "update-degree"; action.title = "Update degree";
     view.tabs[0].sections[0].widgets = [properties, action];
-    vi.stubGlobal("fetch", async (url: string) => new Response(JSON.stringify({ success: true, data: url.endsWith("queryById") ? { function: { parameters: [{ name: "degree", type: "TYPE_STRING" }] } } : {} })));
+    vi.stubGlobal("fetch", async (url: string, init: RequestInit) => {
+      if (!url.endsWith("/action/form")) return answer({});
+      const body = JSON.parse(String(init.body));
+      return answer(actionForm({ degree: body.values?.degree ?? "" }, body.values ?? null));
+    });
     const object = ref({ degree: "Bachelor" });
     const element = mount(() => h(ObjectViewRuntime, { document: view, object: object.value, reference: { className: "Person", primaryKey: "1" }, onRefresh: () => { object.value = { degree: "Doctor" }; } }));
     await settle();
@@ -120,8 +160,11 @@ describe("configured object view interaction", () => {
     const action = createViewWidget("action"); action.resourceId = "ship"; action.title = "Ship order";
     view.tabs[0].sections[0].widgets = [metric, action];
     let reads = 0;
-    vi.stubGlobal("fetch", async (url: string) => new Response(JSON.stringify({ success: true,
-      data: url.endsWith("/metricView/execute") ? [{ value: `read ${++reads}` }] : url.endsWith("/action/queryById") ? { function: { parameters: [] } } : {} })));
+    vi.stubGlobal("fetch", async (url: string, init: RequestInit) => {
+      if (url.endsWith("/metricView/execute")) return answer([{ value: `read ${++reads}` }]);
+      if (url.endsWith("/action/form")) return answer(actionForm({}, JSON.parse(String(init.body)).values ? {} : null));
+      return answer({});
+    });
     const element = mount(() => h(ObjectViewRuntime, { document: view, object: { id: "1" }, reference: { className: "Order", primaryKey: "1" } }));
     await settle();
     expect(element.querySelector(".metric")?.textContent).toBe("read 1");

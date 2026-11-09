@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 import * as contract from "../src/platform-schedules.ts";
+import { formFieldErrorSchema } from "../src/form-fields.ts";
 
 // These are wire fixtures for all producers and consumers. They do not simulate the application services.
 const examples = JSON.parse(await readFile(new URL("../examples/platform-schedules.json", import.meta.url), "utf8"));
@@ -159,8 +160,8 @@ test("error exchanges carry field pointers and FORM_CHANGED always contains a re
   const changed = structuredClone(examples.errors.find((example) => example.name === "form-changed").response);
   delete changed.error.form;
   assert.equal(contract.platformScheduleErrorSchema.safeParse(changed).success, false);
-  contract.platformScheduleFieldErrorSchema.parse({ field: "/content/parameter:region~1name~0", code: "required", message: "Required" });
-  assert.equal(contract.platformScheduleFieldErrorSchema.safeParse({ field: "/content/bad~escape", code: "required", message: "Required" }).success, false);
+  formFieldErrorSchema.parse({ field: "/content/parameter:region~1name~0", code: "required", message: "Required" });
+  assert.equal(formFieldErrorSchema.safeParse({ field: "/content/bad~escape", code: "required", message: "Required" }).success, false);
 });
 
 test("application result links are same-origin paths, including ontology's execution-history exception", () => {
