@@ -156,7 +156,7 @@ onMounted(() => void loadDetail());
             />
           </el-form-item>
           <el-form-item :label="t('hotData.srcField')" :required="requiresJoinFields === true">
-            <el-select v-model="form.fromField" :placeholder="t('hotData.enterSrcField')" filterable clearable style="width: 100%">
+            <el-select v-model="form.fromField" :placeholder="t('hotData.enterSrcField')" filterable clearable fit-input-width popper-class="ontology-relation-options" style="width: 100%">
               <el-option
                 v-for="attribute in sourceAttributes"
                 :key="attribute.name"
@@ -166,7 +166,7 @@ onMounted(() => void loadDetail());
             </el-select>
           </el-form-item>
           <el-form-item :label="t('hotData.tgtField')" :required="requiresJoinFields === true">
-            <el-select v-model="form.toField" :placeholder="t('hotData.enterTgtField')" filterable clearable style="width: 100%">
+            <el-select v-model="form.toField" :placeholder="t('hotData.enterTgtField')" filterable clearable fit-input-width popper-class="ontology-relation-options" style="width: 100%">
               <el-option
                 v-for="attribute in targetAttributes"
                 :key="attribute.name"

@@ -148,6 +148,8 @@ watch(
       <el-form-item :label="ot('sourceObject')" required>
         <el-select
           v-model="form.fromclass"
+          fit-input-width
+          popper-class="ontology-relation-options"
           @change="form.fromField = ''"
           :placeholder="ot('selectSourceObject')"
           style="width: 100%"
@@ -163,6 +165,8 @@ watch(
       <el-form-item :label="t('hotData.srcField')" :required="requiresJoinFields === true">
         <el-select
           v-model="form.fromField"
+          fit-input-width
+          popper-class="ontology-relation-options"
           :placeholder="t('hotData.enterSrcField')"
           :disabled="!form.fromclass"
           filterable
@@ -179,6 +183,8 @@ watch(
       <el-form-item :label="ot('targetObject')" required>
         <el-select
           v-model="form.toclass"
+          fit-input-width
+          popper-class="ontology-relation-options"
           @change="form.toField = ''"
           :placeholder="ot('selectTargetObject')"
           style="width: 100%"
@@ -194,6 +200,8 @@ watch(
       <el-form-item :label="t('hotData.tgtField')" :required="requiresJoinFields === true">
         <el-select
           v-model="form.toField"
+          fit-input-width
+          popper-class="ontology-relation-options"
           :placeholder="t('hotData.enterTgtField')"
           :disabled="!form.toclass"
           filterable

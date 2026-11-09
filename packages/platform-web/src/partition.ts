@@ -74,7 +74,7 @@ export function appDeclarations(
     return {
       id: app.id,
       label: app.label ?? t(app.labelKey!),
-      description: app.descriptionKey ? t(app.descriptionKey) : null,
+      description: app.description ?? (app.descriptionKey ? t(app.descriptionKey) : null),
       icon: app.icon,
       rail: app.rail ?? "apps",
       prefix: app.prefix,

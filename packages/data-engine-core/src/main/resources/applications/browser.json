@@ -17,7 +17,9 @@
       "en": "Object browser",
       "zh-CN": "对象浏览器"
     },
-    "descriptions": {},
+    "descriptions": {
+      "en": "Browse object records and explore relationships between instances"
+    },
     "icon": "objects",
     "groups": [],
     "permissions": []

@@ -1,4 +1,5 @@
-import { readFileSync } from "node:fs";
+import { applicationCatalogSchema, builtinApplicationSchema, type BuiltinApplication } from "@ontomato/contracts/platform-identity";
+import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { workbenchApplications } from "../../../workbench-server/src/services/applications/builtins";
 import { catalogPartition } from "../native-layouts";
@@ -61,9 +62,15 @@ export function navigationOf(navigation: PlatformNavigation) {
   return computed(() => navigation);
 }
 
-export function catalogFixture() {
-  const java = ["browser", "ontology", "governance", "settings"].map(id => JSON.parse(readFileSync(join(join(__dirname, "../../../data-engine-core/src/main/resources/applications"), `${id}.json`), "utf8")));
-  return [...workbenchApplications, ...java].map(({ declaration, ...app }) => ({ ...app, ...declaration, releaseId: null }))
-    .sort((a,b) => ["top","apps","bottom"].indexOf(a.rail) - ["top","apps","bottom"].indexOf(b.rail) || a.sort-b.sort);
+export function readApplicationDeclarations(directory: string): BuiltinApplication[] {
+  return readdirSync(directory).filter(file => file.endsWith(".json"))
+    .map(file => builtinApplicationSchema.parse(JSON.parse(readFileSync(join(directory, file), "utf8"))));
+}
+
+export function catalogFixture(additional: BuiltinApplication[] = []) {
+  const java = readApplicationDeclarations(join(__dirname, "../../../data-engine-core/src/main/resources/applications"));
+  return applicationCatalogSchema.parse([...workbenchApplications, ...java, ...additional]
+    .map(({ declaration, ...app }) => ({ ...app, ...declaration, releaseId: null }))
+    .sort((a,b) => ["top","apps","bottom"].indexOf(a.rail) - ["top","apps","bottom"].indexOf(b.rail) || a.sort-b.sort || a.id.localeCompare(b.id)));
 }
 export function catalogPartitionFixture() { return catalogPartition(catalogFixture(), "en"); }
