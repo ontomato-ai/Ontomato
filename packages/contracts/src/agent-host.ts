@@ -91,6 +91,11 @@ export const agentHostSessionHistorySchema = z.object({
   page: sessionHistoryBoundsSchema,
 }).strict();
 export type AgentHostSessionHistory = z.infer<typeof agentHostSessionHistorySchema>;
+export const agentHostSessionPageQuerySchema = z.object({
+  cursor: z.string().optional(),
+  limit: z.coerce.number().int().min(1).max(100).default(30),
+}).strict();
+export type AgentHostSessionPageQuery = z.infer<typeof agentHostSessionPageQuerySchema>;
 export const agentHostSessionPageSchema = z
   .object({
     sessions: z.array(agentHostSessionSchema),
