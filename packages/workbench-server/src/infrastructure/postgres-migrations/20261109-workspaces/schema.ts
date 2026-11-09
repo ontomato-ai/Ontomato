@@ -8,6 +8,6 @@ export async function ensureWorkspacesSchema(client: QueryableClient) {
       UNIQUE(domain_id,workspace_id));
     CREATE TABLE IF NOT EXISTS ${t("hosted_app_releases")} (
       id uuid PRIMARY KEY, app_id text NOT NULL REFERENCES ${t("hosted_apps")}(app_id),
-      commit_id text NOT NULL, files jsonb NOT NULL, created_at timestamptz NOT NULL DEFAULT now(),
+      commit_id text NOT NULL, created_at timestamptz NOT NULL DEFAULT now(),
       UNIQUE(app_id,commit_id));`);
 }

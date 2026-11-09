@@ -275,7 +275,7 @@ export class RuntimeStore {
   async createSession(scope: Scope, id: string, workspaceId?: string, owner?: string) {
     const replayed = await this.transaction(async (c) => {
       if (workspaceId) {
-        const row = (await c.query(`SELECT id FROM ${this.table("workspaces")} WHERE host_id=$1 AND domain_id=$2 AND id=$3 AND owner_id=$4 FOR UPDATE NOWAIT`, [...values(scope), workspaceId, owner])).rows[0];
+        const row = (await c.query(`SELECT id FROM ${this.table("workspaces")} WHERE host_id=$1 AND domain_id=$2 AND id=$3 AND owner_id=$4`, [...values(scope), workspaceId, owner])).rows[0];
         if (!row) missing();
       }
       const repeat = await this.admission(
@@ -376,7 +376,6 @@ export class RuntimeStore {
         return { run: (await this.run(scope, run.id, c)).run, replayed: true };
       const binding = await this.session(scope, run.sessionId, c);
       if (binding.workspaceId) {
-        await c.query(`SELECT id FROM ${this.table("workspaces")} WHERE host_id=$1 AND domain_id=$2 AND id=$3 FOR UPDATE NOWAIT`, [...values(scope), binding.workspaceId]);
         const claimed = await c.query(`UPDATE ${this.table("workspaces")} SET active_run_id=$4 WHERE host_id=$1 AND domain_id=$2 AND id=$3 AND active_run_id IS NULL RETURNING id`, [...values(scope), binding.workspaceId, run.id]);
         if (!claimed.rowCount) throw new RuntimeError(409, "WORKSPACE_BUSY", "Workspace has an active run");
       }

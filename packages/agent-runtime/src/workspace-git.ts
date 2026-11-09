@@ -48,7 +48,6 @@ export class WorkspaceGit {
       for (const entry of await readdir(directory, { withFileTypes: true })) {
         const file = path.join(directory, entry.name);
         const name = path.relative(this.tree, file).split(path.sep).join("/");
-        workspacePathSchema.parse(name);
         if (entry.isDirectory()) await visit(file);
         else {
           const stat = await lstat(file);
@@ -70,9 +69,7 @@ export class WorkspaceGit {
     return (await this.git("ls-tree", "-r", "-l", "-z", commit)).toString().split("\0").filter(Boolean).map(line => {
       const separator = line.indexOf("\t");
       const metadata = line.slice(0, separator), name = line.slice(separator + 1);
-      const [mode, , oid, size] = metadata.trim().split(/\s+/);
-      workspacePathSchema.parse(name);
-      if (!/^100(644|755)$/.test(mode)) throw new RuntimeError(400, "INVALID_SOURCE", "Published files must be regular files");
+      const [, , oid, size] = metadata.trim().split(/\s+/);
       return { path: name, oid, size: Number(size) };
     });
   }
@@ -86,7 +83,6 @@ export class WorkspaceGit {
     if (!file.startsWith(await realpath(this.tree) + path.sep)) throw new RuntimeError(400, "INVALID_SOURCE", "File escapes workspace");
     const stat = await lstat(file);
     if (!stat.isFile()) throw new RuntimeError(404, "NOT_FOUND", "File not found");
-    this.limit(stat.size, stat.size);
     return readFile(file);
   }
   async export(commit: string) {

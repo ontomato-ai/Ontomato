@@ -96,23 +96,6 @@ export function createRuntimeHttp(runtime: AgentRuntime) {
       void fn(req, res).catch(next);
     };
   app.use("/v1/workspaces", workspaceRouter(runtime, req => scope(req).scope));
-  const checkWorkspaceSession = async (req: Request, sessionId: string) => {
-    const current = scope(req).scope;
-    const session = await runtime.store.session(current, sessionId);
-    if (session.workspaceId) await runtime.workspaces.row(current, workspaceOwner(req), session.workspaceId);
-  };
-  app.use("/v1/sessions/:sessionId", (req, _res, next) => {
-    if (req.params.sessionId === "status") { next(); return; }
-    void checkWorkspaceSession(req, runtimeIdSchema.parse(req.params.sessionId)).then(() => next(), next);
-  });
-  app.use("/v1/runs/:id", (req, _res, next) => {
-    void runtime.store.run(scope(req).scope, runtimeIdSchema.parse(req.params.id))
-      .then(({ run }) => checkWorkspaceSession(req, run.sessionId)).then(() => next(), next);
-  });
-  app.use("/v1/artifacts/:artifactId", (req, _res, next) => {
-    void runtime.store.artifact(scope(req).scope, runtimeIdSchema.parse(req.params.artifactId))
-      .then(artifact => checkWorkspaceSession(req, artifact.sessionId)).then(() => next(), next);
-  });
   app.get("/v1/logs", route(async (req, res) => {
     identity(req);
     res.json(await runtime.logs.query(req.query));
@@ -306,7 +289,6 @@ export function createRuntimeHttp(runtime: AgentRuntime) {
       const { sessionIds } = runtimeSessionStatusesRequestSchema.parse(
         req.body,
       );
-      for (const sessionId of sessionIds) await checkWorkspaceSession(req, sessionId);
       res.json({
         sessions: await runtime.store.sessionStatuses(ctx.scope, sessionIds),
       });

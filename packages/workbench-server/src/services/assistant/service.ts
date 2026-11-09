@@ -78,7 +78,6 @@ export const assistantService = {
   },
   /** Scheduled tasks start their conversations here too, marked with their origin. */
   async create(id: string, owner: AssistantOwner, input: { agentId: string; workspaceId?: string }, origin: SessionRow["origin"] = "user") {
-    if (input.workspaceId) await new RuntimeClient(owner.domainId, undefined, owner.userId).request(`/v1/workspaces/${input.workspaceId}`);
     const { row, replayed } = await assistantStore.create(
       id,
       owner,

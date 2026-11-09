@@ -32,7 +32,7 @@ export async function publishWorkspace(owner: AssistantOwner, workspaceId: strin
   await client.request(`/v1/workspaces/${workspaceId}`);
   const release = await transaction(async c => {
     await c.query(`INSERT INTO ${t("hosted_apps")} (app_id,domain_id,owner_id,workspace_id) VALUES($1,$2,$3,$4) ON CONFLICT(domain_id,workspace_id) DO NOTHING`, [`app-${randomUUID()}`, owner.domainId, owner.userId, workspaceId]);
-    const app = (await c.query(`SELECT app_id FROM ${t("hosted_apps")} WHERE domain_id=$1 AND owner_id=$2 AND workspace_id=$3 FOR UPDATE`, [owner.domainId, owner.userId, workspaceId])).rows[0];
+    const app = (await c.query(`SELECT app_id FROM ${t("hosted_apps")} WHERE domain_id=$1 AND owner_id=$2 AND workspace_id=$3`, [owner.domainId, owner.userId, workspaceId])).rows[0];
     const existing = (await c.query(`SELECT id FROM ${t("hosted_app_releases")} WHERE app_id=$1 AND commit_id=$2`, [app.app_id, commit])).rows[0];
     if (existing) return { appId: app.app_id as string, releaseId: existing.id as string, commit };
     const exported = workspaceExportSchema.parse(await client.request(`/v1/workspaces/${workspaceId}/export`, "POST", { commit }));
@@ -46,7 +46,7 @@ export async function publishWorkspace(owner: AssistantOwner, workspaceId: strin
       await writeFile(target, Buffer.from(file.content, file.encoding));
     }
     await rename(temporary, destination);
-    await c.query(`INSERT INTO ${t("hosted_app_releases")} (id,app_id,commit_id,files) VALUES($1,$2,$3,$4)`, [releaseId, app.app_id, commit, JSON.stringify(exported.files.map(file => file.path))]);
+    await c.query(`INSERT INTO ${t("hosted_app_releases")} (id,app_id,commit_id) VALUES($1,$2,$3)`, [releaseId, app.app_id, commit]);
     return { appId: app.app_id as string, releaseId, commit };
   });
   await writeHostedPublication(release.appId, release.releaseId, declaration, credentials);
