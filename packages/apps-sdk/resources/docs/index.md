@@ -78,6 +78,8 @@ the page is not inside the shell. `app.use(context)` installs the platform's wor
 - Every request carries the current user's credential; the open-source edition sends none. The server decides every
   permission: an app sees and changes only what its user may. When the sign-in expires, the shell takes over.
 - `context.navigate(path)` opens a platform page in the shell, such as `context.navigate("/ontology/assets/metrics")`.
+- An app reaches the platform only through the SDK: `context.metricViews` to read, `context.actions` to change data and
+  `createAssistantClient(context)` for conversations. Other platform paths are internal and change between versions.
 
 ## Reading data: published MetricViews
 
@@ -133,11 +135,11 @@ conversation with one agent:
 ```js
 import { AgentChatPanel, createAssistantClient, useShellLabels } from "@ontomato/sdk/chat";
 
-const client = createAssistantClient(context.request);
+const client = createAssistantClient(context);
 const agents = (await client.listAgents()).filter((agent) => agent.enabled);
 ```
 
-`createAssistantClient(context.request)` talks to the platform's agents as the current user: the user sees the same
+`createAssistantClient(context)` talks to the platform's agents as the current user: the user sees the same
 agents and conversations as in the platform. Call `useShellLabels()` inside `setup()` for the conversation's words in
 the platform's language. Give the panel's container a height; the panel fills it. `examples/chat.html` puts it
 together. `<agent-shell>` is the platform's full conversation page with its column of conversations; see

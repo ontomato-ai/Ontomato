@@ -16,6 +16,7 @@ import {
   createMetricViewsClient,
   metricViewsKey,
   type ActionsClient,
+  type ManagerRequest,
   type MetricViewsClient,
 } from "@ontomato/ontology-manager/clients";
 import edition from "apps-sdk:edition";
@@ -32,15 +33,23 @@ export interface AppContext {
   readonly metricViews: MetricViewsClient;
   /** Executes Actions: `execute({ id, parameters })` resolves to the execution result. */
   readonly actions: ActionsClient;
-  /**
-   * An authenticated request to a path under the platform API root (`/assistant/...` for `createAssistantClient`).
-   * It resolves only for 2xx responses and rejects with the platform's error otherwise.
-   */
-  readonly request: (path: string, init?: RequestInit) => Promise<Response>;
   /** Opens a platform page in the shell, e.g. `navigate("/ontology/objects")`. */
   navigate(path: string): void;
   /** Installs the context into a Vue app: the platform's words, Element Plus's locale and `<metric-view-data>`. */
   install(app: App): void;
+}
+
+/**
+ * The request layer behind each context. Only the SDK's own clients use it: an app reaches the platform through those
+ * clients, never through a request to any platform path, so its calls stay within the documented contract.
+ */
+const transports = new WeakMap<AppContext, ManagerRequest>();
+
+/** The request layer of a context, for the SDK's own modules. */
+export function contextTransport(context: AppContext) {
+  const transport = transports.get(context);
+  if (!transport) throw new Error("Pass the context createAppContext() returned");
+  return transport;
 }
 
 /**
@@ -90,13 +99,12 @@ export function createAppContext(): AppContext {
     (status) => host.onAuthFailure(status),
   );
   const metricViews = createMetricViewsClient(transport);
-  return {
+  const context: AppContext = {
     user: snapshot.user,
     locale: readonly(locale),
     theme: readonly(theme),
     metricViews,
     actions: createActionsClient(transport),
-    request: (path, init = {}) => transport.request(path, init, ""),
     navigate: (path) => host.navigate(path),
     install(app) {
       app.use(i18n);
@@ -105,4 +113,6 @@ export function createAppContext(): AppContext {
       app.component("MetricViewData", MetricViewData);
     },
   };
+  transports.set(context, transport);
+  return context;
 }

@@ -39,7 +39,7 @@
     import { AgentChatPanel, createAssistantClient, useShellLabels } from "@ontomato/sdk/chat";
 
     const context = createAppContext();
-    const client = createAssistantClient(context.request);
+    const client = createAssistantClient(context);
 
     createApp({
       components: { AgentChatPanel },

@@ -101,7 +101,7 @@ export default [
     },
   },
   {
-    files: ["packages/ontology-manager/src/**/*.{ts,vue}", "packages/apps-sdk/src/**/*.ts"],
+    files: ["packages/ontology-manager/src/**/*.{ts,vue}"],
     rules: {
       // DOM type names (such as RequestInit) are not runtime globals; undefined identifiers
       // are checked by vue-tsc.
