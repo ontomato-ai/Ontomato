@@ -57,6 +57,8 @@ packages: {}
     join(dir, "apps/workbench/package.json"),
     `${JSON.stringify({ name: appName })}\n`,
   );
+  mkdirSync(join(dir, "agent-skills/ontomato-app-builder"), { recursive: true });
+  writeFileSync(join(dir, "agent-skills/ontomato-app-builder/SKILL.md"), appName);
   git(["add", "."]);
   git(["-c", "user.name=wb", "-c", "user.email=wb@t", "commit", "-m", "init"]);
   return dir;
@@ -211,6 +213,7 @@ test("buildWorkbenchImage builds the final image and tags deploy alias for publi
   await withDocker({ ...pubDocker, mode: "ok" }, async () => {
     await buildWorkbenchImage(descriptor(pub), ["--arch", "arm64"]);
   });
+  assert.equal(readFileSync(join(pub, ".build/contexts/workbench/arm64/image/workspace/ontomato/agent-skills/ontomato-app-builder/SKILL.md"), "utf8"), "@ontomato/workbench");
   const pubBuild = calls(pubDocker.state).find((argv) => argv.includes("buildx"));
   assert.ok(pubBuild.includes("--load"));
   assert.ok(pubBuild.includes("WORKSPACE=ontomato"));
@@ -228,6 +231,7 @@ test("buildWorkbenchImage builds the final image and tags deploy alias for publi
   await withDocker({ ...entDocker, mode: "ok" }, async () => {
     await buildWorkbenchImage(enterpriseDescriptor(pub, ent), ["--arch", "amd64"]);
   });
+  assert.equal(readFileSync(join(ent, ".build/contexts/workbench/amd64/image/workspace/ontomato/agent-skills/ontomato-app-builder/SKILL.md"), "utf8"), "@ontomato/workbench");
   const entBuild = calls(entDocker.state).find((argv) => argv.includes("buildx"));
   assert.ok(entBuild.includes("--load"));
   assert.ok(entBuild.includes("WORKSPACE=enterprise"));
