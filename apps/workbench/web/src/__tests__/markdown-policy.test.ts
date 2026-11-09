@@ -59,4 +59,19 @@ describe.each(entries)("$name read the product Markdown dialect", ({ render }) =
     expect(element.querySelector("pre")?.textContent).toContain('const range = "1~2"; // ~~kept~~');
     expect(element.querySelector("pre del, pre s")).toBeNull();
   });
+
+  // The dialect is GFM: syntax some renderers add beyond it reads as the characters written, in pages as in exports.
+  it.each([
+    ["superscript", "2^10^", "2^10^"],
+    ["highlight", "==重点==", "==重点=="],
+    ["insertion", "++新增++", "++新增++"],
+    ["inline math and amounts", "质能 $E=mc^2$，预算 $100 到 $200", "质能 $E=mc^2$，预算 $100 到 $200"],
+    ["a math block", "$$\nE=mc^2\n$$", "$$E=mc^2$$"],
+    ["a bracketed math block", "\\[\nx^2\n\\]", "[x^2]"],
+    ["an inline footnote", "正文^[内联脚注]", "正文^[内联脚注]"],
+    ["a footnote and its definition", "正文[^1]\n\n[^1]: 脚注内容", "正文^1"],
+    ["a ::: container", "::: tip\n提示内容\n:::", "::: tip提示内容:::"],
+  ])("shows %s as written", async (_syntax, source, text) => {
+    expect((await render(source)).textContent?.trim()).toBe(text);
+  });
 });
