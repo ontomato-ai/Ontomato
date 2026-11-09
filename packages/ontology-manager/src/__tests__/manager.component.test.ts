@@ -67,6 +67,12 @@ function respond(url: string, body?: Record<string, unknown>): Response {
   if (path === "/admin/delBussinessKnowledge" && knowledgeDeleteFails.has(String(body?.knowledgeID)))
     return json({ success: false, message: "locked" });
   if (path === "/admin/getMetas") return json(metasFor(url));
+  if (path === "/admin/editRelationshipDesc") {
+    const state = metasFor(url) as { data: { relationship_rule: Record<string, Record<string, unknown>> } };
+    const { relationship, ...changes } = body!;
+    Object.assign(state.data.relationship_rule[String(relationship)], changes);
+    return json({ success: true });
+  }
   if (path === "/metricView/queryList") return json({ success: true, data: [
     { id: "metric-1", name: "Revenue metric", status: "PUBLISHED", origin: "USER" },
   ] });
@@ -686,7 +692,7 @@ describe("OntologyManager root component with real pages", () => {
     ["mysql", true],
     ["elasticsearch", true],
     ["m3", false],
-  ])("visual modeling: with current adapter %s, the backend list's requiresJoinFields decides whether relations take join fields", async (current, requiresJoinFields) => {
+  ])("visual modeling: with current adapter %s, join fields stay visible and the adapter decides whether they are required", async (current, requiresJoinFields) => {
     dataAdapter = current;
     mountHost({ ...base, view: "/visual-modeling?focus=object&id=Order&back=playground" });
     await settle();
@@ -694,7 +700,10 @@ describe("OntologyManager root component with real pages", () => {
 
     graphHandlers["edge:dblclick"]!({ edge: { id: "has" } });
     await settle();
-    expect(openDialog("Rel Desc").textContent?.includes("Src Field")).toBe(requiresJoinFields);
+    const field = [...openDialog("Rel Desc").querySelectorAll(".el-form-item")]
+      .find((item) => item.textContent?.includes("Src Field"))!;
+    expect(field).toBeDefined();
+    expect(field.classList.contains("is-required")).toBe(requiresJoinFields);
   });
 
   it("visual modeling: a new relation on an adapter requiring join fields is not sent without them and is sent with fromField/toField", async () => {
@@ -726,7 +735,11 @@ describe("OntologyManager root component with real pages", () => {
       .toMatchObject({ relationDesc: "contains", fromField: "order_id", toField: "id" });
   });
 
-  it.each(["postgresql", "m3"])("relation catalog: %s creation submits the required join fields selected from each object", async (current) => {
+  it.each([
+    { current: "postgresql", fillFields: true },
+    { current: "m3", fillFields: false },
+    { current: "m3", fillFields: true },
+  ])("relation catalog: $current creation with join fields selected=$fillFields", async ({ current, fillFields }) => {
     dataAdapter = current;
     dataAdapters.push({ type: "postgresql", label: "PostgreSQL", requiresJoinFields: true, fields: [], examples: {} });
     metasFor = () => ({ success: true, data: {
@@ -743,17 +756,7 @@ describe("OntologyManager root component with real pages", () => {
     const dialog = openDialog("New Relation Type");
     typeInto(dialog.querySelector("input[maxlength='80']")!, "contains");
     typeInto(dialog.querySelector("textarea")!, "contains an item");
-    const select = async (label: string, optionText: string) => {
-      const item = [...dialog.querySelectorAll(".el-form-item")]
-        .find((item) => item.querySelector("label")?.textContent?.trim() === label)!;
-      (item.querySelector(".el-select__wrapper") as HTMLElement).click();
-      await settle();
-      const list = document.getElementById(item.querySelector("input")!.getAttribute("aria-controls")!)!;
-      const option = [...list.querySelectorAll<HTMLElement>(".el-select-dropdown__item")]
-        .find((option) => option.textContent?.trim() === optionText)!;
-      option.click();
-      await settle();
-    };
+    const select = (label: string, optionText: string) => selectOption(dialog, label, optionText);
     await select("Source Object", "Order (Order)");
     await select("Target Object", "Item (Item)");
 
@@ -770,8 +773,12 @@ describe("OntologyManager root component with real pages", () => {
       expect(paths()).not.toContain("/admin/addRelationship");
       await select("Src Field", "Item link (item_id)");
     } else {
-      expect(dialog.textContent).not.toContain("Src Field");
-      expect(dialog.textContent).not.toContain("Tgt Field");
+      expect(dialog.textContent).toContain("Src Field");
+      expect(dialog.textContent).toContain("Tgt Field");
+      if (fillFields) {
+        await select("Src Field", "Item link (item_id)");
+        await select("Tgt Field", "Item key (id)");
+      }
     }
 
     clickButton("Create");
@@ -781,8 +788,50 @@ describe("OntologyManager root component with real pages", () => {
       fromClassName: "Order",
       toClassName: "Item",
       relationDesc: "contains an item",
-      ...(current === "postgresql" ? { fromField: "item_id", toField: "id" } : {}),
+      fromField: fillFields ? "item_id" : "",
+      toField: fillFields ? "id" : "",
     });
+  });
+
+  it.each(["detail", "visual modeling"])("relation editing through %s persists missing join fields and displays them after reopening", async (entry) => {
+    const state = metas(["Order", "Item"]);
+    state.data.classDef[0].attrs.push({ name: "item_id", showName: "Item link", type: "varchar" });
+    metasFor = () => state;
+    const view = entry === "detail" ? "/relations/has" : "/visual-modeling";
+    const { host, root } = mountHost({ ...base, view });
+    await settle();
+    const openEditor = async () => {
+      if (entry === "detail") return root().querySelector(".relation-detail")!;
+      graphHandlers["edge:dblclick"]!({ edge: { id: "has" } });
+      await settle();
+      return openDialog("Rel Desc");
+    };
+    const editor = await openEditor();
+    if (entry === "detail") {
+      await selectOption(editor, "Src Field", "Item link (item_id)");
+      await selectOption(editor, "Tgt Field", "ID (id)");
+    } else {
+      typeInto(editor.querySelector("input[placeholder='Enter Src Field']")!, "item_id");
+      typeInto(editor.querySelector("input[placeholder='Enter Tgt Field']")!, "id");
+      await settle();
+    }
+    clickButton(entry === "detail" ? "Save" : "Update");
+    await settle();
+    expect(requests.find((request) => request.url.endsWith("/admin/editRelationshipDesc"))?.body)
+      .toEqual({ relationship: "has", desc: "has", fromField: "item_id", toField: "id" });
+
+    host.view = "/objects";
+    await settle();
+    host.view = view;
+    await settle();
+    const reopened = await openEditor();
+    if (entry === "detail") {
+      expect(reopened.textContent).toContain("Item link (item_id)");
+      expect(reopened.textContent).toContain("ID (id)");
+    } else {
+      expect((reopened.querySelector("input[placeholder='Enter Src Field']") as HTMLInputElement).value).toBe("item_id");
+      expect((reopened.querySelector("input[placeholder='Enter Tgt Field']") as HTMLInputElement).value).toBe("id");
+    }
   });
 
   it("when only locale/theme change, the open edit dialog and its input are kept without reloading", async () => {
@@ -1269,6 +1318,18 @@ describe("Manager business knowledge page", () => {
 function typeInto(input: HTMLInputElement | HTMLTextAreaElement, value: string) {
   input.value = value;
   input.dispatchEvent(new Event("input"));
+}
+
+async function selectOption(container: Element, label: string, optionText: string) {
+  const item = [...container.querySelectorAll(".el-form-item")]
+    .find((item) => item.querySelector("label")?.textContent?.trim() === label)!;
+  (item.querySelector(".el-select__wrapper") as HTMLElement).click();
+  await settle();
+  const list = document.getElementById(item.querySelector("input")!.getAttribute("aria-controls")!)!;
+  const option = [...list.querySelectorAll<HTMLElement>(".el-select-dropdown__item")]
+    .find((option) => option.textContent?.trim() === optionText)!;
+  option.click();
+  await settle();
 }
 
 function openDialog(buttonText: string) {

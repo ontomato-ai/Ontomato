@@ -103,7 +103,8 @@ async function create() {
       fromclass: form.fromclass,
       toclass: form.toclass,
       desc,
-      ...(requiresJoinFields.value ? { fromField: form.fromField, toField: form.toField } : {}),
+      fromField: form.fromField,
+      toField: form.toField,
     });
     message.success(ot("relationCreated"));
     visible.value = false;
@@ -159,7 +160,7 @@ watch(
           />
         </el-select>
       </el-form-item>
-      <el-form-item v-if="requiresJoinFields" :label="t('hotData.srcField')" required>
+      <el-form-item :label="t('hotData.srcField')" :required="requiresJoinFields === true">
         <el-select
           v-model="form.fromField"
           :placeholder="t('hotData.enterSrcField')"
@@ -190,7 +191,7 @@ watch(
           />
         </el-select>
       </el-form-item>
-      <el-form-item v-if="requiresJoinFields" :label="t('hotData.tgtField')" required>
+      <el-form-item :label="t('hotData.tgtField')" :required="requiresJoinFields === true">
         <el-select
           v-model="form.toField"
           :placeholder="t('hotData.enterTgtField')"

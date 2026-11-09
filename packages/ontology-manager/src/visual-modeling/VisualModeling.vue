@@ -30,6 +30,7 @@ const {
   listDataAdapters,
   updateOntologyAttribute,
   updateOntologyObject,
+  updateOntologyRelation,
 } = useManagerClient();
 
 interface ClassDef {
@@ -146,8 +147,8 @@ let graph: Graph | null = null;
 
 const classList = ref<ClassDef[]>([]);
 const relationList = ref<RelationDef[]>([]);
-// Relations take join fields when the current data adapter requires them (its requiresJoinFields in the backend adapter list).
-const showJoinFields = ref(false);
+// The adapter decides whether the join fields are required; every relation may retain them.
+const requiresJoinFields = ref<boolean | null>(null);
 
 const selectedNode = ref<ClassDef | null>(null);
 const selectedEdge = ref<RelationDef | null>(null);
@@ -155,11 +156,11 @@ const selectedEdge = ref<RelationDef | null>(null);
 async function loadAdapterConfig() {
   try {
     const { currentType, adapters } = await listDataAdapters();
-    showJoinFields.value = adapters.some(
+    requiresJoinFields.value = adapters.some(
       ({ type, requiresJoinFields }) => type === currentType && requiresJoinFields
     );
-  } catch {
-    showJoinFields.value = false;
+  } catch (error) {
+    message.error(error instanceof Error ? error.message : t("dataBrowser.loadDataFailed"));
   }
 }
 const loading = ref(false);
@@ -770,6 +771,8 @@ async function loadData() {
         fromclass: rel.fromclass,
         toclass: rel.toclass,
         desc: rel.desc || "",
+        fromField: rel.fromField,
+        toField: rel.toField,
         isNew: false,
       })
     );
@@ -981,23 +984,26 @@ function handleTrash2Node() {
     .catch(() => {});
 }
 
-async function handleAddEdge() {
-  if (!editingEdge.value) return;
-
+function validateEdgeFields() {
   if (!newEdgeDesc.value.trim()) {
     message.warning(t("hotData.enterRelDesc"));
-    return;
+    return false;
   }
-  if (showJoinFields.value) {
+  if (requiresJoinFields.value) {
     if (!newEdgeFromField.value.trim()) {
       message.warning(t("hotData.enterSrcField"));
-      return;
+      return false;
     }
     if (!newEdgeToField.value.trim()) {
       message.warning(t("hotData.enterTgtField"));
-      return;
+      return false;
     }
   }
+  return true;
+}
+
+async function handleAddEdge() {
+  if (!editingEdge.value || !validateEdgeFields()) return;
 
   const edge = editingEdge.value;
   const existingRel = relationList.value.find(
@@ -1030,6 +1036,8 @@ async function handleAddEdge() {
     const idx = relationList.value.findIndex((r) => r.relationship === edge.relationship);
     if (idx >= 0) {
       relationList.value[idx].desc = newEdgeDesc.value.trim();
+      relationList.value[idx].fromField = newEdgeFromField.value;
+      relationList.value[idx].toField = newEdgeToField.value;
       relationList.value[idx].isNew = false;
       selectedEdge.value = relationList.value[idx];
     } else {
@@ -1070,20 +1078,26 @@ function handleCancelEdge() {
   edgeDialogVisible.value = false;
 }
 
-function handlePencilEdge() {
-  if (!editingEdge.value) return;
+async function handlePencilEdge() {
+  if (!editingEdge.value || !validateEdgeFields()) return;
 
   const edge = editingEdge.value;
-  const idx = relationList.value.findIndex((r) => r.relationship === edge.relationship);
-  if (idx >= 0) {
-    relationList.value[idx].desc = newEdgeDesc.value.trim();
-    relationList.value[idx].fromField = newEdgeFromField.value;
-    relationList.value[idx].toField = newEdgeToField.value;
-    selectedEdge.value = relationList.value[idx];
+  const changes = {
+    desc: newEdgeDesc.value.trim(),
+    fromField: newEdgeFromField.value.trim(),
+    toField: newEdgeToField.value.trim(),
+  };
+  try {
+    await updateOntologyRelation(edge.relationship, changes);
+    const saved = relationList.value.find((relation) => relation.relationship === edge.relationship)!;
+    Object.assign(saved, changes);
+    selectedEdge.value = saved;
     renderNodes();
-    message.warning(t("hotData.relDescSaved"));
+    message.success(ot("relationSaved"));
+    edgeDialogVisible.value = false;
+  } catch (error) {
+    message.error(error instanceof Error ? error.message : ot("relationSaveFailed"));
   }
-  edgeDialogVisible.value = false;
 }
 
 function handleTrash2Edge() {
@@ -1514,7 +1528,7 @@ async function saveClassDesc(cls: ClassDef) {
       :editing-node="editingNode"
       :editing-edge="editingEdge"
       :class-list="classList"
-      :show-join-fields="showJoinFields"
+      :requires-join-fields="requiresJoinFields"
       @update-edge-field="updateEditingEdgeField"
       @add-node="handleAddNode"
       @pencil-node="handlePencilNode"
