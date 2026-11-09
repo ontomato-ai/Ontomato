@@ -49,6 +49,7 @@ export async function analystCommand(cfg, argv, headers = {}) {
   if (command === "ask") return ask(cfg, args, headers);
   if (command === "run") return runAction(ontology, args, headers);
   if (command === "pending") return pending(ontology, args, headers);
+  if (command === "actions") return listActions(ontology, headers);
   let endpoint, body;
   if (command === "dataset-desc" || command === "classes")
     endpoint = "/overview";
@@ -87,7 +88,7 @@ export async function analystCommand(cfg, argv, headers = {}) {
     body = { id: args[0], revision, parameters: args[1] ? readJson(args[1]) : {}, ...(bindingId ? { bindingId } : {}) };
   } else
     throw new Error(
-      "Commands: dataset-desc, classes, schema, relationships, dsl-reference, distinct-values, execute-dsl, metrics, execute-metric, knowledge, pending, run, ask",
+      "Commands: dataset-desc, classes, schema, relationships, dsl-reference, distinct-values, execute-dsl, metrics, execute-metric, knowledge, pending, actions, run, ask",
     );
   const result = await json(
     ontology + "/ontology/query" + endpoint,
@@ -283,6 +284,59 @@ async function pending(ontology, args, headers) {
   console.log(
     JSON.stringify({ source: "run-contract", workflow: workflow.name, count: rows.length, rows }, null, 2),
   );
+}
+
+/**
+ * What this subject may actually run, and why.
+ *
+ * Computed as the intersection of three things the platform keeps separately: the roles in effect
+ * for the caller, the grants in force, and the actions that exist. A grant is in force only while its
+ * workflow is active at exactly that revision, so a row left by an earlier revision is not reported —
+ * listing it would promise authority the executor would refuse.
+ */
+async function listActions(ontology, headers) {
+  const me = (await json(`${ontology}/user/getCur`, headers)).data;
+  if (!me?.id) throw new Error("The current credential has no user id.");
+
+  const subjects = (await json(`${ontology}/workflow/subjects`, headers, {})).data ?? [];
+  const mine = subjects.find((subject) => subject.id === me.id);
+  const roleIds = new Set(mine?.roleIds ?? []);
+  if (!roleIds.size) {
+    console.log(JSON.stringify({ count: 0, actions: [], reason: "This subject holds no role in this domain." }, null, 2));
+    return;
+  }
+
+  const workflows = (await json(`${ontology}/workflow/query`, headers, {})).data ?? [];
+  const active = new Map(
+    workflows.filter((workflow) => workflow.status === "ACTIVE").map((workflow) => [workflow.id, String(workflow.version ?? "")]),
+  );
+  const grants = (await json(`${ontology}/workflow/grants`, headers, {})).data ?? [];
+  const inForce = grants
+    .filter((grant) => roleIds.has(grant.roleId))
+    .filter((grant) => {
+      if (!grant.workflowId) return true; // granted by hand: it stands on its own
+      return active.has(grant.workflowId) && active.get(grant.workflowId) === String(grant.activatedByWorkflowVersion ?? "");
+    });
+
+  const actions = (await json(`${ontology}/action/queryList`, headers, {})).data ?? [];
+  const known = new Map(actions.map((action) => [action.id, action]));
+  const rows = inForce
+    .map((grant) => {
+      const action = known.get(grant.capabilityId);
+      return {
+        actionId: grant.capabilityId,
+        name: action?.name ?? grant.capabilityId,
+        status: action?.status ?? null,
+        role: grant.roleCode ?? grant.roleId,
+        source: grant.workflowId ? "process" : "direct",
+        workflowId: grant.workflowId ?? null,
+        workflowVersion: grant.activatedByWorkflowVersion ?? null,
+      };
+    })
+    // A grant for an unpublished or retired action is not something the caller can run.
+    .filter((row) => row.status === null || row.status === "PUBLISHED");
+
+  console.log(JSON.stringify({ count: rows.length, actions: rows }, null, 2));
 }
 
 async function ask(cfg, args, headers) {

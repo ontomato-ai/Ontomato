@@ -61,6 +61,7 @@ Run `node ontomato.mjs <command>` from this directory. JSON accepts `@file`.
 | `metrics <question> [--cursor id] [--limit n]` | `POST /ontology/query/metrics/search`: published read specifications, revision and next cursor; no model call |
 | `execute-metric <id> --revision <revision> [@parameters.json] [--binding id]` | `POST /ontology/query/metrics/execute`: current revision checked, execution under your permissions; --binding selects an owned parameter set |
 | `pending [--flow name] [--limit n]` | Your own pending items, read-only: the published "我的待办" metric when it exists, otherwise the active process's run contract; executed under your permissions |
+| `actions` | The actions your roles are granted by an active revision, with the granting process; the same intersection the executor uses |
 | `run <actionId> [@parameters.json]` | `POST /action/execute`: perform one step your roles are granted; a refusal is reported with its real cause |
 | `knowledge <question> [--limit n]` | `POST /ontology/query/knowledge/search`: relevant business knowledge |
 | `ask [--lang en] [--request-id UUID] "complete question"` | Start concurrent binding execution and retrieval; return the first deliverable results and download their files |
@@ -109,6 +110,10 @@ capability grant (is one of your roles granted this action by an active revision
 own preconditions (is it your turn, is the case in the state this step expects). Then data
 permission applies to the state it reads. A refusal names the layer that refused it — see
 [acting on a case](references/actions.md) for what each one means and what to do next.
+
+`actions` answers the other half: which steps are yours to run at all. It intersects your effective
+roles with the grants in force, so a row left by an earlier revision is not listed. "I can run this"
+and "this is waiting for me" are different questions; ask both before concluding you have nothing to do.
 
 Never pass an identity to make a step succeed. "This is not your turn" is a business state, not a
 credential problem, and retrying with different parameters will not change it.
