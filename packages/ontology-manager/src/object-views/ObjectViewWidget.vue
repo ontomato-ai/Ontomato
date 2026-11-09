@@ -83,7 +83,7 @@ async function load() {
       hasMore.value = result.hasMore;
       linkTarget.value = { className: result.targetClass, primaryKey: result.targetPk };
     } else if (props.widget.resourceId) {
-      const result = await client.executeViewMetric(props.widget.resourceId, parameters.value);
+      const result = await client.metricViews.read({ id: props.widget.resourceId, parameters: parameters.value });
       if (current === request) data.value = result;
     }
   } catch (reason) {
@@ -119,7 +119,7 @@ async function execute() {
       try { return [name, parseActionValue(value, actionTypes.value[name] || "")]; }
       catch { throw new Error(ot("ovInvalidParameter", { type: actionTypes.value[name], name })); }
     }));
-    await client.executeViewAction(props.widget.resourceId, param);
+    await client.actions.execute({ id: props.widget.resourceId, parameters: param });
     if (current !== actionRequest) return;
     actionOpen.value = false;
     message.success(ot("ovActionSucceeded"));

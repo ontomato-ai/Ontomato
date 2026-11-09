@@ -77,7 +77,7 @@ export default [
   {
     // Every .mjs here runs on Node (build, packaging and development entries, their tests, and
     // the agent skill CLIs): add only the Node globals.
-    files: ["scripts/**/*.mjs", "apps/*/*.mjs", "agent-skills/**/*.mjs", "packages/agent-runtime/src/**/*.mjs", "packages/workbench-server/resources/runtime-skills/**/*.mjs", "packages/contracts/scripts/**/*.mjs"],
+    files: ["scripts/**/*.mjs", "apps/*/*.mjs", "agent-skills/**/*.mjs", "packages/agent-runtime/src/**/*.mjs", "packages/workbench-server/resources/runtime-skills/**/*.mjs", "packages/contracts/scripts/**/*.mjs", "packages/apps-sdk/*.mjs"],
     languageOptions: { globals: globals.node },
   },
   {
@@ -161,15 +161,29 @@ export default [
     },
   },
   {
-    // The agent shell is a platform UI package: it depends only on contracts and third-party
-    // libraries, never on a host (workbench, Manager), a global store, router or i18n instance.
+    // The agent shell is a platform UI package: it depends only on contracts, the foundation UI and
+    // third-party libraries, never on a host (workbench, Manager), a global store, router or i18n instance.
     files: ["packages/agent-shell-ui/src/**/*.{ts,vue}"],
     rules: {
       "no-undef": "off",
       "no-restricted-imports": restrict([
         {
-          regex: "^@ontomato/(?!contracts(/|$))|^(pinia|vue-router|vue-i18n|element-plus)(/|$)",
-          message: "agent-shell-ui may depend only on contracts; hosts pass labels, data ports and renderers",
+          regex: "^@ontomato/(?!(contracts|foundation-ui)(/|$))|^(pinia|vue-router|vue-i18n|element-plus)(/|$)",
+          message: "agent-shell-ui may depend only on contracts and the foundation UI; hosts pass labels, data ports and renderers",
+        },
+      ]),
+    },
+  },
+  {
+    // The foundation UI is the bottom layer every application and the SDK share (one implementation per
+    // capability, exported by capability subpath): it depends only on Vue, Element Plus and ECharts, never on
+    // a platform package or a host.
+    files: ["packages/foundation-ui/src/**/*.{ts,vue}"],
+    rules: {
+      "no-restricted-imports": restrict([
+        {
+          regex: "^(?!(vue|element-plus|echarts)(/|$)|\\.)",
+          message: "foundation-ui may depend only on Vue, Element Plus and ECharts; the packages that use it depend on it, not the other way round",
         },
       ]),
     },

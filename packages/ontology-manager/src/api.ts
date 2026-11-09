@@ -1,11 +1,12 @@
+import type { AppHostCredential } from "@ontomato/contracts/app-host";
 import type { DataAdaptersData } from "@ontomato/contracts/data-adapters";
 import type { ObjectViewDocument, ObjectViewState } from "@ontomato/contracts/object-views";
+import { createActionsClient } from "./clients/actions";
+import { createMetricViewsClient } from "./clients/metric-views";
 import type { MessageKey, TextParams } from "./i18n";
 
-export type ManagerCredential =
-  | { type: "token"; token: string }
-  | { type: "apiKey"; apiKey: string }
-  | { type: "anonymous" };
+/** The host's credential; its shape is the app host contract's, which apps outside our build also receive. */
+export type ManagerCredential = AppHostCredential;
 
 /**
  * The two data defaults supplied statically by the host. They pre-fill edit forms or are submitted with save payloads,
@@ -50,7 +51,7 @@ function credentialIdentity(credential: ManagerCredential | null) {
  * rebuilds the workspace and the request layer drops stale responses. The locale is not part of the identity (as in the
  * original main system); it only sets Accept-Language on each request.
  */
-export function hostSource(context: ManagerRequestContext) {
+export function hostSource(context: Pick<ManagerRequestContext, "apiBase" | "credential">) {
   return JSON.stringify([context.apiBase, credentialIdentity(context.credential)]);
 }
 
@@ -204,16 +205,18 @@ export interface SmartAsset {
 }
 
 export type ManagerClient = ReturnType<typeof createManagerClient>;
+export type ManagerRequest = ReturnType<typeof createManagerRequest>;
 
 /**
- * Data engine request layer, one per Manager workspace instance. Each request reads the current context values.
- * If apiBase or the credential changed by the time the response or its JSON arrives, the result is dropped (AbortError)
- * without notifying the host or delivering data; when only the locale changed, in-flight results for the same identity
- * are delivered and later requests carry the new locale. After dispose (workspace unmounted) no request is sent, so stale
- * follow-ups of confirmations or multi-step operations never go out with the new context.
+ * Request layer to the platform API, one per Manager workspace instance or app page. Each request reads the current
+ * context values. If apiBase or the credential changed by the time the response or its JSON arrives, the result is
+ * dropped (AbortError) without notifying the host or delivering data; when only the locale changed, in-flight results
+ * for the same identity are delivered and later requests carry the new locale. After dispose (workspace unmounted) no
+ * request is sent, so stale follow-ups of confirmations or multi-step operations never go out with the new context.
+ * Requests go to the data engine (`/data-query`) unless a call names another service prefix (`""` is the Node API).
  */
-export function createManagerClient(
-  context: ManagerRequestContext,
+export function createManagerRequest(
+  context: Omit<ManagerRequestContext, "dataFallbacks">,
   onAuthFailure: (status: ManagerAuthFailureStatus) => void
 ) {
   let disposed = false;
@@ -263,6 +266,25 @@ export function createManagerClient(
 
   const post = (path: string, body: Record<string, unknown>) =>
     send(path, { method: "POST", body: JSON.stringify(body) });
+
+  return {
+    request,
+    send,
+    post,
+    text: context.text,
+    dispose: () => {
+      disposed = true;
+    },
+  };
+}
+
+/** The Manager's data engine client over its own request layer; see `createManagerRequest`. */
+export function createManagerClient(
+  context: ManagerRequestContext,
+  onAuthFailure: (status: ManagerAuthFailureStatus) => void
+) {
+  const transport = createManagerRequest(context, onAuthFailure);
+  const { request, send, post } = transport;
 
   function requestSmartAsset(
     kind: SmartAssetKind,
@@ -508,18 +530,6 @@ export function createManagerClient(
     return objectViewRequest("save", document.className, form, { document, expectedRevision, description });
   }
 
-  async function executeViewMetric(id: string, param: Record<string, unknown>) {
-    const definition = await requestSmartAsset("metrics", "queryById", { id });
-    const parameters = definition.data?.function?.queryPackage?.manifest?.parameterDefs
-      ?? definition.data?.function?.parameters ?? [];
-    const defaults = Object.fromEntries(parameters
-      .filter((parameter: { name: string; value?: unknown }) => Object.hasOwn(parameter, "value") && parameter.value !== null)
-      .map((parameter: { name: string; value: unknown }) => [parameter.name, parameter.value]));
-    const response = await post("/metricView/execute", { id, param: { ...defaults, ...param } });
-    if (response.truncated === true || response.partial === true || response.complete === false) throw new Error(response.truncationHint || context.text("ovIncompleteResults"));
-    return response.data;
-  }
-
   async function loadViewSkills() {
     const response = await send("/skills", { method: "GET" }, "");
     return (response.skills as Array<{ id: string; title?: string; enabled?: boolean; type: string; category: string }>).filter(skill => skill.enabled !== false && skill.type === "executable" && skill.category === "visualization");
@@ -539,13 +549,6 @@ export function createManagerClient(
       if (context.credential?.type === "apiKey") url.searchParams.set("apiKey", context.credential.apiKey);
       return `${quote}${context.apiBase}${url.pathname.slice(4)}${url.search}${quote}`;
     });
-  }
-
-  async function executeViewAction(id: string, param: Record<string, unknown>) {
-    const body = new FormData();
-    body.set("id", id);
-    body.set("param", JSON.stringify(param));
-    return (await send("/action/execute", { method: "POST", body })).data;
   }
 
   async function loadViewLinks(className: string, primaryKey: string, relationship: string, direction: "incoming" | "outgoing", offset: number) {
@@ -631,17 +634,17 @@ export function createManagerClient(
   return {
     objectViewRequest,
     saveObjectView,
-    executeViewMetric,
-    executeViewAction,
+    /** Published MetricView reads: the same client apps get from the SDK. */
+    metricViews: createMetricViewsClient(transport),
+    /** Action execution: the same client apps get from the SDK. */
+    actions: createActionsClient(transport),
     loadViewLinks,
     loadViewSkills,
     renderViewSkill,
     viewSkillHtml,
     request,
     loadInstanceGraphStatistics,
-    dispose: () => {
-      disposed = true;
-    },
+    dispose: transport.dispose,
     requestSmartAsset,
     getMetas,
     loadOntology,

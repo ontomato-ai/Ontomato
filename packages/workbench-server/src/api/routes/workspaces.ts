@@ -83,5 +83,5 @@ export function mountHostedStatic(app: express.Express) {
     res.set({ "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff" });
     res.sendFile(file, { root: runtimeDataDir("hosted-apps", appId, releaseId), dotfiles: "allow", cacheControl: false, lastModified: false, etag: false }, next);
   });
-  app.use("/apps-sdk", express.static(runtimeDataDir("apps-sdk"), { fallthrough: false, redirect: false, index: "index.js" }));
+  app.use("/apps-sdk", express.static(runtimeDataDir("apps-sdk"), { fallthrough: false, redirect: false }));
 }

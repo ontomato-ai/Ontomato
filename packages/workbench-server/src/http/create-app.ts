@@ -1,5 +1,5 @@
 import { workspacePreviewRouter, workspaceRouter, mountHostedStatic } from "../api/routes/workspaces";
-import { initializeAppSdk } from "../services/workspaces/hosted-apps";
+import { installAppSdk } from "../services/workspaces/hosted-apps";
 import { startModelMigration, stopModelMigration } from "../platform/agent-runtime/model-migration";
 import assistantRouter from "../api/routes/assistant";
 import { scheduleApplicationsRouter, scheduleExecutionStatus } from "../api/routes/schedule-applications";
@@ -261,7 +261,8 @@ export async function startWorkbench(
   await syncRuntimeDefaultResources();
   syncDefaultPrompts();
   await initializeConnection();
-  await initializeAppSdk();
+  // Production images carry the apps SDK next to the web pages; development serves neither from a build.
+  if (!isDev) await installAppSdk();
   startModelMigration();
   getWorkbenchLogStore();
   const stopApplication = await initializeApplication?.();

@@ -1,3 +1,4 @@
+import type { AppHostCredential } from "@ontomato/contracts/app-host";
 import {
   modelSettingsSchema,
   ontologyAgentModelSchema,
@@ -29,10 +30,8 @@ import { feedbackPageSchema, feedbackPath, type FeedbackQuery } from "./feedback
  * instance per page load, so a credential change rebuilds the page instead of mixing two identities' data.
  */
 
-export type PlatformCredential =
-  | { type: "token"; token: string }
-  | { type: "apiKey"; apiKey: string }
-  | { type: "anonymous" };
+/** The host's credential; its shape is the app host contract's, like the Manager's. */
+export type PlatformCredential = AppHostCredential;
 
 export interface PlatformRequestContext {
   /** Gateway API root without a trailing slash, e.g. `/wenshu/api`. */

@@ -1,24 +1,32 @@
 import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
-import { mkdir, writeFile, rename } from "node:fs/promises";
+import { cp, mkdir, readdir, writeFile, rename } from "node:fs/promises";
 import path from "node:path";
 import { z } from "zod";
 import { workspaceExportSchema } from "@ontomato/contracts/workspaces";
 import { RuntimeClient } from "../../infrastructure/agent-runtime/client";
 import { getPostgresPool as db, qualifiedTable as t } from "../../infrastructure/postgres";
 import { transaction } from "../../infrastructure/postgres-transaction";
-import { runtimeDataDir } from "../../content/layout";
+import { runtimeDataDir, runtimeRoot } from "../../content/layout";
 import { backendPut } from "../../utils/backend-client";
 import { buildUrl, getApiConfig } from "../../config/data-query-api";
 import type { AssistantOwner } from "../assistant/store";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
 import { HttpError } from "../../utils/errors";
 
-export async function initializeAppSdk() {
-  const directory = runtimeDataDir("apps-sdk", "0.0.0-placeholder.1");
-  if (existsSync(directory)) return;
-  await mkdir(directory, { recursive: true });
-  await writeFile(path.join(directory, "index.js"), 'export const version = "0.0.0-placeholder.1";\nexport const isPlaceholder = true;\n');
+/**
+ * Installs the apps SDK versions this image carries (dist/apps-sdk/<version>) into the data volume that /apps-sdk
+ * serves. An installed version is never replaced or removed, so an app keeps the exact version it names across platform
+ * upgrades. A version appears only complete: it is copied beside its place and renamed into it.
+ */
+export async function installAppSdk() {
+  const shipped = path.join(runtimeRoot(), "dist", "apps-sdk");
+  for (const version of await readdir(shipped)) {
+    const target = runtimeDataDir("apps-sdk", version);
+    if (existsSync(target)) continue;
+    await cp(path.join(shipped, version), `${target}.tmp`, { recursive: true });
+    await rename(`${target}.tmp`, target);
+  }
 }
 export async function writeHostedPublication(appId: string, releaseId: string, declaration: Record<string, unknown>, credentials: AssistantCredentials) {
   const response = await backendPut("hosted-publication", buildUrl(getApiConfig(), `/platform/applications/${appId}/hosted-publication`),
