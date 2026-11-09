@@ -3,6 +3,7 @@ import { computed, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { z } from "zod";
 import type { RuntimeArtifact } from "@ontomato/contracts/agent-runtime-artifacts";
+import { randomId } from "@ontomato/contracts/random-id";
 import { nodeApiFetch, nodeApiGet } from "../../../utils/api";
 const props = defineProps<{ artifact: RuntimeArtifact; refresh?: () => Promise<void> }>();
 const visible = defineModel<boolean>({ default: false });
@@ -11,17 +12,17 @@ const zh = computed(() => locale.value.startsWith("zh"));
 const scopeSchema = z.object({ question: z.string(), assumptions: z.array(z.string()), filters: z.array(z.object({ id: z.string(), label: z.string(), expression: z.string() })) });
 const scope = ref<z.infer<typeof scopeSchema> | null>(null);
 const filterId = ref(""); const replacement = ref(""); const error = ref(""); const loading = ref(false); const busy = ref(false);
-const requestId = ref(crypto.randomUUID());
+const requestId = ref(randomId());
 const endpoint = computed(() => `/assistant/sessions/${props.artifact.sessionId}/artifacts/${props.artifact.id}/analysis-scope`);
 const selected = computed(() => scope.value?.filters.find((filter) => filter.id === filterId.value));
 watch(visible, async (open) => {
   if (!open) return;
-  loading.value = true; scope.value = null; filterId.value = ""; replacement.value = ""; error.value = ""; requestId.value = crypto.randomUUID();
+  loading.value = true; scope.value = null; filterId.value = ""; replacement.value = ""; error.value = ""; requestId.value = randomId();
   try { scope.value = scopeSchema.parse(await nodeApiGet(endpoint.value)); }
   catch (e) { error.value = e instanceof Error ? e.message : (zh.value ? "无法读取原查询范围" : "Unable to read scope"); }
   finally { loading.value = false; }
 });
-watch([filterId, replacement], () => { requestId.value = crypto.randomUUID(); });
+watch([filterId, replacement], () => { requestId.value = randomId(); });
 async function submit() {
   if (!selected.value || !replacement.value.trim() || busy.value) return;
   busy.value = true; error.value = "";

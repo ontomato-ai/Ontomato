@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { App } from "vue";
+import type { Router } from "vue-router";
 import { agentHostAgentListSchema, agentHostSessionPageSchema } from "@ontomato/contracts/agent-host";
 import { appBuilderBootstrapSchema } from "@ontomato/contracts/app-builder";
 import type { WorkbenchAppearance } from "@ontomato/contracts/workbench-appearance";
@@ -148,6 +149,46 @@ describe.each(pagePaths)("the open-source platform at %s", (path) => {
     await open(path);
     const landed = landedAt();
     expect(landed === path || landed.startsWith(`${path}/`), `${path} landed on ${landed}`).toBe(true);
+  });
+});
+
+describe("object views over plain HTTP", () => {
+  it("opens an unconfigured object and leaves its view editor without a secure-context UUID API", async () => {
+    vi.stubGlobal("crypto", { getRandomValues: crypto.getRandomValues.bind(crypto) });
+    const attrs = [{ name: "id", primaryKey: true }, { name: "name", bizzkeyBool: true }];
+    vi.stubGlobal("fetch", async (input: FetchInput, init?: FetchInit) => {
+      const url = new URL(input instanceof Request ? input.url : String(input), window.location.origin);
+      const data = /\/objectView\/(read|edit)$/.test(url.pathname) ? { revision: 0, publishedRevision: null, versions: [] }
+        : url.pathname.endsWith("/getMetas") ? { classDef: [{ className: "Order", attrs }, { className: "Person", attrs }] }
+        : url.pathname.endsWith("/queryInfoByNode") ? { classDef: { attrs }, data: { id: "order-1", name: "HTTP order" } }
+        : undefined;
+      if (url.pathname.endsWith("/skills")) return new Response(JSON.stringify({ skills: [] }));
+      return data === undefined ? answer(input, init) : new Response(JSON.stringify({ success: true, data }));
+    });
+    try {
+      await open("/browser/views/Order?key=order-1");
+      expect(document.querySelector(".object-title h2")?.textContent).toBe("HTTP order");
+      expect(document.querySelector(".object-view-runtime")).not.toBeNull();
+      expect(document.querySelector(".object-page-error")).toBeNull();
+      const app = (document.querySelector("#app") as Element & { __vue_app__: App }).__vue_app__;
+      const router = app.config.globalProperties.$router as Router;
+      await router.push("/ontology/objects/Order/view");
+      await settle();
+      expect(document.querySelector(".view-builder")).not.toBeNull();
+      expect(document.querySelector(".builder-body")?.hasAttribute("inert")).toBe(false);
+      await router.push("/ontology/objects/Person/view");
+      await settle();
+      expect(landedAt()).toBe("/ontology/objects/Person/view");
+      await router.push("/dashboards");
+      await settle();
+      expect(landedAt()).toBe("/dashboards");
+      expect(document.querySelector(".platform-page-header .page-title")?.textContent).toBe("Dashboards");
+      expect(document.querySelector(".view-builder")).toBeNull();
+      expect(document.querySelector(".platform-page-body")?.innerHTML.trim()).toBeTruthy();
+      expect(drawErrors).toEqual([]);
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 });
 
