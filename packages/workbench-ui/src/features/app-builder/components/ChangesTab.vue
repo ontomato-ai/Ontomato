@@ -113,24 +113,29 @@ watch(
             <span class="diff-stat"><span class="add">+{{ file.added }}</span> <span class="remove">−{{ file.removed }}</span></span>
           </header>
           <p v-if="file.binary" class="binary">{{ t("appBuilder.binaryChanged") }}</p>
-          <div v-else class="diff-scroll">
-            <table class="diff-table">
-              <tbody>
-                <tr v-for="(line, index) in file.lines" :key="index" :class="`line-${line.kind}`">
-                  <template v-if="line.kind === 'hunk' || line.kind === 'note'">
-                    <td class="number" colspan="3" />
-                    <td class="text">{{ line.text }}</td>
-                  </template>
-                  <template v-else>
-                    <td class="number">{{ line.before }}</td>
-                    <td class="number">{{ line.after }}</td>
-                    <td class="sign">{{ line.kind === "add" ? "+" : line.kind === "remove" ? "−" : "" }}</td>
-                    <td class="text">{{ line.text }}</td>
-                  </template>
-                </tr>
-              </tbody>
-            </table>
-          </div>
+          <!-- Long lines wrap inside the panel; a wrapped line keeps its old and new numbers on its first row. -->
+          <table v-else class="diff-table">
+            <colgroup>
+              <col class="col-number" />
+              <col class="col-number" />
+              <col class="col-sign" />
+              <col />
+            </colgroup>
+            <tbody>
+              <tr v-for="(line, index) in file.lines" :key="index" :class="`line-${line.kind}`">
+                <template v-if="line.kind === 'hunk' || line.kind === 'note'">
+                  <td class="number" colspan="3" />
+                  <td class="text">{{ line.text }}</td>
+                </template>
+                <template v-else>
+                  <td class="number">{{ line.before }}</td>
+                  <td class="number">{{ line.after }}</td>
+                  <td class="sign">{{ line.kind === "add" ? "+" : line.kind === "remove" ? "−" : "" }}</td>
+                  <td class="text">{{ line.text }}</td>
+                </template>
+              </tr>
+            </tbody>
+          </table>
         </section>
       </template>
     </template>
@@ -244,38 +249,41 @@ watch(
   color: var(--el-text-color-secondary);
   font-size: var(--text-sm);
 }
-.diff-scroll {
-  overflow-x: auto;
-}
 .diff-table {
-  min-width: 100%;
+  width: 100%;
+  table-layout: fixed;
   border-collapse: collapse;
   font-family: var(--font-mono);
   font-size: var(--text-xs);
   line-height: 20px;
+}
+.col-number {
+  width: 48px;
+}
+.col-sign {
+  width: 18px;
 }
 .diff-table td {
   padding: 0;
   vertical-align: top;
 }
 .number {
-  width: 1%;
-  min-width: 34px;
   padding: 0 8px !important;
+  overflow: hidden;
   text-align: right;
   white-space: nowrap;
   color: var(--el-text-color-placeholder);
   user-select: none;
 }
 .sign {
-  width: 18px;
   text-align: center;
   color: var(--el-text-color-secondary);
   user-select: none;
 }
 .text {
-  padding-right: var(--spacing-lg) !important;
-  white-space: pre;
+  padding-right: var(--spacing-md) !important;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
   color: var(--el-text-color-primary);
 }
 tr.line-add {

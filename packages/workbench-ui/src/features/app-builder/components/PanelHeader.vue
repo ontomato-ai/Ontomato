@@ -1,11 +1,12 @@
 <script setup lang="ts">
 import { useI18n } from "vue-i18n";
-import { RefreshCw } from "lucide-vue-next";
+import { Lock, RefreshCw } from "lucide-vue-next";
 import { PANEL_TABS, shortCommit, type PanelTab } from "../panel";
 
 /**
  * The workspace page's header row, beside the shell's expand and close buttons: the four views, then the open view's
- * own tools (the preview's current commit and refresh).
+ * own tools as icons. Their explanations (the commit the preview runs, that files are read only) are in their tooltips,
+ * so the row keeps room for the views and the shell's buttons at the side panel's width.
  */
 defineProps<{ tab: PanelTab; headCommit: string | null }>();
 const emit = defineEmits<{ "update:tab": [tab: PanelTab]; refreshPreview: [] }>();
@@ -30,21 +31,19 @@ const { t } = useI18n();
       </button>
     </div>
     <div class="panel-tools">
-      <template v-if="tab === 'preview'">
-        <span class="tool-text" :title="t('appBuilder.previewHint')">
-          {{ t("appBuilder.currentFiles") }}<template v-if="headCommit"> · <span class="mono">{{ shortCommit(headCommit) }}</span></template>
-        </span>
-        <button
-          type="button"
-          class="tool-button"
-          :title="t('appBuilder.refreshPreview')"
-          :aria-label="t('appBuilder.refreshPreview')"
-          @click="emit('refreshPreview')"
-        >
+      <el-tooltip v-if="tab === 'preview'" placement="bottom-end" :show-after="200">
+        <template #content>
+          <div>{{ t("appBuilder.refreshPreview") }}</div>
+          <div v-if="headCommit" class="tip-detail">{{ t("appBuilder.currentFiles") }} · {{ shortCommit(headCommit) }}</div>
+          <div class="tip-detail">{{ t("appBuilder.previewHint") }}</div>
+        </template>
+        <button type="button" class="tool-button" :aria-label="t('appBuilder.refreshPreview')" @click="emit('refreshPreview')">
           <RefreshCw :size="14" />
         </button>
-      </template>
-      <span v-else-if="tab === 'files'" class="tool-text">{{ t("appBuilder.readOnly") }}</span>
+      </el-tooltip>
+      <el-tooltip v-else-if="tab === 'files'" :content="t('appBuilder.readOnly')" placement="bottom-end" :show-after="200">
+        <span class="tool-icon" tabindex="0" :aria-label="t('appBuilder.readOnly')"><Lock :size="14" /></span>
+      </el-tooltip>
       <span class="tool-separator" aria-hidden="true" />
     </div>
   </div>
@@ -91,7 +90,8 @@ const { t } = useI18n();
   font-weight: var(--font-medium);
 }
 .panel-tab:focus-visible,
-.tool-button:focus-visible {
+.tool-button:focus-visible,
+.tool-icon:focus-visible {
   outline: 2px solid var(--el-color-primary);
   outline-offset: -2px;
 }
@@ -99,19 +99,23 @@ const { t } = useI18n();
   display: flex;
   align-items: center;
   gap: 4px;
-  min-width: 0;
+  flex-shrink: 0;
   margin-left: auto;
   color: var(--el-text-color-secondary);
-  font-size: var(--text-xs);
 }
-.tool-text {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+.tip-detail {
+  max-width: 280px;
+  margin-top: 2px;
+  opacity: 0.8;
 }
-.mono {
-  font-family: var(--font-mono);
+.tool-icon {
+  display: grid;
+  place-items: center;
+  width: var(--control-height-sm);
+  height: var(--control-height-sm);
+  border-radius: var(--radius-sm);
+  color: var(--el-text-color-placeholder);
+  cursor: help;
 }
 .tool-button {
   display: grid;
@@ -137,8 +141,7 @@ const { t } = useI18n();
   background: var(--el-border-color);
 }
 @container page (max-width: 520px) {
-  .panel-tab > svg,
-  .tool-text {
+  .panel-tab > svg {
     display: none;
   }
 }
