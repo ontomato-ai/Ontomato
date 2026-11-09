@@ -36,7 +36,7 @@ const props = defineProps<{
   editingNode: ClassDef | null;
   editingEdge: RelationDef | null;
   classList: ClassDef[];
-  showJoinFields: boolean;
+  requiresJoinFields: boolean | null;
   newNodeName: string;
   newNodeShowName: string;
   newNodeDesc: string;
@@ -194,7 +194,7 @@ const newEdgeToFieldModel = computed({
       <el-form-item :label="t('hotData.relDesc')" required>
         <el-input v-model="newEdgeDescModel" :placeholder="t('hotData.relDesc')" />
       </el-form-item>
-      <el-form-item v-if="showJoinFields" :label="t('hotData.srcField')" required>
+      <el-form-item :label="t('hotData.srcField')" :required="requiresJoinFields === true">
         <template #label>
           <span>
             {{ t("hotData.srcField") }}
@@ -208,7 +208,7 @@ const newEdgeToFieldModel = computed({
         </template>
         <el-input v-model="newEdgeFromFieldModel" :placeholder="t('hotData.enterSrcField')" />
       </el-form-item>
-      <el-form-item v-if="showJoinFields" :label="t('hotData.tgtField')" required>
+      <el-form-item :label="t('hotData.tgtField')" :required="requiresJoinFields === true">
         <template #label>
           <span>
             {{ t("hotData.tgtField") }}
@@ -227,6 +227,7 @@ const newEdgeToFieldModel = computed({
       <el-button @click="emit('cancelEdge')">{{ t("common.cancel") }}</el-button>
       <el-button
         type="primary"
+        :disabled="requiresJoinFields === null"
         @click="editingEdge && editingEdge.isNew ? emit('addEdge') : emit('pencilEdge')"
       >
         {{ editingEdge && editingEdge.isNew ? t("common.add") : t("hotData.update") }}

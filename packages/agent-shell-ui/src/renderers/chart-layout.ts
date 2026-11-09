@@ -1,8 +1,18 @@
 type Option = Record<string, any>;
 
 /** Titles and legends get separate bands; scrolling keeps long legends in their own band. */
-export function chartReadingLayout(source: Option, height = 320): Option {
+export function chartReadingLayout(source: Option, height = 320, presentation: "inline" | "panel" = "panel"): Option {
   const option = structuredClone(source);
+  const series = [option.series ?? []].flat();
+  const pies = series.filter((item) => item.type === "pie");
+  const singleInlinePie = presentation === "inline" && pies.length === 1;
+  // A single inline pie uses the whole reading column; multiple pies retain their comparison layout.
+  if (singleInlinePie) {
+    option.series = series.map((item) => item.type === "pie" ? {
+      ...item, left: 0, right: 0, width: undefined,
+      center: ["50%", Array.isArray(item.center) ? item.center[1] ?? "50%" : "50%"],
+    } : item);
+  }
   const titles = [option.title].flat().filter(Boolean);
   if (!option.legend) return option;
   const hasTitle = titles.some((title) => title.show !== false && (title.text || title.subtext));
@@ -10,13 +20,14 @@ export function chartReadingLayout(source: Option, height = 320): Option {
   const legends = [option.legend].flat();
   let reservedBottom = 0;
   option.legend = legends.map((legend) => {
-    if (legend.show === false || legend.orient === "vertical") return legend;
-    if (legend.bottom == null && legend.top !== "bottom" && !hasTitle) return legend;
+    if (legend.show === false || (legend.orient === "vertical" && !singleInlinePie)) return legend;
+    if (legend.bottom == null && legend.top !== "bottom" && !hasTitle && !singleInlinePie) return legend;
     const bottom = pixels(legend.bottom);
     const fontSize = pixels(legend.textStyle?.fontSize) || 12;
     const band = Math.max(40, fontSize * 2 + 20);
     reservedBottom = Math.max(reservedBottom, bottom + band + 12);
-    return { ...legend, type: "scroll", orient: "horizontal", top: undefined, bottom, left: "center", right: undefined, width: "90%", height: band };
+    // Let ECharts size the content before centering; a 90% box left-aligns short legend contents.
+    return { ...legend, type: "scroll", orient: "horizontal", top: null, bottom, left: "center", right: null, width: "auto", height: band, align: "auto" };
   });
   if (reservedBottom) {
     if (option.grid || option.xAxis || option.yAxis) option.grid = [option.grid ?? {}].flat().map((grid) => ({

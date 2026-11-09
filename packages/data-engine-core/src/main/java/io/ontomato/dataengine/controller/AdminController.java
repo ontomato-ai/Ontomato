@@ -111,7 +111,7 @@ public class AdminController {
 			String desc = param.getString("desc").trim();
 			if (!"".equals(relationship) && !"".equals(desc)) {
 				User user = SystemUtils.getCurUser();
-				adminService.setRelationshipDesc(relationship, desc, user);
+				adminService.editRelationship(relationship, desc, param.getString("fromField"), param.getString("toField"), user);
 			}
 			ret.put("success", true);
 		} catch (Exception e) {

@@ -49,7 +49,7 @@ const emit = defineEmits<{ featureAction: [id: string] }>();
 const WORKBENCH_ID = "business";
 const AGENT_KEY = "ontomato.workbench.agent";
 
-const { t } = useI18n();
+const { t, locale } = useI18n();
 const route = useRoute();
 const router = useRouter();
 const client = createAssistantClient();
@@ -140,6 +140,9 @@ const nav = useAgentNav({
   sessionId: () => conversationId.value,
   setSessionId: (id) => (conversationId.value = id),
   onLeaveConversation: () => (featureId.value = null),
+});
+watch(locale, () => {
+  void nav.loadAgents().catch((error) => ElMessage.error(error instanceof Error ? error.message : String(error)));
 });
 
 /** The conversation the reader came from, so leaving the settings returns to it rather than to a new one. */

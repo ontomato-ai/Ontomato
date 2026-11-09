@@ -44,7 +44,7 @@ async function draw() {
   echarts.registerTheme(themeName, shell.chartTheme.value(isDark.value));
   chart = echarts.init(el.value, themeName);
   try {
-    chart.setOption(chartReadingLayout(option.value.value, el.value.clientHeight), { notMerge: true });
+    chart.setOption(chartReadingLayout(option.value.value, el.value.clientHeight, props.presentation), { notMerge: true });
     drawError.value = false;
   } catch {
     drawError.value = true;
@@ -53,7 +53,7 @@ async function draw() {
   }
   observer = new ResizeObserver(() => {
     chart?.resize();
-    if (chart && el.value && option.value.value) chart.setOption(chartReadingLayout(option.value.value, el.value.clientHeight), { notMerge: true });
+    if (chart && el.value && option.value.value) chart.setOption(chartReadingLayout(option.value.value, el.value.clientHeight, props.presentation), { notMerge: true });
   });
   observer.observe(el.value);
 }
