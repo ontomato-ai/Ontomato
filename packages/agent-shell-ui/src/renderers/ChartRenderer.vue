@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { computed, inject, nextTick, onBeforeUnmount, ref, watch } from "vue";
-import * as echarts from "echarts";
+import { computed, inject, onErrorCaptured, ref, watch } from "vue";
+import { EChart } from "@ontomato/foundation-ui/chart";
 import { shellContextKey } from "../context";
 import type { ArtifactRendererProps } from "../types";
 import { useDarkMode } from "../useDarkMode";
@@ -13,57 +13,38 @@ const props = defineProps<ArtifactRendererProps>();
 const shell = inject(shellContextKey)!;
 const isDark = useDarkMode();
 const { text, error } = useArtifactText(props);
-const el = ref<HTMLElement | null>(null);
+const theme = computed(() => shell.chartTheme.value(isDark.value));
+/** The height the chart is drawn at; the reading layout sizes the legend band from it. */
+const drawnHeight = ref<number>();
 const drawError = ref(false);
-let chart: echarts.ECharts | null = null;
-let observer: ResizeObserver | null = null;
 
+/**
+ * The file's option in the brand colours of the theme and the reading layout; a file that is not an option object,
+ * or cannot be recoloured or laid out, is invalid.
+ */
 const option = computed<{ value: Record<string, unknown> | null; invalid: boolean }>(() => {
   if (text.value === null) return { value: null, invalid: false };
   try {
     const value: unknown = JSON.parse(text.value);
     return value && typeof value === "object" && !Array.isArray(value)
-      ? { value: value as Record<string, unknown>, invalid: false }
+      ? {
+          value: chartReadingLayout(chartBrandColors(value as Record<string, unknown>, theme.value), drawnHeight.value, props.presentation),
+          invalid: false,
+        }
       : { value: null, invalid: true };
   } catch {
     return { value: null, invalid: true };
   }
 });
 
-function dispose() {
-  observer?.disconnect();
-  observer = null;
-  chart?.dispose();
-  chart = null;
-}
-
-async function draw() {
-  dispose();
-  await nextTick();
-  if (!el.value || !option.value.value) return;
-  const themeName = isDark.value ? "agent-shell-dark" : "agent-shell-light";
-  const theme = shell.chartTheme.value(isDark.value);
-  echarts.registerTheme(themeName, theme);
-  const themedOption = chartBrandColors(option.value.value, theme);
-  chart = echarts.init(el.value, themeName);
-  try {
-    chart.setOption(chartReadingLayout(themedOption, el.value.clientHeight, props.presentation), { notMerge: true });
-    drawError.value = false;
-  } catch {
-    drawError.value = true;
-    dispose();
-    return;
-  }
-  observer = new ResizeObserver(() => {
-    chart?.resize();
-    if (chart && el.value) chart.setOption(chartReadingLayout(themedOption, el.value.clientHeight, props.presentation), { notMerge: true });
-  });
-  observer.observe(el.value);
-}
-
-// Theme changes rebuild the instance; a registered theme is read at init time.
-watch([option, isDark], draw, { immediate: true });
-onBeforeUnmount(dispose);
+// An option ECharts cannot draw also shows as invalid; the next file is drawn afresh.
+onErrorCaptured(() => {
+  drawError.value = true;
+  return false;
+});
+watch(text, () => {
+  drawError.value = false;
+});
 </script>
 
 <template>
@@ -71,20 +52,21 @@ onBeforeUnmount(dispose);
     <div v-if="error" class="state error">{{ error }}</div>
     <div v-else-if="text === null" class="state">{{ shell.labels.value.loading }}</div>
     <div v-else-if="option.invalid || drawError" class="state error">{{ shell.labels.value.invalidChart }}</div>
-    <div v-else ref="el" class="chart" role="img" :aria-label="title" />
+    <EChart
+      v-else-if="option.value"
+      :option="option.value"
+      :theme="theme"
+      :height="presentation === 'panel' ? 'min(68vh, 560px)' : 320"
+      role="img"
+      :aria-label="title"
+      @resize="drawnHeight = $event.height"
+    />
   </div>
 </template>
 
 <style scoped>
 .chart-renderer {
   padding: 12px 8px 6px;
-}
-.chart {
-  width: 100%;
-  height: 320px;
-}
-.panel .chart {
-  height: min(68vh, 560px);
 }
 .state {
   padding: 18px;
