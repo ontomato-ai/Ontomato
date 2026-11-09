@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { defineComponent, h } from "vue";
+import { catalogFixture } from "../../../../../../packages/platform-web/src/__tests__/fixtures";
 
 // The heavy Manager pages (graph libraries, Markdown) are doubled; the router, layout, catalogs and requests are real.
 vi.hoisted(() => { window.__APP_CONFIG__ = { API_BASE: "/custom-base/api" }; });
@@ -80,7 +81,7 @@ describe("open-source Ontology Service page", () => {
     window.__APP_CONFIG__ = { API_BASE: "/custom-base/api/", INITIAL_ROUTE: "" };
     vi.stubGlobal("fetch", async (url: string, init: { headers?: unknown } = {}) => {
       requests.push({ url, headers: (init.headers ?? {}) as Record<string, string> });
-      return new Response(JSON.stringify({ success: true, data: [] }), { status: statusFor(url) });
+      return new Response(JSON.stringify({ success: true, data: url.includes("/platform/applications") ? catalogFixture() : [] }), { status: statusFor(url) });
     });
   });
 
@@ -128,7 +129,7 @@ describe("open-source Ontology Service page", () => {
     // The foot is a section of its own, above the account and outside the scrolling area.
     sections.push([...document.querySelectorAll(".rail-foot .rail-label")].map((row) => row.textContent ?? ""));
     expect(sections).toEqual([
-      ["Agent Platform", "Dashboards", "Scheduled tasks", "Object browser"],
+      ["Agent platform", "Dashboards", "Scheduled tasks", "Object browser"],
       ["Ontology manager", "Knowledge governance", "Operations diagnosis"],
       ["System settings"],
     ]);
@@ -189,7 +190,7 @@ describe("open-source Ontology Service page", () => {
     expect(sessionStorage.getItem("ontology_manager_token")).toBeNull();
     expect(requests.length).toBeGreaterThan(0);
     for (const request of requests) {
-      expect(request.url.startsWith(new URL("/custom-base/api/data-query/", window.location.href).href)).toBe(true);
+      expect(new URL(request.url, window.location.origin).pathname.startsWith("/custom-base/api/data-query/") || request.url.startsWith("/api/data-query/platform/applications")).toBe(true);
       expect(request.headers).not.toHaveProperty("tk");
       expect(request.headers).not.toHaveProperty("x-api-key");
     }

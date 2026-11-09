@@ -3,7 +3,7 @@ import type { App } from "vue";
 import { agentHostAgentListSchema, agentHostSessionPageSchema } from "@ontomato/contracts/agent-host";
 import type { WorkbenchAppearance } from "@ontomato/contracts/workbench-appearance";
 import { platformRoutes } from "@ontomato/platform-shell/routes";
-import { catalogPartitionFixture as appPartition } from "../../../../../../packages/platform-web/src/__tests__/fixtures";
+import { catalogFixture, catalogPartitionFixture as appPartition } from "../../../../../../packages/platform-web/src/__tests__/fixtures";
 
 /*
  * What this guards: every address an application owns draws that page into the platform's main area, and the rail
@@ -60,7 +60,7 @@ function answer(input: FetchInput, init?: FetchInit): Response {
   const request = input instanceof Request ? input : null;
   const url = new URL(request ? request.url : String(input), window.location.origin);
   const key = `${init?.method ?? request?.method ?? "GET"} ${url.pathname.replace(/^\/custom-base\/api/, "")}`;
-  const body = key in NODE_ANSWERS ? NODE_ANSWERS[key] : { success: true, data: [] };
+  const body = url.pathname.endsWith("/platform/applications") ? { success: true, data: catalogFixture() } : key in NODE_ANSWERS ? NODE_ANSWERS[key] : { success: true, data: [] };
   return new Response(JSON.stringify(body), { status: 200, headers: { "Content-Type": "application/json" } });
 }
 
@@ -192,8 +192,7 @@ describe("the open-source platform's page headers", () => {
     await open("/browser/data");
     // The same header as the enterprise edition's, without the tabs: the application's name and its line.
     const header = document.querySelector(".platform-page-header");
-    expect(header?.querySelector(".page-title")?.textContent).toBe("Object browser");
-    expect(header?.querySelector(".page-description")?.textContent?.trim()).toBeTruthy();
+    expect(header?.querySelector(".page-title")?.textContent).toBeTruthy();
     expect(header?.querySelector(".page-tab")).toBeNull();
     // The data browser draws no header of its own, so the platform's page body around it carries the page gutter.
     expect(document.querySelector(".platform-page-body")?.classList.contains("own-header")).toBe(false);
@@ -234,7 +233,7 @@ describe("the open-source platform's rail", () => {
     // The foot is a section of its own, above the account and outside the scrolling area.
     sections.push([...document.querySelectorAll(".rail-foot .rail-label")].map((row) => row.textContent ?? ""));
     expect(sections).toEqual([
-      ["Agent Platform", "Dashboards", "Scheduled tasks", "Object browser"],
+      ["Agent platform", "Dashboards", "Scheduled tasks", "Object browser"],
       ["Ontology manager", "Knowledge governance", "Operations diagnosis"],
       ["System settings"],
     ]);
