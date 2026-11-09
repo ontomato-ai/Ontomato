@@ -1,4 +1,4 @@
-import { getOutputLanguageInstruction } from "../../i18n";
+import { getOutputLanguageInstruction, resolveLocale } from "../../i18n";
 import { randomUUID } from "node:crypto";
 import { codeLimitsSchema } from "@ontomato/contracts/agent-runtime-code";
 import type {
@@ -42,7 +42,7 @@ export function runDefinition(
   externalMcp: RuntimeStartRunRequest["definition"]["externalMcp"] = [],
 ): RuntimeStartRunRequest["definition"] {
   return {
-    systemPrompt: systemPrompt + "\n\n" + getOutputLanguageInstruction(locale),
+    systemPrompt: systemPrompt + "\n\n" + getOutputLanguageInstruction(resolveLocale(locale)),
     modelId,
     skills,
     externalMcp,
@@ -158,7 +158,7 @@ export async function startAuxiliary(input: AuxiliaryInput) {
   );
   await client.createSession(sessionId);
   await client.start(sessionId, runId, {
-    language: credentials.locale ?? "en",
+    language: resolveLocale(credentials.locale),
     input: { role: "user", content: input.message, timestamp: Date.now() },
     definition: runDefinition(
       input.systemPrompt,

@@ -9,8 +9,9 @@ import type { SkillMeta } from "../../core/skills/types";
 import { loadSkillContent, resolveSkillPackageFile } from "../../core/skills/discovery/loader";
 import { readSkillPackage } from "../../core/skills/package";
 import { InvalidSkillPackageError, normalizeSkillPackagePath, parseSkillMarkdown, readSkillMarkdown, readSkillLabels,
-  SkillIdSchema, writeSkillMarkdown } from "../../core/skills/manifest";
-import { publicSkillLabelsPath } from "../../content/layout";
+  SkillIdSchema, writeSkillMarkdown, parseSkillMarkdownFrontmatter } from "../../core/skills/manifest";
+import { publicSkillLabelsPath, publicSkillTranslationsRoot, publicSkillsRoot } from "../../content/layout";
+import { resolveLocale } from "../../i18n";
 import { createLogger } from "../../logging/logger";
 import { HttpError } from "../../utils/errors";
 import { withDomainSkills } from "./operations";
@@ -55,7 +56,7 @@ console.log("outputs/result.json");
 class SkillManager {
   private info(skill: SkillMeta, registry: SkillRegistryManager, domainId: string, locale?: string): SkillInfo {
     const labelPath = publicSkillLabelsPath();
-    const labels = skill.isPublic && locale?.toLowerCase().startsWith("zh") && labelPath
+    const labels = skill.isPublic && labelPath && resolveLocale(locale).toLowerCase().startsWith("zh")
       ? readSkillLabels(labelPath)[skill.id] : undefined;
     const m = skill.manifest;
     return { id: skill.id, skill: skillReference(skill, domainId), type: m.type, category: m.category,
@@ -193,8 +194,16 @@ class SkillManager {
     return skill.manifest.scriptPath
       ? fs.readFileSync(await resolveSkillPackageFile(skill, skill.manifest.scriptPath), "utf8") : null;
   }
-  async getSkillContent(domainId: string, id: string, _locale?: string) {
-    return loadSkillContent(requireSkill(await skillRegistryManager.forDomain(domainId), id));
+  async getSkillContent(domainId: string, id: string, locale?: string) {
+    const skill = requireSkill(await skillRegistryManager.forDomain(domainId), id);
+    const translations = publicSkillTranslationsRoot();
+    if (skill.isPublic && translations) {
+      const relative = path.relative(publicSkillsRoot(), skill.skillMdPath);
+      const translated = path.join(translations, resolveLocale(locale), relative);
+      if (fs.existsSync(translated))
+        return parseSkillMarkdownFrontmatter(fs.readFileSync(translated, "utf8"))?.content ?? null;
+    }
+    return loadSkillContent(skill);
   }
   async exportSkill(domainId: string, id: string): Promise<Buffer> {
     const skill = requireSkill(await skillRegistryManager.forDomain(domainId), id);

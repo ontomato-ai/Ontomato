@@ -1,3 +1,4 @@
+import { workspaceCommitSchema } from "./workspaces";
 import { runtimeArtifactSchema } from "./agent-runtime-artifacts";
 import { z } from "zod";
 import {
@@ -48,6 +49,7 @@ export const runtimeAgentEventSchema = z.discriminatedUnion("type", [
       status: z.literal("stopped"),
       stopReason: runtimeStopReasonSchema,
       errorMessage: z.string().nullable(),
+      workspaceCommit: workspaceCommitSchema.nullable(),
     })
     .strict(),
   z

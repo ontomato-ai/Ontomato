@@ -14,6 +14,7 @@ import PlatformRail from "./PlatformRail.vue";
 const props = withDefaults(
   defineProps<{
     apps: readonly PlatformApp[];
+    loading?: boolean;
     activeAppId: string | null;
     account: PlatformAccount | null;
     preferences: PlatformPreferences;
@@ -60,6 +61,7 @@ const collapsed = computed({
 <template>
   <div class="platform-shell" :class="{ 'rail-collapsed': collapsed }">
     <PlatformRail
+      :loading="loading"
       :apps="apps"
       :active-app-id="activeAppId"
       :account="account"

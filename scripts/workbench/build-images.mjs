@@ -95,6 +95,12 @@ export async function buildWorkbenchImage(app, args) {
     destination: context,
   });
   copyWorkspace(app, context, record);
+  const sharedSource = app.sources.find((source) => source.root === app.publicRoot);
+  cpSync(
+    join(app.publicRoot, "agent-skills/ontomato-app-builder"),
+    join(context, "workspace", sharedSource.id, "agent-skills/ontomato-app-builder"),
+    { recursive: true },
+  );
   await copyTools(app, context);
   copyLicenses(app, context);
   writeFileSync(

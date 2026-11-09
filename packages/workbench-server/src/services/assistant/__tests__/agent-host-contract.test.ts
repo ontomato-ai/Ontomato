@@ -8,7 +8,7 @@ describe("session row projection", () => {
       id: "11111111-1111-4111-8111-111111111111",
       status: "stopped",
       stopReason: "stop",
-      errorMessage: null,
+      errorMessage: null, workspaceCommit: null,
       finishedAt: "2026-10-30T00:00:01.000Z",
     } as never);
     expect(view).toEqual({
@@ -23,7 +23,7 @@ describe("session row projection", () => {
         title: "Session",
         createdAt: "2026-10-30T00:00:00.000Z",
         updatedAt: "2026-10-30T00:00:00.000Z",
-        latestRun: { ...view, errorMessage: null },
+        latestRun: { ...view, errorMessage: null, workspaceCommit: null },
       }),
     ).toThrow();
   });

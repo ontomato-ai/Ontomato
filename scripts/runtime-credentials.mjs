@@ -18,7 +18,7 @@ export function ensureRuntimeCredentials(root, env) {
   for (const [name, keys] of [
     [
       "agent-runtime.env",
-      ["AGENT_RUNTIME_SERVICE_TOKEN", "AGENT_RUNTIME_ONTOLOGY_TOKEN"],
+      ["AGENT_RUNTIME_SERVICE_TOKEN", "AGENT_RUNTIME_ONTOLOGY_TOKEN", "ONTOMATO_MODEL_RUNTIME_TOKEN"],
     ],
     [
       "ontology-query.env",

@@ -34,7 +34,7 @@ export class WorkspaceGit {
     await this.files();
     await this.git("add", "-A");
     if ((await this.git("diff", "--cached", "--name-only", "-z")).length)
-      await this.git("commit", "-m", message);
+      await this.git("commit", "--allow-empty-message", "-m", message);
     return this.head();
   }
   async resolve(commit: string) {

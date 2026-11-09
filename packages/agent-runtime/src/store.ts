@@ -163,6 +163,12 @@ export class RuntimeStore {
         CREATE INDEX IF NOT EXISTS workspaces_owner_idx ON ${this.table("workspaces")}(host_id,domain_id,owner_id,updated_at,id);
         ALTER TABLE ${this.table("sessions")} ADD COLUMN IF NOT EXISTS workspace_id uuid;
         CREATE INDEX IF NOT EXISTS sessions_workspace_idx ON ${this.table("sessions")}(host_id,domain_id,workspace_id);`);
+      if (!versions.some(row => row.version === 3)) {
+        await c.query(`UPDATE ${this.table("runs")} SET run=run || '{"workspaceCommit":null}'::jsonb WHERE NOT run ? 'workspaceCommit'`);
+        await c.query(`UPDATE ${this.table("events")} SET envelope=jsonb_set(envelope,'{event,workspaceCommit}','null'::jsonb)
+          WHERE envelope->'event'->>'type'='agent_end' AND NOT (envelope->'event') ? 'workspaceCommit'`);
+        await c.query(`INSERT INTO ${this.table("schema_migrations")} VALUES (3)`);
+      }
       // Every per-run and per-session read path needs its own index; without them each read scans the whole table.
       await c.query(`
         CREATE INDEX IF NOT EXISTS messages_run_idx ON ${this.table("messages")}(host_id,domain_id,run_id,seq);
@@ -769,6 +775,7 @@ export class RuntimeStore {
         run.finishedAt = envelope.timestamp;
         run.stopReason = event.stopReason;
         run.errorMessage = event.errorMessage;
+        run.workspaceCommit = event.workspaceCommit;
         await c.query(
           `UPDATE ${this.table("sessions")} SET active_run_id=NULL,updated_at=now() WHERE host_id=$1 AND domain_id=$2 AND id=$3 AND active_run_id=$4`,
           [...values(scope), run.sessionId, runId],
@@ -807,6 +814,7 @@ export class RuntimeStore {
     id: string,
     reason?: RuntimeStopReason,
     errorMessage?: string | null,
+    workspaceCommit?: string | null,
   ) {
     const { run } = await this.run(scope, id);
     let messages = (await this.messages(scope, run.sessionId, this.pool, id)).map((m) => m.message);
@@ -852,6 +860,7 @@ export class RuntimeStore {
       status: "stopped",
       stopReason,
       errorMessage: text,
+      workspaceCommit: workspaceCommit === undefined ? run.workspaceCommit : workspaceCommit,
     });
     return envelope;
   }

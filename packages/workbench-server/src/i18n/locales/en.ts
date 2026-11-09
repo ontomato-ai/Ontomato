@@ -1,4 +1,6 @@
 export const en = {
+  "assistant.default.regular.name": "Assistant",
+  "assistant.default.analysis.name": "Analyst",
   "assistant.default.regular.description": "Ask questions about your data",
   "assistant.default.analysis.description": "Investigate questions and produce reports",
   // Branch labels
@@ -377,6 +379,10 @@ export const en = {
 
   // Scheduled tasks
   "product.name": "Agent Platform",
+  "assistant.skills.report.title": "Analysis report",
+  "assistant.skills.report.description": "Write an evidence-based Markdown report for a business question.",
+  "assistant.skills.analyst.title": "Ontology analyst",
+  "assistant.skills.analyst.description": "Read ontology metadata and ask data questions",
   "mcp.catalog.analysisTitle": "Agent Platform Agents MCP",
   "mcp.catalog.opsTitle": "Agent Platform Ops Agent MCP",
   "mcp.catalog.systemTitle": "Agent Platform MCP",

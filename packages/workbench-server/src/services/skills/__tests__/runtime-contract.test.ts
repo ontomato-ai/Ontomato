@@ -7,6 +7,11 @@ import { installContentLayout } from "../../../content/layout";
 import { readSkillPackage } from "../../../core/skills/package";
 import { standardSkillFrontmatterSchema } from "@ontomato/contracts/agent-runtime-skills";
 import { parse } from "yaml";
+import { configureI18n } from "../../../i18n";
+import { en, enLocaleMeta } from "../../../i18n/locales/en";
+
+configureI18n({ defaultLocale: "en", packs: { en: { messages: en, ...enLocaleMeta } },
+  languageSwitchEnabled: false, appTextLocale: "en" });
 
 const root = await fs.mkdtemp(path.join(os.tmpdir(), "domain-skills-contract-"));
 installContentLayout({ runtimeRoot: root, prompts: [], runtimeResources: [], publicSkillsRoot: path.resolve("skills") });

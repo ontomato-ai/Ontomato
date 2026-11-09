@@ -27,6 +27,7 @@ export interface PlatformShownPage {
 const props = defineProps<{
   /** The applications the account may see, in rail order. */
   apps: readonly PlatformAppDeclaration[];
+  loading?: boolean;
   /** Where the address belongs and what it shows; null on an address that is no page (a conversation). */
   shownPage: PlatformShownPage | null;
   account: PlatformAccount | null;
@@ -95,6 +96,7 @@ const headerShown = computed(
 
 <template>
   <PlatformShell
+    :loading="loading"
     :class="{ 'object-browser-layout': browserWorkspace }"
     :apps="blocked ? [] : railApps"
     :active-app-id="activeAppId"

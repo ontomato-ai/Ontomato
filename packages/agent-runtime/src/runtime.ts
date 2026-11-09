@@ -193,8 +193,8 @@ export class AgentRuntime {
         for (const row of rows) signalUid(Number(row.worker_uid), "SIGKILL");
       }
     }
-    await this.store.recover();
     await this.workspaces.recover();
+    await this.store.recover();
     await mkdir(this.options.root, { recursive: true, mode: 0o711 });
     await chmod(this.options.root, 0o711);
     await this.code.initialize();
@@ -253,6 +253,7 @@ export class AgentRuntime {
         finishedAt: null,
         stopReason: null,
         errorMessage: null,
+        workspaceCommit: null,
         resolvedSkills: skills.map(
           ({ directory: _directory, ...registered }) => registered,
         ),
@@ -705,8 +706,9 @@ export class AgentRuntime {
     failure: string | null,
   ) {
     const { scope, run } = active;
+    let workspaceCommit: string | null = null;
     try {
-      await this.workspaces.saveSession(scope, run.sessionId, run.id);
+      workspaceCommit = await this.workspaces.saveSession(scope, run.sessionId, run.id);
     } catch (error) {
       reason = "error";
       failure = safeMessage(error);
@@ -715,7 +717,7 @@ export class AgentRuntime {
     await this.locked(scope, run.sessionId, async () => {
       active.pending.clear();
       const before = (await this.store.run(scope, run.id)).seq;
-      await this.store.finish(scope, run.id, reason, failure);
+      await this.store.finish(scope, run.id, reason, failure, workspaceCommit);
       for (const envelope of await this.store.events(scope, run.id))
         if (envelope.cursor.seq > before) this.publish(active, envelope);
     });

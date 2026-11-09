@@ -705,7 +705,14 @@ onBeforeUnmount(() => {
 .session-skeleton span {
   height: 12px;
   border-radius: var(--radius-sm);
-  background: var(--el-fill-color);
+  background: color-mix(in srgb, var(--el-text-color-secondary) 15%, transparent);
+  animation: session-pulse 1.4s ease-in-out infinite;
+}
+@keyframes session-pulse {
+  50% { opacity: 0.35; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .session-skeleton span { animation: none; }
 }
 .session-skeleton span:nth-child(2) {
   width: 70%;

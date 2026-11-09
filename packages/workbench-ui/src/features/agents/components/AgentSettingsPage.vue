@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted } from "vue";
+import { computed, onMounted, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import AgentEditor from "./AgentEditor.vue";
 import CapabilityLibrary from "./CapabilityLibrary.vue";
@@ -23,8 +23,8 @@ const emit = defineEmits<{
   /** The editor's capability library button; the host owns the addresses, as for the column's library row. */
   openCapabilities: [];
 }>();
-const { t } = useI18n();
-const { agents, loading, classes, relations, outlineLoading, modelOptions, modelOptionsFailed, ensureLoaded, reloadModelOptions, remember, forget } =
+const { t, locale } = useI18n();
+const { agents, loading, classes, relations, outlineLoading, modelOptions, modelOptionsFailed, ensureLoaded, load, reloadModelOptions, remember, forget } =
   useAgentDefinitions();
 
 const shown = computed(() => (props.agentId ? agents.value.find((agent) => agent.id === props.agentId) ?? null : agents.value[0] ?? null));
@@ -43,6 +43,7 @@ function deleted(id: string) {
 onMounted(() => {
   void ensureLoaded();
 });
+watch(locale, () => { void load(); });
 </script>
 
 <template>

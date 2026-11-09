@@ -1,3 +1,4 @@
+import { APP_BUILDER, APP_BUILDER_KIND } from "../app-builder/definition";
 import type { ModelSelection } from "@ontomato/contracts/model-settings";
 import { lockSessionClaim, assertUnclaimedSession } from "../agent-host/session-claim";
 import { randomUUID, createHash } from "node:crypto";
@@ -58,7 +59,7 @@ export const assistantStore = {
     if (
       !(
         await db().query(
-          `SELECT 1 FROM ${table("assistant_agents")} WHERE domain_id=$1 LIMIT 1`,
+          `SELECT 1 FROM ${table("assistant_agents")} WHERE domain_id=$1 AND kind<>'app-builder' LIMIT 1`,
           [domainId],
         )
       ).rowCount
@@ -91,10 +92,27 @@ export const assistantStore = {
     }
     return (
       await db().query(
-        `SELECT * FROM ${table("assistant_agents")} WHERE domain_id=$1 ORDER BY sort_order,name,id`,
+        `SELECT * FROM ${table("assistant_agents")} WHERE domain_id=$1 AND kind<>'app-builder' ORDER BY sort_order,name,id`,
         [domainId],
       )
     ).rows;
+  },
+  async appBuilder(domainId: string): Promise<AgentRow> {
+    await db().query(
+      `INSERT INTO ${table("assistant_agents")} (id,domain_id,kind,name,description,system_prompt,model_selection,skills,sort_order)
+       VALUES($1,$2,$3,$4,$5,NULL,$6,$7,2) ON CONFLICT(domain_id,kind) DO NOTHING`,
+      [randomUUID(), domainId, APP_BUILDER.kind, APP_BUILDER.name, APP_BUILDER.description,
+        JSON.stringify({ modelId: null }), JSON.stringify(APP_BUILDER.skills)],
+    );
+    return (await db().query(`SELECT * FROM ${table("assistant_agents")} WHERE domain_id=$1 AND kind=$2`, [domainId, APP_BUILDER_KIND])).rows[0];
+  },
+  async isBuilderRun(id: string, owner: AssistantOwner): Promise<boolean> {
+    const rows = (await db().query(
+      `SELECT a.kind FROM ${table("assistant_turns")} t JOIN ${table("assistant_sessions")} s ON s.id=t.session_id
+       JOIN ${table("assistant_agents")} a ON a.id=s.agent_id WHERE t.id=$1 AND s.domain_id=$2 AND s.owner_id=$3`,
+      [id, owner.domainId, owner.userId],
+    )).rows;
+    return rows.some(row => row.kind === APP_BUILDER_KIND);
   },
   async agent(id: string, owner: AssistantOwner): Promise<AgentRow> {
     const r = await db().query(
@@ -145,6 +163,8 @@ export const assistantStore = {
     }
     await assertUnclaimedSession(tx, id, owner);
     const a = await this.agent(agentId, owner);
+    if (a.kind === APP_BUILDER_KIND && !workspaceId)
+      throw new HttpError(400, "App builder conversations require a workspace", "INVALID_REQUEST");
     if (!a.enabled)
       throw new HttpError(409, "Agent disabled", "AGENT_DISABLED");
     const r = await tx.query(

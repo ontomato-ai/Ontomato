@@ -1,9 +1,7 @@
+import { prepareAnalystRun } from "./prepare";
+import { prepareAppBuilderRun } from "../app-builder/prepare";
 import type { SessionHistoryQuery } from "@ontomato/contracts/session-history";
-import { assistantOntologyContext } from "./context";
-import { assistantDescription } from "./labels";
-import { actionCatalogue } from "./actions";
-import { assistantActionContext } from "./action-context";
-import { ASSISTANT_INTERACTION_CONTEXT } from "./interaction-context";
+import { assistantDescription, assistantName } from "./labels";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import {
@@ -14,7 +12,6 @@ import {
   agentHostSessionSchema,
   agentHostAgentSchema,
 } from "@ontomato/contracts/agent-host";
-import { ARTIFACT_MARKDOWN_PROMPT } from "@ontomato/contracts/agent-artifact-markdown";
 import {
   runtimeArtifactSchema,
   type RuntimeArtifact,
@@ -23,23 +20,17 @@ import {
   datasetPayloadSchema,
 } from "@ontomato/contracts/data-retrieval";
 import { RuntimeClient } from "../../infrastructure/agent-runtime/client";
-import { prepareAssistantSkills } from "./skills";
 import { withDomainSkills } from "../skills/operations";
 import {
   getPostgresPool,
   qualifiedTable as table,
 } from "../../infrastructure/postgres";
-import { getQueryTimeoutMs } from "../../config/query-settings";
 import { assistantStore, type AssistantOwner, type SessionRow, type TurnRow } from "./store";
 import {
   messageText,
-  runDefinition,
-  userSkillEnvironment,
   type AssistantCredentials,
 } from "../../platform/agent-runtime/runtime";
 import { OntologyRetrievalClient } from "./ontology-retrieval";
-import { effectiveSystemPrompt } from "./prompts";
-import { recentUserMessages } from "./user-quotes";
 import { transaction } from "../../infrastructure/postgres-transaction";
 import { HttpError } from "../../utils/errors";
 import { createLogger } from "../../logging/logger";
@@ -64,12 +55,16 @@ const sessionView = (s: SessionRow, latestRun: LatestRun | null) =>
   });
 export { sessionView };
 export const assistantService = {
+  async isAppBuilder(owner: AssistantOwner, input: { agentId: string } | { sessionId: string }) {
+    const agentId = "agentId" in input ? input.agentId : (await assistantStore.session(input.sessionId, owner)).agent_id;
+    return (await assistantStore.agent(agentId, owner)).kind === "app-builder";
+  },
   async agents(owner: AssistantOwner, locale?: string) {
     return {
       agents: (await assistantStore.agents(owner.domainId, locale)).map((a) =>
         agentHostAgentSchema.parse({
           id: a.id,
-          name: a.name,
+          name: assistantName(a, locale),
           description: assistantDescription(a, locale),
           icon: a.icon ?? null,
           enabled: a.enabled,
@@ -105,7 +100,8 @@ export const assistantService = {
   async list(
     owner: AssistantOwner,
     input: {
-      agentId: string;
+      agentId?: string;
+      workspaceId?: string;
       limit: number;
       cursor?: string;
     },
@@ -117,25 +113,27 @@ export const assistantService = {
           .object({
             updatedAt: z.string().datetime(),
             id: z.string().uuid(),
-            agentId: z.string(),
+            agentId: z.string().optional(),
+            workspaceId: z.string().optional(),
           })
           .parse(JSON.parse(Buffer.from(input.cursor, "base64url").toString()));
       } catch {
         throw new HttpError(400, "Invalid session cursor", "INVALID_REQUEST");
       }
     }
-    if (cursor && cursor.agentId !== input.agentId)
+    if (cursor && (cursor.agentId !== input.agentId || cursor.workspaceId !== input.workspaceId))
       throw new HttpError(400, "Cursor filters differ");
     const rows = (
       await db().query(
-        `SELECT * FROM ${table("assistant_sessions")} WHERE domain_id=$1 AND owner_id=$2 AND agent_id=$3 AND ($4::timestamptz IS NULL OR (updated_at,id)<($4,$5::uuid)) ORDER BY updated_at DESC,id DESC LIMIT $6`,
+        `SELECT * FROM ${table("assistant_sessions")} WHERE domain_id=$1 AND owner_id=$2 AND ($3::uuid IS NULL OR agent_id=$3) AND ($7::uuid IS NULL OR workspace_id=$7) AND ($4::timestamptz IS NULL OR (updated_at,id)<($4,$5::uuid)) ORDER BY updated_at DESC,id DESC LIMIT $6`,
         [
           owner.domainId,
           owner.userId,
-          input.agentId,
+          input.agentId ?? null,
           cursor?.updatedAt ?? null,
           cursor?.id ?? null,
           input.limit + 1,
+          input.workspaceId ?? null,
         ],
       )
     ).rows as SessionRow[];
@@ -163,6 +161,7 @@ export const assistantService = {
                 updatedAt: new Date(last.updated_at).toISOString(),
                 id: last.id,
                 agentId: input.agentId,
+                workspaceId: input.workspaceId,
               }),
             ).toString("base64url")
           : null,
@@ -217,6 +216,7 @@ export const assistantService = {
    * same retrieval, so keep one link per retrieval pointing at its latest run.
    */
   async withRetrievals<T extends { run: { id: string } }>(s: T, owner: AssistantOwner): Promise<T> {
+    if (await assistantStore.isBuilderRun(s.run.id, owner)) return s;
     try {
       const links = await new OntologyRetrievalClient(owner, s.run.id).links();
       if (links.length === 0) return s;
@@ -231,7 +231,7 @@ export const assistantService = {
   },
   /** What a turn owes after it ends: closing its child retrievals in the ontology service. Safe to repeat. */
   async settleTurn(id: string, owner: AssistantOwner, credentials: AssistantCredentials = {}) {
-    await this.stopChildren(id, owner, credentials);
+    if (!await assistantStore.isBuilderRun(id, owner)) await this.stopChildren(id, owner, credentials);
     await assistantStore.settled(id);
   },
   async stopChildren(
@@ -270,73 +270,11 @@ export const assistantService = {
         if (!(e instanceof HttpError && e.status === 404)) throw e;
       }
     }
-    let ontologyContext: string;
-    let actionContext = "";
-    try {
-      ontologyContext = await assistantOntologyContext(
-        a,
-        credentials,
-      );
-      try {
-        const actions = await actionCatalogue(owner, credentials);
-        const executions = (await db().query(`SELECT action_id,status,parameters,result,error FROM ${table("assistant_action_executions")} WHERE session_id=$1 AND domain_id=$2 AND owner_id=$3 ORDER BY created_at DESC LIMIT 20`,
-          [sessionId, owner.domainId, owner.userId])).rows;
-        actionContext = assistantActionContext(actions, executions);
-      } catch (error) {
-        logger.warn("Action discovery unavailable for assistant turn", error);
-      }
-    } catch (error) {
-      await this.settleTurn(id, owner, credentials);
-      throw error;
-    }
     try {
       await withDomainSkills(owner.domainId, async () => {
-        const skills = await prepareAssistantSkills(owner.domainId, a.skills);
-        const skillEnvironment = userSkillEnvironment(credentials);
-        const continuationIds = new Set<string>();
-        for (const previous of await assistantStore.turns(sessionId)) {
-          if (previous.id === id) continue;
-          for (const link of await new OntologyRetrievalClient(owner, previous.retrieval_scope_id).links()) continuationIds.add(link.retrievalId);
-        }
-        const userMessages = recentUserMessages(
-          (await client.session(sessionId)).messages,
-          id,
-          message,
-          new Date(turn.created_at).getTime(),
-        );
-        await new OntologyRetrievalClient(owner, turn.retrieval_scope_id).open({
-          classNames: turn.class_names,
-          continuationIds: [...continuationIds].sort(),
-          deadlineAt: new Date(new Date(turn.created_at).getTime() + getQueryTimeoutMs()).toISOString(),
-          recentUserMessages: userMessages,
-        }, credentials);
-        await client.start(sessionId, id, {
-          language: credentials.locale ?? "en",
-          input: {
-            role: "user",
-            content: message,
-            timestamp: new Date(turn.created_at).getTime(),
-          },
-          definition: { agentId: session.agent_id, ...runDefinition(
-            effectiveSystemPrompt(a) +
-              "\n\nInitial ontology context:\n" +
-              ontologyContext +
-              "\n\n" +
-               ARTIFACT_MARKDOWN_PROMPT + actionContext + ASSISTANT_INTERACTION_CONTEXT,
-            a.model_selection.modelId,
-            skills,
-            credentials.locale,
-            a.enabled_mcp_service_ids.map((serviceId) => ({ id: serviceId })),
-          ) },
-          environment: {
-            values: {
-              ...skillEnvironment.values,
-              ONTOMATO_ASSISTANT_SESSION_ID: sessionId,
-              ONTOMATO_RETRIEVAL_CALLER_ID: turn.retrieval_scope_id,
-            },
-            secrets: skillEnvironment.secrets,
-          },
-        });
+        const prepare = a.kind === "app-builder" ? prepareAppBuilderRun : prepareAnalystRun;
+        const request = await prepare({ a, session, turn, message, owner, credentials });
+        await client.start(sessionId, id, request);
       });
     } catch (error) {
       try {
@@ -456,7 +394,8 @@ export const assistantService = {
     }
     if (snapshot?.latestRun?.run.status === "running")
       throw new HttpError(409, "Conversation is running", "SESSION_BUSY");
-    const scopes = (await db().query(`SELECT retrieval_scope_id FROM ${table("assistant_turns")} WHERE session_id=$1`, [sessionId])).rows;
+    const agent = await assistantStore.agent((await assistantStore.session(sessionId, owner)).agent_id, owner);
+    const scopes = agent.kind === "app-builder" ? [] : (await db().query(`SELECT retrieval_scope_id FROM ${table("assistant_turns")} WHERE session_id=$1`, [sessionId])).rows;
     const removed = new Set<string>();
     for (const scope of scopes) {
       const ontology = new OntologyRetrievalClient(owner, scope.retrieval_scope_id);

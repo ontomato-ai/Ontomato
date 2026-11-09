@@ -46,7 +46,7 @@
   --ms-radius: var(--radius-md);
   --link-color: var(--brand-link);
   --table-border: var(--el-border-color);
-  --table-header-bg: var(--el-fill-color);
+  --table-header-bg: var(--el-fill-color-lighter);
   --inline-code-bg: var(--el-fill-color);
   --inline-code-fg: var(--el-text-color-primary);
   --inline-code-border: transparent;

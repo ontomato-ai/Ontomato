@@ -14,11 +14,12 @@ import { resolveAssistantSkillReferences } from "./skill-references";
 import { validateAssistantSkills } from "./skills";
 import { withDomainSkills } from "../skills/operations";
 import { effectiveSystemPrompt, storedSystemPrompt } from "./prompts";
-const view = (a: AgentRow) =>
+import { assistantName, assistantDescription } from "./labels";
+const view = (a: AgentRow, locale?: string) =>
   assistantAgentDefinitionSchema.parse({
     id: a.id,
-    name: a.name,
-    description: a.description,
+    name: assistantName(a, locale),
+    description: assistantDescription(a, locale),
     icon: a.icon ?? null,
     enabled: a.enabled,
     modelSelection: a.model_selection,
@@ -26,30 +27,36 @@ const view = (a: AgentRow) =>
     classNames: a.class_names,
     enabledMcpServiceIds: a.enabled_mcp_service_ids,
     sortOrder: a.sort_order,
-    systemPrompt: effectiveSystemPrompt(a),
+    systemPrompt: effectiveSystemPrompt(a, locale),
   });
-export async function readAgentDefinition(id: string, owner: AssistantOwner) {
-  return view(await assistantStore.agent(id, owner));
+async function editableAgent(id: string, owner: AssistantOwner) {
+  const agent = await assistantStore.agent(id, owner);
+  if (agent.kind === "app-builder") throw new HttpError(404, "Agent definition not found", "NOT_FOUND");
+  return agent;
+}
+export async function readAgentDefinition(id: string, owner: AssistantOwner, locale?: string) {
+  return view(await editableAgent(id, owner), locale);
 }
 export async function saveAgentDefinition(
   id: string,
   input: AssistantAgentInput,
   owner: AssistantOwner,
+  locale?: string,
 ) {
   return withDomainSkills(owner.domainId, async () => {
     await validateModelSelection(owner.domainId, input.modelSelection);
     const skills = resolveAssistantSkillReferences(input.skills, owner.domainId);
     await validateAssistantSkills(owner.domainId, skills);
-    const agent = await assistantStore.agent(id, owner);
+    const agent = await editableAgent(id, owner);
     await getPostgresPool().query(
       `UPDATE ${t("assistant_agents")} SET name=$3,description=$4,enabled=$5,system_prompt=$6,model_selection=$7,model_reference_migrated=true,skills=$8,icon=$9,class_names=$10,enabled_mcp_service_ids=$11,sort_order=$12 WHERE id=$1 AND domain_id=$2`,
       [
         id,
         owner.domainId,
-        input.name,
-        input.description,
+        input.name === assistantName(agent, locale) ? agent.name : input.name,
+        input.description === assistantDescription(agent, locale) ? agent.description : input.description,
         input.enabled,
-        storedSystemPrompt(agent.kind, input.systemPrompt),
+        storedSystemPrompt(agent.kind, input.systemPrompt, locale),
         JSON.stringify(input.modelSelection),
         JSON.stringify(skills),
         input.icon,
@@ -58,7 +65,7 @@ export async function saveAgentDefinition(
         input.sortOrder,
       ],
     );
-    return readAgentDefinition(id, owner);
+    return readAgentDefinition(id, owner, locale);
   });
 }
 export async function createAgentDefinition(
@@ -118,11 +125,11 @@ export async function createAgentDefinition(
   });
 }
 
-export async function listAgentDefinitions(owner: AssistantOwner) {
-  return { agents: (await assistantStore.agents(owner.domainId)).map(view) };
+export async function listAgentDefinitions(owner: AssistantOwner, locale?: string) {
+  return { agents: (await assistantStore.agents(owner.domainId)).map((a) => view(a, locale)) };
 }
 export async function deleteAgentDefinition(id: string, owner: AssistantOwner) {
-  await assistantStore.agent(id, owner);
+  await editableAgent(id, owner);
   await getPostgresPool().query(
     `DELETE FROM ${t("assistant_agents")} WHERE id=$1 AND domain_id=$2`,
     [id, owner.domainId],

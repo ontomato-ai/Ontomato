@@ -15,6 +15,10 @@ test("dev shares a persistent credential, keeps data in the calling checkout and
   const first = runtimeEnvironment(product, {});
   const second = runtimeEnvironment(product, {});
   assert.equal(first.AGENT_RUNTIME_SERVICE_TOKEN, second.AGENT_RUNTIME_SERVICE_TOKEN);
+  assert.ok(first.ONTOMATO_MODEL_RUNTIME_TOKEN);
+  assert.equal(first.ONTOMATO_MODEL_RUNTIME_TOKEN, second.ONTOMATO_MODEL_RUNTIME_TOKEN);
+  assert.equal(configuration("server", product, first).env.ONTOMATO_MODEL_RUNTIME_TOKEN,
+    configuration("runtime", product, first).env.ONTOMATO_MODEL_RUNTIME_TOKEN);
   assert.equal(JSON.parse(first.AGENT_RUNTIME_HOSTS)[0].token, first.AGENT_RUNTIME_SERVICE_TOKEN);
   assert.equal(first.AGENT_RUNTIME_DATABASE, "fixture_database");
   assert.equal(first.AGENT_RUNTIME_URL, "http://127.0.0.1:3131");

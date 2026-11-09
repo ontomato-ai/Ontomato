@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from "vue";
+import { computed, onMounted, ref, watch } from "vue";
 import { PlatformTabs } from "@ontomato/platform-shell";
 import { ElMessage, ElMessageBox } from "element-plus";
 import { useI18n } from "vue-i18n";
@@ -68,6 +68,11 @@ function toForm(agent: AssistantAgentDefinition | null): Form {
 const form = ref<Form>(toForm(props.agent));
 const baseline = ref(JSON.stringify(form.value));
 const dirty = computed(() => JSON.stringify(form.value) !== baseline.value);
+watch(() => props.agent, (agent) => {
+  if (dirty.value) return;
+  form.value = toForm(agent);
+  baseline.value = JSON.stringify(form.value);
+});
 const saving = ref(false);
 const skillsReady = ref(false);
 const promptPreview = ref(false);

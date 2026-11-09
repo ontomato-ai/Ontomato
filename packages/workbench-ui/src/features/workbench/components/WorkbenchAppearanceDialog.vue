@@ -116,7 +116,7 @@ async function save() {
         <fieldset :disabled="saving">
           <p class="appearance-hint">{{ t("appearance.defaultHint") }}</p>
           <div class="brand-preview">
-            <img :src="draft.brand.logo || defaultLogo" alt="Logo" />
+            <img v-if="draft.brand.logo || defaultLogo" :src="draft.brand.logo || defaultLogo" alt="Logo" />
             <div>
               <strong>{{ draft.brand.name.trim() || defaultBrandName }}</strong>
               <small v-if="draft.brand.subtitle.trim()">{{ draft.brand.subtitle.trim() }}</small>

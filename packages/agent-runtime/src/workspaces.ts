@@ -49,10 +49,10 @@ export class Workspaces {
       return result;
     });
   }
-  async replace(scope: Scope, owner: string, id: string, files: WorkspaceFile[]) {
+  async replace(scope: Scope, owner: string, id: string, files: WorkspaceFile[], message: string) {
     return this.write(scope, owner, id, async (git, uid) => {
       await git.replace(files, this.policy.development ? undefined : uid);
-      return { commit: await git.commit("Import source tree") };
+      return { commit: await git.commit(message) };
     });
   }
   async restore(scope: Scope, owner: string, id: string, commit: string) {
@@ -74,10 +74,25 @@ export class Workspaces {
   }
   async saveSession(scope: Scope, sessionId: string, runId: string) {
     const session = await this.store.session(scope, sessionId);
-    if (session.workspaceId) await this.git(scope, session.workspaceId).commit(`Save run ${runId}`);
+    if (!session.workspaceId) return null;
+    const input = (await this.store.messages(scope, sessionId, this.store.pool, runId))
+      .find(record => record.message.role === "user")!.message;
+    const text = typeof input.content === "string" ? input.content
+      : input.content.filter(part => part.type === "text").map(part => part.text).join("\n");
+    const message = text.split(/\r?\n/, 1)[0].trim().slice(0, 200);
+    const git = this.git(scope, session.workspaceId);
+    const before = await git.head();
+    const after = await git.commit(message);
+    return after === before ? null : after;
   }
   async recover() {
-    const rows = (await this.store.pool.query(`SELECT * FROM ${this.store.table("workspaces")} WHERE active_run_id IS NULL`)).rows;
-    for (const row of rows) await this.git({ hostId: row.host_id, domainId: row.domain_id }, row.id).commit("Save changes after runtime restart");
+    const rows = (await this.store.pool.query(`SELECT * FROM ${this.store.table("workspaces")} WHERE active_run_id IS NOT NULL`)).rows;
+    for (const row of rows) {
+      const scope = { hostId: row.host_id, domainId: row.domain_id };
+      const { run } = await this.store.run(scope, row.active_run_id);
+      const commit = await this.saveSession(scope, run.sessionId, run.id);
+      await this.store.pool.query(`UPDATE ${this.store.table("runs")} SET run=jsonb_set(run,'{workspaceCommit}',$4::jsonb) WHERE host_id=$1 AND domain_id=$2 AND id=$3`,
+        [scope.hostId, scope.domainId, run.id, JSON.stringify(commit)]);
+    }
   }
 }

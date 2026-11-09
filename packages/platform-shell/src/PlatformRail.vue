@@ -16,6 +16,7 @@ import PlatformAccountMenu from "./PlatformAccountMenu.vue";
  */
 const props = defineProps<{
   apps: readonly PlatformApp[];
+  loading?: boolean;
   activeAppId: string | null;
   account: PlatformAccount | null;
   preferences: PlatformPreferences;
@@ -116,6 +117,9 @@ onBeforeUnmount(() => document.removeEventListener("pointerdown", onDocumentPoin
     </div>
 
     <div class="rail-scroll">
+      <div v-if="loading" class="rail-skeleton" aria-busy="true" :aria-label="labels.applications">
+        <span v-for="item in 6" :key="item" />
+      </div>
       <template v-for="(section, index) in scrolling" :key="index">
         <div v-if="index > 0" class="rail-divider" aria-hidden="true" />
         <ul class="rail-section">
@@ -283,6 +287,24 @@ onBeforeUnmount(() => document.removeEventListener("pointerdown", onDocumentPoin
 </template>
 
 <style scoped>
+.rail-skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 12px;
+}
+.rail-skeleton span {
+  height: 28px;
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--el-text-color-secondary) 15%, transparent);
+  animation: rail-pulse 1.4s ease-in-out infinite;
+}
+@keyframes rail-pulse {
+  50% { opacity: 0.35; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .rail-skeleton span { animation: none; }
+}
 /*
  * The rail is the ground the application sits on: `rail` in light mode the darkest band, in dark mode the lightest. It
  * draws no divider against the application — the application's own hairline does that — and only the sections, the
