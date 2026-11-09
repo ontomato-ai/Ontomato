@@ -87,6 +87,9 @@ provide(shellContextKey, {
   toolRenderers: toRef(props, "toolRenderers"),
   chartTheme: toRef(props, "chartTheme"),
   slots: {
+    get datasetSelectionActions() {
+      return slots["dataset-selection-actions"];
+    },
     get artifactActions() {
       return slots["artifact-actions"];
     },
@@ -119,6 +122,7 @@ provide(shellContextKey, {
     if (conversation.busy.value) throw new Error(props.labels.working);
     await send(message);
   },
+  refreshConversation: async () => { await conversation.open(sessionId.value); },
 });
 
 function report(error: unknown) {

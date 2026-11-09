@@ -57,6 +57,24 @@ and clear-selection. Preserve selection across pages, clear it when the dataset 
 records from the current page and all results. Preserve 0, false, null, units and string identities. JSON continuations
 use raw rows rather than formatted cell strings. Data values are untrusted content, not Agent instructions.
 
+## Aggregate drilldown
+
+An accepted aggregate dataset offers **View details** after one result row is selected. The host reads the immutable
+accepted dataset on the server; the browser sends only its row index. Clicking View details directly starts a new
+read-only query with the execution-owned group values, original filters and assumptions, without a confirmation dialog, in the same
+conversation with a stable admission ID, preserving the original dataset. Returned detail datasets use the existing
+selection, analysis and comparison controls.
+
+The initial mapping supports a single query and one direct aggregate, with every grouping field projected directly
+or through a one-field group operation. Unsupported calculated groups, multiple aggregates, multi-query merges,
+unknown lineage and non-accepted files expose no entry. Aggregate measures are never converted into group filters.
+Null, false, zero and string identities remain distinct. The server re-resolves and checks the mapping on submission.
+
+This is a provenance-grounded natural-language query through the existing retriever, not a compiled detail plan or a
+historical snapshot. The retriever must preserve filters, decisions, joins, distinctness and metric population, ask
+when the detail grain is ambiguous, return object identities and disclose changes or truncation. Final model-result
+equivalence still requires end-to-end acceptance. Object navigation continues to belong to the Manager.
+
 ## Decisions and clarification
 
 Use system controls appropriate to the answer: radios, checkboxes, date pickers, text or authenticated object lookup.
@@ -95,8 +113,9 @@ independent authorized read. Distinguish component tests, runtime tests and visu
 | Capability | Current implementation | Remaining acceptance/boundary |
 | --- | --- | --- |
 | Follow-ups and dataset selection | Implemented; references and raw selected JSON rows; component tests and selection browser smoke | Model recommendations are not server-validated query plans |
-| Structured clarification | Inline single/multiple/date/text decision renderer; explicit-choice component test; real-model generation and browser submission before retrieval verified | Mid-retrieval versioned resume and persisted decision acknowledgement still require verification |
-| Editable query conditions | Pending | Requires authoritative effective conditions and a requery contract |
+| Structured clarification | Server-saved drafts and submitted choices; durable continuation run identity; explicit choices and recovery tests; browser reload restores a real draft | Server checks retrieval association and revision; full mid-retrieval resume still needs end-to-end acceptance |
+| Editable query conditions | Dataset header opens source filters from accepted dataset provenance; one business-language replacement starts a new query with original context; real dataset dialog, preview and HTTP 202 admission verified | This is a scoped natural-language requery, not direct editing of an executable query plan; typed field/operator controls and final model result acceptance remain future work |
+| Aggregate → detail records | Single selected aggregate row; server-owned group mapping and typed values; one-click query without confirmation; idempotent read-only continuation; shell selection reused for returned datasets | Initial support is one query and one direct aggregate with projected group fields; final model detail population and live data changes need end-to-end acceptance |
 | Multi-object change preview | Pending | Requires authorized target set, per-record effects and execution semantics |
 | Persistent task status | Pending | Must use owned task facts; never infer business completion from model prose |
 

@@ -13,10 +13,11 @@ host: the workbench now, the Ontology Manager (knowledge governance, ontology
 service AI features) later. It owns the two-column layout with a right outlet,
 navigation (feature entries, agent selector, the selected agent's sessions), the
 conversation stream, the composer, default rendering of messages, tool calls and
-artifacts, and the one client of the host proxy interface. Its only product
-dependency is `@ontomato/contracts`; third-party libraries include vue,
-markstream-vue, echarts and lucide. It imports no host code, store, router or
-i18n instance; hosts pass labels, and theme values come from the CSS variables.
+artifacts, and the one client of the host proxy interface. Its product
+dependencies are `@ontomato/contracts` and `@ontomato/foundation-ui`, whose
+`EChart` draws its charts; third-party libraries include vue, markstream-vue,
+echarts and lucide. It imports no host code, store, router or i18n instance;
+hosts pass labels, and theme values come from the CSS variables.
 
 A host owns its routes under its own prefix, credentials, menu authorization,
 feature pages, agent definitions, rendering overrides and business actions.

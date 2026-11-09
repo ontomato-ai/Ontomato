@@ -5,6 +5,8 @@ import { readAssistantHistory } from "./evidence";
 import { renderChartHtmlToDataUrl } from "../analysis-agent/delivery/chart-renderer";
 import { generatePpt } from "../analysis-agent/delivery/ppt-generator";
 import { HttpError } from "../../utils/errors";
+import { chartBrandColors } from "@ontomato/contracts/chart-presentation";
+import { exportChartTheme } from "../chart-theme";
 /** Resolve file references from the owning run before passing content to existing export renderers. */
 export async function exportMarkdown(
   sessionId: string,
@@ -28,7 +30,7 @@ export async function exportMarkdown(
     const bytes = await assistantService.content(sessionId, a.id, owner);
     let rendered: string;
     if (a.path.endsWith(".chart.json")) {
-      const option = JSON.stringify(JSON.parse(bytes.toString())).replaceAll(
+      const option = JSON.stringify(chartBrandColors(JSON.parse(bytes.toString()), exportChartTheme())).replaceAll(
         "<",
         "\\u003c",
       );

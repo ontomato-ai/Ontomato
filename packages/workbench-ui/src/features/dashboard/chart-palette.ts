@@ -32,7 +32,7 @@ export function chartPalette(brand: BrandSource, mode: BrandMode): ChartPalette 
     line: c.line,
     surface: c.surface,
     sunken: c.sunken,
-    sequential: [0.9, 0.7, 0.5, 0.25, 0].map((weight) => mix(c.primary, c.surface, weight)).concat(mix(c.primary, c.ink, 0.35)),
+    sequential: brand.datavizLabeled ? [brand.dataviz[mode][7], brand.dataviz[mode][0]] : [0.9, 0.7, 0.5, 0.25, 0].map((weight) => mix(c.primary, c.surface, weight)).concat(mix(c.primary, c.ink, 0.35)),
     primaryRgb: rgbTriplet(c.primary),
   };
 }

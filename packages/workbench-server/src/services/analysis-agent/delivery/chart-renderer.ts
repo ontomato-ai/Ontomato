@@ -2,6 +2,8 @@ import { echartDir } from "../../../content/layout";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { getBrowser } from "./browser";
+import { themedChartHtml } from "@ontomato/contracts/chart-presentation";
+import { exportChartTheme } from "../../chart-theme";
 
 
 
@@ -91,7 +93,7 @@ export async function renderChartHtmlToDataUrl(
       await chartPage.context().route("**/*", route => route.abort());
       await chartPage.routeWebSocket("**/*", socket => socket.close());
     }
-    let content = ensureChartDocument(inlineChartRuntime(html, echartsScript));
+    let content = themedChartHtml(ensureChartDocument(inlineChartRuntime(html, echartsScript)), exportChartTheme());
     if (options.offline) {
       const policy = `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; font-src data:; connect-src 'none'; frame-src 'none';">`;
       content = content.replace(/<head[^>]*>/i, match => match + policy);

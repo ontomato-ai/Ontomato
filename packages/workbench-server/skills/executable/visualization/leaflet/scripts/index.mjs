@@ -97,11 +97,15 @@ function generateHtml({ title, points, valueField, showTitle }) {
       row.append(keyElement, valueElement);
       return row;
     };
+    let themeRoot = document.documentElement;
+    try { if (parent !== window && window.frameElement) themeRoot = window.frameElement; } catch {}
+    const themeStyle = themeRoot.ownerDocument.defaultView.getComputedStyle(themeRoot);
+    const markerColor = themeStyle.getPropertyValue('--chart-1').trim() || themeStyle.getPropertyValue('--el-color-primary').trim() || 'CanvasText';
     for (const point of points) {
       const numericValue = Number(point.value);
       const radius = Number.isFinite(numericValue) && maxValue > minValue ? 7 + ((numericValue - minValue) / (maxValue - minValue)) * 13 : 9;
       const marker = L.circleMarker([point.latitude, point.longitude], {
-        radius, color: "#1d4ed8", weight: 1.5, fillColor: "#3b82f6", fillOpacity: 0.7
+        radius, color: markerColor, weight: 1.5, fillColor: markerColor, fillOpacity: 0.7
       }).addTo(map);
       const popup = document.createElement("div");
       const popupTitle = document.createElement("div");

@@ -17,7 +17,7 @@
       :class="['chart-wrapper', { 'chart-wrapper--transparent-loading': transparentLoading }]"
       :element-loading-text="t('common.loading')"
     >
-      <div ref="elRef" class="chart-echarts"></div>
+      <EChart v-if="chart.option" :option="brandedOption" :theme="theme" height="100%" />
       <ChartDataOverlay :open="dataOpen" :tabular="tabular" @view-dsl="handleViewDsl" />
       <div v-if="state === 'empty'" class="chart-mask">
         {{ partialNotice || t("common.noData") }}
@@ -52,19 +52,21 @@
 
 <script setup>
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
-import * as echarts from "echarts";
 import interact from "interactjs";
 import { ElMessage, ElMessageBox } from "element-plus";
 import { TriangleAlert } from "lucide-vue-next";
+import { EChart } from "@ontomato/foundation-ui/chart";
 import ChartDataOverlay from "./ChartDataOverlay.vue";
 import ChartToolbar from "./ChartToolbar.vue";
 import ChartZoomModal from "./ChartZoomModal.vue";
 import { extractTabularDataFromOption, safeCloneOption } from "./utils/chartTabular";
 import { modifyResultSetName, deleteResultSet } from "../api";
 import { clamp, parseGridColumns, partialResultNotice } from "./utils/dashboardHelper";
-import { getEchartsTheme } from "./utils/echartsTheme";
+import { nativeEchartsTheme } from "./utils/echartsTheme";
+import { chartBrandColors } from "@ontomato/contracts/chart-presentation";
 import { useI18n } from "vue-i18n";
 import { workbenchContent } from "../../../content";
+import { useTheme } from "../../../composables/useTheme";
 
 /** Loading mask background follows the app's original value (open source: transparent). */
 const transparentLoading = workbenchContent().dashboard.loadingMask === "transparent";
@@ -90,10 +92,11 @@ const emit = defineEmits([
 ]);
 
 const rootRef = ref(null);
-const elRef = ref(null);
-let instance = null;
-let resizeObs = null;
 let interactable = null;
+const { isDark } = useTheme();
+const theme = computed(() => nativeEchartsTheme(isDark.value));
+/** The card's option in the brand colours of the dashboard theme. */
+const brandedOption = computed(() => chartBrandColors(props.chart.option, theme.value));
 const dataOpen = ref(false);
 const tabular = ref(null);
 
@@ -176,97 +179,6 @@ async function handleCommand(cmd) {
   }
 }
 
-let canvasCheckTimer = null;
-
-function clearCanvasCheck() {
-  if (canvasCheckTimer) clearTimeout(canvasCheckTimer);
-  canvasCheckTimer = null;
-}
-
-function hasRenderRoot(el) {
-  if (!el) return false;
-  // echarts uses canvas by default; it may also have an svg renderer
-  return !!el.querySelector("canvas");
-}
-
-function fallbackToTableNow() {
-  if (state.value === "loading" || state.value === "empty") return;
-  if (dataOpen.value) return;
-  refreshTabular();
-  dataOpen.value = true;
-}
-
-function fallbackIfNoCanvasSoon() {
-  const el = elRef.value;
-  if (!el) return;
-
-  clearCanvasCheck();
-
-  // echarts has a very short render window (to avoid false positives from sync checks)
-  canvasCheckTimer = setTimeout(() => {
-    const curEl = elRef.value;
-    if (!curEl) return;
-
-    // No canvas/svg => fall back directly
-    if (!hasRenderRoot(curEl)) {
-      fallbackToTableNow();
-    }
-  }, 100);
-}
-
-let applyRetryRaf = 0;
-function cancelApplyRetry() {
-  if (applyRetryRaf) cancelAnimationFrame(applyRetryRaf);
-  applyRetryRaf = 0;
-}
-
-function applyOption(option) {
-  const el = elRef.value;
-  if (!el) return;
-
-  const { width, height } = el.getBoundingClientRect();
-  if (width < 50 || height < 50) {
-    cancelApplyRetry();
-    applyRetryRaf = requestAnimationFrame(() => applyOption(option));
-    return;
-  }
-
-  if (!instance) {
-    const { themeName } = workbenchContent().dashboard;
-    echarts.registerTheme(themeName, getEchartsTheme());
-    instance = echarts.init(el, themeName);
-  }
-
-  clearCanvasCheck();
-
-  if (option && typeof option === "object") {
-    try {
-      instance.setOption(option, { notMerge: true, lazyUpdate: true });
-    } catch {
-      // Fall back to the table directly after catching an exception
-      fallbackToTableNow();
-      return;
-    }
-  } else {
-    instance.clear();
-  }
-
-  requestAnimationFrame(() => {
-    if (!instance) return;
-
-    try {
-      instance.resize();
-    } catch {
-      // Fall back to the table directly after catching an exception
-      fallbackToTableNow();
-      return;
-    }
-
-    // Fall back to the table directly on first failure
-    fallbackIfNoCanvasSoon();
-  });
-}
-
 function refreshTabular() {
   const rows = props.chart?.rows || [];
   tabular.value = extractTabularDataFromOption(rows);
@@ -319,14 +231,6 @@ function handleConditionsChange(f) {
 }
 
 watch(
-  () => props.chart && props.chart.option,
-  (next) => {
-    applyOption(next);
-  },
-  { deep: true, immediate: true }
-);
-
-watch(
   () => props.chart?.rows,
   () => {
     if (!dataOpen.value) return;
@@ -372,15 +276,6 @@ function setupResize() {
         const rowSpan = clamp(Math.round((h + rowGap) / (baseRowPx + rowGap)), 1, 6);
 
         emit("layout-change", { colSpan, rowSpan });
-
-        // Make echarts more responsive during dragging (optional)
-        requestAnimationFrame(() => {
-          try {
-            instance && instance.resize();
-          } catch {
-            return;
-          }
-        });
       },
       end() {
         emit("resize-active", false);
@@ -395,22 +290,9 @@ function setupResize() {
   });
 }
 
-onMounted(() => {
-  const el = elRef.value;
-  if (!el) return;
-  resizeObs = new ResizeObserver(() => requestAnimationFrame(() => instance && instance.resize()));
-  resizeObs.observe(el);
-  applyOption(props.chart?.option);
-  setupResize();
-});
+onMounted(setupResize);
 
 onBeforeUnmount(() => {
-  cancelApplyRetry();
-  clearCanvasCheck();
-  if (resizeObs) resizeObs.disconnect();
-  resizeObs = null;
-  if (instance) instance.dispose();
-  instance = null;
   if (interactable) {
     interactable.unset();
     interactable = null;
@@ -467,11 +349,6 @@ onBeforeUnmount(() => {
 
 .chart-wrapper--transparent-loading :deep(.el-loading-mask) {
   background-color: transparent;
-}
-
-.chart-echarts {
-  width: 100%;
-  height: 100%;
 }
 
 .chart-partial {

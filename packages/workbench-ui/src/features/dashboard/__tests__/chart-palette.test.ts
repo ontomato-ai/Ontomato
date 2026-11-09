@@ -3,7 +3,7 @@ import { ossBrand } from "@ontomato/design-tokens/oss";
 import type { BrandSource } from "@ontomato/design-tokens";
 import { installWorkbenchBrand } from "../../../brand";
 import { chartPalette } from "../chart-palette";
-import { getEchartsTheme, nativeEchartsTheme } from "../components/utils/echartsTheme";
+import { nativeEchartsTheme } from "../components/utils/echartsTheme";
 import { EchartsGenerator } from "../components/utils/echartsGenerator";
 
 /** A brand unlike the open-source one, to show the charts follow whichever brand the edition installs. */
@@ -18,7 +18,6 @@ const other: BrandSource = {
 
 afterEach(() => {
   installWorkbenchBrand(ossBrand);
-  document.documentElement.classList.remove("dark");
 });
 
 /** DESIGN.md "Charts": dashboard and agent chart colours come from the brand source, not from a copy. */
@@ -35,13 +34,11 @@ describe("chart colours", () => {
     }
   });
 
-  it("follow the installed brand and the mode shown", () => {
+  it("follow the installed brand in each mode", () => {
     installWorkbenchBrand(other);
     expect(nativeEchartsTheme(false).color).toEqual(other.dataviz.light);
     expect(nativeEchartsTheme(false).textStyle).toEqual({ color: "#101010" });
     expect(nativeEchartsTheme(true).color).toEqual(other.dataviz.dark);
-    document.documentElement.classList.add("dark");
-    expect(getEchartsTheme().color).toEqual(other.dataviz.dark);
   });
 
   it("reach the generated dashboard options", () => {

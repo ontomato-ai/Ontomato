@@ -1,18 +1,20 @@
 <script setup lang="ts">
 import { onMounted, ref } from "vue";
 import { useI18n } from "vue-i18n";
-import { LayoutDashboard, ShieldCheck } from "lucide-vue-next";
+import { LayoutDashboard, ShieldCheck, SlidersHorizontal } from "lucide-vue-next";
+import AnalysisScopeDialog from "./AnalysisScopeDialog.vue";
 import type { RuntimeArtifact } from "@ontomato/contracts/agent-runtime-artifacts";
 import type { AssistantDatasetSource } from "@ontomato/contracts/assistant-chat";
 import { AddDatasetDialog } from "../../dashboard";
 import { readDatasetSource } from "../assistant-host";
 
 /** Actions on a dataset file of a conversation: its quality check and adding it to a dashboard. */
-const props = defineProps<{ artifact: RuntimeArtifact; title?: string }>();
+const props = defineProps<{ artifact: RuntimeArtifact; title?: string; refreshConversation?: () => Promise<void> }>();
 const emit = defineEmits<{ openDashboard: [id: string] }>();
-const { t } = useI18n();
+const { t, locale } = useI18n();
 const source = ref<AssistantDatasetSource | null>(null);
 const adding = ref(false);
+const adjusting = ref(false);
 
 onMounted(async () => {
   if (!/\.(csv|json)$/i.test(props.artifact.path) || props.artifact.path.endsWith(".chart.json")) return;
@@ -22,6 +24,8 @@ onMounted(async () => {
 
 <template>
   <template v-if="source">
+    <el-button class="scope-action" text size="small" :icon="SlidersHorizontal" @click="adjusting = true">{{ locale.startsWith('zh') ? '调整范围' : 'Adjust scope' }}</el-button>
+    <AnalysisScopeDialog v-model="adjusting" :artifact="artifact" :refresh="refreshConversation" />
     <el-popover v-if="source.qualityCheck" trigger="click" width="360" placement="bottom-end">
       <template #reference>
         <button type="button" class="dataset-action" :title="t('assistant.qualityCheck')" :aria-label="t('assistant.qualityCheck')">
@@ -50,6 +54,7 @@ onMounted(async () => {
 </template>
 
 <style scoped>
+.scope-action { flex-shrink: 0; }
 .dataset-action {
   display: grid;
   place-items: center;

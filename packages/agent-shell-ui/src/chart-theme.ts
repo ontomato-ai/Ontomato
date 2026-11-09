@@ -28,6 +28,7 @@ export const defaultChartTheme: ChartTheme = () => {
   const palette = chartPaletteFromCss();
   return {
     ...(palette.length ? { color: palette } : {}),
+    ...(palette.length ? { visualMap: { inRange: { color: [palette[7] ?? palette[0], palette[0]] } } } : {}),
     backgroundColor: "transparent",
     textStyle: { color: text },
     title: { textStyle: { color: text }, subtextStyle: { color: muted } },

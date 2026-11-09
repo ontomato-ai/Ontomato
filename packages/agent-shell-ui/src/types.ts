@@ -11,6 +11,7 @@ export interface ArtifactRendererProps {
   read: () => Promise<Blob>;
   openDetails?: () => void;
   continueConversation?: (message: string) => Promise<void>;
+  refreshConversation?: () => Promise<void>;
   /** The renderer this one replaces (shell default or file card), so an override can wrap it. */
   fallback?: Component | null;
 }
