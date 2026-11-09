@@ -98,6 +98,8 @@ function buildSystemPrompt(params: {
   dataProbeCapability: string;
   deliverableCapability: string;
   completionInstruction: string;
+  evidenceRequirements: string;
+  workingMethod: string;
   chartCapability: string;
   skillCapability: string;
   externalMcpCapability: string;
@@ -112,6 +114,8 @@ function buildSystemPrompt(params: {
     dataProbeCapability: params.dataProbeCapability,
     deliverableCapability: params.deliverableCapability,
     completionInstruction: params.completionInstruction,
+    evidenceRequirements: params.evidenceRequirements,
+    workingMethod: params.workingMethod,
     chartCapability: params.chartCapability,
     skillCapability: params.skillCapability,
     externalMcpCapability: params.externalMcpCapability,
@@ -434,6 +438,8 @@ export async function runAnalysisLoopWorkflow(
           dataProbeCapability: dataProbeCapability.prompt,
           deliverableCapability: notebookCapability.supervisorPrompt,
           completionInstruction: notebookCapability.completionInstruction,
+          evidenceRequirements: notebookCapability.evidenceRequirements,
+          workingMethod: notebookCapability.workingMethod,
           chartCapability: chartCapability.prompt,
           skillCapability: skillCapability.prompt,
           externalMcpCapability: externalMcpCapability.prompt,
