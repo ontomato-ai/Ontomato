@@ -704,6 +704,9 @@ export default {
     "openPreview": "Open preview",
     "carries": "Sent with",
     "context": "Current page: {page}",
+    "contextSelection": "Current page: {page}; selected object: {object}.",
+    "selected": "Selected: {object}",
+    "objectKey": "{object} (primary key {key})",
     "busyElsewhere": "This workspace is busy in the conversation \"{title}\"; send after that round ends.",
     "busyUnknown": "This workspace is busy in another conversation; send after that round ends.",
     "openBusy": "Open it"

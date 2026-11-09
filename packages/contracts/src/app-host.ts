@@ -34,6 +34,24 @@ export interface AppHostSnapshot extends AppHostPreferences {
   user: AppHostUser | null;
 }
 
+/** The business object the reader selected on an app's page. */
+export interface AppPageSelection {
+  /** The object's ontology class, by the name the ontology gives it, e.g. `Order`. */
+  className: string;
+  /** The object's primary key, as text. */
+  primaryKey: string;
+  /** What the reader calls the object, e.g. its number or name: `DEMO-0001`. */
+  name: string;
+}
+
+/** What the reader looks at in an app: the app's own page and the object selected on it. */
+export interface AppPageContext {
+  /** The app's own name for the page in view, as the reader sees it, e.g. `Overdue orders`. */
+  page: string;
+  /** null while nothing is selected. */
+  selection: AppPageSelection | null;
+}
+
 export interface AppHost {
   snapshot(): AppHostSnapshot;
   /** The credential of the current page load; null when the shell has none, which is not anonymous. */
@@ -44,4 +62,11 @@ export interface AppHost {
   navigate(path: string): void;
   /** A platform request answered 401 (sign-in expired) or 402 (license); the shell decides what follows. */
   onAuthFailure(status: 401 | 402): void;
+  /**
+   * What the reader of one app frame looks at now. `source` is the calling page's own `window`, the same object as its
+   * frame's `contentWindow` in the shell, so a shell page tells its frames apart by it. A shell page that shows the app
+   * beside its agent (the app builder's preview) puts the context into the messages the reader sends; elsewhere the call
+   * has no effect.
+   */
+  setPageContext(source: object, context: AppPageContext): void;
 }

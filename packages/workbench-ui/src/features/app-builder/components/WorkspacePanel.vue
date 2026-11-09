@@ -16,6 +16,7 @@ import PreviewTab from "./PreviewTab.vue";
 const props = defineProps<{ view: WorkspaceView; tab: PanelTab; reload: number; flash: string | null }>();
 const file = defineModel<string | null>("file", { required: true });
 const target = defineModel<ChangeTarget>("target", { required: true });
+const previewFrame = defineModel<Window | null>("previewFrame", { required: true });
 const emit = defineEmits<{ showChanges: [commit: string] }>();
 const { t } = useI18n();
 
@@ -30,7 +31,14 @@ watch(() => props.tab, (tab) => (shown[tab] = true), { immediate: true });
       <el-button text size="small" @click="view.refresh()">{{ t("common.retry") }}</el-button>
     </div>
     <div v-if="view.workspace" class="panel-views">
-      <PreviewTab v-if="shown.preview" v-show="tab === 'preview'" :view="view" :reload="reload" :flash="flash" />
+      <PreviewTab
+        v-if="shown.preview"
+        v-show="tab === 'preview'"
+        v-model:frame-window="previewFrame"
+        :view="view"
+        :reload="reload"
+        :flash="flash"
+      />
       <FilesTab v-if="shown.files" v-show="tab === 'files'" v-model:file="file" :view="view" />
       <ChangesTab v-if="shown.changes" v-show="tab === 'changes'" v-model:target="target" :view="view" />
       <HistoryTab v-if="shown.history" v-show="tab === 'history'" :view="view" @show-changes="emit('showChanges', $event)" />

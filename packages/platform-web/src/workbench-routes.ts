@@ -1,5 +1,6 @@
 import type { LocationQuery, RouteLocationRaw, RouteMeta, RouteRecordRaw, RouteRecordSingleView } from "vue-router";
 import { platformRoutes as routes } from "@ontomato/platform-shell/routes";
+import { subscribeAppPageContext } from "./app-host";
 import { observeRoutes } from "./observe-routes";
 import DashboardsPage from "./pages/DashboardsRoute.vue";
 import PlatformSchedulesPage from "./pages/PlatformSchedulesRoute.vue";
@@ -62,12 +63,14 @@ export const schedulePages = (): RouteRecordRaw[] => [
 
 /**
  * 应用构建: one page at the workspace its address names. An edition adds what its guard reads to let a reader in (the
- * enterprise edition the application's entry permission, `app-builder`).
+ * enterprise edition the application's entry permission, `app-builder`). The app in its preview reports what its reader
+ * looks at through this window's app host, which the page listens to while it is open.
  */
 export const appBuilderPages = (meta: RouteMeta = {}): RouteRecordRaw[] => [
   {
     ...routes.appBuilder,
     component: () => import("@ontomato/workbench-ui/features/app-builder").then((module) => module.AppBuilder),
+    props: { subscribePageContext: subscribeAppPageContext },
     meta: { workbench: true, ...meta },
   },
 ];
