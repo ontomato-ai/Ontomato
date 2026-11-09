@@ -158,8 +158,8 @@ interface InsertSlot {
 /**
  * Finds the gap a pointer points at in a row-major card grid: the row is the one the pointer is
  * in (or nearest to), and within it the pointer goes before the first card whose horizontal
- * middle lies to its right, otherwise after the row's last card. Points past the last card,
- * including the blank space after it, resolve to the end of the list.
+ * middle lies to its right, otherwise after the row's last card. A pointer below the last row
+ * resolves to the end of the list whatever its horizontal position.
  */
 function findInsertSlot(rects: CardRect[], x: number, y: number): InsertSlot | null {
   if (rects.length === 0) return null;
@@ -174,15 +174,15 @@ function findInsertSlot(rects: CardRect[], x: number, y: number): InsertSlot | n
     const bottom = Math.max(...row.map((i) => rects[i].bottom));
     return y < top ? top - y : y > bottom ? y - bottom : 0;
   };
-  const lastRow = rows[rows.length - 1];
-  const row =
-    y > Math.max(...lastRow.map((i) => rects[i].bottom))
-      ? lastRow
-      : rows.reduce((best, r) => (distance(r) < distance(best) ? r : best));
+  const last = rects.length - 1;
+  if (y > Math.max(...rects.map((rect) => rect.bottom))) {
+    return { slot: last + 1, marker: { index: last, side: "after" } };
+  }
+  const row = rows.reduce((best, r) => (distance(r) < distance(best) ? r : best));
   const before = row.find((i) => x < (rects[i].left + rects[i].right) / 2);
   if (before !== undefined) return { slot: before, marker: { index: before, side: "before" } };
-  const last = row[row.length - 1];
-  return { slot: last + 1, marker: { index: last, side: "after" } };
+  const rowEnd = row[row.length - 1];
+  return { slot: rowEnd + 1, marker: { index: rowEnd, side: "after" } };
 }
 
 const { t } = useI18n();

@@ -127,6 +127,18 @@ describe("agent manager lineup", () => {
     expect(titles(wrapper)).toEqual(["Sales", "Finance", "Ask data"]);
   });
 
+  it("releasing below the last row moves the card to the end even left of the last card", async () => {
+    const wrapper = await mountManager();
+    const { cards, zone } = layOut(wrapper);
+    await cards[0].trigger("dragstart");
+    await zone.trigger("dragover", { clientX: 450, clientY: 400 });
+    expect(cards[2].classes()).toContain("insert-after");
+    await zone.trigger("drop", { clientX: 450, clientY: 400 });
+    await flushPromises();
+    expect(mocks.saveAgentLineup).toHaveBeenCalledWith(["__qa__", "b", "a"]);
+    expect(titles(wrapper)).toEqual(["Ask data", "Finance", "Sales"]);
+  });
+
   it("in a wrapped grid it picks the row under the pointer before the column", async () => {
     const wrapper = await mountManager();
     const cards = wrapper.findAll(".agent-card");
