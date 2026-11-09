@@ -1,6 +1,7 @@
+import { appSdkBuild } from "../app-builder/sdk";
 import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
-import { cp, mkdir, readdir, writeFile, rename } from "node:fs/promises";
+import { cp, mkdir, writeFile, rename } from "node:fs/promises";
 import path from "node:path";
 import { z } from "zod";
 import { workspaceExportSchema } from "@ontomato/contracts/workspaces";
@@ -21,12 +22,11 @@ import { HttpError } from "../../utils/errors";
  */
 export async function installAppSdk() {
   const shipped = path.join(runtimeRoot(), "dist", "apps-sdk");
-  for (const version of await readdir(shipped)) {
-    const target = runtimeDataDir("apps-sdk", version);
-    if (existsSync(target)) continue;
-    await cp(path.join(shipped, version), `${target}.tmp`, { recursive: true });
-    await rename(`${target}.tmp`, target);
-  }
+  const { version } = await appSdkBuild();
+  const target = runtimeDataDir("apps-sdk", version);
+  if (existsSync(target)) return;
+  await cp(path.join(shipped, version), `${target}.tmp`, { recursive: true });
+  await rename(`${target}.tmp`, target);
 }
 export async function writeHostedPublication(appId: string, releaseId: string, declaration: Record<string, unknown>, credentials: AssistantCredentials) {
   const response = await backendPut("hosted-publication", buildUrl(getApiConfig(), `/platform/applications/${appId}/hosted-publication`),

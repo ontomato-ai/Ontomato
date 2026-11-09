@@ -34,7 +34,7 @@ const frame = (value: RuntimeEventEnvelope): RuntimeStreamFrame => ({ type: "eve
 
 function run(overrides: Partial<AgentHostRun> = {}): AgentHostRun {
   return {
-    id: runId, sessionId, status: "running", stopReason: null, errorMessage: null,
+    id: runId, sessionId, status: "running", stopReason: null, errorMessage: null, workspaceCommit: null,
     createdAt: timestamp, finishedAt: null, resolvedSkills: [], retrievals: [], ...overrides,
   };
 }
@@ -123,7 +123,7 @@ describe("backward paging", () => {
   it("keeps the newer run state when an older page arrives", () => {
     const state = emptyConversation(sessionId);
     applyRunSnapshot(state, snapshot());
-    applyEnvelope(state, envelope(4, { type: "agent_end", messages: [], status: "stopped", stopReason: "aborted", errorMessage: null }));
+    applyEnvelope(state, envelope(4, { type: "agent_end", messages: [], status: "stopped", stopReason: "aborted", errorMessage: null, workspaceCommit: null }));
 
     applyHistoryPage(state, history([], [run({ status: "running" })]), true);
 
@@ -194,7 +194,7 @@ describe("event stream recovery", () => {
       stream.event = (value) => applied.push(value.event.type);
       createRunSubscription<AgentHostRunSnapshot[]>().start(stream);
 
-      stream.emit(frame(envelope(4, { type: "agent_end", messages: [], status: "stopped", stopReason: "stop", errorMessage: null })));
+      stream.emit(frame(envelope(4, { type: "agent_end", messages: [], status: "stopped", stopReason: "stop", errorMessage: null, workspaceCommit: null })));
       stream.emit(frame(envelope(5, {
         type: "artifact_registered",
         artifact: { id: replyId, path: "outputs/a.csv", size: 1 } as RuntimeArtifact,
@@ -225,7 +225,7 @@ function subscription(read: () => Promise<AgentHostRunSnapshot[]>): FakeSubscrip
     cursors,
     read: vi.fn(read),
     current: () => ({
-      id: runId, status: "running", stopReason: null, errorMessage: null, createdAt: timestamp,
+      id: runId, status: "running", stopReason: null, errorMessage: null, workspaceCommit: null, createdAt: timestamp,
       finishedAt: null, cursor, artifacts: [], tools: {}, retrievals: [],
     }),
     snapshot(pages) {

@@ -46,7 +46,7 @@ export function workspaceRouter(runtime: AgentRuntime, scope: (req: Request) => 
     const input = workspaceDiffSchema.parse(req.query);
     res.json({ patch: await git(req).diff(input.from, input.to) });
   }));
-  router.post("/:id/import", route(async (req, res) => { res.json(await runtime.workspaces.replace(scope(req), workspaceOwner(req), id(req), workspaceImportSchema.parse(req.body).files)); }));
+  router.post("/:id/import", route(async (req, res) => { const input = workspaceImportSchema.parse(req.body); res.json(await runtime.workspaces.replace(scope(req), workspaceOwner(req), id(req), input.files, input.message)); }));
   router.post("/:id/restore", route(async (req, res) => { res.json(await runtime.workspaces.restore(scope(req), workspaceOwner(req), id(req), workspaceRestoreSchema.parse(req.body).commit)); }));
   router.post("/:id/export", route(async (req, res) => { res.json(await git(req).export(workspaceRestoreSchema.parse(req.body).commit)); }));
   return router;

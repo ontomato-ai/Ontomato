@@ -98,6 +98,7 @@ export interface ShellFeedbackPort {
 
 /** Context passed to the host's message action slot. */
 export interface MessageActionContext {
+  workspaceCommit: string | null;
   sessionId: string;
   runId: string;
   messageId: string;

@@ -44,7 +44,7 @@ function client() {
       sessionId: createdSessionId,
       status: "running",
       stopReason: null,
-      errorMessage: null,
+      errorMessage: null, workspaceCommit: null,
       createdAt: new Date(0).toISOString(),
       finishedAt: null,
       resolvedSkills: [],

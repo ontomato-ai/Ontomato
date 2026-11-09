@@ -33,7 +33,7 @@ public class FunctionController {
 			User user = SystemUtils.getCurUser();
 			Function function = param.to(Function.class);
 			function.setDomainId(user.getDomainId());
-			functionService.save(function, lang);
+			ret.put("data", functionService.save(function, lang));
 			ret.put("success", true);
 		} catch (Exception e) {
 			log.error(e.getMessage(), e);

@@ -17,7 +17,8 @@ import {
   saveAgentDefinition,
   createAgentDefinition,
 } from "../../services/assistant/definitions";
-import { Router } from "express";
+import { Router, type RequestHandler } from "express";
+import { agentHostCreateSessionSchema } from "@ontomato/contracts/agent-host";
 import { z } from "zod";
 import {
   assistantAgentInputSchema,
@@ -32,6 +33,18 @@ const router: ReturnType<typeof Router> = Router(),
 
 import { context, id, wrap } from "../utils/agent-host";
 import { createAgentHostRouter } from "./agent-host";
+const builderPermission = requirePermission(["app-builder"]);
+const guardBuilder: RequestHandler = (req, res, next) => {
+  wrap(async () => {
+    const input = req.params.sessionId
+      ? { sessionId: id(req, "sessionId") }
+      : agentHostCreateSessionSchema.parse(req.body);
+    if (await assistantService.isAppBuilder(context(req).owner, input)) builderPermission(req, res, next);
+    else next();
+  })(req, res, next);
+};
+router.post("/sessions", guardBuilder);
+router.post("/sessions/:sessionId/runs", guardBuilder);
 router.use(createAgentHostRouter(assistantService, true));
 router.get("/sessions/:sessionId/artifacts/:artifactId/drilldown", wrap(async (req, res) => {
   const rowIndex = z.coerce.number().int().nonnegative().safe().parse(req.query.rowIndex);

@@ -136,6 +136,10 @@ function main() {
   const root = join(SOURCES, record.workspaceId);
   process.chdir(root);
   const members = projects(root);
+  if (record.web !== false) {
+    const shared = members.find(member => member.name === "@ontomato/workbench-server");
+    cpSync(resolve(shared.absolute, "../../agent-skills/ontomato-app-builder"), join(STAGE, "agent-skills/ontomato-app-builder"), { recursive: true });
+  }
   const provider = record.yamlProvider || "@ontomato/workbench-server";
   const server = members.find((member) => member.name === provider);
   if (!server) throw new Error(`workspace has no ${provider} member`);

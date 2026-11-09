@@ -40,6 +40,7 @@ export interface RunView {
   status: RuntimeRunStatus;
   stopReason: RuntimeStopReason | null;
   errorMessage: string | null;
+  workspaceCommit: string | null;
   /** Run start and stop times (ISO), from the snapshot or the agent_start/agent_end envelopes. */
   createdAt: string | null;
   finishedAt: string | null;
@@ -82,6 +83,7 @@ function ensureRun(state: ConversationState, runId: string): RunView {
     status: "running",
     stopReason: null,
     errorMessage: null,
+    workspaceCommit: null,
     createdAt: null,
     finishedAt: null,
     cursor: null,
@@ -108,6 +110,7 @@ export function applyRunSnapshot(state: ConversationState, snapshot: AgentHostRu
   run.status = snapshot.run.status;
   run.stopReason = snapshot.run.stopReason;
   run.errorMessage = snapshot.run.errorMessage;
+  run.workspaceCommit = snapshot.run.workspaceCommit;
   run.createdAt = snapshot.run.createdAt;
   run.finishedAt = snapshot.run.finishedAt;
   run.cursor = { seq: snapshot.cursor.seq, streamId: snapshot.cursor.streamId };
@@ -143,6 +146,7 @@ export function applyHistoryPage(state: ConversationState, page: AgentHostSessio
       run.status = value.status;
       run.stopReason = value.stopReason;
       run.errorMessage = value.errorMessage;
+      run.workspaceCommit = value.workspaceCommit;
       run.retrievals = value.retrievals ?? [];
     }
   }
@@ -278,6 +282,7 @@ export function applyEnvelope(state: ConversationState, envelope: RuntimeEventEn
       run.status = event.status;
       run.stopReason = event.stopReason;
       run.errorMessage = event.errorMessage;
+      run.workspaceCommit = event.workspaceCommit;
       run.finishedAt = envelope.timestamp;
       for (const tool of Object.values(run.tools))
         if (tool.status === "running") tool.status = "unknown";

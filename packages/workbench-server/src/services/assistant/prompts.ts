@@ -1,8 +1,8 @@
 import { getPromptTemplate } from "../../core/prompts/loader";
 
-export type DefaultAgentKind = "regular" | "analysis";
+export type DefaultAgentKind = "regular" | "analysis" | "app-builder";
 
-const DEFAULT_KINDS = new Set<string>(["regular", "analysis"]);
+const DEFAULT_KINDS = new Set<string>(["regular", "analysis", "app-builder"]);
 
 export function isDefaultAgentKind(kind: string): kind is DefaultAgentKind {
   return DEFAULT_KINDS.has(kind);
