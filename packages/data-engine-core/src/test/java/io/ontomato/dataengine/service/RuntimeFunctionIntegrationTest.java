@@ -234,7 +234,7 @@ class RuntimeFunctionIntegrationTest {
       function.setDomainId("domain-a");
       String originalFunctionCode = function.getCode();
       var output =
-          new QueryOutputService(python, programs, ontology, config)
+          new QueryOutputService(python, programs, ontology, config, new io.ontomato.dataengine.service.SubjectValueResolver(org.mockito.Mockito.mock(io.ontomato.dataengine.service.SubjectAttributeLookup.class)))
               .execute(
                   UUID.randomUUID().toString(),
                   JSONObject.of(
@@ -274,7 +274,7 @@ class RuntimeFunctionIntegrationTest {
       assertThrows(
           IllegalArgumentException.class,
           () ->
-              new QueryOutputService(python, programs, ontology, config)
+              new QueryOutputService(python, programs, ontology, config, new io.ontomato.dataengine.service.SubjectValueResolver(org.mockito.Mockito.mock(io.ontomato.dataengine.service.SubjectAttributeLookup.class)))
                   .execute(
                       UUID.randomUUID().toString(),
                       JSONObject.of(

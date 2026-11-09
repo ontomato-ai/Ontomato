@@ -50,7 +50,7 @@ class QueryPackageContractTest {
     var python = mock(PythonExecuteService.class);
     var recipe = JSONObject.of("kind", "package", "package", pkg, "parameters", new JSONObject(),
         "columnLabels", JSONObject.of("headcount", "Employees"));
-    var result = new QueryOutputService(python, null, ontology, null)
+    var result = new QueryOutputService(python, null, ontology, null, new io.ontomato.dataengine.service.SubjectValueResolver(org.mockito.Mockito.mock(io.ontomato.dataengine.service.SubjectAttributeLookup.class)))
         .execute(UUID.randomUUID().toString(), recipe, null, access(), "en");
     assertEquals(2, result.getJSONArray("rows").getJSONObject(0).get("headcount"));
     assertEquals(pkg, result.getJSONObject("recipe").getJSONObject("package"));

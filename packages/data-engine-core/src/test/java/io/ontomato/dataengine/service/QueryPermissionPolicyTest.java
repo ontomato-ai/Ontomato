@@ -99,7 +99,7 @@ class QueryPermissionPolicyTest {
     when(config.get("domain")).thenReturn(settings);
     var permission = permission(); permission.setFullData(true);
     var access = new QueryAccessService.Access(new QueryAccessService.GrantUser("user", "domain"), permission, null, null, null);
-    var result = new QueryOutputService(python, new io.ontomato.dataengine.service.impl.ABCProgramServiceImpl(), ontology, config)
+    var result = new QueryOutputService(python, new io.ontomato.dataengine.service.impl.ABCProgramServiceImpl(), ontology, config, new io.ontomato.dataengine.service.SubjectValueResolver(org.mockito.Mockito.mock(io.ontomato.dataengine.service.SubjectAttributeLookup.class)))
         .execute(UUID.randomUUID().toString(), JSONObject.of("kind", "metric", "metricId", "metric", "revision", "r1", "parameters", new JSONObject()), null, access, "en");
     assertEquals(graph, QuerySubgraphContract.validate(result.getJSONObject("sourceAnalysis")));
     assertEquals("Payroll / budget (%)", result.getJSONArray("columns").getJSONObject(1).getString("label"));
@@ -244,7 +244,7 @@ class QueryPermissionPolicyTest {
     var found = JSONObject.from(ontology.metrics(JSONObject.of("limit", 10), access)).getJSONArray("items");
     assertEquals(List.of("valid"), found.stream().map(JSONObject::from).map(item -> item.getString("id")).toList());
     var python = mock(PythonExecuteService.class);
-    var output = new QueryOutputService(python, null, ontology, null);
+    var output = new QueryOutputService(python, null, ontology, null, new io.ontomato.dataengine.service.SubjectValueResolver(org.mockito.Mockito.mock(io.ontomato.dataengine.service.SubjectAttributeLookup.class)));
     var error = assertThrows(IllegalArgumentException.class, () -> output.execute("run", JSONObject.of(
         "kind", "metric", "metricId", "broken", "revision", OntologyQueryService.revision(broken), "parameters", new JSONObject()), null, access, "en"));
     assertEquals("Incomplete stored source declaration", error.getMessage());
@@ -317,7 +317,7 @@ class QueryPermissionPolicyTest {
     var ontology = mock(OntologyQueryService.class);
     when(ontology.execute(dsl, access)).thenReturn(JSONObject.of("sourceAnalysis", actual,
         "data", JSONArray.of(JSONObject.of("answer", JSONArray.of(JSONObject.of("active_staff_total", 3))))));
-    var output = new QueryOutputService(null, null, ontology, null).execute(UUID.randomUUID().toString(), JSONObject.of("kind", "dsl", "dsl", dsl), declared, access, "zh-CN");
+    var output = new QueryOutputService(null, null, ontology, null, new io.ontomato.dataengine.service.SubjectValueResolver(org.mockito.Mockito.mock(io.ontomato.dataengine.service.SubjectAttributeLookup.class))).execute(UUID.randomUUID().toString(), JSONObject.of("kind", "dsl", "dsl", dsl), declared, access, "zh-CN");
     assertEquals("在职员工总数", output.getJSONArray("columns").getJSONObject(0).getString("label"));
     assertEquals("active_staff_total", output.getJSONArray("columns").getJSONObject(0).getString("key"));
   }

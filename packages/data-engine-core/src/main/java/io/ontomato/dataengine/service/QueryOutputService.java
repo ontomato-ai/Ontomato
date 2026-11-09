@@ -11,10 +11,12 @@ public class QueryOutputService {
   private final ABCProgramService programs;
   private final OntologyQueryService ontology;
   private final BusinessConfigService config;
+  private final SubjectValueResolver subjectValues;
 
   public QueryOutputService(PythonExecuteService python, ABCProgramService programs,
-      OntologyQueryService ontology, BusinessConfigService config) {
+      OntologyQueryService ontology, BusinessConfigService config, SubjectValueResolver subjectValues) {
     this.python = python; this.programs = programs; this.ontology = ontology; this.config = config;
+    this.subjectValues = subjectValues;
   }
 
   public JSONObject execute(String id, JSONObject recipe, JSONObject analysis,
@@ -26,13 +28,21 @@ public class QueryOutputService {
   public JSONObject execute(String id, JSONObject recipe, JSONObject analysis,
       QueryAccessService.Access access, String lang, List<String> classNames) throws Exception {
     String kind = recipe.getString("kind");
-    if ("package".equals(kind))
-      return executeBundle(id, recipe, recipe.getJSONObject("package"), recipe.getJSONObject("parameters"),
+    if ("package".equals(kind)) {
+      // The agent-facing path resolves subject references too: a definition executed here must mean the
+      // same thing it means everywhere else, or "mine" depends on which endpoint was called.
+      var packageValues = subjectValues.resolveValues(recipe.getJSONObject("parameters"), access.user());
+      return executeBundle(id, recipe, recipe.getJSONObject("package"), packageValues,
           recipe.getJSONObject("columnLabels"), scoped(access, classNames), lang);
+    }
     var selectedMetric = "metric".equals(kind)
         ? ontology.metric(recipe.getString("metricId"), recipe.getString("revision"), access) : null;
     if (selectedMetric != null && selectedMetric.getFunction().getQueryPackage() != null) {
-      var values = MetricViewBindings.resolve(selectedMetric, recipe.getString("bindingId"), recipe.getJSONObject("parameters"));
+      String bindingId = recipe.getString("bindingId");
+      if (bindingId == null)
+        subjectValues.refuseOverrides(selectedMetric.getFunction(), recipe.getJSONObject("parameters"));
+      var values = MetricViewBindings.resolve(selectedMetric, bindingId, recipe.getJSONObject("parameters"));
+      values = subjectValues.resolveValues(values, access.user());
       return executeBundle(id, recipe, selectedMetric.getFunction().getQueryPackage(), values,
           QueryPackage.labels(selectedMetric.getFunction().getReturnDef().getSourceAnalysis()), scoped(access, classNames), lang);
     }

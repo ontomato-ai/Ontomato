@@ -475,19 +475,9 @@ private MetricViewContent generateContent(JSONArray rows, PythonExecuteResult ex
    * spoof, so it is enforced here rather than left to which call the agent happens to make.</p>
    */
   private void refuseSubjectOverrides(MetricView metric, String bindingId, JSONObject supplied) {
-    if (bindingId != null || supplied == null || supplied.isEmpty()) return;
-    Function function = metric.getFunction();
-    if (function == null || function.getParameters() == null) return;
-    for (Parameter parameter : function.getParameters()) {
-      if (!(parameter.getValue() instanceof String declared)) continue;
-      if (SubjectReference.parse(declared) == null) continue;
-      Object given = supplied.get(parameter.getName());
-      if (given != null && !declared.equals(given)) {
-        throw new IllegalArgumentException(
-            "Parameter '" + parameter.getName() + "' is bound to the authenticated subject and cannot be supplied;"
-                + " run a binding instead");
-      }
-    }
+    if (bindingId != null) return;
+    // One rule for every path: a definition must not mean two things depending on which endpoint ran it.
+    subjectValues.refuseOverrides(metric.getFunction(), supplied);
   }
 
   private void validateDraftDomain(MetricView metric, String domain) {

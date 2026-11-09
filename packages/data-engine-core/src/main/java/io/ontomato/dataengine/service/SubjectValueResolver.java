@@ -9,6 +9,8 @@ import org.springframework.stereotype.Component;
 import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
 
+import io.ontomato.dataengine.bean.function.Function;
+import io.ontomato.dataengine.bean.function.Parameter;
 import io.ontomato.dataengine.core.bean.User;
 
 /**
@@ -97,6 +99,28 @@ public class SubjectValueResolver {
                 validate(values.get(name));
             } catch (IllegalArgumentException error) {
                 throw new IllegalArgumentException("Parameter '" + name + "': " + error.getMessage(), error);
+            }
+        }
+    }
+
+    /**
+     * Refuse a caller-supplied value for a parameter the definition bound to the authenticated subject.
+     *
+     * <p>A binding is the supported way to run a personalised query; supplying the parameter directly is
+     * the way to run someone else's copy of it. Enforced wherever a definition can be executed, so the
+     * rule does not depend on which endpoint the caller chose.</p>
+     */
+    public void refuseOverrides(Function function, JSONObject supplied) {
+        if (function == null || function.getParameters() == null || supplied == null || supplied.isEmpty()) return;
+        for (Parameter parameter : function.getParameters()) {
+            if (!(parameter.getValue() instanceof String declared)) continue;
+            if (SubjectReference.parse(declared) == null) continue;
+            Object given = supplied.get(parameter.getName());
+            if (given != null && !declared.equals(given)) {
+                throw new IllegalArgumentException(
+                        "Parameter '" + parameter.getName()
+                                + "' is bound to the authenticated subject and cannot be supplied;"
+                                + " run a binding instead");
             }
         }
     }
