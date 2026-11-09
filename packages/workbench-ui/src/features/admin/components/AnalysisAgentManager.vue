@@ -13,7 +13,13 @@
       </el-button>
     </div>
 
-    <div class="agents-container">
+    <div
+      ref="dropZone"
+      class="agents-container"
+      @dragover="onDragOver"
+      @dragleave="onDragLeave"
+      @drop="onDrop"
+    >
       <div v-if="lineup.length > 1" class="sort-hint">
         <el-icon :size="14"><GripVertical /></el-icon>
         {{ t("admin.dragToSort") }}
@@ -25,14 +31,13 @@
           class="agent-card"
           :class="{
             disabled: entry.kind === 'agent' && !entry.agent.isEnabled,
-            dragging: dragIndex === index,
-            'drag-over': dragOverIndex === index && dragIndex !== index,
+            dragging: dragFrom === index,
+            'insert-before': insertMarker?.index === index && insertMarker.side === 'before',
+            'insert-after': insertMarker?.index === index && insertMarker.side === 'after',
           }"
           draggable="true"
           @dragstart="onDragStart($event, index)"
-          @dragover.prevent="onDragOver($event, index)"
-          @dragend="onDragEnd"
-          @drop="onDrop($event, index)"
+          @dragend="endDrag"
         >
           <template v-if="entry.kind === 'qa'">
             <div class="agent-header">
@@ -143,6 +148,43 @@ import AgentCreateDialog from "../../analysis/components/AgentCreateDialog.vue";
 import { createQaAgent, getWorkbenchAppearance } from "../../workbench";
 import { workbenchContent } from "../../../content";
 
+type CardRect = Pick<DOMRect, "top" | "bottom" | "left" | "right">;
+/** `slot` is the gap index (0..n) in the current order; `marker` is the card edge that shows it. */
+interface InsertSlot {
+  slot: number;
+  marker: { index: number; side: "before" | "after" };
+}
+
+/**
+ * Finds the gap a pointer points at in a row-major card grid: the row is the one the pointer is
+ * in (or nearest to), and within it the pointer goes before the first card whose horizontal
+ * middle lies to its right, otherwise after the row's last card. Points past the last card,
+ * including the blank space after it, resolve to the end of the list.
+ */
+function findInsertSlot(rects: CardRect[], x: number, y: number): InsertSlot | null {
+  if (rects.length === 0) return null;
+  const rows: number[][] = [];
+  rects.forEach((rect, index) => {
+    const row = rows.find((r) => Math.abs(rects[r[0]].top - rect.top) < 1);
+    if (row) row.push(index);
+    else rows.push([index]);
+  });
+  const distance = (row: number[]) => {
+    const top = Math.min(...row.map((i) => rects[i].top));
+    const bottom = Math.max(...row.map((i) => rects[i].bottom));
+    return y < top ? top - y : y > bottom ? y - bottom : 0;
+  };
+  const lastRow = rows[rows.length - 1];
+  const row =
+    y > Math.max(...lastRow.map((i) => rects[i].bottom))
+      ? lastRow
+      : rows.reduce((best, r) => (distance(r) < distance(best) ? r : best));
+  const before = row.find((i) => x < (rects[i].left + rects[i].right) / 2);
+  if (before !== undefined) return { slot: before, marker: { index: before, side: "before" } };
+  const last = row[row.length - 1];
+  return { slot: last + 1, marker: { index: last, side: "after" } };
+}
+
 const { t } = useI18n();
 const content = workbenchContent();
 const dialogDisplay = content.agentDialogDisplay;
@@ -165,8 +207,12 @@ const loading = ref(false);
 const lineup = ref<AgentLineupEntry[]>([]);
 const appearance = ref<WorkbenchAppearance | null>(null);
 const qaAgent = computed(() => createQaAgent(appearance.value, t));
-const dragIndex = ref<number | null>(null);
-const dragOverIndex = ref<number | null>(null);
+const dropZone = ref<HTMLElement | null>(null);
+/** Index of the card being dragged; null when no card drag is in progress. */
+const dragFrom = ref<number | null>(null);
+/** Where the dragged card would land, or null when releasing now would change nothing. */
+const insertSlot = ref<InsertSlot | null>(null);
+const insertMarker = computed(() => insertSlot.value?.marker ?? null);
 const allSkills = ref<AnalysisSkill[]>([]);
 const showCreateDialog = ref(false);
 const editingAgent = ref<AnalysisAgent | null>(null);
@@ -246,50 +292,58 @@ function openCreateAgent() {
 }
 
 function onDragStart(e: DragEvent, index: number) {
-  dragIndex.value = index;
+  dragFrom.value = index;
+  insertSlot.value = null;
   if (e.dataTransfer) {
     e.dataTransfer.effectAllowed = "move";
     e.dataTransfer.setData("text/plain", String(index));
   }
 }
 
-function onDragOver(e: DragEvent, index: number) {
-  dragOverIndex.value = index;
-  if (e.dataTransfer) {
-    e.dataTransfer.dropEffect = "move";
-  }
-  const card = e.currentTarget as HTMLElement;
-  const rect = card.getBoundingClientRect();
-  const midY = rect.top + rect.height / 2;
-  if (e.clientY < midY) {
-    card.style.transform = "translateY(4px)";
-  } else {
-    card.style.transform = "translateY(-4px)";
-  }
+function cardRects(): CardRect[] {
+  const cards = dropZone.value?.querySelectorAll<HTMLElement>(".agents-grid > .agent-card") ?? [];
+  return Array.from(cards, (card) => card.getBoundingClientRect());
 }
 
-function onDragEnd() {
-  dragIndex.value = null;
-  dragOverIndex.value = null;
-  document.querySelectorAll(".agent-card").forEach((el) => {
-    (el as HTMLElement).style.transform = "";
-  });
+/** The slot only counts when it actually moves the dragged card. */
+function movingSlot(e: DragEvent): InsertSlot | null {
+  const from = dragFrom.value;
+  if (from === null) return null;
+  const slot = findInsertSlot(cardRects(), e.clientX, e.clientY);
+  return slot && slot.slot !== from && slot.slot !== from + 1 ? slot : null;
 }
 
-async function onDrop(_e: DragEvent, dropIndex: number) {
-  const fromIndex = dragIndex.value;
-  if (fromIndex === null || fromIndex === dropIndex) {
-    onDragEnd();
-    return;
-  }
+/** Only this page's own card drags are accepted, anywhere inside the card area. */
+function onDragOver(e: DragEvent) {
+  if (dragFrom.value === null) return;
+  e.preventDefault();
+  if (e.dataTransfer) e.dataTransfer.dropEffect = "move";
+  insertSlot.value = movingSlot(e);
+}
+
+function onDragLeave(e: DragEvent) {
+  const next = e.relatedTarget as Node | null;
+  if (!next || !dropZone.value?.contains(next)) insertSlot.value = null;
+}
+
+/** Leaving the card area or pressing Esc ends the drag without a drop: nothing moves. */
+function endDrag() {
+  dragFrom.value = null;
+  insertSlot.value = null;
+}
+
+async function onDrop(e: DragEvent) {
+  const from = dragFrom.value;
+  if (from === null) return;
+  e.preventDefault();
+  const slot = movingSlot(e);
+  endDrag();
+  if (!slot) return;
 
   const list = [...lineup.value];
-  const [moved] = list.splice(fromIndex, 1);
-  list.splice(dropIndex, 0, moved);
-
+  const [moved] = list.splice(from, 1);
+  list.splice(slot.slot > from ? slot.slot - 1 : slot.slot, 0, moved);
   lineup.value = list;
-
-  onDragEnd();
 
   try {
     await analysisAgentApi.saveAgentLineup(list.map(lineupEntryId));
@@ -509,16 +563,32 @@ onMounted(() => {
   transition: all 0.2s ease;
   box-shadow: var(--el-shadow-sm);
   cursor: default;
+  position: relative;
 }
 
 .agent-card.dragging {
   opacity: 0.4;
-  transform: scale(0.97);
 }
 
-.agent-card.drag-over {
-  border-color: var(--el-color-primary);
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--el-color-primary) 25%, transparent);
+/* Insertion bar centred in the grid gap on the side where the dragged card will land */
+.agent-card.insert-before::before,
+.agent-card.insert-after::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+  border-radius: 999px;
+  background: var(--el-color-primary);
+  pointer-events: none;
+}
+
+.agent-card.insert-before::before {
+  left: calc(var(--spacing-lg) / -2 - 2px);
+}
+
+.agent-card.insert-after::after {
+  right: calc(var(--spacing-lg) / -2 - 2px);
 }
 
 .agent-card:hover {
