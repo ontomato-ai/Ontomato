@@ -8,7 +8,7 @@ import { diagnosisActionKey } from "../ops-host";
 import { authHost } from "../../../utils/auth";
 import FilePreview from "./FilePreview.vue";
 import ArtifactRetentionButton from "./ArtifactRetentionButton.vue";
-const props = defineProps<{ apiPrefix: string; title?: string; question?: string; subtitle?: string; triggerBuildBody?: Record<string, unknown>; triggerBuildUrl?: string; kept?: boolean; retentionLoading?: boolean }>();
+const props = defineProps<{ apiPrefix: string; title?: string; question?: string; subtitle?: string; triggerBuildBody?: Record<string, unknown>; triggerBuildPath?: string; kept?: boolean; retentionLoading?: boolean }>();
 const emit = defineEmits<{ loaded: []; "toggle-retention": [] }>();
 const { t } = useI18n(), diagnose = inject(diagnosisActionKey);
 const manifest = ref<WorkspaceManifest | null>(null), files = ref<ArtifactFileTreeNode[]>([]), preview = ref<ArtifactFilePreview | null>(null), selected = ref<ArtifactFileTreeNode | null>(null);
@@ -33,9 +33,9 @@ async function selectFile(node: ArtifactFileTreeNode) {
   } catch (e) { ElMessage.error(e instanceof Error ? e.message : t("diagnosis.requestFailed")); }
 }
 async function refresh() {
-  if (!props.triggerBuildUrl || refreshing.value) return;
+  if (!props.triggerBuildPath || refreshing.value) return;
   refreshing.value = true;
-  try { await diagnosisApi.rebuildArtifact(props.triggerBuildUrl, { ...props.triggerBuildBody, force: true }); await load(); }
+  try { await diagnosisApi.rebuildArtifact(props.triggerBuildPath, { ...props.triggerBuildBody, force: true }); await load(); }
   catch (e) { ElMessage.error(e instanceof Error ? e.message : t("diagnosis.requestFailed")); }
   finally { refreshing.value = false; }
 }
@@ -48,7 +48,7 @@ watch(() => props.apiPrefix, load, { immediate: true });
       <strong>{{ question || title || t('ops.references') }}</strong>
       <el-button v-if="diagnose && manifest?.evidence" @click="diagnose(manifest.evidence.target)">{{ t('ops.diagnose') }}</el-button>
       <ArtifactRetentionButton v-if="kept !== undefined" :kept="kept" :loading="retentionLoading" @toggle="emit('toggle-retention')" />
-      <el-button v-if="triggerBuildUrl" :loading="refreshing" @click="refresh">{{ t('ops.refresh') }}</el-button>
+      <el-button v-if="triggerBuildPath" :loading="refreshing" @click="refresh">{{ t('ops.refresh') }}</el-button>
       <el-button :disabled="!manifest?.evidence" @click="download">{{ t('common.download') }}</el-button>
     </header>
     <el-alert v-if="error" :title="error" type="error" :closable="false" />

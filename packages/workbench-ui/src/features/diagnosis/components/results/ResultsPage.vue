@@ -106,8 +106,8 @@ async function loadRunDetail(id: string, options: { silent?: boolean } = {}) {
       diagnosisApi.getRun(id),
       diagnosisApi.getRunResults(id),
     ]);
-    runDetail.value = metaRes.data || null;
-    caseResults.value = resultsRes.data?.results || [];
+    runDetail.value = metaRes;
+    caseResults.value = resultsRes.results;
     notifySettledOnce(id, runDetail.value?.status);
   } catch {
     runDetail.value = null;
