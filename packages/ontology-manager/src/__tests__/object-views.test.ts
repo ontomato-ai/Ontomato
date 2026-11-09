@@ -2,7 +2,6 @@ import { describe, expect, it, vi, afterEach } from "vitest";
 import { createObjectView, createViewWidget, objectViewDocumentSchema, viewWidgetSchema, readViewPath, resolveViewBinding, viewConditionMatches } from "@ontomato/contracts/object-views";
 import { createManagerClient } from "../api";
 import { englishMessages } from "../i18n";
-import { parseActionValue } from "../object-views/action-values";
 import { instanceName } from "../object-views/instance-name";
 
 afterEach(() => { vi.unstubAllGlobals(); });
@@ -19,14 +18,6 @@ describe("object view bindings and documents", () => {
     expect(instanceName([{ name: "id" }], { id: "internal-1" })).toBe("—");
     expect(instanceName(attrs, { id: "internal-1", code: "business-code", org_name: null })).toBe("—");
     expect(instanceName([{ name: "name", bizzkey: true, enable: false }], { name: "Hidden" })).toBe("—");
-  });
-  it("converts engine parameter types without changing textual identifiers", () => {
-    expect(parseActionValue("00123", "TYPE_STRING")).toBe("00123");
-    expect(parseActionValue("12.5", "TYPE_NUMBER")).toBe(12.5);
-    expect(parseActionValue('[1,2]', "TYPE_NUMBER_ARRAY")).toEqual([1, 2]);
-    expect(parseActionValue('["001"]', "TYPE_STRING_ARRAY")).toEqual(["001"]);
-    expect(() => parseActionValue('"12"', "TYPE_NUMBER")).toThrow();
-    expect(() => parseActionValue('["12"]', "TYPE_NUMBER_ARRAY")).toThrow();
   });
   it("binds a selected row to downstream parameters and conditions without evaluating code", () => {
     const object = { id: "order-1", status: "open" };

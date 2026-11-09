@@ -324,6 +324,9 @@ importers:
         specifier: 6.0.0
         version: 6.0.0
     devDependencies:
+      element-plus:
+        specifier: 2.13.6
+        version: 2.13.6(typescript@5.9.3)(vue@3.5.30(typescript@5.9.3))
       typescript:
         specifier: 5.9.3
         version: 5.9.3
@@ -348,6 +351,9 @@ importers:
       '@ontomato/contracts':
         specifier: workspace:*
         version: link:../contracts
+      '@ontomato/foundation-ui':
+        specifier: workspace:*
+        version: link:../foundation-ui
       '@ontomato/platform-shell':
         specifier: workspace:*
         version: link:../platform-shell
@@ -458,6 +464,9 @@ importers:
       '@ontomato/design-tokens':
         specifier: workspace:*
         version: link:../design-tokens
+      '@ontomato/foundation-ui':
+        specifier: workspace:*
+        version: link:../foundation-ui
       element-plus:
         specifier: 2.13.6
         version: 2.13.6(typescript@5.9.3)(vue@3.5.30(typescript@5.9.3))

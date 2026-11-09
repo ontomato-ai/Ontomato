@@ -1,58 +1,73 @@
 <script setup lang="ts">
-import type {
-  PlatformScheduleContent,
-  PlatformScheduleForm,
-  PlatformScheduleFormField,
-} from "@ontomato/contracts/platform-schedules";
-import { useScheduleText } from "../text";
+import { ElFormItem, ElInput, ElOption, ElSelect } from "element-plus";
+
+interface Option {
+  value: string;
+  label: string;
+  description: string | null;
+  disabled: boolean;
+  disabledReason: string | null;
+}
+interface Base {
+  key: string;
+  label: string;
+  help: string | null;
+}
+/** A choice among options, or text on one or several lines; a page passes its form's fields, which carry these. */
+type Field =
+  | (Base & { type: "select"; options: readonly Option[] })
+  | (Base & { type: "text"; multiline: boolean; maxLength: number; placeholder: string | null });
+type SelectField = Extract<Field, { type: "select" }>;
 
 /**
- * An application's form, drawn exactly as the application declared it: a choice is a select, whose unavailable options
- * stay listed with the reason; a text is an input, or a large text box where the application asks for several lines
- * (a prompt, one item per line). The fields come in the application's order with its labels, defaults, help and
- * limits; the page adds no field and no rule of its own.
+ * Draws a form exactly as its owner declared it: a choice is a select, whose unavailable options stay listed with the
+ * reason; a text is an input, or a large text box where the owner asks for several lines (a prompt, a list, JSON). The
+ * fields come in the owner's order with its labels, help and limits; the page adds no field and no rule.
  */
 defineProps<{
-  form: PlatformScheduleForm;
-  values: PlatformScheduleContent;
+  fields: readonly Field[];
+  values: Readonly<Record<string, string>>;
   /** The message each field shows, by field key. */
   errors: Readonly<Record<string, string>>;
-  /** While the application answers for a new selection, the old fields wait instead of taking input. */
+  /** While the owner answers for a new choice, the fields wait instead of taking input. */
   disabled: boolean;
+  /** What a select shows before anything is chosen. */
+  choosePlaceholder: string;
+  /** Keys of the fields shown with their value but not typed into. */
+  readOnly?: readonly string[];
 }>();
 const emit = defineEmits<{
-  /** A text changed: the draft follows it, the application is not asked again. */
+  /** A text changed: the draft follows it, the owner is not asked again. */
   input: [key: string, value: string];
-  /** A choice changed; the form asks the application again when the field says the form depends on it. */
-  choose: [field: Extract<PlatformScheduleFormField, { type: "select" }>, value: string];
+  /** A choice changed; the caller asks the owner again when its field says the form depends on it. */
+  choose: [key: string, value: string];
 }>();
-const { t } = useScheduleText();
 
-function chosen(field: Extract<PlatformScheduleFormField, { type: "select" }>, value: string | undefined) {
+function chosen(field: SelectField, value: string | undefined) {
   return field.options.find((option) => option.value === value) ?? null;
 }
 </script>
 
 <template>
-  <div class="fields">
-    <p v-if="form.fields.length === 0" class="empty">{{ t("form.noFields") }}</p>
+  <div class="form-fields">
     <el-form-item
-      v-for="field in form.fields"
+      v-for="field in fields"
       :key="field.key"
       :label="field.label"
       :error="errors[field.key] ?? ''"
       :data-field="field.key"
     >
-      <template v-if="field.type === 'select'">
+      <p v-if="readOnly?.includes(field.key)" class="read-only">{{ values[field.key] || "—" }}</p>
+      <template v-else-if="field.type === 'select'">
         <el-select
           :model-value="values[field.key] || undefined"
-          :placeholder="t('form.choose')"
+          :placeholder="choosePlaceholder"
           :disabled="disabled"
           filterable
           class="control"
-          popper-class="schedule-field-options"
+          popper-class="form-field-options"
           :aria-label="field.label"
-          @update:model-value="emit('choose', field, String($event ?? ''))"
+          @update:model-value="emit('choose', field.key, String($event ?? ''))"
         >
           <el-option
             v-for="option in field.options"
@@ -93,7 +108,7 @@ function chosen(field: Extract<PlatformScheduleFormField, { type: "select" }>, v
 </template>
 
 <style scoped>
-.fields {
+.form-fields {
   display: flex;
   flex-direction: column;
 }
@@ -110,10 +125,17 @@ function chosen(field: Extract<PlatformScheduleFormField, { type: "select" }>, v
 .help span + span::before {
   content: " · ";
 }
-.empty {
-  margin: 0 0 var(--spacing-lg);
-  font-size: var(--text-sm);
+.read-only {
+  box-sizing: border-box;
+  width: 100%;
+  margin: 0;
+  padding: var(--spacing-sm) var(--spacing-md);
+  border-radius: var(--radius-sm);
+  background: var(--el-fill-color-light);
   color: var(--el-text-color-secondary);
+  line-height: var(--leading-sm);
+  overflow-wrap: anywhere;
+  user-select: text;
 }
 /* An option with a second line (what it is, or why it is unavailable) grows to hold it. */
 .option {
@@ -128,7 +150,7 @@ function chosen(field: Extract<PlatformScheduleFormField, { type: "select" }>, v
   color: var(--el-text-color-secondary);
   white-space: normal;
 }
-:global(.schedule-field-options .el-select-dropdown__item) {
+:global(.form-field-options .el-select-dropdown__item) {
   height: auto;
   min-height: var(--control-height);
   line-height: var(--leading-sm);

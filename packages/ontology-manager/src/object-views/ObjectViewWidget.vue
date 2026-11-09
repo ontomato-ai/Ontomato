@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref, watch } from "vue";
+import { computed, onBeforeUnmount, ref, shallowRef, watch } from "vue";
 import { Eye } from "lucide-vue-next";
-import { parseActionValue } from "./action-values";
-import { ElButton, ElInput, ElSelect, ElOption, ElTable, ElTableColumn, ElAlert, ElSkeleton, vLoading } from "element-plus";
+import { ElButton, ElForm, ElInput, ElTable, ElTableColumn, ElAlert, ElSkeleton, vLoading } from "element-plus";
+import { FormFields } from "@ontomato/foundation-ui/form";
 import ElDialog from "../ManagerDialog.vue";
+import { formFieldKey, type FormField } from "@ontomato/contracts/form-fields";
 import { readViewPath, resolveViewBinding, resolveViewParameters, type ViewWidget, type ObjectReference } from "@ontomato/contracts/object-views";
 import type { MetricViewDataSlots } from "../app-components/types";
 import { useManagerClient, useOntologyText } from "../context";
@@ -23,8 +24,10 @@ const loading = ref(false);
 const dataLoaded = ref(false);
 const isDataWidget = computed(() => ["metric", "table", "chart", "links"].includes(props.widget.kind));
 const actionOpen = ref(false);
-const actionValues = ref<Record<string, unknown>>({});
-const actionTypes = ref<Record<string, string>>({});
+/** The Action's fields as the data engine declares them, the draft of their text and the errors on them. */
+const actionFields = shallowRef<FormField[]>([]);
+const actionValues = ref<Record<string, string>>({});
+const actionErrors = ref<Record<string, string>>({});
 const offset = ref(0);
 const hasMore = ref(false);
 const linkTarget = ref({ className: "", primaryKey: "" });
@@ -44,12 +47,26 @@ watch(() => [props.reference.className, props.widget.kind, props.widget.relation
 let request = 0;
 let actionRequest = 0;
 onBeforeUnmount(() => { request++; actionRequest++; });
-watch(() => JSON.stringify([props.reference.className, props.reference.primaryKey, props.widget.resourceId]), () => {
+const parameters = computed(() => resolveViewParameters(props.widget.parameters, props.object, props.variables));
+/** What this view binds to the Action's parameters; a binding that resolves to nothing is still bound, as null. */
+const actionBindings = computed(() => Object.fromEntries(Object.entries(parameters.value).map(([name, value]) => [name, value ?? null])));
+// Another object, Action or binding opens a new form: no draft carries over.
+watch(() => JSON.stringify([props.reference.className, props.reference.primaryKey, props.widget.resourceId, actionBindings.value]), () => {
   actionRequest++;
   actionOpen.value = false;
   actionValues.value = {};
 });
-const parameters = computed(() => resolveViewParameters(props.widget.parameters, props.object, props.variables));
+/** The view's own display of the Action's fields: its labels, and its choices in place of free text. */
+const actionFormFields = computed(() => actionFields.value.map((field): FormField => {
+  const label = props.widget.fieldLabels[field.key] || field.label;
+  const options = props.widget.fieldOptions[field.key];
+  return options
+    ? {
+      key: field.key, label, required: field.required, defaultValue: null, help: field.help, type: "select", refreshOnChange: false,
+      options: options.map(option => ({ ...option, description: null, disabled: false, disabledReason: null })),
+    }
+    : { ...field, label };
+}));
 const bindingValue = computed(() => resolveViewBinding(props.widget.binding, props.object, props.variables));
 // After a failed read the component shows no result rather than the one read for earlier parameters.
 const selectedData = computed(() => props.metricView?.error ? undefined : readViewPath(props.metricView?.data, props.widget.resultPath));
@@ -111,21 +128,31 @@ function click() {
   else if (props.widget.onClick === "setVariable" && props.widget.variable) emit("variable", props.widget.variable, bindingValue.value);
   else if (props.widget.onClick === "openObject" && props.widget.targetClass && bindingValue.value != null) emit("open", { className: props.widget.targetClass, primaryKey: String(bindingValue.value) });
 }
+/** The view's choices a field holds no option of; read-only fields keep their bound value. */
+function unchosen(values: Record<string, string>) {
+  return Object.keys(values).filter(name => props.widget.fieldOptions[name] && !props.widget.readOnlyParameters.includes(name)
+    && !props.widget.fieldOptions[name].some(option => option.value === values[name]));
+}
+function enterAction(key: string, value: string) {
+  actionValues.value[key] = value;
+  delete actionErrors.value[key];
+}
+// The data engine interprets the text and answers the field errors or the typed parameters, which then execute.
 async function execute() {
   if (loading.value || props.preview) return;
+  actionErrors.value = Object.fromEntries(unchosen(actionValues.value).map(name => [name, ot("ovChooseOption")]));
+  if (Object.keys(actionErrors.value).length) return;
   const current = ++actionRequest;
   loading.value = true;
   error.value = "";
   try {
-    for (const [name, options] of Object.entries(props.widget.fieldOptions)) {
-      if (Object.hasOwn(actionValues.value, name) && !options.some(option => option.value === actionValues.value[name])) throw new Error(ot("ovChooseOption"));
-    }
-    const param = Object.fromEntries(Object.entries(actionValues.value).map(([name, value]) => {
-      if (props.widget.readOnlyParameters.includes(name)) value = parameters.value[name];
-      try { return [name, parseActionValue(value, actionTypes.value[name] || "")]; }
-      catch { throw new Error(ot("ovInvalidParameter", { type: actionTypes.value[name], name })); }
-    }));
-    await client.actions.execute({ id: props.widget.resourceId, parameters: param });
+    const form = await client.actions.form({
+      id: props.widget.resourceId, parameters: actionBindings.value, values: actionValues.value, readOnlyParameters: props.widget.readOnlyParameters,
+    });
+    if (current !== actionRequest) return;
+    actionErrors.value = Object.fromEntries(form.errors.map(fieldError => [formFieldKey(fieldError.field, "/values/")!, fieldError.message]));
+    if (!form.parameters) return;
+    await client.actions.execute({ id: props.widget.resourceId, parameters: form.parameters });
     if (current !== actionRequest) return;
     actionOpen.value = false;
     message.success(ot("ovActionSucceeded"));
@@ -138,17 +165,15 @@ async function openAction() {
   const current = ++actionRequest;
   error.value = "";
   try {
-    const response = await client.requestSmartAsset("actions", "queryById", { id: props.widget.resourceId });
+    const form = await client.actions.form({
+      id: props.widget.resourceId, parameters: actionBindings.value, readOnlyParameters: props.widget.readOnlyParameters,
+    });
     if (current !== actionRequest) return;
-    const parametersDefinition = response.data?.function?.parameters || [];
-    actionTypes.value = Object.fromEntries(parametersDefinition.map((parameter: { name: string; type?: string }) => [parameter.name, parameter.type || ""]));
-    actionValues.value = Object.fromEntries(parametersDefinition.map((parameter: { name: string }) => [parameter.name, parameters.value[parameter.name] ?? ""]));
-    for (const name of props.widget.readOnlyParameters) {
-      if (Object.hasOwn(actionValues.value, name) && !Object.hasOwn(props.widget.parameters, name)) throw new Error(ot("ovInvalidParameter", { name, type: "binding" }));
-    }
-    for (const [name, options] of Object.entries(props.widget.fieldOptions)) {
-      if (Object.hasOwn(actionValues.value, name) && !options.some(option => option.value === String(actionValues.value[name]))) actionValues.value[name] = "";
-    }
+    actionFields.value = form.fields;
+    // A bound value that is none of the view's choices starts unchosen.
+    const unmatched = unchosen(form.values);
+    actionValues.value = Object.fromEntries(Object.entries(form.values).map(([name, text]) => [name, unmatched.includes(name) ? "" : text]));
+    actionErrors.value = {};
     actionOpen.value = true;
   } catch (reason) { if (current === actionRequest) error.value = reason instanceof Error ? reason.message : String(reason); }
 }
@@ -178,7 +203,9 @@ async function openAction() {
     <el-dialog v-model="actionOpen" class="object-action-dialog" :title="widget.title" width="min(480px, calc(100% - 32px))" :append-to-body="false">
       <el-alert v-if="error" :title="error" type="error" :closable="false" />
       <dl v-if="widget.contextFields.length" class="action-context properties"><template v-for="field in widget.contextFields" :key="field"><dt>{{ widget.fieldLabels[field] || fieldLabels[field] || field }}</dt><dd>{{ displayField(field, object[field]) }}</dd></template></dl>
-      <label v-for="(_, name) in actionValues" :key="name" class="action-field">{{ widget.fieldLabels[name] || name }}<span v-if="widget.readOnlyParameters.includes(name)" class="action-readonly-value">{{ format(parameters[name]) }}</span><el-select v-else-if="widget.fieldOptions[name]" :model-value="String(actionValues[name] ?? '')" :placeholder="ot('ovChooseOption')" @update:model-value="actionValues[name] = $event"><el-option v-for="option in widget.fieldOptions[name]" :key="option.value" :value="option.value" :label="option.label" /></el-select><el-input v-else :model-value="format(actionValues[name])" @update:model-value="actionValues[name] = $event" /></label>
+      <el-form label-position="top" @submit.prevent="execute">
+        <FormFields :fields="actionFormFields" :values="actionValues" :errors="actionErrors" :disabled="loading" :choose-placeholder="ot('ovChooseOption')" :read-only="widget.readOnlyParameters" @input="enterAction" @choose="enterAction" />
+      </el-form>
       <template #footer><el-button @click="actionOpen = false">{{ ot('ovCancel') }}</el-button><el-button type="primary" :loading="loading" @click="execute">{{ ot('ovSubmit') }}</el-button></template>
     </el-dialog>
   </div>
@@ -209,10 +236,7 @@ async function openAction() {
 .bar-track { background: var(--el-fill-color); height: 12px; border-radius: 2px; overflow: hidden; }
 .bar-track i { display: block; background: var(--el-color-primary); height: 100%; border-radius: inherit; }
 svg { display: block; width: 100%; color: var(--el-color-primary); }
-.action-field { display: flex; flex-direction: column; gap: 8px; margin-bottom: 16px; font-size: var(--text-sm); line-height: 20px; overflow-wrap: anywhere; }
 .action-context { padding: var(--manager-content-gap); margin-bottom: var(--manager-module-gap); border-radius: var(--radius-sm); background: var(--el-fill-color-light); }
-.action-readonly-value { display: block; padding: 8px 12px; border-radius: var(--radius-sm); background: var(--el-fill-color-light); color: var(--el-text-color-secondary); cursor: default; user-select: text; overflow-wrap: anywhere; }
-.action-field:last-child { margin-bottom: 0; }
 .widget-state { display: grid; place-items: center; min-height: 96px; margin: 0; padding: 16px; color: var(--el-text-color-secondary); text-align: center; }
 @container view-card (max-width: 260px) {
   .properties { grid-template-columns: minmax(0, 1fr); row-gap: 4px; }

@@ -1,10 +1,10 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { VueWrapper } from "@vue/test-utils";
 import { platformScheduleFormSchema } from "@ontomato/contracts/platform-schedules";
+import { FormFields } from "@ontomato/foundation-ui/form";
 import { createSchedulesApi } from "../api";
 import { joinApplications } from "../apps";
 import { createAttempts } from "../attempts";
-import ScheduleFormFields from "../components/ScheduleFormFields.vue";
 import ScheduleTaskDialog from "../components/ScheduleTaskDialog.vue";
 import {
   BASE,
@@ -68,7 +68,7 @@ const type = (wrapper: VueWrapper, key: string, value: string) =>
   item(wrapper, key).findComponent({ name: "ElInput" }).vm.$emit("update:modelValue", value);
 /** The application's fields on screen, by label, in its order. */
 const fields = (wrapper: VueWrapper) =>
-  wrapper.findComponent(ScheduleFormFields).findAll(".el-form-item__label").map((label) => label.text());
+  wrapper.findComponent(FormFields).findAll(".el-form-item__label").map((label) => label.text());
 const submitButton = (wrapper: VueWrapper) => wrapper.find('[data-action="submit"]');
 async function submit(wrapper: VueWrapper) {
   await submitButton(wrapper).trigger("click");

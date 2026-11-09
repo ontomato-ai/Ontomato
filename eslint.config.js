@@ -121,9 +121,9 @@ export default [
       "no-restricted-imports": restrict([
         {
           regex:
-            "^@ontomato/(?!(contracts|design-tokens)(/|$))|(^|/)(workbench-ui|workbench-server|ontology-manager|platform-admin|agent-shell-ui)(/|$)",
+            "^@ontomato/(?!(contracts|design-tokens|foundation-ui)(/|$))|(^|/)(workbench-ui|workbench-server|ontology-manager|platform-admin|agent-shell-ui)(/|$)",
           message:
-            "platform-schedules may depend on contracts, design tokens and UI libraries only; hosts inject the request function, the applications and the way to a result",
+            "platform-schedules may depend on contracts, design tokens, the shared foundation components and UI libraries only; hosts inject the request function, the applications and the way to a result",
         },
       ]),
     },

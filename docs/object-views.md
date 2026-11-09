@@ -38,9 +38,12 @@ configured target type and primary-key field.
 
 Input components write variables. Buttons refresh data, set a variable from a binding,
 or open another object. Conditional visibility compares a binding with a fixed value
-or checks whether it is present. Action components load the published Action's
-parameters into a dialog and apply configured bindings as defaults. Submitting uses
-the existing Action endpoint and refreshes object data and query components.
+or checks whether it is present. Action components open the published Action's form
+from the data engine (`/action/form`), with the configured bindings as the fields'
+initial text; read-only parameters keep their bound values. The data engine
+interprets what is typed (JSON for numbers, lists, objects and datasets; text and
+times as typed), and the dialog submits the parameters it answers through the
+existing Action endpoint, then refreshes object data and query components.
 
 Charts execute the template's enabled visualization Skill through the workbench
 `/api/skills/:id/render` endpoint and embed its returned HTML. Skill selection and
