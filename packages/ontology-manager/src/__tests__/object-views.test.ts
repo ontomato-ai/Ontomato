@@ -79,7 +79,7 @@ describe("object view requests", () => {
   it("keeps action strings intact and sends multipart parameters through the host credential", async () => {
     const fetch = vi.fn(async () => new Response(JSON.stringify({ success: true, data: {} })));
     vi.stubGlobal("fetch", fetch);
-    await client().executeViewAction("action-id", { order: "00123", quantity: 4 });
+    await client().actions.execute({ id: "action-id", parameters: { order: "00123", quantity: 4 } });
     const [url, init] = fetch.mock.calls[0] as unknown as [string, RequestInit];
     expect(url).toBe("/api/data-query/action/execute");
     expect((init.headers as Record<string, string>).tk).toBe("test-token");

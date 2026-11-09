@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Conversation</title>
+  {{head}}
+  <style>
+    [v-cloak] { display: none; }
+    html, body, #app { height: 100%; }
+    body { margin: 0; background: var(--el-bg-color-page); color: var(--el-text-color-primary); }
+    .page { display: flex; flex-direction: column; gap: 12px; box-sizing: border-box; padding: 16px; }
+    .bar { display: flex; gap: 8px; align-items: center; }
+    /* The panel fills its container, so the container has the height. */
+    .conversation { flex: 1; min-height: 0; background: var(--el-bg-color); border-radius: 8px; }
+  </style>
+</head>
+<body>
+  <!-- One conversation with one of the platform's agents, as the signed-in user. -->
+  <div id="app" class="page" v-cloak>
+    <div class="bar">
+      <el-select v-model="agentId" placeholder="Choose an agent" style="width: 280px" :loading="agents === null">
+        <el-option v-for="agent in agents ?? []" :key="agent.id" :label="agent.name" :value="agent.id"></el-option>
+      </el-select>
+      <el-button :disabled="!sessionId" @click="sessionId = null">New conversation</el-button>
+    </div>
+    <el-alert v-if="error" type="error" :title="error" show-icon @close="error = ''"></el-alert>
+    <div class="conversation">
+      <agent-chat-panel v-if="agent" :key="agent.id" :client="client" :agent-id="agent.id" :agent="agent"
+        :labels="labels" v-model:session-id="sessionId" @error="error = $event"></agent-chat-panel>
+      <el-empty v-else-if="agents?.length === 0" description="You may use no agent yet"></el-empty>
+    </div>
+  </div>
+
+  <script type="module">
+    import { computed, createApp, ref, watch } from "vue";
+    import ElementPlus from "element-plus";
+    import { createAppContext } from "@ontomato/sdk";
+    import { AgentChatPanel, createAssistantClient, useShellLabels } from "@ontomato/sdk/chat";
+
+    const context = createAppContext();
+    const client = createAssistantClient(context.request);
+
+    createApp({
+      components: { AgentChatPanel },
+      setup() {
+        const agents = ref(null);
+        const agentId = ref(null);
+        const sessionId = ref(null);
+        const error = ref("");
+        client.listAgents().then(
+          (list) => {
+            agents.value = list.filter((agent) => agent.enabled);
+            agentId.value = agents.value[0]?.id ?? null;
+          },
+          (reason) => {
+            error.value = reason.message;
+          },
+        );
+        watch(agentId, () => {
+          sessionId.value = null;
+        });
+        return {
+          client,
+          agents,
+          agentId,
+          agent: computed(() => agents.value?.find((agent) => agent.id === agentId.value) ?? null),
+          sessionId,
+          error,
+          labels: useShellLabels(),
+        };
+      },
+    }).use(ElementPlus).use(context).mount("#app");
+  </script>
+</body>
+</html>

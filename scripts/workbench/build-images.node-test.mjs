@@ -403,6 +403,8 @@ test("assemble writes own packages, resources, links and web without pairing met
   writeFileSync(join(ent, "packages/ent-lib/data/.env"), "S=E\n");
   mkdirSync(join(ent, "dist/web"), { recursive: true });
   writeFileSync(join(ent, "dist/web/index.html"), "<html>\n");
+  mkdirSync(join(ent, "dist/apps-sdk/1.0.0"), { recursive: true });
+  writeFileSync(join(ent, "dist/apps-sdk/1.0.0/sdk.json"), "{}\n");
 
   const store = ent;
   const expressDir = join(store, "node_modules/.pnpm/express@4.22.1/node_modules/express");
@@ -451,6 +453,7 @@ test("assemble writes own packages, resources, links and web without pairing met
   assert.equal(readFileSync(join(armStage, "apps/workbench/src/index.ts"), "utf8"), "enterprise\n");
   assert.equal(existsSync(join(armStage, ".image-meta.json")), false);
   assert.equal(existsSync(join(armStage, "dist/web/index.html")), true);
+  assert.equal(existsSync(join(armStage, "dist/apps-sdk/1.0.0/sdk.json")), true);
   assert.equal(
     realpathSync(join(armStage, "apps/workbench/node_modules/express")),
     realpathSync(expressDir),

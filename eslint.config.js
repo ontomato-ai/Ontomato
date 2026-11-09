@@ -77,7 +77,7 @@ export default [
   {
     // Every .mjs here runs on Node (build, packaging and development entries, their tests, and
     // the agent skill CLIs): add only the Node globals.
-    files: ["scripts/**/*.mjs", "apps/*/*.mjs", "agent-skills/**/*.mjs", "packages/agent-runtime/src/**/*.mjs", "packages/workbench-server/resources/runtime-skills/**/*.mjs", "packages/contracts/scripts/**/*.mjs"],
+    files: ["scripts/**/*.mjs", "apps/*/*.mjs", "agent-skills/**/*.mjs", "packages/agent-runtime/src/**/*.mjs", "packages/workbench-server/resources/runtime-skills/**/*.mjs", "packages/contracts/scripts/**/*.mjs", "packages/apps-sdk/*.mjs"],
     languageOptions: { globals: globals.node },
   },
   {
@@ -101,7 +101,7 @@ export default [
     },
   },
   {
-    files: ["packages/ontology-manager/src/**/*.{ts,vue}"],
+    files: ["packages/ontology-manager/src/**/*.{ts,vue}", "packages/apps-sdk/src/**/*.ts"],
     rules: {
       // DOM type names (such as RequestInit) are not runtime globals; undefined identifiers
       // are checked by vue-tsc.

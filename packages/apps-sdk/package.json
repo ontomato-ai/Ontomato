@@ -1,0 +1,31 @@
+{
+  "name": "@ontomato/apps-sdk",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "exports": {
+    ".": "./src/edition.ts"
+  },
+  "scripts": {
+    "typecheck": "vue-tsc --noEmit"
+  },
+  "dependencies": {
+    "@ontomato/agent-shell-ui": "workspace:*",
+    "@ontomato/contracts": "workspace:*",
+    "@ontomato/design-tokens": "workspace:*",
+    "@ontomato/ontology-manager": "workspace:*",
+    "@ontomato/workbench-ui": "workspace:*",
+    "echarts": "6.0.0",
+    "element-plus": "2.13.6",
+    "vue": "3.5.30",
+    "vue-i18n": "10.0.8"
+  },
+  "devDependencies": {
+    "@types/node": "22.19.15",
+    "@vitejs/plugin-vue": "5.2.4",
+    "typescript": "5.9.3",
+    "vite": "5.4.21",
+    "vue-component-meta": "3.2.6",
+    "vue-tsc": "3.2.6"
+  }
+}

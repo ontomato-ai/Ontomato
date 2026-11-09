@@ -115,6 +115,13 @@ export async function buildWorkbenchImage(app, args) {
     `APPLICATION=${record.application}`,
     "--build-arg",
     `TARGETPLATFORM=linux/${arch}`,
+    // The apps SDK names its version after the product release and the source commits (packages/apps-sdk/build.mjs).
+    "--build-arg",
+    `APPS_SDK_BUILD=${JSON.stringify({
+      product: app.workspaceId,
+      version,
+      sources: entries.map(({ id, revision, dirty }) => ({ id, revision, dirty })),
+    })}`,
     ...imageLabels(app.component, version, stamp),
     "-t",
     tag,

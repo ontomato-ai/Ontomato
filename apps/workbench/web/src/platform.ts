@@ -3,8 +3,6 @@ import "element-plus/theme-chalk/dark/css-vars.css";
 import "@ontomato/workbench-ui/styles/style.css";
 import "./narrow-dialogs.css";
 import "@ontomato/workbench-ui/styles/admin-common.css";
-import en from "element-plus/es/locale/lang/en";
-import publicEn from "@ontomato/workbench-ui/locales/en";
 import { openOntologyServiceAccess } from "@ontomato/workbench-ui";
 import {
   dashboardPages,
@@ -18,6 +16,7 @@ import {
 } from "@ontomato/platform-web";
 import { ossBrand } from "@ontomato/design-tokens/oss";
 import { anonymousAuthHost } from "./auth";
+import { ossLanguage } from "./language";
 import { workbenchContent } from "./workbench-content";
 
 import { platformRoutes } from "@ontomato/platform-shell/routes";
@@ -29,15 +28,7 @@ export function startPlatform() {
   reloadOnStaleBuild();
   startWorkbenchWeb({
     brand: ossBrand,
-    language: {
-      supported: ["en"],
-      defaultLocale: "en",
-      initialLocale: "en",
-      switchEnabled: false,
-      save: null,
-      messages: { en: publicEn },
-      elementLocale: () => en,
-    },
+    language: ossLanguage,
     auth: anonymousAuthHost,
     errorPunctuation: { detailSeparator: ":", listSeparator: ";" },
     content: workbenchContent,

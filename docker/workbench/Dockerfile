@@ -30,6 +30,7 @@ FROM --platform=$BUILDPLATFORM ${NODE_BUILDER_IMAGE} AS app-builder
 ARG WORKSPACE=ontomato
 ARG APPLICATION
 ARG TARGETPLATFORM
+ARG APPS_SDK_BUILD
 ARG PNPM_VERSION=9.15.9
 RUN npm install -g pnpm@${PNPM_VERSION}
 ENV npm_config_store_dir=/pnpm/store
@@ -50,6 +51,8 @@ COPY launch.sh /tmp/launch.sh
 
 WORKDIR /build/workspace/${WORKSPACE}/apps/workbench
 RUN pnpm build:web
+# The product's apps SDK version, installed into the data volume at startup (APPS_SDK_BUILD names it).
+RUN pnpm build:sdk
 RUN TARGETPLATFORM=${TARGETPLATFORM} node /tmp/tools/workbench/stage-app.mjs
 RUN cp /tmp/launch.sh /stage/launch.sh \
  && chmod 0755 /stage/launch.sh \
