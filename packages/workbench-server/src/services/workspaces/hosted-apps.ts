@@ -23,7 +23,7 @@ export async function initializeAppSdk() {
 export async function writeHostedPublication(appId: string, releaseId: string, declaration: Record<string, unknown>, credentials: AssistantCredentials) {
   const response = await backendPut("hosted-publication", buildUrl(getApiConfig(), `/platform/applications/${appId}/hosted-publication`),
     { declaration, releaseId }, { ...credentials, retries: 1 });
-  const result = z.object({ success: z.boolean(), message: z.string().optional() }).passthrough().parse(JSON.parse(response.text));
+  const result = z.object({ success: z.boolean(), message: z.string().nullish() }).passthrough().parse(JSON.parse(response.text));
   if (!result.success) throw new HttpError(502, result.message ?? "Publication rejected");
   return result;
 }
