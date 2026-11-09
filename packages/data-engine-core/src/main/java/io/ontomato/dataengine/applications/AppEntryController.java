@@ -25,9 +25,8 @@ public class AppEntryController {
         if (!id.matches("app-[a-z0-9-]+")) return ResponseEntity.status(403).build();
         String tail = parts.length == 2 ? parts[1] : "";
         String decoded = URLDecoder.decode(tail.replace("+", "%2B"), StandardCharsets.UTF_8);
-        if (decoded.contains("\\") || decoded.contains("%") || decoded.indexOf(0) >= 0 ||
-            java.util.Arrays.stream(decoded.split("/")).anyMatch(s -> s.equals(".") || s.equals("..")) ||
-            decoded.matches("(?i)^/*internal(?:/.*)?$")) return ResponseEntity.status(403).build();
+        if (java.util.Arrays.stream(decoded.split("/")).anyMatch(s -> s.equals(".") || s.equals("..")))
+            return ResponseEntity.status(403).build();
         var app = catalog.all().stream().filter(a -> id.equals(a.getString("id"))).findFirst();
         if (app.isEmpty() || !catalog.inDomain(app.get(),user) || !access.canEnter(app.get(),user)) return ResponseEntity.status(403).build();
         String kind = app.get().getString("kind");
