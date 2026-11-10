@@ -138,6 +138,7 @@ RUN ln -s /opt/runtime/node_modules /node_modules
 FROM runtime-base AS final
 
 COPY --from=app-builder /stage/ /app/
+COPY build-info.json /app/build-info.json
 COPY --from=app-builder /stage/licenses/THIRD_PARTY_NOTICES.txt /licenses/WEB_THIRD_PARTY_NOTICES.txt
 
 COPY tools/workbench/runtime-layout.mjs /tmp/tools/workbench/runtime-layout.mjs

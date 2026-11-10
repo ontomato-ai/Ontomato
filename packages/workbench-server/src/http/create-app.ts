@@ -1,3 +1,4 @@
+import { createHealthRouter } from "../api/routes/health";
 import { appBuilderRouter } from "../api/routes/app-builder";
 import { workspacePreviewRouter, workspaceRouter, mountHostedStatic } from "../api/routes/workspaces";
 import { installAppSdk } from "../services/workspaces/hosted-apps";
@@ -164,9 +165,7 @@ export function createWorkbenchApp(): Express {
     },
   );
 
-  app.get("/api/health", (_req: Request, res: Response) => {
-    res.json({ status: "ok", timestamp: new Date().toISOString() });
-  });
+  app.use("/api/health", createHealthRouter());
 
   app.get("/config.js", (_req: Request, res: Response) => {
     res.type("application/javascript");

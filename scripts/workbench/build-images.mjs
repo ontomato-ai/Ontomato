@@ -101,6 +101,10 @@ export async function buildWorkbenchImage(app, args) {
     appImporter: app.appImporter,
     destination: context,
   });
+  writeFileSync(join(context, "build-info.json"), `${JSON.stringify({
+    version: stamp,
+    sources: entries.map(({ id, revision }) => ({ id, revision })),
+  })}\n`);
   copyWorkspace(app, context, record);
   const sharedSource = app.sources.find((source) => source.root === app.publicRoot);
   cpSync(
