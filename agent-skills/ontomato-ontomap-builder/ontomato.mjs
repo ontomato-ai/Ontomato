@@ -94,8 +94,8 @@ async function uploadVector(cfg, argv) {
     form.append("file", new Blob([fs.readFileSync(file)]), path.basename(file));
   }
   const res = await fetch(`${cfg.envUrl}/api/data-query/vectorResource/upload`, {
-      method: "POST",
-      body: form,
+    method: "POST",
+    body: form,
   });
   const json = await readResponseJson(res);
   console.log(JSON.stringify(json.data, null, 2));
@@ -138,7 +138,7 @@ async function uploadVectors(cfg, argv) {
     form.append("items", JSON.stringify(part));
     const res = await fetch(`${cfg.envUrl}/api/data-query/vectorResource/upload`, {
       method: "POST",
-            body: form,
+      body: form,
     });
     const text = await res.text();
     const json = res.ok ? JSON.parse(text) : null;
@@ -171,7 +171,7 @@ async function importTestData(cfg, argv) {
   form.append("file", new Blob([fs.readFileSync(argv[0])], { type: "application/zip" }), path.basename(argv[0]));
   const res = await fetch(`${cfg.envUrl}/api/data-query/testEnv/importData`, {
     method: "POST",
-        body: form,
+    body: form,
   });
   await readResponseJson(res);
   console.log("test data imported");

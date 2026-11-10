@@ -748,7 +748,7 @@ public class PostgreAdapter implements DataAdapter {
 
 	@Override
 	public void createNamespace(String namespace) {
-		
+
 	}
 
 	@Override
@@ -833,7 +833,7 @@ public class PostgreAdapter implements DataAdapter {
 			log.error(e.getMessage(), e);
 		}
 	}
-	
+
 	private boolean isSupportedType(String type) {
 		return "varchar".equals(type) || "text".equals(type) || "int".equals(type) || "long".equals(type)
 				|| "double".equals(type) || "date".equals(type) || "timestamp".equals(type)
@@ -870,7 +870,7 @@ public class PostgreAdapter implements DataAdapter {
 			log.error(e.getMessage(), e);
 		}
 	}
-		
+
 	/** The SQL type of a class's join column, so a junction column holds the same values its end does. */
 	private String joinColumnType(String className, String fieldName) {
 		List<Map<String, Object>> classDefs = (List<Map<String, Object>>)jsonRule.get("classDef");
@@ -915,7 +915,7 @@ public class PostgreAdapter implements DataAdapter {
 	public void insertObjects(String namespace, Map<String, Object> classDef, JSONArray objs) throws Exception {
 		SimpleDateFormat ymd = new SimpleDateFormat("yyyy-MM-dd");
 		SimpleDateFormat ymdhms = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
-		
+
 		boolean inSandbox = inSandbox(namespace);
 		String fullClassName = null;
 		if (inSandbox) {
@@ -947,14 +947,14 @@ public class PostgreAdapter implements DataAdapter {
 
 		if (idIndex >= 0) {
 			String pk = fields.get(idIndex);
-			
+
 			List<String> sqls = new ArrayList<String>();
 			for (int i = 0; i < objs.size(); i++) {
 				JSONObject obj = objs.getJSONObject(i);
 				if (obj.get(pk) == null || "".equals(obj.getString(pk).trim())) {
 					throw new Exception("The insert statement must contain the primary key [" + pk + "] field");
 				}
-				
+
 				// Build mql: insert into /aaa/bbb(f1,f2,...) values(?,?,...)
 				StringBuilder sql = new StringBuilder();
 				sql.append("insert into ").append(fullClassName).append("(");
@@ -973,7 +973,7 @@ public class PostgreAdapter implements DataAdapter {
 					}
 				}
 				sql.append(")");
-				
+
 				sqls.add(sql.toString());
 			}
 			executeSql(sqls);
@@ -981,7 +981,7 @@ public class PostgreAdapter implements DataAdapter {
 			throw new Exception("The insert statement must contain the primary key field");
 		}
 	}
-	
+
 	private boolean inSandbox(String sandboxId) {
 		return sandboxId != null && !"".equals(sandboxId.trim());
 	}
@@ -991,7 +991,7 @@ public class PostgreAdapter implements DataAdapter {
 			throws Exception {
 		SimpleDateFormat ymd = new SimpleDateFormat("yyyy-MM-dd");
 		SimpleDateFormat ymdhms = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
-		
+
 		boolean inSandbox = inSandbox(namespace);
 		String fullClassName = null;
 		if (inSandbox) {
@@ -1018,7 +1018,7 @@ public class PostgreAdapter implements DataAdapter {
 				}
 			}
 		}
-		
+
 		String setStr = "";
 		for (String key : setValues.keySet()) {
 			if (key.equals(pk)) {
@@ -1046,10 +1046,10 @@ public class PostgreAdapter implements DataAdapter {
 		if (!"".equals(whereStr.trim())) {
 			sql += " where " + whereStr;
 		}
-		
+
 		executeSql(sql);
 	}
-	
+
 	private String generateWhere(JSONObject condition, Map<String, String> attrTypeMap, SimpleDateFormat ymd, SimpleDateFormat ymdhms) throws Exception {
 		String whereStr = "";
 	    if (condition != null) {
@@ -1057,7 +1057,7 @@ public class PostgreAdapter implements DataAdapter {
 	    }
 	    return whereStr;
 	}
-	
+
 	/**
 	 * Recursively build the where fragment
 	 * @param condition   condition JSON (single-attribute condition or logic condition)
@@ -1122,7 +1122,7 @@ public class PostgreAdapter implements DataAdapter {
 	            return "";
 	    }
 	}
-	
+
 	/** A time condition value is passed through verbatim: the source's own time convention is never re-interpreted. */
 	private static String timeLiteral(Object value) {
 		return "'" + String.valueOf(value).replace("'", "''") + "'";
@@ -1196,7 +1196,7 @@ public class PostgreAdapter implements DataAdapter {
 	public void deleteObjects(String namespace, Map<String, Object> classDef, JSONObject where) throws Exception {
 		SimpleDateFormat ymd = new SimpleDateFormat("yyyy-MM-dd");
 		SimpleDateFormat ymdhms = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
-		
+
 		boolean inSandbox = inSandbox(namespace);
 		String fullClassName = null;
 		if (inSandbox) {
@@ -1205,7 +1205,7 @@ public class PostgreAdapter implements DataAdapter {
 		} else {
 			fullClassName = (String) classDef.get("className");
 		}
-		
+
 		Map<String, String> attrTypeMap = new HashMap<String, String>();
 		if (classDef.get("attrs") != null) {
 			List<Map<String, Object>> attrDefs = (List<Map<String, Object>>)classDef.get("attrs");
@@ -1218,13 +1218,13 @@ public class PostgreAdapter implements DataAdapter {
 				}
 			}
 		}
-		
+
 		String sql = "delete from " + fullClassName;
 		String whereStr = generateWhere(where, attrTypeMap, ymd, ymdhms);
 		if (!"".equals(whereStr.trim())) {
 			sql += " where " + whereStr;
 		}
-		
+
 		executeSql(sql);
 	}
 
@@ -1232,7 +1232,7 @@ public class PostgreAdapter implements DataAdapter {
 	public void createEdge(String namespace, String relationName, String sourceClassName, String sourceObjId,
 			String targetClassName, String targetObjId) throws Exception {
 		boolean inSandbox = inSandbox(namespace);
-		
+
 		List<Map<String, Object>> classDefs = (List<Map<String, Object>>)jsonRule.get("classDef");
 		Map<String, Object> relationship_rule = (Map<String, Object>)jsonRule.get("relationship_rule");
 		Map<String, Object> sourceClassDef = null;
@@ -1247,7 +1247,7 @@ public class PostgreAdapter implements DataAdapter {
 		}
 		OntologyRelation rel = OntologyRelation.of(relationName, relationship_rule.get(relationName),
 				"relationship_rule[" + relationName + "]");
-		
+
 		if (sourceClassDef == null || targetClassDef == null || !rel.fromEnd(sourceClassName)
 				|| !rel.toClass().equals(targetClassName)) {
 			throw new Exception("Object class [" + sourceClassName + "] and object class [" + targetClassName + "] have no relationship definition [" + relationName + "]");
@@ -1263,37 +1263,37 @@ public class PostgreAdapter implements DataAdapter {
 							+ rel.kind() + "' but this source stores edges as key columns");
 		}
 
-			String sourcePk = DslUtil.getPrimaryKey(sourceClassDef);
-			String targetPk = DslUtil.getPrimaryKey(targetClassDef);
+		String sourcePk = DslUtil.getPrimaryKey(sourceClassDef);
+		String targetPk = DslUtil.getPrimaryKey(targetClassDef);
 		String sourceInnerField = rel.fromField();
 		String targetInnerField = rel.toField();
-			
-			String sql = null;
-			if (sourcePk.equals(sourceInnerField)) {
+
+		String sql = null;
+		if (sourcePk.equals(sourceInnerField)) {
 			if (targetPk.equals(targetInnerField)) {
 				// Both join fields are the classes' own primary keys: a 1:1 link where the two rows share
 				// one key value. Nothing to write — the connection IS the equal key. Deliberately not a gap.
 				return;
 			} else {
-					String fullClassName = null;
-					if (inSandbox) {
-						String className = (String) targetClassDef.get("className");
-						fullClassName = namespace + className;
-					} else {
-						fullClassName = (String) targetClassDef.get("className");
-					}
-					sql = "update " + fullClassName + " set " + targetInnerField + " = " + toSqlValue("varchar", sourceObjId, null, null) + " where " + targetPk + " = " + toSqlValue("varchar", targetObjId, null, null);
+				String fullClassName = null;
+				if (inSandbox) {
+					String className = (String) targetClassDef.get("className");
+					fullClassName = namespace + className;
+				} else {
+					fullClassName = (String) targetClassDef.get("className");
 				}
-			} else {
+				sql = "update " + fullClassName + " set " + targetInnerField + " = " + toSqlValue("varchar", sourceObjId, null, null) + " where " + targetPk + " = " + toSqlValue("varchar", targetObjId, null, null);
+			}
+		} else {
 			if (targetPk.equals(targetInnerField)) {
-					String fullClassName = null;
-					if (inSandbox) {
-						String className = (String) sourceClassDef.get("className");
-						fullClassName = namespace + className;
-					} else {
-						fullClassName = (String) sourceClassDef.get("className");
-					}
-					sql = "update " + fullClassName + " set " + sourceInnerField + " = " + toSqlValue("varchar", targetObjId, null, null) + " where " + sourcePk + " = " + toSqlValue("varchar", sourceObjId, null, null);
+				String fullClassName = null;
+				if (inSandbox) {
+					String className = (String) sourceClassDef.get("className");
+					fullClassName = namespace + className;
+				} else {
+					fullClassName = (String) sourceClassDef.get("className");
+				}
+				sql = "update " + fullClassName + " set " + sourceInnerField + " = " + toSqlValue("varchar", targetObjId, null, null) + " where " + sourcePk + " = " + toSqlValue("varchar", sourceObjId, null, null);
 			} else {
 				// Neither end is a primary key: there is no column that can carry this connection, so a
 				// junction table is the only realization. Declaring type 'fk' therefore made the
@@ -1302,12 +1302,12 @@ public class PostgreAdapter implements DataAdapter {
 						"relationship_rule[" + relationName + "]",
 						"relationship [" + relationName + "] joins two non-key fields (" + sourceInnerField + ", "
 								+ targetInnerField + "), which needs a junction table; declare it as n:n with a linkTable");
-				}
 			}
-			
-			if (sql != null) {
-				executeSql(sql);
-			}
+		}
+
+		if (sql != null) {
+			executeSql(sql);
+		}
 	}
 
 	/** Insert one junction row, or leave it alone when this exact pairing is already recorded. */
@@ -1341,8 +1341,8 @@ public class PostgreAdapter implements DataAdapter {
 						&& !className.equals(rel.fromClass())) {
 					prefix = className.substring(0, className.length() - rel.fromClass().length());
 					break;
-		}
-	}
+				}
+			}
 		}
 		return prefix + rel.linkTable();
 	}
@@ -1366,12 +1366,12 @@ public class PostgreAdapter implements DataAdapter {
 	private String junctionTable(String namespace, OntologyRelation rel) {
 		return inSandbox(namespace) ? sandboxClassName(namespace, rel.linkTable()) : rel.linkTable();
 	}
-	
+
 	@Override
 	public void deleteEdge(String namespace, String relationName, String sourceClassName, String sourceObjId,
 			String targetClassName, String targetObjId) throws Exception {
 		boolean inSandbox = inSandbox(namespace);
-		
+
 		List<Map<String, Object>> classDefs = (List<Map<String, Object>>)jsonRule.get("classDef");
 		Map<String, Object> relationship_rule = (Map<String, Object>)jsonRule.get("relationship_rule");
 		Map<String, Object> sourceClassDef = null;
@@ -1386,7 +1386,7 @@ public class PostgreAdapter implements DataAdapter {
 		}
 		OntologyRelation rel = OntologyRelation.of(relationName, relationship_rule.get(relationName),
 				"relationship_rule[" + relationName + "]");
-		
+
 		if (sourceClassDef == null || targetClassDef == null || !rel.fromEnd(sourceClassName)
 				|| !rel.toClass().equals(targetClassName)) {
 			throw new Exception("Object class [" + sourceClassName + "] and object class [" + targetClassName + "] have no relationship definition [" + relationName + "]");
@@ -1404,59 +1404,59 @@ public class PostgreAdapter implements DataAdapter {
 							+ rel.kind() + "' but this source stores edges as key columns");
 		}
 
-			String sourcePk = DslUtil.getPrimaryKey(sourceClassDef);
-			String targetPk = DslUtil.getPrimaryKey(targetClassDef);
+		String sourcePk = DslUtil.getPrimaryKey(sourceClassDef);
+		String targetPk = DslUtil.getPrimaryKey(targetClassDef);
 		String sourceInnerField = rel.fromField();
 		String targetInnerField = rel.toField();
-			
-			String sql = null;
-			if (sourcePk.equals(sourceInnerField)) {
+
+		String sql = null;
+		if (sourcePk.equals(sourceInnerField)) {
 			if (targetPk.equals(targetInnerField)) {
 				// A 1:1 shared key: the connection is the equal key value, so there is no column to clear.
 				return;
 			} else {
-					String fullClassName = null;
-					if (inSandbox) {
-						String className = (String) targetClassDef.get("className");
-						fullClassName = namespace + className;
-					} else {
-						fullClassName = (String) targetClassDef.get("className");
-					}
-					sql = "update " + fullClassName + " set " + targetInnerField + " = null where " + targetPk + " = " + toSqlValue("varchar", targetObjId, null, null);
+				String fullClassName = null;
+				if (inSandbox) {
+					String className = (String) targetClassDef.get("className");
+					fullClassName = namespace + className;
+				} else {
+					fullClassName = (String) targetClassDef.get("className");
 				}
-			} else {
+				sql = "update " + fullClassName + " set " + targetInnerField + " = null where " + targetPk + " = " + toSqlValue("varchar", targetObjId, null, null);
+			}
+		} else {
 			if (targetPk.equals(targetInnerField)) {
-					String fullClassName = null;
-					if (inSandbox) {
-						String className = (String) sourceClassDef.get("className");
-						fullClassName = namespace + className;
-					} else {
-						fullClassName = (String) sourceClassDef.get("className");
-					}
-					sql = "update " + fullClassName + " set " + sourceInnerField + " = null where " + sourcePk + " = " + toSqlValue("varchar", sourceObjId, null, null);
+				String fullClassName = null;
+				if (inSandbox) {
+					String className = (String) sourceClassDef.get("className");
+					fullClassName = namespace + className;
+				} else {
+					fullClassName = (String) sourceClassDef.get("className");
+				}
+				sql = "update " + fullClassName + " set " + sourceInnerField + " = null where " + sourcePk + " = " + toSqlValue("varchar", sourceObjId, null, null);
 			} else {
 				throw new DslContractViolationException(DslContractViolationException.Code.UNSUPPORTED_CONSTRUCT,
 						"relationship_rule[" + relationName + "]",
 						"relationship [" + relationName + "] joins two non-key fields (" + sourceInnerField + ", "
 								+ targetInnerField + "), which needs a junction table; declare it as n:n with a linkTable");
-				}
 			}
-			
-			if (sql != null) {
-				executeSql(sql);
-			}
+		}
+
+		if (sql != null) {
+			executeSql(sql);
+		}
 	}
-	
+
 	private void executeSql(String sql) throws Exception {
 		List<String> sqls = new ArrayList<String>();
 		sqls.add(sql);
 		executeSql(sqls);
 	}
-	
+
 	private void executeSql(List<String> sqls) throws Exception {
 		Connection conn = null;
 		Statement st = null;
-		
+
 		try {
 			conn = openConnection();
 			conn.setAutoCommit(false);
@@ -1484,7 +1484,7 @@ public class PostgreAdapter implements DataAdapter {
 			}
 		}
 	}
-	
+
 	@Override
 	public JSONArray queryVectorAttr(Map<String, Object> classDef, String attrName, String objectId) throws Exception {
 		String fullClassName = (String) classDef.get("className");
@@ -1501,14 +1501,14 @@ public class PostgreAdapter implements DataAdapter {
 	@Override
 	public Map<String, Object> query(JSONObject dsl, String sandboxId, String domainId, VectorResourceDao vectorResourceDao, DataRagConfig dataRagConfig) throws Exception {
 		boolean inSandbox = inSandbox(sandboxId);
-		
+
 		UserDataPermission userDataPermission = new UserDataPermission();
 		JSONArray dsls = new JSONArray();
     	dsls.add(dsl);
     	List<Map<String, Object>> classDefs = (List<Map<String, Object>>)jsonRule.get("classDef");
 		String dslStr = DslUtil.normalizeClassNames(JSONArray.toJSONString(dsls, Feature.WriteMapNullValue), classDefs);
 		dslStr = DslUtil.setConditionTimeColumnToCorrectFormat(dslStr, dataRagConfig.getDslMightTimeFormats(), classDefs, timeConditionsAsEpochMillis(), timeConditionZone());
-		
+
 		JSONObject dataMap = new JSONObject();
 		DslExecutionResult result = null;
 		JSONObject data = null;
@@ -1524,14 +1524,14 @@ public class PostgreAdapter implements DataAdapter {
 			result = HttpRequestUtil.executeDsl(dataRagConfig, this, dslStr, null, true, jsonRule, vectorResourceDao, userDataPermission, DslExecutionMode.OPTIMIZED, domainId)[1];
 			data = result.data();
 		}
-		
+
 		dataMap.putAll(data);
 		if (result.failed()) {
 			dataMap.put("error", ErrorText.queryError(result.failure().cause()));
 		}
 		return dataMap;
 	}
-	
+
 	private String addSandboxId(String dslStr, String sandboxId) {
 		JSONArray dsls = JSON.parseArray(dslStr);
 		for (int dslIndex = 0; dslIndex < dsls.size(); dslIndex++) {
@@ -1562,5 +1562,5 @@ public class PostgreAdapter implements DataAdapter {
 		}
 		return JSON.toJSONString(dsls, Feature.WriteMapNullValue);
 	}
-	
+
 }

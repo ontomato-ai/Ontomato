@@ -225,10 +225,10 @@ public class VectorResourceDao extends BaseDao {
 				ensureVectorIndex(indexName, stored.length);
 				return jdbcTemplate.update(
 					"INSERT INTO " + quotedTable(indexName) + " (id, brief, path, class_name, attr_name, object_id, brief_vector) "
-							+ "VALUES (?, ?, ?, ?, ?, ?, ?::vector) "
-							+ "ON CONFLICT (id) DO UPDATE SET brief = EXCLUDED.brief, path = EXCLUDED.path, "
-							+ "class_name = EXCLUDED.class_name, attr_name = EXCLUDED.attr_name, "
-							+ "object_id = EXCLUDED.object_id, brief_vector = EXCLUDED.brief_vector",
+						+ "VALUES (?, ?, ?, ?, ?, ?, ?::vector) "
+						+ "ON CONFLICT (id) DO UPDATE SET brief = EXCLUDED.brief, path = EXCLUDED.path, "
+						+ "class_name = EXCLUDED.class_name, attr_name = EXCLUDED.attr_name, "
+						+ "object_id = EXCLUDED.object_id, brief_vector = EXCLUDED.brief_vector",
 					vectorResource.getId(), vectorResource.getContent(), vectorResource.getPath(),
 					vectorResource.getClassName(), vectorResource.getAttrName(), vectorResource.getObjectId(),
 					new PGvector(stored));

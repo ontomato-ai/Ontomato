@@ -49,12 +49,12 @@ public class EmbeddingService {
             List<float[]> embedded = new ArrayList<>(vectors.size());
             for (int v = 0; v < vectors.size(); v++) {
                 var vector = vectors.getJSONArray(v);
-            if (vector.size() != actual.getDimensions()) throw new IllegalStateException("Embedding dimensions do not match");
-            float[] values = new float[vector.size()];
-            for (int i = 0; i < values.length; i++) {
-                values[i] = vector.getFloatValue(i);
-                if (!Float.isFinite(values[i])) throw new IllegalStateException("Invalid embedding value");
-            }
+                if (vector.size() != actual.getDimensions()) throw new IllegalStateException("Embedding dimensions do not match");
+                float[] values = new float[vector.size()];
+                for (int i = 0; i < values.length; i++) {
+                    values[i] = vector.getFloatValue(i);
+                    if (!Float.isFinite(values[i])) throw new IllegalStateException("Invalid embedding value");
+                }
                 embedded.add(values);
             }
             return embedded;

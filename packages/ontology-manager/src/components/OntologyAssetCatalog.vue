@@ -215,85 +215,85 @@ onMounted(async () => {
           clearable
         />
         <span class="resource-count">{{ filteredAssets.length }} {{ ot("items") }}</span>
-      <template v-if="canBatchUpdate && checked.length">
-        <span class="resource-count">{{ ot("assetChecked", { n: checked.length }) }}</span>
-        <el-select v-model="targetStatus" class="batch-status" :aria-label="ot('status')">
-          <el-option :label="ot('pendingReview')" value="PENDING_REVIEW" />
-          <el-option :label="ot('published')" value="PUBLISHED" />
-          <el-option :label="ot('unused')" value="UNUSED" />
-        </el-select>
-        <el-button :icon="ListChecks" :loading="saving" @click="updateCheckedStatus()">
-          {{ ot("assetBatchStatus") }}
-        </el-button>
-        <el-button link @click="checked = []">{{ ot("assetClearChecked") }}</el-button>
-      </template>
+        <template v-if="canBatchUpdate && checked.length">
+          <span class="resource-count">{{ ot("assetChecked", { n: checked.length }) }}</span>
+          <el-select v-model="targetStatus" class="batch-status" :aria-label="ot('status')">
+            <el-option :label="ot('pendingReview')" value="PENDING_REVIEW" />
+            <el-option :label="ot('published')" value="PUBLISHED" />
+            <el-option :label="ot('unused')" value="UNUSED" />
+          </el-select>
+          <el-button :icon="ListChecks" :loading="saving" @click="updateCheckedStatus()">
+            {{ ot("assetBatchStatus") }}
+          </el-button>
+          <el-button link @click="checked = []">{{ ot("assetClearChecked") }}</el-button>
+        </template>
       </div>
 
       <div class="resource-table">
-      <div class="resource-table-heading">
-        <el-checkbox
-          v-if="canBatchUpdate"
-          class="resource-check"
-          :model-value="allVisibleChecked"
-          :indeterminate="visibleCheckedCount > 0 && !allVisibleChecked"
-          :disabled="!selectableAssets.length"
-          :aria-label="ot('assetCheckAll')"
-          @update:model-value="toggleAllVisible(Boolean($event))"
-        />
-        <div :class="['resource-table-head', { 'function-grid': kind === 'functions' }]">
-          <span>{{ currentMeta.title }}</span>
-          <span v-if="kind === 'functions'">{{ ot("assetOperationType") }}</span>
-          <span v-else>{{ ot("linkedFunction") }}</span>
-          <span v-if="kind !== 'functions'">{{ ot("source") }}</span>
-          <span v-if="kind !== 'functions'">{{ ot("status") }}</span>
-          <span v-if="kind !== 'functions'">{{ ot("createdBy") }}</span>
-          <span v-if="kind !== 'functions'">{{ ot("reviewedBy") }}</span>
-          <span v-if="kind !== 'functions'">{{ ot("lastUpdated") }}</span>
-          <span></span>
+        <div class="resource-table-heading">
+          <el-checkbox
+            v-if="canBatchUpdate"
+            class="resource-check"
+            :model-value="allVisibleChecked"
+            :indeterminate="visibleCheckedCount > 0 && !allVisibleChecked"
+            :disabled="!selectableAssets.length"
+            :aria-label="ot('assetCheckAll')"
+            @update:model-value="toggleAllVisible(Boolean($event))"
+          />
+          <div :class="['resource-table-head', { 'function-grid': kind === 'functions' }]">
+            <span>{{ currentMeta.title }}</span>
+            <span v-if="kind === 'functions'">{{ ot("assetOperationType") }}</span>
+            <span v-else>{{ ot("linkedFunction") }}</span>
+            <span v-if="kind !== 'functions'">{{ ot("source") }}</span>
+            <span v-if="kind !== 'functions'">{{ ot("status") }}</span>
+            <span v-if="kind !== 'functions'">{{ ot("createdBy") }}</span>
+            <span v-if="kind !== 'functions'">{{ ot("reviewedBy") }}</span>
+            <span v-if="kind !== 'functions'">{{ ot("lastUpdated") }}</span>
+            <span></span>
+          </div>
         </div>
-      </div>
-      <div
+        <div
           v-for="asset in filteredAssets"
           :key="asset.id || asset.name"
-        class="resource-table-entry"
-      >
-        <el-checkbox
-          v-if="canBatchUpdate"
-          class="resource-check"
-          :model-value="Boolean(asset.id && checked.includes(asset.id))"
-          :disabled="!asset.id"
-          :aria-label="ot('assetCheckNamed', { name: asset.name })"
-          @update:model-value="asset.id && toggleChecked(asset.id, Boolean($event))"
-        />
-      <button
-        type="button"
-          :class="['resource-table-row', { 'function-grid': kind === 'functions' }]"
-          @click="emit('select', asset)"
+          class="resource-table-entry"
         >
-          <span class="resource-name">
-            <span>
-              <strong>{{ asset.name }}</strong>
-              <small>{{ asset.description || ot("notFilledDescription") }}</small>
+          <el-checkbox
+            v-if="canBatchUpdate"
+            class="resource-check"
+            :model-value="Boolean(asset.id && checked.includes(asset.id))"
+            :disabled="!asset.id"
+            :aria-label="ot('assetCheckNamed', { name: asset.name })"
+            @update:model-value="asset.id && toggleChecked(asset.id, Boolean($event))"
+          />
+          <button
+            type="button"
+            :class="['resource-table-row', { 'function-grid': kind === 'functions' }]"
+            @click="emit('select', asset)"
+          >
+            <span class="resource-name">
+              <span>
+                <strong>{{ asset.name }}</strong>
+                <small>{{ asset.description || ot("notFilledDescription") }}</small>
+              </span>
             </span>
-          </span>
-          <span v-if="kind === 'functions'">{{ operationLabel(asset.operation) }}</span>
-          <span v-else>{{ asset.function?.name || "-" }}</span>
-          <span v-if="kind !== 'functions'">
-            {{
-              asset.origin === "SYSTEM" ? ot("system") : asset.origin === "USER" ? ot("user") : "-"
-            }}
-          </span>
-          <span v-if="kind !== 'functions'">
-            <span :class="['status-pill', statusClass(asset.status)]">
-              {{ statusLabel(asset.status) }}
+            <span v-if="kind === 'functions'">{{ operationLabel(asset.operation) }}</span>
+            <span v-else>{{ asset.function?.name || "-" }}</span>
+            <span v-if="kind !== 'functions'">
+              {{
+                asset.origin === "SYSTEM" ? ot("system") : asset.origin === "USER" ? ot("user") : "-"
+              }}
             </span>
-          </span>
-          <span v-if="kind !== 'functions'">{{ subjectName(asset.createdBy) }}</span>
-          <span v-if="kind !== 'functions'">{{ subjectName(asset.reviewedBy) }}</span>
-          <span v-if="kind !== 'functions'">{{ formatTime(asset.modifyTimestamp) }}</span>
-          <ChevronRight :size="16" class="row-chevron" />
-        </button>
-      </div>
+            <span v-if="kind !== 'functions'">
+              <span :class="['status-pill', statusClass(asset.status)]">
+                {{ statusLabel(asset.status) }}
+              </span>
+            </span>
+            <span v-if="kind !== 'functions'">{{ subjectName(asset.createdBy) }}</span>
+            <span v-if="kind !== 'functions'">{{ subjectName(asset.reviewedBy) }}</span>
+            <span v-if="kind !== 'functions'">{{ formatTime(asset.modifyTimestamp) }}</span>
+            <ChevronRight :size="16" class="row-chevron" />
+          </button>
+        </div>
         <el-empty
           v-if="!loading && filteredAssets.length === 0"
           :description="ot('notFoundNamed', { title: currentMeta.title })"

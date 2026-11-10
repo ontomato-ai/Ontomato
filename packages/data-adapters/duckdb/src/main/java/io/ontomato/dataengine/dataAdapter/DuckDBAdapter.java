@@ -798,7 +798,7 @@ public class DuckDBAdapter implements DataAdapter {
 
 	@Override
 	public void createNamespace(String namespace) {
-		
+
 	}
 
 	@Override
@@ -883,7 +883,7 @@ public class DuckDBAdapter implements DataAdapter {
 			log.error(e.getMessage(), e);
 		}
 	}
-	
+
 	private boolean isSupportedType(String type) {
 		return "varchar".equals(type) || "text".equals(type) || "int".equals(type) || "long".equals(type)
 				|| "double".equals(type) || "date".equals(type) || "timestamp".equals(type)
@@ -908,7 +908,7 @@ public class DuckDBAdapter implements DataAdapter {
 			log.error(e.getMessage(), e);
 		}
 	}
-		
+
 	/** The SQL type of a class's join column, so a junction column holds the same values its end does. */
 	private String joinColumnType(String className, String fieldName) {
 		List<Map<String, Object>> classDefs = (List<Map<String, Object>>) jsonRule.get("classDef");
@@ -995,7 +995,7 @@ public class DuckDBAdapter implements DataAdapter {
 	public void insertObjects(String namespace, Map<String, Object> classDef, JSONArray objs) throws Exception {
 		SimpleDateFormat ymd = new SimpleDateFormat("yyyy-MM-dd");
 		SimpleDateFormat ymdhms = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
-		
+
 		boolean inSandbox = inSandbox(namespace);
 		String fullClassName = null;
 		if (inSandbox) {
@@ -1027,14 +1027,14 @@ public class DuckDBAdapter implements DataAdapter {
 
 		if (idIndex >= 0) {
 			String pk = fields.get(idIndex);
-			
+
 			List<String> sqls = new ArrayList<String>();
 			for (int i = 0; i < objs.size(); i++) {
 				JSONObject obj = objs.getJSONObject(i);
 				if (obj.get(pk) == null || "".equals(obj.getString(pk).trim())) {
 					throw new Exception("The insert statement must contain the primary key [" + pk + "] field");
 				}
-				
+
 				// Build mql: insert into /aaa/bbb(f1,f2,...) values(?,?,...)
 				StringBuilder sql = new StringBuilder();
 				sql.append("insert into ").append(fullClassName).append("(");
@@ -1053,7 +1053,7 @@ public class DuckDBAdapter implements DataAdapter {
 					}
 				}
 				sql.append(")");
-				
+
 				sqls.add(sql.toString());
 			}
 			executeSql(sqls);
@@ -1061,7 +1061,7 @@ public class DuckDBAdapter implements DataAdapter {
 			throw new Exception("The insert statement must contain the primary key field");
 		}
 	}
-	
+
 	private boolean inSandbox(String sandboxId) {
 		return sandboxId != null && !"".equals(sandboxId.trim());
 	}
@@ -1071,7 +1071,7 @@ public class DuckDBAdapter implements DataAdapter {
 			throws Exception {
 		SimpleDateFormat ymd = new SimpleDateFormat("yyyy-MM-dd");
 		SimpleDateFormat ymdhms = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
-		
+
 		boolean inSandbox = inSandbox(namespace);
 		String fullClassName = null;
 		if (inSandbox) {
@@ -1098,7 +1098,7 @@ public class DuckDBAdapter implements DataAdapter {
 				}
 			}
 		}
-		
+
 		String setStr = "";
 		for (String key : setValues.keySet()) {
 			if (key.equals(pk)) {
@@ -1126,10 +1126,10 @@ public class DuckDBAdapter implements DataAdapter {
 		if (!"".equals(whereStr.trim())) {
 			sql += " where " + whereStr;
 		}
-		
+
 		executeSql(sql);
 	}
-	
+
 	private String generateWhere(JSONObject condition, Map<String, String> attrTypeMap, SimpleDateFormat ymd, SimpleDateFormat ymdhms) throws Exception {
 		String whereStr = "";
 	    if (condition != null) {
@@ -1137,7 +1137,7 @@ public class DuckDBAdapter implements DataAdapter {
 	    }
 	    return whereStr;
 	}
-	
+
 	/**
 	 * Recursively build the where fragment
 	 * @param condition   condition JSON (single-attribute condition or logic condition)
@@ -1202,7 +1202,7 @@ public class DuckDBAdapter implements DataAdapter {
 	            return "";
 	    }
 	}
-	
+
 	private static final DateTimeFormatter TEMPORAL_TEXT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
 	/** A temporal column is a date/time type, returned as its own text rather than re-rendered in the process zone. */
@@ -1271,7 +1271,7 @@ public class DuckDBAdapter implements DataAdapter {
 	public void deleteObjects(String namespace, Map<String, Object> classDef, JSONObject where) throws Exception {
 		SimpleDateFormat ymd = new SimpleDateFormat("yyyy-MM-dd");
 		SimpleDateFormat ymdhms = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
-		
+
 		boolean inSandbox = inSandbox(namespace);
 		String fullClassName = null;
 		if (inSandbox) {
@@ -1280,7 +1280,7 @@ public class DuckDBAdapter implements DataAdapter {
 		} else {
 			fullClassName = (String) classDef.get("className");
 		}
-		
+
 		Map<String, String> attrTypeMap = new HashMap<String, String>();
 		if (classDef.get("attrs") != null) {
 			List<Map<String, Object>> attrDefs = (List<Map<String, Object>>)classDef.get("attrs");
@@ -1293,13 +1293,13 @@ public class DuckDBAdapter implements DataAdapter {
 				}
 			}
 		}
-		
+
 		String sql = "delete from " + fullClassName;
 		String whereStr = generateWhere(where, attrTypeMap, ymd, ymdhms);
 		if (!"".equals(whereStr.trim())) {
 			sql += " where " + whereStr;
 		}
-		
+
 		executeSql(sql);
 	}
 
@@ -1307,7 +1307,7 @@ public class DuckDBAdapter implements DataAdapter {
 	public void createEdge(String namespace, String relationName, String sourceClassName, String sourceObjId,
 			String targetClassName, String targetObjId) throws Exception {
 		boolean inSandbox = inSandbox(namespace);
-		
+
 		List<Map<String, Object>> classDefs = (List<Map<String, Object>>)jsonRule.get("classDef");
 		Map<String, Object> relationship_rule = (Map<String, Object>)jsonRule.get("relationship_rule");
 		Map<String, Object> sourceClassDef = null;
@@ -1338,38 +1338,38 @@ public class DuckDBAdapter implements DataAdapter {
 					"an edge stored as a graph relationship; relationship [" + relationName + "] declares type '"
 							+ rel.kind() + "' but this source stores edges as key columns");
 		}
-		
-			String sourcePk = DslUtil.getPrimaryKey(sourceClassDef);
-			String targetPk = DslUtil.getPrimaryKey(targetClassDef);
+
+		String sourcePk = DslUtil.getPrimaryKey(sourceClassDef);
+		String targetPk = DslUtil.getPrimaryKey(targetClassDef);
 		String sourceInnerField = rel.fromField();
 		String targetInnerField = rel.toField();
-			
-			String sql = null;
-			if (sourcePk.equals(sourceInnerField)) {
+
+		String sql = null;
+		if (sourcePk.equals(sourceInnerField)) {
 			if (targetPk.equals(targetInnerField)) {
 				// Both join fields are the classes' own primary keys: a 1:1 link where the two rows
 				// share one key value. Nothing to write — the connection IS the equal key. Not a gap.
 				return;
 			} else {
-					String fullClassName = null;
-					if (inSandbox) {
-						String className = (String) targetClassDef.get("className");
-						fullClassName = namespace + className;
-					} else {
-						fullClassName = (String) targetClassDef.get("className");
-					}
-					sql = "update " + fullClassName + " set " + targetInnerField + " = " + toSqlValue("varchar", sourceObjId, null, null) + " where " + targetPk + " = " + toSqlValue("varchar", targetObjId, null, null);
+				String fullClassName = null;
+				if (inSandbox) {
+					String className = (String) targetClassDef.get("className");
+					fullClassName = namespace + className;
+				} else {
+					fullClassName = (String) targetClassDef.get("className");
 				}
-			} else {
+				sql = "update " + fullClassName + " set " + targetInnerField + " = " + toSqlValue("varchar", sourceObjId, null, null) + " where " + targetPk + " = " + toSqlValue("varchar", targetObjId, null, null);
+			}
+		} else {
 			if (targetPk.equals(targetInnerField)) {
-					String fullClassName = null;
-					if (inSandbox) {
-						String className = (String) sourceClassDef.get("className");
-						fullClassName = namespace + className;
-					} else {
-						fullClassName = (String) sourceClassDef.get("className");
-					}
-					sql = "update " + fullClassName + " set " + sourceInnerField + " = " + toSqlValue("varchar", targetObjId, null, null) + " where " + sourcePk + " = " + toSqlValue("varchar", sourceObjId, null, null);
+				String fullClassName = null;
+				if (inSandbox) {
+					String className = (String) sourceClassDef.get("className");
+					fullClassName = namespace + className;
+				} else {
+					fullClassName = (String) sourceClassDef.get("className");
+				}
+				sql = "update " + fullClassName + " set " + sourceInnerField + " = " + toSqlValue("varchar", targetObjId, null, null) + " where " + sourcePk + " = " + toSqlValue("varchar", sourceObjId, null, null);
 			} else {
 				// Neither end is a primary key: no column can carry this connection, so a junction
 				// table is the only realization. Saying so beats silently writing nothing.
@@ -1377,13 +1377,13 @@ public class DuckDBAdapter implements DataAdapter {
 						"relationship_rule[" + relationName + "]",
 						"relationship [" + relationName + "] joins two non-key fields (" + sourceInnerField + ", "
 								+ targetInnerField + "), which needs a junction table; declare it as n:n with a linkTable");
-				}
-			}
-			
-			if (sql != null) {
-				executeSql(sql);
 			}
 		}
+
+		if (sql != null) {
+			executeSql(sql);
+		}
+	}
 
 	/** Insert one junction row, or leave it alone when this exact pairing is already recorded. */
 	private void insertJunctionRow(String namespace, OntologyRelation rel, String sourceObjId, String targetObjId)
@@ -1397,12 +1397,12 @@ public class DuckDBAdapter implements DataAdapter {
 				+ toSqlValue("varchar", targetObjId, null, null) + ")";
 		executeSql(sql);
 	}
-	
+
 	@Override
 	public void deleteEdge(String namespace, String relationName, String sourceClassName, String sourceObjId,
 			String targetClassName, String targetObjId) throws Exception {
 		boolean inSandbox = inSandbox(namespace);
-		
+
 		List<Map<String, Object>> classDefs = (List<Map<String, Object>>)jsonRule.get("classDef");
 		Map<String, Object> relationship_rule = (Map<String, Object>)jsonRule.get("relationship_rule");
 		Map<String, Object> sourceClassDef = null;
@@ -1436,60 +1436,60 @@ public class DuckDBAdapter implements DataAdapter {
 					"an edge stored as a graph relationship; relationship [" + relationName + "] declares type '"
 							+ rel.kind() + "' but this source stores edges as key columns");
 		}
-		
-			String sourcePk = DslUtil.getPrimaryKey(sourceClassDef);
-			String targetPk = DslUtil.getPrimaryKey(targetClassDef);
+
+		String sourcePk = DslUtil.getPrimaryKey(sourceClassDef);
+		String targetPk = DslUtil.getPrimaryKey(targetClassDef);
 		String sourceInnerField = rel.fromField();
 		String targetInnerField = rel.toField();
-			
-			String sql = null;
-			if (sourcePk.equals(sourceInnerField)) {
+
+		String sql = null;
+		if (sourcePk.equals(sourceInnerField)) {
 			if (targetPk.equals(targetInnerField)) {
 				// A 1:1 shared key: the connection is the equal key value, so there is no column to clear.
 				return;
 			} else {
-					String fullClassName = null;
-					if (inSandbox) {
-						String className = (String) targetClassDef.get("className");
-						fullClassName = namespace + className;
-					} else {
-						fullClassName = (String) targetClassDef.get("className");
-					}
-					sql = "update " + fullClassName + " set " + targetInnerField + " = null where " + targetPk + " = " + toSqlValue("varchar", targetObjId, null, null);
+				String fullClassName = null;
+				if (inSandbox) {
+					String className = (String) targetClassDef.get("className");
+					fullClassName = namespace + className;
+				} else {
+					fullClassName = (String) targetClassDef.get("className");
 				}
-			} else {
+				sql = "update " + fullClassName + " set " + targetInnerField + " = null where " + targetPk + " = " + toSqlValue("varchar", targetObjId, null, null);
+			}
+		} else {
 			if (targetPk.equals(targetInnerField)) {
-					String fullClassName = null;
-					if (inSandbox) {
-						String className = (String) sourceClassDef.get("className");
-						fullClassName = namespace + className;
-					} else {
-						fullClassName = (String) sourceClassDef.get("className");
-					}
-					sql = "update " + fullClassName + " set " + sourceInnerField + " = null where " + sourcePk + " = " + toSqlValue("varchar", sourceObjId, null, null);
+				String fullClassName = null;
+				if (inSandbox) {
+					String className = (String) sourceClassDef.get("className");
+					fullClassName = namespace + className;
+				} else {
+					fullClassName = (String) sourceClassDef.get("className");
+				}
+				sql = "update " + fullClassName + " set " + sourceInnerField + " = null where " + sourcePk + " = " + toSqlValue("varchar", sourceObjId, null, null);
 			} else {
 				throw new DslContractViolationException(DslContractViolationException.Code.UNSUPPORTED_CONSTRUCT,
 						"relationship_rule[" + relationName + "]",
 						"relationship [" + relationName + "] joins two non-key fields (" + sourceInnerField + ", "
 								+ targetInnerField + "), which needs a junction table; declare it as n:n with a linkTable");
-				}
 			}
-			
-			if (sql != null) {
-				executeSql(sql);
-			}
+		}
+
+		if (sql != null) {
+			executeSql(sql);
+		}
 	}
-	
+
 	private void executeSql(String sql) throws Exception {
 		List<String> sqls = new ArrayList<String>();
 		sqls.add(sql);
 		executeSql(sqls);
 	}
-	
+
 	private void executeSql(List<String> sqls) throws Exception {
 		Connection conn = null;
 		Statement st = null;
-		
+
 		try {
 			conn = openConnection();
 			conn.setAutoCommit(false);
@@ -1517,7 +1517,7 @@ public class DuckDBAdapter implements DataAdapter {
 			}
 		}
 	}
-	
+
 	@Override
 	public JSONArray queryVectorAttr(Map<String, Object> classDef, String attrName, String objectId) throws Exception {
 		String fullClassName = (String) classDef.get("className");
@@ -1534,14 +1534,14 @@ public class DuckDBAdapter implements DataAdapter {
 	@Override
 	public Map<String, Object> query(JSONObject dsl, String sandboxId, String domainId, VectorResourceDao vectorResourceDao, DataRagConfig dataRagConfig) throws Exception {
 		boolean inSandbox = inSandbox(sandboxId);
-		
+
 		UserDataPermission userDataPermission = new UserDataPermission();
 		JSONArray dsls = new JSONArray();
     	dsls.add(dsl);
     	List<Map<String, Object>> classDefs = (List<Map<String, Object>>)jsonRule.get("classDef");
 		String dslStr = DslUtil.normalizeClassNames(JSONArray.toJSONString(dsls, Feature.WriteMapNullValue), classDefs);
 		dslStr = DslUtil.setConditionTimeColumnToCorrectFormat(dslStr, dataRagConfig.getDslMightTimeFormats(), classDefs, timeConditionsAsEpochMillis(), timeConditionZone());
-		
+
 		JSONObject dataMap = new JSONObject();
 		DslExecutionResult result = null;
 		JSONObject data = null;
@@ -1557,14 +1557,14 @@ public class DuckDBAdapter implements DataAdapter {
 			result = HttpRequestUtil.executeDsl(dataRagConfig, this, dslStr, null, true, jsonRule, vectorResourceDao, userDataPermission, DslExecutionMode.OPTIMIZED, domainId)[1];
 			data = result.data();
 		}
-		
+
 		dataMap.putAll(data);
 		if (result.failed()) {
 			dataMap.put("error", ErrorText.queryError(result.failure().cause()));
 		}
 		return dataMap;
 	}
-	
+
 	private String addSandboxId(String dslStr, String sandboxId) {
 		JSONArray dsls = JSON.parseArray(dslStr);
 		for (int dslIndex = 0; dslIndex < dsls.size(); dslIndex++) {
@@ -1595,5 +1595,5 @@ public class DuckDBAdapter implements DataAdapter {
 		}
 		return JSON.toJSONString(dsls, Feature.WriteMapNullValue);
 	}
-	
+
 }

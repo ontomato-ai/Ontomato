@@ -1413,11 +1413,11 @@ public class EsAdapter implements DataAdapter {
 		if (keys == null || keys.isEmpty() || keys.size() > maxTerms) {
 			return query;
 		}
-			JSONObject terms = new JSONObject();
+		JSONObject terms = new JSONObject();
 		terms.put(exactField(index, keyField), keys);
-			JSONObject bool = new JSONObject();
-			bool.put("must", JSONArray.of(query, new JSONObject(Map.of("terms", terms))));
-			if (generatedMqls != null) {
+		JSONObject bool = new JSONObject();
+		bool.put("must", JSONArray.of(query, new JSONObject(Map.of("terms", terms))));
+		if (generatedMqls != null) {
 			generatedMqls.add("TERMS pushdown /" + index + " keys=" + keys.size());
 		}
 		return new JSONObject(Map.of("bool", bool));
@@ -1530,7 +1530,7 @@ public class EsAdapter implements DataAdapter {
 				JSONArray hits = page.hits();
 				if (hits.isEmpty()) {
 					break;
-			}
+				}
 				for (int i = 0; i < hits.size(); i++) {
 					JSONObject hit = hits.getJSONObject(i);
 					JSONObject doc = hit.getJSONObject("_source");
@@ -1541,19 +1541,19 @@ public class EsAdapter implements DataAdapter {
 							joined.put(newAlias, doc);
 							if (!sink.accept(joined)) {
 								return;
-			}
-		}
-	}
+							}
+						}
+					}
 					searchAfter = hit.getJSONArray("sort");
-		}
+				}
 				if (hits.size() < PAGE || searchAfter == null) {
 					break;
-			}
+				}
 			}
 		} finally {
 			closePit(pit);
-				}
-			}
+		}
+	}
 
 	/**
 	 * Whether a class name as the DSL carries it names the given ontomap class. The DSL's names are
@@ -1570,7 +1570,7 @@ public class EsAdapter implements DataAdapter {
 	/** The junction index's physical name on the write path: it follows the same namespace rule as a class. */
 	private String junctionIndex(String namespace, OntologyRelation rel) {
 		return EsNaming.indexName(namespace, rel.linkTable());
-		}
+	}
 
 	/**
 	 * The junction index as the read path must spell it. A sandbox run prefixes every class name with
@@ -1587,7 +1587,7 @@ public class EsAdapter implements DataAdapter {
 				prefix = className.substring(0, className.length() - rel.fromClass().length());
 				break;
 			}
-			}
+		}
 		return EsNaming.indexName(prefix, rel.linkTable());
 	}
 
@@ -1598,8 +1598,8 @@ public class EsAdapter implements DataAdapter {
 			}
 			if (edge.to.equals(idx) && inSet.contains(edge.from) && !edge.from.equals(idx)) {
 				return edge;
+			}
 		}
-	}
 		return null;
 	}
 
