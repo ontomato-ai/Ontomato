@@ -27,6 +27,8 @@ import io.ontomato.dataengine.service.BackendSessionEntrance;
 import io.ontomato.dataengine.service.BusinessConfigService;
 import io.ontomato.dataengine.service.LangService;
 import io.ontomato.dataengine.service.MetricViewService;
+import io.ontomato.dataengine.service.ParameterForms;
+import io.ontomato.dataengine.schedules.ScheduleJson;
 import io.ontomato.dataengine.service.SessionCancelledException;
 import io.ontomato.dataengine.service.agent.OntologyGenerationPrompts;
 import io.ontomato.dataengine.service.agent.OntologyGenerationService;
@@ -394,9 +396,9 @@ private MetricViewContent generateContent(JSONArray rows, PythonExecuteResult ex
           .filter(parameter -> parameterTexts.containsKey(parameter.getName())).toList();
       if (definitions.size() != parameterTexts.size())
         throw new IllegalArgumentException("Parameters must match the metric definition exactly");
-      var parsed = io.ontomato.dataengine.service.ParameterForms.interactive(
-          definitions, io.ontomato.dataengine.schedules.ScheduleJson.JSON.valueToTree(parameterTexts),
-          java.util.Map.of(), java.util.List.of(), lang);
+      var parsed = ParameterForms.interactive(
+          definitions, ScheduleJson.JSON.valueToTree(parameterTexts),
+          Map.of(), List.of(), lang);
       if (!parsed.errors().isEmpty())
         throw new IllegalArgumentException(parsed.errors().get(0).path("message").asText());
       values.putAll(parsed.values());
