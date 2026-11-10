@@ -289,6 +289,8 @@ h2 {
   font-size: var(--text-sm);
 }
 .endpoint-card {
+  min-width: 0;
+  overflow-wrap: anywhere;
   display: block;
   width: 100%;
   padding: var(--spacing-md);

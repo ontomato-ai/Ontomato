@@ -39,11 +39,13 @@ Use the class and attribute names exactly as `classes` and `schema` return them;
 
 				5.2.5.3.3 When the constraints are in an `OR` relationship, the or attribute is required, and the or attribute is an array
 
-				5.2.5.3.4 A single object in the array corresponding to the and or or attribute consists of the field and query attributes
+				5.2.5.3.4 A single object in the array corresponding to the and or or attribute consists of the field, query and topK attributes
 
 					5.2.5.3.4.1 field (required) represents the name of the vector type field in the class
 
 					5.2.5.3.4.2 query (required) represents the text to be queried
+
+					5.2.5.3.4.3 topK (optional) is how many resources most similar to query the condition keeps, an integer from 1 to 50; it defaults to 20
 
 		5.2.6  relationship indicates that a certain relationship must be satisfied between objects; it is a list structure, and relationships not returned by `relationships` must not be used. Each element in the list describes
 
@@ -76,11 +78,11 @@ Use the class and attribute names exactly as `classes` and `schema` return them;
 
 		6.3.3 **Arithmetic operations on multiple numeric type fields may only appear in the output of a temporary table and must not appear in the first step** If arithmetic operations on multiple numeric type fields are needed, the item consists only of the expr and as attributes; expr is the mathematical expression of the arithmetic operation, and as is the alias the output is converted to
 
-		6.3.4 The output of a vector type field requires at least two steps; in the query step the field is output to a temporary table (the as, variable and field attributes are required), and in the following step it is output from the temporary table (consisting of the as, variable, field and query attributes)
+		6.3.4 The output of a vector type field requires at least two steps; in the query step the field is output to a temporary table (the as, variable and field attributes are required), and in the following step it is output from the temporary table (consisting of the as, variable, field, query and topK attributes)
 
 			6.3.4.1 If in the following step the field has only the as, variable and field attributes, it means outputting all the files corresponding to the vectors of the field
 
-			6.3.4.2 If in the following step the field has the as, variable, field and query attributes, it means outputting the files corresponding to the vectors of the field filtered by the text content in query
+			6.3.4.2 If in the following step the field has the as, variable, field and query attributes, it means outputting the files corresponding to the vectors of the field filtered by the text content in query; topK (optional, an integer from 1 to 50, default 20) is how many of the resources most similar to query are kept, and unless the step defines sort, the rows and the files of each row are listed from the most similar
 
 		- It is not allowed to perform group by and having operations on vector type fields in output
 		- It is not allowed to perform sort operations on vector type fields in output
@@ -99,8 +101,8 @@ Use the class and attribute names exactly as `classes` and `schema` return them;
 
 ### Vector Semantics
 
-- **Vector Filtering Mechanism**: The `conditions.vector` condition in DSL takes effect only in the object conditions of the first step. Vector retrieval does not take a fixed top-k items; instead, it automatically truncates the highest-similarity cluster of resources based on similarity scores, extracts the primary keys of the corresponding objects, and converts them into a primary key `in` condition on the underlying query.
-- **Two-Step Output and Semantic Filtering**: Outputting a `vector` type attribute requires at least two steps: the first step outputs the attribute to a temporary table (specifying `as`, `variable`, `field`); the following step outputs from the temporary table. If `query` is specified on the field in the second step, only resource items semantically matching the query are retained; if `query` is omitted, all resource items associated with the object are output.
+- **Vector Filtering Mechanism**: The `conditions.vector` condition in DSL takes effect only in the object conditions of the first step. Vector retrieval keeps the `topK` resources most similar to `query` (an integer from 1 to 50, default 20), extracts the primary keys of the corresponding objects, and converts them into a primary key `in` condition on the underlying query.
+- **Two-Step Output and Semantic Filtering**: Outputting a `vector` type attribute requires at least two steps: the first step outputs the attribute to a temporary table (specifying `as`, `variable`, `field`); the following step outputs from the temporary table. If `query` is specified on the field in the second step, only the `topK` resource items most similar to the query are retained (default 20, at most 50), and unless the step defines `sort`, rows and their resource items are listed from the most similar; if `query` is omitted, all resource items associated with the object are output.
 - **Return Shape and Constraints**: The output vector field is an array of objects `[{"path": "<download_url>", "text": "..."}]`, where `path` is an accessible download URL (prefixed by `cardBaseUrl`). Vector fields cannot be used in `sort`, `group_by`, or `having`.
 
 ### Examples

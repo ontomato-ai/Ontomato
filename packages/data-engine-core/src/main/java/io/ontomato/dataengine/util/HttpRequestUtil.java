@@ -25,6 +25,8 @@ import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.util.ArrayList;
 import java.util.HashSet;
+import java.util.IdentityHashMap;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -175,6 +177,8 @@ public class HttpRequestUtil {
                 for(Map mapData : listData){
                     List<Map> listAnswer = (List<Map>)mapData.get("answer");
                     if(listAnswer!=null && listAnswer.size()>0){
+                        // The nearest matched resource of each row, for ordering rows by similarity.
+                        Map<Map, Integer> rowRanks = new IdentityHashMap<Map, Integer>();
                         for(Map mapAnswer : listAnswer){
                         	// Remove the _.path field from the data returned by M3
                             if(mapAnswer.containsKey("_.path")){
@@ -186,15 +190,22 @@ public class HttpRequestUtil {
                             		List<String> paths = selectAsFilePathsMap.get(as);
                             		try {
                                         JSONArray array = DslUtil.parseVectorAttr(mapAnswer.get(as));
-                            			JSONArray newArray = new JSONArray();
+										List<JSONObject> matched = new ArrayList<JSONObject>();
                             			for (int i = 0; i < array.size(); i++) {
                                             JSONObject row = array.getJSONObject(i);
-                            				String path = row.getString("path");
-                            				if (paths.contains(path)) {
-                            					row.put("path", dataRagConfig.getCardBaseUrl() + "/vectorResource/resource/" + path);
-                            					newArray.add(row);
+											if (paths.contains(row.getString("path"))) {
+												matched.add(row);
                             				}
                             			}
+										// Nearest first, as the vector search ranked them.
+										matched.sort(Comparator.comparingInt(row -> paths.indexOf(row.getString("path"))));
+										JSONArray newArray = new JSONArray();
+										for (JSONObject row : matched) {
+											int rank = paths.indexOf(row.getString("path"));
+											rowRanks.merge(mapAnswer, rank, Math::min);
+											row.put("path", dataRagConfig.getCardBaseUrl() + "/vectorResource/resource/" + row.getString("path"));
+											newArray.add(row);
+										}
                             			mapAnswer.put(as, newArray);
                             		} catch (Exception e) {}
                             	} else {
@@ -211,6 +222,10 @@ public class HttpRequestUtil {
                             		} catch (Exception e) {}
                             	}
                             }
+                        }
+                        // A DSL with its own sort keeps the order it asked for.
+                        if (!rowRanks.isEmpty() && !hasOwnSort(dsl)) {
+							listAnswer.sort(Comparator.comparingInt(row -> rowRanks.getOrDefault(row, Integer.MAX_VALUE)));
                         }
                     }
                 }
@@ -255,6 +270,17 @@ public class HttpRequestUtil {
 		} finally {
             io.ontomato.dataengine.logging.ServiceLogEvents.downstream("data-query", adapter.getClass().getSimpleName(), started, outcome);
         }
+    }
+
+    /** Whether the step that produces the result names its own {@code sort}. */
+    static boolean hasOwnSort(JSONObject dsl) {
+		JSONArray steps = dsl == null || dsl.getJSONObject("answer") == null ? null : dsl.getJSONObject("answer").getJSONArray("steps");
+		if (steps == null || steps.isEmpty()) {
+			return false;
+		}
+		JSONObject output = steps.getJSONObject(steps.size() - 1).getJSONObject("output");
+		JSONArray sort = output == null ? null : output.getJSONArray("sort");
+		return sort != null && !sort.isEmpty();
     }
 
     static DslExecutionResult failedDslExecution(Exception cause, List<String> generatedMqls) {

@@ -246,6 +246,8 @@ function generateBasicChartOption(chartType, title, xField, yField, seriesField,
   if (chartType === "pie") {
     return {
       ...baseOption,
+      xAxis: { show: false },
+      yAxis: { show: false },
       legend: { ...baseOption.legend, orient: "horizontal", left: "center", bottom: 20 },
       series: [
         {
@@ -1083,16 +1085,29 @@ function generateSankeyOption(data, title, theme) {
 }
 
 function generateTimelineOption(data, config, theme) {
-  const events = data.map((row, index) => ({ row, index, time: Date.parse(String(row[config.dateField] ?? "")) }))
-    .sort((a, b) => (Number.isFinite(b.time) ? b.time : -Infinity) - (Number.isFinite(a.time) ? a.time : -Infinity) || a.index - b.index);
+  const events = data.map((row, index) => {
+    const raw = row[config.dateField];
+    const time = raw == null || raw === "" ? NaN : Date.parse(String(raw));
+    const undated = { zh: "日期未提供", ja: "日付なし", fr: "Date indisponible", de: "Datum nicht verfügbar", it: "Data non disponibile", ar: "التاريخ غير متاح" };
+    return { row, index, time, date: Number.isFinite(time) ? String(raw).slice(0, 10) : undated[String(config.locale || '').split('-')[0]] || "Undated" };
+  }).sort((a, b) => (Number.isFinite(b.time) ? b.time : -Infinity) - (Number.isFinite(a.time) ? a.time : -Infinity) || a.index - b.index);
   return {
     backgroundColor: theme.bgColor,
-    grid: { top: 16, left: 12, right: 12, bottom: 16 },
+    title: { text: config.title, left: "center", textStyle: { color: theme.textColor, fontSize: 16 } },
+    grid: { top: config.showTitle === false ? 12 : 65, left: 8, right: 12, bottom: 12 },
     xAxis: { type: "value", show: false, min: 0, max: 1 },
-    yAxis: { type: "category", show: false, inverse: true, data: events.map((_, index) => index) },
-    series: [{ type: "scatter", symbolSize: 10, itemStyle: { color: theme.primaryColor },
-      data: events.map((_, index) => [0, index]), label: { show: true, position: "right", distance: 12, color: theme.textColor,
-        formatter: params => { const event = events[params.dataIndex]; return [event.row[config.dateField] || "—", event.row[config.xField], event.row[config.descriptionField]].filter(Boolean).join("\n"); }, lineHeight: 20 } }],
+    yAxis: { type: "category", show: false, inverse: true, boundaryGap: true, data: events.map((_, index) => index) },
+    tooltip: { trigger: "item", renderMode: "richText", formatter: params => {
+      const event = events[params.dataIndex];
+      return [event.date, event.row[config.xField], event.row[config.descriptionField]].filter(Boolean).join("\n");
+    } },
+    series: [
+      { type: "line", symbol: "none", silent: true, lineStyle: { color: theme.borderColor, width: 2 }, data: events.map((_, index) => [0, index]) },
+      { type: "scatter", symbolSize: 10, itemStyle: { color: theme.primaryColor }, data: events.map((_, index) => [0, index]), label: {
+        show: true, position: "right", distance: 16, color: theme.textColor, fontSize: 12,
+        formatter: params => { const event = events[params.dataIndex]; return `${event.date}\n${wrapLabel(event.row[config.xField], 24, 2)}\n${event.row[config.descriptionField] || ""}`; }, lineHeight: 19,
+      } },
+    ],
   };
 }
 
@@ -1194,6 +1209,7 @@ function generateHTML(data, config) {
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     :root { --bg-color: Canvas; }
+    html, body { width: 100%; height: 100%; }
     body {
   font-family:
     Inter,

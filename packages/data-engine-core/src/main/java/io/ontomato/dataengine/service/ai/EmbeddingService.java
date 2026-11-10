@@ -4,6 +4,7 @@ import com.alibaba.fastjson2.JSONObject;
 import io.ontomato.dataengine.service.agent.AgentRuntimeClient;
 import io.ontomato.dataengine.service.agent.AgentHttpException;
 import org.springframework.stereotype.Component;
+import java.util.ArrayList;
 import java.util.List;
 
 @Component("embeddingService")
@@ -29,21 +30,34 @@ public class EmbeddingService {
 
     /** A rebuild rejects a changed generation instead of mixing its vectors into the pinned round. */
     public float[] embedWith(EmbeddingSelection expected, String content, String domain) {
+        return embedAll(expected, List.of(content), domain).get(0);
+    }
+
+    /** Batch uploads use the same runtime-owned model and response contract as single embeddings. */
+    public List<float[]> embedAll(List<String> contents, String domain) {
+        return embedAll(null, contents, domain);
+    }
+
+    private List<float[]> embedAll(EmbeddingSelection expected, List<String> contents, String domain) {
         try {
-            var result = runtime.json(domain, "embedding", "/v1/models/embeddings", "POST", JSONObject.of("texts", List.of(content)), null);
+            var result = runtime.json(domain, "embedding", "/v1/models/embeddings", "POST", JSONObject.of("texts", contents), null);
             var actual = new EmbeddingSelection(result.getString("modelId"), result.getInteger("dimensions"));
             if (expected != null && !expected.equals(actual)) throw new IllegalStateException("Embedding model changed during vector rebuild");
             var vectors = result.getJSONArray("vectors");
-            if (vectors == null || vectors.size() != 1 || actual.getDimensions() == null)
+            if (vectors == null || vectors.size() != contents.size() || actual.getDimensions() == null)
                 throw new IllegalStateException("Invalid embedding response");
-            var vector = vectors.getJSONArray(0);
+            List<float[]> embedded = new ArrayList<>(vectors.size());
+            for (int v = 0; v < vectors.size(); v++) {
+                var vector = vectors.getJSONArray(v);
             if (vector.size() != actual.getDimensions()) throw new IllegalStateException("Embedding dimensions do not match");
             float[] values = new float[vector.size()];
             for (int i = 0; i < values.length; i++) {
                 values[i] = vector.getFloatValue(i);
                 if (!Float.isFinite(values[i])) throw new IllegalStateException("Invalid embedding value");
             }
-            return values;
+                embedded.add(values);
+            }
+            return embedded;
         } catch (RuntimeException e) { throw e; }
         catch (Exception e) { throw new IllegalStateException("Runtime embedding call failed", e); }
     }
