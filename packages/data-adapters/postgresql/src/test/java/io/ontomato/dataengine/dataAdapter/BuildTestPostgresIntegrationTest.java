@@ -242,7 +242,7 @@ class BuildTestPostgresIntegrationTest {
       contexts.close(next.getString("contextId"));
       assertEquals(0,jdbc.queryForObject("SELECT count(*) FROM information_schema.tables WHERE table_schema=? AND table_name LIKE ?",Integer.class,schema,"%"+restored.sandboxId()+"%"));
       exerciseWorkspaceConcurrency(contexts,sandbox,sample);
-      exerciseFailures(contexts,sandbox,config,connection,jdbc,adminDb,schema,vectors,sample,identity,grants,programs,function,permission,writes);
+      exerciseFailures(contexts,sandbox,config,connection,jdbc,adminDb,schema,vectors,sample,identity,grants,programs,function,permission,writes,rule);
       rule.getJSONArray("classDef").getJSONObject(0).getJSONArray("attrs").add(JSONObject.of("name","attachment_extra","type","vector"));
       var collision=assertThrows(org.springframework.web.server.ResponseStatusException.class,()->contexts.create("collision",sample,Map.of()));
       assertTrue(collision.getReason().startsWith("BUILD_TEST_SCHEMA_FAILED"),collision.getReason());
@@ -295,7 +295,7 @@ class BuildTestPostgresIntegrationTest {
  private void exerciseFailures(BuildTestContextService contexts,SandboxServiceImpl sandbox,BusinessConfig config,
      DataAdapterConnection connection,JdbcTemplate jdbc,JdbcTemplate admin,String schema,VectorResourceDao vectors,
      JSONObject sample,IdentityService identity,QueryGrantService grants,ABCProgramServiceImpl programs,Function function,
-     UserDataPermission permission,WriteFunctionOperationService writes) throws Exception {
+     UserDataPermission permission,WriteFunctionOperationService writes,JSONObject rule) throws Exception {
    var mvc=org.springframework.test.web.servlet.setup.MockMvcBuilders.standaloneSetup(new io.ontomato.dataengine.controller.BuildTestController(contexts)).build();
    mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get("/ontology/build-tests/current").param("workspaceId","not-started"))
        .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.status().isOk())
@@ -328,6 +328,16 @@ class BuildTestPostgresIntegrationTest {
        .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.status().isForbidden())
        .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath("$.code").value("BUILD_TEST_FORBIDDEN"));
 
+   var age=rule.getJSONArray("classDef").getJSONObject(0).getJSONArray("attrs").toJavaList(JSONObject.class).stream().filter(field->"age".equals(field.getString("name"))).findFirst().orElseThrow();
+   Object priorType=age.get("type");age.put("type","long");
+   try {
+     expectCode("BUILD_TEST_CONTEXT_CHANGED",()->contexts.require(id,"builder","contract"));
+     queryMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post("/ontology/query/distinct-values")
+         .contentType("application/json").content("{\"className\":\"contract_person\",\"attribute\":\"age\"}")
+         .header(BuildTestContextService.HEADER,JSONObject.of("kind","build-test","contextId",id).toJSONString()))
+         .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.status().isConflict())
+         .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath("$.code").value("BUILD_TEST_CONTEXT_CHANGED"));
+   } finally {age.put("type",priorType);}
    expectCode("BUILD_TEST_FORBIDDEN",()->contexts.require(id,"other","contract"));
    expectCode("BUILD_TEST_FORBIDDEN",()->contexts.require(id,"builder","other-domain"));
    jdbc.update("UPDATE build_test_contexts SET state='PREPARING' WHERE id=?",id);
@@ -370,7 +380,7 @@ class BuildTestPostgresIntegrationTest {
    assertEquals(0,jdbc.queryForObject("SELECT count(*) FROM build_test_contexts WHERE workspace_id='unsupported'",Integer.class));
    var missingFile=JSON.parseObject(Files.readString(Path.of("../../data-engine-core/src/test/resources/agent-contracts/sample.json")));
    expectCode("BUILD_TEST_SAMPLE_INVALID",()->contexts.create("missing-file",missingFile,Map.of()));
-   System.out.println("BUILD_TEST_FAILURE_CASES_PASS missing/not-ready/expired/closed/owner/domain/empty-scope/outside-scope/unsupported/missing-file/auth-before-lookup; rejected Actions issued no grants; protocol-only grant fixture removed; invalid vector attributes created no resources");
+   System.out.println("BUILD_TEST_FAILURE_CASES_PASS missing/not-ready/prepare-failed/definition-changed/expired/closed/owner/domain/empty-scope/outside-scope/unsupported/missing-file/auth-before-lookup; rejected Actions issued no grants; protocol-only grant fixture removed; invalid vector attributes created no resources");
 
    String role="bt_role_"+UUID.randomUUID().toString().replace("-","");
    String originalUser=connection.getString("user"),originalPassword=connection.getString("password");
@@ -381,6 +391,8 @@ class BuildTestPostgresIntegrationTest {
      expectCode("BUILD_TEST_SCHEMA_FAILED",()->contexts.create("no-create",sample,Map.of()));
      var row=JSON.parseObject(jdbc.queryForObject("SELECT data::text FROM build_test_contexts WHERE workspace_id='no-create'",String.class));
      assertTrue(row.getString("prepareError").contains("permission denied"),row.toJSONString());
+     String failedId=contexts.current("no-create").getString("contextId");
+     expectCode("BUILD_TEST_CONTEXT_NOT_READY",()->contexts.require(failedId,"builder","contract"));
      verify(sandbox,times(1)).createSampleStructure(eq(row.getString("sandboxId")),any(),eq("contract"),any());
      long attempts=cleanups(sandbox);contexts.expire();assertEquals(attempts,cleanups(sandbox));
      assertEquals(0,jdbc.queryForObject("SELECT count(*) FROM information_schema.tables WHERE table_schema=? AND table_name LIKE ?",Integer.class,schema,"%"+row.getString("sandboxId")+"%"));
