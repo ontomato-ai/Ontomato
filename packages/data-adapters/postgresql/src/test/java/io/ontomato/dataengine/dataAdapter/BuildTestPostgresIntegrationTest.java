@@ -194,7 +194,7 @@ class BuildTestPostgresIntegrationTest {
       var access=new QueryAccessService.Access(owner,permission,null,null,null).withTarget(target);
       var metrics=spy(new MetricViewServiceImpl());ReflectionTestUtils.setField(metrics,"abcProgramService",programs);ReflectionTestUtils.setField(metrics,"adminService",admin);
       var dsl=QueryPackage.fromDsl(query.toJSONString());
-      var read=QueryPackageExecution.execute(UUID.randomUUID().toString(),dsl,new JSONObject(),null,access,"en",1,ontology,python);
+      var read=QueryPackageExecution.execute(UUID.randomUUID().toString(),dsl,new JSONObject(),JSONObject.of("age","Age"),access,"en",1,ontology,python);
       assertTrue(read.rows().stream().anyMatch(value->JSONObject.from(value).getIntValue("age")==99));
       var pkg=JSON.parseObject(Files.readString(root.resolve("packages/contracts/examples/query-packages.json"))).getJSONObject("pythonAggregate");
       pkg.getJSONArray("files").getJSONObject(0).put("content",query.toJSONString());
@@ -202,11 +202,12 @@ class BuildTestPostgresIntegrationTest {
       pkg.getJSONObject("manifest").getJSONObject("computation").getJSONArray("operations").getJSONObject(0).put("expression","SUM(employees.age)");
       pkg.getJSONObject("manifest").getJSONObject("computation").getJSONArray("operations").getJSONObject(0).getJSONArray("inputs").getJSONObject(0).put("key","age");
       pkg.getJSONArray("files").getJSONObject(1).put("content","# ontomato-python:2\nimport json\nfrom query_runtime import execute_dsl_file\nrows=execute_dsl_file('queries/employees.json')\nprint(json.dumps({'answer':[{'total':sum(row['age'] for row in rows)}]}))\n");
-      read=QueryPackageExecution.execute(UUID.randomUUID().toString(),pkg,JSONObject.of("threshold",20),null,access,"en",1,ontology,python);
+      read=QueryPackageExecution.execute(UUID.randomUUID().toString(),pkg,JSONObject.of("threshold",20),JSONObject.of("total","Total"),access,"en",1,ontology,python);
       assertEquals(144,read.rows().getJSONObject(0).getIntValue("total"));
       for(var readPackage:List.of(dsl,pkg)) {
         var readFunction=new Function();readFunction.setDomainId("contract");readFunction.setOperation(Function.OPERATION_READ);readFunction.setQueryPackage(readPackage);
         readFunction.setParameters(QueryPackage.definitions(readPackage));
+        var returns=new io.ontomato.dataengine.bean.function.ReturnDef();returns.setColumnLabels(readPackage==dsl?JSONObject.of("age","Age"):JSONObject.of("total","Total"));readFunction.setReturnDef(returns);
         var metric=new io.ontomato.dataengine.bean.metricView.MetricView();metric.setId("metric-test");metric.setDomainId("contract");metric.setStatus(io.ontomato.dataengine.bean.metricView.MetricView.STATUS_PUBLISHED);metric.setFunction(readFunction);metric.setBindings(new ArrayList<>());
         doReturn(metric).when(metrics).queryById("metric-test","contract");
         var values=QueryPackage.parameters(readPackage,null);
