@@ -13,18 +13,23 @@ import { readRuntimeConfig } from "./config";
 
 const executionBindings = new WeakMap<object, AppExecutionContext>();
 const executionListeners = new WeakMap<object, Set<(context: AppExecutionContext) => void>>();
+function assertFrameBinding(previous: AppExecutionContext | undefined, next: AppExecutionContext) {
+  if(next.kind!=="build-test" || previous && (previous.kind!=="build-test" || previous.contextId!==next.contextId || previous.workspaceId!==next.workspaceId))
+    throw new Error("Reload the preview frame to change its execution context");
+}
 /** Register before the frame runs. Updating its ID requires a new frame. */
 export function registerBuildPreview(source: object, context: AppExecutionContext) {
+  assertFrameBinding(executionBindings.get(source),context);
   executionBindings.set(source, context);
   return {
     update(next: AppExecutionContext) {
       const previous=executionBindings.get(source);
-      if(previous?.kind!=="build-test" || next.kind!=="build-test" || previous.contextId!==next.contextId || previous.workspaceId!==next.workspaceId)
-        throw new Error("Reload the preview frame to change its execution context");
+      assertFrameBinding(previous,next);
       executionBindings.set(source,next);
       for(const listener of executionListeners.get(source) ?? []) listener(next);
     },
-    dispose() { executionBindings.delete(source); executionListeners.delete(source); },
+    // Keep the last binding until the Window is collected: detached frames must never become live.
+    dispose() { executionListeners.delete(source); },
   };
 }
 

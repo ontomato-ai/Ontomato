@@ -66,10 +66,12 @@ export class WorkspaceBuildTests {
   }
   async requirePreviewSdk() {
     await this.authorize();
-    const bytes = await this.runtime.bytes(`/v1/workspaces/${this.workspaceId}/files/content?path=index.html`);
-    const html = bytes.toString("utf8");
-    const versions = [...new Set([...html.matchAll(/\/apps-sdk\/([a-zA-Z0-9.-]+)\//g)].map(match => match[1]!))];
-    if (!versions.length && !html.includes("@ontomato/sdk")) return; // Static pages have no business client.
+    const tree=z.object({files:z.array(z.object({path:workspacePathSchema}))}).parse(await this.runtime.request(`/v1/workspaces/${this.workspaceId}/tree`));
+    const files=tree.files.filter(file=>/\.(?:html|m?js|ts|vue|json)$/i.test(file.path) && !file.path.startsWith(BUILD_TEST_SAMPLE_DIRECTORY+"/"));
+    const sources=await Promise.all(files.map(async file=>(await this.runtime.bytes(`/v1/workspaces/${this.workspaceId}/files/content?${new URLSearchParams({path:file.path})}`)).toString("utf8")));
+    const code=sources.join("\n");
+    const versions = [...new Set([...code.matchAll(/\/apps-sdk\/([a-zA-Z0-9.-]+)\//g)].map(match => match[1]!))];
+    if (!versions.length && !code.includes("@ontomato/sdk")) return; // Static pages have no SDK business client.
     let supported = versions.length > 0;
     for (const version of versions) {
       const manifest = await readFile(runtimeDataDir("apps-sdk", version, "sdk.json"), "utf8").then(JSON.parse).catch(() => null);

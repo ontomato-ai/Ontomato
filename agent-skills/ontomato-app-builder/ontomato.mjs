@@ -345,7 +345,13 @@ function usage() {
   metric-view delete <id>
   action generate|execute|find|get|save|publish|delete ...   (same arguments as metric-view)
   action re-explain [--missing] [--id <id> ...]
-  action execute <id> [<param json|@file>] [--file <path> ...]
+  action execute <id> [<param json|@file>] [--file <path> ...]`);
+}
+
+async function bindTestTarget(api,workspaceId) {
+  if(!workspaceId) die("BUILD_TEST_WORKSPACE_REQUIRED: pass --workspace <id>");
+  const context=await workbench(api,"GET",`/workspaces/${encodeURIComponent(workspaceId)}/build-tests`);
+  api.executionContext=JSON.stringify({kind:"build-test",contextId:context?.contextId ?? null});
 }
 
 async function main() {
@@ -364,10 +370,8 @@ async function main() {
     if(!["start","status","stop"].includes(sub)) die("test start|status|stop [--workspace <id>] [--sample test-data/sample.json]");
     return print(await workbench(api,sub==="start"?"POST":sub==="stop"?"DELETE":"GET",`/workspaces/${encodeURIComponent(workspaceId)}/build-tests`,sub==="start"?{samplePath}:undefined));
   }
-  if(["execute-dsl","distinct-values","vector-upload","vector-delete"].includes(cmd) || ["action","metric-view"].includes(cmd) && argv[1]==="execute") {
-    if(!workspaceId) die("BUILD_TEST_WORKSPACE_REQUIRED: pass --workspace <id>");
-    const context=await workbench(api,"GET",`/workspaces/${encodeURIComponent(workspaceId)}/build-tests`);
-    api.executionContext=JSON.stringify({kind:"build-test",contextId:context?.contextId ?? null});
+  if(["vector-upload","vector-delete"].includes(cmd) || ["action","metric-view"].includes(cmd) && argv[1]==="execute") {
+    await bindTestTarget(api,workspaceId);
   }
   if (cmd === "sdk") return sdkCommand(api, argv.slice(1));
   if (cmd === "workspace") return workspaceCommand(api, argv.slice(1));
@@ -399,7 +403,7 @@ async function main() {
     return;
   }
   if (cmd === "distinct-values" || cmd === "execute-dsl")
-    return analystCommand(api,argv,headers(api));
+    return analystCommand(api,argv,async()=>{await bindTestTarget(api,workspaceId);return headers(api);});
   if (cmd === "action" && argv[1] === "re-explain") {
     const rest = argv.slice(2);
     const missing = takeFlag(rest, "--missing");
@@ -429,7 +433,8 @@ async function main() {
   if (cmd === "ask") {
     die("BUILD_TEST_UNSUPPORTED: ask is not a build-test execution; use MetricView or execute-dsl");
   }
-  usage();
+  if(!cmd) return usage();
+  die(`BUILD_TEST_UNSUPPORTED: command not supported: ${cmd}`);
 }
 
 main().catch(error => { console.error(error.message);process.exitCode=1; });

@@ -306,6 +306,13 @@ class BuildTestPostgresIntegrationTest {
        .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.status().isOk()).andReturn();
    var received=JSON.parseObject(http.getResponse().getContentAsString());
    assertEquals("test-data/selected.json",received.getJSONObject("sampleSummary").getString("name"));contexts.close(received.getString("contextId"));
+   var access=new QueryAccessService(identity,mock(DataPermissionLookup.class),grants);ReflectionTestUtils.setField(access,"contexts",contexts);
+   var queryMvc=org.springframework.test.web.servlet.setup.MockMvcBuilders.standaloneSetup(new io.ontomato.dataengine.controller.OntologyQueryController(access,(OntologyQueryService)ReflectionTestUtils.getField(programs,"ontology"),null,null)).build();
+   queryMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post("/ontology/query/execute-dsl")
+       .contentType("application/json").content("{\"dsl\":{}}")
+       .header(BuildTestContextService.HEADER,"{\"kind\":\"build-test\",\"contextId\":null}"))
+       .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.status().isBadRequest())
+       .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath("$.code").value("BUILD_TEST_CONTEXT_REQUIRED"));
    var missing=new MockHttpServletRequest();missing.addHeader(BuildTestContextService.HEADER,"{\"kind\":\"build-test\",\"contextId\":null}");
    expectCode("BUILD_TEST_CONTEXT_REQUIRED",()->contexts.resolve(missing));
    expectCode("BUILD_TEST_CONTEXT_NOT_FOUND",()->contexts.require(UUID.randomUUID().toString(),"builder","contract"));
@@ -315,6 +322,12 @@ class BuildTestPostgresIntegrationTest {
    contexts.close(configured.getString("contextId"));ReflectionTestUtils.setField(contexts,"ttlMinutes",60L);
    var context=contexts.create("failures",sample,Map.of());String id=context.getString("contextId");
    var target=contexts.require(id,"builder","contract");
+   queryMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post("/ontology/query/distinct-values")
+       .contentType("application/json").content("{\"className\":\"outside\",\"attribute\":\"id\"}")
+       .header(BuildTestContextService.HEADER,JSONObject.of("kind","build-test","contextId",id).toJSONString()))
+       .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.status().isForbidden())
+       .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath("$.code").value("BUILD_TEST_FORBIDDEN"));
+
    expectCode("BUILD_TEST_FORBIDDEN",()->contexts.require(id,"other","contract"));
    expectCode("BUILD_TEST_FORBIDDEN",()->contexts.require(id,"builder","other-domain"));
    jdbc.update("UPDATE build_test_contexts SET state='PREPARING' WHERE id=?",id);

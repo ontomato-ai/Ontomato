@@ -16,7 +16,6 @@ import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
-import org.springframework.web.server.ResponseStatusException;
 
 /** Durable owner of temporary build data. Cleanup is attempted once, with no automatic replay.
  * Execution/cleanup locks assume a single data-engine instance; they do not coordinate JVMs.
@@ -58,7 +57,7 @@ public class BuildTestContextService {
     jdbc.update("UPDATE build_test_contexts SET state='PREPARE_FAILED' WHERE state='PREPARING'");
     jdbc.update("UPDATE build_test_contexts SET cleanup_error='Cleanup interrupted; result unconfirmed' WHERE cleanup_attempted=true AND cleanup_error IS NULL AND state IN ('CLOSED','EXPIRED','PREPARE_FAILED')");
   }
-  private ResponseStatusException error(HttpStatus status, String code) { return new ResponseStatusException(status, code); }
+  private BuildTestException error(HttpStatus status, String code) { return new BuildTestException(status, code); }
   private JSONObject row(String id) {
     var rows=jdbc.queryForList("SELECT row_to_json(c)::text FROM build_test_contexts c WHERE id=?", String.class,id);
     if(rows.isEmpty()) throw error(HttpStatus.NOT_FOUND,"BUILD_TEST_CONTEXT_NOT_FOUND");

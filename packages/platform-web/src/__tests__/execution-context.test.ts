@@ -19,5 +19,7 @@ describe("frame execution bindings",()=>{
     registration.update({...initial,status:"PREPARING"});expect(changed).toHaveBeenCalledOnce();
     expect(()=>registration.update({...initial,contextId:"new-context"})).toThrow("Reload");
     expect(host.credential()).toEqual({type:"anonymous"});stop();registration.dispose();
+    expect(host.executionContext(preview).kind).toBe("build-test");
+    expect(()=>registerBuildPreview(preview,{...initial,contextId:"replacement"})).toThrow("Reload");
   });
 });

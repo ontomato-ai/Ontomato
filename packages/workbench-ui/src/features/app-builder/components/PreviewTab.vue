@@ -2,9 +2,7 @@
 import { computed, onBeforeUnmount, ref, watch, inject } from "vue";
 import { useI18n } from "vue-i18n";
 import { Check, CircleAlert, Files, LoaderCircle } from "lucide-vue-next";
-import type { WorkspacePreviewToken } from "@ontomato/contracts/workspaces";
 import { apiUrl } from "../../../utils/api-base";
-import { getSynchronizedNow } from "../../../utils/server-time";
 import { builderPlatformKey } from "../platform";
 import { useBuildTestState } from "../build-test-state";
 import { builderApi } from "../api";
@@ -23,7 +21,6 @@ const props = defineProps<{ view: WorkspaceView; reload: number; flash: string |
 const frameWindow = defineModel<Window | null>("frameWindow", { required: true });
 const { t } = useI18n();
 
-let token: (WorkspacePreviewToken & { workspaceId: string }) | null = null;
 let loads = 0;
 const src = ref<string | null>(null);
 const frame = ref(0);
@@ -32,10 +29,10 @@ const hasPage = computed(() => props.view.files.some((file) => file.path === "in
 const workspace = computed(() => props.view.workspace);
 const platform=inject(builderPlatformKey)!;
 const testState=useBuildTestState(()=>workspace.value?.id ?? null);
-defineExpose({buildTestState:testState.state,refreshBuildTestState:testState.refresh});
+defineExpose({buildTestState:testState.state,refreshBuildTestState:testState.refresh,previewError:computed(()=>error.value)});
 let registration: ReturnType<typeof platform.registerPreviewFrame> | null = null;
 watch(testState.state,(context,previous)=>{
-  if(context.kind==="build-test" && previous.kind==="build-test" && context.contextId===previous.contextId && context.workspaceId===previous.workspaceId) registration?.update(context);
+  if(context.kind==="build-test" && previous.kind==="build-test" && context.contextId===previous.contextId && context.workspaceId===previous.workspaceId && context.status===previous.status) registration?.update(context);
   else void load();
 });
 
@@ -43,13 +40,13 @@ async function load() {
   const current = workspace.value;
   const attempt = ++loads;
   error.value = null;
+  src.value = null;
   if (!current || !hasPage.value) {
     src.value = null;
     return;
   }
   try {
-    if (!token || token.workspaceId !== current.id || Date.parse(token.expiresAt) <= getSynchronizedNow())
-      token = { ...(await builderApi.previewToken(current.id)), workspaceId: current.id };
+    const token=await builderApi.previewToken(current.id);
     if (attempt !== loads) return;
     src.value = apiUrl(`/workspaces/${encodeURIComponent(current.id)}/preview/${encodeURIComponent(token.token)}/index.html`);
     frame.value++;

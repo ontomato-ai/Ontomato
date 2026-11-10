@@ -52,7 +52,7 @@ export async function analystCommand(cfg, argv, headers = {}) {
     /\/$/,
     "",
   );
-  if (command === "ask") return ask(cfg, args, headers);
+  if (command === "ask") return ask(cfg, args, typeof headers === "function" ? await headers() : headers);
   let endpoint, body;
   if (command === "dataset-desc" || command === "classes")
     endpoint = "/overview";
@@ -93,6 +93,8 @@ export async function analystCommand(cfg, argv, headers = {}) {
     throw new Error(
       "Commands: dataset-desc, classes, schema, relationships, dsl-reference, distinct-values, execute-dsl, metrics, execute-metric, knowledge, ask",
     );
+  // Resolve dynamic execution credentials only after input validation, once per command.
+  if (typeof headers === "function") headers = await headers();
   const result = await json(
     ontology + "/ontology/query" + endpoint,
     headers,

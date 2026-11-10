@@ -18,7 +18,7 @@ const authorize=vi.fn(),bytes=vi.fn();
 const context={contextId:"context",workspaceId:"workspace",status:"READY",expiresAt:Date.now()+60000,
   classNames:["contract_person","contract_group"],sampleSummary:{classes:2,sha256:"digest"},resources:[]};
 beforeEach(()=>{
-  vi.clearAllMocks();authorize.mockResolvedValue({id:"workspace"});
+  vi.clearAllMocks();authorize.mockImplementation(async(url:string)=>url.endsWith("/tree") ? {files:[{path:"index.html"}]} : {id:"workspace"});
   vi.mocked(RuntimeClient).mockImplementation(()=>({request:authorize,bytes}) as unknown as RuntimeClient);
   vi.mocked(backendPost).mockResolvedValue({text:JSON.stringify(context),status:200,statusText:"OK",headers:new Headers()});
   vi.mocked(backendGet).mockResolvedValue({text:"null",status:200,statusText:"OK",headers:new Headers()});
@@ -49,4 +49,11 @@ it("returns Java's absent state and rejects old SDK preview references",async()=
   vi.mocked(readFile).mockResolvedValue('{"version":"1.0.0"}');
   await expect(tests.requirePreviewSdk()).rejects.toMatchObject({code:"BUILD_TEST_SDK_UPGRADE_REQUIRED"});
   vi.mocked(readFile).mockResolvedValue('{"executionContext":1}');await tests.requirePreviewSdk();
+});
+
+it("checks SDK references in separate modules, not just the entry HTML",async()=>{
+  authorize.mockImplementation(async(url:string)=>url.endsWith("/tree") ? {files:[{path:"index.html"},{path:"app.js"}]} : {id:"workspace"});
+  bytes.mockImplementation(async(url:string)=>Buffer.from(url.includes("app.js") ? 'import "/apps-sdk/1.0.0/sdk.js"' : '<script type="module" src="app.js"></script>'));
+  vi.mocked(readFile).mockResolvedValue('{"version":"1.0.0"}');
+  await expect(new WorkspaceBuildTests({userId:"owner",domainId:"domain"},{},"workspace").requirePreviewSdk()).rejects.toMatchObject({code:"BUILD_TEST_SDK_UPGRADE_REQUIRED"});
 });

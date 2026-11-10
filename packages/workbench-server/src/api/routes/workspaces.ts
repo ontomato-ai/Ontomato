@@ -27,6 +27,7 @@ workspacePreviewRouter.get("/:id/preview/:token/*", wrap(async (req, res) => {
   if (!preview || preview.workspaceId !== workspaceIdSchema.parse(req.params.id) || preview.expiresAt <= Date.now())
     throw new HttpError(404, "Preview expired", "NOT_FOUND");
   const file = workspacePathSchema.parse(req.params[0] || "index.html");
+  if(path.extname(file).toLowerCase()===".html") await new WorkspaceBuildTests(preview.owner,{},preview.workspaceId).requirePreviewSdk();
   res.type(path.extname(file)).set({ "Cache-Control": "no-store", "Referrer-Policy": "no-referrer", "X-Content-Type-Options": "nosniff" })
     .send(await runtime(preview.owner).bytes(`/v1/workspaces/${preview.workspaceId}/files/content?${new URLSearchParams({ path: file })}`));
 }));

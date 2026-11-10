@@ -16,7 +16,7 @@ public record ExecutionTarget(String contextId, String sandboxId, List<String> c
   public boolean testing() { return contextId != null; }
   public void requireClasses(List<String> names) {
     if (testing() && (names == null || names.isEmpty() || !classNames.containsAll(names)))
-      throw new ResponseStatusException(
+      throw new BuildTestException(
           HttpStatus.FORBIDDEN, "BUILD_TEST_FORBIDDEN: empty or out-of-context class declaration");
   }
 }
