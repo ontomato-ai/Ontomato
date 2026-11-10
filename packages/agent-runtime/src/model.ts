@@ -1,5 +1,5 @@
 import { logHeaders } from "@ontomato/service-logging";
-import { runtimeLogger, runtimeDiagnostic, runtimeFailureMessage } from "./logging";
+import { runtimeLogger, runtimeDiagnostic } from "./logging";
 import { randomUUID } from "node:crypto";
 import { PI_CHAT_MODEL_DEFAULTS, type ModelApi, type ModelEntry, type ModelProviderWrite, type ModelRetry } from "@ontomato/contracts/model-settings";
 import type {
@@ -55,6 +55,7 @@ export function modelStream(
   runId: string,
   correlationId: string,
   purpose: "conversation" | "compaction",
+  language = "en",
 ): StreamFn {
   return (model, context, options) => {
     const start = Date.now();
@@ -104,7 +105,16 @@ export function modelStream(
             }
             if (!emitted && held) stream.push(held);
             emitted = true;
-            stream.push(event);
+            if (event.type === "error") {
+              if (event.reason === "error")
+                runtimeLogger.error("model provider failed", { errorMessage: event.error.errorMessage });
+              stream.push({ ...event, error: {
+                ...event.error,
+                // No tool from an interrupted response has been dispatched.
+                content: event.error.content.filter(part => part.type !== "toolCall"),
+                errorMessage: event.reason === "error" ? providerFailureMessage(language) : "Request was aborted",
+              } });
+            } else stream.push(event);
           }
           if (!retry) return;
           await new Promise((resolve) => setTimeout(resolve, 500 * attempt));
@@ -116,7 +126,7 @@ export function modelStream(
           cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } };
         const failed: AssistantMessage = { role: "assistant", content: [], api: model.api,
           provider: model.provider, model: model.id, usage, stopReason: "error",
-          errorMessage: runtimeFailureMessage(error), timestamp: Date.now() };
+          errorMessage: providerFailureMessage(language), timestamp: Date.now() };
         stream.push({ type: "error", reason: "error", error: failed });
       }
     })();
@@ -236,4 +246,10 @@ export async function testModel(config: ResolvedModel, prompt: string, correlati
   if (message.stopReason === "error" || message.stopReason === "aborted")
     throw new RuntimeError(502, "MODEL_TEST_FAILED", "Model connection test failed");
   return { type: "chat" as const, content: message.content.flatMap((part) => part.type === "text" ? [part.text] : []).join("\n") };
+}
+
+function providerFailureMessage(language: string): string {
+  return language.startsWith("zh")
+    ? "模型服务请求失败，请联系管理员查看服务日志。"
+    : "The model service request failed. Contact an administrator to check the service logs.";
 }
