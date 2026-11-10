@@ -42,6 +42,7 @@ class BuildTestPostgresIntegrationTest {
     var permission=new UserDataPermission();permission.setFullData(true);
     var owner=new QueryAccessService.GrantUser("builder","contract");
     var identity=mock(IdentityService.class);
+    when(identity.getCurrentCredentialExpiresAt()).thenReturn(null);
     when(identity.getCurrentUser()).thenReturn(owner);when(identity.getCurrentUserDataPermission()).thenReturn(permission);
     var config=new BusinessConfig();config.setDataAdapter("postgresql");
     var configs=mock(BusinessConfigService.class);when(configs.get("contract")).thenReturn(config);
