@@ -17,7 +17,7 @@
     "typecheck:workbench": "pnpm --filter @ontomato/contracts --filter @ontomato/workbench-server --filter @ontomato/workbench typecheck",
     "test:workbench": "pnpm --filter @ontomato/workbench-server --filter @ontomato/workbench test",
     "lint:workbench": "eslint packages/contracts packages/workbench-server apps/workbench",
-    "test:scripts": "node --test \"scripts/**/*.node-test.mjs\" \"apps/*/*.node-test.mjs\"",
+    "test:scripts": "node --test \"scripts/**/*.node-test.mjs\" \"apps/*/*.node-test.mjs\" \"packages/apps-sdk/*.node-test.mjs\"",
     "lint:scripts": "eslint scripts \"apps/*/*.mjs\" agent-skills",
     "dev:agent-runtime": "node scripts/dev-command.mjs runtime",
     "typecheck:runtime": "pnpm --filter @ontomato/contracts --filter @ontomato/agent-runtime --filter @ontomato/agent-runtime-app typecheck",

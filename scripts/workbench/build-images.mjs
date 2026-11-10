@@ -74,6 +74,13 @@ function assertWorkbenchImage(tag, arch, component, version) {
     throw new Error(`Built image identity mismatch: ${tag}`);
 }
 
+export function isFormalSdkRelease(env) {
+  if (env.PUBLISH_VERSION) return false;
+  return (env.GITHUB_ACTIONS === "true" && env.GITHUB_WORKFLOW === "Images"
+    && env.GITHUB_REF_TYPE === "tag" && /^v\d/.test(env.GITHUB_REF_NAME ?? ""))
+    || (env.GITLAB_CI === "true" && /^v\d/.test(env.CI_COMMIT_TAG ?? ""));
+}
+
 export async function buildWorkbenchImage(app, args) {
   if (args.includes("--help") || args.includes("-h")) {
     console.log("Use node apps/workbench/build.mjs --arch amd64|arm64");
@@ -121,12 +128,11 @@ export async function buildWorkbenchImage(app, args) {
     `APPLICATION=${record.application}`,
     "--build-arg",
     `TARGETPLATFORM=linux/${arch}`,
-    // The apps SDK names its version after the product release and the source commits (packages/apps-sdk/build.mjs).
+    // Only formal CI tag builds ship the base SDK version. All other builds use output content.
     "--build-arg",
     `APPS_SDK_BUILD=${JSON.stringify({
+      release: isFormalSdkRelease(process.env),
       product: app.workspaceId,
-      version,
-      sources: entries.map(({ id, revision, dirty }) => ({ id, revision, dirty })),
     })}`,
     ...imageLabels(app.component, version, stamp),
     "-t",
