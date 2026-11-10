@@ -876,6 +876,7 @@ public class Neo4jAdapter implements DataAdapter {
 		if (condition == null) {
 			return "";
 		}
+		io.ontomato.dataengine.util.WriteWhereValidator.validate(condition, attrTypeMap::containsKey);
 		return buildWhereTree(condition, attrTypeMap, cypher, "n");
 	}
 

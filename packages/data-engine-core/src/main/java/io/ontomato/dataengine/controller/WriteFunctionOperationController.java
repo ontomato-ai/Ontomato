@@ -29,6 +29,20 @@ public class WriteFunctionOperationController {
     @Autowired private io.ontomato.dataengine.service.QueryAccessService accessService;
     @Autowired private io.ontomato.dataengine.service.OntologyQueryService queries;
 
+    @Autowired private io.ontomato.dataengine.dao.JSONRuleDao jsonRuleDao;
+
+    @SuppressWarnings("unchecked")
+    private JSONObject validatedWhere(Object raw, String className, String domainId) {
+        io.ontomato.dataengine.util.WriteWhereValidator.validateStructure(raw);
+        var classes = (java.util.List<Map<String, Object>>) jsonRuleDao.query(domainId).get("classDef");
+        var classDef = classes.stream().filter(c -> className.equals(c.get("className"))).findFirst()
+                .orElseThrow(() -> new IllegalArgumentException("Unknown class: " + className));
+        var attrs = (java.util.List<Map<String, Object>>) classDef.get("attrs");
+        var fields = attrs.stream().filter(a -> !Boolean.FALSE.equals(a.get("enable")))
+                .map(a -> (String) a.get("name")).collect(java.util.stream.Collectors.toSet());
+        return io.ontomato.dataengine.util.WriteWhereValidator.validate(raw, fields::contains);
+    }
+
     private void checkClasses(String... names) {
         java.util.List<String> scope = grant().getList("classNames", String.class);
         if (scope != null && !scope.isEmpty()) for (String name : names)
@@ -68,7 +82,7 @@ public class WriteFunctionOperationController {
 			String sandboxId = dealSandboxId(grant().getString("sandboxId"));
 			String domainId = grant().getString("domainId");
 			JSONObject setValues = param.getJSONObject("setValues");
-			JSONObject where = param.getJSONObject("where");
+			JSONObject where = validatedWhere(param.get("where"), className, domainId);
 			writeFunctionOperationService.update(className, setValues, where, sandboxId, domainId);
 			ret.put("success", true);
 		} catch (Exception e) {
@@ -88,7 +102,7 @@ public class WriteFunctionOperationController {
             checkClasses(className);
 			String sandboxId = dealSandboxId(grant().getString("sandboxId"));
 			String domainId = grant().getString("domainId");
-			JSONObject where = param.getJSONObject("where");
+			JSONObject where = validatedWhere(param.get("where"), className, domainId);
 			writeFunctionOperationService.delete(className, where, sandboxId, domainId);
 			ret.put("success", true);
 		} catch (Exception e) {
