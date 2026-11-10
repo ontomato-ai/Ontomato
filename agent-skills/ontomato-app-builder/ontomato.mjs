@@ -74,7 +74,7 @@ async function readJson(res) {
   const text = await res.text();
   if (!res.ok) die(`${res.status}\n${text}`);
   const json = JSON.parse(text);
-  if (json.success === false || json.error) die(json.message ?? json.error?.message ?? json.error);
+  if (json?.success === false || json?.error) die(json.message ?? json.error?.message ?? json.error);
   return json;
 }
 
@@ -368,7 +368,8 @@ async function main() {
     if(!workspaceId) die("BUILD_TEST_WORKSPACE_REQUIRED: pass --workspace <id>");
     const sub=argv[1], samplePath=takeOption(argv,"--sample") ?? "test-data/sample.json";
     if(!["start","status","stop"].includes(sub)) die("test start|status|stop [--workspace <id>] [--sample test-data/sample.json]");
-    return print(await workbench(api,sub==="start"?"POST":sub==="stop"?"DELETE":"GET",`/workspaces/${encodeURIComponent(workspaceId)}/build-tests`,sub==="start"?{samplePath}:undefined));
+    const result=await workbench(api,sub==="start"?"POST":sub==="stop"?"DELETE":"GET",`/workspaces/${encodeURIComponent(workspaceId)}/build-tests`,sub==="start"?{samplePath}:undefined);
+    return print(result===null && sub!=="start" ? {workspaceId,contextId:null,status:"NONE"} : result);
   }
   if(["vector-upload","vector-delete"].includes(cmd) || ["action","metric-view"].includes(cmd) && argv[1]==="execute") {
     await bindTestTarget(api,workspaceId);

@@ -165,6 +165,7 @@
                         <configuration>
                             <includes>
                                 <include>**/AgentContractBoundaryTest.java</include>
+                                <include>**/SandboxSampleInputTest.java</include>
                                 <include>**/WriteWhereBoundaryTest.java</include>
                                 <include>**/ActionFunctionAdmissionTest.java</include>
                                 <include>**/FunctionProtocolSaveTest.java</include>
