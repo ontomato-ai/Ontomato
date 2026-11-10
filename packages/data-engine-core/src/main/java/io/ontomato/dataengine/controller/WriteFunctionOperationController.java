@@ -224,23 +224,11 @@ public class WriteFunctionOperationController {
 		return "";
 	}
 	
-	private JSONObject validDslJsonFormat(JSONObject param) throws Exception {
-		try {
-			JSONObject dsl = param.getJSONObject("dsl");
-			if (dsl == null) {
-				throw new Exception();
-			}
-			return dsl;
-		} catch (Exception e) {
-			try {
-				JSONArray dsls = param.getJSONArray("dsl");
-				return dsls.getJSONObject(0);
-			} catch (Exception e1) {
-				throw new Exception(e1.getMessage());
-			}
-		}
-	}
-	
+	private JSONObject validDslJsonFormat(JSONObject param) {
+        if (!(param.get("dsl") instanceof JSONObject dsl) || dsl.isEmpty())
+            throw new IllegalArgumentException("dsl: expected one nonempty JSON object; send {\"dsl\":{...}}, not an array or JSON string");
+        return dsl;
+    }	
 	private String dealSandboxId(String sandboxId) {
 		if (ServiceConst.NOT_SANDBOX.equals(sandboxId)) {
 			return null;

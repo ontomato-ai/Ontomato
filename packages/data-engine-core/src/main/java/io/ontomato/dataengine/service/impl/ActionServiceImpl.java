@@ -203,20 +203,13 @@ public class ActionServiceImpl implements ActionService {
       String name = envelope.getString("name");
       String logic = envelope.getString("logic");
       JSONArray classNamesArray = envelope.getJSONArray("classNames");
-      if (code == null || name == null || logic == null || classNamesArray == null) {
-        return null;
-      }
+      if (code == null || code.isBlank()) throw new IllegalArgumentException("code: expected a nonempty Python program with # ontomato-python:2");
+      if (name == null || name.isBlank()) throw new IllegalArgumentException("name: expected a nonempty string");
+      if (logic == null || logic.isBlank()) throw new IllegalArgumentException("logic: expected a nonempty string explaining the program");
+      if (classNamesArray == null || classNamesArray.isEmpty()) throw new IllegalArgumentException("classNames: expected a nonempty array of class names");
       List<String> classNames = classNamesArray.toList(String.class);
-      if (classNames.isEmpty()) {
-        return null;
-      }
-      if (!envelope.containsKey("parameterDefs")) {
-        return null;
-      }
       JSONArray defsArray = envelope.getJSONArray("parameterDefs");
-      if (defsArray == null) {
-        return null;
-      }
+      if (defsArray == null) throw new IllegalArgumentException("parameterDefs: expected an array; use [] for no parameters");
       List<Parameter> parameterDefs =
           DBSchemaUtil.buildParameters(defsArray.toList(Map.class), classDefs);
       Function function = new Function();
@@ -240,7 +233,7 @@ public class ActionServiceImpl implements ActionService {
       action.setStatus(Action.STATUS_PUBLISHED);
       action.setDomainId(domainId);
       action.setSubmissionCriteria(envelope.getJSONObject("submissionCriteria"));
-      try {
+      {
         Object[] explain =
             explainCode(
                 function.getParameters(),
@@ -253,8 +246,9 @@ public class ActionServiceImpl implements ActionService {
         BusinessMeaning businessMeaning = (BusinessMeaning) explain[1];
         action.setCodeSegments(codeSegments);
         action.setBusinessMeaning(businessMeaning);
-      } catch (Exception e) {
       }
+      action.setCodeHash(CodeHashUtil.sha256(function.getCode()));
+      action.setExplanationVersion(Action.EXPLANATION_VERSION);
       action.setDefinition(ActionDefinitionProjector.project(action));
       return generation.settle(
           () -> {
