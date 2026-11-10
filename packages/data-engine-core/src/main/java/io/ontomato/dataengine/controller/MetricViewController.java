@@ -250,6 +250,7 @@ public class MetricViewController {
 			log.error(e.getMessage(), e);
 			ret.put("success", false);
 			ret.put("message", e.getMessage());
+            io.ontomato.dataengine.service.ExecutionTarget.failure(ret,e);
 		}
 		return ret;
 	}
@@ -276,6 +277,7 @@ public class MetricViewController {
 			log.error(e.getMessage(), e);
 			ret.put("success", false);
 			ret.put("message", e.getMessage());
+            io.ontomato.dataengine.service.ExecutionTarget.failure(ret,e);
 		}
 		return ret;
 	}
@@ -304,6 +306,7 @@ public class MetricViewController {
 			log.error(e.getMessage(), e);
 			ret.put("success", false);
 			ret.put("message", e.getMessage());
+            io.ontomato.dataengine.service.ExecutionTarget.failure(ret,e);
 		}
 		return ret;
 	}

@@ -11,6 +11,16 @@ import org.springframework.web.multipart.MultipartFile;
 public class BuildTestController {
   private final BuildTestContextService contexts;
   public BuildTestController(BuildTestContextService contexts) { this.contexts=contexts; }
+  @ExceptionHandler(org.springframework.web.server.ResponseStatusException.class)
+  public org.springframework.http.ResponseEntity<JSONObject> failure(org.springframework.web.server.ResponseStatusException failure) {
+    String message=failure.getReason();
+    String code=message==null?"BUILD_TEST_DATA_FAILED":message.split(":",2)[0];
+    return org.springframework.http.ResponseEntity.status(failure.getStatusCode()).body(JSONObject.of("code",code,"message",message));
+  }
+  @ExceptionHandler(IllegalArgumentException.class)
+  public org.springframework.http.ResponseEntity<JSONObject> invalid(IllegalArgumentException failure) {
+    return org.springframework.http.ResponseEntity.badRequest().body(JSONObject.of("code","BUILD_TEST_SAMPLE_INVALID","message",failure.getMessage()));
+  }
   @PostMapping(consumes="multipart/form-data")
   public JSONObject create(@RequestParam String workspaceId,@RequestPart("sample") JSONObject sample,
       @RequestParam Map<String,MultipartFile> files) throws Exception {

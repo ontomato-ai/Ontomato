@@ -83,7 +83,7 @@ class MetricViewBindingContractTest {
       if (m != null && m.getDomainId().equals(call.getArgument(1))) metrics.remove(m.getId());
       return null;
     }).when(dao).delete(anyString(), anyString());
-    when(execution.execute(anyString(), any(), anyString(), any(), isNull(), anyString(), anyInt(), anyString()))
+    when(execution.execute(anyString(), any(), anyString(), any(), isNull(), anyString(), anyInt(), anyString(), isNull(), any(io.ontomato.dataengine.service.ExecutionTarget.class)))
         .thenAnswer(call -> {
           Function f = call.getArgument(1);
           String code = QueryPackage.query(f.getQueryPackage(), "main").getJSONObject("answer")
@@ -165,6 +165,9 @@ class MetricViewBindingContractTest {
     ReflectionTestUtils.setField(controller, "identityService", identity);
     ReflectionTestUtils.setField(controller, "businessConfigService", configs);
     ReflectionTestUtils.setField(controller, "metricViewService", service);
+    var buildTests=mock(io.ontomato.dataengine.service.BuildTestContextService.class);
+    when(buildTests.resolve(any())).thenReturn(io.ontomato.dataengine.service.ExecutionTarget.LIVE);
+    ReflectionTestUtils.setField(controller,"buildTests",buildTests);
     var mvc = MockMvcBuilders.standaloneSetup(controller).build();
     String request = JSONObject.of("id", metric.getId(), "param", JSONObject.of("topN", 5),
         "parameterTexts", JSONObject.of("topN", "5", "at", "2026-11-10T12:00:00Z",
@@ -179,7 +182,7 @@ class MetricViewBindingContractTest {
       assertTrue(envelope.getBooleanValue("success"), envelope.toJSONString());
       var executed = ArgumentCaptor.forClass(Function.class);
       verify(execution).execute(anyString(), executed.capture(), eq(user.getId()),
-          any(), isNull(), eq("en"), eq(1), eq("domain-a"));
+          any(), isNull(), eq("en"), eq(1), eq("domain-a"), isNull(), eq(io.ontomato.dataengine.service.ExecutionTarget.LIVE));
       JSONObject values = MetricViewBindings.values(executed.getValue());
       assertInstanceOf(Number.class, values.get("topN"));
       assertEquals(5, values.getIntValue("topN"));

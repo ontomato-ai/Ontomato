@@ -171,17 +171,24 @@ class BuildTestPostgresIntegrationTest {
       adapter.createClass("",rule.getJSONArray("classDef").getJSONObject(0));
       jdbc.execute("INSERT INTO contract_person(id,name,age) VALUES('contract-person-1','real',7)");
       var created=contexts.create("workspace",sample,Map.of());
-      String id=created.getString("contextId");var target=contexts.require(id,"builder","contract");
+      String id=created.getString("contextId");
+      var boundary=new MockHttpServletRequest();boundary.addHeader(BuildTestContextService.HEADER,JSONObject.of("kind","build-test","contextId",id).toJSONString());
+      var target=contexts.resolve(boundary);
       assertEquals("contract-group-1",jdbc.queryForObject("SELECT group_id FROM "+target.sandboxId()+"contract_person WHERE id='contract-person-1'",String.class));
       var function=JSON.parseArray(Files.readString(Path.of("../../data-engine-core/src/test/resources/agent-contracts/actions.json"))).getJSONObject(0).getJSONObject("function").to(Function.class);function.setDomainId("contract");
       function.getParameters().get(0).setValue("contract-person-1");function.getParameters().get(1).setValue(99);
-      var result=programs.execute(UUID.randomUUID().toString(),function,"builder",permission,target.sandboxId(),"en",1,"contract",null,target);
-      assertNull(((io.ontomato.dataengine.bean.PythonExecuteResult)result[1]).getError());
+      var action=JSON.parseArray(Files.readString(Path.of("../../data-engine-core/src/test/resources/agent-contracts/actions.json"))).getJSONObject(0).to(io.ontomato.dataengine.bean.action.Action.class);
+      action.setDomainId("contract");action.setFunction(function);
+      var actions=spy(new ActionServiceImpl());doReturn(action).when(actions).queryById(action.getId());
+      ReflectionTestUtils.setField(actions,"identity",identity);ReflectionTestUtils.setField(actions,"abcProgramService",programs);
+      var result=actions.execute(action.getId(),JSONObject.of("id","contract-person-1","age",99),"en",owner,permission,1,target);
+      assertNull(result.getError());
       assertEquals(99,jdbc.queryForObject("SELECT age FROM "+target.sandboxId()+"contract_person WHERE id='contract-person-1'",Integer.class));
       assertEquals(22,jdbc.queryForObject("SELECT age FROM "+target.sandboxId()+"contract_person WHERE id='contract-person-2'",Integer.class));
       assertEquals(7,jdbc.queryForObject("SELECT age FROM contract_person WHERE id='contract-person-1'",Integer.class));
       var query=JSON.parseObject("{\"answer\":{\"steps\":[{\"graph\":{\"patterns\":[{\"objects\":[{\"idx\":0,\"variable\":\"p\",\"class\":\"contract_person\"}]}]},\"output\":{\"to_user\":true,\"fields\":[{\"variable\":\"p\",\"field\":\"age\",\"as\":\"age\"}]}}]}}");
       var access=new QueryAccessService.Access(owner,permission,null,null,null).withTarget(target);
+      var metrics=spy(new MetricViewServiceImpl());ReflectionTestUtils.setField(metrics,"abcProgramService",programs);ReflectionTestUtils.setField(metrics,"adminService",admin);
       var dsl=QueryPackage.fromDsl(query.toJSONString());
       var read=QueryPackageExecution.execute(UUID.randomUUID().toString(),dsl,new JSONObject(),null,access,"en",1,ontology,python);
       assertTrue(read.rows().stream().anyMatch(value->JSONObject.from(value).getIntValue("age")==99));
@@ -193,6 +200,19 @@ class BuildTestPostgresIntegrationTest {
       pkg.getJSONArray("files").getJSONObject(1).put("content","# ontomato-python:2\nimport json\nfrom query_runtime import execute_dsl_file\nrows=execute_dsl_file('queries/employees.json')\nprint(json.dumps({'answer':[{'total':sum(row['age'] for row in rows)}]}))\n");
       read=QueryPackageExecution.execute(UUID.randomUUID().toString(),pkg,JSONObject.of("threshold",20),null,access,"en",1,ontology,python);
       assertEquals(144,read.rows().getJSONObject(0).getIntValue("total"));
+      for(var readPackage:List.of(dsl,pkg)) {
+        var readFunction=new Function();readFunction.setDomainId("contract");readFunction.setOperation(Function.OPERATION_READ);readFunction.setQueryPackage(readPackage);
+        readFunction.setParameters(QueryPackage.definitions(readPackage));
+        var metric=new io.ontomato.dataengine.bean.metricView.MetricView();metric.setId("metric-test");metric.setDomainId("contract");metric.setStatus(io.ontomato.dataengine.bean.metricView.MetricView.STATUS_PUBLISHED);metric.setFunction(readFunction);metric.setBindings(new ArrayList<>());
+        doReturn(metric).when(metrics).queryById("metric-test","contract");
+        var values=QueryPackage.parameters(readPackage,null);
+        assertNotNull(metrics.testExecute(metric,null,values,"en",owner,permission,1,target)[0]);
+        assertNotNull(metrics.execute("metric-test",null,values,null,"en",owner,permission,1,target)[0]);
+      }
+      function.setCode("# ontomato-python:2\nfrom query_runtime import delete\ndelete('contract_person',{'field':'id','operator':'=','value':'contract-person-1'})\n");
+      result=actions.execute(action.getId(),JSONObject.of("id","contract-person-1","age",99),"en",owner,permission,1,target);assertNull(result.getError());
+      assertEquals(2,jdbc.queryForObject("SELECT count(*) FROM "+target.sandboxId()+"contract_person",Integer.class));
+      assertEquals(7,jdbc.queryForObject("SELECT age FROM contract_person WHERE id='contract-person-1'",Integer.class));
       contexts.close(id);assertEquals(0,jdbc.queryForObject("SELECT count(*) FROM information_schema.tables WHERE table_schema=? AND table_name LIKE ?",Integer.class,schema,target.sandboxId()+"%"));
       var next=contexts.create("workspace",sample,Map.of());var restored=contexts.require(next.getString("contextId"),"builder","contract");
       assertEquals(21,jdbc.queryForObject("SELECT age FROM "+restored.sandboxId()+"contract_person WHERE id='contract-person-1'",Integer.class));contexts.close(next.getString("contextId"));

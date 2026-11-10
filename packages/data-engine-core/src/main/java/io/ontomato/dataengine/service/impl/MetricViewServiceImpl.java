@@ -426,12 +426,12 @@ private MetricViewContent generateContent(JSONArray rows, PythonExecuteResult ex
 
   @Override
   public Object[] testExecute(MetricView metric, String bindingId, JSONObject param, String lang, User user, UserDataPermission permission, int timeoutMinutes) throws Exception {
-    if (metric == null) throw new IllegalArgumentException("MetricView not found");
-    validateDraftDomain(metric, user.getDomainId());
     return testExecute(metric,bindingId,param,lang,user,permission,timeoutMinutes,ExecutionTarget.LIVE);
   }
   @Override
   public Object[] testExecute(MetricView metric,String bindingId,JSONObject param,String lang,User user,UserDataPermission permission,int timeoutMinutes,ExecutionTarget target) throws Exception {
+    if (metric == null) throw new IllegalArgumentException("MetricView not found");
+    validateDraftDomain(metric, user.getDomainId());
     if (!MetricView.STATUS_PUBLISHED.equals(metric.getStatus()))
       throw new IllegalArgumentException("MetricView is not published");
     QueryPackage.prepareReadFunction(metric.getFunction(),

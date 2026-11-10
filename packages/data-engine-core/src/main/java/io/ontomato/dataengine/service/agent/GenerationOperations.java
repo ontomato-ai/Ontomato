@@ -6,8 +6,6 @@ import com.alibaba.fastjson2.*;
 import io.ontomato.dataengine.bean.abcHarness.ABCHarnessDashboardParameter;
 import io.ontomato.dataengine.service.*;
 import io.ontomato.dataengine.util.*;
-import java.io.ByteArrayInputStream;
-import java.nio.charset.StandardCharsets;
 import java.util.*;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
@@ -66,11 +64,10 @@ public class GenerationOperations {
   @SuppressWarnings("unchecked")
   public void createSandbox(String sandbox, String domain) throws Exception {
     var schema = schemas.query(domain);
-    sandboxService.createNamespace(sandbox, domain);
-    for (var cls : (List<Map<String, Object>>) schema.get("classDef"))
-      sandboxService.createClass(sandbox, cls, domain);
-    for (var relation : ((Map<String, Object>) schema.get("relationship_rule")).keySet())
-      sandboxService.createEdge(sandbox, relation, domain);
+    var objects=new JSONArray();
+    for(var cls:(List<Map<String,Object>>)schema.get("classDef"))
+      objects.add(JSONObject.of("className",cls.get("className"),"rows",new JSONArray()));
+    sandboxService.createSampleStructure(sandbox,JSONObject.of("objDatas",objects),domain);
   }
 
   public void dropSandbox(String sandbox, String domain) {
@@ -118,11 +115,6 @@ public class GenerationOperations {
           String sandboxId = sandbox(row), domainId = owner.domainId();
           JSONObject data = row.getJSONObject("test_data");
           if (data == null) throw AgentHttpException.invalid("Prepare test data first");
-          Map<String, Object> jsonRule = schemas.query(domainId);
-          List<Map<String, Object>> classDefs =
-              (List<Map<String, Object>>) jsonRule.get("classDef");
-          Map<String, Map<String, Object>> classDefMap = new HashMap<>();
-          for (var cls : classDefs) classDefMap.put((String) cls.get("className"), cls);
           try {
             sandboxService.truncateNamespace(sandboxId, domainId);
 

@@ -96,7 +96,8 @@ public class VectorResourceDao extends BaseDao {
 	 */
 	public void ensureVectorTable(String className, String attrName, String domainId) {
 		String indexName = generateIndexName(className, attrName, domainId);
-		new File("conf/" + dirName + "/" + indexName).mkdirs();
+        try { java.nio.file.Files.createDirectories(new File("conf/" + dirName + "/" + indexName).toPath()); }
+        catch(java.io.IOException failure) { throw new IllegalStateException("Cannot create vector resource directory: " + indexName, failure); }
 		ensureTable(indexName);
 	}
 
@@ -461,6 +462,7 @@ public class VectorResourceDao extends BaseDao {
 	private void deleteFilesInDirectory(String indexName) {
 		File dir = new File("conf/" + dirName + "/" + indexName);
 		if (!dir.isDirectory()) {
+            if(dir.exists()) throw new IllegalStateException("Vector resource path is not a directory: " + dir);
 			return;
 		}
 		File[] files = dir.listFiles();
