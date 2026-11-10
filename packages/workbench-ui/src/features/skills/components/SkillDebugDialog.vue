@@ -25,6 +25,13 @@ const dialogTitle = computed(() => {
 
 const defaultInputExamples: Record<string, string> = {
   echarts: workbenchContent().skillDebugEchartsInput,
+  network_graph: JSON.stringify({
+    chartType: "network-graph",
+    data: {
+      nodes: [{ id: "A", name: "A" }, { id: "B", name: "B" }],
+      links: [{ source: "A", target: "B" }],
+    },
+  }, null, 2),
   growth_rate_calc: JSON.stringify(
     {
       data: [
