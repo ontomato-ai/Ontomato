@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { effectScope, shallowRef } from "vue";
+import { effectScope, nextTick, shallowRef } from "vue";
 import { flushPromises, mount } from "@vue/test-utils";
 import ElementPlus from "element-plus";
 import type { CatalogApplication } from "@ontomato/contracts/platform-identity";
@@ -12,7 +12,8 @@ import { usePublication } from "../publication";
  * The page's header says the workspace's application is published only while it is: while the catalog, the one the rail
  * draws, lists the application the workspace's exports belong to. Exports alone (a publication Java refused) are not a
  * publication, and neither is a catalog that could not be read. While the catalog is read again, what it last listed
- * stands, so the mark does not blink. The mark opens the publication drawer.
+ * stands, so the mark does not blink. The mark opens the publication drawer, and its tooltip goes with the click instead
+ * of floating over the drawer.
  */
 
 const APP_ID = "app-0f8e2b1c";
@@ -69,5 +70,37 @@ describe("the published mark", () => {
     await mark.trigger("click");
     expect(header.emitted("publish")).toHaveLength(1);
     header.unmount();
+  });
+
+  it("closes its tooltip when it opens the publication drawer", async () => {
+    vi.useFakeTimers();
+    const header = mount(PanelHeader, {
+      props: { tab: "preview", headCommit: null, published: "Overdue board" },
+      global: { plugins: [ElementPlus, workbenchI18n()] },
+      attachTo: document.body,
+    });
+    const tooltip = () => [...document.body.querySelectorAll<HTMLElement>(".el-popper")]
+      .find((popper) => popper.textContent!.includes('Published as "Overdue board"'));
+    try {
+      await header.find(".published").trigger("mouseenter");
+      vi.advanceTimersByTime(300);
+      await nextTick();
+      expect(tooltip()!.style.display).not.toBe("none");
+
+      await header.find(".published").trigger("click");
+      vi.advanceTimersByTime(0);
+      await nextTick();
+      expect(tooltip()!.style.display).toBe("none");
+
+      // A click quicker than the tooltip's delay keeps it from showing over the drawer at all.
+      await header.find(".published").trigger("mouseenter");
+      await header.find(".published").trigger("click");
+      vi.advanceTimersByTime(300);
+      await nextTick();
+      expect(tooltip()!.style.display).toBe("none");
+    } finally {
+      header.unmount();
+      vi.useRealTimers();
+    }
   });
 });
