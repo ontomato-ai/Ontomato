@@ -1,5 +1,9 @@
 [
   {
+    "key": "Action.unsupportedFunction",
+    "value": "Action requires an OPERATION_WRITE Python Function and does not support queryPackage; use MetricView for read-only queries."
+  },
+  {
     "key": "scheduledTasks.mail.completedSubject",
     "value": "Scheduled task finished: {title}"
   },

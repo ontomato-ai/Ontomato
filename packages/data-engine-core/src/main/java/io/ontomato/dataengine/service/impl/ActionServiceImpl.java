@@ -18,6 +18,7 @@ import io.ontomato.dataengine.dao.KnowledgeDao;
 import io.ontomato.dataengine.schedules.ScheduleJson;
 import io.ontomato.dataengine.service.ABCProgramService;
 import io.ontomato.dataengine.service.ActionService;
+import io.ontomato.dataengine.service.ActionFunctionAdmission;
 import io.ontomato.dataengine.service.AdminService;
 import io.ontomato.dataengine.service.BusinessConfigService;
 import io.ontomato.dataengine.service.LangService;
@@ -258,6 +259,7 @@ public class ActionServiceImpl implements ActionService {
       return generation.settle(
           () -> {
             if (persistence) {
+              ActionFunctionAdmission.requireSupported(function, langService, lang);
               action.setFunction(functionDao.save(function, lang));
               return actionDao.save(action);
             }
@@ -300,6 +302,7 @@ public class ActionServiceImpl implements ActionService {
     if (function == null) {
       throw new Exception(langService.get(lang, "Function.cannotBeEmpty"));
     }
+    ActionFunctionAdmission.requireSupported(function, langService, lang);
     // Vector storage and the domain-scoped asset index key off the function's domain; the
     // controller sets it on the action, so carry it onto a new function before saving.
     if (function.getDomainId() == null || function.getDomainId().isBlank()) {
@@ -311,12 +314,7 @@ public class ActionServiceImpl implements ActionService {
       if (existFunction == null) {
         throw new Exception(langService.get(lang, "Function.notFound"));
       }
-      if (!Function.OPERATION_WRITE.equals(existFunction.getOperation())) {
-        throw new Exception(langService.get(lang, "Function.notWrite"));
-      }
       codeChanged = !existFunction.getCode().equals(function.getCode());
-    } else if (!Function.OPERATION_WRITE.equals(function.getOperation())) {
-      throw new Exception(langService.get(lang, "Function.notWrite"));
     }
     String codeHash = CodeHashUtil.sha256(function.getCode());
     boolean reusable =
@@ -445,6 +443,7 @@ public class ActionServiceImpl implements ActionService {
         if (function == null || function.getId() == null) {
           throw new Exception("Action " + actionId + " has no embedded function");
         }
+        ActionFunctionAdmission.requireSupported(function, langService, lang);
         if (domainId != null) {
           action.setDomainId(domainId);
           function.setDomainId(domainId);
@@ -572,6 +571,7 @@ public class ActionServiceImpl implements ActionService {
     if (!user.getDomainId().equals(action.getDomainId()) || action.getFunction() == null ||
         !user.getDomainId().equals(action.getFunction().getDomainId())) throw new IllegalArgumentException("Action is outside the current domain");
     if (!Action.STATUS_PUBLISHED.equals(action.getStatus())) throw new Exception(langService.get(lang, "Action.notPublished"));
+    ActionFunctionAdmission.requireSupported(action.getFunction(), langService, lang);
     return action;
   }
 
