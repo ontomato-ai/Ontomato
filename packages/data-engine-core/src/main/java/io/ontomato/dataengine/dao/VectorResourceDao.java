@@ -106,13 +106,11 @@ public class VectorResourceDao extends BaseDao {
 
     public com.alibaba.fastjson2.JSONObject createRecordedVector(com.alibaba.fastjson2.JSONObject planned,String domain) {
       ensureVectorTable(planned.getString("className"),planned.getString("attrName"),domain);
-      return jdbcTemplate.execute((org.springframework.jdbc.core.ConnectionCallback<com.alibaba.fastjson2.JSONObject>) connection->{
-        try(var statement=connection.createStatement();var rows=statement.executeQuery("SELECT * FROM "+quotedTable(planned.getString("logicalName"))+" WHERE 1=0")) {
-          var metadata=rows.getMetaData();
-          return com.alibaba.fastjson2.JSONObject.of("kind","vector","name",metadata.getTableName(1),"schema",metadata.getSchemaName(1),
-              "directory",new File(planned.getString("directory")).getCanonicalPath());
-        } catch(java.io.IOException failure) { throw new java.sql.SQLException("Cannot identify created vector directory",failure); }
-      });
+      var actual=jdbcTemplate.queryForMap("SELECT c.relname,n.nspname FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE c.oid=to_regclass(?)",quotedTable(planned.getString("logicalName")));
+      try {
+        return com.alibaba.fastjson2.JSONObject.of("kind","vector","name",actual.get("relname"),"schema",actual.get("nspname"),
+            "directory",new File(planned.getString("directory")).getCanonicalPath());
+      } catch(java.io.IOException failure) { throw new IllegalStateException("Cannot identify created vector directory",failure); }
     }
 
     public void dropRecordedVector(com.alibaba.fastjson2.JSONObject resource) {

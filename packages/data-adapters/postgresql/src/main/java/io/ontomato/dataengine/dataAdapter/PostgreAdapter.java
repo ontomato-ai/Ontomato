@@ -665,6 +665,19 @@ public class PostgreAdapter implements DataAdapter {
 	}
 
     @Override
+    public JSONObject createRecordedClass(String namespace,Map<String,Object> definition) {
+      createClass(namespace,definition);
+      try(var connection=openConnection();var statement=connection.prepareStatement(
+          "SELECT c.relname,n.nspname FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE c.oid=to_regclass(?)")) {
+        statement.setString(1,sandboxClassName(namespace,(String)definition.get("className")));
+        try(var rows=statement.executeQuery()) {
+          if(!rows.next()) throw new IllegalStateException("Database did not identify the created table");
+          return JSONObject.of("kind","table","name",rows.getString(1),"schema",rows.getString(2));
+        }
+      } catch(java.sql.SQLException failure) { throw new IllegalStateException("Cannot identify sandbox table",failure); }
+    }
+
+    @Override
     public void validateSandboxClasses(String namespace, List<Map<String,Object>> classes) {
       var names=new java.util.HashMap<String,String>();
       try(var connection=openConnection();var statement=connection.prepareStatement("SELECT lower(?)::name::text")) {
