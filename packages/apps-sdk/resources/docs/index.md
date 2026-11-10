@@ -15,8 +15,8 @@ keeps the behaviour of the version it names.
 | `docs/index.md` | This guide |
 | `docs/reference.md` | The API of every `@ontomato/sdk` module, generated from their sources |
 | `docs/element-plus.web-types.json` | Element Plus's own metadata for every component of the bundled version: attributes, events, slots |
-| `examples/basic.html` | Platform context, Element Plus, a chart in the platform's theme and a Markdown text |
-| `examples/metric-action.html` | A published MetricView in a table and a chart, the selected row as page context, then an Action through its form and a fresh read |
+| `examples/basic.html` | Platform context, Element Plus, a chart in the platform's theme, a Markdown text, a CSV text in the code editor previewed as a table, and an HTML document in a sandboxed frame |
+| `examples/metric-action.html` | A published MetricView in a table and a chart, or its result as read-only JSON, the selected row as page context, then an Action through its form and a fresh read through the template ref of `<metric-view-data>` |
 | `examples/chat.html` | A conversation with one of the platform's agents |
 
 ## Modules
@@ -30,10 +30,12 @@ keeps the behaviour of the version it names.
 | `@ontomato/sdk/chart` | `EChart`, `<e-chart>`: the chart the platform draws its own charts with |
 | `@ontomato/sdk/markdown` | `MarkdownView`, `<markdown-view>`: Markdown as the platform reads it |
 | `@ontomato/sdk/form` | `FormFields`, `<form-fields>`: a form as its owner declares it, such as an Action's, and `formFieldKey` |
+| `@ontomato/sdk/code` | `CodeEditor`, `<code-editor>`: code and structured text such as JSON, editable or read-only |
+| `@ontomato/sdk/preview` | `TablePreview`, `<table-preview>`: a table of text cells, with `parseCsv` for CSV and TSV; `HtmlPreview`, `<html-preview>`: an HTML document in a sandboxed frame |
 | `@ontomato/sdk/chat` | The platform's conversation components, `createAssistantClient` and `useShellLabels` |
 
-The chart, Markdown and form components are the ones the platform's own pages use, so an app looks and behaves like
-them. Import each module where the page needs it; a page loads only the modules it imports.
+The chart, Markdown, form, code and preview components are the ones the platform's own pages use, so an app looks and
+behaves like them. Import each module where the page needs it; a page loads only the modules it imports.
 
 The versions of Vue, Element Plus and ECharts are in `sdk.json`. Use only these modules: the page must not load
 scripts, styles or fonts from the internet, because many installations have no internet access.
@@ -81,8 +83,9 @@ the page is not inside the shell. `app.use(context)` installs the platform's wor
 `<metric-view-data>` component.
 
 - `context.locale` and `context.theme` follow the platform while the app is open. The SDK keeps `<html lang>` and the
-  `dark` class of `<html>` in step, and Element Plus and `<markdown-view>` follow both. Use Element Plus's CSS
-  variables, such as `var(--el-bg-color)` and `var(--el-text-color-primary)`, for your own styles, so they follow too.
+  `dark` class of `<html>` in step, and Element Plus, `<markdown-view>` and `<code-editor>` follow both. Use Element
+  Plus's CSS variables, such as `var(--el-bg-color)` and `var(--el-text-color-primary)`, for your own styles, so they
+  follow too.
 - `context.chartTheme` is the theme the platform's own charts are drawn in, for the mode it shows now: give it to every
   `<e-chart>` and the chart follows the platform's light and dark themes.
 - `context.user` is the signed-in user, for display only. It is `null` in the open-source edition.
@@ -138,17 +141,36 @@ the MetricView returns, often an array of row objects. A result the data engine 
 never a silent partial list.
 
 `<metric-view-data>` binds a MetricView by property. It reads when it appears and again whenever the id or the values of
-the parameters change. It draws nothing itself: its default slot receives `data`, `loading`, `error` and `reload`, and
-the page puts a table, a chart or a figure in it. Show `error` yourself.
-The `parameter-texts` property accepts user-entered text that the platform converts according to each parameter's type; invalid text fails that read with the platform's error message.
+the parameters change. It draws nothing itself, and hands one state, `data`, `loading`, `error` and `reload`, to two
+places:
+
+- The template draws from its default slot: put a table, a chart or a figure in it, and show `error` yourself.
+- The page's script reaches the same state through a template ref. `reload()` on the ref reads the MetricView again,
+  such as after an Action changed the data, wherever the Action's form is on the page; `data`, `loading` and `error` on
+  the ref are the slot's values, so the script needs no copy of its own.
+
+The `parameter-texts` property accepts user-entered text that the platform converts according to each parameter's type;
+invalid text fails that read with the platform's error message.
 
 ```html
-<metric-view-data :metric-view-id="metricViewId" :parameters="{ region }" v-slot="{ data, loading, error, reload }">
+<metric-view-data ref="orders" :metric-view-id="metricViewId" :parameters="{ region }"
+  v-slot="{ data, loading, error }">
   <el-alert v-if="error" type="error" :title="error.message" :closable="false"></el-alert>
   <el-table v-else v-loading="loading" :data="data ?? []">
     <el-table-column prop="name" label="Name"></el-table-column>
   </el-table>
 </metric-view-data>
+```
+
+```js
+setup() {
+  const orders = ref(null); // Vue fills it through ref="orders"
+  async function execute(parameters) {
+    await context.actions.execute({ id: ACTION_ID, parameters });
+    await orders.value.reload();
+  }
+  return { orders, execute };
+}
 ```
 
 ## Changing data: Actions
@@ -162,8 +184,8 @@ await context.actions.execute({ id: "<Action id>", parameters: { orderId: "SO-10
 
 Name every parameter the Action declares and give each value its declared type: a number as a number, a list as an
 array. The server checks the user's permission and the values again, and the promise rejects with its message when it
-refuses. Read the MetricViews that show the changed data again afterwards, for example with `reload()` from
-`<metric-view-data>`.
+refuses. Afterwards, read the MetricViews that show the changed data again: in the script that executed the Action,
+call `reload()` on the template ref of each `<metric-view-data>` that shows it.
 
 ### An Action's form
 
@@ -259,6 +281,56 @@ import { MarkdownView } from "@ontomato/sdk/markdown";
 
 Use it for text that is written in Markdown, such as a description a MetricView returns or a note on the page; labels
 and values stay plain text.
+
+## Code
+
+`<code-editor>` from `@ontomato/sdk/code` edits code and structured text as the platform's own editors do: line
+numbers, folding, highlighting for its language and wrapped lines. Read-only, the text can still be selected, searched
+with Ctrl/Cmd-F and copied. It follows the light and dark themes by itself.
+
+```html
+<code-editor v-model="script" language="python" :min-height="200"></code-editor>
+<code-editor :model-value="JSON.stringify(result, null, 2)" language="json" readonly :min-height="120"></code-editor>
+```
+
+```js
+import { CodeEditor } from "@ontomato/sdk/code";
+```
+
+`language` is `javascript`, `json`, `markdown`, `html`, `python` or `text`. Without it the text is highlighted as
+JavaScript, so give `text` for any other text, such as CSV. Use it for code and for data shown as written, such as a
+JSON value, editable or read-only; never a textarea or a `<pre>`.
+
+## Content preview
+
+`@ontomato/sdk/preview` shows content as the platform previews files.
+
+`<table-preview>` draws a table of text cells, `{ columns, rows }`, with Element Plus: cells keep their spaces and line
+breaks, and columns of numbers align right. `parseCsv(text)` reads a CSV text into such a table, its first record as
+the columns, and `parseCsv(text, "\t")` reads TSV. Given `page-size`, the rows come a page at a time with the total
+beside the pager. Other attributes, such as `max-height` and `empty-text`, go to the Element Plus table.
+
+```html
+<table-preview :table="table" :page-size="20"></table-preview>
+```
+
+```js
+import { TablePreview, parseCsv } from "@ontomato/sdk/preview";
+
+const table = computed(() => parseCsv(csv.value));
+```
+
+Use it for text that is a table, such as CSV or TSV, rather than parsing it yourself. Rows a MetricView returns as
+objects go straight into an `el-table`.
+
+`<html-preview>` shows a whole HTML document in a frame. `sandbox` is required and states what the document may do:
+`""` lets nothing in it run, `"allow-scripts"` runs its scripts apart from the page and the platform. Never add
+`allow-same-origin` to `allow-scripts`: the document could then act on the platform as the reader. Give the frame its
+height with a style.
+
+```html
+<html-preview :html="report" sandbox="" title="Report" style="height: 360px"></html-preview>
+```
 
 ## Conversations
 
