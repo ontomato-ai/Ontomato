@@ -8,7 +8,7 @@ import { RuntimeStore } from "../store";
 import { SessionSandbox } from "../sandbox";
 import { removeWorkerFiles, type WorkerPolicy } from "../worker";
 import type { InstalledSkill } from "../skills";
-import { codeLimitsSchema } from "@ontomato/contracts/agent-runtime-code";
+import { codeLimitsSchema, codeExecutionVirtualAddressSpaceBytes } from "@ontomato/contracts/agent-runtime-code";
 
 const database = process.env.RUNTIME_TEST_DATABASE_URL;
 // The sandbox drops the worker to a dedicated UID, which needs Linux and root; the
@@ -168,7 +168,7 @@ describe("session sandbox prepares an isolated workspace", () => {
           skills: skills.map((skill) => skill.skill),
           sandbox: {
             limits: codeLimitsSchema.parse({
-              memoryBytes: 16 * 1024 ** 3,
+              memoryBytes: codeExecutionVirtualAddressSpaceBytes,
               wallTimeMs: 30000,
               cpuSeconds: 60,
               processCount: 64,

@@ -6,6 +6,14 @@ import static org.mockito.Mockito.*;
 
 import com.alibaba.fastjson2.*;
 import io.ontomato.dataengine.bean.PythonExecuteResult;
+import io.ontomato.dataengine.config.BusinessConfig;
+import io.ontomato.dataengine.config.ControllerConst;
+import io.ontomato.dataengine.controller.MetricViewController;
+import io.ontomato.dataengine.util.SystemUtils;
+import org.springframework.http.MediaType;
+import org.springframework.test.web.servlet.setup.MockMvcBuilders;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 import io.ontomato.dataengine.bean.function.Function;
 import io.ontomato.dataengine.bean.function.Parameter;
 import io.ontomato.dataengine.bean.function.ReturnDef;
@@ -18,6 +26,7 @@ import io.ontomato.dataengine.util.ZipBundleUtil;
 import java.util.*;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.SimpleTransactionStatus;
@@ -134,6 +143,50 @@ class MetricViewBindingContractTest {
     result = service.execute(metric.getId(), null, typed,
         JSONObject.of("amount", "abc"), "en", user, new UserDataPermission(), 1);
     assertEquals("abc", ((JSONArray) result[0]).getJSONObject(0).getJSONObject("values").get("amount"));
+  }
+
+  @Test
+  void parameterTextsFromHttpReachExecutionAsPlainTypedValues() throws Exception {
+    MetricView metric = metric("domain-a");
+    metric.setBindings(new ArrayList<>());
+    var defs = metric.getFunction().getQueryPackage().getJSONObject("manifest");
+    defs.put("parameterDefs", JSONArray.of(
+        JSONObject.of("name", "topN", "type", Parameter.TYPE_NUMBER, "value", 5),
+        JSONObject.of("name", "at", "type", Parameter.TYPE_TIME, "value", null),
+        JSONObject.of("name", "options", "type", Parameter.TYPE_ONTOOBJ, "value", null)));
+    service.save(metric, "en");
+    var controller = new MetricViewController();
+    var identity = mock(IdentityService.class);
+    when(identity.getCurrentUserDataPermission()).thenReturn(new UserDataPermission());
+    var config = new BusinessConfig();
+    config.setDslCookerTimeout(60000L);
+    var configs = mock(BusinessConfigService.class);
+    when(configs.get("domain-a")).thenReturn(config);
+    ReflectionTestUtils.setField(controller, "identityService", identity);
+    ReflectionTestUtils.setField(controller, "businessConfigService", configs);
+    ReflectionTestUtils.setField(controller, "metricViewService", service);
+    var mvc = MockMvcBuilders.standaloneSetup(controller).build();
+    String request = JSONObject.of("id", metric.getId(), "param", JSONObject.of("topN", 5),
+        "parameterTexts", JSONObject.of("topN", "5", "at", "2026-11-10T12:00:00Z",
+            "options", JSONObject.of("enabled", true).toJSONString())).toJSONString();
+    try (var system = mockStatic(SystemUtils.class)) {
+      system.when(SystemUtils::getCurUser).thenReturn(user);
+      var response = mvc.perform(post("/metricView/execute")
+          .header(ControllerConst.LANG_HEADER_KEY, "en")
+          .contentType(MediaType.APPLICATION_JSON).content(request))
+          .andExpect(status().isOk()).andReturn().getResponse();
+      JSONObject envelope = JSON.parseObject(response.getContentAsString());
+      assertTrue(envelope.getBooleanValue("success"), envelope.toJSONString());
+      var executed = ArgumentCaptor.forClass(Function.class);
+      verify(execution).execute(anyString(), executed.capture(), eq(user.getId()),
+          any(), isNull(), eq("en"), eq(1), eq("domain-a"));
+      JSONObject values = MetricViewBindings.values(executed.getValue());
+      assertInstanceOf(Number.class, values.get("topN"));
+      assertEquals(5, values.getIntValue("topN"));
+      assertEquals("2026-11-10T12:00:00Z", values.get("at"));
+      var options = assertInstanceOf(Map.class, values.get("options"));
+      assertEquals(Boolean.TRUE, options.get("enabled"));
+    }
   }
 
   @Test

@@ -4,7 +4,7 @@ import { skillReference } from "./skill-manager";
 import { withDomainSkills } from "./operations";
 import { userSkillEnvironment, type AssistantCredentials } from "../../platform/agent-runtime/runtime";
 import { RuntimeClient } from "../../infrastructure/agent-runtime/client";
-import { codeExecutionRequestSchema, codeExecutionSchema } from "@ontomato/contracts/agent-runtime-code";
+import { codeExecutionRequestSchema, codeExecutionSchema, codeExecutionVirtualAddressSpaceBytes } from "@ontomato/contracts/agent-runtime-code";
 import { randomUUID } from "node:crypto";
 import { HttpError } from "../../utils/errors";
 
@@ -25,7 +25,7 @@ export async function renderObjectView(owner: { domainId: string; userId: string
       }],
       entry: "render.py", arguments: [], outputPaths: ["result.html"],
       environment: userSkillEnvironment(credentials), libraries: [{ skill: skills[0], path: "scripts" }],
-      limits: { wallTimeMs: 120000 },
+      limits: { wallTimeMs: 120000, memoryBytes: codeExecutionVirtualAddressSpaceBytes },
     });
     const admission = await client.request("/v1/code-executions", "POST", request, idempotencyKey) as { execution: unknown };
     return codeExecutionSchema.parse(admission.execution);

@@ -13,7 +13,7 @@ import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 import pg from "pg";
 import { runtimeRunSnapshotSchema } from "@ontomato/contracts/agent-runtime";
-import { codeLimitsSchema } from "@ontomato/contracts/agent-runtime-code";
+import { codeLimitsSchema, codeExecutionVirtualAddressSpaceBytes } from "@ontomato/contracts/agent-runtime-code";
 const database = process.env.RUNTIME_TEST_DATABASE_URL;
 const repo = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
@@ -71,7 +71,7 @@ describe("standard runtime real HTTP/PG/processes", () => {
       ...(toolCallPolicy ? { toolCallPolicy } : {}),
       sandbox: {
         limits: codeLimitsSchema.parse({
-          memoryBytes: 16 * 1024 ** 3,
+          memoryBytes: codeExecutionVirtualAddressSpaceBytes,
           wallTimeMs: 15000,
         }),
       },

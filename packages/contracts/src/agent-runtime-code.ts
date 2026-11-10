@@ -9,6 +9,9 @@ import {
   runtimeRelativePathSchema,
 } from "./agent-runtime-values";
 
+/** Virtual address space budget for code that starts Node: V8 reserves a large CodeRange at startup. */
+export const codeExecutionVirtualAddressSpaceBytes = 16 * 1024 ** 3;
+
 export const codeLimitsSchema = z
   .object({
     wallTimeMs: z.number().int().positive().default(120000),
