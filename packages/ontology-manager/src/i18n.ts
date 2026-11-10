@@ -199,7 +199,7 @@ const ontologyEn = {
   deleteRelationConfirm: 'Delete relation "{name}"?',
   objectConnections: "Object Connections",
   relationConnectionNote:
-    "A relation connects a source object to a target object. This interface currently supports editing relation descriptions and deleting relations.",
+    "A relation connects a source object to a target object. You can edit its description and join fields.",
   objectMissing: "Object type does not exist or has been deleted",
   attributeMissing: "Property does not exist or has been deleted",
   relationMissing: "Relation type does not exist or has been deleted",

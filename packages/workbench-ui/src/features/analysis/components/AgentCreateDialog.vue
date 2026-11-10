@@ -129,6 +129,9 @@ const mcpServicesLoadFailed = ref(false);
 const publishedActions = ref<Array<{ id: string; name: string }>>([]);
 const actionsLoading = ref(false);
 const actionsLoadFailed = ref(false);
+const publishedMetricViews = ref<Array<{ id: string; name: string }>>([]);
+const metricViewsLoading = ref(false);
+const metricViewsLoadFailed = ref(false);
 const hotReports = ref<AnalysisReportHotCardSummary[]>([]);
 const hotReportsLoading = ref(false);
 const hotReportsLoadFailed = ref(false);
@@ -186,6 +189,21 @@ async function loadPublishedActions() {
     actionsLoadFailed.value = true;
   } finally {
     actionsLoading.value = false;
+  }
+}
+
+async function loadPublishedMetricViews() {
+  metricViewsLoading.value = true;
+  metricViewsLoadFailed.value = false;
+  try {
+    const json = await queryViewApi.listPublishedMetricViews();
+    publishedMetricViews.value = (Array.isArray(json.data) ? json.data : [])
+      .filter((metricView: any) => typeof metricView?.id === "string")
+      .map((metricView: any) => ({ id: metricView.id, name: String(metricView.name || metricView.id) }));
+  } catch {
+    metricViewsLoadFailed.value = true;
+  } finally {
+    metricViewsLoading.value = false;
   }
 }
 
@@ -361,6 +379,7 @@ const form = ref({
   summaryPosition: "bottom" as AnalysisReportSummaryPosition,
   enabledMcpServiceNames: [] as string[],
   enabledActionIds: [] as string[],
+  enabledMetricViewIds: [] as string[],
   analysisDimensionPrompt: "",
   summarizerPrompt: "",
   conclusionMakerPrompt: "",
@@ -371,7 +390,6 @@ const form = ref({
   graphScopeRootClassNames: [] as string[],
   graphScopeMaxDepth: 1 as number | undefined,
   isEnabled: true,
-  sortOrder: 0 as number,
   avatarKey: "Brain",
   avatarColor: defaultAvatarColor.value,
 });
@@ -407,6 +425,7 @@ function fillFormFromAgent(agent: AnalysisAgent) {
     summaryPosition: agent.summaryPosition === "top" ? "top" : "bottom",
     enabledMcpServiceNames: agent.enabledMcpServiceNames || [],
     enabledActionIds: agent.enabledActionIds || [],
+    enabledMetricViewIds: agent.enabledMetricViewIds || [],
     analysisDimensionPrompt: agent.analysisDimensionPrompt || "",
     summarizerPrompt: agent.summarizerPrompt || "",
     conclusionMakerPrompt: agent.conclusionMakerPrompt || "",
@@ -418,7 +437,6 @@ function fillFormFromAgent(agent: AnalysisAgent) {
       agent.graphScope?.mode === "subgraph" ? [...agent.graphScope.rootClassNames] : [],
     graphScopeMaxDepth: agent.graphScope?.mode === "subgraph" ? agent.graphScope.maxDepth : 1,
     isEnabled: agent.isEnabled,
-    sortOrder: agent.sortOrder ?? 0,
     avatarKey,
     avatarColor,
   };
@@ -435,6 +453,7 @@ function resetForm() {
     summaryPosition: "bottom",
     enabledMcpServiceNames: [],
     enabledActionIds: [],
+    enabledMetricViewIds: [],
     analysisDimensionPrompt: "",
     summarizerPrompt: "",
     conclusionMakerPrompt: "",
@@ -445,7 +464,6 @@ function resetForm() {
     graphScopeRootClassNames: [],
     graphScopeMaxDepth: 1,
     isEnabled: true,
-    sortOrder: 0,
     avatarKey: "Brain",
     avatarColor: defaultAvatarColor.value,
   };
@@ -525,6 +543,7 @@ watch(
       }
       loadExternalMcpServices();
       loadPublishedActions();
+      loadPublishedMetricViews();
       if (props.editingAgent) {
         fillFormFromAgent(props.editingAgent);
         if (props.editingAgent.id) {
@@ -900,6 +919,35 @@ watch(isDark, () => {
               :title="t('admin.actionsLoadFailed')"
             />
           </template>
+          <AgentConfigurationHeader class="actions-header" :title="t('admin.metricViews')" :hint="t('admin.metricViewsHint')" :count="form.enabledMetricViewIds.length">
+            <template #icon><BarChart3 :size="16" /></template>
+            <template #actions>
+              <el-button size="small" :loading="metricViewsLoading" :icon="RefreshCw" @click="loadPublishedMetricViews">{{ t('common.refresh') }}</el-button>
+            </template>
+          </AgentConfigurationHeader>
+          <el-select
+            popper-class="agent-editor-select-dropdown"
+            v-model="form.enabledMetricViewIds"
+            multiple
+            filterable
+            clearable
+            :loading="metricViewsLoading"
+            :disabled="metricViewsLoading || metricViewsLoadFailed"
+            :aria-label="t('admin.metricViews')"
+            :placeholder="t('admin.metricViewsPlaceholder')"
+            fit-input-width
+            style="width: 100%"
+          >
+            <el-option v-for="metricView in publishedMetricViews" :key="metricView.id" :label="metricView.name" :value="metricView.id" />
+            <el-option v-for="id in form.enabledMetricViewIds.filter(id => !publishedMetricViews.some(metricView => metricView.id === id))" :key="id" :label="id" :value="id" disabled />
+          </el-select>
+          <el-alert
+            v-if="metricViewsLoadFailed"
+            class="mcp-load-alert"
+            type="warning"
+            :closable="false"
+            :title="t('admin.metricViewsLoadFailed')"
+          />
         </div>
       </div>
     </div>

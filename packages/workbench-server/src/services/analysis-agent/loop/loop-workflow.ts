@@ -43,6 +43,7 @@ import { combineResultTruncation } from "../../data-query/protocol";
 import { partialReportNotice } from "../report/partial-result-notice";
 import { assembleLoopExternalMcpCapability } from "./external-mcp";
 import { assembleLoopActionCapability } from "./actions";
+import { assembleLoopMetricViewCapability } from "./metric-views";
 import { assembleLoopNotebookCapability } from "./notebook";
 import { assembleLoopDataProbeCapability } from "./probe";
 import { collectPptConversation } from "../delivery/ppt-conversation";
@@ -97,10 +98,13 @@ function buildSystemPrompt(params: {
   dataProbeCapability: string;
   deliverableCapability: string;
   completionInstruction: string;
+  evidenceRequirements: string;
+  workingMethod: string;
   chartCapability: string;
   skillCapability: string;
   externalMcpCapability: string;
   actionCapability: string;
+  metricViewCapability: string;
   userName?: string;
 }): string {
   const trimmed = params.loopPrompt?.trim();
@@ -110,10 +114,13 @@ function buildSystemPrompt(params: {
     dataProbeCapability: params.dataProbeCapability,
     deliverableCapability: params.deliverableCapability,
     completionInstruction: params.completionInstruction,
+    evidenceRequirements: params.evidenceRequirements,
+    workingMethod: params.workingMethod,
     chartCapability: params.chartCapability,
     skillCapability: params.skillCapability,
     externalMcpCapability: params.externalMcpCapability,
     actionCapability: params.actionCapability,
+    metricViewCapability: params.metricViewCapability,
     currentUser: params.userName?.trim()
       ? tApp("analysis.loop.current-user", { userName: params.userName.trim() })
       : "",
@@ -278,6 +285,17 @@ export async function runAnalysisLoopWorkflow(
         trajectory,
       });
 
+      // Read-only, so every run of the agent may call its metric views, unlike Actions.
+      const metricViewCapability = await assembleLoopMetricViewCapability({
+        selectedMetricViewIds: agent.enabledMetricViewIds || [],
+        token,
+        apiKey,
+        userId,
+        locale: params.locale,
+        signal: loopSignal,
+        trajectory,
+      });
+
       const notebookCapability = assembleLoopNotebookCapability({
         reportDeliverableEnabled,
         dirKey: taskId || `${threadId}-${requestSeq}`,
@@ -408,6 +426,7 @@ export async function runAnalysisLoopWorkflow(
         ...skillCapability.supervisorTools,
         ...externalMcpCapability.supervisorTools,
         ...actionCapability.supervisorTools,
+        ...metricViewCapability.supervisorTools,
         ...notebookCapability.supervisorTools,
         ...chartCapability.supervisorTools,
       ];
@@ -419,10 +438,13 @@ export async function runAnalysisLoopWorkflow(
           dataProbeCapability: dataProbeCapability.prompt,
           deliverableCapability: notebookCapability.supervisorPrompt,
           completionInstruction: notebookCapability.completionInstruction,
+          evidenceRequirements: notebookCapability.evidenceRequirements,
+          workingMethod: notebookCapability.workingMethod,
           chartCapability: chartCapability.prompt,
           skillCapability: skillCapability.prompt,
           externalMcpCapability: externalMcpCapability.prompt,
           actionCapability: actionCapability.prompt,
+          metricViewCapability: metricViewCapability.prompt,
           userName: params.userName,
         }),
         messages: [],

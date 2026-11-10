@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -64,7 +65,7 @@ class VectorResourceServiceImplTest {
 	@Test
 	void uploadAppendsTheOriginalTextUnderTheRelationalPrimaryKey() throws Exception {
 		InputStream file = new ByteArrayInputStream(new byte[] {1});
-		when(vectorResourceDao.insert(any(), eq(file), eq("png"), eq("d1"))).thenAnswer(call -> {
+		when(vectorResourceDao.insert(any(), eq(file), eq("png"), eq("d1"), isNull())).thenAnswer(call -> {
 			VectorResource saved = call.getArgument(0);
 			saved.setPath("idx/new.png");
 			saved.setContent("cleaned");
@@ -92,7 +93,7 @@ class VectorResourceServiceImplTest {
 
 	@Test
 	void textOnlyUploadSavesTxtResourceAndAttaches() throws Exception {
-		when(vectorResourceDao.insert(any(), eq(null), eq(null), eq("d1"))).thenAnswer(call -> {
+		when(vectorResourceDao.insert(any(), eq(null), eq(null), eq("d1"), isNull())).thenAnswer(call -> {
 			VectorResource saved = call.getArgument(0);
 			saved.setPath("idx/text.txt");
 			saved.setContent("cleaned");
@@ -109,7 +110,7 @@ class VectorResourceServiceImplTest {
 
 	@Test
 	void attachFailureRollsBackSavedResourceAndThrows() throws Exception {
-		when(vectorResourceDao.insert(any(), any(), any(), eq("d1"))).thenAnswer(call -> {
+		when(vectorResourceDao.insert(any(), any(), any(), eq("d1"), isNull())).thenAnswer(call -> {
 			VectorResource saved = call.getArgument(0);
 			saved.setPath("idx/new.png");
 			return saved;
@@ -123,7 +124,7 @@ class VectorResourceServiceImplTest {
 
 	@Test
 	void rollbackFailureIsSuppressedWhenAttachFails() throws Exception {
-		when(vectorResourceDao.insert(any(), any(), any(), eq("d1"))).thenAnswer(call -> {
+		when(vectorResourceDao.insert(any(), any(), any(), eq("d1"), isNull())).thenAnswer(call -> {
 			VectorResource saved = call.getArgument(0);
 			saved.setPath("idx/new.png");
 			return saved;

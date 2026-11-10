@@ -26,6 +26,7 @@ import { getWorkbenchAppearance } from "@ontomato/workbench-ui/features/workbenc
 import WorkbenchAgentRail from "@ontomato/workbench-ui/features/workbench/components/WorkbenchAgentRail.vue";
 import {
   WorkbenchAppearanceDialog,
+  createQaAgent,
   type WorkbenchAgent,
 } from "@ontomato/workbench-ui/features/workbench";
 import WorkbenchUserMenu from "./WorkbenchUserMenu.vue";
@@ -43,8 +44,15 @@ const analysisStore = useAnalysisStore();
 const dashboardStore = useDashboardStore();
 
 const { showWelcome: showQAWelcome } = storeToRefs(chatStore);
-const { agents, selectedAgentId, tasks, currentTask, showAgentCreateDialog, editingAgent } =
-  storeToRefs(analysisStore);
+const {
+  agentLineup,
+  agents,
+  selectedAgentId,
+  tasks,
+  currentTask,
+  showAgentCreateDialog,
+  editingAgent,
+} = storeToRefs(analysisStore);
 const {
   addToDashboardOpen,
   pendingDashboardDataset,
@@ -107,27 +115,20 @@ function appearanceSaved(value: WorkbenchAppearance) {
   appearanceSection.value = null;
 }
 
-/** The query entry is not a real agent; its name, description and avatar come from appearance. */
-const qaAgent = computed<WorkbenchAgent>(() => ({
-  id: "__qa__",
-  name: appearance.value?.qa.name || t("chat.queryAgent"),
-  description: appearance.value?.qa.description || t("chat.queryAgentDesc"),
-  icon: JSON.stringify({
-    key: appearance.value?.qa.avatarKey || "MessageSquare",
-    color: appearance.value?.qa.avatarColor || "",
-  }),
-  isQA: true,
-  graphScope: { mode: "panorama" },
-  summarizerPrompt: "",
-  conclusionMakerPrompt: "",
-  isEnabled: true,
-  createdAt: 0,
-  updatedAt: 0,
-}));
+const qaAgent = computed(() => createQaAgent(appearance.value, t));
+
+/** Opening the workbench selects the first lineup entry; Q&A is the initial selection otherwise. */
+function selectFirstLineupEntry() {
+  const first = agentLineup.value[0];
+  if (first?.kind !== "agent") return;
+  selectionMode.value = "analysis";
+  selectedAgentId.value = first.agent.id;
+}
 
 async function loadInitialWorkbenchData() {
   void loadAppearance();
   await analysisStore.loadAgents();
+  selectFirstLineupEntry();
   await analysisStore.loadTasks();
   analysisStore.startTaskListPolling();
   await Promise.all([chatStore.loadThreads(), chatStore.restoreCurrentThread()]);
@@ -202,7 +203,7 @@ onUnmounted(() => {
         :brand-subtitle="appearance?.brand.subtitle || t('app.subtitle')"
         :add-agent-label="appearance?.addAgentLabel || t('analysis.addAgent')"
         :qa-agent="qaAgent"
-        :agents="agents"
+        :lineup="agentLineup"
         :selection-mode="selectionMode"
         :selected-agent-id="selectedAgentId"
         :compact="isCompactRail && !isMobile"

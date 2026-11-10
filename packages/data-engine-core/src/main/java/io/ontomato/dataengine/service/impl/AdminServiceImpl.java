@@ -179,12 +179,15 @@ public class AdminServiceImpl implements AdminService {
 	}
 	
 	@Override
-	public void setRelationshipDesc(String relationship, String desc, User user) {
+	public void editRelationship(String relationship, String desc, String fromField, String toField, User user) {
 		Map<String, Object> jsonRule = getJSONRule(user.getDomainId());
 		Map<String, Map<String, String>> relationship_rule = (Map<String, Map<String, String>>)jsonRule.get("relationship_rule");
 		Map<String, String> relationshipDef = relationship_rule.get(relationship);
 		if (relationshipDef != null) {
 			relationshipDef.put("desc", desc);
+			// Older HTTP clients send only the description; omitted join fields keep their saved values.
+			if (fromField != null) relationshipDef.put("fromField", fromField.trim());
+			if (toField != null) relationshipDef.put("toField", toField.trim());
 			writeJSONRule(jsonRule, user.getDomainId());
 			
 			AuditLog auditLog = new AuditLog();

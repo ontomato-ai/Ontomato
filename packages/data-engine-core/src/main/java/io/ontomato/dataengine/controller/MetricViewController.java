@@ -91,6 +91,10 @@ public class MetricViewController {
 			User user = SystemUtils.getCurUser();
 			MetricView metricView = param.to(MetricView.class);
 			metricView.setDomainId(user.getDomainId());
+			// The saved Function belongs to the caller's domain whatever the request says; the DAO keys the vector write by it.
+			if (metricView.getFunction() != null) {
+				metricView.getFunction().setDomainId(user.getDomainId());
+			}
 			metricViewService.save(metricView, lang);
 			ret.put("success", true);
 		} catch (Exception e) {

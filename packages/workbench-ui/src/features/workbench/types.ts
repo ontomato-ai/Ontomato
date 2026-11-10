@@ -12,7 +12,6 @@ export type WorkbenchAgent = Omit<AnalysisAgent, "executionMode" | "reportDelive
   /** Delivery mode determines page rendering: agents with reports disabled use the regular conversation view. */
   reportDeliverableEnabled?: boolean;
   isQA?: boolean;
-  _divider?: boolean;
 };
 
 export interface TaskProgressState {

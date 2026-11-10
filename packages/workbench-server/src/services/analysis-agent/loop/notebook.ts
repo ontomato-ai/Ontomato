@@ -89,6 +89,33 @@ function finalAnswerWorkerCapabilityPrompt(): string {
   return tApp("analysis.loop.notebook.296");
 }
 
+function evidenceCollectionRequirementsPrompt(reportDeliverableEnabled: boolean): string {
+  return [
+    tApp("analysis.loop.evidence-requirements.heading"),
+    tApp("analysis.loop.evidence-requirements.general"),
+    reportDeliverableEnabled
+      ? tApp("analysis.loop.evidence-requirements.discipline.report")
+      : tApp("analysis.loop.evidence-requirements.discipline.regular"),
+    tApp("analysis.loop.evidence-requirements.display-value"),
+    tApp("analysis.loop.evidence-requirements.truthfulness"),
+  ].join("\n");
+}
+
+function workingMethodPrompt(reportDeliverableEnabled: boolean): string {
+  return reportDeliverableEnabled
+    ? [
+        tApp("analysis.loop.working-method.heading"),
+        tApp("analysis.loop.working-method.report.1"),
+        tApp("analysis.loop.working-method.report.2"),
+        tApp("analysis.loop.working-method.report.3"),
+      ].join("\n")
+    : [
+        tApp("analysis.loop.working-method.heading"),
+        tApp("analysis.loop.working-method.regular.1"),
+        tApp("analysis.loop.working-method.regular.2"),
+      ].join("\n");
+}
+
 export interface NotebookChapter {
   name: string;
   content: string;
@@ -196,6 +223,8 @@ export function assembleLoopNotebookCapability(params: {
     completionInstruction: params.reportDeliverableEnabled
       ? tApp("analysis.loop.notebook.297")
       : tApp("analysis.loop.notebook.298"),
+    evidenceRequirements: evidenceCollectionRequirementsPrompt(params.reportDeliverableEnabled),
+    workingMethod: workingMethodPrompt(params.reportDeliverableEnabled),
     compactionPromptVariables: buildCompactionPromptVariables(params.reportDeliverableEnabled),
     notebook,
     supervisorTools,

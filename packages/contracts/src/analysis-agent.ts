@@ -40,18 +40,40 @@ export interface AnalysisAgent {
   enabledMcpServiceNames?: string[];
   /** Published ontology Action IDs a regular-session agent may execute after the user confirms in the conversation */
   enabledActionIds?: string[];
+  /** Published read-only metric view IDs the agent's loop may execute, such as a knowledge search over a vector attribute */
+  enabledMetricViewIds?: string[];
   /** Associated object class names, limiting dimension splitting and query scope */
   classNames?: string[];
   /** Initial ontology exploration scope. Panorama is the backward-compatible default. */
   graphScope: AnalysisGraphScope;
   /** Whether enabled */
   isEnabled: boolean;
-  /** Sort order (smaller values first) */
+  /** Sort order (smaller values first); written only through the agent lineup */
   sortOrder?: number;
   /** Creation timestamp */
   createdAt: number;
   /** Update timestamp */
   updatedAt: number;
+}
+
+/**
+ * Lineup ID of the built-in Q&A agent. It is not an analysis agent and has no agent record:
+ * it takes part in the lineup order but cannot be edited, disabled or deleted.
+ */
+export const QA_AGENT_LINEUP_ID = "__qa__";
+
+/**
+ * One entry of a domain's agent lineup (`GET /analysis-agents/lineup`), already in display
+ * order. The server owns the order; the agent manager and the workbench rail render it as given.
+ */
+export type AgentLineupEntry = { kind: "qa" } | { kind: "agent"; agent: AnalysisAgent };
+
+/**
+ * Body of `PUT /analysis-agents/lineup`: every agent ID of the domain plus
+ * `QA_AGENT_LINEUP_ID`, each exactly once, in the new display order.
+ */
+export interface SaveAgentLineupRequest {
+  order: string[];
 }
 
 export type DimensionType = "categorical" | "temporal" | "numeric";

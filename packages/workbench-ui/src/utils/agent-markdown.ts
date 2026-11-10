@@ -1,4 +1,4 @@
-import { withPptDownloadCredentials } from "./ppt-links";
+import { withRenderedLinks } from "./rendered-links";
 import MarkdownIt from "markdown-it";
 import hljs from "highlight.js/lib/core";
 
@@ -66,7 +66,7 @@ function fixUnclosedFences(src: string): string {
 export function renderAgentMarkdown(content: string): string {
   if (!content) return "";
   const fixed = fixUnclosedFences(content);
-  return withPptDownloadCredentials(md.render(fixed));
+  return withRenderedLinks(md.render(fixed));
 }
 
 /** Render a complete JSON object or array as a formatted code block, with Markdown fallback. */

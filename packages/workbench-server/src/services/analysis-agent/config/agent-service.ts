@@ -1,4 +1,4 @@
-import type { AnalysisAgent } from "@ontomato/contracts/analysis-agent";
+import type { AgentLineupEntry, AnalysisAgent } from "@ontomato/contracts/analysis-agent";
 import pg from "pg";
 import { createLogger } from "../../../logging/logger";
 import {
@@ -14,6 +14,7 @@ import { SkillCategory, SkillType } from "../../../core/skills/constants";
 import { skillRegistryManager } from "../../../core/skills/registry/manager";
 import { t, tApp } from "../../../i18n";
 import { DEFAULT_ANALYSIS_GRAPH_SCOPE, normalizeAnalysisGraphScope } from "./graph-scope";
+import { placeQaAgent, resolveLineupSortOrders } from "./agent-lineup";
 
 const logger = createLogger("analysis-agent-service");
 
@@ -57,6 +58,7 @@ interface AnalysisAgentRow {
   enabled_visualization_skill_ids: string[] | null;
   enabled_mcp_service_names: string[] | null;
   enabled_action_ids: string[] | null;
+  enabled_metric_view_ids: string[] | null;
   class_names: string[] | null;
   graph_scope: unknown;
   is_enabled: boolean;
@@ -158,6 +160,57 @@ export class AnalysisAgentService {
     return result.rows.map(mapAgentRow);
   }
 
+  /** All agents of the domain, enabled or not, with the built-in Q&A agent placed among them. */
+  async listAgentLineup(domainId: string): Promise<AgentLineupEntry[]> {
+    const agents = await this.listAgents(domainId);
+    const qa = await this.pool.query<{ sort_order: number }>(
+      `SELECT sort_order FROM ${qualifiedTable("qa_agent_sort_orders")} WHERE domain_id = $1`,
+      [domainId]
+    );
+    return placeQaAgent(agents, qa.rows[0]?.sort_order ?? null);
+  }
+
+  /** The only writer of agent order: one request saves the whole lineup, Q&A included. */
+  async saveAgentLineup(domainId: string, order: readonly string[]): Promise<void> {
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN");
+      await client.query("SELECT pg_advisory_xact_lock(hashtext($1))", [`agent-lineup-${domainId}`]);
+      const current = await client.query<{ id: string }>(
+        `SELECT id FROM ${qualifiedTable("analysis_agents")} WHERE domain_id = $1 FOR UPDATE`,
+        [domainId]
+      );
+      const { qaSortOrder, agentSortOrders } = resolveLineupSortOrders(
+        order,
+        current.rows.map((row) => row.id)
+      );
+      await client.query(
+        `UPDATE ${qualifiedTable("analysis_agents")} AS agent
+         SET sort_order = lineup.sort_order
+         FROM unnest($2::text[], $3::int[]) AS lineup(id, sort_order)
+         WHERE agent.domain_id = $1 AND agent.id = lineup.id`,
+        [
+          domainId,
+          agentSortOrders.map((entry) => entry.id),
+          agentSortOrders.map((entry) => entry.sortOrder),
+        ]
+      );
+      await client.query(
+        `INSERT INTO ${qualifiedTable("qa_agent_sort_orders")} (domain_id, sort_order, updated_at)
+         VALUES ($1, $2, $3)
+         ON CONFLICT (domain_id) DO UPDATE
+           SET sort_order = EXCLUDED.sort_order, updated_at = EXCLUDED.updated_at`,
+        [domainId, qaSortOrder, Date.now()]
+      );
+      await client.query("COMMIT");
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
   async getAgent(id: string, domainId?: string): Promise<AnalysisAgent | null> {
     const result = await this.pool.query(
       `SELECT * FROM ${qualifiedTable("analysis_agents")} WHERE id = $1 AND domain_id = $2`,
@@ -167,7 +220,10 @@ export class AnalysisAgentService {
   }
 
   async createAgent(
-    agent: Omit<AnalysisAgent, "id" | "createdAt" | "updatedAt" | "reportDeliverableEnabled"> & {
+    agent: Omit<
+      AnalysisAgent,
+      "id" | "createdAt" | "updatedAt" | "reportDeliverableEnabled" | "sortOrder"
+    > & {
       reportDeliverableEnabled?: boolean;
     },
     domainId: string
@@ -179,6 +235,7 @@ export class AnalysisAgentService {
         : agent.enabledVisualizationSkillIds;
     const enabledMcpServiceNames = normalizeStringList(agent.enabledMcpServiceNames);
     const enabledActionIds = normalizeStringList(agent.enabledActionIds);
+    const enabledMetricViewIds = normalizeStringList(agent.enabledMetricViewIds);
     const classNames = normalizeStringList(agent.classNames);
     const graphScope = normalizeAnalysisGraphScope(agent.graphScope);
     await this.validateSkillSelections(enabledSkillIds, SkillCategory.ANALYSIS, domainId);
@@ -197,8 +254,8 @@ export class AnalysisAgentService {
         conclusion_maker_prompt, enabled_skill_ids, enabled_visualization_skill_ids,
         enabled_mcp_service_names, class_names, is_enabled, sort_order, domain_id,
          report_deliverable_enabled, hot_report_enabled, summary_position, graph_scope, created_at, updated_at,
-         enabled_action_ids)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23)`,
+         enabled_action_ids, enabled_metric_view_ids)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24)`,
       [
         id,
         agent.name,
@@ -216,7 +273,7 @@ export class AnalysisAgentService {
         enabledMcpServiceNames,
         classNames,
         agent.isEnabled !== false ? true : false,
-        agent.sortOrder ?? 0,
+        DEFAULT_AGENT_SORT_ORDER,
         domainId,
         agent.reportDeliverableEnabled ?? true,
         agent.hotReportEnabled ?? true,
@@ -227,6 +284,7 @@ export class AnalysisAgentService {
         now,
         now,
         enabledActionIds,
+        enabledMetricViewIds,
       ]
     );
     logger.info(tApp("analysis.config.agent-service.3", { id: id, name: agent.name }));
@@ -254,6 +312,9 @@ export class AnalysisAgentService {
     }
     if (updates.enabledActionIds !== undefined) {
       updates.enabledActionIds = normalizeStringList(updates.enabledActionIds);
+    }
+    if (updates.enabledMetricViewIds !== undefined) {
+      updates.enabledMetricViewIds = normalizeStringList(updates.enabledMetricViewIds);
     }
     if (updates.classNames !== undefined) {
       updates.classNames = normalizeStringList(updates.classNames);
@@ -303,6 +364,10 @@ export class AnalysisAgentService {
       vals.push(updates.enabledActionIds);
       sets.push(`enabled_action_ids = $${idx++}`);
     }
+    if (updates.enabledMetricViewIds !== undefined) {
+      vals.push(updates.enabledMetricViewIds);
+      sets.push(`enabled_metric_view_ids = $${idx++}`);
+    }
     if (updates.loopPrompt !== undefined) {
       vals.push(updates.loopPrompt);
       sets.push(`loop_prompt = $${idx++}`);
@@ -346,10 +411,6 @@ export class AnalysisAgentService {
     if (updates.isEnabled !== undefined) {
       vals.push(updates.isEnabled);
       sets.push(`is_enabled = $${idx++}`);
-    }
-    if (updates.sortOrder !== undefined) {
-      vals.push(updates.sortOrder);
-      sets.push(`sort_order = $${idx++}`);
     }
 
     if (sets.length === 1) return this.getAgent(id, domainId);
@@ -475,6 +536,7 @@ function mapAgentRow(row: AnalysisAgentRow): AnalysisAgent {
     enabledVisualizationSkillIds: row.enabled_visualization_skill_ids || [],
     enabledMcpServiceNames: row.enabled_mcp_service_names || [],
     enabledActionIds: row.enabled_action_ids || [],
+    enabledMetricViewIds: row.enabled_metric_view_ids || [],
     classNames: row.class_names || [],
     graphScope: normalizeAnalysisGraphScope(row.graph_scope),
     isEnabled: row.is_enabled,

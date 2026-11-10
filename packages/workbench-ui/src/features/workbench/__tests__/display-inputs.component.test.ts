@@ -6,6 +6,7 @@ import WorkbenchWelcomeState from "../components/WorkbenchWelcomeState.vue";
 import WorkbenchAgentRail from "../components/WorkbenchAgentRail.vue";
 import { workbenchI18n } from "../../../i18n";
 import type { WorkbenchAgent } from "../types";
+import type { AnalysisAgent } from "@ontomato/contracts/analysis-agent";
 
 const global = { plugins: [workbenchI18n(), createPinia(), ElementPlus] };
 
@@ -34,7 +35,7 @@ describe("display inputs supplied by both layouts", () => {
         brandSubtitle: "",
         addAgentLabel: "Add agent",
         qaAgent,
-        agents: [],
+        lineup: [{ kind: "qa" }],
         selectionMode: "qa",
         selectedAgentId: "",
         ...extra,
@@ -48,6 +49,35 @@ describe("display inputs supplied by both layouts", () => {
     expect(card.element.tagName).toBe("DIV");
     expect(card.attributes("title")).toBe("Q&A");
     expect(wrapper.find(".agent-add-btn").attributes("title")).toBe("Add agent");
+  });
+
+  it("renders the server lineup order with Q&A as an ordinary entry and no divider", () => {
+    const agent = (id: string, name: string): AnalysisAgent => ({
+      id,
+      name,
+      description: "",
+      executionMode: "loop",
+      reportDeliverableEnabled: true,
+      summarizerPrompt: "",
+      conclusionMakerPrompt: "",
+      graphScope: { mode: "panorama" },
+      isEnabled: true,
+      createdAt: 1,
+      updatedAt: 1,
+    });
+    const wrapper = rail({
+      lineup: [
+        { kind: "agent", agent: agent("a", "Sales") },
+        { kind: "qa" },
+        { kind: "agent", agent: agent("b", "Finance") },
+      ],
+    });
+    expect(wrapper.findAll(".agent-card").map((card) => card.attributes("title"))).toEqual([
+      "Sales",
+      "Q&A",
+      "Finance",
+    ]);
+    expect(wrapper.find(".agent-divider").exists()).toBe(false);
   });
 
   it("with the open-source layout inputs: cards are buttons with aria-label and no native title, and no add-button native title", () => {

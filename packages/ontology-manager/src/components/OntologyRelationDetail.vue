@@ -1,14 +1,15 @@
 <script setup lang="ts">
 import { onMounted, reactive, ref, watch } from "vue";
 import { ArrowLeft, ArrowRight, Save, Trash2 } from "lucide-vue-next";
-import { ElAlert, ElButton, ElEmpty, ElForm, ElFormItem, ElInput, vLoading } from "element-plus";
+import { ElAlert, ElButton, ElEmpty, ElForm, ElFormItem, ElInput, ElOption, ElSelect, vLoading } from "element-plus";
 import { useManagerFeedback } from "../feedback";
-import type { OntologyRelation } from "../api";
-import { useManagerClient, useOntologyText } from "../context";
+import type { OntologyAttribute, OntologyRelation } from "../api";
+import { useManagerClient, useOntologyText, useSharedText } from "../context";
 
 const { ot } = useOntologyText();
+const { t } = useSharedText();
 const { message, confirm } = useManagerFeedback();
-const { deleteOntologyRelation, loadOntology, updateOntologyRelation } = useManagerClient();
+const { deleteOntologyRelation, loadOntology, updateOntologyRelation, listDataAdapters } = useManagerClient();
 
 const props = defineProps<{ relationship: string }>();
 const emit = defineEmits<{ back: []; updated: []; object: [className: string] }>();
@@ -17,8 +18,11 @@ const loading = ref(false);
 const saving = ref(false);
 const deleting = ref(false);
 const relation = ref<OntologyRelation | null>(null);
+const requiresJoinFields = ref<boolean | null>(null);
+const sourceAttributes = ref<OntologyAttribute[]>([]);
+const targetAttributes = ref<OntologyAttribute[]>([]);
 const objectLabels = ref<Record<string, string>>({});
-const form = reactive({ desc: "" });
+const form = reactive({ desc: "", fromField: "", toField: "" });
 
 function objectLabel(className: string) {
   return objectLabels.value[className] || className;
@@ -26,16 +30,25 @@ function objectLabel(className: string) {
 
 async function loadDetail() {
   loading.value = true;
+  requiresJoinFields.value = null;
   try {
-    const ontology = await loadOntology();
+    const [ontology, { currentType, adapters }] = await Promise.all([loadOntology(), listDataAdapters()]);
+    requiresJoinFields.value = adapters.some(
+      ({ type, requiresJoinFields }) => type === currentType && requiresJoinFields
+    );
     objectLabels.value = Object.fromEntries(
       ontology.objects.map((object) => [object.className, object.showName])
     );
     relation.value =
       ontology.relations.find((item) => item.relationship === props.relationship) || null;
     form.desc = relation.value?.desc || "";
-  } catch {
+    form.fromField = relation.value?.fromField || "";
+    form.toField = relation.value?.toField || "";
+    sourceAttributes.value = ontology.objects.find((object) => object.className === relation.value?.fromclass)?.attrs || [];
+    targetAttributes.value = ontology.objects.find((object) => object.className === relation.value?.toclass)?.attrs || [];
+  } catch (error) {
     relation.value = null;
+    message.error(error instanceof Error ? error.message : t("dataBrowser.loadDataFailed"));
   } finally {
     loading.value = false;
   }
@@ -48,12 +61,19 @@ async function save() {
     message.warning(ot("fillRelationDescription"));
     return;
   }
-  if (desc === relation.value.desc) return;
+  if (requiresJoinFields.value && !form.fromField) {
+    message.warning(t("hotData.enterSrcField"));
+    return;
+  }
+  if (requiresJoinFields.value && !form.toField) {
+    message.warning(t("hotData.enterTgtField"));
+    return;
+  }
+  if (desc === relation.value.desc && form.fromField === (relation.value.fromField || "") && form.toField === (relation.value.toField || "")) return;
   saving.value = true;
   try {
-    await updateOntologyRelation(relation.value.relationship, desc);
-    relation.value.desc = desc;
-    relation.value.showName = desc;
+    await updateOntologyRelation(relation.value.relationship, { desc, fromField: form.fromField, toField: form.toField });
+    Object.assign(relation.value, { desc, showName: desc, fromField: form.fromField, toField: form.toField });
     message.success(ot("relationSaved"));
     emit("updated");
   } catch (error) {
@@ -111,7 +131,7 @@ onMounted(() => void loadDetail());
       >
         {{ ot("delete") }}
       </el-button>
-      <el-button v-if="relation" type="primary" :icon="Save" :loading="saving" @click="save">
+      <el-button v-if="relation" type="primary" :icon="Save" :loading="saving" :disabled="requiresJoinFields === null" @click="save">
         {{ ot("save") }}
       </el-button>
     </header>
@@ -134,6 +154,26 @@ onMounted(() => void loadDetail());
               maxlength="400"
               show-word-limit
             />
+          </el-form-item>
+          <el-form-item :label="t('hotData.srcField')" :required="requiresJoinFields === true">
+            <el-select v-model="form.fromField" :placeholder="t('hotData.enterSrcField')" filterable clearable fit-input-width popper-class="ontology-relation-options" style="width: 100%">
+              <el-option
+                v-for="attribute in sourceAttributes"
+                :key="attribute.name"
+                :label="`${attribute.showName} (${attribute.name})`"
+                :value="attribute.name"
+              />
+            </el-select>
+          </el-form-item>
+          <el-form-item :label="t('hotData.tgtField')" :required="requiresJoinFields === true">
+            <el-select v-model="form.toField" :placeholder="t('hotData.enterTgtField')" filterable clearable fit-input-width popper-class="ontology-relation-options" style="width: 100%">
+              <el-option
+                v-for="attribute in targetAttributes"
+                :key="attribute.name"
+                :label="`${attribute.showName} (${attribute.name})`"
+                :value="attribute.name"
+              />
+            </el-select>
           </el-form-item>
         </el-form>
       </section>

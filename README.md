@@ -171,7 +171,7 @@ agents supported by [`skills`](https://github.com/vercel-labs/skills)) and point
 the Workbench:
 
 ```bash
-npx skills add ontomato-ai/Ontomato --skill ontomato-ontomap-builder ontomato-book-ontology-builder ontomato-analyst ontomato-app-builder
+npx skills add ontomato-ai/Ontomato --skill ontomato-ontomap-builder ontomato-book-ontology-builder ontomato-analyst ontomato-app-builder ontomato-agent-builder
 export ONTOMATO_URL=http://<host>:3000
 ```
 
@@ -180,10 +180,11 @@ export ONTOMATO_URL=http://<host>:3000
 
 | Skill | Use it to |
 | --- | --- |
-| `ontomato-ontomap-builder` | establish or maintain the ontology's data mappings and business knowledge, then check them with questions |
+| `ontomato-ontomap-builder` | establish or maintain the ontology's data mappings and business knowledge, load business data and vector resources, then check them with questions |
 | `ontomato-book-ontology-builder` | derive a book-specific ontology from full reading, with source evidence and analysis, then hand a deployable package to ontomap-builder |
 | `ontomato-analyst` | query and analyze business objects and relationships through the same ontology |
 | `ontomato-app-builder` | build MetricViews, Actions and application pages on the ontology, in the configured single- or two-environment setup |
+| `ontomato-agent-builder` | configure agents (prompt, MetricViews, Actions, MCP services, skills) and external MCP services |
 | `ontomato-adapter-builder` | implement a new data-source type in a compatible development checkout; ordinary database connection setup uses ontomap-builder |
 
 The skills share one ontology model: business object types, their attributes and directed

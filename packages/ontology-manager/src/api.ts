@@ -97,6 +97,8 @@ export interface OntologyRelation {
   fromclass: string;
   toclass: string;
   desc: string;
+  fromField?: string;
+  toField?: string;
 }
 
 /** A data instance node in the star-chart instance graph. */
@@ -319,6 +321,8 @@ export function createManagerClient(
       fromclass: item.fromclass,
       toclass: item.toclass,
       desc: item.desc || item.relationship,
+      fromField: item.fromField,
+      toField: item.toField,
     })) as OntologyRelation[];
     return { objects, relations };
   }
@@ -414,8 +418,8 @@ export function createManagerClient(
     return post("/admin/delClassAttr", { className, attrName });
   }
 
-  function updateOntologyRelation(relationship: string, desc: string) {
-    return post("/admin/editRelationshipDesc", { relationship, desc });
+  function updateOntologyRelation(relationship: string, changes: { desc: string; fromField: string; toField: string }) {
+    return post("/admin/editRelationshipDesc", { relationship, ...changes });
   }
 
   function createOntologyRelation(input: CreateOntologyRelationInput) {

@@ -1,9 +1,9 @@
 ---
 name: ontomato-ontomap-builder
-description: "Build and maintain Ontomato ontology definitions and their data mappings, business knowledge and text resources; connect a supported data source and verify the ontology with questions. Use for new or existing ontomaps and data-source changes, not database migration or adapter development."
+description: "Ontomato ontology and data: connect a data source, build and maintain the ontomap, its mappings and business knowledge; write business data into the business database (PostgreSQL, MySQL), batch-import vector resources and load test data, and verify with questions. Not for MetricViews, Actions, applications or agent configuration, nor adapter development."
 ---
 
-# Ontomap builder
+# Ontomato ontology and data
 
 ## Ontomato: work through one ontology
 
@@ -22,11 +22,11 @@ Classes and attributes must map to real structures in the selected data source. 
 
 Use one consistent ontology context: deployment, domain where applicable, object identities and resource references. Reuse the business intent, access and scope already established in the session. Resolve technical facts, such as JOIN columns and existing grant sources, through commands, authorized data tools and bundled references. Ask only for missing business decisions or access that those tools cannot supply; do not ask a nontechnical user to guess technical facts. If a required capability is unavailable, explain the missing prerequisite and affected business task while preserving the requested outcome.
 
-The skills cover different tasks on this same platform: `ontomato-ontomap-builder` maintains definitions and mappings; `ontomato-analyst` queries and analyzes them; `ontomato-app-builder` builds applications on their capabilities. Adapter development and enterprise permission management support this platform at their own boundaries. These names explain the roles, not dependencies on other installed skills. Keep this package's files together; its local references travel with it.
+The skills cover different tasks on this same platform: `ontomato-ontomap-builder` maintains the ontology and its data (definitions, mappings, business data and resources); `ontomato-app-builder` builds MetricViews, Actions and applications on it; `ontomato-agent-builder` configures agents and MCP services; `ontomato-analyst` queries and analyzes. Adapter development and enterprise permission management support this platform at their own boundaries. These names explain the roles, not dependencies on other installed skills. Keep this package's files together; its local references travel with it.
 
 ## This skill’s role
 
-Maintain the ontology of one business data source: connect a supported source, create or adapt its ontomap, maintain business knowledge, attach text resources and check the result with questions. This package works through deployed APIs; it needs no product checkout. Database structure inspection or changes require separately available, authorized database tools. It does not export/import business datasets or migrate resource bindings.
+Maintain the ontology of one business data source and the data in it: connect a supported source, create or adapt its ontomap, maintain business knowledge; create tables and import business data in the business database, batch-import vector resources, load test data, and check the result with questions. Every write of data into the ontology happens in this package. Ontology operations go through the deployed Ontomato APIs; the business database is written directly through a configured database command. It does not migrate resource bindings or whole databases.
 
 ## Prerequisites
 
@@ -48,6 +48,17 @@ envUrl: http://host:3000
 
 When the environment variable `ONTOMATO_URL` is set, it takes precedence over `envUrl`, so one setting serves every installed Ontomato skill.
 
+To write the business database directly with `db-sql` and `db-import`, add two settings:
+
+```yaml
+# Business database for db-sql and db-import: postgresql or mysql
+databaseType: postgresql
+# JSON argv of a client that reads SQL from stdin; put the password in PGPASSWORD or MYSQL_PWD, not here
+databaseCommand: ["psql", "-X", "-q", "-v", "ON_ERROR_STOP=1", "-h", "db-host", "-U", "user", "-d", "business"]
+```
+
+`databaseCommand` is the argv array of a client that reads SQL from standard input; the script runs it as is, without a shell. It can be a local `psql`/`mysql`, or `ssh` or `docker exec -i` followed by the client. psql needs `-v ON_ERROR_STOP=1`, otherwise it keeps going after an error. Keep the password in `PGPASSWORD`, `MYSQL_PWD` or the client's own credential file, never in `application.yml`. It connects to the business database the ontology maps, not to Ontomato's own metadata database.
+
 ## Choose the ontology task
 
 Start with the authorized deployment/context and the business purpose. Read `list-datasources` and `get-ontomap` before changing an existing configuration. Connection success establishes access, not a correct model or complete data migration.
@@ -58,7 +69,10 @@ Start with the authorized deployment/context and the business purpose. Read `lis
 | Maintain an existing ontomap | Save the current `get-ontomap` result, edit that object and carry back unrelated definitions, descriptions and returned fields unchanged. Resolve new or renamed mappings from the source. | The intended difference is present and unrelated meaning remains. A request to rename or adapt a mapping is not an instruction to remove its relationships. |
 | Change the data source | Test and inspect the target first. Prepare a compatible ontomap and resolve each existing relationship and resource binding before switching. Then call `use-datasource` and `set-ontomap`, and read back/test the result. | Definitions match the actual target; cross-object questions and relevant resources work. These are separate writes, not an atomic migration. If one fails, read actual state before retrying or restoring the affected configuration. |
 | Maintain business knowledge | Read current entries, then save the requested additions/edits or delete the identified entry. | Read back IDs, content and review status; metadata changes alone do not prove a business answer is correct. |
-| Attach text to an object | Use `upload-vector` for an existing object and a declared `vector` attribute. | Query that object/resource through `ask` or an authorized data reader; the success message alone does not identify the created resource. |
+| Load business data | Run DDL with `db-sql`, then `db-import` a CSV per table; `set-ontomap` when the definition must cover new tables. | Row counts and keys in the business database match the files; `ask` finds the imported objects and relationships. |
+| Batch-import text resources | Once objects exist and the `vector` attribute is declared, `upload-vectors` a JSONL file; use `upload-vector` for one resource or an original file and `delete-vector` to remove one. | The failure list is empty or handled; spot checks retrieve and download. |
+| Load test data | In a test environment or test domain, `import-test-data` a zip. | Read objects and resources back; it clears the classes it covers and is not for real data. |
+| Deploy a book hand-off package | Apply its `ddl.sql`, `import/<class>.csv`, `ontomap.draft.json` and `upload-manifest.jsonl` with `db-sql`, `db-import`, `set-ontomap` and `upload-vectors`. | Re-check model, records and evidence resources as the package's `import-map.md` lists. |
 
 If a required relationship, resource or permission reference cannot yet be preserved with the available tools, keep the current connection and ontomap active. Prepare the target definition and explain the missing access or capability. Resolve those dependencies before switching; do not switch first and plan repairs later, or turn a requirement such as keeping photos usable into deferred work.
 
@@ -84,7 +98,12 @@ node ontomato.mjs set-ontomap @ontomap.json
 node ontomato.mjs get-knowledge
 node ontomato.mjs save-knowledge @knowledge.json
 node ontomato.mjs delete-knowledge <id>
+node ontomato.mjs db-sql @ddl.sql
+node ontomato.mjs db-import public.paragraph @paragraph.csv
+node ontomato.mjs import-test-data test-data.zip
 node ontomato.mjs upload-vector @vector.json
+node ontomato.mjs upload-vectors resources.jsonl
+node ontomato.mjs delete-vector <class> <attribute> <objectId> <path>
 node ontomato.mjs ask "How many people are there?"
 node ontomato.mjs ask --lang en "How many people are there?"
 ```
@@ -100,7 +119,12 @@ node ontomato.mjs ask --lang en "How many people are there?"
 | `set-ontomap` | `ontomap saved` | Replaces the complete definition and validates the primary-key contract. It does not create/alter business tables or migrate objects, permissions or resources. Read back the result. |
 | `get-knowledge` | Entry array | Read only; use returned `knowledgeID` values to identify later edits/deletions. |
 | `save-knowledge`, `delete-knowledge` | Per-entry success message or failure | Writes knowledge; array saves stop at the first failure and retain earlier successes. |
-| `upload-vector` | `vector uploaded` or failure | Adds a resource and appends a reference to the object's vector field in the business data source. The CLI does not print the returned resource ID/path. An uncertain result is not grounds to append again. |
+| `db-sql` | `sql executed` or the client's error | Runs the given SQL (tables, columns, data fixes) in one transaction directly in the business database; nothing is committed on error. |
+| `db-import` | Progress per batch | Reads a CSV (first row: column names) and inserts it in batches (500 rows by default), each in a transaction; stops at a failing batch, earlier batches stay committed, resume with `--from <rows imported>`. |
+| `import-test-data` | `test data imported` | Uploads a test-data zip: clears every class in the file and its vector resources, then writes; test environments or test domains only. |
+| `upload-vector` | The new resource, including `path` | Adds one resource and appends a reference to the object's vector field. Check an uncertain result before appending again. |
+| `upload-vectors` | Progress and failures per batch | Adds text resources from JSONL in batches (100 lines by default), each line on its own; failed lines go to `<file>.failed.jsonl`; a failed request stops with a `--from` hint. |
+| `delete-vector` | `vector deleted` | Deletes one resource and the object's reference to it. |
 | `ask` | Session/events and result data | Runs a question against the current context; it is not an ontomap editor or a dataset export. |
 
 The commands below document their current API paths. Legacy API names containing `Schema` do not change the product concept: the complete semantic definition is the ontomap.
@@ -109,21 +133,71 @@ The commands below document their current API paths. Legacy API names containing
 
 `ask` sends `Accept-Language`. The default is `en`.
 
+## Write the business database
+
+The ontology maps real tables in the business database. Loading data means writing those tables:
+
+1. **Create tables or columns** with `db-sql @ddl.sql`, written in the dialect of `databaseType`; the whole script runs in one transaction. Confirm authorization before changing an existing table.
+2. **Import rows** with `db-import <table> @<file>.csv`. The first row holds column names, which must match the table. An unquoted empty field becomes NULL and `""` an empty string; values are written as string literals that the database converts to the column type. Import only inserts: it never clears or overwrites, and a primary-key conflict fails that batch.
+3. **Align the definition**: for new tables or columns, add the classes or attributes to the `get-ontomap` result and `set-ontomap` it. Each class needs exactly one enabled varchar primary-key attribute, and that column must be non-null and unique in the table.
+4. **Verify** row counts and keys with the database client, then `ask` a question that touches the new data.
+
+Only PostgreSQL and MySQL are supported. For other databases, prepare the same DDL and CSV, let the implementer load them with that database's own tools, then continue with steps 3 and 4.
+
 ## Text resources and object identity
 
-`upload-vector @vector.json` uploads **text only**. The script turns `text` into the bytes of a file and uses the same text for embedding; `suffix` only changes its filename extension, not its format. Keep `suffix: "txt"` for this command. It cannot upload an existing image or PDF; setting `suffix: "jpg"` or `"pdf"` does not convert text into that file type.
+The resource file and embedding belong to Ontomato; the object's vector field stores references shaped as `[{"path":"...","text":"..."}]`. Retrieval is scoped by domain/context, class name and attribute name; each resource also refers to an object key. The object must already exist and the attribute must be declared `vector`; preserve the exact primary-key value.
 
-The object must already exist and the attribute must be declared `vector`. For a new object its reference list can start as `[]`; do not clear an existing list before an append. Preserve the exact object primary-key value. The payload is:
+**Batch import** with `upload-vectors <file>.jsonl`, one resource per line:
 
 ```json
-{"className":"paragraph","attrName":"content","objectId":"p1","text":"The paragraph text…","suffix":"txt"}
+{"className":"paragraph","attrName":"content","objectId":"p1","text":"Chapter 3 Procurement | 3.2 Tendering | …body…"}
 ```
 
-The resource file and embedding belong to Ontomato; the business field stores references shaped as `[{"path":"...","text":"..."}]`. Retrieval is scoped by domain/context, class name and attribute name; each resource also refers to an object key. Changing those names or keys requires explicit handling of existing bindings. `set-ontomap` and `use-datasource` do not perform that migration. If only the database connection changes, preserving names/keys and the reference values is a prerequisite, not proof that resources still work: check retrieval and a download before claiming completion.
+`text` is both what is embedded and what a search returns to the user. **Carry context into each chunk**: with the body alone, the title, document number, person or chapter a question names often cannot be found. A common form joins the document title, section or number, date and body, such as `title | section | body`. Split along the content so that one chunk covers one point.
 
-This package has no commands to migrate, delete or rebuild resources and no original-file upload flag. Use only an already available, authorized resource tool for such work; otherwise explain the capability gap. Repeated uploads append new resources rather than replacing old ones. `get-ontomap` cannot verify resource contents because it only returns definitions.
+A request carries 100 lines by default; embeddings are requested ten at a time and each line succeeds or fails on its own. Failed lines go to `<file>.failed.jsonl` (line, object, reason) and can be re-imported alone once fixed. When a whole request fails the script stops and prints `--from`; check which lines of that batch were stored before resuming, because a repeated import appends new resources instead of replacing old ones.
+
+**One resource, or one with its original file,** with `upload-vector @vector.json`:
+
+```json
+{"className":"paragraph","attrName":"content","objectId":"p1","text":"The paragraph text…","file":"./p1.pdf"}
+```
+
+With `file`, the original file is stored as the resource and its extension becomes the suffix; `text` is still what is embedded, and the backend extracts nothing from the file. Without `file`, `text` is stored as a `.txt` resource. Delete with `delete-vector <class> <attribute> <objectId> <path>`, taking `path` from the object's vector field.
+
+Changing class names, attribute names or keys requires explicit handling of existing bindings. `set-ontomap` and `use-datasource` do not perform that migration. If only the database connection changes, preserving names/keys and the reference values is a prerequisite, not proof that resources still work: check retrieval and a download before claiming completion.
+
+`upload-vector` and `upload-vectors` call `POST /api/data-query/vectorResource/upload` (a multipart form; a batch sends only the `items` field, an array of `{content, className, attrName, objectId}`); `delete-vector` calls `/vectorResource/delete`. The production side of a two-environment deployment offers no resource upload or delete; prepare resources in the test environment.
 
 Vector attachment needs a data adapter that can read the target object and write its reference field. The included implementations provide that path for PostgreSQL, MySQL, SQL Server, DuckDB, Neo4j, Elasticsearch and OpenSearch; GaussDB reports unsupported writes. Installed types come from `list-datasources`; connection success does not establish write authorization or deployment-version support. Treat an unsupported-operation error as a capability boundary, not a reason to write vector storage directly.
+
+## Test data
+
+In a test environment or test domain, `import-test-data <file>.zip` loads objects, relationships and vector resources in one go. The zip holds:
+
+```
+- data.json          object and relationship data
+- files/             files referenced by vector attributes
+```
+
+```json
+{
+  "objDatas": [
+    {"className": "/namespace/class1", "rows": [{"id": "c1", "attr1": "East", "photo": [{"path": "files/c1.jpg", "text": "A bright ward"}]}]}
+  ],
+  "relDatas": [
+    {"relationName": "relationship type", "sourceObjId": "source primary key", "targetObjId": "target primary key"}
+  ]
+}
+```
+
+- `className` must be an existing class; each row holds only enabled attributes of that class and a non-empty primary-key value unique across the whole file.
+- `relationName` must be an existing relationship type whose two ends are rows of the matching classes in this file.
+- A `vector` attribute holds an array of `{"path","text"}`: `path` points to an existing non-empty file under `files/` with a 1–16 character alphanumeric extension, and `text` is non-empty and is what is embedded (the caller supplies any audio/video transcript).
+- Every class that appears in the file is **cleared first**, objects and vector resources alike; other classes are untouched. If writing fails halfway, what was cleared or written stays; fix the cause and import again.
+
+`import-test-data` calls `POST /api/data-query/testEnv/importData`. It is for tests only; load real data as described in "Write the business database".
 
 A non-2xx response or JSON `success: false` is a failure and exits non-zero. A success message does not replace read-back or verification of the business result.
 

@@ -2,6 +2,9 @@ package io.ontomato.dataengine.service;
 
 import java.io.File;
 import java.io.InputStream;
+import java.util.List;
+
+import com.alibaba.fastjson2.JSONObject;
 
 import io.ontomato.dataengine.bean.VectorResource;
 
@@ -19,6 +22,14 @@ public interface VectorResourceService {
 	 * by path) and writes it back via {@code updateObjects}.</p>
 	 */
 	public VectorResource saveAndAttach(VectorResource vectorResource, InputStream is, String suffix, String domainId);
+
+	/**
+	 * Save and attach several text-only resources, as {@link #saveAndAttach} does for each one, with
+	 * the vectors embedded in batches. Each resource succeeds or fails on its own: the result has one
+	 * entry per input, in input order, either {@code {index, success:true, data}} or
+	 * {@code {index, success:false, message}}; a failed one leaves nothing stored.
+	 */
+	public List<JSONObject> saveAndAttachAll(List<VectorResource> vectorResources, String domainId);
 
 	/**
 	 * Delete a vector resource (by object id + path) and detach it from the business object's vector attribute.

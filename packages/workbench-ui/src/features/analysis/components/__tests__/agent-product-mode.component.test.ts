@@ -111,9 +111,11 @@ describe("agent product and execution modes", () => {
     for (const key of ["name", "description", "executionMode", "loopPrompt", "analysisDimensionPrompt",
       "summarizerPrompt", "conclusionMakerPrompt", "enabledSkillIds", "enabledVisualizationSkillIds",
       "enabledMcpServiceNames", "reportDeliverableEnabled", "hotReportEnabled", "summaryPosition",
-      "classNames", "graphScope", "isEnabled", "sortOrder"] as const) {
+      "classNames", "graphScope", "isEnabled"] as const) {
       expect(payload[key], key).toEqual(agent[key]);
     }
+    // Order is written only through the agent lineup, never by the edit dialog.
+    expect(payload).not.toHaveProperty("sortOrder");
     expect(payload).not.toHaveProperty("activeSection");
     expect(payload).not.toHaveProperty("promptTab");
     wrapper.unmount();
