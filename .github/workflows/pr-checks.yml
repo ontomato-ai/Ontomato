@@ -39,7 +39,7 @@ jobs:
           pnpm test:runtime
           pnpm test:workbench
           pnpm --filter @ontomato/workbench test:web
-          pnpm --filter @ontomato/foundation-ui --filter @ontomato/workbench-ui --filter @ontomato/ontology-manager --filter @ontomato/platform-admin --filter @ontomato/agent-shell-ui --filter @ontomato/service-logging test
+          pnpm --filter @ontomato/foundation-ui --filter @ontomato/workbench-ui --filter @ontomato/ontology-manager --filter @ontomato/platform-admin --filter @ontomato/agent-shell-ui --filter @ontomato/service-logging --filter @ontomato/design-tokens --filter @ontomato/markdown --filter @ontomato/platform-schedules --filter @ontomato/platform-shell --filter @ontomato/platform-web test
           pnpm --filter @ontomato/platform-web test
           pnpm test:scripts
 
