@@ -5,6 +5,7 @@ import {
   type ManagerCredential,
   type ManagerRequestContext,
 } from "../api";
+import { BUILD_TEST_HEADER, buildExecutionContext } from "@ontomato/contracts/build-tests";
 import { englishMessages } from "../i18n";
 
 interface RecordedRequest {
@@ -464,4 +465,13 @@ describe("requests used by data browsing and visual modeling", () => {
     const assets = await client.loadSmartAssets("functions");
     expect(assets.map((asset) => asset.name)).toEqual(["", "Unnamed asset", "Unnamed asset"]);
   });
+});
+
+it("binds missing build contexts explicitly and leaves live requests unchanged", async () => {
+  const {context,client}=setup({type:"anonymous"});
+  context.executionContext=buildExecutionContext("workspace",null);
+  await client.loadOntology();
+  expect(JSON.parse(requests[0]!.headers[BUILD_TEST_HEADER]!)).toEqual({kind:"build-test",contextId:null});
+  context.executionContext={kind:"live"};await client.loadOntology();
+  expect(requests[1]!.headers[BUILD_TEST_HEADER]).toBeUndefined();
 });

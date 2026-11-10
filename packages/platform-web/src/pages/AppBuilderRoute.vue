@@ -3,7 +3,7 @@ import { computed, inject } from "vue";
 import { usePlatformHost } from "@ontomato/platform-admin";
 import { platformRoutes } from "@ontomato/platform-shell/routes";
 import { AppBuilder, type AppBuilderPlatform } from "@ontomato/workbench-ui/features/app-builder";
-import { subscribeAppPageContext } from "../app-host";
+import { subscribeAppPageContext, registerBuildPreview } from "../app-host";
 import { openApplicationKey } from "../apps";
 import { useApplicationCatalog } from "../catalog";
 
@@ -20,6 +20,7 @@ const host = usePlatformHost();
 const catalog = useApplicationCatalog();
 const platform: AppBuilderPlatform = {
   subscribePageContext: subscribeAppPageContext,
+  registerPreviewFrame: registerBuildPreview,
   catalog,
   openApplication: inject(openApplicationKey)!,
   permissions: computed(() => {

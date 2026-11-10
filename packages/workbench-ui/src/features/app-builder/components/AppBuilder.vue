@@ -1,17 +1,18 @@
 <script setup lang="ts">
-import { onMounted, ref } from "vue";
+import { onMounted, ref, provide } from "vue";
 import { useI18n } from "vue-i18n";
 import type { AgentHostAgent } from "@ontomato/agent-shell-ui";
 import { builderApi } from "../api";
 import { errorText } from "../panel";
-import type { AppBuilderPlatform } from "../platform";
+import { builderPlatformKey, type AppBuilderPlatform } from "../platform";
 import BuilderShell from "./BuilderShell.vue";
 
 /**
  * 应用构建's page: the builder opens once the server names the domain's builder agent. The platform hands it what only it
  * holds: its app host's page contexts, its application catalog and its permission management.
  */
-defineProps<{ platform: AppBuilderPlatform }>();
+const props=defineProps<{ platform: AppBuilderPlatform }>();
+provide(builderPlatformKey,props.platform);
 const { t } = useI18n();
 const agent = ref<AgentHostAgent | null>(null);
 const error = ref<string | null>(null);

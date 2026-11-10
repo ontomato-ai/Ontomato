@@ -62,6 +62,7 @@ function openDrawer(catalog: ReturnType<typeof catalogOf>, permissions: BuilderP
     commitsState: "ready",
   }) as unknown as WorkspaceView;
   const platform: AppBuilderPlatform = {
+    registerPreviewFrame: () => ({update:vi.fn(),dispose:vi.fn()}),
     subscribePageContext: () => () => {}, catalog, openApplication: vi.fn(), permissions: shallowRef(permissions),
   };
   const scope = effectScope();

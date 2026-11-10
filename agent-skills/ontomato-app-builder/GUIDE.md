@@ -74,9 +74,7 @@ Publish only a commit that already exists. When files were changed in this run, 
 
 ## Explicit external deployment operations
 
-The following existing commands are for an explicitly requested test/production workflow; they are not prerequisites for the built-in builder. `env-mode` reports topology. `import-schema` imports the production ontology into a configured test deployment; `import-test-data <zip>` writes test data. `prod-distinct-values`, `prod-query` and `prod-knowledge` read production. `import-schema` drops and recreates the target domain's data namespace and changes its data-permission grants; use it only for an explicitly authorized dedicated test domain. Do not import, clear or rebuild business data automatically.
 
-`sync-production --action <id> ... --metric-view <id> ...` prints an exact plan and writes nothing without `--confirm`. Show the selected assets and same-ID overwrite effects; use `--confirm` only after approval of that exact plan. The operation copies only the selected interfaces, not pages or business data. Normal application publication uses `workspace publish`.
 
 `vector-upload <class> <attribute> <objectId> [--file <path>] --text <text or @file>` and `vector-delete <class> <attribute> <objectId> <path>` operate on an existing object's resources. Keep these writes within the requested business scope. `ask <question>` is an ad hoc ontology query, not a page API.
 
@@ -86,19 +84,13 @@ Positional names, IDs, paths, questions and descriptions are strings. Arguments 
 
 | Commands | JSON/body types and defaults |
 | --- | --- |
-| `dataset-desc`, `classes`, `env-mode`, `import-schema` | No body; use the established current domain. import-schema is an explicitly authorized destructive external operation as described above. |
 | `schema`, `relationships` | At least one class name, sent as `classNames: string[]`. |
-| `distinct-values`, `prod-distinct-values` | Class and attribute required; `like` defaults to `""`; omitted limit uses the endpoint's default, an explicit limit must be a finite number. |
 | `execute-dsl` | Required DSL JSON, using the DSL endpoint's documented syntax. |
-| `prod-query` | Required single nonempty DSL object, sent as `{dsl: object}`; arrays and serialized objects are rejected. |
-| `prod-knowledge` | Required question; optional finite numeric `--max` becomes `max_result`, otherwise omitted for the server default. |
 | `function list/get/save/delete` | list filter defaults to `{}`; get/delete require an ID. save requires a Function object; READ uses queryPackage, WRITE uses Python v2 code. Parameter names/types/descriptions must have their declared JSON types. No boolean parameter type is added. |
 | `action` / `metric-view` `generate` | Required description → `question: string`; `persistence` is false unless `--save` is given. Invalid generated fields fail by name; no successful asset is fabricated. |
 | `action` / `metric-view` `find/get/save/publish/delete` | find requires a class, optional question defaults to omitted. get/publish/delete require ID. save takes the full definition object, with the embedded Function. publish saves that definition as PUBLISHED; it does not bypass asset admission. |
 | `action` / `metric-view` `execute` | Required ID; JSON parameters default to `{}` only for zero-parameter assets. Every declared key must be present. Explicit null is accepted; `""` and `0` are preserved. Missing keys fail with `Missing parameter: <name>`. MetricView `--binding` supplies its complete saved parameter object and cannot be overridden. |
 | `action re-explain` | Optional repeated IDs; `--missing` defaults false. Results identify individual failures. |
-| `sync-production` | At least one explicit Action or MetricView ID. dryRun defaults true in CLI and HTTP. `--confirm` sends Boolean false; HTTP null or non-Boolean dryRun fails. |
-| `import-test-data` | Required readable ZIP file, multipart `file`; server owns its object/vector validation. |
 | `vector-upload`, `vector-delete` | Required class, attribute and object ID; upload requires text and optionally file, delete requires resource path. Vector fields are rejected by ordinary object insert/update. |
 | `sdk current/read` | current has no body. read requires one relative path, or exact version plus relative path; no version is guessed from an installed application. |
 | `workspace list/commits/sessions/tree` | Optional page/query JSON defaults to `{}`. IDs are required except for list. Page/query fields are checked by the workspace HTTP schema. |
@@ -107,3 +99,11 @@ Positional names, IDs, paths, questions and descriptions are strings. Arguments 
 | `ask` | Required question; uses the shared analyst client's request contract. It does not execute an Action. |
 
 Python write helpers use single object dictionaries and arrays of dictionaries as documented in `query_runtime.py`. A where is a nonempty condition object, never a list; invalid conditions fail before object queries or vector/file cleanup. `appendVector`/`updateVector` require nonempty text; with fileBase64 omitted or null, Java explicitly stores that text as a UTF-8 attachment. With fileBase64 supplied, it must be base64 file bytes; text remains required for embedding. There is no empty-file fallback when both are missing.
+
+## Business testing
+
+Write `test-data/sample.json` in the workspace using the generation `objDatas`, `relDatas`, `vectorDatas` envelope. Attachments are relative to that sample. Start with `test start --workspace <id>` (the built-in agent already has ONTOMATO_WORKSPACE_ID); `test status` and `test stop` use the same workspace entry. No sample is collected from live data. A new start ends and cleans the previous context before preparing a fresh ID.
+
+Action/MetricView execute, execute-dsl, distinct-values and vector commands bind the workspace's current Java context once for that command. Missing, preparing, failed, ended or expired contexts fail; requests never switch to live data. ask is not supported for build tests. Metadata discovery and asset editing keep their existing APIs. To look at live data, publish the application for yourself first. A conversation ending does not stop its test context.
+
+Preview requires the SDK manifest's executionContext capability 1. Upgrade old workspace SDK references when the preview entry rejects them. Test samples are excluded from published application files.

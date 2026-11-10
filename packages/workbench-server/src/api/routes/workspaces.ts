@@ -1,3 +1,5 @@
+import { WorkspaceBuildTests } from "../../services/app-builder/build-tests";
+import { assertAppBuilderAccess } from "../../services/app-builder/access";
 import { agentHostSessionPageQuerySchema } from "@ontomato/contracts/agent-host";
 import { randomBytes } from "node:crypto";
 import path from "node:path";
@@ -29,9 +31,19 @@ workspacePreviewRouter.get("/:id/preview/:token/*", wrap(async (req, res) => {
     .send(await runtime(preview.owner).bytes(`/v1/workspaces/${preview.workspaceId}/files/content?${new URLSearchParams({ path: file })}`));
 }));
 export const workspaceRouter = Router();
+for (const method of ["get", "post", "delete"] as const) {
+  workspaceRouter[method]("/:id/build-tests", wrap(async (req,res) => {
+    const c=context(req);await assertAppBuilderAccess(c.credentials);
+    const tests=new WorkspaceBuildTests(c.owner,c.credentials,id(req,"id"));
+    const result=method==="get" ? await tests.current() : method==="delete" ? await tests.stop()
+      : await tests.start(z.object({samplePath:z.string().optional()}).strict().parse(req.body).samplePath);
+    res.json(result);
+  }));
+}
 workspaceRouter.post("/:id/preview-token", wrap(async (req, res) => {
   const owner = context(req).owner, workspaceId = id(req, "id");
-  await runtime(owner).request(`/v1/workspaces/${workspaceId}`);
+  const tests=new WorkspaceBuildTests(owner,context(req).credentials,workspaceId);
+  await tests.requirePreviewSdk();
   const token = randomBytes(32).toString("base64url"), expiresAt = Date.now() + 10 * 60_000;
   previews.set(token, { workspaceId, owner, expiresAt });
   setTimeout(() => previews.delete(token), 10 * 60_000).unref();
@@ -52,7 +64,8 @@ workspaceRouter.post("/:id/rollback", wrap(async (req, res) => {
   res.json(await rollbackWorkspace(c.owner, id(req, "id"), input.releaseId, input.declaration, c.credentials));
 }));
 workspaceRouter.delete("/:id", wrap(async (req, res) => {
-  const owner = context(req).owner;
+  const c=context(req), owner = c.owner;
+  await new WorkspaceBuildTests(owner,c.credentials,id(req,"id")).stop();
   const deleted = z.object({ sessionIds: z.array(workspaceIdSchema) }).parse(await runtime(owner).request(`/v1/workspaces/${id(req, "id")}`, "DELETE"));
   for (const sessionId of deleted.sessionIds) await assistantService.delete(sessionId, owner);
   res.sendStatus(204);

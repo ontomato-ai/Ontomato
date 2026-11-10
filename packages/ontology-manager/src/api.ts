@@ -1,3 +1,4 @@
+import { BUILD_TEST_HEADER, type AppExecutionContext } from "@ontomato/contracts/build-tests";
 import type { AppHostCredential } from "@ontomato/contracts/app-host";
 import type { DataAdaptersData } from "@ontomato/contracts/data-adapters";
 import type { ObjectViewDocument, ObjectViewState } from "@ontomato/contracts/object-views";
@@ -25,6 +26,7 @@ export interface ManagerRequestContext {
   readonly apiBase: string;
   /** null means the host has cleared or not yet obtained a credential: no business request is sent and it is not treated as anonymous. */
   readonly credential: ManagerCredential | null;
+  readonly executionContext?: AppExecutionContext;
   readonly locale: string;
   /** The request layer's own error texts in the current locale. */
   readonly text: (key: MessageKey, params?: TextParams) => string;
@@ -51,8 +53,8 @@ function credentialIdentity(credential: ManagerCredential | null) {
  * rebuilds the workspace and the request layer drops stale responses. The locale is not part of the identity (as in the
  * original main system); it only sets Accept-Language on each request.
  */
-export function hostSource(context: Pick<ManagerRequestContext, "apiBase" | "credential">) {
-  return JSON.stringify([context.apiBase, credentialIdentity(context.credential)]);
+export function hostSource(context: Pick<ManagerRequestContext, "apiBase" | "credential" | "executionContext">) {
+  return JSON.stringify([context.apiBase, credentialIdentity(context.credential), context.executionContext?.kind === "build-test" ? context.executionContext.contextId : "live"]);
 }
 
 function credentialHeaders(credential: ManagerCredential): Record<string, string> {
@@ -232,6 +234,7 @@ export function createManagerRequest(
       if (disposed || hostSource(context) !== source) throw stale();
     };
 
+    const execution=context.executionContext;
     const response = await fetch(`${context.apiBase}${service}${path}`, {
       ...init,
       headers: {
@@ -240,6 +243,8 @@ export function createManagerRequest(
         "Accept-Language": context.locale,
         "X-Requested-With": "XMLHttpRequest",
         ...credentialHeaders(credential),
+        ...(service === "/data-query" && execution?.kind === "build-test"
+          ? { [BUILD_TEST_HEADER]: JSON.stringify({kind:"build-test",contextId:execution.contextId}) } : {}),
       },
     });
     assertCurrent();
