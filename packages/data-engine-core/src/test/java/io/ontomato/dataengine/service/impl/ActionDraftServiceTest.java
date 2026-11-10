@@ -97,6 +97,20 @@ class ActionDraftServiceTest {
   }
 
   @Test
+  void saveRejectsAQueryPackageBeforeWritingTheSnapshot() {
+    Action action = actionWith(code);
+    action.getFunction().setQueryPackage(JSONObject.of(
+        "manifest", JSONObject.of("parameterDefs", new JSONArray())));
+    when(store.one(anyString(), any(), any(), any())).thenReturn(
+        row(action, code, Instant.now().plusSeconds(3600).toString(), null));
+    when(lang.get("en", "Action.unsupportedFunction")).thenReturn("Action requires a write Python Function");
+    var error = assertThrows(IllegalArgumentException.class,
+        () -> service.save(UUID.randomUUID().toString(), "en"));
+    assertEquals("Action requires a write Python Function", error.getMessage());
+    verifyNoInteractions(functions, actionDao);
+  }
+
+  @Test
   void saveRejectsAConsumedDraft() {
     Action action = actionWith(code);
     JSONObject row =
