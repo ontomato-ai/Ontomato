@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from "vitest";
-import { reactive, shallowRef } from "vue";
+import { effectScope, reactive, shallowRef, type EffectScope } from "vue";
 import { flushPromises, mount } from "@vue/test-utils";
 import ElementPlus, { ElMessageBox } from "element-plus";
 import en from "element-plus/es/locale/lang/en";
@@ -10,13 +10,15 @@ import publicEn from "../../../locales/en";
 import { installWorkbenchI18n, workbenchI18n } from "../../../i18n";
 import PublishDrawer from "../components/PublishDrawer.vue";
 import type { AppBuilderPlatform, BuilderPermissions } from "../platform";
+import { usePublication } from "../publication";
 import type { WorkspaceView } from "../workspace-view";
 
 /*
  * What the drawer keeps: the version marked current is the one Java's catalog says the application opens, never the newest
  * export, and nothing is marked while the catalog cannot be read; rolling back only moves that pointer, through the
  * workspace's rollback, and writes nothing else; a first publication names the application in every language the
- * platform supports; and only an edition with permission management says anything about who can open it.
+ * platform supports; a published application, and only a published one, opens from here as from its rail row; and only
+ * an edition with permission management says anything about who can open it.
  */
 
 const sha = (digit: string) => digit.repeat(40);
@@ -51,20 +53,27 @@ function catalogOf(applications: CatalogApplication[], error: string | null = nu
 }
 
 const wrappers: ReturnType<typeof mount>[] = [];
+const scopes: EffectScope[] = [];
+/** The drawer as the builder opens it, on the builder's publication of the workspace. */
 function openDrawer(catalog: ReturnType<typeof catalogOf>, permissions: BuilderPermissions | null = null, commits = COMMITS) {
   const view = reactive({
     workspace: { id: "w1", name: "Overdue orders", headCommit: commits[0]!.id, activeRunId: null, createdAt: "", updatedAt: "" },
     commits,
     commitsState: "ready",
   }) as unknown as WorkspaceView;
-  const platform: AppBuilderPlatform = { subscribePageContext: () => () => {}, catalog, permissions: shallowRef(permissions) };
+  const platform: AppBuilderPlatform = {
+    subscribePageContext: () => () => {}, catalog, openApplication: vi.fn(), permissions: shallowRef(permissions),
+  };
+  const scope = effectScope();
+  scopes.push(scope);
+  const publication = scope.run(() => usePublication(() => "w1", catalog))!;
   const router = createRouter({ history: createMemoryHistory(), routes: [{ path: "/:any(.*)*", component: { render: () => null } }] });
   const wrapper = mount(PublishDrawer, {
-    props: { open: true, view, platform },
+    props: { open: true, view, platform, publication },
     global: { plugins: [ElementPlus, workbenchI18n(), router] },
   });
   wrappers.push(wrapper);
-  return wrapper;
+  return { wrapper, platform };
 }
 
 const drawer = () => document.body.querySelector<HTMLElement>(".publish-drawer")!;
@@ -85,6 +94,7 @@ beforeEach(() => {
 });
 afterEach(() => {
   wrappers.splice(0).forEach((wrapper) => wrapper.unmount());
+  scopes.splice(0).forEach((scope) => scope.stop());
   document.body.innerHTML = "";
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
@@ -156,6 +166,8 @@ describe("the publication drawer", () => {
     name.value = "Overdue board";
     name.dispatchEvent(new Event("input"));
     await flushPromises();
+    const releaseReads = () => requests.filter((request) => request.path === "/api/workspaces/w1/releases").length;
+    const readsBefore = releaseReads();
     drawer().querySelector<HTMLButtonElement>(".go .el-button--primary")!.click();
     await flushPromises();
 
@@ -170,7 +182,21 @@ describe("the publication drawer", () => {
       },
     }]);
     expect(catalog.refresh).toHaveBeenCalledTimes(1);
-    expect(requests.filter((request) => request.path === "/api/workspaces/w1/releases")).toHaveLength(2);
+    expect(releaseReads()).toBe(readsBefore + 1);
+  });
+
+  it("opens the application from its rail row's entry, and only while it is published", async () => {
+    const { platform } = openDrawer(catalogOf([APPLICATION]));
+    await flushPromises();
+    const open = [...drawer().querySelectorAll<HTMLButtonElement>(".app button")].find((button) => button.textContent!.includes("Open on the rail"))!;
+    open.click();
+    expect(platform.openApplication).toHaveBeenCalledWith(APP_ID);
+    wrappers.splice(0).forEach((wrapper) => wrapper.unmount());
+    document.body.innerHTML = "";
+
+    openDrawer(catalogOf([]));
+    await flushPromises();
+    expect(drawer().textContent).not.toContain("Open on the rail");
   });
 
   it("says who can open the application only where the edition manages permissions", async () => {

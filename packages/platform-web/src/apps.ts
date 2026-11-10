@@ -1,3 +1,4 @@
+import type { InjectionKey } from "vue";
 import type { PlatformApp, PlatformPanelGroup, PlatformRailSection } from "@ontomato/platform-shell";
 
 /**
@@ -33,6 +34,12 @@ export interface PlatformAppDeclaration {
   /** Pages of a page-only application, in display order. */
   groups?: readonly PlatformPanelGroup[];
 }
+
+/**
+ * Opens an application by its id the way its rail row does. The shell's layout provides it to the pages inside it, so a
+ * page that leads to an application never works out the application's address itself.
+ */
+export const openApplicationKey: InjectionKey<(id: string) => void> = Symbol("open-application");
 
 /** The rail entry of one declaration, carrying how the rail opens it: a page, a fixed address, or the host's resolver. */
 export function railApp(declaration: PlatformAppDeclaration): PlatformApp {

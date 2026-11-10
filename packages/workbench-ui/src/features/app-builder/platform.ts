@@ -26,6 +26,8 @@ export interface AppBuilderPlatform {
   subscribePageContext: SubscribePageContext;
   /** Where a publication shows; read again after publishing or rolling back. */
   catalog: BuilderCatalog;
+  /** Opens an application of the catalog by its id, through the same entry as its rail row. */
+  openApplication(id: string): void;
   /** null in an edition without permission management (open source). */
   permissions: Readonly<Ref<BuilderPermissions | null>>;
 }
