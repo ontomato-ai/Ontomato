@@ -221,8 +221,10 @@ class BuildTestPostgresIntegrationTest {
       function.setCode("# ontomato-python:2\nfrom query_runtime import delete\ndelete('contract_person',{'field':'id','operator':'=','value':'contract-person-1'})\n");
       result=actions.execute(action.getId(),JSONObject.of("id","contract-person-1","age",99),"en",owner,permission,1,target);assertNull(result.getError());
       assertEquals(2,jdbc.queryForObject("SELECT count(*) FROM "+target.sandboxId()+"contract_person",Integer.class));
+      var afterDelete=(JSONArray)metrics.execute("metric-test",null,JSONObject.of("threshold",20),null,"en",owner,permission,1,target)[0];
+      assertEquals(45,afterDelete.getJSONObject(0).getIntValue("total"));
       assertEquals(7,jdbc.queryForObject("SELECT age FROM contract_person WHERE id='contract-person-1'",Integer.class));
-      contexts.close(id);assertEquals(0,jdbc.queryForObject("SELECT count(*) FROM information_schema.tables WHERE table_schema=? AND table_name LIKE ?",Integer.class,schema,target.sandboxId()+"%"));
+      contexts.close(id);assertEquals(0,jdbc.queryForObject("SELECT count(*) FROM information_schema.tables WHERE table_schema=? AND table_name LIKE ?",Integer.class,schema,"%"+target.sandboxId()+"%"));
       var next=contexts.create("workspace",sample,Map.of());var restored=contexts.require(next.getString("contextId"),"builder","contract");
       assertEquals(21,jdbc.queryForObject("SELECT age FROM "+restored.sandboxId()+"contract_person WHERE id='contract-person-1'",Integer.class));contexts.close(next.getString("contextId"));
    } finally {
