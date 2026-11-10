@@ -18,6 +18,11 @@ const emit = defineEmits<{
 }>();
 
 const { t } = useI18n();
+
+/** Focus moving inside the editor, its search panel included, has not left the JSON; only focus leaving the editor has. */
+function leaveJson(event: FocusEvent) {
+  if (!(event.currentTarget as HTMLElement).contains(event.relatedTarget as Node | null)) emit("json-blur");
+}
 </script>
 
 <template>
@@ -38,7 +43,7 @@ const { t } = useI18n();
     </div>
     <div class="json-editor-body">
       <!-- While the JSON has focus the page leaves its text alone; on leaving, it writes the cases back in order. -->
-      <div class="json-editor" @focusin="emit('json-focus')" @focusout="emit('json-blur')">
+      <div class="json-editor" @focusin="emit('json-focus')" @focusout="leaveJson">
         <CodeEditor
           :model-value="jsonText"
           language="json"
