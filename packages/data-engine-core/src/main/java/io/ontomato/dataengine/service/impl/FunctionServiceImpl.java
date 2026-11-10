@@ -200,7 +200,7 @@ public class FunctionServiceImpl implements FunctionService {
 			// A referenced Function cannot be modified or deleted
 			isReferenced(function.getId(), lang);
 		}
-		return functionDao.save(function);
+		return functionDao.save(function, lang);
 	}
 
 	private void isReferenced(String functionId, String lang) throws Exception {

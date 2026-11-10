@@ -259,7 +259,7 @@ public class MetricViewController {
 			if (timeoutMinutes <= 0) {
 				timeoutMinutes = 1;
 			}
-			Object[] o = metricViewService.execute(id, param.getString("bindingId"), p, lang, user, curUserDataPermission, timeoutMinutes);
+			Object[] o = metricViewService.execute(id, param.getString("bindingId"), p, param.getJSONObject("parameterTexts"), lang, user, curUserDataPermission, timeoutMinutes);
 			ret.put("success", true);
 			ret.put("data", o[0]);
 			((PythonExecuteResult)o[1]).markCompleteness(ret);

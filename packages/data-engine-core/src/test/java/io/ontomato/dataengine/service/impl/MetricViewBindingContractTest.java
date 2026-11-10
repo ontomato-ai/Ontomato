@@ -49,7 +49,7 @@ class MetricViewBindingContractTest {
     when(functionDao.queryById(anyString())).thenAnswer(call -> {
       Function f = functions.get(call.getArgument(0)); return f == null ? null : copy(f, Function.class);
     });
-    when(functionDao.save(any())).thenAnswer(call -> {
+    when(functionDao.save(any(), anyString())).thenAnswer(call -> {
       Function f = call.getArgument(0);
       if (f.getId() == null) f.setId(UUID.randomUUID().toString());
       functions.put(f.getId(), copy(f, Function.class)); return f;
@@ -107,7 +107,33 @@ class MetricViewBindingContractTest {
   }
 
   JSONObject execute(MetricView m, String bindingId) throws Exception {
-    return ((JSONArray) service.execute(m.getId(), bindingId, null, "en", user, new UserDataPermission(), 1)[0]).getJSONObject(0);
+    return ((JSONArray) service.execute(m.getId(), bindingId, null, null, "en", user, new UserDataPermission(), 1)[0]).getJSONObject(0);
+  }
+
+  @Test
+  void fixedTextUsesCurrentParameterTypesAndInvalidTextNeverExecutes() throws Exception {
+    MetricView metric = metric("domain-a");
+    metric.setBindings(new ArrayList<>());
+    service.save(metric, "en");
+    JSONObject typed = JSONObject.of("labels", List.of("north"), "optional", "unchanged");
+    Object[] result = service.execute(metric.getId(), null, typed,
+        JSONObject.of("amount", "5"), "en", user, new UserDataPermission(), 1);
+    JSONObject values = ((JSONArray) result[0]).getJSONObject(0).getJSONObject("values");
+    assertInstanceOf(Number.class, values.get("amount"));
+    assertEquals(5, values.getIntValue("amount"));
+    assertEquals(List.of("north"), values.getList("labels", String.class));
+    assertEquals("unchanged", values.getString("optional"));
+    clearInvocations(execution);
+    var error = assertThrows(IllegalArgumentException.class, () -> service.execute(
+        metric.getId(), null, typed, JSONObject.of("amount", "abc"), "en", user, new UserDataPermission(), 1));
+    assertEquals("Invalid value for amount", error.getMessage());
+    verifyNoInteractions(execution);
+    metric.getFunction().getQueryPackage().getJSONObject("manifest").getJSONArray("parameterDefs")
+        .getJSONObject(0).put("type", Parameter.TYPE_STRING);
+    service.save(metric, "en");
+    result = service.execute(metric.getId(), null, typed,
+        JSONObject.of("amount", "abc"), "en", user, new UserDataPermission(), 1);
+    assertEquals("abc", ((JSONArray) result[0]).getJSONObject(0).getJSONObject("values").get("amount"));
   }
 
   @Test
@@ -152,7 +178,7 @@ class MetricViewBindingContractTest {
     assertThrows(IllegalArgumentException.class, () -> service.save(a, "en"));
     MetricView original = service.queryById(a.getId(), "domain-a");
     String bindingId = original.getBindings().get(0).getId();
-    assertThrows(IllegalArgumentException.class, () -> service.execute(a.getId(), bindingId, JSONObject.of("amount", 100), "en", user, new UserDataPermission(), 1));
+    assertThrows(IllegalArgumentException.class, () -> service.execute(a.getId(), bindingId, JSONObject.of("amount", 100), null, "en", user, new UserDataPermission(), 1));
     original.getBindings().remove(0); service.save(original, "en");
     assertEquals(1, metrics.get(a.getId()).getBindings().size());
     assertEquals(2, functions.size());

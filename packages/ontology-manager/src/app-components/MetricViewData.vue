@@ -13,8 +13,10 @@ const props = withDefaults(
     metricViewId: string;
     /** Merged over the MetricView's own parameter defaults; reading again when the values change. */
     parameters?: Record<string, unknown>;
+    /** Fixed-value text interpreted by Java using the current parameter definitions. */
+    parameterTexts?: Record<string, string>;
   }>(),
-  { parameters: () => ({}) },
+  { parameters: () => ({}), parameterTexts: () => ({}) },
 );
 
 defineSlots<MetricViewDataSlots>();
@@ -32,7 +34,7 @@ const reload = async () => {
   loading.value = true;
   error.value = null;
   try {
-    const result = await client.read({ id: props.metricViewId, parameters: props.parameters });
+    const result = await client.read({ id: props.metricViewId, parameters: props.parameters, parameterTexts: props.parameterTexts });
     if (request === latest) data.value = result;
   } catch (reason) {
     if (request === latest) error.value = reason as Error;
@@ -41,7 +43,7 @@ const reload = async () => {
   }
 };
 
-watch(() => JSON.stringify([props.metricViewId, props.parameters]), () => reload(), { immediate: true });
+watch(() => JSON.stringify([props.metricViewId, props.parameters, props.parameterTexts]), () => reload(), { immediate: true });
 </script>
 
 <template>

@@ -35,8 +35,8 @@ public interface MetricViewService {
 	
 	public MetricViewContent test(MetricView metricView, String lang, User user, UserDataPermission permission, int timeoutMinutes) throws Exception;
 	
-	/** Returns {rows, PythonExecuteResult}; the result carries the run's partial-query status. */
-	public Object[] execute(String id, String bindingId, JSONObject param, String lang, User user, UserDataPermission permission, int timeoutMinutes) throws Exception;
+	/** Returns {rows, PythonExecuteResult}; parameterTexts overrides param after Java form parsing. */
+	public Object[] execute(String id, String bindingId, JSONObject param, JSONObject parameterTexts, String lang, User user, UserDataPermission permission, int timeoutMinutes) throws Exception;
 	
 	/** Returns {rows, PythonExecuteResult}; the result carries the run's partial-query status. */
 	public Object[] testExecute(MetricView metricView, String bindingId, JSONObject param, String lang, User user, UserDataPermission permission, int timeoutMinutes) throws Exception;

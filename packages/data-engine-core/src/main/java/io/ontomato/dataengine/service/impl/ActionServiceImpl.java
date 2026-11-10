@@ -258,7 +258,7 @@ public class ActionServiceImpl implements ActionService {
       return generation.settle(
           () -> {
             if (persistence) {
-              action.setFunction(functionDao.save(function));
+              action.setFunction(functionDao.save(function, lang));
               return actionDao.save(action);
             }
             return action;
@@ -343,13 +343,13 @@ public class ActionServiceImpl implements ActionService {
             action.setBusinessMeaning(meaning);
             action.setCodeHash(codeHash);
             action.setExplanationVersion(Action.EXPLANATION_VERSION);
-            action.setFunction(functionDao.save(generatedFunction));
+            action.setFunction(functionDao.save(generatedFunction, lang));
             return actionDao.save(action);
           });
     }
     action.setCodeHash(codeHash);
     action.setExplanationVersion(Action.EXPLANATION_VERSION);
-    function = functionDao.save(function);
+    function = functionDao.save(function, lang);
     action.setFunction(function);
     return actionDao.save(action);
   }
@@ -467,7 +467,7 @@ public class ActionServiceImpl implements ActionService {
         }
         action.setCodeHash(codeHash);
         action.setExplanationVersion(Action.EXPLANATION_VERSION);
-        functionDao.save(function);
+        functionDao.save(function, lang);
         actionDao.save(action);
         successCount++;
       } catch (Exception e) {

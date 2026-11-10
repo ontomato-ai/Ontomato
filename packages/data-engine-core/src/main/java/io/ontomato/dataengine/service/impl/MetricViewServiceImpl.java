@@ -173,10 +173,10 @@ public class MetricViewServiceImpl implements MetricViewService {
 
   @Override
   public MetricView save(MetricView metric, String lang) {
-    return new TransactionTemplate(transactionManager).execute(status -> persist(metric, false));
+    return new TransactionTemplate(transactionManager).execute(status -> persist(metric, false, lang));
   }
 
-  private MetricView persist(MetricView metric, boolean importing) {
+  private MetricView persist(MetricView metric, boolean importing, String lang) {
     String domain = Objects.requireNonNull(metric.getDomainId(), "Current domain is required");
     MetricView previous = null;
     if (metric.getId() != null) {
@@ -219,7 +219,7 @@ public class MetricViewServiceImpl implements MetricViewService {
       if (!Objects.equals(other.getId(), metric.getId())) MetricViewBindings.validate(function, other.getBindings());
     metric.setOrigin(previous == null ? MetricView.ORIGIN_USER : previous.getOrigin());
     metric.setCreateTimestamp(previous == null ? null : previous.getCreateTimestamp());
-    functionDao.save(function);
+    functionDao.save(function, lang);
     metricViewDao.save(metric);
     // A shared definition's class projection follows the same edit as its bindings.
     for (MetricView other : sharing) {
@@ -310,7 +310,7 @@ public class MetricViewServiceImpl implements MetricViewService {
         if (item.containsKey("type")) throw new IllegalArgumentException("Legacy MetricView bundles require conversion before import");
         MetricView metric = item.to(MetricView.class);
         metric.setDomainId(domain);
-        new TransactionTemplate(transactionManager).execute(status -> persist(metric, true));
+        new TransactionTemplate(transactionManager).execute(status -> persist(metric, true, lang));
         successCount++;
       } catch (Exception error) {
         failures.add(JSONObject.of("index", i, "id", item.getString("id"), "message", error.getMessage()));
@@ -385,8 +385,23 @@ private MetricViewContent generateContent(JSONArray rows, PythonExecuteResult ex
 	}
 
   @Override
-  public Object[] execute(String id, String bindingId, JSONObject param, String lang, User user, UserDataPermission permission, int timeoutMinutes) throws Exception {
-    return testExecute(queryById(id, user.getDomainId()), bindingId, param, lang, user, permission, timeoutMinutes);
+  public Object[] execute(String id, String bindingId, JSONObject param, JSONObject parameterTexts, String lang, User user, UserDataPermission permission, int timeoutMinutes) throws Exception {
+    MetricView metric = queryById(id, user.getDomainId());
+    if (metric == null) throw new IllegalArgumentException("MetricView not found");
+    JSONObject values = param == null ? new JSONObject() : new JSONObject(param);
+    if (parameterTexts != null) {
+      var definitions = metric.getFunction().getParameters().stream()
+          .filter(parameter -> parameterTexts.containsKey(parameter.getName())).toList();
+      if (definitions.size() != parameterTexts.size())
+        throw new IllegalArgumentException("Parameters must match the metric definition exactly");
+      var parsed = io.ontomato.dataengine.service.ParameterForms.interactive(
+          definitions, io.ontomato.dataengine.schedules.ScheduleJson.JSON.valueToTree(parameterTexts),
+          java.util.Map.of(), java.util.List.of(), lang);
+      if (!parsed.errors().isEmpty())
+        throw new IllegalArgumentException(parsed.errors().get(0).path("message").asText());
+      values.putAll(parsed.values());
+    }
+    return testExecute(metric, bindingId, values, lang, user, permission, timeoutMinutes);
   }
 
   @Override

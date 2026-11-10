@@ -54,7 +54,9 @@ public class FunctionDao {
 		log.info(">>>function table initialization complete");
 	}
 
-	public Function save(Function function) {
+	public Function save(Function function, String lang) {
+        if (!(Function.OPERATION_READ.equals(function.getOperation()) && function.getQueryPackage() != null))
+            io.ontomato.dataengine.service.PythonProgramProtocol.requireSupported(function.getCode(), lang);
 		if (function.getId() == null) {
 			function.setId(UUID.randomUUID().toString());
 		}

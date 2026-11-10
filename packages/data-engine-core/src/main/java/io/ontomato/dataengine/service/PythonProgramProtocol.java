@@ -1,9 +1,6 @@
 package io.ontomato.dataengine.service;
 
-/**
- * The Python executor owns protocol admission; scheduling only projects this same rule into its
- * form.
- */
+/** The shared Python protocol admission rule for saving, executing and scheduling programs. */
 public final class PythonProgramProtocol {
   private PythonProgramProtocol() {}
 

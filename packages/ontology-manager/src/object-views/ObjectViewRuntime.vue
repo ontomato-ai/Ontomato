@@ -15,7 +15,16 @@ watch(() => props.document, document => {
 }, { immediate: true });
 watch(() => JSON.stringify([props.reference.className, props.reference.primaryKey]), () => { variables.value = { ...props.document.variables }; });
 function reload() { refresh.value++; emit("refresh"); }
-/** Metrics, tables and charts bound to a MetricView read it through the MetricViewData that SDK apps use. */
+/** Keep fixed-value text separate so Java can interpret it against the current definition. */
+function metricParameters(widget: ViewWidget) {
+  return resolveViewParameters(Object.fromEntries(Object.entries(widget.parameters)
+    .filter(([, binding]) => !(binding.source === "literal" && typeof binding.value === "string"))), props.object, variables.value);
+}
+function metricParameterTexts(widget: ViewWidget) {
+  return Object.fromEntries(Object.entries(widget.parameters)
+    .filter((entry): entry is [string, { source: "literal"; value: string }] => entry[1].source === "literal" && typeof entry[1].value === "string")
+    .map(([name, binding]) => [name, binding.value]));
+}
 function readsMetricView(widget: ViewWidget) { return ["metric", "table", "chart"].includes(widget.kind) && !!widget.resourceId; }
 </script>
 <template>
@@ -28,7 +37,7 @@ function readsMetricView(widget: ViewWidget) { return ["metric", "table", "chart
             <template v-for="widget in section.widgets" :key="widget.id">
               <article v-if="viewConditionMatches(widget.visibleWhen, object, variables)" :style="{ gridColumn: 'span ' + widget.span }" :class="['widget-card', { 'chart-card': widget.kind === 'chart' }]" :data-kind="widget.kind">
                 <h4 v-if="widget.title">{{ widget.title }}</h4>
-                <MetricViewData v-if="readsMetricView(widget)" v-slot="read" :metric-view-id="widget.resourceId" :parameters="resolveViewParameters(widget.parameters, object, variables)">
+                <MetricViewData v-if="readsMetricView(widget)" v-slot="read" :metric-view-id="widget.resourceId" :parameters="metricParameters(widget)" :parameter-texts="metricParameterTexts(widget)">
                   <ObjectViewWidget :widget="widget" :object="object" :reference="reference" :variables="variables" :refresh="refresh" :preview="preview" :metric-view="read" @variable="(name, value) => variables[name] = value" @refresh="reload" @open="emit('open', $event)" />
                 </MetricViewData>
                 <ObjectViewWidget v-else :widget="widget" :object="object" :reference="reference" :variables="variables" :refresh="refresh" :preview="preview" @variable="(name, value) => variables[name] = value" @refresh="reload" @open="emit('open', $event)" />
