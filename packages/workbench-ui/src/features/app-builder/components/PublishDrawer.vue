@@ -9,74 +9,32 @@ import { formatRelativeTime } from "../../../utils/relative-time";
 import { builderApi } from "../api";
 import { errorText, shortCommit } from "../panel";
 import type { AppBuilderPlatform } from "../platform";
-import { applicationName, catalogDeclaration, newDeclaration, publishable } from "../publication";
-import type { LoadState, WorkspaceView } from "../workspace-view";
+import { applicationName, catalogDeclaration, newDeclaration, publishable, type Publication } from "../publication";
+import type { WorkspaceView } from "../workspace-view";
 
 /**
  * Publishing the workspace as an application on the platform's rail, beside the page so the preview stays usable.
  *
- * It puts together facts that already have owners: the workbench's export records of the workspace (each commit is
- * exported once, as a release of the workspace's application) and Java's catalog, the one the rail draws, which alone
- * says which release the application opens now. A release is marked current only when it is that one; while the catalog
- * cannot be read, the failure shows and nothing is marked. Publishing exports a commit and makes it current; rolling
- * back makes an exported release current again. Neither touches the workspace's files or commits: going back to an old
- * commit is the history's, not this. After either, the catalog is read again and the rail follows.
+ * Where the application stands is the builder's `publication`, the one the page's header shows too: the workbench's
+ * export records of the workspace (each commit is exported once, as a release of the workspace's application) and Java's
+ * catalog, the one the rail draws, which alone says which release the application opens now. A release is marked
+ * current only when it is that one; while the catalog cannot be read, the failure shows and nothing is marked.
+ * Publishing exports a commit and makes it current; rolling back makes an exported release current again. Neither
+ * touches the workspace's files or commits: going back to an old commit is the history's, not this. After either, the
+ * catalog is read again and the rail follows. A published application opens from here as from its rail row.
  *
  * The first publication names the application, by default after the workspace; later ones keep the name it has in the
  * catalog. Where the edition manages permissions, it says who can open the application and leads to where an
  * administrator grants it; the open-source edition says nothing about access.
  */
-const props = defineProps<{ view: WorkspaceView; platform: AppBuilderPlatform }>();
+const props = defineProps<{ view: WorkspaceView; platform: AppBuilderPlatform; publication: Publication }>();
 const open = defineModel<boolean>("open", { required: true });
 const { t, locale } = useI18n();
 const router = useRouter();
 const { catalog, permissions } = props.platform;
+const publication = props.publication;
 const workspace = computed(() => props.view.workspace!);
-
-/* ---- The workspace's releases and the application they belong to ---- */
-const releases = ref<HostedRelease[]>([]);
-const releasesState = ref<LoadState>("loading");
-const releasesError = ref<string | null>(null);
-let reads = 0;
-async function loadReleases() {
-  const read = ++reads;
-  releasesState.value = "loading";
-  try {
-    const items = await builderApi.releases(workspace.value.id);
-    if (read !== reads) return;
-    releases.value = items;
-    releasesState.value = "ready";
-  } catch (error) {
-    if (read !== reads) return;
-    releasesError.value = errorText(error);
-    releasesState.value = "error";
-  }
-}
-
-const appId = computed(() => releases.value[0]?.appId ?? null);
-const application = computed(() => (appId.value && catalog.applications.value.find((app) => app.id === appId.value)) || null);
-/**
- * Where the application stands. Releases the catalog does not list are exports Java never took (a rejected first
- * publication), so the next publication names the application as a new one.
- */
-const status = computed<"loading" | "failed" | "new" | "published">(() => {
-  if (releasesState.value === "loading") return "loading";
-  if (releasesState.value === "error") return "failed";
-  if (!appId.value) return "new";
-  if (catalog.loading.value) return "loading";
-  if (catalog.error.value) return "failed";
-  return application.value ? "published" : "new";
-});
-const failure = computed(() => (releasesState.value === "error" ? releasesError.value : catalog.error.value));
-function retry() {
-  if (releasesState.value === "error") void loadReleases();
-  else void catalog.refresh();
-}
-/** The release the application opens now, by Java's catalog. */
-const currentRelease = computed(() =>
-  status.value === "published" ? releases.value.find((release) => release.releaseId === application.value!.releaseId) ?? null : null,
-);
-const appName = computed(() => (application.value ? applicationName(application.value, locale.value) : ""));
+const appName = computed(() => (publication.application ? applicationName(publication.application, locale.value) : ""));
 
 /* ---- What to publish ---- */
 const commits = computed(() => props.view.commits.filter(publishable));
@@ -91,30 +49,31 @@ watch(open, (value) => {
   if (!value) return;
   name.value = workspace.value.name;
   commit.value = commits.value[0]?.id ?? null;
-  void loadReleases();
+  void publication.loadReleases();
 }, { immediate: true });
 
 /** Why the chosen commit cannot be published now; null when it can, or while the commits are still being read. */
 const blocked = computed(() => {
   if (!commits.value.length) return props.view.commitsState === "ready" ? t("appBuilder.noPublishableCommit") : null;
-  if (status.value === "new" && !name.value.trim()) return t("appBuilder.nameTheApp");
-  if (currentRelease.value && currentRelease.value.commit === commit.value) return t("appBuilder.alreadyCurrent");
+  if (publication.status === "new" && !name.value.trim()) return t("appBuilder.nameTheApp");
+  if (publication.currentRelease?.commit === commit.value) return t("appBuilder.alreadyCurrent");
   return null;
 });
 
 const publishing = ref(false);
 const rollingBack = ref<string | null>(null);
 const canPublish = computed(() =>
-  (status.value === "new" || status.value === "published") && commit.value !== null && !blocked.value && rollingBack.value === null,
+  (publication.status === "new" || publication.status === "published") && commit.value !== null && !blocked.value &&
+  rollingBack.value === null,
 );
 async function publish() {
-  const app = application.value;
+  const app = publication.application;
   const declaration = app ? catalogDeclaration(app) : newDeclaration(name.value.trim());
-  const exported = new Set(releases.value.map((release) => release.releaseId));
+  const exported = new Set(publication.releases!.map((release) => release.releaseId));
   publishing.value = true;
   try {
     const release = await builderApi.publish(workspace.value.id, commit.value!, declaration);
-    await Promise.all([loadReleases(), catalog.refresh()]);
+    await Promise.all([publication.loadReleases(), catalog.refresh()]);
     const values = { name: declaration.names[locale.value] ?? declaration.names.en!, commit: shortCommit(release.commit) };
     if (!app) ElMessage.success(t("appBuilder.published", values));
     else ElMessage.success(t(exported.has(release.releaseId) ? "appBuilder.publishedAgain" : "appBuilder.publishedVersion", values));
@@ -125,7 +84,7 @@ async function publish() {
   }
 }
 async function rollback(release: HostedRelease) {
-  const app = application.value!;
+  const app = publication.application!;
   const values = { name: appName.value, time: formatRelativeTime(release.createdAt), commit: shortCommit(release.commit) };
   try {
     await ElMessageBox.confirm(t("appBuilder.rollbackConfirm", values), t("appBuilder.rollbackTitle"), {
@@ -161,13 +120,13 @@ async function rollback(release: HostedRelease) {
     <div class="publish">
       <section class="section">
         <h3>{{ t("appBuilder.application") }}</h3>
-        <div v-if="status === 'loading'" class="state" aria-busy="true">{{ t("assistant.loading") }}</div>
-        <div v-else-if="status === 'failed'" class="failure" role="alert">
+        <div v-if="publication.status === 'loading'" class="state" aria-busy="true">{{ t("assistant.loading") }}</div>
+        <div v-else-if="publication.status === 'failed'" class="failure" role="alert">
           <CircleAlert :size="16" aria-hidden="true" />
-          <span>{{ failure }}</span>
-          <el-button size="small" @click="retry">{{ t("common.retry") }}</el-button>
+          <span>{{ publication.failure }}</span>
+          <el-button size="small" :loading="publication.retrying" @click="publication.retry()">{{ t("common.retry") }}</el-button>
         </div>
-        <template v-else-if="status === 'new'">
+        <template v-else-if="publication.status === 'new'">
           <label class="field-label" for="publish-name">{{ t("appBuilder.appName") }}</label>
           <el-input id="publish-name" v-model="name" maxlength="200" :placeholder="t('appBuilder.appNamePlaceholder')" />
           <p class="help">{{ t("appBuilder.appNameHint") }}</p>
@@ -176,8 +135,11 @@ async function rollback(release: HostedRelease) {
           <span class="app-icon"><Table2 :size="18" aria-hidden="true" /></span>
           <span class="app-text">
             <strong>{{ appName }}</strong>
-            <span class="hash">{{ application!.id }}</span>
+            <span class="hash">{{ publication.application!.id }}</span>
           </span>
+          <el-button size="small" class="open-app" @click="platform.openApplication(publication.application!.id)">
+            {{ t("appBuilder.openOnRail") }}
+          </el-button>
         </div>
       </section>
 
@@ -195,7 +157,7 @@ async function rollback(release: HostedRelease) {
       </section>
 
       <section class="section">
-        <h3>{{ t(status === "published" ? "appBuilder.publishNewVersion" : "appBuilder.publishCommit") }}</h3>
+        <h3>{{ t(publication.status === "published" ? "appBuilder.publishNewVersion" : "appBuilder.publishCommit") }}</h3>
         <div v-if="view.commitsState === 'error' && !commits.length" class="failure" role="alert">
           <CircleAlert :size="16" aria-hidden="true" />
           <span>{{ t("assistant.loadFailed") }}</span>
@@ -214,7 +176,7 @@ async function rollback(release: HostedRelease) {
             <span class="option">
               <span class="hash">{{ shortCommit(item.id) }}</span>
               <span class="option-message">{{ item.message }}</span>
-              <span v-if="item.id === currentRelease?.commit" class="pill">{{ t("appBuilder.currentRelease") }}</span>
+              <span v-if="item.id === publication.currentRelease?.commit" class="pill">{{ t("appBuilder.currentRelease") }}</span>
               <span class="option-time">{{ formatRelativeTime(item.createdAt) }}</span>
             </span>
           </el-option>
@@ -228,10 +190,15 @@ async function rollback(release: HostedRelease) {
         </div>
       </section>
 
-      <section v-if="releases.length" class="section">
+      <section v-if="publication.releases?.length" class="section">
         <h3>{{ t("appBuilder.versions") }}</h3>
         <ol class="releases">
-          <li v-for="release in releases" :key="release.releaseId" class="release" :class="{ current: release === currentRelease }">
+          <li
+            v-for="release in publication.releases"
+            :key="release.releaseId"
+            class="release"
+            :class="{ current: release === publication.currentRelease }"
+          >
             <span class="dot" aria-hidden="true" />
             <span class="release-main">
               <span class="release-time">{{ t("appBuilder.exportedAt", { time: formatRelativeTime(release.createdAt) }) }}</span>
@@ -240,9 +207,9 @@ async function rollback(release: HostedRelease) {
                 <span v-if="commitOf(release.commit)">{{ commitOf(release.commit)!.message }}</span>
               </span>
             </span>
-            <span v-if="release === currentRelease" class="pill">{{ t("appBuilder.current") }}</span>
+            <span v-if="release === publication.currentRelease" class="pill">{{ t("appBuilder.current") }}</span>
             <el-button
-              v-else-if="status === 'published'"
+              v-else-if="publication.status === 'published'"
               size="small"
               :loading="rollingBack === release.releaseId"
               :disabled="rollingBack !== null || publishing"
@@ -324,8 +291,12 @@ async function rollback(release: HostedRelease) {
 }
 .app-text {
   display: flex;
+  flex: 1;
   flex-direction: column;
   min-width: 0;
+}
+.open-app {
+  flex-shrink: 0;
 }
 .app-text strong {
   overflow: hidden;

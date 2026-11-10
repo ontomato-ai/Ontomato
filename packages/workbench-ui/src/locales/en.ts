@@ -738,7 +738,10 @@ export default {
     "rollbackConfirm": "\"{name}\" on the rail switches to the version exported {time} (commit {commit}). The workspace and its commits stay as they are.",
     "rollbackAction": "Roll back",
     "rolledBack": "Rolled back: \"{name}\" on the rail now opens commit {commit}",
-    "rollbackHint": "Rolling back only changes which version the application on the rail opens; the workspace and its commits stay as they are."
+    "rollbackHint": "Rolling back only changes which version the application on the rail opens; the workspace and its commits stay as they are.",
+    "openOnRail": "Open on the rail",
+    "publishedBadge": "Published",
+    "publishedAs": "Published as \"{name}\""
   },
   "capabilities": {
     "title": "Capability library",

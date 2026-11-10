@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, watch } from "vue";
+import { computed, provide, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { useI18n } from "vue-i18n";
 import { usePageActionsOf, usePlatformHost, type PlatformPage } from "@ontomato/platform-admin";
@@ -9,7 +9,7 @@ import type { PlatformShownPage } from "./PlatformLayout.vue";
 import { appDeclarations } from "./partition";
 import { catalogPartition, type NativeLayout } from "./native-layouts";
 import { useApplicationCatalog } from "./catalog";
-import type { PlatformAppDeclaration } from "./apps";
+import { openApplicationKey, type PlatformAppDeclaration } from "./apps";
 
 /**
  * The platform's one shell around the router: the rail, the current application's column and the page area, with the
@@ -93,6 +93,8 @@ function selectApp(id: string) {
   const path = app ? homeOf(app) : null;
   if (path) void router.push(path);
 }
+// A page inside opens an application through the same entry as its rail row (the app builder, for what it published).
+provide(openApplicationKey, selectApp);
 
 /** Each language retains its own name when the UI locale changes. */
 const localeNames = computed(() =>

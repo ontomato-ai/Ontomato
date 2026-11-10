@@ -21,6 +21,7 @@ import { builderApi, createBuilderClient, WORKSPACE_PAGE } from "../api";
 import { PANEL_ID, PANEL_TABS, errorText, firstLine, shortCommit, type ChangeTarget, type PanelTab } from "../panel";
 import type { AppBuilderPlatform } from "../platform";
 import { selectedObject, usePreviewContext } from "../preview-context";
+import { applicationName, usePublication } from "../publication";
 import { useWorkspaceView, type LoadState } from "../workspace-view";
 import CommitMark from "./CommitMark.vue";
 import ComposerContext from "./ComposerContext.vue";
@@ -40,7 +41,7 @@ import WorkspacePanel from "./WorkspacePanel.vue";
  * chose — only the conversation, beside it, or full — stays while they change conversation or workspace.
  */
 const props = defineProps<{ agent: AgentHostAgent; platform: AppBuilderPlatform }>();
-const { t } = useI18n();
+const { t, locale } = useI18n();
 const route = useRoute();
 const router = useRouter();
 const shellLabels = useShellLabels();
@@ -170,6 +171,9 @@ onBeforeUnmount(() => clearTimeout(flashTimer));
 
 /** The publication drawer, opened from the page's header. */
 const publishOpen = ref(false);
+/** Where the workspace's application stands: the header shows that it is published, the drawer shows the rest. */
+const publication = usePublication(() => workspaceId.value, props.platform.catalog);
+const publishedName = computed(() => publication.application && applicationName(publication.application, locale.value));
 
 // Another workspace keeps the layout and the open view, and drops what belonged to the one left.
 watch(workspaceId, () => {
@@ -244,7 +248,11 @@ const busy = computed(() => {
 /** A run starting or stopping changes who occupies the workspace; a stopped run's commit moves HEAD and the views follow. */
 function onRun(change: ShellRunChange) {
   void view.refresh();
-  if (change.status !== "stopped" || !change.workspaceCommit) return;
+  if (change.status !== "stopped") return;
+  // The agent may have published or rolled the application back: its exports and the catalog are read again.
+  void publication.loadReleases();
+  void props.platform.catalog.refresh();
+  if (!change.workspaceCommit) return;
   target.value = "latest";
   showFlash(t("appBuilder.previewRefreshed", { commit: shortCommit(change.workspaceCommit) }));
 }
@@ -371,6 +379,7 @@ const columnEvents = {
       <PanelHeader
         v-model:tab="tab"
         :head-commit="view.workspace?.headCommit ?? null"
+        :published="publishedName"
         @refresh-preview="reloadPreview++"
         @publish="publishOpen = true"
       />
@@ -415,7 +424,7 @@ const columnEvents = {
       </div>
     </main>
   </div>
-  <PublishDrawer v-if="view.workspace" v-model:open="publishOpen" :view="view" :platform="platform" />
+  <PublishDrawer v-if="view.workspace" v-model:open="publishOpen" :view="view" :platform="platform" :publication="publication" />
 </template>
 
 <style scoped>
