@@ -3,10 +3,12 @@ import { computed, onBeforeUnmount, ref, watch } from "vue";
 import type { ViewWidget } from "@ontomato/contracts/object-views";
 import { useManagerClient, useOntologyText, useManagerContext } from "../context";
 import { themedChartHtml } from "@ontomato/contracts/chart-presentation";
+import { useChartTheme } from "@ontomato/foundation-ui/chart";
 const props = defineProps<{ widget: ViewWidget; rows: Record<string, unknown>[]; value: unknown }>();
 const client = useManagerClient();
 const context = useManagerContext();
 const { ot } = useOntologyText();
+const chartTheme = useChartTheme();
 const html = ref("");
 const error = ref("");
 const loading = ref(false);
@@ -23,11 +25,9 @@ const empty = computed(() => {
 });
 let request = 0;
 onBeforeUnmount(() => { request++; });
-const displayedHtml = computed(() => {
-  const properties = context.presentation.themeProperties[context.theme];
-  const colors = Array.from({ length: 8 }, (_, index) => properties[`--chart-${index + 1}`]).filter(Boolean);
-  return themedChartHtml(client.viewSkillHtml(html.value), { color: colors, visualMap: { inRange: { color: [colors[7], colors[0]] } } }, properties);
-});
+// The skill's charts are drawn in the platform's chart theme, with the page's theme properties inside the frame.
+const displayedHtml = computed(() =>
+  themedChartHtml(client.viewSkillHtml(html.value), chartTheme.value, context.presentation.themeProperties[context.theme]));
 watch(() => JSON.stringify([props.widget, props.value, props.rows, context.locale]), async () => {
   const current = ++request;
   html.value = ""; error.value = ""; loading.value = false;
