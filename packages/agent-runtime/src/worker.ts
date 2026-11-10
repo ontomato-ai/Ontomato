@@ -20,6 +20,7 @@ import { fileURLToPath } from "node:url";
 import path from "node:path";
 import {
   codeLimitsSchema,
+  codeExecutionVirtualAddressSpaceBytes,
   type CodeLimits,
 } from "@ontomato/contracts/agent-runtime-code";
 
@@ -183,7 +184,7 @@ export function spawnWorker(
 }
 export const skillLimits = () =>
   codeLimitsSchema.parse({
-    memoryBytes: 16 * 1024 ** 3,
+    memoryBytes: codeExecutionVirtualAddressSpaceBytes,
     wallTimeMs: 600000,
     cpuSeconds: 600,
   });
