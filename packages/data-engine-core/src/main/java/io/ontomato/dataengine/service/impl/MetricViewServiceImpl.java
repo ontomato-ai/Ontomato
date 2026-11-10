@@ -1,5 +1,7 @@
 package io.ontomato.dataengine.service.impl;
 
+import io.ontomato.dataengine.service.QueryPackage;
+
 import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
@@ -147,7 +149,7 @@ public class MetricViewServiceImpl implements MetricViewService {
       returnDef.setIsVoid(false);
       returnDef.setColumnLabels(envelope.getJSONObject("columnLabels"));
       function.setReturnDef(returnDef);
-      io.ontomato.dataengine.service.QueryPackage.prepareReadFunction(function, classDefs);
+      QueryPackage.prepareReadFunction(function, classDefs);
 
       MetricView metricView = generateFromFunction(function);
       metricView.setStatus(MetricView.STATUS_PUBLISHED);
@@ -215,7 +217,7 @@ public class MetricViewServiceImpl implements MetricViewService {
       }
     }
     function.setDomainId(domain);
-    io.ontomato.dataengine.service.QueryPackage.prepareReadFunction(function,
+    QueryPackage.prepareReadFunction(function,
         (List<Map<String, Object>>) adminService.getJSONRule(domain).get("classDef"));
     if (function.getOrigin() == null) function.setOrigin(Function.ORIGIN_USER);
     MetricViewBindings.validate(function, metric.getBindings());
@@ -419,7 +421,7 @@ private MetricViewContent generateContent(JSONArray rows, PythonExecuteResult ex
     validateDraftDomain(metric, user.getDomainId());
     if (!MetricView.STATUS_PUBLISHED.equals(metric.getStatus()))
       throw new IllegalArgumentException("MetricView is not published");
-    io.ontomato.dataengine.service.QueryPackage.prepareReadFunction(metric.getFunction(),
+    QueryPackage.prepareReadFunction(metric.getFunction(),
         (List<Map<String, Object>>) adminService.getJSONRule(user.getDomainId()).get("classDef"));
     MetricViewBindings.validate(metric.getFunction(), metric.getBindings());
     JSONObject values = MetricViewBindings.resolve(metric, bindingId, param);

@@ -1,5 +1,21 @@
 package io.ontomato.dataengine.controller;
 
+import io.ontomato.dataengine.dao.JSONRuleDao;
+import io.ontomato.dataengine.service.OntologyQueryService;
+import io.ontomato.dataengine.service.QueryAccessService;
+import io.ontomato.dataengine.service.QueryGrantService;
+import io.ontomato.dataengine.util.WriteWhereValidator;
+import jakarta.servlet.http.HttpServletRequest;
+import java.io.ByteArrayInputStream;
+import java.nio.charset.StandardCharsets;
+import java.util.Base64;
+import java.util.List;
+import java.util.stream.Collectors;
+import org.springframework.http.HttpStatus;
+import org.springframework.web.context.request.RequestContextHolder;
+import org.springframework.web.context.request.ServletRequestAttributes;
+import org.springframework.web.server.ResponseStatusException;
+
 import java.io.InputStream;
 import java.util.Map;
 
@@ -25,28 +41,28 @@ import lombok.extern.slf4j.Slf4j;
 @RestController
 public class WriteFunctionOperationController {
 
-    @Autowired private jakarta.servlet.http.HttpServletRequest request;
-    @Autowired private io.ontomato.dataengine.service.QueryAccessService accessService;
-    @Autowired private io.ontomato.dataengine.service.OntologyQueryService queries;
+    @Autowired private HttpServletRequest request;
+    @Autowired private QueryAccessService accessService;
+    @Autowired private OntologyQueryService queries;
 
-    @Autowired private io.ontomato.dataengine.dao.JSONRuleDao jsonRuleDao;
+    @Autowired private JSONRuleDao jsonRuleDao;
 
     @SuppressWarnings("unchecked")
     private JSONObject validatedWhere(Object raw, String className, String domainId) {
-        io.ontomato.dataengine.util.WriteWhereValidator.validateStructure(raw);
-        var classes = (java.util.List<Map<String, Object>>) jsonRuleDao.query(domainId).get("classDef");
+        WriteWhereValidator.validateStructure(raw);
+        var classes = (List<Map<String, Object>>) jsonRuleDao.query(domainId).get("classDef");
         var classDef = classes.stream().filter(c -> className.equals(c.get("className"))).findFirst()
                 .orElseThrow(() -> new IllegalArgumentException("Unknown class: " + className));
-        var attrs = (java.util.List<Map<String, Object>>) classDef.get("attrs");
+        var attrs = (List<Map<String, Object>>) classDef.get("attrs");
         var fields = attrs.stream().filter(a -> !Boolean.FALSE.equals(a.get("enable")))
-                .map(a -> (String) a.get("name")).collect(java.util.stream.Collectors.toSet());
-        return io.ontomato.dataengine.util.WriteWhereValidator.validate(raw, fields::contains);
+                .map(a -> (String) a.get("name")).collect(Collectors.toSet());
+        return WriteWhereValidator.validate(raw, fields::contains);
     }
 
     private void checkClasses(String... names) {
-        java.util.List<String> scope = grant().getList("classNames", String.class);
+        List<String> scope = grant().getList("classNames", String.class);
         if (scope != null && !scope.isEmpty()) for (String name : names)
-            if (!scope.contains(name)) throw new org.springframework.web.server.ResponseStatusException(org.springframework.http.HttpStatus.FORBIDDEN, "Class is outside this operation");
+            if (!scope.contains(name)) throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Class is outside this operation");
     }
 	
 	@Autowired
@@ -174,7 +190,7 @@ public class WriteFunctionOperationController {
     @PostMapping("/writeFunctionOperation/appendVector")
     public JSONObject appendVector(@RequestBody JSONObject body) throws Exception {
         byte[] bytes=vectorBytes(body);
-        try(var input=new java.io.ByteArrayInputStream(bytes)) {
+        try(var input=new ByteArrayInputStream(bytes)) {
             checkClasses(requiredText(body, "className"));
             writeFunctionOperationService.appendVector(requiredText(body, "className"),requiredText(body, "attrName"),requiredText(body, "objectId"),body.getString("text"),input,getSuffix(body.getString("fileName")),dealSandboxId(grant().getString("sandboxId")),grant().getString("domainId"));
         }
@@ -183,7 +199,7 @@ public class WriteFunctionOperationController {
     @PostMapping("/writeFunctionOperation/updateVector")
     public JSONObject updateVector(@RequestBody JSONObject body) throws Exception {
         byte[] bytes=vectorBytes(body);
-        try(var input=new java.io.ByteArrayInputStream(bytes)) {
+        try(var input=new ByteArrayInputStream(bytes)) {
             checkClasses(requiredText(body, "className"));
             writeFunctionOperationService.updateVector(requiredText(body, "className"),requiredText(body, "attrName"),requiredText(body, "objectId"),requiredText(body, "fileId"),body.getString("text"),input,dealSandboxId(grant().getString("sandboxId")),grant().getString("domainId"));
         }
@@ -197,17 +213,17 @@ public class WriteFunctionOperationController {
 
     private static byte[] vectorBytes(JSONObject body) {
         String text = requiredText(body, "text");
-        if (body.get("fileBase64") == null) return text.getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        if (body.get("fileBase64") == null) return text.getBytes(StandardCharsets.UTF_8);
         String encoded = requiredText(body, "fileBase64");
-        try { return java.util.Base64.getDecoder().decode(encoded); }
+        try { return Base64.getDecoder().decode(encoded); }
         catch (IllegalArgumentException invalid) {
             throw new IllegalArgumentException("fileBase64: expected base64 file content; encode the file bytes as base64", invalid);
         }
     }
 
     private JSONObject grant() {
-        var request=((org.springframework.web.context.request.ServletRequestAttributes)org.springframework.web.context.request.RequestContextHolder.currentRequestAttributes()).getRequest();
-        return (JSONObject)request.getAttribute(io.ontomato.dataengine.service.QueryGrantService.ATTRIBUTE);
+        var request=((ServletRequestAttributes)RequestContextHolder.currentRequestAttributes()).getRequest();
+        return (JSONObject)request.getAttribute(QueryGrantService.ATTRIBUTE);
     }
 
 	@PostMapping("/writeFunctionOperation/deleteVector")

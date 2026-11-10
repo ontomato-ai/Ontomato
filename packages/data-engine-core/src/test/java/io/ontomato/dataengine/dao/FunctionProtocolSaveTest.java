@@ -1,5 +1,9 @@
 package io.ontomato.dataengine.dao;
 
+import com.alibaba.fastjson2.JSONArray;
+import com.alibaba.fastjson2.JSONObject;
+import java.util.List;
+
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
@@ -13,10 +17,10 @@ import org.springframework.test.util.ReflectionTestUtils;
 class FunctionProtocolSaveTest {
   @Test
   void externalFunctionFieldsAreNotCoercedBeforeAdmission() {
-    for (var input : java.util.List.of(
-        com.alibaba.fastjson2.JSONObject.of("code", 42),
-        com.alibaba.fastjson2.JSONObject.of("parameters", "[]"),
-        com.alibaba.fastjson2.JSONObject.of("parameters", com.alibaba.fastjson2.JSONArray.of(com.alibaba.fastjson2.JSONObject.of("name", 42))))) {
+    for (var input : List.of(
+        JSONObject.of("code", 42),
+        JSONObject.of("parameters", "[]"),
+        JSONObject.of("parameters", JSONArray.of(JSONObject.of("name", 42))))) {
       var error = assertThrows(IllegalArgumentException.class, () -> Function.fromInput(input));
       assertTrue(error.getMessage().startsWith("Function."));
     }

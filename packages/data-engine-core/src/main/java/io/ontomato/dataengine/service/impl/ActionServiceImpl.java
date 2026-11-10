@@ -1,5 +1,10 @@
 package io.ontomato.dataengine.service.impl;
 
+import io.ontomato.dataengine.service.IdentityService;
+import io.ontomato.dataengine.service.MetricViewBindings;
+import io.ontomato.dataengine.service.scheduling.OntologyScheduleReferences;
+import java.util.Objects;
+
 import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
@@ -68,9 +73,9 @@ public class ActionServiceImpl implements ActionService {
 
   @Autowired private AgentRuntimeClient runtimeClient;
 
-  @Autowired private io.ontomato.dataengine.service.scheduling.OntologyScheduleReferences scheduledReferences;
+  @Autowired private OntologyScheduleReferences scheduledReferences;
 
-  @Autowired private io.ontomato.dataengine.service.IdentityService identity;
+  @Autowired private IdentityService identity;
 
   @PostConstruct
 	public void initService() {
@@ -286,7 +291,7 @@ public class ActionServiceImpl implements ActionService {
         throw new Exception(langService.get(lang, "Action.domainMismatch"));
       }
       if (scheduledReferences.referencesAction(action.getId()) && (action.getFunction() == null
-          || !java.util.Objects.equals(exist[1], action.getFunction().getId())))
+          || !Objects.equals(exist[1], action.getFunction().getId())))
         throw new IllegalArgumentException("A scheduled action must retain its referenced function");
       storedCodeSegments = existAction.getCodeSegments();
       storedBusinessMeaning = existAction.getBusinessMeaning();
@@ -578,7 +583,7 @@ public class ActionServiceImpl implements ActionService {
 
   @Override
 	public PythonExecuteResult execute(String id, JSONObject param, String lang, User user, UserDataPermission permission, int timeoutMinutes) throws Exception {
-        Function function = io.ontomato.dataengine.service.MetricViewBindings.executionWriteFunction(executable(id, lang, user).getFunction(), param);
+        Function function = MetricViewBindings.executionWriteFunction(executable(id, lang, user).getFunction(), param);
 		Object[] o = abcProgramService.execute(UUID.randomUUID().toString(), function, user.getId(), permission, ServiceConst.NOT_SANDBOX, lang, timeoutMinutes, user.getDomainId());
 		PythonExecuteResult result = (PythonExecuteResult)o[1];
         if (result.getError() != null && !result.getError().isBlank()) { result.setResult(null); }

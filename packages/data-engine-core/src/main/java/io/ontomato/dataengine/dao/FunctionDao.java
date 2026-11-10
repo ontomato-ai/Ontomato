@@ -1,5 +1,10 @@
 package io.ontomato.dataengine.dao;
 
+import io.ontomato.dataengine.service.MetricViewBindings;
+import io.ontomato.dataengine.service.QueryPackage;
+import java.sql.ResultSet;
+import java.sql.SQLException;
+
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
@@ -59,13 +64,13 @@ public class FunctionDao {
         if (!Function.OPERATION_READ.equals(function.getOperation()) && !Function.OPERATION_WRITE.equals(function.getOperation()))
             throw new IllegalArgumentException("Function.operation: expected OPERATION_READ or OPERATION_WRITE");
         if (Function.OPERATION_READ.equals(function.getOperation()) && function.getQueryPackage() != null)
-            io.ontomato.dataengine.service.QueryPackage.validate(function.getQueryPackage());
+            QueryPackage.validate(function.getQueryPackage());
         if (function.getParameters() != null) {
             for (var parameter : function.getParameters())
-                if (parameter.getType() == null || !java.util.Set.of("TYPE_STRING", "TYPE_NUMBER", "TYPE_TIME", "TYPE_STRING_ARRAY", "TYPE_NUMBER_ARRAY", "TYPE_TIME_ARRAY", "TYPE_ONTOOBJ", "TYPE_DATASET", "TYPE_VECTOR").contains(parameter.getType()))
+                if (parameter.getType() == null || !Parameter.TYPES.contains(parameter.getType()))
                     throw new IllegalArgumentException("Function.parameters." + parameter.getName() + ".type: expected a supported parameter type; boolean parameters are not supported");
-            io.ontomato.dataengine.service.MetricViewBindings.validateValues(function,
-                io.ontomato.dataengine.service.MetricViewBindings.values(function));
+            MetricViewBindings.validateValues(function,
+                MetricViewBindings.values(function));
         }
         if (!(Function.OPERATION_READ.equals(function.getOperation()) && function.getQueryPackage() != null))
             PythonProgramProtocol.requireSupported(function.getCode(), lang);
@@ -173,7 +178,7 @@ public class FunctionDao {
 		return functions;
 	}
 
-	private Function mapRow(java.sql.ResultSet rs) throws java.sql.SQLException {
+	private Function mapRow(ResultSet rs) throws SQLException {
 		Function function = new Function();
 		function.setId(rs.getString("id"));
 		function.setName(rs.getString("name"));

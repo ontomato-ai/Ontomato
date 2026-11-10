@@ -1,5 +1,7 @@
 package io.ontomato.dataengine.service;
 
+import java.io.IOException;
+
 import static io.ontomato.dataengine.schedules.ScheduleJson.*;
 
 import com.alibaba.fastjson2.JSONObject;
@@ -241,7 +243,7 @@ public final class ParameterForms {
   private static Object json(String text) {
     try {
       return JSON_VALUE.readValue(text);
-    } catch (java.io.IOException invalid) {
+    } catch (IOException invalid) {
       return null;
     }
   }

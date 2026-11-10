@@ -1,5 +1,7 @@
 package io.ontomato.dataengine.service.impl;
 
+import io.ontomato.dataengine.service.MetricViewService;
+
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
@@ -84,7 +86,7 @@ public class EnvServiceImpl implements EnvService {
 	private ActionDao actionDao;
 
 	@Autowired
-	private io.ontomato.dataengine.service.MetricViewService metricViewService;
+	private MetricViewService metricViewService;
 
 	@Autowired
 	private FunctionDao functionDao;

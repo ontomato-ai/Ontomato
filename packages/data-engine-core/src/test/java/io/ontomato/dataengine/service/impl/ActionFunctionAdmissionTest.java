@@ -1,5 +1,7 @@
 package io.ontomato.dataengine.service.impl;
 
+import org.junit.jupiter.api.Test;
+
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
@@ -59,7 +61,7 @@ class ActionFunctionAdmissionTest {
     return action;
   }
 
-  @org.junit.jupiter.api.Test
+  @Test
   void publishedImportsCannotBypassExplanationReadiness() throws Exception {
     var action = action(Function.OPERATION_WRITE);
     action.getFunction().setQueryPackage(null);
