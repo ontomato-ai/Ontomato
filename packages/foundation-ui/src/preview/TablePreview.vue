@@ -118,6 +118,6 @@ function toggle(row: number, selected: number[]) {
 .table-preview-pager {
   flex: none;
   justify-content: flex-end;
-  padding: var(--spacing-sm, 8px) 0;
+  padding: var(--spacing-sm) 0;
 }
 </style>
