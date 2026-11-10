@@ -13,8 +13,9 @@ import type { WorkspaceView } from "../workspace-view";
 /**
  * The workspace's current files running as the app, in a frame of the platform's own origin: like a published app it
  * reads the platform's host port for the reader, the theme and the language, but its business calls run on the
- * workspace's test data, which Java prepares, times and ends. The frame is loaded again, each time with a new token,
- * when the workspace's HEAD moves (a run's commit, a restore), when its test data changes stage, or when the reader asks.
+ * workspace's test data, which Java prepares, times and ends. The frame first loads once Java has answered for the
+ * workspace, and loads again, each time with a new token, when the workspace's HEAD moves (a run's commit, a restore),
+ * when Java answers another context or stage, or when the reader asks. A failed read leaves the frame as it is.
  *
  * The frame's top line says at all times that the preview runs on test data: from which sample and until when, or why
  * there is none to run on. What the agent's run does to the files shares that line instead of covering it. Real data
@@ -35,9 +36,16 @@ const workspace = computed(() => props.view.workspace);
 const platform=inject(builderPlatformKey)!;
 const testState=useBuildTestState(()=>workspace.value?.id ?? null);
 defineExpose({buildTestState:testState.state,refreshBuildTestState:testState.refresh,previewError:computed(()=>error.value)});
+/** What the frame runs on: Java's last answer for the workspace shown, none before the first; a failed read keeps it. */
+const binding = computed(() => {
+  const context = testState.binding.value;
+  return context?.workspaceId === workspace.value?.id ? context : null;
+});
 let registration: ReturnType<typeof platform.registerPreviewFrame> | null = null;
-watch(testState.state,(context,previous)=>{
-  if(context.kind==="build-test" && previous.kind==="build-test" && context.contextId===previous.contextId && context.workspaceId===previous.workspaceId && context.status===previous.status) registration?.update(context);
+// Another context, workspace or stage starts the app afresh, so data that became ready, expired, ended or failed reaches
+// it; a new answer of the same stage only refreshes the frame's snapshot.
+watch(binding, (next, previous) => {
+  if (next && previous && next.workspaceId === previous.workspaceId && next.contextId === previous.contextId && next.status === previous.status) registration?.update(next);
   else void load();
 });
 
@@ -46,7 +54,8 @@ async function load() {
   const attempt = ++loads;
   error.value = null;
   src.value = null;
-  if (!current || !hasPage.value) {
+  // Before Java's first answer there is nothing to bind the frame to: it waits instead of loading twice on opening.
+  if (!current || !hasPage.value || !binding.value) {
     src.value = null;
     return;
   }
@@ -67,18 +76,13 @@ const iframe = ref<HTMLIFrameElement | null>(null);
 watch(iframe, (element) => {
   registration?.dispose();registration=null;
   frameWindow.value = element?.contentWindow ?? null;
-  if(frameWindow.value) registration=platform.registerPreviewFrame(frameWindow.value,testState.state.value);
+  if(frameWindow.value) registration=platform.registerPreviewFrame(frameWindow.value,binding.value!);
 }, { flush: "post" });
 onBeforeUnmount(() => {registration?.dispose();frameWindow.value=null;});
 
 /* ---- The frame's top line and notice: the test data the app runs on ---- */
 
-/** The preview's state source reads only build-test contexts; a live one here would be a wiring fault, not a state. */
-const test = computed(() => {
-  const state = testState.state.value;
-  if (state.kind !== "build-test") throw new Error("The workspace preview runs on test data only");
-  return state;
-});
+const test = testState.state;
 
 /** Java's clock as this page knows it, read every second for the countdown to Java's deadline. */
 const now = ref(getSynchronizedNow());
@@ -98,6 +102,7 @@ const minutes = (count: number) =>
 
 /** The stages the line names in a word; ready and expired data name their deadline instead. */
 const STAGE_TEXT = {
+  LOADING: "assistant.loading",
   NONE: "appBuilder.testNone",
   PREPARING: "appBuilder.testPreparing",
   PREPARE_FAILED: "appBuilder.testFailed",
@@ -126,8 +131,7 @@ const NOTICES = {
 /** The notice under the line, with the failure's reason as its detail when there is one. */
 const notice = computed(() => {
   const stage = phase.value;
-  // Ready data needs no notice; without a page no call can fail, and the line still says no test has started.
-  if (stage === "READY" || (stage === "NONE" && !hasPage.value)) return null;
+  if (stage === "READY" || stage === "LOADING") return null;
   const reason = test.value.error;
   // After a test the reason is its cleanup's; before, the failure's own.
   const detail = stage === "EXPIRED" || stage === "CLOSED" ? reason && t("appBuilder.testCleanupFailed", { reason }) : reason;
@@ -144,7 +148,7 @@ const notice = computed(() => {
         </el-tooltip>
         <span v-if="test.contextId" class="test-sample" :title="test.sampleName">{{ test.sampleName }}</span>
         <span class="test-state">
-          <LoaderCircle v-if="phase === 'PREPARING'" :size="12" class="spin" aria-hidden="true" />
+          <LoaderCircle v-if="phase === 'LOADING' || phase === 'PREPARING'" :size="12" class="spin" aria-hidden="true" />
           {{ stateText }}
         </span>
         <span class="run-state" role="status">

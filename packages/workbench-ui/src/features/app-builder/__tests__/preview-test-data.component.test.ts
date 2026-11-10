@@ -13,8 +13,9 @@ import type { WorkspaceView } from "../workspace-view";
  * sample and Java's deadline while the data is ready, or the stage that leaves none to run on, and the agent's run notes
  * share that line instead of covering it. Every stage without usable data explains under the line what it means for the
  * page's business calls and what brings the data back; a missing test or an unread status is never shown as ready or as
- * empty data. Expired or ended data takes the last round's results off the page. The page itself previews in every
- * stage, and nothing offers real data.
+ * empty data. The page loads once Java has first answered, so opening loads it once; it loads again when Java answers
+ * another context or stage, which takes expired or ended data's results off the page, and never for a failed read, as
+ * Java checks every business call itself. The page previews in every stage Java answers, and nothing offers real data.
  */
 
 const text = publicEn.appBuilder;
@@ -34,6 +35,8 @@ function javaContext(status: string, fields: Record<string, unknown> = {}) {
 /** What the workbench answers: the current context (null for none, or a failed read), and a new token per load. */
 let current: unknown = null;
 let statusFails = false;
+/** While set, status reads wait for it: Java has not answered yet. */
+let held: Promise<void> | null = null;
 let tokens = 0;
 let statusReads = 0;
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
@@ -42,6 +45,7 @@ beforeEach(() => {
   vi.useFakeTimers({ now: NOW, toFake: ["setInterval", "clearInterval", "Date"] });
   current = null;
   statusFails = false;
+  held = null;
   tokens = 0;
   statusReads = 0;
   vi.stubGlobal("fetch", async (input: string, init?: Parameters<typeof fetch>[1]) => {
@@ -49,6 +53,7 @@ beforeEach(() => {
     const path = new URL(input, "http://workbench.test").pathname;
     if (method === "GET" && path === "/api/workspaces/w1/build-tests") {
       statusReads++;
+      if (held) await held;
       return statusFails ? json({ error: { code: "UPSTREAM_FAILED", message: "Data engine unavailable" } }, 502) : json(current);
     }
     if (method === "POST" && path === "/api/workspaces/w1/preview-token") return json({ token: `token-${++tokens}`, expiresAt: "" });
@@ -153,14 +158,6 @@ describe("the preview's test data", () => {
     expect(wrapper.findAll("input, select, [role=switch]")).toHaveLength(0);
   });
 
-  it("leaves the notice out of a workspace without a page, but still says no test has started", async () => {
-    const { wrapper } = await openPreview({ files: [] });
-
-    expect(line(wrapper)).toContain(text.testNone);
-    expect(notice(wrapper).exists()).toBe(false);
-    expect(wrapper.text()).toContain(text.previewEmpty);
-  });
-
   it("says the test data is being prepared from the sample", async () => {
     current = javaContext("PREPARING");
     const { wrapper } = await openPreview();
@@ -208,15 +205,73 @@ describe("the preview's test data", () => {
     expect(notice(wrapper).find(".el-alert__description").exists()).toBe(false);
   });
 
-  it("says the status could not be read, never as ready or as no data", async () => {
+  it("loads the page once, after Java's first answer, and never says no test has started before it", async () => {
+    let answer!: () => void;
+    held = new Promise((resolve) => (answer = resolve));
+    current = javaContext("READY");
+    const { wrapper } = await openPreview();
+
+    expect(line(wrapper)).toContain(publicEn.assistant.loading);
+    expect(line(wrapper)).not.toContain(text.testNone);
+    expect(notice(wrapper).exists()).toBe(false);
+    expect(wrapper.find("iframe").exists()).toBe(false);
+    expect(tokens).toBe(0);
+
+    held = null;
+    answer();
+    await flushPromises();
+    expect(line(wrapper)).toContain(SAMPLE);
+    expect(line(wrapper)).toContain("43 min left");
+    expect(frameSrc(wrapper)).toBe("/api/workspaces/w1/preview/token-1/index.html");
+    expect(tokens).toBe(1);
+  });
+
+  it("keeps the page through a failed read and says only that the status could not be read", async () => {
+    current = javaContext("READY");
+    const { wrapper } = await openPreview();
+    expect(frameSrc(wrapper)).toBe("/api/workspaces/w1/preview/token-1/index.html");
+
+    statusFails = true;
+    await wait(5_000);
+    expect(line(wrapper)).toContain(text.testUnavailable);
+    expect(line(wrapper)).not.toContain(SAMPLE);
+    expect(notice(wrapper).classes()).toContain("el-alert--error");
+    expect(notice(wrapper).find(".el-alert__title").text()).toBe(text.testUnavailableHint);
+    expect(notice(wrapper).find(".el-alert__description").text()).toBe("Data engine unavailable");
+    expect(frameSrc(wrapper)).toBe("/api/workspaces/w1/preview/token-1/index.html");
+
+    statusFails = false;
+    await wait(5_000);
+    expect(line(wrapper)).toContain("43 min left");
+    expect(notice(wrapper).exists()).toBe(false);
+    expect(frameSrc(wrapper)).toBe("/api/workspaces/w1/preview/token-1/index.html");
+    expect(tokens).toBe(1);
+  });
+
+  it("waits for a status it can read before loading the page, never showing an unread status as ready or as no data", async () => {
     statusFails = true;
     const { wrapper } = await openPreview();
 
     expect(line(wrapper)).toContain(text.testUnavailable);
-    expect(line(wrapper)).not.toContain(SAMPLE);
     expect(line(wrapper)).not.toContain(text.testNone);
-    expect(notice(wrapper).classes()).toContain("el-alert--error");
     expect(notice(wrapper).find(".el-alert__title").text()).toBe(text.testUnavailableHint);
-    expect(notice(wrapper).find(".el-alert__description").text()).toBe("Data engine unavailable");
+    expect(wrapper.find("iframe").exists()).toBe(false);
+    expect(tokens).toBe(0);
+
+    statusFails = false;
+    await wait(5_000);
+    expect(line(wrapper)).toContain(text.testNone);
+    expect(frameSrc(wrapper)).toBe("/api/workspaces/w1/preview/token-1/index.html");
+  });
+
+  it("starts the page afresh when the data it waited for is ready", async () => {
+    current = javaContext("PREPARING");
+    const { wrapper } = await openPreview();
+    expect(frameSrc(wrapper)).toBe("/api/workspaces/w1/preview/token-1/index.html");
+
+    current = javaContext("READY");
+    await wait(5_000);
+    expect(line(wrapper)).toContain("43 min left");
+    expect(frameSrc(wrapper)).toBe("/api/workspaces/w1/preview/token-2/index.html");
   });
 });

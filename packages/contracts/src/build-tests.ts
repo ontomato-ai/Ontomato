@@ -11,9 +11,10 @@ export const buildTestContextSchema = z.object({
   prepareError: z.string().nullish(), cleanupError: z.string().nullish(), resources: z.array(z.unknown()),
 });
 export type BuildTestContext = z.infer<typeof buildTestContextSchema>;
+/** What a frame runs on: live, or the build-test context Java answered for its workspace (NONE when Java has none). */
 export type AppExecutionContext = { kind: "live" } | {
   kind: "build-test"; contextId: string | null; workspaceId: string;
-  status: BuildTestContext["status"] | "NONE" | "UNAVAILABLE";
+  status: BuildTestContext["status"] | "NONE";
   expiresAt: number | null; sampleSummary: BuildTestContext["sampleSummary"] | null;
   sampleName: string; error: string | null;
 };
