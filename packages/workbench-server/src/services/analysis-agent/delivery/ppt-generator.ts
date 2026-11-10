@@ -41,11 +41,23 @@ function valueCell(value: unknown): PptCell {
   return {runs: [{text: typeof value === "object" && value !== null ? JSON.stringify(value) : String(value ?? ""), options: {}}]};
 }
 
+/** The 24pt title box of a slide holds one line of about this many Chinese characters. */
+const TITLE_LINE_CHARACTERS = 36;
+
+/** The first line of a question as a slide title: one line, cut with "…" where it is longer. */
+function questionTitle(question: string | undefined): string | undefined {
+  const line = question?.split("\n").map(text => text.trim()).find(Boolean);
+  if (!line) return undefined;
+  const characters = [...line];
+  return characters.length > TITLE_LINE_CHARACTERS ? `${characters.slice(0, TITLE_LINE_CHARACTERS).join("")}…` : line;
+}
+
 /**
  * Render a native data table, paginating rows manually (pptxgenjs autoPage underestimates CJK text height). A table from
- * an answer keeps what its page shows: each cell's formatting as runs, and each column's alignment.
+ * an answer keeps what its page shows: each cell's formatting as runs, and each column's alignment. The footer carries
+ * the deck's title, as on every slide.
  */
-function addDataTable(deck: pptxgen, sectionTitle: string, table: {columns: PptCell[]; rows: PptCell[][]}) {
+function addDataTable(deck: pptxgen, deckTitle: string, slideTitle: string, table: {columns: PptCell[]; rows: PptCell[][]}) {
   const cut = (cell: PptCell): PptCell => ({runs: cutRuns(cell.runs, 600, "…"), align: cell.align});
   const columns = table.columns.map(cut);
   const rows = table.rows.map(row => row.map(cut));
@@ -88,8 +100,8 @@ function addDataTable(deck: pptxgen, sectionTitle: string, table: {columns: PptC
 
   for (const chunk of chunks) {
     const slide = deck.addSlide("REPORT");
-    addSlideChrome(slide, deck.ShapeType, sectionTitle);
-    slide.addText(sectionTitle, {x: .6, y: .4, w: 12, h: .7, fontSize: 24, fontFace: "Microsoft YaHei", color: "172033", fit: "shrink", margin: 0});
+    addSlideChrome(slide, deck.ShapeType, deckTitle);
+    slide.addText(slideTitle, {x: .6, y: .4, w: 12, h: .7, fontSize: 24, fontFace: "Microsoft YaHei", color: "172033", fit: "shrink", margin: 0});
     slide.addTable([headerRow, ...chunk.map(row => row.map(cell => ({text: cell.runs, options: {valign: "top" as const, align: cell.align}})))], {
       x: .6,
       y: 1.3,
@@ -174,7 +186,7 @@ export async function buildPptDeck(
   const usedCharts = new Set<string>();
   for (const {section, nodes} of parsed) {
     const chart = htmlBlocks(nodes)[0];
-    if (chart) sectionCharts.set(section.id, chart);
+    if (chart) sectionCharts.set(section.id, chart.code);
   }
   const deck = new PptxGen();
   deck.layout = "LAYOUT_WIDE";
@@ -365,17 +377,19 @@ export async function buildPptDeck(
   }
 
 
-  // Append every source chart and paginate native tables, even if the summary omits its section.
+  // Append every source chart and paginate native tables, even if the summary omits its section. An answer's chart or
+  // table is titled by the heading above it, else by the first line of its question; a dataset's table keeps its title.
   for (const {section, nodes} of parsed) {
     signal?.throwIfAborted();
-    const sectionTitle = section.heading || firstHeading(nodes) || title;
-    const description = captionRuns(nodes, [(section.heading || "").trim(), sectionTitle, title]);
-    for (const html of htmlBlocks(nodes)) {
+    const blockTitle = (heading: string | undefined) => heading || questionTitle(section.heading) || title;
+    for (const {code: html, heading} of htmlBlocks(nodes)) {
       if (usedCharts.has(html)) continue;
       usedCharts.add(html);
+      const chartTitle = blockTitle(heading);
+      const description = captionRuns(nodes, [(section.heading || "").trim(), chartTitle, title]);
       const slide = deck.addSlide("REPORT");
       addSlideChrome(slide, deck.ShapeType, outline.title);
-      slide.addText(sectionTitle, {x: .6, y: .4, w: 12, h: .7, fontSize: 24, fontFace: "Microsoft YaHei", color: "172033", fit: "shrink", margin: 0});
+      slide.addText(chartTitle, {x: .6, y: .4, w: 12, h: .7, fontSize: 24, fontFace: "Microsoft YaHei", color: "172033", fit: "shrink", margin: 0});
       try { slide.addImage({ data: await renderChart(html), x: .8, y: 1.3, w: 11.6, h: 5.1 }); }
       catch (error) {
         logger.error("PPT chart render failed on appendix slide", {
@@ -389,13 +403,17 @@ export async function buildPptDeck(
       if (description.length) slide.addText(description, {x: .8, y: 6.5, w: 11.6, h: .45, fontSize: 10, fontFace: "Microsoft YaHei", color: "667085", fit: "shrink", margin: 0});
     }
     const tables = [
-      ...(section.tables || []).map(table => ({columns: table.columns.map(valueCell), rows: table.rows.map(row => row.map(valueCell))})),
-      ...pptTables(nodes),
+      ...(section.tables || []).map(table => ({
+        title: section.heading || firstHeading(nodes) || title,
+        columns: table.columns.map(valueCell),
+        rows: table.rows.map(row => row.map(valueCell)),
+      })),
+      ...pptTables(nodes).map(table => ({...table, title: blockTitle(table.heading)})),
     ];
     for (const table of tables) {
       if (!table.columns.length) continue;
       signal?.throwIfAborted();
-      addDataTable(deck, sectionTitle, table);
+      addDataTable(deck, outline.title, table.title, table);
     }
   }
   if (warnings.length) {

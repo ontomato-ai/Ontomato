@@ -32,6 +32,6 @@ describe("slides from an answer's Markdown", () => {
 
     expect(firstHeading(nodes)).toBe("销售概况");
     expect(runsText(captionRuns(nodes, ["销售概况"]))).toBe("本月销售额增长；第二行；华东 旧口径");
-    expect(htmlBlocks(nodes)).toEqual(['<div id="chart"></div>']);
+    expect(htmlBlocks(nodes)).toEqual([{ heading: "销售概况", code: '<div id="chart"></div>' }]);
   });
 });

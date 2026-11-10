@@ -76,9 +76,23 @@ function pptCell(cell: TableCellNode): PptCell {
   return { runs: pptRuns(cell.children), align: cell.align };
 }
 
-/** The text's tables, every cell with its runs and its column's alignment. */
-export function pptTables(nodes: readonly ParsedNode[]): { columns: PptCell[]; rows: PptCell[][] }[] {
-  return nodesOfType<TableNode>(nodes, "table").map(({ header, rows }) => ({
+/** The nodes of one type in reading order, each with the plain text of the last heading before it, if any. */
+function underHeadings<T extends ParsedNode>(nodes: readonly ParsedNode[], type: T["type"]) {
+  const found: { node: T; heading?: string }[] = [];
+  let heading: string | undefined;
+  const visit = (node: ParsedNode) => {
+    if (node.type === "heading") heading = runsText(pptRuns(childrenOf(node))).trim();
+    if (node.type === type) found.push({ node: node as T, heading });
+    childrenOf(node).forEach(visit);
+  };
+  nodes.forEach(visit);
+  return found;
+}
+
+/** The text's tables, each with the heading above it, and every cell with its runs and its column's alignment. */
+export function pptTables(nodes: readonly ParsedNode[]): { heading?: string; columns: PptCell[]; rows: PptCell[][] }[] {
+  return underHeadings<TableNode>(nodes, "table").map(({ node: { header, rows }, heading }) => ({
+    heading,
     columns: header.cells.map(pptCell),
     rows: rows.map((row) => row.cells.map(pptCell)),
   }));
@@ -90,11 +104,11 @@ export function firstHeading(nodes: readonly ParsedNode[]): string | undefined {
   return heading && runsText(pptRuns(heading.children)).trim();
 }
 
-/** The code of the text's ```html blocks, the charts an answer carries. */
-export function htmlBlocks(nodes: readonly ParsedNode[]): string[] {
-  return nodesOfType<CodeBlockNode>(nodes, "code_block")
-    .filter((block) => block.language === "html")
-    .map((block) => block.code.trim());
+/** The text's ```html blocks, the charts an answer carries: each block's code, with the heading above it. */
+export function htmlBlocks(nodes: readonly ParsedNode[]): { heading?: string; code: string }[] {
+  return underHeadings<CodeBlockNode>(nodes, "code_block")
+    .filter(({ node }) => node.language === "html")
+    .map(({ node, heading }) => ({ heading, code: node.code.trim() }));
 }
 
 /** A line of runs without the white space at its two ends. */
