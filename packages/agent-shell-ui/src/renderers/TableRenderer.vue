@@ -1,18 +1,18 @@
 <script setup lang="ts">
 import { computed, inject, ref, watch } from "vue";
-import { ChevronLeft, ChevronRight } from "lucide-vue-next";
+import { CodeEditor } from "@ontomato/foundation-ui/code";
+import { TablePreview, jsonTable, parseCsv, type TableData } from "@ontomato/foundation-ui/preview";
 import { artifactHeaderKey, shellContextKey } from "../context";
 import type { ArtifactRendererProps } from "../types";
 import type { QuerySubgraph } from "@ontomato/contracts/query-subgraph";
-import { jsonTable, parseCsv, type TableData } from "./table-data";
 import { useArtifactText } from "./useArtifactBlob";
 import SubgraphView from "./SubgraphView.vue";
 import SlotOutlet from "../components/SlotOutlet.vue";
 import DatasetSelectionButton from "../components/DatasetSelectionButton.vue";
 
 /**
- * .csv and .json datasets: paginated table; non-tabular JSON falls back to formatted text.
- * A dataset carrying its source analysis can switch to that graph.
+ * .csv and .json datasets in the shared table, a page at a time; JSON that is not a table shows as its formatted source.
+ * A dataset carrying its source analysis can switch to that graph, and its rows can be chosen to continue the analysis.
  */
 const props = defineProps<ArtifactRendererProps>();
 const shell = inject(shellContextKey)!;
@@ -20,15 +20,11 @@ const continueConversation = computed(() => props.continueConversation ?? shell.
 const headerControls = inject(artifactHeaderKey, ref<HTMLElement | null>(null));
 const labels = computed(() => shell.labels.value);
 const { text, error } = useArtifactText(props);
-const page = ref(1);
 const pageSize = computed(() => (props.presentation === "inline" ? 8 : 50));
 const selected = ref<number[]>([]);
 const continuing = ref(false);
 const continuationError = ref("");
-const offset = computed(() => (page.value - 1) * pageSize.value);
-function toggleRow(index: number) {
-  selected.value = selected.value.includes(index) ? selected.value.filter((item) => item !== index) : [...selected.value, index];
-}
+const selectRowLabel = (row: number) => labels.value.selectRow?.(row) ?? `Select row ${row}`;
 async function analyzeSelection(compare = false) {
   if (!continueConversation.value || !selected.value.length || continuing.value) return;
   continuing.value = true; continuationError.value = "";
@@ -64,20 +60,7 @@ const parsed = computed<{ table: TableData | null; raw: string | null; invalid: 
 });
 const view = ref<"data" | "lineage">("data");
 const table = computed(() => parsed.value.table);
-const pages = computed(() => Math.max(1, Math.ceil((table.value?.rows.length ?? 0) / pageSize.value)));
-const visibleRows = computed(() => {
-  const start = (page.value - 1) * pageSize.value;
-  return (table.value?.rows ?? []).slice(start, start + pageSize.value);
-});
-const NUMBER = /^-?\d[\d,]*(\.\d+)?%?$/;
-const numericColumns = computed(() =>
-  (table.value?.columns ?? []).map((_, column) => {
-    const values = (table.value?.rows ?? []).map((row) => row[column] ?? "").filter((value) => value !== "");
-    return values.length > 0 && values.every((value) => NUMBER.test(value));
-  }),
-);
 watch(() => props.artifact.id, () => {
-  page.value = 1;
   view.value = "data";
   selected.value = [];
   continuationError.value = "";
@@ -109,42 +92,21 @@ watch(() => props.artifact.id, () => {
         <DatasetSelectionButton :disabled="continuing" @click="selected = []">{{ labels.clearSelection ?? 'Clear selection' }}</DatasetSelectionButton>
       </div>
       <p v-if="continuationError" class="selection-error" role="alert">{{ continuationError }}</p>
-      <div class="table-scroll">
-        <table>
-          <thead>
-            <tr>
-              <th v-if="continueConversation" class="select-column" />
-              <th v-for="(column, index) in table.columns" :key="index" :class="{ num: numericColumns[index] }">
-                {{ column }}
-              </th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-for="(row, rowIndex) in visibleRows" :key="offset + rowIndex" :class="{ selected: selected.includes(offset + rowIndex) }">
-              <td v-if="continueConversation" class="select-column"><input type="checkbox" :checked="selected.includes(offset + rowIndex)" :disabled="continuing" :aria-label="labels.selectRow?.(offset + rowIndex + 1) ?? `Select row ${offset + rowIndex + 1}`" @change="toggleRow(offset + rowIndex)" /></td>
-              <td v-for="(_, index) in table.columns" :key="index" :class="{ num: numericColumns[index] }">
-                {{ row[index] ?? "" }}
-              </td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-      <div class="table-footer">
-        <span class="row-count">{{ labels.rows(table.rows.length) }}</span>
-        <div v-if="pages > 1" class="pager">
-          <button type="button" :disabled="page <= 1" :aria-label="labels.previousPage" @click="page--">
-            <ChevronLeft :size="15" />
-          </button>
-          <span>{{ page }} / {{ pages }}</span>
-          <button type="button" :disabled="page >= pages" :aria-label="labels.nextPage" @click="page++">
-            <ChevronRight :size="15" />
-          </button>
-        </div>
-      </div>
+      <TablePreview
+        :table="table"
+        :page-size="pageSize"
+        :max-height="presentation === 'inline' ? 360 : undefined"
+        :selected="continueConversation ? selected : undefined"
+        :select-row-label="selectRowLabel"
+        :selection-disabled="continuing"
+        @update:selected="selected = $event"
+      />
       </template>
     </template>
     <div v-else-if="parsed.raw !== null && parsed.raw.trim() === ''" class="state">{{ labels.emptyFile }}</div>
-    <pre v-else class="raw" :class="{ invalid: parsed.invalid }">{{ parsed.raw }}</pre>
+    <div v-else-if="parsed.raw !== null" class="raw">
+      <CodeEditor :model-value="parsed.raw" :language="parsed.invalid ? 'text' : 'json'" readonly :min-height="80" />
+    </div>
   </div>
 </template>
 
@@ -152,14 +114,7 @@ watch(() => props.artifact.id, () => {
 .table-renderer {
   min-width: 0;
 }
-.table-scroll {
-  overflow: auto;
-}
 .selection-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--spacing-sm); padding: var(--spacing-sm) var(--spacing-md); border-bottom: 1px solid var(--el-border-color-light); font-size: var(--text-xs); }
-.select-column input:focus-visible { outline: 2px solid var(--el-color-primary); outline-offset: 2px; }
-.select-column { width: 28px; }
-.select-column input { accent-color: var(--el-color-primary); cursor: pointer; }
-tr.selected td { background: var(--el-color-primary-light-9); }
 .selection-error { margin: 0; padding: var(--spacing-sm) var(--spacing-md); color: var(--el-color-danger); }
 .views {
   display: flex;
@@ -195,77 +150,6 @@ tr.selected td { background: var(--el-color-primary-light-9); }
   color: var(--el-text-color-primary);
   font-weight: 500;
 }
-.inline .table-scroll {
-  max-height: 360px;
-}
-table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: var(--text-sm, 13px);
-  font-variant-numeric: tabular-nums;
-}
-th,
-td {
-  padding: 8px 14px;
-  text-align: left;
-  white-space: nowrap;
-  border-bottom: 1px solid var(--el-border-color-light);
-}
-th {
-  position: sticky;
-  top: 0;
-  background: var(--el-fill-color-lighter);
-  color: var(--el-text-color-secondary);
-  font-weight: 600;
-  font-size: var(--text-xs, 11px);
-  letter-spacing: 0.03em;
-}
-td {
-  color: var(--el-text-color-regular);
-}
-tbody tr:hover td {
-  background: var(--el-fill-color-extra-light);
-}
-.num {
-  text-align: right;
-}
-.table-footer {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 8px 10px 8px 14px;
-}
-.row-count {
-  font-size: var(--text-xs, 11px);
-  color: var(--el-text-color-secondary);
-}
-.pager {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: var(--text-xs, 12px);
-  color: var(--el-text-color-secondary);
-  font-variant-numeric: tabular-nums;
-}
-.pager button {
-  display: grid;
-  place-items: center;
-  width: 28px;
-  height: 28px;
-  border: 1px solid var(--el-border-color);
-  border-radius: 8px;
-  background: var(--el-bg-color);
-  color: var(--el-text-color-regular);
-  cursor: pointer;
-}
-.pager button:disabled {
-  opacity: 0.4;
-  cursor: default;
-}
-.pager button:focus-visible {
-  outline: 2px solid var(--el-color-primary);
-}
 .state {
   padding: 18px;
   color: var(--el-text-color-secondary);
@@ -274,19 +158,8 @@ tbody tr:hover td {
 .state.error {
   color: var(--el-color-danger);
 }
-.raw {
-  margin: 0;
-  padding: 14px;
+.inline .raw {
   max-height: 420px;
   overflow: auto;
-  font-family: var(--font-mono, ui-monospace, monospace);
-  font-size: var(--text-xs, 12px);
-  line-height: 1.6;
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-  color: var(--el-text-color-regular);
-}
-.panel .raw {
-  max-height: none;
 }
 </style>

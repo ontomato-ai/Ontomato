@@ -241,8 +241,8 @@ export type RetainedWorkspaceManifest = WorkspaceManifest & ArtifactRetention;
 export type ArtifactType = "turn-workspace" | "autotest-run";
 
 /**
- * On-disk text format of diagnosis prompt artifacts (written by Node, read by
- * the observe page): the marker words inside `-----<marker> BEGIN/END-----`
+ * On-disk text format of diagnosis prompt artifacts (written by Node): the
+ * marker words inside `-----<marker> BEGIN/END-----`
  * for the seven semantic markers, and the recognition rule for turn titles.
  * Each edition installs its own pre-migration values, independent of UI
  * language; code reads values only by semantic key.

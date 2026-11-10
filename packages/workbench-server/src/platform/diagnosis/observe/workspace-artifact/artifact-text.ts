@@ -5,7 +5,7 @@
  */
 import type { PromptTranscriptFormat } from "@ontomato/contracts/observe";
 
-/** Prompt marker words and turn-title recognition rules belong to the shared contract PromptTranscriptFormat (the observe page reads the same object). */
+/** Prompt marker words and turn-title recognition rules belong to the shared contract PromptTranscriptFormat. */
 export interface WorkspaceArtifactText extends PromptTranscriptFormat {
   /** Prompt file-name fragment of a sub-query try session: `-<word><sub-query number>-try-<n>`. */
   subQueryFilenameWord: string;

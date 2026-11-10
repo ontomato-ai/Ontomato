@@ -1,7 +1,7 @@
 <template>
   <div class="ai-chart-data-overlay" :data-open="open ? '1' : '0'" @click.stop>
     <div class="ai-chart-data-inner">
-      <ChartDataTable :tabular="tabular" :max-rows="maxRows" />
+      <TablePreview :table="chartTable(tabular, maxRows)" height="100%" :empty-text="t('dashboard.noDataToDisplay')" />
       <div class="ai-chart-dsl-row">
         <el-button size="small" @click.stop="emit('view-dsl')">{{ t("common.viewDsl") }}</el-button>
       </div>
@@ -10,8 +10,9 @@
 </template>
 
 <script setup>
-import ChartDataTable from "./ChartDataTable.vue";
+import { TablePreview } from "@ontomato/foundation-ui/preview";
 import { useI18n } from "vue-i18n";
+import { chartTable } from "./utils/chartTabular";
 
 const { t } = useI18n();
 

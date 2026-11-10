@@ -1,12 +1,13 @@
 <script setup lang="ts">
-import { inject, ref, watch } from "vue";
+import { computed, inject, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { ElMessage } from "element-plus";
 import type { WorkspaceManifest, ArtifactFileTreeNode, ArtifactFilePreview } from "@ontomato/contracts/observe";
 import { diagnosisApi } from "../api";
 import { diagnosisActionKey } from "../ops-host";
+import { CodeEditor } from "@ontomato/foundation-ui/code";
+import { TablePreview, parseCsv } from "@ontomato/foundation-ui/preview";
 import { authHost } from "../../../utils/auth";
-import FilePreview from "./FilePreview.vue";
 import ArtifactRetentionButton from "./ArtifactRetentionButton.vue";
 const props = defineProps<{ apiPrefix: string; title?: string; question?: string; subtitle?: string; triggerBuildBody?: Record<string, unknown>; triggerBuildPath?: string; kept?: boolean; retentionLoading?: boolean }>();
 const emit = defineEmits<{ loaded: []; "toggle-retention": [] }>();
@@ -39,6 +40,27 @@ async function refresh() {
   catch (e) { ElMessage.error(e instanceof Error ? e.message : t("diagnosis.requestFailed")); }
   finally { refreshing.value = false; }
 }
+/**
+ * Evidence is read as it was written: CSV and TSV in the shared table, anything else as its source in the code editor,
+ * JSON formatted (one JSON Lines record after another) when it parses.
+ */
+const shown = computed(() => {
+  if (!selected.value || !preview.value) return null;
+  const name = selected.value.name.toLowerCase(), content = preview.value.content;
+  if (name.endsWith(".csv") || name.endsWith(".tsv")) return { kind: "table" as const, table: parseCsv(content, name.endsWith(".tsv") ? "\t" : ",") };
+  if (name.endsWith(".json") || name.endsWith(".jsonl")) return { kind: "source" as const, source: formattedJson(content, name.endsWith(".jsonl")), language: "json" as const };
+  return { kind: "source" as const, source: content, language: name.endsWith(".md") || name.endsWith(".markdown") ? "markdown" as const : "text" as const };
+});
+function formattedJson(content: string, lines: boolean) {
+  try {
+    return lines
+      ? content.split("\n").filter((line) => line.trim()).map((line) => JSON.stringify(JSON.parse(line), null, 2)).join("\n---\n")
+      : JSON.stringify(JSON.parse(content), null, 2);
+  } catch {
+    // A file cut at the preview limit, or not JSON after all, shows as it is.
+    return content;
+  }
+}
 function download() { window.open(diagnosisApi.artifactDownloadUrl(props.apiPrefix, authHost().getToken() || ""), "_blank", "noopener,noreferrer"); }
 watch(() => props.apiPrefix, load, { immediate: true });
 </script>
@@ -63,7 +85,10 @@ watch(() => props.apiPrefix, load, { immediate: true });
       </div>
       <div class="files">
         <el-tree :data="files" :props="{ label: 'name', children: 'children' }" node-key="path" @node-click="selectFile" />
-        <FilePreview v-if="selected && preview" :filename="selected.name" :file-path="selected.path" :content="preview.content" :truncated="preview.truncated" />
+        <template v-if="shown">
+          <TablePreview v-if="shown.kind === 'table'" :table="shown.table" :page-size="50" />
+          <CodeEditor v-else :model-value="shown.source" :language="shown.language" readonly :min-height="100" />
+        </template>
       </div>
     </template>
   </section>

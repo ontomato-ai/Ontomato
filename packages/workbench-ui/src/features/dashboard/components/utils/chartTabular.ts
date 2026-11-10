@@ -1,3 +1,5 @@
+import type { TableData } from "@ontomato/foundation-ui/preview";
+
 type TableRow = Record<string, unknown>;
 
 export function safeCloneOption<T>(option: T): T {
@@ -49,4 +51,13 @@ export function formatCellValue(val: unknown) {
   }
   if (typeof val === "object") return JSON.stringify(val);
   return String(val);
+}
+
+/** The table a card's data shows as: its headers and its first rows, each value written the dashboard's way. */
+export function chartTable(tabular: { headers: string[]; rows: unknown[][] } | null, maxRows: number): TableData {
+  if (!tabular) return { columns: [], rows: [] };
+  return {
+    columns: tabular.headers,
+    rows: tabular.rows.slice(0, maxRows).map((row) => tabular.headers.map((_, index) => formatCellValue(row[index]))),
+  };
 }

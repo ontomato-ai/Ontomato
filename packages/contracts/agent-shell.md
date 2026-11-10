@@ -85,9 +85,10 @@ Lookup is always host override → shell default → generic file card or step.
   answer is the text of messages without tool calls.
 - **Artifacts**: `outputs/` image syntax renders inline, link syntax renders a
   card that opens the right panel; an unclosed reference shows a placeholder.
-  Defaults by extension: `.chart.json` ECharts, `.csv`/`.json` paginated table
-  (record arrays, and dataset files headed by their column labels),
-  images, `.html` iframe with `sandbox="allow-scripts"` only, `.md` rendered like
+  Defaults by extension: `.chart.json` ECharts, `.csv`/`.json` in the foundation's
+  shared table, a page at a time (record arrays, and dataset files headed by their
+  column labels; other JSON as its formatted source), images, `.html` in the
+  foundation's HTML preview with `sandbox="allow-scripts"` only, `.md` rendered like
   a message. Anything else is a file card with download. Overrides
   (`ArtifactRendererOverride`) match a path pattern first, then the longest
   extension. Components are keyed by run and path.

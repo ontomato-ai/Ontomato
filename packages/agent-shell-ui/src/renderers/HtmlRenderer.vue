@@ -3,6 +3,7 @@ import type { ArtifactRendererProps } from "../types";
 import { useArtifactText } from "./useArtifactBlob";
 import { computed } from "vue";
 import { useChartTheme } from "@ontomato/foundation-ui/chart";
+import { HtmlPreview } from "@ontomato/foundation-ui/preview";
 import { themedChartHtml } from "@ontomato/contracts/chart-presentation";
 
 /**
@@ -23,16 +24,13 @@ const html = computed(() => {
 <template>
   <div class="html-artifact" :class="presentation">
     <div v-if="error" class="state">{{ error }}</div>
-    <iframe v-else-if="text !== null" :srcdoc="html" sandbox="allow-scripts" :title="title" referrerpolicy="no-referrer" />
+    <HtmlPreview v-else-if="text !== null" :html="html" sandbox="allow-scripts" referrerpolicy="no-referrer" :title="title" />
   </div>
 </template>
 
 <style scoped>
 .html-artifact iframe {
-  display: block;
-  width: 100%;
   height: 380px;
-  border: 0;
   background: #fff;
 }
 .panel iframe {
