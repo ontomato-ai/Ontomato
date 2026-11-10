@@ -13,7 +13,8 @@ const PRINTED_LIMIT = 160;
 const FULL = ts.TypeFormatFlags.NoTruncation;
 
 const cell = (text) => String(text ?? "").replace(/\s+/g, " ").replace(/\|/g, "\\|").trim();
-const kebab = (name) => name.replace(/([a-z0-9])([A-Z])/g, "$1-$2").toLowerCase();
+/** A name as an HTML template writes it, by Vue's own rule: `EChart` is `<e-chart>`, `choosePlaceholder` `choose-placeholder`. */
+const kebab = (name) => name.replace(/\B([A-Z])/g, "-$1").toLowerCase();
 
 function propType(prop) {
   if (prop.type.length <= PRINTED_LIMIT) return prop.type;

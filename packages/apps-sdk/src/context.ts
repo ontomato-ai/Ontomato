@@ -1,6 +1,7 @@
 import { computed, readonly, ref, type App, type Ref } from "vue";
 import { createI18n } from "vue-i18n";
 import { provideGlobalConfig } from "element-plus";
+import { defaultChartTheme } from "@ontomato/agent-shell-ui/chart-theme";
 import { installBrandTheme } from "@ontomato/design-tokens";
 import {
   APP_HOST_GLOBAL,
@@ -30,9 +31,19 @@ export interface AppContext {
   readonly locale: Readonly<Ref<string>>;
   /** The platform's theme; the page's `<html>` carries the `dark` class while it is dark. */
   readonly theme: Readonly<Ref<AppHostTheme>>;
+  /**
+   * The ECharts theme the platform's own charts are drawn in, for the current light or dark mode: the edition's brand
+   * colours for the series, its text and line colours. Pass it to `<e-chart :theme="chartTheme">`; the chart follows
+   * the platform when it changes.
+   */
+  readonly chartTheme: Readonly<Ref<Record<string, unknown>>>;
   /** Reads published MetricViews: `read({ id, parameters })` resolves to the MetricView's result. */
   readonly metricViews: MetricViewsClient;
-  /** Executes Actions: `execute({ id, parameters })` resolves to the execution result. */
+  /**
+   * Executes Actions. `form({ id })` reads an Action's form, its fields and their initial text, to draw with
+   * `<form-fields>`; `form({ id, values })` answers what the fields hold with the field errors, or with the typed
+   * parameters that `execute({ id, parameters })` takes. `execute` resolves to the execution result.
+   */
   readonly actions: ActionsClient;
   /** Opens a platform page in the shell, e.g. `navigate("/ontology/objects")`. */
   navigate(path: string): void;
@@ -121,6 +132,8 @@ export function createAppContext(): AppContext {
     user: snapshot.user,
     locale: readonly(locale),
     theme: readonly(theme),
+    // The brand stylesheet installed above holds both modes; read when used, the `dark` class has followed the theme.
+    chartTheme: computed(() => defaultChartTheme(theme.value === "dark")),
     metricViews,
     actions: createActionsClient(transport),
     navigate: (path) => host.navigate(path),

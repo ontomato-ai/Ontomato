@@ -9,11 +9,13 @@
     [v-cloak] { display: none; }
     body { margin: 0; background: var(--el-bg-color-page); color: var(--el-text-color-primary); }
     .page { display: grid; gap: 16px; padding: 16px; }
-    .chart { height: 280px; }
   </style>
 </head>
 <body>
-  <!-- The platform context, a form built from Element Plus and an ECharts chart that follows the platform's theme. -->
+  <!--
+    The platform context, a form built from Element Plus, a chart in the platform's chart theme and a Markdown text. The
+    chart and the text follow the platform's light and dark themes.
+  -->
   <div id="app" class="page" v-cloak>
     <el-card>
       <template #header>Platform context</template>
@@ -41,59 +43,53 @@
     </el-card>
 
     <el-card>
-      <template #header>ECharts (sample values)</template>
-      <sample-chart :theme="theme"></sample-chart>
+      <template #header>Chart (sample values)</template>
+      <e-chart :option="option" :theme="chartTheme" :height="280"></e-chart>
+    </el-card>
+
+    <el-card>
+      <template #header>Markdown</template>
+      <markdown-view :content="notes"></markdown-view>
     </el-card>
   </div>
 
   <script type="module">
-    import { createApp, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue";
+    import { createApp, reactive } from "vue";
     import ElementPlus, { ElMessage } from "element-plus";
-    import * as echarts from "echarts";
     import { createAppContext } from "@ontomato/sdk";
+    import { EChart } from "@ontomato/sdk/chart";
+    import { MarkdownView } from "@ontomato/sdk/markdown";
 
     const context = createAppContext();
 
-    // One chart: created after mount, created again for a new theme, resized with its element, disposed on unmount.
-    const SampleChart = {
-      props: { theme: { type: String, required: true } },
-      template: `<div ref="element" class="chart"></div>`,
-      setup(props) {
-        const element = ref(null);
-        let chart = null;
-        const option = {
-          tooltip: {},
-          xAxis: { type: "category", data: ["A", "B", "C", "D"] },
-          yAxis: { type: "value" },
-          series: [{ type: "bar", name: "Sample", data: [12, 20, 15, 8] }],
-        };
-        const draw = () => {
-          chart?.dispose();
-          chart = echarts.init(element.value, props.theme === "dark" ? "dark" : undefined);
-          chart.setOption({ backgroundColor: "transparent", ...option });
-        };
-        const resize = new ResizeObserver(() => chart?.resize());
-        onMounted(() => {
-          draw();
-          resize.observe(element.value);
-        });
-        watch(() => props.theme, draw);
-        onBeforeUnmount(() => {
-          resize.disconnect();
-          chart?.dispose();
-        });
-        return { element };
-      },
+    // The chart draws whatever option it is given; this one never changes, so it is a plain object.
+    const option = {
+      tooltip: { trigger: "axis" },
+      xAxis: { type: "category", data: ["A", "B", "C", "D"] },
+      yAxis: { type: "value" },
+      series: [{ type: "bar", name: "Sample", data: [12, 20, 15, 8] }],
     };
 
+    const notes = [
+      "## How this page is made",
+      "",
+      "- The chart is `<e-chart>`, drawn in `context.chartTheme`.",
+      "- This text is `<markdown-view>`.",
+      "",
+      "Switch the platform between its light and dark themes: both follow.",
+    ].join("\n");
+
     createApp({
-      components: { SampleChart },
+      components: { EChart, MarkdownView },
       setup() {
         const form = reactive({ name: "", date: null });
         return {
           user: context.user,
           locale: context.locale,
           theme: context.theme,
+          chartTheme: context.chartTheme,
+          option,
+          notes,
           form,
           submit: () => ElMessage.success(`Hello, ${form.name || "app"}`),
           openMetricViews: () => context.navigate("/ontology/assets/metrics"),

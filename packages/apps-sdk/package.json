@@ -13,6 +13,7 @@
     "@ontomato/agent-shell-ui": "workspace:*",
     "@ontomato/contracts": "workspace:*",
     "@ontomato/design-tokens": "workspace:*",
+    "@ontomato/foundation-ui": "workspace:*",
     "@ontomato/ontology-manager": "workspace:*",
     "@ontomato/workbench-ui": "workspace:*",
     "echarts": "6.0.0",
