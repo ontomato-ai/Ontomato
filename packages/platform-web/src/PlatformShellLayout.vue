@@ -31,6 +31,8 @@ const router = useRouter();
 
 const catalog = useApplicationCatalog();
 watch(() => host.navigation.value, () => { void catalog.refresh(); }, { immediate: true, deep: true });
+/** The rail's placeholders stand in for a list it does not have yet; a later read keeps the rows it shows. */
+const railLoading = computed(() => catalog.loading.value && catalog.applications.value.length === 0);
 const partition = computed(() => catalogPartition(catalog.applications.value, host.preferences.locale.value, props.renderers));
 
 const declarations = computed<PlatformAppDeclaration[]>(() =>
@@ -114,7 +116,7 @@ const blocked = computed(() => {
 <template>
   <PlatformLayout
     :apps="declarations"
-    :loading="catalog.loading.value"
+    :loading="railLoading"
     :shown-page="shownPage"
     :account="account"
     :preferences="preferences"
