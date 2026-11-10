@@ -19,7 +19,8 @@
     clears it. The chart is <e-chart> in the platform's chart theme, and the Action's form is <form-fields>: the data
     engine says which fields the Action has and turns what they hold into typed parameters.
     A real app names its MetricView, Action and object class in the page; this example asks for them, so it runs against
-    any domain. It shows MetricViews whose result is a list of row objects.
+    any domain. A result that is a list of row objects fills the table and the chart; any other result shows as read-only
+    JSON in <code-editor>.
   -->
   <div id="app" class="page" v-cloak>
     <el-card>
@@ -29,7 +30,7 @@
           <el-input v-model="metricViewId" placeholder="The id of a published MetricView"></el-input>
         </el-form-item>
         <el-form-item label="Parameters (JSON)">
-          <el-input v-model="parametersText" type="textarea" :rows="2"></el-input>
+          <code-editor v-model="parametersText" language="json" :min-height="60" style="width: 100%"></code-editor>
         </el-form-item>
         <el-form-item>
           <el-button type="primary" native-type="submit" :disabled="!metricViewId.trim()">Read</el-button>
@@ -40,10 +41,10 @@
     <metric-view-data v-if="binding" :metric-view-id="binding.id" :parameters="binding.parameters"
       v-slot="{ data, loading, error, reload }">
       <el-card>
-        <template #header>Rows</template>
+        <template #header>Result</template>
         <el-alert v-if="error" type="error" :title="error.message" :closable="false" show-icon></el-alert>
-        <el-alert v-else-if="data !== undefined && !Array.isArray(data)" type="warning" :closable="false" show-icon
-          title="This MetricView does not return a list of rows, which is what this example shows."></el-alert>
+        <code-editor v-else-if="data !== undefined && !Array.isArray(data)" :model-value="JSON.stringify(data, null, 2)"
+          language="json" readonly :min-height="120"></code-editor>
         <template v-else>
           <el-form inline>
             <el-form-item label="Object class">
@@ -114,6 +115,7 @@
     import { createAppContext } from "@ontomato/sdk";
     import { EChart } from "@ontomato/sdk/chart";
     import { FormFields, formFieldKey } from "@ontomato/sdk/form";
+    import { CodeEditor } from "@ontomato/sdk/code";
 
     const context = createAppContext();
     // The page's name as its reader sees it: with the selected row, it is what the platform's agent is told they look at.
@@ -151,7 +153,7 @@
     }
 
     createApp({
-      components: { RowsChart, FormFields },
+      components: { RowsChart, FormFields, CodeEditor },
       setup() {
         const metricViewId = ref("");
         const parametersText = ref("{}");

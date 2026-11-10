@@ -22,6 +22,8 @@ const ENTRIES = [
   { specifier: "@ontomato/sdk/chart", file: "chart.js", source: "src/entries/chart.ts" },
   { specifier: "@ontomato/sdk/markdown", file: "markdown.js", source: "src/entries/markdown.ts" },
   { specifier: "@ontomato/sdk/form", file: "form.js", source: "src/entries/form.ts" },
+  { specifier: "@ontomato/sdk/code", file: "code.js", source: "src/entries/code.ts" },
+  { specifier: "@ontomato/sdk/preview", file: "preview.js", source: "src/entries/preview.ts" },
   { specifier: "@ontomato/sdk/chat", file: "chat.js", source: "src/entries/chat.ts" },
 ];
 const STYLESHEET = "styles/sdk.css";

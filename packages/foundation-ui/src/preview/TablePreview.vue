@@ -12,7 +12,9 @@ import type { TableData } from "./table-data";
 defineOptions({ inheritAttrs: false });
 
 const props = defineProps<{
+  /** The columns' names and the rows of text cells, such as `parseCsv` reads from a CSV or TSV text. */
   table: TableData;
+  /** Rows per page: given, the rows come a page at a time with the total beside the pager; otherwise all at once. */
   pageSize?: number;
   /** Indices of the chosen rows in the whole table; rows can be chosen when given. */
   selected?: number[];
@@ -22,7 +24,10 @@ const props = defineProps<{
   selectionDisabled?: boolean;
 }>();
 
-const emit = defineEmits<{ "update:selected": [rows: number[]] }>();
+const emit = defineEmits<{
+  /** The chosen rows after the reader checks or clears one, by their indices in the whole table. */
+  "update:selected": [rows: number[]];
+}>();
 
 const page = ref(1);
 watch(

@@ -12,8 +12,9 @@
 </head>
 <body>
   <!--
-    The platform context, a form built from Element Plus, a chart in the platform's chart theme and a Markdown text. The
-    chart and the text follow the platform's light and dark themes.
+    The platform context, a form built from Element Plus, a chart in the platform's chart theme, a Markdown text, a CSV
+    text in the code editor previewed as a table, and an HTML document in a sandboxed frame. The chart, the text, the
+    editor and the table follow the platform's light and dark themes.
   -->
   <div id="app" class="page" v-cloak>
     <el-card>
@@ -50,14 +51,27 @@
       <template #header>Markdown</template>
       <markdown-view :content="notes"></markdown-view>
     </el-card>
+
+    <el-card>
+      <template #header>Code and table (edit the CSV: the table follows)</template>
+      <code-editor v-model="csv" language="text" :min-height="120"></code-editor>
+      <table-preview :table="table" :page-size="5" style="margin-top: 12px"></table-preview>
+    </el-card>
+
+    <el-card>
+      <template #header>HTML document</template>
+      <html-preview :html="report" sandbox="" title="Sample document" style="height: 120px"></html-preview>
+    </el-card>
   </div>
 
   <script type="module">
-    import { createApp, reactive } from "vue";
+    import { computed, createApp, reactive, ref } from "vue";
     import ElementPlus, { ElMessage } from "element-plus";
     import { createAppContext } from "@ontomato/sdk";
     import { EChart } from "@ontomato/sdk/chart";
     import { MarkdownView } from "@ontomato/sdk/markdown";
+    import { CodeEditor } from "@ontomato/sdk/code";
+    import { HtmlPreview, TablePreview, parseCsv } from "@ontomato/sdk/preview";
 
     const context = createAppContext();
 
@@ -78,10 +92,29 @@
       "Switch the platform between its light and dark themes: both follow.",
     ].join("\n");
 
+    // CSV as it is written: a quoted field may hold the delimiter.
+    const SAMPLE_CSV = [
+      "region,orders,cities",
+      'East,12,"Shanghai, Hangzhou"',
+      "North,20,Beijing",
+      "South,15,Guangzhou",
+      "West,8,Chengdu",
+    ].join("\n");
+
+    // A document of its own: with an empty sandbox its styles apply and nothing in it runs.
+    const report = [
+      "<!doctype html>",
+      '<body style="margin: 12px; font-family: sans-serif; background: #fff; color: #303133">',
+      "<h3>Sample document</h3>",
+      "<p>Shown in a frame, apart from the page.</p>",
+      "</body>",
+    ].join("\n");
+
     createApp({
-      components: { EChart, MarkdownView },
+      components: { EChart, MarkdownView, CodeEditor, TablePreview, HtmlPreview },
       setup() {
         const form = reactive({ name: "", date: null });
+        const csv = ref(SAMPLE_CSV);
         return {
           user: context.user,
           locale: context.locale,
@@ -89,6 +122,9 @@
           chartTheme: context.chartTheme,
           option,
           notes,
+          csv,
+          table: computed(() => parseCsv(csv.value)),
+          report,
           form,
           submit: () => ElMessage.success(`Hello, ${form.name || "app"}`),
           openMetricViews: () => context.navigate("/ontology/assets/metrics"),

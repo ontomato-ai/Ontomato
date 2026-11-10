@@ -4,9 +4,13 @@
  * referrer policy of its requests (the browser's default when not given). Size and frame come from the page's styles.
  */
 defineProps<{
+  /** The whole HTML document to show. */
   html: string;
+  /** The frame's sandbox tokens, such as `allow-scripts`; an empty string lets nothing in the document run. */
   sandbox: string;
+  /** The referrer policy of the document's requests. */
   referrerpolicy?: ReferrerPolicy;
+  /** The frame's accessible name. */
   title?: string;
 }>();
 </script>
