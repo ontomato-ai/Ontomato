@@ -1,18 +1,12 @@
 name: Checks
 
-# Changes to develop and main are checks, never publications: they run the
-# repository's own checks and touch no private resource. Pull requests into those
-# branches run the same checks, so a feature branch is verified before it lands.
-#
-# Only checks that need nothing beyond a checkout run here. Suites that need a
-# real database, real processes or root are on demand: `pnpm test:integration`,
-# `pnpm test:sandbox` and the Maven contract group below.
-
+# Branch image workflows call these checks once before publishing. Pull requests
+# and manual validation run the same source checks without publishing images.
 on:
-  push:
-    branches: ["develop"]
+  workflow_call:
+  workflow_dispatch:
   pull_request:
-    branches: ["develop", "main"]
+    branches: ["develop", "stable", "main"]
 
 permissions:
   contents: read
