@@ -1,15 +1,16 @@
 <script setup lang="ts">
 import { useI18n } from "vue-i18n";
-import { Lock, RefreshCw } from "lucide-vue-next";
+import { Lock, RefreshCw, Upload } from "lucide-vue-next";
 import { PANEL_TABS, shortCommit, type PanelTab } from "../panel";
 
 /**
- * The workspace page's header row, beside the shell's expand and close buttons: the four views, then the open view's
- * own tools as icons. Their explanations (the commit the preview runs, that files are read only) are in their tooltips,
- * so the row keeps room for the views and the shell's buttons at the side panel's width.
+ * The workspace page's header row, beside the shell's expand and close buttons: the four views, the open view's own tools
+ * as icons, then publishing. The tools' explanations (the commit the preview runs, that files are read only) are in their
+ * tooltips, and publishing keeps only its icon on a narrow page, so the row keeps room for the views and the shell's
+ * buttons at the side panel's width.
  */
 defineProps<{ tab: PanelTab; headCommit: string | null }>();
-const emit = defineEmits<{ "update:tab": [tab: PanelTab]; refreshPreview: [] }>();
+const emit = defineEmits<{ "update:tab": [tab: PanelTab]; refreshPreview: []; publish: [] }>();
 const { t } = useI18n();
 </script>
 
@@ -44,6 +45,16 @@ const { t } = useI18n();
       <el-tooltip v-else-if="tab === 'files'" :content="t('appBuilder.readOnly')" placement="bottom-end" :show-after="200">
         <span class="tool-icon" tabindex="0" :aria-label="t('appBuilder.readOnly')"><Lock :size="14" /></span>
       </el-tooltip>
+      <el-button
+        type="primary"
+        size="small"
+        class="publish"
+        :title="t('appBuilder.publish')"
+        :aria-label="t('appBuilder.publish')"
+        @click="emit('publish')"
+      >
+        <Upload :size="14" aria-hidden="true" /><span class="publish-label">{{ t("appBuilder.publish") }}</span>
+      </el-button>
       <span class="tool-separator" aria-hidden="true" />
     </div>
   </div>
@@ -140,8 +151,15 @@ const { t } = useI18n();
   flex-shrink: 0;
   background: var(--el-border-color);
 }
+.publish {
+  margin-left: 4px;
+}
+.publish-label {
+  margin-left: 4px;
+}
 @container page (max-width: 520px) {
-  .panel-tab > svg {
+  .panel-tab > svg,
+  .publish-label {
     display: none;
   }
 }
