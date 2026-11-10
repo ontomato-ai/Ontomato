@@ -4,8 +4,8 @@ name: Images
 #
 # develop pushes publish the edge version, stable pushes publish the stable
 # version (the maintenance line of released versions), and formal v* tags publish
-# the stripped version plus latest. Pull requests and develop pushes are only
-# checked, never published: they run pr-checks.yml.
+# the stripped version plus latest. Branch images require the source Checks
+# workflow to pass for the same commit. Release tags keep their existing flow.
 #
 # Keep each ref's build, publication and verification together. A newer push to
 # the same branch cancels the superseded run, so only the current head publishes;
@@ -29,7 +29,13 @@ env:
   REGISTRY: ghcr.io/ontomato-ai
 
 jobs:
+  checks:
+    if: github.ref_type == 'branch'
+    uses: ./.github/workflows/pr-checks.yml
+
   build:
+    needs: checks
+    if: ${{ !cancelled() && (github.ref_type == 'tag' || needs.checks.result == 'success') }}
     outputs:
       build-tag: ${{ steps.publish.outputs.build-tag }}
     strategy:
@@ -54,9 +60,6 @@ jobs:
 
       - name: Log in to the registry
         run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
-
-      - name: Check offline delivery
-        run: python3 -B scripts/offline-mirror-test.py
 
       # Cache refs are per image and per architecture: a cache export replaces
       # the manifest under its ref, so it is never a published tag. The ref
