@@ -1,5 +1,6 @@
 package io.ontomato.dataengine.service.impl;
 
+import io.ontomato.dataengine.service.ExecutionTarget;
 import io.ontomato.dataengine.service.IdentityService;
 import io.ontomato.dataengine.service.MetricViewBindings;
 import io.ontomato.dataengine.service.scheduling.OntologyScheduleReferences;
@@ -583,8 +584,12 @@ public class ActionServiceImpl implements ActionService {
 
   @Override
 	public PythonExecuteResult execute(String id, JSONObject param, String lang, User user, UserDataPermission permission, int timeoutMinutes) throws Exception {
+        return execute(id,param,lang,user,permission,timeoutMinutes,ExecutionTarget.LIVE);
+    }
+    @Override
+    public PythonExecuteResult execute(String id, JSONObject param, String lang, User user, UserDataPermission permission, int timeoutMinutes, ExecutionTarget target) throws Exception {
         Function function = MetricViewBindings.executionWriteFunction(executable(id, lang, user).getFunction(), param);
-		Object[] o = abcProgramService.execute(UUID.randomUUID().toString(), function, user.getId(), permission, ServiceConst.NOT_SANDBOX, lang, timeoutMinutes, user.getDomainId());
+		Object[] o = abcProgramService.execute(UUID.randomUUID().toString(), function, user.getId(), permission, target.testing()?target.sandboxId():ServiceConst.NOT_SANDBOX, lang, timeoutMinutes, user.getDomainId(), null, target);
 		PythonExecuteResult result = (PythonExecuteResult)o[1];
         if (result.getError() != null && !result.getError().isBlank()) { result.setResult(null); }
         else result.setResult(o[0] == null ? "{\"completed\":true}" : JSON.toJSONString(JSONObject.of("answer", o[0]), Feature.WriteMapNullValue));

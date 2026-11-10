@@ -664,6 +664,9 @@ public class PostgreAdapter implements DataAdapter {
 	public void validateClassNameFormat(String className) throws Exception {
 	}
 
+    @Override
+    public boolean supportsSandbox() { return true; }
+
 	@Override
 	public void createNamespace(String namespace) {
 		
@@ -682,7 +685,7 @@ public class PostgreAdapter implements DataAdapter {
 				}
 			}
 		} catch (Exception e) {
-			log.error(e.getMessage(), e);
+			throw new IllegalStateException("Sandbox structure operation failed", e);
 		}
 	}
 
@@ -699,7 +702,7 @@ public class PostgreAdapter implements DataAdapter {
 				}
 			}
 		} catch (Exception e) {
-			log.error(e.getMessage(), e);
+			throw new IllegalStateException("Sandbox structure operation failed", e);
 		}
 	}
 
@@ -714,7 +717,8 @@ public class PostgreAdapter implements DataAdapter {
 					if (attr.get("enable") == null || (Boolean)attr.get("enable")) {
 						String name = (String) attr.get("name");
 						String type = (String) attr.get("type");
-						if (name != null && isSupportedType(type)) {
+						if (name == null || !isSupportedType(type)) throw new IllegalArgumentException("Unsupported sandbox attribute: " + name + " (" + type + ")");
+                        if (name != null && isSupportedType(type)) {
 							String ty = "";
 							if ("varchar".equals(type)) {
 								ty = "varchar(200)";
@@ -748,7 +752,7 @@ public class PostgreAdapter implements DataAdapter {
 			sql.append(" );");
 			executeSql(sql.toString());
 		} catch (Exception e) {
-			log.error(e.getMessage(), e);
+			throw new IllegalStateException("Sandbox structure operation failed", e);
 		}
 	}
 	

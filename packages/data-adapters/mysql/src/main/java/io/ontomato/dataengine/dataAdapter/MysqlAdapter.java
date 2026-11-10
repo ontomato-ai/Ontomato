@@ -571,6 +571,9 @@ public class MysqlAdapter implements DataAdapter {
 		
 	}
 
+    @Override
+    public boolean supportsSandbox() { return true; }
+
 	@Override
 	public void createNamespace(String namespace) {
 	}
@@ -588,7 +591,7 @@ public class MysqlAdapter implements DataAdapter {
 				}
 			}
 		} catch (Exception e) {
-			log.error(e.getMessage(), e);
+			throw new IllegalStateException("Sandbox structure operation failed", e);
 		}
 	}
 
@@ -605,7 +608,7 @@ public class MysqlAdapter implements DataAdapter {
 				}
 			}
 		} catch (Exception e) {
-			log.error(e.getMessage(), e);
+			throw new IllegalStateException("Sandbox structure operation failed", e);
 		}
 	}
 
@@ -654,7 +657,7 @@ public class MysqlAdapter implements DataAdapter {
 			sql.append(" );");
 			executeUpdate(sql.toString());
 		} catch (Exception e) {
-			log.error(e.getMessage(), e);
+			throw new IllegalStateException("Sandbox structure operation failed", e);
 		}
 	}
 

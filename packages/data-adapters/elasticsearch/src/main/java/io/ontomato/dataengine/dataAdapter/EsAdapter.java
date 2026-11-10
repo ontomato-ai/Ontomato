@@ -172,6 +172,9 @@ public class EsAdapter implements DataAdapter {
 	// Namespace lifecycle
 	// ----------------------------------------------------------------------------------
 
+    @Override
+    public boolean supportsSandbox() { return true; }
+
 	@Override
 	public void createNamespace(String namespace) {
 		// Indices are created per class; a namespace is only an index-name prefix.
@@ -186,7 +189,7 @@ public class EsAdapter implements DataAdapter {
 					http().post("/" + index + "/_delete_by_query", body, Map.of("refresh", "true"));
 				}
 			} catch (Exception e) {
-			log.error(e.getMessage(), e);
+			throw new IllegalStateException("Sandbox structure operation failed", e);
 		}
 	}
 
@@ -197,7 +200,7 @@ public class EsAdapter implements DataAdapter {
 				http().delete("/" + index);
 			}
 		} catch (Exception e) {
-			log.error(e.getMessage(), e);
+			throw new IllegalStateException("Sandbox structure operation failed", e);
 		}
 	}
 
@@ -249,7 +252,7 @@ public class EsAdapter implements DataAdapter {
 				}
 			}
 		} catch (Exception e) {
-			log.error(e.getMessage(), e);
+			throw new IllegalStateException("Sandbox structure operation failed", e);
 		}
 	}
 

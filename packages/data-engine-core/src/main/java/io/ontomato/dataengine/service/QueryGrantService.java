@@ -45,8 +45,29 @@ public class QueryGrantService {
         "CREATE TABLE IF NOT EXISTS query_runtime_grants (id varchar(64) PRIMARY KEY, run_id"
             + " varchar(128) NOT NULL, domain_id varchar(128) NOT NULL, expires_at bigint NOT NULL,"
             + " revoked boolean NOT NULL DEFAULT false, query_error text)");
+    jdbc.execute("ALTER TABLE query_runtime_grants ADD COLUMN IF NOT EXISTS context_id text");
     jdbc.execute("ALTER TABLE query_runtime_grants ADD COLUMN IF NOT EXISTS package_input jsonb");
     jdbc.execute("ALTER TABLE query_runtime_grants ADD COLUMN IF NOT EXISTS package_partial jsonb");
+  }
+
+  @org.springframework.beans.factory.annotation.Autowired @org.springframework.context.annotation.Lazy
+  private BuildTestContextService contexts;
+
+  public java.util.List<String> revokeContext(String contextId) {
+    var executions=jdbc.queryForList("SELECT run_id FROM query_runtime_grants WHERE context_id=?",String.class,contextId);
+    jdbc.update("UPDATE query_runtime_grants SET revoked=true WHERE context_id=?",contextId);
+    return executions;
+  }
+  public String issueExecution(PythonAuthority authority,String execution,long expiresAt) {
+    var target=authority.target();
+    JSONObject binding=new JSONObject();
+    if(target.testing()) {
+      var current=contexts.require(target.contextId(),authority.userId(),authority.domainId());
+      current.requireClasses(authority.classNames());
+      expiresAt=Math.min(expiresAt,current.expiresAt());
+      binding.put("contextId",current.contextId());
+    }
+    return issue(authority.userId(),authority.domainId(),authority.purpose(),execution,expiresAt,authority.classNames(),authority.sandboxId(),binding);
   }
 
   public void requireWorkbench(HttpServletRequest request) {
@@ -101,6 +122,8 @@ public class QueryGrantService {
           "Query grant requires a valid subject, domain, run and deadline");
     if (!List.of("retrieval-exploration", "user-read", "package-read", "sandbox-write", "ontology-generation", "knowledge-governance")
         .contains(purpose)) throw new IllegalArgumentException("Invalid grant purpose");
+    if(binding!=null && binding.getString("contextId")!=null && (sandboxId==null || classNames==null || classNames.isEmpty()))
+      throw new IllegalArgumentException("BUILD_TEST_FORBIDDEN: test grant requires target and finite classes");
     String id = UUID.randomUUID().toString();
     JSONObject claims = new JSONObject();
     claims.put("iss", "ontology");
@@ -127,6 +150,8 @@ public class QueryGrantService {
         runId,
         domainId,
         expiresAt);
+    if(binding!=null && binding.getString("contextId")!=null)
+      jdbc.update("UPDATE query_runtime_grants SET context_id=? WHERE id=?",binding.getString("contextId"),id);
     return token;
   }
 
@@ -151,6 +176,11 @@ public class QueryGrantService {
               claims.getString("domainId"),
               System.currentTimeMillis());
       if (count == null || count != 1) throw new IllegalArgumentException();
+      if(claims.getString("contextId")!=null) {
+        var target=contexts.require(claims.getString("contextId"),claims.getString("userId"),claims.getString("domainId"));
+        target.requireClasses(claims.getList("classNames",String.class));
+        if(!target.sandboxId().equals(claims.getString("sandboxId"))) throw new IllegalArgumentException();
+      }
       if (!allows(claims, runId, path))
         throw new ResponseStatusException(
             HttpStatus.FORBIDDEN, "This grant cannot call this operation");
@@ -202,8 +232,14 @@ public class QueryGrantService {
     var input = authority.packageInput();
     QueryPackage.validate(input.getJSONObject("package"));
     String digest = OntologyQueryService.digest(input);
+    var binding=JSONObject.of("packageInputSha256",digest);
+    if(authority.target().testing()) {
+      var target=contexts.require(authority.target().contextId(),authority.userId(),authority.domainId());
+      target.requireClasses(authority.classNames());
+      binding.put("contextId",target.contextId()); expiresAt=Math.min(expiresAt,target.expiresAt());
+    }
     String token = issue(authority.userId(), authority.domainId(), "package-read", execution,
-        expiresAt, authority.classNames(), null, JSONObject.of("packageInputSha256", digest));
+        expiresAt, authority.classNames(), authority.sandboxId(), binding);
     String grantId = JSON.parseObject(Base64.getUrlDecoder().decode(token.split("\\.")[1])).getString("jti");
     jdbc.update("UPDATE query_runtime_grants SET package_input=?::jsonb WHERE id=? AND run_id=? AND domain_id=? AND revoked=false",
         JSON.toJSONString(input, com.alibaba.fastjson2.JSONWriter.Feature.WriteMapNullValue), grantId, execution, authority.domainId());

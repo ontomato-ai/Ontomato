@@ -435,12 +435,12 @@ public class VectorResourceDao extends BaseDao {
 	public void dropNamespace(String tmpNamespace, String domainId) {
 		String prefix = generateIndexNamePrefix(tmpNamespace);
 		for (String tableName : listVectorTables(prefix, domainId)) {
-			jdbcTemplate.execute("DROP TABLE IF EXISTS " + quotedTable(tableName));
 			deleteFilesInDirectory(tableName);
 			File dir = new File("conf/" + dirName + "/" + tableName);
 			if (dir.isDirectory() && !dir.delete()) {
-				log.warn("Failed to delete vector resource directory: {}", dir.getAbsolutePath());
+				throw new IllegalStateException("Failed to delete vector resource directory: " + dir.getAbsolutePath());
 			}
+            jdbcTemplate.execute("DROP TABLE IF EXISTS " + quotedTable(tableName));
 		}
 	}
 
@@ -465,11 +465,11 @@ public class VectorResourceDao extends BaseDao {
 		}
 		File[] files = dir.listFiles();
 		if (files == null) {
-			return;
+            throw new IllegalStateException("Cannot list vector resource directory: " + dir);
 		}
 		for (File file : files) {
 			if (file.isFile() && !file.delete()) {
-				log.warn("Failed to delete vector resource file: {}", file.getAbsolutePath());
+				throw new IllegalStateException("Failed to delete vector resource file: " + file.getAbsolutePath());
 			}
 		}
 	}

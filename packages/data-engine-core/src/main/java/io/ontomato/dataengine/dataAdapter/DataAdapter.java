@@ -60,7 +60,12 @@ public interface DataAdapter {
 	/** Refuse an attribute this data source cannot key a class's objects by. */
 	public void validatePrimaryKeyName(String attrName) throws Exception;
 	
-	public void createNamespace(String namespace);
+	default boolean supportsSandbox() { return false; }
+    default boolean supportsSandbox(java.util.List<String> classes) { return supportsSandbox(); }
+    default void createNamespace(String namespace, java.util.List<String> classes) { createNamespace(namespace); }
+    default void dropNamespace(String namespace, java.util.List<String> classes) { dropNamespace(namespace); }
+
+    public void createNamespace(String namespace);
 	
 	public void truncateNamespace(String namespace);
 	

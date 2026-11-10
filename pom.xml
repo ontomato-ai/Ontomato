@@ -174,6 +174,7 @@
                                 <include>**/DBSchemaUtilParameterTypeTest.java</include>
                                 <include>**/RuntimePythonClientTest.java</include>
                                 <include>**/AgentWritePostgresContractTest.java</include>
+                                <include>**/BuildTestPostgresIntegrationTest.java</include>
                                 <include>**/PostgreWriteWhereTest.java</include>
                                 <include>**/MysqlWriteWhereTest.java</include>
                                 <include>**/SqlServerWriteWhereTest.java</include>

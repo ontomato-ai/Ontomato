@@ -55,6 +55,13 @@ public class ABCProgramServiceImpl implements ABCProgramService {
   @Override
   public Object[] execute(String id, Function function, String user, UserDataPermission permission,
       String sandbox, String lang, int timeout, String domain, UUID executionId) throws Exception {
+    return execute(id,function,user,permission,sandbox,lang,timeout,domain,executionId,ExecutionTarget.LIVE);
+  }
+  @Override
+  public Object[] execute(String id, Function function, String user, UserDataPermission permission,
+      String sandbox, String lang, int timeout, String domain, UUID executionId, ExecutionTarget target) throws Exception {
+    if(target.testing() && !Function.OPERATION_READ.equals(function.getOperation()))
+      target.requireClasses(function.getReturnDef()==null?null:function.getReturnDef().getClassNames());
     if (!domain.equals(function.getDomainId())) throw new IllegalArgumentException("Function is outside the current domain");
     FunctionDao.requireSupported(function, lang);
     var parameters = MetricViewBindings.values(function);
@@ -62,9 +69,10 @@ public class ABCProgramServiceImpl implements ABCProgramService {
     if (read && function.getReturnDef() == null) throw new IllegalArgumentException("Stored program has no source declaration");
     var graph = read ? sourceAnalysis(function.getReturnDef().getSourceAnalysis(), function.getReturnDef().getOutKeyRefs()) : null;
     if (read && function.getQueryPackage() != null)
-      return executePackage(id, function.getQueryPackage(), parameters, graph, user, permission, lang, timeout, domain);
+      return executePackage(id, function.getQueryPackage(), parameters, graph, user, permission, lang, timeout, domain, target);
     var authority = read ? PythonAuthority.read(user, domain) : PythonAuthority.write(user, domain, sandbox)
         .withClasses(function.getReturnDef() == null ? null : function.getReturnDef().getClassNames());
+    authority=authority.withTarget(target);
     if (executionId != null) authority = authority.forExecution(executionId.toString());
     PythonExecuteResult result;
     try {
@@ -79,7 +87,11 @@ public class ABCProgramServiceImpl implements ABCProgramService {
 
   private Object[] executePackage(String id, JSONObject bundle, JSONObject values, JSONObject graph, String user,
       UserDataPermission permission, String lang, int timeout, String domain) throws Exception {
-    var access = new QueryAccessService.Access(new QueryAccessService.GrantUser(user, domain), permission, null, null, null);
+    return executePackage(id,bundle,values,graph,user,permission,lang,timeout,domain,ExecutionTarget.LIVE);
+  }
+  private Object[] executePackage(String id, JSONObject bundle, JSONObject values, JSONObject graph, String user,
+      UserDataPermission permission, String lang, int timeout, String domain, ExecutionTarget target) throws Exception {
+    var access = new QueryAccessService.Access(new QueryAccessService.GrantUser(user, domain), permission, null, null, null).withTarget(target);
     var result = QueryPackageExecution.execute(id, bundle, values, QueryPackage.labels(graph), access,
         lang, timeout, ontology, pythonExecuteService);
     return new Object[]{result.rows(), result.execution()};

@@ -5,6 +5,12 @@ import java.util.Map;
 import com.alibaba.fastjson2.JSONArray;
 
 public interface SandboxService {
+    void createSampleStructure(String sandbox, com.alibaba.fastjson2.JSONObject sample, String domain);
+    void dropSampleStructure(String sandbox, java.util.List<String> classes, String domain);
+
+    com.alibaba.fastjson2.JSONObject validateSample(com.alibaba.fastjson2.JSONObject sample, Map<String, byte[]> attachments, String domainId);
+    void loadSample(String sandboxId, com.alibaba.fastjson2.JSONObject sample, Map<String, byte[]> attachments, String domainId) throws Exception;
+
 	
 	public void createNamespace(String tmpNamespace, String domainId);
 

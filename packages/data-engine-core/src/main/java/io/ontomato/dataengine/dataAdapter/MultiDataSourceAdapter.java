@@ -327,6 +327,22 @@ public class MultiDataSourceAdapter implements DataAdapter {
 		}
 	}
 
+    private java.util.List<DataAdapter> sandboxSources(java.util.List<String> classes) {
+      return classes.stream().map(this::configSourceOfClass).distinct().map(this::delegate).toList();
+    }
+    @Override public boolean supportsSandbox() {
+      return definition.getDataSources().stream().allMatch(source -> delegate(source.getId()).supportsSandbox());
+    }
+    @Override public boolean supportsSandbox(java.util.List<String> classes) {
+      return sandboxSources(classes).stream().allMatch(DataAdapter::supportsSandbox);
+    }
+    @Override public void createNamespace(String namespace, java.util.List<String> classes) {
+      sandboxSources(classes).forEach(adapter -> adapter.createNamespace(namespace));
+    }
+    @Override public void dropNamespace(String namespace, java.util.List<String> classes) {
+      sandboxSources(classes).forEach(adapter -> adapter.dropNamespace(namespace));
+    }
+
 	@Override
 	public void createNamespace(String namespace) {
 		fanOut("createNamespace", adapter -> adapter.createNamespace(namespace));

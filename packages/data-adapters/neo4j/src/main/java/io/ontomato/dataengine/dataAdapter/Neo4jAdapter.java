@@ -695,6 +695,9 @@ public class Neo4jAdapter implements DataAdapter {
 	public void validateClassNameFormat(String className) throws Exception {
 	}
 
+    @Override
+    public boolean supportsSandbox() { return true; }
+
 	@Override
 	public void createNamespace(String namespace) {
 	}
@@ -709,7 +712,7 @@ public class Neo4jAdapter implements DataAdapter {
 					+ ") detach delete n";
 			executeWrite(cypher);
 		} catch (Exception e) {
-			log.error(e.getMessage(), e);
+			throw new IllegalStateException("Sandbox structure operation failed", e);
 		}
 	}
 

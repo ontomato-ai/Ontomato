@@ -80,6 +80,7 @@ class OntologyGenerationContractTest {
     python = mock(PythonExecuteService.class);
     identity = mock(IdentityService.class);
     sandboxService = mock(SandboxService.class);
+    when(sandboxService.validateSample(any(),any(),anyString())).thenAnswer(call->call.getArgument(0));
     when(python.execute(anyString(), anyString(), anyInt(), anyString(), any(), any(), any()))
         .thenAnswer(
             call -> {

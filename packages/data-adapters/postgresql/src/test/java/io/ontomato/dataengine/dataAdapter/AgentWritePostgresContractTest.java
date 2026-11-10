@@ -113,7 +113,7 @@ class AgentWritePostgresContractTest {
       Files.copy(Path.of("../../data-engine-core/src/main/resources/python/query_runtime.py"), work.resolve("query_runtime.py"));
       Files.writeString(work.resolve("parameters.json"), "{\"id\":\"contract-person-1\",\"age\":99}");
       String endpoint = "http://127.0.0.1:" + server.getAddress().getPort();
-      python(endpoint, "from query_runtime import insert\ninsert('contract_person', " + fixture("objects.json") + ")");
+      python(endpoint, "from query_runtime import insert\ninsert('contract_person', " + JSON.parseObject(fixture("sample.json")).getJSONArray("objDatas").getJSONObject(0).getJSONArray("rows").toJSONString() + ")");
       for (String operation : List.of("update", "delete")) {
         python(endpoint, "from query_runtime import " + operation + "\ntry:\n    " + operation + "('contract_person', " + (operation.equals("update") ? "{'age':99}, " : "") + fixture("invalid-where.json").strip() + ")\nexcept RuntimeError as e:\n    assert 'where' in str(e), str(e)\nelse:\n    raise AssertionError('invalid where succeeded')");
         assertEquals(3, jdbc.queryForObject("SELECT count(*) FROM contract_person", Integer.class));
@@ -123,7 +123,7 @@ class AgentWritePostgresContractTest {
       assertEquals(99, jdbc.queryForObject("SELECT age FROM contract_person WHERE id='contract-person-1'", Integer.class));
       python(endpoint, "from query_runtime import delete\ndelete('contract_person', " + fixture("valid-where.json") + ")");
       assertEquals(2, jdbc.queryForObject("SELECT count(*) FROM contract_person", Integer.class));
-      python(endpoint, "from query_runtime import insert\ninsert('contract_person', [" + JSON.parseArray(fixture("objects.json")).getJSONObject(0) + "])");
+      python(endpoint, "from query_runtime import insert\ninsert('contract_person', [" + JSON.parseArray(JSON.parseObject(fixture("sample.json")).getJSONArray("objDatas").getJSONObject(0).getJSONArray("rows").toJSONString()).getJSONObject(0) + "])");
       assertEquals(3, jdbc.queryForObject("SELECT count(*) FROM contract_person", Integer.class));
       assertEquals(21, jdbc.queryForObject("SELECT age FROM contract_person WHERE id='contract-person-1'", Integer.class));
     } finally {

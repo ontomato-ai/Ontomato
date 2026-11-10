@@ -46,14 +46,7 @@ public class PythonExecuteServiceImpl implements PythonExecuteService {
                 ? null
                 : authority.packageInput() != null
                 ? grants.issuePackage(authority, id, started + timeout)
-                : grants.issue(
-                    authority.userId(),
-                    authority.domainId(),
-                    authority.purpose(),
-                    id,
-                    started + timeout,
-                    authority.classNames(),
-                    authority.sandboxId());
+                : grants.issueExecution(authority, id, started + timeout);
     List<Map<String, String>> files = new ArrayList<>();
     files.add(Map.of("path", "program.py", "content", code));
     files.add(Map.of("path", "query_runtime.py", "content", runtime.pythonHelper()));

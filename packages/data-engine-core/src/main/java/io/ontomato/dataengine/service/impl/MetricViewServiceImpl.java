@@ -1,5 +1,6 @@
 package io.ontomato.dataengine.service.impl;
 
+import io.ontomato.dataengine.service.ExecutionTarget;
 import io.ontomato.dataengine.service.QueryPackage;
 
 import com.alibaba.fastjson2.JSON;
@@ -332,8 +333,12 @@ public class MetricViewServiceImpl implements MetricViewService {
 
   @Override
 	public MetricViewContent test(MetricView metricView, String lang, User user, UserDataPermission permission, int timeoutMinutes) throws Exception {
+        return test(metricView,lang,user,permission,timeoutMinutes,ExecutionTarget.LIVE);
+    }
+    @Override
+    public MetricViewContent test(MetricView metricView,String lang,User user,UserDataPermission permission,int timeoutMinutes,ExecutionTarget target) throws Exception {
             validateDraftDomain(metricView, user.getDomainId());
-		Object[] o = abcProgramService.execute(UUID.randomUUID().toString(), MetricViewBindings.executionFunction(metricView.getFunction(), MetricViewBindings.values(metricView.getFunction())), user.getId(), permission, null, lang, timeoutMinutes, user.getDomainId());
+		Object[] o = abcProgramService.execute(UUID.randomUUID().toString(), MetricViewBindings.executionFunction(metricView.getFunction(), MetricViewBindings.values(metricView.getFunction())), user.getId(), permission, target.sandboxId(), lang, timeoutMinutes, user.getDomainId(), null, target);
 		MetricViewContent metricViewContent = generateContent((JSONArray)o[0], (PythonExecuteResult)o[1], metricView.getName(), metricView, lang);
 		return metricViewContent;
 	}
@@ -397,6 +402,10 @@ private MetricViewContent generateContent(JSONArray rows, PythonExecuteResult ex
 
   @Override
   public Object[] execute(String id, String bindingId, JSONObject param, JSONObject parameterTexts, String lang, User user, UserDataPermission permission, int timeoutMinutes) throws Exception {
+    return execute(id,bindingId,param,parameterTexts,lang,user,permission,timeoutMinutes,ExecutionTarget.LIVE);
+  }
+  @Override
+  public Object[] execute(String id,String bindingId,JSONObject param,JSONObject parameterTexts,String lang,User user,UserDataPermission permission,int timeoutMinutes,ExecutionTarget target) throws Exception {
     MetricView metric = queryById(id, user.getDomainId());
     if (metric == null) throw new IllegalArgumentException("MetricView not found");
     JSONObject values = param == null ? new JSONObject() : new JSONObject(param);
@@ -412,13 +421,17 @@ private MetricViewContent generateContent(JSONArray rows, PythonExecuteResult ex
         throw new IllegalArgumentException(parsed.errors().get(0).path("message").asText());
       values.putAll(parsed.values());
     }
-    return testExecute(metric, bindingId, values, lang, user, permission, timeoutMinutes);
+    return testExecute(metric, bindingId, values, lang, user, permission, timeoutMinutes, target);
   }
 
   @Override
   public Object[] testExecute(MetricView metric, String bindingId, JSONObject param, String lang, User user, UserDataPermission permission, int timeoutMinutes) throws Exception {
     if (metric == null) throw new IllegalArgumentException("MetricView not found");
     validateDraftDomain(metric, user.getDomainId());
+    return testExecute(metric,bindingId,param,lang,user,permission,timeoutMinutes,ExecutionTarget.LIVE);
+  }
+  @Override
+  public Object[] testExecute(MetricView metric,String bindingId,JSONObject param,String lang,User user,UserDataPermission permission,int timeoutMinutes,ExecutionTarget target) throws Exception {
     if (!MetricView.STATUS_PUBLISHED.equals(metric.getStatus()))
       throw new IllegalArgumentException("MetricView is not published");
     QueryPackage.prepareReadFunction(metric.getFunction(),
@@ -426,7 +439,7 @@ private MetricViewContent generateContent(JSONArray rows, PythonExecuteResult ex
     MetricViewBindings.validate(metric.getFunction(), metric.getBindings());
     JSONObject values = MetricViewBindings.resolve(metric, bindingId, param);
     Function execution = MetricViewBindings.executionFunction(metric.getFunction(), values);
-    return abcProgramService.execute(UUID.randomUUID().toString(), execution, user.getId(), permission, null, lang, timeoutMinutes, user.getDomainId());
+    return abcProgramService.execute(UUID.randomUUID().toString(), execution, user.getId(), permission, target.sandboxId(), lang, timeoutMinutes, user.getDomainId(), null, target);
   }
 
   private void validateDraftDomain(MetricView metric, String domain) {
