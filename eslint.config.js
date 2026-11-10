@@ -101,6 +101,22 @@ export default [
     },
   },
   {
+    // Browser code and shared contracts must also work on plain HTTP intranet deployments.
+    files: [
+      "packages/{contracts,apps-sdk,design-tokens,foundation-ui,agent-shell-ui,ontology-manager,platform-admin,platform-schedules,platform-shell,platform-web,workbench-ui}/src/**/*.{ts,js,vue}",
+      "apps/workbench/web/**/*.{ts,js,vue}",
+    ],
+    rules: {
+      "no-restricted-properties": [
+        "error",
+        {
+          property: "randomUUID",
+          message: "Use randomId() from @ontomato/contracts/random-id; crypto.randomUUID is unavailable over HTTP.",
+        },
+      ],
+    },
+  },
+  {
     // Manager components consume only the context the host passes in; they do not depend on
     // host routes, a global message instance or a store.
     files: ["packages/ontology-manager/src/**/*.{ts,vue}"],

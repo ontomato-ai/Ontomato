@@ -31,6 +31,49 @@ function mount(child: () => ReturnType<typeof h>) {
 async function settle() { for (let index = 0; index < 12; index++) { await new Promise(resolve => setTimeout(resolve, 0)); await nextTick(); } }
 
 describe("configured object view interaction", () => {
+  it("opens an unconfigured object without the secure-context UUID API", async () => {
+    vi.stubGlobal("crypto", { getRandomValues: crypto.getRandomValues.bind(crypto) });
+    const attrs = [{ name: "id", primaryKey: true }, { name: "name", bizzkeyBool: true }];
+    vi.stubGlobal("fetch", async (url: string) => new Response(JSON.stringify({ success: true,
+      data: url.endsWith("/read") ? { revision: 0, publishedRevision: null, versions: [] }
+        : { classDef: { attrs }, data: { id: "order-1", name: "HTTP order" } },
+    })));
+    const element = mount(() => h(ObjectViewPage, { reference: { className: "Order", primaryKey: "order-1" } }));
+    await settle();
+    expect(element.querySelector(".object-title h2")?.textContent).toBe("HTTP order");
+    expect(element.querySelector(".object-view-runtime")).not.toBeNull();
+    expect(element.querySelector(".object-view-runtime")?.textContent).toContain("HTTP order");
+    expect(element.querySelector(".el-alert--error")).toBeNull();
+  });
+  it("edits and saves tabs, sections and widgets without the secure-context UUID API", async () => {
+    vi.stubGlobal("crypto", { getRandomValues: crypto.getRandomValues.bind(crypto) });
+    let saved: ReturnType<typeof createObjectView> | undefined;
+    vi.stubGlobal("fetch", async (url: string, init: RequestInit) => {
+      const body = JSON.parse(String(init.body));
+      if (url.endsWith("/save")) saved = body.document;
+      return new Response(JSON.stringify({ success: true,
+        data: url.endsWith("/edit") ? { revision: 0, publishedRevision: null, versions: [] }
+          : url.endsWith("getMetas") ? { classDef: [{ className: "Order", attrs: [] }] }
+          : url.endsWith("/save") ? { revision: 1, publishedRevision: null, versions: [{ revision: 1, document: body.document }] } : [],
+      }));
+    });
+    const element = mount(() => h(ObjectViewBuilder, { className: "Order" }));
+    await settle();
+    expect(element.querySelector(".builder-body")?.hasAttribute("inert")).toBe(false);
+    async function click(label: string) {
+      Array.from(element.querySelectorAll("button")).find(button => button.textContent?.trim() === label)!.click();
+      await settle();
+    }
+    await click("+ Tab");
+    await click("+ Section");
+    await click("Text");
+    await click("Save draft");
+    expect(saved?.tabs).toHaveLength(2);
+    expect(saved?.tabs[1].sections).toHaveLength(2);
+    expect(saved?.tabs[1].sections[1].widgets.map(widget => widget.kind)).toEqual(["text"]);
+    expect(element.textContent).toContain("v1");
+    expect(element.querySelector(".el-alert--error")).toBeNull();
+  });
   it("selects a defined variable and accepts a nested variable path", async () => {
     const binding = ref<ViewBinding>({ source: "variable", path: "" });
     const element = mount(() => h(ViewBindingEditor, { modelValue: binding.value, variables: ["filter", "selected"], "onUpdate:modelValue": value => { binding.value = value; } }));
