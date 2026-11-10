@@ -132,8 +132,8 @@ public class SandboxServiceImpl implements SandboxService {
       var resources=new JSONArray();
       var namespace=JSONObject.of("kind","pending","logicalName",sandbox,"operation","namespace");
       resources.add(namespace);save.accept(resources);
-      var namespaces=adapter.createRecordedNamespaces(sandbox,classes);
-      resources.clear();resources.addAll(namespaces);save.accept(resources);
+      adapter.createRecordedNamespaces(sandbox,classes,resource->{resources.add(resource);save.accept(resources);});
+      resources.remove(namespace);save.accept(resources);
       for(var cls:definitions) {
         var resource=JSONObject.of("kind","pending","logicalName",adapter.sandboxClassName(sandbox,(String)cls.get("className")));
         resources.add(resource);save.accept(resources);

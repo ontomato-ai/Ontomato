@@ -675,6 +675,15 @@ public class PostgreAdapter implements DataAdapter {
             rows.next();String actual=rows.getString(1),previous=names.putIfAbsent(actual,logical);
             if(previous!=null) throw new IllegalArgumentException("Sandbox table collision: "+previous+" and "+logical+" resolve to "+actual);
           }
+          var columns=new java.util.HashMap<String,String>();
+          for(var attribute:(List<Map<String,Object>>)cls.get("attrs")) {
+            if(Boolean.FALSE.equals(attribute.get("enable"))) continue;
+            String field=(String)attribute.get("name");statement.setString(1,field);
+            try(var rows=statement.executeQuery()) {
+              rows.next();String previous=columns.putIfAbsent(rows.getString(1),field);
+              if(previous!=null) throw new IllegalArgumentException("Sandbox column collision: "+logical+"."+previous+" and "+logical+"."+field+" resolve to "+rows.getString(1));
+            }
+          }
         }
       } catch(java.sql.SQLException failure) { throw new IllegalStateException("Cannot resolve sandbox identifiers",failure); }
     }

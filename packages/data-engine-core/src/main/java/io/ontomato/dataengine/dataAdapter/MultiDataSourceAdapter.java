@@ -331,14 +331,9 @@ public class MultiDataSourceAdapter implements DataAdapter {
       var groups=classes.stream().collect(java.util.stream.Collectors.groupingBy(cls->configSourceOfClass(classNameOf(cls))));
       groups.forEach((source,definitions)->delegate(source).validateSandboxClasses(namespace,definitions));
     }
-    @Override public JSONArray createRecordedNamespaces(String namespace,List<String> classes) {
-      var resources=new JSONArray();
-      classes.stream().map(this::configSourceOfClass).distinct().forEach(source->{
-        for(Object item:delegate(source).createRecordedNamespaces(namespace,classes)) {
-          var resource=(JSONObject)item;resource.put("sourceId",source);resources.add(resource);
-        }
-      });
-      return resources;
+    @Override public void createRecordedNamespaces(String namespace,List<String> classes,java.util.function.Consumer<JSONObject> save) {
+      classes.stream().map(this::configSourceOfClass).distinct().forEach(source->
+        delegate(source).createRecordedNamespaces(namespace,classes,resource->{resource.put("sourceId",source);save.accept(resource);}));
     }
     @Override public JSONObject createRecordedClass(String namespace,Map<String,Object> definition) {
       String source=configSourceOfClass(classNameOf(definition));

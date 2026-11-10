@@ -72,9 +72,8 @@ public interface DataAdapter {
       } catch(java.sql.SQLException failure) { throw new IllegalStateException("Cannot identify sandbox table",failure); }
     }
     default void validateSandboxClasses(String namespace, List<Map<String,Object>> classes) {}
-    default JSONArray createRecordedNamespaces(String namespace, List<String> classes) {
+    default void createRecordedNamespaces(String namespace, List<String> classes, java.util.function.Consumer<JSONObject> save) {
       createNamespace(namespace,classes);
-      return new JSONArray();
     }
     default void dropRecordedResource(JSONObject resource) {
       if(!"table".equals(resource.getString("kind"))) throw new IllegalArgumentException("Unknown sandbox resource: "+resource);
