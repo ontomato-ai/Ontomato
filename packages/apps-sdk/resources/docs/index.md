@@ -140,6 +140,7 @@ never a silent partial list.
 `<metric-view-data>` binds a MetricView by property. It reads when it appears and again whenever the id or the values of
 the parameters change. It draws nothing itself: its default slot receives `data`, `loading`, `error` and `reload`, and
 the page puts a table, a chart or a figure in it. Show `error` yourself.
+The `parameter-texts` property accepts user-entered text that the platform converts according to each parameter's type; invalid text fails that read with the platform's error message.
 
 ```html
 <metric-view-data :metric-view-id="metricViewId" :parameters="{ region }" v-slot="{ data, loading, error, reload }">

@@ -17,6 +17,7 @@ import com.alibaba.fastjson2.JSONWriter.Feature;
 import io.ontomato.dataengine.bean.function.Function;
 import io.ontomato.dataengine.bean.function.Parameter;
 import io.ontomato.dataengine.bean.function.ReturnDef;
+import io.ontomato.dataengine.service.PythonProgramProtocol;
 
 import jakarta.annotation.PostConstruct;
 import lombok.extern.slf4j.Slf4j;
@@ -54,7 +55,9 @@ public class FunctionDao {
 		log.info(">>>function table initialization complete");
 	}
 
-	public Function save(Function function) {
+	public Function save(Function function, String lang) {
+        if (!(Function.OPERATION_READ.equals(function.getOperation()) && function.getQueryPackage() != null))
+            PythonProgramProtocol.requireSupported(function.getCode(), lang);
 		if (function.getId() == null) {
 			function.setId(UUID.randomUUID().toString());
 		}

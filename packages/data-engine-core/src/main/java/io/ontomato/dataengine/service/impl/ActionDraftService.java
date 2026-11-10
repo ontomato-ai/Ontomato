@@ -309,7 +309,7 @@ public class ActionDraftService {
     action.setDomainId(owner.domainId());
     action.setExplanationVersion(Action.EXPLANATION_VERSION);
     action.setDefinition(ActionDefinitionProjector.project(action));
-    action.setFunction(functionDao.save(function));
+    action.setFunction(functionDao.save(function, lang));
     Action saved = actionDao.save(action);
     store.update("UPDATE action_drafts SET consumed_at=now() WHERE id=?", uuid(draftId));
     return saved;
