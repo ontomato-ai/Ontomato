@@ -6,3 +6,9 @@ description: "Build and publish hosted applications using the current Ontomato S
 # Ontomato app builder
 
 Use the shared [technical guide](GUIDE.md) and bundled `ontomato.mjs` to discover real ontology definitions, create business capabilities, and build the requested application. The same package works inside the platform and from an external agent without product source code.
+
+## Execution parameter contract (5.0)
+
+Action and MetricView execution require every declared parameter name in the JSON object. Explicit `null` is allowed; empty strings and zero are real values. Missing parameters fail as `Missing parameter: <name>` before executing Python. An omitted parameter object means `{}` and works only for a definition with no parameters. The command passes server errors through unchanged.
+
+Numeric `--limit` and `--max` options must be finite numbers; invalid values fail before HTTP rather than becoming JSON null. Production synchronization defaults to dry-run in both CLI and HTTP; only `--confirm` (HTTP `dryRun:false`) writes. HTTP dryRun must be a boolean if present; explicit null is invalid.

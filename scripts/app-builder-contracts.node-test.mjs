@@ -21,3 +21,37 @@ for (const [command, option] of [
     });
   }
 }
+
+import { createServer } from "node:http";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
+import { analystCommand } from "../agent-skills/ontomato-analyst/client.mjs";
+
+test("shared analyst numeric options reject invalid values before HTTP", async () => {
+  for (const command of [["distinct-values", "person", "id"], ["metrics", "question"], ["knowledge", "question"]])
+    await assert.rejects(analystCommand({ envUrl: "http://127.0.0.1:1" }, [...command, "--limit", "NaN"]), /--limit: expected a finite number/);
+});
+
+test("skill Action execution preserves complete explicit parameters and owner errors", async () => {
+  let sent;
+  const server = createServer(async (request, response) => {
+    let text = "";
+    for await (const chunk of request) text += chunk;
+    const match = text.match(/name="param"\r\n\r\n([^\r]+)/);
+    sent = JSON.parse(match[1]);
+    response.setHeader("content-type", "application/json");
+    response.end(JSON.stringify(Object.hasOwn(sent, "optional")
+      ? { success: true, data: {} }
+      : { success: false, message: "Missing parameter: optional" }));
+  });
+  await new Promise(resolve => server.listen(0, "127.0.0.1", resolve));
+  const run = parameters => promisify(execFile)(process.execPath, ["agent-skills/ontomato-app-builder/ontomato.mjs", "action", "execute", "test", JSON.stringify(parameters)], {
+    env: { ...process.env, ONTOMATO_URL: `http://127.0.0.1:${server.address().port}`, ONTOMATO_API_KEY: "test-only" },
+  });
+  try {
+    const parameters = { optional: null, text: "", count: 0 };
+    await run(parameters);
+    assert.deepEqual(sent, parameters);
+    await assert.rejects(run({ text: "", count: 0 }), error => error.stderr.includes("Missing parameter: optional"));
+  } finally { await new Promise(resolve => server.close(resolve)); }
+});

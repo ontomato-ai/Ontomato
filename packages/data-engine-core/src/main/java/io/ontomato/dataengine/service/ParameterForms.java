@@ -23,8 +23,8 @@ import java.util.Set;
  * values, for an Action form a person fills in now and for a scheduled task alike. Each context keeps the input its
  * users already have instead of one becoming the other: an Action form takes JSON for structured values and keeps
  * text and times as typed; a scheduled task takes one item per line, reads a date without an offset in the task's time
- * zone and a blank time as the actual start. Parameters have no required marker: a scheduled task leaves a blank text
- * or number out, which then runs as null.
+ * zone and a blank time as the actual start. Parameters have no required marker: a scheduled task supplies an explicit null for a blank text
+ * or number.
  */
 public final class ParameterForms {
   private ParameterForms() {}
@@ -155,7 +155,7 @@ public final class ParameterForms {
       else if (Parameter.TYPE_STRING.equals(type) || Parameter.TYPE_TIME.equals(type)) values.put(name, text);
       else {
         Object value = json(text);
-        if (value != null && MetricViewBindings.accepts(type, value) && finite(value)) values.put(name, value);
+        if (text.strip().equals("null") || value != null && MetricViewBindings.accepts(type, value) && finite(value)) values.put(name, value);
         else errors.add(invalid(field, type, Context.INTERACTIVE, name, zh));
       }
     }
@@ -164,7 +164,7 @@ public final class ParameterForms {
 
   /**
    * What a scheduled task's fields mean when it starts at {@code start}, its fields keyed {@code keyPrefix + name} and
-   * its errors pointing under {@code pointerPrefix}. A blank text or number is left out; a blank time is {@code start};
+   * its errors pointing under {@code pointerPrefix}. A blank text or number is explicit null; a blank time is {@code start};
    * a list is one item per line, blank lines ignored; a date or minute time without an offset is read in {@code zone}.
    */
   public static Values scheduled(
@@ -182,7 +182,10 @@ public final class ParameterForms {
       String key = keyPrefix + parameter.getName(), type = parameter.getType();
       String text = texts.path(key).asText();
       if (text.isBlank()
-          && (Parameter.TYPE_STRING.equals(type) || Parameter.TYPE_NUMBER.equals(type))) continue;
+          && (Parameter.TYPE_STRING.equals(type) || Parameter.TYPE_NUMBER.equals(type))) {
+        values.put(parameter.getName(), null);
+        continue;
+      }
       try {
         values.put(parameter.getName(), scheduledValue(type, text, zone, start));
       } catch (RuntimeException invalid) {

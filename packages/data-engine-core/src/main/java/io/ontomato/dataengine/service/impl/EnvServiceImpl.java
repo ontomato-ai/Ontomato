@@ -204,10 +204,7 @@ public class EnvServiceImpl implements EnvService {
 			}
 			Action action = (Action) row[0];
 			action.setFunction(functionDao.queryById((String) row[1]));
-			String codeHash = CodeHashUtil.sha256(action.getFunction() == null ? null : action.getFunction().getCode());
-			boolean ready = action.getCodeSegments() != null && !action.getCodeSegments().isEmpty()
-					&& codeHash != null && codeHash.equals(action.getCodeHash())
-					&& Integer.valueOf(Action.EXPLANATION_VERSION).equals(action.getExplanationVersion());
+			boolean ready = ActionCodeExplanationValidator.ready(action);
 			if (!ready) {
 				missingExplanations.add(id);
 			}

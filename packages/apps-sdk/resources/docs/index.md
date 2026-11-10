@@ -363,3 +363,7 @@ bundled version. Messages and dialogs come from the named exports: `ElMessage.su
   content: a build with the same content has the same version, and any change makes a new one.
 - A version directory never changes, and installing a newer platform keeps the older versions. To move an app to a
   newer SDK, change the version in its stylesheet link and import map, then test the app again.
+
+### Explicit execution parameters (5.0)
+
+`actions.execute({ id, parameters })` and MetricView execution require every declared parameter key. A missing key fails with `Missing parameter: <name>` before executing the program. Explicit `null` is permitted; `""` and `0` are preserved. Use `actions.form(...)` for platform forms: its `parameters` result already includes every field. Direct calls must supply the complete object themselves; clients do not invent defaults.

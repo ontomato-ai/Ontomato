@@ -57,11 +57,12 @@ public class WriteFunctionOperationController {
     public JSONObject insert(@RequestBody JSONObject param) throws Exception {
 		JSONObject ret = new JSONObject();
 		try {
-			String className = param.getString("className");
+			String className = requiredText(param, "className");
             checkClasses(className);
 			String sandboxId = dealSandboxId(grant().getString("sandboxId"));
 			String domainId = grant().getString("domainId");
-			JSONArray objs = param.getJSONArray("objs");
+			if (!(param.get("objs") instanceof JSONArray)) throw new IllegalArgumentException("objs: expected a nonempty array of object dictionaries");
+            JSONArray objs = param.getJSONArray("objs");
 			writeFunctionOperationService.insert(className, objs, sandboxId, domainId);
 			ret.put("success", true);
 		} catch (Exception e) {
@@ -77,11 +78,13 @@ public class WriteFunctionOperationController {
     public JSONObject update(@RequestBody JSONObject param) throws Exception {
 		JSONObject ret = new JSONObject();
 		try {
-			String className = param.getString("className");
+			String className = requiredText(param, "className");
             checkClasses(className);
 			String sandboxId = dealSandboxId(grant().getString("sandboxId"));
 			String domainId = grant().getString("domainId");
-			JSONObject setValues = param.getJSONObject("setValues");
+			if (!(param.get("setValues") instanceof JSONObject values) || values.isEmpty())
+                throw new IllegalArgumentException("setValues: expected a nonempty object of attribute values; use updateVector for vector attributes");
+            JSONObject setValues = values;
 			JSONObject where = validatedWhere(param.get("where"), className, domainId);
 			writeFunctionOperationService.update(className, setValues, where, sandboxId, domainId);
 			ret.put("success", true);
@@ -98,7 +101,7 @@ public class WriteFunctionOperationController {
     public JSONObject delete(@RequestBody JSONObject param) throws Exception {
 		JSONObject ret = new JSONObject();
 		try {
-			String className = param.getString("className");
+			String className = requiredText(param, "className");
             checkClasses(className);
 			String sandboxId = dealSandboxId(grant().getString("sandboxId"));
 			String domainId = grant().getString("domainId");
@@ -118,11 +121,11 @@ public class WriteFunctionOperationController {
     public JSONObject createEdge(@RequestBody JSONObject param) throws Exception {
 		JSONObject ret = new JSONObject();
 		try {
-			String relationName = param.getString("relationName");
-			String sourceClassName = param.getString("sourceClassName");
-			String sourceObjId = param.getString("sourceObjId");
-			String targetClassName = param.getString("targetClassName");
-			String targetObjId = param.getString("targetObjId");
+			String relationName = requiredText(param, "relationName");
+			String sourceClassName = requiredText(param, "sourceClassName");
+			String sourceObjId = requiredText(param, "sourceObjId");
+			String targetClassName = requiredText(param, "targetClassName");
+			String targetObjId = requiredText(param, "targetObjId");
 			String sandboxId = dealSandboxId(grant().getString("sandboxId"));
 			String domainId = grant().getString("domainId");
 			checkClasses(sourceClassName, targetClassName);
@@ -141,11 +144,11 @@ public class WriteFunctionOperationController {
     public JSONObject deleteEdge(@RequestBody JSONObject param) throws Exception {
 		JSONObject ret = new JSONObject();
 		try {
-			String relationName = param.getString("relationName");
-			String sourceClassName = param.getString("sourceClassName");
-			String sourceObjId = param.getString("sourceObjId");
-			String targetClassName = param.getString("targetClassName");
-			String targetObjId = param.getString("targetObjId");
+			String relationName = requiredText(param, "relationName");
+			String sourceClassName = requiredText(param, "sourceClassName");
+			String sourceObjId = requiredText(param, "sourceObjId");
+			String targetClassName = requiredText(param, "targetClassName");
+			String targetObjId = requiredText(param, "targetObjId");
 			String sandboxId = dealSandboxId(grant().getString("sandboxId"));
 			String domainId = grant().getString("domainId");
 			checkClasses(sourceClassName, targetClassName);
@@ -170,22 +173,38 @@ public class WriteFunctionOperationController {
 
     @PostMapping("/writeFunctionOperation/appendVector")
     public JSONObject appendVector(@RequestBody JSONObject body) throws Exception {
-        byte[] bytes=body.getString("fileBase64")==null?java.util.Objects.toString(body.getString("text"),"").getBytes(java.nio.charset.StandardCharsets.UTF_8):java.util.Base64.getDecoder().decode(body.getString("fileBase64"));
+        byte[] bytes=vectorBytes(body);
         try(var input=new java.io.ByteArrayInputStream(bytes)) {
-            checkClasses(body.getString("className"));
-            writeFunctionOperationService.appendVector(body.getString("className"),body.getString("attrName"),body.getString("objectId"),body.getString("text"),input,getSuffix(body.getString("fileName")),dealSandboxId(grant().getString("sandboxId")),grant().getString("domainId"));
+            checkClasses(requiredText(body, "className"));
+            writeFunctionOperationService.appendVector(requiredText(body, "className"),requiredText(body, "attrName"),requiredText(body, "objectId"),body.getString("text"),input,getSuffix(body.getString("fileName")),dealSandboxId(grant().getString("sandboxId")),grant().getString("domainId"));
         }
         return JSONObject.of("success",true);
     }
     @PostMapping("/writeFunctionOperation/updateVector")
     public JSONObject updateVector(@RequestBody JSONObject body) throws Exception {
-        byte[] bytes=body.getString("fileBase64")==null?java.util.Objects.toString(body.getString("text"),"").getBytes(java.nio.charset.StandardCharsets.UTF_8):java.util.Base64.getDecoder().decode(body.getString("fileBase64"));
+        byte[] bytes=vectorBytes(body);
         try(var input=new java.io.ByteArrayInputStream(bytes)) {
-            checkClasses(body.getString("className"));
-            writeFunctionOperationService.updateVector(body.getString("className"),body.getString("attrName"),body.getString("objectId"),body.getString("fileId"),body.getString("text"),input,dealSandboxId(grant().getString("sandboxId")),grant().getString("domainId"));
+            checkClasses(requiredText(body, "className"));
+            writeFunctionOperationService.updateVector(requiredText(body, "className"),requiredText(body, "attrName"),requiredText(body, "objectId"),requiredText(body, "fileId"),body.getString("text"),input,dealSandboxId(grant().getString("sandboxId")),grant().getString("domainId"));
         }
         return JSONObject.of("success",true);
     }
+    private static String requiredText(JSONObject body, String field) {
+        if (!(body.get(field) instanceof String value) || value.isBlank())
+            throw new IllegalArgumentException(field + ": expected a nonempty string; supply this field as text");
+        return value;
+    }
+
+    private static byte[] vectorBytes(JSONObject body) {
+        String text = requiredText(body, "text");
+        if (body.get("fileBase64") == null) return text.getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        String encoded = requiredText(body, "fileBase64");
+        try { return java.util.Base64.getDecoder().decode(encoded); }
+        catch (IllegalArgumentException invalid) {
+            throw new IllegalArgumentException("fileBase64: expected base64 file content; encode the file bytes as base64", invalid);
+        }
+    }
+
     private JSONObject grant() {
         var request=((org.springframework.web.context.request.ServletRequestAttributes)org.springframework.web.context.request.RequestContextHolder.currentRequestAttributes()).getRequest();
         return (JSONObject)request.getAttribute(io.ontomato.dataengine.service.QueryGrantService.ATTRIBUTE);
@@ -196,11 +215,11 @@ public class WriteFunctionOperationController {
     public JSONObject deleteVector(@RequestBody JSONObject param) throws Exception {
 		JSONObject ret = new JSONObject();
 		try {
-			String className = param.getString("className");
+			String className = requiredText(param, "className");
             checkClasses(className);
-			String attrName = param.getString("attrName");
-			String objectId = param.getString("objectId");
-			String fileId = param.getString("fileId");
+			String attrName = requiredText(param, "attrName");
+			String objectId = requiredText(param, "objectId");
+			String fileId = requiredText(param, "fileId");
 			String sandboxId = dealSandboxId(grant().getString("sandboxId"));
 			String domainId = grant().getString("domainId");
 			writeFunctionOperationService.deleteVector(className, attrName, objectId, fileId, sandboxId, domainId);

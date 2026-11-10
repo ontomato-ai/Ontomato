@@ -12,6 +12,17 @@ import org.springframework.test.util.ReflectionTestUtils;
 
 class FunctionProtocolSaveTest {
   @Test
+  void externalFunctionFieldsAreNotCoercedBeforeAdmission() {
+    for (var input : java.util.List.of(
+        com.alibaba.fastjson2.JSONObject.of("code", 42),
+        com.alibaba.fastjson2.JSONObject.of("parameters", "[]"),
+        com.alibaba.fastjson2.JSONObject.of("parameters", com.alibaba.fastjson2.JSONArray.of(com.alibaba.fastjson2.JSONObject.of("name", 42))))) {
+      var error = assertThrows(IllegalArgumentException.class, () -> Function.fromInput(input));
+      assertTrue(error.getMessage().startsWith("Function."));
+    }
+  }
+
+  @Test
   void savesOnlyExecutablePythonWhileReadPackagesNeedNoPythonHeader() {
     var dao = new FunctionDao();
     var jdbc = mock(JdbcTemplate.class);

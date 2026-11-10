@@ -128,10 +128,13 @@ public class MetricViewServiceImpl implements MetricViewService {
     try (var generation =
         generationService.generateMetricView(sessionId, userMessage, lang, domainId)) {
       JSONObject envelope = generation.result();
+      if (!(envelope.get("queryPackage") instanceof JSONObject)) throw new IllegalArgumentException("queryPackage: expected JSONObject; supply this field with its declared JSON type");
+      if (!(envelope.get("name") instanceof String)) throw new IllegalArgumentException("name: expected String; supply this field with its declared JSON type");
+      if (!(envelope.get("logic") instanceof String)) throw new IllegalArgumentException("logic: expected String; supply this field with its declared JSON type");
       JSONObject bundle = envelope.getJSONObject("queryPackage");
       String name = envelope.getString("name");
       String logic = envelope.getString("logic");
-      if (bundle == null || name == null || logic == null) return null;
+
       Function function = new Function();
       function.setOrigin(Function.ORIGIN_USER);
       function.setOperation(Function.OPERATION_READ);
@@ -307,15 +310,18 @@ public class MetricViewServiceImpl implements MetricViewService {
     JSONArray failures = new JSONArray();
     int successCount = 0;
     for (int i = 0; i < array.size(); i++) {
-      JSONObject item = array.getJSONObject(i);
+      JSONObject item = null;
       try {
+        if (!(array.get(i) instanceof JSONObject)) throw new IllegalArgumentException("items[" + i + "]: expected a MetricView object");
+        item = array.getJSONObject(i);
         if (item.containsKey("type")) throw new IllegalArgumentException("Legacy MetricView bundles require conversion before import");
         MetricView metric = item.to(MetricView.class);
+        metric.setFunction(Function.fromAsset(item));
         metric.setDomainId(domain);
         new TransactionTemplate(transactionManager).execute(status -> persist(metric, true, lang));
         successCount++;
       } catch (Exception error) {
-        failures.add(JSONObject.of("index", i, "id", item.getString("id"), "message", error.getMessage()));
+        failures.add(JSONObject.of("index", i, "id", item == null ? null : item.getString("id"), "message", error.getMessage()));
       }
     }
     return JSONObject.of("success", failures.isEmpty(), "successCount", successCount, "failureCount", failures.size(), "failures", failures);
@@ -412,6 +418,9 @@ private MetricViewContent generateContent(JSONArray rows, PythonExecuteResult ex
     validateDraftDomain(metric, user.getDomainId());
     if (!MetricView.STATUS_PUBLISHED.equals(metric.getStatus()))
       throw new IllegalArgumentException("MetricView is not published");
+    io.ontomato.dataengine.service.QueryPackage.prepareReadFunction(metric.getFunction(),
+        (List<Map<String, Object>>) adminService.getJSONRule(user.getDomainId()).get("classDef"));
+    MetricViewBindings.validate(metric.getFunction(), metric.getBindings());
     JSONObject values = MetricViewBindings.resolve(metric, bindingId, param);
     Function execution = MetricViewBindings.executionFunction(metric.getFunction(), values);
     return abcProgramService.execute(UUID.randomUUID().toString(), execution, user.getId(), permission, null, lang, timeoutMinutes, user.getDomainId());

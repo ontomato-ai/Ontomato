@@ -37,46 +37,25 @@ class ActionParameterDefaultsTest {
   }
 
   @Test
-  void manualActionOmissionsBecomeNullInADetachedExecution() throws Exception {
-    var definition = definition();
+  void omissionsFailBeforeActionExecutionAndNameTheMissingParameter() throws Exception {
     var action = new Action();
     action.setStatus(Action.STATUS_PUBLISHED);
     action.setDomainId("domain-a");
-    action.setFunction(definition);
+    action.setFunction(definition());
     var service = spy(new ActionServiceImpl());
     doReturn(action).when(service).queryById("action-a");
     var programs = mock(ABCProgramService.class);
-    var received = new AtomicReference<Function>();
-    when(programs.execute(
-            anyString(),
-            any(Function.class),
-            eq("user-a"),
-            any(),
-            anyString(),
-            eq("en"),
-            eq(1),
-            eq("domain-a")))
-        .thenAnswer(
-            call -> {
-              received.set(call.getArgument(1));
-              return new Object[] {null, new PythonExecuteResult()};
-            });
     ReflectionTestUtils.setField(service, "identity", mock(IdentityService.class));
     ReflectionTestUtils.setField(service, "abcProgramService", programs);
-    var supplied = new JSONObject();
-    service.execute(
-        "action-a",
-        supplied,
-        "en",
-        new QueryAccessService.GrantUser("user-a", "domain-a"),
-        new UserDataPermission(),
-        1);
-    var values = MetricViewBindings.values(received.get());
-    assertEquals(java.util.Set.of("org_id", "up"), values.keySet());
-    assertNull(values.get("org_id"));
-    assertNull(values.get("up"));
-    assertTrue(supplied.isEmpty());
-    assertEquals("must-not-be-reused", definition.getParameters().getFirst().getValue());
+    var error = assertThrows(IllegalArgumentException.class, () -> service.execute(
+        "action-a", new JSONObject(), "en",
+        new QueryAccessService.GrantUser("user-a", "domain-a"), new UserDataPermission(), 1));
+    assertEquals("Missing parameter: org_id", error.getMessage());
+    verifyNoInteractions(programs);
+    var values = new JSONObject();
+    values.put("org_id", null);
+    values.put("up", null);
+    assertEquals(values, MetricViewBindings.values(MetricViewBindings.executionWriteFunction(definition(), values)));
   }
 
   @Test

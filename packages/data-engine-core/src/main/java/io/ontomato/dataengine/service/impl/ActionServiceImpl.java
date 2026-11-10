@@ -199,6 +199,11 @@ public class ActionServiceImpl implements ActionService {
     try (var generation =
         generationService.generate("action", businessId, prompt, lang, domainId)) {
       JSONObject envelope = generation.result();
+      if (!(envelope.get("code") instanceof String)) throw new IllegalArgumentException("code: expected String; supply this field with its declared JSON type");
+      if (!(envelope.get("name") instanceof String)) throw new IllegalArgumentException("name: expected String; supply this field with its declared JSON type");
+      if (!(envelope.get("logic") instanceof String)) throw new IllegalArgumentException("logic: expected String; supply this field with its declared JSON type");
+      if (!(envelope.get("classNames") instanceof JSONArray)) throw new IllegalArgumentException("classNames: expected JSONArray; supply this field with its declared JSON type");
+      if (!(envelope.get("parameterDefs") instanceof JSONArray)) throw new IllegalArgumentException("parameterDefs: expected JSONArray; supply this field with its declared JSON type");
       String code = envelope.getString("code");
       String name = envelope.getString("name");
       String logic = envelope.getString("logic");
@@ -432,7 +437,10 @@ public class ActionServiceImpl implements ActionService {
       try {
         JSONObject json = array.getJSONObject(i);
         actionId = json.getString("id");
+        if (!(json.get("function") instanceof JSONObject rawFunction)) throw new IllegalArgumentException("Action.function: expected an embedded Function object");
+        Function parsedFunction = Function.fromInput(rawFunction);
         Action action = json.to(Action.class);
+        action.setFunction(parsedFunction);
         Function function = action.getFunction();
         if (function == null || function.getId() == null) {
           throw new Exception("Action " + actionId + " has no embedded function");
@@ -443,7 +451,7 @@ public class ActionServiceImpl implements ActionService {
           function.setDomainId(domainId);
         }
         String codeHash = CodeHashUtil.sha256(function.getCode());
-        if (!allowMissingExplanation) {
+        if (!allowMissingExplanation || Action.STATUS_PUBLISHED.equals(action.getStatus())) {
           if (action.getCodeSegments() == null || action.getCodeSegments().isEmpty()) {
             throw new Exception(
                 "Action "
@@ -451,13 +459,14 @@ public class ActionServiceImpl implements ActionService {
                     + " has no code explanation; run action re-explain or import with"
                     + " allowMissingExplanation=true");
           }
-          if (action.getCodeHash() != null && !action.getCodeHash().equals(codeHash)) {
+          if (!codeHash.equals(action.getCodeHash())) {
             throw new Exception(
                 "Action "
                     + actionId
                     + " explanation does not match its code; run action re-explain");
           }
         }
+        if (Action.STATUS_PUBLISHED.equals(action.getStatus())) ActionCodeExplanationValidator.requireReady(action);
         action.setCodeHash(codeHash);
         action.setExplanationVersion(Action.EXPLANATION_VERSION);
         functionDao.save(function, lang);

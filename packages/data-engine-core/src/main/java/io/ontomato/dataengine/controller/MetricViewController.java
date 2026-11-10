@@ -91,6 +91,7 @@ public class MetricViewController {
 			User user = SystemUtils.getCurUser();
 			if (param.containsKey("type")) throw new IllegalArgumentException("MetricView type is retired; edit parameter bindings on a dynamic metric");
             MetricView metricView = param.to(MetricView.class);
+            metricView.setFunction(io.ontomato.dataengine.bean.function.Function.fromAsset(param));
 			metricView.setDomainId(user.getDomainId());
 			metricViewService.save(metricView, lang);
             ret.put("data", metricView);
@@ -229,6 +230,7 @@ public class MetricViewController {
 	    	User user = SystemUtils.getCurUser();
 			if (param.containsKey("type")) throw new IllegalArgumentException("MetricView type is retired; edit parameter bindings on a dynamic metric");
             MetricView metricView = param.to(MetricView.class);
+            metricView.setFunction(io.ontomato.dataengine.bean.function.Function.fromAsset(param));
 			BusinessConfig businessConfig = businessConfigService.get(user.getDomainId());
     		int timeoutMinutes = Long.valueOf(businessConfig.getDslCookerTimeout() / 60000).intValue();
 			if (timeoutMinutes <= 0) {
@@ -279,6 +281,7 @@ public class MetricViewController {
 			UserDataPermission curUserDataPermission = identityService.getCurrentUserDataPermission();
 	    	User user = SystemUtils.getCurUser();
 			MetricView metricView = param.getJSONObject("metricView").to(MetricView.class);
+            metricView.setFunction(io.ontomato.dataengine.bean.function.Function.fromAsset(param.getJSONObject("metricView")));
 			JSONObject p = param.getJSONObject("param");
 			BusinessConfig businessConfig = businessConfigService.get(user.getDomainId());
     		int timeoutMinutes = Long.valueOf(businessConfig.getDslCookerTimeout() / 60000).intValue();

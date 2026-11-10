@@ -55,9 +55,24 @@ public class FunctionDao {
 		log.info(">>>function table initialization complete");
 	}
 
-	public Function save(Function function, String lang) {
+    public static void requireSupported(Function function, String lang) {
+        if (!Function.OPERATION_READ.equals(function.getOperation()) && !Function.OPERATION_WRITE.equals(function.getOperation()))
+            throw new IllegalArgumentException("Function.operation: expected OPERATION_READ or OPERATION_WRITE");
+        if (Function.OPERATION_READ.equals(function.getOperation()) && function.getQueryPackage() != null)
+            io.ontomato.dataengine.service.QueryPackage.validate(function.getQueryPackage());
+        if (function.getParameters() != null) {
+            for (var parameter : function.getParameters())
+                if (parameter.getType() == null || !java.util.Set.of("TYPE_STRING", "TYPE_NUMBER", "TYPE_TIME", "TYPE_STRING_ARRAY", "TYPE_NUMBER_ARRAY", "TYPE_TIME_ARRAY", "TYPE_ONTOOBJ", "TYPE_DATASET", "TYPE_VECTOR").contains(parameter.getType()))
+                    throw new IllegalArgumentException("Function.parameters." + parameter.getName() + ".type: expected a supported parameter type; boolean parameters are not supported");
+            io.ontomato.dataengine.service.MetricViewBindings.validateValues(function,
+                io.ontomato.dataengine.service.MetricViewBindings.values(function));
+        }
         if (!(Function.OPERATION_READ.equals(function.getOperation()) && function.getQueryPackage() != null))
             PythonProgramProtocol.requireSupported(function.getCode(), lang);
+    }
+
+    public Function save(Function function, String lang) {
+        requireSupported(function, lang);
 		if (function.getId() == null) {
 			function.setId(UUID.randomUUID().toString());
 		}

@@ -135,12 +135,13 @@ public class FunctionServiceImpl implements FunctionService {
     try (var generation =
         generationService.generate("function", sessionId, userMessage, lang, domainId)) {
       JSONObject envelope = generation.result();
+      if (!(envelope.get("queryPackage") instanceof JSONObject)) throw new IllegalArgumentException("queryPackage: expected JSONObject; supply this field with its declared JSON type");
+      if (!(envelope.get("name") instanceof String)) throw new IllegalArgumentException("name: expected String; supply this field with its declared JSON type");
+      if (!(envelope.get("logic") instanceof String)) throw new IllegalArgumentException("logic: expected String; supply this field with its declared JSON type");
       JSONObject bundle = envelope.getJSONObject("queryPackage");
       String name = envelope.getString("name");
       String logic = envelope.getString("logic");
-      if (bundle == null || name == null || logic == null) {
-        return null;
-      }
+
       function.setName(name);
       function.setQueryPackage(bundle);
       function.setLogic(logic);

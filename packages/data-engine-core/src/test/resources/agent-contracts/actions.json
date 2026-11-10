@@ -1,0 +1,46 @@
+[
+  {
+    "id": "contract-update-person",
+    "name": "Contract update person",
+    "origin": "USER",
+    "status": "PUBLISHED",
+    "function": {
+      "id": "contract-update-person-function",
+      "operation": "OPERATION_WRITE",
+      "origin": "USER",
+      "name": "Contract update person",
+      "code": "# ontomato-python:2\nfrom query_runtime import parameters, update\nupdate(\"contract_person\", {\"age\": parameters[\"age\"]}, {\"field\":\"id\",\"operator\":\"=\",\"value\":parameters[\"id\"]})\n",
+      "parameters": [
+        {
+          "name": "id",
+          "type": "TYPE_STRING",
+          "value": null
+        },
+        {
+          "name": "age",
+          "type": "TYPE_NUMBER",
+          "value": null
+        }
+      ],
+      "returnDef": {
+        "isVoid": true,
+        "classNames": [
+          "contract_person"
+        ]
+      }
+    },
+    "codeHash": "431345b89b269999f75ae6ad507fe3fa80bb672b1f8ab24a0aa5eff2eaa90936",
+    "explanationVersion": 1,
+    "codeSegments": [
+      {
+        "id": "update",
+        "kind": "UPDATE_OBJECT",
+        "title": "Update one stable test object",
+        "codeRange": {
+          "start": 3,
+          "end": 3
+        }
+      }
+    ]
+  }
+]

@@ -309,7 +309,7 @@ public class ActionDraftService {
       throw new AgentHttpException(409, "DRAFT_CHANGED", "The draft no longer matches its code");
     function.setDomainId(owner.domainId());
     action.setDomainId(owner.domainId());
-    action.setExplanationVersion(Action.EXPLANATION_VERSION);
+    ActionCodeExplanationValidator.requireReady(action);
     action.setDefinition(ActionDefinitionProjector.project(action));
     action.setFunction(functionDao.save(function, lang));
     Action saved = actionDao.save(action);

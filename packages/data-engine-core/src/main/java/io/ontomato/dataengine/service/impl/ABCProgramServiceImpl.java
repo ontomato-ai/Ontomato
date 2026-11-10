@@ -53,9 +53,9 @@ public class ABCProgramServiceImpl implements ABCProgramService {
   public Object[] execute(String id, Function function, String user, UserDataPermission permission,
       String sandbox, String lang, int timeout, String domain, java.util.UUID executionId) throws Exception {
     if (!domain.equals(function.getDomainId())) throw new IllegalArgumentException("Function is outside the current domain");
+    io.ontomato.dataengine.dao.FunctionDao.requireSupported(function, lang);
     var parameters = MetricViewBindings.values(function);
     boolean read = Function.OPERATION_READ.equals(function.getOperation());
-    if (!read && !Function.OPERATION_WRITE.equals(function.getOperation())) throw new IllegalArgumentException("Unknown Function operation");
     if (read && function.getReturnDef() == null) throw new IllegalArgumentException("Stored program has no source declaration");
     var graph = read ? sourceAnalysis(function.getReturnDef().getSourceAnalysis(), function.getReturnDef().getOutKeyRefs()) : null;
     if (read && function.getQueryPackage() != null)

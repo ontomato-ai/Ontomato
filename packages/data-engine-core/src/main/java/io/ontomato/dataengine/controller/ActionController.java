@@ -108,6 +108,7 @@ public class ActionController {
 		try {
 			User user = SystemUtils.getCurUser();
 			Action action = param.to(Action.class);
+            action.setFunction(io.ontomato.dataengine.bean.function.Function.fromAsset(param));
 			action.setDomainId(user.getDomainId());
 			ret.put("data", actionService.save(action, lang));
 			ret.put("success", true);
