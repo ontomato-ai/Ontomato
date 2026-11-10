@@ -103,6 +103,9 @@ def insert(className, objs):
 def update(className, setValues, where):
     """Update objects in one class.
 
+    where must be a condition object, never a list. Unconditional full-table
+    updates and deletes are rejected.
+
     Args:
         className: full class name.
         setValues: attribute values to change. Must not include vector
@@ -118,6 +121,9 @@ def update(className, setValues, where):
 
 def delete(className, where):
     """Delete objects from one class.
+
+    where must be a condition object, never a list. Unconditional full-table
+    deletes and updates are rejected.
 
     Args:
         className: full class name.

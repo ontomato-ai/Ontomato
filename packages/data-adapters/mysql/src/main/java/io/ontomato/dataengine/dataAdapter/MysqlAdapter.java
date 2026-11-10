@@ -798,6 +798,7 @@ public class MysqlAdapter implements DataAdapter {
 	}
 
 	private String buildWhere(JSONObject condition, boolean topLevel, Map<String, String> attrTypeMap, SimpleDateFormat ymd, SimpleDateFormat ymdhms) throws Exception {
+        if (topLevel) io.ontomato.dataengine.util.WriteWhereValidator.validate(condition, attrTypeMap::containsKey);
 		String operator = condition.getString("operator");
 		if (operator == null) {
 			operator = "";
@@ -813,7 +814,7 @@ public class MysqlAdapter implements DataAdapter {
 				connector = " or ";
 				list = condition.getJSONArray("or");
 			} else {
-				return "";
+				throw new IllegalArgumentException("Invalid where condition: " + condition);
 			}
 			List<String> parts = new ArrayList<String>();
 			for (int i = 0; i < list.size(); i++) {
@@ -851,7 +852,7 @@ public class MysqlAdapter implements DataAdapter {
 			case "is not":
 				return field + " is not null";
 			default:
-				return "";
+				throw new IllegalArgumentException("Invalid where condition: " + condition);
 		}
 	}
 

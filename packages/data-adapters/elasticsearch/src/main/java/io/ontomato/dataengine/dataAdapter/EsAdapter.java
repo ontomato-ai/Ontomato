@@ -367,9 +367,8 @@ public class EsAdapter implements DataAdapter {
 		String className = (String) classDef.get("className");
 		String index = EsNaming.indexName(namespace, className);
 		Map<String, String> attrTypes = attrTypes(classDef);
-		String whereStr = generateWhereSql(where);
 		JSONObject body = new JSONObject();
-		body.put("query", whereStr.isBlank() ? matchAll() : buildWhereQuery(where, attrTypes, index));
+		body.put("query", buildWhereQuery(where, attrTypes, index));
 		http().post("/" + index + "/_delete_by_query", body, Map.of("refresh", "true"));
 	}
 
@@ -1940,15 +1939,11 @@ public class EsAdapter implements DataAdapter {
 	// ----------------------------------------------------------------------------------
 
 	private JSONObject buildWhereQuery(JSONObject condition, Map<String, String> attrTypes, String index) {
-		if (condition == null || condition.isEmpty()) {
+		if (condition == null) {
 			return matchAll();
 		}
-		JSONObject part = propertyQuery(condition, attrTypes, false, index);
-		return part == null ? matchAll() : part;
-	}
-
-	private String generateWhereSql(JSONObject condition) {
-		return condition == null || condition.isEmpty() ? "" : condition.toJSONString();
+		io.ontomato.dataengine.util.WriteWhereValidator.validate(condition, attrTypes::containsKey);
+		return propertyQuery(condition, attrTypes, false, index);
 	}
 
 	// ----------------------------------------------------------------------------------
