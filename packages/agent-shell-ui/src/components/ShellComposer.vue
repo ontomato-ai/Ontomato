@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, inject, nextTick, ref, watch } from "vue";
+import { computed, inject, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { ArrowUp, Square } from "lucide-vue-next";
 import { shellContextKey } from "../context";
 
@@ -11,13 +11,31 @@ const input = ref<HTMLTextAreaElement | null>(null);
 const composing = ref(false);
 const canSend = computed(() => !props.busy && !props.disabled && text.value.trim().length > 0);
 
+/**
+ * The composer is as tall as what it shows: the message, or while it is empty its placeholder, so a long hint is read in
+ * full. It is measured again whenever the text, the placeholder or its width changes.
+ */
 function resize() {
-  const el = input.value;
-  if (!el) return;
+  const el = input.value!;
   el.style.height = "auto";
-  el.style.height = `${Math.min(el.scrollHeight, 220)}px`;
+  el.style.height = `${Math.min(textHeight(el), 220)}px`;
 }
-watch(text, () => nextTick(resize));
+/** The height of the textarea's text; an empty one is measured with its placeholder written in. */
+function textHeight(el: HTMLTextAreaElement) {
+  if (el.value) return el.scrollHeight;
+  el.value = el.placeholder;
+  const height = el.scrollHeight;
+  el.value = "";
+  return height;
+}
+// After the textarea shows the change; a composer closed meanwhile (sent from the full page) is not measured.
+watch([text, () => shell.labels.value.placeholder], resize, { flush: "post" });
+const sizer = new ResizeObserver(() => resize());
+onMounted(() => {
+  resize();
+  sizer.observe(input.value!);
+});
+onBeforeUnmount(() => sizer.disconnect());
 
 function submit() {
   if (!canSend.value) return;

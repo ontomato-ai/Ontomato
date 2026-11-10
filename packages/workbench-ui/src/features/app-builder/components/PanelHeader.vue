@@ -1,5 +1,7 @@
 <script setup lang="ts">
+import { ref } from "vue";
 import { useI18n } from "vue-i18n";
+import type { TooltipInstance } from "element-plus";
 import { BadgeCheck, Lock, RefreshCw, Upload } from "lucide-vue-next";
 import { PANEL_TABS, shortCommit, type PanelTab } from "../panel";
 
@@ -21,6 +23,13 @@ defineProps<{
 }>();
 const emit = defineEmits<{ "update:tab": [tab: PanelTab]; refreshPreview: []; publish: [] }>();
 const { t } = useI18n();
+
+const publishedTip = ref<TooltipInstance | null>(null);
+/** The drawer opens where the mark's tooltip floats: the tooltip goes with the click, and one about to show stays away. */
+function openFromMark() {
+  publishedTip.value!.onClose(undefined, 0);
+  emit("publish");
+}
 </script>
 
 <template>
@@ -55,8 +64,14 @@ const { t } = useI18n();
       <el-tooltip v-else-if="tab === 'files'" :content="t('appBuilder.readOnly')" placement="bottom-end" :show-after="200">
         <span class="tool-icon" tabindex="0" :aria-label="t('appBuilder.readOnly')"><Lock :size="14" /></span>
       </el-tooltip>
-      <el-tooltip v-if="published" :content="t('appBuilder.publishedAs', { name: published })" placement="bottom-end" :show-after="200">
-        <button type="button" class="published" :aria-label="t('appBuilder.publishedAs', { name: published })" @click="emit('publish')">
+      <el-tooltip
+        v-if="published"
+        ref="publishedTip"
+        :content="t('appBuilder.publishedAs', { name: published })"
+        placement="bottom-end"
+        :show-after="200"
+      >
+        <button type="button" class="published" :aria-label="t('appBuilder.publishedAs', { name: published })" @click="openFromMark">
           <BadgeCheck :size="14" aria-hidden="true" /><span class="published-label">{{ t("appBuilder.publishedBadge") }}</span>
         </button>
       </el-tooltip>
