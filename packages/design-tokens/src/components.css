@@ -1,4 +1,18 @@
 /* Shared visual treatment for both editions and the embedded Manager. Layout stays with the owning component. */
+
+/* The page's text and background in both modes, for the workbench and for every app built on the apps SDK alike: the
+   one place they are set. The page's height and scrolling stay with the page. */
+body {
+  margin: 0;
+  font-family: var(--font-sans);
+  font-size: var(--text-base);
+  line-height: var(--leading-base);
+  color: var(--el-text-color-regular);
+  background: var(--el-bg-color-page);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
 /* Product controls use their existing border and background states rather than an additional outline. */
 *,
 *::before,

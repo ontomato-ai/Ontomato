@@ -1,5 +1,6 @@
-/* The one stylesheet of an SDK version: Element Plus with its dark variables, the platform's design foundation and the
-   conversation's styles. The edition's brand colours are installed by createAppContext(). */
+/* The one stylesheet of an SDK version: Element Plus with its dark variables, the platform's design foundation (with the
+   page's text and background) and the conversation's styles. The edition's brand colours are installed by
+   createAppContext(). */
 @import "element-plus/dist/index.css";
 @import "element-plus/theme-chalk/dark/css-vars.css";
 @import "@ontomato/design-tokens/foundation.css";

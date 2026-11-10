@@ -49,6 +49,9 @@ Put the stylesheet and the import map of this version into the page's `<head>`, 
 The paths start at the platform's root. When the platform is deployed under a path prefix, such as `/wenshu`, every
 `/apps-sdk/...` path starts with that prefix: `/wenshu/apps-sdk/...`. Use one version on a page; never mix two.
 
+The stylesheet gives the page the platform's text and background: its font, size, line height, text colour and page
+background, in both the light and the dark theme. Don't set them on `body` again; style only what is your page's own.
+
 ```html
 <div id="app" v-cloak>
   <el-button type="primary" @click="count++">Clicked {{ count }} times</el-button>
