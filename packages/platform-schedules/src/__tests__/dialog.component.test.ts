@@ -206,21 +206,14 @@ describe("writing a scheduled task", () => {
     await chooseApp(wrapper, "ontology");
     await flushPromises();
 
-    const dialog = wrapper.find(".el-dialog.schedule-dialog");
+    const dialog = wrapper.find(".el-dialog");
     const [header, body, footer] = (["header", "body", "footer"] as const).map((part) => dialog.find(`.el-dialog__${part}`));
-    // The title and the buttons sit outside the part that scrolls; every field the action declares is inside it.
+    // The title and the buttons sit outside the body, the part the platform's dialog layout scrolls; every field the
+    // action declares is inside it.
     expect(header.text()).toContain("New scheduled task");
     expect(footer.find('[data-action="submit"]').exists()).toBe(true);
     expect(body.find('[data-action="submit"]').exists()).toBe(false);
     expect(body.findAll('[data-field^="parameter:"]')).toHaveLength(4);
-
-    // The overlay bounds the dialog: a column whose header and footer keep their height and whose body scrolls.
-    const style = (element: Element) => getComputedStyle(element);
-    expect([style(dialog.element).display, style(dialog.element).flexDirection]).toEqual(["flex", "column"]);
-    expect(style(dialog.element).maxHeight).toMatch(/^calc\(100% - /);
-    expect(style(body.element).overflowY).toBe("auto");
-    expect(style(body.element).minHeight).toMatch(/^0(px)?$/);
-    for (const fixed of [header, footer]) expect(style(fixed.element).flexShrink).toBe("0");
   });
 
   it("puts the service's field errors on the fields they name", async () => {

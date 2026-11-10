@@ -30,7 +30,7 @@ function leaveJson(event: FocusEvent) {
     <div class="panel-header json-header">
       <div class="panel-header-title">
         <span class="panel-title">{{ t("hotData.jsonEdit") }}</span>
-        <span class="panel-count">{{ casesCount }}{{ t("hotData.entries") }}</span>
+        <span class="panel-count">{{ t("admin.nTestcases", { n: casesCount }, casesCount) }}</span>
       </div>
       <el-button
         class="json-toggle-button"

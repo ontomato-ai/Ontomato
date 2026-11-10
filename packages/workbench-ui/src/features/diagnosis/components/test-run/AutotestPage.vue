@@ -75,7 +75,7 @@ function subtitle(run: AutotestRunMeta) {
     parts.push(
       Number.isFinite(run.summary.correct)
         ? t("admin.correctCount", { correct: run.summary.correct, total: run.summary.total })
-        : t("admin.nTestcases", { n: run.summary.total }),
+        : t("admin.nTestcases", { n: run.summary.total }, run.summary.total),
     );
   if (run.createdAt) parts.push(relativeTime(run.createdAt));
   return parts.join(" · ");
