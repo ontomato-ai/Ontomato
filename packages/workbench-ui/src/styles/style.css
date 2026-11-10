@@ -8,24 +8,13 @@
 
 * {
   box-sizing: border-box;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
 }
 
+/* The page's text and background come from the design foundation; the workbench owns only its height and scrolling. */
 html,
 body {
   height: 100%;
   overflow: hidden;
-}
-
-body {
-  font-family: var(--font-sans);
-  background: var(--el-bg-color-page);
-  margin: 0;
-  padding: 0;
-  font-size: var(--text-base);
-  line-height: var(--leading-base);
-  color: var(--el-text-color-regular);
 }
 
 .resize-handle {
