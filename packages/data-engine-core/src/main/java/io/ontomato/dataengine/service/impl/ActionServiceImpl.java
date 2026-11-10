@@ -21,6 +21,7 @@ import io.ontomato.dataengine.service.ActionPreconditionService;
 import io.ontomato.dataengine.service.ActionService;
 import io.ontomato.dataengine.service.CapabilityGrantLookup;
 import io.ontomato.dataengine.service.IdentitySnapshotLookup;
+import io.ontomato.dataengine.service.ActionFunctionAdmission;
 import io.ontomato.dataengine.service.AdminService;
 import io.ontomato.dataengine.service.BusinessConfigService;
 import io.ontomato.dataengine.service.LangService;
@@ -269,7 +270,8 @@ public class ActionServiceImpl implements ActionService {
       return generation.settle(
           () -> {
             if (persistence) {
-              action.setFunction(functionDao.save(function));
+              ActionFunctionAdmission.requireSupported(function, langService, lang);
+              action.setFunction(functionDao.save(function, lang));
               return actionDao.save(action);
             }
             return action;
@@ -313,6 +315,7 @@ public class ActionServiceImpl implements ActionService {
     if (function == null) {
       throw new Exception(langService.get(lang, "Function.cannotBeEmpty"));
     }
+    ActionFunctionAdmission.requireSupported(function, langService, lang);
     // Vector storage and the domain-scoped asset index key off the function's domain; the
     // controller sets it on the action, so carry it onto a new function before saving.
     if (function.getDomainId() == null || function.getDomainId().isBlank()) {
@@ -324,12 +327,7 @@ public class ActionServiceImpl implements ActionService {
       if (existFunction == null) {
         throw new Exception(langService.get(lang, "Function.notFound"));
       }
-      if (!Function.OPERATION_WRITE.equals(existFunction.getOperation())) {
-        throw new Exception(langService.get(lang, "Function.notWrite"));
-      }
       codeChanged = !existFunction.getCode().equals(function.getCode());
-    } else if (!Function.OPERATION_WRITE.equals(function.getOperation())) {
-      throw new Exception(langService.get(lang, "Function.notWrite"));
     }
     // Publication freezes the program. Whoever approved the action approved exactly this code, so
     // rewriting it in place would keep the approval while replacing what it approved. A change is a
@@ -362,13 +360,13 @@ public class ActionServiceImpl implements ActionService {
             action.setBusinessMeaning(meaning);
             action.setCodeHash(codeHash);
             action.setExplanationVersion(Action.EXPLANATION_VERSION);
-            action.setFunction(functionDao.save(generatedFunction));
+            action.setFunction(functionDao.save(generatedFunction, lang));
             return actionDao.save(action);
           });
     }
     action.setCodeHash(codeHash);
     action.setExplanationVersion(Action.EXPLANATION_VERSION);
-    function = functionDao.save(function);
+    function = functionDao.save(function, lang);
     action.setFunction(function);
     return actionDao.save(action);
   }
@@ -465,6 +463,7 @@ public class ActionServiceImpl implements ActionService {
         if (function == null || function.getId() == null) {
           throw new Exception("Action " + actionId + " has no embedded function");
         }
+        ActionFunctionAdmission.requireSupported(function, langService, lang);
         if (domainId != null) {
           action.setDomainId(domainId);
           function.setDomainId(domainId);
@@ -491,7 +490,7 @@ public class ActionServiceImpl implements ActionService {
         // the bundle records, falling back to the importer when the bundle carries none.
         if (action.getCreatedBy() == null) action.setCreatedBy(importer);
         action.setReviewedBy(importer);
-        functionDao.save(function);
+        functionDao.save(function, lang);
         actionDao.save(action);
         successCount++;
       } catch (Exception e) {
@@ -596,6 +595,7 @@ public class ActionServiceImpl implements ActionService {
     if (!user.getDomainId().equals(action.getDomainId()) || action.getFunction() == null ||
         !user.getDomainId().equals(action.getFunction().getDomainId())) throw new IllegalArgumentException("Action is outside the current domain");
     if (!Action.STATUS_PUBLISHED.equals(action.getStatus())) throw new Exception(langService.get(lang, "Action.notPublished"));
+    ActionFunctionAdmission.requireSupported(action.getFunction(), langService, lang);
     return action;
   }
 

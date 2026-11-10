@@ -8,24 +8,13 @@
 
 * {
   box-sizing: border-box;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
 }
 
+/* The page's text and background come from the design foundation; the workbench owns only its height and scrolling. */
 html,
 body {
   height: 100%;
   overflow: hidden;
-}
-
-body {
-  font-family: var(--font-sans);
-  background: var(--el-bg-color-page);
-  margin: 0;
-  padding: 0;
-  font-size: var(--text-base);
-  line-height: var(--leading-base);
-  color: var(--el-text-color-regular);
 }
 
 .resize-handle {
@@ -85,8 +74,24 @@ body {
   justify-content: center !important;
 }
 
+/* A centred dialog never outgrows its overlay, which covers the window: the title with its close button and the footer
+   stay in view, and only the body between them scrolls. */
 .el-dialog {
+  display: flex;
+  flex-direction: column;
+  max-height: calc(100% - 32px);
   margin: 0 !important;
+}
+
+.el-dialog__header,
+.el-dialog__footer {
+  flex: none;
+}
+
+.el-dialog__body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
 }
 
 .header-actions {

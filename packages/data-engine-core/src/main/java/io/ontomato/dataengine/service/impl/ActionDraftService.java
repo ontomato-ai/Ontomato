@@ -16,6 +16,7 @@ import io.ontomato.dataengine.core.bean.User;
 import io.ontomato.dataengine.dao.ActionDao;
 import io.ontomato.dataengine.dao.FunctionDao;
 import io.ontomato.dataengine.service.AdminService;
+import io.ontomato.dataengine.service.ActionFunctionAdmission;
 import io.ontomato.dataengine.service.IdentityService;
 import io.ontomato.dataengine.service.LangService;
 import io.ontomato.dataengine.service.agent.ActionCreationService;
@@ -304,6 +305,7 @@ public class ActionDraftService {
     Function function = action.getFunction();
     if (function == null)
       throw new AgentHttpException(422, "INVALID_DRAFT", "The draft has no function");
+    ActionFunctionAdmission.requireSupported(function, langService, lang);
     if (!program.equals(function.getCode())
         || action.getCodeHash() == null
         || !action.getCodeHash().equals(codeHash)
@@ -315,7 +317,7 @@ public class ActionDraftService {
     action.setReviewedBy(owner.userId());
     action.setExplanationVersion(Action.EXPLANATION_VERSION);
     action.setDefinition(ActionDefinitionProjector.project(action));
-    action.setFunction(functionDao.save(function));
+    action.setFunction(functionDao.save(function, lang));
     Action saved = actionDao.save(action);
     store.update("UPDATE action_drafts SET consumed_at=now() WHERE id=?", uuid(draftId));
     return saved;

@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createApp, defineComponent, h, reactive, nextTick, type App } from "vue";
 import { createViewWidget } from "@ontomato/contracts/object-views";
+import { chartTheme } from "@ontomato/foundation-ui/chart";
 import ObjectViewVisualization from "../object-views/ObjectViewVisualization.vue";
 import { installObjectViewHost } from "./object-view-host";
 
@@ -53,5 +54,30 @@ describe("Object View skill rendering", () => {
     const frame = element.querySelector("iframe")!;
     expect(frame.srcdoc).toContain('/prefix/api/echart/echarts.min.js');
     expect(frame.getAttribute("sandbox")).toBe("allow-scripts allow-same-origin");
+  });
+  it("draws the skill's charts in the platform's chart theme and follows the page into dark", async () => {
+    // A brand stylesheet as @ontomato/design-tokens writes one: the light values on :root, the dark ones on html.dark.
+    const brand = document.createElement("style");
+    brand.textContent = ":root { --chart-1: #111111; --el-text-color-primary: #101010; } html.dark { --chart-1: #eeeeee; --el-text-color-primary: #f0f0f0; }";
+    document.head.append(brand);
+    try {
+      vi.stubGlobal("fetch", async () => new Response(JSON.stringify({ success: true, result: { html: "<html><head></head>chart</html>" } })));
+      const element = document.createElement("div"); document.body.append(element);
+      app = createApp(defineComponent({ setup() {
+        return () => h(ObjectViewVisualization, { widget: { ...createViewWidget("chart"), chartType: "bar" }, rows: [{ label: "A", value: 1 }], value: [] });
+      } }));
+      installObjectViewHost(app);
+      app.mount(element);
+      const frame = () => element.querySelector("iframe")?.srcdoc ?? "";
+
+      await vi.waitFor(() => expect(frame()).toContain(JSON.stringify(chartTheme())));
+      expect(frame()).toContain("#111111");
+      document.documentElement.classList.add("dark");
+      await vi.waitFor(() => expect(frame()).toContain(JSON.stringify(chartTheme())));
+      expect(frame()).toContain("#eeeeee");
+    } finally {
+      brand.remove();
+      document.documentElement.classList.remove("dark");
+    }
   });
 });

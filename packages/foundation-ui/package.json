@@ -9,6 +9,7 @@
     "./code": "./src/code/index.ts",
     "./form": "./src/form/index.ts",
     "./markdown": "./src/markdown/index.ts",
+    "./preview": "./src/preview/index.ts",
     "./theme": "./src/theme/index.ts"
   },
   "scripts": {

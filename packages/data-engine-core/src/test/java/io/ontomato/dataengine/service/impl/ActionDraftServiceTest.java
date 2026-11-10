@@ -85,15 +85,29 @@ class ActionDraftServiceTest {
     Action action = actionWith(code);
     JSONObject row = row(action, code, Instant.now().plusSeconds(3600).toString(), null);
     when(store.one(anyString(), any(), any(), any())).thenReturn(row);
-    when(functions.save(any())).thenAnswer(call -> call.getArgument(0));
+    when(functions.save(any(), anyString())).thenAnswer(call -> call.getArgument(0));
     when(actionDao.save(any())).thenAnswer(call -> call.getArgument(0));
 
     Action saved = service.save(UUID.randomUUID().toString(), "en");
 
     assertNotNull(saved);
     verify(actions, never()).explainForDraft(any(), any());
-    verify(functions).save(any());
+    verify(functions).save(any(), anyString());
     verify(actionDao).save(any());
+  }
+
+  @Test
+  void saveRejectsAQueryPackageBeforeWritingTheSnapshot() {
+    Action action = actionWith(code);
+    action.getFunction().setQueryPackage(JSONObject.of(
+        "manifest", JSONObject.of("parameterDefs", new JSONArray())));
+    when(store.one(anyString(), any(), any(), any())).thenReturn(
+        row(action, code, Instant.now().plusSeconds(3600).toString(), null));
+    when(lang.get("en", "Action.unsupportedFunction")).thenReturn("Action requires a write Python Function");
+    var error = assertThrows(IllegalArgumentException.class,
+        () -> service.save(UUID.randomUUID().toString(), "en"));
+    assertEquals("Action requires a write Python Function", error.getMessage());
+    verifyNoInteractions(functions, actionDao);
   }
 
   @Test

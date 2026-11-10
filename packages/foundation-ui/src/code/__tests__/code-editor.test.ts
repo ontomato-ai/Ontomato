@@ -26,19 +26,29 @@ it.each(["markdown", "javascript"] as const)("keeps %s hints out of edited conte
   }
 });
 
-it("searches read-only text from the keyboard, in the words of the host's Element Plus locale", async () => {
+it("lets read-only text take the focus that keyboard search needs", () => {
+  const wrapper = mount(CodeEditor, { props: { modelValue: '{"region": "华东"}', language: "json", readonly: true } });
+  try {
+    expect(viewOf(wrapper).state.readOnly).toBe(true);
+    // The test DOM focuses any element; in a browser only a tab stop lets text that is not editable take the focus.
+    expect((wrapper.get(".cm-content").element as HTMLElement).tabIndex).toBe(0);
+  } finally {
+    wrapper.unmount();
+  }
+});
+
+// Read-only or editable, Ctrl/Cmd-F opens the one search panel: at the top, prompting in the host's Element Plus words.
+it.each([true, false])("opens the same search panel from the keyboard (read-only: %s)", async (readonly) => {
   const wrapper = mount(CodeEditor, {
-    props: { modelValue: '{"region": "华东"}', language: "json", readonly: true },
+    props: { modelValue: '{"region": "华东"}', language: "json", readonly },
     global: { plugins: [[ElementPlus, { locale: zhCn }]] },
   });
   try {
-    const content = wrapper.get(".cm-content").element as HTMLElement;
-    expect(viewOf(wrapper).state.readOnly).toBe(true);
-    // The test DOM focuses any element; in a browser only a tab stop lets text that is not editable take the focus.
-    expect(content.tabIndex).toBe(0);
+    const content = wrapper.get(".cm-content").element;
     content.dispatchEvent(new KeyboardEvent("keydown", { key: "f", keyCode: 70, ctrlKey: true, bubbles: true }));
     await nextTick();
-    expect(wrapper.get(".cm-search input[name=search]").attributes("placeholder")).toBe("请输入搜索内容");
+    expect(wrapper.find(".cm-panels-bottom .cm-search").exists()).toBe(false);
+    expect(wrapper.get(".cm-panels-top .cm-search input[name=search]").attributes("placeholder")).toBe("请输入搜索内容");
   } finally {
     wrapper.unmount();
   }

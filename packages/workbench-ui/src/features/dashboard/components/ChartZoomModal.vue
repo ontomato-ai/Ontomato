@@ -11,16 +11,23 @@
     @close="emit('close')"
   >
     <EChart v-if="mode === 'chart' && option" :option="modalOption" :theme="theme" height="100%" />
-    <ChartDataTable v-show="mode === 'table'" :tabular="tabular" :max-rows="maxRows" />
+    <TablePreview
+      v-if="mode === 'table'"
+      :table="chartTable(tabular, maxRows)"
+      height="100%"
+      :empty-text="t('dashboard.noDataToDisplay')"
+    />
   </el-dialog>
 </template>
 
 <script setup>
 import { computed } from "vue";
 import { EChart, useChartTheme } from "@ontomato/foundation-ui/chart";
-import ChartDataTable from "./ChartDataTable.vue";
+import { TablePreview } from "@ontomato/foundation-ui/preview";
 import { chartBrandColors } from "@ontomato/contracts/chart-presentation";
+import { useI18n } from "vue-i18n";
 import { workbenchContent } from "../../../content";
+import { chartTable } from "./utils/chartTabular";
 
 const props = defineProps({
   open: { type: Boolean, default: false },
@@ -32,6 +39,7 @@ const props = defineProps({
 });
 
 const emit = defineEmits(["close"]);
+const { t } = useI18n();
 
 const { zoomChartTheme } = workbenchContent().dashboard;
 const chartTheme = useChartTheme();
@@ -47,10 +55,8 @@ const modalOption = computed(() =>
 
 <style>
 /* The dialog is drawn in the page's overlay layer, outside this component: the card's size, its title on one line, and
-   the chart or table filling the rest. */
+   the chart or table filling the body (the platform stylesheet makes every dialog a column whose body takes the rest). */
 .chart-zoom-dialog {
-  display: flex;
-  flex-direction: column;
   height: min(720px, 92vh);
 }
 
@@ -63,9 +69,7 @@ const modalOption = computed(() =>
 
 .chart-zoom-body {
   display: flex;
-  flex: 1 1 auto;
   flex-direction: column;
-  min-height: 0;
 }
 
 .chart-zoom-body > * {

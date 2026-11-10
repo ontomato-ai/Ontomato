@@ -199,6 +199,11 @@ export default [
     files: ["packages/foundation-ui/src/**/*.{ts,vue}"],
     ignores: ["packages/foundation-ui/src/**/__tests__/**"],
     rules: {
+      // DOM type names (such as ReferrerPolicy) are not runtime globals, and the base rule reads a function type's
+      // parameter name as an unused variable in a single-file component: vue-tsc and the TypeScript-aware rule check both.
+      "no-undef": "off",
+      "no-unused-vars": "off",
+      "@typescript-eslint/no-unused-vars": ["warn", { argsIgnorePattern: "^_", varsIgnorePattern: "^_" }],
       "no-restricted-imports": "off",
       "@typescript-eslint/no-restricted-imports": restrict([
         {

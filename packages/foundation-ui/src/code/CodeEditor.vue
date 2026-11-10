@@ -164,13 +164,14 @@ const createEditor = () => {
     getLanguageExtension(),
     EditorView.lineWrapping,
     EditorState.tabSize.of(2),
+    // One search panel for every editor, read-only or not: at the top, prompting in the host's words.
+    search({ top: true }),
+    EditorState.phrases.of({ Find: t("el.transfer.filterPlaceholder") }),
   ];
 
   if (props.readonly) {
     // Content that is not editable takes no focus by itself, and the search keys only reach a focused editor.
     extensions.push(EditorView.contentAttributes.of({ tabindex: "0" }));
-    extensions.push(search({ top: true }));
-    extensions.push(EditorState.phrases.of({ Find: t("el.transfer.filterPlaceholder") }));
     extensions.push(EditorView.editable.of(false));
     extensions.push(EditorState.readOnly.of(true));
     if (isDark.value) {
@@ -329,7 +330,7 @@ onUnmounted(() => {
   background: var(--el-color-primary-light-9);
 }
 
-.code-editor.readonly-mode :deep(.cm-panels-top:has(.cm-search)) {
+.code-editor :deep(.cm-panels-top:has(.cm-search)) {
   position: absolute;
   top: 8px !important;
   right: 8px;
@@ -341,7 +342,7 @@ onUnmounted(() => {
   z-index: 50;
 }
 
-.code-editor.readonly-mode :deep(.cm-panel.cm-search) {
+.code-editor :deep(.cm-panel.cm-search) {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -356,7 +357,7 @@ onUnmounted(() => {
   font-family: var(--el-font-family, sans-serif);
 }
 
-.code-editor.readonly-mode :deep(.cm-search input[name="search"]) {
+.code-editor :deep(.cm-search .cm-textfield) {
   flex: 1 1 160px;
   min-width: 120px;
   height: 28px;
@@ -371,12 +372,16 @@ onUnmounted(() => {
   font: inherit;
 }
 
-.code-editor.readonly-mode :deep(.cm-search input[name="search"]:focus) {
+.code-editor :deep(.cm-search .cm-textfield:focus) {
   border-color: var(--el-color-primary);
   box-shadow: 0 0 0 2px var(--el-color-primary-light-8);
 }
 
-.code-editor.readonly-mode :deep(.cm-search .cm-button) {
+.code-editor :deep(.cm-search input[name="search"]) {
+  flex-basis: 120px;
+}
+
+.code-editor :deep(.cm-search .cm-button) {
   height: 28px;
   min-width: 28px;
   box-sizing: border-box;
@@ -397,30 +402,30 @@ onUnmounted(() => {
     background-color 160ms ease;
 }
 
-.code-editor.readonly-mode :deep(.cm-search .cm-button:hover),
-.code-editor.readonly-mode :deep(.cm-search label:hover),
-.code-editor.readonly-mode :deep(.cm-search button[name="close"]:hover) {
+.code-editor :deep(.cm-search .cm-button:hover),
+.code-editor :deep(.cm-search label:hover),
+.code-editor :deep(.cm-search button[name="close"]:hover) {
   color: var(--el-color-primary);
   background: var(--el-color-primary-light-9);
 }
 
-.code-editor.readonly-mode :deep(.cm-search .cm-button:focus-visible),
-.code-editor.readonly-mode :deep(.cm-search button[name="close"]:focus-visible),
-.code-editor.readonly-mode :deep(.cm-search label:has(input:focus-visible)) {
+.code-editor :deep(.cm-search .cm-button:focus-visible),
+.code-editor :deep(.cm-search button[name="close"]:focus-visible),
+.code-editor :deep(.cm-search label:has(input:focus-visible)) {
   outline: 2px solid var(--el-color-primary-light-5);
   outline-offset: 1px;
 }
 
-.code-editor.readonly-mode :deep(.cm-search button[name="next"]),
-.code-editor.readonly-mode :deep(.cm-search button[name="prev"]) {
+.code-editor :deep(.cm-search button[name="next"]),
+.code-editor :deep(.cm-search button[name="prev"]) {
   width: 28px;
   padding: 0;
   border-color: var(--el-border-color-lighter);
   font-size: 0;
 }
 
-.code-editor.readonly-mode :deep(.cm-search button[name="next"]::before),
-.code-editor.readonly-mode :deep(.cm-search button[name="prev"]::before) {
+.code-editor :deep(.cm-search button[name="next"]::before),
+.code-editor :deep(.cm-search button[name="prev"]::before) {
   content: "";
   display: inline-block;
   width: 6px;
@@ -429,15 +434,15 @@ onUnmounted(() => {
   border-bottom: 1.5px solid currentColor;
 }
 
-.code-editor.readonly-mode :deep(.cm-search button[name="next"]::before) {
+.code-editor :deep(.cm-search button[name="next"]::before) {
   transform: translateY(-2px) rotate(45deg);
 }
 
-.code-editor.readonly-mode :deep(.cm-search button[name="prev"]::before) {
+.code-editor :deep(.cm-search button[name="prev"]::before) {
   transform: translateY(2px) rotate(225deg);
 }
 
-.code-editor.readonly-mode :deep(.cm-search label) {
+.code-editor :deep(.cm-search label) {
   position: relative;
   display: inline-flex;
   align-items: center;
@@ -457,33 +462,33 @@ onUnmounted(() => {
     background-color 160ms ease;
 }
 
-.code-editor.readonly-mode :deep(.cm-search label::after) {
+.code-editor :deep(.cm-search label::after) {
   font-family: var(--font-mono);
   font-size: var(--text-xs);
   line-height: 1;
 }
 
-.code-editor.readonly-mode :deep(.cm-search label:has(input[name="case"])::after) {
+.code-editor :deep(.cm-search label:has(input[name="case"])::after) {
   content: "Aa";
 }
 
-.code-editor.readonly-mode :deep(.cm-search label:has(input[name="re"])::after) {
+.code-editor :deep(.cm-search label:has(input[name="re"])::after) {
   content: ".*";
 }
 
-.code-editor.readonly-mode :deep(.cm-search label:has(input[name="word"])::after) {
+.code-editor :deep(.cm-search label:has(input[name="word"])::after) {
   content: "ab";
   text-decoration: underline;
   text-underline-offset: 2px;
 }
 
-.code-editor.readonly-mode :deep(.cm-search label:has(input:checked)) {
+.code-editor :deep(.cm-search label:has(input:checked)) {
   border-color: var(--el-color-primary-light-5);
   background: var(--el-color-primary-light-9);
   color: var(--el-color-primary);
 }
 
-.code-editor.readonly-mode :deep(.cm-search input[type="checkbox"]) {
+.code-editor :deep(.cm-search input[type="checkbox"]) {
   position: absolute;
   width: 1px;
   height: 1px;
@@ -492,7 +497,7 @@ onUnmounted(() => {
   pointer-events: none;
 }
 
-.code-editor.readonly-mode :deep(.cm-search button[name="close"]) {
+.code-editor :deep(.cm-search button[name="close"]) {
   position: absolute;
   top: 6px;
   right: 6px;

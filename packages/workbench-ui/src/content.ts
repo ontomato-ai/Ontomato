@@ -3,8 +3,6 @@
  * of the UI locale and not derived from the Node message bundle. Three kinds: product literals that are the same fact as
  * in Node, historical matching rules (kept as-is, including known old inconsistencies), and standalone fixed UI text. Text that already has a t key still uses messages; error joining punctuation comes from errorPunctuation.
  */
-import type { PromptTranscriptFormat } from "@ontomato/contracts/observe";
-
 export interface WorkbenchContent {
   /** Analysis agent MCP server name, the same value as Node product.analysisMcpServerName: identifies that server among published services on the MCP page (McpManager.vue). */
   analysisMcpServerName: string;
@@ -13,15 +11,11 @@ export interface WorkbenchContent {
   /** Default input example for debugging the echarts skill (the original JSON.stringify(…, null, 2) result, SkillDebugDialog.vue), independent of the UI locale. */
   skillDebugEchartsInput: string;
   /**
-   * Product protocol values of the observe page (/observe): the application log source in the live log sidebar, the same
-   * value as Node product.logSource (LiveLogsPage.vue); the marker words/turn rules of prompt artifacts, the same object as
-   * the Node artifact protocol WorkspaceArtifactText (FilePreview → reading parser); and the prompt directory name, the same
-   * value as Node product.diagnosisWorkspaceNames.prompts (used to tell prompt artifacts by path).
+   * Product protocol value of the observe page (/observe): the application log source in the live log sidebar, the same
+   * value as Node product.logSource (LiveLogsPage.vue).
    */
   observe: {
     appLogSource: string;
-    promptTranscript: PromptTranscriptFormat;
-    promptDirectoryName: string;
   };
   text: WorkbenchFixedText;
   dashboard: DashboardVisuals;

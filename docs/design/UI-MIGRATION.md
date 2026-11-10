@@ -60,7 +60,7 @@ long data, keyboard, dropdown/overlay and permission variants.
 | Platform schedules | /schedules, ?app=, ?taskId=&runId= | PlatformSchedulesPage + ScheduleCard/ScheduleTaskDialog/ScheduleRunsDrawer; cards, one form, records drawer | Implemented | Pending 128 screenshots (both themes, both editions) |
 | Agent schedules | /agents/schedules | Redirect to /schedules?app=agents | Implemented | Not applicable (redirect) |
 | Operations chat | /ops/diagnosis | ObserveLayout / AgentShell | Implemented (shared) | Pending |
-| Turn evidence | /ops/turn, /:turnKey | ListDetail/ArtifactDetail/FilePreview | Implemented | Pending real artifacts |
+| Turn evidence | /ops/turn, /:turnKey | ListDetail/ArtifactDetail | Implemented | Pending real artifacts |
 | Operations tests/results/cases | /ops/test, /results, /cases, /autotest/runs/:runId/cases/:caseId | AutotestPage/TestPage/TestcasesPage/ResultsPage/CaseArtifactPage | In progress | Pending run history/edit dialogs |
 | Live logs | /ops/live-logs | LiveLogsPage; resizable log panes | Implemented | Pending streaming/error |
 | DSL test | /ops/dsl | DslTestPage; editor/result, enterprise MQL | Implemented | Pending execution/result |

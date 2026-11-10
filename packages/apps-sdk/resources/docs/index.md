@@ -49,6 +49,9 @@ Put the stylesheet and the import map of this version into the page's `<head>`, 
 The paths start at the platform's root. When the platform is deployed under a path prefix, such as `/wenshu`, every
 `/apps-sdk/...` path starts with that prefix: `/wenshu/apps-sdk/...`. Use one version on a page; never mix two.
 
+The stylesheet gives the page the platform's text and background: its font, size, line height, text colour and page
+background, in both the light and the dark theme. Don't set them on `body` again; style only what is your page's own.
+
 ```html
 <div id="app" v-cloak>
   <el-button type="primary" @click="count++">Clicked {{ count }} times</el-button>
@@ -137,6 +140,7 @@ never a silent partial list.
 `<metric-view-data>` binds a MetricView by property. It reads when it appears and again whenever the id or the values of
 the parameters change. It draws nothing itself: its default slot receives `data`, `loading`, `error` and `reload`, and
 the page puts a table, a chart or a figure in it. Show `error` yourself.
+The `parameter-texts` property accepts user-entered text that the platform converts according to each parameter's type; invalid text fails that read with the platform's error message.
 
 ```html
 <metric-view-data :metric-view-id="metricViewId" :parameters="{ region }" v-slot="{ data, loading, error, reload }">

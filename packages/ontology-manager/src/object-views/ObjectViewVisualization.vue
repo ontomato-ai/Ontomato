@@ -3,10 +3,13 @@ import { computed, onBeforeUnmount, ref, watch } from "vue";
 import type { ViewWidget } from "@ontomato/contracts/object-views";
 import { useManagerClient, useOntologyText, useManagerContext } from "../context";
 import { themedChartHtml } from "@ontomato/contracts/chart-presentation";
+import { useChartTheme } from "@ontomato/foundation-ui/chart";
+import { HtmlPreview } from "@ontomato/foundation-ui/preview";
 const props = defineProps<{ widget: ViewWidget; rows: Record<string, unknown>[]; value: unknown }>();
 const client = useManagerClient();
 const context = useManagerContext();
 const { ot } = useOntologyText();
+const chartTheme = useChartTheme();
 const html = ref("");
 const error = ref("");
 const loading = ref(false);
@@ -23,11 +26,9 @@ const empty = computed(() => {
 });
 let request = 0;
 onBeforeUnmount(() => { request++; });
-const displayedHtml = computed(() => {
-  const properties = context.presentation.themeProperties[context.theme];
-  const colors = Array.from({ length: 8 }, (_, index) => properties[`--chart-${index + 1}`]).filter(Boolean);
-  return themedChartHtml(client.viewSkillHtml(html.value), { color: colors, visualMap: { inRange: { color: [colors[7], colors[0]] } } }, properties);
-});
+// The skill's charts are drawn in the platform's chart theme, with the page's theme properties inside the frame.
+const displayedHtml = computed(() =>
+  themedChartHtml(client.viewSkillHtml(html.value), chartTheme.value, context.presentation.themeProperties[context.theme]));
 watch(() => JSON.stringify([props.widget, props.value, props.rows, context.locale]), async () => {
   const current = ++request;
   html.value = ""; error.value = ""; loading.value = false;
@@ -56,12 +57,12 @@ watch(() => JSON.stringify([props.widget, props.value, props.rows, context.local
     <div v-if="empty" class="visualization-empty" role="status">{{ ot('ovNoChartData') }}</div>
     <div v-if="loading" class="visualization-loading" role="status"><span class="loading-indicator" aria-hidden="true" />{{ ot('ovLoading') }}</div>
     <p v-if="error" class="visualization-error" role="alert">{{ error }}</p>
-    <iframe v-if="html" :srcdoc="displayedHtml" :title="widget.title" sandbox="allow-scripts allow-same-origin" referrerpolicy="no-referrer" :style="context.presentation.themeProperties[context.theme]" />
+    <HtmlPreview v-if="html" :html="displayedHtml" :title="widget.title" sandbox="allow-scripts allow-same-origin" referrerpolicy="no-referrer" :style="context.presentation.themeProperties[context.theme]" />
   </div>
 </template>
 <style scoped>
 .skill-visualization { box-sizing: border-box; min-width: 0; max-width: 100%; overflow: hidden; display: flex; flex-direction: column; background: var(--el-bg-color); }
-iframe { display: block; width: 100%; height: 100%; min-height: 0; border: 0; flex: 1; background: var(--el-bg-color); }
+iframe { height: 100%; min-height: 0; flex: 1; background: var(--el-bg-color); }
 .visualization-loading { flex: 1; display: flex; align-items: center; justify-content: center; gap: 8px; color: var(--el-text-color-secondary); }
 .visualization-empty { flex: 1; display: grid; place-items: center; padding: 24px; color: var(--el-text-color-secondary); text-align: center; }
 .loading-indicator { width: 14px; height: 14px; border: 2px solid var(--el-border-color); border-top-color: var(--el-color-primary); border-radius: 50%; animation: visualization-spin .8s linear infinite; }

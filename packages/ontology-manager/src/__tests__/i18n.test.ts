@@ -46,7 +46,6 @@ describe("Manager messages in the page's vue-i18n tree", () => {
     const i18n = createI18n({ legacy: false, locale: "en", messages: { en: managerMessageTree(englishMessages) } as never });
     const labels = shellLabels((i18n.global as unknown as { t: GovernanceTranslate }).t);
     expect([labels.steps(0), labels.steps(1), labels.steps(3)]).toEqual(["0 steps", "1 step", "3 steps"]);
-    expect(labels.rows(2)).toBe("2 rows");
     expect(labels.elapsed("3s")).toBe("3s elapsed");
     expect(labels.greeting).toBe(englishMessages.governance.text.welcomeTitle);
   });

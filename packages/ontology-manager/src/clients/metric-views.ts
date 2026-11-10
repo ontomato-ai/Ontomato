@@ -6,6 +6,8 @@ export interface MetricViewRead {
   id: string;
   /** Merged over the defaults the MetricView's own definition declares. */
   parameters: Record<string, unknown>;
+  /** Fixed-value text; Java owns its conversion using the current parameter definition. */
+  parameterTexts?: Record<string, string>;
 }
 
 /**
@@ -20,7 +22,7 @@ export function createMetricViewsClient(request: Pick<ManagerRequest, "post" | "
     const defaults = Object.fromEntries(parameters
       .filter((parameter: { name: string; value?: unknown }) => Object.hasOwn(parameter, "value") && parameter.value !== null)
       .map((parameter: { name: string; value: unknown }) => [parameter.name, parameter.value]));
-    const response = await request.post("/metricView/execute", { id: input.id, param: { ...defaults, ...input.parameters } });
+    const response = await request.post("/metricView/execute", { id: input.id, param: { ...defaults, ...input.parameters }, parameterTexts: input.parameterTexts });
     if (response.truncated === true || response.partial === true || response.complete === false)
       throw new Error(response.truncationHint || request.text("ovIncompleteResults"));
     return response.data;

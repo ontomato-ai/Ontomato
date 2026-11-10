@@ -293,6 +293,27 @@ describe("configured object view interaction", () => {
     expect(element.querySelector(".metric")?.textContent).toBe("changed");
     expect(reads).toBe(1);
   });
+  it("sends fixed text separately from typed bindings and displays execution errors", async () => {
+    const view = createObjectView("Order");
+    view.variables.limit = 7;
+    const chart = createViewWidget("chart"); chart.resourceId = "metric-1";
+    chart.parameters = {
+      top_n: { source: "literal", value: "abc" },
+      limit: { source: "variable", path: "limit" },
+      count: { source: "object", path: "count" },
+    };
+    view.tabs[0].sections[0].widgets = [chart];
+    vi.stubGlobal("fetch", async (url: string, init: RequestInit) => {
+      if (url.endsWith("queryById")) return answer({ function: { parameters: [] } });
+      expect(JSON.parse(String(init.body))).toEqual({
+        id: "metric-1", param: { limit: 7, count: 3 }, parameterTexts: { top_n: "abc" },
+      });
+      return new Response(JSON.stringify({ success: false, message: "Invalid value for top_n" }));
+    });
+    const element = mount(() => h(ObjectViewRuntime, { document: view, object: { count: 3 }, reference: { className: "Order", primaryKey: "1" } }));
+    await settle();
+    expect(element.textContent).toContain("Invalid value for top_n");
+  });
   it("queries a bound MetricView once for each changed parameter", async () => {
     const view = createObjectView("Order");
     view.variables.filter = "initial";
