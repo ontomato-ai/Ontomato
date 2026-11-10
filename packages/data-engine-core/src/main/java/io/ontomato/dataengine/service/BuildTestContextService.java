@@ -70,11 +70,14 @@ public class BuildTestContextService {
     String id=UUID.randomUUID().toString(), sandboxId="bt_"+id.replace("-","")+"_";
     long expires=System.currentTimeMillis()+3600000;
     if(identity.getCurrentCredentialExpiresAt()!=null) expires=Math.min(expires,identity.getCurrentCredentialExpiresAt());
-    var data=JSONObject.of("sandboxId",sandboxId,"classNames",classes,"sample",sample,"fingerprint",fingerprint(user.getDomainId()),"sampleSha256",io.ontomato.dataengine.service.agent.AgentJson.hash(JSONObject.of("sample",sample,"attachments",attachments)),"binding",binding,"resources",binding.getList("resources",String.class).stream().map(name->name.replace("{sandbox}",sandboxId)).toList());
+    var data=JSONObject.of("sandboxId",sandboxId,"classNames",classes,"sample",sample,"fingerprint",fingerprint(user.getDomainId()),"sampleSha256",io.ontomato.dataengine.service.agent.AgentJson.hash(JSONObject.of("sample",sample,"attachments",attachments)),"binding",binding,"resources",new JSONArray());
     jdbc.update("INSERT INTO build_test_contexts(id,owner_id,domain_id,workspace_id,state,expires_at,data) VALUES(?,?,?,?,'PREPARING',?,?::jsonb)",id,user.getId(),user.getDomainId(),workspace,expires,data.toJSONString());
     String stage="BUILD_TEST_SCHEMA_FAILED";
     try {
-      sandbox.createSampleStructure(sandboxId,sample,user.getDomainId());
+      sandbox.createSampleStructure(sandboxId,sample,user.getDomainId(),resources->{
+        data.put("resources",resources);
+        jdbc.update("UPDATE build_test_contexts SET data=?::jsonb WHERE id=?",data.toJSONString(),id);
+      });
       stage="BUILD_TEST_DATA_FAILED";
       sandbox.loadSample(sandboxId,sample,attachments,user.getDomainId());
       jdbc.update("UPDATE build_test_contexts SET state='READY' WHERE id=?",id);
@@ -153,7 +156,10 @@ public class BuildTestContextService {
           throw new IllegalStateException("Execution has not stopped: "+execution);
       }
       var data=r.getJSONObject("data");
-      sandbox.dropSampleStructure(data.getString("sandboxId"),data.getJSONObject("binding"),domain);
+      sandbox.dropSampleStructure(data.getJSONObject("binding"),data.getJSONArray("resources"),domain,resources->{
+        data.put("resources",resources);
+        jdbc.update("UPDATE build_test_contexts SET data=?::jsonb WHERE id=?",data.toJSONString(),id);
+      });
       jdbc.update("UPDATE build_test_contexts SET cleanup_error='' WHERE id=?",id);
       } finally { writeLock.unlock(); }
     } catch(Exception failure) { jdbc.update("UPDATE build_test_contexts SET cleanup_error=? WHERE id=?",failure.getMessage(),id); }

@@ -665,6 +665,21 @@ public class PostgreAdapter implements DataAdapter {
 	}
 
     @Override
+    public void validateSandboxClasses(String namespace, List<Map<String,Object>> classes) {
+      var names=new java.util.HashMap<String,String>();
+      try(var connection=openConnection();var statement=connection.prepareStatement("SELECT lower(?)::name::text")) {
+        for(var cls:classes) {
+          String logical=sandboxClassName(namespace,(String)cls.get("className"));
+          statement.setString(1,logical);
+          try(var rows=statement.executeQuery()) {
+            rows.next();String actual=rows.getString(1),previous=names.putIfAbsent(actual,logical);
+            if(previous!=null) throw new IllegalArgumentException("Sandbox table collision: "+previous+" and "+logical+" resolve to "+actual);
+          }
+        }
+      } catch(java.sql.SQLException failure) { throw new IllegalStateException("Cannot resolve sandbox identifiers",failure); }
+    }
+
+    @Override
     public boolean supportsSandbox() { return true; }
 
 	@Override

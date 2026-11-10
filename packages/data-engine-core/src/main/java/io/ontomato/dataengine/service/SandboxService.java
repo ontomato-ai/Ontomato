@@ -6,9 +6,9 @@ import com.alibaba.fastjson2.JSONArray;
 
 public interface SandboxService {
     com.alibaba.fastjson2.JSONObject bindSample(com.alibaba.fastjson2.JSONObject sample, String domain);
-    void dropSampleStructure(String sandbox, com.alibaba.fastjson2.JSONObject binding, String domain);
+    void dropSampleStructure(com.alibaba.fastjson2.JSONObject binding, com.alibaba.fastjson2.JSONArray resources, String domain, java.util.function.Consumer<com.alibaba.fastjson2.JSONArray> save);
     void createSampleStructure(String sandbox, com.alibaba.fastjson2.JSONObject sample, String domain);
-    void dropSampleStructure(String sandbox, java.util.List<String> classes, String domain);
+    void createSampleStructure(String sandbox, com.alibaba.fastjson2.JSONObject sample, String domain, java.util.function.Consumer<com.alibaba.fastjson2.JSONArray> save);
 
     com.alibaba.fastjson2.JSONObject validateSample(com.alibaba.fastjson2.JSONObject sample, Map<String, byte[]> attachments, String domainId);
     void loadSample(String sandboxId, com.alibaba.fastjson2.JSONObject sample, Map<String, byte[]> attachments, String domainId) throws Exception;

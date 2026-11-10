@@ -65,12 +65,11 @@ public class SandboxServiceImpl implements SandboxService {
         hashes.put("source:"+source.getString("id"),io.ontomato.dataengine.service.agent.AgentJson.hash(source.get("connection")));
         source.remove("connection");
       }
-      return JSONObject.of("config",config,"connectionHashes",hashes,"rule",jsonRuleDao.query(domain),"classNames",classes,
-          "resources",classes.stream().map(name->adapter.sandboxClassName("{sandbox}",name)).toList());
+      return JSONObject.of("config",config,"connectionHashes",hashes,"rule",jsonRuleDao.query(domain),"classNames",classes);
     }
 
     @Override
-    public void dropSampleStructure(String sandbox, JSONObject binding, String domain) {
+    public void dropSampleStructure(JSONObject binding, JSONArray resources, String domain, java.util.function.Consumer<JSONArray> save) {
       var config=com.alibaba.fastjson2.JSON.parseObject(binding.getJSONObject("config").toJSONString(),BusinessConfig.class);
       var current=businessConfigService.get(domain);
       var hashes=binding.getJSONObject("connectionHashes");
@@ -88,8 +87,16 @@ public class SandboxServiceImpl implements SandboxService {
         config.setDataAdapterConnections(current.getDataAdapterConnections());
       }
       var adapter=dataAdapterRegistry.create(config,binding.getJSONObject("rule"));
-      vectorResourceDao.dropNamespace(getVectorNamespace(adapter,sandbox),domain);
-      adapter.dropNamespace(sandbox,binding.getList("classNames",String.class));
+      for(int index=resources.size()-1;index>=0;index--) {
+        var resource=resources.getJSONObject(index);
+        if("DELETED".equals(resource.getString("cleanupStatus"))) continue;
+        try {
+          if("pending".equals(resource.getString("kind"))) throw new IllegalStateException("Resource creation not confirmed: "+resource);
+          if("vector".equals(resource.getString("kind"))) vectorResourceDao.dropRecordedVector(resource);
+          else adapter.dropRecordedResource(resource);
+          resource.put("cleanupStatus","DELETED");save.accept(resources);
+        } catch(RuntimeException failure) { resource.put("cleanupStatus","FAILED");save.accept(resources);throw failure; }
+      }
     }
 
     @Override
@@ -111,12 +118,35 @@ public class SandboxServiceImpl implements SandboxService {
     }
 
     @Override
-    public void dropSampleStructure(String sandbox, List<String> classes, String domain) {
-      var adapter = getDataAdapter(domain);
-      vectorResourceDao.dropNamespace(getVectorNamespace(adapter, sandbox), domain);
-      adapter.dropNamespace(sandbox, classes);
+    @SuppressWarnings("unchecked")
+    public void createSampleStructure(String sandbox,JSONObject sample,String domain,java.util.function.Consumer<JSONArray> save) {
+      var adapter=getDataAdapter(domain);
+      var classes=sample.getJSONArray("objDatas").toJavaList(JSONObject.class).stream().map(row->row.getString("className")).toList();
+      var schema=jsonRuleDao.query(domain);
+      var definitions=((List<Map<String,Object>>)schema.get("classDef")).stream().filter(cls->classes.contains(cls.get("className"))).toList();
+      adapter.validateSandboxClasses(sandbox,definitions);
+      var planned=new java.util.ArrayList<JSONObject>();
+      for(var cls:definitions) for(String attr:getVectorAttrNames(cls))
+        planned.add(vectorResourceDao.plannedSandboxVector(adapter.sandboxClassName(sandbox,(String)cls.get("className")),attr,domain));
+      vectorResourceDao.validateSandboxVectorNames(planned);
+      var resources=new JSONArray();
+      var namespace=JSONObject.of("kind","pending","logicalName",sandbox,"operation","namespace");
+      resources.add(namespace);save.accept(resources);
+      var namespaces=adapter.createRecordedNamespaces(sandbox,classes);
+      resources.clear();resources.addAll(namespaces);save.accept(resources);
+      for(var cls:definitions) {
+        var resource=JSONObject.of("kind","pending","logicalName",adapter.sandboxClassName(sandbox,(String)cls.get("className")));
+        resources.add(resource);save.accept(resources);
+        resource.putAll(adapter.createRecordedClass(sandbox,cls));save.accept(resources);
+      }
+      var relationships=(Map<String,Map<String,String>>)schema.get("relationship_rule");
+      relationships.forEach((name,rel)->{if(classes.contains(rel.get("fromclass")) && classes.contains(rel.get("toclass"))) adapter.createEdgeType(sandbox,name);});
+      for(var plan:planned) {
+        var resource=JSONObject.of("kind","pending","logicalName",plan.getString("logicalName"),"directory",plan.getString("directory"));
+        resources.add(resource);save.accept(resources);
+        resource.putAll(vectorResourceDao.createRecordedVector(plan,domain));save.accept(resources);
+      }
     }
-
 
     @Override
     @SuppressWarnings("unchecked")

@@ -59,7 +59,7 @@ public class VectorResourceDao extends BaseDao {
 	}
 
 	private String quotedTable(String indexName) {
-		return "\"" + indexName + "\"";
+		return "\"" + indexName.replace("\"", "\"\"") + "\"";
 	}
 
 	private String replace(String brief) {
@@ -86,6 +86,41 @@ public class VectorResourceDao extends BaseDao {
 						+ "brief_vector vector"
 						+ ")");
 	}
+
+    public com.alibaba.fastjson2.JSONObject plannedSandboxVector(String className,String attrName,String domain) {
+      String logical=generateIndexName(className,attrName,domain);
+      return com.alibaba.fastjson2.JSONObject.of("logicalName",logical,"className",className,"attrName",attrName,
+          "directory",new File("conf/"+dirName+"/"+logical).getAbsolutePath());
+    }
+
+    /** Ask PostgreSQL to normalize identifiers before DDL; never silently share one physical table. */
+    public void validateSandboxVectorNames(List<com.alibaba.fastjson2.JSONObject> planned) {
+      var names=new java.util.HashMap<String,String>();
+      for(var resource:planned) {
+        String logical=resource.getString("logicalName");
+        String actual=jdbcTemplate.queryForObject("SELECT ?::name::text",String.class,logical);
+        String previous=names.putIfAbsent(actual,logical);
+        if(previous!=null) throw new IllegalArgumentException("Sandbox vector table collision: "+previous+" and "+logical+" resolve to "+actual);
+      }
+    }
+
+    public com.alibaba.fastjson2.JSONObject createRecordedVector(com.alibaba.fastjson2.JSONObject planned,String domain) {
+      ensureVectorTable(planned.getString("className"),planned.getString("attrName"),domain);
+      return jdbcTemplate.execute((org.springframework.jdbc.core.ConnectionCallback<com.alibaba.fastjson2.JSONObject>) connection->{
+        try(var statement=connection.createStatement();var rows=statement.executeQuery("SELECT * FROM "+quotedTable(planned.getString("logicalName"))+" WHERE 1=0")) {
+          var metadata=rows.getMetaData();
+          return com.alibaba.fastjson2.JSONObject.of("kind","vector","name",metadata.getTableName(1),"schema",metadata.getSchemaName(1),
+              "directory",new File(planned.getString("directory")).getCanonicalPath());
+        } catch(java.io.IOException failure) { throw new java.sql.SQLException("Cannot identify created vector directory",failure); }
+      });
+    }
+
+    public void dropRecordedVector(com.alibaba.fastjson2.JSONObject resource) {
+      File directory=new File(resource.getString("directory"));
+      deleteFilesInDirectory(directory);
+      if(directory.exists() && !directory.delete()) throw new IllegalStateException("Cannot delete vector directory: "+directory);
+      jdbcTemplate.execute("DROP TABLE IF EXISTS "+quotedTable(resource.getString("schema"))+"."+quotedTable(resource.getString("name")));
+    }
 
 	/**
 	 * Ensure the vector table and its file directory exist (idempotent).
@@ -460,7 +495,10 @@ public class VectorResourceDao extends BaseDao {
 
 	/** Delete all files directly under a vector resource directory, keeping the directory itself. */
 	private void deleteFilesInDirectory(String indexName) {
-		File dir = new File("conf/" + dirName + "/" + indexName);
+        deleteFilesInDirectory(new File("conf/" + dirName + "/" + indexName));
+    }
+
+    private void deleteFilesInDirectory(File dir) {
 		if (!dir.isDirectory()) {
             if(dir.exists()) throw new IllegalStateException("Vector resource path is not a directory: " + dir);
 			return;

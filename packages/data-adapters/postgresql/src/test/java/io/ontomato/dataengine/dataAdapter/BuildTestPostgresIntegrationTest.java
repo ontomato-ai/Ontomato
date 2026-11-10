@@ -180,6 +180,12 @@ class BuildTestPostgresIntegrationTest {
       String id=created.getString("contextId");
       var boundary=new MockHttpServletRequest();boundary.addHeader(BuildTestContextService.HEADER,JSONObject.of("kind","build-test","contextId",id).toJSONString());
       var target=contexts.resolve(boundary);
+      var vector=created.getJSONArray("resources").toJavaList(JSONObject.class).stream().filter(resource->"vector".equals(resource.getString("kind"))).findFirst().orElseThrow();
+      assertNotEquals(vector.getString("logicalName"),vector.getString("name"),"The fixture must exercise server-truncated names");
+      assertEquals(1,jdbc.queryForObject("SELECT count(*) FROM information_schema.tables WHERE table_schema=? AND table_name=?",Integer.class,vector.getString("schema"),vector.getString("name")));
+      Path vectorDirectory=Path.of(vector.getString("directory"));
+      // Exercise file deletion without claiming vector ingestion through an absent embedding service.
+      Files.copy(Path.of("../../data-engine-core/src/test/resources/agent-contracts/files/example-1.txt"),vectorDirectory.resolve("cleanup-fixture.txt"));
       assertEquals("contract-group-1",jdbc.queryForObject("SELECT group_id FROM "+target.sandboxId()+"contract_person WHERE id='contract-person-1'",String.class));
       var function=JSON.parseArray(Files.readString(Path.of("../../data-engine-core/src/test/resources/agent-contracts/actions.json"))).getJSONObject(0).getJSONObject("function").to(Function.class);function.setDomainId("contract");
       function.getParameters().get(0).setValue("contract-person-1");function.getParameters().get(1).setValue(99);
@@ -227,8 +233,20 @@ class BuildTestPostgresIntegrationTest {
       assertEquals(45,afterDelete.getJSONObject(0).getIntValue("total"));
       assertEquals(7,jdbc.queryForObject("SELECT age FROM contract_person WHERE id='contract-person-1'",Integer.class));
       contexts.close(id);assertEquals(0,jdbc.queryForObject("SELECT count(*) FROM information_schema.tables WHERE table_schema=? AND table_name LIKE ?",Integer.class,schema,"%"+target.sandboxId()+"%"));
+      assertFalse(Files.exists(vectorDirectory),"Delete the recorded directory, not the truncated table-name directory");
+      assertTrue(contexts.status(id).getJSONArray("resources").toJavaList(JSONObject.class).stream().allMatch(resource->"DELETED".equals(resource.getString("cleanupStatus"))));
       var next=contexts.create("workspace",sample,Map.of());var restored=contexts.require(next.getString("contextId"),"builder","contract");
-      assertEquals(21,jdbc.queryForObject("SELECT age FROM "+restored.sandboxId()+"contract_person WHERE id='contract-person-1'",Integer.class));contexts.close(next.getString("contextId"));
+      assertEquals(21,jdbc.queryForObject("SELECT age FROM "+restored.sandboxId()+"contract_person WHERE id='contract-person-1'",Integer.class));
+      assertEquals(3,jdbc.queryForObject("SELECT count(*) FROM "+restored.sandboxId()+"contract_person",Integer.class));
+      assertEquals("contract-group-1",jdbc.queryForObject("SELECT group_id FROM "+restored.sandboxId()+"contract_person WHERE id='contract-person-1'",String.class));
+      contexts.close(next.getString("contextId"));
+      assertEquals(0,jdbc.queryForObject("SELECT count(*) FROM information_schema.tables WHERE table_schema=? AND table_name LIKE ?",Integer.class,schema,"%"+restored.sandboxId()+"%"));
+      rule.getJSONArray("classDef").getJSONObject(0).getJSONArray("attrs").add(JSONObject.of("name","attachment_extra","type","vector"));
+      var collision=assertThrows(org.springframework.web.server.ResponseStatusException.class,()->contexts.create("collision",sample,Map.of()));
+      assertTrue(collision.getReason().startsWith("BUILD_TEST_SCHEMA_FAILED"),collision.getReason());
+      assertTrue(collision.getReason().contains("attachment-contract") && collision.getReason().contains("attachment_extra-contract"),collision.getReason());
+      String collisionSandbox=jdbc.queryForObject("SELECT data->>'sandboxId' FROM build_test_contexts WHERE workspace_id='collision'",String.class);
+      assertEquals(0,jdbc.queryForObject("SELECT count(*) FROM information_schema.tables WHERE table_schema=? AND table_name LIKE ?",Integer.class,schema,"%"+collisionSandbox+"%"));
    } finally {
     if(ontologyHttp!=null)ontologyHttp.stop(0);
     if(runtimeProcess!=null){runtimeProcess.destroy();runtimeProcess.waitFor(5,java.util.concurrent.TimeUnit.SECONDS);if(runtimeProcess.isAlive())runtimeProcess.destroyForcibly();}

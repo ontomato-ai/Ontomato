@@ -60,7 +60,35 @@ public interface DataAdapter {
 	/** Refuse an attribute this data source cannot key a class's objects by. */
 	public void validatePrimaryKeyName(String attrName) throws Exception;
 	
-	default boolean supportsSandbox() { return false; }
+	/** Resource discovery uses the database result metadata, including server-normalized names. */
+    default JSONObject createRecordedClass(String namespace, Map<String,Object> definition) {
+      createClass(namespace, definition);
+      try (var connection=openConnection(); var statement=connection.createStatement();
+          var rows=statement.executeQuery("SELECT * FROM " + sandboxClassName(namespace,(String)definition.get("className")) + " WHERE 1=0")) {
+        var metadata=rows.getMetaData();
+        String name=metadata.getTableName(1);
+        if(name==null || name.isBlank()) throw new IllegalStateException("Database did not identify the created table");
+        return JSONObject.of("kind","table","name",name,"schema",metadata.getSchemaName(1),"catalog",metadata.getCatalogName(1));
+      } catch(java.sql.SQLException failure) { throw new IllegalStateException("Cannot identify sandbox table",failure); }
+    }
+    default void validateSandboxClasses(String namespace, List<Map<String,Object>> classes) {}
+    default JSONArray createRecordedNamespaces(String namespace, List<String> classes) {
+      createNamespace(namespace,classes);
+      return new JSONArray();
+    }
+    default void dropRecordedResource(JSONObject resource) {
+      if(!"table".equals(resource.getString("kind"))) throw new IllegalArgumentException("Unknown sandbox resource: "+resource);
+      try(var connection=openConnection();var statement=connection.createStatement()) {
+        String quote=connection.getMetaData().getIdentifierQuoteString().trim();
+        java.util.function.Function<String,String> quoted=value->quote+value.replace(quote,quote+quote)+quote;
+        String name=quoted.apply(resource.getString("name"));
+        String schema=resource.getString("schema"),catalog=resource.getString("catalog");
+        if(schema!=null && !schema.isBlank()) name=quoted.apply(schema)+"."+name;
+        if(catalog!=null && !catalog.isBlank() && connection.getMetaData().supportsCatalogsInTableDefinitions()) name=quoted.apply(catalog)+"."+name;
+        statement.execute("DROP TABLE IF EXISTS "+name);
+      } catch(java.sql.SQLException failure) { throw new IllegalStateException("Cannot drop recorded sandbox table: "+resource,failure); }
+    }
+    default boolean supportsSandbox() { return false; }
     default boolean supportsSandbox(java.util.List<String> classes) { return supportsSandbox(); }
     default void createNamespace(String namespace, java.util.List<String> classes) { createNamespace(namespace); }
     default void dropNamespace(String namespace, java.util.List<String> classes) { dropNamespace(namespace); }
