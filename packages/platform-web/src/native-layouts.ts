@@ -1,7 +1,7 @@
 import { managerPaths } from "@ontomato/ontology-manager";
 import { platformRoutes } from "@ontomato/platform-shell/routes";
 import type { AppPartition } from "./partition";
-export type NativeLayout = Pick<AppPartition, "sections" | "frame" | "home" | "homePage" | "open">;
+export type NativeLayout = Pick<AppPartition, "sections" | "frame" | "home" | "homePage" | "open" | "descriptionKey">;
 const layouts: readonly (NativeLayout & { renderer: string })[] = [
   {
     renderer: "ontology",
@@ -36,6 +36,7 @@ const layouts: readonly (NativeLayout & { renderer: string })[] = [
   },
   {
     renderer: "browser",
+    descriptionKey: "platform.descriptions.objectBrowser",
     sections: [
       {
         key: "browser:pages",
@@ -117,7 +118,7 @@ export function catalogPartition(applications: import("@ontomato/contracts/platf
   return applications.map((app) => {
     const embedded = app.kind === "hosted" || app.kind === "connected";
     const layout = embedded ? { sections: [] } : { ...nativeLayouts[app.entry.renderer!], ...renderers[app.entry.renderer!] };
-    return { ...layout, id: app.id, label: app.names[locale] ?? app.names.en!, description: app.descriptions[locale] ?? app.descriptions.en ?? null, icon: app.icon, rail: app.rail,
+    return { ...layout, id: app.id, label: app.names[locale] ?? app.names.en!, description: app.descriptions[locale] ?? ("descriptionKey" in layout && layout.descriptionKey ? undefined : app.descriptions.en ?? null), icon: app.icon, rail: app.rail,
       prefix: embedded ? `/applications/${app.id}` : app.entry.path,
       home: embedded ? `/applications/${app.id}` : app.entry.home ?? layout.home };
   });
