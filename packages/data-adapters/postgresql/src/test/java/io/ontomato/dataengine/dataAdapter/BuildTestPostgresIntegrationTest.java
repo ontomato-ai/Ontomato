@@ -38,13 +38,14 @@ class BuildTestPostgresIntegrationTest {
    Process runtimeProcess=null;HttpServer ontologyHttp=null;
    try {
     var jdbc=new JdbcTemplate(new DriverManagerDataSource(jdbcUrl+"?currentSchema="+schema+",public",account[0],account[1]));
+    jdbc.execute("CREATE EXTENSION IF NOT EXISTS vector");
     var permission=new UserDataPermission();permission.setFullData(true);
     var owner=new QueryAccessService.GrantUser("builder","contract");
     var identity=mock(IdentityService.class);
     when(identity.getCurrentUser()).thenReturn(owner);when(identity.getCurrentUserDataPermission()).thenReturn(permission);
     var config=new BusinessConfig();config.setDataAdapter("postgresql");
     var configs=mock(BusinessConfigService.class);when(configs.get("contract")).thenReturn(config);
-    var rule=JSON.parseObject("{\"classDef\":[{\"className\":\"contract_person\",\"attrs\":[{\"name\":\"id\",\"type\":\"varchar\",\"primaryKey\":true},{\"name\":\"name\",\"type\":\"varchar\"},{\"name\":\"age\",\"type\":\"int\"},{\"name\":\"group_id\",\"type\":\"varchar\"}]},{\"className\":\"contract_group\",\"attrs\":[{\"name\":\"id\",\"type\":\"varchar\",\"primaryKey\":true},{\"name\":\"name\",\"type\":\"varchar\"}]}],\"relationship_rule\":{\"person_group\":{\"fromclass\":\"contract_person\",\"toclass\":\"contract_group\",\"fromField\":\"group_id\",\"toField\":\"id\"}}}");
+    var rule=JSON.parseObject(Files.readString(Path.of("../../data-engine-core/src/test/resources/agent-contracts/ontology.json")));
     var rules=mock(JSONRuleDao.class);when(rules.query("contract")).thenReturn(rule);
     var connection=new DataAdapterConnection();connection.put("url",jdbcUrl+"?currentSchema="+schema+",public");connection.put("user",account[0]);connection.put("password",account[1]);
     config.getDataAdapterConnections().put("postgresql",connection);

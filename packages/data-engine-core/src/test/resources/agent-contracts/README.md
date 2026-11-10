@@ -2,7 +2,7 @@
 
 Use only a disposable PostgreSQL test schema. `AgentWritePostgresContractTest` owns a unique schema and drops it in `finally`; it never connects to a business schema. CI supplies the database and fails if it is unavailable.
 
-Schema: `contract_person(id varchar primary key, name varchar, age int)`.
+Metadata to install: `ontology.json`. It defines `contract_person` (id, name, age, group_id, attachment), `contract_group` and the `person_group` relationship. Then upload `sample.json` with multipart attachments named exactly as each `vectorDatas.file` path. The generation text-only entry does not accept attachment bytes.
 
 - `sample.json` → `objDatas[0].rows`: three stable keys, `contract-person-1` through `contract-person-3`; ages 21, 22, 23. Insert these before exercising the sample.
 - `actions.json`: importable published WRITE Action and embedded Python v2 Function. Explanation hash matches `update.py`; no model is needed to run it. Set the domain to your disposable test domain on import. Zip this file as `actions.json` for the import API.

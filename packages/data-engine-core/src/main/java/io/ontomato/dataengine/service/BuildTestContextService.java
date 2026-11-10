@@ -55,7 +55,9 @@ public class BuildTestContextService {
     identity.requireQueryAccess();
     var user=identity.getCurrentUser();
     if(workspace==null || workspace.isBlank()) throw error(HttpStatus.BAD_REQUEST,"BUILD_TEST_SAMPLE_INVALID: workspaceId required");
-    var sample=sandbox.validateSample(input,attachments,user.getDomainId());
+    JSONObject sample;
+    try { sample=sandbox.validateSample(input,attachments,user.getDomainId()); }
+    catch(RuntimeException invalid) { throw error(HttpStatus.BAD_REQUEST,"BUILD_TEST_SAMPLE_INVALID: "+invalid.getMessage()); }
     var classes=sample.getJSONArray("objDatas").toJavaList(JSONObject.class).stream().map(o->o.getString("className")).distinct().toList();
     if(classes.isEmpty()) throw error(HttpStatus.BAD_REQUEST,"BUILD_TEST_SAMPLE_INVALID: classes required");
     if(!QueryAccessService.classScope(identity.getCurrentUserDataPermission(),classes).containsAll(classes)) throw error(HttpStatus.FORBIDDEN,"BUILD_TEST_FORBIDDEN");
@@ -69,15 +71,17 @@ public class BuildTestContextService {
     if(identity.getCurrentCredentialExpiresAt()!=null) expires=Math.min(expires,identity.getCurrentCredentialExpiresAt());
     var data=JSONObject.of("sandboxId",sandboxId,"classNames",classes,"sample",sample,"fingerprint",fingerprint(user.getDomainId()),"binding",binding,"resources",binding.getList("resources",String.class).stream().map(name->name.replace("{sandbox}",sandboxId)).toList());
     jdbc.update("INSERT INTO build_test_contexts(id,owner_id,domain_id,workspace_id,state,expires_at,data) VALUES(?,?,?,?,'PREPARING',?,?::jsonb)",id,user.getId(),user.getDomainId(),workspace,expires,data.toJSONString());
+    String stage="BUILD_TEST_SCHEMA_FAILED";
     try {
       sandbox.createSampleStructure(sandboxId,sample,user.getDomainId());
+      stage="BUILD_TEST_DATA_FAILED";
       sandbox.loadSample(sandboxId,sample,attachments,user.getDomainId());
       jdbc.update("UPDATE build_test_contexts SET state='READY' WHERE id=?",id);
     } catch(Exception failure) {
       data.put("prepareError",failure.getMessage());
       jdbc.update("UPDATE build_test_contexts SET state='PREPARE_FAILED',data=?::jsonb WHERE id=?",data.toJSONString(),id);
       cleanup(row(id));
-      throw error(HttpStatus.UNPROCESSABLE_ENTITY,"BUILD_TEST_DATA_FAILED: "+failure.getMessage());
+      throw error(HttpStatus.UNPROCESSABLE_ENTITY,stage+": contextId="+id+"; "+failure.getMessage());
     }
     return status(id);
   }
