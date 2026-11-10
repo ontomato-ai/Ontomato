@@ -225,11 +225,6 @@ router.post(
       );
       res.json({ success: true, skill });
     } catch (error: unknown) {
-      if (error && typeof error === "object" && "code" in error && error.code === "SKILL_EXISTS") {
-        const skillId = "skillId" in error ? String(error.skillId) : "";
-        const message = error instanceof Error ? error.message : String(error);
-        throw new HttpError(409, message, "SKILL_EXISTS", { skillId });
-      }
       if (error instanceof InvalidSkillPackageError) {
         throw new HttpError(error.status, error.message, error.code);
       }

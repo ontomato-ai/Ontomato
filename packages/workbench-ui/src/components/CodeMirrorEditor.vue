@@ -8,6 +8,7 @@ import { markdown } from "@codemirror/lang-markdown";
 import { html } from "@codemirror/lang-html";
 import { openSearchPanel, search } from "@codemirror/search";
 import { oneDark } from "@codemirror/theme-one-dark";
+import { placeholder as editorPlaceholder } from "@codemirror/view";
 import { EditorState } from "@codemirror/state";
 import { useTheme } from "../composables/useTheme";
 
@@ -144,6 +145,7 @@ const createEditor = () => {
 
   const extensions = [
     basicSetup,
+    editorPlaceholder(props.placeholder ?? ""),
     getLanguageExtension(),
     EditorView.lineWrapping,
     EditorState.tabSize.of(2),
@@ -170,7 +172,7 @@ const createEditor = () => {
     );
   }
 
-  const doc = props.modelValue || props.placeholder || "";
+  const doc = props.modelValue;
 
   editor = new EditorView({
     doc,

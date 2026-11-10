@@ -126,7 +126,7 @@ async function importSkill(file: File, overwrite = false) {
     if (error instanceof ApiRequestError && error.code === "SKILL_EXISTS") {
       try {
         await ElMessageBox.confirm(t("admin.skillExists", {
-          id: String((error.payload.details as { skillId?: unknown } | undefined)?.skillId || t("common.unknown")),
+          id: (error.payload.details as { skillId: string }).skillId,
         }), t("common.tip"), {
           confirmButtonText: t("admin.overwrite"), cancelButtonText: t("common.cancel"), type: "warning",
         });
