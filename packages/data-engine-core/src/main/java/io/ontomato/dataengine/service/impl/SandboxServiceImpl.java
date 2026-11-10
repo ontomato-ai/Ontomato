@@ -100,21 +100,8 @@ public class SandboxServiceImpl implements SandboxService {
     }
 
     @Override
-    @SuppressWarnings("unchecked")
     public void createSampleStructure(String sandbox, JSONObject sample, String domain) {
-      var adapter = getDataAdapter(domain);
-      var classes = sample.getJSONArray("objDatas").toJavaList(JSONObject.class).stream()
-          .map(row -> row.getString("className")).toList();
-      if (classes.isEmpty() || !adapter.supportsSandbox(classes))
-        throw new IllegalArgumentException("BUILD_TEST_UNSUPPORTED: source does not support sandbox");
-      var schema = jsonRuleDao.query(domain);
-      var definitions = (List<Map<String, Object>>) schema.get("classDef");
-      adapter.createNamespace(sandbox, classes);
-      for (var cls : definitions) if (classes.contains(cls.get("className"))) createClass(sandbox, cls, domain);
-      var relationships = (Map<String, Map<String, String>>) schema.get("relationship_rule");
-      relationships.forEach((name, rel) -> {
-        if (classes.contains(rel.get("fromclass")) && classes.contains(rel.get("toclass"))) createEdge(sandbox, name, domain);
-      });
+      createSampleStructure(sandbox,sample,domain,resources->{});
     }
 
     @Override
@@ -122,6 +109,7 @@ public class SandboxServiceImpl implements SandboxService {
     public void createSampleStructure(String sandbox,JSONObject sample,String domain,java.util.function.Consumer<JSONArray> save) {
       var adapter=getDataAdapter(domain);
       var classes=sample.getJSONArray("objDatas").toJavaList(JSONObject.class).stream().map(row->row.getString("className")).toList();
+      if(!adapter.supportsSandbox(classes)) throw new IllegalArgumentException("Source does not support sandbox");
       var schema=jsonRuleDao.query(domain);
       var definitions=((List<Map<String,Object>>)schema.get("classDef")).stream().filter(cls->classes.contains(cls.get("className"))).toList();
       adapter.validateSandboxClasses(sandbox,definitions);
