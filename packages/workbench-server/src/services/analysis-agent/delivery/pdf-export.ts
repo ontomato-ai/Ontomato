@@ -1,8 +1,10 @@
-import { marked } from "./marked";
+import { parseProductMarkdown, type CodeBlockNode, type ParsedNode } from "@ontomato/markdown";
 import { t } from "../../../i18n";
-import { renderChartHtmlToDataUrl, walkChartBlocks } from "./chart-renderer";
+import { renderChartHtmlToDataUrl } from "./chart-renderer";
 import { getBrowser } from "./browser";
 import { tApp } from "../../../i18n";
+import { nodesOfType } from "./markdown-nodes";
+import { reportHtml } from "./report-html";
 
 
 export interface ExportMarkdownPdfInput {
@@ -35,12 +37,20 @@ function buildChartImageHtml(dataUrl: string, index: number) {
   ].join("\n");
 }
 
-async function convertInlineCharts(markdown: string, timeoutMs: number) {
-  return walkChartBlocks(markdown, (chartHtml, chartIndex) =>
-    renderChartHtmlToDataUrl(chartHtml, timeoutMs).then((dataUrl) =>
-      buildChartImageHtml(dataUrl, chartIndex)
-    )
-  );
+/** The ```html blocks that draw a chart, each mapped to its image; a chart that cannot be drawn stays code. */
+async function renderInlineCharts(nodes: readonly ParsedNode[], timeoutMs: number) {
+  const charts = new Map<ParsedNode, string>();
+  for (const block of nodesOfType<CodeBlockNode>(nodes, "code_block")) {
+    const chartHtml = block.code.trim();
+    if (block.language !== "html" || !(chartHtml.includes("<!DOCTYPE html>") || chartHtml.includes("echarts.init(")))
+      continue;
+    try {
+      charts.set(block, buildChartImageHtml(await renderChartHtmlToDataUrl(chartHtml, timeoutMs), charts.size));
+    } catch {
+      continue;
+    }
+  }
+  return charts;
 }
 
 function buildPdfHtml(title: string, bodyHtml: string) {
@@ -87,6 +97,7 @@ function buildPdfHtml(title: string, bodyHtml: string) {
       .pdf-page p { margin: 8px 0; }
       .pdf-page ul, .pdf-page ol { margin: 8px 0 8px 20px; }
       .pdf-page li { margin: 4px 0; }
+      .pdf-page li > p { margin: 0; }
 
       .pdf-page blockquote {
         margin: 10px 0;
@@ -184,13 +195,11 @@ export async function exportMarkdownPdf(input: ExportMarkdownPdfInput) {
   const timeoutMs = input.timeoutMs ?? 30_000;
 
   try {
-    const sourceMarkdown = input.renderInlineCharts
-      ? await convertInlineCharts(markdown, timeoutMs)
-      : markdown;
-    const html = buildPdfHtml(
-      input.title || t("report.defaultTitle"),
-      marked.parse(sourceMarkdown) as string
-    );
+    const nodes = parseProductMarkdown(markdown);
+    const charts = input.renderInlineCharts
+      ? await renderInlineCharts(nodes, timeoutMs)
+      : new Map<ParsedNode, string>();
+    const html = buildPdfHtml(input.title || t("report.defaultTitle"), reportHtml(nodes, charts));
     await page.setContent(html, {
       waitUntil: "load",
       timeout: timeoutMs,

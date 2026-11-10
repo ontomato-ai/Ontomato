@@ -20,14 +20,14 @@ function nodesId(nodes: Nodes): string {
 <script setup lang="ts">
 import { computed } from "vue";
 import MarkdownRender from "markstream-vue";
+import { productMarkdown } from "@ontomato/markdown";
 import { useDarkMode } from "../theme";
-import { parseOptions, productMarkdownIt } from "./dialect";
 
 /**
- * Draws Markdown in the product dialect, the same in every page: GFM, a single newline is a line break, only `~~`
- * strikes through, and raw HTML shows as text. Code blocks are plain preformatted text in the page's light or dark
- * theme. What an address means (a run's files, an app page, a document of the caller's own) belongs to the caller,
- * through `nodes`.
+ * Draws a text in the product Markdown (@ontomato/markdown), the one definition pages and exports read it with: GFM,
+ * a single newline is a line break, only `~~` strikes through, raw HTML and syntax beyond GFM show as written. Code
+ * blocks are plain preformatted text in the page's light or dark theme. What an address means (a run's files, an app
+ * page, a document of the caller's own) belongs to the caller, through `nodes`.
  */
 const props = withDefaults(
   defineProps<{
@@ -50,8 +50,7 @@ const isDark = useDarkMode();
     :custom-id="customId"
     :content="content"
     :final="final"
-    :parse-options="parseOptions"
-    :custom-markdown-it="productMarkdownIt"
+    :custom-markdown-it="productMarkdown"
     :is-dark="isDark"
     mode="chat"
     html-policy="escape"

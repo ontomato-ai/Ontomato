@@ -16,11 +16,11 @@
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.29.0",
     "@ontomato/contracts": "workspace:*",
+    "@ontomato/markdown": "workspace:*",
     "adm-zip": "0.5.17",
     "archiver": "8.0.0",
     "cors": "2.8.6",
     "express": "4.22.1",
-    "marked": "17.0.5",
     "multer": "2.1.1",
     "pg": "8.20.0",
     "playwright": "1.59.1",
