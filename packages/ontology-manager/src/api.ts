@@ -235,6 +235,8 @@ export function createManagerRequest(
     };
 
     const execution=context.executionContext;
+    if(execution?.kind==="build-test" && service!=="/data-query")
+      throw Object.assign(new Error("This operation is not available for test-data preview"),{code:"BUILD_TEST_UNSUPPORTED"});
     const response = await fetch(`${context.apiBase}${service}${path}`, {
       ...init,
       headers: {

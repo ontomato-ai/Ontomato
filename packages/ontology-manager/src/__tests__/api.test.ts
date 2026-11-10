@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   createManagerClient,
+  createManagerRequest,
   type ManagerAuthFailureStatus,
   type ManagerCredential,
   type ManagerRequestContext,
@@ -474,4 +475,11 @@ it("binds missing build contexts explicitly and leaves live requests unchanged",
   expect(JSON.parse(requests[0]!.headers[BUILD_TEST_HEADER]!)).toEqual({kind:"build-test",contextId:null});
   context.executionContext={kind:"live"};await client.loadOntology();
   expect(requests[1]!.headers[BUILD_TEST_HEADER]).toBeUndefined();
+});
+
+it("rejects unwired SDK operations instead of starting a live assistant from a preview",async()=>{
+  const {context}=setup({type:"anonymous"});context.executionContext=buildExecutionContext("workspace",null);
+  const request=createManagerRequest(context,()=>{});
+  await expect(request.request("/assistant/sessions",{method:"POST"},"")).rejects.toMatchObject({code:"BUILD_TEST_UNSUPPORTED"});
+  expect(requests).toHaveLength(0);
 });

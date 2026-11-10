@@ -17,8 +17,8 @@ A workspace is the application source tree. Business definitions remain in Java;
 | --- | --- |
 | `dataset-desc`, `classes` | Current domain and available object classes |
 | `schema <class> ...`, `relationships <class> ...` | Technical attributes, types and actual relationship mappings |
-| `distinct-values <class> <attribute> [--like <pattern>] [--limit <n>]` | Values for exploring the current data |
-| `execute-dsl <json or @file>` | Ad hoc query; use the bundled [DSL reference](references/dsl.md) |
+| `distinct-values <class> <attribute> [--like <pattern>] [--limit <n>]` | Values from the current build-test sample |
+| `execute-dsl <json or @file>` | Query the current build-test sample; use the bundled [DSL reference](references/dsl.md) |
 | `function list [<filter json or @file>]` | Full Function definitions; optional `operation` and `className` filters |
 | `function get <id>`, `function save <definition>`, `function delete <id>` | Read, save or delete a Function; save returns its definition including ID |
 | `metric-view find <class> [<question>]`, `action find <class> [<question>]` | Published interfaces related to the object |
@@ -72,11 +72,11 @@ The declaration uses `{names, descriptions, icon, groups, permissions}`; names a
 
 Publish only a commit that already exists. When files were changed in this run, finish the run first, then publish through the platform drawer or in a later run. Never call a dirty tree HEAD the new version. End with the actual result and workspace-relative file links so the host can show the changed source. Runtime supplies the run's commit separately; do not guess it from a reply or from another run's HEAD.
 
-## Explicit external deployment operations
+## Build-test vector operations
 
 
 
-`vector-upload <class> <attribute> <objectId> [--file <path>] --text <text or @file>` and `vector-delete <class> <attribute> <objectId> <path>` operate on an existing object's resources. Keep these writes within the requested business scope. `ask <question>` is an ad hoc ontology query, not a page API.
+`vector-upload <class> <attribute> <objectId> [--file <path>] --text <text or @file>` and `vector-delete <class> <attribute> <objectId> <path>` operate on an existing object's resources. Keep these writes within the requested business scope. `ask` is unsupported for build tests.
 
 ## Command input and failure contract (5.0)
 
@@ -96,13 +96,13 @@ Positional names, IDs, paths, questions and descriptions are strings. Arguments 
 | `workspace list/commits/sessions/tree` | Optional page/query JSON defaults to `{}`. IDs are required except for list. Page/query fields are checked by the workspace HTTP schema. |
 | `workspace create/get/rename/delete/content/diff/restore` | Required string positional arguments listed above; content's omitted commit reads the working tree. No body defaults invent missing IDs or commits. |
 | `workspace import/publish/releases/rollback` | Required workspace ID; import needs a directory and explicit message, publish needs commit and declaration object, rollback needs release ID and declaration object. releases has no body. |
-| `ask` | Required question; uses the shared analyst client's request contract. It does not execute an Action. |
+
 
 Python write helpers use single object dictionaries and arrays of dictionaries as documented in `query_runtime.py`. A where is a nonempty condition object, never a list; invalid conditions fail before object queries or vector/file cleanup. `appendVector`/`updateVector` require nonempty text; with fileBase64 omitted or null, Java explicitly stores that text as a UTF-8 attachment. With fileBase64 supplied, it must be base64 file bytes; text remains required for embedding. There is no empty-file fallback when both are missing.
 
 ## Business testing
 
-Write `test-data/sample.json` in the workspace using the generation `objDatas`, `relDatas`, `vectorDatas` envelope. Attachments are relative to that sample. Start with `test start --workspace <id>` (the built-in agent already has ONTOMATO_WORKSPACE_ID); `test status` and `test stop` use the same workspace entry. No sample is collected from live data. A new start ends and cleans the previous context before preparing a fresh ID.
+Write `test-data/sample.json` in the workspace using the generation `objDatas`, `relDatas`, `vectorDatas` envelope. Attachments are relative to that sample. Sample files must stay inside test-data/ so publication can exclude the entire test-material directory. Start with `test start --workspace <id>` (the built-in agent already has ONTOMATO_WORKSPACE_ID); `test status` and `test stop` use the same workspace entry. No sample is collected from live data. A new start ends and cleans the previous context before preparing a fresh ID.
 
 Action/MetricView execute, execute-dsl, distinct-values and vector commands bind the workspace's current Java context once for that command. Missing, preparing, failed, ended or expired contexts fail; requests never switch to live data. ask is not supported for build tests. Metadata discovery and asset editing keep their existing APIs. To look at live data, publish the application for yourself first. A conversation ending does not stop its test context.
 

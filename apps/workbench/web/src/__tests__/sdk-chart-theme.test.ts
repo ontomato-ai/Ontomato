@@ -13,6 +13,8 @@ describe("the apps SDK's chart theme", () => {
     let follow!: (preferences: AppHostPreferences) => void;
     const host: AppHost = {
       snapshot: () => ({ locale: "en", theme: "light", apiBase: "/api", user: null }),
+      executionContext: () => ({kind:"live"}),
+      subscribeExecutionContext: () => () => {},
       credential: () => ({ type: "anonymous" }),
       subscribePreferences: (listener) => {
         follow = listener;

@@ -20,8 +20,8 @@ const context={contextId:"context",workspaceId:"workspace",status:"READY",expire
 beforeEach(()=>{
   vi.clearAllMocks();authorize.mockResolvedValue({id:"workspace"});
   vi.mocked(RuntimeClient).mockImplementation(()=>({request:authorize,bytes}) as unknown as RuntimeClient);
-  vi.mocked(backendPost).mockResolvedValue({text:JSON.stringify(context),status:200,headers:new Headers()});
-  vi.mocked(backendGet).mockResolvedValue({text:"null",status:200,headers:new Headers()});
+  vi.mocked(backendPost).mockResolvedValue({text:JSON.stringify(context),status:200,statusText:"OK",headers:new Headers()});
+  vi.mocked(backendGet).mockResolvedValue({text:"null",status:200,statusText:"OK",headers:new Headers()});
 });
 it("authorizes the workspace, forwards original attachment bytes and current credentials once",async()=>{
   bytes.mockImplementation(async(url:string)=>{

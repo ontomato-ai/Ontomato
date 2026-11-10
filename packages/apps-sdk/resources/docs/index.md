@@ -371,3 +371,5 @@ bundled version. Messages and dialogs come from the named exports: `ElMessage.su
 ## Build-test previews
 
 This SDK declares executionContext capability 1 in sdk.json. The same context.metricViews and context.actions clients use the preview frame's Java test context; published applications use their live target. No page code supplies a sandbox ID or manually adds an execution header. context.executionContext reports the host binding. Missing/expired/ended contexts fail with a preserved error code. Rebuild the preview frame to switch test contexts; never save a context ID or credential in application files. Upgrade old SDK references when the preview entry reports BUILD_TEST_SDK_UPGRADE_REQUIRED.
+
+Build-test preview supports the MetricView and Action data clients. Assistant chat is currently unavailable in a test-data preview; its SDK request fails as BUILD_TEST_UNSUPPORTED. It remains available in published applications.

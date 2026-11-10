@@ -242,7 +242,7 @@ class BuildTestPostgresIntegrationTest {
       contexts.close(next.getString("contextId"));
       assertEquals(0,jdbc.queryForObject("SELECT count(*) FROM information_schema.tables WHERE table_schema=? AND table_name LIKE ?",Integer.class,schema,"%"+restored.sandboxId()+"%"));
       exerciseWorkspaceConcurrency(contexts,sandbox,sample);
-      exerciseFailures(contexts,sandbox,config,connection,jdbc,adminDb,schema,vectors,sample,identity,grants,programs,function,permission);
+      exerciseFailures(contexts,sandbox,config,connection,jdbc,adminDb,schema,vectors,sample,identity,grants,programs,function,permission,writes);
       rule.getJSONArray("classDef").getJSONObject(0).getJSONArray("attrs").add(JSONObject.of("name","attachment_extra","type","vector"));
       var collision=assertThrows(org.springframework.web.server.ResponseStatusException.class,()->contexts.create("collision",sample,Map.of()));
       assertTrue(collision.getReason().startsWith("BUILD_TEST_SCHEMA_FAILED"),collision.getReason());
@@ -295,7 +295,7 @@ class BuildTestPostgresIntegrationTest {
  private void exerciseFailures(BuildTestContextService contexts,SandboxServiceImpl sandbox,BusinessConfig config,
      DataAdapterConnection connection,JdbcTemplate jdbc,JdbcTemplate admin,String schema,VectorResourceDao vectors,
      JSONObject sample,IdentityService identity,QueryGrantService grants,ABCProgramServiceImpl programs,Function function,
-     UserDataPermission permission) throws Exception {
+     UserDataPermission permission,WriteFunctionOperationService writes) throws Exception {
    var mvc=org.springframework.test.web.servlet.setup.MockMvcBuilders.standaloneSetup(new io.ontomato.dataengine.controller.BuildTestController(contexts)).build();
    mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get("/ontology/build-tests/current").param("workspaceId","not-started"))
        .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.status().isOk())
@@ -321,6 +321,10 @@ class BuildTestPostgresIntegrationTest {
    expectCode("BUILD_TEST_CONTEXT_NOT_READY",()->contexts.require(id,"builder","contract"));
    jdbc.update("UPDATE build_test_contexts SET state='READY' WHERE id=?",id);
    var invalid=JSON.parseObject(JSON.toJSONString(function),Function.class);
+   int resourceCount=jdbc.queryForObject("SELECT count(*) FROM information_schema.tables WHERE table_schema=? AND table_name LIKE ?",Integer.class,schema,"%"+target.sandboxId()+"%");
+   assertTrue(assertThrows(IllegalArgumentException.class,()->writes.appendVector("contract_person","age","contract-person-1","text",null,"txt",target.sandboxId(),"contract")).getMessage().contains("attrName"));
+   assertTrue(assertThrows(IllegalArgumentException.class,()->writes.deleteVector("contract_person","age","contract-person-1","file.txt",target.sandboxId(),"contract")).getMessage().contains("attrName"));
+   assertEquals(resourceCount,jdbc.queryForObject("SELECT count(*) FROM information_schema.tables WHERE table_schema=? AND table_name LIKE ?",Integer.class,schema,"%"+target.sandboxId()+"%"));
    invalid.getReturnDef().setClassNames(List.of());
    expectCode("BUILD_TEST_FORBIDDEN",()->programs.execute(UUID.randomUUID().toString(),invalid,"builder",permission,target.sandboxId(),"en",1,"contract",null,target));
    invalid.getReturnDef().setClassNames(List.of("outside"));
@@ -353,7 +357,7 @@ class BuildTestPostgresIntegrationTest {
    assertEquals(0,jdbc.queryForObject("SELECT count(*) FROM build_test_contexts WHERE workspace_id='unsupported'",Integer.class));
    var missingFile=JSON.parseObject(Files.readString(Path.of("../../data-engine-core/src/test/resources/agent-contracts/sample.json")));
    expectCode("BUILD_TEST_SAMPLE_INVALID",()->contexts.create("missing-file",missingFile,Map.of()));
-   System.out.println("BUILD_TEST_FAILURE_CASES_PASS missing/not-ready/expired/closed/owner/domain/empty-scope/outside-scope/unsupported/missing-file/auth-before-lookup; no execution grants issued");
+   System.out.println("BUILD_TEST_FAILURE_CASES_PASS missing/not-ready/expired/closed/owner/domain/empty-scope/outside-scope/unsupported/missing-file/auth-before-lookup; rejected Actions issued no grants; protocol-only grant fixture removed; invalid vector attributes created no resources");
 
    String role="bt_role_"+UUID.randomUUID().toString().replace("-","");
    String originalUser=connection.getString("user"),originalPassword=connection.getString("password");

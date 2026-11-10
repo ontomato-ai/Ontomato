@@ -298,7 +298,7 @@ public class SandboxServiceImpl implements SandboxService {
         boolean isVectorAttr = false;
         List<Map<String, Object>> attrDefs = (List<Map<String, Object>>) classDef.get("attrs");
         for (Map<String, Object> attrDef : attrDefs) {
-          if (attrName.equals(attrDef.get("name")) && "vector".equals(attrDef.get("type"))) {
+          if (attrName.equals(attrDef.get("name")) && "vector".equals(attrDef.get("type")) && !Boolean.FALSE.equals(attrDef.get("enable"))) {
             isVectorAttr = true;
             break;
           }

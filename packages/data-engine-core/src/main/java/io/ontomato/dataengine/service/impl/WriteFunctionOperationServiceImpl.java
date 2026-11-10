@@ -295,6 +295,7 @@ public class WriteFunctionOperationServiceImpl implements WriteFunctionOperation
 		if (classDef == null) {
 			throw new Exception(langService.get(businessConfigService.get(domainId).getLang(), "WriteFunctionOperation.classNotExist") + "[" + className + "]");
 		}
+        if(!collectVectorAttrs(classDef).contains(attrName)) throw new IllegalArgumentException("attrName: not an enabled vector attribute: "+attrName);
 		DataAdapter adapter = getDataAdapter(domainId);
 		boolean sandbox = inSandbox(sandboxId);
 		String prefixClassName = sandbox ? adapter.sandboxClassName(sandboxId, className) : className;
@@ -336,6 +337,7 @@ public class WriteFunctionOperationServiceImpl implements WriteFunctionOperation
 		if (classDef == null) {
 			throw new Exception(langService.get(businessConfigService.get(domainId).getLang(), "WriteFunctionOperation.classNotExist") + "[" + className + "]");
 		}
+        if(!collectVectorAttrs(classDef).contains(attrName)) throw new IllegalArgumentException("attrName: not an enabled vector attribute: "+attrName);
 		DataAdapter adapter = getDataAdapter(domainId);
 		boolean sandbox = inSandbox(sandboxId);
 		String prefixClassName = sandbox ? adapter.sandboxClassName(sandboxId, className) : className;
@@ -362,6 +364,7 @@ public class WriteFunctionOperationServiceImpl implements WriteFunctionOperation
 		if (classDef == null) {
 			throw new Exception(langService.get(businessConfigService.get(domainId).getLang(), "WriteFunctionOperation.classNotExist") + "[" + className + "]");
 		}
+        if(!collectVectorAttrs(classDef).contains(attrName)) throw new IllegalArgumentException("attrName: not an enabled vector attribute: "+attrName);
 		DataAdapter adapter = getDataAdapter(domainId);
 		boolean sandbox = inSandbox(sandboxId);
 		String prefixClassName = sandbox ? adapter.sandboxClassName(sandboxId, className) : className;

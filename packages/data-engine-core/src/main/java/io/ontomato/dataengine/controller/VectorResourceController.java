@@ -66,7 +66,9 @@ public class VectorResourceController {
 			String path = param.getString("path");
             var target=buildTests.resolve(request);
             if(target.testing()) {
-              identity.requireActionExecutionAccess(user.getId(),user.getDomainId());target.requireClasses(List.of(className));
+              identity.requireActionExecutionAccess(user.getId(),user.getDomainId());
+              className=requiredText(param,"className");attrName=requiredText(param,"attrName");objectId=requiredText(param,"objectId");path=requiredText(param,"path");
+              target.requireClasses(List.of(className));
               writes.deleteVector(className,attrName,objectId,Path.of(path).getFileName().toString(),target.sandboxId(),user.getDomainId());
             } else vectorResourceService.deleteAndDetach(className, attrName, objectId, path, user.getDomainId());
 			ret.put("success", true);
@@ -130,6 +132,11 @@ public class VectorResourceController {
 		return ret;
 	}
 	
+    private String requiredText(JSONObject body,String key) {
+      if(!(body.get(key) instanceof String value) || value.isBlank()) throw new IllegalArgumentException(key+": expected a nonempty string");
+      return value;
+    }
+
 	@GetMapping("/vectorResource/resource/{indexName}/{fileName}")
 	public ResponseEntity<Resource> download(@PathVariable String indexName, @PathVariable String fileName) {
 		Resource resource = new FileSystemResource(vectorResourceService.getFile(indexName, fileName));
