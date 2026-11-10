@@ -23,10 +23,13 @@ import io.ontomato.dataengine.dao.MetricViewDao;
 import io.ontomato.dataengine.dataAdapter.DslRowLimit;
 import io.ontomato.dataengine.service.ABCProgramService;
 import io.ontomato.dataengine.service.AdminService;
+import io.ontomato.dataengine.service.IdentityService;
 import io.ontomato.dataengine.service.BackendSessionEntrance;
 import io.ontomato.dataengine.service.BusinessConfigService;
 import io.ontomato.dataengine.service.LangService;
 import io.ontomato.dataengine.service.MetricViewService;
+import io.ontomato.dataengine.service.SubjectReference;
+import io.ontomato.dataengine.service.SubjectValueResolver;
 import io.ontomato.dataengine.service.SessionCancelledException;
 import io.ontomato.dataengine.service.agent.OntologyGenerationPrompts;
 import io.ontomato.dataengine.service.agent.OntologyGenerationService;
@@ -57,6 +60,8 @@ public class MetricViewServiceImpl implements MetricViewService {
 
   @Autowired private BusinessConfigService businessConfigService;
 
+  @Autowired private SubjectValueResolver subjectValues;
+
   @Autowired private KnowledgeDao knowledgeDao;
 
   @Autowired private AdminService adminService;
@@ -68,6 +73,8 @@ public class MetricViewServiceImpl implements MetricViewService {
   @Autowired private OntologyGenerationService generationService;
 
   @Autowired private PlatformTransactionManager transactionManager;
+
+  @Autowired private IdentityService identityService;
 
   @PostConstruct
 	public void initService() {
@@ -214,11 +221,28 @@ public class MetricViewServiceImpl implements MetricViewService {
         (List<Map<String, Object>>) adminService.getJSONRule(domain).get("classDef"));
     if (function.getOrigin() == null) function.setOrigin(Function.ORIGIN_USER);
     MetricViewBindings.validate(function, metric.getBindings());
+    validateSubjectReferences(function, metric.getBindings());
     List<MetricView> sharing = function.getId() == null ? List.of() : queryList(null, function.getId(), null, domain);
     for (MetricView other : sharing)
-      if (!Objects.equals(other.getId(), metric.getId())) MetricViewBindings.validate(function, other.getBindings());
+      if (!Objects.equals(other.getId(), metric.getId())) {
+        MetricViewBindings.validate(function, other.getBindings());
+        validateSubjectReferences(function, other.getBindings());
+      }
     metric.setOrigin(previous == null ? MetricView.ORIGIN_USER : previous.getOrigin());
     metric.setCreateTimestamp(previous == null ? null : previous.getCreateTimestamp());
+    // Provenance is resolved here rather than at a controller, because generation and import reach the
+    // same funnel without passing a request body: one place to set it, no path that forgets.
+    String subject = currentSubjectId();
+    if (previous != null) {
+      metric.setCreatedBy(previous.getCreatedBy());
+    } else if (metric.getCreatedBy() == null) {
+      metric.setCreatedBy(subject);
+    }
+    if (MetricView.STATUS_PUBLISHED.equals(metric.getStatus()) && subject != null) {
+      metric.setReviewedBy(subject);
+    } else if (previous != null && metric.getReviewedBy() == null) {
+      metric.setReviewedBy(previous.getReviewedBy());
+    }
     functionDao.save(function);
     metricViewDao.save(metric);
     // A shared definition's class projection follows the same edit as its bindings.
@@ -228,6 +252,43 @@ public class MetricViewServiceImpl implements MetricViewService {
       metricViewDao.save(other);
     }
     return metric;
+  }
+
+  /**
+   * Refuse a definition whose subject reference could never resolve.
+   *
+   * <p>This runs at save, not only at execution: a reference written as {@code {{acount.id}}} is a
+   * literal that matches nothing, so the metric would publish happily and then answer "no rows" forever.
+   * Catching it while the author is still editing is the difference between a typo and a silent outage.</p>
+   */
+  private void validateSubjectReferences(Function function, List<MetricViewBinding> bindings) {
+    if (function.getParameters() != null) {
+      for (Parameter parameter : function.getParameters()) {
+        try {
+          subjectValues.validate(parameter.getValue());
+        } catch (IllegalArgumentException error) {
+          throw new IllegalArgumentException(
+              "Parameter '" + parameter.getName() + "': " + error.getMessage(), error);
+        }
+      }
+    }
+    if (bindings == null) return;
+    for (MetricViewBinding binding : bindings) {
+      if (binding.getParameters() == null) continue;
+      subjectValues.validateValues(binding.getParameters());
+    }
+  }
+
+  /**
+   * The authenticated subject, or null when there is none. Absence is tolerated rather than fatal: a
+   * background or anonymous run must still be able to persist, it just records no provenance.
+   */
+  private String currentSubjectId() {
+    try {
+      return identityService == null ? null : identityService.getCurrentUserId();
+    } catch (RuntimeException noIdentity) {
+      return null;
+    }
   }
 
   @Override
@@ -395,9 +456,28 @@ private MetricViewContent generateContent(JSONArray rows, PythonExecuteResult ex
     validateDraftDomain(metric, user.getDomainId());
     if (!MetricView.STATUS_PUBLISHED.equals(metric.getStatus()))
       throw new IllegalArgumentException("MetricView is not published");
+    // A parameter whose declared value is a subject reference is the server's to fill. Accepting a
+    // supplied value for it would let a caller turn "my pending items" into "anyone's pending items".
+    refuseSubjectOverrides(metric, bindingId, param);
     JSONObject values = MetricViewBindings.resolve(metric, bindingId, param);
+    // A declared subject reference is filled from the authenticated request, never from the supplied
+    // parameters: the predicate is the author's, the value is the server's.
+    values = subjectValues.resolveValues(values, user);
     Function execution = MetricViewBindings.executionFunction(metric.getFunction(), values);
     return abcProgramService.execute(UUID.randomUUID().toString(), execution, user.getId(), permission, null, lang, timeoutMinutes, user.getDomainId());
+  }
+
+  /**
+   * Refuse a caller-supplied value for a parameter the definition bound to the authenticated subject.
+   *
+   * <p>A binding is the supported way to run a personalised metric; supplying the parameter directly is
+   * the way to run someone else's copy of it. The distinction is the difference between a filter and a
+   * spoof, so it is enforced here rather than left to which call the agent happens to make.</p>
+   */
+  private void refuseSubjectOverrides(MetricView metric, String bindingId, JSONObject supplied) {
+    if (bindingId != null) return;
+    // One rule for every path: a definition must not mean two things depending on which endpoint ran it.
+    subjectValues.refuseOverrides(metric.getFunction(), supplied);
   }
 
   private void validateDraftDomain(MetricView metric, String domain) {

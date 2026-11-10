@@ -60,6 +60,9 @@ Run `node ontomato.mjs <command>` from this directory. JSON accepts `@file`.
 | `execute-dsl @query.json` | `POST /ontology/query/execute-dsl`: one read-only DSL object, under your permissions |
 | `metrics <question> [--cursor id] [--limit n]` | `POST /ontology/query/metrics/search`: published read specifications, revision and next cursor; no model call |
 | `execute-metric <id> --revision <revision> [@parameters.json] [--binding id]` | `POST /ontology/query/metrics/execute`: current revision checked, execution under your permissions; --binding selects an owned parameter set |
+| `pending [--flow name] [--limit n]` | Your own pending items, read-only: the published "我的待办" metric when it exists, otherwise the active process's run contract; executed under your permissions |
+| `actions` | The actions your roles are granted by an active revision, with the granting process; the same intersection the executor uses |
+| `run <actionId> [@parameters.json]` | `POST /action/execute`: perform one step your roles are granted; a refusal is reported with its real cause |
 | `knowledge <question> [--limit n]` | `POST /ontology/query/knowledge/search`: relevant business knowledge |
 | `ask [--lang en] [--request-id UUID] "complete question"` | Start concurrent binding execution and retrieval; return the first deliverable results and download their files |
 | `ask --status <retrievalId>` | Read branch status, available results, cursor and quality checks |
@@ -93,6 +96,27 @@ Use this envelope with ask --resume <id> --answers @file and a fresh request ID.
 Reuse that same request ID/envelope after a lost response. Quality checking is
 asynchronous; inspect ask --status later. The product retriever uses direct
 ontology commands and the data-retrieval file script, never recursively ask.
+
+## Acting on your own work
+
+`pending` answers "what is waiting for me" and writes nothing. It prefers the published
+`我的待办` metric: that query was generated from a run contract the platform verified, so its
+field names and open states are the ones the process actually uses. Only when no such metric exists
+does it fall back to the active process's contract, and it then reads the caller's own id from the
+session — there is no identity parameter to pass.
+
+`run` performs exactly one step. The executor decides in order: platform permission, then the
+capability grant (is one of your roles granted this action by an active revision), then the action's
+own preconditions (is it your turn, is the case in the state this step expects). Then data
+permission applies to the state it reads. A refusal names the layer that refused it — see
+[acting on a case](references/actions.md) for what each one means and what to do next.
+
+`actions` answers the other half: which steps are yours to run at all. It intersects your effective
+roles with the grants in force, so a row left by an earlier revision is not listed. "I can run this"
+and "this is waiting for me" are different questions; ask both before concluding you have nothing to do.
+
+Never pass an identity to make a step succeed. "This is not your turn" is a business state, not a
+credential problem, and retrying with different parameters will not change it.
 
 ## Query workflow and result meaning
 

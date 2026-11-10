@@ -10,6 +10,9 @@ import io.ontomato.dataengine.bean.function.Function;
 import io.ontomato.dataengine.bean.function.Parameter;
 import io.ontomato.dataengine.service.ABCProgramService;
 import io.ontomato.dataengine.service.IdentityService;
+import io.ontomato.dataengine.service.CapabilityGrantLookup;
+import io.ontomato.dataengine.service.ActionPreconditionService;
+import io.ontomato.dataengine.service.IdentitySnapshotLookup;
 import io.ontomato.dataengine.service.MetricViewBindings;
 import io.ontomato.dataengine.service.QueryAccessService;
 import io.ontomato.dataengine.service.sys.bean.permission.UserDataPermission;
@@ -40,6 +43,7 @@ class ActionParameterDefaultsTest {
   void manualActionOmissionsBecomeNullInADetachedExecution() throws Exception {
     var definition = definition();
     var action = new Action();
+    action.setId("action-a");
     action.setStatus(Action.STATUS_PUBLISHED);
     action.setDomainId("domain-a");
     action.setFunction(definition);
@@ -55,7 +59,8 @@ class ActionParameterDefaultsTest {
             anyString(),
             eq("en"),
             eq(1),
-            eq("domain-a")))
+            eq("domain-a"),
+            any(ABCProgramService.ExecutionContext.class)))
         .thenAnswer(
             call -> {
               received.set(call.getArgument(1));
@@ -63,6 +68,16 @@ class ActionParameterDefaultsTest {
             });
     ReflectionTestUtils.setField(service, "identity", mock(IdentityService.class));
     ReflectionTestUtils.setField(service, "abcProgramService", programs);
+    var grants = mock(CapabilityGrantLookup.class);
+    when(grants.allows("user-a", "domain-a", CapabilityGrantLookup.ACTION, "action-a")).thenReturn(true);
+    ReflectionTestUtils.setField(service, "capabilityGrants", grants);
+    var preconditions = mock(ActionPreconditionService.class);
+    when(preconditions.evaluate(any(), any(), any(), any())).thenReturn(new ActionPreconditionService.Verdict(true, List.of()));
+    ReflectionTestUtils.setField(service, "preconditions", preconditions);
+    var snapshots = mock(IdentitySnapshotLookup.class);
+    when(snapshots.snapshot(any(), any())).thenReturn(new JSONObject());
+    ReflectionTestUtils.setField(service, "identitySnapshots", snapshots);
+    ReflectionTestUtils.setField(service, "workflowRuns", mock(WorkflowRunResolver.class));
     var supplied = new JSONObject();
     service.execute(
         "action-a",

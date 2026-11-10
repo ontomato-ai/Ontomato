@@ -66,10 +66,22 @@ public class PythonExecuteServiceImpl implements PythonExecuteService {
                 parameters == null ? new JSONObject() : parameters,
                 com.alibaba.fastjson2.JSONWriter.Feature.WriteMapNullValue)));
     for (var file : inputFiles.entrySet()) {
-      if (file.getKey().equals("program.py") || file.getKey().equals("parameters.json") || file.getKey().equals("query_runtime.py"))
+      if (file.getKey().equals("program.py") || file.getKey().equals("parameters.json") || file.getKey().equals("query_runtime.py") || file.getKey().equals("identity.json"))
         throw new ProgramExecutionException(ProgramExecutionException.Reason.INPUT_CONFLICT, lang);
       files.add(Map.of("path", file.getKey(), "content", file.getValue()));
     }
+    // The identity snapshot goes in after the caller's files, and only when one was established: a
+    // file the caller could supply would be a parameter under another name, and an empty snapshot
+    // would say "this subject has no roles" where the truth is "nobody asked".
+    if (authority.identity() != null)
+      files.add(
+          Map.of(
+              "path",
+              "identity.json",
+              "content",
+              JSON.toJSONString(
+                  authority.identity(),
+                  com.alibaba.fastjson2.JSONWriter.Feature.WriteMapNullValue)));
     Map<String, String> values = new java.util.HashMap<>();
     values.put("ONTOMATO_ONTOLOGY_URL", runtime.ontologyUrl());
     Map<String, Object> request = Map.of(

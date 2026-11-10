@@ -10,7 +10,9 @@ import {
   SquareFunction,
   Table2,
   Tags,
-  Workflow,
+  Workflow as WorkflowIcon,
+  GitBranch,
+  Share2,
 } from "lucide-vue-next";
 import type { ManagerCounts } from "./context";
 import type { OntologyResourceCounts } from "./workspace";
@@ -44,6 +46,8 @@ export const managerPaths = {
   attributes: routes.attributes.path,
   relations: routes.relations.path,
   actions: routes.actions.path,
+  workflows: routes.workflows.path,
+  capabilityMap: routes.capabilityMap.path,
   visualModeling: routes.modeling.path,
   dataBrowser: routes.data.path.split("/:")[0]!,
   metrics: routes.metrics.path,
@@ -81,7 +85,9 @@ const pages = [
   page(managerPaths.attributes, "nav.ontologyAttributes", Tags, "ontology", MODELING, "attributes"),
   page(managerPaths.relations, "nav.relationTypes", Link2, "ontology", MODELING, "relations"),
   page(managerPaths.actions, "nav.actionManagement", MousePointerClick, "ontology", ["action-management"], "actions"),
-  page(managerPaths.visualModeling, "nav.visualModeling", Workflow, "ontology", MODELING),
+  page(managerPaths.workflows, "nav.workflowManagement", GitBranch, "ontology", ["action-management"]),
+  page(managerPaths.capabilityMap, "nav.capabilityMap", Share2, "ontology", ["action-management"]),
+  page(managerPaths.visualModeling, "nav.visualModeling", WorkflowIcon, "ontology", MODELING),
   // A page of the object browser: the platform draws the application's header above it and the page gutter around it.
   { ...page(managerPaths.dataBrowser, "nav.dataBrowser", Table2, "ontology", ["data-browser"]), ownHeader: false },
   page(managerPaths.metrics, "nav.metrics", ChartColumn, "assets", MODELING, "metrics"),

@@ -481,7 +481,7 @@ class OntologyRetrievalContractTest {
         "data", JSONArray.of(JSONObject.of("answer", JSONArray.of(JSONObject.of("value", 9))))));
     var ontology = new OntologyQueryService(admin, engine, null, null);
     org.springframework.test.util.ReflectionTestUtils.setField(ontology, "grants", grants);
-    org.springframework.test.util.ReflectionTestUtils.setField(retrieval, "outputs", new QueryOutputService(null, null, ontology, null));
+    org.springframework.test.util.ReflectionTestUtils.setField(retrieval, "outputs", new QueryOutputService(null, null, ontology, null, new io.ontomato.dataengine.service.SubjectValueResolver(org.mockito.Mockito.mock(io.ontomato.dataengine.service.SubjectAttributeLookup.class))));
     var preparation = JSONObject.of("title", "Sales", "question", "Sales?", "recipe", JSONObject.of("kind", "package",
         "package", QueryPackage.fromDsl(query.toJSONString()), "parameters", new JSONObject(), "columnLabels", JSONObject.of("value", "Value")),
         "assumptions", new JSONArray(), "decisionIds", new JSONArray(), "metricUses", new JSONArray(),

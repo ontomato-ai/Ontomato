@@ -71,6 +71,9 @@ CREATE TABLE IF NOT EXISTS ontology_retrieval_artifacts (
   artifact_id uuid PRIMARY KEY, output_id uuid NOT NULL REFERENCES ontology_retrieval_outputs(id),
   run_id uuid NOT NULL REFERENCES ontology_agent_runs(id), path text NOT NULL);
 """);
+    // A database created before this column existed is never altered by CREATE TABLE IF NOT EXISTS, and
+    // sites upgrade by replacing the image. Without this, every retrieval start fails on insert.
+    jdbc.execute("ALTER TABLE ontology_agent_runs ADD COLUMN IF NOT EXISTS language text");
   }
 
   public <T> T transaction(Supplier<T> operation) {

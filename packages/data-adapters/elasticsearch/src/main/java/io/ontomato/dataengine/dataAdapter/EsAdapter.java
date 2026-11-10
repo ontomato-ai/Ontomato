@@ -1,6 +1,8 @@
 package io.ontomato.dataengine.dataAdapter;
 
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
 import java.sql.Connection;
 import java.util.concurrent.TimeUnit;
 import java.util.ArrayList;
@@ -48,6 +50,12 @@ public class EsAdapter implements DataAdapter {
 
 	private static final Set<String> SUPPORTED_TYPES = Set.of(
 			"varchar", "text", "int", "long", "double", "date", "timestamp", "vector");
+
+	/**
+	 * The junction index's only field besides the two keys: the pairing digest, which is stored so a
+	 * cursor can order this index. It carries no meaning the two keys do not already carry.
+	 */
+	static final String PAIR_ID = "pair_id";
 
 	private final DataAdapterConnection connection;
 	private final Map<String, Object> jsonRule;
@@ -253,9 +261,55 @@ public class EsAdapter implements DataAdapter {
 		}
 	}
 
+	/**
+	 * Create the physical carrier of one relationship.
+	 *
+	 * <p>Only an {@code n:n} relationship needs one, and in a search engine that carrier is an index of
+	 * its own: there is no table a column could be added to, and a document cannot grow one field per
+	 * pairing. Both junction columns are mapped as {@code keyword} because they hold the two classes'
+	 * primary keys verbatim — nothing about them is analysed or scored.</p>
+	 *
+	 * <p>A {@code fk} relationship is a field on a document, and a {@code graph} relationship is an edge
+	 * this source kind cannot store; neither has anything to create here.</p>
+	 *
+	 * <p>Idempotent on purpose: the environment build drops the namespace and creates every class and
+	 * relationship again, so an interrupted run must be able to repeat itself.</p>
+	 */
 	@Override
 	public void createEdgeType(String namespace, String edgeName) {
-		// Edges are foreign-key fields; there is no separate type to create.
+		try {
+			Object definition = relationshipRule().get(edgeName);
+			if (definition == null) {
+				return; // nothing declared under this name; createEdge reports the missing definition
+			}
+			OntologyRelation rel = OntologyRelation.of(edgeName, definition, "relationship_rule[" + edgeName + "]");
+			if (!rel.junction()) {
+				return;
+			}
+			JSONObject properties = new JSONObject();
+			properties.put(PAIR_ID, keywordMapping());
+			properties.put(rel.linkTableFromField(), keywordMapping());
+			properties.put(rel.linkTableToField(), keywordMapping());
+			JSONObject mappings = new JSONObject();
+			mappings.put("properties", properties);
+			JSONObject body = new JSONObject();
+			body.put("mappings", mappings);
+			try {
+				http().put("/" + junctionIndex(namespace, rel), body);
+			} catch (Exception e) {
+				if (!String.valueOf(e.getMessage()).contains("resource_already_exists_exception")) {
+					throw e;
+				}
+			}
+		} catch (Exception e) {
+			log.error(e.getMessage(), e);
+		}
+	}
+
+	private static JSONObject keywordMapping() {
+		JSONObject mapping = new JSONObject();
+		mapping.put("type", "keyword");
+		return mapping;
 	}
 
 	private JSONObject mappingOf(String type) {
@@ -385,22 +439,62 @@ public class EsAdapter implements DataAdapter {
 		applyEdge(namespace, relationName, sourceClassName, sourceObjId, targetClassName, targetObjId, false);
 	}
 
-	/** Mirrors the relational four-branch foreign-key maintenance, one document update at a time. */
+	/**
+	 * Maintain one edge. An {@code n:n} relationship has no key field on either end, so the pairing is
+	 * one document in the junction index instead of a field written into a class document; a
+	 * {@code fk} relationship keeps the four-branch key-field maintenance.
+	 */
 	private void applyEdge(String namespace, String relationName, String sourceClassName, String sourceObjId,
 			String targetClassName, String targetObjId, boolean connect) throws Exception {
 		Map<String, Object> sourceClassDef = classDefOf(sourceClassName);
 		Map<String, Object> targetClassDef = classDefOf(targetClassName);
-		Map<String, Object> relDef = relationshipRule().get(relationName) instanceof Map<?, ?> map
-				? castMap(map) : null;
-		if (relDef == null || sourceClassDef == null || targetClassDef == null
-				|| !sourceClassName.equals(relDef.get("fromclass")) || !targetClassName.equals(relDef.get("toclass"))) {
+		Object definition = relationshipRule().get(relationName);
+		if (definition == null || sourceClassDef == null || targetClassDef == null) {
 			throw new Exception("Object class [" + sourceClassName + "] and object class [" + targetClassName
 					+ "] have no relationship definition [" + relationName + "]");
 		}
+		OntologyRelation rel = OntologyRelation.of(relationName, definition,
+				"relationship_rule[" + relationName + "]");
+		if (!rel.fromEnd(sourceClassName) || !rel.toClass().equals(targetClassName)) {
+			throw new Exception("Object class [" + sourceClassName + "] and object class [" + targetClassName
+					+ "] have no relationship definition [" + relationName + "]");
+		}
+
+		if (rel.junction()) {
+			String index = EsNaming.indexName(namespace, rel.linkTable());
+			String pairId = pairId(sourceObjId, targetObjId);
+			if (connect) {
+				// The pair digest is the document id, so re-adding a pairing overwrites it instead of
+				// recording the same pairing twice — a search engine has no unique constraint to do that.
+				JSONObject doc = new JSONObject();
+				doc.put(PAIR_ID, pairId);
+				doc.put(rel.linkTableFromField(), sourceObjId);
+				doc.put(rel.linkTableToField(), targetObjId);
+				http().request("PUT", "/" + index + "/_doc/" + pairId, doc.toJSONString(),
+						Map.of("refresh", "true"));
+			} else {
+				// Removing a pairing that is not there leaves the state the caller asked for; the engine
+				// answers 404 for the missing document, which is not a failure of this operation.
+				try {
+					http().request("DELETE", "/" + index + "/_doc/" + pairId, null, Map.of("refresh", "true"));
+				} catch (Exception e) {
+					if (!String.valueOf(e.getMessage()).contains("404")) {
+						throw e;
+					}
+				}
+			}
+			return;
+		}
+		if (!rel.usesKeyFields()) {
+			throw new UnsupportedDataAdapterOperationException(dialect.type(),
+					"an edge stored as a graph relationship; relationship [" + relationName + "] declares type '"
+							+ rel.kind() + "' but this source stores edges as key fields");
+		}
+
 		String sourcePk = DslUtil.getPrimaryKey(sourceClassDef);
 		String targetPk = DslUtil.getPrimaryKey(targetClassDef);
-		String sourceInnerField = (String) relDef.get("fromField");
-		String targetInnerField = (String) relDef.get("toField");
+		String sourceInnerField = rel.fromField();
+		String targetInnerField = rel.toField();
 
 		if (sourcePk.equals(sourceInnerField)) {
 			if (!targetPk.equals(targetInnerField)) {
@@ -410,7 +504,25 @@ public class EsAdapter implements DataAdapter {
 		} else if (targetPk.equals(targetInnerField)) {
 			String index = EsNaming.indexName(namespace, (String) sourceClassDef.get("className"));
 			setFieldByPk(index, sourcePk, sourceObjId, sourceInnerField, connect ? targetObjId : null);
+		} else {
+			// Neither end is a primary key: no document field can carry this connection, so a junction
+			// index is the only realization. Saying so beats silently writing nothing.
+			throw new DslContractViolationException(DslContractViolationException.Code.UNSUPPORTED_CONSTRUCT,
+					"relationship_rule[" + relationName + "]",
+					"relationship [" + relationName + "] joins two non-key fields (" + sourceInnerField + ", "
+							+ targetInnerField + "), which needs a junction; declare it as n:n with a linkTable");
 		}
+	}
+
+	/** The stable document id of one pairing, so a pair is recorded once no matter how often it is added. */
+	private static String pairId(String fromId, String toId) throws Exception {
+		MessageDigest sha256 = MessageDigest.getInstance("SHA-256");
+		byte[] digest = sha256.digest((fromId + "\u0000" + toId).getBytes(StandardCharsets.UTF_8));
+		StringBuilder hex = new StringBuilder(digest.length * 2);
+		for (byte b : digest) {
+			hex.append(Character.forDigit((b >> 4) & 0xf, 16)).append(Character.forDigit(b & 0xf, 16));
+		}
+		return hex.toString();
 	}
 
 	private void setFieldByPk(String index, String pk, String pkValue, String field, Object value) throws Exception {
@@ -598,6 +710,10 @@ public class EsAdapter implements DataAdapter {
 		JSONObject pattern = step.getJSONObject("graph").getJSONArray("patterns").getJSONObject(0);
 		JSONArray objects = pattern.getJSONArray("objects");
 		JSONArray relationships = pattern.getJSONArray("relationship");
+		// This source resolves an edge to the two ends' key fields, so exactly one hop is all it can
+		// render. A wider range must fail loudly: returning the one-hop pairing would look like the
+		// requested traversal and no caller could tell the difference.
+		KeyFieldHops.requireSingleHop(relationships, "relationship");
 
 		Map<String, Map<String, String>> attrTypesByClass = new HashMap<>();
 		Map<String, Set<String>> enabledAttrsByClass = new HashMap<>();
@@ -655,12 +771,34 @@ public class EsAdapter implements DataAdapter {
 			for (int i = 0; i < relationships.size(); i++) {
 				JSONObject rel = relationships.getJSONObject(i);
 				String relName = rel.getJSONArray("type").getString(0).trim();
-				Map<String, Object> relDef = relationshipRule().get(relName) instanceof Map<?, ?> m ? castMap(m) : null;
-				if (relDef == null) {
+				Object definition = relationshipRule().get(relName);
+				if (definition == null) {
 					continue;
 				}
-				edges.add(new Edge(rel.getInteger("from"), rel.getInteger("to"),
-						(String) relDef.get("fromField"), (String) relDef.get("toField")));
+				OntologyRelation relation = OntologyRelation.of(relName, definition,
+						"relationship_rule[" + relName + "]");
+				if (!relation.usesKeyFields()) {
+					throw new DslContractViolationException(DslContractViolationException.Code.UNSUPPORTED_CONSTRUCT,
+							"relationship[" + relName + "]",
+							"relationship [" + relName + "] declares type '" + relation.kind()
+									+ "', which this source cannot traverse; it stores edges as a link index or a key field");
+				}
+				Integer fromIdx = rel.getInteger("from");
+				Integer toIdx = rel.getInteger("to");
+				// The DSL may traverse the relationship either way; fromField/toField belong to the
+				// ontomap's ends, so resolve which side is which before placing any of them.
+				boolean dslFromIsOntoFrom = classMatches(EsNaming.sanitize(byIdx.get(fromIdx).getString("class")),
+						relation.fromClass());
+				String fromField = dslFromIsOntoFrom ? relation.fromField() : relation.toField();
+				String toField = dslFromIsOntoFrom ? relation.toField() : relation.fromField();
+				if (!relation.junction()) {
+					edges.add(new Edge(fromIdx, toIdx, fromField, toField, null, null, null));
+					continue;
+				}
+				edges.add(new Edge(fromIdx, toIdx, fromField, toField,
+						junctionIndexName(relation),
+						dslFromIsOntoFrom ? relation.linkTableFromField() : relation.linkTableToField(),
+						dslFromIsOntoFrom ? relation.linkTableToField() : relation.linkTableFromField()));
 			}
 		}
 
@@ -1042,25 +1180,40 @@ public class EsAdapter implements DataAdapter {
 				String existingAlias = byIdx.get(newIsTo ? edge.from : edge.to).getString("variable");
 				String existingKey = newIsTo ? edge.fromField : edge.toField;
 				String newKey = newIsTo ? edge.toField : edge.fromField;
+				// An n:n edge is one extra hop: the rows first resolve to the far end's keys through the
+				// junction index, then probe the far class by those keys. A key-field edge hashes the
+				// existing row's own key directly. Either way the second step is the same lookup.
+				Map<String, List<Map<String, JSONObject>>> probe;
+				if (edge.junctionIndex() == null) {
+					probe = indexRows(rows, existingAlias, existingKey);
+				} else {
+					Map<String, Set<String>> pairs = junctionPairs(edge, newIsTo, rows, existingAlias, existingKey,
+							generatedMqls, rowLimit);
+					probe = junctionProbe(pairs, rows, existingAlias, existingKey);
+				}
+				JSONArray probeKeys = edge.junctionIndex() == null ? null : keysOf(probe);
 				if (estimate <= maxMaterialize) {
-					List<JSONObject> docs = searchAll(index, query, generatedMqls, maxMaterialize);
+					// A junction hop already knows which far-end keys can match, so the search is narrowed
+					// before any document is read; a key-field edge reads the far class as its query asks.
+					JSONObject effectiveQuery = withKeyFilter(query, index, newKey, probeKeys, generatedMqls);
+					List<JSONObject> docs = searchAll(index, effectiveQuery, generatedMqls, maxMaterialize);
 					if (emit) {
-						hashJoinTo(rows, existingAlias, existingKey, docs, alias, newKey, sink);
+						probeJoinTo(probe, docs, alias, newKey, sink);
 						return null;
 					}
-					rows = hashJoin(rows, existingAlias, existingKey, docs, alias, newKey, idx.equals(last) ? stopAfter : -1, rowLimit);
+					rows = probeJoin(probe, docs, alias, newKey, idx.equals(last) ? stopAfter : -1, rowLimit);
 				} else {
 					// Too large to materialize: stream it, probing the bounded build side. When the build keys
 					// fit one terms clause, push them down so the engine returns only the matching documents.
-					JSONArray buildKeys = distinctKeys(rows, existingAlias, existingKey);
-					JSONArray push = buildKeys.size() <= maxTerms ? buildKeys : null;
+					JSONArray buildKeys = edge.junctionIndex() == null
+							? distinctKeys(rows, existingAlias, existingKey) : probeKeys;
 					if (emit) {
-						streamJoinTo(rows, existingAlias, existingKey, index, query, alias, newKey, generatedMqls, push, sink);
+						streamProbeJoinTo(probe, index, query, alias, newKey, generatedMqls, buildKeys, sink);
 						return null;
 					}
 					// Only the last join may stop at the requested output count; earlier rows can still be filtered.
 					long stop = idx.equals(last) ? stopAfter : -1;
-					rows = streamJoin(rows, existingAlias, existingKey, index, query, alias, newKey, generatedMqls, stop, push, rowLimit);
+					rows = streamProbeJoin(probe, index, query, alias, newKey, generatedMqls, stop, buildKeys, rowLimit);
 				}
 			}
 		}
@@ -1166,34 +1319,163 @@ public class EsAdapter implements DataAdapter {
 		}
 	}
 
+	/** Index the build side by one key: the probe side's lookup table. */
+	private Map<String, List<Map<String, JSONObject>>> indexRows(List<Map<String, JSONObject>> rows,
+			String alias, String keyField) {
+		Map<String, List<Map<String, JSONObject>>> probe = new HashMap<>();
+		for (Map<String, JSONObject> row : rows) {
+			JSONObject existing = row.get(alias);
+			if (existing != null) {
+				probe.computeIfAbsent(keyOf(existing.get(keyField)), k -> new ArrayList<>()).add(row);
+			}
+		}
+		return probe;
+	}
+
+	private JSONArray keysOf(Map<String, List<Map<String, JSONObject>>> probe) {
+		JSONArray keys = new JSONArray();
+		probe.keySet().forEach(keys::add);
+		return keys;
+	}
+
 	/**
-	 * Probe a bounded build side while streaming a large index page by page (PIT + search_after):
-	 * the large side is never materialized, so the join stays memory-bounded.
+	 * Resolve the pairs an {@code n:n} hop actually joins: for every near-end key in hand, the far-end
+	 * keys the junction records. This is the hop a search engine cannot do in one query — the pairing
+	 * lives in its own index, so the two ends are matched here instead of by the engine.
+	 *
+	 * <p>A junction index that does not exist yet holds no pairing, which is the empty answer rather
+	 * than a failure: a domain may declare a many-to-many relationship before anything is linked.</p>
 	 */
-	private List<Map<String, JSONObject>> streamJoin(List<Map<String, JSONObject>> rows, String existingAlias,
-			String existingKey, String index, JSONObject query, String newAlias, String newKey,
-			List<String> generatedMqls, long stopAfter, JSONArray buildKeys, DslRowLimit.Tracker rowLimit) throws Exception {
-		Map<String, List<Map<String, JSONObject>>> build = new HashMap<>();
+	private Map<String, Set<String>> junctionPairs(Edge edge, boolean newIsTo, List<Map<String, JSONObject>> rows,
+			String existingAlias, String existingKey, List<String> generatedMqls, DslRowLimit.Tracker rowLimit)
+			throws Exception {
+		Map<String, Set<String>> pairs = new HashMap<>();
+		String nearColumn = newIsTo ? edge.junctionFromColumn() : edge.junctionToColumn();
+		String farColumn = newIsTo ? edge.junctionToColumn() : edge.junctionFromColumn();
+		JSONArray nearKeys = distinctKeys(rows, existingAlias, existingKey);
+		if (nearKeys.isEmpty()) {
+			return pairs;
+		}
+		String index = edge.junctionIndex();
+		JSONObject terms = new JSONObject();
+		terms.put(exactField(index, nearColumn), nearKeys);
+		JSONObject query = new JSONObject(Map.of("bool", new JSONObject(Map.of("must",
+				JSONArray.of(new JSONObject(Map.of("terms", terms)))))));
+		if (generatedMqls != null) {
+			generatedMqls.add("LINK /" + index + " keys=" + nearKeys.size());
+		}
+		List<JSONObject> links;
+		try {
+			links = searchAll(index, query, null, maxMaterialize);
+		} catch (IOException e) {
+			if (String.valueOf(e.getMessage()).contains("index_not_found_exception")) {
+				return pairs;
+			}
+			throw e;
+		}
+		for (JSONObject link : links) {
+			String near = keyOf(link.get(nearColumn));
+			String far = keyOf(link.get(farColumn));
+			if (near != null && far != null) {
+				pairs.computeIfAbsent(near, k -> new LinkedHashSet<>()).add(far);
+			}
+		}
+		return pairs;
+	}
+
+	/** The probe table of a junction hop: each far-end key maps to the rows that reach it. */
+	private Map<String, List<Map<String, JSONObject>>> junctionProbe(Map<String, Set<String>> pairs,
+			List<Map<String, JSONObject>> rows, String existingAlias, String existingKey) {
+		Map<String, List<Map<String, JSONObject>>> probe = new HashMap<>();
 		for (Map<String, JSONObject> row : rows) {
 			JSONObject existing = row.get(existingAlias);
-			if (existing != null) {
-				build.computeIfAbsent(keyOf(existing.get(existingKey)), k -> new ArrayList<>()).add(row);
+			if (existing == null) {
+				continue;
+			}
+			Set<String> farIds = pairs.get(keyOf(existing.get(existingKey)));
+			if (farIds == null) {
+				continue;
+			}
+			for (String farId : farIds) {
+				probe.computeIfAbsent(farId, k -> new ArrayList<>()).add(row);
 			}
 		}
-		JSONObject effectiveQuery = query;
-		if (buildKeys != null && !buildKeys.isEmpty()) {
+		return probe;
+	}
+
+	/**
+	 * Restrict the far-end search to the keys the junction resolved. Returns the query unchanged when
+	 * there is nothing to narrow it with, or when the keys exceed one terms clause — the lookup stays
+	 * correct either way, only the amount of work differs.
+	 */
+	private JSONObject withKeyFilter(JSONObject query, String index, String keyField, JSONArray keys,
+			List<String> generatedMqls) throws Exception {
+		if (keys == null || keys.isEmpty() || keys.size() > maxTerms) {
+			return query;
+		}
 			JSONObject terms = new JSONObject();
-			terms.put(exactField(index, newKey), buildKeys);
+		terms.put(exactField(index, keyField), keys);
 			JSONObject bool = new JSONObject();
 			bool.put("must", JSONArray.of(query, new JSONObject(Map.of("terms", terms))));
-			effectiveQuery = new JSONObject(Map.of("bool", bool));
 			if (generatedMqls != null) {
-				generatedMqls.add("TERMS pushdown /" + index + " keys=" + buildKeys.size());
+			generatedMqls.add("TERMS pushdown /" + index + " keys=" + keys.size());
+		}
+		return new JSONObject(Map.of("bool", bool));
+	}
+
+	/** Probe the far side's materialized documents against the build side's key table. */
+	private List<Map<String, JSONObject>> probeJoin(Map<String, List<Map<String, JSONObject>>> probe,
+			List<JSONObject> newDocs, String newAlias, String newKey, long stopAfter, DslRowLimit.Tracker rowLimit) {
+		List<Map<String, JSONObject>> out = new ArrayList<>();
+		for (JSONObject doc : newDocs) {
+			List<Map<String, JSONObject>> matches = probe.get(keyOf(doc.get(newKey)));
+			if (matches == null) {
+				continue;
+			}
+			for (Map<String, JSONObject> match : matches) {
+				if (out.size() >= maxMaterialize) {
+					markWorkingSetTruncated("joined intermediate", rowLimit);
+					return out;
+				}
+				Map<String, JSONObject> joined = new LinkedHashMap<>(match);
+				joined.put(newAlias, doc);
+				out.add(joined);
+				if (stopAfter > 0 && out.size() >= stopAfter) {
+					return out;
+				}
 			}
 		}
+		return out;
+	}
+
+	private void probeJoinTo(Map<String, List<Map<String, JSONObject>>> probe, List<JSONObject> newDocs,
+			String newAlias, String newKey, RowSink sink) {
+		for (JSONObject doc : newDocs) {
+			List<Map<String, JSONObject>> matches = probe.get(keyOf(doc.get(newKey)));
+			if (matches == null) {
+				continue;
+			}
+			for (Map<String, JSONObject> match : matches) {
+				Map<String, JSONObject> joined = new LinkedHashMap<>(match);
+				joined.put(newAlias, doc);
+				if (!sink.accept(joined)) {
+					return;
+				}
+			}
+		}
+	}
+
+	/**
+	 * Probe a bounded build side while streaming the far index page by page (PIT + search_after):
+	 * the large side is never materialized, so the join stays memory-bounded.
+	 */
+	private List<Map<String, JSONObject>> streamProbeJoin(Map<String, List<Map<String, JSONObject>>> probe,
+			String index, JSONObject query, String newAlias, String newKey, List<String> generatedMqls,
+			long stopAfter, JSONArray buildKeys, DslRowLimit.Tracker rowLimit) throws Exception {
+		JSONObject effectiveQuery = withKeyFilter(query, index, newKey, buildKeys, generatedMqls);
 		List<Map<String, JSONObject>> out = new ArrayList<>();
 		if (generatedMqls != null) {
-			generatedMqls.add("STREAM /" + index + " (PIT) probing build=" + rows.size());
+			generatedMqls.add("STREAM /" + index + " (PIT) probing build=" + probe.size());
 		}
 		String pit = openPit(index);
 		try {
@@ -1208,7 +1490,7 @@ public class EsAdapter implements DataAdapter {
 				for (int i = 0; i < hits.size(); i++) {
 					JSONObject hit = hits.getJSONObject(i);
 					JSONObject doc = hit.getJSONObject("_source");
-					List<Map<String, JSONObject>> matches = build.get(keyOf(doc.get(newKey)));
+					List<Map<String, JSONObject>> matches = probe.get(keyOf(doc.get(newKey)));
 					if (matches != null) {
 						for (Map<String, JSONObject> match : matches) {
 							if (out.size() >= maxMaterialize) {
@@ -1235,6 +1517,80 @@ public class EsAdapter implements DataAdapter {
 		return out;
 	}
 
+	private void streamProbeJoinTo(Map<String, List<Map<String, JSONObject>>> probe, String index,
+			JSONObject query, String newAlias, String newKey, List<String> generatedMqls, JSONArray buildKeys,
+			RowSink sink) throws Exception {
+		JSONObject effectiveQuery = withKeyFilter(query, index, newKey, buildKeys, generatedMqls);
+		String pit = openPit(index);
+		try {
+			JSONArray searchAfter = null;
+			while (true) {
+				PageResult page = searchPage(index, pit, effectiveQuery, searchAfter);
+				pit = page.pitId();
+				JSONArray hits = page.hits();
+				if (hits.isEmpty()) {
+					break;
+			}
+				for (int i = 0; i < hits.size(); i++) {
+					JSONObject hit = hits.getJSONObject(i);
+					JSONObject doc = hit.getJSONObject("_source");
+					List<Map<String, JSONObject>> matches = probe.get(keyOf(doc.get(newKey)));
+					if (matches != null) {
+						for (Map<String, JSONObject> match : matches) {
+							Map<String, JSONObject> joined = new LinkedHashMap<>(match);
+							joined.put(newAlias, doc);
+							if (!sink.accept(joined)) {
+								return;
+			}
+		}
+	}
+					searchAfter = hit.getJSONArray("sort");
+		}
+				if (hits.size() < PAGE || searchAfter == null) {
+					break;
+			}
+			}
+		} finally {
+			closePit(pit);
+				}
+			}
+
+	/**
+	 * Whether a class name as the DSL carries it names the given ontomap class. The DSL's names are
+	 * already namespace-prefixed and physically spelled, so the comparison cannot be plain equality.
+	 */
+	private boolean classMatches(String dslClassName, String ontoClassName) {
+		if (ontoClassName == null) {
+			return false;
+		}
+		String onto = EsNaming.sanitize(ontoClassName);
+		return onto.equals(dslClassName) || (dslClassName != null && dslClassName.endsWith(onto));
+	}
+
+	/** The junction index's physical name on the write path: it follows the same namespace rule as a class. */
+	private String junctionIndex(String namespace, OntologyRelation rel) {
+		return EsNaming.indexName(namespace, rel.linkTable());
+		}
+
+	/**
+	 * The junction index as the read path must spell it. A sandbox run prefixes every class name with
+	 * the namespace before the DSL reaches this adapter, and the junction index has to follow the same
+	 * rule or the query would read the production junction. The prefix is recovered from a class
+	 * definition, because the read path receives the already-rewritten names and nothing else.
+	 */
+	private String junctionIndexName(OntologyRelation rel) {
+		String prefix = "";
+		for (Map<String, Object> classDef : classDefs()) {
+			String className = (String) classDef.get("className");
+			if (className != null && rel.fromClass() != null && className.endsWith(rel.fromClass())
+					&& !className.equals(rel.fromClass())) {
+				prefix = className.substring(0, className.length() - rel.fromClass().length());
+				break;
+			}
+			}
+		return EsNaming.indexName(prefix, rel.linkTable());
+	}
+
 	private Edge edgeConnecting(Integer idx, Set<Integer> inSet, List<Edge> edges) {
 		for (Edge edge : edges) {
 			if (edge.from.equals(idx) && inSet.contains(edge.to) && !edge.to.equals(idx)) {
@@ -1242,62 +1598,9 @@ public class EsAdapter implements DataAdapter {
 			}
 			if (edge.to.equals(idx) && inSet.contains(edge.from) && !edge.from.equals(idx)) {
 				return edge;
-			}
 		}
+	}
 		return null;
-	}
-
-	private List<Map<String, JSONObject>> hashJoin(List<Map<String, JSONObject>> rows, String existingAlias,
-			String existingKey, List<JSONObject> newDocs, String newAlias, String newKey, long stopAfter, DslRowLimit.Tracker rowLimit) {
-		Map<String, List<JSONObject>> build = new HashMap<>();
-		for (JSONObject doc : newDocs) {
-			build.computeIfAbsent(keyOf(doc.get(newKey)), k -> new ArrayList<>()).add(doc);
-		}
-		List<Map<String, JSONObject>> out = new ArrayList<>();
-		for (Map<String, JSONObject> row : rows) {
-			JSONObject existing = row.get(existingAlias);
-			if (existing == null) {
-				continue;
-			}
-			List<JSONObject> matches = build.get(keyOf(existing.get(existingKey)));
-			if (matches == null) {
-				continue;
-			}
-			for (JSONObject match : matches) {
-				if (out.size() >= maxMaterialize) {
-					markWorkingSetTruncated("joined intermediate", rowLimit);
-					return out;
-				}
-				Map<String, JSONObject> joined = new LinkedHashMap<>(row);
-				joined.put(newAlias, match);
-				out.add(joined);
-				if (stopAfter > 0 && out.size() >= stopAfter) return out;
-			}
-		}
-		return out;
-	}
-
-	private void hashJoinTo(List<Map<String, JSONObject>> rows, String existingAlias, String existingKey,
-			List<JSONObject> newDocs, String newAlias, String newKey, RowSink sink) {
-		Map<String, List<JSONObject>> build = new HashMap<>();
-		for (JSONObject doc : newDocs) {
-			build.computeIfAbsent(keyOf(doc.get(newKey)), k -> new ArrayList<>()).add(doc);
-		}
-		for (Map<String, JSONObject> row : rows) {
-			JSONObject existing = row.get(existingAlias);
-			if (existing == null) {
-				continue;
-			}
-			List<JSONObject> matches = build.get(keyOf(existing.get(existingKey)));
-			if (matches == null) {
-				continue;
-			}
-			for (JSONObject match : matches) {
-				Map<String, JSONObject> joined = new LinkedHashMap<>(row);
-				joined.put(newAlias, match);
-				if (!sink.accept(joined)) return;
-			}
-		}
 	}
 
 	private List<Map<String, JSONObject>> cross(List<Map<String, JSONObject>> left, List<Map<String, JSONObject>> right,
@@ -2148,6 +2451,11 @@ public class EsAdapter implements DataAdapter {
 	private String primaryKeySortField(String index) throws Exception {
 		Map<String, Object> classDef = classDefOfIndex(index);
 		if (classDef == null) {
+			// A junction index is not a class: it has no primary key, but every pairing document carries
+			// the pair digest, which is its document id and a keyword — a stable cursor of its own.
+			if ("keyword".equals(fieldCaps(index).get(PAIR_ID))) {
+				return PAIR_ID;
+			}
 			throw new IOException("No object class maps to index [" + index
 					+ "], so " + dialect.label() + " cannot page it without _shard_doc");
 		}
@@ -2216,11 +2524,6 @@ public class EsAdapter implements DataAdapter {
 		return types;
 	}
 
-	@SuppressWarnings("unchecked")
-	private static Map<String, Object> castMap(Map<?, ?> map) {
-		return (Map<String, Object>) map;
-	}
-
 	/** A vector value is serialized; everything else (dates/timestamps included) is written verbatim. */
 	private Object normalizeForWrite(String type, Object value) {
 		if (value == null) {
@@ -2251,7 +2554,8 @@ public class EsAdapter implements DataAdapter {
 		return objectId;
 	}
 
-	/** One relationship, resolved to its two ends and their key fields. */
-	private record Edge(Integer from, Integer to, String fromField, String toField) {
+	/** One relationship, resolved to its two ends, their key fields, and its junction when it is n:n. */
+	private record Edge(Integer from, Integer to, String fromField, String toField, String junctionIndex,
+			String junctionFromColumn, String junctionToColumn) {
 	}
 }

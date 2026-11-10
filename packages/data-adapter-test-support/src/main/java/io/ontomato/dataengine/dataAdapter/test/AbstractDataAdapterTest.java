@@ -1,6 +1,7 @@
 package io.ontomato.dataengine.dataAdapter.test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -1054,6 +1055,192 @@ public abstract class AbstractDataAdapterTest {
 	}
 
 	// ----------------------------------------------------------------------------------
+	// EDGE — n:n through a junction table
+	//
+	// A many-to-many relationship has no key field on either end: the pairing lives in a junction
+	// table, one row per connection. These tests read that table directly and traverse the
+	// relationship through the read path, so an adapter that only pretends to support the
+	// realization fails here instead of returning empty results later.
+	// ----------------------------------------------------------------------------------
+
+	/** The junction table name the n:n fixture declares. */
+	protected String junctionTable() {
+		return "person_org_t";
+	}
+
+	/** The junction column holding the from-class key. */
+	protected String junctionFromColumn() {
+		return "person_id";
+	}
+
+	/** The junction column holding the to-class key. */
+	protected String junctionToColumn() {
+		return "org_id";
+	}
+
+	/**
+	 * Create the two graph classes plus the n:n fixture: class 0 and class 1 are joined through a
+	 * junction table declared as {@code type: n:n}, with {@code p1-o1} and {@code p2-o1} as seed rows.
+	 */
+	protected DataAdapter seedJunction() throws Exception {
+		DataAdapter adapter = newAdapter(junctionRule());
+		for (JSONObject classDef : graphClassDefsWithTime()) {
+			adapter.createClass(namespace(), classDef);
+			JSONArray objs = graphSeed().get(classDef.getString("className"));
+			if (objs != null && !objs.isEmpty()) {
+				adapter.insertObjects(namespace(), classDef, objs);
+			}
+		}
+		// createEdgeType must materialize the junction table for an n:n relationship.
+		adapter.createEdgeType(namespace(), junctionRelation());
+		return adapter;
+	}
+
+	/** The n:n relationship name used by the fixture. */
+	protected String junctionRelation() {
+		return "person_org_nn";
+	}
+
+	/** A jsonRule whose first relationship is rewired to the n:n realization. */
+	protected JSONObject junctionRule() {
+		JSONObject rule = graphRule();
+		JSONObject relationships = rule.getJSONObject("relationship_rule");
+		JSONObject junction = new JSONObject();
+		junction.put("fromclass", graphClass(0));
+		junction.put("toclass", graphClass(1));
+		junction.put("desc", "member of");
+		junction.put("type", "n:n");
+		junction.put("fromField", primaryKey());
+		junction.put("toField", primaryKey());
+		junction.put("linkTable", junctionTable());
+		junction.put("linkTableFromField", junctionFromColumn());
+		junction.put("linkTableToField", junctionToColumn());
+		relationships.put(junctionRelation(), junction);
+		return rule;
+	}
+
+	/** A jsonRule with namespace-prefixed class names, for the read path. */
+	protected JSONObject prefixedJunctionRule() {
+		JSONObject rule = junctionRule();
+		JSONArray classDefs = new JSONArray();
+		for (JSONObject classDef : graphClassDefsWithTime()) {
+			JSONObject copy = new JSONObject();
+			for (String key : classDef.keySet()) {
+				if ("className".equals(key)) {
+					copy.put(key, namespace() + classDef.getString(key));
+				} else {
+					copy.put(key, classDef.get(key));
+				}
+			}
+			classDefs.add(copy);
+		}
+		rule.put("classDef", classDefs);
+		return rule;
+	}
+
+	/** Every row of the junction table, read straight from the source. */
+	protected List<JSONObject> junctionRows() throws Exception {
+		List<JSONObject> rows = new ArrayList<>();
+		try (Connection c = newAdapter().openConnection();
+				Statement st = c.createStatement();
+				ResultSet rs = st.executeQuery("select * from " + namespace() + junctionTable())) {
+			ResultSetMetaData md = rs.getMetaData();
+			int n = md.getColumnCount();
+			while (rs.next()) {
+				JSONObject row = new JSONObject();
+				for (int i = 1; i <= n; i++) {
+					row.put(md.getColumnName(i), rs.getObject(i));
+				}
+				rows.add(row);
+			}
+		}
+		return rows;
+	}
+
+	/** Whether the junction table holds exactly the given pairing. */
+	protected boolean junctionHas(String fromId, String toId) throws Exception {
+		for (JSONObject row : junctionRows()) {
+			if (fromId.equals(str(row.get(junctionFromColumn())))
+					&& toId.equals(str(row.get(junctionToColumn())))) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	@Test
+	void junctionCreateEdgeWritesOneRow() throws Exception {
+		assume(DataAdapterCapability.RELATION_NN);
+		DataAdapter adapter = seedJunction();
+		adapter.createEdge(namespace(), junctionRelation(), graphClass(0), "p1", graphClass(1), "o1");
+		assertTrue(junctionHas("p1", "o1"), "createEdge on an n:n relationship must write a junction row");
+		assertEquals(1, junctionRows().size(), "one pairing must be one row");
+		dropGraph();
+	}
+
+	@Test
+	void junctionCreateEdgeTwiceKeepsOneRow() throws Exception {
+		assume(DataAdapterCapability.RELATION_NN);
+		DataAdapter adapter = seedJunction();
+		adapter.createEdge(namespace(), junctionRelation(), graphClass(0), "p1", graphClass(1), "o1");
+		adapter.createEdge(namespace(), junctionRelation(), graphClass(0), "p1", graphClass(1), "o1");
+		assertEquals(1, junctionRows().size(), "the same pairing must not be recorded twice");
+		dropGraph();
+	}
+
+	@Test
+	void junctionDeleteEdgeRemovesOnlyThatPairing() throws Exception {
+		assume(DataAdapterCapability.RELATION_NN);
+		DataAdapter adapter = seedJunction();
+		adapter.createEdge(namespace(), junctionRelation(), graphClass(0), "p1", graphClass(1), "o1");
+		adapter.createEdge(namespace(), junctionRelation(), graphClass(0), "p2", graphClass(1), "o1");
+		adapter.deleteEdge(namespace(), junctionRelation(), graphClass(0), "p1", graphClass(1), "o1");
+		assertFalse(junctionHas("p1", "o1"), "the deleted pairing must be gone");
+		assertTrue(junctionHas("p2", "o1"), "the other pairing must survive");
+		dropGraph();
+	}
+
+	@Test
+	void junctionReadPathJoinsBothEnds() throws Exception {
+		assume(DataAdapterCapability.RELATION_NN);
+		DataAdapter adapter = seedJunction();
+		adapter.createEdge(namespace(), junctionRelation(), graphClass(0), "p1", graphClass(1), "o1");
+		adapter.createEdge(namespace(), junctionRelation(), graphClass(0), "p2", graphClass(1), "o1");
+		adapter.createEdge(namespace(), junctionRelation(), graphClass(0), "p3", graphClass(1), "o2");
+		// The read path must traverse the relationship through the junction table, matching both ends.
+		assertTrue(junctionEdgeExists("p1", "o1"), "the read path must find p1 joined to o1");
+		assertTrue(junctionEdgeExists("p2", "o1"), "the read path must find p2 joined to o1");
+		assertFalse(junctionEdgeExists("p1", "o2"), "the read path must not invent a pairing");
+		assertFalse(junctionEdgeExists("p4", "o1"), "the read path must not invent a pairing");
+		dropGraph();
+	}
+
+	/** Whether the read path, traversing the n:n relationship, joins these two objects. */
+	protected boolean junctionEdgeExists(String sourceId, String targetId) throws Exception {
+		JSONArray objects = new JSONArray();
+		JSONObject source = readObject(0, "s", 0);
+		JSONObject sourceConditions = new JSONObject();
+		sourceConditions.put("properties", readCond(primaryKey(), "=", sourceId));
+		source.put("conditions", sourceConditions);
+		objects.add(source);
+		JSONObject target = readObject(1, "t", 1);
+		JSONObject targetConditions = new JSONObject();
+		targetConditions.put("properties", readCond(primaryKey(), "=", targetId));
+		target.put("conditions", targetConditions);
+		objects.add(target);
+		JSONArray relationships = new JSONArray();
+		relationships.add(readRelation(0, 1, junctionRelation()));
+		JSONArray fields = new JSONArray();
+		fields.add(readField("s", primaryKey(), "source_id"));
+		DataAdapter adapter = newAdapter(prefixedJunctionRule());
+		java.util.List<String> mqls = new java.util.ArrayList<>();
+		String result = adapter.executeDsl(singleStepDsl(objects, relationships, fields, null, null, null),
+				"test-session", null, mqls);
+		JSONArray answer = JSON.parseArray(result).getJSONObject(0).getJSONArray("answer");
+		return !answer.isEmpty();
+	}
+
+	// ----------------------------------------------------------------------------------
 	// Read-path DSL builders
 	// ----------------------------------------------------------------------------------
 
@@ -1271,6 +1458,67 @@ public abstract class AbstractDataAdapterTest {
 		properties.put("name", inner);
 
 		assertThrows(DslContractViolationException.class, () -> queryPersons(properties));
+	}
+
+	// ----------------------------------------------------------------------------------
+	// The hop range is part of what the answer means, so a source that can only join one
+	// hop must refuse a wider range instead of quietly returning the one-hop rows.
+	// ----------------------------------------------------------------------------------
+
+	@Test
+	void multiHopRangeIsRejectedNotRenderedAsOneHop() {
+		assume(DataAdapterCapability.READ_QUERY);
+		// A graph-native source traverses a range by design; a key-field source cannot.
+		assumeFalse(capabilities().contains(DataAdapterCapability.RELATIONSHIP_EDGES),
+				"this source traverses edges natively");
+
+		DslContractViolationException e = assertThrows(DslContractViolationException.class,
+				() -> readQuery(twoClassDslWithHops(1, 2)));
+		assertTrue(e.getViolations().stream().anyMatch(
+				v -> v.getCode() == DslContractViolationException.Code.UNSUPPORTED_CONSTRUCT), e.getMessage());
+		assertTrue(e.getViolations().get(0).getDslPath() != null
+				&& !e.getViolations().get(0).getDslPath().isBlank(), e.getMessage());
+	}
+
+	@Test
+	void unboundedHopRangeIsRejectedNotRenderedAsOneHop() {
+		assume(DataAdapterCapability.READ_QUERY);
+		assumeFalse(capabilities().contains(DataAdapterCapability.RELATIONSHIP_EDGES),
+				"this source traverses edges natively");
+
+		// max_hops = -1 means unlimited in the DSL; a key-field source can render neither that nor a range.
+		assertThrows(DslContractViolationException.class, () -> readQuery(twoClassDslWithHops(1, -1)));
+	}
+
+	@Test
+	void oneHopRelationshipStillRunsWhenTheRangeIsSpelledOut() throws Exception {
+		assume(DataAdapterCapability.READ_QUERY);
+		assumeFalse(capabilities().contains(DataAdapterCapability.RELATIONSHIP_EDGES),
+				"this source traverses edges natively");
+
+		// Stating the default explicitly must not be mistaken for a wider request: the guard is about
+		// what the range admits, not about whether the fields are present.
+		seedGraph();
+		try {
+			readQuery(twoClassDslWithHops(1, 1));
+		} finally {
+			dropGraph();
+		}
+	}
+
+	/** A two-class read with an explicit hop range on its single relationship. */
+	private String twoClassDslWithHops(int minHops, int maxHops) {
+		JSONArray objects = new JSONArray();
+		objects.add(readObject(0, "s", 0));
+		objects.add(readObject(1, "t", 1));
+		JSONObject relation = readRelation(0, 1, firstRelation());
+		relation.put("min_hops", minHops);
+		relation.put("max_hops", maxHops);
+		JSONArray relationships = new JSONArray();
+		relationships.add(relation);
+		JSONArray fields = new JSONArray();
+		fields.add(readField("s", primaryKey(), "source_id"));
+		return singleStepDsl(objects, relationships, fields, null, null, null);
 	}
 
 	protected JSONObject readObject(int graphIdx, String variable, int idx) {

@@ -23,7 +23,9 @@ import io.ontomato.dataengine.dataAdapter.test.AbstractDataAdapterTest;
 import io.ontomato.dataengine.dataAdapter.test.DataAdapterCapability;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * Full contract run for the Neo4j adapter against a real instance.
@@ -337,6 +339,25 @@ class Neo4jAdapterTest extends AbstractDataAdapterTest {
 
 		assertEquals(2, rows.size());
 		assertEquals(2L, ((Number) rows.getJSONObject(0).get("cnt")).longValue());
+		dropGraph();
+	}
+
+	/**
+	 * An {@code n:n} declaration is realized natively here: the pairing is a real relationship, so the
+	 * linkTable the ontomap names is never materialized and neither junction column is read. The shared
+	 * junction suite asserts a junction table, which a graph source does not have, so this is where an
+	 * n:n declaration is actually proven on Neo4j.
+	 */
+	@Test
+	void nnDeclarationIsRealizedAsNativeRelationships() throws Exception {
+		DataAdapter adapter = seedJunction();
+		adapter.createEdge(namespace(), junctionRelation(), graphClass(0), "p1", graphClass(1), "o1");
+		adapter.createEdge(namespace(), junctionRelation(), graphClass(0), "p2", graphClass(1), "o1");
+		adapter.createEdge(namespace(), junctionRelation(), graphClass(0), "p3", graphClass(1), "o2");
+		assertTrue(junctionEdgeExists("p1", "o1"), "an n:n declaration must traverse as a native relationship");
+		assertTrue(junctionEdgeExists("p2", "o1"), "an n:n declaration must traverse as a native relationship");
+		assertFalse(junctionEdgeExists("p1", "o2"), "the read path must not invent a pairing");
+		assertFalse(junctionEdgeExists("p4", "o1"), "the read path must not invent a pairing");
 		dropGraph();
 	}
 

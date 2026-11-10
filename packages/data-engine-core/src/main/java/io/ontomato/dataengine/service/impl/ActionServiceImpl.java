@@ -17,7 +17,10 @@ import io.ontomato.dataengine.dao.FunctionDao;
 import io.ontomato.dataengine.dao.KnowledgeDao;
 import io.ontomato.dataengine.schedules.ScheduleJson;
 import io.ontomato.dataengine.service.ABCProgramService;
+import io.ontomato.dataengine.service.ActionPreconditionService;
 import io.ontomato.dataengine.service.ActionService;
+import io.ontomato.dataengine.service.CapabilityGrantLookup;
+import io.ontomato.dataengine.service.IdentitySnapshotLookup;
 import io.ontomato.dataengine.service.AdminService;
 import io.ontomato.dataengine.service.BusinessConfigService;
 import io.ontomato.dataengine.service.LangService;
@@ -70,6 +73,14 @@ public class ActionServiceImpl implements ActionService {
   @Autowired private io.ontomato.dataengine.service.scheduling.OntologyScheduleReferences scheduledReferences;
 
   @Autowired private io.ontomato.dataengine.service.IdentityService identity;
+
+  @Autowired private ActionPreconditionService preconditions;
+
+  @Autowired private CapabilityGrantLookup capabilityGrants;
+
+  @Autowired private IdentitySnapshotLookup identitySnapshots;
+
+  @Autowired private WorkflowRunResolver workflowRuns;
 
   @PostConstruct
 	public void initService() {
@@ -272,6 +283,7 @@ public class ActionServiceImpl implements ActionService {
     BusinessMeaning storedBusinessMeaning = null;
     String storedCodeHash = null;
     Integer storedExplanationVersion = null;
+    String storedStatus = null;
     if (action.getId() != null) {
       Object[] exist = actionDao.queryById(action.getId());
       if (exist == null) {
@@ -291,6 +303,7 @@ public class ActionServiceImpl implements ActionService {
       storedBusinessMeaning = existAction.getBusinessMeaning();
       storedCodeHash = existAction.getCodeHash();
       storedExplanationVersion = existAction.getExplanationVersion();
+      storedStatus = existAction.getStatus();
     }
     // Explanations are server-derived. A request cannot supply them; they are reused only when the
     // stored explanation belongs to exactly this code and to the current explanation version.
@@ -317,6 +330,12 @@ public class ActionServiceImpl implements ActionService {
       codeChanged = !existFunction.getCode().equals(function.getCode());
     } else if (!Function.OPERATION_WRITE.equals(function.getOperation())) {
       throw new Exception(langService.get(lang, "Function.notWrite"));
+    }
+    // Publication freezes the program. Whoever approved the action approved exactly this code, so
+    // rewriting it in place would keep the approval while replacing what it approved. A change is a
+    // new action, reviewed on its own; re-explaining the same code stays allowed above.
+    if (Action.STATUS_PUBLISHED.equals(storedStatus) && codeChanged) {
+      throw new Exception(langService.get(lang, "Action.publishedIsFrozen"));
     }
     String codeHash = CodeHashUtil.sha256(function.getCode());
     boolean reusable =
@@ -433,6 +452,7 @@ public class ActionServiceImpl implements ActionService {
     JSONArray array = JSON.parseArray(new String(jsonBytes, StandardCharsets.UTF_8));
     User user = SystemUtils.getCurUser();
     String domainId = user == null ? null : user.getDomainId();
+    String importer = user == null ? null : user.getId();
     int successCount = 0;
     JSONArray failures = new JSONArray();
     for (int i = 0; i < array.size(); i++) {
@@ -467,6 +487,10 @@ public class ActionServiceImpl implements ActionService {
         }
         action.setCodeHash(codeHash);
         action.setExplanationVersion(Action.EXPLANATION_VERSION);
+        // An import publishes what it writes, so the importer is its approver; the author is whoever
+        // the bundle records, falling back to the importer when the bundle carries none.
+        if (action.getCreatedBy() == null) action.setCreatedBy(importer);
+        action.setReviewedBy(importer);
         functionDao.save(function);
         actionDao.save(action);
         successCount++;
@@ -577,13 +601,35 @@ public class ActionServiceImpl implements ActionService {
 
   @Override
 	public PythonExecuteResult execute(String id, JSONObject param, String lang, User user, UserDataPermission permission, int timeoutMinutes) throws Exception {
-        Function function = io.ontomato.dataengine.service.MetricViewBindings.executionWriteFunction(executable(id, lang, user).getFunction(), param);
-		Object[] o = abcProgramService.execute(UUID.randomUUID().toString(), function, user.getId(), permission, ServiceConst.NOT_SANDBOX, lang, timeoutMinutes, user.getDomainId());
+        Action action = executable(id, lang, user);
+        if (!capabilityGrants.allows(user.getId(), user.getDomainId(), CapabilityGrantLookup.ACTION, action.getId())) {
+            PythonExecuteResult refused = new PythonExecuteResult();
+            refused.setError(langService.get(lang, "Action.notGranted"));
+            return refused;
+        }
+        ActionPreconditionService.Verdict verdict = preconditions.evaluate(action, param, user, permission);
+        if (!verdict.satisfied()) {
+            PythonExecuteResult refused = new PythonExecuteResult();
+            refused.setError(langService.get(lang, "Action.preconditionFailed") + ": " + String.join("; ", verdict.violations()));
+            return refused;
+        }
+        Function function = io.ontomato.dataengine.service.MetricViewBindings.executionWriteFunction(action.getFunction(), param);
+		Object[] o = abcProgramService.execute(UUID.randomUUID().toString(), function, user.getId(), permission, ServiceConst.NOT_SANDBOX, lang, timeoutMinutes, user.getDomainId(),
+            new ABCProgramService.ExecutionContext(null, identitySnapshot(action, user, verdict)));
 		PythonExecuteResult result = (PythonExecuteResult)o[1];
         if (result.getError() != null && !result.getError().isBlank()) { result.setResult(null); }
         else result.setResult(o[0] == null ? "{\"completed\":true}" : JSON.toJSONString(JSONObject.of("answer", o[0]), Feature.WriteMapNullValue));
 		return result;
 	}
+
+	private JSONObject identitySnapshot(
+			Action action, User user, ActionPreconditionService.Verdict verdict) {
+		JSONObject snapshot = identitySnapshots.snapshot(user, user.getDomainId());
+		String runId = workflowRuns.resolve(user.getDomainId(), action.getId(), verdict.proven());
+		if (runId != null) snapshot.put("workflowRunId", runId);
+		return snapshot;
+	}
+
 
   @Override
   public JSONObject form(String id, JSONObject bound, JSONObject submitted, List<String> readOnly, String lang, User user) throws Exception {

@@ -98,6 +98,8 @@ class EsAdapterTest extends AbstractDataAdapterTest {
 
 	@Override
 	protected Set<DataAdapterCapability> capabilities() {
+		// The n:n realization is declared on top of EDGE_CRUD: a pairing lives in a link index of its
+		// own, not in a field on either class, and the read path resolves it as an extra hop.
 		return EnumSet.of(
 				DataAdapterCapability.READ_QUERY,
 				DataAdapterCapability.LIKE_LITERAL_ESCAPE,
@@ -107,7 +109,8 @@ class EsAdapterTest extends AbstractDataAdapterTest {
 				DataAdapterCapability.OBJECT_CRUD,
 				DataAdapterCapability.EDGE_CRUD,
 				DataAdapterCapability.GRAPH_QUERY,
-				DataAdapterCapability.VECTOR_ATTR);
+				DataAdapterCapability.VECTOR_ATTR,
+				DataAdapterCapability.RELATION_NN);
 	}
 
 	@Override
@@ -284,6 +287,29 @@ class EsAdapterTest extends AbstractDataAdapterTest {
 			JSONObject body = new JSONObject();
 			body.put("query", new JSONObject(Map.of("match_all", new JSONObject())));
 			return http.post("/" + indexOf(className) + "/_count", body).getLongValue("count");
+		}
+	}
+
+	/**
+	 * The junction is an index here, not a table, so the contract suite's direct read-back of its rows
+	 * goes through the search API. Every pairing document is one row; the pair digest it carries is an
+	 * implementation detail of this adapter, so it is left out of the row a test sees.
+	 */
+	@Override
+	protected List<JSONObject> junctionRows() throws Exception {
+		try (EsHttp http = new EsHttp(connection())) {
+			JSONObject body = new JSONObject();
+			body.put("query", new JSONObject(Map.of("match_all", new JSONObject())));
+			body.put("size", 1000);
+			JSONObject response = http.post("/" + indexOf(junctionTable()) + "/_search", body);
+			List<JSONObject> rows = new ArrayList<>();
+			JSONArray hits = response.getJSONObject("hits").getJSONArray("hits");
+			for (int i = 0; hits != null && i < hits.size(); i++) {
+				JSONObject row = new JSONObject(hits.getJSONObject(i).getJSONObject("_source"));
+				row.remove(EsAdapter.PAIR_ID);
+				rows.add(row);
+			}
+			return rows;
 		}
 	}
 

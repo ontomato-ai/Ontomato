@@ -37,5 +37,19 @@ public class Action {
 	private Long createTimestamp;
 	private Long modifyTimestamp;
 	private String domainId;
+
+	/**
+	 * The subject who created this action. Taken from the authenticated request and never accepted
+	 * from a body, so a caller cannot claim to be someone else's author. Set once and never updated:
+	 * the stored value survives later saves.
+	 */
+	private String createdBy;
+
+	/**
+	 * The subject who last published this action. Publication is the review moment, so this is the
+	 * reviewer. Only the latest one is kept; a publish that carries no subject preserves the stored
+	 * value rather than clearing it.
+	 */
+	private String reviewedBy;
 	
 }

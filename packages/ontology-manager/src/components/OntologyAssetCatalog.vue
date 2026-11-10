@@ -9,14 +9,19 @@ import {
   Search,
   SquareFunction,
 } from "lucide-vue-next";
-import type { SmartAsset } from "../api";
+import type { SmartAsset, SubjectRecord } from "../api";
 import type { AssetTab } from "../workspace";
 import { useManagerClient, useOntologyText } from "../context";
 import { useManagerFeedback } from "../feedback";
 import { PlatformPageHeader } from "@ontomato/platform-shell";
 
 const { ot } = useOntologyText();
-const { loadSmartAssets, requestSmartAsset } = useManagerClient();
+const { loadSmartAssets, requestSmartAsset, loadSubjects } = useManagerClient();
+const subjectNames = ref<Record<string, string>>({});
+function subjectName(id?: string | null) {
+  if (!id) return ot("unspecified");
+  return subjectNames.value[id] ?? ot("unspecified");
+}
 const { message } = useManagerFeedback();
 
 const props = defineProps<{ kind: AssetTab }>();
@@ -171,7 +176,21 @@ watch(
     void loadCatalog();
   }
 );
-onMounted(() => void loadCatalog());
+onMounted(async () => {
+  void loadCatalog();
+  try {
+    // Names are a display concern: a missing directory must not hide the catalogue.
+    const subjects = await loadSubjects();
+    subjectNames.value = Object.fromEntries(
+      subjects.map((subject: SubjectRecord) => [
+        subject.id,
+        subject.displayName || subject.loginCode || subject.id,
+      ])
+    );
+  } catch {
+    subjectNames.value = {};
+  }
+});
 </script>
 
 <template>
@@ -227,6 +246,8 @@ onMounted(() => void loadCatalog());
           <span v-else>{{ ot("linkedFunction") }}</span>
           <span v-if="kind !== 'functions'">{{ ot("source") }}</span>
           <span v-if="kind !== 'functions'">{{ ot("status") }}</span>
+          <span v-if="kind !== 'functions'">{{ ot("createdBy") }}</span>
+          <span v-if="kind !== 'functions'">{{ ot("reviewedBy") }}</span>
           <span v-if="kind !== 'functions'">{{ ot("lastUpdated") }}</span>
           <span></span>
         </div>
@@ -267,6 +288,8 @@ onMounted(() => void loadCatalog());
               {{ statusLabel(asset.status) }}
             </span>
           </span>
+          <span v-if="kind !== 'functions'">{{ subjectName(asset.createdBy) }}</span>
+          <span v-if="kind !== 'functions'">{{ subjectName(asset.reviewedBy) }}</span>
           <span v-if="kind !== 'functions'">{{ formatTime(asset.modifyTimestamp) }}</span>
           <ChevronRight :size="16" class="row-chevron" />
         </button>
@@ -349,7 +372,7 @@ onMounted(() => void loadCatalog());
 .resource-table-row {
   display: grid;
   box-sizing: border-box;
-  grid-template-columns: minmax(250px, 1.7fr) minmax(150px, 1fr) 88px 100px 170px 20px;
+  grid-template-columns: minmax(220px, 1.7fr) minmax(140px, 1fr) 88px 100px 110px 110px 170px 20px;
   width: 100%;
   min-width: 0;
   align-items: center;
@@ -451,9 +474,13 @@ onMounted(() => void loadCatalog());
   .resource-table-head span:nth-child(2),
   .resource-table-head span:nth-child(3),
   .resource-table-head span:nth-child(5),
+  .resource-table-head span:nth-child(6),
+  .resource-table-head span:nth-child(7),
   .resource-table-row > span:nth-child(2),
   .resource-table-row > span:nth-child(3),
-  .resource-table-row > span:nth-child(5) {
+  .resource-table-row > span:nth-child(5),
+  .resource-table-row > span:nth-child(6),
+  .resource-table-row > span:nth-child(7) {
     display: none;
   }
   .resource-table-head.function-grid span:nth-child(2),

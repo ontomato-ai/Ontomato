@@ -52,6 +52,8 @@ export const platformRoutes = {
   function: { name: "Function", path: "/ontology/assets/functions/:id" },
   actions: { name: "Actions", path: "/ontology/assets/actions" },
   action: { name: "Action", path: "/ontology/assets/actions/:id" },
+  workflows: { name: "Workflows", path: "/ontology/assets/workflows" },
+  capabilityMap: { name: "CapabilityMap", path: "/ontology/assets/capability-map" },
   knowledge: { name: "BusinessKnowledge", path: "/ontology/knowledge" },
   /** One page for every scheduled task of the platform. */
   schedules: { name: "Schedules", path: "/schedules" },

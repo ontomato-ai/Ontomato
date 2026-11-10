@@ -111,6 +111,8 @@ public class ActionController {
 			action.setDomainId(user.getDomainId());
 			// The nested Function always belongs to the authenticated caller's domain.
 			if (action.getFunction() != null) action.getFunction().setDomainId(user.getDomainId());
+			action.setCreatedBy(user.getId());
+			if (Action.STATUS_PUBLISHED.equals(action.getStatus())) action.setReviewedBy(user.getId());
 			ret.put("data", actionService.save(action, lang));
 			ret.put("success", true);
 		} catch (Exception e) {

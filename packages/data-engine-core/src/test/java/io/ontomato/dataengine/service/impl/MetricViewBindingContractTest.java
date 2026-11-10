@@ -46,6 +46,8 @@ class MetricViewBindingContractTest {
         JSONObject.of("className", "/Employee", "attrs", List.of(JSONObject.of("name", "salary"))))));
     ReflectionTestUtils.setField(service, "adminService", admin);
     ReflectionTestUtils.setField(service, "abcProgramService", execution);
+    ReflectionTestUtils.setField(service, "subjectValues",
+        new SubjectValueResolver(mock(SubjectAttributeLookup.class)));
     when(functionDao.queryById(anyString())).thenAnswer(call -> {
       Function f = functions.get(call.getArgument(0)); return f == null ? null : copy(f, Function.class);
     });

@@ -46,12 +46,12 @@ public class ABCProgramServiceImpl implements ABCProgramService {
   @Override
   public Object[] execute(String id, Function function, String user, UserDataPermission permission,
       String sandbox, String lang, int timeout, String domain) throws Exception {
-    return execute(id, function, user, permission, sandbox, lang, timeout, domain, null);
+    return execute(id, function, user, permission, sandbox, lang, timeout, domain, new ExecutionContext(null, null));
   }
 
   @Override
   public Object[] execute(String id, Function function, String user, UserDataPermission permission,
-      String sandbox, String lang, int timeout, String domain, java.util.UUID executionId) throws Exception {
+      String sandbox, String lang, int timeout, String domain, ExecutionContext context) throws Exception {
     if (!domain.equals(function.getDomainId())) throw new IllegalArgumentException("Function is outside the current domain");
     var parameters = MetricViewBindings.values(function);
     boolean read = Function.OPERATION_READ.equals(function.getOperation());
@@ -62,7 +62,8 @@ public class ABCProgramServiceImpl implements ABCProgramService {
       return executePackage(id, function.getQueryPackage(), parameters, graph, user, permission, lang, timeout, domain);
     var authority = read ? PythonAuthority.read(user, domain) : PythonAuthority.write(user, domain, sandbox)
         .withClasses(function.getReturnDef() == null ? null : function.getReturnDef().getClassNames());
-    if (executionId != null) authority = authority.forExecution(executionId.toString());
+    if (context.executionId() != null) authority = authority.forExecution(context.executionId().toString());
+    if (context.identity() != null) authority = authority.withIdentity(context.identity());
     PythonExecuteResult result;
     try {
       result = pythonExecuteService.execute(id, function.getCode(), timeout, lang, authority, parameters, Map.of());

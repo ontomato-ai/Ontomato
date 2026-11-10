@@ -126,6 +126,8 @@ export default {
   },
   nav: {
     actionManagement: "Action Types",
+    workflowManagement: "Business Processes",
+    capabilityMap: "Capability Map",
     dataBrowser: "Data Browser",
     functionDefinitions: "Functions",
     metrics: "Metric Views",
