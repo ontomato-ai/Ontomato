@@ -55,7 +55,7 @@ function toggle(row: number, selected: number[]) {
 <template>
   <div class="table-preview">
     <el-table v-bind="$attrs" :data="rows" :row-class-name="chosenRow">
-      <el-table-column v-if="selected" width="44" align="center">
+      <el-table-column v-if="selected" width="44" class-name="table-preview-choice">
         <template #default="{ $index }">
           <el-checkbox
             :model-value="selected.includes(offset + $index)"
@@ -109,6 +109,18 @@ function toggle(row: number, selected: number[]) {
 
 .table-preview :deep(.el-table__header .cell) {
   white-space: nowrap;
+}
+
+/* Element Plus gives a checkbox a 32px line of its own; here it is only as tall as its box and sits in the middle of
+   the row, so a row that can be chosen is as tall as one that cannot. */
+.table-preview :deep(.table-preview-choice .cell) {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.table-preview :deep(.table-preview-choice .el-checkbox) {
+  height: auto;
 }
 
 .table-preview :deep(.el-table__row.is-chosen > td.el-table__cell) {
