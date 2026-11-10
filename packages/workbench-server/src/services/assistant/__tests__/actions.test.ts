@@ -29,6 +29,14 @@ describe("confirmed business actions", () => {
     expect(() => validateActionParameters(action, {})).toThrow();
   });
 
+  it("requires every named parameter while preserving explicit null, empty text and zero", () => {
+    expect(() => validateActionParameters(action, {})).toThrow("Missing parameter: value");
+    expect(() => validateActionParameters(action, { value: null })).not.toThrow();
+    expect(() => validateActionParameters(action, { value: 0 })).not.toThrow();
+    const text = { ...action, parameters: [{ ...action.parameters[0]!, type: "TYPE_STRING" }] };
+    expect(() => validateActionParameters(text, { value: "" })).not.toThrow();
+  });
+
   it("never replays an upstream write after its response was lost", async () => {
     const catalogue = await actionCatalogue(owner, {});
     vi.mocked(assistantService.artifact).mockResolvedValue({ path: "outputs/update.action.json", size: 20, runId: "run" } as never);

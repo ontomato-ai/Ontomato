@@ -94,7 +94,7 @@ def insert(className, objs):
     Args:
         className: full class name from the object class list.
         objs: list of object dictionaries. Each must have a unique id or
-            primary key. Vector attributes are not written here; use
+            primary key. Vector attributes are rejected here; use
             appendVector for vector files.
     """
     return write_operation("insert", className=className, objs=objs)
@@ -169,7 +169,9 @@ def appendVector(className, attrName, objectId, text, fileBase64=None, fileName=
         attrName: vector attribute name.
         objectId: id of the target object.
         text: content used to generate the embedding.
-        fileBase64: optional file content; the host fills it at execution time.
+        fileBase64: optional base64 file bytes. With None, the nonempty text
+            is explicitly stored as a UTF-8 text attachment. text is required
+            even when fileBase64 is supplied. Invalid input fails before writes.
         fileName: optional file name.
     """
     return write_operation("appendVector", className=className, attrName=attrName, objectId=objectId,
@@ -185,7 +187,9 @@ def updateVector(className, attrName, objectId, fileId, text, fileBase64=None):
         objectId: id of the target object.
         fileId: existing vector file id (the last path segment).
         text: new content used to generate the embedding.
-        fileBase64: optional file content; the host fills it at execution time.
+        fileBase64: optional base64 file bytes. With None, the nonempty text
+            is explicitly stored as a UTF-8 text attachment. text is required
+            even when fileBase64 is supplied. Invalid input fails before writes.
     """
     return write_operation("updateVector", className=className, attrName=attrName, objectId=objectId,
                            fileId=fileId, text=text, fileBase64=fileBase64)

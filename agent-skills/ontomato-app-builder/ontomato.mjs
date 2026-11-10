@@ -5,6 +5,12 @@ import { authenticate } from "./identity.mjs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
+function finiteNumber(value, field) {
+  if (value.trim() === "" || !Number.isFinite(Number(value)))
+    throw new Error(`${field}: expected a finite number; supply a numeric value such as 10`);
+  return Number(value);
+}
+
 const DIR = path.dirname(fileURLToPath(import.meta.url));
 
 function die(message) {
@@ -110,7 +116,7 @@ async function distinctValues(api, backendPath, rest) {
     attrName: rest[1],
     like: like == null ? "" : like,
   };
-  if (limit != null) body.limit = Number(limit);
+  if (limit != null) body.limit = finiteNumber(limit, "--limit");
   printData(await requestJson(api, "POST", backendPath, body));
 }
 
@@ -499,7 +505,7 @@ async function main() {
     const max = takeOption(rest, "--max");
     if (rest.length === 0) die("prod-knowledge requires a question");
     const body = { question: rest.join(" ") };
-    if (max != null) body.max_result = Number(max);
+    if (max != null) body.max_result = finiteNumber(max, "--max");
     printData(
       await requestJson(
         api,

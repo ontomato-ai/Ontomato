@@ -59,7 +59,12 @@ public class DBSchemaUtil {
     }
 
     private static String str(Object value) {
-        return value == null ? null : value.toString();
+        return value == null ? null : requireString(value);
+    }
+
+    private static String requireString(Object value) {
+        if (!(value instanceof String text)) throw new IllegalArgumentException("parameterDefs: name, type, description and className must be strings; replace the non-string field with text");
+        return text;
     }
 
     /** Returns the dataset description, class definitions and direct relationship definitions. */

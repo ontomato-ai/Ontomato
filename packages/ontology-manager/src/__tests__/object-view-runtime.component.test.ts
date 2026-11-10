@@ -154,6 +154,23 @@ describe("configured object view interaction", () => {
     await nextTick();
     expect(element.querySelector(".el-message--success")).toBeNull();
   });
+  it("Action button sends the complete Java form result including null, empty string and zero", async () => {
+    const view = createObjectView("Order");
+    const action = createViewWidget("action"); action.resourceId = "ship"; action.title = "Ship order";
+    view.tabs[0].sections[0].widgets = [action];
+    const parameters = { optional: null, text: "", count: 0 };
+    let sent: unknown;
+    vi.stubGlobal("fetch", async (url: string, init: RequestInit) => {
+      if (url.endsWith("/action/form")) return answer(actionForm({}, JSON.parse(String(init.body)).values ? parameters : null));
+      if (url.endsWith("/action/execute")) sent = JSON.parse(String((init.body as FormData).get("param")));
+      return answer({});
+    });
+    const element = mount(() => h(ObjectViewRuntime, { document: view, object: { id: "1" }, reference: { className: "Order", primaryKey: "1" } }));
+    await settle();
+    Array.from(element.querySelectorAll("button")).find(button => button.textContent?.trim() === "Ship order")!.click(); await settle();
+    Array.from(element.querySelectorAll("button")).find(button => button.textContent?.trim() === "Submit")!.click(); await settle();
+    expect(sent).toEqual(parameters);
+  });
   it("reads a bound MetricView again after an Action succeeds", async () => {
     const view = createObjectView("Order");
     const metric = createViewWidget("metric"); metric.resourceId = "metric-1"; metric.valueField = "value";

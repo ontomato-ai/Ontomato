@@ -1,5 +1,8 @@
 package io.ontomato.dataengine.service.impl;
 
+import io.ontomato.dataengine.dao.FunctionDao;
+import java.util.UUID;
+
 import com.alibaba.fastjson2.*;
 import io.ontomato.dataengine.bean.PythonExecuteResult;
 import io.ontomato.dataengine.bean.abcHarness.*;
@@ -51,11 +54,11 @@ public class ABCProgramServiceImpl implements ABCProgramService {
 
   @Override
   public Object[] execute(String id, Function function, String user, UserDataPermission permission,
-      String sandbox, String lang, int timeout, String domain, java.util.UUID executionId) throws Exception {
+      String sandbox, String lang, int timeout, String domain, UUID executionId) throws Exception {
     if (!domain.equals(function.getDomainId())) throw new IllegalArgumentException("Function is outside the current domain");
+    FunctionDao.requireSupported(function, lang);
     var parameters = MetricViewBindings.values(function);
     boolean read = Function.OPERATION_READ.equals(function.getOperation());
-    if (!read && !Function.OPERATION_WRITE.equals(function.getOperation())) throw new IllegalArgumentException("Unknown Function operation");
     if (read && function.getReturnDef() == null) throw new IllegalArgumentException("Stored program has no source declaration");
     var graph = read ? sourceAnalysis(function.getReturnDef().getSourceAnalysis(), function.getReturnDef().getOutKeyRefs()) : null;
     if (read && function.getQueryPackage() != null)

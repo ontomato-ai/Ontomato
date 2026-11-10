@@ -1,5 +1,9 @@
 package io.ontomato.dataengine.service.impl;
 
+import io.ontomato.dataengine.bean.action.Action;
+import io.ontomato.dataengine.util.CodeHashUtil;
+import java.util.Objects;
+
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
@@ -14,6 +18,17 @@ import io.ontomato.dataengine.bean.action.BusinessMeaning;
  * The rules correspond to the definition in the prompt action_code_explainer.md.
  */
 final class ActionCodeExplanationValidator {
+
+    static boolean ready(Action action) {
+        return action.getCodeSegments() != null && !action.getCodeSegments().isEmpty()
+            && Objects.equals(CodeHashUtil.sha256(action.getFunction().getCode()), action.getCodeHash())
+            && Integer.valueOf(Action.EXPLANATION_VERSION).equals(action.getExplanationVersion());
+    }
+
+    static void requireReady(Action action) {
+        if (!ready(action)) throw new IllegalArgumentException("Action.codeSegments/codeHash/explanationVersion: expected an explanation matching the current code and explanation version; run action re-explain before publishing");
+        segments(JSONObject.of("segs", action.getCodeSegments()));
+    }
 
 	private static final Set<String> KINDS = Set.of("QUERY", "CREATE_OBJECT", "UPDATE_OBJECT", "DELETE_OBJECT",
 			"CREATE_EDGE", "DELETE_EDGE", "APPEND_VECTOR", "UPDATE_VECTOR", "DELETE_VECTOR",

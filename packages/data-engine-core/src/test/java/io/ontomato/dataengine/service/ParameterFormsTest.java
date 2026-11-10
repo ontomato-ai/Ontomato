@@ -46,8 +46,10 @@ class ParameterFormsTest {
             "/content/",
             "en");
     assertEquals(0, parsed.errors().size());
-    assertFalse(parsed.values().containsKey("region"));
-    assertFalse(parsed.values().containsKey("limit"));
+    assertTrue(parsed.values().containsKey("region"));
+    assertNull(parsed.values().get("region"));
+    assertTrue(parsed.values().containsKey("limit"));
+    assertNull(parsed.values().get("limit"));
     assertEquals(start.toString(), parsed.values().getString("cutoff"));
     assertEquals(
         List.of("2026-11-05T16:00:00Z", "2026-11-07T01:30:00Z", "2026-11-08T01:30:00Z"),

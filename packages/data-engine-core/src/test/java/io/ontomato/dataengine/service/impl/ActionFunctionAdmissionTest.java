@@ -1,5 +1,7 @@
 package io.ontomato.dataengine.service.impl;
 
+import org.junit.jupiter.api.Test;
+
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
@@ -57,6 +59,22 @@ class ActionFunctionAdmissionTest {
     action.setStatus(Action.STATUS_PUBLISHED);
     action.setFunction(function);
     return action;
+  }
+
+  @Test
+  void publishedImportsCannotBypassExplanationReadiness() throws Exception {
+    var action = action(Function.OPERATION_WRITE);
+    action.getFunction().setQueryPackage(null);
+    action.getFunction().setId("function-a");
+    action.getFunction().setCode("# ontomato-python:2\nprint('ok')");
+    byte[] data = ZipBundleUtil.zip("actions.json", JSON.toJSONBytes(List.of(action)));
+    try (var current = mockStatic(SystemUtils.class)) {
+      current.when(SystemUtils::getCurUser).thenReturn(user);
+      var result = service.importActions(data, "en", true);
+      assertFalse(result.getBooleanValue("success"));
+      assertEquals(1, result.getIntValue("failureCount"));
+    }
+    verifyNoInteractions(functions, actions);
   }
 
   @ParameterizedTest

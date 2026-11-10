@@ -1,5 +1,7 @@
 package io.ontomato.dataengine.controller;
 
+import io.ontomato.dataengine.bean.function.Function;
+
 import java.io.File;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -107,7 +109,9 @@ public class ActionController {
 		JSONObject ret = new JSONObject();
 		try {
 			User user = SystemUtils.getCurUser();
-			Action action = param.to(Action.class);
+			var acceptedFunction = Function.fromAsset(param);
+            Action action = param.to(Action.class);
+            action.setFunction(acceptedFunction);
 			action.setDomainId(user.getDomainId());
 			ret.put("data", actionService.save(action, lang));
 			ret.put("success", true);

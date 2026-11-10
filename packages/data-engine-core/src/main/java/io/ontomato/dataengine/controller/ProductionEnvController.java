@@ -33,23 +33,11 @@ public class ProductionEnvController {
 		return ret;
 	}
 	
-	private JSONObject validDslJsonFormat(JSONObject param) throws Exception {
-		try {
-			JSONObject dsl = param.getJSONObject("dsl");
-			if (dsl == null) {
-				throw new Exception();
-			}
-			return dsl;
-		} catch (Exception e) {
-			try {
-				JSONArray dsls = param.getJSONArray("dsl");
-				return dsls.getJSONObject(0);
-			} catch (Exception e1) {
-				throw new Exception(e1.getMessage());
-			}
-		}
-	}
-	
+	private JSONObject validDslJsonFormat(JSONObject param) {
+        if (!(param.get("dsl") instanceof JSONObject dsl) || dsl.isEmpty())
+            throw new IllegalArgumentException("dsl: expected one nonempty JSON object; send {\"dsl\":{...}}, not an array or JSON string");
+        return dsl;
+    }	
 	@PostMapping("/productionEnv/queryDistinctAttrValue")
     @ResponseBody
     public JSONObject queryDistinctAttrValue(@RequestBody JSONObject param) {
@@ -88,7 +76,9 @@ public class ProductionEnvController {
 					metricViewIds.add(metricViewArray.getString(i));
 				}
 			}
-			ret = envService.syncAssetsToProduction(actionIds, metricViewIds, Boolean.TRUE.equals(param.getBoolean("dryRun")));
+			if (param.containsKey("dryRun") && !(param.get("dryRun") instanceof Boolean))
+                throw new IllegalArgumentException("dryRun: expected a boolean; omit it for a dry run or send false explicitly to write");
+            ret = envService.syncAssetsToProduction(actionIds, metricViewIds, !Boolean.FALSE.equals(param.get("dryRun")));
 		} catch (Exception e) {
 			ret.put("success", false);
 			ret.put("message", e.getMessage());

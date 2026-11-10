@@ -40,6 +40,12 @@ function take(args, key) {
   args.splice(i, 2);
   return value;
 }
+function finiteNumber(value, field) {
+  if (value.trim() === "" || !Number.isFinite(Number(value)))
+    throw new Error(`${field}: expected a finite number; supply a numeric value such as 10`);
+  return Number(value);
+}
+
 export async function analystCommand(cfg, argv, headers = {}) {
   const [command, ...args] = argv;
   const ontology = (cfg.ontologyUrl || `${cfg.envUrl}/api/data-query`).replace(
@@ -60,7 +66,7 @@ export async function analystCommand(cfg, argv, headers = {}) {
     body = { classNames: args };
   } else if (command === "distinct-values") {
     const like = take(args, "--like") ?? null,
-      limit = Number(take(args, "--limit") ?? 100);
+      limit = finiteNumber(take(args, "--limit") ?? "100", "--limit");
     if (args.length !== 2)
       throw new Error("distinct-values requires class and attribute");
     endpoint = "/distinct-values";
@@ -69,7 +75,7 @@ export async function analystCommand(cfg, argv, headers = {}) {
     endpoint = "/execute-dsl";
     body = { dsl: readJson(args[0]) };
   } else if (command === "metrics" || command === "knowledge") {
-    const limit = Number(take(args, "--limit") ?? 10),
+    const limit = finiteNumber(take(args, "--limit") ?? "10", "--limit"),
       cursor = take(args, "--cursor") ?? null;
     endpoint = command === "metrics" ? "/metrics/search" : "/knowledge/search";
     body = {

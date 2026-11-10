@@ -1,5 +1,7 @@
 package io.ontomato.dataengine.controller;
 
+import io.ontomato.dataengine.bean.function.Function;
+
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.ResponseEntity;
@@ -90,7 +92,9 @@ public class MetricViewController {
 		try {
 			User user = SystemUtils.getCurUser();
 			if (param.containsKey("type")) throw new IllegalArgumentException("MetricView type is retired; edit parameter bindings on a dynamic metric");
+            var acceptedFunction = Function.fromAsset(param);
             MetricView metricView = param.to(MetricView.class);
+            metricView.setFunction(acceptedFunction);
 			metricView.setDomainId(user.getDomainId());
 			metricViewService.save(metricView, lang);
             ret.put("data", metricView);
@@ -228,7 +232,9 @@ public class MetricViewController {
 			UserDataPermission curUserDataPermission = identityService.getCurrentUserDataPermission();
 	    	User user = SystemUtils.getCurUser();
 			if (param.containsKey("type")) throw new IllegalArgumentException("MetricView type is retired; edit parameter bindings on a dynamic metric");
+            var acceptedFunction = Function.fromAsset(param);
             MetricView metricView = param.to(MetricView.class);
+            metricView.setFunction(acceptedFunction);
 			BusinessConfig businessConfig = businessConfigService.get(user.getDomainId());
     		int timeoutMinutes = Long.valueOf(businessConfig.getDslCookerTimeout() / 60000).intValue();
 			if (timeoutMinutes <= 0) {
@@ -278,7 +284,9 @@ public class MetricViewController {
 		try {
 			UserDataPermission curUserDataPermission = identityService.getCurrentUserDataPermission();
 	    	User user = SystemUtils.getCurUser();
-			MetricView metricView = param.getJSONObject("metricView").to(MetricView.class);
+			var acceptedFunction = Function.fromAsset(param.getJSONObject("metricView"));
+            MetricView metricView = param.getJSONObject("metricView").to(MetricView.class);
+            metricView.setFunction(acceptedFunction);
 			JSONObject p = param.getJSONObject("param");
 			BusinessConfig businessConfig = businessConfigService.get(user.getDomainId());
     		int timeoutMinutes = Long.valueOf(businessConfig.getDslCookerTimeout() / 60000).intValue();

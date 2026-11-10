@@ -76,6 +76,14 @@ describe("object view requests", () => {
     expect((init.headers as Record<string, string>).tk).toBe("test-token");
     expect(JSON.parse(String((init.body as FormData).get("param")))).toEqual({ order: "00123", quantity: 4 });
   });
+  it("SDK actions.execute shared client preserves every explicit null, empty string and zero", async () => {
+    const fetch = vi.fn(async () => new Response(JSON.stringify({ success: true, data: {} })));
+    vi.stubGlobal("fetch", fetch);
+    const parameters = { optional: null, text: "", count: 0 };
+    await client().actions.execute({ id: "action-id", parameters });
+    const init = (fetch.mock.calls[0] as unknown as [string, RequestInit])[1];
+    expect(JSON.parse(String((init.body as FormData).get("param")))).toEqual(parameters);
+  });
   it("builds bounded, directional relationship reads using the permission-aware DSL route", async () => {
     const calls: Array<{ url: string; body: Record<string, any> }> = [];
     vi.stubGlobal("fetch", async (url: string, init: RequestInit) => {

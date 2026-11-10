@@ -1,5 +1,7 @@
 package io.ontomato.dataengine.service;
 
+import com.alibaba.fastjson2.JSONWriter;
+
 import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONObject;
 import io.ontomato.dataengine.bean.function.Function;
@@ -83,26 +85,21 @@ public final class MetricViewBindings {
         throw new IllegalArgumentException("A binding cannot be overridden with parameters");
     } else values = supplied == null ? new JSONObject() : supplied;
     validateValues(metric.getFunction(), values);
-    return JSON.parseObject(JSON.toJSONString(values, com.alibaba.fastjson2.JSONWriter.Feature.WriteMapNullValue));
+    return JSON.parseObject(JSON.toJSONString(values, JSONWriter.Feature.WriteMapNullValue));
   }
 
-  /** Write definitions have no required marker. Omitted inputs retain the manual Action default of null. */
+  /** Write execution uses the same explicit parameter contract as read execution. */
   public static Function executionWriteFunction(Function definition, JSONObject supplied) {
     if (!Function.OPERATION_WRITE.equals(definition.getOperation()))
       throw new IllegalArgumentException("Expected a write function");
-    if (supplied == null) throw new IllegalArgumentException("Parameter values must be an object");
-    JSONObject values = new JSONObject(supplied);
-    if (definition.getParameters() != null)
-      for (Parameter parameter : definition.getParameters())
-        if (!values.containsKey(parameter.getName())) values.put(parameter.getName(), null);
-    return executionFunction(definition, values);
+    return executionFunction(definition, supplied);
   }
 
   /** Execution gets a detached value map; the saved Function remains the definition. */
   public static Function executionFunction(Function definition, JSONObject values) {
     validateValues(definition, values);
     Function execution = JSON.parseObject(
-        JSON.toJSONString(definition, com.alibaba.fastjson2.JSONWriter.Feature.WriteMapNullValue), Function.class);
+        JSON.toJSONString(definition, JSONWriter.Feature.WriteMapNullValue), Function.class);
     if (execution.getQueryPackage() != null) {
       for (Object item : execution.getQueryPackage().getJSONObject("manifest").getJSONArray("parameterDefs")) {
         var parameter = (JSONObject) item;
