@@ -28,6 +28,11 @@ import lombok.extern.slf4j.Slf4j;
 @Slf4j
 @Component("vectorResourceDao")
 public class VectorResourceDao extends BaseDao {
+    /** Filesystem preparation failures are distinct from schema/DDL failures. */
+    public static class ResourceDirectoryException extends IllegalStateException {
+      public ResourceDirectoryException(String message, java.io.IOException cause) { super(message,cause); }
+    }
+
 
 	@Autowired
 	private JdbcTemplate jdbcTemplate;
@@ -110,7 +115,7 @@ public class VectorResourceDao extends BaseDao {
       try {
         return com.alibaba.fastjson2.JSONObject.of("kind","vector","name",actual.get("relname"),"schema",actual.get("nspname"),
             "directory",new File(planned.getString("directory")).getCanonicalPath());
-      } catch(java.io.IOException failure) { throw new IllegalStateException("Cannot identify created vector directory",failure); }
+      } catch(java.io.IOException failure) { throw new ResourceDirectoryException("Cannot identify created vector directory",failure); }
     }
 
     public void dropRecordedVector(com.alibaba.fastjson2.JSONObject resource) {
@@ -130,7 +135,7 @@ public class VectorResourceDao extends BaseDao {
 	public void ensureVectorTable(String className, String attrName, String domainId) {
 		String indexName = generateIndexName(className, attrName, domainId);
         try { java.nio.file.Files.createDirectories(new File("conf/" + dirName + "/" + indexName).toPath()); }
-        catch(java.io.IOException failure) { throw new IllegalStateException("Cannot create vector resource directory: " + indexName, failure); }
+        catch(java.io.IOException failure) { throw new ResourceDirectoryException("Cannot create vector resource directory: " + indexName, failure); }
 		ensureTable(indexName);
 	}
 
