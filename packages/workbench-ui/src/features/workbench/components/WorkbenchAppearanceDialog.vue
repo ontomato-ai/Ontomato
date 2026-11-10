@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from "vue";
-import { ElMessage } from "element-plus";
+import { ElMessage, type UploadFile } from "element-plus";
 import { useI18n } from "vue-i18n";
 import type { WorkbenchAppearance } from "@ontomato/contracts/workbench-appearance";
 import { getWorkbenchAppearance, saveWorkbenchAppearance } from "../api";
@@ -51,10 +51,9 @@ function reset() {
   draft.value.brand = { name: "", subtitle: "", logo: "" };
 }
 
-async function upload(event: Event) {
-  const input = event.target as HTMLInputElement;
-  const file = input.files?.[0];
-  input.value = "";
+/** A chosen image is only read here, into the draft's 128×128 logo; saving the draft is what stores it. */
+async function chooseLogo(chosen: UploadFile) {
+  const file = chosen.raw;
   if (!file || !draft.value) return;
   const selection = ++imageSelection;
   imageLoading.value = true;
@@ -123,13 +122,15 @@ async function save() {
             </div>
           </div>
           <el-form-item label="Logo">
-            <input
-              type="file"
+            <el-upload
               accept="image/png,image/jpeg,image/webp"
-              :aria-label="t('appearance.uploadLogo')"
+              :auto-upload="false"
+              :show-file-list="false"
               :disabled="saving || imageLoading"
-              @change="upload"
-            />
+              :on-change="chooseLogo"
+            >
+              <el-button :loading="imageLoading">{{ t("appearance.uploadLogo") }}</el-button>
+            </el-upload>
             <p class="appearance-hint">{{ t("appearance.imageHint") }}</p>
             <el-button
               :disabled="saving"

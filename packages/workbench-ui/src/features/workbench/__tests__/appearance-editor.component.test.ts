@@ -65,6 +65,34 @@ describe("brand appearance editor", () => {
     wrapper.unmount();
   });
 
+  it("chooses the logo without uploading it: the image is read into the draft, and saving stores it", async () => {
+    // The test DOM draws no images: the browser's decoding and canvas are doubled, the reading code is real.
+    const send = vi.spyOn(XMLHttpRequest.prototype, "send").mockImplementation(() => {});
+    const draw = vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue({ drawImage: vi.fn() } as never);
+    const encode = vi.spyOn(HTMLCanvasElement.prototype, "toDataURL").mockReturnValue("data:image/png;base64,TG9nbw==");
+    vi.stubGlobal("createImageBitmap", vi.fn(async () => ({ width: 512, height: 512, close: vi.fn() })));
+    try {
+      const wrapper = await editor();
+      const input = wrapper.get<HTMLInputElement>(".el-upload input[type=file]").element;
+      Object.defineProperty(input, "files", { value: [new File(["png"], "logo.png", { type: "image/png" })] });
+      input.dispatchEvent(new Event("change"));
+      await flushPromises();
+      expect(wrapper.get(".brand-preview img").attributes("src")).toBe("data:image/png;base64,TG9nbw==");
+      expect(send).not.toHaveBeenCalled();
+      expect(mocks.save).not.toHaveBeenCalled();
+      await button(wrapper, "Save").trigger("click");
+      await flushPromises();
+      expect(mocks.save).toHaveBeenCalledWith({
+        ...original,
+        brand: { ...original.brand, logo: "data:image/png;base64,TG9nbw==" },
+      });
+      wrapper.unmount();
+    } finally {
+      vi.unstubAllGlobals();
+      [send, draw, encode].forEach((spy) => spy.mockRestore());
+    }
+  });
+
   it("disables saving on load failure, then retries from the authoritative configuration", async () => {
     mocks.get.mockRejectedValueOnce(new Error("appearance.loadFailed"));
     const wrapper = await editor();
