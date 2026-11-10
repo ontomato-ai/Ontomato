@@ -1,46 +1,28 @@
 <template>
-  <teleport to="body">
-    <div v-if="open" class="ai-dashboard-chart-zoom-modal" data-open="1" @click="handleMaskClick">
-      <div class="ai-zoom-card" role="dialog" aria-modal="true">
-        <div class="ai-zoom-header">
-          <div class="ai-zoom-title">{{ title }}</div>
-          <button
-            class="ai-zoom-close"
-            type="button"
-            aria-:label="t('common.close')"
-            @click="emit('close')"
-          >
-            ×
-          </button>
-        </div>
-        <div class="ai-zoom-body">
-          <EChart
-            v-if="mode === 'chart' && option"
-            class="ai-zoom-chart"
-            :option="modalOption"
-            :theme="theme"
-            height="100%"
-          />
-          <div v-show="mode === 'table'" class="ai-zoom-table" @click.stop>
-            <ChartDataTable :tabular="tabular" :max-rows="maxRows" />
-          </div>
-        </div>
-      </div>
-    </div>
-  </teleport>
+  <el-dialog
+    :model-value="open"
+    :title="title"
+    width="min(1100px, 92vw)"
+    align-center
+    append-to-body
+    destroy-on-close
+    class="chart-zoom-dialog"
+    body-class="chart-zoom-body"
+    @close="emit('close')"
+  >
+    <EChart v-if="mode === 'chart' && option" :option="modalOption" :theme="theme" height="100%" />
+    <ChartDataTable v-show="mode === 'table'" :tabular="tabular" :max-rows="maxRows" />
+  </el-dialog>
 </template>
 
 <script setup>
-import { computed, onBeforeUnmount, watch } from "vue";
+import { computed } from "vue";
 import { EChart } from "@ontomato/foundation-ui/chart";
 import ChartDataTable from "./ChartDataTable.vue";
 import { nativeEchartsTheme } from "./utils/echartsTheme";
 import { chartBrandColors } from "@ontomato/contracts/chart-presentation";
-import { useI18n } from "vue-i18n";
 import { workbenchContent } from "../../../content";
 import { useTheme } from "../../../composables/useTheme";
-
-useI18n();
 
 const props = defineProps({
   open: { type: Boolean, default: false },
@@ -64,108 +46,33 @@ const theme = computed(() => (zoomChartTheme === "dashboard" ? dashboardTheme.va
 const modalOption = computed(() =>
   chartBrandColors({ ...props.option, backgroundColor: "transparent", title: undefined }, dashboardTheme.value)
 );
-
-function handleMaskClick(e) {
-  if (e.target?.classList?.contains("ai-dashboard-chart-zoom-modal")) emit("close");
-}
-
-let keydownHandler = null;
-watch(
-  () => props.open,
-  (open) => {
-    if (open) {
-      keydownHandler = (e) => {
-        if (e.key === "Escape") emit("close");
-      };
-      window.addEventListener("keydown", keydownHandler);
-      return;
-    }
-    if (keydownHandler) window.removeEventListener("keydown", keydownHandler);
-    keydownHandler = null;
-  }
-);
-
-onBeforeUnmount(() => {
-  if (keydownHandler) window.removeEventListener("keydown", keydownHandler);
-  keydownHandler = null;
-});
 </script>
 
-<style scoped>
-.ai-dashboard-chart-zoom-modal {
-  position: fixed;
-  inset: 0;
-  z-index: 999999;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: rgba(0, 0, 0, 0.45);
-}
-
-.ai-zoom-card {
-  width: min(1100px, 92vw);
-  height: min(720px, 92vh);
-  background: var(--el-bg-color);
-  border-radius: var(--radius-lg);
-  box-shadow: var(--elevation-modal);
+<style>
+/* The dialog is drawn in the page's overlay layer, outside this component: the card's size, its title on one line, and
+   the chart or table filling the rest. */
+.chart-zoom-dialog {
   display: flex;
   flex-direction: column;
-  overflow: hidden;
+  height: min(720px, 92vh);
 }
 
-.ai-zoom-header {
-  flex: 0 0 auto;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 10px 12px;
-  border-bottom: 1px solid var(--el-border-color);
-}
-
-.ai-zoom-title {
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--el-text-color-primary);
-  min-width: 0;
+.chart-zoom-dialog .el-dialog__title {
+  display: block;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.ai-zoom-close {
-  flex: 0 0 auto;
-  width: 28px;
-  height: 28px;
-  border: none;
-  border-radius: 8px;
-  background: var(--el-fill-color);
-  cursor: pointer;
-  color: var(--el-text-color-secondary);
-  font-size: 16px;
-  line-height: 28px;
-}
-
-.ai-zoom-close:hover {
-  background: var(--el-fill-color-dark);
-  color: var(--el-text-color-primary);
-}
-
-.ai-zoom-body {
-  position: relative;
+.chart-zoom-body {
+  display: flex;
   flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
 }
 
-.ai-zoom-chart {
-  position: absolute;
-  inset: 0;
-}
-
-.ai-zoom-table {
-  position: absolute;
-  inset: 0;
-  overflow: auto;
-  padding: 0 10px 10px;
-  box-sizing: border-box;
-  background: var(--el-bg-color);
+.chart-zoom-body > * {
+  flex: 1 1 auto;
+  min-height: 0;
 }
 </style>
