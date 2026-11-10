@@ -349,27 +349,6 @@ export default {
     "name": "Agent Platform"
   },
   "diagnosis": {
-    "promptTranscript": {
-      "viewMode": "Prompt view mode",
-      "readingView": "Conversation",
-      "rawView": "Raw",
-      "fallbackOldFormat": "This file is not in the current unified format. Raw view is available.",
-      "fallbackIncomplete": "This file is incomplete or structurally invalid. Raw view is available.",
-      "inputContext": "Input and context",
-      "assistant": "Assistant response",
-      "systemPrompt": "System prompt",
-      "userPrompt": "User prompt",
-      "thinking": "Reasoning",
-      "visibleOutput": "Output",
-      "message": "Message",
-      "error": "Error",
-      "tool": "Tool call",
-      "parameters": "Arguments",
-      "result": "Result",
-      "matched": "Returned",
-      "unmatched": "Unmatched",
-      "ambiguous": "Ambiguous pairing"
-    },
     "newConversation": "New Conversation",
     "enterProblem": "Enter question to start diagnosis",
     "enterDiagnosis": "Enter diagnosis question...",

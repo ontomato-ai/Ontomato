@@ -1,6 +1,5 @@
 import type { WorkbenchContent } from "@ontomato/workbench-ui";
 import { ossProduct } from "../../src/product";
-import { ossWorkspaceArtifactText } from "../../src/workspace-artifact-text";
 
 /**
  * Static workbench content for this edition (original values). The MCP server names and observe protocol values come
@@ -28,8 +27,6 @@ export const workbenchContent: WorkbenchContent = {
   ),
   observe: {
     appLogSource: ossProduct.logSource,
-    promptTranscript: ossWorkspaceArtifactText,
-    promptDirectoryName: ossProduct.diagnosisWorkspaceNames.prompts,
   },
   text: {
     createDashboardFailed: "Failed to create dashboard",
