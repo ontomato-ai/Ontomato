@@ -251,6 +251,7 @@ onUnmounted(() => {
 
 <style scoped>
 .code-editor {
+  container-type: inline-size;
   border: 1px solid var(--el-border-color);
   border-radius: 8px;
   overflow: hidden;
@@ -375,6 +376,16 @@ onUnmounted(() => {
 .code-editor :deep(.cm-search .cm-textfield:focus) {
   border-color: var(--el-color-primary);
   box-shadow: 0 0 0 2px var(--el-color-primary-light-8);
+}
+
+@container (max-width: 480px) {
+  .code-editor :deep(.cm-search input[name="search"]) {
+    flex-basis: 100%;
+  }
+
+  .code-editor :deep(.cm-search br) {
+    flex-basis: 100%;
+  }
 }
 
 .code-editor :deep(.cm-search .cm-button) {

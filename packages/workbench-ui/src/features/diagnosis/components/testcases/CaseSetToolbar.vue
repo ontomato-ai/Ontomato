@@ -98,10 +98,13 @@ defineExpose({ focus });
   position: relative;
   display: flex;
   align-items: center;
+  width: 320px;
+  max-width: 100%;
 }
 
 .selector-wrap :deep(.el-select) {
-  width: min(240px, 100%);
+  flex: 1;
+  min-width: 0;
 }
 
 .dirty-indicator {
