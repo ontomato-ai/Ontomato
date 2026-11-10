@@ -225,6 +225,10 @@ test("buildWorkbenchImage builds the final image and tags deploy alias for publi
   assert.equal(pubTags.length, 2);
   assert.match(pubTags[0], new RegExp(`^ontomato:${VERSION}-\\d{8}-\\d{6}-g${head(pub).slice(0, 12)}-arm64$`));
   assert.equal(pubTags[1], "ontomato:deploy-arm64");
+  assert.deepEqual(JSON.parse(readFileSync(join(pub, ".build/contexts/workbench/arm64/image/build-info.json"), "utf8")), {
+    version: pubTags[0].slice("ontomato:".length, -"-arm64".length),
+    sources: [{ id: "ontomato", revision: head(pub) }],
+  });
 
   // Enterprise build
   const entDocker = fakeDocker(t, ent);
@@ -243,6 +247,10 @@ test("buildWorkbenchImage builds the final image and tags deploy alias for publi
   assert.equal(entTags.length, 2);
   assert.match(entTags[0], new RegExp(`^data-agent:${VERSION}-\\d{8}-\\d{6}-g${head(ent).slice(0, 12)}-amd64$`));
   assert.equal(entTags[1], "data-agent:deploy-amd64");
+  assert.deepEqual(JSON.parse(readFileSync(join(ent, ".build/contexts/workbench/amd64/image/build-info.json"), "utf8")), {
+    version: entTags[0].slice("data-agent:".length, -"-amd64".length),
+    sources: [{ id: "ontomato", revision: head(pub) }, { id: "enterprise", revision: head(ent) }],
+  });
 
   // Staging context verification
   const ctx = join(ent, ".build/contexts/workbench/amd64/image");
