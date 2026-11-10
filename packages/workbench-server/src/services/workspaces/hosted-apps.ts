@@ -1,7 +1,7 @@
 import { appSdkBuild } from "../app-builder/sdk";
 import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
-import { cp, mkdir, writeFile, rename } from "node:fs/promises";
+import { cp, mkdir, writeFile, rename, readdir, readFile } from "node:fs/promises";
 import path from "node:path";
 import { z } from "zod";
 import { workspaceExportSchema } from "@ontomato/contracts/workspaces";
@@ -24,10 +24,43 @@ export async function installAppSdk() {
   const shipped = path.join(runtimeRoot(), "dist", "apps-sdk");
   const { version } = await appSdkBuild();
   const target = runtimeDataDir("apps-sdk", version);
-  if (existsSync(target)) return;
+  if (existsSync(target)) {
+    await assertSameSdk(path.join(shipped, version), target, version);
+    return;
+  }
   await cp(path.join(shipped, version), `${target}.tmp`, { recursive: true });
   await rename(`${target}.tmp`, target);
 }
+async function sdkFiles(root: string, prefix = ""): Promise<string[]> {
+  const files: string[] = [];
+  for (const entry of await readdir(path.join(root, prefix), { withFileTypes: true })) {
+    const name = path.join(prefix, entry.name);
+    files.push(...(entry.isDirectory() ? await sdkFiles(root, name) : [name]));
+  }
+  return files.sort();
+}
+
+export async function assertSameSdk(shipped: string, installed: string, version: string) {
+  const files = await sdkFiles(shipped);
+  const existing = await sdkFiles(installed);
+  const conflict = () => new Error(`Apps SDK version conflict: ${version} has different installed content; bump the SDK base version for a release`);
+  if (JSON.stringify(files) !== JSON.stringify(existing)) throw conflict();
+  for (const file of files) {
+    const incoming = await readFile(path.join(shipped, file));
+    const current = await readFile(path.join(installed, file));
+    // Older persisted manifests contain provenance, which does not change the SDK contract.
+    if (file === "sdk.json") {
+      const normalize = (bytes: Buffer) => {
+        const manifest = JSON.parse(bytes.toString("utf8"));
+        delete manifest.sources;
+        delete manifest.productVersion;
+        return JSON.stringify(manifest);
+      };
+      if (normalize(incoming) !== normalize(current)) throw conflict();
+    } else if (!incoming.equals(current)) throw conflict();
+  }
+}
+
 export async function writeHostedPublication(appId: string, releaseId: string, declaration: Record<string, unknown>, credentials: AssistantCredentials) {
   const response = await backendPut("hosted-publication", buildUrl(getApiConfig(), `/platform/applications/${appId}/hosted-publication`),
     { declaration, releaseId }, { ...credentials, retries: 1 });

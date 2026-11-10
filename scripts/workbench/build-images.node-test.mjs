@@ -16,7 +16,7 @@ import { delimiter, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { test } from "node:test";
 import { buildStamp, sampleSources } from "../build-support.mjs";
-import { buildWorkbenchImage } from "./build-images.mjs";
+import { buildWorkbenchImage, isFormalSdkRelease } from "./build-images.mjs";
 import { assembleAppStage, stageDirectory } from "./stage-app.mjs";
 
 const VERSION = "9.9.9-test";
@@ -475,3 +475,15 @@ test("assemble writes own packages, resources, links and web without pairing met
 // Synthetic local-build fixtures must not inherit the outer CI build identity.
 delete process.env.CI_PIPELINE_ID;
 delete process.env.GITHUB_RUN_ID;
+
+
+test("only formal CI tags select the base SDK version", () => {
+  const github = { GITHUB_ACTIONS: "true", GITHUB_WORKFLOW: "Images", GITHUB_REF_TYPE: "tag", GITHUB_REF_NAME: "v4.1.3" };
+  const gitlab = { GITLAB_CI: "true", CI_COMMIT_TAG: "v4.1.3" };
+  assert.equal(isFormalSdkRelease(github), true);
+  assert.equal(isFormalSdkRelease(gitlab), true);
+  for (const env of [{}, { PUBLISH_VERSION: "4.1.3" }, { CI_COMMIT_TAG: "v4.1.3" },
+    { ...github, GITHUB_REF_TYPE: "branch" }, { ...github, GITHUB_WORKFLOW: "Checks" },
+    { ...gitlab, CI_COMMIT_TAG: "" }, { ...gitlab, CI_COMMIT_TAG: "skills-v1.0.0" },
+    { ...gitlab, PUBLISH_VERSION: "4.1.3" }]) assert.equal(isFormalSdkRelease(env), false);
+});

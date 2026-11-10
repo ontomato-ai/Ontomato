@@ -7,6 +7,7 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import vue from "@vitejs/plugin-vue";
 import { build } from "vite";
+import { finalizeSdk, VERSION_PLACEHOLDER } from "./content-version.mjs";
 import { referenceMarkdown } from "./reference.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -26,22 +27,9 @@ const LIBRARIES = ["vue", "element-plus", "echarts"];
 
 function readFacts(text) {
   const facts = JSON.parse(text || "null");
-  const revision = /^[0-9a-f]{40}$/;
-  if (typeof facts?.product !== "string" || typeof facts.version !== "string" || !Array.isArray(facts.sources)
-    || !facts.sources.length || facts.sources.some((source) => typeof source.id !== "string"
-      || !revision.test(source.revision) || typeof source.dirty !== "boolean"))
-    throw new Error("APPS_SDK_BUILD must be {product, version, sources: [{id, revision, dirty}]} from the image builder");
+  if (typeof facts?.product !== "string" || typeof facts.release !== "boolean")
+    throw new Error("APPS_SDK_BUILD must be {product, release} from the image builder");
   return facts;
-}
-
-/**
- * A product release ships the SDK's own version; any other build is a prerelease named by the source commits (both
- * repositories for the enterprise edition), so a version never names two different contents.
- */
-function sdkVersion(base, facts) {
-  if (!facts.version.includes("-")) return base;
-  const commits = facts.sources.map((source) => `g${source.revision.slice(0, 12)}`).join(".");
-  return `${base}-dev.${commits}${facts.sources.some((source) => source.dirty) ? ".dirty" : ""}`;
 }
 
 /** Every module, chunk and example shares one Vue: a second runtime would split reactivity and component identity. */
@@ -84,7 +72,7 @@ async function main() {
   if (!editionArg || !outArg) throw new Error("usage: node build.mjs <edition module> <output root>");
   const facts = readFacts(process.env.APPS_SDK_BUILD);
   const base = JSON.parse(readFileSync(join(HERE, "package.json"), "utf8")).version;
-  const version = sdkVersion(base, facts);
+  const version = VERSION_PLACEHOLDER;
   const outRoot = resolve(outArg);
   const outDir = join(outRoot, version);
   rmSync(outRoot, { recursive: true, force: true });
@@ -138,15 +126,13 @@ async function main() {
   writeFileSync(join(outDir, "sdk.json"), `${JSON.stringify({
     version,
     product: facts.product,
-    productVersion: facts.version,
-    sources: facts.sources,
     entries: Object.fromEntries(ENTRIES.map((entry) => [entry.specifier, entry.file])),
     stylesheet: STYLESHEET,
     libraries: Object.fromEntries(LIBRARIES.map((name) => [name, libraryVersion(name)])),
     docs: "docs/index.md",
   }, null, 2)}\n`);
-  writeFileSync(join(outRoot, "current.json"), `${JSON.stringify({ version })}\n`);
-  console.log(`[apps-sdk] ${facts.product} ${version} -> ${outDir}`);
+  const finalVersion = finalizeSdk(outRoot, base, facts.release);
+  console.log(`[apps-sdk] ${facts.product} ${finalVersion} -> ${outRoot}`);
 }
 
 main().catch((error) => {
