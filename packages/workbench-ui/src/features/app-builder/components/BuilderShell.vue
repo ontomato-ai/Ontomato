@@ -19,24 +19,27 @@ import { useShellLabels } from "../../../composables/useShellLabels";
 import { authHost } from "../../../utils/auth";
 import { builderApi, createBuilderClient, WORKSPACE_PAGE } from "../api";
 import { PANEL_ID, PANEL_TABS, errorText, firstLine, shortCommit, type ChangeTarget, type PanelTab } from "../panel";
-import { selectedObject, usePreviewContext, type SubscribePageContext } from "../preview-context";
+import type { AppBuilderPlatform } from "../platform";
+import { selectedObject, usePreviewContext } from "../preview-context";
 import { useWorkspaceView, type LoadState } from "../workspace-view";
 import CommitMark from "./CommitMark.vue";
 import ComposerContext from "./ComposerContext.vue";
 import PanelHeader from "./PanelHeader.vue";
+import PublishDrawer from "./PublishDrawer.vue";
 import WorkspaceColumn from "./WorkspaceColumn.vue";
 import WorkspacePanel from "./WorkspacePanel.vue";
 
 /**
  * 应用构建 as an agent app (DESIGN.md "Agent apps"): the builder agent's conversations, kept per workspace, and beside them
- * the workspace they write — its preview, files, changes and history — as the one page of the application. The
- * conversation, the three states and sending from the page are the shell's; this page fills its column, its page and
- * the two lines the shell leaves to it (the page's header row and what a message carries).
+ * the workspace they write — its preview, files, changes and history — as the one page of the application, and the
+ * drawer that publishes the workspace as an application on the platform's rail. The conversation, the three states and
+ * sending from the page are the shell's; this page fills its column, its page and the two lines the shell leaves to it
+ * (the page's header row and what a message carries).
  *
  * The address names the workspace (`/app-builder/<id>`) and the open conversation (`?sessionId=`). The layout the reader
  * chose — only the conversation, beside it, or full — stays while they change conversation or workspace.
  */
-const props = defineProps<{ agent: AgentHostAgent; subscribePageContext: SubscribePageContext }>();
+const props = defineProps<{ agent: AgentHostAgent; platform: AppBuilderPlatform }>();
 const { t } = useI18n();
 const route = useRoute();
 const router = useRouter();
@@ -165,11 +168,15 @@ function showFlash(text: string) {
 }
 onBeforeUnmount(() => clearTimeout(flashTimer));
 
+/** The publication drawer, opened from the page's header. */
+const publishOpen = ref(false);
+
 // Another workspace keeps the layout and the open view, and drops what belonged to the one left.
 watch(workspaceId, () => {
   file.value = null;
   target.value = "latest";
   flash.value = null;
+  publishOpen.value = false;
 });
 // The open file is the page until the reader picks another, and moves on when it is gone.
 watch(
@@ -193,7 +200,7 @@ function showChanges(commit: string) {
 
 /** The frame the preview shows, while it shows one: what its app reports is the preview's context. */
 const previewFrame = shallowRef<Window | null>(null);
-const previewContext = usePreviewContext(props.subscribePageContext, () => previewFrame.value, () => workspaceId.value);
+const previewContext = usePreviewContext(props.platform.subscribePageContext, () => previewFrame.value, () => workspaceId.value);
 
 /** The open view as a message names it, so "this" in the reader's words means what they look at. */
 const contextPage = computed(() => {
@@ -361,7 +368,12 @@ const columnEvents = {
       <WorkspaceColumn v-bind="column" v-on="columnEvents" />
     </template>
     <template #page-header>
-      <PanelHeader v-model:tab="tab" :head-commit="view.workspace?.headCommit ?? null" @refresh-preview="reloadPreview++" />
+      <PanelHeader
+        v-model:tab="tab"
+        :head-commit="view.workspace?.headCommit ?? null"
+        @refresh-preview="reloadPreview++"
+        @publish="publishOpen = true"
+      />
     </template>
     <template #feature>
       <WorkspacePanel
@@ -403,6 +415,7 @@ const columnEvents = {
       </div>
     </main>
   </div>
+  <PublishDrawer v-if="view.workspace" v-model:open="publishOpen" :view="view" :platform="platform" />
 </template>
 
 <style scoped>

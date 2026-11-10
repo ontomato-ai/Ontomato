@@ -1,8 +1,12 @@
 import { z } from "zod";
 import { agentHostSessionPageSchema } from "@ontomato/contracts/agent-host";
 import { appBuilderBootstrapSchema } from "@ontomato/contracts/app-builder";
+import type { ApplicationDeclaration } from "@ontomato/contracts/platform-identity";
 import {
   workspaceSchema,
+  type HostedPublication,
+  type HostedRelease,
+  type HostedReleasePage,
   type WorkspaceCommitPage,
   type WorkspaceDiff,
   type WorkspacePreviewToken,
@@ -21,7 +25,10 @@ const workspacePath = (id: string) => `/workspaces/${encodeURIComponent(id)}`;
 const page = (offset: number, limit: number) => new URLSearchParams({ offset: String(offset), limit: String(limit) });
 const workspacePageSchema = z.object({ items: z.array(workspaceSchema) });
 
-/** The builder's reads and writes, all on the existing workspace interface (`/api/workspaces`) and its bootstrap. */
+/**
+ * The builder's reads and writes, all on the existing workspace interface (`/api/workspaces`) and its bootstrap. The
+ * publication goes through the workspace too; the workbench writes the application to Java's catalog.
+ */
 export const builderApi = {
   /** The domain's builder agent; its identity comes from the server, never a fixed id. */
   async agent() {
@@ -63,6 +70,18 @@ export const builderApi = {
   },
   async previewToken(id: string) {
     return (await nodeApiPost(`${workspacePath(id)}/preview-token`, {})) as WorkspacePreviewToken;
+  },
+  /** The commits exported for publication, newest first, each with the application it belongs to. */
+  async releases(id: string) {
+    return ((await nodeApiGet(`${workspacePath(id)}/releases`)) as HostedReleasePage).items;
+  },
+  /** Exports a commit (once per commit) and makes it the version the application opens. */
+  async publish(id: string, commit: string, declaration: ApplicationDeclaration) {
+    return (await nodeApiPost(`${workspacePath(id)}/publish`, { commit, declaration })) as HostedPublication;
+  },
+  /** Makes an exported version the one the application opens; the workspace and its commits stay as they are. */
+  async rollback(id: string, releaseId: string, declaration: ApplicationDeclaration) {
+    return (await nodeApiPost(`${workspacePath(id)}/rollback`, { releaseId, declaration })) as HostedRelease;
   },
 };
 
