@@ -69,7 +69,7 @@ public class BuildTestContextService {
     String id=UUID.randomUUID().toString(), sandboxId="bt_"+id.replace("-","")+"_";
     long expires=System.currentTimeMillis()+3600000;
     if(identity.getCurrentCredentialExpiresAt()!=null) expires=Math.min(expires,identity.getCurrentCredentialExpiresAt());
-    var data=JSONObject.of("sandboxId",sandboxId,"classNames",classes,"sample",sample,"fingerprint",fingerprint(user.getDomainId()),"binding",binding,"resources",binding.getList("resources",String.class).stream().map(name->name.replace("{sandbox}",sandboxId)).toList());
+    var data=JSONObject.of("sandboxId",sandboxId,"classNames",classes,"sample",sample,"fingerprint",fingerprint(user.getDomainId()),"sampleSha256",io.ontomato.dataengine.service.agent.AgentJson.hash(JSONObject.of("sample",sample,"attachments",attachments)),"binding",binding,"resources",binding.getList("resources",String.class).stream().map(name->name.replace("{sandbox}",sandboxId)).toList());
     jdbc.update("INSERT INTO build_test_contexts(id,owner_id,domain_id,workspace_id,state,expires_at,data) VALUES(?,?,?,?,'PREPARING',?,?::jsonb)",id,user.getId(),user.getDomainId(),workspace,expires,data.toJSONString());
     String stage="BUILD_TEST_SCHEMA_FAILED";
     try {
@@ -98,7 +98,7 @@ public class BuildTestContextService {
       jdbc.update("UPDATE build_test_contexts SET state='EXPIRED' WHERE id=? AND state='READY'",id);r=row(id);
     }
     var data=r.getJSONObject("data");
-    return JSONObject.of("contextId",id,"workspaceId",r.getString("workspace_id"),"status",r.getString("state"),"expiresAt",r.getLong("expires_at"),"classNames",data.get("classNames"),"sampleSummary",JSONObject.of("classes",data.getJSONArray("classNames").size()),"prepareError",data.get("prepareError"),"cleanupError",r.get("cleanup_error"),"resources",data.get("resources"));
+    return JSONObject.of("contextId",id,"workspaceId",r.getString("workspace_id"),"status",r.getString("state"),"expiresAt",r.getLong("expires_at"),"classNames",data.get("classNames"),"sampleSummary",JSONObject.of("classes",data.getJSONArray("classNames").size(),"sha256",data.getString("sampleSha256")),"prepareError",data.get("prepareError"),"cleanupError",r.get("cleanup_error"),"resources",data.get("resources"));
   }
   public ExecutionTarget resolve(HttpServletRequest request) {
     String header=request.getHeader(HEADER);

@@ -71,6 +71,8 @@ class BuildTestPostgresIntegrationTest {
         Object result=switch(exchange.getRequestURI().getPath()) {
           case "/writeFunctionOperation/update"->http.update(body);
           case "/writeFunctionOperation/delete"->http.delete(body);
+          case "/writeFunctionOperation/createEdge"->http.createEdge(body);
+          case "/writeFunctionOperation/deleteEdge"->http.deleteEdge(body);
           case "/ontology/query/execute-dsl"->body.containsKey("queryRef") ? ontology.executePackage(body.getJSONObject("queryRef"),new QueryAccessService.Access(owner,permission,claims,exchange.getRequestHeaders().getFirst("tk"),claims.getLong("expiresAt"))) : ontology.execute(body.getJSONObject("dsl"),new QueryAccessService.Access(owner,permission,claims,exchange.getRequestHeaders().getFirst("tk"),claims.getLong("expiresAt")));
           default->throw new IllegalArgumentException("Unexpected endpoint");
         };
@@ -210,6 +212,10 @@ class BuildTestPostgresIntegrationTest {
         assertNotNull(metrics.testExecute(metric,null,values,"en",owner,permission,1,target)[0]);
         assertNotNull(metrics.execute("metric-test",null,values,null,"en",owner,permission,1,target)[0]);
       }
+      function.getReturnDef().setClassNames(List.of("contract_person","contract_group"));
+      function.setCode("# ontomato-python:2\nfrom query_runtime import deleteEdge, createEdge\ndeleteEdge('person_group','contract_person','contract-person-1','contract_group','contract-group-1')\ncreateEdge('person_group','contract_person','contract-person-1','contract_group','contract-group-1')\n");
+      result=actions.execute(action.getId(),JSONObject.of("id","contract-person-1","age",99),"en",owner,permission,1,target);assertNull(result.getError());
+      assertEquals("contract-group-1",jdbc.queryForObject("SELECT group_id FROM "+target.sandboxId()+"contract_person WHERE id='contract-person-1'",String.class));
       function.setCode("# ontomato-python:2\nfrom query_runtime import delete\ndelete('contract_person',{'field':'id','operator':'=','value':'contract-person-1'})\n");
       result=actions.execute(action.getId(),JSONObject.of("id","contract-person-1","age",99),"en",owner,permission,1,target);assertNull(result.getError());
       assertEquals(2,jdbc.queryForObject("SELECT count(*) FROM "+target.sandboxId()+"contract_person",Integer.class));
