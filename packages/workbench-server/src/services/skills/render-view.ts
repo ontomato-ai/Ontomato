@@ -25,7 +25,8 @@ export async function renderObjectView(owner: { domainId: string; userId: string
       }],
       entry: "render.py", arguments: [], outputPaths: ["result.html"],
       environment: userSkillEnvironment(credentials), libraries: [{ skill: skills[0], path: "scripts" }],
-      limits: { wallTimeMs: 120000 },
+      // Node reserves a large virtual address range at startup, as in the skill sandbox.
+      limits: { wallTimeMs: 120000, memoryBytes: 16 * 1024 ** 3 },
     });
     const admission = await client.request("/v1/code-executions", "POST", request, idempotencyKey) as { execution: unknown };
     return codeExecutionSchema.parse(admission.execution);
