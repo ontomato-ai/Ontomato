@@ -49,6 +49,7 @@ describe("complete skill references in agent configuration", () => {
       const file = new File(["zip"], "skill.zip");
       await wrapper.getComponent(ElUpload).props("onChange")!({ raw: file } as any, []);
       await flushPromises();
+      expect(ElMessageBox.confirm).toHaveBeenCalledWith(expect.stringContaining(skill.id), expect.anything(), expect.anything());
       expect(importer.mock.calls[1][1]).toBe(true);
       expect(wrapper.emitted("update:modelValue")?.at(-1)).toEqual([[provider, domain]]);
     } finally { wrapper.unmount(); }

@@ -257,7 +257,7 @@ async function importSkill(file: File, overwrite = false) {
       try {
         await ElMessageBox.confirm(
           t("admin.skillExists", {
-            id: String((error.payload.details as { skillId?: unknown } | undefined)?.skillId || t("common.unknown")),
+            id: (error.payload.details as { skillId: string }).skillId,
           }),
           t("common.tip"),
           { confirmButtonText: t("admin.overwrite"), cancelButtonText: t("common.cancel"), type: "warning" },
