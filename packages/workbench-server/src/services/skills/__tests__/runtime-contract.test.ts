@@ -1,4 +1,5 @@
 import fs from "node:fs/promises";
+import { execFileSync } from "node:child_process";
 import os from "node:os";
 import path from "node:path";
 import AdmZip from "adm-zip";
@@ -81,5 +82,26 @@ it("publishes every bundled public directory with the same standard package cont
   for (const skill of skills) {
     const request = await readSkillPackage(skill.path, { namespace: { kind: "provider", provider: "workbench" }, name: skill.id });
     expect(request.files.some((file) => file.path === "SKILL.md")).toBe(true);
+  }
+});
+
+
+it.each([
+  { name: "echarts", input: { chartType: "timeline", data: [{ date: null, event: "Review" }], dateField: "date", descriptionField: "event" }, marker: (locale: string) => `"locale":"${locale}"` },
+  { name: "leaflet", input: { data: [{ lat: 1, lon: 2 }], latitudeField: "lat", longitudeField: "lon" }, marker: (locale: string) => `const locale = "${locale}"` },
+  { name: "network-graph", input: { data: { nodes: [{ id: "a", name: "A" }], links: [] } }, marker: (locale: string) => `<html lang="${locale.split("-")[0]}"` },
+])("$name CLI takes the runtime language only when the input omits it", async ({ name, input, marker }) => {
+  const script = path.resolve(`skills/executable/visualization/${name}/scripts/index.mjs`);
+  for (const locale of [undefined, "ja"]) {
+    const workspace = await fs.mkdtemp(path.join(root, "visualization-cli-"));
+    const source = path.join(workspace, "input.json");
+    await fs.writeFile(source, JSON.stringify({ title: "Locale contract", ...input, locale }));
+    execFileSync(process.execPath, [script, source], {
+      cwd: workspace,
+      env: { ...process.env, ONTOMATO_LANGUAGE: "zh-CN", ONTOMATO_OUTPUT_DIR: path.join(workspace, "outputs") },
+    });
+    const [file] = await fs.readdir(path.join(workspace, "outputs"));
+    const html = await fs.readFile(path.join(workspace, "outputs", file), "utf8");
+    expect(html).toContain(marker(locale ?? "zh-CN"));
   }
 });

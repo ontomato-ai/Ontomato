@@ -1497,7 +1497,9 @@ if (import.meta.main) {
   const { randomUUID } = await import("node:crypto");
   const source = process.argv[2]?.replace(/^@/, "");
   if (!source) throw new Error("Expected a JSON input file");
-  const result = await execute(JSON.parse(await fs.readFile(source, "utf8")));
+  const input = JSON.parse(await fs.readFile(source, "utf8"));
+  if (input.locale === undefined) input.locale = process.env.ONTOMATO_LANGUAGE;
+  const result = await execute(input);
   if (result.meta?.error || result.json?.success === false)
     throw new Error(result.json?.error || "Skill could not produce the requested result");
   const root = process.env.ONTOMATO_OUTPUT_DIR || "outputs";

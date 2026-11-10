@@ -346,8 +346,6 @@ const ontologyEn = {
   assetOperationRead: "Read",
   assetOperationWrite: "Write",
   taskCron: "Cron expression",
-  taskBatchStart: "Start selected tasks",
-  taskBatchStop: "Stop selected tasks",
   taskCronPlaceholder: "e.g. 0 */5 * * * ?",
   taskLinkedFunction: "Linked function",
   taskSelectFunction: "Select write function",
