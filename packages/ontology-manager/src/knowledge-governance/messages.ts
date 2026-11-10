@@ -1,12 +1,12 @@
 import type { ShellLabels } from "@ontomato/agent-shell-ui";
 /**
- * Governance text. `shell` is the shell's labels as stored: the three the page formats from text
- * (steps, rows, elapsed) keep their keys but hold the pattern instead of the formatter, so a
+ * Governance text. `shell` is the shell's labels as stored: the two the page formats from text
+ * (steps, elapsed) keep their keys but hold the pattern instead of the formatter, so a
  * missing key is a type error here rather than a silent `{...}` cast.
  */
 export interface GovernanceMessages {
   text: Readonly<Record<string, string>>;
-  shell: Readonly<Omit<ShellLabels, "steps" | "rows" | "elapsed"> & Record<"steps" | "rows" | "elapsed", string>>;
+  shell: Readonly<Omit<ShellLabels, "steps" | "elapsed"> & Record<"steps" | "elapsed", string>>;
 }
 export const governanceAgentId = "56a15178-ae22-4e6f-9974-ababeb42a676";
 export const englishGovernance: GovernanceMessages = {
@@ -83,11 +83,8 @@ export const englishGovernance: GovernanceMessages = {
     "expand": "Expand page",
     "collapse": "Show beside chat",
     "loading": "Loading…",
-    "rows": "{n} row | {n} rows",
     "emptyFile": "This file is empty.",
     "invalidChart": "This chart file could not be drawn.",
-    "previousPage": "Previous page",
-    "nextPage": "Next page",
     "toolRead": "Read",
     "toolWrite": "Write",
     "toolEdit": "Edit",
@@ -124,7 +121,6 @@ export function shellLabels(t: GovernanceTranslate): ShellLabels {
     placeholder: t("governance.text.placeholder"),
     greeting: t("governance.text.welcomeTitle"),
     steps: (n: number) => t("governance.shell.steps", n),
-    rows: (n: number) => t("governance.shell.rows", n),
     elapsed: (time: string) => t("governance.shell.elapsed", { time }),
     selectRow: undefined,
     selectedRows: undefined,

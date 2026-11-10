@@ -1,11 +1,14 @@
-/** Tabular projection of a dataset file: header row plus string cells, nothing guessed. */
+/** Tabular projection of a file: header row plus string cells, nothing guessed. */
 export interface TableData {
   columns: string[];
   rows: string[][];
 }
 
-/** RFC 4180 CSV: quoted fields, doubled quotes, CRLF or LF; a BOM is ignored. */
-export function parseCsv(text: string): TableData {
+/**
+ * RFC 4180 CSV, and TSV with a tab as the delimiter: quoted fields (which may hold the delimiter and line breaks), doubled
+ * quotes, CRLF or LF; a BOM is ignored. Cells keep their spaces.
+ */
+export function parseCsv(text: string, delimiter: "," | "\t" = ","): TableData {
   const records: string[][] = [];
   let field = "";
   let record: string[] = [];
@@ -22,7 +25,7 @@ export function parseCsv(text: string): TableData {
       continue;
     }
     if (char === '"') quoted = true;
-    else if (char === ",") {
+    else if (char === delimiter) {
       record.push(field);
       field = "";
     } else if (char === "\n" || char === "\r") {

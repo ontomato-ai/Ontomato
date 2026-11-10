@@ -15,7 +15,7 @@ it("puts dataset switches in their artifact header and removes them when the ren
     read: async () => new Blob([JSON.stringify({ columns: [{ key: "value", label: "Value" }], rows: [{ value: 1 }], sourceAnalysis: { schema: "ontomato.query-subgraph.v1" } })]),
   }) });
   app.provide(artifactHeaderKey, ref(header));
-  app.provide(shellContextKey, { labels: ref({ datasetData: "Data", datasetLineage: "Lineage", rows: (n: number) => `${n} rows` }) } as unknown as ShellContext);
+  app.provide(shellContextKey, { labels: ref({ datasetData: "Data", datasetLineage: "Lineage" }) } as unknown as ShellContext);
   app.mount(root);
   try {
     await new Promise((resolve) => setTimeout(resolve, 0));

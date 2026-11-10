@@ -4,6 +4,7 @@ import type { SkillInfo, SkillOutput } from "@ontomato/contracts/skills";
 import { ref, computed, watch } from "vue";
 import { ElMessage } from "element-plus";
 import { CodeEditor } from "@ontomato/foundation-ui/code";
+import { HtmlPreview } from "@ontomato/foundation-ui/preview";
 import { skillsApi } from "../api";
 import { useI18n } from "vue-i18n";
 import { withSkillResourceCredentials } from "../utils/skill-resource";
@@ -152,11 +153,11 @@ function handleClose() {
         <div v-else-if="result" class="result-box">
           <el-tabs v-model="resultTab">
             <el-tab-pane v-if="result.html" :label="t('admin.htmlPreview')" name="html">
-              <iframe
-                :srcdoc="withSkillResourceCredentials(result.html)"
+              <HtmlPreview
                 class="html-preview-iframe"
+                :html="withSkillResourceCredentials(result.html)"
                 sandbox="allow-scripts allow-same-origin"
-              ></iframe>
+              />
             </el-tab-pane>
             <el-tab-pane :label="t('admin.jsonOutput')" name="json">
               <pre class="json-output">{{ formatOutput(result.json) }}</pre>
@@ -223,7 +224,6 @@ function handleClose() {
 
 .html-preview-iframe {
   border: 1px solid var(--el-border-color-lighter);
-  width: 100%;
   height: 400px;
   background: var(--el-fill-color-lighter);
 }

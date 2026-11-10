@@ -11,16 +11,23 @@
     @close="emit('close')"
   >
     <EChart v-if="mode === 'chart' && option" :option="modalOption" :theme="theme" height="100%" />
-    <ChartDataTable v-show="mode === 'table'" :tabular="tabular" :max-rows="maxRows" />
+    <TablePreview
+      v-if="mode === 'table'"
+      :table="chartTable(tabular, maxRows)"
+      height="100%"
+      :empty-text="t('dashboard.noDataToDisplay')"
+    />
   </el-dialog>
 </template>
 
 <script setup>
 import { computed } from "vue";
 import { EChart, useChartTheme } from "@ontomato/foundation-ui/chart";
-import ChartDataTable from "./ChartDataTable.vue";
+import { TablePreview } from "@ontomato/foundation-ui/preview";
 import { chartBrandColors } from "@ontomato/contracts/chart-presentation";
+import { useI18n } from "vue-i18n";
 import { workbenchContent } from "../../../content";
+import { chartTable } from "./utils/chartTabular";
 
 const props = defineProps({
   open: { type: Boolean, default: false },
@@ -32,6 +39,7 @@ const props = defineProps({
 });
 
 const emit = defineEmits(["close"]);
+const { t } = useI18n();
 
 const { zoomChartTheme } = workbenchContent().dashboard;
 const chartTheme = useChartTheme();

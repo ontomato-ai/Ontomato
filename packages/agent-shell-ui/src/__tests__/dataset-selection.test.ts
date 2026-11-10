@@ -13,12 +13,12 @@ it("preserves raw selected rows and dataset scope across pagination when continu
     read: async () => new Blob([JSON.stringify({ question: "Active staff in 2025", assumptions: ["Active only"], truncation: null,
       columns: [{ key: "id", label: "ID" }, { key: "value", label: "Value" }, { key: "note", label: "Note" }], rows })]),
   }) });
-  app.provide(shellContextKey, { labels: ref({ rows: (n: number) => `${n} rows`, nextPage: "Next", previousPage: "Previous", compareSelection: "Compare selection" }) } as unknown as ShellContext);
+  app.provide(shellContextKey, { labels: ref({ compareSelection: "Compare selection" }) } as unknown as ShellContext);
   app.mount(root);
   try {
     await new Promise((resolve) => setTimeout(resolve, 0)); await nextTick();
     root.querySelector<HTMLInputElement>('input[type="checkbox"]')!.click(); await nextTick();
-    root.querySelector<HTMLButtonElement>('[aria-label="Next"]')!.click(); await nextTick();
+    root.querySelector<HTMLButtonElement>(".el-pagination .btn-next")!.click(); await nextTick();
     root.querySelector<HTMLInputElement>('input[type="checkbox"]')!.click(); await nextTick();
     [...root.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent === "Compare selection")!.click();
     await nextTick();

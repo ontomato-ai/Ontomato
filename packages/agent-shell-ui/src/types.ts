@@ -172,11 +172,8 @@ export interface ShellLabels {
   expand: string;
   collapse: string;
   loading: string;
-  rows: (count: number) => string;
   emptyFile: string;
   invalidChart: string;
-  previousPage: string;
-  nextPage: string;
   toolRead: string;
   toolWrite: string;
   toolEdit: string;
