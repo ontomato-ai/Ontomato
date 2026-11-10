@@ -435,6 +435,7 @@ public class ActionServiceImpl implements ActionService {
     for (int i = 0; i < array.size(); i++) {
       String actionId = null;
       try {
+        if (!(array.get(i) instanceof JSONObject)) throw new IllegalArgumentException("items[" + i + "]: expected an Action object; replace this item with a complete definition");
         JSONObject json = array.getJSONObject(i);
         actionId = json.getString("id");
         if (!(json.get("function") instanceof JSONObject rawFunction)) throw new IllegalArgumentException("Action.function: expected an embedded Function object");
@@ -454,10 +455,7 @@ public class ActionServiceImpl implements ActionService {
         if (!allowMissingExplanation || Action.STATUS_PUBLISHED.equals(action.getStatus())) {
           if (action.getCodeSegments() == null || action.getCodeSegments().isEmpty()) {
             throw new Exception(
-                "Action "
-                    + actionId
-                    + " has no code explanation; run action re-explain or import with"
-                    + " allowMissingExplanation=true");
+                "Action.codeSegments: expected a nonempty explanation; run action re-explain before importing a published asset");
           }
           if (!codeHash.equals(action.getCodeHash())) {
             throw new Exception(

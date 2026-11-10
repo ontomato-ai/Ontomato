@@ -315,8 +315,9 @@ public class MetricViewServiceImpl implements MetricViewService {
         if (!(array.get(i) instanceof JSONObject)) throw new IllegalArgumentException("items[" + i + "]: expected a MetricView object");
         item = array.getJSONObject(i);
         if (item.containsKey("type")) throw new IllegalArgumentException("Legacy MetricView bundles require conversion before import");
+        Function acceptedFunction = Function.fromAsset(item);
         MetricView metric = item.to(MetricView.class);
-        metric.setFunction(Function.fromAsset(item));
+        metric.setFunction(acceptedFunction);
         metric.setDomainId(domain);
         new TransactionTemplate(transactionManager).execute(status -> persist(metric, true, lang));
         successCount++;
