@@ -16,7 +16,7 @@ keeps the behaviour of the version it names.
 | `docs/reference.md` | The API of every `@ontomato/sdk` module, generated from their sources |
 | `docs/element-plus.web-types.json` | Element Plus's own metadata for every component of the bundled version: attributes, events, slots |
 | `examples/basic.html` | Platform context, Element Plus, a chart in the platform's theme, a Markdown text, a CSV text in the code editor previewed as a table, and an HTML document in a sandboxed frame |
-| `examples/metric-action.html` | A published MetricView in a table and a chart, or its result as read-only JSON, the selected row as page context, then an Action through its form and a fresh read |
+| `examples/metric-action.html` | A published MetricView in a table and a chart, or its result as read-only JSON, the selected row as page context, then an Action through its form and a fresh read through the template ref of `<metric-view-data>` |
 | `examples/chat.html` | A conversation with one of the platform's agents |
 
 ## Modules
@@ -141,17 +141,36 @@ the MetricView returns, often an array of row objects. A result the data engine 
 never a silent partial list.
 
 `<metric-view-data>` binds a MetricView by property. It reads when it appears and again whenever the id or the values of
-the parameters change. It draws nothing itself: its default slot receives `data`, `loading`, `error` and `reload`, and
-the page puts a table, a chart or a figure in it. Show `error` yourself.
-The `parameter-texts` property accepts user-entered text that the platform converts according to each parameter's type; invalid text fails that read with the platform's error message.
+the parameters change. It draws nothing itself, and hands one state, `data`, `loading`, `error` and `reload`, to two
+places:
+
+- The template draws from its default slot: put a table, a chart or a figure in it, and show `error` yourself.
+- The page's script reaches the same state through a template ref. `reload()` on the ref reads the MetricView again,
+  such as after an Action changed the data, wherever the Action's form is on the page; `data`, `loading` and `error` on
+  the ref are the slot's values, so the script needs no copy of its own.
+
+The `parameter-texts` property accepts user-entered text that the platform converts according to each parameter's type;
+invalid text fails that read with the platform's error message.
 
 ```html
-<metric-view-data :metric-view-id="metricViewId" :parameters="{ region }" v-slot="{ data, loading, error, reload }">
+<metric-view-data ref="orders" :metric-view-id="metricViewId" :parameters="{ region }"
+  v-slot="{ data, loading, error }">
   <el-alert v-if="error" type="error" :title="error.message" :closable="false"></el-alert>
   <el-table v-else v-loading="loading" :data="data ?? []">
     <el-table-column prop="name" label="Name"></el-table-column>
   </el-table>
 </metric-view-data>
+```
+
+```js
+setup() {
+  const orders = ref(null); // Vue fills it through ref="orders"
+  async function execute(parameters) {
+    await context.actions.execute({ id: ACTION_ID, parameters });
+    await orders.value.reload();
+  }
+  return { orders, execute };
+}
 ```
 
 ## Changing data: Actions
@@ -165,8 +184,8 @@ await context.actions.execute({ id: "<Action id>", parameters: { orderId: "SO-10
 
 Name every parameter the Action declares and give each value its declared type: a number as a number, a list as an
 array. The server checks the user's permission and the values again, and the promise rejects with its message when it
-refuses. Read the MetricViews that show the changed data again afterwards, for example with `reload()` from
-`<metric-view-data>`.
+refuses. Afterwards, read the MetricViews that show the changed data again: in the script that executed the Action,
+call `reload()` on the template ref of each `<metric-view-data>` that shows it.
 
 ### An Action's form
 

@@ -5,7 +5,8 @@ import type { MetricViewDataSlots } from "./types";
 
 /**
  * Binds one published MetricView by property and hands its result to the default slot, where the page puts a table, a
- * chart or a figure. It draws nothing of its own: the loading state and a failed read reach the slot as values.
+ * chart or a figure. It draws nothing of its own: the loading state and a failed read reach the slot as values. A
+ * template ref reaches the same state for the page's script, such as `reload()` after an Action changed the data.
  */
 const props = withDefaults(
   defineProps<{
@@ -44,6 +45,8 @@ const reload = async () => {
 };
 
 watch(() => JSON.stringify([props.metricViewId, props.parameters, props.parameterTexts]), () => reload(), { immediate: true });
+
+defineExpose({ data, loading, error, reload });
 </script>
 
 <template>
