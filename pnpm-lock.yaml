@@ -249,6 +249,9 @@ importers:
       '@ontomato/design-tokens':
         specifier: workspace:*
         version: link:../design-tokens
+      '@ontomato/foundation-ui':
+        specifier: workspace:*
+        version: link:../foundation-ui
       '@ontomato/ontology-manager':
         specifier: workspace:*
         version: link:../ontology-manager

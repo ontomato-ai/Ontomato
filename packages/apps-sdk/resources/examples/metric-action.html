@@ -9,15 +9,16 @@
     [v-cloak] { display: none; }
     body { margin: 0; background: var(--el-bg-color-page); color: var(--el-text-color-primary); }
     .page { display: grid; gap: 16px; padding: 16px; }
-    .chart { height: 300px; margin-top: 12px; }
     .hint { margin: 0 0 12px; color: var(--el-text-color-secondary); font-size: 13px; }
     .el-table .selected-row > td.el-table__cell { background-color: var(--el-color-primary-light-9); }
   </style>
 </head>
 <body>
   <!--
-    Reads a published MetricView into a table and a chart, executes an Action and reads the MetricView again. A click on
-    a row selects it as a business object and tells the platform with setPageContext; a second click clears it.
+    Reads a published MetricView into a table and a chart, executes an Action through its form and reads the MetricView
+    again. A click on a row selects it as a business object and tells the platform with setPageContext; a second click
+    clears it. The chart is <e-chart> in the platform's chart theme, and the Action's form is <form-fields>: the data
+    engine says which fields the Action has and turns what they hold into typed parameters.
     A real app names its MetricView, Action and object class in the page; this example asks for them, so it runs against
     any domain. It shows MetricViews whose result is a list of row objects.
   -->
@@ -81,77 +82,63 @@
               </el-select>
             </el-form-item>
           </el-form>
-          <rows-chart v-if="x && y" :rows="data ?? []" :x="x" :y="y" :theme="theme"></rows-chart>
+          <rows-chart v-if="x && y" :rows="data ?? []" :x="x" :y="y"></rows-chart>
         </template>
       </el-card>
 
       <el-card>
         <template #header>Action</template>
-        <el-form label-width="160px" @submit.prevent="execute(reload)">
+        <el-form label-width="160px" @submit.prevent="openAction">
           <el-form-item label="Action id">
             <el-input v-model="actionId" placeholder="The id of an Action you may execute"></el-input>
           </el-form-item>
-          <el-form-item label="Parameters (JSON)">
-            <el-input v-model="actionParametersText" type="textarea" :rows="3"
-              placeholder='Every declared parameter with its typed value, e.g. {"orderId": "SO-1001", "quantity": 4}'></el-input>
-          </el-form-item>
           <el-form-item>
-            <el-button type="primary" native-type="submit" :loading="executing" :disabled="!actionId.trim()">
-              Execute, then read the MetricView again
-            </el-button>
+            <el-button native-type="submit" :disabled="!actionId.trim()">Open its form</el-button>
           </el-form-item>
+        </el-form>
+        <el-form v-if="action" label-position="top" @submit.prevent="execute(reload)">
+          <form-fields :fields="action.fields" :values="action.values" :errors="action.errors" :disabled="executing"
+            choose-placeholder="Choose" @input="(key, value) => (action.values[key] = value)"
+            @choose="(field, value) => (action.values[field.key] = value)">
+          </form-fields>
+          <el-button type="primary" native-type="submit" :loading="executing">
+            Execute, then read the MetricView again
+          </el-button>
         </el-form>
       </el-card>
     </metric-view-data>
   </div>
 
   <script type="module">
-    import { computed, createApp, onBeforeUnmount, onMounted, ref, watch } from "vue";
+    import { computed, createApp, ref, watch } from "vue";
     import ElementPlus, { ElMessage } from "element-plus";
-    import * as echarts from "echarts";
     import { createAppContext } from "@ontomato/sdk";
+    import { EChart } from "@ontomato/sdk/chart";
+    import { FormFields, formFieldKey } from "@ontomato/sdk/form";
 
     const context = createAppContext();
     // The page's name as its reader sees it: with the selected row, it is what the platform's agent is told they look at.
     const PAGE = "MetricView rows";
     context.setPageContext({ page: PAGE, selection: null });
 
-    // A bar chart of two chosen columns; the page decides what to plot, the chart only draws it.
+    // A bar chart of two chosen columns: the page builds the option from the rows, <e-chart> draws it in the platform's
+    // chart theme and follows its light and dark themes.
     const RowsChart = {
+      components: { EChart },
       props: {
         rows: { type: Array, required: true },
         x: { type: String, required: true },
         y: { type: String, required: true },
-        theme: { type: String, required: true },
       },
-      template: `<div ref="element" class="chart"></div>`,
+      template: `<e-chart :option="option" :theme="chartTheme" :height="300" style="margin-top: 12px"></e-chart>`,
       setup(props) {
-        const element = ref(null);
-        let chart = null;
-        const option = () => ({
-          backgroundColor: "transparent",
+        const option = computed(() => ({
           tooltip: { trigger: "axis" },
           xAxis: { type: "category", data: props.rows.map((row) => row[props.x]) },
           yAxis: { type: "value" },
           series: [{ type: "bar", name: props.y, data: props.rows.map((row) => row[props.y]) }],
-        });
-        const draw = () => {
-          chart?.dispose();
-          chart = echarts.init(element.value, props.theme === "dark" ? "dark" : undefined);
-          chart.setOption(option());
-        };
-        const resize = new ResizeObserver(() => chart?.resize());
-        onMounted(() => {
-          draw();
-          resize.observe(element.value);
-        });
-        watch(() => props.theme, draw);
-        watch(() => [props.rows, props.x, props.y], () => chart.setOption(option(), true));
-        onBeforeUnmount(() => {
-          resize.disconnect();
-          chart?.dispose();
-        });
-        return { element };
+        }));
+        return { option, chartTheme: context.chartTheme };
       },
     };
 
@@ -165,7 +152,7 @@
     }
 
     createApp({
-      components: { RowsChart },
+      components: { RowsChart, FormFields },
       setup() {
         const metricViewId = ref("");
         const parametersText = ref("{}");
@@ -173,7 +160,8 @@
         const x = ref("");
         const y = ref("");
         const actionId = ref("");
-        const actionParametersText = ref("{}");
+        // The open Action's form: its fields, what they hold and the message each shows.
+        const action = ref(null);
         const executing = ref(false);
 
         // The selected row as a business object: its class, its primary key and the name readers know it by.
@@ -207,12 +195,26 @@
           binding.value = { id: metricViewId.value.trim(), parameters };
         }
 
+        // The data engine declares the Action's fields and the text they start with.
+        async function openAction() {
+          const id = actionId.value.trim();
+          try {
+            const form = await context.actions.form({ id });
+            action.value = { id, fields: form.fields, values: { ...form.values }, errors: {} };
+          } catch (error) {
+            ElMessage.error(error.message);
+          }
+        }
+
+        // What the fields hold comes back as field errors, or as the typed parameters the Action executes with.
         async function execute(reload) {
-          const parameters = parseJson(actionParametersText.value, "Action parameters");
-          if (!parameters) return;
+          const current = action.value;
           executing.value = true;
           try {
-            await context.actions.execute({ id: actionId.value.trim(), parameters });
+            const answer = await context.actions.form({ id: current.id, values: current.values });
+            current.errors = Object.fromEntries(answer.errors.map((error) => [formFieldKey(error.field, "/values/"), error.message]));
+            if (!answer.parameters) return;
+            await context.actions.execute({ id: current.id, parameters: answer.parameters });
             ElMessage.success("Action executed");
             await reload();
           } catch (error) {
@@ -225,10 +227,9 @@
         const columnsOf = (data) => (Array.isArray(data) && data.length ? Object.keys(data[0]) : []);
 
         return {
-          theme: context.theme,
-          metricViewId, parametersText, binding, x, y, actionId, actionParametersText, executing,
+          metricViewId, parametersText, binding, x, y, actionId, action, executing,
           className, keyColumn, nameColumn, selectable,
-          read, execute, columnsOf, toggleRow, rowClass,
+          read, openAction, execute, columnsOf, toggleRow, rowClass,
         };
       },
     }).use(ElementPlus).use(context).mount("#app");

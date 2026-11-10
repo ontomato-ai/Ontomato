@@ -11,12 +11,12 @@ keeps the behaviour of the version it names.
 
 | Path | Content |
 | --- | --- |
-| `sdk.json` | The version, the product and the source commits it was built from, the module files, the library versions |
+| `sdk.json` | The version, the product, the module files and the versions of the libraries |
 | `docs/index.md` | This guide |
-| `docs/reference.md` | The API of `@ontomato/sdk` and `@ontomato/sdk/chat`, generated from their sources |
+| `docs/reference.md` | The API of every `@ontomato/sdk` module, generated from their sources |
 | `docs/element-plus.web-types.json` | Element Plus's own metadata for every component of the bundled version: attributes, events, slots |
-| `examples/basic.html` | Platform context, Element Plus and an ECharts chart |
-| `examples/metric-action.html` | A published MetricView in a table and a chart, the selected row as page context, then an Action and a fresh read |
+| `examples/basic.html` | Platform context, Element Plus, a chart in the platform's theme and a Markdown text |
+| `examples/metric-action.html` | A published MetricView in a table and a chart, the selected row as page context, then an Action through its form and a fresh read |
 | `examples/chat.html` | A conversation with one of the platform's agents |
 
 ## Modules
@@ -25,9 +25,15 @@ keeps the behaviour of the version it names.
 | --- | --- |
 | `vue` | Vue, the build with the template compiler; the only Vue of the page |
 | `element-plus` | Element Plus, complete: the default export installs every component, the named exports include `ElMessage`, `ElMessageBox` and `ElLoading` |
-| `echarts` | ECharts, complete: `import * as echarts from "echarts"` |
+| `echarts` | ECharts, complete, for the helpers an option uses: `import * as echarts from "echarts"`. Draw with `<e-chart>` |
 | `@ontomato/sdk` | `createAppContext()`, the MetricView and Action clients, and `<metric-view-data>` |
+| `@ontomato/sdk/chart` | `EChart`, `<e-chart>`: the chart the platform draws its own charts with |
+| `@ontomato/sdk/markdown` | `MarkdownView`, `<markdown-view>`: Markdown as the platform reads it |
+| `@ontomato/sdk/form` | `FormFields`, `<form-fields>`: a form as its owner declares it, such as an Action's, and `formFieldKey` |
 | `@ontomato/sdk/chat` | The platform's conversation components, `createAssistantClient` and `useShellLabels` |
+
+The chart, Markdown and form components are the ones the platform's own pages use, so an app looks and behaves like
+them. Import each module where the page needs it; a page loads only the modules it imports.
 
 The versions of Vue, Element Plus and ECharts are in `sdk.json`. Use only these modules: the page must not load
 scripts, styles or fonts from the internet, because many installations have no internet access.
@@ -72,8 +78,10 @@ the page is not inside the shell. `app.use(context)` installs the platform's wor
 `<metric-view-data>` component.
 
 - `context.locale` and `context.theme` follow the platform while the app is open. The SDK keeps `<html lang>` and the
-  `dark` class of `<html>` in step, and Element Plus follows both. Use Element Plus's CSS variables, such as
-  `var(--el-bg-color)` and `var(--el-text-color-primary)`, for your own styles, so they follow too.
+  `dark` class of `<html>` in step, and Element Plus and `<markdown-view>` follow both. Use Element Plus's CSS
+  variables, such as `var(--el-bg-color)` and `var(--el-text-color-primary)`, for your own styles, so they follow too.
+- `context.chartTheme` is the theme the platform's own charts are drawn in, for the mode it shows now: give it to every
+  `<e-chart>` and the chart follows the platform's light and dark themes.
 - `context.user` is the signed-in user, for display only. It is `null` in the open-source edition.
 - Every request carries the current user's credential; the open-source edition sends none. The server decides every
   permission: an app sees and changes only what its user may. When the sign-in expires, the shell takes over.
@@ -153,11 +161,100 @@ array. The server checks the user's permission and the values again, and the pro
 refuses. Read the MetricViews that show the changed data again afterwards, for example with `reload()` from
 `<metric-view-data>`.
 
+### An Action's form
+
+Where the reader fills in the parameters, let the Action's own form ask for them: the data engine decides which fields
+an Action has and how the text typed into them becomes typed values, and `<form-fields>` from `@ontomato/sdk/form`
+draws them as the platform's own pages do. Do not build the inputs yourself.
+
+1. `context.actions.form({ id })` answers `{ fields, values }`: the fields in order and the text they start with. Pass
+   `parameters: { orderId: "SO-1001" }` to start fields with values the page already knows, such as the selected row's
+   key, and `readOnlyParameters: ["orderId"]` for those the reader sees but does not change; give the same names to
+   `<form-fields>` as `read-only`.
+2. Draw the fields inside `<el-form label-position="top">` and keep what they hold as the page's state: `input` gives a
+   field's key and its new text, `choose` the field and the chosen value.
+3. On submit, `context.actions.form({ id, values })`, with the same `parameters` and `readOnlyParameters` as on opening,
+   answers what the fields hold: either `errors`, each naming its field by a pointer such as `/values/quantity`
+   (`formFieldKey(error.field, "/values/")` is the key), or the typed `parameters`.
+4. With `parameters`, `context.actions.execute({ id, parameters })` executes the Action.
+
+```html
+<el-form label-position="top" @submit.prevent="submit">
+  <form-fields :fields="fields" :values="values" :errors="errors" :disabled="busy" choose-placeholder="Choose"
+    @input="(key, value) => (values[key] = value)" @choose="(field, value) => (values[field.key] = value)">
+  </form-fields>
+  <el-button type="primary" native-type="submit" :loading="busy">Execute</el-button>
+</el-form>
+```
+
+```js
+import { FormFields, formFieldKey } from "@ontomato/sdk/form";
+
+const form = await context.actions.form({ id: ACTION_ID, parameters: { orderId: row.id } });
+fields.value = form.fields;
+values.value = { ...form.values };
+
+async function submit() {
+  const answer = await context.actions.form({ id: ACTION_ID, parameters: { orderId: row.id }, values: values.value });
+  errors.value = Object.fromEntries(answer.errors.map((error) => [formFieldKey(error.field, "/values/"), error.message]));
+  if (answer.parameters) await context.actions.execute({ id: ACTION_ID, parameters: answer.parameters });
+}
+```
+
+`examples/metric-action.html` executes an Action through its form.
+
 ## Charts
 
-ECharts is the complete library. Create a chart on an element after it is mounted, call `setOption` when the data
-changes, `resize` when the element's size changes and `dispose` when it goes away. Pass `"dark"` as the theme while
-`context.theme` is dark, and create the chart again when the theme changes. `examples/basic.html` does all four.
+`<e-chart>` from `@ontomato/sdk/chart` draws a chart the way the platform draws its own. It draws the ECharts option it
+is given in the theme it is given, creates the chart when it appears, follows the size of its element, applies every
+new option and theme, and disposes of the chart when it goes away. The page only builds the option.
+
+```html
+<e-chart :option="option" :theme="chartTheme" :height="300"></e-chart>
+```
+
+```js
+import { EChart } from "@ontomato/sdk/chart";
+
+createApp({
+  components: { EChart },
+  setup() {
+    const rows = ref([]);
+    const option = computed(() => ({
+      tooltip: { trigger: "axis" },
+      xAxis: { type: "category", data: rows.value.map((row) => row.region) },
+      yAxis: { type: "value" },
+      series: [{ type: "bar", name: "Orders", data: rows.value.map((row) => row.orders) }],
+    }));
+    return { option, chartTheme: context.chartTheme };
+  },
+}).use(ElementPlus).use(context).mount("#app");
+```
+
+- `option` is a complete ECharts option, and each new object redraws the chart: compute it from the data.
+- `theme` is `context.chartTheme`, the platform's chart colours in its current mode; with it the chart follows the
+  platform's light and dark themes. Do not set colours of your own unless a series means a fixed colour.
+- `height` is in pixels or any CSS length; the width follows the element's container.
+
+Import `echarts` itself only for helpers an option needs, such as `new echarts.graphic.LinearGradient(...)`, never to
+create a chart.
+
+## Markdown
+
+`<markdown-view>` from `@ontomato/sdk/markdown` draws a Markdown text as the platform reads it everywhere: GitHub
+Flavored Markdown, a single line break stays a line break, raw HTML shows as written rather than running. It follows the
+light and dark themes by itself.
+
+```html
+<markdown-view :content="description"></markdown-view>
+```
+
+```js
+import { MarkdownView } from "@ontomato/sdk/markdown";
+```
+
+Use it for text that is written in Markdown, such as a description a MetricView returns or a note on the page; labels
+and values stay plain text.
 
 ## Conversations
 
@@ -186,7 +283,7 @@ bundled version. Messages and dialogs come from the named exports: `ElMessage.su
 
 ## Versions
 
-- `x.y.z` is a released SDK. `x.y.z-dev.g<commit>` is a development build of the platform, named by the commits it
-  was built from.
+- `x.y.z` is a released SDK. `x.y.z-dev.<digest>` is a development build, named by a digest of the version's own
+  content: a build with the same content has the same version, and any change makes a new one.
 - A version directory never changes, and installing a newer platform keeps the older versions. To move an app to a
   newer SDK, change the version in its stylesheet link and import map, then test the app again.

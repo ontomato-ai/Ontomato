@@ -5,6 +5,7 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
+    "./chart-theme": "./src/chart-theme.ts",
     "./style.css": "./src/style.css"
   },
   "scripts": {

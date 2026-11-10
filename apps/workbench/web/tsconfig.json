@@ -14,6 +14,7 @@
     "src/**/*.ts",
     "vite.config.ts",
     "../src/__tests__/integration/**/*.ts",
-    "../../../packages/workbench-ui/src/env.d.ts"
+    "../../../packages/workbench-ui/src/env.d.ts",
+    "../../../packages/apps-sdk/src/env.d.ts"
   ]
 }
