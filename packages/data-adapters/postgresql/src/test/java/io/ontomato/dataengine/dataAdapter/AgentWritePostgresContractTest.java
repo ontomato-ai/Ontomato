@@ -5,6 +5,7 @@ import static org.mockito.Mockito.*;
 import com.alibaba.fastjson2.*;
 import com.sun.net.httpserver.HttpServer;
 import io.ontomato.dataengine.controller.WriteFunctionOperationController;
+import io.ontomato.dataengine.config.DataRagConfig;
 import io.ontomato.dataengine.dao.*;
 import io.ontomato.dataengine.bean.function.Function;
 import io.ontomato.dataengine.service.*;
@@ -91,6 +92,7 @@ class AgentWritePostgresContractTest {
       when(rules.query("contract")).thenReturn(rule);
       var writes = new WriteFunctionOperationServiceImpl();
       ReflectionTestUtils.setField(writes, "jsonRuleDao", rules);
+      ReflectionTestUtils.setField(writes, "dataRagConfig", new DataRagConfig());
       ReflectionTestUtils.setField(writes, "dataAdapterRegistry", registry);
       ReflectionTestUtils.setField(writes, "businessConfigService", mock(BusinessConfigService.class));
       var http = new WriteFunctionOperationController();
