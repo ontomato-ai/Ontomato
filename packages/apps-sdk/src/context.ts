@@ -1,3 +1,4 @@
+import type { AppExecutionContext } from "@ontomato/contracts/build-tests";
 import { computed, readonly, ref, shallowRef, watch, type App, type Ref } from "vue";
 import { createI18n } from "vue-i18n";
 import { provideGlobalConfig } from "element-plus";
@@ -25,6 +26,7 @@ import edition from "apps-sdk:edition";
 
 /** What an app gets from the platform shell it runs in. */
 export interface AppContext {
+  readonly executionContext: AppExecutionContext;
   /** The signed-in user, for display only; null in the open-source edition. */
   readonly user: AppHostUser | null;
   /** The platform's language, e.g. `zh-CN`; it follows the platform while the app is open. */
@@ -123,6 +125,7 @@ export function createAppContext(): AppContext {
   const transport = createManagerRequest(
     {
       apiBase: snapshot.apiBase,
+      get executionContext() { return host.executionContext(window); },
       get credential() {
         return host.credential();
       },
@@ -135,6 +138,7 @@ export function createAppContext(): AppContext {
   );
   const metricViews = createMetricViewsClient(transport);
   const context: AppContext = {
+    get executionContext() { return host.executionContext(window); },
     user: snapshot.user,
     locale: readonly(locale),
     theme: readonly(theme),

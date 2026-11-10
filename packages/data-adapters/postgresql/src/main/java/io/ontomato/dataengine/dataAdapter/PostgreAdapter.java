@@ -722,7 +722,7 @@ public class PostgreAdapter implements DataAdapter {
 				}
 			}
 		} catch (Exception e) {
-			throw new IllegalStateException("Sandbox structure operation failed", e);
+			throw new IllegalStateException("Sandbox structure operation failed: " + e.getMessage(), e);
 		}
 	}
 
@@ -739,7 +739,7 @@ public class PostgreAdapter implements DataAdapter {
 				}
 			}
 		} catch (Exception e) {
-			throw new IllegalStateException("Sandbox structure operation failed", e);
+			throw new IllegalStateException("Sandbox structure operation failed: " + e.getMessage(), e);
 		}
 	}
 
@@ -789,7 +789,7 @@ public class PostgreAdapter implements DataAdapter {
 			sql.append(" );");
 			executeSql(sql.toString());
 		} catch (Exception e) {
-			throw new IllegalStateException("Sandbox structure operation failed", e);
+			throw new IllegalStateException("Sandbox structure operation failed: " + e.getMessage(), e);
 		}
 	}
 	

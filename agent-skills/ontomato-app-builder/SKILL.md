@@ -11,4 +11,5 @@ Use the shared [technical guide](GUIDE.md) and bundled `ontomato.mjs` to discove
 
 Action and MetricView execution require every declared parameter name in the JSON object. Explicit `null` is allowed; empty strings and zero are real values. Missing parameters fail as `Missing parameter: <name>` before executing Python. An omitted parameter object means `{}` and works only for a definition with no parameters. The command passes server errors through unchanged.
 
-Numeric `--limit` and `--max` options must be finite numbers; invalid values fail before HTTP rather than becoming JSON null. Production synchronization defaults to dry-run in both CLI and HTTP; only `--confirm` (HTTP `dryRun:false`) writes. HTTP dryRun must be a boolean if present; explicit null is invalid.
+
+Business testing uses the workspace's Java-owned test context. Write the sample under test-data/, run `test start`, then run the business commands against that context. Use `test status` / `test stop`; no live-data reset or production synchronization belongs to this skill. See GUIDE.md for the sample and workspace contract. Old SDK references must be upgraded for business preview.

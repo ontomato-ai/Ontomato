@@ -6,11 +6,16 @@ import io.ontomato.dataengine.service.*;
 import jakarta.servlet.http.HttpServletRequest;
 import java.util.UUID;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.server.ResponseStatusException;
 
 @RestController
 public class OntologyQueryController {
+  @ExceptionHandler(BuildTestException.class)
+  public ResponseEntity<JSONObject> buildTestFailure(BuildTestException failure) {
+    return ResponseEntity.status(failure.getStatusCode()).body(JSONObject.of("code",failure.getCode(),"message",failure.getReason()));
+  }
   private final QueryAccessService authorization;
   private final OntologyQueryService ontology;
   private final QueryOutputService outputs;

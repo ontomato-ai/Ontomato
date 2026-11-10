@@ -8,7 +8,7 @@ for (const [command, option] of [
   [["prod-knowledge", "question"], "--max"],
 ]) {
   for (const value of ["abc", "Infinity", ""]) {
-    test(`${command[0]} rejects ${JSON.stringify(value)} before HTTP`, () => {
+    test(`${command[0]} rejects ${JSON.stringify(value)} before HTTP (retired operations stay unavailable)`, () => {
       const result = spawnSync(process.execPath, [
         "agent-skills/ontomato-app-builder/ontomato.mjs", ...command, option, value,
       ], {
@@ -16,7 +16,7 @@ for (const [command, option] of [
         env: { ...process.env, ONTOMATO_URL: "http://127.0.0.1:1", ONTOMATO_API_KEY: "test-only" },
       });
       assert.notEqual(result.status, 0);
-      assert.ok(result.stderr.includes(`${option}: expected a finite number`), result.stderr);
+      assert.ok(result.stderr.includes(command[0].startsWith("prod-") ? "BUILD_TEST_UNSUPPORTED" : `${option}: expected a finite number`), result.stderr);
       assert.ok(!result.stderr.includes("fetch failed"), result.stderr);
     });
   }
@@ -35,6 +35,10 @@ test("shared analyst numeric options reject invalid values before HTTP", async (
 test("skill Action execution preserves complete explicit parameters and owner errors", async () => {
   let sent;
   const server = createServer(async (request, response) => {
+    if(request.url.endsWith("/build-tests")) {
+      response.setHeader("content-type","application/json");response.end(JSON.stringify({contextId:"22222222-2222-4222-8222-222222222222"}));return;
+    }
+    assert.deepEqual(JSON.parse(request.headers["x-ontomato-execution-context"]),{kind:"build-test",contextId:"22222222-2222-4222-8222-222222222222"});
     let text = "";
     for await (const chunk of request) text += chunk;
     const match = text.match(/name="param"\r\n\r\n([^\r]+)/);
@@ -46,7 +50,7 @@ test("skill Action execution preserves complete explicit parameters and owner er
   });
   await new Promise(resolve => server.listen(0, "127.0.0.1", resolve));
   const run = parameters => promisify(execFile)(process.execPath, ["agent-skills/ontomato-app-builder/ontomato.mjs", "action", "execute", "test", JSON.stringify(parameters)], {
-    env: { ...process.env, ONTOMATO_URL: `http://127.0.0.1:${server.address().port}`, ONTOMATO_API_KEY: "test-only" },
+    env: { ...process.env, ONTOMATO_URL: `http://127.0.0.1:${server.address().port}`, ONTOMATO_API_KEY: "test-only", ONTOMATO_WORKSPACE_ID:"11111111-1111-4111-8111-111111111111" },
   });
   try {
     const parameters = { optional: null, text: "", count: 0 };

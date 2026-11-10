@@ -52,12 +52,12 @@ class BuildTestPostgresIntegrationTest {
     config.getDataAdapterConnections().put("postgresql",connection);
     var adapter=new PostgreAdapter(connection,rule);
     var queryConfig=new io.ontomato.dataengine.config.DataRagConfig();queryConfig.setDslMightTimeFormats(new String[0]);
-    var registry=new DataAdapterRegistry(List.of(new PostgreAdapterProvider()),queryConfig);
+    var registry=new DataAdapterRegistry(List.of(new PostgreAdapterProvider(),new GaussDBAdapterProvider()),queryConfig);
     var vectors=new VectorResourceDao();ReflectionTestUtils.setField(vectors,"jdbcTemplate",jdbc);
     var writes=new WriteFunctionOperationServiceImpl();
     ReflectionTestUtils.setField(writes,"dataRagConfig",queryConfig);
     ReflectionTestUtils.setField(writes,"jsonRuleDao",rules);ReflectionTestUtils.setField(writes,"dataAdapterRegistry",registry);ReflectionTestUtils.setField(writes,"businessConfigService",configs);ReflectionTestUtils.setField(writes,"vectorResourceDao",vectors);
-    var sandbox=new SandboxServiceImpl();
+    var sandbox=spy(new SandboxServiceImpl());
     ReflectionTestUtils.setField(sandbox,"jsonRuleDao",rules);ReflectionTestUtils.setField(sandbox,"dataAdapterRegistry",registry);ReflectionTestUtils.setField(sandbox,"businessConfigService",configs);ReflectionTestUtils.setField(sandbox,"vectorResourceDao",vectors);ReflectionTestUtils.setField(sandbox,"writes",writes);
     var grants=new QueryGrantService(jdbc,"fixture-signing",new WorkbenchServiceAuthentication("fixture-service"));grants.initialize();
     var runtimeProxy=mock(RuntimeCodeClient.class);
@@ -241,6 +241,8 @@ class BuildTestPostgresIntegrationTest {
       assertEquals("contract-group-1",jdbc.queryForObject("SELECT group_id FROM "+restored.sandboxId()+"contract_person WHERE id='contract-person-1'",String.class));
       contexts.close(next.getString("contextId"));
       assertEquals(0,jdbc.queryForObject("SELECT count(*) FROM information_schema.tables WHERE table_schema=? AND table_name LIKE ?",Integer.class,schema,"%"+restored.sandboxId()+"%"));
+      exerciseWorkspaceConcurrency(contexts,sandbox,sample);
+      exerciseFailures(contexts,sandbox,config,connection,jdbc,adminDb,schema,vectors,sample,identity,grants,programs,function,permission,writes,rule);
       rule.getJSONArray("classDef").getJSONObject(0).getJSONArray("attrs").add(JSONObject.of("name","attachment_extra","type","vector"));
       var collision=assertThrows(org.springframework.web.server.ResponseStatusException.class,()->contexts.create("collision",sample,Map.of()));
       assertTrue(collision.getReason().startsWith("BUILD_TEST_SCHEMA_FAILED"),collision.getReason());
@@ -253,4 +255,181 @@ class BuildTestPostgresIntegrationTest {
     adminDb.execute("DROP SCHEMA "+schema+" CASCADE");adminDb.execute("DROP SCHEMA IF EXISTS "+schema+"_runtime CASCADE");
    }
  }
+ private void exerciseWorkspaceConcurrency(BuildTestContextService contexts,SandboxServiceImpl sandbox,JSONObject sample) throws Exception {
+   var entered=new java.util.concurrent.CountDownLatch(1);var release=new java.util.concurrent.CountDownLatch(1);
+   var first=new java.util.concurrent.atomic.AtomicBoolean(true);
+   doAnswer(call->{
+     if(first.compareAndSet(true,false)) { entered.countDown();assertTrue(release.await(20,java.util.concurrent.TimeUnit.SECONDS)); }
+     return call.callRealMethod();
+   }).when(sandbox).createSampleStructure(anyString(),any(),anyString(),any());
+   try(var executor=java.util.concurrent.Executors.newVirtualThreadPerTaskExecutor()) {
+     try {
+       var a=executor.submit(()->contexts.create("serial-workspace",sample,Map.of()));
+       assertTrue(entered.await(10,java.util.concurrent.TimeUnit.SECONDS));
+       var sameStarted=new java.util.concurrent.CountDownLatch(1);
+       var same=executor.submit(()->{sameStarted.countDown();return contexts.create("serial-workspace",sample,Map.of());});
+       assertTrue(sameStarted.await(10,java.util.concurrent.TimeUnit.SECONDS));
+       var other=executor.submit(()->contexts.create("independent-workspace",sample,Map.of()));
+       var b=other.get(10,java.util.concurrent.TimeUnit.SECONDS);assertEquals("READY",b.getString("status"));
+       assertFalse(same.isDone(),"The same workspace must wait while another workspace proceeds");
+       release.countDown();var original=a.get(10,java.util.concurrent.TimeUnit.SECONDS);var replacement=same.get(10,java.util.concurrent.TimeUnit.SECONDS);
+       assertNotEquals(original.getString("contextId"),replacement.getString("contextId"));
+       assertEquals("CLOSED",contexts.status(original.getString("contextId")).getString("status"));
+       contexts.close(replacement.getString("contextId"));contexts.close(b.getString("contextId"));
+       System.out.println("BUILD_TEST_CONCURRENCY_PASS independent workspace proceeds; same workspace serializes and replaces the old context");
+     } finally { release.countDown(); }
+   } finally { doCallRealMethod().when(sandbox).createSampleStructure(anyString(),any(),anyString(),any()); }
+ }
+ private static String signedClaims(JSONObject claims) throws Exception {
+   String encoded=Base64.getUrlEncoder().withoutPadding().encodeToString(JSON.toJSONBytes(claims));
+   var mac=javax.crypto.Mac.getInstance("HmacSHA256");mac.init(new javax.crypto.spec.SecretKeySpec("fixture-signing".getBytes(java.nio.charset.StandardCharsets.UTF_8),"HmacSHA256"));
+   return "oq."+encoded+"."+Base64.getUrlEncoder().withoutPadding().encodeToString(mac.doFinal(encoded.getBytes(java.nio.charset.StandardCharsets.UTF_8)));
+ }
+ private static void expectCode(String code,org.junit.jupiter.api.function.Executable action) {
+   var failure=assertThrows(org.springframework.web.server.ResponseStatusException.class,action);
+   assertTrue(failure.getReason().contains(code),failure.toString());
+ }
+ private static long cleanups(SandboxService sandbox) {
+   return mockingDetails(sandbox).getInvocations().stream().filter(call->call.getMethod().getName().equals("dropSampleStructure")).count();
+ }
+ private void exerciseFailures(BuildTestContextService contexts,SandboxServiceImpl sandbox,BusinessConfig config,
+     DataAdapterConnection connection,JdbcTemplate jdbc,JdbcTemplate admin,String schema,VectorResourceDao vectors,
+     JSONObject sample,IdentityService identity,QueryGrantService grants,ABCProgramServiceImpl programs,Function function,
+     UserDataPermission permission,WriteFunctionOperationService writes,JSONObject rule) throws Exception {
+   var mvc=org.springframework.test.web.servlet.setup.MockMvcBuilders.standaloneSetup(new io.ontomato.dataengine.controller.BuildTestController(contexts)).build();
+   mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get("/ontology/build-tests/current").param("workspaceId","not-started"))
+       .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.status().isOk())
+       .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.content().string("null"));
+   var http=mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart("/ontology/build-tests")
+       .file(new org.springframework.mock.web.MockMultipartFile("sample","sample.json","application/json",JSON.toJSONBytes(sample)))
+       .param("workspaceId","multipart").param("sampleName","test-data/selected.json"))
+       .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.status().isOk()).andReturn();
+   var received=JSON.parseObject(http.getResponse().getContentAsString());
+   assertEquals("test-data/selected.json",received.getJSONObject("sampleSummary").getString("name"));contexts.close(received.getString("contextId"));
+   var access=new QueryAccessService(identity,mock(DataPermissionLookup.class),grants);ReflectionTestUtils.setField(access,"contexts",contexts);
+   var queryMvc=org.springframework.test.web.servlet.setup.MockMvcBuilders.standaloneSetup(new io.ontomato.dataengine.controller.OntologyQueryController(access,(OntologyQueryService)ReflectionTestUtils.getField(programs,"ontology"),null,null)).build();
+   queryMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post("/ontology/query/execute-dsl")
+       .contentType("application/json").content("{\"dsl\":{}}")
+       .header(BuildTestContextService.HEADER,"{\"kind\":\"build-test\",\"contextId\":null}"))
+       .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.status().isBadRequest())
+       .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath("$.code").value("BUILD_TEST_CONTEXT_REQUIRED"));
+   var missing=new MockHttpServletRequest();missing.addHeader(BuildTestContextService.HEADER,"{\"kind\":\"build-test\",\"contextId\":null}");
+   expectCode("BUILD_TEST_CONTEXT_REQUIRED",()->contexts.resolve(missing));
+   expectCode("BUILD_TEST_CONTEXT_NOT_FOUND",()->contexts.require(UUID.randomUUID().toString(),"builder","contract"));
+   ReflectionTestUtils.setField(contexts,"ttlMinutes",2L);
+   long before=System.currentTimeMillis();var configured=contexts.create("configured-ttl",sample,Map.of());long after=System.currentTimeMillis();
+   assertTrue(configured.getLongValue("expiresAt")>=before+120000L && configured.getLongValue("expiresAt")<=after+120000L);
+   contexts.close(configured.getString("contextId"));ReflectionTestUtils.setField(contexts,"ttlMinutes",60L);
+   var context=contexts.create("failures",sample,Map.of());String id=context.getString("contextId");
+   var target=contexts.require(id,"builder","contract");
+   queryMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post("/ontology/query/distinct-values")
+       .contentType("application/json").content("{\"className\":\"outside\",\"attribute\":\"id\"}")
+       .header(BuildTestContextService.HEADER,JSONObject.of("kind","build-test","contextId",id).toJSONString()))
+       .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.status().isForbidden())
+       .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath("$.code").value("BUILD_TEST_FORBIDDEN"));
+
+   var age=rule.getJSONArray("classDef").getJSONObject(0).getJSONArray("attrs").toJavaList(JSONObject.class).stream().filter(field->"age".equals(field.getString("name"))).findFirst().orElseThrow();
+   Object priorType=age.get("type");age.put("type","long");
+   try {
+     expectCode("BUILD_TEST_CONTEXT_CHANGED",()->contexts.require(id,"builder","contract"));
+     queryMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post("/ontology/query/distinct-values")
+         .contentType("application/json").content("{\"className\":\"contract_person\",\"attribute\":\"age\"}")
+         .header(BuildTestContextService.HEADER,JSONObject.of("kind","build-test","contextId",id).toJSONString()))
+         .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.status().isConflict())
+         .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath("$.code").value("BUILD_TEST_CONTEXT_CHANGED"));
+   } finally {age.put("type",priorType);}
+   expectCode("BUILD_TEST_FORBIDDEN",()->contexts.require(id,"other","contract"));
+   expectCode("BUILD_TEST_FORBIDDEN",()->contexts.require(id,"builder","other-domain"));
+   jdbc.update("UPDATE build_test_contexts SET state='PREPARING' WHERE id=?",id);
+   expectCode("BUILD_TEST_CONTEXT_NOT_READY",()->contexts.require(id,"builder","contract"));
+   jdbc.update("UPDATE build_test_contexts SET state='READY' WHERE id=?",id);
+   var invalid=JSON.parseObject(JSON.toJSONString(function),Function.class);
+   int resourceCount=jdbc.queryForObject("SELECT count(*) FROM information_schema.tables WHERE table_schema=? AND table_name LIKE ?",Integer.class,schema,"%"+target.sandboxId()+"%");
+   assertTrue(assertThrows(IllegalArgumentException.class,()->writes.appendVector("contract_person","age","contract-person-1","text",null,"txt",target.sandboxId(),"contract")).getMessage().contains("attrName"));
+   assertTrue(assertThrows(IllegalArgumentException.class,()->writes.deleteVector("contract_person","age","contract-person-1","file.txt",target.sandboxId(),"contract")).getMessage().contains("attrName"));
+   assertEquals(resourceCount,jdbc.queryForObject("SELECT count(*) FROM information_schema.tables WHERE table_schema=? AND table_name LIKE ?",Integer.class,schema,"%"+target.sandboxId()+"%"));
+   invalid.getReturnDef().setClassNames(List.of());
+   expectCode("BUILD_TEST_FORBIDDEN",()->programs.execute(UUID.randomUUID().toString(),invalid,"builder",permission,target.sandboxId(),"en",1,"contract",null,target));
+   invalid.getReturnDef().setClassNames(List.of("outside"));
+   expectCode("BUILD_TEST_FORBIDDEN",()->programs.execute(UUID.randomUUID().toString(),invalid,"builder",permission,target.sandboxId(),"en",1,"contract",null,target));
+   expectCode("BUILD_TEST_FORBIDDEN",()->grants.issueExecution(PythonAuthority.read("builder","contract").withTarget(target).withClasses(List.of()),UUID.randomUUID().toString(),target.expiresAt()));
+   assertEquals(0,jdbc.queryForObject("SELECT count(*) FROM query_runtime_grants WHERE context_id=?",Integer.class,id));
+   doThrow(new org.springframework.web.server.ResponseStatusException(org.springframework.http.HttpStatus.FORBIDDEN,"query permission required"))
+       .when(identity).requireQueryAccess();
+   expectCode("query permission required",()->contexts.retryCleanup("not-a-record"));
+   doNothing().when(identity).requireQueryAccess();
+   String grantRun=UUID.randomUUID().toString();
+   String token=grants.issueExecution(PythonAuthority.read("builder","contract").withTarget(target),grantRun,target.expiresAt());
+   var claims=JSON.parseObject(Base64.getUrlDecoder().decode(token.split("\\.")[1]));
+   claims.put("classNames",new JSONArray());String emptyScope=signedClaims(claims);
+   expectCode("BUILD_TEST_FORBIDDEN",()->grants.verify(emptyScope,grantRun,"/ontology/query/execute-dsl"));
+   claims.remove("contextId");String noContext=signedClaims(claims);
+   expectCode("Invalid, expired or revoked query grant",()->grants.verify(noContext,grantRun,"/ontology/query/execute-dsl"));
+   jdbc.update("UPDATE build_test_contexts SET expires_at=0 WHERE id=?",id);
+   expectCode("BUILD_TEST_CONTEXT_EXPIRED",()->contexts.require(id,"builder","contract"));
+   expectCode("BUILD_TEST_CONTEXT_EXPIRED",()->grants.verify(token,grantRun,"/ontology/query/execute-dsl"));
+   // This protocol-only credential never started a runtime execution; remove its fixture row.
+   jdbc.update("DELETE FROM query_runtime_grants WHERE run_id=? AND context_id=?",grantRun,id);
+   contexts.expire();
+   assertEquals(0,jdbc.queryForObject("SELECT count(*) FROM information_schema.tables WHERE table_schema=? AND table_name LIKE ?",Integer.class,schema,"%"+target.sandboxId()+"%"));
+   expectCode("BUILD_TEST_CONTEXT_EXPIRED",()->contexts.require(id,"builder","contract"));
+   var closed=contexts.create("closed",sample,Map.of());contexts.close(closed.getString("contextId"));
+   expectCode("BUILD_TEST_CONTEXT_CLOSED",()->contexts.require(closed.getString("contextId"),"builder","contract"));
+   config.setDataAdapter("gaussdb");
+   expectCode("BUILD_TEST_UNSUPPORTED",()->contexts.create("unsupported",sample,Map.of()));config.setDataAdapter("postgresql");
+   assertEquals(0,jdbc.queryForObject("SELECT count(*) FROM build_test_contexts WHERE workspace_id='unsupported'",Integer.class));
+   var missingFile=JSON.parseObject(Files.readString(Path.of("../../data-engine-core/src/test/resources/agent-contracts/sample.json")));
+   expectCode("BUILD_TEST_SAMPLE_INVALID",()->contexts.create("missing-file",missingFile,Map.of()));
+   System.out.println("BUILD_TEST_FAILURE_CASES_PASS missing/not-ready/prepare-failed/definition-changed/expired/closed/owner/domain/empty-scope/outside-scope/unsupported/missing-file/auth-before-lookup; rejected Actions issued no grants; protocol-only grant fixture removed; invalid vector attributes created no resources");
+
+   String role="bt_role_"+UUID.randomUUID().toString().replace("-","");
+   String originalUser=connection.getString("user"),originalPassword=connection.getString("password");
+   admin.execute("CREATE ROLE "+role+" LOGIN PASSWORD 'fixture-only'");
+   try {
+     admin.execute("GRANT USAGE ON SCHEMA "+schema+" TO "+role);
+     connection.put("user",role);connection.put("password","fixture-only");
+     expectCode("BUILD_TEST_SCHEMA_FAILED",()->contexts.create("no-create",sample,Map.of()));
+     var row=JSON.parseObject(jdbc.queryForObject("SELECT data::text FROM build_test_contexts WHERE workspace_id='no-create'",String.class));
+     assertTrue(row.getString("prepareError").contains("permission denied"),row.toJSONString());
+     String failedId=contexts.current("no-create").getString("contextId");
+     expectCode("BUILD_TEST_CONTEXT_NOT_READY",()->contexts.require(failedId,"builder","contract"));
+     verify(sandbox,times(1)).createSampleStructure(eq(row.getString("sandboxId")),any(),eq("contract"),any());
+     long attempts=cleanups(sandbox);contexts.expire();assertEquals(attempts,cleanups(sandbox));
+     assertEquals(0,jdbc.queryForObject("SELECT count(*) FROM information_schema.tables WHERE table_schema=? AND table_name LIKE ?",Integer.class,schema,"%"+row.getString("sandboxId")+"%"));
+     admin.execute("GRANT CREATE ON SCHEMA "+schema+" TO "+role);
+     var cleanup=contexts.create("cleanup-denied",sample,Map.of());String cleanupId=cleanup.getString("contextId");
+     var table=cleanup.getJSONArray("resources").toJavaList(JSONObject.class).stream().filter(resource->"table".equals(resource.getString("kind"))).findFirst().orElseThrow();
+     admin.execute("ALTER TABLE "+schema+"."+table.getString("name")+" OWNER TO "+originalUser);
+     expectCode("BUILD_TEST_CLEANUP_FAILED",()->contexts.close(cleanupId));
+     String error=contexts.status(cleanupId).getString("cleanupError");
+     assertTrue(error.contains("recorded sandbox table"),error);
+     attempts=cleanups(sandbox);contexts.expire();assertEquals(attempts,cleanups(sandbox));
+     assertEquals(error,contexts.status(cleanupId).getString("cleanupError"));
+     admin.execute("ALTER TABLE "+schema+"."+table.getString("name")+" OWNER TO "+role);
+     assertEquals("",contexts.retryCleanup(cleanupId).getString("cleanupError"));
+     System.out.println("BUILD_TEST_FAILURE_CASES_PASS no-DDL-permission/cleanup-permission; one preparation, no automatic retry; explicit cleanup succeeds after privilege restoration");
+   } finally {
+     connection.put("user",originalUser);connection.put("password",originalPassword);
+     admin.execute("DROP OWNED BY "+role);admin.execute("DROP ROLE "+role);
+   }
+   String folder="blocked_"+UUID.randomUUID();Path directory=Path.of("conf",folder);Files.createDirectories(directory);
+   Files.setPosixFilePermissions(directory,java.nio.file.attribute.PosixFilePermissions.fromString("r-x------"));
+   Object prior=ReflectionTestUtils.getField(vectors,"dirName");ReflectionTestUtils.setField(vectors,"dirName",folder);
+   try {
+     expectCode("BUILD_TEST_DATA_FAILED",()->contexts.create("directory-denied",sample,Map.of()));
+     var row=JSON.parseObject(jdbc.queryForObject("SELECT data::text FROM build_test_contexts WHERE workspace_id='directory-denied'",String.class));
+     assertTrue(row.getString("prepareError").contains("vector resource directory"),row.toJSONString());
+     String cleanupError=jdbc.queryForObject("SELECT cleanup_error FROM build_test_contexts WHERE workspace_id='directory-denied'",String.class);
+     assertTrue(cleanupError.contains("not confirmed"),cleanupError);
+     verify(sandbox,times(1)).createSampleStructure(eq(row.getString("sandboxId")),any(),eq("contract"),any());
+     long attempts=cleanups(sandbox);contexts.expire();assertEquals(attempts,cleanups(sandbox));
+     assertEquals(2,jdbc.queryForObject("SELECT count(*) FROM information_schema.tables WHERE table_schema=? AND table_name LIKE ?",Integer.class,schema,"%"+row.getString("sandboxId")+"%"));
+     System.out.println("BUILD_TEST_FAILURE_CASES_PASS directory-unwritable; original preparation error retained, cleanup-unconfirmed retained, two recorded business tables remain; no automatic retry");
+   } finally {
+     ReflectionTestUtils.setField(vectors,"dirName",prior);
+     Files.setPosixFilePermissions(directory,java.nio.file.attribute.PosixFilePermissions.fromString("rwx------"));Files.delete(directory);
+   }
+   assertEquals(7,jdbc.queryForObject("SELECT age FROM contract_person WHERE id='contract-person-1'",Integer.class));
+ }
+
 }

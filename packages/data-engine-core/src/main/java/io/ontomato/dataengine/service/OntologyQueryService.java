@@ -52,6 +52,7 @@ public class OntologyQueryService {
 
   private String checkedClass(String name, QueryAccessService.Access access) {
     String normalized = DBSchemaUtil.normalizeClassName(name, classes(access));
+    if(access.target().testing()) access.target().requireClasses(List.of(normalized));
     List<String> scope =
         access.classNames();
     if (scope != null && !scope.isEmpty() && !scope.contains(normalized))

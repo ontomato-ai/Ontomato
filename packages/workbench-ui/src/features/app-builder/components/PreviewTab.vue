@@ -1,10 +1,10 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref, watch } from "vue";
+import { computed, onBeforeUnmount, ref, watch, inject } from "vue";
 import { useI18n } from "vue-i18n";
 import { Check, CircleAlert, Files, LoaderCircle } from "lucide-vue-next";
-import type { WorkspacePreviewToken } from "@ontomato/contracts/workspaces";
 import { apiUrl } from "../../../utils/api-base";
-import { getSynchronizedNow } from "../../../utils/server-time";
+import { builderPlatformKey } from "../platform";
+import { useBuildTestState } from "../build-test-state";
 import { builderApi } from "../api";
 import { errorText } from "../panel";
 import type { WorkspaceView } from "../workspace-view";
@@ -21,25 +21,32 @@ const props = defineProps<{ view: WorkspaceView; reload: number; flash: string |
 const frameWindow = defineModel<Window | null>("frameWindow", { required: true });
 const { t } = useI18n();
 
-let token: (WorkspacePreviewToken & { workspaceId: string }) | null = null;
 let loads = 0;
 const src = ref<string | null>(null);
 const frame = ref(0);
 const error = ref<string | null>(null);
 const hasPage = computed(() => props.view.files.some((file) => file.path === "index.html"));
 const workspace = computed(() => props.view.workspace);
+const platform=inject(builderPlatformKey)!;
+const testState=useBuildTestState(()=>workspace.value?.id ?? null);
+defineExpose({buildTestState:testState.state,refreshBuildTestState:testState.refresh,previewError:computed(()=>error.value)});
+let registration: ReturnType<typeof platform.registerPreviewFrame> | null = null;
+watch(testState.state,(context,previous)=>{
+  if(context.kind==="build-test" && previous.kind==="build-test" && context.contextId===previous.contextId && context.workspaceId===previous.workspaceId && context.status===previous.status) registration?.update(context);
+  else void load();
+});
 
 async function load() {
   const current = workspace.value;
   const attempt = ++loads;
   error.value = null;
+  src.value = null;
   if (!current || !hasPage.value) {
     src.value = null;
     return;
   }
   try {
-    if (!token || token.workspaceId !== current.id || Date.parse(token.expiresAt) <= getSynchronizedNow())
-      token = { ...(await builderApi.previewToken(current.id)), workspaceId: current.id };
+    const token=await builderApi.previewToken(current.id);
     if (attempt !== loads) return;
     src.value = apiUrl(`/workspaces/${encodeURIComponent(current.id)}/preview/${encodeURIComponent(token.token)}/index.html`);
     frame.value++;
@@ -52,8 +59,12 @@ watch([() => workspace.value?.id, () => workspace.value?.headCommit, hasPage, ()
 
 // Each load makes a new frame element, so a reloaded app is a new window.
 const iframe = ref<HTMLIFrameElement | null>(null);
-watch(iframe, (element) => (frameWindow.value = element?.contentWindow ?? null), { flush: "post" });
-onBeforeUnmount(() => (frameWindow.value = null));
+watch(iframe, (element) => {
+  registration?.dispose();registration=null;
+  frameWindow.value = element?.contentWindow ?? null;
+  if(frameWindow.value) registration=platform.registerPreviewFrame(frameWindow.value,testState.state.value);
+}, { flush: "post" });
+onBeforeUnmount(() => {registration?.dispose();frameWindow.value=null;});
 </script>
 
 <template>
