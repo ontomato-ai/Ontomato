@@ -31,6 +31,7 @@ import { useDarkMode } from "../theme";
  */
 const props = withDefaults(
   defineProps<{
+    /** The text to draw, in the product Markdown. */
     content: string;
     /** False while the text is still arriving: an unfinished link or image at its end reaches its node as `loading`. */
     final?: boolean;

@@ -1,7 +1,6 @@
 import { inject, type InjectionKey, type Ref, type Slot } from "vue";
 import type { RuntimeArtifact } from "@ontomato/contracts/agent-runtime-artifacts";
 import type { AgentHostClient } from "./host";
-import type { ChartTheme } from "./chart-theme";
 import type {
   ArtifactRendererOverride,
   OpenArtifact,
@@ -13,7 +12,6 @@ export interface ShellContext extends Pick<AgentHostClient, "readRetrieval" | "r
   labels: Ref<ShellLabels>;
   artifactRenderers: Ref<readonly ArtifactRendererOverride[]>;
   toolRenderers: Ref<readonly ToolRendererOverride[]>;
-  chartTheme: Ref<ChartTheme>;
   /** Host slots for business actions: `artifact-actions` ({artifact}) and `message-actions`. */
   slots: { artifactActions?: Slot; messageActions?: Slot; datasetSelectionActions?: Slot };
   resolveArtifact(runId: string, path: string): Promise<RuntimeArtifact | null>;

@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import { computed, onMounted, provide, ref, toRef, useSlots, watch } from "vue";
-import { defaultChartTheme, type ChartTheme } from "../chart-theme";
 import { shellContextKey, type ShellContext } from "../context";
 import type { AgentHostClient } from "../host";
 import type { AgentNav } from "../useAgentNav";
@@ -50,7 +49,6 @@ const props = withDefaults(
     feedback?: ShellFeedbackPort;
     artifactRenderers?: readonly ArtifactRendererOverride[];
     toolRenderers?: readonly ToolRendererOverride[];
-    chartTheme?: ChartTheme;
     /** One line naming the open page and its selection, appended to messages sent while a paired page is open. */
     pageContext?: string | null;
     /** Recognises an in-app address in an answer and returns how to open its page; null leaves it as text. */
@@ -66,7 +64,7 @@ const props = withDefaults(
     /** The application's own entry at the foot of its column (its settings, the model the diagnosis runs on). */
     bottom?: { label: string; icon: string } | null;
   }>(),
-  { artifactRenderers: () => [], toolRenderers: () => [], chartTheme: () => defaultChartTheme, title: "", bottom: null },
+  { artifactRenderers: () => [], toolRenderers: () => [], title: "", bottom: null },
 );
 const slots = useSlots();
 const emit = defineEmits<{ error: [message: string]; featureAction: [id: string]; openBottom: []; run: [change: ShellRunChange] }>();
@@ -90,7 +88,6 @@ provide(shellContextKey, {
   labels: toRef(props, "labels"),
   artifactRenderers: toRef(props, "artifactRenderers"),
   toolRenderers: toRef(props, "toolRenderers"),
-  chartTheme: toRef(props, "chartTheme"),
   slots: {
     get datasetSelectionActions() {
       return slots["dataset-selection-actions"];

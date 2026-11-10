@@ -3,7 +3,6 @@ import { ossBrand } from "@ontomato/design-tokens/oss";
 import type { BrandSource } from "@ontomato/design-tokens";
 import { installWorkbenchBrand } from "../../../brand";
 import { chartPalette } from "../chart-palette";
-import { nativeEchartsTheme } from "../components/utils/echartsTheme";
 import { EchartsGenerator } from "../components/utils/echartsGenerator";
 
 /** A brand unlike the open-source one, to show the charts follow whichever brand the edition installs. */
@@ -30,15 +29,7 @@ describe("chart colours", () => {
       expect(palette.textSecondary).toBe(ossBrand[mode].muted);
       expect(palette.line).toBe(ossBrand[mode].line);
       expect(palette.surface).toBe(ossBrand[mode].surface);
-      expect(palette.sequential[4]).toBe(ossBrand[mode].primary);
     }
-  });
-
-  it("follow the installed brand in each mode", () => {
-    installWorkbenchBrand(other);
-    expect(nativeEchartsTheme(false).color).toEqual(other.dataviz.light);
-    expect(nativeEchartsTheme(false).textStyle).toEqual({ color: "#101010" });
-    expect(nativeEchartsTheme(true).color).toEqual(other.dataviz.dark);
   });
 
   it("reach the generated dashboard options", () => {

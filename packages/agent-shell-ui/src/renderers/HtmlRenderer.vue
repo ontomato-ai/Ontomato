@@ -1,9 +1,8 @@
 <script setup lang="ts">
 import type { ArtifactRendererProps } from "../types";
 import { useArtifactText } from "./useArtifactBlob";
-import { computed, inject } from "vue";
-import { shellContextKey } from "../context";
-import { useDarkMode } from "@ontomato/foundation-ui/theme";
+import { computed } from "vue";
+import { useChartTheme } from "@ontomato/foundation-ui/chart";
 import { themedChartHtml } from "@ontomato/contracts/chart-presentation";
 
 /**
@@ -12,13 +11,12 @@ import { themedChartHtml } from "@ontomato/contracts/chart-presentation";
  */
 const props = defineProps<ArtifactRendererProps>();
 const { text, error } = useArtifactText(props);
-const shell = inject(shellContextKey)!;
-const dark = useDarkMode();
+const theme = useChartTheme();
+// Read again with the theme when the page switches mode, so the variables are the new mode's.
 const html = computed(() => {
-  const theme = shell.chartTheme.value(dark.value);
   const css = getComputedStyle(document.documentElement);
   const properties = Object.fromEntries(Array.from(css).filter((key) => key.startsWith("--el-") || key.startsWith("--chart-")).map((key) => [key, css.getPropertyValue(key).trim()]));
-  return themedChartHtml(text.value ?? "", theme, properties);
+  return themedChartHtml(text.value ?? "", theme.value, properties);
 });
 </script>
 

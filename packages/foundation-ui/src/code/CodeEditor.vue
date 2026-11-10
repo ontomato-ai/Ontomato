@@ -20,16 +20,20 @@ import { useDarkMode } from "../theme";
  * only shown, never content.
  */
 const props = defineProps<{
+  /** The text being edited; bind it with `v-model`. */
   modelValue: string;
-  /** JavaScript when not given. */
+  /** The language the text is highlighted as; JavaScript when not given. */
   language?: "javascript" | "json" | "markdown" | "html" | "python" | "text";
+  /** Shown while the text is empty; it never becomes the text. */
   placeholder?: string;
-  /** In pixels; 300 when not given. */
+  /** The editor's least height in pixels; 300 when not given. */
   minHeight?: number;
+  /** The text can be selected, searched and copied, but not changed. */
   readonly?: boolean;
 }>();
 
 const emit = defineEmits<{
+  /** The text after each change the reader makes. */
   "update:modelValue": [value: string];
 }>();
 

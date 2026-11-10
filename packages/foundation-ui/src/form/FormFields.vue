@@ -10,7 +10,9 @@ type SelectField = Extract<FormField, { type: "select" }>;
  * fields come in the owner's order with its labels, help and limits; the page adds no field and no rule.
  */
 defineProps<{
+  /** The fields in the owner's order, each a select or a text as the owner declares it. */
   fields: readonly FormField[];
+  /** What each field holds now, as text by field key; the caller keeps it, following `input` and `choose`. */
   values: Readonly<Record<string, string>>;
   /** The message each field shows, by field key. */
   errors: Readonly<Record<string, string>>;

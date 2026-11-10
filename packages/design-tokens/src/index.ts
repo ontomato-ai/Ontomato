@@ -178,7 +178,18 @@ export function brandProperties(brand: BrandSource, mode: BrandMode): Record<str
   };
   if (c.brandMark) properties["--brand-mark"] = c.brandMark;
   palette.forEach((color, index) => (properties[`--chart-${index + 1}`] = color));
+  chartSequential(brand, mode).forEach((color, index) => (properties[`--chart-sequential-${index + 1}`] = color));
   return properties;
+}
+
+/**
+ * The sequential scale of charts (DESIGN.md "Charts"), from low to high magnitude: primary from near the surface to
+ * past primary toward ink, or, on a labelled product colour card, from its last chart colour to its first.
+ */
+function chartSequential(brand: BrandSource, mode: BrandMode): string[] {
+  const c = brand[mode];
+  if (brand.datavizLabeled) return [brand.dataviz[mode][7], brand.dataviz[mode][0]];
+  return [0.9, 0.7, 0.5, 0.25, 0].map((weight) => mix(c.primary, c.surface, weight)).concat(mix(c.primary, c.ink, 0.35));
 }
 
 function primaryTint(c: BrandColors) {

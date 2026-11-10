@@ -7,6 +7,7 @@ import { join } from "node:path";
 const require = createRequire(import.meta.url);
 const ts = require("typescript");
 const { createChecker } = require("vue-component-meta");
+const { parse: parseComponent } = require("vue/compiler-sfc");
 
 /** Longer printed types read better as the type their source names. */
 const PRINTED_LIMIT = 160;
@@ -28,14 +29,37 @@ function table(lines, head, rows) {
   lines.push(`| ${head.join(" | ")} |`, `| ${head.map(() => "---").join(" | ")} |`, ...rows.map((row) => `| ${row.join(" | ")} |`), "");
 }
 
-function component(meta, lines) {
+/**
+ * The comment on each event a component declares in `defineEmits<{ … }>()`, by event name. vue-component-meta reads
+ * the events from the emit function Vue's types build from that declaration, which keeps no comments.
+ */
+function eventDescriptions(file) {
+  const descriptions = new Map();
+  const script = parseComponent(readFileSync(file, "utf8"), { filename: file }).descriptor.scriptSetup;
+  if (!script) return descriptions;
+  const visit = (node) => {
+    const [declared] = ts.isCallExpression(node) && ts.isIdentifier(node.expression) && node.expression.text === "defineEmits" ? node.typeArguments ?? [] : [];
+    if (declared && ts.isTypeLiteralNode(declared)) {
+      for (const member of declared.members) {
+        const text = ts.getJSDocCommentsAndTags(member).map((doc) => ts.getTextOfJSDocComment(doc.comment) ?? "").join(" ");
+        descriptions.set(member.name.text, text);
+      }
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(ts.createSourceFile(file, script.content, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS));
+  return descriptions;
+}
+
+function component(meta, file, lines) {
   const props = meta.props.filter((prop) => !prop.global);
   table(lines, ["Prop", "Type", "Required", "Default", "Description"], props.map((prop) => [
     `\`${kebab(prop.name)}\``, `\`${cell(propType(prop))}\``, prop.required ? "yes" : "no",
     prop.default === undefined ? "" : `\`${cell(prop.default)}\``, cell(prop.description),
   ]));
+  const events = eventDescriptions(file);
   table(lines, ["Event", "Arguments", "Description"], meta.events.map((event) => [
-    `\`${kebab(event.name)}\``, `\`${cell(event.type)}\``, cell(event.description),
+    `\`${kebab(event.name)}\``, `\`${cell(event.type)}\``, cell(events.get(event.name)),
   ]));
   table(lines, ["Slot", "Slot props", "Description"], meta.slots.map((slot) => [
     `\`${slot.name}\``, `\`${cell(slot.type)}\``, cell(slot.description),
@@ -70,7 +94,7 @@ export function referenceMarkdown({ root, tsconfig, entries }) {
       lines.push(file.endsWith(".vue") ? `### \`<${kebab(name)}>\` ${name}` : `### ${name}`, "");
       if (docs) lines.push(docs, "");
       if (file.endsWith(".vue")) {
-        component(meta.getComponentMeta(file, "default"), lines);
+        component(meta.getComponentMeta(file, "default"), file, lines);
       } else if (ts.isFunctionDeclaration(declaration)) {
         // An inferred return type can expand into a wall of text; the declaration as written names its parts instead.
         const signatures = checker.getTypeOfSymbolAtLocation(symbol, declaration).getCallSignatures()
