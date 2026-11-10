@@ -377,6 +377,10 @@ onUnmounted(() => {
   box-shadow: 0 0 0 2px var(--el-color-primary-light-8);
 }
 
+.code-editor :deep(.cm-search input[name="search"]) {
+  flex-basis: 120px;
+}
+
 .code-editor :deep(.cm-search .cm-button) {
   height: 28px;
   min-width: 28px;
