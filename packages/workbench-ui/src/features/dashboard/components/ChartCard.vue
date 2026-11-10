@@ -55,18 +55,16 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import interact from "interactjs";
 import { ElMessage, ElMessageBox } from "element-plus";
 import { TriangleAlert } from "lucide-vue-next";
-import { EChart } from "@ontomato/foundation-ui/chart";
+import { EChart, useChartTheme } from "@ontomato/foundation-ui/chart";
 import ChartDataOverlay from "./ChartDataOverlay.vue";
 import ChartToolbar from "./ChartToolbar.vue";
 import ChartZoomModal from "./ChartZoomModal.vue";
 import { extractTabularDataFromOption, safeCloneOption } from "./utils/chartTabular";
 import { modifyResultSetName, deleteResultSet } from "../api";
 import { clamp, parseGridColumns, partialResultNotice } from "./utils/dashboardHelper";
-import { nativeEchartsTheme } from "./utils/echartsTheme";
 import { chartBrandColors } from "@ontomato/contracts/chart-presentation";
 import { useI18n } from "vue-i18n";
 import { workbenchContent } from "../../../content";
-import { useTheme } from "../../../composables/useTheme";
 
 /** Loading mask background follows the app's original value (open source: transparent). */
 const transparentLoading = workbenchContent().dashboard.loadingMask === "transparent";
@@ -93,9 +91,8 @@ const emit = defineEmits([
 
 const rootRef = ref(null);
 let interactable = null;
-const { isDark } = useTheme();
-const theme = computed(() => nativeEchartsTheme(isDark.value));
-/** The card's option in the brand colours of the dashboard theme. */
+const theme = useChartTheme();
+/** The card's option in the brand colours of the platform's chart theme. */
 const brandedOption = computed(() => chartBrandColors(props.chart.option, theme.value));
 const dataOpen = ref(false);
 const tabular = ref(null);

@@ -1,19 +1,17 @@
 <script setup lang="ts">
 import { computed, inject, onErrorCaptured, ref, watch } from "vue";
-import { EChart } from "@ontomato/foundation-ui/chart";
-import { useDarkMode } from "@ontomato/foundation-ui/theme";
+import { EChart, useChartTheme } from "@ontomato/foundation-ui/chart";
 import { shellContextKey } from "../context";
 import type { ArtifactRendererProps } from "../types";
 import { useArtifactText } from "./useArtifactBlob";
 import { chartReadingLayout } from "./chart-layout";
 import { chartBrandColors } from "./chart-colors";
 
-/** .chart.json: an ECharts option object as plain JSON, drawn with the host's chart theme. */
+/** .chart.json: an ECharts option object as plain JSON, drawn in the platform's chart theme. */
 const props = defineProps<ArtifactRendererProps>();
 const shell = inject(shellContextKey)!;
-const isDark = useDarkMode();
 const { text, error } = useArtifactText(props);
-const theme = computed(() => shell.chartTheme.value(isDark.value));
+const theme = useChartTheme();
 /** The height the chart is drawn at; the reading layout sizes the legend band from it. */
 const drawnHeight = ref<number>();
 const drawError = ref(false);

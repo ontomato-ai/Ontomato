@@ -1,7 +1,7 @@
-import { computed, readonly, ref, type App, type Ref } from "vue";
+import { computed, readonly, ref, shallowRef, watch, type App, type Ref } from "vue";
 import { createI18n } from "vue-i18n";
 import { provideGlobalConfig } from "element-plus";
-import { defaultChartTheme } from "@ontomato/agent-shell-ui/chart-theme";
+import { chartTheme } from "@ontomato/foundation-ui/chart";
 import { installBrandTheme } from "@ontomato/design-tokens";
 import {
   APP_HOST_GLOBAL,
@@ -33,8 +33,8 @@ export interface AppContext {
   readonly theme: Readonly<Ref<AppHostTheme>>;
   /**
    * The ECharts theme the platform's own charts are drawn in, for the current light or dark mode: the edition's brand
-   * colours for the series, its text and line colours. Pass it to `<e-chart :theme="chartTheme">`; the chart follows
-   * the platform when it changes.
+   * colours for the series and the sequential scale, its text and line colours. Pass it to
+   * `<e-chart :theme="chartTheme">`; the chart follows the platform when it changes.
    */
   readonly chartTheme: Readonly<Ref<Record<string, unknown>>>;
   /** Reads published MetricViews: `read({ id, parameters })` resolves to the MetricView's result. */
@@ -108,6 +108,12 @@ export function createAppContext(): AppContext {
   };
   installBrandTheme(edition.brand);
   follow(snapshot);
+  // The platform's chart theme, read from the brand stylesheet installed above, which holds both modes: read again once
+  // a switch of the platform's theme has switched the `dark` class.
+  const charts = shallowRef(chartTheme());
+  watch(theme, () => {
+    charts.value = chartTheme();
+  });
   const stop = host.subscribePreferences(follow);
   // The shell outlives this frame: stop its listener when the frame goes away, not when the page is only cached.
   window.addEventListener("pagehide", (event) => {
@@ -132,8 +138,7 @@ export function createAppContext(): AppContext {
     user: snapshot.user,
     locale: readonly(locale),
     theme: readonly(theme),
-    // The brand stylesheet installed above holds both modes; read when used, the `dark` class has followed the theme.
-    chartTheme: computed(() => defaultChartTheme(theme.value === "dark")),
+    chartTheme: charts,
     metricViews,
     actions: createActionsClient(transport),
     navigate: (path) => host.navigate(path),

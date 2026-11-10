@@ -9,7 +9,6 @@ import "@ontomato/agent-shell-ui/style.css";
 import type { WorkbenchAppearance } from "@ontomato/contracts/workbench-appearance";
 import { AgentSettingsNav, AgentSettingsPage } from "../../agents";
 import { getWorkbenchAppearance } from "../api";
-import { nativeEchartsTheme } from "../../dashboard/components/utils/echartsTheme";
 import { createAssistantClient, createAssistantFeedback } from "../assistant-host";
 import { useShellLabels } from "../../../composables/useShellLabels";
 import TurnDiagnoseButton from "../../diagnosis/components/TurnDiagnoseButton.vue";
@@ -218,7 +217,6 @@ function appearanceSaved(value: WorkbenchAppearance) {
     :labels="labels"
     :nav="nav"
     :feedback="feedback"
-    :chart-theme="nativeEchartsTheme"
     :artifact-renderers="artifactRenderers"
     @error="ElMessage.error($event)"
     @feature-action="emit('featureAction', $event)"

@@ -7,7 +7,6 @@ export { default as ToolStep } from "./components/ToolStep.vue";
 export { useConversationContinuation } from "./context";
 export { continuationMessage } from "./continuation-message";
 export { useAgentNav, type AgentNav, type AgentNavOptions } from "./useAgentNav";
-export { defaultChartTheme, type ChartTheme } from "./chart-theme";
 export {
   createAgentHostClient,
   type AgentHostClient,

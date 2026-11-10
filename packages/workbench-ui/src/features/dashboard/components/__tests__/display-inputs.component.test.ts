@@ -3,9 +3,8 @@ import { flushPromises, mount } from "@vue/test-utils";
 import { createPinia } from "pinia";
 import { createMemoryHistory, createRouter } from "vue-router";
 import ElementPlus from "element-plus";
-import { EChart } from "@ontomato/foundation-ui/chart";
+import { EChart, chartTheme } from "@ontomato/foundation-ui/chart";
 import ChartZoomModal from "../ChartZoomModal.vue";
-import { nativeEchartsTheme } from "../utils/echartsTheme";
 import { workbenchI18n } from "../../../../i18n";
 import { installWorkbenchContent, workbenchContent, type DashboardVisuals } from "../../../../content";
 
@@ -37,12 +36,12 @@ describe("dashboard display inputs under both layouts", () => {
     return wrapper.findComponent(EChart).props("theme");
   }
 
-  it("zoom dialog: echarts default theme when configured; open source draws with the dashboard theme", async () => {
+  it("zoom dialog: echarts default theme when configured; open source draws with the platform's chart theme", async () => {
     useDashboardVisuals({ zoomChartTheme: "default" });
     expect(await zoomChartTheme()).toBeUndefined();
 
     installWorkbenchContent(ossContent);
-    expect(await zoomChartTheme()).toEqual(nativeEchartsTheme(false));
+    expect(await zoomChartTheme()).toEqual(chartTheme());
   });
 
 

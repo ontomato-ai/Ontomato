@@ -79,6 +79,8 @@ describe("brand generation", () => {
       // Tags and plain buttons use their own tint; the selected background stays primary-soft.
       expect(p["--brand-primary-tint"]).toBe(mix(c.primary, c.surface, 0.9));
       ossBrand.dataviz[mode].forEach((color, index) => expect(p[`--chart-${index + 1}`]).toBe(color));
+      // DESIGN.md "Charts": a primary sequential scale.
+      expect(p["--chart-sequential-5"]).toBe(c.primary);
     }
   });
 

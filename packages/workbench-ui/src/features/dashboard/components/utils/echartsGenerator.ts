@@ -1,7 +1,7 @@
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-nocheck
 /* =============================================================================
- * EchartsGenerator.js - a more polished / more robust option generator (adapted to your echartsTheme)
+ * EchartsGenerator.js - a more polished / more robust option generator (drawn in the platform's chart theme)
  * ============================================================================= */
 
 import { t } from "../../../../i18n";

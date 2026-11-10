@@ -2,7 +2,6 @@
 import { computed, provide, ref, toRef, watch } from "vue";
 import type { AgentHostAgent } from "@ontomato/contracts/agent-host";
 import type { AgentHostClient } from "../host";
-import { defaultChartTheme } from "../chart-theme";
 import { shellContextKey } from "../context";
 import type { ConversationItem } from "../view";
 import type {
@@ -88,7 +87,6 @@ provide(shellContextKey, {
   labels: toRef(props, "labels"),
   artifactRenderers: noArtifacts,
   toolRenderers: noTools,
-  chartTheme: computed(() => defaultChartTheme),
   slots: {},
   resolveArtifact: conversation.resolveArtifact,
   artifactRevision,
