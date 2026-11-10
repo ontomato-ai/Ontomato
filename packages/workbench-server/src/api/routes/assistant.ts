@@ -3,6 +3,7 @@ import { readDiagnosisModel, saveDiagnosisModel } from "../../services/ops-diagn
 import { exportConversationPpt } from "../../services/assistant/export";
 import { safePptFileName } from "../../services/analysis-agent/delivery/ppt-artifacts";
 import { requirePermission } from "../../identity/installed";
+import { assertAppBuilderAccess } from "../../services/app-builder/access";
 import { assistantSkillCatalog } from "../../services/assistant/skills";
 import { actionCard, confirmAction } from "../../services/assistant/actions";
 import { readDecision, saveDecision, submitDecision } from "../../services/assistant/decisions";
@@ -33,14 +34,14 @@ const router: ReturnType<typeof Router> = Router(),
 
 import { context, id, wrap } from "../utils/agent-host";
 import { createAgentHostRouter } from "./agent-host";
-const builderPermission = requirePermission(["app-builder"]);
 const guardBuilder: RequestHandler = (req, res, next) => {
   wrap(async () => {
+    const c = context(req);
     const input = req.params.sessionId
       ? { sessionId: id(req, "sessionId") }
       : agentHostCreateSessionSchema.parse(req.body);
-    if (await assistantService.isAppBuilder(context(req).owner, input)) builderPermission(req, res, next);
-    else next();
+    if (await assistantService.isAppBuilder(c.owner, input)) await assertAppBuilderAccess(c.credentials);
+    next();
   })(req, res, next);
 };
 router.post("/sessions", guardBuilder);
