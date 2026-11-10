@@ -660,7 +660,7 @@ describe("Manager pages in the service router", () => {
     sourceRadio.querySelector("input")!.click();
     await settle();
     expect(overlay.querySelector(".metric-markdown-preview")).toBeNull();
-    expect((overlay.querySelector(".el-dialog textarea") as HTMLTextAreaElement).value).toContain("# Revenue");
+    expect(overlay.querySelector(".el-dialog .cm-content")?.textContent).toContain("# Revenue");
   });
 
   it("the address locates data browsing; page actions navigate through the router; unknown addresses land on the graph", async () => {

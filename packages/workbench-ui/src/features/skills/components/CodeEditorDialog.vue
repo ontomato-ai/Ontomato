@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, watch, computed } from "vue";
 import { useI18n } from "vue-i18n";
-import CodeMirrorEditor from "../../../components/CodeMirrorEditor.vue";
+import { CodeEditor } from "@ontomato/foundation-ui/code";
 
 const { t } = useI18n();
 
@@ -60,7 +60,7 @@ function handleCancel() {
         <el-tag size="small" type="info">{{ language || "javascript" }}</el-tag>
         <span class="char-count">{{ localCode.length }} {{ t("common.characters") }}</span>
       </div>
-      <CodeMirrorEditor
+      <CodeEditor
         v-model="localCode"
         :readonly="readonly"
         language="javascript"

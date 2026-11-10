@@ -207,10 +207,13 @@
   font-size: var(--text-sm);
 }
 
-.mono-input :deep(input),
-.mono-input :deep(textarea) {
+.mono-input :deep(input) {
   font-family: var(--font-mono);
   font-size: var(--text-mono);
+}
+
+.sampling-input {
+  width: 100%;
 }
 
 .check-row {

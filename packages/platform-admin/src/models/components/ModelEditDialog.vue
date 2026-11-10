@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, reactive, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
+import { CodeEditor } from "@ontomato/foundation-ui/code";
 import type { ModelSaveCheck } from "../draft";
 import {
   PI_CHAT_MODEL_DEFAULTS,
@@ -183,11 +184,11 @@ async function submit() {
           </el-form-item>
         </div>
         <el-form-item :label="t('admin.samplingParams')">
-          <el-input
+          <CodeEditor
             v-model="form.sampling"
-            type="textarea"
-            class="mono-input"
-            :autosize="{ minRows: 3, maxRows: 10 }"
+            class="sampling-input"
+            language="json"
+            :min-height="88"
             placeholder='{"temperature": 0.7, "top_p": 0.9}'
           />
           <p class="field-hint">{{ t("admin.samplingParamsHint") }}</p>

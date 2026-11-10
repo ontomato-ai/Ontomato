@@ -2,7 +2,7 @@
 import { ref, watch, computed } from "vue";
 import { useI18n } from "vue-i18n";
 import { MarkdownView } from "@ontomato/foundation-ui/markdown";
-import CodeMirrorEditor from "../../../components/CodeMirrorEditor.vue";
+import { CodeEditor } from "@ontomato/foundation-ui/code";
 
 const { t } = useI18n();
 
@@ -66,7 +66,7 @@ function togglePreview() {
 
       <div class="editor-main" :class="{ 'with-preview': showPreview }">
         <div class="editor-panel">
-          <CodeMirrorEditor
+          <CodeEditor
             v-model="localContent"
             :readonly="readonly"
             language="markdown"

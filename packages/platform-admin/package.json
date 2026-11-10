@@ -14,6 +14,7 @@
   },
   "dependencies": {
     "@ontomato/contracts": "workspace:*",
+    "@ontomato/foundation-ui": "workspace:*",
     "@ontomato/platform-shell": "workspace:*",
     "element-plus": "2.13.6",
     "lucide-vue-next": "1.0.0",

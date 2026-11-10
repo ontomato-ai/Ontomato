@@ -2,7 +2,7 @@
 import { computed, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { FileCode, FileText } from "lucide-vue-next";
-import CodeMirrorEditor from "../../../components/CodeMirrorEditor.vue";
+import { CodeEditor } from "@ontomato/foundation-ui/code";
 import { builderApi } from "../api";
 import { errorText } from "../panel";
 import type { WorkspaceView } from "../workspace-view";
@@ -81,7 +81,7 @@ watch([() => props.view.workspace?.id, () => props.view.workspace?.headCommit, f
         </div>
         <div v-else-if="file && !isText(file)" class="files-state">{{ t("appBuilder.notText") }}</div>
         <div v-else-if="content !== null" class="code">
-          <CodeMirrorEditor :key="file!" :model-value="content" :language="LANGUAGES[extension(file!)]" readonly :min-height="120" />
+          <CodeEditor :key="file!" :model-value="content" :language="LANGUAGES[extension(file!)]" readonly :min-height="120" />
         </div>
         <div v-else class="files-state" aria-busy="true">{{ t("assistant.loading") }}</div>
       </div>
@@ -153,7 +153,7 @@ watch([() => props.view.workspace?.id, () => props.view.workspace?.headCommit, f
   min-height: 0;
   padding: var(--spacing-md);
 }
-.code :deep(.codemirror-editor) {
+.code :deep(.code-editor) {
   height: 100%;
 }
 .code :deep(.cm-editor) {

@@ -32,14 +32,14 @@ jobs:
           pnpm typecheck:runtime
           pnpm typecheck:workbench
           pnpm --filter @ontomato/workbench typecheck:web
-          pnpm --filter @ontomato/workbench-ui --filter @ontomato/ontology-manager --filter @ontomato/platform-admin --filter @ontomato/agent-shell-ui --filter @ontomato/service-logging --filter @ontomato/apps-sdk typecheck
+          pnpm --filter @ontomato/foundation-ui --filter @ontomato/workbench-ui --filter @ontomato/ontology-manager --filter @ontomato/platform-admin --filter @ontomato/agent-shell-ui --filter @ontomato/service-logging --filter @ontomato/apps-sdk typecheck
 
       - name: Test
         run: |
           pnpm test:runtime
           pnpm test:workbench
           pnpm --filter @ontomato/workbench test:web
-          pnpm --filter @ontomato/workbench-ui --filter @ontomato/ontology-manager --filter @ontomato/platform-admin --filter @ontomato/agent-shell-ui --filter @ontomato/service-logging test
+          pnpm --filter @ontomato/foundation-ui --filter @ontomato/workbench-ui --filter @ontomato/ontology-manager --filter @ontomato/platform-admin --filter @ontomato/agent-shell-ui --filter @ontomato/service-logging test
           pnpm test:scripts
 
       - name: Check offline delivery

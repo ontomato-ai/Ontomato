@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, watch, onBeforeUnmount } from "vue";
 import { ElMessage } from "element-plus";
-import CodeMirrorEditor from "../../../../components/CodeMirrorEditor.vue";
+import { CodeEditor } from "@ontomato/foundation-ui/code";
 import { diagnosisApi } from "../../api";
 import { useI18n } from "vue-i18n";
 import type { DslTestPageSlots } from "../layout/types";
@@ -186,7 +186,7 @@ async function executeDsl() {
       </div>
 
       <div class="dsl-editor-wrap">
-        <CodeMirrorEditor v-model="dslText" language="json" :min-height="240" />
+        <CodeEditor v-model="dslText" language="json" :min-height="240" />
       </div>
     </section>
 
@@ -215,7 +215,7 @@ async function executeDsl() {
         <el-tab-pane :label="t('dsl.rawResponse')" name="raw">
           <template v-if="resultTab === 'raw'">
             <el-empty v-if="!rawText" :description="t('dsl.noResponse')" />
-            <CodeMirrorEditor
+            <CodeEditor
               v-else
               :model-value="rawText"
               language="json"
@@ -288,7 +288,7 @@ async function executeDsl() {
   display: flex;
 }
 
-.dsl-editor-wrap :deep(.codemirror-editor) {
+.dsl-editor-wrap :deep(.code-editor) {
   flex: 1;
   min-height: 0;
 }
@@ -331,7 +331,7 @@ async function executeDsl() {
   width: 100%;
 }
 
-.result-tabs :deep(.codemirror-editor) {
+.result-tabs :deep(.code-editor) {
   height: 100%;
 }
 /* In the narrow side panel (DESIGN "Agent apps") the split panes stack. */

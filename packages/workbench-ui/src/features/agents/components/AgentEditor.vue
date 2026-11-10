@@ -4,7 +4,7 @@ import { PlatformTabs } from "@ontomato/platform-shell";
 import { ElMessage, ElMessageBox } from "element-plus";
 import { useI18n } from "vue-i18n";
 import { ExternalLink, RefreshCw, Trash2 } from "lucide-vue-next";
-import CodeMirrorEditor from "../../../components/CodeMirrorEditor.vue";
+import { CodeEditor } from "@ontomato/foundation-ui/code";
 import { MarkdownView } from "@ontomato/foundation-ui/markdown";
 import type {
   AssistantAgentDefinition,
@@ -279,7 +279,7 @@ defineExpose({ dirty });
             </el-button>
           </div>
           <div v-if="promptPreview" class="prompt-preview"><MarkdownView :content="form.systemPrompt" /></div>
-           <CodeMirrorEditor v-else v-model="form.systemPrompt" language="markdown" :min-height="480" />
+           <CodeEditor v-else v-model="form.systemPrompt" language="markdown" :min-height="480" />
           <small class="prompt-count">{{ t("admin.agentEditorCharacters", { count: form.systemPrompt.length }) }} · Markdown</small>
         </section>
         <section v-show="workspaceTab === 'data'" class="editor-section data-section" data-section="data">

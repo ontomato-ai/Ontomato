@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { useI18n } from "vue-i18n";
+import { CodeEditor } from "@ontomato/foundation-ui/code";
 
 defineProps<{
   visible: boolean;
@@ -50,12 +51,13 @@ function handleBeforeUpload(file: File) {
         </span>
       </el-form-item>
       <el-form-item :label="t('hotData.jsonContent')">
-        <el-input
+        <CodeEditor
+          class="json-content"
           :model-value="text"
-          type="textarea"
-          :rows="10"
+          language="json"
+          :min-height="220"
           placeholder='[{"caseId": "1", "question": "..."}]'
-          @update:model-value="emit('update:text', String($event))"
+          @update:model-value="emit('update:text', $event)"
         />
       </el-form-item>
     </el-form>
@@ -69,6 +71,10 @@ function handleBeforeUpload(file: File) {
 </template>
 
 <style scoped>
+.json-content {
+  width: 100%;
+}
+
 .selected-file-name {
   margin-left: 8px;
   font-size: 12px;
