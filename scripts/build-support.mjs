@@ -64,8 +64,10 @@ export function imageCacheArgs() {
     ? [
         "--cache-from",
         `type=registry,ref=${ref}`,
-        "--cache-to",
-        `type=registry,ref=${ref},mode=max`,
+        ...(process.env.BUILD_CACHE_READ_ONLY === "true" ? [] : [
+          "--cache-to",
+          `type=registry,ref=${ref},mode=max`,
+        ]),
       ]
     : [];
 }
