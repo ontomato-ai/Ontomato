@@ -13,6 +13,7 @@
     "typecheck": "vue-tsc --noEmit"
   },
   "dependencies": {
+    "@ontomato/markdown": "workspace:*",
     "echarts": "6.0.0",
     "markstream-vue": "2.0.19"
   },

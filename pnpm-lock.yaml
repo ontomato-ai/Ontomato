@@ -88,6 +88,9 @@ importers:
       '@ontomato/foundation-ui':
         specifier: workspace:*
         version: link:../../packages/foundation-ui
+      '@ontomato/markdown':
+        specifier: workspace:*
+        version: link:../../packages/markdown
       '@ontomato/ontology-manager':
         specifier: workspace:*
         version: link:../../packages/ontology-manager
@@ -320,6 +323,9 @@ importers:
 
   packages/foundation-ui:
     dependencies:
+      '@ontomato/markdown':
+        specifier: workspace:*
+        version: link:../markdown
       echarts:
         specifier: 6.0.0
         version: 6.0.0
@@ -342,6 +348,19 @@ importers:
       vue-tsc:
         specifier: 3.2.6
         version: 3.2.6(typescript@5.9.3)
+
+  packages/markdown:
+    dependencies:
+      stream-markdown-parser:
+        specifier: 1.2.20
+        version: 1.2.20
+    devDependencies:
+      typescript:
+        specifier: 5.9.3
+        version: 5.9.3
+      vitest:
+        specifier: 1.6.0
+        version: 1.6.0(@types/node@22.19.15)(happy-dom@20.14.3)
 
   packages/ontology-manager:
     dependencies:
@@ -657,6 +676,9 @@ importers:
       '@ontomato/contracts':
         specifier: workspace:*
         version: link:../contracts
+      '@ontomato/markdown':
+        specifier: workspace:*
+        version: link:../markdown
       '@ontomato/service-logging':
         specifier: workspace:*
         version: link:../service-logging
@@ -672,9 +694,6 @@ importers:
       express:
         specifier: 4.22.1
         version: 4.22.1
-      marked:
-        specifier: 17.0.5
-        version: 17.0.5
       multer:
         specifier: 2.1.1
         version: 2.1.1
@@ -3500,11 +3519,6 @@ packages:
 
   marked@16.4.2:
     resolution: {integrity: sha512-TI3V8YYWvkVf3KJe1dRkpnjs68JUPyEa5vjKrp1XEEJUAOaQc+Qj+L1qWbPd0SJuAdQkFU0h73sXXqwDYxsiDA==}
-    engines: {node: '>= 20'}
-    hasBin: true
-
-  marked@17.0.5:
-    resolution: {integrity: sha512-6hLvc0/JEbRjRgzI6wnT2P1XuM1/RrrDEX0kPt0N7jGm1133g6X7DlxFasUIx+72aKAr904GTxhSLDrd5DIlZg==}
     engines: {node: '>= 20'}
     hasBin: true
 
@@ -7719,8 +7733,6 @@ snapshots:
       marked: 18.0.11
 
   marked@16.4.2: {}
-
-  marked@17.0.5: {}
 
   marked@18.0.11: {}
 

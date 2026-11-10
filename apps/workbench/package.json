@@ -23,6 +23,7 @@
     "@ontomato/contracts": "workspace:*",
     "@ontomato/design-tokens": "workspace:*",
     "@ontomato/foundation-ui": "workspace:*",
+    "@ontomato/markdown": "workspace:*",
     "@ontomato/ontology-manager": "workspace:*",
     "@ontomato/platform-admin": "workspace:*",
     "@ontomato/platform-shell": "workspace:*",

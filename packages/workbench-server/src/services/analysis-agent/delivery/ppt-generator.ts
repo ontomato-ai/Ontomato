@@ -2,8 +2,9 @@ import type pptxgen from "pptxgenjs";
 import { createRequire } from "node:module";
 import { tApp } from "../../../i18n";
 import type { PptSummarySlide, PptSummaryOutline, PptGenerationOptions, PptSourceSection } from "@ontomato/contracts/ppt";
-import { marked, type Tokens } from "marked";
+import { parseProductMarkdown } from "@ontomato/markdown";
 import { renderChartHtmlToDataUrl } from "./chart-renderer";
+import { captionRuns, cutRuns, firstHeading, htmlBlocks, pptTables, runsText, type PptRun } from "./ppt-markdown";
 import { summarizeReportForPpt } from "./ppt-summarizer";
 import { createLogger } from "../../../logging/logger";
 
@@ -35,32 +36,41 @@ export function tableColumnWidths(columns: readonly string[], rows: readonly (re
   return widths.map(width => +width.toFixed(2));
 }
 
-/** Render a native data table, paginating rows manually (pptxgenjs autoPage underestimates CJK text height). */
-function addDataTable(deck: pptxgen, sectionTitle: string, table: {columns: string[]; rows: unknown[][]}) {
-  const cellText = (value: unknown): string => {
-    const text = typeof value === "object" && value !== null ? JSON.stringify(value) : String(value ?? "");
-    return text.length > 600 ? `${text.slice(0, 600)}…` : text;
-  };
-  const columns = table.columns.map(cellText);
-  const rows = table.rows.map(row => row.map(cellText));
-  const allText = [columns, ...rows].flat().join("");
+/** A dataset value as the runs of a table cell. */
+function valueRuns(value: unknown): PptRun[] {
+  return [{text: typeof value === "object" && value !== null ? JSON.stringify(value) : String(value ?? ""), options: {}}];
+}
+
+/**
+ * Render a native data table, paginating rows manually (pptxgenjs autoPage underestimates CJK text height). Cells are
+ * runs, so a table from an answer keeps the formatting its page shows.
+ */
+function addDataTable(deck: pptxgen, sectionTitle: string, table: {columns: PptRun[][]; rows: PptRun[][][]}) {
+  const columns = table.columns.map(cell => cutRuns(cell, 600, "…"));
+  const rows = table.rows.map(row => row.map(cell => cutRuns(cell, 600, "…")));
+  const columnTexts = columns.map(runsText);
+  const rowTexts = rows.map(row => row.map(runsText));
+  const allText = [columnTexts, ...rowTexts].flat().join("");
   const fontSize = allText.length > 4000 ? 8 : allText.length > 1200 ? 9 : 10;
-  const colW = tableColumnWidths(columns, rows);
-  const headerRow = columns.map(value => ({text: value, options: {bold: true, color: "172033", fill: {color: "EEF3FB"}}}));
+  const colW = tableColumnWidths(columnTexts, rowTexts);
+  const headerRow = columns.map(cell => ({
+    text: cell.map(run => ({text: run.text, options: {...run.options, bold: true}})),
+    options: {bold: true, color: "172033", fill: {color: "EEF3FB"}},
+  }));
 
   // Rough per-row height: full-width CJK glyph ≈ fontSize; add padding. Conservative enough for pagination.
-  const rowHeight = (cells: readonly string[]): number => {
+  const rowHeight = (cells: readonly PptRun[][]): number => {
     let lines = 1;
-    cells.forEach((text, index) => {
+    cells.forEach((cell, index) => {
       const charsPerLine = Math.max(4, Math.floor((colW[index] ?? 2) / (fontSize / 72)));
-      lines = Math.max(lines, Math.ceil(text.length / charsPerLine));
+      lines = Math.max(lines, Math.ceil(runsText(cell).length / charsPerLine));
     });
     return lines * (fontSize / 72) * 1.35 + .1;
   };
 
   const availableHeight = 5.55; // table starts at y=1.3, footer sits at y≈7.08
-  const chunks: string[][][] = [];
-  let current: string[][] = [];
+  const chunks: PptRun[][][][] = [];
+  let current: PptRun[][][] = [];
   let currentHeight = 0;
   for (const row of rows) {
     const height = rowHeight(row);
@@ -78,7 +88,7 @@ function addDataTable(deck: pptxgen, sectionTitle: string, table: {columns: stri
     const slide = deck.addSlide("REPORT");
     addSlideChrome(slide, deck.ShapeType, sectionTitle);
     slide.addText(sectionTitle, {x: .6, y: .4, w: 12, h: .7, fontSize: 24, fontFace: "Microsoft YaHei", color: "172033", fit: "shrink", margin: 0});
-    slide.addTable([headerRow, ...chunk.map(row => row.map(value => ({text: value, options: {valign: "top" as const}})))], {
+    slide.addTable([headerRow, ...chunk.map(row => row.map(cell => ({text: cell, options: {valign: "top" as const}})))], {
       x: .6,
       y: 1.3,
       colW,
@@ -95,27 +105,15 @@ function addDataTable(deck: pptxgen, sectionTitle: string, table: {columns: stri
 }
 
 
-export function markdownSnippet(markdown: string, maxLength = 160): string {
-  const lines = markdown
-    .replace(/```[\s\S]*?```/g, " ")
-    .replace(/^#{1,6}\s+/gm, "")
-    .replace(/\*\*([^*]+)\*\*/g, "$1")
-    .replace(/\*([^*]+)\*/g, "$1")
-    .replace(/`([^`]+)`/g, "$1")
-    .replace(/\[([^\]]+)\]\([^)]*\)/g, "$1")
-    .replace(/^\s*[-*+]\s+/gm, "")
-    .split("\n")
-    .map(line => line.trim())
-    .filter(line => line && !line.includes("|"));
-  return lines.join("；").replace(/\s{2,}/g, " ").slice(0, maxLength);
-}
-
 export async function generatePpt(title: string, sections: readonly PptSourceSection[], options: PptGenerationOptions = {}, signal?: AbortSignal) {
   const outline = await summarizeReportForPpt({ title, ...options,
     report: "",
-    sections: sections.map(section => ({id: section.id, heading: section.heading || section.content.match(/^#{1,3}\s+(.+)$/m)?.[1] || title,
-      text: [partialSourceWarning(section), stripPptCharts(section.content)].filter(Boolean).join("\n\n"),
-      hasChart: /```html/.test(section.content)})),
+    sections: sections.map(section => {
+      const nodes = parseProductMarkdown(section.content);
+      return {id: section.id, heading: section.heading || firstHeading(nodes) || title,
+        text: [partialSourceWarning(section), stripPptCharts(section.content)].filter(Boolean).join("\n\n"),
+        hasChart: htmlBlocks(nodes).length > 0};
+    }),
   }, signal);
   return buildPptDeck(title, sections, outline, options, signal);
 }
@@ -169,11 +167,12 @@ export async function buildPptDeck(
   renderChart: (html: string) => Promise<string> = html => renderChartHtmlToDataUrl(html, 30000, {offline: true, signal})
 ): Promise<{ buffer: Buffer; warnings: string[] }> {
   const warnings: string[] = sections.map(partialSourceWarning).filter(Boolean);
+  const parsed = sections.map(section => ({section, nodes: parseProductMarkdown(section.content)}));
   const sectionCharts = new Map<string, string>();
   const usedCharts = new Set<string>();
-  for (const section of sections) {
-    const chart = [...section.content.matchAll(/```html\s*\n([\s\S]*?)\n```/g)][0]?.[1];
-    if (chart) sectionCharts.set(section.id, chart.trim());
+  for (const {section, nodes} of parsed) {
+    const chart = htmlBlocks(nodes)[0];
+    if (chart) sectionCharts.set(section.id, chart);
   }
   const deck = new PptxGen();
   deck.layout = "LAYOUT_WIDE";
@@ -365,15 +364,11 @@ export async function buildPptDeck(
 
 
   // Append every source chart and paginate native tables, even if the summary omits its section.
-  for (const section of sections) {
+  for (const {section, nodes} of parsed) {
     signal?.throwIfAborted();
-    const plain = stripPptCharts(section.content);
-    const sectionTitle = section.heading || plain.match(/^#{1,3}\s+(.+)$/m)?.[1]?.trim() || title;
-    const description = markdownSnippet(plain.split("\n")
-      .filter(line => { const trimmed = line.trim().replace(/^#+\s*/, ""); return trimmed && trimmed !== (section.heading || "").trim() && trimmed !== sectionTitle && trimmed !== title; })
-      .join("\n"));
-    for (const match of section.content.matchAll(/```html\s*\n([\s\S]*?)\n```/g)) {
-      const html = match[1].trim();
+    const sectionTitle = section.heading || firstHeading(nodes) || title;
+    const description = captionRuns(nodes, [(section.heading || "").trim(), sectionTitle, title]);
+    for (const html of htmlBlocks(nodes)) {
       if (usedCharts.has(html)) continue;
       usedCharts.add(html);
       const slide = deck.addSlide("REPORT");
@@ -389,15 +384,12 @@ export async function buildPptDeck(
         slide.addText("Chart unavailable. See the source data and explanation.", {x: 1, y: 2, w: 11, h: 1, fontSize: 20});
       }
       signal?.throwIfAborted();
-      if (description) slide.addText(description, {x: .8, y: 6.5, w: 11.6, h: .45, fontSize: 10, fontFace: "Microsoft YaHei", color: "667085", fit: "shrink", margin: 0});
+      if (description.length) slide.addText(description, {x: .8, y: 6.5, w: 11.6, h: .45, fontSize: 10, fontFace: "Microsoft YaHei", color: "667085", fit: "shrink", margin: 0});
     }
-    const tables = [...(section.tables || [])];
-    for (const token of marked.lexer(plain)) {
-      if (token.type === "table") {
-        const table = token as Tokens.Table;
-        tables.push({columns: table.header.map(cell => cell.text), rows: table.rows.map(row => row.map(cell => cell.text))});
-      }
-    }
+    const tables = [
+      ...(section.tables || []).map(table => ({columns: table.columns.map(valueRuns), rows: table.rows.map(row => row.map(valueRuns))})),
+      ...pptTables(nodes),
+    ];
     for (const table of tables) {
       if (!table.columns.length) continue;
       signal?.throwIfAborted();
