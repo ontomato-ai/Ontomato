@@ -47,10 +47,8 @@ const modalOption = computed(() =>
 
 <style>
 /* The dialog is drawn in the page's overlay layer, outside this component: the card's size, its title on one line, and
-   the chart or table filling the rest. */
+   the chart or table filling the body (the platform stylesheet makes every dialog a column whose body takes the rest). */
 .chart-zoom-dialog {
-  display: flex;
-  flex-direction: column;
   height: min(720px, 92vh);
 }
 
@@ -63,9 +61,7 @@ const modalOption = computed(() =>
 
 .chart-zoom-body {
   display: flex;
-  flex: 1 1 auto;
   flex-direction: column;
-  min-height: 0;
 }
 
 .chart-zoom-body > * {

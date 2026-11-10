@@ -28,7 +28,7 @@ function caseDisplayName(c: TestCase): string {
   <aside class="panel-left" :style="{ width: width + 'px' }">
     <div class="panel-header">
       <span class="panel-title">{{ t("hotData.caseList") }}</span>
-      <span class="panel-count">{{ cases.length }}{{ t("hotData.entries") }}</span>
+      <span class="panel-count">{{ t("admin.nTestcases", { n: cases.length }, cases.length) }}</span>
     </div>
     <div class="panel-body">
       <div

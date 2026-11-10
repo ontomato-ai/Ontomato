@@ -629,7 +629,7 @@ onUnmounted(() => {
 
     <footer v-if="selectedCaseSetId" class="page-footer">
       <div class="footer-left">
-        <span v-if="isDirty" class="status-unsaved">● {{ t("hotData.unsaved") }}</span>
+        <span v-if="isDirty" class="status-unsaved">● {{ t("hotData.hasUnsavedChanges") }}</span>
         <span v-else class="status-saved">{{ t("hotData.saved") }}</span>
       </div>
       <div class="footer-right">
