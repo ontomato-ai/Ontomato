@@ -10,7 +10,7 @@ public record PythonAuthority(String domainId, String userId, String purpose, St
     this(domainId,userId,purpose,sandboxId,classNames,executionId,parentGrant,packageInput,ExecutionTarget.LIVE);
   }
   public PythonAuthority withTarget(ExecutionTarget value) {
-    return new PythonAuthority(domainId,userId,purpose,value.testing()?value.sandboxId():sandboxId, value.testing()?value.classNames():classNames,executionId,parentGrant,packageInput,value);
+    return new PythonAuthority(domainId,userId,purpose,value.testing()?value.sandboxId():sandboxId, value.testing() && classNames.isEmpty()?value.classNames():classNames,executionId,parentGrant,packageInput,value);
   }
   public record ParentGrant(String token, String runId, long expiresAt) {}
   public PythonAuthority forExecution(String id) {

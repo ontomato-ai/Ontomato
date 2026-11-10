@@ -5,6 +5,8 @@ import java.util.Map;
 import com.alibaba.fastjson2.JSONArray;
 
 public interface SandboxService {
+    com.alibaba.fastjson2.JSONObject bindSample(com.alibaba.fastjson2.JSONObject sample, String domain);
+    void dropSampleStructure(String sandbox, com.alibaba.fastjson2.JSONObject binding, String domain);
     void createSampleStructure(String sandbox, com.alibaba.fastjson2.JSONObject sample, String domain);
     void dropSampleStructure(String sandbox, java.util.List<String> classes, String domain);
 

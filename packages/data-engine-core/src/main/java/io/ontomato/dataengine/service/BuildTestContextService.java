@@ -61,12 +61,13 @@ public class BuildTestContextService {
     if(!QueryAccessService.classScope(identity.getCurrentUserDataPermission(),classes).containsAll(classes)) throw error(HttpStatus.FORBIDDEN,"BUILD_TEST_FORBIDDEN");
     var failed=jdbc.queryForList("SELECT id FROM build_test_contexts WHERE owner_id=? AND domain_id=? AND workspace_id=? AND cleanup_attempted=true AND (cleanup_error IS NULL OR cleanup_error <> '')",String.class,user.getId(),user.getDomainId(),workspace);
     if(!failed.isEmpty()) throw error(HttpStatus.CONFLICT,"BUILD_TEST_CLEANUP_FAILED: "+failed.get(0));
+    var binding=sandbox.bindSample(sample,user.getDomainId());
     var previous=current(workspace);
     if(previous!=null) close(previous.getString("contextId"));
     String id=UUID.randomUUID().toString(), sandboxId="bt_"+id.replace("-","")+"_";
     long expires=System.currentTimeMillis()+3600000;
     if(identity.getCurrentCredentialExpiresAt()!=null) expires=Math.min(expires,identity.getCurrentCredentialExpiresAt());
-    var data=JSONObject.of("sandboxId",sandboxId,"classNames",classes,"sample",sample,"fingerprint",fingerprint(user.getDomainId()),"resources",classes.stream().map(name->sandboxId+name).toList());
+    var data=JSONObject.of("sandboxId",sandboxId,"classNames",classes,"sample",sample,"fingerprint",fingerprint(user.getDomainId()),"binding",binding,"resources",binding.getList("resources",String.class).stream().map(name->name.replace("{sandbox}",sandboxId)).toList());
     jdbc.update("INSERT INTO build_test_contexts(id,owner_id,domain_id,workspace_id,state,expires_at,data) VALUES(?,?,?,?,'PREPARING',?,?::jsonb)",id,user.getId(),user.getDomainId(),workspace,expires,data.toJSONString());
     try {
       sandbox.createSampleStructure(sandboxId,sample,user.getDomainId());
@@ -89,6 +90,9 @@ public class BuildTestContextService {
   public JSONObject status(String id) {
     identity.requireQueryAccess();
     var r=row(id);var user=identity.getCurrentUser();owner(r,user.getId(),user.getDomainId());
+    if("READY".equals(r.getString("state")) && r.getLongValue("expires_at")<=System.currentTimeMillis()) {
+      jdbc.update("UPDATE build_test_contexts SET state='EXPIRED' WHERE id=? AND state='READY'",id);r=row(id);
+    }
     var data=r.getJSONObject("data");
     return JSONObject.of("contextId",id,"workspaceId",r.getString("workspace_id"),"status",r.getString("state"),"expiresAt",r.getLong("expires_at"),"classNames",data.get("classNames"),"sampleSummary",JSONObject.of("classes",data.getJSONArray("classNames").size()),"prepareError",data.get("prepareError"),"cleanupError",r.get("cleanup_error"),"resources",data.get("resources"));
   }
@@ -100,7 +104,9 @@ public class BuildTestContextService {
     if(declaration==null || !"build-test".equals(declaration.getString("kind")) || declaration.getString("contextId")==null)
       throw error(HttpStatus.BAD_REQUEST,"BUILD_TEST_CONTEXT_REQUIRED");
     var user=identity.getCurrentUser();
-    return require(declaration.getString("contextId"),user.getId(),user.getDomainId());
+    var target=require(declaration.getString("contextId"),user.getId(),user.getDomainId());
+    var expiry=identity.getCurrentCredentialExpiresAt();
+    return expiry==null ? target : new ExecutionTarget(target.contextId(),target.sandboxId(),target.classNames(),Math.min(expiry,target.expiresAt()));
   }
   public ExecutionTarget require(String id,String user,String domain) {
     var r=row(id);owner(r,user,domain);
@@ -142,8 +148,7 @@ public class BuildTestContextService {
           throw new IllegalStateException("Execution has not stopped: "+execution);
       }
       var data=r.getJSONObject("data");
-      if(!fingerprint(domain).equals(data.getString("fingerprint"))) throw new IllegalStateException("Source/definition changed; resources retained: "+data.getString("sandboxId"));
-      sandbox.dropSampleStructure(data.getString("sandboxId"),data.getList("classNames",String.class),domain);
+      sandbox.dropSampleStructure(data.getString("sandboxId"),data.getJSONObject("binding"),domain);
       jdbc.update("UPDATE build_test_contexts SET cleanup_error='' WHERE id=?",id);
       } finally { writeLock.unlock(); }
     } catch(Exception failure) { jdbc.update("UPDATE build_test_contexts SET cleanup_error=? WHERE id=?",failure.getMessage(),id); }

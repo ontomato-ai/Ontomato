@@ -64,8 +64,9 @@ public class QueryGrantService {
     if(target.testing()) {
       var current=contexts.require(target.contextId(),authority.userId(),authority.domainId());
       current.requireClasses(authority.classNames());
-      expiresAt=Math.min(expiresAt,current.expiresAt());
+      expiresAt=Math.min(expiresAt,Math.min(current.expiresAt(),target.expiresAt()));
       binding.put("contextId",current.contextId());
+      binding.put("executionKind","build-test");
     }
     return issue(authority.userId(),authority.domainId(),authority.purpose(),execution,expiresAt,authority.classNames(),authority.sandboxId(),binding);
   }
@@ -176,6 +177,7 @@ public class QueryGrantService {
               claims.getString("domainId"),
               System.currentTimeMillis());
       if (count == null || count != 1) throw new IllegalArgumentException();
+      if("build-test".equals(claims.getString("executionKind")) && claims.getString("contextId")==null) throw new IllegalArgumentException();
       if(claims.getString("contextId")!=null) {
         var target=contexts.require(claims.getString("contextId"),claims.getString("userId"),claims.getString("domainId"));
         target.requireClasses(claims.getList("classNames",String.class));
@@ -236,7 +238,8 @@ public class QueryGrantService {
     if(authority.target().testing()) {
       var target=contexts.require(authority.target().contextId(),authority.userId(),authority.domainId());
       target.requireClasses(authority.classNames());
-      binding.put("contextId",target.contextId()); expiresAt=Math.min(expiresAt,target.expiresAt());
+      binding.put("executionKind","build-test");
+      binding.put("contextId",target.contextId()); expiresAt=Math.min(expiresAt,Math.min(target.expiresAt(),authority.target().expiresAt()));
     }
     String token = issue(authority.userId(), authority.domainId(), "package-read", execution,
         expiresAt, authority.classNames(), authority.sandboxId(), binding);

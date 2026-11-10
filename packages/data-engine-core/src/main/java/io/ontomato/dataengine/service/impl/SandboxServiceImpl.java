@@ -51,6 +51,49 @@ public class SandboxServiceImpl implements SandboxService {
 
     @Override
     @SuppressWarnings("unchecked")
+    public JSONObject bindSample(JSONObject sample, String domain) {
+      var config = com.alibaba.fastjson2.JSON.parseObject(com.alibaba.fastjson2.JSON.toJSONString(businessConfigService.get(domain)));
+      var classes = sample.getJSONArray("objDatas").toJavaList(JSONObject.class).stream().map(row->row.getString("className")).toList();
+      var adapter=getDataAdapter(domain);
+      if(!adapter.supportsSandbox(classes)) throw new org.springframework.web.server.ResponseStatusException(org.springframework.http.HttpStatus.UNPROCESSABLE_ENTITY,"BUILD_TEST_UNSUPPORTED");
+      var hashes = new JSONObject();
+      var connections=config.getJSONObject("dataAdapterConnections");
+      connections.forEach((name,connection)->hashes.put(name,io.ontomato.dataengine.service.agent.AgentJson.hash(connection)));
+      config.remove("dataAdapterConnections");
+      var multi=config.getJSONObject("multiDataSource");
+      if(multi!=null) for(var source:multi.getJSONArray("dataSources").toJavaList(JSONObject.class)) {
+        hashes.put("source:"+source.getString("id"),io.ontomato.dataengine.service.agent.AgentJson.hash(source.get("connection")));
+        source.remove("connection");
+      }
+      return JSONObject.of("config",config,"connectionHashes",hashes,"rule",jsonRuleDao.query(domain),"classNames",classes,
+          "resources",classes.stream().map(name->adapter.sandboxClassName("{sandbox}",name)).toList());
+    }
+
+    @Override
+    public void dropSampleStructure(String sandbox, JSONObject binding, String domain) {
+      var config=com.alibaba.fastjson2.JSON.parseObject(binding.getJSONObject("config").toJSONString(),BusinessConfig.class);
+      var current=businessConfigService.get(domain);
+      var hashes=binding.getJSONObject("connectionHashes");
+      if("multi".equals(config.getDataAdapter())) {
+        for(var source:config.getMultiDataSource().getDataSources()) {
+          var present=current.getMultiDataSource()==null ? null : current.getMultiDataSource().source(source.getId());
+          if(present==null || !java.util.Objects.equals(source.getAdapterType(),present.getAdapterType()) || !java.util.Objects.equals(hashes.getString("source:"+source.getId()),io.ontomato.dataengine.service.agent.AgentJson.hash(present.getConnection())))
+            throw new IllegalStateException("Original source unavailable: "+source.getId());
+          source.setConnection(present.getConnection());
+        }
+      } else {
+        var connection=current.getDataAdapterConnections().get(config.getDataAdapter());
+        if(!java.util.Objects.equals(hashes.getString(config.getDataAdapter()),io.ontomato.dataengine.service.agent.AgentJson.hash(connection)))
+          throw new IllegalStateException("Original source unavailable: "+config.getDataAdapter());
+        config.setDataAdapterConnections(current.getDataAdapterConnections());
+      }
+      var adapter=dataAdapterRegistry.create(config,binding.getJSONObject("rule"));
+      vectorResourceDao.dropNamespace(getVectorNamespace(adapter,sandbox),domain);
+      adapter.dropNamespace(sandbox,binding.getList("classNames",String.class));
+    }
+
+    @Override
+    @SuppressWarnings("unchecked")
     public void createSampleStructure(String sandbox, JSONObject sample, String domain) {
       var adapter = getDataAdapter(domain);
       var classes = sample.getJSONArray("objDatas").toJavaList(JSONObject.class).stream()
@@ -97,6 +140,7 @@ public class SandboxServiceImpl implements SandboxService {
       String className =
           DBSchemaUtil.normalizeClassName((String) objData.get("className"), classDefs);
       objData.put("className", className);
+      if(classIdsMap.containsKey(className)) throw AgentHttpException.invalid("Duplicate sample class: "+className);
       Map<String, Object> classDef = classDefMap.get(className);
       if (classDef != null) {
         Set<String> attrNameSet = new HashSet<String>();
@@ -219,6 +263,8 @@ public class SandboxServiceImpl implements SandboxService {
         if (vectorData.containsKey("fileId")) throw AgentHttpException.invalid("Use file with uploaded bytes; fileId is not sample data");
         if (file != null && (file.startsWith("/") || file.contains("..") || file.contains("\\") || !attachments.containsKey(file)))
           throw AgentHttpException.invalid("Missing or invalid sample attachment: " + file);
+        if(file!=null && !VectorResourceDao.isValidSuffix(file.substring(file.lastIndexOf('.')+1)))
+          throw AgentHttpException.invalid("Invalid attachment suffix: "+file);
         Map<String, Object> classDef = classDefMap.get(className);
         if (classDef == null) {
           throw AgentHttpException.invalid("The vector data: Class[" + className + "] is not exist.");

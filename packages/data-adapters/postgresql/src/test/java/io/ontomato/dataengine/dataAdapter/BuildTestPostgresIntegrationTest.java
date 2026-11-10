@@ -47,6 +47,7 @@ class BuildTestPostgresIntegrationTest {
     var rule=JSON.parseObject("{\"classDef\":[{\"className\":\"contract_person\",\"attrs\":[{\"name\":\"id\",\"type\":\"varchar\",\"primaryKey\":true},{\"name\":\"name\",\"type\":\"varchar\"},{\"name\":\"age\",\"type\":\"int\"},{\"name\":\"group_id\",\"type\":\"varchar\"}]},{\"className\":\"contract_group\",\"attrs\":[{\"name\":\"id\",\"type\":\"varchar\",\"primaryKey\":true},{\"name\":\"name\",\"type\":\"varchar\"}]}],\"relationship_rule\":{\"person_group\":{\"fromclass\":\"contract_person\",\"toclass\":\"contract_group\",\"fromField\":\"group_id\",\"toField\":\"id\"}}}");
     var rules=mock(JSONRuleDao.class);when(rules.query("contract")).thenReturn(rule);
     var connection=new DataAdapterConnection();connection.put("url",jdbcUrl+"?currentSchema="+schema+",public");connection.put("user",account[0]);connection.put("password",account[1]);
+    config.getDataAdapterConnections().put("postgresql",connection);
     var adapter=new PostgreAdapter(connection,rule);
     var registry=mock(DataAdapterRegistry.class);when(registry.create(any(),any())).thenReturn(adapter);
     var vectors=new VectorResourceDao();ReflectionTestUtils.setField(vectors,"jdbcTemplate",jdbc);
