@@ -3,6 +3,7 @@ import type { SkillInfo, SkillOutput } from "@ontomato/contracts/skills";
 
 import { ref, computed, watch } from "vue";
 import { ElMessage } from "element-plus";
+import { CodeEditor } from "@ontomato/foundation-ui/code";
 import { skillsApi } from "../api";
 import { useI18n } from "vue-i18n";
 import { withSkillResourceCredentials } from "../utils/skill-resource";
@@ -131,12 +132,7 @@ function handleClose() {
         <div class="section-header">
           <span class="section-title">{{ t("admin.inputParams") }}</span>
         </div>
-        <el-input
-          v-model="inputJson"
-          type="textarea"
-          :rows="8"
-          :placeholder="t('admin.jsonPlaceholder')"
-        />
+        <CodeEditor v-model="inputJson" language="json" :min-height="180" :placeholder="t('admin.jsonPlaceholder')" />
       </div>
 
       <div class="output-section">

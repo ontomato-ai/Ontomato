@@ -5,15 +5,27 @@
   "type": "module",
   "exports": {
     "./chart": "./src/chart/index.ts",
+    "./code": "./src/code/index.ts",
     "./form": "./src/form/index.ts",
     "./markdown": "./src/markdown/index.ts",
     "./theme": "./src/theme/index.ts"
   },
   "scripts": {
-    "typecheck": "vue-tsc --noEmit"
+    "typecheck": "vue-tsc --noEmit",
+    "test": "vitest run"
   },
   "dependencies": {
+    "@codemirror/lang-html": "6.4.11",
+    "@codemirror/lang-javascript": "6.2.5",
+    "@codemirror/lang-json": "6.0.2",
+    "@codemirror/lang-markdown": "6.5.0",
+    "@codemirror/lang-python": "6.2.1",
+    "@codemirror/search": "6.6.0",
+    "@codemirror/state": "6.6.0",
+    "@codemirror/theme-one-dark": "6.1.3",
+    "@codemirror/view": "6.41.0",
     "@ontomato/markdown": "workspace:*",
+    "codemirror": "6.0.2",
     "echarts": "6.0.0",
     "markstream-vue": "2.0.19"
   },
@@ -23,8 +35,12 @@
   },
   "devDependencies": {
     "@ontomato/contracts": "workspace:*",
+    "@vitejs/plugin-vue": "5.2.4",
+    "@vue/test-utils": "2.5.1",
     "element-plus": "2.13.6",
+    "happy-dom": "20.14.3",
     "typescript": "5.9.3",
+    "vitest": "1.6.0",
     "vue": "3.5.30",
     "vue-tsc": "3.2.6"
   }

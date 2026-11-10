@@ -17,6 +17,7 @@ import {
   ElTag,
   vLoading,
 } from "element-plus";
+import { CodeEditor } from "@ontomato/foundation-ui/code";
 import { MarkdownView } from "@ontomato/foundation-ui/markdown";
 import { useManagerFeedback } from "../feedback";
 import type { SmartAsset } from "../api";
@@ -840,12 +841,18 @@ onMounted(() => void loadDetail());
             <template v-if="readFunction">
               <el-alert v-if="!functionRecord.queryPackage && functionRecord.code" :title="ot('assetLegacyPackageHint')" type="info" :closable="false" />
               <el-form-item :label="ot('assetQueryPackage')">
-                <el-input v-model="packageDraft" type="textarea" :rows="18" class="code-input" />
+                <CodeEditor v-model="packageDraft" class="asset-code" language="json" :min-height="360" />
               </el-form-item>
               <el-form-item :label="ot('assetColumnLabels')">
-                <el-input v-model="columnLabelsDraft" type="textarea" :rows="3" />
+                <CodeEditor v-model="columnLabelsDraft" class="asset-code" language="json" :min-height="88" />
               </el-form-item>
-              <el-input v-if="!functionRecord.queryPackage && functionRecord.code" :model-value="functionRecord.code" type="textarea" :rows="8" readonly />
+              <CodeEditor
+                v-if="!functionRecord.queryPackage && functionRecord.code"
+                :model-value="functionRecord.code"
+                language="python"
+                readonly
+                :min-height="180"
+              />
               <el-form-item :label="ot('assetLogicDescription')">
                 <el-input v-model="functionRecord.logic" type="textarea" :rows="3" />
               </el-form-item>
@@ -886,7 +893,7 @@ onMounted(() => void loadDetail());
                 <el-input v-model="record.logic" type="textarea" :rows="3" />
               </el-form-item>
               <el-form-item :label="ot('explainerCode')">
-                <el-input v-model="record.code" type="textarea" :rows="14" class="code-input" />
+                <CodeEditor v-model="record.code" class="asset-code" language="python" :min-height="300" />
               </el-form-item>
             </template>
             <template v-else>
@@ -894,12 +901,7 @@ onMounted(() => void loadDetail());
                 <el-input v-model="functionRecord.logic" type="textarea" :rows="3" />
               </el-form-item>
               <el-form-item :label="ot('explainerCode')">
-                <el-input
-                  v-model="functionRecord.code"
-                  type="textarea"
-                  :rows="14"
-                  class="code-input"
-                />
+                <CodeEditor v-model="functionRecord.code" class="asset-code" language="python" :min-height="300" />
               </el-form-item>
             </template>
             </template>
@@ -969,24 +971,22 @@ onMounted(() => void loadDetail());
             <MarkdownView v-if="testMarkdown" :content="testMarkdown" />
             <p v-else class="markdown-placeholder">{{ ot('metricTestResultPlaceholder') }}</p>
           </div>
-          <el-input
+          <CodeEditor
             v-else
-            v-model="testMarkdown"
-            type="textarea"
-            :rows="14"
+            :model-value="testMarkdown"
+            language="markdown"
             readonly
+            :min-height="300"
             :placeholder="ot('metricTestResultPlaceholder')"
-            class="code-input"
           />
         </el-tab-pane>
         <el-tab-pane :label="ot('metricJsonTest')" name="json">
-          <el-input
-            v-model="testJson"
-            type="textarea"
-            :rows="14"
+          <CodeEditor
+            :model-value="testJson"
+            language="json"
             readonly
+            :min-height="300"
             :placeholder="ot('metricJsonResultPlaceholder')"
-            class="code-input"
           />
         </el-tab-pane>
       </el-tabs>
@@ -1346,8 +1346,8 @@ h2 {
 .asset-form :deep(.el-select) {
   width: 100%;
 }
-.code-input :deep(textarea) {
-  font-family: var(--font-mono);
+.asset-code {
+  width: 100%;
 }
 .test-parameters {
   margin: var(--spacing-lg) 0;

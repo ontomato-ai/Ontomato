@@ -29,7 +29,7 @@ const relations = [
 const SkillSelector = defineComponent({ emits: ["ready"], mounted() { this.$emit("ready", true); }, template: "<div />" });
 const global = {
   plugins: [i18n, ElementPlus],
-  stubs: { SkillSelector, CodeMirrorEditor: { template: "<div />" } },
+  stubs: { SkillSelector, CodeEditor: { template: "<div />" } },
 };
 
 function agent(classNames: string[]): AssistantAgentDefinition {

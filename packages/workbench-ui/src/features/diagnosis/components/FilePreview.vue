@@ -1,11 +1,6 @@
 <script setup lang="ts">
-import { computed, ref } from "vue";
-import CodeMirrorEditor from "../../../components/CodeMirrorEditor.vue";
-
-
-interface SearchableEditor {
-  openSearch: () => void;
-}
+import { computed } from "vue";
+import { CodeEditor } from "@ontomato/foundation-ui/code";
 
 
 const props = defineProps<{
@@ -14,8 +9,6 @@ const props = defineProps<{
   filePath?: string;
   truncated?: boolean;
 }>();
-
-const editorRef = ref<SearchableEditor | null>(null);
 
 const ext = computed(() => {
   const dot = props.filename.lastIndexOf(".");
@@ -83,9 +76,6 @@ function parseCsvLine(line: string, sep: string): string[] {
   result.push(current.trim());
   return result;
 }
-
-function openSearch() { editorRef.value?.openSearch(); }
-defineExpose({ openSearch });
 </script>
 
 <template>
@@ -108,8 +98,7 @@ defineExpose({ openSearch });
 
     <!-- Text-backed formats -->
     <div v-else class="fp-editor-wrap">
-      <CodeMirrorEditor
-        ref="editorRef"
+      <CodeEditor
         :model-value="editorContent"
         :language="editorLanguage"
         :readonly="true"
@@ -158,12 +147,12 @@ defineExpose({ openSearch });
   min-height: 0;
 }
 
-.fp-editor-wrap :deep(.codemirror-editor) {
+.fp-editor-wrap :deep(.code-editor) {
   height: 100%;
   min-height: 100px;
 }
 
-.fp-prompt-wrap :deep(.codemirror-editor) {
+.fp-prompt-wrap :deep(.code-editor) {
   flex: 1 1 auto;
   min-height: 0;
 }

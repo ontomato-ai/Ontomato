@@ -192,17 +192,18 @@ export default [
   },
   {
     // The foundation UI is the bottom layer every application and the SDK share (one implementation per
-    // capability, exported by capability subpath): it depends only on Vue, Element Plus, ECharts, markstream-vue and
-    // the product Markdown, never on a platform package or a host. It may name the wire contracts' types, so a shape it
-    // draws has one definition, but carries no contract code: the TypeScript form of the rule tells a type import from
-    // a value import.
+    // capability, exported by capability subpath): it depends only on Vue, Element Plus, ECharts, markstream-vue,
+    // CodeMirror and the product Markdown, never on a platform package or a host. It may name the wire contracts'
+    // types, so a shape it draws has one definition, but carries no contract code: the TypeScript form of the rule tells
+    // a type import from a value import.
     files: ["packages/foundation-ui/src/**/*.{ts,vue}"],
+    ignores: ["packages/foundation-ui/src/**/__tests__/**"],
     rules: {
       "no-restricted-imports": "off",
       "@typescript-eslint/no-restricted-imports": restrict([
         {
-          regex: "^(?!(vue|element-plus|echarts|markstream-vue|@ontomato/markdown|@ontomato/contracts)(/|$)|\\.)",
-          message: "foundation-ui may depend only on Vue, Element Plus, ECharts, markstream-vue and the product Markdown; the packages that use it depend on it, not the other way round",
+          regex: "^(?!(vue|element-plus|echarts|markstream-vue|codemirror|@codemirror/[a-z-]+|@ontomato/markdown|@ontomato/contracts)(/|$)|\\.)",
+          message: "foundation-ui may depend only on Vue, Element Plus, ECharts, markstream-vue, CodeMirror and the product Markdown; the packages that use it depend on it, not the other way round",
         },
         {
           regex: "^@ontomato/contracts(/|$)",

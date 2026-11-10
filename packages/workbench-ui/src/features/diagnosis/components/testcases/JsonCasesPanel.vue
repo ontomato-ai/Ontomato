@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { useI18n } from "vue-i18n";
+import { CodeEditor } from "@ontomato/foundation-ui/code";
 
 defineProps<{
   collapsed: boolean;
@@ -17,6 +18,11 @@ const emit = defineEmits<{
 }>();
 
 const { t } = useI18n();
+
+/** Focus moving inside the editor, its search panel included, has not left the JSON; only focus leaving the editor has. */
+function leaveJson(event: FocusEvent) {
+  if (!(event.currentTarget as HTMLElement).contains(event.relatedTarget as Node | null)) emit("json-blur");
+}
 </script>
 
 <template>
@@ -36,17 +42,16 @@ const { t } = useI18n();
       </el-button>
     </div>
     <div class="json-editor-body">
-      <el-input
-        :model-value="jsonText"
-        class="json-editor"
-        type="textarea"
-        resize="none"
-        :autosize="false"
-        placeholder='[{"caseId":"1","question":"..."}]'
-        @focus="emit('json-focus')"
-        @blur="emit('json-blur')"
-        @input="emit('json-input', String($event))"
-      />
+      <!-- While the JSON has focus the page leaves its text alone; on leaving, it writes the cases back in order. -->
+      <div class="json-editor" @focusin="emit('json-focus')" @focusout="leaveJson">
+        <CodeEditor
+          :model-value="jsonText"
+          language="json"
+          :min-height="120"
+          placeholder='[{"caseId":"1","question":"..."}]'
+          @update:model-value="emit('json-input', $event)"
+        />
+      </div>
       <div v-if="jsonError" class="json-error">{{ jsonError }}</div>
     </div>
   </aside>
@@ -118,23 +123,10 @@ const { t } = useI18n();
   min-height: 0;
 }
 
-.json-editor :deep(.el-textarea__inner) {
+.json-editor :deep(.code-editor) {
   height: 100%;
-  min-height: 100%;
-  padding: 14px;
   border: none;
   border-radius: 0;
-  box-shadow: none;
-  resize: none;
-  background: var(--el-bg-color);
-  font-size: var(--text-mono);
-  font-family: var(--font-mono);
-  line-height: 1.6;
-  color: var(--el-text-color-regular);
-}
-
-.json-editor :deep(.el-textarea__inner:focus) {
-  box-shadow: inset 0 0 0 1px var(--el-color-primary-light-5);
 }
 
 .json-error {

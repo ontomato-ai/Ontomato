@@ -4,6 +4,7 @@ import type { SkillInfo } from "@ontomato/contracts/skills";
 import { ref, watch, computed } from "vue";
 import { ElMessage } from "element-plus";
 import { Eye, Pencil } from "lucide-vue-next";
+import { CodeEditor } from "@ontomato/foundation-ui/code";
 import { skillsApi } from "../api";
 import CodeEditorDialog from "./CodeEditorDialog.vue";
 import MarkdownEditorDialog from "./MarkdownEditorDialog.vue";
@@ -266,13 +267,13 @@ function resetForm() {
       </el-form-item>
 
       <el-form-item :label="t('admin.detailedContent')">
-        <div class="textarea-with-edit">
-          <el-input
+        <div class="field-with-edit">
+          <CodeEditor
             v-model="form.skillContent"
-            type="textarea"
-            :rows="3"
+            language="markdown"
+            :min-height="88"
             :placeholder="t('admin.skillDetail')"
-            :disabled="loading || isReadOnly"
+            :readonly="loading || isReadOnly"
           />
           <el-button
             type="primary"
@@ -287,13 +288,13 @@ function resetForm() {
       </el-form-item>
 
       <el-form-item v-if="form.type === 'executable'" :label="t('admin.scriptCode')">
-        <div class="textarea-with-edit">
-          <el-input
+        <div class="field-with-edit">
+          <CodeEditor
             v-model="form.scriptCode"
-            type="textarea"
-            :rows="3"
+            language="javascript"
+            :min-height="88"
             placeholder="node scripts/index.mjs work/input.json"
-            :disabled="loading || isReadOnly"
+            :readonly="loading || isReadOnly"
           />
           <el-button
             type="primary"
@@ -339,16 +340,16 @@ function resetForm() {
   margin-top: 4px;
 }
 
-.textarea-with-edit {
+.field-with-edit {
   position: relative;
   width: 100%;
 }
 
-.textarea-with-edit .el-input {
+.field-with-edit .code-editor {
   width: 100%;
 }
 
-.textarea-with-edit .edit-btn {
+.field-with-edit .edit-btn {
   position: absolute;
   right: 8px;
   bottom: 8px;
@@ -356,7 +357,7 @@ function resetForm() {
   transition: opacity 0.2s;
 }
 
-.textarea-with-edit:hover .edit-btn {
+.field-with-edit:hover .edit-btn {
   opacity: 1;
 }
 </style>

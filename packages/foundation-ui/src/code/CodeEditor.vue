@@ -1,21 +1,30 @@
 <script setup lang="ts">
 import { ref, watch, onMounted, onUnmounted } from "vue";
-import { useI18n } from "vue-i18n";
+import { useLocale } from "element-plus";
 import { EditorView, basicSetup } from "codemirror";
 import { javascript } from "@codemirror/lang-javascript";
 import { json } from "@codemirror/lang-json";
 import { markdown } from "@codemirror/lang-markdown";
 import { html } from "@codemirror/lang-html";
-import { openSearchPanel, search } from "@codemirror/search";
+import { python } from "@codemirror/lang-python";
+import { search } from "@codemirror/search";
 import { oneDark } from "@codemirror/theme-one-dark";
 import { placeholder as editorPlaceholder } from "@codemirror/view";
 import { EditorState } from "@codemirror/state";
-import { useTheme } from "../composables/useTheme";
+import { useDarkMode } from "../theme";
 
+/**
+ * Edits code and structured text (CodeMirror 6): line numbers, folding, highlighting for its language and wrapping.
+ * Read-only, it still takes the focus, selects and searches (Ctrl/Cmd-F). It follows the page's dark mode, and takes
+ * its one word of text, the search field's prompt, from the Element Plus locale the host installs. A placeholder is
+ * only shown, never content.
+ */
 const props = defineProps<{
   modelValue: string;
-  language?: "javascript" | "json" | "markdown" | "html" | "text";
+  /** JavaScript when not given. */
+  language?: "javascript" | "json" | "markdown" | "html" | "python" | "text";
   placeholder?: string;
+  /** In pixels; 300 when not given. */
   minHeight?: number;
   readonly?: boolean;
 }>();
@@ -24,8 +33,8 @@ const emit = defineEmits<{
   "update:modelValue": [value: string];
 }>();
 
-const { isDark } = useTheme();
-const { t } = useI18n();
+const isDark = useDarkMode();
+const { t } = useLocale();
 
 const editorRef = ref<HTMLDivElement | null>(null);
 let editor: EditorView | null = null;
@@ -39,7 +48,7 @@ const darkSelectionBackground = "var(--el-color-primary-light-8)";
 const lightTheme = EditorView.theme(
   {
     "&": {
-      backgroundColor: "var(--observe-bg-card, var(--el-fill-color-lighter))",
+      backgroundColor: "var(--el-fill-color-lighter)",
     },
     ".cm-content": {
       caretColor: "var(--el-text-color-primary)",
@@ -54,7 +63,7 @@ const lightTheme = EditorView.theme(
       backgroundColor: "var(--el-fill-color-light)",
     },
     ".cm-gutters": {
-      backgroundColor: "var(--observe-bg-card, var(--el-fill-color-lighter))",
+      backgroundColor: "var(--el-fill-color-lighter)",
       color: "var(--el-text-color-secondary)",
       border: "none",
     },
@@ -75,6 +84,8 @@ const getLanguageExtension = () => {
       return markdown();
     case "javascript":
       return javascript();
+    case "python":
+      return python();
     case "text":
       return [];
     default:
@@ -85,7 +96,7 @@ const getLanguageExtension = () => {
 const readonlyThemeLight = EditorView.theme(
   {
     "&": {
-      backgroundColor: "var(--observe-bg-card, var(--el-fill-color-lighter))",
+      backgroundColor: "var(--el-fill-color-lighter)",
     },
     ".cm-content": {
       caretColor: "transparent",
@@ -100,7 +111,7 @@ const readonlyThemeLight = EditorView.theme(
       backgroundColor: "transparent",
     },
     ".cm-gutters": {
-      backgroundColor: "var(--observe-bg-card, var(--el-fill-color-lighter))",
+      backgroundColor: "var(--el-fill-color-lighter)",
       color: "var(--el-text-color-secondary)",
       border: "none",
     },
@@ -114,7 +125,7 @@ const readonlyThemeLight = EditorView.theme(
 const readonlyThemeDark = EditorView.theme(
   {
     "&": {
-      backgroundColor: "var(--observe-bg-main, var(--el-bg-color))",
+      backgroundColor: "var(--el-bg-color)",
     },
     ".cm-content": {
       caretColor: "transparent",
@@ -129,7 +140,7 @@ const readonlyThemeDark = EditorView.theme(
       backgroundColor: "transparent",
     },
     ".cm-gutters": {
-      backgroundColor: "var(--observe-bg-main, var(--el-bg-color))",
+      backgroundColor: "var(--el-bg-color)",
       color: "var(--el-text-color-secondary)",
       border: "none",
     },
@@ -152,8 +163,10 @@ const createEditor = () => {
   ];
 
   if (props.readonly) {
+    // Content that is not editable takes no focus by itself, and the search keys only reach a focused editor.
+    extensions.push(EditorView.contentAttributes.of({ tabindex: "0" }));
     extensions.push(search({ top: true }));
-    extensions.push(EditorState.phrases.of({ Find: t("common.search") }));
+    extensions.push(EditorState.phrases.of({ Find: t("el.transfer.filterPlaceholder") }));
     extensions.push(EditorView.editable.of(false));
     extensions.push(EditorState.readOnly.of(true));
     if (isDark.value) {
@@ -193,11 +206,6 @@ const recreateEditor = () => {
   createEditor();
 };
 
-function openSearch() {
-  if (!editor) return;
-  openSearchPanel(editor);
-}
-
 watch(
   () => props.modelValue,
   (newValue) => {
@@ -213,7 +221,8 @@ watch(
   }
 );
 
-watch(isDark, () => {
+// The extensions are fixed when the editor is made, so a new theme, mode, language or placeholder makes a new editor.
+watch([isDark, () => props.readonly, () => props.language, () => props.placeholder], () => {
   recreateEditor();
 });
 
@@ -224,80 +233,76 @@ onMounted(() => {
 onUnmounted(() => {
   destroyEditor();
 });
-
-defineExpose({
-  openSearch,
-});
 </script>
 
 <template>
   <div
     ref="editorRef"
-    class="codemirror-editor"
+    class="code-editor"
     :class="{ 'readonly-mode': readonly }"
     :style="{ minHeight: `${minHeight || 300}px` }"
   />
 </template>
 
 <style scoped>
-.codemirror-editor {
+.code-editor {
   border: 1px solid var(--el-border-color);
   border-radius: 8px;
   overflow: hidden;
   font-family: var(--font-mono);
-  background: var(--observe-bg-card, var(--el-fill-color-lighter));
+  background: var(--el-fill-color-lighter);
 }
 
-.codemirror-editor.readonly-mode {
-  border: 1px solid var(--observe-border, var(--el-border-color-lighter));
-  background: var(--observe-bg-card, var(--el-fill-color-lighter));
+.code-editor.readonly-mode {
+  border: 1px solid var(--el-border-color-lighter);
+  background: var(--el-fill-color-lighter);
 }
 
-.codemirror-editor :deep(.cm-editor) {
+.code-editor :deep(.cm-editor) {
   height: 100%;
   outline: none;
   color: var(--el-text-color-primary);
 }
 
-.codemirror-editor :deep(.cm-scroller) {
+.code-editor :deep(.cm-scroller) {
   overflow: auto;
 }
 
-.codemirror-editor :deep(.cm-content) {
+.code-editor :deep(.cm-content) {
   padding: 8px 0;
 }
 
-.codemirror-editor :deep(.cm-line) {
+.code-editor :deep(.cm-line) {
   padding: 0 8px;
 }
 
-.codemirror-editor.readonly-mode :deep(.cm-editor) {
+.code-editor.readonly-mode :deep(.cm-editor) {
   font-size: 12px;
 }
 
-.codemirror-editor.readonly-mode :deep(.cm-scroller) {
+.code-editor.readonly-mode :deep(.cm-scroller) {
   font-family: var(--font-mono);
   line-height: 1.65;
 }
 
-.codemirror-editor.readonly-mode :deep(.cm-content) {
+.code-editor.readonly-mode :deep(.cm-content) {
   padding: 12px 0;
 }
 
-.codemirror-editor.readonly-mode :deep(.cm-line) {
+.code-editor.readonly-mode :deep(.cm-line) {
   padding: 0 12px;
 }
 
-.codemirror-editor.readonly-mode :deep(.cm-gutters) {
-  border-right: 1px solid var(--observe-border, var(--el-border-color-lighter));
+.code-editor.readonly-mode :deep(.cm-gutters) {
+  border-right: 1px solid var(--el-border-color-lighter);
 }
 
-.codemirror-editor.readonly-mode :deep(.cm-lineNumbers .cm-gutterElement) {
+.code-editor.readonly-mode :deep(.cm-lineNumbers .cm-gutterElement) {
   padding: 0 8px 0 10px;
   min-width: 34px;
 }
 
-.codemirror-editor :deep(.cm-foldGutter span) {
+.code-editor :deep(.cm-foldGutter span) {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -315,12 +320,12 @@ defineExpose({
     background-color 160ms ease;
 }
 
-.codemirror-editor :deep(.cm-foldGutter span:hover) {
+.code-editor :deep(.cm-foldGutter span:hover) {
   color: var(--el-color-primary);
   background: var(--el-color-primary-light-9);
 }
 
-.codemirror-editor.readonly-mode :deep(.cm-panels-top:has(.cm-search)) {
+.code-editor.readonly-mode :deep(.cm-panels-top:has(.cm-search)) {
   position: absolute;
   top: 8px !important;
   right: 8px;
@@ -332,7 +337,7 @@ defineExpose({
   z-index: 50;
 }
 
-.codemirror-editor.readonly-mode :deep(.cm-panel.cm-search) {
+.code-editor.readonly-mode :deep(.cm-panel.cm-search) {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -340,14 +345,14 @@ defineExpose({
   box-sizing: border-box;
   width: 100%;
   padding: 6px 36px 6px 8px;
-  border: 1px solid var(--observe-border, var(--el-border-color));
+  border: 1px solid var(--el-border-color);
   border-radius: 8px;
   background: var(--el-bg-color-overlay);
   box-shadow: var(--el-box-shadow-light);
   font-family: var(--el-font-family, sans-serif);
 }
 
-.codemirror-editor.readonly-mode :deep(.cm-search input[name="search"]) {
+.code-editor.readonly-mode :deep(.cm-search input[name="search"]) {
   flex: 1 1 160px;
   min-width: 120px;
   height: 28px;
@@ -362,12 +367,12 @@ defineExpose({
   font: inherit;
 }
 
-.codemirror-editor.readonly-mode :deep(.cm-search input[name="search"]:focus) {
+.code-editor.readonly-mode :deep(.cm-search input[name="search"]:focus) {
   border-color: var(--el-color-primary);
   box-shadow: 0 0 0 2px var(--el-color-primary-light-8);
 }
 
-.codemirror-editor.readonly-mode :deep(.cm-search .cm-button) {
+.code-editor.readonly-mode :deep(.cm-search .cm-button) {
   height: 28px;
   min-width: 28px;
   box-sizing: border-box;
@@ -388,30 +393,30 @@ defineExpose({
     background-color 160ms ease;
 }
 
-.codemirror-editor.readonly-mode :deep(.cm-search .cm-button:hover),
-.codemirror-editor.readonly-mode :deep(.cm-search label:hover),
-.codemirror-editor.readonly-mode :deep(.cm-search button[name="close"]:hover) {
+.code-editor.readonly-mode :deep(.cm-search .cm-button:hover),
+.code-editor.readonly-mode :deep(.cm-search label:hover),
+.code-editor.readonly-mode :deep(.cm-search button[name="close"]:hover) {
   color: var(--el-color-primary);
   background: var(--el-color-primary-light-9);
 }
 
-.codemirror-editor.readonly-mode :deep(.cm-search .cm-button:focus-visible),
-.codemirror-editor.readonly-mode :deep(.cm-search button[name="close"]:focus-visible),
-.codemirror-editor.readonly-mode :deep(.cm-search label:has(input:focus-visible)) {
+.code-editor.readonly-mode :deep(.cm-search .cm-button:focus-visible),
+.code-editor.readonly-mode :deep(.cm-search button[name="close"]:focus-visible),
+.code-editor.readonly-mode :deep(.cm-search label:has(input:focus-visible)) {
   outline: 2px solid var(--el-color-primary-light-5);
   outline-offset: 1px;
 }
 
-.codemirror-editor.readonly-mode :deep(.cm-search button[name="next"]),
-.codemirror-editor.readonly-mode :deep(.cm-search button[name="prev"]) {
+.code-editor.readonly-mode :deep(.cm-search button[name="next"]),
+.code-editor.readonly-mode :deep(.cm-search button[name="prev"]) {
   width: 28px;
   padding: 0;
   border-color: var(--el-border-color-lighter);
   font-size: 0;
 }
 
-.codemirror-editor.readonly-mode :deep(.cm-search button[name="next"]::before),
-.codemirror-editor.readonly-mode :deep(.cm-search button[name="prev"]::before) {
+.code-editor.readonly-mode :deep(.cm-search button[name="next"]::before),
+.code-editor.readonly-mode :deep(.cm-search button[name="prev"]::before) {
   content: "";
   display: inline-block;
   width: 6px;
@@ -420,15 +425,15 @@ defineExpose({
   border-bottom: 1.5px solid currentColor;
 }
 
-.codemirror-editor.readonly-mode :deep(.cm-search button[name="next"]::before) {
+.code-editor.readonly-mode :deep(.cm-search button[name="next"]::before) {
   transform: translateY(-2px) rotate(45deg);
 }
 
-.codemirror-editor.readonly-mode :deep(.cm-search button[name="prev"]::before) {
+.code-editor.readonly-mode :deep(.cm-search button[name="prev"]::before) {
   transform: translateY(2px) rotate(225deg);
 }
 
-.codemirror-editor.readonly-mode :deep(.cm-search label) {
+.code-editor.readonly-mode :deep(.cm-search label) {
   position: relative;
   display: inline-flex;
   align-items: center;
@@ -448,33 +453,33 @@ defineExpose({
     background-color 160ms ease;
 }
 
-.codemirror-editor.readonly-mode :deep(.cm-search label::after) {
+.code-editor.readonly-mode :deep(.cm-search label::after) {
   font-family: var(--font-mono);
   font-size: var(--text-xs);
   line-height: 1;
 }
 
-.codemirror-editor.readonly-mode :deep(.cm-search label:has(input[name="case"])::after) {
+.code-editor.readonly-mode :deep(.cm-search label:has(input[name="case"])::after) {
   content: "Aa";
 }
 
-.codemirror-editor.readonly-mode :deep(.cm-search label:has(input[name="re"])::after) {
+.code-editor.readonly-mode :deep(.cm-search label:has(input[name="re"])::after) {
   content: ".*";
 }
 
-.codemirror-editor.readonly-mode :deep(.cm-search label:has(input[name="word"])::after) {
+.code-editor.readonly-mode :deep(.cm-search label:has(input[name="word"])::after) {
   content: "ab";
   text-decoration: underline;
   text-underline-offset: 2px;
 }
 
-.codemirror-editor.readonly-mode :deep(.cm-search label:has(input:checked)) {
+.code-editor.readonly-mode :deep(.cm-search label:has(input:checked)) {
   border-color: var(--el-color-primary-light-5);
   background: var(--el-color-primary-light-9);
   color: var(--el-color-primary);
 }
 
-.codemirror-editor.readonly-mode :deep(.cm-search input[type="checkbox"]) {
+.code-editor.readonly-mode :deep(.cm-search input[type="checkbox"]) {
   position: absolute;
   width: 1px;
   height: 1px;
@@ -483,7 +488,7 @@ defineExpose({
   pointer-events: none;
 }
 
-.codemirror-editor.readonly-mode :deep(.cm-search button[name="close"]) {
+.code-editor.readonly-mode :deep(.cm-search button[name="close"]) {
   position: absolute;
   top: 6px;
   right: 6px;
