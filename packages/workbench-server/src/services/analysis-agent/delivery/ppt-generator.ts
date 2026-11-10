@@ -4,7 +4,7 @@ import { tApp } from "../../../i18n";
 import type { PptSummarySlide, PptSummaryOutline, PptGenerationOptions, PptSourceSection } from "@ontomato/contracts/ppt";
 import { parseProductMarkdown } from "@ontomato/markdown";
 import { renderChartHtmlToDataUrl } from "./chart-renderer";
-import { captionRuns, cutRuns, firstHeading, htmlBlocks, pptTables, runsText, type PptRun } from "./ppt-markdown";
+import { captionRuns, cutRuns, firstHeading, htmlBlocks, pptTables, runsText, type PptCell } from "./ppt-markdown";
 import { summarizeReportForPpt } from "./ppt-summarizer";
 import { createLogger } from "../../../logging/logger";
 
@@ -36,41 +36,43 @@ export function tableColumnWidths(columns: readonly string[], rows: readonly (re
   return widths.map(width => +width.toFixed(2));
 }
 
-/** A dataset value as the runs of a table cell. */
-function valueRuns(value: unknown): PptRun[] {
-  return [{text: typeof value === "object" && value !== null ? JSON.stringify(value) : String(value ?? ""), options: {}}];
+/** A dataset value as a table cell. */
+function valueCell(value: unknown): PptCell {
+  return {runs: [{text: typeof value === "object" && value !== null ? JSON.stringify(value) : String(value ?? ""), options: {}}]};
 }
 
 /**
- * Render a native data table, paginating rows manually (pptxgenjs autoPage underestimates CJK text height). Cells are
- * runs, so a table from an answer keeps the formatting its page shows.
+ * Render a native data table, paginating rows manually (pptxgenjs autoPage underestimates CJK text height). A table from
+ * an answer keeps what its page shows: each cell's formatting as runs, and each column's alignment.
  */
-function addDataTable(deck: pptxgen, sectionTitle: string, table: {columns: PptRun[][]; rows: PptRun[][][]}) {
-  const columns = table.columns.map(cell => cutRuns(cell, 600, "…"));
-  const rows = table.rows.map(row => row.map(cell => cutRuns(cell, 600, "…")));
-  const columnTexts = columns.map(runsText);
-  const rowTexts = rows.map(row => row.map(runsText));
+function addDataTable(deck: pptxgen, sectionTitle: string, table: {columns: PptCell[]; rows: PptCell[][]}) {
+  const cut = (cell: PptCell): PptCell => ({runs: cutRuns(cell.runs, 600, "…"), align: cell.align});
+  const columns = table.columns.map(cut);
+  const rows = table.rows.map(row => row.map(cut));
+  const cellText = (cell: PptCell) => runsText(cell.runs);
+  const columnTexts = columns.map(cellText);
+  const rowTexts = rows.map(row => row.map(cellText));
   const allText = [columnTexts, ...rowTexts].flat().join("");
   const fontSize = allText.length > 4000 ? 8 : allText.length > 1200 ? 9 : 10;
   const colW = tableColumnWidths(columnTexts, rowTexts);
   const headerRow = columns.map(cell => ({
-    text: cell.map(run => ({text: run.text, options: {...run.options, bold: true}})),
-    options: {bold: true, color: "172033", fill: {color: "EEF3FB"}},
+    text: cell.runs.map(run => ({text: run.text, options: {...run.options, bold: true}})),
+    options: {bold: true, color: "172033", fill: {color: "EEF3FB"}, align: cell.align},
   }));
 
   // Rough per-row height: full-width CJK glyph ≈ fontSize; add padding. Conservative enough for pagination.
-  const rowHeight = (cells: readonly PptRun[][]): number => {
+  const rowHeight = (cells: readonly PptCell[]): number => {
     let lines = 1;
     cells.forEach((cell, index) => {
       const charsPerLine = Math.max(4, Math.floor((colW[index] ?? 2) / (fontSize / 72)));
-      lines = Math.max(lines, Math.ceil(runsText(cell).length / charsPerLine));
+      lines = Math.max(lines, Math.ceil(cellText(cell).length / charsPerLine));
     });
     return lines * (fontSize / 72) * 1.35 + .1;
   };
 
   const availableHeight = 5.55; // table starts at y=1.3, footer sits at y≈7.08
-  const chunks: PptRun[][][][] = [];
-  let current: PptRun[][][] = [];
+  const chunks: PptCell[][][] = [];
+  let current: PptCell[][] = [];
   let currentHeight = 0;
   for (const row of rows) {
     const height = rowHeight(row);
@@ -88,7 +90,7 @@ function addDataTable(deck: pptxgen, sectionTitle: string, table: {columns: PptR
     const slide = deck.addSlide("REPORT");
     addSlideChrome(slide, deck.ShapeType, sectionTitle);
     slide.addText(sectionTitle, {x: .6, y: .4, w: 12, h: .7, fontSize: 24, fontFace: "Microsoft YaHei", color: "172033", fit: "shrink", margin: 0});
-    slide.addTable([headerRow, ...chunk.map(row => row.map(cell => ({text: cell, options: {valign: "top" as const}})))], {
+    slide.addTable([headerRow, ...chunk.map(row => row.map(cell => ({text: cell.runs, options: {valign: "top" as const, align: cell.align}})))], {
       x: .6,
       y: 1.3,
       colW,
@@ -387,7 +389,7 @@ export async function buildPptDeck(
       if (description.length) slide.addText(description, {x: .8, y: 6.5, w: 11.6, h: .45, fontSize: 10, fontFace: "Microsoft YaHei", color: "667085", fit: "shrink", margin: 0});
     }
     const tables = [
-      ...(section.tables || []).map(table => ({columns: table.columns.map(valueRuns), rows: table.rows.map(row => row.map(valueRuns))})),
+      ...(section.tables || []).map(table => ({columns: table.columns.map(valueCell), rows: table.rows.map(row => row.map(valueCell))})),
       ...pptTables(nodes),
     ];
     for (const table of tables) {

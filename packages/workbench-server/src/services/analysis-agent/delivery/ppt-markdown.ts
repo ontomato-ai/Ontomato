@@ -6,6 +6,7 @@ import type {
   InlineCodeNode,
   LinkNode,
   ParsedNode,
+  TableCellNode,
   TableNode,
   TextNode,
 } from "@ontomato/markdown";
@@ -65,11 +66,21 @@ export function cutRuns(runs: readonly PptRun[], maxLength: number, ending: stri
   return cut;
 }
 
-/** The text's tables, every cell as runs. */
-export function pptTables(nodes: readonly ParsedNode[]): { columns: PptRun[][]; rows: PptRun[][][] }[] {
+/** A table cell on a slide: its runs, and the alignment its column has on the page. */
+export interface PptCell {
+  runs: PptRun[];
+  align?: TableCellNode["align"];
+}
+
+function pptCell(cell: TableCellNode): PptCell {
+  return { runs: pptRuns(cell.children), align: cell.align };
+}
+
+/** The text's tables, every cell with its runs and its column's alignment. */
+export function pptTables(nodes: readonly ParsedNode[]): { columns: PptCell[]; rows: PptCell[][] }[] {
   return nodesOfType<TableNode>(nodes, "table").map(({ header, rows }) => ({
-    columns: header.cells.map((cell) => pptRuns(cell.children)),
-    rows: rows.map((row) => row.cells.map((cell) => pptRuns(cell.children))),
+    columns: header.cells.map(pptCell),
+    rows: rows.map((row) => row.cells.map(pptCell)),
   }));
 }
 
