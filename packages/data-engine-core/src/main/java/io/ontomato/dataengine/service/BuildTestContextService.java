@@ -61,6 +61,7 @@ public class BuildTestContextService {
     var classes=sample.getJSONArray("objDatas").toJavaList(JSONObject.class).stream().map(o->o.getString("className")).distinct().toList();
     if(classes.isEmpty()) throw error(HttpStatus.BAD_REQUEST,"BUILD_TEST_SAMPLE_INVALID: classes required");
     if(!QueryAccessService.classScope(identity.getCurrentUserDataPermission(),classes).containsAll(classes)) throw error(HttpStatus.FORBIDDEN,"BUILD_TEST_FORBIDDEN");
+    for(String stale:jdbc.queryForList("SELECT id FROM build_test_contexts WHERE owner_id=? AND domain_id=? AND workspace_id=? AND state IN ('EXPIRED','PREPARE_FAILED') AND cleanup_attempted=false",String.class,user.getId(),user.getDomainId(),workspace)) cleanup(row(stale));
     var failed=jdbc.queryForList("SELECT id FROM build_test_contexts WHERE owner_id=? AND domain_id=? AND workspace_id=? AND cleanup_attempted=true AND (cleanup_error IS NULL OR cleanup_error <> '')",String.class,user.getId(),user.getDomainId(),workspace);
     if(!failed.isEmpty()) throw error(HttpStatus.CONFLICT,"BUILD_TEST_CLEANUP_FAILED: "+failed.get(0));
     var binding=sandbox.bindSample(sample,user.getDomainId());
