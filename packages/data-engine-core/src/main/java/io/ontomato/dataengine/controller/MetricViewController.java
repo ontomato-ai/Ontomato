@@ -44,6 +44,9 @@ import lombok.extern.slf4j.Slf4j;
 @Slf4j
 @RestController
 public class MetricViewController {
+    @org.springframework.beans.factory.annotation.Autowired
+    private io.ontomato.dataengine.service.BuildTestContextService buildTests;
+
 
 	@Autowired
     private IdentityService identityService;
@@ -226,7 +229,7 @@ public class MetricViewController {
 	
 	@PostMapping("/metricView/test")
     @ResponseBody
-    public JSONObject test(@RequestHeader(ControllerConst.LANG_HEADER_KEY) String lang, @RequestBody JSONObject param) {
+    public JSONObject test(@RequestHeader(ControllerConst.LANG_HEADER_KEY) String lang, @RequestBody JSONObject param, jakarta.servlet.http.HttpServletRequest executionRequest) {
 		JSONObject ret = new JSONObject();
 		try {
 			UserDataPermission curUserDataPermission = identityService.getCurrentUserDataPermission();
@@ -240,20 +243,21 @@ public class MetricViewController {
 			if (timeoutMinutes <= 0) {
 				timeoutMinutes = 1;
 			}
-			MetricViewContent metricViewContent = metricViewService.test(metricView, lang, user, curUserDataPermission, timeoutMinutes);
+			MetricViewContent metricViewContent = metricViewService.test(metricView, lang, user, curUserDataPermission, timeoutMinutes, buildTests.resolve(executionRequest));
 			ret.put("success", true);
 			ret.put("data", metricViewContent);
 		} catch (Exception e) {
 			log.error(e.getMessage(), e);
 			ret.put("success", false);
 			ret.put("message", e.getMessage());
+            io.ontomato.dataengine.service.ExecutionTarget.failure(ret,e);
 		}
 		return ret;
 	}
 	
 	@PostMapping("/metricView/execute")
     @ResponseBody
-    public JSONObject execute(@RequestHeader(ControllerConst.LANG_HEADER_KEY) String lang, @RequestBody JSONObject param) {
+    public JSONObject execute(@RequestHeader(ControllerConst.LANG_HEADER_KEY) String lang, @RequestBody JSONObject param, jakarta.servlet.http.HttpServletRequest executionRequest) {
 		JSONObject ret = new JSONObject();
 		try {
 			UserDataPermission curUserDataPermission = identityService.getCurrentUserDataPermission();
@@ -265,7 +269,7 @@ public class MetricViewController {
 			if (timeoutMinutes <= 0) {
 				timeoutMinutes = 1;
 			}
-			Object[] o = metricViewService.execute(id, param.getString("bindingId"), p, param.getJSONObject("parameterTexts"), lang, user, curUserDataPermission, timeoutMinutes);
+			Object[] o = metricViewService.execute(id, param.getString("bindingId"), p, param.getJSONObject("parameterTexts"), lang, user, curUserDataPermission, timeoutMinutes, buildTests.resolve(executionRequest));
 			ret.put("success", true);
 			ret.put("data", o[0]);
 			((PythonExecuteResult)o[1]).markCompleteness(ret);
@@ -273,13 +277,14 @@ public class MetricViewController {
 			log.error(e.getMessage(), e);
 			ret.put("success", false);
 			ret.put("message", e.getMessage());
+            io.ontomato.dataengine.service.ExecutionTarget.failure(ret,e);
 		}
 		return ret;
 	}
 	
 	@PostMapping("/metricView/testExecute")
     @ResponseBody
-    public JSONObject testExecute(@RequestHeader(ControllerConst.LANG_HEADER_KEY) String lang, @RequestBody JSONObject param) {
+    public JSONObject testExecute(@RequestHeader(ControllerConst.LANG_HEADER_KEY) String lang, @RequestBody JSONObject param, jakarta.servlet.http.HttpServletRequest executionRequest) {
 		JSONObject ret = new JSONObject();
 		try {
 			UserDataPermission curUserDataPermission = identityService.getCurrentUserDataPermission();
@@ -293,7 +298,7 @@ public class MetricViewController {
 			if (timeoutMinutes <= 0) {
 				timeoutMinutes = 1;
 			}
-			Object[] o = metricViewService.testExecute(metricView, param.getString("bindingId"), p, lang, user, curUserDataPermission, timeoutMinutes);
+			Object[] o = metricViewService.testExecute(metricView, param.getString("bindingId"), p, lang, user, curUserDataPermission, timeoutMinutes, buildTests.resolve(executionRequest));
 			ret.put("success", true);
 			ret.put("data", o[0]);
 			((PythonExecuteResult)o[1]).markCompleteness(ret);
@@ -301,6 +306,7 @@ public class MetricViewController {
 			log.error(e.getMessage(), e);
 			ret.put("success", false);
 			ret.put("message", e.getMessage());
+            io.ontomato.dataengine.service.ExecutionTarget.failure(ret,e);
 		}
 		return ret;
 	}

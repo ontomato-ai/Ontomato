@@ -664,6 +664,46 @@ public class PostgreAdapter implements DataAdapter {
 	public void validateClassNameFormat(String className) throws Exception {
 	}
 
+    @Override
+    public JSONObject createRecordedClass(String namespace,Map<String,Object> definition) {
+      createClass(namespace,definition);
+      try(var connection=openConnection();var statement=connection.prepareStatement(
+          "SELECT c.relname,n.nspname FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE c.oid=to_regclass(?)")) {
+        statement.setString(1,sandboxClassName(namespace,(String)definition.get("className")));
+        try(var rows=statement.executeQuery()) {
+          if(!rows.next()) throw new IllegalStateException("Database did not identify the created table");
+          return JSONObject.of("kind","table","name",rows.getString(1),"schema",rows.getString(2));
+        }
+      } catch(java.sql.SQLException failure) { throw new IllegalStateException("Cannot identify sandbox table",failure); }
+    }
+
+    @Override
+    public void validateSandboxClasses(String namespace, List<Map<String,Object>> classes) {
+      var names=new java.util.HashMap<String,String>();
+      try(var connection=openConnection();var statement=connection.prepareStatement("SELECT lower(?)::name::text")) {
+        for(var cls:classes) {
+          String logical=sandboxClassName(namespace,(String)cls.get("className"));
+          statement.setString(1,logical);
+          try(var rows=statement.executeQuery()) {
+            rows.next();String actual=rows.getString(1),previous=names.putIfAbsent(actual,logical);
+            if(previous!=null) throw new IllegalArgumentException("Sandbox table collision: "+previous+" and "+logical+" resolve to "+actual);
+          }
+          var columns=new java.util.HashMap<String,String>();
+          for(var attribute:(List<Map<String,Object>>)cls.get("attrs")) {
+            if(Boolean.FALSE.equals(attribute.get("enable"))) continue;
+            String field=(String)attribute.get("name");statement.setString(1,field);
+            try(var rows=statement.executeQuery()) {
+              rows.next();String previous=columns.putIfAbsent(rows.getString(1),field);
+              if(previous!=null) throw new IllegalArgumentException("Sandbox column collision: "+logical+"."+previous+" and "+logical+"."+field+" resolve to "+rows.getString(1));
+            }
+          }
+        }
+      } catch(java.sql.SQLException failure) { throw new IllegalStateException("Cannot resolve sandbox identifiers",failure); }
+    }
+
+    @Override
+    public boolean supportsSandbox() { return true; }
+
 	@Override
 	public void createNamespace(String namespace) {
 		
@@ -682,7 +722,7 @@ public class PostgreAdapter implements DataAdapter {
 				}
 			}
 		} catch (Exception e) {
-			log.error(e.getMessage(), e);
+			throw new IllegalStateException("Sandbox structure operation failed", e);
 		}
 	}
 
@@ -699,7 +739,7 @@ public class PostgreAdapter implements DataAdapter {
 				}
 			}
 		} catch (Exception e) {
-			log.error(e.getMessage(), e);
+			throw new IllegalStateException("Sandbox structure operation failed", e);
 		}
 	}
 
@@ -714,7 +754,8 @@ public class PostgreAdapter implements DataAdapter {
 					if (attr.get("enable") == null || (Boolean)attr.get("enable")) {
 						String name = (String) attr.get("name");
 						String type = (String) attr.get("type");
-						if (name != null && isSupportedType(type)) {
+						if (name == null || !isSupportedType(type)) throw new IllegalArgumentException("Unsupported sandbox attribute: " + name + " (" + type + ")");
+                        if (name != null && isSupportedType(type)) {
 							String ty = "";
 							if ("varchar".equals(type)) {
 								ty = "varchar(200)";
@@ -748,7 +789,7 @@ public class PostgreAdapter implements DataAdapter {
 			sql.append(" );");
 			executeSql(sql.toString());
 		} catch (Exception e) {
-			log.error(e.getMessage(), e);
+			throw new IllegalStateException("Sandbox structure operation failed", e);
 		}
 	}
 	

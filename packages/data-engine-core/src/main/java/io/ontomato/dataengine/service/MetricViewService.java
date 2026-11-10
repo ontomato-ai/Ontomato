@@ -11,6 +11,10 @@ import io.ontomato.dataengine.core.bean.User;
 import io.ontomato.dataengine.service.sys.bean.permission.UserDataPermission;
 
 public interface MetricViewService {
+    MetricViewContent test(MetricView metricView, String lang, User user, UserDataPermission permission, int timeoutMinutes, ExecutionTarget target) throws Exception;
+    Object[] execute(String id, String bindingId, JSONObject param, JSONObject parameterTexts, String lang, User user, UserDataPermission permission, int timeoutMinutes, ExecutionTarget target) throws Exception;
+    Object[] testExecute(MetricView metric, String bindingId, JSONObject param, String lang, User user, UserDataPermission permission, int timeoutMinutes, ExecutionTarget target) throws Exception;
+
     List<MetricView> queryForRetrieval(String domainId,String query,String cursor,List<String> classes,int limit);
 	
 	public MetricView generateFromNatureLanguage(String question, String lang, String domainId, boolean persistence) throws Exception;

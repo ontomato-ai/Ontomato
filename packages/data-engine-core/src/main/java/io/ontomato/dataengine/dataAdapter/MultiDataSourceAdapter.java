@@ -327,6 +327,38 @@ public class MultiDataSourceAdapter implements DataAdapter {
 		}
 	}
 
+    @Override public void validateSandboxClasses(String namespace,List<Map<String,Object>> classes) {
+      var groups=classes.stream().collect(java.util.stream.Collectors.groupingBy(cls->configSourceOfClass(classNameOf(cls))));
+      groups.forEach((source,definitions)->delegate(source).validateSandboxClasses(namespace,definitions));
+    }
+    @Override public void createRecordedNamespaces(String namespace,List<String> classes,java.util.function.Consumer<JSONObject> save) {
+      classes.stream().map(this::configSourceOfClass).distinct().forEach(source->
+        delegate(source).createRecordedNamespaces(namespace,classes,resource->{resource.put("sourceId",source);save.accept(resource);}));
+    }
+    @Override public JSONObject createRecordedClass(String namespace,Map<String,Object> definition) {
+      String source=configSourceOfClass(classNameOf(definition));
+      var resource=delegate(source).createRecordedClass(namespace,definition);resource.put("sourceId",source);return resource;
+    }
+    @Override public void dropRecordedResource(JSONObject resource) {
+      delegate(resource.getString("sourceId")).dropRecordedResource(resource);
+    }
+
+    private java.util.List<DataAdapter> sandboxSources(java.util.List<String> classes) {
+      return classes.stream().map(this::configSourceOfClass).distinct().map(this::delegate).toList();
+    }
+    @Override public boolean supportsSandbox() {
+      return definition.getDataSources().stream().allMatch(source -> delegate(source.getId()).supportsSandbox());
+    }
+    @Override public boolean supportsSandbox(java.util.List<String> classes) {
+      return sandboxSources(classes).stream().allMatch(DataAdapter::supportsSandbox);
+    }
+    @Override public void createNamespace(String namespace, java.util.List<String> classes) {
+      sandboxSources(classes).forEach(adapter -> adapter.createNamespace(namespace));
+    }
+    @Override public void dropNamespace(String namespace, java.util.List<String> classes) {
+      sandboxSources(classes).forEach(adapter -> adapter.dropNamespace(namespace));
+    }
+
 	@Override
 	public void createNamespace(String namespace) {
 		fanOut("createNamespace", adapter -> adapter.createNamespace(namespace));

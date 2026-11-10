@@ -59,7 +59,7 @@ public class VectorResourceDao extends BaseDao {
 	}
 
 	private String quotedTable(String indexName) {
-		return "\"" + indexName + "\"";
+		return "\"" + indexName.replace("\"", "\"\"") + "\"";
 	}
 
 	private String replace(String brief) {
@@ -87,6 +87,39 @@ public class VectorResourceDao extends BaseDao {
 						+ ")");
 	}
 
+    public com.alibaba.fastjson2.JSONObject plannedSandboxVector(String className,String attrName,String domain) {
+      String logical=generateIndexName(className,attrName,domain);
+      return com.alibaba.fastjson2.JSONObject.of("logicalName",logical,"className",className,"attrName",attrName,
+          "directory",new File("conf/"+dirName+"/"+logical).getAbsolutePath());
+    }
+
+    /** Ask PostgreSQL to normalize identifiers before DDL; never silently share one physical table. */
+    public void validateSandboxVectorNames(List<com.alibaba.fastjson2.JSONObject> planned) {
+      var names=new java.util.HashMap<String,String>();
+      for(var resource:planned) {
+        String logical=resource.getString("logicalName");
+        String actual=jdbcTemplate.queryForObject("SELECT ?::name::text",String.class,logical);
+        String previous=names.putIfAbsent(actual,logical);
+        if(previous!=null) throw new IllegalArgumentException("Sandbox vector table collision: "+previous+" and "+logical+" resolve to "+actual);
+      }
+    }
+
+    public com.alibaba.fastjson2.JSONObject createRecordedVector(com.alibaba.fastjson2.JSONObject planned,String domain) {
+      ensureVectorTable(planned.getString("className"),planned.getString("attrName"),domain);
+      var actual=jdbcTemplate.queryForMap("SELECT c.relname,n.nspname FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE c.oid=to_regclass(?)",quotedTable(planned.getString("logicalName")));
+      try {
+        return com.alibaba.fastjson2.JSONObject.of("kind","vector","name",actual.get("relname"),"schema",actual.get("nspname"),
+            "directory",new File(planned.getString("directory")).getCanonicalPath());
+      } catch(java.io.IOException failure) { throw new IllegalStateException("Cannot identify created vector directory",failure); }
+    }
+
+    public void dropRecordedVector(com.alibaba.fastjson2.JSONObject resource) {
+      File directory=new File(resource.getString("directory"));
+      deleteFilesInDirectory(directory);
+      if(directory.exists() && !directory.delete()) throw new IllegalStateException("Cannot delete vector directory: "+directory);
+      jdbcTemplate.execute("DROP TABLE IF EXISTS "+quotedTable(resource.getString("schema"))+"."+quotedTable(resource.getString("name")));
+    }
+
 	/**
 	 * Ensure the vector table and its file directory exist (idempotent).
 	 *
@@ -96,7 +129,8 @@ public class VectorResourceDao extends BaseDao {
 	 */
 	public void ensureVectorTable(String className, String attrName, String domainId) {
 		String indexName = generateIndexName(className, attrName, domainId);
-		new File("conf/" + dirName + "/" + indexName).mkdirs();
+        try { java.nio.file.Files.createDirectories(new File("conf/" + dirName + "/" + indexName).toPath()); }
+        catch(java.io.IOException failure) { throw new IllegalStateException("Cannot create vector resource directory: " + indexName, failure); }
 		ensureTable(indexName);
 	}
 
@@ -435,12 +469,12 @@ public class VectorResourceDao extends BaseDao {
 	public void dropNamespace(String tmpNamespace, String domainId) {
 		String prefix = generateIndexNamePrefix(tmpNamespace);
 		for (String tableName : listVectorTables(prefix, domainId)) {
-			jdbcTemplate.execute("DROP TABLE IF EXISTS " + quotedTable(tableName));
 			deleteFilesInDirectory(tableName);
 			File dir = new File("conf/" + dirName + "/" + tableName);
 			if (dir.isDirectory() && !dir.delete()) {
-				log.warn("Failed to delete vector resource directory: {}", dir.getAbsolutePath());
+				throw new IllegalStateException("Failed to delete vector resource directory: " + dir.getAbsolutePath());
 			}
+            jdbcTemplate.execute("DROP TABLE IF EXISTS " + quotedTable(tableName));
 		}
 	}
 
@@ -459,17 +493,21 @@ public class VectorResourceDao extends BaseDao {
 
 	/** Delete all files directly under a vector resource directory, keeping the directory itself. */
 	private void deleteFilesInDirectory(String indexName) {
-		File dir = new File("conf/" + dirName + "/" + indexName);
+        deleteFilesInDirectory(new File("conf/" + dirName + "/" + indexName));
+    }
+
+    private void deleteFilesInDirectory(File dir) {
 		if (!dir.isDirectory()) {
+            if(dir.exists()) throw new IllegalStateException("Vector resource path is not a directory: " + dir);
 			return;
 		}
 		File[] files = dir.listFiles();
 		if (files == null) {
-			return;
+            throw new IllegalStateException("Cannot list vector resource directory: " + dir);
 		}
 		for (File file : files) {
 			if (file.isFile() && !file.delete()) {
-				log.warn("Failed to delete vector resource file: {}", file.getAbsolutePath());
+				throw new IllegalStateException("Failed to delete vector resource file: " + file.getAbsolutePath());
 			}
 		}
 	}

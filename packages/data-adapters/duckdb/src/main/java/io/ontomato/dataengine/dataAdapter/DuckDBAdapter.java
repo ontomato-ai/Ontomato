@@ -714,6 +714,9 @@ public class DuckDBAdapter implements DataAdapter {
 	public void validateClassNameFormat(String className) throws Exception {
 	}
 
+    @Override
+    public boolean supportsSandbox() { return true; }
+
 	@Override
 	public void createNamespace(String namespace) {
 		
@@ -732,7 +735,7 @@ public class DuckDBAdapter implements DataAdapter {
 				}
 			}
 		} catch (Exception e) {
-			log.error(e.getMessage(), e);
+			throw new IllegalStateException("Sandbox structure operation failed", e);
 		}
 	}
 
@@ -749,7 +752,7 @@ public class DuckDBAdapter implements DataAdapter {
 				}
 			}
 		} catch (Exception e) {
-			log.error(e.getMessage(), e);
+			throw new IllegalStateException("Sandbox structure operation failed", e);
 		}
 	}
 
@@ -798,7 +801,7 @@ public class DuckDBAdapter implements DataAdapter {
 			sql.append(" );");
 			executeSql(sql.toString());
 		} catch (Exception e) {
-			log.error(e.getMessage(), e);
+			throw new IllegalStateException("Sandbox structure operation failed", e);
 		}
 	}
 	

@@ -32,7 +32,7 @@ public final class QueryPackageExecution {
     } else {
       var authority = PythonAuthority.read(access.user().getId(), access.user().getDomainId())
           .withClasses(QueryAccessService.classScope(access.permission(), access.classNames()))
-          .forExecution(id).withPackage(bundle, values);
+          .withTarget(access.target()).forExecution(id).withPackage(bundle, values);
       if (access.grant() != null) authority = authority.withParent(new PythonAuthority.ParentGrant(
           access.credential(), access.grant().getString("runId"), access.grant().getLongValue("expiresAt")));
       var inputs = new LinkedHashMap<String, String>();

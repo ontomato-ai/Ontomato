@@ -44,6 +44,9 @@ import lombok.extern.slf4j.Slf4j;
 @Slf4j
 @RestController
 public class ActionController {
+    @org.springframework.beans.factory.annotation.Autowired
+    private io.ontomato.dataengine.service.BuildTestContextService buildTests;
+
 
 	@Autowired
     private IdentityService identityService;
@@ -340,6 +343,7 @@ public class ActionController {
 	@PostMapping("/action/execute")
     @ResponseBody
     public JSONObject execute(@RequestHeader(ControllerConst.LANG_HEADER_KEY) String lang,
+    		jakarta.servlet.http.HttpServletRequest executionRequest,
     		@RequestParam("id") String id,
     		@RequestParam("param") String paramJson,
     		@RequestParam(value = "file", required = false) List<MultipartFile> files) {
@@ -371,7 +375,7 @@ public class ActionController {
 			if (timeoutMinutes <= 0) {
 				timeoutMinutes = 1;
 			}
-			PythonExecuteResult result = actionService.execute(id, p, lang, user, curUserDataPermission, timeoutMinutes);
+			PythonExecuteResult result = actionService.execute(id, p, lang, user, curUserDataPermission, timeoutMinutes, buildTests.resolve(executionRequest));
 			if (result.getError() != null && !"".equals(result.getError().trim())) {
 				throw new Exception(result.getError());
 			}
@@ -381,6 +385,7 @@ public class ActionController {
 			log.error(e.getMessage(), e);
 			ret.put("success", false);
 			ret.put("message", e.getMessage());
+            io.ontomato.dataengine.service.ExecutionTarget.failure(ret,e);
 		} finally {
 			for (Path tempFile : tempFiles) {
 				try {

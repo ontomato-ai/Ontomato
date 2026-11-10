@@ -172,6 +172,29 @@ public class EsAdapter implements DataAdapter {
 	// Namespace lifecycle
 	// ----------------------------------------------------------------------------------
 
+    @Override public void validateSandboxClasses(String namespace,List<Map<String,Object>> classes) {
+      var names=new java.util.HashMap<String,String>();
+      for(var cls:classes) {
+        String logical=(String)cls.get("className"),key=EsNaming.indexName(namespace,logical),previous=names.putIfAbsent(key,logical);
+        if(previous!=null) throw new IllegalArgumentException("Sandbox index collision: "+previous+" and "+logical+" resolve to "+key);
+      }
+    }
+    @Override public JSONObject createRecordedClass(String namespace,Map<String,Object> definition) {
+      createClass(namespace,definition);
+      try {
+        var indices=http().getArray("/_cat/indices/"+EsNaming.indexName(namespace,(String)definition.get("className")),Map.of("format","json","h","index"));
+        if(indices.size()!=1) throw new IllegalStateException("Database did not identify the created index");
+        return JSONObject.of("kind","index","name",indices.getJSONObject(0).getString("index"));
+      } catch(Exception failure) { throw new IllegalStateException("Cannot identify sandbox index",failure); }
+    }
+    @Override public void dropRecordedResource(JSONObject resource) {
+      try { http().delete("/"+resource.getString("name")); }
+      catch(Exception failure) { throw new IllegalStateException("Cannot drop recorded index: "+resource,failure); }
+    }
+
+    @Override
+    public boolean supportsSandbox() { return true; }
+
 	@Override
 	public void createNamespace(String namespace) {
 		// Indices are created per class; a namespace is only an index-name prefix.
@@ -186,7 +209,7 @@ public class EsAdapter implements DataAdapter {
 					http().post("/" + index + "/_delete_by_query", body, Map.of("refresh", "true"));
 				}
 			} catch (Exception e) {
-			log.error(e.getMessage(), e);
+			throw new IllegalStateException("Sandbox structure operation failed", e);
 		}
 	}
 
@@ -197,7 +220,7 @@ public class EsAdapter implements DataAdapter {
 				http().delete("/" + index);
 			}
 		} catch (Exception e) {
-			log.error(e.getMessage(), e);
+			throw new IllegalStateException("Sandbox structure operation failed", e);
 		}
 	}
 
@@ -249,7 +272,7 @@ public class EsAdapter implements DataAdapter {
 				}
 			}
 		} catch (Exception e) {
-			log.error(e.getMessage(), e);
+			throw new IllegalStateException("Sandbox structure operation failed", e);
 		}
 	}
 

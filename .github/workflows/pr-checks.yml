@@ -82,6 +82,15 @@ jobs:
         with:
           python-version: "3.12"
 
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+
+      - name: Install runtime dependencies
+        run: |
+          npm install --global pnpm@9.15.9
+          pnpm install --frozen-lockfile
+
       - name: Install Python HTTP helper dependency
         run: python3 -m pip install requests==2.32.5
 
