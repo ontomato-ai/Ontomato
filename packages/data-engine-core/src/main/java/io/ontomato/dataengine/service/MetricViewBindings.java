@@ -40,18 +40,24 @@ public final class MetricViewBindings {
     if (values == null) throw new IllegalArgumentException("Parameter values must be an object");
     Set<String> names = new HashSet<>();
     if (function.getParameters() != null) {
-      for (Parameter p : function.getParameters()) {
-        if (p.getName() == null || p.getName().isBlank() || !names.add(p.getName()))
-          throw new IllegalArgumentException("Parameter names must be nonempty and unique");
+      for (int i = 0; i < function.getParameters().size(); i++) {
+        Parameter p = function.getParameters().get(i);
+        if (p.getName() == null || p.getName().isBlank())
+          throw new IllegalArgumentException("Function.parameters[" + i + "].name: expected a nonempty parameter name");
+        if (!names.add(p.getName()))
+          throw new IllegalArgumentException("Function.parameters[" + i + "].name: duplicate parameter '" + p.getName() + "'");
         if (!values.containsKey(p.getName()))
           throw new IllegalArgumentException("Missing parameter: " + p.getName());
         Object value = values.get(p.getName());
         if (value != null && !accepts(p.getType(), value))
-          throw new IllegalArgumentException("Parameter '" + p.getName() + "' requires " + p.getType());
+          throw new IllegalArgumentException("Parameter '" + p.getName() + "' requires " + p.getType() + "; received " + value.getClass().getSimpleName());
       }
     }
-    if (!names.equals(values.keySet()))
-      throw new IllegalArgumentException("Parameters must match the metric definition exactly");
+    if (!names.equals(values.keySet())) {
+      var unknown = new HashSet<>(values.keySet());
+      unknown.removeAll(names);
+      throw new IllegalArgumentException("Unknown parameters: " + unknown + "; expected exactly " + names);
+    }
   }
 
   /** Whether a non-null value fits a parameter type; Action forms check what they interpret by the same rule. */

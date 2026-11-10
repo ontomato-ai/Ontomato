@@ -1,8 +1,9 @@
 package io.ontomato.dataengine.util;
 
 import java.util.Set;
+import java.util.Map;
+import java.util.List;
 import java.util.function.Predicate;
-import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
 
 /** The write filter contract shared by the public boundary and filter compilers. */
@@ -10,7 +11,7 @@ public final class WriteWhereValidator {
     private WriteWhereValidator() {}
 
     public static JSONObject validate(Object raw, Predicate<String> fieldAllowed) {
-        if (!(raw instanceof JSONObject condition) || condition.isEmpty()) {
+        if (!(raw instanceof Map<?, ?> condition) || condition.isEmpty()) {
             throw invalid("must be a non-empty condition object; unconditional writes are forbidden");
         }
         Object operator = condition.get("operator");
@@ -18,11 +19,11 @@ public final class WriteWhereValidator {
             String key = condition.containsKey("and") ? "and" : "or";
             if ((operator != null && !"logic".equals(operator))
                     || !Set.of("operator", key).containsAll(condition.keySet())
-                    || !(condition.get(key) instanceof JSONArray children) || children.isEmpty()) {
+                    || !(condition.get(key) instanceof List<?> children) || children.isEmpty()) {
                 throw invalid("logic requires exactly one non-empty and/or array of conditions");
             }
             for (Object child : children) validate(child, fieldAllowed);
-            return condition;
+            return JSONObject.from(condition);
         }
         if (!(condition.get("field") instanceof String field) || field.isBlank() || !fieldAllowed.test(field)) {
             throw invalid("field must name an enabled attribute of this class");
@@ -37,14 +38,14 @@ public final class WriteWhereValidator {
                 if (value != null && !"null".equals(value)) throw invalid("is/is not requires null");
             }
             case "between", "in" -> {
-                if (!(value instanceof JSONArray values) || values.isEmpty()
+                if (!(value instanceof List<?> values) || values.isEmpty()
                         || (op.equals("between") && values.size() != 2)) throw invalid(op + " requires " + (op.equals("between") ? "two values" : "a non-empty array"));
                 for (Object item : values) if (!scalar(item)) throw invalid(op + " requires scalar values");
             }
             case "like" -> { if (!(value instanceof String)) throw invalid("like requires a string value"); }
             default -> { if (!scalar(value)) throw invalid(op + " requires a non-null scalar value"); }
         }
-        return condition;
+        return JSONObject.from(condition);
     }
 
     public static void validateStructure(Object raw) {

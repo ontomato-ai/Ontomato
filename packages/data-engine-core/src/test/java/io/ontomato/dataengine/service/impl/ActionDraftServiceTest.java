@@ -65,6 +65,8 @@ class ActionDraftServiceTest {
     action.setOrigin(Action.ORIGIN_USER);
     action.setDomainId("fixture-domain");
     action.setFunction(function);
+    action.setCodeSegments(JSONArray.of(JSONObject.of("id", "compute", "kind", "COMPUTE",
+        "title", "Print result", "codeRange", JSONObject.of("start", 1, "end", 2))));
     action.setCodeHash(CodeHashUtil.sha256(source));
     action.setExplanationVersion(Action.EXPLANATION_VERSION);
     return action;
@@ -106,7 +108,7 @@ class ActionDraftServiceTest {
     when(lang.get("en", "Action.unsupportedFunction")).thenReturn("Action requires a write Python Function");
     var error = assertThrows(IllegalArgumentException.class,
         () -> service.save(UUID.randomUUID().toString(), "en"));
-    assertEquals("Action requires a write Python Function", error.getMessage());
+    assertEquals("Function.queryPackage: Action requires a write Python Function", error.getMessage());
     verifyNoInteractions(functions, actionDao);
   }
 
