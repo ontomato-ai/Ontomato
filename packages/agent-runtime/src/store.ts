@@ -818,6 +818,21 @@ export class RuntimeStore {
   ) {
     const { run } = await this.run(scope, id);
     let messages = (await this.messages(scope, run.sessionId, this.pool, id)).map((m) => m.message);
+    // Settle dispatched calls before closing the run, including restart recovery.
+    const answered = new Set(messages.flatMap(m => m.role === "toolResult" ? [m.toolCallId] : []));
+    for (const message of messages) {
+      if (message.role !== "assistant") continue;
+      for (const part of message.content) {
+        if (part.type !== "toolCall" || answered.has(part.id)) continue;
+        await this.append(scope, id, {
+          type: "message_end", messageId: randomUUID(), messageSeq: 0,
+          message: { role: "toolResult", toolCallId: part.id, toolName: part.name,
+            isError: true, timestamp: Date.now(), content: [{ type: "text",
+              text: "Execution ended before its result was recorded. Its external outcome is unknown. Do not repeat this action automatically." }] },
+        });
+      }
+    }
+    messages = (await this.messages(scope, run.sessionId, this.pool, id)).map(m => m.message);
     const last = [...messages].reverse().find((m) => m.role === "assistant");
     if (
       reason &&
