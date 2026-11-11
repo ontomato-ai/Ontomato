@@ -6,15 +6,9 @@ Shared shell contract, approved 2026-10-28; implemented by
 its meaning, the chart file format and the shared prompt; the shell renders each
 kind by default and hosts may override a renderer.
 
-The host appends the common prompt text owned by contracts once to each agent's
-system prompt, alongside its business instructions:
-
-> Reference produced files with workspace-relative outputs/ paths. Use Markdown
-> image syntax ![title](outputs/path) for inline content and Markdown link syntax
-> [title](outputs/path) for a file card opened in the side panel. Choose one form
-> for each intended presentation. Do not embed full dataset contents in the reply.
-> Write a chart as a .chart.json file containing an ECharts option object as plain
-> JSON.
+The host appends the common prompt text owned by contracts
+(`src/agent-artifact-markdown-prompt.json`) once to each agent's system prompt,
+alongside its business instructions.
 
 The exported ARTIFACT_MARKDOWN_PROMPT constant is the only copy of this rule;
 governance, retrieval and the main assistant consume it and do not rewrite it.

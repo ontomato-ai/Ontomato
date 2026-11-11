@@ -197,12 +197,13 @@ export function baseOption() {
       appendToBody: true,
       borderWidth: 0,
     },
+    // ECharts 6 keeps the axes' labels inside the chart by its default outer bounds; its deprecated containLabel let a
+    // slanted first label run past the left edge.
     grid: {
       left: 20,
       right: 20,
       top: 20,
       bottom: 20,
-      containLabel: true,
     },
     legend: {
       show: false,
@@ -531,6 +532,10 @@ function validateOption(chartType, option, fields, data) {
   return fn({ option, fields, data });
 }
 
+/**
+ * Category labels slant so that long names keep their length; how long they may be follows the size the chart is drawn
+ * at (fitChart), and only a longer name ends in an ellipsis.
+ */
 export function axisCategoryBase() {
   return {
     type: "category",
@@ -538,11 +543,27 @@ export function axisCategoryBase() {
     axisLabel: {
       interval: 0,
       rotate: 30,
-      width: 80,
       overflow: "truncate",
+      ellipsis: "…",
       hideOverlap: true,
-      formatter: (v) => truncateLabel(v, 10),
     },
+  };
+}
+
+/**
+ * The labels of a pie, donut or rose: each slice's whole name, wrapped to the room beside the pie (fitChart shrinks a pie
+ * that leaves too little), and its value on a line of its own, so a wrap never splits a number such as "1,580".
+ */
+export function pieLabels(valueText) {
+  return {
+    avoidLabelOverlap: true,
+    label: {
+      show: true,
+      color: chartColors().textSecondary,
+      overflow: "break",
+      formatter: (p) => `${p.name}\n${valueText(p)}`,
+    },
+    labelLine: { length: 12, length2: 8 },
   };
 }
 
@@ -714,7 +735,7 @@ export class EchartsGenerator {
     return {
       tooltip: { trigger: "axis", axisPointer: { type: "cross" } },
       legend: { show: true, top: 0, type: "scroll" },
-      grid: { left: 20, right: 20, top: 36, bottom: 20, containLabel: true },
+      grid: { left: 20, right: 20, top: 36, bottom: 20 },
       xAxis: mergeDeep(axisCategoryBase(xData), { data: xData }),
       yAxis: [
         mergeDeep(axisValueBase(), { name: String(fields?.barAxisName || "").trim() || undefined }),
@@ -753,11 +774,7 @@ export class EchartsGenerator {
             borderColor: chartColors().surface,
             borderWidth: 3,
           },
-          label: {
-            show: true,
-            color: chartColors().textSecondary,
-            formatter: (p) => `${truncateLabel(p.name, 10)}  ${defaultFormatter(p.value)}`,
-          },
+          ...pieLabels((p) => defaultFormatter(p.value)),
           data: items.map((d, i) => ({
             name: d.name,
             value: d.value,
@@ -795,18 +812,12 @@ export class EchartsGenerator {
           type: "pie",
           radius: useDonut ? ["35%", "60%"] : "60%",
           center: ["50%", "50%"],
-          avoidLabelOverlap: true,
           itemStyle: {
             borderRadius: 10,
             borderColor: chartColors().surface,
             borderWidth: 3,
           },
-          label: {
-            show: true,
-            color: chartColors().textSecondary,
-            formatter: (p) => `${truncateLabel(p.name, 10)}  ${defaultFormatter(p.value)}`,
-          },
-          labelLine: { length: 20, length2: 10 },
+          ...pieLabels((p) => defaultFormatter(p.value)),
           data: items.map((d, i) => ({
             name: d.name,
             value: d.value,

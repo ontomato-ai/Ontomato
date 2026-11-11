@@ -4,12 +4,14 @@
       <TablePreview :table="table" height="100%" :empty-text="t('dashboard.noDataToDisplay')" />
       <div class="ai-chart-dsl-row">
         <el-button size="small" @click.stop="emit('view-dsl')">{{ sourceLabel }}</el-button>
+        <span class="ai-chart-row-count">{{ rowCount }}</span>
       </div>
     </div>
   </div>
 </template>
 
 <script setup>
+import { computed } from "vue";
 import { TablePreview } from "@ontomato/foundation-ui/preview";
 import { useI18n } from "vue-i18n";
 
@@ -17,13 +19,25 @@ const { t } = useI18n();
 
 const emit = defineEmits(["view-dsl"]);
 
-defineProps({
+const props = defineProps({
   open: { type: Boolean, default: false },
   /** The card's data as the table shows it. */
   table: { type: Object, required: true },
+  /** How many rows this refresh returned; the table may show only the first of them. */
+  total: { type: Number, required: true },
   /** The label of the button that shows where the card's data comes from. */
   sourceLabel: { type: String, required: true },
 });
+
+/**
+ * The table scrolls inside the card, so its first rows alone can look like the whole result: the count says how many
+ * there are, and how many the table shows when it shows only the first.
+ */
+const rowCount = computed(() =>
+  props.table.rows.length < props.total
+    ? t("dashboard.rowsShown", { n: props.total, shown: props.table.rows.length })
+    : t("dashboard.rows", { n: props.total }, props.total)
+);
 </script>
 
 <style scoped>
@@ -55,6 +69,16 @@ defineProps({
 }
 
 .ai-chart-dsl-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-sm);
   height: 25px;
+}
+
+.ai-chart-row-count {
+  color: var(--el-text-color-secondary);
+  font-size: var(--text-xs);
+  font-variant-numeric: tabular-nums;
 }
 </style>
