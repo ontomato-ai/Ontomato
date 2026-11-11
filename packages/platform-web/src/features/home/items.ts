@@ -62,13 +62,27 @@ export function itemsOf(refs: readonly Pick<HomeItemRef, "kind" | "id">[], items
   return refs.flatMap((ref) => byKey.get(itemKey(ref)) ?? []);
 }
 
-/** Applications by their last opening and agents by their last conversation, newest first. */
-export function recentItems(state: HomeState, items: readonly HomeItem[]): HomeItem[] {
-  const used = [
-    ...state.recentApplications.map((entry) => ({ kind: "application" as const, id: entry.applicationId, at: entry.lastOpenedAt })),
-    ...state.recentAgents.map((entry) => ({ kind: "agent" as const, id: entry.agentId, at: entry.lastConversationAt })),
-  ].sort((a, b) => Date.parse(b.at) - Date.parse(a.at) || a.kind.localeCompare(b.kind) || a.id.localeCompare(b.id));
-  return itemsOf(used, items);
+/** How many recently opened applications the home lists. */
+const RECENT_APPLICATIONS = 8;
+
+/** The applications the reader opened most recently, newest first. */
+export function recentApplications(state: HomeState, items: readonly HomeItem[]): HomeItem[] {
+  const opened = [...state.recentApplications]
+    .sort((a, b) => Date.parse(b.lastOpenedAt) - Date.parse(a.lastOpenedAt) || a.applicationId.localeCompare(b.applicationId))
+    .map((entry) => ({ kind: "application" as const, id: entry.applicationId }));
+  return itemsOf(opened, items).slice(0, RECENT_APPLICATIONS);
+}
+
+/** One of the reader's latest conversations, with the agent it ran on. */
+export type RecentConversation = HomeState["recentConversations"][number] & { agent: HomeItem };
+
+/** The reader's latest conversations whose agent is still open to them, in the order given (newest first). */
+export function recentConversations(state: HomeState, items: readonly HomeItem[]): RecentConversation[] {
+  const agents = new Map(items.filter((item) => item.kind === "agent").map((item) => [item.id, item]));
+  return state.recentConversations.flatMap((conversation) => {
+    const agent = agents.get(conversation.agentId);
+    return agent ? [{ ...conversation, agent }] : [];
+  });
 }
 
 /** Whether an item's shown name or description holds the search text, ignoring case. */

@@ -145,21 +145,23 @@ export const assistantStore = {
       throw new HttpError(404, "Conversation not found", "NOT_FOUND");
     return r.rows[0];
   },
-  /** The last conversation the owner personally ran with each agent; scheduled sessions do not count. */
-  async recentAgentConversations(
+  /** The owner's latest conversations that ran at least once, newest first; scheduled runs do not count. */
+  async recentConversations(
     owner: AssistantOwner,
-  ): Promise<HomeState["recentAgents"]> {
+  ): Promise<HomeState["recentConversations"]> {
     const result = await db().query(
-      `SELECT agent_id AS "agentId", MAX(updated_at) AS "lastConversationAt"
+      `SELECT id AS "sessionId", agent_id AS "agentId", title, updated_at AS "updatedAt"
        FROM ${table("assistant_sessions")}
        WHERE domain_id=$1 AND owner_id=$2 AND latest_run_id IS NOT NULL AND origin='user'
-       GROUP BY agent_id
-       ORDER BY "lastConversationAt" DESC, agent_id`,
+       ORDER BY updated_at DESC, id DESC
+       LIMIT 6`,
       [owner.domainId, owner.userId],
     );
     return result.rows.map((row) => ({
+      sessionId: row.sessionId,
       agentId: row.agentId,
-      lastConversationAt: row.lastConversationAt.toISOString(),
+      title: row.title,
+      updatedAt: row.updatedAt.toISOString(),
     }));
   },
   async create(id: string, owner: AssistantOwner, agentId: string, origin: SessionRow["origin"] = "user", workspaceId?: string) {
