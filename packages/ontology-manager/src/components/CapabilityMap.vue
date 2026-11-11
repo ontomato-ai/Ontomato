@@ -10,6 +10,7 @@ import type {
   WorkflowRecord,
 } from "../api";
 import { useManagerClient, useOntologyText } from "../context";
+import { assetStatusLabel } from "../asset-status";
 import { useManagerFeedback } from "../feedback";
 
 /**
@@ -137,7 +138,7 @@ const nodes = computed<Node[]>(() => {
       key: `action:${action.id}`,
       column: "action",
       label: action.name,
-      detail: action.status ?? "",
+      detail: assetStatusLabel(action.status, ot),
       id: action.id,
     });
   }
@@ -147,7 +148,7 @@ const nodes = computed<Node[]>(() => {
       key: `metric:${metric.id}`,
       column: "metric",
       label: metric.name,
-      detail: metric.status ?? "",
+      detail: assetStatusLabel(metric.status, ot),
       id: metric.id,
     });
   }

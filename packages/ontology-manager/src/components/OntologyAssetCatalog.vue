@@ -10,6 +10,7 @@ import {
   SquareFunction,
 } from "lucide-vue-next";
 import type { SmartAsset, SubjectRecord } from "../api";
+import { assetStatusLabel } from "../asset-status";
 import type { AssetTab } from "../workspace";
 import { useManagerClient, useOntologyText } from "../context";
 import { useManagerFeedback } from "../feedback";
@@ -139,14 +140,6 @@ const filteredAssets = computed(() => {
   );
 });
 
-function statusLabel(status?: string) {
-  if (status === "PUBLISHED" || status === "RUNNING")
-    return status === "RUNNING" ? ot("running") : ot("published");
-  if (status === "PENDING_REVIEW") return ot("pendingReview");
-  if (status === "STOPPED") return ot("stopped");
-  if (status === "UNUSED") return ot("unused");
-  return status || "-";
-}
 
 function statusClass(status?: string) {
   if (status === "PUBLISHED" || status === "RUNNING") return "success";
@@ -285,7 +278,7 @@ onMounted(async () => {
             </span>
             <span v-if="kind !== 'functions'">
               <span :class="['status-pill', statusClass(asset.status)]">
-                {{ statusLabel(asset.status) }}
+                {{ assetStatusLabel(asset.status, ot) }}
               </span>
             </span>
             <span v-if="kind !== 'functions'">{{ subjectName(asset.createdBy) }}</span>
@@ -372,11 +365,11 @@ onMounted(async () => {
 .resource-table-row {
   display: grid;
   box-sizing: border-box;
-  grid-template-columns: minmax(220px, 1.7fr) minmax(140px, 1fr) 88px 100px 110px 110px 170px 20px;
+  grid-template-columns: minmax(0, 1.7fr) minmax(0, 1fr) 56px 88px minmax(0, 0.7fr) minmax(0, 0.7fr) 180px 16px;
   width: 100%;
   min-width: 0;
   align-items: center;
-  column-gap: var(--spacing-md);
+  column-gap: 12px;
   text-align: left;
 }
 .resource-table-row > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
