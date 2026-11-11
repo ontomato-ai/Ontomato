@@ -68,7 +68,7 @@ public class FunctionDao {
         if (function.getParameters() != null) {
             for (var parameter : function.getParameters())
                 if (parameter.getType() == null || !Parameter.TYPES.contains(parameter.getType()))
-                    throw new IllegalArgumentException("Function.parameters." + parameter.getName() + ".type: expected a supported parameter type; boolean parameters are not supported");
+                    throw new IllegalArgumentException("Function.parameters." + parameter.getName() + ".type: received " + parameter.getType() + "; expected one of " + Parameter.TYPES.stream().sorted().toList() + "; boolean parameters are not supported");
             MetricViewBindings.validateValues(function,
                 MetricViewBindings.values(function));
         }

@@ -67,7 +67,7 @@ class MetricViewServiceImplPartialResultTest {
 		if (partial) {
 			execution.setPartialQuery(JSONObject.of("truncated", true, "rowLimit", 100000, "truncationHint", "partial hint"));
 		}
-		when(abcProgramService.execute(anyString(), any(Function.class), anyString(), any(), isNull(), anyString(), anyInt(), anyString()))
+		when(abcProgramService.execute(anyString(), any(Function.class), anyString(), any(), isNull(), anyString(), anyInt(), anyString(), isNull(), any()))
 				.thenReturn(new Object[] {JSONArray.of(JSONObject.of("total", 5)), execution});
 		return service.test(metricView, "en", user, new UserDataPermission(), 1);
 	}

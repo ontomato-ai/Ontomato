@@ -5,7 +5,9 @@ import static org.mockito.Mockito.*;
 import com.alibaba.fastjson2.*;
 import com.sun.net.httpserver.HttpServer;
 import io.ontomato.dataengine.controller.WriteFunctionOperationController;
+import io.ontomato.dataengine.config.DataRagConfig;
 import io.ontomato.dataengine.dao.*;
+import io.ontomato.dataengine.bean.function.Function;
 import io.ontomato.dataengine.service.*;
 import io.ontomato.dataengine.service.ai.EmbeddingService;
 import io.ontomato.dataengine.service.impl.*;
@@ -21,6 +23,9 @@ import org.junit.jupiter.api.io.TempDir;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
 import org.springframework.mock.web.MockHttpServletRequest;
+import org.springframework.mock.http.MockHttpInputMessage;
+import org.springframework.http.MediaType;
+import org.springframework.http.converter.json.MappingJackson2HttpMessageConverter;
 import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.web.context.request.*;
 
@@ -60,6 +65,10 @@ class AgentWritePostgresContractTest {
       ReflectionTestUtils.setField(assets, "functionDao", functions);
       ReflectionTestUtils.setField(assets, "actionDao", actions);
       ReflectionTestUtils.setField(assets, "langService", mock(LangService.class));
+      var assetInput = new MockHttpInputMessage(JSON.toJSONBytes(JSON.parseArray(fixture("actions.json")).getJSONObject(0)));
+      assetInput.getHeaders().setContentType(MediaType.APPLICATION_JSON);
+      var asset = (JSONObject) new MappingJackson2HttpMessageConverter().read(JSONObject.class, assetInput);
+      FunctionDao.requireSupported(Function.fromAsset(asset), "en");
       byte[] bundle = ZipBundleUtil.zip("actions.json", fixture("actions.json").getBytes(StandardCharsets.UTF_8));
       try (var identity = mockStatic(SystemUtils.class)) {
         identity.when(SystemUtils::getCurUser).thenReturn(new QueryAccessService.GrantUser("test", "contract"));
@@ -83,11 +92,18 @@ class AgentWritePostgresContractTest {
       when(rules.query("contract")).thenReturn(rule);
       var writes = new WriteFunctionOperationServiceImpl();
       ReflectionTestUtils.setField(writes, "jsonRuleDao", rules);
+      ReflectionTestUtils.setField(writes, "dataRagConfig", new DataRagConfig());
       ReflectionTestUtils.setField(writes, "dataAdapterRegistry", registry);
       ReflectionTestUtils.setField(writes, "businessConfigService", mock(BusinessConfigService.class));
       var http = new WriteFunctionOperationController();
       ReflectionTestUtils.setField(http, "jsonRuleDao", rules);
       ReflectionTestUtils.setField(http, "writeFunctionOperationService", writes);
+      var queryService = mock(OntologyQueryService.class);
+      when(queryService.execute(any(), any())).thenAnswer(call ->
+          writes.query(call.getArgument(0), null, "contract"));
+      ReflectionTestUtils.setField(http, "queries", queryService);
+      ReflectionTestUtils.setField(http, "accessService", mock(QueryAccessService.class));
+      ReflectionTestUtils.setField(http, "request", new MockHttpServletRequest());
       server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
       server.createContext("/writeFunctionOperation/", exchange -> {
         var request = new MockHttpServletRequest();
@@ -95,11 +111,14 @@ class AgentWritePostgresContractTest {
         RequestContextHolder.setRequestAttributes(new ServletRequestAttributes(request));
         JSONObject result;
         try {
-          var body = JSON.parseObject(new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8));
+          var input = new MockHttpInputMessage(exchange.getRequestBody().readAllBytes());
+          input.getHeaders().setContentType(MediaType.APPLICATION_JSON);
+          var body = (JSONObject) new MappingJackson2HttpMessageConverter().read(JSONObject.class, input);
           result = switch (exchange.getRequestURI().getPath()) {
             case "/writeFunctionOperation/insert" -> http.insert(body);
             case "/writeFunctionOperation/update" -> http.update(body);
             case "/writeFunctionOperation/delete" -> http.delete(body);
+            case "/writeFunctionOperation/query" -> JSONObject.from(http.query(body));
             default -> throw new IllegalArgumentException("Unexpected test endpoint");
           };
         } catch (Exception error) { result = JSONObject.of("success", false, "message", error.getMessage()); }
@@ -114,6 +133,7 @@ class AgentWritePostgresContractTest {
       Files.writeString(work.resolve("parameters.json"), "{\"id\":\"contract-person-1\",\"age\":99}");
       String endpoint = "http://127.0.0.1:" + server.getAddress().getPort();
       python(endpoint, "from query_runtime import insert\ninsert('contract_person', " + JSON.parseObject(fixture("sample.json")).getJSONArray("objDatas").getJSONObject(0).getJSONArray("rows").toJSONString() + ")");
+      python(endpoint, "from query_runtime import query\nrows=query({'answer':{'steps':[{'graph':{'patterns':[{'objects':[{'idx':0,'variable':'p','class':'contract_person'}]}]},'output':{'fields':[{'variable':'p','field':'id','as':'id'}]}}]}})\nassert len(rows)==3, rows");
       for (String operation : List.of("update", "delete")) {
         python(endpoint, "from query_runtime import " + operation + "\ntry:\n    " + operation + "('contract_person', " + (operation.equals("update") ? "{'age':99}, " : "") + fixture("invalid-where.json").strip() + ")\nexcept RuntimeError as e:\n    assert 'where' in str(e), str(e)\nelse:\n    raise AssertionError('invalid where succeeded')");
         assertEquals(3, jdbc.queryForObject("SELECT count(*) FROM contract_person", Integer.class));
