@@ -51,7 +51,22 @@
         </dependency>
         <dependency>
             <groupId>io.ontomato</groupId>
+            <artifactId>data-adapter-clickhouse</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>io.ontomato</groupId>
+            <artifactId>data-adapter-arangodb</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>io.ontomato</groupId>
             <artifactId>data-adapter-elasticsearch</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>io.ontomato</groupId>
+            <artifactId>data-adapter-mongodb</artifactId>
             <version>${project.version}</version>
         </dependency>
         <dependency>
