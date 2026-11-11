@@ -11,16 +11,30 @@
       >
         <TriangleAlert :size="14" />
       </span>
+      <ChartToolbar
+        :data-open="dataOpen"
+        :disabled-types="disabledChartTypes"
+        :conditions="conditions"
+        :attr-show-name-map="props.attrShowNameMap"
+        :parameterized="metricRef"
+        @edit-parameters="emit('edit-parameters', props.chart)"
+        @open-zoom="openZoom"
+        @toggle-data="toggleData"
+        @command="handleCommand"
+        @conditions-change="handleConditionsChange"
+        @open-ai="() => emit('ai-request', props.chart)"
+      />
     </div>
     <div
       v-loading="loading"
       :class="['chart-wrapper', { 'chart-wrapper--transparent-loading': transparentLoading }]"
       :element-loading-text="t('common.loading')"
     >
-      <EChart v-if="chart.option" :option="brandedOption" :theme="theme" height="100%" />
+      <EChart v-if="chart.option" :option="cardOption" :theme="theme" height="100%" @resize="drawn.track" />
       <ChartDataOverlay
         :open="dataOpen"
         :table="table"
+        :total="(chart.rows ?? []).length"
         :source-label="metricRef ? t('dashboard.viewMetric') : t('common.viewDsl')"
         @view-dsl="handleViewDsl"
       />
@@ -35,24 +49,11 @@
         {{ t("analysis.cannotGenerateChart") }}
       </div>
     </div>
-    <ChartToolbar
-      :data-open="dataOpen"
-      :disabled-types="disabledChartTypes"
-      :conditions="conditions"
-      :attr-show-name-map="props.attrShowNameMap"
-      :parameterized="metricRef"
-      @edit-parameters="emit('edit-parameters', props.chart)"
-      @open-zoom="openZoom"
-      @toggle-data="toggleData"
-      @command="handleCommand"
-      @conditions-change="handleConditionsChange"
-      @open-ai="() => emit('ai-request', props.chart)"
-    />
     <ChartZoomModal
       :open="modalOpen"
       :mode="modalMode"
       :title="title"
-      :option="zoomOption"
+      :option="chart.option"
       :table="table"
       @close="closeZoom"
     />
@@ -71,7 +72,8 @@ import ChartDataOverlay from "./ChartDataOverlay.vue";
 import ChartToolbar from "./ChartToolbar.vue";
 import ChartZoomModal from "./ChartZoomModal.vue";
 import { isMetricReferenceEntry } from "@ontomato/contracts/dashboard";
-import { chartTable, extractTabularDataFromOption, safeCloneOption } from "./utils/chartTabular";
+import { chartTable, extractTabularDataFromOption } from "./utils/chartTabular";
+import { fitChart, useDrawnSize } from "./utils/chartFit";
 import { cardErrorHeadline, metricCardSource, metricCardTable } from "./utils/metricCard";
 import { modifyResultSetName, deleteResultSet } from "../api";
 import { clamp, parseGridColumns, partialResultNotice } from "./utils/dashboardHelper";
@@ -106,8 +108,9 @@ const emit = defineEmits([
 const rootRef = ref(null);
 let interactable = null;
 const theme = useChartTheme();
-/** The card's option in the brand colours of the platform's chart theme. */
-const brandedOption = computed(() => chartBrandColors(props.chart.option, theme.value));
+const drawn = useDrawnSize();
+/** The card's option in the brand colours of the platform's chart theme, laid out for the size the card draws it at. */
+const cardOption = computed(() => fitChart(chartBrandColors(props.chart.option, theme.value), drawn.size.value));
 const dataOpen = ref(false);
 /** A metric-reference card: its data and parameters come from the metric it references. */
 const metricRef = computed(() => isMetricReferenceEntry(props.chart));
@@ -123,7 +126,6 @@ const table = computed(() =>
 
 const modalOpen = ref(false);
 const modalMode = ref("chart");
-const zoomOption = ref(null);
 
 const title = computed(() => props.chart?.title || "");
 
@@ -215,7 +217,6 @@ function openZoom() {
   }
 
   modalMode.value = "chart";
-  zoomOption.value = safeCloneOption(props.chart?.option);
   modalOpen.value = true;
 }
 
@@ -325,10 +326,11 @@ onBeforeUnmount(() => {
   border-color: var(--el-border-color-dark);
 }
 
+/* The header is as tall as the tools' buttons, so it keeps its height when they appear. */
 .chart-header {
   display: flex;
-  justify-content: space-between;
   align-items: center;
+  min-height: 26px;
   padding-bottom: var(--spacing-md);
   margin-bottom: var(--spacing-sm);
   border-bottom: 1px solid var(--el-border-color);
@@ -343,6 +345,7 @@ onBeforeUnmount(() => {
   overflow: hidden;
   text-overflow: ellipsis;
   flex: 1;
+  min-width: 0;
 }
 
 .chart-wrapper {
@@ -394,24 +397,20 @@ onBeforeUnmount(() => {
   color: var(--el-text-color-secondary);
 }
 
+/*
+ * The tools sit at the end of the title's row and take room there only while shown (hover, keyboard focus, an open
+ * menu): the title then gives way and ends in an ellipsis instead of lying under them. Hidden, they keep no width but
+ * stay in the tab order, and focusing one shows them.
+ */
 :deep(.ai-chart-toolbar) {
-  position: absolute;
-  top: 14px;
-  right: 14px;
-  z-index: 10;
   display: flex;
+  flex: none;
   align-items: center;
-  gap: 4px;
-  padding: 6px 10px;
-  border-radius: var(--radius-md);
-  background: color-mix(in srgb, var(--el-bg-color) 92%, transparent);
-  border: 1px solid var(--el-border-color);
-  box-shadow: var(--shadow-card);
+  gap: 2px;
+  max-width: 0;
+  overflow: hidden;
   opacity: 0;
-  transform: translateX(10px);
-  transition:
-    opacity 0.18s ease,
-    transform 0.18s ease;
+  transition: opacity 0.18s ease;
   pointer-events: none;
   user-select: none;
 }
@@ -419,16 +418,19 @@ onBeforeUnmount(() => {
 .chart-container:hover :deep(.ai-chart-toolbar),
 .chart-container:focus-within :deep(.ai-chart-toolbar),
 :deep(.ai-chart-toolbar[data-open="1"]) {
+  max-width: none;
+  margin-left: var(--spacing-sm);
+  overflow: visible;
   opacity: 1;
-  transform: translateX(0);
   pointer-events: auto;
-  user-select: auto;
 }
 
 @media (hover: none) {
   :deep(.ai-chart-toolbar) {
+    max-width: none;
+    margin-left: var(--spacing-sm);
+    overflow: visible;
     opacity: 1;
-    transform: none;
     pointer-events: auto;
   }
 }

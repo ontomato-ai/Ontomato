@@ -459,6 +459,8 @@ export default {
   "dashboard": {
     "dragToResize": "Drag to resize",
     "noDataToDisplay": "No data to display",
+    "rows": "{n} row | {n} rows",
+    "rowsShown": "{n} rows, first {shown} shown",
     "queryConditions": "Query conditions",
     "returnRowCount": "Return row count",
     "zoomIn": "Zoom in",

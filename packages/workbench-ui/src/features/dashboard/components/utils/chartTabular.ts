@@ -2,19 +2,6 @@ import type { TableData } from "@ontomato/foundation-ui/preview";
 
 type TableRow = Record<string, unknown>;
 
-export function safeCloneOption<T>(option: T): T {
-  if (!option || typeof option !== "object") return option;
-  try {
-    return structuredClone(option);
-  } catch {
-    try {
-      return JSON.parse(JSON.stringify(option));
-    } catch {
-      return option;
-    }
-  }
-}
-
 export function extractTabularDataFromOption(list: unknown[]) {
   const keys: string[] = [];
   const seen = new Set<string>();
