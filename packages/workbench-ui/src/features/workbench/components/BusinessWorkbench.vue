@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from "vue";
+import { computed, nextTick, onMounted, ref, watch } from "vue";
 import { platformRoutes as routes } from "@ontomato/platform-shell/routes";
 import { ElMessage } from "element-plus";
 import { useI18n } from "vue-i18n";
@@ -10,6 +10,7 @@ import type { WorkbenchAppearance } from "@ontomato/contracts/workbench-appearan
 import { AgentSettingsNav, AgentSettingsPage } from "../../agents";
 import { getWorkbenchAppearance } from "../api";
 import { createAssistantClient, createAssistantFeedback } from "../assistant-host";
+import { readRememberedAgent, rememberAgent } from "../remembered-agent";
 import { useShellLabels } from "../../../composables/useShellLabels";
 import TurnDiagnoseButton from "../../diagnosis/components/TurnDiagnoseButton.vue";
 import ConversationActions from "./ConversationActions.vue";
@@ -47,7 +48,6 @@ const props = withDefaults(
 const emit = defineEmits<{ featureAction: [id: string] }>();
 
 const WORKBENCH_ID = "business";
-const AGENT_KEY = "ontomato.workbench.agent";
 
 const { t, locale } = useI18n();
 const route = useRoute();
@@ -57,12 +57,14 @@ const feedback = createAssistantFeedback();
 const appearance = ref<WorkbenchAppearance | null>(null);
 const editingBrand = ref(false);
 /**
- * `?agentId=` asks for a new conversation with that agent (the platform home's agent cards link here). The page starts
- * from its own choice (the remembered agent, settled against the agent list as always) and the request replaces it once
- * the list shows the agent enabled; no conversation is opened before that.
+ * `?agentId=` names the agent a link from elsewhere (the platform home) asks for: alone it opens a new conversation with
+ * it, with `&prompt=` that conversation starts with the text, with `&sessionId=` it reopens that conversation. The page
+ * starts from its own choice (the remembered agent, settled against the agent list as always) and the request replaces
+ * it once the list shows the agent enabled; no conversation is opened before that.
  */
-const requestedAgent = () => (typeof route.query.agentId === "string" ? route.query.agentId : null);
-const agentId = ref<string | null>(readRemembered());
+const queryText = (value: unknown) => (typeof value === "string" ? value : null);
+const requestedAgent = () => queryText(route.query.agentId);
+const agentId = ref<string | null>(readRememberedAgent());
 /**
  * The application's own pages, by the name the shell shows for them. The dashboards and the scheduled tasks are
  * applications of their own now, so nothing here leaves this application.
@@ -113,21 +115,10 @@ watch(
     if (typeof id === "string" && id !== conversationId.value) conversationId.value = id;
   },
 );
-const shell = ref<{ reloadAgents: () => Promise<void> } | null>(null);
+const shell = ref<InstanceType<typeof AgentShell> | null>(null);
 
-function readRemembered(): string | null {
-  try {
-    return localStorage.getItem(AGENT_KEY);
-  } catch {
-    return null;
-  }
-}
 watch(agentId, (id) => {
-  try {
-    if (id) localStorage.setItem(AGENT_KEY, id);
-  } catch {
-    // Remembering the agent is a convenience only.
-  }
+  if (id) rememberAgent(id);
 });
 
 const workbench = computed<ShellWorkbenchDeclaration>(() => ({
@@ -190,23 +181,37 @@ function openCapabilities(kind: "skill" | "tool" = "skill") {
 const bottomEntry = computed(() => ({ label: t("assistant.featureAgents"), icon: "agents" }));
 
 /**
- * Applies `?agentId=` once the agents are known: an enabled agent is selected on an empty new conversation; a disabled or
- * missing one is reported and the page keeps the agent its own rule chose. The parameter then leaves the address (with a
- * conversation it would have overridden), so a reload or a later switch follows the page's own conversation behaviour.
+ * Applies `?agentId=` once the agents are known. The link's parameters leave the address first, so a reload neither
+ * sends its question again nor reopens what it named; the page then follows its own conversation behaviour. A disabled
+ * or missing agent is reported and the page keeps the agent its own rule chose. An enabled one is selected, and then the
+ * named conversation opens, or a new one starts and, with a question, sends it as its first message.
  */
-function openRequestedAgent() {
+async function openRequestedAgent() {
   const id = requestedAgent();
   if (!id) return;
-  if (nav.agents.value.some((agent) => agent.id === id && agent.enabled)) {
-    agentId.value = id;
-    nav.startNew();
-  } else {
-    ElMessage.error(t("assistant.agentUnavailable"));
-  }
+  const session = queryText(route.query.sessionId);
+  const prompt = queryText(route.query.prompt);
   const query = { ...route.query };
   delete query.agentId;
   delete query.sessionId;
+  delete query.prompt;
   void router.replace({ query });
+  if (!nav.agents.value.some((agent) => agent.id === id && agent.enabled)) {
+    ElMessage.error(t("assistant.agentUnavailable"));
+    return;
+  }
+  agentId.value = id;
+  // Switching agents starts a new conversation in the navigation; what the link names comes after that.
+  await nextTick();
+  if (session) {
+    nav.selectSession(session);
+    return;
+  }
+  nav.startNew();
+  if (!prompt) return;
+  // The shell sends in the conversation it has open: let it take the agent and the new conversation first.
+  await nextTick();
+  await shell.value!.send(prompt);
 }
 // The same address entered while the page is open (another link to an agent) does the same.
 watch(() => route.query.agentId, openRequestedAgent);
