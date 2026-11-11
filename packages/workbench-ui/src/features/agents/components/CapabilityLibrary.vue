@@ -2,7 +2,7 @@
 import { computed, onMounted, ref, watch } from "vue";
 import { ElMessage, ElMessageBox, type UploadFile } from "element-plus";
 import { useI18n } from "vue-i18n";
-import { ChevronRight, Download, Pencil, Plug, Plus, RefreshCw, Search, Trash2, Upload } from "lucide-vue-next";
+import { Download, Pencil, Plug, Plus, RefreshCw, Search, Trash2, Upload } from "lucide-vue-next";
 import type { SkillInfo } from "@ontomato/contracts/skills";
 import { runtimeSkillKey } from "@ontomato/contracts/agent-runtime-skills";
 import type { McpServiceView } from "@ontomato/contracts/agent-runtime-mcp";
@@ -12,25 +12,23 @@ import {
   deleteMcpService,
   listExternalMcpTools,
   listMcpServices,
-  listPublishedMcpServices,
   type McpTool,
-  type PublishedMcpService,
 } from "../../mcp/api";
 import { ApiRequestError } from "../../../utils/api";
 import { authHost } from "../../../utils/auth";
-import { workbenchContent } from "../../../content";
 import { PlatformPageHeader } from "@ontomato/platform-shell";
 import McpServiceDialog from "../../mcp/components/McpServiceDialog.vue";
 import McpToolList from "../../mcp/components/McpToolList.vue";
 import SkillDebugDialog from "../../skills/components/SkillDebugDialog.vue";
 import SkillFormDialog from "../../skills/components/SkillFormDialog.vue";
+import { updateSkillLibraryCount } from "../../skills/count";
 
 /**
- * The capability library of the agent platform: the skills and the external MCP services in one table, so what an agent
- * can use is read in one place: its type, where it comes from, which agents use it and whether it is available. Editing,
- * uploading, adding, checking a connection and deleting reuse the existing interfaces and dialogs.
+ * Separate Skill and MCP pages reuse the existing management interfaces and dialogs.
  */
+const props = withDefaults(defineProps<{ kind?: "skill" | "tool" }>(), { kind: "skill" });
 const { t, locale } = useI18n();
+const isSkill = computed(() => props.kind === "skill");
 
 interface RowBase {
   key: string;
@@ -47,13 +45,9 @@ type Row =
   | (RowBase & { kind: "tool"; service: McpServiceView; tools: McpTool[] | null });
 
 const rows = ref<Row[]>([]);
-/** The platform's own MCP endpoints, published for other systems: addresses and tools, read-only here. */
-const published = ref<PublishedMcpService[]>([]);
-const publishedFailed = ref(false);
 const loading = ref(true);
 const loadFailed = ref(false);
 const search = ref("");
-const kindFilter = ref<"all" | "skill" | "tool">("all");
 const checking = ref<string | null>(null);
 const toggleLoading = ref<Record<string, boolean>>({});
 
@@ -63,23 +57,23 @@ const debugDialog = ref(false);
 const debuggingSkill = ref<SkillInfo | null>(null);
 const serviceDialog = ref(false);
 const editingService = ref<McpServiceView | null>(null);
+let loadVersion = 0;
 
 async function load() {
+  const version = ++loadVersion;
+  const kind = props.kind;
   loading.value = true;
   loadFailed.value = false;
   try {
     const [skillResponse, services, agents] = await Promise.all([
-      skillsApi.fetchSkills(),
-      listMcpServices(),
+      kind === "skill" ? skillsApi.fetchSkills() : Promise.resolve(null),
+      kind === "tool" ? listMcpServices() : Promise.resolve([]),
       agentDefinitionsApi.list(),
     ]);
+    if (version !== loadVersion) return;
+    if (kind === "skill" && !skillResponse?.success) throw new Error("Failed to load skills");
     const skillList: SkillInfo[] = skillResponse?.success ? skillResponse.skills : [];
-    publishedFailed.value = false;
-    try {
-      published.value = await listPublishedMcpServices();
-    } catch {
-      publishedFailed.value = true;
-    }
+    if (kind === "skill") updateSkillLibraryCount(skillList.length);
     const toolRows: Row[] = services.map((service) => ({
       kind: "tool",
       key: `tool:${service.id}`,
@@ -107,18 +101,23 @@ async function load() {
       ...toolRows,
     ];
   } catch {
-    loadFailed.value = true;
+    if (version === loadVersion) loadFailed.value = true;
   } finally {
-    loading.value = false;
+    if (version === loadVersion) loading.value = false;
   }
 }
 onMounted(load);
 watch(locale, load);
+watch(() => props.kind, () => {
+  search.value = "";
+  rows.value = [];
+  void load();
+});
 
 const visibleRows = computed(() => {
   const keyword = search.value.trim().toLowerCase();
   return rows.value.filter((row) => {
-    if (kindFilter.value !== "all" && row.kind !== kindFilter.value) return false;
+    if (row.kind !== props.kind) return false;
     if (!keyword) return true;
     return row.name.toLowerCase().includes(keyword) || row.description.toLowerCase().includes(keyword);
   });
@@ -218,6 +217,7 @@ async function remove(row: Row) {
       const data = await skillsApi.deleteSkill(skill.id);
       if (data.success) {
         rows.value = rows.value.filter((item) => item.key !== row.key);
+        updateSkillLibraryCount(rows.value.filter((item) => item.kind === "skill").length);
         ElMessage.success(t("admin.skillDeleted"));
       }
     } catch {
@@ -303,19 +303,6 @@ function debug(row: Row) {
   debugDialog.value = true;
 }
 
-const { analysisMcpServerName, opsMcpServerName } = workbenchContent();
-/** Published services this page knows: their cards show a localized title and a connection hint. */
-const recognizedPublished = new Map([
-  [analysisMcpServerName, { title: "mcp.agentService", hint: "mcp.publishedAuthHint" }],
-  [opsMcpServerName, { title: "mcp.opsAgentService", hint: "mcp.opsPublishedAuthHint" }],
-]);
-const publishedCards = computed(() =>
-  published.value.map((service) => {
-    const text = recognizedPublished.get(service.name);
-    return { service, title: text ? t(text.title) : service.title || service.name, hint: text ? t(text.hint) : "" };
-  }),
-);
-
 const kindLabel = (row: Row) =>
   row.kind === "skill"
     ? row.skill.type === "executable"
@@ -327,26 +314,21 @@ const kindLabel = (row: Row) =>
 <template>
   <div class="capability-library platform-page">
     <!-- The library's own page header: it is a page of the agent settings, not a panel inside another page. -->
-    <PlatformPageHeader :title="t('capabilities.title')" :description="t('capabilities.description')">
+    <PlatformPageHeader :title="t(isSkill ? 'capabilities.skillTitle' : 'capabilities.mcpTitle')" :description="t(isSkill ? 'capabilities.skillDescription' : 'capabilities.mcpDescription')">
       <template #actions>
         <el-button :icon="RefreshCw" :loading="loading" @click="load">{{ t("common.refresh") }}</el-button>
-        <el-upload :show-file-list="false" accept=".zip" :auto-upload="false" :on-change="uploadSkill">
+        <el-upload v-if="isSkill" :show-file-list="false" accept=".zip" :auto-upload="false" :on-change="uploadSkill">
           <el-button :icon="Upload">{{ t("admin.importSkill") }}</el-button>
         </el-upload>
-        <el-button :icon="Plus" @click="addSkill">{{ t("admin.addSkill") }}</el-button>
-        <el-button type="primary" :icon="Plug" @click="addService">{{ t("hotData.addService") }}</el-button>
+        <el-button v-if="isSkill" type="primary" :icon="Plus" @click="addSkill">{{ t("admin.addSkill") }}</el-button>
+        <el-button v-else type="primary" :icon="Plug" @click="addService">{{ t("hotData.addService") }}</el-button>
       </template>
     </PlatformPageHeader>
     <!-- The page under its header: the one wrapper that takes the page gutter, so no element of the page pads itself
          (the table's own root must not: Element Plus lays its columns out across its padding too). -->
     <div class="library-body platform-page-gutter">
       <div class="library-toolbar">
-        <el-select v-model="kindFilter" :aria-label="t('capabilities.filter')" class="kind-filter">
-          <el-option value="all" :label="t('common.all')" />
-          <el-option value="skill" :label="t('capabilities.skills')" />
-          <el-option value="tool" :label="t('capabilities.tools')" />
-        </el-select>
-        <el-input v-model="search" :placeholder="t('capabilities.search')" :prefix-icon="Search" clearable />
+        <el-input v-model="search" :placeholder="t(isSkill ? 'capabilities.searchSkills' : 'capabilities.searchMcp')" :prefix-icon="Search" clearable />
       </div>
 
       <el-alert v-if="loadFailed" type="error" :closable="false" show-icon :title="t('capabilities.loadFailed')">
@@ -361,7 +343,7 @@ const kindLabel = (row: Row) =>
         :fit="true"
         :max-height="undefined"
       >
-        <el-table-column :label="t('capabilities.name')" min-width="240">
+        <el-table-column :label="t(isSkill ? 'capabilities.skillTitle' : 'capabilities.mcpTitle')" min-width="240">
           <template #default="{ row }">
             <div class="name-cell">
               <span class="row-name">{{ row.name }}</span>
@@ -421,7 +403,7 @@ const kindLabel = (row: Row) =>
         </el-table-column>
         <template #empty>
           <div class="empty">
-            <span>{{ search ? t("capabilities.noMatch") : t("capabilities.empty") }}</span>
+            <span>{{ search ? t("capabilities.noMatch") : t(isSkill ? "capabilities.emptySkills" : "capabilities.emptyMcp") }}</span>
           </div>
         </template>
       </el-table>
@@ -435,26 +417,6 @@ const kindLabel = (row: Row) =>
         </template>
       </section>
 
-      <details v-if="publishedCards.length || publishedFailed" class="published">
-        <summary>
-          <ChevronRight class="disclosure-arrow" :size="14" aria-hidden="true" />
-          <span class="published-title">{{ t("mcp.publishedTab") }}</span>
-          <span class="published-count">{{ publishedCards.length }}</span>
-        </summary>
-        <div class="published-body">
-          <p class="published-hint">{{ t("mcp.publishedHint") }}</p>
-          <el-alert v-if="publishedFailed" type="warning" :closable="false" show-icon :title="t('mcp.loadFailed')" />
-          <article v-for="card in publishedCards" v-else :key="card.service.name" class="published-card">
-            <h4>{{ card.title }}</h4>
-            <code class="published-address">{{ card.service.mcpUrl }}</code>
-            <p v-if="card.hint" class="published-hint">{{ card.hint }}</p>
-            <details class="published-tools">
-              <summary><span class="disclosure-indicator"><ChevronRight :size="14" aria-hidden="true" /></span>{{ t("mcp.availableTools") }} · {{ card.service.tools.length }}</summary>
-              <McpToolList :tools="card.service.tools" />
-            </details>
-          </article>
-        </div>
-      </details>
     </div>
 
     <SkillFormDialog
@@ -593,93 +555,6 @@ const kindLabel = (row: Row) =>
   font-weight: 600;
   color: var(--el-text-color-primary);
 }
-/* A section of its own, collapsed by default: the table above is the page's subject. */
-.published {
-  border-top: 1px solid var(--el-border-color-lighter);
-  padding-top: var(--spacing-sm);
-}
-.published > summary {
-  display: flex;
-  align-items: center;
-  gap: var(--spacing-sm);
-  height: var(--nav-row-height);
-  cursor: pointer;
-  font-size: var(--text-sm);
-  font-weight: 600;
-  color: var(--el-text-color-primary);
-  border-radius: var(--radius-sm);
-  padding: 0 var(--spacing-sm);
-}
-.published > summary:hover {
-  background: var(--el-fill-color-light);
-}
-.published > summary:focus-visible {
-  outline: 2px solid var(--el-color-primary);
-  outline-offset: -2px;
-}
-.published > summary::marker,
-.published > summary::-webkit-details-marker {
-  display: none;
-  content: "";
-}
-.disclosure-arrow { flex-shrink: 0; color: var(--el-text-color-secondary); transition: transform var(--transition-fast); }
-details[open] > summary > .disclosure-arrow { transform: rotate(90deg); }
-.disclosure-indicator {
-  display: inline-flex;
-  flex: 0 0 14px;
-  color: var(--el-text-color-secondary);
-  transition: transform var(--transition-fast);
-}
-.published-tools[open] > summary > .disclosure-indicator { transform: rotate(90deg); }
-.published-count {
-  padding: 0 6px;
-  border-radius: var(--radius-xs);
-  background: var(--el-fill-color);
-  color: var(--el-text-color-secondary);
-  font-size: var(--text-xs);
-  font-weight: 500;
-}
-.published-body {
-  display: grid;
-  gap: var(--spacing-sm);
-  padding: var(--spacing-sm) var(--spacing-sm) 0;
-}
-.published-hint {
-  margin: 0;
-  font-size: var(--text-xs);
-  line-height: 1.6;
-  color: var(--el-text-color-secondary);
-}
-.published-card {
-  padding: var(--page-section-padding);
-  border: 1px solid var(--el-border-color-light);
-  border-radius: var(--radius-md);
-}
-.published-card h4 {
-  margin: 0 0 6px;
-  font-size: var(--text-sm);
-  font-weight: 600;
-  color: var(--el-text-color-primary);
-}
-.published-address {
-  display: block;
-  font-size: var(--text-xs);
-  color: var(--el-text-color-regular);
-  overflow-wrap: anywhere;
-}
-.published-card .published-tools {
-  margin-top: 8px;
-}
-.published-card .published-tools summary {
-  display: flex;
-  align-items: center;
-  gap: var(--spacing-sm);
-  list-style: none;
-  cursor: pointer;
-  font-size: var(--text-xs);
-  color: var(--el-text-color-secondary);
-}
-.published-tools summary::-webkit-details-marker { display: none; }
 @media (max-width: 900px) {
   .toolbar .el-input {
     width: 100%;

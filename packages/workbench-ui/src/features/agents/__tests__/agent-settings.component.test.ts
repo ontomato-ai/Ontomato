@@ -75,7 +75,7 @@ describe("the agent settings column", () => {
     expect(wrapper.findAll(".agent-row .row-note").map((row) => row.text())).toEqual(["日常问数", "调查分析"]);
     expect(wrapper.find(".agent-row.active .row-name").text()).toBe("分析师");
     expect(wrapper.find(".new-agent").exists()).toBe(true);
-    expect(wrapper.find(".plain-row").text()).toContain(t("agents.capabilityLibrary"));
+    expect(wrapper.findAll(".plain-row").map(row => row.text())).toEqual(["Skill", "MCP"]);
   });
 
   it("opens an agent, a new one, the library, and goes back, all through the host", async () => {
@@ -83,10 +83,11 @@ describe("the agent settings column", () => {
     await wrapper.findAll(".agent-row")[1]!.trigger("click");
     await wrapper.find(".new-agent").trigger("click");
     await wrapper.find(".plain-row").trigger("click");
+    await wrapper.findAll(".plain-row")[1]!.trigger("click");
     await wrapper.find(".back").trigger("click");
     expect(wrapper.emitted("selectAgent")).toEqual([["a2"]]);
     expect(wrapper.emitted("createAgent")).toHaveLength(1);
-    expect(wrapper.emitted("openCapabilities")).toHaveLength(1);
+    expect(wrapper.emitted("openCapabilities")).toEqual([["skill"], ["tool"]]);
     expect(wrapper.emitted("back")).toHaveLength(1);
   });
 });
