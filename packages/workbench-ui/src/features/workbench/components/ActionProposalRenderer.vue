@@ -110,7 +110,7 @@ watch(() => props.artifact.id, load, { immediate: true });
         <div v-if="values.expected_value !== undefined" class="current-value"><span>{{ zh ? "当前内容" : "Current value" }}</span><strong>{{ values.expected_value || '—' }}</strong><ArrowRight :size="16" /><span>{{ zh ? "更新为下方内容" : "Update below" }}</span></div>
         <label v-for="parameter in visibleParameters" :key="parameter.name" class="parameter">
           <span>{{ parameterLabel(parameter) }}</span>
-          <el-input v-model="values[parameter.name]" :placeholder="parameterPlaceholder(parameter.name)" :disabled="!editable" :aria-label="parameter.description || parameter.name" />
+          <el-input v-model="values[parameter.name]" :placeholder="parameterPlaceholder(parameter.name)" :disabled="!editable" :aria-label="parameterLabel(parameter)" />
         </label>
         <p v-if="!card.execution && !missingContext" class="confirmation-note">{{ zh ? "确认后更新这条记录" : "Confirm to update this record" }}</p>
         <p v-if="missingContext && !card.execution" class="error" role="alert">{{ (zh ? "缺少参数：" : "Missing parameter: ") + missingNames.join(", ") }}</p>
