@@ -62,10 +62,6 @@ export function cardErrorHeadline(error: CardError, t: (key: string) => string):
   return error.code !== null && HEADLINED.has(error.code) ? t(`dashboard.cardErrors.${error.code}`) : null;
 }
 
-/** What "view metric" shows for a card: the metric it references, as this refresh read it, and the card's parameters. */
-export function metricCardSource(card: MetricCardView) {
-  return { metricId: card.query.metricId, metric: card.metric, parameters: card.query.parameters };
-}
 
 function compare(a: Value, b: Value): number {
   if (typeof a === "number" && typeof b === "number") return a - b;

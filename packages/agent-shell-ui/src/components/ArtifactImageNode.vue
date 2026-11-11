@@ -41,7 +41,7 @@ function expand() {
     <figcaption class="inline-caption">
       <span class="inline-title">{{ title }}</span>
       <div ref="headerControls" class="artifact-header-controls" />
-      <SlotOutlet v-if="artifact" :content="shell.slots.artifactActions" :scope="{ artifact, refreshConversation: shell.refreshConversation }" />
+      <SlotOutlet v-if="artifact" :content="shell.slots.artifactActions" :scope="{ artifact, title, refreshConversation: shell.refreshConversation }" />
       <button
         type="button"
         class="inline-expand"

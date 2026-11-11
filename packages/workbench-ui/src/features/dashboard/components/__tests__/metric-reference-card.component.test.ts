@@ -4,8 +4,11 @@ import ElementPlus from "element-plus";
 import ChartCard from "../ChartCard.vue";
 import MetricCard from "../MetricCard.vue";
 import CardParameterDialog from "../CardParameterDialog.vue";
+import MetricSourceDialog from "../MetricSourceDialog.vue";
+import { createMemoryHistory, createRouter } from "vue-router";
+import { platformRoutes } from "@ontomato/platform-shell/routes";
 import { createDashboardLoader } from "../utils/dashboardHelper";
-import { formatValue, metricChartOption } from "../utils/metricCard";
+import { formatValue, metricChartOption, type MetricCardView } from "../utils/metricCard";
 import { ApiRequestError } from "../../../../utils/api";
 import { workbenchI18n } from "../../../../i18n";
 
@@ -234,6 +237,46 @@ describe("the card parameter form", () => {
       expect(document.querySelector("[data-field='year'] .el-form-item__error")?.textContent).toContain("Not a year"),
     );
     expect(wrapper.emitted("saved")).toBeUndefined();
+    wrapper.unmount();
+  });
+});
+
+describe("view metric", () => {
+  it("reads as the metric's name, localized status and parameter values, and opens the metric", async () => {
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [
+        { path: "/", component: { render: () => null } },
+        { ...platformRoutes.metric, component: { render: () => null } },
+      ],
+    });
+    await router.push("/");
+    const card = {
+      id: "c-new",
+      name: "Revenue by region",
+      title: "Revenue by region",
+      query: { kind: "metric", metricId: "m-1", parameters: { year: 2026, region: null } },
+      chartType: "bar",
+      fields: { xAxis: "region", yAxis: "revenue" },
+      metric: { id: "m-1", name: "Revenue", revision: "rev-internal-42", status: "PENDING_REVIEW" },
+    };
+    const wrapper = mount(MetricSourceDialog, {
+      props: { modelValue: true, card: card as unknown as MetricCardView },
+      global: { plugins: [...plugins, router], stubs: { transition: false } },
+    });
+    await flushPromises();
+    const text = document.querySelector(".el-dialog")!.textContent!;
+    expect(text).toContain("Revenue");
+    expect(text).toContain(t("dashboard.metricStatus.PENDING_REVIEW"));
+    expect(text).toContain("2026");
+    expect(text).toContain("—");
+    expect(text).not.toContain("rev-internal-42");
+    expect(text).not.toContain("{");
+
+    document.querySelector<HTMLButtonElement>(".el-dialog__footer .el-button--primary")!.click();
+    await flushPromises();
+    expect(router.currentRoute.value.name).toBe(platformRoutes.metric.name);
+    expect(router.currentRoute.value.params.id).toBe("m-1");
     wrapper.unmount();
   });
 });

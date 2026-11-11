@@ -487,6 +487,13 @@ export default {
     "noParameters": "This metric has no parameters to set.",
     "choose": "Choose",
     "parametersChanged": "The metric changed while you were editing. Your text is kept; close and reopen the form to continue.",
+    "metricName": "Metric",
+    "metricStatusLabel": "Status",
+    "metricStatus": {
+      "PENDING_REVIEW": "Pending review",
+      "PUBLISHED": "Published"
+    },
+    "openMetric": "Open in metric management",
     "cardErrors": {
       "CARD_OUTPUT_MISMATCH": "The metric's output no longer matches this card's fields.",
       "METRIC_UNAVAILABLE": "The metric is unavailable.",

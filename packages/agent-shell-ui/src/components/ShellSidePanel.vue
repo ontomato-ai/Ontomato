@@ -17,6 +17,7 @@ const headerControls = ref<HTMLElement | null>(null);
 provide(artifactHeaderKey, headerControls);
 const { width, startResize } = usePanelWidth();
 const icon = computed(() => artifactIcon(props.open.artifact.path));
+const title = computed(() => props.open.title || fileName(props.open.artifact.path));
 
 async function download() {
   saveBlob(await shell.readArtifact(props.open.artifact), fileName(props.open.artifact.path));
@@ -29,10 +30,10 @@ async function download() {
     <header class="panel-header">
       <span class="panel-icon"><component :is="icon" :size="17" /></span>
       <span class="panel-heading">
-        <span class="panel-title">{{ open.title || fileName(open.artifact.path) }}</span>
+        <span class="panel-title">{{ title }}</span>
       </span>
       <div ref="headerControls" class="artifact-header-controls" />
-      <SlotOutlet :content="shell.slots.artifactActions" :scope="{ artifact: open.artifact, refreshConversation: shell.refreshConversation }" />
+      <SlotOutlet :content="shell.slots.artifactActions" :scope="{ artifact: open.artifact, title, refreshConversation: shell.refreshConversation }" />
       <button type="button" class="panel-button" :title="shell.labels.value.download" :aria-label="shell.labels.value.download" @click="download">
         <Download :size="16" />
       </button>

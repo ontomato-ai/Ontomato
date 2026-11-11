@@ -286,9 +286,9 @@ function appearanceSaved(value: WorkbenchAppearance) {
     <template #dataset-selection-actions="{ artifact, selectedRowIndices, refreshConversation }">
       <DatasetDrilldown :artifact="artifact" :selected-row-indices="selectedRowIndices" :refresh-conversation="refreshConversation" />
     </template>
-    <template #artifact-actions="{ artifact, refreshConversation }">
+    <template #artifact-actions="{ artifact, title, refreshConversation }">
       <!-- A dataset added to a board opens the dashboards application, which is where boards live. -->
-      <DatasetActions :artifact="artifact" :refresh-conversation="refreshConversation" @open-dashboard="openDashboardApplication" />
+      <DatasetActions :artifact="artifact" :title="title" :refresh-conversation="refreshConversation" @open-dashboard="openDashboardApplication" />
     </template>
     <template #message-actions="{ sessionId, runId }">
       <TurnDiagnoseButton v-if="sessionId && runId" :session-id="sessionId" :run-id="runId" />

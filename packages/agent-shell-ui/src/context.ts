@@ -12,7 +12,7 @@ export interface ShellContext extends Pick<AgentHostClient, "readRetrieval" | "r
   labels: Ref<ShellLabels>;
   artifactRenderers: Ref<readonly ArtifactRendererOverride[]>;
   toolRenderers: Ref<readonly ToolRendererOverride[]>;
-  /** Host slots for business actions: `artifact-actions` ({artifact}) and `message-actions`. */
+  /** Host slots for business actions: `artifact-actions` ({artifact, title}) and `message-actions`. */
   slots: { artifactActions?: Slot; messageActions?: Slot; datasetSelectionActions?: Slot };
   resolveArtifact(runId: string, path: string): Promise<RuntimeArtifact | null>;
   /** Changes whenever a run registers new artifacts, so unresolved references retry. */

@@ -9,7 +9,8 @@ import { AddDatasetDialog } from "../../dashboard";
 import { readDatasetSource } from "../assistant-host";
 
 /** Actions on a dataset file of a conversation: its quality check and adding it to a dashboard. */
-const props = defineProps<{ artifact: RuntimeArtifact; title?: string; refreshConversation?: () => Promise<void> }>();
+/** `title` is the dataset's name as the conversation shows it, which the add-to-dashboard dialog repeats. */
+const props = defineProps<{ artifact: RuntimeArtifact; title: string; refreshConversation?: () => Promise<void> }>();
 const emit = defineEmits<{ openDashboard: [id: string] }>();
 const { t, locale } = useI18n();
 const source = ref<AssistantDatasetSource | null>(null);
@@ -47,7 +48,7 @@ onMounted(async () => {
       v-model="adding"
       :session-id="artifact.sessionId"
       :artifact-id="artifact.id"
-      :title="title || artifact.path"
+      :title="title"
       @added="emit('openDashboard', $event)"
     />
   </template>
