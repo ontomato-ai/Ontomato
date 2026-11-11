@@ -2,6 +2,13 @@ import { shallowRef, watch, type Ref } from "vue";
 import { useDarkMode } from "../theme";
 
 /**
+ * Category labels never overlap: ECharts hides a label that would run into its neighbour, and it decides by the space
+ * each label actually has, so a roomy chart keeps every name whole. The theme does not cap a label's width: a fixed
+ * width would cut names that fit, such as a wide chart's "马克思主义学院".
+ */
+const CATEGORY_LABELS = { hideOverlap: true } as const;
+
+/**
  * The platform's ECharts theme, the one every chart of the platform is drawn in: the brand's colours for the light or
  * dark mode the page shows now, read from the brand stylesheet (DESIGN.md "Charts"). Series take the categorical
  * palette `--chart-N` and visual maps the sequential scale `--chart-sequential-N`; text, axes, split lines and the
@@ -24,10 +31,10 @@ export function chartTheme(): Record<string, unknown> {
   const text = read("--el-text-color-primary");
   const muted = read("--el-text-color-secondary");
   const line = read("--el-border-color");
-  const axis = (showLine: boolean, showSplit: boolean) => ({
+  const axis = (showLine: boolean, showSplit: boolean, category: boolean) => ({
     axisLine: { show: showLine, lineStyle: { color: line } },
     axisTick: { show: false },
-    axisLabel: { color: muted },
+    axisLabel: category ? { color: muted, ...CATEGORY_LABELS } : { color: muted },
     nameTextStyle: { color: muted },
     splitLine: { show: showSplit, lineStyle: { color: line } },
   });
@@ -39,10 +46,10 @@ export function chartTheme(): Record<string, unknown> {
     legend: { textStyle: { color: muted } },
     tooltip: { axisPointer: { lineStyle: { color: line }, crossStyle: { color: line } } },
     visualMap: { inRange: { color: numbered("--chart-sequential-") }, textStyle: { color: muted } },
-    categoryAxis: axis(true, false),
-    valueAxis: axis(false, true),
-    timeAxis: axis(true, false),
-    logAxis: axis(false, true),
+    categoryAxis: axis(true, false, true),
+    valueAxis: axis(false, true, false),
+    timeAxis: axis(true, false, false),
+    logAxis: axis(false, true, false),
   };
 }
 

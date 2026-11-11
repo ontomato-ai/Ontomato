@@ -671,6 +671,8 @@ export default {
     "testClosedHint": "This business test has ended, so reading or writing business data fails. To keep testing, ask the agent to start the business test again.",
     "testUnavailableHint": "The test data's status could not be read; this line updates once it is. Java still checks the test data on every business call and never switches to real data.",
     "testCleanupFailed": "Removing the test data failed: {reason}",
+    "previewSdkUpgrade": "This workspace references an older SDK version ({found}), and the preview needs {required}. Ask the agent to change the SDK version the page references to the current one, then open the preview again.",
+    "previewSdkNoReference": "The preview needs SDK version {required}, and this workspace names no SDK version. Ask the agent to reference it in the page and its import map, then open the preview again.",
     "notText": "This file is not text and is not shown here.",
     "uncommitted": "Uncommitted changes",
     "comparedWith": "Compared with the previous commit {commit}",

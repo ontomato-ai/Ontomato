@@ -260,6 +260,15 @@ createApp({
 - `option` is a complete ECharts option, and each new object redraws the chart: compute it from the data.
 - `theme` is `context.chartTheme`, the platform's chart colours in its current mode; with it the chart follows the
   platform's light and dark themes. Do not set colours of your own unless a series means a fixed colour.
+- The theme keeps the category labels readable by itself: it hides a label that would run into its neighbour, and it
+  gives each label the space its slot has, so a roomy chart keeps every name whole. Give the option the categories and
+  their values; do not set `axisLabel` yourself unless one axis needs a rule of its own, and never set its `interval`
+  to `0` to force every label out, because the long ones then run into each other.
+- When the names are long and the slots really are narrow, change the chart rather than force the labels: a horizontal
+  bar chart (`yAxis` holds the categories, `xAxis` the values) gives each name a whole row, and a label that still needs
+  cutting gets it from the chart's own rule: `axisLabel: { width: 120, overflow: "truncate" }` for an ellipsis, or
+  `axisLabel: { formatter: (name) => name.replace(/(.{8})/g, "$1\n") }` to wrap it. Set that only on the chart whose
+  slots need it, with the width of its own bars in mind.
 - `height` is in pixels or any CSS length; the width follows the element's container.
 
 Import `echarts` itself only for helpers an option needs, such as `new echarts.graphic.LinearGradient(...)`, never to

@@ -1,7 +1,7 @@
 import { afterEach, expect, it, vi } from "vitest";
 import { mount } from "@vue/test-utils";
 import { h, type Ref } from "vue";
-import { useChartTheme } from "../index";
+import { useChartTheme, chartTheme } from "../index";
 
 // A brand stylesheet as @ontomato/design-tokens writes one: the light values on :root, the dark ones on html.dark.
 const brand = document.createElement("style");
@@ -36,4 +36,13 @@ it("draws in the brand's colours of the mode the page shows, and in the dark one
     tooltip: { axisPointer: { lineStyle: { color: "#d0d0d0" } } },
     visualMap: { inRange: { color: ["#b1b1b1", "#b2b2b2"] }, textStyle: { color: "#e0e0e0" } },
   }));
+});
+
+// Category labels keep the space their neighbours have: a label that would run into the next one is hidden, and a
+// roomy chart keeps every name whole. The theme caps no label's width, because a fixed width would cut names that fit.
+it("keeps category labels from overlapping without capping their width", () => {
+  const axisLabel = (chartTheme().categoryAxis as { axisLabel: Record<string, unknown> }).axisLabel;
+  expect(axisLabel).toMatchObject({ hideOverlap: true });
+  expect(axisLabel).not.toHaveProperty("width");
+  expect(axisLabel).not.toHaveProperty("overflow");
 });
