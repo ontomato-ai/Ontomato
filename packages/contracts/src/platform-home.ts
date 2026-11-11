@@ -2,8 +2,8 @@ import { z } from "zod";
 import { runtimeIdSchema, runtimeTimestampSchema } from "./agent-runtime-values";
 
 /**
- * The platform home's personal state: what a user pinned, which of their dashboards the home shows, and when they last
- * used each application and agent. These are references only; names, entries and access always come from the
+ * The platform home's personal state: what a user pinned, which of their dashboards the home shows, when they last
+ * opened each application, and their latest conversations. These are references only; names, entries and access always come from the
  * application catalog and the agent list, and a reference the reader can no longer open is simply not shown.
  */
 export const homeItemRefSchema = z.discriminatedUnion("kind", [
@@ -32,8 +32,13 @@ export const homeStateSchema = z
     dashboardIds: homeDashboardsSchema.shape.ids,
     /** One row per application: the last time its entry was opened. */
     recentApplications: z.array(z.object({ applicationId: z.string().min(1), lastOpenedAt: runtimeTimestampSchema }).strict()),
-    /** One row per agent: the last conversation the user themselves ran with it (scheduled runs do not count). */
-    recentAgents: z.array(z.object({ agentId: runtimeIdSchema, lastConversationAt: runtimeTimestampSchema }).strict()),
+    /**
+     * The user's own latest conversations, newest first and at most six: ones they started themselves (scheduled runs do
+     * not count) and that have run at least once. The title is empty until the conversation has one.
+     */
+    recentConversations: z.array(
+      z.object({ sessionId: runtimeIdSchema, agentId: runtimeIdSchema, title: z.string(), updatedAt: runtimeTimestampSchema }).strict(),
+    ),
   })
   .strict();
 export type HomeState = z.infer<typeof homeStateSchema>;
