@@ -308,4 +308,75 @@ class WorkflowDaoDuckDbTest {
         assertFalse(query.actionTargetExists(target, "003", CapabilityGrantLookup.Admission.ALL, access));
         assertFalse(query.actionTargetExists(target, "missing", CapabilityGrantLookup.Admission.ALL, access));
     }
+
+    @Test
+    void pendingReadsUseTheSameScopedRowsInManagerAndAgentWithoutAnAssigneeProjection() throws Exception {
+        dao.initIndex();
+        var contract = new io.ontomato.dataengine.bean.workflow.RunContract();
+        contract.setClassName("docs"); contract.setIdField("id"); contract.setStepField("stage");
+        contract.setStatusField("status"); contract.setStatusOpen(List.of("open"));
+        contract.setAssigneeField("holder"); contract.setWorkflowRefField("flow");
+        var lead = step(1, "leader", "approve"); lead.setName("review");
+        var person = step(2, "clerk", "approve"); person.setName("correct");
+        var wf = workflow("w1", lead, person); wf.setDomainId("domain"); wf.setRunClassName("docs");
+        wf.setRunContract(contract); wf.setStatus(Workflow.STATUS_ACTIVE); dao.publishVersion(wf); dao.save(wf);
+
+        var attrs = new JSONArray();
+        for (var field : List.of("id","stage","status","department","holder","readable","flow"))
+            attrs.add(JSONObject.of("name",field,"type","varchar","primaryKey","id".equals(field),"enable",true));
+        var rule = JSONObject.of("classDef", JSONArray.of(JSONObject.of("className","docs","attrs",attrs)), "relationship_rule", new JSONObject());
+        jdbc.execute("CREATE TABLE docs(id VARCHAR, stage VARCHAR, status VARCHAR, department VARCHAR, holder VARCHAR, readable VARCHAR, flow VARCHAR)");
+        jdbc.execute("""
+            INSERT INTO docs VALUES ('A','review','open','my-org',null,'yes','w1'),
+              ('B','review','open','other','user','yes','w1'), ('C','correct','open','other','user','yes','w1'),
+              ('D','correct','open','my-org','other','yes','w1'), ('E','review','closed','my-org',null,'yes','w1'),
+              ('F','review','open','my-org',null,'no','w1'), ('G','review','open','my-org',null,'yes','w2')
+            """);
+        var admin = mock(AdminService.class); when(admin.getJSONRule("domain")).thenReturn(rule);
+        var cfg = new DataRagConfig(); cfg.setDslMightTimeFormats(new String[0]);
+        var bc = new BusinessConfig(); var configs = mock(BusinessConfigService.class); when(configs.get("domain")).thenReturn(bc);
+        var db = new DataAdapterConnection(); db.put("url", "jdbc:duckdb:" + directory.resolve("engine.db"));
+        var registry = mock(DataAdapterRegistry.class); when(registry.create(bc, rule)).thenReturn(new DuckDBAdapter(db, rule));
+        var dsl = new DslServiceImpl();
+        ReflectionTestUtils.setField(dsl,"dataRagConfig",cfg); ReflectionTestUtils.setField(dsl,"businessConfigService",configs);
+        ReflectionTestUtils.setField(dsl,"dataAdapterRegistry",registry); ReflectionTestUtils.setField(dsl,"adminService",admin);
+        var manager = spy(new io.ontomato.dataengine.service.impl.MetricViewServiceImpl());
+        var ontology = new OntologyQueryService(admin, dsl, manager, null);
+        var lookup = mock(CapabilityGrantLookup.class);
+        when(lookup.stepAdmissions("user","domain","w1",1)).thenReturn(Map.of(
+            1, new CapabilityGrantLookup.Admission(false,List.of(new CapabilityGrantLookup.Match("docs","department",List.of("my-org")))),
+            2, new CapabilityGrantLookup.Admission(false,List.of(new CapabilityGrantLookup.Match("docs","holder",List.of("user"))))));
+        var pending = new io.ontomato.dataengine.service.WorkflowPendingQuery(dao,lookup,ontology);
+        var subjects = new io.ontomato.dataengine.service.SubjectValueResolver(mock(io.ontomato.dataengine.service.SubjectAttributeLookup.class));
+        ReflectionTestUtils.setField(manager,"pending",pending); ReflectionTestUtils.setField(manager,"subjectValues",subjects);
+        var metric = new io.ontomato.dataengine.bean.metricView.MetricView(); metric.setId("metric"); metric.setDomainId("domain");
+        metric.setWorkflowSource(new io.ontomato.dataengine.bean.metricView.MetricView.WorkflowSource("w1",1,
+            io.ontomato.dataengine.bean.metricView.MetricView.WorkflowSource.Purpose.pending));
+        metric.setStatus("PUBLISHED"); metric.setBindings(List.of());
+        var fn = new io.ontomato.dataengine.bean.function.Function(); fn.setOperation("OPERATION_READ"); fn.setDomainId("domain");
+        fn.setQueryPackage(io.ontomato.dataengine.service.WorkflowRunQueries.pendingPackage(contract));
+        var returns = new io.ontomato.dataengine.bean.function.ReturnDef(); returns.setColumnLabels(JSONObject.of("id","ID","stage","Step","status","State"));
+        fn.setReturnDef(returns); metric.setFunction(fn);
+        io.ontomato.dataengine.service.QueryPackage.prepareReadFunction(fn, List.of(rule.getJSONArray("classDef").getJSONObject(0)));
+        doReturn(metric).when(manager).queryById("metric","domain");
+        var accessUser = new QueryAccessService.GrantUser("user","domain");
+        var permission = new UserDataPermission(); var fp = new FieldPermission("docs");
+        fp.getVisibleFields().addAll(List.of("id","stage","status")); permission.addFieldPermission(fp);
+        permission.addRowPermission("post","docs","{\"operator\":\"logic\",\"and\":[{\"field\":\"readable\",\"operator\":\"=\",\"value\":\"yes\"}]}");
+        var access = new QueryAccessService.Access(accessUser,permission,null,null,null);
+        var outputs = new io.ontomato.dataengine.service.QueryOutputService(null,null,ontology,null,subjects);
+        ReflectionTestUtils.setField(outputs,"pending",pending);
+        var recipe = JSONObject.of("kind","metric","metricId","metric","revision",OntologyQueryService.revision(metric),"parameters",new JSONObject());
+        var rows = outputs.execute("agent", recipe, null, access,"en").getJSONArray("rows");
+        assertEquals(List.of("A","C"), rows.stream().map(JSONObject::from).map(r -> r.getString("id")).sorted().toList());
+        assertEquals(rows, manager.execute("metric",null,new JSONObject(),null,"en",accessUser,permission,1)[0]);
+        assertFalse(recipe.getJSONObject("package").toJSONString().contains("my-org"));
+        when(lookup.stepAdmissions("user","domain","w1",1)).thenReturn(Map.of());
+        assertTrue(outputs.execute("none",recipe,null,access,"en").getJSONArray("rows").isEmpty());
+        when(lookup.stepAdmissions("user","domain","w1",1)).thenThrow(new IllegalStateException("roles unavailable"));
+        org.junit.jupiter.api.Assertions.assertThrows(IllegalStateException.class, () -> outputs.execute("fail",recipe,null,access,"en"));
+        wf.setStatus(Workflow.STATUS_INACTIVE); dao.save(wf);
+        var stale = org.junit.jupiter.api.Assertions.assertThrows(IllegalStateException.class, () -> outputs.execute("stale",recipe,null,access,"en"));
+        assertTrue(stale.getMessage().contains("no longer active"));
+    }
 }

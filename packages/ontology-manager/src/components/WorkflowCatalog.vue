@@ -39,7 +39,7 @@ const {
 } = useManagerClient();
 
 const scopeKinds = ["all", "self_organization", "self_subtree", "self_descendants", "initiated_by_self", "assigned_to_self"] as const;
-const contractFields = ["className", "idField", "stepField", "statusField", "orgField", "initiatorField", "assigneeField"] as const;
+const contractFields = ["className", "idField", "stepField", "statusField", "orgField", "initiatorField", "assigneeField", "workflowRefField"] as const;
 const workflows = ref<WorkflowRecord[]>([]);
 const actions = ref<SmartAsset[]>([]);
 /**

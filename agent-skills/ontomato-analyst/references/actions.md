@@ -17,9 +17,9 @@ A draft or inactive process confers nothing: activating a revision is what write
 
 ## `pending`
 
-Read-only. It prefers the published `我的待办` metric — generated from a run contract the platform
-verified — and falls back to the active process's contract only when no such metric exists. Both
-paths run under your own permissions, and both read your own identity from the session.
+Read-only. Select the published pending metric of an active workflow by its recorded source.
+The server matches the current step and its grants, then applies your row permissions.
+The client does not build a substitute query or take an identity parameter.
 
 ```bash
 node ontomato.mjs pending
@@ -30,10 +30,10 @@ Output shape:
 
 ```json
 {"source":"metric","metric":"我的待办 · 开虚机申请审批","revision":"3","count":1,
- "rows":[{"id":"VM-1","current_node":"部门领导审批","status":"待办","assignee_id":"U100"}]}
+ "rows":[{"id":"VM-1","current_node":"部门领导审批","status":"待办"}]}
 ```
 
-`source` is `metric` or `run-contract`. Zero rows is a real answer; a missing query is an error, and
+`source` is `metric`. For multiple workflows, `items` groups the results by workflow ID. Zero rows is a real answer; a missing query is an error, and
 it says so instead of returning an empty list.
 
 ## `run`

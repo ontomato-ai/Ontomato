@@ -288,4 +288,19 @@ class MetricViewBindingContractTest {
     assertEquals(io.ontomato.dataengine.util.DslPermissionUtil.alwaysFalse("salary"), bound);
   }
 
+
+  @Test
+  void metricAuthorsCannotClaimWorkflowProvenanceAndDetailEditsKeepIt() throws Exception {
+    var definition = metric("domain-a");
+    var detail = new MetricView.WorkflowSource("flow", 1, MetricView.WorkflowSource.Purpose.detail);
+    definition.setWorkflowSource(detail);
+    assertThrows(IllegalArgumentException.class, () -> service.save(definition, "en"));
+    assertTrue(metrics.isEmpty());
+    service.publishWorkflowMetric(definition, "en");
+    definition.setWorkflowSource(null);
+    definition.setDescription("Updated detail view");
+    assertEquals(detail, service.save(definition, "en").getWorkflowSource());
+    definition.setWorkflowSource(new MetricView.WorkflowSource("flow", 1, MetricView.WorkflowSource.Purpose.pending));
+    assertThrows(IllegalArgumentException.class, () -> service.save(definition, "en"));
+  }
 }

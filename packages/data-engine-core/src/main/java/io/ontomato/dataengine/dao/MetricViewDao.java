@@ -46,7 +46,7 @@ public class MetricViewDao extends BaseDao {
 
 	private static final String TABLE_NAME = "metric_view";
 
-	private static final String COLUMNS = "id, name, origin, type, function_id, description, status, match_questions, class_names, domain_id, create_timestamp, modify_timestamp, origin_check_result, origin_question, created_by, reviewed_by";
+	private static final String COLUMNS = "id, name, origin, type, function_id, description, status, match_questions, class_names, domain_id, create_timestamp, modify_timestamp, origin_check_result, origin_question, created_by, reviewed_by, workflow_source";
 
 	@PostConstruct
 	public void initIndex() {
@@ -72,7 +72,7 @@ public class MetricViewDao extends BaseDao {
 						+ "origin_check_result TEXT, "
 						+ "origin_question TEXT, "
 						+ "created_by VARCHAR(64), "
-						+ "reviewed_by VARCHAR(64), "
+						+ "reviewed_by VARCHAR(64), workflow_source JSONB, "
 						+ "brief TEXT, "
 						+ "brief_vector vector"
 						+ ")");
@@ -104,7 +104,7 @@ public class MetricViewDao extends BaseDao {
 		retrievalGate.write(domainId, () -> {
 			PGvector pgVector = new PGvector(embeddingService.embedding(brief, domainId));
 			int changed = jdbcTemplate.update(
-				"INSERT INTO " + TABLE_NAME + " (" + COLUMNS + ", brief, brief_vector) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?::vector) "
+				"INSERT INTO " + TABLE_NAME + " (" + COLUMNS + ", brief, brief_vector) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?::jsonb, ?, ?::vector) "
 						+ "ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, origin = EXCLUDED.origin, type = EXCLUDED.type, "
 						+ "function_id = EXCLUDED.function_id, description = EXCLUDED.description, status = EXCLUDED.status, "
 						+ "match_questions = EXCLUDED.match_questions, class_names = EXCLUDED.class_names, "
@@ -113,13 +113,13 @@ public class MetricViewDao extends BaseDao {
 						// reviewed_by keeps the stored value when this save carries no subject (background work).
 						+ "reviewed_by = COALESCE(EXCLUDED.reviewed_by, metric_view.reviewed_by), "
 						+ "modify_timestamp = EXCLUDED.modify_timestamp, origin_check_result = EXCLUDED.origin_check_result, "
-						+ "origin_question = EXCLUDED.origin_question, brief = EXCLUDED.brief, brief_vector = EXCLUDED.brief_vector WHERE metric_view.domain_id = EXCLUDED.domain_id",
+						+ "workflow_source = EXCLUDED.workflow_source, origin_question = EXCLUDED.origin_question, brief = EXCLUDED.brief, brief_vector = EXCLUDED.brief_vector WHERE metric_view.domain_id = EXCLUDED.domain_id",
 				metricView.getId(), metricView.getName(), metricView.getOrigin(), "GENERAL",
 				function.getId(), metricView.getDescription(), metricView.getStatus(),
 				JSON.toJSONString(metricView.getMatchQuestions(), Feature.WriteMapNullValue),
 				classNamesStr, metricView.getDomainId(), metricView.getCreateTimestamp(), metricView.getModifyTimestamp(),
 				metricView.getOriginCheckResult() == null ? null : JSON.toJSONString(metricView.getOriginCheckResult(), Feature.WriteMapNullValue),
-				metricView.getOriginQuestion(), metricView.getCreatedBy(), metricView.getReviewedBy(), brief, pgVector);
+				metricView.getOriginQuestion(), metricView.getCreatedBy(), metricView.getReviewedBy(), metricView.getWorkflowSource() == null ? null : JSON.toJSONString(metricView.getWorkflowSource()), brief, pgVector);
             if (changed != 1) throw new IllegalArgumentException("MetricView not found");
             saveBindings(metricView);
             return null;
@@ -273,10 +273,11 @@ public class MetricViewDao extends BaseDao {
 
 
     /** Model-free published read lookup. Database failures remain failures. */
-    public List<Object[]> queryForRetrieval(String domainId,String query,String cursor,List<String> classes,int limit) {
+    public List<Object[]> queryForRetrieval(String domainId,String query,String cursor,List<String> classes,int limit,boolean pending) {
         if(!assetLookupPolicy.shouldQuery(jdbcTemplate,TABLE_NAME))return List.of();
         StringBuilder sql=new StringBuilder("SELECT "+java.util.Arrays.stream(COLUMNS.split(", ")).map(c->"m."+c).collect(java.util.stream.Collectors.joining(","))+" FROM metric_view m JOIN function f ON f.id=m.function_id AND f.domain_id=m.domain_id WHERE m.type='GENERAL' AND m.domain_id=? AND m.status=? AND f.operation=?");
         List<Object> args=new ArrayList<>(List.of(domainId,MetricView.STATUS_PUBLISHED,Function.OPERATION_READ));
+        if (pending) sql.append(" AND m.workflow_source->>'purpose'='pending' AND EXISTS (SELECT 1 FROM workflow w WHERE w.domain_id=m.domain_id AND w.id=m.workflow_source->>'workflowId' AND w.status='ACTIVE' AND w.version=(m.workflow_source->>'version')::integer)");
         if(cursor!=null){sql.append(" AND m.id>?");args.add(cursor);}
         if(query!=null&&!query.isBlank()) {
             sql.append(" AND (strpos(lower(m.name),?)>0 OR strpos(lower(coalesce(m.description,'')),?)>0 OR strpos(lower(coalesce(m.match_questions,'')),?)>0 OR strpos(?,lower(m.name))>0)");
@@ -454,6 +455,7 @@ public class MetricViewDao extends BaseDao {
 		metricView.setDomainId(rs.getString("domain_id"));
 		metricView.setCreatedBy(rs.getString("created_by"));
 		metricView.setReviewedBy(rs.getString("reviewed_by"));
+		metricView.setWorkflowSource(JSON.parseObject(rs.getString("workflow_source"), MetricView.WorkflowSource.class));
 		String matchQuestionsStr = rs.getString("match_questions");
 		Set<String> matchQuestions = new HashSet<String>();
 		if (matchQuestionsStr != null && !"null".equals(matchQuestionsStr)) {

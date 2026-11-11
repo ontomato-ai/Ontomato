@@ -60,7 +60,7 @@ Run `node ontomato.mjs <command>` from this directory. JSON accepts `@file`.
 | `execute-dsl @query.json` | `POST /ontology/query/execute-dsl`: one read-only DSL object, under your permissions |
 | `metrics <question> [--cursor id] [--limit n]` | `POST /ontology/query/metrics/search`: published read specifications, revision and next cursor; no model call |
 | `execute-metric <id> --revision <revision> [@parameters.json] [--binding id]` | `POST /ontology/query/metrics/execute`: current revision checked, execution under your permissions; --binding selects an owned parameter set |
-| `pending [--flow name] [--limit n]` | Your own pending items, read-only: the published "我的待办" metric when it exists, otherwise the active process's run contract; executed under your permissions |
+| `pending [--flow name] [--limit n]` | Your own pending items, read-only: only published pending metrics of active workflows; each step is restricted by your role, scope and row permissions |
 | `actions` | The actions your roles are granted by an active revision, with the granting process; the same intersection the executor uses |
 | `run <actionId> [@parameters.json]` | `POST /action/execute`: perform one step your roles are granted; a refusal is reported with its real cause |
 | `knowledge <question> [--limit n]` | `POST /ontology/query/knowledge/search`: relevant business knowledge |
@@ -99,11 +99,9 @@ ontology commands and the data-retrieval file script, never recursively ask.
 
 ## Acting on your own work
 
-`pending` answers "what is waiting for me" and writes nothing. It prefers the published
-`我的待办` metric: that query was generated from a run contract the platform verified, so its
-field names and open states are the ones the process actually uses. Only when no such metric exists
-does it fall back to the active process's contract, and it then reads the caller's own id from the
-session — there is no identity parameter to pass.
+`pending` executes the active workflow's published pending metric. The server matches each
+open row to a frozen step, your role's scope for that step, and your read permissions. A missing
+query or failed grant lookup is an error; an authorized query with no matches returns zero rows.
 
 `run` performs exactly one step. The executor decides in order: platform permission, then the
 capability grant (is one of your roles granted this action by an active revision), then the action's
@@ -112,7 +110,7 @@ permission applies to the state it reads. A refusal names the layer that refused
 [acting on a case](references/actions.md) for what each one means and what to do next.
 
 `actions` answers the other half: which steps are yours to run at all. It intersects your effective
-roles with the grants in force, so a row left by an earlier revision is not listed. "I can run this"
+roles with the grants in force, so a row left by an earlier revision is not listed. It lists candidate actions, not permission for any particular record. "I can run this"
 and "this is waiting for me" are different questions; ask both before concluding you have nothing to do.
 
 Never pass an identity to make a step succeed. "This is not your turn" is a business state, not a

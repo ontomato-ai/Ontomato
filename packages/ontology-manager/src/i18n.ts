@@ -696,6 +696,7 @@ const ontologyEn = {
   contract_orgField: "Organization code field",
   contract_initiatorField: "Initiator field",
   contract_assigneeField: "Assignee field",
+  contract_workflowRefField: "Field containing the workflow ID (shared run class)",
   contract_statusOpen: "Open status values",
   workflowStepName: "Step name",
   workflowStepRole: "Role code",

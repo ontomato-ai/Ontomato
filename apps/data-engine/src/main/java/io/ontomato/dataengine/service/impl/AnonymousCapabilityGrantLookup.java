@@ -13,6 +13,11 @@ import org.springframework.stereotype.Component;
 public class AnonymousCapabilityGrantLookup implements CapabilityGrantLookup {
 
     @Override
+    public java.util.Map<Integer, Admission> stepAdmissions(String userId, String domainId, String workflowId, int version) {
+        return java.util.Map.of();
+    }
+
+    @Override
     public Admission admission(String userId, String domainId, String kind, String capabilityId) {
         return Admission.ALL;
     }

@@ -367,7 +367,7 @@ class QueryRuntimeBoundaryTest {
         "CREATE TABLE metric_view(id text,name text,origin text,type text,function_id"
             + " text,description text,status text,match_questions text,class_names text,domain_id"
             + " text,create_timestamp bigint,modify_timestamp bigint,origin_check_result"
-            + " text,origin_question text)");
+            + " text,origin_question text, created_by text, reviewed_by text)");
     var dao = new io.ontomato.dataengine.dao.MetricViewDao();
     org.springframework.test.util.ReflectionTestUtils.setField(dao, "jdbcTemplate", jdbc);
     org.springframework.test.util.ReflectionTestUtils.setField(
@@ -392,18 +392,29 @@ class QueryRuntimeBoundaryTest {
           i == 3 ? "domain-b" : "domain-a");
     }
     jdbc.execute("CREATE TABLE metric_view_binding(id text,metric_view_id text,name text,description text,parameters jsonb,match_questions text)");
-    var page = dao.queryForRetrieval("domain-a", "Sales_", null, List.of("/sales"), 1);
+    new io.ontomato.dataengine.migration.WorkflowMetricSourceMigration(jdbc).run();
+    assertEquals(0, jdbc.queryForObject("SELECT count(workflow_source) FROM metric_view", Integer.class));
+    jdbc.execute("CREATE TABLE workflow(id text,domain_id text,status text,version integer)");
+    jdbc.execute("INSERT INTO workflow VALUES ('old','domain-a','ACTIVE',2),('w','domain-a','ACTIVE',2)");
+    jdbc.execute("UPDATE metric_view SET workflow_source=jsonb_build_object('workflowId',CASE WHEN id='m0' THEN 'old' ELSE 'w' END, "
+            + "'version',CASE WHEN id='m0' THEN 1 ELSE 2 END,'purpose','pending') WHERE id IN ('m0','m1')");
+    assertThrows(org.springframework.dao.DuplicateKeyException.class, () -> jdbc.update(
+            "UPDATE metric_view SET workflow_source=(SELECT workflow_source FROM metric_view WHERE id='m1') WHERE id='m2'"));
+    var active = dao.queryForRetrieval("domain-a", "", null, List.of(), 20, true);
+    assertEquals(List.of("m1"), active.stream().map(r -> ((io.ontomato.dataengine.bean.metricView.MetricView)r[0]).getId()).toList());
+    jdbc.execute("DROP TABLE workflow");
+    var page = dao.queryForRetrieval("domain-a", "Sales_", null, List.of("/sales"), 1, false);
     assertEquals(1, page.size());
     assertNull(
         ((io.ontomato.dataengine.bean.metricView.MetricView) page.get(0)[0]).getDescription());
     assertEquals(
-        1, dao.queryForRetrieval("domain-a", "Sales_", "m0", List.of("/sales"), 20).size());
-    assertTrue(dao.queryForRetrieval("domain-a", "%", null, List.of(), 20).isEmpty());
+        1, dao.queryForRetrieval("domain-a", "Sales_", "m0", List.of("/sales"), 20, false).size());
+    assertTrue(dao.queryForRetrieval("domain-a", "%", null, List.of(), 20, false).isEmpty());
     jdbc.execute("DROP TABLE metric_view_binding");
     jdbc.execute("DROP TABLE metric_view");
     assertThrows(
         org.springframework.dao.DataAccessException.class,
-        () -> dao.queryForRetrieval("domain-a", "", null, List.of(), 20));
+        () -> dao.queryForRetrieval("domain-a", "", null, List.of(), 20, false));
   }
 
   @Test

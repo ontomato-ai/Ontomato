@@ -1,11 +1,12 @@
 package io.ontomato.dataengine.service.impl;
 
+import io.ontomato.dataengine.service.WorkflowRunQueries;
+import io.ontomato.dataengine.bean.metricView.MetricView.WorkflowSource;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 
 import org.springframework.stereotype.Component;
 
@@ -16,7 +17,6 @@ import io.ontomato.dataengine.bean.function.Function;
 import io.ontomato.dataengine.bean.function.Parameter;
 import io.ontomato.dataengine.bean.function.ReturnDef;
 import io.ontomato.dataengine.bean.metricView.MetricView;
-import io.ontomato.dataengine.bean.metricView.MetricViewBinding;
 import io.ontomato.dataengine.bean.workflow.RunContract;
 import io.ontomato.dataengine.bean.workflow.Workflow;
 import io.ontomato.dataengine.service.AdminService;
@@ -44,10 +44,6 @@ public class WorkflowMetricGenerator {
     private static final String CONDITION_VALUE_POINTER =
             "/answer/steps/0/graph/patterns/0/objects/0/conditions/properties/value";
 
-    /** The same pointer when the query has more than one condition, which nests them under {@code and}. */
-    private static final String FIRST_OF_AND_POINTER =
-            "/answer/steps/0/graph/patterns/0/objects/0/conditions/properties/and/0/value";
-
     private final MetricViewService metrics;
     private final AdminService admin;
 
@@ -62,7 +58,7 @@ public class WorkflowMetricGenerator {
     /**
      * Generate (or refresh) this workflow's read capabilities.
      *
-     * <p>Idempotent by name: activating again updates the same two metrics instead of accumulating a new
+     * <p>Idempotent by workflow and purpose: activating again updates the same two metrics instead of accumulating a new
      * pair every time. A failure for one metric is reported and the other still proceeds, because losing
      * a convenience query must not cost the process its authority.</p>
      */
@@ -80,15 +76,10 @@ public class WorkflowMetricGenerator {
         Map<String, String> labels = labels(workflow.getDomainId(), contract);
         List<MetricView> existing = metrics.queryList(null, null, null, workflow.getDomainId());
 
-        if (contract.getAssigneeField() == null) {
-            // Without an owner field there is no "mine"; generating one would query everyone's work.
-            warnings.add("运行契约未声明 assigneeField，未生成「我的待办」");
-        } else {
-            try {
-                names.add(upsert(existing, myPending(workflow, contract, labels)));
-            } catch (Exception error) {
-                warnings.add("「我的待办」生成失败: " + error.getMessage());
-            }
+        try {
+            names.add(upsert(existing, myPending(workflow, contract, labels)));
+        } catch (Exception error) {
+            warnings.add("「我的待办」生成失败: " + error.getMessage());
         }
         try {
             names.add(upsert(existing, runById(workflow, contract, labels)));
@@ -101,77 +92,37 @@ public class WorkflowMetricGenerator {
     // ---------------------------------------------------------------- the two definitions
 
     private MetricView myPending(Workflow workflow, RunContract contract, Map<String, String> labels) {
-        // Owner and state together: the owner alone would also list runs already finished.
-        JSONArray conditions = JSONArray.of(
-                condition(contract.getAssigneeField(), "=", "{{account.id}}"),
-                JSONObject.of(
-                        "field", contract.getStatusField(),
-                        "operator", "in",
-                        "value", JSONArray.of(contract.getStatusOpen().toArray())));
-        JSONObject dsl = dsl(contract, conditions);
-        JSONObject packageBundle = packageBundle(
-                contract, "assignee", "{{account.id}}", "当前登录人", FIRST_OF_AND_POINTER, dsl);
-
-        return metric(
-                workflow.getDomainId(),
-                "我的待办 · " + workflow.getName(),
-                "当前登录人名下仍处于待办状态的" + workflow.getName() + "，按当前节点与状态列出。",
-                "我有什么待办",
-                List.of("我有什么待办", "我的待办", "待办列表", "我还有哪些要处理", workflow.getName()),
-                packageBundle,
-                labels,
-                binding("我的待办", "assignee", "{{account.id}}"));
+        // A standalone copy of the package has no authenticated workflow grant context.
+        var bundle = WorkflowRunQueries.pendingPackage(contract);
+        var pendingLabels = new LinkedHashMap<String, String>();
+        for (String field : List.of(contract.getIdField(), contract.getStepField(), contract.getStatusField()))
+            pendingLabels.put(field, labels.get(field));
+        var metric = metric(workflow.getDomainId(), "我的待办 · " + workflow.getName(),
+                "当前用户在本流程有权处理的开放单据。", "我有什么待办",
+                List.of("我有什么待办", "我的待办", "待办列表", workflow.getName()), bundle, pendingLabels);
+        metric.setWorkflowSource(new WorkflowSource(workflow.getId(), workflow.getVersion(), WorkflowSource.Purpose.pending));
+        return metric;
     }
 
     private MetricView runById(Workflow workflow, RunContract contract, Map<String, String> labels) {
-        JSONObject dsl = dsl(contract, JSONArray.of(condition(contract.getIdField(), "=", "{{runId}}")));
+        JSONObject dsl = WorkflowRunQueries.dsl(contract, JSONArray.of(condition(contract.getIdField(), "=", "{{runId}}")), true);
         JSONObject packageBundle =
                 packageBundle(contract, "runId", "", "单据主键", CONDITION_VALUE_POINTER, dsl);
 
-        return metric(
+        var metric = metric(
                 workflow.getDomainId(),
                 "单据详情 · " + workflow.getName(),
                 "按主键查看" + workflow.getName() + "的一张单据的当前节点与状态。",
                 "这张单现在到哪一步了",
                 List.of("这张单到什么状态了", "查单据进度", "单据详情", workflow.getName()),
                 packageBundle,
-                labels,
-                // No binding: the caller supplies the id, and no subject value is involved.
-                null);
+                labels);
+        metric.setWorkflowSource(new WorkflowSource(workflow.getId(), workflow.getVersion(), WorkflowSource.Purpose.detail));
+        return metric;
     }
 
     /** One DSL step over the run class, projected to the contract's four readable fields. */
-    private JSONObject dsl(RunContract contract, JSONArray conditions) {
-        JSONObject properties = conditions.size() == 1
-                ? JSONObject.of("properties", conditions.getJSONObject(0))
-                : JSONObject.of("properties", JSONObject.of("operator", "logic", "and", conditions));
-        JSONObject object = JSONObject.of(
-                "idx", 0,
-                "variable", "r",
-                "class", contract.getClassName(),
-                "conditions", properties);
-        JSONObject pattern = JSONObject.of(
-                "objects", JSONArray.of(object),
-                "pattern_logic", "and");
-        JSONObject step = JSONObject.of(
-                "graph", JSONObject.of("patterns", JSONArray.of(pattern), "pattern_logic", "and"),
-                "output", JSONObject.of(
-                        "to_user", true,
-                        "fields", fields(contract),
-                        "limit", JSONObject.of("offset", 0, "count", 200)));
-        return JSONObject.of(
-                "problem", "",
-                "answer", JSONObject.of("steps", JSONArray.of(step)));
-    }
-
-    /**
-     * The query package: a DSL file plus one parameter bound into its condition value.
-     *
-     * <p>The bound value is either a literal the caller supplies ({@code runId}) or a subject reference
-     * the server fills ({@code {{account.id}}}). Either way it arrives as a parameter, because that is
-     * the only path the platform substitutes — and a subject reference there is resolved by the server,
-     * never by the caller.</p>
-     */
+    /** The detail query binds the caller-supplied object key into its only condition. */
     private JSONObject packageBundle(
             RunContract contract,
             String parameterName,
@@ -200,22 +151,6 @@ public class WorkflowMetricGenerator {
                         JSONObject.of("path", "query.json", "content", JSONObject.toJSONString(dsl))));
     }
 
-    /** The projected fields, in reading order and without duplicates. */
-    private JSONArray fields(RunContract contract) {
-        Set<String> names = new LinkedHashSet<>();
-        names.add(contract.getIdField());
-        names.add(contract.getStepField());
-        names.add(contract.getStatusField());
-        if (contract.getAssigneeField() != null) names.add(contract.getAssigneeField());
-
-        JSONArray fields = new JSONArray();
-        for (String name : names) {
-            if (name == null) continue;
-            fields.add(JSONObject.of("variable", "r", "field", name, "as", name));
-        }
-        return fields;
-    }
-
     /** A condition the pointer can target: the leaf is {@code value} on an object that has an operator. */
     private JSONObject condition(String field, String operator, String value) {
         return JSONObject.of("field", field, "operator", operator, "value", value);
@@ -228,8 +163,7 @@ public class WorkflowMetricGenerator {
             String originQuestion,
             List<String> matchQuestions,
             JSONObject packageBundle,
-            Map<String, String> labels,
-            MetricViewBinding binding) {
+            Map<String, String> labels) {
         Function function = new Function();
         function.setName(name);
         function.setOperation(Function.OPERATION_READ);
@@ -249,34 +183,22 @@ public class WorkflowMetricGenerator {
         metric.setStatus(MetricView.STATUS_PUBLISHED);
         metric.setMatchQuestions(new LinkedHashSet<>(matchQuestions));
         metric.setFunction(function);
-        metric.setBindings(binding == null ? new ArrayList<>() : new ArrayList<>(List.of(binding)));
+        metric.setBindings(new ArrayList<>());
         return metric;
     }
 
-    private MetricViewBinding binding(String name, String parameter, String value) {
-        MetricViewBinding binding = new MetricViewBinding();
-        binding.setName(name);
-        binding.setParameters(JSONObject.of(parameter, value));
-        binding.setMatchQuestions(new LinkedHashSet<>(List.of(name)));
-        return binding;
-    }
-
-    /** Update the same metric when it exists, so activation is idempotent rather than additive. */
     private String upsert(List<MetricView> existing, MetricView metric) throws Exception {
         MetricView same = existing.stream()
-                .filter(candidate -> metric.getName().equals(candidate.getName()))
+                .filter(candidate -> candidate.getWorkflowSource() != null
+                        && candidate.getWorkflowSource().workflowId().equals(metric.getWorkflowSource().workflowId())
+                        && candidate.getWorkflowSource().purpose() == metric.getWorkflowSource().purpose())
                 .findFirst()
                 .orElse(null);
         if (same != null) {
             metric.setId(same.getId());
             if (same.getFunction() != null) metric.getFunction().setId(same.getFunction().getId());
-            if (!metric.getBindings().isEmpty()
-                    && same.getBindings() != null
-                    && !same.getBindings().isEmpty()) {
-                metric.getBindings().get(0).setId(same.getBindings().get(0).getId());
-            }
         }
-        MetricView saved = metrics.save(metric, LANG);
+        MetricView saved = metrics.publishWorkflowMetric(metric, LANG);
         return saved == null ? metric.getName() : saved.getName();
     }
 

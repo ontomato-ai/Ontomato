@@ -82,7 +82,7 @@ public class DslServiceImpl implements DslService {
 	}
 
     @Override
-    public Map<String, Object> executeTargetRead(JSONObject query, JSONObject predicate, UserDataPermission permission, User user) {
+    public Map<String, Object> executeGovernedRead(JSONObject query, JSONObject predicate, UserDataPermission permission, User user) {
         return executeNormalized(query, permission, user.getDomainId(), true, predicate);
     }
 

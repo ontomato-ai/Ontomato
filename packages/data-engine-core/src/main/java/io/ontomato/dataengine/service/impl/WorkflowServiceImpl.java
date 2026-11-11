@@ -167,6 +167,7 @@ public class WorkflowServiceImpl implements WorkflowService {
         Set<Integer> numbers = new LinkedHashSet<>();
         if (workflow.getRunContract() != null) workflow.getRunContract().normalized();
         if (steps != null) {
+            if (workflow.getRunContract() != null) WorkflowStep.requireDistinctNames(steps);
             for (WorkflowStep step : steps) {
                 String where = "step " + step.getStepNo();
                 if (step.getStepNo() == null || step.getStepNo() < 1 || !numbers.add(step.getStepNo()))

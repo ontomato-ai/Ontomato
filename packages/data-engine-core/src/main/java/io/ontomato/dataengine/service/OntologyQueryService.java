@@ -201,7 +201,7 @@ public class OntologyQueryService {
   public Map<String, Object> execute(JSONObject query, QueryAccessService.Access access) {
     if (access.grant() != null && "package-read".equals(access.grant().getString("purpose")))
       throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Package executions must reference a declared query file");
-    return executeAuthorized(query, access);
+    return executeAuthorized(query, access, null);
   }
 
   public Map<String, Object> executePackage(JSONObject reference, QueryAccessService.Access access) {
@@ -223,7 +223,7 @@ public class OntologyQueryService {
       values.putAll(overrides);
     }
     values = QueryPackage.parameters(bundle, values);
-    var result = executeAuthorized(QueryPackage.query(bundle, path, values), access);
+    var result = executeAuthorized(QueryPackage.query(bundle, path, values), access, null);
     if (result.get("data") instanceof List<?> data)
       for (Object item : data) {
         var marker = partial(JSONObject.from(item));
@@ -238,10 +238,16 @@ public class OntologyQueryService {
         : JSON.parseObject(JSON.toJSONString(query, com.alibaba.fastjson2.JSONWriter.Feature.WriteMapNullValue));
   }
 
-  private Map<String, Object> executeAuthorized(JSONObject query, QueryAccessService.Access access) {
+  Map<String, Object> executeGoverned(JSONObject query, QueryAccessService.Access access, JSONObject predicate) {
+    if (access.grant() != null && "package-read".equals(access.grant().getString("purpose")))
+      throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Package executions must reference a declared query file");
+    return executeAuthorized(query, access, predicate);
+  }
+
+  private Map<String, Object> executeAuthorized(JSONObject query, QueryAccessService.Access access, JSONObject predicate) {
     Map<String, Object> result;
     try {
-      result = executeQuery(normalized(query), access);
+      result = executeQuery(normalized(query), access, predicate);
     } catch (ResponseStatusException error) {
       if (error.getStatusCode().value() != HttpStatus.FORBIDDEN.value()
           && error.getStatusCode().value() != HttpStatus.NOT_FOUND.value())
@@ -262,18 +268,22 @@ public class OntologyQueryService {
     return new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY, message);
   }
 
-  private Map<String, Object> executeQuery(JSONObject query, QueryAccessService.Access access) throws Exception {
+  private Map<String, Object> executeQuery(JSONObject query, QueryAccessService.Access access, JSONObject predicate) throws Exception {
     validateQuery(query, access);
     if (access.target().testing() || access.grant() != null && "sandbox-write".equals(access.grant().getString("purpose"))) {
       var definitions = classes(access);
       var analysis = QuerySourceAnalysis.fromDsl(query, definitions);
       QueryPermissions.authorizeInputs(analysis, access.permission(), definitions);
+      if (predicate != null) query.getJSONObject("answer").getJSONArray("steps").getJSONObject(0).getJSONObject("graph")
+          .getJSONArray("patterns").getJSONObject(0).getJSONArray("objects").getJSONObject(0)
+          .put("conditions", JSONObject.of("properties", predicate));
       var restricted = (JSONObject) io.ontomato.dataengine.util.DslPermissionUtil.addRowPermission(
           "[" + query.toJSONString() + "]", definitions, access.permission())[0];
       String sandbox = access.target().testing() ? access.target().sandboxId() : access.grant().getString("sandboxId");
       if (io.ontomato.dataengine.config.ServiceConst.NOT_SANDBOX.equals(sandbox)) sandbox = null;
       return QueryPermissions.response(writes.query(restricted, sandbox, access.user().getDomainId()), analysis, access.permission(), true);
     }
+    if (predicate != null) return dsl.executeGovernedRead(query, predicate, access.permission(), access.user());
     boolean internal = access.grant() != null && ("user-read".equals(access.grant().getString("purpose")) || "package-read".equals(access.grant().getString("purpose")));
     return internal ? dsl.executeInternal(query, access.permission(), access.user()) : dsl.executeV1(query, access.permission(), access.user());
   }
@@ -289,17 +299,7 @@ public class OntologyQueryService {
     var visible = QueryPermissions.visibleRule(rule, permission, access.classNames());
     var projection = target.definition(visible);
     String pk = io.ontomato.dataengine.util.DslUtil.getPrimaryKey(target.definition(rule));
-    var predicate = JSONObject.of("field", pk, "operator", "=", "value", key);
-    if (!grant.unrestricted()) {
-      JSONArray alternatives = new JSONArray();
-      for (var match : grant.matches()) {
-        if (name.equals(match.className()) && !match.values().isEmpty())
-          alternatives.add(JSONObject.of("field", match.field(), "operator", "in", "value", match.values()));
-      }
-      if (alternatives.isEmpty()) return false;
-      predicate = JSONObject.of("operator", "logic", "and", JSONArray.of(predicate,
-          JSONObject.of("operator", "logic", "or", alternatives)));
-    }
+    var predicate = grant.restrict(name, JSONObject.of("field", pk, "operator", "=", "value", key));
     // Project one authorized attribute; the value is discarded even if the attribute is masked.
     String field = JSONObject.from(projection).getJSONArray("attrs").getJSONObject(0).getString("name");
     JSONObject object = JSONObject.of("idx", 0, "variable", "o", "class", name);
@@ -307,16 +307,7 @@ public class OntologyQueryService {
         "output", JSONObject.of("to_user", true, "fields", JSONArray.of(JSONObject.of("variable", "o", "field", field, "as", "present")),
             "limit", JSONObject.of("count", 1)));
     JSONObject query = JSONObject.of("problem", "", "answer", JSONObject.of("steps", JSONArray.of(step)));
-    Map<String, Object> result;
-    if (access.target().testing()) {
-      object.put("conditions", JSONObject.of("properties", predicate));
-      var restricted = (JSONObject) io.ontomato.dataengine.util.DslPermissionUtil.addRowPermission(
-          JSONArray.of(query).toJSONString(), (List<Map<String, Object>>) visible.get("classDef"), permission)[0];
-      result = writes.query(restricted, access.target().sandboxId(), access.user().getDomainId());
-    } else {
-      result = dsl.executeTargetRead(query, predicate, permission, access.user());
-    }
-    if (result.get("error") != null) throw queryFailure(result.get("error").toString(), access);
+    var result = executeGoverned(query, access, predicate);
     return !JSONObject.from(result).getJSONArray("data").getJSONObject(0).getJSONArray("answer").isEmpty();
   }
 
@@ -429,8 +420,7 @@ public class OntologyQueryService {
     if (metric.getBindings() != null)
       for (MetricViewBinding binding : metric.getBindings())
         bindings.add(JSONObject.of("id", binding.getId(), "parameters", binding.getParameters()));
-    return digest(
-        JSONObject.of(
+    JSONObject definition = JSONObject.of(
             "id",
             metric.getId(),
             "queryPackage", function.getQueryPackage(),
@@ -441,7 +431,9 @@ public class OntologyQueryService {
             "returnDef",
             function.getReturnDef(),
             "bindings",
-            bindings));
+            bindings);
+    if (metric.getWorkflowSource() != null) definition.put("workflowSource", metric.getWorkflowSource());
+    return digest(definition);
   }
 
   public static String digest(Object value) {
@@ -483,7 +475,9 @@ public class OntologyQueryService {
     if (requested != null)
       requested = requested.stream().map(name -> checkedClass(name, access)).toList();
     List<MetricView> all =
-        metrics.queryForRetrieval(access.user().getDomainId(), text, cursor, requested, limit + 1);
+        "pending".equals(body.getString("workflowPurpose"))
+          ? metrics.pendingForRetrieval(access.user().getDomainId(), cursor, requested, limit + 1)
+          : metrics.queryForRetrieval(access.user().getDomainId(), text, cursor, requested, limit + 1);
     List<JSONObject> found = new ArrayList<>();
     var available = classes(access);
     Set<String> availableNames = available.stream().map(c -> (String) c.get("className")).collect(java.util.stream.Collectors.toSet());

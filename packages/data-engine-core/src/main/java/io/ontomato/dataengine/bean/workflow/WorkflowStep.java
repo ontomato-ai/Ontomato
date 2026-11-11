@@ -39,6 +39,13 @@ public class WorkflowStep {
     public static final String ACTION_TYPE_APPROVE = "approve";
     public static final String ACTION_TYPE_EXECUTE = "execute";
 
+    public static void requireDistinctNames(List<WorkflowStep> steps) {
+        var names = new java.util.HashSet<String>();
+        for (var step : steps)
+            if (step.getName() == null || step.getName().isBlank() || !names.add(step.getName()))
+                throw new IllegalArgumentException("Workflow run steps must have distinct, nonblank names; check step " + step.getStepNo());
+    }
+
     public static List<String> actionTypes() {
         return List.of(ACTION_TYPE_APPROVE, ACTION_TYPE_EXECUTE);
     }
