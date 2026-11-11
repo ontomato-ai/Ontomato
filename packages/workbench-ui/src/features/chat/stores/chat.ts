@@ -7,6 +7,7 @@ import type {
   ExecutionSnapshotStep,
   SendMessageOverrides,
 } from "../../../types/chat";
+import type { RunCancelResponse } from "@ontomato/contracts/chat";
 import { createDeepAnalysisSender } from "../../analysis";
 import { createStandardSender } from "../composables/useStandardStream";
 import {
@@ -231,7 +232,9 @@ export const useChatStore = defineStore("chat", () => {
     const cancelRequest = currentAgentId.value
       ? cancelDeepAnalysisRun(currentThreadId.value, currentRunId)
       : chatApi.cancelRun(currentThreadId.value, currentRunId);
-    await cancelRequest.catch(() => {});
+    const cancelResponse = await cancelRequest
+      .then((response) => (response.ok ? (response.json() as Promise<RunCancelResponse>) : null))
+      .catch(() => null);
     clearCurrentEventSource();
 
     if (streamingSnapshot.value && hasMeaningfulSnapshot(streamingSnapshot.value)) {
@@ -242,6 +245,15 @@ export const useChatStore = defineStore("chat", () => {
 
     isLoading.value = false;
     resetStreamingState();
+    // A cancel event may already have settled the snapshot, so the recorded duration lands on the run's message.
+    const durationMs = cancelResponse?.durationMs;
+    const index = messages.value.findIndex(
+      (msg) => msg.role === "assistant" && !!currentRunId && msg.snapshot?.runId === currentRunId
+    );
+    const stopped = messages.value[index];
+    if (durationMs !== undefined && stopped?.snapshot) {
+      messages.value[index] = { ...stopped, snapshot: { ...stopped.snapshot, durationMs } };
+    }
     await nextTick();
     tailRevision.value++;
   }
@@ -395,6 +407,7 @@ export const useChatStore = defineStore("chat", () => {
           source: "history",
           threadId,
           requestSeq: msg.requestSeq,
+          durationMs: msg.durationMs,
           deepAnalysis: baseSnapshot.deepAnalysis,
         });
 

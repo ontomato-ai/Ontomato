@@ -103,6 +103,8 @@ export interface ResponseSnapshot {
   taskId?: string;
   lastEventSeq?: number;
   requestSeq?: number;
+  /** Server-recorded duration of this turn (turn run endedAt - startedAt); absent until the turn finishes or when not recorded. */
+  durationMs?: number;
   primaryText: string;
   analysisText?: string;
   visualizationHTML?: string;

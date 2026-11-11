@@ -1,4 +1,4 @@
-import type { RunCancelledEvent, RunNotFoundEvent } from "./chat";
+import type { RunCancelledEvent, RunNotFoundEvent, TurnFinishedEvent } from "./chat";
 import type { SseErrorEvent } from "./errors";
 import type { QueryThinkingState } from "./query-thinking";
 import type { AnalysisActivity, AnalysisRunState, AnalysisSection } from "./analysis-presentation";
@@ -90,6 +90,7 @@ export interface AnalysisTurnScope {
 export type DeepAnalysisEmittedEvent = (
   | DeepAnalysisClientEvent
   | DeepAnalysisThinkingStateEvent
+  | TurnFinishedEvent
   | SseErrorEvent
 ) &
   AnalysisTurnScope;

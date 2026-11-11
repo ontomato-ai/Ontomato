@@ -11,6 +11,7 @@ export type ChatClientEvent =
   | SseErrorEvent
   | RunCancelledEvent
   | RunNotFoundEvent
+  | TurnFinishedEvent
   | {
       type: "run_started";
       runId: string;
@@ -59,6 +60,24 @@ export interface RunCancelledEvent {
   requestSeq?: number;
 }
 
+/**
+ * Server-recorded end of one turn, sent before the stream's terminal frame.
+ * `durationMs` is the turn run's endedAt - startedAt, the same fact history reads carry.
+ */
+export interface TurnFinishedEvent {
+  type: "turn_finished";
+  durationMs: number;
+}
+
+/** Answer to a run cancel request; `durationMs` is the cancelled turn's recorded span when its turn run was open. */
+export interface RunCancelResponse {
+  success: true;
+  cancelled: boolean;
+  turnKey?: string;
+  requestSeq?: number;
+  durationMs?: number;
+}
+
 export interface RunNotFoundEvent {
   type: "run_not_found";
   timestamp: number;
@@ -83,6 +102,8 @@ export type ThreadMessagesPayload = {
     content: string;
     requestSeq?: number;
     snapshot?: unknown;
+    /** Assistant turns only: endedAt - startedAt; absent while running or when not recorded. */
+    durationMs?: number;
   }>;
   activeTurn?: {
     requestSeq: number;

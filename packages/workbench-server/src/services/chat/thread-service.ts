@@ -21,7 +21,7 @@ import {
   listQueryRuns,
   type QueryRun,
 } from "../data-query/query-run-store";
-import { listTurnRuns } from "../turn-run/turn-run-store";
+import { listTurnRuns, turnRunDurationMs } from "../turn-run/turn-run-store";
 import { combineResultTruncation } from "../data-query/protocol";
 import { deleteThreadBusinessData, deleteThreadMetadata } from "./thread-store";
 import { getPostgresPool, qualifiedTable } from "../../infrastructure/postgres";
@@ -197,6 +197,10 @@ export async function getThreadMessagesPayload(
     messages.push({ role: "user", content: turn.displayMessage, requestSeq });
     seenUserRequests.add(requestSeq);
   };
+  const turnDuration = (requestSeq: number) => {
+    const durationMs = turnRunDurationMs(turnsByRequest.get(requestSeq));
+    return durationMs === undefined ? {} : { durationMs };
+  };
   let requestCounter = 0;
 
   for (const msg of rawMessages) {
@@ -226,6 +230,7 @@ export async function getThreadMessagesPayload(
       role: "assistant",
       content: msg.content,
       requestSeq,
+      ...turnDuration(requestSeq),
       snapshot: buildHistoryReadSnapshot({
         persisted: snapshot,
         fallbackContent: msg.content,
@@ -256,6 +261,7 @@ export async function getThreadMessagesPayload(
         role: "assistant",
         content,
         requestSeq: snapshot.requestSeq,
+        ...turnDuration(snapshot.requestSeq),
         snapshot: {
           mode: "standard",
           status: snapshot.snapshot.status || "completed",
@@ -273,6 +279,7 @@ export async function getThreadMessagesPayload(
         role: "assistant",
         content,
         requestSeq: snapshot.requestSeq,
+        ...turnDuration(snapshot.requestSeq),
         snapshot: buildHistoryReadSnapshot({
           persisted: snapshot.snapshot,
           fallbackContent: content,

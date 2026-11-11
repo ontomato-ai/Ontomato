@@ -1,4 +1,4 @@
-import type { RunNotFoundEvent } from "@ontomato/contracts/chat";
+import type { RunCancelResponse, RunNotFoundEvent } from "@ontomato/contracts/chat";
 import type { AnalysisRunEvent, AnalysisFollowUpEvent } from "@ontomato/contracts/analysis-events";
 import { Router, Request, Response } from "express";
 import { getCheckpointer } from "../../infrastructure/connection";
@@ -13,6 +13,8 @@ import { generateTitleAsync } from "../utils/title";
 import { setLocale, t, tApp, type Locale } from "../../i18n";
 import { getAnalysisTaskService } from "../../services/analysis-agent/task/task-service";
 import { startAnalysisTaskRun } from "../../services/analysis-agent/task/task-runner";
+import { recordTurnRunFinish, turnRunDurationMs } from "../../services/turn-run/turn-run-store";
+import { buildTurnIdentity } from "../../logging/log-context";
 import { runAnalysisFollowUp } from "../../services/analysis-agent/follow-up";
 import {
   ANALYSIS_AGENT_EXECUTION_MODES,
@@ -557,10 +559,23 @@ router.post(
       ? runStreamStore.getRun(runId)
       : runStreamStore.getActiveRunByKey(deepAnalysisRunKey(threadId));
     if (run) requireRunAccess(run, req as AuthenticatedRequest, deepAnalysisRunKey(threadId));
+    const cancelled = run ? runStreamStore.cancelByRunId(run.id) : false;
+    // Only a run that already knows its own turn records the cancel; otherwise its workflow records its own end.
+    const durationMs =
+      cancelled && run?.turn
+        ? turnRunDurationMs(
+            await recordTurnRunFinish({
+              threadId: run.turn.threadId,
+              requestSeq: run.turn.requestSeq,
+              status: "cancelled",
+            })
+          )
+        : undefined;
     res.json({
       success: true,
-      cancelled: run ? runStreamStore.cancelByRunId(run.id) : false,
-    });
+      cancelled,
+      ...(durationMs === undefined ? {} : { durationMs }),
+    } satisfies RunCancelResponse);
   })
 );
 
@@ -726,6 +741,11 @@ router.get(
     const stopSubscription = taskEventBus.subscribe(task.id, (event) => {
       const { _seq, ...payload } = event;
       void _seq;
+      // The workflow stamps its own turn's request sequence on the events it emits; that is this run's turn.
+      // Task lifecycle events carry the task run identity instead, so they never set it.
+      if (!run.turn && !payload.type.startsWith("task_") && Number.isInteger(payload.requestSeq)) {
+        run.turn = buildTurnIdentity(threadId, payload.requestSeq!);
+      }
       runStreamStore.appendJson(run.id, payload, payload.type === "task_cancelled");
     });
     try {
