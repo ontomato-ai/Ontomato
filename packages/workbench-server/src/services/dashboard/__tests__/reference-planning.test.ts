@@ -65,6 +65,83 @@ describe("metric reference planning output boundary", () => {
     expect(model.warn).not.toHaveBeenCalled();
   });
 
+  it("excludes numeric cards and single-value charts for a multi-row published metric before settlement", async () => {
+    const api = client();
+    model.run.mockResolvedValueOnce(JSON.stringify({ name: "Overview", groups: [{
+      title: "Counts", charts: [charts[0]], metrics: [{ datasetKey: "source-1", name: "First amount" }],
+    }] }));
+    await expect(planReferenceDashboard([dataset], api as unknown as DashboardMetricClient)).rejects.toMatchObject({
+      code: "DASHBOARD_PLAN_INVALID", message: expect.stringContaining("groups.0.metrics"),
+    });
+    const input = JSON.parse(model.run.mock.calls[0][0].message);
+    expect(input.datasets[0].cardCapabilities).toMatchObject({ metric: false, canCalculate: false });
+    expect(input.datasets[0].cardCapabilities.charts).not.toContain("gauge");
+    expect(input.datasets[0].cardCapabilities.charts).not.toContain("liquid-fill");
+    const group = requestedSchema().anyOf[0].properties.groups.items.properties;
+    expect(group.metrics.maxItems).toBe(0);
+    expect(group.charts.items.properties.chartType.enum).not.toContain("gauge");
+    expect(group.charts.items.properties.chartType.enum).not.toContain("liquid-fill");
+    expect(api.settle).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    { ...charts[0], chartType: "gauge" },
+    { ...charts[0], calculation: "Sum the returned rows" },
+  ])("rejects a forbidden published-metric chart at the planning boundary", async chart => {
+    const api = client();
+    model.run.mockResolvedValueOnce(JSON.stringify({ name: "Overview", groups: [{ title: "Counts", charts: [chart], metrics: [] }] }));
+    await expect(planReferenceDashboard([dataset], api as unknown as DashboardMetricClient)).rejects.toMatchObject({
+      code: "DASHBOARD_PLAN_INVALID", message: expect.stringContaining("groups.0.charts.0"),
+    });
+    expect(api.settle).not.toHaveBeenCalled();
+  });
+
+  it("restricts numeric cards to the eligible dataset even when another dataset has one row", async () => {
+    const api = client();
+    const single = { ...dataset, datasetKey: "single", data: [dataset.data[0]] };
+    model.run.mockResolvedValueOnce(JSON.stringify({ name: "Overview", groups: [{
+      title: "Counts", charts: [], metrics: [{ datasetKey: "source-1", name: "Wrong source" }],
+    }] }));
+    await expect(planReferenceDashboard([dataset, single], api as unknown as DashboardMetricClient)).rejects.toMatchObject({
+      code: "DASHBOARD_PLAN_INVALID", message: expect.stringContaining("groups.0.metrics.0.datasetKey"),
+    });
+    expect(api.settle).not.toHaveBeenCalled();
+  });
+
+  it("keeps single-row published metrics available to numeric cards without adding a calculation", async () => {
+    const single = { ...dataset, data: [dataset.data[0]] };
+    const api = client();
+    api.execute.mockResolvedValue({ ...output, rows: single.data });
+    model.run.mockResolvedValueOnce(JSON.stringify({ name: "Overview", groups: [{
+      title: "Counts", charts: [], metrics: [{ datasetKey: "source-1", name: "Amount" }],
+    }] })).mockResolvedValueOnce('{"fields":{"value":"amount"}}');
+    const result = await planReferenceDashboard([single], api as unknown as DashboardMetricClient);
+    expect(result.groups[0].metrics).toHaveLength(1);
+    expect(api.settle.mock.calls[0][0]).toMatchObject({ outputShape: { cardKind: "metric", chartType: "metric" } });
+    expect(api.settle.mock.calls[0][0]).not.toHaveProperty("calculation");
+  });
+
+  it("allows a package to generate a separate single-row summary and declares chart purpose to settlement", async () => {
+    const mutable: DashboardDatasetInput = { ...dataset, recipe: {
+      kind: "package", parameters: {}, columnLabels: { category: "Category", amount: "Amount" },
+      package: { manifest: {
+        schema: "ontomato.query-package.v1", entry: { kind: "dsl", query: "main" }, queries: { main: "query.json" },
+        modules: [], parameterDefs: [], parameterBindings: [], computation: null,
+      }, files: [{ path: "query.json", content: "{}" }] },
+    } };
+    const api = client();
+    api.execute.mockResolvedValueOnce(output).mockResolvedValueOnce({ ...output, rows: [{ category: "Total", amount: 7 }] });
+    model.run.mockResolvedValueOnce(JSON.stringify({ name: "Overview", groups: [{
+      title: "Counts", charts: [charts[0]], metrics: [{ datasetKey: "source-1", name: "Total", calculation: "Sum amount" }],
+    }] })).mockResolvedValueOnce('{"fields":{"xAxis":"category","yAxis":"amount"}}')
+      .mockResolvedValueOnce('{"fields":{"value":"amount"}}');
+    const result = await planReferenceDashboard([mutable], api as unknown as DashboardMetricClient);
+    expect(result.groups[0].charts).toHaveLength(1);
+    expect(result.groups[0].metrics).toHaveLength(1);
+    expect(api.settle.mock.calls[0][0]).toMatchObject({ outputShape: { cardKind: "chart", chartType: "bar" } });
+    expect(api.settle.mock.calls[1][0]).toMatchObject({ calculation: "Sum amount", outputShape: { cardKind: "metric" } });
+  });
+
   it("keeps mapping output strict and logs its raw reply with the required fields path", async () => {
     const raw = '{"formats":{},"unexpected":"not accepted"}';
     model.run.mockResolvedValueOnce(raw);

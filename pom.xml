@@ -173,6 +173,7 @@
                                 <include>**/FunctionProtocolSaveTest.java</include>
                                 <include>**/ActionParameterDefaultsTest.java</include>
                                 <include>**/MetricViewBindingContractTest.java</include>
+                                <include>**/CheckServiceV2ImplTest.java</include>
                                 <include>**/QueryPackageContractTest.java</include>
                                 <include>**/DBSchemaUtilParameterTypeTest.java</include>
                                 <include>**/RuntimePythonClientTest.java</include>

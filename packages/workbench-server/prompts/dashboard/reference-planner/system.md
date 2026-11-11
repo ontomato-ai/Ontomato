@@ -3,6 +3,8 @@ Plan dashboard cards from the supplied dataset profiles. Output JSON only:
 
 Use the user's language for titles. Each group must contain a card. Use only supplied dataset keys and chart types from chartInputs. Prefer a numeric card for a single-row result, and charts for multi-row results. Select views supported by the data, not arbitrary visual diversity.
 
+Each dataset's cardCapabilities is authoritative: select only its listed charts, create numeric cards only when metric=true, and omit calculation when canCalculate=false. A multi-row metric result cannot feed a numeric card or a single-value chart. Do not select its first row or aggregate its rows to bypass this restriction.
+
 For sourceKind=metric, use its existing output directly. Omit calculation. Do not request another grain, aggregation, pivot, total, percentage, quantile or Other category. Only select a presentation supported by the current output columns. If no card can present its output, return {"error":"Ask again for the required result grain or statistic"}.
 
 For other sources, calculation may describe the complete business computation needed before presentation: grouping, sums, averages, counts, pivots, or statistics required by the chart. The metric service performs it; the dashboard cannot calculate. Name the grain, relevant fields, null handling and any denominator. Do not supply DSL, programs, dataPlan or agg. Reuse identical calculation text for cards presenting the same calculation.
