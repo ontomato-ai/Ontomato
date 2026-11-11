@@ -23,13 +23,13 @@ const layouts: readonly (NativeLayout & { renderer: string })[] = [
         key: "ontology:capabilities",
         titleKey: "platform.layers.capabilities",
         // Scheduled tasks of functions are the platform's: one list for every kind of task.
-        paths: [managerPaths.metrics, managerPaths.functions, managerPaths.actions, platformRoutes.ontologyCapabilities.path],
+        paths: [managerPaths.metrics, managerPaths.functions, managerPaths.actions, managerPaths.workflows, platformRoutes.ontologyCapabilities.path],
       },
       {
         key: "ontology:governance",
         titleKey: "platform.layers.governance",
         // Business knowledge stays with the ontology it describes.
-        paths: [managerPaths.knowledge],
+        paths: [managerPaths.knowledge, managerPaths.capabilityMap],
       },
       { key: "ontology:products", titleKey: "platform.layers.products", paths: [], showWhenEmpty: true },
     ],
