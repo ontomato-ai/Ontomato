@@ -3,7 +3,8 @@ import { getSynchronizedNow } from "./server-time";
 
 
 /**
- * Format a date string as a human-readable relative time.
+ * Format a date string as a human-readable relative time. The count is also the plural choice, so a language whose
+ * message has a singular form ("1 hour ago | {n} hours ago") uses it for one; a message of one form reads the same.
  */
 export function relativeTime(dateStr: string): string {
   const now = getSynchronizedNow();
@@ -22,11 +23,11 @@ export function relativeTime(dateStr: string): string {
   const months = Math.floor(days / 30);
 
   if (seconds < 60) return t("common.justNow");
-  if (minutes < 60) return t("common.minutesAgo", { n: minutes });
-  if (hours < 24) return t("common.hoursAgo", { n: hours });
-  if (days < 7) return t("common.daysAgo", { n: days });
-  if (weeks < 5) return t("common.weeksAgo", { n: weeks });
-  return t("common.monthsAgo", { n: months });
+  if (minutes < 60) return t("common.minutesAgo", { n: minutes }, minutes);
+  if (hours < 24) return t("common.hoursAgo", { n: hours }, hours);
+  if (days < 7) return t("common.daysAgo", { n: days }, days);
+  if (weeks < 5) return t("common.weeksAgo", { n: weeks }, weeks);
+  return t("common.monthsAgo", { n: months }, months);
 }
 
 /**
@@ -45,9 +46,11 @@ export function formatRelativeTime(
   if (Number.isNaN(time)) return "";
   const now = getSynchronizedNow();
   const diff = now - time;
+  const minutes = Math.floor(diff / 60_000);
+  const hours = Math.floor(diff / 3600_000);
   if (diff < 60_000) return t("common.justNow");
-  if (diff < 3600_000) return t("common.minutesAgo", { n: Math.floor(diff / 60_000) });
-  if (diff < 86400_000) return t("common.hoursAgo", { n: Math.floor(diff / 3600_000) });
+  if (diff < 3600_000) return t("common.minutesAgo", { n: minutes }, minutes);
+  if (diff < 86400_000) return t("common.hoursAgo", { n: hours }, hours);
   const localeStr = workbenchI18n().global.locale.value as string;
   const opts_base: Intl.DateTimeFormatOptions = {
     month: "2-digit",

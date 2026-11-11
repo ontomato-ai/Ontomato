@@ -3,14 +3,23 @@ import { useI18n } from "vue-i18n";
 import { MessageSquare } from "lucide-vue-next";
 import { relativeTime } from "@ontomato/workbench-ui";
 import HomeTile from "./HomeTile.vue";
-import type { HomeItem, RecentConversation } from "./items";
+import { itemKey, type HomeItem, type RecentConversation } from "./items";
 
 /**
  * Where the reader left off: their latest conversations, each reopened where it was, then the applications they opened
  * last. The agents are not listed again on their own; the conversations already name them.
  */
-defineProps<{ conversations: readonly RecentConversation[]; applications: readonly HomeItem[] }>();
-const emit = defineEmits<{ openConversation: [conversation: RecentConversation]; openApplication: [item: HomeItem] }>();
+defineProps<{
+  conversations: readonly RecentConversation[];
+  applications: readonly HomeItem[];
+  /** The reader's favourites, by `itemKey`, so the applications' stars show which they are. */
+  favorites: ReadonlySet<string>;
+}>();
+const emit = defineEmits<{
+  openConversation: [conversation: RecentConversation];
+  openApplication: [item: HomeItem];
+  toggleFavorite: [item: HomeItem];
+}>();
 const { t } = useI18n();
 </script>
 
@@ -41,7 +50,14 @@ const { t } = useI18n();
     <div v-if="applications.length > 0" class="home-recent-apps">
       <h3 class="home-subheading">{{ t("home.recentApps") }}</h3>
       <div class="home-tile-row">
-        <HomeTile v-for="item in applications" :key="item.id" :item="item" @open="emit('openApplication', item)" />
+        <HomeTile
+          v-for="item in applications"
+          :key="item.id"
+          :item="item"
+          :favorite="favorites.has(itemKey(item))"
+          @open="emit('openApplication', item)"
+          @toggle-favorite="emit('toggleFavorite', item)"
+        />
       </div>
     </div>
   </div>
