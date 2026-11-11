@@ -5,11 +5,13 @@ import { toErrorMessage } from "../../utils/errors";
 import { pptArtifactStore } from "../analysis-agent/delivery/ppt-artifacts";
 import { deleteUserAssistantSessions } from "../assistant/cleanup";
 import { deleteUserDashboards } from "../dashboard/store";
+import { deleteUserHomeData } from "../platform-home/store";
 
 const logger = createLogger("user-resource-cleanup");
 const stages: [string, (userId: string) => Promise<void>][] = [
   ["assistant conversations", deleteUserAssistantSessions],
   ["dashboards", deleteUserDashboards],
+  ["home preferences and application usage", deleteUserHomeData],
   ["memory and preferences", deleteUserState],
   ["PPT artifacts", (id) => pptArtifactStore().deleteByUser(id)],
 ];

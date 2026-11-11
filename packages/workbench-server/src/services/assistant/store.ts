@@ -38,6 +38,10 @@ export interface TurnRow {
   settled: boolean;
   created_at: Date;
 }
+export interface RecentAgentConversation {
+  agentId: string;
+  lastConversationAt: string;
+}
 export interface AgentRow {
   id: string;
   domain_id: string;
@@ -143,6 +147,23 @@ export const assistantStore = {
     if (!r.rowCount)
       throw new HttpError(404, "Conversation not found", "NOT_FOUND");
     return r.rows[0];
+  },
+  /** The last conversation the owner personally ran with each agent; scheduled sessions do not count. */
+  async recentAgentConversations(
+    owner: AssistantOwner,
+  ): Promise<RecentAgentConversation[]> {
+    const result = await db().query(
+      `SELECT agent_id AS "agentId", MAX(updated_at) AS "lastConversationAt"
+       FROM ${table("assistant_sessions")}
+       WHERE domain_id=$1 AND owner_id=$2 AND latest_run_id IS NOT NULL AND origin='user'
+       GROUP BY agent_id
+       ORDER BY "lastConversationAt" DESC, agent_id`,
+      [owner.domainId, owner.userId],
+    );
+    return result.rows.map((row) => ({
+      agentId: row.agentId,
+      lastConversationAt: row.lastConversationAt.toISOString(),
+    }));
   },
   async create(id: string, owner: AssistantOwner, agentId: string, origin: SessionRow["origin"] = "user", workspaceId?: string) {
     return transaction(async (tx) => {
