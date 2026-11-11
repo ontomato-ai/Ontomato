@@ -23,6 +23,7 @@ it("draws in the brand's colours of the mode the page shows, and in the dark one
     },
   });
   expect(theme.value).toMatchObject({
+    darkMode: false,
     color: ["#111111", "#222222"],
     textStyle: { color: "#101010" },
     tooltip: { axisPointer: { lineStyle: { color: "#303030" } } },
@@ -30,7 +31,9 @@ it("draws in the brand's colours of the mode the page shows, and in the dark one
   });
 
   document.documentElement.classList.add("dark");
+  // ECharts is told the page is dark: a transparent chart gives it nothing to tell that from.
   await vi.waitFor(() => expect(theme.value).toMatchObject({
+    darkMode: true,
     color: ["#eeeeee", "#dddddd"],
     textStyle: { color: "#f0f0f0" },
     tooltip: { axisPointer: { lineStyle: { color: "#d0d0d0" } } },

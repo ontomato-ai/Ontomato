@@ -14,6 +14,10 @@ const CATEGORY_LABELS = { hideOverlap: true } as const;
  * palette `--chart-N` and visual maps the sequential scale `--chart-sequential-N`; text, axes, split lines and the
  * tooltip's axis pointer take Element Plus's text and border colours. It is read when called, so read it again when
  * the page switches mode: `useChartTheme()` does that in a component.
+ *
+ * The theme also tells ECharts which mode the page is in. A chart is transparent and shows its page's surface, so
+ * ECharts cannot see a dark page by itself; left to guess, it draws the labels a chart does not colour (a bar's value
+ * above it, say) dark with a light outline, as for a light page.
  */
 export function chartTheme(): Record<string, unknown> {
   const style = getComputedStyle(document.documentElement);
@@ -39,6 +43,7 @@ export function chartTheme(): Record<string, unknown> {
     splitLine: { show: showSplit, lineStyle: { color: line } },
   });
   return {
+    darkMode: document.documentElement.classList.contains("dark"),
     color: numbered("--chart-"),
     backgroundColor: "transparent",
     textStyle: { color: text },
