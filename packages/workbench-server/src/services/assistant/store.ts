@@ -10,6 +10,7 @@ import {
 import { transaction } from "../../infrastructure/postgres-transaction";
 import { HttpError } from "../../utils/errors";
 import type { RuntimeSkillRef } from "@ontomato/contracts/agent-runtime-skills";
+import type { HomeState } from "@ontomato/contracts/platform-home";
 export interface AssistantOwner {
   domainId: string;
   userId: string;
@@ -37,10 +38,6 @@ export interface TurnRow {
   // The turn's child retrievals have been closed after it ended.
   settled: boolean;
   created_at: Date;
-}
-export interface RecentAgentConversation {
-  agentId: string;
-  lastConversationAt: string;
 }
 export interface AgentRow {
   id: string;
@@ -151,7 +148,7 @@ export const assistantStore = {
   /** The last conversation the owner personally ran with each agent; scheduled sessions do not count. */
   async recentAgentConversations(
     owner: AssistantOwner,
-  ): Promise<RecentAgentConversation[]> {
+  ): Promise<HomeState["recentAgents"]> {
     const result = await db().query(
       `SELECT agent_id AS "agentId", MAX(updated_at) AS "lastConversationAt"
        FROM ${table("assistant_sessions")}

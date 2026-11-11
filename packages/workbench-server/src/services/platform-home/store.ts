@@ -1,7 +1,7 @@
 import {
   homeDashboardsSchema,
   homeFavoritesSchema,
-  type HomeItemRef,
+  type HomeState,
 } from "@ontomato/contracts/platform-home";
 import {
   getPostgresPool,
@@ -14,22 +14,12 @@ export interface PlatformHomeOwner {
   userId: string;
 }
 
-export interface HomePreferences {
-  favorites: HomeItemRef[];
-  dashboardIds: string[];
-}
-
-export interface RecentApplication {
-  applicationId: string;
-  lastOpenedAt: string;
-}
-
 const db = () => getPostgresPool();
 
 function usageRow(row: {
   applicationId: string;
   lastOpenedAt: Date;
-}): RecentApplication {
+}): HomeState["recentApplications"][number] {
   return {
     applicationId: row.applicationId,
     lastOpenedAt: row.lastOpenedAt.toISOString(),
@@ -38,7 +28,9 @@ function usageRow(row: {
 
 export const platformHomeStore = {
   /** Missing preferences are an empty selection; only a first save creates the row. */
-  async preferences(owner: PlatformHomeOwner): Promise<HomePreferences> {
+  async preferences(
+    owner: PlatformHomeOwner,
+  ): Promise<Pick<HomeState, "favorites" | "dashboardIds">> {
     const result = await db().query(
       `SELECT favorites, dashboard_ids FROM ${table("platform_home_preferences")} WHERE domain_id=$1 AND user_id=$2`,
       [owner.domainId, owner.userId],
@@ -53,7 +45,7 @@ export const platformHomeStore = {
   },
   async saveFavorites(
     owner: PlatformHomeOwner,
-    favorites: HomeItemRef[],
+    favorites: HomeState["favorites"],
   ): Promise<void> {
     await db().query(
       `INSERT INTO ${table("platform_home_preferences")} (domain_id, user_id, favorites)
@@ -64,7 +56,7 @@ export const platformHomeStore = {
   },
   async saveDashboards(
     owner: PlatformHomeOwner,
-    dashboardIds: string[],
+    dashboardIds: HomeState["dashboardIds"],
   ): Promise<void> {
     await db().query(
       `INSERT INTO ${table("platform_home_preferences")} (domain_id, user_id, dashboard_ids)
@@ -75,7 +67,7 @@ export const platformHomeStore = {
   },
   async recentApplications(
     owner: PlatformHomeOwner,
-  ): Promise<RecentApplication[]> {
+  ): Promise<HomeState["recentApplications"]> {
     const result = await db().query(
       `SELECT application_id AS "applicationId", last_opened_at AS "lastOpenedAt"
        FROM ${table("platform_application_usage")}
@@ -88,7 +80,7 @@ export const platformHomeStore = {
   async recordApplicationOpen(
     owner: PlatformHomeOwner,
     applicationId: string,
-  ): Promise<RecentApplication> {
+  ): Promise<HomeState["recentApplications"][number]> {
     const result = await db().query(
       `INSERT INTO ${table("platform_application_usage")} (domain_id, user_id, application_id, last_opened_at)
        VALUES ($1, $2, $3, now())
