@@ -165,8 +165,14 @@ function itemTooltip(d: Drawing, valueKey: string, shareKey: string | undefined)
   };
 }
 
+/**
+ * Ticks are axis positions, not metric values: they keep the format's kind and scale but not its fixed decimals,
+ * so a 0.5 tick under a whole-number format reads 0.5 instead of a second "1".
+ */
 function valueAxis(d: Drawing, key: string) {
-  return mergeDeep(axisValueBase(), { axisLabel: { formatter: (v: number) => fmt(d, key)(v) } });
+  const format = d.card.formats?.[key];
+  const tickFormat = format && (({ decimals: _, ...rest }) => rest)(format);
+  return mergeDeep(axisValueBase(), { axisLabel: { formatter: (v: number) => formatValue(v, tickFormat) } });
 }
 
 function axisChart(d: Drawing, kind: "bar" | "line" | "area-line") {

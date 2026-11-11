@@ -5,7 +5,7 @@ import ChartCard from "../ChartCard.vue";
 import MetricCard from "../MetricCard.vue";
 import CardParameterDialog from "../CardParameterDialog.vue";
 import { createDashboardLoader } from "../utils/dashboardHelper";
-import { formatValue } from "../utils/metricCard";
+import { formatValue, metricChartOption } from "../utils/metricCard";
 import { ApiRequestError } from "../../../../utils/api";
 import { workbenchI18n } from "../../../../i18n";
 
@@ -151,6 +151,38 @@ describe("metric-reference cards on a dashboard", () => {
       global: { plugins, stubs: { EChart: true } },
     });
     expect(chartCard.find(".chart-mask--error").text()).toContain("Column total is not numeric");
+  });
+
+  it("labels value-axis ticks by their own value, keeping the format's decimals for the data", () => {
+    const option: any = metricChartOption(
+      {
+        id: "c",
+        name: "Bodies by type",
+        query: { kind: "metric", metricId: "m", parameters: {} },
+        chartType: "bar",
+        fields: { xAxis: "type", yAxis: "count" },
+        formats: { count: { kind: "number", decimals: 0 }, share: { kind: "percent", scale: 100, decimals: 0 } },
+      },
+      { columns: [], rows: [{ type: "Planet", count: 3 }, { type: "Moon", count: 1 }] },
+    );
+    const ticks = [0, 0.5, 1, 1.5, 2, 2.5, 3].map(option.yAxis.axisLabel.formatter);
+    expect(new Set(ticks).size).toBe(ticks.length);
+    expect(ticks[1]).toBe("0.5");
+    expect(option.series[0].label.formatter({ value: 3 })).toBe("3");
+
+    const scatter: any = metricChartOption(
+      {
+        id: "s",
+        name: "Share",
+        query: { kind: "metric", metricId: "m", parameters: {} },
+        chartType: "scatter",
+        fields: { xAxis: "count", yAxis: "share" },
+        formats: { count: { kind: "number", decimals: 0 }, share: { kind: "percent", scale: 100, decimals: 0 } },
+      },
+      { columns: [], rows: [{ count: 1, share: 0.25 }] },
+    );
+    expect(scatter.xAxis.axisLabel.formatter(0.5)).toBe("0.5");
+    expect(scatter.yAxis.axisLabel.formatter(0.025)).toBe("2.5%");
   });
 
   it("formats only as the card says: no format keeps the value, a missing value is not zero", () => {
