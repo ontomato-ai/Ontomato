@@ -142,6 +142,10 @@ const negativeEffect = computed(() => definition.value?.businessMeaning?.negativ
         <el-tag size="small" type="info">{{ ot("actionDefinitionDerivedUnverified") }}</el-tag>
       </div>
       <p class="text-muted">{{ ot("actionDefinitionRulesHint") }}</p>
+      <p v-if="definition.declaredTarget">
+        {{ ot("actionTargetClass") }}: {{ definition.declaredTarget.className }} ·
+        {{ ot("actionTargetKey") }}: {{ definition.declaredTarget.keyParameter }}
+      </p>
       <div v-if="definition.objects?.length" class="definition-objects">
         <el-tag v-for="name in definition.objects" :key="name" size="small">{{ name }}</el-tag>
       </div>

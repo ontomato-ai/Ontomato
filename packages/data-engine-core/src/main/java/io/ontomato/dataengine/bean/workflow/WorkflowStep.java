@@ -10,7 +10,7 @@ import lombok.Data;
  * <p>A workflow does not execute anything. It is the published unit that says "in this business
  * process, this role may run this action at this point", so a step is a grant, not a node a runtime
  * moves through. Whoever is next finds their pending item and calls the action themselves; the action's
- * own preconditions decide whether they may.</p>
+ * grant scope and the action's state conditions decide whether they may.</p>
  */
 @Data
 public class WorkflowStep {
@@ -30,8 +30,8 @@ public class WorkflowStep {
     /** approve or execute; kept for display and for the pending-item wording. */
     private String actionType;
 
-    /** dept_role, global_role or initiator: how the owner is picked among the role's holders. */
-    private String assignRule;
+    /** The scope this step grants to its role. */
+    private GrantScope.Kind scope;
 
     /** Business description of what this step decides. */
     private String description;
@@ -39,15 +39,15 @@ public class WorkflowStep {
     public static final String ACTION_TYPE_APPROVE = "approve";
     public static final String ACTION_TYPE_EXECUTE = "execute";
 
-    public static final String ASSIGN_DEPT_ROLE = "dept_role";
-    public static final String ASSIGN_GLOBAL_ROLE = "global_role";
-    public static final String ASSIGN_INITIATOR = "initiator";
+    public static void requireDistinctNames(List<WorkflowStep> steps) {
+        var names = new java.util.HashSet<String>();
+        for (var step : steps)
+            if (step.getName() == null || step.getName().isBlank() || !names.add(step.getName()))
+                throw new IllegalArgumentException("Workflow run steps must have distinct, nonblank names; check step " + step.getStepNo());
+    }
 
     public static List<String> actionTypes() {
         return List.of(ACTION_TYPE_APPROVE, ACTION_TYPE_EXECUTE);
     }
 
-    public static List<String> assignRules() {
-        return List.of(ASSIGN_DEPT_ROLE, ASSIGN_GLOBAL_ROLE, ASSIGN_INITIATOR);
-    }
 }

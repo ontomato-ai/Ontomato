@@ -14,6 +14,7 @@ existing `R` envelope except the gateway check and cookie endpoints.
 - `GET /platform/applications?purpose=schedules`: scheduling application metadata in the current domain.
 - `GET /platform/applications/{id}`: application metadata in the current domain.
 - `PUT /platform/applications/{id}/hosted-publication`: publish or replace the reference.
+- `POST /platform/applications/connected`: register or update a connected application.
 
 Publication body:
 
@@ -53,3 +54,67 @@ capability-library navigation requires `skill-management` or `mcp-service`.
 Grouping-only codes such as `intelligence-engine` and `system-management` do not
 open a page by themselves and are not entry alternatives. Native layout code only
 chooses the first accessible page within an application already returned by Java.
+
+## Connected applications
+
+Registration is an API operation; there is no registration page. Both editions use
+`POST <P>/api/data-query/platform/applications/connected`, where `<P>` is the deployment
+prefix (empty by default), with this body:
+
+```json
+{
+  "id": "app-reporting",
+  "declaration": {
+    "names": {"en": "Reporting"}, "descriptions": {}, "icon": "pages",
+    "groups": [], "permissions": []
+  },
+  "upstream": "http://reporting:8080",
+  "upstreamPrefix": "/"
+}
+```
+
+Use the same ID and endpoint to update an application. Response data is
+`{applicationId, releaseId: null, entryPath}`. The catalog owns the application and
+its connection fields in `sys_application.entry`; there is no separate connection
+table. Existing connected applications keep their data and grants when upgrading.
+
+Configure allowed origins per domain in the deployment `.env`, passed to the data
+engine by Compose's `env_file`:
+
+```dotenv
+ONTOMATO_APP_UPSTREAMS='{"1":["http://reporting:8080","https://reports.example.com:443"]}'
+```
+
+Open source uses domain `1`; enterprise uses the actual domain IDs. Each allowed
+origin names a trusted application server with a scheme, host and explicit port.
+The submitted `upstream` must match an entry exactly. The default `{}` permits no
+registration. Recreate the `datarag` container after changing this environment value.
+`upstreamPrefix` is `/` or a slash-terminated sequence of path segments containing
+letters, digits, underscores or hyphens, for example `/reports/`.
+
+Open source permits all visitors to register, maintain and open applications, using
+the same anonymous single-domain identity as its other applications. Enterprise
+requires the registration API permission for both creation and updates; it is
+available to administrators by default. Updates additionally require the owner or
+a domain administrator. The first registration grants the entry directly to its
+owner; administrators can also enter through their existing menu permissions.
+
+The gateway forwards `/apps/<id>/<tail>` to the registered origin and
+`upstreamPrefix + tail`, preserving the query string. It sends
+`X-Forwarded-Prefix: <P>/apps/<id>` and forwards tk/API Key headers. The trusted
+application handles its own subpath resources and redirects. Its backend obtains
+the caller's identity from the platform rather than accepting a user or domain
+claimed by the browser:
+
+- **Enterprise:** call `POST <P>/api/auth/verify` with the caller's `tk` header or
+  `{ "tk": "..." }` body. The response contains the user identified by that login
+  credential. API Key callers use the existing enterprise-only
+  `POST <P>/api/auth/verifyByApiKey` endpoint instead.
+- **Open source:** call `POST <P>/api/auth/verify` without credentials. It always
+  returns the anonymous single-domain identity, even if a credential is supplied:
+  `data.id = "admin"`, `data.loginCode = "admin"`, `data.userName = "admin"`,
+  `data.domainId = "1"`. Only `/api/auth/verify` is implemented for identity
+  verification in this edition; `/api/auth/verifyByApiKey` is not available.
+
+Both verify responses use the existing `R` envelope (`success: true`, `code: 200`,
+`data: <user>` on success). The identity field is **`data.id`**, not `data.userId`.

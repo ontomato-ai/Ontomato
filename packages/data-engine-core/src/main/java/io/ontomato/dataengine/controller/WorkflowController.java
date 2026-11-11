@@ -211,6 +211,8 @@ public class WorkflowController {
                 item.put("capabilityId", grant.capabilityId());
                 item.put("capabilityVersion", grant.capabilityVersion());
                 item.put("workflowId", grant.workflowId());
+                item.put("stepNo", grant.stepNo());
+                item.put("scope", grant.scope());
                 item.put("activatedByWorkflowVersion", grant.activatedByWorkflowVersion());
                 data.add(item);
             }

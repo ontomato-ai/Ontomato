@@ -14,7 +14,6 @@ import io.ontomato.dataengine.bean.function.ReturnDef;
 import io.ontomato.dataengine.core.bean.SimpleUser;
 import io.ontomato.dataengine.core.bean.User;
 import io.ontomato.dataengine.dao.ActionDao;
-import io.ontomato.dataengine.dao.FunctionDao;
 import io.ontomato.dataengine.service.AdminService;
 import io.ontomato.dataengine.service.ActionFunctionAdmission;
 import io.ontomato.dataengine.service.IdentityService;
@@ -57,7 +56,6 @@ public class ActionDraftService {
   private final ActionServiceImpl actions;
   private final LangService langService;
   private final IdentityService identity;
-  private final FunctionDao functionDao;
   private final ActionDao actionDao;
 
   public ActionDraftService(
@@ -67,7 +65,6 @@ public class ActionDraftService {
       ActionServiceImpl actions,
       LangService langService,
       IdentityService identity,
-      FunctionDao functionDao,
       ActionDao actionDao) {
     this.store = store;
     this.runtime = runtime;
@@ -75,7 +72,6 @@ public class ActionDraftService {
     this.actions = actions;
     this.langService = langService;
     this.identity = identity;
-    this.functionDao = functionDao;
     this.actionDao = actionDao;
   }
 
@@ -195,6 +191,8 @@ public class ActionDraftService {
     action.setCreatedBy(owner.userId());
     action.setReviewedBy(owner.userId());
     action.setSubmissionCriteria(result.getJSONObject("submissionCriteria"));
+    action.setTarget(result.getObject("target", io.ontomato.dataengine.bean.action.ActionTarget.class));
+    actionDao.validateDefinition(action);
     boolean explanationMissing = false;
     try {
       actions.explainForDraft(action, lang);
@@ -265,6 +263,7 @@ public class ActionDraftService {
       throw new AgentHttpException(422, "EXPLAIN_FAILED", error.getMessage());
     }
     action.setExplanationVersion(Action.EXPLANATION_VERSION);
+    actionDao.validateDefinition(action);
     action.setDefinition(ActionDefinitionProjector.project(action));
     String draftHash =
         CodeHashUtil.sha256(
@@ -317,8 +316,7 @@ public class ActionDraftService {
     if (action.getCreatedBy() == null) action.setCreatedBy(owner.userId());
     action.setReviewedBy(owner.userId());
     action.setDefinition(ActionDefinitionProjector.project(action));
-    action.setFunction(functionDao.save(function, lang));
-    Action saved = actionDao.save(action);
+    Action saved = actionDao.saveWithFunction(action, lang);
     store.update("UPDATE action_drafts SET consumed_at=now() WHERE id=?", uuid(draftId));
     return saved;
   }

@@ -22,6 +22,13 @@ import lombok.extern.slf4j.Slf4j;
 @Slf4j
 public class DslPermissionUtil {
 	
+    /** A false property condition without an empty SQL IN list. */
+    public static JSONObject alwaysFalse(String field) {
+        return JSONObject.of("operator", "logic", "and", JSONArray.of(
+                JSONObject.of("field", field, "operator", "is", "value", null),
+                JSONObject.of("field", field, "operator", "is not", "value", null)));
+    }
+
     public static Object[] addRowPermission(String dslStr, List<Map<String, Object>> classDefs, UserDataPermission permission) {
         JSONArray dsls = JSON.parseArray(dslStr);
         if (dsls.size() != 1) throw new IllegalArgumentException("One DSL query is required");

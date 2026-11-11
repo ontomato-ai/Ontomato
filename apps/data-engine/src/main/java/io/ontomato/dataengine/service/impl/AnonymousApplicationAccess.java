@@ -10,6 +10,8 @@ public class AnonymousApplicationAccess implements ApplicationAccess {
     public AnonymousApplicationAccess(IdentityService identity) { this.identity = identity; }
     public User entryUser(String credential) { return identity.getCurrentUser(); }
     public boolean administrator(User user) { return true; }
+    public void requireConnectedRegistration(User user) {}
+    public boolean canMaintain(JSONObject application, User user) { return true; }
     public boolean canEnter(JSONObject application, User user) { return true; }
     public void declare(JSONObject application, ApplicationCatalog.Declaration declaration, boolean created) {}
 }

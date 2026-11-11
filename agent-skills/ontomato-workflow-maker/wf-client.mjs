@@ -126,7 +126,7 @@ async function executeAction(actionId, param) {
   } catch {
     die(`/action/execute 返回非 JSON（HTTP ${r.status}）`, text.slice(0, 500));
   }
-  if (json.success === false) return { ok: false, message: json.message };
+  if (!r.ok || json.success !== true) return { ok: false, message: json.message || json.msg || `HTTP ${r.status}` };
   const data = json.data || {};
   if (data.error) return { ok: false, message: data.error };
   let result = data.result;

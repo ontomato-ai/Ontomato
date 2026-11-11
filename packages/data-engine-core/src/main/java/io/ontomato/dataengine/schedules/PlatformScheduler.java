@@ -146,7 +146,7 @@ public class PlatformScheduler {
               null,
               key,
               execution.locale());
-      provider.authorize(actor);
+      provider.authorize(actor, execution.definition().content());
       provider.validate(execution.definition(), actor);
       store
           .jdbc()

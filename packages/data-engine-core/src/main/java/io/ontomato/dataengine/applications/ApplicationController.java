@@ -28,6 +28,11 @@ public class ApplicationController {
     }
     public record Batch(List<ApplicationCatalog.Builtin> applications) {}
     public record Publication(ApplicationCatalog.Declaration declaration, String releaseId) {}
+    public record Connected(String id, ApplicationCatalog.Declaration declaration, String upstream, String upstreamPrefix) {}
+    @PostMapping("/platform/applications/connected")
+    public R<JSONObject> connected(@RequestBody Connected body) {
+        return R.of(catalog.connected(body.id(), body.declaration(), body.upstream(), body.upstreamPrefix(), current()));
+    }
     @PostMapping(DECLARATIONS)
     public R<?> declare(HttpServletRequest request, @RequestBody Batch batch) {
         String service = authentication.authenticate(request);

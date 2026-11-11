@@ -126,7 +126,7 @@ public class MetricSettlementService {
     }
     subjects.refuseOverrides(metric.getFunction(), parameters);
     subjects.validateValues(parameters);
-    MetricViewBindings.validateValues(metric.getFunction(), parameters);
+    MetricViewBindings.validateDeclaredValues(metric.getFunction(), parameters);
     if (bindingId == null)
       metric = metrics.appendBinding(id, binding(question, parameters), user.getDomainId());
     return reference(metric, parameters);
