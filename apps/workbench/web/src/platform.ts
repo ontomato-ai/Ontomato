@@ -20,8 +20,7 @@ import { anonymousAuthHost } from "./auth";
 import { ossLanguage } from "./language";
 import { workbenchContent } from "./workbench-content";
 
-import { platformRoutes } from "@ontomato/platform-shell/routes";
-import { normalizeManagerEntry, reloadOnStaleBuild } from "@ontomato/platform-web";
+import { normalizeManagerEntry, reloadOnStaleBuild, startPage } from "@ontomato/platform-web";
 import { ossServicePages } from "./manager/platform";
 
 export function startPlatform() {
@@ -51,7 +50,8 @@ export function startPlatform() {
         ...ossServicePages(app, router),
       ], PlatformShellLayout),
       ...legacyAdminRoutes,
-      { path: "/:unknown(.*)*", redirect: platformRoutes.chat.path },
+      // An unknown address lands where the root does.
+      { path: "/:unknown(.*)*", redirect: () => startPage() },
     ],
   });
 }

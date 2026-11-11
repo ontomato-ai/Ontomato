@@ -6,6 +6,7 @@ import {
   Circle,
   Database,
   ExternalLink,
+  House,
   Network,
   ScanEye,
   Settings,
@@ -18,6 +19,8 @@ import {
 
 /** Applications name icons; the shell resolves a curated set so the rail does not pull in whole icon packs. */
 const appIcons: Record<string, Component> = {
+  /** 主页 */
+  home: House,
   /** 智能体平台 */
   agents: Sparkles,
   /** 运维诊断 */
