@@ -35,6 +35,7 @@ import mcpRouter from "../api/routes/mcp";
 import analysisAgentMcpRouter from "../api/routes/analysis-agent-mcp";
 import opsAgentMcpRouter from "../api/routes/ops-agent-mcp";
 import preferencesRouter from "../api/routes/preferences";
+import platformHomeRouter from "../api/routes/platform-home";
 import queryHistoryRouter from "../api/routes/query-history";
 import pptRouter from "../api/routes/ppt";
 import skillsRouter from "../api/routes/skills";
@@ -173,7 +174,7 @@ export function createWorkbenchApp(): Express {
     res.send(
       `window.__APP_CONFIG__ = ${JSON.stringify({
         DEFAULT_LOCALE: getDefaultLocale(),
-        INITIAL_ROUTE: process.env.ONTOLOGY_INITIAL_ROUTE || "/agents/chat",
+        INITIAL_ROUTE: process.env.ONTOLOGY_INITIAL_ROUTE || "",
       })};\nwindow.__APP_CONFIG__.API_BASE = new URL("./api", document.currentScript.src).pathname;`,
     );
   });
@@ -202,6 +203,7 @@ export function createWorkbenchApp(): Express {
   app.use("/api/analysis-tasks", analysisTasksRouter);
   app.use("/api/assistant", assistantRouter);
   app.use("/api/platform/schedule-applications", scheduleApplicationsRouter);
+  app.use("/api/platform/home", platformHomeRouter);
   app.use("/api/dashboards", dashboardsRouter);
   app.use("/api/feedback", feedbackRouter);
   app.use("/api/preferences", preferencesRouter);

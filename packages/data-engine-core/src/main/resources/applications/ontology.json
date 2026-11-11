@@ -20,7 +20,10 @@
       "en": "Ontology manager",
       "zh-CN": "本体管理器"
     },
-    "descriptions": {},
+    "descriptions": {
+      "en": "Model the ontology and manage actions, skills and MCP services",
+      "zh-CN": "建模本体，管理动作、技能与 MCP 服务"
+    },
     "icon": "ontology",
     "groups": [],
     "permissions": []

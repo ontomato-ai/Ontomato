@@ -10,6 +10,7 @@ import {
 import { transaction } from "../../infrastructure/postgres-transaction";
 import { HttpError } from "../../utils/errors";
 import type { RuntimeSkillRef } from "@ontomato/contracts/agent-runtime-skills";
+import type { HomeState } from "@ontomato/contracts/platform-home";
 export interface AssistantOwner {
   domainId: string;
   userId: string;
@@ -143,6 +144,23 @@ export const assistantStore = {
     if (!r.rowCount)
       throw new HttpError(404, "Conversation not found", "NOT_FOUND");
     return r.rows[0];
+  },
+  /** The last conversation the owner personally ran with each agent; scheduled sessions do not count. */
+  async recentAgentConversations(
+    owner: AssistantOwner,
+  ): Promise<HomeState["recentAgents"]> {
+    const result = await db().query(
+      `SELECT agent_id AS "agentId", MAX(updated_at) AS "lastConversationAt"
+       FROM ${table("assistant_sessions")}
+       WHERE domain_id=$1 AND owner_id=$2 AND latest_run_id IS NOT NULL AND origin='user'
+       GROUP BY agent_id
+       ORDER BY "lastConversationAt" DESC, agent_id`,
+      [owner.domainId, owner.userId],
+    );
+    return result.rows.map((row) => ({
+      agentId: row.agentId,
+      lastConversationAt: row.lastConversationAt.toISOString(),
+    }));
   },
   async create(id: string, owner: AssistantOwner, agentId: string, origin: SessionRow["origin"] = "user", workspaceId?: string) {
     return transaction(async (tx) => {
