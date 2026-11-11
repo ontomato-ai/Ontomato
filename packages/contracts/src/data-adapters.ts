@@ -70,7 +70,8 @@ export interface DataAdaptersData {
   adapters: DataAdapterInfo[];
 }
 
-const tableSchema = z.object({ name: z.string(), type: z.enum(["TABLE", "VIEW"]) });
+/** A catalog entry: a relational table, a view, or a document/graph collection (e.g. ArangoDB). */
+const tableSchema = z.object({ name: z.string(), type: z.enum(["TABLE", "VIEW", "COLLECTION"]) });
 
 /**
  * `data` of a successful POST /businessConfig/testDataAdapter, told apart by `kind`: a JDBC-style catalog report

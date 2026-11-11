@@ -26,6 +26,7 @@
         <module>packages/data-adapters/duckdb</module>
         <module>packages/data-adapters/clickhouse</module>
         <module>packages/data-adapters/neo4j</module>
+        <module>packages/data-adapters/arangodb</module>
         <module>packages/data-adapters/elasticsearch</module>
         <module>apps/data-engine</module>
     </modules>
@@ -125,6 +126,11 @@
                 <groupId>org.neo4j.driver</groupId>
                 <artifactId>neo4j-java-driver</artifactId>
                 <version>5.26.3</version>
+            </dependency>
+            <dependency>
+                <groupId>com.arangodb</groupId>
+                <artifactId>arangodb-java-driver</artifactId>
+                <version>7.20.0</version>
             </dependency>
             <dependency>
                 <groupId>org.elasticsearch.client</groupId>
