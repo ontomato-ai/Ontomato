@@ -169,8 +169,6 @@ public class SandboxServiceImpl implements SandboxService {
     List<Map> objDatas = body.getList("objDatas", Map.class),
         relDatas = body.getList("relDatas", Map.class),
         vectorDatas = body.getList("vectorDatas", Map.class);
-    if (objDatas == null || relDatas == null)
-      throw AgentHttpException.invalid("objDatas and relDatas are required");
     // Check the object data
     Map<String, Object> jsonRule = jsonRuleDao.query(domainId);
     List<Map<String, Object>> classDefs = (List<Map<String, Object>>) jsonRule.get("classDef");
@@ -318,9 +316,6 @@ public class SandboxServiceImpl implements SandboxService {
           throw AgentHttpException.invalid(
               "The vector data: objectId[" + objectId + "] is not in Class[" + className + "].");
         }
-        if (attrName == null || "".equals(attrName.trim())) {
-          throw AgentHttpException.invalid("The vector data: attrName is empty.");
-        }
         boolean isVectorAttr = false;
         List<Map<String, Object>> attrDefs = (List<Map<String, Object>>) classDef.get("attrs");
         for (Map<String, Object> attrDef : attrDefs) {
@@ -336,9 +331,6 @@ public class SandboxServiceImpl implements SandboxService {
                   + "] is not a vector attribute of Class["
                   + className
                   + "].");
-        }
-        if (text == null || "".equals(text.trim())) {
-          throw AgentHttpException.invalid("The vector data: text is empty.");
         }
         Map<String, Object> newVectorData = new HashMap<String, Object>();
         newVectorData.put("className", className);
