@@ -28,6 +28,7 @@
         <module>packages/data-adapters/neo4j</module>
         <module>packages/data-adapters/arangodb</module>
         <module>packages/data-adapters/elasticsearch</module>
+        <module>packages/data-adapters/mongodb</module>
         <module>apps/data-engine</module>
     </modules>
 
