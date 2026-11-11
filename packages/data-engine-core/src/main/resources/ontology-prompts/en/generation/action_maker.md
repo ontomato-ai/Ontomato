@@ -223,7 +223,7 @@ All testing and DEBUG of the write function are carried out in the **sandbox env
 ## Step 3: Determine the Parameter Definitions
 For each input parameter identified in step 1, form a parameter definition (used by the ontology-generation `generation.mjs test outputs/program.py parameters.json` command and the result file described in the ontology-generation skills, passed in as structured parameters). If the write function has no parameters, an empty array `[]` is enough. Each parameter definition contains:
 - `name`: the parameter key name
-- `type`: the parameter type; the options are `TYPE_STRING`, `TYPE_NUMBER`, `TYPE_TIME`, `TYPE_STRING_ARRAY`, `TYPE_NUMBER_ARRAY`, `TYPE_TIME_ARRAY`, `TYPE_VECTOR`
+- `type`: use an exact canonical parameter type returned by `generation.mjs helpers`; the platform owns the supported type list.
 - `description`: the parameter explanation
 - `value`: the sample value of the parameter, used to fill in the parameter during the ontology-generation `generation.mjs test outputs/program.py parameters.json` command; for "association/query" type parameters, take a value that really exists in the sandbox test data you prepared, and for "add" type parameters it can be a reasonable sample value
 - `className`: the complete class name of the object class corresponding to the parameter; if there is no corresponding class name, give an empty string
@@ -263,7 +263,7 @@ Vector helper arguments carry text or fileBase64; they do not reference Java hos
 `where` is only a parameter of `update`/`delete`; its exact shape is in the `helpers` output. It is not a parameter of `query`.
 
 ### Notes on Writing
-- **`insert` and `update` write ONLY non-vector attributes.** To attach / update / delete vector files, use `appendVector` / `updateVector` / `deleteVector` exclusively. Never put a vector attribute into `insert`'s rows or `update`'s `setValues` — `insert` silently ignores it, and `update` raises an error.
+- **`insert` and `update` write ONLY non-vector attributes.** To attach / update / delete vector files, use `appendVector` / `updateVector` / `deleteVector` exclusively. Never put a vector attribute into `insert`'s rows or `update`'s `setValues` — both operations reject vector attributes.
 - When adding an object, the `id` or primary key must be unique: it can be passed in as a parameter, or generated inside the program (such as `str(uuid.uuid4())`). It is forbidden to duplicate the id or primary key of an object that already exists in the sandbox.
 - ** It is best to print the exception stack `traceback.print_exc()`, as this helps with troubleshooting **
 - A write function mainly performs write operations; there is no mandatory format requirement for the content of `print`, but it is recommended to print the key execution results or exception information, for easy observation during test.

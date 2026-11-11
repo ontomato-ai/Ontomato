@@ -23,3 +23,11 @@ export function buildExecutionContext(workspaceId: string, context: BuildTestCon
     expiresAt: context?.expiresAt ?? null, sampleSummary: context?.sampleSummary ?? null,
     sampleName: context?.sampleSummary.name ?? "test-data/sample.json", error: context?.prepareError || context?.cleanupError || null };
 }
+
+/** details of BUILD_TEST_SDK_UPGRADE_REQUIRED in the existing HTTP error envelope. */
+export const buildTestSdkUpgradeDetailsSchema=z.object({
+  requiredVersion:z.string(),foundVersions:z.array(z.string()),
+  upgrade:z.object({kind:z.literal("edit-workspace-references"),currentCommand:z.literal("sdk current"),
+    readCommands:z.array(z.string()),steps:z.array(z.string())}),
+});
+export type BuildTestSdkUpgradeDetails=z.infer<typeof buildTestSdkUpgradeDetailsSchema>;

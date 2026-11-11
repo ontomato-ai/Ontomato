@@ -77,7 +77,7 @@ public class WriteFunctionOperationController {
             checkClasses(className);
 			String sandboxId = dealSandboxId(grant().getString("sandboxId"));
 			String domainId = grant().getString("domainId");
-			if (!(param.get("objs") instanceof JSONArray)) throw new IllegalArgumentException("objs: expected a nonempty array of object dictionaries");
+			if (!(param.get("objs") instanceof List<?>)) throw new IllegalArgumentException("objs: expected a nonempty array of object dictionaries");
             JSONArray objs = param.getJSONArray("objs");
 			writeFunctionOperationService.insert(className, objs, sandboxId, domainId);
 			ret.put("success", true);
@@ -98,9 +98,9 @@ public class WriteFunctionOperationController {
             checkClasses(className);
 			String sandboxId = dealSandboxId(grant().getString("sandboxId"));
 			String domainId = grant().getString("domainId");
-			if (!(param.get("setValues") instanceof JSONObject values) || values.isEmpty())
+			if (!(param.get("setValues") instanceof Map<?, ?> values) || values.isEmpty())
                 throw new IllegalArgumentException("setValues: expected a nonempty object of attribute values; use updateVector for vector attributes");
-            JSONObject setValues = values;
+            JSONObject setValues = param.getJSONObject("setValues");
 			JSONObject where = validatedWhere(param.get("where"), className, domainId);
 			writeFunctionOperationService.update(className, setValues, where, sandboxId, domainId);
 			ret.put("success", true);
@@ -260,9 +260,9 @@ public class WriteFunctionOperationController {
 	}
 	
 	private JSONObject validDslJsonFormat(JSONObject param) {
-        if (!(param.get("dsl") instanceof JSONObject dsl) || dsl.isEmpty())
+        if (!(param.get("dsl") instanceof Map<?, ?> dsl) || dsl.isEmpty())
             throw new IllegalArgumentException("dsl: expected one nonempty JSON object; send {\"dsl\":{...}}, not an array or JSON string");
-        return dsl;
+        return param.getJSONObject("dsl");
     }	
 	private String dealSandboxId(String sandboxId) {
 		if (ServiceConst.NOT_SANDBOX.equals(sandboxId)) {

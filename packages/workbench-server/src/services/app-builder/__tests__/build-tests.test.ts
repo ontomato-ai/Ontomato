@@ -47,7 +47,9 @@ it("returns Java's absent state and rejects old SDK preview references",async()=
   expect(await tests.current()).toBeNull();
   bytes.mockResolvedValue(Buffer.from('<script src="/apps-sdk/1.0.0/sdk.js"></script>'));
   vi.mocked(readFile).mockResolvedValue('{"version":"1.0.0"}');
-  await expect(tests.requirePreviewSdk()).rejects.toMatchObject({code:"BUILD_TEST_SDK_UPGRADE_REQUIRED"});
+  await expect(tests.requirePreviewSdk()).rejects.toMatchObject({code:"BUILD_TEST_SDK_UPGRADE_REQUIRED",status:409,
+    message:"Upgrade the workspace SDK references before previewing",
+    details:{requiredVersion:"1.1.0",foundVersions:["1.0.0"],upgrade:{kind:"edit-workspace-references",currentCommand:"sdk current",readCommands:["sdk read sdk.json","sdk read docs/index.md","sdk read docs/reference.md"]}}});
   vi.mocked(readFile).mockResolvedValue('{"executionContext":1}');await tests.requirePreviewSdk();
 });
 

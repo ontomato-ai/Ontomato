@@ -2,6 +2,7 @@ package io.ontomato.dataengine.controller;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -34,9 +35,9 @@ public class ProductionEnvController {
 	}
 	
 	private JSONObject validDslJsonFormat(JSONObject param) {
-        if (!(param.get("dsl") instanceof JSONObject dsl) || dsl.isEmpty())
+        if (!(param.get("dsl") instanceof Map<?, ?> dsl) || dsl.isEmpty())
             throw new IllegalArgumentException("dsl: expected one nonempty JSON object; send {\"dsl\":{...}}, not an array or JSON string");
-        return dsl;
+        return param.getJSONObject("dsl");
     }	
 	@PostMapping("/productionEnv/queryDistinctAttrValue")
     @ResponseBody

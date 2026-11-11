@@ -136,14 +136,39 @@ public class SandboxServiceImpl implements SandboxService {
       }
     }
 
+    private List<?> sampleArray(Object value,String path) {
+      if(!(value instanceof List<?> entries)) throw AgentHttpException.invalid(path+": expected an array");
+      return entries;
+    }
+    private void sampleText(Object value,String path) {
+      if(!(value instanceof String text) || text.isBlank()) throw AgentHttpException.invalid(path+": expected a nonempty string");
+    }
+
     @Override
     @SuppressWarnings("unchecked")
     public JSONObject validateSample(JSONObject body, Map<String, byte[]> attachments, String domainId) {
+    // Samples are external JSON. Validate container shapes before converting or consulting metadata.
+    for(String group:List.of("objDatas","relDatas","vectorDatas")) {
+      if(group.equals("vectorDatas") && !body.containsKey(group)) continue;
+      var entries=sampleArray(body.get(group),"$."+group);
+      for(int index=0;index<entries.size();index++) {
+        String path="$."+group+"["+index+"]";
+        if(!(entries.get(index) instanceof Map<?,?> entry)) throw AgentHttpException.invalid(path+": expected an object");
+        if(group.equals("objDatas")) {
+          sampleText(entry.get("className"),path+".className");
+          var rows=sampleArray(entry.get("rows"),path+".rows");
+          for(int row=0;row<rows.size();row++)
+            if(!(rows.get(row) instanceof Map<?,?>)) throw AgentHttpException.invalid(path+".rows["+row+"]: expected a row object");
+        } else {
+          for(String field:group.equals("relDatas") ? List.of("relationName","sourceObjId","targetObjId") : List.of("className","objectId","attrName","text"))
+            sampleText(entry.get(field),path+"."+field);
+          if(group.equals("vectorDatas") && entry.get("file") != null) sampleText(entry.get("file"),path+".file");
+        }
+      }
+    }
     List<Map> objDatas = body.getList("objDatas", Map.class),
         relDatas = body.getList("relDatas", Map.class),
         vectorDatas = body.getList("vectorDatas", Map.class);
-    if (objDatas == null || relDatas == null)
-      throw AgentHttpException.invalid("objDatas and relDatas are required");
     // Check the object data
     Map<String, Object> jsonRule = jsonRuleDao.query(domainId);
     List<Map<String, Object>> classDefs = (List<Map<String, Object>>) jsonRule.get("classDef");
@@ -186,8 +211,7 @@ public class SandboxServiceImpl implements SandboxService {
                       + "].");
             }
           }
-          if (row.get(pk) != null && !"".equals(((String) row.get(pk)).trim())) {
-            String id = ((String) row.get(pk));
+          if (row.get(pk) instanceof String id && !id.trim().isEmpty()) {
             for (String cn : classIdsMap.keySet()) {
               if (classIdsMap.get(cn).contains(id)) {
                 throw AgentHttpException.invalid("Property[" + pk + "]: " + id + ", is duplicated.");
@@ -292,9 +316,6 @@ public class SandboxServiceImpl implements SandboxService {
           throw AgentHttpException.invalid(
               "The vector data: objectId[" + objectId + "] is not in Class[" + className + "].");
         }
-        if (attrName == null || "".equals(attrName.trim())) {
-          throw AgentHttpException.invalid("The vector data: attrName is empty.");
-        }
         boolean isVectorAttr = false;
         List<Map<String, Object>> attrDefs = (List<Map<String, Object>>) classDef.get("attrs");
         for (Map<String, Object> attrDef : attrDefs) {
@@ -310,9 +331,6 @@ public class SandboxServiceImpl implements SandboxService {
                   + "] is not a vector attribute of Class["
                   + className
                   + "].");
-        }
-        if (text == null || "".equals(text.trim())) {
-          throw AgentHttpException.invalid("The vector data: text is empty.");
         }
         Map<String, Object> newVectorData = new HashMap<String, Object>();
         newVectorData.put("className", className);

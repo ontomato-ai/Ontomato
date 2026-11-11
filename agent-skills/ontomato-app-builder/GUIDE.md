@@ -98,12 +98,35 @@ Positional names, IDs, paths, questions and descriptions are strings. Arguments 
 | `workspace import/publish/releases/rollback` | Required workspace ID; import needs a directory and explicit message, publish needs commit and declaration object, rollback needs release ID and declaration object. releases has no body. |
 
 
-Python write helpers use single object dictionaries and arrays of dictionaries as documented in `query_runtime.py`. A where is a nonempty condition object, never a list; invalid conditions fail before object queries or vector/file cleanup. `appendVector`/`updateVector` require nonempty text; with fileBase64 omitted or null, Java explicitly stores that text as a UTF-8 attachment. With fileBase64 supplied, it must be base64 file bytes; text remains required for embedding. There is no empty-file fallback when both are missing.
+The platform injects the Python helper module when it executes a generated Action; it is not a file in this skill package. Use the program returned by `action generate` through the Action API rather than running it with local Python. Write helpers take object dictionaries and arrays of dictionaries. A where is a nonempty condition object, never a list; invalid conditions fail before object queries or vector/file cleanup. `appendVector`/`updateVector` require nonempty text; with fileBase64 omitted or null, Java explicitly stores that text as a UTF-8 attachment. With fileBase64 supplied, it must be base64 file bytes; text remains required for embedding. There is no empty-file fallback when both are missing.
 
 ## Business testing
 
-Write `test-data/sample.json` in the workspace using the generation `objDatas`, `relDatas`, `vectorDatas` envelope. Attachments are relative to that sample. Sample files must stay inside test-data/ so publication can exclude the entire test-material directory. Start with `test start --workspace <id>` (the built-in agent already has ONTOMATO_WORKSPACE_ID); `test status` and `test stop` use the same workspace entry. No sample is collected from live data. A new start ends and cleans the previous context before preparing a fresh ID.
+Write `test-data/sample.json` in the workspace using the complete envelope below: `objDatas` contains groups of `{className, rows}`; each row is an object dictionary with its primary key and enabled attributes. `relDatas` and `vectorDatas` may be empty arrays. Use technical class and field names from `schema`; replace the example class and attributes to match the current ontology.
+
+```json
+{
+  "objDatas": [{
+    "className": "celestial_body",
+    "rows": [
+      {"id": "e2e-body-1", "name": "Sample A", "description": "Original A"},
+      {"id": "e2e-body-2", "name": "Sample B", "description": "Original B"},
+      {"id": "e2e-body-3", "name": "Sample C", "description": "Original C"}
+    ]
+  }],
+  "relDatas": [],
+  "vectorDatas": []
+}
+```
+
+Attachments are relative to that sample. Sample files must stay inside test-data/ so publication can exclude the entire test-material directory. Start with `test start --workspace <id>` (the built-in agent already has ONTOMATO_WORKSPACE_ID); `test status` and `test stop` use the same workspace entry. No sample is collected from live data. A new start ends and cleans the previous context before preparing a fresh ID.
 
 Action/MetricView execute, execute-dsl, distinct-values and vector commands bind the workspace's current Java context once for that command. Missing, preparing, failed, ended or expired contexts fail; requests never switch to live data. ask is not supported for build tests. Metadata discovery and asset editing keep their existing APIs. To look at live data, publish the application for yourself first. A conversation ending does not stop its test context.
 
 Preview requires the SDK manifest's executionContext capability 1. Upgrade old workspace SDK references when the preview entry rejects them. Test samples are excluded from published application files.
+
+## Upgrade workspace SDK references
+
+When preview returns `BUILD_TEST_SDK_UPGRADE_REQUIRED`, run `sdk current` to obtain the required exact version. Update every old `/apps-sdk/<version>/` reference in the workspace, including the importmap, stylesheet links and any absolute module imports, to that current version. Use `sdk read sdk.json`, `sdk read docs/index.md` and `sdk read docs/reference.md` to check interface changes and adapt the page, then commit the workspace changes (inside the platform, finish the changed run so runtime commits it; externally, use the existing workspace import with an explicit commit message). This uses the existing source-editing workflow; there is no separate SDK upgrade command. Retry preview only after the references and interfaces have been updated.
+
+`test status` and `test stop` succeed when the workspace has no test context, returning `{workspaceId, contextId: null, status: "NONE"}`. This is a normal absence result, not a failed request and not permission to use live data.

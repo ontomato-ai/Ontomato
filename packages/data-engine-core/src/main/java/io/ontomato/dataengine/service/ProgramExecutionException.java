@@ -7,9 +7,9 @@ package io.ontomato.dataengine.service;
 public final class ProgramExecutionException extends IllegalArgumentException {
   public enum Reason {
     RETIRED_PROTOCOL(
-        "This saved program uses the retired Python protocol. Convert or regenerate it before"
+        "code: This saved program uses the retired Python protocol. Convert or regenerate it before"
             + " execution (ontomato-python:2 required).",
-        "程序是旧版协议，需要先转换或重新生成"),
+        "code：程序是旧版协议，需要先转换或重新生成；程序必须包含 # ontomato-python:2 协议头"),
     DOMAIN_REQUIRED("Python execution requires the owning domain", "程序执行缺少所属域"),
     AUTHORITY_EXPIRED("Parent query grant expired", "程序执行授权已过期"),
     INPUT_CONFLICT("Input shadows an execution-owned file", "程序输入与执行器保留文件冲突"),

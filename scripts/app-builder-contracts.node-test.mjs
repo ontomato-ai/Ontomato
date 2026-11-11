@@ -59,3 +59,20 @@ test("skill Action execution preserves complete explicit parameters and owner er
     await assert.rejects(run({ text: "", count: 0 }), error => error.stderr.includes("Missing parameter: optional"));
   } finally { await new Promise(resolve => server.close(resolve)); }
 });
+
+for(const command of ["status","stop"]) {
+  test(`test ${command} reports NONE for an absent workspace context`,async()=>{
+    const methods=[];
+    const server=createServer((request,response)=>{
+      methods.push(request.method);response.setHeader("content-type","application/json");response.end("null");
+    });
+    await new Promise(resolve=>server.listen(0,"127.0.0.1",resolve));
+    try {
+      const result=await promisify(execFile)(process.execPath,["agent-skills/ontomato-app-builder/ontomato.mjs","test",command],{
+        env:{...process.env,ONTOMATO_URL:`http://127.0.0.1:${server.address().port}`,ONTOMATO_API_KEY:"test-only",ONTOMATO_WORKSPACE_ID:"11111111-1111-4111-8111-111111111111"},
+      });
+      assert.deepEqual(JSON.parse(result.stdout),{workspaceId:"11111111-1111-4111-8111-111111111111",contextId:null,status:"NONE"});
+      assert.deepEqual(methods,[command==="status"?"GET":"DELETE"]);
+    } finally {await new Promise(resolve=>server.close(resolve));}
+  });
+}
