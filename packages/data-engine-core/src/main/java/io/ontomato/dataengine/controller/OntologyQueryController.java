@@ -35,6 +35,9 @@ public class OntologyQueryController {
   @org.springframework.beans.factory.annotation.Autowired
   private io.ontomato.dataengine.service.agent.OntologyAgentAccess agentAccess;
 
+  @org.springframework.beans.factory.annotation.Autowired
+  private MetricParameterForms metricForms;
+
   private QueryAccessService.Access access(HttpServletRequest request) {
     var access = authorization.access(request);
     String caller = request.getHeader("X-Ontomato-Retrieval-Caller-Id");
@@ -79,6 +82,23 @@ public class OntologyQueryController {
   @PostMapping("/ontology/query/metrics/describe")
   public Object describeMetric(@RequestBody JSONObject body, HttpServletRequest request) {
     return ontology.describeMetric(body.getString("id"), access(request));
+  }
+
+  @PostMapping("/ontology/query/metrics/parameter-form")
+  public Object metricForm(@RequestBody JSONObject body, HttpServletRequest request) {
+    io.ontomato.dataengine.service.agent.AgentJson.fields(body, "id", "parameters");
+    return metricForms.form(io.ontomato.dataengine.service.agent.AgentJson.text(body, "id"),
+        body.getJSONObject("parameters"), access(request), language(request));
+  }
+
+  @PostMapping("/ontology/query/metrics/parse-parameters")
+  public Object metricParameters(@RequestBody JSONObject body, HttpServletRequest request) {
+    io.ontomato.dataengine.service.agent.AgentJson.fields(body, "id", "revision", "parameters", "values");
+    if (!(body.get("values") instanceof JSONObject values)
+        || values.values().stream().anyMatch(value -> !(value instanceof String)))
+      throw new IllegalArgumentException("Parameter values must be text keyed by parameter name");
+    return metricForms.parse(body.getString("id"), body.getString("revision"), body.getJSONObject("parameters"),
+        values, access(request), language(request));
   }
 
   @PostMapping("/ontology/query/knowledge/search")
