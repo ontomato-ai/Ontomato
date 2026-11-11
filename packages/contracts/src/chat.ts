@@ -62,7 +62,7 @@ export interface RunCancelledEvent {
 
 /**
  * Server-recorded end of one turn, sent before the stream's terminal frame.
- * `durationMs` is the turn run's endedAt - startedAt, the same fact history reads carry.
+ * `durationMs` ends when the answer is ready, before waiting for quality checks; history reads use the same fact.
  */
 export interface TurnFinishedEvent {
   type: "turn_finished";
@@ -102,7 +102,7 @@ export type ThreadMessagesPayload = {
     content: string;
     requestSeq?: number;
     snapshot?: unknown;
-    /** Assistant turns only: endedAt - startedAt; absent while running or when not recorded. */
+    /** Assistant turns only: time to the answer; old records retain their recorded terminal duration. */
     durationMs?: number;
   }>;
   activeTurn?: {

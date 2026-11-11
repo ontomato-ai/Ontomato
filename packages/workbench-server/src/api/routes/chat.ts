@@ -9,7 +9,11 @@ import { createLogger } from "../../logging/logger";
 import { createSseErrorEvent, initializeSse } from "../../utils/sse";
 import { AuthFailedError } from "../../utils/backend-client";
 import { buildTurnIdentity, runWithTurnContext } from "../../logging/log-context";
-import { recordTurnRunFinish, turnRunDurationMs } from "../../services/turn-run/turn-run-store";
+import {
+  recordTurnAnswerCompletion,
+  recordTurnRunFinish,
+  turnRunDurationMs,
+} from "../../services/turn-run/turn-run-store";
 import { convertEventForFrontend } from "../../services/chat/event-projection";
 import { runStreamStore, requireRunAccess, type RunRecord } from "../utils/run-stream";
 import { generateTitleAsync } from "../utils/title";
@@ -294,6 +298,8 @@ router.get(
             nodeCount: Array.isArray(runtimeQuery?.nodeIds) ? runtimeQuery.nodeIds.length : 0,
           });
         }
+
+        await recordTurnAnswerCompletion({ threadId, requestSeq, completedAt: new Date() });
 
         // One execution covers the workflow execution plus the settlement of late facts registered on it; this turn's display
         // includes the quality-check panel, so the subscription channel closes only after both finalize. Past the bounded limit, waiting is abandoned.

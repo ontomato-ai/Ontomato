@@ -11,6 +11,7 @@ export interface TurnRun {
   source?: string;
   displayMessage?: string;
   startedAt: Date;
+  answerCompletedAt?: Date;
   endedAt?: Date;
   createdAt: Date;
   updatedAt: Date;
@@ -38,6 +39,7 @@ function mapTurnRunRow(row: any): TurnRun {
     source: row.source || undefined,
     displayMessage: row.display_message || undefined,
     startedAt: row.started_at,
+    answerCompletedAt: row.answer_completed_at || undefined,
     endedAt: row.ended_at || undefined,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
@@ -45,13 +47,29 @@ function mapTurnRunRow(row: any): TurnRun {
 }
 
 /**
- * Wall-clock span of a finished turn run. A row first written by finish has no recorded
- * start (started_at = ended_at), so it carries no duration rather than a fabricated zero.
+ * Time to the answer, excluding the later quality-check wait. Runs without a separate
+ * answer boundary (including old stored rows) retain their recorded terminal duration.
  */
 export function turnRunDurationMs(turn: TurnRun | null | undefined): number | undefined {
-  if (!turn?.endedAt || turn.status === "running") return undefined;
-  const durationMs = new Date(turn.endedAt).getTime() - new Date(turn.startedAt).getTime();
+  if (!turn) return undefined;
+  const completedAt = turn.answerCompletedAt ?? (turn.status === "running" ? undefined : turn.endedAt);
+  if (!completedAt) return undefined;
+  const durationMs = new Date(completedAt).getTime() - new Date(turn.startedAt).getTime();
   return Number.isFinite(durationMs) && durationMs > 0 ? durationMs : undefined;
+}
+
+/** Saves the answer boundary while the run remains open for quality-check results. */
+export async function recordTurnAnswerCompletion(input: {
+  threadId: string;
+  requestSeq: number;
+  completedAt: Date;
+}): Promise<void> {
+  await getPostgresPool().query(
+    `UPDATE ${qualifiedTable("turn_runs")}
+       SET answer_completed_at = $3
+       WHERE thread_id = $1 AND request_seq = $2`,
+    [input.threadId, input.requestSeq, input.completedAt]
+  );
 }
 
 export async function startStandardTurnRun(input: {

@@ -26,6 +26,10 @@ export async function ensureBusinessStorageV1Schema(client: QueryableClient): Pr
     ADD COLUMN IF NOT EXISTS display_message TEXT
   `);
   await client.query(`
+    ALTER TABLE ${qualifiedTable("turn_runs")}
+    ADD COLUMN IF NOT EXISTS answer_completed_at TIMESTAMPTZ
+  `);
+  await client.query(`
     CREATE INDEX IF NOT EXISTS idx_turn_runs_updated
       ON ${qualifiedTable("turn_runs")} (updated_at DESC)
   `);
