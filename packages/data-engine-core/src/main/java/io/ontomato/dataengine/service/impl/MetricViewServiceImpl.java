@@ -399,7 +399,7 @@ public class MetricViewServiceImpl implements MetricViewService {
     @Override
     public MetricViewContent test(MetricView metricView,String lang,User user,UserDataPermission permission,int timeoutMinutes,ExecutionTarget target) throws Exception {
             validateDraftDomain(metricView, user.getDomainId());
-		Object[] o = abcProgramService.execute(UUID.randomUUID().toString(), MetricViewBindings.executionFunction(metricView.getFunction(), MetricViewBindings.values(metricView.getFunction())), user.getId(), permission, target.sandboxId(), lang, timeoutMinutes, user.getDomainId(), new ABCProgramService.ExecutionContext(null, null, target));
+		Object[] o = abcProgramService.execute(UUID.randomUUID().toString(), MetricViewBindings.executionFunction(metricView.getFunction(), subjectValues.resolveValues(MetricViewBindings.values(metricView.getFunction()), user)), user.getId(), permission, target.sandboxId(), lang, timeoutMinutes, user.getDomainId(), new ABCProgramService.ExecutionContext(null, null, target));
 		MetricViewContent metricViewContent = generateContent((JSONArray)o[0], (PythonExecuteResult)o[1], metricView.getName(), metricView, lang);
 		return metricViewContent;
 	}
@@ -498,28 +498,9 @@ private MetricViewContent generateContent(JSONArray rows, PythonExecuteResult ex
     QueryPackage.prepareReadFunction(metric.getFunction(),
         (List<Map<String, Object>>) adminService.getJSONRule(user.getDomainId()).get("classDef"));
     MetricViewBindings.validate(metric.getFunction(), metric.getBindings());
-    // A parameter whose declared value is a subject reference is the server's to fill. Accepting a
-    // supplied value for it would let a caller turn "my pending items" into "anyone's pending items".
-    refuseSubjectOverrides(metric, bindingId, param);
-    JSONObject values = MetricViewBindings.resolve(metric, bindingId, param);
-    // A declared subject reference is filled from the authenticated request, never from the supplied
-    // parameters: the predicate is the author's, the value is the server's.
-    values = subjectValues.resolveValues(values, user);
+    JSONObject values = subjectValues.metricParameters(metric, bindingId, param, user);
     Function execution = MetricViewBindings.executionFunction(metric.getFunction(), values);
     return abcProgramService.execute(UUID.randomUUID().toString(), execution, user.getId(), permission, target.sandboxId(), lang, timeoutMinutes, user.getDomainId(), new ABCProgramService.ExecutionContext(null, null, target));
-  }
-
-  /**
-   * Refuse a caller-supplied value for a parameter the definition bound to the authenticated subject.
-   *
-   * <p>A binding is the supported way to run a personalised metric; supplying the parameter directly is
-   * the way to run someone else's copy of it. The distinction is the difference between a filter and a
-   * spoof, so it is enforced here rather than left to which call the agent happens to make.</p>
-   */
-  private void refuseSubjectOverrides(MetricView metric, String bindingId, JSONObject supplied) {
-    if (bindingId != null) return;
-    // One rule for every path: a definition must not mean two things depending on which endpoint ran it.
-    subjectValues.refuseOverrides(metric.getFunction(), supplied);
   }
 
   private void validateDraftDomain(MetricView metric, String domain) {

@@ -245,6 +245,10 @@ principal_id = identity.get("principalId")      # 服务端认定的执行人
 workflow_run_id = identity.get("workflowRunId")  # 仅有唯一归属时才有这个键
 ```
 
+快照还包含 `organizations: [{id, code, name}]` 与 `positions: [{id, name, orgId}]`。组织编码由平台在新建时生成；改名、移动不改变它，管理员可换成客户系统使用的编码。业务数据的组织字段存 **code**，不存名称或平台内部 id。
+
+创建单据的 Action 从 `query_runtime.identity["organizations"]` 取本次所属组织的 `code` 写入单据。执行人属于多个组织时，按这次业务选择对应组织，不默认取第一项；选组织是填写业务事实，不代替平台授权。
+
 快照内容：`principalId / domainId / loginCode / userName / membershipId / roles[]`，外加满足条件时的 `workflowRunId`。
 
 **关键约束（必须理解，否则会误用）：**

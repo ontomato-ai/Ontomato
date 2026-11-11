@@ -19,6 +19,8 @@ public interface SubjectAttributeLookup {
     String ACCOUNT = "account";
     /** Custom permission attributes of the member, addressed as {@code principal.<attribute>}. */
     String PRINCIPAL = "principal";
+    /** A list of organization codes in the subject's domain. */
+    String ORG = "org";
 
     /**
      * The value of one subject attribute.
@@ -27,6 +29,8 @@ public interface SubjectAttributeLookup {
      *     the subject has no such attribute or has cleared it
      */
     Object attribute(User user, String source, String attribute);
+
+    List<String> organizationCodes(User user, OrganizationScope scope);
 
     /**
      * The account field names this edition offers, used to refuse a reference to a field that does not

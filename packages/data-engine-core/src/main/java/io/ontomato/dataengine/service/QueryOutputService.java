@@ -31,7 +31,7 @@ public class QueryOutputService {
     if ("package".equals(kind)) {
       // The agent-facing path resolves subject references too: a definition executed here must mean the
       // same thing it means everywhere else, or "mine" depends on which endpoint was called.
-      var packageValues = subjectValues.resolveValues(recipe.getJSONObject("parameters"), access.user());
+      var packageValues = subjectValues.packageParameters(recipe.getJSONObject("package"), recipe.getJSONObject("parameters"), access.user());
       return executeBundle(id, recipe, recipe.getJSONObject("package"), packageValues,
           recipe.getJSONObject("columnLabels"), scoped(access, classNames), lang);
     }
@@ -39,10 +39,7 @@ public class QueryOutputService {
         ? ontology.metric(recipe.getString("metricId"), recipe.getString("revision"), access) : null;
     if (selectedMetric != null && selectedMetric.getFunction().getQueryPackage() != null) {
       String bindingId = recipe.getString("bindingId");
-      if (bindingId == null)
-        subjectValues.refuseOverrides(selectedMetric.getFunction(), recipe.getJSONObject("parameters"));
-      var values = MetricViewBindings.resolve(selectedMetric, bindingId, recipe.getJSONObject("parameters"));
-      values = subjectValues.resolveValues(values, access.user());
+      var values = subjectValues.metricParameters(selectedMetric, bindingId, recipe.getJSONObject("parameters"), access.user());
       return executeBundle(id, recipe, selectedMetric.getFunction().getQueryPackage(), values,
           QueryPackage.labels(selectedMetric.getFunction().getReturnDef().getSourceAnalysis()), scoped(access, classNames), lang);
     }
@@ -67,7 +64,7 @@ public class QueryOutputService {
         var function = metric.getFunction();
         code = function.getCode();
         if (code == null || !code.contains("# ontomato-python:2")) throw new IllegalArgumentException("Saved program requires Python protocol 2");
-        parameters = MetricViewBindings.resolve(metric, recipe.getString("bindingId"), recipe.getJSONObject("parameters"));
+        parameters = subjectValues.metricParameters(metric, recipe.getString("bindingId"), recipe.getJSONObject("parameters"), access.user());
         recipe.put("parameters", parameters);
         var returns = function.getReturnDef();
         analysis = returns.getSourceAnalysis() != null ? returns.getSourceAnalysis() : QuerySourceAnalysis.fromStoredSources(returns.getOutKeyRefs());

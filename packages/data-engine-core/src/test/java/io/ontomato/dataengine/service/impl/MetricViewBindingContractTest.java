@@ -255,4 +255,37 @@ class MetricViewBindingContractTest {
     service.delete(a.getId(), "domain-a", "en");
     assertFalse(metrics.containsKey(a.getId())); assertTrue(metrics.containsKey(b.getId()));
   }
+
+  @Test
+  void aPublishedOrganizationBindingExecutesAsAnArrayAndAnEmptyInMatchesNothing() throws Exception {
+    var m = metric("domain-a");
+    var bundle = m.getFunction().getQueryPackage();
+    var manifest = bundle.getJSONObject("manifest");
+    var declaration = manifest.getJSONArray("parameterDefs").getJSONObject(1);
+    declaration.put("value", "{{org.self}}");
+    var query = QueryPackage.query(bundle, "main");
+    var object = query.getJSONObject("answer").getJSONArray("steps").getJSONObject(0).getJSONObject("graph")
+        .getJSONArray("patterns").getJSONObject(0).getJSONArray("objects").getJSONObject(0);
+    object.put("conditions", JSONObject.of("properties", JSONObject.of("field","salary","operator","in","value",List.of("sample"))));
+    bundle.getJSONArray("files").getJSONObject(0).put("content", query.toJSONString());
+    manifest.getJSONArray("parameterBindings").add(JSONObject.of("parameter","labels","query","main",
+        "pointer","/answer/steps/0/graph/patterns/0/objects/0/conditions/properties/value"));
+    var binding = new io.ontomato.dataengine.bean.metricView.MetricViewBinding();
+    binding.setName("My organizations");
+    binding.setParameters(JSONObject.of("amount", 1, "labels", "{{org.self}}", "optional", "x"));
+    m.setBindings(List.of(binding));
+    var subject = mock(SubjectAttributeLookup.class);
+    when(subject.organizationCodes(user, OrganizationScope.SELF_ORGANIZATION)).thenReturn(List.of());
+    ReflectionTestUtils.setField(service, "subjectValues", new SubjectValueResolver(subject));
+    var saved = service.save(m, "en");
+    var result = ((JSONArray)service.execute(saved.getId(), saved.getBindings().getFirst().getId(),
+        null, null, "en", user, new UserDataPermission(), 1)[0]).getJSONObject(0);
+    var values = result.getJSONObject("values");
+    assertEquals(List.of(), values.get("labels"));
+    var bound = QueryPackage.query(bundle, "main", values).getJSONObject("answer").getJSONArray("steps")
+        .getJSONObject(0).getJSONObject("graph").getJSONArray("patterns").getJSONObject(0)
+        .getJSONArray("objects").getJSONObject(0).getJSONObject("conditions").getJSONObject("properties");
+    assertEquals(io.ontomato.dataengine.util.DslPermissionUtil.alwaysFalse("salary"), bound);
+  }
+
 }

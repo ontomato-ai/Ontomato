@@ -124,4 +124,34 @@ class SubjectValueResolverTest {
     resolver.validate("{{principal.dept}}");
     resolver.validate("待办");
   }
+
+  @Test
+  void organizationReferencesAreWholeServerBoundArraysEvenForOneOrNoCodes() {
+    for (var codes : List.of(List.of("001", "002"), List.of("001"), List.<String>of())) {
+      when(subjects.organizationCodes(user, OrganizationScope.SELF_ORGANIZATION)).thenReturn(codes);
+      assertEquals(codes, resolver.resolve("{{org.self}}", user));
+    }
+    assertThrows(IllegalArgumentException.class, () -> resolver.validate("{{org.name}}"));
+    assertThrows(IllegalArgumentException.class, () -> resolver.validate(List.of("{{org.self}}")));
+    var parameter = new io.ontomato.dataengine.bean.function.Parameter();
+    parameter.setName("departments");
+    parameter.setType(io.ontomato.dataengine.bean.function.Parameter.TYPE_STRING_ARRAY);
+    parameter.setValue("{{org.selfAndDescendants}}");
+    var function = new io.ontomato.dataengine.bean.function.Function();
+    function.setParameters(List.of(parameter));
+    var metric = new io.ontomato.dataengine.bean.metricView.MetricView();
+    metric.setFunction(function);
+    when(subjects.organizationCodes(user, OrganizationScope.SELF_SUBTREE)).thenReturn(List.of("001","002"));
+    assertEquals(List.of("001","002"), resolver.metricParameters(metric, null, new JSONObject(), user).get("departments"));
+    assertThrows(IllegalArgumentException.class, () -> resolver.metricParameters(metric, null,
+        JSONObject.of("departments", List.of("outside")), user));
+    var bundle = QueryPackage.fromDsl("{\"answer\":{\"steps\":[]}}");
+    bundle.getJSONObject("manifest").getJSONArray("parameterDefs").add(JSONObject.from(parameter));
+    assertEquals(List.of("001","002"), resolver.packageParameters(bundle, null, user).get("departments"));
+    assertThrows(IllegalArgumentException.class, () -> resolver.packageParameters(bundle,
+        JSONObject.of("departments", List.of("outside")), user));
+    parameter.setType(io.ontomato.dataengine.bean.function.Parameter.TYPE_STRING);
+    assertThrows(IllegalArgumentException.class, () -> MetricViewBindings.validateDeclaredValues(function, MetricViewBindings.values(function)));
+  }
+
 }
