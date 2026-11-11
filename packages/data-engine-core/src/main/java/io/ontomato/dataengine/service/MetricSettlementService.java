@@ -8,6 +8,7 @@ import io.ontomato.dataengine.bean.metricView.MetricViewBinding;
 import io.ontomato.dataengine.bean.metricView.OriginCheckResult;
 import io.ontomato.dataengine.core.bean.User;
 import io.ontomato.dataengine.service.agent.AgentJson;
+import io.ontomato.dataengine.service.agent.AgentHttpException;
 import io.ontomato.dataengine.service.agent.OntologyGenerationService;
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -49,7 +50,8 @@ public class MetricSettlementService {
       if (!(recipe.get("parameters") instanceof JSONObject))
         throw new IllegalArgumentException("Metric recipes require parameter values");
       if (calculation != null && !calculation.isBlank())
-        throw new IllegalArgumentException("Use this metric's output directly; ask again for another grain or statistic");
+        throw new AgentHttpException(422, "METRIC_REQUERY_REQUIRED",
+            "Use this metric's output directly; ask again for another grain or statistic");
       return commit.run(() -> reuse(recipe.getString("metricId"), recipe.getString("revision"),
           recipe.getString("bindingId"), recipe.getJSONObject("parameters"), question, user));
     }

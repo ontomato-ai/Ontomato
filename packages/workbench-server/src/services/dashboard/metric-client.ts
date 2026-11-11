@@ -17,6 +17,16 @@ const settledSchema = z.object({
 });
 const errorSchema = z.object({ error: z.object({ code: z.string(), message: z.string() }) });
 
+function parseMetricResponse<T>(text: string, schema: z.ZodType<T>): T {
+  try {
+    return schema.parse(JSON.parse(text));
+  } catch (error) {
+    if (error instanceof z.ZodError || error instanceof SyntaxError)
+      throw new HttpError(502, "Invalid response from the metric service", "INVALID_METRIC_RESPONSE");
+    throw error;
+  }
+}
+
 /** Dashboard calls carry the original user and domain; Java owns all metric rules. */
 export class DashboardMetricClient {
   constructor(readonly domainId: string, readonly credentials: AssistantCredentials) {}
@@ -31,19 +41,14 @@ export class DashboardMetricClient {
         },
         retries: 1, errorDetailLimit: 16000,
       });
-      return schema.parse(JSON.parse(response.text));
+      return parseMetricResponse(response.text, schema);
     } catch (error) {
-      if (error instanceof AuthFailedError)
-        throw new HttpError(error.status!, error.message, error.status === 401 ? "UNAUTHORIZED" : "FORBIDDEN");
-      if (error instanceof BackendResponseError) {
-        const parsed = errorSchema.parse(JSON.parse(error.detail));
+      if (error instanceof BackendResponseError || error instanceof AuthFailedError) {
+        const parsed = parseMetricResponse(error.detail, errorSchema);
         const code = error.status === 409 ? "METRIC_SPEC_CHANGED"
-          : error.status === 404 ? "METRIC_UNAVAILABLE"
-          : error.status === 400 ? "METRIC_PARAMETERS_INVALID" : parsed.error.code;
-        throw new HttpError(error.status, parsed.error.message, code);
+          : error.status === 404 ? "METRIC_UNAVAILABLE" : parsed.error.code;
+        throw new HttpError(error.status!, parsed.error.message, code);
       }
-      if (error instanceof z.ZodError || error instanceof SyntaxError)
-        throw new HttpError(502, "Invalid response from the metric service", "INVALID_METRIC_RESPONSE");
       throw error;
     }
   }
