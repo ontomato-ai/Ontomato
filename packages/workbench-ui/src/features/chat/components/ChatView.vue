@@ -64,6 +64,16 @@ function buildOutput(snapshot: ResponseSnapshot): string {
     .join("\n\n---\n\n");
 }
 
+/** Turn duration from the server-recorded fact, e.g. "Took 32s" / "Took 1m 12s". */
+function formatTurnDuration(durationMs: number): string {
+  const totalSeconds = Math.max(1, Math.round(durationMs / 1000));
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return minutes
+    ? t("chat.turnDurationMinutes", { minutes, seconds })
+    : t("chat.turnDurationSeconds", { seconds });
+}
+
 function feedbackTargetId(msg: Message): string {
   const turnKey = msg.snapshot ? snapshotTurnKey(msg.snapshot) : "";
   return turnKey || `${msg.snapshot?.threadId || "qa"}:${msg.id}`;
@@ -302,6 +312,9 @@ watch(
                     <Copy v-else :size="14" />
                   </button>
                   <TurnDiagnoseButton class="ui-icon-btn action-btn" :turn="msg.snapshot" />
+                  <span v-if="msg.snapshot.durationMs" class="turn-duration">
+                    {{ formatTurnDuration(msg.snapshot.durationMs) }}
+                  </span>
                 </div>
               </template>
             </div>
@@ -464,6 +477,12 @@ watch(
 
 .action-btn {
   border-radius: 10px;
+}
+
+.turn-duration {
+  align-self: center;
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
 }
 
 .action-btn:hover,

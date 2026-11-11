@@ -44,6 +44,16 @@ function mapTurnRunRow(row: any): TurnRun {
   };
 }
 
+/**
+ * Wall-clock span of a finished turn run. A row first written by finish has no recorded
+ * start (started_at = ended_at), so it carries no duration rather than a fabricated zero.
+ */
+export function turnRunDurationMs(turn: TurnRun | null | undefined): number | undefined {
+  if (!turn?.endedAt || turn.status === "running") return undefined;
+  const durationMs = new Date(turn.endedAt).getTime() - new Date(turn.startedAt).getTime();
+  return Number.isFinite(durationMs) && durationMs > 0 ? durationMs : undefined;
+}
+
 export async function startStandardTurnRun(input: {
   threadId: string;
   userId: string;
@@ -108,19 +118,28 @@ export async function startTurnRun(input: StartTurnRunInput): Promise<void> {
   );
 }
 
-export async function finishTurnRun(input: FinishTurnRunInput): Promise<void> {
+/** The first terminal write wins: a turn already ended (e.g. at a user cancel) keeps its status and end. */
+export async function finishTurnRun(input: FinishTurnRunInput): Promise<TurnRun | null> {
   const endedAt = input.endedAt ?? new Date();
-  await getPostgresPool().query(
+  const result = await getPostgresPool().query(
     `INSERT INTO ${qualifiedTable("turn_runs")}
         (thread_id, request_seq, status, started_at, ended_at, created_at, updated_at)
        VALUES ($1,$2,$3,$4,$4,$4,$4)
        ON CONFLICT (thread_id, request_seq)
        DO UPDATE SET
-         status = EXCLUDED.status,
-         ended_at = EXCLUDED.ended_at,
-         updated_at = EXCLUDED.updated_at`,
+         status = CASE
+           WHEN ${qualifiedTable("turn_runs")}.ended_at IS NULL THEN EXCLUDED.status
+           ELSE ${qualifiedTable("turn_runs")}.status
+         END,
+         ended_at = COALESCE(${qualifiedTable("turn_runs")}.ended_at, EXCLUDED.ended_at),
+         updated_at = CASE
+           WHEN ${qualifiedTable("turn_runs")}.ended_at IS NULL THEN EXCLUDED.updated_at
+           ELSE ${qualifiedTable("turn_runs")}.updated_at
+         END
+       RETURNING *`,
     [input.threadId, input.requestSeq, input.status, endedAt]
   );
+  return result.rows[0] ? mapTurnRunRow(result.rows[0]) : null;
 }
 
 export async function getTurnRun(threadId: string, requestSeq: number): Promise<TurnRun | null> {
@@ -161,9 +180,9 @@ export async function recordTurnRunStart(input: StartTurnRunInput): Promise<void
   }
 }
 
-export async function recordTurnRunFinish(input: FinishTurnRunInput): Promise<void> {
+export async function recordTurnRunFinish(input: FinishTurnRunInput): Promise<TurnRun | null> {
   try {
-    await finishTurnRun(input);
+    return await finishTurnRun(input);
   } catch (error) {
     logger.warn("Turn run finish record failed", {
       threadId: input.threadId,
@@ -171,5 +190,6 @@ export async function recordTurnRunFinish(input: FinishTurnRunInput): Promise<vo
       status: input.status,
       error: error instanceof Error ? error.message : String(error),
     });
+    return null;
   }
 }

@@ -155,6 +155,8 @@ export function createStandardSender(deps: StandardStreamDeps) {
               showPendingUnderstanding: true,
               analysisText: `${current?.analysisText || ""}${json.content}`,
             });
+          } else if (json.type === "turn_finished") {
+            updateStreamingSnapshot({ durationMs: json.durationMs });
           } else if (json.type === "title") {
             if (!hasSettledTitle.value) {
               hasSettledTitle.value = true;

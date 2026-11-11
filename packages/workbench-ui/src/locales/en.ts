@@ -1006,6 +1006,8 @@ export default {
     "copiedToClipboard": "Copied to clipboard",
     "copyFailed": "Copy failed",
     "generationStopped": "Generation stopped",
+    "turnDurationSeconds": "Took {seconds}s",
+    "turnDurationMinutes": "Took {minutes}m {seconds}s",
     "helpful": "Helpful",
     "notHelpful": "Not helpful",
     "newSession": "New Session",

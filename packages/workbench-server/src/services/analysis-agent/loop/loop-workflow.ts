@@ -25,7 +25,11 @@ import { renderPrompt } from "../../../core/prompts/loader";
 import { t } from "../../../i18n";
 import { buildTurnIdentity, runWithLogContext } from "../../../logging/log-context";
 import { createLogger } from "../../../logging/logger";
-import { recordTurnRunFinish, recordTurnRunStart } from "../../turn-run/turn-run-store";
+import {
+  recordTurnRunFinish,
+  recordTurnRunStart,
+  turnRunDurationMs,
+} from "../../turn-run/turn-run-store";
 import { allocateRequestSeq } from "../../chat/thread-store";
 import type { AnalysisRunIdentity } from "../task/run-history";
 import { datasetSchemaService } from "../../data-query/dataset-schema";
@@ -183,6 +187,13 @@ export async function runAnalysisLoopWorkflow(
       params.onEvent?.({ ...event, requestSeq });
     };
     const loopSignal = signal || new AbortController().signal;
+    /** Ends the turn run and reports its recorded duration on the turn's event channel. */
+    const finishTurnRun = async (status: "completed" | "failed" | "cancelled") => {
+      const durationMs = turnRunDurationMs(await recordTurnRunFinish({ threadId, requestSeq, status }));
+      if (durationMs !== undefined) {
+        params.onEvent?.({ type: "turn_finished", durationMs, requestSeq });
+      }
+    };
 
     const trajectory = createDeepAnalysisArtifactStore({
       taskId,
@@ -501,18 +512,18 @@ export async function runAnalysisLoopWorkflow(
           finalAnswerLength: finalAnswer?.length || 0,
         });
         const payload = await persistArtifacts("cancelled", report, finalAnswer);
-        await recordTurnRunFinish({ threadId, requestSeq, status: "cancelled" });
+        await finishTurnRun("cancelled");
         return payload;
       }
 
       if (reportDeliverableEnabled && !report.trim()) {
         await persistArtifacts("failed", report);
-        await recordTurnRunFinish({ threadId, requestSeq, status: "failed" });
+        await finishTurnRun("failed");
         throw new Error(tApp("analysis.loop.loop-workflow.269"));
       }
 
       const payload = await persistArtifacts("completed", report, finalAnswer);
-      await recordTurnRunFinish({ threadId, requestSeq, status: "completed" });
+      await finishTurnRun("completed");
 
       logger.info(tApp("analysis.loop.loop-workflow.270"), {
         taskId,
@@ -533,7 +544,7 @@ export async function runAnalysisLoopWorkflow(
         reportDeliverableEnabled ? undefined : lastAssistantText(state?.messages || []).text,
         message
       );
-      await recordTurnRunFinish({ threadId, requestSeq, status });
+      await finishTurnRun(status);
       if (status === "cancelled") return trajectory.current();
       throw error;
     } finally {

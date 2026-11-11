@@ -13,7 +13,11 @@ import { AIMessage, HumanMessage } from "@langchain/core/messages";
 import { getCheckpointer, initializeConnection } from "../../../infrastructure/connection";
 import { buildTurnIdentity, runWithLogContext } from "../../../logging/log-context";
 import { createLogger } from "../../../logging/logger";
-import { recordTurnRunFinish, recordTurnRunStart } from "../../turn-run/turn-run-store";
+import {
+  recordTurnRunFinish,
+  recordTurnRunStart,
+  turnRunDurationMs,
+} from "../../turn-run/turn-run-store";
 import { allocateRequestSeq } from "../../chat/thread-store";
 import type { DeepAnalysisEmittedEvent } from "@ontomato/contracts/analysis-events";
 
@@ -124,6 +128,13 @@ export async function runDeepAnalysisWorkflow(
       emit: onEvent,
     });
     const historicalMessages = await loadHistoricalMessages(threadId, requestSeq);
+    /** Ends the turn run and reports its recorded duration on the turn's event channel. */
+    const finishTurnRun = async (status: "completed" | "failed" | "cancelled") => {
+      const durationMs = turnRunDurationMs(await recordTurnRunFinish({ threadId, requestSeq, status }));
+      if (durationMs !== undefined) {
+        onEvent?.({ type: "turn_finished", durationMs, requestSeq });
+      }
+    };
 
     const ctx: DimensionRunContext = {
       lateFacts: new PendingLateFacts(),
@@ -176,22 +187,14 @@ export async function runDeepAnalysisWorkflow(
       }
 
       logger.debug(tApp("analysis.dimension.dimension-workflow.93"));
-      await recordTurnRunFinish({
-        threadId,
-        requestSeq,
-        status: signal?.aborted ? "cancelled" : "completed",
-      });
+      await finishTurnRun(signal?.aborted ? "cancelled" : "completed");
       return await store.finish(signal?.aborted ? "cancelled" : "completed");
     } catch (error: unknown) {
       const errorMessage = error instanceof Error ? error.message : String(error);
       logger.error(tApp("analysis.dimension.dimension-workflow.94"), errorMessage);
 
       logger.warn(tApp("analysis.dimension.dimension-workflow.95"));
-      await recordTurnRunFinish({
-        threadId,
-        requestSeq,
-        status: signal?.aborted ? "cancelled" : "failed",
-      });
+      await finishTurnRun(signal?.aborted ? "cancelled" : "failed");
       await store.finish(signal?.aborted ? "cancelled" : "failed", errorMessage);
       throw error;
     }
