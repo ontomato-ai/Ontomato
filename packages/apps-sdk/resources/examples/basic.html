@@ -75,7 +75,8 @@
     const context = createAppContext();
 
     // The chart draws whatever option it is given; this one never changes, so it is a plain object. The categories are
-    // long on purpose: the chart theme itself keeps their labels from overlapping, so the option needs no axis rules.
+    // long on purpose: the chart theme keeps a label from running into its neighbour by itself, and a roomy chart shows
+    // each name whole, so the option needs no axis rules.
     const option = {
       tooltip: { trigger: "axis" },
       xAxis: { type: "category", data: ["East", "North", "South", "West", "Central China region", "Overseas branches"] },
