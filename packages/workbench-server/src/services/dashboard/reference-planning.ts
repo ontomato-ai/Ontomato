@@ -3,7 +3,7 @@ import { z } from "zod";
 import { zodToJsonSchema } from "zod-to-json-schema";
 import {
   dashboardChartInputs, dashboardFormatSchema, metricReferenceChartSchema, metricReferenceMetricSchema,
-  type DashboardGroup, type DashboardMetricReference, type DashboardMetricOutput, type MetricReferenceChartEntry,
+  type DashboardGroup, type DashboardMetricReference, type DashboardMetricOutput, type MetricReferenceChartEntry, type MetricReferenceEntry,
 } from "@ontomato/contracts/dashboard";
 import { runAuxiliary } from "../../platform/agent-runtime/runtime";
 import { renderPrompt } from "../../core/prompts/loader";
@@ -12,7 +12,7 @@ import { HttpError } from "../../utils/errors";
 import { createLogger } from "../../logging/logger";
 import { cleanJsonBlock } from "./planning/core/chart-recommender";
 import { DashboardMetricClient } from "./metric-client";
-import { requireMatchingOutput } from "./metric-data";
+import { chartFieldSchema, dashboardInputs, outputMappingIssues } from "./metric-data";
 import type { DashboardDatasetInput } from "./types";
 
 const planned = z.object({ datasetKey: z.string(), name: z.string().min(1), calculation: z.string().min(1).optional() });
@@ -21,11 +21,6 @@ const metricPlan = planned.extend({ unit: z.string().optional() }).strict();
 const planSchema = z.object({ name: z.string().min(1), groups: z.array(z.object({
   title: z.string().min(1), charts: z.array(chartPlan), metrics: z.array(metricPlan),
 }).strict().refine(group => group.charts.length + group.metrics.length > 0, "A group must contain cards")).min(1) }).strict();
-const fieldPlanSchema = z.object({
-  fields: z.record(z.union([z.string().min(1), z.array(z.string().min(1)).min(1)])),
-  formats: z.record(dashboardFormatSchema).optional(),
-}).strict();
-const scalarInputs = { required: ["value"], numeric: ["value"], singleRow: true };
 const refusalSchema = z.object({ error: z.string().min(1) }).strict();
 const logger = createLogger("dashboard-planning");
 
@@ -35,6 +30,7 @@ async function model<T>(key: string, input: unknown, schema: z.ZodType<T>, local
     renderPrompt(key, {}, locale),
     "Return one JSON object matching the output schema. Every required property must be present. "
       + "Use [] for a required array property with no entries; never omit it. "
+      + "Property names are literal protocol identifiers: do not translate them or copy placeholder names from examples. "
       + "Do not add properties outside the schema.",
     `Output JSON Schema:\n${JSON.stringify(outputSchema)}`,
   ].join("\n\n");
@@ -62,9 +58,18 @@ async function model<T>(key: string, input: unknown, schema: z.ZodType<T>, local
   }
 }
 
-export async function mapMetricFields(chartType: string, name: string, output: DashboardMetricOutput, locale?: string) {
-  const inputs = chartType === "metric" ? scalarInputs : dashboardChartInputs[chartType];
-  if (!inputs) throw new HttpError(400, "Unsupported chart type", "INVALID_REQUEST");
+export async function mapMetricFields(
+  chartType: string, name: string, output: DashboardMetricOutput, locale?: string,
+  presentation: Pick<MetricReferenceEntry, "sort" | "formats"> = {},
+) {
+  const inputs = dashboardInputs(chartType);
+  const fieldPlanSchema = z.object({
+    fields: chartFieldSchema(chartType), formats: z.record(dashboardFormatSchema).optional(),
+  }).strict().superRefine((mapping, context) => {
+    const combined = { ...presentation, formats: { ...presentation.formats, ...mapping.formats } };
+    for (const issue of outputMappingIssues(chartType, mapping.fields, output, combined))
+      context.addIssue({ code: z.ZodIssueCode.custom, path: issue.path, message: issue.message });
+  });
   return model("dashboard.reference-fields.system", {
     chartType, name, inputs, columns: output.columns,
     dataView: buildModelDataView(output.rows, { truncation: output.truncation ?? undefined }),
@@ -93,7 +98,7 @@ export async function planReferenceDashboard(
     if (!dataset) throw new HttpError(502, "The plan references an unknown dataset", "DASHBOARD_PLAN_INVALID");
     if (dataset.recipe.kind === "metric" && card.calculation)
       throw new HttpError(422, "This metric has no requested statistic; ask again for the required result", "METRIC_REQUERY_REQUIRED");
-    const inputs = chartType === "metric" ? scalarInputs : dashboardChartInputs[chartType];
+    const inputs = dashboardInputs(chartType);
     const key = dataset.recipe.kind === "metric" ? dataset.datasetKey
       : JSON.stringify([dataset.datasetKey, card.calculation, inputs]);
     let task = settled.get(key);
@@ -121,7 +126,6 @@ export async function planReferenceDashboard(
         source: { ...dataset.source, datasetKey: dataset.datasetKey, subQuestion: dataset.subQuestion },
         layout: { colSpan: 12, rowSpan: 1 },
       });
-      requireMatchingOutput(entry, output);
       result.charts.push(entry);
     }
     for (const metric of group.metrics) {
@@ -133,7 +137,6 @@ export async function planReferenceDashboard(
         source: { ...dataset.source, datasetKey: dataset.datasetKey, subQuestion: dataset.subQuestion },
         layout: { colSpan: 6, rowSpan: 1 },
       });
-      requireMatchingOutput(entry, output);
       result.metrics.push(entry);
     }
     groups.push(result);
@@ -145,8 +148,7 @@ export async function changeMetricChartType(card: MetricReferenceChartEntry, cha
   if (!Object.hasOwn(dashboardChartInputs, chartType)) throw new HttpError(400, "Unsupported chart type", "INVALID_REQUEST");
   const spec = await client.describe(card.query.metricId);
   const output = await client.execute(card.query, spec.revision);
-  const mapped = await mapMetricFields(chartType, card.name, output, client.credentials.locale);
+  const mapped = await mapMetricFields(chartType, card.name, output, client.credentials.locale, card);
   const changed = { ...card, chartType, fields: mapped.fields };
-  requireMatchingOutput(changed, output);
   return changed;
 }
