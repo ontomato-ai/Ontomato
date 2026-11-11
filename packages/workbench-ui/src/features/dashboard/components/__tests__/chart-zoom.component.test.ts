@@ -12,7 +12,7 @@ afterEach(() => {
 // card, so the card's state follows and the next zoom opens the dialog again.
 it("closes by the dialog's own means, tells the card, and opens again for the next zoom", async () => {
   const wrapper = mount(ChartZoomModal, {
-    props: { title: "Revenue by region", mode: "table", tabular: { headers: ["region"], rows: [["East"]] } },
+    props: { title: "Revenue by region", mode: "table", table: { columns: ["region"], rows: [["East"]] } },
     // Element Plus reports a close as its closing transition starts, so the real transition runs.
     global: { plugins: [workbenchI18n(), ElementPlus], stubs: { transition: false } },
   });

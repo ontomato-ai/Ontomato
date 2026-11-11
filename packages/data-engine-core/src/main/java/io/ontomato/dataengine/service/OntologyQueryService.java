@@ -453,18 +453,31 @@ public class OntologyQueryService {
   public MetricView metric(String id, String revision, QueryAccessService.Access access) {
     if (id == null || id.isBlank() || revision == null || revision.isBlank())
       throw new IllegalArgumentException("Metric id and revision are required");
-    MetricView metric = metrics.queryById(id, access.user().getDomainId());
-    if (metric == null
-        || !access.user().getDomainId().equals(metric.getDomainId())
-        || !MetricView.STATUS_PUBLISHED.equals(metric.getStatus())
-        || metric.getFunction() == null
-        || !access.user().getDomainId().equals(metric.getFunction().getDomainId())
-        || !Function.OPERATION_READ.equals(metric.getFunction().getOperation()))
-      throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Published read metric not found");
-    if (revision != null && !revision(metric).equals(revision))
+    MetricView metric = metrics.requireExecutable(id, access.user());
+    if (!revision(metric).equals(revision))
       throw new ResponseStatusException(
           HttpStatus.CONFLICT, "Metric specification changed; retrieve it again");
     return metric;
+  }
+
+  public JSONObject describeMetric(String id, QueryAccessService.Access access) {
+    if (id == null || id.isBlank()) throw new IllegalArgumentException("Metric id is required");
+    MetricView metric = metrics.requireExecutable(id, access.user());
+    JSONObject analysis = metricAnalysis(metric);
+    QueryPermissions.authorizeInputs(analysis, access.permission(), classes(access));
+    var columns = analysis.getJSONArray("nodes").stream().map(JSONObject::from)
+        .filter(node -> "output".equals(node.getString("kind")))
+        .map(node -> JSONObject.of("key", node.getString("key"), "label", node.getString("label"), "type", null))
+        .toList();
+    return JSONObject.of("id", metric.getId(), "revision", revision(metric),
+        "status", metric.getStatus(), "name", metric.getName(),
+        "parameterDefs", metric.getFunction().getParameters(), "outputColumns", columns);
+  }
+
+  private JSONObject metricAnalysis(MetricView metric) {
+    var returns = metric.getFunction().getReturnDef();
+    return returns.getSourceAnalysis() != null ? returns.getSourceAnalysis()
+        : QuerySourceAnalysis.fromStoredSources(returns.getOutKeyRefs());
   }
 
   public Object metrics(JSONObject body, QueryAccessService.Access access) {
@@ -494,8 +507,7 @@ public class OntologyQueryService {
       var function = metric.getFunction();
       JSONObject sourceAnalysis;
       try {
-        sourceAnalysis = function.getReturnDef().getSourceAnalysis() != null ? function.getReturnDef().getSourceAnalysis()
-            : QuerySourceAnalysis.fromStoredSources(function.getReturnDef().getOutKeyRefs());
+        sourceAnalysis = metricAnalysis(metric);
         QueryPermissions.authorizeInputs(sourceAnalysis, access.permission(), available);
       } catch (ResponseStatusException unavailable) { continue; }
       catch (IllegalArgumentException | DslContractViolationException invalid) {

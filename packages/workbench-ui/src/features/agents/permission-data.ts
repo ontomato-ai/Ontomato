@@ -50,14 +50,14 @@ export const workbenchPermissions = {
   },
   skills: {
     permissions: ["skill-management"],
-    path: routes.agentSettingsCapabilities.path,
+    path: routes.agentSettingsSkills.path,
     titleKey: "nav.skills",
     ownerApplication: "agents",
     groupKey: "app-capabilities",
   },
   mcpService: {
     permissions: ["mcp-service"],
-    path: routes.agentSettingsCapabilities.path,
+    path: routes.agentSettingsMcp.path,
     titleKey: "nav.mcpService",
     ownerApplication: "agents",
     groupKey: "app-capabilities",

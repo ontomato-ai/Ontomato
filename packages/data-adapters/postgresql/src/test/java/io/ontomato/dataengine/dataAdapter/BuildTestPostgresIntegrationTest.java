@@ -49,6 +49,8 @@ class BuildTestPostgresIntegrationTest {
     var rule=JSON.parseObject(Files.readString(Path.of("../../data-engine-core/src/test/resources/agent-contracts/ontology.json")));
     var rules=mock(JSONRuleDao.class);when(rules.query("contract")).thenAnswer(call->JSON.parseObject(rule.toJSONString()));
     var connection=new DataAdapterConnection();connection.put("url",jdbcUrl+"?currentSchema="+schema+",public");connection.put("user",account[0]);connection.put("password",account[1]);
+    // Persisted enterprise connections can include an unset optional field.
+    connection.put("company",null);
     config.getDataAdapterConnections().put("postgresql",connection);
     var adapter=new PostgreAdapter(connection,rule);
     var queryConfig=new io.ontomato.dataengine.config.DataRagConfig();queryConfig.setDslMightTimeFormats(new String[0]);

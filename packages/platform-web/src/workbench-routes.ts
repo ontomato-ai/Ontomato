@@ -31,16 +31,23 @@ export function workbenchPages(
   observe: { component: PageComponent; meta?: RouteMeta; props?: Record<string, unknown> },
 ): RouteRecordRaw[] {
   return [
-    { ...routes.ontologyCapabilities,
-      component: () => import("@ontomato/workbench-ui/features/workbench").then(module => module.CapabilityLibrary),
-      meta: { service: true, page: routes.ontologyCapabilities.path, ownHeader: true } },
+    { ...routes.publishedMcp,
+      component: () => import("@ontomato/workbench-ui/features/workbench").then(module => module.PublishedMcpServices),
+      meta: { service: true, page: routes.publishedMcp.path, ownHeader: true } },
+    { ...routes.ontologyCapabilities, redirect: { name: routes.ontologySkills.name } },
+    { ...routes.ontologyMcp, redirect: { name: routes.agentSettingsMcp.name } },
+    { ...routes.ontologySkills,
+       component: () => import("@ontomato/workbench-ui/features/workbench").then(module => module.CapabilityLibrary),
+       props: { kind: "skill" },
+       meta: { service: true, page: routes.ontologySkills.path, ownHeader: true } },
     { ...routes.chat, component, meta: { workbench: true } },
     // The application's prefix is no page: it opens the conversation, which is where the platform is entered.
     { path: "/agents", redirect: (to) => capabilityTabLink(to) ?? { name: routes.chat.name, query: to.query } },
     // The first agent's screen is a page, so its old tab link moves on as the screen is entered: from a bookmark, a
     // reload or another page. The platform's own links name the library's address.
     { ...routes.agents, component, meta: { workbench: true }, beforeEnter: (to) => capabilityTabLink(to) ?? true },
-    ...[routes.agentSettingsNew, routes.agentSettingsCapabilities, routes.agentSettings].map(
+    { ...routes.agentSettingsCapabilities, redirect: { name: routes.agentSettingsSkills.name } },
+    ...[routes.agentSettingsNew, routes.agentSettingsSkills, routes.agentSettingsMcp, routes.agentSettings].map(
       (location) => ({ ...location, component, meta: { workbench: true } }),
     ),
     { ...observeRoutes.root, ...observe, children: observeRoutes.children },

@@ -1,17 +1,21 @@
 import { randomUUID } from "node:crypto";
 
-import { dashboardAddArtifactSchema } from "@ontomato/contracts/dashboard-artifacts";
+import type { DashboardAddArtifact } from "@ontomato/contracts/dashboard-artifacts";
 import { t } from "../../i18n";
 import { HttpError } from "../../utils/errors";
 import { normalizeAbcProgram } from "./abc-program";
 import {
   ensureDashboard,
+  parseDashboardInput,
   findGroup,
   requireDashboardId,
   requireGroupId,
 } from "./access";
 import { resolveDashboardDatasets } from "./create-from-analysis";
-import { planDashboard } from "./planning/index";
+import { planReferenceDashboard, changeMetricChartType } from "./reference-planning";
+import { DashboardMetricClient } from "./metric-client";
+import { isMetricReferenceEntry, metricReferenceChartSchema, metricReferenceMetricSchema } from "@ontomato/contracts/dashboard";
+import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
 import {
   createDashboard,
   deleteDashboard,
@@ -49,90 +53,22 @@ export async function createDashboardDimension(
   await saveDashboard(ownerId, domainId, detail);
 }
 export async function addDashboardChart(
-  ownerId: string,
-  domainId: string,
-  body: any,
+  ownerId: string, domainId: string, body: DashboardAddArtifact, credentials: AssistantCredentials,
 ) {
-  const dashboardId = String(body?.dashboardId || "").trim();
-  const groupId = requireGroupId(body?.groupId);
-  const { sessionId, datasetArtifactId } =
-    dashboardAddArtifactSchema.parse(body);
-  if (!dashboardId) throw new HttpError(400, "dashboardId is required");
-  const { datasets } = await resolveDashboardDatasets(
-    sessionId,
-    [datasetArtifactId],
-    { userId: ownerId, domainId },
-  );
-  const targetDataset = datasets[0];
-  if (!targetDataset)
-    throw new HttpError(400, t("api.noAvailableDashboardData"));
-
-  const detail = ensureDashboard(
-    ownerId,
-    await getDashboard(ownerId, domainId, dashboardId),
-  );
+  const { dashboardId, groupId, sessionId, datasetArtifactId } = body;
+  const detail = ensureDashboard(ownerId, await getDashboard(ownerId, domainId, dashboardId));
   const group = findGroup(detail, groupId);
-
-  const planned = await planDashboard({
-    mode: "append",
-    datasets: [targetDataset],
-    existingChartTypes: detail.groups.flatMap((item) =>
-      item.charts.map((chart) => String(chart.chartType || "")).filter(Boolean),
-    ),
-  });
-
-  const validCharts = (
-    Array.isArray((planned as any)?.charts) ? (planned as any).charts : []
-  ).filter(() => {
-    const rows = Array.isArray(targetDataset.data) ? targetDataset.data : [];
-    if (rows.length <= 1) return false;
-    if (rows.length > 0 && Object.keys(rows[0]).length <= 1) return false;
-    return true;
-  });
-
-  const metrics = Array.isArray((planned as any)?.metrics)
-    ? (planned as any).metrics
-    : [];
-
-  group.charts.push(
-    ...validCharts.map((chart: any) => ({
-      id: randomUUID(),
-      name: String(chart?.name || targetDataset.subQuestion),
-      chartType: String(chart?.type || "bar"),
-      fields: chart?.fields || {},
-      dataPlan: chart?.dataPlan,
-      dsl: targetDataset.dsl,
-      abcProgram: targetDataset.abcProgram,
-      source: {
-        ...targetDataset.source,
-        datasetKey: targetDataset.datasetKey,
-        subQuestion: targetDataset.subQuestion,
-      },
-      layout: { colSpan: 12, rowSpan: 1 },
-    })),
-  );
-
-  group.metrics.push(
-    ...metrics.map((metric: any) => ({
-      id: randomUUID(),
-      name: String(metric?.name || targetDataset.subQuestion),
-      unit: String(metric?.unit || ""),
-      agg: metric?.agg,
-      valueField: metric?.valueField,
-      dataPlan: metric?.dataPlan,
-      dsl: targetDataset.dsl,
-      abcProgram: targetDataset.abcProgram,
-      source: {
-        ...targetDataset.source,
-        datasetKey: targetDataset.datasetKey,
-        subQuestion: targetDataset.subQuestion,
-      },
-      layout: { colSpan: 6, rowSpan: 1 },
-    })),
-  );
-
+  const { datasets } = await resolveDashboardDatasets(sessionId, [datasetArtifactId], { userId: ownerId, domainId });
+  const planned = await planReferenceDashboard(datasets, new DashboardMetricClient(domainId, credentials),
+    detail.groups.flatMap(item => item.charts.map(chart => chart.chartType)));
+  const charts = planned.groups.flatMap(item => item.charts);
+  const metrics = planned.groups.flatMap(item => item.metrics);
+  group.charts.push(...charts);
+  group.metrics.push(...metrics);
   await saveDashboard(ownerId, domainId, detail);
+  return { cardIds: [...charts, ...metrics].map(card => card.id) };
 }
+
 export async function renameDashboard(
   ownerId: string,
   domainId: string,
@@ -213,21 +149,20 @@ export async function deleteDashboardChart(
   await saveDashboard(ownerId, domainId, detail);
 }
 export async function changeDashboardChartType(
-  ownerId: string,
-  domainId: string,
-  body: any,
+  ownerId: string, domainId: string, body: any, credentials: AssistantCredentials,
 ) {
-  const detail = ensureDashboard(
-    ownerId,
-    await getDashboard(ownerId, domainId, requireDashboardId(body?.id)),
-  );
+  const detail = ensureDashboard(ownerId, await getDashboard(ownerId, domainId, requireDashboardId(body?.id)));
   const chartId = String(body?.chartId || "").trim();
   const chartType = String(body?.chartType || "").trim();
   for (const group of detail.groups) {
-    const chart = group.charts.find((item) => item.id === chartId);
+    const chart = group.charts.find(item => item.id === chartId);
     if (chart) {
-      chart.chartType = chartType;
-      chart.fields = undefined;
+      if (isMetricReferenceEntry(chart)) {
+        Object.assign(chart, await changeMetricChartType(chart, chartType, new DashboardMetricClient(domainId, credentials)));
+      } else {
+        chart.chartType = chartType;
+        chart.fields = undefined;
+      }
     }
   }
   await saveDashboard(ownerId, domainId, detail);
@@ -245,73 +180,54 @@ export async function updateDashboardChartConditions(
   const conditions = Array.isArray(body?.conditions) ? body.conditions : [];
   for (const group of detail.groups) {
     const chart = group.charts.find((item) => item.id === chartId);
-    if (chart) chart.conditions = conditions;
+    if (chart) {
+      if (isMetricReferenceEntry(chart))
+        throw new HttpError(400, "Use the metric parameter form", "METRIC_PARAMETERS_REQUIRED");
+      chart.conditions = conditions;
+    }
   }
   await saveDashboard(ownerId, domainId, detail);
 }
-export async function replaceDashboardLayout(
-  ownerId: string,
-  domainId: string,
-  body: any,
-) {
-  const detail = ensureDashboard(
-    ownerId,
-    await getDashboard(ownerId, domainId, requireDashboardId(body?.id)),
-  );
+const chartPresentationPatch = metricReferenceChartSchema.omit({ id: true, query: true, source: true, chartType: true }).partial().strip();
+const metricPresentationPatch = metricReferenceMetricSchema.omit({ id: true, query: true, source: true }).partial().strip();
+
+export async function replaceDashboardLayout(ownerId: string, domainId: string, body: any) {
+  const detail = ensureDashboard(ownerId, await getDashboard(ownerId, domainId, requireDashboardId(body?.id)));
+  const savedCharts = new Map(detail.groups.flatMap(group => group.charts).map(card => [card.id, card]));
+  const savedMetrics = new Map(detail.groups.flatMap(group => group.metrics).map(card => [card.id, card]));
   const groups = Array.isArray(body?.groups) ? body.groups : [];
   detail.groups = groups.map((group: any) => ({
     id: String(group?.id || randomUUID()),
     title: String(group?.title || "").trim(),
-    charts: Array.isArray(group?.charts)
-      ? group.charts.map((chart: any) => ({
-          id: String(chart?.id || randomUUID()),
-          name: String(chart?.name || "").trim(),
-          chartType: String(chart?.type || chart?.chartType || "bar"),
-          fields: chart?.fields || {},
-          dataPlan: chart?.dataPlan,
-          conditions: Array.isArray(chart?.conditions) ? chart.conditions : [],
-          abcProgram:
-            normalizeAbcProgram(chart?.abcProgram) ||
-            detail.groups
-              .flatMap((item) => item.charts)
-              .find((item) => item.id === chart?.id)?.abcProgram,
-          dsl:
-            chart?.dsl ||
-            detail.groups
-              .flatMap((item) => item.charts)
-              .find((item) => item.id === chart?.id)?.dsl ||
-            {},
-          source:
-            detail.groups
-              .flatMap((item) => item.charts)
-              .find((item) => item.id === chart?.id)?.source || {},
-          layout: chart?.layout,
-        }))
-      : [],
-    metrics: Array.isArray(group?.metrics)
-      ? group.metrics.map((metric: any) => ({
-          id: String(metric?.id || randomUUID()),
-          name: String(metric?.name || "").trim(),
-          unit: String(metric?.unit || "").trim(),
-          agg: metric?.agg,
-          valueField: metric?.valueField,
-          dataPlan: metric?.dataPlan,
-          abcProgram:
-            normalizeAbcProgram(metric?.abcProgram) ||
-            detail.groups
-              .flatMap((item) => item.metrics)
-              .find((item) => item.id === metric?.id)?.abcProgram,
-          dsl:
-            detail.groups
-              .flatMap((item) => item.metrics)
-              .find((item) => item.id === metric?.id)?.dsl || {},
-          source:
-            detail.groups
-              .flatMap((item) => item.metrics)
-              .find((item) => item.id === metric?.id)?.source || {},
-          layout: metric?.layout,
-        }))
-      : [],
+    charts: (Array.isArray(group?.charts) ? group.charts : []).map((chart: any) => {
+      const existing = savedCharts.get(chart.id);
+      if (!existing) throw new HttpError(400, "Layout can only contain saved cards", "INVALID_REQUEST");
+      if (isMetricReferenceEntry(existing)) {
+        const requestedType = chart.chartType ?? chart.type;
+        if (requestedType !== undefined && requestedType !== existing.chartType)
+          throw new HttpError(400, "Change chart type through modifyResultSetChartType", "INVALID_REQUEST");
+        return { ...existing, ...parseDashboardInput(chartPresentationPatch, chart) };
+      }
+      return {
+        id: existing.id, name: String(chart?.name || "").trim(),
+        chartType: String(chart?.type || chart?.chartType || "bar"),
+        fields: chart?.fields || {}, dataPlan: chart?.dataPlan,
+        conditions: Array.isArray(chart?.conditions) ? chart.conditions : [],
+        abcProgram: normalizeAbcProgram(chart?.abcProgram) || existing.abcProgram,
+        dsl: chart?.dsl || existing.dsl || {}, source: existing.source || {}, layout: chart?.layout,
+      };
+    }),
+    metrics: (Array.isArray(group?.metrics) ? group.metrics : []).map((metric: any) => {
+      const existing = savedMetrics.get(metric.id);
+      if (!existing) throw new HttpError(400, "Layout can only contain saved cards", "INVALID_REQUEST");
+      if (isMetricReferenceEntry(existing)) return { ...existing, ...parseDashboardInput(metricPresentationPatch, metric) };
+      return {
+        id: existing.id, name: String(metric?.name || "").trim(), unit: String(metric?.unit || "").trim(),
+        agg: metric?.agg, valueField: metric?.valueField, dataPlan: metric?.dataPlan,
+        abcProgram: normalizeAbcProgram(metric?.abcProgram) || existing.abcProgram,
+        dsl: existing.dsl || {}, source: existing.source || {}, layout: metric?.layout,
+      };
+    }),
   }));
   await saveDashboard(ownerId, domainId, detail);
 }

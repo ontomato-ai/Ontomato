@@ -18,9 +18,18 @@
       :element-loading-text="t('common.loading')"
     >
       <EChart v-if="chart.option" :option="brandedOption" :theme="theme" height="100%" />
-      <ChartDataOverlay :open="dataOpen" :tabular="tabular" @view-dsl="handleViewDsl" />
+      <ChartDataOverlay
+        :open="dataOpen"
+        :table="table"
+        :source-label="metricRef ? t('dashboard.viewMetric') : t('common.viewDsl')"
+        @view-dsl="handleViewDsl"
+      />
       <div v-if="state === 'empty'" class="chart-mask">
         {{ partialNotice || t("common.noData") }}
+      </div>
+      <div v-else-if="state === 'error' && metricRef" class="chart-mask chart-mask--error" role="alert">
+        <strong v-if="errorHeadline">{{ errorHeadline }}</strong>
+        <span>{{ chart.error.message }}</span>
       </div>
       <div v-else-if="state === 'error' && !dataOpen" class="chart-mask">
         {{ t("analysis.cannotGenerateChart") }}
@@ -31,6 +40,8 @@
       :disabled-types="disabledChartTypes"
       :conditions="conditions"
       :attr-show-name-map="props.attrShowNameMap"
+      :parameterized="metricRef"
+      @edit-parameters="emit('edit-parameters', props.chart)"
       @open-zoom="openZoom"
       @toggle-data="toggleData"
       @command="handleCommand"
@@ -42,7 +53,7 @@
       :mode="modalMode"
       :title="title"
       :option="zoomOption"
-      :tabular="tabular"
+      :table="table"
       @close="closeZoom"
     />
     <!-- Bottom-right resize handle -->
@@ -59,7 +70,9 @@ import { EChart, useChartTheme } from "@ontomato/foundation-ui/chart";
 import ChartDataOverlay from "./ChartDataOverlay.vue";
 import ChartToolbar from "./ChartToolbar.vue";
 import ChartZoomModal from "./ChartZoomModal.vue";
-import { extractTabularDataFromOption, safeCloneOption } from "./utils/chartTabular";
+import { isMetricReferenceEntry } from "@ontomato/contracts/dashboard";
+import { chartTable, extractTabularDataFromOption, safeCloneOption } from "./utils/chartTabular";
+import { cardErrorHeadline, metricCardSource, metricCardTable } from "./utils/metricCard";
 import { modifyResultSetName, deleteResultSet } from "../api";
 import { clamp, parseGridColumns, partialResultNotice } from "./utils/dashboardHelper";
 import { chartBrandColors } from "@ontomato/contracts/chart-presentation";
@@ -85,6 +98,7 @@ const emit = defineEmits([
   "chart-conditions-changed",
   "ai-request",
   "view-dsl",
+  "edit-parameters",
   "layout-change",
   "resize-active",
 ]);
@@ -95,7 +109,17 @@ const theme = useChartTheme();
 /** The card's option in the brand colours of the platform's chart theme. */
 const brandedOption = computed(() => chartBrandColors(props.chart.option, theme.value));
 const dataOpen = ref(false);
-const tabular = ref(null);
+/** A metric-reference card: its data and parameters come from the metric it references. */
+const metricRef = computed(() => isMetricReferenceEntry(props.chart));
+const errorHeadline = computed(() => (props.chart?.error ? cardErrorHeadline(props.chart.error, t) : null));
+
+const TABLE_ROWS = 500;
+/** The data table, the zoomed table and the AI input all read this refresh's rows. */
+const table = computed(() =>
+  metricRef.value
+    ? metricCardTable(props.chart.columns ?? [], (props.chart.rows ?? []).slice(0, TABLE_ROWS), props.chart.formats)
+    : chartTable(extractTabularDataFromOption(props.chart?.rows || []), TABLE_ROWS)
+);
 
 const modalOpen = ref(false);
 const modalMode = ref("chart");
@@ -104,7 +128,10 @@ const zoomOption = ref(null);
 const title = computed(() => props.chart?.title || "");
 
 function handleViewDsl() {
-  emit("view-dsl", { title: title.value, dsl: props.chart?.dsl ?? null });
+  emit("view-dsl", {
+    title: title.value,
+    dsl: metricRef.value ? metricCardSource(props.chart) : (props.chart?.dsl ?? null),
+  });
 }
 
 const ALL_CHART_TYPES = ["pie", "bar", "line", "scatter", "radar", "heatmap"];
@@ -176,23 +203,12 @@ async function handleCommand(cmd) {
   }
 }
 
-function refreshTabular() {
-  const rows = props.chart?.rows || [];
-  tabular.value = extractTabularDataFromOption(rows);
-}
-
 function toggleData() {
-  if (!dataOpen.value) {
-    refreshTabular();
-    dataOpen.value = true;
-  } else {
-    dataOpen.value = false;
-  }
+  dataOpen.value = !dataOpen.value;
 }
 
 function openZoom() {
   if (dataOpen.value) {
-    refreshTabular();
     modalMode.value = "table";
     modalOpen.value = true;
     return;
@@ -227,19 +243,11 @@ function handleConditionsChange(f) {
   });
 }
 
-watch(
-  () => props.chart?.rows,
-  () => {
-    if (!dataOpen.value) return;
-    refreshTabular();
-  }
-);
-
+// A legacy chart that cannot be drawn shows its rows instead; a metric card's failure shows its reason.
 watch(
   () => state.value,
   (nextState) => {
-    if (nextState !== "error") return;
-    refreshTabular();
+    if (nextState !== "error" || metricRef.value) return;
     dataOpen.value = true;
   },
   { immediate: true }
@@ -365,6 +373,20 @@ onBeforeUnmount(() => {
   font-size: var(--text-xs);
   background: color-mix(in srgb, var(--el-bg-color) 72%, transparent);
   border-radius: var(--radius-lg);
+}
+
+.chart-mask--error {
+  flex-direction: column;
+  gap: var(--spacing-xs);
+  padding: var(--spacing-lg);
+  text-align: center;
+  color: var(--el-text-color-secondary);
+  overflow: auto;
+}
+
+.chart-mask--error strong {
+  color: var(--el-color-danger);
+  font-weight: 600;
 }
 
 :deep(.el-loading-spinner .el-loading-text) {

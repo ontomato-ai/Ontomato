@@ -9,9 +9,13 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONObject;
 import io.ontomato.dataengine.bean.function.Function;
+import io.ontomato.dataengine.bean.function.Parameter;
+import io.ontomato.dataengine.bean.metricView.MetricView;
+import io.ontomato.dataengine.bean.metricView.MetricViewBinding;
 import io.ontomato.dataengine.dao.FunctionDao;
 import io.ontomato.dataengine.dao.JSONRuleDao;
 import io.ontomato.dataengine.service.*;
+import io.ontomato.dataengine.service.agent.OntologyGenerationService;
 import java.util.List;
 import java.util.Map;
 import java.nio.charset.StandardCharsets;
@@ -24,6 +28,94 @@ import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
 class JacksonAgentBoundaryTest {
+  @Test
+  void httpDatasetSettlementAcceptsNestedRecipeAndParameterObjects() throws Exception {
+    var authorization = mock(QueryAccessService.class);
+    var user = new QueryAccessService.GrantUser("reader", "domain-a");
+    var access = new QueryAccessService.Access(user, null, null, null, null);
+    when(authorization.access(any())).thenReturn(access);
+    var metrics = mock(MetricViewService.class);
+    var ontology = mock(OntologyQueryService.class);
+    var generation = mock(OntologyGenerationService.class);
+    var metric = boundaryMetric();
+    when(ontology.metric(eq("metric-1"), eq("revision-1"), any())).thenReturn(metric);
+    when(generation.executionAccess("domain-a")).thenReturn(access);
+    when(metrics.appendBinding(eq("metric-1"), any(), eq("domain-a"))).thenReturn(metric);
+    var settlement = new MetricSettlementService(metrics, ontology, generation,
+        new SubjectValueResolver(mock(SubjectAttributeLookup.class)));
+    var sessions = mock(BackendSessionEntrance.class);
+    when(sessions.beginNewSession(any())).thenReturn("settlement-session");
+    var controller = new MetricSettlementController(mock(WorkbenchServiceAuthentication.class),
+        authorization, settlement, sessions);
+    var mvc = MockMvcBuilders.standaloneSetup(controller)
+        .setControllerAdvice(new OntologyAgentErrors())
+        .setMessageConverters(new MappingJackson2HttpMessageConverter()).build();
+    var response = mvc.perform(post("/ontology/ai/metrics/settle-from-dataset")
+        .contentType(MediaType.APPLICATION_JSON).content("""
+            {"question":"Regional sales in 2026","recipe":{"kind":"metric","metricId":"metric-1",
+              "revision":"revision-1","parameters":{"year":2026,"regions":["north","south"]}}}
+            """))
+        .andExpect(status().isOk()).andReturn().getResponse();
+    var result = JSON.parseObject(response.getContentAsString());
+    assertEquals("metric-1", result.getString("metricId"));
+    var binding = org.mockito.ArgumentCaptor.forClass(MetricViewBinding.class);
+    verify(metrics).appendBinding(eq("metric-1"), binding.capture(), eq("domain-a"));
+    assertInstanceOf(Number.class, binding.getValue().getParameters().get("year"));
+    assertEquals(List.of("north", "south"), binding.getValue().getParameters().get("regions"));
+    verify(sessions).endSession("settlement-session");
+  }
+
+  @Test
+  void httpMetricParameterTextsAreParsedAfterJacksonBinding() throws Exception {
+    var authorization = mock(QueryAccessService.class);
+    var user = new QueryAccessService.GrantUser("reader", "domain-a");
+    var access = new QueryAccessService.Access(user, null, null, null, null);
+    when(authorization.access(any())).thenReturn(access);
+    var ontology = mock(OntologyQueryService.class);
+    when(ontology.metric(eq("metric-1"), eq("revision-1"), any())).thenReturn(boundaryMetric());
+    var forms = new MetricParameterForms(mock(MetricViewService.class), ontology,
+        new SubjectValueResolver(mock(SubjectAttributeLookup.class)));
+    var outputs = mock(QueryOutputService.class);
+    var controller = new OntologyQueryController(authorization, ontology, outputs, mock(QueryJobService.class));
+    ReflectionTestUtils.setField(controller, "metricForms", forms);
+    var mvc = MockMvcBuilders.standaloneSetup(controller)
+        .setControllerAdvice(new OntologyQueryErrors())
+        .setMessageConverters(new MappingJackson2HttpMessageConverter()).build();
+    var response = mvc.perform(post("/ontology/query/metrics/parse-parameters")
+        .contentType(MediaType.APPLICATION_JSON).content("""
+            {"id":"metric-1","revision":"revision-1",
+              "parameters":{"year":2025,"regions":["north","south"]},"values":{"year":"2026"}}
+            """))
+        .andExpect(status().isOk()).andReturn().getResponse();
+    var result = JSON.parseObject(response.getContentAsString());
+    assertTrue(result.getJSONArray("errors").isEmpty());
+    assertInstanceOf(Number.class, result.getJSONObject("parameters").get("year"));
+    assertEquals(2026, result.getJSONObject("parameters").getIntValue("year"));
+    assertEquals(List.of("north", "south"), result.getJSONObject("parameters").get("regions"));
+    verifyNoInteractions(outputs);
+  }
+
+  private static MetricView boundaryMetric() {
+    var year = new Parameter();
+    year.setName("year");
+    year.setType(Parameter.TYPE_NUMBER);
+    var regions = new Parameter();
+    regions.setName("regions");
+    regions.setType(Parameter.TYPE_STRING_ARRAY);
+    var function = new Function();
+    function.setOperation(Function.OPERATION_READ);
+    function.setDomainId("domain-a");
+    function.setParameters(List.of(year, regions));
+    var metric = new MetricView();
+    metric.setId("metric-1");
+    metric.setName("Regional sales");
+    metric.setDomainId("domain-a");
+    metric.setStatus(MetricView.STATUS_PUBLISHED);
+    metric.setBindings(List.of());
+    metric.setFunction(function);
+    return metric;
+  }
+
   @Test
   void testContextRefusesBatchVectorUploadsBeforeEitherWriterRuns() throws Exception {
     var contexts = mock(BuildTestContextService.class);
