@@ -14,9 +14,12 @@ import io.ontomato.dataengine.bean.function.Function;
 import io.ontomato.dataengine.bean.function.Parameter;
 import io.ontomato.dataengine.config.BusinessConfig;
 import io.ontomato.dataengine.dao.FunctionDao;
+import io.ontomato.dataengine.dao.WorkflowDao;
 import io.ontomato.dataengine.service.*;
 import io.ontomato.dataengine.service.agent.AgentRuntimeClient;
 import io.ontomato.dataengine.service.impl.ABCProgramServiceImpl;
+import io.ontomato.dataengine.service.impl.ActionServiceImpl;
+import io.ontomato.dataengine.service.impl.WorkflowRunResolver;
 import io.ontomato.dataengine.service.impl.PythonExecuteServiceImpl;
 import io.ontomato.dataengine.service.scheduling.*;
 import io.ontomato.dataengine.service.sys.bean.UserDetail;
@@ -101,6 +104,32 @@ class PlatformScheduleTest extends PostgresTestDatabase {
             + " balances','sales',?,'[]',?)",
         Function.OPERATION_WRITE,
         "# ontomato-python:2\nprint('done')");
+  }
+
+  private ActionServiceImpl manualActions(Action action) throws Exception {
+    var manual = spy(new ActionServiceImpl());
+    doReturn(action).when(manual).queryById(action.getId());
+    ReflectionTestUtils.setField(manual, "identity", identities);
+    ReflectionTestUtils.setField(manual, "abcProgramService", programs);
+    // Edition-owned interfaces are doubles here; the OSS app allows every capability.
+    var grants = mock(CapabilityGrantLookup.class);
+    when(grants.allows(anyString(), anyString(), anyString(), anyString())).thenReturn(true);
+    ReflectionTestUtils.setField(manual, "capabilityGrants", grants);
+    ReflectionTestUtils.setField(
+        manual,
+        "preconditions",
+        new ActionPreconditionService(
+            mock(DslService.class), mock(AdminService.class), mock(SubjectAttributeLookup.class),
+            mock(OntologyQueryService.class)));
+    var snapshots = mock(IdentitySnapshotLookup.class);
+    when(snapshots.snapshot(any(), anyString()))
+        .thenAnswer(call -> com.alibaba.fastjson2.JSONObject.of(
+            "principalId", ((io.ontomato.dataengine.core.bean.User) call.getArgument(0)).getId(),
+            "domainId", call.getArgument(1), "roles", List.of()));
+    ReflectionTestUtils.setField(manual, "identitySnapshots", snapshots);
+    ReflectionTestUtils.setField(
+        manual, "workflowRuns", new WorkflowRunResolver(mock(WorkflowDao.class)));
+    return manual;
   }
 
   private JsonNode definition(String execution) {
@@ -517,10 +546,7 @@ class PlatformScheduleTest extends PostgresTestDatabase {
     when(actions.queryList(Action.STATUS_PUBLISHED, null, null, "sales"))
         .thenReturn(List.of(action));
     jdbc.update("INSERT INTO action VALUES('a')");
-    var manual = spy(new io.ontomato.dataengine.service.impl.ActionServiceImpl());
-    doReturn(action).when(manual).queryById("a");
-    ReflectionTestUtils.setField(manual, "identity", identities);
-    ReflectionTestUtils.setField(manual, "abcProgramService", programs);
+    var manual = manualActions(action);
     String current = "# ontomato-python:2\nprint('current')", legacy = "print('retired')";
     for (String locale : List.of("en", "zh-CN"))
       for (String target : List.of("action:a", "function:f")) {
@@ -630,10 +656,7 @@ class PlatformScheduleTest extends PostgresTestDatabase {
     when(actions.queryList(Action.STATUS_PUBLISHED, null, null, "sales"))
         .thenReturn(List.of(action));
     jdbc.update("INSERT INTO action VALUES('a')");
-    var manual = spy(new io.ontomato.dataengine.service.impl.ActionServiceImpl());
-    doReturn(action).when(manual).queryById("a");
-    ReflectionTestUtils.setField(manual, "identity", identities);
-    ReflectionTestUtils.setField(manual, "abcProgramService", programs);
+    var manual = manualActions(action);
     for (Exception failure :
         List.of(
             new java.io.IOException(
@@ -844,10 +867,7 @@ class PlatformScheduleTest extends PostgresTestDatabase {
               + "  File \"/private/program.py\", line 7, in main\n"
               + "    raise ValueError('X-API-Key: synthetic-secret')\n"
               + "ValueError: private-password\n");
-      var manual = spy(new io.ontomato.dataengine.service.impl.ActionServiceImpl());
-      doReturn(action).when(manual).queryById("a");
-      ReflectionTestUtils.setField(manual, "identity", identities);
-      ReflectionTestUtils.setField(manual, "abcProgramService", programs);
+      var manual = manualActions(action);
       for (String locale : List.of("en", "zh-CN"))
         for (String target : List.of("action:a", "function:f")) {
           UUID task = UUID.randomUUID(), run = UUID.randomUUID();

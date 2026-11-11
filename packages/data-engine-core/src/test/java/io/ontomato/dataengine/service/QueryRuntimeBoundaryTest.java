@@ -367,7 +367,7 @@ class QueryRuntimeBoundaryTest {
         "CREATE TABLE metric_view(id text,name text,origin text,type text,function_id"
             + " text,description text,status text,match_questions text,class_names text,domain_id"
             + " text,create_timestamp bigint,modify_timestamp bigint,origin_check_result"
-            + " text,origin_question text, created_by text, reviewed_by text)");
+            + " text,origin_question text,created_by varchar(64),reviewed_by varchar(64))");
     var dao = new io.ontomato.dataengine.dao.MetricViewDao();
     org.springframework.test.util.ReflectionTestUtils.setField(dao, "jdbcTemplate", jdbc);
     org.springframework.test.util.ReflectionTestUtils.setField(
