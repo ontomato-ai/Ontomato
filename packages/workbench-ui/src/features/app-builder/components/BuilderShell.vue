@@ -359,6 +359,7 @@ const columnEvents = {
 <template>
   <AgentShell
     v-if="client"
+    class="builder-shell"
     v-model:agent-id="agentId"
     v-model:feature-id="featureId"
     v-model:session-id="sessionId"
@@ -416,7 +417,7 @@ const columnEvents = {
     <ShellColumn :label="t('appBuilder.title')">
       <WorkspaceColumn v-bind="column" v-on="columnEvents" />
     </ShellColumn>
-    <main class="start-main">
+    <main v-loading="workspacesState === 'loading'" class="start-main" :aria-busy="workspacesState === 'loading'" :element-loading-text="t('assistant.loading')">
       <div v-if="workspacesState === 'ready' && workspaces.length === 0" class="start-empty">
         <h1>{{ t("appBuilder.startTitle") }}</h1>
         <p>{{ t("appBuilder.startHint") }}</p>
@@ -428,6 +429,12 @@ const columnEvents = {
 </template>
 
 <style scoped>
+.builder-shell :deep(.page-pane.side) {
+  border: 0;
+  border-inline-start: 1px solid var(--el-border-color);
+  border-radius: 0;
+  box-shadow: none;
+}
 /* The start frame is the agent shell's frame without a conversation: the column, then the application's area. */
 .builder-start {
   display: flex;
