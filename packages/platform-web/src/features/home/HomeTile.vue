@@ -9,14 +9,15 @@ import type { HomeItem } from "./items";
  * One application or agent on the home, compact: its icon and its name, with the whole name and its one line as the
  * tooltip. Where it comes from (built in, published, connected, a link) is not shown.
  *
- * In the square it carries the star that adds it to the favourites or takes it out. Among the favourites it carries the
- * two arrows that move it, so the order can be changed from the keyboard as well as by dragging; they float over the
- * tile's end while it is pointed at or holds focus, so they take no width from the name.
+ * Wherever it is shown it carries the star: filled when the item is a favourite, and pressing it adds the item to the
+ * favourites or takes it out. Among the favourites it also carries the two arrows that move it, so the order can be
+ * changed from the keyboard as well as by dragging; they float beside the star while the tile is pointed at or holds
+ * focus, so they take no width from the name.
  */
 const props = defineProps<{
   item: HomeItem;
-  /** Whether it is a favourite, when the tile offers the star. */
-  favorite?: boolean;
+  /** Whether it is one of the reader's favourites. */
+  favorite: boolean;
   /** The favourite's place among the favourites, when the tile is shown in that row. */
   position?: { first: boolean; last: boolean };
 }>();
@@ -33,7 +34,6 @@ const tooltip = computed(() => (props.item.description ? `${props.item.label}\n$
       <span class="home-tile-name">{{ item.label }}</span>
     </button>
     <button
-      v-if="favorite !== undefined"
       type="button"
       class="home-tile-action home-tile-star"
       :class="{ favorite }"
@@ -144,11 +144,14 @@ const tooltip = computed(() => (props.item.description ? `${props.item.label}\n$
 .home-tile-star.favorite {
   color: var(--el-color-warning);
 }
-/* Out of the layout, over the tile's end, shown only while the tile is pointed at or one of its controls has focus. */
+/*
+ * Out of the layout, just left of the star (its 28px and its margin, then a 2px gap), shown only while the tile is pointed
+ * at or one of its controls has focus.
+ */
 .home-tile-move {
   position: absolute;
   top: 50%;
-  right: var(--spacing-xs);
+  right: calc(var(--spacing-xs) + 30px);
   display: flex;
   gap: 2px;
   border-radius: var(--radius-sm);

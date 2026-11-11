@@ -184,6 +184,7 @@ async function saveDashboardIds(ids: string[]) {
             v-for="(item, index) in favorites"
             :key="itemKey(item)"
             :item="item"
+            favorite
             :position="{ first: index === 0, last: index === favorites.length - 1 }"
             draggable="true"
             :class="{ dragging: dragging === index }"
@@ -192,6 +193,7 @@ async function saveDashboardIds(ids: string[]) {
             @dragover.prevent
             @drop.prevent="dropFavorite(index)"
             @open="openItem(item)"
+            @toggle-favorite="toggleFavorite(item)"
             @move="moveFavorite(index, index + $event)"
           />
         </div>
@@ -202,8 +204,10 @@ async function saveDashboardIds(ids: string[]) {
         <HomeContinue
           :conversations="conversations"
           :applications="openedApplications"
+          :favorites="favoriteKeys"
           @open-conversation="openConversation"
           @open-application="openItem"
+          @toggle-favorite="toggleFavorite"
         />
       </section>
 
