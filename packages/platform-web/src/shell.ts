@@ -4,7 +4,8 @@ import "element-plus/theme-chalk/dark/css-vars.css";
 // Design foundation shared with the workbench (type, spacing, shape, density, elevation, motion, component variables).
 import "@ontomato/design-tokens/foundation.css";
 import { computed } from "vue";
-import { Puzzle } from "lucide-vue-next";
+import { Puzzle, Plug } from "lucide-vue-next";
+import { skillLibraryCount } from "@ontomato/workbench-ui/features/workbench";
 import { platformRoutes } from "@ontomato/platform-shell/routes";
 import { useTheme } from "@ontomato/workbench-ui/composables/useTheme";
 import { workbenchI18n, type SupportedLocale } from "@ontomato/workbench-ui/i18n";
@@ -156,7 +157,11 @@ export function createServiceManager(options: {
  * platform administration group, in display order.
  */
 export const ontologyWorkspacePages: readonly PlatformPage[] = [
-  { path: platformRoutes.ontologyCapabilities.path, titleKey: "capabilities.title", icon: Puzzle, permissions: ["skill-management", "mcp-service"], group: "assets", ownHeader: true },
+  { path: platformRoutes.ontologySkills.path, titleKey: "capabilities.skillTitle", icon: Puzzle, permissions: ["skill-management"], group: "assets", ownHeader: true, count: skillLibraryCount },
+];
+
+export const systemIntegrationPages: readonly PlatformPage[] = [
+  { path: platformRoutes.publishedMcp.path, titleKey: "mcp.publishedSettingsTitle", icon: Plug, permissions: ["mcp-service"], group: "platform", ownHeader: true },
 ];
 
 export function serviceNavigation(
@@ -165,7 +170,7 @@ export function serviceNavigation(
   platformPages: readonly PlatformPage[]
 ): PlatformNavigation {
   const ontology = managerNavigation(manager.counts);
-  return { groups: [...ontology.groups, platformGroup], pages: [...ontology.pages, ...platformPages, ...ontologyWorkspacePages] };
+  return { groups: [...ontology.groups, platformGroup], pages: [...ontology.pages, ...platformPages, ...ontologyWorkspacePages, ...systemIntegrationPages] };
 }
 
 /** The root address's landing page for this deployment (see `serviceHome`). */

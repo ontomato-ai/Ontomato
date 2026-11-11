@@ -22,7 +22,7 @@ describe("the platform's applications", () => {
     ]);
     expect(ontology.sections[0]!.paths).not.toContain("/ontology/assets/actions");
     expect(ontology.sections[1]!.paths).toEqual([
-      "/ontology/assets/metrics", "/ontology/assets/functions", "/ontology/assets/actions", "/ontology/assets/workflows", "/ontology/capabilities",
+      "/ontology/assets/metrics", "/ontology/assets/functions", "/ontology/assets/actions", "/ontology/assets/workflows", "/ontology/skills",
     ]);
     expect(ontology.sections[2]!.paths).toEqual(["/ontology/knowledge", "/ontology/assets/capability-map"]);
     expect(ontology.sections[3]!.paths).toEqual([]);

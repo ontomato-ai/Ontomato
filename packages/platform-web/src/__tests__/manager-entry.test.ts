@@ -13,7 +13,7 @@ async function open(path: string) {
     routes: [
       { path: "/chat", component: { render: () => null } },
       // The settings' screens, so a redirect to one lands on it rather than falling through to the catch-all.
-      ...["/agents/settings", "/agents/settings/capabilities", "/agents/settings/:agentId"].map((path) => ({
+      ...["/agents/settings", "/agents/settings/skills", "/agents/settings/mcp", "/agents/settings/:agentId"].map((path) => ({
         path, component: { render: () => null },
       })),
       ...Object.values(legacyAdminRoutes),
@@ -72,10 +72,10 @@ describe("old admin addresses in the workbench", () => {
       ["/admin", "/agents/chat"],
       ["/admin/analysis", "/agents/settings"],
       ["/admin/system-agents", "/agents/settings"],
-      ["/admin/skills", "/agents/settings/capabilities"],
-      ["/admin/skills/analysis", "/agents/settings/capabilities"],
-      ["/admin/skills/visualization", "/agents/settings/capabilities"],
-      ["/admin/mcp-service", "/agents/settings/capabilities"],
+      ["/admin/skills", "/agents/settings/skills"],
+      ["/admin/skills/analysis", "/agents/settings/skills"],
+      ["/admin/skills/visualization", "/agents/settings/skills"],
+      ["/admin/mcp-service", "/agents/settings/mcp"],
       ["/admin/system-config", "/agents/chat"],
       ["/admin/feedback-records", "/agents/chat"],
     ];
@@ -91,15 +91,15 @@ describe("old admin addresses in the workbench", () => {
       history: createMemoryHistory(),
       routes: [
         { path: "/chat", component: { render: () => null } },
-        ...["/agents/settings", "/agents/settings/capabilities", "/agents/settings/:agentId"].map((path) => ({
+        ...["/agents/settings", "/agents/settings/skills", "/agents/settings/mcp", "/agents/settings/:agentId"].map((path) => ({
           path, component: { render: () => null },
         })),
         ...Object.values(legacyAdminRoutes),
       ],
     });
-    for (const path of ["/admin/skills", "/admin/mcp-service"]) {
+    for (const [path, destination] of [["/admin/skills", "/agents/settings/skills"], ["/admin/mcp-service", "/agents/settings/mcp"]] as const) {
       await router.push(path);
-      expect(router.currentRoute.value.path, path).toBe("/agents/settings/capabilities");
+      expect(router.currentRoute.value.path, path).toBe(destination);
     }
     await router.push("/admin/analysis");
     expect(router.currentRoute.value.path).toBe("/agents/settings");

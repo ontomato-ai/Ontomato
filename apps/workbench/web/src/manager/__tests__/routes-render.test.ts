@@ -200,7 +200,7 @@ describe("the open-source platform's old capability library links", () => {
    */
   it.each(["/agents?tab=capabilities", "/agents/settings?tab=capabilities"])("%s lands on the capability library", async (path) => {
     await open(path);
-    expect(window.location.hash).toBe(`#${platformRoutes.agentSettingsCapabilities.path}`);
+    expect(window.location.hash).toBe(`#${platformRoutes.agentSettingsSkills.path}`);
   });
 });
 
