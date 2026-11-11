@@ -54,6 +54,8 @@ import java.util.UUID;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
+import org.springframework.http.HttpStatus;
+import org.springframework.web.server.ResponseStatusException;
 
 @Slf4j
 @Service
@@ -94,7 +96,7 @@ public class MetricViewServiceImpl implements MetricViewService {
 						List<Object[]> oList = metricViewDao.queryList(MetricView.STATUS_PENDING_REVIEW, null, null, null);
 						for (Object[] o : oList) {
 							MetricView metricView = (MetricView)o[0];
-							if (!MetricView.ORIGIN_SYSTEM.equals(metricView.getOrigin())) {
+							if (!metricView.isAdopted() && !MetricView.ORIGIN_SYSTEM.equals(metricView.getOrigin())) {
 								if (now - metricView.getModifyTimestamp() > timeoutTimeRange) {
 									metricViewDao.delete(metricView.getId(), metricView.getDomainId());
 								}
@@ -188,10 +190,18 @@ public class MetricViewServiceImpl implements MetricViewService {
 
   @Override
   public MetricView save(MetricView metric, String lang) {
-    return new TransactionTemplate(transactionManager).execute(status -> persist(metric, false, lang));
+    return new TransactionTemplate(transactionManager).execute(status -> persist(metric, false, false, lang));
   }
 
-  private MetricView persist(MetricView metric, boolean importing, String lang) {
+  @Override
+  public MetricView saveAdoptedCandidate(MetricView metric, User user, String lang) {
+    metric.setDomainId(user.getDomainId());
+    metric.setCreatedBy(user.getId());
+    metric.setStatus(MetricView.STATUS_PENDING_REVIEW);
+    return new TransactionTemplate(transactionManager).execute(status -> persist(metric, false, true, lang));
+  }
+
+  private MetricView persist(MetricView metric, boolean importing, boolean adopting, String lang) {
     String domain = Objects.requireNonNull(metric.getDomainId(), "Current domain is required");
     MetricView previous = null;
     if (metric.getId() != null) {
@@ -238,6 +248,7 @@ public class MetricViewServiceImpl implements MetricViewService {
       }
     metric.setOrigin(previous == null ? MetricView.ORIGIN_USER : previous.getOrigin());
     metric.setCreateTimestamp(previous == null ? null : previous.getCreateTimestamp());
+    metric.setAdopted(adopting || previous != null && previous.isAdopted());
     // Provenance is resolved here rather than at a controller, because generation and import reach the
     // same funnel without passing a request body: one place to set it, no path that forgets.
     String subject = currentSubjectId();
@@ -352,6 +363,23 @@ public class MetricViewServiceImpl implements MetricViewService {
   }
 
   @Override
+  public MetricView requireExecutable(String id, User user) {
+    MetricView metric = queryById(id, user.getDomainId());
+    if (metric == null)
+      throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Executable read metric not found");
+    requireExecutableState(metric, user);
+    return metric;
+  }
+
+  private void requireExecutableState(MetricView metric, User user) {
+    boolean ownCandidate = metric.getId() != null
+        && MetricView.STATUS_PENDING_REVIEW.equals(metric.getStatus())
+        && user.getId().equals(metric.getCreatedBy());
+    if (!MetricView.STATUS_PUBLISHED.equals(metric.getStatus()) && !ownCandidate)
+      throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Executable read metric not found");
+  }
+
+  @Override
   public List<MetricView> queryList(String status, String functionId, String className, String domainId) {
     Objects.requireNonNull(domainId, "Current domain is required");
     return metricViewDao.queryList(status, functionId, className, domainId).stream().map(row -> hydrate(row, domainId)).toList();
@@ -383,7 +411,7 @@ public class MetricViewServiceImpl implements MetricViewService {
         MetricView metric = item.to(MetricView.class);
         metric.setFunction(acceptedFunction);
         metric.setDomainId(domain);
-        new TransactionTemplate(transactionManager).execute(status -> persist(metric, true, lang));
+        new TransactionTemplate(transactionManager).execute(status -> persist(metric, true, false, lang));
         successCount++;
       } catch (Exception error) {
         failures.add(JSONObject.of("index", i, "id", item == null ? null : item.getString("id"), "message", error.getMessage()));
@@ -493,8 +521,8 @@ private MetricViewContent generateContent(JSONArray rows, PythonExecuteResult ex
   public Object[] testExecute(MetricView metric,String bindingId,JSONObject param,String lang,User user,UserDataPermission permission,int timeoutMinutes,ExecutionTarget target) throws Exception {
     if (metric == null) throw new IllegalArgumentException("MetricView not found");
     validateDraftDomain(metric, user.getDomainId());
-    if (!MetricView.STATUS_PUBLISHED.equals(metric.getStatus()))
-      throw new IllegalArgumentException("MetricView is not published");
+    if (metric.getId() == null) requireExecutableState(metric, user);
+    else requireExecutable(metric.getId(), user);
     QueryPackage.prepareReadFunction(metric.getFunction(),
         (List<Map<String, Object>>) adminService.getJSONRule(user.getDomainId()).get("classDef"));
     MetricViewBindings.validate(metric.getFunction(), metric.getBindings());

@@ -22,6 +22,10 @@ public interface MetricViewService {
 	public MetricView generateFromFunction(Function function);
 	
 	public MetricView save(MetricView metricView, String lang) throws Exception;
+
+    MetricView saveAdoptedCandidate(MetricView metric, User user, String lang);
+
+    MetricView requireExecutable(String id, User user);
 	
 	public void delete(String id, String domainId, String lang) throws Exception;
 	

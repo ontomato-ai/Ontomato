@@ -76,6 +76,11 @@ public class OntologyQueryController {
     return ontology.metrics(body, access(request));
   }
 
+  @PostMapping("/ontology/query/metrics/describe")
+  public Object describeMetric(@RequestBody JSONObject body, HttpServletRequest request) {
+    return ontology.describeMetric(body.getString("id"), access(request));
+  }
+
   @PostMapping("/ontology/query/knowledge/search")
   public Object knowledge(@RequestBody JSONObject body, HttpServletRequest request) {
     return ontology.knowledge(body, access(request));

@@ -37,5 +37,8 @@ public class MetricView {
 
 	/** The subject who last published it; publication is the review moment. */
 	private String reviewedBy;
+
+	/** Adopted candidates remain until review, independently of their consumers. */
+	private boolean adopted;
 	
 }

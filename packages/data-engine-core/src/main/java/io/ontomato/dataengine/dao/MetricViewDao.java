@@ -46,7 +46,7 @@ public class MetricViewDao extends BaseDao {
 
 	private static final String TABLE_NAME = "metric_view";
 
-	private static final String COLUMNS = "id, name, origin, type, function_id, description, status, match_questions, class_names, domain_id, create_timestamp, modify_timestamp, origin_check_result, origin_question, created_by, reviewed_by";
+	private static final String COLUMNS = "id, name, origin, type, function_id, description, status, match_questions, class_names, domain_id, create_timestamp, modify_timestamp, origin_check_result, origin_question, created_by, reviewed_by, adopted";
 
 	@PostConstruct
 	public void initIndex() {
@@ -73,11 +73,13 @@ public class MetricViewDao extends BaseDao {
 						+ "origin_question TEXT, "
 						+ "created_by VARCHAR(64), "
 						+ "reviewed_by VARCHAR(64), "
+						+ "adopted BOOLEAN NOT NULL DEFAULT FALSE, "
 						+ "brief TEXT, "
 						+ "brief_vector vector"
 						+ ")");
         jdbcTemplate.execute("ALTER TABLE " + TABLE_NAME + " ADD COLUMN IF NOT EXISTS created_by VARCHAR(64)");
         jdbcTemplate.execute("ALTER TABLE " + TABLE_NAME + " ADD COLUMN IF NOT EXISTS reviewed_by VARCHAR(64)");
+        jdbcTemplate.execute("ALTER TABLE " + TABLE_NAME + " ADD COLUMN IF NOT EXISTS adopted BOOLEAN NOT NULL DEFAULT FALSE");
         jdbcTemplate.execute("CREATE INDEX IF NOT EXISTS idx_" + TABLE_NAME + "_domain_id ON " + TABLE_NAME + "(domain_id)");
         jdbcTemplate.execute("CREATE TABLE IF NOT EXISTS metric_view_binding ("
             + "id VARCHAR(64) PRIMARY KEY, metric_view_id VARCHAR(64) NOT NULL REFERENCES metric_view(id) ON DELETE CASCADE, "
@@ -104,14 +106,14 @@ public class MetricViewDao extends BaseDao {
 		retrievalGate.write(domainId, () -> {
 			PGvector pgVector = new PGvector(embeddingService.embedding(brief, domainId));
 			int changed = jdbcTemplate.update(
-				"INSERT INTO " + TABLE_NAME + " (" + COLUMNS + ", brief, brief_vector) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?::vector) "
+				"INSERT INTO " + TABLE_NAME + " (" + COLUMNS + ", brief, brief_vector) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?::vector) "
 						+ "ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, origin = EXCLUDED.origin, type = EXCLUDED.type, "
 						+ "function_id = EXCLUDED.function_id, description = EXCLUDED.description, status = EXCLUDED.status, "
 						+ "match_questions = EXCLUDED.match_questions, class_names = EXCLUDED.class_names, "
 						+ "domain_id = EXCLUDED.domain_id, create_timestamp = EXCLUDED.create_timestamp, "
 						// created_by is deliberately absent: it records the first save and must survive later ones.
 						// reviewed_by keeps the stored value when this save carries no subject (background work).
-						+ "reviewed_by = COALESCE(EXCLUDED.reviewed_by, metric_view.reviewed_by), "
+						+ "reviewed_by = COALESCE(EXCLUDED.reviewed_by, metric_view.reviewed_by), adopted = EXCLUDED.adopted, "
 						+ "modify_timestamp = EXCLUDED.modify_timestamp, origin_check_result = EXCLUDED.origin_check_result, "
 						+ "origin_question = EXCLUDED.origin_question, brief = EXCLUDED.brief, brief_vector = EXCLUDED.brief_vector WHERE metric_view.domain_id = EXCLUDED.domain_id",
 				metricView.getId(), metricView.getName(), metricView.getOrigin(), "GENERAL",
@@ -119,7 +121,7 @@ public class MetricViewDao extends BaseDao {
 				JSON.toJSONString(metricView.getMatchQuestions(), Feature.WriteMapNullValue),
 				classNamesStr, metricView.getDomainId(), metricView.getCreateTimestamp(), metricView.getModifyTimestamp(),
 				metricView.getOriginCheckResult() == null ? null : JSON.toJSONString(metricView.getOriginCheckResult(), Feature.WriteMapNullValue),
-				metricView.getOriginQuestion(), metricView.getCreatedBy(), metricView.getReviewedBy(), brief, pgVector);
+				metricView.getOriginQuestion(), metricView.getCreatedBy(), metricView.getReviewedBy(), metricView.isAdopted(), brief, pgVector);
             if (changed != 1) throw new IllegalArgumentException("MetricView not found");
             saveBindings(metricView);
             return null;
@@ -454,6 +456,7 @@ public class MetricViewDao extends BaseDao {
 		metricView.setDomainId(rs.getString("domain_id"));
 		metricView.setCreatedBy(rs.getString("created_by"));
 		metricView.setReviewedBy(rs.getString("reviewed_by"));
+		metricView.setAdopted(rs.getBoolean("adopted"));
 		String matchQuestionsStr = rs.getString("match_questions");
 		Set<String> matchQuestions = new HashSet<String>();
 		if (matchQuestionsStr != null && !"null".equals(matchQuestionsStr)) {

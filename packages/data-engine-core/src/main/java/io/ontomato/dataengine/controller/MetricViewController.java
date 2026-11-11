@@ -99,6 +99,7 @@ public class MetricViewController {
             MetricView metricView = param.to(MetricView.class);
             metricView.setFunction(acceptedFunction);
 			metricView.setDomainId(user.getDomainId());
+			metricView.setCreatedBy(user.getId());
 			// The saved Function belongs to the caller's domain whatever the request says; the DAO keys the vector write by it.
 			if (metricView.getFunction() != null) {
 				metricView.getFunction().setDomainId(user.getDomainId());
