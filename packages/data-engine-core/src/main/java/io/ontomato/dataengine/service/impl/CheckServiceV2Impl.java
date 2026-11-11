@@ -5,11 +5,6 @@ import com.alibaba.fastjson2.JSONObject;
 import io.ontomato.dataengine.bean.abcHarness.ABCHarnessCheck;
 import io.ontomato.dataengine.bean.abcHarness.ABCHarnessProgram;
 import io.ontomato.dataengine.bean.abcHarness.ABCHarnessProgramDescription;
-import io.ontomato.dataengine.bean.function.Function;
-import io.ontomato.dataengine.bean.function.Parameter;
-import io.ontomato.dataengine.bean.metricView.MetricView;
-import io.ontomato.dataengine.bean.metricView.MetricViewBinding;
-import io.ontomato.dataengine.service.MetricViewBindings;
 import io.ontomato.dataengine.bean.metricView.OriginCheckResult;
 import io.ontomato.dataengine.dao.CheckDaoV2;
 import io.ontomato.dataengine.dao.KnowledgeDao;
@@ -17,19 +12,14 @@ import io.ontomato.dataengine.service.AdminService;
 import io.ontomato.dataengine.service.BackendSessionEntrance;
 import io.ontomato.dataengine.service.BusinessConfigService;
 import io.ontomato.dataengine.service.CheckServiceV2;
-import io.ontomato.dataengine.service.FunctionService;
 import io.ontomato.dataengine.service.LangService;
-import io.ontomato.dataengine.service.MetricViewService;
 import io.ontomato.dataengine.service.SessionCancelledException;
-import io.ontomato.dataengine.service.agent.AgentJson;
 import io.ontomato.dataengine.service.agent.OntologyGenerationPrompts;
 import io.ontomato.dataengine.service.agent.OntologyGenerationService;
 import jakarta.annotation.PostConstruct;
 import java.util.ArrayList;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
@@ -42,9 +32,7 @@ public class CheckServiceV2Impl implements CheckServiceV2 {
 
   @Autowired private AdminService adminService;
 
-  @Autowired private FunctionService functionService;
-
-  @Autowired private MetricViewService metricViewService;
+  @Autowired private io.ontomato.dataengine.service.MetricSettlementService settlements;
 
   @Autowired private LangService langService;
 
@@ -137,10 +125,14 @@ public class CheckServiceV2Impl implements CheckServiceV2 {
     for (int i = 0; i < programs.size(); i++) {
       try {
         ABCHarnessProgram program = programs.get(i);
-        JSONObject recipe = recipe(recipes, i);
-        if (recipe != null && "metric".equals(recipe.getString("kind")))
-          appendMetricBinding(check, program, recipe, domainId, i);
-        else createFunctionCandidate(check, program, domainId, i);
+        OriginCheckResult quality = new OriginCheckResult();
+        quality.setScore(check.getScore());
+        quality.setConclusion(check.getConclusion());
+        quality.setFittedQuestion(check.getFittedQuestion());
+        settlements.settle(
+            BackendSessionEntrance.derive(check.getSessionId(), "harness-program-" + i),
+            JSONObject.of("question", program.getQuestion(), "recipe", recipes.getJSONObject(i)),
+            generationService.executionAccess(domainId).user(), check.getLang(), false, quality, jobs::settle);
       } catch (Exception failure) {
         if (SessionCancelledException.findCancelled(failure) != null) {
           log.info("check cancelled: " + check.getSessionId());
@@ -154,104 +146,6 @@ public class CheckServiceV2Impl implements CheckServiceV2 {
             failure);
       }
     }
-  }
-
-  private void createFunctionCandidate(
-      ABCHarnessCheck check, ABCHarnessProgram program, String domainId, int index) {
-    // function-metricView
-    Function function =
-        functionService.generateFromABCProgram(
-            program.getQuestion(),
-            program,
-            check.getLang(),
-            domainId,
-            BackendSessionEntrance.derive(check.getSessionId(), "harness-program-" + index));
-    if (function == null) return;
-    Function candidate = function;
-    function = jobs.settle(() -> functionService.save(candidate, check.getLang()));
-    MetricView metricView = metricViewService.generateFromFunction(function);
-    Set<String> matchQuestions = new HashSet<String>();
-    matchQuestions.add(program.getQuestion());
-    metricView.setMatchQuestions(matchQuestions);
-    OriginCheckResult originCheckResult = new OriginCheckResult();
-    originCheckResult.setScore(check.getScore());
-    originCheckResult.setConclusion(check.getConclusion());
-    originCheckResult.setFittedQuestion(check.getFittedQuestion());
-    metricView.setOriginCheckResult(originCheckResult);
-    metricView.setOriginQuestion(program.getQuestion());
-    jobs.settle(() -> metricViewService.save(metricView, check.getLang()));
-    String bindingName =
-        functionService.generateBindingName(
-            program.getQuestion(),
-            function.getParameters(),
-            function,
-            check.getLang(),
-            BackendSessionEntrance.derive(check.getSessionId(), "harness-static-" + index));
-    if (bindingName != null) {
-      MetricViewBinding binding = new MetricViewBinding();
-      binding.setName(bindingName);
-      binding.setParameters(MetricViewBindings.values(function));
-      binding.setMatchQuestions(matchQuestions);
-      jobs.settle(() -> metricViewService.appendBinding(metricView.getId(), binding, domainId));
-    }
-  }
-
-  private void appendMetricBinding(
-      ABCHarnessCheck check,
-      ABCHarnessProgram program,
-      JSONObject recipe,
-      String domainId,
-      int index) {
-    String bindingId = recipe.getString("bindingId");
-    if (bindingId != null && !bindingId.isBlank()) return;
-    String metricId = recipe.getString("metricId");
-    if (metricId == null || metricId.isBlank()) return;
-    MetricView metricView = metricViewService.queryById(metricId, domainId);
-    if (metricView == null || !MetricView.STATUS_PUBLISHED.equals(metricView.getStatus())) {
-      log.warn(
-          "Metric binding skipped for quality check {} program {}: metric {} is not published",
-          check.getSessionId(),
-          index,
-          metricId);
-      return;
-    }
-    JSONObject parameters =
-        recipe.getJSONObject("parameters") == null
-            ? new JSONObject()
-            : recipe.getJSONObject("parameters");
-    if (hasBinding(metricView, parameters)) return;
-    Function function = metricView.getFunction();
-    if (function == null) return;
-    List<Parameter> functionParameters =
-        function.getParameters() == null ? List.of() : function.getParameters();
-    String bindingName =
-        functionService.generateBindingName(
-            program.getQuestion(),
-            functionParameters,
-            function,
-            check.getLang(),
-            BackendSessionEntrance.derive(
-                check.getSessionId(), "harness-metric-binding-" + index));
-    if (bindingName == null) return;
-    MetricViewBinding binding = new MetricViewBinding();
-    binding.setName(bindingName);
-    binding.setParameters(parameters);
-    Set<String> matchQuestions = new HashSet<String>();
-    matchQuestions.add(program.getQuestion());
-    binding.setMatchQuestions(matchQuestions);
-    jobs.settle(() -> metricViewService.appendBinding(metricView.getId(), binding, domainId));
-  }
-
-  private static boolean hasBinding(MetricView metricView, JSONObject parameters) {
-    if (metricView.getBindings() == null) return false;
-    String expected = AgentJson.canonical(parameters);
-    for (MetricViewBinding binding : metricView.getBindings())
-      if (expected.equals(AgentJson.canonical(binding.getParameters()))) return true;
-    return false;
-  }
-
-  private static JSONObject recipe(JSONArray recipes, int index) {
-    return recipes == null || index >= recipes.size() ? null : recipes.getJSONObject(index);
   }
 
   private ABCHarnessProgramDescription describeProgram(

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted } from "vue";
 import { useI18n } from "vue-i18n";
-import { ArrowLeft, Plus, Star } from "lucide-vue-next";
+import { ArrowLeft, Plus, Puzzle, Plug } from "lucide-vue-next";
 import { useAgentDefinitions } from "../definitions";
 
 /**
@@ -17,12 +17,13 @@ const props = defineProps<{
   creating: boolean;
   /** The capability library is open instead of an agent. */
   capabilities: boolean;
+  capabilityKind?: "skill" | "tool";
 }>();
 const emit = defineEmits<{
   back: [];
   selectAgent: [id: string];
   createAgent: [];
-  openCapabilities: [];
+  openCapabilities: [kind: "skill" | "tool"];
 }>();
 const { t } = useI18n();
 const { agents, loading, loadFailed, ensureLoaded } = useAgentDefinitions();
@@ -71,14 +72,16 @@ const heading = computed(() => t("agents.title"));
 
     <p class="group-title">{{ t("agents.capabilityGroup") }}</p>
     <button
+      v-for="kind in (['skill', 'tool'] as const)"
+      :key="kind"
       type="button"
       class="plain-row"
-      :class="{ active: props.capabilities }"
-      :aria-current="props.capabilities ? 'page' : undefined"
-      @click="emit('openCapabilities')"
+      :class="{ active: props.capabilities && (props.capabilityKind ?? 'skill') === kind }"
+      :aria-current="props.capabilities && (props.capabilityKind ?? 'skill') === kind ? 'page' : undefined"
+      @click="emit('openCapabilities', kind)"
     >
-      <Star :size="16" aria-hidden="true" />
-      <span>{{ t("agents.capabilityLibrary") }}</span>
+      <component :is="kind === 'skill' ? Puzzle : Plug" :size="16" aria-hidden="true" />
+      <span>{{ t(kind === 'skill' ? 'capabilities.skillTitle' : 'capabilities.mcpTitle') }}</span>
     </button>
   </div>
 </template>

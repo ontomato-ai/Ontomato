@@ -78,7 +78,6 @@ class ActionGrantGuardTest {
     workflowRuns = mock(WorkflowRunResolver.class);
     lang = mock(LangService.class);
 
-    ReflectionTestUtils.setField(service, "identity", mock(IdentityService.class));
     ReflectionTestUtils.setField(service, "actionDao", actionDao);
     ReflectionTestUtils.setField(service, "functionDao", functionDao);
     ReflectionTestUtils.setField(service, "abcProgramService", programs);
@@ -88,6 +87,7 @@ class ActionGrantGuardTest {
     ReflectionTestUtils.setField(service, "workflowRuns", workflowRuns);
     ReflectionTestUtils.setField(service, "langService", lang);
 
+    when(lang.get(anyString(), eq("Action.targetOutsideScope"))).thenReturn("Target is outside scope");
     when(lang.get(anyString(), eq("Action.notGranted"))).thenReturn("No role grants this action");
     when(lang.get(anyString(), eq("Action.preconditionFailed"))).thenReturn("Preconditions are not met");
     when(identitySnapshots.snapshot(any(), any())).thenReturn(new JSONObject());
@@ -126,7 +126,7 @@ class ActionGrantGuardTest {
   }
 
   private void grantAnswer(boolean allowed) {
-    when(grants.allows(USER_ID, DOMAIN, CapabilityGrantLookup.ACTION, ACTION_ID)).thenReturn(allowed);
+    when(grants.admission(USER_ID, DOMAIN, CapabilityGrantLookup.ACTION, ACTION_ID)).thenReturn(allowed ? CapabilityGrantLookup.Admission.ALL : CapabilityGrantLookup.Admission.DENIED);
   }
 
   private JSONObject params() {
@@ -167,7 +167,7 @@ class ActionGrantGuardTest {
     assertThrows(IllegalArgumentException.class, () -> service.execute(ACTION_ID,
         JSONObject.of("order_id", "O-1", "user_id", "someone-else"), LANG, alice, permission, 5));
     verifyNoInteractions(preconditions, programs);
-    verify(grants).allows(USER_ID, DOMAIN, CapabilityGrantLookup.ACTION, ACTION_ID);
+    verify(grants).admission(USER_ID, DOMAIN, CapabilityGrantLookup.ACTION, ACTION_ID);
   }
 
   @Test
@@ -201,7 +201,7 @@ class ActionGrantGuardTest {
 
     // A draft is not an authorization question; asking the grant here would report the wrong layer.
     assertEquals("Action not published", thrown.getMessage());
-    verify(grants, never()).allows(anyString(), anyString(), anyString(), anyString());
+    verify(grants, never()).admission(anyString(), anyString(), anyString(), anyString());
   }
 
   @Test
@@ -215,7 +215,7 @@ class ActionGrantGuardTest {
             () -> service.execute(ACTION_ID, params(), LANG, alice, permission, 5));
 
     assertTrue(thrown.getMessage().contains("outside the current domain"), thrown.getMessage());
-    verify(grants, never()).allows(anyString(), anyString(), anyString(), anyString());
+    verify(grants, never()).admission(anyString(), anyString(), anyString(), anyString());
   }
 
   @Test
@@ -228,7 +228,7 @@ class ActionGrantGuardTest {
             () -> service.execute(ACTION_ID, params(), LANG, alice, permission, 5));
 
     assertEquals("Action not found", thrown.getMessage());
-    verify(grants, never()).allows(anyString(), anyString(), anyString(), anyString());
+    verify(grants, never()).admission(anyString(), anyString(), anyString(), anyString());
   }
 
   @Test
@@ -263,5 +263,18 @@ class ActionGrantGuardTest {
 
     assertFalse(result.getError().contains("Preconditions are not met"), result.getError());
     assertEquals("No role grants this action", result.getError());
+  }
+
+  @Test
+  void evenAnUnrestrictedGrantRequiresAReadableDeclaredTargetBeforeStateOrProgram() throws Exception {
+    var action = publishedAction();
+    action.setTarget(new io.ontomato.dataengine.bean.action.ActionTarget("Order", "order_id"));
+    var queries = mock(io.ontomato.dataengine.service.OntologyQueryService.class);
+    ReflectionTestUtils.setField(service, "queries", queries);
+    grantAnswer(true);
+    var result = service.execute(ACTION_ID, JSONObject.of("order_id", "00123"), LANG, alice, permission, 5);
+    assertEquals("Target is outside scope", result.getError());
+    verify(queries).actionTargetExists(eq(action.getTarget()), eq("00123"), eq(CapabilityGrantLookup.Admission.ALL), any());
+    org.mockito.Mockito.verifyNoInteractions(preconditions, programs);
   }
 }

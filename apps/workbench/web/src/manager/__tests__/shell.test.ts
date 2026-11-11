@@ -165,7 +165,7 @@ describe("open-source Ontology Service page", () => {
     await start("/#/settings/system-config/general");
     const tabs = [...document.querySelectorAll(".platform-page-header .page-tab")].map((tab) => tab.textContent?.trim());
     // The page under the application is the general settings, not a second "System settings".
-    expect(tabs).toEqual(["Models", "General settings", "Run Records"]);
+    expect(tabs).toEqual(["Models", "General settings", "MCP services", "Run Records"]);
     await start("/#/ontology/objects");
     expect(document.querySelector(".rail-row.active")?.getAttribute("aria-label")).toBe("Ontology manager");
     // The Manager's pages use the platform's one header too: the shell draws none for them, and their own page does.
@@ -192,7 +192,7 @@ describe("open-source Ontology Service page", () => {
     for (const request of requests) {
       const path = new URL(request.url, window.location.origin).pathname;
       // The catalog and the pages read the data engine; entering an application records its opening with the workbench.
-      expect(path.startsWith("/custom-base/api/data-query/") || path.startsWith("/custom-base/api/platform/home/") || request.url.startsWith("/api/data-query/platform/applications")).toBe(true);
+      expect(path.startsWith("/custom-base/api/data-query/") || path === "/custom-base/api/skills" || path.startsWith("/custom-base/api/platform/home/") || request.url.startsWith("/api/data-query/platform/applications")).toBe(true);
       expect(request.headers).not.toHaveProperty("tk");
       expect(request.headers).not.toHaveProperty("x-api-key");
     }

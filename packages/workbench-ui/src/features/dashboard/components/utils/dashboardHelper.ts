@@ -1,10 +1,13 @@
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-nocheck
+import { isMetricReferenceEntry } from "@ontomato/contracts/dashboard";
 import {
   fetchDashboardLocalDetail,
   getAnswerByDslConditionParam,
   getConditionsFromDsl,
+  queryDashboardCard,
 } from "../../api";
+import { cardFailed, cardLoaded, cardLoading, patchCard } from "./metricCard";
 import { queryViewApi } from "../../../query-view";
 import { applyDataPlan } from "./dataPlan";
 import echartsGenerator from "./echartsGenerator";
@@ -302,6 +305,25 @@ export function patchDeleteMetric(groups, metricId) {
 
 /* ======================== Dashboard loading ======================== */
 
+/**
+ * Fetches one metric-reference card's result by its id and patches it back; a failure shows on that card only.
+ * The card's saved query is the server's: nothing of it is sent from here.
+ */
+export function metricCardTask(dashboardId, cardId, setGroups, guard = () => true) {
+  return async () => {
+    if (!guard()) return;
+    setGroups((prev) => patchCard(prev, cardId, cardLoading));
+    try {
+      const data = await queryDashboardCard(dashboardId, cardId);
+      if (!guard()) return;
+      setGroups((prev) => patchCard(prev, cardId, (card) => cardLoaded(card, data)));
+    } catch (e) {
+      if (!guard()) return;
+      setGroups((prev) => patchCard(prev, cardId, (card) => cardFailed(card, e)));
+    }
+  };
+}
+
 export function createDashboardLoader() {
   let abortController = null;
   let loadSeq = 0;
@@ -374,6 +396,11 @@ function buildRenderModelAndTasks({ dashboardId, localGroups, setGroups, guard, 
     // charts rendering
     const renderCharts = [];
     for (const c of charts) {
+      if (isMetricReferenceEntry(c)) {
+        renderCharts.push({ ...c, title: c.name, option: { __ragchatState: "loading" } });
+        tasks.push(metricCardTask(dashboardId, c.id, setGroups, guard));
+        continue;
+      }
       const chartTitle = String(c?.name || c?.title || "").trim();
       if (!chartTitle) continue;
 
@@ -507,6 +534,11 @@ function buildRenderModelAndTasks({ dashboardId, localGroups, setGroups, guard, 
     // metrics rendering
     const renderMetrics = [];
     for (const m of metrics) {
+      if (isMetricReferenceEntry(m)) {
+        renderMetrics.push({ ...m, state: "loading" });
+        tasks.push(metricCardTask(dashboardId, m.id, setGroups, guard));
+        continue;
+      }
       const name = String(m?.name || "").trim();
       if (!name) continue;
 

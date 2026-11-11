@@ -45,7 +45,6 @@ class ActionFunctionAdmissionTest {
     ReflectionTestUtils.setField(service, "functionDao", functions);
     ReflectionTestUtils.setField(service, "actionDao", actions);
     ReflectionTestUtils.setField(service, "abcProgramService", programs);
-    ReflectionTestUtils.setField(service, "identity", mock(IdentityService.class));
   }
 
   private Action action(String operation) {

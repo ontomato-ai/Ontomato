@@ -83,7 +83,8 @@ const settingsAgentId = computed(() => {
   const id = route.params.agentId;
   return typeof id === "string" && !creatingAgent.value ? id : null;
 });
-const capabilitiesOpen = computed(() => route.path === settingsPath("/capabilities"));
+const capabilityKind = computed(() => route.path === routes.agentSettingsMcp.path ? "tool" : "skill");
+const capabilitiesOpen = computed(() => [routes.agentSettingsSkills.path, routes.agentSettingsMcp.path, routes.agentSettingsCapabilities.path].some(path => path === route.path));
 /**
  * The page the shell shows: the settings are the `agents` page, whose addresses are the settings' own screens; every
  * other page names its route. Closing the page (a new conversation) returns to the conversation.
@@ -181,8 +182,8 @@ function createSettingsAgent() {
 }
 
 /** The capability library, from the column's row and from the editor's button alike. */
-function openCapabilities() {
-  void router.push({ name: routes.agentSettingsCapabilities.name });
+function openCapabilities(kind: "skill" | "tool" = "skill") {
+  void router.push({ name: kind === "tool" ? routes.agentSettingsMcp.name : routes.agentSettingsSkills.name });
 }
 
 /** The column's own entry at the foot: the agent settings, which replace the column while they are open. */
@@ -258,6 +259,7 @@ function appearanceSaved(value: WorkbenchAppearance) {
         :agent-id="settingsAgentId"
         :creating="creatingAgent"
         :capabilities="capabilitiesOpen"
+        :capability-kind="capabilityKind"
         @back="backToChat"
         @select-agent="selectSettingsAgent"
         @create-agent="createSettingsAgent"
@@ -270,6 +272,7 @@ function appearanceSaved(value: WorkbenchAppearance) {
         :agent-id="settingsAgentId"
         :creating="creatingAgent"
         :capabilities="capabilitiesOpen"
+        :capability-kind="capabilityKind"
         @changed="shell?.reloadAgents()"
         @open-capabilities="openCapabilities"
       />

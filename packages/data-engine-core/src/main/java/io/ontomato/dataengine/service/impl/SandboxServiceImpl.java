@@ -5,6 +5,7 @@ import java.io.ByteArrayInputStream;
 import java.nio.charset.StandardCharsets;
 import io.ontomato.dataengine.service.WriteFunctionOperationService;
 import io.ontomato.dataengine.service.agent.AgentHttpException;
+import io.ontomato.dataengine.service.agent.AgentJson;
 import io.ontomato.dataengine.util.*;
 import java.util.ArrayList;
 import java.util.List;
@@ -13,6 +14,7 @@ import java.util.Map;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
+import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
 
@@ -58,14 +60,22 @@ public class SandboxServiceImpl implements SandboxService {
       if(!adapter.supportsSandbox(classes)) throw new org.springframework.web.server.ResponseStatusException(org.springframework.http.HttpStatus.UNPROCESSABLE_ENTITY,"BUILD_TEST_UNSUPPORTED");
       var hashes = new JSONObject();
       var connections=config.getJSONObject("dataAdapterConnections");
-      connections.forEach((name,connection)->hashes.put(name,io.ontomato.dataengine.service.agent.AgentJson.hash(connection)));
+      connections.forEach((name,connection)->hashes.put(name,connectionHash(connection)));
       config.remove("dataAdapterConnections");
       var multi=config.getJSONObject("multiDataSource");
       if(multi!=null) for(var source:multi.getJSONArray("dataSources").toJavaList(JSONObject.class)) {
-        hashes.put("source:"+source.getString("id"),io.ontomato.dataengine.service.agent.AgentJson.hash(source.get("connection")));
+        hashes.put("source:"+source.getString("id"),connectionHash(source.get("connection")));
         source.remove("connection");
       }
       return JSONObject.of("config",config,"connectionHashes",hashes,"rule",jsonRuleDao.query(domain),"classNames",classes);
+    }
+
+    /**
+     * Match the serialized connection representation stored by existing bindings. A null map value
+     * means an unset field; retain every actual value, including credentials, in the fingerprint.
+     */
+    private String connectionHash(Object connection) {
+      return AgentJson.hash(JSON.parseObject(JSON.toJSONString(connection)));
     }
 
     @Override
@@ -76,13 +86,13 @@ public class SandboxServiceImpl implements SandboxService {
       if("multi".equals(config.getDataAdapter())) {
         for(var source:config.getMultiDataSource().getDataSources()) {
           var present=current.getMultiDataSource()==null ? null : current.getMultiDataSource().source(source.getId());
-          if(present==null || !java.util.Objects.equals(source.getAdapterType(),present.getAdapterType()) || !java.util.Objects.equals(hashes.getString("source:"+source.getId()),io.ontomato.dataengine.service.agent.AgentJson.hash(present.getConnection())))
+          if(present==null || !java.util.Objects.equals(source.getAdapterType(),present.getAdapterType()) || !java.util.Objects.equals(hashes.getString("source:"+source.getId()),connectionHash(present.getConnection())))
             throw new IllegalStateException("Original source unavailable: "+source.getId());
           source.setConnection(present.getConnection());
         }
       } else {
         var connection=current.getDataAdapterConnections().get(config.getDataAdapter());
-        if(!java.util.Objects.equals(hashes.getString(config.getDataAdapter()),io.ontomato.dataengine.service.agent.AgentJson.hash(connection)))
+        if(!java.util.Objects.equals(hashes.getString(config.getDataAdapter()),connectionHash(connection)))
           throw new IllegalStateException("Original source unavailable: "+config.getDataAdapter());
         config.setDataAdapterConnections(current.getDataAdapterConnections());
       }

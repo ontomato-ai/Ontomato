@@ -23,13 +23,13 @@ class QueryPermissionPolicyTest {
   void dslLabelsDescribeFiltersAndOperationsWithoutTechnicalAliases() {
     var metadata = definitions();
     var attrs = JSONObject.from(metadata.get(0)).getJSONArray("attrs");
-    attrs.getJSONObject(1).put("attrDesc", "单位全称");
-    attrs.add(JSONObject.of("name", "status", "attrDesc", "人员状态", "enable", true));
+    attrs.getJSONObject(1).put("showName", "单位全称");
+    attrs.add(JSONObject.of("name", "status", "showName", "人员状态", "attrDesc", "在职状态，例如在职、离职、退休。", "enable", true));
     var dsl = query("COUNT", "headcount"); dsl.remove("problem");
     var step = dsl.getJSONObject("answer").getJSONArray("steps").getJSONObject(0);
     var condition = JSON.parseObject("""
-        {"properties":{"and":[{"field":"status","operator":"=","value":"在职"},
-        {"or":[{"field":"department","operator":"=","value":"文学院"},{"field":"department","operator":"=","value":"理学院"}]}]}}
+        {"properties":{"operator":"logic","and":[{"field":"status","operator":"=","value":"在职"},
+        {"operator":"logic","or":[{"field":"department","operator":"=","value":"文学院"},{"field":"department","operator":"=","value":"理学院"}]}]}}
         """);
     step.getJSONObject("graph").getJSONArray("patterns").getJSONObject(0).getJSONArray("objects").getJSONObject(0).put("conditions", condition);
     step.getJSONObject("output").put("group_by", JSONObject.of("fields", JSONArray.of(JSONObject.of("variable", "e", "field", "department"))));
@@ -37,8 +37,12 @@ class QueryPermissionPolicyTest {
     var graph = QuerySourceAnalysis.fromDsl(dsl, metadata);
     assertEquals("员工", graph.getJSONArray("queries").getJSONObject(0).getString("label"));
     var filter = graph.getJSONArray("filters").getJSONObject(0);
-    assertEquals(condition.toJSONString(), filter.getString("expression"));
-    assertEquals("(人员状态 = 在职 AND (单位全称 = 文学院 OR 单位全称 = 理学院))", filter.getString("label"));
+    assertEquals(2, graph.getJSONArray("filters").size());
+    assertEquals(condition.getJSONObject("properties").getJSONArray("and").getJSONObject(0).toJSONString(), filter.getString("expression"));
+    assertEquals("人员状态 = 在职", filter.getString("label"));
+    var alternative = graph.getJSONArray("filters").getJSONObject(1);
+    assertEquals("(单位全称 = 文学院 OR 单位全称 = 理学院)", alternative.getString("label"));
+    assertEquals(condition.getJSONObject("properties").getJSONArray("and").getJSONObject(1).toJSONString(), alternative.getString("expression"));
     var labels = graph.getJSONArray("nodes").stream().map(JSONObject::from).filter(n -> "operation".equals(n.getString("kind")))
         .map(n -> n.getString("label")).toList();
     assertTrue(labels.contains("COUNT(*)")); assertTrue(labels.contains("GROUP BY 单位全称"));
@@ -235,7 +239,7 @@ class QueryPermissionPolicyTest {
     var metrics = mock(MetricViewService.class);
     when(metrics.queryForRetrieval(eq("domain"), eq(""), isNull(), isNull(), anyInt()))
         .thenReturn(List.of(broken, unknown, valid));
-    when(metrics.queryById("broken", "domain")).thenReturn(broken);
+    when(metrics.requireExecutable(eq("broken"), any())).thenReturn(broken);
     var admin = mock(AdminService.class);
     when(admin.getJSONRule("domain")).thenReturn(Map.of("classDef", definitions()));
     var ontology = new OntologyQueryService(admin, null, metrics, null);
@@ -320,5 +324,32 @@ class QueryPermissionPolicyTest {
     var output = new QueryOutputService(null, null, ontology, null, new io.ontomato.dataengine.service.SubjectValueResolver(org.mockito.Mockito.mock(io.ontomato.dataengine.service.SubjectAttributeLookup.class))).execute(UUID.randomUUID().toString(), JSONObject.of("kind", "dsl", "dsl", dsl), declared, access, "zh-CN");
     assertEquals("在职员工总数", output.getJSONArray("columns").getJSONObject(0).getString("label"));
     assertEquals("active_staff_total", output.getJSONArray("columns").getJSONObject(0).getString("key"));
+  }
+
+  @Test
+  void targetReadUsesTheSandboxAndIntersectsHiddenScopeFieldsWithTheExistingRowRule() throws Exception {
+    var admin = mock(AdminService.class);
+    var defs = definitions();
+    var attrs = (JSONArray) defs.get(0).get("attrs");
+    attrs.add(JSONObject.of("name", "staff_code", "primaryKey", true));
+    attrs.add(JSONObject.of("name", "org_code"));
+    when(admin.getJSONRule("domain")).thenReturn(Map.of("classDef", defs));
+    var dsl = mock(DslService.class);
+    var ontology = new OntologyQueryService(admin, dsl, null, null);
+    var writes = mock(WriteFunctionOperationService.class);
+    org.springframework.test.util.ReflectionTestUtils.setField(ontology, "writes", writes);
+    var perm = permission(); perm.addRowPermission("post", "/Employee", "{\"operator\":\"logic\",\"and\":[{\"field\":\"department\",\"operator\":\"=\",\"value\":\"sales\"}]}");
+    var access = new QueryAccessService.Access(new QueryAccessService.GrantUser("u", "domain"), perm, null, null, null)
+        .withTarget(new ExecutionTarget("ctx", "sandbox-a", List.of("/Employee"), Long.MAX_VALUE));
+    var match = new CapabilityGrantLookup.Match("/Employee", "org_code", List.of("ORG-X"));
+    var args = org.mockito.ArgumentCaptor.forClass(JSONObject.class);
+    when(writes.query(args.capture(), eq("sandbox-a"), eq("domain"))).thenReturn(
+        JSONObject.of("data", JSONArray.of(JSONObject.of("answer", new JSONArray()))));
+    assertFalse(ontology.actionTargetExists(new io.ontomato.dataengine.bean.action.ActionTarget("/Employee", "employee"),
+        "0001", new CapabilityGrantLookup.Admission(false, List.of(match)), access));
+    var graph = args.getValue().getJSONObject("answer").getJSONArray("steps").getJSONObject(0).getJSONObject("graph");
+    String filter = graph.toJSONString();
+    for (String value : List.of("staff_code", "0001", "org_code", "ORG-X", "department", "sales")) assertTrue(filter.contains(value));
+    verifyNoInteractions(dsl);
   }
 }

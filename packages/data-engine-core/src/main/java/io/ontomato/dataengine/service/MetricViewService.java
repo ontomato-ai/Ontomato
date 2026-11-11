@@ -21,7 +21,14 @@ public interface MetricViewService {
 
 	public MetricView generateFromFunction(Function function);
 	
+    MetricView publishWorkflowMetric(MetricView metric, String lang);
+    List<MetricView> pendingForRetrieval(String domainId, String cursor, List<String> classes, int limit);
+
 	public MetricView save(MetricView metricView, String lang) throws Exception;
+
+    MetricView saveAdoptedCandidate(MetricView metric, User user, String lang);
+
+    MetricView requireExecutable(String id, User user);
 	
 	public void delete(String id, String domainId, String lang) throws Exception;
 	

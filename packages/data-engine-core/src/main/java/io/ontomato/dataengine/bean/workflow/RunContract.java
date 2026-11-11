@@ -48,6 +48,8 @@ public class RunContract {
 
     /** The attribute holding the single subject the run is assigned to, when it is assigned to one. */
     private String assigneeField;
+    private String orgField;
+    private String initiatorField;
 
     /** The attribute holding a claimable pool, when work waits for someone to take it instead. */
     private String candidateField;
@@ -69,6 +71,8 @@ public class RunContract {
         stepField = trimToNull(stepField);
         statusField = trimToNull(statusField);
         assigneeField = trimToNull(assigneeField);
+        orgField = trimToNull(orgField);
+        initiatorField = trimToNull(initiatorField);
         candidateField = trimToNull(candidateField);
         workflowRefField = trimToNull(workflowRefField);
         statusOpen = normalizeValues(statusOpen);

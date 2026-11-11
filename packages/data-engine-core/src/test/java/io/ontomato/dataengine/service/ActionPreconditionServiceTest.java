@@ -31,7 +31,6 @@ class ActionPreconditionServiceTest {
 
   private DslService queries;
   private OntologyQueryService scopedQueries;
-  private SubjectAttributeLookup subjects;
   private ActionPreconditionService service;
   private User alice;
   private UserDataPermission permission;
@@ -39,18 +38,15 @@ class ActionPreconditionServiceTest {
   @BeforeEach
   void setUp() {
     queries = mock(DslService.class);
-    subjects = mock(SubjectAttributeLookup.class);
     AdminService admin = mock(AdminService.class);
     when(admin.getJSONRule(DOMAIN)).thenReturn(classRule());
     scopedQueries = mock(OntologyQueryService.class);
-    service = new ActionPreconditionService(queries, admin, subjects, scopedQueries);
+    service = new ActionPreconditionService(queries, admin, scopedQueries);
 
     alice = user("U1");
     permission = new UserDataPermission();
     permission.setFullData(true);
 
-    when(subjects.attribute(any(), eq(SubjectAttributeLookup.ACCOUNT), eq("id")))
-        .thenAnswer(invocation -> ((User) invocation.getArgument(0)).getId());
   }
 
   @Test
@@ -64,31 +60,12 @@ class ActionPreconditionServiceTest {
   }
 
   @Test
-  void aSubjectReferenceRejectsAnotherPersonsObject() {
-    Action action =
-        action(
-            criteria(
-                condition(
-                    "submitter",
-                    "=",
-                    "{{account.id}}",
-                    "Only the submitter may withdraw this report")));
-    state("R1", "submitter", "U2");
-
-    var verdict = service.evaluate(action, JSONObject.of("report_id", "R1"), alice, permission, ExecutionTarget.LIVE);
-
-    assertFalse(verdict.satisfied());
-    assertEquals(List.of("Only the submitter may withdraw this report"), verdict.violations());
-  }
-
-  @Test
-  void aSubjectReferenceAdmitsTheOwnersObject() {
-    Action action = action(criteria(condition("submitter", "=", "{{account.id}}", "mine")));
-    state("R1", "submitter", "U1");
-
-    var verdict = service.evaluate(action, JSONObject.of("report_id", "R1"), alice, permission, ExecutionTarget.LIVE);
-
-    assertTrue(verdict.satisfied());
+  void subjectComparisonsMustMoveToGrantsBeforeSaving() {
+    for (Object ref : List.of("{{account.id}}", "{{principal.employeeId}}", List.of("{{org.self}}"))) {
+      var error = org.junit.jupiter.api.Assertions.assertThrows(IllegalArgumentException.class, () ->
+          ActionPreconditionService.requireBusinessConditions(criteria(condition("submitter", "=", ref, "mine"))));
+      assertTrue(error.getMessage().contains("conditions[0].value (submitter)"));
+    }
   }
 
   @Test
@@ -117,23 +94,11 @@ class ActionPreconditionServiceTest {
   }
 
   @Test
-  void aMissingSubjectValueNeverMatches() {
-    Action action = action(criteria(condition("submitter", "=", "{{principal.employeeId}}", "mine")));
-    when(subjects.attribute(any(), eq(SubjectAttributeLookup.PRINCIPAL), eq("employeeId")))
-        .thenReturn(null);
-    state("R1", "submitter", "U1");
-
-    var verdict = service.evaluate(action, JSONObject.of("report_id", "R1"), alice, permission, ExecutionTarget.LIVE);
-
-    assertFalse(verdict.satisfied(), "an unresolved subject reference must not match");
-  }
-
-  @Test
   void everyFailedConditionIsReportedAtOnce() {
     Action action =
         action(
             criteria(
-                condition("submitter", "=", "{{account.id}}", "not mine"),
+                condition("submitter", "=", "U1", "wrong submitter"),
                 condition("status", "=", "待打款", "wrong state")));
     when(queries.executeInternal(any(), any(), any()))
         .thenReturn(

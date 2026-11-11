@@ -1,9 +1,9 @@
 <template>
   <div class="ai-chart-data-overlay" :data-open="open ? '1' : '0'" @click.stop>
     <div class="ai-chart-data-inner">
-      <TablePreview :table="chartTable(tabular, maxRows)" height="100%" :empty-text="t('dashboard.noDataToDisplay')" />
+      <TablePreview :table="table" height="100%" :empty-text="t('dashboard.noDataToDisplay')" />
       <div class="ai-chart-dsl-row">
-        <el-button size="small" @click.stop="emit('view-dsl')">{{ t("common.viewDsl") }}</el-button>
+        <el-button size="small" @click.stop="emit('view-dsl')">{{ sourceLabel }}</el-button>
       </div>
     </div>
   </div>
@@ -12,7 +12,6 @@
 <script setup>
 import { TablePreview } from "@ontomato/foundation-ui/preview";
 import { useI18n } from "vue-i18n";
-import { chartTable } from "./utils/chartTabular";
 
 const { t } = useI18n();
 
@@ -20,8 +19,10 @@ const emit = defineEmits(["view-dsl"]);
 
 defineProps({
   open: { type: Boolean, default: false },
-  tabular: { type: Object, default: null },
-  maxRows: { type: Number, default: 500 },
+  /** The card's data as the table shows it. */
+  table: { type: Object, required: true },
+  /** The label of the button that shows where the card's data comes from. */
+  sourceLabel: { type: String, required: true },
 });
 </script>
 

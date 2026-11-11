@@ -26,6 +26,8 @@ public class AnonymousIdentitySnapshotLookup implements IdentitySnapshotLookup {
         snapshot.put("principalId", user == null ? null : user.getId());
         snapshot.put("domainId", domainId);
         snapshot.put("roles", List.of());
+        snapshot.put("organizations", List.of());
+        snapshot.put("positions", List.of());
         return snapshot;
     }
 }

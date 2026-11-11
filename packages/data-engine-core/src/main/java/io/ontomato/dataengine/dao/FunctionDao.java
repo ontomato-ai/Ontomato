@@ -69,8 +69,9 @@ public class FunctionDao {
             for (var parameter : function.getParameters())
                 if (parameter.getType() == null || !Parameter.TYPES.contains(parameter.getType()))
                     throw new IllegalArgumentException("Function.parameters." + parameter.getName() + ".type: received " + parameter.getType() + "; expected one of " + Parameter.TYPES.stream().sorted().toList() + "; boolean parameters are not supported");
-            MetricViewBindings.validateValues(function,
-                MetricViewBindings.values(function));
+            var values = MetricViewBindings.values(function);
+            if (Function.OPERATION_READ.equals(function.getOperation())) MetricViewBindings.validateDeclaredValues(function, values);
+            else MetricViewBindings.validateValues(function, values);
         }
         if (!(Function.OPERATION_READ.equals(function.getOperation()) && function.getQueryPackage() != null))
             PythonProgramProtocol.requireSupported(function.getCode(), lang);

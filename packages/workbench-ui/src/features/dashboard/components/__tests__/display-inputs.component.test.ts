@@ -29,7 +29,7 @@ const global = () => ({ plugins: [workbenchI18n(), createPinia(), router, Elemen
 
 describe("dashboard display inputs under both layouts", () => {
   async function zoomChartTheme() {
-    const wrapper = mount(ChartZoomModal, { props: { option: { series: [] } }, global: global() });
+    const wrapper = mount(ChartZoomModal, { props: { option: { series: [] }, table: { columns: [], rows: [] } }, global: global() });
     // The component is a JS <script setup>, so test-utils cannot infer its props type.
     await wrapper.setProps({ open: true } as never);
     await flushPromises();

@@ -16,6 +16,7 @@ import org.springframework.web.server.ResponseStatusException;
       OntologyAgentController.class,
       OntologyRetrievalController.class,
       OntologyGenerationController.class,
+      MetricSettlementController.class,
       KnowledgeGovernanceController.class
     })
 @Order(-110)

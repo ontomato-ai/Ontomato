@@ -1,5 +1,6 @@
 package io.ontomato.dataengine.service;
 
+import io.ontomato.dataengine.bean.workflow.GrantScope;
 import io.ontomato.dataengine.bean.workflow.Workflow;
 
 /**
@@ -31,7 +32,7 @@ public interface WorkflowGrantSink {
             String roleCode,
             String capabilityKind,
             String capabilityId,
-            int workflowVersion);
+            int workflowVersion, Integer stepNo, GrantScope scope);
 
     /**
      * Withdraw exactly the grants that this workflow revision activated.

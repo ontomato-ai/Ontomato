@@ -13,6 +13,13 @@ public final class QueryPackageExecution {
   public static Result execute(String id, JSONObject bundle, JSONObject parameters, JSONObject labels,
       QueryAccessService.Access access, String lang, int minutes, OntologyQueryService ontology,
       PythonExecuteService python) throws Exception {
+    return execute(id, bundle, parameters, labels, access, lang, minutes, ontology, python, null);
+  }
+
+  @SuppressWarnings("unchecked")
+  static Result execute(String id, JSONObject bundle, JSONObject parameters, JSONObject labels,
+      QueryAccessService.Access access, String lang, int minutes, OntologyQueryService ontology,
+      PythonExecuteService python, JSONObject workflowPredicate) throws Exception {
     QueryPackage.validate(bundle);
     var values = QueryPackage.parameters(bundle, parameters);
     var definitions = (List<Map<String, Object>>) ontology.rule(access).get("classDef");
@@ -22,7 +29,9 @@ public final class QueryPackageExecution {
     JSONArray rows;
     PythonExecuteResult execution;
     if ("dsl".equals(entry.getString("kind"))) {
-      var result = JSONObject.from(ontology.execute(QueryPackage.query(bundle, entry.getString("query"), values), access));
+      var query = QueryPackage.query(bundle, entry.getString("query"), values);
+      var result = JSONObject.from(workflowPredicate == null ? ontology.execute(query, access)
+          : ontology.executeGoverned(query, access, workflowPredicate));
       if (result.getJSONArray("data").size() != 1) throw new IllegalArgumentException("One output table is required");
       var datum = result.getJSONArray("data").getJSONObject(0);
       rows = datum.getJSONArray("answer");

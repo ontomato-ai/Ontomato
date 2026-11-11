@@ -4,6 +4,7 @@ import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONObject;
 import io.ontomato.dataengine.core.bean.User;
 import java.util.*;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -21,8 +22,11 @@ public class ApplicationCatalog {
     private final JdbcTemplate db;
     private final TransactionTemplate transactions;
     private final ApplicationAccess access;
-    public ApplicationCatalog(JdbcTemplate db, TransactionTemplate transactions, ApplicationAccess access) {
+    private final JSONObject upstreams;
+    public ApplicationCatalog(JdbcTemplate db, TransactionTemplate transactions, ApplicationAccess access,
+            @Value("${ONTOMATO_APP_UPSTREAMS:{}}") String upstreams) {
         this.db = db; this.transactions = transactions; this.access = access;
+        this.upstreams = JSON.parseObject(upstreams);
     }
     public List<JSONObject> all() {
         return db.query("SELECT * FROM sys_application WHERE kind IS NOT NULL ORDER BY CASE rail WHEN 'top' THEN 0 WHEN 'apps' THEN 1 ELSE 2 END,sort,id",
@@ -75,6 +79,19 @@ public class ApplicationCatalog {
         if (releaseId == null || !releaseId.matches("[a-zA-Z0-9_-]{1,128}")) throw bad("Invalid releaseId");
         return userApplication(id, "hosted", declaration, releaseId, user);
     }
+    public JSONObject connected(String id, Declaration declaration, String upstream, String upstreamPrefix, User user) {
+        access.requireConnectedRegistration(user);
+        var allowed = upstreams.getJSONArray(user.getDomainId());
+        if (allowed == null || !allowed.contains(upstream)) throw bad("Upstream is not allowed in this domain");
+        if (upstreamPrefix == null || !upstreamPrefix.matches("/(?:[a-zA-Z0-9_-]+/)*"))
+            throw bad("Invalid upstream prefix");
+        return transactions.execute(tx -> {
+            var result = userApplication(id, "connected", declaration, null, user);
+            db.update("UPDATE sys_application SET entry=entry || ?::jsonb WHERE id=?",
+                JSONObject.of("upstream", upstream, "upstreamPrefix", upstreamPrefix).toJSONString(), id);
+            return result;
+        });
+    }
     public JSONObject userApplication(String id, String kind, Declaration declaration, String releaseId, User user) {
         validateId(id); validate(declaration);
         if (!id.startsWith("app-") || user.getDomainId() == null) throw bad("A user application requires an app- ID and domain");
@@ -85,7 +102,7 @@ public class ApplicationCatalog {
             if (old.isPresent()) {
                 var a = old.get();
                 if (!kind.equals(a.getString("kind")) || !Objects.equals(user.getDomainId(),a.getString("domainId")) ||
-                    !(user.getId().equals(a.getString("ownerUserId")) || access.administrator(user))) throw denied();
+                    !access.canMaintain(a,user)) throw denied();
             }
             String owner = old.isEmpty() ? user.getId() : old.get().getString("ownerUserId");
             save(id, user.getDomainId(), kind.equals("hosted") ? "workbench" : "data-engine", owner, kind, "apps", "business", 100,

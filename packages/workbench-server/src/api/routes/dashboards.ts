@@ -1,6 +1,6 @@
 import { Router, type Router as ExpressRouter } from "express";
 
-import { getOwnedDashboard, listDashboardGroups } from "../../services/dashboard/access";
+import { getOwnedDashboard, listDashboardGroups, parseDashboardInput } from "../../services/dashboard/access";
 import { analyzeChartWithLlm } from "../../services/dashboard/chart-analysis";
 import { createDashboardFromAnalysis } from "../../services/dashboard/create-from-analysis";
 import { getDashboardConditions, queryDashboardData } from "../../services/dashboard/dsl-execution";
@@ -23,7 +23,30 @@ import {
 import { listDashboards } from "../../services/dashboard/store";
 import { requireDomainId, type AuthenticatedRequest } from "../../utils/request-identity";
 import { asyncHandler } from "../utils/http";
+import { dashboardCardRequestSchema, dashboardSaveParametersSchema } from "@ontomato/contracts/dashboard";
+import { dashboardSourceSchema, dashboardAddArtifactSchema } from "@ontomato/contracts/dashboard-artifacts";
+import { DashboardMetricClient } from "../../services/dashboard/metric-client";
+import { queryMetricCard, metricCardParameterForm, saveMetricCardParameters } from "../../services/dashboard/metric-data";
 const router: ExpressRouter = Router();
+function metricContext(req: AuthenticatedRequest) {
+  const domainId = requireDomainId(req);
+  return {
+    owner: { userId: req.userId, domainId },
+    client: new DashboardMetricClient(domainId, { token: req.token, apiKey: req.apiKey, locale: req.locale }),
+  };
+}
+router.post("/query-card", asyncHandler(async (req, res) => {
+  const { owner, client } = metricContext(req as AuthenticatedRequest);
+  res.json({ success: true, data: await queryMetricCard(owner, parseDashboardInput(dashboardCardRequestSchema, req.body), client) });
+}));
+router.post("/card-parameter-form", asyncHandler(async (req, res) => {
+  const { owner, client } = metricContext(req as AuthenticatedRequest);
+  res.json({ success: true, data: await metricCardParameterForm(owner, parseDashboardInput(dashboardCardRequestSchema, req.body), client) });
+}));
+router.post("/save-card-parameters", asyncHandler(async (req, res) => {
+  const { owner, client } = metricContext(req as AuthenticatedRequest);
+  res.json({ success: true, data: await saveMetricCardParameters(owner, parseDashboardInput(dashboardSaveParametersSchema, req.body), client) });
+}));
 router.get(
   "/",
   asyncHandler(async (req, res) => {
@@ -96,13 +119,12 @@ router.post(
 router.post(
   "/create-from-analysis",
   asyncHandler(async (req, res) => {
-    const { userId, token, locale } = req as AuthenticatedRequest;
+    const { userId, token, apiKey, locale } = req as AuthenticatedRequest;
     const data = await createDashboardFromAnalysis(
       userId,
       requireDomainId(req as AuthenticatedRequest),
-      req.body || {},
-      token,
-      locale
+      parseDashboardInput(dashboardSourceSchema, req.body),
+      { token, apiKey, locale }
     );
     res.json({ success: true, data });
   })
@@ -110,12 +132,12 @@ router.post(
 router.post(
   "/add-chart",
   asyncHandler(async (req, res) => {
-    await addDashboardChart(
-      (req as AuthenticatedRequest).userId,
-      requireDomainId(req as AuthenticatedRequest),
-      req.body || {}
+    const { userId, token, apiKey, locale } = req as AuthenticatedRequest;
+    const data = await addDashboardChart(
+      userId, requireDomainId(req as AuthenticatedRequest),
+      parseDashboardInput(dashboardAddArtifactSchema, req.body), { token, apiKey, locale }
     );
-    res.json({ success: true });
+    res.json({ success: true, data });
   })
 );
 router.post(
@@ -187,10 +209,9 @@ router.post(
 router.post(
   "/modifyResultSetChartType",
   asyncHandler(async (req, res) => {
+    const { userId, token, apiKey, locale } = req as AuthenticatedRequest;
     await changeDashboardChartType(
-      (req as AuthenticatedRequest).userId,
-      requireDomainId(req as AuthenticatedRequest),
-      req.body || {}
+      userId, requireDomainId(req as AuthenticatedRequest), req.body || {}, { token, apiKey, locale }
     );
     res.json({ success: true });
   })

@@ -1,6 +1,6 @@
 ---
 name: ontomato-workflow-maker
-description: 在 Ontomato 上从零创建一条业务流程：把业务描述拆成「运行对象 + 运行契约 + 角色 + 每步动作」，建角色、写 Action（含"该轮到谁"的前置条件）、声明 runContract（单号/节点/状态/负责人的字段位置）、存流程草稿、经有审批权的账号激活落授权，激活同时自动生成「我的待办」「单据详情」两个查询，再以各角色身份完整走一遍。用于「我要在 ontomato 里做一个 XX 业务流程」「建 workflow/action/role」「把这条流程跑通」这类任务。
+description: 在 Ontomato 上从零创建一条业务流程：把业务描述拆成「运行对象 + 运行契约 + 角色 + 每步动作」，建角色、写 Action（声明目标对象和单据状态前置条件）、声明 runContract（单号/节点/状态/负责人的字段位置）、存流程草稿、经有审批权的账号激活落授权，激活同时自动生成「我的待办」「单据详情」两个查询，再以各角色身份完整走一遍。用于「我要在 ontomato 里做一个 XX 业务流程」「建 workflow/action/role」「把这条流程跑通」这类任务。
 ---
 
 # 从零创建一条业务流程（Workflow + Action + Role）
@@ -15,7 +15,7 @@ description: 在 Ontomato 上从零创建一条业务流程：把业务描述拆
 | 步骤里的 `Action` | 真正干活的那段 python；谁能跑、什么时候能跑都写在它自己身上 | 不是流程节点 |
 | 步骤里的 `roleCode` | 授权主体：激活时解析成域内角色 | 不是人名 |
 
-因此流程的"流转"是**主体拉式**的：轮到谁，谁自己来跑他那一步的动作；动作的 `submissionCriteria` 判定"现在是不是你的回合"。不要去找"下一步该派给谁"的接口，它不存在，也不该存在。
+因此流程的"流转"是**主体拉式**的：轮到谁，谁自己来跑他那一步的动作；步骤授权的范围决定谁可以办这张单，动作的 `submissionCriteria` 检查当前步骤和单据状态。不要去找"下一步该派给谁"的接口，它不存在，也不该存在。
 
 ## 身份与工具
 
@@ -43,7 +43,7 @@ node wf-client.mjs me          # 当前账号与域
    → 一个事实层类（如 `expense_request`）+ 主键 + 业务属性。
 2. **步骤序列**：谁先、谁后、每步是审批还是执行。
 3. **每步的角色**：用域里已有的角色名（`roleName`），流程步骤的 `roleCode` 就是它。
-4. **派单规则**：`dept_role`（同部门该角色）/ `global_role`（全局该角色）/ `initiator`（发起人自己）。
+4. **授权范围**：全部可读对象、所在组织、所在组织及下级、仅下级、本人发起或指派给本人。选组织范围时确定业务单据存组织编码的字段。
 5. **提交要件**：用户提交这张单必须填什么；哪些字段由平台算、不许调用方传。
 6. **运行契约**：这张单的「身份 / 当前节点 / 状态 / 负责人」分别存在哪几个字段？状态里哪些值算「还没办完」？
    → 落地为 `runContract`；激活时逐字段校验，也是「我的待办」查询能自动生成的前提。
@@ -105,7 +105,9 @@ node wf-client.mjs dsl '{"problem":"查类是否存在","answer":{"steps":[{"gra
   "statusOpen": ["待办"],
   "statusDone": ["已完成"],
   "statusRejected": ["已驳回"],
-  "assigneeField": "assignee_id"
+  "assigneeField": "assignee_id",
+  "orgField": "department_code",
+  "initiatorField": "applicant_id"
 }
 ```
 
@@ -183,9 +185,9 @@ result = run()
 
 `query_runtime` 可用的写原语：`insert / update / delete / createEdge / deleteEdge / appendVector / updateVector / deleteVector`，读用 `query(dsl)` 或 `execute_dsl(dsl)`。参数从 `parameters as params` 取。
 
-### 4.3 办理动作：**"该轮到谁"必须写成前置条件**
+### 4.3 办理动作：声明目标与单据状态
 
-这是整条流程的关键，也是最容易被跳过的一步。没有它，任何有授权的角色都能在任何时刻跑任意一步。
+对已有对象执行的 Action 在顶层声明 `"target":{"className":"expense_request","keyParameter":"run_id"}`；`run_id` 必须是 Function 的字符串参数。创建单据时不声明尚未存在的目标，只能授予 all。以下条件只检查单据状态，人员和组织归属写在步骤 scope 上。
 
 ```json
 "submissionCriteria": {
@@ -193,9 +195,7 @@ result = run()
     {"objectParameter": "run_id", "className": "<类名>", "field": "current_node",
      "operator": "=", "value": "<本步名称>", "message": "这一步还没轮到"},
     {"objectParameter": "run_id", "className": "<类名>", "field": "status",
-     "operator": "=", "value": "待办", "message": "这张单当前不是待办状态"},
-    {"objectParameter": "run_id", "className": "<类名>", "field": "assignee_id",
-     "operator": "=", "value": "{{account.id}}", "message": "这不是你的待办"}
+     "operator": "=", "value": "待办", "message": "这张单当前不是待办状态"}
   ]
 }
 ```
@@ -203,8 +203,7 @@ result = run()
 规则（都来自 `ActionPreconditionService` 的实际行为）：
 
 - `objectParameter` 指向**参数名**，用它的值去定位对象；参数没传 → 条件不成立 → 拒绝。
-- `{{account.<字段>}}` / `{{principal.<属性>}}` 从**认证请求**解析，不从参数读 —— 所以"只能办自己的单"无法靠传别人的 id 绕过。可用 `account` 字段：`id / loginCode / userName / mobileNumber / email / imsAdress / notes`。
-- 引用解析不到 → 得 null → 永不相等 → **拒绝**（不是放行）。
+- 条件不能比较当前用户；“指派给本人”用 `assigned_to_self`，字段来自运行契约的 `assigneeField`。
 - 条件无法求值（类名写错、对象读不到）→ **拒绝**。
 - 支持的 `operator`：`= / != / > / >= / < / <= / in / not in / like / is / is not`。NULL 走三值逻辑，`is` 判空。
 - 前置条件读状态走的是**带数据权限的**查询，不是绕过权限直读。
@@ -232,7 +231,7 @@ def run():
 result = run()
 ```
 
-注意：**推进到下一步时"下一个负责人是谁"必须由代码算**（按部门找领导、按角色找唯一成员等），因为平台没有派单器。这一步算不出来就把它做成参数让上一步的人指定，并在 `logic` 里说明 —— 不要假装平台会派。
+只有“指派给本人”的步骤需要写入具体负责人。部门步骤用单据组织编码和角色的授权范围，不按成员列表猜一个审批人。
 
 另外：`operator_id` 现在是**冗余**的 —— 身份快照已经有服务端算好的身份，不要再靠参数传。
 
@@ -245,6 +244,10 @@ principal_id = identity.get("principalId")      # 服务端认定的执行人
 workflow_run_id = identity.get("workflowRunId")  # 仅有唯一归属时才有这个键
 ```
 
+快照还包含 `organizations: [{id, code, name}]` 与 `positions: [{id, name, orgId}]`。组织编码由平台在新建时生成；改名、移动不改变它，管理员可换成客户系统使用的编码。业务数据的组织字段存 **code**，不存名称或平台内部 id。
+
+创建单据的 Action 从 `query_runtime.identity["organizations"]` 取本次所属组织的 `code` 写入单据。执行人属于多个组织时，按这次业务选择对应组织，不默认取第一项；选组织是填写业务事实，不代替平台授权。
+
 快照内容：`principalId / domainId / loginCode / userName / membershipId / roles[]`，外加满足条件时的 `workflowRunId`。
 
 **关键约束（必须理解，否则会误用）：**
@@ -253,10 +256,10 @@ workflow_run_id = identity.get("workflowRunId")  # 仅有唯一归属时才有�
 | --- | --- |
 | 由服务端写入 `identity.json` | 调用方无法伪造；`inputFiles` 里传同名文件会被拒 |
 | **不参与授权判定** | 能不能读写仍 100% 由 `ONTOMATO_TK` 决定；快照只供业务判断 |
-| `workflowRunId` 需要**前置条件已证实** | 参数里的 id 只是线索，通过求值才成为证据 |
+| `workflowRunId` 需要**声明目标、读到该行且仅一个生效流程拥有它** | 参数里的 id 只是线索，通过目标点查后才用于流程归属 |
 | `workflowRunId` 需要**归属唯一** | 多条生效流程都含此动作 → 不给值（宁可没有，不给错的） |
 
-所以：**做业务判断读快照，做权限判断靠 token + 前置条件。** 不要因为「能读到 principalId」就以为可以跳过 `submissionCriteria`——那是两回事。
+所以：**做业务判断读快照，业务授权由平台按角色、范围和目标可读性判断。** 不要因为「能读到 principalId」就以为可以跳过 `submissionCriteria`——那是两回事。
 
 ### 4.4 导入
 
@@ -282,10 +285,11 @@ node wf-client.mjs action-get act_xxx     # 看 status=PUBLISHED、parameters、
   "name": "日常报销审批",
   "description": "员工报销，部门领导审批后财务打款。",
   "runClassName": "expense_request",
+  "runContract": {"className":"expense_request","idField":"id","stepField":"current_node","statusField":"status","statusOpen":["待办"],"orgField":"department_code","assigneeField":"assignee_id"},
   "steps": [
     {"stepNo": 1, "name": "领导审批", "roleCode": "DEPT_LEADER",
      "actionId": "act_expense_approve", "actionType": "approve",
-     "assignRule": "dept_role", "description": "审批必要性与金额"}
+     "scope": "self_organization", "description": "审批必要性与金额"}
   ]
 }
 ```
@@ -295,7 +299,7 @@ node wf-client.mjs wf-save ./workflow.json
 # → {"id":"...","status":"DRAFT","version":0}
 ```
 
-- `stepNo` 从 1 连续递增；`actionType` ∈ `approve|execute`；`assignRule` ∈ `dept_role|global_role|initiator`。
+- `stepNo` 从 1 连续递增；`actionType` ∈ `approve|execute`；`scope` ∈ `all|self_organization|self_subtree|self_descendants|initiated_by_self|assigned_to_self`。
 - `roleCode` 与 `actionId` 都不能空；`actionId` 必须能在本域查到动作。
 - 保存后是 `DRAFT`，**不授予任何权限**。
 
@@ -334,10 +338,10 @@ node wf-client.mjs wf-grants       # 应出现 N 行：roleCode × actionId × a
 
 | 名称 | 口径 | 谁用 |
 |---|---|---|
-| `我的待办 · <流程名>` | `assigneeField = {{account.id}}` 且 `status ∈ statusOpen` | 各角色本人问「我有什么待办」 |
+| `我的待办 · <流程名>` | 开放状态，且当前冻结步骤属于本人的有效角色、单据在该步骤的授权范围内；仍受读侧行权限约束 | 各角色本人问「我有什么待办」 |
 | `单据详情 · <流程名>` | 按 `idField` 查，调用方传 `runId` | 「这张单到哪一步了」 |
 
-激活响应里的 `activationNotes` 是**生成告警**：为空表示两个查询都生成了；有内容说明某个没生成（例如契约没声明 `assigneeField`）。**不要把它当成普通成功忽略掉** —— 没有查询时，角色问待办得到的是空，而不是错误。
+激活响应里的 `activationNotes` 是**生成告警**：为空表示两个查询都生成了；有内容说明某个没生成。**不要把它当成普通成功忽略掉** —— 没有已发布待办查询时，`pending` 会明确报错，不会解释为没有待办。升级不会补发旧指标；下次重新发布流程才生成带来源的查询。
 
 核对：
 
@@ -346,7 +350,7 @@ node wf-client.mjs wf-query <workflowId>     # 看 runContract 回显与 activat
 # 生成的 metric 可在本体服务的「指标视图」页看到，状态应为 PUBLISHED
 ```
 
-重复激活是**原地更新**同一对查询，不会每次多出一份。
+待办按流程 ID、冻结版本及用途识别，不能按名称认领旧指标。组织步骤不要求负责人；个人指派才使用 `assigneeField`。步骤名称必须唯一，与单据的当前步骤值完全相同。多个流程共用运行类时，声明 `workflowRefField` 并让创建单据的 Action 将流程 ID 写入该字段。agent 的 `pending` 只执行已发布的待办指标，查不到指标和没有待办是两种不同的结果。
 
 
 ## 第 7 步：以各角色身份完整走一遍
@@ -362,7 +366,7 @@ node wf-client.mjs subjects
 | 情况 | 处理 |
 | --- | --- |
 | 该角色恰好一个成员 | 直接用他 |
-| 多个成员 | `dept_role` 按发起人部门挑，`global_role` 按平台默认（目前取 id 升序）挑；把选中的那个告诉用户 |
+| 多个成员 | 按单据字段与步骤的授权范围选择验收账号；同一角色可用不同部门的成员验证允许和拒绝 |
 | 一个成员都没有 | **停**。这一步没有合法执行人，流程一定走到这里死掉；让用户先维护成员 |
 
 ### 7.2 每个身份都要能真的执行
@@ -416,9 +420,11 @@ node wf-client.mjs dsl '{"problem":"查运行对象","answer":{"steps":[{"graph"
 | --- | --- |
 | `Action is outside the current domain` | 令牌的域与动作的域不一致 |
 | `Action.notPublished` | 动作还不是 `PUBLISHED` |
+| 旧接口权限 `/action/execute` 被拒绝 | 此动作没有任何能力授权记录，才沿用旧接口权限 |
+| `Action.targetOutsideScope` | 声明的目标不可读或不在角色的授权范围内；核对主键和单据归属 |
 | `Action.notGranted` | 令牌账号的有效角色里没有被授这个动作 |
 | `Action.publishedIsFrozen` | 想改已发布动作的代码；新建动作代替 |
-| `Precondition failed: ...` 或你的 `message` | 前置条件不满足（阶段/状态/不是你的单） |
+| `Precondition failed: ...` 或你的 `message` | 单据业务条件不满足（阶段或状态） |
 | `Function.notWrite` | `operation` 不是 `OPERATION_WRITE` |
 | workflow save `ClassCastException`（旧版本） | 已修复；若仍出现，说明后端不是当前分支 |
 

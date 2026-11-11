@@ -5,6 +5,7 @@ import com.alibaba.fastjson2.JSONObject;
 import io.ontomato.dataengine.service.*;
 import jakarta.servlet.http.HttpServletRequest;
 import java.util.UUID;
+import java.util.Map;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -34,6 +35,9 @@ public class OntologyQueryController {
 
   @org.springframework.beans.factory.annotation.Autowired
   private io.ontomato.dataengine.service.agent.OntologyAgentAccess agentAccess;
+
+  @org.springframework.beans.factory.annotation.Autowired
+  private MetricParameterForms metricForms;
 
   private QueryAccessService.Access access(HttpServletRequest request) {
     var access = authorization.access(request);
@@ -74,6 +78,28 @@ public class OntologyQueryController {
   @PostMapping("/ontology/query/metrics/search")
   public Object metrics(@RequestBody JSONObject body, HttpServletRequest request) {
     return ontology.metrics(body, access(request));
+  }
+
+  @PostMapping("/ontology/query/metrics/describe")
+  public Object describeMetric(@RequestBody JSONObject body, HttpServletRequest request) {
+    return ontology.describeMetric(body.getString("id"), access(request));
+  }
+
+  @PostMapping("/ontology/query/metrics/parameter-form")
+  public Object metricForm(@RequestBody JSONObject body, HttpServletRequest request) {
+    io.ontomato.dataengine.service.agent.AgentJson.fields(body, "id", "parameters");
+    return metricForms.form(io.ontomato.dataengine.service.agent.AgentJson.text(body, "id"),
+        body.getJSONObject("parameters"), access(request), language(request));
+  }
+
+  @PostMapping("/ontology/query/metrics/parse-parameters")
+  public Object metricParameters(@RequestBody JSONObject body, HttpServletRequest request) {
+    io.ontomato.dataengine.service.agent.AgentJson.fields(body, "id", "revision", "parameters", "values");
+    if (!(body.get("values") instanceof Map<?, ?> values)
+        || values.values().stream().anyMatch(value -> !(value instanceof String)))
+      throw new IllegalArgumentException("Parameter values must be text keyed by parameter name");
+    return metricForms.parse(body.getString("id"), body.getString("revision"), body.getJSONObject("parameters"),
+        body.getJSONObject("values"), access(request), language(request));
   }
 
   @PostMapping("/ontology/query/knowledge/search")

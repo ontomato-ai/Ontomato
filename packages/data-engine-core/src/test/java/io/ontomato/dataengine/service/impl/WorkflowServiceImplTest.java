@@ -1,5 +1,6 @@
 package io.ontomato.dataengine.service.impl;
 
+import io.ontomato.dataengine.bean.workflow.GrantScope;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -53,7 +54,8 @@ class WorkflowServiceImplTest {
     admin = mock(AdminService.class);
     metricGenerator = mock(WorkflowMetricGenerator.class);
     service = new WorkflowServiceImpl(workflows, actions, grants, admin, metricGenerator);
-    when(actions.queryById(anyString())).thenReturn(new Object[] {new Action(), null});
+    Action local = new Action(); local.setDomainId(DOMAIN);
+    when(actions.queryById(anyString())).thenReturn(new Object[] {local, null});
     when(metricGenerator.generate(any()))
         .thenReturn(new WorkflowMetricGenerator.Generated(List.of(), List.of()));
     when(admin.getJSONRule(DOMAIN))
@@ -73,8 +75,8 @@ class WorkflowServiceImplTest {
     assertEquals(Workflow.STATUS_ACTIVE, activated.getStatus());
     assertEquals(1, activated.getVersion());
     verify(workflows).publishVersion(workflow);
-    verify(grants).grant(DOMAIN, "w1", "LEADER", CapabilityGrantLookup.ACTION, "approve", 1);
-    verify(grants).grant(DOMAIN, "w1", "FINANCE", CapabilityGrantLookup.ACTION, "pay", 1);
+    verify(grants).grant(DOMAIN, "w1", "LEADER", CapabilityGrantLookup.ACTION, "approve", 1, 1, GrantScope.ALL);
+    verify(grants).grant(DOMAIN, "w1", "FINANCE", CapabilityGrantLookup.ACTION, "pay", 1, 2, GrantScope.ALL);
     verify(workflows).appendEvent(workflow, Workflow.EVENT_ACTIVATED, "U1");
   }
 
@@ -91,8 +93,8 @@ class WorkflowServiceImplTest {
     Workflow activated = service.activate("w1", DOMAIN, "U1");
 
     assertEquals(2, activated.getVersion());
-    verify(grants).grant(DOMAIN, "w1", "LEADER", CapabilityGrantLookup.ACTION, "approve", 2);
-    verify(grants, never()).grant(anyString(), anyString(), anyString(), anyString(), anyString(), eq(1));
+    verify(grants).grant(DOMAIN, "w1", "LEADER", CapabilityGrantLookup.ACTION, "approve", 2, 1, GrantScope.ALL);
+    verify(grants, never()).grant(anyString(), anyString(), anyString(), anyString(), anyString(), eq(1), any(), any());
   }
 
   @Test
@@ -117,7 +119,7 @@ class WorkflowServiceImplTest {
     var refused = assertThrows(IllegalArgumentException.class, () -> service.activate("w1", DOMAIN, "U1"));
 
     assertTrue(refused.getMessage().contains("names no role"), refused.getMessage());
-    verify(grants, never()).grant(anyString(), anyString(), anyString(), anyString(), anyString(), anyInt());
+    verify(grants, never()).grant(anyString(), anyString(), anyString(), anyString(), anyString(), anyInt(), any(), any());
   }
 
   @Test
@@ -137,7 +139,7 @@ class WorkflowServiceImplTest {
     workflow.setStatus(Workflow.STATUS_ACTIVE);
 
     assertThrows(IllegalArgumentException.class, () -> service.save(workflow));
-    verify(grants, never()).grant(anyString(), anyString(), anyString(), anyString(), anyString(), anyInt());
+    verify(grants, never()).grant(anyString(), anyString(), anyString(), anyString(), anyString(), anyInt(), any(), any());
   }
 
   @Test
@@ -267,7 +269,7 @@ class WorkflowServiceImplTest {
     assertThrows(IllegalArgumentException.class, () -> service.activate("w1", DOMAIN, "U1"));
 
     // Nothing may be granted for a revision whose run contract was never verified.
-    verify(grants, never()).grant(any(), any(), any(), any(), any(), anyInt());
+    verify(grants, never()).grant(any(), any(), any(), any(), any(), anyInt(), any(), any());
     verify(workflows, never()).publishVersion(any());
   }
 
@@ -311,7 +313,7 @@ class WorkflowServiceImplTest {
 
     // Authority is already in force; a convenience query failing must not take it back.
     assertEquals(Workflow.STATUS_ACTIVE, activated.getStatus());
-    verify(grants, times(1)).grant(any(), any(), any(), any(), any(), anyInt());
+    verify(grants, times(1)).grant(any(), any(), any(), any(), any(), anyInt(), any(), any());
     assertTrue(activated.getActivationNotes().get(0).contains("boom"), activated.getActivationNotes().toString());
   }
 
@@ -355,7 +357,28 @@ class WorkflowServiceImplTest {
     step.setRoleCode(roleCode);
     step.setActionId(actionId);
     step.setActionType(WorkflowStep.ACTION_TYPE_APPROVE);
-    step.setAssignRule(WorkflowStep.ASSIGN_GLOBAL_ROLE);
+    step.setScope(GrantScope.Kind.all);
     return step;
+  }
+
+  @Test
+  void scopedStepsNeedMatchingTargetsAndMaterializeTheContractFieldWhenActivated() {
+    var step = step(1, "LEADER", "approve");
+    step.setScope(GrantScope.Kind.self_organization);
+    var workflow = workflow(step);
+    var contract = contract("Report", "stage", "status", List.of("open"));
+    contract.setAssigneeField(null);
+    contract.setOrgField("department");
+    workflow.setRunContract(contract);
+    when(admin.getJSONRule(DOMAIN)).thenReturn(classRule("Report", "id", "stage", "status", "department"));
+    assertThrows(IllegalArgumentException.class, () -> service.save(workflow));
+    var action = new Action(); action.setDomainId(DOMAIN);
+    action.setTarget(new io.ontomato.dataengine.bean.action.ActionTarget("Report", "document"));
+    when(actions.queryById("approve")).thenReturn(new Object[]{action, "f"});
+    when(workflows.queryById("w1")).thenReturn(workflow);
+    when(workflows.publishVersion(workflow)).thenReturn(1);
+    service.activate("w1", DOMAIN, "reviewer");
+    verify(grants).grant(DOMAIN, "w1", "LEADER", CapabilityGrantLookup.ACTION, "approve", 1, 1,
+        new GrantScope(GrantScope.Kind.self_organization, "Report", "department"));
   }
 }

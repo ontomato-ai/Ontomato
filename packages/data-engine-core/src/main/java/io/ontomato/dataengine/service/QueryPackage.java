@@ -141,7 +141,13 @@ public final class QueryPackage {
           (leaf.equals("count") || leaf.equals("offset")) && pointer.contains("/limit/") ||
           leaf.equals("query") && object.containsKey("field")))
       throw new IllegalArgumentException("Parameter must target a DSL value: " + pointer);
-    object.put(leaf, value);
+    // Adapters cannot emit IN (). Bind an empty set to a false predicate on the same field.
+    if ("value".equals(leaf) && "in".equals(object.getString("operator"))
+        && pointer.contains("/conditions/properties/") && value instanceof List<?> items && items.isEmpty()) {
+      String field = object.getString("field");
+      object.clear();
+      object.putAll(io.ontomato.dataengine.util.DslPermissionUtil.alwaysFalse(field));
+    } else object.put(leaf, value);
   }
 
   public static JSONObject analysis(JSONObject value, JSONObject values, JSONObject labels,

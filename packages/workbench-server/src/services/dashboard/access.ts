@@ -1,8 +1,14 @@
 import type { DashboardDetail, DashboardGroup } from "@ontomato/contracts/dashboard";
+import type { z } from "zod";
 import { t } from "../../i18n";
 import { HttpError } from "../../utils/errors";
 import { requireOwner } from "../../utils/owner-guard";
 import { getDashboard } from "./store";
+export function parseDashboardInput<T>(schema: z.ZodType<T>, input: unknown): T {
+  const result = schema.safeParse(input);
+  if (!result.success) throw new HttpError(400, "Invalid dashboard request", "INVALID_REQUEST", { issues: result.error.issues });
+  return result.data;
+}
 
 export function requireDashboardId(value: unknown) {
   const id = String(value || "").trim();

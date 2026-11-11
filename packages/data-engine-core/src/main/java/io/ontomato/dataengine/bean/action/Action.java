@@ -31,6 +31,7 @@ public class Action {
 	private JSONObject definition;
 	/** Authored or generation-time submission criteria; null for legacy actions. */
 	private JSONObject submissionCriteria;
+	private ActionTarget target;
 	private String codeHash;
 	private Integer explanationVersion;
 	private String status;

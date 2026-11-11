@@ -195,6 +195,22 @@ public class WorkflowDao {
 		return jdbcTemplate.query(sql.toString(), (rs, rowNum) -> map(rs), params.toArray());
 	}
 
+    public record PendingRevision(io.ontomato.dataengine.bean.workflow.RunContract contract, List<WorkflowStep> steps, boolean sharedClass) {}
+
+    /** Use the active frozen snapshot, not the editable definition. Past processes can still have rows in a shared class. */
+    public PendingRevision pendingRevision(String domain, String id, int version) {
+        var rows = jdbcTemplate.query("""
+                SELECT v.run_contract, v.steps, EXISTS (
+                    SELECT 1 FROM workflow_version other WHERE other.domain_id=v.domain_id
+                    AND other.workflow_id<>v.workflow_id AND other.run_class_name=v.run_class_name) AS shared_class
+                FROM workflow_version v JOIN workflow w ON w.id=v.workflow_id AND w.domain_id=v.domain_id AND w.version=v.version
+                WHERE v.domain_id=? AND v.workflow_id=? AND v.version=? AND w.status='ACTIVE'
+                """, (rs, n) -> new PendingRevision(JSON.parseObject(rs.getString("run_contract"),
+                        io.ontomato.dataengine.bean.workflow.RunContract.class).normalized(), parseSteps(rs.getString("steps")),
+                        rs.getBoolean("shared_class")), domain, id, version);
+        return rows.isEmpty() ? null : rows.get(0);
+    }
+
 	/** The steps of one published revision, so a grant can be re-derived from what was approved. */
 	public List<WorkflowStep> versionSteps(String workflowId, int version) {
 		List<String> found = jdbcTemplate.query(

@@ -38,6 +38,8 @@ const {
   loadSubjects,
 } = useManagerClient();
 
+const scopeKinds = ["all", "self_organization", "self_subtree", "self_descendants", "initiated_by_self", "assigned_to_self"] as const;
+const contractFields = ["className", "idField", "stepField", "statusField", "orgField", "initiatorField", "assigneeField", "workflowRefField"] as const;
 const workflows = ref<WorkflowRecord[]>([]);
 const actions = ref<SmartAsset[]>([]);
 /**
@@ -133,7 +135,7 @@ onMounted(async () => {
 });
 
 function openCreate() {
-  Object.assign(form, { id: undefined, name: "", description: "", steps: [blankStep(1)] });
+  Object.assign(form, { id: undefined, name: "", description: "", runClassName: null, runContract: null, steps: [blankStep(1)] });
   editing.value = true;
 }
 
@@ -152,13 +154,15 @@ function openEdit(workflow: WorkflowRecord) {
     id: workflow.id,
     name: workflow.name,
     description: workflow.description ?? "",
+    runClassName: workflow.runClassName,
+    runContract: workflow.runContract ? { ...workflow.runContract, statusOpen: [...(workflow.runContract.statusOpen ?? [])] } : null,
     steps: (workflow.steps ?? []).map((step) => ({ ...step })),
   });
   editing.value = true;
 }
 
 function blankStep(no: number): WorkflowStepRecord {
-  return { stepNo: no, name: "", roleCode: "", actionId: "", actionType: "approve", assignRule: "dept_role" };
+  return { stepNo: no, name: "", roleCode: "", actionId: "", actionType: "approve", scope: "all" };
 }
 
 function addStep() {
@@ -180,7 +184,7 @@ async function save() {
   const steps = (form.steps ?? []).filter((step) => (step.roleCode ?? "").trim() || (step.actionId ?? "").trim());
   saving.value = true;
   try {
-    await saveWorkflow({ ...form, name, steps });
+    await saveWorkflow({ ...form, name, steps, runClassName: form.runContract?.className ?? form.runClassName });
     message.success(ot("workflowSaved"));
     editing.value = false;
     await refresh();
@@ -280,7 +284,7 @@ function grantsByRole(rows: CapabilityGrantRecord[]) {
   for (const grant of rows) {
     const role = grant.roleCode || grant.roleId || "-";
     const capabilities = grouped.get(role) ?? [];
-    const name = capabilityName(grant);
+    const name = [capabilityName(grant), grant.stepNo, ot(`scope_${grant.scope.kind}`), grant.scope.field].filter(Boolean).join(" · ");
     if (!capabilities.includes(name)) capabilities.push(name);
     grouped.set(role, capabilities);
   }
@@ -385,28 +389,52 @@ function grantSummary(workflow: WorkflowRecord) {
         <el-form-item :label="ot('workflowColumnDesc')">
           <el-input v-model="form.description" type="textarea" :rows="2" />
         </el-form-item>
-      </el-form>
+        <el-button v-if="!form.runContract" @click="form.runContract = { className: form.runClassName ?? '', statusOpen: [] }">{{ ot("workflowContractAdd") }}</el-button>
+        <template v-else>
+          <h4>{{ ot("workflowContract") }}</h4>
+          <el-form-item v-for="field in contractFields" :key="field" :label="ot(`contract_${field}`)">
+            <el-input v-model="form.runContract[field]" />
+          </el-form-item>
+          <el-form-item :label="ot('contract_statusOpen')">
+            <el-select v-model="form.runContract.statusOpen" multiple filterable allow-create default-first-option />
+          </el-form-item>
+          <el-button link @click="form.runContract = null">{{ ot("workflowContractRemove") }}</el-button>
+        </template>
 
-      <div class="workflow-steps-editor">
-        <div class="workflow-steps-editor__header">
-          <span>{{ ot("workflowColumnSteps") }}</span>
-          <el-button link type="primary" @click="addStep">
-            <Plus :size="14" />
-            <span>{{ ot("workflowAddStep") }}</span>
-          </el-button>
+        <div class="workflow-steps-editor">
+          <div class="workflow-steps-editor__header">
+            <span>{{ ot("workflowColumnSteps") }}</span>
+            <el-button link type="primary" @click="addStep">
+              <Plus :size="14" />
+              <span>{{ ot("workflowAddStep") }}</span>
+            </el-button>
+          </div>
+          <div v-for="(step, index) in form.steps" :key="index" class="workflow-step-row">
+            <span class="workflow-step-no">{{ index + 1 }}</span>
+            <div class="workflow-step-fields">
+              <el-form-item :label="ot('workflowStepName')">
+                <el-input v-model="step.name" />
+              </el-form-item>
+              <el-form-item :label="ot('workflowStepRole')">
+                <el-input v-model="step.roleCode" />
+              </el-form-item>
+              <el-form-item :label="ot('workflowStepAction')">
+                <el-select v-model="step.actionId" filterable clearable :placeholder="ot('workflowStepAction')">
+                  <el-option v-for="action in publishedActions" :key="action.id" :label="action.name" :value="action.id" />
+                </el-select>
+              </el-form-item>
+              <el-form-item :label="ot('workflowScope')">
+                <el-select v-model="step.scope">
+                  <el-option v-for="kind in scopeKinds" :key="kind" :value="kind" :label="ot(`scope_${kind}`)" />
+                </el-select>
+              </el-form-item>
+            </div>
+            <el-button link type="danger" :aria-label="ot('workflowDelete')" @click="removeStep(index)">
+              <Trash2 :size="14" />
+            </el-button>
+          </div>
         </div>
-        <div v-for="(step, index) in form.steps" :key="index" class="workflow-step-row">
-          <span class="workflow-step-no">{{ index + 1 }}</span>
-          <el-input v-model="step.name" :placeholder="ot('workflowStepName')" class="workflow-step-name" />
-          <el-input v-model="step.roleCode" :placeholder="ot('workflowStepRole')" class="workflow-step-role" />
-          <el-select v-model="step.actionId" filterable clearable :placeholder="ot('workflowStepAction')" class="workflow-step-action">
-            <el-option v-for="action in publishedActions" :key="action.id" :label="action.name" :value="action.id" />
-          </el-select>
-          <el-button link type="danger" @click="removeStep(index)">
-            <Trash2 :size="14" />
-          </el-button>
-        </div>
-      </div>
+      </el-form>
 
       <template #footer>
         <el-button @click="editing = false">{{ ot("workflowCancel") }}</el-button>
@@ -570,6 +598,7 @@ function grantSummary(workflow: WorkflowRecord) {
   margin: 0 4px 4px 0;
 }
 .workflow-steps-editor {
+  container: workflow-steps / inline-size;
   margin-top: 8px;
 }
 .workflow-steps-editor__header {
@@ -580,23 +609,30 @@ function grantSummary(workflow: WorkflowRecord) {
   font-weight: 600;
 }
 .workflow-step-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 8px;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 12px;
+  padding-block: 12px;
+  border-block-start: 1px solid var(--el-border-color-lighter);
 }
 .workflow-step-no {
-  width: 20px;
   color: var(--el-text-color-secondary);
-  text-align: center;
+  font-variant-numeric: tabular-nums;
 }
-.workflow-step-name {
-  flex: 1.2;
+.workflow-step-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px 16px;
 }
-.workflow-step-role {
-  flex: 1;
+.workflow-step-fields > .el-form-item {
+  min-width: 0;
+  margin: 0;
 }
-.workflow-step-action {
-  flex: 1.4;
+@container workflow-steps (min-width: 48rem) {
+  .workflow-step-fields { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+}
+@container workflow-steps (max-width: 30rem) {
+  .workflow-step-fields { grid-template-columns: minmax(0, 1fr); }
 }
 </style>

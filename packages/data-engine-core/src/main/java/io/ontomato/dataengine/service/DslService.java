@@ -13,6 +13,9 @@ public interface DslService {
 	
 	public Map<String, Object> executeV1(JSONObject dsl, UserDataPermission permission, User user);
 
+    /** Apply a server-authored row predicate after the projection has passed ordinary field authorization. */
+    Map<String, Object> executeGovernedRead(JSONObject query, JSONObject predicate, UserDataPermission permission, User user);
+
     /** Only Java's authenticated execution boundary may request intermediate values. */
     public Map<String, Object> executeInternal(JSONObject dsl, UserDataPermission permission, User user);
 	
