@@ -63,12 +63,12 @@ public class DslServiceImpl implements DslService {
 
 	@Override
 	public Map<String, Object> executeV1(JSONObject dsl, UserDataPermission permission, User user) {
-		return executeNormalized(dsl, permission, user.getDomainId(), false);
+		return executeNormalized(dsl, permission, user.getDomainId(), false, null);
 	}
 
     @Override
     public Map<String, Object> executeInternal(JSONObject dsl, UserDataPermission permission, User user) {
-        return executeNormalized(dsl, permission, user.getDomainId(), true);
+        return executeNormalized(dsl, permission, user.getDomainId(), true, null);
     }
 	
 	@Override
@@ -81,8 +81,13 @@ public class DslServiceImpl implements DslService {
     	return nodeIds;
 	}
 
+    @Override
+    public Map<String, Object> executeTargetRead(JSONObject query, JSONObject predicate, UserDataPermission permission, User user) {
+        return executeNormalized(query, permission, user.getDomainId(), true, predicate);
+    }
+
 	/** Normalize and execute with the already resolved permission. */
-	private Map<String, Object> executeNormalized(JSONObject dsl, UserDataPermission permission, String domainId, boolean internal) {
+	private Map<String, Object> executeNormalized(JSONObject dsl, UserDataPermission permission, String domainId, boolean internal, JSONObject targetPredicate) {
 		BusinessConfig businessConfig = businessConfigService.get(domainId);
 		Map<String, Object> jsonRule = adminService.getJSONRule(domainId);
 		JSONArray dsls = new JSONArray();
@@ -91,6 +96,9 @@ public class DslServiceImpl implements DslService {
 		QueryPermissions.restrictRelations(dsl, jsonRule, permission);
 		var analysis = QuerySourceAnalysis.fromDsl(dsl, classDefs);
 		QueryPermissions.authorizeInputs(analysis, permission, classDefs);
+        if (targetPredicate != null) dsl.getJSONObject("answer").getJSONArray("steps").getJSONObject(0)
+                .getJSONObject("graph").getJSONArray("patterns").getJSONObject(0).getJSONArray("objects").getJSONObject(0)
+                .put("conditions", JSONObject.of("properties", targetPredicate));
 		String dslStr = DslUtil.normalizeClassNames(JSONArray.toJSONString(dsls, Feature.WriteMapNullValue), classDefs);
 		DataAdapter timeConditionAdapter = dataAdapterRegistry.create(businessConfig, jsonRule);
 		dslStr = DslUtil.setConditionTimeColumnToCorrectFormat(dslStr, dataRagConfig.getDslMightTimeFormats(), classDefs, timeConditionAdapter.timeConditionsAsEpochMillis(), timeConditionAdapter.timeConditionZone());

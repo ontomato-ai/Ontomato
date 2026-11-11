@@ -191,11 +191,13 @@ class BuildTestPostgresIntegrationTest {
       function.getParameters().get(0).setValue("contract-person-1");function.getParameters().get(1).setValue(99);
       var action=JSON.parseArray(Files.readString(Path.of("../../data-engine-core/src/test/resources/agent-contracts/actions.json"))).getJSONObject(0).to(io.ontomato.dataengine.bean.action.Action.class);
       action.setDomainId("contract");action.setFunction(function);
+      action.setTarget(new io.ontomato.dataengine.bean.action.ActionTarget("contract_person", "id"));
       var actions=spy(new ActionServiceImpl());doReturn(action).when(actions).queryById(action.getId());
       ReflectionTestUtils.setField(actions,"identity",identity);ReflectionTestUtils.setField(actions,"abcProgramService",programs);
-      CapabilityGrantLookup actionGrants = (userId, domainId, kind, capabilityId) -> true;
+      CapabilityGrantLookup actionGrants = (userId, domainId, kind, capabilityId) -> CapabilityGrantLookup.Admission.ALL;
       ReflectionTestUtils.setField(actions, "capabilityGrants", actionGrants);
-      ReflectionTestUtils.setField(actions, "preconditions", new ActionPreconditionService(mock(DslService.class), admin, mock(SubjectAttributeLookup.class), ontology));
+      ReflectionTestUtils.setField(actions, "queries", ontology);
+      ReflectionTestUtils.setField(actions, "preconditions", new ActionPreconditionService(mock(DslService.class), admin, ontology));
       ReflectionTestUtils.setField(actions, "identitySnapshots", (IdentitySnapshotLookup) (actor, domain) -> JSONObject.of("principalId", actor.getId()));
       ReflectionTestUtils.setField(actions, "workflowRuns", mock(WorkflowRunResolver.class));
       var result=actions.execute(action.getId(),JSONObject.of("id","contract-person-1","age",99),"en",owner,permission,1,target);

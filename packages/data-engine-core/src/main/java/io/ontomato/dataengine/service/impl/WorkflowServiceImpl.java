@@ -1,5 +1,8 @@
 package io.ontomato.dataengine.service.impl;
 
+import io.ontomato.dataengine.util.DslUtil;
+import io.ontomato.dataengine.bean.workflow.GrantScope;
+import io.ontomato.dataengine.bean.action.Action;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -90,7 +93,7 @@ public class WorkflowServiceImpl implements WorkflowService {
 
         for (WorkflowStep step : workflow.getSteps()) {
             grants.grant(domainId, workflow.getId(), step.getRoleCode(), CapabilityGrantLookup.ACTION,
-                    step.getActionId(), version);
+                    step.getActionId(), version, step.getStepNo(), GrantScope.freeze(step.getScope(), workflow.getRunContract()));
         }
         workflows.appendEvent(workflow, Workflow.EVENT_ACTIVATED, principalId);
         grants.activated(workflow, principalId);
@@ -161,27 +164,54 @@ public class WorkflowServiceImpl implements WorkflowService {
     private void validate(Workflow workflow, String domainId) {
         List<String> problems = new ArrayList<>();
         List<WorkflowStep> steps = workflow.getSteps();
+        Set<Integer> numbers = new LinkedHashSet<>();
+        if (workflow.getRunContract() != null) workflow.getRunContract().normalized();
         if (steps != null) {
             for (WorkflowStep step : steps) {
                 String where = "step " + step.getStepNo();
+                if (step.getStepNo() == null || step.getStepNo() < 1 || !numbers.add(step.getStepNo()))
+                    problems.add(where + " requires a unique positive stepNo");
+                if (step.getScope() == null) problems.add(where + " must declare its scope");
                 if (step.getRoleCode() == null || step.getRoleCode().isBlank()) {
                     problems.add(where + " names no role");
                 }
                 if (step.getActionId() == null || step.getActionId().isBlank()) {
                     problems.add(where + " names no action");
-                } else if (actions.queryById(step.getActionId()) == null) {
-                    problems.add(where + " names an unknown action: " + step.getActionId());
+                } else {
+                    var row = actions.queryById(step.getActionId());
+                    if (row == null || !domainId.equals(((Action) row[0]).getDomainId()))
+                        problems.add(where + " names an unknown action: " + step.getActionId());
+                    else validateTarget(step, (Action) row[0], workflow, problems);
                 }
                 if (step.getActionType() != null && !WorkflowStep.actionTypes().contains(step.getActionType())) {
                     problems.add(where + " has an unknown action type: " + step.getActionType());
                 }
-                if (step.getAssignRule() != null && !WorkflowStep.assignRules().contains(step.getAssignRule())) {
-                    problems.add(where + " has an unknown assignment rule: " + step.getAssignRule());
-                }
+
             }
         }
         validateRunContract(workflow, domainId, problems);
         if (!problems.isEmpty()) throw new IllegalArgumentException(String.join("; ", problems));
+    }
+
+    private void validateTarget(WorkflowStep step, Action action, Workflow workflow, List<String> problems) {
+        if (step.getScope() == null) return;
+        var target = action.getTarget();
+        var contract = workflow.getRunContract();
+        try {
+            var scope = GrantScope.freeze(step.getScope(), contract);
+            if (scope.kind() != GrantScope.Kind.all) scope.requireTarget(target, admin.getJSONRule(workflow.getDomainId()));
+            if (target != null && workflow.getRunClassName() != null && !target.className().equals(workflow.getRunClassName()))
+                throw new IllegalArgumentException("Action target does not match runClassName");
+            if (target != null && contract != null) {
+                if (!target.className().equals(contract.getClassName()))
+                    throw new IllegalArgumentException("Action target does not match runContract.className");
+                var definition = target.definition(admin.getJSONRule(workflow.getDomainId()));
+                if (!DslUtil.getPrimaryKey(definition).equals(contract.getIdField()))
+                    throw new IllegalArgumentException("runContract.idField must be the Action target primary key");
+            }
+        } catch (IllegalArgumentException error) {
+            problems.add("step " + step.getStepNo() + ": " + error.getMessage());
+        }
     }
 
     /**
@@ -246,6 +276,8 @@ public class WorkflowServiceImpl implements WorkflowService {
         addIfNamed(fields, contract.getIdField());
         addIfNamed(fields, contract.getStepField());
         addIfNamed(fields, contract.getStatusField());
+        addIfNamed(fields, contract.getOrgField());
+        addIfNamed(fields, contract.getInitiatorField());
         addIfNamed(fields, contract.getAssigneeField());
         addIfNamed(fields, contract.getCandidateField());
         addIfNamed(fields, contract.getWorkflowRefField());
@@ -287,7 +319,7 @@ public class WorkflowServiceImpl implements WorkflowService {
         Object raw = classDef.get("attrs");
         if (!(raw instanceof List<?> attrs)) return names;
         for (Object attr : attrs) {
-            if (attr instanceof Map<?, ?> field && field.get("name") != null) {
+            if (attr instanceof Map<?, ?> field && !Boolean.FALSE.equals(field.get("enable")) && field.get("name") != null) {
                 names.add(String.valueOf(field.get("name")));
             }
         }

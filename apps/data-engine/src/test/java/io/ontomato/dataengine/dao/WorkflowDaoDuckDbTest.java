@@ -1,5 +1,24 @@
 package io.ontomato.dataengine.dao;
 
+import io.ontomato.dataengine.dataAdapter.DuckDBAdapter;
+import io.ontomato.dataengine.dataAdapter.DataAdapterConnection;
+import io.ontomato.dataengine.dataAdapter.DataAdapterRegistry;
+import io.ontomato.dataengine.bean.action.ActionTarget;
+import io.ontomato.dataengine.service.sys.bean.permission.UserDataPermission;
+import io.ontomato.dataengine.service.sys.bean.permission.FieldPermission;
+import io.ontomato.dataengine.service.impl.DslServiceImpl;
+import io.ontomato.dataengine.service.OntologyQueryService;
+import io.ontomato.dataengine.service.BusinessConfigService;
+import io.ontomato.dataengine.service.CapabilityGrantLookup;
+import io.ontomato.dataengine.service.QueryAccessService;
+import io.ontomato.dataengine.service.AdminService;
+import io.ontomato.dataengine.config.BusinessConfig;
+import io.ontomato.dataengine.config.DataRagConfig;
+import com.alibaba.fastjson2.JSONArray;
+import com.alibaba.fastjson2.JSONObject;
+import java.util.Map;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.mockito.Mockito.*;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
@@ -236,5 +255,57 @@ class WorkflowDaoDuckDbTest {
         step.setRoleCode(role);
         step.setActionId(action);
         return step;
+    }
+
+    @Test
+    void migrationRewritesBothRepresentationsWithoutPublishing() {
+        dao.initIndex();
+        jdbc.execute("CREATE TABLE action (id TEXT, domain_id TEXT, submission_criteria TEXT)");
+        jdbc.execute("CREATE TABLE action_drafts (id TEXT, domain_id TEXT, action JSON, consumed_at TIMESTAMP, expires_at TIMESTAMP)");
+        var workflow = workflow("w1", step(1, "L", "approve"));
+        dao.save(workflow);
+        dao.publishVersion(workflow);
+        String old = "[{\"stepNo\":1,\"roleCode\":\"L\",\"actionId\":\"approve\",\"assignRule\":\"dept_role\"}]";
+        jdbc.update("UPDATE workflow SET steps=?", old);
+        jdbc.update("UPDATE workflow_version SET steps=?", old);
+        new io.ontomato.dataengine.migration.ActionTargetScopeMigration(jdbc).run();
+        assertEquals(io.ontomato.dataengine.bean.workflow.GrantScope.Kind.self_organization, dao.queryById("w1").getSteps().get(0).getScope());
+        assertEquals(dao.queryById("w1").getSteps(), dao.versionSteps("w1", 1));
+        assertEquals(0, jdbc.queryForObject("SELECT count(*) FROM workflow_event", Integer.class));
+    }
+
+    @Test
+    void liveActionScopeIntersectsRowsWithoutRequiringTheOrganizationOrKeyColumn() throws Exception {
+        var definition = JSONObject.of("className", "target_documents", "attrs", JSONArray.of(
+                JSONObject.of("name","id","type","varchar","primaryKey",true,"enable",true),
+                JSONObject.of("name","name","type","varchar","enable",true),
+                JSONObject.of("name","bio","type","varchar","enable",true),
+                JSONObject.of("name","age","type","int","enable",true)));
+        var rule = JSONObject.of("classDef", JSONArray.of(definition), "relationship_rule", new JSONObject());
+        jdbc.execute("CREATE TABLE target_documents(id VARCHAR PRIMARY KEY, name VARCHAR, bio VARCHAR, age INTEGER)");
+        jdbc.execute("INSERT INTO target_documents VALUES ('001','one','A',20),('002','two','B',20),('003','three','A',10)");
+        var db = new DataAdapterConnection();
+        db.put("url", "jdbc:duckdb:" + directory.resolve("engine.db"));
+        var admin = mock(AdminService.class); when(admin.getJSONRule("domain")).thenReturn(rule);
+        var config = new DataRagConfig(); config.setDslMightTimeFormats(new String[0]);
+        var configs = mock(BusinessConfigService.class);
+        var business = new BusinessConfig(); when(configs.get("domain")).thenReturn(business);
+        var registry = mock(DataAdapterRegistry.class); when(registry.create(business, rule)).thenReturn(new DuckDBAdapter(db, rule));
+        var dsl = new DslServiceImpl();
+        ReflectionTestUtils.setField(dsl, "dataRagConfig", config);
+        ReflectionTestUtils.setField(dsl, "dataAdapterRegistry", registry);
+        ReflectionTestUtils.setField(dsl, "businessConfigService", configs);
+        ReflectionTestUtils.setField(dsl, "adminService", admin);
+        var query = new OntologyQueryService(admin, dsl, null, null);
+        var perm = new UserDataPermission();
+        var fields = new FieldPermission("target_documents"); fields.getVisibleFields().add("name"); perm.addFieldPermission(fields);
+        perm.addRowPermission("auditor", "target_documents", "{\"operator\":\"logic\",\"and\":[{\"field\":\"age\",\"operator\":\">=\",\"value\":18}]}");
+        var access = new QueryAccessService.Access(new QueryAccessService.GrantUser("u", "domain"), perm, null, null, null);
+        var target = new ActionTarget("target_documents", "doc");
+        var allowed = new CapabilityGrantLookup.Admission(false, List.of(new CapabilityGrantLookup.Match("target_documents", "bio", List.of("A"))));
+        assertTrue(query.actionTargetExists(target, "001", allowed, access));
+        assertFalse(query.actionTargetExists(target, "002", allowed, access));
+        assertFalse(query.actionTargetExists(target, "003", CapabilityGrantLookup.Admission.ALL, access));
+        assertFalse(query.actionTargetExists(target, "missing", CapabilityGrantLookup.Admission.ALL, access));
     }
 }

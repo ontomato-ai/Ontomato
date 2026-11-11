@@ -21,11 +21,13 @@ public interface CapabilityGrantLookup {
     /** The capability kinds a role can be granted. */
     Set<String> KINDS = Set.of(ACTION);
 
-    /**
-     * Whether the subject may use the capability.
-     *
-     * @param kind one of {@link #KINDS}
-     * @param capabilityId the id of the capability object (for an action, the action id)
-     */
-    boolean allows(String userId, String domainId, String kind, String capabilityId);
+    /** Conditions are alternatives; each retains the target class authorized by its own grant. */
+    record Match(String className, String field, java.util.List<String> values) {}
+    record Admission(boolean unrestricted, java.util.List<Match> matches) {
+        public static final Admission ALL = new Admission(true, java.util.List.of());
+        public static final Admission DENIED = new Admission(false, java.util.List.of());
+        public boolean admitted() { return unrestricted || !matches.isEmpty(); }
+    }
+
+    Admission admission(String userId, String domainId, String kind, String capabilityId);
 }

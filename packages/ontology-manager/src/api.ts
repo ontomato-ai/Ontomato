@@ -211,13 +211,20 @@ export interface SmartAsset {
 }
 
 /** One step of a workflow: the role that owns it and the action it runs. */
+export type WorkflowScope = "all" | "self_organization" | "self_subtree" | "self_descendants" | "initiated_by_self" | "assigned_to_self";
+export interface RunContractRecord {
+  className: string; idField?: string; stepField?: string; statusField?: string;
+  orgField?: string; initiatorField?: string; assigneeField?: string;
+  statusOpen?: string[]; statusDone?: string[]; statusRejected?: string[];
+  candidateField?: string; workflowRefField?: string;
+}
 export interface WorkflowStepRecord {
   stepNo?: number;
   name?: string;
   roleCode?: string;
   actionId?: string;
   actionType?: string;
-  assignRule?: string;
+  scope: WorkflowScope;
   description?: string;
 }
 
@@ -232,6 +239,7 @@ export interface WorkflowRecord {
   status?: string;
   version?: number | null;
   runClassName?: string | null;
+  runContract?: RunContractRecord | null;
   steps?: WorkflowStepRecord[];
   /** Subject id that created the process. */
   createdBy?: string | null;
@@ -254,6 +262,8 @@ export interface CapabilityGrantRecord {
    */
   workflowId?: string | null;
   activatedByWorkflowVersion?: string | null;
+  scope: { kind: WorkflowScope; field?: string; className?: string };
+  stepNo?: number | null;
 }
 
 /**

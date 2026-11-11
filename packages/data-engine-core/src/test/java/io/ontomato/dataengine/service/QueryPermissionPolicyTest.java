@@ -321,4 +321,31 @@ class QueryPermissionPolicyTest {
     assertEquals("在职员工总数", output.getJSONArray("columns").getJSONObject(0).getString("label"));
     assertEquals("active_staff_total", output.getJSONArray("columns").getJSONObject(0).getString("key"));
   }
+
+  @Test
+  void targetReadUsesTheSandboxAndIntersectsHiddenScopeFieldsWithTheExistingRowRule() throws Exception {
+    var admin = mock(AdminService.class);
+    var defs = definitions();
+    var attrs = (JSONArray) defs.get(0).get("attrs");
+    attrs.add(JSONObject.of("name", "staff_code", "primaryKey", true));
+    attrs.add(JSONObject.of("name", "org_code"));
+    when(admin.getJSONRule("domain")).thenReturn(Map.of("classDef", defs));
+    var dsl = mock(DslService.class);
+    var ontology = new OntologyQueryService(admin, dsl, null, null);
+    var writes = mock(WriteFunctionOperationService.class);
+    org.springframework.test.util.ReflectionTestUtils.setField(ontology, "writes", writes);
+    var perm = permission(); perm.addRowPermission("post", "/Employee", "{\"operator\":\"logic\",\"and\":[{\"field\":\"department\",\"operator\":\"=\",\"value\":\"sales\"}]}");
+    var access = new QueryAccessService.Access(new QueryAccessService.GrantUser("u", "domain"), perm, null, null, null)
+        .withTarget(new ExecutionTarget("ctx", "sandbox-a", List.of("/Employee"), Long.MAX_VALUE));
+    var match = new CapabilityGrantLookup.Match("/Employee", "org_code", List.of("ORG-X"));
+    var args = org.mockito.ArgumentCaptor.forClass(JSONObject.class);
+    when(writes.query(args.capture(), eq("sandbox-a"), eq("domain"))).thenReturn(
+        JSONObject.of("data", JSONArray.of(JSONObject.of("answer", new JSONArray()))));
+    assertFalse(ontology.actionTargetExists(new io.ontomato.dataengine.bean.action.ActionTarget("/Employee", "employee"),
+        "0001", new CapabilityGrantLookup.Admission(false, List.of(match)), access));
+    var graph = args.getValue().getJSONObject("answer").getJSONArray("steps").getJSONObject(0).getJSONObject("graph");
+    String filter = graph.toJSONString();
+    for (String value : List.of("staff_code", "0001", "org_code", "ORG-X", "department", "sales")) assertTrue(filter.contains(value));
+    verifyNoInteractions(dsl);
+  }
 }

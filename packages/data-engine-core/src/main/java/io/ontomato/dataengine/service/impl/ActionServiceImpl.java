@@ -1,5 +1,7 @@
 package io.ontomato.dataengine.service.impl;
 
+import io.ontomato.dataengine.service.QueryAccessService;
+import io.ontomato.dataengine.service.OntologyQueryService;
 import io.ontomato.dataengine.service.ExecutionTarget;
 import io.ontomato.dataengine.service.IdentityService;
 import io.ontomato.dataengine.service.MetricViewBindings;
@@ -84,6 +86,7 @@ public class ActionServiceImpl implements ActionService {
   @Autowired private ActionPreconditionService preconditions;
 
   @Autowired private CapabilityGrantLookup capabilityGrants;
+  @Autowired private OntologyQueryService queries;
 
   @Autowired private IdentitySnapshotLookup identitySnapshots;
 
@@ -255,6 +258,8 @@ public class ActionServiceImpl implements ActionService {
       action.setStatus(Action.STATUS_PUBLISHED);
       action.setDomainId(domainId);
       action.setSubmissionCriteria(envelope.getJSONObject("submissionCriteria"));
+      action.setTarget(envelope.getObject("target", io.ontomato.dataengine.bean.action.ActionTarget.class));
+      if (!persistence) actionDao.validateDefinition(action);
       {
         Object[] explain =
             explainCode(
@@ -276,8 +281,7 @@ public class ActionServiceImpl implements ActionService {
           () -> {
             if (persistence) {
               ActionFunctionAdmission.requireSupported(function, langService, lang);
-              action.setFunction(functionDao.save(function, lang));
-              return actionDao.save(action);
+              return actionDao.saveWithFunction(action, lang);
             }
             return action;
           });
@@ -353,7 +357,6 @@ public class ActionServiceImpl implements ActionService {
       action.setCodeSegments(storedCodeSegments);
       action.setBusinessMeaning(storedBusinessMeaning);
     } else {
-      Function generatedFunction = function;
       return explainCode(
           function.getParameters(),
           function.getCode(),
@@ -365,15 +368,12 @@ public class ActionServiceImpl implements ActionService {
             action.setBusinessMeaning(meaning);
             action.setCodeHash(codeHash);
             action.setExplanationVersion(Action.EXPLANATION_VERSION);
-            action.setFunction(functionDao.save(generatedFunction, lang));
-            return actionDao.save(action);
+            return actionDao.saveWithFunction(action, lang);
           });
     }
     action.setCodeHash(codeHash);
     action.setExplanationVersion(Action.EXPLANATION_VERSION);
-    function = functionDao.save(function, lang);
-    action.setFunction(function);
-    return actionDao.save(action);
+    return actionDao.saveWithFunction(action, lang);
   }
 
   @Override
@@ -497,8 +497,7 @@ public class ActionServiceImpl implements ActionService {
         // the bundle records, falling back to the importer when the bundle carries none.
         if (action.getCreatedBy() == null) action.setCreatedBy(importer);
         action.setReviewedBy(importer);
-        functionDao.save(function, lang);
-        actionDao.save(action);
+        actionDao.saveWithFunction(action, lang);
         successCount++;
       } catch (Exception e) {
         log.error("Failed to import action {}: {}", actionId, e.getMessage(), e);
@@ -614,12 +613,17 @@ public class ActionServiceImpl implements ActionService {
   @Override
   public PythonExecuteResult execute(String id, JSONObject param, String lang, User user, UserDataPermission permission, int timeoutMinutes, ExecutionTarget target) throws Exception {
     Action action = executable(id, lang, user);
-    if (!capabilityGrants.allows(user.getId(), user.getDomainId(), CapabilityGrantLookup.ACTION, action.getId())) {
-      PythonExecuteResult refused = new PythonExecuteResult();
-      refused.setError(langService.get(lang, "Action.notGranted"));
-      return refused;
+    var admission = capabilityGrants.admission(user.getId(), user.getDomainId(), CapabilityGrantLookup.ACTION, action.getId());
+    if (!admission.admitted()) {
+      return notGranted(lang);
     }
     Function function = io.ontomato.dataengine.service.MetricViewBindings.executionWriteFunction(action.getFunction(), param);
+    String key = null;
+    if (action.getTarget() != null) {
+      key = action.getTarget().key(param);
+      var access = new QueryAccessService.Access(user, permission, null, null, null).withTarget(target);
+      if (!queries.actionTargetExists(action.getTarget(), key, admission, access)) return notGranted(lang);
+    } else if (!admission.unrestricted()) return notGranted(lang);
     ActionPreconditionService.Verdict verdict = preconditions.evaluate(action, param, user, permission, target);
     if (!verdict.satisfied()) {
       PythonExecuteResult refused = new PythonExecuteResult();
@@ -627,24 +631,33 @@ public class ActionServiceImpl implements ActionService {
       return refused;
     }
     Object[] o = abcProgramService.execute(UUID.randomUUID().toString(), function, user.getId(), permission, target.testing() ? target.sandboxId() : ServiceConst.NOT_SANDBOX, lang, timeoutMinutes, user.getDomainId(),
-        new ABCProgramService.ExecutionContext(null, identitySnapshot(action, user, verdict), target));
+        new ABCProgramService.ExecutionContext(null, identitySnapshot(action, user, key), target));
     PythonExecuteResult result = (PythonExecuteResult)o[1];
     if (result.getError() != null && !result.getError().isBlank()) { result.setResult(null); }
     else result.setResult(o[0] == null ? "{\"completed\":true}" : JSON.toJSONString(JSONObject.of("answer", o[0]), Feature.WriteMapNullValue));
     return result;
   }
 
+  private PythonExecuteResult notGranted(String lang) {
+    var result = new PythonExecuteResult();
+    result.setError(langService.get(lang, "Action.notGranted"));
+    return result;
+  }
+
   private JSONObject identitySnapshot(
-      Action action, User user, ActionPreconditionService.Verdict verdict) {
+      Action action, User user, String key) {
     JSONObject snapshot = identitySnapshots.snapshot(user, user.getDomainId());
-    String runId = workflowRuns.resolve(user.getDomainId(), action.getId(), verdict.proven());
+    String runId = key == null ? null : workflowRuns.resolve(user.getDomainId(), action.getId(), action.getTarget().className(), key);
     if (runId != null) snapshot.put("workflowRunId", runId);
     return snapshot;
   }
 
   @Override
   public JSONObject form(String id, JSONObject bound, JSONObject submitted, List<String> readOnly, String lang, User user) throws Exception {
-    List<Parameter> parameters = executable(id, lang, user).getFunction().getParameters();
+    Action action = executable(id, lang, user);
+    if (!capabilityGrants.admission(user.getId(), user.getDomainId(), CapabilityGrantLookup.ACTION, id).admitted())
+      throw new IllegalArgumentException(langService.get(lang, "Action.notGranted"));
+    List<Parameter> parameters = action.getFunction().getParameters();
     var names = new HashSet<String>();
     for (Parameter parameter : parameters) {
       names.add(parameter.getName());

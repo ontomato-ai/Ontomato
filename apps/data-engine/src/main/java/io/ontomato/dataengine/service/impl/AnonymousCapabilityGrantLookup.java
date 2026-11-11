@@ -13,7 +13,7 @@ import org.springframework.stereotype.Component;
 public class AnonymousCapabilityGrantLookup implements CapabilityGrantLookup {
 
     @Override
-    public boolean allows(String userId, String domainId, String kind, String capabilityId) {
-        return true;
+    public Admission admission(String userId, String domainId, String kind, String capabilityId) {
+        return Admission.ALL;
     }
 }

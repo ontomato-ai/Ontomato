@@ -1,5 +1,6 @@
 package io.ontomato.dataengine.service;
 
+import io.ontomato.dataengine.bean.action.ActionTarget;
 import io.ontomato.dataengine.dataAdapter.DslContractViolationException;
 import io.ontomato.dataengine.dataAdapter.DslGrammarValidator;
 import static io.ontomato.dataengine.dataAdapter.DslContractViolationException.Code.INVALID_GRAMMAR;
@@ -275,6 +276,48 @@ public class OntologyQueryService {
     }
     boolean internal = access.grant() != null && ("user-read".equals(access.grant().getString("purpose")) || "package-read".equals(access.grant().getString("purpose")));
     return internal ? dsl.executeInternal(query, access.permission(), access.user()) : dsl.executeV1(query, access.permission(), access.user());
+  }
+
+  /** Only the existence bit leaves the query boundary. Governance fields are not client projections. */
+  public boolean actionTargetExists(ActionTarget target, String key, CapabilityGrantLookup.Admission grant,
+                                   QueryAccessService.Access access) throws Exception {
+    String name = target.className();
+    var permission = access.permission();
+    QueryPermissions.requireClass(permission, name);
+    if (access.target().testing()) access.target().requireClasses(List.of(name));
+    var rule = admin.getJSONRule(access.user().getDomainId());
+    var visible = QueryPermissions.visibleRule(rule, permission, access.classNames());
+    var projection = target.definition(visible);
+    String pk = io.ontomato.dataengine.util.DslUtil.getPrimaryKey(target.definition(rule));
+    var predicate = JSONObject.of("field", pk, "operator", "=", "value", key);
+    if (!grant.unrestricted()) {
+      JSONArray alternatives = new JSONArray();
+      for (var match : grant.matches()) {
+        if (name.equals(match.className()) && !match.values().isEmpty())
+          alternatives.add(JSONObject.of("field", match.field(), "operator", "in", "value", match.values()));
+      }
+      if (alternatives.isEmpty()) return false;
+      predicate = JSONObject.of("operator", "logic", "and", JSONArray.of(predicate,
+          JSONObject.of("operator", "logic", "or", alternatives)));
+    }
+    // Project one authorized attribute; the value is discarded even if the attribute is masked.
+    String field = JSONObject.from(projection).getJSONArray("attrs").getJSONObject(0).getString("name");
+    JSONObject object = JSONObject.of("idx", 0, "variable", "o", "class", name);
+    JSONObject step = JSONObject.of("graph", JSONObject.of("patterns", JSONArray.of(JSONObject.of("objects", JSONArray.of(object)))),
+        "output", JSONObject.of("to_user", true, "fields", JSONArray.of(JSONObject.of("variable", "o", "field", field, "as", "present")),
+            "limit", JSONObject.of("count", 1)));
+    JSONObject query = JSONObject.of("problem", "", "answer", JSONObject.of("steps", JSONArray.of(step)));
+    Map<String, Object> result;
+    if (access.target().testing()) {
+      object.put("conditions", JSONObject.of("properties", predicate));
+      var restricted = (JSONObject) io.ontomato.dataengine.util.DslPermissionUtil.addRowPermission(
+          JSONArray.of(query).toJSONString(), (List<Map<String, Object>>) visible.get("classDef"), permission)[0];
+      result = writes.query(restricted, access.target().sandboxId(), access.user().getDomainId());
+    } else {
+      result = dsl.executeTargetRead(query, predicate, permission, access.user());
+    }
+    if (result.get("error") != null) throw queryFailure(result.get("error").toString(), access);
+    return !JSONObject.from(result).getJSONArray("data").getJSONObject(0).getJSONArray("answer").isEmpty();
   }
 
   public Object distinct(JSONObject body, QueryAccessService.Access access) {
