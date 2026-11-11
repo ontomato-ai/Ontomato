@@ -55,7 +55,7 @@ function appFor(path: string): PlatformAppDeclaration | null {
 
 const route = useRoute();
 const router = useRouter();
-const railApps = computed(() => (props.apps ?? []).map(railApp));
+const railApps = computed(() => (props.apps ?? []).map((app) => railApp(app, () => emit("selectApp", app.id))));
 const activeAppId = computed(() => appFor(route.path)?.id ?? null);
 const activeApp = computed(() => props.apps.find((app) => app.id === activeAppId.value) ?? null);
 const browserWorkspace = computed(() => route.path === "/browser/data" || route.path.startsWith("/browser/data/"));

@@ -139,8 +139,8 @@ describe("open-source Ontology Service page", () => {
   });
 
   it.each([
-    ["/", "#/agents/chat", "agents"],
-    ["/#/", "#/agents/chat", "agents"],
+    ["/", "#/home", null],
+    ["/#/", "#/home", null],
     ["/?view=data-browser", "#/browser/data", "data "],
     ["/?view=assets", "#/ontology/assets/metrics", null],
     ["/?view=visual-modeling&focus=object&id=Order", "#/ontology/visual-modeling?focus=object&id=Order", "modeling object:Order"],
@@ -149,7 +149,7 @@ describe("open-source Ontology Service page", () => {
     ["/#/admin/ontology/visual-modeling", "#/ontology/visual-modeling", "modeling :"],
     ["/#/admin", "#/settings/model-config/usage", "models"],
     ["/#/admin/audit-log", "#/settings/records/audit-log", null],
-    ["/#/no-such-page", "#/agents/chat", "agents"],
+    ["/#/no-such-page", "#/home", null],
   ])("old address %s lands on %s", async (url, landed, page) => {
     await start(url);
     expect(hash()).toBe(landed);
@@ -190,7 +190,9 @@ describe("open-source Ontology Service page", () => {
     expect(sessionStorage.getItem("ontology_manager_token")).toBeNull();
     expect(requests.length).toBeGreaterThan(0);
     for (const request of requests) {
-      expect(new URL(request.url, window.location.origin).pathname.startsWith("/custom-base/api/data-query/") || request.url.startsWith("/api/data-query/platform/applications")).toBe(true);
+      const path = new URL(request.url, window.location.origin).pathname;
+      // The catalog and the pages read the data engine; entering an application records its opening with the workbench.
+      expect(path.startsWith("/custom-base/api/data-query/") || path.startsWith("/custom-base/api/platform/home/") || request.url.startsWith("/api/data-query/platform/applications")).toBe(true);
       expect(request.headers).not.toHaveProperty("tk");
       expect(request.headers).not.toHaveProperty("x-api-key");
     }

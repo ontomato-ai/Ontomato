@@ -894,6 +894,37 @@ export default {
     }
   },
 
+  "home": {
+    "title": "Home",
+    "search": "Search applications and agents",
+    "chooseDashboards": "Choose dashboards",
+    "personal": "Favorites and recently used",
+    "favorites": "Favorites",
+    "recent": "Recently used",
+    "noFavorites": "Star an application or agent to keep it here",
+    "noRecent": "Applications you open and agents you talk to appear here",
+    "dashboards": "My dashboards",
+    "square": "Applications and agents",
+    "categories": { "all": "All", "top": "Ontology", "apps": "Applications", "bottom": "Administration", "agents": "Agents" },
+    "noItems": "Nothing to open here",
+    "noMatches": "Nothing matches the search",
+    "addFavorite": "Add {name} to favorites",
+    "removeFavorite": "Remove {name} from favorites",
+    "moveEarlier": "Move {name} earlier",
+    "moveLater": "Move {name} later",
+    "loadFailed": "The home could not be loaded: {reason}",
+    "retry": "Retry",
+    "dashboardPicker": {
+      "title": "Dashboards on the home",
+      "shown": "Shown on the home",
+      "available": "Your other dashboards",
+      "nothingShown": "No dashboard is shown on the home",
+      "none": "You have no dashboards yet. Create one in the Dashboards application.",
+      "add": "Add",
+      "remove": "Remove from home"
+    }
+  },
+
   // The scheduled tasks page's own text: one page, shown by the platform and by the agent application, so its words
   // belong to the message tree every host already loads rather than to a merge at startup.
   platformSchedules: platformSchedules.platformSchedules,

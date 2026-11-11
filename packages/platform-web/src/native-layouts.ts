@@ -3,6 +3,8 @@ import { platformRoutes } from "@ontomato/platform-shell/routes";
 import type { AppPartition } from "./partition";
 export type NativeLayout = Pick<AppPartition, "sections" | "frame" | "home" | "homePage" | "open" | "descriptionKey">;
 const layouts: readonly (NativeLayout & { renderer: string })[] = [
+  // The platform's home draws its own page: no column, no header of the shell's.
+  { renderer: "home", sections: [] },
   {
     renderer: "ontology",
     // Four layers organize existing screens; cross-application entries keep their original routes and permissions.
