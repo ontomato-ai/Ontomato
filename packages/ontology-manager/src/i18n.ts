@@ -663,7 +663,7 @@ const ontologyEn = {
 
   workflowTitle: "Business Processes",
   workflowDesc:
-    "A process is published as one unit of authority: activating a revision lets the roles its steps name run the actions those steps name. Nothing runs automatically, so a step's own preconditions decide when it is someone's turn.",
+    "Once a workflow is active, each step’s role determines who can perform its action, and its scope determines which records they can work on. Action preconditions check only the record’s state, such as whether it is awaiting approval.",
   workflowRefresh: "Refresh",
   workflowCreate: "New Process",
   workflowEmpty: "No business process in this domain yet",

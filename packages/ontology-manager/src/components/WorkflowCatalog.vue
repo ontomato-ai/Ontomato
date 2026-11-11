@@ -400,31 +400,41 @@ function grantSummary(workflow: WorkflowRecord) {
           </el-form-item>
           <el-button link @click="form.runContract = null">{{ ot("workflowContractRemove") }}</el-button>
         </template>
-      </el-form>
 
-      <div class="workflow-steps-editor">
-        <div class="workflow-steps-editor__header">
-          <span>{{ ot("workflowColumnSteps") }}</span>
-          <el-button link type="primary" @click="addStep">
-            <Plus :size="14" />
-            <span>{{ ot("workflowAddStep") }}</span>
-          </el-button>
+        <div class="workflow-steps-editor">
+          <div class="workflow-steps-editor__header">
+            <span>{{ ot("workflowColumnSteps") }}</span>
+            <el-button link type="primary" @click="addStep">
+              <Plus :size="14" />
+              <span>{{ ot("workflowAddStep") }}</span>
+            </el-button>
+          </div>
+          <div v-for="(step, index) in form.steps" :key="index" class="workflow-step-row">
+            <span class="workflow-step-no">{{ index + 1 }}</span>
+            <div class="workflow-step-fields">
+              <el-form-item :label="ot('workflowStepName')">
+                <el-input v-model="step.name" />
+              </el-form-item>
+              <el-form-item :label="ot('workflowStepRole')">
+                <el-input v-model="step.roleCode" />
+              </el-form-item>
+              <el-form-item :label="ot('workflowStepAction')">
+                <el-select v-model="step.actionId" filterable clearable :placeholder="ot('workflowStepAction')">
+                  <el-option v-for="action in publishedActions" :key="action.id" :label="action.name" :value="action.id" />
+                </el-select>
+              </el-form-item>
+              <el-form-item :label="ot('workflowScope')">
+                <el-select v-model="step.scope">
+                  <el-option v-for="kind in scopeKinds" :key="kind" :value="kind" :label="ot(`scope_${kind}`)" />
+                </el-select>
+              </el-form-item>
+            </div>
+            <el-button link type="danger" :aria-label="ot('workflowDelete')" @click="removeStep(index)">
+              <Trash2 :size="14" />
+            </el-button>
+          </div>
         </div>
-        <div v-for="(step, index) in form.steps" :key="index" class="workflow-step-row">
-          <span class="workflow-step-no">{{ index + 1 }}</span>
-          <el-input v-model="step.name" :placeholder="ot('workflowStepName')" class="workflow-step-name" />
-          <el-input v-model="step.roleCode" :placeholder="ot('workflowStepRole')" class="workflow-step-role" />
-          <el-select v-model="step.actionId" filterable clearable :placeholder="ot('workflowStepAction')" class="workflow-step-action">
-            <el-option v-for="action in publishedActions" :key="action.id" :label="action.name" :value="action.id" />
-          </el-select>
-          <el-select v-model="step.scope" :aria-label="ot('workflowScope')">
-            <el-option v-for="kind in scopeKinds" :key="kind" :value="kind" :label="ot(`scope_${kind}`)" />
-          </el-select>
-          <el-button link type="danger" @click="removeStep(index)">
-            <Trash2 :size="14" />
-          </el-button>
-        </div>
-      </div>
+      </el-form>
 
       <template #footer>
         <el-button @click="editing = false">{{ ot("workflowCancel") }}</el-button>
@@ -588,6 +598,7 @@ function grantSummary(workflow: WorkflowRecord) {
   margin: 0 4px 4px 0;
 }
 .workflow-steps-editor {
+  container: workflow-steps / inline-size;
   margin-top: 8px;
 }
 .workflow-steps-editor__header {
@@ -598,23 +609,30 @@ function grantSummary(workflow: WorkflowRecord) {
   font-weight: 600;
 }
 .workflow-step-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 8px;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 12px;
+  padding-block: 12px;
+  border-block-start: 1px solid var(--el-border-color-lighter);
 }
 .workflow-step-no {
-  width: 20px;
   color: var(--el-text-color-secondary);
-  text-align: center;
+  font-variant-numeric: tabular-nums;
 }
-.workflow-step-name {
-  flex: 1.2;
+.workflow-step-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px 16px;
 }
-.workflow-step-role {
-  flex: 1;
+.workflow-step-fields > .el-form-item {
+  min-width: 0;
+  margin: 0;
 }
-.workflow-step-action {
-  flex: 1.4;
+@container workflow-steps (min-width: 48rem) {
+  .workflow-step-fields { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+}
+@container workflow-steps (max-width: 30rem) {
+  .workflow-step-fields { grid-template-columns: minmax(0, 1fr); }
 }
 </style>
