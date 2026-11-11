@@ -22,9 +22,9 @@ describe("the platform's applications", () => {
     ]);
     expect(ontology.sections[0]!.paths).not.toContain("/ontology/assets/actions");
     expect(ontology.sections[1]!.paths).toEqual([
-      "/ontology/assets/metrics", "/ontology/assets/functions", "/ontology/assets/actions", "/ontology/capabilities",
+      "/ontology/assets/metrics", "/ontology/assets/functions", "/ontology/assets/actions", "/ontology/assets/workflows", "/ontology/capabilities",
     ]);
-    expect(ontology.sections[2]!.paths).toEqual(["/ontology/knowledge"]);
+    expect(ontology.sections[2]!.paths).toEqual(["/ontology/knowledge", "/ontology/assets/capability-map"]);
     expect(ontology.sections[3]!.paths).toEqual([]);
     const menu = appDeclarations(generatedNavigation(), closedAccess(["ontology-modeling"]), appPartition(), t)
       .find(app => app.id === "ontology")!;
