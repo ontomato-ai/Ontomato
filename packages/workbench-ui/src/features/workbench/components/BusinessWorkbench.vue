@@ -57,11 +57,12 @@ const feedback = createAssistantFeedback();
 const appearance = ref<WorkbenchAppearance | null>(null);
 const editingBrand = ref(false);
 /**
- * `?agentId=` asks for a new conversation with that agent (the platform home's agent cards link here). It wins over the
- * remembered agent, so the page does not open the remembered agent's conversation first and then switch.
+ * `?agentId=` asks for a new conversation with that agent (the platform home's agent cards link here). The page starts
+ * from its own choice (the remembered agent, settled against the agent list as always) and the request replaces it once
+ * the list shows the agent enabled; no conversation is opened before that.
  */
 const requestedAgent = () => (typeof route.query.agentId === "string" ? route.query.agentId : null);
-const agentId = ref<string | null>(requestedAgent() ?? readRemembered());
+const agentId = ref<string | null>(readRemembered());
 /**
  * The application's own pages, by the name the shell shows for them. The dashboards and the scheduled tasks are
  * applications of their own now, so nothing here leaves this application.
@@ -188,9 +189,9 @@ function openCapabilities() {
 const bottomEntry = computed(() => ({ label: t("assistant.featureAgents"), icon: "agents" }));
 
 /**
- * Applies `?agentId=` once the agents are known: an enabled agent is selected on an empty new conversation; any other id
- * is reported and nothing else is chosen in its place. The parameter then leaves the address (with a conversation it
- * would have overridden), so a reload or a later switch follows the page's own conversation behaviour.
+ * Applies `?agentId=` once the agents are known: an enabled agent is selected on an empty new conversation; a disabled or
+ * missing one is reported and the page keeps the agent its own rule chose. The parameter then leaves the address (with a
+ * conversation it would have overridden), so a reload or a later switch follows the page's own conversation behaviour.
  */
 function openRequestedAgent() {
   const id = requestedAgent();

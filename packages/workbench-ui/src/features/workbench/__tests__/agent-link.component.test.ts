@@ -70,11 +70,15 @@ describe("a link to one agent", () => {
     expect(router.currentRoute.value.query).toEqual({});
   });
 
-  it("reports an agent that is not available and does not choose another in its place", async () => {
+  it.each([
+    ["disabled", retired!.id],
+    ["deleted", "33333333-3333-4333-8333-333333333333"],
+  ])("reports a %s agent and keeps the agent the page itself chose", async (_case, id) => {
+    localStorage.setItem("ontomato.workbench.agent", sales!.id);
     const error = vi.spyOn(ElMessage, "error");
-    const { router, shell } = await openChat({ agentId: retired!.id });
+    const { router, shell } = await openChat({ agentId: id });
     expect(error).toHaveBeenCalledWith(i18n.global.t("assistant.agentUnavailable"));
-    expect(shell.props("agentId")).toBe(retired!.id);
+    expect(shell.props("agentId")).toBe(sales!.id);
     expect(router.currentRoute.value.query).toEqual({});
   });
 });
