@@ -77,6 +77,7 @@ export function appDeclarations(
       description: app.description ?? (app.descriptionKey ? t(app.descriptionKey) : null),
       icon: app.icon,
       rail: app.rail ?? "apps",
+      category: app.category,
       prefix: app.prefix,
       frame: app.frame,
       href: app.href,

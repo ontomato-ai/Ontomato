@@ -34,6 +34,7 @@ export function partitionOf(): readonly AppPartition[] {
       id: "browser",
       labelKey: "platform.objectBrowser",
       icon: "objects",
+      category: "business",
       prefix: "/browser",
       sections: [
         { key: "browser:pages", titleKey: "platform.objectBrowser", paths: ["/ontology/playground", "/browser/data"] },
@@ -43,6 +44,7 @@ export function partitionOf(): readonly AppPartition[] {
       id: "ontology",
       labelKey: "platform.ontologyManager",
       icon: "ontology",
+      category: "build",
       prefix: "/ontology",
       sections: [
         { key: "ontology:model", titleKey: "nav.groupOntology", paths: ["/ontology/objects"] },

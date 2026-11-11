@@ -56,6 +56,12 @@ const client = createAssistantClient();
 const feedback = createAssistantFeedback();
 const appearance = ref<WorkbenchAppearance | null>(null);
 const editingBrand = ref(false);
+/**
+ * `?agentId=` asks for a new conversation with that agent (the platform home's agent cards link here). The page starts
+ * from its own choice (the remembered agent, settled against the agent list as always) and the request replaces it once
+ * the list shows the agent enabled; no conversation is opened before that.
+ */
+const requestedAgent = () => (typeof route.query.agentId === "string" ? route.query.agentId : null);
 const agentId = ref<string | null>(readRemembered());
 /**
  * The application's own pages, by the name the shell shows for them. The dashboards and the scheduled tasks are
@@ -98,7 +104,9 @@ const featureId = computed<string | null>({
  * The open conversation. The address carries it while the settings are shown, so leaving them (or reloading) returns to
  * the conversation the reader came from instead of to a blank one.
  */
-const conversationId = ref<string | null>(typeof route.query.sessionId === "string" ? route.query.sessionId : null);
+const conversationId = ref<string | null>(
+  !requestedAgent() && typeof route.query.sessionId === "string" ? route.query.sessionId : null,
+);
 watch(
   () => route.query.sessionId,
   (id) => {
@@ -181,6 +189,28 @@ function openCapabilities(kind: "skill" | "tool" = "skill") {
 /** The column's own entry at the foot: the agent settings, which replace the column while they are open. */
 const bottomEntry = computed(() => ({ label: t("assistant.featureAgents"), icon: "agents" }));
 
+/**
+ * Applies `?agentId=` once the agents are known: an enabled agent is selected on an empty new conversation; a disabled or
+ * missing one is reported and the page keeps the agent its own rule chose. The parameter then leaves the address (with a
+ * conversation it would have overridden), so a reload or a later switch follows the page's own conversation behaviour.
+ */
+function openRequestedAgent() {
+  const id = requestedAgent();
+  if (!id) return;
+  if (nav.agents.value.some((agent) => agent.id === id && agent.enabled)) {
+    agentId.value = id;
+    nav.startNew();
+  } else {
+    ElMessage.error(t("assistant.agentUnavailable"));
+  }
+  const query = { ...route.query };
+  delete query.agentId;
+  delete query.sessionId;
+  void router.replace({ query });
+}
+// The same address entered while the page is open (another link to an agent) does the same.
+watch(() => route.query.agentId, openRequestedAgent);
+
 /** The board a conversation just added a dataset to: the dashboards application, opened on that board. */
 function openDashboardApplication(dashboardId: string) {
   void router.push({ path: routes.dashboards.path, query: { dashboardId } });
@@ -193,7 +223,7 @@ onMounted(async () => {
     ElMessage.error(t("appearance.loadFailed"));
   }
   // The column shows the list, so the agent platform loads it; the conversation only reads the state.
-  await nav.loadAgents().catch((error) => ElMessage.error(error instanceof Error ? error.message : String(error)));
+  await nav.loadAgents().then(openRequestedAgent, (error) => ElMessage.error(error instanceof Error ? error.message : String(error)));
   await nav.loadSessions();
 });
 

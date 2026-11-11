@@ -7,6 +7,8 @@
  */
 export const platformRoutes = {
   layout: { name: "PlatformLayout", path: "/" },
+  /** The platform's home: everyone's starting point, with their favourites, dashboards and every application. */
+  home: { name: "Home", path: "/home" },
   chat: { name: "Chat", path: "/agents/chat" },
   /** The dashboards are an application of their own: the charts and datasets conversations add to. */
   dashboards: { name: "Dashboards", path: "/dashboards" },

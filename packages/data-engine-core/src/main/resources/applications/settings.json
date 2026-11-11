@@ -2,6 +2,7 @@
   "id": "settings",
   "kind": "native",
   "rail": "bottom",
+  "category": "admin",
   "sort": 20,
   "entry": {
     "path": "/settings",
@@ -20,7 +21,10 @@
       "en": "System settings",
       "zh-CN": "系统设置"
     },
-    "descriptions": {},
+    "descriptions": {
+      "en": "Configure models, access, audit and system monitoring",
+      "zh-CN": "配置模型、权限、审计与系统监控"
+    },
     "icon": "settings",
     "groups": [],
     "permissions": []
