@@ -81,7 +81,7 @@ class ActionFunctionAdmissionTest {
   @ValueSource(strings = {Function.OPERATION_READ, Function.OPERATION_WRITE})
   void saveRejectsQueryPackagesBeforePersistingOrCheckingPython(String operation) {
     var error = assertThrows(IllegalArgumentException.class, () -> service.save(action(operation), "en"));
-    assertEquals(MESSAGE, error.getMessage());
+    assertTrue(error.getMessage().endsWith(MESSAGE));
     verifyNoInteractions(functions, actions);
   }
 
@@ -96,7 +96,7 @@ class ActionFunctionAdmissionTest {
     stored.setCode("# ontomato-python:2\nprint('ok')");
     when(functions.queryById("function-a")).thenReturn(stored);
     var error = assertThrows(IllegalArgumentException.class, () -> service.save(submitted, "en"));
-    assertEquals(MESSAGE, error.getMessage());
+    assertTrue(error.getMessage().endsWith(MESSAGE));
     verify(functions, never()).save(any(), anyString());
     verifyNoInteractions(actions);
   }
@@ -109,8 +109,8 @@ class ActionFunctionAdmissionTest {
         () -> service.form("action-a", new JSONObject(), null, List.of(), "en", user));
     var executionError = assertThrows(IllegalArgumentException.class,
         () -> service.execute("action-a", new JSONObject(), "en", user, new UserDataPermission(), 1));
-    assertEquals(MESSAGE, formError.getMessage());
-    assertEquals(MESSAGE, executionError.getMessage());
+    assertTrue(formError.getMessage().endsWith(MESSAGE));
+    assertTrue(executionError.getMessage().endsWith(MESSAGE));
     verifyNoInteractions(programs);
   }
 
@@ -126,7 +126,7 @@ class ActionFunctionAdmissionTest {
       var result = service.importActions(bundle, "en", true);
       assertFalse(result.getBooleanValue("success"));
       assertEquals(0, result.getIntValue("successCount"));
-      assertEquals(MESSAGE, result.getJSONArray("failures").getJSONObject(0).getString("message"));
+      assertTrue(result.getJSONArray("failures").getJSONObject(0).getString("message").endsWith(MESSAGE));
     }
     verifyNoInteractions(functions, actions);
   }

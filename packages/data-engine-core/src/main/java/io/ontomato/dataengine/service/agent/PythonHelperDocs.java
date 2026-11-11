@@ -1,6 +1,7 @@
 package io.ontomato.dataengine.service.agent;
 
 import java.io.InputStream;
+import io.ontomato.dataengine.bean.function.Parameter;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.regex.Matcher;
@@ -22,6 +23,7 @@ public final class PythonHelperDocs {
     String source = resource();
     StringBuilder out = new StringBuilder();
     out.append("# Python helper API\n\n");
+    out.append("Parameter types: ").append(Parameter.TYPES.stream().sorted().toList()).append(".\n\n");
     out.append("Generated from `python/query_runtime.py`; do not edit this document by hand.\n\n");
     List<String> lines = source.lines().toList();
     for (int index = 0; index < lines.size(); index++) {

@@ -75,8 +75,10 @@ watch([() => workspace.value?.id, () => workspace.value?.headCommit, hasPage, ()
 const iframe = ref<HTMLIFrameElement | null>(null);
 watch(iframe, (element) => {
   registration?.dispose();registration=null;
-  frameWindow.value = element?.contentWindow ?? null;
-  if(frameWindow.value) registration=platform.registerPreviewFrame(frameWindow.value,binding.value!);
+  const source = element?.contentWindow ?? null;
+  // A controlled model's prop updates on the parent's next render; register the actual new frame now.
+  frameWindow.value = source;
+  if(source) registration=platform.registerPreviewFrame(source,binding.value!);
 }, { flush: "post" });
 onBeforeUnmount(() => {registration?.dispose();frameWindow.value=null;});
 

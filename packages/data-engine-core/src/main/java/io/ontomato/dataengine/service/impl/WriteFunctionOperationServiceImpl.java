@@ -96,7 +96,7 @@ public class WriteFunctionOperationServiceImpl implements WriteFunctionOperation
             throw new IllegalArgumentException("objs: expected a nonempty array of object dictionaries");
         Set<String> vectorAttrs = collectVectorAttrs(classDef);
         for (int i = 0; i < objs.size(); i++) {
-            if (!(objs.get(i) instanceof JSONObject obj) || obj.isEmpty())
+            if (!(objs.get(i) instanceof Map<?, ?> obj) || obj.isEmpty())
                 throw new IllegalArgumentException("objs[" + i + "]: expected a nonempty object dictionary");
             for (String field : vectorAttrs)
                 if (obj.containsKey(field))
