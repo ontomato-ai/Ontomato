@@ -316,7 +316,7 @@ public class OntologyScheduleApplication implements ScheduleApplication {
               actor.locale(),
               Math.max(1, configs.get(actor.domain()).getReportCardPythonTimeout()),
               actor.domain(),
-              new ABCProgramService.ExecutionContext(execution.runId(), null));
+              new ABCProgramService.ExecutionContext(execution.runId(), null, io.ontomato.dataengine.service.ExecutionTarget.LIVE));
       var result = (io.ontomato.dataengine.bean.PythonExecuteResult) output[1];
       state.put("result", result.getResult());
       state.set("spendTime", JSON.valueToTree(result.getSpendTime()));

@@ -1,3 +1,4 @@
+import type { AppExecutionContext } from "@ontomato/contracts/build-tests";
 import { watch } from "vue";
 import type { Router } from "vue-router";
 import {
@@ -9,6 +10,42 @@ import {
 import type { PlatformPreferences } from "@ontomato/platform-admin";
 import { authHost } from "@ontomato/workbench-ui/utils/auth";
 import { readRuntimeConfig } from "./config";
+
+const executionBindings = new WeakMap<object, AppExecutionContext>();
+const executionListeners = new WeakMap<object, Set<(context: AppExecutionContext) => void>>();
+function assertFrameBinding(previous: AppExecutionContext | undefined, next: AppExecutionContext) {
+  if(previous && (previous.kind!==next.kind || previous.kind==="build-test" && next.kind==="build-test" && (previous.contextId!==next.contextId || previous.workspaceId!==next.workspaceId)))
+    throw new Error("Reload the preview frame to change its execution context");
+}
+/** Register before the frame runs. Updating its ID requires a new frame. */
+function registerFrame(source: object, context: AppExecutionContext) {
+  assertFrameBinding(executionBindings.get(source),context);
+  executionBindings.set(source, context);
+  return {
+    update(next: AppExecutionContext) {
+      const previous=executionBindings.get(source);
+      assertFrameBinding(previous,next);
+      executionBindings.set(source,next);
+      for(const listener of executionListeners.get(source) ?? []) listener(next);
+    },
+    // Keep the last binding until the Window is collected: detached frames must never become live.
+    dispose() { executionListeners.delete(source); },
+  };
+}
+
+export function registerBuildPreview(source: object, context: AppExecutionContext) {
+  if(context.kind!=="build-test") throw new Error("A preview requires a build-test binding");
+  return registerFrame(source,context);
+}
+/** Published application frames explicitly select live execution through this module. */
+export function registerLiveFrame(source: object) {
+  return registerFrame(source,{kind:"live"}).dispose;
+}
+function executionContext(source: object) {
+  const context=executionBindings.get(source);
+  if(!context) throw Object.assign(new Error("Frame execution context is not registered"),{code:"APP_HOST_FRAME_UNREGISTERED"});
+  return context;
+}
 
 type PageContextListener = AppHost["setPageContext"];
 const pageContextListeners = new Set<PageContextListener>();
@@ -46,6 +83,12 @@ export function installAppHost(options: {
         apiBase: readRuntimeConfig().apiBase,
         user: user && { userId: user.userId, loginCode: user.loginCode, userName: user.userName, domainId: user.domainId },
       };
+    },
+    executionContext,
+    subscribeExecutionContext(source, listener) {
+      executionContext(source);
+      const listeners=executionListeners.get(source) ?? new Set();executionListeners.set(source,listeners);listeners.add(listener);
+      return () => { listeners.delete(listener); };
     },
     credential: () => options.credential,
     subscribePreferences: (listener) => watch(current, (value) => listener(value)),

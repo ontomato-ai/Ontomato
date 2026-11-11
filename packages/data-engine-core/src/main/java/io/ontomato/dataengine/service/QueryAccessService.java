@@ -13,6 +13,8 @@ import org.springframework.web.server.ResponseStatusException;
 /** HTTP query authorization composes identity/permissions above the grant lifecycle. */
 @Service
 public class QueryAccessService {
+  @org.springframework.beans.factory.annotation.Autowired @org.springframework.context.annotation.Lazy
+  private BuildTestContextService contexts;
   private final IdentityService identity;
   private final DataPermissionLookup permissions;
   private final QueryGrantService grants;
@@ -63,7 +65,7 @@ public class QueryAccessService {
     identity.requireQueryAccess();
     return new Access(
         user, identity.getCurrentUserDataPermission(), null, null,
-        identity.getCurrentCredentialExpiresAt());
+        identity.getCurrentCredentialExpiresAt()).withTarget(request.getHeader(BuildTestContextService.HEADER)==null ? ExecutionTarget.LIVE : contexts.resolve(request));
   }
 
   public static java.util.List<String> classScope(UserDataPermission permission, java.util.List<String> requested) {
@@ -78,10 +80,17 @@ public class QueryAccessService {
   /** Request authority is captured once; neither source beans nor accessor results can mutate it. */
   public record Access(
       User user, UserDataPermission permission, JSONObject grant, String credential, Long expiresAt,
-      java.util.List<String> classNames) {
+      java.util.List<String> classNames, ExecutionTarget target) {
+    public Access(User user, UserDataPermission permission, JSONObject grant, String credential, Long expiresAt, java.util.List<String> classNames) {
+      this(user,permission,grant,credential,expiresAt,classNames,ExecutionTarget.LIVE);
+    }
+    public Access withTarget(ExecutionTarget value) {
+      return new Access(user,permission,grant,credential,expiresAt,value.testing()?value.classNames():classNames,value);
+    }
     public Access(User user, UserDataPermission permission, JSONObject grant, String credential, Long expiresAt) {
       this(user, permission, grant, credential, expiresAt,
-          grant == null ? java.util.List.of() : grant.getList("classNames", String.class));
+          grant == null ? java.util.List.of() : grant.getList("classNames", String.class),
+          grant!=null && grant.getString("contextId")!=null ? new ExecutionTarget(grant.getString("contextId"),grant.getString("sandboxId"),grant.getList("classNames",String.class),grant.getLong("expiresAt")) : ExecutionTarget.LIVE);
     }
     public Access {
       user = new CapturedUser(

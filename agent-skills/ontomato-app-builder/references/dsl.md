@@ -1,6 +1,6 @@
 # DSL reference
 
-`prod-query` and `execute-dsl` take the same DSL; one runs it in production, the other in the test environment.
+`execute-dsl` runs the DSL in the workspace's current build-test context. Start that context from an explicit sample first.
 
 Use the class and attribute names exactly as `classes` and `schema` return them; `schema` and `distinct-values` need the exact name. In a DSL, a leading `/` on a class name is also accepted. A relationship's `type` is the relationship type from `relationships`, and `from` / `to` point at the source and target classes.
 
@@ -64,7 +64,7 @@ Use the class and attribute names exactly as `classes` and `schema` return them;
 
 	6.2 save_table represents the name of the temporary table to store; it must start with `/`, the second character must be a letter, there is no requirement on the following characters, and the length must not exceed 64 characters. It takes effect when to_user is false, and when to_user is true this item is not needed,
 
-	In DSL, a temporary table can only be referenced as an intermediate result within a single execution of the same DSL object. The step that produces the temporary table and the step that references the temporary table must be placed in the steps of the same DSL object and executed as a whole through one `execute-dsl` or `prod-query` call. It is strictly forbidden to first "save" a temporary table with one call and then reference it in another DSL or another call.
+	In DSL, a temporary table can only be referenced as an intermediate result within a single execution of the same DSL object. The step that produces the temporary table and the step that references the temporary table must be placed in the steps of the same DSL object and executed as a whole through one `execute-dsl` call. It is strictly forbidden to first "save" a temporary table with one call and then reference it in another DSL or another call.
 
 	6.3 fields represents the output field list, a list structure; each field consists of variable, field or expr (choose one), as, function (not required), distinct (not required), variable specifies which object variable in objects to take, field specifies which attribute of the variable object to take, as is the alias the output is converted to, A distinct value of true indicates deduplication of the field (**and distinct can only act in the output of a temporary table**)
    
@@ -263,4 +263,4 @@ Use the class and attribute names exactly as `classes` and `schema` return them;
 
 ### Result
 
-`execute-dsl` and `prod-query` print the response. `data[0].answer` holds the rows of the step with `to_user: true`, and `data[0].mqls` holds the statements that ran. When the query fails, `error` explains why and the script exits non-zero. If the result contains a vector field, its value is an array of objects containing resource download URLs and text summaries: `[{"path": "<download_url>", "text": "..."}]`.
+`execute-dsl` prints the response. `data[0].answer` holds the rows of the step with `to_user: true`, and `data[0].mqls` holds the statements that ran. When the query fails, `error` explains why and the script exits non-zero. If the result contains a vector field, its value is an array of objects containing resource download URLs and text summaries: `[{"path": "<download_url>", "text": "..."}]`.

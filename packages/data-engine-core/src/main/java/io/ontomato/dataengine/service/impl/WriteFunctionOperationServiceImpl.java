@@ -53,7 +53,7 @@ public class WriteFunctionOperationServiceImpl implements WriteFunctionOperation
 	public void insert(String className, JSONArray objs, String sandboxId, String domainId) throws Exception {
 		Map<String, Object> classDef = getClassDefByClassName(className, domainId);
 		if (classDef != null) {
-			stripVectorAttrs(classDef, objs);
+			validateInsertObjects(classDef, objs);
 			DataAdapter adapter = getDataAdapter(domainId);
 			adapter.insertObjects(sandboxId, classDef, objs);
 		} else {
@@ -90,22 +90,19 @@ public class WriteFunctionOperationServiceImpl implements WriteFunctionOperation
 		return vectorAttrs;
 	}
 
-	/** insert silently drops vector attributes (they are written only via appendVector/updateVector). */
-	private void stripVectorAttrs(Map<String, Object> classDef, JSONArray objs) {
-		Set<String> vectorAttrs = collectVectorAttrs(classDef);
-		if (vectorAttrs.isEmpty() || objs == null) {
-			return;
-		}
-		for (int i = 0; i < objs.size(); i++) {
-			JSONObject obj = objs.getJSONObject(i);
-			if (obj == null) {
-				continue;
-			}
-			for (String va : vectorAttrs) {
-				obj.remove(va);
-			}
-		}
-	}
+    /** Validate the complete external batch before creating an adapter or writing any row. */
+    private void validateInsertObjects(Map<String, Object> classDef, JSONArray objs) {
+        if (objs == null || objs.isEmpty())
+            throw new IllegalArgumentException("objs: expected a nonempty array of object dictionaries");
+        Set<String> vectorAttrs = collectVectorAttrs(classDef);
+        for (int i = 0; i < objs.size(); i++) {
+            if (!(objs.get(i) instanceof Map<?, ?> obj) || obj.isEmpty())
+                throw new IllegalArgumentException("objs[" + i + "]: expected a nonempty object dictionary");
+            for (String field : vectorAttrs)
+                if (obj.containsKey(field))
+                    throw new IllegalArgumentException("objs[" + i + "]." + field + ": vector attributes cannot be inserted; use appendVector");
+        }
+    }
 
 	/** update rejects any vector attribute in setValues (use updateVector/appendVector instead). */
 	private void rejectVectorAttrs(Map<String, Object> classDef, JSONObject setValues, String domainId) throws Exception {
@@ -289,10 +286,16 @@ public class WriteFunctionOperationServiceImpl implements WriteFunctionOperation
 	
 	@Override
 	public void appendVector(String className, String attrName, String objectId, String content, InputStream is, String suffix, String sandboxId, String domainId) throws Exception {
+        appendVectorAndReturn(className,attrName,objectId,content,is,suffix,sandboxId,domainId);
+    }
+    @Override
+    public VectorResource appendVectorAndReturn(String className,String attrName,String objectId,String content,InputStream is,String suffix,String sandboxId,String domainId) throws Exception {
+
 		Map<String, Object> classDef = getClassDefByClassName(className, domainId);
 		if (classDef == null) {
 			throw new Exception(langService.get(businessConfigService.get(domainId).getLang(), "WriteFunctionOperation.classNotExist") + "[" + className + "]");
 		}
+        if(!collectVectorAttrs(classDef).contains(attrName)) throw new IllegalArgumentException("attrName: not an enabled vector attribute: "+attrName);
 		DataAdapter adapter = getDataAdapter(domainId);
 		boolean sandbox = inSandbox(sandboxId);
 		String prefixClassName = sandbox ? adapter.sandboxClassName(sandboxId, className) : className;
@@ -325,6 +328,7 @@ public class WriteFunctionOperationServiceImpl implements WriteFunctionOperation
 			updated.add(newItem);
 		}
 		writeVectorAttr(adapter, classDef, attrName, objectId, sandboxId, updated);
+        return saved;
 	}
 	
 	@Override
@@ -333,6 +337,7 @@ public class WriteFunctionOperationServiceImpl implements WriteFunctionOperation
 		if (classDef == null) {
 			throw new Exception(langService.get(businessConfigService.get(domainId).getLang(), "WriteFunctionOperation.classNotExist") + "[" + className + "]");
 		}
+        if(!collectVectorAttrs(classDef).contains(attrName)) throw new IllegalArgumentException("attrName: not an enabled vector attribute: "+attrName);
 		DataAdapter adapter = getDataAdapter(domainId);
 		boolean sandbox = inSandbox(sandboxId);
 		String prefixClassName = sandbox ? adapter.sandboxClassName(sandboxId, className) : className;
@@ -359,6 +364,7 @@ public class WriteFunctionOperationServiceImpl implements WriteFunctionOperation
 		if (classDef == null) {
 			throw new Exception(langService.get(businessConfigService.get(domainId).getLang(), "WriteFunctionOperation.classNotExist") + "[" + className + "]");
 		}
+        if(!collectVectorAttrs(classDef).contains(attrName)) throw new IllegalArgumentException("attrName: not an enabled vector attribute: "+attrName);
 		DataAdapter adapter = getDataAdapter(domainId);
 		boolean sandbox = inSandbox(sandboxId);
 		String prefixClassName = sandbox ? adapter.sandboxClassName(sandboxId, className) : className;

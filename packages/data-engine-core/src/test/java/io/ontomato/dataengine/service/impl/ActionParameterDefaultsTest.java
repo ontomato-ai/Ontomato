@@ -17,7 +17,6 @@ import io.ontomato.dataengine.service.MetricViewBindings;
 import io.ontomato.dataengine.service.QueryAccessService;
 import io.ontomato.dataengine.service.sys.bean.permission.UserDataPermission;
 import java.util.List;
-import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
 import org.springframework.test.util.ReflectionTestUtils;
 
@@ -40,58 +39,36 @@ class ActionParameterDefaultsTest {
   }
 
   @Test
-  void manualActionOmissionsBecomeNullInADetachedExecution() throws Exception {
-    var definition = definition();
+  void omissionsFailBeforeActionExecutionAndNameTheMissingParameter() throws Exception {
     var action = new Action();
     action.setId("action-a");
     action.setStatus(Action.STATUS_PUBLISHED);
     action.setDomainId("domain-a");
-    action.setFunction(definition);
+    action.setFunction(definition());
     var service = spy(new ActionServiceImpl());
     doReturn(action).when(service).queryById("action-a");
     var programs = mock(ABCProgramService.class);
-    var received = new AtomicReference<Function>();
-    when(programs.execute(
-            anyString(),
-            any(Function.class),
-            eq("user-a"),
-            any(),
-            anyString(),
-            eq("en"),
-            eq(1),
-            eq("domain-a"),
-            any(ABCProgramService.ExecutionContext.class)))
-        .thenAnswer(
-            call -> {
-              received.set(call.getArgument(1));
-              return new Object[] {null, new PythonExecuteResult()};
-            });
     ReflectionTestUtils.setField(service, "identity", mock(IdentityService.class));
     ReflectionTestUtils.setField(service, "abcProgramService", programs);
     var grants = mock(CapabilityGrantLookup.class);
     when(grants.allows("user-a", "domain-a", CapabilityGrantLookup.ACTION, "action-a")).thenReturn(true);
     ReflectionTestUtils.setField(service, "capabilityGrants", grants);
     var preconditions = mock(ActionPreconditionService.class);
-    when(preconditions.evaluate(any(), any(), any(), any())).thenReturn(new ActionPreconditionService.Verdict(true, List.of()));
+    when(preconditions.evaluate(any(), any(), any(), any(), any())).thenReturn(new ActionPreconditionService.Verdict(true, List.of()));
     ReflectionTestUtils.setField(service, "preconditions", preconditions);
     var snapshots = mock(IdentitySnapshotLookup.class);
     when(snapshots.snapshot(any(), any())).thenReturn(new JSONObject());
     ReflectionTestUtils.setField(service, "identitySnapshots", snapshots);
     ReflectionTestUtils.setField(service, "workflowRuns", mock(WorkflowRunResolver.class));
-    var supplied = new JSONObject();
-    service.execute(
-        "action-a",
-        supplied,
-        "en",
-        new QueryAccessService.GrantUser("user-a", "domain-a"),
-        new UserDataPermission(),
-        1);
-    var values = MetricViewBindings.values(received.get());
-    assertEquals(java.util.Set.of("org_id", "up"), values.keySet());
-    assertNull(values.get("org_id"));
-    assertNull(values.get("up"));
-    assertTrue(supplied.isEmpty());
-    assertEquals("must-not-be-reused", definition.getParameters().getFirst().getValue());
+    var error = assertThrows(IllegalArgumentException.class, () -> service.execute(
+        "action-a", new JSONObject(), "en",
+        new QueryAccessService.GrantUser("user-a", "domain-a"), new UserDataPermission(), 1));
+    assertEquals("Missing parameter: org_id", error.getMessage());
+    verifyNoInteractions(programs);
+    var values = new JSONObject();
+    values.put("org_id", null);
+    values.put("up", null);
+    assertEquals(values, MetricViewBindings.values(MetricViewBindings.executionWriteFunction(definition(), values)));
   }
 
   @Test

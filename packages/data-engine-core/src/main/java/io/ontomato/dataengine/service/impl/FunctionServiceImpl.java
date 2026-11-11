@@ -1,5 +1,8 @@
 package io.ontomato.dataengine.service.impl;
 
+import io.ontomato.dataengine.service.QueryPackage;
+import io.ontomato.dataengine.service.QuerySourceSnapshot;
+
 import com.alibaba.fastjson2.JSONObject;
 import io.ontomato.dataengine.bean.abcHarness.ABCHarnessProgram;
 import io.ontomato.dataengine.bean.abcHarness.ABCHarnessProgramOutKeyRef;
@@ -127,7 +130,7 @@ public class FunctionServiceImpl implements FunctionService {
 
     Map<String, Object> jsonRule = generationService.authorizedRule(adminService.getJSONRule(domainId), domainId);
     List<Map<String, Object>> classDefs = (List<Map<String, Object>>) jsonRule.get("classDef");
-    var queryLogic = io.ontomato.dataengine.service.QuerySourceSnapshot.input(abcProgram);
+    var queryLogic = QuerySourceSnapshot.input(abcProgram);
 
     String userMessage =
         OntologyGenerationPrompts.getReadFunctionMakerUserMessage(
@@ -135,12 +138,13 @@ public class FunctionServiceImpl implements FunctionService {
     try (var generation =
         generationService.generate("function", sessionId, userMessage, lang, domainId)) {
       JSONObject envelope = generation.result();
+      if (!(envelope.get("queryPackage") instanceof JSONObject)) throw new IllegalArgumentException("queryPackage: expected JSONObject; supply this field with its declared JSON type");
+      if (!(envelope.get("name") instanceof String)) throw new IllegalArgumentException("name: expected String; supply this field with its declared JSON type");
+      if (!(envelope.get("logic") instanceof String)) throw new IllegalArgumentException("logic: expected String; supply this field with its declared JSON type");
       JSONObject bundle = envelope.getJSONObject("queryPackage");
       String name = envelope.getString("name");
       String logic = envelope.getString("logic");
-      if (bundle == null || name == null || logic == null) {
-        return null;
-      }
+
       function.setName(name);
       function.setQueryPackage(bundle);
       function.setLogic(logic);
@@ -149,7 +153,7 @@ public class FunctionServiceImpl implements FunctionService {
       returnDef.setIsVoid(false);
       returnDef.setColumnLabels(envelope.getJSONObject("columnLabels"));
       function.setReturnDef(returnDef);
-      io.ontomato.dataengine.service.QueryPackage.prepareReadFunction(function, classDefs);
+      QueryPackage.prepareReadFunction(function, classDefs);
 
       return generation.settle(() -> function);
     }
@@ -182,7 +186,7 @@ public class FunctionServiceImpl implements FunctionService {
 	@Transactional(rollbackFor = Exception.class)
 	public Function save(Function function, String lang) throws Exception {
         if (Function.OPERATION_READ.equals(function.getOperation()))
-            io.ontomato.dataengine.service.QueryPackage.prepareReadFunction(function,
+            QueryPackage.prepareReadFunction(function,
                 (List<Map<String, Object>>) adminService.getJSONRule(function.getDomainId()).get("classDef"));
 		if (function.getId() != null) {
 			functionDao.lock(function.getId());

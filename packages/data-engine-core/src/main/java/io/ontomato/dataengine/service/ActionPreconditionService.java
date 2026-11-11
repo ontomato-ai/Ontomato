@@ -55,11 +55,13 @@ public class ActionPreconditionService {
     public record Proven(String className, String objectId) {}
 
     private final DslService queries;
+    private final OntologyQueryService scopedQueries;
     private final AdminService admin;
     private final SubjectAttributeLookup subjects;
 
     public ActionPreconditionService(
-            DslService queries, AdminService admin, SubjectAttributeLookup subjects) {
+            DslService queries, AdminService admin, SubjectAttributeLookup subjects, OntologyQueryService scopedQueries) {
+        this.scopedQueries = scopedQueries;
         this.queries = queries;
         this.admin = admin;
         this.subjects = subjects;
@@ -73,7 +75,7 @@ public class ActionPreconditionService {
      *     error
      */
     public Verdict evaluate(
-            Action action, JSONObject parameters, User user, UserDataPermission permission) {
+            Action action, JSONObject parameters, User user, UserDataPermission permission, ExecutionTarget target) {
         JSONObject criteria = action.getSubmissionCriteria();
         if (criteria == null || criteria.isEmpty()) return Verdict.pass();
 
@@ -90,7 +92,7 @@ public class ActionPreconditionService {
         List<Proven> proven = new ArrayList<>();
         for (Object value : conditions) {
             JSONObject condition = JSONObject.from(value);
-            if (!holds(condition, parameters, user, permission, classDefs, domainId)) {
+            if (!holds(condition, parameters, user, permission, classDefs, target)) {
                 violations.add(message(condition));
                 continue;
             }
@@ -124,7 +126,7 @@ public class ActionPreconditionService {
             User user,
             UserDataPermission permission,
             List<Map<String, Object>> classDefs,
-            String domainId) {
+            ExecutionTarget target) {
         String objectParameter = condition.getString("objectParameter");
         String className = normalize(condition.getString("className"), classDefs);
         String field = condition.getString("field");
@@ -143,7 +145,7 @@ public class ActionPreconditionService {
         String primaryKey = DslUtil.getPrimaryKey(classDef);
 
         List<Object> rows =
-                readState(className, primaryKey, identification, field, permission, user, domainId);
+                readState(className, primaryKey, identification, field, permission, user, target);
         if (rows.isEmpty()) return false;
         Object actual = rows.get(0);
         return compare(actual, operator, expected);
@@ -157,9 +159,11 @@ public class ActionPreconditionService {
             String field,
             UserDataPermission permission,
             User user,
-            String domainId) {
+            ExecutionTarget target) {
         JSONObject dsl = selection(className, primaryKey, identification, field);
-        Map<String, Object> result = queries.executeInternal(dsl, permission, user);
+        Map<String, Object> result = target.testing()
+                ? scopedQueries.execute(dsl, new QueryAccessService.Access(user, permission, null, null, null).withTarget(target))
+                : queries.executeInternal(dsl, permission, user);
         JSONArray data = JSON.parseObject(JSON.toJSONString(result)).getJSONArray("data");
         if (data == null || data.isEmpty()) return List.of();
         JSONArray answer = data.getJSONObject(0).getJSONArray("answer");

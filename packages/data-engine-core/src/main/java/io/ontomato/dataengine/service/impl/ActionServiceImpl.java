@@ -1,5 +1,11 @@
 package io.ontomato.dataengine.service.impl;
 
+import io.ontomato.dataengine.service.ExecutionTarget;
+import io.ontomato.dataengine.service.IdentityService;
+import io.ontomato.dataengine.service.MetricViewBindings;
+import io.ontomato.dataengine.service.scheduling.OntologyScheduleReferences;
+import java.util.Objects;
+
 import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
@@ -71,9 +77,9 @@ public class ActionServiceImpl implements ActionService {
 
   @Autowired private AgentRuntimeClient runtimeClient;
 
-  @Autowired private io.ontomato.dataengine.service.scheduling.OntologyScheduleReferences scheduledReferences;
+  @Autowired private OntologyScheduleReferences scheduledReferences;
 
-  @Autowired private io.ontomato.dataengine.service.IdentityService identity;
+  @Autowired private IdentityService identity;
 
   @Autowired private ActionPreconditionService preconditions;
 
@@ -210,24 +216,22 @@ public class ActionServiceImpl implements ActionService {
     try (var generation =
         generationService.generate("action", businessId, prompt, lang, domainId)) {
       JSONObject envelope = generation.result();
+      if (!(envelope.get("code") instanceof String)) throw new IllegalArgumentException("code: expected String; supply this field with its declared JSON type");
+      if (!(envelope.get("name") instanceof String)) throw new IllegalArgumentException("name: expected String; supply this field with its declared JSON type");
+      if (!(envelope.get("logic") instanceof String)) throw new IllegalArgumentException("logic: expected String; supply this field with its declared JSON type");
+      if (!(envelope.get("classNames") instanceof JSONArray)) throw new IllegalArgumentException("classNames: expected JSONArray; supply this field with its declared JSON type");
+      if (!(envelope.get("parameterDefs") instanceof JSONArray)) throw new IllegalArgumentException("parameterDefs: expected JSONArray; supply this field with its declared JSON type");
       String code = envelope.getString("code");
       String name = envelope.getString("name");
       String logic = envelope.getString("logic");
       JSONArray classNamesArray = envelope.getJSONArray("classNames");
-      if (code == null || name == null || logic == null || classNamesArray == null) {
-        return null;
-      }
+      if (code == null || code.isBlank()) throw new IllegalArgumentException("code: expected a nonempty Python program with # ontomato-python:2");
+      if (name == null || name.isBlank()) throw new IllegalArgumentException("name: expected a nonempty string");
+      if (logic == null || logic.isBlank()) throw new IllegalArgumentException("logic: expected a nonempty string explaining the program");
+      if (classNamesArray == null || classNamesArray.isEmpty()) throw new IllegalArgumentException("classNames: expected a nonempty array of class names");
       List<String> classNames = classNamesArray.toList(String.class);
-      if (classNames.isEmpty()) {
-        return null;
-      }
-      if (!envelope.containsKey("parameterDefs")) {
-        return null;
-      }
       JSONArray defsArray = envelope.getJSONArray("parameterDefs");
-      if (defsArray == null) {
-        return null;
-      }
+      if (defsArray == null) throw new IllegalArgumentException("parameterDefs: expected an array; use [] for no parameters");
       List<Parameter> parameterDefs =
           DBSchemaUtil.buildParameters(defsArray.toList(Map.class), classDefs);
       Function function = new Function();
@@ -251,7 +255,7 @@ public class ActionServiceImpl implements ActionService {
       action.setStatus(Action.STATUS_PUBLISHED);
       action.setDomainId(domainId);
       action.setSubmissionCriteria(envelope.getJSONObject("submissionCriteria"));
-      try {
+      {
         Object[] explain =
             explainCode(
                 function.getParameters(),
@@ -264,8 +268,9 @@ public class ActionServiceImpl implements ActionService {
         BusinessMeaning businessMeaning = (BusinessMeaning) explain[1];
         action.setCodeSegments(codeSegments);
         action.setBusinessMeaning(businessMeaning);
-      } catch (Exception e) {
       }
+      action.setCodeHash(CodeHashUtil.sha256(function.getCode()));
+      action.setExplanationVersion(Action.EXPLANATION_VERSION);
       action.setDefinition(ActionDefinitionProjector.project(action));
       return generation.settle(
           () -> {
@@ -299,7 +304,7 @@ public class ActionServiceImpl implements ActionService {
         throw new Exception(langService.get(lang, "Action.domainMismatch"));
       }
       if (scheduledReferences.referencesAction(action.getId()) && (action.getFunction() == null
-          || !java.util.Objects.equals(exist[1], action.getFunction().getId())))
+          || !Objects.equals(exist[1], action.getFunction().getId())))
         throw new IllegalArgumentException("A scheduled action must retain its referenced function");
       storedCodeSegments = existAction.getCodeSegments();
       storedBusinessMeaning = existAction.getBusinessMeaning();
@@ -456,9 +461,13 @@ public class ActionServiceImpl implements ActionService {
     for (int i = 0; i < array.size(); i++) {
       String actionId = null;
       try {
+        if (!(array.get(i) instanceof JSONObject)) throw new IllegalArgumentException("items[" + i + "]: expected an Action object; replace this item with a complete definition");
         JSONObject json = array.getJSONObject(i);
         actionId = json.getString("id");
+        if (!(json.get("function") instanceof JSONObject rawFunction)) throw new IllegalArgumentException("Action.function: expected an embedded Function object");
+        Function parsedFunction = Function.fromInput(rawFunction);
         Action action = json.to(Action.class);
+        action.setFunction(parsedFunction);
         Function function = action.getFunction();
         if (function == null || function.getId() == null) {
           throw new Exception("Action " + actionId + " has no embedded function");
@@ -469,21 +478,19 @@ public class ActionServiceImpl implements ActionService {
           function.setDomainId(domainId);
         }
         String codeHash = CodeHashUtil.sha256(function.getCode());
-        if (!allowMissingExplanation) {
+        if (!allowMissingExplanation || Action.STATUS_PUBLISHED.equals(action.getStatus())) {
           if (action.getCodeSegments() == null || action.getCodeSegments().isEmpty()) {
             throw new Exception(
-                "Action "
-                    + actionId
-                    + " has no code explanation; run action re-explain or import with"
-                    + " allowMissingExplanation=true");
+                "Action.codeSegments: expected a nonempty explanation; run action re-explain before importing a published asset");
           }
-          if (action.getCodeHash() != null && !action.getCodeHash().equals(codeHash)) {
+          if (!codeHash.equals(action.getCodeHash())) {
             throw new Exception(
                 "Action "
                     + actionId
                     + " explanation does not match its code; run action re-explain");
           }
         }
+        if (Action.STATUS_PUBLISHED.equals(action.getStatus())) ActionCodeExplanationValidator.requireReady(action);
         action.setCodeHash(codeHash);
         action.setExplanationVersion(Action.EXPLANATION_VERSION);
         // An import publishes what it writes, so the importer is its approver; the author is whoever
@@ -600,36 +607,40 @@ public class ActionServiceImpl implements ActionService {
   }
 
   @Override
-	public PythonExecuteResult execute(String id, JSONObject param, String lang, User user, UserDataPermission permission, int timeoutMinutes) throws Exception {
-        Action action = executable(id, lang, user);
-        if (!capabilityGrants.allows(user.getId(), user.getDomainId(), CapabilityGrantLookup.ACTION, action.getId())) {
-            PythonExecuteResult refused = new PythonExecuteResult();
-            refused.setError(langService.get(lang, "Action.notGranted"));
-            return refused;
-        }
-        ActionPreconditionService.Verdict verdict = preconditions.evaluate(action, param, user, permission);
-        if (!verdict.satisfied()) {
-            PythonExecuteResult refused = new PythonExecuteResult();
-            refused.setError(langService.get(lang, "Action.preconditionFailed") + ": " + String.join("; ", verdict.violations()));
-            return refused;
-        }
-        Function function = io.ontomato.dataengine.service.MetricViewBindings.executionWriteFunction(action.getFunction(), param);
-		Object[] o = abcProgramService.execute(UUID.randomUUID().toString(), function, user.getId(), permission, ServiceConst.NOT_SANDBOX, lang, timeoutMinutes, user.getDomainId(),
-            new ABCProgramService.ExecutionContext(null, identitySnapshot(action, user, verdict)));
-		PythonExecuteResult result = (PythonExecuteResult)o[1];
-        if (result.getError() != null && !result.getError().isBlank()) { result.setResult(null); }
-        else result.setResult(o[0] == null ? "{\"completed\":true}" : JSON.toJSONString(JSONObject.of("answer", o[0]), Feature.WriteMapNullValue));
-		return result;
-	}
+  public PythonExecuteResult execute(String id, JSONObject param, String lang, User user, UserDataPermission permission, int timeoutMinutes) throws Exception {
+    return execute(id, param, lang, user, permission, timeoutMinutes, ExecutionTarget.LIVE);
+  }
 
-	private JSONObject identitySnapshot(
-			Action action, User user, ActionPreconditionService.Verdict verdict) {
-		JSONObject snapshot = identitySnapshots.snapshot(user, user.getDomainId());
-		String runId = workflowRuns.resolve(user.getDomainId(), action.getId(), verdict.proven());
-		if (runId != null) snapshot.put("workflowRunId", runId);
-		return snapshot;
-	}
+  @Override
+  public PythonExecuteResult execute(String id, JSONObject param, String lang, User user, UserDataPermission permission, int timeoutMinutes, ExecutionTarget target) throws Exception {
+    Action action = executable(id, lang, user);
+    if (!capabilityGrants.allows(user.getId(), user.getDomainId(), CapabilityGrantLookup.ACTION, action.getId())) {
+      PythonExecuteResult refused = new PythonExecuteResult();
+      refused.setError(langService.get(lang, "Action.notGranted"));
+      return refused;
+    }
+    Function function = io.ontomato.dataengine.service.MetricViewBindings.executionWriteFunction(action.getFunction(), param);
+    ActionPreconditionService.Verdict verdict = preconditions.evaluate(action, param, user, permission, target);
+    if (!verdict.satisfied()) {
+      PythonExecuteResult refused = new PythonExecuteResult();
+      refused.setError(langService.get(lang, "Action.preconditionFailed") + ": " + String.join("; ", verdict.violations()));
+      return refused;
+    }
+    Object[] o = abcProgramService.execute(UUID.randomUUID().toString(), function, user.getId(), permission, target.testing() ? target.sandboxId() : ServiceConst.NOT_SANDBOX, lang, timeoutMinutes, user.getDomainId(),
+        new ABCProgramService.ExecutionContext(null, identitySnapshot(action, user, verdict), target));
+    PythonExecuteResult result = (PythonExecuteResult)o[1];
+    if (result.getError() != null && !result.getError().isBlank()) { result.setResult(null); }
+    else result.setResult(o[0] == null ? "{\"completed\":true}" : JSON.toJSONString(JSONObject.of("answer", o[0]), Feature.WriteMapNullValue));
+    return result;
+  }
 
+  private JSONObject identitySnapshot(
+      Action action, User user, ActionPreconditionService.Verdict verdict) {
+    JSONObject snapshot = identitySnapshots.snapshot(user, user.getDomainId());
+    String runId = workflowRuns.resolve(user.getDomainId(), action.getId(), verdict.proven());
+    if (runId != null) snapshot.put("workflowRunId", runId);
+    return snapshot;
+  }
 
   @Override
   public JSONObject form(String id, JSONObject bound, JSONObject submitted, List<String> readOnly, String lang, User user) throws Exception {

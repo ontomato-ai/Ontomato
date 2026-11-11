@@ -7,7 +7,10 @@ public final class ActionFunctionAdmission {
   private ActionFunctionAdmission() {}
 
   public static void requireSupported(Function function, LangService messages, String lang) {
-    if (!Function.OPERATION_WRITE.equals(function.getOperation()) || function.getQueryPackage() != null)
-      throw new IllegalArgumentException(messages.get(lang, "Action.unsupportedFunction"));
+    if (!Function.OPERATION_WRITE.equals(function.getOperation()))
+      throw new IllegalArgumentException("Function.operation=" + function.getOperation() + ": "
+          + messages.get(lang, "Action.unsupportedFunction"));
+    if (function.getQueryPackage() != null)
+      throw new IllegalArgumentException("Function.queryPackage: " + messages.get(lang, "Action.unsupportedFunction"));
   }
 }

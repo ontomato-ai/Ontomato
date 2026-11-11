@@ -1,5 +1,6 @@
 package io.ontomato.dataengine.service;
 
+import io.ontomato.dataengine.bean.VectorResource;
 import java.io.InputStream;
 import java.util.Map;
 
@@ -7,6 +8,8 @@ import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
 
 public interface WriteFunctionOperationService {
+    VectorResource appendVectorAndReturn(String className,String attrName,String objectId,String content,InputStream input,String suffix,String sandbox,String domain) throws Exception;
+
 
 	public void insert(String className, JSONArray objs, String sandboxId, String domainId) throws Exception;
 	

@@ -796,6 +796,9 @@ public class DuckDBAdapter implements DataAdapter {
 	public void validateClassNameFormat(String className) throws Exception {
 	}
 
+    @Override
+    public boolean supportsSandbox() { return true; }
+
 	@Override
 	public void createNamespace(String namespace) {
 
@@ -814,7 +817,7 @@ public class DuckDBAdapter implements DataAdapter {
 				}
 			}
 		} catch (Exception e) {
-			log.error(e.getMessage(), e);
+			throw new IllegalStateException("Sandbox structure operation failed", e);
 		}
 	}
 
@@ -831,7 +834,7 @@ public class DuckDBAdapter implements DataAdapter {
 				}
 			}
 		} catch (Exception e) {
-			log.error(e.getMessage(), e);
+			throw new IllegalStateException("Sandbox structure operation failed", e);
 		}
 	}
 
@@ -880,7 +883,7 @@ public class DuckDBAdapter implements DataAdapter {
 			sql.append(" );");
 			executeSql(sql.toString());
 		} catch (Exception e) {
-			log.error(e.getMessage(), e);
+			throw new IllegalStateException("Sandbox structure operation failed", e);
 		}
 	}
 
@@ -1144,6 +1147,7 @@ public class DuckDBAdapter implements DataAdapter {
 	 * @param topLevel    whether this is the top level (no parentheses at the top level, parentheses for nested logic)
 	 */
 	private String buildWhere(JSONObject condition, boolean topLevel, Map<String, String> attrTypeMap, SimpleDateFormat ymd, SimpleDateFormat ymdhms) throws Exception {
+        if (topLevel) io.ontomato.dataengine.util.WriteWhereValidator.validate(condition, attrTypeMap::containsKey);
 	    String operator = condition.getString("operator");
 	    if (operator == null) {
 	    	operator = "";
@@ -1160,7 +1164,7 @@ public class DuckDBAdapter implements DataAdapter {
 	            connector = " or ";
 	            list = condition.getJSONArray("or");
 	        } else {
-	            return "";
+	            throw new IllegalArgumentException("Invalid where condition: " + condition);
 	        }
 	        List<String> parts = new ArrayList<String>();
 	        for (int i = 0; i < list.size(); i++) {
@@ -1199,7 +1203,7 @@ public class DuckDBAdapter implements DataAdapter {
 	        case "is not":
 	            return field + " is not null";
 	        default:
-	            return "";
+	            throw new IllegalArgumentException("Invalid where condition: " + condition);
 	    }
 	}
 

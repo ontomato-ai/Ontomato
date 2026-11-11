@@ -44,3 +44,19 @@ it("reuses identical SDK content and rejects a different payload at the same ver
     await rm(root, { recursive: true, force: true });
   }
 });
+
+it("excludes test materials from actual release files while preserving workspace source",async()=>{
+  const {mkdtemp,readFile,rm}=await import("node:fs/promises");
+  const {tmpdir}=await import("node:os");const {join}=await import("node:path");
+  const {writeHostedFiles}=await import("../hosted-apps");
+  const files=[{path:"index.html",encoding:"utf8" as const,content:"<p>application</p>"},
+    {path:"test-data/sample.json",encoding:"utf8" as const,content:"sample-source"},
+    {path:"test-data/files/example.txt",encoding:"utf8" as const,content:"attachment-source"}];
+  const root=await mkdtemp(join(tmpdir(),"release-exclusion-"));
+  try {
+    await writeHostedFiles(files,root);expect(await readFile(join(root,"index.html"),"utf8")).toBe("<p>application</p>");
+    await expect(readFile(join(root,"test-data/sample.json"))).rejects.toMatchObject({code:"ENOENT"});
+    await expect(readFile(join(root,"test-data/files/example.txt"))).rejects.toMatchObject({code:"ENOENT"});
+    expect(files).toHaveLength(3);expect(files[1]!.content).toBe("sample-source");
+  } finally {await rm(root,{recursive:true,force:true});}
+});

@@ -17,8 +17,8 @@ A workspace is the application source tree. Business definitions remain in Java;
 | --- | --- |
 | `dataset-desc`, `classes` | Current domain and available object classes |
 | `schema <class> ...`, `relationships <class> ...` | Technical attributes, types and actual relationship mappings |
-| `distinct-values <class> <attribute> [--like <pattern>] [--limit <n>]` | Values for exploring the current data |
-| `execute-dsl <json or @file>` | Ad hoc query; use the bundled [DSL reference](references/dsl.md) |
+| `distinct-values <class> <attribute> [--like <pattern>] [--limit <n>]` | Values from the current build-test sample |
+| `execute-dsl <json or @file>` | Query the current build-test sample; use the bundled [DSL reference](references/dsl.md) |
 | `function list [<filter json or @file>]` | Full Function definitions; optional `operation` and `className` filters |
 | `function get <id>`, `function save <definition>`, `function delete <id>` | Read, save or delete a Function; save returns its definition including ID |
 | `metric-view find <class> [<question>]`, `action find <class> [<question>]` | Published interfaces related to the object |
@@ -46,7 +46,7 @@ node <skill>/ontomato.mjs sdk read docs/reference.md
 node <skill>/ontomato.mjs sdk read examples/<example from the docs>
 ```
 
-Discovery returns `version`, `publicBasePath`, `sdkBasePath`, `manifestPath`, `docsPath` and `referencePath` from this image's build. Read the manifest, guide, reference and relevant examples of this version. Write HTML and ES modules using its local Vue, Element Plus, ECharts and Ontomato modules. Use the SDK's MetricView and Action APIs and refresh after writes. Draw charts, Markdown and Action forms with the platform's own components, as the guide shows: `<e-chart>` in `context.chartTheme`, `<markdown-view>`, and `<form-fields>` on `context.actions.form`. They look like the platform and follow its light and dark themes. Do not create a chart with ECharts itself, render Markdown another way or hand-build an Action's fields; import `echarts` only for the helpers an option uses. Follow its host integration for theme and language; use only context APIs and modules actually present in this version.
+Discovery returns `version`, `publicBasePath`, `sdkBasePath`, `manifestPath`, `docsPath` and `referencePath` from this image's build. Read the manifest, guide, reference and relevant examples of this version. Write HTML and ES modules using its local Vue, Element Plus, ECharts and Ontomato modules. Use the SDK's MetricView and Action APIs and refresh after writes. Draw charts, Markdown, code, content previews and Action forms with the platform's own components, as the guide shows: `<e-chart>` in `context.chartTheme`, `<markdown-view>`, `<code-editor>` for code and data as written such as JSON, `<table-preview>` with `parseCsv` for CSV and TSV, `<html-preview>` for an HTML document, and `<form-fields>` on `context.actions.form`. They look like the platform and follow its light and dark themes. Do not create a chart with ECharts itself, render Markdown another way, show code in a textarea or `<pre>`, parse CSV yourself or hand-build an Action's fields; import `echarts` only for the helpers an option uses. Follow its host integration for theme and language; use only context APIs and modules actually present in this version. The chart theme already keeps category labels from running into each other, so give the option the categories and their values and leave `axisLabel` alone: never set its `interval` to `0` to force every label out, and when the names are long and the slots narrow, change the chart (a horizontal bar chart gives each name its own row) or cut or wrap that one chart's labels through its own `axisLabel` (`width` with `overflow`, or a `formatter`), instead of restating a rule for every chart.
 
 Every page reports what its reader looks at with `context.setPageContext({ page, selection })`, as the SDK guide describes: once when the page starts, with `selection: null`; whenever the reader moves to another page or tab of the app; and whenever they select a business object or clear the selection. `page` is the app's own name for the page in view, as the reader sees it. `selection` is `null` or the selected object as `{ className, primaryKey, name }`: its ontology class name from the platform, its primary key as text, and the name readers know it by. Keep the selection as the page's own state, set by the reader's clicks; do not scan the DOM, post messages between frames or describe the page in another format. A published app's call has no effect. While the builder's workspace panel is open, the user's message ends with a line naming what they look at: the preview with the app's page and the selected object (class, name and primary key), a file, or a commit. "This" or "this row" in the request means that.
 
@@ -72,10 +72,61 @@ The declaration uses `{names, descriptions, icon, groups, permissions}`; names a
 
 Publish only a commit that already exists. When files were changed in this run, finish the run first, then publish through the platform drawer or in a later run. Never call a dirty tree HEAD the new version. End with the actual result and workspace-relative file links so the host can show the changed source. Runtime supplies the run's commit separately; do not guess it from a reply or from another run's HEAD.
 
-## Explicit external deployment operations
+## Build-test vector operations
 
-The following existing commands are for an explicitly requested test/production workflow; they are not prerequisites for the built-in builder. `env-mode` reports topology. `import-schema` imports the production ontology into a configured test deployment; `import-test-data <zip>` writes test data. `prod-distinct-values`, `prod-query` and `prod-knowledge` read production. `import-schema` drops and recreates the target domain's data namespace and changes its data-permission grants; use it only for an explicitly authorized dedicated test domain. Do not import, clear or rebuild business data automatically.
 
-`sync-production --action <id> ... --metric-view <id> ...` prints an exact plan and writes nothing without `--confirm`. Show the selected assets and same-ID overwrite effects; use `--confirm` only after approval of that exact plan. The operation copies only the selected interfaces, not pages or business data. Normal application publication uses `workspace publish`.
 
-`vector-upload <class> <attribute> <objectId> [--file <path>] --text <text or @file>` and `vector-delete <class> <attribute> <objectId> <path>` operate on an existing object's resources. Keep these writes within the requested business scope. `ask <question>` is an ad hoc ontology query, not a page API.
+`vector-upload <class> <attribute> <objectId> [--file <path>] --text <text or @file>` and `vector-delete <class> <attribute> <objectId> <path>` operate on an existing object's resources. Keep these writes within the requested business scope. `ask` is unsupported for build tests.
+
+## Command input and failure contract (5.0)
+
+Positional names, IDs, paths, questions and descriptions are strings. Arguments shown without brackets are required; bracketed arguments are optional. JSON input is parsed once, without converting a JSON string to an object or taking the first member of an array. A missing field or wrong type fails with the owner's field name and correction; the command exits nonzero and preserves that message. An import can report per-item success/failure; check its `failures`, not just the HTTP status.
+
+| Commands | JSON/body types and defaults |
+| --- | --- |
+| `schema`, `relationships` | At least one class name, sent as `classNames: string[]`. |
+| `execute-dsl` | Required DSL JSON, using the DSL endpoint's documented syntax. |
+| `function list/get/save/delete` | list filter defaults to `{}`; get/delete require an ID. save requires a Function object; READ uses queryPackage, WRITE uses Python v2 code. Parameter names/types/descriptions must have their declared JSON types. No boolean parameter type is added. |
+| `action` / `metric-view` `generate` | Required description → `question: string`; `persistence` is false unless `--save` is given. Invalid generated fields fail by name; no successful asset is fabricated. |
+| `action` / `metric-view` `find/get/save/publish/delete` | find requires a class, optional question defaults to omitted. get/publish/delete require ID. save takes the full definition object, with the embedded Function. publish saves that definition as PUBLISHED; it does not bypass asset admission. |
+| `action` / `metric-view` `execute` | Required ID; JSON parameters default to `{}` only for zero-parameter assets. Every declared key must be present. Explicit null is accepted; `""` and `0` are preserved. Missing keys fail with `Missing parameter: <name>`. MetricView `--binding` supplies its complete saved parameter object and cannot be overridden. |
+| `action re-explain` | Optional repeated IDs; `--missing` defaults false. Results identify individual failures. |
+| `vector-upload`, `vector-delete` | Required class, attribute and object ID; upload requires text and optionally file, delete requires resource path. Vector fields are rejected by ordinary object insert/update. |
+| `sdk current/read` | current has no body. read requires one relative path, or exact version plus relative path; no version is guessed from an installed application. |
+| `workspace list/commits/sessions/tree` | Optional page/query JSON defaults to `{}`. IDs are required except for list. Page/query fields are checked by the workspace HTTP schema. |
+| `workspace create/get/rename/delete/content/diff/restore` | Required string positional arguments listed above; content's omitted commit reads the working tree. No body defaults invent missing IDs or commits. |
+| `workspace import/publish/releases/rollback` | Required workspace ID; import needs a directory and explicit message, publish needs commit and declaration object, rollback needs release ID and declaration object. releases has no body. |
+
+
+The platform injects the Python helper module when it executes a generated Action; it is not a file in this skill package. Use the program returned by `action generate` through the Action API rather than running it with local Python. Write helpers take object dictionaries and arrays of dictionaries. A where is a nonempty condition object, never a list; invalid conditions fail before object queries or vector/file cleanup. `appendVector`/`updateVector` require nonempty text; with fileBase64 omitted or null, Java explicitly stores that text as a UTF-8 attachment. With fileBase64 supplied, it must be base64 file bytes; text remains required for embedding. There is no empty-file fallback when both are missing.
+
+## Business testing
+
+Write `test-data/sample.json` in the workspace using the complete envelope below: `objDatas` contains groups of `{className, rows}`; each row is an object dictionary with its primary key and enabled attributes. `relDatas` and `vectorDatas` may be empty arrays. Use technical class and field names from `schema`; replace the example class and attributes to match the current ontology.
+
+```json
+{
+  "objDatas": [{
+    "className": "celestial_body",
+    "rows": [
+      {"id": "e2e-body-1", "name": "Sample A", "description": "Original A"},
+      {"id": "e2e-body-2", "name": "Sample B", "description": "Original B"},
+      {"id": "e2e-body-3", "name": "Sample C", "description": "Original C"}
+    ]
+  }],
+  "relDatas": [],
+  "vectorDatas": []
+}
+```
+
+Attachments are relative to that sample. Sample files must stay inside test-data/ so publication can exclude the entire test-material directory. Start with `test start --workspace <id>` (the built-in agent already has ONTOMATO_WORKSPACE_ID); `test status` and `test stop` use the same workspace entry. No sample is collected from live data. A new start ends and cleans the previous context before preparing a fresh ID.
+
+Action/MetricView execute, execute-dsl, distinct-values and vector commands bind the workspace's current Java context once for that command. Missing, preparing, failed, ended or expired contexts fail; requests never switch to live data. ask is not supported for build tests. Metadata discovery and asset editing keep their existing APIs. To look at live data, publish the application for yourself first. A conversation ending does not stop its test context.
+
+Preview requires the SDK manifest's executionContext capability 1. Upgrade old workspace SDK references when the preview entry rejects them. Test samples are excluded from published application files.
+
+## Upgrade workspace SDK references
+
+When preview returns `BUILD_TEST_SDK_UPGRADE_REQUIRED`, run `sdk current` to obtain the required exact version. Update every old `/apps-sdk/<version>/` reference in the workspace, including the importmap, stylesheet links and any absolute module imports, to that current version. Use `sdk read sdk.json`, `sdk read docs/index.md` and `sdk read docs/reference.md` to check interface changes and adapt the page, then commit the workspace changes (inside the platform, finish the changed run so runtime commits it; externally, use the existing workspace import with an explicit commit message). This uses the existing source-editing workflow; there is no separate SDK upgrade command. Retry preview only after the references and interfaces have been updated.
+
+`test status` and `test stop` succeed when the workspace has no test context, returning `{workspaceId, contextId: null, status: "NONE"}`. This is a normal absence result, not a failed request and not permission to use live data.

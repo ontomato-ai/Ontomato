@@ -12,7 +12,9 @@ import type { TableData } from "./table-data";
 defineOptions({ inheritAttrs: false });
 
 const props = defineProps<{
+  /** The columns' names and the rows of text cells, such as `parseCsv` reads from a CSV or TSV text. */
   table: TableData;
+  /** Rows per page: given, the rows come a page at a time with the total beside the pager; otherwise all at once. */
   pageSize?: number;
   /** Indices of the chosen rows in the whole table; rows can be chosen when given. */
   selected?: number[];
@@ -22,7 +24,10 @@ const props = defineProps<{
   selectionDisabled?: boolean;
 }>();
 
-const emit = defineEmits<{ "update:selected": [rows: number[]] }>();
+const emit = defineEmits<{
+  /** The chosen rows after the reader checks or clears one, by their indices in the whole table. */
+  "update:selected": [rows: number[]];
+}>();
 
 const page = ref(1);
 watch(
@@ -55,7 +60,7 @@ function toggle(row: number, selected: number[]) {
 <template>
   <div class="table-preview">
     <el-table v-bind="$attrs" :data="rows" :row-class-name="chosenRow">
-      <el-table-column v-if="selected" width="44" align="center">
+      <el-table-column v-if="selected" width="44" class-name="table-preview-choice">
         <template #default="{ $index }">
           <el-checkbox
             :model-value="selected.includes(offset + $index)"
@@ -109,6 +114,18 @@ function toggle(row: number, selected: number[]) {
 
 .table-preview :deep(.el-table__header .cell) {
   white-space: nowrap;
+}
+
+/* Element Plus gives a checkbox a 32px line of its own; here it is only as tall as its box and sits in the middle of
+   the row, so a row that can be chosen is as tall as one that cannot. */
+.table-preview :deep(.table-preview-choice .cell) {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.table-preview :deep(.table-preview-choice .el-checkbox) {
+  height: auto;
 }
 
 .table-preview :deep(.el-table__row.is-chosen > td.el-table__cell) {

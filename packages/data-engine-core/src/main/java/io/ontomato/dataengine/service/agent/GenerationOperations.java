@@ -6,8 +6,6 @@ import com.alibaba.fastjson2.*;
 import io.ontomato.dataengine.bean.abcHarness.ABCHarnessDashboardParameter;
 import io.ontomato.dataengine.service.*;
 import io.ontomato.dataengine.util.*;
-import java.io.ByteArrayInputStream;
-import java.nio.charset.StandardCharsets;
 import java.util.*;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
@@ -66,11 +64,10 @@ public class GenerationOperations {
   @SuppressWarnings("unchecked")
   public void createSandbox(String sandbox, String domain) throws Exception {
     var schema = schemas.query(domain);
-    sandboxService.createNamespace(sandbox, domain);
-    for (var cls : (List<Map<String, Object>>) schema.get("classDef"))
-      sandboxService.createClass(sandbox, cls, domain);
-    for (var relation : ((Map<String, Object>) schema.get("relationship_rule")).keySet())
-      sandboxService.createEdge(sandbox, relation, domain);
+    var objects=new JSONArray();
+    for(var cls:(List<Map<String,Object>>)schema.get("classDef"))
+      objects.add(JSONObject.of("className",cls.get("className"),"rows",new JSONArray()));
+    sandboxService.createSampleStructure(sandbox,JSONObject.of("objDatas",objects),domain);
   }
 
   public void dropSandbox(String sandbox, String domain) {
@@ -92,185 +89,12 @@ public class GenerationOperations {
   public JSONObject prepare(String run, Owner owner, JSONObject body) throws Exception {
     String domainId = owner.domainId();
     String sandboxId = store.transaction(() -> sandbox(gate(run, owner)));
-    List<Map> objDatas = body.getList("objDatas", Map.class),
-        relDatas = body.getList("relDatas", Map.class),
-        vectorDatas = body.getList("vectorDatas", Map.class);
-    if (objDatas == null || relDatas == null)
-      throw AgentHttpException.invalid("objDatas and relDatas are required");
-    // Check the object data
-    Map<String, Object> jsonRule = schemas.query(domainId);
-    List<Map<String, Object>> classDefs = (List<Map<String, Object>>) jsonRule.get("classDef");
-    Map<String, Map<String, Object>> classDefMap = new HashMap<String, Map<String, Object>>();
-    for (Map<String, Object> classDef : classDefs) {
-      classDefMap.put((String) classDef.get("className"), classDef);
-    }
-    Map<String, Set<String>> classIdsMap = new HashMap<String, Set<String>>();
-    for (Map<String, Object> objData : objDatas) {
-      // ABC and DSL accept both "/orders" and "orders"; fixtures must normalize too, otherwise
-      // reset() later stores a class name that the sandbox class map cannot resolve.
-      String className =
-          DBSchemaUtil.normalizeClassName((String) objData.get("className"), classDefs);
-      objData.put("className", className);
-      Map<String, Object> classDef = classDefMap.get(className);
-      if (classDef != null) {
-        Set<String> attrNameSet = new HashSet<String>();
-        String pk = DslUtil.getPrimaryKey(classDef);
-        List<Map<String, Object>> attrDefs = (List<Map<String, Object>>) classDef.get("attrs");
-        for (Map<String, Object> attrDef : attrDefs) {
-          if (attrDef.get("enable") == null || (Boolean) attrDef.get("enable")) {
-            attrNameSet.add((String) attrDef.get("name"));
-          }
-        }
-        Set<String> ids = new HashSet<String>();
-        List<Map<String, Object>> rows = (List<Map<String, Object>>) objData.get("rows");
-        for (Map<String, Object> row : rows) {
-          for (String key : row.keySet()) {
-            if (!attrNameSet.contains(key)) {
-              throw AgentHttpException.invalid(
-                  "The row of Class["
-                      + className
-                      + "] has a property["
-                      + key
-                      + "], but that property does not belong to Class["
-                      + className
-                      + "].");
-            }
-          }
-          if (row.get(pk) != null && !"".equals(((String) row.get(pk)).trim())) {
-            String id = ((String) row.get(pk));
-            for (String cn : classIdsMap.keySet()) {
-              if (classIdsMap.get(cn).contains(id)) {
-                throw AgentHttpException.invalid("Property[" + pk + "]: " + id + ", is duplicated.");
-              }
-            }
-            if (ids.contains(id)) {
-              throw AgentHttpException.invalid("Property[" + pk + "]: " + id + ", is duplicated.");
-            }
-            ids.add(id);
-          } else {
-            throw AgentHttpException.invalid(
-                "The row of Class["
-                    + className
-                    + "] has not primary key property["
-                    + pk
-                    + "], or the value of primary key property["
-                    + pk
-                    + "] is null or empty string.");
-          }
-        }
-        classIdsMap.put(className, ids);
-      } else {
-        throw AgentHttpException.invalid("Class[" + className + "] is not exist.");
-      }
-    }
-
-    // Check the relationship data
-    List<Map<String, Object>> newRelDatas = new ArrayList<Map<String, Object>>();
-    Map<String, Object> relationship_rule = (Map<String, Object>) jsonRule.get("relationship_rule");
-    for (Map<String, Object> relData : relDatas) {
-      String relationName = (String) relData.get("relationName");
-      String sourceObjId = (String) relData.get("sourceObjId");
-      String targetObjId = (String) relData.get("targetObjId");
-
-      if (relationship_rule.get(relationName) != null) {
-        Map<String, String> relationDef = (Map<String, String>) relationship_rule.get(relationName);
-        String fromClass = relationDef.get("fromclass");
-        String toClass = relationDef.get("toclass");
-        Set<String> fromIds = classIdsMap.get(fromClass);
-        if (fromIds == null || !fromIds.contains(sourceObjId)) {
-          throw AgentHttpException.invalid(
-              "The relation data: {relationName:"
-                  + relationName
-                  + ", sourceObjId: "
-                  + sourceObjId
-                  + ", targetObjId: "
-                  + targetObjId
-                  + "}, sourceObjId["
-                  + sourceObjId
-                  + "] is not in Class["
-                  + fromClass
-                  + "].");
-        }
-        Set<String> toIds = classIdsMap.get(toClass);
-        if (toIds == null || !toIds.contains(targetObjId)) {
-          throw AgentHttpException.invalid(
-              "The relation data: {relationName:"
-                  + relationName
-                  + ", sourceObjId: "
-                  + sourceObjId
-                  + ", targetObjId: "
-                  + targetObjId
-                  + "}, targetObjId["
-                  + targetObjId
-                  + "] is not in Class["
-                  + toClass
-                  + "].");
-        }
-        Map<String, Object> newRelData = new HashMap<String, Object>();
-        newRelData.put("relationName", relationName);
-        newRelData.put("sourceClassName", fromClass);
-        newRelData.put("sourceObjId", sourceObjId);
-        newRelData.put("targetClassName", toClass);
-        newRelData.put("targetObjId", targetObjId);
-        newRelDatas.add(newRelData);
-      } else {
-        throw AgentHttpException.invalid("Relation[" + relationName + "] is not exist.");
-      }
-    }
-
-    // Check the vector data
-    List<Map<String, Object>> newVectorDatas = new ArrayList<Map<String, Object>>();
-    if (vectorDatas != null) {
-      for (Map<String, Object> vectorData : vectorDatas) {
-        String className =
-            DBSchemaUtil.normalizeClassName((String) vectorData.get("className"), classDefs);
-        String objectId = (String) vectorData.get("objectId");
-        String attrName = (String) vectorData.get("attrName");
-        String text = (String) vectorData.get("text");
-        String fileId = (String) vectorData.get("fileId");
-        Map<String, Object> classDef = classDefMap.get(className);
-        if (classDef == null) {
-          throw AgentHttpException.invalid("The vector data: Class[" + className + "] is not exist.");
-        }
-        Set<String> ids = classIdsMap.get(className);
-        if (ids == null || !ids.contains(objectId)) {
-          throw AgentHttpException.invalid(
-              "The vector data: objectId[" + objectId + "] is not in Class[" + className + "].");
-        }
-        if (attrName == null || "".equals(attrName.trim())) {
-          throw AgentHttpException.invalid("The vector data: attrName is empty.");
-        }
-        boolean isVectorAttr = false;
-        List<Map<String, Object>> attrDefs = (List<Map<String, Object>>) classDef.get("attrs");
-        for (Map<String, Object> attrDef : attrDefs) {
-          if (attrName.equals(attrDef.get("name")) && "vector".equals(attrDef.get("type"))) {
-            isVectorAttr = true;
-            break;
-          }
-        }
-        if (!isVectorAttr) {
-          throw AgentHttpException.invalid(
-              "The vector data: attrName["
-                  + attrName
-                  + "] is not a vector attribute of Class["
-                  + className
-                  + "].");
-        }
-        if (text == null || "".equals(text.trim())) {
-          throw AgentHttpException.invalid("The vector data: text is empty.");
-        }
-        Map<String, Object> newVectorData = new HashMap<String, Object>();
-        newVectorData.put("className", className);
-        newVectorData.put("objectId", objectId);
-        newVectorData.put("attrName", attrName);
-        newVectorData.put("text", text);
-        newVectorData.put("fileId", fileId);
-        newVectorDatas.add(newVectorData);
-      }
-    }
-
-    JSONObject data =
-        JSONObject.of("objDatas", objDatas, "relDatas", newRelDatas, "vectorDatas", newVectorDatas);
+    // Generation historically supplied text with a fileId suffix, never file bytes.
+    // Its boundary now declares that input explicitly as a text-only sample.
+    body = JSONObject.parseObject(body.toJSONString());
+    if (body.getJSONArray("vectorDatas") != null)
+      for (var item : body.getJSONArray("vectorDatas")) ((JSONObject) item).remove("fileId");
+    JSONObject data = sandboxService.validateSample(body, Map.of(), domainId);
     store.transaction(
         () -> {
           gate(run, owner);
@@ -291,50 +115,10 @@ public class GenerationOperations {
           String sandboxId = sandbox(row), domainId = owner.domainId();
           JSONObject data = row.getJSONObject("test_data");
           if (data == null) throw AgentHttpException.invalid("Prepare test data first");
-          Map<String, Object> jsonRule = schemas.query(domainId);
-          List<Map<String, Object>> classDefs =
-              (List<Map<String, Object>>) jsonRule.get("classDef");
-          Map<String, Map<String, Object>> classDefMap = new HashMap<>();
-          for (var cls : classDefs) classDefMap.put((String) cls.get("className"), cls);
           try {
             sandboxService.truncateNamespace(sandboxId, domainId);
 
-            JSONArray objDatas = data.getJSONArray("objDatas");
-            for (int i = 0; i < objDatas.size(); i++) {
-              JSONObject objData = objDatas.getJSONObject(i);
-              String className =
-                  DBSchemaUtil.normalizeClassName(objData.getString("className"), classDefs);
-              objData.put("className", className);
-              JSONArray rows = objData.getJSONArray("rows");
-              Map<String, Object> classDef = classDefMap.get(className);
-              sandboxService.insertObjects(sandboxId, classDef, rows, domainId);
-            }
-
-            JSONArray relDatas = data.getJSONArray("relDatas");
-            sandboxService.insertRelations(sandboxId, relDatas, domainId);
-
-            JSONArray vectorDatas = data.getJSONArray("vectorDatas");
-            if (vectorDatas != null) {
-              for (int i = 0; i < vectorDatas.size(); i++) {
-                JSONObject vectorData = vectorDatas.getJSONObject(i);
-                String className =
-                    DBSchemaUtil.normalizeClassName(vectorData.getString("className"), classDefs);
-                String objectId = vectorData.getString("objectId");
-                String attrName = vectorData.getString("attrName");
-                String text = vectorData.getString("text");
-                String fileId = vectorData.getString("fileId");
-                String suffix = getSuffixFromFileId(fileId);
-                writes.appendVector(
-                    className,
-                    attrName,
-                    objectId,
-                    text,
-                    new ByteArrayInputStream(text.getBytes(StandardCharsets.UTF_8)),
-                    suffix,
-                    sandboxId,
-                    domainId);
-              }
-            }
+            sandboxService.loadSample(sandboxId, data, Map.of(), domainId);
           } catch (RuntimeException error) {
             throw error;
           } catch (Exception error) {
@@ -342,10 +126,6 @@ public class GenerationOperations {
           }
           return JSONObject.of("reset", true);
         });
-  }
-
-  private String getSuffixFromFileId(String id) {
-    return id == null || !id.contains(".") ? "txt" : id.substring(id.lastIndexOf('.') + 1);
   }
 
   public Object query(String run, Owner owner, JSONObject body) {

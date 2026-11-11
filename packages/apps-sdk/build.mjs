@@ -1,3 +1,4 @@
+import { BUILD_TEST_SDK_CAPABILITY } from "../contracts/src/build-tests.ts";
 // Builds one product's apps SDK: `node build.mjs <edition module> <output root>`. The output root then holds exactly
 // current.json and one version directory with the browser modules, the stylesheet, the docs and the examples of that version. The source
 // facts come from the image builder in APPS_SDK_BUILD (scripts/workbench/build-images.mjs).
@@ -22,6 +23,8 @@ const ENTRIES = [
   { specifier: "@ontomato/sdk/chart", file: "chart.js", source: "src/entries/chart.ts" },
   { specifier: "@ontomato/sdk/markdown", file: "markdown.js", source: "src/entries/markdown.ts" },
   { specifier: "@ontomato/sdk/form", file: "form.js", source: "src/entries/form.ts" },
+  { specifier: "@ontomato/sdk/code", file: "code.js", source: "src/entries/code.ts" },
+  { specifier: "@ontomato/sdk/preview", file: "preview.js", source: "src/entries/preview.ts" },
   { specifier: "@ontomato/sdk/chat", file: "chat.js", source: "src/entries/chat.ts" },
 ];
 const STYLESHEET = "styles/sdk.css";
@@ -129,6 +132,7 @@ async function main() {
   writeFileSync(join(outDir, "sdk.json"), `${JSON.stringify({
     version,
     product: facts.product,
+    executionContext: BUILD_TEST_SDK_CAPABILITY,
     entries: Object.fromEntries(ENTRIES.map((entry) => [entry.specifier, entry.file])),
     stylesheet: STYLESHEET,
     libraries: Object.fromEntries(LIBRARIES.map((name) => [name, libraryVersion(name)])),

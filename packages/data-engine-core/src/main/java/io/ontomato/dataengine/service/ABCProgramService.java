@@ -11,7 +11,6 @@ import io.ontomato.dataengine.bean.function.Function;
 import io.ontomato.dataengine.service.sys.bean.permission.UserDataPermission;
 
 public interface ABCProgramService {
-
 	/** Returns {rows, PythonExecuteResult}, like the read-function variant; the result carries the run's partial-query status. */
 	public Object[] execute(String sessionId, ABCHarnessProgram program, String userId, UserDataPermission curUserDataPermission, String lang, int timeoutMinutes, String domainId) throws Exception;
 	
@@ -21,7 +20,7 @@ public interface ABCProgramService {
 	public Object[] execute(String sessionId, Function function, String userId, UserDataPermission curUserDataPermission, String sandboxId, String lang, int timeoutMinutes, String domainId) throws Exception;
 
     /** Execution facts supplied by the trusted caller, outside business parameters. */
-    record ExecutionContext(java.util.UUID executionId, com.alibaba.fastjson2.JSONObject identity) {}
+    record ExecutionContext(java.util.UUID executionId, com.alibaba.fastjson2.JSONObject identity, ExecutionTarget target) {}
 
     /** Preserve durable admission and the caller-established identity in one execution context. */
     public Object[] execute(String sessionId, Function function, String userId, UserDataPermission permission,

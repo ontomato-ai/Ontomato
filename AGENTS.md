@@ -37,6 +37,12 @@ Java tests that touch databases, models or external systems must not be run unfi
 a whole. Real configuration and runtime data must not be committed. Save only this task's
 results and protect other tasks' changes.
 
+Spring's Jackson converter binds the nested objects and arrays of a request body as `Map`
+and `List`, never as fastjson `JSONObject` and `JSONArray`. A check at a Java HTTP boundary
+tests for `Map` and `List`, and a test that claims to cover that boundary passes its body
+through the real message converter, as `JacksonAgentBoundaryTest` does; a body parsed with
+fastjson does not take the path a real request takes.
+
 ## Collaboration and working directories
 
 Use an ordinary outer directory for an isolated pair of checkouts; do not add a third

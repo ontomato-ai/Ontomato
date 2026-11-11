@@ -10,6 +10,9 @@ export function readJson(argument) {
       : argument,
   );
 }
+function commandHeaders(headers) {
+  return typeof headers === "function" ? headers() : headers;
+}
 async function json(url, headers, body) {
   const response = await fetch(url, {
     method: body === undefined ? "GET" : "POST",
@@ -40,16 +43,22 @@ function take(args, key) {
   args.splice(i, 2);
   return value;
 }
+function finiteNumber(value, field) {
+  if (value.trim() === "" || !Number.isFinite(Number(value)))
+    throw new Error(`${field}: expected a finite number; supply a numeric value such as 10`);
+  return Number(value);
+}
+
 export async function analystCommand(cfg, argv, headers = {}) {
   const [command, ...args] = argv;
   const ontology = (cfg.ontologyUrl || `${cfg.envUrl}/api/data-query`).replace(
     /\/$/,
     "",
   );
-  if (command === "ask") return ask(cfg, args, headers);
+  if (command === "ask") return ask(cfg, args, await commandHeaders(headers));
   if (command === "run") return runAction(ontology, args, headers);
   if (command === "pending") return pending(ontology, args, headers);
-  if (command === "actions") return listActions(ontology, headers);
+  if (command === "actions") return listActions(ontology, await commandHeaders(headers));
   let endpoint, body;
   if (command === "dataset-desc" || command === "classes")
     endpoint = "/overview";
@@ -63,7 +72,7 @@ export async function analystCommand(cfg, argv, headers = {}) {
     body = { classNames: args };
   } else if (command === "distinct-values") {
     const like = take(args, "--like") ?? null,
-      limit = Number(take(args, "--limit") ?? 100);
+      limit = finiteNumber(take(args, "--limit") ?? "100", "--limit");
     if (args.length !== 2)
       throw new Error("distinct-values requires class and attribute");
     endpoint = "/distinct-values";
@@ -72,7 +81,7 @@ export async function analystCommand(cfg, argv, headers = {}) {
     endpoint = "/execute-dsl";
     body = { dsl: readJson(args[0]) };
   } else if (command === "metrics" || command === "knowledge") {
-    const limit = Number(take(args, "--limit") ?? 10),
+    const limit = finiteNumber(take(args, "--limit") ?? "10", "--limit"),
       cursor = take(args, "--cursor") ?? null;
     endpoint = command === "metrics" ? "/metrics/search" : "/knowledge/search";
     body = {
@@ -90,6 +99,8 @@ export async function analystCommand(cfg, argv, headers = {}) {
     throw new Error(
       "Commands: dataset-desc, classes, schema, relationships, dsl-reference, distinct-values, execute-dsl, metrics, execute-metric, knowledge, pending, actions, run, ask",
     );
+  // Resolve dynamic execution credentials only after input validation, once per command.
+  headers = await commandHeaders(headers);
   const result = await json(
     ontology + "/ontology/query" + endpoint,
     headers,
@@ -137,6 +148,7 @@ async function runAction(ontology, args, headers) {
   const actionId = args[0];
   if (!actionId) throw new Error("run requires an action id");
   const parameters = args[1] ? readJson(args[1]) : {};
+  headers = await commandHeaders(headers);
   const response = await fetch(`${ontology}/action/execute`, {
     method: "POST",
     headers: {
@@ -189,6 +201,7 @@ async function runAction(ontology, args, headers) {
 async function pending(ontology, args, headers) {
   const limit = Number(take(args, "--limit") ?? 20);
   const flow = take(args, "--flow");
+  headers = await commandHeaders(headers);
   let metricFailure;
   try {
     const search = await json(`${ontology}/ontology/query/metrics/search`, headers, {

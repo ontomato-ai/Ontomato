@@ -1,3 +1,4 @@
+import { buildTestContextSchema } from "@ontomato/contracts/build-tests";
 import { z } from "zod";
 import { agentHostSessionPageSchema } from "@ontomato/contracts/agent-host";
 import { appBuilderBootstrapSchema } from "@ontomato/contracts/app-builder";
@@ -30,6 +31,10 @@ const workspacePageSchema = z.object({ items: z.array(workspaceSchema) });
  * publication goes through the workspace too; the workbench writes the application to Java's catalog.
  */
 export const builderApi = {
+  async buildTestStatus(id: string) {
+    const value=await nodeApiGet(`${workspacePath(id)}/build-tests`);
+    return value===null ? null : buildTestContextSchema.parse(value);
+  },
   /** The domain's builder agent; its identity comes from the server, never a fixed id. */
   async agent() {
     return appBuilderBootstrapSchema.parse(await nodeApiGet("/app-builder/bootstrap")).agent;

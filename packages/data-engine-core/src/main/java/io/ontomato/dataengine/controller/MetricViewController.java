@@ -1,5 +1,7 @@
 package io.ontomato.dataengine.controller;
 
+import io.ontomato.dataengine.bean.function.Function;
+
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.ResponseEntity;
@@ -42,6 +44,9 @@ import lombok.extern.slf4j.Slf4j;
 @Slf4j
 @RestController
 public class MetricViewController {
+    @org.springframework.beans.factory.annotation.Autowired
+    private io.ontomato.dataengine.service.BuildTestContextService buildTests;
+
 
 	@Autowired
     private IdentityService identityService;
@@ -90,7 +95,9 @@ public class MetricViewController {
 		try {
 			User user = SystemUtils.getCurUser();
 			if (param.containsKey("type")) throw new IllegalArgumentException("MetricView type is retired; edit parameter bindings on a dynamic metric");
+            var acceptedFunction = Function.fromAsset(param);
             MetricView metricView = param.to(MetricView.class);
+            metricView.setFunction(acceptedFunction);
 			metricView.setDomainId(user.getDomainId());
 			// The saved Function belongs to the caller's domain whatever the request says; the DAO keys the vector write by it.
 			if (metricView.getFunction() != null) {
@@ -226,32 +233,35 @@ public class MetricViewController {
 	
 	@PostMapping("/metricView/test")
     @ResponseBody
-    public JSONObject test(@RequestHeader(ControllerConst.LANG_HEADER_KEY) String lang, @RequestBody JSONObject param) {
+    public JSONObject test(@RequestHeader(ControllerConst.LANG_HEADER_KEY) String lang, @RequestBody JSONObject param, jakarta.servlet.http.HttpServletRequest executionRequest) {
 		JSONObject ret = new JSONObject();
 		try {
 			UserDataPermission curUserDataPermission = identityService.getCurrentUserDataPermission();
 	    	User user = SystemUtils.getCurUser();
 			if (param.containsKey("type")) throw new IllegalArgumentException("MetricView type is retired; edit parameter bindings on a dynamic metric");
+            var acceptedFunction = Function.fromAsset(param);
             MetricView metricView = param.to(MetricView.class);
+            metricView.setFunction(acceptedFunction);
 			BusinessConfig businessConfig = businessConfigService.get(user.getDomainId());
     		int timeoutMinutes = Long.valueOf(businessConfig.getDslCookerTimeout() / 60000).intValue();
 			if (timeoutMinutes <= 0) {
 				timeoutMinutes = 1;
 			}
-			MetricViewContent metricViewContent = metricViewService.test(metricView, lang, user, curUserDataPermission, timeoutMinutes);
+			MetricViewContent metricViewContent = metricViewService.test(metricView, lang, user, curUserDataPermission, timeoutMinutes, buildTests.resolve(executionRequest));
 			ret.put("success", true);
 			ret.put("data", metricViewContent);
 		} catch (Exception e) {
 			log.error(e.getMessage(), e);
 			ret.put("success", false);
 			ret.put("message", e.getMessage());
+            io.ontomato.dataengine.service.ExecutionTarget.failure(ret,e);
 		}
 		return ret;
 	}
 	
 	@PostMapping("/metricView/execute")
     @ResponseBody
-    public JSONObject execute(@RequestHeader(ControllerConst.LANG_HEADER_KEY) String lang, @RequestBody JSONObject param) {
+    public JSONObject execute(@RequestHeader(ControllerConst.LANG_HEADER_KEY) String lang, @RequestBody JSONObject param, jakarta.servlet.http.HttpServletRequest executionRequest) {
 		JSONObject ret = new JSONObject();
 		try {
 			UserDataPermission curUserDataPermission = identityService.getCurrentUserDataPermission();
@@ -263,7 +273,7 @@ public class MetricViewController {
 			if (timeoutMinutes <= 0) {
 				timeoutMinutes = 1;
 			}
-			Object[] o = metricViewService.execute(id, param.getString("bindingId"), p, param.getJSONObject("parameterTexts"), lang, user, curUserDataPermission, timeoutMinutes);
+			Object[] o = metricViewService.execute(id, param.getString("bindingId"), p, param.getJSONObject("parameterTexts"), lang, user, curUserDataPermission, timeoutMinutes, buildTests.resolve(executionRequest));
 			ret.put("success", true);
 			ret.put("data", o[0]);
 			((PythonExecuteResult)o[1]).markCompleteness(ret);
@@ -271,25 +281,28 @@ public class MetricViewController {
 			log.error(e.getMessage(), e);
 			ret.put("success", false);
 			ret.put("message", e.getMessage());
+            io.ontomato.dataengine.service.ExecutionTarget.failure(ret,e);
 		}
 		return ret;
 	}
 	
 	@PostMapping("/metricView/testExecute")
     @ResponseBody
-    public JSONObject testExecute(@RequestHeader(ControllerConst.LANG_HEADER_KEY) String lang, @RequestBody JSONObject param) {
+    public JSONObject testExecute(@RequestHeader(ControllerConst.LANG_HEADER_KEY) String lang, @RequestBody JSONObject param, jakarta.servlet.http.HttpServletRequest executionRequest) {
 		JSONObject ret = new JSONObject();
 		try {
 			UserDataPermission curUserDataPermission = identityService.getCurrentUserDataPermission();
 	    	User user = SystemUtils.getCurUser();
-			MetricView metricView = param.getJSONObject("metricView").to(MetricView.class);
+			var acceptedFunction = Function.fromAsset(param.getJSONObject("metricView"));
+            MetricView metricView = param.getJSONObject("metricView").to(MetricView.class);
+            metricView.setFunction(acceptedFunction);
 			JSONObject p = param.getJSONObject("param");
 			BusinessConfig businessConfig = businessConfigService.get(user.getDomainId());
     		int timeoutMinutes = Long.valueOf(businessConfig.getDslCookerTimeout() / 60000).intValue();
 			if (timeoutMinutes <= 0) {
 				timeoutMinutes = 1;
 			}
-			Object[] o = metricViewService.testExecute(metricView, param.getString("bindingId"), p, lang, user, curUserDataPermission, timeoutMinutes);
+			Object[] o = metricViewService.testExecute(metricView, param.getString("bindingId"), p, lang, user, curUserDataPermission, timeoutMinutes, buildTests.resolve(executionRequest));
 			ret.put("success", true);
 			ret.put("data", o[0]);
 			((PythonExecuteResult)o[1]).markCompleteness(ret);
@@ -297,6 +310,7 @@ public class MetricViewController {
 			log.error(e.getMessage(), e);
 			ret.put("success", false);
 			ret.put("message", e.getMessage());
+            io.ontomato.dataengine.service.ExecutionTarget.failure(ret,e);
 		}
 		return ret;
 	}

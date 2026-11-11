@@ -52,6 +52,7 @@ public class OntologyQueryService {
 
   private String checkedClass(String name, QueryAccessService.Access access) {
     String normalized = DBSchemaUtil.normalizeClassName(name, classes(access));
+    if(access.target().testing()) access.target().requireClasses(List.of(normalized));
     List<String> scope =
         access.classNames();
     if (scope != null && !scope.isEmpty() && !scope.contains(normalized))
@@ -262,13 +263,13 @@ public class OntologyQueryService {
 
   private Map<String, Object> executeQuery(JSONObject query, QueryAccessService.Access access) throws Exception {
     validateQuery(query, access);
-    if (access.grant() != null && "sandbox-write".equals(access.grant().getString("purpose"))) {
+    if (access.target().testing() || access.grant() != null && "sandbox-write".equals(access.grant().getString("purpose"))) {
       var definitions = classes(access);
       var analysis = QuerySourceAnalysis.fromDsl(query, definitions);
       QueryPermissions.authorizeInputs(analysis, access.permission(), definitions);
       var restricted = (JSONObject) io.ontomato.dataengine.util.DslPermissionUtil.addRowPermission(
           "[" + query.toJSONString() + "]", definitions, access.permission())[0];
-      String sandbox = access.grant().getString("sandboxId");
+      String sandbox = access.target().testing() ? access.target().sandboxId() : access.grant().getString("sandboxId");
       if (io.ontomato.dataengine.config.ServiceConst.NOT_SANDBOX.equals(sandbox)) sandbox = null;
       return QueryPermissions.response(writes.query(restricted, sandbox, access.user().getDomainId()), analysis, access.permission(), true);
     }

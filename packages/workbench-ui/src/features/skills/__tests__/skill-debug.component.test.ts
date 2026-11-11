@@ -5,9 +5,9 @@ import type { SkillInfo } from "@ontomato/contracts/skills";
 import { workbenchI18n } from "../../../i18n";
 import SkillDebugDialog from "../components/SkillDebugDialog.vue";
 
-vi.mock("../api", () => ({
-  skillsApi: { debugSkill: async () => ({ success: true, result: { html: "<html><body>chart</body></html>", json: {}, meta: {} } }) },
-}));
+const debug = vi.hoisted(() => vi.fn());
+vi.mock("../api", () => ({ skillsApi: { debugSkill: debug } }));
+debug.mockResolvedValue({ success: true, result: { html: "<html><body>chart</body></html>", json: {}, meta: {} } });
 
 afterEach(() => {
   document.body.innerHTML = "";
@@ -28,5 +28,22 @@ it("runs a skill's HTML output with scripts and its own origin, as before", asyn
   expect(frame.getAttribute("sandbox")).toBe("allow-scripts allow-same-origin");
   expect(frame.hasAttribute("referrerpolicy")).toBe(false);
   expect(frame.srcdoc).toContain("chart");
+  wrapper.unmount();
+});
+
+it("supplies nodes and relationships when debugging a network graph", async () => {
+  const wrapper = mount(SkillDebugDialog, {
+    props: { visible: true, skill: { id: "network-graph", title: "Network" } as SkillInfo },
+    global: { plugins: [workbenchI18n(), ElementPlus] }, attachTo: document.body,
+  });
+  await flushPromises();
+  await wrapper.findAll("button").find((button) => button.text() === "Execute")!.trigger("click");
+  await flushPromises();
+  expect(debug).toHaveBeenLastCalledWith("network-graph", {
+    chartType: "network-graph", data: {
+      nodes: [{ id: "A", name: "A" }, { id: "B", name: "B" }], links: [{ source: "A", target: "B" }],
+    },
+  });
+  expect(document.querySelector("iframe")?.srcdoc).toContain("chart");
   wrapper.unmount();
 });

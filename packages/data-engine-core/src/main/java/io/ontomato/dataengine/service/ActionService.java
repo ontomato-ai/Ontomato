@@ -10,6 +10,8 @@ import io.ontomato.dataengine.core.bean.User;
 import io.ontomato.dataengine.service.sys.bean.permission.UserDataPermission;
 
 public interface ActionService {
+    PythonExecuteResult execute(String id, JSONObject param, String lang, User user, UserDataPermission permission, int timeoutMinutes, ExecutionTarget target) throws Exception;
+
 	
 	public Action generateFromNatureLanguage(String question, String lang, String domainId, boolean persistence) throws Exception;
 

@@ -24,7 +24,9 @@ export async function previewSkill(owner: { domainId: string; userId: string },
     });
   });
   const snapshot = await waitForRun(client, runId);
+  const html = snapshot.artifacts.find((artifact) => artifact.mediaType === "text/html");
   return {
+    html: html ? await client.text(`/v1/artifacts/${html.id}/content`) : undefined,
     text: finalText(snapshot) || snapshot.run.errorMessage || "",
     json: { runId, status: snapshot.run.status, stopReason: snapshot.run.stopReason,
       errorMessage: snapshot.run.errorMessage, artifacts: snapshot.artifacts },

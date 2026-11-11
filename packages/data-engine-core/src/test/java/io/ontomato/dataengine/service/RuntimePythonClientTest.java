@@ -78,8 +78,7 @@ class RuntimePythonClientTest {
     when(runtime.pythonHelper()).thenReturn("# private fixture helper");
     QueryGrantService grants = mock(QueryGrantService.class);
     when(runtime.ontologyUrl()).thenReturn("http://ontology");
-    when(grants.issue(
-            anyString(), anyString(), anyString(), anyString(), anyLong(), anyList(), isNull()))
+    when(grants.issueExecution(any(), anyString(), anyLong()))
         .thenReturn("scoped-grant");
     when(runtime.execution(anyString(), anyString()))
         .thenReturn(
@@ -131,8 +130,7 @@ class RuntimePythonClientTest {
     when(runtime.pythonHelper()).thenReturn("# private fixture helper");
     QueryGrantService grants = mock(QueryGrantService.class);
     when(runtime.ontologyUrl()).thenReturn("http://ontology");
-    when(grants.issue(
-            anyString(), anyString(), anyString(), anyString(), anyLong(), anyList(), isNull()))
+    when(grants.issueExecution(any(), anyString(), anyLong()))
         .thenReturn("user-read-fixture");
     when(runtime.execution(anyString(), anyString()))
         .thenReturn(JSONObject.parseObject("{\"status\":\"stopped\",\"exitCode\":0,\"outputs\":[{\"name\":\"stdout\"}]}"));
@@ -169,15 +167,7 @@ class RuntimePythonClientTest {
                 .execute(
                     "function-session-2", function, "user", permission, null, "en", 1, "domain")[0];
     assertEquals("****", rows.getJSONObject(0).getString("count"));
-    verify(grants, times(2))
-        .issue(
-            eq("user"),
-            eq("domain"),
-            eq("user-read"),
-            anyString(),
-            anyLong(),
-            eq(java.util.List.of()),
-            isNull());
+    verify(grants, times(2)).issueExecution(argThat(a -> a.userId().equals("user") && a.domainId().equals("domain") && a.purpose().equals("user-read") && a.classNames().isEmpty() && a.sandboxId()==null), anyString(), anyLong());
     function.setCode("print('old protocol')");
     assertThrows(
         IllegalArgumentException.class,

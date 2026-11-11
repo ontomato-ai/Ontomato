@@ -10,7 +10,7 @@ const props = defineProps<ArtifactRendererProps>();
 const { t, locale } = useI18n();
 const zh = computed(() => locale.value.toLowerCase().startsWith("zh"));
 const card = ref<AssistantActionCard | null>(null);
-const values = ref<Record<string, string>>({});
+const values = ref<Record<string, string | null>>({});
 const loading = ref(false);
 const executing = ref(false);
 const error = ref("");
@@ -30,9 +30,10 @@ const identityParameter = (name: string) => /^(exchange_id|person_id)$/.test(nam
 const visibleParameters = computed(() => card.value?.action.parameters.filter((parameter) =>
   !identityParameter(parameter.name) && parameter.name !== "expected_value") ?? []);
 const target = computed(() => card.value?.proposal.display?.target || (values.value.exchange_id ? (zh.value ? "所选学术交流记录" : "Selected exchange record") : values.value.person_id ? (zh.value ? "所选教职工" : "Selected staff member") : props.title));
-const missingContext = computed(() => card.value?.action.parameters.some((parameter) =>
-  (identityParameter(parameter.name) || parameter.name === "expected_value") && !values.value[parameter.name]?.trim()) ?? false);
-const ready = computed(() => !missingContext.value && visibleParameters.value.every((parameter) => !parameter.required || values.value[parameter.name]?.trim()));
+const missingNames = computed(() => card.value?.action.parameters
+  .filter(parameter => !Object.hasOwn(values.value, parameter.name)).map(parameter => parameter.name) ?? []);
+const missingContext = computed(() => missingNames.value.length > 0);
+const ready = computed(() => !missingContext.value);
 function parameterPlaceholder(name: string) {
   if (!zh.value) return "Enter the new value";
   return ({ new_source: "例如：科研处活动登记表（请填写真实来源）", new_role: "例如：主讲人、主持人、参会人", new_activity_type: "例如：学术研讨、教学交流", highest_education: "例如：研究生、本科", highest_degree: "例如：博士、硕士、学士" } as Record<string, string>)[name] || "请填写要更新的内容";
@@ -58,7 +59,8 @@ async function load() {
   loading.value = true; error.value = "";
   try {
     card.value = assistantActionCardSchema.parse(await nodeApiGet(endpoint.value));
-    values.value = Object.fromEntries(Object.entries(card.value.execution?.parameters ?? card.value.proposal.parameters).map(([name, value]) => [name, stringify(value)]));
+    const parameters = card.value.execution?.parameters ?? card.value.proposal.parameters;
+    values.value = Object.fromEntries(Object.entries(parameters).map(([name, value]) => [name, value === null ? null : stringify(value)]));
   } catch (e) { error.value = e instanceof Error ? e.message : String(e); }
   finally { loading.value = false; }
 }
@@ -67,7 +69,8 @@ async function confirm() {
   executing.value = true; error.value = "";
   try {
     const parameters = Object.fromEntries(card.value.action.parameters.map((parameter) => {
-      const value = values.value[parameter.name] ?? "";
+      const value = values.value[parameter.name]!;
+      if (value === null) return [parameter.name, null];
       const type = parameter.type.replace(/^TYPE_/, "").toLowerCase();
       return [parameter.name, ["string", "time", "date", "varchar", "text"].includes(type) ? value : JSON.parse(value)];
     }));
@@ -107,10 +110,10 @@ watch(() => props.artifact.id, load, { immediate: true });
         <div v-if="values.expected_value !== undefined" class="current-value"><span>{{ zh ? "当前内容" : "Current value" }}</span><strong>{{ values.expected_value || '—' }}</strong><ArrowRight :size="16" /><span>{{ zh ? "更新为下方内容" : "Update below" }}</span></div>
         <label v-for="parameter in visibleParameters" :key="parameter.name" class="parameter">
           <span>{{ parameterLabel(parameter) }}</span>
-          <el-input v-model="values[parameter.name]" :placeholder="parameterPlaceholder(parameter.name)" :required="parameter.required" :disabled="!editable" :aria-label="parameter.description || parameter.name" />
+          <el-input v-model="values[parameter.name]" :placeholder="parameterPlaceholder(parameter.name)" :disabled="!editable" :aria-label="parameter.description || parameter.name" />
         </label>
-        <p v-if="!card.execution && !missingContext" class="confirmation-note">{{ !ready ? (zh ? "补充新内容后即可确认，其他信息已自动填好。" : "Complete the new value to continue. Other details are prefilled.") : (zh ? "确认后更新这条记录" : "Confirm to update this record") }}</p>
-        <p v-if="missingContext && !card.execution" class="error" role="alert">{{ zh ? "操作对象信息不完整，请先重新查询这条记录，获取完整信息后再生成操作建议。" : "Target details are incomplete. Query the record again before requesting a new suggestion." }}</p>
+        <p v-if="!card.execution && !missingContext" class="confirmation-note">{{ zh ? "确认后更新这条记录" : "Confirm to update this record" }}</p>
+        <p v-if="missingContext && !card.execution" class="error" role="alert">{{ (zh ? "缺少参数：" : "Missing parameter: ") + missingNames.join(", ") }}</p>
         <div class="proposal-actions">
         <el-button v-if="!card.execution" type="primary" native-type="submit" :loading="executing" :disabled="!ready || card.proposal.version !== card.action.version">{{ zh ? "确认更新" : "Confirm update" }}</el-button>
         <el-button v-if="!detailed && props.openDetails" text @click="props.openDetails">{{ zh ? "查看详情" : "View details" }}</el-button>

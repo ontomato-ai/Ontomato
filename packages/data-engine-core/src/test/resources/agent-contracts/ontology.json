@@ -1,0 +1,52 @@
+{
+  "classDef": [
+    {
+      "className": "contract_person",
+      "attrs": [
+        {
+          "name": "id",
+          "type": "varchar",
+          "primaryKey": true
+        },
+        {
+          "name": "name",
+          "type": "varchar"
+        },
+        {
+          "name": "age",
+          "type": "int"
+        },
+        {
+          "name": "group_id",
+          "type": "varchar"
+        },
+        {
+          "name": "attachment",
+          "type": "vector"
+        }
+      ]
+    },
+    {
+      "className": "contract_group",
+      "attrs": [
+        {
+          "name": "id",
+          "type": "varchar",
+          "primaryKey": true
+        },
+        {
+          "name": "name",
+          "type": "varchar"
+        }
+      ]
+    }
+  ],
+  "relationship_rule": {
+    "person_group": {
+      "fromclass": "contract_person",
+      "toclass": "contract_group",
+      "fromField": "group_id",
+      "toField": "id"
+    }
+  }
+}

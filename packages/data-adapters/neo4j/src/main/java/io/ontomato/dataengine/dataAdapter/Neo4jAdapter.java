@@ -695,6 +695,20 @@ public class Neo4jAdapter implements DataAdapter {
 	public void validateClassNameFormat(String className) throws Exception {
 	}
 
+    @Override public JSONObject createRecordedClass(String namespace,Map<String,Object> definition) {
+      createClass(namespace,definition);
+      return JSONObject.of("kind","label","name",sandboxClassName(namespace,(String)definition.get("className")));
+    }
+    @Override public void dropRecordedResource(JSONObject resource) {
+      try {
+        var query=new CypherQuery();String label=query.next();query.params.put(label,resource.getString("name"));
+        query.text="MATCH (n) WHERE $"+label+" IN labels(n) DETACH DELETE n";executeWrite(query);
+      } catch(Exception failure) { throw new IllegalStateException("Cannot drop recorded label: "+resource,failure); }
+    }
+
+    @Override
+    public boolean supportsSandbox() { return true; }
+
 	@Override
 	public void createNamespace(String namespace) {
 	}
@@ -709,7 +723,7 @@ public class Neo4jAdapter implements DataAdapter {
 					+ ") detach delete n";
 			executeWrite(cypher);
 		} catch (Exception e) {
-			log.error(e.getMessage(), e);
+			throw new IllegalStateException("Sandbox structure operation failed", e);
 		}
 	}
 
@@ -876,6 +890,7 @@ public class Neo4jAdapter implements DataAdapter {
 		if (condition == null) {
 			return "";
 		}
+		io.ontomato.dataengine.util.WriteWhereValidator.validate(condition, attrTypeMap::containsKey);
 		return buildWhereTree(condition, attrTypeMap, cypher, "n");
 	}
 

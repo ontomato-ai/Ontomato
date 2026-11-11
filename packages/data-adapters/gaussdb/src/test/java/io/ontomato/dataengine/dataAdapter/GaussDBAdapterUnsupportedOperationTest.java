@@ -29,6 +29,12 @@ class GaussDBAdapterUnsupportedOperationTest {
 		assertThrowsUnsupported(() -> adapter.query(new JSONObject(), "s", "d", null, null), "query");
 	}
 
+    @Test void unknownWriteConditionsAlsoThrow() throws Exception {
+        var where = JSONObject.of("field", "id", "operator", "unknown", "value", "p");
+        assertThrows(UnsupportedDataAdapterOperationException.class, () -> adapter.deleteObjects(null, Map.of(), where));
+        assertThrows(UnsupportedDataAdapterOperationException.class, () -> adapter.updateObjects(null, Map.of(), new JSONObject(), where));
+    }
+
 	private void assertThrowsUnsupported(org.junit.jupiter.api.function.Executable exec, String op) {
 		UnsupportedDataAdapterOperationException ex = assertThrows(UnsupportedDataAdapterOperationException.class, exec);
 		assertEquals("GaussDB data source does not support " + op, ex.getMessage());

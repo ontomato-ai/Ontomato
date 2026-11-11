@@ -155,7 +155,7 @@ class ActionGrantGuardTest {
 
     // Either one running first would mean the program could already have written, or a subject
     // learned something about an object they were never allowed to execute against.
-    verify(preconditions, never()).evaluate(any(), any(), any(), any());
+    verify(preconditions, never()).evaluate(any(), any(), any(), any(), any());
     verifyNoInteractions(programs);
   }
 
@@ -163,12 +163,10 @@ class ActionGrantGuardTest {
   void theGrantIsAskedWithTheAuthenticatedSubjectNotTheParameters() throws Exception {
     publishedAction();
     grantAnswer(true);
-    when(preconditions.evaluate(any(), any(), any(), any()))
-        .thenReturn(new ActionPreconditionService.Verdict(false, List.of("not yours")));
-
-    // The parameters claim another subject; the identity must come from the request.
-    service.execute(ACTION_ID, JSONObject.of("user_id", "someone-else"), LANG, alice, permission, 5);
-
+    // The extra user_id is not an admitted parameter and cannot select the authorization subject.
+    assertThrows(IllegalArgumentException.class, () -> service.execute(ACTION_ID,
+        JSONObject.of("order_id", "O-1", "user_id", "someone-else"), LANG, alice, permission, 5));
+    verifyNoInteractions(preconditions, programs);
     verify(grants).allows(USER_ID, DOMAIN, CapabilityGrantLookup.ACTION, ACTION_ID);
   }
 
@@ -176,7 +174,7 @@ class ActionGrantGuardTest {
   void aGrantedRunProceedsPastTheGuardToThePreconditions() throws Exception {
     publishedAction();
     grantAnswer(true);
-    when(preconditions.evaluate(any(), any(), any(), any()))
+    when(preconditions.evaluate(any(), any(), any(), any(), any()))
         .thenReturn(new ActionPreconditionService.Verdict(false, List.of("still open")));
 
     PythonExecuteResult result = service.execute(ACTION_ID, params(), LANG, alice, permission, 5);
@@ -184,7 +182,7 @@ class ActionGrantGuardTest {
     // Proving the refusal below is about the precondition, not about a grant that never resolved:
     // without this case a guard that always says no would pass every test above.
     assertEquals("Preconditions are not met: still open", result.getError());
-    verify(preconditions).evaluate(any(), any(), any(), any());
+    verify(preconditions).evaluate(any(), any(), any(), any(), any());
     verifyNoInteractions(programs);
   }
 
@@ -237,7 +235,7 @@ class ActionGrantGuardTest {
   void aGrantedAndPermittedRunReachesTheProgram() throws Exception {
     Action action = publishedAction();
     grantAnswer(true);
-    when(preconditions.evaluate(any(), any(), any(), any()))
+    when(preconditions.evaluate(any(), any(), any(), any(), any()))
         .thenReturn(new ActionPreconditionService.Verdict(true, List.of()));
     Object[] programResult = new Object[] { JSONObject.of("shipped", true), new PythonExecuteResult() };
     when(programs.execute(any(), any(Function.class), eq(USER_ID), eq(permission),
@@ -258,7 +256,7 @@ class ActionGrantGuardTest {
     publishedAction();
     grantAnswer(false);
     // A precondition that would also fail: the grant answer is the one the operator must see first.
-    when(preconditions.evaluate(any(), any(), any(), any()))
+    when(preconditions.evaluate(any(), any(), any(), any(), any()))
         .thenReturn(new ActionPreconditionService.Verdict(false, List.of("would fail too")));
 
     PythonExecuteResult result = service.execute(ACTION_ID, params(), LANG, alice, permission, 5);

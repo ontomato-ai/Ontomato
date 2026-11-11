@@ -1,6 +1,6 @@
 import { getOutputLanguageInstruction, resolveLocale } from "../../i18n";
 import { randomUUID } from "node:crypto";
-import { codeLimitsSchema } from "@ontomato/contracts/agent-runtime-code";
+import { codeLimitsSchema, codeExecutionVirtualAddressSpaceBytes } from "@ontomato/contracts/agent-runtime-code";
 import type {
   RuntimeStartRunRequest,
   RuntimeRunSnapshot,
@@ -48,7 +48,7 @@ export function runDefinition(
     externalMcp,
     sandbox: {
       limits: codeLimitsSchema.parse({
-        memoryBytes: 16 * 1024 ** 3,
+        memoryBytes: codeExecutionVirtualAddressSpaceBytes,
         wallTimeMs: getQueryTimeoutMs(),
         cpuSeconds: Math.ceil(getQueryTimeoutMs() / 1000),
       }),

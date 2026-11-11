@@ -31,7 +31,7 @@ public class FunctionController {
 		JSONObject ret = new JSONObject();
 		try {
 			User user = SystemUtils.getCurUser();
-			Function function = param.to(Function.class);
+			Function function = Function.fromInput(param);
 			function.setDomainId(user.getDomainId());
 			ret.put("data", functionService.save(function, lang));
 			ret.put("success", true);

@@ -50,6 +50,7 @@ function takeFlag(argv, name) {
 
 function headers(api) {
   return { "Accept-Language": api.lang,
+    ...(api.executionContext ? {"X-Ontomato-Execution-Context":api.executionContext} : {}),
     ...(api.apiKey ? { "X-API-Key": api.apiKey } : api.tk ? { tk: api.tk } : {}),
   };
 }
@@ -73,7 +74,7 @@ async function readJson(res) {
   const text = await res.text();
   if (!res.ok) die(`${res.status}\n${text}`);
   const json = JSON.parse(text);
-  if (json.success === false || json.error) die(json.message ?? json.error?.message ?? json.error);
+  if (json?.success === false || json?.error) die(json.message ?? json.error?.message ?? json.error);
   return json;
 }
 
@@ -84,50 +85,6 @@ async function requestJson(api, method, backendPath, body) {
 function printData(json) {
   if (typeof json.data === "string") console.log(json.data);
   else console.log(JSON.stringify(json.data, null, 2));
-}
-
-async function ask(api, words) {
-  return analystCommand(
-    api,
-    ["ask", "--lang", api.lang, ...words],
-    headers(api),
-  );
-}
-
-// /dsl/executeV1 and /productionEnv/queryData both answer with the DSL result: rows, executed statements and an `error` reason.
-async function printDslResult(res) {
-  const json = await readJson(res);
-  console.log(JSON.stringify(json, null, 2));
-  if (json.error != null) process.exit(1);
-}
-
-async function distinctValues(api, backendPath, rest) {
-  const like = takeOption(rest, "--like");
-  const limit = takeOption(rest, "--limit");
-  if (rest.length !== 2) die("distinct-values requires <class> <attribute>");
-  const body = {
-    className: rest[0],
-    attrName: rest[1],
-    like: like == null ? "" : like,
-  };
-  if (limit != null) body.limit = Number(limit);
-  printData(await requestJson(api, "POST", backendPath, body));
-}
-
-async function importTestData(api, file) {
-  const form = new FormData();
-  form.append(
-    "file",
-    new Blob([fs.readFileSync(file)], { type: "application/zip" }),
-    path.basename(file),
-  );
-  const res = await fetch(`${api.ontologyUrl}/testEnv/importData`, {
-    method: "POST",
-    headers: headers(api),
-    body: form,
-  });
-  await readJson(res);
-  console.log("ok");
 }
 
 async function vectorUpload(api, argv) {
@@ -265,43 +222,6 @@ async function assetCommand(api, prefix, argv) {
   usage();
 }
 
-async function syncProduction(api, rest) {
-  const actionIds = [];
-  for (
-    let v = takeOption(rest, "--action");
-    v != null;
-    v = takeOption(rest, "--action")
-  )
-    actionIds.push(v);
-  const metricViewIds = [];
-  for (
-    let v = takeOption(rest, "--metric-view");
-    v != null;
-    v = takeOption(rest, "--metric-view")
-  )
-    metricViewIds.push(v);
-  const confirm = takeFlag(rest, "--confirm");
-  if (rest.length) die(`unknown arguments: ${rest.join(" ")}`);
-  if (actionIds.length === 0 && metricViewIds.length === 0) {
-    die(
-      "sync-production requires at least one --action <id> or --metric-view <id>",
-    );
-  }
-  const json = await requestJson(api, "POST", "/productionEnv/sync", {
-    actionIds,
-    metricViewIds,
-    dryRun: !confirm,
-  });
-  console.log(JSON.stringify(json, null, 2));
-  if (!confirm) {
-    console.error("DRY RUN ONLY: production was not changed.");
-    console.error(
-      "Show this plan to the user and ask for explicit confirmation. Run again with --confirm only after the user approves.",
-    );
-    process.exit(2);
-  }
-}
-
 async function workbench(api, method, endpoint, body) {
   return readJson(await fetch(`${api.envUrl}/api${endpoint}`, {
     method, headers: { ...headers(api), "Content-Type": "application/json" },
@@ -390,6 +310,7 @@ async function workspaceCommand(api, [command, ...args]) {
 
 function usage() {
   die(`usage: ontomato.mjs [--lang <tag>] <command>
+  test start|status|stop [--workspace <id>] [--sample test-data/sample.json]
   sdk current
   sdk read <relative path, e.g. docs/index.md>
   function list [<filter json|@file>]
@@ -411,12 +332,6 @@ function usage() {
   classes
   schema <class> [<class> ...]
   relationships <class> [<class> ...]
-  env-mode
-  import-schema
-  prod-distinct-values <class> <attribute> [--like <pattern>] [--limit <n>]
-  prod-query <json|@file>
-  prod-knowledge [--max <n>] <question>
-  import-test-data <file>
   vector-upload <class> <attribute> <objectId> [--file <path>] --text <text|@file>
   vector-delete <class> <attribute> <objectId> <path>
   distinct-values <class> <attribute> [--like <pattern>] [--limit <n>]
@@ -430,20 +345,35 @@ function usage() {
   metric-view delete <id>
   action generate|execute|find|get|save|publish|delete ...   (same arguments as metric-view)
   action re-explain [--missing] [--id <id> ...]
-  action execute <id> [<param json|@file>] [--file <path> ...]
-  sync-production --action <id> [--action <id> ...] --metric-view <id> [--metric-view <id> ...] [--confirm]
-  ask <question>`);
+  action execute <id> [<param json|@file>] [--file <path> ...]`);
+}
+
+async function bindTestTarget(api,workspaceId) {
+  if(!workspaceId) die("BUILD_TEST_WORKSPACE_REQUIRED: pass --workspace <id>");
+  const context=await workbench(api,"GET",`/workspaces/${encodeURIComponent(workspaceId)}/build-tests`);
+  api.executionContext=JSON.stringify({kind:"build-test",contextId:context?.contextId ?? null});
 }
 
 async function main() {
   const argv = process.argv.slice(2);
   const lang = takeOption(argv, "--lang") ?? "en";
+  const workspaceId=takeOption(argv,"--workspace") ?? process.env.ONTOMATO_WORKSPACE_ID;
   const cmd = argv[0];
   const cfg = loadConfig();
   if (!cfg.envUrl) die("Set ONTOMATO_URL or envUrl in application.yml");
   const identity = process.env.ONTOMATO_API_KEY ? { apiKey: process.env.ONTOMATO_API_KEY }
     : process.env.ONTOMATO_TK ? { tk: process.env.ONTOMATO_TK } : await authenticate(cfg, lang);
   const api = { ...cfg, lang, ...identity };
+  if(cmd==="test") {
+    if(!workspaceId) die("BUILD_TEST_WORKSPACE_REQUIRED: pass --workspace <id>");
+    const sub=argv[1], samplePath=takeOption(argv,"--sample") ?? "test-data/sample.json";
+    if(!["start","status","stop"].includes(sub)) die("test start|status|stop [--workspace <id>] [--sample test-data/sample.json]");
+    const result=await workbench(api,sub==="start"?"POST":sub==="stop"?"DELETE":"GET",`/workspaces/${encodeURIComponent(workspaceId)}/build-tests`,sub==="start"?{samplePath}:undefined);
+    return print(result===null && sub!=="start" ? {workspaceId,contextId:null,status:"NONE"} : result);
+  }
+  if(["vector-upload","vector-delete"].includes(cmd) || ["action","metric-view"].includes(cmd) && argv[1]==="execute") {
+    await bindTestTarget(api,workspaceId);
+  }
   if (cmd === "sdk") return sdkCommand(api, argv.slice(1));
   if (cmd === "workspace") return workspaceCommand(api, argv.slice(1));
   if (cmd === "function") return functionCommand(api, argv.slice(1));
@@ -465,56 +395,6 @@ async function main() {
     printData(await requestJson(api, "POST", backendPath, { classNames }));
     return;
   }
-  if (cmd === "env-mode") {
-    printData(await requestJson(api, "GET", "/testEnv/mode"));
-    return;
-  }
-  if (cmd === "sync-production") {
-    await syncProduction(api, argv.slice(1));
-    return;
-  }
-  if (cmd === "import-schema") {
-    await requestJson(api, "GET", "/testEnv/importSchema");
-    console.log("ok");
-    return;
-  }
-  if (cmd === "prod-distinct-values") {
-    await distinctValues(
-      api,
-      "/productionEnv/queryDistinctAttrValue",
-      argv.slice(1),
-    );
-    return;
-  }
-  if (cmd === "prod-query") {
-    if (argv[1] == null) die("prod-query requires a DSL JSON");
-    const dsl = JSON.parse(readInput(argv[1]));
-    await printDslResult(
-      await send(api, "POST", "/productionEnv/queryData", { dsl }),
-    );
-    return;
-  }
-  if (cmd === "prod-knowledge") {
-    const rest = argv.slice(1);
-    const max = takeOption(rest, "--max");
-    if (rest.length === 0) die("prod-knowledge requires a question");
-    const body = { question: rest.join(" ") };
-    if (max != null) body.max_result = Number(max);
-    printData(
-      await requestJson(
-        api,
-        "POST",
-        "/productionEnv/queryBusinessKnowledge",
-        body,
-      ),
-    );
-    return;
-  }
-  if (cmd === "import-test-data") {
-    if (argv[1] == null) die("import-test-data requires a file");
-    await importTestData(api, argv[1]);
-    return;
-  }
   if (cmd === "vector-upload") {
     await vectorUpload(api, argv.slice(1));
     return;
@@ -523,17 +403,8 @@ async function main() {
     await vectorDelete(api, argv.slice(1));
     return;
   }
-  if (cmd === "distinct-values") {
-    await distinctValues(api, "/admin/queryDistinctAttrValue", argv.slice(1));
-    return;
-  }
-  if (cmd === "execute-dsl") {
-    if (argv[1] == null) die("execute-dsl requires a DSL JSON");
-    await printDslResult(
-      await send(api, "POST", "/dsl/executeV1", JSON.parse(readInput(argv[1]))),
-    );
-    return;
-  }
+  if (cmd === "distinct-values" || cmd === "execute-dsl")
+    return analystCommand(api,argv,async()=>{await bindTestTarget(api,workspaceId);return headers(api);});
   if (cmd === "action" && argv[1] === "re-explain") {
     const rest = argv.slice(2);
     const missing = takeFlag(rest, "--missing");
@@ -561,10 +432,10 @@ async function main() {
     return;
   }
   if (cmd === "ask") {
-    await ask(api, argv.slice(1));
-    return;
+    die("BUILD_TEST_UNSUPPORTED: ask is not a build-test execution; use MetricView or execute-dsl");
   }
-  usage();
+  if(!cmd) return usage();
+  die(`BUILD_TEST_UNSUPPORTED: command not supported: ${cmd}`);
 }
 
-main();
+main().catch(error => { console.error(error.message);process.exitCode=1; });

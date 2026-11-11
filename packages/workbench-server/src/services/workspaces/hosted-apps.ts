@@ -1,10 +1,11 @@
+import { BUILD_TEST_SAMPLE_DIRECTORY } from "@ontomato/contracts/build-tests";
 import { appSdkBuild } from "../app-builder/sdk";
 import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
 import { cp, mkdir, writeFile, rename, readdir, readFile } from "node:fs/promises";
 import path from "node:path";
 import { z } from "zod";
-import { workspaceExportSchema } from "@ontomato/contracts/workspaces";
+import { workspaceExportSchema, type WorkspaceExport } from "@ontomato/contracts/workspaces";
 import { RuntimeClient } from "../../infrastructure/agent-runtime/client";
 import { getPostgresPool as db, qualifiedTable as t } from "../../infrastructure/postgres";
 import { transaction } from "../../infrastructure/postgres-transaction";
@@ -68,6 +69,15 @@ export async function writeHostedPublication(appId: string, releaseId: string, d
   if (!result.success) throw new HttpError(502, result.message ?? "Publication rejected");
   return result;
 }
+/** Materialize only application files; the workspace keeps its test source for rebuilding. */
+export async function writeHostedFiles(files: WorkspaceExport["files"], temporary: string) {
+    for (const file of files) {
+      if (file.path === BUILD_TEST_SAMPLE_DIRECTORY || file.path.startsWith(BUILD_TEST_SAMPLE_DIRECTORY + "/")) continue;
+      const target = path.join(temporary, file.path);
+      await mkdir(path.dirname(target), { recursive: true });
+      await writeFile(target, Buffer.from(file.content, file.encoding));
+    }
+}
 export async function publishWorkspace(owner: AssistantOwner, workspaceId: string, commit: string, declaration: Record<string, unknown>, credentials: AssistantCredentials) {
   const client = new RuntimeClient(owner.domainId, undefined, owner.userId);
   await client.request(`/v1/workspaces/${workspaceId}`);
@@ -81,11 +91,7 @@ export async function publishWorkspace(owner: AssistantOwner, workspaceId: strin
     const destination = runtimeDataDir("hosted-apps", app.app_id, releaseId);
     const temporary = destination + ".tmp";
     await mkdir(temporary, { recursive: true });
-    for (const file of exported.files) {
-      const target = path.join(temporary, file.path);
-      await mkdir(path.dirname(target), { recursive: true });
-      await writeFile(target, Buffer.from(file.content, file.encoding));
-    }
+    await writeHostedFiles(exported.files,temporary);
     await rename(temporary, destination);
     await c.query(`INSERT INTO ${t("hosted_app_releases")} (id,app_id,commit_id) VALUES($1,$2,$3)`, [releaseId, app.app_id, commit]);
     return { appId: app.app_id as string, releaseId, commit };

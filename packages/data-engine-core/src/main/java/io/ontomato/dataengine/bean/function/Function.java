@@ -1,6 +1,9 @@
 package io.ontomato.dataengine.bean.function;
 
+import com.alibaba.fastjson2.JSONObject;
+
 import java.util.List;
+import java.util.Map;
 
 import lombok.Data;
 
@@ -21,7 +24,35 @@ public class Function {
 	private List<Parameter> parameters;
 	private ReturnDef returnDef;
 	private String code;
-	private com.alibaba.fastjson2.JSONObject queryPackage;
+	private JSONObject queryPackage;
+
+    public static Function fromAsset(JSONObject asset) {
+        if (!(asset.get("function") instanceof Map<?, ?>))
+            throw new IllegalArgumentException("function: expected an embedded Function object; supply its definition");
+        return fromInput(asset.getJSONObject("function"));
+    }
+
+    /** Parse an externally authored Function before bean conversion can coerce its field types. */
+    public static Function fromInput(JSONObject input) {
+        for (String field : List.of("operation", "name", "code", "logic"))
+            if (input.get(field) != null && !(input.get(field) instanceof String))
+                throw new IllegalArgumentException("Function." + field + ": expected a string; supply text");
+        if (input.get("queryPackage") != null && !(input.get("queryPackage") instanceof Map<?, ?>))
+            throw new IllegalArgumentException("Function.queryPackage: expected an object; supply the package manifest and files");
+        Object parameters = input.get("parameters");
+        if (parameters != null) {
+            if (!(parameters instanceof List<?> list))
+                throw new IllegalArgumentException("Function.parameters: expected an array of parameter definitions");
+            for (int i = 0; i < list.size(); i++) {
+                if (!(list.get(i) instanceof Map<?, ?> definition))
+                    throw new IllegalArgumentException("Function.parameters[" + i + "]: expected a parameter definition object");
+                for (String field : List.of("name", "type", "description"))
+                    if (definition.get(field) != null && !(definition.get(field) instanceof String))
+                        throw new IllegalArgumentException("Function.parameters[" + i + "]." + field + ": expected a string");
+            }
+        }
+        return input.to(Function.class);
+    }
 
 	public List<Parameter> getParameters() {
 		return queryPackage == null ? parameters : queryPackage.getJSONObject("manifest")

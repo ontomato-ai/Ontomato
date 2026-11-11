@@ -164,6 +164,26 @@
                         <artifactId>maven-surefire-plugin</artifactId>
                         <configuration>
                             <includes>
+                                <include>**/AgentContractBoundaryTest.java</include>
+                                <include>**/SandboxSampleInputTest.java</include>
+                                <include>**/JacksonAgentBoundaryTest.java</include>
+                                <include>**/WriteWhereBoundaryTest.java</include>
+                                <include>**/ActionFunctionAdmissionTest.java</include>
+                                <include>**/FunctionProtocolSaveTest.java</include>
+                                <include>**/ActionParameterDefaultsTest.java</include>
+                                <include>**/MetricViewBindingContractTest.java</include>
+                                <include>**/QueryPackageContractTest.java</include>
+                                <include>**/DBSchemaUtilParameterTypeTest.java</include>
+                                <include>**/RuntimePythonClientTest.java</include>
+                                <include>**/AgentWritePostgresContractTest.java</include>
+                                <include>**/BuildTestPostgresIntegrationTest.java</include>
+                                <include>**/PostgreWriteWhereTest.java</include>
+                                <include>**/MysqlWriteWhereTest.java</include>
+                                <include>**/SqlServerWriteWhereTest.java</include>
+                                <include>**/DuckDBWriteWhereTest.java</include>
+                                <include>**/Neo4jWriteWhereTest.java</include>
+                                <include>**/EsWriteWhereTest.java</include>
+
                                 <include>**/ServiceLogContractTest.java</include>
                                 <include>**/ServiceLogJdbcTest.java</include>
                                 <include>**/OntologyRetrievalContractTest.java</include>

@@ -1,3 +1,4 @@
+import type { AppExecutionContext } from "./build-tests";
 import type { RequestIdentity } from "./identity";
 
 /*
@@ -54,6 +55,9 @@ export interface AppPageContext {
 
 export interface AppHost {
   snapshot(): AppHostSnapshot;
+  /** The calling frame's explicit execution binding; unregistered sources throw. */
+  executionContext(source: object): AppExecutionContext;
+  subscribeExecutionContext(source: object, listener: (context: AppExecutionContext) => void): () => void;
   /** The credential of the current page load; null when the shell has none, which is not anonymous. */
   credential(): AppHostCredential | null;
   /** Calls the listener on every change of language or theme; the returned function stops it. */

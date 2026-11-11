@@ -33,12 +33,14 @@ export function validateActionParameters(action: AssistantActionOption, paramete
   const names = new Set(action.parameters.map((parameter) => parameter.name));
   if (Object.keys(parameters).some((name) => !names.has(name))) throw new HttpError(400, "Unknown action parameter", "INVALID_ACTION_PARAMETERS");
   for (const parameter of action.parameters) {
+    if (!Object.hasOwn(parameters, parameter.name) || parameters[parameter.name] === undefined)
+      throw new HttpError(400, `Missing parameter: ${parameter.name}`, "INVALID_ACTION_PARAMETERS");
     const value = parameters[parameter.name];
+    if (value === null) continue;
     const type = parameter.type.replace(/^TYPE_/, "").toLowerCase();
     let valid = value !== undefined && value !== null;
-    if (["string", "time", "date", "varchar", "text"].includes(type)) valid = typeof value === "string" && Boolean(value.trim());
+    if (["string", "time", "date", "varchar", "text"].includes(type)) valid = typeof value === "string";
     else if (["number", "int", "integer", "long", "double", "float"].includes(type)) valid = typeof value === "number" && Number.isFinite(value) && (!["int", "integer", "long"].includes(type) || Number.isInteger(value));
-    else if (type === "boolean") valid = typeof value === "boolean";
     else if (type.endsWith("_array") || ["array", "dataset"].includes(type)) {
       valid = Array.isArray(value);
       if (valid && type === "number_array") valid = (value as unknown[]).every((item) => typeof item === "number" && Number.isFinite(item));

@@ -1,5 +1,10 @@
 package io.ontomato.dataengine.dao;
 
+import io.ontomato.dataengine.service.MetricViewBindings;
+import io.ontomato.dataengine.service.QueryPackage;
+import java.sql.ResultSet;
+import java.sql.SQLException;
+
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
@@ -55,9 +60,24 @@ public class FunctionDao {
 		log.info(">>>function table initialization complete");
 	}
 
-	public Function save(Function function, String lang) {
+    public static void requireSupported(Function function, String lang) {
+        if (!Function.OPERATION_READ.equals(function.getOperation()) && !Function.OPERATION_WRITE.equals(function.getOperation()))
+            throw new IllegalArgumentException("Function.operation: expected OPERATION_READ or OPERATION_WRITE");
+        if (Function.OPERATION_READ.equals(function.getOperation()) && function.getQueryPackage() != null)
+            QueryPackage.validate(function.getQueryPackage());
+        if (function.getParameters() != null) {
+            for (var parameter : function.getParameters())
+                if (parameter.getType() == null || !Parameter.TYPES.contains(parameter.getType()))
+                    throw new IllegalArgumentException("Function.parameters." + parameter.getName() + ".type: received " + parameter.getType() + "; expected one of " + Parameter.TYPES.stream().sorted().toList() + "; boolean parameters are not supported");
+            MetricViewBindings.validateValues(function,
+                MetricViewBindings.values(function));
+        }
         if (!(Function.OPERATION_READ.equals(function.getOperation()) && function.getQueryPackage() != null))
             PythonProgramProtocol.requireSupported(function.getCode(), lang);
+    }
+
+    public Function save(Function function, String lang) {
+        requireSupported(function, lang);
 		if (function.getId() == null) {
 			function.setId(UUID.randomUUID().toString());
 		}
@@ -158,7 +178,7 @@ public class FunctionDao {
 		return functions;
 	}
 
-	private Function mapRow(java.sql.ResultSet rs) throws java.sql.SQLException {
+	private Function mapRow(ResultSet rs) throws SQLException {
 		Function function = new Function();
 		function.setId(rs.getString("id"));
 		function.setName(rs.getString("name"));

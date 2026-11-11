@@ -1,3 +1,5 @@
+import type { InjectionKey } from "vue";
+import type { AppExecutionContext } from "@ontomato/contracts/build-tests";
 import type { Ref } from "vue";
 import type { CatalogApplication } from "@ontomato/contracts/platform-identity";
 import type { SubscribePageContext } from "./preview-context";
@@ -21,7 +23,9 @@ export interface BuilderPermissions {
 }
 
 /** What the platform that shows the builder hands it: facts only the platform holds. */
+export const builderPlatformKey: InjectionKey<AppBuilderPlatform> = Symbol("builder-platform");
 export interface AppBuilderPlatform {
+  registerPreviewFrame(source: object, context: AppExecutionContext): { update(context: AppExecutionContext): void; dispose(): void };
   /** What the app in the preview reports through the app host. */
   subscribePageContext: SubscribePageContext;
   /** Where a publication shows; read again after publishing or rolling back. */

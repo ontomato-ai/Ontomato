@@ -39,15 +39,17 @@ public class DBSchemaUtil {
     /** Builds parameters from the object list defined by the parameters; the field mapping and baseline are exactly the same as those parsed from the body, and are shared by the test tools and all submission paths. */
     public static List<Parameter> buildParameters(List<Map> defs, List<Map<String, Object>> classDefs) {
         List<Parameter> parameters = new ArrayList<Parameter>();
-        for (Map def : defs) {
+        for (int i = 0; i < defs.size(); i++) {
+            Map def = defs.get(i);
+            String field = "parameterDefs[" + i + "].";
             Parameter parameter = new Parameter();
-            parameter.setName(str(def.get("name")));
-            parameter.setType(str(def.get("type")));
-            parameter.setDescription(str(def.get("description")));
+            parameter.setName(str(def.get("name"), field + "name"));
+            parameter.setType(str(def.get("type"), field + "type"));
+            parameter.setDescription(str(def.get("description"), field + "description"));
             Object value = ParameterValues.normalize(parameter.getType(), def.get("value"));
             parameter.setValue(value);
             parameter.setSample(value);
-            String className = normalizeClassName(str(def.get("className")), classDefs);
+            String className = normalizeClassName(str(def.get("className"), field + "className"), classDefs);
             List<String> classNames = new ArrayList<String>();
             if (className != null && !"".equals(className.trim())) {
                 classNames.add(className);
@@ -58,8 +60,13 @@ public class DBSchemaUtil {
         return parameters;
     }
 
-    private static String str(Object value) {
-        return value == null ? null : value.toString();
+    private static String str(Object value, String field) {
+        return value == null ? null : requireString(value, field);
+    }
+
+    private static String requireString(Object value, String field) {
+        if (!(value instanceof String text)) throw new IllegalArgumentException(field + ": expected a JSON string; received " + value.getClass().getSimpleName() + "; replace this field with text");
+        return text;
     }
 
     /** Returns the dataset description, class definitions and direct relationship definitions. */

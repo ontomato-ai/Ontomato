@@ -1,5 +1,12 @@
 package io.ontomato.dataengine.controller;
 
+import io.ontomato.dataengine.service.BuildTestContextService;
+import io.ontomato.dataengine.service.WriteFunctionOperationService;
+import io.ontomato.dataengine.service.IdentityService;
+import io.ontomato.dataengine.service.ExecutionTarget;
+import jakarta.servlet.http.HttpServletRequest;
+import java.util.List;
+import java.nio.file.Path;
 import java.io.InputStream;
 import java.util.ArrayList;
 import java.util.List;
@@ -31,6 +38,10 @@ import lombok.extern.slf4j.Slf4j;
 @Slf4j
 @RestController
 public class VectorResourceController {
+    @Autowired private BuildTestContextService buildTests;
+    @Autowired private WriteFunctionOperationService writes;
+    @Autowired private IdentityService identity;
+
 
 	@Autowired
 	private VectorResourceService vectorResourceService;
@@ -49,7 +60,7 @@ public class VectorResourceController {
 	
 	@PostMapping("/vectorResource/delete")
 	@ResponseBody
-	public JSONObject delete(@RequestBody JSONObject param) {
+	public JSONObject delete(@RequestBody JSONObject param, HttpServletRequest request) {
 		JSONObject ret = new JSONObject();
 		try {
 			User user = SystemUtils.getCurUser();
@@ -57,12 +68,19 @@ public class VectorResourceController {
 			String attrName = param.getString("attrName");
 			String objectId = param.getString("objectId");
 			String path = param.getString("path");
-			vectorResourceService.deleteAndDetach(className, attrName, objectId, path, user.getDomainId());
+            var target=buildTests.resolve(request);
+            if(target.testing()) {
+              identity.requireActionExecutionAccess(user.getId(),user.getDomainId());
+              className=requiredText(param,"className");attrName=requiredText(param,"attrName");objectId=requiredText(param,"objectId");path=requiredText(param,"path");
+              target.requireClasses(List.of(className));
+              writes.deleteVector(className,attrName,objectId,Path.of(path).getFileName().toString(),target.sandboxId(),user.getDomainId());
+            } else vectorResourceService.deleteAndDetach(className, attrName, objectId, path, user.getDomainId());
 			ret.put("success", true);
 		} catch (Exception e) {
 			log.error(e.getMessage(), e);
 			ret.put("success", false);
 			ret.put("message", e.getMessage());
+            ExecutionTarget.failure(ret,e);
 		}
 		return ret;
 	}
@@ -76,24 +94,20 @@ public class VectorResourceController {
 			@RequestParam(value = "attrName", required = false) String attrName,
 			@RequestParam(value = "objectId", required = false) String objectId,
 			@RequestParam(value = "suffix", required = false) String suffix,
-			@RequestParam(value = "items", required = false) String items) {
-		if (items != null) {
-			if (file != null || content != null || className != null || attrName != null || objectId != null || suffix != null) {
-				JSONObject ret = new JSONObject();
-				ret.put("success", false);
-				ret.put("message", "items uploads text-only resources in a batch and cannot be combined with file, content, className, attrName, objectId or suffix");
-				return ret;
-			}
-			return uploadAll(items);
-		}
+			@RequestParam(value = "items", required = false) String items, HttpServletRequest request) {
 		JSONObject ret = new JSONObject();
-		if (content == null || className == null || attrName == null || objectId == null) {
-			ret.put("success", false);
-			ret.put("message", "content, className, attrName and objectId are required");
-			return ret;
-		}
 		InputStream is = null;
 		try {
+			var target = buildTests.resolve(request);
+			if (items != null) {
+				if (target.testing())
+					throw new IllegalArgumentException("The test context supports only single-resource uploads.");
+				if (file != null || content != null || className != null || attrName != null || objectId != null || suffix != null)
+					throw new IllegalArgumentException("items uploads text-only resources in a batch and cannot be combined with file, content, className, attrName, objectId or suffix");
+				return uploadAll(items);
+			}
+			if (content == null || className == null || attrName == null || objectId == null)
+				throw new IllegalArgumentException("content, className, attrName and objectId are required");
 			User user = SystemUtils.getCurUser();
 			VectorResource resource = new VectorResource();
 			resource.setContent(content);
@@ -108,13 +122,18 @@ public class VectorResourceController {
 				}
 				is = file.getInputStream();
 			}
-			VectorResource save = vectorResourceService.saveAndAttach(resource, is, suffix, user.getDomainId());
+            VectorResource save;
+            if(target.testing()) {
+              identity.requireActionExecutionAccess(user.getId(),user.getDomainId());target.requireClasses(List.of(className));
+              save=writes.appendVectorAndReturn(className,attrName,objectId,content,is,suffix,target.sandboxId(),user.getDomainId());
+            } else save=vectorResourceService.saveAndAttach(resource,is,suffix,user.getDomainId());
 			ret.put("success", true);
 			ret.put("data", save);
 		} catch (Exception e) {
 			log.error(e.getMessage(), e);
 			ret.put("success", false);
 			ret.put("message", e.getMessage());
+            ExecutionTarget.failure(ret,e);
 		} finally {
 			if (is != null) {
 				try {
@@ -163,6 +182,10 @@ public class VectorResourceController {
 		}
 		return ret;
 	}
+    private String requiredText(JSONObject body,String key) {
+      if(!(body.get(key) instanceof String value) || value.isBlank()) throw new IllegalArgumentException(key+": expected a nonempty string");
+      return value;
+    }
 
 	@GetMapping("/vectorResource/resource/{indexName}/{fileName}")
 	public ResponseEntity<Resource> download(@PathVariable String indexName, @PathVariable String fileName) {

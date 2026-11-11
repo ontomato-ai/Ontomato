@@ -1,0 +1,56 @@
+{
+  "objDatas": [
+    {
+      "className": "contract_person",
+      "rows": [
+        {
+          "id": "contract-person-1",
+          "name": "contract-1",
+          "age": 21
+        },
+        {
+          "id": "contract-person-2",
+          "name": "contract-2",
+          "age": 22
+        },
+        {
+          "id": "contract-person-3",
+          "name": "contract-3",
+          "age": 23
+        }
+      ]
+    },
+    {
+      "className": "contract_group",
+      "rows": [
+        {
+          "id": "contract-group-1",
+          "name": "Group"
+        }
+      ]
+    }
+  ],
+  "relDatas": [
+    {
+      "relationName": "person_group",
+      "sourceObjId": "contract-person-1",
+      "targetObjId": "contract-group-1"
+    }
+  ],
+  "vectorDatas": [
+    {
+      "className": "contract_person",
+      "objectId": "contract-person-1",
+      "attrName": "attachment",
+      "text": "Contract attachment 1",
+      "file": "files/example-1.txt"
+    },
+    {
+      "className": "contract_person",
+      "objectId": "contract-person-2",
+      "attrName": "attachment",
+      "text": "Contract attachment 2",
+      "file": "files/example-2.txt"
+    }
+  ]
+}

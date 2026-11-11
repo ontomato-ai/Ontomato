@@ -237,10 +237,12 @@ async function backendRequest(
     const started = performance.now();
     let outcome = "success";
     try {
+      const headers = { ...logHeaders(), ...(options.headers ?? buildBackendHeaders(token, userId, locale, apiKey)) };
+      if (body instanceof FormData) delete headers["Content-Type"];
       const response = await fetch(url, {
         method,
-        headers: { ...logHeaders(), ...(options.headers ?? buildBackendHeaders(token, userId, locale, apiKey)) },
-        ...(["POST", "PUT"].includes(method) ? { body: JSON.stringify(body) } : {}),
+        headers,
+        ...(["POST", "PUT"].includes(method) ? { body: body instanceof FormData ? body : JSON.stringify(body) } : {}),
         signal: abortBridge.signal,
         dispatcher: backendDispatcher,
       } as NonNullable<Parameters<typeof fetch>[1]> & { dispatcher: Agent });

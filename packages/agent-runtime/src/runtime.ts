@@ -603,6 +603,7 @@ export class AgentRuntime {
                       run.id,
                       run.correlationId,
                       "compaction",
+                      request.language,
                     ),
                     model,
                     normalizeContext({
@@ -679,6 +680,7 @@ export class AgentRuntime {
           run.id,
           run.correlationId,
           "conversation",
+          request.language,
         ),
       );
       if (signal.aborted) {

@@ -80,6 +80,7 @@ class OntologyGenerationContractTest {
     python = mock(PythonExecuteService.class);
     identity = mock(IdentityService.class);
     sandboxService = mock(SandboxService.class);
+    when(sandboxService.validateSample(any(),any(),anyString())).thenAnswer(call->call.getArgument(0));
     when(python.execute(anyString(), anyString(), anyInt(), anyString(), any(), any(), any()))
         .thenAnswer(
             call -> {
@@ -327,7 +328,7 @@ class OntologyGenerationContractTest {
     verifyNoInteractions(sandboxService, python);
     reset(identity);
     var opened = generation.open("action", UUID.randomUUID().toString(), null, owner, true);
-    verify(sandboxService).createNamespace(anyString(), eq(owner.domainId()));
+    verify(sandboxService).createSampleStructure(anyString(), any(), eq(owner.domainId()));
     doThrow(new org.springframework.web.server.ResponseStatusException(org.springframework.http.HttpStatus.FORBIDDEN))
         .when(identity).requireActionExecutionAccess(owner.userId(), owner.domainId());
     assertThrows(org.springframework.web.server.ResponseStatusException.class, () -> operations.test(opened.getString("runId"), owner,

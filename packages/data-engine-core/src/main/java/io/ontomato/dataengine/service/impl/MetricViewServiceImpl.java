@@ -1,5 +1,8 @@
 package io.ontomato.dataengine.service.impl;
 
+import io.ontomato.dataengine.service.ExecutionTarget;
+import io.ontomato.dataengine.service.QueryPackage;
+
 import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
@@ -135,10 +138,13 @@ public class MetricViewServiceImpl implements MetricViewService {
     try (var generation =
         generationService.generateMetricView(sessionId, userMessage, lang, domainId)) {
       JSONObject envelope = generation.result();
+      if (!(envelope.get("queryPackage") instanceof JSONObject)) throw new IllegalArgumentException("queryPackage: expected JSONObject; supply this field with its declared JSON type");
+      if (!(envelope.get("name") instanceof String)) throw new IllegalArgumentException("name: expected String; supply this field with its declared JSON type");
+      if (!(envelope.get("logic") instanceof String)) throw new IllegalArgumentException("logic: expected String; supply this field with its declared JSON type");
       JSONObject bundle = envelope.getJSONObject("queryPackage");
       String name = envelope.getString("name");
       String logic = envelope.getString("logic");
-      if (bundle == null || name == null || logic == null) return null;
+
       Function function = new Function();
       function.setOrigin(Function.ORIGIN_USER);
       function.setOperation(Function.OPERATION_READ);
@@ -151,7 +157,7 @@ public class MetricViewServiceImpl implements MetricViewService {
       returnDef.setIsVoid(false);
       returnDef.setColumnLabels(envelope.getJSONObject("columnLabels"));
       function.setReturnDef(returnDef);
-      io.ontomato.dataengine.service.QueryPackage.prepareReadFunction(function, classDefs);
+      QueryPackage.prepareReadFunction(function, classDefs);
 
       MetricView metricView = generateFromFunction(function);
       metricView.setStatus(MetricView.STATUS_PUBLISHED);
@@ -219,7 +225,7 @@ public class MetricViewServiceImpl implements MetricViewService {
       }
     }
     function.setDomainId(domain);
-    io.ontomato.dataengine.service.QueryPackage.prepareReadFunction(function,
+    QueryPackage.prepareReadFunction(function,
         (List<Map<String, Object>>) adminService.getJSONRule(domain).get("classDef"));
     if (function.getOrigin() == null) function.setOrigin(Function.ORIGIN_USER);
     MetricViewBindings.validate(function, metric.getBindings());
@@ -368,15 +374,19 @@ public class MetricViewServiceImpl implements MetricViewService {
     JSONArray failures = new JSONArray();
     int successCount = 0;
     for (int i = 0; i < array.size(); i++) {
-      JSONObject item = array.getJSONObject(i);
+      JSONObject item = null;
       try {
+        if (!(array.get(i) instanceof JSONObject)) throw new IllegalArgumentException("items[" + i + "]: expected a MetricView object");
+        item = array.getJSONObject(i);
         if (item.containsKey("type")) throw new IllegalArgumentException("Legacy MetricView bundles require conversion before import");
+        Function acceptedFunction = Function.fromAsset(item);
         MetricView metric = item.to(MetricView.class);
+        metric.setFunction(acceptedFunction);
         metric.setDomainId(domain);
         new TransactionTemplate(transactionManager).execute(status -> persist(metric, true, lang));
         successCount++;
       } catch (Exception error) {
-        failures.add(JSONObject.of("index", i, "id", item.getString("id"), "message", error.getMessage()));
+        failures.add(JSONObject.of("index", i, "id", item == null ? null : item.getString("id"), "message", error.getMessage()));
       }
     }
     return JSONObject.of("success", failures.isEmpty(), "successCount", successCount, "failureCount", failures.size(), "failures", failures);
@@ -384,8 +394,12 @@ public class MetricViewServiceImpl implements MetricViewService {
 
   @Override
 	public MetricViewContent test(MetricView metricView, String lang, User user, UserDataPermission permission, int timeoutMinutes) throws Exception {
+        return test(metricView,lang,user,permission,timeoutMinutes,ExecutionTarget.LIVE);
+    }
+    @Override
+    public MetricViewContent test(MetricView metricView,String lang,User user,UserDataPermission permission,int timeoutMinutes,ExecutionTarget target) throws Exception {
             validateDraftDomain(metricView, user.getDomainId());
-		Object[] o = abcProgramService.execute(UUID.randomUUID().toString(), MetricViewBindings.executionFunction(metricView.getFunction(), MetricViewBindings.values(metricView.getFunction())), user.getId(), permission, null, lang, timeoutMinutes, user.getDomainId());
+		Object[] o = abcProgramService.execute(UUID.randomUUID().toString(), MetricViewBindings.executionFunction(metricView.getFunction(), MetricViewBindings.values(metricView.getFunction())), user.getId(), permission, target.sandboxId(), lang, timeoutMinutes, user.getDomainId(), new ABCProgramService.ExecutionContext(null, null, target));
 		MetricViewContent metricViewContent = generateContent((JSONArray)o[0], (PythonExecuteResult)o[1], metricView.getName(), metricView, lang);
 		return metricViewContent;
 	}
@@ -449,6 +463,10 @@ private MetricViewContent generateContent(JSONArray rows, PythonExecuteResult ex
 
   @Override
   public Object[] execute(String id, String bindingId, JSONObject param, JSONObject parameterTexts, String lang, User user, UserDataPermission permission, int timeoutMinutes) throws Exception {
+    return execute(id,bindingId,param,parameterTexts,lang,user,permission,timeoutMinutes,ExecutionTarget.LIVE);
+  }
+  @Override
+  public Object[] execute(String id,String bindingId,JSONObject param,JSONObject parameterTexts,String lang,User user,UserDataPermission permission,int timeoutMinutes,ExecutionTarget target) throws Exception {
     MetricView metric = queryById(id, user.getDomainId());
     if (metric == null) throw new IllegalArgumentException("MetricView not found");
     JSONObject values = param == null ? new JSONObject() : new JSONObject(param);
@@ -464,15 +482,22 @@ private MetricViewContent generateContent(JSONArray rows, PythonExecuteResult ex
         throw new IllegalArgumentException(parsed.errors().get(0).path("message").asText());
       values.putAll(parsed.values());
     }
-    return testExecute(metric, bindingId, values, lang, user, permission, timeoutMinutes);
+    return testExecute(metric, bindingId, values, lang, user, permission, timeoutMinutes, target);
   }
 
   @Override
   public Object[] testExecute(MetricView metric, String bindingId, JSONObject param, String lang, User user, UserDataPermission permission, int timeoutMinutes) throws Exception {
+    return testExecute(metric,bindingId,param,lang,user,permission,timeoutMinutes,ExecutionTarget.LIVE);
+  }
+  @Override
+  public Object[] testExecute(MetricView metric,String bindingId,JSONObject param,String lang,User user,UserDataPermission permission,int timeoutMinutes,ExecutionTarget target) throws Exception {
     if (metric == null) throw new IllegalArgumentException("MetricView not found");
     validateDraftDomain(metric, user.getDomainId());
     if (!MetricView.STATUS_PUBLISHED.equals(metric.getStatus()))
       throw new IllegalArgumentException("MetricView is not published");
+    QueryPackage.prepareReadFunction(metric.getFunction(),
+        (List<Map<String, Object>>) adminService.getJSONRule(user.getDomainId()).get("classDef"));
+    MetricViewBindings.validate(metric.getFunction(), metric.getBindings());
     // A parameter whose declared value is a subject reference is the server's to fill. Accepting a
     // supplied value for it would let a caller turn "my pending items" into "anyone's pending items".
     refuseSubjectOverrides(metric, bindingId, param);
@@ -481,7 +506,7 @@ private MetricViewContent generateContent(JSONArray rows, PythonExecuteResult ex
     // parameters: the predicate is the author's, the value is the server's.
     values = subjectValues.resolveValues(values, user);
     Function execution = MetricViewBindings.executionFunction(metric.getFunction(), values);
-    return abcProgramService.execute(UUID.randomUUID().toString(), execution, user.getId(), permission, null, lang, timeoutMinutes, user.getDomainId());
+    return abcProgramService.execute(UUID.randomUUID().toString(), execution, user.getId(), permission, target.sandboxId(), lang, timeoutMinutes, user.getDomainId(), new ABCProgramService.ExecutionContext(null, null, target));
   }
 
   /**

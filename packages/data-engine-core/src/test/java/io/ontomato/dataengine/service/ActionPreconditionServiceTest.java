@@ -30,6 +30,7 @@ class ActionPreconditionServiceTest {
   private static final String REPORT = "/report";
 
   private DslService queries;
+  private OntologyQueryService scopedQueries;
   private SubjectAttributeLookup subjects;
   private ActionPreconditionService service;
   private User alice;
@@ -41,7 +42,8 @@ class ActionPreconditionServiceTest {
     subjects = mock(SubjectAttributeLookup.class);
     AdminService admin = mock(AdminService.class);
     when(admin.getJSONRule(DOMAIN)).thenReturn(classRule());
-    service = new ActionPreconditionService(queries, admin, subjects);
+    scopedQueries = mock(OntologyQueryService.class);
+    service = new ActionPreconditionService(queries, admin, subjects, scopedQueries);
 
     alice = user("U1");
     permission = new UserDataPermission();
@@ -55,7 +57,7 @@ class ActionPreconditionServiceTest {
   void anActionWithoutCriteriaAlwaysRuns() {
     Action action = action(null);
 
-    var verdict = service.evaluate(action, JSONObject.of("report_id", "R1"), alice, permission);
+    var verdict = service.evaluate(action, JSONObject.of("report_id", "R1"), alice, permission, ExecutionTarget.LIVE);
 
     assertTrue(verdict.satisfied());
     assertTrue(verdict.violations().isEmpty());
@@ -73,7 +75,7 @@ class ActionPreconditionServiceTest {
                     "Only the submitter may withdraw this report")));
     state("R1", "submitter", "U2");
 
-    var verdict = service.evaluate(action, JSONObject.of("report_id", "R1"), alice, permission);
+    var verdict = service.evaluate(action, JSONObject.of("report_id", "R1"), alice, permission, ExecutionTarget.LIVE);
 
     assertFalse(verdict.satisfied());
     assertEquals(List.of("Only the submitter may withdraw this report"), verdict.violations());
@@ -84,7 +86,7 @@ class ActionPreconditionServiceTest {
     Action action = action(criteria(condition("submitter", "=", "{{account.id}}", "mine")));
     state("R1", "submitter", "U1");
 
-    var verdict = service.evaluate(action, JSONObject.of("report_id", "R1"), alice, permission);
+    var verdict = service.evaluate(action, JSONObject.of("report_id", "R1"), alice, permission, ExecutionTarget.LIVE);
 
     assertTrue(verdict.satisfied());
   }
@@ -97,7 +99,7 @@ class ActionPreconditionServiceTest {
                 condition("status", "=", "待打款", "Only a report awaiting payment can be paid")));
     state("R1", "status", "已打款");
 
-    var verdict = service.evaluate(action, JSONObject.of("report_id", "R1"), alice, permission);
+    var verdict = service.evaluate(action, JSONObject.of("report_id", "R1"), alice, permission, ExecutionTarget.LIVE);
 
     assertFalse(verdict.satisfied());
     assertEquals(List.of("Only a report awaiting payment can be paid"), verdict.violations());
@@ -109,7 +111,7 @@ class ActionPreconditionServiceTest {
     when(queries.executeInternal(any(), any(), any()))
         .thenReturn(Map.of("data", new JSONArray()));
 
-    var verdict = service.evaluate(action, JSONObject.of("report_id", "R1"), alice, permission);
+    var verdict = service.evaluate(action, JSONObject.of("report_id", "R1"), alice, permission, ExecutionTarget.LIVE);
 
     assertFalse(verdict.satisfied());
   }
@@ -121,7 +123,7 @@ class ActionPreconditionServiceTest {
         .thenReturn(null);
     state("R1", "submitter", "U1");
 
-    var verdict = service.evaluate(action, JSONObject.of("report_id", "R1"), alice, permission);
+    var verdict = service.evaluate(action, JSONObject.of("report_id", "R1"), alice, permission, ExecutionTarget.LIVE);
 
     assertFalse(verdict.satisfied(), "an unresolved subject reference must not match");
   }
@@ -142,7 +144,7 @@ class ActionPreconditionServiceTest {
                         "answer",
                         JSONArray.of(JSONObject.of("submitter", "U2", "status", "已打款"))))));
 
-    var verdict = service.evaluate(action, JSONObject.of("report_id", "R1"), alice, permission);
+    var verdict = service.evaluate(action, JSONObject.of("report_id", "R1"), alice, permission, ExecutionTarget.LIVE);
 
     assertFalse(verdict.satisfied());
     assertEquals(2, verdict.violations().size());
@@ -156,9 +158,21 @@ class ActionPreconditionServiceTest {
             Map.of("data", JSONArray.of(JSONObject.of("answer", JSONArray.of(
                 JSONObject.of("amount", "1500.00"))))));
 
-    var verdict = service.evaluate(action, JSONObject.of("report_id", "R1"), alice, permission);
+    var verdict = service.evaluate(action, JSONObject.of("report_id", "R1"), alice, permission, ExecutionTarget.LIVE);
 
     assertTrue(verdict.satisfied(), "1500 compares above 1000 even as text");
+  }
+
+  @Test
+  void previewChecksTheObjectInTheSameSandboxAsTheWrite() {
+    var target = new ExecutionTarget("context", "sandbox", List.of(REPORT), 1L);
+    var action = action(criteria(condition("status", "=", "open", "must be open")));
+    when(scopedQueries.execute(any(), org.mockito.ArgumentMatchers.argThat(access ->
+        access.target().equals(target) && access.user().getId().equals(alice.getId())
+            && access.user().getDomainId().equals(DOMAIN) && access.permission().isFullData())))
+        .thenReturn(Map.of("data", JSONArray.of(JSONObject.of("answer", JSONArray.of(JSONObject.of("status", "open"))))));
+    assertTrue(service.evaluate(action, JSONObject.of("report_id", "R1"), alice, permission, target).satisfied());
+    org.mockito.Mockito.verifyNoInteractions(queries);
   }
 
   private void state(String reportId, String field, Object value) {

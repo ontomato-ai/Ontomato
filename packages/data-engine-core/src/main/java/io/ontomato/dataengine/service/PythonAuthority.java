@@ -6,7 +6,7 @@ import java.util.List;
 /** Created by trusted Java callers, never deserialized from a model or HTTP body. */
 public record PythonAuthority(String domainId, String userId, String purpose, String sandboxId,
     List<String> classNames, String executionId, ParentGrant parentGrant, JSONObject packageInput,
-    JSONObject identity) {
+    JSONObject identity, ExecutionTarget target) {
   public record ParentGrant(String token, String runId, long expiresAt) {}
 
   /**
@@ -23,7 +23,7 @@ public record PythonAuthority(String domainId, String userId, String purpose, St
   /** An authority for a run whose identity the server did not establish. */
   public PythonAuthority(String domainId, String userId, String purpose, String sandboxId,
       List<String> classNames, String executionId, ParentGrant parentGrant, JSONObject packageInput) {
-    this(domainId, userId, purpose, sandboxId, classNames, executionId, parentGrant, packageInput, null);
+    this(domainId, userId, purpose, sandboxId, classNames, executionId, parentGrant, packageInput, null, ExecutionTarget.LIVE);
   }
 
   /**
@@ -36,34 +36,40 @@ public record PythonAuthority(String domainId, String userId, String purpose, St
    */
   public PythonAuthority withIdentity(JSONObject snapshot) {
     return new PythonAuthority(domainId, userId, purpose, sandboxId, classNames, executionId,
-        parentGrant, packageInput, snapshot);
+        parentGrant, packageInput, snapshot, target);
+  }
+
+  public PythonAuthority withTarget(ExecutionTarget value) {
+    return new PythonAuthority(domainId, userId, purpose, value.testing() ? value.sandboxId() : sandboxId,
+        value.testing() && classNames.isEmpty() ? value.classNames() : classNames, executionId,
+        parentGrant, packageInput, identity, value);
   }
 
   public PythonAuthority forExecution(String id) {
-    return new PythonAuthority(domainId, userId, purpose, sandboxId, classNames, id, parentGrant, packageInput, identity);
+    return new PythonAuthority(domainId, userId, purpose, sandboxId, classNames, id, parentGrant, packageInput, identity, target);
   }
   public PythonAuthority withParent(ParentGrant grant) {
-    return new PythonAuthority(domainId, userId, purpose, sandboxId, classNames, executionId, grant, packageInput, identity);
+    return new PythonAuthority(domainId, userId, purpose, sandboxId, classNames, executionId, grant, packageInput, identity, target);
   }
   public PythonAuthority withClasses(List<String> classes) {
     return new PythonAuthority(domainId, userId, purpose, sandboxId,
-        classes == null ? List.of() : List.copyOf(classes), executionId, parentGrant, packageInput, identity);
+        classes == null ? List.of() : List.copyOf(classes), executionId, parentGrant, packageInput, identity, target);
   }
   public PythonAuthority withPackage(JSONObject bundle, JSONObject parameters) {
-    return new PythonAuthority(domainId, userId, "package-read", null, classNames, executionId,
+    return new PythonAuthority(domainId, userId, "package-read", sandboxId, classNames, executionId,
         parentGrant, JSONObject.of("package", QueryPackage.copy(bundle), "parameters", QueryPackage.copy(parameters)),
-        identity);
+        identity, target);
   }
   public static PythonAuthority read(String user, String domain) {
-    return new PythonAuthority(domain, user, "user-read", null, List.of(), null, null, null, null);
+    return new PythonAuthority(domain, user, "user-read", null, List.of(), null, null, null);
   }
   public static PythonAuthority exploration(String user, String domain) {
-    return new PythonAuthority(domain, user, "retrieval-exploration", null, List.of(), null, null, null, null);
+    return new PythonAuthority(domain, user, "retrieval-exploration", null, List.of(), null, null, null);
   }
   public static PythonAuthority write(String user, String domain, String sandbox) {
-    return new PythonAuthority(domain, user, "sandbox-write", sandbox, List.of(), null, null, null, null);
+    return new PythonAuthority(domain, user, "sandbox-write", sandbox, List.of(), null, null, null);
   }
   public static PythonAuthority calculation(String domain) {
-    return new PythonAuthority(domain, "ontology-service", null, null, List.of(), null, null, null, null);
+    return new PythonAuthority(domain, "ontology-service", null, null, List.of(), null, null, null);
   }
 }
