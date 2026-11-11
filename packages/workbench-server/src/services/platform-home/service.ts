@@ -9,12 +9,12 @@ import { assistantStore } from "../assistant/store";
 import { platformHomeStore, type PlatformHomeOwner } from "./store";
 
 export async function readHome(owner: PlatformHomeOwner): Promise<HomeState> {
-  const [preferences, recentApplications, recentAgents] = await Promise.all([
+  const [preferences, recentApplications, recentConversations] = await Promise.all([
     platformHomeStore.preferences(owner),
     platformHomeStore.recentApplications(owner),
-    assistantStore.recentAgentConversations(owner),
+    assistantStore.recentConversations(owner),
   ]);
-  return { ...preferences, recentApplications, recentAgents };
+  return { ...preferences, recentApplications, recentConversations };
 }
 
 export async function saveFavorites(
