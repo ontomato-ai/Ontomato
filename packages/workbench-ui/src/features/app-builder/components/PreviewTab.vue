@@ -193,13 +193,13 @@ const notice = computed(() => {
 </template>
 
 <style scoped>
-/* The app sits in its own frame on the panel, so the page it draws never runs into the panel's edges. */
+/* The preview fills the workspace surface; its status bar separates it from the page header. */
 .preview {
   display: flex;
   height: 100%;
   box-sizing: border-box;
-  padding: var(--spacing-md);
-  background: var(--el-fill-color-lighter);
+  min-height: 0;
+  background: var(--el-bg-color);
 }
 .preview-frame {
   display: flex;
@@ -207,8 +207,6 @@ const notice = computed(() => {
   flex-direction: column;
   min-width: 0;
   overflow: hidden;
-  border: 1px solid var(--el-border-color-light);
-  border-radius: var(--radius-md);
   background: var(--el-bg-color);
 }
 /*

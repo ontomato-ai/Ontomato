@@ -43,7 +43,7 @@ watch(() => props.tab, (tab) => (shown[tab] = true), { immediate: true });
       <ChangesTab v-if="shown.changes" v-show="tab === 'changes'" v-model:target="target" :view="view" />
       <HistoryTab v-if="shown.history" v-show="tab === 'history'" :view="view" @show-changes="emit('showChanges', $event)" />
     </div>
-    <div v-else-if="!view.error" class="panel-state" aria-busy="true">{{ t("assistant.loading") }}</div>
+    <div v-else-if="!view.error" v-loading="true" class="panel-state" aria-busy="true" :element-loading-text="t('assistant.loading')" />
   </div>
 </template>
 
@@ -74,9 +74,8 @@ watch(() => props.tab, (tab) => (shown[tab] = true), { immediate: true });
   overflow-wrap: anywhere;
 }
 .panel-state {
-  padding: var(--spacing-2xl) var(--spacing-lg);
-  color: var(--el-text-color-secondary);
-  font-size: var(--text-sm);
-  text-align: center;
+  position: relative;
+  flex: 1;
+  min-height: 100px;
 }
 </style>

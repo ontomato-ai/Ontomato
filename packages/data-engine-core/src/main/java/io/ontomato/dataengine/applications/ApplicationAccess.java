@@ -7,6 +7,8 @@ import io.ontomato.dataengine.core.bean.User;
 public interface ApplicationAccess {
     User entryUser(String credential);
     boolean administrator(User user);
+    void requireConnectedRegistration(User user);
+    boolean canMaintain(JSONObject application, User user);
     boolean canEnter(JSONObject application, User user);
     void declare(JSONObject application, ApplicationCatalog.Declaration declaration, boolean created);
 }

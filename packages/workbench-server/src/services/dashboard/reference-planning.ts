@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
+import { zodToJsonSchema } from "zod-to-json-schema";
 import {
   dashboardChartInputs, dashboardFormatSchema, metricReferenceChartSchema, metricReferenceMetricSchema,
   type DashboardGroup, type DashboardMetricReference, type DashboardMetricOutput, type MetricReferenceChartEntry,
@@ -8,6 +9,7 @@ import { runAuxiliary } from "../../platform/agent-runtime/runtime";
 import { renderPrompt } from "../../core/prompts/loader";
 import { buildModelDataView } from "../../utils/model-data-view";
 import { HttpError } from "../../utils/errors";
+import { createLogger } from "../../logging/logger";
 import { cleanJsonBlock } from "./planning/core/chart-recommender";
 import { DashboardMetricClient } from "./metric-client";
 import { requireMatchingOutput } from "./metric-data";
@@ -24,20 +26,38 @@ const fieldPlanSchema = z.object({
   formats: z.record(dashboardFormatSchema).optional(),
 }).strict();
 const scalarInputs = { required: ["value"], numeric: ["value"], singleRow: true };
+const refusalSchema = z.object({ error: z.string().min(1) }).strict();
+const logger = createLogger("dashboard-planning");
 
 async function model<T>(key: string, input: unknown, schema: z.ZodType<T>, locale?: string): Promise<T> {
-  const response = await runAuxiliary({ systemPrompt: renderPrompt(key, {}, locale), message: JSON.stringify(input) });
+  const outputSchema = zodToJsonSchema(z.union([schema, refusalSchema]), { $refStrategy: "none" });
+  const systemPrompt = [
+    renderPrompt(key, {}, locale),
+    "Return one JSON object matching the output schema. Every required property must be present. "
+      + "Use [] for a required array property with no entries; never omit it. "
+      + "Do not add properties outside the schema.",
+    `Output JSON Schema:\n${JSON.stringify(outputSchema)}`,
+  ].join("\n\n");
+  const response = await runAuxiliary({ systemPrompt, message: JSON.stringify(input) });
   try {
     const value = JSON.parse(cleanJsonBlock(response));
     if (value && typeof value === "object" && "error" in value) {
-      const refused = z.object({ error: z.string().min(1) }).strict().parse(value);
+      const refused = refusalSchema.parse(value);
       throw new HttpError(422, refused.error, "METRIC_REQUERY_REQUIRED");
     }
     return schema.parse(value);
   }
   catch (error) {
-    if (error instanceof z.ZodError || error instanceof SyntaxError)
-      throw new HttpError(502, "Dashboard planning returned an invalid definition", "DASHBOARD_PLAN_INVALID");
+    if (error instanceof z.ZodError || error instanceof SyntaxError) {
+      const issues = error instanceof z.ZodError ? error.issues : undefined;
+      const reason = issues
+        ? issues.map(issue => `${issue.path.join(".") || "<root>"}: ${issue.message}`).join("; ")
+        : `JSON: ${error.message}`;
+      // The shared logger retains message/error fields, not arbitrary metadata.
+      logger.warn(`Dashboard planning rejected model output: ${JSON.stringify({ stage: key, issues, rawOutput: response })}`, { error });
+      throw new HttpError(502, `Dashboard planning returned an invalid definition: ${reason}`,
+        "DASHBOARD_PLAN_INVALID", { stage: key, issues });
+    }
     throw error;
   }
 }

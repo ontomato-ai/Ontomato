@@ -30,7 +30,7 @@ onMounted(load);
 
 <template>
   <BuilderShell v-if="agent" :agent="agent" :platform="platform" />
-  <div v-else class="builder-loading" :aria-busy="error === null">
+  <div v-else v-loading="error === null" class="builder-loading" :aria-busy="error === null" :element-loading-text="t('assistant.loading')">
     <p v-if="error" role="alert">
       <span>{{ error }}</span>
       <el-button size="small" @click="load">{{ t("common.retry") }}</el-button>
@@ -40,6 +40,9 @@ onMounted(load);
 
 <style scoped>
 .builder-loading {
+  flex: 1;
+  min-height: 0;
+  position: relative;
   display: flex;
   align-items: center;
   justify-content: center;
