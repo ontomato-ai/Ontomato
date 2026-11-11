@@ -905,7 +905,7 @@ export default {
     "noRecent": "Applications you open and agents you talk to appear here",
     "dashboards": "My dashboards",
     "square": "Applications and agents",
-    "categories": { "all": "All", "top": "Ontology", "apps": "Applications", "bottom": "Administration", "agents": "Agents" },
+    "categories": { "all": "All", "business": "Business apps", "agents": "Agents", "build": "Build & govern", "admin": "Administration" },
     "noItems": "Nothing to open here",
     "noMatches": "Nothing matches the search",
     "addFavorite": "Add {name} to favorites",

@@ -55,7 +55,7 @@ const PERMISSIONS_PAGE: PlatformPage = {
   group: "platform",
 };
 const PERMISSIONS_APP: BuiltinApplication = {
-  id: "permissions", kind: "native", rail: "bottom", sort: 10,
+  id: "permissions", kind: "native", rail: "bottom", category: "admin", sort: 10,
   entry: { path: platformRoutes.permissions.path, renderer: "permissions" },
   entryAccess: ["user-management", "role-management", "position-management"], scheduleAdapter: null,
   declaration: { names: { en: "Permissions" }, descriptions: {}, icon: "permissions", groups: [], permissions: [] },
