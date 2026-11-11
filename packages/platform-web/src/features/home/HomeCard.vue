@@ -9,6 +9,8 @@ import type { HomeItem } from "./items";
  * favourites or takes it out. Where it comes from (built in, published, connected, a link) is not shown.
  *
  * A favourite can be moved by the two arrow buttons as well as dragged, so its order can be changed from the keyboard.
+ * The arrows float beside the star while the card is pointed at or holds focus, so they take no width from the name
+ * and the line: a favourite truncates its text exactly as the same card does in the square.
  */
 defineProps<{
   item: HomeItem;
@@ -31,7 +33,7 @@ const { t } = useI18n();
       </span>
     </button>
     <div class="home-card-actions">
-      <template v-if="position">
+      <div v-if="position" class="home-card-move-group">
         <button
           type="button"
           class="home-card-action home-card-move"
@@ -52,7 +54,7 @@ const { t } = useI18n();
         >
           <ArrowRight :size="14" aria-hidden="true" />
         </button>
-      </template>
+      </div>
       <button
         type="button"
         class="home-card-action home-card-star"
@@ -168,17 +170,24 @@ const { t } = useI18n();
 .home-card-star.favorite {
   color: var(--el-color-warning);
 }
-/* The arrows are for rearranging; they stay out of the way until the card is pointed at or focused. */
-.home-card-move {
+/*
+ * The arrows are for rearranging: out of the layout, on the star's row just left of it (one 28px action and the 2px gap),
+ * and shown only while the card is pointed at or one of its controls has focus, so tabbing reaches them and they never
+ * narrow the text; while shown they cover the end of the name.
+ */
+.home-card-move-group {
+  position: absolute;
+  top: var(--spacing-sm);
+  right: calc(var(--spacing-sm) + 30px);
+  display: flex;
+  gap: 2px;
+  border-radius: var(--radius-sm);
+  background: var(--el-fill-color-light);
   opacity: 0;
+  transition: opacity var(--transition-fast);
 }
-.home-card:hover .home-card-move,
-.home-card:focus-within .home-card-move {
+.home-card:hover .home-card-move-group,
+.home-card:focus-within .home-card-move-group {
   opacity: 1;
-}
-@media (hover: none) {
-  .home-card-move {
-    opacity: 1;
-  }
 }
 </style>
