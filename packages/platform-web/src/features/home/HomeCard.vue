@@ -25,11 +25,17 @@ const { t } = useI18n();
 
 <template>
   <div class="home-card">
-    <button type="button" class="home-card-open" @click="emit('open')">
+    <!-- The name and the line are cut to fit the card; the button's tooltip holds both whole, as the rail's rows do. -->
+    <button
+      type="button"
+      class="home-card-open"
+      :title="item.description ? `${item.label}\n${item.description}` : item.label"
+      @click="emit('open')"
+    >
       <span class="home-card-icon" aria-hidden="true"><component :is="appIcon(item.icon)" :size="18" /></span>
       <span class="home-card-text">
         <span class="home-card-name">{{ item.label }}</span>
-        <span v-if="item.description" class="home-card-description" :title="item.description">{{ item.description }}</span>
+        <span v-if="item.description" class="home-card-description">{{ item.description }}</span>
       </span>
     </button>
     <div class="home-card-actions">
