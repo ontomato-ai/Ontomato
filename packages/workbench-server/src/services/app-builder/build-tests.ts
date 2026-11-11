@@ -1,6 +1,6 @@
 import path from "node:path";
 import { z } from "zod";
-import { buildTestContextSchema, BUILD_TEST_SDK_CAPABILITY, BUILD_TEST_SAMPLE_DIRECTORY } from "@ontomato/contracts/build-tests";
+import { buildTestContextSchema, type BuildTestSdkUpgradeDetails, BUILD_TEST_SDK_CAPABILITY, BUILD_TEST_SAMPLE_DIRECTORY } from "@ontomato/contracts/build-tests";
 import { workspacePathSchema } from "@ontomato/contracts/workspaces";
 import { RuntimeClient } from "../../infrastructure/agent-runtime/client";
 import { backendGet, backendPost, backendDelete, BackendResponseError, AuthFailedError } from "../../utils/backend-client";
@@ -77,6 +77,15 @@ export class WorkspaceBuildTests {
       const manifest = await readFile(runtimeDataDir("apps-sdk", version, "sdk.json"), "utf8").then(JSON.parse).catch(() => null);
       supported &&= manifest?.executionContext === BUILD_TEST_SDK_CAPABILITY;
     }
-    if (!supported) throw new HttpError(409, `Upgrade the workspace SDK to ${(await currentAppSdk()).version} for build-test preview`, "BUILD_TEST_SDK_UPGRADE_REQUIRED");
+    if (!supported) {
+      const sdk=await currentAppSdk();
+      const details:BuildTestSdkUpgradeDetails={
+        requiredVersion:sdk.version,
+        foundVersions:versions,
+        upgrade:{kind:"edit-workspace-references",currentCommand:"sdk current",readCommands:["sdk read sdk.json","sdk read docs/index.md","sdk read docs/reference.md"],
+          steps:["Read the current SDK version","Replace every old /apps-sdk/<version>/ reference in importmaps, stylesheets and workspace modules","Read the current SDK interface documentation and adapt changed interfaces","Commit the workspace changes"]},
+      };
+      throw new HttpError(409,"Upgrade the workspace SDK references before previewing","BUILD_TEST_SDK_UPGRADE_REQUIRED",details);
+    }
   }
 }

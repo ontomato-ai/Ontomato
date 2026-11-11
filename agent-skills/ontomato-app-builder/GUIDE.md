@@ -124,3 +124,9 @@ Attachments are relative to that sample. Sample files must stay inside test-data
 Action/MetricView execute, execute-dsl, distinct-values and vector commands bind the workspace's current Java context once for that command. Missing, preparing, failed, ended or expired contexts fail; requests never switch to live data. ask is not supported for build tests. Metadata discovery and asset editing keep their existing APIs. To look at live data, publish the application for yourself first. A conversation ending does not stop its test context.
 
 Preview requires the SDK manifest's executionContext capability 1. Upgrade old workspace SDK references when the preview entry rejects them. Test samples are excluded from published application files.
+
+## Upgrade workspace SDK references
+
+When preview returns `BUILD_TEST_SDK_UPGRADE_REQUIRED`, run `sdk current` to obtain the required exact version. Update every old `/apps-sdk/<version>/` reference in the workspace, including the importmap, stylesheet links and any absolute module imports, to that current version. Use `sdk read sdk.json`, `sdk read docs/index.md` and `sdk read docs/reference.md` to check interface changes and adapt the page, then commit the workspace changes (inside the platform, finish the changed run so runtime commits it; externally, use the existing workspace import with an explicit commit message). This uses the existing source-editing workflow; there is no separate SDK upgrade command. Retry preview only after the references and interfaces have been updated.
+
+`test status` and `test stop` succeed when the workspace has no test context, returning `{workspaceId, contextId: null, status: "NONE"}`. This is a normal absence result, not a failed request and not permission to use live data.
