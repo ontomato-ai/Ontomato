@@ -58,7 +58,7 @@ router.post("/sessions/:sessionId/artifacts/:artifactId/drilldown", wrap(async (
   res.sendStatus(202);
 }));
 router.get("/sessions/:sessionId/artifacts/:artifactId/analysis-scope", wrap(async (req, res) => {
-  res.json(await readAnalysisScope(id(req, "sessionId"), id(req, "artifactId"), context(req).owner));
+  res.json(await readAnalysisScope(id(req, "sessionId"), id(req, "artifactId"), context(req).owner, z.string().max(35).optional().parse(req.query.locale)));
 }));
 router.post("/sessions/:sessionId/artifacts/:artifactId/analysis-scope", wrap(async (req, res) => {
   const c = context(req);

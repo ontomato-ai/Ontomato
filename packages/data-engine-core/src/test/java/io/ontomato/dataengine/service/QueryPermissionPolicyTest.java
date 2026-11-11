@@ -23,13 +23,13 @@ class QueryPermissionPolicyTest {
   void dslLabelsDescribeFiltersAndOperationsWithoutTechnicalAliases() {
     var metadata = definitions();
     var attrs = JSONObject.from(metadata.get(0)).getJSONArray("attrs");
-    attrs.getJSONObject(1).put("attrDesc", "单位全称");
-    attrs.add(JSONObject.of("name", "status", "attrDesc", "人员状态", "enable", true));
+    attrs.getJSONObject(1).put("showName", "单位全称");
+    attrs.add(JSONObject.of("name", "status", "showName", "人员状态", "attrDesc", "在职状态，例如在职、离职、退休。", "enable", true));
     var dsl = query("COUNT", "headcount"); dsl.remove("problem");
     var step = dsl.getJSONObject("answer").getJSONArray("steps").getJSONObject(0);
     var condition = JSON.parseObject("""
-        {"properties":{"and":[{"field":"status","operator":"=","value":"在职"},
-        {"or":[{"field":"department","operator":"=","value":"文学院"},{"field":"department","operator":"=","value":"理学院"}]}]}}
+        {"properties":{"operator":"logic","and":[{"field":"status","operator":"=","value":"在职"},
+        {"operator":"logic","or":[{"field":"department","operator":"=","value":"文学院"},{"field":"department","operator":"=","value":"理学院"}]}]}}
         """);
     step.getJSONObject("graph").getJSONArray("patterns").getJSONObject(0).getJSONArray("objects").getJSONObject(0).put("conditions", condition);
     step.getJSONObject("output").put("group_by", JSONObject.of("fields", JSONArray.of(JSONObject.of("variable", "e", "field", "department"))));
@@ -37,8 +37,12 @@ class QueryPermissionPolicyTest {
     var graph = QuerySourceAnalysis.fromDsl(dsl, metadata);
     assertEquals("员工", graph.getJSONArray("queries").getJSONObject(0).getString("label"));
     var filter = graph.getJSONArray("filters").getJSONObject(0);
-    assertEquals(condition.toJSONString(), filter.getString("expression"));
-    assertEquals("(人员状态 = 在职 AND (单位全称 = 文学院 OR 单位全称 = 理学院))", filter.getString("label"));
+    assertEquals(2, graph.getJSONArray("filters").size());
+    assertEquals(condition.getJSONObject("properties").getJSONArray("and").getJSONObject(0).toJSONString(), filter.getString("expression"));
+    assertEquals("人员状态 = 在职", filter.getString("label"));
+    var alternative = graph.getJSONArray("filters").getJSONObject(1);
+    assertEquals("(单位全称 = 文学院 OR 单位全称 = 理学院)", alternative.getString("label"));
+    assertEquals(condition.getJSONObject("properties").getJSONArray("and").getJSONObject(1).toJSONString(), alternative.getString("expression"));
     var labels = graph.getJSONArray("nodes").stream().map(JSONObject::from).filter(n -> "operation".equals(n.getString("kind")))
         .map(n -> n.getString("label")).toList();
     assertTrue(labels.contains("COUNT(*)")); assertTrue(labels.contains("GROUP BY 单位全称"));
