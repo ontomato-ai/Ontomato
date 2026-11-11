@@ -5,6 +5,7 @@ import com.alibaba.fastjson2.JSONObject;
 import io.ontomato.dataengine.service.*;
 import jakarta.servlet.http.HttpServletRequest;
 import java.util.UUID;
+import java.util.Map;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -94,11 +95,11 @@ public class OntologyQueryController {
   @PostMapping("/ontology/query/metrics/parse-parameters")
   public Object metricParameters(@RequestBody JSONObject body, HttpServletRequest request) {
     io.ontomato.dataengine.service.agent.AgentJson.fields(body, "id", "revision", "parameters", "values");
-    if (!(body.get("values") instanceof JSONObject values)
+    if (!(body.get("values") instanceof Map<?, ?> values)
         || values.values().stream().anyMatch(value -> !(value instanceof String)))
       throw new IllegalArgumentException("Parameter values must be text keyed by parameter name");
     return metricForms.parse(body.getString("id"), body.getString("revision"), body.getJSONObject("parameters"),
-        values, access(request), language(request));
+        body.getJSONObject("values"), access(request), language(request));
   }
 
   @PostMapping("/ontology/query/knowledge/search")

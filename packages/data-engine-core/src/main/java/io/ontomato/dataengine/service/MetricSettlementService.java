@@ -13,6 +13,7 @@ import io.ontomato.dataengine.service.agent.OntologyGenerationService;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import org.springframework.stereotype.Service;
 
@@ -42,12 +43,13 @@ public class MetricSettlementService {
       boolean adopt, OriginCheckResult quality, Commit commit) throws Exception {
     AgentJson.fields(input, "question", "recipe", "calculation", "outputShape");
     String question = AgentJson.text(input, "question");
-    if (!(input.get("recipe") instanceof JSONObject recipe))
+    if (!(input.get("recipe") instanceof Map<?, ?>))
       throw new IllegalArgumentException("A dataset recipe is required");
+    JSONObject recipe = input.getJSONObject("recipe");
     String kind = AgentJson.text(recipe, "kind");
     String calculation = input.getString("calculation");
     if ("metric".equals(kind)) {
-      if (!(recipe.get("parameters") instanceof JSONObject))
+      if (!(recipe.get("parameters") instanceof Map<?, ?>))
         throw new IllegalArgumentException("Metric recipes require parameter values");
       if (calculation != null && !calculation.isBlank())
         throw new AgentHttpException(422, "METRIC_REQUERY_REQUIRED",

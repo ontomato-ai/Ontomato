@@ -235,7 +235,7 @@ class QueryPermissionPolicyTest {
     var metrics = mock(MetricViewService.class);
     when(metrics.queryForRetrieval(eq("domain"), eq(""), isNull(), isNull(), anyInt()))
         .thenReturn(List.of(broken, unknown, valid));
-    when(metrics.queryById("broken", "domain")).thenReturn(broken);
+    when(metrics.requireExecutable(eq("broken"), any())).thenReturn(broken);
     var admin = mock(AdminService.class);
     when(admin.getJSONRule("domain")).thenReturn(Map.of("classDef", definitions()));
     var ontology = new OntologyQueryService(admin, null, metrics, null);
