@@ -5,6 +5,7 @@ export const workbenchApplications: BuiltinApplication[] = [
     "id": "home",
     "kind": "native",
     "rail": "top",
+    "category": "business",
     "sort": 0,
     "entry": {
       "path": "/home",
@@ -33,6 +34,7 @@ export const workbenchApplications: BuiltinApplication[] = [
     "id": "agents",
     "kind": "native",
     "rail": "top",
+    "category": "business",
     "sort": 10,
     "entry": {
       "path": "/agents",
@@ -61,6 +63,7 @@ export const workbenchApplications: BuiltinApplication[] = [
     "id": "dashboards",
     "kind": "native",
     "rail": "top",
+    "category": "business",
     "sort": 20,
     "entry": {
       "path": "/dashboards",
@@ -89,6 +92,7 @@ export const workbenchApplications: BuiltinApplication[] = [
     "id": "schedules",
     "kind": "native",
     "rail": "top",
+    "category": "business",
     "sort": 30,
     "entry": {
       "path": "/schedules",
@@ -117,6 +121,7 @@ export const workbenchApplications: BuiltinApplication[] = [
     "id": "operations",
     "kind": "native",
     "rail": "apps",
+    "category": "admin",
     "sort": 30,
     "entry": {
       "path": "/ops",
@@ -144,6 +149,7 @@ export const workbenchApplications: BuiltinApplication[] = [
     "id": "app-builder",
     "kind": "native",
     "rail": "apps",
+    "category": "build",
     "sort": 40,
     "entry": {
       "path": "/app-builder",

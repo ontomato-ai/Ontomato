@@ -2,6 +2,7 @@
   "id": "browser",
   "kind": "native",
   "rail": "top",
+  "category": "business",
   "sort": 40,
   "entry": {
     "path": "/browser",

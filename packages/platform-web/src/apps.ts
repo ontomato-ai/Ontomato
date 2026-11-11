@@ -1,4 +1,5 @@
 import type { InjectionKey, Ref } from "vue";
+import type { CatalogApplication } from "@ontomato/contracts/platform-identity";
 import type { PlatformApp, PlatformPanelGroup, PlatformRailSection } from "@ontomato/platform-shell";
 
 /**
@@ -22,6 +23,8 @@ export interface PlatformAppDeclaration {
    * declaration made outside this module may leave it out, which puts the application among the business ones.
    */
   rail?: PlatformRailSection;
+  /** The functional group the home's square files it under; the rail's section does not decide it. */
+  category: CatalogApplication["category"];
   /** The application owns the addresses under this prefix. */
   prefix: string;
   /** How its pages are shown when it holds several; absent means header tabs. */

@@ -2,6 +2,7 @@
   "id": "governance",
   "kind": "native",
   "rail": "apps",
+  "category": "build",
   "sort": 20,
   "entry": {
     "path": "/governance",

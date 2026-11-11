@@ -2,6 +2,7 @@
   "id": "ontology",
   "kind": "native",
   "rail": "apps",
+  "category": "build",
   "sort": 10,
   "entry": {
     "path": "/ontology",

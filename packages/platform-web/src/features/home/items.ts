@@ -8,8 +8,8 @@ import type { PlatformAppDeclaration } from "../../apps";
  */
 export const HOME_APPLICATION_ID = "home";
 
-/** The square's categories: the rail's three sections, then the agents. */
-export const homeCategories = ["all", "top", "apps", "bottom", "agents"] as const;
+/** The square's categories: the catalog's functional groups, with the agents as one more. */
+export const homeCategories = ["all", "business", "agents", "build", "admin"] as const;
 export type HomeCategory = (typeof homeCategories)[number];
 
 /** One card of the home: an application from the catalog or an agent of the current domain, named as they name it. */
@@ -41,7 +41,7 @@ export function homeItems(applications: readonly PlatformAppDeclaration[], agent
       label: app.label,
       description: app.description ?? null,
       icon: app.icon,
-      category: app.rail ?? "apps",
+      category: app.category,
     })),
     ...agents
       .filter((agent) => agent.enabled)

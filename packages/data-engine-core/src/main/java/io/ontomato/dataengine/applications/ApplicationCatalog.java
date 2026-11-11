@@ -16,7 +16,7 @@ public class ApplicationCatalog {
     public record Permission(String code, Map<String,String> names, String groupKey, int sort) {}
     public record Declaration(Map<String,String> names, Map<String,String> descriptions, String icon,
                               List<Group> groups, List<Permission> permissions) {}
-    public record Builtin(String id, String kind, String rail, int sort, JSONObject entry,
+    public record Builtin(String id, String kind, String rail, String category, int sort, JSONObject entry,
                           List<String> entryAccess, String scheduleAdapter, Declaration declaration) {}
     private final JdbcTemplate db;
     private final TransactionTemplate transactions;
@@ -30,7 +30,7 @@ public class ApplicationCatalog {
                 "ownerService", row.getString("owner_service"), "ownerUserId", row.getString("owner_user_id"),
                 "kind", row.getString("kind"), "names", JSON.parseObject(row.getString("names")),
                 "descriptions", JSON.parseObject(row.getString("descriptions")), "icon", row.getString("icon"),
-                "rail", row.getString("rail"), "sort", row.getInt("sort"), "entry", JSON.parseObject(row.getString("entry")),
+                "rail", row.getString("rail"), "category", row.getString("category"), "sort", row.getInt("sort"), "entry", JSON.parseObject(row.getString("entry")),
                 "entryAccess", JSON.parseArray(row.getString("entry_access")), "scheduleAdapter", row.getString("schedule_adapter"),
                 "releaseId", row.getString("release_id")));
     }
@@ -60,12 +60,13 @@ public class ApplicationCatalog {
         transactions.executeWithoutResult(tx -> {
             for (var d : declarations) {
                 validateId(d.id()); validate(d.declaration());
-                if (!List.of("native","link").contains(d.kind()) || !List.of("top","apps","bottom").contains(d.rail()))
+                if (!List.of("native","link").contains(d.kind()) || !List.of("top","apps","bottom").contains(d.rail())
+                    || d.category() == null || !List.of("business","build","admin").contains(d.category()))
                     throw bad("Invalid built-in application");
                 var old = all().stream().filter(a -> d.id().equals(a.getString("id"))).findFirst();
                 if (old.isPresent() && (!service.equals(old.get().getString("ownerService")) || old.get().getString("domainId") != null))
                     throw denied();
-                save(d.id(), null, service, null, d.kind(), d.rail(), d.sort(), d.entry(), d.entryAccess(), d.scheduleAdapter(), null, d.declaration());
+                save(d.id(), null, service, null, d.kind(), d.rail(), d.category(), d.sort(), d.entry(), d.entryAccess(), d.scheduleAdapter(), null, d.declaration());
                 access.declare(require(d.id()), d.declaration(), old.isEmpty());
             }
         });
@@ -87,22 +88,22 @@ public class ApplicationCatalog {
                     !(user.getId().equals(a.getString("ownerUserId")) || access.administrator(user))) throw denied();
             }
             String owner = old.isEmpty() ? user.getId() : old.get().getString("ownerUserId");
-            save(id, user.getDomainId(), kind.equals("hosted") ? "workbench" : "data-engine", owner, kind, "apps", 100,
+            save(id, user.getDomainId(), kind.equals("hosted") ? "workbench" : "data-engine", owner, kind, "apps", "business", 100,
                 JSONObject.of("path", "/apps/" + id + "/"), List.of("app:" + id + ":entry"), null, releaseId, declaration);
             var application = require(id);
             access.declare(application, declaration, old.isEmpty());
             return JSONObject.of("applicationId", id, "releaseId", releaseId, "entryPath", "/apps/" + id + "/");
         });
     }
-    private void save(String id, String domain, String service, String owner, String kind, String rail, int sort,
+    private void save(String id, String domain, String service, String owner, String kind, String rail, String category, int sort,
                       JSONObject entry, List<String> entryAccess, String adapter, String releaseId, Declaration d) {
         db.update("""
-            INSERT INTO sys_application(id,domain_id,owner_service,owner_user_id,kind,names,descriptions,icon,rail,sort,entry,entry_access,schedule_adapter,release_id,groups,entry_path,updated_at)
-            VALUES(?,?,?,?,?,?::jsonb,?::jsonb,?,?,?,?::jsonb,?::jsonb,?,?,?::jsonb,?,now()) ON CONFLICT(id) DO UPDATE SET
-            names=excluded.names,descriptions=excluded.descriptions,icon=excluded.icon,rail=excluded.rail,sort=excluded.sort,
+            INSERT INTO sys_application(id,domain_id,owner_service,owner_user_id,kind,names,descriptions,icon,rail,category,sort,entry,entry_access,schedule_adapter,release_id,groups,entry_path,updated_at)
+            VALUES(?,?,?,?,?,?::jsonb,?::jsonb,?,?,?,?,?::jsonb,?::jsonb,?,?,?::jsonb,?,now()) ON CONFLICT(id) DO UPDATE SET
+            names=excluded.names,descriptions=excluded.descriptions,icon=excluded.icon,rail=excluded.rail,category=excluded.category,sort=excluded.sort,
             entry=excluded.entry,entry_access=excluded.entry_access,schedule_adapter=excluded.schedule_adapter,
             release_id=excluded.release_id,groups=excluded.groups,entry_path=excluded.entry_path,updated_at=now()
-            """, id,domain,service,owner,kind,JSON.toJSONString(d.names()),JSON.toJSONString(d.descriptions()),d.icon(),rail,sort,
+            """, id,domain,service,owner,kind,JSON.toJSONString(d.names()),JSON.toJSONString(d.descriptions()),d.icon(),rail,category,sort,
             entry.toJSONString(),JSON.toJSONString(entryAccess),adapter,releaseId,JSON.toJSONString(d.groups()),entry.getString("path"));
     }
     public static void validateId(String id) {

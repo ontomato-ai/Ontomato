@@ -19,7 +19,7 @@ import { usePublication } from "../publication";
 const APP_ID = "app-0f8e2b1c";
 const RELEASE: HostedRelease = { appId: APP_ID, releaseId: "release-2", commit: "2".repeat(40), createdAt: "2026-11-10T08:05:00.000Z" };
 const APPLICATION: CatalogApplication = {
-  id: APP_ID, kind: "hosted", names: { en: "Overdue board" }, descriptions: {}, icon: "pages", rail: "apps", sort: 100,
+  id: APP_ID, kind: "hosted", names: { en: "Overdue board" }, descriptions: {}, icon: "pages", rail: "apps", category: "business", sort: 100,
   entry: { path: `/apps/${APP_ID}/` }, entryAccess: [`app:${APP_ID}:entry`], scheduleAdapter: null, releaseId: "release-2",
 };
 

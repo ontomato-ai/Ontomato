@@ -3,6 +3,7 @@ import { z } from "zod";
 const names = z.record(z.string().min(1)).refine((value) => Boolean(value.en), "An English name is required");
 const key = z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}$/);
 const sequence = z.string().regex(/^[0-9]+$/).refine((value) => BigInt(value) <= 9223372036854775807n);
+const categories = z.enum(["business", "build", "admin"]);
 
 export const applicationDeclarationSchema = z.object({
   names,
@@ -14,14 +15,14 @@ export const applicationDeclarationSchema = z.object({
 export type ApplicationDeclaration = z.infer<typeof applicationDeclarationSchema>;
 export const builtinApplicationSchema = z.object({
   id: z.string().regex(/^[a-z][a-z0-9-]{0,63}$/), kind: z.enum(["native", "link"]),
-  rail: z.enum(["top", "apps", "bottom"]), sort: z.number().int(),
+  rail: z.enum(["top", "apps", "bottom"]), category: categories, sort: z.number().int(),
   entry: z.object({ path: z.string(), renderer: z.string(), home: z.string().optional() }),
   entryAccess: z.array(z.string()).min(1), scheduleAdapter: z.string().nullable(), declaration: applicationDeclarationSchema,
 });
 export type BuiltinApplication = z.infer<typeof builtinApplicationSchema>;
 export const applicationCatalogSchema = z.array(z.object({
   id: z.string(), kind: z.enum(["native", "hosted", "connected", "link"]), names,
-  descriptions: z.record(z.string()), icon: z.string(), rail: z.enum(["top", "apps", "bottom"]), sort: z.number(),
+  descriptions: z.record(z.string()), icon: z.string(), rail: z.enum(["top", "apps", "bottom"]), category: categories, sort: z.number(),
   entry: z.object({ path: z.string(), renderer: z.string().optional(), home: z.string().optional() }),
   entryAccess: z.array(z.string()).min(1), scheduleAdapter: z.string().nullable(), releaseId: z.string().nullable(),
 }));
