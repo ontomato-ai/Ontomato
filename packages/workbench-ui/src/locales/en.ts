@@ -550,6 +550,7 @@ export default {
     "noResponse": "No Response"
   },
   "assistant": {
+    "agentUnavailable": "This agent is not available",
     "newConversation": "New chat",
     "agent": "Agent",
     "sessions": "Recent",
