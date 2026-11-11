@@ -48,7 +48,7 @@ class ActionDraftServiceTest {
     functions = mock(FunctionDao.class);
     actionDao = mock(ActionDao.class);
     service =
-        new ActionDraftService(store, runtime, admin, actions, lang, identity, functions, actionDao);
+        new ActionDraftService(store, runtime, admin, actions, lang, identity, actionDao);
     User user = mock(User.class);
     when(user.getId()).thenReturn("fixture-user");
     when(user.getDomainId()).thenReturn("fixture-domain");
@@ -85,17 +85,18 @@ class ActionDraftServiceTest {
   @Test
   void saveUsesTheStoredSnapshotWithoutExplainingAgain() throws Exception {
     Action action = actionWith(code);
+    var target = new io.ontomato.dataengine.bean.action.ActionTarget("Order", "order_id");
+    action.setTarget(target);
     JSONObject row = row(action, code, Instant.now().plusSeconds(3600).toString(), null);
     when(store.one(anyString(), any(), any(), any())).thenReturn(row);
     when(functions.save(any(), anyString())).thenAnswer(call -> call.getArgument(0));
-    when(actionDao.save(any())).thenAnswer(call -> call.getArgument(0));
+    when(actionDao.saveWithFunction(any(), anyString())).thenAnswer(call -> call.getArgument(0));
 
     Action saved = service.save(UUID.randomUUID().toString(), "en");
 
-    assertNotNull(saved);
+    assertEquals(target, saved.getTarget());
     verify(actions, never()).explainForDraft(any(), any());
-    verify(functions).save(any(), anyString());
-    verify(actionDao).save(any());
+    verify(actionDao).saveWithFunction(any(), eq("en"));
   }
 
   @Test
@@ -189,5 +190,22 @@ class ActionDraftServiceTest {
 
     assertEquals(draftId, result.getString("draftId"));
     verify(actions).explainForDraft(any(), eq("en"));
+  }
+
+  @Test
+  void targetRequiresAnExistingClassWithOneKeyAndAStringParameter() {
+    var action = actionWith(code);
+    var parameter = new io.ontomato.dataengine.bean.function.Parameter();
+    parameter.setName("doc"); parameter.setType("TYPE_STRING");
+    action.getFunction().setParameters(List.of(parameter));
+    var target = new io.ontomato.dataengine.bean.action.ActionTarget("Order", "doc");
+    var rule = JSONObject.of("classDef", JSONArray.of(JSONObject.of("className", "Order", "attrs",
+        JSONArray.of(JSONObject.of("name", "number", "primaryKey", true)))));
+    target.validate(action, rule);
+    assertEquals("0001", target.key(JSONObject.of("doc", "0001")));
+    assertThrows(IllegalArgumentException.class, () -> target.key(new JSONObject()));
+    parameter.setType("TYPE_NUMBER");
+    assertThrows(IllegalArgumentException.class, () -> target.validate(action, rule));
+    assertThrows(IllegalArgumentException.class, () -> target.definition(JSONObject.of("classDef", new JSONArray())));
   }
 }

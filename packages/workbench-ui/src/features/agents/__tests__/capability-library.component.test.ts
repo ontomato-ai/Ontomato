@@ -6,11 +6,10 @@ import type { AssistantAgentDefinition } from "@ontomato/contracts/assistant-cha
 import { workbenchI18n } from "../../../i18n";
 import { workbenchContent } from "../../../content";
 import CapabilityLibrary from "../components/CapabilityLibrary.vue";
+import PublishedMcpServices from "../../mcp/components/PublishedMcpServices.vue";
+import { skillLibraryCount } from "../../skills/count";
 
-/*
- * The capability library is one table: skills and external MCP services together, each row saying which kind it is,
- * where it comes from, which agents use it and whether it is available; the filter switches between the two kinds.
- */
+// Skill and MCP pages load and expose only the corresponding management actions.
 const i18n = workbenchI18n();
 const t = i18n.global.t as (key: string, params?: Record<string, unknown>) => string;
 
@@ -75,49 +74,64 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-async function mountLibrary() {
+async function mountLibrary(kind: "skill" | "tool" = "skill") {
   const router = createRouter({ history: createMemoryHistory(), routes: [{ path: "/", component: { template: "<div />" } }] });
   await router.push("/");
-  const wrapper = mount(CapabilityLibrary, { attachTo: document.body, global: { plugins: [i18n, ElementPlus, router] } });
+  const wrapper = mount(CapabilityLibrary, { props: { kind }, attachTo: document.body, global: { plugins: [i18n, ElementPlus, router] } });
   await flushPromises();
   const names = () => wrapper.findAll(".row-name").map((item) => item.text());
   return { wrapper, names };
 }
 
 describe("capability library", () => {
-  it("lists skills and external tools in one table with kind, source and the agents that use them", async () => {
+  it("lists skills with their source and agents without loading MCP services", async () => {
     const { wrapper, names } = await mountLibrary();
-    expect(names()).toEqual(["Trend analysis", "Bar chart", "Orders"]);
+    expect(names()).toEqual(["Trend analysis", "Bar chart"]);
+    expect(skillLibraryCount()).toBe(2);
+    expect(api.listMcpServices).not.toHaveBeenCalled();
+    expect(api.listPublishedMcpServices).not.toHaveBeenCalled();
+    expect(wrapper.text()).toContain(t("admin.importSkill"));
+    expect(wrapper.text()).not.toContain(t("hotData.addService"));
     const rows = wrapper.findAll(".el-table__row");
     expect(rows[0]!.text()).toContain(t("capabilities.kindKnowledgeSkill"));
     expect(rows[0]!.text()).toContain(t("capabilities.sourceDomain"));
     expect(rows[0]!.text()).toContain("Sales analyst");
     expect(rows[1]!.text()).toContain(t("capabilities.sourcePublic"));
     expect(rows[1]!.text()).toContain(t("capabilities.unused"));
-    expect(rows[2]!.text()).toContain(t("capabilities.kindTool"));
-    expect(rows[2]!.text()).toContain(t("capabilities.sourceService"));
     wrapper.unmount();
   });
 
-  it("filters by kind: all, skills, external tools", async () => {
+  it("keeps the total independent of search and updates it after reloading", async () => {
     const { wrapper, names } = await mountLibrary();
-    const choose = async (label: string) => {
-      const select = wrapper.findComponent({ name: "ElSelect" });
-      const option = select.findAllComponents({ name: "ElOption" }).find(item => item.props("label") === label)!;
-      select.vm.$emit("update:modelValue", option.props("value"));
-      await flushPromises();
-    };
-    await choose(t("capabilities.skills"));
+    await wrapper.find(".library-toolbar input").setValue("Trend");
+    expect(names()).toEqual(["Trend analysis"]);
+    expect(skillLibraryCount()).toBe(2);
+    api.fetchSkills.mockResolvedValue({ success: true, skills: [skills[0]] });
+    await wrapper.findAll("button").find(button => button.text() === t("common.refresh"))!.trigger("click");
+    await flushPromises();
+    expect(skillLibraryCount()).toBe(1);
+    wrapper.unmount();
+  });
+
+  it("switches between isolated Skill and MCP pages", async () => {
+    const { wrapper, names } = await mountLibrary();
     expect(names()).toEqual(["Trend analysis", "Bar chart"]);
-    await choose(t("capabilities.tools"));
+    await wrapper.setProps({ kind: "tool" });
+    await flushPromises();
     expect(names()).toEqual(["Orders"]);
-    await choose(t("common.all"));
-    expect(names()).toHaveLength(3);
+    expect(wrapper.text()).toContain(t("hotData.addService"));
+    expect(wrapper.text()).not.toContain(t("admin.importSkill"));
+    await wrapper.setProps({ kind: "skill" });
+    await flushPromises();
+    expect(names()).toEqual(["Trend analysis", "Bar chart"]);
     wrapper.unmount();
   });
 
   it("checks a tool's connection in place and keeps the discovered tools with that row", async () => {
-    const { wrapper } = await mountLibrary();
+    const { wrapper } = await mountLibrary("tool");
+    expect(api.fetchSkills).not.toHaveBeenCalled();
+    expect(api.listPublishedMcpServices).not.toHaveBeenCalled();
+    expect(wrapper.find(".published-card").exists()).toBe(false);
     const button = wrapper.findAll("button").find((item) => item.text() === t("capabilities.check"))!;
     await button.trigger("click");
     await flushPromises();
@@ -131,14 +145,30 @@ describe("capability library", () => {
       { name: workbenchContent().analysisMcpServerName, mcpUrl: "http://localhost/mcp/analysis-agents", tools: [] },
       { name: workbenchContent().opsMcpServerName, title: "Ontomato Ops Agent MCP", mcpUrl: "http://localhost/mcp/ops-agent", tools: [{ name: "send", description: "Send a message" }] },
     ]);
-    const { wrapper } = await mountLibrary();
+    const wrapper = mount(PublishedMcpServices, { global: { plugins: [i18n, ElementPlus] } });
+    await flushPromises();
     const cards = wrapper.findAll(".published-card");
-    expect(cards.map((card) => card.find("h4").text())).toEqual([t("mcp.agentService"), t("mcp.opsAgentService")]);
+    expect(cards.map((card) => card.find("h3").text())).toEqual([t("mcp.agentService"), t("mcp.opsAgentService")]);
+    expect(api.listMcpServices).not.toHaveBeenCalled();
+    expect(api.agentList).not.toHaveBeenCalled();
+    expect(api.fetchSkills).not.toHaveBeenCalled();
     expect(cards[0]!.find(".published-address").text()).toBe("http://localhost/mcp/analysis-agents");
     expect(cards[0]!.find("summary").text()).toBe(`${t("mcp.availableTools")} · 0`);
     expect(cards[1]!.find("summary").text()).toBe(`${t("mcp.availableTools")} · 1`);
     // Published services are shown, not edited: their rows have no delete action.
     expect(cards[1]!.find("button").exists()).toBe(false);
+    wrapper.unmount();
+  });
+
+  it("retries published service loading from the system settings page", async () => {
+    api.listPublishedMcpServices.mockRejectedValueOnce(new Error("Unavailable"));
+    const wrapper = mount(PublishedMcpServices, { global: { plugins: [i18n, ElementPlus] } });
+    await flushPromises();
+    expect(wrapper.text()).toContain(t("mcp.loadFailed"));
+    await wrapper.findAll("button").find(button => button.text() === t("common.retry"))!.trigger("click");
+    await flushPromises();
+    expect(wrapper.find(".el-alert").exists()).toBe(false);
+    expect(wrapper.text()).toContain(t("mcp.noPublishedServices"));
     wrapper.unmount();
   });
 });

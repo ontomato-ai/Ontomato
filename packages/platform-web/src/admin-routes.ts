@@ -21,8 +21,7 @@ export function managerLocation(query: Record<string, unknown>) {
   }
 }
 
-// The capability library has an address of its own now; the old console's links point straight at it.
-const capabilityTab = { path: routes.agentSettingsCapabilities.path };
+// Legacy console links open the matching Skill or MCP page.
 export const legacyAdminRoutes: RouteRecordRaw[] = [
   { path: "/admin/ontology-manager", redirect: (to) => to.query.view === "visual-modeling"
     ? { path: routes.modeling.path, query: managerViewQuery(to.query) }
@@ -34,9 +33,10 @@ export const legacyAdminRoutes: RouteRecordRaw[] = [
   })),
   { path: "/admin/knowledge", redirect: routes.knowledge.path },
   ...["analysis", "system-agents"].map((key) => ({ path: "/admin/" + key, redirect: routes.agents.path })),
-  ...["skills", "skills/analysis", "skills/visualization", "mcp-service"].map((key) => ({
-    path: "/admin/" + key, redirect: capabilityTab,
+  ...["skills", "skills/analysis", "skills/visualization"].map((key) => ({
+    path: "/admin/" + key, redirect: routes.agentSettingsSkills.path,
   })),
+  { path: "/admin/mcp-service", redirect: routes.agentSettingsMcp.path },
   ...["/observe", "/admin/observe"].map((base) => ({
     path: base + "/:page(.*)?",
     redirect: (to: RouteLocation) => ({

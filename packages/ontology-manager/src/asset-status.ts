@@ -8,4 +8,3 @@ export function assetStatusLabel(status: string | undefined, ot: (key: MessageKe
   if (status === "UNUSED") return ot("unused");
   return status || "-";
 }
-

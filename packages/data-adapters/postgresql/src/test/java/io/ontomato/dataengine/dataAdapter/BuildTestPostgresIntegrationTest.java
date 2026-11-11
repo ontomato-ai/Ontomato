@@ -49,6 +49,8 @@ class BuildTestPostgresIntegrationTest {
     var rule=JSON.parseObject(Files.readString(Path.of("../../data-engine-core/src/test/resources/agent-contracts/ontology.json")));
     var rules=mock(JSONRuleDao.class);when(rules.query("contract")).thenAnswer(call->JSON.parseObject(rule.toJSONString()));
     var connection=new DataAdapterConnection();connection.put("url",jdbcUrl+"?currentSchema="+schema+",public");connection.put("user",account[0]);connection.put("password",account[1]);
+    // Persisted enterprise connections can include an unset optional field.
+    connection.put("company",null);
     config.getDataAdapterConnections().put("postgresql",connection);
     var adapter=new PostgreAdapter(connection,rule);
     var queryConfig=new io.ontomato.dataengine.config.DataRagConfig();queryConfig.setDslMightTimeFormats(new String[0]);
@@ -191,11 +193,14 @@ class BuildTestPostgresIntegrationTest {
       function.getParameters().get(0).setValue("contract-person-1");function.getParameters().get(1).setValue(99);
       var action=JSON.parseArray(Files.readString(Path.of("../../data-engine-core/src/test/resources/agent-contracts/actions.json"))).getJSONObject(0).to(io.ontomato.dataengine.bean.action.Action.class);
       action.setDomainId("contract");action.setFunction(function);
+      action.setTarget(new io.ontomato.dataengine.bean.action.ActionTarget("contract_person", "id"));
       var actions=spy(new ActionServiceImpl());doReturn(action).when(actions).queryById(action.getId());
-      ReflectionTestUtils.setField(actions,"identity",identity);ReflectionTestUtils.setField(actions,"abcProgramService",programs);
-      CapabilityGrantLookup actionGrants = (userId, domainId, kind, capabilityId) -> true;
+      ReflectionTestUtils.setField(actions,"abcProgramService",programs);
+      CapabilityGrantLookup actionGrants = mock(CapabilityGrantLookup.class);
+      when(actionGrants.admission(anyString(), anyString(), eq(CapabilityGrantLookup.ACTION), anyString())).thenReturn(CapabilityGrantLookup.Admission.ALL);
       ReflectionTestUtils.setField(actions, "capabilityGrants", actionGrants);
-      ReflectionTestUtils.setField(actions, "preconditions", new ActionPreconditionService(mock(DslService.class), admin, mock(SubjectAttributeLookup.class), ontology));
+      ReflectionTestUtils.setField(actions, "queries", ontology);
+      ReflectionTestUtils.setField(actions, "preconditions", new ActionPreconditionService(mock(DslService.class), admin, ontology));
       ReflectionTestUtils.setField(actions, "identitySnapshots", (IdentitySnapshotLookup) (actor, domain) -> JSONObject.of("principalId", actor.getId()));
       ReflectionTestUtils.setField(actions, "workflowRuns", mock(WorkflowRunResolver.class));
       var result=actions.execute(action.getId(),JSONObject.of("id","contract-person-1","age",99),"en",owner,permission,1,target);

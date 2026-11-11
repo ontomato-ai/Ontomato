@@ -17,10 +17,19 @@ import io.ontomato.dataengine.dao.CheckDaoV2;
 import io.ontomato.dataengine.dao.KnowledgeDao;
 import io.ontomato.dataengine.service.AdminService;
 import io.ontomato.dataengine.service.BusinessConfigService;
-import io.ontomato.dataengine.service.FunctionService;
 import io.ontomato.dataengine.service.LangService;
 import io.ontomato.dataengine.service.MetricViewService;
 import io.ontomato.dataengine.service.QueryJobService;
+import io.ontomato.dataengine.service.MetricSettlementService;
+import io.ontomato.dataengine.service.OntologyQueryService;
+import io.ontomato.dataengine.service.QueryAccessService;
+import io.ontomato.dataengine.service.SubjectValueResolver;
+import io.ontomato.dataengine.service.SubjectAttributeLookup;
+import io.ontomato.dataengine.dao.MetricViewDao;
+import io.ontomato.dataengine.dao.FunctionDao;
+import org.springframework.test.util.ReflectionTestUtils;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.SimpleTransactionStatus;
 import io.ontomato.dataengine.service.agent.OntologyGenerationService;
 import io.ontomato.dataengine.util.DslRuleUtil;
 import java.util.*;
@@ -40,7 +49,6 @@ class CheckServiceV2ImplTest {
 
   @Mock BusinessConfigService businessConfigService;
   @Mock AdminService adminService;
-  @Mock FunctionService functionService;
   @Mock MetricViewService metricViewService;
   @Mock LangService langService;
   @Mock OntologyGenerationService generationService;
@@ -49,13 +57,15 @@ class CheckServiceV2ImplTest {
   @Mock KnowledgeDao knowledgeDao;
   @Mock OntologyGenerationService.Generation describeGeneration;
   @Mock OntologyGenerationService.Generation qualityGeneration;
+  @Mock OntologyGenerationService.Generation settlementGeneration;
+  @Mock OntologyQueryService ontology;
 
   @InjectMocks CheckServiceV2Impl checks;
 
   private MockedStatic<DslRuleUtil> dslRule;
 
   @BeforeEach
-  void setUp() {
+  void setUp() throws Exception {
     dslRule = mockStatic(DslRuleUtil.class);
     dslRule.when(() -> DslRuleUtil.generateWholeDslRule(any())).thenReturn("DSL syntax");
     BusinessConfig config = new BusinessConfig();
@@ -68,6 +78,26 @@ class CheckServiceV2ImplTest {
     when(adminService.getJSONRule(DOMAIN)).thenReturn(rule);
     when(langService.get(anyString(), anyString())).thenReturn("English");
     when(jobs.settle(any())).thenAnswer(invocation -> work(invocation.getArgument(0)));
+    ReflectionTestUtils.setField(checks, "settlements", new MetricSettlementService(
+        metricViewService, ontology, generationService, new SubjectValueResolver(mock(SubjectAttributeLookup.class))));
+    when(generationService.executionAccess(DOMAIN)).thenReturn(
+        new QueryAccessService.Access(new QueryAccessService.GrantUser("reader", DOMAIN), null, null, null, null));
+    when(generationService.settleMetricView(anyString(), anyString(), eq("en"), eq(DOMAIN)))
+        .thenReturn(settlementGeneration);
+    when(settlementGeneration.result()).thenReturn(JSONObject.of("kind", "create", "name", "Employees",
+        "logic", "Count employees", "queryPackage", program().getQueryPackage(), "columnLabels", new JSONObject()));
+    when(settlementGeneration.settle(any())).thenAnswer(invocation -> work(invocation.getArgument(0)));
+    when(metricViewService.generateFromFunction(any())).thenAnswer(invocation -> {
+      MetricView metric = metric(invocation.getArgument(0));
+      metric.setId(null);
+      metric.setStatus(MetricView.STATUS_PENDING_REVIEW);
+      return metric;
+    });
+    when(metricViewService.save(any(), eq("en"))).thenAnswer(invocation -> {
+      MetricView metric = invocation.getArgument(0);
+      metric.setId("metric-1");
+      return metric;
+    });
 
     when(describeGeneration.result())
         .thenReturn(JSONObject.of("meaning", "counts employees", "summary", "employee count"));
@@ -100,7 +130,7 @@ class CheckServiceV2ImplTest {
     assertEquals("How many staff are employed?", check.getFittedQuestion());
     assertTrue(check.getFinished());
     verify(checkDaoV2).save(check);
-    verify(functionService, never()).generateFromABCProgram(any(), any(), any(), any(), any());
+    verify(generationService, never()).settleMetricView(any(), any(), any(), any());
     verify(metricViewService, never()).generateFromFunction(any());
     verify(metricViewService, never()).save(any(), anyString());
     verify(metricViewService, never()).appendBinding(any(), any(), anyString());
@@ -135,117 +165,109 @@ class CheckServiceV2ImplTest {
         IllegalStateException.class,
         () -> checks.check(check, List.of(program()), List.of(), List.of(), List.of(), DOMAIN));
     assertNull(check.getScore());
-    verify(functionService, never()).generateFromABCProgram(any(), any(), any(), any(), any());
+    verify(generationService, never()).settleMetricView(any(), any(), any(), any());
   }
 
   @Test
   void candidateFailureIsLoggedAndTheNextCandidateStillRuns() throws Exception {
-    ABCHarnessCheck check = scoredCheck();
-    when(functionService.generateFromABCProgram(any(), any(), any(), any(), any()))
-        .thenThrow(new IllegalStateException("Function generation failed"))
-        .thenReturn(null);
-
-    assertDoesNotThrow(
-        () ->
-            checks.generateCandidates(
-                check,
-                List.of(program(), program()),
-                JSONArray.of(
-                    JSONObject.of("kind", "package"), JSONObject.of("kind", "package")),
-                DOMAIN));
-
-    verify(functionService, times(2))
-        .generateFromABCProgram(any(), any(), any(), any(), any());
-    verify(metricViewService, never()).save(any(), anyString());
-    verify(metricViewService, never()).appendBinding(any(), any(), anyString());
+    when(generationService.settleMetricView(anyString(), anyString(), eq("en"), eq(DOMAIN)))
+        .thenThrow(new IllegalStateException("Metric generation failed"))
+        .thenReturn(settlementGeneration);
+    assertDoesNotThrow(() -> checks.generateCandidates(scoredCheck(), List.of(program(), program()),
+        JSONArray.of(packageRecipe(), packageRecipe()), DOMAIN));
+    verify(generationService, times(2)).settleMetricView(anyString(), anyString(), eq("en"), eq(DOMAIN));
+    verify(metricViewService).save(any(), eq("en"));
+    verify(metricViewService, never()).saveAdoptedCandidate(any(), any(), anyString());
   }
 
   @Test
   void packageRecipeCreatesAFunctionCandidateFromTheWholePackage() throws Exception {
     ABCHarnessCheck check = scoredCheck();
-    Function function = function();
-    MetricView candidate = metric(function);
-    when(functionService.generateFromABCProgram(any(), any(), any(), any(), any()))
-        .thenReturn(function);
-    when(functionService.save(function, "en")).thenReturn(function);
-    when(metricViewService.generateFromFunction(function)).thenReturn(candidate);
-    when(functionService.generateBindingName(any(), any(), any(), any(), any()))
-        .thenReturn("Employees in 2026");
-
-    checks.generateCandidates(
-        check, List.of(program()), JSONArray.of(JSONObject.of("kind", "package")), DOMAIN);
-
-    verify(functionService).save(function, "en");
-    verify(metricViewService).save(candidate, "en");
-    verify(metricViewService).appendBinding(eq("metric-1"), any(), eq(DOMAIN));
+    checks.generateCandidates(check, List.of(program()), JSONArray.of(packageRecipe()), DOMAIN);
+    ArgumentCaptor<String> prompt = ArgumentCaptor.forClass(String.class);
+    verify(generationService).settleMetricView(anyString(), prompt.capture(), eq("en"), eq(DOMAIN));
+    assertTrue(prompt.getValue().contains(program().getQueryPackage().toJSONString()));
+    ArgumentCaptor<MetricView> saved = ArgumentCaptor.forClass(MetricView.class);
+    verify(metricViewService).save(saved.capture(), eq("en"));
+    assertEquals("reader", saved.getValue().getCreatedBy());
+    assertEquals(MetricView.STATUS_PENDING_REVIEW, saved.getValue().getStatus());
+    assertFalse(saved.getValue().isAdopted());
+    assertEquals(90.0, saved.getValue().getOriginCheckResult().getScore());
+    assertEquals(1, saved.getValue().getBindings().size());
+    assertEquals(new JSONObject(), saved.getValue().getBindings().getFirst().getParameters());
+    assertEquals(program().getQueryPackage(), saved.getValue().getFunction().getQueryPackage());
   }
 
   @Test
   void metricRecipeAppendsOnlyABinding() throws Exception {
-    ABCHarnessCheck check = scoredCheck();
-    Function function = function();
-    MetricView metric = metric(function);
-    when(metricViewService.queryById("metric-1", DOMAIN)).thenReturn(metric);
-    when(functionService.generateBindingName(
-            anyString(), anyList(), eq(function), anyString(), anyString()))
-        .thenReturn("Employees in 2026");
-    JSONObject recipe =
-        JSONObject.of(
-            "kind", "metric",
-            "metricId", "metric-1",
-            "parameters", JSONObject.of("year", "2026"));
-
-    checks.generateCandidates(
-        check, List.of(program()), JSONArray.of(recipe), DOMAIN);
-
+    MetricView metric = metric(function());
+    when(ontology.metric(eq("metric-1"), eq("revision-1"), any())).thenReturn(metric);
+    when(metricViewService.appendBinding(eq("metric-1"), any(), eq(DOMAIN))).thenReturn(metric);
+    checks.generateCandidates(scoredCheck(), List.of(program()), JSONArray.of(metricRecipe()), DOMAIN);
     ArgumentCaptor<MetricViewBinding> binding = ArgumentCaptor.forClass(MetricViewBinding.class);
     verify(metricViewService).appendBinding(eq("metric-1"), binding.capture(), eq(DOMAIN));
-    assertEquals("Employees in 2026", binding.getValue().getName());
+    assertEquals(QUESTION, binding.getValue().getName());
     assertEquals("2026", binding.getValue().getParameters().getString("year"));
     assertTrue(binding.getValue().getMatchQuestions().contains(QUESTION));
-    verify(functionService, never()).generateFromABCProgram(any(), any(), any(), any(), any());
+    verify(generationService, never()).settleMetricView(any(), any(), any(), any());
     verify(metricViewService, never()).generateFromFunction(any());
     verify(metricViewService, never()).save(any(), anyString());
   }
 
   @Test
   void metricRecipeSkipsAnIdenticalBinding() throws Exception {
-    ABCHarnessCheck check = scoredCheck();
-    Function function = function();
-    MetricView metric = metric(function);
+    // Deduplication moved to the locked metric write; exercise that owner instead of a caller-side copy.
+    MetricView metric = metric(function());
     MetricViewBinding existing = new MetricViewBinding();
+    existing.setId("binding-1");
     existing.setName("Existing 2026");
     existing.setParameters(JSONObject.of("year", "2026"));
     metric.setBindings(new ArrayList<>(List.of(existing)));
-    when(metricViewService.queryById("metric-1", DOMAIN)).thenReturn(metric);
-    JSONObject recipe =
-        JSONObject.of(
-            "kind", "metric",
-            "metricId", "metric-1",
-            "parameters", JSONObject.of("year", "2026"));
-
-    checks.generateCandidates(
-        check, List.of(program()), JSONArray.of(recipe), DOMAIN);
-
-    verify(functionService, never()).generateBindingName(any(), any(), any(), any(), any());
-    verify(metricViewService, never()).appendBinding(any(), any(), anyString());
+    MetricViewDao dao = mock(MetricViewDao.class);
+    FunctionDao functions = mock(FunctionDao.class);
+    PlatformTransactionManager transactions = mock(PlatformTransactionManager.class);
+    when(transactions.getTransaction(any())).thenReturn(new SimpleTransactionStatus());
+    when(dao.queryById("metric-1", DOMAIN)).thenReturn(new Object[] {metric, "function-1"});
+    when(functions.queryById("function-1")).thenReturn(metric.getFunction());
+    MetricViewServiceImpl writer = new MetricViewServiceImpl();
+    ReflectionTestUtils.setField(writer, "metricViewDao", dao);
+    ReflectionTestUtils.setField(writer, "functionDao", functions);
+    ReflectionTestUtils.setField(writer, "transactionManager", transactions);
+    ReflectionTestUtils.setField(writer, "subjectValues", new SubjectValueResolver(mock(SubjectAttributeLookup.class)));
+    ReflectionTestUtils.setField(checks, "settlements", new MetricSettlementService(
+        writer, ontology, generationService, new SubjectValueResolver(mock(SubjectAttributeLookup.class))));
+    when(ontology.metric(eq("metric-1"), eq("revision-1"), any())).thenReturn(metric);
+    checks.generateCandidates(scoredCheck(), List.of(program()), JSONArray.of(metricRecipe()), DOMAIN);
+    verify(dao).lock("metric-1", DOMAIN);
+    verify(dao, never()).save(any());
+    assertEquals(List.of(existing), metric.getBindings());
+    verify(generationService, never()).settleMetricView(any(), any(), any(), any());
   }
 
   @Test
   void metricRecipeWithABindingIdAppendsNothing() throws Exception {
-    ABCHarnessCheck check = scoredCheck();
-    JSONObject recipe =
-        JSONObject.of(
-            "kind", "metric",
-            "metricId", "metric-1",
-            "bindingId", "binding-1",
-            "parameters", JSONObject.of("year", "2026"));
-
-    checks.generateCandidates(
-        check, List.of(program()), JSONArray.of(recipe), DOMAIN);
-
-    verify(metricViewService, never()).queryById(anyString(), anyString());
+    MetricView metric = metric(function());
+    MetricViewBinding existing = new MetricViewBinding();
+    existing.setId("binding-1");
+    existing.setName("Existing 2026");
+    existing.setParameters(JSONObject.of("year", "2026"));
+    metric.setBindings(new ArrayList<>(List.of(existing)));
+    when(ontology.metric(eq("metric-1"), eq("revision-1"), any())).thenReturn(metric);
+    JSONObject recipe = metricRecipe();
+    recipe.put("bindingId", "binding-1");
+    checks.generateCandidates(scoredCheck(), List.of(program()), JSONArray.of(recipe), DOMAIN);
     verify(metricViewService, never()).appendBinding(any(), any(), anyString());
+    verify(metricViewService, never()).save(any(), anyString());
+    verify(generationService, never()).settleMetricView(any(), any(), any(), any());
+  }
+
+  private static JSONObject packageRecipe() {
+    return JSONObject.of("kind", "package", "package", program().getQueryPackage(), "parameters", new JSONObject());
+  }
+
+  private static JSONObject metricRecipe() {
+    return JSONObject.of("kind", "metric", "metricId", "metric-1", "revision", "revision-1",
+        "parameters", JSONObject.of("year", "2026"));
   }
 
   private static <T> T work(Object value) throws Exception {

@@ -54,7 +54,9 @@ class PlatformScheduleTest extends PostgresTestDatabase {
   private OntologyScheduleApplication ontology;
   private PlatformTasks tasks;
   private UserDetail user;
-  private ActionService actions;
+  private ActionServiceImpl actions;
+  private CapabilityGrantLookup grantsForActions;
+  private OntologyQueryService targetQueries;
   private ABCProgramServiceImpl programs;
   private OntologyScheduleReferences references;
   private MockMvc http;
@@ -84,8 +86,11 @@ class PlatformScheduleTest extends PostgresTestDatabase {
     when(identity.issueKey(user)).thenReturn("test-key");
     when(identity.accepts("test-key", "sales", "alice")).thenReturn(true);
     credentials = new TaskCredentials(store, identity, "test-seal");
-    actions = mock(ActionService.class);
-    when(actions.queryList(anyString(), isNull(), isNull(), anyString())).thenReturn(List.of());
+    actions = spy(new ActionServiceImpl());
+    doReturn(List.of()).when(actions).queryList(anyString(), isNull(), isNull(), anyString());
+    grantsForActions = mock(CapabilityGrantLookup.class);
+    when(grantsForActions.admission(anyString(), anyString(), anyString(), anyString())).thenReturn(CapabilityGrantLookup.Admission.ALL);
+    targetQueries = mock(OntologyQueryService.class);
     programs = new ABCProgramServiceImpl();
     var configs = mock(BusinessConfigService.class);
     var config = new BusinessConfig();
@@ -93,7 +98,8 @@ class PlatformScheduleTest extends PostgresTestDatabase {
     when(configs.get("sales")).thenReturn(config);
     ontology =
         new OntologyScheduleApplication(
-            functions, actions, programs, configs, identities, references);
+            functions, actions, programs, configs, identities, references, grantsForActions);
+    wireActionExecutor();
     var remote = mock(WorkbenchScheduleApplications.class);
     applications = scheduleApplications(List.of(ontology), remote);
     tasks = new PlatformTasks(store, identities, identity, credentials, applications, transactions);
@@ -106,30 +112,23 @@ class PlatformScheduleTest extends PostgresTestDatabase {
         "# ontomato-python:2\nprint('done')");
   }
 
-  private ActionServiceImpl manualActions(Action action) throws Exception {
-    var manual = spy(new ActionServiceImpl());
-    doReturn(action).when(manual).queryById(action.getId());
-    ReflectionTestUtils.setField(manual, "identity", identities);
-    ReflectionTestUtils.setField(manual, "abcProgramService", programs);
-    // Edition-owned interfaces are doubles here; the OSS app allows every capability.
-    var grants = mock(CapabilityGrantLookup.class);
-    when(grants.allows(anyString(), anyString(), anyString(), anyString())).thenReturn(true);
-    ReflectionTestUtils.setField(manual, "capabilityGrants", grants);
-    ReflectionTestUtils.setField(
-        manual,
-        "preconditions",
-        new ActionPreconditionService(
-            mock(DslService.class), mock(AdminService.class), mock(SubjectAttributeLookup.class),
-            mock(OntologyQueryService.class)));
+  private void wireActionExecutor() {
+    ReflectionTestUtils.setField(actions, "abcProgramService", programs);
+    ReflectionTestUtils.setField(actions, "capabilityGrants", grantsForActions);
+    ReflectionTestUtils.setField(actions, "queries", targetQueries);
+    ReflectionTestUtils.setField(actions, "preconditions", new ActionPreconditionService(
+        mock(DslService.class), mock(AdminService.class), targetQueries));
+    var messages = mock(LangService.class);
+    when(messages.get(anyString(), eq("Action.targetOutsideScope"))).thenReturn("Target is not readable or is outside the granted scope");
+    ReflectionTestUtils.setField(actions, "langService", messages);
     var snapshots = mock(IdentitySnapshotLookup.class);
     when(snapshots.snapshot(any(), anyString()))
         .thenAnswer(call -> com.alibaba.fastjson2.JSONObject.of(
             "principalId", ((io.ontomato.dataengine.core.bean.User) call.getArgument(0)).getId(),
             "domainId", call.getArgument(1), "roles", List.of()));
-    ReflectionTestUtils.setField(manual, "identitySnapshots", snapshots);
+    ReflectionTestUtils.setField(actions, "identitySnapshots", snapshots);
     ReflectionTestUtils.setField(
-        manual, "workflowRuns", new WorkflowRunResolver(mock(WorkflowDao.class)));
-    return manual;
+        actions, "workflowRuns", new WorkflowRunResolver(mock(WorkflowDao.class)));
   }
 
   private JsonNode definition(String execution) {
@@ -542,11 +541,11 @@ class PlatformScheduleTest extends PostgresTestDatabase {
     action.setDomainId("sales");
     action.setStatus(Action.STATUS_PUBLISHED);
     action.setFunction(functions.queryById("f"));
-    when(actions.queryById("a")).thenReturn(action);
+    doReturn(action).when(actions).queryById("a");
     when(actions.queryList(Action.STATUS_PUBLISHED, null, null, "sales"))
         .thenReturn(List.of(action));
     jdbc.update("INSERT INTO action VALUES('a')");
-    var manual = manualActions(action);
+    var manual = actions;
     String current = "# ontomato-python:2\nprint('current')", legacy = "print('retired')";
     for (String locale : List.of("en", "zh-CN"))
       for (String target : List.of("action:a", "function:f")) {
@@ -652,11 +651,11 @@ class PlatformScheduleTest extends PostgresTestDatabase {
     action.setName("Action");
     action.setStatus(Action.STATUS_PUBLISHED);
     action.setFunction(functions.queryById("f"));
-    when(actions.queryById("a")).thenReturn(action);
+    doReturn(action).when(actions).queryById("a");
     when(actions.queryList(Action.STATUS_PUBLISHED, null, null, "sales"))
         .thenReturn(List.of(action));
     jdbc.update("INSERT INTO action VALUES('a')");
-    var manual = manualActions(action);
+    var manual = actions;
     for (Exception failure :
         List.of(
             new java.io.IOException(
@@ -722,6 +721,7 @@ class PlatformScheduleTest extends PostgresTestDatabase {
     var claims = new AtomicReference<com.alibaba.fastjson2.JSONObject>();
     var fixtureError = new AtomicReference<Throwable>();
     var failureStderr = new AtomicReference<String>();
+    var deliveredIdentity = new AtomicReference<com.alibaba.fastjson2.JSONObject>();
     var fixture = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
     fixture.createContext(
         "/v1/code-executions",
@@ -732,6 +732,9 @@ class PlatformScheduleTest extends PostgresTestDatabase {
               var body =
                   com.alibaba.fastjson2.JSON.parseObject(exchange.getRequestBody().readAllBytes());
               var files = body.getJSONArray("files");
+              deliveredIdentity.set(files.stream().map(com.alibaba.fastjson2.JSONObject::from)
+                  .filter(f -> "identity.json".equals(f.getString("path")))
+                  .map(f -> com.alibaba.fastjson2.JSON.parseObject(f.getString("content"))).findFirst().orElse(null));
               var parameterFile =
                   files.stream()
                       .map(com.alibaba.fastjson2.JSONObject::from)
@@ -811,7 +814,7 @@ class PlatformScheduleTest extends PostgresTestDatabase {
       action.setDomainId("sales");
       action.setStatus(Action.STATUS_PUBLISHED);
       action.setFunction(functions.queryById("f"));
-      when(actions.queryById("a")).thenReturn(action);
+      doReturn(action).when(actions).queryById("a");
       when(actions.queryList(Action.STATUS_PUBLISHED, null, null, "sales"))
           .thenReturn(List.of(action));
       jdbc.update("INSERT INTO action VALUES('a')");
@@ -858,7 +861,11 @@ class PlatformScheduleTest extends PostgresTestDatabase {
         assertNull(fixtureError.get(), String.valueOf(fixtureError.get()));
         assertEquals("completed", result.status(), String.valueOf(result.error()));
         assertEquals("done", result.result());
-        assertNotNull(claims.get());
+        assertEquals(runId.toString(), claims.get().getString("runId"));
+        if (target.equals("action:a")) {
+          assertEquals("alice", deliveredIdentity.get().getString("principalId"));
+          assertEquals("sales", deliveredIdentity.get().getString("domainId"));
+        } else assertNull(deliveredIdentity.get());
         sample("platformTaskRunSchema", result.wire());
         assertTrue(references.references("f"));
       }
@@ -867,7 +874,7 @@ class PlatformScheduleTest extends PostgresTestDatabase {
               + "  File \"/private/program.py\", line 7, in main\n"
               + "    raise ValueError('X-API-Key: synthetic-secret')\n"
               + "ValueError: private-password\n");
-      var manual = manualActions(action);
+      var manual = actions;
       for (String locale : List.of("en", "zh-CN"))
         for (String target : List.of("action:a", "function:f")) {
           UUID task = UUID.randomUUID(), run = UUID.randomUUID();
@@ -956,6 +963,39 @@ class PlatformScheduleTest extends PostgresTestDatabase {
     assertEquals(
         "TASK_RUNNING",
         assertThrows(ScheduleException.class, () -> tasks.delete(id, "\"1\"")).code);
+  }
+
+  @Test
+  void anActionOnlyCreatorCanScheduleButCannotExecuteAnUnreadableTarget() throws Exception {
+    jdbc.update("UPDATE function SET parameters=? WHERE id='f'",
+        "[{\"name\":\"order_id\",\"type\":\"TYPE_STRING\"}]");
+    var action = new Action();
+    action.setId("a"); action.setDomainId("sales"); action.setStatus(Action.STATUS_PUBLISHED);
+    action.setTarget(new io.ontomato.dataengine.bean.action.ActionTarget("Order", "order_id"));
+    action.setFunction(functions.queryById("f")); action.setName("Approve order");
+    doReturn(action).when(actions).queryById("a");
+    doReturn(List.of(action)).when(actions).queryList(Action.STATUS_PUBLISHED, null, null, "sales");
+    jdbc.update("INSERT INTO action VALUES('a')");
+    doThrow(new org.springframework.web.server.ResponseStatusException(org.springframework.http.HttpStatus.FORBIDDEN))
+        .when(identities).requireActionExecutionAccess("alice", "sales");
+    var actor = new ScheduleApplication.Actor(user, identity.dataPermission("sales", "alice"), null, null, "en");
+    ontology.authorize(actor);
+    var choice = ontology.form(new ScheduleApplication.FormInput(object(), null, null, "UTC"), actor);
+    var options = choice.path("fields").get(0).path("options");
+    assertEquals(1, options.size()); assertEquals("action:a", options.get(0).path("value").asText());
+    clearInvocations(identities);
+    var def = (com.fasterxml.jackson.databind.node.ObjectNode)definition("action:a");
+    def.set("content", object("execution","action:a","parameter:order_id","001"));
+    var task = UUID.randomUUID(); var run = UUID.randomUUID();
+    tasks.create(task,def,"en",true); tasks.manual(task,run,"en");
+    var scheduler = new PlatformScheduler(store,transactions,applications,credentials,identity,mock(TaskMail.class));
+    try { scheduler.dispatch(run); } finally { scheduler.stop(); }
+    var recorded = store.run(run);
+    assertEquals("failed", recorded.status());
+    assertEquals("Target is not readable or is outside the granted scope", recorded.error().message());
+    verify(identities, never()).requireActionExecutionAccess("alice", "sales");
+    verify(targetQueries).actionTargetExists(eq(action.getTarget()), eq("001"), any(), any());
+    verify(actions).executeScheduled(eq(action), any(), eq("en"), eq(user), any(), eq(1), eq(run));
   }
 
   @Test

@@ -29,6 +29,17 @@ public class MetricView {
 	private Long modifyTimestamp;
 	private Set<String> matchQuestions;
 	private String domainId;
+    /** Written by workflow publication, not supplied by the metric author. */
+    public record WorkflowSource(String workflowId, int version, Purpose purpose) {
+        public enum Purpose { pending, detail }
+    }
+    private WorkflowSource workflowSource;
+    @com.alibaba.fastjson2.annotation.JSONField(serialize = false, deserialize = false)
+    @com.fasterxml.jackson.annotation.JsonIgnore
+    public boolean isWorkflowPending() {
+        return workflowSource != null && workflowSource.purpose() == WorkflowSource.Purpose.pending;
+    }
+
 	private String originQuestion;
 	private OriginCheckResult originCheckResult;
 
@@ -37,5 +48,8 @@ public class MetricView {
 
 	/** The subject who last published it; publication is the review moment. */
 	private String reviewedBy;
+
+	/** Adopted candidates remain until review, independently of their consumers. */
+	private boolean adopted;
 	
 }

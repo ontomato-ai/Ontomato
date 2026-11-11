@@ -14,6 +14,7 @@ export {
   serviceLocales,
   serviceNavigation,
   ontologyWorkspacePages,
+  systemIntegrationPages,
   startPage,
   startShellPreferences,
   stopPage,

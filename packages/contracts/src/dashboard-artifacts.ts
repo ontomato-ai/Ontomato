@@ -2,7 +2,7 @@ import { z } from "zod";
 export const dashboardSourceSchema = z.object({
   sessionId: z.string().uuid(),
   datasetArtifactIds: z.array(z.string().uuid()).min(1),
-});
+}).strict();
 export const dashboardAddArtifactSchema = z
   .object({
     sessionId: z.string().uuid(),
@@ -12,3 +12,4 @@ export const dashboardAddArtifactSchema = z
   })
   .strict();
 export type DashboardAddArtifact = z.infer<typeof dashboardAddArtifactSchema>;
+export type DashboardSource = z.infer<typeof dashboardSourceSchema>;

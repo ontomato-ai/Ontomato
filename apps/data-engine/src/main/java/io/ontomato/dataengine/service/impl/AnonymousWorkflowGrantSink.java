@@ -1,5 +1,6 @@
 package io.ontomato.dataengine.service.impl;
 
+import io.ontomato.dataengine.bean.workflow.GrantScope;
 import io.ontomato.dataengine.service.WorkflowGrantSink;
 import org.springframework.stereotype.Component;
 
@@ -19,7 +20,7 @@ public class AnonymousWorkflowGrantSink implements WorkflowGrantSink {
             String roleCode,
             String capabilityKind,
             String capabilityId,
-            int workflowVersion) {
+            int workflowVersion, Integer stepNo, GrantScope scope) {
         // No roles to grant to.
     }
 

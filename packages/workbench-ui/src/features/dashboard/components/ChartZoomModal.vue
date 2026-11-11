@@ -13,7 +13,7 @@
     <EChart v-if="mode === 'chart' && option" :option="modalOption" :theme="theme" height="100%" />
     <TablePreview
       v-if="mode === 'table'"
-      :table="chartTable(tabular, maxRows)"
+      :table="table"
       height="100%"
       :empty-text="t('dashboard.noDataToDisplay')"
     />
@@ -27,15 +27,14 @@ import { TablePreview } from "@ontomato/foundation-ui/preview";
 import { chartBrandColors } from "@ontomato/contracts/chart-presentation";
 import { useI18n } from "vue-i18n";
 import { workbenchContent } from "../../../content";
-import { chartTable } from "./utils/chartTabular";
 
 const props = defineProps({
   open: { type: Boolean, default: false },
   mode: { type: String, default: "chart" },
   title: { type: String, default: "" },
   option: { type: Object, default: null },
-  tabular: { type: Object, default: null },
-  maxRows: { type: Number, default: 500 },
+  /** The card's data as the table shows it. */
+  table: { type: Object, required: true },
 });
 
 const emit = defineEmits(["close"]);

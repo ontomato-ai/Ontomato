@@ -16,15 +16,8 @@ import org.springframework.stereotype.Service;
 /**
  * Evaluates an Action's {@code submissionCriteria} before the program runs.
  *
- * <p>The criteria are the whole-action preconditions: conditions over the parameters and the state of
- * the object they identify, evaluated once at the top of the action. They are the only place an action
- * states <em>when</em> it may run, so a caller that passes an object id it does not own is rejected
- * here rather than inside the program.</p>
- *
- * <p>Each condition compares one attribute of the object its {@code objectParameter} names against a
- * value. The value may stay literal, or reference the acting subject as {@code {{account.<field>}}} or
- * {@code {{principal.<attribute>}}} — that reference is what makes "only my own report" expressible,
- * because it reads the subject from the authenticated request and never from the caller's parameters.</p>
+ * <p>These conditions compare stored business state with literal values. Authority over the
+ * declared target belongs to capability grants and is checked before evaluating these conditions.</p>
  *
  * <p>Conditions the author declared {@code unrepresentable} stay in the program; they are not evaluated
  * here and never silently treated as satisfied.</p>
@@ -33,38 +26,36 @@ import org.springframework.stereotype.Service;
 public class ActionPreconditionService {
 
     /** The criteria of an action whose preconditions hold, or an empty result when it declares none. */
-    public record Verdict(boolean satisfied, List<String> violations, List<Proven> proven) {
-        static Verdict pass() {
-            return new Verdict(true, List.of(), List.of());
-        }
+    public record Verdict(boolean satisfied, List<String> violations) {
+        static Verdict pass() { return new Verdict(true, List.of()); }
+    }
 
-        /** A verdict that carries no proof: every caller that only asks "held or not" keeps working. */
-        public Verdict(boolean satisfied, List<String> violations) {
-            this(satisfied, violations, List.of());
+    /** Audience restrictions belong to grants, never to business-state conditions. */
+    public static void requireBusinessConditions(JSONObject criteria) {
+        if (criteria == null || criteria.getJSONArray("conditions") == null) return;
+        var conditions = criteria.getJSONArray("conditions");
+        for (int i = 0; i < conditions.size(); i++) {
+            var condition = conditions.getJSONObject(i);
+            if (hasSubject(condition.get("value")))
+                throw new IllegalArgumentException("submissionCriteria.conditions[" + i + "].value (" + condition.getString("field")
+                        + "): move the current-user comparison to an Action grant scope");
         }
     }
 
-    /**
-     * One object this evaluation actually read and found in the state the action declared.
-     *
-     * <p>This is the server's own reading, not the caller's claim: the identification came from the
-     * parameters, but every condition the author declared about it had to hold against stored state.
-     * That is what lets a program be told "this is the run you are working on" without trusting a
-     * parameter it could have made up — the pair is recorded only when the row proved out.</p>
-     */
-    public record Proven(String className, String objectId) {}
+    private static boolean hasSubject(Object value) {
+        if (value instanceof List<?> items) return items.stream().anyMatch(ActionPreconditionService::hasSubject);
+        return value instanceof String text && SubjectReference.parse(text) != null;
+    }
 
     private final DslService queries;
     private final OntologyQueryService scopedQueries;
     private final AdminService admin;
-    private final SubjectAttributeLookup subjects;
 
     public ActionPreconditionService(
-            DslService queries, AdminService admin, SubjectAttributeLookup subjects, OntologyQueryService scopedQueries) {
+            DslService queries, AdminService admin, OntologyQueryService scopedQueries) {
         this.scopedQueries = scopedQueries;
         this.queries = queries;
         this.admin = admin;
-        this.subjects = subjects;
     }
 
     /**
@@ -89,31 +80,13 @@ public class ActionPreconditionService {
                 (List<Map<String, Object>>) jsonRule.get("classDef");
 
         List<String> violations = new ArrayList<>();
-        List<Proven> proven = new ArrayList<>();
         for (Object value : conditions) {
             JSONObject condition = JSONObject.from(value);
             if (!holds(condition, parameters, user, permission, classDefs, target)) {
                 violations.add(message(condition));
-                continue;
             }
-            proven.add(proven(condition, parameters, classDefs));
         }
-        if (!violations.isEmpty()) return new Verdict(false, List.copyOf(violations));
-        List<Proven> distinct = new ArrayList<>();
-        for (Proven item : proven) {
-            if (item != null && !distinct.contains(item)) distinct.add(item);
-        }
-        return new Verdict(true, List.of(), List.copyOf(distinct));
-    }
-
-    /** The object one satisfied condition was about, or null when it names none this evaluation read. */
-    private Proven proven(
-            JSONObject condition, JSONObject parameters, List<Map<String, Object>> classDefs) {
-        String className = normalize(condition.getString("className"), classDefs);
-        Object identification =
-                parameters == null ? null : parameters.get(condition.getString("objectParameter"));
-        if (className == null || identification == null) return null;
-        return new Proven(className, String.valueOf(identification));
+        return new Verdict(violations.isEmpty(), List.copyOf(violations));
     }
 
     /**
@@ -133,7 +106,7 @@ public class ActionPreconditionService {
         String operator = operator(condition.getString("operator"));
         if (className == null || field == null || operator == null) return false;
 
-        Object expected = subjectValue(condition.get("value"), user);
+        Object expected = condition.get("value");
         Object identification = parameters == null ? null : parameters.get(objectParameter);
         if (identification == null) return false;
 
@@ -289,37 +262,6 @@ public class ActionPreconditionService {
             }
         }
         return null;
-    }
-
-    /** A declared value, with subject references resolved from the authenticated request. */
-    private Object subjectValue(Object declared, User user) {
-        if (declared instanceof String text) {
-            return isSubjectReference(text) ? resolveReference(text, user) : text;
-        }
-        if (declared instanceof List<?> items) {
-            List<Object> resolved = new ArrayList<>(items.size());
-            for (Object item : items) resolved.add(subjectValue(item, user));
-            return resolved;
-        }
-        return declared;
-    }
-
-    /**
-     * Whether a value is exactly one {@code {{source.attribute}}} reference. A reference inside longer
-     * text is a template, not a subject value; comparing a template is never what "only my own report"
-     * means, so it stays literal.
-     */
-    private boolean isSubjectReference(String text) {
-        return SubjectReference.parse(text) != null;
-    }
-
-    /**
-     * Resolve a subject reference. A subject that has no such attribute or has cleared it yields null,
-     * which can never equal an object value: an unresolvable reference must not turn into a match.
-     */
-    private Object resolveReference(String text, User user) {
-        SubjectReference.Parsed reference = SubjectReference.parse(text);
-        return reference == null ? text : subjects.attribute(user, reference.source(), reference.attribute());
     }
 
     /** The message a violation reports; the author supplies it, otherwise it names the failed check. */

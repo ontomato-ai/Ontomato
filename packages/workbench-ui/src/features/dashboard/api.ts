@@ -2,6 +2,10 @@ import type {
   DashboardListItem,
   DashboardDetail,
   DashboardGroup,
+  DashboardCardData,
+  DashboardMetricReference,
+  DashboardParameterForm,
+  DashboardSaveParameters,
 } from "@ontomato/contracts/dashboard";
 import {
   dashboardAddArtifactSchema,
@@ -164,4 +168,24 @@ export async function getConditionsFromDsl(dsl: Record<string, unknown>) {
     return raw[0];
   }
   return Array.isArray(raw) ? raw : [];
+}
+
+/** One metric-reference card's current result: the metric's output columns and rows, read by the card's id. */
+export async function queryDashboardCard(dashboardId: string, cardId: string): Promise<DashboardCardData> {
+  const json = await nodeApiPost("/dashboards/query-card", { dashboardId, cardId });
+  return json.data;
+}
+
+/** The metric's parameter form for one card, filled with the card's saved values. */
+export async function fetchCardParameterForm(dashboardId: string, cardId: string): Promise<DashboardParameterForm> {
+  const json = await nodeApiPost("/dashboards/card-parameter-form", { dashboardId, cardId });
+  return json.data;
+}
+
+/** Saves the parameters the reader edited on one card; the metric itself and its bindings stay as they are. */
+export async function saveCardParameters(
+  input: DashboardSaveParameters
+): Promise<{ cardId: string; query: DashboardMetricReference; revision: string }> {
+  const json = await nodeApiPost("/dashboards/save-card-parameters", input);
+  return json.data;
 }

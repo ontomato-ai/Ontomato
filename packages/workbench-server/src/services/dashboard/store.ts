@@ -3,6 +3,9 @@ import type {
   DashboardGroup,
   DashboardListItem,
 } from "@ontomato/contracts/dashboard";
+import { metricReferenceChartSchema, metricReferenceMetricSchema } from "@ontomato/contracts/dashboard";
+import { HttpError } from "../../utils/errors";
+import type { z } from "zod";
 import { randomUUID } from "node:crypto";
 import { t, tApp } from "../../i18n";
 import pg from "pg";
@@ -17,12 +20,20 @@ function getPool(): pg.Pool {
   return getPostgresPool();
 }
 
+function readReference<T>(schema: z.ZodType<T>, value: unknown): T {
+  const parsed = schema.safeParse(value);
+  if (!parsed.success) throw new HttpError(500, "Invalid saved metric card", "INVALID_CARD_DATA", { issues: parsed.error.issues });
+  return parsed.data;
+}
+
 function ensureGroups(groups: DashboardGroup[] | undefined): DashboardGroup[] {
   return (Array.isArray(groups) ? groups : []).map((group) => ({
     id: String(group?.id || randomUUID()),
     title: String(group?.title || "").trim(),
     charts: Array.isArray(group?.charts)
-      ? group.charts.map((chart) => ({
+      ? group.charts.map((chart) => {
+          if (chart && "query" in chart) return readReference(metricReferenceChartSchema, chart);
+          return ({
           ...chart,
           id: String(chart?.id || randomUUID()),
           name: String(chart?.name || "").trim(),
@@ -31,10 +42,13 @@ function ensureGroups(groups: DashboardGroup[] | undefined): DashboardGroup[] {
             chart?.dsl && typeof chart.dsl === "object" && !Array.isArray(chart.dsl)
               ? chart.dsl
               : {},
-        }))
+        });
+        })
       : [],
     metrics: Array.isArray(group?.metrics)
-      ? group.metrics.map((metric) => ({
+      ? group.metrics.map((metric) => {
+          if (metric && "query" in metric) return readReference(metricReferenceMetricSchema, metric);
+          return ({
           ...metric,
           id: String(metric?.id || randomUUID()),
           name: String(metric?.name || "").trim(),
@@ -42,7 +56,8 @@ function ensureGroups(groups: DashboardGroup[] | undefined): DashboardGroup[] {
             metric?.dsl && typeof metric.dsl === "object" && !Array.isArray(metric.dsl)
               ? metric.dsl
               : {},
-        }))
+        });
+        })
       : [],
   }));
 }
@@ -119,7 +134,7 @@ export async function createDashboard(params: {
     name: String(params.name || "").trim() || tApp("queryFixed.175"),
     createdAt: now,
     updatedAt: now,
-    groups: ensureGroups(params.groups),
+    groups: params.groups ?? [],
   };
   if (params.source) {
     detail.source = params.source;
@@ -146,7 +161,6 @@ export async function createDashboard(params: {
 export async function saveDashboard(ownerId: string, domainId: string, detail: DashboardDetail) {
   const pool = getPool();
   detail.updatedAt = Date.now();
-  detail.groups = ensureGroups(detail.groups);
   const result = await pool.query(
     `UPDATE ${qualifiedTable("dashboards")}
      SET name = $1, groups = $2, source = $3, updated_at = $4

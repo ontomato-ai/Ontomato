@@ -86,3 +86,49 @@ test("standalone skill distributions use the one analyst transport source", asyn
     }
   }
 });
+
+test("pending selects generated revisions and never substitutes a DSL for missing or failed grants", async () => {
+  const calls = [], logs = [];
+  let phase = "found";
+  const server = createServer(async (req, res) => {
+    let data = ""; for await (const chunk of req) data += chunk;
+    const body = JSON.parse(data); calls.push([req.url, body]); res.setHeader("content-type", "application/json");
+    const owned = { id: "metric", name: "Renamed workflow", revision: "rev", workflowSource: {workflowId:"wf",purpose:"pending"} };
+    if (req.url.endsWith("/search")) res.end(JSON.stringify({ items: phase === "missing" ? [] :
+      [{id:"manual", name:"我的待办 · Renamed workflow"}, owned], nextCursor:null }));
+    else if (req.url.endsWith("/execute") && phase === "error") { res.statusCode = 403; res.end('{"error":"grant lookup refused"}'); }
+    else if (req.url.endsWith("/execute")) res.end('{"rows":[{"id":"a"}]}');
+    else { res.statusCode = 404; res.end('{"error":"Unexpected request"}'); }
+  });
+  await new Promise(resolve => server.listen(0,"127.0.0.1",resolve));
+  const cfg = { ontologyUrl: `http://127.0.0.1:${server.address().port}` };
+  const print = console.log;
+  try {
+    console.log = s => logs.push(JSON.parse(s));
+    await analystCommand(cfg, ["pending","--flow","wf"]);
+    assert.deepEqual(calls[1][1], {id:"metric",revision:"rev"}); assert.equal(logs[0].rows[0].id, "a");
+    phase = "missing"; await assert.rejects(analystCommand(cfg, ["pending"]), /No published pending-items query/);
+    phase = "error"; await assert.rejects(analystCommand(cfg, ["pending"]), /grant lookup refused/);
+    assert.ok(calls.every(([url]) => url.startsWith("/ontology/query/metrics/")));
+  } finally { console.log = print; await new Promise(resolve => server.close(resolve)); }
+});
+
+test("run reports missing legacy permission, grant scope, and authentication refused by the server", async () => {
+  const cases = [
+    [200, {success:false,code:403,message:"Operation permission is required: /action/execute"}, /no capability grants/],
+    [200, {success:false,message:"No role grants this action to the current subject"}, /No current role grant/],
+    [200, {success:false,message:"Target is not readable or is outside the granted scope"}, /outside the scope granted/],
+    [200, {success:false,message:"Action preconditions are not met: status is closed"}, /Business precondition failed: status is closed/],
+    [401, {code:401,msg:"Authentication required"}, /Authentication required/],
+  ];
+  let response;
+  const server = createServer((req, res) => {
+    res.writeHead(response[0], {"content-type":"application/json"}); res.end(JSON.stringify(response[1]));
+  });
+  await new Promise(resolve => server.listen(0, "127.0.0.1", resolve));
+  const print = console.log; console.log = () => {};
+  try {
+    for (response of cases) await assert.rejects(
+      analystCommand({ontologyUrl:`http://127.0.0.1:${server.address().port}`}, ["run","fixture"]), response[2]);
+  } finally { console.log = print; await new Promise(resolve => server.close(resolve)); }
+});

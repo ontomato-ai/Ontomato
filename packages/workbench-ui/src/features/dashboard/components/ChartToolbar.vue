@@ -19,7 +19,17 @@
       <TableProperties v-else class="tool-icon" :size="16" />
     </button>
 
+    <button
+      v-if="parameterized"
+      class="ai-chart-tool-btn"
+      type="button"
+      :title="t('dashboard.editParameters')"
+      @click.stop.prevent="emit('edit-parameters')"
+    >
+      <Filter class="tool-icon" :size="16" />
+    </button>
     <el-dropdown
+      v-else
       ref="controlDropdownRef"
       trigger="click"
       :hide-on-click="false"
@@ -77,6 +87,8 @@ const props = defineProps({
   disabledTypes: { type: Array, default: () => [] },
   conditions: { type: Array, default: () => [] },
   attrShowNameMap: { type: Object, default: () => ({}) },
+  /** A metric-reference card: filtering edits the metric's parameters, not DSL conditions. */
+  parameterized: { type: Boolean, default: false },
 });
 
 const emit = defineEmits([
@@ -85,6 +97,7 @@ const emit = defineEmits([
   "typeChange",
   "command",
   "conditions-change",
+  "edit-parameters",
   "openAi",
 ]);
 

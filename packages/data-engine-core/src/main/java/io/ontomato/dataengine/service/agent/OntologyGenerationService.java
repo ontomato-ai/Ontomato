@@ -166,13 +166,18 @@ public class OntologyGenerationService {
       String kind, String businessId, String prompt, String lang, String domain, String source) {
     if (kind.equals("metric"))
       throw AgentHttpException.invalid("MetricView generation has its own agent");
-    return generate(kind, businessId, prompt, lang, domain, source, false);
+    return generate(kind, businessId, prompt, lang, domain, source, false, false);
   }
 
   /** MetricView generation runs as its own agent with its own definition and skill package. */
   public Generation generateMetricView(
       String businessId, String prompt, String lang, String domain) {
-    return generate("metric", businessId, prompt, lang, domain, null, true);
+    return generate("metric", businessId, prompt, lang, domain, null, true, false);
+  }
+
+  /** Dataset settlement may reuse a published metric; ordinary creation still requires a tested package. */
+  public Generation settleMetricView(String businessId, String prompt, String lang, String domain) {
+    return generate("metric", businessId, prompt, lang, domain, null, true, true);
   }
 
   /** Explanation is short-lived; a stuck explain run must not hold the draft request for 10 minutes. */
@@ -187,7 +192,8 @@ public class OntologyGenerationService {
       String lang,
       String domain,
       String source,
-      boolean metricView) {
+      boolean metricView,
+      boolean settlement) {
     Owner owner = owner(domain);
     var ids = open(kind, businessId, source, owner, false);
     String session = ids.getString("sessionId"), run = ids.getString("runId");
@@ -264,7 +270,23 @@ public class OntologyGenerationService {
         throw new IllegalStateException("Ontology generation did not complete successfully");
       var result = JSON.parseObject(file(domain, session, run, "outputs/result.json"));
       if (result == null) throw new IllegalArgumentException("Missing generation result");
-      if (Set.of("action", "metric", "function", "dashboard").contains(kind)) {
+      boolean reuse = false;
+      if (settlement) {
+        String outcome = AgentJson.text(result, "kind");
+        if ("reuse".equals(outcome)) {
+          AgentJson.fields(result, "kind", "metricId", "revision", "parameters");
+          AgentJson.text(result, "metricId");
+          AgentJson.text(result, "revision");
+          if (!(result.get("parameters") instanceof JSONObject))
+            throw AgentHttpException.invalid("Metric reuse requires parameter values");
+          reuse = true;
+        } else if ("create".equals(outcome)) {
+          AgentJson.fields(result, "kind", "packagePath", "columnLabels", "name", "logic");
+          if (!(result.get("columnLabels") instanceof JSONObject))
+            throw AgentHttpException.invalid("Metric creation requires output labels");
+        } else throw AgentHttpException.invalid("Metric settlement must reuse or create");
+      }
+      if (!reuse && Set.of("action", "metric", "function", "dashboard").contains(kind)) {
         if (result.containsKey("code")) throw AgentHttpException.invalid("Use a source file path");
         if (kind.equals("action")) {
           String code = file(domain, session, run, AgentJson.text(result, "sourcePath"));

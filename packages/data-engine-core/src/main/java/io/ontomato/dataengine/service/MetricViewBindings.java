@@ -29,7 +29,7 @@ public final class MetricViewBindings {
       if (binding.getName() == null || binding.getName().isBlank())
         throw new IllegalArgumentException("Binding name is required");
       try {
-        validateValues(function, binding.getParameters());
+        validateDeclaredValues(function, binding.getParameters());
       } catch (IllegalArgumentException error) {
         throw new IllegalArgumentException("Binding '" + binding.getName() + "': " + error.getMessage());
       }
@@ -37,6 +37,15 @@ public final class MetricViewBindings {
   }
 
   public static void validateValues(Function function, JSONObject values) {
+    validateValues(function, values, false);
+  }
+
+  /** Definitions may bind an entire string array to its authenticated organization source. */
+  public static void validateDeclaredValues(Function function, JSONObject values) {
+    validateValues(function, values, true);
+  }
+
+  private static void validateValues(Function function, JSONObject values, boolean declaration) {
     if (values == null) throw new IllegalArgumentException("Parameter values must be an object");
     Set<String> names = new HashSet<>();
     if (function.getParameters() != null) {
@@ -49,6 +58,13 @@ public final class MetricViewBindings {
         if (!values.containsKey(p.getName()))
           throw new IllegalArgumentException("Missing parameter: " + p.getName());
         Object value = values.get(p.getName());
+        if (declaration && OrganizationScope.fromReference(p.getValue()) != null && !Objects.equals(p.getValue(), value))
+          throw new IllegalArgumentException("Parameter '" + p.getName() + "' is bound to the authenticated subject");
+        if (declaration && OrganizationScope.fromReference(value) != null) {
+          if (!Parameter.TYPE_STRING_ARRAY.equals(p.getType()))
+            throw new IllegalArgumentException("Organization references require TYPE_STRING_ARRAY: " + p.getName());
+          continue;
+        }
         if (value != null && !accepts(p.getType(), value))
           throw new IllegalArgumentException("Parameter '" + p.getName() + "' requires " + p.getType() + "; received " + value.getClass().getSimpleName());
       }
@@ -89,8 +105,15 @@ public final class MetricViewBindings {
       values = binding(metric, bindingId).getParameters();
       if (supplied != null && !supplied.isEmpty() && !supplied.equals(values))
         throw new IllegalArgumentException("A binding cannot be overridden with parameters");
-    } else values = supplied == null ? new JSONObject() : supplied;
-    validateValues(metric.getFunction(), values);
+    } else {
+      values = supplied == null ? new JSONObject() : new JSONObject(supplied);
+      if (metric.getFunction().getParameters() != null) {
+        for (Parameter p : metric.getFunction().getParameters())
+          if (!values.containsKey(p.getName()) && OrganizationScope.fromReference(p.getValue()) != null)
+            values.put(p.getName(), p.getValue());
+      }
+    }
+    validateDeclaredValues(metric.getFunction(), values);
     return JSON.parseObject(JSON.toJSONString(values, JSONWriter.Feature.WriteMapNullValue));
   }
 

@@ -1,5 +1,6 @@
 package io.ontomato.dataengine.service;
 
+import io.ontomato.dataengine.bean.workflow.GrantScope;
 import java.util.List;
 
 /**
@@ -27,7 +28,7 @@ public interface CapabilityGrantQuery {
             /** The workflow that activated this grant; null when granted directly. */
             String workflowId,
             /** The workflow revision that activated this grant; null when granted directly. */
-            String activatedByWorkflowVersion) {}
+            String activatedByWorkflowVersion, Integer stepNo, GrantScope scope) {}
 
     /** Every grant in the domain. Read-only and unpaged: a domain's grants are bounded by its roles. */
     List<Grant> grantsInDomain(String domainId);

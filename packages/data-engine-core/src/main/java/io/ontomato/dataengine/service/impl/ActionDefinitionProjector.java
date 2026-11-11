@@ -56,9 +56,8 @@ final class ActionDefinitionProjector {
     definition.put("explanationVersion", action.getExplanationVersion());
 
     Function function = action.getFunction();
-    if (function == null) {
-      return definition;
-    }
+    if (action.getTarget() != null) definition.put("declaredTarget", action.getTarget());
+    if (function == null) return definition;
     definition.put(
         "execution",
         JSONObject.of("kind", "FUNCTION", "operation", function.getOperation()));

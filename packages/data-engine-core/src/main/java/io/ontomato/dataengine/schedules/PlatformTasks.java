@@ -204,7 +204,7 @@ public class PlatformTasks {
     ZoneId.of(zone);
     var provider = applications.require(appId);
     var actor = actor(user, locale);
-    provider.authorize(actor);
+    provider.authorize(actor, input.get("values"));
     return provider.form(
         new ScheduleApplication.FormInput(
             input.get("values"), input.get("changedField").asText(null), task, zone),
@@ -214,7 +214,7 @@ public class PlatformTasks {
   private ScheduleApplication.Validation prepare(
       TaskDefinition definition, ScheduleApplication provider, User user, String locale) {
     var actor = actor(user, locale);
-    provider.authorize(actor);
+    provider.authorize(actor, definition.content());
     var validation = provider.validate(definition, actor);
     if (provider.remote()) credentials.prepareForSetup(user);
     return validation;
@@ -422,7 +422,7 @@ public class PlatformTasks {
         try {
           var provider = applications.require(task.definition().appId());
           var actor = actor(user, locale);
-          provider.authorize(actor);
+          provider.authorize(actor, task.definition().content());
           provider.validate(task.definition(), actor);
           transactions.executeWithoutResult(
               tx -> {

@@ -9,7 +9,7 @@ import { workbenchContent } from "../../../../content";
 import { areaGradientStops, barGradientStops, currentChartPalette } from "../../chart-palette";
 
 /** Colours come from the installed brand's chart palette in the mode shown when the option is generated. */
-const chartColors = () => currentChartPalette();
+export const chartColors = () => currentChartPalette();
 const reasonText = () => workbenchContent().dashboard.healthReasons;
 
 
@@ -52,7 +52,7 @@ function clamp(n, min, max) {
   return Math.max(min, Math.min(max, n));
 }
 
-function mergeDeep(target, src) {
+export function mergeDeep(target, src) {
   const t = target && typeof target === "object" ? target : {};
   const s = src && typeof src === "object" ? src : {};
   const out = Array.isArray(t) ? [...t] : { ...t };
@@ -83,7 +83,7 @@ function formatPercent(v) {
   return `${p.toFixed(0)}%`;
 }
 
-function truncateLabel(s, maxLen = 10) {
+export function truncateLabel(s, maxLen = 10) {
   const str = String(s ?? "");
   if (str.length <= maxLen) return str;
   return str.slice(0, maxLen) + "…";
@@ -105,7 +105,7 @@ function wrapLabel(s, maxCharsPerLine = 6, maxLines = 2) {
   return lines.join("\n");
 }
 
-function createBarGradient(color) {
+export function createBarGradient(color) {
   const pair = barGradientStops(color, chartColors().surface);
 
   return {
@@ -127,7 +127,7 @@ function createBarGradient(color) {
   };
 }
 
-function createAreaGradient(color) {
+export function createAreaGradient(color) {
   const colors = areaGradientStops(color);
 
   return {
@@ -153,7 +153,7 @@ function createAreaGradient(color) {
   };
 }
 
-function getThemeColor(index) {
+export function getThemeColor(index) {
   const colors = chartColors().series;
   return colors[index % colors.length];
 }
@@ -189,7 +189,7 @@ function guessXY(fields, data) {
   return { x, y };
 }
 
-function baseOption() {
+export function baseOption() {
   return {
     animation: false, // more stable for dashboards
     tooltip: {
@@ -218,7 +218,7 @@ function isFiniteNumber(v) {
   return typeof v === "number" && Number.isFinite(v);
 }
 
-function deepSanitize(obj) {
+export function deepSanitize(obj) {
   // Purpose: remove undefined / NaN / Infinity to avoid echarts silently hanging or rendering blank
   if (obj === undefined) return null;
   if (obj === null) return null;
@@ -531,7 +531,7 @@ function validateOption(chartType, option, fields, data) {
   return fn({ option, fields, data });
 }
 
-function axisCategoryBase() {
+export function axisCategoryBase() {
   return {
     type: "category",
     axisTick: { alignWithLabel: true },
@@ -546,7 +546,7 @@ function axisCategoryBase() {
   };
 }
 
-function axisValueBase() {
+export function axisValueBase() {
   return {
     type: "value",
     axisLabel: {

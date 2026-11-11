@@ -36,6 +36,26 @@ collects all files from this run and checks the exact package test; a model clai
 bash success or inherited artifact is not a receipt. Java owns saving, publication,
 binding consistency and permissions. End with a brief description.
 
+## Dataset settlement
+
+Only when the host explicitly identifies a dataset-settlement task, first search
+published metrics with ontomato-analyst. Compare the complete requested logic,
+including grain, scope, filters, time semantics, denominators and null handling.
+Matching preview numbers do not establish equivalence. Read a matching metric's
+current revision and parameter definitions. If equivalent, write
+`{kind:"reuse",metricId:"...",revision:"...",parameters:{...}}` to outputs/result.json.
+Do not create a package for this outcome. Preserve declared subject references.
+
+Otherwise generate and business-test the final package as above, and write
+`{kind:"create",packagePath:"outputs/package.json",columnLabels:{...},name:"...",logic:"..."}`.
+Include the requested grouping, aggregation, pivot and chart statistics in this
+package; a card only selects output fields and renders them. Its display sorting,
+row count, formatting and style do not belong in the calculation unless they
+change the requested business value. Do not call another metric from a Function,
+and do not substitute row counts for zero, missing or nonnumeric results.
+Ordinary natural-language creation still uses the original tested-package result,
+without a reuse outcome. Java alone saves, adopts, publishes and adds bindings.
+
 Hosted runs supply ONTOMATO_ONTOLOGY_URL, ONTOMATO_GENERATION_ID,
 ONTOMATO_GENERATION_KIND and scoped ONTOMATO_TK. External agents run `begin` with
 an authorized user credential (or API key) before testing, then `close`. Ordinary
