@@ -24,6 +24,7 @@
         <module>packages/data-adapters/sqlserver</module>
         <module>packages/data-adapters/gaussdb</module>
         <module>packages/data-adapters/duckdb</module>
+        <module>packages/data-adapters/clickhouse</module>
         <module>packages/data-adapters/neo4j</module>
         <module>packages/data-adapters/elasticsearch</module>
         <module>apps/data-engine</module>
@@ -113,6 +114,12 @@
                 <groupId>org.duckdb</groupId>
                 <artifactId>duckdb_jdbc</artifactId>
                 <version>1.5.5.1</version>
+            </dependency>
+            <dependency>
+                <groupId>com.clickhouse</groupId>
+                <artifactId>clickhouse-jdbc</artifactId>
+                <version>0.7.2</version>
+                <classifier>all</classifier>
             </dependency>
             <dependency>
                 <groupId>org.neo4j.driver</groupId>
