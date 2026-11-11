@@ -17,6 +17,7 @@ const props = defineProps<{
   agentId: string | null;
   creating: boolean;
   capabilities: boolean;
+  capabilityKind?: "skill" | "tool";
 }>();
 const emit = defineEmits<{
   changed: [];
@@ -48,7 +49,7 @@ watch(locale, () => { void load(); });
 
 <template>
   <div class="agent-settings-page">
-    <CapabilityLibrary v-if="capabilities" />
+    <CapabilityLibrary v-if="capabilities" :kind="capabilityKind ?? 'skill'" />
     <AgentEditor
       v-else-if="creating || shown"
       :key="editorKey"

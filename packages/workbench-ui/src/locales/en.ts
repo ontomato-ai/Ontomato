@@ -313,6 +313,8 @@ export default {
     "dslExecNoData": "DSL execution failed, no data returned"
   },
   "mcp": {
+    "publishedSettingsTitle": "MCP services",
+    "noPublishedServices": "No published MCP services",
     "externalTab": "Agent tools",
     "externalHint": "Add a service, then select it in the agent configuration.",
     "publishedTab": "Published services",
@@ -754,6 +756,14 @@ export default {
     "publishedAs": "Published as \"{name}\""
   },
   "capabilities": {
+    "skillTitle": "Skill",
+    "mcpTitle": "MCP",
+    "skillDescription": "Manage skills available to agents",
+    "mcpDescription": "Manage external MCP services available to agents",
+    "searchSkills": "Search skills",
+    "searchMcp": "Search MCP services",
+    "emptySkills": "No skills yet",
+    "emptyMcp": "No external MCP services yet",
     "title": "Capability library",
     "description": "Manage skills and external tools available to agents",
     "filter": "Capability type",
