@@ -4,7 +4,7 @@ import { platformLayoutRoute } from "../layout-route";
 import { platformRoutes } from "@ontomato/platform-shell/routes";
 
 describe("platform root landing", () => {
-  it("redirects the root to agents even with an empty-path manager frame", async () => {
+  it("redirects the root to the home even with an empty-path manager frame", async () => {
     const router = createRouter({
       history: createMemoryHistory(),
       routes: [platformLayoutRoute([
@@ -15,7 +15,7 @@ describe("platform root landing", () => {
       ])],
     });
     await router.push("/");
-    expect(router.currentRoute.value.path).toBe("/agents/chat");
+    expect(router.currentRoute.value.path).toBe("/home");
     await router.push("/ontology/objects");
     expect(router.currentRoute.value.path).toBe("/ontology/objects");
   });

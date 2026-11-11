@@ -1,8 +1,9 @@
 import { beforeEach, expect, it, vi } from "vitest";
-const stages = vi.hoisted(() => ({ sessions: vi.fn(), dashboards: vi.fn(), state: vi.fn(), ppt: vi.fn() }));
+const stages = vi.hoisted(() => ({ sessions: vi.fn(), dashboards: vi.fn(), home: vi.fn(), state: vi.fn(), ppt: vi.fn() }));
 vi.mock("../../assistant/cleanup", () => ({ deleteUserAssistantSessions: stages.sessions }));
 vi.mock("../../assistant/user-state", () => ({ deleteUserState: stages.state }));
 vi.mock("../../dashboard/store", () => ({ deleteUserDashboards: stages.dashboards }));
+vi.mock("../../platform-home/store", () => ({ deleteUserHomeData: stages.home }));
 vi.mock("../../analysis-agent/delivery/ppt-artifacts", () => ({ pptArtifactStore: () => ({ deleteByUser: stages.ppt }) }));
 vi.mock("../../../logging/logger", () => ({ createLogger: () => ({ error: vi.fn() }) }));
 import { cleanupDeletedUsers } from "../user-resource-cleanup";
@@ -15,6 +16,7 @@ it("reports the failed stage and can repeat earlier successful stages", async ()
   expect(stages.dashboards).not.toHaveBeenCalled();
   await cleanupDeletedUsers(["alice"]);
   expect(stages.sessions).toHaveBeenCalledTimes(2);
+  expect(stages.home).toHaveBeenCalledWith("alice");
   expect(stages.ppt).toHaveBeenCalledWith("alice");
 });
 

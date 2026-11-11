@@ -25,6 +25,7 @@ public class ApplicationCatalogUpgrade implements InitializingBean {
             ALTER TABLE sys_application ADD COLUMN IF NOT EXISTS descriptions jsonb;
             ALTER TABLE sys_application ADD COLUMN IF NOT EXISTS icon varchar(64);
             ALTER TABLE sys_application ADD COLUMN IF NOT EXISTS rail varchar(16);
+            ALTER TABLE sys_application ADD COLUMN IF NOT EXISTS category varchar(16) NOT NULL DEFAULT 'business';
             ALTER TABLE sys_application ADD COLUMN IF NOT EXISTS entry jsonb;
             ALTER TABLE sys_application ADD COLUMN IF NOT EXISTS entry_access jsonb;
             ALTER TABLE sys_application ADD COLUMN IF NOT EXISTS schedule_adapter varchar(64);
