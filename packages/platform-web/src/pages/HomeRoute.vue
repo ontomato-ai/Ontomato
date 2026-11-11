@@ -7,16 +7,20 @@ import { LayoutDashboard, Search } from "lucide-vue-next";
 import type { AgentHostAgent } from "@ontomato/contracts/agent-host";
 import type { DashboardListItem } from "@ontomato/contracts/dashboard";
 import type { HomeItemRef, HomeState } from "@ontomato/contracts/platform-home";
+import { usePlatformHost } from "@ontomato/platform-admin";
 import { PlatformTabs } from "@ontomato/platform-shell";
 import { platformRoutes } from "@ontomato/platform-shell/routes";
+import { readRememberedAgent } from "@ontomato/workbench-ui";
 import { fetchDashboardList } from "@ontomato/workbench-ui/features/dashboard";
 import { createAssistantClient } from "@ontomato/workbench-ui/features/workbench/assistant-host";
 import { openApplicationKey, platformApplicationsKey } from "../apps";
 import { useApplicationCatalog } from "../catalog";
 import {
   DashboardPicker,
-  HomeCard,
+  HomeAsk,
+  HomeContinue,
   HomeDashboards,
+  HomeTile,
   homeCategories,
   homeItems,
   itemKey,
@@ -25,28 +29,33 @@ import {
   matches,
   moved,
   readHomeState,
-  recentItems,
+  recentApplications,
+  recentConversations,
   saveDashboards,
   saveFavorites,
   type HomeCategory,
   type HomeItem,
+  type RecentConversation,
 } from "../features/home";
 
 /**
- * The platform's home, where everyone starts: a search over everything below; the reader's favourites and recently used
- * items; the dashboards they chose to see here; and the square of every application and agent they may open.
+ * The platform's home, where everyone starts. It answers "what do I do today, and where did I leave off" first: a
+ * greeting and a question for an agent; the reader's favourites; the conversations and applications they used last; the
+ * dashboards they chose to see here. The square of every application and agent they may open comes last.
  *
  * Names, descriptions, icons and entries come from the application catalog the rail shows and from the agent list; the
- * home's own state only holds which items and dashboards the reader picked and when they last used each, so an item the
- * reader can no longer open is simply not shown. A new reader with nothing picked and nothing used sees the square
- * straight under the search.
+ * home's own state only holds references, times and the latest conversations, so an item the reader can no longer open
+ * is simply not shown. A reader with nothing of their own sees the square straight under the question.
  */
 const { t } = useI18n();
 const router = useRouter();
+const host = usePlatformHost();
 const applications = inject(platformApplicationsKey)!;
 const openApplication = inject(openApplicationKey)!;
 const catalog = useApplicationCatalog();
 const agentClient = createAssistantClient();
+/** The agent the agent platform last used, which the question box offers first. */
+const remembered = readRememberedAgent();
 
 const agents = ref<AgentHostAgent[]>([]);
 const state = ref<HomeState | null>(null);
@@ -56,22 +65,15 @@ const loadError = ref<string | null>(null);
 const errorText = (error: unknown) => (error instanceof Error ? error.message : String(error));
 
 const items = computed(() => homeItems(applications.value, agents.value));
+const agentItems = computed(() => items.value.filter((item) => item.kind === "agent"));
 const favorites = computed(() => (state.value ? itemsOf(state.value.favorites, items.value) : []));
 const favoriteKeys = computed(() => new Set(favorites.value.map(itemKey)));
-const recent = computed(() => (state.value ? recentItems(state.value, items.value) : []));
+const conversations = computed(() => (state.value ? recentConversations(state.value, items.value) : []));
+const openedApplications = computed(() => (state.value ? recentApplications(state.value, items.value) : []));
 const shownDashboards = computed(() => {
   const byId = new Map(dashboards.value.map((dashboard) => [dashboard.id, dashboard]));
   return (state.value?.dashboardIds ?? []).flatMap((id) => byId.get(id) ?? []);
 });
-
-type PersonalTab = "favorites" | "recent";
-/** The tab the reader chose; until they choose, a reader with favourites sees them, one who only used things sees those. */
-const personalChoice = ref<PersonalTab | null>(null);
-const personalTab = computed<PersonalTab>(() => personalChoice.value ?? (favorites.value.length > 0 ? "favorites" : "recent"));
-const personalTabs = computed(() => [
-  { id: "favorites", label: t("home.favorites") },
-  { id: "recent", label: t("home.recent") },
-]);
 
 /** Every request the home needs, read afresh each time the home is entered; the catalog is the shell's. */
 async function load() {
@@ -94,20 +96,26 @@ void load();
 const ready = computed(() => state.value !== null && !(catalog.loading.value && applications.value.length === 0));
 
 const query = ref("");
-const searching = computed(() => query.value.trim() !== "");
-const shownFavorites = computed(() => favorites.value.filter((item) => matches(item, query.value)));
-const shownRecent = computed(() => recent.value.filter((item) => matches(item, query.value)));
-
 const category = ref<HomeCategory>("all");
 const categoryTabs = computed(() => homeCategories.map((id) => ({ id, label: t(`home.categories.${id}`) })));
 const square = computed(() =>
   items.value.filter((item) => (category.value === "all" || item.category === category.value) && matches(item, query.value)),
 );
 
+const chat = platformRoutes.chat.path;
+
 function openItem(item: HomeItem) {
   if (item.kind === "application") openApplication(item.id);
   // An agent opens in the agent platform, on a new conversation with it.
-  else void router.push({ path: platformRoutes.chat.path, query: { agentId: item.id } });
+  else void router.push({ path: chat, query: { agentId: item.id } });
+}
+
+function ask(agentId: string, prompt: string) {
+  void router.push({ path: chat, query: { agentId, prompt } });
+}
+
+function openConversation(conversation: RecentConversation) {
+  void router.push({ path: chat, query: { agentId: conversation.agentId, sessionId: conversation.sessionId } });
 }
 
 /*
@@ -161,77 +169,72 @@ async function saveDashboardIds(ids: string[]) {
 
 <template>
   <div class="home-page platform-page-gutter">
-    <h1 class="home-title">{{ t("home.title") }}</h1>
-    <div class="home-toolbar">
-      <el-input
-        v-model="query"
-        class="home-search"
-        clearable
-        :placeholder="t('home.search')"
-        :aria-label="t('home.search')"
-      >
-        <template #prefix><Search :size="16" aria-hidden="true" /></template>
-      </el-input>
-      <el-button :disabled="!ready" @click="pickerOpen = true">
-        <LayoutDashboard :size="16" aria-hidden="true" />
-        <span class="home-button-label">{{ t("home.chooseDashboards") }}</span>
-      </el-button>
-    </div>
-
     <div v-if="loadError" class="home-state" role="alert">
       <span>{{ t("home.loadFailed", { reason: loadError }) }}</span>
       <el-button :loading="loading" @click="load">{{ t("home.retry") }}</el-button>
     </div>
     <el-skeleton v-else-if="!ready" class="home-loading" :rows="5" animated />
     <template v-else>
-      <section v-if="favorites.length > 0 || recent.length > 0" class="home-section" :aria-label="t('home.personal')">
-        <PlatformTabs :tabs="personalTabs" :active-id="personalTab" :label="t('home.personal')" @select="personalChoice = $event as PersonalTab" />
-        <template v-if="personalTab === 'favorites'">
-          <div v-if="shownFavorites.length > 0" class="home-grid">
-            <HomeCard
-              v-for="(item, index) in shownFavorites"
-              :key="itemKey(item)"
-              :item="item"
-              favorite
-              :position="searching ? undefined : { first: index === 0, last: index === shownFavorites.length - 1 }"
-              :draggable="!searching"
-              :class="{ dragging: dragging === index }"
-              @dragstart="dragging = index"
-              @dragend="dragging = null"
-              @dragover.prevent
-              @drop.prevent="dropFavorite(index)"
-              @open="openItem(item)"
-              @toggle-favorite="toggleFavorite(item)"
-              @move="moveFavorite(index, index + $event)"
-            />
-          </div>
-          <p v-else class="home-empty">{{ searching ? t("home.noMatches") : t("home.noFavorites") }}</p>
-        </template>
-        <template v-else>
-          <div v-if="shownRecent.length > 0" class="home-grid">
-            <HomeCard
-              v-for="item in shownRecent"
-              :key="itemKey(item)"
-              :item="item"
-              :favorite="favoriteKeys.has(itemKey(item))"
-              @open="openItem(item)"
-              @toggle-favorite="toggleFavorite(item)"
-            />
-          </div>
-          <p v-else class="home-empty">{{ searching ? t("home.noMatches") : t("home.noRecent") }}</p>
-        </template>
+      <HomeAsk :agents="agentItems" :remembered="remembered" :user-name="host.account?.userName ?? null" @ask="ask" />
+
+      <section v-if="favorites.length > 0" class="home-section" aria-labelledby="home-favorites">
+        <h2 id="home-favorites" class="home-heading">{{ t("home.favorites") }}</h2>
+        <div class="home-tile-row">
+          <HomeTile
+            v-for="(item, index) in favorites"
+            :key="itemKey(item)"
+            :item="item"
+            :position="{ first: index === 0, last: index === favorites.length - 1 }"
+            draggable="true"
+            :class="{ dragging: dragging === index }"
+            @dragstart="dragging = index"
+            @dragend="dragging = null"
+            @dragover.prevent
+            @drop.prevent="dropFavorite(index)"
+            @open="openItem(item)"
+            @move="moveFavorite(index, index + $event)"
+          />
+        </div>
       </section>
 
-      <section v-if="shownDashboards.length > 0" class="home-section">
-        <h2 class="home-heading">{{ t("home.dashboards") }}</h2>
-        <HomeDashboards :dashboards="shownDashboards" />
+      <section v-if="conversations.length > 0 || openedApplications.length > 0" class="home-section" aria-labelledby="home-continue">
+        <h2 id="home-continue" class="home-heading">{{ t("home.continue") }}</h2>
+        <HomeContinue
+          :conversations="conversations"
+          :applications="openedApplications"
+          @open-conversation="openConversation"
+          @open-application="openItem"
+        />
       </section>
 
-      <section class="home-section">
-        <h2 class="home-heading">{{ t("home.square") }}</h2>
+      <!-- The reader's own dashboards: without one chosen, the section is its title and the button that chooses. -->
+      <section v-if="dashboards.length > 0" class="home-section" aria-labelledby="home-dashboards">
+        <div class="home-section-head">
+          <h2 id="home-dashboards" class="home-heading">{{ t("home.dashboards") }}</h2>
+          <el-button text @click="pickerOpen = true">
+            <LayoutDashboard :size="16" aria-hidden="true" />
+            <span class="home-button-label">{{ t("home.chooseDashboards") }}</span>
+          </el-button>
+        </div>
+        <HomeDashboards v-if="shownDashboards.length > 0" :dashboards="shownDashboards" />
+      </section>
+
+      <section class="home-section" aria-labelledby="home-square">
+        <div class="home-section-head">
+          <h2 id="home-square" class="home-heading">{{ t("home.square") }}</h2>
+          <el-input
+            v-model="query"
+            class="home-search"
+            clearable
+            :placeholder="t('home.squareSearch')"
+            :aria-label="t('home.squareSearch')"
+          >
+            <template #prefix><Search :size="16" aria-hidden="true" /></template>
+          </el-input>
+        </div>
         <PlatformTabs :tabs="categoryTabs" :active-id="category" :label="t('home.square')" @select="category = $event as HomeCategory" />
-        <div v-if="square.length > 0" class="home-grid">
-          <HomeCard
+        <div v-if="square.length > 0" class="home-square">
+          <HomeTile
             v-for="item in square"
             :key="itemKey(item)"
             :item="item"
@@ -240,18 +243,17 @@ async function saveDashboardIds(ids: string[]) {
             @toggle-favorite="toggleFavorite(item)"
           />
         </div>
-        <p v-else class="home-empty">{{ searching ? t("home.noMatches") : t("home.noItems") }}</p>
+        <p v-else class="home-empty">{{ query.trim() ? t("home.noMatches") : t("home.noItems") }}</p>
       </section>
-    </template>
 
-    <DashboardPicker
-      v-if="ready"
-      v-model="pickerOpen"
-      :dashboards="dashboards"
-      :shown="shownDashboards.map((dashboard) => dashboard.id)"
-      :saving="savingDashboards"
-      @save="saveDashboardIds"
-    />
+      <DashboardPicker
+        v-model="pickerOpen"
+        :dashboards="dashboards"
+        :shown="shownDashboards.map((dashboard) => dashboard.id)"
+        :saving="savingDashboards"
+        @save="saveDashboardIds"
+      />
+    </template>
   </div>
 </template>
 
@@ -262,36 +264,21 @@ async function saveDashboardIds(ids: string[]) {
   flex-direction: column;
   gap: var(--spacing-2xl);
   width: 100%;
-  max-width: 1440px;
+  max-width: 1280px;
   margin-inline: auto;
-  padding-block: var(--spacing-xl) var(--spacing-2xl);
-}
-/* The page is named for assistive technology; the rail's selected row already names it on screen. */
-.home-title {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  overflow: hidden;
-  clip: rect(0 0 0 0);
-  white-space: nowrap;
-}
-.home-toolbar {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--spacing-sm);
-  align-items: center;
-}
-.home-search {
-  flex: 1 1 320px;
-  max-width: 640px;
-}
-.home-button-label {
-  margin-left: var(--spacing-xs);
+  padding-block: var(--spacing-3xl) var(--spacing-2xl);
 }
 .home-section {
   display: flex;
   flex-direction: column;
   gap: var(--spacing-md);
+}
+.home-section-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-sm) var(--spacing-lg);
 }
 .home-heading {
   margin: 0;
@@ -300,13 +287,29 @@ async function saveDashboardIds(ids: string[]) {
   font-weight: var(--font-semibold);
   line-height: var(--leading-lg);
 }
-.home-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
-  gap: var(--spacing-md);
+.home-button-label {
+  margin-left: var(--spacing-xs);
 }
-.home-grid .dragging {
+.home-search {
+  width: 280px;
+  max-width: 100%;
+}
+/* The favourites: one compact row of names that wraps rather than scroll out of reach. */
+.home-tile-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-sm);
+}
+.home-tile-row > * {
+  width: 200px;
+}
+.home-tile-row .dragging {
   opacity: 0.5;
+}
+.home-square {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: var(--spacing-sm);
 }
 .home-empty {
   margin: 0;

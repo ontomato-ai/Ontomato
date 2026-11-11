@@ -8,10 +8,14 @@ export {
   itemsOf,
   matches,
   moved,
-  recentItems,
+  recentApplications,
+  recentConversations,
   type HomeCategory,
   type HomeItem,
+  type RecentConversation,
 } from "./items";
-export { default as HomeCard } from "./HomeCard.vue";
+export { default as HomeAsk } from "./HomeAsk.vue";
+export { default as HomeContinue } from "./HomeContinue.vue";
+export { default as HomeTile } from "./HomeTile.vue";
 export { default as HomeDashboards } from "./HomeDashboards.vue";
 export { default as DashboardPicker } from "./DashboardPicker.vue";
