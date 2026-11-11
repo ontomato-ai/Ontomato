@@ -2,6 +2,7 @@
   "id": "settings",
   "kind": "native",
   "rail": "bottom",
+  "category": "admin",
   "sort": 20,
   "entry": {
     "path": "/settings",
