@@ -8,10 +8,11 @@ refused it, so the caller knows whether to ask an administrator, wait, or fix th
 
 | # | Layer | Refusal reads | What it means | What to do |
 |---|---|---|---|---|
-| 1 | Platform permission | `无此权限：/action/execute` | Your role lacks the API permission for the execute endpoint | Ask an administrator to attach the API position that carries it |
-| 2 | Capability grant | `No role grants this action to the current subject` | No **active** process revision grants this action to any role you hold | The step is not yours, or the revision that names your role is not active |
-| 3 | Preconditions | `Action preconditions are not met: <reasons>` | The case is not in the state this step expects, or it is not assigned to you | The reasons are the author's own words; read them literally |
-| 4 | Data permission | `403 Class is outside the authorized scope` | Your role may not read the class this step inspects | Data permission is separate from the capability grant |
+| 1a | Action has grants | `No role grants this action` | Your roles hold no effective direct or active-workflow grant | Check the role and active workflow version |
+| 1b | Action has no grant records | Permission required: `/action/execute` | This legacy action uses its original API permission | Ask for that permission or configure a capability grant |
+| 2 | Declared target | Target not readable or outside granted scope | A declared object must be visible under the row rules and match your grant scope | Check the object key, role, and scope |
+| 3 | Business preconditions | `Action preconditions are not met: <reasons>` | Stored business state fails the action's condition | Read the author's reason |
+
 
 A draft or inactive process confers nothing: activating a revision is what writes the grants.
 
@@ -56,7 +57,7 @@ Output on refusal (exit code 1):
 
 ```json
 {"ok":false,"actionId":"act_vm_dept_approve",
- "error":"This is not your turn: 这一步还没轮到",
+ "error":"Business precondition failed: 这一步还没轮到",
  "raw":"Action preconditions are not met: 这一步还没轮到"}
 ```
 

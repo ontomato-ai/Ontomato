@@ -103,17 +103,16 @@ ontology commands and the data-retrieval file script, never recursively ask.
 open row to a frozen step, your role's scope for that step, and your read permissions. A missing
 query or failed grant lookup is an error; an authorized query with no matches returns zero rows.
 
-`run` performs exactly one step. The executor decides in order: platform permission, then the
-capability grant (is one of your roles granted this action by an active revision), then the action's
-own preconditions (is it your turn, is the case in the state this step expects). Then data
-permission applies to the state it reads. A refusal names the layer that refused it — see
-[acting on a case](references/actions.md) for what each one means and what to do next.
+`run` performs one action. An action with grant records uses the active capability grants;
+only an action with no grant records uses the legacy execution API permission. A declared
+target must also be readable and in scope, and its business-state preconditions must hold.
+See [acting on a case](references/actions.md) for the refusals.
 
 `actions` answers the other half: which steps are yours to run at all. It intersects your effective
 roles with the grants in force, so a row left by an earlier revision is not listed. It lists candidate actions, not permission for any particular record. "I can run this"
 and "this is waiting for me" are different questions; ask both before concluding you have nothing to do.
 
-Never pass an identity to make a step succeed. "This is not your turn" is a business state, not a
+Never pass an identity to make a step succeed. A failed business precondition describes the state of the record, not a
 credential problem, and retrying with different parameters will not change it.
 
 ## Query workflow and result meaning

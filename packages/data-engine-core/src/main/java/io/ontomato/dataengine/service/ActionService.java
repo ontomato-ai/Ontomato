@@ -10,6 +10,10 @@ import io.ontomato.dataengine.core.bean.User;
 import io.ontomato.dataengine.service.sys.bean.permission.UserDataPermission;
 
 public interface ActionService {
+    /** A scheduler-owned run of the resolved Action returns the program's original result. */
+    PythonExecuteResult executeScheduled(Action action, JSONObject parameters, String lang, User creator,
+            UserDataPermission permission, int timeoutMinutes, java.util.UUID runId) throws Exception;
+
     PythonExecuteResult execute(String id, JSONObject param, String lang, User user, UserDataPermission permission, int timeoutMinutes, ExecutionTarget target) throws Exception;
 
 	

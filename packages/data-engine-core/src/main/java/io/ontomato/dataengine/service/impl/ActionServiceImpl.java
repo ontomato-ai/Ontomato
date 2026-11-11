@@ -3,7 +3,6 @@ package io.ontomato.dataengine.service.impl;
 import io.ontomato.dataengine.service.QueryAccessService;
 import io.ontomato.dataengine.service.OntologyQueryService;
 import io.ontomato.dataengine.service.ExecutionTarget;
-import io.ontomato.dataengine.service.IdentityService;
 import io.ontomato.dataengine.service.MetricViewBindings;
 import io.ontomato.dataengine.service.scheduling.OntologyScheduleReferences;
 import java.util.Objects;
@@ -80,8 +79,6 @@ public class ActionServiceImpl implements ActionService {
   @Autowired private AgentRuntimeClient runtimeClient;
 
   @Autowired private OntologyScheduleReferences scheduledReferences;
-
-  @Autowired private IdentityService identity;
 
   @Autowired private ActionPreconditionService preconditions;
 
@@ -593,16 +590,13 @@ public class ActionServiceImpl implements ActionService {
     return ret;
   }
 
-  /** The published Action of the user's domain, once the user may execute Actions. */
-  private Action executable(String id, String lang, User user) throws Exception {
-    identity.requireActionExecutionAccess(user.getId(), user.getDomainId());
-    Action action = queryById(id);
+  /** Asset validity is independent of the edition-owned admission decision. */
+  private void requireExecutable(Action action, String lang, User user) throws Exception {
     if (action == null) throw new Exception(langService.get(lang, "Action.notFound"));
     if (!user.getDomainId().equals(action.getDomainId()) || action.getFunction() == null ||
         !user.getDomainId().equals(action.getFunction().getDomainId())) throw new IllegalArgumentException("Action is outside the current domain");
     if (!Action.STATUS_PUBLISHED.equals(action.getStatus())) throw new Exception(langService.get(lang, "Action.notPublished"));
     ActionFunctionAdmission.requireSupported(action.getFunction(), langService, lang);
-    return action;
   }
 
   @Override
@@ -612,35 +606,46 @@ public class ActionServiceImpl implements ActionService {
 
   @Override
   public PythonExecuteResult execute(String id, JSONObject param, String lang, User user, UserDataPermission permission, int timeoutMinutes, ExecutionTarget target) throws Exception {
-    Action action = executable(id, lang, user);
-    var admission = capabilityGrants.admission(user.getId(), user.getDomainId(), CapabilityGrantLookup.ACTION, action.getId());
-    if (!admission.admitted()) {
-      return notGranted(lang);
-    }
-    Function function = io.ontomato.dataengine.service.MetricViewBindings.executionWriteFunction(action.getFunction(), param);
-    String key = null;
-    if (action.getTarget() != null) {
-      key = action.getTarget().key(param);
-      var access = new QueryAccessService.Access(user, permission, null, null, null).withTarget(target);
-      if (!queries.actionTargetExists(action.getTarget(), key, admission, access)) return notGranted(lang);
-    } else if (!admission.unrestricted()) return notGranted(lang);
-    ActionPreconditionService.Verdict verdict = preconditions.evaluate(action, param, user, permission, target);
-    if (!verdict.satisfied()) {
-      PythonExecuteResult refused = new PythonExecuteResult();
-      refused.setError(langService.get(lang, "Action.preconditionFailed") + ": " + String.join("; ", verdict.violations()));
-      return refused;
-    }
-    Object[] o = abcProgramService.execute(UUID.randomUUID().toString(), function, user.getId(), permission, target.testing() ? target.sandboxId() : ServiceConst.NOT_SANDBOX, lang, timeoutMinutes, user.getDomainId(),
-        new ABCProgramService.ExecutionContext(null, identitySnapshot(action, user, key), target));
+    Object[] o = run(queryById(id), param, lang, user, permission, timeoutMinutes, target, null);
     PythonExecuteResult result = (PythonExecuteResult)o[1];
     if (result.getError() != null && !result.getError().isBlank()) { result.setResult(null); }
     else result.setResult(o[0] == null ? "{\"completed\":true}" : JSON.toJSONString(JSONObject.of("answer", o[0]), Feature.WriteMapNullValue));
     return result;
   }
 
-  private PythonExecuteResult notGranted(String lang) {
+  @Override
+  public PythonExecuteResult executeScheduled(Action action, JSONObject param, String lang, User creator,
+      UserDataPermission permission, int timeoutMinutes, UUID runId) throws Exception {
+    return (PythonExecuteResult) run(action, param, lang, creator, permission, timeoutMinutes, ExecutionTarget.LIVE, runId)[1];
+  }
+
+  private Object[] run(Action action, JSONObject param, String lang, User user, UserDataPermission permission,
+      int timeoutMinutes, ExecutionTarget target, UUID runId) throws Exception {
+    requireExecutable(action, lang, user);
+    var admission = capabilityGrants.admission(user.getId(), user.getDomainId(), CapabilityGrantLookup.ACTION, action.getId());
+    if (!admission.admitted()) {
+      return new Object[]{null, refused(lang, "Action.notGranted")};
+    }
+    Function function = io.ontomato.dataengine.service.MetricViewBindings.executionWriteFunction(action.getFunction(), param);
+    String key = null;
+    if (action.getTarget() != null) {
+      key = action.getTarget().key(param);
+      var access = new QueryAccessService.Access(user, permission, null, null, null).withTarget(target);
+      if (!queries.actionTargetExists(action.getTarget(), key, admission, access)) return new Object[]{null, refused(lang, "Action.targetOutsideScope")};
+    } else if (!admission.unrestricted()) return new Object[]{null, refused(lang, "Action.targetOutsideScope")};
+    ActionPreconditionService.Verdict verdict = preconditions.evaluate(action, param, user, permission, target);
+    if (!verdict.satisfied()) {
+      PythonExecuteResult refused = new PythonExecuteResult();
+      refused.setError(langService.get(lang, "Action.preconditionFailed") + ": " + String.join("; ", verdict.violations()));
+      return new Object[]{null, refused};
+    }
+    return abcProgramService.execute((runId == null ? UUID.randomUUID() : runId).toString(), function, user.getId(), permission, target.testing() ? target.sandboxId() : ServiceConst.NOT_SANDBOX, lang, timeoutMinutes, user.getDomainId(),
+        new ABCProgramService.ExecutionContext(runId, identitySnapshot(action, user, key), target));
+  }
+
+  private PythonExecuteResult refused(String lang, String key) {
     var result = new PythonExecuteResult();
-    result.setError(langService.get(lang, "Action.notGranted"));
+    result.setError(langService.get(lang, key));
     return result;
   }
 
@@ -654,7 +659,8 @@ public class ActionServiceImpl implements ActionService {
 
   @Override
   public JSONObject form(String id, JSONObject bound, JSONObject submitted, List<String> readOnly, String lang, User user) throws Exception {
-    Action action = executable(id, lang, user);
+    Action action = queryById(id);
+    requireExecutable(action, lang, user);
     if (!capabilityGrants.admission(user.getId(), user.getDomainId(), CapabilityGrantLookup.ACTION, id).admitted())
       throw new IllegalArgumentException(langService.get(lang, "Action.notGranted"));
     List<Parameter> parameters = action.getFunction().getParameters();

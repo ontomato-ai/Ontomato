@@ -146,7 +146,10 @@ class SubjectValueResolverTest {
     assertThrows(IllegalArgumentException.class, () -> resolver.metricParameters(metric, null,
         JSONObject.of("departments", List.of("outside")), user));
     var bundle = QueryPackage.fromDsl("{\"answer\":{\"steps\":[]}}");
-    bundle.getJSONObject("manifest").getJSONArray("parameterDefs").add(JSONObject.from(parameter));
+    // Query package definitions arrive as JSON, not as Java beans converted to JSONObject.
+    bundle.getJSONObject("manifest").put("parameterDefs", com.alibaba.fastjson2.JSON.parseArray("""
+        [{"name":"departments","type":"TYPE_STRING_ARRAY","value":"{{org.selfAndDescendants}}"}]
+        """));
     assertEquals(List.of("001","002"), resolver.packageParameters(bundle, null, user).get("departments"));
     assertThrows(IllegalArgumentException.class, () -> resolver.packageParameters(bundle,
         JSONObject.of("departments", List.of("outside")), user));

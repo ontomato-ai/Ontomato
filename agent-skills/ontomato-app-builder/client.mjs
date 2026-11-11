@@ -130,12 +130,14 @@ export async function analystCommand(cfg, argv, headers = {}) {
 function explainActionError(message) {
   const text = String(message ?? "");
   if (/No role grants this action/i.test(text))
-    return "Your roles are not granted this action. A process must be active, and its step must name one of your roles.";
+    return "No current role grant allows this action. Check the direct grant or the active workflow revision.";
   if (/preconditions are not met/i.test(text))
-    return "This is not your turn: " + text.replace(/^.*?preconditions are not met:\s*/i, "");
-  if (/无此权限|no permission|not permitted/i.test(text))
-    return "Your role lacks the platform permission to call /action/execute.";
-  if (/authorized scope|FORBIDDEN|\b403\b/i.test(text))
+    return "Business precondition failed: " + text.replace(/^.*?preconditions are not met:\s*/i, "");
+  if (text.includes("/action/execute") && /permission|无此权限/i.test(text))
+    return "This action has no capability grants; it requires the existing /action/execute permission.";
+  if (/Action\.targetOutsideScope|not readable or is outside the granted scope/i.test(text))
+    return "You cannot read this target or it is outside the scope granted to your role.";
+  if (/class is outside the authorized scope|field is outside the authorized scope/i.test(text))
     return "Your role lacks data permission for this object class; the platform refused the read this step needs.";
   if (/not published|Action\.notPublished/i.test(text)) return "This action is not published.";
   if (/frozen|publishedIsFrozen/i.test(text))
@@ -166,7 +168,8 @@ async function runAction(ontology, args, headers) {
   } catch {
     throw new Error(`Action execution returned non-JSON (HTTP ${response.status}): ${text.slice(0, 300)}`);
   }
-  const error = result?.data?.error ?? (result.success === false ? result.message : null);
+  const error = result?.data?.error || (!response.ok || result.success !== true
+    ? (result.message || result.msg || result.error?.message || `Action request refused (HTTP ${response.status})`) : null);
   if (error) {
     const explained = explainActionError(error);
     console.log(JSON.stringify({ ok: false, actionId, error: explained, raw: String(error) }, null, 2));

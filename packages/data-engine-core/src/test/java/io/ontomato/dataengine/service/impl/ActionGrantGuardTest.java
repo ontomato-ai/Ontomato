@@ -78,7 +78,6 @@ class ActionGrantGuardTest {
     workflowRuns = mock(WorkflowRunResolver.class);
     lang = mock(LangService.class);
 
-    ReflectionTestUtils.setField(service, "identity", mock(IdentityService.class));
     ReflectionTestUtils.setField(service, "actionDao", actionDao);
     ReflectionTestUtils.setField(service, "functionDao", functionDao);
     ReflectionTestUtils.setField(service, "abcProgramService", programs);
@@ -88,6 +87,7 @@ class ActionGrantGuardTest {
     ReflectionTestUtils.setField(service, "workflowRuns", workflowRuns);
     ReflectionTestUtils.setField(service, "langService", lang);
 
+    when(lang.get(anyString(), eq("Action.targetOutsideScope"))).thenReturn("Target is outside scope");
     when(lang.get(anyString(), eq("Action.notGranted"))).thenReturn("No role grants this action");
     when(lang.get(anyString(), eq("Action.preconditionFailed"))).thenReturn("Preconditions are not met");
     when(identitySnapshots.snapshot(any(), any())).thenReturn(new JSONObject());
@@ -273,7 +273,7 @@ class ActionGrantGuardTest {
     ReflectionTestUtils.setField(service, "queries", queries);
     grantAnswer(true);
     var result = service.execute(ACTION_ID, JSONObject.of("order_id", "00123"), LANG, alice, permission, 5);
-    assertEquals("No role grants this action", result.getError());
+    assertEquals("Target is outside scope", result.getError());
     verify(queries).actionTargetExists(eq(action.getTarget()), eq("00123"), eq(CapabilityGrantLookup.Admission.ALL), any());
     org.mockito.Mockito.verifyNoInteractions(preconditions, programs);
   }

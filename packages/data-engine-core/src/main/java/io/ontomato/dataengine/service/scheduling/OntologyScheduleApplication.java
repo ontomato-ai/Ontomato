@@ -35,6 +35,7 @@ public class OntologyScheduleApplication implements ScheduleApplication {
   private final BusinessConfigService configs;
   private final IdentityService identity;
   private final OntologyScheduleReferences references;
+  private final CapabilityGrantLookup grants;
 
   public String id() {
     return "ontology";
@@ -45,17 +46,43 @@ public class OntologyScheduleApplication implements ScheduleApplication {
   }
 
   public void authorize(Actor actor) {
+    for (Action action : actions.queryList(Action.STATUS_PUBLISHED, null, null, actor.domain())) {
+      if (action.getFunction() != null && actor.domain().equals(action.getFunction().getDomainId())
+          && unsupportedReason(action.getFunction(), actor.locale()) == null && permitted(action.getId(), actor)) return;
+    }
+    if (permitted(null, actor) && functions.queryList(Function.OPERATION_WRITE, null, actor.domain()).stream()
+        .anyMatch(f -> unsupportedReason(f, actor.locale()) == null)) return;
+    throw denied(actor);
+  }
+
+  @Override
+  public void authorize(Actor actor, JsonNode content) {
+    String selection = content.path("execution").asText("");
+    if (selection.isBlank()) { authorize(actor); return; }
+    int split = selection.indexOf(':');
+    if (split < 1) throw unavailable();
+    String actionId = switch (selection.substring(0, split)) {
+      case "action" -> selection.substring(split + 1);
+      case "function" -> null;
+      default -> throw unavailable();
+    };
+    if (!permitted(actionId, actor)) throw denied(actor);
+  }
+
+  private boolean permitted(String actionId, Actor actor) {
     try {
+      if (actionId != null) return grants.admission(actor.creator(), actor.domain(), CapabilityGrantLookup.ACTION, actionId).admitted();
       identity.requireActionExecutionAccess(actor.creator(), actor.domain());
+      return true;
     } catch (org.springframework.web.server.ResponseStatusException denied) {
       if (denied.getStatusCode().value() != 403) throw denied;
-      throw new ScheduleException(
-          403,
-          "PERMISSION_DENIED",
-          actor.locale().startsWith("zh")
-              ? "你没有执行动作或函数的权限"
-              : "You do not have permission to execute actions or functions");
+      return false;
     }
+  }
+
+  private ScheduleException denied(Actor actor) {
+    return new ScheduleException(403, "PERMISSION_DENIED", zh(actor)
+        ? "你没有执行动作或函数的权限" : "You do not have permission to execute actions or functions");
   }
 
   public boolean asynchronous() {
@@ -66,7 +93,9 @@ public class OntologyScheduleApplication implements ScheduleApplication {
     return Math.max(1, configs.get(execution.domainId()).getReportCardPythonTimeout()) + 1;
   }
 
-  private record Target(String actionId, Function function, String label) {}
+  private record Target(Action action, Function function, String label) {
+    String actionId() { return action == null ? null : action.getId(); }
+  }
 
   private Target target(String value, String domain, String locale) {
     int split = value.indexOf(':');
@@ -81,7 +110,7 @@ public class OntologyScheduleApplication implements ScheduleApplication {
           || !domain.equals(action.getFunction().getDomainId())) throw unavailable();
       String reason = unsupportedReason(action.getFunction(), locale);
       if (reason != null) throw new ScheduleException(422, "TARGET_UNAVAILABLE", reason);
-      return new Target(id, action.getFunction(), label(action.getName(), id));
+      return new Target(action, action.getFunction(), label(action.getName(), id));
     }
     if (!kind.equals("function")) throw unavailable();
     var function = functions.queryById(id);
@@ -171,49 +200,53 @@ public class OntologyScheduleApplication implements ScheduleApplication {
   }
 
   public JsonNode form(FormInput input, Actor actor) {
-    boolean zh = actor.locale().startsWith("zh");
-    var options = array();
-    for (var action : actions.queryList(Action.STATUS_PUBLISHED, null, null, actor.domain())) {
-      String reason =
-          action.getFunction() == null || !actor.domain().equals(action.getFunction().getDomainId())
-              ? "Target unavailable"
-              : unsupportedReason(action.getFunction(), actor.locale());
-      options.add(
-          FormFields.option(
-              "action:" + action.getId(),
-              label(action.getName(), action.getId()) + (zh ? " · 动作" : " · Action"),
-              reason,
-              action.getDescription()));
-    }
-    for (var function : functions.queryList(Function.OPERATION_WRITE, null, actor.domain()))
-      options.add(
-          FormFields.option(
-              "function:" + function.getId(),
-              label(function.getName(), function.getId()) + (zh ? " · 函数" : " · Function"),
-              unsupportedReason(function, actor.locale()),
-              function.getDescription()));
     String selected = input.values().path("execution").asText("");
-    boolean found = false;
-    for (var option : options) if (selected.equals(option.path("value").asText())) found = true;
-    if (!selected.isBlank() && !found)
-      options.add(
-          FormFields.option(selected, selected, zh ? "目标已不可用" : "Target unavailable", null));
+    var options = array();
+    Target selectedTarget = null;
+    for (var action : actions.queryList(Action.STATUS_PUBLISHED, null, null, actor.domain())) {
+      if (!permitted(action.getId(), actor)) continue;
+      var function = action.getFunction();
+      String reason = function == null || !actor.domain().equals(function.getDomainId())
+          ? "Target unavailable" : unsupportedReason(function, actor.locale());
+      var candidate = new Target(action, function, label(action.getName(), action.getId()));
+      String value = "action:" + action.getId();
+      options.add(option(value, candidate, reason, action.getDescription(), actor));
+      if (selected.equals(value) && reason == null) selectedTarget = candidate;
+    }
+    if (permitted(null, actor)) {
+      for (var function : functions.queryList(Function.OPERATION_WRITE, null, actor.domain())) {
+        String reason = unsupportedReason(function, actor.locale());
+        var candidate = new Target(null, function, label(function.getName(), function.getId()));
+        String value = "function:" + function.getId();
+        options.add(option(value, candidate, reason, function.getDescription(), actor));
+        if (selected.equals(value) && reason == null) selectedTarget = candidate;
+      }
+    }
+    if (!selected.isBlank() && !hasChoice(options, selected))
+      options.add(FormFields.option(selected, selected, zh(actor) ? "目标已不可用" : "Target unavailable", null));
+    return targetForm(input, actor, options, selectedTarget);
+  }
+
+  private boolean hasChoice(JsonNode options, String selected) {
+    for (var option : options) if (selected.equals(option.path("value").asText())) return true;
+    return false;
+  }
+
+  private JsonNode option(String value, Target target, String reason, String description, Actor actor) {
+    String kind = target.action() == null ? (zh(actor) ? " · 函数" : " · Function") : (zh(actor) ? " · 动作" : " · Action");
+    return FormFields.option(value, target.label() + kind, reason, description);
+  }
+
+  private JsonNode targetForm(FormInput input, Actor actor, com.fasterxml.jackson.databind.node.ArrayNode options, Target target) {
+    boolean zh = zh(actor);
+    String selected = input.values().path("execution").asText("");
     var fields = array();
     fields.add(FormFields.select("execution", zh ? "执行" : "Execute", options, true));
     String revision = "ontology-unselected-v1";
-    if (!selected.isBlank()) {
-      try {
-        var target = target(selected, actor.domain(), actor.locale());
-        revision = formRevision(target.function(), target.actionId());
-        fields.addAll(
-            ParameterForms.fields(
-                target.function().getParameters(),
-                ParameterForms.Context.SCHEDULED,
-                PARAMETER_KEY,
-                actor.locale()));
-      } catch (ScheduleException unavailable) {
-        /* The unavailable selection remains visible and disabled. */
-      }
+    if (target != null) {
+      revision = formRevision(target.function(), target.actionId());
+      fields.addAll(ParameterForms.fields(target.function().getParameters(), ParameterForms.Context.SCHEDULED,
+          PARAMETER_KEY, actor.locale()));
     }
     JsonNode values =
         "execution".equals(input.changedField()) ? object("execution", selected) : input.values();
@@ -221,7 +254,7 @@ public class OntologyScheduleApplication implements ScheduleApplication {
     if (form.path("submittable").asBoolean() && !selected.isBlank()) {
       var errors =
           ParameterForms.scheduled(
-                  target(selected, actor.domain(), actor.locale()).function().getParameters(),
+                  target.function().getParameters(),
                   PARAMETER_KEY,
                   form.path("values"),
                   ZoneId.of(input.timeZone()),
@@ -238,15 +271,12 @@ public class OntologyScheduleApplication implements ScheduleApplication {
   }
 
   public Validation validate(TaskDefinition definition, Actor actor) {
-    authorize(actor);
-    String selected = definition.content().path("execution").asText();
-    if (!selected.isBlank()) target(selected, actor.domain(), actor.locale());
-    var form = form(new FormInput(definition.content(), null, null, definition.timeZone()), actor);
-    var validation = ScheduleForms.validate(definition, form);
-    var target =
-        target(definition.content().path("execution").asText(), actor.domain(), actor.locale());
-    values(
-        target.function(), definition.content(), definition.timeZone(), Instant.now(), actor.locale());
+    String selected = definition.content().path("execution").asText("");
+    var input = new FormInput(definition.content(), null, null, definition.timeZone());
+    if (selected.isBlank()) return ScheduleForms.validate(definition, targetForm(input, actor, array(), null));
+    var target = target(selected, actor.domain(), actor.locale());
+    var options = array().add(option(selected, target, null, null, actor));
+    var validation = ScheduleForms.validate(definition, targetForm(input, actor, options, target));
     return new Validation(
         validation.content(),
         validation.formRevision(),
@@ -267,12 +297,12 @@ public class OntologyScheduleApplication implements ScheduleApplication {
   }
 
   public JsonNode start(Execution execution, Actor actor) {
-    validate(execution.definition(), actor);
     var target =
         target(
             execution.definition().content().path("execution").asText(),
             actor.domain(),
             actor.locale());
+    if (target.action() == null && !permitted(null, actor)) throw denied(actor);
     if (!execution
         .definition()
         .formRevision()
@@ -287,7 +317,6 @@ public class OntologyScheduleApplication implements ScheduleApplication {
             execution.definition().timeZone(),
             started,
             actor.locale());
-    var function = MetricViewBindings.executionWriteFunction(target.function(), values);
     var state = ScheduleForms.execution("completed");
     state.set(
         "resultLink",
@@ -306,18 +335,17 @@ public class OntologyScheduleApplication implements ScheduleApplication {
             "executionId",
             execution.runId()));
     try {
-      var output =
-          programs.execute(
-              execution.runId().toString(),
-              function,
-              actor.creator(),
-              actor.permission(),
-              ServiceConst.NOT_SANDBOX,
-              actor.locale(),
-              Math.max(1, configs.get(actor.domain()).getReportCardPythonTimeout()),
-              actor.domain(),
-              new ABCProgramService.ExecutionContext(execution.runId(), null, io.ontomato.dataengine.service.ExecutionTarget.LIVE));
-      var result = (io.ontomato.dataengine.bean.PythonExecuteResult) output[1];
+      int timeout = Math.max(1, configs.get(actor.domain()).getReportCardPythonTimeout());
+      io.ontomato.dataengine.bean.PythonExecuteResult result;
+      if (target.action() != null) {
+        result = actions.executeScheduled(target.action(), values, actor.locale(), actor.user(), actor.permission(), timeout, execution.runId());
+      } else {
+        var function = MetricViewBindings.executionWriteFunction(target.function(), values);
+        var output = programs.execute(execution.runId().toString(), function, actor.creator(), actor.permission(),
+            ServiceConst.NOT_SANDBOX, actor.locale(), timeout, actor.domain(),
+            new ABCProgramService.ExecutionContext(execution.runId(), null, ExecutionTarget.LIVE));
+        result = (io.ontomato.dataengine.bean.PythonExecuteResult) output[1];
+      }
       state.put("result", result.getResult());
       state.set("spendTime", JSON.valueToTree(result.getSpendTime()));
       if (result.getError() != null && !result.getError().isBlank()) {

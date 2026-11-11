@@ -193,7 +193,7 @@ class BuildTestPostgresIntegrationTest {
       action.setDomainId("contract");action.setFunction(function);
       action.setTarget(new io.ontomato.dataengine.bean.action.ActionTarget("contract_person", "id"));
       var actions=spy(new ActionServiceImpl());doReturn(action).when(actions).queryById(action.getId());
-      ReflectionTestUtils.setField(actions,"identity",identity);ReflectionTestUtils.setField(actions,"abcProgramService",programs);
+      ReflectionTestUtils.setField(actions,"abcProgramService",programs);
       CapabilityGrantLookup actionGrants = mock(CapabilityGrantLookup.class);
       when(actionGrants.admission(anyString(), anyString(), eq(CapabilityGrantLookup.ACTION), anyString())).thenReturn(CapabilityGrantLookup.Admission.ALL);
       ReflectionTestUtils.setField(actions, "capabilityGrants", actionGrants);

@@ -420,6 +420,8 @@ node wf-client.mjs dsl '{"problem":"查运行对象","answer":{"steps":[{"graph"
 | --- | --- |
 | `Action is outside the current domain` | 令牌的域与动作的域不一致 |
 | `Action.notPublished` | 动作还不是 `PUBLISHED` |
+| 旧接口权限 `/action/execute` 被拒绝 | 此动作没有任何能力授权记录，才沿用旧接口权限 |
+| `Action.targetOutsideScope` | 声明的目标不可读或不在角色的授权范围内；核对主键和单据归属 |
 | `Action.notGranted` | 令牌账号的有效角色里没有被授这个动作 |
 | `Action.publishedIsFrozen` | 想改已发布动作的代码；新建动作代替 |
 | `Precondition failed: ...` 或你的 `message` | 单据业务条件不满足（阶段或状态） |

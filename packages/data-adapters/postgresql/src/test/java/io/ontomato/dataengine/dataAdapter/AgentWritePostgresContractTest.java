@@ -54,6 +54,7 @@ class AgentWritePostgresContractTest {
       functions.initIndex();
       var actions = new ActionDao();
       ReflectionTestUtils.setField(actions, "jdbcTemplate", jdbc);
+      ReflectionTestUtils.setField(actions, "functions", functions);
       var embedding = mock(EmbeddingService.class);
       when(embedding.embedding(anyString(), any())).thenReturn(new float[] {0, 1});
       ReflectionTestUtils.setField(actions, "embeddingService", embedding);
@@ -62,7 +63,6 @@ class AgentWritePostgresContractTest {
       ReflectionTestUtils.setField(actions, "retrievalGate", gate);
       actions.initIndex();
       var assets = new ActionServiceImpl();
-      ReflectionTestUtils.setField(assets, "functionDao", functions);
       ReflectionTestUtils.setField(assets, "actionDao", actions);
       ReflectionTestUtils.setField(assets, "langService", mock(LangService.class));
       var assetInput = new MockHttpInputMessage(JSON.toJSONBytes(JSON.parseArray(fixture("actions.json")).getJSONObject(0)));
