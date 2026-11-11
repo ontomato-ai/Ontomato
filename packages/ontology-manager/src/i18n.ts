@@ -743,7 +743,7 @@ const ontologyEn = {
 
   mapTitle: "Governance & Capability Map",
   mapDesc:
-    "The authority graph, left to right: a subject holds a role, the role may run what a process names, and the process names actions. Metric views sit beside actions rather than after them — nothing in the model ties one to the other.",
+    "The authority graph, left to right: a subject holds a role, the role may run what a process names, and the process names actions. Metric views sit beside actions rather than after them — nothing in the model ties one to the other. Select a node to read its relations.",
   mapFilter: "Filter by name",
   mapRefresh: "Refresh",
   mapEmpty: "Nothing to draw in this domain yet",

@@ -319,63 +319,65 @@ function grantSummary(workflow: WorkflowRecord) {
     <div v-loading="loading" class="workflow-body">
       <el-empty v-if="!loading && workflows.length === 0" :description="ot('workflowEmpty')" />
       <el-table v-else :data="workflows" row-key="id" class="workflow-table">
-        <el-table-column :label="ot('workflowColumnName')" min-width="200">
+        <el-table-column :label="ot('workflowColumnName')" min-width="150">
           <template #default="{ row }">
             <div class="workflow-name">{{ row.name }}</div>
             <div v-if="row.description" class="workflow-desc">{{ row.description }}</div>
           </template>
         </el-table-column>
-        <el-table-column :label="ot('workflowColumnStatus')" width="110">
+        <el-table-column :label="ot('workflowColumnStatus')" width="78">
           <template #default="{ row }">
             <el-tag :type="statusTag(row.status).type" effect="light">{{ statusTag(row.status).text }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column :label="ot('workflowColumnVersion')" width="90">
+        <el-table-column :label="ot('workflowColumnVersion')" width="60">
           <template #default="{ row }">v{{ row.version ?? 0 }}</template>
         </el-table-column>
-        <el-table-column :label="ot('workflowColumnSteps')" min-width="280">
+        <el-table-column :label="ot('workflowColumnSteps')" min-width="96" show-overflow-tooltip>
           <template #default="{ row }">
             <span class="workflow-steps">{{ stepSummary(row) }}</span>
           </template>
         </el-table-column>
-        <el-table-column :label="ot('workflowColumnGrants')" min-width="180">
+        <el-table-column :label="ot('workflowColumnGrants')" min-width="124">
           <template #default="{ row }">
             <!--
               The count is the only summary safe to read at a glance: an empty authority is a state an
               operator must be able to see without opening anything, because an activated process that
               grants nothing looks identical to one that works.
             -->
-            <el-button link type="primary" @click="openGrants(row)">
+            <el-button class="workflow-grant-button" link type="primary" @click="openGrants(row)">
               <span class="workflow-grants" :class="{ 'workflow-grants--empty': workflowGrants(row).inForce.length === 0 }">
                 {{ grantSummary(row) }}
               </span>
             </el-button>
           </template>
         </el-table-column>
-        <el-table-column :label="ot('workflowColumnCreatedBy')" width="130">
+        <el-table-column :label="ot('workflowColumnCreatedBy')" min-width="84" show-overflow-tooltip>
           <template #default="{ row }">{{ subjectName(row.createdBy) }}</template>
         </el-table-column>
-        <el-table-column :label="ot('workflowColumnReviewedBy')" width="130">
+        <el-table-column :label="ot('workflowColumnReviewedBy')" min-width="104" show-overflow-tooltip>
           <template #default="{ row }">{{ subjectName(row.reviewedBy) }}</template>
         </el-table-column>
-        <el-table-column :label="ot('workflowColumnOps')" width="300" fixed="right">
+        <el-table-column :label="ot('workflowColumnOps')" min-width="164">
           <template #default="{ row }">
-            <el-button link type="primary" @click="openEdit(row)">
-              <ArrowDownUp :size="14" />
-              <span>{{ ot("workflowEdit") }}</span>
-            </el-button>
-            <el-button v-if="row.status !== 'ACTIVE'" link type="success" @click="activate(row)">
-              <Play :size="14" />
-              <span>{{ ot("workflowActivate") }}</span>
-            </el-button>
-            <el-button v-else link type="warning" @click="deactivate(row)">
-              <Pause :size="14" />
-              <span>{{ ot("workflowDeactivate") }}</span>
-            </el-button>
-            <el-button link type="danger" :disabled="row.status === 'ACTIVE'" @click="remove(row)">
-              <Trash2 :size="14" />
-              <span>{{ ot("workflowDelete") }}</span>
-            </el-button>
+            <div class="workflow-operations">
+              <el-button link type="primary" @click="openEdit(row)">
+                <ArrowDownUp :size="14" />
+                <span>{{ ot("workflowEdit") }}</span>
+              </el-button>
+              <el-button v-if="row.status !== 'ACTIVE'" link type="success" @click="activate(row)">
+                <Play :size="14" />
+                <span>{{ ot("workflowActivate") }}</span>
+              </el-button>
+              <el-button v-else link type="warning" @click="deactivate(row)">
+                <Pause :size="14" />
+                <span>{{ ot("workflowDeactivate") }}</span>
+              </el-button>
+              <el-button link type="danger" :disabled="row.status === 'ACTIVE'" @click="remove(row)">
+                <Trash2 :size="14" />
+                <span>{{ ot("workflowDelete") }}</span>
+              </el-button>
+            </div>
           </template>
         </el-table-column>
       </el-table>
@@ -554,6 +556,22 @@ function grantSummary(workflow: WorkflowRecord) {
 .workflow-body {
   flex: 1;
   min-height: 200px;
+}
+.workflow-table :deep(.cell) {
+  padding-inline: 8px;
+}
+.workflow-operations {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+}
+.workflow-operations > .el-button {
+  margin: 0;
+}
+.workflow-grant-button {
+  max-width: 100%;
+  white-space: normal;
+  text-align: start;
 }
 .workflow-name {
   font-weight: 600;
