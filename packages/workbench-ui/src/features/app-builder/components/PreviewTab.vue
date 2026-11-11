@@ -154,11 +154,11 @@ const notice = computed(() => {
         <span class="run-state" role="status">
           <template v-if="workspace?.activeRunId">
             <LoaderCircle :size="13" class="spin" aria-hidden="true" />
-            <span :title="t('appBuilder.previewRunning')">{{ t("appBuilder.previewRunning") }}</span>
+            <span>{{ t("appBuilder.previewRunning") }}</span>
           </template>
           <template v-else-if="flash">
             <Check :size="13" class="ok" aria-hidden="true" />
-            <span :title="flash">{{ flash }}</span>
+            <span>{{ flash }}</span>
           </template>
         </span>
       </div>
@@ -209,21 +209,25 @@ const notice = computed(() => {
   border-radius: var(--radius-md);
   background: var(--el-bg-color);
 }
-/* The frame's own line, one row at every width: the sample's name and the run's note give way, the stage stays whole. */
+/*
+ * The frame's own line: the sample's name and the run's note wrap onto a second row when the panel is narrow, such as
+ * beside the conversation, instead of each being cut to a few characters with an ellipsis. The stage stays whole and
+ * the sample's name gives way only at the very end, when the row cannot hold even its first part.
+ */
 .frame-line {
   display: flex;
   flex-shrink: 0;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 6px;
+  gap: 0 6px;
   min-height: var(--control-height-sm);
-  padding: 0 var(--spacing-sm);
+  padding: 2px var(--spacing-sm);
   overflow: hidden;
   border-bottom: 1px solid var(--el-border-color-light);
   background: var(--el-fill-color-light);
   color: var(--el-text-color-secondary);
   font-size: var(--text-xs);
   line-height: var(--leading-xs);
-  white-space: nowrap;
 }
 .test-tag {
   flex-shrink: 0;
@@ -232,6 +236,7 @@ const notice = computed(() => {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
+  white-space: nowrap;
   color: var(--el-text-color-regular);
 }
 .test-state {
@@ -239,22 +244,23 @@ const notice = computed(() => {
   flex-shrink: 0;
   align-items: center;
   gap: 6px;
+  white-space: nowrap;
 }
 .test-sample + .test-state::before {
   content: "·";
 }
+/* No `min-width: 0` on the row's parts: a flex item that may shrink is a flex item that is cut, which is what this
+   line must not do. Everything that does not fit moves to the next row whole. */
 .run-state {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  min-width: 0;
   margin-inline-start: auto;
   color: var(--el-text-color-regular);
 }
 .run-state span {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 .run-state svg {
   flex-shrink: 0;

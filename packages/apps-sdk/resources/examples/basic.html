@@ -46,7 +46,6 @@
       <template #header>Chart (sample values)</template>
       <e-chart :option="option" :theme="chartTheme" :height="280"></e-chart>
     </el-card>
-
     <el-card>
       <template #header>Markdown</template>
       <markdown-view :content="notes"></markdown-view>
@@ -75,12 +74,13 @@
 
     const context = createAppContext();
 
-    // The chart draws whatever option it is given; this one never changes, so it is a plain object.
+    // The chart draws whatever option it is given; this one never changes, so it is a plain object. The categories are
+    // long on purpose: the chart theme itself keeps their labels from overlapping, so the option needs no axis rules.
     const option = {
       tooltip: { trigger: "axis" },
-      xAxis: { type: "category", data: ["A", "B", "C", "D"] },
+      xAxis: { type: "category", data: ["East", "North", "South", "West", "Central China region", "Overseas branches"] },
       yAxis: { type: "value" },
-      series: [{ type: "bar", name: "Sample", data: [12, 20, 15, 8] }],
+      series: [{ type: "bar", name: "Sample", data: [12, 20, 15, 8, 17, 6] }],
     };
 
     const notes = [

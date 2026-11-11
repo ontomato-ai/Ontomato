@@ -260,6 +260,10 @@ createApp({
 - `option` is a complete ECharts option, and each new object redraws the chart: compute it from the data.
 - `theme` is `context.chartTheme`, the platform's chart colours in its current mode; with it the chart follows the
   platform's light and dark themes. Do not set colours of your own unless a series means a fixed colour.
+- The theme also paints the chart's background with the page's surface and keeps the category labels readable: it hides
+  a label that would overlap its neighbour, and cuts one too wide for its slot with an ellipsis. Give the option the
+  categories and their values; do not set `axisLabel` yourself unless one axis needs a rule of its own, and never set
+  its `interval` to `0` to force every label out, because the long ones then run into each other.
 - `height` is in pixels or any CSS length; the width follows the element's container.
 
 Import `echarts` itself only for helpers an option needs, such as `new echarts.graphic.LinearGradient(...)`, never to
