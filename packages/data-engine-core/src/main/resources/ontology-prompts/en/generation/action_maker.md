@@ -279,6 +279,8 @@ Vector helper arguments carry text or fileBase64; they do not reference Java hos
 
 # Submission criteria first
 
+For an existing object, declare top-level `target: {className, keyParameter}`; the key parameter must be a string. A creation has no target. Actor and organization restrictions belong to grants, not submission criteria.
+
 Before writing the program, decide the whole-action preconditions and deliver them as `submissionCriteria` in `outputs/result.json`. They describe conditions over parameters and the pre-action object state; they are not per-write guards.
 
 ```json

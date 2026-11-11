@@ -10,6 +10,7 @@ import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
 
 import io.ontomato.dataengine.bean.function.Function;
+import io.ontomato.dataengine.bean.metricView.MetricView;
 import io.ontomato.dataengine.bean.function.Parameter;
 import io.ontomato.dataengine.core.bean.User;
 
@@ -32,7 +33,7 @@ public class SubjectValueResolver {
     public static final String ACCOUNT = SubjectAttributeLookup.ACCOUNT;
     public static final String PRINCIPAL = SubjectAttributeLookup.PRINCIPAL;
 
-    private static final Set<String> SOURCES = Set.of(ACCOUNT, PRINCIPAL);
+    private static final Set<String> SOURCES = Set.of(ACCOUNT, PRINCIPAL, SubjectAttributeLookup.ORG);
 
     private final SubjectAttributeLookup subjects;
 
@@ -51,9 +52,9 @@ public class SubjectValueResolver {
     }
 
     /**
-     * Resolve one declared value.
+     * Resolve one declared value. Organization references always produce a list of codes.
      *
-     * <p>Literals pass through untouched; a reference must produce exactly one value. A multi-valued
+     * <p>Literals pass through untouched; a scalar reference must produce exactly one value. A multi-valued
      * subject attribute (a custom attribute holding several strings) cannot stand in for a scalar
      * comparison, so it is refused rather than silently joined into something the author did not write.</p>
      */
@@ -64,7 +65,10 @@ public class SubjectValueResolver {
         }
         if (value instanceof List<?> items) {
             List<Object> resolved = new ArrayList<>(items.size());
-            for (Object item : items) resolved.add(resolve(item, user));
+            for (Object item : items) {
+                requireListElement(item);
+                resolved.add(resolve(item, user));
+            }
             return JSONArray.of(resolved.toArray());
         }
         return value;
@@ -80,14 +84,18 @@ public class SubjectValueResolver {
             SubjectReference.Parsed reference = SubjectReference.parse(text);
             if (reference == null) {
                 throw new IllegalArgumentException(
-                        "Malformed subject reference: " + text + " (expected {{account.field}} or {{principal.attribute}})");
+                        "Malformed subject reference: " + text + " (expected a whole {{source.attribute}} reference)");
             }
             requireKnownSource(reference, text);
             requireKnownAccountField(reference, text);
+            if (SubjectAttributeLookup.ORG.equals(reference.source())) OrganizationScope.fromAttribute(reference.attribute());
             return;
         }
         if (value instanceof List<?> items) {
-            for (Object item : items) validate(item);
+            for (Object item : items) {
+                requireListElement(item);
+                validate(item);
+            }
         }
     }
 
@@ -128,6 +136,8 @@ public class SubjectValueResolver {
     private Object resolve(SubjectReference.Parsed reference, String text, User user) {
         requireKnownSource(reference, text);
         requireKnownAccountField(reference, text);
+        if (SubjectAttributeLookup.ORG.equals(reference.source()))
+            return subjects.organizationCodes(user, OrganizationScope.fromAttribute(reference.attribute()));
         Object value = subjects.attribute(user, reference.source(), reference.attribute());
         if (value == null) {
             throw new IllegalArgumentException(
@@ -143,6 +153,27 @@ public class SubjectValueResolver {
             return values.get(0);
         }
         return value;
+    }
+
+    private static void requireListElement(Object item) {
+        if (OrganizationScope.fromReference(item) != null)
+            throw new IllegalArgumentException("An organization reference is the entire array, not an array element");
+    }
+
+    /** Both the management and agent paths bind metric parameters from the same authenticated subject. */
+    public JSONObject metricParameters(MetricView metric, String bindingId, JSONObject supplied, User user) {
+        if (bindingId == null) refuseOverrides(metric.getFunction(), supplied);
+        return resolveValues(MetricViewBindings.resolve(metric, bindingId, supplied), user);
+    }
+
+    /** A package recipe may omit defaults, but cannot replace a declared organization binding. */
+    public JSONObject packageParameters(JSONObject bundle, JSONObject supplied, User user) {
+        var definition = new Function();
+        definition.setQueryPackage(bundle);
+        var values = MetricViewBindings.values(definition);
+        if (supplied != null) values.putAll(supplied);
+        MetricViewBindings.validateDeclaredValues(definition, values);
+        return resolveValues(values, user);
     }
 
     private void requireKnownSource(SubjectReference.Parsed reference, String text) {

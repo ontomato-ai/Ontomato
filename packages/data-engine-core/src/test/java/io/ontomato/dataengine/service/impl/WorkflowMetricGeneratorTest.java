@@ -26,10 +26,6 @@ import org.mockito.ArgumentCaptor;
 /**
  * What activating a process publishes as queries, and what it must refuse to publish.
  *
- * <p>The pending query is the one that decides whether "I have nothing pending" is an answer or a
- * failure, so these cases pin the two things that make it trustworthy: the owner is a server-filled
- * subject reference, and a contract without an owner field produces no such query at all rather than
- * one that quietly lists everyone's work.</p>
  */
 class WorkflowMetricGeneratorTest {
 
@@ -45,7 +41,7 @@ class WorkflowMetricGeneratorTest {
     admin = mock(AdminService.class);
     generator = new WorkflowMetricGenerator(metrics, admin);
     when(metrics.queryList(any(), any(), any(), anyString())).thenReturn(List.of());
-    when(metrics.save(any(), anyString())).thenAnswer(call -> call.getArgument(0));
+    when(metrics.publishWorkflowMetric(any(), anyString())).thenAnswer(call -> call.getArgument(0));
     when(admin.getJSONRule(DOMAIN)).thenReturn(classRule());
   }
 
@@ -56,7 +52,7 @@ class WorkflowMetricGeneratorTest {
     WorkflowMetricGenerator.Generated generated = generator.generate(workflow);
 
     ArgumentCaptor<MetricView> saved = ArgumentCaptor.forClass(MetricView.class);
-    verify(metrics, times(2)).save(saved.capture(), anyString());
+    verify(metrics, times(2)).publishWorkflowMetric(saved.capture(), anyString());
     assertEquals(2, generated.names().size());
     assertTrue(generated.warnings().isEmpty(), generated.warnings().toString());
 
@@ -65,14 +61,11 @@ class WorkflowMetricGeneratorTest {
         .findFirst()
         .orElseThrow();
     String bundle = pending.getFunction().getQueryPackage().toJSONString();
-    // The caller cannot choose the owner: the server fills it from the authenticated request.
-    assertTrue(bundle.contains("{{account.id}}"), bundle);
-    // Owner and state: the pointer targets the owner inside the and-group, and the open state is fixed.
-    assertTrue(bundle.contains(
-        "\"pointer\":\"/answer/steps/0/graph/patterns/0/objects/0/conditions/properties/and/0/value\""), bundle);
-    assertTrue(bundle.contains("待办"), bundle);
-    assertTrue(bundle.contains("vm_request"), bundle);
-    assertEquals("{{account.id}}", pending.getBindings().get(0).getParameters().getString("assignee"));
+    assertTrue(pending.getBindings().isEmpty());
+    assertEquals("w1", pending.getWorkflowSource().workflowId());
+    assertEquals(2, pending.getWorkflowSource().version());
+    assertEquals(MetricView.WorkflowSource.Purpose.pending, pending.getWorkflowSource().purpose());
+    assertTrue(!bundle.contains("account.id") && !bundle.contains("assignee_id"), bundle);
     assertEquals(MetricView.STATUS_PUBLISHED, pending.getStatus());
 
     MetricView detail = saved.getAllValues().stream()
@@ -85,16 +78,15 @@ class WorkflowMetricGeneratorTest {
   }
 
   @Test
-  void aContractWithoutAnOwnerProducesOnlyTheDetailQuery() throws Exception {
+  void departmentStepsNeedNoAssigneeField() throws Exception {
     RunContract contract = contract();
     contract.setAssigneeField(null);
 
     WorkflowMetricGenerator.Generated generated = generator.generate(workflow(contract));
 
-    verify(metrics, times(1)).save(any(), anyString());
-    assertEquals(1, generated.names().size());
-    // Refusing is the point: a pending query with no owner field would list everyone's work as "mine".
-    assertTrue(generated.warnings().stream().anyMatch(w -> w.contains("assigneeField")), generated.warnings().toString());
+    verify(metrics, times(2)).publishWorkflowMetric(any(), anyString());
+    assertEquals(2, generated.names().size());
+    assertTrue(generated.warnings().isEmpty());
   }
 
   @Test
@@ -113,18 +105,21 @@ class WorkflowMetricGeneratorTest {
     Workflow workflow = workflow(contract());
     MetricView existingPending = new MetricView();
     existingPending.setId("mv-1");
-    existingPending.setName("我的待办 · 虚机申请流程");
+    existingPending.setName("previous name");
+    existingPending.setWorkflowSource(new MetricView.WorkflowSource("w1", 1, MetricView.WorkflowSource.Purpose.pending));
     existingPending.setBindings(new ArrayList<>());
     MetricView existingDetail = new MetricView();
     existingDetail.setId("mv-2");
-    existingDetail.setName("单据详情 · 虚机申请流程");
+    existingDetail.setWorkflowSource(new MetricView.WorkflowSource("w1", 1, MetricView.WorkflowSource.Purpose.detail));
+    var manual = new MetricView();
+    manual.setId("manual"); manual.setName("我的待办 · 虚机申请流程");
     when(metrics.queryList(any(), any(), any(), anyString()))
-        .thenReturn(List.of(existingPending, existingDetail));
+        .thenReturn(List.of(manual, existingPending, existingDetail));
 
     generator.generate(workflow);
 
     ArgumentCaptor<MetricView> saved = ArgumentCaptor.forClass(MetricView.class);
-    verify(metrics, times(2)).save(saved.capture(), anyString());
+    verify(metrics, times(2)).publishWorkflowMetric(saved.capture(), anyString());
     // Reusing the ids is what makes a re-activation a refresh rather than a duplicate pair every time.
     assertTrue(saved.getAllValues().stream().anyMatch(metric -> "mv-1".equals(metric.getId())));
     assertTrue(saved.getAllValues().stream().anyMatch(metric -> "mv-2".equals(metric.getId())));
@@ -137,7 +132,8 @@ class WorkflowMetricGeneratorTest {
     workflow.setId("w1");
     workflow.setName("虚机申请流程");
     workflow.setDomainId(DOMAIN);
-    workflow.setStatus(Workflow.STATUS_DRAFT);
+    workflow.setStatus(Workflow.STATUS_ACTIVE);
+    workflow.setVersion(2);
     workflow.setRunContract(contract);
     return workflow;
   }
@@ -168,5 +164,26 @@ class WorkflowMetricGeneratorTest {
     Map<String, Object> rule = new LinkedHashMap<>();
     rule.put("classDef", List.of(definition));
     return rule;
+  }
+
+  @Test
+  void sharedRunClassesWithoutAWorkflowReferenceRequireAModelDecision() throws Exception {
+    var flow = workflow(contract());
+    generator.generate(flow);
+    var saved = ArgumentCaptor.forClass(MetricView.class);
+    verify(metrics, times(2)).publishWorkflowMetric(saved.capture(), anyString());
+    var metric = saved.getAllValues().stream().filter(MetricView::isWorkflowPending).findFirst().orElseThrow();
+    var dao = mock(io.ontomato.dataengine.dao.WorkflowDao.class);
+    when(dao.pendingRevision(DOMAIN,"w1",2)).thenReturn(
+        new io.ontomato.dataengine.dao.WorkflowDao.PendingRevision(flow.getRunContract(), List.of(), true));
+    var grants = mock(io.ontomato.dataengine.service.CapabilityGrantLookup.class);
+    var query = new io.ontomato.dataengine.service.WorkflowPendingQuery(dao, grants, null);
+    var access = new io.ontomato.dataengine.service.QueryAccessService.Access(
+        new io.ontomato.dataengine.service.QueryAccessService.GrantUser("user", DOMAIN),
+        new io.ontomato.dataengine.service.sys.bean.permission.UserDataPermission(), null, null, null);
+    var error = org.junit.jupiter.api.Assertions.assertThrows(IllegalStateException.class,
+        () -> query.execute("test",metric,new com.alibaba.fastjson2.JSONObject(),access,"en"));
+    assertTrue(error.getMessage().contains("workflowRefField"));
+    verifyNoInteractions(grants);
   }
 }

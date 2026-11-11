@@ -38,6 +38,8 @@ const {
   loadSubjects,
 } = useManagerClient();
 
+const scopeKinds = ["all", "self_organization", "self_subtree", "self_descendants", "initiated_by_self", "assigned_to_self"] as const;
+const contractFields = ["className", "idField", "stepField", "statusField", "orgField", "initiatorField", "assigneeField", "workflowRefField"] as const;
 const workflows = ref<WorkflowRecord[]>([]);
 const actions = ref<SmartAsset[]>([]);
 /**
@@ -133,7 +135,7 @@ onMounted(async () => {
 });
 
 function openCreate() {
-  Object.assign(form, { id: undefined, name: "", description: "", steps: [blankStep(1)] });
+  Object.assign(form, { id: undefined, name: "", description: "", runClassName: null, runContract: null, steps: [blankStep(1)] });
   editing.value = true;
 }
 
@@ -152,13 +154,15 @@ function openEdit(workflow: WorkflowRecord) {
     id: workflow.id,
     name: workflow.name,
     description: workflow.description ?? "",
+    runClassName: workflow.runClassName,
+    runContract: workflow.runContract ? { ...workflow.runContract, statusOpen: [...(workflow.runContract.statusOpen ?? [])] } : null,
     steps: (workflow.steps ?? []).map((step) => ({ ...step })),
   });
   editing.value = true;
 }
 
 function blankStep(no: number): WorkflowStepRecord {
-  return { stepNo: no, name: "", roleCode: "", actionId: "", actionType: "approve", assignRule: "dept_role" };
+  return { stepNo: no, name: "", roleCode: "", actionId: "", actionType: "approve", scope: "all" };
 }
 
 function addStep() {
@@ -180,7 +184,7 @@ async function save() {
   const steps = (form.steps ?? []).filter((step) => (step.roleCode ?? "").trim() || (step.actionId ?? "").trim());
   saving.value = true;
   try {
-    await saveWorkflow({ ...form, name, steps });
+    await saveWorkflow({ ...form, name, steps, runClassName: form.runContract?.className ?? form.runClassName });
     message.success(ot("workflowSaved"));
     editing.value = false;
     await refresh();
@@ -280,7 +284,7 @@ function grantsByRole(rows: CapabilityGrantRecord[]) {
   for (const grant of rows) {
     const role = grant.roleCode || grant.roleId || "-";
     const capabilities = grouped.get(role) ?? [];
-    const name = capabilityName(grant);
+    const name = [capabilityName(grant), grant.stepNo, ot(`scope_${grant.scope.kind}`), grant.scope.field].filter(Boolean).join(" · ");
     if (!capabilities.includes(name)) capabilities.push(name);
     grouped.set(role, capabilities);
   }
@@ -385,6 +389,17 @@ function grantSummary(workflow: WorkflowRecord) {
         <el-form-item :label="ot('workflowColumnDesc')">
           <el-input v-model="form.description" type="textarea" :rows="2" />
         </el-form-item>
+        <el-button v-if="!form.runContract" @click="form.runContract = { className: form.runClassName ?? '', statusOpen: [] }">{{ ot("workflowContractAdd") }}</el-button>
+        <template v-else>
+          <h4>{{ ot("workflowContract") }}</h4>
+          <el-form-item v-for="field in contractFields" :key="field" :label="ot(`contract_${field}`)">
+            <el-input v-model="form.runContract[field]" />
+          </el-form-item>
+          <el-form-item :label="ot('contract_statusOpen')">
+            <el-select v-model="form.runContract.statusOpen" multiple filterable allow-create default-first-option />
+          </el-form-item>
+          <el-button link @click="form.runContract = null">{{ ot("workflowContractRemove") }}</el-button>
+        </template>
       </el-form>
 
       <div class="workflow-steps-editor">
@@ -401,6 +416,9 @@ function grantSummary(workflow: WorkflowRecord) {
           <el-input v-model="step.roleCode" :placeholder="ot('workflowStepRole')" class="workflow-step-role" />
           <el-select v-model="step.actionId" filterable clearable :placeholder="ot('workflowStepAction')" class="workflow-step-action">
             <el-option v-for="action in publishedActions" :key="action.id" :label="action.name" :value="action.id" />
+          </el-select>
+          <el-select v-model="step.scope" :aria-label="ot('workflowScope')">
+            <el-option v-for="kind in scopeKinds" :key="kind" :value="kind" :label="ot(`scope_${kind}`)" />
           </el-select>
           <el-button link type="danger" @click="removeStep(index)">
             <Trash2 :size="14" />

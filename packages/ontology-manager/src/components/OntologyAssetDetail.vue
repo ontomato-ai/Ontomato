@@ -160,6 +160,8 @@ const matchQuestionText = computed({
 // The explanation tab belongs only to actions with segments; other assets and actions without segments show no tab bar.
 const activeTab = ref<"definition" | "explainer">("definition");
 const savedCodeSnapshot = ref("");
+const targetClass = ref("");
+const targetKey = ref("");
 
 const editedCode = computed(() => {
   const code = record.value?.function?.code;
@@ -309,6 +311,8 @@ function guardText(condition: any): string {
 watch(
   () => record.value,
   () => {
+    targetClass.value = record.value?.target?.className ?? "";
+    targetKey.value = record.value?.target?.keyParameter ?? "";
     savedCodeSnapshot.value = editedCode.value;
     const fn = functionRecord.value;
     packageDraft.value = fn?.queryPackage ? JSON.stringify(fn.queryPackage, null, 2) : "";
@@ -398,6 +402,8 @@ async function save() {
   saving.value = true;
   try {
     const isAction = props.kind === "actions";
+    if (isAction) record.value.target = targetClass.value || targetKey.value
+      ? { className: targetClass.value.trim(), keyParameter: targetKey.value.trim() } : null;
     const codeChanged = isAction && codeDirty.value;
     // Recalculation happens synchronously in the save request, so actions with code changes first warn that it may take a while.
     if (codeChanged) message.info(ot("explainerRegenerating"));
@@ -659,6 +665,14 @@ onMounted(() => void loadDetail());
           <el-form-item :label="ot('description')">
             <el-input v-model="record.description" type="textarea" :rows="3" />
           </el-form-item>
+          <template v-if="kind === 'actions'">
+            <el-form-item :label="ot('actionTargetClass')"><el-input v-model="targetClass" /></el-form-item>
+            <el-form-item :label="ot('actionTargetKey')">
+              <el-select v-model="targetKey" clearable>
+                <el-option v-for="p in (functionRecord?.parameters ?? []).filter((p: AssetRecord) => p.type === 'TYPE_STRING')" :key="p.name" :value="p.name" :label="p.name" />
+              </el-select>
+            </el-form-item>
+          </template>
           <el-form-item v-if="!isFunction" :label="ot('status')">
             <el-select v-model="record.status">
               <el-option :label="ot('assetStatusPendingReview')" value="PENDING_REVIEW" />

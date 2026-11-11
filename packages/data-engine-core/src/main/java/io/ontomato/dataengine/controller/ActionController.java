@@ -389,6 +389,8 @@ public class ActionController {
 			log.error(e.getMessage(), e);
 			ret.put("success", false);
 			ret.put("message", e.getMessage());
+            if (e instanceof org.springframework.web.server.ResponseStatusException denied && denied.getStatusCode().value() == 403)
+                ret.put("code", 403);
             io.ontomato.dataengine.service.ExecutionTarget.failure(ret,e);
 		} finally {
 			for (Path tempFile : tempFiles) {

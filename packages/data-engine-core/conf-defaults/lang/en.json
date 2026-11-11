@@ -320,6 +320,10 @@
     "value": "Action preconditions are not met"
   },
   {
+    "key": "Action.targetOutsideScope",
+    "value": "Target is not readable or is outside the granted scope"
+  },
+  {
     "key": "Action.notGranted",
     "value": "No role grants this action to the current subject"
   },

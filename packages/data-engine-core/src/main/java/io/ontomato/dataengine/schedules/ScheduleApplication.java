@@ -73,6 +73,9 @@ public interface ScheduleApplication {
 
   void authorize(Actor actor);
 
+  /** Providers with target-specific grants can authorize the selection without checking unrelated targets. */
+  default void authorize(Actor actor, JsonNode content) { authorize(actor); }
+
   JsonNode form(FormInput input, Actor actor);
 
   Validation validate(TaskDefinition definition, Actor actor);

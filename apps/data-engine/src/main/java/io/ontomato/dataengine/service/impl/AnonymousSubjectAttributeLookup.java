@@ -41,6 +41,11 @@ public class AnonymousSubjectAttributeLookup implements SubjectAttributeLookup {
     }
 
     @Override
+    public java.util.List<String> organizationCodes(User user, io.ontomato.dataengine.service.OrganizationScope scope) {
+        return java.util.List.of();
+    }
+
+    @Override
     public Object attribute(User user, String source, String attribute) {
         if (user == null || attribute == null || !ACCOUNT.equals(source)) return null;
         Function<User, String> field = ACCOUNT_FIELDS.get(attribute);

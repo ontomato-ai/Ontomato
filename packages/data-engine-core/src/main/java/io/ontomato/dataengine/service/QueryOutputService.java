@@ -12,6 +12,7 @@ public class QueryOutputService {
   private final OntologyQueryService ontology;
   private final BusinessConfigService config;
   private final SubjectValueResolver subjectValues;
+  @org.springframework.beans.factory.annotation.Autowired private WorkflowPendingQuery pending;
 
   public QueryOutputService(PythonExecuteService python, ABCProgramService programs,
       OntologyQueryService ontology, BusinessConfigService config, SubjectValueResolver subjectValues) {
@@ -31,20 +32,19 @@ public class QueryOutputService {
     if ("package".equals(kind)) {
       // The agent-facing path resolves subject references too: a definition executed here must mean the
       // same thing it means everywhere else, or "mine" depends on which endpoint was called.
-      var packageValues = subjectValues.resolveValues(recipe.getJSONObject("parameters"), access.user());
+      var packageValues = subjectValues.packageParameters(recipe.getJSONObject("package"), recipe.getJSONObject("parameters"), access.user());
       return executeBundle(id, recipe, recipe.getJSONObject("package"), packageValues,
-          recipe.getJSONObject("columnLabels"), scoped(access, classNames), lang);
+          recipe.getJSONObject("columnLabels"), scoped(access, classNames), lang, null);
     }
     var selectedMetric = "metric".equals(kind)
         ? ontology.metric(recipe.getString("metricId"), recipe.getString("revision"), access) : null;
+    if (selectedMetric != null && selectedMetric.isWorkflowPending() && selectedMetric.getFunction().getQueryPackage() == null)
+      throw new IllegalStateException("Pending query requires its published DSL package");
     if (selectedMetric != null && selectedMetric.getFunction().getQueryPackage() != null) {
       String bindingId = recipe.getString("bindingId");
-      if (bindingId == null)
-        subjectValues.refuseOverrides(selectedMetric.getFunction(), recipe.getJSONObject("parameters"));
-      var values = MetricViewBindings.resolve(selectedMetric, bindingId, recipe.getJSONObject("parameters"));
-      values = subjectValues.resolveValues(values, access.user());
+      var values = subjectValues.metricParameters(selectedMetric, bindingId, recipe.getJSONObject("parameters"), access.user());
       return executeBundle(id, recipe, selectedMetric.getFunction().getQueryPackage(), values,
-          QueryPackage.labels(selectedMetric.getFunction().getReturnDef().getSourceAnalysis()), scoped(access, classNames), lang);
+          QueryPackage.labels(selectedMetric.getFunction().getReturnDef().getSourceAnalysis()), scoped(access, classNames), lang, selectedMetric);
     }
     JSONArray rows;
     JSONArray legacySources = null;
@@ -67,7 +67,7 @@ public class QueryOutputService {
         var function = metric.getFunction();
         code = function.getCode();
         if (code == null || !code.contains("# ontomato-python:2")) throw new IllegalArgumentException("Saved program requires Python protocol 2");
-        parameters = MetricViewBindings.resolve(metric, recipe.getString("bindingId"), recipe.getJSONObject("parameters"));
+        parameters = subjectValues.metricParameters(metric, recipe.getString("bindingId"), recipe.getJSONObject("parameters"), access.user());
         recipe.put("parameters", parameters);
         var returns = function.getReturnDef();
         analysis = returns.getSourceAnalysis() != null ? returns.getSourceAnalysis() : QuerySourceAnalysis.fromStoredSources(returns.getOutKeyRefs());
@@ -114,17 +114,19 @@ public class QueryOutputService {
     if (classes == null || classes.isEmpty()) return access;
     var selected = access.classNames().isEmpty() ? classes : classes.stream().filter(access.classNames()::contains).toList();
     if (selected.isEmpty()) throw new IllegalArgumentException("No classes remain in the task scope");
-    return new QueryAccessService.Access(access.user(), access.permission(), access.grant(), access.credential(), access.expiresAt(), selected);
+    return new QueryAccessService.Access(access.user(), access.permission(), access.grant(), access.credential(), access.expiresAt(), selected, access.target());
   }
 
   private JSONObject executeBundle(String id, JSONObject recipe, JSONObject bundle, JSONObject parameters,
-      JSONObject labels, QueryAccessService.Access access, String lang) throws Exception {
+      JSONObject labels, QueryAccessService.Access access, String lang, io.ontomato.dataengine.bean.metricView.MetricView metric) throws Exception {
     String digest = OntologyQueryService.digest(bundle);
     if (recipe.containsKey("packageSha256") && !digest.equals(recipe.getString("packageSha256")))
       throw new IllegalArgumentException("Query package digest mismatch");
     int minutes = "dsl".equals(bundle.getJSONObject("manifest").getJSONObject("entry").getString("kind"))
         ? 1 : Math.max(1, (int) (config.get(access.user().getDomainId()).getDslCookerTimeout() / 60000));
-    var result = QueryPackageExecution.execute(id, bundle, parameters, labels, access, lang, minutes, ontology, python);
+    var result = metric != null && metric.isWorkflowPending()
+        ? pending.execute(id, metric, parameters, access, lang)
+        : QueryPackageExecution.execute(id, bundle, parameters, labels, access, lang, minutes, ontology, python);
     recipe.put("package", QueryPackage.copy(bundle));
     recipe.put("parameters", result.parameters());
     recipe.put("columnLabels", labels);

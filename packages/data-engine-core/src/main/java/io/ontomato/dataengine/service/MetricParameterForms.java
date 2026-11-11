@@ -50,7 +50,7 @@ public class MetricParameterForms {
   private void validate(MetricView metric, JSONObject values) {
     subjects.refuseOverrides(metric.getFunction(), values);
     subjects.validateValues(values);
-    MetricViewBindings.validateValues(metric.getFunction(), values);
+    MetricViewBindings.validateDeclaredValues(metric.getFunction(), values);
   }
 
   private List<String> readOnly(MetricView metric) {

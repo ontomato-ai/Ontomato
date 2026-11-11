@@ -48,10 +48,9 @@ class ActionParameterDefaultsTest {
     var service = spy(new ActionServiceImpl());
     doReturn(action).when(service).queryById("action-a");
     var programs = mock(ABCProgramService.class);
-    ReflectionTestUtils.setField(service, "identity", mock(IdentityService.class));
     ReflectionTestUtils.setField(service, "abcProgramService", programs);
     var grants = mock(CapabilityGrantLookup.class);
-    when(grants.allows("user-a", "domain-a", CapabilityGrantLookup.ACTION, "action-a")).thenReturn(true);
+    when(grants.admission("user-a", "domain-a", CapabilityGrantLookup.ACTION, "action-a")).thenReturn(CapabilityGrantLookup.Admission.ALL);
     ReflectionTestUtils.setField(service, "capabilityGrants", grants);
     var preconditions = mock(ActionPreconditionService.class);
     when(preconditions.evaluate(any(), any(), any(), any(), any())).thenReturn(new ActionPreconditionService.Verdict(true, List.of()));
