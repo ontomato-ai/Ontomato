@@ -18,7 +18,8 @@
       "zh-CN": "对象浏览器"
     },
     "descriptions": {
-      "en": "Browse object records and explore relationships between instances"
+      "en": "Browse object records and explore relationships between instances",
+      "zh-CN": "浏览对象记录，查看实例之间的关系"
     },
     "icon": "objects",
     "groups": [],

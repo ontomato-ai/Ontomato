@@ -18,7 +18,10 @@
       "en": "Knowledge governance",
       "zh-CN": "知识治理"
     },
-    "descriptions": {},
+    "descriptions": {
+      "en": "Review user feedback and curate business knowledge",
+      "zh-CN": "处理用户反馈，维护业务知识"
+    },
     "icon": "knowledge",
     "groups": [],
     "permissions": []

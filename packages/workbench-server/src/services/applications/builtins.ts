@@ -2,6 +2,34 @@ import type { BuiltinApplication } from "@ontomato/contracts/platform-identity";
 
 export const workbenchApplications: BuiltinApplication[] = [
   {
+    "id": "home",
+    "kind": "native",
+    "rail": "top",
+    "sort": 0,
+    "entry": {
+      "path": "/home",
+      "renderer": "home",
+      "home": "/home"
+    },
+    "entryAccess": [
+      "domain-member"
+    ],
+    "scheduleAdapter": null,
+    "declaration": {
+      "names": {
+        "en": "Home",
+        "zh-CN": "主页"
+      },
+      "descriptions": {
+        "en": "Your apps, agents and dashboards",
+        "zh-CN": "常用应用、智能体与我的仪表盘"
+      },
+      "icon": "home",
+      "groups": [],
+      "permissions": []
+    }
+  },
+  {
     "id": "agents",
     "kind": "native",
     "rail": "top",
@@ -20,7 +48,10 @@ export const workbenchApplications: BuiltinApplication[] = [
         "en": "Agent platform",
         "zh-CN": "智能体平台"
       },
-      "descriptions": {},
+      "descriptions": {
+        "en": "Chat with an agent and get answers, analysis and reports from your data",
+        "zh-CN": "与智能体对话，基于数据获得回答、分析和报告"
+      },
       "icon": "agents",
       "groups": [],
       "permissions": []
@@ -45,7 +76,10 @@ export const workbenchApplications: BuiltinApplication[] = [
         "en": "Dashboards",
         "zh-CN": "仪表盘"
       },
-      "descriptions": {},
+      "descriptions": {
+        "en": "Build and review dashboards of your charts and metrics",
+        "zh-CN": "制作和查看由图表、指标组成的仪表盘"
+      },
       "icon": "dashboards",
       "groups": [],
       "permissions": []
@@ -70,7 +104,10 @@ export const workbenchApplications: BuiltinApplication[] = [
         "en": "Scheduled tasks",
         "zh-CN": "定时任务"
       },
-      "descriptions": {},
+      "descriptions": {
+        "en": "Run analyses and reports on a recurring schedule",
+        "zh-CN": "按周期自动运行分析与报告"
+      },
       "icon": "schedule",
       "groups": [],
       "permissions": []
@@ -94,7 +131,10 @@ export const workbenchApplications: BuiltinApplication[] = [
         "en": "Operations diagnosis",
         "zh-CN": "运维诊断"
       },
-      "descriptions": {},
+      "descriptions": {
+        "en": "Diagnose agent and service failures",
+        "zh-CN": "诊断智能体与服务故障"
+      },
       "icon": "diagnosis",
       "groups": [],
       "permissions": []
@@ -119,7 +159,10 @@ export const workbenchApplications: BuiltinApplication[] = [
         "en": "App builder",
         "zh-CN": "应用构建"
       },
-      "descriptions": {},
+      "descriptions": {
+        "en": "Build and publish applications from conversations",
+        "zh-CN": "通过对话构建并发布应用"
+      },
       "icon": "builder",
       "groups": [
         {
