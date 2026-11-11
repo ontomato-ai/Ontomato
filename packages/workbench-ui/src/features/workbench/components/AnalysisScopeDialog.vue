@@ -11,48 +11,72 @@ const { locale } = useI18n();
 const zh = computed(() => locale.value.startsWith("zh"));
 const scopeSchema = z.object({ question: z.string(), assumptions: z.array(z.string()), filters: z.array(z.object({ id: z.string(), label: z.string(), expression: z.string() })) });
 const scope = ref<z.infer<typeof scopeSchema> | null>(null);
-const filterId = ref(""); const replacement = ref(""); const error = ref(""); const loading = ref(false); const busy = ref(false);
+const adjustment = ref(""); const error = ref(""); const loading = ref(false); const busy = ref(false);
 const requestId = ref(randomId());
 const endpoint = computed(() => `/assistant/sessions/${props.artifact.sessionId}/artifacts/${props.artifact.id}/analysis-scope`);
-const selected = computed(() => scope.value?.filters.find((filter) => filter.id === filterId.value));
 watch(visible, async (open) => {
   if (!open) return;
-  loading.value = true; scope.value = null; filterId.value = ""; replacement.value = ""; error.value = ""; requestId.value = randomId();
-  try { scope.value = scopeSchema.parse(await nodeApiGet(endpoint.value)); }
+  loading.value = true; scope.value = null; adjustment.value = ""; error.value = ""; requestId.value = randomId();
+  try {
+    scope.value = scopeSchema.parse(await nodeApiGet(`${endpoint.value}?locale=${encodeURIComponent(locale.value)}`));
+  }
   catch (e) { error.value = e instanceof Error ? e.message : (zh.value ? "无法读取原查询范围" : "Unable to read scope"); }
   finally { loading.value = false; }
 });
-watch([filterId, replacement], () => { requestId.value = randomId(); });
+watch(adjustment, () => { requestId.value = randomId(); });
 async function submit() {
-  if (!selected.value || !replacement.value.trim() || busy.value) return;
+  if (!scope.value || loading.value || !adjustment.value.trim() || busy.value) return;
   busy.value = true; error.value = "";
   try {
-    await nodeApiFetch(endpoint.value, "POST", { filterId: filterId.value, replacement: replacement.value.trim() }, { headers: { "Idempotency-Key": requestId.value } });
+    await nodeApiFetch(endpoint.value, "POST", { adjustment: adjustment.value.trim() }, { headers: { "Idempotency-Key": requestId.value } });
     visible.value = false; await props.refresh?.();
   } catch (e) { error.value = e instanceof Error ? e.message : (zh.value ? "查询未能启动，请重试" : "Unable to start query"); }
   finally { busy.value = false; }
 }
 </script>
 <template>
-  <el-dialog v-model="visible" :title="zh ? '调整分析范围' : 'Adjust analysis scope'" width="min(560px, 94vw)" append-to-body :close-on-click-modal="!busy">
+  <el-dialog v-model="visible" class="analysis-scope-dialog" :title="zh ? '调整范围并重新查询' : 'Adjust scope and run new query'" width="min(640px, 94vw)" append-to-body :close-on-click-modal="!busy">
     <div v-loading="loading" class="scope-editor">
-      <p v-if="scope">{{ scope.question }}</p>
-      <p class="scope-hint">{{ zh ? '修改一项原查询条件后重新取数，其他条件保持不变。原结果将保留。' : 'Change one source condition and run a new query. Other conditions and the old result are preserved.' }}</p>
-      <el-form v-if="scope?.filters.length" label-position="top" :disabled="busy" @submit.prevent="submit">
-        <el-form-item :label="zh ? '原查询条件' : 'Source condition'"><el-select v-model="filterId" :aria-label="zh ? '原查询条件' : 'Source condition'"><el-option v-for="filter in scope.filters" :key="filter.id" :value="filter.id" :label="filter.label" /></el-select></el-form-item>
-        <el-form-item :label="zh ? '调整为' : 'Replace with'"><el-input v-model="replacement" :placeholder="zh ? '例如：年龄改为55岁及以上' : 'Describe the new condition'" /></el-form-item>
-        <div v-if="selected && replacement.trim()" class="scope-preview"><span>{{ selected.label }}</span><span aria-hidden="true">→</span><strong>{{ replacement }}</strong></div>
+      <div v-if="scope" class="scope-question">
+        <span class="section-caption">{{ zh ? '原问题' : 'Original question' }}</span>
+        <p>{{ scope.question }}</p>
+      </div>
+      <el-form v-if="scope" label-position="top" :disabled="busy" @submit.prevent="submit">
+        <div class="scope-conditions">
+          <p class="section-caption">{{ zh ? '当前查询条件' : 'Current query conditions' }}</p>
+          <ul v-if="scope.filters.length"><li v-for="filter in scope.filters" :key="filter.id"><span class="condition-dot" aria-hidden="true" /><span class="condition-text">{{ filter.label }}</span></li></ul>
+          <p v-else class="scope-hint">{{ zh ? '未记录可展示的筛选条件，可参考原问题描述调整要求。' : 'No displayable filters were recorded. Refer to the original question when describing changes.' }}</p>
+        </div>
+        <el-form-item :label="zh ? '希望如何调整？' : 'How would you like to adjust the scope?'"><el-input v-model="adjustment" type="textarea" :maxlength="2000" :autosize="{ minRows: 3, maxRows: 6 }" :placeholder="zh ? '例如：年龄改为55岁及以上，人员范围改为退休教职工。' : 'For example: include retired staff aged 55 and above.'" /></el-form-item>
+        <p class="scope-hint">{{ zh ? '可同时修改、增加或取消多项条件，未提及的条件和输出要求保持不变。' : 'Change, add, or remove multiple conditions. Unmentioned conditions and output requirements remain unchanged.' }}</p>
       </el-form>
-      <el-empty v-else-if="scope && !loading" :description="zh ? '这份结果没有可确认来源的筛选条件，请在对话中补充范围。' : 'No source filters are available. Describe the new scope in chat.'" :image-size="48" />
       <el-alert v-if="error" type="error" :closable="false" :title="error" />
     </div>
-    <template #footer><el-button :disabled="busy" @click="visible = false">{{ zh ? '取消' : 'Cancel' }}</el-button><el-button type="primary" :loading="busy" :disabled="!selected || !replacement.trim()" @click="submit">{{ zh ? '重新查询' : 'Run new query' }}</el-button></template>
+    <template #footer><div class="scope-footer"><div class="footer-actions"><el-button :disabled="busy" @click="visible = false">{{ zh ? '取消' : 'Cancel' }}</el-button><el-button type="primary" :loading="busy" :disabled="!scope || loading || !adjustment.trim()" @click="submit">{{ zh ? '重新查询' : 'Run new query' }}</el-button></div></div></template>
   </el-dialog>
 </template>
 <style scoped>
-.scope-editor { min-height: 100px; display: flex; flex-direction: column; gap: var(--spacing-md); }
+.scope-editor { min-height: 100px; display: flex; flex-direction: column; gap: var(--spacing-md); max-height: 65vh; overflow-y: auto; padding: 2px; color: var(--el-text-color-primary); }
 .scope-editor p { margin: 0; }
-.scope-hint { color: var(--el-text-color-secondary); font-size: var(--text-sm); }
-.scope-preview { display: flex; flex-wrap: wrap; gap: var(--spacing-sm); padding: var(--spacing-md); background: var(--el-fill-color-light); border-radius: var(--radius-sm); }
-.el-select { width: 100%; }
+.scope-question { padding: var(--spacing-md); background: var(--el-fill-color-light); border-radius: var(--radius-md); }
+.scope-question p { margin-top: var(--spacing-xs); font-size: var(--text-sm); line-height: 1.45; overflow-wrap: anywhere; }
+.section-caption { color: var(--el-text-color-secondary); font-size: var(--text-xs); font-weight: 500; line-height: 1.5; }
+.scope-hint { color: var(--el-text-color-secondary); font-size: var(--text-xs); line-height: 1.4; }
+.scope-editor :deep(.el-form-item) { margin-bottom: var(--spacing-md); }
+.scope-editor :deep(.el-form-item__label) { font-weight: 500; color: var(--el-text-color-primary); }
+.scope-editor :deep(.el-form-item__content) { line-height: 1.45; }
+.scope-editor :deep(.el-textarea__inner) { line-height: 1.45; padding: var(--spacing-sm) var(--spacing-md); }
+.scope-conditions { margin-bottom: var(--spacing-md); padding: var(--spacing-sm) var(--spacing-md); border: 1px solid var(--el-border-color-light); border-radius: var(--radius-md); }
+.scope-conditions ul { display: grid; gap: var(--spacing-xs); margin: var(--spacing-sm) 0 0; padding: 0; list-style: none; }
+.scope-conditions li { display: flex; align-items: baseline; gap: var(--spacing-sm); padding: var(--spacing-xs) var(--spacing-sm); border-radius: var(--radius-sm); font-size: var(--text-sm); line-height: 1.4; }
+.condition-dot { width: 5px; height: 5px; flex: 0 0 5px; background: var(--el-text-color-placeholder); border-radius: 50%; align-self: flex-start; margin-top: 7px; }
+.condition-text { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.scope-footer { display: flex; justify-content: flex-end; align-items: center; }
+.footer-actions { display: flex; flex-shrink: 0; gap: var(--spacing-sm); }
+.footer-actions :deep(.el-button + .el-button) { margin-left: 0; }
+@media (max-width: 480px) {
+  .scope-footer { flex-wrap: wrap; }
+  .footer-actions { margin-inline-start: auto; }
+  .scope-conditions { padding: var(--spacing-sm); }
+}
 </style>

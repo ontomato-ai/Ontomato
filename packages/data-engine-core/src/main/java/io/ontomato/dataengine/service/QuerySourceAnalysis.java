@@ -229,11 +229,20 @@ public final class QuerySourceAnalysis {
       var attr = metadata.get(name).getJSONArray("attrs").stream().map(JSONObject::from)
           .filter(a -> attribute.equals(a.getString("name")) && !Boolean.FALSE.equals(a.getBoolean("enable"))).findFirst()
           .orElseThrow(() -> new DslContractViolationException(INVALID_GRAMMAR, "answer.steps", "Unknown source attribute: " + attribute));
-      String id = node("field", label(attr.get("attrDesc"), attribute), "attrName", attribute);
+      String id = node("field", label(attr.get("showName"), attribute), "attrName", attribute);
       edge("contains", owner, id); fields.put(attribute, id); return id;
     }
 
     void condition(JSONObject condition, String variable) {
+      if (condition.size() == 1 && condition.get("properties") instanceof Map<?, ?> properties) {
+        condition(JSONObject.from(properties), variable);
+        return;
+      }
+      if ((condition.size() == 1 || condition.size() == 2 && "logic".equals(condition.getString("operator")))
+          && condition.get("and") instanceof List<?> children && !children.isEmpty()) {
+        for (Object child : children) condition(JSONObject.from(child), variable);
+        return;
+      }
       Set<String> targets = new LinkedHashSet<>();
       conditionFields(condition, variable, targets);
       if (targets.isEmpty() && owners.containsKey(variable)) targets.add(owners.get(variable));
@@ -247,7 +256,7 @@ public final class QuerySourceAnalysis {
       var definition = metadata.get(ownerClasses.get(variable));
       if (definition != null) for (Object value : definition.getJSONArray("attrs")) {
         var attr = JSONObject.from(value);
-        if (Objects.equals(attribute, attr.getString("name"))) return label(attr.get("attrDesc"), attribute);
+        if (Objects.equals(attribute, attr.getString("name"))) return label(attr.get("showName"), attribute);
       }
       var fields = variables.get(variable);
       String source = fields == null ? null : fields.get(attribute);
