@@ -302,6 +302,8 @@ const notice = computed(() => {
   margin: 4px 0 0;
   font-size: var(--text-sm);
   line-height: var(--leading-sm);
+  /* A version's digest or a path with no spaces in it breaks instead of running out of the panel. */
+  overflow-wrap: anywhere;
 }
 .frame-state .state-title {
   color: var(--el-text-color-primary);
