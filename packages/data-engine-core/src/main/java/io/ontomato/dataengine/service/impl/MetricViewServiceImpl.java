@@ -38,6 +38,7 @@ import io.ontomato.dataengine.schedules.ScheduleJson;
 import io.ontomato.dataengine.service.SessionCancelledException;
 import io.ontomato.dataengine.service.agent.OntologyGenerationPrompts;
 import io.ontomato.dataengine.service.agent.OntologyGenerationService;
+import io.ontomato.dataengine.service.agent.AgentJson;
 import io.ontomato.dataengine.service.sys.bean.permission.UserDataPermission;
 import io.ontomato.dataengine.util.DBSchemaUtil;
 import io.ontomato.dataengine.util.SystemUtils;
@@ -323,6 +324,12 @@ public class MetricViewServiceImpl implements MetricViewService {
       if (question != null) metric.getMatchQuestions().add(question.trim());
       if (binding != null) {
         if (binding.getId() != null) throw new IllegalArgumentException("A new binding cannot choose an ID");
+        MetricViewBindings.validate(metric.getFunction(), List.of(binding));
+        validateSubjectReferences(metric.getFunction(), List.of(binding));
+        String parameters = AgentJson.canonical(binding.getParameters());
+        if (metric.getBindings().stream()
+            .anyMatch(existing -> parameters.equals(AgentJson.canonical(existing.getParameters()))))
+          return metric;
         metric.getBindings().add(binding);
       }
       MetricViewBindings.validate(metric.getFunction(), metric.getBindings());
