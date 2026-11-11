@@ -14,11 +14,11 @@ import { readRuntimeConfig } from "./config";
 const executionBindings = new WeakMap<object, AppExecutionContext>();
 const executionListeners = new WeakMap<object, Set<(context: AppExecutionContext) => void>>();
 function assertFrameBinding(previous: AppExecutionContext | undefined, next: AppExecutionContext) {
-  if(next.kind!=="build-test" || previous && (previous.kind!=="build-test" || previous.contextId!==next.contextId || previous.workspaceId!==next.workspaceId))
+  if(previous && (previous.kind!==next.kind || previous.kind==="build-test" && next.kind==="build-test" && (previous.contextId!==next.contextId || previous.workspaceId!==next.workspaceId)))
     throw new Error("Reload the preview frame to change its execution context");
 }
 /** Register before the frame runs. Updating its ID requires a new frame. */
-export function registerBuildPreview(source: object, context: AppExecutionContext) {
+function registerFrame(source: object, context: AppExecutionContext) {
   assertFrameBinding(executionBindings.get(source),context);
   executionBindings.set(source, context);
   return {
@@ -31,6 +31,20 @@ export function registerBuildPreview(source: object, context: AppExecutionContex
     // Keep the last binding until the Window is collected: detached frames must never become live.
     dispose() { executionListeners.delete(source); },
   };
+}
+
+export function registerBuildPreview(source: object, context: AppExecutionContext) {
+  if(context.kind!=="build-test") throw new Error("A preview requires a build-test binding");
+  return registerFrame(source,context);
+}
+/** Only owners of published/normal platform frames explicitly select live execution. */
+export function registerLiveFrame(source: object) {
+  return registerFrame(source,{kind:"live"}).dispose;
+}
+function executionContext(source: object) {
+  const context=executionBindings.get(source);
+  if(!context) throw Object.assign(new Error("Frame execution context is not registered"),{code:"APP_HOST_FRAME_UNREGISTERED"});
+  return context;
 }
 
 type PageContextListener = AppHost["setPageContext"];
@@ -70,8 +84,10 @@ export function installAppHost(options: {
         user: user && { userId: user.userId, loginCode: user.loginCode, userName: user.userName, domainId: user.domainId },
       };
     },
-    executionContext: (source) => executionBindings.get(source) ?? { kind: "live" },
+    executionContext,
+    registerLiveFrame,
     subscribeExecutionContext(source, listener) {
+      executionContext(source);
       const listeners=executionListeners.get(source) ?? new Set();executionListeners.set(source,listeners);listeners.add(listener);
       return () => { listeners.delete(listener); };
     },
