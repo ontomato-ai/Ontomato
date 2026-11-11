@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import * as completions from "@earendil-works/pi-ai/api/openai-completions";
 import { expect, it, vi } from "vitest";
 import { Type } from "typebox";
 import { normalizeContext, type Message } from "@earendil-works/pi-ai";
@@ -5,6 +7,11 @@ import { modelStream, piModel, recoverContext, resolveModel } from "../model";
 import { runAgentLoop } from "../core/pi/agent-loop";
 import { RuntimeStore } from "../store";
 import { runtimeLogger } from "../logging";
+
+vi.mock("@earendil-works/pi-ai/api/openai-completions", async importOriginal => {
+  const actual = await importOriginal<typeof import("@earendil-works/pi-ai/api/openai-completions")>();
+  return { ...actual, streamSimple: vi.fn(actual.streamSimple) };
+});
 
 const config = resolveModel("fixture", { api: "openai-completions", baseUrl: "http://fixture/v1", apiKey: "key" },
   { id: "fixture", type: "chat" }, { provider: { maxRetries: 0, timeoutMs: 5000, maxRetryDelayMs: 0 } });
@@ -69,6 +76,7 @@ it.each(["zh-CN", "en"])("keeps provider JSON in logs and presents readable %s f
   const message = await output.result();
   expect(message.errorMessage).toContain(language === "en" ? "model service" : "模型服务");
   expect(message.errorMessage).not.toContain("private upstream JSON");
+  expect(message.errorMessage).toContain("HTTP 400");
   expect(JSON.stringify(log.mock.calls)).toContain("private upstream JSON");
   log.mockRestore();
 });
@@ -87,4 +95,43 @@ it("writes an unknown outcome for an unfinished dispatched call before closing t
   expect(append.mock.calls.map(call => call[2].type)).toEqual(["message_end", "message_end", "agent_end"]);
   expect(messages[1].message).toMatchObject({ role: "toolResult", toolCallId: "dispatched", isError: true });
   expect(JSON.stringify(messages[1])).toContain("Do not repeat this action automatically");
+});
+
+// Captured on 128: session.json messages 11–15, without persistence envelopes.
+it("continues after the real persisted partial-call, cancellation notice and upstream 400", async () => {
+  const persisted: Message[] = JSON.parse(readFileSync(new URL("./fixtures/interrupted-history.json", import.meta.url), "utf8"));
+  const original = JSON.stringify(persisted);
+  const recovered = recoverContext(persisted);
+  expect(JSON.stringify(persisted)).toBe(original);
+  expect(recovered.some(message => message.role === "toolResult")).toBe(false);
+  expect(recovered.flatMap(message => message.role === "assistant" ? message.content : [])
+    .some(part => part.type === "toolCall")).toBe(false);
+  const fetcher = vi.fn<Parameters<typeof fetch>, ReturnType<typeof fetch>>().mockResolvedValue(
+    response(chunk({ role: "assistant", content: "continued" }, "stop")),
+  );
+  const stream = modelStream(config, store, scope, "next", "correlation", "conversation");
+  const output = await stream(piModel(config), normalizeContext({ messages: [...recovered, user("next")] }), { fetch: fetcher });
+  for await (const _event of output) { /* Consume the next model request. */ }
+  const payload = JSON.parse(fetcher.mock.calls[0][1]!.body as string);
+  expect(payload.messages.some((message: { role: string }) => message.role === "tool")).toBe(false);
+  expect((await output.result()).stopReason).toBe("stop");
+  expect(fetcher).toHaveBeenCalledTimes(1);
+});
+
+it.each([400, 401, 429])("preserves HTTP %s on the thrown-exception path without exposing its body", async status => {
+  const failure = Object.assign(new Error("private upstream body"), { status });
+  vi.mocked(completions.streamSimple).mockImplementationOnce(() => { throw failure; });
+  const log = vi.spyOn(runtimeLogger, "error");
+  try {
+    const stream = modelStream(config, store, scope, "run", "correlation", "conversation", "zh-CN");
+    const output = await stream(piModel(config), normalizeContext({ messages: [user("start")] }));
+    for await (const _event of output) { /* Consume the failed request. */ }
+    const message = await output.result();
+    expect(message.errorMessage).toContain(`HTTP ${status}`);
+    expect(message.errorMessage).toContain("模型服务");
+    expect(message.errorMessage).not.toContain("private upstream body");
+    expect(JSON.stringify(log.mock.calls)).toContain("private upstream body");
+  } finally {
+    log.mockRestore();
+  }
 });

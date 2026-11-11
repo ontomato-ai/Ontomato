@@ -1,5 +1,5 @@
 import { logHeaders } from "@ontomato/service-logging";
-import { runtimeLogger, runtimeDiagnostic } from "./logging";
+import { runtimeLogger, runtimeFailureMessage } from "./logging";
 import { randomUUID } from "node:crypto";
 import { PI_CHAT_MODEL_DEFAULTS, type ModelApi, type ModelEntry, type ModelProviderWrite, type ModelRetry } from "@ontomato/contracts/model-settings";
 import type {
@@ -112,7 +112,7 @@ export function modelStream(
                 ...event.error,
                 // No tool from an interrupted response has been dispatched.
                 content: event.error.content.filter(part => part.type !== "toolCall"),
-                errorMessage: event.reason === "error" ? providerFailureMessage(language) : "Request was aborted",
+                errorMessage: event.reason === "error" ? runtimeFailureMessage(event.error.errorMessage, language) : "Request was aborted",
               } });
             } else stream.push(event);
           }
@@ -120,13 +120,13 @@ export function modelStream(
           await new Promise((resolve) => setTimeout(resolve, 500 * attempt));
         }
       } catch (error) {
-        // Provider text can echo request bodies; keep it in the log and store only its class and status.
-        runtimeLogger.error("model stream failed", runtimeDiagnostic(error));
+        // Provider text can echo request bodies; keep it in the log and expose only readable text and HTTP status.
+        runtimeLogger.error("model stream failed", { errorMessage: error instanceof Error ? error.message : String(error) });
         const usage = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0,
           cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } };
         const failed: AssistantMessage = { role: "assistant", content: [], api: model.api,
           provider: model.provider, model: model.id, usage, stopReason: "error",
-          errorMessage: providerFailureMessage(language), timestamp: Date.now() };
+          errorMessage: runtimeFailureMessage(error, language), timestamp: Date.now() };
         stream.push({ type: "error", reason: "error", error: failed });
       }
     })();
@@ -198,6 +198,12 @@ export function recoverContext(messages: Message[]): Message[] {
       });
       continue;
     }
+    // Older persisted responses can contain calls whose arguments were still streaming.
+    // The provider omits failed assistant messages, so they must never gain tool results.
+    if (message.role === "assistant" && (message.stopReason === "aborted" || message.stopReason === "error")) {
+      result.push({ ...message, content: message.content.filter(part => part.type !== "toolCall") });
+      continue;
+    }
     result.push(message);
     if (message.role !== "assistant") continue;
     const answered = new Set<string>();
@@ -248,8 +254,3 @@ export async function testModel(config: ResolvedModel, prompt: string, correlati
   return { type: "chat" as const, content: message.content.flatMap((part) => part.type === "text" ? [part.text] : []).join("\n") };
 }
 
-function providerFailureMessage(language: string): string {
-  return language.startsWith("zh")
-    ? "模型服务请求失败，请联系管理员查看服务日志。"
-    : "The model service request failed. Contact an administrator to check the service logs.";
-}
