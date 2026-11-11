@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { submissionConditionRows } from "./actionCreation/submissionConditions";
 import ElDialog from "../ManagerDialog.vue";
 import { computed, onMounted, ref, watch } from "vue";
 import { ArrowLeft, Play, Plus, Save, Sparkles, Trash2 } from "lucide-vue-next";
@@ -275,23 +276,10 @@ const ruleTarget = (rule: any) => {
   return rule.className || "—";
 };
 const submissionCriteria = computed(() => actionDefinition.value?.submissionCriteria ?? null);
-const criteriaConditions = computed(() => submissionCriteria.value?.conditions || []);
+const criteriaConditions = computed(() => submissionConditionRows(submissionCriteria.value?.conditions || [], ot));
 const criteriaOperator = computed(() => submissionCriteria.value?.operator || "AND");
 const criteriaUnrepresentable = computed(() => submissionCriteria.value?.unrepresentable || []);
-function criterionText(condition: any): string {
-  if (!condition) return "";
-  if (condition.kind === "PROPERTY")
-    return `${condition.className || condition.objectParameter || "?"}.${condition.field} ${condition.operator} ${JSON.stringify(condition.value)}`;
-  if (condition.kind === "LINK_EXISTS")
-    return ot("actionDefinitionLinkExists", {
-      source: condition.from || condition.objectParameter || "?",
-      relation: condition.relation,
-    });
-  return condition.description || condition.kind || "—";
-}
-function criterionMessage(condition: any): string {
-  return condition?.message || condition?.failureMessage || "";
-}
+
 function guardText(condition: any): string {
   if (!condition) return "";
   if (condition.properties) return guardText(condition.properties);
@@ -774,12 +762,12 @@ onMounted(() => void loadDetail());
           <template v-if="submissionCriteria">
             <div v-if="criteriaConditions.length" class="criteria-list">
               <div v-for="(condition, index) in criteriaConditions" :key="index" class="criteria-row">
-                <div class="criteria-main">
-                  <span class="kt">{{ criteriaOperator }}</span>
-                  <code class="rule-guard">{{ criterionText(condition) }}</code>
+                <div v-if="condition.expression" class="criteria-main">
+                  <span v-if="index > 0" class="kt">{{ criteriaOperator }}</span>
+                  <code class="rule-guard">{{ condition.expression }}</code>
                 </div>
-                <div v-if="criterionMessage(condition)" class="criteria-msg">
-                  {{ criterionMessage(condition) }}
+                <div v-if="condition.message" class="criteria-msg">
+                  {{ condition.message }}
                 </div>
               </div>
             </div>
@@ -884,11 +872,11 @@ onMounted(() => void loadDetail());
               class="parameter-row"
             >
               <el-input v-model="parameter.name" :placeholder="ot('assetParameterName')" />
-              <el-select v-model="parameter.type" :placeholder="ot('assetParameterType')">
+              <el-select v-model="parameter.type" :title="parameter.type" :placeholder="ot('assetParameterType')">
                 <el-option v-for="type in parameterTypes" :key="type" :label="type" :value="type" />
               </el-select>
               <el-input v-model="parameter.description" :placeholder="ot('description')" />
-              <el-input v-model="parameter.sample" :placeholder="ot('assetParameterSample')" />
+              <el-input v-model="parameter.sample" :title="String(parameter.sample ?? '')" :placeholder="ot('assetParameterSample')" />
               <el-input
                 :model-value="parameterClassNamesText(parameter)"
                 :placeholder="ot('assetParameterClasses')"
@@ -1384,7 +1372,7 @@ h2 {
 }
 .parameter-row {
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr)) 28px;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 12.5rem), 1fr));
   gap: var(--spacing-sm);
   align-items: center;
   min-width: 0;
@@ -1402,21 +1390,11 @@ h2 {
 .parameter-row > .el-button {
   width: 28px;
   min-width: 28px;
-  justify-self: center;
+  justify-self: end;
 }
 @container ontology-manager (max-width: 980px) {
   .detail-body {
     grid-template-columns: minmax(0, 1fr);
-  }
-}
-@container ontology-manager (max-width: 900px) {
-  .parameter-row {
-    grid-template-columns: 1fr 1fr 28px;
-  }
-  .parameter-row .el-input:nth-child(3),
-  .parameter-row .el-input:nth-child(4),
-  .parameter-row .el-input:nth-child(5) {
-    grid-column: span 1;
   }
 }
 @container ontology-manager (max-width: 640px) {

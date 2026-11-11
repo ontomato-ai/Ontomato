@@ -122,7 +122,7 @@ node wf-client.mjs dsl '{"problem":"查类是否存在","answer":{"steps":[{"gra
 
 流程有 N 步，就写 N+1 个动作：**1 个发起动作 + 每步 1 个办理动作**。
 
-### 4.1 动作骨架（导入格式）
+### 4.1 办理动作骨架（先作为待审核草稿导入）
 
 ```json
 {
@@ -130,8 +130,11 @@ node wf-client.mjs dsl '{"problem":"查类是否存在","answer":{"steps":[{"gra
   "name": "中文动作名",
   "description": "一句话说清这个动作做什么",
   "origin": "USER",
-  "status": "PUBLISHED",
-  "submissionCriteria": { "conditions": [ ... ] },
+  "status": "PENDING_REVIEW",
+  "target": {"className": "<类名>", "keyParameter": "run_id"},
+  "submissionCriteria": {"conditions": [
+    {"objectParameter": "run_id", "className": "<类名>", "field": "status", "operator": "=", "value": "待办", "message": "单据不是待办"}
+  ]},
   "function": {
     "id": "fun_<流程>_<步骤>",
     "name": "同动作名",
@@ -142,11 +145,13 @@ node wf-client.mjs dsl '{"problem":"查类是否存在","answer":{"steps":[{"gra
       {"name": "run_id", "type": "TYPE_STRING", "description": "运行对象主键", "sample": "X001", "classNames": ["<类名>"]}
     ],
     "returnDef": {"isVoid": true, "classNames": ["<类名>"]},
-    "code": "# ontomato-python:2\n...",
+    "code": "# ontomato-python:2\nfrom query_runtime import parameters, update\nresult = update(\"<类名>\", {\"status\": \"已完成\"}, {\"field\": \"id\", \"operator\": \"=\", \"value\": parameters[\"run_id\"]})",
     "logic": "人话版逻辑，供解释与审阅"
   }
 }
 ```
+
+将占位的类名、字段（包括实际主键）和程序替换为业务定义。上例针对已有单据；新建单据的动作不声明尚不存在的目标。
 
 硬约束（都是代码里真的会拒的）：
 
@@ -154,7 +159,7 @@ node wf-client.mjs dsl '{"problem":"查类是否存在","answer":{"steps":[{"gra
 | --- | --- |
 | `code` 第一行必须是 `# ontomato-python:2` | 运行时版本标记 |
 | `function.operation` 只能是 `OPERATION_WRITE` | 保存时强制，否则 `Function.notWrite` |
-| `status` 用 `PUBLISHED` 才算可执行 | `DRAFT` 下执行报 `Action.notPublished` |
+| `status` 用 `PUBLISHED` 才算可执行 | Action 草稿用 `PENDING_REVIEW`，此时执行报 `Action.notPublished` |
 | 已发布就**冻结** | `PUBLISHED` 后改 `code` 报 `Action.publishedIsFrozen`；要改就新建动作 |
 | 每个动作必须有内嵌 `function` | 导入报 `has no embedded function` |
 | 参数类型目前用 `TYPE_STRING` | 其余类型在本部署未验证 |
@@ -224,7 +229,7 @@ def run():
         "status": "已完成" if result in ("approved", "done") else "已驳回",
         "assignee_id": "<下一步负责人来源，或 空>",
         "updated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-    }, {"id": run_id})
+    }, {"field": "id", "operator": "=", "value": run_id})
     insert("<日志类名>", [{ "id": ..., "run_id": run_id, "operator_id": params.get("operator_id"), "result": result, "comment": comment }])
     return {"run_id": run_id, "result": result}
 
@@ -261,22 +266,14 @@ workflow_run_id = identity.get("workflowRunId")  # 仅有唯一归属时才有�
 
 所以：**做业务判断读快照，业务授权由平台按角色、范围和目标可读性判断。** 不要因为「能读到 principalId」就以为可以跳过 `submissionCriteria`——那是两回事。
 
-### 4.4 导入
+### 4.4 导入草稿，生成解释，再发布
 
-```bash
-node wf-client.mjs action-import ./actions.json      # 数组或单对象
-```
+1. 用 `node wf-client.mjs action-import ./actions.json` 导入上面的 `PENDING_REVIEW` 动作。客户端接受单个对象或数组，打成只含一个 JSON 文件的 ZIP，并带 `allowMissingExplanation=true`。确认返回的 `success` 为 true 且 `failureCount` 为 0；否则按 `failures[].message` 修正对应动作。
+2. 在同一域以已认证身份调用 `POST /action/re-explain`，请求体例如 `{"ids":["act_expense_approve"],"missingOnly":false}`。明确列出本次的动作 ID；检查外层 `success` 和 `data.failureCount`，单个新动作应有 `data.successCount=1`。有失败就停在草稿，读 `data.failures[].message`。
+3. 用 `POST /action/queryById`（`{"id":"act_expense_approve"}`）重新取回完整 `data` 对象，审阅程序与服务器生成的解释。确认 `codeSegments` 非空，且有当前代码的 `codeHash` 和 `explanationVersion`。只把该对象的 `status` 改为 `PUBLISHED`，将**完整对象**（含原 `function`）作为 `POST /action/save` 的请求体。以上接口均相对于 `WF_BASE`。
+4. 保存须返回 `success:true`；用 `node wf-client.mjs action-get act_expense_approve` 核对状态已为 `PUBLISHED`、目标和提交条件正确，再将该动作编入流程并激活。
 
-客户端会自己打成 zip（导入接口要 zip，内部恰好一个 `.json`），并带 `allowMissingExplanation=true`。
-
-预期返回 `{"success":true,"successCount":N,"failureCount":0,"failures":[]}`。
-`success:false` 或 `failureCount>0` 就逐条读 `failures[].message`，不要重试同一条 —— 都是确定性的校验失败。
-
-导入后抽查：
-
-```bash
-node wf-client.mjs action-get act_xxx     # 看 status=PUBLISHED、parameters、submissionCriteria
-```
+`allowMissingExplanation=true` 不会放宽已发布动作的导入校验。不要把缺解释的骨架直接标为 `PUBLISHED`，也不要自行编造解释、哈希或版本号。
 
 ## 第 5 步：存流程草稿
 
