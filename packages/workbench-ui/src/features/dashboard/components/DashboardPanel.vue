@@ -113,6 +113,7 @@
                   @chart-deleted="handleChartDeleted"
                   @chart-conditions-changed="handleChartConditionsChanged"
                   @view-dsl="handleViewDsl"
+                  @edit-parameters="openParameters"
                   @ai-request="(chart) => handleAiRequest(chart)"
                   @layout-change="(layout) => handleLayoutChange(g, c, layout)"
                   @resize-active="(v) => setDragDisabled(v)"
@@ -146,6 +147,13 @@
     <el-dialog v-model="dslDialogOpen" :title="dslDialogTitle" width="860px" append-to-body>
       <DslViewer :value="dslDialogData" />
     </el-dialog>
+
+    <CardParameterDialog
+      v-model="parametersOpen"
+      :dashboard-id="normalizeId(props.dashboardId)"
+      :card="parametersCard"
+      @saved="handleParametersSaved"
+    />
   </div>
 </template>
 
@@ -159,6 +167,9 @@ import MetricCard from "./MetricCard.vue";
 import AiDrawer from "./AIDrawer.vue";
 import DropdownMenu from "./DropdownMenu.vue";
 import DslViewer from "./DslViewer.vue";
+import CardParameterDialog from "./CardParameterDialog.vue";
+import { isMetricReferenceEntry } from "@ontomato/contracts/dashboard";
+import { metricCardSource, patchCard } from "./utils/metricCard";
 
 import {
   normalizeId,
@@ -173,6 +184,7 @@ import {
   patchDeleteMetric,
   fetchClassMetas,
   createDashboardLoader,
+  metricCardTask,
   clamp,
 } from "./utils/dashboardHelper";
 
@@ -209,6 +221,9 @@ const aiChart = ref(null);
 const dslDialogOpen = ref(false);
 const dslDialogTitle = ref("");
 const dslDialogData = ref(null);
+
+const parametersOpen = ref(false);
+const parametersCard = ref(null);
 
 const loader = createDashboardLoader();
 
@@ -358,6 +373,30 @@ function buildLayoutPersistPayload(groups) {
     rowSpan: clamp(layout?.rowSpan ?? 1, 1, 6),
   });
 
+  // A metric-reference card sends only its presentation; its query stays as saved and its chart type changes elsewhere.
+  const pickMetricChart = (c) => ({
+    id: c.id,
+    name: c.title || c.name,
+    fields: c.fields,
+    sort: c.sort,
+    displayLimit: c.displayLimit,
+    formats: c.formats,
+    layout: pickLayout(c.layout),
+    style: c.style,
+  });
+
+  const pickMetricValue = (m) => ({
+    id: m.id,
+    name: m.name,
+    unit: m.unit,
+    valueField: m.valueField,
+    sort: m.sort,
+    displayLimit: m.displayLimit,
+    formats: m.formats,
+    layout: pickLayout(m.layout),
+    style: m.style,
+  });
+
   const pickChart = (c) => {
     const { name, title, chartType, dataPlan, id, fields, dsl, abcProgram, source, conditions } = c;
     return {
@@ -397,8 +436,12 @@ function buildLayoutPersistPayload(groups) {
     return {
       id: normalizeId(g?.id || ""),
       title: String(g?.title || "").trim(),
-      charts: charts.map(pickChart).filter((x) => x.id && (x.dsl || x.abcProgram)),
-      metrics: metrics.map(pickMetric).filter((x) => x.id && (x.dsl || x.abcProgram)),
+      charts: charts
+        .map((c) => (isMetricReferenceEntry(c) ? pickMetricChart(c) : pickChart(c)))
+        .filter((x) => x.id),
+      metrics: metrics
+        .map((m) => (isMetricReferenceEntry(m) ? pickMetricValue(m) : pickMetric(m)))
+        .filter((x) => x.id),
     };
   });
 }
@@ -513,14 +556,16 @@ async function handleCreateDimension(insertIndex) {
   }
 }
 
+function setGroups(updater) {
+  chartGroups.value = typeof updater === "function" ? updater(chartGroups.value || []) : updater;
+}
+
 async function loadDashboardAll(id) {
   // 1) Local detail
   await reloadDashboardGroups(id);
 
   // 2) Remote merge (restore option/dataRows, etc.)
-  await loader.loadDashboardById(id, (updater) => {
-    chartGroups.value = typeof updater === "function" ? updater(chartGroups.value || []) : updater;
-  });
+  await loader.loadDashboardById(id, setGroups);
 }
 
 function appendNewGroupsOnly(prevGroups, nextGroupsFromLocal) {
@@ -681,7 +726,13 @@ async function handleMetricCommand(cmd, _g, m) {
   if (!id || !metricId) return;
 
   if (cmd === "view_dsl") {
-    openDslDialog(metricTitle || t("common.viewDsl"), m?.dsl ?? null);
+    if (isMetricReferenceEntry(m)) openDslDialog(metricTitle, metricCardSource(m));
+    else openDslDialog(metricTitle || t("common.viewDsl"), m?.dsl ?? null);
+    return;
+  }
+
+  if (cmd === "parameters") {
+    openParameters(m);
     return;
   }
 
@@ -840,6 +891,19 @@ async function handleChartConditionsChanged(payload) {
       []
     );
   }
+}
+
+/* ======================== metric-reference parameters ======================== */
+
+function openParameters(card) {
+  parametersCard.value = { id: card.id, name: card.title || card.name };
+  parametersOpen.value = true;
+}
+
+/** The saved parameters become the card's query; the card then asks the metric again. */
+function handleParametersSaved(cardId, query) {
+  setGroups((prev) => patchCard(prev, cardId, (card) => ({ ...card, query })));
+  metricCardTask(normalizeId(props.dashboardId), cardId, setGroups)();
 }
 
 /* ======================== AI ======================== */

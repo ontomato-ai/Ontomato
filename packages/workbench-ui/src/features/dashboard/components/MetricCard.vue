@@ -18,6 +18,7 @@
         </span>
         <DropdownMenu
           scene="metric"
+          :metric-ref="metricRef"
           trigger-class="metric-more"
           @command="(cmd) => emit('command', cmd)"
         />
@@ -27,8 +28,14 @@
         :class="['value-container', { 'value-container--transparent-loading': transparentLoading }]"
         element-loading-text=""
       >
-        <div class="value" :title="formattedValue">{{ formattedValue }}</div>
-        <div v-if="unit" class="unit">{{ unit }}</div>
+        <div v-if="metricRef && metric.error" class="metric-error" role="alert" :title="metric.error.message">
+          <strong v-if="errorHeadline">{{ errorHeadline }}</strong>
+          <span>{{ metric.error.message }}</span>
+        </div>
+        <template v-else>
+          <div class="value" :title="formattedValue">{{ formattedValue }}</div>
+          <div v-if="unit" class="unit">{{ unit }}</div>
+        </template>
       </div>
       <span class="resize-handle" :title="t('dashboard.dragToResize')" />
     </div>
@@ -39,8 +46,10 @@
 import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 import interact from "interactjs";
 import { TriangleAlert } from "lucide-vue-next";
+import { isMetricReferenceEntry } from "@ontomato/contracts/dashboard";
 import DropdownMenu from "./DropdownMenu.vue";
 import { clamp, parseGridColumns, partialResultNotice } from "./utils/dashboardHelper";
+import { cardErrorHeadline, metricCardValue } from "./utils/metricCard";
 import { useI18n } from "vue-i18n";
 import { workbenchContent } from "../../../content";
 
@@ -79,7 +88,15 @@ function formatValue(value) {
 const name = computed(() => String(props.metric?.name || ""));
 const unit = computed(() => String(props.metric?.unit || "").trim());
 const loading = computed(() => String(props.metric?.state || "").trim() === "loading");
-const formattedValue = computed(() => formatValue(props.metric?.value));
+/** A metric-reference card shows the single row's value as the metric gave it; zero rows are "no data". */
+const metricRef = computed(() => isMetricReferenceEntry(props.metric));
+const errorHeadline = computed(() => (props.metric?.error ? cardErrorHeadline(props.metric.error, t) : null));
+const formattedValue = computed(() => {
+  if (!metricRef.value) return formatValue(props.metric?.value);
+  if (props.metric.state !== "ready" && props.metric.state !== "empty") return "";
+  const value = metricCardValue(props.metric, props.metric.rows);
+  return value.empty ? t("common.noData") : value.text;
+});
 const partialNotice = computed(() => partialResultNotice(props.metric?.truncation, t));
 
 /* ======================== resize logic ======================== */
@@ -237,6 +254,21 @@ onBeforeUnmount(() => {
 
 .value-container--transparent-loading :deep(.el-loading-mask) {
   background-color: transparent;
+}
+
+.metric-error {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  font-size: var(--text-xs);
+  color: var(--el-text-color-secondary);
+  overflow: hidden;
+}
+
+.metric-error strong {
+  color: var(--el-color-danger);
+  font-weight: 600;
 }
 
 .value {

@@ -478,7 +478,23 @@ export default {
     "createDimensionBelow": "Create Dimension Below",
     "deleteDashboardConfirm": "Confirm delete dashboard \"{name}\"?",
     "enterMultipleNumbers": "Enter multiple numbers",
-    "enterKeywordsSelect": "Enter keywords to select"
+    "enterKeywordsSelect": "Enter keywords to select",
+    "viewMetric": "View metric",
+    "editParameters": "Parameters",
+    "parametersTitle": "Parameters of \"{name}\"",
+    "noParameters": "This metric has no parameters to set.",
+    "choose": "Choose",
+    "parametersChanged": "The metric changed while you were editing. Your text is kept; close and reopen the form to continue.",
+    "cardErrors": {
+      "CARD_OUTPUT_MISMATCH": "The metric's output no longer matches this card's fields.",
+      "METRIC_UNAVAILABLE": "The metric is unavailable.",
+      "METRIC_SPEC_CHANGED": "The metric changed during this request. Refresh to see its current result.",
+      "METRIC_REQUERY_REQUIRED": "This chart needs results the metric does not output. Ask the question again to get them.",
+      "UNSUPPORTED_DATASET_RECIPE": "This dataset cannot be added directly. Ask the question again.",
+      "DASHBOARD_PLAN_INVALID": "Planning the chart failed.",
+      "INVALID_METRIC_RESPONSE": "The metric service returned an invalid response.",
+      "INVALID_CARD_DATA": "This card's saved configuration is invalid."
+    }
   },
   "dataBrowser": {
     "filterConditions": "Filter Conditions"
@@ -619,6 +635,7 @@ export default {
     "newDashboard": "New dashboard from this data",
     "dashboardGroup": "Group",
     "addedToDashboard": "Added to the dashboard",
+    "addingToDashboard": "Settling the metric and planning the chart. This can take a minute or two.",
     "qualityCheck": "Quality check",
     "exportPpt": "Export conversation as PPT",
     "exportFailed": "Export failed"
