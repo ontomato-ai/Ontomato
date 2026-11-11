@@ -216,12 +216,12 @@ describe("the open-source platform's conversations", () => {
 });
 
 describe("the open-source platform's page headers", () => {
-  it("switches the system settings' three screens in the application's header", async () => {
+  it("switches the system settings' four screens in the application's header", async () => {
     await open("/settings/records/audit-log");
     // An application of several pages is one header with its pages as tabs; the page keeps its own second-level tabs.
     const tabs = [...document.querySelectorAll(".platform-page-header .page-tab")].map((tab) => tab.textContent?.trim());
     // The page under the application is named for what it holds; repeating the application's own name says nothing.
-    expect(tabs).toEqual(["Models", "General settings", "Run Records"]);
+    expect(tabs).toEqual(["Models", "General settings", "MCP services", "Run Records"]);
     expect(document.querySelector(".platform-page-header .page-tab.active")?.textContent?.trim()).toBe("Run Records");
   });
 
