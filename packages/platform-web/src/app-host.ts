@@ -37,7 +37,7 @@ export function registerBuildPreview(source: object, context: AppExecutionContex
   if(context.kind!=="build-test") throw new Error("A preview requires a build-test binding");
   return registerFrame(source,context);
 }
-/** Only owners of published/normal platform frames explicitly select live execution. */
+/** Published application frames explicitly select live execution through this module. */
 export function registerLiveFrame(source: object) {
   return registerFrame(source,{kind:"live"}).dispose;
 }
@@ -85,7 +85,6 @@ export function installAppHost(options: {
       };
     },
     executionContext,
-    registerLiveFrame,
     subscribeExecutionContext(source, listener) {
       executionContext(source);
       const listeners=executionListeners.get(source) ?? new Set();executionListeners.set(source,listeners);listeners.add(listener);

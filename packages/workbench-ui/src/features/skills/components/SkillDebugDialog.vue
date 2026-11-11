@@ -4,7 +4,7 @@ import type { SkillInfo, SkillOutput } from "@ontomato/contracts/skills";
 import { ref, computed, watch } from "vue";
 import { ElMessage } from "element-plus";
 import { CodeEditor } from "@ontomato/foundation-ui/code";
-import { HtmlPreview, registerLiveHtmlFrame } from "@ontomato/foundation-ui/preview";
+import { HtmlPreview } from "@ontomato/foundation-ui/preview";
 import { skillsApi } from "../api";
 import { useI18n } from "vue-i18n";
 import { withSkillResourceCredentials } from "../utils/skill-resource";
@@ -160,7 +160,7 @@ function handleClose() {
         <div v-else-if="result" class="result-box">
           <el-tabs v-model="resultTab">
             <el-tab-pane v-if="result.html" :label="t('admin.htmlPreview')" name="html">
-              <HtmlPreview :register-frame="registerLiveHtmlFrame"
+              <HtmlPreview
                 class="html-preview-iframe"
                 :html="withSkillResourceCredentials(result.html)"
                 sandbox="allow-scripts allow-same-origin"

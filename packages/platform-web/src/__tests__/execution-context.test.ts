@@ -5,7 +5,7 @@ import { createRouter, createMemoryHistory } from "vue-router";
 import type { PlatformPreferences } from "@ontomato/platform-admin";
 import { APP_HOST_GLOBAL, type AppHost } from "@ontomato/contracts/app-host";
 import { buildExecutionContext } from "@ontomato/contracts/build-tests";
-import { installAppHost, registerBuildPreview } from "../app-host";
+import { installAppHost, registerBuildPreview, registerLiveFrame } from "../app-host";
 import ApplicationRoute from "../pages/ApplicationRoute.vue";
 
 const elements:HTMLIFrameElement[]=[];
@@ -43,7 +43,8 @@ describe("explicit frame execution bindings",()=>{
     expect(host().executionContext(source)).toEqual(initial);
     registration.update({...initial,status:"PREPARING"});expect(changed).toHaveBeenCalledOnce();
     expect(()=>registration.update({...initial,contextId:"new-context"})).toThrow("Reload");
-    expect(()=>host().registerLiveFrame(source)).toThrow("Reload");
+    expect(()=>registerLiveFrame(source)).toThrow("Reload");
+    expect(host()).not.toHaveProperty("registerLiveFrame");
     stop();registration.dispose();expect(host().executionContext(source).kind).toBe("build-test");
   });
 });

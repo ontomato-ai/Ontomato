@@ -4,7 +4,7 @@ import type { ViewWidget } from "@ontomato/contracts/object-views";
 import { useManagerClient, useOntologyText, useManagerContext } from "../context";
 import { themedChartHtml } from "@ontomato/contracts/chart-presentation";
 import { useChartTheme } from "@ontomato/foundation-ui/chart";
-import { HtmlPreview, registerLiveHtmlFrame } from "@ontomato/foundation-ui/preview";
+import { HtmlPreview } from "@ontomato/foundation-ui/preview";
 const props = defineProps<{ widget: ViewWidget; rows: Record<string, unknown>[]; value: unknown }>();
 const client = useManagerClient();
 const context = useManagerContext();
@@ -57,7 +57,7 @@ watch(() => JSON.stringify([props.widget, props.value, props.rows, context.local
     <div v-if="empty" class="visualization-empty" role="status">{{ ot('ovNoChartData') }}</div>
     <div v-if="loading" class="visualization-loading" role="status"><span class="loading-indicator" aria-hidden="true" />{{ ot('ovLoading') }}</div>
     <p v-if="error" class="visualization-error" role="alert">{{ error }}</p>
-    <HtmlPreview :register-frame="registerLiveHtmlFrame" v-if="html" :html="displayedHtml" :title="widget.title" sandbox="allow-scripts allow-same-origin" referrerpolicy="no-referrer" :style="context.presentation.themeProperties[context.theme]" />
+    <HtmlPreview v-if="html" :html="displayedHtml" :title="widget.title" sandbox="allow-scripts allow-same-origin" referrerpolicy="no-referrer" :style="context.presentation.themeProperties[context.theme]" />
   </div>
 </template>
 <style scoped>

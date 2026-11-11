@@ -29,14 +29,14 @@
     "@ontomato/markdown": "workspace:*",
     "codemirror": "6.0.2",
     "echarts": "6.0.0",
-    "markstream-vue": "2.0.19",
-    "@ontomato/contracts": "workspace:*"
+    "markstream-vue": "2.0.19"
   },
   "peerDependencies": {
     "element-plus": "^2.13.6",
     "vue": "^3.5.30"
   },
   "devDependencies": {
+    "@ontomato/contracts": "workspace:*",
     "@vitejs/plugin-vue": "5.2.4",
     "@vue/test-utils": "2.5.1",
     "element-plus": "2.13.6",

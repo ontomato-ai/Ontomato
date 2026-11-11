@@ -57,8 +57,6 @@ export interface AppHost {
   snapshot(): AppHostSnapshot;
   /** The calling frame's explicit execution binding; unregistered sources throw. */
   executionContext(source: object): AppExecutionContext;
-  /** Register a normal platform HTML frame before loading its document. */
-  registerLiveFrame(source: object): () => void;
   subscribeExecutionContext(source: object, listener: (context: AppExecutionContext) => void): () => void;
   /** The credential of the current page load; null when the shell has none, which is not anonymous. */
   credential(): AppHostCredential | null;
