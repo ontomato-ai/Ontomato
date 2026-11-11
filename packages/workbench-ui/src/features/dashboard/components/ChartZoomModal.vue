@@ -76,6 +76,11 @@ const modalOption = computed(() =>
   flex-direction: column;
 }
 
+.chart-zoom-dialog .chart-zoom-body .table-preview .el-table__header .cell {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
 .chart-zoom-body > * {
   flex: 1 1 auto;
   min-height: 0;

@@ -113,6 +113,7 @@
                   @chart-deleted="handleChartDeleted"
                   @chart-conditions-changed="handleChartConditionsChanged"
                   @view-dsl="handleViewDsl"
+                  @view-metric="openMetricSource"
                   @edit-parameters="openParameters"
                   @ai-request="(chart) => handleAiRequest(chart)"
                   @layout-change="(layout) => handleLayoutChange(g, c, layout)"
@@ -148,6 +149,8 @@
       <DslViewer :value="dslDialogData" />
     </el-dialog>
 
+    <MetricSourceDialog v-model="metricSourceOpen" :card="metricSourceCard" />
+
     <CardParameterDialog
       v-model="parametersOpen"
       :dashboard-id="normalizeId(props.dashboardId)"
@@ -169,7 +172,8 @@ import DropdownMenu from "./DropdownMenu.vue";
 import DslViewer from "./DslViewer.vue";
 import CardParameterDialog from "./CardParameterDialog.vue";
 import { isMetricReferenceEntry } from "@ontomato/contracts/dashboard";
-import { metricCardSource, patchCard } from "./utils/metricCard";
+import MetricSourceDialog from "./MetricSourceDialog.vue";
+import { patchCard } from "./utils/metricCard";
 
 import {
   normalizeId,
@@ -221,6 +225,9 @@ const aiChart = ref(null);
 const dslDialogOpen = ref(false);
 const dslDialogTitle = ref("");
 const dslDialogData = ref(null);
+
+const metricSourceOpen = ref(false);
+const metricSourceCard = ref(null);
 
 const parametersOpen = ref(false);
 const parametersCard = ref(null);
@@ -726,7 +733,7 @@ async function handleMetricCommand(cmd, _g, m) {
   if (!id || !metricId) return;
 
   if (cmd === "view_dsl") {
-    if (isMetricReferenceEntry(m)) openDslDialog(metricTitle, metricCardSource(m));
+    if (isMetricReferenceEntry(m)) openMetricSource(m);
     else openDslDialog(metricTitle || t("common.viewDsl"), m?.dsl ?? null);
     return;
   }
@@ -894,6 +901,11 @@ async function handleChartConditionsChanged(payload) {
 }
 
 /* ======================== metric-reference parameters ======================== */
+
+function openMetricSource(card) {
+  metricSourceCard.value = card;
+  metricSourceOpen.value = true;
+}
 
 function openParameters(card) {
   parametersCard.value = { id: card.id, name: card.title || card.name };

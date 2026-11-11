@@ -18,9 +18,40 @@ import type { DashboardDatasetInput } from "./types";
 const planned = z.object({ datasetKey: z.string(), name: z.string().min(1), calculation: z.string().min(1).optional() });
 const chartPlan = planned.extend({ chartType: z.string().refine(type => Object.hasOwn(dashboardChartInputs, type)) }).strict();
 const metricPlan = planned.extend({ unit: z.string().optional() }).strict();
-const planSchema = z.object({ name: z.string().min(1), groups: z.array(z.object({
-  title: z.string().min(1), charts: z.array(chartPlan), metrics: z.array(metricPlan),
-}).strict().refine(group => group.charts.length + group.metrics.length > 0, "A group must contain cards")).min(1) }).strict();
+
+function cardCapabilities(dataset: DashboardDatasetInput) {
+  const canCalculate = dataset.recipe.kind !== "metric";
+  const singleRow = dataset.data.length <= 1;
+  return {
+    canCalculate,
+    metric: canCalculate || singleRow,
+    charts: Object.keys(dashboardChartInputs).filter(type => canCalculate || singleRow || !dashboardChartInputs[type].singleRow),
+  };
+}
+
+function choice<T>(options: z.ZodType<T>[]): z.ZodType<T> {
+  return options.length === 1 ? options[0] : z.union(options as [z.ZodType<T>, z.ZodType<T>, ...z.ZodType<T>[]]);
+}
+
+/** Validate the complete plan against each source before any metric or binding is written. */
+function planningSchema(datasets: DashboardDatasetInput[]) {
+  const charts: z.ZodType<z.infer<typeof chartPlan>>[] = [];
+  const metrics: z.ZodType<z.infer<typeof metricPlan>>[] = [];
+  for (const dataset of datasets) {
+    const capabilities = cardCapabilities(dataset);
+    const source = {
+      datasetKey: z.literal(dataset.datasetKey),
+      calculation: capabilities.canCalculate ? planned.shape.calculation : z.never().optional(),
+    };
+    charts.push(chartPlan.extend({ ...source, chartType: z.enum(capabilities.charts as [string, ...string[]]) }));
+    if (capabilities.metric) metrics.push(metricPlan.extend(source));
+  }
+  return z.object({ name: z.string().min(1), groups: z.array(z.object({
+    title: z.string().min(1), charts: z.array(choice(charts)),
+    metrics: metrics.length ? z.array(choice(metrics))
+      : z.array(metricPlan).max(0, "No dataset supports a numeric card; use a chart for multi-row metric results"),
+  }).strict().refine(group => group.charts.length + group.metrics.length > 0, "A group must contain cards")).min(1) }).strict();
+}
 const refusalSchema = z.object({ error: z.string().min(1) }).strict();
 const logger = createLogger("dashboard-planning");
 
@@ -84,20 +115,18 @@ export async function planReferenceDashboard(
     chartInputs: dashboardChartInputs, existingChartTypes,
     datasets: datasets.map(dataset => ({
       datasetKey: dataset.datasetKey, question: dataset.subQuestion, sourceKind: dataset.recipe.kind,
+      cardCapabilities: cardCapabilities(dataset),
       columns: dataset.columns, rowCount: dataset.data.length,
       dataView: buildModelDataView(dataset.data, { truncation: dataset.truncated ? {
         truncated: true, rowLimit: dataset.rowLimit!, truncationHint: dataset.truncationHint!,
       } : undefined }),
     })),
-  }, planSchema, client.credentials.locale);
+  }, planningSchema(datasets), client.credentials.locale);
   const byKey = new Map(datasets.map(dataset => [dataset.datasetKey, dataset]));
   // Cards presenting the same requested calculation share one settlement in this operation.
   const settled = new Map<string, Promise<{ query: DashboardMetricReference; output: DashboardMetricOutput }>>();
   async function source(card: z.infer<typeof planned>, chartType: string) {
-    const dataset = byKey.get(card.datasetKey);
-    if (!dataset) throw new HttpError(502, "The plan references an unknown dataset", "DASHBOARD_PLAN_INVALID");
-    if (dataset.recipe.kind === "metric" && card.calculation)
-      throw new HttpError(422, "This metric has no requested statistic; ask again for the required result", "METRIC_REQUERY_REQUIRED");
+    const dataset = byKey.get(card.datasetKey)!;
     const inputs = dashboardInputs(chartType);
     const key = dataset.recipe.kind === "metric" ? dataset.datasetKey
       : JSON.stringify([dataset.datasetKey, card.calculation, inputs]);
@@ -106,7 +135,8 @@ export async function planReferenceDashboard(
       task = (async () => {
         const result = await client.settle({
           question: dataset.subQuestion, recipe: dataset.recipe,
-          ...(card.calculation ? { calculation: card.calculation } : {}), outputShape: inputs,
+          ...(card.calculation ? { calculation: card.calculation } : {}),
+          outputShape: { cardKind: chartType === "metric" ? "metric" : "chart", chartType, ...inputs },
         });
         const query: DashboardMetricReference = { kind: "metric", metricId: result.metricId, parameters: result.parameters };
         return { query, output: await client.execute(query, result.revision) };

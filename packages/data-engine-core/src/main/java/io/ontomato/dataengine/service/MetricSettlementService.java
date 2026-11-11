@@ -72,9 +72,13 @@ public class MetricSettlementService {
         denominators, null handling and output meaning. Equal preview values are not equivalence.
         If equivalent, return kind=reuse with that metricId, its current revision and typed parameters.
         Otherwise return kind=create with a tested final query package using the dataset-settlement
-        result contract in metricview-generation. Include every requested business calculation in
-        the Function: grouping, sums, averages, counts, pivots and any chart statistics such as boxplot
-        quantiles, hierarchy totals, shares or an Other category. Cards do not calculate these values.
+        result contract in metricview-generation. Implement only the requested calculation and result
+        shape; do not add unrequested analyses, derived columns or rows. Cards do not calculate values.
+        When outputShape.cardKind is chart, keep output rows at the chart's requested grain. Never
+        append grand-total, subtotal or summary rows as extra chart categories. A separate metric card
+        owns the overall total. Hierarchical nodes may carry their requested values, but do not add a
+        synthetic total node or category. If outputShape.cardKind is metric, return the requested
+        single-row summary instead of mixing it with detail or category rows.
         Use existing DSL and query-package Python execution; do not reference or call another metric
         inside a new Function. Do not replace zero, missing or nonnumeric values with row counts.
         Preserve subject-reference declarations instead of freezing the current user's identity.

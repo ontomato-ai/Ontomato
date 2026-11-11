@@ -74,7 +74,7 @@ import ChartZoomModal from "./ChartZoomModal.vue";
 import { isMetricReferenceEntry } from "@ontomato/contracts/dashboard";
 import { chartTable, extractTabularDataFromOption } from "./utils/chartTabular";
 import { fitChart, useDrawnSize } from "./utils/chartFit";
-import { cardErrorHeadline, metricCardSource, metricCardTable } from "./utils/metricCard";
+import { cardErrorHeadline, metricCardTable } from "./utils/metricCard";
 import { modifyResultSetName, deleteResultSet } from "../api";
 import { clamp, parseGridColumns, partialResultNotice } from "./utils/dashboardHelper";
 import { chartBrandColors } from "@ontomato/contracts/chart-presentation";
@@ -100,6 +100,7 @@ const emit = defineEmits([
   "chart-conditions-changed",
   "ai-request",
   "view-dsl",
+  "view-metric",
   "edit-parameters",
   "layout-change",
   "resize-active",
@@ -130,10 +131,8 @@ const modalMode = ref("chart");
 const title = computed(() => props.chart?.title || "");
 
 function handleViewDsl() {
-  emit("view-dsl", {
-    title: title.value,
-    dsl: metricRef.value ? metricCardSource(props.chart) : (props.chart?.dsl ?? null),
-  });
+  if (metricRef.value) emit("view-metric", props.chart);
+  else emit("view-dsl", { title: title.value, dsl: props.chart?.dsl ?? null });
 }
 
 const ALL_CHART_TYPES = ["pie", "bar", "line", "scatter", "radar", "heatmap"];
@@ -376,6 +375,12 @@ onBeforeUnmount(() => {
   font-size: var(--text-xs);
   background: color-mix(in srgb, var(--el-bg-color) 72%, transparent);
   border-radius: var(--radius-lg);
+}
+
+/* A card is narrow: the data view's column names wrap instead of being cut off. */
+.chart-wrapper :deep(.table-preview .el-table__header .cell) {
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 
 .chart-mask--error {

@@ -108,6 +108,7 @@ Every override receives the component it replaces as `fallback`, so it can wrap
 the default instead of re-implementing it.
 
 Business actions (save as dashboard, export PPT and similar) never require an
-override: hosts fill the `artifact-actions` slot (scope `{artifact}`, shown in
-the panel header and inline captions) and the `message-actions` slot (scope
+override: hosts fill the `artifact-actions` slot (scope `{artifact, title}`,
+where `title` is the name the shell shows for the file; shown in the panel
+header and inline captions) and the `message-actions` slot (scope
 `{sessionId, runId, messageId, text}`, shown under an answer).
