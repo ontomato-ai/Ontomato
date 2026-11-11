@@ -55,7 +55,6 @@ public class MetricSettlementService {
     }
     JSONObject source = switch (kind) {
       case "package" -> QueryPackage.accept(recipe.getJSONObject("package"));
-      case "dsl" -> QueryPackage.fromDsl(recipe.getJSONObject("dsl").toJSONString());
       case "python" -> QuerySourceSnapshot.legacy(recipe.getString("code"), List.of());
       default -> throw new IllegalArgumentException("Unsupported dataset recipe: " + kind);
     };
