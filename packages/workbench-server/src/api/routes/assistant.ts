@@ -1,11 +1,8 @@
 import { modelSelectionSchema } from "@ontomato/contracts/model-settings";
 import { readDiagnosisModel, saveDiagnosisModel } from "../../services/ops-diagnosis/model-settings";
-import { exportConversationPpt } from "../../services/assistant/export";
-import { safePptFileName } from "../../services/analysis-agent/delivery/ppt-artifacts";
 import { requirePermission } from "../../identity/installed";
 import { assertAppBuilderAccess } from "../../services/app-builder/access";
 import { assistantSkillCatalog } from "../../services/assistant/skills";
-import { actionCard, confirmAction } from "../../services/assistant/actions";
 import { readAnalysisScope } from "../../services/assistant/analysis-scope";
 import { readDrilldown } from "../../services/assistant/drilldown";
 import {
@@ -27,7 +24,6 @@ import { agentTasksFrameSchema } from "@ontomato/contracts/agent-tasks";
 import { setTimeout as delay } from "node:timers/promises";
 import { publicFrame, publicSnapshot } from "../../platform/agent-runtime/projection";
 import { readRuntimeFrames } from "../../infrastructure/agent-runtime/client";
-import { buildAttachmentContentDisposition } from "../utils/http";
 const router: ReturnType<typeof Router> = Router(),
   uuid = z.string().uuid(),
   TASK_READ_MS = 2000;
@@ -53,15 +49,6 @@ router.get("/sessions/:sessionId/artifacts/:artifactId/drilldown", wrap(async (r
 }));
 router.get("/sessions/:sessionId/artifacts/:artifactId/analysis-scope", wrap(async (req, res) => {
   res.json(await readAnalysisScope(id(req, "sessionId"), id(req, "artifactId"), context(req).owner, z.string().max(35).optional().parse(req.query.locale)));
-}));
-router.get("/sessions/:sessionId/artifacts/:artifactId/action", wrap(async (req, res) => {
-  const c = context(req);
-  res.json(await actionCard(id(req, "sessionId"), id(req, "artifactId"), c.owner, c.credentials));
-}));
-router.post("/sessions/:sessionId/artifacts/:artifactId/action/confirm", wrap(async (req, res) => {
-  const c = context(req);
-  const input = z.object({ parameters: z.record(z.unknown()) }).strict().parse(req.body);
-  res.json(await confirmAction(id(req, "sessionId"), id(req, "artifactId"), c.owner, c.credentials, input.parameters));
 }));
 const agentAdmin = requirePermission(["analysis-agent"]);
 router.get("/diagnosis-model", agentAdmin, wrap(async (req, res) => {
@@ -189,29 +176,6 @@ router.put(
         context(req).credentials.locale,
       ),
     );
-  }),
-);
-router.post(
-  "/sessions/:sessionId/export/ppt",
-  wrap(async (req, res) => {
-    const controller = new AbortController();
-    res.on("close", () => {
-      if (!res.writableEnded) controller.abort();
-    });
-    const { buffer } = await exportConversationPpt(
-      id(req, "sessionId"),
-      context(req).owner,
-      controller.signal,
-    );
-    res
-      .set({
-        "Content-Type":
-          "application/vnd.openxmlformats-officedocument.presentationml.presentation",
-        "Content-Disposition": buildAttachmentContentDisposition(
-          safePptFileName("conversation"),
-        ),
-      })
-      .send(buffer);
   }),
 );
 router.get(

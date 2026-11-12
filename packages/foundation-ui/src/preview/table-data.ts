@@ -2,6 +2,23 @@
 export interface TableData {
   columns: string[];
   rows: string[][];
+  /**
+   * The cells' own values where the source has them (a JSON file): numbers stay numbers and missing cells are null, so
+   * a table sorted by its reader orders numbers by value. Without them (a CSV) every cell sorts as text.
+   */
+  values?: (number | string | null)[][];
+}
+
+/** Text a table that its reader can sort and filter shows around its columns' filters. */
+export interface TableArrangeLabels {
+  /** Accessible name of a column's filter button, from the column's name. */
+  filter: (column: string) => string;
+  /** Placeholder of the search over a column's values. */
+  search: string;
+  /** The choice that keeps every value of the column. */
+  all: string;
+  /** How the filter lists an empty cell. */
+  empty: string;
 }
 
 /**
@@ -49,6 +66,11 @@ function cell(value: unknown): string {
   return typeof value === "object" ? JSON.stringify(value) : String(value);
 }
 
+function sortValue(value: unknown): number | string | null {
+  if (value === null || value === undefined) return null;
+  return typeof value === "number" ? value : cell(value);
+}
+
 /**
  * JSON arrays of records become tables, and so do dataset files ({columns:[{key,label}], rows}),
  * headed by their column labels; anything else is shown as formatted JSON.
@@ -61,9 +83,11 @@ export function jsonTable(value: unknown): TableData | null {
       columns.every((column) => column && typeof column.key === "string" && typeof column.label === "string")
     ) {
       const fields = columns as { key: string; label: string }[];
+      const records = rows as Record<string, unknown>[];
       return {
         columns: fields.map((column) => column.label),
-        rows: (rows as Record<string, unknown>[]).map((row) => fields.map((column) => cell(row?.[column.key]))),
+        rows: records.map((row) => fields.map((column) => cell(row?.[column.key]))),
+        values: records.map((row) => fields.map((column) => sortValue(row?.[column.key]))),
       };
     }
     return null;
@@ -73,9 +97,11 @@ export function jsonTable(value: unknown): TableData | null {
     const columns: string[] = [];
     for (const row of value as Record<string, unknown>[])
       for (const key of Object.keys(row)) if (!columns.includes(key)) columns.push(key);
+    const records = value as Record<string, unknown>[];
     return {
       columns,
-      rows: (value as Record<string, unknown>[]).map((row) => columns.map((key) => cell(row[key]))),
+      rows: records.map((row) => columns.map((key) => cell(row[key]))),
+      values: records.map((row) => columns.map((key) => sortValue(row[key]))),
     };
   }
   return null;

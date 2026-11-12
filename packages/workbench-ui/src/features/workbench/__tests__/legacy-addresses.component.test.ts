@@ -51,7 +51,6 @@ vi.mock("../assistant-host", () => ({
   createAssistantClient: () => ({}),
   createAssistantFeedback: () => ({}),
 }));
-vi.mock("../components/ConversationActions.vue", () => ({ default: { template: "<div />" } }));
 vi.mock("../components/DatasetActions.vue", () => ({ default: { template: "<div />" } }));
 vi.mock("../components/WorkbenchAppearanceDialog.vue", () => ({ default: { template: "<div />" } }));
 vi.mock("../../diagnosis/components/TurnDiagnoseButton.vue", () => ({ default: { template: "<div />" } }));

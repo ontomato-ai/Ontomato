@@ -14,7 +14,7 @@ tokens, accessibility and responsive rules. It does not define business permissi
 | Goal | Understand the question, objects and scope | Natural language and contextual task starters |
 | Decisions | Obtain missing time ranges, populations and definitions | Single/multiple choice, dates, searchable objects and notes |
 | Evidence | Explain findings and their limits | Plain answer, datasets, charts and provenance |
-| Next step | Continue analysis or address a finding | Up to three suggestions, dataset selection, relevant Action proposals |
+| Next step | Continue analysis | Up to three suggestions and dataset selection |
 | Confirmation | Review target and intended changes | Before/after preview, missing fields and explicit confirmation |
 | Readback | Establish what actually happened | Recorded outcome, fresh data and a new edit operation |
 
@@ -30,7 +30,6 @@ Simple questions do not need a mandatory stage tracker. Show a stage or blocker 
 | Dataset | Structured evidence | Preserve raw values, identifiers, source and truncation |
 | Chart | Comparisons, structure and trends | Include units/scope; title, legend and plot occupy distinct space |
 | Follow-up | Useful read-only continuation | At most three short labels, source references and complete scoped question |
-| Action | A finding has a relevant business operation | Brief reason, target, current/new values, explicit confirmation |
 | Change preview | Multiple fields or records | Unambiguous before/after values and affected scope |
 | Task status | Long work or user intervention | Real states, no invented percentages |
 | Result | Operation ended | Success, failure or unknown with an appropriate recovery action |
@@ -88,18 +87,6 @@ resumes the retrieval named in the card, which records the decisions. The card k
 sent message is the user's answer. Required text cannot be whitespace. Accepted decisions do not certify that the
 resulting dataset implements the chosen scope; final-result equivalence still requires end-to-end verification.
 
-## Action and recovery
-
-Inline Action cards answer: what is suggested, for whom, what is current, what changes, and what confirmation does.
-System-owned identifiers and expected values are not user-entry fields. Unknown new values need clear business labels,
-examples and appropriate controls. Detailed rules, identifiers and raw receipts live in a disclosure rather than prose.
-Completed cards remain immutable; another edit queries current data and creates another confirmed operation.
-
-States: needs input → needs confirmation → executing → succeeded / failed / outcome unknown. Prevent duplicate writes.
-Do not replay a write whose outcome is unknown. Recover through fresh data. Failures explain the unfinished step,
-known data effects and next action. Preserve entered values where possible. Never show object coercions, stack traces
-or raw response bodies as user-facing errors.
-
 ## Visual and interaction rules
 
 Use existing system inputs, selects, dates, buttons, tokens and icons. Hover, focus, pressed, disabled, loading and
@@ -125,6 +112,6 @@ independent authorized read. Distinguish component tests, runtime tests and visu
 | Multi-object change preview | Pending | Requires authorized target set, per-record effects and execution semantics |
 | Persistent task status | Pending | Must use owned task facts; never infer business completion from model prose |
 
-Interaction prompts belong in services/assistant/interaction-context.ts; Action instructions belong in action-context.ts.
+Interaction prompts belong in services/assistant/interaction-context.ts.
 How the assistant continues from a referenced file belongs once in the `ontomato-analyst-assistant` skill.
 The Agent settings prompt is the user's editable agent instruction, supplemented per run by these host contracts.

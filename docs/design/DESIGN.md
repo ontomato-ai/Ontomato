@@ -370,9 +370,11 @@ heading and 8px from a heading to its content; no outer gap on the first or last
 Report tables also clear the renderer's internal table margin: heading-to-table is 8px, ordinary blocks 12px,
 major sections 24px, subsections 20px, and the report title-to-introduction gap is 16px. Table cells use 8px vertical
 and 12px horizontal padding with 13px/20px text. Code, diagrams and callouts do not add a second outer margin to slots.
-Embedded artifacts own their internal caption, tabs, table and footer spacing; prose margins must not cascade into
-them. Dataset tabs use centered labels in 28px controls in the artifact header's right-hand actions, without a separate
-toolbar row. Docked artifact panels have square edges and only a left separator; artifact cards use an 8px radius and
+Embedded artifacts own their internal caption, table and footer spacing; prose margins must not cascade into
+them. A dataset's table can be sorted from its headers and filtered by a column's values; that changes only what is
+shown, and chosen rows stay the source file's rows. A partial result says so under the table. How the data was obtained
+stands under the table as each query's own label and its conditions, with the lineage graph opening in place (open by
+default in the docked panel), never behind a tab. Docked artifact panels have square edges and only a left separator; artifact cards use an 8px radius and
 a light border that stays unchanged on hover. Hover uses only a quiet neutral fill, without elevation or movement.
 Process disclosures use
 8px before expanded details and 4px between steps. There is no universal chat spacing standard; these relationships

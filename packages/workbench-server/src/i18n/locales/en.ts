@@ -380,7 +380,7 @@ export const en = {
   // Scheduled tasks
   "product.name": "Agent Platform",
   "assistant.skills.report.title": "Analysis report",
-  "assistant.skills.report.description": "Write an evidence-based Markdown report for a business question.",
+  "assistant.skills.report.description": "Write an evidence-based report and turn it into a PowerPoint presentation on request.",
   "assistant.skills.analyst.title": "Ontology analyst",
   "assistant.skills.analyst.description": "Read ontology metadata and ask data questions",
   "mcp.catalog.analysisTitle": "Agent Platform Agents MCP",

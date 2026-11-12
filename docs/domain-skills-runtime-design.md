@@ -50,7 +50,8 @@ exclusive imports, exports, prompts and obsolete tests with each removed path.
 
 Retain management resource/export routes, public-package read-only behavior,
 domain state, assistant deletion cleanup, provider startup publication and
-runtime name/digest storage. No startup migration of old packages or definitions.
+runtime name/digest storage. Legacy package bodies are not rewritten; the later report-skill migration only
+replaces saved selections of the two retired PPT provider skills.
 
 ## Approved scope and implementation evidence
 
@@ -59,21 +60,24 @@ examples now show a normal CLI; debug shows the final answer, PI state and file
 metadata of an ordinary runtime run. The agent selector edits provider and domain
 references together. Its catalogue must load successfully before saving.
 
-Seven bundled public packages are standard sources published as workbench
-provider skills: growth-rate-calc, generate-ppt, echarts, leaflet, network-graph,
+Six bundled public packages are standard sources published as workbench
+provider skills: growth-rate-calc, echarts, leaflet, network-graph,
 admin-choropleth-map and quality-trace-graph. Their calculations and interactive
 rendering stay in ordinary scripts. HTML embeds bundled library distribution
 assets so the exported package and result do not depend on workbench static routes.
 The canonical ECharts and Leaflet sources remain the existing bundled libraries;
 package-local copies carry them in the standalone distributions.
-`generate-ppt` calls the existing authenticated conversation export API. No stored
-customer package or agent-definition conversion is performed.
+The host-owned `assistant-report` writes a report and offers a PPT follow-up. The
+assistant plans slides; its bundled script reads the report's original chart/data
+files and writes `report.pptx` as a normal runtime artifact. The startup migration
+replaces selected legacy PPT provider skills after retiring disabled selections.
 
 Focused contract/component checks cover standard ZIP bytes, independent package
 validation, domain selection, edit publication, shared host metadata and retained
 edition labels. Type/lint checks and both editions' Maven compilation pass. The
-seven public CLIs also run from copied standalone directories; PPT transport uses
-a loopback fixture, not a real presentation generation proof.
+remaining public CLIs also run from copied standalone directories. Report PPT
+generation belongs to the host skill, with its bundle built from the package-owned
+`report-skill` source; it no longer calls a workbench export API.
 
 Main-directory UI, full-stack, image and runtime-registry smoke remain
 controller-owned, including active-run immutability and the next message in an

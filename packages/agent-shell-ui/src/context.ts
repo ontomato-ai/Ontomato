@@ -39,8 +39,6 @@ export interface MessageContext {
 
 export const shellContextKey: InjectionKey<ShellContext> = Symbol("agent-shell");
 export const messageContextKey: InjectionKey<Ref<MessageContext>> = Symbol("agent-shell-message");
-/** Each artifact provides its own header outlet for renderer-specific controls. */
-export const artifactHeaderKey: InjectionKey<Ref<HTMLElement | null>> = Symbol("artifact-header");
 
 /**
  * How much of a full page's foot the shell's floating composer covers, in pixels; 0 beside the conversation. The pane

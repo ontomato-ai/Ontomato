@@ -11,7 +11,7 @@ it("passes original row indices across pages to host-owned dataset selection act
     artifact, title: "Result", presentation: "inline",
     read: async () => new Blob([JSON.stringify({ columns: [{ key: "department", label: "Department" }], rows: Array.from({ length: 10 }, (_, index) => ({ department: index })) })]),
   }) });
-  app.provide(shellContextKey, { labels: ref({}),
+  app.provide(shellContextKey, { labels: ref({ filterColumn: (column: string) => `Filter ${column}`, filterSearch: "Search", filterAll: "All", filterEmpty: "(Empty)" }),
     continueConversation: async () => {}, slots: { datasetSelectionActions: ({ artifact: source, selectedRowIndices }: { artifact: { id: string }; selectedRowIndices: number[] }) => h("span", { class: "host-selection" }, `${source.id}:${selectedRowIndices.join(",")}`) },
   } as unknown as ShellContext);
   app.mount(root);

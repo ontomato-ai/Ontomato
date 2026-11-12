@@ -1,10 +1,10 @@
 <script setup lang="ts">
-import { computed, inject, provide, ref, watch } from "vue";
+import { computed, inject, ref, watch } from "vue";
 import type { RuntimeArtifact } from "@ontomato/contracts/agent-runtime-artifacts";
 import { Maximize2 } from "lucide-vue-next";
 import { artifactPath } from "@ontomato/contracts/agent-artifact-markdown";
 import { fileName } from "../artifacts";
-import { artifactHeaderKey, messageContextKey, shellContextKey } from "../context";
+import { messageContextKey, shellContextKey } from "../context";
 import ArtifactView from "./ArtifactView.vue";
 import SlotOutlet from "./SlotOutlet.vue";
 
@@ -13,8 +13,6 @@ const props = defineProps<{
   node: { src: string; alt: string; title: string | null; loading?: boolean };
 }>();
 const shell = inject(shellContextKey)!;
-const headerControls = ref<HTMLElement | null>(null);
-provide(artifactHeaderKey, headerControls);
 const message = inject(messageContextKey)!;
 const path = computed(() => (props.node.loading ? null : artifactPath(props.node.src)));
 const title = computed(() => props.node.alt || (path.value ? fileName(path.value) : ""));
@@ -40,7 +38,6 @@ function expand() {
   <figure v-else-if="path" class="inline-artifact">
     <figcaption class="inline-caption">
       <span class="inline-title">{{ title }}</span>
-      <div ref="headerControls" class="artifact-header-controls" />
       <SlotOutlet v-if="artifact" :content="shell.slots.artifactActions" :scope="{ artifact, title }" />
       <button
         type="button"
@@ -97,12 +94,6 @@ function expand() {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.artifact-header-controls {
-  display: flex;
-  align-items: center;
-  flex-shrink: 0;
-}
-.artifact-header-controls:empty { display: none; }
 .inline-expand {
   display: grid;
   place-items: center;

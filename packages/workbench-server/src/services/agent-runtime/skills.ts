@@ -3,6 +3,7 @@ import { runtimeRegisteredSkillSchema } from "@ontomato/contracts/agent-runtime-
 import { RuntimeClient } from "../../infrastructure/agent-runtime/client";
 import { readSkillPackage } from "../../core/skills/package";
 import fs from "node:fs";
+import { exportChartTheme } from "../chart-theme";
 import path from "node:path";
 import { publicSkillsRoot, publicSkillTranslationsRoot } from "../../content/layout";
 
@@ -11,6 +12,8 @@ export async function publishSkill(root: string, skill: RuntimeSkillRef, domainI
   if (skill.namespace.kind === "domain" && skill.namespace.domainId !== domainId)
     throw new Error("Verified domain is required for domain skill publication");
   const pkg = await readSkillPackage(root, skill);
+  if (skill.namespace.kind === "provider" && skill.namespace.provider === "workbench" && skill.name === "assistant-report")
+    pkg.files.push({ path: "resources/chart-theme.json", content: JSON.stringify(exportChartTheme()) });
   const translations = publicSkillTranslationsRoot();
   const relative = path.relative(publicSkillsRoot(), root);
   if (skill.namespace.kind === "provider" && translations && relative &&

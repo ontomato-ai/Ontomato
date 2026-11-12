@@ -37,6 +37,8 @@ export default [
       // of lint scope (the source eslint.config.js ignores data/** and skills/**).
       "packages/workbench-server/data/**",
       "packages/workbench-server/skills/**",
+      "packages/workbench-server/resources/runtime-skills/assistant-report/scripts/*.cjs",
+      "packages/workbench-server/resources/runtime-skills/assistant-report/vendor/**",
       // Java modules.
       "packages/data-engine-core/**",
     ],
@@ -77,7 +79,7 @@ export default [
   {
     // Every .mjs here runs on Node (build, packaging and development entries, their tests, and
     // the agent skill CLIs): add only the Node globals.
-    files: ["scripts/**/*.mjs", "apps/*/*.mjs", "agent-skills/**/*.mjs", "packages/agent-runtime/src/**/*.mjs", "packages/workbench-server/resources/runtime-skills/**/*.mjs", "packages/contracts/scripts/**/*.mjs", "packages/apps-sdk/*.mjs"],
+    files: ["scripts/**/*.mjs", "apps/*/*.mjs", "agent-skills/**/*.mjs", "packages/agent-runtime/src/**/*.mjs", "packages/workbench-server/resources/runtime-skills/**/*.mjs", "packages/contracts/scripts/**/*.mjs", "packages/workbench-server/report-skill/**/*.mjs", "packages/apps-sdk/*.mjs"],
     languageOptions: { globals: globals.node },
   },
   {
