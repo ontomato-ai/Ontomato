@@ -65,6 +65,8 @@ A `page` declared `withConversation` follows the agent-app states (DESIGN.md
 it can collapse beside the conversation and expand again (`pageView` model:
 `full` | `side`, which hosts may also set), and closing it returns to the
 conversation, whose top right corner then opens it beside the conversation again.
+Beside the conversation its width is dragged between bounds; dragged on 80px past
+the widest and released, it expands, past the narrowest, it closes.
 The page renders once and keeps its state while it moves; the `feature` slot also
 gets `view`. Full, the pane keeps the composer's height (`--pane-dock-space`)
 after the page's content; a page that fills the pane and scrolls inside itself
