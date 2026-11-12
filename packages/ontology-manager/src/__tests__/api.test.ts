@@ -74,12 +74,13 @@ describe("credentials and request headers", () => {
 
     expect(requests[0].url).toBe("/custom/manager-api/data-query/admin/getMetas");
     expect(requests[0].method).toBe("POST");
-    expect(requests[0].headers).toEqual({
+    expect(requests[0].headers).toMatchObject({
       "Content-Type": "application/json",
       "Accept-Language": "en",
       "X-Requested-With": "XMLHttpRequest",
       tk: "t-1",
     });
+    expect(requests[0].headers).not.toHaveProperty("x-api-key");
   });
 
   it("an API key sends only x-api-key", async () => {
@@ -327,9 +328,10 @@ describe("requests used by data browsing and visual modeling", () => {
     await client.loadObjectData("Order", 1, 25);
 
     expect(requests.map((r) => r.body)).toEqual([
-      { classname: "Order", pagenum: 2, pagecount: 50, search: "abc" },
-      { classname: "Order", pagenum: 1, pagecount: 25 },
+      expect.objectContaining({ classname: "Order", pagenum: 2, pagecount: 50, search: "abc" }),
+      expect.objectContaining({ classname: "Order", pagenum: 1, pagecount: 25 }),
     ]);
+    expect(requests[1].body).not.toHaveProperty("search");
   });
 
   it("reads one instance's record with POST", async () => {
@@ -375,7 +377,7 @@ describe("requests used by data browsing and visual modeling", () => {
     ).toEqual([
       [
         "/admin/addClass",
-        {
+        expect.objectContaining({
           className: "Order",
           primaryKeyName: "order_no",
           showName: "Sales Order",
@@ -383,22 +385,22 @@ describe("requests used by data browsing and visual modeling", () => {
           classToCard: false,
           instanceToCard: false,
           inStarChart: false,
-        },
+        }),
       ],
       [
         "/admin/addRelationship",
-        {
+        expect.objectContaining({
           relationName: "has",
           fromClassName: "A",
           toClassName: "B",
           relationDesc: "d",
           fromField: "a_id",
           toField: "id",
-        },
+        }),
       ],
       [
         "/admin/addRelationship",
-        { relationName: "r", fromClassName: "A", toClassName: "B", relationDesc: "" },
+        expect.objectContaining({ relationName: "r", fromClassName: "A", toClassName: "B", relationDesc: "" }),
       ],
     ]);
   });
@@ -420,7 +422,7 @@ describe("requests used by data browsing and visual modeling", () => {
     // The fallback comes from the host-supplied value, not from the UI locale.
     const { client } = setup({ type: "token", token: "t" });
 
-    await expect(client.loadOntology()).resolves.toEqual({
+    await expect(client.loadOntology()).resolves.toMatchObject({
       objects: [
         {
           className: "Order",

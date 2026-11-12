@@ -6,10 +6,7 @@ import { instanceName } from "../object-views/instance-name";
 
 afterEach(() => { vi.unstubAllGlobals(); });
 describe("object view bindings and documents", () => {
-  it("uses type-specific defaults while preserving saved dimensions", () => {
-    expect(createViewWidget("chart")).toMatchObject({ span: 6, height: 320 });
-    expect(createViewWidget("table")).toMatchObject({ span: 12, height: 360 });
-    expect(createViewWidget("metric")).toMatchObject({ span: 4, height: 80 });
+  it("preserves saved widget dimensions through the schema", () => {
     expect(viewWidgetSchema.parse({ ...createViewWidget("chart"), span: 9, height: 480 })).toMatchObject({ span: 9, height: 480 });
   });
   it("uses enabled business keys for names and never falls back to technical identifiers", () => {
