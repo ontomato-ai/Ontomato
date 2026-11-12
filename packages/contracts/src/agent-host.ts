@@ -8,7 +8,9 @@ import { sessionHistoryBoundsSchema } from "./session-history";
 import { runtimeArtifactSchema } from "./agent-runtime-artifacts";
 import {
   runtimeCursorSchema,
+  runtimeSessionRunFrameSchema,
   runtimeStreamFrameSchema,
+  type RuntimeSessionRunFrame,
 } from "./agent-runtime-events";
 import {
   runtimeIdSchema,
@@ -37,6 +39,24 @@ export const agentHostRunStatusSchema = z
     id: runtimeIdSchema,
     status: runtimeRunStatusSchema,
     stopReason: runtimeStopReasonSchema.nullable(),
+  })
+  .strict();
+/** The user-level list notice: identity only, never the run state itself. */
+export const agentHostSessionRunFrameSchema = runtimeSessionRunFrameSchema;
+export const agentHostSessionStatusRequestSchema = z
+  .object({ sessionIds: z.array(runtimeIdSchema) })
+  .strict();
+/** State is read by session ID after a notice or ready; null only means the session has no run. */
+export const agentHostSessionRunSnapshotSchema = z
+  .object({
+    sessions: z.array(
+      z
+        .object({
+          sessionId: runtimeIdSchema,
+          latestRun: agentHostRunStatusSchema.nullable(),
+        })
+        .strict(),
+    ),
   })
   .strict();
 export const agentHostMessageSchema = runtimeMessageRecordSchema;
@@ -122,6 +142,13 @@ export type AgentHostAgent = z.infer<typeof agentHostAgentSchema>;
 export type AgentHostAgentList = z.infer<typeof agentHostAgentListSchema>;
 export type AgentHostRun = z.infer<typeof agentHostRunSchema>;
 export type AgentHostRunStatus = z.infer<typeof agentHostRunStatusSchema>;
+export type AgentHostSessionRunFrame = RuntimeSessionRunFrame;
+export type AgentHostSessionStatusRequest = z.infer<
+  typeof agentHostSessionStatusRequestSchema
+>;
+export type AgentHostSessionRunSnapshot = z.infer<
+  typeof agentHostSessionRunSnapshotSchema
+>;
 export type AgentHostMessage = z.infer<typeof agentHostMessageSchema>;
 export type AgentHostRunSnapshot = z.infer<typeof agentHostRunSnapshotSchema>;
 export type AgentHostSession = z.infer<typeof agentHostSessionSchema>;

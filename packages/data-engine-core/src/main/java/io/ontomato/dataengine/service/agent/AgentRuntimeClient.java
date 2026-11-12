@@ -151,6 +151,19 @@ public class AgentRuntimeClient {
     return json(domain, id, "/v1/runs/" + id, "GET", null, null);
   }
 
+  /** The host/domain lifecycle notices; the runtime sends ready after registering the subscription. */
+  public HttpResponse<InputStream> sessionRunEvents(String domain, String correlation)
+      throws Exception {
+    return stream(domain, correlation, "/v1/sessions/run-events");
+  }
+
+  /** Light status for sessions already checked by the host; the runtime keeps request order. */
+  public JSONObject sessionStatuses(String domain, String correlation, java.util.List<String> ids)
+      throws Exception {
+    return json(
+        domain, correlation, "/v1/sessions/status", "POST", JSONObject.of("sessionIds", ids), null);
+  }
+
   /** The run's lifecycle view only: no events, messages or artifacts, and no runtime session lock. */
   public JSONObject status(String domain, String id) throws Exception {
     return json(domain, id, "/v1/runs/" + id + "/status", "GET", null, null).getJSONObject("run");

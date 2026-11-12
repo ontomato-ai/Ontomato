@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { nextTick, ref } from "vue";
 import type { AgentHostClient } from "../host";
+import type { AgentHostSession } from "@ontomato/contracts/agent-host";
 import { useAgentNav } from "../useAgentNav";
 
 const remembered = "11111111-1111-4111-8111-111111111111";
@@ -90,5 +91,45 @@ describe("first agent read", () => {
     expect(agentId.value).toBe(remembered);
     expect(sessionId.value).not.toBeNull();
     expect(onLeaveConversation).not.toHaveBeenCalled();
+  });
+});
+
+describe("promoting a conversation", () => {
+  const running = { id: "77777777-7777-4777-8777-777777777777", status: "running" as const, stopReason: null };
+  const listed = (id: string, title: string, latestRun: AgentHostSession["latestRun"] = null): AgentHostSession => ({
+    id, agentId: remembered, title, origin: "user", createdAt: "", updatedAt: "", latestRun,
+  });
+
+  it("fills an empty title and moves the row it already has to the top with its run state", () => {
+    const { state } = nav([], remembered);
+    const first = listed(served, "Earlier", running);
+    const second = listed(remembered, "");
+    state.sessions.value = [first, second];
+
+    state.promoteSession(first, "the first message");
+
+    expect(state.sessions.value.map((row) => [row.id, row.title, row.latestRun?.status ?? null])).toEqual([
+      [served, "Earlier", "running"],
+      [remembered, "", null],
+    ]);
+
+    // A row still untitled takes the message, as the host titles the conversation with it.
+    state.promoteSession(second, "the new message");
+    expect(state.sessions.value.map((row) => [row.id, row.title, row.latestRun?.status ?? null])).toEqual([
+      [remembered, "the new message", null],
+      [served, "Earlier", "running"],
+    ]);
+  });
+
+  it("places a conversation it does not list at the top without writing its run state", () => {
+    const { state } = nav([], remembered);
+    state.sessions.value = [listed(served, "Earlier")];
+
+    state.promoteSession({ ...listed(remembered, ""), latestRun: null }, "first words");
+
+    expect(state.sessions.value.map((row) => [row.id, row.title, row.latestRun])).toEqual([
+      [remembered, "first words", null],
+      [served, "Earlier", null],
+    ]);
   });
 });

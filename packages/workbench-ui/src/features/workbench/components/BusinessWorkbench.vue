@@ -4,7 +4,7 @@ import { platformRoutes as routes } from "@ontomato/platform-shell/routes";
 import { ElMessage } from "element-plus";
 import { useI18n } from "vue-i18n";
 import { useRoute, useRouter } from "vue-router";
-import { AgentShell, useAgentNav, type ShellFeatureDeclaration, type ShellWorkbenchDeclaration } from "@ontomato/agent-shell-ui";
+import { AgentShell, useAgentNav, useSessionRunFeed, type ShellFeatureDeclaration, type ShellWorkbenchDeclaration } from "@ontomato/agent-shell-ui";
 import { AgentModelsPage, ontologyAgentModelPages, ontologyAgentModelSource, usePageAccess } from "@ontomato/platform-shell";
 import "@ontomato/agent-shell-ui/style.css";
 import type { WorkbenchAppearance } from "@ontomato/contracts/workbench-appearance";
@@ -140,6 +140,12 @@ const nav = useAgentNav({
   sessionId: () => conversationId.value,
   setSessionId: (id) => (conversationId.value = id),
   onLeaveConversation: () => (featureId.value = null),
+});
+// The one list notice stream of this page: every conversation it lists follows its run, whichever one is open.
+useSessionRunFeed({
+  port: client.sessionRuns,
+  sessions: () => nav.sessions.value,
+  onError: (error) => ElMessage.error(error instanceof Error ? error.message : String(error)),
 });
 watch(locale, () => {
   void nav.loadAgents().catch((error) => ElMessage.error(error instanceof Error ? error.message : String(error)));

@@ -290,6 +290,24 @@ public class OntologyAgentHost {
     return JSONObject.of("sessions", result, "nextCursor", next);
   }
 
+  /** Light run status for sessions the caller has already been allowed to read, in request order. */
+  public JSONArray sessionStatuses(List<String> ids, Owner owner) throws Exception {
+    var sessions = new JSONArray();
+    if (ids.isEmpty()) return sessions;
+    var statuses = runtime.sessionStatuses(owner.domainId(), null, ids).getJSONArray("sessions");
+    for (Object item : statuses) {
+      var status = (JSONObject) item;
+      var latest = status.getJSONObject("latestRun");
+      sessions.add(
+          JSONObject.of(
+              "sessionId",
+              status.getJSONObject("session").getString("id"),
+              "latestRun",
+              latest == null ? null : publicRunStatus(latest)));
+    }
+    return sessions;
+  }
+
   public JSONObject artifact(String session, String artifact, Owner owner) throws Exception {
     store.session(session, owner);
     var value =

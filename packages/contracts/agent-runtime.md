@@ -28,6 +28,7 @@ plain JSON; HTTP failures retain `{error:{code,message},correlationId}`.
 | GET /v1/sessions/:id | `{session,messages,latestRun}` complete snapshot |
 | GET /v1/sessions/:id/history | bounded conversation history page; `before`, `after`, `through`, optional recovery `runId` |
 | POST /v1/sessions/status | `{sessionIds}`; ordered `{sessions:[{session,latestRun}]}` |
+| GET /v1/sessions/run-events | SSE, `ready` then `run_started`/`run_stopped` lifecycle notices for the host + domain; identity only, no replay |
 | POST /v1/sessions/:id/runs | StartRun below; 202 `{run,replayed}` |
 | GET /v1/runs/:id | `{run,messages,pendingMessages,toolExecutions,artifacts,cursor}` |
 | GET /v1/runs/:id/status | `{run}` lifecycle view only; with `waitFor=stopped` (and `timeoutMs` ≤ 60000, default 30000) held until the run stops or the timeout, which returns it still running |
@@ -64,6 +65,19 @@ Run start checks its read-only prerequisites before admitting: a session whose
 definition role has no configured model returns 422 `MODEL_NOT_CONFIGURED`, and a
 platform that cannot isolate workers returns 503 `CODE_ISOLATION_UNAVAILABLE`.
 Neither leaves an admission, so the same key may start once the dependency is fixed.
+
+`GET /v1/sessions/run-events` is an SSE stream scoped to the authenticated host and
+`X-Domain-Id`; it is not a run event stream. The runtime registers the subscription
+first and then sends `data: {"type":"ready"}`. Every later frame is
+`{"type":"run_started"|"run_stopped","sessionId","runId"}`: `run_started` follows an
+`admit` transaction committed for a new run (a replay is silent), and `run_stopped`
+follows a committed `finish`, including error, cancellation and preparation failure.
+Rejected admissions send nothing. Frames are identity only and are never replayed;
+a reconnect gets a new `ready` and later changes, while the host reads
+`POST /v1/sessions/status` for current state. A dropped connection unsubscribes and
+never cancels work. Existing heartbeat comments carry no state. The runtime does not
+know terminal-user permissions; each host narrows the notices to the sessions its
+caller may read.
 
 ## Run definition, environment and sandbox
 

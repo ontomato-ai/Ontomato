@@ -4,7 +4,7 @@ import { computed, onMounted, provide, ref, watch } from "vue";
 import { useRoute, useRouter, type LocationQueryRaw } from "vue-router";
 import { useI18n } from "vue-i18n";
 import { ElMessage } from "element-plus";
-import { AgentShell, useAgentNav, type ShellWorkbenchDeclaration } from "@ontomato/agent-shell-ui";
+import { AgentShell, useAgentNav, useSessionRunFeed, type ShellWorkbenchDeclaration } from "@ontomato/agent-shell-ui";
 import { useAgentModelLabels, useLeaveConfirmation } from "@ontomato/platform-shell";
 import "@ontomato/agent-shell-ui/style.css";
 import { DIAGNOSIS_AGENT_ID, type DiagnosisTarget } from "@ontomato/contracts/ops-diagnosis";
@@ -163,6 +163,12 @@ const nav = useAgentNav({
   sessionId: () => sessionId.value,
   setSessionId: (id) => (sessionId.value = id),
   onLeaveConversation: () => (featureId.value = null),
+});
+// The one list notice stream of this page: every diagnosis conversation it lists follows its run, open or not.
+useSessionRunFeed({
+  port: client.sessionRuns,
+  sessions: () => nav.sessions.value,
+  onError: (error) => ElMessage.error(error instanceof Error ? error.message : String(error)),
 });
 
 onMounted(async () => {

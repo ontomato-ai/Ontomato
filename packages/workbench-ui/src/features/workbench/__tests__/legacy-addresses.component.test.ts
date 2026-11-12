@@ -41,9 +41,8 @@ vi.mock("@ontomato/agent-shell-ui", async (importOriginal) => ({
     selectSession: () => {},
     removeSession: async () => {},
     promoteSession: () => {},
-    markRun: () => {},
-    runStatus: () => null,
   }),
+  useSessionRunFeed: () => {},
 }));
 vi.mock("../api", () => ({ getWorkbenchAppearance: async () => ({ brand: { name: "", logo: "", subtitle: "" } }) }));
 vi.mock("../../dashboard", () => ({ DashboardHome: { template: '<div class="dashboards" />' } }));

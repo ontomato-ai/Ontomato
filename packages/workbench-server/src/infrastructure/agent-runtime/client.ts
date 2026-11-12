@@ -15,8 +15,10 @@ import {
   type RuntimeStartRunRequest,
 } from "@ontomato/contracts/agent-runtime";
 import {
+  runtimeSessionRunFrameSchema,
   runtimeStreamFrameSchema,
   type RuntimeCursor,
+  type RuntimeSessionRunFrame,
   type RuntimeStreamFrame,
 } from "@ontomato/contracts/agent-runtime-events";
 import { environment } from "../../config/environment";
@@ -222,12 +224,34 @@ export class RuntimeClient {
       throw new HttpError(response.status, "Agent runtime stream failed");
     await readRuntimeFrames(response, onFrame, signal);
   }
+  /** Host/domain lifecycle notices; the `ready` frame comes from the runtime itself. */
+  async sessionRunEvents(
+    onOpen: () => void,
+    onFrame: (frame: RuntimeSessionRunFrame) => Promise<void>,
+    signal: AbortSignal,
+  ) {
+    const response = await fetch(
+      `${environment.agentRuntime().url.replace(/\/$/, "")}/v1/sessions/run-events`,
+      { headers: this.headers(), signal },
+    );
+    if (!response.ok)
+      throw new HttpError(response.status, "Agent runtime stream failed");
+    // The caller commits its own success response only once the runtime stream is open.
+    onOpen();
+    await readSseFrames(
+      response,
+      (value) => runtimeSessionRunFrameSchema.parse(value),
+      onFrame,
+      signal,
+    );
+  }
 }
 
 /** The runtime uses one JSON data line per frame; comments carry its existing heartbeat. */
-export async function readRuntimeFrames(
+export async function readSseFrames<T>(
   response: Response,
-  onFrame: (frame: RuntimeStreamFrame) => Promise<void>,
+  parse: (value: unknown) => T,
+  onFrame: (frame: T) => Promise<void>,
   signal: AbortSignal,
   onComment?: (line: string) => void,
 ) {
@@ -247,7 +271,7 @@ export async function readRuntimeFrames(
         const line = buffer.slice(0, newline).trimEnd();
         buffer = buffer.slice(newline + 1);
         if (line.startsWith("data: "))
-          await onFrame(runtimeStreamFrameSchema.parse(JSON.parse(line.slice(6))));
+          await onFrame(parse(JSON.parse(line.slice(6))));
         else if (line.startsWith(":")) onComment?.(line);
       }
     }
@@ -255,4 +279,20 @@ export async function readRuntimeFrames(
     signal.removeEventListener("abort", cancel);
     await reader.cancel().catch(() => {});
   }
+}
+
+/** The single run stream keeps its own frame schema on the shared SSE reader. */
+export async function readRuntimeFrames(
+  response: Response,
+  onFrame: (frame: RuntimeStreamFrame) => Promise<void>,
+  signal: AbortSignal,
+  onComment?: (line: string) => void,
+) {
+  await readSseFrames(
+    response,
+    (value) => runtimeStreamFrameSchema.parse(value),
+    onFrame,
+    signal,
+    onComment,
+  );
 }

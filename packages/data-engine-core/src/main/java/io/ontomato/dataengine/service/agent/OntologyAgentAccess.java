@@ -4,6 +4,7 @@ import com.alibaba.fastjson2.JSONObject;
 import io.ontomato.dataengine.service.*;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.stereotype.Service;
+import org.springframework.web.server.ResponseStatusException;
 
 /** Authenticated request context is captured before leaving the servlet thread. */
 @Service
@@ -143,5 +144,57 @@ public class OntologyAgentAccess {
     var owner = callerOwner(request, caller);
     store.requireCallerResource(caller, session, run);
     return owner;
+  }
+
+  /**
+   * A session read decision captured on the request thread. A long-lived SSE body runs off
+   * that thread, where the edition's identity is not available, so the verified owner and
+   * permissions are fixed here and only the per-session ownership lookup happens later.
+   */
+  public final class SessionReads {
+    private final OntologyAgentStore.Owner owner;
+    private final boolean governance;
+    private final boolean query;
+
+    private SessionReads(
+        OntologyAgentStore.Owner owner, boolean governance, boolean query) {
+      this.owner = owner;
+      this.governance = governance;
+      this.query = query;
+    }
+
+    public boolean readable(String session) {
+      try {
+        var row = store.session(session, owner);
+        return KnowledgeGovernanceService.AGENT.equals(row.getString("agent_id"))
+            ? governance
+            : query;
+      } catch (AgentHttpException error) {
+        if (error.status() == 404 || error.status() == 403) return false;
+        throw error;
+      }
+    }
+
+    public OntologyAgentStore.Owner owner() {
+      return owner;
+    }
+  }
+
+  /** The user-level list connection; both list routes take the current user credential. */
+  public SessionReads sessionReads(HttpServletRequest request) {
+    var context = authenticated(request);
+    return new SessionReads(
+        context.owner(), identity.hasKnowledgeGovernanceAccess(), queryAllowed());
+  }
+
+  /** Only the capability's own 403 means no query permission; every other failure propagates. */
+  private boolean queryAllowed() {
+    try {
+      identity.requireQueryAccess();
+      return true;
+    } catch (ResponseStatusException denied) {
+      if (denied.getStatusCode().value() == 403) return false;
+      throw denied;
+    }
   }
 }
