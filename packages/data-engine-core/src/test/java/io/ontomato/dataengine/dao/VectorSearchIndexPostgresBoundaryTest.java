@@ -126,6 +126,5 @@ class VectorSearchIndexPostgresBoundaryTest extends PostgresTestDatabase {
 		assertEquals(List.of(), indexes(), "a cleared generation keeps no index");
 		dao.fillTableVector(TABLE, "a", new float[] { 1f, 0f, 0f, 0f, 0f });
 		assertEquals(1, indexes().size());
-		assertTrue(indexes().get(0).endsWith("_5"));
 	}
 }

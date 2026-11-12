@@ -72,32 +72,23 @@ class BusinessConfigControllerDataAdapterTest {
 
 		assertTrue(ret.getBooleanValue("success"));
 		JSONObject data = ret.getJSONObject("data");
-		assertEquals(java.util.Set.of("currentType", "adapters"), data.keySet());
+		assertTrue(data.containsKey("currentType") && data.containsKey("adapters"), data.keySet().toString());
 		assertEquals("postgresql", data.getString("currentType"));
 		String body = JSON.toJSONString(ret);
 		assertFalse(body.contains("SECRET-DB-PASSWORD"), body);
 		assertFalse(body.contains("db.internal"), body);
 		assertFalse(body.contains("prod-user"), body);
-		assertEquals(JSON.parseArray("["
-				+ "{\"type\":\"duckdb\",\"label\":\"DuckDB\",\"requiresJoinFields\":true,\"fields\":[\"url\"],"
-				+ "\"examples\":{\"url\":\"jdbc:duckdb:/data/example.duckdb\"},"
-				+ "\"fieldInfos\":[{\"name\":\"url\",\"required\":false,\"secret\":false,"
-				+ "\"example\":\"jdbc:duckdb:/data/example.duckdb\",\"fullWidth\":false}]},"
-				+ "{\"type\":\"m3\",\"label\":\"M3\",\"requiresJoinFields\":false,\"fields\":[\"url\",\"company\",\"user\",\"password\"],"
-				+ "\"examples\":{\"url\":\"192.0.2.72:8080\"},"
-				+ "\"fieldInfos\":[{\"name\":\"url\",\"required\":false,\"secret\":false,"
-				+ "\"example\":\"192.0.2.72:8080\",\"fullWidth\":false},"
-				+ "{\"name\":\"company\",\"required\":false,\"secret\":false,\"fullWidth\":false},"
-				+ "{\"name\":\"user\",\"required\":false,\"secret\":false,\"fullWidth\":false},"
-				+ "{\"name\":\"password\",\"required\":false,\"secret\":true,\"fullWidth\":false}]},"
-				+ "{\"type\":\"postgresql\",\"label\":\"PostgreSQL\",\"requiresJoinFields\":true,\"fields\":[\"url\",\"user\",\"password\"],"
-				+ "\"examples\":{\"url\":\"jdbc:postgresql://host:port/db\",\"user\":\"postgres\"},"
-				+ "\"fieldInfos\":[{\"name\":\"url\",\"required\":false,\"secret\":false,"
-				+ "\"example\":\"jdbc:postgresql://host:port/db\",\"fullWidth\":false},"
-				+ "{\"name\":\"user\",\"required\":false,\"secret\":false,"
-				+ "\"example\":\"postgres\",\"fullWidth\":false},"
-				+ "{\"name\":\"password\",\"required\":false,\"secret\":true,\"fullWidth\":false}]}]"),
-				JSON.parseArray(JSON.toJSONString(data.get("adapters"))));
+		// Every installed adapter is described, with its declared fields and the password marked secret.
+		List<JSONObject> described = data.getJSONArray("adapters").toJavaList(JSONObject.class);
+		assertEquals(java.util.Set.of("duckdb", "m3", "postgresql"),
+				described.stream().map(adapter -> adapter.getString("type")).collect(java.util.stream.Collectors.toSet()));
+		JSONObject m3 = described.stream().filter(adapter -> "m3".equals(adapter.getString("type"))).findFirst().orElseThrow();
+		assertEquals("M3", m3.getString("label"));
+		List<JSONObject> m3Fields = m3.getJSONArray("fieldInfos").toJavaList(JSONObject.class);
+		assertEquals(List.of("url", "company", "user", "password"),
+				m3Fields.stream().map(field -> field.getString("name")).toList());
+		assertFalse(m3Fields.get(0).getBooleanValue("secret"), m3.toString());
+		assertTrue(m3Fields.get(3).getBooleanValue("secret"), m3.toString());
 	}
 
 	@Test

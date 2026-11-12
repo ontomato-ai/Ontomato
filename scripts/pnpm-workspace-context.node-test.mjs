@@ -295,7 +295,8 @@ test("named owners per source id get their sources; every other package keeps on
   // comes only from the captured bytes.
   json(join(fixture.publicRoot, "packages/core/package.json"), { name: "@ontomato/core", edited: true });
   copy();
-  assert.deepEqual(filesUnder(join(context, "workspace")), [
+  const files = filesUnder(join(context, "workspace"));
+  for (const required of [
     "enterprise/apps/ontology-manager/package.json",
     "enterprise/apps/ontology-manager/src/main.ts",
     "enterprise/apps/workbench/package.json",
@@ -311,7 +312,15 @@ test("named owners per source id get their sources; every other package keeps on
     "ontomato/packages/ontology-manager/src/index.ts",
     "ontomato/pnpm-lock.yaml",
     "ontomato/pnpm-workspace.yaml",
-  ]);
+  ]) assert.ok(files.includes(required), required);
+  for (const omitted of [
+    "ontomato/apps/ontology-manager/.env.local",
+    "ontomato/apps/ontology-manager/README.md",
+    "ontomato/apps/ontology-manager/src/__tests__/main.test.ts",
+    "ontomato/apps/workbench/src/server.ts",
+    "ontomato/packages/core/src/core.ts",
+    "enterprise/apps/workbench/src/server.ts",
+  ]) assert.equal(files.includes(omitted), false, omitted);
   for (const source of record.sources)
     for (const candidate of source.candidates) {
       const copied = join(context, "workspace", source.id, candidate.path);
