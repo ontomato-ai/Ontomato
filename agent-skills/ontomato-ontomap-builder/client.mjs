@@ -13,6 +13,11 @@ export function readJson(argument) {
 function commandHeaders(headers) {
   return typeof headers === "function" ? headers() : headers;
 }
+async function agentHeaders(cfg,headers) {
+  const supplied=await commandHeaders(headers);
+  const credential=supplied.tk || supplied["X-API-Key"] ? {} : process.env.ONTOMATO_API_KEY ? {"X-API-Key":process.env.ONTOMATO_API_KEY} : process.env.ONTOMATO_TK || cfg.tk ? {tk:process.env.ONTOMATO_TK || cfg.tk} : {};
+  return {"Accept-Language":process.env.ONTOMATO_LANGUAGE ?? "en",...credential,...supplied};
+}
 async function json(url, headers, body) {
   const response = await fetch(url, {
     method: body === undefined ? "GET" : "POST",
@@ -59,7 +64,7 @@ export async function analystCommand(cfg, argv, headers = {}) {
   if (command === "retriever-cancel") {
     const run=take(args,"--run");
     if(args.length!==1 || !run) throw new Error("retriever-cancel requires sessionId --run runId from the task snapshot");
-    console.log(JSON.stringify(await json(`${ontology}/ontology/retrievals/${encodeURIComponent(args[0])}/retriever/cancel`,await commandHeaders(headers),{expectedRoundId:run})));
+    console.log(JSON.stringify(await json(`${ontology}/ontology/retrievals/${encodeURIComponent(args[0])}/retriever/cancel`,await agentHeaders(cfg,headers),{expectedRoundId:run})));
     return;
   }
   if (command === "run") return runAction(ontology, args, headers);
@@ -366,7 +371,7 @@ export async function agentChannelCommand(cfg,argv,headers={}) {
   if((op==="read" || op==="cancel") && !command.taskId) throw new Error("A task ID is required");
   if((follow || files) && op!=="read") throw new Error("--follow and --files belong to agent read");
   const ontology=(cfg.ontologyUrl || `${cfg.envUrl}/api/data-query`).replace(/\/$/u,"");
-  headers=await commandHeaders(headers);
+  headers=await agentHeaders(cfg,headers);
   if(follow) return followAgentTask(ontology,headers,command.taskId,files);
   const result=await json(`${ontology}/platform/agent-channel/commands`,headers,command);
   console.log(JSON.stringify(op==="read" && files ? await downloadAgentFiles(ontology,headers,result) : result,null,2));
