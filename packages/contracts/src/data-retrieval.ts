@@ -151,8 +151,10 @@ export const retrievalInputSchema = z
 export const bindingRetrievalSchema = z.object({
   status: z.enum(["running", "completed", "cancelled", "interrupted"]),
   error: z.string().nullable(),
-  datasets: z.array(z.object({ id, sha256: z.string(), title: z.string(), qualityCheck: runtimeJsonObjectSchema.optional() })),
+  datasets: z.array(z.object({ id, sha256: z.string(), title: z.string() })),
 });
+/** A branch's quality check named by its task; its status and conclusion are read from the session's tasks. */
+export const qualityTaskReferenceSchema = z.object({ taskId: id, source: z.enum(["binding", "retriever"]) }).strict();
 const retrievalRunStateSchema = z.object({
   status: z.enum(["running", "stopped"]), stopReason: runtimeStopReasonSchema.nullable(), errorMessage: z.string().nullable(),
 });
@@ -167,7 +169,7 @@ export const retrievalDeliverySchema = z.object({
 });
 export const retrievalPollSchema = z.object({
   bindings: bindingRetrievalSchema,
-  qualityCheck: runtimeJsonObjectSchema.optional(),
+  qualityTasks: z.array(qualityTaskReferenceSchema),
   id, roundId: id, cursor: z.number().int().nonnegative(), decisionRevision: z.number().int(),
   runtimeSessionId: id.nullable(), runtimeRunId: id.nullable(), run: retrievalRunStateSchema.nullable(),
   pending: z.object({ retriever: z.boolean(), bindings: z.boolean() }), deliveries: z.array(retrievalDeliverySchema),
@@ -180,7 +182,7 @@ export const retrievalSnapshotSchema = z.object({
   bindingPending: z.boolean().optional(),
   admissionError: z.string().nullable().optional(),
   createdAt: z.string().optional(),
-  qualityCheck: runtimeJsonObjectSchema.optional(),
+  qualityTasks: z.array(qualityTaskReferenceSchema),
   id,
   revision: z.number().int(),
   runtimeSessionId: id.nullable(),

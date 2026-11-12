@@ -125,10 +125,15 @@ public class OntologyAgentAccess {
   public OntologyAgentStore.Owner callerOwner(HttpServletRequest request, String caller) {
     if (request.getHeader("X-Ontomato-Query-Service-Token") == null)
       return current(request).owner();
+    return OntologyAgentStore.owner(store.serviceCaller(caller, serviceDomain(request)));
+  }
+
+  /** The domain a workbench service request acts in; the service, not a user, is authenticated. */
+  public String serviceDomain(HttpServletRequest request) {
     service(request);
     String domain = request.getHeader("X-Domain-Id");
     if (domain == null || domain.isBlank()) throw AgentHttpException.invalid("Domain is required");
-    return OntologyAgentStore.owner(store.serviceCaller(caller, domain));
+    return domain;
   }
 
   public OntologyAgentStore.Owner reader(HttpServletRequest request, String session, String run) {

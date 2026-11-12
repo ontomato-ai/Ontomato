@@ -1,12 +1,13 @@
 import type { ShellLabels } from "@ontomato/agent-shell-ui";
 /**
  * Governance text. `shell` is the shell's labels as stored: the two the page formats from text
- * (steps, elapsed) keep their keys but hold the pattern instead of the formatter, so a
- * missing key is a type error here rather than a silent `{...}` cast.
+ * (steps, elapsed, worked) keep their keys but hold the pattern instead of the formatter, so a
+ * missing key is a type error here rather than a silent `{...}` cast. It has no task labels: the governance
+ * conversation delegates no tasks.
  */
 export interface GovernanceMessages {
   text: Readonly<Record<string, string>>;
-  shell: Readonly<Omit<ShellLabels, "steps" | "elapsed"> & Record<"steps" | "elapsed", string>>;
+  shell: Readonly<Omit<ShellLabels, "steps" | "elapsed" | "worked" | "tasks"> & Record<"steps" | "elapsed" | "worked", string>>;
 }
 export const governanceAgentId = "56a15178-ae22-4e6f-9974-ababeb42a676";
 export const englishGovernance: GovernanceMessages = {
@@ -94,13 +95,12 @@ export const englishGovernance: GovernanceMessages = {
     "activityValues": "Probe values",
     "activityQuery": "Run query",
     "activityKnowledge": "Search metrics and knowledge",
-    "activityRetrieve": "Retrieve data",
     "activityDataset": "Prepare dataset",
     "activityCompute": "Run calculation",
     "datasetData": "Data",
     "datasetLineage": "Lineage",
-    "done": "Done",
     "elapsed": "{time} elapsed",
+    "worked": "Worked for {time}",
   }
 };
 /** The page's vue-i18n translation: a named-parameter lookup and a plural lookup that sets `{n}` and `{count}`. */
@@ -122,7 +122,10 @@ export function shellLabels(t: GovernanceTranslate): ShellLabels {
     greeting: t("governance.text.welcomeTitle"),
     steps: (n: number) => t("governance.shell.steps", n),
     elapsed: (time: string) => t("governance.shell.elapsed", { time }),
+    worked: (time: string) => t("governance.shell.worked", { time }),
     selectRow: undefined,
     selectedRows: undefined,
+    analyzeSelectionMessage: undefined,
+    compareSelectionMessage: undefined,
   };
 }

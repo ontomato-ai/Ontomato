@@ -72,10 +72,10 @@ describe("assistant ontology provenance", () => {
       input: { question: "Sales?", userQuotes: [], previousDatasetIds: [], interaction: "resumable" },
       snapshot: {
         id: retrieval, revision: 1, runtimeSessionId: session, runtimeRunId: run,
-        run: null, cursor: 0, deliveries: [], datasetArtifactIds: [], decisionRevision: 0,
+        run: null, cursor: 0, deliveries: [], datasetArtifactIds: [], decisionRevision: 0, qualityTasks: [],
         bindings: {
           status: "completed", error: null,
-          datasets: [{ id: "66666666-6666-4666-8666-666666666666", sha256: "a".repeat(64), title: "Sales", qualityCheck: {} }],
+          datasets: [{ id: "66666666-6666-4666-8666-666666666666", sha256: "a".repeat(64), title: "Sales" }],
         },
       },
     });
@@ -115,10 +115,10 @@ describe("assistant ontology provenance", () => {
       input: { question: "Sales?", userQuotes: [], previousDatasetIds: [], interaction: "resumable" },
       snapshot: {
         id: retrieval, revision: 1, runtimeSessionId: session, runtimeRunId: run,
-        run: null, cursor: 0, deliveries: [], datasetArtifactIds: [], decisionRevision: 0,
+        run: null, cursor: 0, deliveries: [], datasetArtifactIds: [], decisionRevision: 0, qualityTasks: [],
         bindings: {
           status: "completed", error: null,
-          datasets: [{ id: "66666666-6666-4666-8666-666666666666", sha256: "a".repeat(64), title: "Sales", qualityCheck: {} }],
+          datasets: [{ id: "66666666-6666-4666-8666-666666666666", sha256: "a".repeat(64), title: "Sales" }],
         },
       },
     });
@@ -131,10 +131,10 @@ describe("assistant ontology provenance", () => {
       input: { question: "Sales?", userQuotes: [], previousDatasetIds: [], interaction: "resumable" },
       snapshot: {
         id: retrieval, revision: 1, runtimeSessionId: session, runtimeRunId: run,
-        run: null, cursor: 0, deliveries: [], datasetArtifactIds: [], decisionRevision: 0,
+        run: null, cursor: 0, deliveries: [], datasetArtifactIds: [], decisionRevision: 0, qualityTasks: [],
         bindings: {
           status: "completed", error: null,
-          datasets: [{ id: "66666666-6666-4666-8666-666666666666", sha256: "a".repeat(64), title: "Sales", qualityCheck: {} }],
+          datasets: [{ id: "66666666-6666-4666-8666-666666666666", sha256: "a".repeat(64), title: "Sales" }],
         },
       },
     });
@@ -142,6 +142,24 @@ describe("assistant ontology provenance", () => {
       id: "66666666-6666-4666-8666-666666666666",
     });
     await expect(assistantService.datasetSource("session", "copy", owner)).rejects.toThrow();
+  });
+
+  it("roots each caller's tasks at the reply whose turn opened that caller", async () => {
+    const reply = "88888888-8888-4888-8888-888888888888", caller = "99999999-9999-4999-8999-999999999999";
+    vi.spyOn(assistantStore, "session").mockResolvedValue({} as never);
+    vi.spyOn(assistantStore, "isBuilderRun").mockResolvedValue(false);
+    vi.mocked(assistantStore.turns).mockResolvedValue([{ id: reply, retrieval_scope_id: caller, settled: false } as TurnRow]);
+    route.set(`/ontology/retrieval-callers/tasks?callerIds=${caller}`, {
+      tasks: [{ kind: "retrieval", id: run, callerId: caller, parentTaskId: null, status: "completed", error: null,
+        createdAt: "2026-11-12T02:00:00Z", process: { mode: "none" }, branches: [] }],
+      qualityResults: [],
+      settled: true,
+    });
+    const read = await assistantService.tasks(session, owner);
+    expect(read.snapshot.tasks[0]).toMatchObject({ id: run, root: { sessionId: session, runId: reply } });
+    expect(read.snapshot.tasks[0]).not.toHaveProperty("callerId");
+    // The reply's turn is not settled yet, so it can still delegate more work.
+    expect(read.settled).toBe(false);
   });
 
   it("closes the parent's ontology scope with the caller's own credential", async () => {

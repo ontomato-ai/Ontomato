@@ -30,7 +30,8 @@ import {
   messageText,
   type AssistantCredentials,
 } from "../../platform/agent-runtime/runtime";
-import { OntologyRetrievalClient } from "./ontology-retrieval";
+import { OntologyRetrievalClient, readCallerTasks } from "./ontology-retrieval";
+import { agentTasksSnapshotSchema } from "@ontomato/contracts/agent-tasks";
 import { transaction } from "../../infrastructure/postgres-transaction";
 import { HttpError } from "../../utils/errors";
 import { createLogger } from "../../logging/logger";
@@ -170,20 +171,7 @@ export const assistantService = {
   async history(id: string, owner: AssistantOwner, query: SessionHistoryQuery) {
     await assistantStore.session(id, owner);
     const page = await new RuntimeClient(owner.domainId, undefined, owner.userId).history(id, query);
-    const runs = await Promise.all(page.runs.map(async run => (await this.withRetrievals({ run }, owner)).run));
-    // The live run view is the page's own run; the retrieval links on it come from the page's run
-    // list when that list holds it, otherwise they are read once for this run.
-    const live = page.latestRun;
-    const latest = live
-      ? runs.find(run => run.id === live.run.id) ??
-        (await this.withRetrievals({ run: live.run }, owner)).run
-      : null;
-    return {
-      ...page,
-      session: sessionView(await assistantStore.session(id, owner), page.session.latestRun),
-      runs,
-      latestRun: live && latest ? { ...live, run: latest } : null,
-    };
+    return { ...page, session: sessionView(await assistantStore.session(id, owner), page.session.latestRun) };
   },
   async snapshot(id: string, owner: AssistantOwner) {
     const row = await assistantStore.session(id, owner),
@@ -191,13 +179,8 @@ export const assistantService = {
     return {
       session: sessionView(await assistantStore.session(row.id, owner), s.latestRun?.run ?? null),
       messages: publicMessages(s.messages),
-      latestRun: s.latestRun ? publicSnapshot(await this.withRetrievals(s.latestRun, owner)) : null,
+      latestRun: s.latestRun ? publicSnapshot(s.latestRun) : null,
     };
-  },
-  async retrievalClient(sessionId: string, runId: string, owner: AssistantOwner) {
-    const turn = await assistantStore.turn(runId, owner);
-    if (turn.session_id !== sessionId) throw new HttpError(404, "Run not found", "NOT_FOUND");
-    return new OntologyRetrievalClient(owner, turn.retrieval_scope_id);
   },
   /** The run belongs to this user's session by the workbench's own turn record; no runtime read is needed. */
   async ownRun(sessionId: string, id: string, owner: AssistantOwner) {
@@ -207,27 +190,33 @@ export const assistantService = {
   },
   async readRun(sessionId: string, id: string, owner: AssistantOwner) {
     await this.ownRun(sessionId, id, owner);
-    const s = await new RuntimeClient(owner.domainId, undefined, owner.userId).run(id);
-    return this.withRetrievals(s, owner);
+    return new RuntimeClient(owner.domainId, undefined, owner.userId).run(id);
   },
   /**
-   * The run's retrieval associations, attached for activity rendering by every read of a run.
-   * Ontology lists one row per retrieval run in creation order; a continuation adds a run to the
-   * same retrieval, so keep one link per retrieval pointing at its latest run.
+   * The conversation's delegated work: each admitted turn's caller scope names the rounds and quality checks the
+   * ontology service ran for that reply, so the turn's run is their root. Settled while nothing will change before the
+   * conversation's next run: the latest turn has been settled and the ontology service owes nothing.
    */
-  async withRetrievals<T extends { run: { id: string } }>(s: T, owner: AssistantOwner): Promise<T> {
-    if (await assistantStore.isBuilderRun(s.run.id, owner)) return s;
-    try {
-      const links = await new OntologyRetrievalClient(owner, s.run.id).links();
-      if (links.length === 0) return s;
-      const latest = new Map<string, string>();
-      for (const link of links) latest.set(link.retrievalId, link.runId);
-      const retrievals = [...latest].map(([retrievalId, runId]) => ({ retrievalId, runId }));
-      return { ...s, run: { ...s.run, retrievals } };
-    } catch {
-      // Non-fatal: retrievals are best-effort for rendering only.
-      return s;
-    }
+  async tasks(sessionId: string, owner: AssistantOwner) {
+    await assistantStore.session(sessionId, owner);
+    const turns = await assistantStore.turns(sessionId);
+    if (!turns.length || await assistantStore.isBuilderRun(turns[0].id, owner))
+      return { snapshot: { sessionId, tasks: [], qualityResults: [] }, settled: true };
+    const runs = new Map(turns.map((turn) => [turn.retrieval_scope_id, turn.id]));
+    const read = await readCallerTasks(owner, [...runs.keys()]);
+    const snapshot = agentTasksSnapshotSchema.parse({
+      sessionId,
+      tasks: read.tasks.map(({ callerId, ...task }) => ({ ...task, root: { sessionId, runId: runs.get(callerId) } })),
+      qualityResults: read.qualityResults,
+    });
+    return { snapshot, settled: read.settled && turns.at(-1)!.settled };
+  },
+  /** A retrieval task's own run, through the caller scope of the reply that delegated it. */
+  async taskProcess(sessionId: string, taskId: string, owner: AssistantOwner) {
+    const task = (await this.tasks(sessionId, owner)).snapshot.tasks.find((candidate) => candidate.id === taskId);
+    if (task?.kind !== "retrieval" || task.process.mode !== "inline") throw new HttpError(404, "Task process not found", "NOT_FOUND");
+    const turn = await assistantStore.turn(task.root.runId, owner);
+    return { client: new OntologyRetrievalClient(owner, turn.retrieval_scope_id), process: task.process };
   },
   /** What a turn owes after it ends: closing its child retrievals in the ontology service. Safe to repeat. */
   async settleTurn(id: string, owner: AssistantOwner, credentials: AssistantCredentials = {}) {
@@ -467,9 +456,8 @@ export const assistantService = {
         const evidence = await ontology.evidence(link.retrievalId, link.runId);
         for (const output of evidence.snapshot.bindings?.datasets ?? []) {
           if (output.sha256 !== a.sha256) continue;
-          const source = await ontology.dataset(link.retrievalId, output.id);
-          return { retrievalId: link.retrievalId, sourceOutputId: output.id,
-            ...(source.qualityCheck ? { qualityCheck: source.qualityCheck } : {}) };
+          await ontology.dataset(link.retrievalId, output.id);
+          return { retrievalId: link.retrievalId, sourceOutputId: output.id };
         }
         const sourceSession = evidence.snapshot.runtimeSessionId;
         if (!sourceSession) continue;
@@ -477,8 +465,7 @@ export const assistantService = {
           const source = await ontology.artifact(sourceSession, artifactId);
           if (source.sha256 !== a.sha256) continue;
           await ontology.dataset(link.retrievalId, artifactId);
-          return { retrievalId: link.retrievalId, sourceArtifactId: artifactId,
-            ...(evidence.snapshot.qualityCheck ? { qualityCheck: evidence.snapshot.qualityCheck } : {}) };
+          return { retrievalId: link.retrievalId, sourceArtifactId: artifactId };
         }
       }
     }
@@ -510,11 +497,8 @@ export const assistantService = {
   ) {
     const s = await this.readRun(sessionId, input.runId, owner);
     if (input.target.kind === "message") {
-      if (
-        !s.messages.some(
-          (m) => m.id === input.target.id && m.message.role === "assistant",
-        )
-      )
+      // A message rating is a rating of the run's answer, the one message the runtime named.
+      if (input.target.id !== s.run.answerMessageId)
         throw new HttpError(404, "Message not found");
     } else {
       const a = await this.artifact(sessionId, input.target.id, owner);

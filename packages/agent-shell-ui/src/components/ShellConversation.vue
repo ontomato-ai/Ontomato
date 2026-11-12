@@ -7,7 +7,6 @@ import { shellContextKey } from "../context";
 import type { ConversationItem } from "../view";
 import ShellComposer from "./ShellComposer.vue";
 import ShellResponse from "./ShellResponse.vue";
-import ShellUserMessage from "./ShellUserMessage.vue";
 
 const props = defineProps<{
   items: ConversationItem[];
@@ -145,12 +144,12 @@ function send(text: string) {
           </div>
           <template v-for="item in items" :key="item.key">
             <div v-if="item.kind === 'user'" class="user-turn">
-              <div class="user-bubble"><ShellUserMessage :text="item.text" /></div>
+              <div class="user-bubble">{{ item.text }}</div>
             </div>
             <ShellResponse v-else :item="item" :session-id="sessionId" :feedback="feedback" />
           </template>
           <div v-if="pendingInput !== null" class="user-turn">
-            <div class="user-bubble pending"><ShellUserMessage :text="pendingInput" /></div>
+            <div class="user-bubble pending">{{ pendingInput }}</div>
           </div>
           <div v-if="waiting" class="waiting" aria-live="polite" :aria-label="labels.working">
             <span class="dot" /><span class="dot" /><span class="dot" />

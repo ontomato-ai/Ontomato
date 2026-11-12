@@ -33,7 +33,7 @@ async function download() {
         <span class="panel-title">{{ title }}</span>
       </span>
       <div ref="headerControls" class="artifact-header-controls" />
-      <SlotOutlet :content="shell.slots.artifactActions" :scope="{ artifact: open.artifact, title, refreshConversation: shell.refreshConversation }" />
+      <SlotOutlet :content="shell.slots.artifactActions" :scope="{ artifact: open.artifact, title }" />
       <button type="button" class="panel-button" :title="shell.labels.value.download" :aria-label="shell.labels.value.download" @click="download">
         <Download :size="16" />
       </button>

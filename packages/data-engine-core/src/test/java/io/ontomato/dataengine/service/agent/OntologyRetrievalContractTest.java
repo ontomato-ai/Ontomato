@@ -168,6 +168,8 @@ class OntologyRetrievalContractTest {
     var definitions = new OntologyAgentDefinitions(runtime, new RuntimeCodeClient(runtime), org.mockito.Mockito.mock(OntologyAgentModelSettings.class));
     var bindings = mock(OntologyBindingRetrieval.class);
     when(bindings.snapshot(any(),any(),any())).thenReturn(JSONObject.of("status","completed","error",null,"datasets",new JSONArray()));
+    var results = new RetrievalResults(store);
+    var tasks = new RetrievalTasks(store, jobs, results);
     retrieval =
         new OntologyRetrievalService(
             store,
@@ -178,7 +180,7 @@ class OntologyRetrievalContractTest {
             mock(QueryOutputService.class),
             jobs,
             quality,
-            authorization, bindings, new RetrievalResults(store));
+            authorization, bindings, results, tasks);
     var host =
         new OntologyAgentHost(
             store,
@@ -190,7 +192,7 @@ class OntologyRetrievalContractTest {
     http =
         MockMvcBuilders.standaloneSetup(
                 new OntologyAgentController(host, authorization, runtime, retrieval),
-                new OntologyRetrievalController(retrieval, store, authorization))
+                new OntologyRetrievalController(retrieval, store, authorization, tasks))
             .setControllerAdvice(new OntologyAgentErrors())
             .addFilters(new QueryGrantFilter(grants))
             .build();

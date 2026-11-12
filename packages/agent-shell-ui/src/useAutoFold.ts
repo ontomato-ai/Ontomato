@@ -14,5 +14,10 @@ export function useAutoFold(active: () => boolean) {
     touched = true;
     open.value = !open.value;
   }
-  return { open, toggle };
+  /** Opens it for the reader, as their own choice. */
+  function reveal() {
+    touched = true;
+    open.value = true;
+  }
+  return { open, toggle, reveal };
 }

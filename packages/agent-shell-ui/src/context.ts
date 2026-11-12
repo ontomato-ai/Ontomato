@@ -1,6 +1,6 @@
 import { inject, type InjectionKey, type Ref, type Slot } from "vue";
 import type { RuntimeArtifact } from "@ontomato/contracts/agent-runtime-artifacts";
-import type { AgentHostClient } from "./host";
+import type { ShellTaskPort } from "./host";
 import type {
   ArtifactRendererOverride,
   OpenArtifact,
@@ -8,11 +8,15 @@ import type {
   ToolRendererOverride,
 } from "./types";
 
-export interface ShellContext extends Pick<AgentHostClient, "readRetrieval" | "readRetrievalRun" | "subscribeRetrieval"> {
+export interface ShellContext {
   labels: Ref<ShellLabels>;
+  /** The host's task routes, when its conversations delegate work. */
+  tasks?: ShellTaskPort;
+  /** The task the reader asked to see (from the task list); its card or review opens and scrolls into view. */
+  taskFocus?: Ref<{ taskId: string; at: number } | null>;
   artifactRenderers: Ref<readonly ArtifactRendererOverride[]>;
   toolRenderers: Ref<readonly ToolRendererOverride[]>;
-  /** Host slots for business actions: `artifact-actions` ({artifact, title}) and `message-actions`. */
+  /** Host slots for business actions: `artifact-actions` ({artifact, title}), `dataset-selection-actions` ({artifact, title, selectedRowIndices}) and `message-actions`. */
   slots: { artifactActions?: Slot; messageActions?: Slot; datasetSelectionActions?: Slot };
   resolveArtifact(runId: string, path: string): Promise<RuntimeArtifact | null>;
   /** Changes whenever a run registers new artifacts, so unresolved references retry. */
@@ -24,7 +28,6 @@ export interface ShellContext extends Pick<AgentHostClient, "readRetrieval" | "r
   pageLink(href: string): (() => void) | null;
   /** Continue the current conversation from an explicit artifact action. */
   continueConversation?: (message: string) => Promise<void>;
-  refreshConversation?: () => Promise<void>;
 }
 
 /** The message whose Markdown is rendering; artifact references resolve within its run. */

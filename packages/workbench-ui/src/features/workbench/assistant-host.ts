@@ -32,7 +32,7 @@ const workbenchRequest: AgentHostClientOptions["request"] = (path, init) =>
  * root: the workbench's own by default, the app's when an SDK app embeds the conversation.
  */
 export function createAssistantClient(request: AgentHostClientOptions["request"] = workbenchRequest) {
-  return createAgentHostClient({ request: (path, init) => request(`${PREFIX}${path}`, init) });
+  return createAgentHostClient({ request: (path, init) => request(`${PREFIX}${path}`, init), tasks: true });
 }
 
 /** The same client with its conversations bound to one workspace (the app builder's): made in it, listed from it. */

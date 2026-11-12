@@ -253,6 +253,7 @@ export class AgentRuntime {
         finishedAt: null,
         stopReason: null,
         errorMessage: null,
+        answerMessageId: null,
         workspaceCommit: null,
         resolvedSkills: skills.map(
           ({ directory: _directory, ...registered }) => registered,

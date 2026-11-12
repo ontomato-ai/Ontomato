@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, provide, ref, toRef, useSlots, watch } from "vue";
-import { PanelRightOpen } from "lucide-vue-next";
+import { ListChecks, PanelRightOpen } from "lucide-vue-next";
 import { shellContextKey, type ShellContext } from "../context";
 import type { AgentHostClient } from "../host";
 import type { AgentNav } from "../useAgentNav";
@@ -19,6 +19,7 @@ import ShellConversation from "./ShellConversation.vue";
 import ShellNavBody from "./ShellNavBody.vue";
 import ShellPagePane from "./ShellPagePane.vue";
 import ShellSidePanel from "./ShellSidePanel.vue";
+import TaskDrawer from "./tasks/TaskDrawer.vue";
 
 /**
  * A conversation application inside the area the platform gives it: its own column, then the conversation with the right
@@ -78,6 +79,7 @@ const sessionId = defineModel<string | null>("sessionId", { default: null });
 /** Where a paired page sits: filling the workspace, or beside the conversation. Hosts may set it. */
 const pageView = defineModel<"full" | "side">("pageView", { default: "full" });
 const openArtifact = ref<OpenArtifact | null>(null);
+const taskFocus = ref<{ taskId: string; at: number } | null>(null);
 
 const conversation = useAgentConversation(() => props.client);
 const nav = props.nav;
@@ -108,9 +110,8 @@ provide(shellContextKey, {
   resolveArtifact: conversation.resolveArtifact,
   artifactRevision: conversation.artifactRevision,
   readArtifact: (artifact) => props.client.readArtifact(artifact),
-  readRetrieval: (...args) => props.client.readRetrieval(...args),
-  readRetrievalRun: (...args) => props.client.readRetrievalRun(...args),
-  subscribeRetrieval: (...args) => props.client.subscribeRetrieval(...args),
+  tasks: props.client.tasks,
+  taskFocus,
   openArtifact: (open) => {
     // The side holds one thing at a time: an expanded card replaces a page beside the conversation.
     if (pairedPage.value) featureId.value = null;
@@ -130,8 +131,26 @@ provide(shellContextKey, {
     if (conversation.busy.value) throw new Error(props.labels.working);
     await send(message);
   },
-  refreshConversation: async () => { await conversation.open(sessionId.value); },
 });
+
+/** The replies that delegated work, in order, and the one the task list shows: the latest unless the reader moved. */
+const taskRounds = computed(() => [...new Set(conversation.tasks.value?.tasks.map((task) => task.root.runId) ?? [])]);
+const taskRound = ref<string | null>(null);
+const tasksOpen = ref(false);
+const shownRound = computed({
+  get: () => (taskRound.value && taskRounds.value.includes(taskRound.value) ? taskRound.value : taskRounds.value.at(-1)!),
+  set: (runId: string) => (taskRound.value = runId),
+});
+const latestRoundTasks = computed(() =>
+  conversation.tasks.value?.tasks.filter((task) => task.root.runId === taskRounds.value.at(-1)).length ?? 0);
+watch(sessionId, () => {
+  tasksOpen.value = false;
+  taskRound.value = null;
+});
+function toggleTasks() {
+  taskRound.value = null;
+  tasksOpen.value = !tasksOpen.value;
+}
 
 function report(error: unknown) {
   emit("error", error instanceof Error ? error.message : String(error));
@@ -249,16 +268,36 @@ onMounted(() => {
     </ShellColumn>
 
     <main v-show="!pageFull" class="shell-main">
-      <button
-        v-if="closedPage && !featureId && !openArtifact"
-        type="button"
-        class="reopen-page"
-        :title="labels.open"
-        :aria-label="labels.open"
-        @click="reopenPage"
-      >
-        <PanelRightOpen :size="16" />
-      </button>
+      <div v-if="!featureId || pairedPage" class="corner">
+        <button
+          v-if="taskRounds.length && labels.tasks"
+          type="button"
+          class="tasks-button"
+          :aria-expanded="tasksOpen"
+          @click="toggleTasks"
+        >
+          <ListChecks :size="15" />
+          <span>{{ labels.tasks.list(latestRoundTasks) }}</span>
+        </button>
+        <button
+          v-if="closedPage && !featureId && !openArtifact"
+          type="button"
+          class="reopen-page"
+          :title="labels.open"
+          :aria-label="labels.open"
+          @click="reopenPage"
+        >
+          <PanelRightOpen :size="16" />
+        </button>
+      </div>
+      <TaskDrawer
+        v-if="tasksOpen && (!featureId || pairedPage) && conversation.tasks.value && taskRounds.length"
+        v-model:run-id="shownRound"
+        :snapshot="conversation.tasks.value"
+        :rounds="taskRounds"
+        @locate="taskFocus = { taskId: $event, at: Date.now() }"
+        @close="tasksOpen = false"
+      />
       <div v-if="featureId && !pairedPage" class="feature-page">
         <slot name="feature" :feature-id="featureId" view="full" />
       </div>
@@ -340,12 +379,39 @@ onMounted(() => {
   min-width: 0;
   overflow: hidden;
 }
-/* In the corner the page's close button left, over the conversation. */
-.reopen-page {
+/* The conversation's top right corner, over it: the reply's task list and, where the page's close button was, the page. */
+.corner {
   position: absolute;
   z-index: 2;
   top: var(--spacing-md);
   right: var(--spacing-md);
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+}
+.tasks-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: var(--control-height);
+  padding: 0 10px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--el-text-color-secondary);
+  font: inherit;
+  font-size: var(--text-sm, 13px);
+  cursor: pointer;
+}
+.tasks-button:hover,
+.tasks-button[aria-expanded="true"] {
+  background: var(--el-fill-color);
+  color: var(--el-text-color-primary);
+}
+.tasks-button:focus-visible {
+  outline: 2px solid var(--el-color-primary);
+}
+.reopen-page {
   display: grid;
   place-items: center;
   width: var(--control-height);

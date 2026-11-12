@@ -20,9 +20,9 @@ workbench `/api/retrievals` entirely.
 | POST `/ontology/retrievals/:id/retriever/cancel` | `{expectedRoundId}`; cancel only that current retriever, never binding work/results/QC |
 | POST `/ontology/retrievals/:id/answers` | New UUID key; existing `retrievalAnswersSchema` (`expectedRunId`, `expectedDecisionRevision`, `message`); 202 `RetrievalPoll` |
 | POST `/ontology/retrievals/:id/cancel` | `{}`; close business writes before cancelling active output/QC work and runtime intent/run |
-| GET `/ontology/retrievals/:id/datasets/:datasetId` | `{id,payload:DatasetPayload}` for an accepted immutable dataset; host binding results also identify their source, hash and QC |
+| GET `/ontology/retrievals/:id/datasets/:datasetId` | `{id,payload:DatasetPayload}` for an accepted immutable dataset; host binding results also identify their source, hash and quality task |
 | GET `/ontology/retrievals/:id/datasets/:datasetId/content` | Original accepted bytes, whether a real runtime artifact or a host output receipt |
-| GET `/ontology/retrievals/:id/runs/:runId/evidence` | `{input:RetrievalInput,snapshot:RetrievalSnapshot}` for that exact owned round; QC comes from its Java job |
+| GET `/ontology/retrievals/:id/runs/:runId/evidence` | `{input:RetrievalInput,snapshot:RetrievalSnapshot}` for that exact owned round; QC is read as its quality tasks |
 | DELETE `/ontology/retrievals/:id` | 204; active run 409. Delete the owned business record and runtime session through their owners |
 
 Preserve `running/stopped`, stopReason/errorMessage, runtime IDs,
@@ -42,31 +42,11 @@ creation/continuation, snapshotted by Java, defaults to 600 seconds. A caller sc
 Workbench supplies the remaining deadline from its own turn deadline, a fixed ten
 minutes. Java does not read workbench configuration.
 
-## Retrieval activity subscription
+## Retrieval as a task
 
-The workbench exposes the child under the authenticated parent route
-`/assistant/sessions/:sessionId/runs/:runId/retrievals/:retrievalId`:
-
-- GET `?retrievalRunId=:retrievalRunId` reads that round's lightweight business
-  snapshot. Its deliveries belong only to that round; `cursor` is the last such
-  delivery cursor (zero before delivery), from the same result sequence as `/results`.
-- GET `/runs/:retrievalRunId` projects the existing ontology agent-host run snapshot
-  for activity: run, toolExecutions and cursor are retained; messages,
-  pendingMessages and artifacts are empty arrays under the unchanged host schema.
-- GET `/runs/:retrievalRunId/events?afterSeq=...&streamId=...` proxies that child
-  run's existing ontology event stream. Only tool execution events, agent_end
-  (with an empty messages array), snapshot_required and heartbeat comments pass
-  through. Events never join the parent's stream; the common event protocol is unchanged.
-
-The workbench verifies the user's parent session/run and uses its stored caller
-scope; ontology verifies that the requested child session/run belongs to the scope.
-The shell reads a run snapshot once, then subscribes from that snapshot's event
-cursor. Ordinary disconnects reconnect from the last applied cursor with the same
-backoff as the main conversation. Only snapshot_required re-reads the snapshot;
-initial loading and explicit run refreshes still read it. Delivery cursors cannot
-resume event streams. Navigation detaches the subscription and clears pending
-reconnects. Ontology's events response disables the servlet async deadline for
-that subscription only; ordinary HTTP requests retain their existing timeouts.
+A round and its quality checks are read as [tasks](agent-tasks.md); the retriever's own run is
+shown through the task's process routes. Reads name each branch's quality task
+(`qualityTasks`, a binding dataset's `qualityTaskId`) rather than embedding the job.
 
 Business state reads continue through admission and independent binding execution,
 and stop when both branches have published or finished. Runtime `agent_end` alone
@@ -86,7 +66,10 @@ formal execution limits plus credential/caller expiry.
 
 A successful binding publishes one delivery immediately. No match or execution
 failure publishes nothing and cannot make ask return early. Retriever delivery
-uses its actual terminal messages and accepted artifacts. Results are ordered by
+uses its accepted artifacts, and its `answer` is the text of the message the
+runtime named as the run's `answerMessageId` (empty without one; binding
+deliveries have none). Reads apply the same identity to deliveries stored before
+the runtime named answers: their text counts only for a normal stop. Results are ordered by
 an ontology cursor; wait reads only later deliveries without restarting work.
 Only the main agent chooses whether to cancel the retriever or wait. Whole-request
 or parent closure cancels both unfinished branches, retaining accepted outputs

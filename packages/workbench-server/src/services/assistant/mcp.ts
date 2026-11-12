@@ -8,7 +8,7 @@ import { assistantStore, type AssistantOwner } from "./store";
 import { assistantService } from "./service";
 import {
   messageText,
-  finalText,
+  answerText,
   type AssistantCredentials,
 } from "../../platform/agent-runtime/runtime";
 import { HttpError } from "../../utils/errors";
@@ -22,7 +22,7 @@ export async function analysisTask(id: string, owner: AssistantOwner) {
     report = s.artifacts
       .filter((a) => /^outputs\/reports\/.+\/report\.md$/.test(a.path))
       .at(-1),
-    text = finalText(s);
+    text = answerText(s);
   return {
     id,
     agentId: session.agent_id,
