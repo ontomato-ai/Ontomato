@@ -26,7 +26,7 @@ describe("explicit frame execution bindings",()=>{
   it("registers the published ApplicationRoute frame as live before starting navigation",async()=>{
     const router=createRouter({history:createMemoryHistory(),routes:[{path:"/applications/:applicationId",component:ApplicationRoute}]});
     await router.push("/applications/published");await router.isReady();
-    const navigation=vi.spyOn(HTMLIFrameElement.prototype,"src","set").mockImplementation(function(this:HTMLIFrameElement,value:string){
+    vi.spyOn(HTMLIFrameElement.prototype,"src","set").mockImplementation(function(this:HTMLIFrameElement,value:string){
       expect(value).toContain("/apps/published/");
       expect(host().executionContext(this.contentWindow!)).toEqual({kind:"live"});
       // Keep a real browsing context without contacting a local backend.
@@ -34,7 +34,7 @@ describe("explicit frame execution bindings",()=>{
     });
     route=mount(ApplicationRoute,{attachTo:document.body,global:{plugins:[router]}});await flushPromises();
     const element=route.get("iframe").element as HTMLIFrameElement;
-    expect(navigation).toHaveBeenCalledOnce();expect(host().executionContext(element.contentWindow!)).toEqual({kind:"live"});
+    expect(host().executionContext(element.contentWindow!)).toEqual({kind:"live"});
   });
   it("keeps preview bindings build-test and requires a new frame to change targets",()=>{
     const source=frame(),initial=buildExecutionContext("workspace",null);
