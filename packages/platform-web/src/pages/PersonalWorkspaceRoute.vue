@@ -16,6 +16,7 @@ import { platformSchedulesPath, platformTaskListSchema, type PlatformTask } from
 import { platformRoutes } from "@ontomato/platform-shell/routes";
 import { useApplicationCatalog } from "../catalog";
 import AppPage from "./AppPage.vue";
+import WorkspaceSkeleton from "./WorkspaceSkeleton.vue";
 import { AppWindow, ArrowUpRight, CircleAlert, Clock3, LayoutDashboard, MoreHorizontal, Pin, RefreshCw, Settings2, Sparkles } from "lucide-vue-next";
 import WorkspaceResourceDetail, { type WorkspaceResource } from "./WorkspaceResourceDetail.vue";
 import { agentHostAgentListSchema, agentHostCreateSessionResponseSchema, agentHostSessionSnapshotSchema, type AgentHostAgent, type AgentHostSession } from "@ontomato/contracts/agent-host";
@@ -322,14 +323,14 @@ const actions = computed(() => [
 <template>
   <AppPage :title="text.title" :description="text.intro" :actions="actions" :labels="{ save: text.save, discard: text.cancel, unsavedChanges: text.unsaved }">
     <div v-if="errors.config" role="alert" class="workspace-error">{{ errors.config }} <el-button @click="readConfig">{{ text.retry }}</el-button></div>
-    <p v-if="!ready && busy.config" role="status">{{ text.loading }}</p>
+    <WorkspaceSkeleton v-if="!ready && busy.config" :label="text.loading" :rows="6" />
     <el-alert v-if="analysisError" :title="analysisError" type="error" :closable="false" />
     <div v-if="ready" class="workspace-grid" :class="{ 'tasks-first': config.layout === 'tasks' }">
       <div v-for="(sections, column) in columns" :key="column" class="workspace-column" :class="{ 'activity-column': sections.includes('tasks') }">
     <section v-if="column === 0 && canChat" class="workspace-welcome">
       <div class="workspace-heading"><Sparkles :size="20" aria-hidden="true" /><h1>{{ workspaceText.heading }}</h1></div>
       <p>{{ workspaceText.description }}</p>
-      <p v-if="busy.agents" role="status">{{ text.loading }}</p>
+      <WorkspaceSkeleton v-if="busy.agents" :label="text.loading" :rows="1" composer />
       <div v-else-if="errors.agents" role="alert">{{ errors.agents }} <el-button @click="readAgents">{{ text.retry }}</el-button></div>
       <div v-else-if="enabledAgents.length" class="workspace-ask">
         <ShellComposer :busy="false" :labels="{ placeholder: workspaceText.placeholder, send: workspaceText.send, stop: workspaceText.stop }" @send="ask">
@@ -367,7 +368,8 @@ const actions = computed(() => [
           <p v-if="errors.pinsSave" role="alert" class="workspace-error">{{ errors.pinsSave }}</p>
           <template v-if="pinned.length">
             <h3>{{ locale.startsWith('zh') ? '已固定' : 'Pinned' }}</h3>
-            <article v-for="(item, index) in pinned" :key="item.sessionId" class="workspace-item pinned-analysis">
+            <WorkspaceSkeleton v-if="busy.pins" :label="text.loading" :rows="Math.min(pinned.length, 3)" />
+            <article v-for="(item, index) in (busy.pins ? [] : pinned)" :key="item.sessionId" class="workspace-item pinned-analysis">
               <div class="resource-body"><button class="resource-link" :disabled="!item.session || !enabledAgents.some(agent => agent.id === item.session?.agentId)" @click="router.push({ path: platformRoutes.chat.path, query: { agentId: item.session!.agentId, sessionId: item.sessionId } })">{{ item.title }}</button><p v-if="pinErrors[item.sessionId]">{{ pinErrors[item.sessionId] }}</p><p v-else-if="item.session">{{ date(item.session.updatedAt) }}</p>
               </div>
               <el-dropdown trigger="click" :disabled="saving" @command="(command: string) => command === 'rename' ? renamePin(item.sessionId) : command === 'up' ? movePin(index, -1) : command === 'down' ? movePin(index, 1) : updatePins(config.pinnedAnalyses.filter(pin => pin.sessionId !== item.sessionId))">
@@ -382,7 +384,7 @@ const actions = computed(() => [
             </article>
           </template>
           <h3 v-if="pinned.length && conversations.length">{{ locale.startsWith('zh') ? '最近分析' : 'Recent analyses' }}</h3>
-          <p v-if="busy.conversations" role="status">{{ text.loading }}</p>
+          <WorkspaceSkeleton v-if="busy.conversations" :label="text.loading" />
           <div v-else-if="errors.conversations" role="alert">{{ errors.conversations }} <el-button @click="readConversations">{{ text.retry }}</el-button></div>
           <p v-else-if="!conversations.length && !pinned.length" class="workspace-empty">{{ workspaceText.empty }}</p>
           <article v-for="item in conversations" :key="item.sessionId" class="workspace-item conversation-item">
@@ -392,7 +394,7 @@ const actions = computed(() => [
           </article>
         </template>
         <template v-if="section === 'tasks'">
-          <p v-if="busy.tasks" role="status">{{ text.loading }}</p>
+          <WorkspaceSkeleton v-if="busy.tasks" :label="text.loading" />
           <div v-else-if="errors.tasks" role="alert">{{ errors.tasks }} <el-button @click="readTasks">{{ text.retry }}</el-button></div>
           <template v-else>
             <div class="attention-summary" aria-live="polite">
@@ -417,7 +419,7 @@ const actions = computed(() => [
           </template>
         </template>
         <template v-else-if="section === 'recent'">
-          <p v-if="busy.recent" role="status">{{ text.loading }}</p>
+          <WorkspaceSkeleton v-if="busy.recent" :label="text.loading" />
           <div v-else-if="errors.recent" role="alert">{{ errors.recent }} <el-button @click="readRecent">{{ text.retry }}</el-button></div>
           <template v-else>
             <p v-if="!availableRecent.length" class="workspace-empty">{{ text.emptyRecent }}</p>
@@ -431,7 +433,7 @@ const actions = computed(() => [
           </template>
         </template>
         <template v-else-if="section === 'data'">
-          <p v-if="busy.data" role="status">{{ text.loading }}</p>
+          <WorkspaceSkeleton v-if="busy.data" :label="text.loading" />
           <div v-else-if="errors.data" role="alert">{{ errors.data }} <el-button @click="readDashboards">{{ text.retry }}</el-button></div>
           <template v-else>
             <p v-if="!selectedDashboards.length" class="workspace-empty">{{ text.emptyData }}</p>
@@ -444,7 +446,7 @@ const actions = computed(() => [
           </template>
         </template>
         <template v-else-if="section === 'apps'">
-          <p v-if="catalog.loading.value" role="status">{{ text.loading }}</p>
+          <WorkspaceSkeleton v-if="catalog.loading.value" :label="text.loading" :rows="2" />
           <div v-else-if="catalog.error.value" role="alert">{{ catalog.error.value }} <el-button @click="catalog.refresh">{{ text.retry }}</el-button></div>
           <template v-else>
             <p v-if="!selectedApps.length" class="workspace-empty">{{ text.emptyApps }}</p>
