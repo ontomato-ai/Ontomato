@@ -369,12 +369,18 @@ onMounted(() => {
 /* The conversation's ground is the application's own area, the page tone; what fades into it fades into that. */
 .shell-main {
   --shell-conversation-ground: var(--el-bg-color-page);
+  /* The task list's own width, the room the conversation leaves it while it is open. */
+  --shell-task-drawer-width: min(320px, 100%);
   position: relative;
   display: flex;
   flex-direction: column;
   flex: 1;
   min-width: 0;
   overflow: hidden;
+}
+/* The task list is a column of its own, not a layer over the composer: the conversation keeps the rest of the width. */
+.shell-main:has(> .task-drawer) {
+  padding-right: var(--shell-task-drawer-width);
 }
 /* In the corner the page's close button left, over the conversation. */
 .reopen-page {
