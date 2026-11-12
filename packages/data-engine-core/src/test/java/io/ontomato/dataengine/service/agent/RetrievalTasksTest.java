@@ -11,6 +11,7 @@ class RetrievalTasksTest {
   private static JSONObject round() {
     var row = JSONObject.of("id", "11111111-1111-4111-8111-111111111111", "session_id", "22222222-2222-4222-8222-222222222222",
         "created_at", "2026-11-12T02:00:00Z", "external", false, "runtime_admitted", true);
+    row.put("request", JSONObject.of("question", "Sales by region?"));
     row.put("admission_error", null);
     return row;
   }
@@ -46,6 +47,7 @@ class RetrievalTasksTest {
     assertEquals("completed", task.getString("status"));
     assertEquals("cancelled", ended.getJSONObject(1).getString("status"));
     assertEquals("inline", task.getJSONObject("process").getString("mode"));
+    assertEquals("Sales by region?", task.getString("question"));
   }
 
   @Test

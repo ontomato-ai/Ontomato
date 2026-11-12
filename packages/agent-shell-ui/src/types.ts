@@ -226,8 +226,10 @@ export interface ShellTaskLabels {
   /** What the check examined: one branch's results. */
   checked: string;
   checkedBranch: Record<"binding" | "retriever", string>;
-  /** The reply's task list: its button with the count, and the list's own title. */
-  list: (count: number) => string;
+  /** The folded review's line names what it checked, e.g. "Checked: binding results". */
+  checkedSource: (source: string) => string;
+  /** A reply's entry to its delegated work, beside its process line; and the task list's own title. */
+  count: (count: number) => string;
   listTitle: string;
   round: (index: number, count: number) => string;
   previousRound: string;

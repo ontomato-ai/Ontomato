@@ -175,7 +175,10 @@ public class RetrievalTasks {
       error = failed.map(b -> b.getJSONObject("error")).orElse(null);
     }
     boolean inline = !row.getBooleanValue("external") && row.getBooleanValue("runtime_admitted");
+    // A round's admitted request is its input: ask's question, or the message a reply resumes the retrieval with.
+    var request = row.getJSONObject("request");
     var task = JSONObject.of("kind", "retrieval", "id", row.getString("id"), "status", status,
+        "question", request.containsKey("question") ? request.getString("question") : request.getString("message"),
         "createdAt", Instant.parse(row.getString("created_at")).toString(),
         "process", inline
             ? JSONObject.of("mode", "inline", "runtimeSessionId", row.getString("session_id"), "runtimeRunId", row.getString("id"))

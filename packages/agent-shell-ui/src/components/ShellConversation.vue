@@ -108,6 +108,12 @@ watch([() => props.sessionId, () => props.loading], ([, loading]) => {
   toBottom();
 }, { flush: "post" });
 
+// A task the reader asked to see is scrolled to by its reply; following the tail would scroll away from it as the
+// reply's process opens.
+watch(() => shell.taskFocus?.value, (focus) => {
+  if (focus) stick.value = false;
+});
+
 function send(text: string) {
   stick.value = true;
   emit("send", text);

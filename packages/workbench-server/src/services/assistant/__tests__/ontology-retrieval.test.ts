@@ -150,7 +150,7 @@ describe("assistant ontology provenance", () => {
     vi.spyOn(assistantStore, "isBuilderRun").mockResolvedValue(false);
     vi.mocked(assistantStore.turns).mockResolvedValue([{ id: reply, retrieval_scope_id: caller, settled: false } as TurnRow]);
     route.set(`/ontology/retrieval-callers/tasks?callerIds=${caller}`, {
-      tasks: [{ kind: "retrieval", id: run, callerId: caller, parentTaskId: null, status: "completed", error: null,
+      tasks: [{ kind: "retrieval", id: run, callerId: caller, question: "Sales?", parentTaskId: null, status: "completed", error: null,
         createdAt: "2026-11-12T02:00:00Z", process: { mode: "none" }, branches: [] }],
       qualityResults: [],
       settled: true,

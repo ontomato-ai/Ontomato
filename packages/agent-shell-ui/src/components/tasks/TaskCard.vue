@@ -15,8 +15,6 @@ const shell = inject(shellContextKey)!;
 const labels = computed(() => shell.labels.value.tasks!);
 const running = computed(() => props.task.status === "running");
 const { open, toggle } = useAutoFold(() => running.value);
-const datasets = computed(() => props.task.branches.flatMap((branch) => branch.datasets));
-const detail = computed(() => datasets.value.map((dataset) => dataset.title).join(" · "));
 
 function reason(error: AgentTaskError) {
   return labels.value.errors[error.code] ?? error.message ?? labels.value.status.failed;
@@ -31,7 +29,7 @@ function reason(error: AgentTaskError) {
       <Database v-else :size="14" />
       <span class="executor">{{ labels.retriever }}</span>
       <span class="status">{{ labels.status[task.status] }}</span>
-      <span v-if="detail" class="detail">{{ detail }}</span>
+      <span class="detail">{{ task.question }}</span>
       <ChevronRight :size="14" class="chevron" />
     </button>
     <div v-if="open" class="task-body">

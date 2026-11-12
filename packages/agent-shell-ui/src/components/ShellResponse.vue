@@ -32,6 +32,9 @@ const target = computed(() =>
     : null,
 );
 const hasProcess = computed(() => props.item.process.length > 0);
+/** The work this reply delegated: its retrievals and their quality checks; its entry opens the task list here. */
+const taskCount = computed(() =>
+  props.item.process.filter((block) => block.kind === "task").length + props.item.reviews.length);
 /** The process stays open while the run works and folds to one line once it stops; a stopped run mounts folded. */
 const { open, toggle, reveal } = useAutoFold(() => props.item.running);
 
@@ -128,21 +131,26 @@ async function submit(value: ShellFeedbackValue) {
 <template>
   <div class="response">
     <section v-if="status || hasProcess" class="process-region" :class="{ open }">
-      <button
-        v-if="hasProcess"
-        type="button"
-        class="process-toggle"
-        :aria-expanded="open"
-        :aria-live="item.running ? 'off' : 'polite'"
-        @click="toggle"
-      >
-        <LoaderCircle v-if="item.running" :size="12" class="spin" />
-        <span>{{ status }}</span>
-        <ChevronRight :size="14" class="chevron" />
-      </button>
-      <div v-else class="process-toggle" :aria-live="item.running ? 'off' : 'polite'">
-        <LoaderCircle v-if="item.running" :size="12" class="spin" />
-        <span>{{ status }}</span>
+      <div class="process-line">
+        <button
+          v-if="hasProcess"
+          type="button"
+          class="process-toggle"
+          :aria-expanded="open"
+          :aria-live="item.running ? 'off' : 'polite'"
+          @click="toggle"
+        >
+          <LoaderCircle v-if="item.running" :size="12" class="spin" />
+          <span>{{ status }}</span>
+          <ChevronRight :size="14" class="chevron" />
+        </button>
+        <div v-else class="process-toggle" :aria-live="item.running ? 'off' : 'polite'">
+          <LoaderCircle v-if="item.running" :size="12" class="spin" />
+          <span>{{ status }}</span>
+        </div>
+        <button v-if="taskCount && shell.openTasks" type="button" class="process-toggle tasks-entry" @click="shell.openTasks(item.runId)">
+          {{ labels.tasks!.count(taskCount) }}
+        </button>
       </div>
       <div v-if="open && hasProcess" class="process-body">
         <template v-for="block in item.process" :key="block.key">
@@ -220,7 +228,6 @@ async function submit(value: ShellFeedbackValue) {
         v-for="review in item.reviews"
         :key="review.task.id"
         :review="review"
-        :named="item.reviews.length > 1"
       />
     </div>
   </div>
@@ -237,13 +244,18 @@ async function submit(value: ShellFeedbackValue) {
 .response > .response-text:not(:first-child) {
   margin-top: calc(var(--conversation-block-gap) - var(--conversation-process-gap));
 }
+.process-line {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 2px;
+  margin-left: -8px;
+}
 .process-toggle {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  align-self: flex-start;
   max-width: 100%;
-  margin-left: -8px;
   padding: 2px 8px;
   border: 0;
   border-radius: var(--radius-sm);
@@ -257,6 +269,11 @@ async function submit(value: ShellFeedbackValue) {
 button.process-toggle {
   cursor: pointer;
   transition: background-color var(--transition-fast, 150ms);
+}
+/* The reply's delegated work, beside its process line: "Worked for 0:25 · 2 tasks". */
+.tasks-entry::before {
+  content: "·";
+  margin-right: 2px;
 }
 button.process-toggle:hover {
   background: var(--el-fill-color);
