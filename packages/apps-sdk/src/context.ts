@@ -117,9 +117,10 @@ export function createAppContext(): AppContext {
     charts.value = chartTheme();
   });
   const stop = host.subscribePreferences(follow);
-  // The room the shell's own controls cover at the frame's foot, which the stylesheet keeps after the page's content.
+  // The room the shell's own controls cover at the frame's foot, which the stylesheet keeps after the page's content:
+  // the shell's own value, read by the same class the platform's pages use.
   const stopInsets = host.subscribeFrameInsets(window, ({ bottom }) =>
-    document.documentElement.style.setProperty("--app-inset-bottom", `${bottom}px`),
+    document.documentElement.style.setProperty("--pane-dock-space", `${bottom}px`),
   );
   // The shell outlives this frame: stop its listeners when the frame goes away, not when the page is only cached.
   window.addEventListener("pagehide", (event) => {

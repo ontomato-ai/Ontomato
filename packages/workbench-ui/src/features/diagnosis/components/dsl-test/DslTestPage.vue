@@ -2,6 +2,7 @@
 import { ref, computed, watch, onBeforeUnmount } from "vue";
 import { ElMessage } from "element-plus";
 import { CodeEditor } from "@ontomato/foundation-ui/code";
+import { ShellDockRoom } from "@ontomato/agent-shell-ui";
 import { diagnosisApi } from "../../api";
 import { useI18n } from "vue-i18n";
 import type { DslTestPageSlots } from "../layout/types";
@@ -186,7 +187,7 @@ async function executeDsl() {
       </div>
 
       <div class="dsl-editor-wrap">
-        <CodeEditor v-model="dslText" language="json" :min-height="240" />
+        <CodeEditor v-model="dslText" language="json" :min-height="240" content-end-space="var(--pane-dock-space, 0px)" />
       </div>
     </section>
 
@@ -207,6 +208,8 @@ async function executeDsl() {
               min-width="140"
               show-overflow-tooltip
             />
+            <!-- The fixed-height table scrolls its own body, so the room goes inside it, after the last row. -->
+            <template #append><ShellDockRoom /></template>
           </el-table>
         </el-tab-pane>
 
@@ -221,6 +224,7 @@ async function executeDsl() {
               language="json"
               readonly
               :min-height="240"
+              content-end-space="var(--pane-dock-space, 0px)"
             />
           </template>
         </el-tab-pane>
@@ -338,6 +342,8 @@ async function executeDsl() {
 @container page (max-width: 720px) {
   .dsl-test-page { flex-direction: column; gap: 8px; overflow: auto; }
   .dsl-panel { width: 100% !important; flex: 1 0 300px; }
+  /* Stacked, the editor leaves the page's foot; the results below it keep the room there. */
+  .dsl-panel.left { --pane-dock-space: 0px; }
   .drag-handle { display: none; }
 }
 </style>

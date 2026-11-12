@@ -58,7 +58,7 @@ watch([() => props.view.workspace?.id, () => props.view.workspace?.headCommit, f
     </div>
     <div v-else-if="view.filesState === 'ready' && files.length === 0" class="files-state">{{ t("appBuilder.previewEmpty") }}</div>
     <template v-else>
-      <ul class="tree" :aria-label="t('appBuilder.tabFiles')">
+      <ul class="tree shell-dock-room" :aria-label="t('appBuilder.tabFiles')">
         <li v-for="entry in files" :key="entry.path">
           <button
             type="button"
@@ -81,7 +81,14 @@ watch([() => props.view.workspace?.id, () => props.view.workspace?.headCommit, f
         </div>
         <div v-else-if="file && !isText(file)" class="files-state">{{ t("appBuilder.notText") }}</div>
         <div v-else-if="content !== null" class="code">
-          <CodeEditor :key="file!" :model-value="content" :language="LANGUAGES[extension(file!)]" readonly :min-height="120" />
+          <CodeEditor
+            :key="file!"
+            :model-value="content"
+            :language="LANGUAGES[extension(file!)]"
+            readonly
+            :min-height="120"
+            content-end-space="var(--pane-dock-space, 0px)"
+          />
         </div>
         <div v-else class="files-state" aria-busy="true">{{ t("assistant.loading") }}</div>
       </div>
@@ -96,11 +103,11 @@ watch([() => props.view.workspace?.id, () => props.view.workspace?.headCommit, f
   height: 100%;
   min-height: 0;
 }
-/* Full, the shell's composer floats over the foot of each scrolling part, which keeps that room after its content. */
+/* Full, the shell's composer floats over the foot of each scrolling part, which marks where its content ends. */
 .tree {
   flex: 0 0 200px;
   margin: 0;
-  padding: var(--spacing-sm) var(--spacing-sm) calc(var(--spacing-sm) + var(--pane-dock-space, 0px));
+  padding: var(--spacing-sm);
   overflow-y: auto;
   list-style: none;
   border-right: 1px solid var(--el-border-color-lighter);
@@ -160,9 +167,6 @@ watch([() => props.view.workspace?.id, () => props.view.workspace?.headCommit, f
 .code :deep(.cm-editor) {
   height: 100%;
 }
-.code :deep(.cm-content) {
-  padding-bottom: var(--pane-dock-space, 0px);
-}
 .files-state {
   display: flex;
   flex-direction: column;
@@ -178,7 +182,9 @@ watch([() => props.view.workspace?.id, () => props.view.workspace?.headCommit, f
   .files {
     flex-direction: column;
   }
+  /* Stacked, the tree moves off the page's foot; the code below it keeps the room there. */
   .tree {
+    --pane-dock-space: 0px;
     flex: 0 0 auto;
     max-height: 128px;
     border-right: 0;
