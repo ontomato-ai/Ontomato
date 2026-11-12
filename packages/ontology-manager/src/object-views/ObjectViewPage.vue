@@ -1,13 +1,12 @@
 <script setup lang="ts">
 import { inject, onBeforeUnmount, ref, watch } from "vue";
-import { useI18n } from "vue-i18n";
 import { workspaceObjectHostKey, type WorkspaceObjectHost } from "@ontomato/contracts/workspace-objects";
 import { ElAlert, ElButton, ElSkeleton, vLoading } from "element-plus";
 import { ArrowLeft, Settings2, RefreshCw, Star } from "lucide-vue-next";
 import { createObjectView, objectViewDocumentSchema, type ObjectReference, type ObjectViewDocument } from "@ontomato/contracts/object-views";
-import { useManagerClient, useOntologyText } from "../context";
+import { useManagerClient, useManagerContext, useOntologyText } from "../context";
 const { ot } = useOntologyText();
-const { locale } = useI18n();
+const manager = useManagerContext();
 import ObjectViewRuntime from "./ObjectViewRuntime.vue";
 import { computed } from "vue";
 import { instanceName, type InstanceNameAttribute } from "./instance-name";
@@ -17,8 +16,8 @@ const client = useManagerClient();
 const workspaceHost = inject<WorkspaceObjectHost | null>(workspaceObjectHostKey, null);
 const pinned = ref(false), pinBusy = ref(false), pinError = ref("");
 const pinLabel = computed(() => pinned.value
-  ? (locale.value.startsWith("zh") ? "取消收藏" : "Remove from favorites")
-  : (locale.value.startsWith("zh") ? "收藏到工作台" : "Add to workspace favorites"));
+  ? (manager.locale.startsWith("zh") ? "取消收藏" : "Remove from favorites")
+  : (manager.locale.startsWith("zh") ? "收藏到工作台" : "Add to workspace favorites"));
 async function togglePin() {
   if (!workspaceHost) return;
   const reference = { ...props.reference, title: (displayName.value || props.reference.primaryKey).slice(0, 200) };

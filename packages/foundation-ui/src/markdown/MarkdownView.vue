@@ -1,6 +1,7 @@
 <script lang="ts">
 import { setCustomComponents } from "markstream-vue";
 import type { Component } from "vue";
+import MarkdownTable from "./MarkdownTable.vue";
 
 /** Node types a caller can draw itself; the paragraph is here because it can see all of a paragraph's children. */
 const NODE_TYPES = ["link", "image", "paragraph"] as const;
@@ -13,12 +14,15 @@ function sameNodes(a: Nodes, b: Nodes): boolean {
   return NODE_TYPES.every((type) => a[type] === b[type]);
 }
 
-/** markstream looks node components up by an id: each set of components is registered once, the first time it is drawn. */
+/**
+ * markstream looks node components up by an id: each set of components is registered once, the first time it is drawn.
+ * Every set draws tables with MarkdownTable.
+ */
 function nodesId(nodes: Nodes): string {
   const known = registered.find((entry) => sameNodes(entry.nodes, nodes));
   if (known) return known.id;
   const id = `markdown-view-${registered.length + 1}`;
-  setCustomComponents(id, nodes);
+  setCustomComponents(id, { ...nodes, table: MarkdownTable });
   registered.push({ nodes, id });
   return id;
 }
@@ -47,7 +51,7 @@ const props = withDefaults(
   }>(),
   { final: true },
 );
-const customId = computed(() => (props.nodes ? nodesId(props.nodes) : undefined));
+const customId = computed(() => nodesId(props.nodes ?? {}));
 // The stylesheet follows the `dark` class by itself; markstream picks a code block's colours from this property only.
 const isDark = useDarkMode();
 </script>
