@@ -2,12 +2,6 @@
   <div class="skill-selector">
     <AgentConfigurationHeader class="skill-selector-toolbar" :title="title || ''" :hint="hint" :count="title ? selectedSkills.length : undefined">
       <template #icon><slot name="icon" /></template>
-      <template #actions>
-        <el-upload :show-file-list="false" accept=".zip" :auto-upload="false" :disabled="importLoading" :on-change="handleImport">
-          <el-button size="small" :icon="Upload" :loading="importLoading">{{ t("admin.importSkill") }}</el-button>
-        </el-upload>
-        <el-button size="small" :icon="Plus" @click="openCreateSkill">{{ t("admin.addSkill") }}</el-button>
-      </template>
     </AgentConfigurationHeader>
     <el-alert
       v-if="loadError"
@@ -30,13 +24,9 @@
             <el-tag v-if="skill.unavailable" size="small" type="warning">
               {{ t("assistant.unavailable") }}
             </el-tag>
-            <el-tag v-else-if="!skill.enabled" size="small" type="warning">
-              {{ t("common.disabled") }}
-            </el-tag>
           </div>
           <el-checkbox
             :model-value="isSelected(skill.skill)"
-            :disabled="!skill.enabled && !isSelected(skill.skill)"
             @click.stop="toggleSkill(skill.skill)"
           />
         </div>
@@ -57,24 +47,13 @@
       />
     </div>
   </div>
-  <SkillFormDialog
-    v-model:visible="showCreateDialog"
-    initial-category="analysis"
-    @created="handleSkillCreated"
-  />
 </template>
 
 <script setup lang="ts">
 import { computed, ref, watch } from "vue";
-import { skillsApi } from "../../skills/api";
 import { agentDefinitionsApi } from "../api";
 import type { AssistantSkillOption } from "@ontomato/contracts/assistant-chat";
 import { runtimeSkillKey, type RuntimeSkillRef } from "@ontomato/contracts/agent-runtime-skills";
-import type { SkillInfo } from "@ontomato/contracts/skills";
-import { Plus, Upload } from "lucide-vue-next";
-import { ElMessage, ElMessageBox, type UploadFile } from "element-plus";
-import { ApiRequestError } from "../../../utils/api";
-import SkillFormDialog from "../../skills/components/SkillFormDialog.vue";
 import AgentConfigurationHeader from "./AgentConfigurationHeader.vue";
 import { useI18n } from "vue-i18n";
 import { errorPunctuation } from "../../../utils/error-punctuation";
@@ -97,71 +76,16 @@ const emit = defineEmits<{
 const skills = ref<AssistantSkillOption[]>([]);
 const selectedSkills = ref<RuntimeSkillRef[]>([]);
 const loadError = ref("");
-const showCreateDialog = ref(false);
 const loading = ref(false);
-const importLoading = ref(false);
 const displayedSkills = computed(() => {
   const available = new Set(skills.value.map((item) => runtimeSkillKey(item.skill)));
   return [
     ...skills.value.map((item) => ({ ...item, unavailable: false })),
     ...selectedSkills.value
       .filter((skill) => !available.has(runtimeSkillKey(skill)))
-      .map((skill) => ({ skill, title: skill.name, description: "", tags: [], enabled: false, unavailable: true })),
+      .map((skill) => ({ skill, title: skill.name, description: "", tags: [], unavailable: true })),
   ];
 });
-
-async function importSkill(file: File, overwrite = false) {
-  importLoading.value = true;
-  try {
-    const data = await skillsApi.importSkill(file, overwrite);
-    if (!data.success) {
-      ElMessage.error(data.error || t("admin.importFailed"));
-      return;
-    }
-    ElMessage.success(t("admin.skillImportSuccess", {
-      id: data.skill.id, action: overwrite ? t("admin.overwrite") : t("common.import"),
-    }));
-    await handleSkillCreated(data.skill);
-  } catch (error) {
-    if (error instanceof ApiRequestError && error.code === "SKILL_EXISTS") {
-      try {
-        await ElMessageBox.confirm(t("admin.skillExists", {
-          id: (error.payload.details as { skillId: string }).skillId,
-        }), t("common.tip"), {
-          confirmButtonText: t("admin.overwrite"), cancelButtonText: t("common.cancel"), type: "warning",
-        });
-      } catch {
-        return;
-      }
-      await importSkill(file, true);
-    } else {
-      ElMessage.error(error instanceof Error ? error.message : t("admin.importFailed"));
-    }
-  } finally {
-    importLoading.value = false;
-  }
-}
-
-async function handleImport(uploadFile: UploadFile) {
-  if (!uploadFile.raw || importLoading.value) return;
-  if (!uploadFile.raw.name.toLowerCase().endsWith(".zip")) {
-    ElMessage.warning(t("admin.zipOnly"));
-    return;
-  }
-  await importSkill(uploadFile.raw);
-}
-
-function openCreateSkill() {
-  showCreateDialog.value = true;
-}
-
-async function handleSkillCreated(skill: SkillInfo) {
-  await loadSkills();
-  if (skills.value.some((item) => runtimeSkillKey(item.skill) === runtimeSkillKey(skill.skill)) && !isSelected(skill.skill)) {
-    selectedSkills.value = [...selectedSkills.value, skill.skill];
-    emit("update:modelValue", selectedSkills.value);
-  }
-}
 
 // One list for the agent: analysis and visualization skills alike.
 async function loadSkills() {
@@ -185,7 +109,6 @@ function isSelected(skill: RuntimeSkillRef) {
 function toggleSkill(skill: RuntimeSkillRef) {
   const key = runtimeSkillKey(skill);
   const index = selectedSkills.value.findIndex((item) => runtimeSkillKey(item) === key);
-  if (index < 0 && !skills.value.find((item) => runtimeSkillKey(item.skill) === key)?.enabled) return;
   selectedSkills.value = index >= 0
     ? selectedSkills.value.filter((item) => runtimeSkillKey(item) !== key)
     : [...selectedSkills.value, skill];
@@ -203,7 +126,6 @@ watch(
 
 // Initialize
 loadSkills();
-defineExpose({ handleSkillCreated });
 </script>
 
 <style scoped>

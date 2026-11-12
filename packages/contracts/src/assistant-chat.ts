@@ -29,7 +29,6 @@ export const assistantSkillOptionSchema = z.object({
   skill: runtimeSkillRefSchema,
   title: z.string(),
   description: z.string(),
-  enabled: z.boolean(),
   tags: z.array(z.string()).default([]),
 }).strict();
 export const assistantSkillCatalogSchema = z.object({

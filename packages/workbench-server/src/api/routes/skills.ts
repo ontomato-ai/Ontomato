@@ -2,14 +2,8 @@ import { NextFunction, Request, Response, Router } from "express";
 import { z } from "zod";
 import multer from "multer";
 import { skillManager } from "../../services/skills/skill-manager";
-import { previewSkill } from "../../services/skills/preview";
 import { renderObjectView } from "../../services/skills/render-view";
-import {
-  InvalidSkillPackageError,
-  SkillCategorySchema,
-  SkillIdSchema,
-  SkillTypeSchema,
-} from "../../core/skills/manifest";
+import { InvalidSkillPackageError } from "../../core/skills/manifest";
 import { t, tApp } from "../../i18n";
 import { validateBody } from "../middleware";
 import { requirePermission } from "../../identity/installed";
@@ -28,36 +22,6 @@ function requireDomain(req: Request, res: Response, next: NextFunction): void {
   }
   next();
 }
-
-const CreateSkillSchema = z
-  .object({
-    id: SkillIdSchema,
-    type: SkillTypeSchema,
-    category: SkillCategorySchema,
-    title: z.string().optional(),
-    description: z.string({ required_error: tApp("foundation.skill.description") }).trim().min(1, tApp("foundation.skill.description")),
-    tags: z.array(z.string()).optional(),
-    version: z.string().optional(),
-    timeout: z.number().optional(),
-    outputType: z.enum(["text", "html", "json"]).optional(),
-    scriptCode: z.string().optional(),
-    skillContent: z.string().optional(),
-  });
-
-const UpdateSkillSchema = z.object({
-  title: z.string().optional(),
-  description: z.string().trim().min(1, tApp("foundation.skill.description")).optional(),
-  tags: z.array(z.string()).optional(),
-  version: z.string().optional(),
-  timeout: z.number().optional(),
-  outputType: z.enum(["text", "html", "json"]).optional(),
-  scriptCode: z.string().optional(),
-  skillContent: z.string().optional(),
-});
-
-const DebugSkillSchema = z.object({
-  input: z.record(z.unknown()).optional().default({}),
-});
 
 router.post("/:id/render", requireDomain, validateBody(z.object({ input: z.object({
   data: z.unknown(), chartType: z.string().max(100), title: z.string().max(200),
@@ -100,22 +64,21 @@ router.get(
 );
 
 router.get(
-  "/:id/script",
+  "/:id/files",
   asyncHandler(async (req: Request, res: Response) => {
     const domainId = (req as AuthenticatedRequest).domainId;
-    const scriptCode = domainId ? await skillManager.getSkillScript(domainId, req.params.id) : null;
-    res.json({ success: true, scriptCode });
+    const files = domainId ? await skillManager.listSkillFiles(domainId, req.params.id) : [];
+    res.json({ success: true, files });
   })
 );
 
 router.get(
-  "/:id/content",
+  "/:id/file",
+  requireDomain,
   asyncHandler(async (req: Request, res: Response) => {
-    const domainId = (req as AuthenticatedRequest).domainId;
-    const skillContent = domainId
-      ? await skillManager.getSkillContent(domainId, req.params.id, getLocaleFromRequest(req))
-      : null;
-    res.json({ success: true, skillContent });
+    const content = await skillManager.readSkillFile((req as AuthenticatedRequest).domainId!, req.params.id,
+      String(req.query.path ?? ""), getLocaleFromRequest(req));
+    res.json({ success: true, content });
   })
 );
 
@@ -135,19 +98,6 @@ router.get(
 );
 
 // Write endpoints — authenticated by the shared /api boundary and require a domain.
-router.put(
-  "/:id/toggle",
-  requireDomain,
-  requireSkillAdmin,
-  asyncHandler(async (req: Request, res: Response) => {
-    const result = await skillManager.toggleSkill(
-      (req as AuthenticatedRequest).domainId!,
-      req.params.id
-    );
-    res.json({ success: true, enabled: result.enabled });
-  })
-);
-
 router.delete(
   "/:id",
   requireDomain,
@@ -158,48 +108,6 @@ router.delete(
       req.params.id
     );
     res.json({ success: true, ...result });
-  })
-);
-
-router.post(
-  "/",
-  requireDomain,
-  requireSkillAdmin,
-  validateBody(CreateSkillSchema),
-  asyncHandler(async (req: Request, res: Response) => {
-    const body = req.body as z.infer<typeof CreateSkillSchema>;
-    const skill = await skillManager.createSkill(
-      (req as AuthenticatedRequest).domainId!,
-      body.id,
-      body.type,
-      body.category,
-      {
-        title: body.title,
-        description: body.description,
-        tags: body.tags,
-        version: body.version,
-        outputType: body.outputType,
-        scriptCode: body.scriptCode,
-        skillContent: body.skillContent,
-      }
-    );
-    res.json({ success: true, skill });
-  })
-);
-
-router.put(
-  "/:id",
-  requireDomain,
-  requireSkillAdmin,
-  validateBody(UpdateSkillSchema),
-  asyncHandler(async (req: Request, res: Response) => {
-    const body = req.body as z.infer<typeof UpdateSkillSchema>;
-    const skill = await skillManager.updateSkill(
-      (req as AuthenticatedRequest).domainId!,
-      req.params.id,
-      body
-    );
-    res.json({ success: true, skill });
   })
 );
 
@@ -230,24 +138,6 @@ router.post(
       }
       throw error;
     }
-  })
-);
-
-router.post(
-  "/:id/debug",
-  requireDomain,
-  requireSkillAdmin,
-  validateBody(DebugSkillSchema),
-  asyncHandler(async (req: Request, res: Response) => {
-    const body = req.body as z.infer<typeof DebugSkillSchema>;
-    const request = req as AuthenticatedRequest;
-    const result = await previewSkill(
-      { domainId: request.domainId!, userId: request.userId },
-      { token: request.token, apiKey: request.apiKey, locale: request.locale },
-      req.params.id,
-      body.input,
-    );
-    res.json({ success: true, result });
   })
 );
 

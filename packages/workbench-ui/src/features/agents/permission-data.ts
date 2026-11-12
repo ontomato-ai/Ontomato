@@ -19,7 +19,8 @@ export interface WorkbenchPermissionData {
   permissions: readonly string[];
   path: string;
   titleKey: string;
-  ownerApplication: "agents" | "operations";
+  /** The application whose page the entry opens: skills are the ontology manager's, external MCP the settings'. */
+  ownerApplication: "agents" | "operations" | "ontology" | "settings";
   groupKey: string;
 }
 
@@ -50,16 +51,16 @@ export const workbenchPermissions = {
   },
   skills: {
     permissions: ["skill-management"],
-    path: routes.agentSettingsSkills.path,
+    path: routes.ontologySkills.path,
     titleKey: "nav.skills",
-    ownerApplication: "agents",
+    ownerApplication: "ontology",
     groupKey: "app-capabilities",
   },
   mcpService: {
     permissions: ["mcp-service"],
-    path: routes.agentSettingsMcp.path,
+    path: routes.externalMcp.path,
     titleKey: "nav.mcpService",
-    ownerApplication: "agents",
+    ownerApplication: "settings",
     groupKey: "app-capabilities",
   },
 } satisfies Record<string, WorkbenchPermissionData>;

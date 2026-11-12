@@ -17,7 +17,7 @@ function platformSkills() {
     const parsed = readSkillMarkdown(path.join(root, "SKILL.md"));
     if (!parsed) throw new Error(`Missing platform skill: ${name}`);
     return { root, skill: { namespace: { kind: "provider" as const, provider: "workbench" }, name },
-      title: parsed.manifest.title ?? name, description: parsed.manifest.description, enabled: true };
+      title: parsed.manifest.title ?? name, description: parsed.manifest.description };
   });
 }
 export async function registerAssistantSkills() {
@@ -33,15 +33,15 @@ export async function assistantSkillCatalog(domainId: string, locale?: string) {
       description: tForLocale(locale, "assistant.skills.report.description") })),
     { skill: { namespace: { kind: "provider", provider: "ontology" }, name: "ontomato-analyst-assistant" },
       title: tForLocale(locale, "assistant.skills.analyst.title"),
-      description: tForLocale(locale, "assistant.skills.analyst.description"), enabled: true },
+      description: tForLocale(locale, "assistant.skills.analyst.description") },
     ...(await skillManager.getAllSkills(domainId, locale)).map((s) => ({
-      skill: s.skill, title: s.title ?? s.id, description: s.description ?? "", enabled: s.enabled, tags: s.tags,
+      skill: s.skill, title: s.title ?? s.id, description: s.description ?? "", tags: s.tags,
     })),
   ] });
 }
 export async function validateAssistantSkills(domainId: string, refs: readonly RuntimeSkillRef[]) {
   const catalogue = await assistantSkillCatalog(domainId);
-  const known = new Map(catalogue.skills.map((s) => [runtimeSkillKey(s.skill), s]));
+  const known = new Set(catalogue.skills.map((s) => runtimeSkillKey(s.skill)));
   const names = new Set<string>();
   for (const ref of refs) {
     if (!known.has(runtimeSkillKey(ref)))
@@ -49,7 +49,7 @@ export async function validateAssistantSkills(domainId: string, refs: readonly R
     if (names.has(ref.name)) throw new HttpError(400, "Selected skill names must be unique", "INVALID_REQUEST");
     names.add(ref.name);
   }
-  return refs.filter((ref) => known.get(runtimeSkillKey(ref))!.enabled);
+  return [...refs];
 }
 
 /** The caller holds the domain operation boundary until runtime admission finishes. */

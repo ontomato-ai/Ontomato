@@ -8,8 +8,6 @@ export interface WorkbenchContent {
   analysisMcpServerName: string;
   /** Operations agent MCP server name, the same value as Node product.opsMcpServerName: identifies that server the same way (McpManager.vue). */
   opsMcpServerName: string;
-  /** Default input example for debugging the echarts skill (the original JSON.stringify(…, null, 2) result, SkillDebugDialog.vue), independent of the UI locale. */
-  skillDebugEchartsInput: string;
   /**
    * Product protocol value of the observe page (/observe): the application log source in the live log sidebar, the same
    * value as Node product.logSource (LiveLogsPage.vue).
@@ -57,8 +55,6 @@ export interface WorkbenchFixedText {
   businessConfigSeparator: string;
   /** Dashboard creation failure (dashboard/api.ts). */
   createDashboardFailed: string;
-  /** Invalid skill list response format (skills/api.ts). */
-  skillsListInvalid: string;
   /** Display of an empty error message (query-view/utils/display-error.ts). */
   unknownError: string;
   /**

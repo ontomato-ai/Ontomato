@@ -5,7 +5,6 @@ import { HttpError } from "../../../utils/errors";
 import router from "../skills";
 
 vi.mock("../../../i18n", () => ({ t: (key: string) => key, tApp: (key: string) => key }));
-vi.mock("../../../services/skills/preview", () => ({ previewSkill: vi.fn() }));
 vi.mock("../../../services/skills/render-view", () => ({ renderObjectView: vi.fn() }));
 
 vi.mock("../../../identity/installed", () => ({

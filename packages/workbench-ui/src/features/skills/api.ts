@@ -1,48 +1,21 @@
-import type { SkillInfo } from "@ontomato/contracts/skills";
-export type AnalysisSkill = Pick<
-  SkillInfo,
-  "id" | "type" | "title" | "description" | "category" | "tags" | "useCases" | "enabled"
->;
+import type { SkillFile } from "@ontomato/contracts/skills";
 import { api } from "../../api";
 import { apiUrl } from "../../utils/api-base";
-import { workbenchContent } from "../../content";
 
-export function createSkillsApi(request: Pick<typeof api, "get" | "post" | "put" | "delete" | "postFormData"> = api) {
-  async function fetchSkills() {
-    return request.get("/skills");
-  }
-
-  async function listSkills(category: AnalysisSkill["category"]): Promise<AnalysisSkill[]> {
-    const response = await fetchSkills();
-    if (response?.success !== true || !Array.isArray(response.skills)) {
-      throw new Error(workbenchContent().text.skillsListInvalid);
-    }
-
-    const skills: AnalysisSkill[] = response.skills;
-    return skills.filter(
-      (skill) =>
-        skill.category === category && (category !== "visualization" || skill.type === "executable")
-    );
-  }
-
+export function createSkillsApi(request: Pick<typeof api, "get" | "delete" | "postFormData"> = api) {
   return {
-    fetchSkills,
-    listAnalysisSkills: () => listSkills("analysis"),
-    listVisualizationSkills: () => listSkills("visualization"),
-    toggleSkill: (skillId: string) => request.put(`/skills/${skillId}/toggle`),
+    fetchSkills: () => request.get("/skills"),
     getReferences: (skillId: string) => request.get(`/skills/${skillId}/references`),
     deleteSkill: (skillId: string) => request.delete(`/skills/${skillId}`),
-    getScript: (skillId: string) => request.get(`/skills/${skillId}/script`),
-    getContent: (skillId: string) => request.get(`/skills/${skillId}/content`),
-    updateSkill: (skillId: string, body: unknown) => request.put(`/skills/${skillId}`, body),
-    createSkill: (body: unknown) => request.post("/skills", body),
+    listFiles: async (skillId: string): Promise<SkillFile[]> =>
+      (await request.get(`/skills/${encodeURIComponent(skillId)}/files`)).files,
+    readFile: async (skillId: string, path: string): Promise<string> =>
+      (await request.get(`/skills/${encodeURIComponent(skillId)}/file?path=${encodeURIComponent(path)}`)).content,
     importSkill: (file: File, overwrite = false) => {
       const formData = new FormData();
       formData.append("file", file);
       return request.postFormData(overwrite ? "/skills/import?overwrite=true" : "/skills/import", formData);
     },
-    debugSkill: (skillId: string, input: unknown) =>
-      request.post(`/skills/${skillId}/debug`, { input }),
     exportUrl: (skillId: string, query: string) =>
       apiUrl(`/skills/${skillId}/export${query ? `?${query}` : ""}`),
   };
