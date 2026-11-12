@@ -6,6 +6,7 @@ import {
   PlatformPageHeader,
   PlatformShell,
   type PlatformAccount,
+  type PlatformBrand,
   type PlatformPageActions,
   type PlatformPreferences,
   type PlatformShellLabels,
@@ -35,7 +36,7 @@ const props = defineProps<{
   /** The name of each supported language, in the words the shell shows. */
   localeNames?: Readonly<Record<string, string>>;
   labels: PlatformShellLabels;
-  brand?: { name: string; logo?: string };
+  brand?: PlatformBrand;
   pageActions: PlatformPageActions | null;
   /** The host shows no application at all (its licence is not in force, or the account holds no page). */
   blocked?: { reason: "licence" | "no-pages"; message: string } | null;

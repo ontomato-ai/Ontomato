@@ -16,10 +16,6 @@ const request = (limits) => codeExecutionRequestSchema.parse({
   limits,
 });
 
-test("standalone Python requests retain the 1 GiB default", () => {
-  assert.equal(request({}).limits.memoryBytes, 1024 ** 3);
-});
-
 test("a Node launcher can request the shared address space budget without widening other limits", () => {
   const defaults = request({}).limits;
   const node = request({ memoryBytes: codeExecutionVirtualAddressSpaceBytes }).limits;

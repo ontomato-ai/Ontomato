@@ -8,6 +8,7 @@ import { localeAutonyms } from "./locale-names";
 import type { PlatformShownPage } from "./PlatformLayout.vue";
 import { appDeclarations } from "./partition";
 import { catalogPartition, type NativeLayout } from "./native-layouts";
+import type { PlatformBrand } from "@ontomato/platform-shell";
 import { platformRoutes } from "@ontomato/platform-shell/routes";
 import { useApplicationCatalog } from "./catalog";
 import { nodeApiRequest } from "@ontomato/workbench-ui";
@@ -28,7 +29,8 @@ import { createWorkspaceObjectHost } from "./workspace-objects";
 const props = defineProps<{
   /** Edition-owned page layouts and link launchers; the catalog owns application metadata. */
   renderers?: Record<string, NativeLayout>;
-  brand?: { name: string; logo?: string };
+  /** The edition's mark; its name defaults to the platform's service name. */
+  brand?: Omit<PlatformBrand, "name"> & { name?: string };
 }>();
 
 const host = usePlatformHost();
@@ -96,7 +98,7 @@ const labels = computed(() => ({
 const openApplication = useApplicationOpening(declarations);
 provide(openApplicationKey, openApplication);
 provide(platformApplicationsKey, declarations);
-const shellBrand = props.brand ?? { name: "Ontomato" };
+const shellBrand = computed<PlatformBrand>(() => ({ ...props.brand, name: props.brand?.name ?? t("platform.serviceName") }));
 provide(platformBrandKey, shellBrand);
 
 const recentVisit = computed(() => {

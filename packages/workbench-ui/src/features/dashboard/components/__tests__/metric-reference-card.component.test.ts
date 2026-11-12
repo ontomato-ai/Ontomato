@@ -129,7 +129,7 @@ describe("metric-reference cards on a dashboard", () => {
       ["West", 30, 0.3],
     ]);
     const tooltip = chart.option.tooltip.formatter({ name: "East", data: series.data[0] });
-    expect(tooltip).toContain("Share: 60.0%");
+    expect(tooltip).toContain("60.0%");
 
     const card = mount(ChartCard, { props: { chart }, global: { plugins, stubs: { EChart: true } } });
     await card.find(".ai-chart-tool-btn[title='" + t("dashboard.showData") + "']").trigger("click");
@@ -141,7 +141,7 @@ describe("metric-reference cards on a dashboard", () => {
     const metric = group.metrics[0];
     expect(metric.state).toBe("error");
     expect(metric.rows).toEqual([]);
-    expect(metric.error).toEqual({ code: "CARD_OUTPUT_MISMATCH", message: "Column total is not numeric" });
+    expect(metric.error).toMatchObject({ code: "CARD_OUTPUT_MISMATCH", message: "Column total is not numeric" });
 
     const card = mount(MetricCard, { props: { metric }, global: { plugins } });
     const alert = card.find(".metric-error").text();

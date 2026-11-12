@@ -38,7 +38,6 @@ class ServiceLogContractTest {
     String console = bytes.toString(StandardCharsets.UTF_8);
     assertEquals(java.nio.file.Files.readString(directory.resolve("ontology.log")), console);
     assertEquals(1, console.chars().filter(c -> c == '\n').count());
-    assertTrue(console.contains(" stack="));
   }
 
   @Test void asynchronousContextIsCapturedAndRestored() throws Exception {

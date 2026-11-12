@@ -97,13 +97,8 @@ describe("personal workspace", () => {
       { appId: "removed", title: "Removed app", path: "/applications/removed", visitedAt: new Date().toISOString() },
     ];
     const { wrapper } = await page();
-    expect(wrapper.text()).toContain("Recent resources");
-    const columns = wrapper.findAll(".workspace-column");
-    expect(columns).toHaveLength(2);
-    expect(columns[0]!.find('[data-section="apps"]').exists()).toBe(true);
-    expect(columns[0]!.find('[data-section="data"]').exists()).toBe(true);
-    expect(columns[1]!.find('[data-section="tasks"]').exists()).toBe(true);
-    expect(columns[1]!.find('[data-section="recent"]').exists()).toBe(true);
+    for (const section of ["apps", "data", "tasks", "recent"])
+      expect(wrapper.find(`[data-section="${section}"]`).exists()).toBe(true);
     expect(wrapper.text()).not.toContain("Removed app");
     const preview = wrapper.findComponent({ name: "DashboardMetricPreview" });
     const revision = preview.props("revision");

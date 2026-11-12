@@ -3,24 +3,27 @@ import { onMounted, ref, watch } from "vue";
 import { useRouter } from "vue-router";
 import { ElMessage, ElMessageBox, type UploadFile } from "element-plus";
 import { useI18n } from "vue-i18n";
-import { BookOpen, FileCode, Upload } from "lucide-vue-next";
+import { BookOpen, Download, FileCode, Trash2, Upload } from "lucide-vue-next";
 import type { SkillInfo } from "@ontomato/contracts/skills";
 import { PlatformPageHeader } from "@ontomato/platform-shell";
 import { platformRoutes } from "@ontomato/platform-shell/routes";
 import { ApiRequestError } from "../../../utils/api";
 import { skillsApi } from "../api";
 import { updateSkillLibraryCount } from "../count";
+import { deleteSkill, exportSkill } from "../actions";
 
 /**
  * The platform's skills, in the ontology manager's capability layer: one card a skill, with its name, where it came
- * from and what it is for. A skill is read in its own page; agents choose skills in their own settings, and a package
- * changes only by importing it again.
+ * from and what it is for, and its export and (for this domain's own) delete at hand. A skill is read in its own page;
+ * agents choose skills in their own settings, and a package changes only by importing it again, which first says what
+ * a package looks like.
  */
 const { t, locale } = useI18n();
 const router = useRouter();
 const skills = ref<SkillInfo[]>([]);
 const loading = ref(true);
 const loadFailed = ref(false);
+const importing = ref(false);
 let loadVersion = 0;
 
 async function load() {
@@ -70,8 +73,13 @@ async function importSkill(file: File, overwrite = false) {
   }
 }
 
+async function remove(skill: SkillInfo) {
+  if (await deleteSkill(skill.id, t)) await load();
+}
+
 async function upload(uploaded: UploadFile) {
   if (!uploaded.raw) return;
+  importing.value = false;
   if (!uploaded.raw.name.toLowerCase().endsWith(".zip")) {
     ElMessage.warning(t("admin.zipOnly"));
     return;
@@ -84,9 +92,7 @@ async function upload(uploaded: UploadFile) {
   <div class="skill-library platform-page">
     <PlatformPageHeader :title="t('capabilities.skillTitle')" :description="t('capabilities.skillDescription')">
       <template #actions>
-        <el-upload :show-file-list="false" accept=".zip" :auto-upload="false" :on-change="upload">
-          <el-button type="primary" :icon="Upload">{{ t("admin.importSkill") }}</el-button>
-        </el-upload>
+        <el-button type="primary" :icon="Upload" @click="importing = true">{{ t("admin.importSkill") }}</el-button>
       </template>
     </PlatformPageHeader>
     <div v-loading="loading" class="library-body platform-page-gutter">
@@ -94,10 +100,10 @@ async function upload(uploaded: UploadFile) {
         <el-button text @click="load">{{ t("common.retry") }}</el-button>
       </el-alert>
       <ul v-else-if="skills.length" class="skill-grid">
-        <li v-for="skill in skills" :key="skill.id">
-          <button type="button" class="skill-card" @click="open(skill)">
+        <li v-for="skill in skills" :key="skill.id" class="skill-card">
+          <button type="button" class="card-open" @click="open(skill)">
             <span class="card-head">
-              <component :is="skill.type === 'executable' ? FileCode : BookOpen" class="card-icon" :size="16" aria-hidden="true" />
+              <component :is="skill.type === 'executable' ? FileCode : BookOpen" class="card-icon" :size="20" aria-hidden="true" />
               <span class="card-name">{{ skill.title || skill.id }}</span>
               <el-tag size="small" :type="skill.isPublic ? 'info' : 'primary'" effect="plain" disable-transitions>
                 {{ skill.isPublic ? t("capabilities.sourcePublic") : t("capabilities.sourceDomain") }}
@@ -105,10 +111,34 @@ async function upload(uploaded: UploadFile) {
             </span>
             <span v-if="skill.description" class="card-description">{{ skill.description }}</span>
           </button>
+          <span class="card-actions">
+            <el-button size="small" text :icon="Download" @click="exportSkill(skill.id)">{{ t("common.export") }}</el-button>
+            <el-button v-if="!skill.isPublic" size="small" text type="danger" :icon="Trash2" @click="remove(skill)">
+              {{ t("common.delete") }}
+            </el-button>
+          </span>
         </li>
       </ul>
       <p v-else-if="!loading" class="empty">{{ t("capabilities.emptySkills") }}</p>
     </div>
+    <!-- What a package looks like comes before the file is chosen, not after an import failed. -->
+    <el-dialog v-model="importing" :title="t('admin.importSkill')" width="480px" append-to-body>
+      <p class="import-intro">{{ t("capabilities.importIntro") }}</p>
+      <ul class="import-rules">
+        <li>{{ t("capabilities.importRuleRoot") }}</li>
+        <li>{{ t("capabilities.importRuleFrontmatter") }}</li>
+        <li>{{ t("capabilities.importRuleText") }}</li>
+        <li>{{ t("capabilities.importRuleOverwrite") }}</li>
+      </ul>
+      <template #footer>
+        <span class="import-footer">
+          <el-button @click="importing = false">{{ t("common.cancel") }}</el-button>
+          <el-upload :show-file-list="false" accept=".zip" :auto-upload="false" :on-change="upload">
+            <el-button type="primary" :icon="Upload">{{ t("capabilities.importChoose") }}</el-button>
+          </el-upload>
+        </span>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -123,11 +153,11 @@ async function upload(uploaded: UploadFile) {
   padding-block: var(--page-content-gap) var(--spacing-xl);
   min-width: 0;
 }
-/* One card a skill: its name, where it came from and what it is for, in rows that fill the page's width. */
+/* One card a skill: its name, where it came from and what it is for, its actions along the foot. */
 .skill-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
-  gap: var(--spacing-sm);
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: var(--spacing-md);
   margin: 0;
   padding: 0;
   list-style: none;
@@ -135,26 +165,32 @@ async function upload(uploaded: UploadFile) {
 .skill-card {
   display: flex;
   flex-direction: column;
-  gap: var(--spacing-xs);
-  width: 100%;
-  height: 100%;
-  min-height: 88px;
-  padding: var(--spacing-md);
-  box-sizing: border-box;
+  min-height: 160px;
   border: 1px solid var(--el-border-color-lighter);
   border-radius: var(--radius-md);
   background: var(--el-fill-color-blank);
-  color: var(--el-text-color-primary);
-  font: inherit;
-  text-align: start;
-  cursor: pointer;
   transition: border-color var(--transition-fast), background-color var(--transition-fast);
 }
 .skill-card:hover {
   border-color: var(--el-border-color);
   background: var(--el-fill-color-light);
 }
-.skill-card:focus-visible {
+.card-open {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+  width: 100%;
+  padding: var(--spacing-lg) var(--spacing-lg) var(--spacing-sm);
+  border: 0;
+  border-radius: var(--radius-md) var(--radius-md) 0 0;
+  background: none;
+  color: var(--el-text-color-primary);
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+.card-open:focus-visible {
   outline: 2px solid var(--el-color-primary);
   outline-offset: -2px;
 }
@@ -174,21 +210,51 @@ async function upload(uploaded: UploadFile) {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: var(--text-sm);
+  font-size: var(--text-base);
   font-weight: var(--font-semibold);
 }
 .card-description {
   display: -webkit-box;
   overflow: hidden;
   -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
+  -webkit-line-clamp: 3;
   color: var(--el-text-color-secondary);
-  font-size: var(--text-xs);
-  line-height: var(--leading-xs);
+  font-size: var(--text-sm);
+  line-height: var(--leading-sm);
+}
+.card-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 2px;
+  padding: 0 var(--spacing-sm) var(--spacing-sm);
+}
+.card-actions :deep(.el-button) {
+  margin: 0;
 }
 .empty {
   margin: 0;
   color: var(--el-text-color-secondary);
   font-size: var(--text-sm);
+}
+.import-intro {
+  margin: 0 0 var(--spacing-sm);
+  color: var(--el-text-color-primary);
+  font-size: var(--text-sm);
+}
+.import-rules {
+  display: grid;
+  gap: var(--spacing-xs);
+  margin: 0;
+  padding-left: 1.2em;
+  color: var(--el-text-color-regular);
+  font-size: var(--text-sm);
+  line-height: var(--leading-sm);
+}
+.import-footer {
+  display: inline-flex;
+  gap: var(--spacing-sm);
+}
+.import-footer :deep(.el-button) {
+  margin: 0;
 }
 </style>

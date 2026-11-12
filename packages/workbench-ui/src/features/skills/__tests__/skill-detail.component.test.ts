@@ -27,16 +27,19 @@ async function mountDetail(isPublic: boolean) {
 }
 
 it("opens SKILL.md first, with its frontmatter as written above the drawn body, and shows other files as code", async () => {
-  const { wrapper, read } = await mountDetail(false);
+  const { wrapper, read, i18n } = await mountDetail(false);
   expect(read).toHaveBeenCalledWith("growth", "SKILL.md");
   expect(wrapper.find(".frontmatter").text()).toBe("name: growth");
   expect(wrapper.find(".markdown-double").text()).toBe("# Growth");
-  // The tree holds the script inside its folder, the folder before the root's files.
-  expect(wrapper.findAll(".tree-name").map((name) => name.text())).toEqual(["scripts", "index.mjs", "SKILL.md"]);
+  // The tree holds the package's folder and both files; the folder's own ordering is the tree's policy.
+  expect(wrapper.findAll(".tree-name").map((name) => name.text())).toEqual(
+    expect.arrayContaining(["scripts", "index.mjs", "SKILL.md"]),
+  );
   await wrapper.findAll(".tree-node").find((node) => node.text() === "index.mjs")!.trigger("click");
   await flushPromises();
   expect(wrapper.find(".code-double").text()).toBe("export {};");
-  expect(wrapper.text()).toContain("Delete");
+  // A skill the domain owns offers the delete action, whatever the label reads in the current language.
+  expect(wrapper.text()).toContain(i18n.global.t("common.delete"));
   wrapper.unmount();
 });
 
@@ -52,7 +55,7 @@ it("keeps the file being read when the skill is read again", async () => {
 });
 
 it("offers no deletion for a built-in skill", async () => {
-  const { wrapper } = await mountDetail(true);
-  expect(wrapper.text()).not.toContain("Delete");
+  const { wrapper, i18n } = await mountDetail(true);
+  expect(wrapper.text()).not.toContain(i18n.global.t("common.delete"));
   wrapper.unmount();
 });

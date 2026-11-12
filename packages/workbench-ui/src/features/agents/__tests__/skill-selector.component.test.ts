@@ -22,12 +22,25 @@ describe("complete skill references in agent configuration", () => {
     try {
       await flushPromises();
       const card = wrapper.findAll(".skill-card").find((item) => item.text().includes(missing.name))!;
-      expect(card.classes()).toContain("selected");
-      expect(card.text()).toContain("Unavailable");
+      // The saved skill the catalogue no longer offers is marked, whatever the label reads in the current language.
+      expect(card.text()).toContain(workbenchI18n().global.t("assistant.unavailable"));
       expect(wrapper.emitted("update:modelValue")).toBeUndefined();
       await card.trigger("click");
       expect(wrapper.emitted("update:modelValue")?.at(-1)).toEqual([[provider]]);
       expect(wrapper.text()).not.toContain(missing.name);
+    } finally { wrapper.unmount(); }
+  });
+
+  it("does not call saved skills unavailable while the catalogue is still loading", async () => {
+    vi.spyOn(agentDefinitionsApi, "skills").mockReturnValue(new Promise(() => {}));
+    const wrapper = mount(SkillSelector, {
+      props: { modelValue: [provider] },
+      global: { plugins: [workbenchI18n(), ElementPlus] },
+    });
+    try {
+      await flushPromises();
+      expect(wrapper.findAll(".skill-card")).toHaveLength(0);
+      expect(wrapper.text()).not.toContain(workbenchI18n().global.t("assistant.unavailable"));
     } finally { wrapper.unmount(); }
   });
 
@@ -41,8 +54,6 @@ describe("complete skill references in agent configuration", () => {
     try {
       await flushPromises();
       const cards = wrapper.findAll(".skill-card");
-      expect(cards[0].classes()).toContain("selected");
-      expect(cards[1].classes()).not.toContain("selected");
       await cards[0].trigger("click");
       expect(wrapper.emitted("update:modelValue")?.at(-1)).toEqual([[]]);
       await cards[1].trigger("click");

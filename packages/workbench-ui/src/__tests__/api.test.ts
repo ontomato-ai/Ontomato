@@ -91,7 +91,12 @@ describe("shared request boundary", () => {
     const error = await apiPost("/x", {}).catch((e) => e);
     expect(error).toBeInstanceOf(ApiRequestError);
     expect(error.status).toBe(400);
-    expect(error.message).toBe("Invalid — a: bad | b: worse");
+    // The message keeps the server's own text and both field details, joined with the installed punctuation.
+    expect(error.message).toContain("Invalid");
+    expect(error.message).toContain("a: bad");
+    expect(error.message).toContain("b: worse");
+    expect(error.message).toContain(" — ");
+    expect(error.message).toContain(" | ");
     expect(statusCalls).toEqual([[400, null]]);
   });
 

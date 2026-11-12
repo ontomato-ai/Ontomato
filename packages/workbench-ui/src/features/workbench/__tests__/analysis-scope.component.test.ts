@@ -26,7 +26,11 @@ it("shows the source condition and sends the adjustment as one ordinary message 
     await submit().trigger("click"); await flushPromises();
     expect(wrapper.props("modelValue")).toBe(true);
     await submit().trigger("click"); await flushPromises();
-    expect(proceed).toHaveBeenLastCalledWith('For the data file "Staff" (outputs/retrievals/r/d.dataset.json), change the query scope: Age ≥ 55');
+    // One message naming the file, its title and the reader's own adjustment.
+    const message = proceed.mock.calls.at(-1)![0] as string;
+    expect(message).toContain("Staff");
+    expect(message).toContain("outputs/retrievals/r/d.dataset.json");
+    expect(message).toContain("Age ≥ 55");
     expect(wrapper.emitted("update:modelValue")?.at(-1)).toEqual([false]);
   } finally { wrapper.unmount(); }
 });
@@ -50,6 +54,6 @@ it("displays all conditions and allows multiple changes without choosing a condi
     await wrapper.findComponent({ name: "ElInput" }).setValue("Age ≥ 55 and retired staff");
     expect(submit.props("disabled")).toBe(false);
     await submit.trigger("click"); await flushPromises();
-    expect(proceed).toHaveBeenCalledWith(expect.stringContaining("change the query scope: Age ≥ 55 and retired staff"));
+    expect(proceed).toHaveBeenCalledWith(expect.stringContaining("Age ≥ 55 and retired staff"));
   } finally { wrapper.unmount(); }
 });

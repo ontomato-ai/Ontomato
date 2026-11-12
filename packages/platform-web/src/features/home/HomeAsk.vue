@@ -41,7 +41,7 @@ function ask(question: string) {
 
 <template>
   <div class="home-welcome">
-    <PlatformBrandMark class="home-brand" :brand="brand" :size="40" />
+    <div class="home-brand"><PlatformBrandMark :brand="brand" :size="40" /></div>
     <h1 class="home-greeting">{{ greeting }}</h1>
     <p class="home-date">{{ today }}</p>
     <div v-if="agents.length > 0" class="home-ask">
@@ -64,6 +64,7 @@ function ask(question: string) {
   margin-inline: auto;
 }
 .home-brand {
+  display: flex;
   margin-bottom: var(--spacing-lg);
 }
 /* The display role: the welcome only (DESIGN.md "Foundation tokens"), as the conversation's own welcome. */

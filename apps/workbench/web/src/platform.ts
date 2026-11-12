@@ -1,3 +1,4 @@
+import { defineComponent, h } from "vue";
 import "element-plus/dist/index.css";
 import "element-plus/theme-chalk/dark/css-vars.css";
 import "@ontomato/workbench-ui/styles/style.css";
@@ -23,6 +24,18 @@ import { workbenchContent } from "./workbench-content";
 
 import { normalizeManagerEntry, reloadOnStaleBuild, startPage } from "@ontomato/platform-web";
 import { ossServicePages } from "./manager/platform";
+
+/**
+ * The open-source platform shell: the platform's layout with this edition's mark. The image is served beside index.html
+ * (public/), so a path relative to the page follows the deployment's prefix, as the favicon does; the name is the
+ * platform's service name.
+ */
+// A component object, not a bare render function: the router takes a bare function for a lazy loader and expects a
+// promise from it, which left the whole open-source site blank (2026-11-12).
+const OssPlatformShell = defineComponent({
+  name: "OssPlatformShell",
+  render: () => h(PlatformShellLayout, { brand: { logo: "./ontomato-mark-green.svg" } }),
+});
 
 export function startPlatform() {
   normalizeManagerEntry();
@@ -50,7 +63,7 @@ export function startPlatform() {
         // The open-source edition has no permissions: every reader may build.
         ...appBuilderPages(),
         ...ossServicePages(app, router),
-      ], PlatformShellLayout),
+      ], OssPlatformShell),
       ...legacyAdminRoutes,
       // An unknown address lands where the root does.
       { path: "/:unknown(.*)*", redirect: () => startPage() },

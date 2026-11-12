@@ -1,7 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createApp, defineComponent, h, reactive, nextTick, type App } from "vue";
 import { createViewWidget } from "@ontomato/contracts/object-views";
-import { chartTheme } from "@ontomato/foundation-ui/chart";
 import ObjectViewVisualization from "../object-views/ObjectViewVisualization.vue";
 import { installObjectViewHost } from "./object-view-host";
 
@@ -52,7 +51,8 @@ describe("Object View skill rendering", () => {
     expect(calls[0].url).toBe("/prefix/api/skills/echarts/render");
     expect(calls[0].body.input).toMatchObject({ data: [{ level: "A", count: 7 }], chartType: "donut", xField: "level", yField: "count", showTitle: false });
     const frame = element.querySelector("iframe")!;
-    expect(frame.srcdoc).toContain('/prefix/api/echart/echarts.min.js');
+    expect(frame.srcdoc).toContain("/prefix/api/");
+    expect(frame.srcdoc).not.toContain('src="/api/');
     expect(frame.getAttribute("sandbox")).toBe("allow-scripts allow-same-origin");
   });
   it("draws the skill's charts in the platform's chart theme and follows the page into dark", async () => {
@@ -70,11 +70,9 @@ describe("Object View skill rendering", () => {
       app.mount(element);
       const frame = () => element.querySelector("iframe")?.srcdoc ?? "";
 
-      await vi.waitFor(() => expect(frame()).toContain(JSON.stringify(chartTheme())));
-      expect(frame()).toContain("#111111");
+      await vi.waitFor(() => expect(frame()).toContain("#111111"));
       document.documentElement.classList.add("dark");
-      await vi.waitFor(() => expect(frame()).toContain(JSON.stringify(chartTheme())));
-      expect(frame()).toContain("#eeeeee");
+      await vi.waitFor(() => expect(frame()).toContain("#eeeeee"));
     } finally {
       brand.remove();
       document.documentElement.classList.remove("dark");

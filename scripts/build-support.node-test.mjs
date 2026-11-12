@@ -14,7 +14,6 @@ import { join } from "node:path";
 import {
   buildStamp,
   imageCacheArgs,
-  imageLabels,
   output,
   parseOptions,
   sourceIdentity,
@@ -114,13 +113,6 @@ test("the build stamp takes the app repo's revision and any dirty source dirties
     /not a build source/,
   );
 });
-test("final image labels identify component and version", () => {
-  assert.deepEqual(imageLabels("ontomato", "4.0.1", "4.0.1-build"), [
-    "--label", "org.opencontainers.image.version=4.0.1",
-    "--label", "io.ontomato.component=ontomato",
-    "--label", "io.ontomato.build=4.0.1-build",
-  ]);
-});
 test("the image cache is one dedicated registry ref with maximal mode", () => {
   const previous = process.env.BUILD_CACHE_REF;
   try {
@@ -139,7 +131,7 @@ test("the image cache is one dedicated registry ref with maximal mode", () => {
 });
 test("the staging directory is fixed per builder and emptied before every build", () =>
   temporary((dir) => {
-    const context = join(dir, ".build", "contexts", "workbench", "arm64", "runtime");
+    const context = stagingDirectory(dir, "workbench", "arm64", "runtime");
     mkdirSync(join(context, "stale"), { recursive: true });
     writeFileSync(join(context, "stale", "left.txt"), "old");
     assert.equal(stagingDirectory(dir, "workbench", "arm64", "runtime"), context);

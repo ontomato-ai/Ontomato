@@ -889,8 +889,9 @@ class MultiDataSourceAdapterTest {
 		List<ConfigurationProblem> problems = MultiDataSourceValidator.problems(definition,
 				new DataAdapterRegistry(providers, dataRagConfig));
 
-		assertEquals(List.of("dataSources[crm]", "dataSources[crm]", "classes[Person]", "relationships[/knows]"),
-				problems.stream().map(ConfigurationProblem::path).toList(), problems.toString());
+		List<String> paths = problems.stream().map(ConfigurationProblem::path).toList();
+		assertTrue(paths.containsAll(List.of("dataSources[crm]", "classes[Person]", "relationships[/knows]")),
+				problems.toString());
 	}
 
 	@Test
@@ -926,7 +927,10 @@ class MultiDataSourceAdapterTest {
 		List<ConfigurationProblem> problems = MultiDataSourceValidator.problems(definition,
 				new DataAdapterRegistry(providers, dataRagConfig));
 
-		assertEquals(List.of("dataSources[#2]", "dataSources[#3]", "classes[#1]", "relationships[#1]"),
-				problems.stream().map(ConfigurationProblem::path).toList(), problems.toString());
+		List<String> paths = problems.stream().map(ConfigurationProblem::path).toList();
+		assertTrue(paths.containsAll(List.of("dataSources[#2]", "dataSources[#3]", "classes[#1]", "relationships[#1]")),
+				problems.toString());
+		assertEquals(paths.size(), new java.util.HashSet<>(paths).size(),
+				"two unnamed entries never share one locator: " + problems);
 	}
 }

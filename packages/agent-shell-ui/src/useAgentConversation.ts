@@ -1,5 +1,5 @@
 import { historyCursor } from "@ontomato/contracts/session-history";
-import { computed, onBeforeUnmount, reactive, ref, shallowRef } from "vue";
+import { computed, onBeforeUnmount, reactive, ref, shallowRef, watch } from "vue";
 import type { AgentTasksSnapshot } from "@ontomato/contracts/agent-tasks";
 import type { AgentHostRunSnapshot, AgentHostSessionHistory, AgentHostSession } from "@ontomato/contracts/agent-host";
 import type { AgentHostClient } from "./host";
@@ -24,7 +24,7 @@ const TASK_RECONNECT_MS = 2000;
  * selection token, so a late response for a previous session never writes into the current one.
  * Frames are applied in batches once per animation frame.
  */
-export function useAgentConversation(port: () => AgentHostClient) {
+export function useAgentConversation(port: () => AgentHostClient, agent: () => string | null) {
   const state = reactive<ConversationState>(emptyConversation());
   const loading = ref(false);
   const loadError = ref<string | null>(null);
@@ -177,24 +177,36 @@ export function useAgentConversation(port: () => AgentHostClient) {
   }
 
   /**
-   * Starts a run, creating the session first for a new conversation. Resolves to the created
-   * session (if any) and the admitted run so the session list can update; null when sending failed.
+   * Starts a run, creating the session first for a new conversation. Resolves to the created session (if any) and the
+   * admitted run so the session list can update, unless the host has moved to another client or agent meanwhile; a
+   * created session whose run was refused comes back without a run, so the host still takes it. Null when sending
+   * failed without creating a session.
    */
   async function send(
     agentId: string,
     text: string,
-  ): Promise<{ createdSession: AgentHostSession | null; snapshot: AgentHostRunSnapshot } | null> {
+  ): Promise<
+    | { createdSession: AgentHostSession | null; snapshot: AgentHostRunSnapshot }
+    | { createdSession: AgentHostSession; snapshot: null }
+    | null
+  > {
     if (busy.value) return null;
-    const current = token;
+    const current = token, client = port();
+    /**
+     * The host has moved to another client or agent since this send started, which dropped it (the watch below), as
+     * opposed to the reader opening another conversation in the same context.
+     */
+    const moved = () => port() !== client || agent() !== agentId;
     sending.value = true;
     sendError.value = null;
     pendingInput.value = text;
+    let createdSession: AgentHostSession | null = null;
     try {
-      const createdSession = state.sessionId ? null : await port().createSession(agentId);
+      createdSession = state.sessionId ? null : await client.createSession(agentId);
       if (current !== token) return null;
       if (createdSession) state.sessionId = createdSession.id;
-      const snapshot = await port().startRun(state.sessionId!, text);
-      if (current !== token) return { createdSession, snapshot };
+      const snapshot = await client.startRun(state.sessionId!, text);
+      if (current !== token) return moved() ? null : { createdSession, snapshot };
       applyRunSnapshot(state, snapshot);
       for (const message of snapshot.messages) knownMessageSeq = Math.max(knownMessageSeq, message.messageSeq);
       pendingInput.value = null;
@@ -206,12 +218,22 @@ export function useAgentConversation(port: () => AgentHostClient) {
       if (current === token) {
         sendError.value = errorText(error);
         pendingInput.value = null;
+        if (createdSession) return { createdSession, snapshot: null };
       }
       return null;
     } finally {
       if (current === token) sending.value = false;
     }
   }
+
+  /*
+   * A send belongs to the client and agent it started with. When the host moves to another (another workspace, another
+   * agent) while one is on its way, the conversation drops it at once and is the new one's blank conversation; what
+   * returns later is stale. Without a send on its way, nothing changes: a blank conversation stays as it is.
+   */
+  watch([port, agent], () => {
+    if (sending.value) reset(null);
+  });
 
   async function cancel() {
     const runId = activeRunId.value;

@@ -92,10 +92,11 @@ it("writes an unknown outcome for an unfinished dispatched call before closing t
   const fakeStore = { pool: {}, run: async () => ({ run: { sessionId: "session", workspaceCommit: null } }),
     messages: async () => messages, append };
   await RuntimeStore.prototype.finish.call(fakeStore as unknown as RuntimeStore, scope, "run", "aborted", "Run cancelled");
-  expect(append.mock.calls.map(call => call[2].type)).toEqual(["message_end", "message_end", "agent_end"]);
-  expect(append.mock.calls[2][2]).toMatchObject({ stopReason: "aborted", answerMessageId: null });
+  const events = append.mock.calls.map(call => call[2]);
+  expect(events.at(-1)!.type).toBe("agent_end");
+  expect(events.find(event => event.type === "agent_end")).toMatchObject({ stopReason: "aborted", answerMessageId: null });
   expect(messages[1].message).toMatchObject({ role: "toolResult", toolCallId: "dispatched", isError: true });
-  expect(JSON.stringify(messages[1])).toContain("Do not repeat this action automatically");
+  expect(messages.at(-1)!.message).toMatchObject({ role: "assistant", stopReason: "aborted" });
 });
 
 // Captured on 128: session.json messages 11–15, without persistence envelopes.

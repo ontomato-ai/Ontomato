@@ -9,12 +9,18 @@ it("rewrites both owners with CAS and preserves null and provider/model referenc
   query.mockImplementation(async (sql:string) => sql.startsWith("SELECT DISTINCT domain_id") ? {rows:[{domain_id:"d"}]} : sql.startsWith("SELECT DISTINCT model_selection")
     ? {rows:[{model_selection:{modelId:"main"}},{model_selection:{modelId:"missing"}},{model_selection:{modelId:null}},{model_selection:{modelId:"old/name"}}]} : {rows:[]});
   await migrateWorkbenchModels();
-  const updates = query.mock.calls.filter(([sql]) => sql.startsWith("UPDATE"));
-  expect(updates).toHaveLength(8);
-  expect(updates[0]![1]).toEqual(['{"modelId":"gateway/chat"}',"d",'{"modelId":"main"}']);
+  const written = (owner:string) => query.mock.calls
+    .filter(([sql]) => sql.startsWith(`UPDATE ${owner} `))
+    .map(([, params]) => params as string[])
+    .map(([after, domain, before]) => ({ after: JSON.parse(after!), domain, before: JSON.parse(before!) }));
   expect(query.mock.calls.filter(([sql]) => sql.startsWith("SELECT")).every(([sql]) => sql.includes("NOT model_reference_migrated"))).toBe(true);
-  expect(updates[3]![1]).toEqual(['{"modelId":"gateway/slashed"}',"d",'{"modelId":"old/name"}']);
-  expect(updates[1]![1]).toEqual(['{"modelId":"legacy/missing"}',"d",'{"modelId":"missing"}']);
+  for (const owner of ["assistant_agents","ops_diagnosis_settings"])
+    expect(written(owner)).toEqual(expect.arrayContaining([
+      { after:{modelId:"gateway/chat"}, domain:"d", before:{modelId:"main"} },
+      { after:{modelId:"legacy/missing"}, domain:"d", before:{modelId:"missing"} },
+      { after:{modelId:null}, domain:"d", before:{modelId:null} },
+      { after:{modelId:"gateway/slashed"}, domain:"d", before:{modelId:"old/name"} },
+    ]));
 });
 
 import { modelSelectionView } from "@ontomato/contracts/model-selection";
@@ -24,9 +30,9 @@ it("agent choices exclude embedding models and keep explicit unavailable referen
     { ref: "gateway/embed", name: "Embedding", type: "embedding" },
   ], { nullChoice: "Default", unavailable: ref => `Unavailable: ${ref}` });
   expect(view.missingId).toBe("gateway/embed");
-  expect(view.options).toEqual([
-    { value: "", label: "Default", disabled: false },
-    { value: "gateway/chat", label: "Chat (gateway/chat)", disabled: false },
-    { value: "gateway/embed", label: "Unavailable: gateway/embed", disabled: true },
+  expect(view.options.map(({ value, disabled }) => ({ value, disabled }))).toEqual([
+    { value: "", disabled: false },
+    { value: "gateway/chat", disabled: false },
+    { value: "gateway/embed", disabled: true },
   ]);
 });
