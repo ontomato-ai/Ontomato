@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotSame;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -30,6 +31,7 @@ import com.fasterxml.jackson.core.JsonParser;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.json.JsonMapper;
 import com.sun.net.httpserver.HttpServer;
+import io.ontomato.dataengine.config.BusinessConfig;
 import io.ontomato.dataengine.config.CustomRequestParameters;
 import io.ontomato.dataengine.config.ModelConfig;
 
@@ -59,6 +61,9 @@ class OpenAiCustomParametersRequestTest {
     private HttpServer server;
     private final AtomicReference<String> requestBody = new AtomicReference<>();
     private final AtomicReference<String> testHeader = new AtomicReference<>();
+    private final AtomicReference<String> protocol = new AtomicReference<>();
+    private final AtomicReference<String> upgradeHeader = new AtomicReference<>();
+    private final AtomicReference<String> http2SettingsHeader = new AtomicReference<>();
     private final List<String> requestBodies = java.util.Collections.synchronizedList(new java.util.ArrayList<>());
     private final AtomicInteger requestCount = new AtomicInteger();
     private volatile int responseStatus = 200;
@@ -76,8 +81,11 @@ class OpenAiCustomParametersRequestTest {
     @BeforeEach
     void startServer() throws IOException {
         server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
-        server.createContext("/v1/chat/completions", exchange -> {
+        server.createContext("/v1/", exchange -> {
             requestCount.incrementAndGet();
+            protocol.set(exchange.getProtocol());
+            upgradeHeader.set(exchange.getRequestHeaders().getFirst("Upgrade"));
+            http2SettingsHeader.set(exchange.getRequestHeaders().getFirst("HTTP2-Settings"));
             String captured = new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
             requestBody.set(captured);
             requestBodies.add(captured);
@@ -107,6 +115,43 @@ class OpenAiCustomParametersRequestTest {
                 .modelName("test-model");
     }
 
+
+    @Test
+    void chatRequestsReachHttp11ServersWithoutUpgradeHeaders() {
+        ChatModel model = MultiThreadAIChatService.buildChatModel(productionModel(), false, null);
+
+        assertEquals("ok", model.chat("hello"));
+
+        assertHttp11WithoutUpgrade();
+        JSONObject body = JSON.parseObject(requestBody.get());
+        assertEquals("hello", body.getJSONArray("messages").getJSONObject(0).getString("content"));
+    }
+
+    @Test
+    void embeddingRequestsReachHttp11ServersWithoutUpgradeHeaders() {
+        responsePayload = "{\"object\":\"list\",\"data\":[{\"object\":\"embedding\","
+                + "\"index\":0,\"embedding\":[0.1,0.2,0.3]}],\"model\":\"test-model\","
+                + "\"usage\":{\"prompt_tokens\":1,\"total_tokens\":1}}";
+        BusinessConfig.EmbeddingModelProperties properties = new BusinessConfig().new EmbeddingModelProperties();
+        properties.setBaseUrl(baseUrl());
+        properties.setApiKey("test-key");
+        properties.setModelName("test-model");
+        properties.setDimensions(3);
+        properties.setTimeout(Duration.ofSeconds(10));
+        properties.setCustomHeaders(Map.of("X-Test", "embedding"));
+
+        assertEquals(3, new EmbeddingService().embedWith(properties, "hello").content().dimension());
+
+        assertHttp11WithoutUpgrade();
+        assertEquals("embedding", testHeader.get());
+        assertEquals(List.of("hello"), JSON.parseObject(requestBody.get()).getObject("input", List.class));
+    }
+
+    private void assertHttp11WithoutUpgrade() {
+        assertEquals("HTTP/1.1", protocol.get());
+        assertNull(upgradeHeader.get(), "model servers must not receive an h2c upgrade");
+        assertNull(http2SettingsHeader.get());
+    }
 
     @Test
     void overridesTopLevelBodyFieldsAtFinalExit() {

@@ -64,8 +64,8 @@
             </dependency>
             <dependency>
                 <groupId>dev.langchain4j</groupId>
-                <artifactId>langchain4j-http-client-spring-restclient</artifactId>
-                <version>${langchain4j-beta.version}</version>
+                <artifactId>langchain4j-http-client-jdk</artifactId>
+                <version>${langchain4j.version}</version>
             </dependency>
             <dependency>
                 <groupId>dev.langchain4j</groupId>

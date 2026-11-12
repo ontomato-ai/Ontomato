@@ -73,6 +73,7 @@ public class EmbeddingService {
 	
 	private EmbeddingModel buildModel(BusinessConfig.EmbeddingModelProperties embeddingModelProperties) {
 		EmbeddingModel embedingModel = OpenAiEmbeddingModel.builder()
+		        .httpClientBuilder(OntomatoHttpClientBuilder.http11ClientBuilder())
 		        .baseUrl(embeddingModelProperties.getBaseUrl())
 		        .apiKey(embeddingModelProperties.getApiKey())
 		        .modelName(embeddingModelProperties.getModelName())
