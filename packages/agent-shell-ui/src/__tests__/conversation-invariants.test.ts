@@ -74,26 +74,26 @@ describe("delegated tasks in a reply", () => {
   const tasks: AgentTasksSnapshot = {
     sessionId,
     tasks: [
-      { kind: "retrieval", id: roundId, root: { sessionId, runId }, question: "Sales?", parentTaskId: null, status: "completed", error: null,
-        createdAt: at(3), process: { mode: "none" }, branches: [{ source: "retriever", status: "completed", error: null,
-          datasets: [{ id: dataset, title: "Sales", rowCount: 3, truncation: null }] }] },
+      { kind: "agent", id: roundId, root: { sessionId, runId }, title: "Sales?", agentRef: {providerId:"ontology",agentId:"retrieval"}, sessionRef:{providerId:"ontology",sessionId:roundId}, runId:roundId, requestedBy:{session:{providerId:"workbench",sessionId},runId}, results:[], parentTaskId: null, status: "completed", error: null,
+        createdAt: at(3), process: { mode: "none" }, retrieval:{question:"Sales?",decisionRevision:0,branches: [{ source: "retriever", status: "completed", error: null,
+          datasets: [{ id: dataset, title: "Sales", rowCount: 3, truncation: null }] }]} },
       { kind: "quality", id: checkId, root: { sessionId, runId }, parentTaskId: roundId, status: "completed", error: null,
         createdAt: null, process: { mode: "none" }, checks: { source: "retriever", datasetIds: [dataset] } },
     ],
     qualityResults: [{ taskId: checkId, score: 92, summary: "Matches the question.", conclusion: "Matches the question.", fittedQuestion: "Sales?" }],
   };
 
-  it("keeps the ask step, follows it with the retrieval's card and reviews the reply", () => {
+  it("keeps the delegation step, follows it with the retrieval's card and reviews the reply", () => {
     const state = emptyConversation(sessionId);
-    const ask = { ...partial, stopReason: "toolUse" as const, timestamp: 2, content: [
-      { type: "toolCall" as const, id: "ask", name: "bash", arguments: { command: "node skills/ontomato-analyst-assistant/ontomato.mjs ask 'Sales'" } },
+    const delegation = { ...partial, stopReason: "toolUse" as const, timestamp: 2, content: [
+      { type: "toolCall" as const, id: "delegate", name: "bash", arguments: { command: "node skills/ontomato-analyst-assistant/ontomato.mjs agent start --agent ontology/retrieval --message 'Sales'" } },
     ] };
     applyRunSnapshot(state, snapshot({
-      messages: [user, { id: replyId, runId, messageSeq: 1, message: ask }],
+      messages: [user, { id: replyId, runId, messageSeq: 1, message: delegation }],
       pendingMessages: [{ id: partialId, message: { ...partial, timestamp: 4 } }],
     }));
     const response = conversationItems(state, tasks).find((item) => item.kind === "response")!;
-    // The ask step, then the retrieval's card, then the note reviewing the reply; other blocks may sit between them.
+    // The delegation step, then the retrieval's card, then the note reviewing the reply; other blocks may sit between them.
     const kinds = response.process.map((block) => block.kind);
     expect(kinds.filter((kind) => ["steps", "task", "note"].includes(kind))).toEqual(["steps", "task", "note"]);
     const step = response.process[0]!.kind === "steps" ? response.process[0]!.steps[0]! : null;

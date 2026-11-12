@@ -1,5 +1,5 @@
 import type { RuntimeJsonValue, RuntimeStopReason } from "@ontomato/contracts/agent-runtime-values";
-import type { AgentTasksSnapshot, QualityResult, QualityTask, RetrievalTask, ChannelAgentTask } from "@ontomato/contracts/agent-tasks";
+import type { AgentTasksSnapshot, QualityResult, QualityTask,ChannelAgentTask } from "@ontomato/contracts/agent-tasks";
 import { orderedMessages, type ConversationState } from "./conversation";
 import { skillOfCommand } from "./tools";
 import type { ProcessStepView } from "./types";
@@ -13,7 +13,7 @@ export type ProcessStep = ProcessStepView;
 export type ProcessBlock =
   | { kind: "note"; key: string; text: string; final: boolean; runId: string }
   | { kind: "steps"; key: string; steps: ProcessStep[]; active: boolean }
-  | { kind: "task"; key: string; task: RetrievalTask | ChannelAgentTask };
+  | { kind: "task"; key: string; task: ChannelAgentTask };
 
 /** Another party's review of the reply's data: one quality check of one retrieval branch. */
 export interface ResponseReview {
@@ -75,16 +75,16 @@ function userText(content: string | { type: string; text?: string }[]): string {
  */
 export function conversationItems(state: ConversationState, tasks: AgentTasksSnapshot | null = null): ConversationItem[] {
   const items: ConversationItem[] = [];
-  const retrievals = new Map<string, Array<RetrievalTask | ChannelAgentTask>>();
+  const retrievals = new Map<string, Array<ChannelAgentTask>>();
   const reviews = new Map<string, ResponseReview[]>();
   for (const task of tasks?.tasks ?? []) {
-    if (task.kind === "retrieval" || task.kind === "agent") {
+    if (task.kind === "agent") {
       if (task.kind === "agent" && task.parentTaskId !== null) continue;
       retrievals.set(task.root.runId, [...(retrievals.get(task.root.runId) ?? []), task]);
       continue;
     }
     const parent = tasks!.tasks.find((candidate) => candidate.id === task.parentTaskId);
-    const delivered = parent?.kind === "retrieval" ? parent.branches.flatMap((branch) => branch.datasets) : [];
+    const delivered = parent?.kind === "agent" && parent.retrieval ? parent.retrieval.branches.flatMap((branch) => branch.datasets) : [];
     reviews.set(task.root.runId, [...(reviews.get(task.root.runId) ?? []), {
       task,
       result: tasks!.qualityResults.find((result) => result.taskId === task.id) ?? null,
