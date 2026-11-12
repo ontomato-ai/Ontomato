@@ -30,6 +30,7 @@ const label = computed(() => t("appBuilder.composerWorkspace", { name: name.valu
         <el-dropdown-item
           v-for="workspace in workspaces"
           :key="workspace.id"
+          class="app-builder-workspace-option"
           :aria-current="workspace.id === workspaceId ? 'true' : undefined"
           @click="emit('select', workspace.id)"
         >
@@ -37,7 +38,7 @@ const label = computed(() => t("appBuilder.composerWorkspace", { name: name.valu
           <span class="option-name">{{ workspace.name }}</span>
           <Check v-if="workspace.id === workspaceId" :size="14" class="option-check" aria-hidden="true" />
         </el-dropdown-item>
-        <el-dropdown-item divided @click="emit('create')">
+        <el-dropdown-item divided class="app-builder-workspace-option" @click="emit('create')">
           <FolderPlus :size="14" aria-hidden="true" />
           <span class="option-name">{{ t("appBuilder.newWorkspace") }}</span>
         </el-dropdown-item>
@@ -82,16 +83,25 @@ const label = computed(() => t("appBuilder.composerWorkspace", { name: name.valu
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.option-name {
+</style>
+
+<style>
+/* The menu is drawn in the page's overlay layer, outside this picker: an icon, the name cut short, the current mark. */
+.el-dropdown-menu__item.app-builder-workspace-option {
+  gap: 8px;
+}
+.app-builder-workspace-option svg {
+  flex-shrink: 0;
+}
+.app-builder-workspace-option .option-name {
   flex: 1;
   max-width: 280px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.option-check {
-  flex-shrink: 0;
-  margin-left: 12px;
+.app-builder-workspace-option .option-check {
+  margin-left: 4px;
   color: var(--brand-link);
 }
 </style>
