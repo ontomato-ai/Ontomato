@@ -93,7 +93,6 @@ return computed<ShellLabels>(() => ({
     fittedQuestion: t("assistant.reviewFittedQuestion"),
     checked: t("assistant.reviewChecked"),
     checkedBranch: { binding: t("assistant.reviewCheckedBinding"), retriever: t("assistant.reviewCheckedRetriever") },
-    checkedSource: (source) => t("assistant.reviewCheckedSource", { source }),
     count: (count) => t("assistant.taskCount", { n: count }, count),
     listTitle: t("assistant.taskListTitle"),
     round: (index, count) => t("assistant.taskRound", { index, count }),

@@ -14,6 +14,7 @@ export { platformPath, platformRoutes } from "./routes";
 export type {
   PlatformAccount,
   PlatformApp,
+  PlatformBrand,
   PlatformIcon,
   PlatformPageActions,
   PlatformPanelGroup,

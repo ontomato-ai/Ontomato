@@ -1,0 +1,68 @@
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { flushPromises, mount } from "@vue/test-utils";
+import { createI18n } from "vue-i18n";
+import Preview from "../components/DashboardMetricPreview.vue";
+
+const api = vi.hoisted(() => ({ detail: vi.fn(), query: vi.fn() }));
+vi.mock("@ontomato/foundation-ui/chart", () => ({ EChart: { props: ["option"], template: '<div class="rendered-chart" />' }, useChartTheme: () => ({ value: {} }) }));
+vi.mock("../api", () => ({ fetchDashboardLocalDetail: api.detail, queryDashboardCard: api.query }));
+beforeEach(() => {
+  api.detail.mockReset().mockResolvedValue({ groups: [{ metrics: [
+    { id: "total", name: "Total", query: { kind: "metric", metricId: "total", parameters: {} }, valueField: "value", formats: { value: { kind: "number" } }, unit: "orders" },
+    { id: "failed", name: "Other metric", query: { kind: "metric", metricId: "failed", parameters: {} }, valueField: "value" },
+  ] }] });
+  api.query.mockReset().mockImplementation(async (_board, card) => {
+    if (card === "failed") throw new Error("Metric unavailable");
+    return { rows: [{ value: 0 }], truncation: null };
+  });
+});
+describe("dashboard metric previews", () => {
+  it("queries only explicitly followed cards and reports missing selections", async () => {
+    const wrapper = mount(Preview, { props: { dashboardId: "board", revision: 0, cardIds: ["total", "removed"] }, global: { plugins: [createI18n({ legacy: false, locale: "en", messages: { en: {} } })] } });
+    await flushPromises();
+    expect(api.query.mock.calls.map(call => call[1])).toEqual(["total"]);
+    expect(wrapper.text()).toContain("1 followed cards are unavailable");
+    expect(wrapper.text()).toContain("read time is not the source data update time");
+    await wrapper.setProps({ cardIds: [] });
+    await flushPromises();
+    expect(wrapper.findAll('.preview-value')).toHaveLength(0);
+    expect(api.query).toHaveBeenCalledTimes(1);
+    wrapper.unmount();
+  });
+  it("loads a saved chart and emits its identity for the workspace detail interaction", async () => {
+    const card = { id: "status-chart", name: "Staff status", query: { kind: "metric", metricId: "status", parameters: {} }, chartType: "bar", fields: { xAxis: "category", yAxis: "count" } };
+    api.detail.mockResolvedValue({ groups: [{ metrics: [], charts: [card] }] });
+    api.query.mockResolvedValue({ card, columns: [{ key: "category", label: "Status" }, { key: "count", label: "Count" }], rows: [{ category: "Active", count: 3109 }], truncation: null });
+    const wrapper = mount(Preview, { props: { dashboardId: "board", revision: 0 }, global: { plugins: [createI18n({ legacy: false, locale: "en", messages: { en: {} } })] } });
+    await flushPromises();
+    expect(wrapper.find('.rendered-chart').exists()).toBe(true);
+    await wrapper.find('button').trigger('click');
+    expect(wrapper.emitted('select')?.[0]).toEqual([{ id: "status-chart", name: "Staff status" }]);
+    wrapper.unmount();
+  });
+  it("discards a result from the previous dashboard after switching", async () => {
+    let finish!: (value: unknown) => void;
+    api.query.mockImplementation((_board, card) => card === "total" ? new Promise(resolve => { finish = resolve; }) : Promise.reject(new Error("Metric unavailable")));
+    const wrapper = mount(Preview, { props: { dashboardId: "first", revision: 0 }, global: { plugins: [createI18n({ legacy: false, locale: "en", messages: { en: {} } })] } });
+    await flushPromises();
+    api.detail.mockResolvedValue({ groups: [] });
+    await wrapper.setProps({ dashboardId: "second" });
+    await flushPromises();
+    finish({ rows: [{ value: 999 }], truncation: null });
+    await flushPromises();
+    expect(wrapper.text()).not.toContain("999");
+    expect(wrapper.text()).toContain("Open dashboard");
+    wrapper.unmount();
+  });
+  it("shows zero values and the read time while isolating a failed metric", async () => {
+    const wrapper = mount(Preview, { props: { dashboardId: "board", revision: 0 }, global: { plugins: [createI18n({ legacy: false, locale: "en", messages: { en: {} } })] } });
+    await flushPromises();
+    expect(wrapper.text()).toContain("0 orders");
+    expect(wrapper.text()).toContain("Read at");
+    expect(wrapper.text()).toContain("Metric unavailable");
+    await wrapper.setProps({ revision: 1 });
+    await flushPromises();
+    expect(api.detail).toHaveBeenCalledTimes(2);
+    wrapper.unmount();
+  });
+});

@@ -20,9 +20,10 @@ async function mountDetail(isPublic: boolean) {
   const read = vi.spyOn(skillsApi, "readFile").mockImplementation(async (_id, path) =>
     path === "SKILL.md" ? "---\nname: growth\n---\n# Growth\n" : "export {};\n");
   const router = createRouter({ history: createMemoryHistory(), routes: [{ path: "/:any(.*)", component: { template: "<div/>" } }] });
-  const wrapper = mount(SkillDetail, { props: { skillId: "growth" }, global: { plugins: [workbenchI18n(), ElementPlus, router] } });
+  const i18n = workbenchI18n();
+  const wrapper = mount(SkillDetail, { props: { skillId: "growth" }, global: { plugins: [i18n, ElementPlus, router] } });
   await flushPromises();
-  return { wrapper, read };
+  return { wrapper, read, i18n };
 }
 
 it("opens SKILL.md first, with its frontmatter as written above the drawn body, and shows other files as code", async () => {
@@ -36,6 +37,17 @@ it("opens SKILL.md first, with its frontmatter as written above the drawn body, 
   await flushPromises();
   expect(wrapper.find(".code-double").text()).toBe("export {};");
   expect(wrapper.text()).toContain("Delete");
+  wrapper.unmount();
+});
+
+it("keeps the file being read when the skill is read again", async () => {
+  const { wrapper, i18n } = await mountDetail(false);
+  await wrapper.findAll(".tree-node").find((node) => node.text() === "index.mjs")!.trigger("click");
+  await flushPromises();
+  // Another language reads the skill again; the reader stays on the script.
+  (i18n.global.locale as unknown as { value: string }).value = "zh-CN";
+  await flushPromises();
+  expect(wrapper.find(".code-double").text()).toBe("export {};");
   wrapper.unmount();
 });
 

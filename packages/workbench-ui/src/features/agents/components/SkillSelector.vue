@@ -78,6 +78,8 @@ const selectedSkills = ref<RuntimeSkillRef[]>([]);
 const loadError = ref("");
 const loading = ref(false);
 const displayedSkills = computed(() => {
+  // Until the catalogue arrives, nothing can be judged unavailable.
+  if (loading.value) return [];
   const available = new Set(skills.value.map((item) => runtimeSkillKey(item.skill)));
   return [
     ...skills.value.map((item) => ({ ...item, unavailable: false })),
