@@ -40,6 +40,8 @@ const emit = defineEmits<{ discard: []; save: [] }>();
   <header class="platform-page-header platform-page-gutter" :class="{ compact }">
     <div v-if="title || description || actions?.length || draft || $slots.actions" class="header-row">
       <div class="header-text">
+        <!-- What stands for the page's subject before its name (an agent's avatar). -->
+        <span v-if="$slots.leading" class="header-leading"><slot name="leading" /></span>
         <h1 v-if="title" class="page-title">{{ title }}</h1>
         <p v-if="description" class="page-description">{{ description }}</p>
       </div>
@@ -123,6 +125,11 @@ const emit = defineEmits<{ discard: []; save: [] }>();
   font-size: var(--text-sm);
   line-height: var(--leading-sm);
   color: var(--el-text-color-secondary);
+}
+.header-leading {
+  display: inline-flex;
+  align-self: center;
+  flex-shrink: 0;
 }
 .page-actions {
   display: flex;

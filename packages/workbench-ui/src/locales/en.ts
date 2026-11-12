@@ -824,7 +824,8 @@ export default {
     "dataScopeIncludeAdjacent": "Include the adjacent object types",
     "dataScopeList": "Object types",
     "dataScopeNoClasses": "This domain has no object types yet",
-    "dataScopeReset": "Reset view"
+    "dataScopeReset": "Reset view",
+    "discardConfirm": "Discard the unsaved changes to this agent?"
   },
   "scheduledTasks": {
     "title": "Scheduled tasks",

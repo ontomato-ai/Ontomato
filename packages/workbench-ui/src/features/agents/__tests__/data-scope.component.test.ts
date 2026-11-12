@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { flushPromises, mount, type VueWrapper } from "@vue/test-utils";
 import ElementPlus from "element-plus";
 import { defineComponent } from "vue";
+import { createMemoryHistory, createRouter } from "vue-router";
 import type { AssistantAgentDefinition } from "@ontomato/contracts/assistant-chat";
 import { workbenchI18n } from "../../../i18n";
 import AgentEditor from "../components/AgentEditor.vue";
@@ -27,8 +28,11 @@ const relations = [
 ];
 
 const SkillSelector = defineComponent({ emits: ["ready"], mounted() { this.$emit("ready", true); }, template: "<div />" });
+// The editor sits at its agent's address: leaving it is what its unsaved changes are checked against.
+const router = createRouter({ history: createMemoryHistory(), routes: [{ path: "/agents/settings/:agentId", component: { template: "<div />" } }] });
+await router.push("/agents/settings/agent-1");
 const global = {
-  plugins: [i18n, ElementPlus],
+  plugins: [i18n, ElementPlus, router],
   stubs: { SkillSelector, CodeEditor: { template: "<div />" } },
 };
 
@@ -115,13 +119,13 @@ describe("agent editor data scope", () => {
     const graph = wrapper.findComponent(DataScopeGraph);
     graph.vm.$emit("update:modelValue", ["Order", "Customer"]);
     await flushPromises();
-    const save = () => wrapper.findAll(".editor-bar button").find((button) => button.text() === t("common.save"))!;
+    const save = () => wrapper.findAll(".platform-page-header button").find((button) => button.text() === t("common.save"))!;
     await save().trigger("click");
     await flushPromises();
     expect(update.mock.calls[0]![1].classNames).toEqual(["Order", "Customer"]);
   });
 
-  it("keeps the editor's sections in order: basics, data scope, capabilities, model, instructions", async () => {
+  it("lays the editor out as one page of sections in order: basics, model, instructions, capabilities, data scope", async () => {
     vi.spyOn(agentDefinitionsApi, "listMcpServiceOptions").mockResolvedValue([]);
     const wrapper = mount(AgentEditor, {
       props: { agent: agent([]), classes, relations, outlineLoading: false, modelOptions: null, modelOptionsFailed: false },
@@ -131,7 +135,11 @@ describe("agent editor data scope", () => {
     wrappers.push(wrapper);
     await flushPromises();
     const sections = wrapper.findAll(".editor-section").map((section) => section.attributes("data-section"));
-    expect(sections).toEqual(["basics", "capabilities", "prompt", "data"]);
-    expect(wrapper.find('[data-section="basics"] [data-section="model"]').exists()).toBe(true);
+    expect(sections).toEqual(["basics", "model", "prompt", "capabilities", "data"]);
+    // Every section is on the page at once: no tabs or steps hide one.
+    expect(wrapper.findAll(".editor-section").every((section) => section.isVisible())).toBe(true);
+    expect(wrapper.findAll(".editor-contents .contents-link").map((link) => link.text())).toEqual([
+      t("agents.basic"), t("agents.model"), t("agents.prompt"), t("agents.capabilities"), t("agents.data"),
+    ]);
   });
 });
