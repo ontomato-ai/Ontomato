@@ -21,7 +21,6 @@ export { useAgentNav, type AgentNav, type AgentNavOptions } from "./useAgentNav"
 export { useSessionRunFeed, type SessionRunFeedOptions } from "./useSessionRunFeed";
 export {
   createAgentHostClient,
-  SessionRunStreamError,
   type AgentHostClient,
   type AgentHostClientOptions,
   type AgentHostWorkspaceScope,
