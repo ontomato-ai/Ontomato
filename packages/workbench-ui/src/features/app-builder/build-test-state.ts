@@ -13,7 +13,8 @@ export type BuildTestView = Omit<BuildTestBinding, "status"> & {
 };
 
 /**
- * A read-only mirror of the workspace's test context, read from Java every 5 seconds; only Java changes its lifecycle.
+ * A mirror of the workspace's test context, read from Java every 5 seconds. Java owns its lifecycle; the agent and the
+ * preview start a round through the same Node entry, and `refresh` reads the result.
  *
  * `binding` is Java's last answer for the workspace, null before the first one. A failed read keeps it: Java checks the
  * context again on every business call, so a failed read is no reason to rebind or reload the frame. `state` is what the

@@ -17,7 +17,7 @@ export type PanelSnap = "expand" | "close";
  *
  * With `snap`, the width stops at its bounds, and a drag carried on SNAP_DISTANCE past one is a request to leave the
  * side: `beyond` names it while the pointer is there, and releasing there calls `snap` with the width as the drag found
- * it, so the side comes back at that width.
+ * it, so the side comes back at that width. A drag the browser cancels, or whose capture is lost otherwise, only ends.
  */
 export function usePanelWidth(snap?: (edge: PanelSnap) => void) {
   const width = ref(Math.round(Math.min(Math.max(window.innerWidth * 0.42, 420), 760)));
@@ -34,12 +34,12 @@ export function usePanelWidth(snap?: (edge: PanelSnap) => void) {
   function stopResize() {
     if (!drag) return;
     drag.handle.removeEventListener("pointermove", resize);
-    drag.handle.removeEventListener("lostpointercapture", release);
+    drag.handle.removeEventListener("pointerup", release);
+    drag.handle.removeEventListener("lostpointercapture", stopResize);
     drag = null;
     resizing.value = false;
     beyond.value = null;
   }
-  // Releasing the pointer ends the capture; so does anything else that takes it away.
   function release() {
     const edge = beyond.value;
     const start = drag!.width;
@@ -54,7 +54,8 @@ export function usePanelWidth(snap?: (edge: PanelSnap) => void) {
     resizing.value = true;
     handle.setPointerCapture(event.pointerId);
     handle.addEventListener("pointermove", resize);
-    handle.addEventListener("lostpointercapture", release);
+    handle.addEventListener("pointerup", release);
+    handle.addEventListener("lostpointercapture", stopResize);
   }
   onBeforeUnmount(stopResize);
   return { width, resizing, beyond, startResize };

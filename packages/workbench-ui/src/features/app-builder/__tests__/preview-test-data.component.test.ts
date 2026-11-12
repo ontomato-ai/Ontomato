@@ -17,6 +17,7 @@ import type { WorkspaceView } from "../workspace-view";
  * empty data. The page loads once Java has first answered, so opening loads it once; it loads again when Java answers
  * another context or stage, which takes expired or ended data's results off the page, and never for a failed read, as
  * Java checks every business call itself. The page previews in every stage Java answers, and nothing offers real data.
+ * Once a round has expired or ended, its notice starts the next one from the same sample, through the agent's entry.
  */
 
 const text = publicEn.appBuilder;
@@ -40,6 +41,8 @@ let statusFails = false;
 let held: Promise<void> | null = null;
 let tokens = 0;
 let statusReads = 0;
+/** The bodies of the starts this page asked the workbench for. */
+let starts: unknown[] = [];
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
 
 beforeEach(() => {
@@ -49,6 +52,7 @@ beforeEach(() => {
   held = null;
   tokens = 0;
   statusReads = 0;
+  starts = [];
   vi.stubGlobal("fetch", async (input: string, init?: Parameters<typeof fetch>[1]) => {
     const method = init?.method ?? "GET";
     const path = new URL(input, "http://workbench.test").pathname;
@@ -58,6 +62,11 @@ beforeEach(() => {
       return statusFails ? json({ error: { code: "UPSTREAM_FAILED", message: "Data engine unavailable" } }, 502) : json(current);
     }
     if (method === "POST" && path === "/api/workspaces/w1/preview-token") return json({ token: `token-${++tokens}`, expiresAt: "" });
+    if (method === "POST" && path === "/api/workspaces/w1/build-tests") {
+      starts.push(JSON.parse(String(init!.body)));
+      current = javaContext("READY", { contextId: "context-2" });
+      return json(current);
+    }
     throw new Error(`Unexpected ${method} ${path}`);
   });
 });
@@ -193,7 +202,8 @@ describe("the preview's test data", () => {
     expect(line(wrapper)).not.toContain("left");
     expect(notice(wrapper).classes()).toContain("el-alert--warning");
     expect(notice(wrapper).find(".el-alert__title").text()).toBe(text.testClosedHint);
-    expect(notice(wrapper).find(".el-alert__description").text()).toBe("Removing the test data failed: drop table failed");
+    expect(notice(wrapper).find(".notice-detail").text()).toBe("Removing the test data failed: drop table failed");
+    expect(notice(wrapper).find(".notice-actions button").text()).toBe(text.testRestart);
     expect(frameSrc(wrapper)).not.toBe(readyFrame);
   });
 
@@ -203,7 +213,31 @@ describe("the preview's test data", () => {
 
     expect(line(wrapper)).toContain(`Expired at ${clock(NOW - 60_000)}`);
     expect(notice(wrapper).find(".el-alert__title").text()).toBe(text.testExpiredHint);
-    expect(notice(wrapper).find(".el-alert__description").exists()).toBe(false);
+    expect(notice(wrapper).find(".notice-detail").exists()).toBe(false);
+    expect(notice(wrapper).find(".notice-actions button").text()).toBe(text.testRestart);
+  });
+
+  it("restarts an expired round from its own sample, and the page runs on the new round", async () => {
+    current = javaContext("EXPIRED", { expiresAt: NOW - 60_000, sampleSummary: { name: "test-data/orders.json", classes: 1, sha256: null } });
+    const { wrapper } = await openPreview();
+    const expiredFrame = frameSrc(wrapper);
+
+    await notice(wrapper).find(".notice-actions button").trigger("click");
+    await flushPromises();
+
+    expect(starts).toEqual([{ samplePath: "test-data/orders.json" }]);
+    expect(notice(wrapper).exists()).toBe(false);
+    expect(frameSrc(wrapper)).not.toBe(expiredFrame);
+  });
+
+  it("offers no restart for a round Java recorded without its sample, nor for a failed preparation", async () => {
+    current = javaContext("CLOSED", { sampleSummary: { name: null, classes: 1, sha256: null } });
+    const { wrapper } = await openPreview();
+    expect(notice(wrapper).find(".notice-actions").exists()).toBe(false);
+
+    current = javaContext("PREPARE_FAILED", { prepareError: "bad sample" });
+    await wait(5_000);
+    expect(notice(wrapper).find(".notice-actions").exists()).toBe(false);
   });
 
   it("loads the page once, after Java's first answer, and never says no test has started before it", async () => {
