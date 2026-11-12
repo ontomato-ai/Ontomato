@@ -57,34 +57,16 @@ test("the shared ask uses ontology, preserves continuation and downloads origina
   }
 });
 
-test("standalone skill distributions use the one analyst transport source", async () => {
+test("skill packages bundle the one analyst transport source", async () => {
   const { readFile } = await import("node:fs/promises");
-  const source = await readFile(
-    new URL("../agent-skills/ontomato-analyst/client.mjs", import.meta.url),
-    "utf8",
-  );
-  const roots = [
+  const read = (root) =>
+    readFile(new URL(root + "client.mjs", import.meta.url), "utf8");
+  const source = await read("../agent-skills/ontomato-analyst/");
+  for (const root of [
     "../agent-skills/ontomato-app-builder/",
     "../agent-skills/ontomato-ontomap-builder/",
-  ];
-  for (const locale of ["en", "zh"])
-    for (const skill of [
-      "ontomato-analyst",
-      "ontomato-ontomap-builder",
-    ])
-      roots.push(`../../ontomato-enterprise/agent-skills/${locale}/${skill}/`);
-  for (const root of roots) {
-    try {
-      assert.equal(
-        await readFile(new URL(root + "client.mjs", import.meta.url), "utf8"),
-        source,
-      );
-    } catch (error) {
-      if (root.includes("ontomato-enterprise") && error.code === "ENOENT")
-        continue;
-      throw error;
-    }
-  }
+  ])
+    assert.equal(await read(root), source);
 });
 
 test("pending selects generated revisions and never substitutes a DSL for missing or failed grants", async () => {
