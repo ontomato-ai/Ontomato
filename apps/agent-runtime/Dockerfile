@@ -25,11 +25,34 @@ RUN TARGETPLATFORM=${TARGETPLATFORM} node /tmp/tools/workbench/stage-app.mjs
 COPY LICENSE NOTICE /stage/licenses/
 FROM ${PYTHON_RUNTIME_IMAGE} AS python-runtime
 ARG PIP_INDEX_URL=https://pypi.org/simple
+ARG DEBIAN_MIRROR=http://deb.debian.org/debian
+ARG DEBIAN_SECURITY_MIRROR=http://deb.debian.org/debian-security
 COPY requirements-py310.txt /tmp/requirements-py310.txt
-RUN apt-get update && apt-get install -y --no-install-recommends libstdc++6 git \
- && rm -rf /var/lib/apt/lists/* \
- && pip install --no-cache-dir --no-deps -i "${PIP_INDEX_URL}" -r /tmp/requirements-py310.txt \
- && pip check && python -c "import requests, numpy, pandas, sympy"
+# Install from the optional Debian mirror, restore the base sources afterwards,
+# and retry once from those original sources if the mirror install fails.
+RUN set -eu; \
+    sources=/etc/apt/sources.list.d/debian.sources; \
+    cp "$sources" /tmp/debian.sources.original; \
+    install_packages() { \
+      apt-get update \
+      && apt-get install -y --no-install-recommends libstdc++6 git; \
+    }; \
+    echo "Installing Debian packages from ${DEBIAN_MIRROR}"; \
+    sed -i -E \
+      -e "s#https?://deb.debian.org/debian-security#${DEBIAN_SECURITY_MIRROR}#g" \
+      -e "s#https?://deb.debian.org/debian#${DEBIAN_MIRROR}#g" \
+      "$sources"; \
+    if ! install_packages; then \
+      echo "Installing from ${DEBIAN_MIRROR} failed; retrying with the original Debian sources" >&2; \
+      cp /tmp/debian.sources.original "$sources"; \
+      install_packages; \
+    fi; \
+    cp /tmp/debian.sources.original "$sources"; \
+    rm -f /tmp/debian.sources.original; \
+    rm -rf /var/lib/apt/lists/*; \
+    pip install --no-cache-dir --no-deps -i "${PIP_INDEX_URL}" -r /tmp/requirements-py310.txt; \
+    pip check; \
+    python -c "import requests, numpy, pandas, sympy"
 COPY --from=node-runtime /usr/local/bin/node /usr/local/bin/node
 COPY --from=node-runtime /usr/local/LICENSE /usr/local/share/node/LICENSE
 COPY --from=dependencies /tmp/npm-licenses.json /tmp/npm-licenses.json
@@ -47,8 +70,30 @@ RUN rm -rf /usr/local/lib/python3.10/site-packages/pip* /usr/local/lib/python3.1
  && ! python -m pip --version
 
 FROM python-runtime AS final
-RUN apt-get update && apt-get install -y --no-install-recommends fonts-wqy-microhei fonts-dejavu-core \
- && rm -rf /var/lib/apt/lists/*
+ARG DEBIAN_MIRROR=http://deb.debian.org/debian
+ARG DEBIAN_SECURITY_MIRROR=http://deb.debian.org/debian-security
+# Install from the optional Debian mirror, restore the base sources afterwards,
+# and retry once from those original sources if the mirror install fails.
+RUN set -eu; \
+    sources=/etc/apt/sources.list.d/debian.sources; \
+    cp "$sources" /tmp/debian.sources.original; \
+    install_packages() { \
+      apt-get update \
+      && apt-get install -y --no-install-recommends fonts-wqy-microhei fonts-dejavu-core; \
+    }; \
+    echo "Installing Debian packages from ${DEBIAN_MIRROR}"; \
+    sed -i -E \
+      -e "s#https?://deb.debian.org/debian-security#${DEBIAN_SECURITY_MIRROR}#g" \
+      -e "s#https?://deb.debian.org/debian#${DEBIAN_MIRROR}#g" \
+      "$sources"; \
+    if ! install_packages; then \
+      echo "Installing from ${DEBIAN_MIRROR} failed; retrying with the original Debian sources" >&2; \
+      cp /tmp/debian.sources.original "$sources"; \
+      install_packages; \
+    fi; \
+    cp /tmp/debian.sources.original "$sources"; \
+    rm -f /tmp/debian.sources.original; \
+    rm -rf /var/lib/apt/lists/*
 ENV NODE_ENV=production AGENT_RUNTIME_HOST=0.0.0.0 AGENT_RUNTIME_ROOT=/data
 COPY --from=dependencies /opt/runtime/node_modules /opt/runtime/node_modules
 COPY --from=payload /stage/ /app/

@@ -25,6 +25,9 @@ The build host needs Node.js 24+, Git, Make and Docker with Buildx. `ARCH` defau
 to the host architecture. `PROMPT_LANG=en` selects the public Java prompts. Base
 image digests and pnpm versions live in the Dockerfiles. `DEBIAN_MIRROR`,
 `DEBIAN_SECURITY_MIRROR` and `PIP_INDEX_URL` remain host-level build settings.
+When a Debian mirror is set, the image installs its packages from it and then
+restores the base image's sources; if that install fails, it retries once from
+the original sources. Leaving the mirrors unset uses the official sources.
 
 CI publishes final images. Pushes to `develop` publish the `edge` version, pushes to
 `stable` publish the `stable` version, and formal `v*` tags publish the stripped version

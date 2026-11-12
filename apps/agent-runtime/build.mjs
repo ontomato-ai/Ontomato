@@ -19,6 +19,13 @@ import {
 } from "../../scripts/pnpm-workspace-context.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
+// Optional host-level Debian mirror; unset keeps the official sources.
+function debianMirrorArgs() {
+  return ["DEBIAN_MIRROR", "DEBIAN_SECURITY_MIRROR"].flatMap((name) => {
+    const value = process.env[name];
+    return value ? ["--build-arg", `${name}=${value}`] : [];
+  });
+}
 export const app = {
   repoRoot: root,
   publicRoot: root,
@@ -72,6 +79,7 @@ export function build(args) {
     "--platform",
     `linux/${arch}`,
     ...imageCacheArgs(),
+    ...debianMirrorArgs(),
     "--load",
     ...imageLabels(app.component, version, stamp),
     "--label",
