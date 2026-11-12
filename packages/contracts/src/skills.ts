@@ -1,17 +1,15 @@
 import type { RuntimeSkillRef } from "./agent-runtime-skills";
+/**
+ * A skill as the platform lists it. The package itself is standard frontmatter only; the title is the edition's label
+ * for a built-in skill, otherwise the skill's name, and the description is the label's or the package's own.
+ */
 export interface SkillInfo {
   id: string;
   skill: RuntimeSkillRef;
-  type: "executable" | "knowledge";
-  category: "analysis" | "visualization";
-  title?: string;
-  description?: string;
-  tags: string[];
+  title: string;
+  description: string;
   isPublic: boolean;
   path: string;
-  version: string;
-  outputType?: string;
-  useCases?: string[];
 }
 
 export interface SkillDeleteResult {

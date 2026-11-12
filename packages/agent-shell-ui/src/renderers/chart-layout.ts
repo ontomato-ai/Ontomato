@@ -2,9 +2,22 @@ import { chartAxisBounds } from "@ontomato/contracts/chart-presentation";
 
 type Option = Record<string, any>;
 
-/** Titles and legends get separate bands; scrolling keeps long legends in their own band. Axis bounds follow the shared rule. */
-export function chartReadingLayout(source: Option, height = 320, presentation: "inline" | "panel" = "panel"): Option {
+/**
+ * Titles and legends get separate bands; scrolling keeps long legends in their own band. A narrow column cuts a long
+ * title short and hides category labels that would overlap. Axis bounds follow the shared rule.
+ */
+export function chartReadingLayout(source: Option, height = 320, presentation: "inline" | "panel" = "panel", width?: number): Option {
   const option = structuredClone(source);
+  // The card header names the chart and the tooltip names each category, so neither is lost on screen.
+  const each = (value: Option | Option[], change: (item: Option) => Option) => Array.isArray(value) ? value.map(change) : change(value);
+  if (width && option.title) {
+    const fit = (style: Option | undefined) => ({ ...style, width: width - 24, overflow: style?.overflow ?? "truncate" });
+    option.title = each(option.title, (title) => ({ ...title, textStyle: fit(title.textStyle), subtextStyle: fit(title.subtextStyle) }));
+  }
+  for (const key of ["xAxis", "yAxis"]) if (option[key]) option[key] = each(option[key], (axis) =>
+    axis.type === "category" || (axis.type == null && Array.isArray(axis.data))
+      ? { ...axis, axisLabel: { ...axis.axisLabel, hideOverlap: axis.axisLabel?.hideOverlap ?? true } }
+      : axis);
   const series = [option.series ?? []].flat();
   const pies = series.filter((item) => item.type === "pie");
   const singleInlinePie = presentation === "inline" && pies.length === 1;

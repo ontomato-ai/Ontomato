@@ -5,20 +5,16 @@ import { runtimeSkillKey } from "@ontomato/contracts/agent-runtime-skills";
 import { assistantSkillCatalogSchema } from "@ontomato/contracts/assistant-chat";
 import { workbenchServerResourceRoot } from "../../content/resources";
 import { skillRegistryManager } from "../../core/skills/registry/manager";
-import { readSkillMarkdown } from "../../core/skills/manifest";
 import { HttpError } from "../../utils/errors";
 import { skillManager, skillReference } from "../skills/skill-manager";
 import { publishSkill } from "../agent-runtime/skills";
 import { tForLocale } from "../../i18n";
 
 function platformSkills() {
-  return ["assistant-report"].map((name) => {
-    const root = path.join(workbenchServerResourceRoot, "resources/runtime-skills", name);
-    const parsed = readSkillMarkdown(path.join(root, "SKILL.md"));
-    if (!parsed) throw new Error(`Missing platform skill: ${name}`);
-    return { root, skill: { namespace: { kind: "provider" as const, provider: "workbench" }, name },
-      title: parsed.manifest.title ?? name, description: parsed.manifest.description };
-  });
+  return ["assistant-report"].map((name) => ({
+    root: path.join(workbenchServerResourceRoot, "resources/runtime-skills", name),
+    skill: { namespace: { kind: "provider" as const, provider: "workbench" }, name },
+  }));
 }
 export async function registerAssistantSkills() {
   await publishSkill(path.resolve(workbenchServerResourceRoot, "../../agent-skills/ontomato-app-builder"), APP_BUILDER_SKILL);
@@ -35,7 +31,7 @@ export async function assistantSkillCatalog(domainId: string, locale?: string) {
       title: tForLocale(locale, "assistant.skills.analyst.title"),
       description: tForLocale(locale, "assistant.skills.analyst.description") },
     ...(await skillManager.getAllSkills(domainId, locale)).map((s) => ({
-      skill: s.skill, title: s.title ?? s.id, description: s.description ?? "", tags: s.tags,
+      skill: s.skill, title: s.title, description: s.description,
     })),
   ] });
 }

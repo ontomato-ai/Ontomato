@@ -23,7 +23,7 @@ export async function readSkillPackage(root: string, skill: RuntimeSkillRef) {
   await walk(root);
   const request = runtimeRegisterSkillRequestSchema.parse({ skill, files });
   const parsed = parseSkillMarkdown(files.find((file) => file.path === "SKILL.md")!.content);
-  if (!parsed || parsed.frontmatter.name !== skill.name)
+  if (!parsed || parsed.manifest.name !== skill.name)
     throw new InvalidSkillPackageError("SKILL.md must declare the package name");
   return request;
 }

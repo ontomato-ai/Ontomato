@@ -293,7 +293,7 @@ onBeforeUnmount(() => { generation++; sampleRequest++; objectSearchRequest++; wi
           <label v-if="['text', 'button', 'action', 'input'].includes(widget.kind)">{{ ot('ovText') }}<el-input v-model="widget.text" type="textarea" :autosize="{ minRows: 3, maxRows: 8 }" /></label>
           <label v-if="['metric', 'table', 'chart'].includes(widget.kind)">{{ ot('ovMetricView') }}<el-select v-model="widget.resourceId" clearable filterable><el-option v-for="asset in metrics" :key="asset.id" :value="asset.id!" :label="asset.name" /></el-select></label>
           <label v-if="widget.kind === 'action'">{{ ot('ovAction') }}<el-select v-model="widget.resourceId" filterable><el-option v-for="asset in actions" :key="asset.id" :value="asset.id!" :label="asset.name" /></el-select></label>
-          <label v-if="widget.kind === 'chart'">{{ ot('ovVisualizationSkill') }}<el-select v-model="widget.skillId" filterable><el-option v-for="skill in skills" :key="skill.id" :value="skill.id" :label="skill.title || skill.id" /></el-select></label>
+          <label v-if="widget.kind === 'chart'">{{ ot('ovVisualizationSkill') }}<el-select v-model="widget.skillId" filterable><el-option v-for="skill in skills" :key="skill.id" :value="skill.id" :label="skill.title" /></el-select></label>
           <section v-if="widget.resourceId" class="parameter-settings">
             <h4>{{ ot('ovParameterBindings') }}</h4>
             <div v-for="(_, name) in widget.parameters" :key="name" class="parameter">

@@ -1,13 +1,6 @@
 ---
 name: echarts
 description: Self-contained ECharts chart rendering, supporting bar charts, line charts, pie charts, hierarchical charts, advanced charts, and the full series of chart types. Automatically completes data analysis and chart configuration selection internally.
-metadata:
-  ontomato.type: executable
-  ontomato.category: visualization
-  ontomato.title: ECharts chart rendering
-  ontomato.tags: '["visualization","echarts","chart"]'
-  ontomato.version: 2.0.0
-  ontomato.outputType: html
 ---
 
 ## Standard CLI
