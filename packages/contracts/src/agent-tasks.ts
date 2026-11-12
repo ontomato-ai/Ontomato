@@ -1,4 +1,6 @@
 import { z } from "zod";
+import { runtimeMessageRecordSchema } from "./agent-runtime";
+import { agentRefSchema, agentSessionRefSchema, agentExecutionRefSchema, agentNotificationSchema } from "./agent-channel";
 import { truncationSchema } from "./data-retrieval";
 import { runtimeIdSchema, runtimeTimestampSchema } from "./agent-runtime-values";
 
@@ -7,7 +9,7 @@ import { runtimeIdSchema, runtimeTimestampSchema } from "./agent-runtime-values"
  * a quality task is the quality job one branch of that round scheduled (its ID). Nothing here is stored as a task.
  */
 const id = runtimeIdSchema;
-export const agentTaskStatusSchema = z.enum(["running", "completed", "failed", "cancelled"]);
+export const agentTaskStatusSchema = z.enum(["starting", "running", "completed", "failed", "cancelled"]);
 /** Why a task or branch did not complete; the owner chooses the code, the message is its own text when it has one. */
 export const agentTaskErrorSchema = z.object({ code: z.string().min(1), message: z.string().nullable() }).strict();
 /** The reply that delegated the task: the host's conversation and the run that is its reply. */
@@ -15,6 +17,7 @@ export const agentTaskRootSchema = z.object({ sessionId: id, runId: id }).strict
 /** A task's own agent run, readable while and after it runs; none before the run was admitted, or for a job. */
 export const agentTaskProcessSchema = z.discriminatedUnion("mode", [
   z.object({ mode: z.literal("inline"), runtimeSessionId: id, runtimeRunId: id }).strict(),
+  z.object({ mode: z.literal("page"), href: z.string().min(1) }).strict(),
   z.object({ mode: z.literal("none") }).strict(),
 ]);
 export const retrievalBranchSourceSchema = z.enum(["binding", "retriever"]);
@@ -53,7 +56,14 @@ export const qualityTaskSchema = z.object({
   /** What was checked: one branch of the parent round and the datasets it delivered. */
   checks: z.object({ source: retrievalBranchSourceSchema, datasetIds: z.array(id) }).strict(),
 }).strict();
-export const agentTaskSchema = z.discriminatedUnion("kind", [retrievalTaskSchema, qualityTaskSchema]);
+export const channelAgentTaskSchema = z.object({
+  ...taskFields, kind: z.literal("agent"), title: z.string(),
+  requestedBy: agentExecutionRefSchema, parentTaskId: id.nullable(),
+  agentRef: agentRefSchema, sessionRef: agentSessionRefSchema, runId: id,
+  process: agentTaskProcessSchema,
+  results: z.array(z.object({ kind: z.string(), href: z.string(), title: z.string() }).strict()),
+}).strict();
+export const agentTaskSchema = z.discriminatedUnion("kind", [retrievalTaskSchema, qualityTaskSchema, channelAgentTaskSchema]);
 /** A completed check's conclusion; a check that did not complete has none, only its task's error. */
 export const qualityResultSchema = z.object({
   taskId: id, score: z.number().finite(),
@@ -65,6 +75,9 @@ export const agentTasksSnapshotSchema = z.object({
   sessionId: id,
   tasks: z.array(agentTaskSchema),
   qualityResults: z.array(qualityResultSchema),
+  notifications: z.array(runtimeMessageRecordSchema.extend({ message: agentNotificationSchema })).optional(),
+  /** Failed preparations have no run; the intent owns this diagnostic, never a synthetic user message. */
+  preparationFailures: z.array(z.object({ runId: id, inputId: id, error: z.string(), createdAt: runtimeTimestampSchema }).strict()).optional(),
 }).strict();
 /**
  * One `event: tasks` frame of a session's task stream: always the complete snapshot. `settled` says nothing will change
@@ -96,3 +109,5 @@ export type QualityResult = z.infer<typeof qualityResultSchema>;
 export type AgentTasksSnapshot = z.infer<typeof agentTasksSnapshotSchema>;
 export type AgentTasksFrame = z.infer<typeof agentTasksFrameSchema>;
 export type CallerTasks = z.infer<typeof callerTasksSchema>;
+
+export type ChannelAgentTask = z.infer<typeof channelAgentTaskSchema>;

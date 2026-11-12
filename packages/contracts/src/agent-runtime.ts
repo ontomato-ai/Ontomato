@@ -1,3 +1,4 @@
+import { agentRunContextSchema, agentNotificationSchema, agentAuthoritySchema } from "./agent-channel";
 import { workspaceCommitSchema } from "./workspaces";
 import { serviceLogCorrelationSchema } from "./service-logging";
 import { z } from "zod";
@@ -77,7 +78,9 @@ export const runtimeStartRunRequestSchema = z
   .object({
     language: runtimeKeySchema,
     definition: runtimeAgentDefinitionSchema,
-    input: runtimeUserMessageSchema,
+    input: z.union([runtimeUserMessageSchema, agentNotificationSchema]),
+    channel: agentRunContextSchema.optional(),
+    authority: agentAuthoritySchema.optional(),
     environment: runtimeEnvironmentSchema,
   })
   .strict();
@@ -111,6 +114,7 @@ const runtimeRunFields = {
   answerMessageId: runtimeIdSchema.nullable(),
   /** Commit created by this run, never the workspace HEAD from another run. */
   workspaceCommit: workspaceCommitSchema.nullable(),
+  channel: agentRunContextSchema.optional(),
   resolvedSkills: z.array(runtimeRegisteredSkillSchema),
   environment: z.object({
     values: z.record(z.string()),
@@ -155,11 +159,11 @@ export const runtimeCreateSessionResponseSchema = z
   })
   .strict();
 
-/** Raw settled history is append-only. Compaction never replaces these rows. */
+/** Inputs receive an ID and sequence on receipt; runId stays null until a safe consumption boundary. */
 export const runtimeMessageRecordSchema = z
   .object({
     id: runtimeIdSchema,
-    runId: runtimeIdSchema,
+    runId: runtimeIdSchema.nullable(),
     messageSeq: runtimeSequenceSchema,
     message: runtimeSettledMessageSchema,
   })

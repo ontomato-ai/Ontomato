@@ -1,3 +1,4 @@
+import { agentNotificationSchema } from "./agent-channel";
 import { workspaceCommitSchema } from "./workspaces";
 import { runtimeArtifactSchema } from "./agent-runtime-artifacts";
 import { z } from "zod";
@@ -36,6 +37,8 @@ export const runtimeToolResultSchema = z
 /** PI lifecycle names with stable message identities and an explicit persisted terminal status. */
 export const runtimeAgentEventSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("agent_start") }).strict(),
+  z.object({ type: z.literal("notification_received"), messageId: runtimeIdSchema,
+    messageSeq: runtimeSequenceSchema, message: agentNotificationSchema }).strict(),
   z
     .object({
       type: z.literal("artifact_registered"),

@@ -347,3 +347,52 @@ never full messages, thinking, tools or annotations. Artifact content is read th
 Only hosts configured with `domainHistory: true` can read another host's projection; shipped
 configuration grants this to ontology alone. Other runtime routes remain host-scoped.
 `definition.agentId` is an optional opaque host-owned agent identity for filtering.
+
+## Agent channel
+
+`agent-channel.ts` owns provider/session/execution references, directory entries, actor references,
+inputs and provider callbacks. Fixed server configuration maps providers to host credentials and
+callback URLs. Models cannot supply identity, domain, credentials or callback addresses.
+
+The native `agent` tool is installed by the runtime for provider-prepared runs with an actor reference. Legacy start entry points receive no channel tool during A1. `start` creates a child session; `send` is
+restricted to the creator and created children. Inputs have one stable message ID and sequence
+assigned on receipt, with a null runId until consumed. Notifications retain their role through
+history and UI; only the model boundary presents them as explicitly attributed context.
+
+Provider `prepare` receives mode `run` or `steer`, the execution language and a typed input, including question kind and
+replyTo. Questions do not stop the sender. A1 consumes messages at the end-of-loop boundary;
+explicit steering and the full question/answer flow land in A2. The runtime reserves a preparing
+intent under the session lock, calls prepare outside it, then confirms admission under the lock.
+At a terminal loop boundary it atomically consumes inputs or seals the loop. Later input belongs
+to the next intent. Each execution fixes requestedBy and root independently of the creation tree.
+
+Callbacks are POST prepare/settle/read/cancel beneath the configured provider URL. Prepare
+returns a runtime start request; steer acknowledges the host's input recording. Settle closes
+business eligibility; read returns the host's delivery projection. Cancel closes eligibility
+before runtime cancellation. Runtime cancellation includes execution descendants and suppresses
+automatic wakeup from that cancellation. No platform task table or delegation budget is added.
+
+### A2 entry-point migration checklist
+
+A1 and A2 ship together. The following legacy Java entry points deliberately keep the original
+start protocol and have no native agent tool in A1; migrate them as whole paths in A2:
+
+- `OntologyRetrievalService` / `OntologyAgentHost`: move retrieval admission, binding startup,
+  query scope, caller user quotes, continuation IDs and confirmed-decision revision into prepare.
+  Both ask-created and directly messaged retrieval runs need the same actor and prepare path.
+  Move result publication and the two-branch completion rule into settle/changed; preserve
+  cancellation eligibility. Answers carrying replyTo update confirmed decisions at prepare.
+- `ActionCreationService`: extract the existing write-authority gate, runtime definition, skill
+  publication and environment from start into prepare; provide actor recovery, settle/read/cancel
+  and the real action/session result references.
+- `OntologyGenerationService`: extract generation/test admission, sandbox authority, runtime
+  definition and environment into prepare; provide actor recovery, generation result projection,
+  settle/read/cancel and retain build-test restrictions.
+
+Then migrate every ask skill/client, external HTTP/SSE/CLI and needs-input/steering consumer,
+remove the old ask routes and polling reads, and verify the complete integration before release.
+Node auxiliary one-shot model calls are also still raw start consumers; they expose no agent tool.
+
+Failed preparations are projected from the existing admission intent in `preparationFailures`.
+The conversation shows the failure beside its received input, including when an expired actor
+prevents an automatic wake. Diagnostics are not new model inputs and cannot trigger another wake.
