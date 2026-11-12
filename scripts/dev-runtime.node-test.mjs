@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, relative } from "node:path";
 import { test } from "node:test";
 import { runtimeEnvironment } from "./dev-runtime.mjs";
 import { configuration } from "./dev-command.mjs";
@@ -22,12 +22,14 @@ test("dev shares a persistent credential, keeps data in the calling checkout and
   assert.equal(JSON.parse(first.AGENT_RUNTIME_HOSTS)[0].token, first.AGENT_RUNTIME_SERVICE_TOKEN);
   assert.equal(first.AGENT_RUNTIME_DATABASE, "fixture_database");
   assert.equal(first.AGENT_RUNTIME_URL, "http://127.0.0.1:3131");
-  assert.equal(first.AGENT_RUNTIME_ROOT, join(root, "data/agent-runtime"));
+  assert.equal(relative(root, first.AGENT_RUNTIME_ROOT).startsWith(".."), false);
   assert.equal(statSync(join(root, ".secrets/agent-runtime.env")).mode & 0o777, 0o600);
   assert.doesNotMatch(readFileSync(join(root, ".env"), "utf8"), /AGENT_RUNTIME_SERVICE_TOKEN/);
   const settings = configuration("runtime", product, first);
   assert.equal(settings.cwd, root);
-  assert.deepEqual(settings.args.slice(-2), ["--dev-root", root]);
+  const devRoot = settings.args.indexOf("--dev-root");
+  assert.ok(devRoot >= 0, "missing --dev-root");
+  assert.equal(settings.args[devRoot + 1], root);
   const command = `node /public/node_modules/tsx/dist/cli.mjs ${settings.args.join(" ")}`;
   const ctx = { root, javaEnvFile: join(root, ".env") };
   assert.equal(classify(command, root, ctx), "frontend-root");

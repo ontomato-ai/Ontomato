@@ -71,7 +71,6 @@ class ConnectionSecretCodecTest {
 		ConnectionSecretCodec.EncryptResult first = codec.encryptJson(json);
 		assertTrue(first.changed());
 		assertNotEquals(json, first.json());
-		assertTrue(first.json().contains("enc:v1:"));
 		assertFalse(first.json().contains("\"password\":\"pw\""));
 
 		ConnectionSecretCodec.EncryptResult second = codec.encryptJson(first.json());

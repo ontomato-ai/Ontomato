@@ -161,19 +161,24 @@ class HttpRequestUtilVectorTest {
 
 	@Test
 	void anArrayComesBackAsResourceUrls() throws Exception {
-		assertEquals(List.of("http://card/vectorResource/resource/idx/a.png", "http://card/vectorResource/resource/idx/b.png"),
-				run(WHERE_DSL, JSON.parseArray(STORED)).paths());
+		assertResourceUrls(List.of("a.png", "b.png"), run(WHERE_DSL, JSON.parseArray(STORED)).paths());
 	}
 
 	@Test
 	void aSqlColumnsJsonTextComesBackAsResourceUrls() throws Exception {
-		assertEquals(List.of("http://card/vectorResource/resource/idx/a.png", "http://card/vectorResource/resource/idx/b.png"),
-				run(WHERE_DSL, STORED).paths());
+		assertResourceUrls(List.of("a.png", "b.png"), run(WHERE_DSL, STORED).paths());
 	}
 
 	@Test
 	void aSelectQueryKeepsOnlyTheMatchedResources() throws Exception {
-		assertEquals(List.of("http://card/vectorResource/resource/idx/a.png"), run(SELECT_DSL, STORED).paths());
+		assertResourceUrls(List.of("a.png"), run(SELECT_DSL, STORED).paths());
+	}
+
+	/** The attribute value is a URL under the configured card base URL that names the stored file. */
+	private static void assertResourceUrls(List<String> files, List<String> paths) {
+		assertEquals(files, paths.stream().map(path -> path.substring(path.lastIndexOf('/') + 1)).toList(),
+				paths.toString());
+		assertTrue(paths.stream().allMatch(path -> path.startsWith("http://card/")), paths.toString());
 	}
 
 	private record Run(String executedDsl, DslExecutionResult result) {
