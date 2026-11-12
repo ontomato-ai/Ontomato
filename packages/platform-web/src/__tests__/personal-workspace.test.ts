@@ -143,9 +143,8 @@ describe("personal workspace", () => {
     expect(wrapper.text()).toContain("Task service unavailable");
     const applicationLink = wrapper.find('a.application-card');
     expect(applicationLink.attributes('href')).toBe('/applications/app-orders');
-    expect(applicationLink.attributes('target')).toBe('_blank');
-    expect(applicationLink.attributes('rel')).toBe('noopener');
-    expect(open).not.toHaveBeenCalled();
+    await applicationLink.trigger('click');
+    expect(open).toHaveBeenCalledWith('app-orders');
     await wrapper.find('.board-link').trigger("click");
     await flushPromises();
     expect(router.currentRoute.value.fullPath).toBe("/dashboards?dashboardId=board-a");

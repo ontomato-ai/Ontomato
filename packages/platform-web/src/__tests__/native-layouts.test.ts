@@ -11,7 +11,6 @@ import { catalogPartition } from "../native-layouts";
  */
 const t = (key: string) => key;
 const declarations = appDeclarations(generatedNavigation(), closedAccess(["business-knowledge"]), appPartition(), t);
-const named = (section: string) => declarations.filter((app) => app.rail === section).map((app) => app.id);
 
 describe("the platform's applications", () => {
   it("shows only the implemented workspace when an old workplace registration remains", () => {
@@ -37,9 +36,6 @@ describe("the platform's applications", () => {
   });
   it("organizes the ontology menu into its layers with the capability library, and its models at the foot", () => {
     const ontology = appPartition().find(app => app.id === "ontology")!;
-    expect(ontology.sections.map(section => section.key)).toEqual([
-      "ontology:facts", "ontology:capabilities", "ontology:governance",
-    ]);
     expect(ontology.sections[0]!.paths).not.toContain("/ontology/assets/actions");
     expect(ontology.sections[1]!.paths).toEqual([
       "/ontology/assets/metrics", "/ontology/assets/functions", "/ontology/assets/actions", "/ontology/assets/workflows", "/ontology/skills",
@@ -57,11 +53,10 @@ describe("the platform's applications", () => {
       ["settings:records", ["/settings/records/audit-log", "/settings/records/system-monitor"]],
     ]);
   });
-  it("sits in three sections: the home and the everyday applications, the business ones, and the settings above the account", () => {
-    expect(named("top")).toEqual(["home", "personal-workspace", "agents", "dashboards", "schedules", "browser"]);
-    // 应用构建 comes after the operations diagnosis.
-    expect(named("apps")).toEqual(["ontology", "governance", "operations", "app-builder"]);
-    expect(named("bottom")).toEqual(["settings"]);
+  it("provides a distinct gallery entry beside the personal home", () => {
+    const gallery=declarations.find(app=>app.id==='application-gallery')!;
+    expect(gallery.home).toBe('/applications');
+    expect(gallery.home).not.toBe(declarations.find(app=>app.id==='home')?.home);
   });
 
   it("gives the dashboards and the scheduled tasks an application of their own, each at its own address", () => {

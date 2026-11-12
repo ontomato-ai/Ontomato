@@ -15,10 +15,12 @@ import {
   Sparkles,
   Table2,
   Waypoints,
+  Grid2X2,
 } from "lucide-vue-next";
 
 /** Applications name icons; the shell resolves a curated set so the rail does not pull in whole icon packs. */
 const appIcons: Record<string, Component> = {
+  gallery: Grid2X2,
   /** 主页 */
   home: House,
   /** 智能体平台 */

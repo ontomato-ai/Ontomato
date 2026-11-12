@@ -9,6 +9,13 @@ import { zodToJsonSchema } from "zod-to-json-schema";
 import {productDependencies} from '@ontomato/contracts/product-dependencies';
 
 const router: ReturnType<typeof Router> = Router();
+router.post('/:id/create-page',wrap(async(req,res)=>{
+  const {owner,credentials}=context(req);
+  const source=await getProduct(owner,String(req.params.id));
+  const {name}=z.object({name:z.string().trim().min(1).max(200)}).strict().parse(req.body);
+  if(source.document.kind!=='layout-template')throw new HttpError(400,'Choose a layout template','INVALID_HOME_TEMPLATE');
+  res.json({asset:await saveProduct(owner,randomUUID(),{name,description:source.description,visibility:'private',document:{...source.document,kind:'page'}},0,credentials)});
+}));
 router.get("/types", wrap(async (_req,res) => { res.json({types:productTypes,schema:zodToJsonSchema(productSaveSchema,{target:"jsonSchema7"})}); }));
 router.get("/home", wrap(async (req,res) => { const c=context(req);res.json({asset:await personalHome(c.owner,c.credentials)}); }));
 router.get("/", wrap(async (req,res) => { res.json({assets:await listProducts(context(req).owner)}); }));

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from "vue";
+import { computed, inject, onMounted, ref } from "vue";
 import { randomId } from "@ontomato/contracts/random-id";
 import { productAssetSchema, type ProductAsset } from "@ontomato/contracts/product-assets";
 import { AgentPicker, ShellComposer } from "@ontomato/agent-shell-ui";
@@ -17,6 +17,8 @@ import type { DashboardListItem } from "@ontomato/contracts/dashboard";
 import { platformSchedulesPath, platformTaskListSchema, type PlatformTask } from "@ontomato/contracts/platform-schedules";
 import { platformRoutes } from "@ontomato/platform-shell/routes";
 import { useApplicationCatalog } from "../catalog";
+import {openApplicationKey} from '../apps';
+import {HOME_PREFERENCES_CHANGED} from '../features/home/api';
 import AppPage from "./AppPage.vue";
 import WorkspaceSkeleton from "./WorkspaceSkeleton.vue";
 import { AppWindow, ArrowUpRight, CircleAlert, Clock3, LayoutDashboard, MoreHorizontal, Pin, RefreshCw, Settings2, Sparkles } from "lucide-vue-next";
@@ -25,6 +27,7 @@ import { agentHostAgentListSchema, agentHostCreateSessionResponseSchema, agentHo
 const { locale } = useI18n();
 const props=defineProps<{productAssetId?:string}>();
 const router = useRouter();
+const openApplication=inject(openApplicationKey)!;
 const catalog = useApplicationCatalog();
 const config = ref(defaultPersonalWorkspace());
 const homeAsset = ref<ProductAsset | null>(null);
@@ -254,11 +257,12 @@ const text = computed(() => locale.value.startsWith("zh") ? {
   unavailable: "This resource was removed or is unavailable. Choose a replacement in settings.", selection: "Items appear in selection order. Deselect and select again to reorder.",
   attention: "Task activity", issues: "Need intervention", results: "Recent results", runningTasks: "Running", clear: "No scheduled tasks need intervention", recent: "Recent work", emptyRecent: "Open an application, dashboard or analysis conversation to resume it here", recentApps: "Recently used", pinned: "Pinned", updated: "Last visited", noAttention: "Task issues and results from the last 7 days appear here", assistantHint: "Assistant", assistantDescription: "Query data and investigate questions in a conversation", noApps: "No frequently used applications yet",
 });
-const apps = computed(() => catalog.applications.value.filter(app => app.id !== "personal-workspace" && app.id !== "home"));
+const apps = computed(() => catalog.applications.value.filter(app => !["personal-workspace","workplace","home","application-gallery"].includes(app.id)));
 const canBuild = computed(() => catalog.applications.value.some(app => app.id === "app-builder"));
 const canChat = computed(() => catalog.applications.value.some(app => app.id === "agents"));
 const selectedDashboards = computed(() => config.value.dashboardIds.map(id => ({ id, resource: dashboards.value.find(board => board.id === id) })));
 const selectedApps = computed(() => config.value.applicationIds.map(id => ({ id, resource: apps.value.find(app => app.id === id) })));
+const selectedAgents=computed(()=>config.value.agentIds.flatMap(id=>enabledAgents.value.find(agent=>agent.id===id)??[]));
 function applicationHref(id: string) {
   const app=catalog.applications.value.find(app=>app.id===id);
   return router.resolve({ path: app?.kind==='native' ? app.entry.home ?? app.entry.path : `/applications/${encodeURIComponent(id)}` }).href;
@@ -354,6 +358,7 @@ async function save() {
   await load("save", async () => {
     const body = homeAsset.value ? await saveComposition() : await saveConfiguration(personalWorkspaceSchema.parse(draft.value));
     acceptConfig(body);
+    window.dispatchEvent(new Event(HOME_PREFERENCES_CHANGED));
     editing.value = false;
     await readProducts();
   });
@@ -510,21 +515,21 @@ const actions = computed(() => [
           <WorkspaceSkeleton v-if="catalog.loading.value" :label="text.loading" :rows="2" />
           <div v-else-if="catalog.error.value" role="alert">{{ catalog.error.value }} <el-button @click="catalog.refresh">{{ text.retry }}</el-button></div>
           <template v-else>
-            <p v-if="!selectedApps.length" class="workspace-empty">{{ text.emptyApps }}</p>
-            <el-button v-if="!selectedApps.length" :disabled="saving || refreshing" @click="configure('resources')">{{ interactionLabels.configure }}</el-button>
+            <p v-if="!selectedApps.length&&!selectedAgents.length" class="workspace-empty">{{ text.emptyApps }}</p>
+            <el-button v-if="!selectedApps.length&&!selectedAgents.length" :disabled="saving || refreshing" @click="configure('resources')">{{ interactionLabels.configure }}</el-button>
             <div class="application-grid">
             <article v-for="app in selectedApps" :key="app.id" class="application-resource">
-              <a v-if="app.resource" class="application-card" :href="applicationHref(app.id)" target="_blank" rel="noopener" :aria-label="`${app.resource.names[locale] ?? app.resource.names.en}（${locale.startsWith('zh') ? '在新标签页打开' : 'opens in a new tab'}）`" :title="locale.startsWith('zh') ? '在新标签页打开' : 'Opens in a new tab'">
+              <a v-if="app.resource" class="application-card" :href="applicationHref(app.id)" @click.prevent="openApplication(app.id)">
                  <AppWindow :size="18" class="resource-icon" aria-hidden="true" />
                 <span class="resource-body"><strong>{{ app.resource.names[locale] ?? app.resource.names.en }}</strong><span>{{ app.resource.descriptions[locale] ?? app.resource.descriptions.en ?? text.application }}</span></span>
-                <ArrowUpRight :size="16" aria-hidden="true" />
               </a>
               <p v-else>{{ text.unavailable }}</p>
             </article>
+            <article v-for="agent in selectedAgents" :key="agent.id" class="application-resource"><button class="application-card" @click="router.push({path:platformRoutes.chat.path,query:{agentId:agent.id}})"><Sparkles :size="18" class="resource-icon"/><span class="resource-body"><strong>{{agent.name}}</strong><span>{{agent.description}}</span></span></button></article>
             </div>
             <h3 v-if="recentApps.length">{{ text.recentApps }}</h3>
             <article v-for="app in recentApps" :key="app.id" class="workspace-item">
-              <a class="resource-link" :href="applicationHref(app.id)" target="_blank" rel="noopener" :title="locale.startsWith('zh') ? '在新标签页打开' : 'Opens in a new tab'">{{ app.names[locale] ?? app.names.en }} <ArrowUpRight :size="14" aria-hidden="true" /></a>
+              <a class="resource-link" :href="applicationHref(app.id)" @click.prevent="openApplication(app.id)">{{ app.names[locale] ?? app.names.en }}</a>
             </article>
           </template>
         </template>
@@ -571,6 +576,7 @@ const actions = computed(() => [
             <el-option v-for="id in draft.applicationIds.filter(id => !apps.some(app => app.id === id))" :key="id" :value="id" :label="text.unavailable" />
           </el-select>
         </el-form-item>
+        <el-form-item :label="locale.startsWith('zh')?'常用智能体':'Pinned agents'"><el-select v-model="draft.agentIds" multiple filterable :disabled="busy.agents||!!errors.agents"><el-option v-for="agent in enabledAgents" :key="agent.id" :value="agent.id" :label="agent.name"/></el-select></el-form-item>
         <p>{{ text.selection }}</p>
         </el-tab-pane>
         <el-tab-pane name="opening" :label="interactionLabels.title">
