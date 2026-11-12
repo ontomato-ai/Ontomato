@@ -1,18 +1,25 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
+import { AgentPicker, ShellComposer } from "@ontomato/agent-shell-ui";
+import { ElMessageBox } from "element-plus";
+import { readRememberedAgent } from "@ontomato/workbench-ui";
+import { homeStateSchema, type HomeState } from "@ontomato/contracts/platform-home";
+import type { WorkspaceObjectReference } from "@ontomato/contracts/workspace-objects";
 import { useI18n } from "vue-i18n";
 import { useRouter } from "vue-router";
 import { nodeApiRequest } from "@ontomato/workbench-ui";
-import { defaultPersonalWorkspace, personalWorkspaceSchema, recentWorkListSchema, type RecentWork } from "@ontomato/contracts/personal-workspace";
+import { defaultPersonalWorkspace, personalWorkspaceSchema, recentWorkListSchema, type RecentWork, type WorkspaceSection } from "@ontomato/contracts/personal-workspace";
+import { ManagerFrame, ObjectViewPage } from "@ontomato/ontology-manager";
 import { DashboardCardPicker, DashboardMetricPreview } from "@ontomato/workbench-ui/features/dashboard";
 import type { DashboardListItem } from "@ontomato/contracts/dashboard";
 import { platformSchedulesPath, platformTaskListSchema, type PlatformTask } from "@ontomato/contracts/platform-schedules";
 import { platformRoutes } from "@ontomato/platform-shell/routes";
 import { useApplicationCatalog } from "../catalog";
 import AppPage from "./AppPage.vue";
-import { AppWindow, ArrowUpRight, CircleAlert, Clock3, LayoutDashboard, RefreshCw, Settings2, Sparkles } from "lucide-vue-next";
+import WorkspaceSkeleton from "./WorkspaceSkeleton.vue";
+import { AppWindow, ArrowUpRight, CircleAlert, Clock3, LayoutDashboard, MoreHorizontal, Pin, RefreshCw, Settings2, Sparkles } from "lucide-vue-next";
 import WorkspaceResourceDetail, { type WorkspaceResource } from "./WorkspaceResourceDetail.vue";
-import { agentHostAgentListSchema, agentHostCreateSessionResponseSchema } from "@ontomato/contracts/agent-host";
+import { agentHostAgentListSchema, agentHostCreateSessionResponseSchema, agentHostSessionSnapshotSchema, type AgentHostAgent, type AgentHostSession } from "@ontomato/contracts/agent-host";
 const { locale } = useI18n();
 const router = useRouter();
 const catalog = useApplicationCatalog();
@@ -32,30 +39,141 @@ const presentation = ref<"drawer" | "dialog">("drawer");
 const resourceOpen = ref(false);
 const analysisBusy = ref(false);
 const analysisError = ref("");
+const objectPreview = ref<WorkspaceObjectReference | null>(null);
+const objectPreviewOpen = ref(false);
+const settingsTab = ref("layout");
+function sectionName(section: WorkspaceSection) {
+  return ({ apps: workspaceText.value.resources, data: text.value.data, conversations: workspaceText.value.continue,
+    objects: locale.value.startsWith("zh") ? "收藏的对象" : "Pinned objects", tasks: text.value.attention, recent: workspaceText.value.recent })[section];
+}
+function presetSections(layout: string): { main: WorkspaceSection[]; sidebar: WorkspaceSection[]; hidden: WorkspaceSection[] } {
+  return layout === "tasks" ? { main: ["tasks", "data"], sidebar: ["conversations", "objects", "apps", "recent"], hidden: [] }
+    : { main: layout === "data" ? ["data", "apps"] : ["apps", "data"], sidebar: ["conversations", "objects", "tasks", "recent"], hidden: [] };
+}
+function moveSection(section: WorkspaceSection, destination: "main" | "sidebar" | "hidden") {
+  const sections = draft.value.sections!;
+  for (const key of ["main", "sidebar", "hidden"] as const) sections[key] = sections[key].filter(item => item !== section);
+  sections[destination].push(section);
+}
+function orderSection(column: "main" | "sidebar" | "hidden", index: number, offset: number) {
+  const items = draft.value.sections![column]; const [item] = items.splice(index, 1); items.splice(index + offset, 0, item!);
+}
+const agents = ref<AgentHostAgent[]>([]);
+const agentId = ref<string | null>(readRememberedAgent());
+const homeState = ref<HomeState | null>(null);
+const pinnedSessions = ref<Record<string, AgentHostSession>>({});
+const pinErrors = ref<Record<string, string>>({});
+const pinned = computed(() => config.value.pinnedAnalyses.map(item => ({ ...item, session: pinnedSessions.value[item.sessionId] })));
+let pinReadRevision = 0;
+const enabledAgents = computed(() => agents.value.filter(agent => agent.enabled));
+const conversations = computed(() => (homeState.value?.recentConversations ?? []).filter(item => enabledAgents.value.some(agent => agent.id === item.agentId) && !config.value.pinnedAnalyses.some(pin => pin.sessionId === item.sessionId)).slice(0, 4));
+async function readPinned() {
+  const revision = ++pinReadRevision;
+  await load("pins", async () => {
+    const sessions: Record<string, AgentHostSession> = {}, failures: Record<string, string> = {};
+    await Promise.all(config.value.pinnedAnalyses.map(async item => {
+      try { sessions[item.sessionId] = agentHostSessionSnapshotSchema.parse(await json(`/api/assistant/sessions/${item.sessionId}`)).session; }
+      catch { failures[item.sessionId] = locale.value.startsWith("zh") ? "会话暂不可访问" : "Conversation unavailable"; }
+    }));
+    if (revision === pinReadRevision) { pinnedSessions.value = sessions; pinErrors.value = failures; }
+  });
+}
+async function updatePins(next: typeof config.value.pinnedAnalyses) {
+  if (saving.value || editing.value) return;
+  saving.value = true;
+  await load("pinsSave", async () => {
+    const result = await json("/api/personal-workspace", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...config.value, pinnedAnalyses: next }) });
+    config.value = personalWorkspaceSchema.parse(result.data);
+    await readPinned();
+  });
+  saving.value = false;
+}
+function pinConversation(item: { sessionId: string; title: string }) {
+  void updatePins([...config.value.pinnedAnalyses, { sessionId: item.sessionId, title: conversationTitle(item.title).slice(0, 200) }]);
+}
+async function renamePin(id: string) {
+  const item = config.value.pinnedAnalyses.find(item => item.sessionId === id)!;
+  try {
+    const result = await ElMessageBox.prompt(locale.value.startsWith("zh") ? "仅修改工作台中的名称" : "Change the name in this workspace only", locale.value.startsWith("zh") ? "重命名分析" : "Rename analysis", {
+      inputValue: item.title, inputValidator: value => !!value?.trim() && value.trim().length <= 200,
+      confirmButtonText: text.value.save, cancelButtonText: text.value.cancel,
+    });
+    await updatePins(config.value.pinnedAnalyses.map(pin => pin.sessionId === id ? { ...pin, title: result.value.trim() } : pin));
+  } catch { /* Dismissing the name editor leaves the saved reference untouched. */ }
+}
+function movePin(index: number, offset: number) {
+  const next = [...config.value.pinnedAnalyses];
+  const [item] = next.splice(index, 1); next.splice(index + offset, 0, item!); void updatePins(next);
+}
+async function removeObject(item: WorkspaceObjectReference) {
+  if (saving.value) return;
+  saving.value = true;
+  await load("objectsSave", async () => {
+    const next = { ...config.value, pinnedObjects: config.value.pinnedObjects.filter(value => value.className !== item.className || value.primaryKey !== item.primaryKey) };
+    config.value = personalWorkspaceSchema.parse((await json("/api/personal-workspace", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(next) })).data);
+  });
+  saving.value = false;
+}
+function openObject(item: WorkspaceObjectReference) {
+  if (config.value.objectOpening === "drawer") { objectPreview.value = item; objectPreviewOpen.value = true; return; }
+  openObjectPage(item);
+}
+function openObjectPage(item: WorkspaceObjectReference) {
+  objectPreviewOpen.value = false;
+  void router.push({ name: platformRoutes.objectView.name, params: { className: item.className }, query: { key: item.primaryKey, from: "workspace" } });
+}
+function askObject(item: WorkspaceObjectReference) {
+  const question = locale.value.startsWith("zh")
+    ? `请分析对象「${item.title}」。对象引用：${JSON.stringify({ className: item.className, primaryKey: item.primaryKey })}。请先按现有权限读取并核实该对象，说明可获得的信息与数据限制；不要将该对象默认扩展为全学院或其他对象集合。`
+    : `Analyze object "${item.title}". Reference: ${JSON.stringify({ className: item.className, primaryKey: item.primaryKey })}. First read and verify the object through existing permissions. Explain available evidence and limitations; do not silently expand its scope.`;
+  void ask(question);
+}
+/** Older sessions may use the resource-analysis request as their title. Show its business label only. */
+function conversationTitle(title: string) {
+  const resourceTitle = title.match(/"(?:resource|kind)"[\s\S]*?"title"\s*:\s*"((?:[^"\\]|\\.)*)"/);
+  if (resourceTitle) {
+    try { return JSON.parse(`"${resourceTitle[1]}"`) as string; } catch { /* Fall through to the readable request. */ }
+  }
+  const readable = title
+    .replace(/\s*[（(][^()（）]*(?:dashboardId|cardId|sessionId|taskId|runId)\s*[:：][^()（）]*[）)]/gi, "")
+    .split(/\n|\{\s*"|(?:dashboardId|cardId|sessionId|taskId|runId)\s*[:：]/i)[0]!
+    .replace(/(?:个人工作台协作请求|分析上下文)\s*[:：]\s*/g, "")
+    .replace(/请先读取当前信息[\s\S]*$/, "")
+    .replace(/[\s，,；;：:]+$/, "").trim();
+  return readable || workspaceText.value.untitled;
+}
+const workspaceText = computed(() => locale.value.startsWith("zh") ? {
+  heading: "你想了解哪些数据？", description: "用日常语言提问，让智能体帮你查询和分析", placeholder: "例如：按学院统计在职教职工人数，并比较人员构成", send: "发送问题", stop: "停止", agent: "智能体", continue: "继续分析", empty: "完成一次分析后，可从这里继续", untitled: "未命名分析", resources: "常用应用", noAgent: "暂无可用智能体，请检查智能体配置", recent: "最近访问",
+} : { heading: "What would you like to know?", description: "Ask in your own words to explore and analyze your data", placeholder: "For example: Compare active staff counts and composition by school", send: "Send question", stop: "Stop", agent: "Agent", continue: "Continue analysis", empty: "Return here after completing an analysis", untitled: "Untitled analysis", resources: "Applications", noAgent: "No enabled agents. Check agent configuration.", recent: "Recent resources" });
+async function ask(question: string) {
+  if (!agentId.value || !enabledAgents.value.some(agent => agent.id === agentId.value)) return;
+  await router.push({ path: platformRoutes.chat.path, query: { agentId: agentId.value, prompt: question } });
+}
 const interactionLabels = computed(() => locale.value.startsWith("zh") ? {
   title: "打开方式", metrics: "指标详情", tasks: "任务结果", drawer: "侧滑面板", dialog: "弹窗", page: "完整页面", conversation: "助手对话",
   analyze: "交给助手分析", openPage: "在完整页面打开", intervention: "需要处理", finished: "最近完成", density: "展示密度", help: "点击指标或任务时使用所选方式；打开后仍可切换", configure: "选择资源",
 } : { title: "Open with", metrics: "Metric details", tasks: "Task results", drawer: "Side panel", dialog: "Dialog", page: "Full page", conversation: "Assistant conversation",
   analyze: "Analyze with assistant", openPage: "Open full page", intervention: "Needs intervention", finished: "Recently completed", density: "Display density", help: "Choose how metrics and tasks open. You can also switch after opening.", configure: "Choose resources" });
-async function analyze(target: WorkspaceResource) {
+async function analyze(target: WorkspaceResource, intent: "analyze" | "explain" = "analyze") {
   if (analysisBusy.value || !canChat.value) return;
   analysisBusy.value = true; analysisError.value = "";
   try {
     const evidence = target.kind === "metric"
       ? await json("/api/dashboards/query-card", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ dashboardId: target.dashboardId, cardId: target.cardId }) })
       : target.runId ? await json(`${platformSchedulesPath}/${target.taskId}/runs/${target.runId}`) : null;
-    const agents = agentHostAgentListSchema.parse(await json("/api/assistant/agents"));
-    const agent = agents.agents.find(item => item.enabled);
+    const agent = enabledAgents.value.find(item => item.id === agentId.value);
     if (!agent) throw new Error(locale.value.startsWith("zh") ? "没有可用的智能体" : "No enabled assistant available");
     const session = agentHostCreateSessionResponseSchema.parse(await json("/api/assistant/sessions", {
       method: "POST", headers: { "Content-Type": "application/json", "Idempotency-Key": crypto.randomUUID() }, body: JSON.stringify({ agentId: agent.id }),
     })).session;
-    const message = locale.value.startsWith("zh") ? "请协助分析个人工作台中的这项内容。先读取当前资源与最新数据，解释口径或执行结果，再给出下一步建议。本次只分析，不执行任何写入。" : "Analyze this workspace resource. Read its current data, explain the metric or execution result and suggest next steps. Only analyze; do not write data.";
+    const message = intent === "explain"
+      ? (locale.value.startsWith("zh") ? "请解释这个指标的业务含义、统计口径、实际查询参数及结果中的空值。以当前资源和查询证据为依据，缺少的说明请明确指出，不推测定义。" : "Explain this metric's business meaning, definition, saved parameters and missing values using the resource and query evidence. Explicitly identify unavailable definitions.")
+      : (locale.value.startsWith("zh") ? "请分析当前指标或任务结果，以查询证据为依据解释主要发现和数据限制，并提出可继续核实的问题。区分执行状态与业务结论，不推断缺失数据。本次只分析，不执行写入。" : "Analyze this metric or task result using its evidence. Explain findings and limitations and suggest questions to verify. Distinguish run status from business conclusions; do not infer missing data or write data.");
     await json(`/api/assistant/sessions/${session.id}/runs`, {
       method: "POST", headers: { "Content-Type": "application/json", "Idempotency-Key": crypto.randomUUID() }, body: JSON.stringify({ message: `${message}\n${JSON.stringify({ resource: target, evidence })}` }),
     });
     resourceOpen.value = false;
-    await router.push({ path: platformRoutes.chat.path, query: { sessionId: session.id } });
+    await router.push({ path: platformRoutes.chat.path, query: { agentId: agent.id, sessionId: session.id } });
   } catch (failure) { analysisError.value = failure instanceof Error ? failure.message : String(failure); }
   finally { analysisBusy.value = false; }
 }
@@ -73,7 +191,7 @@ function openTask(task: PlatformTask) {
   openResource({ kind: "task", title: task.title, taskId: task.id, runId: task.lastRun?.id ?? null, path: task.latestResult?.link.path ?? router.resolve({ path: platformRoutes.schedules.path, query: { taskId: task.id } }).fullPath });
 }
 const text = computed(() => locale.value.startsWith("zh") ? {
-  title: "个人工作台", intro: "你的应用、关注的数据与最近的工作", configure: "配置工作台", refresh: "刷新",
+  title: "个人工作台", intro: "问数、关注数据，继续日常工作", configure: "配置工作台", refresh: "刷新",
   save: "保存", cancel: "取消", unsaved: "有未保存的修改", layout: "布局重点", tasks: "我的定时任务", data: "关注的数据",
   apps: "常用应用", tasksLayout: "任务优先", dataLayout: "数据优先", assistantLayout: "应用优先",
   appsDescription: "固定工作中常用的应用，快速进入业务流程", dataDescription: "集中查看关注的仪表盘与关键指标", tasksDescription: "查看需要介入的任务和最近的执行结果", recentDescription: "回到最近打开的应用、会话与数据", application: "应用", dashboard: "仪表盘",
@@ -84,7 +202,7 @@ const text = computed(() => locale.value.startsWith("zh") ? {
   unavailable: "资源已删除或当前不可访问，请在配置中重新选择。", selection: "按选择顺序展示，可取消后重新选择来调整顺序。",
   attention: "任务动态", issues: "需介入", results: "近期结果", runningTasks: "运行中", clear: "当前没有需要介入的定时任务", recent: "最近访问", emptyRecent: "打开应用、仪表盘或分析会话后，可从这里继续", recentApps: "最近使用", pinned: "已固定", updated: "最近访问", noAttention: "异常任务和最近 7 天的结果会显示在这里", assistantHint: "智能助手", assistantDescription: "通过对话查询数据、分析问题", noApps: "暂无可用的常用应用",
 } : {
-  title: "Personal workspace", intro: "Your applications, followed data and recent work", configure: "Configure workspace", refresh: "Refresh",
+  title: "Personal workspace", intro: "Ask questions, follow data and continue your work", configure: "Configure workspace", refresh: "Refresh",
   save: "Save", cancel: "Cancel", unsaved: "Unsaved changes", layout: "Layout focus", tasks: "My scheduled tasks", data: "Followed data",
   apps: "Applications", tasksLayout: "Tasks first", dataLayout: "Data first", assistantLayout: "Applications first",
   appsDescription: "Keep the applications you use for your daily workflows close", dataDescription: "Follow dashboards and their key metrics in one place", tasksDescription: "Review task issues and recent execution results", recentDescription: "Return to recently opened applications, conversations and data", application: "Application", dashboard: "Dashboard",
@@ -105,19 +223,20 @@ function applicationHref(id: string) {
 }
 /** Keep data on a wide working surface and activity in a compact supporting column. */
 const columns = computed(() => {
-  return config.value.layout === "data" ? [["data", "apps"], ["tasks", "recent"]]
-    : config.value.layout === "tasks" ? [["tasks", "recent"], ["apps", "data"]] : [["apps", "data"], ["tasks", "recent"]];
+  const sections = config.value.sections ?? presetSections(config.value.layout);
+  return [sections.main, sections.sidebar];
 });
 const needsIntervention = (task: PlatformTask) => !task.activeRunId && (!!task.pause || task.lastRun?.status === "failed");
 const issueTasks = computed(() => tasks.value.filter(needsIntervention));
 const runningTasks = computed(() => tasks.value.filter(task => task.activeRunId));
 const resultTasks = computed(() => tasks.value.filter(task => task.latestResult?.runId === task.lastRun?.id
   && task.lastRun?.status === "completed" && Date.parse(task.lastRun.finishedAt ?? "") >= Date.now() - 7 * 86400000));
-const attentionTasks = computed(() => [...tasks.value].filter(task => needsIntervention(task) || task.activeRunId || resultTasks.value.includes(task)).sort((a, b) => {
-  const priority = (task: PlatformTask) => needsIntervention(task) ? 0 : task.activeRunId ? 1 : 2;
-  return priority(a) - priority(b) || (b.lastRun?.finishedAt ?? "").localeCompare(a.lastRun?.finishedAt ?? "");
-}).slice(0, 6));
-const availableRecent = computed(() => recent.value.filter(item => catalog.applications.value.some(app => app.id === item.appId)));
+const taskGroups = computed(() => [
+  { id: "issues", label: interactionLabels.value.intervention, items: issueTasks.value.slice(0, 3) },
+  { id: "running", label: text.value.running, items: runningTasks.value.slice(0, 2) },
+  { id: "results", label: locale.value.startsWith("zh") ? "近期结果" : "Recent results", items: [...resultTasks.value].sort((a, b) => (b.lastRun?.finishedAt ?? "").localeCompare(a.lastRun?.finishedAt ?? "")).slice(0, 3) },
+].filter(group => group.items.length));
+const availableRecent = computed(() => recent.value.filter(item => !new URL(item.path, "https://workspace.invalid").searchParams.has("sessionId") && catalog.applications.value.some(app => app.id === item.appId)));
 const recentApps = computed(() => [...new Set(availableRecent.value.map(item => item.appId))].map(id => apps.value.find(app => app.id === id)).filter((app): app is typeof apps.value[number] => !!app && !config.value.applicationIds.includes(app.id)).slice(0, 4));
 function recentTitle(item: RecentWork) {
   const url = new URL(item.path, "https://workspace.invalid");
@@ -127,7 +246,7 @@ function recentTitle(item: RecentWork) {
 }
 function recentContext(item: RecentWork) {
   const url = new URL(item.path, "https://workspace.invalid");
-  const object = url.searchParams.get("primaryKey");
+  const object = url.searchParams.get("key") ?? url.searchParams.get("primaryKey");
   const session = url.searchParams.get("sessionId");
   if (object) return `${locale.value.startsWith("zh") ? "对象" : "Object"} · ${object}`;
   if (session) return `${locale.value.startsWith("zh") ? "会话" : "Conversation"} · ${session.slice(0, 8)}`;
@@ -149,19 +268,29 @@ async function load(key: string, action: () => Promise<void>) {
 const readConfig = () => load("config", async () => {
   config.value = personalWorkspaceSchema.parse((await json("/api/personal-workspace")).data);
   ready.value = true;
+  void readPinned();
 });
 const readDashboards = () => load("data", async () => { dashboards.value = (await json("/api/dashboards")).data; });
 const readTasks = () => load("tasks", async () => { tasks.value = platformTaskListSchema.parse(await json(platformSchedulesPath)).tasks; });
 const readRecent = () => load("recent", async () => { recent.value = recentWorkListSchema.parse((await json("/api/personal-workspace/recent")).data); });
+const readAgents = () => load("agents", async () => {
+  agents.value = agentHostAgentListSchema.parse(await json("/api/assistant/agents")).agents;
+  if (!enabledAgents.value.some(agent => agent.id === agentId.value)) agentId.value = enabledAgents.value[0]?.id ?? null;
+});
+const readConversations = () => load("conversations", async () => { homeState.value = homeStateSchema.parse(await json("/api/platform/home")); });
 async function refresh() {
   previewRevision.value++;
-  await Promise.all([readTasks(), readDashboards(), readRecent(), catalog.refresh()]);
+  await Promise.all([readTasks(), readDashboards(), readRecent(), readAgents(), readConversations(), catalog.refresh()]);
+  if (ready.value) await readPinned();
 }
 onMounted(() => { void readConfig(); void refresh(); });
 function configure() {
   delete errors.value.save;
   draft.value = { ...config.value, dashboardCards: Object.fromEntries(Object.entries(config.value.dashboardCards).map(([id, cards]) => [id, [...cards]])), interactions: { ...config.value.interactions }, dashboardIds: [...config.value.dashboardIds], applicationIds: [...config.value.applicationIds] };
   editing.value = true;
+  const sections = config.value.sections ?? presetSections(config.value.layout);
+  draft.value.sections = { main: [...sections.main], sidebar: [...sections.sidebar], hidden: [...sections.hidden] };
+  settingsTab.value = "layout";
 }
 async function save() {
   saving.value = true;
@@ -180,9 +309,6 @@ function taskStatus(task: PlatformTask) {
   if (!task.enabled) return text.value.disabled;
   return task.lastRun ? text.value[task.lastRun.status] : text.value.pending;
 }
-function taskGroup(task: PlatformTask) {
-  return needsIntervention(task) ? interactionLabels.value.intervention : task.activeRunId ? text.value.running : interactionLabels.value.finished;
-}
 function date(value: string) { return new Date(value).toLocaleString(locale.value, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }); }
 /** A task preview is a short sentence; full formatting and attachments belong to its result page. */
 function taskSummary(value: string) {
@@ -190,7 +316,6 @@ function taskSummary(value: string) {
     .replace(/[*#`]/g, "").replace(/\s+/g, " ").trim();
 }
 const actions = computed(() => [
-  ...(canChat.value ? [{ id: "assistant", label: text.value.chat, icon: Sparkles, onClick: () => void router.push(platformRoutes.chat.path) }] : []),
   { id: "refresh", label: text.value.refresh, icon: RefreshCw, onClick: () => void refresh() },
   ...(ready.value ? [{ id: "configure", label: text.value.configure, icon: Settings2, onClick: configure }] : []),
 ]);
@@ -198,20 +323,78 @@ const actions = computed(() => [
 <template>
   <AppPage :title="text.title" :description="text.intro" :actions="actions" :labels="{ save: text.save, discard: text.cancel, unsavedChanges: text.unsaved }">
     <div v-if="errors.config" role="alert" class="workspace-error">{{ errors.config }} <el-button @click="readConfig">{{ text.retry }}</el-button></div>
-    <p v-if="!ready && busy.config" role="status">{{ text.loading }}</p>
+    <WorkspaceSkeleton v-if="!ready && busy.config" :label="text.loading" :rows="6" />
     <el-alert v-if="analysisError" :title="analysisError" type="error" :closable="false" />
     <div v-if="ready" class="workspace-grid" :class="{ 'tasks-first': config.layout === 'tasks' }">
       <div v-for="(sections, column) in columns" :key="column" class="workspace-column" :class="{ 'activity-column': sections.includes('tasks') }">
+    <section v-if="column === 0 && canChat" class="workspace-welcome">
+      <div class="workspace-heading"><Sparkles :size="20" aria-hidden="true" /><h1>{{ workspaceText.heading }}</h1></div>
+      <p>{{ workspaceText.description }}</p>
+      <WorkspaceSkeleton v-if="busy.agents" :label="text.loading" :rows="1" composer />
+      <div v-else-if="errors.agents" role="alert">{{ errors.agents }} <el-button @click="readAgents">{{ text.retry }}</el-button></div>
+      <div v-else-if="enabledAgents.length" class="workspace-ask">
+        <ShellComposer :busy="false" :labels="{ placeholder: workspaceText.placeholder, send: workspaceText.send, stop: workspaceText.stop }" @send="ask">
+          <template #tools>
+            <AgentPicker variant="pill" :agents="enabledAgents" :agent-id="agentId" :label="workspaceText.agent" @select="agentId = $event" />
+          </template>
+        </ShellComposer>
+      </div>
+      <p v-else>{{ workspaceText.noAgent }}</p>
+    </section>
       <section v-for="section in sections" :key="section" class="workspace-section" :data-section="section">
-        <header><h2>{{ section === 'tasks' ? text.attention : text[section as 'recent' | 'data' | 'apps'] }}</h2>
+        <header><h2>{{ section === 'objects' ? (locale.startsWith('zh') ? '收藏的对象' : 'Pinned objects') : section === 'conversations' ? workspaceText.continue : section === 'apps' ? workspaceText.resources : section === 'recent' ? workspaceText.recent : section === 'tasks' ? text.attention : text.data }}</h2>
           <el-button v-if="section === 'tasks' || section === 'data'" text @click="router.push(section === 'tasks' ? platformRoutes.schedules.path : platformRoutes.dashboards.path)">{{ text.all }}</el-button>
           <div v-if="section === 'apps'" class="section-actions">
             <el-button v-if="canBuild" text @click="router.push({ name: platformRoutes.appBuilder.name })">{{ text.build }} <ArrowUpRight :size="14" aria-hidden="true" /></el-button>
             <el-button text @click="configure">{{ locale.startsWith('zh') ? '管理应用' : 'Manage applications' }}</el-button>
           </div>
         </header>
+        <template v-if="section === 'objects'">
+          <p v-if="errors.objectsSave" role="alert" class="workspace-error">{{ errors.objectsSave }}</p>
+          <p v-if="!config.pinnedObjects.length" class="workspace-empty">{{ locale.startsWith('zh') ? '在对象详情中收藏教职工、机构或成果，可从这里快速返回' : 'Pin a person, organization or result from its object view to return here' }}</p>
+          <article v-for="item in config.pinnedObjects" :key="JSON.stringify([item.className, item.primaryKey])" class="workspace-item">
+            <div class="resource-body"><button class="resource-link" @click="openObject(item)">{{ item.title }}</button>
+            </div>
+            <div class="object-row-actions">
+              <el-button v-if="canChat && enabledAgents.length" size="small" :icon="Sparkles" @click="askObject(item)">{{ locale.startsWith('zh') ? '提问' : 'Ask' }}</el-button>
+              <el-dropdown trigger="click" :disabled="saving" @command="removeObject(item)">
+                <el-button class="row-icon-action" text :icon="MoreHorizontal" :disabled="saving" :aria-label="locale.startsWith('zh') ? `管理对象：${item.title}` : `Manage object: ${item.title}`" :title="locale.startsWith('zh') ? '更多操作' : 'More actions'" />
+                <template #dropdown><el-dropdown-menu><el-dropdown-item>{{ locale.startsWith('zh') ? '取消收藏' : 'Unpin' }}</el-dropdown-item></el-dropdown-menu></template>
+              </el-dropdown>
+            </div>
+          </article>
+        </template>
+        <template v-if="section === 'conversations'">
+          <p v-if="errors.pinsSave" role="alert" class="workspace-error">{{ errors.pinsSave }}</p>
+          <template v-if="pinned.length">
+            <h3>{{ locale.startsWith('zh') ? '已固定' : 'Pinned' }}</h3>
+            <WorkspaceSkeleton v-if="busy.pins" :label="text.loading" :rows="Math.min(pinned.length, 3)" />
+            <article v-for="(item, index) in (busy.pins ? [] : pinned)" :key="item.sessionId" class="workspace-item pinned-analysis">
+              <div class="resource-body"><button class="resource-link" :disabled="!item.session || !enabledAgents.some(agent => agent.id === item.session?.agentId)" @click="router.push({ path: platformRoutes.chat.path, query: { agentId: item.session!.agentId, sessionId: item.sessionId } })">{{ item.title }}</button><p v-if="pinErrors[item.sessionId]">{{ pinErrors[item.sessionId] }}</p><p v-else-if="item.session">{{ date(item.session.updatedAt) }}</p>
+              </div>
+              <el-dropdown trigger="click" :disabled="saving" @command="(command: string) => command === 'rename' ? renamePin(item.sessionId) : command === 'up' ? movePin(index, -1) : command === 'down' ? movePin(index, 1) : updatePins(config.pinnedAnalyses.filter(pin => pin.sessionId !== item.sessionId))">
+                <el-button class="row-icon-action" text :disabled="saving" :icon="MoreHorizontal" :aria-label="locale.startsWith('zh') ? `管理分析：${item.title}` : `Manage analysis: ${item.title}`" :title="locale.startsWith('zh') ? '更多操作' : 'More actions'" />
+                <template #dropdown><el-dropdown-menu>
+                  <el-dropdown-item command="rename">{{ locale.startsWith('zh') ? '重命名' : 'Rename' }}</el-dropdown-item>
+                  <el-dropdown-item command="up" :disabled="index === 0">{{ locale.startsWith('zh') ? '上移' : 'Move up' }}</el-dropdown-item>
+                  <el-dropdown-item command="down" :disabled="index === pinned.length - 1">{{ locale.startsWith('zh') ? '下移' : 'Move down' }}</el-dropdown-item>
+                  <el-dropdown-item command="unpin" divided>{{ locale.startsWith('zh') ? '取消固定' : 'Unpin' }}</el-dropdown-item>
+                </el-dropdown-menu></template>
+              </el-dropdown>
+            </article>
+          </template>
+          <h3 v-if="pinned.length && conversations.length">{{ locale.startsWith('zh') ? '最近分析' : 'Recent analyses' }}</h3>
+          <WorkspaceSkeleton v-if="busy.conversations" :label="text.loading" />
+          <div v-else-if="errors.conversations" role="alert">{{ errors.conversations }} <el-button @click="readConversations">{{ text.retry }}</el-button></div>
+          <p v-else-if="!conversations.length && !pinned.length" class="workspace-empty">{{ workspaceText.empty }}</p>
+          <article v-for="item in conversations" :key="item.sessionId" class="workspace-item conversation-item">
+            <Sparkles :size="16" class="resource-icon" aria-hidden="true" />
+            <div class="resource-body"><button class="resource-link" @click="router.push({ path: platformRoutes.chat.path, query: { agentId: item.agentId, sessionId: item.sessionId } })">{{ conversationTitle(item.title) }}</button><p>{{ enabledAgents.find(agent => agent.id === item.agentId)?.name }} · {{ date(item.updatedAt) }}</p></div>
+            <el-button class="row-icon-action pin-analysis" text :icon="Pin" :title="locale.startsWith('zh') ? '固定分析' : 'Pin analysis'" :aria-label="locale.startsWith('zh') ? '固定分析' : 'Pin analysis'" :disabled="saving || config.pinnedAnalyses.length >= 20" @click="pinConversation(item)" />
+          </article>
+        </template>
         <template v-if="section === 'tasks'">
-          <p v-if="busy.tasks" role="status">{{ text.loading }}</p>
+          <WorkspaceSkeleton v-if="busy.tasks" :label="text.loading" />
           <div v-else-if="errors.tasks" role="alert">{{ errors.tasks }} <el-button @click="readTasks">{{ text.retry }}</el-button></div>
           <template v-else>
             <div class="attention-summary" aria-live="polite">
@@ -220,10 +403,10 @@ const actions = computed(() => [
               <span><strong>{{ runningTasks.length }}</strong>{{ text.runningTasks }}</span>
             </div>
             <p v-if="resultTasks.length" class="execution-note">{{ locale.startsWith('zh') ? '执行完成表示运行已结束，数据是否取到及结论是否可用请查看结果' : 'Completed means the run ended. Check the result for data availability and usable conclusions.' }}</p>
-            <p v-if="!attentionTasks.length" class="workspace-empty">{{ text.clear }}<br>{{ text.noAttention }}</p>
-            <template v-for="(task, taskIndex) in attentionTasks" :key="task.id">
-            <h3 v-if="taskIndex === 0 || taskGroup(task) !== taskGroup(attentionTasks[taskIndex - 1]!)">{{ taskGroup(task) }}</h3>
-            <article class="workspace-item" :class="{ 'needs-intervention': needsIntervention(task) }">
+            <p v-if="!taskGroups.length" class="workspace-empty">{{ text.clear }}<br>{{ text.noAttention }}</p>
+            <div v-for="group in taskGroups" :key="group.id" class="task-group" :data-task-group="group.id">
+            <h3>{{ group.label }}</h3>
+            <article v-for="task in group.items" :key="task.id" class="workspace-item" :class="{ 'needs-intervention': needsIntervention(task) }">
               <div class="resource-body"><button class="resource-link" @click="openTask(task)">{{ task.title }}</button>
                 <p><span class="task-status" :class="{ 'is-paused': !!task.pause, 'is-failed': !task.activeRunId && !task.pause && task.lastRun?.status === 'failed' }">{{ taskStatus(task) }}</span><span v-if="task.nextRunAt"> · {{ text.next }} {{ date(task.nextRunAt) }}</span></p>
                 <p v-if="task.pause" class="task-summary" :title="task.pause.message">{{ task.pause.message }}</p>
@@ -231,13 +414,12 @@ const actions = computed(() => [
                 <p v-else-if="task.lastRun?.resultSummary" class="task-summary">{{ taskSummary(task.lastRun.resultSummary) }}</p>
               </div>
               <el-button v-if="needsIntervention(task)" size="small" type="primary" plain @click="router.push({ path: platformRoutes.schedules.path, query: { taskId: task.id } })">{{ locale.startsWith('zh') ? '去处理' : 'Resolve' }}</el-button>
-              <el-button v-else-if="task.latestResult" size="small" text @click="openTask(task)">{{ text.result }}</el-button>
             </article>
-            </template>
+            </div>
           </template>
         </template>
         <template v-else-if="section === 'recent'">
-          <p v-if="busy.recent" role="status">{{ text.loading }}</p>
+          <WorkspaceSkeleton v-if="busy.recent" :label="text.loading" />
           <div v-else-if="errors.recent" role="alert">{{ errors.recent }} <el-button @click="readRecent">{{ text.retry }}</el-button></div>
           <template v-else>
             <p v-if="!availableRecent.length" class="workspace-empty">{{ text.emptyRecent }}</p>
@@ -251,7 +433,7 @@ const actions = computed(() => [
           </template>
         </template>
         <template v-else-if="section === 'data'">
-          <p v-if="busy.data" role="status">{{ text.loading }}</p>
+          <WorkspaceSkeleton v-if="busy.data" :label="text.loading" />
           <div v-else-if="errors.data" role="alert">{{ errors.data }} <el-button @click="readDashboards">{{ text.retry }}</el-button></div>
           <template v-else>
             <p v-if="!selectedDashboards.length" class="workspace-empty">{{ text.emptyData }}</p>
@@ -264,7 +446,7 @@ const actions = computed(() => [
           </template>
         </template>
         <template v-else-if="section === 'apps'">
-          <p v-if="catalog.loading.value" role="status">{{ text.loading }}</p>
+          <WorkspaceSkeleton v-if="catalog.loading.value" :label="text.loading" :rows="2" />
           <div v-else-if="catalog.error.value" role="alert">{{ catalog.error.value }} <el-button @click="catalog.refresh">{{ text.retry }}</el-button></div>
           <template v-else>
             <p v-if="!selectedApps.length" class="workspace-empty">{{ text.emptyApps }}</p>
@@ -288,11 +470,25 @@ const actions = computed(() => [
       </section>
       </div>
     </div>
-    <el-dialog v-model="editing" :title="text.configure" width="min(560px, 94vw)" :close-on-click-modal="false" :close-on-press-escape="!saving" :show-close="!saving">
+    <el-dialog v-model="editing" :title="text.configure" width="min(740px, 94vw)" :close-on-click-modal="false" :close-on-press-escape="!saving" :show-close="!saving">
       <el-form label-position="top" :disabled="saving">
+        <el-tabs v-model="settingsTab">
+        <el-tab-pane name="layout" :label="locale.startsWith('zh') ? '页面布局' : 'Layout'">
         <el-form-item :label="text.layout">
-          <el-select v-model="draft.layout"><el-option value="tasks" :label="text.tasksLayout" /><el-option value="data" :label="text.dataLayout" /><el-option value="assistant" :label="text.assistantLayout" /></el-select>
+          <el-select v-model="draft.layout" @change="draft.sections = presetSections(draft.layout)"><el-option value="tasks" :label="text.tasksLayout" /><el-option value="data" :label="text.dataLayout" /><el-option value="assistant" :label="text.assistantLayout" /></el-select>
         </el-form-item>
+        <p class="settings-note">{{ locale.startsWith('zh') ? '选择预设会重置区块位置。问数入口始终位于主栏顶部；可调整下方区块的位置、顺序或隐藏。' : 'A preset resets section placement. The question box stays at the top of the main column; arrange or hide the sections below.' }}</p>
+        <section v-for="position in (['main', 'sidebar', 'hidden'] as const)" :key="position" class="section-editor">
+          <h3>{{ position === 'main' ? (locale.startsWith('zh') ? '主栏' : 'Main column') : position === 'sidebar' ? (locale.startsWith('zh') ? '侧栏' : 'Sidebar') : (locale.startsWith('zh') ? '已隐藏' : 'Hidden') }}</h3>
+          <div v-for="(section, index) in draft.sections?.[position]" :key="section" class="section-editor-row">
+            <span>{{ sectionName(section) }}</span>
+            <el-select :model-value="position" :aria-label="sectionName(section)" @change="(value: 'main' | 'sidebar' | 'hidden') => moveSection(section, value)"><el-option value="main" :label="locale.startsWith('zh') ? '主栏' : 'Main column'" /><el-option value="sidebar" :label="locale.startsWith('zh') ? '侧栏' : 'Sidebar'" /><el-option value="hidden" :label="locale.startsWith('zh') ? '隐藏' : 'Hidden'" /></el-select>
+            <el-button size="small" :disabled="saving || index === 0" @click="orderSection(position, index, -1)">{{ locale.startsWith('zh') ? '上移' : 'Up' }}</el-button>
+            <el-button size="small" :disabled="saving || index === draft.sections![position].length - 1" @click="orderSection(position, index, 1)">{{ locale.startsWith('zh') ? '下移' : 'Down' }}</el-button>
+          </div>
+        </section>
+        </el-tab-pane>
+        <el-tab-pane name="resources" :label="locale.startsWith('zh') ? '资源内容' : 'Resources'">
         <el-form-item :label="text.data">
           <el-select v-model="draft.dashboardIds" multiple filterable :disabled="busy.data || !!errors.data">
             <el-option v-for="board in dashboards" :key="board.id" :value="board.id" :label="board.name" />
@@ -310,6 +506,8 @@ const actions = computed(() => [
           </el-select>
         </el-form-item>
         <p>{{ text.selection }}</p>
+        </el-tab-pane>
+        <el-tab-pane name="opening" :label="interactionLabels.title">
         <h3>{{ interactionLabels.title }}</h3>
         <p>{{ interactionLabels.help }}</p>
         <el-form-item v-for="kind in (['metrics', 'tasks'] as const)" :key="kind" :label="interactionLabels[kind]">
@@ -317,16 +515,32 @@ const actions = computed(() => [
             <el-option v-for="mode in (['drawer', 'dialog', 'page', 'conversation'] as const)" :key="mode" :value="mode" :label="interactionLabels[mode]" :disabled="mode === 'conversation' && !canChat" />
           </el-select>
         </el-form-item>
+        <el-form-item :label="locale.startsWith('zh') ? '收藏对象' : 'Pinned objects'">
+          <el-select v-model="draft.objectOpening"><el-option value="page" :label="interactionLabels.page" /><el-option value="drawer" :label="locale.startsWith('zh') ? '侧栏预览' : 'Side preview'" /></el-select>
+        </el-form-item>
+        <p class="settings-note">{{ locale.startsWith('zh') ? '对象内容使用已配置的对象视图；在对象详情中通过「配置视图」维护。完整页面可返回工作台。' : 'Objects use their configured object views. Edit them from the object page. Full pages can return to the workspace.' }}</p>
+        </el-tab-pane>
+        </el-tabs>
         <p v-if="errors.save" role="alert" class="workspace-error">{{ errors.save }}</p>
       </el-form>
       <template #footer><el-button :disabled="saving" @click="editing = false">{{ text.cancel }}</el-button><el-button type="primary" :loading="saving" @click="save">{{ text.save }}</el-button></template>
     </el-dialog>
+    <el-drawer v-model="objectPreviewOpen" class="workspace-object-drawer" :title="objectPreview?.title" size="min(920px, 100vw)" destroy-on-close>
+      <template v-if="objectPreview">
+        <div class="resource-toolbar"><el-button @click="openObjectPage(objectPreview)">{{ interactionLabels.openPage }}</el-button><el-button v-if="canChat && enabledAgents.length" type="primary" @click="askObject(objectPreview)">{{ locale.startsWith('zh') ? '就此对象提问' : 'Ask about this object' }}</el-button></div>
+        <ManagerFrame class="workspace-preview-frame"><ObjectViewPage class="workspace-object-preview" :reference="objectPreview" preview @open="objectPreview = { ...$event, title: locale.startsWith('zh') ? '关联对象' : 'Related object' }" /></ManagerFrame>
+      </template>
+    </el-drawer>
     <component :is="presentation === 'drawer' ? 'el-drawer' : 'el-dialog'" v-model="resourceOpen" :title="resource?.title" :size="'min(680px, 100vw)'" :width="'min(760px, 94vw)'" destroy-on-close>
       <template v-if="resource">
         <div class="resource-toolbar">
           <el-button @click="resourceOpen = false; router.push(resource.path)">{{ interactionLabels.openPage }}</el-button>
           <el-button v-if="canChat" type="primary" :loading="analysisBusy" @click="analyze(resource)">{{ interactionLabels.analyze }}</el-button>
-          <el-button @click="presentation = presentation === 'drawer' ? 'dialog' : 'drawer'">{{ presentation === 'drawer' ? interactionLabels.dialog : interactionLabels.drawer }}</el-button>
+          <el-button v-if="canChat && resource.kind === 'metric'" :loading="analysisBusy" @click="analyze(resource, 'explain')">{{ locale.startsWith('zh') ? '解释指标口径' : 'Explain metric definition' }}</el-button>
+          <el-dropdown trigger="click" @command="presentation = presentation === 'drawer' ? 'dialog' : 'drawer'">
+            <el-button :icon="MoreHorizontal" :aria-label="locale.startsWith('zh') ? '更多查看方式' : 'More viewing options'" :title="locale.startsWith('zh') ? '更多查看方式' : 'More viewing options'" />
+            <template #dropdown><el-dropdown-menu><el-dropdown-item>{{ presentation === 'drawer' ? interactionLabels.dialog : interactionLabels.drawer }}</el-dropdown-item></el-dropdown-menu></template>
+          </el-dropdown>
         </div>
         <el-alert v-if="analysisError" :title="analysisError" type="error" :closable="false" />
         <WorkspaceResourceDetail :resource="resource" />
@@ -335,8 +549,34 @@ const actions = computed(() => [
   </AppPage>
 </template>
 <style scoped>
-.workspace-grid { display: grid; grid-template-columns: minmax(0, 2.2fr) minmax(300px, 1fr); gap: var(--spacing-xl); align-items: start; }
-.workspace-grid.tasks-first { grid-template-columns: minmax(300px, 1fr) minmax(0, 2.2fr); }
+.workspace-welcome { width: 100%; padding-top: var(--spacing-sm); }
+.settings-note { font-size: var(--text-sm); color: var(--el-text-color-secondary); }
+:global(.workspace-object-drawer > .el-drawer__body) { display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
+.workspace-object-drawer .resource-toolbar { flex-shrink: 0; }
+.workspace-preview-frame { flex: 1; min-height: 0; height: auto; }
+.workspace-preview-frame :deep(main.ontology-manager-shell) { flex: 1; min-height: 0; height: 100%; }
+.workspace-object-preview { flex: 1; min-height: 0; height: 100%; overflow: auto; }
+.workspace-object-preview :deep(.object-view-runtime) { padding-inline: 0; }
+.section-editor { margin-top: var(--spacing-lg); }
+.section-editor-row { display: flex; align-items: center; gap: var(--spacing-sm); padding-block: var(--spacing-sm); border-bottom: 1px solid var(--el-border-color-lighter); }
+.section-editor-row > span { flex: 1; min-width: 0; }
+.section-editor-row .el-select { width: 110px; }
+.section-editor-row :deep(.el-button + .el-button) { margin-left: 0; }
+.workspace-heading { display: flex; align-items: center; gap: var(--spacing-md); }
+.workspace-heading > svg { color: var(--el-color-primary); flex-shrink: 0; }
+.workspace-heading h1 { margin: 0; font-size: var(--text-2xl); font-weight: var(--font-semibold); line-height: 1.4; }
+.workspace-welcome > p { margin: var(--spacing-sm) 0 var(--spacing-lg); font-size: var(--text-sm); }
+.workspace-ask { --shell-composer-shadow: var(--elevation-composer); }
+.workspace-grid { display: grid; grid-template-columns: minmax(0, 2.2fr) minmax(300px, 1fr); gap: var(--page-section-padding); align-items: start; }
+.conversation-item { align-items: flex-start; }
+.conversation-item > svg { margin-top: 2px; }
+.conversation-item .resource-link { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.object-row-actions { display: flex; align-items: center; gap: var(--spacing-xs); flex-shrink: 0; }
+.resource-link:disabled { color: var(--el-text-color-secondary); cursor: default; }
+.row-icon-action { flex-shrink: 0; width: var(--control-height-sm); min-height: var(--control-height-sm); padding: 0; color: var(--el-text-color-secondary); }
+.row-icon-action :deep(svg) { width: 16px; height: 16px; }
+.pinned-analysis { align-items: flex-start; }
+.pinned-analysis > .el-dropdown { flex-shrink: 0; }
 .resource-toolbar { display: flex; flex-wrap: wrap; gap: var(--spacing-sm); margin-bottom: var(--spacing-lg); }
 .resource-toolbar :deep(.el-button + .el-button) { margin-left: 0; }
 .section-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: var(--spacing-sm); }
@@ -345,7 +585,9 @@ const actions = computed(() => [
 .workspace-column { display: flex; flex-direction: column; gap: var(--spacing-xl); min-width: 0; }
 .workspace-column + .workspace-column { border-left: 1px solid var(--el-border-color); padding-left: var(--page-section-padding); }
 .workspace-section { min-width: 0; }
-.workspace-section + .workspace-section { padding-top: var(--spacing-lg); border-top: 1px solid var(--el-border-color); }
+.workspace-section + .workspace-section { padding-top: var(--spacing-md); border-top: 1px solid var(--el-border-color-lighter); }
+.workspace-section > .workspace-item:first-of-type, .task-group > .workspace-item:first-of-type { border-top: 0; padding-top: var(--spacing-xs); }
+.workspace-section > .workspace-item:last-child, .task-group > .workspace-item:last-child { padding-bottom: 0; }
 header, .workspace-item { display: flex; justify-content: space-between; align-items: center; gap: var(--spacing-md); }
 header { min-height: var(--control-height); margin-bottom: var(--spacing-md); }
 header > .el-button, .section-actions :deep(.el-button) { padding-inline: var(--spacing-sm); }
@@ -372,7 +614,7 @@ p { color: var(--el-text-color-secondary); line-height: 1.6; overflow-wrap: anyw
 .workspace-board { padding: 0; }
 .workspace-board + .workspace-board { margin-top: var(--spacing-xl); border-top: 1px solid var(--el-border-color); padding-top: var(--spacing-lg); }
 .workspace-board > .resource-link { font-weight: var(--font-medium); min-height: var(--control-height); margin-bottom: var(--spacing-sm); }
-.attention-summary { display: flex; flex-wrap: wrap; gap: var(--spacing-lg); padding-block: var(--spacing-md); border-block: 1px solid var(--el-border-color-lighter); margin-bottom: var(--spacing-md); }
+.attention-summary { display: flex; flex-wrap: wrap; gap: var(--spacing-lg); padding-block: var(--spacing-xs) var(--spacing-md); border-bottom: 1px solid var(--el-border-color-lighter); margin-bottom: var(--spacing-md); }
 .attention-summary > span { display: flex; align-items: baseline; gap: var(--spacing-xs); color: var(--el-text-color-secondary); font-size: var(--text-xs); }
 .attention-summary strong { font-size: var(--text-xl); line-height: 1.4; color: var(--el-text-color-primary); font-variant-numeric: tabular-nums; }
 .attention-summary .has-issues svg { color: var(--el-color-warning); align-self: center; flex-shrink: 0; }
@@ -385,12 +627,14 @@ p { color: var(--el-text-color-secondary); line-height: 1.6; overflow-wrap: anyw
 .resource-link:hover { color: var(--brand-link, var(--el-color-primary)); text-decoration: underline; }
 .workspace-empty { font-size: var(--text-sm); padding-block: var(--spacing-md); }
 .execution-note { margin: 0 0 var(--spacing-md); font-size: var(--text-xs); line-height: 1.5; }
+.task-group + .task-group { margin-top: var(--spacing-xl); }
+.task-group > h3 { margin-top: 0; }
 .recent-item { align-items: flex-start; }
 .recent-item .resource-icon { margin-top: 2px; }
 .activity-column .workspace-item { align-items: flex-start; }
 .activity-column .workspace-item > .el-button { margin-top: 0; flex-shrink: 0; }
 .workspace-error { color: var(--el-color-danger); }
 .el-select { width: 100%; }
-@container platform-page (max-width: 1050px) { .workspace-grid, .workspace-grid.tasks-first { grid-template-columns: minmax(0, 1fr); } .workspace-column + .workspace-column { border-left: 0; padding-left: 0; padding-top: var(--spacing-xl); border-top: 1px solid var(--el-border-color); } .activity-column { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); } .activity-column .workspace-section + .workspace-section { border-top: 0; padding-top: 0; } }
-@container platform-page (max-width: 600px) { .application-grid, .activity-column { grid-template-columns: minmax(0, 1fr); } .activity-column .workspace-section + .workspace-section { border-top: 1px solid var(--el-border-color); padding-top: var(--spacing-lg); } }
+@container platform-page (max-width: 1050px) { .workspace-grid { grid-template-columns: minmax(0, 1fr); } .workspace-column + .workspace-column { border-left: 0; padding-left: 0; padding-top: var(--spacing-xl); border-top: 1px solid var(--el-border-color); } }
+@container platform-page (max-width: 600px) { .application-grid { grid-template-columns: minmax(0, 1fr); } .workspace-heading h1 { font-size: var(--text-title); } }
 </style>
