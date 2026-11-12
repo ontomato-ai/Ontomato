@@ -56,7 +56,10 @@ export const qualityTaskSchema = z.object({
 export const agentTaskSchema = z.discriminatedUnion("kind", [retrievalTaskSchema, qualityTaskSchema]);
 /** A completed check's conclusion; a check that did not complete has none, only its task's error. */
 export const qualityResultSchema = z.object({
-  taskId: id, score: z.number().finite(), conclusion: z.string(), fittedQuestion: z.string(),
+  taskId: id, score: z.number().finite(),
+  /** One line for the business user on why the score is what it is; absent for checks settled before it was asked. */
+  summary: z.string().nullable(),
+  conclusion: z.string(), fittedQuestion: z.string(),
 }).strict();
 export const agentTasksSnapshotSchema = z.object({
   sessionId: id,

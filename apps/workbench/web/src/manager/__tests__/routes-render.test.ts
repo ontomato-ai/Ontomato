@@ -295,7 +295,8 @@ describe("the open-source platform's rail", () => {
     await open("/ontology/objects");
     // The rail lists the applications in the partition's order; an application without an external link or an
     // unavailability hint is a row that switches the shell. Every one of them opens somewhere.
-    const switching = appPartition();
+    // The personal workspace keeps its address while its rail entry is hidden for now.
+    const switching = appPartition().filter((app) => app.id !== "personal-workspace");
     const rows = [...document.querySelectorAll<HTMLElement>(".rail-row:not(.external):not(.unavailable)")];
     expect(rows.length).toBe(switching.length);
 

@@ -126,6 +126,7 @@ class CheckServiceV2ImplTest {
     checks.check(check, List.of(program()), List.of(), List.of(), List.of(), DOMAIN);
 
     assertEquals(90.0, check.getScore());
+    assertEquals("Answers the staff count", check.getSummary());
     assertEquals("The program answers the question", check.getConclusion());
     assertEquals("How many staff are employed?", check.getFittedQuestion());
     assertTrue(check.getFinished());
@@ -154,6 +155,21 @@ class CheckServiceV2ImplTest {
     assertTrue(prompt.getValue().contains("The user's actual message"));
     assertTrue(prompt.getValue().contains("Confirmed decision"));
     assertFalse(prompt.getValue().contains(QUESTION));
+  }
+
+  @Test
+  void aMissingSummaryStillSettlesTheCheckWithoutOne() throws Exception {
+    ABCHarnessCheck check = check();
+    JSONObject result = qualityResult(90.0);
+    result.remove("summary");
+    when(qualityGeneration.result()).thenReturn(result);
+
+    checks.check(check, List.of(program()), List.of(), List.of(), List.of(), DOMAIN);
+
+    assertEquals(90.0, check.getScore());
+    assertNull(check.getSummary());
+    assertEquals("The program answers the question", check.getConclusion());
+    assertTrue(check.getFinished());
   }
 
   @Test
@@ -308,6 +324,7 @@ class CheckServiceV2ImplTest {
 
   private static JSONObject qualityResult(double score) {
     return JSONObject.of(
+        "summary", "Answers the staff count",
         "conclusion", "The program answers the question",
         "fittedQuestion", "How many staff are employed?",
         "score", score);
