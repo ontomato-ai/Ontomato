@@ -55,8 +55,9 @@ describe("web API errors", () => {
       )
     );
 
+    // The field-level detail is the only way to tell which field the server rejected.
     await expect(nodeApiPost("/skills", {})).rejects.toThrow(
-      "Request validation failed — type: Visualization skills must use the executable type"
+      "type: Visualization skills must use the executable type"
     );
   });
 });

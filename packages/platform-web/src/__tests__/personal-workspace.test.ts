@@ -7,8 +7,9 @@ import { defaultPersonalWorkspace } from "@ontomato/contracts/personal-workspace
 import { openApplicationKey } from "../apps";
 import Workspace from "../pages/PersonalWorkspaceRoute.vue";
 
-const api = vi.hoisted(() => ({ request: vi.fn(), failTasks: false, failSave: false, saved: null as unknown, tasks: [] as unknown[], recent: [] as unknown[] }));
-vi.mock("@ontomato/workbench-ui", () => ({ nodeApiRequest: api.request }));
+const api = vi.hoisted(() => ({ request: vi.fn(), failTasks: false, failSave: false, saved: null as unknown, tasks: [] as unknown[], recent: [] as unknown[], conversations: [] as unknown[] }));
+vi.mock("@ontomato/workbench-ui", () => ({ nodeApiRequest: api.request, readRememberedAgent: () => null }));
+vi.mock("@ontomato/agent-shell-ui", () => ({ AgentPicker: { template: '<div />' }, ShellComposer: { name: "ShellComposer", template: '<div><slot name="tools" /></div>' } }));
 vi.mock("@ontomato/workbench-ui/features/dashboard", () => ({ DashboardCardPicker: { template: '<div />' }, DashboardMetricDetail: { template: '<div>Live metric details</div>' }, DashboardMetricPreview: { name: "DashboardMetricPreview", props: ["dashboardId", "revision"], template: '<div class="metric-preview-stub">{{ dashboardId }}<button class="select-metric" @click="$emit(\'select\', {id: \'card-a\', name: \'Revenue\'})">Revenue</button></div>' } }));
 
 const application = { id: "app-orders", kind: "hosted", category: "business", names: { en: "Orders" }, descriptions: {}, icon: "pages", rail: "apps", sort: 0, entry: { path: "/orders" }, entryAccess: ["orders"], scheduleAdapter: null, releaseId: "release" };
@@ -18,12 +19,16 @@ beforeEach(() => {
   api.saved = null;
   api.tasks = [];
   api.recent = [];
+  api.conversations = [];
   api.request.mockReset().mockImplementation(async (path: string, init?: RequestInit) => {
     if (path.includes("scheduled-tasks")) {
       if (api.failTasks) throw new Error("Task service unavailable");
       return Response.json({ tasks: api.tasks, timeZone: "UTC" });
     }
-    if (path.includes("platform/applications")) return Response.json({ success: true, data: [application] });
+    if (path.includes("platform/applications")) return Response.json({ success: true, data: [application, { ...application, id: "agents", kind: "native", entry: { path: "/agents", renderer: "agents" } }] });
+    if (path.endsWith("/assistant/agents")) return Response.json({ agents: [{ id: "11111111-1111-4111-8111-111111111111", name: "Analyst", enabled: true, description: "Analyze data", icon: null }] });
+    if (path.endsWith("/platform/home")) return Response.json({ favorites: [], dashboardIds: [], recentApplications: [], recentConversations: api.conversations });
+    if (path.includes('/assistant/sessions/')) return Response.json({ session: { id: "22222222-2222-4222-8222-222222222222", agentId: "11111111-1111-4111-8111-111111111111", title: "Faculty", createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), latestRun: null }, messages: [], latestRun: null });
     if (path.includes("dashboards")) return Response.json({ data: [{ id: "board-a", name: "Sales" }] });
     if (path.endsWith("/recent")) return Response.json({ data: api.recent });
     if (init?.method === "PUT") {
@@ -36,7 +41,7 @@ beforeEach(() => {
 });
 async function page() {
   const router = createRouter({ history: createMemoryHistory(), routes: [
-    { path: "/workspace", component: Workspace }, { path: "/dashboards", component: { template: "<div />" } },
+    { path: "/workspace", component: Workspace }, { path: "/dashboards", component: { template: "<div />" } }, { path: "/agents/chat", component: { template: "<div />" } },
   ] });
   await router.push("/workspace");
   const open = vi.fn();
@@ -48,14 +53,40 @@ async function page() {
   return { wrapper, router, open };
 }
 describe("personal workspace", () => {
+  it("pins an accessible analysis and removes it from the recent list without duplicating it", async () => {
+    api.conversations = [{ sessionId: "22222222-2222-4222-8222-222222222222", agentId: "11111111-1111-4111-8111-111111111111", title: "Faculty analysis", updatedAt: new Date().toISOString() }];
+    const { wrapper } = await page();
+    await wrapper.find('.pin-analysis').trigger('click');
+    await flushPromises();
+    expect(api.saved).toMatchObject({ pinnedAnalyses: [{ sessionId: "22222222-2222-4222-8222-222222222222", title: "Faculty analysis" }] });
+    expect(wrapper.findAll('.pinned-analysis')).toHaveLength(1);
+    expect(wrapper.findAll('.conversation-item')).toHaveLength(0);
+    wrapper.find('.pinned-analysis').findComponent({ name: 'ElDropdown' }).vm.$emit('command', 'unpin');
+    await flushPromises();
+    expect(wrapper.findAll('.pinned-analysis')).toHaveLength(0);
+    expect(wrapper.findAll('.conversation-item')).toHaveLength(1);
+    wrapper.unmount();
+  });
+  it("starts a question with the selected agent without adding scope or hidden context", async () => {
+    const { wrapper, router } = await page();
+    const composer = wrapper.findComponent({ name: "ShellComposer" });
+    expect(composer.exists()).toBe(true);
+    composer.vm.$emit('send', 'Explain the revenue');
+    await flushPromises();
+    expect(router.currentRoute.value.path).toBe('/agents/chat');
+    expect(router.currentRoute.value.query.agentId).toBe('11111111-1111-4111-8111-111111111111');
+    expect(router.currentRoute.value.query.prompt).toBe('Explain the revenue');
+    expect(api.request.mock.calls.some(([, init]) => init?.method === 'POST')).toBe(false);
+    wrapper.unmount();
+  });
   it("opens metric details beside the workspace and can switch to a dialog", async () => {
     const { wrapper, router } = await page();
     await wrapper.find('.select-metric').trigger('click');
     await flushPromises();
     expect(router.currentRoute.value.path).toBe('/workspace');
-    expect(wrapper.findComponent({ name: 'ElDrawer' }).props('modelValue')).toBe(true);
+    expect(wrapper.findAllComponents({ name: 'ElDrawer' }).some(drawer => drawer.props('modelValue') === true)).toBe(true);
     const toolbar = wrapper.find('.resource-toolbar');
-    await toolbar.findAll('button').find(button => button.text() === 'Dialog')!.trigger('click');
+    toolbar.findComponent({ name: 'ElDropdown' }).vm.$emit('command', 'dialog');
     await flushPromises();
     expect(wrapper.findAllComponents({ name: 'ElDialog' }).some(dialog => dialog.props('modelValue') === true)).toBe(true);
     wrapper.unmount();
@@ -66,13 +97,8 @@ describe("personal workspace", () => {
       { appId: "removed", title: "Removed app", path: "/applications/removed", visitedAt: new Date().toISOString() },
     ];
     const { wrapper } = await page();
-    expect(wrapper.text()).toContain("Recent work");
-    const columns = wrapper.findAll(".workspace-column");
-    expect(columns).toHaveLength(2);
-    expect(columns[0]!.find('[data-section="apps"]').exists()).toBe(true);
-    expect(columns[0]!.find('[data-section="data"]').exists()).toBe(true);
-    expect(columns[1]!.find('[data-section="tasks"]').exists()).toBe(true);
-    expect(columns[1]!.find('[data-section="recent"]').exists()).toBe(true);
+    for (const section of ["apps", "data", "tasks", "recent"])
+      expect(wrapper.find(`[data-section="${section}"]`).exists()).toBe(true);
     expect(wrapper.text()).not.toContain("Removed app");
     const preview = wrapper.findComponent({ name: "DashboardMetricPreview" });
     const revision = preview.props("revision");
@@ -108,7 +134,7 @@ describe("personal workspace", () => {
     expect(applicationLink.attributes('target')).toBe('_blank');
     expect(applicationLink.attributes('rel')).toBe('noopener');
     expect(open).not.toHaveBeenCalled();
-    await wrapper.findAll("button").find(button => button.text() === "Sales")!.trigger("click");
+    await wrapper.find('.board-link').trigger("click");
     await flushPromises();
     expect(router.currentRoute.value.fullPath).toBe("/dashboards?dashboardId=board-a");
     wrapper.unmount();
@@ -126,7 +152,7 @@ describe("personal workspace", () => {
     api.failSave = false;
     await save().trigger("click");
     await flushPromises();
-    expect(api.saved).toEqual({ ...defaultPersonalWorkspace(), dashboardIds: ["board-a"], applicationIds: ["app-orders"] });
+    expect(api.saved).toEqual({ ...defaultPersonalWorkspace(), dashboardIds: ["board-a"], applicationIds: ["app-orders"], sections: { main: ["apps", "data"], sidebar: ["conversations", "objects", "tasks", "recent"], hidden: [] } });
     wrapper.unmount();
   });
 });

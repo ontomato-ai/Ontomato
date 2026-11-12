@@ -39,7 +39,7 @@ describe("chart colours", () => {
       { name: "b", value: 2 },
     ]);
     const text = JSON.stringify(option);
-    expect(text).toContain("#fafafa");
+    expect(text).toContain(other.light.surface);
     expect(text).not.toMatch(new RegExp(ossBrand.light.surface, "i"));
   });
 });

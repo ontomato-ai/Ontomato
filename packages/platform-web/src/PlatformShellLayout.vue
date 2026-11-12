@@ -25,6 +25,8 @@ import { appAt } from "./apps";
 import { recentDestination } from "./recent-work";
 import { openApplicationKey, platformApplicationsKey, platformBrandKey, type PlatformAppDeclaration } from "./apps";
 import { useApplicationOpening } from "./application-opening";
+import { workspaceObjectHostKey } from "@ontomato/contracts/workspace-objects";
+import { createWorkspaceObjectHost } from "./workspace-objects";
 
 /**
  * The platform's one shell around the router: the rail, the current application's column and the page area, with the
@@ -44,6 +46,7 @@ const host = usePlatformHost();
 const { t, te } = useI18n();
 const route = useRoute();
 const router = useRouter();
+provide(workspaceObjectHostKey, createWorkspaceObjectHost());
 
 const catalog = useApplicationCatalog();
 watch(() => host.navigation.value, () => { void catalog.refresh(); }, { immediate: true, deep: true });

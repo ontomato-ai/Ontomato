@@ -101,9 +101,13 @@ const headerLabels = computed(() => ({
     :brand="brand"
     @select-app="emit('selectApp', $event)"
   >
-    <!-- The application's menu of its own: its name, its groups and its foot in its column, the page beside it. -->
-    <div v-if="menu && !blocked" class="platform-app-body has-menu">
-      <aside class="platform-app-menu" :aria-label="labels.pages">
+    <!--
+      One page area for every application, so the page is mounted once: the menu of an application that has its own (the
+      ontology manager) is inserted beside the page, never around it. Which application has a menu is known only when the
+      catalog arrives, after the page has been drawn; a page area per case would mount the page a second time then.
+    -->
+    <div class="platform-app-body" :class="{ 'has-menu': menu !== null && !blocked }">
+      <aside v-if="menu && !blocked" class="platform-app-menu" :aria-label="labels.pages">
         <h2 class="app-menu-title">{{ menu.label }}</h2>
         <AppPanelPages
           class="app-menu-pages"
@@ -124,7 +128,12 @@ const headerLabels = computed(() => ({
           @save="pageActions?.draft?.save()"
           @discard="pageActions?.draft?.discard()"
         />
+        <div v-if="blocked" class="platform-blocked" role="alert">{{ blocked.message }}</div>
+        <!--
+          A page that draws its own header carries its own gutter; every other page gets it here, once, with the header's.
+        -->
         <div
+          v-else
           class="platform-page-body platform-page-gutter"
           :class="{ 'own-header': shownPage?.ownHeader === true, 'own-frame': shownPage === null, 'browser-workspace': browserWorkspace }"
         >
@@ -132,29 +141,6 @@ const headerLabels = computed(() => ({
         </div>
       </div>
     </div>
-    <template v-else>
-      <PlatformPageHeader
-        v-if="headerShown"
-        :title="headerTitle"
-        :description="headerDescription"
-        :actions="pageActions?.actions"
-        :draft="pageActions?.draft ?? null"
-        :labels="headerLabels"
-        @save="pageActions?.draft?.save()"
-        @discard="pageActions?.draft?.discard()"
-      />
-      <div v-if="blocked" class="platform-blocked" role="alert">{{ blocked.message }}</div>
-      <!--
-        A page that draws its own header carries its own gutter; every other page gets it here, once, with the header's.
-      -->
-      <div
-        v-else
-        class="platform-page-body platform-page-gutter"
-        :class="{ 'own-header': shownPage?.ownHeader === true, 'own-frame': shownPage === null, 'browser-workspace': browserWorkspace }"
-      >
-        <RouterView />
-      </div>
-    </template>
   </PlatformShell>
 </template>
 

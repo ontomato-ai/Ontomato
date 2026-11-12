@@ -117,13 +117,10 @@ describe("the platform's scheduled tasks page", () => {
     const { wrapper } = await mountPlatform("/schedules");
 
     expect(wrapper.text()).not.toContain("platformSchedules.");
-    expect(wrapper.findAll(".chip").map((chip) => chip.findAll("span")[0]!.text())).toEqual([
-      "All",
-      "Agent platform",
-      "Ontology manager",
-      "Knowledge governance",
-      "Operations diagnosis",
-    ]);
+    const railNames = catalogFixture()
+      .filter((app) => ["ontology", "agents", "operations", "governance"].includes(app.id))
+      .map((app) => app.names.en!);
+    expect(wrapper.findAll(".chip").map((chip) => chip.findAll("span")[0]!.text())).toEqual(["All", ...railNames]);
     expect(wrapper.text()).toContain("Nightly status check");
     expect(requests.some((url) => url.includes("/data-query/platform/scheduled-tasks/credential/renew"))).toBe(true);
     expect(requests.every((url) => !url.includes("/api/data-query/api/data-query"))).toBe(true);

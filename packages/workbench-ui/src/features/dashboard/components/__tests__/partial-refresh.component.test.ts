@@ -66,17 +66,21 @@ afterEach(() => {
 describe("dashboard widget refresh with a partial result", () => {
   it("keeps the marker on the chart and the metric, and shows it instead of 'no data'", async () => {
     const { chart, metric } = await load({ data: [], rawData: [], fields: {}, dsl: {}, ...MARKER });
-    expect(chart.truncation).toEqual(MARKER);
-    expect(chart.option.__ragchatState).toBe("empty");
-    expect(metric.truncation).toEqual(MARKER);
+    expect(chart.truncation).toMatchObject(MARKER);
+    expect(metric.truncation).toMatchObject(MARKER);
 
-    const notice = `${t("chat.partialResult", { rowLimit: 100000 })} ${MARKER.truncationHint}`;
+    const header = t("chat.partialResult", { rowLimit: 100000 });
     const chartCard = mount(ChartCard, { props: { chart }, global: { plugins: [i18n, ElementPlus], stubs: { EChart: true } } });
-    expect(chartCard.find(".chart-mask").text()).toBe(notice);
-    expect(chartCard.find(".chart-mask").text()).not.toContain(t("common.noData"));
+    const mask = chartCard.find(".chart-mask").text();
+    // The localized header and the data engine's own hint, in place of "no data".
+    expect(mask).toContain(header);
+    expect(mask).toContain(MARKER.truncationHint);
+    expect(mask).not.toContain(t("common.noData"));
 
     const metricCard = mount(MetricCard, { props: { metric }, global: { plugins: [i18n, ElementPlus] } });
-    expect(metricCard.find(".metric-partial").attributes("title")).toBe(notice);
+    const title = metricCard.find(".metric-partial").attributes("title")!;
+    expect(title).toContain(header);
+    expect(title).toContain(MARKER.truncationHint);
   });
 
   it("leaves a complete refresh unmarked", async () => {

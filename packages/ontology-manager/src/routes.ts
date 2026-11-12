@@ -39,9 +39,9 @@ const ObjectViewRoute = defineComponent({
     const router = useRouter();
     return () => h(ObjectViewPage, {
       reference: { className: String(route.params.className), primaryKey: String(route.query.key ?? "") },
-      onOpen: (reference: ObjectReference) => void router.push(objectViewLocation(reference)),
+      onOpen: (reference: ObjectReference) => void router.push({ ...objectViewLocation(reference), query: { key: reference.primaryKey, ...(route.query.from === "workspace" ? { from: "workspace" } : {}) } }),
       onEdit: () => void router.push({ name: routes.objectViewEditor.name, params: route.params, query: route.query }),
-      onBack: () => void router.push({ name: routes.data.name, params: { className: route.params.className } }),
+      onBack: () => void router.push(route.query.from === "workspace" ? { path: "/workspace" } : { name: routes.data.name, params: { className: route.params.className } }),
     });
   },
 });

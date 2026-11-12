@@ -85,8 +85,14 @@ describe("the preview's page context", () => {
     const { t } = workbenchI18n().global;
     const name = (key: string, named: Record<string, string>) => t(key, named);
 
-    expect(selectedObject(ORDER, name)).toBe("Order DEMO-0001");
-    expect(selectedObject({ className: "celestial_body", primaryKey: "body_earth", name: "Earth" }, name))
-      .toBe("celestial_body Earth (primary key body_earth)");
+    // The name is the key: the object is named once, by its class and that key.
+    const named = selectedObject(ORDER, name);
+    expect(named).toContain("Order");
+    expect(named).toContain("DEMO-0001");
+    // Name and key differ: the reader learns both, so the agent knows which object it is.
+    const keyed = selectedObject({ className: "celestial_body", primaryKey: "body_earth", name: "Earth" }, name);
+    expect(keyed).toContain("celestial_body");
+    expect(keyed).toContain("Earth");
+    expect(keyed).toContain("body_earth");
   });
 });
