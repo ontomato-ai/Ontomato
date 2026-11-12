@@ -73,6 +73,13 @@ export const builderApi = {
   async restore(id: string, commit: string) {
     return ((await nodeApiPost(`${workspacePath(id)}/restore`, { commit })) as WorkspaceSaved).commit;
   },
+  /**
+   * Starts a business test from a sample of the workspace through the entry the agent's `test start` uses; Java ends
+   * the previous round and owns the new one.
+   */
+  async startBuildTest(id: string, samplePath: string) {
+    await nodeApiPost(`${workspacePath(id)}/build-tests`, { samplePath });
+  },
   async previewToken(id: string) {
     return (await nodeApiPost(`${workspacePath(id)}/preview-token`, {})) as WorkspacePreviewToken;
   },
