@@ -1,13 +1,6 @@
 ---
 name: quality-trace-graph
 description: Render batches, process executions, assembly events, recall decisions, and products as an interactive directed evidence graph highlighting risk anchors, recall status, and data gaps.
-metadata:
-  ontomato.type: executable
-  ontomato.category: visualization
-  ontomato.title: Quality Traceability Graph
-  ontomato.tags: '["quality traceability","relationship graph","directed graph","derived paths","batch impact","ECharts"]'
-  ontomato.version: 1.0.0
-  ontomato.outputType: html
 ---
 
 ## Standard CLI

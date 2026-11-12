@@ -37,7 +37,7 @@ afterEach(() => { vi.unstubAllGlobals(); vi.unstubAllEnvs(); });
 it("round-trips a standard package byte-for-byte and lists and reads its files", async () => {
   const imported = await skillManager.importSkill(domain, zip());
   expect(imported.skill).toEqual(reference);
-  expect(imported.type).toBe("executable");
+  expect(imported.title).toBe(reference.name);
   const exported = new AdmZip(await skillManager.exportSkill(domain, reference.name));
   for (const [name, content] of Object.entries(files)) expect(exported.readFile(name)).toEqual(Buffer.from(content));
   const front = parse(exported.readAsText("SKILL.md").split("---")[1]);
@@ -45,6 +45,14 @@ it("round-trips a standard package byte-for-byte and lists and reads its files",
   expect(await skillManager.listSkillFiles(domain, reference.name)).toEqual(Object.keys(files).sort()
     .map((name) => ({ path: name, size: Buffer.byteLength(files[name as keyof typeof files]) })));
   expect(await skillManager.readSkillFile(domain, reference.name, "references/guide.md")).toBe(files["references/guide.md"]);
+});
+
+it("keeps an older package's ontomato.* metadata in the package and reads none of it", async () => {
+  const older = "---\nname: sample-skill\ndescription: A portable sample\nmetadata:\n  ontomato.title: Old title\n  ontomato.category: visualization\n  ontomato.tags: not json\n---\nRun scripts/main.mjs.\n";
+  const imported = await skillManager.importSkill(domain, zip({ "SKILL.md": older }), true);
+  expect(imported).toMatchObject({ title: reference.name, description: "A portable sample" });
+  const exported = new AdmZip(await skillManager.exportSkill(domain, reference.name));
+  expect(exported.readAsText("SKILL.md")).toBe(older);
 });
 
 it("reads only files inside the package", async () => {

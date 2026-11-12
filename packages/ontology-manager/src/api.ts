@@ -618,9 +618,13 @@ export function createManagerClient(
     return objectViewRequest("save", document.className, form, { document, expectedRevision, description });
   }
 
+  /**
+   * Every skill of the domain: a package says nothing about drawing charts, so the author picks one and the preview shows
+   * whether it can. Until object views keep their own generated charts (requirement 46820517), this is the whole choice.
+   */
   async function loadViewSkills() {
     const response = await send("/skills", { method: "GET" }, "");
-    return (response.skills as Array<{ id: string; title?: string; type: string; category: string }>).filter(skill => skill.type === "executable" && skill.category === "visualization");
+    return response.skills as Array<{ id: string; title: string }>;
   }
 
   async function renderViewSkill(id: string, input: Record<string, unknown>) {

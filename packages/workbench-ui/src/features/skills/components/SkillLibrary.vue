@@ -3,7 +3,7 @@ import { onMounted, ref, watch } from "vue";
 import { useRouter } from "vue-router";
 import { ElMessage, ElMessageBox, type UploadFile } from "element-plus";
 import { useI18n } from "vue-i18n";
-import { BookOpen, Download, FileCode, Trash2, Upload } from "lucide-vue-next";
+import { Download, Puzzle, Trash2, Upload } from "lucide-vue-next";
 import type { SkillInfo } from "@ontomato/contracts/skills";
 import { PlatformPageHeader } from "@ontomato/platform-shell";
 import { platformRoutes } from "@ontomato/platform-shell/routes";
@@ -103,8 +103,8 @@ async function upload(uploaded: UploadFile) {
         <li v-for="skill in skills" :key="skill.id" class="skill-card">
           <button type="button" class="card-open" @click="open(skill)">
             <span class="card-head">
-              <component :is="skill.type === 'executable' ? FileCode : BookOpen" class="card-icon" :size="20" aria-hidden="true" />
-              <span class="card-name">{{ skill.title || skill.id }}</span>
+              <Puzzle class="card-icon" :size="20" aria-hidden="true" />
+              <span class="card-name">{{ skill.title }}</span>
               <el-tag size="small" :type="skill.isPublic ? 'info' : 'primary'" effect="plain" disable-transitions>
                 {{ skill.isPublic ? t("capabilities.sourcePublic") : t("capabilities.sourceDomain") }}
               </el-tag>

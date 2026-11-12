@@ -1,14 +1,6 @@
 ---
 name: growth-rate-calc
 description: Compute year-over-year and month-over-month growth rates for data, suitable for time series data analysis.
-metadata:
-  ontomato.type: executable
-  ontomato.category: analysis
-  ontomato.title: Year-over-year and month-over-month calculation
-  ontomato.tags: '["year-over-year","month-over-month","growth rate","calculation"]'
-  ontomato.version: 1.0.0
-  ontomato.outputType: json
-  ontomato.useCases: '["year-over-year growth analysis","month-over-month growth analysis","trend calculation"]'
 ---
 
 ## Standard CLI

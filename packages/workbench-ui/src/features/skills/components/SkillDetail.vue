@@ -125,7 +125,7 @@ async function remove() {
     <header class="detail-titlebar platform-page-gutter">
       <el-button text :icon="ArrowLeft" @click="back">{{ t("capabilities.backToSkills") }}</el-button>
       <span class="title-divider" aria-hidden="true"></span>
-      <h1 class="title-name">{{ skill ? skill.title || skill.id : skillId }}</h1>
+      <h1 class="title-name">{{ skill ? skill.title : skillId }}</h1>
       <el-tag v-if="skill" size="small" :type="skill.isPublic ? 'info' : 'primary'" effect="plain" disable-transitions>
         {{ skill.isPublic ? t("capabilities.sourcePublic") : t("capabilities.sourceDomain") }}
       </el-tag>

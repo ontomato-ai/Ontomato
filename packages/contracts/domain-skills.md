@@ -16,7 +16,6 @@ type AssistantSkillCatalog = {
     skill: RuntimeSkillRef;
     title: string;
     description: string;
-    tags: string[];
   }[];
 };
 ```
@@ -46,14 +45,14 @@ description validation is shared with runtime publication through contracts.
 Private top-level `type/category/entries` and an exported `execute(input)` are no
 longer package requirements. No private execution manifest is generated.
 
-Descriptive fields use optional string-valued `metadata["ontomato.<field>"]`
-entries: type, category, title, tags (JSON array), version and outputType. These
-are workbench presentation hints, not runtime dispatch or version selectors. A
-plain standard package requires none of them; the view defaults to category
-analysis, derives type from script presence, and uses name/empty tags/empty
-version when hints are absent. Import/export preserves package bytes; importing a
-package with an existing name replaces the whole package after confirmation.
-Packages are not edited in place, and there is no domain-wide enablement: an
+A package is its standard frontmatter (`name`, `description` and the other
+standard fields) with its scripts and references; since 2026-11-12 the platform
+reads nothing from `metadata`, including the `ontomato.*` hints older packages
+still carry, and neither strips nor rejects them. A skill is listed under the
+edition's label for a built-in skill (name and description, by skill name), else
+under its own name and description. Import/export preserves package bytes;
+importing a package with an existing name replaces the whole package after
+confirmation. Packages are not edited in place, and there is no domain-wide enablement: an
 agent uses exactly the skills selected in its definition.
 
 At new-run preparation the workbench publishes the selected domain directory's
