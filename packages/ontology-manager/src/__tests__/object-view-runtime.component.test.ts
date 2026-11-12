@@ -60,6 +60,16 @@ describe("configured object view interaction", () => {
     (element.querySelector(".el-table__body tr") as HTMLElement).click(); await settle();
     expect(element.textContent).toContain("Maintain exchange");
   });
+  it("shows an empty list property as empty, not as its raw value", async () => {
+    const view = createObjectView("Person");
+    const properties = createViewWidget("properties"); properties.fields = ["photoWorks", "tags"];
+    view.tabs[0].sections[0].widgets = [properties];
+    vi.stubGlobal("fetch", async () => answer({}));
+    const element = mount(() => h(ObjectViewRuntime, { document: view, object: { photoWorks: [], tags: ["a"] }, reference: { className: "Person", primaryKey: "1" } }));
+    await settle();
+    expect(Array.from(element.querySelectorAll("dd")).map(item => item.textContent?.trim())).toEqual(["—", '["a"]']);
+  });
+
   it("uses configured select options and does not label an unknown code as a degree", async () => {
     const view = createObjectView("Person");
     const properties = createViewWidget("properties"); properties.fields = ["degree"];
