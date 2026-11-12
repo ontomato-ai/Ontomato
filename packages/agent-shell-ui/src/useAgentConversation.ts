@@ -24,7 +24,7 @@ const TASK_RECONNECT_MS = 2000;
  * selection token, so a late response for a previous session never writes into the current one.
  * Frames are applied in batches once per animation frame.
  */
-export function useAgentConversation(port: () => AgentHostClient) {
+export function useAgentConversation(port: () => AgentHostClient, agent: () => string | null) {
   const state = reactive<ConversationState>(emptyConversation());
   const loading = ref(false);
   const loadError = ref<string | null>(null);
@@ -177,24 +177,41 @@ export function useAgentConversation(port: () => AgentHostClient) {
   }
 
   /**
-   * Starts a run, creating the session first for a new conversation. Resolves to the created
-   * session (if any) and the admitted run so the session list can update; null when sending failed.
+   * Starts a run, creating the session first for a new conversation. A send belongs to the client and agent it started
+   * with: once the host has moved to another, what returns is dropped and the conversation is the new one's blank
+   * conversation again. Otherwise resolves to the created session (if any) and the admitted run, so the session list
+   * can update; a created session whose run was refused comes back without a run, so the host still takes it. Null
+   * when sending failed without creating a session.
    */
   async function send(
     agentId: string,
     text: string,
-  ): Promise<{ createdSession: AgentHostSession | null; snapshot: AgentHostRunSnapshot } | null> {
+  ): Promise<
+    | { createdSession: AgentHostSession | null; snapshot: AgentHostRunSnapshot }
+    | { createdSession: AgentHostSession; snapshot: null }
+    | null
+  > {
     if (busy.value) return null;
-    const current = token;
+    const current = token, client = port();
+    /** The host has moved to another client or agent since this send started. */
+    const moved = () => port() !== client || agent() !== agentId;
+    /** Once the host has moved, this send's results are dropped and the conversation is the new one's blank conversation. */
+    const left = () => {
+      if (!moved()) return false;
+      reset(null);
+      return true;
+    };
     sending.value = true;
     sendError.value = null;
     pendingInput.value = text;
+    let createdSession: AgentHostSession | null = null;
     try {
-      const createdSession = state.sessionId ? null : await port().createSession(agentId);
-      if (current !== token) return null;
+      createdSession = state.sessionId ? null : await client.createSession(agentId);
+      if (current !== token || left()) return null;
       if (createdSession) state.sessionId = createdSession.id;
-      const snapshot = await port().startRun(state.sessionId!, text);
-      if (current !== token) return { createdSession, snapshot };
+      const snapshot = await client.startRun(state.sessionId!, text);
+      if (current !== token) return moved() ? null : { createdSession, snapshot };
+      if (left()) return null;
       applyRunSnapshot(state, snapshot);
       for (const message of snapshot.messages) knownMessageSeq = Math.max(knownMessageSeq, message.messageSeq);
       pendingInput.value = null;
@@ -203,9 +220,10 @@ export function useAgentConversation(port: () => AgentHostClient) {
       stream.start(subscription(snapshot.run.id));
       return { createdSession, snapshot };
     } catch (error) {
-      if (current === token) {
+      if (current === token && !left()) {
         sendError.value = errorText(error);
         pendingInput.value = null;
+        if (createdSession) return { createdSession, snapshot: null };
       }
       return null;
     } finally {

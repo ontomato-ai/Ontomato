@@ -98,10 +98,13 @@ export function useAgentNav(options: AgentNavOptions) {
     sessions.value = [{ ...session, title: session.title || title, latestRun: runStatus(run) }, ...sessions.value];
   }
 
-  /** Marks the open conversation's entry with a run's new state. */
-  function markRun(run: Pick<AgentHostRun, "id" | "status" | "stopReason">) {
-    const entry = currentSession.value;
-    if (entry) sessions.value = [{ ...entry, latestRun: runStatus(run) }, ...sessions.value.filter((s) => s !== entry)];
+  /**
+   * Marks the entry of the conversation a run belongs to with the run's new state, whichever conversation is open. A
+   * conversation still untitled takes the message that started the run, as the host titles it.
+   */
+  function markRun(run: Pick<AgentHostRun, "id" | "sessionId" | "status" | "stopReason">, title: string) {
+    const entry = sessions.value.find((session) => session.id === run.sessionId);
+    if (entry) sessions.value = [{ ...entry, title: entry.title || title, latestRun: runStatus(run) }, ...sessions.value.filter((s) => s !== entry)];
   }
 
   // Switching agents drops the previous agent's conversations and starts from a clean conversation.
