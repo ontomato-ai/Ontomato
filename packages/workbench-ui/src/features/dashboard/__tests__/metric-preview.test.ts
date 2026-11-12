@@ -17,6 +17,18 @@ beforeEach(() => {
   });
 });
 describe("dashboard metric previews", () => {
+  it("queries only explicitly followed cards and reports missing selections", async () => {
+    const wrapper = mount(Preview, { props: { dashboardId: "board", revision: 0, cardIds: ["total", "removed"] }, global: { plugins: [createI18n({ legacy: false, locale: "en", messages: { en: {} } })] } });
+    await flushPromises();
+    expect(api.query.mock.calls.map(call => call[1])).toEqual(["total"]);
+    expect(wrapper.text()).toContain("1 followed cards are unavailable");
+    expect(wrapper.text()).toContain("read time is not the source data update time");
+    await wrapper.setProps({ cardIds: [] });
+    await flushPromises();
+    expect(wrapper.findAll('.preview-value')).toHaveLength(0);
+    expect(api.query).toHaveBeenCalledTimes(1);
+    wrapper.unmount();
+  });
   it("loads a saved chart and emits its identity for the workspace detail interaction", async () => {
     const card = { id: "status-chart", name: "Staff status", query: { kind: "metric", metricId: "status", parameters: {} }, chartType: "bar", fields: { xAxis: "category", yAxis: "count" } };
     api.detail.mockResolvedValue({ groups: [{ metrics: [], charts: [card] }] });
