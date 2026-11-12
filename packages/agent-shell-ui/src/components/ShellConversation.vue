@@ -30,6 +30,12 @@ const labels = computed(() => shell.labels.value);
 const scroller = ref<HTMLElement | null>(null);
 const content = ref<HTMLElement | null>(null);
 const stick = ref(true);
+/**
+ * A task the reader picked from the task list, held in view: its reply's process and the content above it keep laying
+ * out after it opens (some of it only as it enters the view), so every layout change places it again, instantly, until
+ * the reader scrolls. While it is held the tail is not followed.
+ */
+const anchor = ref<string | null>(null);
 let observer: ResizeObserver | null = null;
 let lastScrollTop = 0;
 
@@ -44,7 +50,7 @@ const waiting = computed(
 
 function onScroll() {
   const el = scroller.value;
-  if (!el) return;
+  if (!el || anchor.value) return;
   const upward = el.scrollTop < lastScrollTop;
   lastScrollTop = el.scrollTop;
   stick.value = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
@@ -81,7 +87,8 @@ function toBottom(smooth = false) {
 onMounted(() => {
   // Follow new content once per layout change, only while the reader is already at the bottom.
   observer = new ResizeObserver(() => {
-    if (stick.value) toBottom();
+    if (anchor.value) holdAnchor();
+    else if (stick.value) toBottom();
   });
   if (content.value) observer.observe(content.value);
 });
@@ -96,6 +103,7 @@ watch(content, (el, previous) => {
 watch(
   () => props.sessionId,
   () => {
+    anchor.value = null;
     stick.value = true;
     lastScrollTop = 0;
   },
@@ -108,13 +116,31 @@ watch([() => props.sessionId, () => props.loading], ([, loading]) => {
   toBottom();
 }, { flush: "post" });
 
-// A task the reader asked to see is scrolled to by its reply; following the tail would scroll away from it as the
-// reply's process opens.
-watch(() => shell.taskFocus?.value, (focus) => {
-  if (focus) stick.value = false;
+function holdAnchor() {
+  const el = scroller.value, target = anchor.value && document.getElementById(anchor.value);
+  if (!el || !target) return;
+  el.scrollTop += target.getBoundingClientRect().top - el.getBoundingClientRect().top - el.clientHeight / 4;
+  lastScrollTop = el.scrollTop;
+}
+
+/** The reader's own scrolling releases a held task. */
+function release() {
+  if (!anchor.value) return;
+  anchor.value = null;
+  onScroll();
+}
+
+// Its reply opens the process or the review in the same flush; the task is placed once that has rendered.
+watch(() => shell.taskFocus?.value, async (focus) => {
+  if (!focus) return;
+  stick.value = false;
+  anchor.value = `agent-task-${focus.taskId}`;
+  await nextTick();
+  holdAnchor();
 });
 
 function send(text: string) {
+  anchor.value = null;
   stick.value = true;
   emit("send", text);
 }
@@ -132,7 +158,15 @@ function send(text: string) {
       </div>
     </div>
     <template v-else>
-      <div ref="scroller" class="scroller" @scroll.passive="onScroll">
+      <div
+        ref="scroller"
+        class="scroller"
+        @scroll.passive="onScroll"
+        @wheel.passive="release"
+        @touchstart.passive="release"
+        @keydown="release"
+        @pointerdown="release"
+      >
         <div ref="content" class="thread">
           <div v-if="hasOlder && !loading" class="history-more">
             <span v-if="olderError" role="alert">{{ labels.loadFailed }}</span>

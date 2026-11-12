@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, inject, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { computed, inject, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { Check, ChevronRight, CircleAlert, Copy, LoaderCircle, Square, ThumbsDown, ThumbsUp, TriangleAlert } from "lucide-vue-next";
 import type { ShellFeedbackPort, ShellFeedbackValue } from "../types";
 import SlotOutlet from "./SlotOutlet.vue";
@@ -38,34 +38,10 @@ const taskCount = computed(() =>
 /** The process stays open while the run works and folds to one line once it stops; a stopped run mounts folded. */
 const { open, toggle, reveal } = useAutoFold(() => props.item.running);
 
-/** A task the reader picked from the task list: its card opens the process, its review is already in view. */
-watch(() => shell.taskFocus?.value, async (focus) => {
-  if (!focus) return;
-  const card = props.item.process.some((block) => block.kind === "task" && block.task.id === focus.taskId);
-  if (!card && !props.item.reviews.some((review) => review.task.id === focus.taskId)) return;
-  if (card) reveal();
-  await nextTick();
-  scrollWhenSettled(`agent-task-${focus.taskId}`);
+/** A task the reader picked from the task list: its card is in the process, which opens; the conversation scrolls to it. */
+watch(() => shell.taskFocus?.value, (focus) => {
+  if (focus && props.item.process.some((block) => block.kind === "task" && block.task.id === focus.taskId)) reveal();
 });
-
-/**
- * Scrolls to an element once its position stops moving between frames: what opens with it lays out after it, and a
- * scroll made before that is pushed away.
- */
-function scrollWhenSettled(id: string) {
-  let last: number | null = null;
-  const step = () => {
-    const element = document.getElementById(id);
-    if (!element) return;
-    const top = element.getBoundingClientRect().top;
-    if (top === last) element.scrollIntoView({ block: "center", behavior: "smooth" });
-    else {
-      last = top;
-      requestAnimationFrame(step);
-    }
-  };
-  requestAnimationFrame(step);
-}
 
 /** The main run's elapsed time: ticking while it is active, its duration once it stopped. */
 const now = ref(Date.now());
