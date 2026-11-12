@@ -3,7 +3,6 @@ import { ensurePlatformHomeSchema } from "./20261111-platform-home/schema";
 import { ensurePlatformEventCursorSchema } from "./20261103-platform-events/schema";
 import { ensureOpsDiagnosisSchema } from "./20261029-ops-diagnosis/schema";
 import { ensureAssistantSchema } from "./20261028-assistant/schema";
-import { ensureAssistantActionsSchema } from "./20261107-assistant-actions/schema";
 import { ensureAssistantDefaultPromptSchema } from "./20261105-assistant-default-prompts/schema";
 import {
   ASSISTANT_DEFAULT_PROMPTS_NAME,
@@ -100,7 +99,6 @@ export const POSTGRES_MIGRATION_REGISTRY: MigrationRegistration[] = [
   { directory: "20261028-assistant", ensureSchema: ensureAssistantSchema },
   { directory: "20261109-workspaces", ensureSchema: ensureWorkspacesSchema },
   { directory: "20261111-platform-home", ensureSchema: ensurePlatformHomeSchema },
-  { directory: "20261107-assistant-actions", ensureSchema: ensureAssistantActionsSchema },
   {
     directory: "20261105-assistant-default-prompts",
     ensureSchema: ensureAssistantDefaultPromptSchema,

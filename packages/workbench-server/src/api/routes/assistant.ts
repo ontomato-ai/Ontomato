@@ -5,7 +5,6 @@ import { safePptFileName } from "../../services/analysis-agent/delivery/ppt-arti
 import { requirePermission } from "../../identity/installed";
 import { assertAppBuilderAccess } from "../../services/app-builder/access";
 import { assistantSkillCatalog } from "../../services/assistant/skills";
-import { actionCard, confirmAction } from "../../services/assistant/actions";
 import { readAnalysisScope } from "../../services/assistant/analysis-scope";
 import { readDrilldown } from "../../services/assistant/drilldown";
 import {
@@ -53,15 +52,6 @@ router.get("/sessions/:sessionId/artifacts/:artifactId/drilldown", wrap(async (r
 }));
 router.get("/sessions/:sessionId/artifacts/:artifactId/analysis-scope", wrap(async (req, res) => {
   res.json(await readAnalysisScope(id(req, "sessionId"), id(req, "artifactId"), context(req).owner, z.string().max(35).optional().parse(req.query.locale)));
-}));
-router.get("/sessions/:sessionId/artifacts/:artifactId/action", wrap(async (req, res) => {
-  const c = context(req);
-  res.json(await actionCard(id(req, "sessionId"), id(req, "artifactId"), c.owner, c.credentials));
-}));
-router.post("/sessions/:sessionId/artifacts/:artifactId/action/confirm", wrap(async (req, res) => {
-  const c = context(req);
-  const input = z.object({ parameters: z.record(z.unknown()) }).strict().parse(req.body);
-  res.json(await confirmAction(id(req, "sessionId"), id(req, "artifactId"), c.owner, c.credentials, input.parameters));
 }));
 const agentAdmin = requirePermission(["analysis-agent"]);
 router.get("/diagnosis-model", agentAdmin, wrap(async (req, res) => {
