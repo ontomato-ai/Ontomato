@@ -96,6 +96,7 @@ public class AgentCaller {
     return new OntologyAgentAccess.Context(actor.owner(),access,null,null,language,expires,scope);
   }
   public OntologyAgentAccess.Context ownerContext(OntologyAgentStore.Owner owner,io.ontomato.dataengine.service.QueryAccessService.Access access,String language,long deadline) {
+    if(access.expiresAt()!=null) deadline=Math.min(deadline,access.expiresAt());
     String token=null,key=null;
     var current=identity.getCurrentUser();
     var request=org.springframework.web.context.request.RequestContextHolder.getRequestAttributes();
