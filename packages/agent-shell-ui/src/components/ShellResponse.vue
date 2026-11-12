@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, inject, onBeforeUnmount, onMounted, ref, watch } from "vue";
-import { Check, CircleAlert, Copy, LoaderCircle, Square, ThumbsDown, ThumbsUp, TriangleAlert } from "lucide-vue-next";
+import { Check, ChevronRight, CircleAlert, Copy, LoaderCircle, Square, ThumbsDown, ThumbsUp, TriangleAlert } from "lucide-vue-next";
 import type { ShellFeedbackPort, ShellFeedbackValue } from "../types";
 import SlotOutlet from "./SlotOutlet.vue";
 import RetrievalActivity from "./RetrievalActivity.vue";
@@ -8,6 +8,7 @@ import { shellContextKey } from "../context";
 import type { ResponseItem } from "../view";
 import ShellMarkdown from "./ShellMarkdown.vue";
 import ShellProcess from "./ShellProcess.vue";
+import { useAutoFold } from "../useAutoFold";
 
 const props = defineProps<{
   item: ResponseItem;
@@ -23,16 +24,17 @@ const reasonOpen = ref(false);
 const reason = ref("");
 const feedbackBusy = ref(false);
 
-/** The answer is the run's last settled message; while a run streams, each reply with text moves the
- * id, so feedback is read once the run stops rather than at every step. */
+/** The runtime names the answer when the run stops, so feedback has a target only then. */
 const target = computed(() =>
   props.sessionId && !props.item.running && props.item.answerMessageId
     ? { sessionId: props.sessionId, runId: props.item.runId, messageId: props.item.answerMessageId }
     : null,
 );
-const waiting = computed(() => props.item.running && props.item.blocks.length === 0 && props.item.retrievals.length === 0);
+const hasProcess = computed(() => props.item.process.length > 0 || props.item.retrievals.length > 0);
+/** The process stays open while the run works and folds to one line once it stops; a stopped run mounts folded. */
+const { open, toggle } = useAutoFold(() => props.item.running);
 
-/** Elapsed time since the request: ticking while the run is active, final once it stopped. */
+/** The main run's elapsed time: ticking while it is active, its duration once it stopped. */
 const now = ref(Date.now());
 let ticker: ReturnType<typeof setInterval> | null = null;
 watch(
@@ -54,11 +56,11 @@ function clock(ms: number) {
   return h ? `${h}:${String(m).padStart(2, "0")}:${ss}` : `${m}:${ss}`;
 }
 const status = computed(() => {
-  const { startedAt, finishedAt, running, end } = props.item;
+  const { startedAt, finishedAt, running } = props.item;
   const until = running ? now.value : finishedAt;
-  if (startedAt === null || until === null) return null;
-  const state = running ? labels.value.working : end?.stopReason === "stop" ? labels.value.done : "";
-  return { state, elapsed: labels.value.elapsed(clock(until - startedAt)) };
+  if (startedAt === null || until === null) return running ? labels.value.working : null;
+  const time = clock(until - startedAt);
+  return running ? `${labels.value.working} · ${labels.value.elapsed(time)}` : labels.value.worked(time);
 });
 
 // The answer id appears after the run settles, and the component stays mounted, so read the stored
@@ -114,29 +116,46 @@ async function submit(value: ShellFeedbackValue) {
 
 <template>
   <div class="response">
-    <div v-if="status" class="status-line" :aria-live="item.running ? 'off' : 'polite'">
-      <LoaderCircle v-if="item.running" :size="12" class="spin" />
-      <span v-if="status.state">{{ status.state }}</span>
-      <span v-if="status.state" aria-hidden="true">·</span>
-      <span>{{ status.elapsed }}</span>
-    </div>
-    <div v-if="waiting" class="waiting" aria-live="polite">
+    <section v-if="status || hasProcess" class="process-region" :class="{ open }">
+      <button
+        v-if="hasProcess"
+        type="button"
+        class="process-toggle"
+        :aria-expanded="open"
+        :aria-live="item.running ? 'off' : 'polite'"
+        @click="toggle"
+      >
+        <LoaderCircle v-if="item.running" :size="12" class="spin" />
+        <span>{{ status }}</span>
+        <ChevronRight :size="14" class="chevron" />
+      </button>
+      <div v-else class="process-toggle" :aria-live="item.running ? 'off' : 'polite'">
+        <LoaderCircle v-if="item.running" :size="12" class="spin" />
+        <span>{{ status }}</span>
+      </div>
+      <div v-if="open && hasProcess" class="process-body">
+        <RetrievalActivity
+          v-for="link in item.retrievals"
+          :key="link.retrievalId"
+          :link="link"
+          :parent-run-id="item.runId"
+          :session-id="sessionId ?? ''"
+        />
+        <template v-for="block in item.process" :key="block.key">
+          <ShellProcess v-if="block.kind === 'steps'" :steps="block.steps" :active="block.active" />
+          <div v-else class="process-note">
+            <ShellMarkdown :content="block.text" :final="block.final" :run-id="block.runId" />
+          </div>
+        </template>
+      </div>
+    </section>
+    <div v-if="item.running && !hasProcess" class="waiting" aria-live="polite">
       <span class="dot" /><span class="dot" /><span class="dot" />
       <span class="sr-only">{{ labels.working }}</span>
     </div>
-    <RetrievalActivity
-      v-for="link in item.retrievals"
-      :key="link.retrievalId"
-      :link="link"
-      :parent-run-id="item.runId"
-      :session-id="sessionId ?? ''"
-    />
-    <template v-for="block in item.blocks" :key="block.key">
-      <ShellProcess v-if="block.kind === 'process'" class="response-process" :steps="block.steps" :active="block.active" />
-      <div v-else class="response-text">
-        <ShellMarkdown :content="block.text" :final="block.final" :run-id="block.runId" />
-      </div>
-    </template>
+    <div v-if="item.answerMessageId" class="response-text">
+      <ShellMarkdown :content="item.answerText" final :run-id="item.runId" />
+    </div>
 
     <div v-if="item.end?.stopReason === 'aborted'" class="end-note muted">
       <Square :size="12" /> {{ labels.stopped }}
@@ -190,6 +209,7 @@ async function submit(value: ShellFeedbackValue) {
         <button type="submit" class="primary" :disabled="!reason.trim() || feedbackBusy">{{ labels.submit }}</button>
       </div>
     </form>
+    <!-- Reviews by other parties (quality checks) go here: after the answer and its actions, never inside them. -->
   </div>
 </template>
 
@@ -204,14 +224,57 @@ async function submit(value: ShellFeedbackValue) {
 .response > .response-text:not(:first-child) {
   margin-top: calc(var(--conversation-block-gap) - var(--conversation-process-gap));
 }
-.status-line {
-  display: flex;
+.process-toggle {
+  display: inline-flex;
   align-items: center;
   gap: 6px;
+  align-self: flex-start;
+  max-width: 100%;
+  margin-left: -8px;
+  padding: 2px 8px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
   line-height: var(--leading-xs);
   color: var(--el-text-color-tertiary);
+  font: inherit;
   font-size: var(--text-xs, 12px);
   font-variant-numeric: tabular-nums;
+}
+button.process-toggle {
+  cursor: pointer;
+  transition: background-color var(--transition-fast, 150ms);
+}
+button.process-toggle:hover {
+  background: var(--el-fill-color);
+  color: var(--el-text-color-regular);
+}
+button.process-toggle:focus-visible {
+  outline: 2px solid var(--el-color-primary);
+  outline-offset: 1px;
+}
+.chevron {
+  flex-shrink: 0;
+  transition: transform var(--transition-fast, 150ms);
+}
+.open .chevron {
+  transform: rotate(90deg);
+}
+.process-region {
+  display: flex;
+  flex-direction: column;
+  gap: var(--conversation-process-gap);
+  min-width: 0;
+}
+.process-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--conversation-process-gap);
+  min-width: 0;
+}
+/* The agent's own notes in the process read quieter than its answer. */
+.process-note {
+  color: var(--el-text-color-secondary);
 }
 .spin {
   animation: spin 1s linear infinite;

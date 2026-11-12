@@ -86,7 +86,10 @@ formal execution limits plus credential/caller expiry.
 
 A successful binding publishes one delivery immediately. No match or execution
 failure publishes nothing and cannot make ask return early. Retriever delivery
-uses its actual terminal messages and accepted artifacts. Results are ordered by
+uses its accepted artifacts, and its `answer` is the text of the message the
+runtime named as the run's `answerMessageId` (empty without one; binding
+deliveries have none). Reads apply the same identity to deliveries stored before
+the runtime named answers: their text counts only for a normal stop. Results are ordered by
 an ontology cursor; wait reads only later deliveries without restarting work.
 Only the main agent chooses whether to cancel the retriever or wait. Whole-request
 or parent closure cancels both unfinished branches, retaining accepted outputs

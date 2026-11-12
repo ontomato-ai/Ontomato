@@ -8,7 +8,7 @@ import { OntologyRetrievalClient } from "./ontology-retrieval";
 import { projectDataset } from "./dataset-projection";
 import type { AssistantQueryEvidence } from "./query-evidence";
 import { assistantStore, type AssistantOwner } from "./store";
-import { messageText, finalText } from "../../platform/agent-runtime/runtime";
+import { messageText, answerText } from "../../platform/agent-runtime/runtime";
 import { buildTurnKey } from "../../logging/log-context";
 import { HttpError } from "../../utils/errors";
 export type AssistantReadAccess =
@@ -80,7 +80,7 @@ export async function readAssistantTurnEvidence(
       sourceRef: link.retrievalId,
       question: evidence.input.question,
       status: child?.run.status ?? (evidence.snapshot.retrieverPending || evidence.snapshot.bindings?.status === "running" ? "running" : "stopped"),
-      fullContent: child ? finalText(child) : "",
+      fullContent: child ? answerText(child) : "",
       backendSessions: [],
       qcResult: evidence.snapshot.qualityCheck,
       datasetsPayload: datasets.map((d) => ({
@@ -128,7 +128,7 @@ export async function readAssistantTurnEvidence(
     requestSeq,
     turnKey: buildTurnKey(sessionId, requestSeq),
     question: messages.find((m) => m.role === "user")?.content ?? "",
-    answer: finalText(run),
+    answer: answerText(run),
     messages,
     runs: [run],
     retrievalRuns,

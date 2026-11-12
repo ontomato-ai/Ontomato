@@ -196,10 +196,10 @@ export interface ShellLabels {
   /** Dataset view switch: the rows, or the graph of how they were obtained. */
   datasetData: string;
   datasetLineage: string;
-  /** A finished response's status line. */
-  done: string;
-  /** Elapsed time phrase; `time` is already formatted as m:ss. */
+  /** Elapsed time phrase while a response runs; `time` is already formatted as m:ss. */
   elapsed: (time: string) => string;
+  /** A finished response's folded process line; `time` is the run's duration, formatted as m:ss. */
+  worked: (time: string) => string;
 }
 
 export interface OpenArtifact {

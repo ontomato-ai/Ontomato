@@ -49,6 +49,7 @@ export const runtimeAgentEventSchema = z.discriminatedUnion("type", [
       status: z.literal("stopped"),
       stopReason: runtimeStopReasonSchema,
       errorMessage: z.string().nullable(),
+      answerMessageId: runtimeIdSchema.nullable(),
       workspaceCommit: workspaceCommitSchema.nullable(),
     })
     .strict(),

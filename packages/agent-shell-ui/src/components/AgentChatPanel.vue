@@ -71,8 +71,8 @@ function sanitizeItem(item: ConversationItem): ConversationItem {
   if (item.kind !== "response") return item;
   return {
     ...item,
-    blocks: item.blocks.map((block) =>
-      block.kind === "process" ? { ...block, steps: block.steps.map(sanitizeStep) } : block
+    process: item.process.map((block) =>
+      block.kind === "steps" ? { ...block, steps: block.steps.map(sanitizeStep) } : block
     ),
   };
 }

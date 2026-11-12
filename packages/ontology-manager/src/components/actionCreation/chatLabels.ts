@@ -59,8 +59,8 @@ export function actionChatLabels(overrides: Partial<ShellLabels> = {}): ShellLab
     activityCompute: "Run calculation",
     datasetData: "Data",
     datasetLineage: "Lineage",
-    done: "Done",
     elapsed: (time) => `${time} elapsed`,
+    worked: (time) => `Worked for ${time}`,
     ...overrides,
   };
 }

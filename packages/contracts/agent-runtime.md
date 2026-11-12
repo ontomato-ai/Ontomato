@@ -31,6 +31,7 @@ plain JSON; HTTP failures retain `{error:{code,message},correlationId}`.
 | POST /v1/sessions/:id/runs | StartRun below; 202 `{run,replayed}` |
 | GET /v1/runs/:id | `{run,messages,pendingMessages,toolExecutions,artifacts,cursor}` |
 | GET /v1/runs/:id/status | `{run}` lifecycle view only; with `waitFor=stopped` (and `timeoutMs` ≤ 60000, default 30000) held until the run stops or the timeout, which returns it still running |
+| GET /v1/runs/:id/final-reply | The message named by the run's `answerMessageId`, or `null` |
 | GET /v1/runs/:id/events | SSE, query `afterSeq` + `streamId` |
 | POST /v1/runs/:id/cancel | `{}`; 200 `{run}` after stopping |
 | POST /v1/sessions/:id/run-intents/:runId/cancel | 204, including unadmitted intents |
@@ -174,6 +175,7 @@ type RunState = {
   status: "running" | "stopped";
   stopReason: "stop" | "length" | "toolUse" | "error" | "aborted" | null;
   errorMessage: string | null;
+  answerMessageId: string | null;
 };
 ```
 
@@ -195,6 +197,15 @@ the existing required PI metadata/usage. The adapter materializes this service
 notice as context text for subsequent PI input rather than passing an incomplete
 provider message to pi-ai. This is one explicit boundary case, not another run
 status or a claim that a model emitted the notice.
+
+answerMessageId is the run's final answer, decided once when the run stops and
+stored with that state: on a normal stop, the run's last model assistant message
+when it has non-empty text and no tool call; otherwise null, including every
+length/error/aborted stop. No earlier message stands in for it and no
+runtime-originated message counts. Every other message is process. Runs stored
+before this field get it from the same rule when the runtime opens its storage,
+in the run and in its agent_end event. Hosts and pages read it; none decides the
+answer from message text.
 
 Only status answers whether execution is still active. length is not silently
 converted to error or complete success. toolUse is preserved if that is the last
@@ -316,7 +327,7 @@ request, does not retry or persist anything, and cancels on disconnect. Request 
 ## Restricted run history
 
 `GET /v1/history` and `/v1/history/:hostId/:runId` expose the projection defined in
-`src/agent-runtime-history.ts`. It contains user questions, final answers and artifact metadata,
+`src/agent-runtime-history.ts`. It contains user questions, the answer message's text (null without one) and artifact metadata,
 never full messages, thinking, tools or annotations. Artifact content is read through
 `/v1/history/:hostId/:runId/artifacts/:artifactId/content`. `X-Domain-Id` always applies.
 Only hosts configured with `domainHistory: true` can read another host's projection; shipped

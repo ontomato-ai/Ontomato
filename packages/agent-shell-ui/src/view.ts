@@ -5,10 +5,10 @@ import type { ProcessStepView } from "./types";
 
 export type ProcessStep = ProcessStepView;
 
-export type ResponseBlock =
-  /** `commentary`: text written in the same message as tool calls, i.e. what the agent is about to do. */
-  | { kind: "text"; key: string; text: string; final: boolean; runId: string; commentary: boolean }
-  | { kind: "process"; key: string; steps: ProcessStep[]; active: boolean };
+/** One piece of a response's process: the agent's text that is not its answer, or consecutive thinking and tool steps. */
+export type ProcessBlock =
+  | { kind: "note"; key: string; text: string; final: boolean; runId: string }
+  | { kind: "steps"; key: string; steps: ProcessStep[]; active: boolean };
 
 export interface UserItem {
   kind: "user";
@@ -21,11 +21,12 @@ export interface ResponseItem {
   key: string;
   runId: string;
   workspaceCommit: string | null;
-  blocks: ResponseBlock[];
+  /** Everything the run did except its answer's text, in order; it streams here while the run is active. */
+  process: ProcessBlock[];
   running: boolean;
   /** Present once the run stopped; rendering decides how each PI reason is shown. */
   end: { stopReason: RuntimeStopReason | null; errorMessage: string | null } | null;
-  /** Last settled assistant message, the feedback and copy target. */
+  /** The message the runtime named as the run's answer: the body, and the copy, feedback and action target. */
   answerMessageId: string | null;
   answerText: string;
   /** Retrieval associations for activity rendering; stable across continuations. */
@@ -72,7 +73,7 @@ export function conversationItems(state: ConversationState): ConversationItem[] 
       key: runId,
       runId,
       workspaceCommit: null,
-      blocks: [],
+      process: [],
       running: false,
       end: null,
       answerMessageId: null,
@@ -96,25 +97,26 @@ export function conversationItems(state: ConversationState): ConversationItem[] 
     const current = openResponse(entry.runId);
     const run = state.runs[entry.runId];
     const settled = entry.messageSeq !== null;
-    const commentary = message.content.some((block) => block.type === "toolCall");
+    // Only the answer's text leaves the process; its thinking stays there with the rest of the work.
+    const answer = entry.id === run?.answerMessageId;
+    if (answer) {
+      current.answerMessageId = entry.id;
+      current.answerText = message.content
+        .map((block) => (block.type === "text" ? block.text : ""))
+        .join("\n\n")
+        .trim();
+    }
     message.content.forEach((block, index) => {
       const key = `${entry.id}:${index}`;
       if (block.type === "text") {
-        if (!block.text) return;
-        current.blocks.push({
-          kind: "text",
-          key,
-          text: block.text,
-          final: settled,
-          runId: entry.runId,
-          commentary,
-        });
+        if (!block.text || answer) return;
+        current.process.push({ kind: "note", key, text: block.text, final: settled, runId: entry.runId });
         return;
       }
-      let process = current.blocks.at(-1);
-      if (process?.kind !== "process") {
-        process = { kind: "process", key, steps: [], active: false };
-        current.blocks.push(process);
+      let process = current.process.at(-1);
+      if (process?.kind !== "steps") {
+        process = { kind: "steps", key, steps: [], active: false };
+        current.process.push(process);
       }
       if (block.type === "thinking") {
         if (!block.thinking.trim() && settled) return;
@@ -145,13 +147,6 @@ export function conversationItems(state: ConversationState): ConversationItem[] 
         output: tool?.output || (block.id ? (toolResults.get(block.id) ?? "") : ""),
       });
     });
-    if (settled && message.content.some((block) => block.type === "text" && block.text.trim())) {
-      current.answerMessageId = entry.id;
-      current.answerText = message.content
-        .map((block) => (block.type === "text" ? block.text : ""))
-        .join("\n\n")
-        .trim();
-    }
   }
 
   for (const item of items) {
@@ -161,14 +156,14 @@ export function conversationItems(state: ConversationState): ConversationItem[] 
     item.retrievals = run?.retrievals ?? [];
     // Associated retrievals own the business activity; keep unassociated or failed calls visible.
     if (item.retrievals.length) {
-      for (const block of item.blocks) {
-        if (block.kind !== "process") continue;
+      for (const block of item.process) {
+        if (block.kind !== "steps") continue;
         block.steps = block.steps.filter((step) => !(
           step.kind === "tool" && step.toolName === "bash" && step.status !== "failed" &&
           typeof step.args.command === "string" && runsAnalystAsk(step.args.command)
         ));
       }
-      item.blocks = item.blocks.filter((block) => block.kind !== "process" || block.steps.length > 0);
+      item.process = item.process.filter((block) => block.kind !== "steps" || block.steps.length > 0);
     }
     item.workspaceCommit = run?.workspaceCommit ?? null;
     item.startedAt = run?.createdAt ? Date.parse(run.createdAt) : null;
@@ -176,9 +171,9 @@ export function conversationItems(state: ConversationState): ConversationItem[] 
     item.end = run && run.status === "stopped"
       ? { stopReason: run.stopReason, errorMessage: run.errorMessage }
       : null;
-    const last = item.blocks.at(-1);
-    for (const block of item.blocks) {
-      if (block.kind !== "process") continue;
+    const last = item.process.at(-1);
+    for (const block of item.process) {
+      if (block.kind !== "steps") continue;
       block.active =
         item.running &&
         block === last &&

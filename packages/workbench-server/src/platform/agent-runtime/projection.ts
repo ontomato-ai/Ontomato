@@ -25,7 +25,7 @@ export function runStatusView(run: {
 }
 /**
  * The business outcome of a run: the runtime only reports running/stopped, the stop reason says why.
- * A length-limited run still delivered its answer, so it counts as completed, not failed.
+ * A length-limited run ended without failing, so it counts as completed, though the runtime names no answer for it.
  */
 export type RunOutcome = "running" | "completed" | "cancelled" | "failed";
 export function runOutcome(run: { status: "running" | "stopped"; stopReason: string | null }): RunOutcome {

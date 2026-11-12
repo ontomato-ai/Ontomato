@@ -9,7 +9,7 @@ import { tApp } from "../../i18n";
 import { randomUUID } from "node:crypto";
 import { createDiagnosis, diagnosisService } from "../../services/ops-diagnosis/service";
 import type { AgentHostOwner } from "../../services/agent-host/types";
-import { messageText } from "../../platform/agent-runtime/runtime";
+import { answerText } from "../../platform/agent-runtime/runtime";
 import { HttpError } from "../../utils/errors";
 import {
   catalogRequest,
@@ -30,8 +30,7 @@ async function waitForTurnResult(sessionId: string, owner: AgentHostOwner, timeo
     if (run.run.status === "stopped") {
       const outcome = runOutcome(run.run);
       if (outcome === "failed" || outcome === "cancelled") return { status: "failed" as const, sessionId, error: run.run.errorMessage || "Diagnosis stopped" };
-      const last = [...run.messages].reverse().find((m) => m.message.role === "assistant");
-      return { status: "completed" as const, sessionId, answer: last ? messageText(last.message) : "" };
+      return { status: "completed" as const, sessionId, answer: answerText(run) };
     }
     if (Date.now() >= deadline) return { status: "running" as const, sessionId };
     await new Promise((resolve) => setTimeout(resolve, Math.min(250, Math.max(0, deadline - Date.now()))));

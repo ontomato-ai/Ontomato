@@ -89,9 +89,15 @@ Lookup is always host override → shell default → generic file card or step.
   (markstream-vue), the same as every other page: single newlines are line
   breaks and only `~~` marks strikethrough, as in every delivery channel; raw
   HTML is escaped. The shell adds only its link and image nodes for `outputs/`
-  files and host page links. Text in a message that also calls tools is the agent's
-  progress note: it stays visible in the timeline in a quieter style, while the
-  answer is the text of messages without tool calls.
+  files and host page links.
+- **Process and answer**: a response has two regions. The process holds the main
+  agent's own text, thinking and tool steps, and retrieval activity, in order; it is
+  open and grows while the run works, and folds to one "worked for" line with the
+  main run's duration once the run stops, which the user can open again. The answer
+  holds only the text of the message the runtime named as `answerMessageId`; its
+  thinking stays in the process. A run stopped without an answer (length, error,
+  aborted) keeps all its text in the process, with the stop shown beside it.
+  Copy, feedback and the `message-actions` slot target that answer message.
 - **Artifacts**: `outputs/` image syntax renders inline, link syntax renders a
   card that opens the right panel; an unclosed reference shows a placeholder.
   Defaults by extension: `.chart.json` ECharts, `.csv`/`.json` in the foundation's
@@ -107,8 +113,7 @@ Lookup is always host override → shell default → generic file card or step.
   commands are named by their business action (inspect ontology, probe values,
   run query, search metrics and knowledge, retrieve data, prepare dataset, run
   calculation); a finished process row lists the distinct actions and the step
-  count, and retrieval activity uses the same step views and summary. Each
-  response shows its elapsed time from the request, ticking while it runs.
+  count, and retrieval activity uses the same step views and summary.
   Overrides (`ToolRendererOverride`) match a skill name first, then a tool name.
 - **Charts**: hosts may pass a native ECharts theme; the default follows the CSS
   tokens.

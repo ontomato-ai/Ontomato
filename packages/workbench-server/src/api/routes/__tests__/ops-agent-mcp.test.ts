@@ -105,7 +105,8 @@ function readToolPayload(result: unknown): any {
 
 describe("ops agent MCP compatibility", () => {
   const sessionId = "a8c435e0-c139-43e7-b4b3-329b966504a8";
-  const snapshot = (status: string, stopReason: string | null, text = "diagnosed") => ({ latestRun: { run: { status, stopReason, errorMessage: stopReason === "aborted" ? "Cancelled" : null }, messages: [{ message: { role: "assistant", content: [{ type: "text", text }] } }] } });
+  const snapshot = (status: string, stopReason: string | null, text = "diagnosed") => ({ latestRun: { run: { status, stopReason, errorMessage: stopReason === "aborted" ? "Cancelled" : null,
+    answerMessageId: stopReason === "stop" ? "answer" : null }, messages: [{ id: "answer", message: { role: "assistant", content: [{ type: "text", text }] } }] } });
   it("retains the send schema and creates a session with the current owner", async () => {
     mocks.create.mockResolvedValue({ session: { id: sessionId } }); mocks.start.mockResolvedValue({}); mocks.snapshot.mockResolvedValue(snapshot("stopped", "stop"));
     const catalog = await getOpsAgentMcpToolCatalog(); expect(catalog.map((t) => t.name)).toEqual(["send"]);
@@ -125,10 +126,10 @@ describe("ops agent MCP compatibility", () => {
     const client = await startClient(createOpsAgentMcpRouter({ timeoutMs: 0 }));
     expect(readToolPayload(await client.callTool({ name: "send", arguments: { sessionId } }))).toMatchObject({ status: "failed", sessionId });
   });
-  it("does not call a partial answer successful business diagnosis", async () => {
+  it("does not promote a length-limited run's partial text to its answer", async () => {
     mocks.snapshot.mockResolvedValue(snapshot("stopped", "length", "Partial evidence"));
     const client = await startClient(createOpsAgentMcpRouter({ timeoutMs: 0 }));
-    expect(readToolPayload(await client.callTool({ name: "send", arguments: { sessionId } }))).toEqual({ status: "completed", sessionId, answer: "Partial evidence" });
+    expect(readToolPayload(await client.callTool({ name: "send", arguments: { sessionId } }))).toEqual({ status: "completed", sessionId, answer: "" });
   });
   it("retains invalid, missing and busy error shapes", async () => {
     const client = await startClient(createOpsAgentMcpRouter({ timeoutMs: 0 }));

@@ -2,7 +2,7 @@ import type { SkillOutput } from "@ontomato/contracts/skills";
 import { ARTIFACT_MARKDOWN_PROMPT } from "@ontomato/contracts/agent-artifact-markdown";
 import { skillRegistryManager } from "../../core/skills/registry/manager";
 import { renderPrompt } from "../../core/prompts/loader";
-import { startAuxiliary, waitForRun, finalText, userSkillEnvironment,
+import { startAuxiliary, waitForRun, answerText, userSkillEnvironment,
   type AssistantCredentials } from "../../platform/agent-runtime/runtime";
 import { HttpError } from "../../utils/errors";
 import { prepareAssistantSkills } from "../assistant/skills";
@@ -27,7 +27,7 @@ export async function previewSkill(owner: { domainId: string; userId: string },
   const html = snapshot.artifacts.find((artifact) => artifact.mediaType === "text/html");
   return {
     html: html ? await client.text(`/v1/artifacts/${html.id}/content`) : undefined,
-    text: finalText(snapshot) || snapshot.run.errorMessage || "",
+    text: answerText(snapshot) || snapshot.run.errorMessage || "",
     json: { runId, status: snapshot.run.status, stopReason: snapshot.run.stopReason,
       errorMessage: snapshot.run.errorMessage, artifacts: snapshot.artifacts },
     meta: { skillId: id, resolvedSkills: snapshot.run.resolvedSkills },

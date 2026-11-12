@@ -93,6 +93,7 @@ it("writes an unknown outcome for an unfinished dispatched call before closing t
     messages: async () => messages, append };
   await RuntimeStore.prototype.finish.call(fakeStore as unknown as RuntimeStore, scope, "run", "aborted", "Run cancelled");
   expect(append.mock.calls.map(call => call[2].type)).toEqual(["message_end", "message_end", "agent_end"]);
+  expect(append.mock.calls[2][2]).toMatchObject({ stopReason: "aborted", answerMessageId: null });
   expect(messages[1].message).toMatchObject({ role: "toolResult", toolCallId: "dispatched", isError: true });
   expect(JSON.stringify(messages[1])).toContain("Do not repeat this action automatically");
 });

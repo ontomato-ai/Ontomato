@@ -40,8 +40,10 @@ export interface RunView {
   status: RuntimeRunStatus;
   stopReason: RuntimeStopReason | null;
   errorMessage: string | null;
+  /** The message the runtime named as the run's answer once it stopped; every other message is process. */
+  answerMessageId: string | null;
   workspaceCommit: string | null;
-  /** Run start and stop times (ISO), from the snapshot or the agent_start/agent_end envelopes. */
+  /** Run start and stop times (ISO), from snapshots, history pages or the agent_start/agent_end envelopes. */
   createdAt: string | null;
   finishedAt: string | null;
   cursor: { seq: number; streamId: string } | null;
@@ -83,6 +85,7 @@ function ensureRun(state: ConversationState, runId: string): RunView {
     status: "running",
     stopReason: null,
     errorMessage: null,
+    answerMessageId: null,
     workspaceCommit: null,
     createdAt: null,
     finishedAt: null,
@@ -110,6 +113,7 @@ export function applyRunSnapshot(state: ConversationState, snapshot: AgentHostRu
   run.status = snapshot.run.status;
   run.stopReason = snapshot.run.stopReason;
   run.errorMessage = snapshot.run.errorMessage;
+  run.answerMessageId = snapshot.run.answerMessageId;
   run.workspaceCommit = snapshot.run.workspaceCommit;
   run.createdAt = snapshot.run.createdAt;
   run.finishedAt = snapshot.run.finishedAt;
@@ -146,7 +150,10 @@ export function applyHistoryPage(state: ConversationState, page: AgentHostSessio
       run.status = value.status;
       run.stopReason = value.stopReason;
       run.errorMessage = value.errorMessage;
+      run.answerMessageId = value.answerMessageId;
       run.workspaceCommit = value.workspaceCommit;
+      run.createdAt = value.createdAt;
+      run.finishedAt = value.finishedAt;
       run.retrievals = value.retrievals ?? [];
     }
   }
@@ -282,6 +289,7 @@ export function applyEnvelope(state: ConversationState, envelope: RuntimeEventEn
       run.status = event.status;
       run.stopReason = event.stopReason;
       run.errorMessage = event.errorMessage;
+      run.answerMessageId = event.answerMessageId;
       run.workspaceCommit = event.workspaceCommit;
       run.finishedAt = envelope.timestamp;
       for (const tool of Object.values(run.tools))

@@ -510,11 +510,8 @@ export const assistantService = {
   ) {
     const s = await this.readRun(sessionId, input.runId, owner);
     if (input.target.kind === "message") {
-      if (
-        !s.messages.some(
-          (m) => m.id === input.target.id && m.message.role === "assistant",
-        )
-      )
+      // A message rating is a rating of the run's answer, the one message the runtime named.
+      if (input.target.id !== s.run.answerMessageId)
         throw new HttpError(404, "Message not found");
     } else {
       const a = await this.artifact(sessionId, input.target.id, owner);

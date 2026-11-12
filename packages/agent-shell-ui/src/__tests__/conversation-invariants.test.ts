@@ -34,8 +34,8 @@ const frame = (value: RuntimeEventEnvelope): RuntimeStreamFrame => ({ type: "eve
 
 function run(overrides: Partial<AgentHostRun> = {}): AgentHostRun {
   return {
-    id: runId, sessionId, status: "running", stopReason: null, errorMessage: null, workspaceCommit: null,
-    createdAt: timestamp, finishedAt: null, resolvedSkills: [], retrievals: [], ...overrides,
+    id: runId, sessionId, status: "running", stopReason: null, errorMessage: null, answerMessageId: null,
+    workspaceCommit: null, createdAt: timestamp, finishedAt: null, resolvedSkills: [], retrievals: [], ...overrides,
   };
 }
 
@@ -77,7 +77,7 @@ describe("retrieval activity projection", () => {
       ],
     } }] }));
     const steps = () => conversationItems(state).flatMap((item) => item.kind === "response"
-      ? item.blocks.flatMap((block) => block.kind === "process" ? block.steps : []) : []);
+      ? item.process.flatMap((block) => block.kind === "steps" ? block.steps : []) : []);
     expect(steps()).toHaveLength(3);
     state.runs[runId]!.retrievals = [{ retrievalId: "retrieval", runId: "child" }];
     expect(steps().map((step) => step.key)).toEqual([`${partialId}:0`, `${partialId}:2`]);
@@ -95,7 +95,7 @@ describe("retrieval activity projection", () => {
     }));
     const response = conversationItems(state).find((item) => item.kind === "response")!;
     expect(response.retrievals).toHaveLength(1);
-    expect(response.blocks).toEqual([]);
+    expect(response.process).toEqual([]);
   });
 });
 
@@ -106,6 +106,7 @@ describe("live cut over partials", () => {
     expect(Object.keys(state.messages)).toEqual([userId, partialId]);
 
     applyRunSnapshot(state, snapshot({
+      run: run({ status: "stopped", stopReason: "stop", finishedAt: timestamp, answerMessageId: partialId }),
       messages: [
         user,
         { id: partialId, runId, messageSeq: 1, message: { ...partial, content: [{ type: "text", text: "Finished" }], stopReason: "stop" as const } },
@@ -123,7 +124,7 @@ describe("backward paging", () => {
   it("keeps the newer run state when an older page arrives", () => {
     const state = emptyConversation(sessionId);
     applyRunSnapshot(state, snapshot());
-    applyEnvelope(state, envelope(4, { type: "agent_end", messages: [], status: "stopped", stopReason: "aborted", errorMessage: null, workspaceCommit: null }));
+    applyEnvelope(state, envelope(4, { type: "agent_end", messages: [], status: "stopped", stopReason: "aborted", errorMessage: null, answerMessageId: null, workspaceCommit: null }));
 
     applyHistoryPage(state, history([], [run({ status: "running" })]), true);
 
@@ -194,7 +195,7 @@ describe("event stream recovery", () => {
       stream.event = (value) => applied.push(value.event.type);
       createRunSubscription<AgentHostRunSnapshot[]>().start(stream);
 
-      stream.emit(frame(envelope(4, { type: "agent_end", messages: [], status: "stopped", stopReason: "stop", errorMessage: null, workspaceCommit: null })));
+      stream.emit(frame(envelope(4, { type: "agent_end", messages: [], status: "stopped", stopReason: "stop", errorMessage: null, answerMessageId: null, workspaceCommit: null })));
       stream.emit(frame(envelope(5, {
         type: "artifact_registered",
         artifact: { id: replyId, path: "outputs/a.csv", size: 1 } as RuntimeArtifact,
@@ -225,7 +226,7 @@ function subscription(read: () => Promise<AgentHostRunSnapshot[]>): FakeSubscrip
     cursors,
     read: vi.fn(read),
     current: () => ({
-      id: runId, status: "running", stopReason: null, errorMessage: null, workspaceCommit: null, createdAt: timestamp,
+      id: runId, status: "running", stopReason: null, errorMessage: null, answerMessageId: null, workspaceCommit: null, createdAt: timestamp,
       finishedAt: null, cursor, artifacts: [], tools: {}, retrievals: [],
     }),
     snapshot(pages) {

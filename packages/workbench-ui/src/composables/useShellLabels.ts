@@ -69,8 +69,8 @@ return computed<ShellLabels>(() => ({
   activityCompute: t("assistant.activityCompute"),
   datasetData: t("assistant.datasetData"),
   datasetLineage: t("assistant.datasetLineage"),
-  done: t("assistant.done"),
   elapsed: (time) => t("assistant.elapsed", { time }),
+  worked: (time) => t("assistant.worked", { time }),
 }));
 
 }

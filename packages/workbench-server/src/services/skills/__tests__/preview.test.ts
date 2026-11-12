@@ -10,7 +10,7 @@ vi.mock("../../assistant/skills", () => ({ prepareAssistantSkills: mocks.prepare
 vi.mock("../skill-manager", () => ({ skillReference: () => ({ name: "network-graph", namespace: { kind: "provider", provider: "workbench" } }) }));
 vi.mock("../../../core/prompts/loader", () => ({ renderPrompt: () => "Use the skill" }));
 vi.mock("../../../platform/agent-runtime/runtime", () => ({
-  startAuxiliary: mocks.start, waitForRun: mocks.wait, finalText: () => "Result", userSkillEnvironment: () => ({ values: {}, secrets: {} }),
+  startAuxiliary: mocks.start, waitForRun: mocks.wait, answerText: () => "Result", userSkillEnvironment: () => ({ values: {}, secrets: {} }),
 }));
 import { previewSkill } from "../preview";
 

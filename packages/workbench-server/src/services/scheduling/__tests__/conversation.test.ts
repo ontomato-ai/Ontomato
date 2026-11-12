@@ -13,8 +13,8 @@ it("reads lifecycle only until stopped and reads just the final reply on success
   const own = vi.spyOn(assistantService, "ownRun").mockResolvedValue();
   const status = vi.spyOn(RuntimeClient.prototype, "status");
   const base = { id: runId, sessionId, createdAt: "2026-11-05T00:00:00Z", finishedAt: null, resolvedSkills: [], errorMessage: null, workspaceCommit: null };
-  status.mockResolvedValueOnce({ ...base, status: "running", stopReason: null })
-    .mockResolvedValueOnce({ ...base, status: "stopped", stopReason: "stop" });
+  status.mockResolvedValueOnce({ ...base, status: "running", stopReason: null, answerMessageId: null })
+    .mockResolvedValueOnce({ ...base, status: "stopped", stopReason: "stop", answerMessageId: randomUUID() });
   const reply = vi.spyOn(RuntimeClient.prototype, "finalReply").mockResolvedValue({ role: "assistant", content: [{ type: "text", text: "Result" }] } as never);
   const snapshot = vi.spyOn(RuntimeClient.prototype, "run");
   const wait = vi.spyOn(RuntimeClient.prototype, "waitStopped");
