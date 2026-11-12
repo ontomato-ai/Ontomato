@@ -56,7 +56,7 @@ onMounted(() => {
       </div>
     </Teleport>
     <main ref="shell" class="ontology-manager-shell">
-      <RouterView v-if="mounted" />
+      <slot v-if="mounted"><RouterView /></slot>
       <ManagerConfirmDialog />
     </main>
   </div>
