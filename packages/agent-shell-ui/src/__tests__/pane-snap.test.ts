@@ -32,12 +32,16 @@ async function sidePane() {
   await nextTick();
   const pane = root.querySelector<HTMLElement>(".page-pane")!;
   const handle = root.querySelector<HTMLElement>(".pane-resize")!;
-  /** Presses the handle at x 500, moves to `to` and releases there; the browser ends the capture on release. */
-  async function drag(to: number) {
+  /**
+   * Presses the handle at x 500, moves to `to` and releases there (the browser ends the capture after the release), or
+   * loses the capture without a release, as a cancelled drag does.
+   */
+  async function drag(to: number, end: "release" | "cancel" = "release") {
     handle.dispatchEvent(new PointerEvent("pointerdown", { pointerId: 1, clientX: 500, bubbles: true }));
     handle.dispatchEvent(new PointerEvent("pointermove", { pointerId: 1, clientX: to }));
     await nextTick();
     const during = { width: pane.style.getPropertyValue("--panel-width"), className: pane.className };
+    if (end === "release") handle.dispatchEvent(new PointerEvent("pointerup", { pointerId: 1, clientX: to }));
     handle.dispatchEvent(new PointerEvent("lostpointercapture", { pointerId: 1 }));
     await nextTick();
     return { during, after: pane.style.getPropertyValue("--panel-width") };
@@ -52,6 +56,10 @@ it("expands or closes a page dragged on past its bounds, and stops at a bound ot
   // 430 + (500 - 600) = 330: under the narrowest by less than the snap distance, so it stops at 360.
   expect(await drag(600)).toMatchObject({ during: { width: "360px" }, after: "360px" });
   expect([onExpand.mock.calls.length, onClose.mock.calls.length]).toEqual([0, 0]);
+
+  // A cancelled drag far past the narrowest only ends: nothing switches.
+  await drag(700, "cancel");
+  expect(onClose).not.toHaveBeenCalled();
 
   // 360 + (500 - 700) = 160: far past the narrowest; releasing there closes the page and keeps the width it had.
   const closing = await drag(700);

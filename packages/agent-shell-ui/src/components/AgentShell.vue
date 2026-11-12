@@ -128,7 +128,6 @@ provide(shellContextKey, {
     if (conversation.busy.value) throw new Error(props.labels.working);
     await send(message);
   },
-  refreshConversation: async () => { await conversation.open(sessionId.value); },
 });
 
 /** The replies that delegated work, in order, and the one the task list shows: the latest unless the reader moved. */

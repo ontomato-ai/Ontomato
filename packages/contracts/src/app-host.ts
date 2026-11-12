@@ -55,7 +55,7 @@ export interface AppPageContext {
 
 /** Room the platform shell's own controls cover along the edges of an app frame, in CSS pixels. */
 export interface AppFrameInsets {
-  /** The foot of the frame under the composer floating over it (the app builder's preview, full); 0 elsewhere. */
+  /** The height of the frame's foot that the platform's own controls cover; 0 when nothing covers it. */
   bottom: number;
 }
 

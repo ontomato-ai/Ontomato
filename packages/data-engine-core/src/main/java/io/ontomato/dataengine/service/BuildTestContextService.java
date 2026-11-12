@@ -146,8 +146,10 @@ public class BuildTestContextService {
   }
   public ExecutionTarget require(String id,String user,String domain) {
     var r=row(id);owner(r,user,domain);
+    // An ended test stays ended after its deadline passes: the reader is told what they did, as the status reports it.
+    if("CLOSED".equals(r.getString("state"))) throw error(HttpStatus.GONE,"BUILD_TEST_CONTEXT_CLOSED");
     if(r.getLongValue("expires_at")<=System.currentTimeMillis()) throw error(HttpStatus.GONE,"BUILD_TEST_CONTEXT_EXPIRED");
-    if(!"READY".equals(r.getString("state"))) throw error("CLOSED".equals(r.getString("state"))?HttpStatus.GONE:HttpStatus.CONFLICT,"BUILD_TEST_CONTEXT_"+("CLOSED".equals(r.getString("state"))?"CLOSED":"NOT_READY"));
+    if(!"READY".equals(r.getString("state"))) throw error(HttpStatus.CONFLICT,"BUILD_TEST_CONTEXT_NOT_READY");
     var data=r.getJSONObject("data");
     if(!fingerprint(domain).equals(data.getString("fingerprint"))) throw error(HttpStatus.CONFLICT,"BUILD_TEST_CONTEXT_CHANGED");
     return new ExecutionTarget(id,data.getString("sandboxId"),data.getList("classNames",String.class),r.getLong("expires_at"));

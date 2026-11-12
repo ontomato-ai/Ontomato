@@ -3,14 +3,20 @@ import { beforeEach, expect, it, vi } from "vitest";
 import ElementPlus from "element-plus";
 import { workbenchI18n } from "../../../i18n";
 import AnalysisScopeDialog from "../components/AnalysisScopeDialog.vue";
-const api = vi.hoisted(() => ({ get: vi.fn(), fetch: vi.fn() }));
-vi.mock("../../../utils/api", () => ({ nodeApiGet: api.get, nodeApiFetch: api.fetch }));
+import { shellContextKey } from "../../../../../agent-shell-ui/src/context";
+const api = vi.hoisted(() => ({ get: vi.fn() }));
+vi.mock("../../../utils/api", () => ({ nodeApiGet: api.get }));
 beforeEach(() => { vi.resetAllMocks(); });
-it("shows the source condition and submits adjustments with a stable retry identity", async () => {
+const artifact = { id: "dataset", sessionId: "session", path: "outputs/retrievals/r/d.dataset.json" } as never;
+function mountDialog(proceed: (message: string) => Promise<void>) {
+  return mount(AnalysisScopeDialog, { props: { modelValue: false, artifact, title: "Staff" },
+    global: { plugins: [workbenchI18n(), ElementPlus], provide: { [shellContextKey as symbol]: { continueConversation: proceed } } } });
+}
+
+it("shows the source condition and sends the adjustment as one ordinary message naming the file", async () => {
   api.get.mockResolvedValue({ question: "Staff aged 60+", assumptions: [], filters: [{ id: "age", label: "Age ≥ 60", expression: "age >= 60" }] });
-  api.fetch.mockRejectedValueOnce(new Error("Connection lost")).mockResolvedValueOnce({});
-  const refresh = vi.fn();
-  const wrapper = mount(AnalysisScopeDialog, { props: { modelValue: false, artifact: { id: "dataset", sessionId: "session" } as never, refresh }, global: { plugins: [workbenchI18n(), ElementPlus] } });
+  const proceed = vi.fn().mockRejectedValueOnce(new Error("Working")).mockResolvedValueOnce(undefined);
+  const wrapper = mountDialog(proceed);
   try {
     await wrapper.setProps({ modelValue: true }); await flushPromises();
     expect(wrapper.findComponent({ name: "ElSelect" }).exists()).toBe(false);
@@ -18,10 +24,10 @@ it("shows the source condition and submits adjustments with a stable retry ident
     await wrapper.findComponent({ name: "ElInput" }).setValue("Age ≥ 55");
     const submit = () => wrapper.findAllComponents({ name: "ElButton" }).at(-1)!;
     await submit().trigger("click"); await flushPromises();
+    expect(wrapper.props("modelValue")).toBe(true);
     await submit().trigger("click"); await flushPromises();
-    expect(api.fetch.mock.calls[0]![3].headers["Idempotency-Key"]).toBe(api.fetch.mock.calls[1]![3].headers["Idempotency-Key"]);
-    expect(api.fetch.mock.calls[1]![2]).toEqual({ adjustment: "Age ≥ 55" });
-    expect(refresh).toHaveBeenCalledTimes(1);
+    expect(proceed).toHaveBeenLastCalledWith('For the data file "Staff" (outputs/retrievals/r/d.dataset.json), change the query scope: Age ≥ 55');
+    expect(wrapper.emitted("update:modelValue")?.at(-1)).toEqual([false]);
   } finally { wrapper.unmount(); }
 });
 
@@ -30,8 +36,8 @@ it("displays all conditions and allows multiple changes without choosing a condi
     { id: "age", label: "Age ≥ 60", expression: "age >= 60" },
     { id: "status", label: "Active", expression: "status = active" },
   ] });
-  api.fetch.mockResolvedValue({});
-  const wrapper = mount(AnalysisScopeDialog, { props: { modelValue: false, artifact: { id: "dataset", sessionId: "session" } as never }, global: { plugins: [workbenchI18n(), ElementPlus] } });
+  const proceed = vi.fn().mockResolvedValue(undefined);
+  const wrapper = mountDialog(proceed);
   try {
     await wrapper.setProps({ modelValue: true }); await flushPromises();
     const select = wrapper.findComponent({ name: "ElSelect" });
@@ -44,6 +50,6 @@ it("displays all conditions and allows multiple changes without choosing a condi
     await wrapper.findComponent({ name: "ElInput" }).setValue("Age ≥ 55 and retired staff");
     expect(submit.props("disabled")).toBe(false);
     await submit.trigger("click"); await flushPromises();
-    expect(api.fetch.mock.calls[0]![2]).toEqual({ adjustment: "Age ≥ 55 and retired staff" });
+    expect(proceed).toHaveBeenCalledWith(expect.stringContaining("change the query scope: Age ≥ 55 and retired staff"));
   } finally { wrapper.unmount(); }
 });

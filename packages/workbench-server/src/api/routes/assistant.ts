@@ -6,11 +6,8 @@ import { requirePermission } from "../../identity/installed";
 import { assertAppBuilderAccess } from "../../services/app-builder/access";
 import { assistantSkillCatalog } from "../../services/assistant/skills";
 import { actionCard, confirmAction } from "../../services/assistant/actions";
-import { readDecision, saveDecision, submitDecision } from "../../services/assistant/decisions";
-import { clarificationValuesSchema } from "@ontomato/contracts/assistant-clarification";
-import { adjustAnalysisScope, readAnalysisScope, scopeChangeSchema } from "../../services/assistant/analysis-scope";
-import { drilldownInputSchema } from "@ontomato/contracts/assistant-drilldown";
-import { readDrilldown, startDrilldown } from "../../services/assistant/drilldown";
+import { readAnalysisScope } from "../../services/assistant/analysis-scope";
+import { readDrilldown } from "../../services/assistant/drilldown";
 import {
   readAgentDefinition,
   listAgentDefinitions,
@@ -54,29 +51,8 @@ router.get("/sessions/:sessionId/artifacts/:artifactId/drilldown", wrap(async (r
   const rowIndex = z.coerce.number().int().nonnegative().safe().parse(req.query.rowIndex);
   res.json(await readDrilldown(id(req, "sessionId"), id(req, "artifactId"), context(req).owner, rowIndex));
 }));
-router.post("/sessions/:sessionId/artifacts/:artifactId/drilldown", wrap(async (req, res) => {
-  const c = context(req);
-  await startDrilldown(id(req, "sessionId"), id(req, "artifactId"), c.owner, c.credentials,
-    drilldownInputSchema.parse(req.body).rowIndex, uuid.parse(req.header("Idempotency-Key")));
-  res.sendStatus(202);
-}));
 router.get("/sessions/:sessionId/artifacts/:artifactId/analysis-scope", wrap(async (req, res) => {
   res.json(await readAnalysisScope(id(req, "sessionId"), id(req, "artifactId"), context(req).owner, z.string().max(35).optional().parse(req.query.locale)));
-}));
-router.post("/sessions/:sessionId/artifacts/:artifactId/analysis-scope", wrap(async (req, res) => {
-  const c = context(req);
-  await adjustAnalysisScope(id(req, "sessionId"), id(req, "artifactId"), c.owner, c.credentials, scopeChangeSchema.parse(req.body), uuid.parse(req.header("Idempotency-Key")));
-  res.sendStatus(202);
-}));
-router.get("/sessions/:sessionId/artifacts/:artifactId/decision", wrap(async (req, res) => {
-  res.json(await readDecision(id(req, "sessionId"), id(req, "artifactId"), context(req).owner));
-}));
-router.put("/sessions/:sessionId/artifacts/:artifactId/decision", wrap(async (req, res) => {
-  res.json(await saveDecision(id(req, "sessionId"), id(req, "artifactId"), context(req).owner, clarificationValuesSchema.parse(req.body)));
-}));
-router.post("/sessions/:sessionId/artifacts/:artifactId/decision/submit", wrap(async (req, res) => {
-  const c = context(req);
-  res.json(await submitDecision(id(req, "sessionId"), id(req, "artifactId"), c.owner, c.credentials, clarificationValuesSchema.parse(req.body)));
 }));
 router.get("/sessions/:sessionId/artifacts/:artifactId/action", wrap(async (req, res) => {
   const c = context(req);

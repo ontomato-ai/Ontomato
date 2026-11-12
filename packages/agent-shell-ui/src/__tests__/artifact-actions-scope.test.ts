@@ -17,7 +17,6 @@ it("gives the artifact-actions slot the title the panel shows", async () => {
   app.provide(shellContextKey, {
     labels: ref({ download: "Download", close: "Close" }),
     slots: { artifactActions: (scope: Record<string, unknown>) => (scopes.push(scope), []) },
-    refreshConversation: async () => {},
   } as unknown as ShellContext);
   app.mount(root);
   try {

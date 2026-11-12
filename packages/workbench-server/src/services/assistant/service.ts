@@ -182,11 +182,6 @@ export const assistantService = {
       latestRun: s.latestRun ? publicSnapshot(s.latestRun) : null,
     };
   },
-  async retrievalClient(sessionId: string, runId: string, owner: AssistantOwner) {
-    const turn = await assistantStore.turn(runId, owner);
-    if (turn.session_id !== sessionId) throw new HttpError(404, "Run not found", "NOT_FOUND");
-    return new OntologyRetrievalClient(owner, turn.retrieval_scope_id);
-  },
   /** The run belongs to this user's session by the workbench's own turn record; no runtime read is needed. */
   async ownRun(sessionId: string, id: string, owner: AssistantOwner) {
     const turn = await assistantStore.turn(id, owner);
